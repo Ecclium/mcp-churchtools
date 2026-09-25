@@ -1,0 +1,34 @@
+name: Feature request
+description: Suggest a new capability or an improvement.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **This repository is public.** Before you paste anything, remove host names, tenant names, IP addresses, tokens and personal data such as names, e-mail addresses or IDs from a real ChurchTools instance. Use placeholders such as `https://example.church.tools`, `demo-tenant`, `person-id-1` or `max.mustermann@example.org`.
+
+        **Dieses Repository ist öffentlich.** Entfernen Sie vor dem Einfügen Hostnamen, Tenant-Namen, IP-Adressen, Tokens und Personendaten wie Namen, E-Mail-Adressen oder IDs aus einer echten ChurchTools-Instanz. Verwenden Sie Platzhalter wie `https://example.church.tools`, `demo-tenant`, `person-id-1` oder `max.mustermann@example.org`.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: The situation in your congregation or organisation, described with placeholders.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What do you propose?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+  - type: checkboxes
+    id: redaction
+    attributes:
+      label: Redaction
+      options:
+        - label: I removed host names, tenant names, IP addresses, tokens and personal data. Ich habe Hostnamen, Tenant-Namen, IP-Adressen, Tokens und Personendaten entfernt.
+          required: true

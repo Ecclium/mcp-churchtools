@@ -1,0 +1,51 @@
+name: Bug report
+description: Something does not behave as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **This repository is public.** Before you paste anything, remove host names, tenant names, IP addresses, tokens and personal data such as names, e-mail addresses or IDs from a real ChurchTools instance. Use placeholders such as `https://example.church.tools`, `demo-tenant`, `person-id-1` or `max.mustermann@example.org`.
+
+        **Dieses Repository ist öffentlich.** Entfernen Sie vor dem Einfügen Hostnamen, Tenant-Namen, IP-Adressen, Tokens und Personendaten wie Namen, E-Mail-Adressen oder IDs aus einer echten ChurchTools-Instanz. Verwenden Sie Platzhalter wie `https://example.church.tools`, `demo-tenant`, `person-id-1` oder `max.mustermann@example.org`.
+
+        Security vulnerabilities do not belong here; see SECURITY.md. Sicherheitslücken gehören nicht hierher, siehe SECURITY.md.
+  - type: textarea
+    id: observed
+    attributes:
+      label: What happened?
+      description: What you did and what you observed.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: main at 1a2b3c4
+  - type: textarea
+    id: output
+    attributes:
+      label: Redacted output
+      description: Log lines or error messages, after removing host names, tenant names, IP addresses, tokens and personal data.
+      render: text
+  - type: checkboxes
+    id: redaction
+    attributes:
+      label: Redaction
+      options:
+        - label: I removed host names, tenant names, IP addresses, tokens and personal data. Ich habe Hostnamen, Tenant-Namen, IP-Adressen, Tokens und Personendaten entfernt.
+          required: true
