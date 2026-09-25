@@ -9,6 +9,7 @@
     "noEmit": true,
     "tsBuildInfoFile": "${configDir}/dist/tsconfig.tsbuildinfo",
     "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
     "rootDir": ".."
   },
   "include": ["**/*.mts", "../vitest.config.mts"],

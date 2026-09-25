@@ -10,8 +10,8 @@ Ecclium läuft auf Node.js. Festzulegen ist, welche Versionen unterstützt werde
 
 Der Zeitplan des Node.js-Projekts (Datei `schedule.json` im Repository `nodejs/Release`, Stand 25.09.2026) nennt:
 
-| Linie | LTS ab | Wartung ab | Ende |
-|---|---|---|---|
+| Linie      | LTS ab     | Wartung ab | Ende       |
+| ---------- | ---------- | ---------- | ---------- |
 | Node.js 22 | 29.10.2024 | 21.10.2025 | 30.04.2027 |
 | Node.js 24 | 28.10.2025 | 20.10.2026 | 30.04.2028 |
 | Node.js 26 | 28.10.2026 | 20.10.2027 | 30.04.2029 |

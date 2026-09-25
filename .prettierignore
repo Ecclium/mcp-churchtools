@@ -1,0 +1,10 @@
+# Prettier also skips everything in .gitignore.
+
+# The brand package is delivered as is and never changed here.
+brand/
+
+# Written by pnpm, not by hand.
+pnpm-lock.yaml
+
+# The licence text stays exactly as published.
+LICENSE

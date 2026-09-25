@@ -12,51 +12,51 @@ Die Spalte «Fällt vor» nennt die Phase, vor deren Beginn der Entscheid festst
 - **Geplant:** Nummer und Thema stehen fest, der Text folgt.
 - **Betrieblich, nicht öffentlich:** Der Entscheid betrifft nur den gehosteten Betrieb und liegt nicht in diesem Repository. Die Nummer steht hier, damit die Zählung keine Lücken hat.
 
-| Nr. | Titel | Status | Fällt vor |
-|---|---|---|---|
-| [0001](0001-adrs-als-entscheidformat.md) | ADRs als Entscheidformat | Vorgeschlagen | Phase 0 |
-| [0002](0002-apache-2-0-und-dco.md) | Apache-2.0 und DCO, kein CLA, Kern bleibt offen | Vorgeschlagen | Phase 0 |
-| 0003 | Mandantenkontext als expliziter Parameter | Geplant | Phase 1 |
-| 0004 | Getrennte Container-Images für Server und Runner, gleicher Inhalt aus dem npm-Tarball, Trennung über Rechte und Zugangsdaten | Geplant | Phase 7 |
-| 0005 |  | Betrieblich, nicht öffentlich |  |
-| 0006 |  | Betrieblich, nicht öffentlich |  |
-| 0007 |  | Betrieblich, nicht öffentlich |  |
-| 0008 | Signierte Offline-Lizenzdateien statt Online-Aktivierung | Geplant | Phase 9 |
-| 0009 | Positivliste für ausgehende Verbindungen, auch im Self-Hosting | Geplant | Phase 6 |
-| 0010 |  | Betrieblich, nicht öffentlich |  |
-| 0011 |  | Betrieblich, nicht öffentlich |  |
-| 0012 | GitHub als Code-Verwaltung, kein selbst betriebener Git-Dienst | Geplant | Phase 0 |
-| 0013 | Repositorys und Aufteilung öffentlich und privat | Geplant | Phase 0 |
-| [0014](0014-oeffentlich-ab-dem-ersten-commit.md) | Öffentliche Versionsgeschichte ab dem ersten Commit | Angenommen | Phase 0, vor dem ersten Commit |
-| 0015 | Pro-Modul bindet den Kern als veröffentlichte Abhängigkeit, nicht als Submodul | Geplant | Phase 0 |
-| 0016 |  | Betrieblich, nicht öffentlich |  |
-| 0017 | Clean Room gegenüber dem eigenen Fork eines Referenzprojekts | Geplant | Phase 0 |
-| 0018 | MCP-Protokoll 2026-07-28 und SDK v2, zustandsloser Server | Geplant | Phase 1 |
-| [0019](0019-node-linie.md) | Node-Linie: 24 LTS, Images auf 26, Wechselregel im Oktober | Vorgeschlagen | Phase 0 |
-| 0020 | Werkzeugkette: pnpm 11, TypeScript 6, Vitest 5, Renovate | Geplant | Phase 0 |
-| 0021 | Supply-Chain-Baseline | Geplant | Phase 0 |
-| [0022](0022-paketzuschnitt.md) | Paketzuschnitt, zwei npm-Pakete, Bündelung ausser `zod` und `plugin-api` | Vorgeschlagen | Phase 0 |
-| 0023 | Kein Token-Passthrough, OAuth-Delegation für Pro und gehosteten Betrieb | Geplant | Phase 1 |
-| 0024 | Eine Tool-Pipeline, Redaction und Audit ab Phase 1 | Geplant | Phase 1 |
-| 0025 | Eigene zod-Schemas als Wahrheit für den ChurchTools-Client | Geplant | Phase 1 |
-| 0026 | Redaction über klassifizierte Ausgabeschemas, Pseudonyme nach RFC 8452 | Geplant | Phase 2 |
-| 0027 | Doku-Index nur mit Fakten bis zur Lizenzklärung | Geplant | Phase 3 |
-| 0028 | Audit-Ereignis v1 und Datei-Sink im freien Kern | Geplant | Phase 4 |
-| 0029 | Write-Guard: Plan und Commit, Nachweise nur im Kern, Bestätigungswege, `replayGuard` | Geplant | Phase 5 |
-| 0030 | ContentPolicy und nur Markdown-Ziele | Geplant | Phase 5 |
-| 0031 | Persistenz-Ausnahmen und Crypto-Shredding mit Tagesschlüsseln | Geplant | Phase 5 |
-| 0032 | Richtlinie mit IDs, portable Rezeptziele, Prüfcode in der Kennzeichnung | Geplant | Phase 5 |
-| 0033 | Runner-Modell ohne Werkzeuge, Hybrid-Ausgabevertrag | Geplant | Phase 6 |
-| 0034 | Zeitplan-Semantik: croner als einzige Quelle, `run-once --due` | Geplant | Phase 6 |
-| 0035 | Egress-Positivliste im Self-Hosting mit Squid und `undici`-Dispatcher | Geplant | Phase 6 |
-| 0036 | Runner-Container-Vertrag | Geplant | Phase 6 |
-| 0037 | Anmeldung am Server: im freien Kern statische Bearer-Tokens und OAuth-Modus gegen einen Anmeldedienst des Betreibers, Komfort im Pro-Modul, Client-Test in Phase 7 | Geplant | Phase 1 |
-| 0038 | Container: distroless, Images aus dem npm-Tarball, Attestations und cosign | Geplant | Phase 7 |
-| 0039 | Kein dauerhaftes Staging, Referenzinstallation bei einer Gemeinde | Geplant | Phase 7 |
-| 0040 | Release: Trusted und Staged Publishing, Release-PR lokal | Geplant | Phase 8 |
-| 0041 | `plugin-api` 1.0: Vertrauensmodell, Integrität, Port-Ersatz nur signiert | Geplant | Phase 9 |
-| 0042 | Pro-Sichtbarkeit ohne Platzhalter-Tools | Geplant | Phase 9 |
-| 0043 |  | Betrieblich, nicht öffentlich |  |
-| 0044 |  | Betrieblich, nicht öffentlich |  |
-| 0045 |  | Betrieblich, nicht öffentlich |  |
-| 0046 |  | Betrieblich, nicht öffentlich |  |
+| Nr.                                              | Titel                                                                                                                                                              | Status                        | Fällt vor                      |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------- | ------------------------------ |
+| [0001](0001-adrs-als-entscheidformat.md)         | ADRs als Entscheidformat                                                                                                                                           | Vorgeschlagen                 | Phase 0                        |
+| [0002](0002-apache-2-0-und-dco.md)               | Apache-2.0 und DCO, kein CLA, Kern bleibt offen                                                                                                                    | Vorgeschlagen                 | Phase 0                        |
+| 0003                                             | Mandantenkontext als expliziter Parameter                                                                                                                          | Geplant                       | Phase 1                        |
+| 0004                                             | Getrennte Container-Images für Server und Runner, gleicher Inhalt aus dem npm-Tarball, Trennung über Rechte und Zugangsdaten                                       | Geplant                       | Phase 7                        |
+| 0005                                             |                                                                                                                                                                    | Betrieblich, nicht öffentlich |                                |
+| 0006                                             |                                                                                                                                                                    | Betrieblich, nicht öffentlich |                                |
+| 0007                                             |                                                                                                                                                                    | Betrieblich, nicht öffentlich |                                |
+| 0008                                             | Signierte Offline-Lizenzdateien statt Online-Aktivierung                                                                                                           | Geplant                       | Phase 9                        |
+| 0009                                             | Positivliste für ausgehende Verbindungen, auch im Self-Hosting                                                                                                     | Geplant                       | Phase 6                        |
+| 0010                                             |                                                                                                                                                                    | Betrieblich, nicht öffentlich |                                |
+| 0011                                             |                                                                                                                                                                    | Betrieblich, nicht öffentlich |                                |
+| 0012                                             | GitHub als Code-Verwaltung, kein selbst betriebener Git-Dienst                                                                                                     | Geplant                       | Phase 0                        |
+| 0013                                             | Repositorys und Aufteilung öffentlich und privat                                                                                                                   | Geplant                       | Phase 0                        |
+| [0014](0014-oeffentlich-ab-dem-ersten-commit.md) | Öffentliche Versionsgeschichte ab dem ersten Commit                                                                                                                | Angenommen                    | Phase 0, vor dem ersten Commit |
+| 0015                                             | Pro-Modul bindet den Kern als veröffentlichte Abhängigkeit, nicht als Submodul                                                                                     | Geplant                       | Phase 0                        |
+| 0016                                             |                                                                                                                                                                    | Betrieblich, nicht öffentlich |                                |
+| 0017                                             | Clean Room gegenüber dem eigenen Fork eines Referenzprojekts                                                                                                       | Geplant                       | Phase 0                        |
+| 0018                                             | MCP-Protokoll 2026-07-28 und SDK v2, zustandsloser Server                                                                                                          | Geplant                       | Phase 1                        |
+| [0019](0019-node-linie.md)                       | Node-Linie: 24 LTS, Images auf 26, Wechselregel im Oktober                                                                                                         | Vorgeschlagen                 | Phase 0                        |
+| [0020](0020-werkzeugkette.md)                    | Werkzeugkette: pnpm 11, TypeScript 6, Vitest 5, Renovate                                                                                                           | Vorgeschlagen                 | Phase 0                        |
+| [0021](0021-supply-chain-baseline.md)            | Supply-Chain-Baseline                                                                                                                                              | Vorgeschlagen                 | Phase 0                        |
+| [0022](0022-paketzuschnitt.md)                   | Paketzuschnitt, zwei npm-Pakete, Bündelung ausser `zod` und `plugin-api`                                                                                           | Vorgeschlagen                 | Phase 0                        |
+| 0023                                             | Kein Token-Passthrough, OAuth-Delegation für Pro und gehosteten Betrieb                                                                                            | Geplant                       | Phase 1                        |
+| 0024                                             | Eine Tool-Pipeline, Redaction und Audit ab Phase 1                                                                                                                 | Geplant                       | Phase 1                        |
+| 0025                                             | Eigene zod-Schemas als Wahrheit für den ChurchTools-Client                                                                                                         | Geplant                       | Phase 1                        |
+| 0026                                             | Redaction über klassifizierte Ausgabeschemas, Pseudonyme nach RFC 8452                                                                                             | Geplant                       | Phase 2                        |
+| 0027                                             | Doku-Index nur mit Fakten bis zur Lizenzklärung                                                                                                                    | Geplant                       | Phase 3                        |
+| 0028                                             | Audit-Ereignis v1 und Datei-Sink im freien Kern                                                                                                                    | Geplant                       | Phase 4                        |
+| 0029                                             | Write-Guard: Plan und Commit, Nachweise nur im Kern, Bestätigungswege, `replayGuard`                                                                               | Geplant                       | Phase 5                        |
+| 0030                                             | ContentPolicy und nur Markdown-Ziele                                                                                                                               | Geplant                       | Phase 5                        |
+| 0031                                             | Persistenz-Ausnahmen und Crypto-Shredding mit Tagesschlüsseln                                                                                                      | Geplant                       | Phase 5                        |
+| 0032                                             | Richtlinie mit IDs, portable Rezeptziele, Prüfcode in der Kennzeichnung                                                                                            | Geplant                       | Phase 5                        |
+| 0033                                             | Runner-Modell ohne Werkzeuge, Hybrid-Ausgabevertrag                                                                                                                | Geplant                       | Phase 6                        |
+| 0034                                             | Zeitplan-Semantik: croner als einzige Quelle, `run-once --due`                                                                                                     | Geplant                       | Phase 6                        |
+| 0035                                             | Egress-Positivliste im Self-Hosting mit Squid und `undici`-Dispatcher                                                                                              | Geplant                       | Phase 6                        |
+| 0036                                             | Runner-Container-Vertrag                                                                                                                                           | Geplant                       | Phase 6                        |
+| 0037                                             | Anmeldung am Server: im freien Kern statische Bearer-Tokens und OAuth-Modus gegen einen Anmeldedienst des Betreibers, Komfort im Pro-Modul, Client-Test in Phase 7 | Geplant                       | Phase 1                        |
+| 0038                                             | Container: distroless, Images aus dem npm-Tarball, Attestations und cosign                                                                                         | Geplant                       | Phase 7                        |
+| 0039                                             | Kein dauerhaftes Staging, Referenzinstallation bei einer Gemeinde                                                                                                  | Geplant                       | Phase 7                        |
+| 0040                                             | Release: Trusted und Staged Publishing, Release-PR lokal                                                                                                           | Geplant                       | Phase 8                        |
+| 0041                                             | `plugin-api` 1.0: Vertrauensmodell, Integrität, Port-Ersatz nur signiert                                                                                           | Geplant                       | Phase 9                        |
+| 0042                                             | Pro-Sichtbarkeit ohne Platzhalter-Tools                                                                                                                            | Geplant                       | Phase 9                        |
+| 0043                                             |                                                                                                                                                                    | Betrieblich, nicht öffentlich |                                |
+| 0044                                             |                                                                                                                                                                    | Betrieblich, nicht öffentlich |                                |
+| 0045                                             |                                                                                                                                                                    | Betrieblich, nicht öffentlich |                                |
+| 0046                                             |                                                                                                                                                                    | Betrieblich, nicht öffentlich |                                |
