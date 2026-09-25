@@ -1,0 +1,27 @@
+# Local configuration and secrets. Only .env.example belongs in the repository.
+.env
+.env.*
+!.env.example
+.envrc
+secrets/
+
+# Local mise overrides, which may hold personal settings or environment values
+mise.local.toml
+mise.*.local.toml
+.mise.local.toml
+.mise.*.local.toml
+mise.local.lock
+mise.*.local.lock
+
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Local overrides of the Git hooks
+lefthook-local.yml
+
+# Logs and system files
+*.log
+.DS_Store

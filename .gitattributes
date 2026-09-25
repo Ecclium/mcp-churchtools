@@ -1,0 +1,16 @@
+# Text is stored and checked out with LF line endings on every platform.
+* text=auto eol=lf
+
+# Binary formats: no line ending conversion, no text diff.
+*.gif binary
+*.ico binary
+*.jpeg binary
+*.jpg binary
+*.pdf binary
+*.png binary
+*.woff binary
+*.woff2 binary
+
+# The brand package is delivered as is and never edited here: stored byte for
+# byte, and left out of the language statistics.
+brand/** -text linguist-vendored
