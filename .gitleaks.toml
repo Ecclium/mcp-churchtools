@@ -1,0 +1,85 @@
+# Secret scanning for this public repository (ADR 0014).
+#
+# The built-in gitleaks rules find credentials. The rules below add data that
+# must never be published here: ChurchTools hosts, tokens in Authorization
+# headers and URLs, private IP addresses, e-mail addresses and home directory
+# paths. They are generic on purpose. A pattern for a specific tenant or person
+# would itself reveal what it is looking for, so such patterns never belong in
+# this file. Names, phone numbers and IDs cannot be recognised by a pattern and
+# are left to review.
+#
+# Placeholders that pass: https://example.church.tools, demo-tenant,
+# person-id-1, max.mustermann@example.org, 10.0.0.0/8, and any value written
+# in angle brackets, such as <token> or /home/<name>/.
+
+title = "Ecclium secret scanning"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "ecclium-churchtools-host"
+description = "Host under church.tools. Only example.church.tools may appear in this repository."
+regex = '''(?i)\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+church\.tools\b'''
+
+# Covers header literals, object keys and calls such as
+# headers.set("Authorization", "Login ..."), for ChurchTools login tokens and
+# for bearer tokens alike.
+[[rules]]
+id = "ecclium-authorization-header"
+description = "Login or bearer token in an Authorization header. Write the value as <token>."
+regex = '''(?i)\bauthorization["'`]?\s*[:=,]\s*["'`]?(?:login|bearer)\s+([a-z0-9._~+/=-]{16,})'''
+secretGroup = 1
+keywords = ["authorization"]
+
+[[rules]]
+id = "ecclium-churchtools-login-token-param"
+description = "ChurchTools login token as a login_token parameter. Write the value as <token>."
+regex = '''(?i)\blogin_token=([a-z0-9._~%+/=-]{16,})'''
+secretGroup = 1
+keywords = ["login_token"]
+
+[[rules]]
+id = "ecclium-private-ipv4"
+description = "Private IPv4 address (RFC 1918). Only the literal range 10.0.0.0/8 may appear as a placeholder."
+regex = '''\b(?:10\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])|172\.(?:1[6-9]|2[0-9]|3[01])|192\.168)\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?:/[0-9]{1,2})?\b'''
+
+[[rules]]
+id = "ecclium-email-address"
+description = "E-mail address. Use an address under example.org, example.com or example.net."
+regex = '''(?i)\b[a-z0-9][a-z0-9._%+-]*@(?:[a-z0-9-]+\.)+[a-z]{2,}\b'''
+
+# The secret is the user name alone. The built-in global allowlist ignores
+# findings whose whole value looks like a path under /home or /Users, so a
+# rule that reported the path would never fire. The name may end at a path
+# separator, a quote, white space or the end of the line, and Windows paths
+# may use escaped backslashes and any case.
+[[rules]]
+id = "ecclium-home-path"
+description = "Path inside a home directory, which usually names a person. Write the user as <name>."
+regex = '''(?m)(?:/Users/|/home/|\b[A-Za-z]:\\{1,2}[Uu][Ss][Ee][Rr][Ss]\\{1,2})([A-Za-z0-9._-]+)(?:[/\\"'`\s]|$)'''
+secretGroup = 1
+
+[[allowlists]]
+description = "The documented placeholder host, also URL-encoded after a slash."
+targetRules = ["ecclium-churchtools-host"]
+regexTarget = "match"
+regexes = ['''(?i)^(?:2f)?example\.church\.tools$''']
+
+[[allowlists]]
+description = "The documented placeholder range."
+targetRules = ["ecclium-private-ipv4"]
+regexTarget = "match"
+regexes = ['''^10\.0\.0\.0/8$''']
+
+[[allowlists]]
+description = "Placeholder addresses under the reserved example domains."
+targetRules = ["ecclium-email-address"]
+regexTarget = "match"
+regexes = ['''(?i)@(?:[a-z0-9-]+\.)*example\.(?:org|com|net)$''']
+
+[[allowlists]]
+description = "Sign-off and co-author trailers name the contributor, as the commit metadata does anyway."
+targetRules = ["ecclium-email-address"]
+regexTarget = "line"
+regexes = ['''(?i)^\s*(?:signed-off-by|co-authored-by):\s''']

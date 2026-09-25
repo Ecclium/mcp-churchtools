@@ -1,0 +1,23 @@
+# Git hooks, installed with `mise exec -- lefthook install` (ADR 0014).
+#
+# Every commit and every commit message is scanned for secrets and for data
+# that must never reach this public repository (see .gitleaks.toml). A local
+# hook can be skipped, so it must not be the only line of defence.
+#
+# gitleaks runs through `mise exec`, so the version pinned in mise.toml is used
+# even when mise is not activated in the shell. If mise is not on the PATH or
+# gitleaks is missing, the hook fails and the commit is stopped. If lefthook
+# itself cannot be found, the generated hook lets the commit pass unchecked.
+# --verbose names rule, file and line of a finding; --redact hides the value.
+pre-commit:
+  commands:
+    secrets:
+      run: mise exec -- gitleaks git --pre-commit --staged --redact --verbose --no-banner -c .gitleaks.toml
+
+commit-msg:
+  commands:
+    secrets:
+      # Drops the diff that `git commit -v` appends below the scissors line.
+      # Removed lines there never reach the commit and would only cause false
+      # alarms; the comment lines above it, such as # Author:, stay scanned.
+      run: sed '/^# -\{24\} >8 -\{24\}$/,$d' {1} | mise exec -- gitleaks stdin --redact --verbose --no-banner -c .gitleaks.toml

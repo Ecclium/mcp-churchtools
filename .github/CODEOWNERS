@@ -1,0 +1,30 @@
+# Who is responsible for which files.
+#
+# With a single maintainer and no required approvals, this file documents
+# responsibility; it does not enforce a second review. The explicit entries
+# mark the files that decide what runs on developer machines and in CI, what
+# gets published, how leaked data is found and what the project promises.
+# They stay with the maintainers even if the default rule changes. Later
+# rules take precedence.
+* @ecclium/maintainers
+
+/.github/ @ecclium/maintainers
+/.vscode/ @ecclium/maintainers
+/package.json @ecclium/maintainers
+/packages/*/package.json @ecclium/maintainers
+/pnpm-lock.yaml @ecclium/maintainers
+/pnpm-workspace.yaml @ecclium/maintainers
+/mise.toml @ecclium/maintainers
+/mise.compat.toml @ecclium/maintainers
+/mise.lock @ecclium/maintainers
+/mise.compat.lock @ecclium/maintainers
+/.gitleaks.toml @ecclium/maintainers
+/lefthook.yml @ecclium/maintainers
+/.gitignore @ecclium/maintainers
+/.gitattributes @ecclium/maintainers
+/brand/ @ecclium/maintainers
+/docs/adr/ @ecclium/maintainers
+/SECURITY.md @ecclium/maintainers
+/PROMISE.md @ecclium/maintainers
+/LICENSE @ecclium/maintainers
+/NOTICE @ecclium/maintainers
