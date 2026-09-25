@@ -76,7 +76,7 @@ Verwenden Sie Platzhalter: `https://example.church.tools`, `demo-tenant`, `perso
 
 Zitieren Sie Quellen ohne Host: mit Titel, Version und Abschnitt, bei der ChurchTools-API mit Version und `operationId`.
 
-Ein Git-Hook aus der Einrichtung unten prüft jeden Commit und jede Commit-Message mit gitleaks auf Zugangsdaten, Hosts unter `church.tools`, private IPv4-Adressen, E-Mail-Adressen und Home-Pfade. Namen, Telefonnummern, IDs, öffentliche IP-Adressen und IPv6-Adressen erkennt er nicht. Er fängt Versehen ab, Ihre eigene Durchsicht ersetzt er nicht.
+Ein Git-Hook aus der Einrichtung unten prüft jeden Commit und jede Commit-Message mit gitleaks. Er sucht nach Zugangsdaten, Hosts unter `church.tools`, internen Hostnamen, IPv4- und IPv6-Adressen, E-Mail-Adressen, Telefonnummern aus der Schweiz, Liechtenstein, Deutschland und Österreich, AHV-Nummern, IBAN und Home-Pfaden. Dazu kommen Dateien, die nie ins Repository gehören, etwa `.env`, Schlüssel oder Datenexporte. Welche Platzhalter die Prüfung durchlässt, steht am Anfang von `.gitleaks.toml`. Namen, IDs und ChurchTools-Instanzen auf einer eigenen Domain erkennt der Hook nicht, und ein Kommentar `gitleaks:allow` schaltet einen Fund nicht ab. Er fängt Versehen ab, Ihre eigene Durchsicht ersetzt er nicht.
 
 ## Fremder Quelltext und Clean Room
 
