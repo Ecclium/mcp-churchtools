@@ -102,12 +102,35 @@ Node.js und alle Werkzeuge sind in `mise.toml` gepinnt, ihre Prüfsummen stehen 
 
    `mise.lock` enthält Einträge für Linux auf x64 und macOS auf arm64. Auf anderen Plattformen bricht die Installation im Locked-Modus ab. Eröffnen Sie dann bitte ein Issue, damit die Plattform geprüft in `mise.lock` aufgenommen wird.
 
-2. Richten Sie die Git-Hooks ein:
+2. Installieren Sie die Abhängigkeiten mit dem gepinnten pnpm:
+
+   ```sh
+   mise exec -- pnpm install
+   ```
+
+   pnpm installiert nur Versionen, die seit mindestens drei Tagen veröffentlicht sind, und führt keine Install-Skripte aus. Die übrigen Schutzeinstellungen stehen mit Begründung in `pnpm-workspace.yaml`.
+
+3. Richten Sie die Git-Hooks ein:
 
    ```sh
    mise exec -- lefthook install
    ```
 
-3. Prüfen Sie, ob der Hook läuft: Beim nächsten Commit erscheint die Ausgabe von lefthook mit dem Schritt `secrets`, und gitleaks meldet «no leaks found». Fehlt die Ausgabe, ist der Hook nicht aktiv. Meldet der Schritt «command not found», fehlt mise im Pfad.
+4. Prüfen Sie, ob die Hooks laufen: Beim nächsten Commit erscheint die Ausgabe von lefthook mit den Schritten `secrets` und `format`, und gitleaks meldet «no leaks found». Fehlt die Ausgabe, sind die Hooks nicht aktiv. Meldet ein Schritt «command not found», fehlt mise im Pfad.
 
-Weitere Prüfungen für Formatierung, Typen und Tests kommen dazu, sobald es Code gibt.
+## Prüfungen
+
+Vor einem Pull Request muss dieser Befehl ohne Fehler durchlaufen:
+
+```sh
+mise exec -- pnpm check
+```
+
+Er prüft nacheinander Formatierung, Typen, Lint und Tests und danach drei Dinge, die über den Code hinausgehen: die Lizenzen aller Abhängigkeiten, die Schutzeinstellungen von pnpm und die relativen Links in der Dokumentation. Die einzelnen Schritte gibt es auch als eigene Befehle, etwa `pnpm lint`, `pnpm test` oder `pnpm check:licenses`. `pnpm format` behebt die Formatierung.
+
+Dabei gilt:
+
+- Jede exportierte Funktion und jeder exportierte Typ braucht einen Dokumentationskommentar (JSDoc) mit Zweck, Parametern, Ergebnis und Fehlerfällen. Exportierte Funktionen und Klassen der Pakete brauchen zusätzlich ein Beispiel. ESLint prüft das.
+- Im Code der Pakete ist direkte Ausgabe über `console`, `process.stdout` oder `process.stderr` verboten. Im Betrieb über stdio gehört stdout dem MCP-Protokoll.
+- Abhängigkeiten werden auf eine genaue Version gepinnt, nicht auf einen Bereich. Zur Laufzeit sind nur freizügige Lizenzen erlaubt, für Werkzeuge der Entwicklung einige mehr. Die Listen stehen in `scripts/check-licenses.mts`.
+- Eine Ausnahme vom Mindestalter von drei Tagen gibt es nur für Sicherheitskorrekturen, als genaue Version mit Datum und Begründung in `pnpm-workspace.yaml`.
