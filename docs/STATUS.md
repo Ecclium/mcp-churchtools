@@ -1,12 +1,12 @@
 # Status
 
-Stand: 25.09.2026, Phase 0, nach dem Fundament des Repositorys
+Stand: 25.09.2026, Phase 0, nach dem Gerüst des Workspace
 
 ## Aktuelle Phase
 
-Phase 0, Fundament und Entscheide. Das Fundament des Repositorys ist fertig: gepinnte Werkzeuge, Secret-Scanning ab dem ersten Commit, Grundlagen für Lizenz, Beiträge und Sicherheitsmeldungen und die ersten ADRs.
+Phase 0, Fundament und Entscheide. Fertig sind das Fundament des Repositorys und das Gerüst des Workspace: neun leere Pakete mit Projektreferenzen, Schutzeinstellungen für pnpm, TypeScript 6 und Vitest. `pnpm install --frozen-lockfile && pnpm build && pnpm test` läuft lokal grün.
 
-Nächster Schritt: Workspace und Monorepo-Gerüst mit pnpm, TypeScript, Vitest und den leeren Paketen, dazu ADR 0019 und 0022. Voraussetzung: Das Fundament des Repositorys ist gemergt, und der Test mit einem direkten Push auf `main` ist gemacht (siehe Offen).
+Nächster Schritt: Qualitätswerkzeuge, also ESLint mit typbasierten Regeln und JSDoc-Pflicht für Exporte, Prettier, Prüfungen für Lizenzen, für die wirksamen pnpm-Einstellungen und für relative Links in Markdown sowie ein Test für einheitliche Werkzeugversionen, dazu ADR 0020 und 0021. Voraussetzung: Das Gerüst des Workspace ist gemergt.
 
 ## Vorbedingungen Phase 0
 
@@ -44,7 +44,6 @@ Diese Grundsatzfragen sind entschieden.
 ## Offen
 
 - Vorbedingung Phase 1: ADR 0003, 0018 und 0023 festhalten und als entschieden bestätigen lassen, ADR 0037 festhalten und den Wortlaut bestätigen lassen. Die ADRs 0024 und 0025 fallen ebenfalls vor Phase 1.
-- Direkter Push auf `main`: Der Nachweis, dass er abgewiesen wird, folgt nach dem Merge des Fundaments. Dabei wird auch geprüft, dass GitHub `.github/CODEOWNERS` ohne Fehler anzeigt.
 - `TRADEMARKS.md`: Der Text folgt nach rechtlicher Prüfung. Bis dahin keine eigene Fassung. README, ADR 0002 und `brand/README.md` verweisen schon darauf. Mit der Datei kommt der Verweis in `NOTICE` dazu. Die Prüfung klärt auch, unter welchen Bedingungen die Dateien von Logo und Icons in `brand/` kopiert und weitergegeben werden dürfen, auch in Forks.
 - Zugang für den API-Spike: Testinstanz oder Dienstkonto, dazu die ID eines Wiki-Testbereichs. Stellt der Maintainer vor dem Spike bereit.
 - Lizenzstatus der ChurchTools-Dokumentation: Die OpenAPI-Spezifikation der ChurchTools-API nennt in `info.license` CC BY 4.0, für die übrige Dokumentation ist der Status ungeklärt. Bis zur Klärung liegt keine Kopie der Dokumentation im Repository. Entscheid vor Phase 3 (ADR 0027).
@@ -54,9 +53,11 @@ Diese Grundsatzfragen sind entschieden.
 - CodeQL im Default Setup analysiert keine Pull Requests aus Forks. Entscheid vor dem ersten Beitrag von aussen, spätestens in Phase 8.
 - Neu zu bewerten: pnpm 12 (Phase 8), gitleaks gegen seinen Nachfolger (spätestens Phase 8), MCP-SDK 2.1.x (vor Phase 1), der umbenannte Prometheus-Client (vor der Phase mit Metriken), TypeScript 7 (sobald typescript-eslint es trägt), Cache in CI (wenn die Laufzeit es verlangt).
 - Weitere Plattformen in `mise.lock`, etwa Linux auf arm64 oder macOS auf x64, sobald jemand sie braucht.
+- Node.js 24.15, die Mindestversion, läuft in CI nicht mit. Ob CI sie zusätzlich prüft, wird mit der Werkbank entschieden (ADR 0019).
 - Für das Threat Model v0 vorgemerkt:
   - Die eingebaute globale Allowlist von gitleaks gilt auch für die eigenen Regeln. Sie überspringt unter anderem Bilder einschliesslich SVG, Schriften, `pnpm-lock.yaml`, `package-lock.json`, `node_modules/` und `.gitleaks.toml` selbst. Ausserdem verwirft sie Funde, deren Wert wie ein Systempfad aussieht. Die Regel für Home-Pfade meldet deshalb nur den Benutzernamen.
   - Der von lefthook erzeugte Hook lässt einen Commit ohne Prüfung durch, wenn das Programm lefthook nicht gefunden wird. Der Hook ist deshalb nur eine erste Sicherung, ein Scan in CI folgt.
+  - TypeScript und `@types/node` erscheinen auf npm ohne Herkunftsnachweis (Provenance), anders als Vitest, Vite und pnpm. Die Vertrauensrichtlinie von pnpm (`trustPolicy`) schützt diese beiden Pakete deshalb nicht, es bleibt das Mindestalter von drei Tagen. Beim Einrichten automatischer Aktualisierungen zu berücksichtigen.
 
 ## Annahmen
 
@@ -71,3 +72,10 @@ Diese Grundsatzfragen sind entschieden.
   - Grundlagen: README, NOTICE, PROMISE, SECURITY, CONTRIBUTING mit DCO, CODEOWNERS, Issue-Formulare, Vorlage für Pull Requests, `.gitignore`, `.gitattributes`, `.editorconfig`, `.env.example`. Private Vulnerability Reporting ist auf GitHub eingeschaltet.
   - Markenpaket 1.2 unverändert in `brand/`. Nachweis: Der Tree-Hash von `brand/` ist gleich dem Tree des Markenpakets bei seinem Tag für Version 1.2, `c2125f64e59c9ea90c23d653ad89ea0f4c958002`.
   - ADR-Vorlage und Index. ADR 0001 und 0002 vorgeschlagen, ADR 0014 angenommen.
+- 25.09.2026, Schutz von `main` nachgewiesen: Ein direkter Push auf `main` wird abgewiesen, GitHub meldet GH013 mit «Changes must be made through a pull request». GitHub zeigt `.github/CODEOWNERS` ohne Fehler. Voraussetzung dafür ist, dass das Team `@ecclium/maintainers` sichtbar ist und Schreibrecht auf das Repository hat.
+- 25.09.2026, Gerüst des Workspace:
+  - pnpm-Workspace mit Schutzeinstellungen, bevor die erste Abhängigkeit dazukam: Mindestalter von drei Tagen, auch für Versionen ohne Zeitangabe und ohne Ausweichen auf jüngere Versionen, keine Herabstufung des Herkunftsnachweises, transitive Abhängigkeiten nur aus der Registry, keine Install-Skripte, Installation vor `pnpm run`, wenn `node_modules` nicht zum Lockfile passt. Alle Werte sind mit `pnpm config get` als wirksam geprüft, und `pnpm-workspace.yaml` bleibt nach der Installation unverändert.
+  - Neun leere Pakete nach ADR 0022, alle privat, mit Projektreferenzen für TypeScript 6.0.3. Ziel ES2025 ohne Browser-Typen, keine in TypeScript 6.0 veralteten Optionen (ADR 0019).
+  - Vitest 5.0.1 mit Abdeckung über V8. Tests und Typprüfung nutzen den Quelltext der Pakete, nicht das Ergebnis eines Builds. Gegenprobe: Ohne die Export-Bedingung und ohne `dist/` scheitern 9 von 10 Testdateien, mit ihr laufen alle.
+  - Nachweis: `pnpm install --frozen-lockfile && pnpm build && pnpm test` und `pnpm typecheck` laufen lokal grün.
+  - ADR 0019 und 0022 vorgeschlagen.
