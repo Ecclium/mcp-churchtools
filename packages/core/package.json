@@ -1,0 +1,20 @@
+{
+  "name": "@ecclium/mcp-churchtools-core",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@ecclium/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@ecclium/mcp-churchtools-plugin-api": "workspace:*"
+  },
+  "devDependencies": {
+    "@ecclium/mcp-churchtools-testkit": "workspace:*"
+  }
+}

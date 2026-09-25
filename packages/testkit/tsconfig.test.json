@@ -1,0 +1,15 @@
+// Type check of the tests. They are not built: Vitest runs them from source.
+// The type definitions of the test tooling expect DOM types, which the
+// workspace leaves out on purpose, so declaration files are not checked
+// here. The build projects still check theirs.
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true,
+    "tsBuildInfoFile": "${configDir}/dist/tsconfig.test.tsbuildinfo",
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*.test.ts"],
+  "references": [{ "path": "./tsconfig.json" }]
+}

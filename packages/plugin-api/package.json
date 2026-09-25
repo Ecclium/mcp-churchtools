@@ -1,0 +1,26 @@
+{
+  "name": "@ecclium/mcp-churchtools-plugin-api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Schnittstelle für Erweiterungen von Ecclium MCP für ChurchTools, in Entwicklung. Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Hersteller von ChurchTools.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@ecclium/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "devDependencies": {
+    "@ecclium/mcp-churchtools-testkit": "workspace:*"
+  }
+}

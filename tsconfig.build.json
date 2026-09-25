@@ -1,0 +1,16 @@
+// Build solution: `tsc -b tsconfig.build.json` compiles every package into
+// its dist/ folder, in dependency order.
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/plugin-api" },
+    { "path": "./packages/core" },
+    { "path": "./packages/docs-index" },
+    { "path": "./packages/tools" },
+    { "path": "./packages/workflows" },
+    { "path": "./packages/runner" },
+    { "path": "./packages/server" },
+    { "path": "./packages/cli" },
+    { "path": "./packages/testkit" }
+  ]
+}

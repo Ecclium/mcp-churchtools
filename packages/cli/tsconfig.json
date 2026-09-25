@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"],
+  "references": [
+    { "path": "../core" },
+    { "path": "../docs-index" },
+    { "path": "../plugin-api" },
+    { "path": "../runner" },
+    { "path": "../server" },
+    { "path": "../tools" },
+    { "path": "../workflows" }
+  ]
+}

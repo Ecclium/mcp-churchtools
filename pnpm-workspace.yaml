@@ -1,0 +1,46 @@
+# pnpm workspace and the settings that protect every install. pnpm only warns
+# about a setting it does not know and then ignores it, so a misspelt name
+# here would silently remove a protection.
+
+packages:
+  - packages/*
+
+# The testkit may import every package, and every other package uses it in
+# its tests as a devDependency. The resulting cycles run only through
+# devDependencies and are intended (ADR 0022). Cycles between the runtime
+# dependencies are caught elsewhere: the TypeScript project references of
+# the packages follow their dependencies, and `tsc -b` rejects a cycle.
+ignoreWorkspaceCycles: true
+
+# Install only versions that have been public for at least three days (4320
+# minutes). Compromised releases are usually found and withdrawn within that
+# time. Exceptions are for security fixes only, each as name@version with the
+# date and the reason in a comment above it.
+minimumReleaseAge: 4320
+minimumReleaseAgeExclude: []
+# Fail when no version in the requested range is old enough, instead of
+# falling back to a newer one.
+minimumReleaseAgeStrict: true
+# A version whose publish time is missing from the registry metadata counts
+# as too new, for this check and for the trust policy below.
+minimumReleaseAgeIgnoreMissingTime: false
+
+# Fail when a version is published with weaker evidence of its origin than
+# earlier versions of the same package, for example without a provenance
+# attestation after versions that had one. That is a typical sign of a
+# hijacked account.
+trustPolicy: no-downgrade
+
+# Transitive dependencies must come from the registry, not from Git
+# repositories or tarball URLs.
+blockExoticSubdeps: true
+
+# Dependencies run no install scripts. A package with a build script that is
+# not listed under allowBuilds makes the install fail instead of being skipped
+# with a warning.
+strictDepBuilds: true
+allowBuilds: {}
+
+# Before `pnpm run` and `pnpm exec`, check that node_modules matches the
+# lockfile, and install first if it does not.
+verifyDepsBeforeRun: install

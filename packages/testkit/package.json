@@ -1,0 +1,24 @@
+{
+  "name": "@ecclium/mcp-churchtools-testkit",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@ecclium/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@ecclium/mcp-churchtools": "workspace:*",
+    "@ecclium/mcp-churchtools-core": "workspace:*",
+    "@ecclium/mcp-churchtools-docs-index": "workspace:*",
+    "@ecclium/mcp-churchtools-plugin-api": "workspace:*",
+    "@ecclium/mcp-churchtools-runner": "workspace:*",
+    "@ecclium/mcp-churchtools-server": "workspace:*",
+    "@ecclium/mcp-churchtools-tools": "workspace:*",
+    "@ecclium/mcp-churchtools-workflows": "workspace:*"
+  }
+}

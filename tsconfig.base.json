@@ -1,0 +1,41 @@
+// Compiler options shared by every project in the workspace. Paths use
+// ${configDir}, so they resolve against the project that extends this file.
+// No baseUrl, no paths and no option that TypeScript 6.0 deprecates, so the
+// same configuration works with TypeScript 7.
+{
+  "compilerOptions": {
+    // Node.js 24.15, the oldest supported release, runs all of ES2025. No DOM
+    // types: nothing here runs in a browser (ADR 0019).
+    "target": "es2025",
+    "lib": ["es2025"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    // Only the Node.js types are global; everything else is imported.
+    "types": ["node"],
+    // Workspace packages resolve to their TypeScript source through this
+    // export condition, so a type check never depends on an earlier build
+    // (ADR 0022).
+    "customConditions": ["@ecclium/source"],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+
+    // Every file compiles on its own, and removing the types leaves plain
+    // JavaScript: no enums, namespaces or parameter properties, and imports
+    // stay as written.
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "isolatedModules": true,
+
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "rootDir": "${configDir}/src",
+    "outDir": "${configDir}/dist",
+    // Kept inside dist/, so deleting dist/ also forces the next build.
+    "tsBuildInfoFile": "${configDir}/dist/tsconfig.tsbuildinfo"
+  }
+}

@@ -1,0 +1,26 @@
+// Type check of the workspace tests in this folder and of the Vitest
+// configuration. Like the package tests, they are not built, and the
+// declaration files of the test tooling are not checked, because they expect
+// DOM types that the workspace leaves out on purpose.
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true,
+    "tsBuildInfoFile": "${configDir}/dist/tsconfig.tsbuildinfo",
+    "skipLibCheck": true,
+    "rootDir": ".."
+  },
+  "include": ["**/*.mts", "../vitest.config.mts"],
+  "references": [
+    { "path": "../packages/plugin-api" },
+    { "path": "../packages/core" },
+    { "path": "../packages/docs-index" },
+    { "path": "../packages/tools" },
+    { "path": "../packages/workflows" },
+    { "path": "../packages/runner" },
+    { "path": "../packages/server" },
+    { "path": "../packages/cli" },
+    { "path": "../packages/testkit" }
+  ]
+}
