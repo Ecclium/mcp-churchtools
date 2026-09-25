@@ -1,0 +1,32 @@
+{
+  "name": "@ecclium/mcp-churchtools",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Ecclium MCP für ChurchTools, in Entwicklung: verbindet KI-Assistenten mit der Gemeindesoftware ChurchTools. Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Hersteller von ChurchTools.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@ecclium/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "dependencies": {
+    "@ecclium/mcp-churchtools-core": "workspace:*",
+    "@ecclium/mcp-churchtools-docs-index": "workspace:*",
+    "@ecclium/mcp-churchtools-plugin-api": "workspace:*",
+    "@ecclium/mcp-churchtools-runner": "workspace:*",
+    "@ecclium/mcp-churchtools-server": "workspace:*",
+    "@ecclium/mcp-churchtools-tools": "workspace:*",
+    "@ecclium/mcp-churchtools-workflows": "workspace:*"
+  }
+}

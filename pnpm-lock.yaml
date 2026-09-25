@@ -6,4 +6,141 @@ settings:
 
 importers:
 
-  .: {}
+  .:
+    devDependencies:
+      '@types/node':
+        specifier: 24.13.6
+        version: 24.13.6
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+
+  packages/cli:
+    dependencies:
+      '@ecclium/mcp-churchtools-core':
+        specifier: workspace:*
+        version: link:../core
+      '@ecclium/mcp-churchtools-docs-index':
+        specifier: workspace:*
+        version: link:../docs-index
+      '@ecclium/mcp-churchtools-plugin-api':
+        specifier: workspace:*
+        version: link:../plugin-api
+      '@ecclium/mcp-churchtools-runner':
+        specifier: workspace:*
+        version: link:../runner
+      '@ecclium/mcp-churchtools-server':
+        specifier: workspace:*
+        version: link:../server
+      '@ecclium/mcp-churchtools-tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@ecclium/mcp-churchtools-workflows':
+        specifier: workspace:*
+        version: link:../workflows
+
+  packages/core:
+    dependencies:
+      '@ecclium/mcp-churchtools-plugin-api':
+        specifier: workspace:*
+        version: link:../plugin-api
+
+  packages/docs-index:
+    dependencies:
+      '@ecclium/mcp-churchtools-plugin-api':
+        specifier: workspace:*
+        version: link:../plugin-api
+
+  packages/plugin-api: {}
+
+  packages/runner:
+    dependencies:
+      '@ecclium/mcp-churchtools-core':
+        specifier: workspace:*
+        version: link:../core
+      '@ecclium/mcp-churchtools-plugin-api':
+        specifier: workspace:*
+        version: link:../plugin-api
+      '@ecclium/mcp-churchtools-workflows':
+        specifier: workspace:*
+        version: link:../workflows
+
+  packages/server:
+    dependencies:
+      '@ecclium/mcp-churchtools-core':
+        specifier: workspace:*
+        version: link:../core
+      '@ecclium/mcp-churchtools-plugin-api':
+        specifier: workspace:*
+        version: link:../plugin-api
+
+  packages/testkit:
+    dependencies:
+      '@ecclium/mcp-churchtools':
+        specifier: workspace:*
+        version: link:../cli
+      '@ecclium/mcp-churchtools-core':
+        specifier: workspace:*
+        version: link:../core
+      '@ecclium/mcp-churchtools-docs-index':
+        specifier: workspace:*
+        version: link:../docs-index
+      '@ecclium/mcp-churchtools-plugin-api':
+        specifier: workspace:*
+        version: link:../plugin-api
+      '@ecclium/mcp-churchtools-runner':
+        specifier: workspace:*
+        version: link:../runner
+      '@ecclium/mcp-churchtools-server':
+        specifier: workspace:*
+        version: link:../server
+      '@ecclium/mcp-churchtools-tools':
+        specifier: workspace:*
+        version: link:../tools
+      '@ecclium/mcp-churchtools-workflows':
+        specifier: workspace:*
+        version: link:../workflows
+
+  packages/tools:
+    dependencies:
+      '@ecclium/mcp-churchtools-core':
+        specifier: workspace:*
+        version: link:../core
+      '@ecclium/mcp-churchtools-docs-index':
+        specifier: workspace:*
+        version: link:../docs-index
+      '@ecclium/mcp-churchtools-plugin-api':
+        specifier: workspace:*
+        version: link:../plugin-api
+
+  packages/workflows:
+    dependencies:
+      '@ecclium/mcp-churchtools-core':
+        specifier: workspace:*
+        version: link:../core
+      '@ecclium/mcp-churchtools-plugin-api':
+        specifier: workspace:*
+        version: link:../plugin-api
+
+packages:
+
+  '@types/node@24.13.6':
+    resolution: {integrity: sha512-SGrw/h3KPFshy3OE6ZL53LMBG5vGQQ8/gIpiqz/kRZhPJ7HgwCEs8LBuNtWLa8dvGZVpSF7+Bf+c11HUrCb/yg==}
+
+  typescript@6.0.3:
+    resolution: {integrity: sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==}
+    engines: {node: '>=14.17'}
+    hasBin: true
+
+  undici-types@7.18.2:
+    resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
+
+snapshots:
+
+  '@types/node@24.13.6':
+    dependencies:
+      undici-types: 7.18.2
+
+  typescript@6.0.3: {}
+
+  undici-types@7.18.2: {}
