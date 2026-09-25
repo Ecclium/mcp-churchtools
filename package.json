@@ -10,7 +10,11 @@
     "lint": "eslint --max-warnings 0 .",
     "test": "vitest run",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "check": "pnpm run format:check && pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run check:licenses && pnpm run check:pnpm && pnpm run check:links",
+    "check:licenses": "node scripts/check-licenses.mts",
+    "check:pnpm": "node scripts/check-pnpm-settings.mts",
+    "check:links": "node scripts/check-md-links.mts"
   },
   "devDependencies": {
     "@ecclium/mcp-churchtools": "workspace:*",

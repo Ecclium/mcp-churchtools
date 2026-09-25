@@ -1,0 +1,14 @@
+// Type check of the scripts in this folder. They are not built: Node.js runs
+// them directly and strips the types, which is why imports name the .mts
+// file (ADR 0020).
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "rootDir": ".",
+    "tsBuildInfoFile": "${configDir}/dist/tsconfig.tsbuildinfo"
+  },
+  "include": ["**/*.mts"]
+}

@@ -1,7 +1,7 @@
 // Every project in the workspace, checked together by `tsc -b`: the packages
-// through the build solution, then the tests of each package and of the
-// workspace. Editors also start here: for an open file they look for a
-// tsconfig.json that references the project owning it.
+// through the build solution, the tests of each package, the scripts and the
+// tests of the workspace. Editors also start here: for an open file they look
+// for a tsconfig.json that references the project owning it.
 {
   "files": [],
   "references": [
@@ -15,6 +15,7 @@
     { "path": "./packages/server/tsconfig.test.json" },
     { "path": "./packages/cli/tsconfig.test.json" },
     { "path": "./packages/testkit/tsconfig.test.json" },
+    { "path": "./scripts" },
     { "path": "./tests" }
   ]
 }
