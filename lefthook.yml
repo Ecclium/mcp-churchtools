@@ -15,6 +15,10 @@ pre-commit:
   commands:
     secrets:
       run: mise exec -- gitleaks git --pre-commit --staged --redact --verbose --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
+    # Checks the formatting of the staged files and changes nothing. Fix a
+    # finding with `pnpm format`, then stage the result.
+    format:
+      run: mise exec -- pnpm exec prettier --check --ignore-unknown {staged_files}
 
 commit-msg:
   commands:

@@ -7,7 +7,9 @@
   "scripts": {
     "build": "tsc -b tsconfig.build.json",
     "typecheck": "tsc -b",
-    "test": "vitest run"
+    "test": "vitest run",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
     "@ecclium/mcp-churchtools": "workspace:*",
@@ -21,6 +23,7 @@
     "@ecclium/mcp-churchtools-workflows": "workspace:*",
     "@types/node": "24.13.6",
     "@vitest/coverage-v8": "5.0.1",
+    "prettier": "3.9.8",
     "typescript": "6.0.3",
     "vite": "8.3.0",
     "vitest": "5.0.1"
