@@ -32,10 +32,10 @@ Die Spalte «Fällt vor» nennt die Phase, vor deren Beginn der Entscheid festst
 | 0016 |  | Betrieblich, nicht öffentlich |  |
 | 0017 | Clean Room gegenüber dem eigenen Fork eines Referenzprojekts | Geplant | Phase 0 |
 | 0018 | MCP-Protokoll 2026-07-28 und SDK v2, zustandsloser Server | Geplant | Phase 1 |
-| 0019 | Node-Linie: 24 LTS, Images auf 26, Wechselregel im Oktober | Geplant | Phase 0 |
+| [0019](0019-node-linie.md) | Node-Linie: 24 LTS, Images auf 26, Wechselregel im Oktober | Vorgeschlagen | Phase 0 |
 | 0020 | Werkzeugkette: pnpm 11, TypeScript 6, Vitest 5, Renovate | Geplant | Phase 0 |
 | 0021 | Supply-Chain-Baseline | Geplant | Phase 0 |
-| 0022 | Paketzuschnitt, zwei npm-Pakete, Bündelung ausser `zod` und `plugin-api` | Geplant | Phase 0 |
+| [0022](0022-paketzuschnitt.md) | Paketzuschnitt, zwei npm-Pakete, Bündelung ausser `zod` und `plugin-api` | Vorgeschlagen | Phase 0 |
 | 0023 | Kein Token-Passthrough, OAuth-Delegation für Pro und gehosteten Betrieb | Geplant | Phase 1 |
 | 0024 | Eine Tool-Pipeline, Redaction und Audit ab Phase 1 | Geplant | Phase 1 |
 | 0025 | Eigene zod-Schemas als Wahrheit für den ChurchTools-Client | Geplant | Phase 1 |
