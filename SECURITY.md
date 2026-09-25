@@ -10,9 +10,9 @@ Schicken Sie keine echten Daten mit: keine Hostnamen oder Tenant-Namen Ihrer Chu
 
 Ecclium wird von einer Person entwickelt. Es gibt keine Erreichbarkeit rund um die Uhr und keine Vertretung. Gerechnet ab Eingang Ihrer Meldung streben wir diese Fristen an:
 
-| Schritt | Frist |
-|---|---|
-| Eingangsbestätigung | innerhalb von 10 Tagen |
+| Schritt                  | Frist                  |
+| ------------------------ | ---------------------- |
+| Eingangsbestätigung      | innerhalb von 10 Tagen |
 | Einschätzung der Meldung | innerhalb von 14 Tagen |
 | Fix für kritische Lücken | innerhalb von 30 Tagen |
 

@@ -37,17 +37,17 @@ Gewählt ist jeweils die dritte Option.
 
 **Pakete.** Der Workspace hat neun Pakete unter `packages/`:
 
-| Verzeichnis | Paketname | Inhalt |
-|---|---|---|
-| `plugin-api` | `@ecclium/mcp-churchtools-plugin-api` | Vertrag zwischen Kern und Erweiterungen |
-| `core` | `@ecclium/mcp-churchtools-core` | Konfiguration, Mandantenkontext, ChurchTools-Client, einziger Weg für ausgehende Verbindungen, Tool-Pipeline, Maskierung, Absicherung der Schreibvorgänge, Richtlinien, Protokoll |
-| `docs-index` | `@ecclium/mcp-churchtools-docs-index` | Index mit Fakten aus der ChurchTools-Dokumentation |
-| `tools` | `@ecclium/mcp-churchtools-tools` | Domänen-Tools, MCP-Prompts, generische API-Tools |
-| `workflows` | `@ecclium/mcp-churchtools-workflows` | Rezepte, Richtlinien, Rezept-Engine, Anbindung von Sprachmodellen |
-| `runner` | `@ecclium/mcp-churchtools-runner` | Läufe nach Zeitplan, Freigabe, Rücknahme |
-| `server` | `@ecclium/mcp-churchtools-server` | MCP-Server über stdio und HTTP |
-| `cli` | `@ecclium/mcp-churchtools` | Zusammensetzung aller Teile und der Befehl `ecclium` |
-| `testkit` | `@ecclium/mcp-churchtools-testkit` | Testhilfen, nur für Tests |
+| Verzeichnis  | Paketname                             | Inhalt                                                                                                                                                                            |
+| ------------ | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `plugin-api` | `@ecclium/mcp-churchtools-plugin-api` | Vertrag zwischen Kern und Erweiterungen                                                                                                                                           |
+| `core`       | `@ecclium/mcp-churchtools-core`       | Konfiguration, Mandantenkontext, ChurchTools-Client, einziger Weg für ausgehende Verbindungen, Tool-Pipeline, Maskierung, Absicherung der Schreibvorgänge, Richtlinien, Protokoll |
+| `docs-index` | `@ecclium/mcp-churchtools-docs-index` | Index mit Fakten aus der ChurchTools-Dokumentation                                                                                                                                |
+| `tools`      | `@ecclium/mcp-churchtools-tools`      | Domänen-Tools, MCP-Prompts, generische API-Tools                                                                                                                                  |
+| `workflows`  | `@ecclium/mcp-churchtools-workflows`  | Rezepte, Richtlinien, Rezept-Engine, Anbindung von Sprachmodellen                                                                                                                 |
+| `runner`     | `@ecclium/mcp-churchtools-runner`     | Läufe nach Zeitplan, Freigabe, Rücknahme                                                                                                                                          |
+| `server`     | `@ecclium/mcp-churchtools-server`     | MCP-Server über stdio und HTTP                                                                                                                                                    |
+| `cli`        | `@ecclium/mcp-churchtools`            | Zusammensetzung aller Teile und der Befehl `ecclium`                                                                                                                              |
+| `testkit`    | `@ecclium/mcp-churchtools-testkit`    | Testhilfen, nur für Tests                                                                                                                                                         |
 
 **Veröffentlichung.** Veröffentlicht werden genau zwei Pakete: das Produktpaket `@ecclium/mcp-churchtools` mit dem Befehl `ecclium` und die Schnittstelle `@ecclium/mcp-churchtools-plugin-api` mit eigener, streng semantischer Version. Die übrigen sieben bleiben privat im Workspace. Bis zur ersten Veröffentlichung sind alle neun als `private` markiert, damit keines versehentlich auf npm gelangt.
 
@@ -55,16 +55,16 @@ Gewählt ist jeweils die dritte Option.
 
 **Importe.** Erlaubt sind:
 
-| Paket | darf importieren |
-|---|---|
-| `plugin-api` | kein anderes Paket, `zod` nur als Peer-Abhängigkeit |
-| `core`, `docs-index` | `plugin-api` |
-| `tools` | `core`, `plugin-api`, `docs-index` |
-| `workflows` | `core`, `plugin-api` |
-| `runner` | `core`, `workflows`, `plugin-api` |
-| `server` | `core`, `plugin-api` |
-| `cli` | alle, `testkit` nur in Tests |
-| `testkit` | alle |
+| Paket                | darf importieren                                    |
+| -------------------- | --------------------------------------------------- |
+| `plugin-api`         | kein anderes Paket, `zod` nur als Peer-Abhängigkeit |
+| `core`, `docs-index` | `plugin-api`                                        |
+| `tools`              | `core`, `plugin-api`, `docs-index`                  |
+| `workflows`          | `core`, `plugin-api`                                |
+| `runner`             | `core`, `workflows`, `plugin-api`                   |
+| `server`             | `core`, `plugin-api`                                |
+| `cli`                | alle, `testkit` nur in Tests                        |
+| `testkit`            | alle                                                |
 
 `testkit` ist für alle anderen Pakete nur eine devDependency und wird nie ausgeliefert.
 

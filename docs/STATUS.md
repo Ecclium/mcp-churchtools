@@ -28,18 +28,18 @@ Vom Maintainer bestätigt am 25.09.2026:
 
 Diese Grundsatzfragen sind entschieden.
 
-| Nr. | Frage | Entscheid |
-|---|---|---|
-| 1 | Produktname und npm-Scope | Ecclium. Pakete `@ecclium/mcp-churchtools` (Befehl `ecclium`) und `@ecclium/mcp-churchtools-plugin-api`. |
-| 2 | Erster Tenant | Eine Testinstanz, sofern verfügbar. Sonst ein eigenes, eng berechtigtes Dienstkonto auf einem produktiven Tenant, Rechte phasenweise erweitert. Für den Runner ein zweites Konto mit noch engeren Rechten. Beide getrennt von allem, was der eigene Fork eines Referenzprojekts benutzt (ADR 0017). |
-| 3 | Erstes produktives Rezept | `dienstplan-report`, vorläufig. Wird vor Phase 6 bestätigt. |
-| 4 | Songs und Finanzen | Finanz- und Spendenmodule bleiben in Version 1 draussen. Songs bleiben lesend drin. |
-| 5 | Snapshots | Standardmässig an, 30 Tage, abschaltbar. Verschlüsselt mit Tagesschlüsseln, Vernichtung nach Frist plus einem Tag. |
-| 6 | Sprache des README | Deutsch zuerst, englische Fassung spätestens zum Release in Phase 8. |
-| 7 | Arbeitsrhythmus | In Schüben, ohne Termine. Jeder Schub endet mit grünen Prüfungen und nachgeführter `docs/STATUS.md`. |
-| 8 | Sichtbarkeit von Pro-Funktionen | Ein Tool `ct_about` statt Platzhalter-Tools. Hinweis pro Tool nur bei installiertem, nicht lizenziertem Plugin. Wird vor Phase 9 als ADR 0042 festgehalten. |
-| 9 | Sprache der Fehlermeldungen | Für das Modell Englisch, in der Kommandozeile für Betreiber Deutsch. |
-| 10 | Fristen in `SECURITY.md` | Eingangsbestätigung innerhalb von 10 Tagen, Einschätzung innerhalb von 14 Tagen, Fix für kritische Lücken innerhalb von 30 Tagen, keine Erreichbarkeit rund um die Uhr. |
+| Nr. | Frage                           | Entscheid                                                                                                                                                                                                                                                                                           |
+| --- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Produktname und npm-Scope       | Ecclium. Pakete `@ecclium/mcp-churchtools` (Befehl `ecclium`) und `@ecclium/mcp-churchtools-plugin-api`.                                                                                                                                                                                            |
+| 2   | Erster Tenant                   | Eine Testinstanz, sofern verfügbar. Sonst ein eigenes, eng berechtigtes Dienstkonto auf einem produktiven Tenant, Rechte phasenweise erweitert. Für den Runner ein zweites Konto mit noch engeren Rechten. Beide getrennt von allem, was der eigene Fork eines Referenzprojekts benutzt (ADR 0017). |
+| 3   | Erstes produktives Rezept       | `dienstplan-report`, vorläufig. Wird vor Phase 6 bestätigt.                                                                                                                                                                                                                                         |
+| 4   | Songs und Finanzen              | Finanz- und Spendenmodule bleiben in Version 1 draussen. Songs bleiben lesend drin.                                                                                                                                                                                                                 |
+| 5   | Snapshots                       | Standardmässig an, 30 Tage, abschaltbar. Verschlüsselt mit Tagesschlüsseln, Vernichtung nach Frist plus einem Tag.                                                                                                                                                                                  |
+| 6   | Sprache des README              | Deutsch zuerst, englische Fassung spätestens zum Release in Phase 8.                                                                                                                                                                                                                                |
+| 7   | Arbeitsrhythmus                 | In Schüben, ohne Termine. Jeder Schub endet mit grünen Prüfungen und nachgeführter `docs/STATUS.md`.                                                                                                                                                                                                |
+| 8   | Sichtbarkeit von Pro-Funktionen | Ein Tool `ct_about` statt Platzhalter-Tools. Hinweis pro Tool nur bei installiertem, nicht lizenziertem Plugin. Wird vor Phase 9 als ADR 0042 festgehalten.                                                                                                                                         |
+| 9   | Sprache der Fehlermeldungen     | Für das Modell Englisch, in der Kommandozeile für Betreiber Deutsch.                                                                                                                                                                                                                                |
+| 10  | Fristen in `SECURITY.md`        | Eingangsbestätigung innerhalb von 10 Tagen, Einschätzung innerhalb von 14 Tagen, Fix für kritische Lücken innerhalb von 30 Tagen, keine Erreichbarkeit rund um die Uhr.                                                                                                                             |
 
 ## Offen
 
