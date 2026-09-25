@@ -1,12 +1,12 @@
 # Status
 
-Stand: 25.09.2026, Phase 0, nach dem Gerüst des Workspace
+Stand: 26.09.2026, Phase 0, nach den Qualitätswerkzeugen
 
 ## Aktuelle Phase
 
-Phase 0, Fundament und Entscheide. Fertig sind das Fundament des Repositorys und das Gerüst des Workspace: neun leere Pakete mit Projektreferenzen, Schutzeinstellungen für pnpm, TypeScript 6 und Vitest. `pnpm install --frozen-lockfile && pnpm build && pnpm test` läuft lokal grün.
+Phase 0, Fundament und Entscheide. Fertig sind das Fundament des Repositorys, das Gerüst des Workspace und die Qualitätswerkzeuge: Formatierung, Lint mit Typinformation, Tests, Prüfungen für Lizenzen, für die Schutzeinstellungen von pnpm und für Links sowie erweiterte Regeln gegen vertrauliche Daten. `pnpm check` fasst alle Prüfungen zusammen und läuft lokal grün.
 
-Nächster Schritt: Qualitätswerkzeuge, also ESLint mit typbasierten Regeln und JSDoc-Pflicht für Exporte, Prettier, Prüfungen für Lizenzen, für die wirksamen pnpm-Einstellungen und für relative Links in Markdown sowie ein Test für einheitliche Werkzeugversionen, dazu ADR 0020 und 0021. Voraussetzung: Das Gerüst des Workspace ist gemergt.
+Nächster Schritt: Helfer und lesende Proben für den API-Spike. Die Skripte geben nur die Struktur der Antworten aus, keine Werte, und laufen später beim Maintainer gegen den Zugang aus «Offen». Dazu das Gerüst von `docs/research/churchtools-api.md`. Voraussetzung: Die Qualitätswerkzeuge sind gemergt.
 
 ## Vorbedingungen Phase 0
 
@@ -57,7 +57,7 @@ Diese Grundsatzfragen sind entschieden.
 - Für das Threat Model v0 vorgemerkt:
   - Die eingebaute globale Allowlist von gitleaks gilt auch für die eigenen Regeln. Sie überspringt unter anderem Bilder einschliesslich SVG, Schriften, `pnpm-lock.yaml`, `package-lock.json`, `node_modules/` und `.gitleaks.toml` selbst. Ausserdem verwirft sie Funde, deren Wert wie ein Systempfad aussieht. Die Regel für Home-Pfade meldet deshalb nur den Benutzernamen.
   - Der von lefthook erzeugte Hook lässt einen Commit ohne Prüfung durch, wenn das Programm lefthook nicht gefunden wird. Der Hook ist deshalb nur eine erste Sicherung, ein Scan in CI folgt.
-  - TypeScript und `@types/node` erscheinen auf npm ohne Herkunftsnachweis (Provenance), anders als Vitest, Vite und pnpm. Die Vertrauensrichtlinie von pnpm (`trustPolicy`) schützt diese beiden Pakete deshalb nicht, es bleibt das Mindestalter von drei Tagen. Beim Einrichten automatischer Aktualisierungen zu berücksichtigen.
+  - TypeScript, `@types/node`, ESLint, `@eslint/js` und Prettier erscheinen auf npm ohne Herkunftsnachweis (Provenance), anders als Vitest, Vite, typescript-eslint, eslint-plugin-jsdoc und pnpm. Die Vertrauensrichtlinie von pnpm (`trustPolicy`) schützt diese Pakete deshalb nicht, es bleibt das Mindestalter von drei Tagen. Sie werden nie automatisch übernommen (ADR 0021).
 
 ## Annahmen
 
@@ -79,3 +79,11 @@ Diese Grundsatzfragen sind entschieden.
   - Vitest 5.0.1 mit Abdeckung über V8. Tests und Typprüfung nutzen den Quelltext der Pakete, nicht das Ergebnis eines Builds. Gegenprobe: Ohne die Export-Bedingung und ohne `dist/` scheitern 9 von 10 Testdateien, mit ihr laufen alle.
   - Nachweis: `pnpm install --frozen-lockfile && pnpm build && pnpm test` und `pnpm typecheck` laufen lokal grün.
   - ADR 0019 und 0022 vorgeschlagen.
+- 26.09.2026, Qualitätswerkzeuge:
+  - gitleaks prüft zusätzlich auf Dateien, die nie ins Repository gehören, auf interne Hostnamen, IPv4- und IPv6-Adressen, Telefonnummern, AHV-Nummern und IBAN. Die Platzhalter stehen am Anfang von `.gitleaks.toml`. Ein Kommentar `gitleaks:allow` schaltet einen Fund nicht mehr ab. Nachweis: Jede eigene Regel schlägt auf einen zur Testzeit erzeugten Wert an, ihre Platzhalter gehen durch, und Geschichte, Arbeitsbaum und alle Commit-Messages sind ohne Fund.
+  - Prettier 3.9.8 für Code, Konfiguration und Dokumentation, im Hook für die gestagten Dateien. Die bestehenden Dokumente sind formatiert, ihr Text ist unverändert.
+  - ESLint 10.11.0 mit typescript-eslint 8.70.1 in der strengen, typbasierten Einstellung und eslint-plugin-jsdoc 64.5.4. Pflicht für Dokumentationskommentare an Exporten, Verbot direkter Ausgabe im Code der Pakete. Gegenprobe mit absichtlich falschen Dateien.
+  - Prüfskripte für Lizenzen, für die wirksamen Einstellungen von pnpm und für relative Links in Markdown, mit Tests. Gegenprobe: Ein falsch geschriebener Schlüssel, ein abgeschwächter Wert und ein Link ohne Ziel lassen die Prüfung scheitern.
+  - Test, der die Versionen von Node.js und pnpm über alle Konfigurationsdateien abgleicht und prüft, dass jede Abhängigkeit genau gepinnt ist.
+  - Nachweis: `pnpm check` läuft lokal grün, mit 67 Tests in 14 Dateien.
+  - ADR 0020 und 0021 vorgeschlagen.
