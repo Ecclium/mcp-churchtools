@@ -5,6 +5,13 @@
 packages:
   - packages/*
 
+# The testkit may import every package, and every other package uses it in
+# its tests as a devDependency. The resulting cycles run only through
+# devDependencies and are intended (ADR 0022). Cycles between the runtime
+# dependencies are caught elsewhere: the TypeScript project references of
+# the packages follow their dependencies, and `tsc -b` rejects a cycle.
+ignoreWorkspaceCycles: true
+
 # Install only versions that have been public for at least three days (4320
 # minutes). Compromised releases are usually found and withdrawn within that
 # time. Exceptions are for security fixes only, each as name@version with the

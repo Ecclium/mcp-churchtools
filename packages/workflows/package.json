@@ -14,5 +14,8 @@
   "dependencies": {
     "@ecclium/mcp-churchtools-core": "workspace:*",
     "@ecclium/mcp-churchtools-plugin-api": "workspace:*"
+  },
+  "devDependencies": {
+    "@ecclium/mcp-churchtools-testkit": "workspace:*"
   }
 }

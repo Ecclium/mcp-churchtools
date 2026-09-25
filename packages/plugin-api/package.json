@@ -19,5 +19,8 @@
         "default": "./dist/index.js"
       }
     }
+  },
+  "devDependencies": {
+    "@ecclium/mcp-churchtools-testkit": "workspace:*"
   }
 }

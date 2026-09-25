@@ -28,5 +28,8 @@
     "@ecclium/mcp-churchtools-server": "workspace:*",
     "@ecclium/mcp-churchtools-tools": "workspace:*",
     "@ecclium/mcp-churchtools-workflows": "workspace:*"
+  },
+  "devDependencies": {
+    "@ecclium/mcp-churchtools-testkit": "workspace:*"
   }
 }

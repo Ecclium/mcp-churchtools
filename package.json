@@ -6,10 +6,23 @@
   },
   "scripts": {
     "build": "tsc -b tsconfig.build.json",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "test": "vitest run"
   },
   "devDependencies": {
+    "@ecclium/mcp-churchtools": "workspace:*",
+    "@ecclium/mcp-churchtools-core": "workspace:*",
+    "@ecclium/mcp-churchtools-docs-index": "workspace:*",
+    "@ecclium/mcp-churchtools-plugin-api": "workspace:*",
+    "@ecclium/mcp-churchtools-runner": "workspace:*",
+    "@ecclium/mcp-churchtools-server": "workspace:*",
+    "@ecclium/mcp-churchtools-testkit": "workspace:*",
+    "@ecclium/mcp-churchtools-tools": "workspace:*",
+    "@ecclium/mcp-churchtools-workflows": "workspace:*",
     "@types/node": "24.13.6",
-    "typescript": "6.0.3"
+    "@vitest/coverage-v8": "5.0.1",
+    "typescript": "6.0.3",
+    "vite": "8.3.0",
+    "vitest": "5.0.1"
   }
 }
