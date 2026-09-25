@@ -7,6 +7,7 @@
   "scripts": {
     "build": "tsc -b tsconfig.build.json",
     "typecheck": "tsc -b",
+    "lint": "eslint --max-warnings 0 .",
     "test": "vitest run",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
@@ -21,10 +22,14 @@
     "@ecclium/mcp-churchtools-testkit": "workspace:*",
     "@ecclium/mcp-churchtools-tools": "workspace:*",
     "@ecclium/mcp-churchtools-workflows": "workspace:*",
+    "@eslint/js": "10.0.1",
     "@types/node": "24.13.6",
     "@vitest/coverage-v8": "5.0.1",
+    "eslint": "10.11.0",
+    "eslint-plugin-jsdoc": "64.5.4",
     "prettier": "3.9.8",
     "typescript": "6.0.3",
+    "typescript-eslint": "8.70.1",
     "vite": "8.3.0",
     "vitest": "5.0.1"
   }
