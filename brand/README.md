@@ -5,9 +5,9 @@
 
 # Markenrichtlinie Ecclium
 
-Version 1.2, Stand 25.09.2026
+Version 1.3, Stand 26.09.2026
 
-Neu in 1.2: Bewegung auf der Startseite der Website (Kapitel 8), Laufweg, Schrittplan und ausgewählter Raum in der Grundriss-Grafik (Kapitel 6), eine Klarstellung, was als Hervorhebung in Messing zählt (Kapitel 3), und die Werte für Bewegung als Tokens `--motion-*`.
+Neu in 1.3: Der feste Begriff «Rezept» heisst neu «Routine» (Kapitel 7 und 9, auch in der Kennzeichnung). Das Icon `icon-rezept.svg` ist durch `icon-routine.svg` mit neuem Motiv ersetzt.
 
 Dieser Ordner enthält Logo, Icons, Farben, Schriften und die Regeln, nach denen Ecclium auftritt. Er richtet sich an alle, die Dokumentation, Oberflächen, Vorträge oder Beiträge über Ecclium gestalten. Für den Gebrauch von Name und Logo durch Dritte gilt [TRADEMARKS.md](../TRADEMARKS.md).
 
@@ -149,7 +149,7 @@ Der Weg zwischen den Räumen ist eine gestrichelte Haarlinie in `--line` (3 5). 
 ## 7. Icons und Bilder
 
 - Icons von [Lucide](https://lucide.dev) im 24er-Raster, Linie 1,5 px, mit eckigen Enden und spitzen Ecken (`stroke-linecap: square; stroke-linejoin: miter`). Grössen 16, 20, 24 px.
-- Eigene Icons für die Begriffe von Ecclium liegen in `icons/`: Rezept, Richtlinie, Protokoll, Freigabe, Rücknahme, Kennzeichnung. Messing höchstens als ein Detail.
+- Eigene Icons für die Begriffe von Ecclium liegen in `icons/`: Routine, Richtlinie, Protokoll, Freigabe, Rücknahme, Kennzeichnung. Messing höchstens als ein Detail.
 - Keine Emoji, kein Funkelsymbol für KI, keine Roboter. Keine Kreuze, Tauben, Flammen oder Kirchtürme als Motiv.
 - Keine Fotos in Version 1, keine Stockbilder von Menschen, keine erzeugten Bilder von Menschen.
 - Bildschirmfotos nur mit erfundenen Daten: `https://example.church.tools`, `max.mustermann@example.org`, «Person A».
@@ -186,7 +186,7 @@ Dort ist zusätzlich erlaubt:
 
 Ecclium spricht wie jemand, der in der Gemeinde Verantwortung trägt: ruhig, genau, freundlich, ohne Fachjargon.
 
-- Anrede «Sie», überall. «Wir» steht für das Projekt und kommt sparsam vor. Bedienelemente als Verb ohne Anrede: «Freigeben», «Ablehnen», «Rezept prüfen».
+- Anrede «Sie», überall. «Wir» steht für das Projekt und kommt sparsam vor. Bedienelemente als Verb ohne Anrede: «Freigeben», «Ablehnen», «Routine prüfen».
 - Kurze Sätze im Aktiv. Zahlen, Zeiten und Grenzen genau: «1 von 2 erlaubten Vorgängen», nicht «ein paar Änderungen».
 - Grenzen zuerst und offen: «Die Maskierung begrenzt den Schaden, sie anonymisiert nicht.» Nie absolute Sicherheit versprechen.
 - Vertrauen entsteht durch Daten- und Informationssicherheit und offen dokumentierte Schutzmassnahmen, nicht durch Personen oder Referenzen.
@@ -198,7 +198,7 @@ Ecclium spricht wie jemand, der in der Gemeinde Verantwortung trägt: ruhig, gen
 
 ### Feste Begriffe
 
-Rezept, Richtlinie, Lauf, Vorschau, Freigabe, Kennzeichnung, Protokoll, Rücknahme. Die Zustände eines Schreibvorgangs heissen immer so:
+Routine, Richtlinie, Lauf, Vorschau, Freigabe, Kennzeichnung, Protokoll, Rücknahme. «Routine» ist weiblich: die Routine, der Routine, Mehrzahl Routinen. Die Zustände eines Schreibvorgangs heissen immer so:
 
 | Zustand | Farbe | Bedeutung |
 |---|---|---|
@@ -223,7 +223,7 @@ Jede Meldung sagt, was geschieht oder geschah, warum, und was Sie jetzt tun kön
 
 Jeder Inhalt, den Ecclium erzeugt, trägt am Ende diese Zeile, in DM Mono mit einem Quadrat in Messing davor:
 
-> Automatisch erstellt am 28.09.2026 durch Ecclium, Rezept dienstplan-report, Lauf 2026-W40, Prüfcode k1:ABCDEFGHIJKLM. Rückfragen an [Verantwortliche Person].
+> Automatisch erstellt am 28.09.2026 durch Ecclium, Routine dienstplan-report, Lauf 2026-W40, Prüfcode k1:ABCDEFGHIJKLM. Rückfragen an [Verantwortliche Person].
 
 ### Kernsätze
 

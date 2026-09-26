@@ -6,7 +6,7 @@
 
 ## Kontext
 
-Ecclium besteht aus Teilen mit unterschiedlicher Aufgabe und unterschiedlichem Vertrauen: dem Kern mit ChurchTools-Client, Maskierung, Absicherung der Schreibvorgänge und Protokoll, den Tools, der Schicht für Rezepte, dem Runner, dem MCP-Server, der Kommandozeile und den Testhilfen. Dazu kommt eine Schnittstelle, gegen die Erweiterungen gebaut werden, auch ein kostenpflichtiges Zusatzmodul und Erweiterungen Dritter.
+Ecclium besteht aus Teilen mit unterschiedlicher Aufgabe und unterschiedlichem Vertrauen: dem Kern mit ChurchTools-Client, Maskierung, Absicherung der Schreibvorgänge und Protokoll, den Tools, der Schicht für Routinen, dem Runner, dem MCP-Server, der Kommandozeile und den Testhilfen. Dazu kommt eine Schnittstelle, gegen die Erweiterungen gebaut werden, auch ein kostenpflichtiges Zusatzmodul und Erweiterungen Dritter.
 
 Zu entscheiden ist, wie der Code in Pakete geschnitten wird, welche Importe zwischen ihnen erlaubt sind und wie das durchgesetzt wird, welche Pakete veröffentlicht werden und in welcher Form, und wie die Pakete einander im Workspace finden.
 
@@ -43,7 +43,7 @@ Gewählt ist jeweils die dritte Option.
 | `core`       | `@ecclium/mcp-churchtools-core`       | Konfiguration, Mandantenkontext, ChurchTools-Client, einziger Weg für ausgehende Verbindungen, Tool-Pipeline, Maskierung, Absicherung der Schreibvorgänge, Richtlinien, Protokoll |
 | `docs-index` | `@ecclium/mcp-churchtools-docs-index` | Index mit Fakten aus der ChurchTools-Dokumentation                                                                                                                                |
 | `tools`      | `@ecclium/mcp-churchtools-tools`      | Domänen-Tools, MCP-Prompts, generische API-Tools                                                                                                                                  |
-| `workflows`  | `@ecclium/mcp-churchtools-workflows`  | Rezepte, Richtlinien, Rezept-Engine, Anbindung von Sprachmodellen                                                                                                                 |
+| `workflows`  | `@ecclium/mcp-churchtools-workflows`  | Routinen, Richtlinien, Routine-Engine, Anbindung von Sprachmodellen                                                                                                               |
 | `runner`     | `@ecclium/mcp-churchtools-runner`     | Läufe nach Zeitplan, Freigabe, Rücknahme                                                                                                                                          |
 | `server`     | `@ecclium/mcp-churchtools-server`     | MCP-Server über stdio und HTTP                                                                                                                                                    |
 | `cli`        | `@ecclium/mcp-churchtools`            | Zusammensetzung aller Teile und der Befehl `ecclium`                                                                                                                              |
