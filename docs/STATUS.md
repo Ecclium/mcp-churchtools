@@ -23,7 +23,7 @@ Vom Maintainer bestätigt am 25.09.2026:
 - Identität bei Beiträgen, entschieden am 25.09.2026: Das Sign-off nennt eine bekannte Identität, ein Pseudonym genügt. Anonyme Beiträge werden nicht angenommen.
 - Geschichte auf `main` (ADR 0014), entschieden am 25.09.2026: Sie wird nicht umgeschrieben. Einzige Ausnahme sind Personendaten, die entfernt werden müssen, und das nur nach einem offen festgehaltenen Entscheid.
 - Fristen in `SECURITY.md`, entschieden am 25.09.2026: Die Fristen aus Grundsatzentscheid 10 sind Ziele, keine Zusage.
-- Begriff «Routine», entschieden am 26.09.2026: Die geplanten Abläufe von Ecclium heissen «Routinen», nicht mehr «Rezepte», im Code `routine`. Der Begriff ist für Gemeindeleitende klarer. Was noch nachzuführen ist, steht unter «Offen».
+- Begriff «Routine», entschieden am 26.09.2026: Die geplanten Abläufe von Ecclium heissen «Routinen», nicht mehr «Rezepte», im Code `routine`. Der Begriff ist für Gemeindeleitende klarer. `brand/` ist auf Version 1.3 mit dem neuen Begriff und dem Icon `icon-routine.svg`; ADR 0022, der ADR-Index und die Paketbeschreibungen von `runner` und `workflows` sind nachgeführt.
 
 ## Grundsatzentscheide
 
@@ -48,7 +48,6 @@ Diese Grundsatzfragen sind entschieden.
 - `TRADEMARKS.md`: Der Text folgt nach rechtlicher Prüfung. Bis dahin keine eigene Fassung. README, ADR 0002 und `brand/README.md` verweisen schon darauf. Mit der Datei kommt der Verweis in `NOTICE` dazu. Die Prüfung klärt auch, unter welchen Bedingungen die Dateien von Logo und Icons in `brand/` kopiert und weitergegeben werden dürfen, auch in Forks.
 - Zugang für den API-Spike: Testinstanz oder Dienstkonto, dazu die ID einer Wiki-Kategorie nur für Tests und optional die einer zweiten Kategorie, die das Dienstkonto nicht lesen darf. Stellt der Maintainer vor dem Spike bereit. Dann laufen die lesenden Proben nach `scripts/spike/README.md`, und ihre durchgesehenen Ergebnisse kommen in `docs/research/churchtools-api.md`.
 - Fragen F1 bis F15 zur API von ChurchTools: Stand vor dem Spike in `docs/research/churchtools-api.md`. Als belegt gilt eine Antwort erst, wenn eine Probe sie an einer Instanz bestätigt hat.
-- Begriff «Routine»: ADR 0022, der ADR-Index und die Kommentare in `packages/runner` und `packages/workflows` verwenden noch «Rezept» oder `recipe`. `brand/` in Version 1.3 mit dem neuen Begriff liefert der Maintainer.
 - Lizenzstatus der ChurchTools-Dokumentation: Die OpenAPI-Spezifikation der ChurchTools-API nennt in `info.license` CC BY 4.0, für die übrige Dokumentation ist der Status ungeklärt. Bis zur Klärung liegt keine Kopie der Dokumentation im Repository. Entscheid vor Phase 3 (ADR 0027).
 - OAuth bei ChurchTools: Endpunkte, PKCE, Refresh, Laufzeiten und Tokenformat sind nicht dokumentiert, unter `.well-known` liegen keine Metadaten. Offen bis Phase 7 oder bis zum Pro-Modul.
 - Rate-Limit der ChurchTools-API: nur inoffiziell bekannt. Das Verhalten bei 429 bleibt offen, solange keine Testinstanz zur Verfügung steht.
