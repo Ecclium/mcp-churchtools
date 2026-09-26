@@ -1,12 +1,12 @@
 # Status
 
-Stand: 26.09.2026, Phase 0, nach den Qualitätswerkzeugen
+Stand: 26.09.2026, Phase 0, nach den lesenden Proben des API-Spikes
 
 ## Aktuelle Phase
 
-Phase 0, Fundament und Entscheide. Fertig sind das Fundament des Repositorys, das Gerüst des Workspace und die Qualitätswerkzeuge: Formatierung, Lint mit Typinformation, Tests, Prüfungen für Lizenzen, für die Schutzeinstellungen von pnpm und für Links sowie erweiterte Regeln gegen vertrauliche Daten. `pnpm check` fasst alle Prüfungen zusammen und läuft lokal grün.
+Phase 0, Fundament und Entscheide. Fertig sind das Fundament des Repositorys, das Gerüst des Workspace, die Qualitätswerkzeuge und der erste Teil des API-Spikes: Helfer und lesende Proben, die nur die Struktur der Antworten ausgeben, und das Gerüst von `docs/research/churchtools-api.md`. `pnpm check` fasst alle Prüfungen zusammen und läuft lokal grün.
 
-Nächster Schritt: Helfer und lesende Proben für den API-Spike. Die Skripte geben nur die Struktur der Antworten aus, keine Werte, und laufen später beim Maintainer gegen den Zugang aus «Offen». Dazu das Gerüst von `docs/research/churchtools-api.md`. Voraussetzung: Die Qualitätswerkzeuge sind gemergt.
+Nächster Schritt: schreibende Proben für den zweiten Teil des Spikes, nur in der Testkategorie und nur mit einem ausdrücklichen Schalter. Voraussetzung: Die lesenden Proben sind gemergt. Sobald zudem der Zugang aus «Offen» bereitsteht, führt der Maintainer die lesenden Proben nach `scripts/spike/README.md` aus und gibt die durchgesehenen Ausgaben frei.
 
 ## Vorbedingungen Phase 0
 
@@ -23,6 +23,7 @@ Vom Maintainer bestätigt am 25.09.2026:
 - Identität bei Beiträgen, entschieden am 25.09.2026: Das Sign-off nennt eine bekannte Identität, ein Pseudonym genügt. Anonyme Beiträge werden nicht angenommen.
 - Geschichte auf `main` (ADR 0014), entschieden am 25.09.2026: Sie wird nicht umgeschrieben. Einzige Ausnahme sind Personendaten, die entfernt werden müssen, und das nur nach einem offen festgehaltenen Entscheid.
 - Fristen in `SECURITY.md`, entschieden am 25.09.2026: Die Fristen aus Grundsatzentscheid 10 sind Ziele, keine Zusage.
+- Begriff «Routine», entschieden am 26.09.2026: Die geplanten Abläufe von Ecclium heissen «Routinen», nicht mehr «Rezepte», im Code `routine`. Der Begriff ist für Gemeindeleitende klarer. Was noch nachzuführen ist, steht unter «Offen».
 
 ## Grundsatzentscheide
 
@@ -32,7 +33,7 @@ Diese Grundsatzfragen sind entschieden.
 | --- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | Produktname und npm-Scope       | Ecclium. Pakete `@ecclium/mcp-churchtools` (Befehl `ecclium`) und `@ecclium/mcp-churchtools-plugin-api`.                                                                                                                                                                                            |
 | 2   | Erster Tenant                   | Eine Testinstanz, sofern verfügbar. Sonst ein eigenes, eng berechtigtes Dienstkonto auf einem produktiven Tenant, Rechte phasenweise erweitert. Für den Runner ein zweites Konto mit noch engeren Rechten. Beide getrennt von allem, was der eigene Fork eines Referenzprojekts benutzt (ADR 0017). |
-| 3   | Erstes produktives Rezept       | `dienstplan-report`, vorläufig. Wird vor Phase 6 bestätigt.                                                                                                                                                                                                                                         |
+| 3   | Erste produktive Routine        | `dienstplan-report`, vorläufig. Wird vor Phase 6 bestätigt.                                                                                                                                                                                                                                         |
 | 4   | Songs und Finanzen              | Finanz- und Spendenmodule bleiben in Version 1 draussen. Songs bleiben lesend drin.                                                                                                                                                                                                                 |
 | 5   | Snapshots                       | Standardmässig an, 30 Tage, abschaltbar. Verschlüsselt mit Tagesschlüsseln, Vernichtung nach Frist plus einem Tag.                                                                                                                                                                                  |
 | 6   | Sprache des README              | Deutsch zuerst, englische Fassung spätestens zum Release in Phase 8.                                                                                                                                                                                                                                |
@@ -45,7 +46,9 @@ Diese Grundsatzfragen sind entschieden.
 
 - Vorbedingung Phase 1: ADR 0003, 0018 und 0023 festhalten und als entschieden bestätigen lassen, ADR 0037 festhalten und den Wortlaut bestätigen lassen. Die ADRs 0024 und 0025 fallen ebenfalls vor Phase 1.
 - `TRADEMARKS.md`: Der Text folgt nach rechtlicher Prüfung. Bis dahin keine eigene Fassung. README, ADR 0002 und `brand/README.md` verweisen schon darauf. Mit der Datei kommt der Verweis in `NOTICE` dazu. Die Prüfung klärt auch, unter welchen Bedingungen die Dateien von Logo und Icons in `brand/` kopiert und weitergegeben werden dürfen, auch in Forks.
-- Zugang für den API-Spike: Testinstanz oder Dienstkonto, dazu die ID eines Wiki-Testbereichs. Stellt der Maintainer vor dem Spike bereit.
+- Zugang für den API-Spike: Testinstanz oder Dienstkonto, dazu die ID einer Wiki-Kategorie nur für Tests und optional die einer zweiten Kategorie, die das Dienstkonto nicht lesen darf. Stellt der Maintainer vor dem Spike bereit. Dann laufen die lesenden Proben nach `scripts/spike/README.md`, und ihre durchgesehenen Ergebnisse kommen in `docs/research/churchtools-api.md`.
+- Fragen F1 bis F15 zur API von ChurchTools: Stand vor dem Spike in `docs/research/churchtools-api.md`. Als belegt gilt eine Antwort erst, wenn eine Probe sie an einer Instanz bestätigt hat.
+- Begriff «Routine»: ADR 0022, der ADR-Index und die Kommentare in `packages/runner` und `packages/workflows` verwenden noch «Rezept» oder `recipe`. `brand/` in Version 1.3 mit dem neuen Begriff liefert der Maintainer.
 - Lizenzstatus der ChurchTools-Dokumentation: Die OpenAPI-Spezifikation der ChurchTools-API nennt in `info.license` CC BY 4.0, für die übrige Dokumentation ist der Status ungeklärt. Bis zur Klärung liegt keine Kopie der Dokumentation im Repository. Entscheid vor Phase 3 (ADR 0027).
 - OAuth bei ChurchTools: Endpunkte, PKCE, Refresh, Laufzeiten und Tokenformat sind nicht dokumentiert, unter `.well-known` liegen keine Metadaten. Offen bis Phase 7 oder bis zum Pro-Modul.
 - Rate-Limit der ChurchTools-API: nur inoffiziell bekannt. Das Verhalten bei 429 bleibt offen, solange keine Testinstanz zur Verfügung steht.
@@ -58,6 +61,8 @@ Diese Grundsatzfragen sind entschieden.
   - Die eingebaute globale Allowlist von gitleaks gilt auch für die eigenen Regeln. Sie überspringt unter anderem Bilder einschliesslich SVG, Schriften, `pnpm-lock.yaml`, `package-lock.json`, `node_modules/` und `.gitleaks.toml` selbst. Ausserdem verwirft sie Funde, deren Wert wie ein Systempfad aussieht. Die Regel für Home-Pfade meldet deshalb nur den Benutzernamen.
   - Der von lefthook erzeugte Hook lässt einen Commit ohne Prüfung durch, wenn das Programm lefthook nicht gefunden wird. Der Hook ist deshalb nur eine erste Sicherung, ein Scan in CI folgt.
   - TypeScript, `@types/node`, ESLint, `@eslint/js` und Prettier erscheinen auf npm ohne Herkunftsnachweis (Provenance), anders als Vitest, Vite, typescript-eslint, eslint-plugin-jsdoc und pnpm. Die Vertrauensrichtlinie von pnpm (`trustPolicy`) schützt diese Pakete deshalb nicht, es bleibt das Mindestalter von drei Tagen. Sie werden nie automatisch übernommen (ADR 0021).
+  - Die Proben des Spikes vertrauen dem OpenAPI-Dokument der Instanz: Seine Werte stehen nicht auf der Sperrliste, seine Schlüssel dürfen in der Ausgabe erscheinen. Eigene Namen einer Instanz im Dokument fängt nur die Durchsicht vor dem Weitergeben.
+  - In `02-permissions` erscheinen Namen von Rechten, wenn sie aus kleingeschriebenen Wörtern bestehen. Verrät ein solcher Name etwas über die Gemeinde und kommt er in keiner Antwort als Wert vor, fängt ihn ebenfalls nur die Durchsicht.
 
 ## Annahmen
 
@@ -87,3 +92,8 @@ Diese Grundsatzfragen sind entschieden.
   - Test, der die Versionen von Node.js und pnpm über alle Konfigurationsdateien abgleicht und prüft, dass jede Abhängigkeit genau gepinnt ist.
   - Nachweis: `pnpm check` läuft lokal grün, mit 67 Tests in 14 Dateien.
   - ADR 0020 und 0021 vorgeschlagen.
+- 26.09.2026, erster Teil des API-Spikes, lesende Proben:
+  - Helfer in `scripts/spike/lib/`: Die Ausgabe zeigt nur Struktur, Klassen und die Version von ChurchTools. Vor jeder Ausgabe prüft eine Sicherung jedes Wort gegen eine Positivliste und jeden Schlüssel aus der Instanz gegen eine Sperrliste mit allem, was aus der Instanz oder vom Rechner stammt. Bei einem Treffer erscheinen nur JSON-Pointer. Anfragen nur als GET an die eine Origin, das Token nur im Header, keine Weiterleitungen, Zeit- und Grössengrenzen. Token- und State-Datei werden auf dem geöffneten Handle geprüft. Fehler zeigen nur feste Codes mit deutschen Hinweisen.
+  - Fünf lesende Proben `00-inventory` bis `04-wiki-read` mit README: Vorbereitung, Ausführung aus einem geprüften Commit mit `env -i`, Codes, Durchsicht vor dem Weitergeben, Aufräumen. Jede Probe schlägt ihre Operationen über Methode und Pfad im OpenAPI-Dokument der Instanz nach und ruft nichts auf, was die Instanz nicht dokumentiert.
+  - Gerüst von `docs/research/churchtools-api.md` mit 15 Fragen, der Probe dazu und dem Stand laut Dokumentation.
+  - Nachweis: Alle Proben laufen in den Tests gegen eine synthetische Instanz, deren Antworten voller Kanarienwerte sind. Keiner davon erscheint in einer Ausgabe. Gegenprobe: Sechs absichtlich eingebaute Fehler lassen die Tests scheitern, darunter das Token in der URL, eine ungeprüfte Kennung im Pfad und der Wert einer Kopfzeile in der Ausgabe. Als Programm gestartet, bricht jede Probe ohne Umgebung mit Code 2 und einem deutschen Hinweis ab, ohne Anfrage. `pnpm check` läuft lokal grün, mit 167 Tests in 21 Dateien.
