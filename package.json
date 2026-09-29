@@ -19,7 +19,7 @@
     "ci:workflow-lint": "actionlint && zizmor --offline --min-severity=medium --no-progress .github/workflows",
     "ci:secret-scan": "gitleaks git --redact --no-banner --ignore-gitleaks-allow --log-opts=HEAD -c .gitleaks.toml .",
     "ci:check": "pnpm run build && pnpm run check",
-    "ci:local": "pnpm run ci:workflow-lint && pnpm run ci:secret-scan && pnpm run ci:check && MISE_ENV=compat mise exec -- pnpm run ci:check"
+    "ci:local": "pnpm run ci:workflow-lint && pnpm run ci:secret-scan && pnpm run ci:check && MISE_ENV=compat mise exec -- pnpm run ci:check && MISE_ENV=minimum mise exec -- pnpm run ci:check"
   },
   "devDependencies": {
     "@ecclium/mcp-churchtools": "workspace:*",

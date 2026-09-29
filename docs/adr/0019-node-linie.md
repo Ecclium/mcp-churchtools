@@ -34,7 +34,7 @@ Für Ecclium zählen ausserdem einzelne Fähigkeiten, belegt in den Release Note
 ## Entscheid
 
 - Unterstützt sind Node.js 24 ab 24.15 sowie Node.js 26 und neuer. Node.js 22 und 25 werden nicht unterstützt. 24.15 ist die erste Version, in der Type Stripping und `require(esm)` als stabil gelten.
-- Entwickelt wird mit der neuesten Version von Node.js 24, heute 24.21.0. So gelangt keine Schnittstelle, die es erst in einer neueren Linie gibt, unbemerkt in den Code. CI prüft zusätzlich mit der nächsten Linie, heute Node.js 26.10.0.
+- Entwickelt wird mit der neuesten Version von Node.js 24, heute 24.21.0. So gelangt keine Schnittstelle, die es erst in einer neueren Linie gibt, unbemerkt in den Code. CI prüft zusätzlich mit der nächsten Linie, heute Node.js 26.10.0, und mit der Mindestversion 24.15.0.
 - Die Container-Images laufen auf Node.js 26, sobald diese Linie LTS ist, also ab dem 28.10.2026. Nur dort begrenzt das Permission Model auch den Netzzugriff.
 - TypeScript übersetzt nach ES2025, weil Node.js ab 24.15 den ganzen Sprachstand ES2025 ausführt. Typen für Browser (DOM) sind nicht eingebunden, weil kein Teil von Ecclium im Browser läuft.
 - Die Typen für Node.js (`@types/node`) folgen der Linie 24, der ältesten unterstützten.
@@ -43,14 +43,18 @@ Für Ecclium zählen ausserdem einzelne Fähigkeiten, belegt in den Release Note
 ## Konsequenzen
 
 - Wer Ecclium ohne Container betreibt, braucht Node.js 24.15 oder neuer. Die Mindestversion ist eine Grenze der Kompatibilität, keine Empfehlung. Betreiben Sie die neueste Version Ihrer Linie, denn Sicherheitskorrekturen erscheinen laufend, auch für das Permission Model.
-- CI prüft die neueste Version von Node.js 24 und die nächste Linie, nicht die Mindestversion selbst. Nutzt der Code eine Schnittstelle, die erst nach 24.15 in Node.js 24 dazukam, fällt das nicht von selbst auf.
+- CI prüft drei Versionen: die neueste von Node.js 24, die Mindestversion 24.15.0 und die nächste Linie. Nutzt der Code eine Schnittstelle, die erst nach 24.15 in Node.js 24 dazukam, schlägt die Prüfung mit der Mindestversion fehl, sofern ein Test die Stelle ausführt. Die Typprüfung findet eine solche Schnittstelle nicht, weil `@types/node` der neuesten Version der Linie folgt.
+- Verlangt ein Werkzeug der Entwicklung eine neuere Version, warnt pnpm bei der Installation nur. Die Prüfung mit der Mindestversion scheitert erst, wenn das Werkzeug unter 24.15.0 tatsächlich nicht läuft. eslint-plugin-jsdoc verlangt heute genau 24.15.0.
+- Die Mindestversion ändert sich nur zusammen mit `engines.node`, nie durch eine automatische Aktualisierung.
 - Ab dem 28.10.2026 laufen Container und Betrieb ohne Container auf verschiedenen Linien. CI prüft deshalb beide.
 - Node.js 24 geht am 20.10.2026 in die Wartung und endet am 30.04.2028. Bis dahin braucht es den Entscheid, die Linie aufzugeben.
 - Ein Wechsel der Linie ist kein Routine-Update. Automatische Aktualisierungen heben die Hauptversion von Node.js nicht an.
 
 ## Umsetzung
 
-- `mise.toml` pinnt Node.js 24.21.0 für Entwicklung und CI, `mise.compat.toml` pinnt Node.js 26.10.0 für die Prüfung mit der nächsten Linie. `.nvmrc` nennt 24.21.0 für nvm und fnm.
+- `mise.toml` pinnt Node.js 24.21.0 für Entwicklung und CI, `mise.compat.toml` pinnt Node.js 26.10.0 für die Prüfung mit der nächsten Linie, `mise.minimum.toml` pinnt die Mindestversion 24.15.0. `.nvmrc` nennt 24.21.0 für nvm und fnm.
 - `engines.node` im Wurzel-`package.json`: `^24.15.0 || >=26.0.0`.
 - `tsconfig.base.json`: `target` und `lib` auf `es2025`, ohne DOM. `@types/node` in Version 24.
-- Die Prüfung mit Node.js 26 in CI und die Regel, die automatische Aktualisierungen der Hauptversion verhindert, folgen mit der Werkbank in Phase 0. Die Container-Images folgen in Phase 7.
+- CI prüft in den Jobs `check`, `compat` und `minimum` von `.github/workflows/ci.yml`. `tests/toolchain.test.mts` prüft, dass `mise.minimum.toml` die untere Grenze von `engines.node` nennt.
+- `.github/renovate.json5` schlägt keine neue Hauptversion von Node.js vor, lässt `mise.minimum.toml` unverändert und hält `@types/node` bei der Linie 24.
+- Die Container-Images folgen in Phase 7.

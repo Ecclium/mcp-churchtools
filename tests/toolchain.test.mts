@@ -54,6 +54,14 @@ describe('Node.js', () => {
     expect(major(compatNode)).toBeGreaterThan(major(developmentNode));
   });
 
+  it('checks the oldest supported version in the minimum environment', () => {
+    const lowest = /^\^(\d+\.\d+\.\d+) \|\| /.exec(
+      root.engines?.['node'] ?? '',
+    )?.[1];
+    expect(lowest).toBeDefined();
+    expect(tomlValue(read('mise.minimum.toml'), 'node')).toBe(lowest);
+  });
+
   it('types only the APIs of the development line', () => {
     const types = root.devDependencies?.['@types/node'] ?? '';
     expect(major(types)).toBe(major(developmentNode));
