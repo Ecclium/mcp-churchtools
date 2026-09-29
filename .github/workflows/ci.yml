@@ -160,3 +160,28 @@ jobs:
         run: pnpm run ci:check
       - name: Check that the checks changed no tracked file
         run: git diff --exit-code
+
+  deps-review:
+    name: deps-review
+    # Compares the dependencies of the base and the head of a pull request.
+    # Other events have no such pair; a skipped job counts as passed.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Review new and changed dependencies
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          # Any known vulnerability fails, in runtime and development
+          # dependencies alike: development tools run in CI and on
+          # developer machines. Licences are checked by our own script
+          # against its allowlist (ADR 0021). No comment on the pull
+          # request, which would need write access, and no calls to
+          # services outside GitHub.
+          fail-on-severity: low
+          fail-on-scopes: runtime, development, unknown
+          license-check: false
+          comment-summary-in-pr: never
+          show-openssf-scorecard: false
