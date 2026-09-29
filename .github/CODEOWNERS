@@ -15,12 +15,8 @@
 /packages/*/package.json @ecclium/maintainers
 /pnpm-lock.yaml @ecclium/maintainers
 /pnpm-workspace.yaml @ecclium/maintainers
-/mise.toml @ecclium/maintainers
-/mise.compat.toml @ecclium/maintainers
-/mise.minimum.toml @ecclium/maintainers
-/mise.lock @ecclium/maintainers
-/mise.compat.lock @ecclium/maintainers
-/mise.minimum.lock @ecclium/maintainers
+/mise*.toml @ecclium/maintainers
+/mise*.lock @ecclium/maintainers
 /scripts/ @ecclium/maintainers
 /vitest.config.mts @ecclium/maintainers
 /.gitleaks.toml @ecclium/maintainers

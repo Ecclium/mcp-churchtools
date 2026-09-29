@@ -56,7 +56,7 @@ Name und E-Mail-Adresse im Sign-off müssen zum Autor oder zur Autorin des Commi
 - Commit-Messages auf Englisch nach Conventional Commits 1.0.0, etwa `fix: reject tokens without prefix` oder `docs(adr): record the node line`.
 - Kleine Commits, die je eine Sache ändern.
 - Pull Requests werden per Squash gemergt. Der Titel des Pull Requests wird zum Titel des Commits auf `main` und folgt deshalb ebenfalls Conventional Commits, mit einem der Typen `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style` oder `test`. Die Nachrichten der zusammengefassten Commits samt Sign-off stehen darunter.
-- Jeder Commit trägt das Sign-off seiner Autorin oder seines Autors. Der Git-Hook aus der Einrichtung weist einen Commit ohne Sign-off ab, in CI prüft der Job `dco` jeden Commit des Pull Requests. Ausgenommen ist nur ein Merge-Commit, der nichts ausser dem Zusammenführen enthält, wie ihn «Update branch» auf GitHub erzeugt. Ein fehlendes Sign-off setzen Sie nachträglich mit `git rebase --signoff origin/main`, in einem Fork mit dem Remote des Projekts, etwa `upstream/main`, und übertragen den Branch danach mit `git push --force-with-lease`.
+- Jeder Commit trägt das Sign-off seiner Autorin oder seines Autors. Der Git-Hook aus der Einrichtung weist einen Commit ohne Sign-off ab, in CI prüft der Job `dco` jeden Commit des Pull Requests. Ausgenommen ist nur ein Merge-Commit mit genau zwei Eltern, der nichts ausser dem Zusammenführen enthält, wie ihn «Update branch» auf GitHub erzeugt. Während eines Merges prüft der Hook das Sign-off nicht, das übernimmt der Job `dco`. Ein fehlendes Sign-off setzen Sie nachträglich mit `git rebase --signoff origin/main`, in einem Fork mit dem Remote des Projekts, etwa `upstream/main`, und übertragen den Branch danach mit `git push --force-with-lease`.
 - Jede neue Abhängigkeit wird im Commit begründet: Zweck, Lizenz, erwogene Alternativen. Eine kleine Zahl von Abhängigkeiten ist ein Qualitätsmerkmal.
 
 ## Sprache
@@ -117,7 +117,7 @@ Node.js und alle Werkzeuge sind in `mise.toml` gepinnt, ihre Prüfsummen stehen 
    mise exec -- lefthook install
    ```
 
-4. Prüfen Sie, ob die Hooks laufen: Beim nächsten Commit erscheint die Ausgabe von lefthook mit den Schritten `secrets` und `format`, danach für die Commit-Message `secrets` und `sign-off`, und gitleaks meldet «no leaks found». Fehlt die Ausgabe, sind die Hooks nicht aktiv. Meldet ein Schritt «command not found», fehlt mise im Pfad.
+4. Prüfen Sie, ob die Hooks laufen: Beim nächsten Commit erscheint die Ausgabe von lefthook mit den Schritten `secrets`, `file-names`, `ignore-file` und `format`, danach für die Commit-Message `secrets` und `sign-off`, und gitleaks meldet «no leaks found». Fehlt die Ausgabe, sind die Hooks nicht aktiv. Meldet ein Schritt «command not found», fehlt mise im Pfad.
 
 ## Prüfungen
 
@@ -152,7 +152,7 @@ Für jeden Pull Request laufen die folgenden Prüfungen. Jede ist Pflicht für d
 | `pr-title`      | Den Titel nach Conventional Commits und mit gitleaks.                                                                                                                       |
 | `dco`           | Das Sign-off jedes Commits und die Commit-Messages mit gitleaks.                                                                                                            |
 
-`workflow-lint`, `secret-scan`, `pr-title` und `dco` scheitern ausserdem, solange irgendwo eine Datei `.gitleaksignore` liegt, weil gitleaks sie von sich aus liest und eine Zeile darin jeden Fund abschaltet.
+`secret-scan`, `pr-title` und `dco` scheitern ausserdem, solange irgendwo eine Datei `.gitleaksignore` liegt, weil gitleaks sie von sich aus liest und eine Zeile darin jeden Fund abschaltet.
 
 Dieser Befehl führt lokal aus: die Prüfung der Workflows, zizmor dabei ohne Netz, den Scan der Geschichte und der Dateinamen mit gitleaks sowie Build und `pnpm check` auf allen drei Versionen von Node.js. Den Scan der Dateien, die Prüfung der Abhängigkeiten, Titel und Sign-off prüft nur CI.
 

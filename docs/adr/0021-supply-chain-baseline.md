@@ -74,7 +74,7 @@ Sicherheitsaktualisierungen umgehen die Wartezeit von Renovate. pnpm installiert
 - Lizenzen: `scripts/check-licenses.mts`.
 - Werkzeuge: `mise.toml`, `mise.lock`, `mise.compat.toml`, `mise.compat.lock`, `mise.minimum.toml`, `mise.minimum.lock`.
 - Geheimnisse: `.gitleaks.toml`, `lefthook.yml`.
-- Alle Prüfungen zusammen: `pnpm check`, dazu `pnpm ci:local` für die Prüfungen aus CI, die ohne GitHub möglich sind.
+- Alle Prüfungen zusammen: `pnpm check`, dazu `pnpm ci:local`, das die meisten Prüfungen aus CI lokal ausführt, ohne den Scan der Dateien, die Prüfung der Abhängigkeiten, Titel und Sign-off.
 - CI: `.github/workflows/ci.yml` mit den Jobs `workflow-lint`, `secret-scan`, `check`, `compat`, `minimum` und `deps-review`, `.github/workflows/pr-meta.yml` mit `pr-title` und `dco`, dazu `scripts/ci/`. Jeder dieser Jobs ist eine Pflichtprüfung für `main`.
 - OpenSSF Scorecard: `.github/workflows/scorecard.yml`, keine Pflichtprüfung.
 - Aktualisierungen: `.github/renovate.json5`.
