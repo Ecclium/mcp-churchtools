@@ -24,18 +24,20 @@ Gewählt ist die dritte Option.
 - **pnpm 11** ist der Paketmanager, gepinnt in `packageManager` mit dem Hash der Version. pnpm 12 erschien am 26.08.2026 als Neuschreibung mit eigenen Binärdateien pro Plattform und wird vor dem ersten Release neu bewertet.
 - **TypeScript 6.0** mit Projektreferenzen und `tsc -b` für Build und Typprüfung. TypeScript 7 ist eine Neuimplementierung in Go und wird von typescript-eslint noch nicht unterstützt (Peer-Bereich `<6.1.0` in Version 8.70.1). Die Konfiguration nutzt keine Option, die TypeScript 6.0 als veraltet markiert, damit der Wechsel später ohne Umbau gelingt.
 - **Vitest 5** mit Abdeckung über V8 für alle Tests. Tests laufen aus dem Quelltext, nicht aus dem Build (ADR 0022).
-- **ESLint 10** mit typescript-eslint in der strengen, typbasierten Einstellung und eslint-plugin-jsdoc. Jeder Export braucht einen Dokumentationskommentar mit Zweck, Parametern, Ergebnis und Fehlerfällen, exportierte Funktionen und Klassen der Pakete zusätzlich ein Beispiel. Im Code der Pakete ist direkte Ausgabe über `console`, `process.stdout` und `process.stderr` verboten, weil stdout im Betrieb über stdio dem MCP-Protokoll gehört.
+- **ESLint 10** mit typescript-eslint in der strengen, typbasierten Einstellung und eslint-plugin-jsdoc. Jeder Export braucht einen Dokumentationskommentar mit Zweck, Parametern, Ergebnis und Fehlerfällen, exportierte Funktionen und Klassen der Pakete zusätzlich ein Beispiel. Im Code der Pakete ist `console` verboten, weil stdout im Betrieb über stdio dem MCP-Protokoll gehört. Auf stdout und stderr schreiben nur die Orte, die ADR 0018 nennt: der Logger und die Meldungen der Kommandozeile für Betreiber.
 - **Prettier 3** formatiert Code, Konfiguration und Dokumentation. `brand/`, das Lockfile und der Lizenztext bleiben unverändert.
 - **lefthook 2** richtet die Git-Hooks ein: gitleaks für jeden Commit und jede Commit-Message, Prettier für die gestagten Dateien.
 - **Hilfsskripte** liegen als `.mts` unter `scripts/` und laufen ohne Build direkt in Node.js, das die Typen entfernt. Sie nutzen nur, was Node.js mitbringt.
-- **`pnpm check`** ist der eine Befehl für alle lokalen Prüfungen: Formatierung, Typen, Lint, Tests, Lizenzen, Schutzeinstellungen von pnpm und Links in der Dokumentation. CI ruft dieselben Befehle auf.
+- **dependency-cruiser 18** prüft die Architekturregeln, also jeden Import in den Paketen gegen die Grenzen aus ADR 0022, ADR 0018 und ADR 0024. Es liest TypeScript mit dem installierten Compiler und unterstützt TypeScript 7 noch nicht.
+- **`pnpm check`** ist der eine Befehl für alle lokalen Prüfungen: Formatierung, Typen, Lint, Architekturregeln, Tests, Lizenzen, Schutzeinstellungen von pnpm und Links in der Dokumentation. CI ruft dieselben Befehle auf.
 - **Renovate** schlägt Aktualisierungen vor, unter den Regeln von ADR 0021.
-- Weitere Werkzeuge kommen, wenn sie gebraucht werden: dependency-cruiser 18 für die Architekturregeln und ein Bundler für das Produktpaket.
+- Ein Bundler für das Produktpaket kommt, wenn er gebraucht wird.
 
 ## Konsequenzen
 
 - Wer mitarbeitet, braucht nur mise. Alles andere kommt in einer festen, geprüften Version.
-- TypeScript 7 und pnpm 12 warten, bis ihre Umgebung sie trägt. Das kostet Geschwindigkeit, schützt aber vor einem Wechsel auf eine junge Neuschreibung.
+- TypeScript 7 und pnpm 12 warten, bis ihre Umgebung sie trägt. Das kostet Geschwindigkeit, schützt aber vor einem Wechsel auf eine junge Neuschreibung. Für TypeScript 7 müssen neben typescript-eslint auch dependency-cruiser und die Tests der Architektur, die die Programmier-API von TypeScript benutzen, bereit sein. Ohne einen Compiler, den es lesen kann, findet dependency-cruiser keine Module und meldet trotzdem Erfolg. Die Tests der Architekturregeln prüfen deshalb, dass es Module findet.
+- Dass die Konfiguration keine veraltete Option nutzt, prüft ein Test über alle tsconfig-Dateien. `tsc -b` allein genügt nicht, weil es die Optionen der Dateien, die nur auf andere Projekte verweisen, nicht prüft.
 - Typbasiertes Lint ist langsamer als Lint ohne Typen. Bei der Grösse des Projekts fällt das nicht ins Gewicht.
 - Die Pflicht zur Dokumentation kostet beim Schreiben Zeit. Das ist gewollt, weil Fremde den Code lesen.
 - Hilfsskripte dürfen nur Syntax nutzen, die sich durch Entfernen der Typen in JavaScript verwandelt. Für die Pakete gilt dieselbe Regel (`erasableSyntaxOnly`), es gibt also keine zweite Art, TypeScript zu schreiben.
@@ -46,5 +48,6 @@ Gewählt ist die dritte Option.
 - Paketmanager: `packageManager` in `package.json`, Schutzeinstellungen in `pnpm-workspace.yaml` (ADR 0021).
 - Compiler: `tsconfig.base.json`, `tsconfig.build.json`, `tsconfig.json` und je Paket `tsconfig.json` und `tsconfig.test.json` (ADR 0022).
 - Tests: `vitest.config.mts`. Lint: `eslint.config.mjs`. Formatierung: `.prettierrc.json`, `.prettierignore`. Hooks: `lefthook.yml`.
+- Architekturregeln: `.dependency-cruiser.mjs`, geprüft mit `pnpm check:arch`, und die Tests unter `tests/architecture/`, darunter `tsconfig-options.test.mts` für die veralteten Optionen.
 - Prüfungen: Skripte unter `scripts/`, zusammengefasst in `pnpm check`. `tests/toolchain.test.mts` prüft, dass die Versionen von Node.js und pnpm in allen Dateien übereinstimmen und jede Abhängigkeit genau gepinnt ist.
 - Renovate und die Prüfungen in CI folgen mit der Werkbank in Phase 0.
