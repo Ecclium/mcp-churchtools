@@ -50,6 +50,8 @@ Bevor eine Probe etwas ausgibt, prüft sie die ganze Ausgabe zweimal:
 
 Schlägt eine Prüfung an, gibt die Probe nur die Stellen der Treffer als JSON-Pointer aus und endet mit Code 3.
 
+Vom Host stehen der ganze Name, der Port und jeder Teil auf der Sperrliste, auch in der Schreibweise mit Umlauten und bei einer IPv6-Adresse jede Gruppe. Ausgenommen sind nur bei Instanzen unter `church.tools` die Wörter «church» und «tools», die alle diese Instanzen teilen. Sonst würde schon ein Recht wie «admin church category» jede Ausgabe von `02-permissions` zurückhalten.
+
 Die Werte des OpenAPI-Dokuments stehen nicht auf der Sperrliste. Das Dokument beschreibt die API, und die Ausgabe braucht seine Schlüssel. Enthält das Dokument Ihrer Instanz eigene Namen, etwa von Zusatzfeldern, können diese als Schlüssel erscheinen. Achten Sie bei der Durchsicht darauf.
 
 ## Voraussetzungen

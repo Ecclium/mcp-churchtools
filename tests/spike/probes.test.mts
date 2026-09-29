@@ -25,6 +25,7 @@ import { hints } from '../../scripts/spike/lib/errors.mts';
 import type { FetchFunction } from '../../scripts/spike/lib/http.mts';
 import { exitCodes } from '../../scripts/spike/lib/output.mts';
 import {
+  hostValues,
   runProbe,
   type ProbeDefinition,
 } from '../../scripts/spike/lib/probe.mts';
@@ -775,6 +776,31 @@ describe('the probes against a synthetic instance', () => {
     });
     expect(leaks(run.output, [...setting.forbidden, 'example'])).toEqual([]);
   });
+
+  it('show right names that contain a word of the hosted domain', async () => {
+    const setting = setup();
+    const instance = syntheticInstance(setting, {
+      rights: {
+        data: {
+          churchcore: {
+            'administer church html templates': false,
+            'use church html templates': [],
+          },
+          churchcal: { 'admin church category': false },
+        },
+      },
+    });
+    expect((await runOne(inventory, setting.env, instance)).code).toBe(
+      exitCodes.ok,
+    );
+    const run = await runOne(permissions, setting.env, instance);
+    expect(run.code).toBe(exitCodes.ok);
+    const shown = run.output.stdout();
+    expect(shown).toContain('administer church html templates');
+    expect(shown).toContain('use church html templates');
+    expect(shown).toContain('admin church category');
+    expect(leaks(run.output, setting.forbidden)).toEqual([]);
+  });
 });
 
 describe('the probes stop before the first request', () => {
@@ -894,6 +920,40 @@ describe('00-inventory', () => {
     expect(run.output.stderr()).toContain(hints.spezifikationUngueltig);
     expect(run.calls).toHaveLength(1);
     expect(existsSync(setting.stateFile)).toBe(false);
+  });
+});
+
+describe('hostValues', () => {
+  it('blocks the instance name but not the words of the hosted domain', () => {
+    expect(hostValues('https://example.church.tools')).toEqual([
+      'https://example.church.tools',
+      'example.church.tools',
+      'example',
+    ]);
+  });
+
+  it('blocks every label of an own domain, the port and the Unicode form', () => {
+    const values = hostValues('https://ct.bücher.example:8443');
+    for (const value of [
+      'ct.xn--bcher-kva.example:8443',
+      '8443',
+      'ct',
+      'xn--bcher-kva',
+      'bücher',
+      'ct.bücher.example',
+      'example',
+    ]) {
+      expect(values).toContain(value);
+    }
+  });
+
+  it('splits an IP address into its parts', () => {
+    expect(hostValues('https://192.0.2.10')).toEqual(
+      expect.arrayContaining(['192.0.2.10', '192', '0', '2', '10']),
+    );
+    expect(hostValues('https://[2001:db8::1]:8443')).toEqual(
+      expect.arrayContaining(['2001:db8::1', '2001', 'db8', '1', '8443']),
+    );
   });
 });
 
