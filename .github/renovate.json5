@@ -1,8 +1,8 @@
 // Renovate proposes updates of dependencies, tools and actions as pull
 // requests (ADR 0020). The rules follow the supply-chain baseline (ADR 0021):
-// a release must be some days old before it is proposed, only development
-// tools and actions that merely read may be merged automatically, and
-// everything that runs at runtime or with write access waits for a person.
+// a release must be some days old before it is proposed, only patch and
+// minor updates of development tools may be merged automatically, and
+// everything else, including every action, waits for a person.
 // Later rules take precedence over earlier ones.
 {
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
@@ -17,8 +17,8 @@
     ':semanticCommits',
   ],
 
-  // A branch is updated only when it falls behind main, which the ruleset
-  // requires before a merge.
+  // A branch is rebased only when it falls behind main, so that its checks
+  // ran against the current main before it is merged.
   rebaseWhen: 'behind-base-branch',
   automergeStrategy: 'squash',
 
@@ -41,7 +41,9 @@
   ignorePaths: ['brand/**'],
 
   // Every update waits three days, the same age pnpm requires for every
-  // package it installs.
+  // package it installs. For an action, Renovate reads the age from Git
+  // dates that whoever sets the tag controls, unless the version has a
+  // GitHub release; this is one reason why actions never merge on their own.
   minimumReleaseAge: '3 days',
 
   vulnerabilityAlerts: {
@@ -107,19 +109,16 @@
       automerge: false,
     },
     {
-      description: 'Patch and minor updates of actions that only read merge automatically, where every job of the workflow only reads. An action that also runs in a job with write access keeps its update for a person, because Renovate updates all workflows in one branch.',
+      description: 'Actions are never merged automatically (ADR 0021). Their age comes from Git dates that whoever sets a tag controls, and an action runs in the checks of its own update, where a hijacked release could report success.',
       matchManagers: ['github-actions'],
-      matchDepNames: [
-        'actions/checkout',
-        'jdx/mise-action',
-        'actions/dependency-review-action',
-      ],
-      matchFileNames: [
-        '.github/workflows/ci.yml',
-        '.github/workflows/pr-meta.yml',
-      ],
-      matchUpdateTypes: ['patch', 'minor'],
-      automerge: true,
+      automerge: false,
+    },
+    {
+      description: 'The version of mise in the workflows is updated by the custom manager above, together with constraints.mise, not by the manager for actions.',
+      matchManagers: ['github-actions'],
+      matchDepNames: ['jdx/mise'],
+      matchDepTypes: ['uses-with'],
+      enabled: false,
     },
     {
       description: 'A new SHA for an unchanged version means that a tag was moved, the typical sign of a hijacked action. Such an update waits for approval on the dependency dashboard.',

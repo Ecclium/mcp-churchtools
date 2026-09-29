@@ -6,11 +6,13 @@
 # actions from its own list and no run steps in this job, and no other job
 # with id-token: write. Results are published from the default branch only.
 #
-# This is the only job of the repository with write permissions: it uploads
-# the results as code scanning alerts (security-events) and signs them for
-# the Scorecard service (id-token). None of its actions is updated
-# automatically, because each new SHA must first be added to the allowlist
-# of the organisation (ADR 0021).
+# This is the only job in the workflows of this repository with write
+# permissions: it uploads the results as code scanning alerts
+# (security-events) and signs them for the Scorecard service (id-token).
+# CodeQL runs in a job of its own that GitHub manages. The organisation
+# allows scorecard-action, upload-artifact and upload-sarif only with their
+# exact SHA, so an update of one of them needs a new entry there first
+# (ADR 0021).
 name: scorecard
 
 on:
