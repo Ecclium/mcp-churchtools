@@ -197,6 +197,8 @@ function pageList(
 interface InstanceOptions {
   /** The OpenAPI document, `null` for an instance that publishes none. */
   readonly document?: unknown;
+  /** Status and body of `GET /api/info`. */
+  readonly info?: { readonly status: number; readonly body: unknown };
   /** The body of `GET /api/permissions/global`. */
   readonly rights?: unknown;
 }
@@ -223,12 +225,14 @@ function syntheticInstance(
         : answer(canaries, options.document ?? specification);
     }
     if (path === '/api/info') {
-      return answer(canaries, {
-        version: '3.136.2',
-        siteName: canaries.groupName,
-        shortName: canaries.personId,
-        build: canaries.number,
-      });
+      return options.info === undefined
+        ? answer(canaries, {
+            version: '3.136.2',
+            siteName: canaries.groupName,
+            shortName: canaries.personId,
+            build: canaries.number,
+          })
+        : answer(canaries, options.info.body, options.info.status);
     }
     if (path === '/api/whoami') {
       if (authorization === `Login ${canaries.token}`) {
@@ -430,7 +434,7 @@ describe('the probes against a synthetic instance', () => {
     expect(invalid[1]).toBe(invalid[0]);
   });
 
-  it('report the version, the documented operations and the info answer', async () => {
+  it('report the version, the documented operations and only the status of the info answer', async () => {
     const setting = setup();
     const { inventory: run } = await runAll(
       setting,
@@ -440,21 +444,7 @@ describe('the probes against a synthetic instance', () => {
       probe: '00-inventory',
       churchtoolsVersion: '3.136',
       spezifikation: { status: 200, format: 'OpenAPI 3' },
-      info: {
-        status: 200,
-        format: 'JSON',
-        kopfzeilen: { bekannt: knownHeaders, weitere: '1' },
-        cookies: { anzahl: '0', attribute: [] },
-        struktur: {
-          typ: 'Objekt',
-          felder: {
-            version: text,
-            siteName: text,
-            '<key#1>': text,
-            '<key#2>': number,
-          },
-        },
-      },
+      info: { status: 200 },
       operationen: {
         info: 'dokumentiert',
         whoami: 'dokumentiert',
@@ -854,6 +844,48 @@ describe('the probes stop before the first request', () => {
 });
 
 describe('00-inventory', () => {
+  it('shows only status and version of the info answer, even if one of its keys is on the block list', async () => {
+    const setting = setup();
+    const { canaries } = setting;
+    // `siteName` is declared in the specification and also appears as a
+    // value, so a description of this answer would have to be withheld.
+    const instance = syntheticInstance(setting, {
+      info: {
+        status: 200,
+        body: {
+          version: '3.136.2',
+          siteName: canaries.groupName,
+          shortName: 'siteName',
+          settings: { [canaries.personName]: canaries.personEmail },
+        },
+      },
+    });
+    const run = await runOne(inventory, setting.env, instance);
+    expect(run.code).toBe(exitCodes.ok);
+    expect(run.result).toMatchObject({
+      churchtoolsVersion: '3.136',
+      info: { status: 200 },
+      state: 'angelegt',
+    });
+    expect(
+      leaks(run.output, [...setting.forbidden, 'sitename', 'settings']),
+    ).toEqual([]);
+  });
+
+  it('reports an unknown version if the info answer carries none', async () => {
+    const setting = setup();
+    const instance = syntheticInstance(setting, {
+      info: { status: 403, body: { message: setting.canaries.personName } },
+    });
+    const run = await runOne(inventory, setting.env, instance);
+    expect(run.code).toBe(exitCodes.ok);
+    expect(run.result).toMatchObject({
+      churchtoolsVersion: 'unbekannt',
+      info: { status: 403 },
+    });
+    expect(leaks(run.output, setting.forbidden)).toEqual([]);
+  });
+
   it('writes no state if the instance publishes no OpenAPI document', async () => {
     const setting = setup();
     const instance = syntheticInstance(setting, { document: null });
