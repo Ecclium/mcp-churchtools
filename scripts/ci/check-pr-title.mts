@@ -28,11 +28,12 @@ export const commitTypes: readonly string[] = [
   'test',
 ];
 
-// Control characters, including line breaks, and the invisible characters
-// that change the direction or visibility of text. In a title they could
-// hide what the commit on main will say.
+// Control characters, including line breaks, every invisible format
+// character (Unicode category Cf: direction marks and overrides, zero-width
+// characters, tag characters) and variation selectors. In a title they could
+// hide text in what the commit on main will say.
 const hiddenCharacters =
-  /[\p{Cc}\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]/u;
+  /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\u{fe00}-\u{fe0f}\u{e0100}-\u{e01ef}]/u;
 
 const header = /^(?<type>[a-z]+)(?:\((?<scope>[^()]*)\))?!?: (?<subject>.*)$/;
 

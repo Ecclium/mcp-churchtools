@@ -122,9 +122,16 @@ export function signOffs(message: string): string[] {
     .map((line) => line.slice(line.indexOf(':') + 1).trim());
 }
 
+// Name and address come from the commit and so from the pull request. Git
+// keeps characters such as a carriage return in them, and the runner reads
+// a line that starts after one as a command (::). Every control and format
+// character is therefore replaced before the identity is printed.
+const visible = (text: string): string =>
+  text.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '?');
+
 const missing = (commit: string, author: Identity): string =>
-  `Commit ${commit}: Das Sign-off von «${author.name} <${author.email}>» fehlt. ` +
-  'Setzen Sie es mit «git commit --signoff», bei bestehenden Commits mit «git rebase --signoff».';
+  `Commit ${commit}: Das Sign-off von «${visible(author.name)} <${visible(author.email)}>» fehlt. ` +
+  'Setzen Sie es mit «git commit --signoff», bei bestehenden Commits mit «git rebase --signoff origin/main» und danach «git push --force-with-lease».';
 
 /**
  * Checks every commit that is reachable from `head` but not from `base`.

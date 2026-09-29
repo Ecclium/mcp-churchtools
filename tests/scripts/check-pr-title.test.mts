@@ -39,12 +39,21 @@ describe('checkTitle', () => {
     expect(checkTitle('bump(X): update')).toHaveLength(2);
   });
 
+  // Built with fromCodePoint, so that no invisible character sits in this
+  // file itself.
+  const hidden = (codePoint: number): string => String.fromCodePoint(codePoint);
+
   it.each([
-    ['a line break', 'fix: reject tokens\nSigned-off-by: someone'],
-    ['a carriage return', 'fix: reject tokens\r'],
-    ['a direction override', 'fix: reject \u202eenekot'],
-    ['a zero-width space', 'fix: reject\u200btokens'],
-    ['a byte order mark', '\ufefffix: reject tokens'],
+    ['a line break', `fix: reject tokens${hidden(0x0a)}Signed-off-by: someone`],
+    ['a carriage return', `fix: reject tokens${hidden(0x0d)}`],
+    ['a direction override', `fix: reject ${hidden(0x202e)}enekot`],
+    ['an Arabic letter mark', `fix: a${hidden(0x061c)}b`],
+    ['a zero-width space', `fix: reject${hidden(0x200b)}tokens`],
+    ['a soft hyphen', `fix: re${hidden(0x00ad)}ject tokens`],
+    ['a byte order mark', `${hidden(0xfeff)}fix: reject tokens`],
+    ['tag characters', `fix: harmless${hidden(0xe0065)}${hidden(0xe0076)}`],
+    ['a variation selector', `fix: reject${hidden(0xe0100)} tokens`],
+    ['a line separator', `fix: reject${hidden(0x2028)}tokens`],
   ])('rejects a title with %s', (_, title) => {
     expect(checkTitle(title)).toEqual([
       expect.stringContaining('Steuerzeichen'),

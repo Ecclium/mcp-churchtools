@@ -148,6 +148,21 @@ describe('check-dco', () => {
       expect(result.output).not.toContain('::');
     });
 
+    it('prints an identity only without control characters', () => {
+      // Git keeps a carriage return in a name, and the runner would read the
+      // rest of the line as a command.
+      commit('a.txt', ['fix: one'], {
+        GIT_AUTHOR_NAME: `Max${String.fromCodePoint(0x0d)}::error::injected`,
+      });
+      const result = check('--range', 'main', 'feature');
+      expect(result.status).toBe(1);
+      expect(result.output).not.toContain(String.fromCodePoint(0x0d));
+      expect(result.output).toContain('Max?::error::injected');
+      for (const line of result.output.split('\n')) {
+        expect(line.startsWith('::')).toBe(false);
+      }
+    });
+
     it('lets a merge without changes of its own pass unsigned', () => {
       commit('a.txt', ['fix: one', signOff(max)]);
       repository.git(['switch', '--quiet', 'main']);
