@@ -116,11 +116,13 @@ jobs:
       - name: Scan the names of all files, now and in the history
         # Both scans above read contents, not names, and a file name can
         # carry a host or an address just as well. quotePath=false keeps
-        # names with umlauts readable for the rules.
+        # names with umlauts readable for the rules. LC_ALL=C sorts bytewise,
+        # so a name with an invalid byte cannot make sort fail and empty the
+        # input of the scan.
         run: |
           { git -c core.quotePath=false log --format= --name-only HEAD
             git -c core.quotePath=false ls-files
-          } | sort -u | gitleaks stdin --redact --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
+          } | LC_ALL=C sort -u | gitleaks stdin --redact --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
 
   # check, compat and minimum run the same steps on different versions of
   # Node.js (ADR 0019): the development version from mise.toml, the next line

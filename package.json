@@ -17,7 +17,7 @@
     "check:pnpm": "node scripts/check-pnpm-settings.mts",
     "check:links": "node scripts/check-md-links.mts",
     "ci:workflow-lint": "actionlint && zizmor --offline --min-severity=medium --no-progress .github/workflows",
-    "ci:secret-scan": "test ! -e .gitleaksignore && gitleaks git --redact --no-banner --ignore-gitleaks-allow --log-opts=HEAD -c .gitleaks.toml . && git -c core.quotePath=false log --format= --name-only HEAD | sort -u | gitleaks stdin --redact --no-banner --ignore-gitleaks-allow -c .gitleaks.toml",
+    "ci:secret-scan": "test ! -e .gitleaksignore && gitleaks git --redact --no-banner --ignore-gitleaks-allow --log-opts=HEAD -c .gitleaks.toml . && { git -c core.quotePath=false log --format= --name-only HEAD; git -c core.quotePath=false ls-files; } | LC_ALL=C sort -u | gitleaks stdin --redact --no-banner --ignore-gitleaks-allow -c .gitleaks.toml",
     "ci:check": "pnpm run build && pnpm run check",
     "ci:local": "pnpm run ci:workflow-lint && pnpm run ci:secret-scan && pnpm run ci:check && MISE_ENV=compat mise exec -- pnpm run ci:check && MISE_ENV=minimum mise exec -- pnpm run ci:check"
   },
