@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import { copyFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { copyFileSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -9,19 +9,29 @@ import { createRepository, type Repository } from '../support/git.mts';
 
 // The Git hooks in lefthook.yml stop a commit that contains a secret or data
 // that must not become public, in the staged files and in the commit message
-// (ADR 0014). This test installs the hooks into a temporary repository and
+// (ADR 0014), and a commit whose message lacks the sign-off of its author
+// (ADR 0002). This test installs the hooks into a temporary repository and
 // commits through them, as a contributor would. Every commit that must fail
 // has a counterpart that passes, so the test cannot pass merely because the
 // hook fails for another reason, such as a missing tool.
 //
-// It needs mise, lefthook and gitleaks on the PATH, as `mise exec -- pnpm
-// check` and the CI jobs provide them.
+// It needs mise, lefthook, gitleaks and Node.js on the PATH, as `mise exec --
+// pnpm check` and the CI jobs provide them.
 
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
 
-// The hooks read these files: mise.toml and mise.lock select the pinned
-// gitleaks, .gitleaks.toml holds the rules.
-const hookFiles = ['lefthook.yml', '.gitleaks.toml', 'mise.toml', 'mise.lock'];
+// The hooks read these files: .gitleaks.toml holds the rules, the script
+// checks the sign-off, and the mise files select gitleaks and Node.js. All
+// mise environments are copied, so that a run with MISE_ENV, as in the
+// compat job, uses the same tools as the workspace.
+const hookFiles = [
+  'lefthook.yml',
+  '.gitleaks.toml',
+  'scripts/ci/check-dco.mts',
+  ...readdirSync(workspace).filter((name) =>
+    /^mise(\.[^.]+)?\.(toml|lock)$/.test(name),
+  ),
+];
 
 /** A subdomain of church.tools that is new on every run. */
 const canaryHost = (): string =>
@@ -48,10 +58,11 @@ describe('the commit hooks', () => {
 
   const commit = (
     message: string,
+    { signOff = true } = {},
   ): { status: number | null; output: string } => {
     const result = repository.run(
       'git',
-      ['commit', '--signoff', '--message', message],
+      ['commit', ...(signOff ? ['--signoff'] : []), '--message', message],
       hookEnvironment(),
     );
     return { status: result.status, output: result.stdout + result.stderr };
@@ -68,6 +79,7 @@ describe('the commit hooks', () => {
   beforeAll(() => {
     repository = createRepository();
     for (const file of hookFiles) {
+      mkdirSync(dirname(join(repository.path, file)), { recursive: true });
       copyFileSync(join(workspace, file), join(repository.path, file));
     }
     const install = repository.run('lefthook', ['install'], hookEnvironment());
@@ -85,6 +97,7 @@ describe('the commit hooks', () => {
       const result = commit('test: add the hook configuration');
       expect(result.status, result.output).toBe(0);
       expect(result.output).toContain('no leaks found');
+      expect(result.output).toContain('Sign-offs geprüft: 1 Commit');
       expect(commitCount()).toBe(1);
     },
     timeout,
@@ -127,6 +140,23 @@ describe('the commit hooks', () => {
       );
       expect(counterpart.status, counterpart.output).toBe(0);
       expect(commitCount()).toBe(3);
+    },
+    timeout,
+  );
+
+  it(
+    'stop a commit without the sign-off of its author',
+    () => {
+      stage('notes.md', 'Still nothing to report.\n');
+
+      const result = commit('docs: extend the notes', { signOff: false });
+      expect(result.status, result.output).not.toBe(0);
+      expect(result.output).toContain('Das Sign-off von');
+      expect(commitCount()).toBe(3);
+
+      const counterpart = commit('docs: extend the notes');
+      expect(counterpart.status, counterpart.output).toBe(0);
+      expect(commitCount()).toBe(4);
     },
     timeout,
   );
