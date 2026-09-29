@@ -24,12 +24,24 @@ const manifests: readonly Manifest[] = await Promise.all(
 
 describe('workspace packages', () => {
   it.each(manifests)('$name exports its source first', ({ exports }) => {
-    const main = exports['.'] ?? {};
-    expect(Object.keys(main)[0]).toBe('@ecclium/source');
-    expect(main['@ecclium/source']).toBe('./src/index.ts');
+    expect(exports['.']?.['@ecclium/source']).toBe('./src/index.ts');
+    for (const [subpath, conditions] of Object.entries(exports)) {
+      expect(Object.keys(conditions)[0], subpath).toBe('@ecclium/source');
+      expect(conditions['@ecclium/source'], subpath).toMatch(
+        /^\.\/src\/.+\.ts$/,
+      );
+    }
   });
 
-  it.each(manifests)('$name loads by its package name', async ({ name }) => {
-    await expect(import(name)).resolves.toBeTypeOf('object');
-  });
+  it.each(manifests)(
+    '$name loads by its package name',
+    async ({ name, exports }) => {
+      for (const subpath of Object.keys(exports)) {
+        const specifier = `${name}${subpath.slice(1)}`;
+        await expect(import(specifier), specifier).resolves.toBeTypeOf(
+          'object',
+        );
+      }
+    },
+  );
 });
