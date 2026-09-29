@@ -72,11 +72,11 @@ Gewählt ist jeweils die dritte Option.
 
 1. **Paketdefinition:** Jedes Paket nennt in `package.json` nur Pakete, die es laut Tabelle importieren darf, als Abhängigkeit `workspace:*`, `testkit` nur als devDependency. `exports` gibt nur die genannten Einstiegspunkte frei. Diese Ebene schützt allein nicht: Das `package.json` im Wurzelordner nennt für die Tests alle Pakete und die Werkzeuge der Entwicklung, deshalb sind im Workspace alle Pakete von überall auflösbar.
 2. **Projektreferenzen von TypeScript:** Das Build-Projekt eines Pakets referenziert genau seine Abhängigkeiten. `tsc -b` baut in dieser Reihenfolge und lehnt Zyklen ab.
-3. **dependency-cruiser in CI:** prüft jeden Import gegen dieselbe Tabelle, auch relative Pfade über Paketgrenzen, Importe nur für Typen und Importe von npm-Paketen, die das eigene `package.json` nicht nennt.
+3. **dependency-cruiser in CI:** prüft jeden Import gegen dieselbe Tabelle, auch relative Pfade über Paketgrenzen und aus einem Paket in den Rest des Repositorys, Importe nur für Typen und Importe von npm-Paketen, die das eigene `package.json` nicht für die Laufzeit nennt. Von der letzten Prüfung sind Tests ausgenommen, weil sie die Testwerkzeuge aus dem Wurzelordner benutzen. Als Test gilt nur, was auf `.test.ts` endet: genau die Dateien, die Vitest ausführt und der Build weglässt.
 
 Die Tabelle steht in einer Datei, `tests/architecture/boundaries.json`. Aus ihr lesen dependency-cruiser, die Architekturregeln von ESLint und die Tests, und ein Test prüft, dass `package.json` und Projektreferenzen jedes Pakets zu ihr passen.
 
-**Quelle statt Build.** `exports` nennt zuerst `"@ecclium/source": "./src/index.ts"`, danach `types` und `default` für das Ergebnis des Builds in `dist/`. TypeScript (`customConditions`) und Vitest lösen Workspace-Pakete unter dieser Bedingung auf und prüfen so immer den aktuellen Quelltext. Die beiden veröffentlichten Pakete lassen die Bedingung über `publishConfig.exports` weg.
+**Quelle statt Build.** `exports` nennt für jeden Einstiegspunkt zuerst die Quelle unter `@ecclium/source`, für den Hauptpfad `"./src/index.ts"`, danach `types` und `default` für das Ergebnis des Builds in `dist/`. TypeScript (`customConditions`) und Vitest lösen Workspace-Pakete unter dieser Bedingung auf und prüfen so immer den aktuellen Quelltext. Die beiden veröffentlichten Pakete lassen die Bedingung über `publishConfig.exports` weg.
 
 **Zwei TypeScript-Projekte pro Paket.** `tsconfig.json` baut den Quelltext in `src/` ohne die Tests. `tsconfig.test.json` prüft die Tests ohne Ausgabe und referenziert das eigene Build-Projekt und `testkit`. So darf `testkit` alle Pakete importieren, ohne dass Projektreferenzen einen Zyklus bilden. Im Wurzelordner baut `tsconfig.build.json` alle Pakete. `tsconfig.json` umfasst zusätzlich alle Testprojekte und dient der Typprüfung und den Editoren.
 
@@ -95,9 +95,9 @@ Die Tabelle steht in einer Datei, `tests/architecture/boundaries.json`. Aus ihr 
 
 ## Umsetzung
 
-- Pakete: `packages/*/package.json` und je ein Einstiegspunkt `packages/*/src/index.ts`.
+- Pakete: `packages/*/package.json` und je ein Einstiegspunkt `packages/*/src/index.ts`, bei `core` zusätzlich `./mcp` mit `packages/core/src/mcp/mount.ts`.
 - Projekte: `tsconfig.base.json`, `tsconfig.build.json`, `tsconfig.json`, `packages/*/tsconfig.json`, `packages/*/tsconfig.test.json`, `tests/tsconfig.json`.
-- Auflösung in Tests: `vitest.config.mts`. `tests/packages.test.mts` lädt jedes Paket über seinen Namen und prüft, dass `exports` die Quelle zuerst nennt. Gegenprobe von Hand: Ohne die Bedingung und ohne `dist/` scheitern die Tests.
+- Auflösung in Tests: `vitest.config.mts`. `tests/packages.test.mts` lädt jedes Paket und jeden Unterpfad über seinen Namen und prüft, dass `exports` die Quelle zuerst nennt. Gegenprobe von Hand: Ohne die Bedingung und ohne `dist/` scheitern die Tests.
 - Zyklen über `testkit`: `ignoreWorkspaceCycles` in `pnpm-workspace.yaml`.
 - Tabelle und feste Orte: `tests/architecture/boundaries.json`, geprüft beim Laden durch `tests/architecture/boundaries.mts`.
 - dependency-cruiser: `.dependency-cruiser.mjs` mit den Regeln aus `tests/architecture/dependency-rules.mts`, geprüft mit `pnpm check:arch`. Jede Regel hat in `tests/architecture/dependency-rules.test.mts` ein Beispiel, das sie verletzt.
