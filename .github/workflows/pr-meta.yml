@@ -49,6 +49,15 @@ jobs:
           version: 2026.9.14
           cache: false
           install_args: node aqua:gitleaks/gitleaks
+      - name: Refuse ignore files of gitleaks
+        # gitleaks reads a .gitleaksignore in the checkout on its own, and one
+        # line there silences any finding. Findings are allowed only through
+        # the reviewed allowlists in .gitleaks.toml (ADR 0014).
+        run: |
+          if [ -n "$(find . -name .gitleaksignore -not -path './.git/*' -print -quit)" ]; then
+            echo 'Eine Datei .gitleaksignore schaltet Funde ab und ist nicht erlaubt. Erweitern Sie stattdessen die Allowlist in .gitleaks.toml.' >&2
+            exit 1
+          fi
       - name: Check that the title follows Conventional Commits
         env:
           TITLE: ${{ github.event.pull_request.title }}
@@ -80,6 +89,15 @@ jobs:
           version: 2026.9.14
           cache: false
           install_args: node aqua:gitleaks/gitleaks
+      - name: Refuse ignore files of gitleaks
+        # gitleaks reads a .gitleaksignore in the checkout on its own, and one
+        # line there silences any finding. Findings are allowed only through
+        # the reviewed allowlists in .gitleaks.toml (ADR 0014).
+        run: |
+          if [ -n "$(find . -name .gitleaksignore -not -path './.git/*' -print -quit)" ]; then
+            echo 'Eine Datei .gitleaksignore schaltet Funde ab und ist nicht erlaubt. Erweitern Sie stattdessen die Allowlist in .gitleaks.toml.' >&2
+            exit 1
+          fi
       - name: Check that the test merge contains the head of the pull request
         # Fails closed if the test merge that GitHub recorded for this event
         # was built from another head than the event names, so that no result

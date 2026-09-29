@@ -26,7 +26,12 @@
 #   commit-msg hook   gitleaks stdin --redact --no-banner --ignore-gitleaks-allow
 #                     (gitleaks git reads only file changes, never commit
 #                     messages, so the hook passes each message through stdin)
-#   pull request      gitleaks git --redact --no-banner --ignore-gitleaks-allow --log-opts="<base>..<head>"
+#   file names        gitleaks stdin over the names of staged or committed
+#                     files (gitleaks git and gitleaks dir read contents, not
+#                     names)
+#   pull request      gitleaks git --redact --no-banner --ignore-gitleaks-allow --log-opts=HEAD,
+#                     gitleaks dir, and gitleaks stdin over file names, title
+#                     and commit messages (.github/workflows/)
 #   full history      gitleaks git --redact --no-banner --ignore-gitleaks-allow
 #   release artifact  gitleaks dir <unpacked npm tarball> --redact --no-banner --ignore-gitleaks-allow
 #                     (unpack first: gitleaks skips .tgz files as binary; for
@@ -62,7 +67,9 @@
 #   the rule in this file, in its own pull request, with a comment saying why.
 #   Inline "gitleaks:allow" comments are ignored on purpose (flag
 #   --ignore-gitleaks-allow): a suppression in the same line as the finding
-#   is too easy to slip through review.
+#   is too easy to slip through review. For the same reason the hooks and CI
+#   refuse a .gitleaksignore file, which gitleaks would otherwise read on its
+#   own and which can silence any finding with a single line.
 
 title = "Ecclium MCP for ChurchTools"
 

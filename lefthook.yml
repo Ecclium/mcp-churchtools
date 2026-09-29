@@ -16,6 +16,15 @@ pre-commit:
   commands:
     secrets:
       run: mise exec -- gitleaks git --pre-commit --staged --redact --verbose --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
+    # gitleaks reads the contents of files, not their names, and a name can
+    # carry a host or an address just as well.
+    file-names:
+      run: git -c core.quotePath=false diff --cached --name-only --diff-filter=ACR | mise exec -- gitleaks stdin --redact --verbose --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
+    # gitleaks reads a .gitleaksignore on its own, and one line there
+    # silences any finding. Allowed findings belong in the allowlists of
+    # .gitleaks.toml, where they are reviewed.
+    ignore-file:
+      run: test ! -e .gitleaksignore || { echo 'Eine Datei .gitleaksignore schaltet Funde ab und ist nicht erlaubt. Erweitern Sie stattdessen die Allowlist in .gitleaks.toml.' >&2; exit 1; }
     # Checks the formatting of the staged files and changes nothing. Fix a
     # finding with `pnpm format`, then stage the result.
     format:

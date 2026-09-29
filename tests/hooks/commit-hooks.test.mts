@@ -1,5 +1,11 @@
 import { randomBytes } from 'node:crypto';
-import { copyFileSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -8,8 +14,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createRepository, type Repository } from '../support/git.mts';
 
 // The Git hooks in lefthook.yml stop a commit that contains a secret or data
-// that must not become public, in the staged files and in the commit message
-// (ADR 0014), and a commit whose message lacks the sign-off of its author
+// that must not become public, in the staged files, their names and the
+// commit message (ADR 0014), a commit while a .gitleaksignore could silence
+// findings, and a commit whose message lacks the sign-off of its author
 // (ADR 0002). This test installs the hooks into a temporary repository and
 // commits through them, as a contributor would. Every commit that must fail
 // has a counterpart that passes, so the test cannot pass merely because the
@@ -157,6 +164,49 @@ describe('the commit hooks', () => {
       const counterpart = commit('docs: extend the notes');
       expect(counterpart.status, counterpart.output).toBe(0);
       expect(commitCount()).toBe(4);
+    },
+    timeout,
+  );
+
+  it(
+    'stop a staged file whose name carries a finding',
+    () => {
+      const host = canaryHost();
+      const file = `export-${host}.md`;
+      stage(file, 'Nothing to report.\n');
+
+      const result = commit('docs: add an export');
+      expect(result.status, result.output).not.toBe(0);
+      expect(result.output).toContain(rule);
+      expect(result.output).not.toContain(host);
+      expect(commitCount()).toBe(4);
+
+      repository.git(['rm', '--cached', '--quiet', '--', file]);
+      rmSync(join(repository.path, file));
+      stage('export.md', 'Nothing to report.\n');
+      const counterpart = commit('docs: add an export');
+      expect(counterpart.status, counterpart.output).toBe(0);
+      expect(commitCount()).toBe(5);
+    },
+    timeout,
+  );
+
+  it(
+    'stop every commit while a .gitleaksignore exists',
+    () => {
+      const ignoreFile = join(repository.path, '.gitleaksignore');
+      writeFileSync(ignoreFile, 'notes.md:opsec-churchtools-host:1\n');
+      stage('notes.md', 'Once more nothing to report.\n');
+
+      const result = commit('docs: update the notes');
+      expect(result.status, result.output).not.toBe(0);
+      expect(result.output).toContain('.gitleaksignore');
+      expect(commitCount()).toBe(5);
+
+      rmSync(ignoreFile);
+      const counterpart = commit('docs: update the notes');
+      expect(counterpart.status, counterpart.output).toBe(0);
+      expect(commitCount()).toBe(6);
     },
     timeout,
   );

@@ -68,7 +68,8 @@ jobs:
       - name: Audit the workflows
         # Online, zizmor also checks that each pinned SHA belongs to the
         # action and matches the version in its comment, and that no pinned
-        # version has a known vulnerability. The job token only reads.
+        # version has a known vulnerability of medium severity or above. The
+        # job token only reads.
         env:
           GH_TOKEN: ${{ github.token }}
         run: zizmor --min-severity=medium --no-progress .github/workflows
@@ -93,6 +94,15 @@ jobs:
           version: 2026.9.14
           cache: false
           install_args: aqua:gitleaks/gitleaks
+      - name: Refuse ignore files of gitleaks
+        # gitleaks reads a .gitleaksignore in the checkout on its own, and one
+        # line there silences any finding. Findings are allowed only through
+        # the reviewed allowlists in .gitleaks.toml (ADR 0014).
+        run: |
+          if [ -n "$(find . -name .gitleaksignore -not -path './.git/*' -print -quit)" ]; then
+            echo 'Eine Datei .gitleaksignore schaltet Funde ab und ist nicht erlaubt. Erweitern Sie stattdessen die Allowlist in .gitleaks.toml.' >&2
+            exit 1
+          fi
       - name: Scan every commit that leads to the tested one
         # --redact: the log of a public repository is public, so a finding
         # must not print the value it found. --ignore-gitleaks-allow: an
@@ -103,6 +113,14 @@ jobs:
         # Catches content that the scan of the history does not see, such as
         # changes made while resolving a merge conflict.
         run: gitleaks dir --redact --no-banner --ignore-gitleaks-allow -c .gitleaks.toml .
+      - name: Scan the names of all files, now and in the history
+        # Both scans above read contents, not names, and a file name can
+        # carry a host or an address just as well. quotePath=false keeps
+        # names with umlauts readable for the rules.
+        run: |
+          { git -c core.quotePath=false log --format= --name-only HEAD
+            git -c core.quotePath=false ls-files
+          } | sort -u | gitleaks stdin --redact --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
 
   # check, compat and minimum run the same steps on different versions of
   # Node.js (ADR 0019): the development version from mise.toml, the next line
