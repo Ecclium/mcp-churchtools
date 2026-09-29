@@ -3,7 +3,8 @@
 # With a single maintainer and no required approvals, this file documents
 # responsibility; it does not enforce a second review. The explicit entries
 # mark the files that decide what runs on developer machines and in CI, what
-# gets published, how leaked data is found and what the project promises.
+# gets published, which imports and outputs the architecture allows, how
+# leaked data is found and what the project promises.
 # They stay with the maintainers even if the default rule changes. Later
 # rules take precedence.
 * @ecclium/maintainers
@@ -22,6 +23,9 @@
 /lefthook.yml @ecclium/maintainers
 /.gitignore @ecclium/maintainers
 /.gitattributes @ecclium/maintainers
+/.dependency-cruiser.mjs @ecclium/maintainers
+/eslint.config.mjs @ecclium/maintainers
+/tests/architecture/ @ecclium/maintainers
 /brand/ @ecclium/maintainers
 /docs/adr/ @ecclium/maintainers
 /SECURITY.md @ecclium/maintainers
