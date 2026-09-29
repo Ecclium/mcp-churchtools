@@ -1,6 +1,7 @@
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -11,18 +12,24 @@ import { dirname, join, relative } from 'node:path';
 import ts from 'typescript';
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { workspaceRoot } from './boundaries.mts';
+import { loadBoundaries, workspaceRoot } from './boundaries.mts';
+import { pathPattern } from './dependency-rules.mts';
 
-// dependency-cruiser sees only which module imports which. If the entry point
-// of core re-exported the raw ChurchTools client or the mount, every package
-// could use them through `@ecclium/mcp-churchtools-core` without a single
-// forbidden import (ADR 0024). This test follows each export of the entry
-// point to its declaration with the TypeScript checker.
+// dependency-cruiser sees only which module imports which. If an entry point
+// re-exported the raw ChurchTools client, the mount or the MCP SDK, other
+// packages could use them through a permitted import (ADR 0024). This test
+// follows each export of every entry point to its declaration with the
+// TypeScript checker. The entry point of the mount itself, the subpath ./mcp
+// of core, is the one place allowed to export the mount.
 
-/** Where exports of the entry point of core must not come from. */
-const hidden = [
-  /^packages\/core\/src\/churchtools\//,
-  /^packages\/core\/src\/mcp\//,
+const boundaries = loadBoundaries();
+const { rawClient, mcpMount } = boundaries.places;
+const toPattern = (path: string): RegExp => new RegExp(pathPattern(path));
+
+/** Where no export of an entry point may come from. */
+const hidden: readonly RegExp[] = [
+  ...rawClient.paths.map(toPattern),
+  ...mcpMount.paths.map(toPattern),
   /(^|\/)node_modules\/@modelcontextprotocol\//,
 ];
 
@@ -56,10 +63,26 @@ function exportOrigins(root: string, entry: string): string[] {
   });
 }
 
-const hiddenOrigins = (root: string): string[] =>
-  exportOrigins(root, 'packages/core/src/index.ts').filter((origin) =>
+const hiddenOrigins = (root: string, entry: string): string[] =>
+  exportOrigins(root, entry).filter((origin) =>
     hidden.some((pattern) => pattern.test(origin)),
   );
+
+/** The source behind every export of every package, except the mount. */
+const entryPoints = boundaries.packages.flatMap((pkg) => {
+  const manifest = JSON.parse(
+    readFileSync(
+      join(workspaceRoot, 'packages', pkg.dir, 'package.json'),
+      'utf8',
+    ),
+  ) as { exports: Record<string, Record<string, string>> };
+  return Object.values(manifest.exports)
+    .flatMap((conditions) => conditions['@ecclium/source'] ?? [])
+    .map((source) => join('packages', pkg.dir, source))
+    .filter(
+      (entry) => !mcpMount.paths.some((path) => toPattern(path).test(entry)),
+    );
+});
 
 const temporaryFolders: string[] = [];
 afterAll(() => {
@@ -68,15 +91,20 @@ afterAll(() => {
   }
 });
 
-function writeCore(files: Readonly<Record<string, string>>): string {
+function writeTree(files: Readonly<Record<string, string>>): string {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'ecclium-surface-')));
   temporaryFolders.push(root);
   const all = {
     'packages/core/package.json': '{ "type": "module" }\n',
+    'packages/server/package.json': '{ "type": "module" }\n',
     'packages/core/src/churchtools/index.ts':
       'export const rawClient = { get: (): void => undefined };\n',
     'packages/core/src/mcp/mount.ts':
       'export const mount = (): void => undefined;\n',
+    'node_modules/@modelcontextprotocol/server/package.json':
+      '{ "name": "@modelcontextprotocol/server", "type": "module", "exports": { ".": { "types": "./index.d.ts" } } }\n',
+    'node_modules/@modelcontextprotocol/server/index.d.ts':
+      'export declare const McpServer: unknown;\n',
     ...files,
   };
   for (const [path, content] of Object.entries(all)) {
@@ -86,50 +114,90 @@ function writeCore(files: Readonly<Record<string, string>>): string {
   return root;
 }
 
-describe('entry point of core', () => {
-  it('exports nothing from the raw client, the mount or the MCP SDK', () => {
-    expect(hiddenOrigins(workspaceRoot)).toEqual([]);
+const coreEntry = 'packages/core/src/index.ts';
+
+const leaks: readonly {
+  readonly name: string;
+  readonly entry: string;
+  readonly files: Readonly<Record<string, string>>;
+}[] = [
+  {
+    name: 'the raw client through another module',
+    entry: coreEntry,
+    files: {
+      [coreEntry]: "export * from './relay.js';\n",
+      'packages/core/src/relay.ts':
+        "export { rawClient } from './churchtools/index.js';\n",
+    },
+  },
+  {
+    name: 'the raw client imported and exported again',
+    entry: coreEntry,
+    files: {
+      [coreEntry]:
+        "import { rawClient } from './churchtools/index.js';\nexport { rawClient };\n",
+    },
+  },
+  {
+    name: 'the mount under another name',
+    entry: coreEntry,
+    files: {
+      [coreEntry]: "export { mount as register } from './mcp/mount.js';\n",
+    },
+  },
+  {
+    name: 'a type of the MCP SDK',
+    entry: coreEntry,
+    files: {
+      [coreEntry]:
+        "export { McpServer } from '@modelcontextprotocol/server';\n",
+    },
+  },
+  {
+    name: 'the mount, passed on by the server',
+    entry: 'packages/server/src/index.ts',
+    files: {
+      'packages/server/src/index.ts':
+        "export { mount } from '../../core/src/mcp/mount.js';\n",
+    },
+  },
+];
+
+describe('entry points of the packages', () => {
+  it('include every package', () => {
+    expect(entryPoints).toEqual(
+      expect.arrayContaining(
+        boundaries.packages.map((pkg) => `packages/${pkg.dir}/src/index.ts`),
+      ),
+    );
   });
 
-  const leaks: readonly {
-    readonly name: string;
-    readonly files: Readonly<Record<string, string>>;
-  }[] = [
-    {
-      name: 'the raw client through another module',
-      files: {
-        'packages/core/src/index.ts': "export * from './relay.js';\n",
-        'packages/core/src/relay.ts':
-          "export { rawClient } from './churchtools/index.js';\n",
-      },
+  it.each(entryPoints)(
+    '%s exports nothing from the raw client, the mount or the MCP SDK',
+    (entry) => {
+      expect(hiddenOrigins(workspaceRoot, entry)).toEqual([]);
     },
-    {
-      name: 'the raw client imported and exported again',
-      files: {
-        'packages/core/src/index.ts':
-          "import { rawClient } from './churchtools/index.js';\nexport { rawClient };\n",
-      },
-    },
-    {
-      name: 'the mount under another name',
-      files: {
-        'packages/core/src/index.ts':
-          "export { mount as register } from './mcp/mount.js';\n",
-      },
-    },
-  ];
+  );
 
-  it.each(leaks)('refuses to export $name', ({ files }) => {
-    expect(hiddenOrigins(writeCore(files))).not.toEqual([]);
+  it.each(leaks)('refuse to export $name', ({ entry, files }) => {
+    expect(hiddenOrigins(writeTree(files), entry)).not.toEqual([]);
   });
 
-  it('accepts an export declared in core itself', () => {
-    const root = writeCore({
-      'packages/core/src/index.ts': 'export const version = 1;\n',
-    });
-    expect(exportOrigins(root, 'packages/core/src/index.ts')).toEqual([
-      'packages/core/src/index.ts',
-    ]);
-    expect(hiddenOrigins(root)).toEqual([]);
+  it('have a failing example for every forbidden origin', () => {
+    const origins = leaks.flatMap(({ entry, files }) =>
+      exportOrigins(writeTree(files), entry),
+    );
+    for (const pattern of hidden) {
+      expect(
+        origins.some((origin) => pattern.test(origin)),
+        String(pattern),
+      ).toBe(true);
+    }
+  });
+
+  it('accept an export declared in the package itself', () => {
+    const root = writeTree({ [coreEntry]: 'export const version = 1;\n' });
+    expect(exportOrigins(root, coreEntry)).toEqual([coreEntry]);
+    expect(hiddenOrigins(root, coreEntry)).toEqual([]);
   });
 });

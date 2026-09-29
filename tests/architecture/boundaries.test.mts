@@ -189,6 +189,113 @@ describe('loading boundaries.json', () => {
       message: /a folder is listed twice/,
     },
     {
+      name: 'a package name listed twice',
+      change: (m) => {
+        pkg(m, 'tools').name = pkg(m, 'core').name;
+      },
+      message: /a name is listed twice/,
+    },
+    {
+      name: 'an import listed twice',
+      change: (m) => {
+        pkg(m, 'core').imports.push('plugin-api');
+      },
+      message: /core: an import is listed twice/,
+    },
+    {
+      name: 'a path listed twice',
+      change: (m) => {
+        const stdout = place(m, 'stdout');
+        stdout.paths = [...stdout.paths, ...stdout.paths];
+      },
+      message: /places\.stdout: a path is listed twice/,
+    },
+    {
+      name: 'an empty description',
+      change: (m) => {
+        place(m, 'stdout').description = ' ';
+      },
+      message: /places\.stdout: description must not be empty/,
+    },
+    {
+      name: 'a package folder that is not a plain name',
+      change: (m) => {
+        pkg(m, 'core').dir = 'Core';
+      },
+      message: /dir must be the name of a folder/,
+    },
+    {
+      name: 'a package name outside the scope',
+      change: (m) => {
+        pkg(m, 'core').name = 'mcp-churchtools-core';
+      },
+      message: /name must be a package name under @ecclium\//,
+    },
+    {
+      name: 'packages that are not a list',
+      change: (m) => {
+        Reflect.set(m, 'packages', {});
+      },
+      message: /packages: must be a list/,
+    },
+    {
+      name: 'places that are not an object',
+      change: (m) => {
+        Reflect.set(m, 'places', []);
+      },
+      message: /places: must be an object/,
+    },
+    {
+      name: 'paths that are not a list',
+      change: (m) => {
+        m.places['stdout'] = { ...place(m, 'stdout'), paths: 'x' as never };
+      },
+      message: /places\.stdout: paths must be a list/,
+    },
+    {
+      name: 'a folder among the importers of the raw client',
+      change: (m) => {
+        place(m, 'rawClientImporters').paths = ['packages/core/src/logger/'];
+      },
+      message:
+        /places\.rawClientImporters: "packages\/core\/src\/logger\/" must be one module/,
+    },
+    {
+      name: 'the entry point of core among the importers of the raw client',
+      change: (m) => {
+        place(m, 'rawClientImporters').paths = ['packages/core/src/index.ts'];
+      },
+      message:
+        /places\.rawClientImporters: "packages\/core\/src\/index\.ts" must be one module/,
+    },
+    {
+      name: 'a module of another package among the importers of the raw client',
+      change: (m) => {
+        place(m, 'rawClientImporters').paths = [
+          'packages/server/src/stdio/index.ts',
+        ];
+      },
+      message:
+        /places\.rawClientImporters: "packages\/server\/src\/stdio\/index\.ts" must be one module/,
+    },
+    {
+      name: 'a module inside the client folder among its importers',
+      change: (m) => {
+        place(m, 'rawClientImporters').paths = [
+          'packages/core/src/churchtools/index.ts',
+        ];
+      },
+      message: /places\.rawClientImporters: .* must be one module/,
+    },
+    {
+      name: 'the package of the mount among its importers',
+      change: (m) => {
+        place(m, 'mcpMountImporters').paths = ['packages/core/src/'];
+      },
+      message:
+        /places\.mcpMountImporters: "packages\/core\/src\/" lies in the package of the mount/,
+    },
+    {
       name: 'a test package that is not listed',
       change: (m) => {
         m.testOnly = 'fixtures';

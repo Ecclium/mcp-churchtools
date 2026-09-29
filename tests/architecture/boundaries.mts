@@ -243,6 +243,42 @@ function parsePlaces(
   return places;
 }
 
+const packageOf = (path: string): string =>
+  /^packages\/([^/]+)\//.exec(path)?.[1] ?? '';
+
+/**
+ * The lists of exceptions must stay narrow: a folder or the entry point of
+ * core among the importers of the raw client, or the package of the mount
+ * among its importers, would switch the rule off for a whole package.
+ */
+function checkExceptions(
+  places: Partial<Record<PlaceKey, Place>>,
+  report: Report,
+): void {
+  const client = places.rawClient?.paths ?? [];
+  const clientPackages = new Set(client.map(packageOf));
+  for (const path of places.rawClientImporters?.paths ?? []) {
+    if (
+      path.endsWith('/') ||
+      path.endsWith('/src/index.ts') ||
+      !clientPackages.has(packageOf(path)) ||
+      client.some((folder) => path.startsWith(folder))
+    ) {
+      report(
+        `places.rawClientImporters: "${path}" must be one module of the package of the raw client, outside its folder and not the entry point`,
+      );
+    }
+  }
+  const mountPackages = new Set((places.mcpMount?.paths ?? []).map(packageOf));
+  for (const path of places.mcpMountImporters?.paths ?? []) {
+    if (mountPackages.has(packageOf(path))) {
+      report(
+        `places.mcpMountImporters: "${path}" lies in the package of the mount`,
+      );
+    }
+  }
+}
+
 /**
  * Checks a parsed boundaries.json and returns it typed.
  *
@@ -274,6 +310,7 @@ export function parseBoundaries(value: unknown, root: string): Boundaries {
   }
   checkImports(packages, typeof testOnly === 'string' ? testOnly : '', report);
   const places = parsePlaces(value['places'], dirs, root, report);
+  checkExceptions(places, report);
 
   if (problems.length > 0 || typeof testOnly !== 'string') {
     throw new Error(`boundaries.json: ${problems.join('; ')}`);
