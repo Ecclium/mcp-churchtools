@@ -75,8 +75,26 @@ const probes: readonly {
     concerns: ['stdout'],
   },
   { code: "import { WriteStream } from 'node:tty';", concerns: ['stdout'] },
+  { code: "await import('node:tty');", concerns: ['stdout'] },
+  {
+    code: "import { writeFileSync } from 'node:fs';\nwriteFileSync(1, 'x');",
+    concerns: ['stdout'],
+  },
+  {
+    code: "import { createWriteStream } from 'node:fs';\ncreateWriteStream('/dev/stdout');",
+    concerns: ['stdout'],
+  },
 
   { code: "process.stderr.write('x');", concerns: ['stderr'] },
+  { code: "process.emitWarning('x');", concerns: ['stderr'] },
+  {
+    code: "import { appendFileSync } from 'node:fs';\nappendFileSync(2, 'x');",
+    concerns: ['stderr'],
+  },
+  {
+    code: "import { writeFileSync } from 'node:fs';\nwriteFileSync('/dev/fd/2', 'x');",
+    concerns: ['stderr'],
+  },
   { code: "import { stderr } from 'process';", concerns: ['stderr'] },
   {
     code: "import { writeSync } from 'node:fs';\nwriteSync(2, 'x');",
@@ -92,6 +110,7 @@ const probes: readonly {
   { code: "Reflect.get(process, 'stdout');", concerns: ['process'] },
   { code: "const key = 'stdout';\nprocess[key];", concerns: ['process'] },
   { code: 'globalThis.process.exitCode = 1;', concerns: ['process'] },
+  { code: 'const root = globalThis;', concerns: ['process'] },
   { code: "import proc from 'node:process';", concerns: ['process'] },
   { code: "await import('node:process');", concerns: ['process'] },
 
@@ -125,6 +144,19 @@ const probes: readonly {
     code: "import { createRequire } from 'node:module';",
     concerns: ['require'],
   },
+  { code: "import mod from 'node:module';", concerns: ['require'] },
+  { code: "await import('module');", concerns: ['require'] },
+  { code: "process.getBuiltinModule('node:fs');", concerns: ['require'] },
+
+  {
+    code: "import { spawnSync } from 'node:child_process';",
+    concerns: ['subprocess'],
+  },
+  {
+    code: "import { Worker } from 'node:worker_threads';",
+    concerns: ['subprocess'],
+  },
+  { code: "await import('node:cluster');", concerns: ['subprocess'] },
 ];
 
 /** Code that no restriction may touch. */
@@ -139,6 +171,8 @@ const allowed: readonly string[] = [
   'const job = { process: (): void => undefined };\njob.process();',
   'const child = { stdout: 1 };\nexport const out = child.stdout;',
   'export class Worker {\n  process(): void {}\n}',
+  'export const request = globalThis.fetch;',
+  "export const note = 'Messages go to /dev/stdout in the output module.';",
 ];
 
 /**
