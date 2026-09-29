@@ -8,6 +8,7 @@ import {
   expectedSettings,
   undocumentedExceptions,
   unknownWorkspaceKeys,
+  unlistedExceptions,
 } from '../../scripts/check-pnpm-settings.mts';
 
 describe('compareSettings', () => {
@@ -142,6 +143,44 @@ describe('undocumentedExceptions', () => {
       'utf8',
     );
     expect(undocumentedExceptions(yaml)).toEqual([]);
+  });
+});
+
+describe('unlistedExceptions', () => {
+  const dated = [
+    'minimumReleaseAgeExclude:',
+    '  # 29.09.2026: security fix for a parser',
+    '  - fix@1.2.4',
+    '  # 29.09.2026: same advisory, second package',
+    "  - '@scope/fix@2.0.1'",
+  ].join('\n');
+
+  it('accepts what pnpm applies when every entry is written as a line', () => {
+    expect(
+      unlistedExceptions(dated, ['fix@1.2.4', '@scope/fix@2.0.1']),
+    ).toEqual([]);
+    expect(unlistedExceptions('minimumReleaseAgeExclude: []', [])).toEqual([]);
+  });
+
+  it('reports an exception that pnpm applies but the text does not show', () => {
+    // YAML also allows a quoted key, which the reading of the text does not
+    // follow. pnpm still applies the exception.
+    const quoted = ['"minimumReleaseAgeExclude":', '  - fix@1.2.4'].join('\n');
+    expect(undocumentedExceptions(quoted)).toEqual([]);
+    expect(unlistedExceptions(quoted, ['fix@1.2.4'])).toEqual([
+      expect.stringContaining('"fix@1.2.4" gilt für pnpm'),
+    ]);
+    expect(
+      unlistedExceptions('minimumReleaseAgeExclude: []', ['other@3.0.1']),
+    ).toEqual([expect.stringContaining('"other@3.0.1"')]);
+  });
+
+  it('leaves a list in brackets to undocumentedExceptions', () => {
+    expect(
+      unlistedExceptions('minimumReleaseAgeExclude: [fix@1.2.4]', [
+        'fix@1.2.4',
+      ]),
+    ).toEqual([]);
   });
 });
 

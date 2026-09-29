@@ -119,6 +119,57 @@ export function unknownWorkspaceKeys(yaml: string): string[] {
 // the check until a maintainer has written down why it is justified.
 const datedReason = /^\s*#\s*(?:\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2}):?\s+\S/;
 
+/** An exception as written in the block list of pnpm-workspace.yaml. */
+interface WrittenException {
+  /** The entry without surrounding quotes. */
+  readonly value: string;
+  /** Whether the line directly above gives a date and a reason. */
+  readonly dated: boolean;
+}
+
+/**
+ * Reads minimumReleaseAgeExclude from the text of pnpm-workspace.yaml: the
+ * value after the key on the same line and the entries of a block list
+ * below it.
+ *
+ * @param yaml - Content of pnpm-workspace.yaml.
+ * @returns The value on the line of the key and the entries below it, or
+ *   undefined if no line starts with the key.
+ */
+function readExceptions(
+  yaml: string,
+):
+  | { readonly inline: string; readonly entries: WrittenException[] }
+  | undefined {
+  const lines = yaml.split('\n');
+  const key = /^minimumReleaseAgeExclude\s*:/;
+  const start = lines.findIndex((line) => key.test(line));
+  if (start === -1) {
+    return undefined;
+  }
+  const inline = (lines[start] ?? '')
+    .replace(key, '')
+    .replace(/\s#.*$/, '')
+    .trim();
+  const entries: WrittenException[] = [];
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const line = lines[index] ?? '';
+    if (/^[^\s#-]/.test(line)) {
+      break;
+    }
+    const entry = /^\s*-\s*(.*?)\s*$/.exec(line)?.[1];
+    if (entry !== undefined) {
+      entries.push({
+        value: entry.replace(/^(["'])(.*)\1$/, '$2'),
+        dated: datedReason.test(lines[index - 1] ?? ''),
+      });
+    }
+  }
+  return { inline, entries };
+}
+
+const emptyList = /^(\[\s*\])?$/;
+
 /**
  * Lists the exceptions from the minimum release age in pnpm-workspace.yaml
  * that have no comment with date and reason directly above them.
@@ -131,38 +182,52 @@ const datedReason = /^\s*#\s*(?:\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2}):?\s+\S/;
  * @returns One message per exception without date and reason.
  */
 export function undocumentedExceptions(yaml: string): string[] {
-  const lines = yaml.split('\n');
-  const key = /^minimumReleaseAgeExclude\s*:/;
-  const start = lines.findIndex((line) => key.test(line));
-  if (start === -1) {
+  const written = readExceptions(yaml);
+  if (written === undefined) {
     // A missing key is reported by compareSettings.
     return [];
   }
-  const inline = (lines[start] ?? '')
-    .replace(key, '')
-    .replace(/\s#.*$/, '')
-    .trim();
-  if (inline !== '') {
-    return /^\[\s*\]$/.test(inline)
-      ? []
-      : [
-          'minimumReleaseAgeExclude: Jede Ausnahme steht auf einer eigenen Zeile («- name@1.2.3») mit einem Kommentar mit Datum und Grund darüber, nicht in eckigen Klammern.',
-        ];
+  if (!emptyList.test(written.inline)) {
+    return [
+      'minimumReleaseAgeExclude: Jede Ausnahme steht auf einer eigenen Zeile («- name@1.2.3») mit einem Kommentar mit Datum und Grund darüber, nicht in eckigen Klammern.',
+    ];
   }
-  const problems: string[] = [];
-  for (let index = start + 1; index < lines.length; index += 1) {
-    const line = lines[index] ?? '';
-    if (/^[^\s#-]/.test(line)) {
-      break;
-    }
-    const entry = /^\s*-\s*(.*?)\s*$/.exec(line)?.[1];
-    if (entry !== undefined && !datedReason.test(lines[index - 1] ?? '')) {
-      problems.push(
-        `Ausnahme ${JSON.stringify(entry)} in minimumReleaseAgeExclude: Direkt darüber fehlt ein Kommentar mit Datum und Grund, etwa «# 29.09.2026: Sicherheitskorrektur für …».`,
-      );
-    }
+  return written.entries
+    .filter((entry) => !entry.dated)
+    .map(
+      (entry) =>
+        `Ausnahme ${JSON.stringify(entry.value)} in minimumReleaseAgeExclude: Direkt darüber fehlt ein Kommentar mit Datum und Grund, etwa «# 29.09.2026: Sicherheitskorrektur für …».`,
+    );
+}
+
+/**
+ * Lists the exceptions that pnpm applies but that pnpm-workspace.yaml does
+ * not show as a line of the block list. YAML knows other ways to write the
+ * same list, such as a quoted key, which the reading of the text above does
+ * not follow; what pnpm applies is what counts.
+ *
+ * @param yaml - Content of pnpm-workspace.yaml.
+ * @param effective - The effective value of minimumReleaseAgeExclude, as
+ *   printed by `pnpm config list --json`.
+ * @returns One message per exception that is not written as a line.
+ */
+export function unlistedExceptions(yaml: string, effective: unknown): string[] {
+  if (!Array.isArray(effective)) {
+    // A value that is not a list is reported by compareSettings.
+    return [];
   }
-  return problems;
+  const written = readExceptions(yaml);
+  if (written !== undefined && !emptyList.test(written.inline)) {
+    // Already reported by undocumentedExceptions.
+    return [];
+  }
+  const listed = new Set(written?.entries.map((entry) => entry.value));
+  return effective
+    .filter((entry) => !listed.has(String(entry)))
+    .map(
+      (entry) =>
+        `Ausnahme ${JSON.stringify(entry)} gilt für pnpm, steht in pnpm-workspace.yaml aber nicht als eigene Zeile unter minimumReleaseAgeExclude mit einem Kommentar mit Datum und Grund darüber.`,
+    );
 }
 
 /**
@@ -205,6 +270,7 @@ function main(): number {
       (key) => `Unbekannte Einstellung in pnpm-workspace.yaml: ${key}`,
     ),
     ...undocumentedExceptions(yaml),
+    ...unlistedExceptions(yaml, actual['minimumReleaseAgeExclude']),
     ...compareSettings(actual),
   ];
   for (const problem of problems) {
