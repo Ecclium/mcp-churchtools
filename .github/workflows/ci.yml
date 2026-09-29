@@ -1,0 +1,105 @@
+# Checks for every pull request, every push to main and the merge queue.
+#
+# Each job's name equals its id and is a required status check in the ruleset
+# for main. Renaming a job therefore breaks the ruleset. The workflow has no
+# path filter, because a workflow that does not run leaves a required check
+# pending forever; jobs that only make sense for some events are skipped with
+# `if:`, and a skipped job counts as passed.
+#
+# Supply chain (ADR 0021): the workflow starts without permissions and every
+# job gets `contents: read` only. Checkout does not keep the token, every
+# action is pinned to a full commit SHA with its exact version as a comment,
+# and no job uses secrets or a cache. A poisoned cache could replace gitleaks
+# or zizmor, and the checksums in mise.lock are not checked again when tools
+# are restored from a cache. Workflows from forks run only after a maintainer
+# has approved them; CONTRIBUTING.md lists what to review first.
+#
+# mise installs the tools pinned in mise.toml with the checksums from
+# mise.lock (locked mode). The mise binary itself is verified by mise-action
+# against the signed checksums of its release. The version of mise is pinned
+# here and in .github/renovate.json5, and tests/toolchain.test.mts keeps both
+# in step: a newer mise may write a lock file format that this one rejects.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # A new push to a pull request makes the older run useless. Runs on main
+  # and in the merge queue are never cancelled.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    # An explicit bash adds -o pipefail, so a failure inside a pipe fails the
+    # step instead of being hidden by the last command of the pipe.
+    shell: bash
+
+env:
+  MISE_LOCKED: 1
+
+jobs:
+  workflow-lint:
+    name: workflow-lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install actionlint, shellcheck and zizmor
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.9.14
+          cache: false
+          install_args: aqua:rhysd/actionlint aqua:koalaman/shellcheck aqua:zizmorcore/zizmor
+      - name: Lint the workflows
+        # actionlint also runs shellcheck over every run step.
+        run: actionlint
+      - name: Audit the workflows
+        # Online, zizmor also checks that each pinned SHA belongs to the
+        # action and matches the version in its comment, and that no pinned
+        # version has a known vulnerability. The job token only reads.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: zizmor --min-severity=medium --no-progress .github/workflows
+
+  secret-scan:
+    name: secret-scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    # No pnpm install and no code from the repository run in this job, so a
+    # change to the scripts or dependencies cannot switch the scan off.
+    steps:
+      - name: Check out with the whole history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install gitleaks
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.9.14
+          cache: false
+          install_args: aqua:gitleaks/gitleaks
+      - name: Scan every commit that leads to the tested one
+        # --redact: the log of a public repository is public, so a finding
+        # must not print the value it found. --ignore-gitleaks-allow: an
+        # inline comment cannot silence a finding (ADR 0014). The history of
+        # the tested commit only, not every branch of the repository.
+        run: gitleaks git --redact --no-banner --ignore-gitleaks-allow --log-opts=HEAD -c .gitleaks.toml .
+      - name: Scan the checked-out files
+        # Catches content that the scan of the history does not see, such as
+        # changes made while resolving a merge conflict.
+        run: gitleaks dir --redact --no-banner --ignore-gitleaks-allow -c .gitleaks.toml .
