@@ -9,6 +9,11 @@
       "@ecclium/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./mcp": {
+      "@ecclium/source": "./src/mcp/mount.ts",
+      "types": "./dist/mcp/mount.d.ts",
+      "default": "./dist/mcp/mount.js"
     }
   },
   "dependencies": {

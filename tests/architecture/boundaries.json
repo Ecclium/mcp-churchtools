@@ -1,0 +1,115 @@
+{
+  "$comment": "Package boundaries of the workspace, the single source for the dependency-cruiser rules, the ESLint architecture rules and the architecture tests. Paths ending in / are folders, all other paths are files. tests/architecture/boundaries.mts checks this file before anything uses it.",
+  "packages": [
+    {
+      "dir": "plugin-api",
+      "name": "@ecclium/mcp-churchtools-plugin-api",
+      "imports": []
+    },
+    {
+      "dir": "core",
+      "name": "@ecclium/mcp-churchtools-core",
+      "imports": ["plugin-api"]
+    },
+    {
+      "dir": "docs-index",
+      "name": "@ecclium/mcp-churchtools-docs-index",
+      "imports": ["plugin-api"]
+    },
+    {
+      "dir": "tools",
+      "name": "@ecclium/mcp-churchtools-tools",
+      "imports": ["core", "docs-index", "plugin-api"]
+    },
+    {
+      "dir": "workflows",
+      "name": "@ecclium/mcp-churchtools-workflows",
+      "imports": ["core", "plugin-api"]
+    },
+    {
+      "dir": "runner",
+      "name": "@ecclium/mcp-churchtools-runner",
+      "imports": ["core", "plugin-api", "workflows"]
+    },
+    {
+      "dir": "server",
+      "name": "@ecclium/mcp-churchtools-server",
+      "imports": ["core", "plugin-api"]
+    },
+    {
+      "dir": "cli",
+      "name": "@ecclium/mcp-churchtools",
+      "imports": [
+        "core",
+        "docs-index",
+        "plugin-api",
+        "runner",
+        "server",
+        "tools",
+        "workflows"
+      ]
+    },
+    {
+      "dir": "testkit",
+      "name": "@ecclium/mcp-churchtools-testkit",
+      "imports": [
+        "cli",
+        "core",
+        "docs-index",
+        "plugin-api",
+        "runner",
+        "server",
+        "tools",
+        "workflows"
+      ]
+    }
+  ],
+  "testOnly": "testkit",
+  "places": {
+    "rawClient": {
+      "adr": "0024",
+      "description": "The raw ChurchTools client.",
+      "paths": ["packages/core/src/churchtools/"]
+    },
+    "rawClientImporters": {
+      "adr": "0024",
+      "description": "Core modules outside the client folder that may import the raw client. Each entry is one file, added when the module exists.",
+      "paths": []
+    },
+    "mcpMount": {
+      "adr": "0024",
+      "description": "The mount: the only registration with the MCP SDK, next to the serialize stage. Reached through the subpath export ./mcp of core.",
+      "paths": ["packages/core/src/mcp/"]
+    },
+    "mcpMountImporters": {
+      "adr": "0024",
+      "description": "Code outside the mount folder that may import the mount.",
+      "paths": ["packages/server/src/"]
+    },
+    "mcpSdk": {
+      "adr": "0024",
+      "description": "Code that may import the MCP SDK.",
+      "paths": ["packages/core/src/mcp/", "packages/server/src/"]
+    },
+    "stdioEntries": {
+      "adr": "0018",
+      "description": "Start of the stdio mode, in which stdout carries only the MCP protocol. Nothing reachable from here may be a stdout place.",
+      "paths": ["packages/cli/src/stdio/", "packages/server/src/stdio/"]
+    },
+    "stdout": {
+      "adr": "0018",
+      "description": "Code that may write to stdout.",
+      "paths": ["packages/cli/src/output/"]
+    },
+    "stderr": {
+      "adr": "0018",
+      "description": "Code that may write to stderr: the logger and the messages of the command line for operators.",
+      "paths": ["packages/cli/src/output/", "packages/core/src/logger/"]
+    },
+    "plugins": {
+      "adr": "0022",
+      "description": "Plugins as a third party would write them. They may import only the plugin API.",
+      "paths": ["packages/testkit/src/plugins/"]
+    }
+  }
+}

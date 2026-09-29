@@ -11,7 +11,8 @@
     "test": "vitest run",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "pnpm run format:check && pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run check:licenses && pnpm run check:pnpm && pnpm run check:links",
+    "check": "pnpm run format:check && pnpm run typecheck && pnpm run lint && pnpm run check:arch && pnpm run test && pnpm run check:licenses && pnpm run check:pnpm && pnpm run check:links",
+    "check:arch": "depcruise --config .dependency-cruiser.mjs packages",
     "check:licenses": "node scripts/check-licenses.mts",
     "check:pnpm": "node scripts/check-pnpm-settings.mts",
     "check:links": "node scripts/check-md-links.mts"
@@ -29,6 +30,7 @@
     "@eslint/js": "10.0.1",
     "@types/node": "24.13.6",
     "@vitest/coverage-v8": "5.0.1",
+    "dependency-cruiser": "18.4.0",
     "eslint": "10.11.0",
     "eslint-plugin-jsdoc": "64.5.4",
     "prettier": "3.9.8",

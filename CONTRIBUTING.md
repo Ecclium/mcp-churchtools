@@ -126,11 +126,12 @@ Vor einem Pull Request muss dieser Befehl ohne Fehler durchlaufen:
 mise exec -- pnpm check
 ```
 
-Er prüft nacheinander Formatierung, Typen, Lint und Tests und danach drei Dinge, die über den Code hinausgehen: die Lizenzen aller Abhängigkeiten, die Schutzeinstellungen von pnpm und die relativen Links in der Dokumentation. Die einzelnen Schritte gibt es auch als eigene Befehle, etwa `pnpm lint`, `pnpm test` oder `pnpm check:licenses`. `pnpm format` behebt die Formatierung.
+Er prüft nacheinander Formatierung, Typen, Lint, die Architekturregeln und die Tests und danach drei Dinge, die über den Code hinausgehen: die Lizenzen aller Abhängigkeiten, die Schutzeinstellungen von pnpm und die relativen Links in der Dokumentation. Die einzelnen Schritte gibt es auch als eigene Befehle, etwa `pnpm lint`, `pnpm check:arch`, `pnpm test` oder `pnpm check:licenses`. `pnpm format` behebt die Formatierung.
 
 Dabei gilt:
 
 - Jede exportierte Funktion und jeder exportierte Typ braucht einen Dokumentationskommentar (JSDoc) mit Zweck, Parametern, Ergebnis und Fehlerfällen. Exportierte Funktionen und Klassen der Pakete brauchen zusätzlich ein Beispiel. ESLint prüft das.
-- Im Code der Pakete ist direkte Ausgabe über `console`, `process.stdout` oder `process.stderr` verboten. Im Betrieb über stdio gehört stdout dem MCP-Protokoll.
+- Im Code der Pakete ist `console` verboten. Im Betrieb über stdio gehört stdout dem MCP-Protokoll: Auf stdout und stderr schreiben nur die Orte, die `tests/architecture/boundaries.json` nennt, also der Logger und die Meldungen der Kommandozeile (ADR 0018). Das MCP-SDK importieren nur der Mount in `packages/core/src/mcp/` und der Server (ADR 0024).
+- Welches Paket welches importieren darf, steht ebenfalls in `tests/architecture/boundaries.json` (ADR 0022). `pnpm check:arch` prüft jeden Import mit dependency-cruiser, ESLint prüft Ausgaben, das Laden von Modulen und das SDK. Zu jeder Regel gibt es unter `tests/architecture/` einen Test mit einem Beispiel, das sie verletzt.
 - Abhängigkeiten werden auf eine genaue Version gepinnt, nicht auf einen Bereich. Zur Laufzeit sind nur freizügige Lizenzen erlaubt, für Werkzeuge der Entwicklung einige mehr. Die Listen stehen in `scripts/check-licenses.mts`.
 - Eine Ausnahme vom Mindestalter von drei Tagen gibt es nur für Sicherheitskorrekturen, als genaue Version mit Datum und Begründung in `pnpm-workspace.yaml`.

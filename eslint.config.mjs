@@ -9,6 +9,9 @@ import { defineConfig } from 'eslint/config';
 import jsdoc from 'eslint-plugin-jsdoc';
 import tseslint from 'typescript-eslint';
 
+import { loadBoundaries } from './tests/architecture/boundaries.mts';
+import { architectureLintConfig } from './tests/architecture/lint-rules.mts';
+
 export default defineConfig(
   {
     // The brand package is delivered as is and never changed here.
@@ -80,27 +83,11 @@ export default defineConfig(
       ],
     },
   },
-  {
-    // In stdio mode, stdout carries the MCP protocol, and any other output
-    // there breaks the connection. Package code therefore writes only
-    // through the logger. Scripts under scripts/ may print.
-    files: ['packages/*/src/**/*.ts'],
-    rules: {
-      'no-console': 'error',
-      'no-restricted-properties': [
-        'error',
-        {
-          object: 'process',
-          property: 'stdout',
-          message:
-            'Write through the logger: stdout belongs to the MCP protocol.',
-        },
-        {
-          object: 'process',
-          property: 'stderr',
-          message: 'Write through the logger, which owns stderr.',
-        },
-      ],
-    },
-  },
+  // Architecture rules for the code of the packages, generated from
+  // tests/architecture/boundaries.json: in the stdio mode stdout carries the
+  // MCP protocol, so only the listed places write to stdout or stderr and
+  // nothing uses console (ADR 0018); only the mount and the server import
+  // the MCP SDK (ADR 0024). Scripts under scripts/ may print.
+  // tests/architecture/lint-rules.mts explains each restriction.
+  ...architectureLintConfig(loadBoundaries()),
 );
