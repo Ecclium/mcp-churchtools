@@ -30,10 +30,12 @@ export const commitTypes: readonly string[] = [
 
 // Control characters, including line breaks, every invisible format
 // character (Unicode category Cf: direction marks and overrides, zero-width
-// characters, tag characters) and variation selectors. In a title they could
-// hide text in what the commit on main will say.
+// characters, tag characters), line and paragraph separators, and every
+// character Unicode marks as default ignorable, such as variation selectors
+// and fillers. In a title they could hide text in what the commit on main
+// will say.
 const hiddenCharacters =
-  /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\u{fe00}-\u{fe0f}\u{e0100}-\u{e01ef}]/u;
+  /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u;
 
 const header = /^(?<type>[a-z]+)(?:\((?<scope>[^()]*)\))?!?: (?<subject>.*)$/;
 

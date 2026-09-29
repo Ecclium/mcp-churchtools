@@ -53,6 +53,9 @@ describe('checkTitle', () => {
     ['a byte order mark', `${hidden(0xfeff)}fix: reject tokens`],
     ['tag characters', `fix: harmless${hidden(0xe0065)}${hidden(0xe0076)}`],
     ['a variation selector', `fix: reject${hidden(0xe0100)} tokens`],
+    ['a Mongolian variation selector', `fix: reject${hidden(0x180b)} tokens`],
+    ['a Hangul filler', `fix: reject${hidden(0x3164)}tokens`],
+    ['a combining grapheme joiner', `fix: reject${hidden(0x034f)}tokens`],
     ['a line separator', `fix: reject${hidden(0x2028)}tokens`],
   ])('rejects a title with %s', (_, title) => {
     expect(checkTitle(title)).toEqual([
