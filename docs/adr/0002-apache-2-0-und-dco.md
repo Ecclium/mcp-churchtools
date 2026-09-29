@@ -46,3 +46,4 @@ Beiträge:
 - Lizenztext: `LICENSE`. Hinweise und Rechteinhaber: `NOTICE`.
 - Zusage für den freien Kern: `PROMISE.md`.
 - DCO im Wortlaut, Regeln für Sign-off und Identität: `CONTRIBUTING.md`.
+- Prüfung des Sign-offs: `scripts/ci/check-dco.mts`, vor jedem Commit im Git-Hook (`lefthook.yml`) und für jeden Commit eines Pull Requests im Job `dco` (`.github/workflows/pr-meta.yml`). Name und E-Mail-Adresse im Sign-off müssen die des Autors oder der Autorin sein. Ein Merge-Commit ohne eigene Änderung braucht kein Sign-off.
