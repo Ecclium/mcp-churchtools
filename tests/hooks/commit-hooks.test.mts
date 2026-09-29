@@ -1,15 +1,10 @@
+import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import {
-  copyFileSync,
-  mkdirSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { copyFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { createRepository, type Repository } from '../support/git.mts';
 
@@ -28,16 +23,23 @@ import { createRepository, type Repository } from '../support/git.mts';
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
 
 // The hooks read these files: .gitleaks.toml holds the rules, the script
-// checks the sign-off, and the mise files select gitleaks and Node.js. All
-// mise environments are copied, so that a run with MISE_ENV, as in the
-// compat job, uses the same tools as the workspace.
+// checks the sign-off, and the mise files select gitleaks and Node.js. Every
+// tracked mise environment is copied, so that a run with MISE_ENV, as in the
+// compat job, uses the same tools as the workspace. Untracked files such as
+// a personal mise.local.toml stay out.
+const trackedMiseFiles = spawnSync(
+  'git',
+  ['ls-files', '--', 'mise*.toml', 'mise*.lock'],
+  { cwd: workspace, encoding: 'utf8' },
+)
+  .stdout.split('\n')
+  .filter((name) => /^mise(\.[^./]+)?\.(toml|lock)$/.test(name));
+
 const hookFiles = [
   'lefthook.yml',
   '.gitleaks.toml',
   'scripts/ci/check-dco.mts',
-  ...readdirSync(workspace).filter((name) =>
-    /^mise(\.[^.]+)?\.(toml|lock)$/.test(name),
-  ),
+  ...trackedMiseFiles,
 ];
 
 /** A subdomain of church.tools that is new on every run. */
@@ -89,10 +91,25 @@ describe('the commit hooks', () => {
       mkdirSync(dirname(join(repository.path, file)), { recursive: true });
       copyFileSync(join(workspace, file), join(repository.path, file));
     }
+    expect(trackedMiseFiles).toContain('mise.toml');
     const install = repository.run('lefthook', ['install'], hookEnvironment());
     expect(install.status, install.stdout + install.stderr).toBe(0);
+    // The configuration itself is committed without the hooks, so that
+    // every test starts from the same commit and can run on its own.
     repository.git(['add', '--', ...hookFiles]);
+    repository.git([
+      'commit',
+      '--quiet',
+      '--no-verify',
+      '--message',
+      'chore: add the hook configuration',
+    ]);
   }, timeout);
+
+  beforeEach(() => {
+    repository.git(['reset', '--quiet', '--hard']);
+    repository.git(['clean', '--quiet', '--force', '-d']);
+  });
 
   afterAll(() => {
     repository.remove();
@@ -101,11 +118,14 @@ describe('the commit hooks', () => {
   it(
     'let a clean commit pass after scanning it',
     () => {
-      const result = commit('test: add the hook configuration');
+      const before = commitCount();
+      stage('notes.md', 'Nothing to report.\n');
+
+      const result = commit('docs: add notes');
       expect(result.status, result.output).toBe(0);
       expect(result.output).toContain('no leaks found');
       expect(result.output).toContain('Sign-offs geprüft: 1 Commit');
-      expect(commitCount()).toBe(1);
+      expect(commitCount()).toBe(before + 1);
     },
     timeout,
   );
@@ -113,19 +133,20 @@ describe('the commit hooks', () => {
   it(
     'stop a staged file with a finding and do not print the value',
     () => {
+      const before = commitCount();
       const host = canaryHost();
-      stage('notes.md', `See https://${host}/ for details.\n`);
+      stage('links.md', `See https://${host}/ for details.\n`);
 
-      const result = commit('docs: add notes');
+      const result = commit('docs: add links');
       expect(result.status, result.output).not.toBe(0);
       expect(result.output).toContain(rule);
       expect(result.output).not.toContain(host);
-      expect(commitCount()).toBe(1);
+      expect(commitCount()).toBe(before);
 
-      stage('notes.md', 'See https://example.church.tools/ for details.\n');
-      const counterpart = commit('docs: add notes');
+      stage('links.md', 'See https://example.church.tools/ for details.\n');
+      const counterpart = commit('docs: add links');
       expect(counterpart.status, counterpart.output).toBe(0);
-      expect(commitCount()).toBe(2);
+      expect(commitCount()).toBe(before + 1);
     },
     timeout,
   );
@@ -133,20 +154,21 @@ describe('the commit hooks', () => {
   it(
     'stop a commit message with a finding and do not print the value',
     () => {
-      stage('notes.md', 'Nothing to report.\n');
+      const before = commitCount();
+      stage('summary.md', 'Nothing to report.\n');
       const host = canaryHost();
 
       const result = commit(`docs: summarise the notes from ${host}`);
       expect(result.status, result.output).not.toBe(0);
       expect(result.output).toContain(rule);
       expect(result.output).not.toContain(host);
-      expect(commitCount()).toBe(2);
+      expect(commitCount()).toBe(before);
 
       const counterpart = commit(
         'docs: summarise the notes from example.church.tools',
       );
       expect(counterpart.status, counterpart.output).toBe(0);
-      expect(commitCount()).toBe(3);
+      expect(commitCount()).toBe(before + 1);
     },
     timeout,
   );
@@ -154,16 +176,17 @@ describe('the commit hooks', () => {
   it(
     'stop a commit without the sign-off of its author',
     () => {
-      stage('notes.md', 'Still nothing to report.\n');
+      const before = commitCount();
+      stage('todo.md', 'Still nothing to report.\n');
 
-      const result = commit('docs: extend the notes', { signOff: false });
+      const result = commit('docs: add a list', { signOff: false });
       expect(result.status, result.output).not.toBe(0);
       expect(result.output).toContain('Das Sign-off von');
-      expect(commitCount()).toBe(3);
+      expect(commitCount()).toBe(before);
 
-      const counterpart = commit('docs: extend the notes');
+      const counterpart = commit('docs: add a list');
       expect(counterpart.status, counterpart.output).toBe(0);
-      expect(commitCount()).toBe(4);
+      expect(commitCount()).toBe(before + 1);
     },
     timeout,
   );
@@ -171,6 +194,7 @@ describe('the commit hooks', () => {
   it(
     'stop a staged file whose name carries a finding',
     () => {
+      const before = commitCount();
       const host = canaryHost();
       const file = `export-${host}.md`;
       stage(file, 'Nothing to report.\n');
@@ -179,14 +203,14 @@ describe('the commit hooks', () => {
       expect(result.status, result.output).not.toBe(0);
       expect(result.output).toContain(rule);
       expect(result.output).not.toContain(host);
-      expect(commitCount()).toBe(4);
+      expect(commitCount()).toBe(before);
 
       repository.git(['rm', '--cached', '--quiet', '--', file]);
       rmSync(join(repository.path, file));
       stage('export.md', 'Nothing to report.\n');
       const counterpart = commit('docs: add an export');
       expect(counterpart.status, counterpart.output).toBe(0);
-      expect(commitCount()).toBe(5);
+      expect(commitCount()).toBe(before + 1);
     },
     timeout,
   );
@@ -194,19 +218,20 @@ describe('the commit hooks', () => {
   it(
     'stop every commit while a .gitleaksignore exists',
     () => {
+      const before = commitCount();
       const ignoreFile = join(repository.path, '.gitleaksignore');
-      writeFileSync(ignoreFile, 'notes.md:opsec-churchtools-host:1\n');
-      stage('notes.md', 'Once more nothing to report.\n');
+      writeFileSync(ignoreFile, 'report.md:opsec-churchtools-host:1\n');
+      stage('report.md', 'Once more nothing to report.\n');
 
-      const result = commit('docs: update the notes');
+      const result = commit('docs: add a report');
       expect(result.status, result.output).not.toBe(0);
       expect(result.output).toContain('.gitleaksignore');
-      expect(commitCount()).toBe(5);
+      expect(commitCount()).toBe(before);
 
       rmSync(ignoreFile);
-      const counterpart = commit('docs: update the notes');
+      const counterpart = commit('docs: add a report');
       expect(counterpart.status, counterpart.output).toBe(0);
-      expect(commitCount()).toBe(6);
+      expect(commitCount()).toBe(before + 1);
     },
     timeout,
   );
