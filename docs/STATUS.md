@@ -1,12 +1,12 @@
 # Status
 
-Stand: 26.09.2026, Phase 0, nach den lesenden Proben des API-Spikes
+Stand: 29.09.2026, Phase 0, die lesenden Proben des API-Spikes laufen
 
 ## Aktuelle Phase
 
 Phase 0, Fundament und Entscheide. Fertig sind das Fundament des Repositorys, das Gerüst des Workspace, die Qualitätswerkzeuge und der erste Teil des API-Spikes: Helfer und lesende Proben, die nur die Struktur der Antworten ausgeben, und das Gerüst von `docs/research/churchtools-api.md`. `pnpm check` fasst alle Prüfungen zusammen und läuft lokal grün.
 
-Nächster Schritt: schreibende Proben für den zweiten Teil des Spikes, nur in der Testkategorie und nur mit einem ausdrücklichen Schalter. Voraussetzung: Die lesenden Proben sind gemergt. Sobald zudem der Zugang aus «Offen» bereitsteht, führt der Maintainer die lesenden Proben nach `scripts/spike/README.md` aus und gibt die durchgesehenen Ausgaben frei.
+Nächster Schritt: Architekturregeln mit roten Tests. Parallel führt der Maintainer die lesenden Proben nach `scripts/spike/README.md` aus und gibt die durchgesehenen Ausgaben frei, `00-inventory` noch einmal in der korrigierten Fassung. Danach folgen die schreibenden Proben, nur in der Testkategorie und nur mit einem ausdrücklichen Schalter. Sie sollen abbrechen, wenn das Konto mehr als die Testkategorie ändern darf. Dafür muss der Aufbau der Rechte-Antwort bekannt sein, den `02-permissions` zeigt. Deshalb warten sie auf deren Ausgabe.
 
 ## Vorbedingungen Phase 0
 
@@ -24,6 +24,8 @@ Vom Maintainer bestätigt am 25.09.2026:
 - Geschichte auf `main` (ADR 0014), entschieden am 25.09.2026: Sie wird nicht umgeschrieben. Einzige Ausnahme sind Personendaten, die entfernt werden müssen, und das nur nach einem offen festgehaltenen Entscheid.
 - Fristen in `SECURITY.md`, entschieden am 25.09.2026: Die Fristen aus Grundsatzentscheid 10 sind Ziele, keine Zusage.
 - Begriff «Routine», entschieden am 26.09.2026: Die geplanten Abläufe von Ecclium heissen «Routinen», nicht mehr «Rezepte», im Code `routine`. Der Begriff ist für Gemeindeleitende klarer. `brand/` ist auf Version 1.3 mit dem neuen Begriff und dem Icon `icon-routine.svg`; ADR 0022, der ADR-Index und die Paketbeschreibungen von `runner` und `workflows` sind nachgeführt.
+- Tenant für den API-Spike, entschieden am 29.09.2026: Eine Testinstanz gibt es nicht. Der Spike läuft nach Grundsatzentscheid 2 mit einem eigenen, eng berechtigten Testkonto auf einem produktiven Tenant, mit Zustimmung der Verantwortlichen. Das Konto liest im Wiki nur die Testkategorie. Schreibrecht bekommt es nur für die Testkategorie: kurz für einen zweiten Lauf von `02-permissions`, damit der Aufbau eines solchen Rechts bekannt ist, und für die Dauer der schreibenden Proben. Eine Probe zum Rate-Limit entsteht erst mit einer Testinstanz.
+- Reihenfolge in Phase 0, entschieden am 29.09.2026: Die Architekturregeln kommen vor den schreibenden Proben, weil diese auf die durchgesehenen Ausgaben der lesenden Proben warten.
 
 ## Grundsatzentscheide
 
@@ -46,7 +48,7 @@ Diese Grundsatzfragen sind entschieden.
 
 - Vorbedingung Phase 1: ADR 0003, 0018 und 0023 festhalten und als entschieden bestätigen lassen, ADR 0037 festhalten und den Wortlaut bestätigen lassen. Die ADRs 0024 und 0025 fallen ebenfalls vor Phase 1.
 - `TRADEMARKS.md`: Der Text folgt nach rechtlicher Prüfung. Bis dahin keine eigene Fassung. README, ADR 0002 und `brand/README.md` verweisen schon darauf. Mit der Datei kommt der Verweis in `NOTICE` dazu. Die Prüfung klärt auch, unter welchen Bedingungen die Dateien von Logo und Icons in `brand/` kopiert und weitergegeben werden dürfen, auch in Forks.
-- Zugang für den API-Spike: Testinstanz oder Dienstkonto, dazu die ID einer Wiki-Kategorie nur für Tests und optional die einer zweiten Kategorie, die das Dienstkonto nicht lesen darf. Stellt der Maintainer vor dem Spike bereit. Dann laufen die lesenden Proben nach `scripts/spike/README.md`, und ihre durchgesehenen Ergebnisse kommen in `docs/research/churchtools-api.md`.
+- Ergebnisse des API-Spikes: Der Zugang steht bereit (siehe «Weitere Entscheide»). Die lesenden Proben laufen nach `scripts/spike/README.md`, ihre durchgesehenen Ergebnisse kommen in `docs/research/churchtools-api.md`.
 - Fragen F1 bis F15 zur API von ChurchTools: Stand vor dem Spike in `docs/research/churchtools-api.md`. Als belegt gilt eine Antwort erst, wenn eine Probe sie an einer Instanz bestätigt hat.
 - Lizenzstatus der ChurchTools-Dokumentation: Die OpenAPI-Spezifikation der ChurchTools-API nennt in `info.license` CC BY 4.0, für die übrige Dokumentation ist der Status ungeklärt. Bis zur Klärung liegt keine Kopie der Dokumentation im Repository. Entscheid vor Phase 3 (ADR 0027).
 - OAuth bei ChurchTools: Endpunkte, PKCE, Refresh, Laufzeiten und Tokenformat sind nicht dokumentiert, unter `.well-known` liegen keine Metadaten. Offen bis Phase 7 oder bis zum Pro-Modul.
@@ -96,3 +98,5 @@ Diese Grundsatzfragen sind entschieden.
   - Fünf lesende Proben `00-inventory` bis `04-wiki-read` mit README: Vorbereitung, Ausführung aus einem geprüften Commit mit `env -i`, Codes, Durchsicht vor dem Weitergeben, Aufräumen. Jede Probe schlägt ihre Operationen über Methode und Pfad im OpenAPI-Dokument der Instanz nach und ruft nichts auf, was die Instanz nicht dokumentiert.
   - Gerüst von `docs/research/churchtools-api.md` mit 15 Fragen, der Probe dazu und dem Stand laut Dokumentation.
   - Nachweis: Alle Proben laufen in den Tests gegen eine synthetische Instanz, deren Antworten voller Kanarienwerte sind. Keiner davon erscheint in einer Ausgabe. Gegenprobe: Sechs absichtlich eingebaute Fehler lassen die Tests scheitern, darunter das Token in der URL, eine ungeprüfte Kennung im Pfad und der Wert einer Kopfzeile in der Ausgabe. Als Programm gestartet, bricht jede Probe ohne Umgebung mit Code 2 und einem deutschen Hinweis ab, ohne Anfrage. `pnpm check` läuft lokal grün, mit 167 Tests in 21 Dateien.
+- 29.09.2026, Korrektur an `00-inventory`: Von der Antwort auf `/api/info` gibt die Probe nur noch Status und Version aus. Diese Antwort beschreibt die Instanz selbst, und keine Frage des Spikes braucht ihren Aufbau. Beim ersten Lauf an einer Instanz hatte die Sicherung die ganze Ausgabe zurückgehalten, weil Schlüssel dieser Antwort etwas von der Sperrliste enthielten. Die Werte der Antwort stehen weiterhin auf der Sperrliste, als Vorsorge für den Fall, dass eine spätere Fassung mehr davon zeigt.
+  - Nachweis: Ein neuer Test mit einem solchen Schlüssel endet mit der alten Fassung in Code 3 und läuft mit der neuen durch, ohne einen Wert der Antwort auszugeben. `pnpm check` läuft lokal grün, mit 169 Tests in 21 Dateien.
