@@ -92,6 +92,22 @@ describe('mise', () => {
     expect(new Set(versions).size).toBe(1);
   });
 
+  // Renovate updates the version of mise with a regular expression over the
+  // workflows and over its own configuration (.github/renovate.json5). The
+  // same expressions here make sure that it finds every place and that the
+  // mise updating mise.lock is the mise CI runs.
+  it('lets Renovate find every pinned version of mise', () => {
+    const renovate = read('.github/renovate.json5');
+    const step =
+      /jdx\/mise-action@[0-9a-f]{40} # v\S+\s+with:\s+version: (\S+)/g;
+    for (const workflow of workflows) {
+      const found = [...workflow.matchAll(step)].map((match) => match[1]);
+      expect(found).toEqual(miseVersions(workflow));
+    }
+    const [version] = workflows.flatMap(miseVersions);
+    expect(/\bmise: '([^']+)'/.exec(renovate)?.[1]).toBe(version);
+  });
+
   // mise 2026.9.7 to 2026.9.15 read and write lock files in format 2; newer
   // releases write format 3, which these reject. A lock file in format 3
   // therefore needs a newer mise in CI in the same change.
