@@ -1,5 +1,6 @@
 import {
   cpSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -47,18 +48,33 @@ afterAll(() => {
   }
 });
 
-/**
- * Copies package.json and src/ of every package into a new temporary folder,
- * adds the given files, and links the packages and the installed npm
- * packages the way pnpm does. The folder name is resolved first: on macOS
- * the temporary folder lies behind a symbolic link, and paths through it
- * would match none of the rules.
- */
 const folders = (path: string): string[] =>
   readdirSync(path, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name);
 
+/**
+ * Links the npm packages of a node_modules folder of the workspace into the
+ * copy, each to its real location. Workspace packages are left out, because
+ * the copy links its own.
+ */
+function linkNpmPackages(from: string, to: string): void {
+  if (!existsSync(from)) return;
+  mkdirSync(to, { recursive: true });
+  for (const entry of readdirSync(from)) {
+    if (entry.startsWith('.') || entry === '@ecclium') continue;
+    symlinkSync(realpathSync(join(from, entry)), join(to, entry));
+  }
+}
+
+/**
+ * Copies package.json and src/ of every package into a new temporary folder
+ * and adds the given files. The npm packages of the root and of each package
+ * are linked to their real location, and every folder under packages/ of the
+ * copy is linked by its package name, as pnpm does in the workspace. The
+ * folder name is resolved first: on macOS the temporary folder lies behind a
+ * symbolic link, and paths through it would match none of the rules.
+ */
 function copyWorkspace(files: Readonly<Record<string, string>>): string {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'ecclium-arch-')));
   temporaryFolders.push(root);
@@ -70,16 +86,13 @@ function copyWorkspace(files: Readonly<Record<string, string>>): string {
         { recursive: true },
       );
     }
-  }
-  const modules = join(root, 'node_modules');
-  mkdirSync(modules);
-  for (const entry of readdirSync(join(workspaceRoot, 'node_modules'))) {
-    if (entry.startsWith('.') || entry === '@ecclium') continue;
-    symlinkSync(
-      join(workspaceRoot, 'node_modules', entry),
-      join(modules, entry),
+    linkNpmPackages(
+      join(workspaceRoot, 'packages', dir, 'node_modules'),
+      join(root, 'packages', dir, 'node_modules'),
     );
   }
+  const modules = join(root, 'node_modules');
+  linkNpmPackages(join(workspaceRoot, 'node_modules'), modules);
   for (const [path, content] of Object.entries(files)) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), content);
@@ -136,7 +149,10 @@ const tableCases: readonly Case[] = boundaries.packages.flatMap((pkg) => {
 
 const coreManifest = JSON.parse(
   readFileSync(join(workspaceRoot, 'packages/core/package.json'), 'utf8'),
-) as { exports: Record<string, Record<string, string>> };
+) as {
+  exports: Record<string, Record<string, string>>;
+  devDependencies?: Record<string, string>;
+};
 
 const cases: readonly Case[] = [
   ...tableCases,
@@ -183,6 +199,15 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'testkit-dev-only',
+    name: 'core reaches the testkit through a file named like a test that ships',
+    files: {
+      'packages/core/src/forbidden.ts':
+        "import './helper.test.mjs';\nexport {};\n",
+      'packages/core/src/helper.test.mts': `import '${nameOf('testkit')}';\nexport {};\n`,
+    },
+  },
+  {
     rule: 'not-to-unresolvable',
     name: 'core imports a package that is not installed',
     files: {
@@ -200,6 +225,33 @@ const cases: readonly Case[] = [
         'module.exports = {};\n',
       'packages/tools/src/forbidden.ts':
         "import 'ecclium-example-undeclared';\nexport {};\n",
+    },
+  },
+  {
+    rule: 'no-undeclared-npm',
+    name: 'core imports an npm package it declares only for development',
+    files: {
+      'node_modules/ecclium-example-dev/package.json':
+        '{ "name": "ecclium-example-dev", "version": "1.0.0", "main": "index.js" }\n',
+      'node_modules/ecclium-example-dev/index.js': 'module.exports = {};\n',
+      'packages/core/package.json': `${JSON.stringify({
+        ...coreManifest,
+        devDependencies: {
+          ...coreManifest.devDependencies,
+          'ecclium-example-dev': '1.0.0',
+        },
+      })}\n`,
+      'packages/core/src/forbidden.ts':
+        "import 'ecclium-example-dev';\nexport {};\n",
+    },
+  },
+  {
+    rule: 'no-import-outside-packages',
+    name: 'core imports a file of the repository outside packages/',
+    files: {
+      'tests/example.json': '{ "value": 1 }\n',
+      'packages/core/src/forbidden.ts':
+        "import data from '../../../tests/example.json' with { type: 'json' };\nexport const value = data;\n",
     },
   },
   {
@@ -348,7 +400,7 @@ describe('dependency-cruiser configuration', () => {
     expect(options).not.toHaveProperty('exclude');
     expect(options).not.toHaveProperty('includeOnly');
     expect(options.doNotFollow).toEqual({
-      path: ['node_modules', '(^|/)dist/'],
+      path: ['(^|/)node_modules/', '^packages/[^/]+/dist/'],
     });
     expect(options.tsPreCompilationDeps).toBe(true);
     expect(options.validate).toBe(true);
@@ -381,9 +433,22 @@ describe('dependency-cruiser on the packages as they are', () => {
   );
   const run = cruiseFolder(workspaceRoot);
 
-  it('reads every source file of every package', async () => {
-    const seen = new Set((await run).modules.map((module) => module.source));
-    expect(sourceFiles.filter((file) => !seen.has(file))).toEqual([]);
+  it('reads and follows every source file of every package', async () => {
+    const followed = new Set(
+      (await run).modules
+        .filter((module) => module.followable !== false)
+        .map((module) => module.source),
+    );
+    expect(sourceFiles.filter((file) => !followed.has(file))).toEqual([]);
+  });
+
+  it('finds no folder named dist or node_modules among the sources', () => {
+    // ESLint skips every dist/ folder, so code in such a folder would escape
+    // the rules for output.
+    const hidden = sourceFiles.filter((file) =>
+      /\/src\/(.+\/)?(dist|node_modules)\//.test(file),
+    );
+    expect(hidden).toEqual([]);
   });
 
   it('resolves every import between packages to the source', async () => {

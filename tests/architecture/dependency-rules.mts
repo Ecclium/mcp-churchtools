@@ -16,8 +16,12 @@ import type { Boundaries, PlaceKey } from './boundaries.mts';
 /** Name of the package that plugins may import. */
 const pluginApi = 'plugin-api';
 
-/** Test files, which may use test helpers that other code may not. */
-const testFile = String.raw`\.test\.[cm]?ts$`;
+/**
+ * Test files, which may use test helpers that other code may not. The same
+ * pattern as the tests Vitest runs and the files the build leaves out, so a
+ * file that ships is never treated as a test.
+ */
+const testFile = String.raw`\.test\.ts$`;
 
 const escape = (text: string): string =>
   text.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
@@ -133,9 +137,20 @@ export function dependencyRules(
       name: 'no-undeclared-npm',
       severity: 'error',
       comment:
-        'ADR 0022: code of a package imports only npm packages its own package.json declares. The workspace root declares the development tools, which would otherwise be importable from everywhere.',
+        'ADR 0022: code of a package imports only npm packages its own package.json declares for run time. The workspace root declares the development tools, which would otherwise be importable from everywhere. Tests are exempt: they use the test tools of the root.',
       from: { path: '^packages/', pathNot: testFile },
-      to: { dependencyTypes: ['npm-no-pkg', 'npm-unknown'] },
+      to: { dependencyTypes: ['npm-no-pkg', 'npm-unknown', 'npm-dev'] },
+    },
+    {
+      name: 'no-import-outside-packages',
+      severity: 'error',
+      comment:
+        'ADR 0022: code of a package imports no file of the repository outside packages/ by a relative path. Such a file would be missing from the published package.',
+      from: { path: '^packages/' },
+      to: {
+        pathNot: ['^packages/', '(^|/)node_modules/'],
+        dependencyTypes: ['local'],
+      },
     },
     {
       name: 'no-relative-cross-package',
@@ -181,14 +196,14 @@ export function dependencyRules(
     {
       name: 'no-stdout-in-stdio-paths',
       severity: 'error',
-      comment: `${adr('stdioEntries')}: in the stdio mode stdout carries only the MCP protocol, so no module reachable from its start may write to stdout.`,
+      comment: `${adr('stdioEntries')}: in the stdio mode stdout carries only the MCP protocol, so no module reachable from its start may write to stdout. Tests there are exempt: they reach the command line through the testkit.`,
       from: { path: at('stdioEntries'), pathNot: testFile },
       to: { path: at('stdout'), reachable: true },
     },
     {
       name: 'plugins-only-plugin-api',
       severity: 'error',
-      comment: `${adr('plugins')}: a plugin imports only the plugin API, as a plugin of a third party must.`,
+      comment: `${adr('plugins')}: a plugin imports only the plugin API, as a plugin of a third party must. Its tests may use the testkit.`,
       from: { path: at('plugins'), pathNot: testFile },
       to: {
         path: '^packages/',
@@ -206,7 +221,9 @@ export const cruiseOptions: ICruiseOptions = {
   // Stop at node_modules and dist/ but keep the edges into them. exclude and
   // includeOnly would drop those edges, and with them the violations of an
   // import that falls back to a build instead of the source.
-  doNotFollow: { path: ['node_modules', '(^|/)dist/'] },
+  // Both patterns are anchored, so that a source folder that happens to be
+  // named dist or node_modules is still followed.
+  doNotFollow: { path: ['(^|/)node_modules/', '^packages/[^/]+/dist/'] },
   // Type-only imports cross package boundaries just like runtime imports.
   tsPreCompilationDeps: true,
   // Resolve workspace packages to their TypeScript source, like TypeScript
