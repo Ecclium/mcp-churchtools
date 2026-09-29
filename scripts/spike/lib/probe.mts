@@ -10,7 +10,7 @@
  */
 import { homedir, userInfo } from 'node:os';
 import { dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { domainToUnicode, fileURLToPath } from 'node:url';
 
 import {
   checkNewState,
@@ -61,17 +61,63 @@ export interface Dependencies {
   readonly folder: string;
 }
 
+/** The domain of instances hosted by the vendor of ChurchTools. */
+const hostedDomain = 'church.tools';
+
+function hostParts(hostname: string): string[] {
+  if (hostname.startsWith('[')) {
+    // An IPv6 address: the address without brackets and each of its groups.
+    const address = hostname.slice(1, -1);
+    return [address, ...address.split(':').filter((group) => group !== '')];
+  }
+  const labels = hostname.split('.');
+  // Every instance hosted by the vendor shares the two labels of its
+  // domain, so they say nothing about the instance. Blocked, they would
+  // withhold right names such as «admin church category» on every such
+  // instance. Every other label stays, the top-level domain included,
+  // since one like .zuerich narrows down where an instance is.
+  return hostname.endsWith(`.${hostedDomain}`) ? labels.slice(0, -2) : labels;
+}
+
+/**
+ * Lists what the address of an instance puts onto the block list.
+ *
+ * That is the origin, the host with its port, the port, and the host name
+ * with each of its parts, both in the ASCII form of the URL and in its
+ * Unicode form, so a name with umlauts is caught in either spelling. An
+ * IPv6 address is split into its groups. For an instance under
+ * `church.tools` the two labels of that domain are left out.
+ *
+ * @param origin - Origin of the instance, as read from the environment.
+ * @returns The values to block, each once.
+ * @example
+ * ```ts
+ * hostValues('https://example.church.tools');
+ * // ['https://example.church.tools', 'example.church.tools', 'example']
+ * ```
+ */
+export function hostValues(origin: string): string[] {
+  const url = new URL(origin);
+  const values = [origin, url.host];
+  if (url.port !== '') {
+    values.push(url.port);
+  }
+  for (const name of [url.hostname, domainToUnicode(url.hostname)]) {
+    if (name !== '') {
+      values.push(name, ...hostParts(name));
+    }
+  }
+  return [...new Set(values)];
+}
+
 function blockLocal(
   guard: Guard,
   env: Environment,
   origin: string,
   token: string,
 ): void {
-  const host = new URL(origin).host;
-  guard.block(origin);
-  guard.block(host);
-  for (const part of host.split(/[.:]/)) {
-    guard.block(part);
+  for (const value of hostValues(origin)) {
+    guard.block(value);
   }
   guard.block(token);
   for (const name of spikeVariables) {
