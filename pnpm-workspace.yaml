@@ -14,8 +14,10 @@ ignoreWorkspaceCycles: true
 
 # Install only versions that have been public for at least three days (4320
 # minutes). Compromised releases are usually found and withdrawn within that
-# time. Exceptions are for security fixes only, each as name@version with the
-# date and the reason in a comment above it.
+# time. Exceptions are for security fixes only, each as name@version on a
+# line of its own, with a comment directly above it that starts with the
+# date and gives the reason, such as `# 29.09.2026: security fix for ...`.
+# scripts/check-pnpm-settings.mts rejects an exception without one.
 minimumReleaseAge: 4320
 minimumReleaseAgeExclude: []
 # Fail when no version in the requested range is old enough, instead of

@@ -6,7 +6,9 @@
  * without anyone noticing. This script compares the effective values with
  * the expected ones and rejects every key in pnpm-workspace.yaml that it
  * does not know. An environment variable that overrides a value is caught
- * as well, because the effective values come from pnpm itself.
+ * as well, because the effective values come from pnpm itself. Every
+ * exception from the minimum release age needs a comment with its date and
+ * reason directly above it.
  *
  * Usage: `node scripts/check-pnpm-settings.mts`
  *
@@ -111,6 +113,58 @@ export function unknownWorkspaceKeys(yaml: string): string[] {
   return keys.filter((key) => !knownWorkspaceKeys.has(key));
 }
 
+// The comment directly above an exception starts with its date and gives the
+// reason, as in «# 29.09.2026: security fix for …». Renovate adds exceptions
+// for security updates on its own and without a comment; such an entry fails
+// the check until a maintainer has written down why it is justified.
+const datedReason = /^\s*#\s*(?:\d{2}\.\d{2}\.\d{4}|\d{4}-\d{2}-\d{2}):?\s+\S/;
+
+/**
+ * Lists the exceptions from the minimum release age in pnpm-workspace.yaml
+ * that have no comment with date and reason directly above them.
+ *
+ * Exceptions are written as a block list, one entry per line. A list in
+ * brackets is accepted only when it is empty, because it leaves no room for
+ * a comment above each entry.
+ *
+ * @param yaml - Content of pnpm-workspace.yaml.
+ * @returns One message per exception without date and reason.
+ */
+export function undocumentedExceptions(yaml: string): string[] {
+  const lines = yaml.split('\n');
+  const key = /^minimumReleaseAgeExclude\s*:/;
+  const start = lines.findIndex((line) => key.test(line));
+  if (start === -1) {
+    // A missing key is reported by compareSettings.
+    return [];
+  }
+  const inline = (lines[start] ?? '')
+    .replace(key, '')
+    .replace(/\s#.*$/, '')
+    .trim();
+  if (inline !== '') {
+    return /^\[\s*\]$/.test(inline)
+      ? []
+      : [
+          'minimumReleaseAgeExclude: Jede Ausnahme steht auf einer eigenen Zeile («- name@1.2.3») mit einem Kommentar mit Datum und Grund darüber, nicht in eckigen Klammern.',
+        ];
+  }
+  const problems: string[] = [];
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const line = lines[index] ?? '';
+    if (/^[^\s#-]/.test(line)) {
+      break;
+    }
+    const entry = /^\s*-\s*(.*?)\s*$/.exec(line)?.[1];
+    if (entry !== undefined && !datedReason.test(lines[index - 1] ?? '')) {
+      problems.push(
+        `Ausnahme ${JSON.stringify(entry)} in minimumReleaseAgeExclude: Direkt darüber fehlt ein Kommentar mit Datum und Grund, etwa «# 29.09.2026: Sicherheitskorrektur für …».`,
+      );
+    }
+  }
+  return problems;
+}
+
 /**
  * Prepares the environment in which pnpm reports its settings.
  *
@@ -150,6 +204,7 @@ function main(): number {
     ...unknownWorkspaceKeys(yaml).map(
       (key) => `Unbekannte Einstellung in pnpm-workspace.yaml: ${key}`,
     ),
+    ...undocumentedExceptions(yaml),
     ...compareSettings(actual),
   ];
   for (const problem of problems) {
