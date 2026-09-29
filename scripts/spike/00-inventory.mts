@@ -8,7 +8,9 @@
  * Answers: the ChurchTools version as major and minor number, and for each
  * operation of the spike whether the instance documents it. It lists no
  * other paths, because the list of paths would show which modules are
- * active.
+ * active. Of the info answer it shows only the status and the version: that
+ * answer carries the name and settings of the instance, and no question of
+ * the spike needs its structure.
  *
  * Usage: see README.md in this folder.
  *
@@ -19,8 +21,7 @@ import { createState, instanceId } from './lib/env.mts';
 import type { Json } from './lib/guard.mts';
 import { operations, specificationPath } from './lib/operations.mts';
 import { main, type ProbeDefinition } from './lib/probe.mts';
-import { describeResponse } from './lib/report.mts';
-import { Schemas, asOpenApi, findOperation, isObject } from './lib/spec.mts';
+import { asOpenApi, findOperation, isObject } from './lib/spec.mts';
 
 const words = [
   'probe',
@@ -28,6 +29,8 @@ const words = [
   'churchtoolsVersion',
   'unbekannt',
   'spezifikation',
+  'status',
+  'format',
   'OpenAPI 3',
   'Swagger 2',
   'info',
@@ -87,13 +90,14 @@ export const probe: ProbeDefinition = {
       throw new SpikeError('ANTWORT_UNGUELTIG', 'spezifikationUngueltig');
     }
     guard.allowFixed(specification.status);
-    const schemas = new Schemas(document);
-    const infoOperation = findOperation(
-      document,
-      operations.info.method,
-      operations.info.template,
-    );
+    // The keys of the info answer are not shown: a key of that answer can
+    // contain something on the block list, such as a part of the host or the
+    // name of the instance, and the guard would then withhold the whole
+    // inventory. Its values still go onto the block list. Today nothing of
+    // the answer reaches the output, so that is only a precaution in case a
+    // later change shows more of it.
     const info = await client.get({ path: operations.info.template });
+    guard.allowFixed(info.status);
     const version = versionOf(info.body);
     if (version !== null) {
       guard.allowVersion(version);
@@ -112,11 +116,7 @@ export const probe: ProbeDefinition = {
         format:
           typeof document['openapi'] === 'string' ? 'OpenAPI 3' : 'Swagger 2',
       },
-      info: describeResponse(info, {
-        guard,
-        schemas,
-        operation: infoOperation,
-      }),
+      info: { status: info.status },
       operationen: Object.fromEntries(
         Object.entries(operations).map(([name, { method, template }]) => [
           name,
