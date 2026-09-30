@@ -1,12 +1,12 @@
 # Status
 
-Stand: 30.09.2026, Phase 0, die Werkbank läuft auf `main` grün und Renovate ist eingerichtet, der API-Spike wartet auf eine Testinstanz mit Anmeldung
+Stand: 30.09.2026, Phase 0, die Entscheide vor Phase 1 liegen als Vorschlag vor und das Threat Model v0 steht, der API-Spike wartet auf eine Testinstanz mit Anmeldung
 
 ## Aktuelle Phase
 
-Phase 0, Fundament und Entscheide. Fertig sind das Fundament des Repositorys, das Gerüst des Workspace, die Qualitätswerkzeuge, die Architekturregeln mit einem Beispiel je Regel, das sie verletzt, die Werkbank und der erste Teil des API-Spikes: Helfer und lesende Proben, die nur die Struktur der Antworten ausgeben, und das Gerüst von `docs/research/churchtools-api.md`. `pnpm check` fasst alle Prüfungen zusammen, `pnpm ci:local` führt die meisten Prüfungen aus CI lokal aus. Beide laufen lokal grün, die Werkbank auch in CI.
+Phase 0, Fundament und Entscheide. Fertig sind das Fundament des Repositorys, das Gerüst des Workspace, die Qualitätswerkzeuge, die Architekturregeln mit einem Beispiel je Regel, das sie verletzt, die Werkbank, die Vorschläge für die Entscheide vor Phase 1, das Threat Model v0 und der erste Teil des API-Spikes: Helfer und lesende Proben, die nur die Struktur der Antworten ausgeben, und das Gerüst von `docs/research/churchtools-api.md`. `pnpm check` fasst alle Prüfungen zusammen, `pnpm ci:local` führt die meisten Prüfungen aus CI lokal aus. Beide laufen lokal grün, die Werkbank auch in CI.
 
-Nächster Schritt: die Entscheide vor Phase 1 als ADR festhalten und das Threat Model v0 anlegen. Der API-Spike ruht, bis eine Testinstanz mit Anmeldung bereitsteht oder feststeht, dass es keine gibt. Dann gilt der Weg mit einem eigenen Spike-Konto (siehe «Weitere Entscheide»).
+Nächster Schritt: Der Maintainer bestätigt die ADRs 0003, 0018, 0023, 0024, 0025 und 0037. Danach folgen die Auswertung des API-Spikes, die übrigen ADRs aus Phase 0 und der Abschluss der Phase. Der API-Spike ruht, bis eine Testinstanz mit Anmeldung bereitsteht oder feststeht, dass es keine gibt. Dann gilt der Weg mit einem eigenen Spike-Konto (siehe «Weitere Entscheide»).
 
 ## Vorbedingungen Phase 0
 
@@ -18,7 +18,7 @@ Vom Maintainer bestätigt am 25.09.2026:
 
 ## Weitere Entscheide
 
-- Anmeldung am Server (ADR 0037), entschieden am 25.09.2026: Im freien Kern gibt es statische Bearer-Tokens und einen OAuth-Modus, der nur Tokens eines Anmeldediensts des Betreibers prüft. Der freie Kern bringt keinen eigenen Anmeldedienst mit, und einen Betrieb über HTTP ohne Anmeldung gibt es nicht. Wird in Phase 0 als ADR festgehalten.
+- Anmeldung am Server (ADR 0037), entschieden am 25.09.2026: Im freien Kern gibt es statische Bearer-Tokens und einen OAuth-Modus, der nur Tokens eines Anmeldediensts des Betreibers prüft. Der freie Kern bringt keinen eigenen Anmeldedienst mit, und einen Betrieb über HTTP ohne Anmeldung gibt es nicht. Festgehalten in ADR 0037, dessen Wortlaut noch zu bestätigen ist.
 - Rechteinhaber in `NOTICE`, entschieden am 25.09.2026: «Die Autorinnen und Autoren von Ecclium».
 - Identität bei Beiträgen, entschieden am 25.09.2026: Das Sign-off nennt eine bekannte Identität, ein Pseudonym genügt. Anonyme Beiträge werden nicht angenommen.
 - Geschichte auf `main` (ADR 0014), entschieden am 25.09.2026: Sie wird nicht umgeschrieben. Einzige Ausnahme sind Personendaten, die entfernt werden müssen, und das nur nach einem offen festgehaltenen Entscheid.
@@ -49,14 +49,15 @@ Diese Grundsatzfragen sind entschieden.
 
 ## Offen
 
-- Vorbedingung Phase 1: ADR 0018 und 0024 liegen als Vorschlag vor und warten auf die Bestätigung. ADR 0003 und 0023 festhalten und als entschieden bestätigen lassen, ADR 0037 festhalten und den Wortlaut bestätigen lassen. ADR 0025 fällt ebenfalls vor Phase 1.
-- MCP-SDK in Version 2: Wie es den Betrieb ohne Sitzung einstellt, belegen die Metadaten der Pakete nicht. Prüfung an den Typdefinitionen und der Dokumentation zu Beginn von Phase 1, zusammen mit den Abschnitten der Spezifikation 2026-07-28, die die Aussagen von ADR 0018 zu Sitzung, `input_required` und Sampling belegen.
+- Vorbedingung Phase 1: ADR 0003, 0018, 0023, 0024, 0025 und 0037 liegen als Vorschlag vor und sind bereit zur Bestätigung. Bei ADR 0037 gilt die Bestätigung dem Wortlaut, entschieden ist er seit dem 25.09.2026. ADR 0025 wird mit den Ergebnissen der Proben `00-inventory` bis `03-pagination-errors` ergänzt. Vor Phase 1 stehen ausserdem diese Ergebnisse aus (siehe «Fristen des Spikes») und der Abschluss von Phase 0 mit den ADRs 0012, 0013, 0015 und 0017.
+- MCP-SDK in Version 2: Wie es den Betrieb ohne Sitzung einstellt, belegen die Metadaten der Pakete nicht. Prüfung an den Typdefinitionen und der Dokumentation zu Beginn von Phase 1. Dass die Spezifikation 2026-07-28 keine Sitzung und keinen Aufruf `initialize` mehr kennt, belegt ihr Änderungsprotokoll («Key Changes», abgerufen am 30.09.2026). Die Abschnitte zu `input_required` und Sampling werden mit dem SDK geprüft.
 - `TRADEMARKS.md`: Der Text folgt nach rechtlicher Prüfung. Bis dahin keine eigene Fassung. README, ADR 0002 und `brand/README.md` verweisen schon darauf. Mit der Datei kommt der Verweis in `NOTICE` dazu. Die Prüfung klärt auch, unter welchen Bedingungen die Dateien von Logo und Icons in `brand/` kopiert und weitergegeben werden dürfen, auch in Forks.
+- Markenpaket 1.3: Dass `brand/` unverändert dem Tag der Version 1.3 entspricht, ist noch nicht belegt. Der Tree-Hash von `brand/` auf `main` ist `0ab3735abc3da4e80cb0c48c6a5a1cdd3a887f74`. Für Version 1.2 steht der Nachweis unter «Erledigt».
 - Ergebnisse des API-Spikes: Die Proben laufen auf einer Testinstanz mit Anmeldung, sobald sie bereitsteht, sonst mit einem eigenen Spike-Konto. Fristen unter «Weitere Entscheide». Die durchgesehenen Ergebnisse kommen in `docs/research/churchtools-api.md`.
 - Aufräumen nach dem ersten Lauf: Token-Datei, State-Datei und Ausgaben löschen, das Login-Token des verwendeten Kontos in ChurchTools ungültig machen.
 - Fragen F1 bis F15 zur API von ChurchTools: Stand vor dem Spike in `docs/research/churchtools-api.md`. Als belegt gilt eine Antwort erst, wenn eine Probe sie an einer Instanz bestätigt hat.
 - Lizenzstatus der ChurchTools-Dokumentation: Die OpenAPI-Spezifikation der ChurchTools-API nennt in `info.license` CC BY 4.0, für die übrige Dokumentation ist der Status ungeklärt. Bis zur Klärung liegt keine Kopie der Dokumentation im Repository. Entscheid vor Phase 3 (ADR 0027).
-- OAuth bei ChurchTools: Endpunkte, PKCE, Refresh, Laufzeiten und Tokenformat sind nicht dokumentiert, unter `.well-known` liegen keine Metadaten. Offen bis Phase 7 oder bis zum Pro-Modul.
+- OAuth bei ChurchTools: Seit Version 3.135.0 vom 03.08.2026 dürfen OAuth-Anwendungen mit dem Scope `api` auf die REST-API zugreifen, im Rahmen der Rechte des angemeldeten Benutzers (ADR 0023). Pfade der Endpunkte, PKCE, Refresh, Laufzeiten und Tokenformat sind nicht dokumentiert, unter `.well-known` liegen keine Metadaten. Offen bis Phase 7 oder bis zum Pro-Modul.
 - Rate-Limit der ChurchTools-API: nur inoffiziell bekannt. Das Verhalten bei 429 bleibt offen, solange keine Testinstanz zur Verfügung steht.
 - Nachweis zu Stufe 2 des Rulesets: dass ein direkter Push auf `main` weiter abgewiesen wird, ist noch nicht vorgeführt.
 - Renovate: Noch nicht beobachtet sind ein Merge, den Renovate selbst auslöst, und ob Renovate bei einem Werkzeug aus mise `mise.lock` mitzieht.
@@ -134,3 +135,7 @@ Diese Grundsatzfragen sind entschieden.
   - OpenSSF Scorecard veröffentlicht von `main`. Das erste Ergebnis vom 30.09.2026 für den Commit c228888, erstellt mit Scorecard 5.5.0, hat den Gesamtwert 6.6 von 10. Den Wert 0 haben Code-Review, Maintained, Fuzzing, CII-Best-Practices und Contributors, Branch-Protection hat 4, SAST und CI-Tests haben 8. Packaging und Signed-Releases werden ohne Release nicht bewertet, alle übrigen Prüfungen haben 10.
   - Vom Maintainer eingerichtet: CodeQL analysiert zusätzlich die Sprache GitHub Actions, und die Warnungen zu Schadsoftware in Abhängigkeiten (Malware alerts) sind eingeschaltet. Stufe 2 des Rulesets greift: Solange Pflichtprüfungen laufen, ist der Merge gesperrt.
   - Renovate ist eingerichtet, als GitHub-App von Mend und nur für dieses Repository. Sie läuft im Modus «Scan and Alert», weil Renovate im Modus «Scan Only» keine Pull Requests öffnet. Automatisches Mergen ist im Repository erlaubt. Das Dependency Dashboard ist offen, eine Meldung zur Konfiguration gibt es nicht. Die ersten beiden Pull Requests, Prettier 3.9.9 und Vite 8.3.1, hat der Maintainer von Hand gemergt. Die Commits von Renovate tragen ein Sign-off, das zum Autor passt, `dco` und `pr-title` waren grün.
+- 30.09.2026, Entscheide vor Phase 1 und Threat Model v0:
+  - ADR 0003 (Mandantenkontext), 0023 (kein Token-Passthrough), 0025 (eigene zod-Schemas) und 0037 (Anmeldung am Server) vorgeschlagen, ADR 0004, 0008 und 0009 als Entwurf. Die Aussagen zur MCP-Spezifikation 2026-07-28, zur Dokumentation von ChurchTools und zum Stand der MCP-Clients sind am 30.09.2026 an den Quellen geprüft, jede ein zweites Mal von einer unabhängigen Prüfung. Aussagen zur API, die noch keine Probe belegt, stehen als offen.
+  - `docs/threat-model.md`, Version 0: Schützenswertes, Angreifer, 20 Bedrohungen des Produkts und 19 der Lieferkette und Werkbank mit Gegenmassnahme, Phase, ADR und Stand, dazu die Restrisiken und das erste Ergebnis von Scorecard. Es übernimmt die hier vorgemerkten Punkte in berichtigter Form. `SECURITY.md` verweist darauf, CODEOWNERS nennt es.
+  - Nachweis: `pnpm check` läuft lokal grün, mit 397 Tests in 30 Dateien und ohne Link ohne Ziel.
