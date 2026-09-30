@@ -30,6 +30,7 @@ export const expectedSettings: Readonly<Record<string, unknown>> = {
   strictDepBuilds: true,
   allowBuilds: {},
   verifyDepsBeforeRun: 'install',
+  ignorePnpmfile: true,
   ignoreWorkspaceCycles: true,
 };
 

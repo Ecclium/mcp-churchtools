@@ -49,3 +49,12 @@ allowBuilds: {}
 # Before `pnpm run` and `pnpm exec`, check that node_modules matches the
 # lockfile, and install first if it does not.
 verifyDepsBeforeRun: install
+
+# Never load a pnpmfile: neither .pnpmfile.mjs nor .pnpmfile.cjs in the
+# workspace, nor one from the global configuration or from a config
+# dependency. Such a file runs its code in every pnpm command, and a pull
+# request or a file left in the working tree could bring one in. The
+# environment variable pnpm_config_ignore_pnpmfile=false or a command line
+# option still switches it back on, and pnpm dlx and pnpm create do not
+# read this setting.
+ignorePnpmfile: true
