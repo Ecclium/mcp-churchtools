@@ -30,10 +30,11 @@ Gewählt ist die dritte Option. Sie gilt ab dem ersten Commit.
 - Transitive Abhängigkeiten kommen nur aus der Registry, nicht aus Git-Repositories oder Tarball-Adressen.
 - Abhängigkeiten führen keine Install-Skripte aus. Ein Paket mit einem Build-Schritt, der nicht ausdrücklich abgelehnt ist, lässt die Installation scheitern.
 - Vor `pnpm run` prüft pnpm, dass `node_modules` zum Lockfile passt.
+- pnpm lädt keine Datei `.pnpmfile.*`, weder aus dem Workspace noch aus der globalen Konfiguration oder einer Abhängigkeit der Konfiguration. Eine solche Datei liefe bei jedem Befehl von pnpm.
 
 pnpm übergeht einen unbekannten Schlüssel nur mit einer Warnung. `scripts/check-pnpm-settings.mts` prüft deshalb die wirksamen Werte und jeden Schlüssel der Datei.
 
-**Aktualisierungen.** Renovate wartet bei Laufzeitabhängigkeiten sieben Tage, bei Werkzeugen, Actions und Digests drei. Automatisch übernommen werden nur Patch- und Minor-Versionen von Entwicklungswerkzeugen, wenn alle Pflichtprüfungen grün sind. Nie automatisch übernommen werden Laufzeitabhängigkeiten, Actions, Werkzeuge aus mise, Basis-Images, Werkzeuge ohne Herkunftsnachweis, die Pflege der Lockdatei und Sicherheitsaktualisierungen.
+**Aktualisierungen.** Renovate wartet bei Laufzeitabhängigkeiten sieben Tage, bei Werkzeugen, Actions und Digests drei. Automatisch übernommen werden nur Patch- und Minor-Versionen der Entwicklungswerkzeuge, die `.github/renovate.json5` ausdrücklich nennt, und nur, wenn alle Pflichtprüfungen grün sind. Auf diese Liste kommt ein Werkzeug nur, wenn es mit Herkunftsnachweis über einen vertrauenswürdigen Herausgeber (Trusted Publishing) erscheint. Eine spätere Version mit schwächerem Nachweis weist pnpm dann zurück. Nie automatisch übernommen werden Laufzeitabhängigkeiten, Actions, Werkzeuge aus mise, Basis-Images, Werkzeuge ohne Herkunftsnachweis, die Pflege der Lockdatei und Sicherheitsaktualisierungen.
 
 Actions sind aus zwei Gründen ausgenommen. Das Alter einer Version liest Renovate bei Actions aus Git-Daten, die bestimmt, wer den Tag setzt, ausser die Version hat ein Release auf GitHub; die Wartezeit ist für Actions also nicht verlässlich. Und eine Action läuft in den Prüfungen ihrer eigenen Aktualisierung: Eine übernommene Version von `actions/checkout` oder der Action, die mise installiert, könnte dort jede Pflichtprüfung als bestanden melden.
 
@@ -41,7 +42,7 @@ Jede Action ist auf eine SHA gepinnt, mit der genauen Version im Kommentar. Brin
 
 Sicherheitsaktualisierungen umgehen die Wartezeit von Renovate. pnpm installiert sie trotzdem erst mit einer Ausnahme vom Mindestalter, und diese Ausnahme besteht die Prüfung erst, wenn eine Maintainerin oder ein Maintainer Datum und Begründung dazugeschrieben hat.
 
-**Herkunftsnachweis.** Die Vertrauensrichtlinie von pnpm schützt nur Pakete, die einen Herkunftsnachweis (Provenance) veröffentlichen. Am 26.09.2026 fehlt er bei TypeScript, `@types/node`, ESLint, `@eslint/js` und Prettier. Für diese Pakete bleibt das Mindestalter die einzige automatische Sperre.
+**Herkunftsnachweis.** Die Vertrauensrichtlinie von pnpm schützt nur Pakete, die einen Herkunftsnachweis (Provenance) veröffentlichen. Am 30.09.2026 fehlt er bei TypeScript, `@types/node`, ESLint, `@eslint/js` und Prettier. Prettier erscheint über einen vertrauenswürdigen Herausgeber, aber ohne Herkunftsnachweis, und pnpm wertet das wie keinen Nachweis. Für diese Pakete bleibt das Mindestalter die einzige automatische Sperre. Am selben Tag erscheinen vitest, `@vitest/coverage-v8`, vite, typescript-eslint, eslint-plugin-jsdoc und dependency-cruiser mit Herkunftsnachweis über einen vertrauenswürdigen Herausgeber, in der gepinnten Version wie in den Versionen, auf die Renovate wartet. Nur sie übernimmt Renovate automatisch.
 
 **Lizenzen.** Zur Laufzeit sind nur MIT, ISC, Apache-2.0, BSD-2-Clause, BSD-3-Clause, 0BSD und BlueOak-1.0.0 erlaubt. Werkzeuge der Entwicklung dürfen zusätzlich MPL-2.0, CC0-1.0, CC-BY-3.0 und CC-BY-4.0 nutzen, weil sie nie ausgeliefert werden. Eine unbekannte Lizenz ist ein Fehler. Jede neue Abhängigkeit wird im Commit begründet: Zweck, Lizenz, erwogene Alternativen.
 
@@ -78,7 +79,7 @@ Sicherheitsaktualisierungen umgehen die Wartezeit von Renovate. pnpm installiert
 - CI: `.github/workflows/ci.yml` mit den Jobs `workflow-lint`, `secret-scan`, `check`, `compat`, `minimum` und `deps-review`, `.github/workflows/pr-meta.yml` mit `pr-title` und `dco`, dazu `scripts/ci/`. Jeder dieser Jobs ist eine Pflichtprüfung für `main`.
 - Kein Cache, mise im gesperrten Modus: `tests/toolchain.test.mts` verlangt `cache: false` in jedem Schritt, der mise installiert, `MISE_LOCKED` in jedem Workflow mit einem solchen Schritt und keinen anderen Cache.
 - OpenSSF Scorecard: `.github/workflows/scorecard.yml`, keine Pflichtprüfung.
-- Aktualisierungen: `.github/renovate.json5`. Die Werkzeuge ohne Herkunftsnachweis nimmt dort eine Liste von Namen vom automatischen Übernehmen aus. Ein neues Werkzeug ohne Herkunftsnachweis stünde nicht auf dieser Liste. Vorgesehen ist, nur ausdrücklich genannte Werkzeuge automatisch zu übernehmen.
+- Aktualisierungen: `.github/renovate.json5`. Automatisch übernommen werden nur die Werkzeuge einer Positivliste, die Werkzeuge ohne Herkunftsnachweis schliesst eine Regel danach zusätzlich aus. `tests/toolchain.test.mts` prüft beide Listen und dass keine andere Regel und kein Preset Automerge einschaltet.
 - Ausnahmen vom Mindestalter: `scripts/check-pnpm-settings.mts` verlangt über jeder Ausnahme einen Kommentar mit Datum und Grund und gleicht die Liste mit den Ausnahmen ab, die pnpm tatsächlich anwendet.
 - Positivliste der Actions, Pflicht zur vollständigen SHA und Freigabe von Workflows aus Forks: Einstellungen der Organisation auf GitHub.
 - Sicherheitskonfiguration auf GitHub: Abhängigkeitsgraph (für `deps-review`), Dependabot-Warnungen (für die Sicherheitsaktualisierungen von Renovate, ohne eigene Pull Requests von Dependabot), CodeQL im Default Setup, Secret Scanning mit Push Protection und Private Vulnerability Reporting.
