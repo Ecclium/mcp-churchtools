@@ -80,16 +80,23 @@ describe('pnpm', () => {
 
 describe('mise', () => {
   const workflowDirectory = new URL('../.github/workflows/', import.meta.url);
-  const workflows = readdirSync(workflowDirectory)
+  const workflowFiles = readdirSync(workflowDirectory)
     .filter((name) => name.endsWith('.yml'))
-    .map((name) => readFileSync(new URL(name, workflowDirectory), 'utf8'));
+    .map(
+      (name) =>
+        [name, readFileSync(new URL(name, workflowDirectory), 'utf8')] as const,
+    );
+  const workflows = workflowFiles.map(([, workflow]) => workflow);
+
+  /** Every step of a workflow that installs tools with mise-action. */
+  const miseSteps = (workflow: string): string[] =>
+    workflow
+      .split(/^\s*- (?=name:|uses:)/m)
+      .filter((step) => step.includes('jdx/mise-action@'));
 
   /** The `version:` inputs of every mise-action step in a workflow. */
   const miseVersions = (workflow: string): (string | undefined)[] =>
-    workflow
-      .split(/^\s*- (?=name:|uses:)/m)
-      .filter((step) => step.includes('jdx/mise-action@'))
-      .map((step) => /^\s+version: (\S+)$/m.exec(step)?.[1]);
+    miseSteps(workflow).map((step) => /^\s+version: (\S+)$/m.exec(step)?.[1]);
 
   it('pins one version of mise in every workflow that installs tools', () => {
     const versions = workflows.flatMap(miseVersions);
@@ -114,6 +121,34 @@ describe('mise', () => {
     }
     const [version] = workflows.flatMap(miseVersions);
     expect(/\bmise: '([^']+)'/.exec(renovate)?.[1]).toBe(version);
+  });
+
+  // A cache restored from an earlier run could replace gitleaks or zizmor,
+  // and mise does not check the checksums from its lock files again for
+  // tools it restores from a cache (ADR 0021). mise-action caches unless it
+  // is told not to. Locked mode makes mise refuse a tool whose version,
+  // address or checksum is missing from the lock file.
+  it('installs the tools without a cache and in locked mode', () => {
+    for (const [name, workflow] of workflowFiles) {
+      const steps = miseSteps(workflow);
+      for (const step of steps) {
+        expect(step, name).toMatch(/^\s+cache: false$/m);
+      }
+      if (steps.length > 0) {
+        expect(workflow, name).toMatch(
+          /^env:\n(?: +\S.*\n)*? +MISE_LOCKED: 1$/m,
+        );
+      }
+    }
+  });
+
+  it('restores no cache in any workflow', () => {
+    for (const [name, workflow] of workflowFiles) {
+      expect(workflow, name).not.toMatch(/uses: actions\/cache/);
+      for (const line of workflow.match(/^\s+[\w-]*cache[\w-]*:.*$/gim) ?? []) {
+        expect(line.trim(), name).toBe('cache: false');
+      }
+    }
   });
 
   // mise 2026.9.7 to 2026.9.15 read and write lock files in format 2; newer
