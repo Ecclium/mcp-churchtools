@@ -192,6 +192,41 @@ describe('the scans of names, titles and messages in CI', () => {
     timeout,
   );
 
+  // On main every commit is the squash commit of a pull request, and whoever
+  // merges can change its message. In a pull request the job sees the test
+  // merge, whose second parent leads to the commits of the pull request.
+  it(
+    'find a message on main and one behind the second parent of a merge',
+    () => {
+      const step =
+        'Scan the messages of every commit that leads to the tested one';
+      const host = canaryHost();
+
+      const squashed = setUp();
+      commit(squashed, 'one.md', `fix: one (#1)\n\nFrom ${host}.`);
+      commit(squashed, 'two.md', `${binaryStart} fix: two (#2)`);
+      const onMain = run(squashed, 'ci.yml', step);
+      expect(onMain.status, onMain.output).toBe(1);
+      expect(onMain.output).toContain('leaks found: 1');
+      expect(onMain.output).not.toContain(host);
+
+      const merged = setUp();
+      testMerge(merged, [`fix: one\n\nFrom ${host}.`]);
+      const inMerge = run(merged, 'ci.yml', step);
+      expect(inMerge.status, inMerge.output).toBe(1);
+      expect(inMerge.output).toContain('leaks found: 1');
+
+      const clean = setUp();
+      commit(clean, 'one.md', 'fix: one (#1)\n\nFrom example.church.tools.');
+      commit(clean, 'two.md', `${binaryStart} fix: two (#2)`);
+      testMerge(clean, ['fix: three\n\nFrom example.church.tools.']);
+      const counterpart = run(clean, 'ci.yml', step);
+      expect(counterpart.status, counterpart.output).toBe(0);
+      expect(counterpart.output).toContain('no leaks found');
+    },
+    timeout,
+  );
+
   // The runs above cover the steps in CI. This check covers every place, the
   // hooks and the scripts for local runs included, and every scan that is
   // added later.

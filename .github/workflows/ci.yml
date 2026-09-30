@@ -127,6 +127,19 @@ jobs:
               git -c core.quotePath=false ls-files
             } | LC_ALL=C sort -u
           } | gitleaks stdin --redact --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
+      - name: Scan the messages of every commit that leads to the tested one
+        # The scan of the history reads what each commit changes, not its
+        # message. A message reaches main in the squash commit, and whoever
+        # merges can change it in the dialog of the merge, after pr-meta has
+        # checked the messages of the pull request. On a push to main this
+        # step reads the message as it arrived and every older one, so it
+        # does not depend on which commits the event names. It finds data
+        # only once it is on main, where a finding is handled as ADR 0014
+        # describes. The two lines printed first: see the step before.
+        run: |
+          { printf '\n%40000s\n' ''
+            git log --format=%B HEAD
+          } | gitleaks stdin --redact --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
 
   # check, compat and minimum run the same steps on different versions of
   # Node.js (ADR 0019): the development version from mise.toml, the next line

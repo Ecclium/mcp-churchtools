@@ -29,9 +29,11 @@
 #   file names        gitleaks stdin over the names of staged or committed
 #                     files (gitleaks git and gitleaks dir read contents, not
 #                     names)
-#   pull request      gitleaks git --redact --no-banner --ignore-gitleaks-allow --log-opts=HEAD,
-#                     gitleaks dir, and gitleaks stdin over file names, title
-#                     and commit messages (.github/workflows/)
+#   CI                gitleaks git --redact --no-banner --ignore-gitleaks-allow --log-opts=HEAD,
+#                     gitleaks dir, and gitleaks stdin over file names, the
+#                     messages of every commit up to the tested one, and the
+#                     title and the commit messages of a pull request
+#                     (.github/workflows/)
 #   full history      gitleaks git --redact --no-banner --ignore-gitleaks-allow
 #   release artifact  gitleaks dir <unpacked npm tarball> --redact --no-banner --ignore-gitleaks-allow
 #                     (unpack first: gitleaks skips .tgz files as binary; for
