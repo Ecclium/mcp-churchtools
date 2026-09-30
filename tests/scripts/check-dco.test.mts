@@ -75,7 +75,12 @@ describe('isSignedOffBy', () => {
   });
 });
 
-describe('check-dco', () => {
+// Each test and each set-up starts Git and Node.js several times and needs
+// well under a second. Under heavy load, such as several checks running at
+// once, one took longer than the default limit of five seconds.
+const timeout = 30_000;
+
+describe('check-dco', { timeout }, () => {
   let repository: Repository;
   let counter = 0;
 
@@ -107,7 +112,7 @@ describe('check-dco', () => {
     // The base carries no sign-off: only the new commits are checked.
     commit('base.txt', ['chore: start']);
     repository.git(['switch', '--quiet', '--create', 'feature']);
-  });
+  }, timeout);
 
   afterEach(() => {
     repository.remove();
