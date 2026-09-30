@@ -1,12 +1,12 @@
 # Status
 
-Stand: 30.09.2026, Phase 0, die Werkbank läuft in CI grün und ihre Prüfungen sind Pflicht für `main`, der API-Spike wartet auf eine Testinstanz mit Anmeldung
+Stand: 30.09.2026, Phase 0, die Werkbank läuft auf `main` grün und Renovate ist eingerichtet, der API-Spike wartet auf eine Testinstanz mit Anmeldung
 
 ## Aktuelle Phase
 
 Phase 0, Fundament und Entscheide. Fertig sind das Fundament des Repositorys, das Gerüst des Workspace, die Qualitätswerkzeuge, die Architekturregeln mit einem Beispiel je Regel, das sie verletzt, die Werkbank und der erste Teil des API-Spikes: Helfer und lesende Proben, die nur die Struktur der Antworten ausgeben, und das Gerüst von `docs/research/churchtools-api.md`. `pnpm check` fasst alle Prüfungen zusammen, `pnpm ci:local` führt die meisten Prüfungen aus CI lokal aus. Beide laufen lokal grün, die Werkbank auch in CI.
 
-Nächster Schritt: Renovate einrichten und seinen ersten Lauf prüfen, CodeQL um die Sprache GitHub Actions ergänzen und den ersten Lauf von OpenSSF Scorecard auf `main` ansehen. Dann folgen die Entscheide vor Phase 1 und das Threat Model v0. Der API-Spike ruht, bis eine Testinstanz mit Anmeldung bereitsteht oder feststeht, dass es keine gibt. Dann gilt der Weg mit einem eigenen Spike-Konto (siehe «Weitere Entscheide»).
+Nächster Schritt: die Entscheide vor Phase 1 als ADR festhalten und das Threat Model v0 anlegen. Der API-Spike ruht, bis eine Testinstanz mit Anmeldung bereitsteht oder feststeht, dass es keine gibt. Dann gilt der Weg mit einem eigenen Spike-Konto (siehe «Weitere Entscheide»).
 
 ## Vorbedingungen Phase 0
 
@@ -58,11 +58,16 @@ Diese Grundsatzfragen sind entschieden.
 - Lizenzstatus der ChurchTools-Dokumentation: Die OpenAPI-Spezifikation der ChurchTools-API nennt in `info.license` CC BY 4.0, für die übrige Dokumentation ist der Status ungeklärt. Bis zur Klärung liegt keine Kopie der Dokumentation im Repository. Entscheid vor Phase 3 (ADR 0027).
 - OAuth bei ChurchTools: Endpunkte, PKCE, Refresh, Laufzeiten und Tokenformat sind nicht dokumentiert, unter `.well-known` liegen keine Metadaten. Offen bis Phase 7 oder bis zum Pro-Modul.
 - Rate-Limit der ChurchTools-API: nur inoffiziell bekannt. Das Verhalten bei 429 bleibt offen, solange keine Testinstanz zur Verfügung steht.
-- Nachweis zu Stufe 2 des Rulesets: dass ein direkter Push auf `main` weiter abgewiesen wird und ein Pull Request mit einer roten Pflichtprüfung nicht gemergt werden kann, ist noch nicht vorgeführt.
-- OpenSSF Scorecard veröffentlicht nur von `main`. Erst der erste Lauf nach dem Merge zeigt, ob Veröffentlichung und Upload der Ergebnisse gelingen.
-- Renovate ist noch nicht eingerichtet. Sein erster Lauf zeigt, ob das Sign-off seiner Commits zum Autor passt, ob seine Titel die Prüfung bestehen, ob es `mise.lock` mitzieht und ob seine Konfiguration gültig ist.
+- Nachweis zu Stufe 2 des Rulesets: dass ein direkter Push auf `main` weiter abgewiesen wird, ist noch nicht vorgeführt.
+- Renovate: Noch nicht beobachtet sind ein Merge, den Renovate selbst auslöst, und ob Renovate bei einem Werkzeug aus mise `mise.lock` mitzieht.
+- Aktualisierungen, die Renovate am 30.09.2026 meldet und die einen bewussten Entscheid brauchen:
+  - Ubuntu 26.04 als Runner statt 24.04.
+  - `jdx/mise-action` 5: Erschienen am 28.09.2026, die einzige inkompatible Änderung ist ein Mindestalter von 24 Stunden als Vorgabe.
+  - eslint-plugin-jsdoc 65: Ob es mit Node.js 24.15.0 läuft, zeigt der Job `minimum` im Pull Request.
+  - mise 2026.9.17: Ab 2026.9.16 schreibt mise Lockdateien im Format 3, das die in CI gepinnte Version nicht liest. Nur zusammen mit der Version in CI.
+  - `github/codeql-action` 4.38.2: Vorher muss die neue SHA für `upload-sarif` in die Positivliste der Organisation.
 - CodeQL im Default Setup analysiert keine Pull Requests aus Forks. Entscheid vor dem ersten Beitrag von aussen, spätestens in Phase 8.
-- Neu zu bewerten: pnpm 12 (Phase 8), gitleaks gegen seinen Nachfolger (spätestens Phase 8), das Paar aus MCP-Server und Adapter (beim Einbau in Phase 1, ADR 0018), der umbenannte Prometheus-Client (vor der Phase mit Metriken), TypeScript 7 (sobald typescript-eslint und dependency-cruiser es tragen), Cache in CI (wenn die Laufzeit es verlangt), mise-action 5 (erschienen am 28.09.2026), mise ab 2026.9.16 (schreibt Lockdateien im Format 3, das die heute gepinnte Version nicht liest; nur zusammen mit der Version in CI).
+- Neu zu bewerten: pnpm 12 (Phase 8), gitleaks gegen seinen Nachfolger (spätestens Phase 8), das Paar aus MCP-Server und Adapter (beim Einbau in Phase 1, ADR 0018), der umbenannte Prometheus-Client (vor der Phase mit Metriken), TypeScript 7 (sobald typescript-eslint und dependency-cruiser es tragen), Cache in CI (wenn die Laufzeit es verlangt), shellcheck (Renovate meldet es als verwaist, das letzte Release erschien am 04.08.2025; actionlint prüft damit die Skripte der Workflows).
 - Weitere Plattformen in `mise.lock`, etwa Linux auf arm64 oder macOS auf x64, sobald jemand sie braucht.
 - Für das Threat Model v0 vorgemerkt:
   - Die eingebaute globale Allowlist von gitleaks gilt auch für die eigenen Regeln. Sie überspringt unter anderem Bilder einschliesslich SVG, Schriften, `pnpm-lock.yaml`, `package-lock.json`, `node_modules/` und `.gitleaks.toml` selbst. Ausserdem verwirft sie Funde, deren Wert wie ein Systempfad aussieht. Die Regel für Home-Pfade meldet deshalb nur den Benutzernamen.
@@ -138,3 +143,8 @@ Diese Grundsatzfragen sind entschieden.
   - Im ersten Lauf waren alle Pflichtjobs grün, ohne Korrektur. `ci` brauchte 1 Minute 13 Sekunden, das Ziel für einen Pull Request sind 6 Minuten: `workflow-lint` 9 Sekunden, mit den Prüfungen von zizmor, die das Netz brauchen, und ohne Befund, `secret-scan` 7 Sekunden, `check` 63, `compat` 69 und `minimum` 53 Sekunden mit je 397 Tests in 30 Dateien, `deps-review` 5 Sekunden. `pr-meta` mit `pr-title` und `dco` brauchte 12 Sekunden.
   - Der Abhängigkeitsgraph von GitHub führt `pnpm-lock.yaml` unter den Abhängigkeiten. `deps-review` kann Änderungen daran also prüfen. Der erste Pull Request änderte keine Abhängigkeit, seine Zusammenfassung blieb deshalb leer.
   - Ruleset für `main`, Stufe 2, vom Maintainer gesetzt: Pflichtprüfungen `workflow-lint`, `secret-scan`, `check`, `compat`, `minimum`, `deps-review`, `pr-title` und `dco`, ein Branch muss vor dem Merge auf dem Stand von `main` sein, und Befunde von CodeQL ab «hoch» verhindern den Merge. Aus Stufe 1 bleiben: Pull Request nötig, kein Force-Push, lineare Historie, nur Squash, keine Ausnahmen. Squash-Commits übernehmen den Titel des Pull Requests und die Nachrichten der Commits samt Sign-off.
+- 30.09.2026, nach dem Merge der Werkbank:
+  - Die Werkbank ist als 605435b auf `main`. Der Baum des Squash-Commits ist gleich dem letzten Stand des Branches, das Sign-off jedes Commits ist erhalten. Auf `main` laufen `ci` und `scorecard` grün. Die Positivliste der Organisation nimmt den Eintrag für `github/codeql-action/upload-sarif` mit genau einer SHA an.
+  - OpenSSF Scorecard veröffentlicht von `main`. Das erste Ergebnis vom 30.09.2026 für den Commit c228888, erstellt mit Scorecard 5.5.0, hat den Gesamtwert 6.6 von 10. Den Wert 0 haben Code-Review, Maintained, Fuzzing, CII-Best-Practices und Contributors, Branch-Protection hat 4, SAST und CI-Tests haben 8. Packaging und Signed-Releases werden ohne Release nicht bewertet, alle übrigen Prüfungen haben 10.
+  - Vom Maintainer eingerichtet: CodeQL analysiert zusätzlich die Sprache GitHub Actions, und die Warnungen zu Schadsoftware in Abhängigkeiten (Malware alerts) sind eingeschaltet. Stufe 2 des Rulesets greift: Solange Pflichtprüfungen laufen, ist der Merge gesperrt.
+  - Renovate ist eingerichtet, als GitHub-App von Mend und nur für dieses Repository. Sie läuft im Modus «Scan and Alert», weil Renovate im Modus «Scan Only» keine Pull Requests öffnet. Automatisches Mergen ist im Repository erlaubt. Das Dependency Dashboard ist offen, eine Meldung zur Konfiguration gibt es nicht. Die ersten beiden Pull Requests, Prettier 3.9.9 und Vite 8.3.1, hat der Maintainer von Hand gemergt. Die Commits von Renovate tragen ein Sign-off, das zum Autor passt, `dco` und `pr-title` waren grün.
