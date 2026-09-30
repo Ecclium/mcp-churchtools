@@ -154,7 +154,7 @@ Für jeden Pull Request laufen die folgenden Prüfungen. Jede ist Pflicht für d
 
 `secret-scan`, `pr-title` und `dco` scheitern ausserdem, solange irgendwo eine Datei `.gitleaksignore` liegt, weil gitleaks sie von sich aus liest und eine Zeile darin jeden Fund abschaltet.
 
-Nach dem Merge laufen die Jobs aus `ci.yml` noch einmal auf `main`. `secret-scan` prüft dann auch die Nachricht des Squash-Commits, die sich im Dialog des Merge ändern lässt. Ein Fund dort steht schon auf `main` und wird nach ADR 0014 als Vorfall behandelt.
+Nach dem Merge laufen die Jobs aus `ci.yml` ausser `deps-review` noch einmal auf `main`. `secret-scan` prüft dann auch die Nachricht des Squash-Commits, die sich im Dialog des Merge ändern lässt. Ein Fund dort steht schon auf `main` und wird nach ADR 0014 als Vorfall behandelt.
 
 Dieser Befehl führt lokal aus: die Prüfung der Workflows, zizmor dabei ohne Netz, den Scan der Geschichte, der Dateinamen und der Commit-Messages mit gitleaks sowie Build und `pnpm check` auf allen drei Versionen von Node.js. Den Scan der Dateien, die Prüfung der Abhängigkeiten, Titel und Sign-off prüft nur CI.
 
