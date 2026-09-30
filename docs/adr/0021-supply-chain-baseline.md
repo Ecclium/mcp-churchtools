@@ -77,7 +77,7 @@ Sicherheitsaktualisierungen umgehen die Wartezeit von Renovate. pnpm installiert
 - Alle Prüfungen zusammen: `pnpm check`, dazu `pnpm ci:local`, das die meisten Prüfungen aus CI lokal ausführt, ohne den Scan der Dateien, die Prüfung der Abhängigkeiten, Titel und Sign-off.
 - CI: `.github/workflows/ci.yml` mit den Jobs `workflow-lint`, `secret-scan`, `check`, `compat`, `minimum` und `deps-review`, `.github/workflows/pr-meta.yml` mit `pr-title` und `dco`, dazu `scripts/ci/`. Jeder dieser Jobs ist eine Pflichtprüfung für `main`.
 - OpenSSF Scorecard: `.github/workflows/scorecard.yml`, keine Pflichtprüfung.
-- Aktualisierungen: `.github/renovate.json5`.
+- Aktualisierungen: `.github/renovate.json5`. Die Werkzeuge ohne Herkunftsnachweis nimmt dort eine Liste von Namen vom automatischen Übernehmen aus. Ein neues Werkzeug ohne Herkunftsnachweis stünde nicht auf dieser Liste. Vorgesehen ist, nur ausdrücklich genannte Werkzeuge automatisch zu übernehmen.
 - Ausnahmen vom Mindestalter: `scripts/check-pnpm-settings.mts` verlangt über jeder Ausnahme einen Kommentar mit Datum und Grund und gleicht die Liste mit den Ausnahmen ab, die pnpm tatsächlich anwendet.
 - Positivliste der Actions, Pflicht zur vollständigen SHA und Freigabe von Workflows aus Forks: Einstellungen der Organisation auf GitHub.
 - Sicherheitskonfiguration auf GitHub: Abhängigkeitsgraph (für `deps-review`), Dependabot-Warnungen (für die Sicherheitsaktualisierungen von Renovate, ohne eigene Pull Requests von Dependabot), CodeQL im Default Setup, Secret Scanning mit Push Protection und Private Vulnerability Reporting.

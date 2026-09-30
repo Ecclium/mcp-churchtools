@@ -8,7 +8,7 @@
 
 Ecclium ist ein MCP-Server. Festzulegen ist, welche Version des Model Context Protocol er spricht, mit welcher Bibliothek, ob er zwischen zwei Anfragen Zustand hält und wem im Betrieb über stdio die Standardausgabe gehört.
 
-Die MCP-Spezifikation in der Version 2026-07-28 kennt keinen Aufruf `initialize` und keine Kopfzeile `Mcp-Session-Id` mehr. Ein Server kann jede Anfrage für sich beantworten. Rückfragen an die Nutzerin oder den Nutzer laufen über Multi Round-Trip Requests (`input_required`), Sampling gilt als veraltet. Für den Betrieb über stdio verlangt die Spezifikation, dass der Server auf stdout nur MCP-Nachrichten schreibt (Abschnitt «Transports»). Jede andere Ausgabe dort bricht die Verbindung.
+Die MCP-Spezifikation in der Version 2026-07-28 kennt keinen Aufruf `initialize` und keine Kopfzeile `Mcp-Session-Id` mehr (Änderungsprotokoll «Key Changes», Abschnitt «Major changes», Punkte 1 und 2, abgerufen am 30.09.2026). Ein Server kann jede Anfrage für sich beantworten. Rückfragen an die Nutzerin oder den Nutzer laufen über Multi Round-Trip Requests (`input_required`), Sampling gilt als veraltet. Für den Betrieb über stdio verlangt die Spezifikation, dass der Server auf stdout nur MCP-Nachrichten schreibt (Abschnitt «Transports»). Jede andere Ausgabe dort bricht die Verbindung.
 
 Zur Bibliothek, laut den Metadaten der Pakete in der npm-Registry, abgerufen am 29.09.2026:
 
@@ -43,7 +43,7 @@ Gewählt ist die dritte Option.
 - Was über eine Anfrage hinaus gelten muss, etwa eine offene Bestätigung, liegt nicht im Server, sondern im Kern mit eigener Frist und eigenem Schutz.
 - Die Regel für stdout ist doppelt abgesichert. dependency-cruiser verbietet, dass vom Start des Betriebs über stdio ein Modul erreichbar ist, das auf stdout schreiben darf (`no-stdout-in-stdio-paths`). ESLint verbietet im Code der Pakete ausserhalb dieser Orte `console` in jeder Schreibweise, `process.stdout` und `process.stderr`, das Schreiben mit den Dateideskriptoren 1 und 2 als fester Zahl und über die Gerätedateien wie `/dev/stdout`, `node:tty`, `process.emitWarning`, Kindprozesse, Worker und Cluster sowie `process` und `globalThis` als weitergegebenen Wert. Weil ein Modul, das an den Regeln vorbei geladen wird, auch an ihnen vorbei schreiben könnte, verbietet ESLint zudem `node:module`, `require`, `process.getBuiltinModule` und `import()` mit berechnetem Namen.
 - Restrisiken: Die Regeln sehen Code, nicht das Verhalten zur Laufzeit. Sie erkennen nicht das Schreiben über einen berechneten Dateideskriptor oder einen zusammengesetzten Pfad zu einer Gerätedatei, über einen Strom, den ein anderes Modul übergibt, und im Code einer Abhängigkeit. Ab Phase 1 prüft deshalb ein Test im Betrieb über stdio, dass auf stdout nur Protokollnachrichten erscheinen.
-- Offen: Wie das SDK in Version 2 den Betrieb ohne Sitzung einstellt, belegen die Metadaten der Pakete nicht. Das wird zu Beginn von Phase 1 an den Typdefinitionen und der Dokumentation des SDK geprüft. Dabei werden auch die Aussagen dieses ADR zur Spezifikation, keine Sitzung, `input_required` und Sampling, mit ihrem Abschnitt belegt.
+- Offen: Wie das SDK in Version 2 den Betrieb ohne Sitzung einstellt, belegen die Metadaten der Pakete nicht. Das wird zu Beginn von Phase 1 an den Typdefinitionen und der Dokumentation des SDK geprüft. Dabei werden auch die Aussagen dieses ADR zu `input_required` und Sampling mit ihrem Abschnitt in der Spezifikation belegt.
 
 ## Umsetzung
 
