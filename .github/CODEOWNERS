@@ -4,7 +4,7 @@
 # responsibility; it does not enforce a second review. The explicit entries
 # mark the files that decide what runs on developer machines and in CI, what
 # gets published, which imports and outputs the architecture allows, how
-# leaked data is found and what the project promises.
+# leaked data is found, which risks the project accepts and what it promises.
 # They stay with the maintainers even if the default rule changes. Later
 # rules take precedence.
 * @ecclium/maintainers
@@ -34,6 +34,7 @@
 /tests/architecture/ @ecclium/maintainers
 /brand/ @ecclium/maintainers
 /docs/adr/ @ecclium/maintainers
+/docs/threat-model.md @ecclium/maintainers
 /SECURITY.md @ecclium/maintainers
 /PROMISE.md @ecclium/maintainers
 /LICENSE @ecclium/maintainers
