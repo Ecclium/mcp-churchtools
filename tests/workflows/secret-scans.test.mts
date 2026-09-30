@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createRepository, type Repository } from '../support/git.mts';
-import { runCommand } from '../support/workflows.mts';
+import { runCommand, runValues } from '../support/workflows.mts';
 
 // The scans in CI read file names, the title of a pull request and commit
 // messages through `gitleaks stdin` (ADR 0014). This test takes the command
@@ -45,6 +45,11 @@ const canaryHost = (): string =>
 // one does, which the two lines each scan prints first must neutralise (see
 // .gitleaks.toml).
 const binaryStart = '%PDF-1.7';
+
+/** The local scans of `pnpm ci:secret-scan`, which pnpm runs with sh. */
+const localScript = (
+  JSON.parse(read('package.json')) as { scripts: Record<string, string> }
+).scripts['ci:secret-scan'];
 
 const timeout = 60_000;
 
@@ -87,29 +92,38 @@ describe('the scans of names, titles and messages in CI', () => {
     repository.git(['merge', '--quiet', '--no-ff', '--no-edit', 'feature']);
   };
 
-  const run = (
+  /** Runs a command with the tools from mise, in the given shell. */
+  const shell = (
     repository: Repository,
-    workflow: string,
-    step: string,
-    extra: NodeJS.ProcessEnv = {},
+    command: string,
+    {
+      runner = true,
+      extra = {},
+    }: { runner?: boolean; extra?: NodeJS.ProcessEnv } = {},
   ): { status: number | null; output: string } => {
     const result = repository.run(
       'mise',
       [
         'exec',
         '--',
-        'bash',
-        '--noprofile',
-        '--norc',
-        '-eo',
-        'pipefail',
-        '-c',
-        runCommand(workflow, step),
+        ...(runner
+          ? ['bash', '--noprofile', '--norc', '-eo', 'pipefail', '-c']
+          : ['sh', '-c']),
+        command,
       ],
       { MISE_TRUSTED_CONFIG_PATHS: repository.path, NO_COLOR: '1', ...extra },
     );
     return { status: result.status, output: result.stdout + result.stderr };
   };
+
+  /** Runs a step of a workflow as the runner does. */
+  const run = (
+    repository: Repository,
+    workflow: string,
+    step: string,
+    extra: NodeJS.ProcessEnv = {},
+  ): { status: number | null; output: string } =>
+    shell(repository, runCommand(workflow, step), { extra });
 
   afterEach(() => {
     for (const repository of repositories.splice(0)) {
@@ -227,24 +241,110 @@ describe('the scans of names, titles and messages in CI', () => {
     timeout,
   );
 
-  // The runs above cover the steps in CI. This check covers every place, the
-  // hooks and the scripts for local runs included, and every scan that is
-  // added later.
+  // `pnpm ci:local` runs these scans on a developer machine, with sh as pnpm
+  // does.
+  it(
+    'find the same in the local scans of pnpm ci:secret-scan',
+    () => {
+      expect(localScript).toBeDefined();
+      const script = localScript ?? '';
+      const host = canaryHost();
+
+      const inName = setUp();
+      commit(inName, `${binaryStart}-notes.md`, 'docs: add notes');
+      commit(inName, `export-${host}.md`, 'docs: add an export');
+      const nameResult = shell(inName, script, { runner: false });
+      expect(nameResult.status, nameResult.output).toBe(1);
+      expect(nameResult.output).toContain('leaks found: 1');
+      expect(nameResult.output).not.toContain(host);
+
+      const inMessage = setUp();
+      commit(inMessage, 'one.md', `fix: one (#1)\n\nFrom ${host}.`);
+      commit(inMessage, 'two.md', `${binaryStart} fix: two (#2)`);
+      const messageResult = shell(inMessage, script, { runner: false });
+      expect(messageResult.status, messageResult.output).toBe(1);
+      expect(messageResult.output).toContain('leaks found: 1');
+      expect(messageResult.output).not.toContain(host);
+
+      const clean = setUp();
+      commit(clean, `${binaryStart}-notes.md`, `${binaryStart} fix: two (#2)`);
+      const counterpart = shell(clean, script, { runner: false });
+      expect(counterpart.status, counterpart.output).toBe(0);
+      expect(counterpart.output.split('no leaks found').length - 1).toBe(3);
+    },
+    timeout,
+  );
+
+  // The runs above cover each scan once. This check finds every scan through
+  // stdin in the tracked files, including scans added later, and requires
+  // the two lines as the start of the very pipeline that feeds gitleaks.
   it('let every scan through stdin read the two lines first', () => {
-    const header = String.raw`printf '\n%40000s\n`;
-    const { scripts } = JSON.parse(read('package.json')) as {
-      scripts: Record<string, string>;
-    };
-    const sources: [string, string][] = [
-      ['.github/workflows/ci.yml', read('.github/workflows/ci.yml')],
-      ['.github/workflows/pr-meta.yml', read('.github/workflows/pr-meta.yml')],
-      ['lefthook.yml', read('lefthook.yml')],
-      ['package.json', Object.values(scripts).join('\n')],
+    // Matches the text printf '\n%40000s\n with a backslash before each n.
+    const header = String.raw`printf '\\n%40000s\\n`;
+    const forms = [
+      // A group in a run: value of a workflow or of lefthook.yml.
+      new RegExp(
+        String.raw`^\{ ${header}' ''\n(?:[^\n]*\n)+\} \| (?:mise exec -- )?gitleaks stdin [^|;&\n]*\n$`,
+      ),
+      // A single value, such as the title, printed after the two lines.
+      new RegExp(
+        String.raw`^${header}%s\\n' '' "\$[A-Z_]+" \| gitleaks stdin [^|;&\n]*$`,
+      ),
+      // A group in a script of package.json.
+      new RegExp(
+        String.raw`^\{ ${header}' ''; .*; \} \| gitleaks stdin [^|;&]*$`,
+      ),
     ];
-    for (const [file, content] of sources) {
-      const scans = content.split('gitleaks stdin').length - 1;
-      expect(scans, file).toBeGreaterThan(0);
-      expect(content.split(header).length - 1, file).toBe(scans);
+    const code = (text: string): string =>
+      text
+        .split('\n')
+        .filter((line) => !/^\s*(#|\/\/|\*)/.test(line))
+        .join('\n');
+    const count = (text: string): number =>
+      text.split('gitleaks stdin').length - 1;
+
+    // New files count before they are committed, ignored ones never.
+    const tracked = spawnSync(
+      'git',
+      ['ls-files', '--cached', '--others', '--exclude-standard'],
+      { cwd: workspace, encoding: 'utf8' },
+    )
+      .stdout.split('\n')
+      .filter((file) => file !== '' && !/^(docs|tests)\/|\.md$/.test(file));
+    const commands: [string, string][] = [];
+    for (const file of tracked) {
+      const text = read(file);
+      if (count(code(text)) === 0) {
+        continue;
+      }
+      let found: string[];
+      if (file === 'package.json') {
+        const { scripts } = JSON.parse(text) as {
+          scripts: Record<string, string>;
+        };
+        found = Object.values(scripts).flatMap((script) =>
+          script.split(' && '),
+        );
+      } else if (/\.ya?ml$/.test(file)) {
+        found = runValues(text, file);
+      } else {
+        found = [];
+      }
+      // Every scan in the file must be one that this check reads.
+      expect(count(found.join('\n')), file).toBe(count(code(text)));
+      commands.push(
+        ...found
+          .filter((command) => count(command) > 0)
+          .map((command): [string, string] => [file, command]),
+      );
+    }
+    expect(commands.length).toBeGreaterThanOrEqual(7);
+    for (const [file, command] of commands) {
+      expect(count(command), file).toBe(1);
+      expect(
+        forms.some((form) => form.test(command)),
+        `${file}: ${command}`,
+      ).toBe(true);
     }
   });
 });

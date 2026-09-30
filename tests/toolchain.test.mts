@@ -80,8 +80,9 @@ describe('pnpm', () => {
 
 describe('mise', () => {
   const workflowDirectory = new URL('../.github/workflows/', import.meta.url);
+  // GitHub runs .yml and .yaml files alike.
   const workflowFiles = readdirSync(workflowDirectory)
-    .filter((name) => name.endsWith('.yml'))
+    .filter((name) => /\.ya?ml$/.test(name))
     .map(
       (name) =>
         [name, readFileSync(new URL(name, workflowDirectory), 'utf8')] as const,
@@ -138,6 +139,13 @@ describe('mise', () => {
         expect(workflow, name).toMatch(
           /^env:\n(?: +\S.*\n)*? +MISE_LOCKED: 1$/m,
         );
+      }
+      // A job, a step or a line written to $GITHUB_ENV could switch it off
+      // again.
+      for (const [, value] of workflow.matchAll(
+        /MISE_LOCKED\s*[:=]\s*['"]?([^'"\s]*)/g,
+      )) {
+        expect(value, name).toBe('1');
       }
     }
   });
