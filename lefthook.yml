@@ -17,9 +17,14 @@ pre-commit:
     secrets:
       run: mise exec -- gitleaks git --pre-commit --staged --redact --verbose --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
     # gitleaks reads the contents of files, not their names, and a name can
-    # carry a host or an address just as well.
+    # carry a host or an address just as well. The two lines printed first
+    # keep gitleaks from skipping the names as a binary file when the first
+    # name starts like one, such as %PDF (see .gitleaks.toml).
     file-names:
-      run: git -c core.quotePath=false diff --cached --name-only --diff-filter=ACR | mise exec -- gitleaks stdin --redact --verbose --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
+      run: |
+        { printf '\n%40000s\n' ''
+          git -c core.quotePath=false diff --cached --name-only --diff-filter=ACR
+        } | mise exec -- gitleaks stdin --redact --verbose --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
     # gitleaks reads a .gitleaksignore on its own, and one line there
     # silences any finding. Allowed findings belong in the allowlists of
     # .gitleaks.toml, where they are reviewed.
@@ -36,7 +41,12 @@ commit-msg:
       # Drops the diff that `git commit -v` appends below the scissors line.
       # Removed lines there never reach the commit and would only cause false
       # alarms; the comment lines above it, such as # Author:, stay scanned.
-      run: sed '/^# -\{24\} >8 -\{24\}$/,$d' {1} | mise exec -- gitleaks stdin --redact --verbose --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
+      # The two lines printed first keep gitleaks from skipping the message
+      # as a binary file when it starts like one (see .gitleaks.toml).
+      run: |
+        { printf '\n%40000s\n' ''
+          sed '/^# -\{24\} >8 -\{24\}$/,$d' {1}
+        } | mise exec -- gitleaks stdin --redact --verbose --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
     # The message needs a Signed-off-by trailer of the author (ADR 0002),
     # which `git commit --signoff` adds. The dco job in CI runs the same
     # script over every commit of a pull request, so a commit that skipped

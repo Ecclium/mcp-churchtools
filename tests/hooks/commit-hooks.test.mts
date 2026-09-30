@@ -215,6 +215,57 @@ describe('the commit hooks', () => {
     timeout,
   );
 
+  // gitleaks skips piped text as a binary file when its first bytes look
+  // like the signature of a file format, and a name or a message that starts
+  // with %PDF does. The hooks print two lines of their own first, so the
+  // finding behind such a start is still reported (see .gitleaks.toml).
+  it(
+    'stop a finding in a name when the first name starts like a binary file',
+    () => {
+      const before = commitCount();
+      const host = canaryHost();
+      const file = `export-${host}.md`;
+      stage('%PDF-notes.md', 'Nothing to report.\n');
+      stage(file, 'Nothing to report.\n');
+
+      const result = commit('docs: add notes and an export');
+      expect(result.status, result.output).not.toBe(0);
+      expect(result.output).toContain(rule);
+      expect(result.output).not.toContain(host);
+      expect(commitCount()).toBe(before);
+
+      repository.git(['rm', '--cached', '--quiet', '--', file]);
+      rmSync(join(repository.path, file));
+      stage('export.md', 'Nothing to report.\n');
+      const counterpart = commit('docs: add notes and an export');
+      expect(counterpart.status, counterpart.output).toBe(0);
+      expect(commitCount()).toBe(before + 1);
+    },
+    timeout,
+  );
+
+  it(
+    'stop a finding in a message that starts like a binary file',
+    () => {
+      const before = commitCount();
+      stage('pdf.md', 'Nothing to report.\n');
+      const host = canaryHost();
+
+      const result = commit(`%PDF-1.7 notes\n\nFrom ${host}.`);
+      expect(result.status, result.output).not.toBe(0);
+      expect(result.output).toContain(rule);
+      expect(result.output).not.toContain(host);
+      expect(commitCount()).toBe(before);
+
+      const counterpart = commit(
+        '%PDF-1.7 notes\n\nFrom example.church.tools.',
+      );
+      expect(counterpart.status, counterpart.output).toBe(0);
+      expect(commitCount()).toBe(before + 1);
+    },
+    timeout,
+  );
+
   it(
     'stop every commit while a .gitleaksignore exists',
     () => {
