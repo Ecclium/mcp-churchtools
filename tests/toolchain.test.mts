@@ -216,12 +216,12 @@ const renovateConfig = (): RenovateConfig => {
 
 // Renovate merges on its own only patch and minor updates of development
 // tools that are named in its configuration and published with provenance
-// (ADR 0021). Their trust policy in pnpm then refuses a later version with
-// weaker evidence. A tool without provenance is merged by a person.
+// (ADR 0021). The trust policy of pnpm (pnpm-workspace.yaml) then refuses a
+// later version with weaker evidence. A tool without provenance is merged by
+// a person.
 describe('Renovate', () => {
   const config = renovateConfig();
   const rules = config.packageRules;
-  const automerged = rules.filter((rule) => rule.automerge === true);
   const withoutProvenance = [
     'typescript',
     '@types/node',
@@ -229,13 +229,45 @@ describe('Renovate', () => {
     '@eslint/js',
     'prettier',
   ];
+  // An exact name matches only itself. Renovate reads a name with *, ?,
+  // braces, a leading ! or slashes around it as a pattern.
+  const exactName = /^(?:@[a-z0-9-]+\/)?[a-z0-9][a-z0-9.-]*$/;
+
+  /** Every key in the configuration, at any depth, with its path. */
+  const entries = (
+    value: unknown,
+    path = '',
+  ): { path: string; key: string; value: unknown }[] =>
+    typeof value === 'object' && value !== null
+      ? Object.entries(value as Record<string, unknown>).flatMap(
+          ([key, child]) => [
+            { path: `${path}/${key}`, key, value: child },
+            ...entries(child, `${path}/${key}`),
+          ],
+        )
+      : [];
+  const everywhere = entries(config);
+  const pathsOf = (key: string): string[] =>
+    everywhere.filter((entry) => entry.key === key).map((entry) => entry.path);
+
+  const allowedIndex = rules.findIndex((rule) => rule.automerge === true);
+  const allowed = rules[allowedIndex] ?? {};
+
+  // Renovate reads automerge from the top level, from objects per manager
+  // such as npm, from objects per update type such as patch, from
+  // vulnerabilityAlerts, lockFileMaintenance and every package rule.
+  it('turns automerge on in exactly one rule', () => {
+    expect(
+      everywhere
+        .filter((entry) => entry.key === 'automerge' && entry.value !== false)
+        .map((entry) => entry.path),
+    ).toEqual([`/packageRules/${String(allowedIndex)}/automerge`]);
+  });
 
   it('merges automatically only the named development tools', () => {
-    expect(automerged).toHaveLength(1);
-    const [rule = {}] = automerged;
     // Any further matcher, such as a pattern for names, could widen the
     // rule beyond the names that were checked.
-    expect(Object.keys(rule).sort()).toEqual([
+    expect(Object.keys(allowed).sort()).toEqual([
       'automerge',
       'description',
       'matchDepTypes',
@@ -243,42 +275,58 @@ describe('Renovate', () => {
       'matchPackageNames',
       'matchUpdateTypes',
     ]);
-    expect(rule.matchManagers).toEqual(['npm']);
-    expect(rule.matchDepTypes).toEqual(['devDependencies']);
-    expect(rule.matchUpdateTypes).toEqual(['patch', 'minor']);
-    const names = rule.matchPackageNames ?? [];
+    expect(allowed.matchManagers).toEqual(['npm']);
+    expect(allowed.matchDepTypes).toEqual(['devDependencies']);
+    expect(allowed.matchUpdateTypes).toEqual(['patch', 'minor']);
+    const names = allowed.matchPackageNames ?? [];
     expect(names.length).toBeGreaterThan(0);
     for (const name of names) {
-      // Renovate reads a name with *, ?, braces or slashes around it as a
-      // pattern; an exact name matches only itself.
-      expect(name).toMatch(/^(?:@[a-z0-9-]+\/)?[a-z0-9][a-z0-9.-]*$/);
+      expect(name).toMatch(exactName);
       expect(Object.keys(root.devDependencies ?? {})).toContain(name);
     }
   });
 
-  it('turns automerge on nowhere else', () => {
-    expect(config.automerge).not.toBe(true);
-    expect(config.vulnerabilityAlerts?.automerge).toBe(false);
-    expect(config.lockFileMaintenance?.automerge).toBe(false);
-    for (const preset of config.extends) {
-      expect(preset.toLowerCase()).not.toContain('automerge');
+  // ignoreTests lets Renovate merge without green checks, and automergeType
+  // and platformAutomerge change who merges and when.
+  it('merges only after every required check', () => {
+    for (const key of ['ignoreTests', 'automergeType', 'platformAutomerge']) {
+      expect(pathsOf(key), key).toEqual([]);
     }
   });
 
+  // A preset can turn automerge on or skip the checks, also from inside a
+  // rule. The three presets here set neither (checked on 30.09.2026).
+  it('uses only the known presets', () => {
+    expect(config.extends).toEqual([
+      'config:best-practices',
+      'helpers:pinGitHubActionDigestsToSemver',
+      ':semanticCommits',
+    ]);
+    expect(pathsOf('extends')).toEqual(['/extends']);
+  });
+
   it('never merges a tool without provenance automatically', () => {
-    const [allowed] = automerged;
-    const denied = rules.findIndex(
+    const deniedIndex = rules.findIndex(
       (rule) =>
         rule.automerge === false &&
         withoutProvenance.every((name) =>
           rule.matchPackageNames?.includes(name),
         ),
     );
-    // Later rules win, so the list of exceptions must come after the rule
-    // that turns automerge on.
-    expect(denied).toBeGreaterThan(rules.indexOf(allowed ?? {}));
+    // Later rules win, so the exceptions must come after the rule that
+    // turns automerge on, and nothing may narrow them.
+    expect(deniedIndex).toBeGreaterThan(allowedIndex);
+    const denied = rules[deniedIndex] ?? {};
+    expect(Object.keys(denied).sort()).toEqual([
+      'automerge',
+      'description',
+      'matchPackageNames',
+    ]);
+    for (const name of denied.matchPackageNames ?? []) {
+      expect(name).toMatch(exactName);
+    }
     for (const name of withoutProvenance) {
-      expect(allowed?.matchPackageNames).not.toContain(name);
+      expect(allowed.matchPackageNames).not.toContain(name);
     }
   });
 });

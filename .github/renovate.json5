@@ -3,7 +3,7 @@
 // a release must be some days old before it is proposed, only patch and
 // minor updates of the development tools named below may be merged
 // automatically, and everything else, including every action, waits for a
-// person. tests/toolchain.test.mts checks these rules.
+// person. tests/toolchain.test.mts checks the rules for automerge.
 // Later rules take precedence over earlier ones.
 {
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
@@ -92,7 +92,7 @@
       minimumReleaseAge: '7 days',
     },
     {
-      description: 'Patch and minor updates of these development tools merge automatically once every required check has passed. On 30.09.2026 each was published with a provenance attestation through a trusted publisher, and the trust policy of pnpm refuses a later version with weaker evidence (ADR 0021). Every other package waits for a person, so a tool joins this list only after the same check.',
+      description: 'Patch and minor updates of these development tools merge automatically once every required check has passed. As checked on 30.09.2026, each is published with a provenance attestation through a trusted publisher, and the trust policy of pnpm refuses a later version with weaker evidence (ADR 0021). Every other package waits for a person, so a tool joins this list only after the same check.',
       matchManagers: ['npm'],
       matchDepTypes: ['devDependencies'],
       matchPackageNames: [
