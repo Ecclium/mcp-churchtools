@@ -27,7 +27,7 @@ Gewählt ist die dritte Option.
   - Im Betrieb über stdio aus der Konfiguration des Prozesses.
   - Im Betrieb über HTTP aus der geprüften Anmeldung am Server (ADR 0037). Eine Anmeldung, der kein Mandant zugeordnet ist, wird abgelehnt.
   - Im Runner aus seiner eigenen Konfiguration, für jeden Lauf neu.
-- **Eine Stelle:** Aus der geprüften Quelle leitet genau ein Port, der `TenantResolver`, Mandant und Akteur ab. Bei einer Anmeldung über HTTP ist der Akteur das Subjekt der geprüften Anmeldung (ADR 0037). Die Kommandozeile setzt den Port als Composition Root zusammen, ein Zusatzmodul kann ihn ersetzen.
+- **Eine Stelle:** Aus der geprüften Quelle leitet genau ein Port, der `TenantResolver`, Mandant und Akteur ab. Bei einer Anmeldung über HTTP besteht der Akteur aus Quelle und Subjekt der geprüften Anmeldung (ADR 0037), damit ein statisches Token und ein Token des Anmeldediensts mit demselben Subjekt nie derselbe Akteur sind. Die Kommandozeile setzt den Port als Composition Root zusammen, ein Zusatzmodul kann ihn ersetzen.
 - **Self-Hosting:** Eine Installation bedient genau einen Mandanten. Er heisst `default`.
 - **Gebunden an den Mandanten:** Ein Cache bindet jeden Eintrag an Mandant und Akteur, der Schlüssel besteht aus Mandant, Akteur und Route. Pseudonyme und Schlüssel gelten pro Mandant. Jeder Protokolleintrag und jedes Ereignis im Audit nennt den Mandanten.
 - **Nachweis ab Phase 1:** Ein Pflichttest bedient zwei Mandanten mit verschiedenen Basis-URLs parallel in einem Prozess und zeigt, dass nichts zwischen ihnen übergeht, weder im Cache noch in den Logs noch im Audit.

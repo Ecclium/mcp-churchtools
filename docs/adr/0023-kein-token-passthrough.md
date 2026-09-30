@@ -14,7 +14,7 @@ Zu ChurchTools, laut ChurchTools Academy und Änderungsprotokoll, abgerufen am 3
 
 - Die REST-API nimmt ein Login-Token in der Kopfzeile `Authorization: Login <token>` an. Das Token authentifiziert den Benutzer, dem es gehört (Academy, Seite «API Authentifizierung», Abschnitt «Login-Token»). Eine Einschränkung auf weniger Rechte als die des Kontos beschreibt die Dokumentation nicht, ein eigenes Dienstkonto ebenso wenig.
 - Seit Version 3.135.0 vom 03.08.2026 dürfen OAuth-Anwendungen mit ausdrücklicher Freigabe, Scope `api`, auf die REST-API zugreifen, nur im Rahmen der Rechte des angemeldeten Benutzers (Änderungsprotokoll «Web v3.135.0», Abschnitt «Verbesserungen»; Academy, Seite «Was ist OAuth? (SSO in Drittsysteme)», Abschnitt «Häufige Fragen (FAQ)»). Als OAuth-Anbieter dient ChurchTools schon seit Version 3.116.0 (Änderungsprotokoll «Web v3.116.0», Abschnitt «Verbesserungen»).
-- Eine OAuth-Anwendung richtet jemand mit den nötigen Rechten in den Einstellungen der jeweiligen Instanz ein, mit der Redirect-URI des Clients (Academy, Seite «OAuth-Authentifizierung mit ChurchTools», Abschnitt «OAuth-Server vorbereiten»).
+- Eine OAuth-Anwendung richtet jemand mit den nötigen Rechten in den Einstellungen der jeweiligen Instanz ein, mit der Redirect-URI des Clients (Academy, Seite «OAuth-Authentifizierung mit ChurchTools», Abschnitte «OAuth-Server vorbereiten» und «OAuth-Server fertigstellen»).
 - Nicht dokumentiert sind die Pfade der Endpunkte, PKCE, Refresh-Tokens, Laufzeiten, das Format der Tokens und Metadaten unter `.well-known` (`docs/research/churchtools-api.md`, Frage F15).
 
 Festzulegen ist, ob Ecclium Tokens von Clients an ChurchTools weiterreicht und wie Rechte pro Person entstehen.
