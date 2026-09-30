@@ -1,6 +1,6 @@
 # Architekturentscheide
 
-Hier stehen die Architekturentscheide (Architecture Decision Records, ADR) von Ecclium. Format und Regeln legt [ADR 0001](0001-adrs-als-entscheidformat.md) fest, die Vorlage ist [0000-template.md](0000-template.md).
+Hier stehen die Architekturentscheide (Architecture Decision Records, ADR) von Ecclium. Format und Regeln legt [ADR 0001](0001-adrs-als-entscheidformat.md) fest, die Vorlage ist [0000-template.md](0000-template.md). «Pro» oder «Pro-Modul» heisst das kostenpflichtige Zusatzmodul, das den freien Kern erweitert, ohne etwas aus ihm zu entfernen ([PROMISE.md](../../PROMISE.md)).
 
 Die Spalte «Fällt vor» nennt die Phase, vor deren Beginn der Entscheid feststehen muss. Bei Phase 0 heisst das: im Lauf von Phase 0, bevor die Arbeit beginnt, die davon abhängt. Die Status bedeuten:
 
