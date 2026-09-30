@@ -173,6 +173,9 @@ Sehen Sie sich vor der Freigabe diese Teile des Diffs an. Jede Änderung dort ve
 - `.gitleaks.toml` und `lefthook.yml`.
 - `.gitleaksignore` an jedem Ort, auch wenn die Prüfungen sie abweisen.
 - Alles, was mise liest: `mise*.toml`, `mise*.lock`, `.mise*.toml`, `mise/`, `.mise/`, `.config/` und `.tool-versions`. mise übernimmt aus diesen Dateien auch Umgebungsvariablen und Pfade für alle folgenden Schritte eines Jobs.
-- `package.json` samt `scripts`, `packages/*/package.json`, `pnpm-workspace.yaml` und `pnpm-lock.yaml`.
+- `package.json` samt `scripts`, `packages/*/package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `.npmrc` und `.pnpmfile.*`. pnpm führt eine Datei `.pnpmfile.*` bei jeder Installation aus, auch wenn Install-Skripte gesperrt sind.
+- Einstellungen für Editoren in `.vscode/`.
 - Konfigurationen der Prüfungen: `eslint.config.mjs`, `.dependency-cruiser.mjs`, `vitest.config.mts`, `tsconfig*.json`, `.prettierrc.json` und `.prettierignore`, dazu jede Konfiguration von ESLint oder Prettier in einem Unterordner.
 - Tests der Regeln und Prüfungen: `tests/architecture/**`, `tests/hooks/**`, `tests/scripts/**`, `tests/support/**` und `tests/toolchain.test.mts`. Jede Testdatei, auch unter `packages/`, läuft in CI mit allem, was sie importiert, und kann die Prüfungen verfälschen.
+
+Dieselbe Durchsicht gilt, bevor Sie den Branch eines Pull Requests lokal auschecken. Hooks, Skripte, Prettier aus `node_modules`, eine Datei `.pnpmfile.*` und die Konfiguration von mise laufen dann auf Ihrem Rechner, sobald Sie Git, mise oder pnpm aufrufen. `pnpm run` installiert vorher, wenn `node_modules` nicht zum Lockfile passt.

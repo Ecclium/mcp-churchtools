@@ -31,6 +31,10 @@ Bis Version 0.1.0 erschienen ist, gibt es nur den Stand auf `main`. Sicherheitsk
 
 Vermuten Sie einen Vorfall mit Ecclium, etwa ein abgeflossenes Token, eine kompromittierte Installation oder Abhängigkeit oder unerwartete Schreibvorgänge in ChurchTools, dann widerrufen Sie zuerst die ChurchTools-Tokens, die Ecclium benutzt, noch vor jeder Analyse. Ein Login-Token wirkt ohne zweiten Faktor und trägt alle Rechte seines Kontos.
 
+## Bedrohungen und Restrisiken
+
+Was Ecclium schützt, gegen wen, mit welchen Massnahmen und was offen bleibt, steht im [Threat Model](docs/threat-model.md).
+
 ## English
 
 Please report vulnerabilities privately through GitHub's private vulnerability reporting ("Report a vulnerability" under "Security" in this repository), never in a public issue or pull request. Do not include real data such as host names, tenant names, tokens or personal data; use placeholders like `https://example.church.tools` instead. If we need more for the analysis, we will ask.
@@ -40,3 +44,5 @@ Ecclium is maintained by one person, without round-the-clock availability or a d
 After the fix we publish a security advisory and, if you wish, credit you in it. Report vulnerabilities in ChurchTools itself to the manufacturer of ChurchTools; Ecclium is an independent project and is not affiliated with the manufacturer of ChurchTools. Report vulnerabilities in a dependency to the project that maintains it.
 
 If you suspect any incident involving Ecclium, such as a leaked token, a compromised installation or dependency, or unexpected write operations in ChurchTools, first revoke the ChurchTools tokens that Ecclium uses, before any analysis. A login token works without a second factor and carries all permissions of its account.
+
+What Ecclium protects, against whom, with which measures and what remains open is described in the [threat model](docs/threat-model.md), in German.

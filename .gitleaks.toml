@@ -114,8 +114,10 @@ tags = ["secret", "churchtools"]
 [[rules]]
 id = "churchtools-token-assignment"
 description = "ChurchTools token assigned to a variable or setting"
-# Secrets reach the server only through *_FILE variables that hold a path.
-# A token assigned directly (CT_TOKEN=..., churchtoolsToken: "...") is a
+# Secrets reach the server and the runner through *_FILE variables that
+# hold a path; only local stdio mode may read the token from an environment
+# variable (ADR 0023). Either way the value never belongs in the repository,
+# so a token assigned directly (CT_TOKEN=..., churchtoolsToken: "...") is a
 # leak. Assignments to *_FILE, *_PATH and *_DIR are paths and are allowed.
 regex = '''(?i)\b(?:CT|CHURCHTOOLS)_?[A-Z0-9_]*TOKEN[A-Z0-9_]*["'\x60]?\s*[:=]\s*["'\x60]?([A-Za-z0-9._~+/=-]{16,})'''
 secretGroup = 1
