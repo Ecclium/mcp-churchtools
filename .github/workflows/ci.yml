@@ -120,12 +120,13 @@ jobs:
         # so a name with an invalid byte cannot make sort fail and empty the
         # input of the scan. The two lines printed first keep gitleaks from
         # skipping the names as a binary file when the first name starts like
-        # one, such as %PDF (see .gitleaks.toml).
+        # one, such as %PDF, and sed G puts an empty line after each name
+        # (see .gitleaks.toml).
         run: |
           { printf '\n%40000s\n' ''
             { git -c core.quotePath=false log --format= --name-only HEAD
               git -c core.quotePath=false ls-files
-            } | LC_ALL=C sort -u
+            } | LC_ALL=C sort -u | sed G
           } | gitleaks stdin --redact --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
       - name: Scan the messages of every commit that leads to the tested one
         # The scan of the history reads what each commit changes, not its

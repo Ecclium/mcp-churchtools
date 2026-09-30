@@ -49,6 +49,11 @@
 #   cover every position at which gitleaks 8.30 looks for a signature, and
 #   the line break in the first byte keeps it from checking later parts of
 #   the text again.
+#   Lists of file names get an empty line after each name (sed G). gitleaks
+#   reads its input in parts of about 100 kB and cuts them at an empty line
+#   if it finds one within 25 kB, otherwise anywhere. Without the empty
+#   lines a name could be cut in two, and a host across the cut would go
+#   unseen. Commit messages already have empty lines between them.
 #
 # Placeholders that pass (use them in code, tests, fixtures, docs, examples)
 #   ChurchTools instance  https://example.church.tools, tenant "demo-tenant"
