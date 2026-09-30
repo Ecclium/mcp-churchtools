@@ -144,7 +144,7 @@ Für jeden Pull Request laufen die folgenden Prüfungen. Jede ist Pflicht für d
 | Prüfung         | Was sie prüft                                                                                                                                                               |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `workflow-lint` | Die Workflows mit actionlint und shellcheck, dazu zizmor ab mittlerer Schwere. In CI prüft zizmor auch, ob jede gepinnte SHA zur Action und zur Version im Kommentar passt. |
-| `secret-scan`   | Die Geschichte bis zum geprüften Commit, die Dateien und alle Dateinamen mit gitleaks.                                                                                      |
+| `secret-scan`   | Die Geschichte bis zum geprüften Commit, die Dateien, alle Dateinamen und die Nachrichten aller Commits bis dorthin mit gitleaks.                                           |
 | `check`         | Build und `pnpm check` mit der Version von Node.js für die Entwicklung.                                                                                                     |
 | `compat`        | Dasselbe mit der nächsten Linie von Node.js.                                                                                                                                |
 | `minimum`       | Dasselbe mit der ältesten unterstützten Version von Node.js.                                                                                                                |
@@ -154,7 +154,9 @@ Für jeden Pull Request laufen die folgenden Prüfungen. Jede ist Pflicht für d
 
 `secret-scan`, `pr-title` und `dco` scheitern ausserdem, solange irgendwo eine Datei `.gitleaksignore` liegt, weil gitleaks sie von sich aus liest und eine Zeile darin jeden Fund abschaltet.
 
-Dieser Befehl führt lokal aus: die Prüfung der Workflows, zizmor dabei ohne Netz, den Scan der Geschichte und der Dateinamen mit gitleaks sowie Build und `pnpm check` auf allen drei Versionen von Node.js. Den Scan der Dateien, die Prüfung der Abhängigkeiten, Titel und Sign-off prüft nur CI.
+Nach dem Merge laufen die Jobs aus `ci.yml` noch einmal auf `main`. `secret-scan` prüft dann auch die Nachricht des Squash-Commits, die sich im Dialog des Merge ändern lässt. Ein Fund dort steht schon auf `main` und wird nach ADR 0014 als Vorfall behandelt.
+
+Dieser Befehl führt lokal aus: die Prüfung der Workflows, zizmor dabei ohne Netz, den Scan der Geschichte, der Dateinamen und der Commit-Messages mit gitleaks sowie Build und `pnpm check` auf allen drei Versionen von Node.js. Den Scan der Dateien, die Prüfung der Abhängigkeiten, Titel und Sign-off prüft nur CI.
 
 ```sh
 mise exec -- pnpm ci:local
