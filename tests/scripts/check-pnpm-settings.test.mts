@@ -33,6 +33,23 @@ describe('compareSettings', () => {
     ).toEqual(['Einstellung trustPolicy ist "off", erwartet "no-downgrade"']);
   });
 
+  // pnpm_config_ variables in the environment, for example from an [env]
+  // entry of a mise file, can switch these on without touching the file.
+  it('reports settings that switch the trust policy off', () => {
+    expect(
+      compareSettings({
+        ...expectedSettings,
+        trustLockfile: true,
+        trustPolicyExclude: ['*'],
+        trustPolicyIgnoreAfter: 1,
+      }),
+    ).toEqual([
+      'Einstellung trustLockfile ist true, erwartet false',
+      'Einstellung trustPolicyExclude ist ["*"], erwartet []',
+      'Einstellung trustPolicyIgnoreAfter ist 1 und darf nicht gesetzt sein',
+    ]);
+  });
+
   it('allows exceptions from the release age only for exact versions', () => {
     const exact = {
       minimumReleaseAgeExclude: ['@scope/fix@1.2.3', 'fix@2.0.1'],

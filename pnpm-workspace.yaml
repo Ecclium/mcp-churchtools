@@ -35,6 +35,12 @@ minimumReleaseAgeIgnoreMissingTime: false
 # when it installs from the lockfile, it fails, so CI refuses such a version
 # in the lockfile as well.
 trustPolicy: no-downgrade
+# Nothing may weaken the trust policy: pnpm checks every entry of the
+# lockfile again when it installs from it, and no package is excluded.
+# scripts/check-pnpm-settings.mts also requires trustPolicyIgnoreAfter to be
+# unset, which would let older versions skip the policy.
+trustLockfile: false
+trustPolicyExclude: []
 
 # Transitive dependencies must come from the registry, not from Git
 # repositories or tarball URLs.

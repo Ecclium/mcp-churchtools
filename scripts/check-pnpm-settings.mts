@@ -26,6 +26,8 @@ export const expectedSettings: Readonly<Record<string, unknown>> = {
   minimumReleaseAgeStrict: true,
   minimumReleaseAgeIgnoreMissingTime: false,
   trustPolicy: 'no-downgrade',
+  trustLockfile: false,
+  trustPolicyExclude: [],
   blockExoticSubdeps: true,
   strictDepBuilds: true,
   allowBuilds: {},
@@ -33,6 +35,16 @@ export const expectedSettings: Readonly<Record<string, unknown>> = {
   ignorePnpmfile: true,
   ignoreWorkspaceCycles: true,
 };
+
+/**
+ * Settings that must not be set at all, because every value weakens a
+ * protection. trustPolicyIgnoreAfter lets a version skip the trust policy
+ * once it is older than the given number of minutes, and no value of it
+ * means «never».
+ */
+export const unsetSettings: ReadonlySet<string> = new Set([
+  'trustPolicyIgnoreAfter',
+]);
 
 /** The keys pnpm-workspace.yaml may contain. */
 export const knownWorkspaceKeys: ReadonlySet<string> = new Set([
@@ -50,7 +62,8 @@ const exactVersion =
  *
  * Two settings may deviate within limits: `minimumReleaseAgeExclude` may
  * name exact versions (`name@1.2.3`), and `allowBuilds` may list packages
- * whose scripts stay disabled (`false`). Every other value must match.
+ * whose scripts stay disabled (`false`). Every other value must match, and
+ * the settings in {@link unsetSettings} must be absent.
  *
  * @param actual - Effective settings, as printed by `pnpm config list --json`.
  * @returns One message per problem, empty if everything is in effect.
@@ -91,6 +104,13 @@ export function compareSettings(
     } else if (!isDeepStrictEqual(value, expected)) {
       problems.push(
         `Einstellung ${key} ist ${JSON.stringify(value)}, erwartet ${JSON.stringify(expected)}`,
+      );
+    }
+  }
+  for (const key of unsetSettings) {
+    if (key in actual) {
+      problems.push(
+        `Einstellung ${key} ist ${JSON.stringify(actual[key])} und darf nicht gesetzt sein`,
       );
     }
   }
