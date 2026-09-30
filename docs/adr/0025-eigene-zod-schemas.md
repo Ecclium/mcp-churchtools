@@ -16,7 +16,7 @@ Festzulegen ist, woran der Client Antworten von ChurchTools prüft und wozu das 
 
 ## Optionen
 
-1. **Typen und Prüfung aus dem OpenAPI-Dokument erzeugen:** wenig Handarbeit, aber das Dokument unterscheidet sich je nach Instanz und Version, eine eingecheckte Kopie ist nicht möglich, jede Ungenauigkeit des Dokuments würde zur Prüfung selbst, und eine Klassifikation für die Maskierung enthält es nicht.
+1. **Typen und Prüfung aus dem OpenAPI-Dokument erzeugen:** wenig Handarbeit, aber das Dokument unterscheidet sich je nach Instanz und Version, eine Kopie gehört bis zur Klärung der Lizenz nicht ins Repository (ADR 0027), jede Ungenauigkeit des Dokuments würde zur Prüfung selbst, und eine Klassifikation für die Maskierung enthält es nicht.
 2. **Antworten nur typisieren, nicht prüfen:** schnell, aber ein unerwartetes Feld oder ein unerwarteter Typ gelangt ungeprüft bis zur Maskierung, und Abweichungen fallen erst im Betrieb auf.
 3. **Eigene zod-Schemas für jeden genutzten Endpunkt,** von Hand geschrieben, die das OpenAPI-Dokument nur als Hilfe benutzen.
 
@@ -27,14 +27,15 @@ Gewählt ist die dritte Option.
 - **Wahrheit:** Für jeden Endpunkt, den der Client nutzt, gibt es ein eigenes zod-Schema für Anfrage und Antwort, auch für Paginierung und Fehler. Der Client prüft jede Antwort daran. Was ein Schema nicht deklariert, erreicht kein Tool.
 - **Keine geratene Antwort:** Passt eine Antwort nicht zu ihrem Schema, endet der Aufruf mit einem klaren Fehler. Ausnahme mit Absicht: Eine unbekannte Struktur der Rechte-Antwort sperrt nur das Schreiben, nie das Lesen. Die eigene Prüfung der Rechte ist beratend, durchgesetzt werden die Rechte von ChurchTools.
 - **Das OpenAPI-Dokument** dient zwei Zwecken und ist in beiden nicht die Wahrheit: Es liefert die Grundlage, um die Operationen der generischen API-Tools zu klassifizieren, die Endpunkte ohne eigenes Tool erreichen. Und ein Vertragsabgleich läuft lokal gegen eine Kopie, die nicht eingecheckt wird, damit Änderungen der API auffallen.
-- **Abgrenzung:** Dieses ADR betrifft die Schemas des Clients gegenüber ChurchTools. Die Ausgabeschemas der Tools und ihre Klassifikation für die Maskierung regelt ADR 0026, die generischen API-Tools entstehen in Phase 3.
+- **Abgrenzung:** Dieses ADR betrifft die Schemas des Clients gegenüber ChurchTools. Die Ausgabeschemas der Tools und ihre Klassifikation für die Maskierung regelt ADR 0026, die generischen API-Tools entstehen in Phase 3. Für das Minimum der Maskierung ab Phase 1 tragen die Ausgabeschemas der ersten Tools die Klassen für E-Mail-Adressen, Telefonnummern und Geburtsdaten im Register von zod (ADR 0022, ADR 0024).
 
 ## Konsequenzen
 
 - Jeder Endpunkt kostet Handarbeit. Dafür ist jedes Feld bewusst aufgenommen, und die Zahl der Endpunkte bleibt klein, weil jeder ein Schema braucht.
-- Ändert ChurchTools eine Antwort, schlägt die Prüfung fehl, statt still falsche oder zusätzliche Daten weiterzugeben. Der lokale Vertragsabgleich soll solche Änderungen vorher zeigen. Weil keine Kopie des Dokuments im Repository liegt, läuft er nicht in CI.
+- Ändert ChurchTools eine Antwort, schlägt die Prüfung fehl, statt still falsche oder zusätzliche Daten weiterzugeben. Der lokale Vertragsabgleich soll solche Änderungen vorher zeigen.
 - `zod` kommt mit dem ersten Schema in Phase 1 als Abhängigkeit dazu, begründet im Commit. Dass es nicht gebündelt wird und das Register für Klassifikationen hält, legt ADR 0022 fest.
-- Offen: Die Aussagen zu Rechte-Antwort, Paginierung, `limit` und Fehlern stammen aus der Dokumentation. Die Proben `00-inventory` bis `03-pagination-errors` prüfen sie an einer Instanz, ihre Ergebnisse ergänzen dieses ADR vor Phase 1.
+- Restrisiken: Solange keine Kopie des Dokuments im Repository liegt, läuft der Vertragsabgleich nicht in CI. Eine Änderung der API zeigt sich dann erst, wenn jemand ihn lokal ausführt oder eine Antwort im Betrieb an ihrem Schema scheitert.
+- Offen: Die Aussagen zu Rechte-Antwort, Paginierung, `limit` und Fehlern stammen aus der Dokumentation. Die Proben `00-inventory` bis `03-pagination-errors` prüfen sie an einer Instanz. Ihre Ergebnisse ergänzen den Kontext dieses ADR, bevor es angenommen wird.
 
 ## Umsetzung
 
