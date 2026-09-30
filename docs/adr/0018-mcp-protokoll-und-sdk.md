@@ -29,7 +29,7 @@ Gewählt ist die dritte Option.
 
 - Ecclium spricht MCP in der Version 2026-07-28 über `@modelcontextprotocol/server`, im Betrieb über HTTP zusammen mit `@modelcontextprotocol/hono`.
 - Der Server hält keinen Zustand zwischen Anfragen. Für jede Anfrage entsteht eine Server-Instanz, Antworten gehen im JSON-Modus ohne SSE. Clients mit der Protokollversion 2025-11-25 werden ebenfalls ohne Sitzung bedient. Rückfragen laufen über Multi Round-Trip Requests, Sampling wird nicht benutzt. Alles Zeitgesteuerte läuft im Runner als eigener Prozess.
-- **Versionen:** Server- und Adapterpaket werden nur gemeinsam aktualisiert. Die Version des Adapters bestimmt die Mindestversion des Servers, und das Serverpaket bringt sein Kernpaket in genau passender Version mit. Welches Paar gepinnt wird, entscheidet sich beim Einbau in Phase 1: das jüngste, das das Mindestalter für neue Versionen erfüllt (ADR 0021). Ein Pin, der schon jetzt gesetzt würde, wäre bis dahin veraltet.
+- **Versionen:** In Phase 1 wird `@modelcontextprotocol/server` für den Betrieb über stdio gepinnt, die jüngste Version, die das Mindestalter für neue Versionen erfüllt (ADR 0021). Ein Pin, der schon in Phase 0 gesetzt würde, wäre beim Einbau veraltet. Der Adapter `@modelcontextprotocol/hono` kommt erst mit dem Betrieb über HTTP in Phase 7 dazu, in einer Version, die zum gepinnten Server passt. Bis dahin wäre er eine Abhängigkeit ohne Nutzen. Ab dann werden Server- und Adapterpaket nur gemeinsam aktualisiert: Die Version des Adapters bestimmt die Mindestversion des Servers, und das Serverpaket bringt sein Kernpaket in genau passender Version mit.
 - **stdout im Betrieb über stdio** gehört dem Protokoll, und nur der stdio-Transport des SDK schreibt dorthin. Die Orte im Code stehen in `tests/architecture/boundaries.json`:
   - Der Betrieb über stdio beginnt in `packages/server/src/stdio/` und in der Kommandozeile in `packages/cli/src/stdio/`. Nichts, was von dort aus erreichbar ist, darf auf stdout schreiben.
   - Auf stdout schreiben nur die Meldungen der Kommandozeile für Betreiber in `packages/cli/src/output/`.
@@ -51,4 +51,4 @@ Gewählt ist die dritte Option.
 - dependency-cruiser: Regel `no-stdout-in-stdio-paths` in `tests/architecture/dependency-rules.mts`, geprüft mit `pnpm check:arch`.
 - ESLint: `tests/architecture/lint-rules.mts`, geladen von `eslint.config.mjs`.
 - Tests: `tests/architecture/dependency-rules.test.mts` und `tests/architecture/lint-rules.test.mts`, je Regel mit einem Beispiel, das sie verletzt.
-- Das SDK selbst, die Server-Instanz pro Anfrage und der Test im Betrieb über stdio folgen in Phase 1.
+- Das Serverpaket des SDK, die Server-Instanz pro Anfrage und der Test im Betrieb über stdio folgen in Phase 1, der Adapter für HTTP in Phase 7.
