@@ -1,0 +1,8 @@
+# Minimum environment, selected with MISE_ENV=minimum: the tools from
+# mise.toml with the oldest version of Node.js that Ecclium supports, the
+# lower bound of engines.node in package.json. Code that a test runs and that
+# needs a newer release of Node.js 24 then fails in CI instead of on an
+# operator's machine (ADR 0019). This version changes only together with
+# engines.node, never through an automatic update.
+[tools]
+node = "24.15.0"

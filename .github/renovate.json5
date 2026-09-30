@@ -1,0 +1,186 @@
+// Renovate proposes updates of dependencies, tools and actions as pull
+// requests (ADR 0020). The rules follow the supply-chain baseline (ADR 0021):
+// a release must be some days old before it is proposed, only patch and
+// minor updates of development tools may be merged automatically, and
+// everything else, including every action, waits for a person.
+// Later rules take precedence over earlier ones.
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: [
+    // Pins actions to full commit SHAs, refreshes the lock files weekly and
+    // migrates this file when Renovate renames an option.
+    'config:best-practices',
+    // Writes the exact version next to each pinned SHA, such as # v7.0.1.
+    // zizmor checks in CI that version and SHA belong together.
+    'helpers:pinGitHubActionDigestsToSemver',
+    // Conventional Commits, which the pr-title job checks.
+    ':semanticCommits',
+  ],
+
+  // A branch is rebased only when it falls behind main, so that its checks
+  // ran against the current main before it is merged.
+  rebaseWhen: 'behind-base-branch',
+  automergeStrategy: 'squash',
+
+  // Every commit needs a sign-off of its author (ADR 0002). Renovate commits
+  // through the GitHub API, so the author is this account. The sign-off
+  // goes into the body, not into commitTrailers: when GitHub merges a pull
+  // request automatically, the squash commit keeps the body but not the
+  // trailers.
+  gitAuthor: 'renovate[bot] <29139614+renovate[bot]@users.noreply.github.com>',
+  commitBody: 'Signed-off-by: {{{gitAuthor}}}',
+
+  // The mise that updates mise.lock is the one CI installs, so the lock file
+  // stays in a format CI can read. tests/toolchain.test.mts keeps both in
+  // step.
+  constraints: {
+    mise: '2026.9.14',
+  },
+
+  // brand/ is delivered as a whole and never changed in this repository.
+  ignorePaths: ['brand/**'],
+
+  // Every update waits three days, the same age pnpm requires for every
+  // package it installs. For an action, Renovate reads the age from Git
+  // dates that whoever sets the tag controls, unless the version has a
+  // GitHub release; this is one reason why actions never merge on their own.
+  minimumReleaseAge: '3 days',
+
+  vulnerabilityAlerts: {
+    // Security updates skip the waiting time but are never merged
+    // automatically. The exception they need in pnpm-workspace.yaml fails
+    // the checks until a maintainer has added its date and reason.
+    automerge: false,
+    labels: ['security'],
+  },
+
+  lockFileMaintenance: {
+    // Refreshing the lock file can change any transitive dependency,
+    // including runtime ones.
+    automerge: false,
+  },
+
+  customManagers: [
+    {
+      customType: 'regex',
+      description: 'The version of mise that CI installs and that updates mise.lock',
+      managerFilePatterns: [
+        '/^\\.github/workflows/[^/]+\\.yml$/',
+        '/^\\.github/renovate\\.json5$/',
+      ],
+      matchStrings: [
+        'jdx/mise-action@[0-9a-f]{40} # v\\S+\\s+with:\\s+version: (?<currentValue>\\S+)',
+        "\\bmise: '(?<currentValue>[^']+)'",
+      ],
+      depNameTemplate: 'mise',
+      datasourceTemplate: 'github-releases',
+      packageNameTemplate: 'jdx/mise',
+      extractVersionTemplate: '^v(?<version>.+)$',
+      versioningTemplate: 'semver',
+    },
+  ],
+
+  packageRules: [
+    {
+      description: 'Runtime dependencies wait seven days.',
+      matchDepTypes: [
+        'dependencies',
+        'optionalDependencies',
+        'peerDependencies',
+      ],
+      minimumReleaseAge: '7 days',
+    },
+    {
+      description: 'Patch and minor updates of development tools merge automatically once every required check has passed.',
+      matchManagers: ['npm'],
+      matchDepTypes: ['devDependencies'],
+      matchUpdateTypes: ['patch', 'minor'],
+      automerge: true,
+    },
+    {
+      description: 'These packages are published without provenance, so only the waiting time protects against a hijacked release (ADR 0021). A person merges them.',
+      matchPackageNames: [
+        'typescript',
+        '@types/node',
+        'eslint',
+        '@eslint/js',
+        'prettier',
+      ],
+      automerge: false,
+    },
+    {
+      description: 'Actions are never merged automatically (ADR 0021). Their age comes from Git dates that whoever sets a tag controls, and an action runs in the checks of its own update, where a hijacked release could report success.',
+      matchManagers: ['github-actions'],
+      automerge: false,
+    },
+    {
+      description: 'The version of mise in the workflows is updated by the custom manager above, together with constraints.mise, not by the manager for actions.',
+      matchManagers: ['github-actions'],
+      matchDepNames: ['jdx/mise'],
+      matchDepTypes: ['uses-with'],
+      enabled: false,
+    },
+    {
+      description: 'A new SHA for an unchanged version means that a tag was moved, the typical sign of a hijacked action. Such an update waits for approval on the dependency dashboard.',
+      matchManagers: ['github-actions'],
+      matchUpdateTypes: ['digest'],
+      automerge: false,
+      dependencyDashboardApproval: true,
+    },
+    {
+      description: 'These actions are allowed by the organisation with their exact SHA only.',
+      matchManagers: ['github-actions'],
+      matchPackageNames: [
+        'ossf/scorecard-action',
+        'github/codeql-action',
+        'actions/upload-artifact',
+      ],
+      automerge: false,
+      prBodyNotes: [
+        'The organisation allows this action with its exact SHA only. Add the new SHA to the allowlist of the organisation before merging; until then the workflow cannot start.',
+      ],
+    },
+    {
+      description: 'TypeScript 7 has no programmatic API before 7.1, which typescript-eslint needs, and dependency-cruiser 18 reads TypeScript below 7 only (ADR 0020).',
+      matchPackageNames: ['typescript'],
+      allowedVersions: '<7',
+    },
+    {
+      description: 'pnpm is pinned in mise.toml and in packageManager, which must name the same version. pnpm 12 is reassessed on its own (ADR 0020).',
+      matchDepNames: ['pnpm', 'aqua:pnpm/pnpm'],
+      groupName: 'pnpm',
+      allowedVersions: '<12',
+    },
+    {
+      description: 'mise.toml and .nvmrc name the same development version of Node.js.',
+      matchDepNames: ['node'],
+      matchFileNames: ['mise.toml', '.nvmrc'],
+      groupName: 'Node.js',
+    },
+    {
+      description: 'A new major version of Node.js is adopted by the rule in ADR 0019, not by an update.',
+      matchDepNames: ['node'],
+      matchUpdateTypes: ['major'],
+      enabled: false,
+    },
+    {
+      description: 'The types follow the oldest supported line of Node.js (ADR 0019).',
+      matchPackageNames: ['@types/node'],
+      allowedVersions: '<25',
+    },
+    {
+      description: 'mise.minimum.toml names the oldest supported version of Node.js, the lower bound of engines.node. It changes only together with it (ADR 0019).',
+      matchFileNames: ['mise.minimum.toml'],
+      enabled: false,
+    },
+    {
+      description: 'The MCP server and its Hono adapter are updated only together, because each adapter release needs a matching server release (ADR 0018).',
+      matchPackageNames: [
+        '@modelcontextprotocol/server',
+        '@modelcontextprotocol/hono',
+      ],
+      groupName: 'MCP SDK',
+      automerge: false,
+    },
+  ],
+}

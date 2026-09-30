@@ -1,0 +1,116 @@
+# Checks of a pull request that concern its text rather than its code: the
+# title, which becomes the first line of the commit on main, and the sign-off
+# and messages of its commits. With the squash setting «Pull request title
+# and commit details» the messages become part of that commit as well.
+#
+# Both jobs are required status checks for main and follow the conventions
+# described at the top of ci.yml. Title, messages and identities are text
+# from outside; they reach the scripts only through environment variables
+# and Git, never as part of a script.
+name: pr-meta
+
+on:
+  pull_request:
+    # edited: a changed title must be checked again.
+    types: [opened, edited, synchronize, reopened]
+  merge_group:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  MISE_LOCKED: 1
+
+jobs:
+  pr-title:
+    name: pr-title
+    # In the merge queue there is no title to check. A skipped job counts as
+    # passed.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Node.js and gitleaks
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.9.14
+          cache: false
+          install_args: node aqua:gitleaks/gitleaks
+      - name: Refuse ignore files of gitleaks
+        # gitleaks reads a .gitleaksignore in the checkout on its own, and one
+        # line there silences any finding. Findings are allowed only through
+        # the reviewed allowlists in .gitleaks.toml (ADR 0014).
+        run: |
+          if [ -n "$(find . -name .gitleaksignore -not -path './.git/*' -print -quit)" ]; then
+            echo 'Eine Datei .gitleaksignore schaltet Funde ab und ist nicht erlaubt. Erweitern Sie stattdessen die Allowlist in .gitleaks.toml.' >&2
+            exit 1
+          fi
+      - name: Check that the title follows Conventional Commits
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: node scripts/ci/check-pr-title.mts "$TITLE"
+      - name: Scan the title for secrets
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: printf '%s\n' "$TITLE" | gitleaks stdin --redact --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
+
+  dco:
+    name: dco
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out with the whole history
+        # For a pull request this is the test merge of its head into the
+        # base branch: HEAD^1 is the base, HEAD^2 the head of the pull
+        # request, and the commits between them are those it adds.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Node.js and gitleaks
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.9.14
+          cache: false
+          install_args: node aqua:gitleaks/gitleaks
+      - name: Refuse ignore files of gitleaks
+        # gitleaks reads a .gitleaksignore in the checkout on its own, and one
+        # line there silences any finding. Findings are allowed only through
+        # the reviewed allowlists in .gitleaks.toml (ADR 0014).
+        run: |
+          if [ -n "$(find . -name .gitleaksignore -not -path './.git/*' -print -quit)" ]; then
+            echo 'Eine Datei .gitleaksignore schaltet Funde ab und ist nicht erlaubt. Erweitern Sie stattdessen die Allowlist in .gitleaks.toml.' >&2
+            exit 1
+          fi
+      - name: Check that the test merge contains the head of the pull request
+        # Fails closed if the test merge that GitHub recorded for this event
+        # was built from another head than the event names, so that no result
+        # is reported for commits this run has not seen. A re-run keeps both,
+        # only a new event helps.
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$(git rev-parse HEAD^2)" != "$HEAD_SHA" ]; then
+            echo 'Der geprüfte Stand gehört nicht zum letzten Commit des Pull Requests, und ein erneuter Lauf prüft denselben Stand. Übertragen Sie einen neuen Commit, oder schliessen Sie den Pull Request und öffnen Sie ihn wieder.' >&2
+            exit 1
+          fi
+      - name: Check the sign-off of every commit
+        run: node scripts/ci/check-dco.mts --range HEAD^1 HEAD^2
+      - name: Scan the commit messages for secrets
+        run: git log --format=%B HEAD^1..HEAD^2 | gitleaks stdin --redact --no-banner --ignore-gitleaks-allow -c .gitleaks.toml

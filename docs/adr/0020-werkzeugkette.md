@@ -26,11 +26,12 @@ Gewählt ist die dritte Option.
 - **Vitest 5** mit Abdeckung über V8 für alle Tests. Tests laufen aus dem Quelltext, nicht aus dem Build (ADR 0022).
 - **ESLint 10** mit typescript-eslint in der strengen, typbasierten Einstellung und eslint-plugin-jsdoc. Jeder Export braucht einen Dokumentationskommentar mit Zweck, Parametern, Ergebnis und Fehlerfällen, exportierte Funktionen und Klassen der Pakete zusätzlich ein Beispiel. Im Code der Pakete ist `console` verboten, weil stdout im Betrieb über stdio dem MCP-Protokoll gehört. Auf stdout und stderr schreiben nur die Orte, die ADR 0018 nennt: der Logger und die Meldungen der Kommandozeile für Betreiber.
 - **Prettier 3** formatiert Code, Konfiguration und Dokumentation. `brand/`, das Lockfile und der Lizenztext bleiben unverändert.
-- **lefthook 2** richtet die Git-Hooks ein: gitleaks für jeden Commit und jede Commit-Message, Prettier für die gestagten Dateien.
+- **lefthook 2** richtet die Git-Hooks ein: gitleaks für jeden Commit und jede Commit-Message, Prettier für die gestagten Dateien und die Prüfung des Sign-offs.
 - **Hilfsskripte** liegen als `.mts` unter `scripts/` und laufen ohne Build direkt in Node.js, das die Typen entfernt. Sie nutzen nur, was Node.js mitbringt.
 - **dependency-cruiser 18** prüft die Architekturregeln, also jeden Import in den Paketen gegen die Grenzen aus ADR 0022, ADR 0018 und ADR 0024. Es liest TypeScript mit dem installierten Compiler und unterstützt TypeScript 7 noch nicht.
-- **`pnpm check`** ist der eine Befehl für alle lokalen Prüfungen: Formatierung, Typen, Lint, Architekturregeln, Tests, Lizenzen, Schutzeinstellungen von pnpm und Links in der Dokumentation. CI ruft dieselben Befehle auf.
-- **Renovate** schlägt Aktualisierungen vor, unter den Regeln von ADR 0021.
+- **`pnpm check`** ist der eine Befehl für alle lokalen Prüfungen: Formatierung, Typen, Lint, Architekturregeln, Lizenzen, Schutzeinstellungen von pnpm, Links in der Dokumentation und zuletzt die Tests. CI ruft dieselben Befehle auf. `pnpm ci:local` führt zusätzlich die Prüfung der Workflows ohne Netz, den Scan der Geschichte und der Dateinamen sowie `pnpm check` auf allen drei Versionen von Node.js aus.
+- **GitHub Actions** führt CI aus. Jeder Job, der Werkzeuge braucht, installiert sie mit mise aus denselben Dateien wie ein Entwicklungsrechner. Die Version von mise selbst ist in den Workflows gepinnt, weil eine neuere Version Lockdateien in einem Format schreiben kann, das eine ältere nicht liest.
+- **Renovate** schlägt Aktualisierungen vor, unter den Regeln von ADR 0021. Dieselbe Version von mise, die CI benutzt, aktualisiert die Lockdateien.
 - Ein Bundler für das Produktpaket kommt, wenn er gebraucht wird.
 
 ## Konsequenzen
@@ -44,10 +45,11 @@ Gewählt ist die dritte Option.
 
 ## Umsetzung
 
-- Werkzeuge: `mise.toml`, `mise.lock`, `mise.compat.toml`, `mise.compat.lock`.
+- Werkzeuge: `mise.toml`, `mise.lock`, `mise.compat.toml`, `mise.compat.lock`, `mise.minimum.toml`, `mise.minimum.lock`.
 - Paketmanager: `packageManager` in `package.json`, Schutzeinstellungen in `pnpm-workspace.yaml` (ADR 0021).
 - Compiler: `tsconfig.base.json`, `tsconfig.build.json`, `tsconfig.json` und je Paket `tsconfig.json` und `tsconfig.test.json` (ADR 0022).
 - Tests: `vitest.config.mts`. Lint: `eslint.config.mjs`. Formatierung: `.prettierrc.json`, `.prettierignore`. Hooks: `lefthook.yml`.
 - Architekturregeln: `.dependency-cruiser.mjs`, geprüft mit `pnpm check:arch`, und die Tests unter `tests/architecture/`, darunter `tsconfig-options.test.mts` für die veralteten Optionen.
-- Prüfungen: Skripte unter `scripts/`, zusammengefasst in `pnpm check`. `tests/toolchain.test.mts` prüft, dass die Versionen von Node.js und pnpm in allen Dateien übereinstimmen und jede Abhängigkeit genau gepinnt ist.
-- Renovate und die Prüfungen in CI folgen mit der Werkbank in Phase 0.
+- Prüfungen: Skripte unter `scripts/`, zusammengefasst in `pnpm check`, und `scripts/ci/` für die Prüfungen der Pull Requests. `tests/toolchain.test.mts` prüft, dass die Versionen von Node.js, pnpm und mise in allen Dateien übereinstimmen, dass jede Lockdatei von mise im Format liegt, das die gepinnte Version liest, und dass jede Abhängigkeit genau gepinnt ist.
+- CI: `.github/workflows/ci.yml`, `.github/workflows/pr-meta.yml` und `.github/workflows/scorecard.yml` (ADR 0021). `pnpm ci:local` führt die meisten Prüfungen aus `ci.yml` lokal aus; welche, nennt `CONTRIBUTING.md`.
+- Renovate: `.github/renovate.json5`.

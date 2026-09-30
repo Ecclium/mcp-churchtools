@@ -6,7 +6,9 @@ import {
   compareSettings,
   configEnvironment,
   expectedSettings,
+  undocumentedExceptions,
   unknownWorkspaceKeys,
+  unlistedExceptions,
 } from '../../scripts/check-pnpm-settings.mts';
 
 describe('compareSettings', () => {
@@ -73,6 +75,112 @@ describe('unknownWorkspaceKeys', () => {
     for (const key of Object.keys(expectedSettings)) {
       expect(yaml).toMatch(new RegExp(`^${key}:`, 'm'));
     }
+  });
+});
+
+describe('undocumentedExceptions', () => {
+  const workspace = (...exclude: string[]): string =>
+    ['packages:', '  - packages/*', ...exclude, 'minimumReleaseAge: 4320'].join(
+      '\n',
+    );
+
+  it('accepts no exceptions and exceptions with date and reason', () => {
+    expect(
+      undocumentedExceptions(workspace('minimumReleaseAgeExclude: []')),
+    ).toEqual([]);
+    expect(
+      undocumentedExceptions(
+        workspace(
+          'minimumReleaseAgeExclude:',
+          '  # 29.09.2026: security fix for a parser, advisory published today',
+          '  - fix@1.2.4',
+          '  # 2026-09-30 same advisory, second package',
+          '  - "@scope/fix@2.0.1"',
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  it.each([
+    ['without a comment', ['  - fix@1.2.4']],
+    ['with a comment that has no date', ['  # security fix', '  - fix@1.2.4']],
+    ['with a date but no reason', ['  # 29.09.2026', '  - fix@1.2.4']],
+    [
+      'with the comment separated by a blank line',
+      ['  # 29.09.2026: security fix', '', '  - fix@1.2.4'],
+    ],
+    ['in the first column', ['- fix@1.2.4']],
+  ])('reports an exception %s', (_, lines) => {
+    expect(
+      undocumentedExceptions(workspace('minimumReleaseAgeExclude:', ...lines)),
+    ).toEqual([expect.stringContaining('"fix@1.2.4"')]);
+  });
+
+  it('reports each undocumented exception of several', () => {
+    expect(
+      undocumentedExceptions(
+        workspace(
+          'minimumReleaseAgeExclude:',
+          '  # 29.09.2026: security fix',
+          '  - fix@1.2.4',
+          '  - other@3.0.1',
+        ),
+      ),
+    ).toEqual([expect.stringContaining('"other@3.0.1"')]);
+  });
+
+  it('rejects exceptions in brackets, as Renovate might write them', () => {
+    expect(
+      undocumentedExceptions(
+        workspace('minimumReleaseAgeExclude: [fix@1.2.4]'),
+      ),
+    ).toEqual([expect.stringContaining('eckigen Klammern')]);
+  });
+
+  it('finds nothing in pnpm-workspace.yaml', () => {
+    const yaml = readFileSync(
+      new URL('../../pnpm-workspace.yaml', import.meta.url),
+      'utf8',
+    );
+    expect(undocumentedExceptions(yaml)).toEqual([]);
+  });
+});
+
+describe('unlistedExceptions', () => {
+  const dated = [
+    'minimumReleaseAgeExclude:',
+    '  # 29.09.2026: security fix for a parser',
+    '  - fix@1.2.4',
+    '  # 29.09.2026: same advisory, second package',
+    "  - '@scope/fix@2.0.1'",
+  ].join('\n');
+
+  it('accepts what pnpm applies when every entry is written as a line', () => {
+    expect(
+      unlistedExceptions(dated, ['fix@1.2.4', '@scope/fix@2.0.1']),
+    ).toEqual([]);
+    expect(unlistedExceptions('minimumReleaseAgeExclude: []', [])).toEqual([]);
+  });
+
+  it('reports an exception that pnpm applies but the text does not show', () => {
+    // YAML also allows a quoted key, which the reading of the text does not
+    // follow. pnpm still applies the exception.
+    const quoted = ['"minimumReleaseAgeExclude":', '  - fix@1.2.4'].join('\n');
+    expect(undocumentedExceptions(quoted)).toEqual([]);
+    expect(unlistedExceptions(quoted, ['fix@1.2.4'])).toEqual([
+      expect.stringContaining('"fix@1.2.4" gilt für pnpm'),
+    ]);
+    expect(
+      unlistedExceptions('minimumReleaseAgeExclude: []', ['other@3.0.1']),
+    ).toEqual([expect.stringContaining('"other@3.0.1"')]);
+  });
+
+  it('leaves a list in brackets to undocumentedExceptions', () => {
+    expect(
+      unlistedExceptions('minimumReleaseAgeExclude: [fix@1.2.4]', [
+        'fix@1.2.4',
+      ]),
+    ).toEqual([]);
   });
 });
 

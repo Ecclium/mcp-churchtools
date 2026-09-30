@@ -2,10 +2,10 @@ import { readFileSync, readdirSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-// The Node.js and pnpm versions are named in several files, each read by a
-// different tool: mise, nvm, pnpm, Corepack and npm. These tests keep them
-// in step, so that an update of one file cannot leave another one behind
-// (ADR 0019, ADR 0020).
+// The Node.js, pnpm and mise versions are named in several files, each read
+// by a different tool: mise, nvm, pnpm, Corepack, npm and the CI workflows.
+// These tests keep them in step, so that an update of one file cannot leave
+// another one behind (ADR 0019, ADR 0020).
 
 const read = (path: string): string =>
   readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -54,6 +54,14 @@ describe('Node.js', () => {
     expect(major(compatNode)).toBeGreaterThan(major(developmentNode));
   });
 
+  it('checks the oldest supported version in the minimum environment', () => {
+    const lowest = /^\^(\d+\.\d+\.\d+) \|\| /.exec(
+      root.engines?.['node'] ?? '',
+    )?.[1];
+    expect(lowest).toBeDefined();
+    expect(tomlValue(read('mise.minimum.toml'), 'node')).toBe(lowest);
+  });
+
   it('types only the APIs of the development line', () => {
     const types = root.devDependencies?.['@types/node'] ?? '';
     expect(major(types)).toBe(major(developmentNode));
@@ -67,6 +75,58 @@ describe('pnpm', () => {
     expect(root.packageManager).toMatch(
       new RegExp(`^pnpm@${String(version)}\\+sha512\\.[0-9a-f]{128}$`),
     );
+  });
+});
+
+describe('mise', () => {
+  const workflowDirectory = new URL('../.github/workflows/', import.meta.url);
+  const workflows = readdirSync(workflowDirectory)
+    .filter((name) => name.endsWith('.yml'))
+    .map((name) => readFileSync(new URL(name, workflowDirectory), 'utf8'));
+
+  /** The `version:` inputs of every mise-action step in a workflow. */
+  const miseVersions = (workflow: string): (string | undefined)[] =>
+    workflow
+      .split(/^\s*- (?=name:|uses:)/m)
+      .filter((step) => step.includes('jdx/mise-action@'))
+      .map((step) => /^\s+version: (\S+)$/m.exec(step)?.[1]);
+
+  it('pins one version of mise in every workflow that installs tools', () => {
+    const versions = workflows.flatMap(miseVersions);
+    expect(versions.length).toBeGreaterThan(0);
+    for (const version of versions) {
+      expect(version).toMatch(/^\d{4}\.\d+\.\d+$/);
+    }
+    expect(new Set(versions).size).toBe(1);
+  });
+
+  // Renovate updates the version of mise with a regular expression over the
+  // workflows and over its own configuration (.github/renovate.json5). The
+  // same expressions here make sure that it finds every place and that the
+  // mise updating mise.lock is the mise CI runs.
+  it('lets Renovate find every pinned version of mise', () => {
+    const renovate = read('.github/renovate.json5');
+    const step =
+      /jdx\/mise-action@[0-9a-f]{40} # v\S+\s+with:\s+version: (\S+)/g;
+    for (const workflow of workflows) {
+      const found = [...workflow.matchAll(step)].map((match) => match[1]);
+      expect(found).toEqual(miseVersions(workflow));
+    }
+    const [version] = workflows.flatMap(miseVersions);
+    expect(/\bmise: '([^']+)'/.exec(renovate)?.[1]).toBe(version);
+  });
+
+  // mise 2026.9.7 to 2026.9.15 read and write lock files in format 2; newer
+  // releases write format 3, which these reject. A lock file in format 3
+  // therefore needs a newer mise in CI in the same change.
+  it('keeps every lock file in the format the pinned mise reads', () => {
+    const locks = readdirSync(new URL('../', import.meta.url)).filter((name) =>
+      /^mise(\.[^.]+)?\.lock$/.test(name),
+    );
+    expect(locks).toContain('mise.lock');
+    for (const lock of locks) {
+      expect(read(lock), lock).toMatch(/^lockfile_version = 2$/m);
+    }
   });
 });
 

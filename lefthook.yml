@@ -1,8 +1,9 @@
 # Git hooks, installed with `mise exec -- lefthook install` (ADR 0014).
 #
 # Every commit and every commit message is scanned for secrets and for data
-# that must never reach this public repository (see .gitleaks.toml). A local
-# hook can be skipped, so it must not be the only line of defence.
+# that must never reach this public repository (see .gitleaks.toml), and
+# every commit message needs a sign-off. A local hook can be skipped, so it
+# must not be the only line of defence.
 #
 # gitleaks runs through `mise exec`, so the version pinned in mise.toml is used
 # even when mise is not activated in the shell. If mise is not on the PATH or
@@ -15,6 +16,15 @@ pre-commit:
   commands:
     secrets:
       run: mise exec -- gitleaks git --pre-commit --staged --redact --verbose --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
+    # gitleaks reads the contents of files, not their names, and a name can
+    # carry a host or an address just as well.
+    file-names:
+      run: git -c core.quotePath=false diff --cached --name-only --diff-filter=ACR | mise exec -- gitleaks stdin --redact --verbose --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
+    # gitleaks reads a .gitleaksignore on its own, and one line there
+    # silences any finding. Allowed findings belong in the allowlists of
+    # .gitleaks.toml, where they are reviewed.
+    ignore-file:
+      run: test ! -e .gitleaksignore || { echo 'Eine Datei .gitleaksignore schaltet Funde ab und ist nicht erlaubt. Erweitern Sie stattdessen die Allowlist in .gitleaks.toml.' >&2; exit 1; }
     # Checks the formatting of the staged files and changes nothing. Fix a
     # finding with `pnpm format`, then stage the result.
     format:
@@ -27,3 +37,9 @@ commit-msg:
       # Removed lines there never reach the commit and would only cause false
       # alarms; the comment lines above it, such as # Author:, stay scanned.
       run: sed '/^# -\{24\} >8 -\{24\}$/,$d' {1} | mise exec -- gitleaks stdin --redact --verbose --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
+    # The message needs a Signed-off-by trailer of the author (ADR 0002),
+    # which `git commit --signoff` adds. The dco job in CI runs the same
+    # script over every commit of a pull request, so a commit that skipped
+    # this hook is still caught there.
+    sign-off:
+      run: mise exec -- node scripts/ci/check-dco.mts --message-file {1}

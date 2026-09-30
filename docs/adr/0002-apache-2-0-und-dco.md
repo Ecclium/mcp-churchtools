@@ -38,7 +38,7 @@ Beiträge:
 - Ohne CLA erhält das Projekt an Beiträgen keine Rechte, die über die Apache License 2.0 hinausgehen. Die Rechte an einem Beitrag bleiben bei seinen Autorinnen und Autoren.
 - Die Lizenz allein hält künftige Fassungen nicht offen: Die Apache License 2.0 erlaubt, eine Weiterentwicklung unter anderen Bedingungen weiterzugeben (Abschnitt 4). Dass der Kern offen bleibt, sichert deshalb die ausdrückliche Zusage in `PROMISE.md`, nicht die Lizenz. Ecclium sagt das offen, statt mehr zu versprechen, als die Lizenz leistet.
 - Fremder Quelltext wird nicht in den Kern übernommen, auch nicht unter MIT. Ist eine Ausnahme nötig, wird sie vorher entschieden, im Code markiert und in `NOTICE` mit Quelle und Lizenz vermerkt.
-- Jeder Pull Request braucht eine Prüfung der Sign-offs. Bis eine automatische Prüfung besteht, prüfen die Maintainer von Hand.
+- Jeder Pull Request braucht eine Prüfung der Sign-offs. Sie läuft automatisch in CI und schon vor jedem Commit im Git-Hook.
 - Die Sign-off-Zeile macht Name und E-Mail-Adresse dauerhaft öffentlich. `CONTRIBUTING.md` weist darauf hin und nennt die noreply-Adresse von GitHub als Ausweg.
 
 ## Umsetzung
@@ -46,3 +46,4 @@ Beiträge:
 - Lizenztext: `LICENSE`. Hinweise und Rechteinhaber: `NOTICE`.
 - Zusage für den freien Kern: `PROMISE.md`.
 - DCO im Wortlaut, Regeln für Sign-off und Identität: `CONTRIBUTING.md`.
+- Prüfung des Sign-offs: `scripts/ci/check-dco.mts`, vor jedem Commit im Git-Hook (`lefthook.yml`) und für jeden Commit eines Pull Requests im Job `dco` (`.github/workflows/pr-meta.yml`). Name und E-Mail-Adresse im Sign-off müssen die des Autors oder der Autorin sein. Ein Merge-Commit mit genau zwei Eltern und ohne eigene Änderung braucht kein Sign-off. Während eines Merges prüft der Hook nicht, das übernimmt der Job `dco`.

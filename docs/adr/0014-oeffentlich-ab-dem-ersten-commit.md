@@ -32,5 +32,6 @@ Die Geschichte auf `main` wird nicht umgeschrieben. Einzige Ausnahme: Personenda
 
 ## Umsetzung
 
-- Regeln für gitleaks: `.gitleaks.toml`. Git-Hooks vor dem Commit und für die Commit-Message: `lefthook.yml`.
+- Regeln für gitleaks: `.gitleaks.toml`. Git-Hooks vor dem Commit und für die Commit-Message: `lefthook.yml`, geprüft durch `tests/hooks/commit-hooks.test.mts`.
+- Scan in CI: Der Job `secret-scan` in `.github/workflows/ci.yml` prüft die Geschichte bis zum geprüften Commit, die Dateien und alle Dateinamen. Die Jobs in `.github/workflows/pr-meta.yml` prüfen den Titel eines Pull Requests und alle seine Commit-Messages, die Teil des Squash-Commits auf `main` werden. Hooks und CI weisen eine Datei `.gitleaksignore` zurück, weil gitleaks sie von sich aus liest und eine Zeile darin jeden Fund abschalten würde.
 - Schutz von `main`: ein Ruleset in den Einstellungen des Repositorys auf GitHub. Es verlangt Pull Requests, verbietet Force-Push und erlaubt nur eine lineare Geschichte mit Squash-Merges.
