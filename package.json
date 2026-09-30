@@ -32,7 +32,7 @@
     "@ecclium/mcp-churchtools-tools": "workspace:*",
     "@ecclium/mcp-churchtools-workflows": "workspace:*",
     "@eslint/js": "10.0.1",
-    "@types/node": "24.13.6",
+    "@types/node": "24.19.0",
     "@vitest/coverage-v8": "5.0.1",
     "dependency-cruiser": "18.4.0",
     "eslint": "10.11.0",
