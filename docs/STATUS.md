@@ -58,7 +58,7 @@ Diese Grundsatzfragen sind entschieden.
 - Lizenzstatus der ChurchTools-Dokumentation: Die OpenAPI-Spezifikation der ChurchTools-API nennt in `info.license` CC BY 4.0, für die übrige Dokumentation ist der Status ungeklärt. Bis zur Klärung liegt keine Kopie der Dokumentation im Repository. Entscheid vor Phase 3 (ADR 0027).
 - OAuth bei ChurchTools: Seit Version 3.135.0 vom 03.08.2026 dürfen OAuth-Anwendungen mit dem Scope `api` auf die REST-API zugreifen, im Rahmen der Rechte des angemeldeten Benutzers (ADR 0023). Pfade der Endpunkte, PKCE, Refresh, Laufzeiten, Tokenformat und Metadaten unter `.well-known` sind nicht dokumentiert. Offen bis Phase 7 oder bis zum Pro-Modul.
 - Rate-Limit der ChurchTools-API: nur inoffiziell bekannt. Das Verhalten bei 429 bleibt offen, solange keine Testinstanz zur Verfügung steht.
-- Einstellungen, die das Threat Model voraussetzt und die der Maintainer noch mit Datum bestätigt: die Einträge mit genau einer SHA für `ossf/scorecard-action` und `actions/upload-artifact` in der Positivliste der Organisation. Die Einstellungen der Konten der Maintainer folgen mit dem Abschluss von Phase 0.
+- Einstellungen der Konten der Maintainer, die das Threat Model voraussetzt (L15): Der Maintainer bestätigt sie mit dem Abschluss von Phase 0.
 - Renovate: Noch nicht beobachtet ist, ob Pull Requests zur Behebung, die der Dienst im Modus «Scan and Alert» anlegen kann, die Wartezeit und die Regeln aus `.github/renovate.json5` einhalten.
 - Aktualisierungen, die Renovate am 30.09.2026 meldet und die einen bewussten Entscheid brauchen:
   - Ubuntu 26.04 statt 24.04 für die Runner von GitHub Actions (`runs-on`).
@@ -148,4 +148,4 @@ Diese Grundsatzfragen sind entschieden.
   - Die Positivliste der Organisation greift: Mit der neuen SHA für `upload-sarif` startet der Workflow von Scorecard nicht (siehe «Offen»).
 - 30.09.2026, Nachweise nach dem Merge der Einstellungen (#20):
   - Eine rote Pflichtprüfung sperrt den Merge: Mit einem Titel, der nicht Conventional Commits folgt, schlug `pr-title` fehl, und «Squash and merge» war gesperrt. Mit dem korrigierten Titel lief die Prüfung grün, danach liess sich mergen. Damit ist Stufe 2 des Rulesets vollständig vorgeführt.
-  - Der Maintainer hat die Positivliste der Organisation mit der neuen SHA für `github/codeql-action/upload-sarif` nachgeführt. Auf `main` laufen `ci`, `scorecard` und CodeQL für `4fe88e7` wieder grün.
+  - Der Maintainer hat die Positivliste der Organisation mit der neuen SHA für `github/codeql-action/upload-sarif` nachgeführt. Vom Maintainer bestätigt: `ossf/scorecard-action` und `actions/upload-artifact` stehen dort ebenfalls mit genau einer SHA, der Version im jeweiligen Workflow. Auf `main` laufen `ci`, `scorecard` und CodeQL für `4fe88e7` wieder grün.
