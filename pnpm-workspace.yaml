@@ -27,10 +27,13 @@ minimumReleaseAgeStrict: true
 # as too new, for this check and for the trust policy below.
 minimumReleaseAgeIgnoreMissingTime: false
 
-# Fail when a version is published with weaker evidence of its origin than
-# earlier versions of the same package, for example without a provenance
-# attestation after versions that had one. That is a typical sign of a
-# hijacked account.
+# Refuse a version that is published with weaker evidence of its origin
+# than earlier versions of the same package, for example without a
+# provenance attestation after versions that had one. That is a typical sign
+# of a hijacked account. When pnpm resolves a range, it takes the newest
+# older version that passes instead and warns. For an exact version, and
+# when it installs from the lockfile, it fails, so CI refuses such a version
+# in the lockfile as well.
 trustPolicy: no-downgrade
 
 # Transitive dependencies must come from the registry, not from Git

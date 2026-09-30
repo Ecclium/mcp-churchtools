@@ -26,7 +26,7 @@ Gewählt ist die dritte Option. Sie gilt ab dem ersten Commit.
 
 - Jede Version, auch eine transitive, muss seit mindestens drei Tagen veröffentlicht sein. Findet pnpm in einem Bereich keine Version, die alt genug ist, bricht die Installation ab, statt auf eine jüngere auszuweichen. Eine Version ohne Zeitangabe in der Registry gilt als zu jung.
 - Eine Ausnahme vom Mindestalter gibt es nur für eine Sicherheitskorrektur, als genaue Version mit Datum und Begründung.
-- Erscheint eine Version mit schwächerem Herkunftsnachweis als frühere Versionen desselben Pakets, bricht die Installation ab.
+- Eine Version mit schwächerem Herkunftsnachweis als frühere Versionen desselben Pakets installiert pnpm nicht. Löst es einen Bereich auf, nimmt es stattdessen die neueste ältere Version, die die Prüfung besteht, und warnt. Bei einer genau gepinnten Version und bei der Installation aus dem Lockfile bricht es ab. So weist auch CI eine solche Version im Lockfile zurück.
 - Transitive Abhängigkeiten kommen nur aus der Registry, nicht aus Git-Repositories oder Tarball-Adressen.
 - Abhängigkeiten führen keine Install-Skripte aus. Ein Paket mit einem Build-Schritt, der nicht ausdrücklich abgelehnt ist, lässt die Installation scheitern.
 - Vor `pnpm run` prüft pnpm, dass `node_modules` zum Lockfile passt.
