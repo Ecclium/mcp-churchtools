@@ -1,8 +1,9 @@
 // Renovate proposes updates of dependencies, tools and actions as pull
 // requests (ADR 0020). The rules follow the supply-chain baseline (ADR 0021):
 // a release must be some days old before it is proposed, only patch and
-// minor updates of development tools may be merged automatically, and
-// everything else, including every action, waits for a person.
+// minor updates of the development tools named below may be merged
+// automatically, and everything else, including every action, waits for a
+// person. tests/toolchain.test.mts checks these rules.
 // Later rules take precedence over earlier ones.
 {
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
@@ -91,14 +92,22 @@
       minimumReleaseAge: '7 days',
     },
     {
-      description: 'Patch and minor updates of development tools merge automatically once every required check has passed.',
+      description: 'Patch and minor updates of these development tools merge automatically once every required check has passed. On 30.09.2026 each was published with a provenance attestation through a trusted publisher, and the trust policy of pnpm refuses a later version with weaker evidence (ADR 0021). Every other package waits for a person, so a tool joins this list only after the same check.',
       matchManagers: ['npm'],
       matchDepTypes: ['devDependencies'],
+      matchPackageNames: [
+        '@vitest/coverage-v8',
+        'dependency-cruiser',
+        'eslint-plugin-jsdoc',
+        'typescript-eslint',
+        'vite',
+        'vitest',
+      ],
       matchUpdateTypes: ['patch', 'minor'],
       automerge: true,
     },
     {
-      description: 'These packages are published without provenance, so only the waiting time protects against a hijacked release (ADR 0021). A person merges them.',
+      description: 'These packages are published without provenance, so only the waiting time protects against a hijacked release (ADR 0021). A person merges them, even if one of them is added to the list above by mistake.',
       matchPackageNames: [
         'typescript',
         '@types/node',

@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs';
 
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 // The Node.js, pnpm and mise versions are named in several files, each read
@@ -169,6 +170,115 @@ describe('mise', () => {
     expect(locks).toContain('mise.lock');
     for (const lock of locks) {
       expect(read(lock), lock).toMatch(/^lockfile_version = 2$/m);
+    }
+  });
+});
+
+interface RenovateRule {
+  readonly automerge?: boolean;
+  readonly matchManagers?: readonly string[];
+  readonly matchDepTypes?: readonly string[];
+  readonly matchPackageNames?: readonly string[];
+  readonly matchUpdateTypes?: readonly string[];
+}
+
+interface RenovateConfig {
+  readonly extends: readonly string[];
+  readonly automerge?: boolean;
+  readonly vulnerabilityAlerts?: { readonly automerge?: boolean };
+  readonly lockFileMaintenance?: { readonly automerge?: boolean };
+  readonly packageRules: readonly RenovateRule[];
+}
+
+/**
+ * Reads .github/renovate.json5 without running it. The JSON reader of
+ * TypeScript takes the JSON5 of this file, comments and single quotes
+ * included, and reports each single-quoted string (code 1327); any other
+ * report fails the test.
+ */
+const renovateConfig = (): RenovateConfig => {
+  const file = ts.parseJsonText(
+    'renovate.json5',
+    read('.github/renovate.json5'),
+  );
+  const errors: ts.Diagnostic[] = [];
+  const config = ts.convertToObject(file, errors) as RenovateConfig;
+  const { parseDiagnostics } = file as unknown as {
+    parseDiagnostics: readonly ts.Diagnostic[];
+  };
+  expect(
+    [...parseDiagnostics, ...errors]
+      .filter((error) => error.code !== 1327)
+      .map((error) => ts.flattenDiagnosticMessageText(error.messageText, ' ')),
+  ).toEqual([]);
+  return config;
+};
+
+// Renovate merges on its own only patch and minor updates of development
+// tools that are named in its configuration and published with provenance
+// (ADR 0021). Their trust policy in pnpm then refuses a later version with
+// weaker evidence. A tool without provenance is merged by a person.
+describe('Renovate', () => {
+  const config = renovateConfig();
+  const rules = config.packageRules;
+  const automerged = rules.filter((rule) => rule.automerge === true);
+  const withoutProvenance = [
+    'typescript',
+    '@types/node',
+    'eslint',
+    '@eslint/js',
+    'prettier',
+  ];
+
+  it('merges automatically only the named development tools', () => {
+    expect(automerged).toHaveLength(1);
+    const [rule = {}] = automerged;
+    // Any further matcher, such as a pattern for names, could widen the
+    // rule beyond the names that were checked.
+    expect(Object.keys(rule).sort()).toEqual([
+      'automerge',
+      'description',
+      'matchDepTypes',
+      'matchManagers',
+      'matchPackageNames',
+      'matchUpdateTypes',
+    ]);
+    expect(rule.matchManagers).toEqual(['npm']);
+    expect(rule.matchDepTypes).toEqual(['devDependencies']);
+    expect(rule.matchUpdateTypes).toEqual(['patch', 'minor']);
+    const names = rule.matchPackageNames ?? [];
+    expect(names.length).toBeGreaterThan(0);
+    for (const name of names) {
+      // Renovate reads a name with *, ?, braces or slashes around it as a
+      // pattern; an exact name matches only itself.
+      expect(name).toMatch(/^(?:@[a-z0-9-]+\/)?[a-z0-9][a-z0-9.-]*$/);
+      expect(Object.keys(root.devDependencies ?? {})).toContain(name);
+    }
+  });
+
+  it('turns automerge on nowhere else', () => {
+    expect(config.automerge).not.toBe(true);
+    expect(config.vulnerabilityAlerts?.automerge).toBe(false);
+    expect(config.lockFileMaintenance?.automerge).toBe(false);
+    for (const preset of config.extends) {
+      expect(preset.toLowerCase()).not.toContain('automerge');
+    }
+  });
+
+  it('never merges a tool without provenance automatically', () => {
+    const [allowed] = automerged;
+    const denied = rules.findIndex(
+      (rule) =>
+        rule.automerge === false &&
+        withoutProvenance.every((name) =>
+          rule.matchPackageNames?.includes(name),
+        ),
+    );
+    // Later rules win, so the list of exceptions must come after the rule
+    // that turns automerge on.
+    expect(denied).toBeGreaterThan(rules.indexOf(allowed ?? {}));
+    for (const name of withoutProvenance) {
+      expect(allowed?.matchPackageNames).not.toContain(name);
     }
   });
 });
