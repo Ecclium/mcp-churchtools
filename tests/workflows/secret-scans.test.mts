@@ -310,7 +310,13 @@ describe('the scans of names, titles and messages in CI', () => {
       { cwd: workspace, encoding: 'utf8' },
     )
       .stdout.split('\n')
-      .filter((file) => file !== '' && !/^(docs|tests)\/|\.md$/.test(file));
+      .filter(
+        (file) =>
+          file !== '' &&
+          !file.startsWith('docs/') &&
+          !file.startsWith('tests/') &&
+          !file.endsWith('.md'),
+      );
     const commands: [string, string][] = [];
     for (const file of tracked) {
       const text = read(file);
