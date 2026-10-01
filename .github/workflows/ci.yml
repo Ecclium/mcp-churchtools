@@ -141,6 +141,19 @@ jobs:
           { printf '\n%40000s\n' ''
             git log --format=%B HEAD
           } | gitleaks stdin --redact --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
+      - name: Refuse binary files outside brand/
+        # gitleaks skips binary files before any rule runs, so an office
+        # export, a database or an archive with member data passes every scan
+        # above. Git tells binary from text by content and shows a binary
+        # file as "-" in --numstat, in every commit and in the tested tree.
+        # The attributes come from the empty tree, so a .gitattributes in the
+        # pull request cannot make a binary file count as text. Only brand/,
+        # which is delivered as a whole, holds binary files (ADR 0014).
+        run: |
+          empty=$(git hash-object -t tree /dev/null)
+          { git -c core.quotePath=false --attr-source="$empty" log --numstat --no-renames --format= HEAD
+            git -c core.quotePath=false --attr-source="$empty" diff --numstat --no-renames "$empty" HEAD
+          } | awk -F '\t' '$1 == "-" && $3 !~ /^brand\// && !seen[$3]++ { print "Binärdatei ausserhalb von brand/: " $3 > "/dev/stderr"; bad = 1 } END { exit bad }'
 
   # check, compat and minimum run the same steps on different versions of
   # Node.js (ADR 0019): the development version from mise.toml, the next line

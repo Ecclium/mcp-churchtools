@@ -26,6 +26,14 @@ pre-commit:
         { printf '\n%40000s\n' ''
           git -c core.quotePath=false diff --cached --name-only --diff-filter=ACR | sed G
         } | mise exec -- gitleaks stdin --redact --verbose --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
+    # gitleaks skips binary files, so a staged export, database or archive
+    # with member data passes the scans above. Only brand/ may hold binary
+    # files; the attributes come from the empty tree, as in the step «Refuse
+    # binary files outside brand/» in ci.yml (ADR 0014).
+    binary-files:
+      run: |
+        empty=$(git hash-object -t tree /dev/null)
+        git -c core.quotePath=false --attr-source="$empty" diff --cached --numstat --no-renames | awk -F '\t' '$1 == "-" && $3 !~ /^brand\// && !seen[$3]++ { print "Binärdatei ausserhalb von brand/: " $3 > "/dev/stderr"; bad = 1 } END { exit bad }'
     # gitleaks reads a .gitleaksignore on its own, and one line there
     # silences any finding. Allowed findings belong in the allowlists of
     # .gitleaks.toml, where they are reviewed.

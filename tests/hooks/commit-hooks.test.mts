@@ -50,6 +50,9 @@ const canaryHost = (): string =>
 // whose patterns are the business of .gitleaks.toml.
 const rule = 'opsec-churchtools-host';
 
+/** Content that Git treats as binary: it holds NUL bytes. */
+const binary = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00, 0x01, 0x02]);
+
 const timeout = 60_000;
 
 describe('the commit hooks', () => {
@@ -260,6 +263,38 @@ describe('the commit hooks', () => {
       const counterpart = commit(
         '%PDF-1.7 notes\n\nFrom example.church.tools.',
       );
+      expect(counterpart.status, counterpart.output).toBe(0);
+      expect(commitCount()).toBe(before + 1);
+    },
+    timeout,
+  );
+
+  // gitleaks skips binary files, so an export or a database with member
+  // data would pass every scan. The hook refuses a binary file outside
+  // brand/, by its content and whatever .gitattributes says (ADR 0014).
+  it(
+    'stop a binary file outside brand/ and let one in brand/ pass',
+    () => {
+      const before = commitCount();
+      mkdirSync(join(repository.path, 'exports'), { recursive: true });
+      writeFileSync(join(repository.path, 'exports/members.xlsx'), binary);
+      stage('.gitattributes', '*.xlsx diff\n');
+      repository.git(['add', '--', 'exports/members.xlsx']);
+
+      const result = commit('docs: add an export');
+      expect(result.status, result.output).not.toBe(0);
+      expect(result.output).toContain(
+        'Binärdatei ausserhalb von brand/: exports/members.xlsx',
+      );
+      expect(commitCount()).toBe(before);
+
+      repository.git(['reset', '--quiet']);
+      rmSync(join(repository.path, 'exports'), { recursive: true });
+      rmSync(join(repository.path, '.gitattributes'));
+      mkdirSync(join(repository.path, 'brand'), { recursive: true });
+      writeFileSync(join(repository.path, 'brand/logo.png'), binary);
+      repository.git(['add', '--', 'brand/logo.png']);
+      const counterpart = commit('docs: add the logo');
       expect(counterpart.status, counterpart.output).toBe(0);
       expect(commitCount()).toBe(before + 1);
     },

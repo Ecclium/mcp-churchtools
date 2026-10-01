@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { copyFileSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -271,6 +271,58 @@ describe('the scans of names, titles and messages in CI', () => {
       const counterpart = shell(clean, script, { runner: false });
       expect(counterpart.status, counterpart.output).toBe(0);
       expect(counterpart.output.split('no leaks found').length - 1).toBe(3);
+    },
+    timeout,
+  );
+
+  /** Commits a binary file, made binary by its NUL bytes. */
+  const commitBinary = (
+    repository: Repository,
+    file: string,
+    message: string,
+  ): void => {
+    mkdirSync(dirname(join(repository.path, file)), { recursive: true });
+    writeFileSync(
+      join(repository.path, file),
+      Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00, 0x01, 0x02]),
+    );
+    repository.git(['add', '--', file]);
+    repository.git(['commit', '--quiet', '--message', message]);
+  };
+
+  // gitleaks skips binary files, so an export or a database with member
+  // data would pass every scan. CI refuses a binary file outside brand/ in
+  // the whole history, by its content and whatever .gitattributes says.
+  it(
+    'refuse a binary file outside brand/, also one removed later',
+    () => {
+      const step = 'Refuse binary files outside brand/';
+      const repository = setUp();
+      writeFileSync(join(repository.path, '.gitattributes'), '*.xlsx diff\n');
+      repository.git(['add', '--', '.gitattributes']);
+      commitBinary(repository, 'data/members.xlsx', 'docs: add an export');
+      repository.git(['rm', '--quiet', '--', 'data/members.xlsx']);
+      repository.git(['commit', '--quiet', '--message', 'docs: remove it']);
+
+      const result = run(repository, 'ci.yml', step);
+      expect(result.status, result.output).toBe(1);
+      expect(result.output).toContain(
+        'Binärdatei ausserhalb von brand/: data/members.xlsx',
+      );
+      const local = shell(repository, localScript ?? '', { runner: false });
+      expect(local.status, local.output).toBe(1);
+      expect(local.output).toContain(
+        'Binärdatei ausserhalb von brand/: data/members.xlsx',
+      );
+
+      const clean = setUp();
+      commitBinary(clean, 'brand/png/logo.png', 'docs: add the logo');
+      const counterpart = run(clean, 'ci.yml', step);
+      expect(counterpart.status, counterpart.output).toBe(0);
+      const localCounterpart = shell(clean, localScript ?? '', {
+        runner: false,
+      });
+      expect(localCounterpart.status, localCounterpart.output).toBe(0);
     },
     timeout,
   );
