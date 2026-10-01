@@ -12,6 +12,7 @@ import {
   lockfileVersion,
   registryIntegrity,
   splitEntry,
+  UnreadableLockfile,
 } from '../../scripts/ci/check-lockfile-provenance.mts';
 import { createRepository, type Repository } from '../support/git.mts';
 import { runCommand } from '../support/workflows.mts';
@@ -29,13 +30,19 @@ const script = fileURLToPath(
 const sha = 'sha512-AAAA';
 const integrity = `resolution: {integrity: ${sha}}`;
 
-/** A lockfile in the layout of pnpm 11, with the given packages. */
+/**
+ * A lockfile in the layout of pnpm 11, with the given packages and one
+ * snapshot for each of them.
+ */
 const lockfile = (
   packages: Readonly<Record<string, string>>,
   version = "'9.0'",
 ): string =>
   [
     `lockfileVersion: ${version}`,
+    '',
+    'settings:',
+    '  autoInstallPeers: true',
     '',
     'importers:',
     '',
@@ -50,15 +57,20 @@ const lockfile = (
     ...Object.entries(packages).flatMap(([key, resolution]) => [
       `  ${key}:`,
       `    ${resolution}`,
+      "    engines: {node: '>=20'}",
       '',
     ]),
     'snapshots:',
     '',
-    '  vitest@5.0.3(typescript@6.0.3):',
-    '    dependencies:',
-    '      tinyspy: 4.0.4',
-    '',
+    ...Object.keys(packages).flatMap((key) => [
+      key.startsWith('vitest@')
+        ? `  ${key}(typescript@6.0.3):\n    dependencies:\n      tinyspy: 4.0.4`
+        : `  ${key}: {}`,
+      '',
+    ]),
   ].join('\n');
+
+const fields = ['resolution', 'engines'];
 
 // A registry document carries more than the evidence, among it the name and
 // address of the person who published it. These values must never appear in
@@ -78,8 +90,8 @@ describe('lockfileVersion and lockedPackages', () => {
     });
     expect(lockfileVersion(text)).toBe('9.0');
     expect([...lockedPackages(text)]).toEqual([
-      ['vitest@5.0.3', integrity],
-      ['@vitest/spy@5.0.3', integrity],
+      ['vitest@5.0.3', { resolution: integrity, fields }],
+      ['@vitest/spy@5.0.3', { resolution: integrity, fields }],
     ]);
   });
 
@@ -88,6 +100,146 @@ describe('lockfileVersion and lockedPackages', () => {
     expect(lockedPackages(text.replace(/\n/g, '\r\n'))).toEqual(
       lockedPackages(text),
     );
+  });
+
+  it('read the lockfile of this repository', () => {
+    const text = readFileSync(
+      new URL('../../pnpm-lock.yaml', import.meta.url),
+      'utf8',
+    );
+    expect(lockedPackages(text).size).toBeGreaterThan(100);
+  });
+
+  // pnpm writes quoted strings and flow collections on one line and long
+  // texts as block scalars. The reader accepts these forms.
+  it('read the forms pnpm writes', () => {
+    const text = lockfile({
+      'vitest@5.0.3': integrity,
+      'is-number@7.0.0': integrity,
+    })
+      .replace('        specifier: 5.0.3', "        specifier: '>=5.0.3 <6'")
+      .replace(
+        "  is-number@7.0.0:\n    resolution: {integrity: sha512-AAAA}\n    engines: {node: '>=20'}",
+        [
+          '  is-number@7.0.0:',
+          `    ${integrity}`,
+          "    engines: {node: '>=20', npm: \"it's [fine\"}",
+          '    cpu: [x64, arm64]',
+          '    deprecated: |-',
+          "      'Use other' [instead",
+          '',
+          '      \u3000See: https://example.org/ #x',
+          '    hasBin: true',
+        ].join('\n'),
+      );
+    expect(lockedPackages(text).get('is-number@7.0.0')).toEqual({
+      resolution: integrity,
+      fields: ['resolution', 'engines', 'cpu', 'deprecated', 'hasBin'],
+    });
+  });
+
+  // YAML has more forms than pnpm writes, and pnpm reads them. A string or a
+  // bracket left open makes the next lines part of a value for pnpm, so a
+  // reader of lines could take one for a new section and skip the packages
+  // after it. With the other forms, pnpm could see a package or a field
+  // that the reader does not. Each of them stops the check.
+  it('refuse every form that pnpm does not write', () => {
+    const text = lockfile({
+      'vitest@5.0.3': integrity,
+      'is-number@7.0.0': integrity,
+    });
+    const key = '  is-number@7.0.0:';
+    const field = `    ${integrity}`;
+    const nested = '      tinyspy: 4.0.4';
+    const variants: readonly (readonly [string, string, string])[] = [
+      ['comment after a key', key, `${key} # note`],
+      ['space after a key', key, `${key} `],
+      ['value on the line of a key', key, `${key} {${integrity}}`],
+      ['explicit key', key, '  ? is-number@7.0.0'],
+      ['double-quoted key', key, '  "is-number@7.0.0":'],
+      ['merge key as a package', key, `  <<:\n${key}`],
+      ['comment line', key, `  # note\n${key}`],
+      ['tab in the indentation', key, `\t${key}`],
+      ['odd indentation', key, ` ${key}`],
+      ['first field too deep', `${key}\n${field}`, `${key}\n  ${field}`],
+      ['repeated field', field, `${field}\n    ${integrity}`],
+      ['merge key', field, `${field}\n    <<: {version: 6.0.0}`],
+      ['quoted field name', field, `${field}\n    'version': 6.0.0`],
+      ['alias as a value', field, '    resolution: *base'],
+      ['anchor on a value', field, `    resolution: &base {integrity: ${sha}}`],
+      ['tag on a value', field, `    resolution: !!map {integrity: ${sha}}`],
+      ['next line', field, `${field}\n    deprecated: x\u0085zz: y`],
+      ['line separator', field, `${field}\n    deprecated: x\u2028zz: y`],
+      ['paragraph separator', field, `${field}\n    deprecated: x\u2029zz: y`],
+      [
+        'single-quoted value over lines',
+        field,
+        `${field}\n    deprecated: 'x\nzz: y'`,
+      ],
+      [
+        'double-quoted value over lines',
+        field,
+        `${field}\n    deprecated: "x\nzz: y"`,
+      ],
+      [
+        'flow mapping over lines',
+        field,
+        `${field}\n    engines: {node: x,\nzz: y}`,
+      ],
+      ['flow sequence over lines', field, `${field}\n    cpu: [x64,\nzz: y]`],
+      [
+        'quoted value over lines in a snapshot',
+        nested,
+        "      tinyspy: '4.0.4\nzz: y'",
+      ],
+      ['flow key over lines in a snapshot', nested, '      {a: b,\nzz: y}: c'],
+      [
+        'flow value over lines in the importers',
+        '        specifier: 5.0.3',
+        '        specifier: [5.0.3,\nzz: y]',
+      ],
+      [
+        'block scalar with an indentation indicator',
+        field,
+        `${field}\n    deprecated: |2\n      x`,
+      ],
+      ['comment after a value', field, `${field}\n    hasBin: true # note`],
+      ['comment inside a flow value', field, `${field}\n    cpu: [x64 # note]`],
+      [
+        'field below an empty entry',
+        '  is-number@7.0.0: {}',
+        '  is-number@7.0.0: {}\n    version: 6.0.0',
+      ],
+      ['comment after the section', '\npackages:', '\npackages: # note'],
+      ['quoted section', '\npackages:', "\n'packages':"],
+      ['flow section', '\npackages:', '\npackages: {}\npackages:'],
+      ['merge into the document', '\npackages:', '\n<<: {}\npackages:'],
+      ['document start', 'lockfileVersion', '---\nlockfileVersion'],
+      [
+        'snapshot without a package',
+        '\nsnapshots:\n',
+        '\nsnapshots:\n\n  ignore@7.0.11: {}\n',
+      ],
+      [
+        'snapshot with a suffix without a package',
+        '\nsnapshots:\n',
+        '\nsnapshots:\n\n  ignore@7.0.11(typescript@6.0.3): {}\n',
+      ],
+    ];
+    for (const [name, from, to] of variants) {
+      expect(text, name).toContain(from);
+      expect(() => lockedPackages(text.replaceAll(from, to)), name).toThrow(
+        UnreadableLockfile,
+      );
+    }
+    // Both sections as flow mappings on one line each: pnpm reads the
+    // packages, a reader of lines would see none.
+    const flow = [
+      "lockfileVersion: '9.0'",
+      `packages: {is-number@7.0.0: {${integrity}}}`,
+      'snapshots: {is-number@7.0.0: {}}',
+    ].join('\n');
+    expect(() => lockedPackages(flow)).toThrow(UnreadableLockfile);
   });
 });
 
@@ -105,8 +257,8 @@ describe('addedPackages', () => {
       'ignore@7.0.9': integrity,
     });
     expect(addedPackages(base, head)).toEqual([
-      { key: 'tinyspy@4.0.4', resolution: tarball },
-      { key: 'vitest@5.0.3', resolution: integrity },
+      { key: 'tinyspy@4.0.4', resolution: tarball, fields },
+      { key: 'vitest@5.0.3', resolution: integrity, fields },
     ]);
   });
 });
@@ -217,7 +369,11 @@ describe('checkPackages', () => {
         ? Promise.reject(new Error('HTTP 404'))
         : Promise.resolve(document);
     };
-  const added = (key: string, resolution = integrity) => ({ key, resolution });
+  const added = (key: string, resolution = integrity, names = fields) => ({
+    key,
+    resolution,
+    fields: names,
+  });
 
   it('passes when every added version has both kinds of evidence', async () => {
     const report = await checkPackages(
@@ -302,6 +458,26 @@ describe('checkPackages', () => {
     expect(report.lines).toEqual([
       'vitest@5.0.2: Prüfsumme weicht von der Registry ab',
       'ignore@7.0.11: Prüfsumme weicht von der Registry ab',
+    ]);
+  });
+
+  // pnpm installs the version of such a field, not the one in the key.
+  it('treats an entry with a name or version field as not from the registry', async () => {
+    const asked: string[] = [];
+    const report = await checkPackages(
+      [
+        added('vitest@5.0.2', integrity, [...fields, 'version']),
+        added('ignore@7.0.11', integrity, ['name', ...fields]),
+      ],
+      (url) => {
+        asked.push(url);
+        return Promise.resolve({ dist: attested, _npmUser: trusted });
+      },
+    );
+    expect(asked).toEqual([]);
+    expect(report.lines).toEqual([
+      'vitest@5.0.2: nicht aus der Registry',
+      'ignore@7.0.11: nicht aus der Registry',
     ]);
   });
 
@@ -391,6 +567,34 @@ describe('check-lockfile-provenance', () => {
     const empty = run(prepare(known, lockfile({})), 'HEAD');
     expect(empty.status, empty.output).toBe(2);
     expect(empty.output).toContain('keine Pakete');
+  });
+
+  it('stops with code 2 when the lockfile uses a form that pnpm does not write', () => {
+    const known = lockfile({ 'vitest@5.0.3': integrity });
+    const hidden = lockfile({
+      'vitest@5.0.3': integrity,
+      'ignore@7.0.11': integrity,
+    }).replace('  ignore@7.0.11:', '  ignore@7.0.11: # note');
+    const result = run(prepare(known, hidden), 'HEAD');
+    expect(result.status, result.output).toBe(2);
+    expect(result.output).toContain(
+      'Das Lockfile (Arbeitsbaum) lässt sich nicht sicher lesen.',
+    );
+  });
+
+  it('stops with code 2 when the lockfile of the base is unreadable', () => {
+    const known = lockfile({ 'vitest@5.0.3': integrity });
+    const result = run(
+      prepare(
+        known.replace('  vitest@5.0.3:', '  vitest@5.0.3: # note'),
+        known,
+      ),
+      'HEAD',
+    );
+    expect(result.status, result.output).toBe(2);
+    expect(result.output).toContain(
+      'Das Lockfile (Basis) lässt sich nicht sicher lesen.',
+    );
   });
 
   it('stops with code 2 on a wrong call or an unknown commit', () => {
