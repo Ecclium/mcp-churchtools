@@ -185,6 +185,7 @@ interface RenovateRule {
 interface RenovateConfig {
   readonly extends: readonly string[];
   readonly automerge?: boolean;
+  readonly platformAutomerge?: boolean;
   readonly vulnerabilityAlerts?: { readonly automerge?: boolean };
   readonly lockFileMaintenance?: { readonly automerge?: boolean };
   readonly packageRules: readonly RenovateRule[];
@@ -287,11 +288,14 @@ describe('Renovate', () => {
   });
 
   // ignoreTests lets Renovate merge without green checks, and automergeType
-  // and platformAutomerge change who merges and when.
-  it('merges only after every required check', () => {
-    for (const key of ['ignoreTests', 'automergeType', 'platformAutomerge']) {
+  // changes how it merges. With platformAutomerge true, GitHub would merge
+  // once the required checks pass, past a failing lockfile-provenance.
+  it('merges only after every check has passed', () => {
+    for (const key of ['ignoreTests', 'automergeType']) {
       expect(pathsOf(key), key).toEqual([]);
     }
+    expect(pathsOf('platformAutomerge')).toEqual(['/platformAutomerge']);
+    expect(config.platformAutomerge).toBe(false);
   });
 
   // A preset can turn automerge on or skip the checks, also from inside a

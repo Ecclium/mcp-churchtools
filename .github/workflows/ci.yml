@@ -1,7 +1,8 @@
 # Checks for every pull request, every push to main and the merge queue.
 #
 # Each job's name equals its id and is a required status check in the ruleset
-# for main. Renaming a job therefore breaks the ruleset. The workflow has no
+# for main, except lockfile-provenance, which must never become one (see
+# that job). Renaming a required job breaks the ruleset. The workflow has no
 # path filter, because a workflow that does not run leaves a required check
 # pending forever; jobs that only make sense for some events are skipped with
 # `if:`, and a skipped job counts as passed.
@@ -141,6 +142,22 @@ jobs:
           { printf '\n%40000s\n' ''
             git log --format=%B HEAD
           } | gitleaks stdin --redact --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
+      - name: Refuse binary files outside brand/
+        # gitleaks skips binary files before any rule runs, so an office
+        # export, a database or an archive with member data passes every scan
+        # above. Git tells binary from text by content and shows a binary
+        # file as "-" in --numstat, in every commit and in the tested tree.
+        # The attributes come from the empty tree, so a .gitattributes in the
+        # pull request cannot make a binary file count as text, and -m shows
+        # what a merge commit adds. Git counts a file as binary only if its
+        # first 8000 bytes hold a NUL byte, so the usual export formats are
+        # also refused by name, whatever their case. Only brand/, which is
+        # delivered as a whole, holds such files (ADR 0014).
+        run: |
+          empty=$(git hash-object -t tree /dev/null)
+          { git -c core.quotePath=false --attr-source="$empty" log -m --numstat --no-renames --format= HEAD
+            git -c core.quotePath=false --attr-source="$empty" diff --numstat --no-renames "$empty" HEAD
+          } | awk -F '\t' '($1 == "-" || tolower($3) ~ /\.(pdf|docx?|xls[xm]?|od[ts]|sqlite3?|db|zip|7z|rar|tar|tgz|gz)$/) && $3 !~ /^brand\// && !seen[$3]++ { print "Binär- oder Exportdatei ausserhalb von brand/: " $3 > "/dev/stderr"; bad = 1 } END { exit bad }'
 
   # check, compat and minimum run the same steps on different versions of
   # Node.js (ADR 0019): the development version from mise.toml, the next line
@@ -251,3 +268,34 @@ jobs:
           license-check: false
           comment-summary-in-pr: never
           show-openssf-scorecard: false
+
+  # Not a required check, and it must not become one: the ruleset has no
+  # bypass, so a required check that fails would also stop a person from
+  # merging. It fails when a pull request adds versions to pnpm-lock.yaml
+  # that come without a provenance attestation through a trusted publisher.
+  # Renovate merges only when every check has passed (platformAutomerge is
+  # false in .github/renovate.json5), so such an update waits for a person,
+  # who can merge after looking at the named packages (ADR 0021). It runs in
+  # this workflow, so its check exists on the commit as early as the others.
+  lockfile-provenance:
+    name: lockfile-provenance
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out with the whole history
+        # For a pull request this is the test merge: HEAD^1 is the base.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install Node.js
+        uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+        with:
+          version: 2026.9.16
+          cache: false
+          install_args: node
+      - name: Check the provenance of new lockfile entries
+        run: node scripts/ci/check-lockfile-provenance.mts HEAD^1

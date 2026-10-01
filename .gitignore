@@ -1,3 +1,39 @@
+# Exports and documents that may hold personal data of a congregation, such
+# as lists exported from ChurchTools, never belong in this repository
+# (ADR 0014). Ignoring them keeps them out of `git add -A`; the hooks and CI
+# also refuse every binary file outside brand/. Synthetic CSV fixtures and
+# the brand package stay possible. This block comes first, so that the
+# rules below, such as those for .env or node_modules/, apply in brand/ too.
+*.csv
+*.xlsx
+*.xlsm
+*.xls
+*.ods
+*.odt
+*.docx
+*.doc
+*.pdf
+*.vcf
+*.har
+*.eml
+*.msg
+*.mbox
+*.pcap
+*.pcapng
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.bak
+*.zip
+*.7z
+*.rar
+*.tar
+*.tgz
+*.gz
+!tests/fixtures/**/*.csv
+!brand/**
+
 # Local configuration and secrets. Only .env.example belongs in the repository.
 .env
 .env.*

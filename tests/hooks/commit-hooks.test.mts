@@ -50,6 +50,9 @@ const canaryHost = (): string =>
 // whose patterns are the business of .gitleaks.toml.
 const rule = 'opsec-churchtools-host';
 
+/** Content that Git treats as binary: it holds NUL bytes. */
+const binary = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00, 0x01, 0x02]);
+
 const timeout = 60_000;
 
 describe('the commit hooks', () => {
@@ -261,6 +264,60 @@ describe('the commit hooks', () => {
         '%PDF-1.7 notes\n\nFrom example.church.tools.',
       );
       expect(counterpart.status, counterpart.output).toBe(0);
+      expect(commitCount()).toBe(before + 1);
+    },
+    timeout,
+  );
+
+  // gitleaks skips binary files, so an export or a database with member
+  // data would pass every scan. The hook refuses a binary file outside
+  // brand/, by its content and whatever .gitattributes says, and the usual
+  // export formats by name, also without a NUL byte (ADR 0014).
+  it(
+    'stop binary and export files outside brand/ and let them pass in brand/',
+    () => {
+      const before = commitCount();
+      const message = (file: string): string =>
+        `Binär- oder Exportdatei ausserhalb von brand/: ${file}`;
+      mkdirSync(join(repository.path, 'exports'), { recursive: true });
+      mkdirSync(join(repository.path, 'docs/brand'), { recursive: true });
+      writeFileSync(join(repository.path, 'exports/members.xlsx'), binary);
+      writeFileSync(
+        join(repository.path, 'docs/brand/liste.PDF'),
+        '%PDF-1.7\n',
+      );
+      stage('.gitattributes', '*.xlsx diff\n');
+      repository.git([
+        'add',
+        '--',
+        'exports/members.xlsx',
+        'docs/brand/liste.PDF',
+      ]);
+
+      const result = commit('docs: add an export');
+      expect(result.status, result.output).not.toBe(0);
+      expect(result.output).toContain(message('exports/members.xlsx'));
+      expect(result.output).toContain(message('docs/brand/liste.PDF'));
+      expect(commitCount()).toBe(before);
+
+      repository.git(['reset', '--quiet']);
+      rmSync(join(repository.path, 'exports'), { recursive: true });
+      rmSync(join(repository.path, 'docs'), { recursive: true });
+      rmSync(join(repository.path, '.gitattributes'));
+      mkdirSync(join(repository.path, 'brand'), { recursive: true });
+      writeFileSync(join(repository.path, 'brand/logo.png'), binary);
+      writeFileSync(join(repository.path, 'brand/guide.pdf'), '%PDF-1.7\n');
+      repository.git(['add', '--', 'brand/logo.png', 'brand/guide.pdf']);
+      const counterpart = commit('docs: add the brand files');
+      expect(counterpart.status, counterpart.output).toBe(0);
+      expect(commitCount()).toBe(before + 1);
+
+      // Moving a file out of brand/ makes it a new file outside of it.
+      mkdirSync(join(repository.path, 'exports'), { recursive: true });
+      repository.git(['mv', 'brand/logo.png', 'exports/logo.png']);
+      const moved = commit('docs: move the logo');
+      expect(moved.status, moved.output).not.toBe(0);
+      expect(moved.output).toContain(message('exports/logo.png'));
       expect(commitCount()).toBe(before + 1);
     },
     timeout,
