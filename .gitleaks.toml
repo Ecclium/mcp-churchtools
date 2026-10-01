@@ -29,14 +29,31 @@
 #   file names        gitleaks stdin over the names of staged or committed
 #                     files (gitleaks git and gitleaks dir read contents, not
 #                     names)
-#   pull request      gitleaks git --redact --no-banner --ignore-gitleaks-allow --log-opts=HEAD,
-#                     gitleaks dir, and gitleaks stdin over file names, title
-#                     and commit messages (.github/workflows/)
+#   CI                gitleaks git --redact --no-banner --ignore-gitleaks-allow --log-opts=HEAD,
+#                     gitleaks dir, and gitleaks stdin over file names, the
+#                     messages of every commit up to the tested one, and the
+#                     title and the commit messages of a pull request
+#                     (.github/workflows/)
 #   full history      gitleaks git --redact --no-banner --ignore-gitleaks-allow
 #   release artifact  gitleaks dir <unpacked npm tarball> --redact --no-banner --ignore-gitleaks-allow
 #                     (unpack first: gitleaks skips .tgz files as binary; for
 #                     container images, scan only the application directory,
 #                     not the base image with its OS files)
+#
+#   Every gitleaks stdin scan reads two lines first, an empty one and one of
+#   40000 spaces, as in `{ printf '\n%40000s\n' ''; ...; } | gitleaks stdin`.
+#   gitleaks skips piped text as a binary file, with success and without a
+#   word, when its first bytes look like the signature of a file format:
+#   %PDF at the start, ustar at byte 257 or CD001 at byte 32769, among
+#   others. A file name or a commit message can start that way. The spaces
+#   cover every position at which gitleaks 8.30 looks for a signature, and
+#   the line break in the first byte keeps it from checking later parts of
+#   the text again.
+#   Lists of file names get an empty line after each name (sed G). gitleaks
+#   reads its input in parts of about 100 kB and cuts them at an empty line
+#   if it finds one within 25 kB, otherwise anywhere. Without the empty
+#   lines a name could be cut in two, and a host across the cut would go
+#   unseen. Commit messages already have empty lines between them.
 #
 # Placeholders that pass (use them in code, tests, fixtures, docs, examples)
 #   ChurchTools instance  https://example.church.tools, tenant "demo-tenant"
@@ -234,7 +251,9 @@ description = "Data export, capture or dump that may contain personal data"
 # tests/fixtures/ (see tests/fixtures/README.md).
 # Not listed: .xlsx, .xls, .docx, .pdf and images. gitleaks' built-in global
 # allowlist skips these files completely, so a rule here would never fire.
-# .gitignore blocks the office formats instead.
+# gitleaks also skips every binary file before any rule runs, so .sqlite,
+# .db and .ods below never fire either. Nothing in this repository stops
+# such files yet (docs/threat-model.md, L8).
 path ='''(?i)\.(?:har|vcf|mbox|eml|msg|pcapng?|sqlite3?|db|dump|bak|csv|ods)$'''
 tags = ["forbidden-file", "pii"]
 [[rules.allowlists]]

@@ -63,9 +63,11 @@ jobs:
           TITLE: ${{ github.event.pull_request.title }}
         run: node scripts/ci/check-pr-title.mts "$TITLE"
       - name: Scan the title for secrets
+        # The two lines printed first keep gitleaks from skipping the text as
+        # a binary file when it starts like one (see .gitleaks.toml).
         env:
           TITLE: ${{ github.event.pull_request.title }}
-        run: printf '%s\n' "$TITLE" | gitleaks stdin --redact --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
+        run: printf '\n%40000s\n%s\n' '' "$TITLE" | gitleaks stdin --redact --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
 
   dco:
     name: dco
@@ -113,4 +115,10 @@ jobs:
       - name: Check the sign-off of every commit
         run: node scripts/ci/check-dco.mts --range HEAD^1 HEAD^2
       - name: Scan the commit messages for secrets
-        run: git log --format=%B HEAD^1..HEAD^2 | gitleaks stdin --redact --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
+        # The two lines printed first keep gitleaks from skipping the
+        # messages as a binary file when the first one starts like one (see
+        # .gitleaks.toml).
+        run: |
+          { printf '\n%40000s\n' ''
+            git log --format=%B HEAD^1..HEAD^2
+          } | gitleaks stdin --redact --no-banner --ignore-gitleaks-allow -c .gitleaks.toml

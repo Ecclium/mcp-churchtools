@@ -163,7 +163,12 @@ const leaks: readonly {
   },
 ];
 
-describe('entry points of the packages', () => {
+// Each test builds a TypeScript program and needs well under a second.
+// Under heavy load, such as several checks running at once, one took longer
+// than the default limit of five seconds.
+const timeout = 30_000;
+
+describe('entry points of the packages', { timeout }, () => {
   it('include every package', () => {
     expect(entryPoints).toEqual(
       expect.arrayContaining(
