@@ -252,8 +252,9 @@ description = "Data export, capture or dump that may contain personal data"
 # Not listed: .xlsx, .xls, .docx, .pdf and images. gitleaks' built-in global
 # allowlist skips these files completely, so a rule here would never fire.
 # gitleaks also skips every binary file before any rule runs, so .sqlite,
-# .db and .ods below never fire either. Nothing in this repository stops
-# such files yet (docs/threat-model.md, L8).
+# .db and .ods below never fire either. The hooks and CI refuse every
+# binary file and the usual export formats outside brand/ instead, and
+# .gitignore leaves them out (ADR 0014, docs/threat-model.md L8).
 path ='''(?i)\.(?:har|vcf|mbox|eml|msg|pcapng?|sqlite3?|db|dump|bak|csv|ods)$'''
 tags = ["forbidden-file", "pii"]
 [[rules.allowlists]]
