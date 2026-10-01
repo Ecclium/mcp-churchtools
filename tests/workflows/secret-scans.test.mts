@@ -290,39 +290,87 @@ describe('the scans of names, titles and messages in CI', () => {
     repository.git(['commit', '--quiet', '--message', message]);
   };
 
+  /** Commits a text file at any path. */
+  const commitText = (
+    repository: Repository,
+    file: string,
+    content: string,
+    message: string,
+  ): void => {
+    mkdirSync(dirname(join(repository.path, file)), { recursive: true });
+    writeFileSync(join(repository.path, file), content);
+    repository.git(['add', '--', file]);
+    repository.git(['commit', '--quiet', '--message', message]);
+  };
+
+  /** Merges the branch side into main and lets `change` adjust the merge. */
+  const mergeSide = (
+    repository: Repository,
+    name: string,
+    change: () => void,
+  ): void => {
+    repository.git(['switch', '--quiet', '-C', 'side']);
+    commit(repository, `${name}.md`, `fix: ${name}`);
+    repository.git(['switch', '--quiet', 'main']);
+    repository.git(['merge', '--quiet', '--no-ff', '--no-commit', 'side']);
+    change();
+    repository.git(['commit', '--quiet', '--no-edit']);
+  };
+
   // gitleaks skips binary files, so an export or a database with member
-  // data would pass every scan. CI refuses a binary file outside brand/ in
-  // the whole history, by its content and whatever .gitattributes says.
+  // data would pass every scan. CI and the local scans refuse a binary file
+  // outside brand/ in the whole history, by its content and whatever
+  // .gitattributes says, and the usual export formats by name, also without
+  // a NUL byte.
   it(
-    'refuse a binary file outside brand/, also one removed later',
+    'refuse binary and export files outside brand/, wherever they entered',
     () => {
       const step = 'Refuse binary files outside brand/';
-      const repository = setUp();
-      writeFileSync(join(repository.path, '.gitattributes'), '*.xlsx diff\n');
-      repository.git(['add', '--', '.gitattributes']);
-      commitBinary(repository, 'data/members.xlsx', 'docs: add an export');
-      repository.git(['rm', '--quiet', '--', 'data/members.xlsx']);
-      repository.git(['commit', '--quiet', '--message', 'docs: remove it']);
+      const message = (file: string): string =>
+        `Binär- oder Exportdatei ausserhalb von brand/: ${file}`;
+      const both = (
+        repository: Repository,
+      ): { status: number | null; output: string }[] => [
+        run(repository, 'ci.yml', step),
+        shell(repository, localScript ?? '', { runner: false }),
+      ];
 
-      const result = run(repository, 'ci.yml', step);
-      expect(result.status, result.output).toBe(1);
-      expect(result.output).toContain(
-        'Binärdatei ausserhalb von brand/: data/members.xlsx',
-      );
-      const local = shell(repository, localScript ?? '', { runner: false });
-      expect(local.status, local.output).toBe(1);
-      expect(local.output).toContain(
-        'Binärdatei ausserhalb von brand/: data/members.xlsx',
-      );
+      const history = setUp();
+      writeFileSync(join(history.path, '.gitattributes'), '*.xlsx diff\n');
+      history.git(['add', '--', '.gitattributes']);
+      commitBinary(history, 'data/members.xlsx', 'docs: add an export');
+      history.git(['rm', '--quiet', '--', 'data/members.xlsx']);
+      history.git(['commit', '--quiet', '--message', 'docs: remove it']);
+      commitText(history, 'docs/brand/liste.PDF', '%PDF-1.7\n', 'docs: add');
+      for (const result of both(history)) {
+        expect(result.status, result.output).toBe(1);
+        expect(result.output).toContain(message('data/members.xlsx'));
+        expect(result.output).toContain(message('docs/brand/liste.PDF'));
+      }
+
+      // Only merge commits add these files, and a later merge removes one.
+      const merged = setUp();
+      mergeSide(merged, 'one', () => {
+        for (const file of ['kept.xlsx', 'gone.xlsx']) {
+          writeFileSync(join(merged.path, file), Buffer.from([0, 1, 2]));
+          merged.git(['add', '--', file]);
+        }
+      });
+      mergeSide(merged, 'two', () => {
+        merged.git(['rm', '--quiet', '--', 'gone.xlsx']);
+      });
+      for (const result of both(merged)) {
+        expect(result.status, result.output).toBe(1);
+        expect(result.output).toContain(message('kept.xlsx'));
+        expect(result.output).toContain(message('gone.xlsx'));
+      }
 
       const clean = setUp();
       commitBinary(clean, 'brand/png/logo.png', 'docs: add the logo');
-      const counterpart = run(clean, 'ci.yml', step);
-      expect(counterpart.status, counterpart.output).toBe(0);
-      const localCounterpart = shell(clean, localScript ?? '', {
-        runner: false,
-      });
-      expect(localCounterpart.status, localCounterpart.output).toBe(0);
+      commitText(clean, 'brand/guide.pdf', '%PDF-1.7\n', 'docs: add a guide');
+      for (const result of both(clean)) {
+        expect(result.status, result.output).toBe(0);
+      }
     },
     timeout,
   );
