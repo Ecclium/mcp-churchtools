@@ -9,9 +9,10 @@
  * earlier versions of the same package, so it does not protect a package
  * that never had such evidence. This check asks the npm registry, for each
  * added version, whether it has a provenance attestation and was published
- * through a trusted publisher. If one lacks either, comes from somewhere
- * other than the registry, or the registry cannot be asked, the check
- * fails.
+ * through a trusted publisher, and whether the integrity in the lockfile is
+ * the one the registry lists for that version. If one lacks either piece of
+ * evidence, has another integrity, comes from somewhere other than the
+ * registry, or the registry cannot be asked, the check fails.
  *
  * It is not a required check. A person can still merge after looking at the
  * named packages, while Renovate, which merges only when every check has
@@ -169,6 +170,18 @@ export function evidenceOf(manifest: unknown): Evidence {
   };
 }
 
+/**
+ * Reads the integrity the registry lists for one version.
+ *
+ * @param manifest - The JSON from https://registry.npmjs.org/name/version.
+ * @returns `dist.integrity`, or undefined if it is missing.
+ */
+export function registryIntegrity(manifest: unknown): string | undefined {
+  const dist = isObject(manifest) ? manifest['dist'] : undefined;
+  const integrity = isObject(dist) ? dist['integrity'] : undefined;
+  return typeof integrity === 'string' ? integrity : undefined;
+}
+
 const yesNo = (value: boolean): string => (value ? 'ja' : 'nein');
 
 /**
@@ -188,23 +201,35 @@ export async function checkPackages(
     const parsed = splitEntry(entry);
     // A registry package resolves to an integrity hash alone; a tarball or
     // Git resolution comes from somewhere else.
-    if (
-      parsed === undefined ||
-      !/^resolution: \{integrity: [^,}]+\}$/.test(resolution)
-    ) {
+    const integrity = /^resolution: \{integrity: ([^,}]+)\}$/.exec(
+      resolution,
+    )?.[1];
+    if (parsed === undefined || integrity === undefined) {
       lines.push(`${entry}: nicht aus der Registry`);
       failed += 1;
       continue;
     }
     const url = `https://registry.npmjs.org/${parsed.name.replaceAll('/', '%2f')}/${parsed.version}`;
-    let evidence: Evidence;
+    let manifest: unknown;
     try {
-      evidence = evidenceOf(await fetchJson(url));
+      manifest = await fetchJson(url);
     } catch {
       lines.push(`${entry}: Registry nicht erreichbar`);
       failed += 1;
       continue;
     }
+    // pnpm installs whatever matches the integrity in the lockfile. Only
+    // when it is the one the registry lists for this version does the
+    // evidence below belong to the package pnpm installs: another version
+    // named in the entry, or a tarball from another registry set in an
+    // .npmrc, has another integrity. A version without `dist.integrity`
+    // is older than provenance and fails here.
+    if (registryIntegrity(manifest) !== integrity) {
+      lines.push(`${entry}: Prüfsumme weicht von der Registry ab`);
+      failed += 1;
+      continue;
+    }
+    const evidence = evidenceOf(manifest);
     lines.push(
       `${entry}: Herkunftsnachweis ${yesNo(evidence.provenance)}, vertrauenswürdiger Herausgeber ${yesNo(evidence.trustedPublisher)}`,
     );

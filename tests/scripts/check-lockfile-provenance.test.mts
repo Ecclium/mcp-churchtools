@@ -10,6 +10,7 @@ import {
   evidenceOf,
   lockedPackages,
   lockfileVersion,
+  registryIntegrity,
   splitEntry,
 } from '../../scripts/ci/check-lockfile-provenance.mts';
 import { createRepository, type Repository } from '../support/git.mts';
@@ -25,7 +26,8 @@ const script = fileURLToPath(
   new URL('../../scripts/ci/check-lockfile-provenance.mts', import.meta.url),
 );
 
-const integrity = 'resolution: {integrity: sha512-AAAA}';
+const sha = 'sha512-AAAA';
+const integrity = `resolution: {integrity: ${sha}}`;
 
 /** A lockfile in the layout of pnpm 11, with the given packages. */
 const lockfile = (
@@ -62,7 +64,10 @@ const lockfile = (
 // address of the person who published it. These values must never appear in
 // the output of the check.
 const publisher = { name: 'Erika Musterfrau', email: 'erika@example.org' };
-const attested = { attestations: { provenance: { predicateType: 'slsa' } } };
+const attested = {
+  integrity: sha,
+  attestations: { provenance: { predicateType: 'slsa' } },
+};
 const trusted = { ...publisher, trustedPublisher: { id: 'github' } };
 
 describe('lockfileVersion and lockedPackages', () => {
@@ -194,6 +199,15 @@ describe('evidenceOf', () => {
   });
 });
 
+describe('registryIntegrity', () => {
+  it('reads dist.integrity only as a string', () => {
+    expect(registryIntegrity({ dist: { integrity: sha } })).toBe(sha);
+    expect(registryIntegrity({ dist: { integrity: [sha] } })).toBeUndefined();
+    expect(registryIntegrity({ dist: {} })).toBeUndefined();
+    expect(registryIntegrity('x')).toBeUndefined();
+  });
+});
+
 describe('checkPackages', () => {
   const registry =
     (documents: Readonly<Record<string, unknown>>) =>
@@ -237,11 +251,11 @@ describe('checkPackages', () => {
           _npmUser: publisher,
         },
         'https://registry.npmjs.org/prettier/3.9.9': {
-          dist: {},
+          dist: { integrity: sha },
           _npmUser: trusted,
         },
         'https://registry.npmjs.org/ignore/7.0.11': {
-          dist: {},
+          dist: { integrity: sha },
           _npmUser: publisher,
         },
         'https://registry.npmjs.org/bar/1.0.0': {
@@ -262,6 +276,33 @@ describe('checkPackages', () => {
     const output = report.lines.join('\n');
     expect(output).not.toContain(publisher.name);
     expect(output).not.toContain(publisher.email);
+  });
+
+  // pnpm installs what matches the integrity in the lockfile. Evidence for
+  // the version in the key says nothing about another tarball, such as an
+  // older version named in the entry or one from another registry.
+  it('fails when the integrity is not the one the registry lists', async () => {
+    const report = await checkPackages(
+      [
+        added('vitest@5.0.2', 'resolution: {integrity: sha512-BBBB}'),
+        added('ignore@7.0.11'),
+      ],
+      registry({
+        'https://registry.npmjs.org/vitest/5.0.2': {
+          dist: attested,
+          _npmUser: trusted,
+        },
+        'https://registry.npmjs.org/ignore/7.0.11': {
+          dist: { attestations: attested.attestations },
+          _npmUser: trusted,
+        },
+      }),
+    );
+    expect(report.failed).toBe(2);
+    expect(report.lines).toEqual([
+      'vitest@5.0.2: Prüfsumme weicht von der Registry ab',
+      'ignore@7.0.11: Prüfsumme weicht von der Registry ab',
+    ]);
   });
 
   it('never asks the registry about a name that would leave its path', async () => {
