@@ -22,6 +22,11 @@
   // ran against the current main before it is merged.
   rebaseWhen: 'behind-base-branch',
   automergeStrategy: 'squash',
+  // Renovate merges on its own only when every check on the branch has
+  // passed, also the ones that are not required, such as lockfile-provenance.
+  // The automatic merge of GitHub, which Renovate would use otherwise, waits
+  // only for the required checks (ADR 0021).
+  platformAutomerge: false,
 
   // Every commit needs a sign-off of its author (ADR 0002). Renovate commits
   // through the GitHub API, so the author is this account. The sign-off
