@@ -50,6 +50,14 @@ export interface ProvenanceReport {
 
 const semver = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
+// The name becomes part of the registry URL, where a character such as `?`
+// or `#` or a name such as `..` would ask about a different package than
+// the one in the lockfile. Only ASCII letters, digits and `._~-` pass, as
+// `@scope/name` or as a name that starts with a letter or digit, and no
+// part starts with a dot. The rare older names with one of `'!()*` fail,
+// and a person looks at them.
+const packageName = /^(?:@[\w~-][\w.~-]*\/[\w~-][\w.~-]*|[A-Za-z0-9][\w.~-]*)$/;
+
 /**
  * Reads the `lockfileVersion` of pnpm-lock.yaml.
  *
@@ -122,7 +130,8 @@ export function addedPackages(base: string, head: string): AddedPackage[] {
 
 /**
  * Splits a key such as `@scope/name@1.2.3` into name and version. Only a
- * key with an exact version can come from the registry.
+ * key with an exact version and a name that can go into the registry URL
+ * unchanged is checked against the registry.
  *
  * @param entry - A key of the `packages:` section.
  * @returns Name and version, or undefined if the key names no registry
@@ -134,7 +143,7 @@ export function splitEntry(
   const at = entry.lastIndexOf('@');
   const name = entry.slice(0, at);
   const version = entry.slice(at + 1);
-  return at > 0 && semver.test(version) && !name.includes(':')
+  return at > 0 && semver.test(version) && packageName.test(name)
     ? { name, version }
     : undefined;
 }
@@ -187,7 +196,7 @@ export async function checkPackages(
       failed += 1;
       continue;
     }
-    const url = `https://registry.npmjs.org/${parsed.name.replace('/', '%2f')}/${parsed.version}`;
+    const url = `https://registry.npmjs.org/${parsed.name.replaceAll('/', '%2f')}/${parsed.version}`;
     let evidence: Evidence;
     try {
       evidence = evidenceOf(await fetchJson(url));
@@ -248,7 +257,9 @@ async function main(): Promise<number> {
       return 2;
     }
   }
-  if (lockedPackages(after).size === 0 && /^\s+specifier:/m.test(after)) {
+  // Spaces only: `\s` would also match line breaks and take quadratic time
+  // on a lockfile of blank lines.
+  if (lockedPackages(after).size === 0 && /^ +specifier:/m.test(after)) {
     console.error('Im Lockfile stehen Abhängigkeiten, aber keine Pakete.');
     return 2;
   }

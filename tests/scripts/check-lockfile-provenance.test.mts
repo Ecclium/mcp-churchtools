@@ -116,6 +116,19 @@ describe('splitEntry', () => {
       name: '@vitest/spy',
       version: '5.0.3-beta.1',
     });
+    for (const name of [
+      'JSONStream',
+      'string_decoder',
+      'lodash._basecopy',
+      '@types/babel__core',
+      '@scope/_private',
+      '@-scope/run',
+    ]) {
+      expect(splitEntry(`${name}@1.0.0`), name).toEqual({
+        name,
+        version: '1.0.0',
+      });
+    }
   });
 
   it('refuses keys that name no registry version', () => {
@@ -125,6 +138,37 @@ describe('splitEntry', () => {
       'foo@git+https://example.org/foo.git#abc',
       '@scope/foo',
       'foo',
+    ]) {
+      expect(splitEntry(entry), entry).toBeUndefined();
+    }
+  });
+
+  // The name goes into the path of the registry URL. None of these is a
+  // package name, and some, such as `..`, `?` and `#`, would make the URL
+  // ask about a different package. The long s and the Kelvin sign would
+  // match `s` and `k` if the pattern ever ignored case for Unicode.
+  it('refuses names that cannot go into the registry URL unchanged', () => {
+    for (const entry of [
+      '..@1.0.0',
+      '.@1.0.0',
+      '@scope/.x@1.0.0',
+      '@./x@1.0.0',
+      'x/y/../../vitest@5.0.3',
+      '../vitest@5.0.3',
+      '@scope/../vitest@5.0.3',
+      '@scope/foo/bar@1.0.0',
+      'foo/bar@1.0.0',
+      '.hidden@1.0.0',
+      'foo?x=1@1.0.0',
+      'foo#x@1.0.0',
+      'foo%2f..@1.0.0',
+      'foo bar@1.0.0',
+      '@/foo@1.0.0',
+      '@scope/@1.0.0',
+      '-foo@1.0.0',
+      '_foo@1.0.0',
+      'vit\u017Fest@5.0.3',
+      'vite\u212A@1.0.0',
     ]) {
       expect(splitEntry(entry), entry).toBeUndefined();
     }
@@ -218,6 +262,23 @@ describe('checkPackages', () => {
     const output = report.lines.join('\n');
     expect(output).not.toContain(publisher.name);
     expect(output).not.toContain(publisher.email);
+  });
+
+  it('never asks the registry about a name that would leave its path', async () => {
+    const asked: string[] = [];
+    const report = await checkPackages(
+      [added('x/y/../../vitest@5.0.3'), added('@scope/foo/bar@1.0.0')],
+      (url) => {
+        asked.push(url);
+        return Promise.resolve({ dist: attested, _npmUser: trusted });
+      },
+    );
+    expect(asked).toEqual([]);
+    expect(report.failed).toBe(2);
+    expect(report.lines).toEqual([
+      'x/y/../../vitest@5.0.3: nicht aus der Registry',
+      '@scope/foo/bar@1.0.0: nicht aus der Registry',
+    ]);
   });
 });
 
