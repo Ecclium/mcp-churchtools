@@ -9,9 +9,10 @@
  * earlier versions of the same package, so it does not protect a package
  * that never had such evidence. This check asks the npm registry, for each
  * added version, whether it has a provenance attestation and was published
- * through a trusted publisher. If one lacks either, comes from somewhere
- * other than the registry, or the registry cannot be asked, the check
- * fails.
+ * through a trusted publisher, and whether the integrity in the lockfile is
+ * the one the registry lists for that version. If one lacks either piece of
+ * evidence, has another integrity, comes from somewhere other than the
+ * registry, or the registry cannot be asked, the check fails.
  *
  * It is not a required check. A person can still merge after looking at the
  * named packages, while Renovate, which merges only when every check has
@@ -68,47 +69,273 @@ export function lockfileVersion(lockfile: string): string | undefined {
   return /^lockfileVersion: '?([^'\s]+)'?\s*$/m.exec(lockfile)?.[1];
 }
 
+/** The lockfile uses a form that this check cannot read safely. */
+export class UnreadableLockfile extends Error {}
+
+/** One entry of the `packages:` section of pnpm-lock.yaml. */
+export interface LockedPackage {
+  /** Its `resolution:` line, or an empty string if it has none. */
+  readonly resolution: string;
+  /** The names of its fields, such as `resolution` or `engines`. */
+  readonly fields: readonly string[];
+}
+
+// pnpm writes the lockfile as YAML in a narrow form: two spaces per level,
+// no comments, anchors, aliases, tags or explicit keys, and every quoted
+// string and every flow collection on one line. Only long texts span lines,
+// as block scalars such as `|-`, which end where the indentation does. This
+// reader accepts only that form. pnpm reads any YAML: a string or bracket
+// left open makes the following lines, even one at the start of a line,
+// part of a value for pnpm, while a reader of lines could take them for a
+// new section and skip the packages after it. With anchors, aliases, merge
+// keys or a key in another form, pnpm could see a package or a field that
+// this reader does not. Any other form therefore stops the check.
+const topLevelLine = /^([A-Za-z][A-Za-z0-9]*):(?: (.*))?$/;
+const keyLine = /^ {2}('(?:[^']|'')+'|[^\s'"?:,[\]{}#&*!|<>%@`-]\S*):( \{\})?$/;
+const fieldLine = /^ {4}([A-Za-z][A-Za-z0-9]*):(?: |$)/;
+const quotedAt = /'(?:[^']|'')*'|"(?:[^"\\]|\\.)*"/y;
+
 /**
- * Lists the keys of the `packages:` section of pnpm-lock.yaml (version 9)
- * with their `resolution:` line. Each key names one resolved package, such
- * as `vitest@5.0.3` or `'@vitest/coverage-v8@5.0.3'`, without the peer
- * suffix that the `snapshots:` section adds. Line endings are normalised,
- * so a lockfile written with CRLF reads the same.
+ * Measures the quoted string that starts at `start`.
+ *
+ * @param text - One line of the lockfile.
+ * @param start - Index of the opening quote.
+ * @returns Its length with both quotes, or undefined if it does not end
+ *   on this line.
+ */
+function quotedLength(text: string, start: number): number | undefined {
+  quotedAt.lastIndex = start;
+  return quotedAt.exec(text)?.[0].length;
+}
+
+/**
+ * Checks that the flow collection at the start of `text` closes on its
+ * line, with nothing after it. A quote starts a string only where a value
+ * can start; inside a word it is a character like any other.
+ *
+ * @param text - A value that starts with `[` or `{`.
+ * @returns Whether it closes, without anchors, aliases, tags or comments.
+ */
+function flowCloses(text: string): boolean {
+  let depth = 0;
+  let previous = '';
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text.charAt(index);
+    const valueStart = previous === '' || '[{,:?'.includes(previous);
+    if (valueStart && (char === "'" || char === '"')) {
+      const length = quotedLength(text, index);
+      if (length === undefined) {
+        return false;
+      }
+      index += length - 1;
+      previous = char;
+      continue;
+    }
+    if (
+      (valueStart && '&*!?'.includes(char)) ||
+      (char === '#' && text.charAt(index - 1) === ' ')
+    ) {
+      return false;
+    }
+    if (char === '[' || char === '{') {
+      depth += 1;
+    } else if (char === ']' || char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return /^ *$/.test(text.slice(index + 1));
+      }
+    }
+    if (char !== ' ') {
+      previous = char;
+    }
+  }
+  return false;
+}
+
+/**
+ * Tells how a value after `key: ` or `- ` ends.
+ *
+ * @param value - The value, without the spaces before it.
+ * @returns `line` if it ends on its line, `block` for the start of a block
+ *   scalar, or undefined for a form that pnpm does not write.
+ */
+function valueForm(value: string): 'line' | 'block' | undefined {
+  if (value === '') {
+    return 'line';
+  }
+  const first = value.charAt(0);
+  if (first === "'" || first === '"') {
+    const length = quotedLength(value, 0);
+    return length !== undefined && /^ *$/.test(value.slice(length))
+      ? 'line'
+      : undefined;
+  }
+  if (first === '[' || first === '{') {
+    return flowCloses(value) ? 'line' : undefined;
+  }
+  if (first === '|' || first === '>') {
+    return /^[|>][-+]?$/.test(value) ? 'block' : undefined;
+  }
+  // Anchors, aliases, tags, explicit keys, reserved characters, comments.
+  return '&*!?%@`#'.includes(first) || / #/.test(value) ? undefined : 'line';
+}
+
+/**
+ * Tells how a line of the lockfile ends.
+ *
+ * @param content - The line without its indentation.
+ * @returns `line` if everything it opens closes on it, `block` for the
+ *   start of a block scalar, or undefined for a form that pnpm does not
+ *   write.
+ */
+function lineForm(content: string): 'line' | 'block' | undefined {
+  // Items of block sequences.
+  const rest = content.slice(/^(?:- +)*/.exec(content)?.[0].length ?? 0);
+  if (rest.startsWith("'") || rest.startsWith('"')) {
+    const length = quotedLength(rest, 0);
+    if (length === undefined) {
+      return undefined;
+    }
+    const after = rest.slice(length);
+    if (/^ *$/.test(after)) {
+      return 'line';
+    }
+    return /^:(?: |$)/.test(after)
+      ? valueForm(after.slice(1).replace(/^ +/, ''))
+      : undefined;
+  }
+  // A plain key ends at the first colon before a space or the line end.
+  const colon = rest.search(/:(?: |$)/);
+  if (colon === -1) {
+    return valueForm(rest);
+  }
+  const key = rest.slice(0, colon);
+  return key === '' || '[{&*!?|>%@`#'.includes(key.charAt(0)) || / #/.test(key)
+    ? undefined
+    : valueForm(rest.slice(colon + 1).replace(/^ +/, ''));
+}
+
+/**
+ * Reads the `packages:` section of pnpm-lock.yaml (version 9). Each key
+ * names one resolved package, such as `vitest@5.0.3` or
+ * `'@vitest/coverage-v8@5.0.3'`, without the peer suffix that the
+ * `snapshots:` section adds. Every key of `snapshots:` must have its
+ * package here. Line endings are normalised, so a lockfile written with
+ * CRLF reads the same.
  *
  * @param lockfile - Content of pnpm-lock.yaml.
- * @returns The keys without quotes, each with its resolution, or an empty
- *   string if it has none.
+ * @returns The keys without quotes, each with its resolution and fields.
+ * @throws {UnreadableLockfile} For a form that pnpm does not write.
  */
-export function lockedPackages(lockfile: string): Map<string, string> {
-  const packages = new Map<string, string>();
-  let inPackages = false;
-  let current: string | undefined;
-  for (const line of lockfile.replace(/\r\n?/g, '\n').split('\n')) {
-    if (/^\S/.test(line)) {
-      inPackages = line.trim() === 'packages:';
-      current = undefined;
+export function lockedPackages(lockfile: string): Map<string, LockedPackage> {
+  const packages = new Map<string, { resolution: string; fields: string[] }>();
+  const snapshots: string[] = [];
+  const sections = new Set<string>();
+  let section: string | undefined;
+  let entry: { resolution: string; fields: string[] } | undefined;
+  // What the last line of the section was, so that a field follows a key
+  // and a deeper line follows a field.
+  let previous: 'key' | 'field' | undefined;
+  // The indentation of the line that opened a block scalar.
+  let block: number | undefined;
+  const lines = lockfile.replace(/\r\n?/g, '\n').split('\n');
+  for (const [index, line] of lines.entries()) {
+    const at = `Zeile ${String(index + 1)}`;
+    // YAML 1.1 reads these characters as line breaks, this reader does not.
+    if (/[\u0085\u2028\u2029]/.test(line)) {
+      throw new UnreadableLockfile(`${at}: Zeichen für einen Zeilenumbruch`);
+    }
+    const indent = /^ */.exec(line)?.[0].length ?? 0;
+    const content = line.slice(indent);
+    if (/^[ \t]*$/.test(content) || (block !== undefined && indent > block)) {
       continue;
     }
-    if (!inPackages) {
+    block = undefined;
+    const form = lineForm(content);
+    if (form === undefined) {
+      throw new UnreadableLockfile(
+        `${at}: Wert, der nicht auf seiner Zeile endet, oder unbekannte Form`,
+      );
+    }
+    if (form === 'block') {
+      block = indent;
+    }
+    if (indent === 0) {
+      const top = topLevelLine.exec(line);
+      if (top === null) {
+        throw new UnreadableLockfile(
+          `${at}: unbekannte Form auf oberster Ebene`,
+        );
+      }
+      section = top[1];
+      entry = undefined;
+      previous = undefined;
+      if (section === 'packages' || section === 'snapshots') {
+        if (
+          sections.has(section) ||
+          (top[2] !== undefined && top[2] !== '{}')
+        ) {
+          throw new UnreadableLockfile(
+            `${at}: unbekannte Form des Abschnitts ${section}`,
+          );
+        }
+        sections.add(section);
+      }
       continue;
     }
-    const key = /^ {2}(\S.*):$/.exec(line)?.[1];
-    if (key !== undefined) {
-      current = key.replace(/^'(.*)'$/, '$1');
-      packages.set(current, '');
-    } else if (current !== undefined && /^ {4}resolution:/.test(line)) {
-      packages.set(current, line.trim());
+    if (section !== 'packages' && section !== 'snapshots') {
+      continue;
+    }
+    if (indent === 2) {
+      const key = keyLine.exec(line);
+      if (key?.[1] === undefined) {
+        throw new UnreadableLockfile(`${at}: unbekannte Form eines Schlüssels`);
+      }
+      const name = key[1].startsWith("'")
+        ? key[1].slice(1, -1).replaceAll("''", "'")
+        : key[1];
+      if (section === 'packages') {
+        entry = { resolution: '', fields: [] };
+        packages.set(name, entry);
+      } else {
+        snapshots.push(name);
+      }
+      // An entry written as `{}` has no fields below it.
+      previous = key[2] === undefined ? 'key' : undefined;
+      continue;
+    }
+    if (indent === 4 && previous !== undefined) {
+      const field = fieldLine.exec(line)?.[1];
+      // pnpm's YAML reader refuses a repeated key, so a repeat here means
+      // that this reader took part of a value for a field.
+      if (field === undefined || entry?.fields.includes(field) === true) {
+        throw new UnreadableLockfile(`${at}: unbekannte Form eines Felds`);
+      }
+      entry?.fields.push(field);
+      if (entry !== undefined && field === 'resolution') {
+        entry.resolution = line.trim();
+      }
+      previous = 'field';
+      continue;
+    }
+    if (indent < 6 || previous !== 'field') {
+      throw new UnreadableLockfile(`${at}: unerwartete Einrückung`);
+    }
+  }
+  for (const key of snapshots) {
+    if (!packages.has(key.replace(/\(.*$/, ''))) {
+      throw new UnreadableLockfile(
+        `${key} steht unter snapshots:, aber nicht unter packages:`,
+      );
     }
   }
   return packages;
 }
 
 /** A package that a change adds to the lockfile, or whose source changes. */
-export interface AddedPackage {
+export interface AddedPackage extends LockedPackage {
   /** The key, such as `vitest@5.0.3`. */
   readonly key: string;
-  /** Its `resolution:` line in the new lockfile. */
-  readonly resolution: string;
 }
 
 /**
@@ -119,12 +346,15 @@ export interface AddedPackage {
  * @param base - pnpm-lock.yaml before the change.
  * @param head - pnpm-lock.yaml after the change.
  * @returns The packages, sorted by key.
+ * @throws {UnreadableLockfile} For a form that pnpm does not write.
  */
 export function addedPackages(base: string, head: string): AddedPackage[] {
   const before = lockedPackages(base);
   return [...lockedPackages(head)]
-    .filter(([key, resolution]) => before.get(key) !== resolution)
-    .map(([key, resolution]) => ({ key, resolution }))
+    .filter(
+      ([key, { resolution }]) => before.get(key)?.resolution !== resolution,
+    )
+    .map(([key, locked]) => ({ key, ...locked }))
     .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 }
 
@@ -169,6 +399,18 @@ export function evidenceOf(manifest: unknown): Evidence {
   };
 }
 
+/**
+ * Reads the integrity the registry lists for one version.
+ *
+ * @param manifest - The JSON from https://registry.npmjs.org/name/version.
+ * @returns `dist.integrity`, or undefined if it is missing.
+ */
+export function registryIntegrity(manifest: unknown): string | undefined {
+  const dist = isObject(manifest) ? manifest['dist'] : undefined;
+  const integrity = isObject(dist) ? dist['integrity'] : undefined;
+  return typeof integrity === 'string' ? integrity : undefined;
+}
+
 const yesNo = (value: boolean): string => (value ? 'ja' : 'nein');
 
 /**
@@ -184,27 +426,46 @@ export async function checkPackages(
 ): Promise<ProvenanceReport> {
   const lines: string[] = [];
   let failed = 0;
-  for (const { key: entry, resolution } of entries) {
+  for (const { key: entry, resolution, fields } of entries) {
     const parsed = splitEntry(entry);
     // A registry package resolves to an integrity hash alone; a tarball or
-    // Git resolution comes from somewhere else.
+    // Git resolution comes from somewhere else. pnpm writes a name or a
+    // version into an entry only for such packages, and it installs the
+    // version of that field rather than the one in the key.
+    const integrity = /^resolution: \{integrity: ([^,}]+)\}$/.exec(
+      resolution,
+    )?.[1];
     if (
       parsed === undefined ||
-      !/^resolution: \{integrity: [^,}]+\}$/.test(resolution)
+      integrity === undefined ||
+      fields.includes('name') ||
+      fields.includes('version')
     ) {
       lines.push(`${entry}: nicht aus der Registry`);
       failed += 1;
       continue;
     }
     const url = `https://registry.npmjs.org/${parsed.name.replaceAll('/', '%2f')}/${parsed.version}`;
-    let evidence: Evidence;
+    let manifest: unknown;
     try {
-      evidence = evidenceOf(await fetchJson(url));
+      manifest = await fetchJson(url);
     } catch {
       lines.push(`${entry}: Registry nicht erreichbar`);
       failed += 1;
       continue;
     }
+    // pnpm installs whatever matches the integrity in the lockfile. Only
+    // when it is the one the registry lists for this version does the
+    // evidence below belong to the package pnpm installs: another version
+    // named in the entry, or a tarball from another registry set in an
+    // .npmrc, has another integrity. A version without `dist.integrity`
+    // is older than provenance and fails here.
+    if (registryIntegrity(manifest) !== integrity) {
+      lines.push(`${entry}: Prüfsumme weicht von der Registry ab`);
+      failed += 1;
+      continue;
+    }
+    const evidence = evidenceOf(manifest);
     lines.push(
       `${entry}: Herkunftsnachweis ${yesNo(evidence.provenance)}, vertrauenswürdiger Herausgeber ${yesNo(evidence.trustedPublisher)}`,
     );
@@ -253,6 +514,17 @@ async function main(): Promise<number> {
     if (lockfileVersion(text) !== '9.0') {
       console.error(
         `Das Lockfile (${name}) hat das Format ${String(lockfileVersion(text))}, diese Prüfung liest nur 9.0.`,
+      );
+      return 2;
+    }
+    try {
+      lockedPackages(text);
+    } catch (error) {
+      if (!(error instanceof UnreadableLockfile)) {
+        throw error;
+      }
+      console.error(
+        `Das Lockfile (${name}) lässt sich nicht sicher lesen. ${error.message}`,
       );
       return 2;
     }
