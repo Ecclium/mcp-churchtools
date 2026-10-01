@@ -77,7 +77,7 @@ Verwenden Sie Platzhalter: `https://example.church.tools`, `demo-tenant`, `perso
 
 Zitieren Sie Quellen ohne Host: mit Titel, Version und Abschnitt, bei der ChurchTools-API mit Version und `operationId`.
 
-Ein Git-Hook aus der Einrichtung unten prüft jeden Commit und jede Commit-Message mit gitleaks. Er sucht nach Zugangsdaten, Hosts unter `church.tools`, internen Hostnamen, IPv4- und IPv6-Adressen, E-Mail-Adressen, Telefonnummern aus der Schweiz, Liechtenstein, Deutschland und Österreich, AHV-Nummern, IBAN und Home-Pfaden. Dazu kommen Dateien, die nie ins Repository gehören, etwa `.env`, Schlüssel oder Datenexporte. Welche Platzhalter die Prüfung durchlässt, steht am Anfang von `.gitleaks.toml`. Er prüft auch die Namen der Dateien. Namen, IDs und ChurchTools-Instanzen auf einer eigenen Domain erkennt er nicht. Ein Kommentar `gitleaks:allow` schaltet einen Fund nicht ab, und eine Datei `.gitleaksignore` weisen Hook und CI zurück. Er fängt Versehen ab, Ihre eigene Durchsicht ersetzt er nicht.
+Ein Git-Hook aus der Einrichtung unten prüft jeden Commit und jede Commit-Message mit gitleaks. Er sucht nach Zugangsdaten, Hosts unter `church.tools`, internen Hostnamen, IPv4- und IPv6-Adressen, E-Mail-Adressen, Telefonnummern aus der Schweiz, Liechtenstein, Deutschland und Österreich, AHV-Nummern, IBAN und Home-Pfaden. Dazu kommen Dateien, die nie ins Repository gehören, etwa `.env`, Schlüssel oder Datenexporte. Welche Platzhalter die Prüfung durchlässt, steht am Anfang von `.gitleaks.toml`. Er prüft auch die Namen der Dateien und weist Binärdateien ausserhalb von `brand/` zurück, weil gitleaks sie nicht liest. Namen, IDs und ChurchTools-Instanzen auf einer eigenen Domain erkennt er nicht. Ein Kommentar `gitleaks:allow` schaltet einen Fund nicht ab, und eine Datei `.gitleaksignore` weisen Hook und CI zurück. Er fängt Versehen ab, Ihre eigene Durchsicht ersetzt er nicht.
 
 ## Fremder Quelltext und Clean Room
 
@@ -141,18 +141,20 @@ Dabei gilt:
 
 Für jeden Pull Request laufen die folgenden Prüfungen. Jede ist Pflicht für den Merge nach `main`:
 
-| Prüfung         | Was sie prüft                                                                                                                                                               |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `workflow-lint` | Die Workflows mit actionlint und shellcheck, dazu zizmor ab mittlerer Schwere. In CI prüft zizmor auch, ob jede gepinnte SHA zur Action und zur Version im Kommentar passt. |
-| `secret-scan`   | Die Geschichte bis zum geprüften Commit, die Dateien, alle Dateinamen und die Nachrichten aller Commits bis dorthin mit gitleaks.                                           |
-| `check`         | Build und `pnpm check` mit der Version von Node.js für die Entwicklung.                                                                                                     |
-| `compat`        | Dasselbe mit der nächsten Linie von Node.js.                                                                                                                                |
-| `minimum`       | Dasselbe mit der ältesten unterstützten Version von Node.js.                                                                                                                |
-| `deps-review`   | Neue oder geänderte Abhängigkeiten auf bekannte Schwachstellen.                                                                                                             |
-| `pr-title`      | Den Titel nach Conventional Commits und mit gitleaks.                                                                                                                       |
-| `dco`           | Das Sign-off jedes Commits und die Commit-Messages mit gitleaks.                                                                                                            |
+| Prüfung         | Was sie prüft                                                                                                                                                                |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `workflow-lint` | Die Workflows mit actionlint und shellcheck, dazu zizmor ab mittlerer Schwere. In CI prüft zizmor auch, ob jede gepinnte SHA zur Action und zur Version im Kommentar passt.  |
+| `secret-scan`   | Die Geschichte bis zum geprüften Commit, die Dateien, alle Dateinamen und die Nachrichten aller Commits bis dorthin mit gitleaks, dazu Binärdateien ausserhalb von `brand/`. |
+| `check`         | Build und `pnpm check` mit der Version von Node.js für die Entwicklung.                                                                                                      |
+| `compat`        | Dasselbe mit der nächsten Linie von Node.js.                                                                                                                                 |
+| `minimum`       | Dasselbe mit der ältesten unterstützten Version von Node.js.                                                                                                                 |
+| `deps-review`   | Neue oder geänderte Abhängigkeiten auf bekannte Schwachstellen.                                                                                                              |
+| `pr-title`      | Den Titel nach Conventional Commits und mit gitleaks.                                                                                                                        |
+| `dco`           | Das Sign-off jedes Commits und die Commit-Messages mit gitleaks.                                                                                                             |
 
 `secret-scan`, `pr-title` und `dco` scheitern ausserdem, solange irgendwo eine Datei `.gitleaksignore` liegt, weil gitleaks sie von sich aus liest und eine Zeile darin jeden Fund abschaltet.
+
+`lockfile-provenance` ist keine Pflichtprüfung. Der Job meldet jede neue Version im Lockfile, die ohne Herkunftsnachweis über einen vertrauenswürdigen Herausgeber erschienen ist. Renovate mergt eine solche Aktualisierung dann nicht von selbst. Sehen Sie sich die genannten Pakete an, bevor Sie von Hand mergen. Nehmen Sie den Job nie als Pflichtprüfung ins Ruleset auf: Das Ruleset kennt keine Ausnahmen, und Sie könnten solche Aktualisierungen sonst auch selbst nicht mehr mergen.
 
 Nach dem Merge laufen die Jobs aus `ci.yml` ausser `deps-review` noch einmal auf `main`. `secret-scan` prüft dann auch die Nachricht des Squash-Commits, die sich im Dialog des Merge ändern lässt. Ein Fund dort steht schon auf `main` und wird nach ADR 0014 als Vorfall behandelt.
 
