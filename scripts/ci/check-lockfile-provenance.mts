@@ -44,47 +44,80 @@ export type Fetcher = (url: string) => Promise<unknown>;
 export interface ProvenanceReport {
   /** One line per added version, in German. */
   readonly lines: readonly string[];
-  /** Number of versions without both pieces of evidence. */
+  /** Number of versions that do not pass. */
   readonly failed: number;
 }
 
 const semver = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 
 /**
- * Lists the keys of the `packages:` section of pnpm-lock.yaml (version 9).
- * Each key names one resolved package, such as `vitest@5.0.3` or
- * `'@vitest/coverage-v8@5.0.3'`, without the peer suffix that the
- * `snapshots:` section adds.
+ * Reads the `lockfileVersion` of pnpm-lock.yaml.
  *
  * @param lockfile - Content of pnpm-lock.yaml.
- * @returns The keys without quotes.
+ * @returns The version, such as `9.0`, or undefined.
  */
-export function lockedPackages(lockfile: string): Set<string> {
-  const packages = new Set<string>();
+export function lockfileVersion(lockfile: string): string | undefined {
+  return /^lockfileVersion: '?([^'\s]+)'?\s*$/m.exec(lockfile)?.[1];
+}
+
+/**
+ * Lists the keys of the `packages:` section of pnpm-lock.yaml (version 9)
+ * with their `resolution:` line. Each key names one resolved package, such
+ * as `vitest@5.0.3` or `'@vitest/coverage-v8@5.0.3'`, without the peer
+ * suffix that the `snapshots:` section adds. Line endings are normalised,
+ * so a lockfile written with CRLF reads the same.
+ *
+ * @param lockfile - Content of pnpm-lock.yaml.
+ * @returns The keys without quotes, each with its resolution, or an empty
+ *   string if it has none.
+ */
+export function lockedPackages(lockfile: string): Map<string, string> {
+  const packages = new Map<string, string>();
   let inPackages = false;
-  for (const line of lockfile.split('\n')) {
+  let current: string | undefined;
+  for (const line of lockfile.replace(/\r\n?/g, '\n').split('\n')) {
     if (/^\S/.test(line)) {
       inPackages = line.trim() === 'packages:';
+      current = undefined;
+      continue;
+    }
+    if (!inPackages) {
       continue;
     }
     const key = /^ {2}(\S.*):$/.exec(line)?.[1];
-    if (inPackages && key !== undefined) {
-      packages.add(key.replace(/^'(.*)'$/, '$1'));
+    if (key !== undefined) {
+      current = key.replace(/^'(.*)'$/, '$1');
+      packages.set(current, '');
+    } else if (current !== undefined && /^ {4}resolution:/.test(line)) {
+      packages.set(current, line.trim());
     }
   }
   return packages;
 }
 
+/** A package that a change adds to the lockfile, or whose source changes. */
+export interface AddedPackage {
+  /** The key, such as `vitest@5.0.3`. */
+  readonly key: string;
+  /** Its `resolution:` line in the new lockfile. */
+  readonly resolution: string;
+}
+
 /**
- * Lists the packages that are in the second lockfile but not in the first.
+ * Lists the packages that are new in the second lockfile or whose
+ * resolution differs from the first, so that a changed source of a known
+ * version is checked as well.
  *
  * @param base - pnpm-lock.yaml before the change.
  * @param head - pnpm-lock.yaml after the change.
- * @returns The added keys, sorted.
+ * @returns The packages, sorted by key.
  */
-export function addedPackages(base: string, head: string): string[] {
+export function addedPackages(base: string, head: string): AddedPackage[] {
   const before = lockedPackages(base);
-  return [...lockedPackages(head)].filter((entry) => !before.has(entry)).sort();
+  return [...lockedPackages(head)]
+    .filter(([key, resolution]) => before.get(key) !== resolution)
+    .map(([key, resolution]) => ({ key, resolution }))
+    .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 }
 
 /**
@@ -132,19 +165,24 @@ const yesNo = (value: boolean): string => (value ? 'ja' : 'nein');
 /**
  * Asks the registry for the evidence of each added version.
  *
- * @param entries - Added keys of the `packages:` section.
+ * @param entries - Added or changed packages of the lockfile.
  * @param fetchJson - Fetches a registry document; injected for the tests.
  * @returns One line per version and the number of versions that fail.
  */
 export async function checkPackages(
-  entries: readonly string[],
+  entries: readonly AddedPackage[],
   fetchJson: Fetcher,
 ): Promise<ProvenanceReport> {
   const lines: string[] = [];
   let failed = 0;
-  for (const entry of entries) {
+  for (const { key: entry, resolution } of entries) {
     const parsed = splitEntry(entry);
-    if (parsed === undefined) {
+    // A registry package resolves to an integrity hash alone; a tarball or
+    // Git resolution comes from somewhere else.
+    if (
+      parsed === undefined ||
+      !/^resolution: \{integrity: [^,}]+\}$/.test(resolution)
+    ) {
       lines.push(`${entry}: nicht aus der Registry`);
       failed += 1;
       continue;
@@ -196,20 +234,35 @@ async function main(): Promise<number> {
     );
     return 2;
   }
-  const added = addedPackages(
-    before.stdout,
-    readFileSync('pnpm-lock.yaml', 'utf8'),
-  );
+  const after = readFileSync('pnpm-lock.yaml', 'utf8');
+  // An unknown format could hide packages from this reader and let the
+  // check pass with nothing checked.
+  for (const [name, text] of [
+    ['Basis', before.stdout],
+    ['Arbeitsbaum', after],
+  ] as const) {
+    if (lockfileVersion(text) !== '9.0') {
+      console.error(
+        `Das Lockfile (${name}) hat das Format ${String(lockfileVersion(text))}, diese Prüfung liest nur 9.0.`,
+      );
+      return 2;
+    }
+  }
+  if (lockedPackages(after).size === 0 && /^\s+specifier:/m.test(after)) {
+    console.error('Im Lockfile stehen Abhängigkeiten, aber keine Pakete.');
+    return 2;
+  }
+  const added = addedPackages(before.stdout, after);
   const report = await checkPackages(added, fetchJson);
   for (const line of report.lines) {
     console.log(line);
   }
   console.log(
-    `Lockfile geprüft: ${String(added.length)} neue Paketversionen, ${String(report.failed)} ohne Herkunftsnachweis über einen vertrauenswürdigen Herausgeber.`,
+    `Lockfile geprüft: ${String(added.length)} neue oder geänderte Paketversionen, davon ${String(report.failed)} nicht bestanden.`,
   );
   if (report.failed > 0) {
     console.error(
-      'Renovate übernimmt diese Änderung nicht automatisch. Sehen Sie sich die genannten Pakete an, bevor Sie den Pull Request von Hand mergen.',
+      'Renovate übernimmt diese Änderung nicht automatisch. Ist die Registry nicht erreichbar, starten Sie den Job später erneut. Sonst sehen Sie sich die genannten Pakete an, bevor Sie den Pull Request von Hand mergen.',
     );
     return 1;
   }
