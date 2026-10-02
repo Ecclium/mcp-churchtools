@@ -34,7 +34,7 @@ jobs:
     # In the merge queue there is no title to check. A skipped job counts as
     # passed.
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -72,7 +72,7 @@ jobs:
   dco:
     name: dco
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
