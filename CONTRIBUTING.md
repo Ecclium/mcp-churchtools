@@ -83,7 +83,7 @@ Ein Git-Hook aus der Einrichtung unten prüft jeden Commit und jede Commit-Messa
 
 Fremder Quelltext wird nicht in den Kern kopiert, auch nicht unter einer freien Lizenz. Ist eine Ausnahme nötig, wird sie vorher entschieden, im Code markiert und in `NOTICE` mit Quelle und Lizenz vermerkt ([ADR 0002](docs/adr/0002-apache-2-0-und-dco.md)).
 
-Das gilt besonders für andere quelloffene MCP-Server für ChurchTools. Ecclium übernimmt aus ihnen keinen Quelltext, auch keine einzelnen Funktionen oder Tests, auch nicht unter einer freien Lizenz wie MIT. Ideen, der Zuschnitt von Tools und Namensschemata dürfen einfliessen, Code nicht. So bleibt die Herkunft jeder Zeile im Kern klar. Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Hersteller von ChurchTools.
+Das gilt besonders für andere quelloffene MCP-Server für ChurchTools. Ecclium übernimmt aus ihnen keinen Quelltext, auch keine einzelnen Funktionen oder Tests, auch nicht unter einer freien Lizenz wie MIT. Ideen, der Zuschnitt von Tools und Namensschemata dürfen einfliessen, Code nicht. So bleibt die Herkunft jeder Zeile im Kern klar. Für den Fork eines dieser Projekte, den der Maintainer betreibt, gilt zusätzlich die Trennung aus [ADR 0017](docs/adr/0017-clean-room-gegenueber-fork.md). Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Hersteller von ChurchTools.
 
 Beobachtungen an der ChurchTools-API selbst sind willkommen. Beschreiben Sie dann das Verhalten der API, nicht fremden Code.
 
