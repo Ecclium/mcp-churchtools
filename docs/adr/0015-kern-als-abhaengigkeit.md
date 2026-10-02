@@ -1,6 +1,6 @@
 # ADR 0015: Pro-Modul bindet den Kern als veröffentlichte Abhängigkeit, nicht als Submodul
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 02.10.2026
 - Datum: 02.10.2026
 - Fällt vor: Phase 0
 

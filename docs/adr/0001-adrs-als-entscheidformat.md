@@ -1,6 +1,6 @@
 # ADR 0001: ADRs als Entscheidformat
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 02.10.2026
 - Datum: 25.09.2026
 - Fällt vor: Phase 0
 

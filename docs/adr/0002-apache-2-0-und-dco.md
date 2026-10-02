@@ -1,6 +1,6 @@
 # ADR 0002: Apache-2.0 und DCO, kein CLA, Kern bleibt offen
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 02.10.2026
 - Datum: 25.09.2026
 - Fällt vor: Phase 0
 
