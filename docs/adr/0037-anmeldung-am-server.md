@@ -1,6 +1,6 @@
 # ADR 0037: Anmeldung am Server: im freien Kern statische Bearer-Tokens und OAuth-Modus gegen einen Anmeldedienst des Betreibers, Komfort im Pro-Modul, Client-Test in Phase 7
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 02.10.2026
 - Datum: 25.09.2026
 - Fällt vor: Phase 1
 
