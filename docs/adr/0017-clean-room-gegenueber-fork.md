@@ -13,7 +13,7 @@ Fremder Code im Kern brächte Pflichten aus seiner Lizenz und machte die Herkunf
 ## Optionen
 
 1. **Nur die allgemeine Regel gegen fremden Quelltext:** keine zusätzlichen Vorgaben. Wer am Fork und am Kern im selben Umfeld arbeitet, übernimmt Code oder Zugangsdaten aber leicht aus Versehen.
-2. **Clean Room:** Fork und Kern bleiben getrennt, in der Arbeit wie bei Konten und Zugangsdaten. Aus dem Betrieb des Forks fliessen nur Beobachtungen am API ein, gekennzeichnet.
+2. **Clean Room:** Fork und Kern bleiben getrennt, in der Arbeit wie bei Konten und Zugangsdaten. Aus dem Betrieb des Forks fliessen nur Beobachtungen an der API ein, gekennzeichnet.
 
 ## Entscheid
 
@@ -22,7 +22,7 @@ Gewählt ist die zweite Option.
 - **Getrennte Arbeit:** Am Fork und am Kern wird nie in derselben Arbeitsumgebung gearbeitet. In der Arbeitsumgebung des Kerns liegen weder Quelltext noch Zugangsdaten des Forks.
 - **Kein Quelltext:** Aus dem Fork und aus den Referenzprojekten wird kein Quelltext übernommen, auch keine einzelnen Funktionen, Tests oder Konfigurationen. Ideen, der Zuschnitt von Tools und Namensschemata dürfen einfliessen. Ausnahmen gibt es nur nach dem Verfahren aus ADR 0002.
 - **Getrennte Konten:** Ecclium benutzt kein Konto, kein Dienstkonto und kein Token, das der Fork benutzt, weder für die Proben des API-Spikes noch für Server, Runner oder CI.
-- **Beobachtungen am API:** Was beim Betrieb des Forks über das Verhalten der ChurchTools-API bekannt wird, darf einfliessen, als Beschreibung der API mit dem Vermerk «Beobachtung am API im eigenen Betrieb, kein fremder Quelltext». Belegt ist eine solche Beobachtung erst, wenn die Dokumentation oder eine Probe sie bestätigt (`docs/research/churchtools-api.md`). Daten, Protokolle und Konfiguration aus dem Betrieb des Forks kommen nie ins Repository.
+- **Beobachtungen an der API:** Was beim Betrieb des Forks über das Verhalten der ChurchTools-API bekannt wird, darf einfliessen, als Beschreibung der API mit dem Vermerk «Beobachtung an der API im eigenen Betrieb, kein fremder Quelltext». Wie jede Aussage zur API gilt eine solche Beobachtung erst als belegt, wenn eine Probe sie an einer Instanz bestätigt hat (`docs/research/churchtools-api.md`). Daten, Protokolle und Konfiguration aus dem Betrieb des Forks kommen nie ins Repository.
 
 ## Konsequenzen
 

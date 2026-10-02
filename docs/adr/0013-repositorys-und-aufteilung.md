@@ -35,8 +35,8 @@ Zwischen den Teilen gilt:
 
 - Der Kern muss für sich verständlich sein. Eine Begründung, die ausserhalb entstanden ist und den Kern betrifft, gilt hier erst, wenn sie als ADR in diesem Repository steht.
 - Eine Erweiterungsstelle, die das Pro-Modul braucht, entsteht zuerst öffentlich im Kern (ADR 0015).
-- Die Nummern der ADRs werden über alle Teile hinweg gezählt. Der Index zeigt die betrieblichen Nummern ohne Titel, damit die Zählung keine Lücken hat.
-- Importierte der Kern ein Paket, das seine Tabelle der Abhängigkeiten nicht erlaubt, schlügen die Regeln für Importe an (ADR 0022). Dass ein nicht öffentlicher Teil nichts in den Kern trägt, was dort nicht hingehört, sichern die Prüfungen auf vertrauliche Daten (ADR 0014) und die Durchsicht, nicht die Trennung selbst.
+- Der Kern und der gehostete Betrieb zählen die Nummern ihrer ADRs gemeinsam. Der Index zeigt die betrieblichen Nummern ohne Titel, damit die Zählung keine Lücken hat. Entscheide zum Pro-Modul, die den Kern betreffen, stehen als ADR in diesem Repository.
+- Die Tabelle der erlaubten Importe regelt nur die Pakete dieses Workspace. Ein npm-Paket erkennen die Regeln für Importe nur, wenn das `package.json` des importierenden Pakets es nicht nennt (ADR 0022). Eine Abhängigkeit des Kerns von einem nicht öffentlichen Paket fiele deshalb erst in der Durchsicht auf und in der Prüfung der Lizenzen, die jede Lizenz ausserhalb ihrer Listen zurückweist (ADR 0021). Dass ein nicht öffentlicher Teil nichts in den Kern trägt, was dort nicht hingehört, sichern die Prüfungen auf vertrauliche Daten (ADR 0014) und die Durchsicht, nicht die Trennung selbst.
 - Der Abgleich des Markenpakets über den Tree-Hash ist ein Nachweis von Hand und für jede neue Version nötig (Threat Model L16).
 
 ## Umsetzung

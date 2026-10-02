@@ -6,7 +6,7 @@
 
 ## Kontext
 
-Das Pro-Modul erweitert den freien Kern um Funktionen für Organisationen. Es liegt in einem eigenen, nicht öffentlichen Repository (ADR 0013). Um Tools, Ports und Kanäle anzubieten, braucht es die Schnittstelle des Kerns für Erweiterungen. Zu entscheiden ist, auf welchem Weg es den Kern einbindet.
+Das Pro-Modul erweitert den freien Kern um Funktionen für Organisationen. Es liegt in einem eigenen, nicht öffentlichen Repository (ADR 0013). Um eigene Tools anzubieten oder Ports des Kerns zu ersetzen, braucht es die Schnittstelle des Kerns für Erweiterungen. Zu entscheiden ist, auf welchem Weg es den Kern einbindet.
 
 Dabei gelten diese Bedingungen:
 

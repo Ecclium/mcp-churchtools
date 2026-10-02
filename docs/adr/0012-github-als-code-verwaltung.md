@@ -42,4 +42,4 @@ Container-Images unter `ghcr.io/ecclium/` (ADR 0004) und der Release-Pfad (ADR 0
 - Beiträge: `.github/CODEOWNERS`, `.github/ISSUE_TEMPLATE/`, `.github/pull_request_template.md`.
 - CI: `.github/workflows/`, Aktualisierungen: `.github/renovate.json5` (ADR 0021).
 - Meldeweg für Sicherheitslücken: `SECURITY.md`.
-- Ruleset, Positivliste der Actions und die Einstellungen für Sicherheit: in den Einstellungen von Repository und Organisation, bestätigt in `docs/STATUS.md`.
+- Ruleset, Positivliste der Actions und die Einstellungen für Sicherheit: in den Einstellungen von Repository und Organisation. Als belegt gilt jede, sobald der Maintainer sie mit Datum in `docs/STATUS.md` bestätigt hat.
