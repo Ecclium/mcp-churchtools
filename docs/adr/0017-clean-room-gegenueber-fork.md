@@ -1,6 +1,6 @@
 # ADR 0017: Clean Room gegenüber dem eigenen Fork eines Referenzprojekts
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 02.10.2026
 - Datum: 02.10.2026
 - Fällt vor: Phase 0
 

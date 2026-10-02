@@ -1,6 +1,6 @@
 # ADR 0020: Werkzeugkette: pnpm 11, TypeScript 6, Vitest 5, Renovate
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 02.10.2026
 - Datum: 26.09.2026
 - Fällt vor: Phase 0
 

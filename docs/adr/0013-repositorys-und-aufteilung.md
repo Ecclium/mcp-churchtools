@@ -1,6 +1,6 @@
 # ADR 0013: Repositorys und Aufteilung öffentlich und privat
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 02.10.2026
 - Datum: 02.10.2026
 - Fällt vor: Phase 0
 

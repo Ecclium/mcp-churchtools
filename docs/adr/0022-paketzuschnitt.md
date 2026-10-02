@@ -1,6 +1,6 @@
 # ADR 0022: Paketzuschnitt, zwei npm-Pakete, Bündelung ausser `zod` und `plugin-api`
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 02.10.2026
 - Datum: 25.09.2026
 - Fällt vor: Phase 0
 
