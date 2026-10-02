@@ -1,6 +1,6 @@
 # ADR 0014: Öffentliche Versionsgeschichte ab dem ersten Commit
 
-- Status: Angenommen
+- Status: Angenommen am 25.09.2026
 - Datum: 25.09.2026
 - Fällt vor: Phase 0, vor dem ersten Commit
 

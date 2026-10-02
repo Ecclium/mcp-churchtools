@@ -4,7 +4,7 @@ Hier stehen die Architekturentscheide (Architecture Decision Records, ADR) von E
 
 Die Spalte «Fällt vor» nennt die Phase, vor deren Beginn der Entscheid feststehen muss. Bei Phase 0 heisst das: im Lauf von Phase 0, bevor die Arbeit beginnt, die davon abhängt. Die Status bedeuten:
 
-- **Angenommen:** Der Entscheid gilt. Er ändert sich nur durch ein neues ADR.
+- **Angenommen am TT.MM.JJJJ:** Der Entscheid gilt seit seiner Bestätigung an diesem Tag. Er ändert sich nur durch ein neues ADR.
 - **Vorgeschlagen:** Das ADR ist geschrieben und wartet auf die Bestätigung.
 - **Entwurf:** Das ADR ist begonnen, aber noch nicht zur Bestätigung bereit.
 - **Abgelöst durch ADR NNNN:** Der Entscheid gilt nicht mehr, das genannte ADR ersetzt ihn.
@@ -27,7 +27,7 @@ Die Spalte «Fällt vor» nennt die Phase, vor deren Beginn der Entscheid festst
 | 0011                                             |                                                                                                                                                                    | Betrieblich, nicht öffentlich |                                |
 | [0012](0012-github-als-code-verwaltung.md)       | GitHub als Code-Verwaltung, kein selbst betriebener Git-Dienst                                                                                                     | Vorgeschlagen                 | Phase 0                        |
 | [0013](0013-repositorys-und-aufteilung.md)       | Repositorys und Aufteilung öffentlich und privat                                                                                                                   | Vorgeschlagen                 | Phase 0                        |
-| [0014](0014-oeffentlich-ab-dem-ersten-commit.md) | Öffentliche Versionsgeschichte ab dem ersten Commit                                                                                                                | Angenommen                    | Phase 0, vor dem ersten Commit |
+| [0014](0014-oeffentlich-ab-dem-ersten-commit.md) | Öffentliche Versionsgeschichte ab dem ersten Commit                                                                                                                | Angenommen am 25.09.2026      | Phase 0, vor dem ersten Commit |
 | [0015](0015-kern-als-abhaengigkeit.md)           | Pro-Modul bindet den Kern als veröffentlichte Abhängigkeit, nicht als Submodul                                                                                     | Vorgeschlagen                 | Phase 0                        |
 | 0016                                             |                                                                                                                                                                    | Betrieblich, nicht öffentlich |                                |
 | [0017](0017-clean-room-gegenueber-fork.md)       | Clean Room gegenüber dem eigenen Fork eines Referenzprojekts                                                                                                       | Vorgeschlagen                 | Phase 0                        |

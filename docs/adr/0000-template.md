@@ -4,7 +4,7 @@
 - Datum: TT.MM.JJJJ
 - Fällt vor: Phase N
 
-<!-- Status ist einer von: Entwurf, Vorgeschlagen, Angenommen, Abgelöst durch ADR NNNN, Verworfen. -->
+<!-- Status ist einer von: Entwurf, Vorgeschlagen, Angenommen am TT.MM.JJJJ, Abgelöst durch ADR NNNN, Verworfen. -->
 
 ## Kontext
 

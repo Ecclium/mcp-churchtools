@@ -20,9 +20,9 @@ Entscheide mit Tragweite für Architektur, Sicherheit, Datenschutz, Lizenz oder 
 
 - **Datei:** `NNNN-titel.md`, mit vierstelliger, fortlaufender Nummer und einem kurzen Titel in Kleinbuchstaben mit Bindestrichen, Umlaute als ae, oe, ue. Die Vorlage ist `0000-template.md`.
 - **Aufbau:** Status, Datum und die Phase, vor der entschieden sein muss. Danach Kontext, Optionen, Entscheid, Konsequenzen und, sobald es etwas umzusetzen gibt, Umsetzung.
-- **Status eines ADR:** Entwurf (begonnen, noch nicht zur Bestätigung bereit), Vorgeschlagen, Angenommen, Abgelöst durch ADR NNNN (ein neues ADR ersetzt den Entscheid), Verworfen.
+- **Status eines ADR:** Entwurf (begonnen, noch nicht zur Bestätigung bereit), Vorgeschlagen, Angenommen am TT.MM.JJJJ (an diesem Tag bestätigt, festgehalten in `docs/STATUS.md`), Abgelöst durch ADR NNNN (ein neues ADR ersetzt den Entscheid), Verworfen. Das Feld «Datum» nennt den Tag, an dem das ADR geschrieben oder der Entscheid gefällt wurde. Es bleibt bei der Annahme gleich.
 - **Status im Index:** Der Index in `docs/adr/README.md` kennt zusätzlich «Geplant» für noch nicht geschriebene ADRs und «Betrieblich, nicht öffentlich» für Entscheide, die nur den gehosteten Betrieb betreffen und nicht in diesem Repository liegen. Ihre Nummern stehen im Index, damit die Zählung keine Lücken hat.
-- **Änderungen:** Ein angenommener Entscheid ändert sich nur durch ein neues ADR, das ihn ablöst. Im abgelösten ADR ändert sich dann nur der Status zu «Abgelöst durch ADR NNNN». Sonst darf nur der Abschnitt «Umsetzung» nachgeführt werden.
+- **Änderungen:** Ein angenommener Entscheid ändert sich nur durch ein neues ADR, das ihn ablöst. Im abgelösten ADR ändert sich dann nur der Status zu «Abgelöst durch ADR NNNN». Sonst darf nur der Abschnitt «Umsetzung» nachgeführt werden, dazu einmal das Datum der Annahme im Status, wenn es dort noch fehlt.
 - **Sprache:** Deutsch, nach Kapitel 9 der Markenrichtlinie in `brand/README.md`.
 - **Quellen:** ohne Host zitiert, mit Titel, Version und Abschnitt, bei der ChurchTools-API mit Version und `operationId`.
 - **Verweise:** Code, Kommentare, Architekturregeln und Prüfungen nennen das ADR, das ihre Begründung trägt, mit seiner Nummer, etwa «ADR 0002».
