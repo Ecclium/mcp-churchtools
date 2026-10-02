@@ -1,6 +1,6 @@
 # ADR 0024: Eine Tool-Pipeline, Redaction und Audit ab Phase 1
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 02.10.2026
 - Datum: 29.09.2026
 - Fällt vor: Phase 1
 

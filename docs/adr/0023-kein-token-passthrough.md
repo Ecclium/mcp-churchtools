@@ -1,6 +1,6 @@
 # ADR 0023: Kein Token-Passthrough, OAuth-Delegation für Pro und gehosteten Betrieb
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 02.10.2026
 - Datum: 30.09.2026
 - Fällt vor: Phase 1
 
