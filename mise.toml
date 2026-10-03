@@ -7,7 +7,7 @@
 # move a tool to another source without a visible diff here.
 [tools]
 node = "24.21.0"
-"aqua:pnpm/pnpm" = "11.28.2"
+"aqua:pnpm/pnpm" = "11.28.3"
 "aqua:gitleaks/gitleaks" = "8.30.1"
 "aqua:evilmartians/lefthook" = "2.1.14"
 "aqua:rhysd/actionlint" = "1.7.12"
