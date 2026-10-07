@@ -58,7 +58,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install actionlint, shellcheck and zizmor
-        uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        uses: jdx/mise-action@94c60b39bc2d90ab2f9bab27f38d3cc4812c1834 # v5.1.0
         with:
           version: 2026.10.0
           cache: false
@@ -90,7 +90,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Install gitleaks
-        uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        uses: jdx/mise-action@94c60b39bc2d90ab2f9bab27f38d3cc4812c1834 # v5.1.0
         with:
           version: 2026.10.0
           cache: false
@@ -175,7 +175,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Node.js, pnpm and the tools
-        uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        uses: jdx/mise-action@94c60b39bc2d90ab2f9bab27f38d3cc4812c1834 # v5.1.0
         with:
           version: 2026.10.0
           cache: false
@@ -204,7 +204,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Node.js, pnpm and the tools
-        uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        uses: jdx/mise-action@94c60b39bc2d90ab2f9bab27f38d3cc4812c1834 # v5.1.0
         with:
           version: 2026.10.0
           cache: false
@@ -231,7 +231,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install Node.js, pnpm and the tools
-        uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        uses: jdx/mise-action@94c60b39bc2d90ab2f9bab27f38d3cc4812c1834 # v5.1.0
         with:
           version: 2026.10.0
           cache: false
@@ -292,7 +292,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Install Node.js
-        uses: jdx/mise-action@7a4e45a543138629540c9a1616d08632b893e492 # v5.0.1
+        uses: jdx/mise-action@94c60b39bc2d90ab2f9bab27f38d3cc4812c1834 # v5.1.0
         with:
           version: 2026.10.0
           cache: false
