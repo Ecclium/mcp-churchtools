@@ -1,0 +1,42 @@
+# OAuth bei ChurchTools: Fragen und Befunde
+
+Stand: 07.10.2026, Gerüst vor dem OAuth-Spike
+
+Dieses Dokument hält fest, was Ecclium über OAuth bei ChurchTools wissen muss und worauf sich jede Aussage stützt. ChurchTools ist OAuth-Anbieter, und seit Version 3.135.0 dürfen OAuth-Anwendungen mit dem Scope `api` auf die REST-API zugreifen. Ecclium braucht das für nutzerbezogene Rechte im gehosteten Betrieb und im Pro-Modul (ADR 0023) und vielleicht für die Anbindung eines Dienstkontos. Eine Aussage gilt erst als belegt, wenn der Spike sie an einer Instanz bestätigt hat. Was weder Dokumentation noch Spike belegen, steht unter «Offen» in [`docs/STATUS.md`](../STATUS.md).
+
+## Methode
+
+- Der OAuth-Spike läuft gegen die Testinstanz mit synthetischen Daten ([ADR 0049](../adr/0049-testumgebung.md)), mit einer eigens registrierten Anwendung und einer synthetischen Person.
+- Sein Code ist Wegwerfcode. Er liegt ausserhalb der Pakete und wird nicht committet, nur seine Ergebnisse stehen hier. Code für OAuth im Kern entsteht erst in Phase 7 (ADR 0037), Code des Pro-Moduls nicht in diesem Repository.
+- Hostname, Client-IDs, Geheimnisse und Tokens stehen nie in diesem Repository, auch nicht gekürzt.
+- Jeder Befund nennt die Version von ChurchTools, an der er geprüft wurde. Die Ergebnisse sind die Grundlage für spätere Entscheide in ADR 0023 und ADR 0037.
+
+## Quellen
+
+- Das Änderungsprotokoll von ChurchTools in der Academy, Versionen «Web v3.135.0», «Web v3.135.1» und «Web v3.136.0».
+- ChurchTools Academy, die Seiten «API Authentifizierung», «Was ist OAuth? (Login in Drittsysteme)», «Login bei und mit ChurchTools», «OAuth Authentication with ChurchTools» und «CORS».
+- Die OpenAPI-Spezifikation der Instanz unter `/system/runtime/swagger/openapi.json`. Eine zentrale, öffentliche Beschreibung aller Endpunkte gibt es laut Academy nicht.
+
+## Fragen
+
+| Nr. | Frage                                                                                                                                                      | Stand vor dem Spike                                                                                                                                                                                              |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| O1  | Wo und von wem werden OAuth-Anwendungen registriert, und welche Angaben braucht es?                                                                        | Laut Dokumentation pro Instanz in den Systemeinstellungen unter «Login», mit einer erzeugten Client-ID und den Redirect-URIs der Anwendung. Ein Geheimnis verlangt ChurchTools laut Dokumentation derzeit nicht. |
+| O2  | Welche Abläufe (Grant Types) unterstützt ChurchTools?                                                                                                      | Nicht dokumentiert.                                                                                                                                                                                              |
+| O3  | Wird PKCE mit S256 unterstützt oder verlangt?                                                                                                              | Nicht dokumentiert.                                                                                                                                                                                              |
+| O4  | Welche Redirect-URIs sind erlaubt, auch `http://127.0.0.1` für lokale Clients?                                                                             | Redirect-URIs werden pro Anwendung eingetragen. Welche Formen erlaubt sind, ist nicht dokumentiert.                                                                                                              |
+| O5  | Wie lange gelten Zugriffs- und Refresh-Tokens, und rotieren Refresh-Tokens?                                                                                | Nicht dokumentiert.                                                                                                                                                                                              |
+| O6  | Wie verhält sich die Zustimmung bei einer erneuten Anmeldung?                                                                                              | Laut Dokumentation braucht der Zugriff auf die API eine ausdrückliche Freigabe. Wie sie bei einer erneuten Anmeldung aussieht, ist nicht dokumentiert.                                                           |
+| O7  | Wie widerrufen eine Person und ein Administrator eine Anwendung, und was geschieht danach mit Tokens, die schon ausgegeben sind?                           | Nicht dokumentiert.                                                                                                                                                                                              |
+| O8  | Ist der Scope `api` unterteilt, oder lässt er sich unterteilen?                                                                                            | Dokumentiert ist nur der Scope `api`.                                                                                                                                                                            |
+| O9  | Entsprechen die Rechte eines OAuth-Tokens genau denen der angemeldeten Person?                                                                             | Laut Dokumentation gilt der Zugriff «im Rahmen der Berechtigungen des angemeldeten Benutzers», also höchstens mit diesen Rechten.                                                                                |
+| O10 | Gibt es einen Weg für Abläufe nach Zeitplan ohne angemeldete Person, etwa Client Credentials?                                                              | Nicht dokumentiert.                                                                                                                                                                                              |
+| O11 | Lässt sich ein Dienstkonto über eine OAuth-Anwendung statt über ein kopiertes Login-Token anbinden?                                                        | Nicht dokumentiert.                                                                                                                                                                                              |
+| O12 | Wozu dient der Endpunkt, mit dem externe Anwendungen seit Version 3.136.0 Login-Tokens erstellen, welche Rechte braucht er, und sind die Tokens befristet? | Das Änderungsprotokoll nennt den Endpunkt, aber weder Pfad noch Rechte noch Befristung. Die OpenAPI-Spezifikation der Instanz soll ihn zeigen.                                                                   |
+| O13 | Betrifft die Freigabe anderer Domains aus Version 3.136.0 Clients, die ein Login-Token im Header senden?                                                   | Laut Änderungsprotokoll brauchen Clients mit OAuth- oder Bearer-Token und Server-zu-Server-Clients keine Anpassung. Ob ein Client mit `Authorization: Login` dazu zählt, ist nicht dokumentiert.                 |
+| O14 | Wie übergibt ein Client das OAuth-Token an die REST-API, und entsteht dabei eine Sitzung?                                                                  | Nicht dokumentiert. Dokumentiert ist nur der Header `Authorization: Login` für Login-Tokens, die seit Version 3.135.0 bei Anfragen an die REST-API keine Sitzung mehr anlegen, ausser mit `with_session=true`.   |
+| O15 | Welches Format haben die Tokens, und veröffentlicht ChurchTools Metadaten unter `.well-known`?                                                             | Nicht dokumentiert.                                                                                                                                                                                              |
+
+## Befunde
+
+Noch keine. Nach dem Spike steht hier je Frage der Befund, mit der Version von ChurchTools.
