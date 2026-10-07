@@ -1,6 +1,6 @@
 # ADR 0021: Supply-Chain-Baseline
 
-- Status: Angenommen am 02.10.2026
+- Status: Abgelöst durch ADR 0050
 - Datum: 26.09.2026
 - Fällt vor: Phase 0
 

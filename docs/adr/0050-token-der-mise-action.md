@@ -1,6 +1,6 @@
 # ADR 0050: Token des Jobs bei der Action, die mise installiert
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 08.10.2026
 - Datum: 08.10.2026
 - Fällt vor: Phase 0
 
