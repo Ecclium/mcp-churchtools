@@ -1,6 +1,6 @@
 # Status
 
-Stand: 07.10.2026, Phase 0, die ADRs aus Phase 0 und die Entscheide vor Phase 1 sind bis auf ADR 0025 angenommen, ADR 0049 zur Testumgebung liegt als Entwurf vor, der API-Spike läuft auf einer Testinstanz mit synthetischen Daten
+Stand: 08.10.2026, Phase 0, die ADRs aus Phase 0 und die Entscheide vor Phase 1 sind bis auf ADR 0025 angenommen, ADR 0049 zur Testumgebung liegt als Entwurf vor, der API-Spike läuft auf einer Testinstanz mit synthetischen Daten
 
 ## Aktuelle Phase
 
@@ -202,3 +202,6 @@ Diese Grundsatzfragen sind entschieden.
 - 07.10.2026, `jdx/mise-action` 5.0.1 und 5.1.0 an ihrem Quelltext geprüft: Die Aussagen in ADR 0021, im Threat Model und in `CONTRIBUTING.md` gelten weiter. Seit Version 5.0.1 prüft die Action ein schon vorhandenes mise gegen die signierten Prüfsummen, bevor sie es ausführt. Mit `cache: false` stellt auch Version 5.1.0 keinen Cache wieder her und legt keinen an.
 - 07.10.2026, Testumgebung: ADR 0049 als Entwurf, die Bedrohungen T23 und T24 im Threat Model, die Fragen F20 bis F23 in `docs/research/churchtools-api.md` und das Gerüst von `docs/research/churchtools-oauth.md` mit den Fragen O1 bis O15.
   - Nachweis: `pnpm check` läuft lokal grün, mit 444 Tests in 34 Dateien, jeder relative Link hat ein Ziel, und Titel, Status und Phase jedes ADR stimmen mit dem Index überein. Eine Durchsicht aus vier Blickwinkeln, jeder Befund von zwei weiteren Prüfungen bestätigt, fand unter anderem eine Ausnahme von ADR 0020, die ADR 0001 so nicht vorsieht, ein Schreibverbot ohne Geltungsbereich und eine falsch zugeordnete Version zu den Sitzungen von Login-Tokens. Sie sind korrigiert.
+- 07.10.2026, die Testumgebung ist als `22d3da4` auf `main` (#55). Der Baum des Squash-Commits ist gleich dem letzten Stand des Branches, und das Sign-off jedes Commits ist erhalten. Sein Titel lautet versehentlich «fix(deps): update source-map-js to 1.2.2», der Inhalt sind die sieben Commits zur Testumgebung. Die Geschichte auf `main` wird nicht umgeschrieben (ADR 0014), die Korrektur für `source-map-js` folgt im nächsten Eintrag.
+- 08.10.2026, `source-map-js` 1.2.2: Version 1.2.1 hatte eine Schwachstelle der Stufe «hoch» (GHSA-68fv-2mgg-jv7q). Eine indexierte Source-Map mit sehr grossem Versatz konnte die Ereignisschleife blockieren. Das Paket kommt nur über Werkzeuge der Entwicklung ins Lockfile, über vite und postcss sowie `@vitest/coverage-v8`. Das Lockfile steht jetzt auf 1.2.2. Die Version ist älter als das Mindestalter, hat aber wie 1.2.1 keinen Herkunftsnachweis. `lockfile-provenance` meldet sie deshalb, gemergt wird nach der Durchsicht von Hand.
+  - Nachweis: Im Lockfile ändern sich nur die Einträge dieses Pakets, und `pnpm audit` meldet keine Schwachstelle mehr. Die Prüfsumme des Pakets gleicht der Registry. Der Unterschied zu 1.2.1 enthält nur die Korrektur, ohne neue Abhängigkeiten, Install-Skripte oder Zugriffe auf Netz, Dateien oder Prozesse. `pnpm check` läuft lokal grün, mit 444 Tests in 34 Dateien.
