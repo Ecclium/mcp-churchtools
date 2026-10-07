@@ -160,6 +160,94 @@ describe('mise', () => {
     }
   });
 
+  /** The jobs of a workflow as [name, text], split at the keys under `jobs:`. */
+  const jobsOf = (workflow: string): (readonly [string, string])[] =>
+    (workflow.split(/^jobs:\n/m)[1] ?? '')
+      .split(/^(?= {2}[\w-]+:\s*$)/m)
+      .map((job) => [/^ {2}([\w-]+):/.exec(job)?.[1] ?? '', job] as const)
+      .filter(([job]) => job !== '');
+
+  // Since version 5.1.1 mise-action keeps the job token to itself. The input
+  // persist_github_token, or github_token with another token, would hand a
+  // token to every later step again, and so would MISE_GITHUB_TOKEN set
+  // anywhere in a workflow. The mise processes still inherit the token, so
+  // a job that installs tools with mise only reads and uses no secrets
+  // (ADR 0050).
+  const miseJobViolations = (workflow: string): string[] => {
+    const violations: string[] = [];
+    if (workflow.includes('MISE_GITHUB_TOKEN')) {
+      violations.push('MISE_GITHUB_TOKEN');
+    }
+    for (const [job, text] of jobsOf(workflow)) {
+      const steps = miseSteps(text);
+      if (steps.length === 0) {
+        continue;
+      }
+      for (const step of steps) {
+        if (/^\s+['"]?(?:persist_)?github_token['"]?\s*:/m.test(step)) {
+          violations.push(`${job}: token input`);
+        }
+      }
+      const permissions =
+        /^ {4}permissions:\n((?: {6}.*\n)*)/m.exec(text)?.[1] ?? '';
+      if (permissions.trim() !== 'contents: read') {
+        violations.push(`${job}: permissions`);
+      }
+      if (/\bsecrets\s*[.[]/.test(text)) {
+        violations.push(`${job}: secrets`);
+      }
+    }
+    return violations;
+  };
+
+  it('keeps the job token from the steps after mise and lets their jobs only read', () => {
+    const miseJobs = workflowFiles.flatMap(([, workflow]) =>
+      jobsOf(workflow).filter(([, text]) => miseSteps(text).length > 0),
+    );
+    // Guard against a split that finds no job and so checks nothing.
+    expect(miseJobs.length).toBe(workflows.flatMap(miseSteps).length);
+    expect(miseJobs.length).toBeGreaterThan(0);
+    for (const [name, workflow] of workflowFiles) {
+      expect(miseJobViolations(workflow), name).toEqual([]);
+    }
+  });
+
+  it('reports each way to hand on the token or to widen the rights of such a job', () => {
+    const ci = workflowFiles.find(([name]) => name === 'ci.yml')?.[1] ?? '';
+    const afterCache = (line: string) => (workflow: string) =>
+      workflow.replace(/^(\s+)cache: false$/m, `$1cache: false\n$1${line}`);
+    const mutations = [
+      afterCache('persist_github_token: true'),
+      afterCache("'persist_github_token': 'true'"),
+      afterCache('github_token: ${{ github.token }}'),
+      (workflow: string) =>
+        workflow.replace(
+          /^( +)MISE_LOCKED: 1$/m,
+          '$1MISE_LOCKED: 1\n$1MISE_GITHUB_TOKEN: ${{ github.token }}',
+        ),
+      (workflow: string) =>
+        workflow.replace(/^ {6}contents: read$/m, '      contents: write'),
+      (workflow: string) =>
+        workflow.replace(
+          /^ {6}contents: read$/m,
+          '      contents: read\n      pull-requests: write',
+        ),
+      (workflow: string) =>
+        workflow.replace(
+          /^ {4}permissions:\n {6}contents: read$/m,
+          '    permissions: write-all',
+        ),
+      (workflow: string) =>
+        workflow.replace('${{ github.token }}', '${{ secrets.SOME_TOKEN }}'),
+    ];
+    expect(miseJobViolations(ci)).toEqual([]);
+    for (const mutate of mutations) {
+      const mutated = mutate(ci);
+      expect(mutated).not.toBe(ci);
+      expect(miseJobViolations(mutated)).not.toEqual([]);
+    }
+  });
+
   // mise 2026.9.7 to 2026.9.15 read and write lock files in format 2; newer
   // releases write format 3, which these reject. A lock file in format 3
   // therefore needs a newer mise in CI in the same change.
