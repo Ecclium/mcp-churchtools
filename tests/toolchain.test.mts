@@ -160,6 +160,167 @@ describe('mise', () => {
     }
   });
 
+  /**
+   * The jobs of a workflow as [name, text], split at the keys under `jobs:`,
+   * also when a key is quoted or followed by a comment.
+   */
+  const jobsOf = (workflow: string): (readonly [string, string])[] =>
+    (workflow.split(/^jobs:\n/m)[1] ?? '')
+      .split(/^(?= {2}[^\s#])/m)
+      .map((job) => [/^ {2}['"]?([\w-]+)/.exec(job)?.[1] ?? '', job] as const)
+      .filter(([job]) => job !== '');
+
+  /** Whether an expression `${{ … }}` in the text reads the given context. */
+  const readsContext = (text: string, context: RegExp): boolean =>
+    (text.match(/\$\{\{[\s\S]*?\}\}/g) ?? []).some((expression) =>
+      context.test(expression),
+    );
+  /** Any use of `secrets`, also `toJSON(secrets)`. */
+  const secretsContext = /\bsecrets\b/i;
+  /** `github.token`, or the whole `github` context, which holds it. */
+  const tokenContext = /(?<![\w.'"-])github(?![\w-])(?!\s*\.\s*(?!token\b)\w)/i;
+
+  // Online, zizmor checks the pinned actions against the GitHub API, so this
+  // step gets the job token after mise, in exactly this entry. The token only
+  // reads there (ADR 0050).
+  const tokenSteps = new Map([
+    ['workflow-lint: Audit the workflows', 'GH_TOKEN: ${{ github.token }}'],
+  ]);
+
+  // Since version 5.1.1 mise-action keeps the job token to itself. The input
+  // persist_github_token would hand it to every later step again, and so
+  // would MISE_GITHUB_TOKEN set anywhere in a workflow. The input
+  // github_token would give another token to the mise processes. Those
+  // processes still inherit the token and run what the mise files say, so a
+  // job that installs tools with mise only reads, uses no secrets and passes
+  // the token to no step but those in tokenSteps (ADR 0050).
+  const miseJobViolations = (workflow: string): string[] => {
+    const violations: string[] = [];
+    if (workflow.includes('MISE_GITHUB_TOKEN')) {
+      violations.push('MISE_GITHUB_TOKEN');
+    }
+    if (miseSteps(workflow).length === 0) {
+      return violations;
+    }
+    const header = workflow.split(/^jobs:\n/m)[0] ?? '';
+    if (readsContext(header, secretsContext)) {
+      violations.push('workflow: secrets');
+    }
+    if (readsContext(header, tokenContext)) {
+      violations.push('workflow: token');
+    }
+    for (const [job, text] of jobsOf(workflow)) {
+      const steps = miseSteps(text);
+      if (steps.length === 0) {
+        continue;
+      }
+      for (const step of steps) {
+        if (/^\s+['"]?(?:persist_)?github_token['"]?\s*:/im.test(step)) {
+          violations.push(`${job}: token input`);
+        }
+      }
+      for (const part of text.split(/^(?= {6}- )/m)) {
+        const step = /^ {6}(?:- | {2})name: (.+)$/m.exec(part)?.[1] ?? '';
+        const allowed = tokenSteps.get(`${job}: ${step}`) ?? '';
+        if (readsContext(part.replace(allowed, ''), tokenContext)) {
+          violations.push(`${job}: token`);
+        }
+      }
+      const blocks = [
+        ...text.matchAll(
+          /^ {4}permissions:(.*)\n((?:(?: {5,}\S.*| *(?:#.*)?)\n)*)/gm,
+        ),
+      ];
+      const scopes = (blocks[0]?.[2] ?? '')
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line !== '' && !line.startsWith('#'));
+      if (
+        blocks.length !== 1 ||
+        (blocks[0]?.[1] ?? '').replace(/#.*/, '').trim() !== '' ||
+        scopes.join('\n') !== 'contents: read'
+      ) {
+        violations.push(`${job}: permissions`);
+      }
+      if (readsContext(text, secretsContext)) {
+        violations.push(`${job}: secrets`);
+      }
+    }
+    return violations;
+  };
+
+  it('keeps the job token from the steps after mise and lets their jobs only read', () => {
+    const miseJobs = workflowFiles.flatMap(([, workflow]) =>
+      jobsOf(workflow).filter(([, text]) => miseSteps(text).length > 0),
+    );
+    // Guard against a split that finds no job and so checks nothing.
+    expect(miseJobs.length).toBe(workflows.flatMap(miseSteps).length);
+    expect(miseJobs.length).toBeGreaterThan(0);
+    for (const [name, workflow] of workflowFiles) {
+      expect(miseJobViolations(workflow), name).toEqual([]);
+    }
+  });
+
+  it('reports each way to hand on the token or to widen the rights of such a job', () => {
+    const ci = workflowFiles.find(([name]) => name === 'ci.yml')?.[1] ?? '';
+    const afterCache = (line: string) => (workflow: string) =>
+      workflow.replace(/^(\s+)cache: false$/m, `$1cache: false\n$1${line}`);
+    const afterLocked = (line: string) => (workflow: string) =>
+      workflow.replace(/^( +)MISE_LOCKED: 1$/m, `$1MISE_LOCKED: 1\n$1${line}`);
+    const afterRead = (lines: string) => (workflow: string) =>
+      workflow.replace(
+        /^ {6}contents: read$/m,
+        `      contents: read\n${lines}`,
+      );
+    const mutations = [
+      afterCache('persist_github_token: true'),
+      afterCache("'persist_github_token': 'true'"),
+      afterCache('PERSIST_GITHUB_TOKEN: true'),
+      afterCache('github_token: ${{ github.token }}'),
+      afterLocked('MISE_GITHUB_TOKEN: ${{ github.token }}'),
+      afterLocked('GH_TOKEN: ${{ github.token }}'),
+      afterLocked('NPM_TOKEN: ${{ secrets.NPM_TOKEN }}'),
+      (workflow: string) =>
+        workflow.replace(
+          /^ {2}compat:\n/m,
+          '$&    env:\n      GITHUB_TOKEN: ${{ github.token }}\n',
+        ),
+      (workflow: string) =>
+        workflow.replace('name: Audit the workflows', 'name: Audit'),
+      (workflow: string) =>
+        workflow.replace('${{ github.token }}', '${{ toJSON(github) }}'),
+      (workflow: string) =>
+        workflow.replace('${{ github.token }}', '${{ secrets.SOME_TOKEN }}'),
+      (workflow: string) =>
+        workflow.replace('${{ github.token }}', '${{ toJSON(secrets) }}'),
+      (workflow: string) =>
+        workflow.replace(/^ {6}contents: read$/m, '      contents: write'),
+      afterRead('      pull-requests: write'),
+      afterRead('\n      pull-requests: write'),
+      afterRead('    # a comment\n      pull-requests: write'),
+      (workflow: string) =>
+        workflow.replace(
+          /^ {4}permissions:\n {6}contents: read$/m,
+          '    permissions: write-all',
+        ),
+    ];
+    expect(miseJobViolations(ci)).toEqual([]);
+    for (const [index, mutate] of mutations.entries()) {
+      const mutated = mutate(ci);
+      expect(mutated, `mutation ${String(index)}`).not.toBe(ci);
+      expect(
+        miseJobViolations(mutated),
+        `mutation ${String(index)}`,
+      ).not.toEqual([]);
+    }
+    // A quoted job key or one with a comment still starts its own job.
+    const quoted = ci.replace(/^ {2}([\w-]+):$/gm, "  '$1': # a comment");
+    expect(quoted).not.toBe(ci);
+    expect(jobsOf(quoted).map(([job]) => job)).toEqual(
+      jobsOf(ci).map(([job]) => job),
+    );
+  });
+
   // mise 2026.9.7 to 2026.9.15 read and write lock files in format 2; newer
   // releases write format 3, which these reject. A lock file in format 3
   // therefore needs a newer mise in CI in the same change.
