@@ -192,7 +192,11 @@ function describeObject(
     let label: string;
     if (named) {
       label = key;
-      options.guard.allowChecked(key);
+      if (options.keys === 'specification') {
+        options.guard.allowDeclared(key);
+      } else {
+        options.guard.allowChecked(key);
+      }
     } else {
       unnamed += 1;
       label = `<key#${String(unnamed)}>`;

@@ -131,6 +131,39 @@ describe('describe', () => {
     expect(guard.check(shape)).toEqual([]);
   });
 
+  it('shows a declared key although a value names it, as @deprecated does', () => {
+    const guard = new Guard();
+    const value = {
+      identifier: 'page-id-1',
+      title: 'Ablauf eines Probentags',
+      '@deprecated': { identifier: 'title' },
+    };
+    guard.blockAll(value);
+    const shape = describeValue(
+      value,
+      { $ref: '#/components/schemas/Page' },
+      { guard, schemas, keys: 'specification' },
+    );
+    expect(Object.keys((shape as { felder: object }).felder)).toEqual([
+      'identifier',
+      'title',
+      '<key#1>',
+    ]);
+    expect(guard.check(shape)).toEqual([]);
+  });
+
+  it('still withholds a lower-case key that equals a value of the response', () => {
+    const guard = new Guard();
+    guard.blockAll(['Jugend']);
+    const shape = describeValue({ jugend: { view: true } }, undefined, {
+      guard,
+      schemas,
+      keys: 'lowercaseWords',
+      booleanValues: true,
+    });
+    expect(guard.check(shape)).toEqual(['/felder/#0']);
+  });
+
   it('stops at a fixed depth', () => {
     const guard = new Guard();
     let deep: unknown = 'x';
