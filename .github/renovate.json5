@@ -38,7 +38,8 @@
 
   // The mise that updates mise.lock is the one CI installs, so the lock file
   // stays in a format CI can read. tests/toolchain.test.mts keeps both in
-  // step.
+  // step. Only the custom manager below updates this value, together with
+  // the workflows.
   constraints: {
     mise: '2026.10.0',
   },
@@ -132,6 +133,12 @@
       matchManagers: ['github-actions'],
       matchDepNames: ['jdx/mise'],
       matchDepTypes: ['uses-with'],
+      enabled: false,
+    },
+    {
+      description: 'constraints.mise is updated by the custom manager above as well, not by the manager for Renovate configuration files, which takes the tag of a release with its leading v as the version. Renovate still reads constraints.mise to choose the mise that updates mise.lock.',
+      matchManagers: ['renovate-config'],
+      matchDepNames: ['mise'],
       enabled: false,
     },
     {
