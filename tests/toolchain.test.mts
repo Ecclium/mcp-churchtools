@@ -337,7 +337,9 @@ describe('mise', () => {
 
 interface RenovateRule {
   readonly automerge?: boolean;
+  readonly enabled?: boolean;
   readonly matchManagers?: readonly string[];
+  readonly matchDepNames?: readonly string[];
   readonly matchDepTypes?: readonly string[];
   readonly matchPackageNames?: readonly string[];
   readonly matchUpdateTypes?: readonly string[];
@@ -493,6 +495,37 @@ describe('Renovate', () => {
     for (const name of withoutProvenance) {
       expect(allowed.matchPackageNames).not.toContain(name);
     }
+  });
+
+  // Renovate's manager for its own configuration reads constraints.mise as
+  // a dependency of its own and writes the tag of a release, with its
+  // leading v. When it has an update it wins over the custom manager, which
+  // keeps the value equal to the workflows. Without the rule, the test for
+  // the pinned versions of mise fails only at the next update of mise.
+  it('lets only the custom manager update the version of mise in constraints', () => {
+    const switchedOff = rules.filter(
+      (rule) =>
+        rule.enabled === false &&
+        rule.matchManagers?.includes('renovate-config') === true &&
+        rule.matchDepNames?.includes('mise') === true,
+    );
+    expect(switchedOff).toHaveLength(1);
+    const [rule] = switchedOff;
+    // Any further matcher could narrow the rule so that it misses the
+    // entry, and a rule that turns something on could undo it.
+    expect(Object.keys(rule ?? {}).sort()).toEqual([
+      'description',
+      'enabled',
+      'matchDepNames',
+      'matchManagers',
+    ]);
+    expect(rule?.matchManagers).toEqual(['renovate-config']);
+    expect(rule?.matchDepNames).toEqual(['mise']);
+    expect(
+      everywhere
+        .filter((entry) => entry.key === 'enabled' && entry.value !== false)
+        .map((entry) => entry.path),
+    ).toEqual([]);
   });
 });
 
