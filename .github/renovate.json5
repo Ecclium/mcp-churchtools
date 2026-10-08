@@ -41,7 +41,7 @@
   // step. Only the custom manager below updates this value, together with
   // the workflows.
   constraints: {
-    mise: '2026.10.0',
+    mise: '2026.10.3',
   },
 
   // brand/ is delivered as a whole and never changed in this repository.
