@@ -60,7 +60,7 @@ jobs:
       - name: Install actionlint, shellcheck and zizmor
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          version: 2026.10.0
+          version: 2026.10.3
           cache: false
           install_args: aqua:rhysd/actionlint aqua:koalaman/shellcheck aqua:zizmorcore/zizmor
       - name: Lint the workflows
@@ -92,7 +92,7 @@ jobs:
       - name: Install gitleaks
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          version: 2026.10.0
+          version: 2026.10.3
           cache: false
           install_args: aqua:gitleaks/gitleaks
       - name: Refuse ignore files of gitleaks
@@ -177,7 +177,7 @@ jobs:
       - name: Install Node.js, pnpm and the tools
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          version: 2026.10.0
+          version: 2026.10.3
           cache: false
       - name: Install the dependencies from the lockfile
         run: pnpm install --frozen-lockfile
@@ -206,7 +206,7 @@ jobs:
       - name: Install Node.js, pnpm and the tools
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          version: 2026.10.0
+          version: 2026.10.3
           cache: false
       - name: Install the dependencies from the lockfile
         run: pnpm install --frozen-lockfile
@@ -233,7 +233,7 @@ jobs:
       - name: Install Node.js, pnpm and the tools
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          version: 2026.10.0
+          version: 2026.10.3
           cache: false
       - name: Install the dependencies from the lockfile
         run: pnpm install --frozen-lockfile
@@ -294,7 +294,7 @@ jobs:
       - name: Install Node.js
         uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          version: 2026.10.0
+          version: 2026.10.3
           cache: false
           install_args: node
       - name: Check the provenance of new lockfile entries
