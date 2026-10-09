@@ -259,3 +259,4 @@ Diese Grundsatzfragen sind entschieden.
   - `07-wiki-cleanup` entfernte alle vier Seiten des Laufs, im Schreibbereich liegt nur noch «main». Danach erhielt das Schreibkonto ein neues Token, und `01-auth` bestätigte, dass die Instanz das alte abweist. Das Schreibkonto bleibt mit seinen Rechten bestehen.
   - Die Befunde stehen in `docs/research/churchtools-api.md`. Das Threat Model (T9, Löschen im Wiki, T10, Personendaten, T23) und ADR 0049 (Umsetzung) sind nachgeführt.
   - Nachweis: Die Ausgaben aller Proben sind vor dem Weitergeben durchgesehen und mit gitleaks geprüft. `pnpm check` läuft lokal grün, mit 595 Tests in 38 Dateien.
+- 09.10.2026, die Auswertung des schreibenden Laufs ist als `8a5b2a9` auf `main` (#66). Der Squash-Commit bringt genau die Änderung des Branches.
