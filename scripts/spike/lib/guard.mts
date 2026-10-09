@@ -12,7 +12,9 @@
  *    host parts, token, the values of the probe variables, user name and
  *    home folder, the state file, header values and every string and number
  *    of the responses. Comparison ignores case and also looks for the
- *    URL-encoded form.
+ *    URL-encoded form. A key the specification declares is not blocked by
+ *    a value from a response that equals the whole key, see
+ *    {@link Guard.allowDeclared}.
  *
  * If either check fails, the probe prints nothing but the positions of the
  * findings, as JSON pointers whose unknown parts are replaced by numbers.
@@ -45,8 +47,10 @@ const versionPattern = /^\d+\.\d+$/;
 export class Guard {
   readonly #fixed = new Set<string>();
   readonly #checked = new Set<string>();
+  readonly #declared = new Set<string>();
   #version: string | undefined;
   readonly #blockedText = new Set<string>();
+  readonly #strictText = new Set<string>();
   readonly #blockedNumbers = new Set<string>();
 
   /**
@@ -78,6 +82,29 @@ export class Guard {
   }
 
   /**
+   * Allows a key that the specification declares at its position.
+   *
+   * Like {@link Guard.allowChecked}, except for one case: a value from a
+   * response that equals the whole key, ignoring case, does not block it.
+   * The key reaches the output because the specification names it, so a
+   * response value with the same text adds nothing. ChurchTools sends such
+   * values itself, for example `{"@deprecated": {"identifier": "guid"}}` in
+   * every wiki page and person, and the name of a model such as `WikiPage`
+   * in an error. A value that is only part of the key, as a whole word,
+   * still blocks it. Values added with {@link Guard.block}, such as the
+   * host and its parts, the token or a header value, still block an equal
+   * key: the specification comes from the instance, and a key it declares
+   * could carry the name of the instance. Like every rule of the guard, the
+   * exception follows the word, not its position.
+   *
+   * @param key - Key the specification declares.
+   */
+  allowDeclared(key: string): void {
+    this.#checked.add(key);
+    this.#declared.add(key);
+  }
+
+  /**
    * Allows the ChurchTools version, the one value from the instance that
    * may appear in the output.
    *
@@ -96,19 +123,13 @@ export class Guard {
    *
    * Text shorter than three characters is not added, because it would match
    * almost every word. Such text can still not reach the output, since the
-   * allow list does not contain it.
+   * allow list does not contain it. A value added here blocks every key that
+   * contains it, a declared key that equals it included.
    *
    * @param value - Value from the instance or the local machine.
    */
   block(value: string | number): void {
-    const text = String(value).trim();
-    if (/^-?\d+(?:\.\d+)?$/.test(text)) {
-      this.#blockedNumbers.add(text.replace(/^-/, ''));
-    }
-    if (text.length >= 3) {
-      this.#blockedText.add(text.toLowerCase());
-      this.#blockedText.add(encodeURIComponent(text).toLowerCase());
-    }
+    this.#add(value, true);
   }
 
   /**
@@ -118,13 +139,14 @@ export class Guard {
    * specification declares, and the output shows them on purpose. A key
    * that carries data, such as a group ID, never reaches the output,
    * because it is replaced by `<key#n>` and the allow list does not
-   * contain it.
+   * contain it. A value added here does not block a declared key that
+   * equals it, see {@link Guard.allowDeclared}.
    *
    * @param value - Parsed response or other structured data.
    */
   blockAll(value: unknown): void {
     if (typeof value === 'string' || typeof value === 'number') {
-      this.block(value);
+      this.#add(value, false);
     } else if (Array.isArray(value)) {
       for (const item of value) {
         this.blockAll(item);
@@ -178,12 +200,36 @@ export class Guard {
     if (word === this.#version) {
       return true;
     }
-    return this.#checked.has(word) && !this.#isBlocked(word);
+    return (
+      this.#checked.has(word) &&
+      !this.#isBlocked(word, this.#declared.has(word))
+    );
   }
 
-  #isBlocked(word: string): boolean {
+  #add(value: string | number, strict: boolean): void {
+    const text = String(value).trim();
+    if (/^-?\d+(?:\.\d+)?$/.test(text)) {
+      this.#blockedNumbers.add(text.replace(/^-/, ''));
+    }
+    if (text.length >= 3) {
+      for (const form of [
+        text.toLowerCase(),
+        encodeURIComponent(text).toLowerCase(),
+      ]) {
+        this.#blockedText.add(form);
+        if (strict) {
+          this.#strictText.add(form);
+        }
+      }
+    }
+  }
+
+  #isBlocked(word: string, declared: boolean): boolean {
     const lower = word.toLowerCase();
     for (const blocked of this.#blockedText) {
+      if (declared && blocked === lower && !this.#strictText.has(blocked)) {
+        continue;
+      }
       if (containsWord(lower, blocked)) {
         return true;
       }

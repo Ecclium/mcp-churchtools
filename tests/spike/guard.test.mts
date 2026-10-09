@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { Guard, containsWord } from '../../scripts/spike/lib/guard.mts';
+import { hostValues } from '../../scripts/spike/lib/probe.mts';
 
 describe('Guard', () => {
   it('lets fixed words pass and reports unknown ones by position only', () => {
@@ -66,6 +67,58 @@ describe('Guard', () => {
     expect(() => {
       guard.allowVersion('3.136.2');
     }).toThrow('INTERN');
+  });
+
+  // ChurchTools names fields in values as well: every wiki page and person
+  // carries {"@deprecated": {"identifier": "guid"}}, and an error names its
+  // model, such as WikiPage, and presumably WikiCategory for a closed
+  // category.
+  it('lets a declared key pass a response value that equals it, ignoring case', () => {
+    const guard = new Guard();
+    guard.allowDeclared('guid');
+    guard.allowDeclared('wikiCategory');
+    guard.blockAll({
+      '@deprecated': { identifier: 'guid' },
+      args: { model: 'WikiCategory' },
+    });
+    expect(guard.check({ guid: null, wikiCategory: null })).toEqual([]);
+  });
+
+  it('still blocks a declared key that contains a value as a part', () => {
+    const guard = new Guard();
+    guard.allowDeclared('max_value');
+    guard.allowDeclared('value_max');
+    guard.allowDeclared('field4711');
+    // Values that equal the keys come first, so an exception that ends the
+    // check at the first equal value fails here.
+    guard.blockAll({ a: 'max_value', b: 'value_max', c: 'field4711' });
+    guard.blockAll({ name: 'Max', id: 4711 });
+    expect(
+      guard.check({ max_value: null, value_max: null, field4711: null }),
+    ).toEqual(['/#0', '/#1', '/#2']);
+  });
+
+  it('still blocks a declared key that equals the host, a header or the token', () => {
+    const guard = new Guard();
+    for (const value of hostValues('https://example.church.tools')) {
+      guard.block(value);
+    }
+    guard.block('session');
+    guard.allowDeclared('example');
+    guard.allowDeclared('session');
+    guard.blockAll({ name: 'Example', cookie: 'session' });
+    expect(guard.check({ example: null, session: null })).toEqual([
+      '/#0',
+      '/#1',
+    ]);
+  });
+
+  it('lets only a declared key pass a value that equals it', () => {
+    const guard = new Guard();
+    guard.allowDeclared('guid');
+    guard.allowChecked('jugend');
+    guard.blockAll({ identifier: 'guid', name: 'Jugend' });
+    expect(guard.check({ guid: null, jugend: null })).toEqual(['/#1']);
   });
 
   it('adds strings and numbers of a response, but not its keys', () => {
