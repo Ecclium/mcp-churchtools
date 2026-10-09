@@ -80,6 +80,20 @@ export const maxChanges = 30;
 
 const listItem = /^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$/;
 const bareUrl = 'https://example.org/';
+
+/**
+ * The target of the first Markdown link in a line, `[text](target)` or
+ * `<target>`.
+ *
+ * The kind «URL in Link umgewandelt» compares this target with the bare
+ * URL of the synthetic text as a whole, not as a part of the line.
+ *
+ * @param line - One line.
+ * @returns The target, if the line holds a link.
+ */
+function linkTarget(line: string): string | undefined {
+  return /\]\(([^()\s]+)\)/.exec(line)?.[1] ?? /<([^<>\s]+)>/.exec(line)?.[1];
+}
 const commentLine = corpus.find((line) => line.startsWith('<!--')) ?? '<!--';
 
 function tableForm(line: string): string {
@@ -109,8 +123,8 @@ function kindOf(original: string, changed: string): ChangeKind {
     return 'Escape geändert';
   }
   if (
-    original.includes(bareUrl) &&
-    (changed.includes(`](${bareUrl}`) || changed.includes(`<${bareUrl}>`))
+    original.split(/\s+/).some((word) => word === bareUrl) &&
+    linkTarget(changed) === bareUrl
   ) {
     return 'URL in Link umgewandelt';
   }

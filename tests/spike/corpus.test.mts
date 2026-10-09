@@ -74,6 +74,23 @@ describe('classifyChanges', () => {
       edit('<!--', () => 'Ein HTML-Kommentar'),
       'HTML-Kommentar entfernt',
     ],
+    [
+      'an autolink of the bare URL',
+      edit(
+        'Eine nackte Adresse',
+        () => 'Eine nackte Adresse: <https://example.org/>',
+      ),
+      'URL in Link umgewandelt',
+    ],
+    [
+      'a link to another address',
+      edit(
+        'Eine nackte Adresse',
+        () =>
+          'Eine nackte Adresse: [https://example.org/](https://example.com/)',
+      ),
+      'andere',
+    ],
     ['another change', edit('# Ablauf', () => '# Anderer Titel'), 'andere'],
   ])('names %s with its line', (_, changed, kind) => {
     const changes = classifyChanges(corpusText, changed);
