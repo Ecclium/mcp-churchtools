@@ -45,3 +45,5 @@ Gewählt ist die dritte Option.
 
 - gitleaks erkennt Login-Tokens in einer Kopfzeile, in einer URL und in einer Zuweisung: Regeln `churchtools-login-token-header`, `churchtools-login-token-query` und `churchtools-token-assignment` in `.gitleaks.toml`.
 - Der ChurchTools-Client, der Typ für Geheimnisse und das Lesen der Tokens aus Dateien folgen in Phase 1.
+- Die Rechte eines Kontos kommen in ChurchTools auch aus seinem Personenstatus. Auf der Testinstanz aus ADR 0049 brachte jeder vorgegebene Status bis auf einen eigene Rechte mit, unter anderem auf Personendaten und Kalender. Ein Dienstkonto erhält deshalb einen eigenen Personenstatus ohne Berechtigungen und direkt nur die Rechte seiner Aufgabe. Erst so zeigte `GET /api/permissions/global` beim lesenden Konto des Spikes nur die vorgesehenen Rechte (`docs/research/churchtools-api.md`, F5). Die Anleitung für Betreiber nimmt das auf.
+- Ein erneuertes Login-Token macht das alte ungültig, auf der Testinstanz etwa zehn Sekunden nach dem Erneuern geprüft (F23). Jede Anfrage mit einem gültigen Login-Token erhält dort Cookies (F3). Wie der Client damit umgeht, legt der Bau des Clients in Phase 1 fest.
