@@ -36,7 +36,7 @@ Jede Probe schreibt JSON auf stdout und kurze Hinweise auf stderr. Auf stderr st
 - Texte erscheinen nur als «leer» oder «nicht leer», Zahlen nur als Typ, Anzahlen nur als Klasse: 0, 1, 2–9, 10–99, 100–999, ab 1000.
 - Genaue Zahlen gibt es nur in `03`, weil die Frage sie verlangt: die Anzahl der gelieferten Einträge und das Echo von `limit`.
 - Der einzige Wert aus der Instanz ist die Version von ChurchTools als Haupt- und Nebennummer, etwa `3.136`.
-- Schlüssel erscheinen mit ihrem Namen, wenn das OpenAPI-Dokument Ihrer Instanz sie für diese Antwort deklariert. In `02` gilt stattdessen: Ein Schlüssel erscheint mit Namen, wenn er nur aus kleingeschriebenen Wörtern besteht. Dort werden Namen von Modulen und Rechten als Schlüssel erwartet, die das Dokument nicht einzeln aufzählt. Alle anderen Schlüssel erscheinen als `<key#1>`, `<key#2>` und so weiter.
+- Schlüssel erscheinen mit ihrem Namen, wenn das OpenAPI-Dokument Ihrer Instanz sie für diese Antwort deklariert. In `02` gilt stattdessen: Ein Schlüssel erscheint mit Namen, wenn er nur aus kleingeschriebenen Wörtern besteht. Dort werden Namen von Modulen und Rechten als Schlüssel erwartet, die das Dokument nicht einzeln aufzählt. Ein deklarierter Schlüssel erscheint nur mit Namen, wenn er die Form eines Bezeichners hat: höchstens 64 Zeichen aus ASCII-Buchstaben, Ziffern, `_` und `$`, ohne Ziffer am Anfang. Ein Schlüssel wie `@deprecated` erscheint deshalb immer ohne Namen. Alle anderen Schlüssel erscheinen als `<key#1>`, `<key#2>` und so weiter.
 - Kopfzeilen erscheinen mit Namen, wenn der Name auf einer festen Liste bekannter Kopfzeilen steht, etwa `content-type` oder `retry-after`, und mit der Klasse ihres Werts: Zahl, Datum oder Text. Alle anderen Kopfzeilen erscheinen nur als Anzahl.
 - Cookies erscheinen nur als Anzahl und mit ihren Attributen, nie mit Name oder Wert, weil ein Name den Namen der Instanz tragen kann.
 - Rechte in `02` und das Feld `isMarkdown` in `04` erscheinen als «wahr» oder «falsch».
@@ -48,7 +48,7 @@ Bevor eine Probe etwas ausgibt, prüft sie die ganze Ausgabe zweimal:
 1. Jedes Wort muss bekannt sein: ein festes Wort der Proben, ein zugelassener Schlüssel oder die Version.
 2. Kein zugelassener Schlüssel darf als ganzes Wort etwas enthalten, das aus der Instanz oder von Ihrem Rechner stammt: den Host und seine Teile, das Token, die Werte der Variablen, Ihren Benutzernamen und Ihr Home-Verzeichnis, die Werte aller Kopfzeilen und Cookies und jede Zeichenkette und Zahl aus den Antworten. Gross- und Kleinschreibung zählen nicht, die URL-kodierte Form wird mitgeprüft.
 
-Eine Ausnahme gilt für Schlüssel, die das OpenAPI-Dokument Ihrer Instanz an ihrer Stelle deklariert: Ein Wert aus einer Antwort, der genau so lautet wie der ganze Schlüssel, sperrt ihn nicht, ohne Rücksicht auf Gross- und Kleinschreibung. Solch ein Schlüssel steht in der Ausgabe, weil das Dokument ihn nennt. ChurchTools schickt solche Werte selbst, etwa `{"@deprecated": {"identifier": "guid"}}` in jeder Wiki-Seite und jeder Person oder den Namen eines Modells wie `WikiPage` in einer Fehlerantwort. Ein Wert, der als ganzes Wort nur Teil eines Schlüssels ist, sperrt ihn weiter. Der Host und seine Teile, das Token, die Werte der Variablen, Ihr Benutzername, Ihr Home-Verzeichnis und die Werte der Kopfzeilen und Cookies sperren auch einen gleichlautenden Schlüssel. Die Namen der Rechte aus `02-permissions` prüft die Sicherung ohne diese Ausnahme. Nennt das OpenAPI-Dokument Ihrer Instanz einen eigenen Namen als Schlüssel und kommt derselbe Name als Wert in einer Antwort vor, hält die Sicherung ihn nicht mehr zurück. Achten Sie bei der Durchsicht darauf.
+Eine Ausnahme gilt für Schlüssel, die das OpenAPI-Dokument Ihrer Instanz an ihrer Stelle deklariert: Ein Wert aus einer Antwort, der genau so lautet wie der ganze Schlüssel, sperrt ihn nicht, ohne Rücksicht auf Gross- und Kleinschreibung. Solch ein Schlüssel steht in der Ausgabe, weil das Dokument ihn nennt. ChurchTools schickt solche Werte selbst, etwa `{"@deprecated": {"identifier": "guid"}}` in jeder Wiki-Seite oder den Namen eines Modells wie `WikiPage` in einer Fehlerantwort. Ein Wert, der als ganzes Wort nur Teil eines Schlüssels ist, sperrt ihn weiter. Der Host und seine Teile, das Token, die Werte der Variablen, Ihr Benutzername, Ihr Home-Verzeichnis und die Werte der Kopfzeilen und Cookies sperren auch einen gleichlautenden Schlüssel. Die Namen der Rechte aus `02-permissions` prüft die Sicherung ohne diese Ausnahme. Nennt das OpenAPI-Dokument Ihrer Instanz einen eigenen Namen als Schlüssel und kommt derselbe Name als Wert in einer Antwort vor, hält die Sicherung ihn nicht mehr zurück. Achten Sie bei der Durchsicht darauf.
 
 Schlägt eine Prüfung an, gibt die Probe nur die Stellen der Treffer als JSON-Pointer aus und endet mit Code 3.
 
@@ -59,12 +59,12 @@ Die Werte des OpenAPI-Dokuments stehen nicht auf der Sperrliste. Das Dokument be
 ## Voraussetzungen
 
 - Node.js 24.21.0, wie in `.nvmrc`. Die Proben brauchen nur Node.js selbst, keine Pakete und kein `pnpm install`.
-- Ein Dienstkonto in ChurchTools mit einem Login-Token. Es darf die Testkategorie lesen und sonst möglichst wenig.
-- Eine Wiki-Kategorie nur für Tests, mit einigen Seiten aus erfundenem Inhalt, mindestens eine davon mit mehreren Versionen.
+- Ein Dienstkonto in ChurchTools mit einem Login-Token. Es darf das Wiki sehen und die Testkategorie lesen, sonst nichts. Beim Recht «Einzelne Wiki-Kategorien sehen» wählen Sie nur die Testkategorie, nie «alle». In ChurchTools kann auch ein Personenstatus Rechte vergeben. Auf einer Testinstanz mit synthetischen Daten brachte jeder vorgegebene Status bis auf einen eigene Rechte mit, etwa auf Personendaten und Kalender. Geben Sie dem Dienstkonto deshalb einen eigenen Status ohne Berechtigungen, und nehmen Sie es in keine Gruppe auf. Ob es nur die beiden Rechte hat, zeigt `02-permissions` (Schritt 6), soweit `GET /api/permissions/global` alle Rechte nennt. Ob diese Antwort auch Rechte aus Gruppen enthält, ist ungeprüft.
+- Eine Wiki-Kategorie nur für Tests, mit einigen Seiten aus erfundenem Inhalt, mindestens eine davon mit mehreren Versionen. `04` liest höchstens drei Seiten in der Reihenfolge der Liste. Auf der Testinstanz beobachtet: Eine Seite, die Sie in der Weboberfläche anlegen, hat schon zwei Versionen, die erste ohne Text. In jeder neuen Kategorie legt ChurchTools von selbst eine leere Seite «main» an, die Kategorie hat also eine Seite mehr, als Sie angelegt haben.
 - Optional eine zweite Kategorie ohne vertrauliche Seiten, die das Dienstkonto nicht lesen darf.
 - Ein privater Ordner ausserhalb jedes Git-Arbeitsbaums für Token, State-Datei und Ausgaben.
 
-Die Proben prüfen Token-Datei und State-Datei vor dem Lesen: kein symbolischer Link, eine reguläre Datei, die Ihnen gehört, keine Rechte für andere, ausserhalb jedes Git-Arbeitsbaums. Die Token-Datei enthält genau eine Zeile aus druckbaren ASCII-Zeichen und ist höchstens 4 KiB gross. Die State-Datei legt `00-inventory` selbst an, mit Modus 0600. Sie darf vorher nicht existieren.
+Die Proben prüfen Token-Datei und State-Datei vor dem Lesen: kein symbolischer Link, eine reguläre Datei, die Ihnen gehört, keine Rechte für andere, ausserhalb jedes Git-Arbeitsbaums. Die Token-Datei enthält genau eine Zeile aus druckbaren ASCII-Zeichen und ist höchstens 4 KiB gross. Die State-Datei legt `00-inventory` selbst an, mit Modus 0600. Sie darf vorher nicht existieren. Existiert sie schon, bricht `00-inventory` mit Code 2 ab, bevor es eine Anfrage sendet.
 
 ## Ausführung
 
@@ -106,14 +106,53 @@ Die Befehle sind für zsh und bash geschrieben. Ersetzen Sie die Werte in Grossb
    echo "Code $?"
    ```
 
-5. Führen Sie die übrigen Proben aus:
+   Wollen Sie `00-inventory` wiederholen, löschen Sie zuerst die State-Datei. Oder geben Sie in `ECCLIUM_SPIKE_STATE_FILE` eine neue an und danach allen Proben dieselbe. Leiten Sie die Ausgabe einer Wiederholung in eine neue Datei um: Die Shell leert die Zieldatei von `>` schon vor dem Start der Probe. Bricht `00-inventory` dann ab, weil die State-Datei existiert, ist die frühere Ausgabe leer.
+
+5. Führen Sie `01-auth` und `02-permissions` aus:
 
    ```bash
-   for P in 01-auth 02-permissions 03-pagination-errors 04-wiki-read; do
+   for P in 01-auth 02-permissions; do
      env -i ECCLIUM_SPIKE_BASE_URL="$URL" ECCLIUM_SPIKE_TOKEN_FILE="$D/token" ECCLIUM_SPIKE_STATE_FILE="$D/state.json" ECCLIUM_SPIKE_WIKI_CATEGORY_ID="$KATEGORIE" ECCLIUM_SPIKE_FORBIDDEN_CATEGORY_ID="$GESPERRT" "$NODE" "$R/scripts/spike/$P.mts" > "$D/ausgabe/$P.json"
      echo "$P: Code $?"
    done
    ```
+
+6. Halten Sie hier an und prüfen Sie `02-permissions.json`, bevor `03` und `04` die Testkategorie lesen. Erwartet sind Code 0, unter `antwort` der Status 200 und im Modul `churchwiki` genau zwei Rechte: `view` mit «wahr» und `view category` mit `anzahl` «1». Jedes andere Recht steht auf «falsch» oder ist eine Liste mit `anzahl` «0». Dieser Befehl gibt jedes Recht aus, das nicht auf «falsch» steht und keine leere Liste ist, also auch die beiden erwarteten:
+
+   ```bash
+   env -i "$NODE" -e '
+   let out = {};
+   try { out = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); } catch {}
+   const daten = out.antwort?.status === 200 ? out.antwort.struktur?.felder?.data : undefined;
+   if (daten?.typ !== "Objekt") { console.log("ABBRUCH: keine Antwort 200 mit Rechten"); process.exit(1); }
+   if (daten.weitereFelder) console.log("weitere Module nicht gezeigt");
+   for (const [modul, rechte] of Object.entries(daten.felder)) {
+     if (rechte.typ !== "Objekt" || rechte.weitereFelder) console.log(`${modul}: nicht vollständig gezeigt`);
+     for (const [recht, w] of Object.entries(rechte.felder ?? {}))
+       if (w.wert !== "falsch" && w.anzahl !== "0") console.log(`${modul}: ${recht}: ${w.wert ?? w.anzahl ?? w.typ}`);
+   }
+   ' "$D/ausgabe/02-permissions.json"
+   ```
+
+   Erwartet sind genau diese zwei Zeilen:
+
+   ```text
+   churchwiki: view: wahr
+   churchwiki: view category: 1
+   ```
+
+   Steht dort etwas anderes, machen Sie nicht weiter. Schränken Sie die Rechte des Dienstkontos ein, wie unter «Voraussetzungen» beschrieben, und wiederholen Sie nur `02-permissions`. Die State-Datei bleibt gültig. Welche Kategorie das Konto lesen darf, zeigt `02` nicht.
+
+7. Führen Sie `03-pagination-errors` und `04-wiki-read` aus:
+
+   ```bash
+   for P in 03-pagination-errors 04-wiki-read; do
+     env -i ECCLIUM_SPIKE_BASE_URL="$URL" ECCLIUM_SPIKE_TOKEN_FILE="$D/token" ECCLIUM_SPIKE_STATE_FILE="$D/state.json" ECCLIUM_SPIKE_WIKI_CATEGORY_ID="$KATEGORIE" ECCLIUM_SPIKE_FORBIDDEN_CATEGORY_ID="$GESPERRT" "$NODE" "$R/scripts/spike/$P.mts" > "$D/ausgabe/$P.json"
+     echo "$P: Code $?"
+   done
+   ```
+
+   In `03` nennt der Eintrag in `limitTest` mit `angefragt` 100 unter `eintraege`, wie viele Seiten das Konto lesen kann, solange es weniger als 100 sind: Ihre Seiten der Testkategorie und die Seite «main». Stimmt die Zahl nicht, prüfen Sie `KATEGORIE` und die Rechte des Kontos.
 
 Eine Probe bricht vor der ersten Anfrage ab, wenn `NODE_OPTIONS`, `NODE_DEBUG`, `NODE_PATH` oder `NODE_EXTRA_CA_CERTS` gesetzt ist oder `NODE_TLS_REJECT_UNAUTHORIZED=0` gilt. Diese Variablen könnten fremden Code laden oder ein fremdes Zertifikat gelten lassen, über das jemand das Token mitlesen könnte. Mit `env -i` sind sie nicht gesetzt.
 
@@ -129,6 +168,8 @@ Eine Probe bricht vor der ersten Anfrage ab, wenn `NODE_OPTIONS`, `NODE_DEBUG`, 
 
 Fehler erscheinen nur als fester Code mit einem festen Hinweis, nie mit einer Meldung oder einem Stack, weil diese Daten aus einer Antwort enthalten könnten.
 
+Die Umleitung `>` legt die Zieldatei an oder leert sie, bevor die Probe startet. Bei Code 2, 4 und 70 bleibt sie leer. Bei Code 3 enthält sie nur `zurueckgehalten` und die Liste `stellen`. Eine frühere Ausgabe unter demselben Namen ist danach überschrieben.
+
 ## Durchsicht vor dem Weitergeben
 
 1. Öffnen Sie jede Datei in `$D/ausgabe` und lesen Sie sie ganz. Erwartet sind nur Wörter der Proben, Schlüssel der API, Klassen, Statuscodes und die Version.
@@ -143,8 +184,18 @@ Fehler erscheinen nur als fester Code mit einem festen Hinweis, nie mit einer Me
 
 ## Aufräumen
 
-- Löschen Sie den Ordner `$R`, die State-Datei und die Ausgaben, sobald die Ergebnisse im Research-Dokument stehen. Die State-Datei enthält das vollständige OpenAPI-Dokument Ihrer Instanz.
-- Machen Sie das Token nach dem Spike ungültig oder deaktivieren Sie das Dienstkonto.
+1. Machen Sie das Token ungültig. Melden Sie sich als Dienstkonto an und erneuern Sie sein Login-Token, ohne das neue zu kopieren. Oder deaktivieren Sie das Dienstkonto.
+2. Nach dem Erneuern prüfen Sie mit der alten Token-Datei, dass die Instanz das alte Token abweist:
+
+   ```bash
+   env -i ECCLIUM_SPIKE_BASE_URL="$URL" ECCLIUM_SPIKE_TOKEN_FILE="$D/token" ECCLIUM_SPIKE_STATE_FILE="$D/state.json" ECCLIUM_SPIKE_WIKI_CATEGORY_ID="$KATEGORIE" ECCLIUM_SPIKE_FORBIDDEN_CATEGORY_ID="$GESPERRT" "$NODE" "$R/scripts/spike/01-auth.mts" > "$D/ausgabe/01-auth-nach-erneuerung.json"
+   echo "Code $?"
+   ```
+
+   Erwartet ist unter `anfragen.mitToken` der Status 401. Auf einer Testinstanz mit synthetischen Daten und ChurchTools 3.137 war das etwa zehn Sekunden nach dem Erneuern so. Steht dort 200, gilt das alte Token noch, deaktivieren Sie dann das Dienstkonto. Sehen Sie auch diese Ausgabe durch, bevor Sie sie weitergeben.
+
+3. Löschen Sie danach die Token-Datei.
+4. Löschen Sie den Ordner `$R`, die State-Datei und die Ausgaben, sobald die Ergebnisse im Research-Dokument stehen. Die State-Datei enthält das vollständige OpenAPI-Dokument Ihrer Instanz.
 
 ## Tests
 

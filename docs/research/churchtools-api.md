@@ -1,6 +1,6 @@
 # REST-API von ChurchTools: Fragen und Befunde
 
-Stand: 07.10.2026, Gerüst vor dem API-Spike
+Stand: 09.10.2026, Befunde aus dem lesenden Teil des API-Spikes
 
 Dieses Dokument hält fest, was Ecclium über die REST-API von ChurchTools wissen muss, bevor die ersten Tools entstehen, und worauf sich jede Aussage stützt. Eine Aussage gilt erst als belegt, wenn eine Probe sie an einer Instanz bestätigt hat. «Laut Dokumentation» heisst: so beschrieben, im Spike noch nicht geprüft. Was weder Dokumentation noch Spike belegen, steht unter «Offen» in [`docs/STATUS.md`](../STATUS.md).
 
@@ -8,7 +8,7 @@ Dieses Dokument hält fest, was Ecclium über die REST-API von ChurchTools wisse
 
 - Die Fragen ergeben sich aus den Tools, die Ecclium für Wiki, Rechte und Anmeldung braucht.
 - Der Spike läuft gegen eine Testinstanz mit ausschliesslich synthetischen Daten ([ADR 0049](../adr/0049-testumgebung.md)). Ihr Hostname steht nicht in diesem Repository.
-- Der erste Teil des Spikes liest nur. Die Proben in [`scripts/spike/`](../../scripts/spike/README.md) laufen mit einem eigenen, lesenden Dienstkonto gegen eine Wiki-Kategorie nur für Tests. Sie geben nur die Struktur der Antworten aus, keine Werte, mit der Version von ChurchTools als einziger Ausnahme.
+- Der erste Teil des Spikes liest nur. Die Proben in [`scripts/spike/`](../../scripts/spike/README.md) laufen mit einem eigenen, lesenden Dienstkonto gegen eine Wiki-Kategorie nur für Tests. Sie geben nur die Struktur der Antworten aus, keine Werte. Ausnahmen sind die Version von ChurchTools, die Wahrheitswerte der Rechte in `02-permissions`, in `03-pagination-errors` die Zahl der gelieferten Einträge und das Echo von `limit` und in `04-wiki-read` der Wert von `isMarkdown` und ob die Version einer Seite ihrer neuesten Version entspricht.
 - Ein zweiter Teil folgt. Er schreibt mit einem eigenen Konto nur in einen Testbereich des Wikis, hinter dem Wächter aus ADR 0049, und prüft die Fragen zum Anlegen und Ändern von Wiki-Seiten. Einige Fragen prüft der Maintainer zusätzlich von Hand im Browser.
 - Befunde gelten für die Version und die Einstellungen der Testinstanz. Wo eine Einstellung das Ergebnis bestimmen kann, sagt es der Befund.
 - Die Ausgaben der Proben werden vor dem Weitergeben durchgesehen. In dieses Dokument kommen nur Befunde über die Struktur und das Verhalten der API, nie Daten einer Gemeinde.
@@ -53,4 +53,84 @@ Das Repository nennt keinen Host einer Instanz, auch nicht den einer Demo-Instan
 
 ## Befunde
 
-Noch keine. Nach dem Spike steht hier je Frage der Befund, mit der Version von ChurchTools und der Probe, die ihn belegt.
+Geprüft auf der Testinstanz aus [ADR 0049](../adr/0049-testumgebung.md) mit den lesenden Proben `00-inventory` bis `04-wiki-read`. `00-inventory` bis `02-permissions` liefen am 08.10.2026 in der Fassung von `6c47822`, die Instanz meldete dabei die Version 3.137. `03-pagination-errors`, `04-wiki-read` und eine Wiederholung von `01-auth` nach dem Erneuern des Tokens liefen am 09.10.2026 in der Fassung von `dcd606c`, ohne die Version neu abzufragen. `dcd606c` ändert an den Proben nur die Sicherung der Ausgabe. Das lesende Dienstkonto durfte genau eine Wiki-Kategorie lesen. Die Befunde gelten für die Version und die Einstellungen dieser Instanz. Eine andere Instanz kann anders eingestellt sein, etwa bei Sitzungen oder bei den Rechten, die ein Personenstatus mitbringt.
+
+Die Befunde verwenden diese Stufen:
+
+- «Belegt»: Eine Probe hat es an der Testinstanz bestätigt.
+- «Teilweise belegt»: Eine Probe hat einen Teil der Frage bestätigt. Was fehlt, steht beim Befund.
+- «Offen»: Die lesenden Proben beantworten die Frage nicht. Der Befund nennt, was sie klärt.
+- «Von Hand beobachtet»: Der Maintainer hat es in der Weboberfläche der Testinstanz gesehen. Das ergänzt einen Befund, belegt ihn aber nicht.
+
+Die Proben geben einen Schlüssel nur mit seinem Namen aus, wenn das OpenAPI-Dokument ihn an dieser Stelle deklariert und er die Form eines Bezeichners hat. Ein Schlüssel ohne Namen in der Ausgabe ist also nicht deklariert oder hat eine andere Form, etwa weil er mit «@» beginnt. In `02-permissions` gilt für die Namen der Module und Rechte stattdessen: Ein Schlüssel erscheint mit Namen, wenn er nur aus kleingeschriebenen Wörtern besteht.
+
+### Anmeldung und Konto
+
+**F1, belegt (`00-inventory`).** Die Testinstanz meldet die Version 3.137, eine Nebenversion über der Spezifikation 3.136.2 unter «Quellen». Ihr OpenAPI-Dokument im Format OpenAPI 3 dokumentiert alle zehn Operationen, die der Spike nachschlägt, auch `POST /api/wiki/categories/{id}/pages` und `PATCH /api/wiki/categories/{id}/pages/{identifier}` für den zweiten Teil.
+
+**F2, belegt (`01-auth`).** Mit dem Header `Authorization: Login` und dem Token antwortet `GET /api/whoami` mit 200 und den Daten des Dienstkontos, mit und ohne `only_allow_authenticated=true`.
+
+**F3, teilweise belegt (`01-auth`, alle Proben).** Jede Antwort auf eine Anfrage mit gültigem Token setzt drei Cookies, auch eine Antwort 400, 403 oder 404. Alle drei tragen `HttpOnly`, `Secure` und `SameSite=None` und eine Laufzeit über `Max-Age` und `Expires`. Nur diese Antworten tragen auch `Cache-Control`, `Expires` und `Pragma`. Ohne Token oder mit ungültigem Token setzt keine Antwort ein Cookie. Die Proben schicken keine Cookies zurück, jede Anfrage erhält deshalb neue. Die Namen der Cookies gibt keine Probe aus. Dass es Cookies einer Sitzung sind, ist ein Schluss aus dem Verhalten. Offen bleibt, wie die Testinstanz Sitzungen für Login-Tokens eingestellt hat.
+
+**F4, belegt (`01-auth`).** Ohne Token antwortet `GET /api/whoami` mit 200, ohne Cookie, und liefert ein kleineres Personenobjekt mit leerer `guid` und leerem `firstName`. Mit `only_allow_authenticated=true` antwortet dieselbe Anfrage mit 401. Ein ungültiges Token erhält 401, mit und ohne den Parameter. Das OpenAPI-Dokument der Instanz deklariert den Parameter. Eine Antwort 200 von `whoami` zeigt eine Anmeldung also nur zusammen mit `only_allow_authenticated=true`.
+
+**F18, belegt (`01-auth`).** Die Antwort hat `data` und `meta`. `data` ist das Personenobjekt des Kontos mit 40 Feldern, darunter `id`, `guid`, `firstName`, `lastName`, `email`, `emails` als Liste von Objekten mit `email`, `isDefault` und `contactLabelId`, Felder für Adresse und Telefon, `campusId`, `departmentIds`, `isArchived`, `visibility` und `meta` mit `createdDate`, `createdPerson.id`, `modifiedDate` und `modifiedPerson.id`. `meta.simulatingUserId` ist beim Dienstkonto `null`. Ohne Anmeldung hat `data` 18 Felder, darunter einen Schlüssel, den die Probe nicht benennt.
+
+**F23, belegt (`01-auth`, wiederholt).** Ja. Das lesende Konto erhielt in der Weboberfläche ein neues Token. Etwa zehn Sekunden danach, so die Angabe des Maintainers, antwortete `whoami` auf das alte Token mit 401, mit und ohne `only_allow_authenticated=true`, in derselben Form wie auf ein ungültiges Token und ohne Cookie. Die Anfragen ohne Token und mit ungültigem Token antworteten wie im ersten Lauf. Ob Cookies aus früheren Anfragen mit dem alten Token weiter gelten, zeigt die Probe nicht, weil sie nie Cookies zurückschickt.
+
+### Rechte
+
+**F5, belegt (`02-permissions`).** `GET /api/permissions/global` liefert unter `data` ein Objekt je Modul, etwa `churchwiki`. Darin steht je Recht ein Wahrheitswert oder eine Liste. Was eine Liste enthält, zeigt die Ausgabe nur bei der einzigen nicht leeren: eine Zahl. Die Antwort führt auch die Rechte auf, die das Konto nicht hat, als `false` oder als leere Liste. Den Umfang der Rechte zeigen also die Werte `true` und die nicht leeren Listen. Beim lesenden Dienstkonto waren es genau zwei, beide im Modul `churchwiki`: `view` mit `true` und `view category` mit einer einzigen Zahl. Nicht jeder Name eines Rechts besteht nur aus kleingeschriebenen Wörtern.
+
+Von Hand beobachtet: Auf der Testinstanz brachte jeder vorgegebene Personenstatus bis auf einen eigene Rechte mit, unter anderem auf Personendaten, auf die eigenen Daten, auf einzelne Kalender und deren Events. Das Dienstkonto hatte zuerst einen solchen Status und das Recht, alle Wiki-Kategorien zu sehen, und `02-permissions` zeigte mehr als die zwei Rechte. Nachdem das Recht auf genau eine Kategorie beschränkt war und das Konto einen eigenen Status ohne jede Berechtigung erhalten hatte, blieben nur die zwei übrig, auch die Rechte auf die eigenen Daten fielen weg. Das Dienstkonto gehörte keiner Gruppe an.
+
+### Paginierung und Fehler
+
+**F6, belegt (`03-pagination-errors`).** `meta.pagination` von `GET /api/wiki/pages` hat vier Felder, alle Zahlen: `total`, `limit`, `current` und `lastPage`. Daneben steht `meta.count`. Eine Seite hinter der letzten antwortet mit 200, einer leeren Liste in `data` und denselben vier Feldern. Das Ende einer Liste zeigt also `lastPage`, kein Fehler. `GET /api/wiki/categories/{id}/pages` und die Versionsliste einer Seite haben keine Paginierung, nur `meta.count` (`04-wiki-read`).
+
+**F7, teilweise belegt (`03-pagination-errors`).** Ja, `limit` hat eine Obergrenze, anders als die Dokumentation sagt. `limit=100` nimmt die API an und meldet es in `meta.pagination.limit` zurück. `limit=1000` ergibt 400 mit einem Eintrag in der Fehlerliste. Die API kürzt also nicht still, sie lehnt ab. Die Grenze liegt bei mindestens 100 und höchstens 999. Der genaue Wert ist offen.
+
+**F8, teilweise belegt (`01-auth`, `03-pagination-errors`).** Geprüft sind vier Fälle, jeder an einer Operation: 400 bei ungültigem `page` oder `limit` auf `GET /api/wiki/pages`, 401 ohne gültige Anmeldung auf `GET /api/whoami`, 403 für die Seitenliste einer Kategorie ohne Leserecht und 404 für eine unbekannte Seite. Alle vier sind JSON mit derselben Form: drei nicht leere Texte, ein viertes Feld und eine Liste.
+
+- 400: Das vierte Feld ist eine leere Liste, die Liste hat einen Eintrag oder mehrere.
+- 401: Das vierte Feld und die Liste sind leer.
+- 403: Das vierte Feld ist ein Objekt mit einem Text und einer Zahl, die Liste ist leer.
+- 404: Das vierte Feld ist ein Objekt mit zwei Texten, die Liste ist leer.
+
+Die Schlüssel dieser Antworten deklariert das OpenAPI-Dokument der Instanz an diesen Stellen nicht. Von Hand beobachtet: Eine Antwort 404 hat die Schlüssel `message`, `translatedMessage`, `messageKey` mit dem Wert `error.notfound`, `args` mit `model` und `id` und `errors`. Dass die übrigen Fehler dieselben Namen in derselben Reihenfolge tragen, legt die gleiche Form nahe, belegt ist es nicht.
+
+**F14, offen.** Keine Probe prüft das Rate-Limit. Keine der 37 Antworten, deren Kopfzeilen die Proben beschreiben, trug eine Kopfzeile zum Rate-Limit oder `Retry-After`, und keine hatte den Status 429. Welche Kopfzeilen eine Antwort 429 trägt, bleibt offen.
+
+**F22, belegt (alle Proben).** Ja, soweit geprüft. Jede der 37 Antworten, deren Kopfzeilen die Proben beschreiben, trug einen `Date`-Header mit einem Datum, bei den Status 200, 400, 401, 403 und 404. Antworten 429 und 5xx kamen nicht vor. Wie genau die Uhr der Instanz geht, zeigen die Proben nicht.
+
+### Wiki
+
+**F9, belegt (`04-wiki-read`).** Am Feld `isMarkdown`, einem Wahrheitswert. Es steht in jedem Eintrag der Seitenlisten, in der Seite, in jedem Eintrag der Versionsliste und in einer einzelnen Version. Von den drei geprüften Seiten der Testkategorie waren zwei in Markdown, eine nicht. Von Hand beobachtet: Das Umwandeln einer Seite in HTML legt eine neue Version an, und `isMarkdown` steht je Version.
+
+**F10, teilweise belegt (`04-wiki-read`).** Bei allen drei geprüften Seiten war `version` der Seite gleich der höchsten Version ihrer Liste. Wann die Version steigt, können lesende Proben nicht zeigen. Von Hand beobachtet: Wer in der Weboberfläche eine Seite anlegt, erzeugt bei «Weiter» die Version 1 mit leerem Text und bei «Erstellen» den Inhalt als Version 2. Ob eine Änderung nur des Titels oder ein Speichern ohne Änderung die Version erhöht, prüft der zweite Teil.
+
+**F19, belegt (`04-wiki-read`).** `GET /api/wiki/categories/{id}/pages/{identifier}/versions` liefert unter `data` je Version ein vollständiges Seitenobjekt mit `version`, `title`, `text`, `isMarkdown` und `meta`, dazu `meta.count`, ohne Paginierung. Die Liste enthält also die Texte aller Versionen. `GET /api/wiki/categories/{id}/pages/{identifier}/versions/{version}` liefert eine einzelne Version im selben Aufbau wie die Seite, geprüft für die höchste Version jeder Seite. In welcher Reihenfolge die Liste die Versionen liefert, zeigen die Proben nicht.
+
+**F11, offen (zweiter Teil).** Die lesenden Proben zeigen nur, dass Antworten auf `GET` einer Seite weder `ETag` noch `Last-Modified` tragen. `PATCH` auf eine Seite ist dokumentiert (`00-inventory`).
+
+**F12, offen (zweiter Teil).** Bekannt ist nur, dass Antworten auf Anfragen mit Login-Token Cookies mit `SameSite=None` setzen (F3).
+
+**F13 und F17, offen (zweiter Teil).** Die lesenden Proben berühren diese Fragen nicht.
+
+**F16, offen (zweiter Teil).** `POST` auf die Seiten einer Kategorie ist dokumentiert (`00-inventory`). Von Hand beobachtet: Jede neue Kategorie erhält von selbst eine leere Markdown-Seite «main».
+
+**F15, offen (Spike zu OAuth).** Siehe [`churchtools-oauth.md`](churchtools-oauth.md).
+
+**F20 und F21, offen (von Hand).** Die lesenden Proben berühren diese Fragen nicht.
+
+### Weitere Befunde
+
+Keine Frage oben verlangt diese Befunde. Für die Tools sind sie trotzdem wichtig.
+
+- **Kategorie ohne Leserecht (`03-pagination-errors`):** `GET /api/wiki/pages` mit einem Filter auf eine solche Kategorie antwortet mit 200 und einer leeren Liste. `GET /api/wiki/categories/{id}/pages` für dieselbe Kategorie antwortet mit 403. Eine leere Liste allein zeigt also nicht, ob das Konto die Kategorie lesen darf.
+- **Ungültige Werte (`03-pagination-errors`):** `page` und `limit` mit `0`, `-1` oder `x` ergeben 400. Die API korrigiert sie nicht still. Bei `limit=x` stehen mehrere Einträge in der Fehlerliste, sonst einer.
+- **Kennung einer Seite (`04-wiki-read`):** Einträge der Listen haben `guid` und `identifier`, aber kein Feld `id`. Seite, Versionsliste und Version liessen sich über `identifier` abrufen. Jedes Seitenobjekt trägt zusätzlich einen Schlüssel, den die Probe nicht benennt, mit einem Objekt aus einem Text. Von Hand beobachtet: Es ist `"@deprecated": {"identifier": "guid"}`. Welches der beiden Felder damit abgelöst wird und ob die Pfade auch eine `guid` annehmen, ist offen.
+- **Listen ohne Text (`03-pagination-errors`, `04-wiki-read`):** Die Einträge von `GET /api/wiki/pages` und `GET /api/wiki/categories/{id}/pages` haben kein Feld `text`. Den Text liefern nur Seite, Versionsliste und Version.
+- **Rechte je Seite (`04-wiki-read`):** Jede Seite und jeder Eintrag der Listen trägt `permissions` mit `canEdit` und `canDelete`.
+- **Personendaten in Wiki-Antworten (`03-pagination-errors`, `04-wiki-read`):** `meta.createdPerson` und `meta.modifiedPerson` sind Objekte mit `title`, `domainType`, `domainIdentifier`, `apiUrl`, `frontendUrl`, `imageUrl`, `icon`, `color`, `initials`, `infos` und `domainAttributes` mit `firstName`, `lastName`, `guid`, `dateOfDeath` und `isArchived`. Sie stehen in jedem Eintrag der Listen, in jeder Seite und in jeder Version, auch für ein Konto ohne jedes Recht auf Personendaten.
+- **Kopfzeilen (alle Proben):** Die Antworten tragen nur bekannte Kopfzeilen, nicht jede Antwort alle: `cache-control`, `content-encoding`, `content-security-policy`, `content-type`, `date`, `expires`, `pragma`, `strict-transport-security`, `transfer-encoding`, `vary` und `x-frame-options`. `etag`, `last-modified`, `retry-after`, `www-authenticate` und Kopfzeilen zum Rate-Limit kamen nicht vor.

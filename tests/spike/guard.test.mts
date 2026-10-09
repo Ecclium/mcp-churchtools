@@ -69,8 +69,8 @@ describe('Guard', () => {
     }).toThrow('INTERN');
   });
 
-  // ChurchTools names fields in values as well: every wiki page and person
-  // carries {"@deprecated": {"identifier": "guid"}}, and an error names its
+  // ChurchTools names fields in values as well: every wiki page carries
+  // {"@deprecated": {"identifier": "guid"}}, and an error names its
   // model, such as WikiPage, and presumably WikiCategory for a closed
   // category.
   it('lets a declared key pass a response value that equals it, ignoring case', () => {
