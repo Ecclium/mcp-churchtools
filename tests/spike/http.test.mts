@@ -5,9 +5,14 @@ import { Guard } from '../../scripts/spike/lib/guard.mts';
 import {
   classifyNetworkError,
   createClient,
+  createWriteClient,
+  pastDate,
   pathFor,
+  staleEntityTag,
   userAgent,
   type FetchFunction,
+  type Precondition,
+  type WriteRequest,
 } from '../../scripts/spike/lib/http.mts';
 import { makeCanaries, origin } from './support.mts';
 
@@ -265,6 +270,182 @@ describe('createClient', () => {
         fetch: () => Promise.resolve(response),
       });
       expect((await client.get({ path: '/api/whoami' })).kind).toBe(kind);
+    }
+  });
+});
+
+describe('createWriteClient', () => {
+  const guid = '0f8fad5b-d9cb-469f-a165-70867728950e';
+
+  it('sends each write operation with its method, a JSON body and the token only in its header', async () => {
+    const { token } = makeCanaries();
+    const { fetch, calls } = recordingFetch(() =>
+      jsonResponse({ data: {} }, { status: 201 }),
+    );
+    const writer = createWriteClient({
+      origin,
+      token,
+      guard: new Guard(),
+      fetch,
+    });
+    await writer.send({
+      operation: 'wikiPageCreate',
+      parameters: [7],
+      body: { title: 'spike-schreibprobe', isMarkdown: true },
+    });
+    await writer.send({
+      operation: 'wikiPageUpdate',
+      parameters: [7, guid],
+      body: { text: 'x' },
+      precondition: { ifMatch: staleEntityTag },
+    });
+    await writer.send({ operation: 'wikiPageDelete', parameters: [7, guid] });
+
+    const [create, update, remove] = calls;
+    expect(create?.init.method).toBe('POST');
+    expect(create?.url.href).toBe(`${origin}/api/wiki/categories/7/pages`);
+    expect(create?.init.body).toBe(
+      JSON.stringify({ title: 'spike-schreibprobe', isMarkdown: true }),
+    );
+    const createHeaders = new Headers(create?.init.headers);
+    expect(createHeaders.get('content-type')).toBe('application/json');
+    expect(createHeaders.get('authorization')).toBe(`Login ${token}`);
+    expect(createHeaders.get('user-agent')).toBe(userAgent);
+    expect(create?.init.redirect).toBe('manual');
+    expect(update?.init.method).toBe('PATCH');
+    expect(update?.url.pathname).toBe(`/api/wiki/categories/7/pages/${guid}`);
+    expect(new Headers(update?.init.headers).get('if-match')).toBe('"0"');
+    expect(remove?.init.method).toBe('DELETE');
+    expect(remove?.init.body).toBeUndefined();
+    expect(new Headers(remove?.init.headers).has('content-type')).toBe(false);
+    for (const call of calls) {
+      expect(call.url.href).not.toContain(token);
+      const body = call.init.body;
+      expect(typeof body === 'string' ? body : '').not.toContain(token);
+    }
+  });
+
+  it('sends If-Unmodified-Since only with the fixed date', async () => {
+    const { fetch, calls } = recordingFetch(() => jsonResponse({}));
+    const writer = createWriteClient({
+      origin,
+      token: 't',
+      guard: new Guard(),
+      fetch,
+    });
+    await writer.send({
+      operation: 'wikiPageUpdate',
+      parameters: [7, guid],
+      body: { text: 'x' },
+      precondition: { ifUnmodifiedSince: pastDate },
+    });
+    const headers = new Headers(calls[0]?.init.headers);
+    expect(headers.get('if-unmodified-since')).toBe(pastDate);
+    expect(headers.has('if-match')).toBe(false);
+  });
+
+  it('refuses, before any request, another operation, a page that is no GUID and any other precondition', async () => {
+    const { fetch, calls } = recordingFetch(() => jsonResponse({}));
+    const writer = createWriteClient({
+      origin,
+      token: 't',
+      guard: new Guard(),
+      fetch,
+    });
+    const refused = [
+      { operation: 'wikiPage', parameters: [7, guid] },
+      { operation: 'whoami', parameters: [] },
+      { operation: 'wikiPageUpdate', parameters: [7, 'main'] },
+      { operation: 'wikiPageDelete', parameters: [7, `${guid}x`] },
+      { operation: 'wikiPageDelete', parameters: [7] },
+      { operation: 'wikiPageCreate', parameters: [0] },
+      {
+        operation: 'wikiPageUpdate',
+        parameters: [7, guid],
+        precondition: { ifMatch: '*' },
+      },
+      {
+        operation: 'wikiPageUpdate',
+        parameters: [7, guid],
+        precondition: { ifMatch: staleEntityTag, ifUnmodifiedSince: pastDate },
+      },
+      {
+        operation: 'wikiPageUpdate',
+        parameters: [7, guid],
+        precondition: { authorization: 'Login x' },
+      },
+    ];
+    for (const request of refused) {
+      // The cast stands for a caller that ignores the types.
+      expect(
+        await codeOf(() => writer.send(request as unknown as WriteRequest)),
+        JSON.stringify(request),
+      ).toBe('INTERN');
+    }
+    expect(calls).toHaveLength(0);
+    const precondition: Precondition = { ifMatch: staleEntityTag };
+    expect(precondition.ifMatch).toBe('"0"');
+  });
+
+  it('does not follow a redirect and does not repeat a request that timed out', async () => {
+    const redirect = recordingFetch(
+      () => new Response(null, { status: 307, headers: { location: '/x' } }),
+    );
+    const writer = createWriteClient({
+      origin,
+      token: 't',
+      guard: new Guard(),
+      fetch: redirect.fetch,
+    });
+    expect(
+      await codeOf(() =>
+        writer.send({ operation: 'wikiPageDelete', parameters: [7, guid] }),
+      ),
+    ).toBe('HTTP_REDIRECT');
+    expect(redirect.calls).toHaveLength(1);
+
+    let attempts = 0;
+    const timedOut = createWriteClient({
+      origin,
+      token: 't',
+      guard: new Guard(),
+      fetch: () => {
+        attempts += 1;
+        return Promise.reject(
+          new DOMException('The operation timed out.', 'TimeoutError'),
+        );
+      },
+    });
+    expect(
+      await codeOf(() =>
+        timedOut.send({
+          operation: 'wikiPageCreate',
+          parameters: [7],
+          body: { title: 'x' },
+        }),
+      ),
+    ).toBe('TIMEOUT');
+    expect(attempts).toBe(1);
+  });
+
+  it('puts the values of a write response on the block list', async () => {
+    const canaries = makeCanaries();
+    const { fetch } = recordingFetch(() =>
+      jsonResponse(
+        { data: { guid, title: canaries.personName } },
+        { status: 201, headers: { 'x-custom': canaries.headerValue } },
+      ),
+    );
+    const guard = new Guard();
+    const writer = createWriteClient({ origin, token: 't', guard, fetch });
+    await writer.send({
+      operation: 'wikiPageCreate',
+      parameters: [7],
+      body: { title: 'x' },
+    });
+    for (const value of [guid, canaries.personName, canaries.headerValue]) {
+      guard.allowChecked(value);
+      expect(guard.check({ [value]: null })).toEqual(['/#0']);
     }
   });
 });
