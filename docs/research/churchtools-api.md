@@ -144,7 +144,7 @@ Unverändert blieben die Überschriften, der Absatz, die nummerierte Liste, die 
 
 **F16, belegt (`05-wiki-write`).** Ja. Mit `isMarkdown` auf wahr legt `POST` eine Markdown-Seite an. Ohne das Feld erhält die neue Seite `isMarkdown` falsch und ist keine Markdown-Seite, wie es das OpenAPI-Dokument sagt. Jede neue Seite hatte Version 1, `onStartpage` falsch und `identifier` gleich `guid`. Die Antwort 201 enthält unter `data` die angelegte Seite mit `guid`, `wikiCategory`, `title`, `version`, `text`, `isMarkdown`, `onStartpage`, `redirectTo`, `permissions`, `meta`, `identifier` und einem Schlüssel, den die Probe nicht benennt, mit einem Objekt aus einem Text (siehe «Kennung einer Seite»). Darin ist `wikiCategory.permissions` ein leeres Objekt. Von Hand beobachtet: Jede neue Kategorie erhält von selbst eine leere Markdown-Seite «main».
 
-**F15, offen (Spike zu OAuth).** Siehe [`churchtools-oauth.md`](churchtools-oauth.md).
+**F15, teilweise belegt (Spike zu OAuth).** Die Befunde zu O1 bis O15 stehen in [`churchtools-oauth.md`](churchtools-oauth.md). Offen sind dort unter anderem, wie lange ein unbenutztes Refresh-Token höchstens gilt, ob andere Wege als das Löschen der Anwendung einen Zugang beenden, etwa ein Widerruf durch die Person selbst, und schreibende Anfragen mit einem OAuth-Token.
 
 **F20, von Hand geprüft (`05-wiki-write`, Browser).** Ja. Die vierte Seite, eine Markdown-Seite, die nie im Web-Editor gespeichert war, enthielt die URL laut API genau einmal und nackt, ohne Markdown-Link und ohne spitze Klammern. Ihre Ansicht in der Weboberfläche zeigte sie als Link. Der Markdown-Editor schreibt eine nackte URL beim Speichern als Link in den Text (F13). Ob die Ansicht einer Seite ohne Markdown eine nackte URL verlinkt, ist nicht geprüft.
 
