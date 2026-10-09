@@ -89,8 +89,8 @@ export class Guard {
    * The key reaches the output because the specification names it, so a
    * response value with the same text adds nothing. ChurchTools sends such
    * values itself, for example `{"@deprecated": {"identifier": "guid"}}` in
-   * every wiki page and person, and the name of a model such as `WikiPage`
-   * in an error. A value that is only part of the key, as a whole word,
+   * every wiki page, and the name of a model such as `WikiPage` in an
+   * error. A value that is only part of the key, as a whole word,
    * still blocks it. Values added with {@link Guard.block}, such as the
    * host and its parts, the token or a header value, still block an equal
    * key: the specification comes from the instance, and a key it declares
