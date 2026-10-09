@@ -1,22 +1,24 @@
 # OAuth bei ChurchTools: Fragen und Befunde
 
-Stand: 07.10.2026, Gerüst vor dem OAuth-Spike
+Stand: 09.10.2026, Befunde aus dem OAuth-Spike
 
-Dieses Dokument hält fest, was Ecclium über OAuth bei ChurchTools wissen muss und worauf sich jede Aussage stützt. ChurchTools ist OAuth-Anbieter, und seit Version 3.135.0 dürfen OAuth-Anwendungen mit dem Scope `api` auf die REST-API zugreifen. Ecclium braucht das für nutzerbezogene Rechte im gehosteten Betrieb und im Pro-Modul (ADR 0023) und vielleicht für die Anbindung eines Dienstkontos. Eine Aussage gilt erst als belegt, wenn der Spike sie an einer Instanz bestätigt hat. Was weder Dokumentation noch Spike belegen, steht unter «Offen» in [`docs/STATUS.md`](../STATUS.md).
+Dieses Dokument hält fest, was Ecclium über OAuth bei ChurchTools wissen muss und worauf sich jede Aussage stützt. ChurchTools ist OAuth-Anbieter, und seit Version 3.135.0 dürfen OAuth-Anwendungen mit dem Scope `api` auf die REST-API zugreifen. Ecclium braucht das für nutzerbezogene Rechte im gehosteten Betrieb und im Pro-Modul (ADR 0023). Der freie Kern bindet sein Dienstkonto weiter mit einem Login-Token an (O11, [`docs/STATUS.md`](../STATUS.md)). Eine Aussage gilt erst als belegt, wenn der Spike sie an einer Instanz bestätigt hat. Die wichtigsten offenen Punkte stehen unter «Offen» in [`docs/STATUS.md`](../STATUS.md), die übrigen nennt der jeweilige Befund.
 
 ## Methode
 
 - Der OAuth-Spike läuft gegen die Testinstanz mit synthetischen Daten ([ADR 0049](../adr/0049-testumgebung.md)), mit einer eigens registrierten Anwendung und einer synthetischen Person.
-- Sein Code ist Wegwerfcode. Er liegt ausserhalb der Pakete und wird nicht committet, nur seine Ergebnisse stehen hier. Code für OAuth im Kern entsteht erst in Phase 7 (ADR 0037), Code des Pro-Moduls nicht in diesem Repository.
+- Sein Code ist Wegwerfcode. Er liegt ausserhalb der Pakete und wird nicht committet, nur seine Ergebnisse stehen hier. Code für OAuth gegenüber ChurchTools entsteht im Pro-Modul und im gehosteten Betrieb, nicht in diesem Repository (ADR 0023). Der OAuth-Modus des Servers für Clients (ADR 0037) ist davon getrennt.
 - Hostname, Client-IDs, Geheimnisse und Tokens stehen nie in diesem Repository, auch nicht gekürzt.
 - Befunde gelten für die Version und die Einstellungen der Testinstanz. Wo eine Einstellung das Ergebnis bestimmen kann, sagt es der Befund.
-- Jeder Befund nennt die Version von ChurchTools, an der er geprüft wurde. Die Ergebnisse klären offene Punkte aus ADR 0023 und sind die Grundlage für jedes neue ADR, das darauf aufbaut, etwa zur Anbindung eines Dienstkontos über eine OAuth-Anwendung.
+- Die Version von ChurchTools, an der die Befunde geprüft wurden, steht am Anfang des Abschnitts «Befunde». Die Ergebnisse klären offene Punkte aus ADR 0023 und sind die Grundlage für Entscheide zu OAuth bei ChurchTools im Pro-Modul und im gehosteten Betrieb.
 
 ## Quellen
 
 - Das Änderungsprotokoll von ChurchTools in der Academy, Versionen «Web v3.135.0», «Web v3.135.1» und «Web v3.136.0».
 - ChurchTools Academy, die Seiten «API Authentifizierung», «API Dokumentation», «Was ist OAuth? (SSO in Drittsysteme)», «Login bei und mit ChurchTools», «OAuth-Authentifizierung mit ChurchTools» und «CORS», abgerufen am 07.10.2026.
 - Die OpenAPI-Spezifikation der Instanz unter `/system/runtime/swagger/openapi.json`. Laut der Seite «API Dokumentation» liefert jede Instanz ihre eigene Dokumentation der API aus.
+- RFC 6749 (OAuth 2.0), RFC 8252 (OAuth 2.0 for Native Apps) und RFC 9207 (OAuth 2.0 Authorization Server Issuer Identification), auf die sich einzelne Befunde beziehen.
+- Beobachtungen in der Weboberfläche der Testinstanz, an der versteckten Schnittstelle `/api/oauthclients` und mit Anfragen im Browser, im Text als «von Hand beobachtet» gekennzeichnet.
 
 ## Fragen
 
@@ -40,4 +42,96 @@ Dieses Dokument hält fest, was Ecclium über OAuth bei ChurchTools wissen muss 
 
 ## Befunde
 
-Noch keine. Nach dem Spike steht hier je Frage der Befund, mit der Version von ChurchTools.
+Geprüft am 09.10.2026 auf der Testinstanz aus [ADR 0049](../adr/0049-testumgebung.md), die dabei die Version 3.137 meldete. Das Skript des Spikes lag ausserhalb der Pakete und ist nicht committet. Es nutzte die Helfer aus `scripts/spike/lib/` und gab wie die Proben nur Struktur aus: Statuscodes, feste Wörter, Namen von Schlüsseln und die Laufzeit von Tokens in Sekunden, nie Tokens, Codes, Client-ID oder Geheimnis. Vor jedem Schritt, der Anfragen sendet, prüfte es die Instanz mit einem Wächter nach ADR 0049.
+
+- **Anwendung:** ein OAuth-Client nur für den Spike, mit der Redirect-URI `http://localhost:8976/callback`. Am Ende wurde er gelöscht.
+- **Testperson:** eine synthetische Person mit eigenem Status ohne Berechtigungen, in keiner Gruppe. Eingerichtet waren direkt nur drei Rechte: Wiki sehen, die Kennkategorie sehen und sich bei diesem Client anmelden. Bevor der Spike begann, zeigte `02-permissions` mit ihrem Login-Token drei wirksame Rechte: `view` im Wiki und je einen Eintrag in `view category` und in `login to external system`. Weil ihr Status keine Berechtigungen hat und sie in keiner Gruppe ist, sind es ihre direkten Rechte. Dass der Eintrag in `view category` die Kennkategorie ist, prüfte der Wächter. Zu welchem Client der Eintrag in `login to external system` gehört, zeigt die Ausgabe nicht, das ist nur in der Oberfläche gesehen. Am Ende wurde ihr Login-Token erneuert.
+- **Von Hand:** Die Anmeldungen im Browser machte der Maintainer. Die Anleitung des Skripts verlangte einen Browser ohne Anmeldung bei der Instanz, also ein privates Fenster oder eine Abmeldung vorher. Ob jede Anmeldung in einem neuen privaten Fenster lief, ist nicht festgehalten. Ob ChurchTools eine Anmeldung verlangte und um Zustimmung fragte, gab er im Terminal an.
+
+Die Befunde verwenden diese Stufen:
+
+- «Belegt»: Der Spike hat es an der Testinstanz bestätigt.
+- «Teilweise belegt»: Der Spike hat einen Teil der Frage bestätigt. Was fehlt, steht beim Befund.
+- «Von Hand beobachtet»: In der Weboberfläche der Testinstanz oder mit einer Anfrage im Browser gesehen, ohne Spike. Das ergänzt einen Befund, belegt ihn aber nicht.
+- «Offen»: Der Spike beantwortet die Frage nicht. Der Befund nennt, was fehlt.
+
+Die Befunde gelten für die Version und die Einstellungen der Testinstanz.
+
+### Anwendung und Abläufe
+
+**O1, teilweise belegt.** Belegt ist, dass der Token-Endpunkt das Geheimnis verlangt, anders als die Dokumentation sagt: Ohne Geheimnis antwortete er mit 400 und `invalid_request`, mit dem Geheimnis im Body mit 200. Die Endpunkte sind `/oauth/authorize`, `/oauth/access_token` und `/oauth/userinfo`, der Spike hat alle drei benutzt. Von Hand beobachtet:
+
+- Eine OAuth-Anwendung registriert eine Administratorin oder ein Administrator in jeder Instanz selbst, unter Systemeinstellungen, Allgemein, Login.
+- Die Anwendung erhält einen Namen und eine Redirect-URI. Die Oberfläche nimmt nur eine Redirect-URI an.
+- Nach dem Speichern zeigt ChurchTools die Client-ID und die Adressen der Endpunkte für Autorisierung, Access-Token und Profil.
+- Ein Geheimnis zeigt ChurchTools einmal, beim Anlegen.
+- Einen Schalter für öffentliche und vertrauliche Clients gibt es nicht.
+- Die versteckte Schnittstelle `/api/oauthclients` gibt `redirectUri` als Liste aus, und `isConfidential` war bei diesem Client wahr. Laut OpenAPI-Dokument nimmt sie beim Anlegen `redirectUri` als Text und `isConfidential` mit der Vorgabe wahr.
+
+Die Testperson hatte das Recht `login to external system` im Modul `churchcore`, und alle Anmeldungen im Browser liefen mit diesem Recht. Die Liste des Rechts enthielt eine Zahl, nicht die Client-ID. Ob sich eine Person ohne dieses Recht anmelden kann und ob der Eintrag zu genau diesem Client gehört, hat der Spike nicht geprüft (siehe O7).
+
+**O2, belegt.** Nur Authorization Code mit Refresh-Token. Die Autorisierung mit `response_type=token`, also den Implicit Flow, lehnte ChurchTools mit 400 und `unsupported_grant_type` ab, nicht mit `unsupported_response_type`, wie es RFC 6749 an dieser Stelle vorsieht. Am Token-Endpunkt ergaben `client_credentials`, `password`, der Device Code und ein unbekannter Grant je 400 mit `unsupported_grant_type`.
+
+**O3, belegt.** ChurchTools prüft PKCE mit S256, wenn die Autorisierung eine Challenge trägt: Mit einem falschen `code_verifier` antwortete der Token-Endpunkt mit 400 und `invalid_grant`. Pflicht ist PKCE für diesen vertraulichen Client nicht. Eine Anmeldung ohne Challenge und der Tausch ohne `code_verifier` waren erfolgreich. Mit der Methode `plain` wies ChurchTools die Anfrage ohne Sitzung nicht ab. Ob es nach der Anmeldung einen Code ausgibt und der Tausch gelingt, ist nicht geprüft. Ob ein öffentlicher Client PKCE braucht, hat der Spike nicht geprüft, weil die Oberfläche keinen öffentlichen Client anlegen lässt. Über die versteckte Schnittstelle ist das nicht versucht.
+
+**O4, teilweise belegt.** Die Redirect-URI muss genau der registrierten entsprechen. Registriert war `http://localhost:8976/callback`. Abgelehnt hat die Autorisierung mit 401 und `invalid_client`, ohne Weiterleitung:
+
+- `http://127.0.0.1:8976/callback` und `http://[::1]:8976/callback`;
+- bei `localhost` ein anderer Port oder ein anderer Pfad;
+- `https` statt `http`.
+
+Ob ChurchTools bei einer mit `127.0.0.1` registrierten URI beliebige Ports annimmt, wie RFC 8252 es für Loopback-IP-Adressen verlangt, ist nicht geprüft. Die Anfragen mit anderem Port oder Pfad bei `127.0.0.1` gingen an eine nicht registrierte Adresse und zeigen dazu nichts. Auch der Token-Endpunkt lehnte einen Code mit einer anderen Redirect-URI ab, mit 400 und `invalid_request`. Diese andere URI, die Form mit `127.0.0.1`, war nicht registriert. Der Code blieb danach gültig. Von Hand beobachtet: Beim Registrieren nahm die Oberfläche `http://localhost:8976/callback` und `http://127.0.0.1:8976/callback` an, aber jeweils nur eine Adresse je Client.
+
+### Tokens und Zustimmung
+
+**O5, teilweise belegt.**
+
+- Laut `expires_in` gilt ein Access-Token 3600 Sekunden. Aus `exp` und `iat` liess sich die Lebensdauer nicht berechnen (O15).
+- Jeder Refresh liefert ein neues Access-Token und ein neues Refresh-Token. Danach ist das alte Refresh-Token ungültig (400, `invalid_grant`), und das alte Access-Token antwortet sofort mit 401, auch vor seinem Ablauf.
+- Ein zweiter Versuch mit dem alten Refresh-Token machte das neueste Access-Token nicht ungültig. Ob das neueste Refresh-Token danach noch galt, ist nicht geprüft: «ohne-pkce» ersetzte es durch Tokens einer neuen Anmeldung, bevor es wieder gebraucht wurde.
+- Auch ein Refresh verlangt das Geheimnis. Ohne Geheimnis antwortete der Token-Endpunkt mit 400 und `invalid_request`.
+- Ein unbenutztes Refresh-Token galt noch knapp drei Stunden nach seiner Ausgabe: Das Refresh-Token der zweiten Anmeldung mit «anmelden» tauschte bei «widerruf recht-entzogen» mit 200. Die Zeiten hat der Maintainer notiert.
+
+Offen sind, wie lange ein unbenutztes Refresh-Token höchstens gilt und ob eine Kette von Refreshs eine Höchstdauer hat.
+
+**O6, von Hand beobachtet.** In den drei Durchgängen mit gespeicherter Ausgabe (zweimal «anmelden», einmal «ohne-pkce») musste sich die Person nach Angabe des Maintainers bei ChurchTools anmelden, und ChurchTools zeigte eine Seite zur Zustimmung, auch beim zweiten Durchgang derselben Person beim selben Client. Ob ChurchTools die Zustimmung in einer bestehenden Sitzung erneut verlangt, ist nicht geprüft. Ein weiterer Durchgang von «anmelden» brach ab, weil die Tokens einer anderen Person gehörten. Seine Antworten sind nicht aufgezeichnet, die Ursache ist offen (`docs/STATUS.md`).
+
+**O7, teilweise belegt.** Geprüft sind zwei Wege, beide an der Testperson.
+
+- **Entzug des Rechts:** Nachdem die Liste ihres Rechts `login to external system` leer war, wie der Wächter prüfte, gelang ein Refresh mit 200, und `whoami` mit dem neuen Access-Token antwortete mit 200. Der Entzug beendet also einen schon verbundenen Client nicht. Ob er eine neue Anmeldung verhindert, ist nicht geprüft.
+- **Löschen des Clients:** Nach dem Löschen antwortete ein noch nicht abgelaufenes Access-Token mit 401, und ein Refresh ergab 404 im Fehlerformat der REST-API. Das Löschen beendete also die Tokens der Testperson. Dass es alle Personen trifft, die den Client benutzen, ist zu erwarten, aber nicht mit einer zweiten Person geprüft.
+- **Offen:** Ob eine Person selbst eine Anwendung widerrufen kann und ob es einen Endpunkt zum Widerruf eines Tokens gibt, hat der Spike nicht geprüft. Dokumentiert ist keiner. Ebenso wenig geprüft ist, ob das Sperren der Person, ein neues Passwort oder ein erneuertes Login-Token ihre OAuth-Tokens beendet. Ihr Login-Token wurde erst erneuert, als der Client schon gelöscht war.
+
+Von den geprüften Wegen beendete also nur das Löschen der Anwendung den Zugang.
+
+**O8, teilweise belegt.** Die Scopes `openid` und ein erfundener Scope ergaben eine Weiterleitung an die Redirect-URI mit `invalid_scope`, ohne Code und mit unverändertem `state`. Eine Anfrage ohne Scope wies ChurchTools ohne Sitzung nicht ab. Einen Code dafür gab es im Spike nicht. Ob er sich tauschen lässt und welche Rechte das Token dann hat, ist nicht geprüft. Ob `api` unterteilt ist, zeigt der Spike nicht: Er prüfte keinen Unter-Scope, und den Wert des Claims `scopes` gab er nicht aus. Die Token-Antwort enthält kein Feld `scope`, das Access-Token einen Claim `scopes`. Andere Scopes als `api` sind nicht dokumentiert.
+
+**O9, belegt.** Mit dem Bearer-Token lieferte `GET /api/permissions/global` dieselben Rechte und `GET /api/wiki/categories` dieselben Kategorien (verglichen nach ID) wie mit dem Login-Token derselben Person, und `whoami` nannte dieselbe Person. Geprüft ist das an einer Person mit drei Rechten.
+
+**O10, belegt.** Nein. `client_credentials` ergab 400 mit `unsupported_grant_type`, ebenso `password` und der Device Code. Ohne angemeldete Person geht es nur mit einem Refresh-Token aus einer früheren Anmeldung, solange es gilt (O5).
+
+**O11, belegt über O2, O5, O7 und O10.** Ein Dienstkonto liesse sich nur so anbinden: Jemand meldet sich einmal von Hand als dieses Konto an und stimmt zu, danach hält der Server die Kette der Refresh-Tokens. Reisst sie ab, etwa weil ein Refresh-Token abläuft, der Client gelöscht wird oder ein rotiertes Token nicht gespeichert wurde, braucht es wieder eine Anmeldung von Hand. Der Entzug des Rechts beendet den Zugang nicht. Der Entscheid dazu steht in [`docs/STATUS.md`](../STATUS.md) unter «Weitere Entscheide».
+
+**O12, teilweise belegt.** Der Endpunkt ist `POST /api/login/token` mit `username` und `password` als JSON. Laut OpenAPI-Dokument der Instanz gibt er das dauerhafte Login-Token aus, ohne eine Sitzung anzulegen, nicht für Konten mit Zwei-Faktor-Anmeldung. Als mögliche Antwort nennt es auch 429. Dass es der Endpunkt aus dem Änderungsprotokoll zu 3.136.0 ist, ist ein Schluss aus seiner Beschreibung im OpenAPI-Dokument. Geprüft, mit der Testperson ohne Zwei-Faktor-Anmeldung:
+
+- Er war ohne Anmeldung aufrufbar.
+- Er gab genau das bestehende Login-Token der Person zurück, erzeugte kein neues, und das bisherige galt weiter.
+- Ein falsches Passwort und ein unbekannter Benutzername ergaben dieselbe Antwort 400 mit gleichem Inhalt.
+
+Ob das Konto bestimmte Rechte braucht, ist nicht geprüft: Die Testperson hatte das Recht `login to external system`. Eine Befristung des Tokens nennt die Dokumentation nicht, gemessen ist sie nicht. Ein erneuertes Token macht das alte ungültig (`docs/research/churchtools-api.md`, F23).
+
+**O13, offen.** Der Spike setzte keinen Header `Origin` und hat die Freigabe anderer Domains nicht geprüft. Verwandt: Schreibende Anfragen mit Login-Token, ohne Sitzung und ohne Cookie, brauchten kein CSRF-Token (`docs/research/churchtools-api.md`, F12). Das beantwortet die Frage nicht, weil auch die Proben keinen Header `Origin` setzten.
+
+**O14, belegt.** Mit `Authorization: Bearer <Access-Token>`. Eine Sitzung entstand dabei nicht: Die Antwort auf `whoami` mit dem Bearer-Token setzte kein Cookie, die Antwort auf `whoami` mit dem Login-Token derselben Person dagegen schon (`docs/research/churchtools-api.md`, F3). Die Cookies der übrigen Antworten hat der Spike nicht gezählt. Lesende Anfragen mit dem Bearer-Token liefen ohne Cookie und ohne CSRF-Token. `Authorization: Login <Access-Token>` ergab 401.
+
+**O15, teilweise belegt.** Belegt ist das Format: Das Access-Token ist ein JWT mit `typ` JWT und `alg` RS256 im Kopf, ohne `kid`, und mit den Claims `iss`, `aud`, `jti`, `sub`, `scopes`, `iat`, `nbf` und `exp`. Ihre Werte hat der Spike nicht ausgegeben. Die Lebensdauer liess sich aus `exp` und `iat` nicht berechnen, weil mindestens einer der beiden Claims keine ganze Zahl war. Die Signatur hat der Spike nicht geprüft. Von Hand beobachtet: Unter `/.well-known/openid-configuration`, `/.well-known/oauth-authorization-server` und `/.well-known/jwks.json` antwortet ChurchTools mit 404. Einen öffentlichen Schlüssel zur Prüfung der Tokens veröffentlicht es an diesen Stellen nicht.
+
+### Weitere Befunde
+
+- **Fehlerantworten:** Fehlerantworten des Token-Endpunkts sind JSON mit `error`, `error_description` und `hint`. Die Fehlercodes tragen Namen aus RFC 6749, an der Autorisierung aber nicht immer die dort vorgesehenen: `response_type=token` ergab `unsupported_grant_type` statt `unsupported_response_type`, eine falsche Redirect-URI 401 mit `invalid_client`. Die Schlüssel der Fehlerantworten der Autorisierung hat der Spike nicht erfasst. Abweichend ergab ein Refresh nach dem Löschen des Clients 404 im Fehlerformat der REST-API, und ein unbekannter Client bei der Autorisierung 404 ohne JSON. Eine Antwort 401 auf ein Bearer-Token trägt keinen `WWW-Authenticate`-Header.
+- **Autorisierung ohne Sitzung:** Eine gültige Anfrage ohne Sitzung beantwortet ChurchTools mit 200 und einer Antwort, die nicht JSON ist, im Browser die Anmeldeseite. Wer JSON verlangt, erhält 401 ohne Fehlercode.
+- **Wiederholung eines Codes:** Ein zweiter Tausch desselben Codes ergab 400 mit `invalid_grant`. Das Access-Token aus dem ersten Tausch galt danach weiter. RFC 6749 empfiehlt, solche Tokens zu widerrufen.
+- **Aussteller in der Antwort:** Der Rückruf einer erfolgreichen Autorisierung trug nur `code` und `state`, kein `iss` nach RFC 9207. Bei einer Weiterleitung mit Fehler ist das nicht geprüft.
+- **Profil:** `GET /oauth/userinfo` mit dem Bearer-Token antwortet mit 200. Die Antwort enthält die Schlüssel `data`, `id`, `sub`, `firstName`, `lastName`, `email`, `imageUrl`, `photoURL`, `displayName`, `userName`, `groups` und `roles`. Die Werte hat der Spike nicht ausgegeben, die Testperson war in keiner Gruppe.
+- **Weitere Adressen unter `/oauth/`:** Von Hand beobachtet: `/oauth/token` und `/oauth/jwks` antworten mit 404, `GET /oauth/access_token` mit 405, `/oauth/authorize` ohne Parameter mit 400 und `invalid_request`, `/oauth/userinfo` ohne Token mit 401. Die Adressen unter `.well-known` stehen in O15.
+- **OpenAPI-Dokument:** Von Hand beobachtet: Es beschreibt als Anmeldung nur das Login-Token, in der Kopfzeile oder als Parameter `login_token`, kein Bearer-Token. Die Endpunkte unter `/oauth/` stehen nicht darin.
