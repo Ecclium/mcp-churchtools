@@ -101,6 +101,8 @@ export const hints = {
   keinTerminal:
     'Abbruch: Die Bestätigung braucht ein Terminal. Starten Sie die Probe direkt im Terminal, ohne umgeleitete Eingabe.',
   nichtBestaetigt: 'Abbruch: nicht bestätigt. Es wurde nichts geändert.',
+  leseOperationFehlt:
+    'Abbruch: Die Instanz dokumentiert eine Operation nicht, mit der die Probe ihre Seiten zurückliest. Es wurde nichts geschrieben.',
   schreibenAbgebrochen:
     'Abbruch nach einer schreibenden Anfrage. Es folgt keine weitere. Prüfen Sie den Schreibbereich und räumen Sie mit 07-wiki-cleanup und derselben Schreib-State-Datei auf.',
   spezifikationUngueltig:
