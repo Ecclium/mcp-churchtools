@@ -153,6 +153,22 @@ export interface WriteInstanceOptions {
   readonly failOnCall?: number;
   /** Status of the deletion of a page. Default 204. */
   readonly deleteStatus?: number;
+  /** Status of `GET /api/permissions/global`. Default 200. */
+  readonly rightsStatus?: number;
+  /** Whether the rights come as text instead of JSON. */
+  readonly rightsAsText?: boolean;
+  /** Status of the page list of the write area. Default 200. */
+  readonly pagesStatus?: number;
+  /** Replaces the body of the page list of the write area. */
+  readonly pageList?: (entries: Record<string, unknown>[]) => unknown;
+  /** How the instance changes a text it receives on create. */
+  readonly normalizeOnCreate?: (text: string) => string;
+  /** Answer this call (1-based) normally, then lose the answer. */
+  readonly loseAnswerOnCall?: number;
+  /** Whether a deletion answers 204 but leaves the page. */
+  readonly deleteKeepsPage?: boolean;
+  /** How the instance changes a text it receives on change. */
+  readonly normalizeOnUpdate?: (text: string) => string;
 }
 
 /** A synthetic instance: fetch, the calls it received and its pages. */
@@ -219,11 +235,15 @@ export function writeInstance(
     },
   };
   const category = { id: writeCategory, name: canaries.groupName };
-  const answer = (body: unknown, status = 200): Response =>
+  const answer = (
+    body: unknown,
+    status = 200,
+    contentType = 'application/json',
+  ): Response =>
     new Response(status === 204 ? null : JSON.stringify(body), {
       status,
       headers: {
-        'content-type': 'application/json',
+        'content-type': contentType,
         date: new Date(0).toUTCString(),
         'x-kanarie': canaries.headerValue,
         'set-cookie': `${canaries.cookieName}=${canaries.cookieValue}; Path=/; Secure; HttpOnly; SameSite=None`,
@@ -326,6 +346,8 @@ export function writeInstance(
             churchdb: { view: false, 'security level person': [] },
           },
         },
+        options.rightsStatus ?? 200,
+        options.rightsAsText === true ? 'text/plain' : 'application/json',
       );
     }
     const match =
@@ -351,7 +373,11 @@ export function writeInstance(
             return error(status);
           }
         }
-        const text = fields['text'];
+        const sent = fields['text'];
+        const text =
+          typeof sent === 'string' && options.normalizeOnCreate !== undefined
+            ? options.normalizeOnCreate(sent)
+            : sent;
         const page: SyntheticPage = {
           guid: makeGuid(),
           title,
@@ -369,7 +395,13 @@ export function writeInstance(
         return answer({ data: pageData(page) }, 201);
       }
       const list = [...pages.values()].map(listEntry);
-      return answer({ data: list, meta: { count: list.length } });
+      return answer(
+        options.pageList?.(list) ?? {
+          data: list,
+          meta: { count: list.length },
+        },
+        options.pagesStatus ?? 200,
+      );
     }
     const page = call.method === 'GET' ? find(key) : pages.get(key);
     if (page === undefined) {
@@ -380,7 +412,7 @@ export function writeInstance(
         return error(403);
       }
       const status = options.deleteStatus ?? 204;
-      if (status === 204) {
+      if (status === 204 && options.deleteKeepsPage !== true) {
         pages.delete(page.guid);
       }
       return status === 204 ? answer(null, 204) : error(status);
@@ -401,7 +433,11 @@ export function writeInstance(
       if (typeof fields['onStartpage'] === 'boolean') {
         page.onStartpage = fields['onStartpage'];
       }
-      const text = fields['text'];
+      const received = fields['text'];
+      const text =
+        typeof received === 'string' && options.normalizeOnUpdate !== undefined
+          ? options.normalizeOnUpdate(received)
+          : received;
       if (
         typeof text === 'string' &&
         (text !== current.text || options.sameTextNewVersion === true)
@@ -464,7 +500,13 @@ export function writeInstance(
           new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } }),
         );
       }
-      return Promise.resolve(respond(call));
+      const response = respond(call);
+      if (options.loseAnswerOnCall === calls.length) {
+        return Promise.reject(
+          new DOMException('The operation timed out.', 'TimeoutError'),
+        );
+      }
+      return Promise.resolve(response);
     },
   };
 }

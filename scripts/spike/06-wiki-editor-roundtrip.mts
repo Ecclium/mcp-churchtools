@@ -11,10 +11,12 @@
  * Writes: nothing.
  * Answers: whether saving without an edit creates a version (F10), how the
  * editor changes a Markdown page (F13), and whether an HTML comment
- * survives the editor (F17). It compares each page with its state after
- * 05 and names each change by kind and line of the synthetic text, such as
- * «Listenzeichen» or «HTML-Kommentar entfernt». The check code of Ecclium
- * must tolerate exactly these changes.
+ * survives the editor (F17). It names each change against the synthetic
+ * text by kind and line, such as «Listenzeichen» or «HTML-Kommentar
+ * entfernt», and says whether the page still matched that text after 05:
+ * if the API itself changed the text, its changes are in the list as
+ * well, and the output of 05 names them. The check code of Ecclium must
+ * tolerate exactly these changes.
  *
  * Usage: see README.md in this folder.
  *
@@ -22,12 +24,14 @@
  */
 import {
   changeKinds,
+  changeReport,
   classifyChanges,
+  commentKept,
   corpusText,
   textHash,
 } from './lib/corpus.mts';
 import { SpikeError } from './lib/errors.mts';
-import { checkInstance } from './lib/gate.mts';
+import { checkInstance, pageTitlePrefix } from './lib/gate.mts';
 import type { Json } from './lib/guard.mts';
 import { operations } from './lib/operations.mts';
 import { readPage } from './lib/pages.mts';
@@ -51,6 +55,9 @@ const words = [
   'anzahlVersionen',
   'htmlKommentarErhalten',
   'aenderungen',
+  'weitereAenderungen',
+  'standNach05',
+  'Korpus',
   'zeile',
   'art',
   'fehlt',
@@ -89,13 +96,13 @@ export const probe: ProbeDefinition = {
     const result = await checkInstance({ client, state }, write.settings, {
       writes: [],
       ownPages: new Set(written.pages.map((page) => page.guid)),
+      ownTitles: `${pageTitlePrefix}-${written.run}-`,
     });
-    const editorPages = written.pages.filter((page) => page.role === 'editor');
     const pages: Record<string, Json> = {};
-    for (const [index, page] of editorPages.slice(0, names.length).entries()) {
-      const name = names[index] ?? 'markdown1';
-      const { baseline } = page;
-      if (baseline === undefined) {
+    for (const name of names) {
+      const page = written.pages.find((entry) => entry.role === name);
+      const baseline = page?.baseline;
+      if (page === undefined || baseline === undefined) {
         pages[name] = { stand: 'fehlt' };
         continue;
       }
@@ -105,28 +112,33 @@ export const probe: ProbeDefinition = {
         pages[name] = { leseStatus: view.status };
         continue;
       }
-      const text = view.text ?? '';
-      const fromCorpus = baseline.textHash === textHash(corpusText);
-      const changes = fromCorpus ? classifyChanges(corpusText, text) : [];
-      guard.allowFixed(...changes.map((change) => change.zeile));
-      pages[name] = {
+      const report: Record<string, Json> = {
         versionGestiegen:
           view.version === undefined
             ? 'unbekannt'
             : yesNo(view.version > baseline.version),
-        textGeaendert: yesNo(textHash(text) !== baseline.textHash),
         isMarkdownGelesen:
           view.isMarkdown === undefined
             ? 'fehlt'
             : view.isMarkdown
               ? 'wahr'
               : 'falsch',
-        anzahlVersionen: countClass(view.versionCount ?? 0),
-        htmlKommentarErhalten: yesNo(text.includes('<!--')),
-        aenderungen: fromCorpus
-          ? changes.map((change) => ({ zeile: change.zeile, art: change.art }))
-          : 'weicht ab',
+        anzahlVersionen:
+          view.versionCount === undefined
+            ? 'unbekannt'
+            : countClass(view.versionCount),
+        standNach05:
+          baseline.textHash === textHash(corpusText) ? 'Korpus' : 'weicht ab',
       };
+      pages[name] =
+        typeof view.text === 'string'
+          ? {
+              ...report,
+              textGeaendert: yesNo(textHash(view.text) !== baseline.textHash),
+              htmlKommentarErhalten: yesNo(commentKept(view.text)),
+              ...changeReport(guard, classifyChanges(corpusText, view.text)),
+            }
+          : { ...report, textGeaendert: 'unbekannt' };
     }
     return { probe: '06-wiki-editor-roundtrip', seiten: pages };
   },

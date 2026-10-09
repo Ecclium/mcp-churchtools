@@ -58,6 +58,8 @@ export interface ProbeContext {
   readonly state: SpikeState | undefined;
   /** For a probe of the write account: the handle for the guard. */
   readonly write: WriteSetup | undefined;
+  /** Waits, for example between two writes. Replaceable in tests. */
+  readonly wait: (milliseconds: number) => Promise<void>;
 }
 
 /** What a probe of the write account gets for the guard. */
@@ -85,6 +87,8 @@ export interface Dependencies {
   readonly folder: string;
   /** Where a confirmation comes from. Default: nowhere, so nothing is confirmed. */
   readonly input?: Input;
+  /** How a probe waits. Default: a real timer. */
+  readonly wait?: (milliseconds: number) => Promise<void>;
 }
 
 /** The domain of instances hosted by the vendor of ChurchTools. */
@@ -224,6 +228,12 @@ export async function runProbe(
       statePath: path,
       state,
       write,
+      wait:
+        dependencies.wait ??
+        ((milliseconds) =>
+          new Promise((resolve) => {
+            setTimeout(resolve, milliseconds);
+          })),
     });
     return writeResult(output, guard, io);
   } catch (error) {

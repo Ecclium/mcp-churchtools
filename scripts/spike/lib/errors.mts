@@ -95,9 +95,9 @@ export const hints = {
   weitereKategorien:
     'Abbruch: Das Konto sieht ausser dem Schreibbereich und der Kennkategorie weitere Kategorien. Schränken Sie seine Rechte ein, wie im README beschrieben.',
   zuWeitBerechtigt:
-    'Abbruch: zu weit berechtigt. Das Konto darf mehr, als den Schreibbereich und die Kennkategorie zu sehen und den Schreibbereich zu bearbeiten. Schränken Sie seine Rechte ein, wie im README beschrieben.',
+    'Abbruch: Die Rechte des Kontos passen nicht. Erlaubt sind genau: das Wiki sehen, den Schreibbereich und die Kennkategorie sehen, den Schreibbereich bearbeiten. Richten Sie die Rechte so ein, wie im README beschrieben.',
   fremdeSeiten:
-    'Abbruch: Im Schreibbereich liegen Seiten, die nicht zu diesem Lauf gehören. Entfernen Sie sie zuerst, mit 07-wiki-cleanup und der Schreib-State-Datei des früheren Laufs oder von Hand.',
+    'Abbruch: Im Schreibbereich liegen Seiten, die nicht zu diesem Lauf gehören. Entfernen Sie sie zuerst, mit 07-wiki-cleanup und der Schreib-State-Datei des früheren Laufs oder von Hand. Es wurde nichts geändert.',
   keinTerminal:
     'Abbruch: Die Bestätigung braucht ein Terminal. Starten Sie die Probe direkt im Terminal, ohne umgeleitete Eingabe.',
   nichtBestaetigt: 'Abbruch: nicht bestätigt. Es wurde nichts geändert.',

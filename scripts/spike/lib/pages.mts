@@ -68,9 +68,13 @@ export async function readPage(
     path: pathFor(operations.wikiPageVersions.template, category, guid),
   });
   const list = dataOf(versions);
-  const numbers = (Array.isArray(list) ? list : [])
-    .map((entry) => (isObject(entry) ? entry['version'] : undefined))
-    .filter(isPositive);
+  // A refused list says nothing about the number of versions.
+  const numbers =
+    versions.status === 200 && Array.isArray(list)
+      ? list
+          .map((entry) => (isObject(entry) ? entry['version'] : undefined))
+          .filter(isPositive)
+      : undefined;
   const meta = data['meta'];
   const modified = isObject(meta) ? meta['modifiedDate'] : undefined;
   const text = data['text'];
@@ -88,6 +92,6 @@ export async function readPage(
       ? { onStartpage: data['onStartpage'] }
       : {}),
     ...(typeof modified === 'string' ? { modifiedDate: modified } : {}),
-    versionCount: numbers.length,
+    ...(numbers === undefined ? {} : { versionCount: numbers.length }),
   };
 }

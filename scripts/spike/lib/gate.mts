@@ -291,9 +291,9 @@ function readPages(response: ProbeResponse): readonly PageEntry[] {
   const body = response.body as JsonObject;
   const meta = body['meta'];
   const count = isObject(meta) ? meta['count'] : undefined;
-  // The list carries no pagination. A count beyond the list would mean
-  // the guard did not see every page.
-  if (count !== undefined && count !== entries.length) {
+  // The list carries no pagination. Without the documented count, or with
+  // a count beyond the list, the guard would not know it saw every page.
+  if (typeof count !== 'number' || count !== entries.length) {
     throw refuse('waechterAntwortUnerwartet');
   }
   return entries.map((entry): PageEntry => {
@@ -321,6 +321,12 @@ export interface GateOptions {
   readonly writes: readonly WriteOperation[];
   /** GUIDs of the current run that may lie in the write area. */
   readonly ownPages: ReadonlySet<string>;
+  /**
+   * Start of the titles of the current run, `spike-schreibprobe-<tag>-`.
+   * A page with such a title counts as its own even without its GUID, as
+   * after a create whose answer was lost.
+   */
+  readonly ownTitles?: string;
 }
 
 /** What the checks by reading found. */
@@ -403,6 +409,9 @@ export async function checkInstance(
     throw refuse('waechterAntwortUnerwartet');
   }
   const data = isObject(rights.body) ? rights.body['data'] : undefined;
+  if (!isObject(data)) {
+    throw refuse('waechterAntwortUnerwartet');
+  }
   if (!rightsWithin(data, writeCategory, identification.id)) {
     throw refuse('zuWeitBerechtigt');
   }
@@ -413,8 +422,12 @@ export async function checkInstance(
     }),
   );
   const automatic = pages.filter((page) => page.title === autoPageTitle);
+  const { ownTitles } = options;
   const foreign = pages.filter(
-    (page) => page.title !== autoPageTitle && !options.ownPages.has(page.guid),
+    (page) =>
+      page.title !== autoPageTitle &&
+      !options.ownPages.has(page.guid) &&
+      !(ownTitles !== undefined && page.title.startsWith(ownTitles)),
   );
   if (automatic.length > 1 || foreign.length > 0) {
     throw refuse('fremdeSeiten');

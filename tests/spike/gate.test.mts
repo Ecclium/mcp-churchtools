@@ -458,7 +458,7 @@ describe('checkInstance', () => {
     [
       'rights without data',
       () => ({ rights: { churchwiki: {} } }),
-      'zuWeitBerechtigt',
+      'waechterAntwortUnerwartet',
     ],
   ])('refuses %s', async (_, options, hint) => {
     const setting = writeSetup();
@@ -473,6 +473,104 @@ describe('checkInstance', () => {
       ),
     ).toBe(hint);
     expect(writeMethods(instance)).toEqual([]);
+  });
+
+  const narrowRights = (s: WriteSetting): unknown => ({
+    data: {
+      churchwiki: {
+        view: true,
+        'view category': [s.writeCategory, s.identification],
+        'edit category': [s.writeCategory],
+        'edit masterdata': false,
+      },
+    },
+  });
+
+  it.each<[string, (s: WriteSetting) => WriteInstanceOptions]>([
+    [
+      'narrow rights answered with 403',
+      (s) => ({ rights: narrowRights(s), rightsStatus: 403 }),
+    ],
+    [
+      'narrow rights answered as text',
+      (s) => ({ rights: narrowRights(s), rightsAsText: true }),
+    ],
+    ['rights without a data object', () => ({ rights: { data: [] } })],
+    ['a page list answered with 403', () => ({ pagesStatus: 403 })],
+    ['a page list answered with 500', () => ({ pagesStatus: 500 })],
+    ['a page list without data', () => ({ pageList: () => ({ meta: {} }) })],
+    [
+      'a page list without its count',
+      () => ({ pageList: (entries) => ({ data: entries }) }),
+    ],
+    [
+      'a page whose GUID has another form',
+      () => ({
+        pageList: (entries) => ({
+          data: entries.map((entry) => ({ ...entry, guid: 'main' })),
+          meta: { count: entries.length },
+        }),
+      }),
+    ],
+    [
+      'a page without a title',
+      () => ({
+        pageList: (entries) => ({
+          data: entries.map((entry) =>
+            Object.fromEntries(
+              Object.entries(entry).filter(([key]) => key !== 'title'),
+            ),
+          ),
+          meta: { count: entries.length },
+        }),
+      }),
+    ],
+  ])('stops on %s, as on an answer it cannot check', async (_, options) => {
+    const setting = writeSetup();
+    const instance = writeInstance(setting, options(setting));
+    expect(
+      await hintOf(() =>
+        checkInstance(
+          contextFor(setting, instance),
+          settingsOf(setting),
+          createOnly,
+        ),
+      ),
+    ).toBe('waechterAntwortUnerwartet');
+    expect(writeMethods(instance)).toEqual([]);
+  });
+
+  it('counts a page with the titles of the run as its own, but no other', async () => {
+    const page = {
+      guid: makeGuid(),
+      title: 'spike-schreibprobe-0a1b2c3d-2',
+      onStartpage: false,
+      versions: [
+        {
+          version: 1,
+          text: 'x',
+          isMarkdown: true,
+          modifiedDate: '2026-01-01T00:00:00Z',
+        },
+      ],
+    };
+    const ownTitles = 'spike-schreibprobe-0a1b2c3d-';
+    expect(
+      (
+        await check(
+          { extraPages: [page] },
+          { writes: [], ownPages: new Set(), ownTitles },
+        )
+      ).hint,
+    ).toBe('passed');
+    expect(
+      (
+        await check(
+          { extraPages: [{ ...page, title: 'spike-schreibprobe-ffffffff-2' }] },
+          { writes: [], ownPages: new Set(), ownTitles },
+        )
+      ).hint,
+    ).toBe('fremdeSeiten');
   });
 
   it('refuses a write area that is the identification category', async () => {
@@ -517,6 +615,33 @@ describe('checkInstance', () => {
     );
     expect(hint).toBe('waechterOperationFehlt');
     expect(instance.calls).toEqual([]);
+  });
+
+  it('needs the documented page list, even if the create on the same path is documented', async () => {
+    const pagesPath =
+      specification.paths['/wiki/categories/{categoryId}/pages'];
+    const document = {
+      ...specification,
+      paths: {
+        ...specification.paths,
+        '/wiki/categories/{categoryId}/pages': { post: pagesPath.post },
+      },
+    };
+    const { hint, instance } = await check({ document });
+    expect(hint).toBe('waechterOperationFehlt');
+    expect(instance.calls).toEqual([]);
+  });
+
+  it('stops on a category list whose data is no list', async () => {
+    const { hint, instance } = await check({
+      categories: {
+        data: {},
+        meta: { count: 0 },
+        permissions: { editMasterData: false },
+      },
+    });
+    expect(hint).toBe('waechterAntwortUnerwartet');
+    expect(writeMethods(instance)).toEqual([]);
   });
 
   it('refuses a page list whose count is larger than the list', async () => {

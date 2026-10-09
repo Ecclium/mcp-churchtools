@@ -46,10 +46,10 @@ describe('the write state', () => {
     const file = WriteStateFile.create(path, writeOrigin, category);
     const first = makeGuid();
     const second = makeGuid();
-    file.addPage(first, 'editor');
+    file.addPage(first, 'markdown1');
     // Already on disk before the file is closed, as after a crash.
     expect(readWriteState(path, writeOrigin, category).pages).toEqual([
-      { guid: first, role: 'editor', baseline: undefined },
+      { guid: first, role: 'markdown1', baseline: undefined },
     ]);
     file.addPage(second, 'faelle');
     file.setBaseline(first, { version: 1, textHash: 'a'.repeat(64) });
@@ -62,7 +62,7 @@ describe('the write state', () => {
     expect(state.pages).toEqual([
       {
         guid: first,
-        role: 'editor',
+        role: 'markdown1',
         baseline: { version: 1, textHash: 'a'.repeat(64) },
       },
       { guid: second, role: 'faelle', baseline: undefined },
@@ -105,7 +105,7 @@ describe('the write state', () => {
     const file = WriteStateFile.create(path, writeOrigin, category);
     expect(
       hintOf(() => {
-        file.addPage('main', 'editor');
+        file.addPage('main', 'markdown1');
       }),
     ).toBe('INTERN');
     file.close();
@@ -128,11 +128,11 @@ describe('the write state', () => {
     ['a line that is no JSON', (header) => `${header}\n{broken\n`],
     [
       'a missing final line break',
-      (header, guid) => `${header}\n{"page":"${guid}","role":"editor"}`,
+      (header, guid) => `${header}\n{"page":"${guid}","role":"markdown1"}`,
     ],
     [
       'a page that is no GUID',
-      (header) => `${header}\n{"page":"main","role":"editor"}\n`,
+      (header) => `${header}\n{"page":"main","role":"markdown1"}\n`,
     ],
     [
       'an unknown role',
@@ -141,7 +141,7 @@ describe('the write state', () => {
     [
       'a page twice',
       (header, guid) =>
-        `${header}\n{"page":"${guid}","role":"editor"}\n{"page":"${guid}","role":"faelle"}\n`,
+        `${header}\n{"page":"${guid}","role":"markdown1"}\n{"page":"${guid}","role":"faelle"}\n`,
     ],
     [
       'a state of an unknown page',
@@ -151,7 +151,7 @@ describe('the write state', () => {
     [
       'a state without a hash',
       (header, guid) =>
-        `${header}\n{"page":"${guid}","role":"editor"}\n{"baseline":"${guid}","version":1}\n`,
+        `${header}\n{"page":"${guid}","role":"markdown1"}\n{"baseline":"${guid}","version":1}\n`,
     ],
     ['an unknown line', (header) => `${header}\n{"delete":"all"}\n`],
     ['another format', () => `{"format":"other"}\n`],

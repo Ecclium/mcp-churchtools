@@ -4,8 +4,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   classifyChanges,
+  commentKept,
   corpus,
   corpusText,
+  limitChanges,
   maxChanges,
   textHash,
   type ChangeKind,
@@ -108,14 +110,50 @@ describe('classifyChanges', () => {
     ).toEqual([{ zeile: 1, art: 'Zeilenumbruch geändert' }]);
   });
 
-  it('lists at most a fixed number of changes', () => {
+  it('keeps the counterpart of a line when changes meet a removed or added line', () => {
+    // The comment line goes, and the next line loses its trailing spaces.
+    const trimmedAfterComment = corpus
+      .filter((line) => !line.startsWith('<!--'))
+      .map((line) => line.trimEnd())
+      .join('\n');
+    expect(classifyChanges(corpusText, trimmedAfterComment)).toEqual([
+      { zeile: lineOf('<!--'), art: 'HTML-Kommentar entfernt' },
+      { zeile: lineOf('Diese Zeile endet'), art: 'Leerzeichen am Zeilenende' },
+    ]);
+    // Blank lines between the list items, and every marker becomes «-».
+    const spaced = corpus
+      .flatMap((line) =>
+        line.startsWith('* ') || line.startsWith('+ ')
+          ? ['', `- ${line.slice(2)}`]
+          : [line],
+      )
+      .join('\n');
+    expect(classifyChanges(corpusText, spaced)).toEqual([
+      { zeile: lineOf('* Stern') - 1, art: 'Zeile hinzugefügt' },
+      { zeile: lineOf('* Stern'), art: 'Listenzeichen' },
+      { zeile: lineOf('* Stern'), art: 'Zeile hinzugefügt' },
+      { zeile: lineOf('+ Plus'), art: 'Listenzeichen' },
+    ]);
+  });
+
+  it('returns every change, and limitChanges keeps a fixed number', () => {
     const everything = corpus.map((line) => `x${line}x`).join('\n');
-    expect(classifyChanges(corpusText, everything)).toHaveLength(
-      Math.min(maxChanges, corpus.length),
-    );
-    expect(classifyChanges(corpusText, '').length).toBeLessThanOrEqual(
-      maxChanges,
-    );
+    const changes = classifyChanges(corpusText, everything);
+    expect(changes).toHaveLength(corpus.length);
+    const doubled = [...changes, ...changes];
+    const { shown, more } = limitChanges(doubled);
+    expect(shown).toHaveLength(maxChanges);
+    expect(more).toBe(doubled.length - maxChanges);
+    expect(limitChanges(changes.slice(0, 3)).more).toBe(0);
+  });
+});
+
+describe('commentKept', () => {
+  it('needs the comment as an unchanged line of its own', () => {
+    expect(commentKept(corpusText)).toBe(true);
+    expect(commentKept(corpusText.replaceAll('\n', '\r\n'))).toBe(true);
+    expect(commentKept(corpusText.replace('<!--', '\\<!--'))).toBe(false);
+    expect(commentKept(corpusText.replace('<!--', '<!-- '))).toBe(false);
   });
 });
 

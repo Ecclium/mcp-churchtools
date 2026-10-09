@@ -39,10 +39,18 @@ import { isObject } from './spec.mts';
 const format = 'ecclium-spike-write-state.v1';
 const maxWriteStateBytes = 1024 * 1024;
 
-/** What a page of the run is for. */
-export type PageRole = 'editor' | 'faelle';
+/**
+ * What a page of the run is for: the three pages for the web editor, by
+ * the name the output uses, or the cases of 05.
+ */
+export type PageRole = 'markdown1' | 'markdown2' | 'standardformat' | 'faelle';
 
-const roles: readonly string[] = ['editor', 'faelle'] satisfies PageRole[];
+const roles: readonly string[] = [
+  'markdown1',
+  'markdown2',
+  'standardformat',
+  'faelle',
+] satisfies PageRole[];
 
 /** The state of a page after 05-wiki-write, for the comparison in 06. */
 export interface PageBaseline {

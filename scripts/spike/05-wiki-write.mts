@@ -23,8 +23,15 @@
  * API honours a version condition (F11), whether a client with a login
  * token and no session needs a CSRF token (F12), which format a new page
  * gets (F16), and whether an HTML comment survives the API (F17). It
- * prints only status codes, ja or nein, wahr or falsch, count classes, and
- * the kinds of change with the line numbers of the synthetic text.
+ * prints status codes, ja or nein, wahr or falsch, count classes, and the
+ * kinds of change with the line numbers of the synthetic text. For the
+ * first page and for every refused write it also prints the structure of
+ * the answer, as the reading probes do. Where it cannot tell, it prints
+ * «unbekannt» or «fehlt» rather than a guess.
+ *
+ * Between two writes it waits a little longer than a second: the instance
+ * gives the time of the last change in whole seconds, so two writes in the
+ * same second would look like none.
  *
  * Usage: see README.md in this folder.
  *
@@ -32,7 +39,9 @@
  */
 import {
   changeKinds,
+  changeReport,
   classifyChanges,
+  commentKept,
   corpusText,
   textHash,
 } from './lib/corpus.mts';
@@ -83,6 +92,7 @@ const words = [
   'textGleich',
   'htmlKommentarErhalten',
   'aenderungen',
+  'weitereAenderungen',
   'zeile',
   'art',
   'onStartpageFalsch',
@@ -120,6 +130,9 @@ const words = [
 const summary =
   '05-wiki-write legt im Schreibbereich vier Seiten an, ändert die vierte mehrmals und legt einmal einen doppelten Titel an.';
 
+/** A little more than a second, see the module comment. */
+const pauseBeforeWrite = 1100;
+
 /** A page the probe asked the instance to create. */
 interface Created {
   readonly response: ProbeResponse;
@@ -136,6 +149,7 @@ interface Run {
   readonly updateOperation: JsonObject | undefined;
   readonly category: number;
   readonly file: WriteStateFile;
+  readonly wait: (milliseconds: number) => Promise<void>;
 }
 
 const yesNo = (value: boolean): string => (value ? 'ja' : 'nein');
@@ -207,6 +221,7 @@ async function create(
   body: Readonly<Record<string, Json>>,
   role: PageRole,
 ): Promise<Created> {
+  await run.wait(pauseBeforeWrite);
   const response = await run.writer.send({
     operation: 'wikiPageCreate',
     parameters: [run.category],
@@ -246,25 +261,46 @@ function pageReport(
   if (view.status !== 200) {
     return { ...result, leseStatus: view.status };
   }
-  const text = view.text ?? '';
-  const changes = text === corpusText ? [] : classifyChanges(corpusText, text);
-  run.guard.allowFixed(...changes.map((change) => change.zeile));
-  return {
+  const report: Record<string, Json> = {
     ...result,
     isMarkdownGelesen: truth(view.isMarkdown),
     versionEins:
       view.version === undefined ? 'unbekannt' : yesNo(view.version === 1),
-    anzahlVersionen: countClass(view.versionCount ?? 0),
-    textGleich: yesNo(view.text === corpusText),
-    htmlKommentarErhalten: yesNo(text.includes('<!--')),
-    aenderungen: changes.map((change) => ({
-      zeile: change.zeile,
-      art: change.art,
-    })),
+    anzahlVersionen:
+      view.versionCount === undefined
+        ? 'unbekannt'
+        : countClass(view.versionCount),
     onStartpageFalsch:
       view.onStartpage === undefined ? 'fehlt' : yesNo(!view.onStartpage),
-    identifierGleichGuid: yesNo(view.identifier === view.guid),
+    identifierGleichGuid:
+      view.guid === undefined ? 'fehlt' : yesNo(view.identifier === view.guid),
   };
+  if (typeof view.text !== 'string') {
+    return { ...report, textGleich: 'fehlt' };
+  }
+  return {
+    ...report,
+    textGleich: yesNo(view.text === corpusText),
+    htmlKommentarErhalten: yesNo(commentKept(view.text)),
+    ...changeReport(run.guard, classifyChanges(corpusText, view.text)),
+  };
+}
+
+/**
+ * Tells whether a text carries the marker line of a case as its last line,
+ * so a write counts as taken even if the instance changed other lines.
+ *
+ * @param text - The text read back.
+ * @param label - The label of the case.
+ * @returns Whether the last line that is not empty is `Fall: <label>`.
+ */
+export function carriesMarker(text: string, label: string): boolean {
+  const lines = text
+    .replaceAll('\r\n', '\n')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => line !== '');
+  return lines.at(-1) === `Fall: ${label}`;
 }
 
 async function runCases(
@@ -273,10 +309,14 @@ async function runCases(
   titleOf: (suffix: string) => string,
 ): Promise<Json> {
   let before = await readPage(run.client, run.category, guid);
+  /** What a case expects to read back: the exact text or a marker line. */
+  type Expected =
+    { readonly exact: string } | { readonly marker: string } | undefined;
   const update = async (
     request: Pick<WriteRequest, 'body' | 'precondition'>,
-    expectedText?: string,
+    expected?: Expected,
   ): Promise<Record<string, Json>> => {
+    await run.wait(pauseBeforeWrite);
     const response = await run.writer.send({
       operation: 'wikiPageUpdate',
       parameters: [run.category, guid],
@@ -284,6 +324,7 @@ async function runCases(
     });
     run.guard.allowFixed(response.status);
     const after = await readPage(run.client, run.category, guid);
+    run.guard.allowFixed(after.status);
     const result: Record<string, Json> = {
       status: response.status,
       versionGestiegen: rose(before.version, after.version),
@@ -292,8 +333,13 @@ async function runCases(
         after.modifiedDate,
       ),
     };
-    if (expectedText !== undefined) {
-      result['textUebernommen'] = yesNo(after.text === expectedText);
+    if (expected !== undefined) {
+      result['textUebernommen'] =
+        typeof after.text !== 'string'
+          ? 'unbekannt'
+          : 'exact' in expected
+            ? yesNo(after.text === expected.exact)
+            : yesNo(carriesMarker(after.text, expected.marker));
     }
     if (request.body !== undefined && 'title' in request.body) {
       result['titelGeaendert'] = changed(before.title, after.title);
@@ -301,23 +347,30 @@ async function runCases(
     if (!succeeded(response)) {
       result['antwort'] = describe(run, response, run.updateOperation);
     }
+    if (after.status !== 200) {
+      result['leseStatus'] = after.status;
+    }
+    // After a failed read-back, the next case has nothing to compare with,
+    // so it says «unbekannt» rather than comparing with an older state.
     before = after;
     return result;
   };
   const marked = (label: string): string => `${corpusText}\nFall: ${label}`;
+  const textCase = (label: string): Promise<Record<string, Json>> =>
+    update({ body: { text: marked(label) } }, { marker: label });
 
-  const gleicherText = await update({ body: { text: corpusText } }, corpusText);
-  const neuerText = await update(
-    { body: { text: marked('neuer Text') } },
-    marked('neuer Text'),
+  // The text exactly as the instance keeps it, so this case changes
+  // nothing even if the instance normalised the text on create.
+  const stored = typeof before.text === 'string' ? before.text : corpusText;
+  const gleicherText = await update(
+    { body: { text: stored } },
+    { exact: stored },
   );
+  const neuerText = await textCase('neuer Text');
   const ohneText = await update({ body: { isMarkdown: true } });
   const start = before;
   const first = await update({ body: { text: marked('erste von zwei') } });
-  const second = await update(
-    { body: { text: marked('zweite von zwei') } },
-    marked('zweite von zwei'),
-  );
+  const second = await textCase('zweite von zwei');
   const zweimalHintereinander: Json = {
     statusErste: first['status'] ?? 'fehlt',
     statusZweite: second['status'] ?? 'fehlt',
@@ -326,26 +379,25 @@ async function runCases(
   };
   const veralteteVersion = await update(
     { body: { text: marked('veraltete Version'), version: 1 } },
-    marked('veraltete Version'),
+    { marker: 'veraltete Version' },
   );
   const ifMatch = await update(
     {
       body: { text: marked('If-Match') },
       precondition: { ifMatch: staleEntityTag },
     },
-    marked('If-Match'),
+    { marker: 'If-Match' },
   );
   const ifUnmodifiedSince = await update(
     {
       body: { text: marked('If-Unmodified-Since') },
       precondition: { ifUnmodifiedSince: pastDate },
     },
-    marked('If-Unmodified-Since'),
+    { marker: 'If-Unmodified-Since' },
   );
-  // The title keeps the prefix and the tag of the run, so 07 still knows
-  // the page if the instance takes the undeclared field.
-  const titelImBody = await update({ body: { title: titleOf('4-titel') } });
 
+  // Before the title case: if the instance takes an undeclared title, the
+  // fourth page would carry another title, and nothing would be repeated.
   const duplicate = await create(
     run,
     titleOf('4'),
@@ -363,6 +415,10 @@ async function runCases(
       run.createOperation,
     );
   }
+
+  // The title keeps the prefix and the tag of the run, so 07 still knows
+  // the page if the instance takes the undeclared field.
+  const titelImBody = await update({ body: { title: titleOf('4-titel') } });
 
   return {
     gleicherText,
@@ -385,15 +441,20 @@ async function writeAndRead(
     run,
     titleOf('1'),
     { text: corpusText, isMarkdown: true },
-    'editor',
+    'markdown1',
   );
   const markdown2 = await create(
     run,
     titleOf('2'),
     { text: corpusText, isMarkdown: true },
-    'editor',
+    'markdown2',
   );
-  const plain = await create(run, titleOf('3'), { text: corpusText }, 'editor');
+  const plain = await create(
+    run,
+    titleOf('3'),
+    { text: corpusText },
+    'standardformat',
+  );
   const cases = await create(
     run,
     titleOf('4'),
@@ -422,10 +483,16 @@ async function writeAndRead(
   // of the editor from those of the probe.
   for (const created of [markdown1, markdown2, plain]) {
     const view = viewOf(created);
-    if (created.guid !== undefined && view?.version !== undefined) {
+    // Without a text read back there is no state to compare with, and 06
+    // says so instead of reporting a change.
+    if (
+      created.guid !== undefined &&
+      view?.version !== undefined &&
+      typeof view.text === 'string'
+    ) {
       run.file.setBaseline(created.guid, {
         version: view.version,
-        textHash: textHash(view.text ?? ''),
+        textHash: textHash(view.text),
       });
     }
   }
@@ -447,7 +514,7 @@ export const probe: ProbeDefinition = {
   name: '05-wiki-write',
   state: 'read',
   account: 'write',
-  async run({ client, guard, state, write, origin }): Promise<Json> {
+  async run({ client, guard, state, write, origin, wait }): Promise<Json> {
     guard.allowFixed(...words, ...countClasses, ...changeKinds);
     if (state === undefined || write === undefined) {
       throw new Error('INTERN');
@@ -492,6 +559,7 @@ export const probe: ProbeDefinition = {
       ),
       category: result.writeCategory,
       file,
+      wait,
     };
     try {
       return await writeAndRead(
