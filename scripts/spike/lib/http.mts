@@ -1,20 +1,28 @@
 /**
  * The only way the probes reach the instance.
  *
- * Every request is a GET to the one origin of the base URL. The token goes
- * only into the header `Authorization: Login`, never into a query string,
- * and the probes never ask for a session. Redirects are not followed,
- * because they could carry the token to another host. Each request has a
- * time limit and a size limit, and every header value and every string and
- * number of a response goes onto the block list of the guard at once.
+ * The reading probes send only GET requests. Every request goes to the one
+ * origin of the base URL. The token goes only into the header
+ * `Authorization: Login`, never into a query string, and the probes never
+ * ask for a session. Redirects are not followed, because they could carry
+ * the token to another host. Each request has a time limit and a size
+ * limit, and every header value and every string and number of a response
+ * goes onto the block list of the guard at once.
  *
  * Paths come only from fixed templates. An ID taken from a response may
  * fill a template only if it has the form of an ID, and it is encoded.
  *
+ * The write probes get a second client, {@link createWriteClient}, from the
+ * guard of the test environment once all its checks have passed (ADR 0049).
+ * It sends only the three write operations of the spike, with a JSON body
+ * and at most one of two fixed preconditions, and never repeats a request:
+ * after a timeout nobody knows whether the instance wrote.
+ *
  * @packageDocumentation
  */
 import { SpikeError, type ErrorCode } from './errors.mts';
-import type { Guard } from './guard.mts';
+import type { Guard, Json } from './guard.mts';
+import { operations } from './operations.mts';
 import { isObject } from './spec.mts';
 
 /** The fetch function, replaceable in tests. */
@@ -76,10 +84,61 @@ export interface ClientOptions {
   readonly maxBytes?: number;
 }
 
+/** The operations the write client may send. */
+export const writeOperations = [
+  'wikiPageCreate',
+  'wikiPageUpdate',
+  'wikiPageDelete',
+] as const;
+
+/** One of the write operations. */
+export type WriteOperation = (typeof writeOperations)[number];
+
+/** A made-up entity tag the instance never sent, for the precondition test. */
+export const staleEntityTag = '"0"';
+
+/** A date long before any page of the instance, for the precondition test. */
+export const pastDate = 'Sat, 01 Jan 2000 00:00:00 GMT';
+
+/**
+ * A precondition a write may carry. The values are fixed: the instance
+ * sends neither `ETag` nor `Last-Modified` for a page, so a probe can only
+ * test whether it honours made-up stale values at all.
+ */
+export type Precondition =
+  | { readonly ifMatch: typeof staleEntityTag }
+  | { readonly ifUnmodifiedSince: typeof pastDate };
+
+/** One request of a write probe. */
+export interface WriteRequest {
+  readonly operation: WriteOperation;
+  /** IDs for the placeholders of the template, in order. */
+  readonly parameters: readonly (string | number)[];
+  /** The JSON body, if the operation takes one. */
+  readonly body?: { readonly [key: string]: Json };
+  readonly precondition?: Precondition;
+}
+
+/** A client that writes, bound to one instance and one token. */
+export interface WriteClient {
+  /**
+   * Sends one write request, once.
+   *
+   * @param request - Operation, IDs, body and precondition.
+   * @returns The response, already read and parsed.
+   * @throws {SpikeError} On network errors, redirects, oversized responses, and before any request if the request has another form.
+   */
+  send(request: WriteRequest): Promise<ProbeResponse>;
+}
+
 /** The User-Agent of every request, so the probes are visible in logs. */
 export const userAgent = 'ecclium-spike';
 
 const identifier = /^[A-Za-z0-9_-][A-Za-z0-9._~-]{0,199}$/;
+
+/** The form of a page GUID, as the OpenAPI document of ChurchTools gives it. */
+export const guidPattern =
+  /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
 
 /**
  * Fills a fixed path template with IDs.
@@ -203,6 +262,83 @@ function blockCookies(guard: Guard, cookies: readonly string[]): void {
   }
 }
 
+interface Exchange {
+  readonly method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  readonly url: URL;
+  readonly headers: Headers;
+  readonly body?: string;
+  readonly maxBytes: number;
+  readonly blockValues: boolean;
+}
+
+async function exchange(
+  options: ClientOptions,
+  request: Exchange,
+): Promise<ProbeResponse> {
+  const fetchFunction = options.fetch ?? fetch;
+  let response: Response;
+  let bytes: Uint8Array;
+  try {
+    response = await fetchFunction(request.url, {
+      method: request.method,
+      headers: request.headers,
+      ...(request.body === undefined ? {} : { body: request.body }),
+      redirect: 'manual',
+      signal: AbortSignal.timeout(options.timeoutMs ?? 20_000),
+    });
+    if (
+      response.type === 'opaqueredirect' ||
+      (response.status >= 300 && response.status < 400)
+    ) {
+      await response.body?.cancel();
+      throw new SpikeError('HTTP_REDIRECT');
+    }
+    bytes = await readLimited(response, request.maxBytes);
+  } catch (error) {
+    throw error instanceof SpikeError
+      ? error
+      : new SpikeError(classifyNetworkError(error));
+  }
+
+  response.headers.forEach((value) => {
+    options.guard.block(value);
+  });
+  const setCookies = response.headers.getSetCookie();
+  blockCookies(options.guard, setCookies);
+
+  const text = new TextDecoder().decode(bytes);
+  const contentType = response.headers.get('content-type') ?? '';
+  let body: unknown = undefined;
+  let kind: ProbeResponse['kind'] = 'anderes Format';
+  if (text.trim() === '') {
+    kind = 'leer';
+  } else if (contentType.includes('json')) {
+    try {
+      body = JSON.parse(text);
+      kind = 'JSON';
+    } catch {
+      kind = 'anderes Format';
+    }
+  }
+  if (request.blockValues) {
+    options.guard.blockAll(body);
+  }
+  return {
+    status: response.status,
+    headers: response.headers,
+    setCookies,
+    body,
+    kind,
+  };
+}
+
+function baseHeaders(): Headers {
+  return new Headers({
+    Accept: 'application/json',
+    'User-Agent': userAgent,
+  });
+}
+
 /**
  * Creates the client for one instance.
  *
@@ -215,8 +351,6 @@ function blockCookies(guard: Guard, cookies: readonly string[]): void {
  * ```
  */
 export function createClient(options: ClientOptions): Client {
-  const fetchFunction = options.fetch ?? fetch;
-  const timeoutMs = options.timeoutMs ?? 20_000;
   return {
     async get(request: ProbeRequest): Promise<ProbeResponse> {
       const url = new URL(request.path, options.origin);
@@ -226,73 +360,103 @@ export function createClient(options: ClientOptions): Client {
       for (const [name, value] of request.query ?? []) {
         url.searchParams.append(name, value);
       }
-      const headers = new Headers({
-        Accept: 'application/json',
-        'User-Agent': userAgent,
-      });
+      const headers = baseHeaders();
       const auth = request.auth ?? 'token';
       if (auth === 'token') {
         headers.set('Authorization', `Login ${options.token}`);
       } else if (typeof auth === 'object') {
         headers.set('Authorization', `Login ${auth.invalidToken}`);
       }
-
-      let response: Response;
-      let bytes: Uint8Array;
-      try {
-        response = await fetchFunction(url, {
-          method: 'GET',
-          headers,
-          redirect: 'manual',
-          signal: AbortSignal.timeout(timeoutMs),
-        });
-        if (
-          response.type === 'opaqueredirect' ||
-          (response.status >= 300 && response.status < 400)
-        ) {
-          await response.body?.cancel();
-          throw new SpikeError('HTTP_REDIRECT');
-        }
-        bytes = await readLimited(
-          response,
-          request.maxBytes ?? options.maxBytes ?? 5 * 1024 * 1024,
-        );
-      } catch (error) {
-        throw error instanceof SpikeError
-          ? error
-          : new SpikeError(classifyNetworkError(error));
-      }
-
-      response.headers.forEach((value) => {
-        options.guard.block(value);
+      return exchange(options, {
+        method: 'GET',
+        url,
+        headers,
+        maxBytes: request.maxBytes ?? options.maxBytes ?? 5 * 1024 * 1024,
+        blockValues: request.blockValues !== false,
       });
-      const setCookies = response.headers.getSetCookie();
-      blockCookies(options.guard, setCookies);
+    },
+  };
+}
 
-      const text = new TextDecoder().decode(bytes);
-      const contentType = response.headers.get('content-type') ?? '';
-      let body: unknown = undefined;
-      let kind: ProbeResponse['kind'] = 'anderes Format';
-      if (text.trim() === '') {
-        kind = 'leer';
-      } else if (contentType.includes('json')) {
-        try {
-          body = JSON.parse(text);
-          kind = 'JSON';
-        } catch {
-          kind = 'anderes Format';
-        }
+function preconditionHeader(
+  precondition: Precondition | undefined,
+): readonly [string, string] | undefined {
+  if (precondition === undefined) {
+    return undefined;
+  }
+  const entries = Object.entries(precondition);
+  const [entry] = entries;
+  if (entries.length === 1 && entry !== undefined) {
+    const [name, value] = entry;
+    if (name === 'ifMatch' && value === staleEntityTag) {
+      return ['If-Match', value];
+    }
+    if (name === 'ifUnmodifiedSince' && value === pastDate) {
+      return ['If-Unmodified-Since', value];
+    }
+  }
+  throw new SpikeError('INTERN');
+}
+
+/**
+ * Creates the client that writes. Only the guard of the test environment
+ * calls this, after all its checks have passed (ADR 0049).
+ *
+ * The path comes from the template of the operation. A page is addressed
+ * only by its GUID: the write operations of ChurchTools accept nothing
+ * else, while the read operation on the same path also accepts a title.
+ *
+ * @param options - Origin, token, guard and limits.
+ * @returns A client that sends only the write operations of the spike.
+ * @example
+ * ```ts
+ * const writer = createWriteClient({ origin, token, guard });
+ * await writer.send({
+ *   operation: 'wikiPageCreate',
+ *   parameters: [7],
+ *   body: { title: 'spike-schreibprobe', isMarkdown: true },
+ * });
+ * ```
+ */
+export function createWriteClient(options: ClientOptions): WriteClient {
+  return {
+    async send(request: WriteRequest): Promise<ProbeResponse> {
+      if (!(writeOperations as readonly string[]).includes(request.operation)) {
+        throw new SpikeError('INTERN');
       }
-      if (request.blockValues !== false) {
-        options.guard.blockAll(body);
+      const { method, template } = operations[request.operation];
+      const [, page] = request.parameters;
+      if (
+        request.operation !== 'wikiPageCreate' &&
+        (typeof page !== 'string' || !guidPattern.test(page))
+      ) {
+        throw new SpikeError('INTERN');
       }
-      return {
-        status: response.status,
-        headers: response.headers,
-        setCookies,
-        body,
-        kind,
-      };
+      const path = pathFor(template, ...request.parameters);
+      const url = new URL(path, options.origin);
+      if (url.origin !== options.origin) {
+        throw new SpikeError('INTERN');
+      }
+      const headers = baseHeaders();
+      headers.set('Authorization', `Login ${options.token}`);
+      const extra = preconditionHeader(request.precondition);
+      if (extra !== undefined) {
+        headers.set(...extra);
+      }
+      let body: string | undefined;
+      if (request.body !== undefined) {
+        headers.set('Content-Type', 'application/json');
+        body = JSON.stringify(request.body);
+      }
+      return exchange(options, {
+        method:
+          method === 'post' ? 'POST' : method === 'patch' ? 'PATCH' : 'DELETE',
+        url,
+        headers,
+        ...(body === undefined ? {} : { body }),
+        maxBytes: options.maxBytes ?? 5 * 1024 * 1024,
+        blockValues: true,
+      });
     },
   };
 }

@@ -35,6 +35,10 @@ export const spikeVariables = [
   'ECCLIUM_SPIKE_STATE_FILE',
   'ECCLIUM_SPIKE_WIKI_CATEGORY_ID',
   'ECCLIUM_SPIKE_FORBIDDEN_CATEGORY_ID',
+  'ECCLIUM_SPIKE_ALLOW_WRITE',
+  'ECCLIUM_SPIKE_WRITE_TOKEN_FILE',
+  'ECCLIUM_SPIKE_WRITE_CATEGORY_ID',
+  'ECCLIUM_SPIKE_WRITE_STATE_FILE',
 ] as const;
 
 /** The environment of a probe, as far as the probes read it. */
@@ -120,14 +124,18 @@ export function readOrigin(env: Environment): string {
 export function readCategoryId(
   env: Environment,
   name:
-    'ECCLIUM_SPIKE_WIKI_CATEGORY_ID' | 'ECCLIUM_SPIKE_FORBIDDEN_CATEGORY_ID',
+    | 'ECCLIUM_SPIKE_WIKI_CATEGORY_ID'
+    | 'ECCLIUM_SPIKE_FORBIDDEN_CATEGORY_ID'
+    | 'ECCLIUM_SPIKE_WRITE_CATEGORY_ID',
   required: boolean,
 ): number | undefined {
   const raw = env[name] ?? '';
   const hint: HintKey =
     name === 'ECCLIUM_SPIKE_WIKI_CATEGORY_ID'
       ? 'kategorieFehlt'
-      : 'gesperrteKategorieUngueltig';
+      : name === 'ECCLIUM_SPIKE_WRITE_CATEGORY_ID'
+        ? 'schreibKategorieFehlt'
+        : 'gesperrteKategorieUngueltig';
   if (raw === '') {
     if (required) {
       throw new SpikeError('KONFIGURATION', hint);
@@ -162,7 +170,18 @@ export function isInsideGitWorkTree(path: string): boolean {
   }
 }
 
-function readPrivateFile(
+/**
+ * Reads a small private file: no link, a regular file of the caller, no
+ * access for others, at most `maxBytes`, outside every Git working tree.
+ *
+ * @param path - Path of the file.
+ * @param maxBytes - Size limit.
+ * @param hint - Hint if the file is unsafe.
+ * @param missingHint - Hint if the file does not exist.
+ * @returns The content as UTF-8 text.
+ * @throws {SpikeError} If the file is missing or unsafe.
+ */
+export function readPrivateFile(
   path: string,
   maxBytes: number,
   hint: HintKey,
@@ -198,20 +217,33 @@ function readPrivateFile(
 /**
  * Reads the ChurchTools token from its file.
  *
+ * The reading probes take the token of the read account, the probes of the
+ * write account take its own token from another variable (ADR 0049).
+ *
  * @param env - Environment of the process.
+ * @param variable - The variable that names the token file.
  * @returns The token.
  * @throws {SpikeError} If the file is missing, unsafe or not exactly one line of printable ASCII.
  */
-export function readToken(env: Environment): string {
-  const path = env['ECCLIUM_SPIKE_TOKEN_FILE'] ?? '';
+export function readToken(
+  env: Environment,
+  variable:
+    | 'ECCLIUM_SPIKE_TOKEN_FILE'
+    | 'ECCLIUM_SPIKE_WRITE_TOKEN_FILE' = 'ECCLIUM_SPIKE_TOKEN_FILE',
+): string {
+  const write = variable === 'ECCLIUM_SPIKE_WRITE_TOKEN_FILE';
+  const path = env[variable] ?? '';
   if (path === '') {
-    throw new SpikeError('KONFIGURATION', 'tokenDateiFehlt');
+    throw new SpikeError(
+      'KONFIGURATION',
+      write ? 'schreibTokenDateiFehlt' : 'tokenDateiFehlt',
+    );
   }
   const content = readPrivateFile(
     path,
     maxTokenBytes,
     'tokenDateiUnsicher',
-    'tokenDateiNichtGefunden',
+    write ? 'schreibTokenDateiNichtGefunden' : 'tokenDateiNichtGefunden',
   );
   const token = content.replace(/\r?\n$/, '');
   if (!/^[\x21-\x7e]+$/.test(token)) {

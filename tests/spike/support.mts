@@ -204,6 +204,13 @@ export const specification = {
         },
       },
     },
+    '/wiki/categories': {
+      get: {
+        responses: {
+          '200': json({ $ref: '#/components/schemas/CategoryList' }),
+        },
+      },
+    },
     '/wiki/categories/{categoryId}/pages': {
       get: {
         responses: {
@@ -211,7 +218,16 @@ export const specification = {
           default: json({ $ref: '#/components/schemas/Error' }),
         },
       },
-      post: { responses: {} },
+      post: {
+        requestBody: json({ $ref: '#/components/schemas/PageCreate' }),
+        responses: {
+          '201': json({
+            type: 'object',
+            properties: { data: { $ref: '#/components/schemas/Page' } },
+          }),
+          default: json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
     },
     '/wiki/categories/{categoryId}/pages/{identifier}': {
       get: {
@@ -223,7 +239,22 @@ export const specification = {
           default: json({ $ref: '#/components/schemas/Error' }),
         },
       },
-      patch: { responses: {} },
+      patch: {
+        requestBody: json({ $ref: '#/components/schemas/PageUpdate' }),
+        responses: {
+          '200': json({
+            type: 'object',
+            properties: { data: { $ref: '#/components/schemas/Page' } },
+          }),
+          default: json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+      delete: {
+        responses: {
+          '204': {},
+          default: json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
     },
     '/wiki/categories/{categoryId}/pages/{identifier}/versions': {
       get: {
@@ -283,14 +314,67 @@ export const specification = {
           lastPage: { type: 'integer' },
         },
       },
+      Permissions: {
+        type: 'object',
+        properties: {
+          canEdit: { type: 'boolean' },
+          canDelete: { type: 'boolean' },
+        },
+      },
+      Category: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          name: { type: 'string' },
+          permissions: { $ref: '#/components/schemas/Permissions' },
+        },
+      },
+      CategoryList: {
+        type: 'object',
+        properties: {
+          data: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/Category' },
+          },
+          permissions: {
+            type: 'object',
+            properties: { editMasterData: { type: 'boolean' } },
+          },
+        },
+      },
       Page: {
         type: 'object',
         properties: {
+          guid: { type: 'string' },
           identifier: { type: 'string' },
           title: { type: 'string' },
           text: { type: 'string' },
           version: { type: 'integer' },
           isMarkdown: { type: 'boolean' },
+          onStartpage: { type: 'boolean' },
+          wikiCategory: { $ref: '#/components/schemas/Category' },
+          permissions: { $ref: '#/components/schemas/Permissions' },
+          meta: {
+            type: 'object',
+            properties: { modifiedDate: { type: 'string' } },
+          },
+        },
+      },
+      PageCreate: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          text: { type: 'string' },
+          isMarkdown: { type: 'boolean' },
+          onStartpage: { type: 'boolean' },
+        },
+      },
+      PageUpdate: {
+        type: 'object',
+        properties: {
+          text: { type: 'string' },
+          isMarkdown: { type: 'boolean' },
+          onStartpage: { type: 'boolean' },
         },
       },
       PageList: {

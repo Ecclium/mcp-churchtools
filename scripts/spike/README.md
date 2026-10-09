@@ -1,6 +1,8 @@
-# API-Spike: lesende Proben
+# API-Spike: Proben
 
-Diese Skripte prüfen, wie sich die REST-API von ChurchTools bei einer echten Instanz verhält: Anmeldung mit einem Token, Rechte, Paginierung, Fehler und Wiki. Sie lesen nur, und sie geben nur die Struktur der Antworten aus, nicht deren Inhalt. Die Ergebnisse fliessen in `docs/research/churchtools-api.md` ein.
+Diese Skripte prüfen, wie sich die REST-API von ChurchTools bei einer echten Instanz verhält: Anmeldung mit einem Token, Rechte, Paginierung, Fehler und Wiki. Sie geben nur die Struktur der Antworten und feste Wörter aus, nicht deren Inhalt. Die Ergebnisse fliessen in `docs/research/churchtools-api.md` ein.
+
+Der Spike hat zwei Teile. Die Proben `00` bis `04` lesen nur, mit einem lesenden Dienstkonto. Die Proben `05` bis `07` laufen mit einem eigenen Schreibkonto und nur auf der Testinstanz mit synthetischen Daten aus ADR 0049: `05` und `07` schreiben in einen Schreibbereich des Wikis, `06` liest dort. Vor jeder dieser Proben prüft der Wächter der Testumgebung, ob die Instanz die Testinstanz ist und das Konto das enge Schreibkonto (siehe «Der Wächter der Testumgebung»).
 
 Die Proben verringern das Risiko, dass Daten Ihrer Gemeinde in eine Ausgabe geraten. Ausschliessen können sie es nicht. Lesen Sie deshalb jede Ausgabe durch, bevor Sie sie weitergeben (siehe «Durchsicht vor dem Weitergeben»).
 
@@ -14,15 +16,28 @@ Die Proben verringern das Risiko, dass Daten Ihrer Gemeinde in eine Ausgabe gera
 | `03-pagination-errors.mts` | `GET /api/wiki/pages` für die Testkategorie mit `limit` 1, 2, 100 und 1000, mit einer Seite hinter der letzten und mit ungültigen Werten für `page` und `limit`. `GET /api/wiki/categories/{id}/pages/{identifier}` mit einer zufälligen, unbekannten Kennung. Optional beide Seitenlisten der gesperrten Kategorie. | Wie die Paginierung arbeitet, Felder von `meta.pagination`, wirksame Obergrenze von `limit`, Format der Fehler 400, 404 und 403.                                                                                                                                                                                                                 |
 | `04-wiki-read.mts`         | `GET /api/wiki/categories/{id}/pages` für die Testkategorie, dann für höchstens drei Seiten daraus die Seite, ihre Versionen und die neueste Version                                                                                                                                                                 | Struktur von Seite und Versionsliste, ob die Felder `version` und `isMarkdown` vorkommen, ob die Version einer Seite der neuesten Version ihrer Liste entspricht.                                                                                                                                                                                |
 
-In ChurchTools schreibt keine Probe etwas. Lokal legt `00-inventory` die State-Datei an. Sie enthält die Version und das OpenAPI-Dokument Ihrer Instanz, damit die übrigen Proben ihre Operationen darin nachschlagen können. Die Operationen zum Anlegen und Ändern von Wiki-Seiten schlägt `00-inventory` nur nach, aufgerufen werden sie nie.
+Die lesenden Proben schreiben in ChurchTools nichts. Lokal legt `00-inventory` die State-Datei an. Sie enthält die Version und das OpenAPI-Dokument Ihrer Instanz, damit die übrigen Proben ihre Operationen darin nachschlagen können. Die Operationen zum Anlegen, Ändern und Löschen von Wiki-Seiten schlägt `00-inventory` nur nach. Aufgerufen werden sie nur von `05` und `07`, hinter dem Wächter.
 
-Ausser `/api/info`, `/api/whoami`, `/api/permissions/global` und dem OpenAPI-Dokument liest keine Probe etwas ausserhalb der Testkategorie. Die einzige Ausnahme ist die gesperrte Kategorie, wenn Sie eine angeben: `03` fragt ihre Seitenlisten ab, um die Antwort 403 zu sehen. Wählen Sie dafür eine Kategorie ohne vertrauliche Seiten. Darf das Dienstkonto sie doch lesen, beschreibt die Ausgabe auch ihre Struktur.
+Ausser `/api/info`, `/api/whoami`, `/api/permissions/global` und dem OpenAPI-Dokument liest keine lesende Probe etwas ausserhalb der Testkategorie. Die einzige Ausnahme ist die gesperrte Kategorie, wenn Sie eine angeben: `03` fragt ihre Seitenlisten ab, um die Antwort 403 zu sehen. Wählen Sie dafür eine Kategorie ohne vertrauliche Seiten. Darf das Dienstkonto sie doch lesen, beschreibt die Ausgabe auch ihre Struktur.
 
-Jede Probe sucht ihre Operationen vor dem ersten Aufruf im OpenAPI-Dokument Ihrer Instanz, über Methode und Pfad. Fehlt eine Operation dort, meldet die Probe «nicht dokumentiert» und ruft sie nicht auf.
+Jede Probe sucht ihre Operationen vor dem ersten Aufruf im OpenAPI-Dokument Ihrer Instanz, über Methode und Pfad. Fehlt eine Operation dort, meldet eine lesende Probe «nicht dokumentiert» und ruft sie nicht auf. Eine Probe des Schreibkontos bricht dann ab.
+
+## Was die Proben des Schreibkontos tun
+
+| Probe                          | Liest und schreibt                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Beantwortet                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `05-wiki-write.mts`            | Legt im Schreibbereich mit `POST /api/wiki/categories/{id}/pages` vier Seiten mit einem synthetischen Text an: zwei in Markdown, eine ohne `isMarkdown`, eine für die Fälle. Ändert nur die vierte mit `PATCH …/pages/{guid}`: gleicher Text, neuer Text, kein Text, zwei Änderungen hintereinander, veraltete `version`, veraltetes `If-Match`, `If-Unmodified-Since` in der Vergangenheit, `title` im Body. Legt einmal den Titel der vierten Seite neu an. Liest jede Seite zurück. | Ob und wann eine neue Version entsteht, ob die API eine Versionsbedingung beachtet, ob ein Client mit Login-Token ohne Sitzung ein CSRF-Token braucht, welches Format eine neue Seite erhält, ob ein HTML-Kommentar den Weg über die API übersteht.                                                                                |
+| `06-wiki-editor-roundtrip.mts` | Liest die drei ersten Seiten des Laufs und ihre Versionen, nachdem Sie sie im Web-Editor ohne Änderung gespeichert haben. Schreibt nichts.                                                                                                                                                                                                                                                                                                                                             | Was der Web-Editor an einer Markdown-Seite ändert, nach Art und Zeile des synthetischen Texts, ob dabei eine Version entsteht und ob der HTML-Kommentar bleibt. `standNach05` sagt, ob die Seite nach `05` noch dem synthetischen Text entsprach. Wenn nicht, enthält die Liste auch die Änderungen der API, die schon `05` nennt. |
+| `07-wiki-cleanup.mts`          | Löscht mit `DELETE …/pages/{guid}` die Seiten des Laufs: die aus der Schreib-State-Datei und die Seiten des Schreibbereichs, deren Titel Präfix und Kennung des Laufs trägt. Jede erst nach einem Lesen, das Schreibbereich, diesen Titel und das Recht zum Löschen zeigt.                                                                                                                                                                                                             | Ob die dokumentierte Löschung wirkt und ob eine gelöschte Seite danach fehlt.                                                                                                                                                                                                                                                      |
+
+Jede Seite, die `05` anlegt, hält die Probe sofort in einer eigenen Schreib-State-Datei fest, mit Modus 0600 und ausserhalb jedes Git-Arbeitsbaums. Bricht `05` mitten im Lauf ab, nennt die Datei trotzdem jede Seite, deren Anlegen die Instanz bestätigt hat. Ging eine Antwort verloren, findet `07` die Seite über den Titel mit der Kennung des Laufs. Nach einem Fehler, der auf eine schreibende Anfrage folgt, sendet `05` keine weitere.
+
+Ausser der Liste der Kategorien, `/api/permissions/global` und dem OpenAPI-Dokument lesen die Proben des Schreibkontos nur im Schreibbereich, und geschrieben wird nur dort. Eine Löschung entfernt eine Seite mit allen Versionen und lässt sich nicht rückgängig machen.
 
 ## Anfragen
 
-- Nur `GET`, nur an die Basis-URL.
+- Nur an die Basis-URL. Die lesenden Proben senden nur `GET`.
+- `05` und `07` senden ausserdem `POST`, `PATCH` und `DELETE`, nur an Seiten des Schreibbereichs, mit einem JSON-Body und ohne CSRF-Token oder Cookie. Eine Seite adressieren sie nur über ihre GUID. Eine schreibende Anfrage wird nie wiederholt: Nach einem Zeitlimit weiss niemand, ob die Instanz geschrieben hat. Vor jeder schreibenden Anfrage wartet `05` etwas mehr als eine Sekunde, weil die Instanz die Zeit der letzten Änderung nur in ganzen Sekunden nennt.
 - Das Token steht nur im Header `Authorization: Login`, nie in einer URL. Die Proben fordern keine Sitzung an.
 - Die Proben folgen keiner Weiterleitung, sie brechen mit `HTTP_REDIRECT` ab.
 - Jede Anfrage hat ein Zeitlimit von 20 Sekunden und eine Grössengrenze von 5 MiB, für das OpenAPI-Dokument 32 MiB.
@@ -40,6 +55,24 @@ Jede Probe schreibt JSON auf stdout und kurze Hinweise auf stderr. Auf stderr st
 - Kopfzeilen erscheinen mit Namen, wenn der Name auf einer festen Liste bekannter Kopfzeilen steht, etwa `content-type` oder `retry-after`, und mit der Klasse ihres Werts: Zahl, Datum oder Text. Alle anderen Kopfzeilen erscheinen nur als Anzahl.
 - Cookies erscheinen nur als Anzahl und mit ihren Attributen, nie mit Name oder Wert, weil ein Name den Namen der Instanz tragen kann.
 - Rechte in `02` und das Feld `isMarkdown` in `04` erscheinen als «wahr» oder «falsch».
+- `05`, `06` und `07` geben Statuscodes, «ja» oder «nein», «wahr» oder «falsch», Anzahlklassen und die Art jeder Änderung mit der Zeilennummer im synthetischen Text aus, etwa `{ "zeile": 9, "art": "Listenzeichen" }`, höchstens dreissig und die Klasse der übrigen. Den Text selbst geben sie nie aus. Er steht in `lib/corpus.mts` und enthält nichts aus einer Instanz. Für die erste angelegte Seite und für jede abgelehnte schreibende Anfrage gibt `05` ausserdem die Struktur der Antwort aus, wie die lesenden Proben: mit den Schlüsseln, die das OpenAPI-Dokument deklariert. Was eine Probe nicht feststellen kann, etwa weil das Zurücklesen scheitert, steht als «unbekannt» oder «fehlt» in der Ausgabe.
+
+## Der Wächter der Testumgebung
+
+Jede Probe des Schreibkontos prüft vor ihrer ersten Anfrage, nur mit ihrer Umgebung:
+
+- Der Schalter `ECCLIUM_SPIKE_ALLOW_WRITE` stimmt mit dem ersten Teil des Hosts überein, ohne Rücksicht auf Gross- und Kleinschreibung. Tippen Sie ihn von Hand ein, nie aus der Variablen der Adresse: Nur so hält ein vertippter Host den Lauf an.
+- Die Basis-URL ist nicht der Platzhalter dieses README.
+- Das Token kommt nur aus `ECCLIUM_SPIKE_WRITE_TOKEN_FILE`. Ist zugleich `ECCLIUM_SPIKE_TOKEN_FILE` gesetzt, bricht die Probe ab.
+
+Danach liest sie und bricht ab, sobald etwas nicht stimmt:
+
+- Genau eine sichtbare Kategorie heisst `testinstanz-kennung`, und das Konto darf sie weder bearbeiten noch löschen. Fehlt sie, gilt die Instanz als produktiv.
+- Die Kategorie aus `ECCLIUM_SPIKE_WRITE_CATEGORY_ID` ist eine andere, sichtbar und bearbeitbar. Eine dritte Kategorie sieht das Konto nicht.
+- Die globalen Rechte erlauben genau das: das Wiki sehen, Schreibbereich und Kennkategorie sehen, den Schreibbereich bearbeiten. Jedes andere Recht jedes Moduls steht auf «falsch» oder ist leer.
+- Im Schreibbereich liegen nur die Seite «main» und die Seiten des laufenden Laufs.
+
+Was der Wächter nicht prüfen kann, wertet er als Grund zum Abbruch: eine Operation, die die Instanz nicht dokumentiert, ein anderer Status, ein fehlendes Feld, ein Wert eines anderen Typs. Zuletzt fragt `05` oder `07` im Terminal nach, mit der Frage auf stderr. Nur die Antwort «ja» lässt die Probe schreiben. Ohne Terminal, etwa mit umgeleiteter Eingabe, bricht sie ab.
 
 ## Sicherung vor jeder Ausgabe
 
@@ -64,16 +97,23 @@ Die Werte des OpenAPI-Dokuments stehen nicht auf der Sperrliste. Das Dokument be
 - Optional eine zweite Kategorie ohne vertrauliche Seiten, die das Dienstkonto nicht lesen darf.
 - Ein privater Ordner ausserhalb jedes Git-Arbeitsbaums für Token, State-Datei und Ausgaben.
 
+Für die Proben des Schreibkontos, nur auf der Testinstanz aus ADR 0049:
+
+- Eine Kategorie `testinstanz-kennung`, die das Schreibkonto sieht, aber nicht bearbeiten darf. Ihr Name steht fest im Code des Wächters.
+- Ein Schreibbereich: eine eigene Kategorie, die nur das Schreibkonto und Sie sehen. Ausser der Seite «main» liegt darin nichts.
+- Ein Schreibkonto, getrennt vom lesenden Dienstkonto: eine synthetische Person mit einem eigenen Status ohne Berechtigungen, in keiner Gruppe, mit einem Passwort, damit Sie sein Login-Token holen können. Es erhält direkt nur diese Rechte: «Wiki sehen», «Einzelne Wiki-Kategorien sehen» für Schreibbereich und Kennkategorie, «Einzelne Wiki-Kategorien bearbeiten» nur für den Schreibbereich. Nirgends «alle».
+- Eine eigene Token-Datei für das Schreibkonto im privaten Ordner.
+
 Die Proben prüfen Token-Datei und State-Datei vor dem Lesen: kein symbolischer Link, eine reguläre Datei, die Ihnen gehört, keine Rechte für andere, ausserhalb jedes Git-Arbeitsbaums. Die Token-Datei enthält genau eine Zeile aus druckbaren ASCII-Zeichen und ist höchstens 4 KiB gross. Die State-Datei legt `00-inventory` selbst an, mit Modus 0600. Sie darf vorher nicht existieren. Existiert sie schon, bricht `00-inventory` mit Code 2 ab, bevor es eine Anfrage sendet.
 
-## Ausführung
+## Ausführung des lesenden Teils
 
 Die Befehle sind für zsh und bash geschrieben. Ersetzen Sie die Werte in Grossbuchstaben und die Adresse der Instanz.
 
 1. Legen Sie die Variablen für diese Sitzung fest. `SHA` ist der Commit aus dem Pull Request, dessen Skripte Sie geprüft haben. Ohne gesperrte Kategorie lassen Sie `GESPERRT` leer.
 
    ```bash
-   D="$HOME/.config/ecclium-spike"
+   D="$HOME/.config/ecclium-testinstanz"
    URL=https://example.church.tools
    KATEGORIE=KATEGORIE_ID
    GESPERRT=GESPERRTE_KATEGORIE_ID
@@ -154,17 +194,80 @@ Die Befehle sind für zsh und bash geschrieben. Ersetzen Sie die Werte in Grossb
 
    In `03` nennt der Eintrag in `limitTest` mit `angefragt` 100 unter `eintraege`, wie viele Seiten das Konto lesen kann, solange es weniger als 100 sind: Ihre Seiten der Testkategorie und die Seite «main». Stimmt die Zahl nicht, prüfen Sie `KATEGORIE` und die Rechte des Kontos.
 
+## Ausführung des schreibenden Teils
+
+Erst nach dem lesenden Teil, nur auf der Testinstanz. Die Schritte setzen die Variablen `D`, `URL`, `SHA`, `R` und `NODE` aus den Schritten 1 bis 3 des lesenden Teils voraus.
+
+1. Legen Sie die Variablen des Schreibkontos fest. `SCHREIBBEREICH` ist die ID des Schreibbereichs.
+
+   ```bash
+   SCHREIBBEREICH=SCHREIBBEREICH_ID
+   (umask 077 && touch "$D/token-schreiben")
+   ```
+
+   Fügen Sie das Login-Token des Schreibkontos in einem Editor als einzige Zeile in `$D/token-schreiben` ein.
+
+2. Führen Sie `00-inventory` mit dem Token des Schreibkontos und einer neuen State-Datei aus, dann `02-permissions`. Beide haben keinen Wächter und senden das Token an `$URL`. Prüfen Sie deshalb vorher, dass `$URL` die Adresse der Testinstanz ist:
+
+   ```bash
+   env -i ECCLIUM_SPIKE_BASE_URL="$URL" ECCLIUM_SPIKE_TOKEN_FILE="$D/token-schreiben" ECCLIUM_SPIKE_STATE_FILE="$D/state-schreiben.json" "$NODE" "$R/scripts/spike/00-inventory.mts" > "$D/ausgabe/00-inventory-schreiben.json"
+   echo "Code $?"
+   env -i ECCLIUM_SPIKE_BASE_URL="$URL" ECCLIUM_SPIKE_TOKEN_FILE="$D/token-schreiben" ECCLIUM_SPIKE_STATE_FILE="$D/state-schreiben.json" "$NODE" "$R/scripts/spike/02-permissions.mts" > "$D/ausgabe/02-permissions-schreiben.json"
+   echo "Code $?"
+   ```
+
+3. Halten Sie an und prüfen Sie die Rechte mit dem Befehl aus Schritt 6 des lesenden Teils, mit `02-permissions-schreiben.json` statt `02-permissions.json` am Ende. Erwartet sind genau diese drei Zeilen:
+
+   ```text
+   churchwiki: view: wahr
+   churchwiki: view category: 2–9
+   churchwiki: edit category: 1
+   ```
+
+   Steht dort etwas anderes, schränken Sie die Rechte ein und wiederholen Sie nur `02-permissions`. Der Wächter prüft die Rechte vor dem Schreiben noch einmal, genauer: mit den IDs von Schreibbereich und Kennkategorie.
+
+4. Führen Sie `05-wiki-write` aus. Ersetzen Sie `ERSTER_TEIL_DES_HOSTS` von Hand durch den Teil der Adresse vor dem ersten Punkt. Leiten Sie die Eingabe nicht um: Die Probe fragt im Terminal nach. Vergleichen Sie vor der Antwort die SHA-256-Werte auf dem Bildschirm mit dem Pull Request, dann tippen Sie «ja».
+
+   ```bash
+   env -i ECCLIUM_SPIKE_BASE_URL="$URL" ECCLIUM_SPIKE_ALLOW_WRITE=ERSTER_TEIL_DES_HOSTS ECCLIUM_SPIKE_WRITE_TOKEN_FILE="$D/token-schreiben" ECCLIUM_SPIKE_STATE_FILE="$D/state-schreiben.json" ECCLIUM_SPIKE_WRITE_CATEGORY_ID="$SCHREIBBEREICH" ECCLIUM_SPIKE_WRITE_STATE_FILE="$D/schreib-state.jsonl" "$NODE" "$R/scripts/spike/05-wiki-write.mts" > "$D/ausgabe/05-wiki-write.json"
+   echo "Code $?"
+   ```
+
+   Sehen Sie die Ausgabe durch, bevor Sie weitermachen.
+
+5. Öffnen Sie im Web-Editor nacheinander die drei Seiten, deren Titel auf `-1`, `-2` und `-3` enden, und speichern Sie jede ohne Änderung. Am besten als Schreibkonto: Speichern Sie als Administrator, steht Ihr Name in der Versionsgeschichte. Notieren Sie, ob der Editor das Speichern überhaupt anbot.
+
+6. Führen Sie `06-wiki-editor-roundtrip` aus und sehen Sie die Ausgabe durch:
+
+   ```bash
+   env -i ECCLIUM_SPIKE_BASE_URL="$URL" ECCLIUM_SPIKE_ALLOW_WRITE=ERSTER_TEIL_DES_HOSTS ECCLIUM_SPIKE_WRITE_TOKEN_FILE="$D/token-schreiben" ECCLIUM_SPIKE_STATE_FILE="$D/state-schreiben.json" ECCLIUM_SPIKE_WRITE_CATEGORY_ID="$SCHREIBBEREICH" ECCLIUM_SPIKE_WRITE_STATE_FILE="$D/schreib-state.jsonl" "$NODE" "$R/scripts/spike/06-wiki-editor-roundtrip.mts" > "$D/ausgabe/06-wiki-editor-roundtrip.json"
+   echo "Code $?"
+   ```
+
+7. Prüfen Sie zwei Fragen von Hand, bevor die Seiten verschwinden. Notieren Sie nur «ja» oder «nein»:
+   - Zeigt die Ansicht der Seite, deren Titel auf `-4` oder `-4-titel` endet, die nackte Adresse `https://example.org/` als Link? Diese Seite ist in Markdown und wurde nie im Web-Editor gespeichert, die Antwort hängt also nur von der Darstellung ab.
+   - Erwähnen Sie als Administrator die synthetische Person des Schreibkontos in einer der Seiten. Erhält das Schreibkonto danach eine Benachrichtigung? Notieren Sie dazu, welche Benachrichtigungen das Schreibkonto eingeschaltet hat.
+
+8. Legen Sie die durchgesehenen Ausgaben ab. Erst danach führen Sie `07-wiki-cleanup` aus und bestätigen mit «ja». Die Löschung lässt sich nicht rückgängig machen.
+
+   ```bash
+   env -i ECCLIUM_SPIKE_BASE_URL="$URL" ECCLIUM_SPIKE_ALLOW_WRITE=ERSTER_TEIL_DES_HOSTS ECCLIUM_SPIKE_WRITE_TOKEN_FILE="$D/token-schreiben" ECCLIUM_SPIKE_STATE_FILE="$D/state-schreiben.json" ECCLIUM_SPIKE_WRITE_CATEGORY_ID="$SCHREIBBEREICH" ECCLIUM_SPIKE_WRITE_STATE_FILE="$D/schreib-state.jsonl" "$NODE" "$R/scripts/spike/07-wiki-cleanup.mts" > "$D/ausgabe/07-wiki-cleanup.json"
+   echo "Code $?"
+   ```
+
+Wiederholen: Endet `05` nach der Bestätigung mit einem anderen Code als 0, führen Sie zuerst `07` mit derselben Schreib-State-Datei aus. `07` findet auch Seiten dieses Laufs, deren Antwort verloren ging, über den Titel mit der Kennung des Laufs. Danach starten Sie `05` mit einem neuen Pfad in `ECCLIUM_SPIKE_WRITE_STATE_FILE`. Seiten mit dem Präfix `spike-schreibprobe` aus einem Lauf, dessen Schreib-State-Datei fehlt, entfernen Sie von Hand. Solange solche Seiten im Schreibbereich liegen, brechen `05`, `06` und `07` ab.
+
 Eine Probe bricht vor der ersten Anfrage ab, wenn `NODE_OPTIONS`, `NODE_DEBUG`, `NODE_PATH` oder `NODE_EXTRA_CA_CERTS` gesetzt ist oder `NODE_TLS_REJECT_UNAUTHORIZED=0` gilt. Diese Variablen könnten fremden Code laden oder ein fremdes Zertifikat gelten lassen, über das jemand das Token mitlesen könnte. Mit `env -i` sind sie nicht gesetzt.
 
 ## Codes
 
-| Code | Bedeutung                                                                                                                                                                                          |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | Ausgabe geschrieben.                                                                                                                                                                               |
-| 2    | Eine Variable oder Datei fehlt, eine Datei ist unsicher, oder die Umgebung ist unsicher. Der Hinweis auf stderr nennt den Grund. Die Probe hat in diesem Fall in der Regel keine Anfrage gesendet. |
-| 3    | Ausgabe zurückgehalten, siehe «Sicherung vor jeder Ausgabe».                                                                                                                                       |
-| 4    | Netz oder Antwort: `NETZ_DNS`, `NETZ_VERBINDUNG`, `NETZ`, `TLS`, `TIMEOUT`, `HTTP_REDIRECT`, `ANTWORT_ZU_GROSS` oder `ANTWORT_UNGUELTIG`.                                                          |
-| 70   | Unerwarteter Fehler in der Probe (`INTERN`).                                                                                                                                                       |
+| Code | Bedeutung                                                                                                                                                                                                                                                                                                                                                 |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | Ausgabe geschrieben.                                                                                                                                                                                                                                                                                                                                      |
+| 2    | Eine Variable oder Datei fehlt, eine Datei ist unsicher, die Umgebung ist unsicher, oder der Wächter hat abgebrochen. Der Hinweis auf stderr nennt den Grund. Eine lesende Probe hat in diesem Fall in der Regel keine Anfrage gesendet. Bei einer Probe des Schreibkontos können Lese-Anfragen des Wächters vorausgegangen sein, aber keine schreibende. |
+| 3    | Ausgabe zurückgehalten, siehe «Sicherung vor jeder Ausgabe».                                                                                                                                                                                                                                                                                              |
+| 4    | Netz oder Antwort: `NETZ_DNS`, `NETZ_VERBINDUNG`, `NETZ`, `TLS`, `TIMEOUT`, `HTTP_REDIRECT`, `ANTWORT_ZU_GROSS` oder `ANTWORT_UNGUELTIG`. Folgt der Fehler auf eine schreibende Anfrage, sagt der Hinweis das, siehe «Wiederholen».                                                                                                                       |
+| 70   | Unerwarteter Fehler in der Probe (`INTERN`).                                                                                                                                                                                                                                                                                                              |
 
 Fehler erscheinen nur als fester Code mit einem festen Hinweis, nie mit einer Meldung oder einem Stack, weil diese Daten aus einer Antwort enthalten könnten.
 
@@ -172,7 +275,7 @@ Die Umleitung `>` legt die Zieldatei an oder leert sie, bevor die Probe startet.
 
 ## Durchsicht vor dem Weitergeben
 
-1. Öffnen Sie jede Datei in `$D/ausgabe` und lesen Sie sie ganz. Erwartet sind nur Wörter der Proben, Schlüssel der API, Klassen, Statuscodes und die Version.
+1. Öffnen Sie jede Datei in `$D/ausgabe` und lesen Sie sie ganz. Erwartet sind nur Wörter der Proben, Schlüssel der API, Klassen, Statuscodes, Zeilennummern des synthetischen Texts und die Version.
 2. Suchen Sie nach allem, was Ihre Instanz, Ihre Gemeinde oder Personen erkennbar macht: Host, Namen, Gruppen, IDs.
 3. Prüfen Sie die Ausgaben im Klon des Repositorys mit gitleaks und den Regeln des Projekts, und zusätzlich mit einem eigenen Mustersatz, falls Sie einen mit den Namen Ihrer Instanz und Gemeinde pflegen:
 
@@ -195,7 +298,16 @@ Die Umleitung `>` legt die Zieldatei an oder leert sie, bevor die Probe startet.
    Erwartet ist unter `anfragen.mitToken` der Status 401. Auf einer Testinstanz mit synthetischen Daten und ChurchTools 3.137 war das etwa zehn Sekunden nach dem Erneuern so. Steht dort 200, gilt das alte Token noch, deaktivieren Sie dann das Dienstkonto. Sehen Sie auch diese Ausgabe durch, bevor Sie sie weitergeben.
 
 3. Löschen Sie danach die Token-Datei.
-4. Löschen Sie den Ordner `$R`, die State-Datei und die Ausgaben, sobald die Ergebnisse im Research-Dokument stehen. Die State-Datei enthält das vollständige OpenAPI-Dokument Ihrer Instanz.
+4. Nach dem schreibenden Teil erneuern Sie ebenso das Token des Schreibkontos und prüfen mit `01-auth`, dass die Instanz das alte abweist. `01-auth` liest das Token aus `ECCLIUM_SPIKE_TOKEN_FILE` und hat keinen Wächter. Prüfen Sie vorher, dass `$URL` die Adresse der Testinstanz ist:
+
+   ```bash
+   env -i ECCLIUM_SPIKE_BASE_URL="$URL" ECCLIUM_SPIKE_TOKEN_FILE="$D/token-schreiben" ECCLIUM_SPIKE_STATE_FILE="$D/state-schreiben.json" "$NODE" "$R/scripts/spike/01-auth.mts" > "$D/ausgabe/01-auth-schreibkonto-nach-erneuerung.json"
+   echo "Code $?"
+   ```
+
+   Erwartet ist unter `anfragen.mitToken` der Status 401. Das Schreibkonto bleibt bestehen, löschen Sie nur die Token-Datei.
+
+5. Löschen Sie den Ordner `$R`, die State-Dateien, die Schreib-State-Datei und die Ausgaben, sobald die Ergebnisse im Research-Dokument stehen. Die State-Datei enthält das vollständige OpenAPI-Dokument Ihrer Instanz. Die Schreib-State-Datei brauchen `06` und `07`. Löschen Sie sie erst, wenn `07` alle Seiten des Laufs entfernt hat.
 
 ## Tests
 

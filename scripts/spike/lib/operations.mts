@@ -3,9 +3,10 @@
  *
  * The paths follow the public OpenAPI document of ChurchTools. Before a
  * probe calls one, it looks it up by method and path in the document of
- * the instance itself. If the instance does not document it, the probe
- * reports that and calls nothing. The write operations are only looked
- * up, never called.
+ * the instance itself. If the instance does not document it, a reading
+ * probe reports that and calls nothing, and a probe of the write account
+ * stops. Only the write probes call the write operations, through the
+ * client the guard of the test environment hands out (ADR 0049).
  *
  * @packageDocumentation
  */
@@ -26,6 +27,7 @@ export const operations = {
   whoami: { method: 'get', template: '/api/whoami' },
   permissionsGlobal: { method: 'get', template: '/api/permissions/global' },
   wikiPages: { method: 'get', template: '/api/wiki/pages' },
+  wikiCategories: { method: 'get', template: '/api/wiki/categories' },
   wikiCategoryPages: {
     method: 'get',
     template: '/api/wiki/categories/{}/pages',
@@ -45,6 +47,10 @@ export const operations = {
   },
   wikiPageUpdate: {
     method: 'patch',
+    template: '/api/wiki/categories/{}/pages/{}',
+  },
+  wikiPageDelete: {
+    method: 'delete',
     template: '/api/wiki/categories/{}/pages/{}',
   },
 } as const satisfies Readonly<Record<string, OperationTemplate>>;
