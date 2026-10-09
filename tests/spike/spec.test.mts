@@ -48,7 +48,7 @@ describe('findOperation', () => {
       findOperation(document, 'patch', '/api/wiki/categories/{}/pages/{}'),
     ).toBeDefined();
     expect(
-      findOperation(document, 'delete', '/api/wiki/categories/{}/pages/{}'),
+      findOperation(document, 'put', '/api/wiki/categories/{}/pages/{}'),
     ).toBeUndefined();
     expect(findOperation(document, 'get', '/wiki/pages')).toBeUndefined();
   });

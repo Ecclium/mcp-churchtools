@@ -26,6 +26,7 @@ export const operations = {
   whoami: { method: 'get', template: '/api/whoami' },
   permissionsGlobal: { method: 'get', template: '/api/permissions/global' },
   wikiPages: { method: 'get', template: '/api/wiki/pages' },
+  wikiCategories: { method: 'get', template: '/api/wiki/categories' },
   wikiCategoryPages: {
     method: 'get',
     template: '/api/wiki/categories/{}/pages',
@@ -45,6 +46,10 @@ export const operations = {
   },
   wikiPageUpdate: {
     method: 'patch',
+    template: '/api/wiki/categories/{}/pages/{}',
+  },
+  wikiPageDelete: {
+    method: 'delete',
     template: '/api/wiki/categories/{}/pages/{}',
   },
 } as const satisfies Readonly<Record<string, OperationTemplate>>;
