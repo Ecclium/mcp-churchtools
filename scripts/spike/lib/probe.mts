@@ -6,10 +6,16 @@
  * could identify the instance or the local machine, and only then sends
  * requests. Whatever goes wrong ends in a fixed code.
  *
+ * A probe of the write account also passes the checks of the guard that
+ * need no request (ADR 0049), takes its token from its own variable, and
+ * gets an opaque handle instead of a write client. Only the guard turns
+ * that handle into a client that writes.
+ *
  * @packageDocumentation
  */
 import { homedir, userInfo } from 'node:os';
 import { dirname } from 'node:path';
+import { createInterface } from 'node:readline';
 import { domainToUnicode, fileURLToPath } from 'node:url';
 
 import {
@@ -23,6 +29,14 @@ import {
   type Environment,
   type SpikeState,
 } from './env.mts';
+import {
+  checkWriteEnvironment,
+  createWriteAccess,
+  noInput,
+  type Input,
+  type WriteAccess,
+  type WriteSettings,
+} from './gate.mts';
 import { Guard, type Json } from './guard.mts';
 import { createClient, type Client, type FetchFunction } from './http.mts';
 import {
@@ -42,6 +56,14 @@ export interface ProbeContext {
   readonly statePath: string;
   /** The state of 00-inventory, for every probe except 00-inventory. */
   readonly state: SpikeState | undefined;
+  /** For a probe of the write account: the handle for the guard. */
+  readonly write: WriteSetup | undefined;
+}
+
+/** What a probe of the write account gets for the guard. */
+export interface WriteSetup {
+  readonly access: WriteAccess;
+  readonly settings: WriteSettings;
 }
 
 /** A probe: its name, how it uses the state, and its work. */
@@ -49,6 +71,8 @@ export interface ProbeDefinition {
   readonly name: string;
   /** `create` for 00-inventory, `read` for all others. */
   readonly state: 'create' | 'read';
+  /** Which account the probe runs with. Default: the read account. */
+  readonly account?: 'read' | 'write';
   readonly run: (context: ProbeContext) => Promise<Json>;
 }
 
@@ -59,6 +83,8 @@ export interface Dependencies {
   readonly io: Io;
   /** Folder of the probes, for the hashes. */
   readonly folder: string;
+  /** Where a confirmation comes from. Default: nowhere, so nothing is confirmed. */
+  readonly input?: Input;
 }
 
 /** The domain of instances hosted by the vendor of ChurchTools. */
@@ -152,7 +178,16 @@ export async function runProbe(
   try {
     checkNodeEnvironment(env);
     const origin = readOrigin(env);
-    const token = readToken(env);
+    const settings =
+      definition.account === 'write'
+        ? checkWriteEnvironment(env, origin)
+        : undefined;
+    const token = readToken(
+      env,
+      settings === undefined
+        ? 'ECCLIUM_SPIKE_TOKEN_FILE'
+        : 'ECCLIUM_SPIKE_WRITE_TOKEN_FILE',
+    );
     const path = statePath(env);
     const guard = new Guard();
     blockLocal(guard, env, origin, token);
@@ -171,6 +206,16 @@ export async function runProbe(
       guard,
       fetch: dependencies.fetch,
     });
+    const write =
+      settings === undefined
+        ? undefined
+        : {
+            access: createWriteAccess(
+              { origin, token, guard, fetch: dependencies.fetch },
+              dependencies.input ?? noInput,
+            ),
+            settings,
+          };
     const output = await definition.run({
       origin,
       client,
@@ -178,11 +223,38 @@ export async function runProbe(
       env,
       statePath: path,
       state,
+      write,
     });
     return writeResult(output, guard, io);
   } catch (error) {
     return writeError(error, io);
   }
+}
+
+/**
+ * Reads one line from the terminal, with the prompt on stderr, so that
+ * stdout carries only the result.
+ *
+ * @param prompt - Fixed text of the probe.
+ * @returns The line, or `undefined` at the end of the input.
+ */
+function askTerminal(prompt: string): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    const reader = createInterface({
+      input: process.stdin,
+      output: process.stderr,
+    });
+    let answer: string | undefined;
+    reader.once('line', (line) => {
+      answer = line;
+      reader.close();
+    });
+    reader.once('close', () => {
+      resolve(answer);
+    });
+    reader.setPrompt(prompt);
+    reader.prompt();
+  });
 }
 
 /**
@@ -206,5 +278,6 @@ export async function main(
     fetch,
     io,
     folder: dirname(fileURLToPath(moduleUrl)),
+    input: { isTerminal: process.stdin.isTTY, readLine: askTerminal },
   });
 }

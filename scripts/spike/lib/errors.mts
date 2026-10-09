@@ -54,6 +54,55 @@ export const hints = {
     'Abbruch: ECCLIUM_SPIKE_WIKI_CATEGORY_ID fehlt oder ist keine positive ganze Zahl.',
   gesperrteKategorieUngueltig:
     'Abbruch: ECCLIUM_SPIKE_FORBIDDEN_CATEGORY_ID ist keine positive ganze Zahl.',
+  platzhalterHost:
+    'Abbruch: ECCLIUM_SPIKE_BASE_URL ist noch der Platzhalter aus dem README. Tragen Sie die Adresse der Testinstanz ein.',
+  schalterFehlt:
+    'Abbruch: ECCLIUM_SPIKE_ALLOW_WRITE fehlt. Proben mit dem Schreibkonto laufen nur mit diesem Schalter.',
+  schalterFalsch:
+    'Abbruch: ECCLIUM_SPIKE_ALLOW_WRITE passt nicht zum Host. Tippen Sie den ersten Teil des Hosts von Hand, nicht aus der Variablen der Adresse.',
+  zweiTokenVariablen:
+    'Abbruch: ECCLIUM_SPIKE_TOKEN_FILE ist gesetzt. Proben mit dem Schreibkonto lesen das Token nur aus ECCLIUM_SPIKE_WRITE_TOKEN_FILE. Lassen Sie die andere Variable im Aufruf weg.',
+  schreibTokenDateiFehlt: 'Abbruch: ECCLIUM_SPIKE_WRITE_TOKEN_FILE fehlt.',
+  schreibTokenDateiNichtGefunden:
+    'Abbruch: Die Token-Datei des Schreibkontos wurde nicht gefunden. Prüfen Sie den Pfad in ECCLIUM_SPIKE_WRITE_TOKEN_FILE.',
+  schreibKategorieFehlt:
+    'Abbruch: ECCLIUM_SPIKE_WRITE_CATEGORY_ID fehlt oder ist keine positive ganze Zahl.',
+  schreibStateFehlt: 'Abbruch: ECCLIUM_SPIKE_WRITE_STATE_FILE fehlt.',
+  schreibStateVorhanden:
+    'Abbruch: Die Schreib-State-Datei existiert schon. 05-wiki-write legt sie bei jedem Lauf neu an. Wählen Sie einen neuen Pfad und behalten Sie die alte Datei für 07-wiki-cleanup.',
+  schreibStateUnsicher:
+    'Abbruch: Die Schreib-State-Datei muss eine reguläre Datei des aufrufenden Benutzers sein, ohne Rechte für andere und ausserhalb eines Git-Arbeitsbaums.',
+  schreibStateNichtGefunden:
+    'Abbruch: Die Schreib-State-Datei wurde nicht gefunden. Sie entsteht in 05-wiki-write.',
+  schreibStateUngueltig:
+    'Abbruch: Die Schreib-State-Datei ist beschädigt, stammt nicht von 05-wiki-write oder gehört zu einer anderen Instanz oder Kategorie.',
+  waechterOperationFehlt:
+    'Abbruch: Die Instanz dokumentiert eine Operation nicht, die der Wächter braucht. Sie gilt deshalb als produktiv. Es wurde nichts geschrieben.',
+  waechterAntwortUnerwartet:
+    'Abbruch: Eine Antwort, die der Wächter prüft, hat nicht die dokumentierte Form. Die Instanz gilt deshalb als produktiv. Es wurde nichts geschrieben.',
+  kennkategorieFehlt:
+    'Abbruch: Das Konto sieht keine Kategorie «testinstanz-kennung». Die Instanz gilt deshalb als produktiv. Es wurde nichts geschrieben.',
+  kennkategorieMehrfach:
+    'Abbruch: Das Konto sieht mehr als eine Kategorie «testinstanz-kennung». Es wurde nichts geschrieben.',
+  kennkategorieBearbeitbar:
+    'Abbruch: Das Konto darf die Kennkategorie bearbeiten oder löschen. Es darf sie nur sehen.',
+  schreibKategorieNichtSichtbar:
+    'Abbruch: Das Konto sieht die Kategorie aus ECCLIUM_SPIKE_WRITE_CATEGORY_ID nicht.',
+  schreibKategorieIstKennung:
+    'Abbruch: ECCLIUM_SPIKE_WRITE_CATEGORY_ID nennt die Kennkategorie. Geschrieben wird nur im Schreibbereich.',
+  schreibKategorieNichtBearbeitbar:
+    'Abbruch: Das Konto darf den Schreibbereich nicht bearbeiten.',
+  weitereKategorien:
+    'Abbruch: Das Konto sieht ausser dem Schreibbereich und der Kennkategorie weitere Kategorien. Schränken Sie seine Rechte ein, wie im README beschrieben.',
+  zuWeitBerechtigt:
+    'Abbruch: zu weit berechtigt. Das Konto darf mehr, als den Schreibbereich und die Kennkategorie zu sehen und den Schreibbereich zu bearbeiten. Schränken Sie seine Rechte ein, wie im README beschrieben.',
+  fremdeSeiten:
+    'Abbruch: Im Schreibbereich liegen Seiten, die nicht zu diesem Lauf gehören. Entfernen Sie sie zuerst, mit 07-wiki-cleanup und der Schreib-State-Datei des früheren Laufs oder von Hand.',
+  keinTerminal:
+    'Abbruch: Die Bestätigung braucht ein Terminal. Starten Sie die Probe direkt im Terminal, ohne umgeleitete Eingabe.',
+  nichtBestaetigt: 'Abbruch: nicht bestätigt. Es wurde nichts geändert.',
+  schreibenAbgebrochen:
+    'Abbruch nach einer schreibenden Anfrage. Es folgt keine weitere. Prüfen Sie den Schreibbereich und räumen Sie mit 07-wiki-cleanup und derselben Schreib-State-Datei auf.',
   spezifikationUngueltig:
     'Abbruch: Die Instanz liefert unter dem erwarteten Pfad kein OpenAPI-Dokument.',
   netz: 'Abbruch: Die Instanz ist nicht erreichbar. Code siehe oben.',
