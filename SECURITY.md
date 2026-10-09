@@ -29,7 +29,7 @@ Bis Version 0.1.0 erschienen ist, gibt es nur den Stand auf `main`. Sicherheitsk
 
 ## Bei einem Vorfall
 
-Vermuten Sie einen Vorfall mit Ecclium, etwa ein abgeflossenes Token, eine kompromittierte Installation oder Abhängigkeit oder unerwartete Schreibvorgänge in ChurchTools, dann widerrufen Sie zuerst die ChurchTools-Tokens, die Ecclium benutzt, noch vor jeder Analyse. Ein Login-Token wirkt ohne zweiten Faktor und trägt alle Rechte seines Kontos.
+Vermuten Sie einen Vorfall mit Ecclium, etwa ein abgeflossenes Token, eine kompromittierte Installation oder Abhängigkeit oder unerwartete Schreibvorgänge in ChurchTools, dann ändern Sie noch vor jeder Analyse zuerst die Passwörter der ChurchTools-Konten, die Ecclium benutzt, und widerrufen danach ihre Tokens. Ein Login-Token wirkt ohne zweiten Faktor und trägt alle Rechte seines Kontos. Wer das Passwort eines Kontos kennt, kann sich sein Login-Token jederzeit neu holen, deshalb kommt das Passwort zuerst.
 
 ## Bedrohungen und Restrisiken
 
@@ -43,6 +43,6 @@ Ecclium is maintained by one person, without round-the-clock availability or a d
 
 After the fix we publish a security advisory and, if you wish, credit you in it. Report vulnerabilities in ChurchTools itself to the manufacturer of ChurchTools; Ecclium is an independent project and is not affiliated with the manufacturer of ChurchTools. Report vulnerabilities in a dependency to the project that maintains it.
 
-If you suspect any incident involving Ecclium, such as a leaked token, a compromised installation or dependency, or unexpected write operations in ChurchTools, first revoke the ChurchTools tokens that Ecclium uses, before any analysis. A login token works without a second factor and carries all permissions of its account.
+If you suspect any incident involving Ecclium, such as a leaked token, a compromised installation or dependency, or unexpected write operations in ChurchTools, first change the passwords of the ChurchTools accounts that Ecclium uses and then revoke their tokens, before any analysis. A login token works without a second factor and carries all permissions of its account. Anyone who knows the password of an account can fetch its login token again, which is why the password comes first.
 
 What Ecclium protects, against whom, with which measures and what remains open is described in the [threat model](docs/threat-model.md), in German.
