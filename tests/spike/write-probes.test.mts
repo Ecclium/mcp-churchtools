@@ -10,8 +10,13 @@ import { describe, expect, it } from 'vitest';
 
 import { probe as inventory } from '../../scripts/spike/00-inventory.mts';
 import { probe as write } from '../../scripts/spike/05-wiki-write.mts';
+import { probe as roundtrip } from '../../scripts/spike/06-wiki-editor-roundtrip.mts';
 import { probe as cleanup } from '../../scripts/spike/07-wiki-cleanup.mts';
-import { corpusText, textHash } from '../../scripts/spike/lib/corpus.mts';
+import {
+  corpus,
+  corpusText,
+  textHash,
+} from '../../scripts/spike/lib/corpus.mts';
 import { hints } from '../../scripts/spike/lib/errors.mts';
 import type { Input } from '../../scripts/spike/lib/gate.mts';
 import { exitCodes } from '../../scripts/spike/lib/output.mts';
@@ -325,6 +330,133 @@ describe('05-wiki-write', () => {
     expect(missing.code).toBe(exitCodes.configuration);
     expect(missing.output.stderr()).toContain(hints.leseOperationFehlt);
     expect(other.instance.calls).toEqual([]);
+  });
+});
+
+describe('06-wiki-editor-roundtrip', () => {
+  const lineOf = (start: string): number =>
+    corpus.findIndex((line) => line.startsWith(start)) + 1;
+
+  async function written(): Promise<{
+    setting: WriteSetting;
+    instance: WriteInstance;
+    guids: string[];
+  }> {
+    const ready = await prepared();
+    const run = await runOne(
+      write,
+      ready.instance,
+      ready.setting.env,
+      confirming(ready.instance),
+    );
+    expect(run.code, run.output.stderr()).toBe(exitCodes.ok);
+    ready.instance.calls.length = 0;
+    const guids = readWriteState(
+      ready.setting.writeStateFile,
+      writeOrigin,
+      ready.setting.writeCategory,
+    )
+      .pages.filter((page) => page.role === 'editor')
+      .map((page) => page.guid);
+    return { ...ready, guids };
+  }
+
+  it('names what the web editor changed, by kind and line, and writes nothing', async () => {
+    const { setting, instance, guids } = await written();
+    const [first, second, third] = guids;
+    instance.editorSave(first ?? '', (text) =>
+      text
+        .replace('* Stern', '- Stern')
+        .split('\n')
+        .filter((line) => !line.startsWith('<!--'))
+        .join('\n'),
+    );
+    instance.editorSave(second ?? '', (text) => text);
+    instance.editorSave(third ?? '', (text) =>
+      text.replace(
+        'https://example.org/',
+        '[https://example.org/](https://example.org/)',
+      ),
+    );
+    const run = await runOne(roundtrip, instance, setting.env);
+    expect(run.code, run.output.stderr()).toBe(exitCodes.ok);
+    expect(leaks(run.output, setting.forbidden)).toEqual([]);
+    expect(writes(instance)).toEqual([]);
+    expect(run.result).toEqual({
+      probe: '06-wiki-editor-roundtrip',
+      seiten: {
+        markdown1: {
+          versionGestiegen: 'ja',
+          textGeaendert: 'ja',
+          isMarkdownGelesen: 'wahr',
+          anzahlVersionen: '2–9',
+          htmlKommentarErhalten: 'nein',
+          aenderungen: [
+            { zeile: lineOf('* Stern'), art: 'Listenzeichen' },
+            { zeile: lineOf('<!--'), art: 'HTML-Kommentar entfernt' },
+          ],
+        },
+        markdown2: {
+          versionGestiegen: 'ja',
+          textGeaendert: 'nein',
+          isMarkdownGelesen: 'wahr',
+          anzahlVersionen: '2–9',
+          htmlKommentarErhalten: 'ja',
+          aenderungen: [],
+        },
+        standardformat: {
+          versionGestiegen: 'ja',
+          textGeaendert: 'ja',
+          isMarkdownGelesen: 'falsch',
+          anzahlVersionen: '2–9',
+          htmlKommentarErhalten: 'ja',
+          aenderungen: [
+            {
+              zeile: lineOf('Eine nackte Adresse'),
+              art: 'URL in Link umgewandelt',
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  it('reports a page the editor never saved as unchanged', async () => {
+    const { setting, instance } = await written();
+    const run = await runOne(roundtrip, instance, setting.env);
+    expect(run.code, run.output.stderr()).toBe(exitCodes.ok);
+    expect(run.result).toMatchObject({
+      seiten: {
+        markdown1: { versionGestiegen: 'nein', textGeaendert: 'nein' },
+      },
+    });
+  });
+
+  it('stops before any request without a write state, and reads nothing beside a foreign page', async () => {
+    const { setting, instance } = await prepared();
+    const missing = await runOne(roundtrip, instance, setting.env);
+    expect(missing.code).toBe(exitCodes.configuration);
+    expect(missing.output.stderr()).toContain(hints.schreibStateNichtGefunden);
+    expect(instance.calls).toEqual([]);
+
+    const done = await written();
+    const foreign = writeInstance(done.setting, {
+      extraPages: [
+        {
+          guid: '0f8fad5b-d9cb-469f-a165-70867728950e',
+          title: 'Fremde Seite',
+          onStartpage: false,
+          versions: [
+            { version: 1, text: 'x', isMarkdown: true, modifiedDate: 'x' },
+          ],
+        },
+      ],
+    });
+    const refused = await runOne(roundtrip, foreign, done.setting.env);
+    expect(refused.code).toBe(exitCodes.configuration);
+    expect(refused.output.stderr()).toContain(hints.fremdeSeiten);
+    expect(foreign.calls.every((call) => call.method === 'GET')).toBe(true);
+    expect(foreign.calls).toHaveLength(3);
   });
 });
 

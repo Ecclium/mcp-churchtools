@@ -42,7 +42,6 @@ import type { Guard, Json } from './lib/guard.mts';
 import {
   guidPattern,
   pastDate,
-  pathFor,
   staleEntityTag,
   type Client,
   type ProbeResponse,
@@ -51,6 +50,7 @@ import {
 } from './lib/http.mts';
 import { operations } from './lib/operations.mts';
 import { main, type ProbeDefinition } from './lib/probe.mts';
+import { dataOf, readPage, type PageView } from './lib/pages.mts';
 import { describeResponse } from './lib/report.mts';
 import {
   Schemas,
@@ -120,20 +120,6 @@ const words = [
 const summary =
   '05-wiki-write legt im Schreibbereich vier Seiten an, ändert die vierte mehrmals und legt einmal einen doppelten Titel an.';
 
-/** What the probe reads back of a page. */
-interface PageView {
-  readonly status: number;
-  readonly guid?: string;
-  readonly identifier?: unknown;
-  readonly title?: string;
-  readonly version?: number;
-  readonly text?: string | null;
-  readonly isMarkdown?: boolean;
-  readonly onStartpage?: boolean;
-  readonly modifiedDate?: string;
-  readonly versionCount?: number;
-}
-
 /** A page the probe asked the instance to create. */
 interface Created {
   readonly response: ProbeResponse;
@@ -152,17 +138,11 @@ interface Run {
   readonly file: WriteStateFile;
 }
 
-const isPositive = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 const yesNo = (value: boolean): string => (value ? 'ja' : 'nein');
 const truth = (value: boolean | undefined): string =>
   value === undefined ? 'fehlt' : value ? 'wahr' : 'falsch';
 const succeeded = (response: ProbeResponse): boolean =>
   response.status >= 200 && response.status < 300;
-
-function dataOf(response: ProbeResponse): unknown {
-  return isObject(response.body) ? response.body['data'] : undefined;
-}
 
 /**
  * Takes the GUID of a page from an answer of the instance.
@@ -178,46 +158,6 @@ export function guidOf(response: ProbeResponse): string | undefined {
   const data = dataOf(response);
   const guid = isObject(data) ? data['guid'] : undefined;
   return typeof guid === 'string' && guidPattern.test(guid) ? guid : undefined;
-}
-
-async function readPage(
-  client: Client,
-  category: number,
-  guid: string,
-): Promise<PageView> {
-  const page = await client.get({
-    path: pathFor(operations.wikiPage.template, category, guid),
-  });
-  const data = dataOf(page);
-  if (page.status !== 200 || !isObject(data)) {
-    return { status: page.status };
-  }
-  const versions = await client.get({
-    path: pathFor(operations.wikiPageVersions.template, category, guid),
-  });
-  const list = dataOf(versions);
-  const numbers = (Array.isArray(list) ? list : [])
-    .map((entry) => (isObject(entry) ? entry['version'] : undefined))
-    .filter(isPositive);
-  const meta = data['meta'];
-  const modified = isObject(meta) ? meta['modifiedDate'] : undefined;
-  const text = data['text'];
-  return {
-    status: page.status,
-    ...(typeof data['guid'] === 'string' ? { guid: data['guid'] } : {}),
-    identifier: data['identifier'],
-    ...(typeof data['title'] === 'string' ? { title: data['title'] } : {}),
-    ...(isPositive(data['version']) ? { version: data['version'] } : {}),
-    ...(typeof text === 'string' || text === null ? { text } : {}),
-    ...(typeof data['isMarkdown'] === 'boolean'
-      ? { isMarkdown: data['isMarkdown'] }
-      : {}),
-    ...(typeof data['onStartpage'] === 'boolean'
-      ? { onStartpage: data['onStartpage'] }
-      : {}),
-    ...(typeof modified === 'string' ? { modifiedDate: modified } : {}),
-    versionCount: numbers.length,
-  };
 }
 
 function rose(before: number | undefined, after: number | undefined): string {
