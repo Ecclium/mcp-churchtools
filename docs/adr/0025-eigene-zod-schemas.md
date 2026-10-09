@@ -1,6 +1,6 @@
 # ADR 0025: Eigene zod-Schemas als Wahrheit für den ChurchTools-Client
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 09.10.2026
 - Datum: 30.09.2026
 - Fällt vor: Phase 1
 
