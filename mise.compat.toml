@@ -2,4 +2,4 @@
 # mise.toml with the next Node line instead, so that the code is also checked
 # against the version the container images will move to.
 [tools]
-node = "26.10.0"
+node = "26.11.1"
