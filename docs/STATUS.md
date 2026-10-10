@@ -1,12 +1,12 @@
 # Status
 
-Stand: 10.10.2026, Phase 1 hat begonnen. Der Plan der Phase ist mit dem Maintainer abgestimmt, die Architekturregeln für Phase 1 sind gebaut.
+Stand: 11.10.2026, Phase 1 läuft. Gebaut sind die Architekturregeln für Phase 1 und die Sperre im Testprozess, die Tests ohne Aussenverbindung hält.
 
 ## Aktuelle Phase
 
-Phase 1, Kern und erster Lesezugriff, hat begonnen. Fertig sind die Architekturregeln, die vor dem Code der Phase stehen: Netzverbindungen öffnet nur der ausgehende Weg in `packages/core/src/http/`, beim MCP-SDK registriert nur der Mount, Code der Pakete hält keinen veränderlichen Zustand auf Modulebene (ADR 0051, vorgeschlagen), und keine Direktive im Code schaltet eine dieser Regeln ab. Phase 0, Fundament und Entscheide, ist abgeschlossen (Erledigt). `pnpm check` fasst alle Prüfungen zusammen, `pnpm ci:local` führt die meisten Prüfungen aus CI lokal aus. Beide laufen lokal grün, die Werkbank auch in CI.
+Phase 1, Kern und erster Lesezugriff, hat begonnen. Fertig sind die Architekturregeln, die vor dem Code der Phase stehen: Netzverbindungen öffnet nur der ausgehende Weg in `packages/core/src/http/`, beim MCP-SDK registriert nur der Mount, Code der Pakete hält keinen veränderlichen Zustand auf Modulebene (ADR 0051, vorgeschlagen), und keine Direktive im Code schaltet eine dieser Regeln ab. Tests bauen keine Verbindung nach aussen auf: Eine Sperre in jedem Testprozess lässt jeden Test scheitern, der es versucht (ADR 0052, vorgeschlagen). Phase 0, Fundament und Entscheide, ist abgeschlossen (Erledigt). `pnpm check` fasst alle Prüfungen zusammen, `pnpm ci:local` führt die meisten Prüfungen aus CI lokal aus. Beide laufen lokal grün, die Werkbank auch in CI.
 
-Nächster Schritt: Tests ohne Aussenverbindung, also eine Sperre, die einen Test scheitern lässt, sobald er eine echte Verbindung aufbaut, lokal und in CI. Danach folgen die Prüfung des MCP-SDK in Version 2 mit dem Spike zu Elicitation und die lesende Probe für Personen und Gruppen, die ein eigenes Dienstkonto des Servers auf der Testinstanz braucht.
+Nächster Schritt: der Netz-Namensraum in CI, damit Build und Prüfungen der Jobs `check`, `compat` und `minimum` ohne Weg nach aussen laufen, mit dem Ergebnis seines ersten Laufs (ADR 0052). Danach folgen die Prüfung des MCP-SDK in Version 2 mit dem Spike zu Elicitation und die lesende Probe für Personen und Gruppen, die ein eigenes Dienstkonto des Servers auf der Testinstanz braucht.
 
 ## Vorbedingungen Phase 0
 
@@ -52,6 +52,10 @@ Vom Maintainer bestätigt am 25.09.2026:
   - Eine Token-Datei mit Rechten für Gruppe oder andere bricht den Start ab. Eine Lockerung für das offizielle Container-Image folgt in Phase 7.
   - `ECCLIUM_REDACTION=strict` lehnt der Server bis Phase 4 mit einer klaren Meldung ab.
   - Das Mindestalter von drei Tagen gilt auch für die Version des MCP-SDK, die Phase 1 pinnt.
+- Tests ohne Aussenverbindung (ADR 0052), entschieden am 10.10.2026:
+  - Die Sperre im Testprozess und der Netz-Namensraum in CI kommen in zwei Pull Requests. Die Sperre ist lokal vollständig belegbar, der Namensraum braucht einen Lauf auf GitHub.
+  - In den Jobs `check`, `compat` und `minimum` darf ein Aufruf von sudo die Einschränkung von AppArmor für Benutzer-Namensräume für den Rest des Jobs aufheben, nur auf Runnern von GitHub. Gelingt dieser Weg nicht, legt derselbe Lauf den Namensraum mit sudo an und wechselt zurück zum Benutzer des Runners. Entsteht kein Namensraum, scheitert der Job.
+  - Nach dem Namensraum zeigen zwei einmalige rote Läufe in einem Pull Request, der nicht gemergt wird, dass CI an einer echten Verbindung scheitert: einmal an der Sperre, einmal ohne sie am Namensraum.
 
 ## Grundsatzentscheide
 
@@ -74,6 +78,7 @@ Diese Grundsatzfragen sind entschieden.
 
 ## Offen
 
+- Netz-Namensraum in CI (ADR 0052): folgt mit dem nächsten Pull Request. Ob er auf `ubuntu-24.04` unprivilegiert nach dem Aufheben der Einschränkung entsteht, ob `::1` darin trägt und ob die Namensauflösung darin scheitert, zeigt erst sein erster Lauf. Bis dahin gilt in CI nur die Sperre im Testprozess.
 - ADR zur Server-Instanz und ADR 0051: Das ADR, das ADR 0018 ablöst und im Betrieb über stdio eine Instanz pro Verbindung festlegt, folgt mit der Prüfung des MCP-SDK. Bis es angenommen ist, gilt ADR 0018. ADR 0051 (Zustand zwischen Anfragen) ist vorgeschlagen und wird vor dem ersten Code des ausgehenden Wegs angenommen, weil Pool und Drosselung seine benannten Ausnahmen sind.
 - MCP-SDK in Version 2: Wie es den Betrieb ohne Sitzung einstellt, belegen die Metadaten der Pakete nicht. Prüfung an den Typdefinitionen und der Dokumentation zu Beginn von Phase 1. Dass die Spezifikation 2026-07-28 keine Sitzung und keinen Aufruf `initialize` mehr kennt, belegt ihr Änderungsprotokoll («Key Changes», Abschnitt «Major changes», Punkte 1 und 2, abgerufen am 30.09.2026). Die Abschnitte zu `input_required` und Sampling werden mit dem SDK geprüft.
 - `TRADEMARKS.md`: Der Text folgt nach rechtlicher Prüfung. Bis dahin keine eigene Fassung. README, ADR 0002 und `brand/README.md` verweisen schon darauf. Mit der Datei kommt der Verweis in `NOTICE` dazu. Die Prüfung klärt auch, unter welchen Bedingungen die Dateien von Logo und Icons in `brand/` kopiert und weitergegeben werden dürfen, auch in Forks.
@@ -311,3 +316,9 @@ Diese Grundsatzfragen sind entschieden.
   - Ein Test lehnt im Code der Pakete jede Direktive ab, die eine Architekturregel abschaltet. Das galt vorher auch für die älteren Regeln nicht.
   - Der Test von dependency-cruiser schreibt seine Beispiele nur noch in seine Kopie des Workspace, nie durch einen Link in ein echtes npm-Paket.
   - Nachweis: Jede neue Einschränkung hat ein Beispiel, an dem sie rot wird, und erlaubte Beispiele, an jedem Ort und daneben. Eine Durchsicht aus drei Blickwinkeln, mit rund 70 absichtlich falschen Fassungen der Regeln, fand unter anderem Singletons, die die Regel gegen Zustand übersah, einen Ort `egress`, der die Netzregel für ganz core hätte abschalten können, und Module, deren Fall im Test fehlte. Alles ist behoben. `pnpm check` läuft lokal grün, mit 661 Tests in 38 Dateien.
+- 10.10.2026, die Architekturregeln für Phase 1 sind als `6962740` auf `main` (#73), nach eslint-plugin-jsdoc 65.2.0 als `c1f1cdb` (#71). Der Squash-Commit bringt genau die Änderung des Branches, zusammen mit #71.
+- 11.10.2026, Tests ohne Aussenverbindung, erster Teil:
+  - Jeder Testprozess lädt über `setupFiles` eine Sperre (`tests/support/no-network.mts`). Erlaubt sind nur Verbindungen zu `127.0.0.1` und `::1` als IP-Literal und TCP-Server auf diesen Adressen. Gesperrt sind jede andere Adresse, jede Namensauflösung, lokale Sockets, Worker-Threads, die rohen Bindungen für Sockets und DNS und der Proxy aus der Umgebung. Jeder Versuch lässt den Test scheitern, auch ein abgefangener. Was keinem Test zuzuordnen ist, lässt die Datei scheitern, und was kein Haken eines Tests sieht, etwa beim Laden einer Datei oder nach ihrem letzten Test, den ganzen Lauf. Kindprozesse mit Node.js erben die Sperre und enden nach einem Versuch mit Code 70.
+  - Gegenprobe: Ein Prozess mit der Sperre probiert 32 Wege nach aussen, die alle am Fehler der Sperre scheitern müssen, und 8 erlaubte Wege. Eigene Läufe von Vitest über Fixtures, die absichtlich verbinden, scheitern mit der Meldung der Sperre, auch für Versuche nach dem letzten Test und beim Laden einer Datei. Das Gegenstück über Loopback besteht, und ein Proxy auf Loopback hält den Lauf vor dem ersten Test an.
+  - ADR 0052 (Tests ohne Aussenverbindung) vorgeschlagen. Threat Model L23 («teilweise») und T23, CONTRIBUTING und CODEOWNERS sind nachgeführt.
+  - Nachweis: Die Suite bleibt mit der Sperre auf Node.js 24.21.0, 26.10.0 und 24.15.0 grün. Zwölf absichtlich falsche Fassungen werden je von mindestens einem Test erkannt, darunter eine Sperre, die Versuche nur mitschreibt, eine, die sich im Kindprozess nicht installiert, und eine ohne Abbruch bei einem Proxy auf Loopback. Eine Durchsicht aus vier Blickwinkeln, jeder Befund gegengeprüft, fand unter anderem Server auf allen Schnittstellen, die `listen` mit leeren Feldern durchliess, Versuche nach dem letzten Test, die unbemerkt blieben, und eine Gegenprobe, die nur das Mitschreiben prüfte. Alles ist behoben. `pnpm check` läuft lokal grün, mit 685 Tests in 39 Dateien.
