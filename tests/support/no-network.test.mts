@@ -8,11 +8,13 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { describe, expect, it, vi } from 'vitest';
 
+import workspaceConfig from '../../vitest.config.mts';
 import {
   blockedMarker,
   guardPreload,
   installNetworkGuard,
   loopbackProxyActive,
+  proxyVariables,
   withoutNetworkGuard,
 } from './no-network.mts';
 
@@ -32,6 +34,12 @@ const catchingChild = [
 ];
 
 describe('the network guard in the test process', () => {
+  it('is the setup file of every test process', () => {
+    expect(workspaceConfig.test?.setupFiles).toEqual([
+      'tests/support/no-network.setup.mts',
+    ]);
+  });
+
   it('keeps its patches in place', () => {
     const descriptor = Object.getOwnPropertyDescriptor(
       net.Socket.prototype,
@@ -57,6 +65,21 @@ describe('the network guard in the test process', () => {
       address: '127.0.0.1',
       family: 4,
     });
+  });
+
+  it('hands itself to Node.js child processes and removes the proxy variables', () => {
+    expect((process.env['NODE_OPTIONS'] ?? '').split(/\s+/)).toContain(
+      guardPreload,
+    );
+    const child = spawnSync(process.execPath, catchingChild, {
+      encoding: 'utf8',
+      timeout: 30_000,
+    });
+    expect(child.status, child.stderr).toBe(70);
+    expect(child.stderr).toContain(blockedMarker);
+    for (const name of [...proxyVariables, 'NODE_USE_ENV_PROXY']) {
+      expect(process.env[name], name).toBeUndefined();
+    }
   });
 
   it.each([
