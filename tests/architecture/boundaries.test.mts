@@ -335,6 +335,31 @@ describe('loading boundaries.json', () => {
       message: /places\.egress: names no path/,
     },
     {
+      name: 'a folder as the place of registration with the MCP SDK',
+      change: (m) => {
+        place(m, 'mcpRegistration').paths = ['packages/core/src/mcp/'];
+      },
+      message:
+        /places\.mcpRegistration: "packages\/core\/src\/mcp\/" must be one file inside the mount/,
+    },
+    {
+      name: 'a place of registration with the MCP SDK that names no file',
+      change: (m) => {
+        place(m, 'mcpRegistration').paths = [];
+      },
+      message: /places\.mcpRegistration: names no path/,
+    },
+    {
+      name: 'a registration with the MCP SDK outside the mount',
+      change: (m) => {
+        place(m, 'mcpRegistration').paths = [
+          'packages/server/src/stdio/index.ts',
+        ];
+      },
+      message:
+        /places\.mcpRegistration: "packages\/server\/src\/stdio\/index\.ts" must be one file inside the mount/,
+    },
+    {
       name: 'the package of the mount among its importers',
       change: (m) => {
         place(m, 'mcpMountImporters').paths = ['packages/core/src/'];
@@ -353,6 +378,14 @@ describe('loading boundaries.json', () => {
 
   it('accepts the file as it is', () => {
     expect(() => parseBoundaries(manifest, workspaceRoot)).not.toThrow();
+  });
+
+  it('accepts a registration with the MCP SDK in the package for tests', () => {
+    const changed = structuredClone(manifest);
+    place(changed, 'mcpRegistration').paths.push(
+      'packages/testkit/src/index.ts',
+    );
+    expect(() => parseBoundaries(changed, workspaceRoot)).not.toThrow();
   });
 
   it.each(cases)('refuses $name', ({ change, message }) => {

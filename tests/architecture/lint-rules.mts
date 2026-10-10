@@ -6,7 +6,8 @@ import type { Boundaries, PlaceKey } from './boundaries.mts';
 // and loaded by eslint.config.mjs. dependency-cruiser sees imports; these
 // rules see what code does with them: writing to stdout or stderr, using
 // console, loading modules past the import checks, starting processes,
-// importing the MCP SDK and opening network connections.
+// importing the MCP SDK, registering with it and opening network
+// connections.
 //
 // Every restriction carries an id such as [arch:stdout] and its ADR in the
 // message, so the tests can prove each one on its own. Several restrictions
@@ -28,6 +29,7 @@ export const concernIds = [
   'require',
   'subprocess',
   'network',
+  'mcp-register',
 ] as const;
 
 type Concern = (typeof concernIds)[number];
@@ -46,6 +48,7 @@ const liftable: readonly (readonly [Concern, PlaceKey])[] = [
   ['stderr', 'stderr'],
   ['mcp-sdk', 'mcpSdk'],
   ['network', 'egress'],
+  ['mcp-register', 'mcpRegistration'],
 ];
 
 /** The places of boundaries.json that lift a restriction. */
@@ -71,6 +74,7 @@ function messages(boundaries: Boundaries): Record<Concern, string> {
       '[arch:require] Modules are loaded only with import, never through node:module, require or process.getBuiltinModule, which the architecture checks do not see (ADR 0022).',
     subprocess:
       '[arch:subprocess] The packages start no child processes, workers or cluster members, which can share stdout with the MCP protocol (ADR 0018).',
+    'mcp-register': `[arch:mcp-register] Only the mount registers tools, prompts, resources and handlers with the MCP SDK, so that every call runs through the one pipeline (${adr('mcpRegistration')}).`,
     network: `[arch:network] Only the outbound path in core opens network connections, after it checks the host allow-list (${adr('egress')}).`,
   };
 }
@@ -92,6 +96,15 @@ const networkModules = [
   'inspector',
   'inspector/promises',
 ] as const;
+
+/**
+ * Methods and properties of the MCP SDK that register tools, prompts,
+ * resources or handlers. The rule matches them by name, so the plugin API
+ * must not use these names for its own methods. The list is checked against
+ * the SDK when it is built in.
+ */
+const registration =
+  'registerTool|registerPrompt|registerResource|setRequestHandler|setNotificationHandler|fallbackRequestHandler|fallbackNotificationHandler';
 
 /** Globals that open network connections. */
 const networkGlobals = [
@@ -275,6 +288,19 @@ function restrictions(
             selector: String.raw`${node}[source.value=/^@modelcontextprotocol\x2F/]`,
             message: message['mcp-sdk'],
           }))
+        : []),
+      ...(forbid('mcp-register')
+        ? [
+            // Any access, not only a call: a method passed on or bound
+            // registers just as well, and so does an assignment to a
+            // fallback handler. A key built from a variable or by
+            // concatenation is not seen.
+            `MemberExpression[property.name=/^(${registration})$/]`,
+            `MemberExpression[property.value=/^(${registration})$/]`,
+            `MemberExpression[property.type='TemplateLiteral'][property.quasis.0.value.cooked=/^(${registration})$/]`,
+            `ObjectPattern > Property[key.name=/^(${registration})$/]`,
+            `ObjectPattern > Property[key.value=/^(${registration})$/]`,
+          ].map((selector) => ({ selector, message: message['mcp-register'] }))
         : []),
       ...(forbid('network')
         ? declarationsOf(networkGlobals.join('|')).map((selector) => ({

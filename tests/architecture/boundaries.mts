@@ -28,6 +28,7 @@ export const placeKeys = [
   'rawClient',
   'rawClientImporters',
   'mcpMount',
+  'mcpRegistration',
   'mcpMountImporters',
   'mcpSdk',
   'stdioEntries',
@@ -253,9 +254,12 @@ const packageOf = (path: string): string =>
  * among its importers, would switch the rule off for a whole package. The
  * outbound path is one folder directly under src/ of core, next to the raw
  * client, and shares no path with another place (ADR 0022).
+ * Registration with the MCP SDK stays in single files of the mount or of
+ * the package for tests (ADR 0024).
  */
 function checkExceptions(
   places: Partial<Record<PlaceKey, Place>>,
+  testOnly: string,
   report: Report,
 ): void {
   const client = places.rawClient?.paths ?? [];
@@ -290,6 +294,20 @@ function checkExceptions(
     }
   }
   const mountPackages = new Set((places.mcpMount?.paths ?? []).map(packageOf));
+  const mount = places.mcpMount?.paths ?? [];
+  for (const path of places.mcpRegistration?.paths ?? []) {
+    if (
+      path.endsWith('/') ||
+      !(
+        mount.some((folder) => path.startsWith(folder)) ||
+        packageOf(path) === testOnly
+      )
+    ) {
+      report(
+        `places.mcpRegistration: "${path}" must be one file inside the mount or inside ${testOnly}`,
+      );
+    }
+  }
   for (const path of places.mcpMountImporters?.paths ?? []) {
     if (mountPackages.has(packageOf(path))) {
       report(
@@ -330,7 +348,7 @@ export function parseBoundaries(value: unknown, root: string): Boundaries {
   }
   checkImports(packages, typeof testOnly === 'string' ? testOnly : '', report);
   const places = parsePlaces(value['places'], dirs, root, report);
-  checkExceptions(places, report);
+  checkExceptions(places, typeof testOnly === 'string' ? testOnly : '', report);
 
   if (problems.length > 0 || typeof testOnly !== 'string') {
     throw new Error(`boundaries.json: ${problems.join('; ')}`);

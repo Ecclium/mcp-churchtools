@@ -162,6 +162,43 @@ const probes: readonly {
   },
   { code: "await import('node:cluster');", concerns: ['subprocess'] },
 
+  {
+    code: "server.registerTool('x', {}, () => ({}));",
+    concerns: ['mcp-register'],
+  },
+  {
+    code: "server['registerPrompt']('x', {}, () => ({}));",
+    concerns: ['mcp-register'],
+  },
+  {
+    code: 'mcp.server.setRequestHandler(schema, () => ({}));',
+    concerns: ['mcp-register'],
+  },
+  {
+    code: 'server.setNotificationHandler?.(schema, () => undefined);',
+    concerns: ['mcp-register'],
+  },
+  {
+    code: 'export const add = server.registerTool.bind(server);',
+    concerns: ['mcp-register'],
+  },
+  {
+    code: 'const { registerResource } = server;',
+    concerns: ['mcp-register'],
+  },
+  {
+    code: "const { 'registerTool': add } = server;",
+    concerns: ['mcp-register'],
+  },
+  {
+    code: "server[`registerTool`]('x', {}, () => ({}));",
+    concerns: ['mcp-register'],
+  },
+  {
+    code: 'server.fallbackRequestHandler = async () => ({});',
+    concerns: ['mcp-register'],
+  },
+
   { code: "await fetch('https://example.org');", concerns: ['network'] },
   { code: 'export const request = globalThis.fetch;', concerns: ['network'] },
   { code: "export const request = global['fetch'];", concerns: ['network'] },
@@ -216,6 +253,8 @@ const allowed: readonly string[] = [
   'export class Worker {\n  process(): void {}\n}',
   "export const note = 'Messages go to /dev/stdout in the output module.';",
   "export const target = new URL('https://example.org');",
+  "registry.register('x');",
+  'export class Host {\n  addTool(): void {}\n}',
   'const fetch = (): void => undefined;\nfetch();',
   "import { readFile } from 'node:fs/promises';\nexport const read = readFile;",
 ];
@@ -237,6 +276,11 @@ const locations: readonly {
   { path: 'packages/cli/src/outputx/probe.ts', allowed: [] },
   { path: 'packages/cli/src/stdio/probe.ts', allowed: [] },
   { path: 'packages/core/src/mcp/probe.ts', allowed: ['mcp-sdk'] },
+  {
+    path: 'packages/core/src/mcp/mount.ts',
+    allowed: ['mcp-sdk', 'mcp-register'],
+  },
+  { path: 'packages/core/src/mcp/mount-extra.ts', allowed: ['mcp-sdk'] },
   { path: 'packages/core/src/mcpx/probe.ts', allowed: [] },
   { path: 'packages/server/src/probe.ts', allowed: ['mcp-sdk'] },
   { path: 'packages/server/src/stdio/probe.ts', allowed: ['mcp-sdk'] },

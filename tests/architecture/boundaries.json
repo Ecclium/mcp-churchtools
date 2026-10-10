@@ -86,6 +86,11 @@
       "description": "The mount: the only registration with the MCP SDK, next to the serialize stage. Reached through the subpath export ./mcp of core.",
       "paths": ["packages/core/src/mcp/"]
     },
+    "mcpRegistration": {
+      "adr": "0024",
+      "description": "The only modules that call the registration functions of the MCP SDK. Each entry is one file inside the mount or inside the package for tests.",
+      "paths": ["packages/core/src/mcp/mount.ts"]
+    },
     "mcpMountImporters": {
       "adr": "0024",
       "description": "Code outside the mount folder that may import the mount.",
