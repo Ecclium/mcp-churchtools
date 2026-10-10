@@ -1,13 +1,14 @@
 import type { Linter } from 'eslint';
 
 import type { Boundaries, PlaceKey } from './boundaries.mts';
+import { moduleStateRule } from './module-state-rule.mts';
 
 // ESLint rules for the code of the packages, generated from boundaries.json
 // and loaded by eslint.config.mjs. dependency-cruiser sees imports; these
 // rules see what code does with them: writing to stdout or stderr, using
 // console, loading modules past the import checks, starting processes,
-// importing the MCP SDK, registering with it and opening network
-// connections.
+// importing the MCP SDK, registering with it, opening network connections
+// and keeping state at module level.
 //
 // Every restriction carries an id such as [arch:stdout] and its ADR in the
 // message, so the tests can prove each one on its own. Several restrictions
@@ -30,6 +31,7 @@ export const concernIds = [
   'subprocess',
   'network',
   'mcp-register',
+  'module-state',
 ] as const;
 
 type Concern = (typeof concernIds)[number];
@@ -40,6 +42,7 @@ export const architectureRuleIds: readonly string[] = [
   'no-restricted-imports',
   'no-restricted-properties',
   'no-restricted-syntax',
+  'ecclium-arch/no-module-state',
 ];
 
 /** Concerns that some places may lift, and where boundaries.json lists them. */
@@ -75,6 +78,7 @@ function messages(boundaries: Boundaries): Record<Concern, string> {
     subprocess:
       '[arch:subprocess] The packages start no child processes, workers or cluster members, which can share stdout with the MCP protocol (ADR 0018).',
     'mcp-register': `[arch:mcp-register] Only the mount registers tools, prompts, resources and handlers with the MCP SDK, so that every call runs through the one pipeline (${adr('mcpRegistration')}).`,
+    'module-state': `[arch:module-state] Code in the packages keeps no mutable state at module level. State that outlives a request is created in the composition root, as a named port or a named exception (${adr('moduleState')}).`,
     network: `[arch:network] Only the outbound path in core opens network connections, after it checks the host allow-list (${adr('egress')}).`,
   };
 }
@@ -328,6 +332,9 @@ function restrictions(
  * Builds the configuration blocks: one for all code in the packages, then
  * one for each place that lifts a restriction. Longer paths come later, so
  * a place inside another one wins and keeps what the outer place allows.
+ * The rule against state at module level has its own block, because it is
+ * not one of the shared ESLint rules; tests and the files of moduleState are
+ * exempt from it.
  *
  * @param boundaries - The checked content of boundaries.json.
  * @returns Flat configuration blocks for ESLint.
@@ -360,5 +367,24 @@ export function architectureLintConfig(
         ),
       ),
     })),
+    {
+      name: 'architecture: module state',
+      files: [`packages/*/src/**/*.${sources}`],
+      ignores: [
+        // Only the form that Vitest runs and the build leaves out: a file
+        // that ships is never treated as a test.
+        'packages/*/src/**/*.test.ts',
+        ...boundaries.places.moduleState.paths,
+      ],
+      plugins: {
+        'ecclium-arch': { rules: { 'no-module-state': moduleStateRule } },
+      },
+      rules: {
+        'ecclium-arch/no-module-state': [
+          'error',
+          { message: message['module-state'] },
+        ],
+      },
+    },
   ];
 }

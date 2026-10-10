@@ -35,6 +35,7 @@ export const placeKeys = [
   'stdout',
   'stderr',
   'plugins',
+  'moduleState',
 ] as const;
 
 /** Key of a place in the code that a rule refers to. */
@@ -59,7 +60,10 @@ export interface Boundaries {
 
 // A list of exceptions may stay empty until the first module needs one. Every
 // other place must name at least one path, or its rule would check nothing.
-const mayBeEmpty: ReadonlySet<PlaceKey> = new Set(['rawClientImporters']);
+const mayBeEmpty: ReadonlySet<PlaceKey> = new Set([
+  'rawClientImporters',
+  'moduleState',
+]);
 
 type Report = (problem: string) => void;
 
@@ -255,7 +259,8 @@ const packageOf = (path: string): string =>
  * outbound path is one folder directly under src/ of core, next to the raw
  * client, and shares no path with another place (ADR 0022).
  * Registration with the MCP SDK stays in single files of the mount or of
- * the package for tests (ADR 0024).
+ * the package for tests (ADR 0024). Mutable state at module level is
+ * allowed only file by file (ADR 0051).
  */
 function checkExceptions(
   places: Partial<Record<PlaceKey, Place>>,
@@ -306,6 +311,11 @@ function checkExceptions(
       report(
         `places.mcpRegistration: "${path}" must be one file inside the mount or inside ${testOnly}`,
       );
+    }
+  }
+  for (const path of places.moduleState?.paths ?? []) {
+    if (path.endsWith('/')) {
+      report(`places.moduleState: "${path}" must be one file`);
     }
   }
   for (const path of places.mcpMountImporters?.paths ?? []) {

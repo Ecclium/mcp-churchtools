@@ -360,6 +360,13 @@ describe('loading boundaries.json', () => {
         /places\.mcpRegistration: "packages\/server\/src\/stdio\/index\.ts" must be one file inside the mount/,
     },
     {
+      name: 'a folder among the modules with state at module level',
+      change: (m) => {
+        place(m, 'moduleState').paths = ['packages/core/src/'];
+      },
+      message: /places\.moduleState: "packages\/core\/src\/" must be one file/,
+    },
+    {
       name: 'the package of the mount among its importers',
       change: (m) => {
         place(m, 'mcpMountImporters').paths = ['packages/core/src/'];

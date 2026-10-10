@@ -120,6 +120,11 @@
       "adr": "0022",
       "description": "Plugins as a third party would write them. They may import only the plugin API.",
       "paths": ["packages/testkit/src/plugins/"]
+    },
+    "moduleState": {
+      "adr": "0051",
+      "description": "Modules that may keep mutable state at module level. Each entry is one file with its own ADR.",
+      "paths": []
     }
   }
 }

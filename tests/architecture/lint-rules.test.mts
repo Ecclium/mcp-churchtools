@@ -6,13 +6,15 @@ import { describe, expect, it } from 'vitest';
 
 import { loadBoundaries, workspaceRoot } from './boundaries.mts';
 import {
+  architectureLintConfig,
   architectureRuleIds,
   concernIds,
   liftingPlaces,
 } from './lint-rules.mts';
 
 // Proves each ESLint architecture restriction with code that breaks it, at
-// every place of boundaries.json and next to it (ADR 0018, ADR 0024). ESLint
+// every place of boundaries.json and next to it (ADR 0018, ADR 0022, ADR
+// 0024, ADR 0051). ESLint
 // finds its configuration from the workspace root, as `pnpm lint` does, but
 // runs without type information: the project service refuses paths that do
 // not exist on disk. Only the architecture rules are reported.
@@ -199,12 +201,70 @@ const probes: readonly {
     concerns: ['mcp-register'],
   },
 
+  { code: 'let count = 0;', concerns: ['module-state'] },
+  { code: 'export let count = 0;', concerns: ['module-state'] },
+  { code: 'var count = 0;', concerns: ['module-state'] },
+  { code: 'if (ready) {\n  var late = 1;\n}', concerns: ['module-state'] },
+  {
+    code: 'namespace Cache {\n  export let size = 0;\n}',
+    concerns: ['module-state'],
+  },
+  { code: 'const cache = new Map();', concerns: ['module-state'] },
+  { code: 'export const seen = new WeakMap();', concerns: ['module-state'] },
+  { code: 'const table = { seen: new Set() };', concerns: ['module-state'] },
+  { code: 'const refs = [new WeakRef(target)];', concerns: ['module-state'] },
+  {
+    code: 'export class Store {\n  static items = new Map();\n}',
+    concerns: ['module-state'],
+  },
+  {
+    code: 'export class Store {\n  static {\n    Store.seen = new WeakSet();\n  }\n}',
+    concerns: ['module-state'],
+  },
+  {
+    code: 'class Cache {\n  items = new Map<string, string>();\n}\nexport const cache = new Cache();',
+    concerns: ['module-state'],
+  },
+  {
+    code: 'export class Cache {\n  static readonly instance = new Cache();\n}',
+    concerns: ['module-state'],
+  },
+  {
+    code: 'export class Counter {\n  static count = 0;\n}',
+    concerns: ['module-state'],
+  },
+  {
+    code: 'export class Counter {\n  static accessor count = 0;\n}',
+    concerns: ['module-state'],
+  },
+  {
+    code: "import { AsyncLocalStorage } from 'node:async_hooks';\nexport const store = new AsyncLocalStorage();",
+    concerns: ['module-state'],
+  },
+  {
+    code: 'export const seen = new globalThis.Map();',
+    concerns: ['module-state'],
+  },
+  {
+    code: 'const Collection = Map;\nexport const items = new Collection();',
+    concerns: ['module-state'],
+  },
+
   { code: "await fetch('https://example.org');", concerns: ['network'] },
   { code: 'export const request = globalThis.fetch;', concerns: ['network'] },
   { code: "export const request = global['fetch'];", concerns: ['network'] },
-  { code: "new WebSocket('wss://example.org');", concerns: ['network'] },
-  { code: "new EventSource('https://example.org');", concerns: ['network'] },
-  { code: 'new XMLHttpRequest();', concerns: ['network'] },
+  {
+    code: "export const open = (): unknown => new WebSocket('wss://example.org');",
+    concerns: ['network'],
+  },
+  {
+    code: "export const open = (): unknown => new EventSource('https://example.org');",
+    concerns: ['network'],
+  },
+  {
+    code: 'export const open = (): unknown => new XMLHttpRequest();',
+    concerns: ['network'],
+  },
   { code: "import https from 'node:https';", concerns: ['network'] },
   { code: "import { connect } from 'net';", concerns: ['network'] },
   { code: "import type { Agent } from 'node:http';", concerns: ['network'] },
@@ -252,8 +312,22 @@ const allowed: readonly string[] = [
   'const child = { stdout: 1 };\nexport const out = child.stdout;',
   'export class Worker {\n  process(): void {}\n}',
   "export const note = 'Messages go to /dev/stdout in the output module.';",
-  "export const target = new URL('https://example.org');",
+  "export const target = (): URL => new URL('https://example.org');",
   "registry.register('x');",
+  'export function count(): number {\n  let n = 0;\n  n += 1;\n  return n;\n}',
+  'export const make = (): Map<string, number> => new Map();',
+  'export class Store {\n  readonly items = new Map<string, number>();\n}',
+  'export class Store {\n  static readonly create = (): Set<string> => new Set();\n}',
+  'export const limits = Object.freeze({ max: 100 });',
+  'declare let ambient: number;',
+  "declare module 'ecclium-example' {\n  let value: number;\n}",
+  'export class Limits {\n  static readonly max = 100;\n}',
+  'export class Store {\n  accessor items = new Map<string, number>();\n}',
+  'export const encoder = new TextEncoder();',
+  "export const percent = new Intl.NumberFormat('de-CH', { style: 'percent' });",
+  'for (let index = 0; index < 3; index += 1) {\n  void index;\n}',
+  'export class Tally {\n  count(): number {\n    let n = 0;\n    n += 1;\n    return n;\n  }\n}',
+  'export const count = function (): number {\n  let n = 0;\n  n += 1;\n  return n;\n};',
   'export class Host {\n  addTool(): void {}\n}',
   'const fetch = (): void => undefined;\nfetch();',
   "import { readFile } from 'node:fs/promises';\nexport const read = readFile;",
@@ -268,7 +342,8 @@ const locations: readonly {
   readonly allowed: readonly Concern[];
 }[] = [
   { path: 'packages/core/src/probe.ts', allowed: [] },
-  { path: 'packages/core/src/probe.test.ts', allowed: [] },
+  { path: 'packages/core/src/probe.test.ts', allowed: ['module-state'] },
+  { path: 'packages/core/src/probe.test.mts', allowed: [] },
   { path: 'packages/core/src/probe.mts', allowed: [] },
   { path: 'packages/core/src/logger/probe.ts', allowed: ['stderr'] },
   { path: 'packages/core/src/loggerx/probe.ts', allowed: [] },
@@ -330,6 +405,22 @@ describe('ESLint architecture rules', () => {
         place,
       ).toBe(true);
     }
+  });
+
+  it('leave the files listed in moduleState to their own ADR', () => {
+    const boundaries = loadBoundaries();
+    const file = 'packages/core/src/index.ts';
+    const blocks = architectureLintConfig({
+      ...boundaries,
+      places: {
+        ...boundaries.places,
+        moduleState: { ...boundaries.places.moduleState, paths: [file] },
+      },
+    });
+    const block = blocks.find(
+      (entry) => entry.name === 'architecture: module state',
+    );
+    expect(block?.ignores).toContain(file);
   });
 
   it('have a failing example for every restriction', () => {
