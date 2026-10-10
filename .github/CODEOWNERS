@@ -32,6 +32,10 @@
 /.dependency-cruiser.mjs @ecclium/maintainers
 /eslint.config.mjs @ecclium/maintainers
 /tests/architecture/ @ecclium/maintainers
+/tests/fixtures/network/ @ecclium/maintainers
+/tests/support/ @ecclium/maintainers
+/tests/workflows/ @ecclium/maintainers
+/tests/toolchain.test.mts @ecclium/maintainers
 /brand/ @ecclium/maintainers
 /docs/adr/ @ecclium/maintainers
 /docs/threat-model.md @ecclium/maintainers
