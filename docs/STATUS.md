@@ -1,12 +1,12 @@
 # Status
 
-Stand: 10.10.2026, Phase 0 ist abgeschlossen. Die ADRs aus Phase 0, die Entscheide vor Phase 1 und ADR 0049 zur Testumgebung sind angenommen, der lesende und der schreibende Teil des API-Spikes und der Spike zu OAuth sind auf einer Testinstanz mit synthetischen Daten gelaufen und ausgewertet
+Stand: 10.10.2026, Phase 1 hat begonnen. Der Plan der Phase ist mit dem Maintainer abgestimmt, die Architekturregeln für Phase 1 sind gebaut.
 
 ## Aktuelle Phase
 
-Phase 0, Fundament und Entscheide, ist abgeschlossen. Fertig sind das Fundament des Repositorys, das Gerüst des Workspace, die Qualitätswerkzeuge, die Architekturregeln mit einem Beispiel je Regel, das sie verletzt, die Werkbank, die ADRs aus Phase 0, die Entscheide vor Phase 1, das Threat Model v0, ADR 0049 zur Testumgebung und beide Teile des API-Spikes: Helfer und lesende Proben, die nur die Struktur der Antworten ausgeben, die Gerüste von `docs/research/churchtools-api.md` und `docs/research/churchtools-oauth.md` sowie der lesende Lauf auf der Testinstanz mit seinen Befunden, dazu die Proben des schreibenden Teils mit dem Wächter aus ADR 0049 und der schreibende Lauf mit seinen Befunden, und der Spike zu OAuth mit seinen Befunden. `pnpm check` fasst alle Prüfungen zusammen, `pnpm ci:local` führt die meisten Prüfungen aus CI lokal aus. Beide laufen lokal grün, die Werkbank auch in CI.
+Phase 1, Kern und erster Lesezugriff, hat begonnen. Fertig sind die Architekturregeln, die vor dem Code der Phase stehen: Netzverbindungen öffnet nur der ausgehende Weg in `packages/core/src/http/`, beim MCP-SDK registriert nur der Mount, Code der Pakete hält keinen veränderlichen Zustand auf Modulebene (ADR 0051, vorgeschlagen), und keine Direktive im Code schaltet eine dieser Regeln ab. Phase 0, Fundament und Entscheide, ist abgeschlossen (Erledigt). `pnpm check` fasst alle Prüfungen zusammen, `pnpm ci:local` führt die meisten Prüfungen aus CI lokal aus. Beide laufen lokal grün, die Werkbank auch in CI.
 
-Nächster Schritt: Phase 1, Kern und erster Lesezugriff. Sie beginnt mit einem Plan, den der Maintainer freigibt. Ihre Vorbedingungen sind erfüllt: ADR 0003, 0018, 0023, 0024, 0025, 0037 und 0049 sind angenommen, und Phase 0 ist abgeschlossen.
+Nächster Schritt: Tests ohne Aussenverbindung, also eine Sperre, die einen Test scheitern lässt, sobald er eine echte Verbindung aufbaut, lokal und in CI. Danach folgen die Prüfung des MCP-SDK in Version 2 mit dem Spike zu Elicitation und die lesende Probe für Personen und Gruppen, die ein eigenes Dienstkonto des Servers auf der Testinstanz braucht.
 
 ## Vorbedingungen Phase 0
 
@@ -74,6 +74,7 @@ Diese Grundsatzfragen sind entschieden.
 
 ## Offen
 
+- ADR zur Server-Instanz und ADR 0051: Das ADR, das ADR 0018 ablöst und im Betrieb über stdio eine Instanz pro Verbindung festlegt, folgt mit der Prüfung des MCP-SDK. Bis es angenommen ist, gilt ADR 0018. ADR 0051 (Zustand zwischen Anfragen) ist vorgeschlagen und wird vor dem ersten Code des ausgehenden Wegs angenommen, weil Pool und Drosselung seine benannten Ausnahmen sind.
 - MCP-SDK in Version 2: Wie es den Betrieb ohne Sitzung einstellt, belegen die Metadaten der Pakete nicht. Prüfung an den Typdefinitionen und der Dokumentation zu Beginn von Phase 1. Dass die Spezifikation 2026-07-28 keine Sitzung und keinen Aufruf `initialize` mehr kennt, belegt ihr Änderungsprotokoll («Key Changes», Abschnitt «Major changes», Punkte 1 und 2, abgerufen am 30.09.2026). Die Abschnitte zu `input_required` und Sampling werden mit dem SDK geprüft.
 - `TRADEMARKS.md`: Der Text folgt nach rechtlicher Prüfung. Bis dahin keine eigene Fassung. README, ADR 0002 und `brand/README.md` verweisen schon darauf. Mit der Datei kommt der Verweis in `NOTICE` dazu. Die Prüfung klärt auch, unter welchen Bedingungen die Dateien von Logo und Icons in `brand/` kopiert und weitergegeben werden dürfen, auch in Forks.
 - Ergebnisse des API-Spikes: Der lesende Teil ist am 08. und 09.10.2026 auf der Testinstanz gelaufen, der schreibende am 09.10.2026, beide an ChurchTools 3.137. Die Befunde stehen in `docs/research/churchtools-api.md`, unter dem Vorbehalt aus ADR 0049. Der Spike zu OAuth lief am 09.10.2026, ebenfalls an ChurchTools 3.137, seine Befunde stehen in `docs/research/churchtools-oauth.md`. Was ein Lauf nicht zeigen kann, bleibt offen, mit Grund.
@@ -302,3 +303,11 @@ Diese Grundsatzfragen sind entschieden.
   - ADR 0049 ist angenommen, in der Datei und im Index.
   - `SECURITY.md` nennt bei einem Vorfall jetzt zuerst ein neues Passwort für die Konten, dann den Widerruf ihrer Tokens, auf Deutsch und auf Englisch. Mit dem Passwort gibt `POST /api/login/token` das Login-Token heraus (`docs/research/churchtools-oauth.md`, O12).
   - Die offenen Fragen zum Lesebudget und zum Ablauf statischer Bearer-Tokens sind beantwortet. Das Threat Model nennt den Ablauf bei T3.
+- 10.10.2026, der Abschluss von Phase 0 ist als `9c76e84` auf `main` (#69), vite 8.3.3 als `1809860` (#61).
+- 10.10.2026, Architekturregeln für Phase 1:
+  - Ort `egress` (`packages/core/src/http/`), die Regel `network-only-in-egress` von dependency-cruiser und die ESLint-Sperre `[arch:network]` (ADR 0022). Ausserhalb des ausgehenden Wegs sperren sie im Code der Pakete eine feste Liste: die eingebauten Module für HTTP, Sockets, TLS, UDP, DNS und den Inspector, undici und die globalen `fetch`, `WebSocket`, `EventSource` und `XMLHttpRequest`. Eine andere Bibliothek, die selbst Verbindungen öffnet, erkennen sie nicht. dependency-cruiser hat damit 20 Regeln. Ihre Muster treffen noch kein Modul, der Test der Regeln führt sie deshalb in `notYetMatched` und schlägt fehl, sobald eines trifft.
+  - Ort `mcpRegistration` mit `packages/core/src/mcp/mount.ts` und die ESLint-Sperre `[arch:mcp-register]`: Nur der Mount greift auf die Registrierfunktionen des MCP-SDK zu (ADR 0024).
+  - ADR 0051 (Zustand zwischen Anfragen) vorgeschlagen, mit der ESLint-Regel `ecclium-arch/no-module-state` und dem leeren Ort `moduleState`.
+  - Ein Test lehnt im Code der Pakete jede Direktive ab, die eine Architekturregel abschaltet. Das galt vorher auch für die älteren Regeln nicht.
+  - Der Test von dependency-cruiser schreibt seine Beispiele nur noch in seine Kopie des Workspace, nie durch einen Link in ein echtes npm-Paket.
+  - Nachweis: Jede neue Einschränkung hat ein Beispiel, an dem sie rot wird, und erlaubte Beispiele, an jedem Ort und daneben. Eine Durchsicht aus drei Blickwinkeln, mit rund 70 absichtlich falschen Fassungen der Regeln, fand unter anderem Singletons, die die Regel gegen Zustand übersah, einen Ort `egress`, der die Netzregel für ganz core hätte abschalten können, und Module, deren Fall im Test fehlte. Alles ist behoben. `pnpm check` läuft lokal grün, mit 661 Tests in 38 Dateien.
