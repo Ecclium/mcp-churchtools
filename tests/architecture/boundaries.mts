@@ -24,6 +24,7 @@ export interface PackageBoundary {
 
 /** Keys of the places in the code that a rule refers to. */
 export const placeKeys = [
+  'egress',
   'rawClient',
   'rawClientImporters',
   'mcpMount',
@@ -249,7 +250,9 @@ const packageOf = (path: string): string =>
 /**
  * The lists of exceptions must stay narrow: a folder or the entry point of
  * core among the importers of the raw client, or the package of the mount
- * among its importers, would switch the rule off for a whole package.
+ * among its importers, would switch the rule off for a whole package. The
+ * outbound path is one folder directly under src/ of core, next to the raw
+ * client, and shares no path with another place (ADR 0022).
  */
 function checkExceptions(
   places: Partial<Record<PlaceKey, Place>>,
@@ -257,6 +260,23 @@ function checkExceptions(
 ): void {
   const client = places.rawClient?.paths ?? [];
   const clientPackages = new Set(client.map(packageOf));
+  const others = placeKeys
+    .filter((key) => key !== 'egress')
+    .flatMap((key) => places[key]?.paths ?? []);
+  for (const path of places.egress?.paths ?? []) {
+    if (
+      !/^packages\/[^/]+\/src\/[^/]+\/$/.test(path) ||
+      !clientPackages.has(packageOf(path))
+    ) {
+      report(
+        `places.egress: "${path}" must be a folder directly under src/ of core, the package of the raw client`,
+      );
+    } else if (
+      others.some((other) => other.startsWith(path) || path.startsWith(other))
+    ) {
+      report(`places.egress: "${path}" shares a path with another place`);
+    }
+  }
   for (const path of places.rawClientImporters?.paths ?? []) {
     if (
       path.endsWith('/') ||

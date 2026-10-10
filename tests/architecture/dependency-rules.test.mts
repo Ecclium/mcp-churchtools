@@ -1,6 +1,7 @@
 import {
   cpSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -11,7 +12,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 
 import {
   cruise,
@@ -23,6 +24,7 @@ import extractDepcruiseOptions from 'dependency-cruiser/config-utl/extract-depcr
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { loadBoundaries, workspaceRoot } from './boundaries.mts';
+import { networkTargets } from './dependency-rules.mts';
 
 // Each dependency-cruiser rule is proven by a forbidden example: the test
 // copies the packages into a temporary folder, adds one file that breaks
@@ -68,6 +70,28 @@ function linkNpmPackages(from: string, to: string): void {
 }
 
 /**
+ * Refuses a file of a case that would land outside the copy. The npm packages
+ * of the copy are links to their real location, so a case that writes into
+ * one of them would change the real package.
+ *
+ * @param root - The resolved folder of the copy.
+ * @param path - The path of the file from the root of the copy.
+ * @throws {Error} When the file or its nearest existing folder resolves to a
+ *   location outside the copy, or the file is a link.
+ */
+export function assertInsideCopy(root: string, path: string): void {
+  let folder = dirname(join(root, path));
+  while (!existsSync(folder)) folder = dirname(folder);
+  const real = realpathSync(folder);
+  const linked =
+    lstatSync(join(root, path), { throwIfNoEntry: false })?.isSymbolicLink() ??
+    false;
+  if ((real !== root && !real.startsWith(`${root}${sep}`)) || linked) {
+    throw new Error(`${path} would be written outside the copy`);
+  }
+}
+
+/**
  * Copies package.json and src/ of every package into a new temporary folder
  * and adds the given files. The npm packages of the root and of each package
  * are linked to their real location, and every folder under packages/ of the
@@ -94,6 +118,7 @@ function copyWorkspace(files: Readonly<Record<string, string>>): string {
   const modules = join(root, 'node_modules');
   linkNpmPackages(join(workspaceRoot, 'node_modules'), modules);
   for (const [path, content] of Object.entries(files)) {
+    assertInsideCopy(root, path);
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), content);
   }
@@ -151,6 +176,7 @@ const coreManifest = JSON.parse(
   readFileSync(join(workspaceRoot, 'packages/core/package.json'), 'utf8'),
 ) as {
   exports: Record<string, Record<string, string>>;
+  dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
 };
 
@@ -279,6 +305,62 @@ const cases: readonly Case[] = [
       'packages/tools/src/forbidden.ts': `import '${nameOf('core')}/internal';\nexport {};\n`,
     },
   },
+  ...[
+    'http',
+    'https',
+    'http2',
+    'net',
+    'tls',
+    'dgram',
+    'dns',
+    'dns/promises',
+    'inspector',
+    'inspector/promises',
+  ].map((name) => ({
+    rule: 'network-only-in-egress',
+    name: `tools imports node:${name}`,
+    files: {
+      'packages/tools/src/forbidden.ts': `import 'node:${name}';\nexport {};\n`,
+    },
+  })),
+  {
+    rule: 'network-only-in-egress',
+    name: 'a folder next to the outbound path imports node:https',
+    files: {
+      'packages/core/src/httpx/forbidden.ts':
+        "import 'node:https';\nexport {};\n",
+    },
+  },
+  {
+    rule: 'network-only-in-egress',
+    name: 'core outside the outbound path imports net for types only',
+    files: {
+      'packages/core/src/forbidden.ts':
+        "import type { Socket } from 'net';\nexport type Connection = Socket;\n",
+    },
+  },
+  {
+    rule: 'network-only-in-egress',
+    name: 'core outside the outbound path imports dns/promises with import()',
+    files: {
+      'packages/core/src/forbidden.ts':
+        "export const load = async (): Promise<unknown> => import('node:dns/promises');\n",
+    },
+  },
+  {
+    rule: 'network-only-in-egress',
+    name: 'core outside the outbound path imports undici, which it declares',
+    files: {
+      'node_modules/undici/package.json':
+        '{ "name": "undici", "version": "1.0.0", "main": "index.js" }\n',
+      'node_modules/undici/index.js': 'module.exports = {};\n',
+      'packages/core/package.json': `${JSON.stringify({
+        ...coreManifest,
+        dependencies: { ...coreManifest.dependencies, undici: '1.0.0' },
+      })}\n`,
+      'packages/core/src/forbidden.ts': "import 'undici';\nexport {};\n",
+    },
+  },
   {
     rule: 'raw-client-only-in-core',
     name: 'a core module that is not listed imports the raw client',
@@ -354,7 +436,59 @@ const allowedCases: readonly Omit<Case, 'rule'>[] = [
         "import './index.js';\nexport {};\n",
     },
   },
+  {
+    name: 'the outbound path imports node:https and dns',
+    files: {
+      'packages/core/src/http/allowed.ts':
+        "import 'node:https';\nimport 'dns';\nexport {};\n",
+    },
+  },
+  {
+    name: 'core imports node:fs, which opens no connection',
+    files: {
+      'packages/core/src/allowed.ts': "import 'node:fs';\nexport {};\n",
+    },
+  },
 ];
+
+// Paths of rules that may still match no module of the workspace. No package
+// opens a network connection before the HTTP transport of phase 1. The test
+// below fails as soon as one of these paths matches, so the entry goes when
+// the first module needs the rule.
+const notYetMatched: readonly string[] = networkTargets.map(
+  (pattern) => `network-only-in-egress.to: ${pattern}`,
+);
+
+describe('the copy of the workspace', () => {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), 'ecclium-copy-')));
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), 'ecclium-outside-')));
+  temporaryFolders.push(base, outside);
+  mkdirSync(join(base, 'node_modules'));
+  symlinkSync(outside, join(base, 'node_modules', 'linked'));
+  writeFileSync(join(outside, 'file.js'), '');
+  symlinkSync(join(outside, 'file.js'), join(base, 'link.js'));
+
+  it('accepts a new file inside the copy', () => {
+    expect(() => {
+      assertInsideCopy(base, 'packages/core/src/new/file.ts');
+    }).not.toThrow();
+  });
+
+  it.each(['node_modules/linked/file.js', 'node_modules/linked/new/file.js'])(
+    'refuses %s, which lies in a linked folder',
+    (path) => {
+      expect(() => {
+        assertInsideCopy(base, path);
+      }).toThrow(/would be written outside the copy/);
+    },
+  );
+
+  it('refuses a file that is a link', () => {
+    expect(() => {
+      assertInsideCopy(base, 'link.js');
+    }).toThrow(/would be written outside the copy/);
+  });
+});
 
 describe('dependency-cruiser rules', () => {
   it('pass the packages as they are', async () => {
@@ -470,6 +604,7 @@ describe('dependency-cruiser on the packages as they are', () => {
   it('matches at least one module with every path of every rule', async () => {
     // A rule whose path matches nothing checks nothing, for example after a
     // folder was renamed. $1 stands for the package folder of the importer.
+    // Only the paths in notYetMatched may match nothing, and they must.
     const modules = (await run).modules.map((module) => module.source);
     const empty = rules.flatMap((rule) => {
       const sides = { from: rule.from, to: 'to' in rule ? rule.to : undefined };
@@ -482,6 +617,6 @@ describe('dependency-cruiser on the packages as they are', () => {
         }),
       );
     });
-    expect(empty).toEqual([]);
+    expect(empty).toEqual(notYetMatched);
   });
 });

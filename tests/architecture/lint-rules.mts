@@ -5,8 +5,8 @@ import type { Boundaries, PlaceKey } from './boundaries.mts';
 // ESLint rules for the code of the packages, generated from boundaries.json
 // and loaded by eslint.config.mjs. dependency-cruiser sees imports; these
 // rules see what code does with them: writing to stdout or stderr, using
-// console, loading modules past the import checks, starting processes, and
-// importing the MCP SDK.
+// console, loading modules past the import checks, starting processes,
+// importing the MCP SDK and opening network connections.
 //
 // Every restriction carries an id such as [arch:stdout] and its ADR in the
 // message, so the tests can prove each one on its own. Several restrictions
@@ -14,8 +14,8 @@ import type { Boundaries, PlaceKey } from './boundaries.mts';
 // of that rule as a whole. Each block therefore repeats every restriction it
 // does not lift.
 //
-// The rules read code, not what it does at run time. ADR 0018 lists what
-// they cannot see.
+// The rules read code, not what it does at run time. The ADRs named in the
+// messages list what they cannot see.
 
 /** What the rules keep out of the packages, each with its own id. */
 export const concernIds = [
@@ -27,6 +27,7 @@ export const concernIds = [
   'dynamic-import',
   'require',
   'subprocess',
+  'network',
 ] as const;
 
 type Concern = (typeof concernIds)[number];
@@ -44,6 +45,12 @@ const liftable: readonly (readonly [Concern, PlaceKey])[] = [
   ['stdout', 'stdout'],
   ['stderr', 'stderr'],
   ['mcp-sdk', 'mcpSdk'],
+  ['network', 'egress'],
+];
+
+/** The places of boundaries.json that lift a restriction. */
+export const liftingPlaces: readonly PlaceKey[] = [
+  ...new Set(liftable.map(([, key]) => key)),
 ];
 
 const sources = '{ts,mts,cts}';
@@ -64,16 +71,62 @@ function messages(boundaries: Boundaries): Record<Concern, string> {
       '[arch:require] Modules are loaded only with import, never through node:module, require or process.getBuiltinModule, which the architecture checks do not see (ADR 0022).',
     subprocess:
       '[arch:subprocess] The packages start no child processes, workers or cluster members, which can share stdout with the MCP protocol (ADR 0018).',
+    network: `[arch:network] Only the outbound path in core opens network connections, after it checks the host allow-list (${adr('egress')}).`,
   };
 }
+
+/**
+ * Built-in modules that open or resolve network connections, or listen on a
+ * port like the inspector. A fixed list: another library that opens
+ * connections itself is a new dependency, which the review checks.
+ */
+const networkModules = [
+  'http',
+  'https',
+  'http2',
+  'net',
+  'tls',
+  'dgram',
+  'dns',
+  'dns/promises',
+  'inspector',
+  'inspector/promises',
+] as const;
+
+/** Globals that open network connections. */
+const networkGlobals = [
+  'fetch',
+  'WebSocket',
+  'EventSource',
+  'XMLHttpRequest',
+] as const;
 
 /** A module name with and without the prefix node:. */
 const builtin = (...names: readonly string[]): string[] =>
   names.flatMap((name) => [`node:${name}`, name]);
 
-/** A selector for import() of the given built-in modules. */
-const importOf = (names: string): string =>
-  `ImportExpression[source.value=/^(node:)?(${names})$/]`;
+/** A selector for import() or typeof import() of the given built-in modules. */
+const importOf = (names: string, node = 'ImportExpression'): string =>
+  `${node}[source.value=/^(node:)?(${names})$/]`;
+
+/**
+ * Selectors for a declaration of the given globals at module level. A
+ * declaration for the type checker hides the global from ESLint, while the
+ * code still calls the global at run time.
+ */
+const declarationsOf = (names: string): string[] => [
+  `TSDeclareFunction[id.name=/^(${names})$/]`,
+  `VariableDeclaration[declare=true] > VariableDeclarator[id.name=/^(${names})$/]`,
+  `ClassDeclaration[declare=true][id.name=/^(${names})$/]`,
+];
+
+/**
+ * The network modules as alternatives for a selector, which ends its regular
+ * expression at the first slash.
+ */
+const networkNames = networkModules
+  .map((name) => name.replace('/', String.raw`\x2F`))
+  .join('|');
 
 /** Rule settings for code that may do what `allowed` names, and no more. */
 function restrictions(
@@ -110,12 +163,22 @@ function restrictions(
     'no-restricted-globals': [
       'error',
       { name: 'console', message: message.console },
+      ...(forbid('network')
+        ? networkGlobals.map((name) => ({ name, message: message.network }))
+        : []),
     ],
     'no-restricted-properties': [
       'error',
       ...['globalThis', 'global'].flatMap((object) => [
         { object, property: 'console', message: message.console },
         { object, property: 'process', message: message.process },
+        ...(forbid('network')
+          ? networkGlobals.map((property) => ({
+              object,
+              property,
+              message: message.network,
+            }))
+          : []),
       ]),
       ...['getBuiltinModule', 'binding', 'dlopen'].map((property) => ({
         object: 'process',
@@ -144,15 +207,30 @@ function restrictions(
           ...(forbid('stdout') ? whole('stdout', 'tty') : []),
           ...whole('require', 'module'),
           ...whole('subprocess', 'child_process', 'worker_threads', 'cluster'),
+          ...(forbid('network') ? whole('network', ...networkModules) : []),
         ],
-        patterns: forbid('mcp-sdk')
-          ? [{ regex: '^@modelcontextprotocol/', message: message['mcp-sdk'] }]
-          : [],
+        patterns: [
+          ...(forbid('mcp-sdk')
+            ? [
+                {
+                  regex: '^@modelcontextprotocol/',
+                  message: message['mcp-sdk'],
+                },
+              ]
+            : []),
+          ...(forbid('network')
+            ? [{ regex: '^undici(/|$)', message: message.network }]
+            : []),
+        ],
       },
     ],
     'no-restricted-syntax': [
       'error',
       { selector: importOf('console'), message: message.console },
+      ...declarationsOf('console').map((selector) => ({
+        selector,
+        message: message.console,
+      })),
       { selector: importOf('process'), message: message.process },
       { selector: importOf('module'), message: message.require },
       {
@@ -197,6 +275,24 @@ function restrictions(
             selector: String.raw`${node}[source.value=/^@modelcontextprotocol\x2F/]`,
             message: message['mcp-sdk'],
           }))
+        : []),
+      ...(forbid('network')
+        ? declarationsOf(networkGlobals.join('|')).map((selector) => ({
+            selector,
+            message: message.network,
+          }))
+        : []),
+      ...(forbid('network')
+        ? ['ImportExpression', 'TSImportType'].flatMap((node) => [
+            {
+              selector: importOf(networkNames, node),
+              message: message.network,
+            },
+            {
+              selector: String.raw`${node}[source.value=/^undici(\x2F|$)/]`,
+              message: message.network,
+            },
+          ])
         : []),
     ],
   };

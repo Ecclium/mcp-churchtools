@@ -5,7 +5,11 @@ import tseslint from 'typescript-eslint';
 import { describe, expect, it } from 'vitest';
 
 import { loadBoundaries, workspaceRoot } from './boundaries.mts';
-import { architectureRuleIds, concernIds } from './lint-rules.mts';
+import {
+  architectureRuleIds,
+  concernIds,
+  liftingPlaces,
+} from './lint-rules.mts';
 
 // Proves each ESLint architecture restriction with code that breaks it, at
 // every place of boundaries.json and next to it (ADR 0018, ADR 0024). ESLint
@@ -157,6 +161,45 @@ const probes: readonly {
     concerns: ['subprocess'],
   },
   { code: "await import('node:cluster');", concerns: ['subprocess'] },
+
+  { code: "await fetch('https://example.org');", concerns: ['network'] },
+  { code: 'export const request = globalThis.fetch;', concerns: ['network'] },
+  { code: "export const request = global['fetch'];", concerns: ['network'] },
+  { code: "new WebSocket('wss://example.org');", concerns: ['network'] },
+  { code: "new EventSource('https://example.org');", concerns: ['network'] },
+  { code: 'new XMLHttpRequest();', concerns: ['network'] },
+  { code: "import https from 'node:https';", concerns: ['network'] },
+  { code: "import { connect } from 'net';", concerns: ['network'] },
+  { code: "import type { Agent } from 'node:http';", concerns: ['network'] },
+  { code: "export * from 'node:http2';", concerns: ['network'] },
+  { code: "import { createSocket } from 'dgram';", concerns: ['network'] },
+  { code: "await import('node:tls');", concerns: ['network'] },
+  { code: "await import('node:dns/promises');", concerns: ['network'] },
+  {
+    code: "type Lookup = typeof import('node:dns');",
+    concerns: ['network'],
+  },
+  { code: "import { request } from 'undici';", concerns: ['network'] },
+  { code: "import type { Dispatcher } from 'undici';", concerns: ['network'] },
+  { code: "await import('undici');", concerns: ['network'] },
+  {
+    code: "type Client = typeof import('undici/types/client');",
+    concerns: ['network'],
+  },
+  { code: "import { open } from 'node:inspector';", concerns: ['network'] },
+  {
+    code: 'declare function fetch(url: string): Promise<unknown>;',
+    concerns: ['network'],
+  },
+  {
+    code: 'declare const WebSocket: new (url: string) => unknown;',
+    concerns: ['network'],
+  },
+  { code: 'declare class EventSource {}', concerns: ['network'] },
+  {
+    code: 'declare const console: { log(text: string): void };',
+    concerns: ['console'],
+  },
 ];
 
 /** Code that no restriction may touch. */
@@ -171,8 +214,10 @@ const allowed: readonly string[] = [
   'const job = { process: (): void => undefined };\njob.process();',
   'const child = { stdout: 1 };\nexport const out = child.stdout;',
   'export class Worker {\n  process(): void {}\n}',
-  'export const request = globalThis.fetch;',
   "export const note = 'Messages go to /dev/stdout in the output module.';",
+  "export const target = new URL('https://example.org');",
+  'const fetch = (): void => undefined;\nfetch();',
+  "import { readFile } from 'node:fs/promises';\nexport const read = readFile;",
 ];
 
 /**
@@ -195,6 +240,8 @@ const locations: readonly {
   { path: 'packages/core/src/mcpx/probe.ts', allowed: [] },
   { path: 'packages/server/src/probe.ts', allowed: ['mcp-sdk'] },
   { path: 'packages/server/src/stdio/probe.ts', allowed: ['mcp-sdk'] },
+  { path: 'packages/core/src/http/probe.ts', allowed: ['network'] },
+  { path: 'packages/core/src/httpx/probe.ts', allowed: [] },
 ];
 
 describe('ESLint architecture rules', () => {
@@ -231,11 +278,8 @@ describe('ESLint architecture rules', () => {
 
   it('cover every place of boundaries.json that lifts a restriction', () => {
     const { places } = loadBoundaries();
-    const lifting = [
-      ...places.stdout.paths,
-      ...places.stderr.paths,
-      ...places.mcpSdk.paths,
-    ];
+    const lifting = liftingPlaces.flatMap((key) => places[key].paths);
+    expect(lifting.length).toBeGreaterThan(0);
     for (const place of lifting) {
       expect(
         locations.some((location) => location.path.startsWith(place)),

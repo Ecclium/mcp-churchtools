@@ -288,6 +288,53 @@ describe('loading boundaries.json', () => {
       message: /places\.rawClientImporters: .* must be one module/,
     },
     {
+      name: 'an outbound path outside core',
+      change: (m) => {
+        place(m, 'egress').paths = ['packages/server/src/stdio/'];
+      },
+      message:
+        /places\.egress: "packages\/server\/src\/stdio\/" must be a folder directly under src\/ of core/,
+    },
+    {
+      name: 'an outbound path that is a single file',
+      change: (m) => {
+        place(m, 'egress').paths = ['packages/core/src/index.ts'];
+      },
+      message:
+        /places\.egress: "packages\/core\/src\/index\.ts" must be a folder directly under src\/ of core/,
+    },
+    {
+      name: 'the whole of core as the outbound path',
+      change: (m) => {
+        place(m, 'egress').paths = ['packages/core/src/'];
+      },
+      message:
+        /places\.egress: "packages\/core\/src\/" must be a folder directly under src\/ of core/,
+    },
+    {
+      name: 'the folder of the mount as the outbound path',
+      change: (m) => {
+        place(m, 'egress').paths = ['packages/core/src/mcp/'];
+      },
+      message:
+        /places\.egress: "packages\/core\/src\/mcp\/" shares a path with another place/,
+    },
+    {
+      name: 'the folder of the raw client as the outbound path',
+      change: (m) => {
+        place(m, 'egress').paths = ['packages/core/src/churchtools/'];
+      },
+      message:
+        /places\.egress: "packages\/core\/src\/churchtools\/" shares a path with another place/,
+    },
+    {
+      name: 'an outbound path that names no folder',
+      change: (m) => {
+        place(m, 'egress').paths = [];
+      },
+      message: /places\.egress: names no path/,
+    },
+    {
       name: 'the package of the mount among its importers',
       change: (m) => {
         place(m, 'mcpMountImporters').paths = ['packages/core/src/'];

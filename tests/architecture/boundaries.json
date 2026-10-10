@@ -66,6 +66,11 @@
   ],
   "testOnly": "testkit",
   "places": {
+    "egress": {
+      "adr": "0022",
+      "description": "The single outbound path of core: the only code that opens network connections, after it checks the host allow-list.",
+      "paths": ["packages/core/src/http/"]
+    },
     "rawClient": {
       "adr": "0024",
       "description": "The raw ChurchTools client.",
