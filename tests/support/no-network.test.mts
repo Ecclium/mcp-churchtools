@@ -1,14 +1,17 @@
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import dns from 'node:dns';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import net from 'node:net';
-import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import workspaceConfig from '../../vitest.config.mts';
+import fixtureConfig from '../fixtures/network/vitest.config.mts';
 import {
   blockedMarker,
   guardPreload,
@@ -20,7 +23,10 @@ import {
 
 // The network guard of the tests (ADR 0052). Attempts that the guard must
 // refuse never run in this process, where each one would fail the test.
-// They run in Node.js child processes with the guard loaded.
+// They run in child processes: Node.js processes with the guard loaded, and
+// separate Vitest runs over the fixtures in tests/fixtures/network/, which
+// must fail with the message of the guard, so that a plain network outage
+// cannot pass for the guard.
 
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
 const fixtures = 'tests/fixtures/network';
@@ -193,5 +199,201 @@ describe.skipIf(process.env[proofChild] === '1')('the proof', () => {
       /allen Schnittstellen/,
     );
     expect(messages.get('dns.reverse of an address')).toMatch(/reverse/);
+  });
+
+  describe('separate Vitest runs of the fixtures', () => {
+    interface Report {
+      readonly testResults: readonly {
+        readonly name: string;
+        readonly status: string;
+        readonly message: string;
+        readonly assertionResults: readonly {
+          readonly title: string;
+          readonly status: string;
+          readonly failureMessages: readonly string[];
+        }[];
+      }[];
+    }
+
+    interface Run {
+      readonly status: number | null;
+      readonly output: string;
+      readonly report: Report;
+    }
+
+    let folder = '';
+    let main: Run;
+    let late: Run;
+    let proxied: Run;
+
+    /**
+     * Runs the given fixtures in their own Vitest process, without the
+     * preload, so that only the setup files of the workspace install the
+     * guard. The report goes to a temporary folder, not into the workspace.
+     */
+    const runFixtures = (
+      name: string,
+      files: readonly string[],
+      extra: Readonly<Record<string, string>>,
+    ): Run => {
+      const output = join(folder, `${name}.json`);
+      const result = spawnSync(
+        process.execPath,
+        [
+          join(workspace, 'node_modules/vitest/vitest.mjs'),
+          'run',
+          '--config',
+          join(workspace, fixtures, 'vitest.config.mts'),
+          '--reporter=default',
+          '--reporter=json',
+          '--outputFile.json',
+          output,
+          ...files.map((file) => `${fixtures}/${file}`),
+        ],
+        {
+          cwd: workspace,
+          encoding: 'utf8',
+          env: {
+            ...withoutNetworkGuard(process.env),
+            [proofChild]: '1',
+            ...extra,
+          },
+          timeout: 60_000,
+        },
+      );
+      const text = `${result.stdout}\n${result.stderr}`;
+      if (!existsSync(output)) {
+        throw new Error(
+          `The Vitest run '${name}' wrote no report (status ${String(result.status)}, signal ${String(result.signal)}, ${String(result.error)}):\n${text.slice(-3000)}`,
+        );
+      }
+      return {
+        status: result.status,
+        output: text,
+        report: JSON.parse(readFileSync(output, 'utf8')) as Report,
+      };
+    };
+
+    beforeAll(() => {
+      folder = mkdtempSync(join(tmpdir(), 'ecclium-network-proof-'));
+      // Proxy variables without the switch of Node.js: the setup file must
+      // remove them, and the guard must not stop the run for them.
+      main = runFixtures(
+        'main',
+        ['connects.mts', 'environment.mts', 'hidden.mts', 'loopback.mts'],
+        {
+          HTTP_PROXY: 'http://proxy.example.org:3128',
+          https_proxy: 'http://proxy.example.org:3128',
+          NO_PROXY: '127.0.0.1',
+        },
+      );
+      late = runFixtures('late', ['late-load.mts', 'late-timer.mts'], {});
+      proxied = runFixtures('proxied', ['environment.mts'], {
+        NODE_USE_ENV_PROXY: '1',
+        HTTPS_PROXY: 'http://127.0.0.1:9',
+      });
+    }, 180_000);
+
+    afterAll(() => {
+      if (folder !== '') rmSync(folder, { recursive: true, force: true });
+    });
+
+    const file = (run: Run, name: string): Report['testResults'][number] => {
+      const found = run.report.testResults.find((entry) =>
+        entry.name.endsWith(`${fixtures}/${name}`),
+      );
+      if (found === undefined) throw new Error(`no result for ${name}`);
+      return found;
+    };
+
+    it('run exactly the network fixtures with the setup files of the workspace', () => {
+      expect(fixtureConfig.test?.include).toEqual(
+        [
+          'connects.mts',
+          'environment.mts',
+          'hidden.mts',
+          'late-load.mts',
+          'late-timer.mts',
+          'loopback.mts',
+        ].map((name) => `${fixtures}/${name}`),
+      );
+      expect(fixtureConfig.test?.setupFiles).toEqual(
+        workspaceConfig.test?.setupFiles,
+      );
+      expect(resolve(fixtureConfig.root ?? '')).toBe(resolve(workspace));
+    });
+
+    it('fail every test that tries a connection, with the message of the guard', () => {
+      expect(main.status, main.output).toBe(1);
+      const tests = file(main, 'connects.mts').assertionResults;
+      expect(tests.map((test) => test.title)).toEqual([
+        'fetch',
+        'https.get',
+        'https.get with its own lookup',
+        'tls.connect',
+        'net.connect to 192.0.2.1',
+        'dns.lookup',
+        'dns.promises.lookup',
+        'a swallowed attempt',
+      ]);
+      for (const test of tests) {
+        expect(test.status, test.title).toBe('failed');
+        expect(test.failureMessages.join('\n'), test.title).toContain(
+          blockedMarker,
+        );
+      }
+    });
+
+    it('fail the file for attempts that no single test reports', () => {
+      const hidden = file(main, 'hidden.mts');
+      // Vitest counts the error of the hook as the expected failure of a
+      // test marked as failing, and the second attempt comes after the
+      // hooks of its test, so both tests pass on their own.
+      expect(hidden.assertionResults.map((test) => test.status)).toEqual([
+        'passed',
+        'passed',
+      ]);
+      expect(hidden.status).toBe('failed');
+      expect(hidden.message).toContain(`${blockedMarker}: 2 Versuche`);
+    });
+
+    it('remove the proxy variables and hand the guard to child processes', () => {
+      const environment = file(main, 'environment.mts');
+      expect(environment.status, environment.message).toBe('passed');
+      expect(environment.assertionResults.map((test) => test.status)).toEqual([
+        'passed',
+        'passed',
+      ]);
+    });
+
+    it('let every connection to loopback through', () => {
+      const loopback = file(main, 'loopback.mts');
+      expect(loopback.status).toBe('passed');
+      const passed = loopback.assertionResults.filter(
+        (test) => test.status === 'passed',
+      );
+      // The round trips need a server and are skipped where binding is
+      // forbidden; the other three run everywhere.
+      expect(passed.length).toBeGreaterThanOrEqual(3);
+    });
+
+    it('fail the run for attempts while a file loads and after its last test', () => {
+      // No test fails here: one file has only a skipped test, the other
+      // test passes. The guard reports both attempts as uncaught errors.
+      expect(file(late, 'late-load.mts').status).not.toBe('failed');
+      expect(file(late, 'late-timer.mts').status).toBe('passed');
+      expect(late.status, late.output).toBe(1);
+      const reported = late.output.split(
+        `NetworkBlockedError: ${blockedMarker}`,
+      );
+      expect(reported.length - 1, late.output).toBeGreaterThanOrEqual(2);
+    });
+
+    it('stop a run that follows a proxy on loopback before the first test', () => {
+      expect(proxied.status, proxied.output).toBe(1);
+      const environment = file(proxied, 'environment.mts');
+      expect(environment.status).toBe('failed');
+      expect(environment.message).toContain('Proxy auf Loopback');
+    });
   });
 });
