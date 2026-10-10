@@ -1,4 +1,5 @@
-import { join } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
 
 import { ESLint } from 'eslint';
 import tseslint from 'typescript-eslint';
@@ -6,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 import { loadBoundaries, workspaceRoot } from './boundaries.mts';
 import {
+  architectureDirectives,
   architectureLintConfig,
   architectureRuleIds,
   concernIds,
@@ -421,6 +423,45 @@ describe('ESLint architecture rules', () => {
       (entry) => entry.name === 'architecture: module state',
     );
     expect(block?.ignores).toContain(file);
+  });
+
+  it.each([
+    '// eslint-disable-next-line',
+    '/* eslint-disable */',
+    '// eslint-disable-line no-restricted-globals',
+    '// eslint-disable-next-line no-console, no-restricted-syntax -- why',
+    '/* eslint-disable ecclium-arch/no-module-state */',
+    '/* eslint no-restricted-imports: off */',
+  ])('find the directive %s', (comment) => {
+    expect(architectureDirectives(`${comment}\nexport {};\n`)).toHaveLength(1);
+  });
+
+  it.each([
+    '// eslint-disable-next-line @typescript-eslint/no-unused-vars -- why',
+    '/* eslint-enable */',
+    '// a comment about eslint-disable in prose',
+    "export const note = 'eslint';",
+  ])('let %s pass', (comment) => {
+    expect(architectureDirectives(`${comment}\nexport {};\n`)).toEqual([]);
+  });
+
+  it('find no directive in the packages that switches off an architecture rule', () => {
+    const root = join(workspaceRoot, 'packages');
+    const files = readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .flatMap((entry) =>
+        readdirSync(join(root, entry.name, 'src'), { recursive: true })
+          .map(String)
+          .filter((file) => /\.[cm]?[jt]s$/.test(file))
+          .map((file) => join(root, entry.name, 'src', file)),
+      );
+    expect(files.length).toBeGreaterThan(0);
+    const found = files.flatMap((file) =>
+      architectureDirectives(readFileSync(file, 'utf8')).map(
+        (comment) => `${relative(workspaceRoot, file)}: ${comment}`,
+      ),
+    );
+    expect(found).toEqual([]);
   });
 
   it('have a failing example for every restriction', () => {

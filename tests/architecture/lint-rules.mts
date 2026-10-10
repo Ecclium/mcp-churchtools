@@ -45,6 +45,36 @@ export const architectureRuleIds: readonly string[] = [
   'ecclium-arch/no-module-state',
 ];
 
+/**
+ * Comments in a source file that would switch off an architecture rule: an
+ * eslint-disable comment without a list of rules, one that names a rule of
+ * architectureRuleIds, and an inline configuration of such a rule. ESLint
+ * honours them, so a single comment would silence a whole restriction. A
+ * comment that switches off another rule stays allowed.
+ *
+ * @param source - The text of a source file.
+ * @returns The offending comments, empty when there are none.
+ */
+export function architectureDirectives(source: string): string[] {
+  const found: string[] = [];
+  const directive =
+    /\/[*/]\s*(eslint(?:-disable(?:-next-line|-line)?)?)(?=[\s*]|$)([^\n]*)/g;
+  for (const [whole, kind, rest = ''] of source.matchAll(directive)) {
+    // The rules end at the end of a block comment or before a description
+    // after two dashes.
+    const text = (rest.split('*/')[0] ?? '').split('--')[0] ?? '';
+    const names = text
+      .split(',')
+      .map((name) => name.trim().split(/[\s:]/)[0] ?? '')
+      .filter((name) => name !== '');
+    const blanket = kind !== 'eslint' && names.length === 0;
+    if (blanket || names.some((name) => architectureRuleIds.includes(name))) {
+      found.push(whole.trim());
+    }
+  }
+  return found;
+}
+
 /** Concerns that some places may lift, and where boundaries.json lists them. */
 const liftable: readonly (readonly [Concern, PlaceKey])[] = [
   ['stdout', 'stdout'],
