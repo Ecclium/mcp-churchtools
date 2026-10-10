@@ -24,15 +24,18 @@ export interface PackageBoundary {
 
 /** Keys of the places in the code that a rule refers to. */
 export const placeKeys = [
+  'egress',
   'rawClient',
   'rawClientImporters',
   'mcpMount',
+  'mcpRegistration',
   'mcpMountImporters',
   'mcpSdk',
   'stdioEntries',
   'stdout',
   'stderr',
   'plugins',
+  'moduleState',
 ] as const;
 
 /** Key of a place in the code that a rule refers to. */
@@ -57,7 +60,10 @@ export interface Boundaries {
 
 // A list of exceptions may stay empty until the first module needs one. Every
 // other place must name at least one path, or its rule would check nothing.
-const mayBeEmpty: ReadonlySet<PlaceKey> = new Set(['rawClientImporters']);
+const mayBeEmpty: ReadonlySet<PlaceKey> = new Set([
+  'rawClientImporters',
+  'moduleState',
+]);
 
 type Report = (problem: string) => void;
 
@@ -249,14 +255,37 @@ const packageOf = (path: string): string =>
 /**
  * The lists of exceptions must stay narrow: a folder or the entry point of
  * core among the importers of the raw client, or the package of the mount
- * among its importers, would switch the rule off for a whole package.
+ * among its importers, would switch the rule off for a whole package. The
+ * outbound path is one folder directly under src/ of core, next to the raw
+ * client, and shares no path with another place (ADR 0022).
+ * Registration with the MCP SDK stays in single files of the mount or of
+ * the package for tests (ADR 0024). Mutable state at module level is
+ * allowed only file by file (ADR 0051).
  */
 function checkExceptions(
   places: Partial<Record<PlaceKey, Place>>,
+  testOnly: string,
   report: Report,
 ): void {
   const client = places.rawClient?.paths ?? [];
   const clientPackages = new Set(client.map(packageOf));
+  const others = placeKeys
+    .filter((key) => key !== 'egress')
+    .flatMap((key) => places[key]?.paths ?? []);
+  for (const path of places.egress?.paths ?? []) {
+    if (
+      !/^packages\/[^/]+\/src\/[^/]+\/$/.test(path) ||
+      !clientPackages.has(packageOf(path))
+    ) {
+      report(
+        `places.egress: "${path}" must be a folder directly under src/ of core, the package of the raw client`,
+      );
+    } else if (
+      others.some((other) => other.startsWith(path) || path.startsWith(other))
+    ) {
+      report(`places.egress: "${path}" shares a path with another place`);
+    }
+  }
   for (const path of places.rawClientImporters?.paths ?? []) {
     if (
       path.endsWith('/') ||
@@ -270,6 +299,25 @@ function checkExceptions(
     }
   }
   const mountPackages = new Set((places.mcpMount?.paths ?? []).map(packageOf));
+  const mount = places.mcpMount?.paths ?? [];
+  for (const path of places.mcpRegistration?.paths ?? []) {
+    if (
+      path.endsWith('/') ||
+      !(
+        mount.some((folder) => path.startsWith(folder)) ||
+        packageOf(path) === testOnly
+      )
+    ) {
+      report(
+        `places.mcpRegistration: "${path}" must be one file inside the mount or inside ${testOnly}`,
+      );
+    }
+  }
+  for (const path of places.moduleState?.paths ?? []) {
+    if (path.endsWith('/')) {
+      report(`places.moduleState: "${path}" must be one file`);
+    }
+  }
   for (const path of places.mcpMountImporters?.paths ?? []) {
     if (mountPackages.has(packageOf(path))) {
       report(
@@ -310,7 +358,7 @@ export function parseBoundaries(value: unknown, root: string): Boundaries {
   }
   checkImports(packages, typeof testOnly === 'string' ? testOnly : '', report);
   const places = parsePlaces(value['places'], dirs, root, report);
-  checkExceptions(places, report);
+  checkExceptions(places, typeof testOnly === 'string' ? testOnly : '', report);
 
   if (problems.length > 0 || typeof testOnly !== 'string') {
     throw new Error(`boundaries.json: ${problems.join('; ')}`);

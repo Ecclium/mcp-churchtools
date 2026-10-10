@@ -1,14 +1,22 @@
-import { join } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
 
 import { ESLint } from 'eslint';
 import tseslint from 'typescript-eslint';
 import { describe, expect, it } from 'vitest';
 
 import { loadBoundaries, workspaceRoot } from './boundaries.mts';
-import { architectureRuleIds, concernIds } from './lint-rules.mts';
+import {
+  architectureDirectives,
+  architectureLintConfig,
+  architectureRuleIds,
+  concernIds,
+  liftingPlaces,
+} from './lint-rules.mts';
 
 // Proves each ESLint architecture restriction with code that breaks it, at
-// every place of boundaries.json and next to it (ADR 0018, ADR 0024). ESLint
+// every place of boundaries.json and next to it (ADR 0018, ADR 0022, ADR
+// 0024, ADR 0051). ESLint
 // finds its configuration from the workspace root, as `pnpm lint` does, but
 // runs without type information: the project service refuses paths that do
 // not exist on disk. Only the architecture rules are reported.
@@ -157,6 +165,140 @@ const probes: readonly {
     concerns: ['subprocess'],
   },
   { code: "await import('node:cluster');", concerns: ['subprocess'] },
+
+  {
+    code: "server.registerTool('x', {}, () => ({}));",
+    concerns: ['mcp-register'],
+  },
+  {
+    code: "server['registerPrompt']('x', {}, () => ({}));",
+    concerns: ['mcp-register'],
+  },
+  {
+    code: 'mcp.server.setRequestHandler(schema, () => ({}));',
+    concerns: ['mcp-register'],
+  },
+  {
+    code: 'server.setNotificationHandler?.(schema, () => undefined);',
+    concerns: ['mcp-register'],
+  },
+  {
+    code: 'export const add = server.registerTool.bind(server);',
+    concerns: ['mcp-register'],
+  },
+  {
+    code: 'const { registerResource } = server;',
+    concerns: ['mcp-register'],
+  },
+  {
+    code: "const { 'registerTool': add } = server;",
+    concerns: ['mcp-register'],
+  },
+  {
+    code: "server[`registerTool`]('x', {}, () => ({}));",
+    concerns: ['mcp-register'],
+  },
+  {
+    code: 'server.fallbackRequestHandler = async () => ({});',
+    concerns: ['mcp-register'],
+  },
+
+  { code: 'let count = 0;', concerns: ['module-state'] },
+  { code: 'export let count = 0;', concerns: ['module-state'] },
+  { code: 'var count = 0;', concerns: ['module-state'] },
+  { code: 'if (ready) {\n  var late = 1;\n}', concerns: ['module-state'] },
+  {
+    code: 'namespace Cache {\n  export let size = 0;\n}',
+    concerns: ['module-state'],
+  },
+  { code: 'const cache = new Map();', concerns: ['module-state'] },
+  { code: 'export const seen = new WeakMap();', concerns: ['module-state'] },
+  { code: 'const table = { seen: new Set() };', concerns: ['module-state'] },
+  { code: 'const refs = [new WeakRef(target)];', concerns: ['module-state'] },
+  {
+    code: 'export class Store {\n  static items = new Map();\n}',
+    concerns: ['module-state'],
+  },
+  {
+    code: 'export class Store {\n  static {\n    Store.seen = new WeakSet();\n  }\n}',
+    concerns: ['module-state'],
+  },
+  {
+    code: 'class Cache {\n  items = new Map<string, string>();\n}\nexport const cache = new Cache();',
+    concerns: ['module-state'],
+  },
+  {
+    code: 'export class Cache {\n  static readonly instance = new Cache();\n}',
+    concerns: ['module-state'],
+  },
+  {
+    code: 'export class Counter {\n  static count = 0;\n}',
+    concerns: ['module-state'],
+  },
+  {
+    code: 'export class Counter {\n  static accessor count = 0;\n}',
+    concerns: ['module-state'],
+  },
+  {
+    code: "import { AsyncLocalStorage } from 'node:async_hooks';\nexport const store = new AsyncLocalStorage();",
+    concerns: ['module-state'],
+  },
+  {
+    code: 'export const seen = new globalThis.Map();',
+    concerns: ['module-state'],
+  },
+  {
+    code: 'const Collection = Map;\nexport const items = new Collection();',
+    concerns: ['module-state'],
+  },
+
+  { code: "await fetch('https://example.org');", concerns: ['network'] },
+  { code: 'export const request = globalThis.fetch;', concerns: ['network'] },
+  { code: "export const request = global['fetch'];", concerns: ['network'] },
+  {
+    code: "export const open = (): unknown => new WebSocket('wss://example.org');",
+    concerns: ['network'],
+  },
+  {
+    code: "export const open = (): unknown => new EventSource('https://example.org');",
+    concerns: ['network'],
+  },
+  {
+    code: 'export const open = (): unknown => new XMLHttpRequest();',
+    concerns: ['network'],
+  },
+  { code: "import https from 'node:https';", concerns: ['network'] },
+  { code: "import { connect } from 'net';", concerns: ['network'] },
+  { code: "import type { Agent } from 'node:http';", concerns: ['network'] },
+  { code: "export * from 'node:http2';", concerns: ['network'] },
+  { code: "import { createSocket } from 'dgram';", concerns: ['network'] },
+  { code: "await import('node:tls');", concerns: ['network'] },
+  { code: "await import('node:dns/promises');", concerns: ['network'] },
+  {
+    code: "type Lookup = typeof import('node:dns');",
+    concerns: ['network'],
+  },
+  { code: "import { request } from 'undici';", concerns: ['network'] },
+  { code: "import type { Dispatcher } from 'undici';", concerns: ['network'] },
+  { code: "await import('undici');", concerns: ['network'] },
+  {
+    code: "type Client = typeof import('undici/types/client');",
+    concerns: ['network'],
+  },
+  { code: "import { open } from 'node:inspector';", concerns: ['network'] },
+  {
+    code: 'declare function fetch(url: string): Promise<unknown>;',
+    concerns: ['network'],
+  },
+  {
+    code: 'declare const WebSocket: new (url: string) => unknown;',
+    concerns: ['network'],
+  },
+  { code: 'declare class EventSource {}', concerns: ['network'] },
+  {
+    code: 'declare const console: { log(text: string): void };',
+    concerns: ['console'],
+  },
 ];
 
 /** Code that no restriction may touch. */
@@ -171,8 +313,26 @@ const allowed: readonly string[] = [
   'const job = { process: (): void => undefined };\njob.process();',
   'const child = { stdout: 1 };\nexport const out = child.stdout;',
   'export class Worker {\n  process(): void {}\n}',
-  'export const request = globalThis.fetch;',
   "export const note = 'Messages go to /dev/stdout in the output module.';",
+  "export const target = (): URL => new URL('https://example.org');",
+  "registry.register('x');",
+  'export function count(): number {\n  let n = 0;\n  n += 1;\n  return n;\n}',
+  'export const make = (): Map<string, number> => new Map();',
+  'export class Store {\n  readonly items = new Map<string, number>();\n}',
+  'export class Store {\n  static readonly create = (): Set<string> => new Set();\n}',
+  'export const limits = Object.freeze({ max: 100 });',
+  'declare let ambient: number;',
+  "declare module 'ecclium-example' {\n  let value: number;\n}",
+  'export class Limits {\n  static readonly max = 100;\n}',
+  'export class Store {\n  accessor items = new Map<string, number>();\n}',
+  'export const encoder = new TextEncoder();',
+  "export const percent = new Intl.NumberFormat('de-CH', { style: 'percent' });",
+  'for (let index = 0; index < 3; index += 1) {\n  void index;\n}',
+  'export class Tally {\n  count(): number {\n    let n = 0;\n    n += 1;\n    return n;\n  }\n}',
+  'export const count = function (): number {\n  let n = 0;\n  n += 1;\n  return n;\n};',
+  'export class Host {\n  addTool(): void {}\n}',
+  'const fetch = (): void => undefined;\nfetch();',
+  "import { readFile } from 'node:fs/promises';\nexport const read = readFile;",
 ];
 
 /**
@@ -184,7 +344,8 @@ const locations: readonly {
   readonly allowed: readonly Concern[];
 }[] = [
   { path: 'packages/core/src/probe.ts', allowed: [] },
-  { path: 'packages/core/src/probe.test.ts', allowed: [] },
+  { path: 'packages/core/src/probe.test.ts', allowed: ['module-state'] },
+  { path: 'packages/core/src/probe.test.mts', allowed: [] },
   { path: 'packages/core/src/probe.mts', allowed: [] },
   { path: 'packages/core/src/logger/probe.ts', allowed: ['stderr'] },
   { path: 'packages/core/src/loggerx/probe.ts', allowed: [] },
@@ -192,9 +353,16 @@ const locations: readonly {
   { path: 'packages/cli/src/outputx/probe.ts', allowed: [] },
   { path: 'packages/cli/src/stdio/probe.ts', allowed: [] },
   { path: 'packages/core/src/mcp/probe.ts', allowed: ['mcp-sdk'] },
+  {
+    path: 'packages/core/src/mcp/mount.ts',
+    allowed: ['mcp-sdk', 'mcp-register'],
+  },
+  { path: 'packages/core/src/mcp/mount-extra.ts', allowed: ['mcp-sdk'] },
   { path: 'packages/core/src/mcpx/probe.ts', allowed: [] },
   { path: 'packages/server/src/probe.ts', allowed: ['mcp-sdk'] },
   { path: 'packages/server/src/stdio/probe.ts', allowed: ['mcp-sdk'] },
+  { path: 'packages/core/src/http/probe.ts', allowed: ['network'] },
+  { path: 'packages/core/src/httpx/probe.ts', allowed: [] },
 ];
 
 describe('ESLint architecture rules', () => {
@@ -231,17 +399,69 @@ describe('ESLint architecture rules', () => {
 
   it('cover every place of boundaries.json that lifts a restriction', () => {
     const { places } = loadBoundaries();
-    const lifting = [
-      ...places.stdout.paths,
-      ...places.stderr.paths,
-      ...places.mcpSdk.paths,
-    ];
+    const lifting = liftingPlaces.flatMap((key) => places[key].paths);
+    expect(lifting.length).toBeGreaterThan(0);
     for (const place of lifting) {
       expect(
         locations.some((location) => location.path.startsWith(place)),
         place,
       ).toBe(true);
     }
+  });
+
+  it('leave the files listed in moduleState to their own ADR', () => {
+    const boundaries = loadBoundaries();
+    const file = 'packages/core/src/index.ts';
+    const blocks = architectureLintConfig({
+      ...boundaries,
+      places: {
+        ...boundaries.places,
+        moduleState: { ...boundaries.places.moduleState, paths: [file] },
+      },
+    });
+    const block = blocks.find(
+      (entry) => entry.name === 'architecture: module state',
+    );
+    expect(block?.ignores).toContain(file);
+  });
+
+  it.each([
+    '// eslint-disable-next-line',
+    '/* eslint-disable */',
+    '// eslint-disable-line no-restricted-globals',
+    '// eslint-disable-next-line no-console, no-restricted-syntax -- why',
+    '/* eslint-disable ecclium-arch/no-module-state */',
+    '/* eslint no-restricted-imports: off */',
+  ])('find the directive %s', (comment) => {
+    expect(architectureDirectives(`${comment}\nexport {};\n`)).toHaveLength(1);
+  });
+
+  it.each([
+    '// eslint-disable-next-line @typescript-eslint/no-unused-vars -- why',
+    '/* eslint-enable */',
+    '// a comment about eslint-disable in prose',
+    "export const note = 'eslint';",
+  ])('let %s pass', (comment) => {
+    expect(architectureDirectives(`${comment}\nexport {};\n`)).toEqual([]);
+  });
+
+  it('find no directive in the packages that switches off an architecture rule', () => {
+    const root = join(workspaceRoot, 'packages');
+    const files = readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .flatMap((entry) =>
+        readdirSync(join(root, entry.name, 'src'), { recursive: true })
+          .map(String)
+          .filter((file) => /\.[cm]?[jt]s$/.test(file))
+          .map((file) => join(root, entry.name, 'src', file)),
+      );
+    expect(files.length).toBeGreaterThan(0);
+    const found = files.flatMap((file) =>
+      architectureDirectives(readFileSync(file, 'utf8')).map(
+        (comment) => `${relative(workspaceRoot, file)}: ${comment}`,
+      ),
+    );
+    expect(found).toEqual([]);
   });
 
   it('have a failing example for every restriction', () => {

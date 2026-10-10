@@ -23,6 +23,17 @@ const pluginApi = 'plugin-api';
  */
 const testFile = String.raw`\.test\.ts$`;
 
+/**
+ * What opens or resolves network connections: the built-in modules for HTTP,
+ * sockets, TLS, UDP, DNS and the inspector, and the HTTP client undici.
+ * dependency-cruiser drops the prefix node: of a built-in module, the pattern
+ * allows it all the same.
+ */
+export const networkTargets: readonly string[] = [
+  '^(node:)?(http|https|http2|net|tls|dgram|dns|inspector)(/promises)?$',
+  '(^|/)node_modules/undici/',
+];
+
 const escape = (text: string): string =>
   text.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
@@ -178,6 +189,13 @@ export function dependencyRules(
           ...exportedEntries(boundaries, root),
         ],
       },
+    },
+    {
+      name: 'network-only-in-egress',
+      severity: 'error',
+      comment: `${adr('egress')}: only the outbound path in core opens network connections, after it checks the host allow-list (draft ADR 0009). Imports for types only count as well.`,
+      from: { path: '^packages/', pathNot: at('egress') },
+      to: { path: [...networkTargets] },
     },
     {
       name: 'raw-client-only-in-core',

@@ -288,6 +288,85 @@ describe('loading boundaries.json', () => {
       message: /places\.rawClientImporters: .* must be one module/,
     },
     {
+      name: 'an outbound path outside core',
+      change: (m) => {
+        place(m, 'egress').paths = ['packages/server/src/stdio/'];
+      },
+      message:
+        /places\.egress: "packages\/server\/src\/stdio\/" must be a folder directly under src\/ of core/,
+    },
+    {
+      name: 'an outbound path that is a single file',
+      change: (m) => {
+        place(m, 'egress').paths = ['packages/core/src/index.ts'];
+      },
+      message:
+        /places\.egress: "packages\/core\/src\/index\.ts" must be a folder directly under src\/ of core/,
+    },
+    {
+      name: 'the whole of core as the outbound path',
+      change: (m) => {
+        place(m, 'egress').paths = ['packages/core/src/'];
+      },
+      message:
+        /places\.egress: "packages\/core\/src\/" must be a folder directly under src\/ of core/,
+    },
+    {
+      name: 'the folder of the mount as the outbound path',
+      change: (m) => {
+        place(m, 'egress').paths = ['packages/core/src/mcp/'];
+      },
+      message:
+        /places\.egress: "packages\/core\/src\/mcp\/" shares a path with another place/,
+    },
+    {
+      name: 'the folder of the raw client as the outbound path',
+      change: (m) => {
+        place(m, 'egress').paths = ['packages/core/src/churchtools/'];
+      },
+      message:
+        /places\.egress: "packages\/core\/src\/churchtools\/" shares a path with another place/,
+    },
+    {
+      name: 'an outbound path that names no folder',
+      change: (m) => {
+        place(m, 'egress').paths = [];
+      },
+      message: /places\.egress: names no path/,
+    },
+    {
+      name: 'a folder as the place of registration with the MCP SDK',
+      change: (m) => {
+        place(m, 'mcpRegistration').paths = ['packages/core/src/mcp/'];
+      },
+      message:
+        /places\.mcpRegistration: "packages\/core\/src\/mcp\/" must be one file inside the mount/,
+    },
+    {
+      name: 'a place of registration with the MCP SDK that names no file',
+      change: (m) => {
+        place(m, 'mcpRegistration').paths = [];
+      },
+      message: /places\.mcpRegistration: names no path/,
+    },
+    {
+      name: 'a registration with the MCP SDK outside the mount',
+      change: (m) => {
+        place(m, 'mcpRegistration').paths = [
+          'packages/server/src/stdio/index.ts',
+        ];
+      },
+      message:
+        /places\.mcpRegistration: "packages\/server\/src\/stdio\/index\.ts" must be one file inside the mount/,
+    },
+    {
+      name: 'a folder among the modules with state at module level',
+      change: (m) => {
+        place(m, 'moduleState').paths = ['packages/core/src/'];
+      },
+      message: /places\.moduleState: "packages\/core\/src\/" must be one file/,
+    },
+    {
       name: 'the package of the mount among its importers',
       change: (m) => {
         place(m, 'mcpMountImporters').paths = ['packages/core/src/'];
@@ -306,6 +385,14 @@ describe('loading boundaries.json', () => {
 
   it('accepts the file as it is', () => {
     expect(() => parseBoundaries(manifest, workspaceRoot)).not.toThrow();
+  });
+
+  it('accepts a registration with the MCP SDK in the package for tests', () => {
+    const changed = structuredClone(manifest);
+    place(changed, 'mcpRegistration').paths.push(
+      'packages/testkit/src/index.ts',
+    );
+    expect(() => parseBoundaries(changed, workspaceRoot)).not.toThrow();
   });
 
   it.each(cases)('refuses $name', ({ change, message }) => {

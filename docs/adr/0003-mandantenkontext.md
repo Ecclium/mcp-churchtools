@@ -44,3 +44,4 @@ Gewählt ist die dritte Option.
 
 - Die Paketbeschreibungen von `core` und `plugin-api` nennen den Mandantenkontext (ADR 0022). Beide Pakete sind noch leer.
 - Typ, `TenantResolver` und der Test mit zwei Mandanten folgen in Phase 1.
+- Zustand auf Modulebene meldet die ESLint-Regel `[arch:module-state]` nach ADR 0051 (vorgeschlagen): `let` und `var` des Moduls, jedes `new` beim Laden und statische Felder ohne `readonly`. Nicht jede Form, einen Kontext aufzubewahren, erkennt sie, etwa ein verändertes Objekt in einer Konstante oder eine Closure.

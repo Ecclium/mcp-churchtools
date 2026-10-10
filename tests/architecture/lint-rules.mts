@@ -1,12 +1,14 @@
 import type { Linter } from 'eslint';
 
 import type { Boundaries, PlaceKey } from './boundaries.mts';
+import { moduleStateRule } from './module-state-rule.mts';
 
 // ESLint rules for the code of the packages, generated from boundaries.json
 // and loaded by eslint.config.mjs. dependency-cruiser sees imports; these
 // rules see what code does with them: writing to stdout or stderr, using
-// console, loading modules past the import checks, starting processes, and
-// importing the MCP SDK.
+// console, loading modules past the import checks, starting processes,
+// importing the MCP SDK, registering with it, opening network connections
+// and keeping state at module level.
 //
 // Every restriction carries an id such as [arch:stdout] and its ADR in the
 // message, so the tests can prove each one on its own. Several restrictions
@@ -14,8 +16,8 @@ import type { Boundaries, PlaceKey } from './boundaries.mts';
 // of that rule as a whole. Each block therefore repeats every restriction it
 // does not lift.
 //
-// The rules read code, not what it does at run time. ADR 0018 lists what
-// they cannot see.
+// The rules read code, not what it does at run time. The ADRs named in the
+// messages list what they cannot see.
 
 /** What the rules keep out of the packages, each with its own id. */
 export const concernIds = [
@@ -27,6 +29,9 @@ export const concernIds = [
   'dynamic-import',
   'require',
   'subprocess',
+  'network',
+  'mcp-register',
+  'module-state',
 ] as const;
 
 type Concern = (typeof concernIds)[number];
@@ -37,13 +42,51 @@ export const architectureRuleIds: readonly string[] = [
   'no-restricted-imports',
   'no-restricted-properties',
   'no-restricted-syntax',
+  'ecclium-arch/no-module-state',
 ];
+
+/**
+ * Comments in a source file that would switch off an architecture rule: an
+ * eslint-disable comment without a list of rules, one that names a rule of
+ * architectureRuleIds, and an inline configuration of such a rule. ESLint
+ * honours them, so a single comment would silence a whole restriction. A
+ * comment that switches off another rule stays allowed.
+ *
+ * @param source - The text of a source file.
+ * @returns The offending comments, empty when there are none.
+ */
+export function architectureDirectives(source: string): string[] {
+  const found: string[] = [];
+  const directive =
+    /\/[*/]\s*(eslint(?:-disable(?:-next-line|-line)?)?)(?=[\s*]|$)([^\n]*)/g;
+  for (const [whole, kind, rest = ''] of source.matchAll(directive)) {
+    // The rules end at the end of a block comment or before a description
+    // after two dashes.
+    const text = (rest.split('*/')[0] ?? '').split('--')[0] ?? '';
+    const names = text
+      .split(',')
+      .map((name) => name.trim().split(/[\s:]/)[0] ?? '')
+      .filter((name) => name !== '');
+    const blanket = kind !== 'eslint' && names.length === 0;
+    if (blanket || names.some((name) => architectureRuleIds.includes(name))) {
+      found.push(whole.trim());
+    }
+  }
+  return found;
+}
 
 /** Concerns that some places may lift, and where boundaries.json lists them. */
 const liftable: readonly (readonly [Concern, PlaceKey])[] = [
   ['stdout', 'stdout'],
   ['stderr', 'stderr'],
   ['mcp-sdk', 'mcpSdk'],
+  ['network', 'egress'],
+  ['mcp-register', 'mcpRegistration'],
+];
+
+/** The places of boundaries.json that lift a restriction. */
+export const liftingPlaces: readonly PlaceKey[] = [
+  ...new Set(liftable.map(([, key]) => key)),
 ];
 
 const sources = '{ts,mts,cts}';
@@ -64,16 +107,73 @@ function messages(boundaries: Boundaries): Record<Concern, string> {
       '[arch:require] Modules are loaded only with import, never through node:module, require or process.getBuiltinModule, which the architecture checks do not see (ADR 0022).',
     subprocess:
       '[arch:subprocess] The packages start no child processes, workers or cluster members, which can share stdout with the MCP protocol (ADR 0018).',
+    'mcp-register': `[arch:mcp-register] Only the mount registers tools, prompts, resources and handlers with the MCP SDK, so that every call runs through the one pipeline (${adr('mcpRegistration')}).`,
+    'module-state': `[arch:module-state] Code in the packages keeps no mutable state at module level. State that outlives a request is created in the composition root, as a named port or a named exception (${adr('moduleState')}).`,
+    network: `[arch:network] Only the outbound path in core opens network connections, after it checks the host allow-list (${adr('egress')}).`,
   };
 }
+
+/**
+ * Built-in modules that open or resolve network connections, or listen on a
+ * port like the inspector. A fixed list: another library that opens
+ * connections itself is a new dependency, which the review checks.
+ */
+const networkModules = [
+  'http',
+  'https',
+  'http2',
+  'net',
+  'tls',
+  'dgram',
+  'dns',
+  'dns/promises',
+  'inspector',
+  'inspector/promises',
+] as const;
+
+/**
+ * Methods and properties of the MCP SDK that register tools, prompts,
+ * resources or handlers. The rule matches them by name, so the plugin API
+ * must not use these names for its own methods. The list is checked against
+ * the SDK when it is built in.
+ */
+const registration =
+  'registerTool|registerPrompt|registerResource|setRequestHandler|setNotificationHandler|fallbackRequestHandler|fallbackNotificationHandler';
+
+/** Globals that open network connections. */
+const networkGlobals = [
+  'fetch',
+  'WebSocket',
+  'EventSource',
+  'XMLHttpRequest',
+] as const;
 
 /** A module name with and without the prefix node:. */
 const builtin = (...names: readonly string[]): string[] =>
   names.flatMap((name) => [`node:${name}`, name]);
 
-/** A selector for import() of the given built-in modules. */
-const importOf = (names: string): string =>
-  `ImportExpression[source.value=/^(node:)?(${names})$/]`;
+/** A selector for import() or typeof import() of the given built-in modules. */
+const importOf = (names: string, node = 'ImportExpression'): string =>
+  `${node}[source.value=/^(node:)?(${names})$/]`;
+
+/**
+ * Selectors for a declaration of the given globals at module level. A
+ * declaration for the type checker hides the global from ESLint, while the
+ * code still calls the global at run time.
+ */
+const declarationsOf = (names: string): string[] => [
+  `TSDeclareFunction[id.name=/^(${names})$/]`,
+  `VariableDeclaration[declare=true] > VariableDeclarator[id.name=/^(${names})$/]`,
+  `ClassDeclaration[declare=true][id.name=/^(${names})$/]`,
+];
+
+/**
+ * The network modules as alternatives for a selector, which ends its regular
+ * expression at the first slash.
+ */
+const networkNames = networkModules
+  .map((name) => name.replace('/', String.raw`\x2F`))
+  .join('|');
 
 /** Rule settings for code that may do what `allowed` names, and no more. */
 function restrictions(
@@ -110,12 +210,22 @@ function restrictions(
     'no-restricted-globals': [
       'error',
       { name: 'console', message: message.console },
+      ...(forbid('network')
+        ? networkGlobals.map((name) => ({ name, message: message.network }))
+        : []),
     ],
     'no-restricted-properties': [
       'error',
       ...['globalThis', 'global'].flatMap((object) => [
         { object, property: 'console', message: message.console },
         { object, property: 'process', message: message.process },
+        ...(forbid('network')
+          ? networkGlobals.map((property) => ({
+              object,
+              property,
+              message: message.network,
+            }))
+          : []),
       ]),
       ...['getBuiltinModule', 'binding', 'dlopen'].map((property) => ({
         object: 'process',
@@ -144,15 +254,30 @@ function restrictions(
           ...(forbid('stdout') ? whole('stdout', 'tty') : []),
           ...whole('require', 'module'),
           ...whole('subprocess', 'child_process', 'worker_threads', 'cluster'),
+          ...(forbid('network') ? whole('network', ...networkModules) : []),
         ],
-        patterns: forbid('mcp-sdk')
-          ? [{ regex: '^@modelcontextprotocol/', message: message['mcp-sdk'] }]
-          : [],
+        patterns: [
+          ...(forbid('mcp-sdk')
+            ? [
+                {
+                  regex: '^@modelcontextprotocol/',
+                  message: message['mcp-sdk'],
+                },
+              ]
+            : []),
+          ...(forbid('network')
+            ? [{ regex: '^undici(/|$)', message: message.network }]
+            : []),
+        ],
       },
     ],
     'no-restricted-syntax': [
       'error',
       { selector: importOf('console'), message: message.console },
+      ...declarationsOf('console').map((selector) => ({
+        selector,
+        message: message.console,
+      })),
       { selector: importOf('process'), message: message.process },
       { selector: importOf('module'), message: message.require },
       {
@@ -198,6 +323,37 @@ function restrictions(
             message: message['mcp-sdk'],
           }))
         : []),
+      ...(forbid('mcp-register')
+        ? [
+            // Any access, not only a call: a method passed on or bound
+            // registers just as well, and so does an assignment to a
+            // fallback handler. A key built from a variable or by
+            // concatenation is not seen.
+            `MemberExpression[property.name=/^(${registration})$/]`,
+            `MemberExpression[property.value=/^(${registration})$/]`,
+            `MemberExpression[property.type='TemplateLiteral'][property.quasis.0.value.cooked=/^(${registration})$/]`,
+            `ObjectPattern > Property[key.name=/^(${registration})$/]`,
+            `ObjectPattern > Property[key.value=/^(${registration})$/]`,
+          ].map((selector) => ({ selector, message: message['mcp-register'] }))
+        : []),
+      ...(forbid('network')
+        ? declarationsOf(networkGlobals.join('|')).map((selector) => ({
+            selector,
+            message: message.network,
+          }))
+        : []),
+      ...(forbid('network')
+        ? ['ImportExpression', 'TSImportType'].flatMap((node) => [
+            {
+              selector: importOf(networkNames, node),
+              message: message.network,
+            },
+            {
+              selector: String.raw`${node}[source.value=/^undici(\x2F|$)/]`,
+              message: message.network,
+            },
+          ])
+        : []),
     ],
   };
 }
@@ -206,6 +362,9 @@ function restrictions(
  * Builds the configuration blocks: one for all code in the packages, then
  * one for each place that lifts a restriction. Longer paths come later, so
  * a place inside another one wins and keeps what the outer place allows.
+ * The rule against state at module level has its own block, because it is
+ * not one of the shared ESLint rules; tests and the files of moduleState are
+ * exempt from it.
  *
  * @param boundaries - The checked content of boundaries.json.
  * @returns Flat configuration blocks for ESLint.
@@ -238,5 +397,24 @@ export function architectureLintConfig(
         ),
       ),
     })),
+    {
+      name: 'architecture: module state',
+      files: [`packages/*/src/**/*.${sources}`],
+      ignores: [
+        // Only the form that Vitest runs and the build leaves out: a file
+        // that ships is never treated as a test.
+        'packages/*/src/**/*.test.ts',
+        ...boundaries.places.moduleState.paths,
+      ],
+      plugins: {
+        'ecclium-arch': { rules: { 'no-module-state': moduleStateRule } },
+      },
+      rules: {
+        'ecclium-arch/no-module-state': [
+          'error',
+          { message: message['module-state'] },
+        ],
+      },
+    },
   ];
 }
