@@ -100,7 +100,7 @@ function messages(boundaries: Boundaries): Record<Concern, string> {
     stderr: `[arch:stderr] Only the logger and the output module of the command line write to stderr (${adr('stderr')}).`,
     process:
       '[arch:process] Use process and globalThis only through a property such as process.env. Passed on or taken apart, they hide writes to stdout and stderr from these rules (ADR 0018).',
-    'mcp-sdk': `[arch:mcp-sdk] Only the mount in core and the server import the MCP SDK (${adr('mcpSdk')}).`,
+    'mcp-sdk': `[arch:mcp-sdk] Only the mount in core, the server and the elicitation spike in testkit import the MCP SDK (${adr('mcpSdk')}).`,
     'dynamic-import':
       '[arch:dynamic-import] import() takes a fixed string, so that the architecture checks see what it loads (ADR 0022).',
     require:

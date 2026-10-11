@@ -375,6 +375,21 @@ const locations: readonly {
   { path: 'packages/server/src/stdio/probe.ts', allowed: ['mcp-sdk'] },
   { path: 'packages/core/src/http/probe.ts', allowed: ['network'] },
   { path: 'packages/core/src/httpx/probe.ts', allowed: [] },
+  {
+    path: 'packages/testkit/src/mcp-spike/server.ts',
+    allowed: ['mcp-sdk', 'mcp-register'],
+  },
+  {
+    path: 'packages/testkit/src/mcp-spike/stdio.ts',
+    allowed: ['mcp-sdk', 'stderr'],
+  },
+  { path: 'packages/testkit/src/mcp-spike/log.ts', allowed: ['mcp-sdk'] },
+  {
+    path: 'packages/testkit/src/mcp-spike/probe.test.ts',
+    allowed: ['mcp-sdk', 'module-state'],
+  },
+  { path: 'packages/testkit/src/mcp-spikex/probe.ts', allowed: [] },
+  { path: 'packages/testkit/src/probe.ts', allowed: [] },
 ];
 
 describe('ESLint architecture rules', () => {
