@@ -87,10 +87,7 @@ async function gate(
   let client: Client | undefined;
   const code = await codeOf(async () => {
     const pass = await passPersonsGate(
-      {
-        client: createGateClient(clientOptions, gatePaths),
-        state: personsState(instanceOptions.document),
-      },
+      { state: personsState(instanceOptions.document) },
       access ?? createPersonsAccess(clientOptions),
     );
     client = pass.client;
@@ -140,6 +137,26 @@ describe('the reach of the clients', () => {
     }
     expect(instance.calls).toEqual([]);
     expect((await client.get({ path: '/api/whoami' })).status).toBe(200);
+  });
+
+  it.each([
+    '/api/wiki%2F..%2Fpersons',
+    '/api/wiki%2f%2e%2e%2fpersons',
+    '/api;x/persons',
+    '/api/%2570ersons',
+    '/api/wiki%5C..%5Cpersons',
+    '/api/wiki/.well-known',
+  ])('refuses %s in every client, before any request', async (path) => {
+    const instance = personsInstance(setting);
+    const clientOptions = options(setting, instance);
+    for (const client of [
+      createClient(clientOptions),
+      createGateClient(clientOptions, [path]),
+      createPersonsClient(clientOptions),
+    ]) {
+      expect(await codeOf(() => client.get({ path }))).toBe('INTERN');
+    }
+    expect(instance.calls).toEqual([]);
   });
 
   it('lets the gate client reach only the two reads of the guard', async () => {
@@ -406,10 +423,7 @@ describe('the guard for personal data', () => {
     const clientOptions = options(setting, instance);
     const code = await codeOf(() =>
       passPersonsGate(
-        {
-          client: createGateClient(clientOptions, gatePaths),
-          state: personsState(),
-        },
+        { state: personsState() },
         createPersonsAccess(clientOptions),
       ),
     );
@@ -425,6 +439,24 @@ describe('the guard for personal data', () => {
     const { code, instance } = await gate({ document });
     expect(code).toBe('KONFIGURATION personenWaechterOperationFehlt');
     expect(instance.calls).toEqual([]);
+  });
+
+  it('checks the answers of the instance of its handle, not those of a client it is handed', async () => {
+    const setting = personsSetup();
+    const instance = personsInstance(setting, {
+      rights: narrowRights(setting.identification, { 'view archive': true }),
+    });
+    const narrow = personsInstance(setting);
+    const context = {
+      state: personsState(),
+      client: createGateClient(options(setting, narrow), gatePaths),
+    };
+    const code = await codeOf(() =>
+      passPersonsGate(context, createPersonsAccess(options(setting, instance))),
+    );
+    expect(code).toBe('KONFIGURATION personenZuWeitBerechtigt');
+    expect(narrow.calls).toEqual([]);
+    expect(instance.calls.map((call) => call.url.pathname)).toEqual(gatePaths);
   });
 
   it('refuses a handle it did not create, before any request', async () => {
@@ -492,11 +524,11 @@ describe('a probe that reads personal data', () => {
       name: 'richtig',
       state: 'read',
       personalData: true,
-      async run({ client, persons, state }) {
+      async run({ persons, state }) {
         if (persons === undefined || state === undefined) {
           throw new Error('INTERN');
         }
-        const pass = await passPersonsGate({ client, state }, persons.access);
+        const pass = await passPersonsGate({ state }, persons.access);
         await pass.client.get({ path: '/api/persons' });
         return {};
       },

@@ -42,6 +42,7 @@ import {
   sameIds,
 } from './gate.mts';
 import {
+  createGateClient,
   createPersonsClient,
   type Client,
   type ClientOptions,
@@ -193,10 +194,12 @@ export function personsRightsWithin(
   return true;
 }
 
-/** What the probe needs for the checks by reading. */
+/**
+ * What the probe needs for the checks by reading. The guard sends its two
+ * reads itself, with the origin and token of the handle, so the answers it
+ * checks come from the instance and account it unlocks.
+ */
 export interface PersonsGateContext {
-  /** The client for the two reads of the guard. */
-  readonly client: Client;
   readonly state: SpikeState;
 }
 
@@ -213,7 +216,7 @@ export interface PersonsPass {
 /**
  * Runs every check and only then hands out the client for personal data.
  *
- * @param context - The client for the reads of the guard and the state of 00-inventory.
+ * @param context - The state of 00-inventory.
  * @param access - The handle from the common course of the probe.
  * @returns The checked rights and the client for personal data.
  * @throws {SpikeError} If one check fails; then no personal data may be read.
@@ -234,8 +237,12 @@ export async function passPersonsGate(
     }
   }
 
+  const reads = createGateClient(
+    options,
+    personsGateOperations.map((name) => operations[name].template),
+  );
   const { categories, editMasterData } = readCategories(
-    await context.client.get({ path: operations.wikiCategories.template }),
+    await reads.get({ path: operations.wikiCategories.template }),
     'personenWaechterAntwortUnerwartet',
   );
   const identification = findIdentification(categories, {
@@ -250,7 +257,7 @@ export async function passPersonsGate(
     throw refuse('personenZuWeitBerechtigt');
   }
 
-  const rights = await context.client.get({
+  const rights = await reads.get({
     path: operations.permissionsGlobal.template,
   });
   const data = isObject(rights.body) ? rights.body['data'] : undefined;

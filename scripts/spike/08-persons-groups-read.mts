@@ -426,12 +426,12 @@ export const probe: ProbeDefinition = {
   name: '08-persons-groups-read',
   state: 'read',
   personalData: true,
-  async run({ client, guard, state, persons }): Promise<Json> {
+  async run({ guard, state, persons }): Promise<Json> {
     guard.allowFixed(...words, ...knownParameters);
     if (state === undefined || persons === undefined) {
       throw new SpikeError('INTERN');
     }
-    const pass = await passPersonsGate({ client, state }, persons.access);
+    const pass = await passPersonsGate({ state }, persons.access);
     const { personId, groupId, otherGroupId } = persons.settings;
     const reader = pass.client;
     const document = state.specification;

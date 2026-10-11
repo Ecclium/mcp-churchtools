@@ -348,9 +348,12 @@ function baseHeaders(): Headers {
 /**
  * Tells whether a path lies below one of the {@link personalPrefixes}.
  *
- * The path is compared decoded, without doubled slashes and ignoring
- * case, so that no other spelling of the same path slips through. A path
- * that cannot be decoded counts as personal.
+ * The path is compared decoded once, without doubled slashes and ignoring
+ * case. A path that cannot be decoded counts as personal. Other spellings,
+ * such as dot segments or a semicolon that only appear after decoding, are
+ * not resolved here: the clients refuse every path that carries `%`, `;`
+ * or `\` or a segment starting with a dot, see {@link isPlainPath}. No probe
+ * builds such a path, because {@link pathFor} and the fixed templates do not.
  *
  * @param pathname - The path of a URL, as `URL.pathname` gives it.
  * @returns Whether an answer to this path may carry personal data.
@@ -369,6 +372,21 @@ export function isPersonalPath(pathname: string): boolean {
   );
 }
 
+/**
+ * Tells whether a path has only the plain form the probes build: no `%`,
+ * `;` or `\`, and no segment that starts with a dot. A server or a proxy
+ * could read any of these as another path.
+ *
+ * @param pathname - The path of a URL, as `URL.pathname` gives it.
+ * @returns Whether the path has the plain form.
+ */
+export function isPlainPath(pathname: string): boolean {
+  return (
+    !/[%;\\]/.test(pathname) &&
+    !pathname.split('/').some((segment) => segment.startsWith('.'))
+  );
+}
+
 /** Which paths a client may reach. */
 type Reach =
   | { readonly kind: 'ohne Personendaten' }
@@ -379,7 +397,11 @@ function readClient(options: ClientOptions, reach: Reach): Client {
   return {
     async get(request: ProbeRequest): Promise<ProbeResponse> {
       const url = new URL(request.path, options.origin);
-      if (!request.path.startsWith('/') || url.origin !== options.origin) {
+      if (
+        !request.path.startsWith('/') ||
+        url.origin !== options.origin ||
+        !isPlainPath(url.pathname)
+      ) {
         throw new SpikeError('INTERN');
       }
       if (
