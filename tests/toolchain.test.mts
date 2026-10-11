@@ -3,6 +3,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
+import { jobsOf } from './support/workflows.mts';
+
 // The Node.js, pnpm and mise versions are named in several files, each read
 // by a different tool: mise, nvm, pnpm, Corepack, npm and the CI workflows.
 // These tests keep them in step, so that an update of one file cannot leave
@@ -159,16 +161,6 @@ describe('mise', () => {
       }
     }
   });
-
-  /**
-   * The jobs of a workflow as [name, text], split at the keys under `jobs:`,
-   * also when a key is quoted or followed by a comment.
-   */
-  const jobsOf = (workflow: string): (readonly [string, string])[] =>
-    (workflow.split(/^jobs:\n/m)[1] ?? '')
-      .split(/^(?= {2}[^\s#])/m)
-      .map((job) => [/^ {2}['"]?([\w-]+)/.exec(job)?.[1] ?? '', job] as const)
-      .filter(([job]) => job !== '');
 
   /** Whether an expression `${{ … }}` in the text reads the given context. */
   const readsContext = (text: string, context: RegExp): boolean =>
