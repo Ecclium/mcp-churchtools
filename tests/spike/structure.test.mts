@@ -181,6 +181,36 @@ describe('describe', () => {
       ),
     ).toContain('zu tief');
   });
+
+  it('describes 50 fields of an object by default and more on request', () => {
+    const guard = new Guard();
+    const names = Array.from(
+      { length: 60 },
+      (_, index) => `feld${String(index)}`,
+    );
+    const schema = {
+      type: 'object',
+      properties: Object.fromEntries(
+        names.map((name) => [name, { type: 'string' }]),
+      ),
+    };
+    const value = Object.fromEntries(names.map((name) => [name, 'x']));
+    const cut = describeValue(value, schema, {
+      guard,
+      schemas,
+      keys: 'specification',
+    }) as { felder: Record<string, unknown>; weitereFelder?: string };
+    expect(Object.keys(cut.felder)).toHaveLength(50);
+    expect(cut.weitereFelder).toBe('10–99');
+    const whole = describeValue(value, schema, {
+      guard,
+      schemas,
+      keys: 'specification',
+      maxFields: 200,
+    }) as { felder: Record<string, unknown>; weitereFelder?: string };
+    expect(Object.keys(whole.felder)).toEqual(names);
+    expect(whole.weitereFelder).toBeUndefined();
+  });
 });
 
 describe('textFeatures', () => {

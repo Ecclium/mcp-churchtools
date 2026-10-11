@@ -472,6 +472,7 @@ export const specification = {
           '@deprecated': { type: 'object' },
           id: { type: 'integer' },
           guid: { type: 'string' },
+          identifier: { type: 'string' },
           name: { type: 'string' },
         },
       },

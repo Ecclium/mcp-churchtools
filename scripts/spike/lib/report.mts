@@ -188,6 +188,8 @@ export interface ResponseOptions {
   readonly booleanValues?: boolean;
   /** Whether texts show the features of a date, see {@link describe}. */
   readonly textFormats?: boolean;
+  /** How many fields of one object are described, see {@link describe}. */
+  readonly maxFields?: number;
 }
 
 /**
@@ -225,6 +227,9 @@ export function describeResponse(
             keys: options.keys ?? 'specification',
             booleanValues: options.booleanValues ?? false,
             textFormats: options.textFormats ?? false,
+            ...(options.maxFields === undefined
+              ? {}
+              : { maxFields: options.maxFields }),
           })
         : response.kind,
   };

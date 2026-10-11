@@ -211,6 +211,16 @@ export interface PersonsInstanceOptions {
   readonly ownId?: number;
   /** Puts the foreign person into g1 and p1 into the foreign group. */
   readonly crossMembers?: boolean;
+  /** Whether a `limit` that is no number is ignored instead of refused. */
+  readonly lenientLimit?: boolean;
+  /** A search term the search answers without any hit. */
+  readonly emptyQuery?: string;
+  /** Whether search and lists match only at the start of a word. */
+  readonly wordStartsOnly?: boolean;
+  /** Whether the lists of persons and groups answer 403. */
+  readonly refusedLists?: boolean;
+  /** Whether every person carries 60 more fields than the document declares. */
+  readonly manyFields?: boolean;
 }
 
 /** One synthetic or foreign person of the instance. */
@@ -350,7 +360,7 @@ export function personsInstance(
       : foreign,
     own,
   ];
-  const [p1, p2, p3] = people;
+  const [p1, p2, p3, p4] = people;
   const foreignGroupId = setting.otherGroupId + 1;
   const foreignGroup: Group = {
     label: 'foreignGroup',
@@ -371,6 +381,7 @@ export function personsInstance(
       members: [
         p1?.id ?? 0,
         p2?.id ?? 0,
+        p4?.id ?? 0,
         ...(options.crossMembers === true ? [foreign.id] : []),
       ],
     },
@@ -402,6 +413,11 @@ export function personsInstance(
       birthday: entry.birthday,
       isArchived: false,
     }),
+    ...(options.manyFields === true
+      ? Object.fromEntries(
+          Array.from({ length: 60 }, (_, index) => [`feld${String(index)}`, 1]),
+        )
+      : {}),
     meta: { modifiedDate: '2026-10-11T08:15:00Z' },
   });
   const groupData = (entry: Group): Record<string, unknown> => ({
@@ -452,7 +468,11 @@ export function personsInstance(
     entries: readonly Record<string, unknown>[],
     maxLimit: number,
   ): Response => {
-    const limitText = url.searchParams.get('limit') ?? '10';
+    const sentLimit = url.searchParams.get('limit') ?? '10';
+    const limitText =
+      options.lenientLimit === true && !/^-?\d+$/.test(sentLimit)
+        ? '10'
+        : sentLimit;
     const pageText = url.searchParams.get('page') ?? '1';
     if (!/^[1-9]\d*$/.test(limitText) || Number(limitText) > maxLimit) {
       return invalid('limit', limitText);
@@ -473,7 +493,12 @@ export function personsInstance(
     });
   };
   const matches = (text: string, ...values: readonly string[]): boolean =>
-    values.some((value) => value.toLowerCase().includes(text.toLowerCase()));
+    values.some((value) => {
+      const [term, field] = [text.toLowerCase(), value.toLowerCase()];
+      return options.wordStartsOnly === true
+        ? field.startsWith(term) || field.includes(` ${term}`)
+        : field.includes(term);
+    });
   const findPerson = (key: string): Person | undefined =>
     people.find((entry) => String(entry.id) === key || entry.guid === key);
   const findGroup = (key: string): Group | undefined =>
@@ -482,6 +507,13 @@ export function personsInstance(
   const respondPersonal = (url: URL): Response | undefined => {
     const parts = url.pathname.split('/').slice(2);
     const [kind, key, sub] = parts;
+    if (
+      options.refusedLists === true &&
+      (kind === 'persons' || kind === 'groups') &&
+      key === undefined
+    ) {
+      return answer({ message: canaries.personName }, 403);
+    }
     if (kind === 'persons' && key === undefined) {
       const query = url.searchParams.get('query');
       const email = url.searchParams.get('email');
@@ -554,6 +586,9 @@ export function personsInstance(
       }
       if (query === options.refusedQuery) {
         return invalid('query', query);
+      }
+      if (query === options.emptyQuery) {
+        return answer({ data: [], meta: { count: 0 } });
       }
       const domains = url.searchParams.getAll('domain_types[]');
       const wanted = (domain: string): boolean =>

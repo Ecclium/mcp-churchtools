@@ -399,6 +399,151 @@ describe('probe 08', () => {
     });
   });
 
+  it('searches the echo of the marker only in an error, sent without the search term', async () => {
+    const plain = await run();
+    const lenient = await run({ lenientLimit: true });
+    const markerEntry = (result: Record<string, unknown>): unknown =>
+      (
+        section(section(result, 'listen'), 'persons')[
+          'ungueltigeWerte'
+        ] as Record<string, unknown>[]
+      ).find((entry) => entry['wert'] === 'Marke');
+    expect(markerEntry(plain.result)).toMatchObject({
+      status: 400,
+      echo: { echo: 'ja', unter: ['args'] },
+    });
+    // The list ignores the value and answers 200 with the synthetic names.
+    expect(markerEntry(lenient.result)).toMatchObject({
+      status: 200,
+      echo: 'nicht geprüft',
+    });
+    const markerCalls = plain.calls.filter(
+      (call) => call.url.searchParams.get('limit') === 'Spikeprobe',
+    );
+    expect(markerCalls.length).toBeGreaterThan(0);
+    for (const call of markerCalls) {
+      expect(call.url.searchParams.has('query')).toBe(false);
+    }
+  });
+
+  it('takes parameters of the path item into account and leaves out a search without query', async () => {
+    const document = structuredClone(personsState().specification) as {
+      paths: Record<string, Record<string, unknown>>;
+    };
+    const personsPath = document.paths['/persons'] ?? {};
+    const listing = (personsPath['get'] ?? {}) as Record<string, unknown>;
+    const parameters = listing['parameters'] as Record<string, unknown>[];
+    personsPath['parameters'] = parameters.filter(
+      (parameter) => parameter['name'] === 'query',
+    );
+    listing['parameters'] = parameters.filter(
+      (parameter) => parameter['name'] !== 'query',
+    );
+    const searching = (document.paths['/search']?.['get'] ?? {}) as Record<
+      string,
+      unknown
+    >;
+    searching['parameters'] = (
+      searching['parameters'] as Record<string, unknown>[]
+    ).filter((parameter) => parameter['name'] !== 'query');
+    const { code, result, calls } = await run({}, document);
+    expect(code).toBe(exitCodes.ok);
+    expect(section(result, 'ergebnisse')['persons:q1']).toBe(
+      'erlaubt mit Einträgen',
+    );
+    expect(section(result, 'ergebnisse')['search:q1']).toBeUndefined();
+    expect(section(result, 'listen')['search']).toBe('nicht deklariert');
+    expect(calls.filter((call) => call.url.pathname === '/api/search')).toEqual(
+      [],
+    );
+  });
+
+  it('tells the form of meta only from a 200, for search as well', async () => {
+    const plain = await run();
+    expect(section(section(plain.result, 'listen'), 'search')).toEqual({
+      grenze: 'nicht deklariert',
+      meta: { count: 'ja', all: 'nein', pagination: 'nein' },
+      ungueltigeWerte: [],
+    });
+    const refused = await run({ refusedLists: true });
+    expect(refused.code).toBe(exitCodes.ok);
+    expect(section(section(refused.result, 'listen'), 'persons')['meta']).toBe(
+      'unbekannt',
+    );
+  });
+
+  it('describes the first answer with entries, and the error answers of the lists', async () => {
+    const { result } = await run({ emptyQuery: 'Spikeprobe' });
+    const ergebnisse = section(result, 'ergebnisse');
+    expect(ergebnisse['search:q1']).toBe('erlaubt leer');
+    expect(ergebnisse['search:q2']).toBe('erlaubt mit Einträgen');
+    expect(JSON.stringify(section(result, 'strukturen')['search'])).toContain(
+      'domainType',
+    );
+    expect(section(result, 'fehler')['persons 400']).toMatchObject({
+      antwort: { status: 400, struktur: { typ: 'Objekt' } },
+      fehlerschluessel: { message: 'ja', args: 'ja', errors: 'ja' },
+    });
+  });
+
+  it('names more than 50 fields of a person', async () => {
+    const { result } = await run({ manyFields: true });
+    const person = JSON.stringify(section(result, 'strukturen')['person']);
+    expect(person).toContain('<key#60>');
+    expect(person).not.toContain('weitereFelder');
+  });
+
+  it('finds the marker inside a word only where the instance does', async () => {
+    const plain = await run();
+    const starts = await run({ wordStartsOnly: true });
+    expect(seen(plain.result, 'search:q7')).toMatchObject({
+      p1: 'ja',
+      p3: 'ja',
+    });
+    expect(seen(plain.result, 'persons:q7')['p1']).toBe('ja');
+    expect(seen(plain.result, 'groups:q7')['g1']).toBe('ja');
+    expect(seen(starts.result, 'search:q7')).toMatchObject({
+      p1: 'nein',
+      p3: 'nein',
+    });
+    expect(seen(starts.result, 'search:q1')['p2']).toBe('ja');
+    expect(section(plain.result, 'ergebnisse')['search:q8']).toBe(
+      'erlaubt leer',
+    );
+  });
+
+  it('shows the hints on deprecated fields of persons, groups and memberships', async () => {
+    const { result } = await run();
+    const membership = {
+      veraltet: 'vorhanden',
+      ersetzt: [{ veraltet: 'personId', ersatz: 'person' }],
+      andere: '0',
+    };
+    expect(result['veraltet']).toEqual({
+      person: { veraltet: 'fehlt' },
+      personGroups: membership,
+      group: {
+        veraltet: 'vorhanden',
+        ersetzt: [{ veraltet: 'identifier', ersatz: 'guid' }],
+        andere: '0',
+      },
+      groupMembers: membership,
+    });
+  });
+
+  it('shows the member of g1 outside the visible area', async () => {
+    const { result } = await run();
+    expect(seen(result, 'groupMembers:g1')).toEqual({
+      p1: 'ja',
+      p2: 'ja',
+      p3: 'nein',
+      p4: 'ja',
+      g1: 'ja',
+      g2: 'nein',
+    });
+    expect(section(result, 'andereEintraege')['groupMembers:g1']).toBe('0');
+  });
+
   it('never takes a group for the record of the account', async () => {
     const onForeign = await run((setting) => ({
       groups: 'alle',

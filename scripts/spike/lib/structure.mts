@@ -62,6 +62,11 @@ export interface DescribeOptions {
    * that do not ask for it stay the same.
    */
   readonly textFormats?: boolean;
+  /**
+   * How many fields of one object are described by name or position, by
+   * default 50. The rest appear only as a count class.
+   */
+  readonly maxFields?: number;
 }
 
 /** Words the features of a text may contain. */
@@ -148,7 +153,7 @@ export const structureWords = [
 ] as const;
 
 const maxDepth = 10;
-const maxFields = 50;
+const defaultMaxFields = 50;
 const maxSampled = 50;
 const maxShapes = 3;
 const identifierKey = /^[A-Za-z_$][A-Za-z0-9_$]{0,63}$/;
@@ -257,6 +262,7 @@ function describeObject(
   const fields: Record<string, Json> = {};
   let unnamed = 0;
   const entries = Object.entries(object);
+  const maxFields = options.maxFields ?? defaultMaxFields;
   for (const [key, item] of entries.slice(0, maxFields)) {
     const named =
       options.keys === 'specification'

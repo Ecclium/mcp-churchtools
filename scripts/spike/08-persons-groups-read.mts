@@ -22,7 +22,7 @@
  * and groups have, and how persons and groups are addressed. Names, IDs,
  * e-mail addresses, dates and search terms never appear: the synthetic
  * objects appear only as `p1` to `p4` and `g1`, `g2`, the search terms as
- * `q1` to `q7`.
+ * `q1` to `q8`.
  *
  * Usage: see README.md in this folder.
  *
@@ -86,6 +86,16 @@ const personOperations = [
 ] as const satisfies readonly OperationName[];
 
 type PersonOperation = (typeof personOperations)[number];
+
+/**
+ * How many fields of one object the structures name. A person has some 60
+ * fields in the public document, and an instance can add its own; the
+ * stages compare them between security levels (F32).
+ */
+const maxPersonFields = 200;
+
+/** The search terms also sent to the list of groups: the marker in its forms. */
+const groupQueries: readonly string[] = ['q1', 'q2', 'q3', 'q7'];
 
 /**
  * An ID that no person or group of a test instance has: the largest
@@ -432,10 +442,17 @@ export const probe: ProbeDefinition = {
       const { method, template } = operations[name];
       const operation = findOperation(document, method, template);
       if (operation !== undefined) {
+        // Parameters of the path item count as well, as in the output.
+        const pathItem = findPathItem(document, method, template);
         documented.set(name, {
           operation,
-          pathItem: findPathItem(document, method, template),
-          query: schemas.queryParameters(operation),
+          pathItem,
+          query: new Set(
+            schemas
+              .parameterDetails(operation, pathItem)
+              .filter((detail) => detail.location === 'query')
+              .map((detail) => detail.name),
+          ),
         });
       }
     }
@@ -455,6 +472,36 @@ export const probe: ProbeDefinition = {
     const skip = (target: string, word: ResultWord): void => {
       ergebnisse[fixed(target)] = word;
     };
+    const describe = (name: PersonOperation, response: ProbeResponse): Json =>
+      describeResponse(response, {
+        guard,
+        schemas,
+        operation: documented.get(name)?.operation,
+        textFormats: true,
+        maxFields: maxPersonFields,
+      });
+    // The first error answer per operation and status, with its structure.
+    const recordError = (
+      name: PersonOperation,
+      response: ProbeResponse,
+      sent?: string,
+    ): void => {
+      if (response.status < 400) {
+        return;
+      }
+      const errorKey = fixed(`${name} ${String(response.status)}`);
+      if (fehler[errorKey] !== undefined) {
+        return;
+      }
+      fehler[errorKey] = {
+        antwort: describe(name, response),
+        fehlerschluessel: describeErrorKeys(response.body, guard),
+        ...(sent === undefined
+          ? {}
+          : { echo: describeEcho(response.body, sent, guard) }),
+      };
+    };
+    const withoutEntries = new Set<PersonOperation>();
 
     const whoami = findOperation(
       document,
@@ -471,9 +518,10 @@ export const probe: ProbeDefinition = {
     }
 
     // Sends one call and records its result and the visibility of the
-    // synthetic objects. Of the answers it describes only the first 200
-    // per operation and the first answer per error status, so the output
-    // stays short enough to read through.
+    // synthetic objects. Of the answers it describes only one 200 per
+    // operation, the first with entries or else the first, and the first
+    // answer per error status, so the output stays short enough to read
+    // through.
     const call = async (
       target: string,
       name: PersonOperation,
@@ -481,8 +529,7 @@ export const probe: ProbeDefinition = {
       query: readonly (readonly [string, string])[] = [],
       options: { readonly sent?: string; readonly unknown?: boolean } = {},
     ): Promise<ProbeResponse | undefined> => {
-      const entry = documented.get(name);
-      if (entry === undefined) {
+      if (!documented.has(name)) {
         skip(target, 'nicht dokumentiert');
         return undefined;
       }
@@ -500,28 +547,20 @@ export const probe: ProbeDefinition = {
       if (seen.eigener !== undefined) {
         eigenerDatensatz[key] = seen.eigener;
       }
-      const describe = (): Json =>
-        describeResponse(response, {
-          guard,
-          schemas,
-          operation: entry.operation,
-          textFormats: true,
-        });
-      if (response.status === 200 && strukturen[name] === undefined) {
-        strukturen[name] = describe();
-      }
-      if (response.status >= 400) {
-        const errorKey = fixed(`${name} ${String(response.status)}`);
-        if (fehler[errorKey] === undefined) {
-          fehler[errorKey] = {
-            antwort: describe(),
-            fehlerschluessel: describeErrorKeys(response.body, guard),
-            ...(options.sent === undefined
-              ? {}
-              : { echo: describeEcho(response.body, options.sent, guard) }),
-          };
+      const hasEntries = ergebnisse[key] === 'erlaubt mit Einträgen';
+      if (
+        response.status === 200 &&
+        (strukturen[name] === undefined ||
+          (hasEntries && withoutEntries.has(name)))
+      ) {
+        strukturen[name] = describe(name, response);
+        if (hasEntries) {
+          withoutEntries.delete(name);
+        } else {
+          withoutEntries.add(name);
         }
       }
+      recordError(name, response, options.sent);
       return response;
     };
 
@@ -580,17 +619,23 @@ export const probe: ProbeDefinition = {
     ];
     await call('persons', 'persons', operations.persons.template);
     await call('groups', 'groups', operations.groups.template);
-    for (const { label, text } of queries) {
-      await call(
-        `search:${label}`,
-        'search',
-        operations.search.template,
-        [['query', text]],
-        { sent: text },
-      );
-    }
+    // Without a declared query the search is left out, as the lists are.
     const search = documented.get('search');
-    if (search?.query.has('domain_types[]') === true) {
+    if (search === undefined || search.query.has('query')) {
+      for (const { label, text } of queries) {
+        await call(
+          `search:${label}`,
+          'search',
+          operations.search.template,
+          [['query', text]],
+          { sent: text },
+        );
+      }
+    }
+    if (
+      search?.query.has('query') === true &&
+      search.query.has('domain_types[]')
+    ) {
       for (const domain of ['person', 'group']) {
         await call(
           `search:q1:${domain}`,
@@ -627,7 +672,9 @@ export const probe: ProbeDefinition = {
     }
     const groupsEntry = documented.get('groups');
     if (groupsEntry?.query.has('query') === true) {
-      for (const { label, text } of searchQueries.slice(0, 3)) {
+      for (const { label, text } of searchQueries.filter((query) =>
+        groupQueries.includes(query.label),
+      )) {
         await call(
           `groups:${label}`,
           'groups',
@@ -707,6 +754,14 @@ export const probe: ProbeDefinition = {
       pathFor(operations.person.template, personId),
     );
     kennung['p1'] = synthetic(p1, 'p1');
+    if (kennung['p1'] === 'ja') {
+      veraltet['person'] = describeDeprecation(
+        p1 === undefined ? undefined : dataOf(p1),
+        dataSchema('person'),
+        schemas,
+        guard,
+      );
+    }
     const p1Guid = kennung['p1'] === 'ja' ? guidOf(p1) : undefined;
     if (p1Guid === undefined) {
       skip('person:p1-guid', 'nicht aufgerufen');
@@ -753,7 +808,7 @@ export const probe: ProbeDefinition = {
         }
         continue;
       }
-      await call(
+      const members = await call(
         `groupMembers:${label}`,
         'groupMembers',
         pathFor(operations.groupMembers.template, id),
@@ -764,6 +819,12 @@ export const probe: ProbeDefinition = {
       veraltet['group'] = describeDeprecation(
         group === undefined ? undefined : dataOf(group),
         dataSchema('group'),
+        schemas,
+        guard,
+      );
+      veraltet['groupMembers'] = describeDeprecation(
+        (members === undefined ? [] : (entriesOf(members) ?? []))[0],
+        schemas.items(dataSchema('groupMembers')),
         schemas,
         guard,
       );
@@ -832,6 +893,9 @@ export const probe: ProbeDefinition = {
         documented.get(name),
         operations[name].template,
         [['query', marker]],
+        (response) => {
+          recordError(name, response);
+        },
       );
     }
 
@@ -873,6 +937,7 @@ async function describeList(
   entry: Documented | undefined,
   path: string,
   base: readonly (readonly [string, string])[],
+  onAnswer: (response: ProbeResponse) => void,
 ): Promise<Json> {
   if (entry === undefined) {
     return 'nicht dokumentiert';
@@ -892,6 +957,7 @@ async function describeList(
         path,
         query: [...base, ...withPage('1'), ['limit', String(limit)]],
       });
+      onAnswer(response);
       if (limit === 1) {
         first = response;
         const last = pagination(response.body)?.['lastPage'];
@@ -908,7 +974,7 @@ async function describeList(
       };
     });
     result['grenze'] = describeLimitBound(bound, guard);
-    result['meta'] = first === undefined ? 'unbekannt' : metaForm(first);
+    result['meta'] = first?.status === 200 ? metaForm(first) : 'unbekannt';
     result['weitereSeiten'] =
       lastPage === undefined ? 'unbekannt' : lastPage > 1 ? 'ja' : 'nein';
     if (pages) {
@@ -920,6 +986,7 @@ async function describeList(
           ['limit', '1'],
         ],
       });
+      onAnswer(behind);
       const data = isObject(behind.body) ? behind.body['data'] : undefined;
       result['hinterLetzterSeite'] = {
         status: fixedStatus(guard, behind.status),
@@ -932,27 +999,43 @@ async function describeList(
     }
   } else {
     result['grenze'] = 'nicht deklariert';
+    const plain = await reader.get({
+      path,
+      query: [...base, ...withPage('1')],
+    });
+    onAnswer(plain);
+    result['meta'] = plain.status === 200 ? metaForm(plain) : 'unbekannt';
   }
   const invalid: Json[] = [];
   for (const [name, value] of [...invalidValues, ['limit', marker] as const]) {
     if (!entry.query.has(name)) {
       continue;
     }
+    // The marker goes out only as the invalid value, and only an error
+    // answer is searched for it, so an echo cannot come from a name in the
+    // data or from the search term (F28).
+    const isMarker = value === marker;
     const response = await reader.get({
       path,
       query: [
-        ...base,
+        ...(isMarker ? [] : base),
         ...(name === 'page' ? [] : withPage('1')),
         [name, value],
       ],
     });
+    onAnswer(response);
     invalid.push({
       parameter: name,
-      wert: value === marker ? 'Marke' : value,
+      wert: isMarker ? 'Marke' : value,
       status: fixedStatus(guard, response.status),
       fehlerschluessel: describeErrorKeys(response.body, guard),
-      ...(value === marker
-        ? { echo: describeEcho(response.body, value, guard) }
+      ...(isMarker
+        ? {
+            echo:
+              response.status >= 400
+                ? describeEcho(response.body, value, guard)
+                : 'nicht geprüft',
+          }
         : {}),
     });
   }

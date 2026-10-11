@@ -6,7 +6,8 @@
  * on the instance carries. The probe recognises them in its memory by
  * their names and never prints a name: in the output they appear only as
  * `p1` to `p4` and `g1`, `g2`. The search terms are fixed here, so no other
- * term reaches a request or the logs of the instance.
+ * term reaches a request or the logs of the instance; the only other one
+ * is a random UUID per run.
  *
  * @packageDocumentation
  */
@@ -34,7 +35,9 @@ export interface SyntheticPerson {
 /**
  * The synthetic persons: the marker as the last name, as the start of the
  * last name, as the first name, and inside the last name. `p4` belongs to
- * another area than the others and to no group.
+ * another area than the others, so it shows whether the rights of an area
+ * hold; it is a member of `g1`, so the members of `g1` show whether a
+ * member outside the visible area is left out.
  */
 export const syntheticPersons: readonly SyntheticPerson[] = [
   { label: 'p1', firstName: 'Anna', lastName: 'Spikeprobe' },
@@ -63,10 +66,12 @@ export const searchQueries = [
   { label: 'q4', text: 'Anna Spikeprobe' },
   { label: 'q5', text: 'Spikeprobe Anna' },
   { label: 'q6', text: emailToken },
+  // Inside the marker: a hit on p1 to p3 shows a match inside a word.
+  { label: 'q7', text: 'ikeprob' },
 ] as const;
 
 /** The label of the search term that is a random UUID of each run. */
-export const unknownQueryLabel = 'q7';
+export const unknownQueryLabel = 'q8';
 
 const lower = (value: unknown): string | undefined =>
   typeof value === 'string' ? value.toLowerCase() : undefined;
