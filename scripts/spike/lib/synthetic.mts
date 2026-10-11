@@ -73,8 +73,9 @@ export const searchQueries = [
 /** The label of the search term that is a random UUID of each run. */
 export const unknownQueryLabel = 'q8';
 
+// An empty text is no name: reduced persons carry an empty first name.
 const lower = (value: unknown): string | undefined =>
-  typeof value === 'string' ? value.toLowerCase() : undefined;
+  typeof value === 'string' && value !== '' ? value.toLowerCase() : undefined;
 
 interface Names {
   readonly pairs: (readonly [string, string])[];

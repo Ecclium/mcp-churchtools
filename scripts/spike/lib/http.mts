@@ -351,8 +351,8 @@ function baseHeaders(): Headers {
  * The path is compared decoded once, without doubled slashes and ignoring
  * case. A path that cannot be decoded counts as personal. Other spellings,
  * such as dot segments or a semicolon that only appear after decoding, are
- * not resolved here: the clients refuse every path that carries `%`, `;`
- * or `\` or a segment starting with a dot, see {@link isPlainPath}. No probe
+ * not resolved here: the clients refuse every path that still carries `%`
+ * or `;` or a segment starting with a dot, see {@link isPlainPath}. No probe
  * builds such a path, because {@link pathFor} and the fixed templates do not.
  *
  * @param pathname - The path of a URL, as `URL.pathname` gives it.
@@ -373,16 +373,17 @@ export function isPersonalPath(pathname: string): boolean {
 }
 
 /**
- * Tells whether a path has only the plain form the probes build: no `%`,
- * `;` or `\`, and no segment that starts with a dot. A server or a proxy
- * could read any of these as another path.
+ * Tells whether a path has only the plain form the probes build: no `%`
+ * or `;`, and no segment that starts with a dot. A server or a proxy could
+ * read any of these as another path. `URL` has already turned `\` into
+ * `/` and resolved segments of dots before this check.
  *
  * @param pathname - The path of a URL, as `URL.pathname` gives it.
  * @returns Whether the path has the plain form.
  */
 export function isPlainPath(pathname: string): boolean {
   return (
-    !/[%;\\]/.test(pathname) &&
+    !/[%;]/.test(pathname) &&
     !pathname.split('/').some((segment) => segment.startsWith('.'))
   );
 }

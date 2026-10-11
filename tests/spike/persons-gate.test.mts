@@ -286,7 +286,7 @@ describe('the rights the guard for personal data accepts', () => {
     },
   );
 
-  it.each([true, [-1], ['alle'], 'alle', 1, {}])(
+  it.each([true, [-1], [0], ['alle'], 'alle', 1, -1, {}])(
     'refuses the value %o on a right outside the read list',
     (value) => {
       expect(
@@ -441,6 +441,34 @@ describe('the guard for personal data', () => {
               permissions: { canEdit: true, canDelete: false },
             },
           ],
+          permissions: { editMasterData: false },
+        },
+      }),
+    ],
+    [
+      'personenKennkategorieBearbeitbar',
+      ({ identification }) => ({
+        categories: {
+          data: [
+            {
+              id: identification,
+              name: identificationCategoryName,
+              permissions: { canEdit: false, canDelete: true },
+            },
+          ],
+          permissions: { editMasterData: false },
+        },
+      }),
+    ],
+    [
+      'personenKennkategorieMehrfach',
+      ({ identification }) => ({
+        categories: {
+          data: [identification, identification + 1].map((id) => ({
+            id,
+            name: identificationCategoryName,
+            permissions: { canEdit: false, canDelete: false },
+          })),
           permissions: { editMasterData: false },
         },
       }),

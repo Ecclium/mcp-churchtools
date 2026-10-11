@@ -353,7 +353,6 @@ function seenIn(
   const side = varyingSide[name];
   for (const entry of entries) {
     const result = syntheticIn(entry);
-    allComparable &&= result.comparable;
     for (const label of result.found) {
       found.add(label);
     }
@@ -363,6 +362,9 @@ function seenIn(
       side === undefined
         ? result
         : syntheticIn(isObject(entry) ? entry[side] : undefined);
+    // In a membership the fixed side always carries a name, so only the
+    // varying side tells whether the entry could be compared.
+    allComparable &&= decisive.comparable;
     if (mine) {
       continue;
     }
@@ -893,6 +895,7 @@ export const probe: ProbeDefinition = {
         documented.get(name),
         operations[name].template,
         [['query', marker]],
+        unknownQuery,
         (response) => {
           recordError(name, response);
         },
@@ -937,6 +940,7 @@ async function describeList(
   entry: Documented | undefined,
   path: string,
   base: readonly (readonly [string, string])[],
+  neutral: string,
   onAnswer: (response: ProbeResponse) => void,
 ): Promise<Json> {
   if (entry === undefined) {
@@ -1011,14 +1015,21 @@ async function describeList(
     if (!entry.query.has(name)) {
       continue;
     }
-    // The marker goes out only as the invalid value, and only an error
-    // answer is searched for it, so an echo cannot come from a name in the
-    // data or from the search term (F28).
+    // The marker goes out only as the invalid value, the search term of the
+    // base is then the random one, and only an error answer is searched, so
+    // an echo cannot come from a name in the data or from the search term
+    // (F28).
     const isMarker = value === marker;
     const response = await reader.get({
       path,
       query: [
-        ...(isMarker ? [] : base),
+        ...(isMarker
+          ? base.map(([key, text]) =>
+              text === marker
+                ? ([key, neutral] as const)
+                : ([key, text] as const),
+            )
+          : base),
         ...(name === 'page' ? [] : withPage('1')),
         [name, value],
       ],

@@ -99,7 +99,8 @@ export function personsSetup(): PersonsSetting {
       String(p2 + 3),
       'demo-tenant.example',
       personsSwitch,
-      'spikepro',
+      // Part of every fixed search term with the marker: q1 to q3 and q7.
+      'ikepro',
       'qzvx',
       'anna',
       'bruno',
@@ -223,6 +224,12 @@ export interface PersonsInstanceOptions {
   readonly manyFields?: boolean;
   /** The largest `limit` the lists echo; larger ones are cut to it. */
   readonly echoCap?: number;
+  /** Whether names and titles are empty texts instead of missing. */
+  readonly emptyNames?: boolean;
+  /** Whether the member p4 of g1 appears without any name. */
+  readonly unnamedMember?: boolean;
+  /** Whether references to persons name them only in their title. */
+  readonly titlesOnly?: boolean;
 }
 
 /** One synthetic or foreign person of the instance. */
@@ -404,8 +411,19 @@ export function personsInstance(
     options.groups === 'alle' ||
     ((options.groups ?? 'typA') === 'typA' && entry.type === 'A');
   const named = (fields: Record<string, unknown>): Record<string, unknown> =>
-    options.withoutNames === true ? {} : fields;
+    options.withoutNames === true
+      ? {}
+      : options.emptyNames === true
+        ? Object.fromEntries(
+            Object.entries(fields).map(([key, value]) => [
+              key,
+              typeof value === 'string' ? '' : value,
+            ]),
+          )
+        : fields;
   const personData = (entry: Person): Record<string, unknown> => ({
+    // A made-up hint whose fields only a person declares.
+    '@deprecated': { email: 'guid' },
     id: entry.id,
     guid: entry.guid,
     ...named({
@@ -433,7 +451,9 @@ export function personsInstance(
     domainType: 'person',
     domainIdentifier: String(entry.id),
     domainAttributes: {
-      ...named({ firstName: entry.firstName, lastName: entry.lastName }),
+      ...(options.titlesOnly === true
+        ? {}
+        : named({ firstName: entry.firstName, lastName: entry.lastName })),
       guid: entry.guid,
     },
   });
@@ -446,7 +466,10 @@ export function personsInstance(
     // test can let it equal the ID of the account's own record.
     id: group.id,
     personId: member.id,
-    person: reference(member),
+    person:
+      options.unnamedMember === true && member === p4 && group.label === 'g1'
+        ? { domainType: 'person', domainIdentifier: String(member.id) }
+        : reference(member),
     group: {
       ...named({ title: group.name }),
       domainType: 'group',

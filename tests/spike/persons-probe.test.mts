@@ -71,6 +71,10 @@ function expectNothingBeyond(
     ),
   );
   for (const call of instance.calls) {
+    // No value the instance made up goes back to it, not even as a term.
+    for (const [, value] of call.url.searchParams) {
+      expect(instance.generated).not.toContain(value.toLowerCase());
+    }
     for (const name of ['ids[]', 'ids']) {
       for (const value of call.url.searchParams.getAll(name)) {
         expect(environment.has(value)).toBe(true);
@@ -182,6 +186,8 @@ describe('probe 08', () => {
     expect(seen(result, 'groups:ids')).toEqual(only('g1'));
     expect(seen(result, 'personGroups:p1')).toEqual(only('p1', 'g1'));
     expect(ergebnisse['groupMembers:g1']).toBe('erlaubt mit Einträgen');
+    // g2 is refused, so it is not checked, and its members are read anyway.
+    expect(ergebnisse['groupMembers:g2']).toBe('verweigert');
   });
 
   it('shows g2 where the account sees every group, and no member list where it may not', async () => {
@@ -273,6 +279,13 @@ describe('probe 08', () => {
     expect(
       taken.calls.filter((call) => call.url.pathname === unknownPath),
     ).toHaveLength(1);
+    const takenByGroup = await run({}, undefined, {
+      ECCLIUM_SPIKE_OTHER_GROUP_ID: String(unknownId),
+    });
+    expect(section(takenByGroup.result, 'ergebnisse')).toMatchObject({
+      'person:unbekannt': 'nicht geprüft',
+      'group:unbekannt': 'nicht geprüft',
+    });
   });
 
   it('names the known parameters and counts the others', async () => {
@@ -558,6 +571,40 @@ describe('probe 08', () => {
         ].includes(call.url.pathname),
       ),
     ).toEqual([]);
+    expect(section(result, 'veraltet')['person']).toBeUndefined();
+  });
+
+  it('takes empty names for no names', async () => {
+    const { code, result } = await run({ emptyNames: true });
+    expect(code).toBe(exitCodes.ok);
+    expect(section(result, 'kennungSynthetisch')['p1']).toBe(
+      'nicht vergleichbar',
+    );
+    expect(section(result, 'andereEintraege')['persons']).toBe('0');
+    expect(section(result, 'nichtVergleichbar')['persons']).toBe('2–9');
+    expect(seen(result, 'persons')['p1']).toBe('unbekannt');
+  });
+
+  it('recognises a person by the full name in a title', async () => {
+    const { result } = await run({ titlesOnly: true });
+    expect(seen(result, 'search:q1')).toMatchObject({
+      p1: 'ja',
+      p2: 'ja',
+      p3: 'ja',
+      p4: 'nein',
+    });
+  });
+
+  it('cannot tell a member without a name from a missing one', async () => {
+    const { result } = await run({ unnamedMember: true });
+    expect(seen(result, 'groupMembers:g1')).toMatchObject({
+      p1: 'ja',
+      p2: 'ja',
+      p4: 'unbekannt',
+      g1: 'ja',
+    });
+    expect(section(result, 'nichtVergleichbar')['groupMembers:g1']).toBe('1');
+    expect(section(result, 'andereEintraege')['groupMembers:g1']).toBe('0');
   });
 
   it('counts a foreign member of g1 and a foreign group of p1 as other entries', async () => {
@@ -599,7 +646,10 @@ describe('probe 08', () => {
     );
     expect(markerCalls.length).toBeGreaterThan(0);
     for (const call of markerCalls) {
-      expect(call.url.searchParams.has('query')).toBe(false);
+      // The random term of the run replaces the marker as search term.
+      expect(call.url.searchParams.get('query')).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
     }
   });
 
@@ -697,7 +747,11 @@ describe('probe 08', () => {
       andere: '0',
     };
     expect(result['veraltet']).toEqual({
-      person: { veraltet: 'fehlt' },
+      person: {
+        veraltet: 'vorhanden',
+        ersetzt: [{ veraltet: 'email', ersatz: 'guid' }],
+        andere: '0',
+      },
       personGroups: membership,
       group: {
         veraltet: 'vorhanden',
@@ -738,5 +792,7 @@ describe('probe 08', () => {
     expect(section(onG1.result, 'eigenerDatensatz')['groupMembers:g1']).toBe(
       'nein',
     );
+    const onP1 = await run((setting) => ({ ownId: setting.personId }));
+    expect(section(onP1.result, 'eigenerDatensatz')['person:p1-id']).toBe('ja');
   });
 });
