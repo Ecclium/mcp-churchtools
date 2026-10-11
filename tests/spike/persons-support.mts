@@ -37,7 +37,7 @@ export interface PersonsSetting {
   readonly otherGroupId: number;
   /** ID of the record of the account itself. */
   readonly ownId: number;
-  /** ID of p2; p3 and p4 follow it. */
+  /** Base of the IDs of p2 to p4, which follow it; p1 takes it with `foreignAsP1`. */
   readonly p2: number;
   readonly folder: string;
   readonly tokenFile: string;
@@ -91,6 +91,7 @@ export function personsSetup(): PersonsSetting {
       String(personId),
       String(groupId),
       String(otherGroupId),
+      String(otherGroupId + 1),
       String(ownId),
       String(p2),
       String(p2 + 1),
@@ -98,10 +99,15 @@ export function personsSetup(): PersonsSetting {
       String(p2 + 3),
       'demo-tenant.example',
       personsSwitch,
-      'spikeprobe',
+      'spikepro',
       'qzvx',
+      'anna',
       'bruno',
       'carlsen',
+      'dora',
+      'kanarie',
+      'nord',
+      'west',
       'kontakt',
       '2026-01-05',
       '2026-10-11T08:15:00Z',
@@ -165,6 +171,12 @@ export interface PersonsCall {
   readonly method: string;
   readonly url: URL;
   readonly authorization: string | null;
+  /**
+   * For a single read of a person or group, the object it addressed:
+   * `p1` to `p4`, `g1`, `g2`, `foreign`, `own`, `foreignGroup`, `unknown`
+   * for the unknown ID that exists, or `none`.
+   */
+  readonly resolved: string | undefined;
 }
 
 /** How the synthetic instance behaves. */
@@ -189,10 +201,15 @@ export interface PersonsInstanceOptions {
   readonly unknownExists?: boolean;
   /** Puts the ID of the foreign person into ECCLIUM_SPIKE_PERSON_ID. */
   readonly foreignAsP1?: boolean;
+  /** Puts the ID of the foreign group into ECCLIUM_SPIKE_GROUP_ID. */
+  readonly foreignAsG1?: boolean;
+  /** A search term the search refuses with 400, echoing it in `args`. */
+  readonly refusedQuery?: string;
 }
 
 /** One synthetic or foreign person of the instance. */
 interface Person {
+  readonly label: 'p1' | 'p2' | 'p3' | 'p4' | 'foreign' | 'own';
   readonly id: number;
   readonly guid: string;
   readonly firstName: string;
@@ -204,6 +221,7 @@ interface Person {
 
 /** One synthetic or foreign group of the instance. */
 interface Group {
+  readonly label: 'g1' | 'g2' | 'foreignGroup';
   readonly id: number;
   readonly guid: string;
   readonly name: string;
@@ -218,6 +236,8 @@ export const personsLimit = 500;
 export interface PersonsInstance {
   readonly fetch: FetchFunction;
   readonly calls: PersonsCall[];
+  /** Every GUID and birthday the instance made up, in lower case. */
+  readonly generated: readonly string[];
 }
 
 /**
@@ -233,25 +253,37 @@ export function personsInstance(
 ): PersonsInstance {
   const { canaries, identification } = setting;
   const calls: PersonsCall[] = [];
+  const generated: string[] = [];
+  // The cookie in the form the research notes describe (F3), so that its
+  // pieces sit on the block list as they do on a real instance.
   const answer = (body: unknown, status = 200): Response =>
     new Response(JSON.stringify(body), {
       status,
       headers: {
         'content-type': 'application/json',
         'x-kanarie': canaries.headerValue,
+        'set-cookie': `${canaries.cookieName}=${canaries.cookieValue}; expires=Mon, 12-Oct-2026 08:15:00 GMT; Max-Age=86400; path=/; secure; HttpOnly; SameSite=None`,
       },
     });
+  const made = (value: string): string => {
+    generated.push(value.toLowerCase());
+    return value;
+  };
   const birthday = (): string =>
-    `19${String(randomInt(30, 99))}-0${String(randomInt(1, 9))}-1${String(randomInt(0, 9))}`;
+    made(
+      `19${String(randomInt(30, 99))}-0${String(randomInt(1, 9))}-1${String(randomInt(0, 9))}`,
+    );
   const person = (
+    label: Person['label'],
     id: number,
     firstName: string,
     lastName: string,
     email: string,
     area: Person['area'],
   ): Person => ({
+    label,
     id,
-    guid: makeGuid(),
+    guid: made(makeGuid()),
     firstName,
     lastName,
     email,
@@ -259,6 +291,7 @@ export function personsInstance(
     area,
   });
   const own = person(
+    'own',
     setting.ownId,
     'Kanarie',
     canaries.personName,
@@ -266,6 +299,7 @@ export function personsInstance(
     'anderer',
   );
   const foreign = person(
+    'foreign',
     canaries.number,
     canaries.personName,
     canaries.groupName,
@@ -274,6 +308,7 @@ export function personsInstance(
   );
   const people: readonly Person[] = [
     person(
+      'p1',
       options.foreignAsP1 === true ? setting.p2 : setting.personId,
       'Anna',
       'Spikeprobe',
@@ -281,6 +316,7 @@ export function personsInstance(
       'bereich',
     ),
     person(
+      'p2',
       setting.p2 + 1,
       'Bruno',
       'Spikeprobenberg',
@@ -288,6 +324,7 @@ export function personsInstance(
       'bereich',
     ),
     person(
+      'p3',
       setting.p2 + 2,
       'Spikeprobe',
       'Carlsen',
@@ -295,6 +332,7 @@ export function personsInstance(
       'bereich',
     ),
     person(
+      'p4',
       setting.p2 + 3,
       'Dora',
       'Vorspikeprobe',
@@ -307,24 +345,28 @@ export function personsInstance(
     own,
   ];
   const [p1, p2, p3] = people;
+  const foreignGroupId = setting.otherGroupId + 1;
   const foreignGroup: Group = {
-    id: setting.otherGroupId + 1,
-    guid: makeGuid(),
+    label: 'foreignGroup',
+    id: options.foreignAsG1 === true ? setting.groupId : foreignGroupId,
+    guid: made(makeGuid()),
     name: canaries.groupName,
     type: 'A',
     members: [foreign.id],
   };
   const groups: readonly Group[] = [
     {
-      id: setting.groupId,
-      guid: makeGuid(),
+      label: 'g1',
+      id: options.foreignAsG1 === true ? foreignGroupId : setting.groupId,
+      guid: made(makeGuid()),
       name: 'Spikeprobe Nord',
       type: 'A',
       members: [p1?.id ?? 0, p2?.id ?? 0],
     },
     {
+      label: 'g2',
       id: setting.otherGroupId,
-      guid: makeGuid(),
+      guid: made(makeGuid()),
       name: 'Spikeprobe West',
       type: 'B',
       members: [p3?.id ?? 0],
@@ -493,6 +535,9 @@ export function personsInstance(
       if (query === null || query === '') {
         return invalid('query', '');
       }
+      if (query === options.refusedQuery) {
+        return invalid('query', query);
+      }
       const domains = url.searchParams.getAll('domain_types[]');
       const wanted = (domain: string): boolean =>
         domains.length === 0 || domains.includes(domain);
@@ -560,14 +605,28 @@ export function personsInstance(
     }
     return answer({ message: canaries.personName }, 404);
   };
+  // Which object a single read addresses, whichever form its key takes.
+  const resolve = (url: URL): string | undefined => {
+    const [kind, key] = url.pathname.split('/').slice(2);
+    if (key === undefined || (kind !== 'persons' && kind !== 'groups')) {
+      return undefined;
+    }
+    if (key === unknown && options.unknownExists === true) {
+      return 'unknown';
+    }
+    const found = kind === 'persons' ? findPerson(key) : findGroup(key);
+    return found?.label ?? 'none';
+  };
   return {
     calls,
+    generated,
     fetch: (url, init) => {
       const headers = new Headers(init.headers);
       calls.push({
         method: init.method ?? 'fehlt',
         url,
         authorization: headers.get('authorization'),
+        resolved: resolve(url),
       });
       return Promise.resolve(respond(url));
     },

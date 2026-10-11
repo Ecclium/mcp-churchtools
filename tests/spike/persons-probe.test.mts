@@ -38,6 +38,49 @@ interface Run {
   readonly setting: PersonsSetting;
 }
 
+// Forms of values the instance makes up at random: GUIDs, the random
+// search term, birthdays and other dates.
+const valueForms = [
+  /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
+  /\d{4}-\d{2}-\d{2}/,
+];
+
+/**
+ * Checks what holds for every run: no value of the instance in the output,
+ * and no single read beyond the IDs of the environment, the unknown values
+ * and the GUIDs of `p1` and `g1`. The instance tags each single read with
+ * the object it addressed, so a GUID taken from a list fails here.
+ */
+function expectNothingBeyond(
+  setting: PersonsSetting,
+  instance: {
+    readonly calls: readonly PersonsCall[];
+    readonly generated: readonly string[];
+  },
+  output: Capture,
+): void {
+  expect(leaks(output, [...setting.forbidden, ...instance.generated])).toEqual(
+    [],
+  );
+  for (const form of valueForms) {
+    expect(output.stdout()).not.toMatch(form);
+  }
+  const environment = new Set(
+    [setting.personId, setting.groupId, setting.otherGroupId, unknownId].map(
+      String,
+    ),
+  );
+  for (const call of instance.calls) {
+    if (call.resolved === undefined) {
+      continue;
+    }
+    const key = call.url.pathname.split('/')[3] ?? '';
+    if (!environment.has(key)) {
+      expect(['p1', 'g1', 'none']).toContain(call.resolved);
+    }
+  }
+}
+
 async function run(
   make:
     | PersonsInstanceOptions
@@ -58,6 +101,7 @@ async function run(
     io: output.io,
     folder: spikeFolder,
   });
+  expectNothingBeyond(setting, instance, output);
   const result =
     code === exitCodes.ok
       ? (JSON.parse(output.stdout()) as Record<string, unknown>)
@@ -130,23 +174,50 @@ describe('probe 08', () => {
   });
 
   it('fetches single objects only by the IDs of the environment, their own GUIDs and the unknown values', async () => {
+    // run() checks every single read; here it sees foreign GUIDs in every list.
     const { calls, setting } = await run({ persons: 'alle', groups: 'alle' });
-    const allowed = new Set(
-      [setting.personId, setting.groupId, setting.otherGroupId, unknownId].map(
-        String,
-      ),
+    const environment = new Set(
+      [setting.personId, setting.groupId, setting.otherGroupId].map(String),
     );
-    const guid = /^[0-9a-f-]{36}$/i;
-    const keys = calls
-      .map((call) =>
-        /^\/api\/(?:persons|groups)\/([^/]+)/.exec(call.url.pathname),
+    const byGuid = calls
+      .filter((call) => call.resolved !== undefined)
+      .filter(
+        (call) =>
+          !environment.has(call.url.pathname.split('/')[3] ?? '') &&
+          call.resolved !== 'none',
       )
-      .filter((match) => match !== null)
-      .map((match) => match[1] ?? '');
-    expect(keys.length).toBeGreaterThan(5);
-    for (const key of keys) {
-      expect(allowed.has(key) || guid.test(key)).toBe(true);
-    }
+      .map(
+        (call) =>
+          `${call.resolved ?? ''} ${call.url.pathname.split('/')[4] ?? ''}`,
+      );
+    expect(byGuid.sort()).toEqual(['g1 ', 'g1 members', 'p1 ']);
+  });
+
+  it('stops at a group that is not synthetic and reads nothing more about it', async () => {
+    const { code, result, calls, setting } = await run({ foreignAsG1: true });
+    expect(code).toBe(exitCodes.ok);
+    expect(section(result, 'kennungSynthetisch')['g1']).toBe('nein');
+    expect(section(result, 'ergebnisse')['groupMembers:g1']).toBe(
+      'nicht aufgerufen',
+    );
+    expect(
+      calls.filter((call) =>
+        call.url.pathname.startsWith(`/api/groups/${String(setting.groupId)}/`),
+      ),
+    ).toEqual([]);
+    expect(
+      calls.filter((call) => call.resolved === 'foreignGroup'),
+    ).toHaveLength(1);
+  });
+
+  it('tells the echo of a search term in an error, never the term', async () => {
+    const { code, result } = await run({ refusedQuery: 'Spikepro' });
+    expect(code).toBe(exitCodes.ok);
+    expect(section(result, 'ergebnisse')['search:q3']).toBe('Fehler');
+    expect(section(result, 'fehler')['search 400']).toMatchObject({
+      fehlerschluessel: { message: 'ja', args: 'ja', errors: 'ja' },
+      echo: { echo: 'ja', unter: ['args'] },
+    });
   });
 
   it('shows the change between a stage without rights and one with', async () => {
