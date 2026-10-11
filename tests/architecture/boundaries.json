@@ -88,8 +88,11 @@
     },
     "mcpRegistration": {
       "adr": "0024",
-      "description": "The only modules that call the registration functions of the MCP SDK. Each entry is one file inside the mount or inside the package for tests.",
-      "paths": ["packages/core/src/mcp/mount.ts"]
+      "description": "The only modules that call the registration functions of the MCP SDK. Each entry is one file inside the mount or inside the package for tests, there the server of the elicitation spike (ADR 0053).",
+      "paths": [
+        "packages/core/src/mcp/mount.ts",
+        "packages/testkit/src/mcp-spike/server.ts"
+      ]
     },
     "mcpMountImporters": {
       "adr": "0024",
@@ -98,13 +101,21 @@
     },
     "mcpSdk": {
       "adr": "0024",
-      "description": "Code that may import the MCP SDK.",
-      "paths": ["packages/core/src/mcp/", "packages/server/src/"]
+      "description": "Code that may import the MCP SDK: the mount, the server and, in the package for tests, the elicitation spike (ADR 0053).",
+      "paths": [
+        "packages/core/src/mcp/",
+        "packages/server/src/",
+        "packages/testkit/src/mcp-spike/"
+      ]
     },
     "stdioEntries": {
       "adr": "0018",
-      "description": "Start of the stdio mode, in which stdout carries only the MCP protocol. Nothing reachable from here may be a stdout place.",
-      "paths": ["packages/cli/src/stdio/", "packages/server/src/stdio/"]
+      "description": "Start of the stdio mode, in which stdout carries only the MCP protocol, and the start of the elicitation spike. Nothing reachable from here may be a stdout place.",
+      "paths": [
+        "packages/cli/src/stdio/",
+        "packages/server/src/stdio/",
+        "packages/testkit/src/mcp-spike/stdio.ts"
+      ]
     },
     "stdout": {
       "adr": "0018",
@@ -113,8 +124,12 @@
     },
     "stderr": {
       "adr": "0018",
-      "description": "Code that may write to stderr: the logger and the messages of the command line for operators.",
-      "paths": ["packages/cli/src/output/", "packages/core/src/logger/"]
+      "description": "Code that may write to stderr: the logger, the messages of the command line for operators and the start of the elicitation spike, which writes its record there.",
+      "paths": [
+        "packages/cli/src/output/",
+        "packages/core/src/logger/",
+        "packages/testkit/src/mcp-spike/stdio.ts"
+      ]
     },
     "plugins": {
       "adr": "0022",

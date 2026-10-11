@@ -97,17 +97,17 @@ function messages(boundaries: Boundaries): Record<Concern, string> {
     console:
       '[arch:console] Code in the packages writes through the logger or the output module of the command line, never through console (ADR 0018).',
     stdout: `[arch:stdout] Only the output module of the command line writes to stdout. In the stdio mode stdout carries the MCP protocol (${adr('stdout')}).`,
-    stderr: `[arch:stderr] Only the logger and the output module of the command line write to stderr (${adr('stderr')}).`,
+    stderr: `[arch:stderr] Only the logger, the output module of the command line and the start of the elicitation spike in testkit write to stderr (${adr('stderr')}).`,
     process:
       '[arch:process] Use process and globalThis only through a property such as process.env. Passed on or taken apart, they hide writes to stdout and stderr from these rules (ADR 0018).',
-    'mcp-sdk': `[arch:mcp-sdk] Only the mount in core and the server import the MCP SDK (${adr('mcpSdk')}).`,
+    'mcp-sdk': `[arch:mcp-sdk] Only the mount in core, the server and the elicitation spike in testkit import the MCP SDK (${adr('mcpSdk')}).`,
     'dynamic-import':
       '[arch:dynamic-import] import() takes a fixed string, so that the architecture checks see what it loads (ADR 0022).',
     require:
       '[arch:require] Modules are loaded only with import, never through node:module, require or process.getBuiltinModule, which the architecture checks do not see (ADR 0022).',
     subprocess:
       '[arch:subprocess] The packages start no child processes, workers or cluster members, which can share stdout with the MCP protocol (ADR 0018).',
-    'mcp-register': `[arch:mcp-register] Only the mount registers tools, prompts, resources and handlers with the MCP SDK, so that every call runs through the one pipeline (${adr('mcpRegistration')}).`,
+    'mcp-register': `[arch:mcp-register] Only the mount, and in testkit the server of the elicitation spike, register tools, prompts, resources and handlers with the MCP SDK, so that every call runs through the one pipeline (${adr('mcpRegistration')}).`,
     'module-state': `[arch:module-state] Code in the packages keeps no mutable state at module level. State that outlives a request is created in the composition root, as a named port or a named exception (${adr('moduleState')}).`,
     network: `[arch:network] Only the outbound path in core opens network connections, after it checks the host allow-list (${adr('egress')}).`,
   };
@@ -133,12 +133,20 @@ const networkModules = [
 
 /**
  * Methods and properties of the MCP SDK that register tools, prompts,
- * resources or handlers. The rule matches them by name, so the plugin API
- * must not use these names for its own methods. The list is checked against
- * the SDK when it is built in.
+ * resources or handlers, remove or announce them, or swap the handler of a
+ * registered resource. The rule matches them by name, so the plugin API must
+ * not use these names for its own methods. Checked against version 2.3.1 of
+ * the SDK (ADR 0053).
+ *
+ * The objects that registerTool, registerPrompt and registerResource return
+ * can also swap or switch off a handler: update({ callback }), remove(),
+ * disable() and enabled on all of them, and the fields handler and executor,
+ * which the SDK reads on every request. These names are too common for a
+ * rule that matches names, so the mount keeps these objects to itself and
+ * the review checks that.
  */
 const registration =
-  'registerTool|registerPrompt|registerResource|setRequestHandler|setNotificationHandler|fallbackRequestHandler|fallbackNotificationHandler';
+  'registerTool|registerPrompt|registerResource|setRequestHandler|setNotificationHandler|fallbackRequestHandler|fallbackNotificationHandler|removeRequestHandler|removeNotificationHandler|registerCapabilities|readCallback';
 
 /** Globals that open network connections. */
 const networkGlobals = [

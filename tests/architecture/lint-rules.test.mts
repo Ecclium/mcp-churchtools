@@ -202,6 +202,22 @@ const probes: readonly {
     code: 'server.fallbackRequestHandler = async () => ({});',
     concerns: ['mcp-register'],
   },
+  {
+    code: "mcp.server.removeRequestHandler('tools/call');",
+    concerns: ['mcp-register'],
+  },
+  {
+    code: "mcp.server.removeNotificationHandler('notifications/cancelled');",
+    concerns: ['mcp-register'],
+  },
+  {
+    code: 'mcp.server.registerCapabilities({ tools: {} });',
+    concerns: ['mcp-register'],
+  },
+  {
+    code: 'resource.readCallback = async () => ({ contents: [] });',
+    concerns: ['mcp-register'],
+  },
 
   { code: 'let count = 0;', concerns: ['module-state'] },
   { code: 'export let count = 0;', concerns: ['module-state'] },
@@ -363,6 +379,21 @@ const locations: readonly {
   { path: 'packages/server/src/stdio/probe.ts', allowed: ['mcp-sdk'] },
   { path: 'packages/core/src/http/probe.ts', allowed: ['network'] },
   { path: 'packages/core/src/httpx/probe.ts', allowed: [] },
+  {
+    path: 'packages/testkit/src/mcp-spike/server.ts',
+    allowed: ['mcp-sdk', 'mcp-register'],
+  },
+  {
+    path: 'packages/testkit/src/mcp-spike/stdio.ts',
+    allowed: ['mcp-sdk', 'stderr'],
+  },
+  { path: 'packages/testkit/src/mcp-spike/log.ts', allowed: ['mcp-sdk'] },
+  {
+    path: 'packages/testkit/src/mcp-spike/probe.test.ts',
+    allowed: ['mcp-sdk', 'module-state'],
+  },
+  { path: 'packages/testkit/src/mcp-spikex/probe.ts', allowed: [] },
+  { path: 'packages/testkit/src/probe.ts', allowed: [] },
 ];
 
 describe('ESLint architecture rules', () => {

@@ -1,10 +1,14 @@
 /**
- * Checks the licences of all installed dependencies against two lists
- * (ADR 0021).
+ * Checks the licences of the installed dependencies of every package in the
+ * workspace against two lists (ADR 0021).
  *
  * Dependencies that ship with Ecclium may only use permissive licences.
  * Tools used during development may also use a few more, because they are
  * never distributed. An unknown licence is an error.
+ *
+ * The check sees what pnpm installs, nothing else. Code that a dependency
+ * bundles into its own files has no entry in the lockfile and stays
+ * invisible here.
  *
  * Usage: `node scripts/check-licenses.mts`
  *
@@ -147,8 +151,37 @@ export function countPackages(report: LicenceReport): number {
     .reduce((sum, entry) => sum + entry.versions.length, 0);
 }
 
-function readReport(scope: '--dev' | '--prod'): LicenceReport {
-  const output = runPnpm(['licenses', 'list', '--json', scope]);
+/** Where and with which environment {@link readReport} runs pnpm. */
+export interface ReportOptions {
+  /** Root of the workspace to read, by default the current directory. */
+  readonly dir?: string;
+  /** Environment for pnpm, by default that of this process. */
+  readonly env?: NodeJS.ProcessEnv;
+}
+
+/**
+ * Lists the licences of the installed dependencies of every package in a
+ * workspace.
+ *
+ * `-r` is what makes this cover the packages under `packages/`. Without it
+ * pnpm reads only the root package, which reaches the workspace packages
+ * through links it does not follow, so their dependencies would appear in
+ * neither scope.
+ *
+ * @param scope - `--prod` for dependencies at run time, `--dev` for development.
+ * @param options - Workspace and environment for pnpm.
+ * @returns The report of pnpm, empty if the scope has no dependencies.
+ * @throws {Error} If pnpm cannot be started or exits with an error.
+ */
+export function readReport(
+  scope: '--dev' | '--prod',
+  options: ReportOptions = {},
+): LicenceReport {
+  const dir = options.dir === undefined ? [] : ['--dir', options.dir];
+  const output = runPnpm(
+    [...dir, 'licenses', 'list', '--json', '-r', scope],
+    options.env,
+  );
   // Without dependencies in the scope, pnpm prints a sentence, not JSON.
   return output.trimStart().startsWith('{')
     ? (JSON.parse(output) as LicenceReport)

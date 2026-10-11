@@ -394,6 +394,14 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'no-stdout-in-stdio-paths',
+    name: 'the start of the elicitation spike reaches the output module of the command line',
+    files: {
+      'packages/testkit/src/mcp-spike/stdio.ts': `import '${nameOf('cli')}';\nexport {};\n`,
+      'packages/cli/src/index.ts': "import './output/index.js';\nexport {};\n",
+    },
+  },
+  {
     rule: 'plugins-only-plugin-api',
     name: 'the example plugin imports core',
     files: {
