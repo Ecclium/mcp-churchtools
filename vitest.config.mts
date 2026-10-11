@@ -14,6 +14,9 @@ export default defineConfig({
   },
   test: {
     include: ['packages/*/src/**/*.test.ts', 'tests/**/*.test.mts'],
+    // Every test process runs with the network guard: connections only to
+    // 127.0.0.1 and ::1 as IP literals, no name resolution (ADR 0052).
+    setupFiles: ['tests/support/no-network.setup.mts'],
     coverage: {
       provider: 'v8',
       include: ['packages/*/src/**/*.ts'],
