@@ -2,7 +2,7 @@
 
 Stand: 11.10.2026, Prüfung von `@modelcontextprotocol/server` 2.3.1
 
-Dieses Dokument hält fest, was Ecclium über das MCP-SDK in Version 2 und über Rückfragen an Nutzerinnen und Nutzer (Elicitation) wissen muss, und worauf sich jede Aussage stützt. Der Entscheid, der darauf aufbaut, steht in [ADR 0053](../adr/0053-mcp-sdk-und-instanzmodell.md). Der erste Teil ist die Prüfung des SDK. Der zweite Teil, der Spike zu Elicitation mit echten Clients, folgt mit seinen Läufen.
+Dieses Dokument hält fest, was Ecclium über das MCP-SDK in Version 2 und über Rückfragen an Nutzerinnen und Nutzer (Elicitation) wissen muss, und worauf sich jede Aussage stützt. Der Entscheid, der darauf aufbaut, steht in [ADR 0053](../adr/0053-mcp-sdk-und-instanzmodell.md). Der erste Teil ist die Prüfung des SDK. Der zweite Teil beschreibt den Spike zu Elicitation mit echten Clients und wie seine Läufe ablaufen. Die Ergebnisse der Läufe folgen.
 
 ## Methode
 
@@ -137,6 +137,152 @@ Die Tests in `packages/testkit/src/mcp-spike/round-trip.test.ts` laufen im Proze
 - Über `StdioServerTransport` auf zwei Strömen stehen auf stdout nur JSON-RPC-Nachrichten.
 
 Der Build von `testkit` übersetzt die Typdefinitionen des SDK ohne `skipLibCheck` und ohne die Typen des Browsers.
+
+## Spike zu Elicitation
+
+Der Spike klärt, wie sich echte Clients verhalten, wenn ein Server über `input_required` nachfragt: ob sie einen Dialog zeigen, was sie bei Annehmen, Ablehnen und Abbrechen senden und ob sie ohne Dialog antworten. Davon hängt ab, ob die Bestätigung von Schreibvorgängen über Elicitation in Phase 5 der Normalfall oder ein Randfall ist (Threat Model, T8). Der Server des Spikes liegt in `packages/testkit/src/mcp-spike/`. Er greift weder auf ChurchTools noch aufs Netz zu und braucht weder einen Tenant noch Zugangsdaten.
+
+### Was die Clients dokumentieren
+
+Stand 11.10.2026:
+
+- **Claude Code** zeigt Rückfragen im Modus Formular und URL als Dialog. Über die Protokollversion 2026-07-28 deklariert es `elicitation: {form: {}, url: {}}` (Dokumentation von Claude Code, Seite «Connect Claude Code to tools via MCP», Abschnitt «Respond to MCP elicitation requests»). Im Dialog sendet «Decline» die Aktion `decline`, die Taste Esc die Aktion `cancel`. Ein Hook für das Ereignis `Elicitation` kann ohne Dialog annehmen, ablehnen oder abbrechen (Seite `hooks`, Abschnitt «Elicitation»).
+- **Protokollversion bei Claude Code:** Ab Version 2.1.292 verhandelt Claude Code über stdio standardmässig 2026-07-28. Mit `MCP_PROTOCOL_NEGOTIATION=legacy`, ab Version 2.1.221, bleibt es bei der älteren Version. Laut Dokumentation kann ein Server auch mit einer neuen Version auf der älteren Protokollversion bleiben. Massgebend ist deshalb die Ära, die das Protokoll des Spikes zeigt, nicht die Version des Clients.
+- **`claude -p`:** Mit der Option `--permission-prompts none`, ab Version 2.1.259, bricht Claude Code jede Rückfrage ab, die kein Hook beantwortet (Seite `headless`). Was ohne diese Option geschieht, ist nicht dokumentiert.
+- **Claude Desktop:** Zu Elicitation gibt es keine Dokumentation, im Änderungsprotokoll bis Version 2.31226.1 vom 09.10.2026 keinen Eintrag. Berichte im öffentlichen Issue-Tracker von Claude Code nennen einen Code-Tab, der Rückfragen sofort ablehnt (Issue 96043), und einen Chat, der sich unabhängig von der Version der App als `claude-ai` in Version `0.1.0` meldet (Issue 100785). Beides ist nicht offiziell.
+
+### Vorbereitung
+
+1. Im Checkout auf dem Stand von `main` bauen: `mise exec -- pnpm build`.
+2. Den Pfad von Node.js notieren: `mise which node`. Claude Desktop startet Server ohne den Suchpfad der Shell, deshalb steht Node.js überall mit absolutem Pfad.
+3. Einen Ordner für die Protokolle ausserhalb des Checkouts anlegen.
+4. Der Server startet überall mit demselben Befehl. Die Platzhalter `/pfad/zu/node`, `/pfad/zum/checkout` und `/pfad/zum/protokoll` ersetzen Sie durch Ihre Pfade:
+
+   ```sh
+   sh -c 'exec /pfad/zu/node /pfad/zum/checkout/packages/testkit/dist/mcp-spike/stdio.js 2>>/pfad/zum/protokoll/spike-$(date +%Y%m%d-%H%M%S).jsonl'
+   ```
+
+   Jeder Start schreibt sein Protokoll in eine eigene Datei. stdout bleibt dem Protokoll von MCP vorbehalten.
+
+### Läufe
+
+In jedem Lauf bitten Sie das Modell, das Tool `spike_rueckfrage` des Servers `ecclium-elicitation` aufzurufen, und antworten auf jede Rückfrage innerhalb von 30 Sekunden. Zuerst erscheint der Dialog zur Freigabe des Tools, den Sie erlauben. Die Rückfrage selbst erkennen Sie an «Ecclium-Spike» und einem Kurzcode aus sechs Zeichen. Jeder Aufruf stellt eine neue Frage mit neuem Kurzcode. Pro Lauf gibt es drei Aktionen, jede mit einem eigenen Aufruf:
+
+- **A:** annehmen, mit «Bestätigt» auf ja.
+- **B:** ablehnen über «Decline» oder die entsprechende Schaltfläche.
+- **C:** abbrechen mit Esc oder durch Schliessen des Dialogs.
+
+| Nr. | Oberfläche                      | Einrichtung                                                                                                             | Aktionen   |
+| --- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------- |
+| 1   | Claude Code, interaktiv         | Server mit `claude mcp add --scope user --transport stdio ecclium-elicitation -- sh -c '…'` eintragen, `claude` starten | A, B, C    |
+| 2   | Claude Code, interaktiv, Legacy | wie Lauf 1, gestartet mit `MCP_PROTOCOL_NEGOTIATION=legacy claude`                                                      | A, B, C    |
+| 3   | Claude Code, Hook lehnt ab      | Wegwerf-Ordner mit Hook, siehe unten                                                                                    | ein Aufruf |
+| 4   | Claude Code, Hook nimmt an      | zweiter Wegwerf-Ordner mit Hook, siehe unten                                                                            | ein Aufruf |
+| 5   | `claude -p`                     | `claude -p "Rufe das Tool spike_rueckfrage auf." --allowedTools mcp__ecclium-elicitation__spike_rueckfrage`             | ein Aufruf |
+| 6   | `claude -p`, ohne Rückfragen    | wie Lauf 5, zusätzlich `--permission-prompts none`                                                                      | ein Aufruf |
+| 7   | Claude Desktop, Code-Tab        | Server aus Lauf 1 (`~/.claude.json`), neue Sitzung im Code-Tab                                                          | A, B, C    |
+| 8   | Claude Desktop, Code-Tab        | Server in `claude_desktop_config.json` statt in `~/.claude.json`, Claude Desktop ganz beenden und neu starten           | A, B, C    |
+| 9   | Claude Desktop, Chat            | Server aus Lauf 8, neuer Chat                                                                                           | A, B, C    |
+
+- **Versionen:** Notieren Sie vor jedem Lauf die Version von Claude Code (`claude --version`, im Code-Tab `/status`) und von Claude Desktop (Menü «Über»), dazu die Version von macOS. Die Läufe mit Claude Code brauchen mindestens Version 2.1.292.
+- **Hooks für die Läufe 3 und 4:** Legen Sie zwei Ordner ausserhalb des Checkouts an und starten Sie `claude` darin. Jeder erhält Einstellungen für das Projekt mit diesem Eintrag, wie es die Dokumentation von Claude Code zeigt (Seite `hooks`, Abschnitt «Answer a form request from a script»):
+
+  ```json
+  {
+    "hooks": {
+      "Elicitation": [
+        {
+          "matcher": "ecclium-elicitation",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "${CLAUDE_PROJECT_DIR}/antwort.sh",
+              "args": []
+            }
+          ]
+        }
+      ]
+    }
+  }
+  ```
+
+  Im ersten Ordner lehnt `antwort.sh` ab, im zweiten nimmt es an. Beide Dateien brauchen `chmod +x`.
+
+  ```sh
+  #!/bin/sh
+  # Lauf 3: lehnt ab, ohne Dialog.
+  exit 2
+  ```
+
+  ```sh
+  #!/bin/sh
+  # Lauf 4: nimmt an, ohne Dialog.
+  printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"Elicitation","action":"accept","content":{"bestaetigt":true,"farbe":"blau"}}}'
+  ```
+
+- **Desktop:** Ein Eintrag in `claude_desktop_config.json` lädt Claude Desktop auch in Sitzungen des Code-Tabs. Schliessen Sie diese während Lauf 9 oder unterscheiden Sie die Läufe im Protokoll am Namen des Clients und an der Zeit. Der Eintrag lautet:
+
+  ```json
+  {
+    "mcpServers": {
+      "ecclium-elicitation": {
+        "command": "sh",
+        "args": [
+          "-c",
+          "exec /pfad/zu/node /pfad/zum/checkout/packages/testkit/dist/mcp-spike/stdio.js 2>>/pfad/zum/protokoll/spike-$(date +%Y%m%d-%H%M%S).jsonl"
+        ]
+      }
+    }
+  }
+  ```
+
+### Vorlage pro Aktion
+
+```text
+Lauf (Nr.):
+Oberfläche:
+Version Claude Code:
+Version Claude Desktop:
+macOS:
+Aktion (A, B, C oder Hook):
+Dialog sichtbar: ja oder nein
+Kurzcode im Dialog:
+Antwort des Modells:
+Auffälligkeiten:
+```
+
+«Dialog sichtbar» ist Pflicht, auch bei einem Lauf, in dem kein Dialog zu erwarten ist. Nur so lässt sich eine Antwort ohne Dialog von einer Antwort mit Dialog unterscheiden, denn das Protokoll sieht beide gleich.
+
+### Auswertung
+
+Jede Aktion erhält einen von sechs Ausgängen, aus dem Protokoll des Servers und Ihrer Notiz zum Dialog:
+
+| Ausgang                           | Im Protokoll                                                                                                                                                                                           | Dialog sichtbar |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------- |
+| angenommen                        | `retry_received` mit `accept`                                                                                                                                                                          | ja              |
+| angenommen ohne Dialog            | `retry_received` mit `accept`                                                                                                                                                                          | nein            |
+| abgelehnt mit Dialog              | `retry_received` mit `decline`                                                                                                                                                                         | ja              |
+| automatisch abgelehnt ohne Dialog | `retry_received` mit `decline` oder `cancel`, die rohe Aktion bleibt stehen                                                                                                                            | nein            |
+| abgebrochen                       | `retry_received` mit `cancel`                                                                                                                                                                          | ja              |
+| nicht unterstützt                 | `capability_absent`, `response_sent` mit `is_error` (Shim), ein Fehler -32021 oder nach `input_required_issued` kein `retry_received` innerhalb von 600 Sekunden, dieser Fall als «Zeitüberschreitung» | nein            |
+
+`tool_call` zeigt die Ära, die Protokollversion, den Namen, den der Client von sich angibt, und die deklarierten Capabilities. Der Name ist eine Selbstauskunft des Clients und kein Beleg.
+
+### Weitergeben
+
+Das Protokoll enthält nur Namen, Zahlen und feste Wörter, keine Antworten und keine Pfade. Auf stderr können aber auch Meldungen anderer Herkunft landen, etwa Warnungen von Node.js. Geben Sie deshalb nur Zeilen weiter, die mit dem Zeitstempel beginnen und ein bekanntes Ereignis tragen, und entfernen Sie jede andere Zeile vorher:
+
+```sh
+grep -E '^\{"ts":"[0-9T:.Z-]+","event":"(process_start|instance_created|client_hello|discover|tool_call|capability_absent|input_required_issued|retry_received|elicitation_sent|elicitation_answered|cancel_received|response_sent|request_rejected|server_error|entry_error|process_failed)"' spike-DATUM.jsonl > spike-DATUM.weitergeben.jsonl
+```
+
+Weitergegeben werden die gefilterten Dateien und die Notizen pro Aktion.
+
+### Aufräumen
+
+- Server austragen: `claude mcp remove --scope user ecclium-elicitation` und den Eintrag in `claude_desktop_config.json` entfernen, danach Claude Desktop neu starten.
+- Die beiden Wegwerf-Ordner der Läufe 3 und 4 samt ihren Einstellungen löschen.
+- Die Protokolle nach der Auswertung löschen.
 
 ## Offene Punkte
 
