@@ -19,6 +19,7 @@
     "@ecclium/mcp-churchtools-runner": "workspace:*",
     "@ecclium/mcp-churchtools-server": "workspace:*",
     "@ecclium/mcp-churchtools-tools": "workspace:*",
-    "@ecclium/mcp-churchtools-workflows": "workspace:*"
+    "@ecclium/mcp-churchtools-workflows": "workspace:*",
+    "@modelcontextprotocol/server": "2.3.1"
   }
 }
