@@ -139,7 +139,7 @@ describe('the reach of the clients', () => {
       expect(await codeOf(() => client.get({ path }))).toBe('INTERN');
     }
     expect(instance.calls).toEqual([]);
-    expect((await client.get({ path: '/api/whoami' })).status).toBe(404);
+    expect((await client.get({ path: '/api/whoami' })).status).toBe(200);
   });
 
   it('lets the gate client reach only the two reads of the guard', async () => {
@@ -158,8 +158,13 @@ describe('the reach of the clients', () => {
     const instance = personsInstance(setting);
     const client = createPersonsClient(options(setting, instance));
     for (const path of ['/api/persons', '/api/groups/1', '/api/search']) {
-      expect((await client.get({ path })).status).toBe(200);
+      await client.get({ path });
     }
+    expect(instance.calls.map((call) => call.url.pathname)).toEqual([
+      '/api/persons',
+      '/api/groups/1',
+      '/api/search',
+    ]);
   });
 
   it('is created only by the guard for personal data', () => {
