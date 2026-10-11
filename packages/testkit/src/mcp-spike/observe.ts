@@ -3,11 +3,13 @@
  * client and server, writes what they show to the record and passes every
  * message on unchanged (ADR 0053).
  *
- * Some answers come from the SDK before a handler of the spike runs: the
- * shim answers an older client without elicitation, a missing capability
- * ends in -32021, a forged `requestState` in -32602. Only the messages show
- * these cases, and only they show what the client sent: its protocol
- * version, its self-reported name and the capabilities it declared. Reading
+ * Some answers come from the SDK on its own. It answers a forged
+ * `requestState` with -32602 before any handler runs. For an older client
+ * without elicitation, the handler of the spike asks once, and then the
+ * shim of the SDK answers with an `isError` result instead of asking the
+ * client. Only the messages show these answers, and only they show what the
+ * client sent: its protocol version, its self-reported name and the
+ * capabilities it declared. Reading
  * the capabilities of an older client here also spares the spike
  * `getClientCapabilities`, which the SDK marks as deprecated.
  *
