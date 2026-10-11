@@ -82,5 +82,5 @@ Gewählt ist Option 6, für den Namensraum der Weg b mit c als Rückfall im selb
 ## Umsetzung
 
 - Sperre: `tests/support/no-network.mts`, Setup-Datei `tests/support/no-network.setup.mts`, eingebunden über `setupFiles` in `vitest.config.mts`.
-- Tests der Sperre und Gegenprobe: `tests/support/no-network.test.mts` mit den Dateien in `tests/fixtures/network/`: `attempts.mts` für den Prozess mit der Sperre, `connects.mts`, `environment.mts`, `hidden.mts`, `late-load.mts`, `late-timer.mts` und `loopback.mts` für die eigenen Läufe von Vitest, `vitest.config.mts` für diese Läufe. Geprüft auf Node.js 24.21.0, 26.10.0 und 24.15.0.
+- Tests der Sperre und Gegenprobe: `tests/support/no-network.test.mts` mit den Dateien in `tests/fixtures/network/`: `attempts.mts` für den Prozess mit der Sperre, `connects.mts`, `environment.mts`, `hidden.mts`, `late-load.mts` und `loopback.mts` für die eigenen Läufe von Vitest, `vitest.config.mts` für diese Läufe. Geprüft auf Node.js 24.21.0, 26.10.0 und 24.15.0.
 - Der Netz-Namensraum in CI folgt mit dem nächsten Pull Request, zusammen mit dem Ergebnis seines ersten Laufs.

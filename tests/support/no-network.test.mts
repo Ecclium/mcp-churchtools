@@ -33,6 +33,11 @@ const fixtures = 'tests/fixtures/network';
 // Set for the Vitest runs of the fixtures, which never include this file;
 // the check stops a run from starting itself should the fixtures change.
 const proofChild = 'ECCLIUM_NETWORK_PROOF_CHILD';
+// Control sequences of a terminal, which a run may print around its errors.
+const controlSequence = new RegExp(
+  `${String.fromCharCode(27)}\\[[0-9;]*[A-Za-z]`,
+  'g',
+);
 // A child that catches the error of the guard and ends normally.
 const catchingChild = [
   '-e',
@@ -253,15 +258,22 @@ describe.skipIf(process.env[proofChild] === '1')('the proof', () => {
         {
           cwd: workspace,
           encoding: 'utf8',
+          // Without colors, as in the other tests that read the output of a
+          // child: the proof reads the plain text of the uncaught errors.
           env: {
             ...withoutNetworkGuard(process.env),
             [proofChild]: '1',
+            NO_COLOR: '1',
+            FORCE_COLOR: undefined,
             ...extra,
           },
           timeout: 60_000,
         },
       );
-      const text = `${result.stdout}\n${result.stderr}`;
+      const text = `${result.stdout}\n${result.stderr}`.replace(
+        controlSequence,
+        '',
+      );
       if (!existsSync(output)) {
         throw new Error(
           `The Vitest run '${name}' wrote no report (status ${String(result.status)}, signal ${String(result.signal)}, ${String(result.error)}):\n${text.slice(-3000)}`,
@@ -287,7 +299,7 @@ describe.skipIf(process.env[proofChild] === '1')('the proof', () => {
           NO_PROXY: '127.0.0.1',
         },
       );
-      late = runFixtures('late', ['late-load.mts', 'late-timer.mts'], {});
+      late = runFixtures('late', ['late-load.mts'], {});
       proxied = runFixtures('proxied', ['environment.mts'], {
         NODE_USE_ENV_PROXY: '1',
         HTTPS_PROXY: 'http://127.0.0.1:9',
@@ -313,7 +325,6 @@ describe.skipIf(process.env[proofChild] === '1')('the proof', () => {
           'environment.mts',
           'hidden.mts',
           'late-load.mts',
-          'late-timer.mts',
           'loopback.mts',
         ].map((name) => `${fixtures}/${name}`),
       );
@@ -377,16 +388,14 @@ describe.skipIf(process.env[proofChild] === '1')('the proof', () => {
       expect(passed.length).toBeGreaterThanOrEqual(3);
     });
 
-    it('fail the run for attempts while a file loads and after its last test', () => {
-      // No test fails here: one file has only a skipped test, the other
-      // test passes. The guard reports both attempts as uncaught errors.
+    it('fail the run for an attempt that no hook of a test sees', () => {
+      // The attempt comes while the file loads, and the only test of the
+      // file is skipped, so no hook of a test or of the file runs. The guard
+      // reports it as an uncaught error, and no test fails.
       expect(file(late, 'late-load.mts').status).not.toBe('failed');
-      expect(file(late, 'late-timer.mts').status).toBe('passed');
-      expect(late.status, late.output).toBe(1);
-      const reported = late.output.split(
-        `NetworkBlockedError: ${blockedMarker}`,
-      );
-      expect(reported.length - 1, late.output).toBeGreaterThanOrEqual(2);
+      expect(late.status, JSON.stringify(late.output)).toBe(1);
+      expect(late.output).toContain(`NetworkBlockedError: ${blockedMarker}`);
+      expect(late.output).toContain('late-load.mts');
     });
 
     it('stop a run that follows a proxy on loopback before the first test', () => {

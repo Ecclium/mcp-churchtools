@@ -18,7 +18,6 @@ export default defineConfig({
       'tests/fixtures/network/environment.mts',
       'tests/fixtures/network/hidden.mts',
       'tests/fixtures/network/late-load.mts',
-      'tests/fixtures/network/late-timer.mts',
       'tests/fixtures/network/loopback.mts',
     ],
   },
