@@ -160,10 +160,10 @@ Stand 11.10.2026:
 4. Der Server startet überall mit demselben Befehl. Die Platzhalter `/pfad/zu/node`, `/pfad/zum/checkout` und `/pfad/zum/protokoll` ersetzen Sie durch Ihre Pfade:
 
    ```sh
-   sh -c 'exec /pfad/zu/node /pfad/zum/checkout/packages/testkit/dist/mcp-spike/stdio.js 2>>/pfad/zum/protokoll/spike-$(date +%Y%m%d-%H%M%S).jsonl'
+   sh -c 'exec /pfad/zu/node /pfad/zum/checkout/packages/testkit/dist/mcp-spike/stdio.js 2>>/pfad/zum/protokoll/spike-$(date -u +%Y%m%dT%H%M%SZ)-$$.jsonl'
    ```
 
-   Jeder Start schreibt sein Protokoll in eine eigene Datei. stdout bleibt dem Protokoll von MCP vorbehalten.
+   Jeder Start schreibt sein Protokoll in eine eigene Datei, benannt nach der Zeit in UTC und der Nummer des Prozesses. stdout bleibt dem Protokoll von MCP vorbehalten.
 
 ### Läufe
 
@@ -173,20 +173,21 @@ In jedem Lauf bitten Sie das Modell, das Tool `spike_rueckfrage` des Servers `ec
 - **B:** ablehnen über «Decline» oder die entsprechende Schaltfläche.
 - **C:** abbrechen mit Esc oder durch Schliessen des Dialogs.
 
-| Nr. | Oberfläche                      | Einrichtung                                                                                                             | Aktionen   |
-| --- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------- |
-| 1   | Claude Code, interaktiv         | Server mit `claude mcp add --scope user --transport stdio ecclium-elicitation -- sh -c '…'` eintragen, `claude` starten | A, B, C    |
-| 2   | Claude Code, interaktiv, Legacy | wie Lauf 1, gestartet mit `MCP_PROTOCOL_NEGOTIATION=legacy claude`                                                      | A, B, C    |
-| 3   | Claude Code, Hook lehnt ab      | Wegwerf-Ordner mit Hook, siehe unten                                                                                    | ein Aufruf |
-| 4   | Claude Code, Hook nimmt an      | zweiter Wegwerf-Ordner mit Hook, siehe unten                                                                            | ein Aufruf |
-| 5   | `claude -p`                     | `claude -p "Rufe das Tool spike_rueckfrage auf." --allowedTools mcp__ecclium-elicitation__spike_rueckfrage`             | ein Aufruf |
-| 6   | `claude -p`, ohne Rückfragen    | wie Lauf 5, zusätzlich `--permission-prompts none`                                                                      | ein Aufruf |
-| 7   | Claude Desktop, Code-Tab        | Server aus Lauf 1 (`~/.claude.json`), neue Sitzung im Code-Tab                                                          | A, B, C    |
-| 8   | Claude Desktop, Code-Tab        | Server in `claude_desktop_config.json` statt in `~/.claude.json`, Claude Desktop ganz beenden und neu starten           | A, B, C    |
-| 9   | Claude Desktop, Chat            | Server aus Lauf 8, neuer Chat                                                                                           | A, B, C    |
+| Nr. | Oberfläche                      | Einrichtung                                                                                                                                                         | Aktionen   |
+| --- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| 1   | Claude Code, interaktiv         | Server mit `claude mcp add --scope user --transport stdio ecclium-elicitation -- sh -c '…'` eintragen, dann `claude --settings '{"disableAllHooks": true}'` starten | A, B, C    |
+| 2   | Claude Code, interaktiv, Legacy | wie Lauf 1, gestartet mit `MCP_PROTOCOL_NEGOTIATION=legacy claude --settings '{"disableAllHooks": true}'`                                                           | A, B, C    |
+| 3   | Claude Code, Hook lehnt ab      | Wegwerf-Ordner mit Hook, siehe unten                                                                                                                                | ein Aufruf |
+| 4   | Claude Code, Hook nimmt an      | zweiter Wegwerf-Ordner mit Hook, siehe unten                                                                                                                        | ein Aufruf |
+| 5   | `claude -p`                     | `claude -p "Rufe das Tool spike_rueckfrage auf." --allowedTools mcp__ecclium-elicitation__spike_rueckfrage --settings '{"disableAllHooks": true}'`                  | ein Aufruf |
+| 6   | `claude -p`, ohne Rückfragen    | wie Lauf 5, zusätzlich `--permission-prompts none`                                                                                                                  | ein Aufruf |
+| 7   | Claude Desktop, Code-Tab        | Server aus Lauf 1 (`~/.claude.json`), neue Sitzung im Code-Tab in einem Ordner ohne Hook für `Elicitation`, vorher mit `/hooks` geprüft                             | A, B, C    |
+| 8   | Claude Desktop, Code-Tab        | Server in `claude_desktop_config.json` statt in `~/.claude.json`, Claude Desktop ganz beenden und neu starten, Hooks wie in Lauf 7 geprüft                          | A, B, C    |
+| 9   | Claude Desktop, Chat            | Server aus Lauf 8, neuer Chat                                                                                                                                       | A, B, C    |
 
 - **Versionen:** Notieren Sie vor jedem Lauf die Version von Claude Code (`claude --version`, im Code-Tab `/status`) und von Claude Desktop (Menü «Über»), dazu die Version von macOS. Die Läufe mit Claude Code brauchen mindestens Version 2.1.292.
-- **Hooks für die Läufe 3 und 4:** Legen Sie zwei Ordner ausserhalb des Checkouts an und starten Sie `claude` darin. Jeder erhält Einstellungen für das Projekt mit diesem Eintrag, wie es die Dokumentation von Claude Code zeigt (Seite `hooks`, Abschnitt «Answer a form request from a script»):
+- **Hooks:** Ein Hook für `Elicitation` beantwortet eine Rückfrage, ohne dass ein Dialog erscheint, und das Protokoll sieht dann aus wie eine Antwort ohne Dialog. Ausser in den Läufen 3 und 4 darf deshalb keiner aktiv sein. `--settings '{"disableAllHooks": true}'` schaltet für einen Lauf alle Hooks aus Projekt, Benutzer und Plugins ab, im Code-Tab prüfen Sie es mit `/hooks`.
+- **Hooks für die Läufe 3 und 4:** Legen Sie zwei Ordner ausserhalb des Checkouts an und starten Sie `claude` darin, ohne `--settings`. Alle anderen Läufe starten Sie ausserhalb dieser beiden Ordner. Jeder erhält Einstellungen für das Projekt mit diesem Eintrag, wie es die Dokumentation von Claude Code zeigt (Seite `hooks`, Abschnitt «Answer a form request from a script»):
 
   ```json
   {
@@ -230,7 +231,7 @@ In jedem Lauf bitten Sie das Modell, das Tool `spike_rueckfrage` des Servers `ec
         "command": "sh",
         "args": [
           "-c",
-          "exec /pfad/zu/node /pfad/zum/checkout/packages/testkit/dist/mcp-spike/stdio.js 2>>/pfad/zum/protokoll/spike-$(date +%Y%m%d-%H%M%S).jsonl"
+          "exec /pfad/zu/node /pfad/zum/checkout/packages/testkit/dist/mcp-spike/stdio.js 2>>/pfad/zum/protokoll/spike-$(date -u +%Y%m%dT%H%M%SZ)-$$.jsonl"
         ]
       }
     }
@@ -246,26 +247,38 @@ Version Claude Code:
 Version Claude Desktop:
 macOS:
 Aktion (A, B, C oder Hook):
+Uhrzeit (UTC, wie ts im Protokoll):
+Protokolldatei (nur der Name, ohne Pfad):
+Hook für Elicitation aktiv: ja oder nein
 Dialog sichtbar: ja oder nein
 Kurzcode im Dialog:
 Antwort des Modells:
 Auffälligkeiten:
 ```
 
-«Dialog sichtbar» ist Pflicht, auch bei einem Lauf, in dem kein Dialog zu erwarten ist. Nur so lässt sich eine Antwort ohne Dialog von einer Antwort mit Dialog unterscheiden, denn das Protokoll sieht beide gleich.
+«Dialog sichtbar» ist Pflicht, auch bei einem Lauf, in dem kein Dialog zu erwarten ist. Nur so lässt sich eine Antwort ohne Dialog von einer Antwort mit Dialog unterscheiden, denn das Protokoll sieht beide gleich. Eine Aktion ohne Dialog, ohne Kurzcode oder mit `capability_absent` ordnen Sie dem Protokoll über Uhrzeit und Datei zu.
 
 ### Auswertung
 
-Jede Aktion erhält einen von sechs Ausgängen, aus dem Protokoll des Servers und Ihrer Notiz zum Dialog:
+Jede Aktion erhält einen von sechs Ausgängen, aus dem Protokoll des Servers und Ihrer Notiz zum Dialog. Bei einem älteren Client (`era` gleich `legacy` in `tool_call`) stellt der Shim des SDK die Frage: Dann stehen zwischen `input_required_issued` und `retry_received` zusätzlich `elicitation_sent` und `elicitation_answered` mit derselben Aktion.
 
-| Ausgang                           | Im Protokoll                                                                                                                                                                                           | Dialog sichtbar |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------- |
-| angenommen                        | `retry_received` mit `accept`                                                                                                                                                                          | ja              |
-| angenommen ohne Dialog            | `retry_received` mit `accept`                                                                                                                                                                          | nein            |
-| abgelehnt mit Dialog              | `retry_received` mit `decline`                                                                                                                                                                         | ja              |
-| automatisch abgelehnt ohne Dialog | `retry_received` mit `decline` oder `cancel`, die rohe Aktion bleibt stehen                                                                                                                            | nein            |
-| abgebrochen                       | `retry_received` mit `cancel`                                                                                                                                                                          | ja              |
-| nicht unterstützt                 | `capability_absent`, `response_sent` mit `is_error` (Shim), ein Fehler -32021 oder nach `input_required_issued` kein `retry_received` innerhalb von 600 Sekunden, dieser Fall als «Zeitüberschreitung» | nein            |
+| Ausgang                           | Im Protokoll                                                                | Dialog sichtbar |
+| --------------------------------- | --------------------------------------------------------------------------- | --------------- |
+| angenommen                        | `retry_received` mit `accept`, dazu der Wert von `valid`                    | ja              |
+| angenommen ohne Dialog            | `retry_received` mit `accept`, dazu der Wert von `valid`                    | nein            |
+| abgelehnt mit Dialog              | `retry_received` mit `decline`                                              | ja              |
+| automatisch abgelehnt ohne Dialog | `retry_received` mit `decline` oder `cancel`, die rohe Aktion bleibt stehen | nein            |
+| abgebrochen                       | `retry_received` mit `cancel`                                               | ja              |
+| nicht unterstützt                 | einer der Fälle in der folgenden Liste                                      | ja oder nein    |
+
+«Nicht unterstützt» hat vier Fälle, die in der Matrix mit ihrem Namen stehen:
+
+- **keine Elicitation deklariert:** in der Ära 2026 `capability_absent`, in der Ära 2025 `input_required_issued` und danach `response_sent` mit `is_error`, ohne `elicitation_sent`.
+- **Fehler des Clients:** in der Ära 2025 `elicitation_sent`, dann `elicitation_answered` mit `errorCode` und `response_sent` mit `is_error`.
+- **Zeitüberschreitung:** in der Ära 2026 nach `input_required_issued` kein `retry_received` innerhalb von 600 Sekunden, in der Ära 2025 `elicitation_sent` ohne `elicitation_answered` und nach etwa 600 Sekunden `response_sent` mit `is_error`.
+- **Aufruf abgebrochen:** `cancel_received` für den Aufruf, ohne `retry_received`.
+
+Passt eine Aktion zu keinem dieser Muster, etwa mit `retry_received` und der Aktion `missing` oder mit `request_rejected`, halten Sie sie als «unklar» fest und geben die Zeilen unverändert weiter.
 
 `tool_call` zeigt die Ära, die Protokollversion, den Namen, den der Client von sich angibt, und die deklarierten Capabilities. Der Name ist eine Selbstauskunft des Clients und kein Beleg.
 
@@ -274,7 +287,7 @@ Jede Aktion erhält einen von sechs Ausgängen, aus dem Protokoll des Servers un
 Das Protokoll enthält nur Namen, Zahlen und feste Wörter, keine Antworten und keine Pfade. Auf stderr können aber auch Meldungen anderer Herkunft landen, etwa Warnungen von Node.js. Geben Sie deshalb nur Zeilen weiter, die mit dem Zeitstempel beginnen und ein bekanntes Ereignis tragen, und entfernen Sie jede andere Zeile vorher:
 
 ```sh
-grep -E '^\{"ts":"[0-9T:.Z-]+","event":"(process_start|instance_created|client_hello|discover|tool_call|capability_absent|input_required_issued|retry_received|elicitation_sent|elicitation_answered|cancel_received|response_sent|request_rejected|server_error|entry_error|process_failed)"' spike-DATUM.jsonl > spike-DATUM.weitergeben.jsonl
+grep -E '^\{"ts":"[0-9T:.Z-]+","event":"(process_start|instance_created|client_hello|discover|tool_call|capability_absent|input_required_issued|retry_received|elicitation_sent|elicitation_answered|cancel_received|response_sent|request_rejected|server_error|entry_error|process_failed)"' spike-DATEI.jsonl > spike-DATEI.weitergeben.jsonl
 ```
 
 Weitergegeben werden die gefilterten Dateien und die Notizen pro Aktion.
