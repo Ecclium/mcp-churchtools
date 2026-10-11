@@ -15,7 +15,7 @@ import {
 } from './lint-rules.mts';
 
 // Proves each ESLint architecture restriction with code that breaks it, at
-// every place of boundaries.json and next to it (ADR 0018, ADR 0022, ADR
+// every place of boundaries.json and next to it (ADR 0053, ADR 0022, ADR
 // 0024, ADR 0051). ESLint
 // finds its configuration from the workspace root, as `pnpm lint` does, but
 // runs without type information: the project service refuses paths that do
