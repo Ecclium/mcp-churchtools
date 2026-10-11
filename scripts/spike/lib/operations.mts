@@ -9,7 +9,10 @@
  * client the guard of the test environment hands out (ADR 0049).
  *
  * The operations on persons, groups and search are marked `personal`:
- * their answers carry personal data.
+ * their answers carry personal data. The general client refuses every path
+ * below {@link personalPrefixes}. Only the guard for personal data hands
+ * out a client that reaches them, and only to the probe that reads persons
+ * on the test instance (ADR 0049).
  *
  * @packageDocumentation
  */
@@ -77,3 +80,13 @@ export const operations = {
 
 /** The name of one operation. */
 export type OperationName = keyof typeof operations;
+
+/**
+ * The paths below which answers carry personal data. Every operation
+ * marked `personal` lies below one of them.
+ */
+export const personalPrefixes = [
+  '/api/persons',
+  '/api/groups',
+  '/api/search',
+] as const;
