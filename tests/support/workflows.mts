@@ -127,3 +127,17 @@ export function runCommand(workflow: string, step: string): string {
   }
   return readRun(lines.slice(0, end), start + 1 + runIndex, workflow);
 }
+
+/**
+ * The jobs of a workflow as [name, text], split at the keys under `jobs:`,
+ * also when a key is quoted or followed by a comment.
+ *
+ * @param workflow - The text of a workflow file.
+ * @returns The jobs in the order of the file.
+ */
+export function jobsOf(workflow: string): (readonly [string, string])[] {
+  return (workflow.split(/^jobs:\n/m)[1] ?? '')
+    .split(/^(?= {2}[^\s#])/m)
+    .map((job) => [/^ {2}['"]?([\w-]+)/.exec(job)?.[1] ?? '', job] as const)
+    .filter(([job]) => job !== '');
+}

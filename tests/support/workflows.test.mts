@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { runValues } from './workflows.mts';
+import { jobsOf, runValues } from './workflows.mts';
 
 // The checks of the secret scans read every run: value as the runner and
 // lefthook see it. A value this reader would read only in part must fail
@@ -41,5 +41,37 @@ describe('runValues', () => {
         /cannot read/,
       );
     }
+  });
+});
+
+describe('jobsOf', () => {
+  it('finds the jobs in the order of the file and skips comments', () => {
+    const workflow = [
+      'on: push',
+      'jobs:',
+      '  # a comment',
+      '  first:',
+      '    runs-on: ubuntu-24.04',
+      '  second:',
+      '    runs-on: ubuntu-24.04',
+      '',
+    ].join('\n');
+    expect(jobsOf(workflow).map(([job]) => job)).toEqual(['first', 'second']);
+    expect(jobsOf(workflow)[1]?.[1]).toContain('second:');
+  });
+
+  it('starts a job at a quoted key and at a key followed by a comment', () => {
+    const workflow = [
+      'jobs:',
+      "  'quoted':",
+      '    runs-on: ubuntu-24.04',
+      '  commented: # why',
+      '    runs-on: ubuntu-24.04',
+      '',
+    ].join('\n');
+    expect(jobsOf(workflow).map(([job]) => job)).toEqual([
+      'quoted',
+      'commented',
+    ]);
   });
 });
