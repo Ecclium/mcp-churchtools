@@ -43,7 +43,7 @@ Das Serverpaket bündelt Code anderer Pakete in seine eigenen Dateien. Das Werkz
 | `@cfworker/json-schema` | 4.1.1   | MIT          | `cfWorkerProvider-p3WaZPqB.mjs`, `cfWorkerProvider-BwbPzsdI.cjs`                                     |
 | `json-schema-typed`     | 8.0.2   | BSD-2-Clause | nur die Typen `types-DUs7mGBv.d.mts`, `types-DsbMXNFL.d.cts`                                         |
 
-- **Was davon läuft:** Unter Node.js lädt das SDK über seinen Unterpfad `./_shims` die Gruppe um ajv als Prüfer für JSON-Schemas. `content-type` liegt im Hauptteil. `@cfworker/json-schema` lädt nur der Unterpfad `./validators/cf-worker` oder die Bedingung `workerd`. `json-schema-typed` steht nur in den Typen.
+- **Was davon läuft:** Unter Node.js lädt das SDK über seinen Unterpfad `./_shims` die Gruppe um ajv als Prüfer für JSON-Schemas. `content-type` liegt im Hauptteil. `@cfworker/json-schema` lädt nur der Unterpfad `./validators/cf-worker` oder `./_shims` unter den Bedingungen `workerd` und `browser`, etwa in Cloudflare Workers oder in einem Bundle für den Browser. `json-schema-typed` steht nur in den Typen.
 - **Woher die Lizenzen stammen:** aus den Metadaten der Registry für die jeweilige Version. Nur `content-type` behält im gebündelten Code seinen Hinweis auf Urheber und Lizenz. `LICENSE` des Pakets nennt keine Hinweise Dritter.
 - **Kernpaket:** `@modelcontextprotocol/core` 2.3.1 bündelt keinen fremden Code. Seine Source Maps nennen nur eigene Quellen, und es importiert zur Laufzeit nur `zod/v4`.
 - **Was die Werkzeuge sehen:** Gebündelter Code steht nicht im Lockfile. `pnpm licenses list`, `deps-review` und Renovate sehen ihn nicht, und ein Override in pnpm kann ihn nicht ersetzen.
@@ -64,7 +64,7 @@ Laut OSV, abgerufen am 11.10.2026, haben `ajv` 8.18.0, `ajv-formats` 3.0.1, `fas
 | GHSA-qw65-cvwx-89v3 | CVE-2026-84292 | hoch    | 3.1.7          | 28.09.2026     | eingeschleuste Authority über einen ungeprüften Port        |
 | GHSA-hrr3-gc8f-f4qj | CVE-2026-86472 | mittel  | 3.1.8          | 29.09.2026     | uneinheitliche Gross- und Kleinschreibung des Hosts         |
 
-ajv benutzt `fast-uri`, um `$id` und `$ref` aufzulösen, wenn es ein JSON-Schema übersetzt. Erreichbar ist es damit über die Schemas von Tools und Rückfragen, die der Server selbst festlegt. Ob ein Wert vom Client es erreicht, etwa über ein Format für URIs, ist nicht geprüft. Eine neuere Version des SDK, die eine behobene Version bündeln könnte, gibt es am 11.10.2026 nicht.
+ajv benutzt `fast-uri`, um `$id` und `$ref` aufzulösen, wenn es ein JSON-Schema übersetzt. Das SDK übersetzt ein Schema mit ajv nur an zwei Stellen: in `fromJsonSchema()`, das ein JSON-Schema als Schema für ein Tool verpackt, und im veralteten `elicitInput` der Ära 2025, das angenommenen Inhalt gegen das `requestedSchema` prüft. Schemas aus zod prüft zod, und `inputRequired.elicit` übersetzt nichts und prüft keine Antwort. Auch der Shim prüft angenommenen Inhalt nicht (Quelltext `src/server/server.ts`, `src/fromJsonSchema.ts`). Ob ein Wert vom Client `fast-uri` über einen dieser beiden Wege erreicht, etwa über ein Format für URIs, ist nicht geprüft. Eine neuere Version des SDK, die eine behobene Version bündeln könnte, gibt es am 11.10.2026 nicht.
 
 ## Einstieg über stdio und Instanzen
 
@@ -111,18 +111,19 @@ ajv benutzt `fast-uri`, um `$id` und `$ref` aufzulösen, wenn es ein JSON-Schema
 ## stdout, stderr und Konsole
 
 - **stdout:** Nur `StdioServerTransport.send` schreibt dorthin (`dist/stdio.mjs`). Die Spezifikation verlangt, dass auf stdout nur gültige MCP-Nachrichten stehen (`basic/transports/stdio`).
-- **stderr:** `console.warn` meldet sich bei einem ungültigen Namen eines Tools, bei zod älter als 4.2, bei einer ungültigen Kopfzeile `x-mcp-header` und bei `createMcpHandler` mit `responseMode: 'json'`. Letzteres betrifft den Betrieb über HTTP in Phase 7. Im JSON-Modus verwirft `createMcpHandler` Benachrichtigungen während eines Aufrufs.
-- **ajv** schreibt über seinen Logger nur mit der Option `$comment: true` auf stdout. Das SDK setzt sie nicht.
+- **stderr:** `console.warn` meldet sich bei einem ungültigen Namen eines Tools, bei zod älter als 4.2, bei `tools/list`, wenn das Eingabeschema eines Tools eine ungültige Angabe `x-mcp-header` trägt, und bei `createMcpHandler` mit `responseMode: 'json'`. Letzteres betrifft den Betrieb über HTTP in Phase 7.
+- **JSON-Modus über HTTP:** `createMcpHandler` verwirft in diesem Modus Benachrichtigungen während eines Aufrufs, etwa zum Fortschritt. `subscriptions/listen` beantwortet es unabhängig davon immer über SSE, mit einem Keepalive alle 15 Sekunden und höchstens `maxSubscriptions` offenen Strömen, in der Voreinstellung 1024. Weil `McpServer` `listChanged` für Tools, Prompts und Ressourcen in der Voreinstellung deklariert, bleibt ein solcher Strom offen (Quelltext `src/server/createMcpHandler.ts`, `src/server/mcp.ts`).
+- **ajv** benutzt `console` als Logger. Auf stdout schreibt es nur mit der Option `$comment: true`, die das SDK nicht setzt. Auf stderr schreibt es Warnungen, etwa bei einem unbekannten Format in einem Schema, und einen Fehler, wenn das Übersetzen eines Schemas scheitert. Das betrifft nur die beiden Wege, auf denen das SDK ajv benutzt.
 
 ## Kein Haken vor dem Handler
 
 - Ein unbekanntes oder abgeschaltetes Tool endet als -32602, ein Fehler bei der Prüfung der Eingabe als Ergebnis mit `isError`, eine fehlerhafte Anfrage `tools/call` als -32602. Keines davon erreicht einen Handler von Ecclium oder `onerror` (Quelltext `src/server/mcp.ts`).
-- Das Serverpaket hat keine Middleware. `fallbackRequestHandler` greift nur bei Methoden, für die kein Handler registriert ist.
+- Das Serverpaket hat keine Middleware zwischen einer MCP-Methode und ihrem Handler. `fallbackRequestHandler` greift nur bei Methoden, für die kein Handler registriert ist. Seine Middleware für HTTP (`requireBearerAuth`, `hostHeaderValidationResponse`, `originValidationResponse`, `oauthMetadataResponse`) prüft eine Anfrage vor `createMcpHandler`, nicht pro Methode.
 - Ein Transport, der die Nachrichten beobachtet, sieht diese Fälle. Der Spike benutzt einen solchen, um sie zu protokollieren. Ob er auch als Haken für das Audit taugt, und ob ein Schema, das die Prüfung der Eingabe umhüllt, die bessere Wahl ist, entscheidet der Bau des Mounts in Phase 1.
 
 ## Namen der Registrierung
 
-Methoden, über die Code Tools, Prompts, Ressourcen oder Handler beim SDK anmeldet oder ändert: `registerTool`, `registerPrompt`, `registerResource`, `setRequestHandler`, `setNotificationHandler`, `fallbackRequestHandler`, `fallbackNotificationHandler`, `removeRequestHandler`, `removeNotificationHandler`, `registerCapabilities` und an einem registrierten Tool `update`, `enable`, `disable` und `remove` (`dist/createMcpHandler-D4NN8WsG.d.mts`). Die Sperre `[arch:mcp-register]` kannte vor der Prüfung die ersten sieben.
+Methoden, über die Code Tools, Prompts, Ressourcen oder Handler beim SDK anmeldet oder ändert: `registerTool`, `registerPrompt`, `registerResource`, `setRequestHandler`, `setNotificationHandler`, `fallbackRequestHandler`, `fallbackNotificationHandler`, `removeRequestHandler`, `removeNotificationHandler`, `registerCapabilities` und an einem registrierten Tool, Prompt, einer Ressource oder Vorlage `update`, `enable`, `disable`, `remove` und `enabled` (`dist/createMcpHandler-D4NN8WsG.d.mts`). Auch eine Zuweisung an `executor` eines Tools, `handler` eines Prompts oder `readCallback` einer Ressource oder Vorlage tauscht den Handler aus, denn das SDK liest diese Felder bei jeder Anfrage (Quelltext `src/server/mcp.ts`). Die Sperre `[arch:mcp-register]` kannte vor der Prüfung die ersten sieben Methoden. Seither erfasst sie auch `removeRequestHandler`, `removeNotificationHandler`, `registerCapabilities` und `readCallback`. Die übrigen Namen sind für eine Regel, die nach Namen sucht, zu allgemein.
 
 ## Belegt durch die Tests des Spikes
 
