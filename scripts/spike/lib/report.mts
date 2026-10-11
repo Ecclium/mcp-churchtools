@@ -4,9 +4,11 @@
  * A description holds the status, the kind of body, the headers, the
  * cookies and the structure of the body, and nothing else. Header names
  * appear only if they are well known, all others only as a count. Header
- * values appear only as a class. Cookies appear only as a count and with
- * their attributes, never with name or value, because a cookie name can
- * carry the name of the instance.
+ * values appear only as a class. Cookies appear only as a count class and
+ * with the distinct forms of their attributes, never with name or value,
+ * because a cookie name can carry the name of the instance. Each form
+ * appears once, so the list does not give away the exact number of
+ * cookies.
  *
  * @packageDocumentation
  */
@@ -79,7 +81,11 @@ export const reportWords = [
   'beide',
   'Sitzung',
   'struktur',
+  'weitereFormen',
 ] as const;
+
+/** At most this many distinct forms of cookie attributes are shown. */
+const maxCookieForms = 3;
 
 /**
  * Puts a header value into a class.
@@ -154,6 +160,23 @@ function describeCookie(cookie: string): Json {
   };
 }
 
+function describeCookies(cookies: readonly string[]): Json {
+  const forms = new Map<string, Json>();
+  for (const cookie of cookies) {
+    const form = describeCookie(cookie);
+    forms.set(JSON.stringify(form), form);
+  }
+  const distinct = [...forms.values()];
+  const result: Record<string, Json> = {
+    anzahl: countClass(cookies.length),
+    attribute: distinct.slice(0, maxCookieForms),
+  };
+  if (distinct.length > maxCookieForms) {
+    result['weitereFormen'] = countClass(distinct.length - maxCookieForms);
+  }
+  return result;
+}
+
 /** Settings for {@link describeResponse}. */
 export interface ResponseOptions {
   readonly guard: Guard;
@@ -191,10 +214,7 @@ export function describeResponse(
     status: response.status,
     format: response.kind,
     kopfzeilen: describeHeaders(response.headers, guard),
-    cookies: {
-      anzahl: countClass(response.setCookies.length),
-      attribute: response.setCookies.slice(0, 5).map(describeCookie),
-    },
+    cookies: describeCookies(response.setCookies),
     struktur:
       response.kind === 'JSON'
         ? describe(response.body, schema, {
