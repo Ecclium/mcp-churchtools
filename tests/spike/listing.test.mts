@@ -77,6 +77,22 @@ describe('the search for the bound of limit', () => {
     expect(api.asked).toEqual([...boundStarts]);
   });
 
+  it('stops without a bound on another status during the halving', async () => {
+    const asked: number[] = [];
+    // The first halving asks for 550, between the accepted 100 and the refused 1000.
+    const found = await findLimitBound((limit) => {
+      asked.push(limit);
+      const status = limit === 550 ? 403 : limit <= 500 ? 200 : 400;
+      return Promise.resolve({ limit, status, echo: undefined });
+    });
+    expect(found).toMatchObject({
+      result: 'nicht bestimmbar',
+      accepted: 100,
+      rejected: 1000,
+    });
+    expect(asked).toEqual([...boundStarts, 550]);
+  });
+
   it('stops when a refused value lies below an accepted one', async () => {
     const api: List = {
       asked: [],

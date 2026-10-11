@@ -259,6 +259,8 @@ describe('textFeatures', () => {
     ['11.10.2026', { format: 'anderer Text' }],
     ['2026-10-11 und mehr', { format: 'anderer Text' }],
     ['vor 2026-10-11', { format: 'anderer Text' }],
+    ['vor 2026-10-11T08:15', { format: 'anderer Text' }],
+    ['2026-10-11T08:15:00Z x', { format: 'anderer Text' }],
   ])('describes %s by features only', (text, expected) => {
     expect(textFeatures(text)).toEqual(expected);
   });

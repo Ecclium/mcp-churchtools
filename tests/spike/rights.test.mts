@@ -11,6 +11,7 @@ const ids = [48_213, 51_877];
 
 function rights(
   values: Readonly<Record<string, unknown>> = {},
+  groups: Readonly<Record<string, unknown>> = {},
 ): Record<string, Record<string, unknown>> {
   return {
     churchwiki: {
@@ -24,7 +25,7 @@ function rights(
       'view hidden persons': false,
       ...values,
     },
-    churchgroup: { view: false },
+    churchgroup: { view: false, ...groups },
   };
 }
 
@@ -91,6 +92,24 @@ describe('the description of the effective rights', () => {
   it('leaves out a module without an effective right', () => {
     const output = describeEffectiveRights(rights(), new Guard());
     expect(Object.keys(output as object)).toEqual(['churchwiki']);
+  });
+
+  it('shows the read rights of churchgroup', () => {
+    const output = describeEffectiveRights(
+      rights({}, { view: true, 'view groups of grouptype': [-1] }),
+      new Guard(),
+    ) as Record<string, unknown>;
+    expect(output['churchgroup']).toEqual({
+      view: { typ: 'Wahrheitswert', wert: 'wahr' },
+      'view groups of grouptype': {
+        typ: 'Liste',
+        anzahl: '1',
+        elemente: { 'Zahl negativ': '1' },
+      },
+    });
+    expect(() =>
+      describeEffectiveRights(rights({}, { edit: true }), new Guard()),
+    ).toThrow(SpikeError);
   });
 
   it('stops on an effective right that is not in its table', () => {

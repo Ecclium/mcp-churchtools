@@ -20,6 +20,7 @@ import {
   readOrigin,
   readState,
   readToken,
+  spikeVariables,
   type SpikeState,
 } from '../../scripts/spike/lib/env.mts';
 import { SpikeError } from '../../scripts/spike/lib/errors.mts';
@@ -61,6 +62,18 @@ describe('checkNodeEnvironment', () => {
         checkNodeEnvironment({ NODE_TLS_REJECT_UNAUTHORIZED: '1' });
       }),
     ).toBeUndefined();
+  });
+});
+
+describe('spikeVariables', () => {
+  it('holds the IDs of the probe that reads persons, so their values stay out of every output', () => {
+    expect(spikeVariables).toEqual(
+      expect.arrayContaining([
+        'ECCLIUM_SPIKE_PERSON_ID',
+        'ECCLIUM_SPIKE_GROUP_ID',
+        'ECCLIUM_SPIKE_OTHER_GROUP_ID',
+      ]),
+    );
   });
 });
 

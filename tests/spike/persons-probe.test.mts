@@ -71,6 +71,11 @@ function expectNothingBeyond(
     ),
   );
   for (const call of instance.calls) {
+    for (const name of ['ids[]', 'ids']) {
+      for (const value of call.url.searchParams.getAll(name)) {
+        expect(environment.has(value)).toBe(true);
+      }
+    }
     if (call.resolved === undefined) {
       continue;
     }
@@ -86,6 +91,7 @@ async function run(
     | PersonsInstanceOptions
     | ((setting: PersonsSetting) => PersonsInstanceOptions) = {},
   document?: unknown,
+  changes: Readonly<Record<string, string | undefined>> = {},
 ): Promise<Run> {
   const setting = personsSetup();
   const options = typeof make === 'function' ? make(setting) : make;
@@ -96,7 +102,7 @@ async function run(
   });
   const output = capture();
   const code = await runProbe(probe, {
-    env: setting.env,
+    env: { ...setting.env, ...changes },
     fetch: instance.fetch,
     io: output.io,
     folder: spikeFolder,
@@ -148,6 +154,10 @@ describe('probe 08', () => {
       ergebnis: 'genau',
       groesstesAngenommen: 500,
       kleinstesAbgelehnt: 501,
+      kuerzung: 'nein',
+      anfragen: expect.arrayContaining([
+        { angefragt: 1, status: 200, limitEcho: 1 },
+      ]) as unknown,
     });
     expect(persons['hinterLetzterSeite']).toEqual({
       status: 200,
@@ -159,6 +169,173 @@ describe('probe 08', () => {
       all: 'ja',
       pagination: 'ja',
     });
+    const only = (...labels: readonly string[]): Record<string, string> =>
+      Object.fromEntries(
+        ['p1', 'p2', 'p3', 'p4', 'g1', 'g2'].map((label) => [
+          label,
+          labels.includes(label) ? 'ja' : 'nein',
+        ]),
+      );
+    expect(seen(result, 'groups')).toEqual(only('g1'));
+    expect(seen(result, 'search:q1')).toEqual(only('p1', 'p2', 'p3', 'g1'));
+    expect(seen(result, 'persons:ids')).toEqual(only('p1'));
+    expect(seen(result, 'groups:ids')).toEqual(only('g1'));
+    expect(seen(result, 'personGroups:p1')).toEqual(only('p1', 'g1'));
+    expect(ergebnisse['groupMembers:g1']).toBe('erlaubt mit Einträgen');
+  });
+
+  it('shows g2 where the account sees every group, and no member list where it may not', async () => {
+    const alle = await run({ groups: 'alle' });
+    expect(seen(alle.result, 'groups')['g2']).toBe('ja');
+    expect(seen(alle.result, 'search:q1')['g2']).toBe('ja');
+    expect(seen(alle.result, 'groups:ids')).toMatchObject({
+      g1: 'ja',
+      g2: 'ja',
+    });
+    expect(section(alle.result, 'kennungSynthetisch')['g2']).toBe('ja');
+    expect(seen(alle.result, 'groupMembers:g2')['p3']).toBe('ja');
+    const closed = await run({ memberLists: false });
+    const ergebnisse = section(closed.result, 'ergebnisse');
+    expect(ergebnisse['group:g1-id']).toBe('erlaubt mit Einträgen');
+    expect(ergebnisse['groupMembers:g1']).toBe('verweigert');
+    expect(ergebnisse['groupMembers:g1-guid']).toBe('verweigert');
+  });
+
+  it('tells a cut limit and searches the bound in an empty list as well', async () => {
+    const cut = await run({ echoCap: 100 });
+    const persons = (run: Run): Record<string, unknown> =>
+      section(section(section(run.result, 'listen'), 'persons'), 'grenze');
+    expect(persons(cut)['kuerzung']).toBe('ja');
+    // The bound comes from the check of the parameters, not from the data.
+    const empty = await run({ persons: 'keine' });
+    expect(section(empty.result, 'ergebnisse')['persons']).toBe('erlaubt leer');
+    expect(persons(empty)).toMatchObject({
+      ergebnis: 'genau',
+      groesstesAngenommen: 500,
+    });
+  });
+
+  it('sends the spelling ids where the instance declares it', async () => {
+    const document = structuredClone(personsState().specification) as {
+      paths: Record<
+        string,
+        Record<string, { parameters: { name?: string }[] }>
+      >;
+    };
+    const listing = document.paths['/persons']?.['get'];
+    const ids = listing?.parameters.find((item) => item.name === 'ids[]');
+    if (ids === undefined) {
+      throw new Error('synthetic document changed');
+    }
+    ids.name = 'ids';
+    const { code, calls, setting } = await run({}, document);
+    expect(code).toBe(exitCodes.ok);
+    const byIds = calls.filter(
+      (call) =>
+        call.url.pathname === '/api/persons' &&
+        call.url.searchParams.get('ids') === String(setting.personId),
+    );
+    expect(byIds).toHaveLength(1);
+    expect(byIds[0]?.url.searchParams.has('ids[]')).toBe(false);
+  });
+
+  it('leaves out the unknown ID where the instance cannot reach it or it is in use', async () => {
+    const document = structuredClone(personsState().specification) as {
+      paths: Record<
+        string,
+        Record<string, { parameters: { schema: Record<string, unknown> }[] }>
+      >;
+    };
+    const parameter =
+      document.paths['/persons/{personId}']?.['get']?.parameters[0];
+    if (parameter === undefined) {
+      throw new Error('synthetic document changed');
+    }
+    parameter.schema['maximum'] = 99_999_999;
+    const bounded = await run({}, document);
+    const unknownPath = `/api/persons/${String(unknownId)}`;
+    expect(section(bounded.result, 'ergebnisse')['person:unbekannt']).toBe(
+      'nicht geprüft',
+    );
+    expect(section(bounded.result, 'ergebnisse')['group:unbekannt']).toBe(
+      'nicht gefunden',
+    );
+    expect(
+      bounded.calls.filter((call) => call.url.pathname === unknownPath),
+    ).toEqual([]);
+    const taken = await run({}, undefined, {
+      ECCLIUM_SPIKE_PERSON_ID: String(unknownId),
+    });
+    expect(taken.code).toBe(exitCodes.ok);
+    const ergebnisse = section(taken.result, 'ergebnisse');
+    expect(ergebnisse['person:unbekannt']).toBe('nicht geprüft');
+    expect(ergebnisse['group:unbekannt']).toBe('nicht geprüft');
+    expect(
+      taken.calls.filter((call) => call.url.pathname === unknownPath),
+    ).toHaveLength(1);
+  });
+
+  it('names the known parameters and counts the others', async () => {
+    const document = structuredClone(personsState().specification) as {
+      paths: Record<
+        string,
+        Record<string, { parameters: Record<string, unknown>[] }>
+      >;
+    };
+    const listing = document.paths['/persons']?.['get'];
+    if (listing === undefined) {
+      throw new Error('synthetic document changed');
+    }
+    listing.parameters.push({
+      name: 'kanarie_feld',
+      in: 'query',
+      deprecated: true,
+      schema: { type: 'string', enum: ['a', 'b'] },
+    });
+    const email = listing.parameters.find((item) => item['name'] === 'email');
+    if (email === undefined) {
+      throw new Error('synthetic document changed');
+    }
+    email['deprecated'] = true;
+    const { code, result } = await run({}, document);
+    expect(code).toBe(exitCodes.ok);
+    const parameter = section(result, 'parameter');
+    const persons = section(parameter, 'persons');
+    expect(persons['weitere']).toBe('1');
+    const named = persons['benannt'] as Record<string, unknown>[];
+    expect(named.map((item) => item['name'])).toEqual([
+      'ids[]',
+      'query',
+      'email',
+      'page',
+      'limit',
+    ]);
+    expect(named.find((item) => item['name'] === 'email')).toMatchObject({
+      veraltet: 'ja',
+    });
+    expect(named.find((item) => item['name'] === 'ids[]')).toEqual({
+      name: 'ids[]',
+      ort: 'query',
+      pflicht: 'nein',
+      typ: 'Liste',
+      eintraege: 'ganze Zahl',
+      veraltet: 'nein',
+      aufzaehlung: 'nein',
+    });
+    const search = section(parameter, 'search')['benannt'] as Record<
+      string,
+      unknown
+    >[];
+    expect(search.find((item) => item['name'] === 'query')).toMatchObject({
+      pflicht: 'ja',
+    });
+    expect(
+      search.find((item) => item['name'] === 'domain_types[]'),
+    ).toMatchObject({ aufzaehlung: '2–9' });
+    const person = section(parameter, 'person')['benannt'];
+    expect(person).toEqual([
+      expect.objectContaining({ name: 'personId', ort: 'path', pflicht: 'ja' }),
+    ]);
   });
 
   it('sends only GET to the one origin, with the token only in its header', async () => {

@@ -221,6 +221,8 @@ export interface PersonsInstanceOptions {
   readonly refusedLists?: boolean;
   /** Whether every person carries 60 more fields than the document declares. */
   readonly manyFields?: boolean;
+  /** The largest `limit` the lists echo; larger ones are cut to it. */
+  readonly echoCap?: number;
 }
 
 /** One synthetic or foreign person of the instance. */
@@ -488,7 +490,12 @@ export function personsInstance(
       meta: {
         count: entries.length,
         all: entries.length,
-        pagination: { total: entries.length, limit, current: page, lastPage },
+        pagination: {
+          total: entries.length,
+          limit: Math.min(limit, options.echoCap ?? limit),
+          current: page,
+          lastPage,
+        },
       },
     });
   };
@@ -517,7 +524,10 @@ export function personsInstance(
     if (kind === 'persons' && key === undefined) {
       const query = url.searchParams.get('query');
       const email = url.searchParams.get('email');
-      const ids = url.searchParams.getAll('ids[]');
+      const ids = [
+        ...url.searchParams.getAll('ids[]'),
+        ...url.searchParams.getAll('ids'),
+      ];
       const visible = people.filter(
         (entry) =>
           seesPerson(entry) &&
@@ -548,7 +558,10 @@ export function personsInstance(
     }
     if (kind === 'groups' && key === undefined) {
       const query = url.searchParams.get('query');
-      const ids = url.searchParams.getAll('ids[]');
+      const ids = [
+        ...url.searchParams.getAll('ids[]'),
+        ...url.searchParams.getAll('ids'),
+      ];
       const visible = groups.filter(
         (entry) =>
           seesGroup(entry) &&

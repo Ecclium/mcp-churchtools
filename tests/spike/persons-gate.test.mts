@@ -2,7 +2,9 @@
 // before the first request with personal data whenever the instance or the
 // account is not the narrow one of the test instance, and the client that
 // reaches persons must exist only behind it.
+import { randomUUID } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -25,6 +27,7 @@ import {
   checkPersonsEnvironment,
   createPersonsAccess,
   passPersonsGate,
+  personReadRights,
   personsRightsWithin,
   type PersonsAccess,
 } from '../../scripts/spike/lib/persons-gate.mts';
@@ -323,6 +326,55 @@ describe('the rights the guard for personal data accepts', () => {
     }
   });
 
+  const withModules = (
+    modules: Readonly<Record<string, Readonly<Record<string, unknown>>>>,
+  ): Record<string, Record<string, unknown>> => {
+    const rights = narrowRights(identification);
+    for (const [module, values] of Object.entries(modules)) {
+      rights[module] = { ...rights[module], ...values };
+    }
+    return rights;
+  };
+
+  it('accepts every read right of churchdb and churchgroup with any value', () => {
+    expect(
+      personsRightsWithin(
+        withModules({
+          churchgroup: {
+            view: true,
+            'view groups of grouptype': [-1],
+            'security level group': [1],
+          },
+        }),
+        identification,
+      ),
+    ).toBe(true);
+    for (const [module, names] of Object.entries(personReadRights)) {
+      for (const name of names) {
+        expect(
+          personsRightsWithin(
+            withModules({ [module]: { [name]: true } }),
+            identification,
+          ),
+        ).toBe(true);
+      }
+    }
+  });
+
+  it.each([
+    ['churchcal', { view: true }],
+    ['churchcal', { 'view category': [1] }],
+    ['churchservice', { view: true }],
+    ['churchdb', { 'view category': [1] }],
+    ['churchgroup', { edit: true }],
+    ['churchgroup', { 'view memberliste': true }],
+    ['churchgroup', { 'view alldata': [1] }],
+  ])('refuses %s with %o', (module, values) => {
+    expect(
+      personsRightsWithin(withModules({ [module]: values }), identification),
+    ).toBe(false);
+  });
+
   it('refuses a module or a response of another form', () => {
     expect(
       personsRightsWithin(
@@ -539,6 +591,45 @@ describe('a probe that reads personal data', () => {
       ...gatePaths,
       '/api/persons',
     ]);
+  });
+
+  it.each([
+    'ECCLIUM_SPIKE_PERSON_ID',
+    'ECCLIUM_SPIKE_GROUP_ID',
+    'ECCLIUM_SPIKE_OTHER_GROUP_ID',
+  ])('withholds an output that carries %s', async (name) => {
+    const naming: ProbeDefinition = {
+      name: 'nennt-id',
+      state: 'read',
+      personalData: true,
+      run({ env, guard }) {
+        const key = `k${env[name] ?? ''}`;
+        guard.allowChecked(key);
+        return Promise.resolve({ [key]: key });
+      },
+    };
+    const { code } = await run(naming);
+    expect(code).toBe(exitCodes.withheld);
+  });
+
+  it('checks the switch before it reads the token', async () => {
+    const probe: ProbeDefinition = {
+      name: 'ohne-schalter-und-token',
+      state: 'read',
+      personalData: true,
+      run: () => Promise.resolve({}),
+    };
+    const { code, instance, stderr } = await run(probe, {
+      ECCLIUM_SPIKE_ALLOW_PERSONS: undefined,
+      ECCLIUM_SPIKE_TOKEN_FILE: join(
+        tmpdir(),
+        `fehlt-${randomUUID()}`,
+        'token',
+      ),
+    });
+    expect(code).toBe(exitCodes.configuration);
+    expect(stderr).toContain(hints.personenSchalterFehlt);
+    expect(instance.calls).toEqual([]);
   });
 
   it('sends nothing without the switch', async () => {
