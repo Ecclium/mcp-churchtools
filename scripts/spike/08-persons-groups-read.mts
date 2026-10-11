@@ -12,8 +12,8 @@
  *   search terms of `lib/synthetic.mts`, with `ids[]`, and with `limit`
  *   and `page` to find how the lists page and where `limit` ends;
  * - the synthetic person, its groups, the two synthetic groups and their
- *   members, by the IDs from the environment, and once more by the GUID
- *   their own answers carry;
+ *   members, by the IDs from the environment, and the person and the first
+ *   group with its members once more by the GUID their own answers carry;
  * - one unknown ID and one unknown GUID for persons and for groups.
  * Writes: nothing.
  * Answers: which operations and parameters the instance documents, how

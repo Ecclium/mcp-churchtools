@@ -18,9 +18,9 @@ Die Proben verringern das Risiko, dass Daten Ihrer Gemeinde in eine Ausgabe gera
 
 Die lesenden Proben schreiben in ChurchTools nichts. Lokal legt `00-inventory` die State-Datei an. Sie enthält die Version und das OpenAPI-Dokument Ihrer Instanz, damit die übrigen Proben ihre Operationen darin nachschlagen können. Die Operationen zum Anlegen, Ändern und Löschen von Wiki-Seiten schlägt `00-inventory` nur nach. Aufgerufen werden sie nur von `05` und `07`, hinter dem Wächter.
 
-Ausser `/api/info`, `/api/whoami`, `/api/permissions/global` und dem OpenAPI-Dokument liest keine lesende Probe etwas ausserhalb der Testkategorie. Die einzige Ausnahme ist die gesperrte Kategorie, wenn Sie eine angeben: `03` fragt ihre Seitenlisten ab, um die Antwort 403 zu sehen. Wählen Sie dafür eine Kategorie ohne vertrauliche Seiten. Darf das Dienstkonto sie doch lesen, beschreibt die Ausgabe auch ihre Struktur. `08` liest darüber hinaus, hinter seinem Wächter, Personen, Gruppen, Mitgliederlisten und die globale Suche (siehe «Was die Probe für Personen und Gruppen tut»).
+Ausser `/api/info`, `/api/whoami`, `/api/permissions/global` und dem OpenAPI-Dokument liest keine lesende Probe etwas ausserhalb der Testkategorie. Die einzige Ausnahme ist die gesperrte Kategorie, wenn Sie eine angeben: `03` fragt ihre Seitenlisten ab, um die Antwort 403 zu sehen. Wählen Sie dafür eine Kategorie ohne vertrauliche Seiten. Darf das Dienstkonto sie doch lesen, beschreibt die Ausgabe auch ihre Struktur. `08` liest ausserdem für seinen Wächter die Liste der Wiki-Kategorien und, hinter diesem Wächter, Personen, Gruppen, Mitgliederlisten und die globale Suche (siehe «Was die Probe für Personen und Gruppen tut»).
 
-Jede Probe sucht ihre Operationen vor dem ersten Aufruf im OpenAPI-Dokument Ihrer Instanz, über Methode und Pfad. Fehlt eine Operation dort, meldet eine lesende Probe «nicht dokumentiert» und ruft sie nicht auf. Eine Probe des Schreibkontos bricht dann ab. Der Wächter von `08` bricht ab, wenn die Instanz eine der beiden Operationen nicht dokumentiert, mit denen er prüft. Fehlt eine Operation für Personen, Gruppen oder die Suche, meldet `08` «nicht dokumentiert» und ruft sie nicht auf.
+Jede Probe sucht ihre Operationen vor dem ersten Aufruf im OpenAPI-Dokument Ihrer Instanz, über Methode und Pfad. Fehlt eine Operation dort, meldet eine lesende Probe «nicht dokumentiert» und ruft sie nicht auf. Eine Probe des Schreibkontos bricht dann ab. Der Wächter von `08` bricht ab, wenn die Instanz `GET /api/wiki/categories` oder `GET /api/permissions/global` nicht dokumentiert. Fehlt eine Operation für Personen, Gruppen oder die Suche, meldet `08` «nicht dokumentiert» und ruft sie nicht auf.
 
 ## Was die Proben des Schreibkontos tun
 
@@ -36,15 +36,15 @@ Ausser der Liste der Kategorien, `/api/permissions/global` und dem OpenAPI-Dokum
 
 ## Was die Probe für Personen und Gruppen tut
 
-| Probe                        | Liest                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Beantwortet                                                                                                                                                                                                                                                                                                                                                                      |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `08-persons-groups-read.mts` | Nach seinem Wächter: `GET /api/whoami`; die Listen `GET /api/persons` und `GET /api/groups` ohne Filter, mit den festen Suchbegriffen, mit `ids[]` für die IDs aus der Umgebung und mit `limit` und `page`; die globale Suche `GET /api/search` mit den festen Suchbegriffen; die synthetische Person, ihre Gruppen, die beiden synthetischen Gruppen und ihre Mitglieder, je über die ID aus der Umgebung und einmal über die GUID aus ihrer eigenen Antwort; je eine unbekannte ID und GUID | Welche Operationen und Parameter Ihre Instanz dokumentiert, wie die Suche trifft, wie die Listen blättern und wo `limit` endet, wie Fehler aussehen, welches Recht jede Operation verlangt, wie Rechte und «alle» aussehen, welche Felder Personen und Gruppen haben, ob Gruppen und Mitgliederlisten Personendaten mitbringen und wie Personen und Gruppen angesprochen werden. |
+| Probe                        | Liest                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Beantwortet                                                                                                                                                                                                                                                                                                                                                                      |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `08-persons-groups-read.mts` | Für seinen Wächter: `GET /api/wiki/categories` und `GET /api/permissions/global`. Danach: `GET /api/whoami`; die Listen `GET /api/persons` und `GET /api/groups` ohne Filter, mit den festen Suchbegriffen, mit `ids[]` für die IDs aus der Umgebung und mit `limit` und `page`; die globale Suche `GET /api/search` mit den festen Suchbegriffen; die synthetische Person `p1` und ihre Gruppen, die beiden synthetischen Gruppen `g1` und `g2` und ihre Mitglieder, je über die ID aus der Umgebung; `p1` sowie `g1` mit seinen Mitgliedern ein zweites Mal über die GUID aus der eigenen Antwort; je eine unbekannte ID und GUID | Welche Operationen und Parameter Ihre Instanz dokumentiert, wie die Suche trifft, wie die Listen blättern und wo `limit` endet, wie Fehler aussehen, welches Recht jede Operation verlangt, wie Rechte und «alle» aussehen, welche Felder Personen und Gruppen haben, ob Gruppen und Mitgliederlisten Personendaten mitbringen und wie Personen und Gruppen angesprochen werden. |
 
-`08` schreibt nichts. Es sendet nur `GET` und nur an Operationen, die Ihre Instanz dokumentiert. Einzeln ruft es nur die synthetische Person und die beiden synthetischen Gruppen ab, über die IDs aus `ECCLIUM_SPIKE_PERSON_ID`, `ECCLIUM_SPIKE_GROUP_ID` und `ECCLIUM_SPIKE_OTHER_GROUP_ID` und über die GUID, die ihre eigene Antwort trägt. Zeigt eine dieser Antworten nicht das erwartete synthetische Objekt, gibt `08` unter `kennungSynthetisch` «nein» aus und liest dazu nichts weiter. Halten Sie dann an und prüfen Sie die ID. Die unbekannte ID ist eine feste Zahl, die keine Testinstanz erreicht, damit kein Abruf zufällig eine echte Person trifft. Die Suchbegriffe stehen fest in `lib/synthetic.mts` und erscheinen in der Ausgabe nur als `q1` bis `q7`, `q7` ist eine zufällige UUID. Die Mitgliederliste kennt einen Parameter für zusätzliche Felder einer Person. `08` sendet ihn nie.
+`08` schreibt nichts. Es sendet nur `GET`, nur an Operationen, die Ihre Instanz dokumentiert, und Parameter nur, wenn die Operation sie deklariert. Einzeln ruft es nur die synthetische Person und die beiden synthetischen Gruppen ab, über die IDs aus `ECCLIUM_SPIKE_PERSON_ID`, `ECCLIUM_SPIKE_GROUP_ID` und `ECCLIUM_SPIKE_OTHER_GROUP_ID`, und `p1` und `g1` zusätzlich über die GUID, die ihre eigene Antwort trägt. Unter `kennungSynthetisch` steht für jeden Einzelabruf über eine ID «ja», «nein», «nicht vergleichbar» oder «nicht geprüft». Antwortet er mit 200 und zeigt ein anderes Objekt, steht dort «nein», trägt seine Antwort gar keinen Namen, «nicht vergleichbar». In beiden Fällen liest `08` zu diesem Objekt nichts weiter, und Sie halten an (Schritt 5 der Ausführung). Antwortet er nicht mit 200, steht dort «nicht geprüft». `08` ruft dann über die ID aus der Umgebung trotzdem die Gruppen der Person oder die Mitglieder der Gruppe ab, damit die Stufen zeigen, wie diese Operationen ohne das Recht antworten. Über die GUID ruft es nur nach «ja» ab. Die unbekannte ID ist eine feste Zahl, die keine Testinstanz erreicht, damit kein Abruf zufällig eine echte Person trifft. Die Suchbegriffe stehen fest in `lib/synthetic.mts` und erscheinen in der Ausgabe nur als `q1` bis `q8`: die Marke, klein geschrieben und ihr Anfang, Vor- und Nachname von `p1` in beiden Reihenfolgen, ein Teil der E-Mail-Adresse von `p1`, ein Teil aus der Mitte der Marke und als `q8` eine zufällige UUID. Die Grenze von `limit` sucht `08` auch bei einer leeren Liste, weil sie von der Prüfung der Parameter abhängt, nicht von den Daten. Die Mitgliederliste kennt einen Parameter für zusätzliche Felder einer Person. `08` sendet ihn nie.
 
 ## Anfragen
 
-- Nur an die Basis-URL. Die lesenden Proben senden nur `GET`. Pfade unter `/api/persons`, `/api/groups` und `/api/search` lehnt der Client jeder Probe vor der Anfrage ab, in jeder Schreibweise. Nur `08` erreicht sie, mit einem Client, den erst sein Wächter herausgibt.
+- Nur an die Basis-URL. Die lesenden Proben senden nur `GET`. Pfade unter `/api/persons`, `/api/groups` und `/api/search` lehnt der Client jeder Probe vor der Anfrage ab, auch in anderer Gross- und Kleinschreibung und mit doppelten Schrägstrichen. Einen Pfad mit `%`, `;` oder `\` oder mit einem Abschnitt, der mit einem Punkt beginnt, lehnt er immer ab, weil ein Server ihn als anderen Pfad lesen könnte. Die Proben bauen solche Pfade nie. Nur `08` erreicht die Pfade für Personen, Gruppen und Suche, mit einem Client, den erst sein Wächter herausgibt.
 - `05` und `07` senden ausserdem `POST`, `PATCH` und `DELETE`, nur an Seiten des Schreibbereichs, mit einem JSON-Body und ohne CSRF-Token oder Cookie. Eine Seite adressieren sie nur über ihre GUID. Eine schreibende Anfrage wird nie wiederholt: Nach einem Zeitlimit weiss niemand, ob die Instanz geschrieben hat. Vor jeder schreibenden Anfrage wartet `05` etwas mehr als eine Sekunde, weil die Instanz die Zeit der letzten Änderung nur in ganzen Sekunden nennt.
 - Das Token steht nur im Header `Authorization: Login`, nie in einer URL. Die Proben fordern keine Sitzung an.
 - Die Proben folgen keiner Weiterleitung, sie brechen mit `HTTP_REDIRECT` ab.
@@ -57,10 +57,10 @@ Ausser der Liste der Kategorien, `/api/permissions/global` und dem OpenAPI-Dokum
 Jede Probe schreibt JSON auf stdout und kurze Hinweise auf stderr. Auf stderr stehen zuerst die Version von Node.js und die SHA-256-Werte aller Dateien `.mts` und `.md` dieses Ordners. Vergleichen Sie sie mit der Beschreibung des Pull Requests, aus dem der Commit stammt.
 
 - Texte erscheinen nur als «leer» oder «nicht leer», Zahlen nur als Typ, Anzahlen nur als Klasse: 0, 1, 2–9, 10–99, 100–999, ab 1000.
-- Genaue Zahlen gibt es nur in `03` und `08`, weil die Frage sie verlangt: in `03` die Anzahl der gelieferten Einträge und das Echo von `limit`, in `08` die gesendeten Werte von `limit`, ihren Status, ihr Echo und die Grenze von `limit`. Die Anzahl der Einträge zeigt `08` nur als Klasse.
+- Genaue Zahlen gibt es nur in `03` und `08`, weil die Frage sie verlangt: in `03` die Anzahl der gelieferten Einträge und das Echo von `limit`, in `08` die gesendeten Werte von `limit`, ihr Echo und die Grenze von `limit`. Die Anzahl der Einträge zeigt `08` nur als Klasse. Statuscodes geben alle Proben genau aus.
 - Der einzige Wert aus der Instanz ist die Version von ChurchTools als Haupt- und Nebennummer, etwa `3.136`.
 - Schlüssel erscheinen mit ihrem Namen, wenn das OpenAPI-Dokument Ihrer Instanz sie für diese Antwort deklariert. In `02` gilt stattdessen: Ein Schlüssel erscheint mit Namen, wenn er nur aus kleingeschriebenen Wörtern besteht. Dort werden Namen von Modulen und Rechten als Schlüssel erwartet, die das Dokument nicht einzeln aufzählt. Ein deklarierter Schlüssel erscheint nur mit Namen, wenn er die Form eines Bezeichners hat: höchstens 64 Zeichen aus ASCII-Buchstaben, Ziffern, `_` und `$`, ohne Ziffer am Anfang. Ein Schlüssel wie `@deprecated` erscheint deshalb immer ohne Namen. Alle anderen Schlüssel erscheinen als `<key#1>`, `<key#2>` und so weiter.
-- In `08` erscheinen die synthetischen Personen nur als `p1` bis `p4`, die Gruppen als `g1` und `g2` und die Suchbegriffe als `q1` bis `q7`. Jeder Aufruf hat unter `ergebnisse` ein festes Wort: «verweigert», «erlaubt mit Einträgen», «erlaubt leer», «nicht gefunden», «Fehler», «nicht dokumentiert», «nicht aufgerufen», «unbekannte ID vorhanden» oder «nicht geprüft». Dazu stehen unter `sichtbar` für jedes synthetische Objekt «ja», «nein» oder «unbekannt», unter `andereEintraege` die Klasse der übrigen Einträge und unter `eigenerDatensatz`, ob der Datensatz des Kontos selbst dabei war. Texte zeigen in `08` zusätzlich, ob sie ein Datum oder ein Datum mit Zeit sind, mit Trenner, Sekunden, Bruchteilen und Zone, nie den Text. Rechte erscheinen nur, wenn sie wirksam sind, mit Namen aus einer festen Liste. Eine Liste von Rechten erscheint als Anzahlklasse und als Klassen ihrer Elemente: positive Zahl, 0, negative Zahl, Zahl, die nicht ganz ist, Text, Objekt oder anderes. Von einer Fehlerantwort zeigt `08`, welche der bekannten Schlüssel `message`, `translatedMessage`, `messageKey`, `args` und `errors` sie trägt und ob sie einen gesendeten Text wiederholt, nie den Text.
+- In `08` erscheinen die synthetischen Personen nur als `p1` bis `p4`, die Gruppen als `g1` und `g2` und die Suchbegriffe als `q1` bis `q8`. Jeder Aufruf hat unter `ergebnisse` ein festes Wort: «verweigert», «erlaubt mit Einträgen», «erlaubt leer», «nicht gefunden», «Fehler», «nicht dokumentiert», «nicht aufgerufen», «unbekannte ID vorhanden» oder «nicht geprüft». Dazu stehen unter `sichtbar` für jedes synthetische Objekt «ja», «nein» oder «unbekannt», unter `andereEintraege` die Klasse der Einträge, die einen Namen tragen und weder synthetisch noch der Datensatz des Kontos sind, unter `nichtVergleichbar` die Klasse der Einträge ohne jeden Namen und unter `eigenerDatensatz`, ausser bei Gruppen, ob der Datensatz des Kontos selbst dabei war. «nein» unter `sichtbar` heisst, dass jeder Eintrag einen Namen trug und keiner das Objekt nannte. Antwortet ein Aufruf nicht mit 200, liest `08` keine Einträge, und dort steht überall «unbekannt». In den Mitgliedern einer Gruppe zählt für `andereEintraege` die Person eines Eintrags, in den Gruppen einer Person die Gruppe. Unter `strukturen` steht je Operation eine Antwort mit 200, die erste mit Einträgen oder sonst die erste, mit bis zu 200 Feldern je Objekt. Texte zeigen in `08` zusätzlich, ob sie ein Datum oder ein Datum mit Zeit sind, mit Trenner, Sekunden, Bruchteilen und Zone, nie den Text. Rechte erscheinen nur, wenn sie wirksam sind, mit Namen aus einer festen Liste. Eine Liste von Rechten erscheint als Anzahlklasse und als Klassen ihrer Elemente: positive Zahl, 0, negative Zahl, Zahl, die nicht ganz ist, Text, Objekt oder anderes. Unter `fehler` steht die erste Fehlerantwort je Operation und Status mit ihrer Struktur, auch aus den Listen. Von einer Fehlerantwort zeigt `08`, welche der bekannten Schlüssel `message`, `translatedMessage`, `messageKey`, `args` und `errors` sie trägt und ob sie einen gesendeten Text wiederholt, nie den Text. Den ungültigen Wert von `limit` mit der Marke sendet `08` ohne Suchbegriff und sucht sein Echo nur in einer Fehlerantwort. Antwortet die Liste darauf mit 200, steht beim Echo «nicht geprüft».
 - Kopfzeilen erscheinen mit Namen, wenn der Name auf einer festen Liste bekannter Kopfzeilen steht, etwa `content-type` oder `retry-after`, und mit der Klasse ihres Werts: Zahl, Datum oder Text. Alle anderen Kopfzeilen erscheinen nur als Anzahl.
 - Cookies erscheinen nur als Anzahlklasse und mit den verschiedenen Formen ihrer Attribute, jede Form einmal und höchstens drei, nie mit Name oder Wert, weil ein Name den Namen der Instanz tragen kann. Gibt es mehr Formen, steht ihre Zahl als Klasse unter `weitereFormen`.
 - Rechte in `02` und das Feld `isMarkdown` in `04` erscheinen als «wahr» oder «falsch».
@@ -91,13 +91,13 @@ Vor seiner ersten Anfrage prüft `08`, nur mit seiner Umgebung:
 - Der Schalter `ECCLIUM_SPIKE_ALLOW_PERSONS` stimmt mit dem ersten Teil des Hosts überein, ohne Rücksicht auf Gross- und Kleinschreibung. Tippen Sie ihn von Hand ein.
 - `ECCLIUM_SPIKE_PERSON_ID`, `ECCLIUM_SPIKE_GROUP_ID` und `ECCLIUM_SPIKE_OTHER_GROUP_ID` sind positive ganze Zahlen, und die beiden Gruppen sind verschieden.
 
-Bis dahin hält `08` nur einen Client für die beiden Anfragen des Wächters. Danach liest der Wächter und bricht ab, sobald etwas nicht stimmt:
+Bis dahin hält `08` nur einen Client für die beiden Anfragen des Wächters, `GET /api/wiki/categories` und `GET /api/permissions/global`. Danach liest der Wächter und bricht ab, sobald etwas nicht stimmt. Beide Anfragen sendet er selbst, mit der Adresse und dem Token, für die er danach den Client herausgibt. So stammen die Antworten, die er prüft, von dieser Instanz und diesem Konto:
 
 - Das Konto sieht genau eine Kategorie, `testinstanz-kennung`, und darf sie weder bearbeiten noch löschen. Stammdaten bearbeiten darf es nicht.
 - Im Wiki darf das Konto genau das Wiki und die Kennkategorie sehen.
 - In `churchdb` dürfen nur `view`, `view alldata`, `view persons from campus`, `security level person`, `view group`, `view groups of grouptype`, `security level group` und `view memberliste` gesetzt sein, in `churchgroup` nur `view`, `view group`, `view groups of grouptype` und `security level group`, jeweils mit beliebigem Wert. Jedes andere Recht jedes Moduls steht auf «falsch» oder ist leer.
 
-Was der Wächter nicht prüfen kann, wertet er als Grund zum Abbruch. Erst wenn alles stimmt, gibt er den Client heraus, der Personen, Gruppen und die Suche erreicht. Eine Bestätigung im Terminal gibt es nicht, weil `08` nichts schreibt. Braucht eine Operation ein Leserecht, das nicht auf dieser Liste steht, bricht der Wächter ab, sobald Sie es vergeben. Die Liste wird dann mit einem eigenen Pull Request erweitert.
+Was der Wächter nicht prüfen kann, wertet er als Grund zum Abbruch: eine Operation, die die Instanz nicht dokumentiert, eine Antwort anderer Form, ein Recht, das er nicht kennt. Rechte, die das Konto über eine Gruppe erhält, sieht er nur, soweit `GET /api/permissions/global` sie nennt. Ob die Antwort das tut, ist offen (F31 in `docs/research/churchtools-api.md`). Deshalb gehört das Dienstkonto des Servers keiner Gruppe an (siehe «Voraussetzungen»). Erst wenn alles stimmt, gibt er den Client heraus, der Personen, Gruppen und die Suche erreicht. Eine Bestätigung im Terminal gibt es nicht, weil `08` nichts schreibt. Braucht eine Operation ein Leserecht, das nicht auf dieser Liste steht, bricht der Wächter ab, sobald Sie es vergeben. Die Liste wird dann mit einem eigenen Pull Request erweitert.
 
 ## Sicherung vor jeder Ausgabe
 
@@ -133,8 +133,8 @@ Für die Probe für Personen und Gruppen, nur auf der Testinstanz aus ADR 0049:
 
 - Das Dienstkonto des Servers, getrennt von den beiden anderen Konten: eine synthetische Person mit einem eigenen Status ohne Berechtigungen, in keiner Gruppe und in keinem Bereich der synthetischen Personen, mit einem Passwort, damit Sie sein Login-Token holen können. Es erhält direkt nur «Wiki sehen» und «Einzelne Wiki-Kategorien sehen» für die Kennkategorie. Die Leserechte für Personen und Gruppen vergeben Sie erst in den Stufen.
 - Eine eigene Token-Datei für das Dienstkonto des Servers im privaten Ordner.
-- Ihre Bestätigung, dass jede Person auf der Testinstanz Platzhalter trägt, auch Konten wie das des Administrators. Echte Daten auf der Testinstanz sind ein Vorfall (ADR 0049). Geben Sie einer Person mit echten Daten zuerst Platzhalter.
-- Ein Bereich nur für die synthetischen Personen und ein zweiter, ebenfalls synthetischer Bereich. Verwenden Sie in Namen von Bereichen, Status und Gruppentypen keine Wörter aus Namen von Rechten wie «view», «group» oder «person»: Ein solcher Wert hielte sonst einen Namen in der Ausgabe zurück.
+- Jede Person auf der Testinstanz trägt Platzhalter, auch Konten wie das des Administrators. Prüfen Sie das vor dem ersten Lauf. Echte Daten auf der Testinstanz sind ein Vorfall (ADR 0049). Geben Sie einer Person mit echten Daten zuerst Platzhalter.
+- Ein Bereich nur für die synthetischen Personen und ein zweiter, ebenfalls synthetischer Bereich. Verwenden Sie in Namen von Bereichen, Status und Gruppentypen keine allgemeinen Wörter wie «view», «group» oder «person». Kommt ein solcher Name in einer Antwort vor, sperrt er jeden deklarierten Schlüssel, der ihn als ganzes Wort enthält, etwa nach einem Unterstrich, und die Probe endet mit Code 3. Die Namen der Rechte betrifft das in `08` nicht, sie sind feste Wörter.
 - Vier synthetische Personen und zwei Gruppen, von Hand angelegt, genau mit diesen Namen und nur mit Platzhaltern:
 
   | In der Ausgabe | Vorname    | Nachname        | Bereich               | Gruppen      |
@@ -142,9 +142,9 @@ Für die Probe für Personen und Gruppen, nur auf der Testinstanz aus ADR 0049:
   | `p1`           | Anna       | Spikeprobe      | synthetischer Bereich | `g1`, leitet |
   | `p2`           | Bruno      | Spikeprobenberg | synthetischer Bereich | `g1`         |
   | `p3`           | Spikeprobe | Carlsen         | synthetischer Bereich | `g2`         |
-  | `p4`           | Dora       | Vorspikeprobe   | zweiter Bereich       | keine        |
+  | `p4`           | Dora       | Vorspikeprobe   | zweiter Bereich       | `g1`         |
 
-  Die Gruppe `g1` heisst «Spikeprobe Nord» und gehört zu einem Gruppentyp A, die Gruppe `g2` heisst «Spikeprobe West» und gehört zu einem anderen Gruppentyp B. Beide haben dieselbe Sichtbarkeit. `p1` erhält die E-Mail-Adresse `kontakt.qzvx@example.org`, eine erfundene Telefonnummer wie `+41 00 000 00 00`, ein erfundenes Geburtsdatum und eine erfundene Adresse, die anderen erhalten Adressen unter `example.org`. Keine der vier ist verborgen oder archiviert. Hat Ihre Instanz Standorte, erhalten alle vier denselben eigenen Standort. Notieren Sie die IDs von `p1`, `g1` und `g2` nur lokal, und die Einstellungen in Worten: Bereiche, Gruppentypen, Sichtbarkeit.
+  Die Gruppe `g1` heisst «Spikeprobe Nord» und gehört zu einem Gruppentyp A, die Gruppe `g2` heisst «Spikeprobe West» und gehört zu einem anderen Gruppentyp B. Beide haben dieselbe Sichtbarkeit. `p4` liegt ausserhalb des Bereichs, den die Stufen öffnen, ist aber Mitglied von `g1`. So zeigen die Mitglieder von `g1`, ob die API ein Mitglied weglässt, das das Konto nicht sehen darf. `p1` erhält die E-Mail-Adresse `kontakt.qzvx@example.org`, eine erfundene Telefonnummer wie `+41 00 000 00 00`, ein erfundenes Geburtsdatum und eine erfundene Adresse, die anderen erhalten Adressen unter `example.org`. Keine der vier ist verborgen oder archiviert. Hat Ihre Instanz Standorte, erhalten alle vier denselben eigenen Standort. Notieren Sie die IDs von `p1`, `g1` und `g2` nur lokal, und die Einstellungen in Worten: Bereiche, Gruppentypen, Sichtbarkeit.
 
 - Die Testinstanz öffnen in diesem Teil nur Sie, auch als Administrator, in einem privaten Fenster eines Browsers ohne Erweiterungen.
 
@@ -305,7 +305,7 @@ Eine Probe bricht vor der ersten Anfrage ab, wenn `NODE_OPTIONS`, `NODE_DEBUG`, 
 
 ## Ausführung der Probe für Personen und Gruppen
 
-Nur auf der Testinstanz, nach den Voraussetzungen oben. Die Schritte setzen die Variablen `D`, `URL`, `SHA`, `R` und `NODE` aus den Schritten 1 bis 3 des lesenden Teils voraus. In jeder Stufe ändern Sie die Rechte des Dienstkontos des Servers in der Oberfläche und führen `08` aus. Halten Sie zu jedem Recht seine Bezeichnung in der Oberfläche fest.
+Nur auf der Testinstanz, nach den Voraussetzungen oben. Die Schritte setzen die Variablen `D`, `URL`, `SHA`, `R` und `NODE` aus den Schritten 1 bis 3 des lesenden Teils voraus. In jeder Stufe ändern Sie die Rechte des Dienstkontos des Servers in der Oberfläche und führen `08` aus. Halten Sie zu jedem Recht seine Bezeichnung in der Oberfläche fest und den Bereich, in dem es dort steht.
 
 1. Legen Sie die Variablen fest und eine leere Token-Datei an:
 
@@ -327,9 +327,9 @@ Nur auf der Testinstanz, nach den Voraussetzungen oben. Die Schritte setzen die 
    echo "Code $?"
    ```
 
-   Prüfen Sie die Rechte mit dem Befehl aus Schritt 6 des lesenden Teils, mit `02-permissions-server.json`. Erwartet sind genau die beiden Zeilen von dort. In `00-inventory-server.json` steht jede Operation für Personen, Gruppen und Suche auf «dokumentiert» oder «nicht dokumentiert».
+   Prüfen Sie die Rechte mit dem Befehl aus Schritt 6 des lesenden Teils, mit `02-permissions-server.json`. Erwartet sind genau die beiden Zeilen von dort. Steht dort etwas anderes, führen Sie `08` nicht aus. Schränken Sie die Rechte des Dienstkontos des Servers ein, wie unter «Voraussetzungen» beschrieben, und wiederholen Sie nur `02-permissions`. Die State-Datei bleibt gültig. In `00-inventory-server.json` steht jede Operation für Personen, Gruppen und Suche auf «dokumentiert» oder «nicht dokumentiert». Vergleichen Sie danach die SHA-256-Werte, die `00-inventory` auf dem Bildschirm ausgegeben hat, mit dem Pull Request. Sie umfassen alle Dateien des Ordners, auch `08` und seinen Wächter. Starten Sie `08` erst, wenn alle Werte übereinstimmen.
 
-3. Führen Sie in jeder Stufe `08` aus. Setzen Sie `S` auf den Namen der Stufe und ersetzen Sie `ERSTER_TEIL_DES_HOSTS` von Hand durch den Teil der Adresse vor dem ersten Punkt. Vergleichen Sie vor dem ersten Lauf die SHA-256-Werte auf dem Bildschirm mit dem Pull Request.
+3. Führen Sie in jeder Stufe `08` aus. Setzen Sie `S` auf den Namen der Stufe und ersetzen Sie `ERSTER_TEIL_DES_HOSTS` von Hand durch den Teil der Adresse vor dem ersten Punkt. `08` fragt nicht nach und liest sofort. Die SHA-256-Werte haben Sie deshalb schon in Schritt 2 verglichen.
 
    ```bash
    S=s0
@@ -339,23 +339,25 @@ Nur auf der Testinstanz, nach den Voraussetzungen oben. Die Schritte setzen die 
 
    Die Stufen bauen aufeinander auf:
 
-   | Stufe         | Änderung der Rechte                                                   | Was `08` zeigen soll                                                       |
-   | ------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-   | `s0`          | nur das Wiki und die Kennkategorie                                    | Wächter bestanden, nichts sichtbar, `andereEintraege` «0»                  |
-   | `s1`          | dazu `churchdb: view`                                                 | ob das Recht auf das Modul allein etwas öffnet                             |
-   | `s2`          | dazu `view alldata`, nur für den synthetischen Bereich                | `p1` bis `p3` in Liste und Suche, `p4` nicht                               |
-   | `s3`          | dazu `security level person`, die niedrigste Stufe                    | die Felder einer Person bei niedriger Stufe                                |
-   | `s4`          | `security level person` mit allen Stufen einzeln                      | Felder, die erst mit höheren Stufen erscheinen                             |
-   | `s5`          | dazu `churchgroup: view`                                              | ob das Recht auf das Modul der Gruppen allein etwas öffnet                 |
-   | `s6`          | dazu `view groups of grouptype`, nur für Typ A                        | `g1` sichtbar, `g2` weggelassen oder verweigert                            |
-   | `s7`          | dazu `security level group`, die niedrigste Stufe                     | Mitglieder und Felder der Gruppe                                           |
-   | `s8`          | dazu `view memberliste`                                               | ob die Mitgliederliste dieses Recht verlangt                               |
-   | `g1` bis `g4` | je ein Recht entzogen, sonst wie `s8`                                 | Gegenproben, siehe unten                                                   |
-   | `sa`          | `view groups of grouptype` von Typ A auf «alle», danach wieder zurück | `g2` sichtbar, die Klassen der Elemente dieses Rechts neben denen von `s6` |
+   | Stufe         | Änderung der Rechte                                                   | Was `08` zeigen soll                                                                                                                         |
+   | ------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+   | `s0`          | nur das Wiki und die Kennkategorie                                    | Wächter bestanden, unter `sichtbar` kein «ja», jede Liste und Suche «verweigert» oder «erlaubt leer», `andereEintraege` «0» oder «unbekannt» |
+   | `s1`          | dazu `churchdb: view`                                                 | ob das Recht auf das Modul allein etwas öffnet                                                                                               |
+   | `s2`          | dazu `view alldata`, nur für den synthetischen Bereich                | `p1` bis `p3` in Liste und Suche, `p4` nicht                                                                                                 |
+   | `s3`          | dazu `security level person`, die niedrigste Stufe                    | die Felder einer Person bei niedriger Stufe                                                                                                  |
+   | `s4`          | `security level person` mit allen Stufen einzeln                      | Felder, die erst mit höheren Stufen erscheinen                                                                                               |
+   | `s5`          | dazu `churchgroup: view`                                              | ob das Recht auf das Modul der Gruppen allein etwas öffnet                                                                                   |
+   | `s6`          | dazu `view groups of grouptype`, nur für Typ A                        | `g1` sichtbar, `g2` weggelassen oder verweigert                                                                                              |
+   | `s7`          | dazu `security level group`, die niedrigste Stufe                     | Mitglieder und Felder der Gruppe                                                                                                             |
+   | `s8`          | dazu `view memberliste`                                               | ob die Mitgliederliste dieses Recht verlangt                                                                                                 |
+   | `e1` bis `e4` | je ein Recht entzogen, sonst wie `s8`                                 | Gegenproben, siehe unten                                                                                                                     |
+   | `sa`          | `view groups of grouptype` von Typ A auf «alle», danach wieder zurück | `g2` sichtbar, die Klassen der Elemente dieses Rechts neben denen von `s6`                                                                   |
 
-   Die Gegenproben `g1` bis `g4` legen wir nach `s8` fest: je eine für jedes Recht, das zuerst ein Ergebnis für Listen, Suche oder die Sichtbarkeit von `p1` bis `p4` und `g1` geändert hat. `sa` läuft zuletzt, damit ein Abbruch dort keine Gegenprobe kostet. Im Wiki vergeben Sie nie «alle».
+   Die Gegenproben `e1` bis `e4` legen Sie nach `s8` fest: je eine für jedes Recht, das zuerst ein Ergebnis für Listen, Suche oder die Sichtbarkeit von `p1` bis `p4` und `g1` geändert hat, höchstens vier. Für die übrigen Rechte bleibt der Befund «hinreichend» (Schritt 6). `sa` läuft zuletzt, damit ein Abbruch dort keine Gegenprobe kostet. Im Wiki vergeben Sie nie «alle». Sobald die Mitglieder von `g1` lesbar sind, zeigen sie, ob `p4` dort fehlt.
 
-4. Vergleichen Sie zwei Stufen ohne Werte. Dieser Befehl gibt die wirksamen Rechte, das Ergebnis jedes Aufrufs, die Sichtbarkeit und `kennungSynthetisch` als Zeilen aus:
+   `view groups of grouptype` und `security level group` gibt es in `churchdb` und in `churchgroup`. Bietet die Oberfläche ein Recht an zwei Stellen an, wählen Sie in `s6` eine davon und setzen Sie in `s7` und `sa` die Rechte an derselben Stelle, sonst lassen sich die Stufen nicht vergleichen. In welchem Modul ein Recht ankommt, zeigt die Zeile `recht:` im Vergleich aus Schritt 4.
+
+4. Vergleichen Sie zwei Stufen ohne Werte. Dieser Befehl gibt die wirksamen Rechte, das Ergebnis jedes Aufrufs, die Sichtbarkeit, die Klassen der übrigen Einträge und der Einträge ohne Namen, `kennungSynthetisch` und die Namen der Felder jeder Operation als Zeilen aus:
 
    ```bash
    zeilen() { env -i "$NODE" -e '
@@ -368,22 +370,46 @@ Nur auf der Testinstanz, nach den Voraussetzungen oben. Die Schritte setzen die 
    for (const [ziel, e] of Object.entries(out.ergebnisse ?? {})) console.log(`ergebnis: ${ziel}: ${e}`);
    for (const [ziel, s] of Object.entries(out.sichtbar ?? {})) console.log(`sichtbar: ${ziel}: ${Object.entries(s).map(([k, v]) => k + "=" + v).join(" ")}`);
    for (const [ziel, a] of Object.entries(out.andereEintraege ?? {})) console.log(`andere: ${ziel}: ${a}`);
+   for (const [ziel, a] of Object.entries(out.nichtVergleichbar ?? {})) console.log(`ohne Namen: ${ziel}: ${a}`);
    for (const [k, v] of Object.entries(out.kennungSynthetisch ?? {})) console.log(`kennung: ${k}: ${v}`);
+   for (const [op, s] of Object.entries(out.strukturen ?? {})) {
+     const daten = s?.struktur?.felder?.data;
+     const felder = daten?.felder ?? daten?.formen?.[0]?.felder;
+     if (felder) console.log(`felder: ${op}: ${Object.keys(felder).join(" ")}`);
+   }
    ' "$1"; }
    diff <(zeilen "$D/ausgabe/08-s0.json") <(zeilen "$D/ausgabe/08-s1.json")
    ```
 
-   `diff` zeigt genau das neue Recht und jedes Ergebnis, das sich geändert hat.
+   `diff` zeigt genau das neue Recht mit seinem Modul und jedes Ergebnis, das sich geändert hat.
 
-5. Halten Sie an und melden Sie sich nach `s0`, nach `s1` und nach `s8`. Halten Sie ausserdem sofort an, wenn:
+5. Halten Sie nach `s0`, nach `s1` und nach `s8` an und vergleichen Sie die Zeilen aus Schritt 4 mit der Spalte «Was `08` zeigen soll», bevor Sie weitermachen. Nach `s8` legen Sie die Gegenproben fest (Schritt 3). Halten Sie ausserdem sofort an, wenn:
+   - `02-permissions-server.json` eine Zeile zeigt, die nicht erwartet ist;
    - ein Code nicht 0 ist oder der Wächter abbricht;
-   - `kennungSynthetisch` «nein» zeigt;
+   - `kennungSynthetisch` «nein» zeigt. Prüfen Sie dann die ID;
+   - `kennungSynthetisch` «nicht vergleichbar» zeigt oder `nichtVergleichbar` für ein Ziel eine Klasse über «0». Dann tragen die Antworten in dieser Stufe keine Namen. Sehen Sie unter `strukturen` nach, ob `firstName` und `lastName` fehlen;
    - in `s0` ein synthetisches Objekt sichtbar ist;
-   - `andereEintraege` für `persons` oder eine Suche nach Personen mehr als «0» zeigt. Dann sieht das Konto Personen ausserhalb des synthetischen Bereichs.
+   - `andereEintraege` für ein Ziel, das mit `persons`, `search`, `groupMembers` oder `personGroups` beginnt, eine Klasse über «0» zeigt. Dann sieht das Konto Personen oder Mitgliedschaften ausserhalb der synthetischen Daten. «unbekannt» heisst, dass keine Einträge gelesen wurden, und ist kein Grund zum Anhalten.
+
+   Setzen Sie nach einem solchen Halt die Rechte auf `s0` zurück und erneuern Sie das Token wie in Schritt 7, bevor Sie die Ursache suchen.
 
 6. Was als Beleg gilt: Ein Endpunkt verlangt ein Recht, wenn er in der Stufe davor verweigert ist oder kein synthetisches Objekt zeigt, wenn er mit dem Recht Einträge mit den erwarteten Objekten liefert, und wenn er in der Gegenprobe ohne das Recht, bei sonst gleichen Rechten, wieder wie vorher ist. Ohne Gegenprobe heisst der Befund «hinreichend», nicht «nötig».
 
-7. Danach setzen Sie die Rechte des Dienstkontos auf die Stufe `s0` zurück: nur das Wiki und die Kennkategorie. Erneuern Sie sein Token, prüfen Sie mit `01-auth` und der alten Token-Datei, dass die Instanz das alte abweist, wie unter «Aufräumen» beschrieben, und bestätigen Sie mit dem neuen Token und `02-permissions`, dass nur die zwei Rechte von `s0` gelten.
+7. Danach setzen Sie die Rechte des Dienstkontos des Servers auf die Stufe `s0` zurück: nur das Wiki und die Kennkategorie. Erneuern Sie sein Login-Token und lassen Sie `$D/token-server` vorerst unverändert. Prüfen Sie mit `echo "$URL"`, dass dies die Adresse der Testinstanz ist, dann mit `01-auth` und der alten Token-Datei, dass die Instanz das alte Token abweist:
+
+   ```bash
+   env -i ECCLIUM_SPIKE_BASE_URL="$URL" ECCLIUM_SPIKE_TOKEN_FILE="$D/token-server" ECCLIUM_SPIKE_STATE_FILE="$D/state-server.json" "$NODE" "$R/scripts/spike/01-auth.mts" > "$D/ausgabe/01-auth-server-nach-erneuerung.json"
+   echo "Code $?"
+   ```
+
+   Erwartet ist unter `anfragen.mitToken` der Status 401. Steht dort 200, deaktivieren Sie das Dienstkonto. Fügen Sie erst danach das neue Token als einzige Zeile in `$D/token-server` ein und bestätigen Sie mit `02-permissions`, dass nur die zwei Rechte von `s0` gelten:
+
+   ```bash
+   env -i ECCLIUM_SPIKE_BASE_URL="$URL" ECCLIUM_SPIKE_TOKEN_FILE="$D/token-server" ECCLIUM_SPIKE_STATE_FILE="$D/state-server.json" "$NODE" "$R/scripts/spike/02-permissions.mts" > "$D/ausgabe/02-permissions-server-ende.json"
+   echo "Code $?"
+   ```
+
+   Prüfen Sie die Ausgabe mit dem Befehl aus Schritt 6 des lesenden Teils. Erwartet sind genau die beiden Zeilen von `s0`. Löschen Sie danach `$D/token-server`. Das Dienstkonto des Servers bleibt bestehen.
 
 ## Codes
 
@@ -409,10 +435,17 @@ Die Umleitung `>` legt die Zieldatei an oder leert sie, bevor die Probe startet.
    mise exec -- gitleaks dir --redact --no-banner --config .gitleaks.toml "$D/ausgabe"
    ```
 
-4. Für `08` muss diese Suche ohne Treffer bleiben. Findet sie etwas, geben Sie die Datei nicht weiter und melden Sie es:
+4. Für `08` muss die folgende Suche ohne Treffer bleiben. Findet sie etwas, löschen Sie die Datei und geben Sie keine Ausgabe dieser Stufe weiter. Melden Sie den Fehler der Sicherung vertraulich, wie `SECURITY.md` beschreibt, ohne Werte:
 
    ```bash
    grep -i -l -E 'spikeprobe|qzvx' "$D"/ausgabe/08-*.json
+   ```
+
+   Die beiden folgenden Suchen finden Vornamen, Adressen unter `example.org`, GUIDs und Daten. Ein Treffer kann auch ein Schlüssel sein, den das OpenAPI-Dokument Ihrer Instanz deklariert. Sehen Sie sich jeden Treffer an, bevor Sie die Datei weitergeben:
+
+   ```bash
+   grep -i -l -w -E 'anna|bruno|carlsen|dora' "$D"/ausgabe/08-*.json
+   grep -i -l -E 'example\.org|[0-9a-f]{8}-[0-9a-f]{4}-|[0-9]{4}-[0-9]{2}-[0-9]{2}' "$D"/ausgabe/08-*.json
    ```
 
 5. Geben Sie nur Dateien weiter, die diese Durchsicht bestanden haben.
