@@ -118,14 +118,27 @@ ajv benutzt `fast-uri`, um `$id` und `$ref` aufzulösen, wenn es ein JSON-Schema
 
 - Ein unbekanntes oder abgeschaltetes Tool endet als -32602, ein Fehler bei der Prüfung der Eingabe als Ergebnis mit `isError`, eine fehlerhafte Anfrage `tools/call` als -32602. Keines davon erreicht einen Handler von Ecclium oder `onerror` (Quelltext `src/server/mcp.ts`).
 - Das Serverpaket hat keine Middleware. `fallbackRequestHandler` greift nur bei Methoden, für die kein Handler registriert ist.
-- Denkbar, aber nicht geprüft, sind ein Transport, der die Nachrichten beobachtet, und ein Schema, das die Prüfung der Eingabe umhüllt.
+- Ein Transport, der die Nachrichten beobachtet, sieht diese Fälle. Der Spike benutzt einen solchen, um sie zu protokollieren. Ob er auch als Haken für das Audit taugt, und ob ein Schema, das die Prüfung der Eingabe umhüllt, die bessere Wahl ist, entscheidet der Bau des Mounts in Phase 1.
 
 ## Namen der Registrierung
 
 Methoden, über die Code Tools, Prompts, Ressourcen oder Handler beim SDK anmeldet oder ändert: `registerTool`, `registerPrompt`, `registerResource`, `setRequestHandler`, `setNotificationHandler`, `fallbackRequestHandler`, `fallbackNotificationHandler`, `removeRequestHandler`, `removeNotificationHandler`, `registerCapabilities` und an einem registrierten Tool `update`, `enable`, `disable` und `remove` (`dist/createMcpHandler-D4NN8WsG.d.mts`). Die Sperre `[arch:mcp-register]` kannte vor der Prüfung die ersten sieben.
 
+## Belegt durch die Tests des Spikes
+
+Die Tests in `packages/testkit/src/mcp-spike/round-trip.test.ts` laufen im Prozess, ohne Netz und ohne Client-Paket. Sie spielen den Client mit rohem JSON-RPC über `InMemoryTransport.createLinkedPair()` und belegen:
+
+- `serveStdio` bedient über ein solches Paar auch die Ära 2026. Die Doku des SDK nennt dafür nur die Ära 2025 und rät für die Ära 2026 zu `createMcpHandler` (`docs/testing.md`). Die Tests des SDK benutzen das Paar aber für beide Ären, und der Spike bestätigt das.
+- Der Shim reicht den geprüften `requestState` beim Wiedereinstieg an den Handler weiter, bei `accept`, `decline` und `cancel`.
+- Ein älterer Client ohne Elicitation erhält ein Ergebnis mit `isError`, und der Handler läuft kein zweites Mal.
+- Ein gefälschter `requestState` endet als -32602 mit `invalid_request_state`. Den Grund `mac` sieht nur `onerror` der Instanz.
+- Der Codec weist einen `requestState` für eine andere Methode zurück (`bind`), einen aus einem Prozess mit anderem Schlüssel (`mac`) und einen nach 600 Sekunden (`expired`).
+- Nach `server/discover` und einem Rückfall auf `initialize` entstehen zwei Instanzen, zuerst für die Ära 2026, dann für die Ära 2025.
+- Über `StdioServerTransport` auf zwei Strömen stehen auf stdout nur JSON-RPC-Nachrichten.
+
+Der Build von `testkit` übersetzt die Typdefinitionen des SDK ohne `skipLibCheck` und ohne die Typen des Browsers.
+
 ## Offene Punkte
 
-- Ob die Typdefinitionen des SDK ohne `skipLibCheck` und ohne die Typen des Browsers übersetzen, zeigt erst der Build mit dem Spike.
 - Ob ein Wert vom Client den gebündelten Code von `fast-uri` erreicht.
 - Wie sich Clients bei Rückfragen verhalten. Das klärt der Spike.
