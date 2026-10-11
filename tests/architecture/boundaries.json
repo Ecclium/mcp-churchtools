@@ -109,7 +109,7 @@
       ]
     },
     "stdioEntries": {
-      "adr": "0018",
+      "adr": "0053",
       "description": "Start of the stdio mode, in which stdout carries only the MCP protocol, and the start of the elicitation spike. Nothing reachable from here may be a stdout place.",
       "paths": [
         "packages/cli/src/stdio/",
@@ -118,12 +118,12 @@
       ]
     },
     "stdout": {
-      "adr": "0018",
+      "adr": "0053",
       "description": "Code that may write to stdout.",
       "paths": ["packages/cli/src/output/"]
     },
     "stderr": {
-      "adr": "0018",
+      "adr": "0053",
       "description": "Code that may write to stderr: the logger, the messages of the command line for operators and the start of the elicitation spike, which writes its record there.",
       "paths": [
         "packages/cli/src/output/",

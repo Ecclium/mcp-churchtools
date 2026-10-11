@@ -86,7 +86,7 @@ export default defineConfig(
   // Architecture rules for the code of the packages, generated from
   // tests/architecture/boundaries.json: in the stdio mode stdout carries the
   // MCP protocol, so only the listed places write to stdout or stderr and
-  // nothing uses console (ADR 0018); only the mount and the server import
+  // nothing uses console (ADR 0053); only the mount and the server import
   // the MCP SDK, and only the mount registers with it (ADR 0024), with the
   // elicitation spike in testkit as a named exception (ADR 0053); only the
   // outbound path opens network connections (ADR 0022); no mutable state at

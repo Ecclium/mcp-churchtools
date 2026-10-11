@@ -44,4 +44,5 @@ Gewählt ist die dritte Option.
 
 - Die Paketbeschreibungen von `core` und `plugin-api` nennen den Mandantenkontext (ADR 0022). Beide Pakete sind noch leer.
 - Typ, `TenantResolver` und der Test mit zwei Mandanten folgen in Phase 1.
+- ADR 0053 löst ADR 0018 ab. «Für jede Anfrage entsteht eine Server-Instanz» im Kontext heisst seitdem: über HTTP eine Instanz pro Anfrage, über stdio eine pro Verbindung, in beiden Fällen ohne Daten einer Anfrage. Der Mandantenkontext entsteht weiter für jeden Aufruf eines Tools neu.
 - Zustand auf Modulebene meldet die ESLint-Regel `[arch:module-state]` nach ADR 0051 (vorgeschlagen): `let` und `var` des Moduls, jedes `new` beim Laden und statische Felder ohne `readonly`. Nicht jede Form, einen Kontext aufzubewahren, erkennt sie, etwa ein verändertes Objekt in einer Konstante oder eine Closure.

@@ -1,6 +1,6 @@
 # ADR 0018: MCP-Protokoll 2026-07-28 und SDK v2, zustandsloser Server
 
-- Status: Angenommen am 02.10.2026
+- Status: Abgelöst durch ADR 0053
 - Datum: 29.09.2026
 - Fällt vor: Phase 1
 

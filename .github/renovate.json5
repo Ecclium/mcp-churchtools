@@ -195,7 +195,7 @@
       enabled: false,
     },
     {
-      description: 'The MCP server and its Hono adapter are updated only together, because each adapter release needs a matching server release (ADR 0018).',
+      description: 'The MCP server and its Hono adapter are updated only together, because each adapter release needs a matching server release (ADR 0053).',
       matchPackageNames: [
         '@modelcontextprotocol/server',
         '@modelcontextprotocol/hono',
