@@ -82,7 +82,8 @@ export function namespaceViolations(
 /**
  * Every way the wrapper could run the command with network or ignore a
  * failure: without strict mode, without the probes in their places, with
- * the sysctl outside a GitHub runner, or without failing at the end.
+ * the sysctl outside a GitHub runner, without stopping Docker on a GitHub
+ * runner before the namespace, or without failing at the end.
  */
 export function wrapperViolations(text: string): string[] {
   const found: string[] = [];
@@ -113,6 +114,17 @@ export function wrapperViolations(text: string): string[] {
     )
   ) {
     found.push('the restriction is lifted outside a GitHub runner');
+  }
+  const dockerStop =
+    /\n\s*if \[ "\$\{RUNNER_ENVIRONMENT:-\}" = github-hosted \] && \[ -e "\$docker_socket" \]; then\n\s+if ! sudo systemctl stop docker\.socket docker\.service; then\n[^\n]*\n\s+exit 1\n/.exec(
+      text,
+    );
+  if (
+    dockerStop === null ||
+    dockerStop.index < online ||
+    dockerStop.index > at('if way_b; then')
+  ) {
+    found.push('Docker does not stop on a GitHub runner before the namespace');
   }
   if (!text.trimEnd().endsWith("laufen nicht'\nexit 1")) {
     found.push('does not fail without a namespace');
@@ -202,33 +214,92 @@ describe('the network namespace of the check jobs', () => {
     expect(wrapperViolations(script)).toEqual([]);
   });
 
+  const dockerGuard =
+    '[ "${RUNNER_ENVIRONMENT:-}" = github-hosted ] && [ -e "$docker_socket" ]';
+  // The whole block that stops Docker, up to its closing fi at the margin.
+  const dockerBlock =
+    /\nif \[ "\$\{RUNNER_ENVIRONMENT:-\}" = github-hosted \] && \[ -e "\$docker_socket" \]; then\n[\s\S]*?\nfi\n/.exec(
+      script,
+    )?.[0] ?? '';
+  // The wrapper with that block moved in front of a line. It throws when the
+  // line is gone, so that a case never tests a wrapper without the block.
+  const dockerMovedBefore = (line: string): string => {
+    const rest = script.replace(dockerBlock, '\n');
+    if (!rest.includes(line)) throw new Error(`no line ${line} in the wrapper`);
+    return rest.replace(line, () => `${dockerBlock.slice(1)}${line}`);
+  };
+
   it.each([
-    ['without strict mode', script.replace('\nset -euo pipefail\n', '\n')],
+    [
+      'without strict mode',
+      script.replace('\nset -euo pipefail\n', '\n'),
+      'no strict mode first',
+    ],
     [
       'with the probe inside after the command',
       script
         .replace('  node "$probe" offline\n', '')
         .replace('  exec "$@"\n', '  exec "$@"\n  node "$probe" offline\n'),
+      'the probe inside does not run before the command',
     ],
     [
       'with a probe whose failure is ignored',
       script.replace('node "$probe" offline', 'node "$probe" offline || true'),
+      'ignores a failure',
     ],
     [
       'without the probe before the namespace',
       script.replace('node "$probe" online\n', ''),
+      'no probe before the namespace',
     ],
     [
       'with the sysctl on every machine',
-      script.replace('[ "${RUNNER_ENVIRONMENT:-}" = github-hosted ] && ', ''),
+      script.replace(
+        '[ "${RUNNER_ENVIRONMENT:-}" = github-hosted ] && [ "$before" = 1 ]',
+        '[ "$before" = 1 ]',
+      ),
+      'the restriction is lifted outside a GitHub runner',
+    ],
+    [
+      'stopping Docker on every machine',
+      script.replace(dockerGuard, '[ -e "$docker_socket" ]'),
+      'Docker does not stop on a GitHub runner before the namespace',
+    ],
+    [
+      'stopping the service of Docker but not its socket',
+      script.replace(
+        'sudo systemctl stop docker.socket docker.service',
+        'sudo systemctl stop docker.service',
+      ),
+      'Docker does not stop on a GitHub runner before the namespace',
+    ],
+    [
+      'going on when Docker does not stop',
+      script.replace(
+        /(stoppen, die Prüfungen laufen nicht'\n)\s+exit 1\n/,
+        '$1',
+      ),
+      'Docker does not stop on a GitHub runner before the namespace',
+    ],
+    [
+      'stopping Docker before the probe that shows the network',
+      dockerMovedBefore('node "$probe" online\n'),
+      'Docker does not stop on a GitHub runner before the namespace',
+    ],
+    [
+      'stopping Docker only after the namespace',
+      dockerMovedBefore("report error 'Netzsperre' 'Netzsperre: kein"),
+      'Docker does not stop on a GitHub runner before the namespace',
     ],
     [
       'ending well without a namespace',
       script.replace(/exit 1\n$/, 'exit 0\n'),
+      'does not fail without a namespace',
     ],
-  ])('reports a wrapper %s', (_name, changed) => {
+  ])('reports a wrapper %s', (_name, changed, violation) => {
+    expect(dockerBlock).not.toBe('');
     expect(changed).not.toBe(script);
-    expect(wrapperViolations(changed)).not.toEqual([]);
+    expect(wrapperViolations(changed)).toContain(violation);
   });
 
   it('passes shellcheck', () => {

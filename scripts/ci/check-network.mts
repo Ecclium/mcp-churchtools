@@ -4,6 +4,9 @@
 //
 //   node scripts/ci/check-network.mts online|offline
 //
+// Inside, the socket of Docker must not answer either: Docker runs outside
+// the namespace and would carry a connection out of it.
+//
 // It prints one line in German and, on GitHub, a notice that the run keeps
 // as an annotation. It never prints an address it resolved. The verdict is
 // a pure function, so its tests need no network. The probe runs without the
@@ -24,6 +27,8 @@ const onlineHost = 'github.com';
  * for documentation (RFC 5737). Without a route the attempt fails at once.
  */
 const offlineAddress = '192.0.2.1';
+/** The socket of Docker in its default place. */
+const dockerSocket = '/var/run/docker.sock';
 const timeoutMs = 5000;
 
 /** The outcome of one operation. */
@@ -46,6 +51,8 @@ export interface Observations {
   readonly lookup: Outcome;
   /** A connection out: by name online, to an address offline. */
   readonly outbound: Outcome;
+  /** A connection to the socket of Docker. */
+  readonly docker: Outcome;
 }
 
 /** The mode of the probe. */
@@ -62,7 +69,13 @@ export type Mode = 'online' | 'offline';
  */
 export function judge(mode: Mode, seen: Observations): string[] {
   const problems: string[] = [];
-  const outcomes = [seen.loopback4, seen.loopback6, seen.lookup, seen.outbound];
+  const outcomes = [
+    seen.loopback4,
+    seen.loopback6,
+    seen.lookup,
+    seen.outbound,
+    seen.docker,
+  ];
   if (outcomes.some((outcome) => outcome.code === blockedCode)) {
     problems.push('die Sperre der Tests ist aktiv, die Probe misst so nichts');
   }
@@ -89,6 +102,11 @@ export function judge(mode: Mode, seen: Observations): string[] {
     problems.push('Namensauflösung nicht sofort gescheitert');
   if (seen.outbound.result !== 'failed') {
     problems.push('Verbindung nach aussen nicht sofort gescheitert');
+  }
+  // Online the socket of Docker may answer; the wrapper stops Docker only
+  // after that probe.
+  if (seen.docker.result !== 'failed') {
+    problems.push('Verbindung zum Docker-Socket nicht sofort gescheitert');
   }
   return problems;
 }
@@ -122,7 +140,8 @@ export function describe(
   return (
     `Netzprobe ${mode}: ${verdict}; Schnittstellen ${seen.interfaces.join(' ') || 'keine'}; ` +
     `Loopback IPv4 ${shown(seen.loopback4)}; Loopback IPv6 ${shown(seen.loopback6)}; ` +
-    `Namensauflösung ${shown(seen.lookup)}; Verbindung nach aussen ${shown(seen.outbound)}`
+    `Namensauflösung ${shown(seen.lookup)}; Verbindung nach aussen ${shown(seen.outbound)}; ` +
+    `Docker-Socket ${shown(seen.docker)}`
   );
 }
 
@@ -214,7 +233,8 @@ async function observe(mode: Mode): Promise<Observations> {
       ? connected({ host: onlineHost, port: 443 })
       : connected({ host: offlineAddress, port: 443 }),
   );
-  return { interfaces, loopback4, loopback6, lookup, outbound };
+  const docker = await measure(() => connected({ path: dockerSocket }));
+  return { interfaces, loopback4, loopback6, lookup, outbound, docker };
 }
 
 // Escapes a value for a workflow command of GitHub Actions.

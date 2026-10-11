@@ -22,6 +22,7 @@ const online: Observations = {
   loopback6: ok,
   lookup: ok,
   outbound: ok,
+  docker: ok,
 };
 
 const offline: Observations = {
@@ -30,15 +31,27 @@ const offline: Observations = {
   loopback6: ok,
   lookup: failed('EAI_AGAIN'),
   outbound: failed('ENETUNREACH'),
+  docker: failed('ENOENT'),
 };
 
 group('the network probe', () => {
   it('accepts a job that reaches the outside before the namespace', () => {
     expect(judge('online', online)).toEqual([]);
+    expect(judge('online', { ...online, docker: failed('ENOENT') })).toEqual(
+      [],
+    );
   });
 
   it('accepts a namespace with loopback only', () => {
     expect(judge('offline', offline)).toEqual([]);
+  });
+
+  it('accepts a namespace where Docker is stopped or out of reach', () => {
+    for (const code of ['ECONNREFUSED', 'EACCES']) {
+      expect(judge('offline', { ...offline, docker: failed(code) })).toEqual(
+        [],
+      );
+    }
   });
 
   it.each([
@@ -62,9 +75,16 @@ group('the network probe', () => {
       { outbound: timeout },
       'Verbindung nach aussen',
     ],
+    ['a Docker socket that answers', { docker: ok }, 'Docker-Socket'],
+    ['a Docker socket that hangs', { docker: timeout }, 'Docker-Socket'],
     [
       'the guard of the tests',
       { outbound: failed(blockedCode) },
+      'Sperre der Tests',
+    ],
+    [
+      'the guard of the tests in front of Docker',
+      { docker: failed(blockedCode) },
       'Sperre der Tests',
     ],
   ])('refuses a namespace with %s', (_name, change, problem) => {
@@ -99,7 +119,8 @@ group('the network probe', () => {
     expect(line).toBe(
       'Netzprobe offline: in Ordnung; Schnittstellen lo; Loopback IPv4 ok, 3 ms; ' +
         'Loopback IPv6 ok, 3 ms; Namensauflösung gescheitert EAI_AGAIN, 1 ms; ' +
-        'Verbindung nach aussen gescheitert ENETUNREACH, 1 ms',
+        'Verbindung nach aussen gescheitert ENETUNREACH, 1 ms; ' +
+        'Docker-Socket gescheitert ENOENT, 1 ms',
     );
     expect(describe('online', { ...online, interfaces: [] }, ['x'])).toContain(
       'Fehler: x; Schnittstellen keine',

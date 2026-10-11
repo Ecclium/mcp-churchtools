@@ -6,12 +6,13 @@
 #
 #   bash scripts/ci/without-network.sh pnpm run ci:check
 #
-# Linux only. Way b: on a GitHub-hosted runner, lift the AppArmor
-# restriction on unprivileged user namespaces for the rest of the job, then
-# build the namespace without root. Way c, if b gives no namespace: create
-# it with sudo and drop back to the runner user, without groups and without
-# a way to gain privileges. Without a namespace the step fails; the checks
-# never run with network.
+# Linux only. On a GitHub-hosted runner, Docker stops first: its socket
+# would lead out of the namespace. Way b: on a GitHub-hosted runner, lift
+# the AppArmor restriction on unprivileged user namespaces for the rest of
+# the job, then build the namespace without root. Way c, if b gives no
+# namespace: create it with sudo and drop back to the runner user, without
+# groups and without a way to gain privileges. Without a namespace the step
+# fails; the checks never run with network.
 set -euo pipefail
 
 script=$(readlink -f "$0")
@@ -41,13 +42,14 @@ if [ "$#" -eq 0 ]; then
 fi
 
 restriction=/proc/sys/kernel/apparmor_restrict_unprivileged_userns
+docker_socket=/var/run/docker.sock
 uid=$(id -u)
 gid=$(id -g)
 user=$(id -un)
 
 # Facts the first runs on hosted runners settle (ADR 0052), no addresses.
 before=$(cat "$restriction" 2>/dev/null || echo 'nicht vorhanden')
-if [ -w /var/run/docker.sock ]; then docker=erreichbar; else docker='nicht erreichbar'; fi
+if [ -w "$docker_socket" ]; then docker=erreichbar; else docker='nicht erreichbar'; fi
 hosts=$(grep -E '^hosts:' /etc/nsswitch.conf 2>/dev/null || echo 'hosts: unbekannt')
 if command -v setpriv >/dev/null 2>&1; then setpriv=vorhanden; else setpriv=fehlt; fi
 report notice 'Netzsperre Runner' "Netzsperre: Einschränkung vorher $before; Gruppen $(id -Gn); Docker-Socket $docker; nsswitch $hosts; setpriv $setpriv"
@@ -55,6 +57,19 @@ report notice 'Netzsperre Runner' "Netzsperre: Einschränkung vorher $before; Gr
 # The job must still reach the outside here, or the probe inside would
 # prove nothing.
 node "$probe" online
+
+# Docker runs outside the namespace and reaches the network for every
+# process that may use its socket. The runner user may, as a member of the
+# group docker, and way b keeps the groups. Nothing in the checks needs
+# Docker, so on a runner of GitHub it stops for the rest of the job.
+# Elsewhere the probe inside fails while the socket answers.
+if [ "${RUNNER_ENVIRONMENT:-}" = github-hosted ] && [ -e "$docker_socket" ]; then
+  if ! sudo systemctl stop docker.socket docker.service; then
+    report error 'Netzsperre' 'Netzsperre: Docker lässt sich nicht stoppen, die Prüfungen laufen nicht'
+    exit 1
+  fi
+  report notice 'Netzsperre Docker' 'Netzsperre: Docker für den Rest des Jobs gestoppt'
+fi
 
 # The commands of both ways run in a new shell, which brings up loopback and
 # then runs the command it is given as the runner user; their variables
