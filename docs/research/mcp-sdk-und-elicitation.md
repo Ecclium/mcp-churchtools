@@ -2,7 +2,7 @@
 
 Stand: 11.10.2026, Prüfung von `@modelcontextprotocol/server` 2.3.1
 
-Dieses Dokument hält fest, was Ecclium über das MCP-SDK in Version 2 und über Rückfragen an Nutzerinnen und Nutzer (Elicitation) wissen muss, und worauf sich jede Aussage stützt. Der Entscheid, der darauf aufbaut, steht in [ADR 0053](../adr/0053-mcp-sdk-und-instanzmodell.md). Der erste Teil ist die Prüfung des SDK. Der zweite Teil beschreibt den Spike zu Elicitation mit echten Clients und wie seine Läufe ablaufen. Die Ergebnisse der Läufe folgen.
+Dieses Dokument hält fest, was Ecclium über das MCP-SDK in Version 2 und über Rückfragen an Nutzerinnen und Nutzer (Elicitation) wissen muss, und worauf sich jede Aussage stützt. Der Entscheid, der darauf aufbaut, steht in [ADR 0053](../adr/0053-mcp-sdk-und-instanzmodell.md). Der erste Teil ist die Prüfung des SDK. Der zweite Teil beschreibt den Spike zu Elicitation mit echten Clients und wie seine Läufe ablaufen. Die Ergebnisse der Läufe stehen im Abschnitt «Ergebnisse».
 
 ## Methode
 
@@ -298,7 +298,49 @@ Weitergegeben werden die gefilterten Dateien und die Notizen pro Aktion.
 - Die beiden Wegwerf-Ordner der Läufe 3 und 4 samt ihren Einstellungen löschen.
 - Die Protokolle nach der Auswertung löschen.
 
+### Ergebnisse
+
+Die Läufe fanden am 11.10.2026 zwischen 18:28 und 18:44 UTC statt, mit Claude Code 2.1.296, Claude Desktop 2.31226.1 und macOS 27.0 (Build 26A428), gegen den Spike mit dem SDK 2.3.1. Alle Zeilen in den Protokollen trugen ein bekanntes Ereignis.
+
+Abweichungen von der Anleitung:
+
+- Die Läufe 1 bis 6 liefen ohne Eingriff einer Person, die Läufe 3 bis 6 als einzelne Befehle. In den Läufen 1 und 2 startete ein Skript `claude` in einem Pseudo-Terminal, wartete, bis die Rückfrage mit Kurzcode auf dem Bildschirm stand, und sendete dann die Tasten. «Dialog sichtbar» ist dort aus der Ausgabe des Bildschirms abgelesen, die den Dialog mit demselben Kurzcode zeigt wie das Protokoll. Die Antwortzeiten von 3 bis 5 Sekunden sind die Wartezeit des Skripts.
+- In den Läufen 1 bis 4 war das Tool schon beim Start freigegeben, in den Läufen 1 und 2 mit `--allowedTools`. Ein Dialog zur Freigabe des Tools erschien deshalb nicht.
+- Die Läufe 3 und 4 liefen mit `claude -p` statt interaktiv, weil Claude Code in einem neuen Ordner interaktiv zuerst fragt, ob es dem Ordner vertrauen soll. Die Hooks aus den Einstellungen des Projekts griffen auch so: Der angenommene Inhalt in Lauf 4 trägt genau die Felder, die der Hook sendet.
+- In Lauf 7 lief nur die Aktion A, Lauf 8 lief nicht. Die Frage zum Code-Tab, ob überhaupt ein Dialog erscheint, beantwortet A. Ablehnen und Abbrechen sind nur in der Kommandozeile belegt. Der Code-Tab meldete sich zwar als `claude-code` in derselben Version, aber Name und Version sind eine Selbstauskunft. Nach dem Neustart von Claude Desktop für Lauf 9 meldete sich eine Verbindung ohne Aufruf als `claude-code` 2.1.295, woher sie kam, ist nicht festgehalten. Lauf 8 unterscheidet sich von Lauf 7 nur darin, woher der Code-Tab den Eintrag des Servers liest. Den Eintrag in `claude_desktop_config.json` gab es nur für Lauf 9, im Chat.
+- In Lauf 9 genügte ein Aufruf statt A, B und C, weil der Chat keine Frage erhielt.
+- Zwei Aufrufe um 18:24 und 18:25 UTC, vor Lauf 1, sind nicht ausgewertet, weil nicht notiert ist, ob ein Dialog erschien. Beide endeten nach etwa 50 Sekunden mit `decline`. Die übrigen Protokolle stammen von Verbindungen ohne Aufruf.
+
+| Lauf | Oberfläche                                   | Client laut Protokoll | Ära                   | Aktion     | Dialog sichtbar | Antwort nach | Ausgang                                          |
+| ---- | -------------------------------------------- | --------------------- | --------------------- | ---------- | --------------- | ------------ | ------------------------------------------------ |
+| 1    | Claude Code, interaktiv                      | `claude-code` 2.1.296 | 2026-07-28            | A          | ja              | 4,5 s        | angenommen, Inhalt gültig                        |
+| 1    | Claude Code, interaktiv                      | `claude-code` 2.1.296 | 2026-07-28            | B          | ja              | 4,5 s        | abgelehnt mit Dialog                             |
+| 1    | Claude Code, interaktiv                      | `claude-code` 2.1.296 | 2026-07-28            | C          | ja              | 3,1 s        | abgebrochen                                      |
+| 2    | Claude Code, interaktiv, Legacy              | `claude-code` 2.1.296 | 2025-11-25, über Shim | A          | ja              | 4,4 s        | angenommen, Inhalt gültig                        |
+| 2    | Claude Code, interaktiv, Legacy              | `claude-code` 2.1.296 | 2025-11-25, über Shim | B          | ja              | 4,4 s        | abgelehnt mit Dialog                             |
+| 2    | Claude Code, interaktiv, Legacy              | `claude-code` 2.1.296 | 2025-11-25, über Shim | C          | ja              | 3,1 s        | abgebrochen                                      |
+| 3    | Claude Code, Hook lehnt ab, mit `-p`         | `claude-code` 2.1.296 | 2026-07-28            | Hook       | nein            | 0,37 s       | automatisch abgelehnt ohne Dialog (`decline`)    |
+| 4    | Claude Code, Hook nimmt an, mit `-p`         | `claude-code` 2.1.296 | 2026-07-28            | Hook       | nein            | 0,15 s       | angenommen ohne Dialog, Inhalt gültig            |
+| 5    | `claude -p`                                  | `claude-code` 2.1.296 | 2026-07-28            | keine      | nein            | 11 ms        | automatisch abgelehnt ohne Dialog (`cancel`)     |
+| 6    | `claude -p --permission-prompts none`        | `claude-code` 2.1.296 | 2026-07-28            | keine      | nein            | 11 ms        | automatisch abgelehnt ohne Dialog (`cancel`)     |
+| 7    | Claude Desktop, Code-Tab                     | `claude-code` 2.1.296 | 2026-07-28            | A          | ja              | 23,8 s       | angenommen, Inhalt gültig                        |
+| 7    | Claude Desktop, Code-Tab                     |                       |                       | B, C       |                 |              | nicht gelaufen                                   |
+| 8    | Claude Desktop, Code-Tab, Eintrag in Desktop |                       |                       | A, B, C    |                 |              | nicht gelaufen                                   |
+| 9    | Claude Desktop, Chat                         | `claude-ai` 0.1.0     | 2025-11-25            | ein Aufruf | nein            |              | nicht unterstützt (keine Elicitation deklariert) |
+
+Befunde:
+
+- **Dialog:** Claude Code zeigt die Rückfrage interaktiv in beiden Ären als Dialog, mit der Frage samt Kurzcode, den beiden Feldern und dem Hinweis, dass Esc abbricht. «Decline» sendet `decline`, Esc sendet `cancel`, wie dokumentiert. Im Code-Tab von Claude Desktop erschien beim Annehmen in der Ära 2026 ebenfalls ein Dialog. Ein sofortiges Ablehnen wie in Issue 96043 trat mit dieser Version nicht auf.
+- **Ältere Clients:** Mit `MCP_PROTOCOL_NEGOTIATION=legacy` verbindet sich Claude Code mit 2025-11-25 und deklariert Elicitation für Formular und URL. Der Shim fragt über `elicitation/create`, und die Antwort kommt mit derselben Aktion beim Handler an. Der Dialog ist derselbe wie in der Ära 2026, nur die Zeile «Fulfilling input required by 'tools/call' (round 1)» fehlt.
+- **Hooks:** Ein Hook für `Elicitation` beantwortet die Rückfrage, ohne dass eine Person sie sieht, in beide Richtungen. Belegt ist das in den Läufen mit `claude -p`, dass ein Hook auch den interaktiven Dialog ersetzt, sagt die Dokumentation (siehe oben). Der Exit-Code 2 ergab `decline` nach 0,37 s, eine Antwort mit `accept` und Inhalt ergab nach 0,15 s gültigen angenommenen Inhalt. Im Protokoll des Servers unterscheidet sich eine solche Antwort in keinem Feld von einer Antwort mit Dialog, nur in der Zeit bis zur Antwort, und die beweist nichts. Eine angenommene Rückfrage belegt deshalb nicht, dass ein Mensch sie gesehen hat (Threat Model, T8).
+- **`claude -p`:** Claude Code deklariert Elicitation für Formular und URL auch mit `-p` und brach die Rückfrage ohne Hook in beiden Läufen nach 11 ms ab, mit und ohne `--permission-prompts none`. Eine deklarierte Capability heisst also nicht, dass jemand antworten kann. Der Abbruch kam sofort und nicht erst nach einer Frist.
+- **Chat von Claude Desktop:** Der Chat meldet sich als `claude-ai` in Version 0.1.0, wie Issue 100785 berichtet, verhandelt 2025-11-25 und deklariert nur `extensions` mit `io.modelcontextprotocol/ui`, keine Elicitation. Der Shim beantwortete den Aufruf mit `isError`, ohne zu fragen, und das Modell gab die Fehlermeldung wieder. Rückfragen über Elicitation gehen im Chat nicht.
+- **Weiterer Client in Claude Desktop:** Gleichzeitig mit dem Chat startete Claude Desktop den Server für einen Client, der sich als `local-agent-mode-ecclium-elicitation` in Version 1.0.0 meldet, mit 2025-11-25, `extensions` mit `io.modelcontextprotocol/ui` und `roots`, ohne Elicitation. Über ihn lief kein Aufruf.
+
+Für die Bestätigung von Schreibvorgängen in Phase 5 heisst das: Über Elicitation trägt sie in Claude Code interaktiv und im Code-Tab von Claude Desktop. Im Chat von Claude Desktop bleibt nur die Bestätigung per Echo, und mit `claude -p` kommt ohne Hook keine Bestätigung zustande. Schreiben kann nach T8 nur der Kern mit einem Nachweis. Ablehnen, Abbrechen, ein Fehler oder eine Zeitüberschreitung liefern keinen, eine Rückfrage, die niemand beantwortet, führt also nicht zu einem Schreibvorgang.
+
 ## Offene Punkte
 
 - Ob ein Wert vom Client den gebündelten Code von `fast-uri` erreicht.
-- Wie sich Clients bei Rückfragen verhalten. Das klärt der Spike.
+- Wie der Code-Tab von Claude Desktop Ablehnen und Abbrechen sendet und ob ein Eintrag in `claude_desktop_config.json` dort dasselbe ergibt (Lauf 7 B und C, Lauf 8).
+- Wie sich andere Clients als Claude Code und Claude Desktop bei Rückfragen verhalten.
