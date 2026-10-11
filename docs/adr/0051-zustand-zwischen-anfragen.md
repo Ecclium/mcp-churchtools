@@ -6,7 +6,7 @@
 
 ## Kontext
 
-Der Mandantenkontext entsteht für jede Anfrage neu und wird nie auf Modulebene oder über seine Anfrage hinaus gehalten (ADR 0003). ADR 0018 nennt den Server zustandslos: Er hält keinen Zustand zwischen Anfragen, für jede Anfrage entsteht eine Server-Instanz. Die Typen verhindern aber nicht, dass ein Modul Daten einer Anfrage aufbewahrt und in einer späteren wieder benutzt. Solcher Zustand ist unsichtbar: Er kann Daten einer Gemeinde in die Antwort für eine andere tragen, er wächst ohne Grenze, und im Review fällt er nur auf, wenn jemand gezielt danach sucht.
+Der Mandantenkontext entsteht für jede Anfrage neu und wird nie auf Modulebene oder über seine Anfrage hinaus gehalten (ADR 0003). ADR 0018 nannte den Server zustandslos: Er hält keinen Zustand zwischen Anfragen, für jede Anfrage entsteht eine Server-Instanz. ADR 0053 löst es ab, mit einer Instanz pro Verbindung im Betrieb über stdio. Die Typen verhindern aber nicht, dass ein Modul Daten einer Anfrage aufbewahrt und in einer späteren wieder benutzt. Solcher Zustand ist unsichtbar: Er kann Daten einer Gemeinde in die Antwort für eine andere tragen, er wächst ohne Grenze, und im Review fällt er nur auf, wenn jemand gezielt danach sucht.
 
 Ganz ohne Zustand über eine Anfrage hinaus kommt der Kern trotzdem nicht aus:
 
@@ -36,12 +36,12 @@ Gewählt ist die dritte Option.
   - **in einem benannten Port** für Pläne bis zur Bestätigung, für Nonces gegen Wiederholung und für Kontingente pro Akteur. Jeder Port kommt mit seinem eigenen ADR, wenn er gebaut wird, und bindet jeden Eintrag an Mandant und Akteur (ADR 0003). Ein weiterer Port braucht ebenfalls ein eigenes ADR.
   - **in einer benannten Ausnahme.** Es gibt zwei: den Pool der Verbindungen des ausgehenden Wegs und den Zähler der eigenen Drosselung. Beide enthalten keine Inhalte aus ChurchTools und keine Zugangsdaten. Sie gelten je ChurchTools-Instanz, also je Mandant: Ein Mandant verbraucht nie die Drosselung eines anderen und teilt keine Verbindung mit ihm. Ein Neustart des Prozesses setzt sie zurück, und zwei Prozesse teilen nichts.
 - **Cache:** Ein Cache über Anfragen hinweg ist ein solcher Zustand und braucht ein eigenes ADR. Sein Schlüssel besteht aus Mandant, Akteur und Route (ADR 0003). In Phase 1 gibt es keinen Cache über Anfragen hinweg.
-- **Server-Instanz:** Eine Instanz des MCP-Servers hält keine Daten einer Anfrage über diese hinaus. Der Mandantenkontext entsteht für jeden Aufruf eines Tools neu. «Zustandslos» im Sinn von ADR 0018 heisst damit: kein Zustand mit Daten einer Anfrage. Pool und Zähler der Drosselung tragen keine solchen Daten.
+- **Server-Instanz:** Eine Instanz des MCP-Servers hält keine Daten einer Anfrage über diese hinaus. Der Mandantenkontext entsteht für jeden Aufruf eines Tools neu. «Zustandslos» im Sinn von ADR 0053 heisst damit: kein Zustand mit Daten einer Anfrage. Pool und Zähler der Drosselung tragen keine solchen Daten.
 
 ## Konsequenzen
 
 - Was eine Anfrage überdauert, steht an einer Stelle, der Composition Root, und ist im Review leicht zu finden.
-- ADR 0018 ist angenommen und ändert sich nur durch ein neues ADR. Das ADR, das ADR 0018 in Phase 1 ablösen soll, übernimmt diese Abgrenzung. Bis dahin legt dieses ADR aus, was ADR 0018 mit «keinen Zustand» meint.
+- ADR 0053 löst ADR 0018 ab und übernimmt diese Abgrenzung: Eine Instanz des MCP-Servers hält keine Daten einer Anfrage über diese hinaus.
 - Eine Nachschlagetabelle als `Map` auf Modulebene und ein Objekt einer Klasse als Singleton sind nicht mehr erlaubt. Stattdessen dient ein eingefrorenes Objekt, eine Funktion, die die Tabelle erzeugt, oder eine Instanz aus der Composition Root.
 - Nach einem Neustart beginnt die Drosselung bei null. Kurz danach kann Ecclium mehr Anfragen senden, als seine eigene Grenze in diesem Zeitraum erlaubt. Die Grenze von ChurchTools gilt unabhängig davon.
 - Ohne Cache kostet jede Anfrage den Aufruf bei ChurchTools. Das ist gewollt, bis ein Cache mit eigenem ADR gezeigt hat, dass er keine Daten zwischen Mandanten oder Akteuren vermischt.

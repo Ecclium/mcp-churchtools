@@ -62,6 +62,7 @@ Vom Maintainer bestätigt am 25.09.2026:
   - ADR 0053 wird erst nach den Läufen des Spikes angenommen, weil sein Teil zu älteren Clients vom Verhalten der Clients abhängt.
   - Die Läufe ordnen jede Aktion einem von sechs Ausgängen zu, darunter «angenommen ohne Dialog»: Ein Hook in Claude Code kann eine Rückfrage annehmen, ohne dass eine Person etwas sieht. Zwei Kontrollläufe mit einem solchen Hook, einer lehnt ab, einer nimmt an, laufen in Wegwerf-Ordnern mit eigenen Einstellungen, die danach gelöscht werden.
   - Die Läufe umfassen Claude Code interaktiv in beiden Ären, `claude -p` mit und ohne `--permission-prompts none`, den Code-Tab von Claude Desktop und seinen Chat.
+- Annahme von ADR 0053, entschieden am 11.10.2026 nach den Läufen des Spikes zu Elicitation: Der Maintainer nimmt ADR 0053 an. Es steht in der Datei und im Index auf «Angenommen am 11.10.2026», ADR 0018 auf «Abgelöst durch ADR 0053». Ältere Clients bedient der Betrieb über stdio mit dem Shim des SDK, denn der Chat von Claude Desktop 2.31226.1 verband sich mit der Protokollversion 2025-11-25 und wäre nicht nutzbar, wenn der Server ältere Clients abwiese. Ablehnen und Abbrechen im Code-Tab und Lauf 8 mit dem Eintrag in `claude_desktop_config.json` hält die Auswertung als nicht gelaufen fest.
 
 ## Grundsatzentscheide
 
@@ -84,7 +85,7 @@ Diese Grundsatzfragen sind entschieden.
 
 ## Offen
 
-- ADR 0053 und ADR 0051: ADR 0053 schlägt vor, ADR 0018 abzulösen, mit einer Instanz pro Verbindung im Betrieb über stdio. Es wird nach den Läufen des Spikes zu Elicitation angenommen, bis dahin gilt ADR 0018. ADR 0051 (Zustand zwischen Anfragen) ist vorgeschlagen und wird vor dem ersten Code des ausgehenden Wegs angenommen, weil Pool und Drosselung seine benannten Ausnahmen sind.
+- ADR 0051 (Zustand zwischen Anfragen) ist vorgeschlagen und wird vor dem ersten Code des ausgehenden Wegs angenommen, weil Pool und Drosselung seine benannten Ausnahmen sind.
 - Bestätigung von Schreibvorgängen in Phase 5 (T8, ADR 0029): Laut den Läufen des Spikes zu Elicitation zeigen Claude Code interaktiv und der Code-Tab von Claude Desktop eine Rückfrage als Dialog. Der Chat von Claude Desktop deklariert keine Elicitation, dort bleibt nur die Bestätigung per Echo. `claude -p` deklariert Elicitation, bricht aber eine Rückfrage ohne Hook sofort ab. Ein Hook kann ohne Dialog annehmen, eine Annahme beweist deshalb nicht den Willen eines Menschen. Wie die Bestätigung damit umgeht, legt ADR 0029 vor Phase 5 fest.
 - Offen aus den Läufen: wie der Code-Tab von Claude Desktop Ablehnen und Abbrechen sendet, ob ein Eintrag in `claude_desktop_config.json` dort dasselbe ergibt und wie sich andere Clients verhalten.
 - Kein Haken vor dem Handler: Im MCP-SDK enden ein unbekanntes Tool und ein Fehler bei der Prüfung der Eingabe als Fehler oder als Ergebnis mit `isError`, bevor ein Handler von Ecclium läuft. Sie erreichen so weder das Audit noch den Logger. Ob ein Transport, der die Nachrichten beobachtet, oder ein Schema, das die Prüfung der Eingabe umhüllt, diese Lücke schliesst, entscheidet der Bau des Mounts in Phase 1. Sonst steht sie als Restrisiko im Threat Model (ADR 0053).
