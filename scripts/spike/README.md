@@ -1,8 +1,8 @@
 # API-Spike: Proben
 
-Diese Skripte prüfen, wie sich die REST-API von ChurchTools bei einer echten Instanz verhält: Anmeldung mit einem Token, Rechte, Paginierung, Fehler und Wiki. Sie geben nur die Struktur der Antworten und feste Wörter aus, nicht deren Inhalt. Die Ergebnisse fliessen in `docs/research/churchtools-api.md` ein.
+Diese Skripte prüfen, wie sich die REST-API von ChurchTools bei einer echten Instanz verhält: Anmeldung mit einem Token, Rechte, Paginierung, Fehler, Wiki, Personen, Gruppen und die globale Suche. Sie geben nur die Struktur der Antworten und feste Wörter aus, nicht deren Inhalt. Die Ergebnisse fliessen in `docs/research/churchtools-api.md` ein.
 
-Der Spike hat zwei Teile. Die Proben `00` bis `04` lesen nur, mit einem lesenden Dienstkonto. Die Proben `05` bis `07` laufen mit einem eigenen Schreibkonto und nur auf der Testinstanz mit synthetischen Daten aus ADR 0049: `05` und `07` schreiben in einen Schreibbereich des Wikis, `06` liest dort. Vor jeder dieser Proben prüft der Wächter der Testumgebung, ob die Instanz die Testinstanz ist und das Konto das enge Schreibkonto (siehe «Der Wächter der Testumgebung»).
+Der Spike hat drei Teile. Die Proben `00` bis `04` lesen nur, mit einem lesenden Dienstkonto. Die Proben `05` bis `07` laufen mit einem eigenen Schreibkonto und nur auf der Testinstanz mit synthetischen Daten aus ADR 0049: `05` und `07` schreiben in einen Schreibbereich des Wikis, `06` liest dort. Vor jeder dieser Proben prüft der Wächter der Testumgebung, ob die Instanz die Testinstanz ist und das Konto das enge Schreibkonto (siehe «Der Wächter der Testumgebung»). Die Probe `08` liest Personen, Gruppen und die globale Suche, mit dem Dienstkonto des Servers und ebenfalls nur auf der Testinstanz. Personen und Gruppen sind Daten besonderer Kategorien. Vor `08` prüft deshalb ein eigener Wächter, ob die Instanz die Testinstanz ist und das Konto nur die erlaubten Leserechte hat (siehe «Der Wächter für Personendaten»).
 
 Die Proben verringern das Risiko, dass Daten Ihrer Gemeinde in eine Ausgabe geraten. Ausschliessen können sie es nicht. Lesen Sie deshalb jede Ausgabe durch, bevor Sie sie weitergeben (siehe «Durchsicht vor dem Weitergeben»).
 
@@ -18,9 +18,9 @@ Die Proben verringern das Risiko, dass Daten Ihrer Gemeinde in eine Ausgabe gera
 
 Die lesenden Proben schreiben in ChurchTools nichts. Lokal legt `00-inventory` die State-Datei an. Sie enthält die Version und das OpenAPI-Dokument Ihrer Instanz, damit die übrigen Proben ihre Operationen darin nachschlagen können. Die Operationen zum Anlegen, Ändern und Löschen von Wiki-Seiten schlägt `00-inventory` nur nach. Aufgerufen werden sie nur von `05` und `07`, hinter dem Wächter.
 
-Ausser `/api/info`, `/api/whoami`, `/api/permissions/global` und dem OpenAPI-Dokument liest keine lesende Probe etwas ausserhalb der Testkategorie. Die einzige Ausnahme ist die gesperrte Kategorie, wenn Sie eine angeben: `03` fragt ihre Seitenlisten ab, um die Antwort 403 zu sehen. Wählen Sie dafür eine Kategorie ohne vertrauliche Seiten. Darf das Dienstkonto sie doch lesen, beschreibt die Ausgabe auch ihre Struktur.
+Ausser `/api/info`, `/api/whoami`, `/api/permissions/global` und dem OpenAPI-Dokument liest keine lesende Probe etwas ausserhalb der Testkategorie. Die einzige Ausnahme ist die gesperrte Kategorie, wenn Sie eine angeben: `03` fragt ihre Seitenlisten ab, um die Antwort 403 zu sehen. Wählen Sie dafür eine Kategorie ohne vertrauliche Seiten. Darf das Dienstkonto sie doch lesen, beschreibt die Ausgabe auch ihre Struktur. `08` liest darüber hinaus, hinter seinem Wächter, Personen, Gruppen, Mitgliederlisten und die globale Suche (siehe «Was die Probe für Personen und Gruppen tut»).
 
-Jede Probe sucht ihre Operationen vor dem ersten Aufruf im OpenAPI-Dokument Ihrer Instanz, über Methode und Pfad. Fehlt eine Operation dort, meldet eine lesende Probe «nicht dokumentiert» und ruft sie nicht auf. Eine Probe des Schreibkontos bricht dann ab.
+Jede Probe sucht ihre Operationen vor dem ersten Aufruf im OpenAPI-Dokument Ihrer Instanz, über Methode und Pfad. Fehlt eine Operation dort, meldet eine lesende Probe «nicht dokumentiert» und ruft sie nicht auf. Eine Probe des Schreibkontos bricht dann ab. Der Wächter von `08` bricht ab, wenn die Instanz eine der beiden Operationen nicht dokumentiert, mit denen er prüft. Fehlt eine Operation für Personen, Gruppen oder die Suche, meldet `08` «nicht dokumentiert» und ruft sie nicht auf.
 
 ## Was die Proben des Schreibkontos tun
 
@@ -34,9 +34,17 @@ Jede Seite, die `05` anlegt, hält die Probe sofort in einer eigenen Schreib-Sta
 
 Ausser der Liste der Kategorien, `/api/permissions/global` und dem OpenAPI-Dokument lesen die Proben des Schreibkontos nur im Schreibbereich, und geschrieben wird nur dort. Eine Löschung entfernt eine Seite mit allen Versionen und lässt sich nicht rückgängig machen.
 
+## Was die Probe für Personen und Gruppen tut
+
+| Probe                        | Liest                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Beantwortet                                                                                                                                                                                                                                                                                                                                                                      |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `08-persons-groups-read.mts` | Nach seinem Wächter: `GET /api/whoami`; die Listen `GET /api/persons` und `GET /api/groups` ohne Filter, mit den festen Suchbegriffen, mit `ids[]` für die IDs aus der Umgebung und mit `limit` und `page`; die globale Suche `GET /api/search` mit den festen Suchbegriffen; die synthetische Person, ihre Gruppen, die beiden synthetischen Gruppen und ihre Mitglieder, je über die ID aus der Umgebung und einmal über die GUID aus ihrer eigenen Antwort; je eine unbekannte ID und GUID | Welche Operationen und Parameter Ihre Instanz dokumentiert, wie die Suche trifft, wie die Listen blättern und wo `limit` endet, wie Fehler aussehen, welches Recht jede Operation verlangt, wie Rechte und «alle» aussehen, welche Felder Personen und Gruppen haben, ob Gruppen und Mitgliederlisten Personendaten mitbringen und wie Personen und Gruppen angesprochen werden. |
+
+`08` schreibt nichts. Es sendet nur `GET` und nur an Operationen, die Ihre Instanz dokumentiert. Einzeln ruft es nur die synthetische Person und die beiden synthetischen Gruppen ab, über die IDs aus `ECCLIUM_SPIKE_PERSON_ID`, `ECCLIUM_SPIKE_GROUP_ID` und `ECCLIUM_SPIKE_OTHER_GROUP_ID` und über die GUID, die ihre eigene Antwort trägt. Zeigt eine dieser Antworten nicht das erwartete synthetische Objekt, gibt `08` unter `kennungSynthetisch` «nein» aus und liest dazu nichts weiter. Halten Sie dann an und prüfen Sie die ID. Die unbekannte ID ist eine feste Zahl, die keine Testinstanz erreicht, damit kein Abruf zufällig eine echte Person trifft. Die Suchbegriffe stehen fest in `lib/synthetic.mts` und erscheinen in der Ausgabe nur als `q1` bis `q7`, `q7` ist eine zufällige UUID. Die Mitgliederliste kennt einen Parameter für zusätzliche Felder einer Person. `08` sendet ihn nie.
+
 ## Anfragen
 
-- Nur an die Basis-URL. Die lesenden Proben senden nur `GET`.
+- Nur an die Basis-URL. Die lesenden Proben senden nur `GET`. Pfade unter `/api/persons`, `/api/groups` und `/api/search` lehnt der Client jeder Probe vor der Anfrage ab, in jeder Schreibweise. Nur `08` erreicht sie, mit einem Client, den erst sein Wächter herausgibt.
 - `05` und `07` senden ausserdem `POST`, `PATCH` und `DELETE`, nur an Seiten des Schreibbereichs, mit einem JSON-Body und ohne CSRF-Token oder Cookie. Eine Seite adressieren sie nur über ihre GUID. Eine schreibende Anfrage wird nie wiederholt: Nach einem Zeitlimit weiss niemand, ob die Instanz geschrieben hat. Vor jeder schreibenden Anfrage wartet `05` etwas mehr als eine Sekunde, weil die Instanz die Zeit der letzten Änderung nur in ganzen Sekunden nennt.
 - Das Token steht nur im Header `Authorization: Login`, nie in einer URL. Die Proben fordern keine Sitzung an.
 - Die Proben folgen keiner Weiterleitung, sie brechen mit `HTTP_REDIRECT` ab.
@@ -49,9 +57,10 @@ Ausser der Liste der Kategorien, `/api/permissions/global` und dem OpenAPI-Dokum
 Jede Probe schreibt JSON auf stdout und kurze Hinweise auf stderr. Auf stderr stehen zuerst die Version von Node.js und die SHA-256-Werte aller Dateien `.mts` und `.md` dieses Ordners. Vergleichen Sie sie mit der Beschreibung des Pull Requests, aus dem der Commit stammt.
 
 - Texte erscheinen nur als «leer» oder «nicht leer», Zahlen nur als Typ, Anzahlen nur als Klasse: 0, 1, 2–9, 10–99, 100–999, ab 1000.
-- Genaue Zahlen gibt es nur in `03`, weil die Frage sie verlangt: die Anzahl der gelieferten Einträge und das Echo von `limit`.
+- Genaue Zahlen gibt es nur in `03` und `08`, weil die Frage sie verlangt: in `03` die Anzahl der gelieferten Einträge und das Echo von `limit`, in `08` die gesendeten Werte von `limit`, ihren Status, ihr Echo und die Grenze von `limit`. Die Anzahl der Einträge zeigt `08` nur als Klasse.
 - Der einzige Wert aus der Instanz ist die Version von ChurchTools als Haupt- und Nebennummer, etwa `3.136`.
 - Schlüssel erscheinen mit ihrem Namen, wenn das OpenAPI-Dokument Ihrer Instanz sie für diese Antwort deklariert. In `02` gilt stattdessen: Ein Schlüssel erscheint mit Namen, wenn er nur aus kleingeschriebenen Wörtern besteht. Dort werden Namen von Modulen und Rechten als Schlüssel erwartet, die das Dokument nicht einzeln aufzählt. Ein deklarierter Schlüssel erscheint nur mit Namen, wenn er die Form eines Bezeichners hat: höchstens 64 Zeichen aus ASCII-Buchstaben, Ziffern, `_` und `$`, ohne Ziffer am Anfang. Ein Schlüssel wie `@deprecated` erscheint deshalb immer ohne Namen. Alle anderen Schlüssel erscheinen als `<key#1>`, `<key#2>` und so weiter.
+- In `08` erscheinen die synthetischen Personen nur als `p1` bis `p4`, die Gruppen als `g1` und `g2` und die Suchbegriffe als `q1` bis `q7`. Jeder Aufruf hat unter `ergebnisse` ein festes Wort: «verweigert», «erlaubt mit Einträgen», «erlaubt leer», «nicht gefunden», «Fehler», «nicht dokumentiert», «nicht aufgerufen», «unbekannte ID vorhanden» oder «nicht geprüft». Dazu stehen unter `sichtbar` für jedes synthetische Objekt «ja», «nein» oder «unbekannt», unter `andereEintraege` die Klasse der übrigen Einträge und unter `eigenerDatensatz`, ob der Datensatz des Kontos selbst dabei war. Texte zeigen in `08` zusätzlich, ob sie ein Datum oder ein Datum mit Zeit sind, mit Trenner, Sekunden, Bruchteilen und Zone, nie den Text. Rechte erscheinen nur, wenn sie wirksam sind, mit Namen aus einer festen Liste. Eine Liste von Rechten erscheint als Anzahlklasse und als Klassen ihrer Elemente: positive Zahl, 0, negative Zahl, Zahl, die nicht ganz ist, Text, Objekt oder anderes. Von einer Fehlerantwort zeigt `08`, welche der bekannten Schlüssel `message`, `translatedMessage`, `messageKey`, `args` und `errors` sie trägt und ob sie einen gesendeten Text wiederholt, nie den Text.
 - Kopfzeilen erscheinen mit Namen, wenn der Name auf einer festen Liste bekannter Kopfzeilen steht, etwa `content-type` oder `retry-after`, und mit der Klasse ihres Werts: Zahl, Datum oder Text. Alle anderen Kopfzeilen erscheinen nur als Anzahl.
 - Cookies erscheinen nur als Anzahlklasse und mit den verschiedenen Formen ihrer Attribute, jede Form einmal und höchstens drei, nie mit Name oder Wert, weil ein Name den Namen der Instanz tragen kann. Gibt es mehr Formen, steht ihre Zahl als Klasse unter `weitereFormen`.
 - Rechte in `02` und das Feld `isMarkdown` in `04` erscheinen als «wahr» oder «falsch».
@@ -74,6 +83,22 @@ Danach liest sie und bricht ab, sobald etwas nicht stimmt:
 
 Was der Wächter nicht prüfen kann, wertet er als Grund zum Abbruch: eine Operation, die die Instanz nicht dokumentiert, ein anderer Status, ein fehlendes Feld, ein Wert eines anderen Typs. Zuletzt fragt `05` oder `07` im Terminal nach, mit der Frage auf stderr. Nur die Antwort «ja» lässt die Probe schreiben. Ohne Terminal, etwa mit umgeleiteter Eingabe, bricht sie ab.
 
+## Der Wächter für Personendaten
+
+Vor seiner ersten Anfrage prüft `08`, nur mit seiner Umgebung:
+
+- Die Basis-URL ist nicht der Platzhalter dieses README.
+- Der Schalter `ECCLIUM_SPIKE_ALLOW_PERSONS` stimmt mit dem ersten Teil des Hosts überein, ohne Rücksicht auf Gross- und Kleinschreibung. Tippen Sie ihn von Hand ein.
+- `ECCLIUM_SPIKE_PERSON_ID`, `ECCLIUM_SPIKE_GROUP_ID` und `ECCLIUM_SPIKE_OTHER_GROUP_ID` sind positive ganze Zahlen, und die beiden Gruppen sind verschieden.
+
+Bis dahin hält `08` nur einen Client für die beiden Anfragen des Wächters. Danach liest der Wächter und bricht ab, sobald etwas nicht stimmt:
+
+- Das Konto sieht genau eine Kategorie, `testinstanz-kennung`, und darf sie weder bearbeiten noch löschen. Stammdaten bearbeiten darf es nicht.
+- Im Wiki darf das Konto genau das Wiki und die Kennkategorie sehen.
+- In `churchdb` dürfen nur `view`, `view alldata`, `view persons from campus`, `security level person`, `view group`, `view groups of grouptype`, `security level group` und `view memberliste` gesetzt sein, in `churchgroup` nur `view`, `view group`, `view groups of grouptype` und `security level group`, jeweils mit beliebigem Wert. Jedes andere Recht jedes Moduls steht auf «falsch» oder ist leer.
+
+Was der Wächter nicht prüfen kann, wertet er als Grund zum Abbruch. Erst wenn alles stimmt, gibt er den Client heraus, der Personen, Gruppen und die Suche erreicht. Eine Bestätigung im Terminal gibt es nicht, weil `08` nichts schreibt. Braucht eine Operation ein Leserecht, das nicht auf dieser Liste steht, bricht der Wächter ab, sobald Sie es vergeben. Die Liste wird dann mit einem eigenen Pull Request erweitert.
+
 ## Sicherung vor jeder Ausgabe
 
 Bevor eine Probe etwas ausgibt, prüft sie die ganze Ausgabe zweimal:
@@ -81,7 +106,7 @@ Bevor eine Probe etwas ausgibt, prüft sie die ganze Ausgabe zweimal:
 1. Jedes Wort muss bekannt sein: ein festes Wort der Proben, ein zugelassener Schlüssel oder die Version.
 2. Kein zugelassener Schlüssel darf als ganzes Wort etwas enthalten, das aus der Instanz oder von Ihrem Rechner stammt: den Host und seine Teile, das Token, die Werte der Variablen, Ihren Benutzernamen und Ihr Home-Verzeichnis, die Werte aller Kopfzeilen und Cookies und jede Zeichenkette und Zahl aus den Antworten. Gross- und Kleinschreibung zählen nicht, die URL-kodierte Form wird mitgeprüft.
 
-Eine Ausnahme gilt für Schlüssel, die das OpenAPI-Dokument Ihrer Instanz an ihrer Stelle deklariert: Ein Wert aus einer Antwort, der genau so lautet wie der ganze Schlüssel, sperrt ihn nicht, ohne Rücksicht auf Gross- und Kleinschreibung. Solch ein Schlüssel steht in der Ausgabe, weil das Dokument ihn nennt. ChurchTools schickt solche Werte selbst, etwa `{"@deprecated": {"identifier": "guid"}}` in jeder Wiki-Seite oder den Namen eines Modells wie `WikiPage` in einer Fehlerantwort. Ein Wert, der als ganzes Wort nur Teil eines Schlüssels ist, sperrt ihn weiter. Der Host und seine Teile, das Token, die Werte der Variablen, Ihr Benutzername, Ihr Home-Verzeichnis und die Werte der Kopfzeilen und Cookies sperren auch einen gleichlautenden Schlüssel. Die Namen der Rechte aus `02-permissions` prüft die Sicherung ohne diese Ausnahme. Nennt das OpenAPI-Dokument Ihrer Instanz einen eigenen Namen als Schlüssel und kommt derselbe Name als Wert in einer Antwort vor, hält die Sicherung ihn nicht mehr zurück. Achten Sie bei der Durchsicht darauf.
+Eine Ausnahme gilt für Schlüssel, die das OpenAPI-Dokument Ihrer Instanz an ihrer Stelle deklariert: Ein Wert aus einer Antwort, der genau so lautet wie der ganze Schlüssel, sperrt ihn nicht, ohne Rücksicht auf Gross- und Kleinschreibung. Solch ein Schlüssel steht in der Ausgabe, weil das Dokument ihn nennt. ChurchTools schickt solche Werte selbst, etwa `{"@deprecated": {"identifier": "guid"}}` in jeder Wiki-Seite oder den Namen eines Modells wie `WikiPage` in einer Fehlerantwort. Ein Wert, der als ganzes Wort nur Teil eines Schlüssels ist, sperrt ihn weiter. Der Host und seine Teile, das Token, die Werte der Variablen, Ihr Benutzername, Ihr Home-Verzeichnis und die Werte der Kopfzeilen und Cookies sperren auch einen gleichlautenden Schlüssel. Die Namen der Rechte aus `02-permissions` prüft die Sicherung ohne diese Ausnahme. In `08` stammen die Namen der Rechte aus einer festen Liste im Code und gelten als feste Wörter: Werte aus Antworten über Personen und Gruppen wie «person» oder «group» würden sie sonst zurückhalten. Nennt das OpenAPI-Dokument Ihrer Instanz einen eigenen Namen als Schlüssel und kommt derselbe Name als Wert in einer Antwort vor, hält die Sicherung ihn nicht mehr zurück. Achten Sie bei der Durchsicht darauf.
 
 Schlägt eine Prüfung an, gibt die Probe nur die Stellen der Treffer als JSON-Pointer aus und endet mit Code 3.
 
@@ -103,6 +128,25 @@ Für die Proben des Schreibkontos, nur auf der Testinstanz aus ADR 0049:
 - Ein Schreibbereich: eine eigene Kategorie, die nur das Schreibkonto und Sie sehen. Ausser der Seite «main» liegt darin nichts.
 - Ein Schreibkonto, getrennt vom lesenden Dienstkonto: eine synthetische Person mit einem eigenen Status ohne Berechtigungen, in keiner Gruppe, mit einem Passwort, damit Sie sein Login-Token holen können. Es erhält direkt nur diese Rechte: «Wiki sehen», «Einzelne Wiki-Kategorien sehen» für Schreibbereich und Kennkategorie, «Einzelne Wiki-Kategorien bearbeiten» nur für den Schreibbereich. Nirgends «alle».
 - Eine eigene Token-Datei für das Schreibkonto im privaten Ordner.
+
+Für die Probe für Personen und Gruppen, nur auf der Testinstanz aus ADR 0049:
+
+- Das Dienstkonto des Servers, getrennt von den beiden anderen Konten: eine synthetische Person mit einem eigenen Status ohne Berechtigungen, in keiner Gruppe und in keinem Bereich der synthetischen Personen, mit einem Passwort, damit Sie sein Login-Token holen können. Es erhält direkt nur «Wiki sehen» und «Einzelne Wiki-Kategorien sehen» für die Kennkategorie. Die Leserechte für Personen und Gruppen vergeben Sie erst in den Stufen.
+- Eine eigene Token-Datei für das Dienstkonto des Servers im privaten Ordner.
+- Ihre Bestätigung, dass jede Person auf der Testinstanz Platzhalter trägt, auch Konten wie das des Administrators. Echte Daten auf der Testinstanz sind ein Vorfall (ADR 0049). Geben Sie einer Person mit echten Daten zuerst Platzhalter.
+- Ein Bereich nur für die synthetischen Personen und ein zweiter, ebenfalls synthetischer Bereich. Verwenden Sie in Namen von Bereichen, Status und Gruppentypen keine Wörter aus Namen von Rechten wie «view», «group» oder «person»: Ein solcher Wert hielte sonst einen Namen in der Ausgabe zurück.
+- Vier synthetische Personen und zwei Gruppen, von Hand angelegt, genau mit diesen Namen und nur mit Platzhaltern:
+
+  | In der Ausgabe | Vorname    | Nachname        | Bereich               | Gruppen      |
+  | -------------- | ---------- | --------------- | --------------------- | ------------ |
+  | `p1`           | Anna       | Spikeprobe      | synthetischer Bereich | `g1`, leitet |
+  | `p2`           | Bruno      | Spikeprobenberg | synthetischer Bereich | `g1`         |
+  | `p3`           | Spikeprobe | Carlsen         | synthetischer Bereich | `g2`         |
+  | `p4`           | Dora       | Vorspikeprobe   | zweiter Bereich       | keine        |
+
+  Die Gruppe `g1` heisst «Spikeprobe Nord» und gehört zu einem Gruppentyp A, die Gruppe `g2` heisst «Spikeprobe West» und gehört zu einem anderen Gruppentyp B. Beide haben dieselbe Sichtbarkeit. `p1` erhält die E-Mail-Adresse `kontakt.qzvx@example.org`, eine erfundene Telefonnummer wie `+41 00 000 00 00`, ein erfundenes Geburtsdatum und eine erfundene Adresse, die anderen erhalten Adressen unter `example.org`. Keine der vier ist verborgen oder archiviert. Hat Ihre Instanz Standorte, erhalten alle vier denselben eigenen Standort. Notieren Sie die IDs von `p1`, `g1` und `g2` nur lokal, und die Einstellungen in Worten: Bereiche, Gruppentypen, Sichtbarkeit.
+
+- Die Testinstanz öffnen in diesem Teil nur Sie, auch als Administrator, in einem privaten Fenster eines Browsers ohne Erweiterungen.
 
 Die Proben prüfen Token-Datei und State-Datei vor dem Lesen: kein symbolischer Link, eine reguläre Datei, die Ihnen gehört, keine Rechte für andere, ausserhalb jedes Git-Arbeitsbaums. Die Token-Datei enthält genau eine Zeile aus druckbaren ASCII-Zeichen und ist höchstens 4 KiB gross. Die State-Datei legt `00-inventory` selbst an, mit Modus 0600. Sie darf vorher nicht existieren. Existiert sie schon, bricht `00-inventory` mit Code 2 ab, bevor es eine Anfrage sendet.
 
@@ -259,15 +303,97 @@ Wiederholen: Endet `05` nach der Bestätigung mit einem anderen Code als 0, füh
 
 Eine Probe bricht vor der ersten Anfrage ab, wenn `NODE_OPTIONS`, `NODE_DEBUG`, `NODE_PATH` oder `NODE_EXTRA_CA_CERTS` gesetzt ist oder `NODE_TLS_REJECT_UNAUTHORIZED=0` gilt. Diese Variablen könnten fremden Code laden oder ein fremdes Zertifikat gelten lassen, über das jemand das Token mitlesen könnte. Mit `env -i` sind sie nicht gesetzt.
 
+## Ausführung der Probe für Personen und Gruppen
+
+Nur auf der Testinstanz, nach den Voraussetzungen oben. Die Schritte setzen die Variablen `D`, `URL`, `SHA`, `R` und `NODE` aus den Schritten 1 bis 3 des lesenden Teils voraus. In jeder Stufe ändern Sie die Rechte des Dienstkontos des Servers in der Oberfläche und führen `08` aus. Halten Sie zu jedem Recht seine Bezeichnung in der Oberfläche fest.
+
+1. Legen Sie die Variablen fest und eine leere Token-Datei an:
+
+   ```bash
+   PERSON=ID_VON_P1
+   GRUPPE=ID_VON_G1
+   ANDERE_GRUPPE=ID_VON_G2
+   (umask 077 && touch "$D/token-server")
+   ```
+
+   Fügen Sie das Login-Token des Dienstkontos des Servers in einem Editor als einzige Zeile in `$D/token-server` ein.
+
+2. Führen Sie `00-inventory` mit diesem Token und einer neuen State-Datei aus, dann `02-permissions`. Beide haben keinen Wächter und senden das Token an `$URL`. Prüfen Sie deshalb vorher mit `echo "$URL"`, dass dies die Adresse der Testinstanz ist:
+
+   ```bash
+   env -i ECCLIUM_SPIKE_BASE_URL="$URL" ECCLIUM_SPIKE_TOKEN_FILE="$D/token-server" ECCLIUM_SPIKE_STATE_FILE="$D/state-server.json" "$NODE" "$R/scripts/spike/00-inventory.mts" > "$D/ausgabe/00-inventory-server.json"
+   echo "Code $?"
+   env -i ECCLIUM_SPIKE_BASE_URL="$URL" ECCLIUM_SPIKE_TOKEN_FILE="$D/token-server" ECCLIUM_SPIKE_STATE_FILE="$D/state-server.json" "$NODE" "$R/scripts/spike/02-permissions.mts" > "$D/ausgabe/02-permissions-server.json"
+   echo "Code $?"
+   ```
+
+   Prüfen Sie die Rechte mit dem Befehl aus Schritt 6 des lesenden Teils, mit `02-permissions-server.json`. Erwartet sind genau die beiden Zeilen von dort. In `00-inventory-server.json` steht jede Operation für Personen, Gruppen und Suche auf «dokumentiert» oder «nicht dokumentiert».
+
+3. Führen Sie in jeder Stufe `08` aus. Setzen Sie `S` auf den Namen der Stufe und ersetzen Sie `ERSTER_TEIL_DES_HOSTS` von Hand durch den Teil der Adresse vor dem ersten Punkt. Vergleichen Sie vor dem ersten Lauf die SHA-256-Werte auf dem Bildschirm mit dem Pull Request.
+
+   ```bash
+   S=s0
+   env -i ECCLIUM_SPIKE_BASE_URL="$URL" ECCLIUM_SPIKE_ALLOW_PERSONS=ERSTER_TEIL_DES_HOSTS ECCLIUM_SPIKE_TOKEN_FILE="$D/token-server" ECCLIUM_SPIKE_STATE_FILE="$D/state-server.json" ECCLIUM_SPIKE_PERSON_ID="$PERSON" ECCLIUM_SPIKE_GROUP_ID="$GRUPPE" ECCLIUM_SPIKE_OTHER_GROUP_ID="$ANDERE_GRUPPE" "$NODE" "$R/scripts/spike/08-persons-groups-read.mts" > "$D/ausgabe/08-$S.json"
+   echo "Code $?"
+   ```
+
+   Die Stufen bauen aufeinander auf:
+
+   | Stufe         | Änderung der Rechte                                                   | Was `08` zeigen soll                                                       |
+   | ------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+   | `s0`          | nur das Wiki und die Kennkategorie                                    | Wächter bestanden, nichts sichtbar, `andereEintraege` «0»                  |
+   | `s1`          | dazu `churchdb: view`                                                 | ob das Recht auf das Modul allein etwas öffnet                             |
+   | `s2`          | dazu `view alldata`, nur für den synthetischen Bereich                | `p1` bis `p3` in Liste und Suche, `p4` nicht                               |
+   | `s3`          | dazu `security level person`, die niedrigste Stufe                    | die Felder einer Person bei niedriger Stufe                                |
+   | `s4`          | `security level person` mit allen Stufen einzeln                      | Felder, die erst mit höheren Stufen erscheinen                             |
+   | `s5`          | dazu `churchgroup: view`                                              | ob das Recht auf das Modul der Gruppen allein etwas öffnet                 |
+   | `s6`          | dazu `view groups of grouptype`, nur für Typ A                        | `g1` sichtbar, `g2` weggelassen oder verweigert                            |
+   | `s7`          | dazu `security level group`, die niedrigste Stufe                     | Mitglieder und Felder der Gruppe                                           |
+   | `s8`          | dazu `view memberliste`                                               | ob die Mitgliederliste dieses Recht verlangt                               |
+   | `g1` bis `g4` | je ein Recht entzogen, sonst wie `s8`                                 | Gegenproben, siehe unten                                                   |
+   | `sa`          | `view groups of grouptype` von Typ A auf «alle», danach wieder zurück | `g2` sichtbar, die Klassen der Elemente dieses Rechts neben denen von `s6` |
+
+   Die Gegenproben `g1` bis `g4` legen wir nach `s8` fest: je eine für jedes Recht, das zuerst ein Ergebnis für Listen, Suche oder die Sichtbarkeit von `p1` bis `p4` und `g1` geändert hat. `sa` läuft zuletzt, damit ein Abbruch dort keine Gegenprobe kostet. Im Wiki vergeben Sie nie «alle».
+
+4. Vergleichen Sie zwei Stufen ohne Werte. Dieser Befehl gibt die wirksamen Rechte, das Ergebnis jedes Aufrufs, die Sichtbarkeit und `kennungSynthetisch` als Zeilen aus:
+
+   ```bash
+   zeilen() { env -i "$NODE" -e '
+   let out = {};
+   try { out = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); } catch {}
+   if (out.waechter !== "bestanden") { console.log("ABBRUCH: Wächter nicht bestanden"); process.exit(1); }
+   for (const [modul, rechte] of Object.entries(out.rechte ?? {}))
+     for (const [recht, w] of Object.entries(rechte))
+       console.log(`recht: ${modul}: ${recht}: ${w.wert ?? w.klasse ?? w.anzahl ?? w.typ}${w.elemente ? " " + JSON.stringify(w.elemente) : ""}`);
+   for (const [ziel, e] of Object.entries(out.ergebnisse ?? {})) console.log(`ergebnis: ${ziel}: ${e}`);
+   for (const [ziel, s] of Object.entries(out.sichtbar ?? {})) console.log(`sichtbar: ${ziel}: ${Object.entries(s).map(([k, v]) => k + "=" + v).join(" ")}`);
+   for (const [ziel, a] of Object.entries(out.andereEintraege ?? {})) console.log(`andere: ${ziel}: ${a}`);
+   for (const [k, v] of Object.entries(out.kennungSynthetisch ?? {})) console.log(`kennung: ${k}: ${v}`);
+   ' "$1"; }
+   diff <(zeilen "$D/ausgabe/08-s0.json") <(zeilen "$D/ausgabe/08-s1.json")
+   ```
+
+   `diff` zeigt genau das neue Recht und jedes Ergebnis, das sich geändert hat.
+
+5. Halten Sie an und melden Sie sich nach `s0`, nach `s1` und nach `s8`. Halten Sie ausserdem sofort an, wenn:
+   - ein Code nicht 0 ist oder der Wächter abbricht;
+   - `kennungSynthetisch` «nein» zeigt;
+   - in `s0` ein synthetisches Objekt sichtbar ist;
+   - `andereEintraege` für `persons` oder eine Suche nach Personen mehr als «0» zeigt. Dann sieht das Konto Personen ausserhalb des synthetischen Bereichs.
+
+6. Was als Beleg gilt: Ein Endpunkt verlangt ein Recht, wenn er in der Stufe davor verweigert ist oder kein synthetisches Objekt zeigt, wenn er mit dem Recht Einträge mit den erwarteten Objekten liefert, und wenn er in der Gegenprobe ohne das Recht, bei sonst gleichen Rechten, wieder wie vorher ist. Ohne Gegenprobe heisst der Befund «hinreichend», nicht «nötig».
+
+7. Danach setzen Sie die Rechte des Dienstkontos auf die Stufe `s0` zurück: nur das Wiki und die Kennkategorie. Erneuern Sie sein Token, prüfen Sie mit `01-auth` und der alten Token-Datei, dass die Instanz das alte abweist, wie unter «Aufräumen» beschrieben, und bestätigen Sie mit dem neuen Token und `02-permissions`, dass nur die zwei Rechte von `s0` gelten.
+
 ## Codes
 
-| Code | Bedeutung                                                                                                                                                                                                                                                                                                                                                 |
-| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | Ausgabe geschrieben.                                                                                                                                                                                                                                                                                                                                      |
-| 2    | Eine Variable oder Datei fehlt, eine Datei ist unsicher, die Umgebung ist unsicher, oder der Wächter hat abgebrochen. Der Hinweis auf stderr nennt den Grund. Eine lesende Probe hat in diesem Fall in der Regel keine Anfrage gesendet. Bei einer Probe des Schreibkontos können Lese-Anfragen des Wächters vorausgegangen sein, aber keine schreibende. |
-| 3    | Ausgabe zurückgehalten, siehe «Sicherung vor jeder Ausgabe».                                                                                                                                                                                                                                                                                              |
-| 4    | Netz oder Antwort: `NETZ_DNS`, `NETZ_VERBINDUNG`, `NETZ`, `TLS`, `TIMEOUT`, `HTTP_REDIRECT`, `ANTWORT_ZU_GROSS` oder `ANTWORT_UNGUELTIG`. Folgt der Fehler auf eine schreibende Anfrage, sagt der Hinweis das, siehe «Wiederholen».                                                                                                                       |
-| 70   | Unerwarteter Fehler in der Probe (`INTERN`).                                                                                                                                                                                                                                                                                                              |
+| Code | Bedeutung                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | Ausgabe geschrieben.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 2    | Eine Variable oder Datei fehlt, eine Datei ist unsicher, die Umgebung ist unsicher, oder der Wächter hat abgebrochen. Der Hinweis auf stderr nennt den Grund. Eine lesende Probe hat in diesem Fall in der Regel keine Anfrage gesendet. Bei einer Probe des Schreibkontos können Lese-Anfragen des Wächters vorausgegangen sein, aber keine schreibende. Bei `08` können die beiden Lese-Anfragen seines Wächters vorausgegangen sein, aber keine an Personen, Gruppen oder die Suche. |
+| 3    | Ausgabe zurückgehalten, siehe «Sicherung vor jeder Ausgabe».                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 4    | Netz oder Antwort: `NETZ_DNS`, `NETZ_VERBINDUNG`, `NETZ`, `TLS`, `TIMEOUT`, `HTTP_REDIRECT`, `ANTWORT_ZU_GROSS` oder `ANTWORT_UNGUELTIG`. Folgt der Fehler auf eine schreibende Anfrage, sagt der Hinweis das, siehe «Wiederholen».                                                                                                                                                                                                                                                     |
+| 70   | Unerwarteter Fehler in der Probe (`INTERN`).                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 Fehler erscheinen nur als fester Code mit einem festen Hinweis, nie mit einer Meldung oder einem Stack, weil diese Daten aus einer Antwort enthalten könnten.
 
@@ -275,7 +401,7 @@ Die Umleitung `>` legt die Zieldatei an oder leert sie, bevor die Probe startet.
 
 ## Durchsicht vor dem Weitergeben
 
-1. Öffnen Sie jede Datei in `$D/ausgabe` und lesen Sie sie ganz. Erwartet sind nur Wörter der Proben, Schlüssel der API, Klassen, Statuscodes, Zeilennummern des synthetischen Texts und die Version.
+1. Öffnen Sie jede Datei in `$D/ausgabe` und lesen Sie sie ganz. Erwartet sind nur Wörter der Proben, Schlüssel der API, Klassen, Statuscodes, Zeilennummern des synthetischen Texts, die Werte von `limit` und die Version.
 2. Suchen Sie nach allem, was Ihre Instanz, Ihre Gemeinde oder Personen erkennbar macht: Host, Namen, Gruppen, IDs.
 3. Prüfen Sie die Ausgaben im Klon des Repositorys mit gitleaks und den Regeln des Projekts, und zusätzlich mit einem eigenen Mustersatz, falls Sie einen mit den Namen Ihrer Instanz und Gemeinde pflegen:
 
@@ -283,7 +409,13 @@ Die Umleitung `>` legt die Zieldatei an oder leert sie, bevor die Probe startet.
    mise exec -- gitleaks dir --redact --no-banner --config .gitleaks.toml "$D/ausgabe"
    ```
 
-4. Geben Sie nur Dateien weiter, die diese Durchsicht bestanden haben.
+4. Für `08` muss diese Suche ohne Treffer bleiben. Findet sie etwas, geben Sie die Datei nicht weiter und melden Sie es:
+
+   ```bash
+   grep -i -l -E 'spikeprobe|qzvx' "$D"/ausgabe/08-*.json
+   ```
+
+5. Geben Sie nur Dateien weiter, die diese Durchsicht bestanden haben.
 
 ## Aufräumen
 
