@@ -479,6 +479,7 @@ export const specification = {
         type: 'object',
         properties: {
           '@deprecated': { type: 'object' },
+          id: { type: 'integer' },
           personId: { type: 'integer' },
           person: { $ref: '#/components/schemas/Person' },
           group: { $ref: '#/components/schemas/Group' },

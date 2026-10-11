@@ -170,6 +170,9 @@ const resultWords = [
   'nicht geprüft',
 ] as const;
 
+/** What the single read of a synthetic object showed. */
+type Identification = 'ja' | 'nein' | 'nicht vergleichbar' | 'nicht geprüft';
+
 type ResultWord = (typeof resultWords)[number];
 
 const words = [
@@ -227,6 +230,8 @@ const words = [
   'sichtbar',
   'andereEintraege',
   'eigenerDatensatz',
+  'nichtVergleichbar',
+  'nicht vergleichbar',
   'kennungSynthetisch',
   ...invalidValues.flat(),
 ];
@@ -268,14 +273,27 @@ function entriesOf(response: ProbeResponse): readonly unknown[] | undefined {
   return data === undefined || data === null ? [] : [data];
 }
 
-function isOwn(entry: unknown, ownId: number | undefined): boolean {
+// Whether the account's own record can be among the entries of an operation.
+function ownMatters(name: PersonOperation): boolean {
+  return name !== 'groups' && name !== 'group';
+}
+
+function isOwn(
+  entry: unknown,
+  ownId: number | undefined,
+  name: PersonOperation,
+): boolean {
   if (ownId === undefined || !isObject(entry)) {
     return false;
   }
   const own = String(ownId);
   const person = entry['person'];
+  // A bare id is a person's only where the operation answers persons;
+  // persons and groups count their IDs apart.
   return (
-    (entry['domainType'] === undefined && String(entry['id']) === own) ||
+    ((name === 'persons' || name === 'person') &&
+      entry['domainType'] === undefined &&
+      String(entry['id']) === own) ||
     (entry['domainType'] === 'person' &&
       String(entry['domainIdentifier']) === own) ||
     String(entry['personId']) === own ||
@@ -283,44 +301,85 @@ function isOwn(entry: unknown, ownId: number | undefined): boolean {
   );
 }
 
+/**
+ * The side of a membership that varies within one answer: the member in
+ * the members of a group, the group in the groups of a person. The other
+ * side names the synthetic object the call asked for in every entry.
+ */
+const varyingSide: Partial<Record<PersonOperation, string>> = {
+  groupMembers: 'person',
+  personGroups: 'group',
+};
+
 interface Seen {
   readonly sichtbar: Visibility;
   readonly andere: string;
-  readonly eigener: 'ja' | 'nein' | 'unbekannt';
+  readonly nichtVergleichbar: string;
+  readonly eigener: 'ja' | 'nein' | 'unbekannt' | undefined;
 }
 
-function seenIn(response: ProbeResponse, ownId: number | undefined): Seen {
-  const unknownAll = Object.fromEntries(
-    labels.map((label) => [label, 'unbekannt']),
-  ) as Visibility;
+function seenIn(
+  response: ProbeResponse,
+  ownId: number | undefined,
+  name: PersonOperation,
+): Seen {
+  const matters = ownMatters(name);
   const entries = entriesOf(response);
   if (entries === undefined) {
-    return { sichtbar: unknownAll, andere: 'unbekannt', eigener: 'unbekannt' };
+    return {
+      sichtbar: Object.fromEntries(
+        labels.map((label) => [label, 'unbekannt']),
+      ) as Visibility,
+      andere: 'unbekannt',
+      nichtVergleichbar: 'unbekannt',
+      eigener: matters ? 'unbekannt' : undefined,
+    };
   }
   const found = new Set<Label>();
-  let comparable = entries.length === 0;
+  let allComparable = true;
   let others = 0;
+  let unnamed = 0;
   let own = false;
+  const side = varyingSide[name];
   for (const entry of entries) {
     const result = syntheticIn(entry);
-    comparable ||= result.comparable;
+    allComparable &&= result.comparable;
     for (const label of result.found) {
       found.add(label);
     }
-    const mine = isOwn(entry, ownId);
+    const mine = matters && isOwn(entry, ownId, name);
     own ||= mine;
-    if (result.found.size === 0 && !mine) {
+    const decisive =
+      side === undefined
+        ? result
+        : syntheticIn(isObject(entry) ? entry[side] : undefined);
+    if (mine) {
+      continue;
+    }
+    // An entry without any name is neither synthetic nor another person.
+    if (!decisive.comparable) {
+      unnamed += 1;
+    } else if (decisive.found.size === 0) {
       others += 1;
     }
   }
   return {
-    sichtbar: comparable
-      ? (Object.fromEntries(
-          labels.map((label) => [label, found.has(label) ? 'ja' : 'nein']),
-        ) as Visibility)
-      : unknownAll,
+    // «nein» only where every entry carried a name to compare.
+    sichtbar: Object.fromEntries(
+      labels.map((label) => [
+        label,
+        found.has(label) ? 'ja' : allComparable ? 'nein' : 'unbekannt',
+      ]),
+    ) as Visibility,
     andere: countClass(others),
-    eigener: ownId === undefined ? 'unbekannt' : own ? 'ja' : 'nein',
+    nichtVergleichbar: countClass(unnamed),
+    eigener: !matters
+      ? undefined
+      : ownId === undefined
+        ? 'unbekannt'
+        : own
+          ? 'ja'
+          : 'nein',
   };
 }
 
@@ -384,6 +443,7 @@ export const probe: ProbeDefinition = {
     const ergebnisse: Record<string, Json> = {};
     const sichtbar: Record<string, Json> = {};
     const andereEintraege: Record<string, Json> = {};
+    const nichtVergleichbar: Record<string, Json> = {};
     const eigenerDatensatz: Record<string, Json> = {};
     const strukturen: Record<string, Json> = {};
     const fehler: Record<string, Json> = {};
@@ -433,10 +493,13 @@ export const probe: ProbeDefinition = {
         return response;
       }
       ergebnisse[key] = resultOf(response);
-      const seen = seenIn(response, ownId);
+      const seen = seenIn(response, ownId, name);
       sichtbar[key] = seen.sichtbar;
       andereEintraege[key] = seen.andere;
-      eigenerDatensatz[key] = seen.eigener;
+      nichtVergleichbar[key] = seen.nichtVergleichbar;
+      if (seen.eigener !== undefined) {
+        eigenerDatensatz[key] = seen.eigener;
+      }
       const describe = (): Json =>
         describeResponse(response, {
           guard,
@@ -601,17 +664,26 @@ export const probe: ProbeDefinition = {
     }
 
     // Single reads: only the IDs from the environment, and a GUID only from
-    // the answer to one of them that showed the synthetic object.
-    const kennung: Record<string, Json> = {};
+    // the answer to one of them that showed the synthetic object. An answer
+    // with 200 that shows another object or no name at all stops every
+    // further read about it; a refused one does not, so the stages show
+    // how the dependent reads answer without the right.
+    const kennung: Record<string, Identification> = {};
     const synthetic = (
       response: ProbeResponse | undefined,
       label: Label,
-    ): 'ja' | 'nein' | 'nicht geprüft' => {
+    ): Identification => {
       if (response?.status !== 200) {
         return 'nicht geprüft';
       }
-      return syntheticIn(dataOf(response)).found.has(label) ? 'ja' : 'nein';
+      const result = syntheticIn(dataOf(response));
+      if (result.found.has(label)) {
+        return 'ja';
+      }
+      return result.comparable ? 'nein' : 'nicht vergleichbar';
     };
+    const goesOn = (word: Identification | undefined): boolean =>
+      word === 'ja' || word === 'nicht geprüft';
     const guidOf = (
       response: ProbeResponse | undefined,
     ): string | undefined => {
@@ -645,7 +717,7 @@ export const probe: ProbeDefinition = {
         pathFor(operations.person.template, p1Guid),
       );
     }
-    if (kennung['p1'] === 'nein') {
+    if (!goesOn(kennung['p1'])) {
       skip('personGroups:p1', 'nicht aufgerufen');
     } else {
       const memberships = await call(
@@ -673,8 +745,12 @@ export const probe: ProbeDefinition = {
         pathFor(operations.group.template, id),
       );
       kennung[label] = synthetic(group, label);
-      if (kennung[label] === 'nein') {
+      if (!goesOn(kennung[label])) {
         skip(`groupMembers:${label}`, 'nicht aufgerufen');
+        if (label === 'g1') {
+          skip('group:g1-guid', 'nicht aufgerufen');
+          skip('groupMembers:g1-guid', 'nicht aufgerufen');
+        }
         continue;
       }
       await call(
@@ -769,6 +845,7 @@ export const probe: ProbeDefinition = {
       ergebnisse,
       sichtbar,
       andereEintraege,
+      nichtVergleichbar,
       eigenerDatensatz,
     };
   },

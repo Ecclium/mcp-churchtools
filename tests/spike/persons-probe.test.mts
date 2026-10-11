@@ -339,4 +339,82 @@ describe('probe 08', () => {
     // The foreign canary person; the synthetic ones and the own record do not count.
     expect(section(alle.result, 'andereEintraege')['persons']).toBe('1');
   });
+
+  it('counts answers without names apart and reads nothing more on them', async () => {
+    const { code, result, calls, setting } = await run({
+      withoutNames: true,
+    });
+    expect(code).toBe(exitCodes.ok);
+    const ergebnisse = section(result, 'ergebnisse');
+    expect(ergebnisse['persons']).toBe('erlaubt mit Einträgen');
+    const unknownAll = {
+      p1: 'unbekannt',
+      p2: 'unbekannt',
+      p3: 'unbekannt',
+      p4: 'unbekannt',
+      g1: 'unbekannt',
+      g2: 'unbekannt',
+    };
+    expect(seen(result, 'persons')).toEqual(unknownAll);
+    expect(seen(result, 'search:q1')).toEqual(unknownAll);
+    expect(section(result, 'andereEintraege')['persons']).toBe('0');
+    expect(section(result, 'nichtVergleichbar')['persons']).toBe('2–9');
+    expect(result['kennungSynthetisch']).toEqual({
+      p1: 'nicht vergleichbar',
+      g1: 'nicht vergleichbar',
+      g2: 'nicht geprüft',
+    });
+    for (const target of [
+      'person:p1-guid',
+      'personGroups:p1',
+      'groupMembers:g1',
+      'group:g1-guid',
+      'groupMembers:g1-guid',
+    ]) {
+      expect(ergebnisse[target]).toBe('nicht aufgerufen');
+    }
+    expect(
+      calls.filter((call) =>
+        [
+          `/api/persons/${String(setting.personId)}/groups`,
+          `/api/groups/${String(setting.groupId)}/members`,
+        ].includes(call.url.pathname),
+      ),
+    ).toEqual([]);
+  });
+
+  it('counts a foreign member of g1 and a foreign group of p1 as other entries', async () => {
+    const plain = await run();
+    const crossed = await run({ crossMembers: true });
+    const others = (run: Run, target: string): unknown =>
+      section(run.result, 'andereEintraege')[target];
+    expect(others(plain, 'groupMembers:g1')).toBe('0');
+    expect(others(plain, 'personGroups:p1')).toBe('0');
+    expect(others(crossed, 'groupMembers:g1')).toBe('1');
+    expect(others(crossed, 'personGroups:p1')).toBe('1');
+    expect(seen(crossed.result, 'groupMembers:g1')).toMatchObject({
+      p1: 'ja',
+      p2: 'ja',
+      g1: 'ja',
+    });
+  });
+
+  it('never takes a group for the record of the account', async () => {
+    const onForeign = await run((setting) => ({
+      groups: 'alle',
+      ownId: setting.otherGroupId + 1,
+    }));
+    expect(
+      section(onForeign.result, 'eigenerDatensatz')['groups'],
+    ).toBeUndefined();
+    expect(section(onForeign.result, 'andereEintraege')['groups']).toBe('1');
+    const onG1 = await run((setting) => ({ ownId: setting.groupId }));
+    expect(
+      section(onG1.result, 'eigenerDatensatz')['group:g1-id'],
+    ).toBeUndefined();
+    expect(section(onG1.result, 'eigenerDatensatz')['persons']).toBe('nein');
+    expect(section(onG1.result, 'eigenerDatensatz')['groupMembers:g1']).toBe(
+      'nein',
+    );
+  });
 });

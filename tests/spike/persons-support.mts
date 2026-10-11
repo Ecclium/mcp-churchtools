@@ -205,6 +205,12 @@ export interface PersonsInstanceOptions {
   readonly foreignAsG1?: boolean;
   /** A search term the search refuses with 400, echoing it in `args`. */
   readonly refusedQuery?: string;
+  /** Leaves every name and title out of the answers. */
+  readonly withoutNames?: boolean;
+  /** ID of the record of the account itself, instead of the one of the setting. */
+  readonly ownId?: number;
+  /** Puts the foreign person into g1 and p1 into the foreign group. */
+  readonly crossMembers?: boolean;
 }
 
 /** One synthetic or foreign person of the instance. */
@@ -292,7 +298,7 @@ export function personsInstance(
   });
   const own = person(
     'own',
-    setting.ownId,
+    options.ownId ?? setting.ownId,
     'Kanarie',
     canaries.personName,
     canaries.personEmail,
@@ -352,7 +358,8 @@ export function personsInstance(
     guid: made(makeGuid()),
     name: canaries.groupName,
     type: 'A',
-    members: [foreign.id],
+    members:
+      options.crossMembers === true ? [foreign.id, p1?.id ?? 0] : [foreign.id],
   };
   const groups: readonly Group[] = [
     {
@@ -361,7 +368,11 @@ export function personsInstance(
       guid: made(makeGuid()),
       name: 'Spikeprobe Nord',
       type: 'A',
-      members: [p1?.id ?? 0, p2?.id ?? 0],
+      members: [
+        p1?.id ?? 0,
+        p2?.id ?? 0,
+        ...(options.crossMembers === true ? [foreign.id] : []),
+      ],
     },
     {
       label: 'g2',
@@ -379,29 +390,32 @@ export function personsInstance(
   const seesGroup = (entry: Group): boolean =>
     options.groups === 'alle' ||
     ((options.groups ?? 'typA') === 'typA' && entry.type === 'A');
+  const named = (fields: Record<string, unknown>): Record<string, unknown> =>
+    options.withoutNames === true ? {} : fields;
   const personData = (entry: Person): Record<string, unknown> => ({
     id: entry.id,
     guid: entry.guid,
-    firstName: entry.firstName,
-    lastName: entry.lastName,
-    email: entry.email,
-    birthday: entry.birthday,
-    isArchived: false,
+    ...named({
+      firstName: entry.firstName,
+      lastName: entry.lastName,
+      email: entry.email,
+      birthday: entry.birthday,
+      isArchived: false,
+    }),
     meta: { modifiedDate: '2026-10-11T08:15:00Z' },
   });
   const groupData = (entry: Group): Record<string, unknown> => ({
     '@deprecated': { identifier: 'guid' },
     id: entry.id,
     guid: entry.guid,
-    name: entry.name,
+    ...named({ name: entry.name }),
   });
   const reference = (entry: Person): Record<string, unknown> => ({
-    title: `${entry.firstName} ${entry.lastName}`,
+    ...named({ title: `${entry.firstName} ${entry.lastName}` }),
     domainType: 'person',
     domainIdentifier: String(entry.id),
     domainAttributes: {
-      firstName: entry.firstName,
-      lastName: entry.lastName,
+      ...named({ firstName: entry.firstName, lastName: entry.lastName }),
       guid: entry.guid,
     },
   });
@@ -410,10 +424,13 @@ export function personsInstance(
     group: Group,
   ): Record<string, unknown> => ({
     '@deprecated': { personId: 'person' },
+    // An ID of the membership itself; here that of its group, so that a
+    // test can let it equal the ID of the account's own record.
+    id: group.id,
     personId: member.id,
     person: reference(member),
     group: {
-      title: group.name,
+      ...named({ title: group.name }),
       domainType: 'group',
       domainIdentifier: String(group.id),
     },
@@ -557,7 +574,7 @@ export function personsInstance(
               wanted('group') && seesGroup(entry) && matches(query, entry.name),
           )
           .map((entry) => ({
-            title: entry.name,
+            ...named({ title: entry.name }),
             domainType: 'group',
             domainIdentifier: String(entry.id),
             domainAttributes: { guid: entry.guid },
