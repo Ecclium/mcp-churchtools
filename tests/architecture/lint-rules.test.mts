@@ -202,6 +202,18 @@ const probes: readonly {
     code: 'server.fallbackRequestHandler = async () => ({});',
     concerns: ['mcp-register'],
   },
+  {
+    code: "mcp.server.removeRequestHandler('tools/call');",
+    concerns: ['mcp-register'],
+  },
+  {
+    code: "mcp.server.removeNotificationHandler('notifications/cancelled');",
+    concerns: ['mcp-register'],
+  },
+  {
+    code: 'mcp.server.registerCapabilities({ tools: {} });',
+    concerns: ['mcp-register'],
+  },
 
   { code: 'let count = 0;', concerns: ['module-state'] },
   { code: 'export let count = 0;', concerns: ['module-state'] },

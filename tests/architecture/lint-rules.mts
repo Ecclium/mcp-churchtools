@@ -133,12 +133,14 @@ const networkModules = [
 
 /**
  * Methods and properties of the MCP SDK that register tools, prompts,
- * resources or handlers. The rule matches them by name, so the plugin API
- * must not use these names for its own methods. The list is checked against
- * the SDK when it is built in.
+ * resources or handlers, or remove or announce them. The rule matches them
+ * by name, so the plugin API must not use these names for its own methods.
+ * Checked against version 2.3.1 of the SDK (ADR 0053). RegisteredTool.update
+ * can swap the handler of a tool as well, but its name is too common for a
+ * rule that matches names, so only the review catches it.
  */
 const registration =
-  'registerTool|registerPrompt|registerResource|setRequestHandler|setNotificationHandler|fallbackRequestHandler|fallbackNotificationHandler';
+  'registerTool|registerPrompt|registerResource|setRequestHandler|setNotificationHandler|fallbackRequestHandler|fallbackNotificationHandler|removeRequestHandler|removeNotificationHandler|registerCapabilities';
 
 /** Globals that open network connections. */
 const networkGlobals = [
