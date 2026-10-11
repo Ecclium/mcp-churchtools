@@ -548,3 +548,18 @@ describe('dependencies', () => {
     }
   });
 });
+
+describe('testkit', () => {
+  // testkit holds what only tests and spikes need, including dependencies
+  // that no release may carry (ADR 0022). npm refuses to publish a private
+  // package. publishConfig and files only prepare a package for publishing,
+  // so either one would be the first step towards shipping it.
+  it('stays private and has nothing that prepares a release', () => {
+    const testkit = JSON.parse(
+      read('packages/testkit/package.json'),
+    ) as Readonly<Record<string, unknown>>;
+    expect(testkit['private']).toBe(true);
+    expect(Object.keys(testkit)).not.toContain('publishConfig');
+    expect(Object.keys(testkit)).not.toContain('files');
+  });
+});
