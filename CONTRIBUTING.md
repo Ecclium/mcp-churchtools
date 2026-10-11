@@ -146,7 +146,7 @@ Für jeden Pull Request laufen die folgenden Prüfungen. Jede ist Pflicht für d
 | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `workflow-lint` | Die Workflows mit actionlint und shellcheck, dazu zizmor ab mittlerer Schwere. In CI prüft zizmor auch, ob jede gepinnte SHA zur Action und zur Version im Kommentar passt.              |
 | `secret-scan`   | Die Geschichte bis zum geprüften Commit, die Dateien, alle Dateinamen und die Nachrichten aller Commits bis dorthin mit gitleaks, dazu Binär- und Exportdateien ausserhalb von `brand/`. |
-| `check`         | Build und `pnpm check` mit der Version von Node.js für die Entwicklung.                                                                                                                  |
+| `check`         | Build und `pnpm check` mit der Version von Node.js für die Entwicklung, in einem Netz-Namensraum nur mit Loopback (ADR 0052).                                                            |
 | `compat`        | Dasselbe mit der nächsten Linie von Node.js.                                                                                                                                             |
 | `minimum`       | Dasselbe mit der ältesten unterstützten Version von Node.js.                                                                                                                             |
 | `deps-review`   | Neue oder geänderte Abhängigkeiten auf bekannte Schwachstellen.                                                                                                                          |

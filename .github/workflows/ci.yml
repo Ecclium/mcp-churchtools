@@ -185,8 +185,13 @@ jobs:
         # pnpm can write to pnpm-workspace.yaml during an install. A change
         # to a protection setting must fail here, not pass unseen.
         run: git diff --exit-code
-      - name: Build, then run every check
-        run: pnpm run ci:check
+      - name: Build, then run every check without network
+        # Build and checks run in a network namespace with loopback only, so
+        # a test or tool that opens a real connection fails here (ADR 0052).
+        # Checkout, mise and the install above still have the network.
+        env:
+          MISE_OFFLINE: 1
+        run: bash scripts/ci/without-network.sh pnpm run ci:check
       - name: Check that the checks changed no tracked file
         run: git diff --exit-code
 
@@ -212,8 +217,13 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Check that the install changed no tracked file
         run: git diff --exit-code
-      - name: Build, then run every check
-        run: pnpm run ci:check
+      - name: Build, then run every check without network
+        # Build and checks run in a network namespace with loopback only, so
+        # a test or tool that opens a real connection fails here (ADR 0052).
+        # Checkout, mise and the install above still have the network.
+        env:
+          MISE_OFFLINE: 1
+        run: bash scripts/ci/without-network.sh pnpm run ci:check
       - name: Check that the checks changed no tracked file
         run: git diff --exit-code
 
@@ -239,8 +249,13 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Check that the install changed no tracked file
         run: git diff --exit-code
-      - name: Build, then run every check
-        run: pnpm run ci:check
+      - name: Build, then run every check without network
+        # Build and checks run in a network namespace with loopback only, so
+        # a test or tool that opens a real connection fails here (ADR 0052).
+        # Checkout, mise and the install above still have the network.
+        env:
+          MISE_OFFLINE: 1
+        run: bash scripts/ci/without-network.sh pnpm run ci:check
       - name: Check that the checks changed no tracked file
         run: git diff --exit-code
 
