@@ -186,6 +186,8 @@ export interface ResponseOptions {
   /** Default: keys the specification declares. */
   readonly keys?: KeyPolicy;
   readonly booleanValues?: boolean;
+  /** Whether texts show the features of a date, see {@link describe}. */
+  readonly textFormats?: boolean;
 }
 
 /**
@@ -222,6 +224,7 @@ export function describeResponse(
             schemas,
             keys: options.keys ?? 'specification',
             booleanValues: options.booleanValues ?? false,
+            textFormats: options.textFormats ?? false,
           })
         : response.kind,
   };

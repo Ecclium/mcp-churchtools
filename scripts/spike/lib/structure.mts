@@ -56,6 +56,71 @@ export interface DescribeOptions {
   readonly keys: KeyPolicy;
   /** Whether true and false are shown, as for rights of the service account. */
   readonly booleanValues?: boolean;
+  /**
+   * Whether a text that is not empty also shows the features of a date
+   * or a date with time. Off by default, so the outputs of the probes
+   * that do not ask for it stay the same.
+   */
+  readonly textFormats?: boolean;
+}
+
+/** Words the features of a text may contain. */
+export const textFormatWords = [
+  'format',
+  'Datum',
+  'Datum mit Zeit',
+  'anderer Text',
+  'trenner',
+  'T',
+  'Leerzeichen',
+  'sekunden',
+  'ja',
+  'nein',
+  'bruchteile',
+  'keine',
+  '1-3 Stellen',
+  'mehr',
+  'zone',
+  'Z',
+  'Versatz',
+] as const;
+
+const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+const dateTimePattern =
+  /^\d{4}-\d{2}-\d{2}([T ])\d{2}:\d{2}(:\d{2})?(?:\.(\d+))?(Z|[+-]\d{2}:?\d{2})?$/;
+
+/**
+ * Describes the features of a text that is not empty, never the text.
+ *
+ * Both patterns match the whole text. A date is `JJJJ-MM-TT`. A date with
+ * time also tells the separator, whether there are seconds, how many
+ * digits of a fraction, and whether a zone follows as `Z` or as an offset.
+ * Every other text is «anderer Text».
+ *
+ * @param text - A text from a response.
+ * @returns The features as fixed words.
+ */
+export function textFeatures(text: string): Readonly<Record<string, string>> {
+  if (datePattern.test(text)) {
+    return { format: 'Datum' };
+  }
+  const match = dateTimePattern.exec(text);
+  if (match === null) {
+    return { format: 'anderer Text' };
+  }
+  const [, separator, seconds, fraction, zone] = match;
+  return {
+    format: 'Datum mit Zeit',
+    trenner: separator === 'T' ? 'T' : 'Leerzeichen',
+    sekunden: seconds === undefined ? 'nein' : 'ja',
+    bruchteile:
+      fraction === undefined
+        ? 'keine'
+        : fraction.length <= 3
+          ? '1-3 Stellen'
+          : 'mehr',
+    zone: zone === undefined ? 'keine' : zone === 'Z' ? 'Z' : 'Versatz',
+  };
 }
 
 /** Words that every description may contain. */
@@ -108,6 +173,9 @@ export function describe(
   options: DescribeOptions,
 ): Json {
   options.guard.allowFixed(...structureWords);
+  if (options.textFormats === true) {
+    options.guard.allowFixed(...textFormatWords);
+  }
   return describeAt(value, schema, options, 0);
 }
 
@@ -132,7 +200,12 @@ function describeAt(
     return { typ: 'Zahl' };
   }
   if (typeof value === 'string') {
-    return { typ: 'Text', inhalt: value === '' ? 'leer' : 'nicht leer' };
+    if (value === '') {
+      return { typ: 'Text', inhalt: 'leer' };
+    }
+    return options.textFormats === true
+      ? { typ: 'Text', inhalt: 'nicht leer', ...textFeatures(value) }
+      : { typ: 'Text', inhalt: 'nicht leer' };
   }
   if (Array.isArray(value)) {
     return describeList(value, schema, options, depth);
