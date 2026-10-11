@@ -214,6 +214,10 @@ const probes: readonly {
     code: 'mcp.server.registerCapabilities({ tools: {} });',
     concerns: ['mcp-register'],
   },
+  {
+    code: 'resource.readCallback = async () => ({ contents: [] });',
+    concerns: ['mcp-register'],
+  },
 
   { code: 'let count = 0;', concerns: ['module-state'] },
   { code: 'export let count = 0;', concerns: ['module-state'] },
