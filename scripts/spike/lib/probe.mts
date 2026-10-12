@@ -11,6 +11,11 @@
  * gets an opaque handle instead of a write client. Only the guard turns
  * that handle into a client that writes.
  *
+ * A probe that reads personal data likewise passes the checks of the guard
+ * for personal data that need no request. It gets a client for the two
+ * reads of that guard only, and an opaque handle. Only that guard turns
+ * the handle into a client that reaches persons, groups and search.
+ *
  * @packageDocumentation
  */
 import { homedir, userInfo } from 'node:os';
@@ -37,8 +42,22 @@ import {
   type WriteAccess,
   type WriteSettings,
 } from './gate.mts';
+import { SpikeError } from './errors.mts';
 import { Guard, type Json } from './guard.mts';
-import { createClient, type Client, type FetchFunction } from './http.mts';
+import {
+  createClient,
+  createGateClient,
+  type Client,
+  type FetchFunction,
+} from './http.mts';
+import { operations } from './operations.mts';
+import {
+  checkPersonsEnvironment,
+  createPersonsAccess,
+  personsGateOperations,
+  type PersonsAccess,
+  type PersonsSettings,
+} from './persons-gate.mts';
 import {
   installCrashHandlers,
   integrityLines,
@@ -50,6 +69,10 @@ import {
 /** What a probe gets to do its work. */
 export interface ProbeContext {
   readonly origin: string;
+  /**
+   * The client that reads. For a probe that reads personal data it
+   * reaches only the two reads of the guard for personal data.
+   */
   readonly client: Client;
   readonly guard: Guard;
   readonly env: Environment;
@@ -58,6 +81,8 @@ export interface ProbeContext {
   readonly state: SpikeState | undefined;
   /** For a probe of the write account: the handle for the guard. */
   readonly write: WriteSetup | undefined;
+  /** For a probe that reads personal data: the handle for its guard. */
+  readonly persons: PersonsSetup | undefined;
   /** Waits, for example between two writes. Replaceable in tests. */
   readonly wait: (milliseconds: number) => Promise<void>;
 }
@@ -68,6 +93,12 @@ export interface WriteSetup {
   readonly settings: WriteSettings;
 }
 
+/** What a probe that reads personal data gets for the guard. */
+export interface PersonsSetup {
+  readonly access: PersonsAccess;
+  readonly settings: PersonsSettings;
+}
+
 /** A probe: its name, how it uses the state, and its work. */
 export interface ProbeDefinition {
   readonly name: string;
@@ -75,6 +106,8 @@ export interface ProbeDefinition {
   readonly state: 'create' | 'read';
   /** Which account the probe runs with. Default: the read account. */
   readonly account?: 'read' | 'write';
+  /** Set for the probe that reads persons, groups and search. */
+  readonly personalData?: true;
   readonly run: (context: ProbeContext) => Promise<Json>;
 }
 
@@ -182,9 +215,16 @@ export async function runProbe(
   try {
     checkNodeEnvironment(env);
     const origin = readOrigin(env);
+    if (definition.personalData === true && definition.account === 'write') {
+      throw new SpikeError('INTERN');
+    }
     const settings =
       definition.account === 'write'
         ? checkWriteEnvironment(env, origin)
+        : undefined;
+    const personsSettings =
+      definition.personalData === true
+        ? checkPersonsEnvironment(env, origin)
         : undefined;
     const token = readToken(
       env,
@@ -204,12 +244,18 @@ export async function runProbe(
       // The OpenAPI document in the state describes the API, see the README.
       guard.blockAll({ instance: state.instance, version: state.version });
     }
-    const client = createClient({
-      origin,
-      token,
-      guard,
-      fetch: dependencies.fetch,
-    });
+    const options = { origin, token, guard, fetch: dependencies.fetch };
+    const client =
+      personsSettings === undefined
+        ? createClient(options)
+        : createGateClient(
+            options,
+            personsGateOperations.map((name) => operations[name].template),
+          );
+    const persons =
+      personsSettings === undefined
+        ? undefined
+        : { access: createPersonsAccess(options), settings: personsSettings };
     const write =
       settings === undefined
         ? undefined
@@ -228,6 +274,7 @@ export async function runProbe(
       statePath: path,
       state,
       write,
+      persons,
       wait:
         dependencies.wait ??
         ((milliseconds) =>

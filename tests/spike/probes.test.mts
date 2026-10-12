@@ -459,6 +459,13 @@ describe('the probes against a synthetic instance', () => {
         wikiPageCreate: 'dokumentiert',
         wikiPageUpdate: 'dokumentiert',
         wikiPageDelete: 'dokumentiert',
+        persons: 'dokumentiert',
+        person: 'dokumentiert',
+        personGroups: 'dokumentiert',
+        groups: 'dokumentiert',
+        group: 'dokumentiert',
+        groupMembers: 'dokumentiert',
+        search: 'dokumentiert',
       },
       state: 'angelegt',
     });

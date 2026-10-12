@@ -105,6 +105,32 @@ export const hints = {
     'Abbruch: Die Instanz dokumentiert eine Operation nicht, mit der die Probe ihre Seiten zurückliest. Es wurde nichts geschrieben.',
   schreibenAbgebrochen:
     'Abbruch nach einer schreibenden Anfrage. Es folgt keine weitere. Prüfen Sie den Schreibbereich und räumen Sie mit 07-wiki-cleanup und derselben Schreib-State-Datei auf.',
+  personenSchalterFehlt:
+    'Abbruch: ECCLIUM_SPIKE_ALLOW_PERSONS fehlt. Die Probe für Personen und Gruppen läuft nur mit diesem Schalter. Es wurden keine Personendaten gelesen.',
+  personenSchalterFalsch:
+    'Abbruch: ECCLIUM_SPIKE_ALLOW_PERSONS passt nicht zum Host. Tippen Sie den ersten Teil des Hosts von Hand, nicht aus der Variablen der Adresse. Es wurden keine Personendaten gelesen.',
+  personIdFehlt:
+    'Abbruch: ECCLIUM_SPIKE_PERSON_ID fehlt oder ist keine positive ganze Zahl. Es wurden keine Personendaten gelesen.',
+  gruppenIdFehlt:
+    'Abbruch: ECCLIUM_SPIKE_GROUP_ID fehlt oder ist keine positive ganze Zahl. Es wurden keine Personendaten gelesen.',
+  andereGruppenIdFehlt:
+    'Abbruch: ECCLIUM_SPIKE_OTHER_GROUP_ID fehlt oder ist keine positive ganze Zahl. Es wurden keine Personendaten gelesen.',
+  gruppenGleich:
+    'Abbruch: ECCLIUM_SPIKE_GROUP_ID und ECCLIUM_SPIKE_OTHER_GROUP_ID nennen dieselbe Gruppe. Es wurden keine Personendaten gelesen.',
+  personenWaechterOperationFehlt:
+    'Abbruch: Die Instanz dokumentiert eine Operation nicht, die der Wächter für Personendaten braucht. Sie gilt deshalb als produktiv. Es wurden keine Personendaten gelesen.',
+  personenWaechterAntwortUnerwartet:
+    'Abbruch: Eine Antwort, die der Wächter für Personendaten prüft, hat nicht die dokumentierte Form. Die Instanz gilt deshalb als produktiv. Es wurden keine Personendaten gelesen.',
+  personenKennkategorieFehlt:
+    'Abbruch: Das Konto sieht keine Kategorie «testinstanz-kennung». Die Instanz gilt deshalb als produktiv. Es wurden keine Personendaten gelesen.',
+  personenKennkategorieMehrfach:
+    'Abbruch: Das Konto sieht mehr als eine Kategorie «testinstanz-kennung». Es wurden keine Personendaten gelesen.',
+  personenKennkategorieBearbeitbar:
+    'Abbruch: Das Konto darf die Kennkategorie bearbeiten oder löschen. Es darf sie nur sehen. Es wurden keine Personendaten gelesen.',
+  personenWeitereKategorien:
+    'Abbruch: Das Konto sieht ausser der Kennkategorie weitere Kategorien. Schränken Sie seine Rechte ein, wie im README beschrieben. Es wurden keine Personendaten gelesen.',
+  personenZuWeitBerechtigt:
+    'Abbruch: Die Rechte des Kontos passen nicht. Erlaubt sind genau: das Wiki und die Kennkategorie sehen, dazu die Leserechte für Personen und Gruppen aus dem README. Richten Sie die Rechte so ein, wie im README beschrieben. Es wurden keine Personendaten gelesen.',
   spezifikationUngueltig:
     'Abbruch: Die Instanz liefert unter dem erwarteten Pfad kein OpenAPI-Dokument.',
   netz: 'Abbruch: Die Instanz ist nicht erreichbar. Code siehe oben.',

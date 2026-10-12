@@ -8,6 +8,12 @@
  * stops. Only the write probes call the write operations, through the
  * client the guard of the test environment hands out (ADR 0049).
  *
+ * The operations on persons, groups and search are marked `personal`:
+ * their answers carry personal data. The general client refuses every path
+ * below {@link personalPrefixes}. Only the guard for personal data hands
+ * out a client that reaches them, and only to the probe that reads persons
+ * on the test instance (ADR 0049).
+ *
  * @packageDocumentation
  */
 import type { Method } from './spec.mts';
@@ -16,6 +22,8 @@ import type { Method } from './spec.mts';
 export interface OperationTemplate {
   readonly method: Method;
   readonly template: string;
+  /** Set for operations whose answers carry personal data. */
+  readonly personal?: true;
 }
 
 /** Where every ChurchTools instance publishes its OpenAPI document. */
@@ -53,7 +61,32 @@ export const operations = {
     method: 'delete',
     template: '/api/wiki/categories/{}/pages/{}',
   },
+  persons: { method: 'get', template: '/api/persons', personal: true },
+  person: { method: 'get', template: '/api/persons/{}', personal: true },
+  personGroups: {
+    method: 'get',
+    template: '/api/persons/{}/groups',
+    personal: true,
+  },
+  groups: { method: 'get', template: '/api/groups', personal: true },
+  group: { method: 'get', template: '/api/groups/{}', personal: true },
+  groupMembers: {
+    method: 'get',
+    template: '/api/groups/{}/members',
+    personal: true,
+  },
+  search: { method: 'get', template: '/api/search', personal: true },
 } as const satisfies Readonly<Record<string, OperationTemplate>>;
 
 /** The name of one operation. */
 export type OperationName = keyof typeof operations;
+
+/**
+ * The paths below which answers carry personal data. Every operation
+ * marked `personal` lies below one of them.
+ */
+export const personalPrefixes = [
+  '/api/persons',
+  '/api/groups',
+  '/api/search',
+] as const;

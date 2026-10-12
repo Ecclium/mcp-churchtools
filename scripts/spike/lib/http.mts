@@ -12,6 +12,12 @@
  * Paths come only from fixed templates. An ID taken from a response may
  * fill a template only if it has the form of an ID, and it is encoded.
  *
+ * The client of every probe refuses the paths whose answers carry personal
+ * data, before any request. A probe that reads persons first gets a client
+ * for the two reads of the guard for personal data only. The guard alone
+ * hands out {@link createPersonsClient}, once its checks have passed
+ * (ADR 0049).
+ *
  * The write probes get a second client, {@link createWriteClient}, from the
  * guard of the test environment once all its checks have passed (ADR 0049).
  * It sends only the three write operations of the spike, with a JSON body
@@ -22,7 +28,7 @@
  */
 import { SpikeError, type ErrorCode } from './errors.mts';
 import type { Guard, Json } from './guard.mts';
-import { operations } from './operations.mts';
+import { operations, personalPrefixes } from './operations.mts';
 import { isObject } from './spec.mts';
 
 /** The fetch function, replaceable in tests. */
@@ -340,21 +346,69 @@ function baseHeaders(): Headers {
 }
 
 /**
- * Creates the client for one instance.
+ * Tells whether a path lies below one of the {@link personalPrefixes}.
  *
- * @param options - Origin, token, guard and limits.
- * @returns A client that sends only the requests described above.
- * @example
- * ```ts
- * const client = createClient({ origin, token, guard });
- * const response = await client.get({ path: pathFor('/api/whoami') });
- * ```
+ * The path is compared decoded once, without doubled slashes and ignoring
+ * case. A path that cannot be decoded counts as personal. Other spellings,
+ * such as dot segments or a semicolon that only appear after decoding, are
+ * not resolved here: the clients refuse every path that still carries `%`
+ * or `;` or a segment starting with a dot, see {@link isPlainPath}. No probe
+ * builds such a path, because {@link pathFor} and the fixed templates do not.
+ *
+ * @param pathname - The path of a URL, as `URL.pathname` gives it.
+ * @returns Whether an answer to this path may carry personal data.
  */
-export function createClient(options: ClientOptions): Client {
+export function isPersonalPath(pathname: string): boolean {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    return true;
+  }
+  const path = decoded.replace(/\/{2,}/g, '/').toLowerCase();
+  return personalPrefixes.some(
+    (prefix) =>
+      path.startsWith(prefix) && !/[a-z0-9_]/.test(path.charAt(prefix.length)),
+  );
+}
+
+/**
+ * Tells whether a path has only the plain form the probes build: no `%`
+ * or `;`, and no segment that starts with a dot. A server or a proxy could
+ * read any of these as another path. `URL` has already turned `\` into
+ * `/` and resolved segments of dots before this check.
+ *
+ * @param pathname - The path of a URL, as `URL.pathname` gives it.
+ * @returns Whether the path has the plain form.
+ */
+export function isPlainPath(pathname: string): boolean {
+  return (
+    !/[%;]/.test(pathname) &&
+    !pathname.split('/').some((segment) => segment.startsWith('.'))
+  );
+}
+
+/** Which paths a client may reach. */
+type Reach =
+  | { readonly kind: 'ohne Personendaten' }
+  | { readonly kind: 'nur'; readonly paths: readonly string[] }
+  | { readonly kind: 'mit Personendaten' };
+
+function readClient(options: ClientOptions, reach: Reach): Client {
   return {
     async get(request: ProbeRequest): Promise<ProbeResponse> {
       const url = new URL(request.path, options.origin);
-      if (!request.path.startsWith('/') || url.origin !== options.origin) {
+      if (
+        !request.path.startsWith('/') ||
+        url.origin !== options.origin ||
+        !isPlainPath(url.pathname)
+      ) {
+        throw new SpikeError('INTERN');
+      }
+      if (
+        (reach.kind !== 'mit Personendaten' && isPersonalPath(url.pathname)) ||
+        (reach.kind === 'nur' && !reach.paths.includes(url.pathname))
+      ) {
         throw new SpikeError('INTERN');
       }
       for (const [name, value] of request.query ?? []) {
@@ -376,6 +430,50 @@ export function createClient(options: ClientOptions): Client {
       });
     },
   };
+}
+
+/**
+ * Creates the client for one instance. It refuses every path whose answer
+ * may carry personal data, see {@link isPersonalPath}.
+ *
+ * @param options - Origin, token, guard and limits.
+ * @returns A client that sends only the requests described above.
+ * @example
+ * ```ts
+ * const client = createClient({ origin, token, guard });
+ * const response = await client.get({ path: pathFor('/api/whoami') });
+ * ```
+ */
+export function createClient(options: ClientOptions): Client {
+  return readClient(options, { kind: 'ohne Personendaten' });
+}
+
+/**
+ * Creates a client that reaches only the given paths, and none with
+ * personal data. A probe that reads persons gets it for the reads of the
+ * guard for personal data, before that guard has passed.
+ *
+ * @param options - Origin, token, guard and limits.
+ * @param paths - The only paths it sends to, exactly, without query.
+ * @returns A client limited to these paths.
+ */
+export function createGateClient(
+  options: ClientOptions,
+  paths: readonly string[],
+): Client {
+  return readClient(options, { kind: 'nur', paths });
+}
+
+/**
+ * Creates the client that reads persons, groups and search. Only the
+ * guard for personal data calls this, after all its checks have passed
+ * (ADR 0049).
+ *
+ * @param options - Origin, token, guard and limits.
+ * @returns A client that also reaches the paths with personal data.
+ */
+export function createPersonsClient(options: ClientOptions): Client {
+  return readClient(options, { kind: 'mit Personendaten' });
 }
 
 function preconditionHeader(

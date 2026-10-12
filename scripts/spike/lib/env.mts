@@ -39,6 +39,10 @@ export const spikeVariables = [
   'ECCLIUM_SPIKE_WRITE_TOKEN_FILE',
   'ECCLIUM_SPIKE_WRITE_CATEGORY_ID',
   'ECCLIUM_SPIKE_WRITE_STATE_FILE',
+  'ECCLIUM_SPIKE_ALLOW_PERSONS',
+  'ECCLIUM_SPIKE_PERSON_ID',
+  'ECCLIUM_SPIKE_GROUP_ID',
+  'ECCLIUM_SPIKE_OTHER_GROUP_ID',
 ] as const;
 
 /** The environment of a probe, as far as the probes read it. */
@@ -144,6 +148,35 @@ export function readCategoryId(
   }
   if (!/^[1-9]\d{0,9}$/.test(raw)) {
     throw new SpikeError('KONFIGURATION', hint);
+  }
+  return Number(raw);
+}
+
+/** The variables that name a synthetic person or group of the test instance. */
+export type ObjectIdVariable =
+  | 'ECCLIUM_SPIKE_PERSON_ID'
+  | 'ECCLIUM_SPIKE_GROUP_ID'
+  | 'ECCLIUM_SPIKE_OTHER_GROUP_ID';
+
+const objectIdHints: Readonly<Record<ObjectIdVariable, HintKey>> = {
+  ECCLIUM_SPIKE_PERSON_ID: 'personIdFehlt',
+  ECCLIUM_SPIKE_GROUP_ID: 'gruppenIdFehlt',
+  ECCLIUM_SPIKE_OTHER_GROUP_ID: 'andereGruppenIdFehlt',
+};
+
+/**
+ * Reads the ID of a synthetic person or group from the environment. The
+ * variable must be set.
+ *
+ * @param env - Environment of the process.
+ * @param name - Name of the variable.
+ * @returns The ID.
+ * @throws {SpikeError} If the variable is missing or no positive whole number.
+ */
+export function readObjectId(env: Environment, name: ObjectIdVariable): number {
+  const raw = env[name] ?? '';
+  if (!/^[1-9]\d{0,9}$/.test(raw)) {
+    throw new SpikeError('KONFIGURATION', objectIdHints[name]);
   }
   return Number(raw);
 }

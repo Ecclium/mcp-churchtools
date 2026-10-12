@@ -5,6 +5,7 @@ import { Schemas, asOpenApi } from '../../scripts/spike/lib/spec.mts';
 import {
   countClass,
   describe as describeValue,
+  textFeatures,
 } from '../../scripts/spike/lib/structure.mts';
 import { makeCanaries, specification } from './support.mts';
 
@@ -179,5 +180,127 @@ describe('describe', () => {
         }),
       ),
     ).toContain('zu tief');
+  });
+
+  it('describes 50 fields of an object by default and more on request', () => {
+    const guard = new Guard();
+    const names = Array.from(
+      { length: 60 },
+      (_, index) => `feld${String(index)}`,
+    );
+    const schema = {
+      type: 'object',
+      properties: Object.fromEntries(
+        names.map((name) => [name, { type: 'string' }]),
+      ),
+    };
+    const value = Object.fromEntries(names.map((name) => [name, 'x']));
+    const cut = describeValue(value, schema, {
+      guard,
+      schemas,
+      keys: 'specification',
+    }) as { felder: Record<string, unknown>; weitereFelder?: string };
+    expect(Object.keys(cut.felder)).toHaveLength(50);
+    expect(cut.weitereFelder).toBe('10–99');
+    const whole = describeValue(value, schema, {
+      guard,
+      schemas,
+      keys: 'specification',
+      maxFields: 200,
+    }) as { felder: Record<string, unknown>; weitereFelder?: string };
+    expect(Object.keys(whole.felder)).toEqual(names);
+    expect(whole.weitereFelder).toBeUndefined();
+  });
+});
+
+describe('textFeatures', () => {
+  it.each([
+    ['2026-10-11', { format: 'Datum' }],
+    [
+      '2026-10-11T08:15:00Z',
+      {
+        format: 'Datum mit Zeit',
+        trenner: 'T',
+        sekunden: 'ja',
+        bruchteile: 'keine',
+        zone: 'Z',
+      },
+    ],
+    [
+      '2026-10-11 08:15',
+      {
+        format: 'Datum mit Zeit',
+        trenner: 'Leerzeichen',
+        sekunden: 'nein',
+        bruchteile: 'keine',
+        zone: 'keine',
+      },
+    ],
+    [
+      '2026-10-11T08:15:00.123+02:00',
+      {
+        format: 'Datum mit Zeit',
+        trenner: 'T',
+        sekunden: 'ja',
+        bruchteile: '1-3 Stellen',
+        zone: 'Versatz',
+      },
+    ],
+    [
+      '2026-10-11T08:15:00.123456+0200',
+      {
+        format: 'Datum mit Zeit',
+        trenner: 'T',
+        sekunden: 'ja',
+        bruchteile: 'mehr',
+        zone: 'Versatz',
+      },
+    ],
+    ['11.10.2026', { format: 'anderer Text' }],
+    ['2026-10-11 und mehr', { format: 'anderer Text' }],
+    ['vor 2026-10-11', { format: 'anderer Text' }],
+    ['vor 2026-10-11T08:15', { format: 'anderer Text' }],
+    ['2026-10-11T08:15:00Z x', { format: 'anderer Text' }],
+  ])('describes %s by features only', (text, expected) => {
+    expect(textFeatures(text)).toEqual(expected);
+  });
+});
+
+describe('describe with the features of texts', () => {
+  const canaries = makeCanaries();
+  const birthday = `19${String(canaries.number).slice(0, 2)}-04-17`;
+  const value = { firstName: canaries.personName, birthday };
+
+  it('shows the features of a date, never the date', () => {
+    const guard = new Guard();
+    guard.blockAll(value);
+    const output = describeValue(value, person, {
+      guard,
+      schemas,
+      keys: 'specification',
+      textFormats: true,
+    });
+    expect(output).toEqual({
+      typ: 'Objekt',
+      felder: {
+        firstName: {
+          typ: 'Text',
+          inhalt: 'nicht leer',
+          format: 'anderer Text',
+        },
+        birthday: { typ: 'Text', inhalt: 'nicht leer', format: 'Datum' },
+      },
+    });
+    expect(guard.check(output)).toEqual([]);
+    expect(JSON.stringify(output)).not.toContain(birthday);
+  });
+
+  it('keeps every other description as it was', () => {
+    const output = describeValue(value, person, {
+      guard: new Guard(),
+      schemas,
+      keys: 'specification',
+    });
+    expect(JSON.stringify(output)).not.toContain('format');
   });
 });

@@ -281,9 +281,168 @@ export const specification = {
         },
       },
     },
+    '/persons': {
+      get: {
+        parameters: [
+          {
+            name: 'ids[]',
+            in: 'query',
+            schema: { type: 'array', items: { type: 'integer' } },
+          },
+          { name: 'query', in: 'query', schema: { type: 'string' } },
+          { name: 'email', in: 'query', schema: { type: 'string' } },
+          { $ref: '#/components/parameters/Page' },
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', maximum: 500 },
+          },
+        ],
+        responses: {
+          '200': json({ $ref: '#/components/schemas/PersonList' }),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+    },
+    '/persons/{personId}': {
+      get: {
+        parameters: [
+          {
+            name: 'personId',
+            in: 'path',
+            required: true,
+            schema: { type: 'integer' },
+          },
+        ],
+        responses: {
+          '200': json({
+            type: 'object',
+            properties: { data: { $ref: '#/components/schemas/Person' } },
+          }),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+    },
+    '/persons/{personId}/groups': {
+      get: {
+        parameters: [
+          {
+            name: 'personId',
+            in: 'path',
+            required: true,
+            schema: { type: 'integer' },
+          },
+        ],
+        responses: {
+          '200': json({ $ref: '#/components/schemas/MemberList' }),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+    },
+    '/groups': {
+      get: {
+        parameters: [
+          {
+            name: 'ids[]',
+            in: 'query',
+            schema: { type: 'array', items: { type: 'integer' } },
+          },
+          { name: 'query', in: 'query', schema: { type: 'string' } },
+          { $ref: '#/components/parameters/Page' },
+          { name: 'limit', in: 'query', schema: { type: 'integer' } },
+          {
+            name: 'include[]',
+            in: 'query',
+            schema: {
+              type: 'array',
+              items: { type: 'string', enum: ['roles', 'tags'] },
+            },
+          },
+        ],
+        responses: {
+          '200': json({ $ref: '#/components/schemas/GroupList' }),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+    },
+    '/groups/{groupId}': {
+      parameters: [
+        {
+          name: 'groupId',
+          in: 'path',
+          required: true,
+          schema: { type: 'integer' },
+        },
+      ],
+      get: {
+        responses: {
+          '200': json({
+            type: 'object',
+            properties: { data: { $ref: '#/components/schemas/Group' } },
+          }),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+    },
+    '/groups/{groupId}/members': {
+      parameters: [
+        {
+          name: 'groupId',
+          in: 'path',
+          required: true,
+          schema: { type: 'integer' },
+        },
+      ],
+      get: {
+        parameters: [
+          { $ref: '#/components/parameters/Page' },
+          { name: 'limit', in: 'query', schema: { type: 'integer' } },
+          { name: 'query', in: 'query', schema: { type: 'string' } },
+          {
+            name: 'personFields[]',
+            in: 'query',
+            schema: { type: 'array', items: { type: 'string' } },
+          },
+        ],
+        responses: {
+          '200': json({ $ref: '#/components/schemas/MemberList' }),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+    },
+    '/search': {
+      get: {
+        parameters: [
+          {
+            name: 'query',
+            in: 'query',
+            required: true,
+            schema: { type: 'string' },
+          },
+          {
+            name: 'domain_types[]',
+            in: 'query',
+            schema: {
+              type: 'array',
+              items: { type: 'string', enum: ['person', 'group', 'song'] },
+            },
+          },
+        ],
+        responses: {
+          '200': json({ $ref: '#/components/schemas/SearchList' }),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+    },
   },
   components: {
-    parameters: { Page: { name: 'page', in: 'query' } },
+    parameters: {
+      Page: {
+        name: 'page',
+        in: 'query',
+        schema: { type: 'integer', minimum: 1 },
+      },
+    },
     schemas: {
       Info: {
         type: 'object',
@@ -296,9 +455,95 @@ export const specification = {
         type: 'object',
         properties: {
           id: { type: 'integer' },
+          guid: { type: 'string' },
           firstName: { type: 'string' },
           lastName: { type: 'string' },
           email: { type: 'string' },
+          birthday: { type: 'string' },
+          meta: {
+            type: 'object',
+            properties: { modifiedDate: { type: 'string' } },
+          },
+        },
+      },
+      Group: {
+        type: 'object',
+        properties: {
+          '@deprecated': { type: 'object' },
+          id: { type: 'integer' },
+          guid: { type: 'string' },
+          identifier: { type: 'string' },
+          name: { type: 'string' },
+        },
+      },
+      Membership: {
+        type: 'object',
+        properties: {
+          '@deprecated': { type: 'object' },
+          id: { type: 'integer' },
+          personId: { type: 'integer' },
+          person: { $ref: '#/components/schemas/Person' },
+          group: { $ref: '#/components/schemas/Group' },
+          memberStartDate: { type: 'string' },
+        },
+      },
+      SearchResult: {
+        type: 'object',
+        properties: {
+          domainType: { type: 'string' },
+          domainIdentifier: { type: 'string' },
+          title: { type: 'string' },
+          domainAttributes: { type: 'object' },
+        },
+      },
+      ListMeta: {
+        type: 'object',
+        properties: {
+          count: { type: 'integer' },
+          pagination: { $ref: '#/components/schemas/Pagination' },
+        },
+      },
+      PersonList: {
+        type: 'object',
+        properties: {
+          data: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/Person' },
+          },
+          meta: { $ref: '#/components/schemas/ListMeta' },
+        },
+      },
+      GroupList: {
+        type: 'object',
+        properties: {
+          data: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/Group' },
+          },
+          meta: { $ref: '#/components/schemas/ListMeta' },
+        },
+      },
+      MemberList: {
+        type: 'object',
+        properties: {
+          data: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/Membership' },
+          },
+          meta: { $ref: '#/components/schemas/ListMeta' },
+        },
+      },
+      SearchList: {
+        type: 'object',
+        properties: {
+          data: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/SearchResult' },
+          },
+          meta: {
+            type: 'object',
+            properties: { count: { type: 'integer' } },
+          },
         },
       },
       Error: {

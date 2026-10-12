@@ -63,7 +63,7 @@ export const pageTitlePrefix = 'spike-schreibprobe';
 export const autoPageTitle = 'main';
 
 /** The base URL of the README, never a real instance. */
-const placeholderHost = 'example.church.tools';
+export const placeholderHost = 'example.church.tools';
 
 /** One line typed by the person who runs a probe. Replaceable in tests. */
 export interface Input {
@@ -133,18 +133,11 @@ export function checkWriteEnvironment(
   env: Environment,
   origin: string,
 ): WriteSettings {
-  const host = new URL(origin).hostname;
-  if (host === placeholderHost) {
-    throw new SpikeError('KONFIGURATION', 'platzhalterHost');
-  }
-  const switchValue = env['ECCLIUM_SPIKE_ALLOW_WRITE'] ?? '';
-  if (switchValue === '') {
-    throw new SpikeError('KONFIGURATION', 'schalterFehlt');
-  }
-  const [label] = host.split('.');
-  if (label === undefined || switchValue.toLowerCase() !== label) {
-    throw new SpikeError('KONFIGURATION', 'schalterFalsch');
-  }
+  checkSwitch(env, origin, {
+    variable: 'ECCLIUM_SPIKE_ALLOW_WRITE',
+    missing: 'schalterFehlt',
+    wrong: 'schalterFalsch',
+  });
   if ((env['ECCLIUM_SPIKE_TOKEN_FILE'] ?? '') !== '') {
     throw new SpikeError('KONFIGURATION', 'zweiTokenVariablen');
   }
@@ -155,15 +148,65 @@ export function checkWriteEnvironment(
   };
 }
 
+/** The variable of a switch and the hints if it is missing or wrong. */
+export interface SwitchHints {
+  readonly variable:
+    'ECCLIUM_SPIKE_ALLOW_WRITE' | 'ECCLIUM_SPIKE_ALLOW_PERSONS';
+  readonly missing: HintKey;
+  readonly wrong: HintKey;
+}
+
+/**
+ * Checks that the base URL is not the placeholder of the README and that
+ * a switch equals the first label of the host, so a mistyped base URL
+ * stops the run before any request.
+ *
+ * @param env - Environment of the process.
+ * @param origin - Origin from the base URL.
+ * @param hints - The switch variable and its hints.
+ * @throws {SpikeError} If the base URL is the placeholder, or the switch is missing or does not fit the host.
+ */
+export function checkSwitch(
+  env: Environment,
+  origin: string,
+  hints: SwitchHints,
+): void {
+  const host = new URL(origin).hostname;
+  if (host === placeholderHost) {
+    throw new SpikeError('KONFIGURATION', 'platzhalterHost');
+  }
+  const switchValue = env[hints.variable] ?? '';
+  if (switchValue === '') {
+    throw new SpikeError('KONFIGURATION', hints.missing);
+  }
+  const [label] = host.split('.');
+  if (label === undefined || switchValue.toLowerCase() !== label) {
+    throw new SpikeError('KONFIGURATION', hints.wrong);
+  }
+}
+
 function refuse(hint: HintKey): SpikeError {
   return new SpikeError('KONFIGURATION', hint);
 }
 
-function isId(value: unknown): value is number {
+/**
+ * Tells whether a value is an ID: a positive safe whole number.
+ *
+ * @param value - Any value.
+ * @returns Whether it is an ID.
+ */
+export function isId(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
 }
 
-function sameIds(value: unknown, expected: readonly number[]): boolean {
+/**
+ * Tells whether a value is a list of exactly the given IDs, each once.
+ *
+ * @param value - Any value.
+ * @param expected - The IDs the list must hold.
+ * @returns Whether the list holds exactly these IDs.
+ */
+export function sameIds(value: unknown, expected: readonly number[]): boolean {
   if (!Array.isArray(value) || !value.every(isId)) {
     return false;
   }
@@ -226,37 +269,53 @@ export function rightsWithin(
   return true;
 }
 
-interface Category {
+/** A wiki category as a guard sees it. */
+export interface Category {
   readonly id: number;
   readonly name: string;
   readonly canEdit: boolean;
   readonly canDelete: boolean;
 }
 
-function dataList(response: ProbeResponse): readonly unknown[] {
+function dataList(
+  response: ProbeResponse,
+  unexpected: HintKey,
+): readonly unknown[] {
   const data = isObject(response.body) ? response.body['data'] : undefined;
   if (
     response.status !== 200 ||
     response.kind !== 'JSON' ||
     !Array.isArray(data)
   ) {
-    throw refuse('waechterAntwortUnerwartet');
+    throw refuse(unexpected);
   }
   return data;
 }
 
-function readCategories(response: ProbeResponse): {
+/**
+ * Reads the categories the account can see and whether it may edit master
+ * data.
+ *
+ * @param response - Answer of `GET /api/wiki/categories`.
+ * @param unexpected - Hint if the answer has another form.
+ * @returns The categories and the right to edit master data.
+ * @throws {SpikeError} If the answer has another form than documented.
+ */
+export function readCategories(
+  response: ProbeResponse,
+  unexpected: HintKey,
+): {
   readonly categories: readonly Category[];
   readonly editMasterData: boolean;
 } {
-  const entries = dataList(response);
+  const entries = dataList(response, unexpected);
   const body = response.body as JsonObject;
   const permissions = body['permissions'];
   const editMasterData = isObject(permissions)
     ? permissions['editMasterData']
     : undefined;
   if (typeof editMasterData !== 'boolean') {
-    throw refuse('waechterAntwortUnerwartet');
+    throw refuse(unexpected);
   }
   const categories = entries.map((entry): Category => {
     const rights = isObject(entry) ? entry['permissions'] : undefined;
@@ -268,7 +327,7 @@ function readCategories(response: ProbeResponse): {
       typeof rights['canEdit'] !== 'boolean' ||
       typeof rights['canDelete'] !== 'boolean'
     ) {
-      throw refuse('waechterAntwortUnerwartet');
+      throw refuse(unexpected);
     }
     return {
       id: entry['id'],
@@ -280,6 +339,43 @@ function readCategories(response: ProbeResponse): {
   return { categories, editMasterData };
 }
 
+/** The hints if the identification category is missing, double or editable. */
+export interface IdentificationHints {
+  readonly missing: HintKey;
+  readonly multiple: HintKey;
+  readonly editable: HintKey;
+}
+
+/**
+ * Finds the identification category among the visible categories. There
+ * must be exactly one of its fixed name, and the account may neither edit
+ * nor delete it.
+ *
+ * @param categories - The categories the account can see.
+ * @param hints - The hints for each way the check fails.
+ * @returns The identification category.
+ * @throws {SpikeError} If it is missing, appears twice or may be edited or deleted.
+ */
+export function findIdentification(
+  categories: readonly Category[],
+  hints: IdentificationHints,
+): Category {
+  const named = categories.filter(
+    (category) => category.name === identificationCategoryName,
+  );
+  const [identification] = named;
+  if (identification === undefined) {
+    throw refuse(hints.missing);
+  }
+  if (named.length > 1) {
+    throw refuse(hints.multiple);
+  }
+  if (identification.canEdit || identification.canDelete) {
+    throw refuse(hints.editable);
+  }
+  return identification;
+}
+
 /** A page of the write area, as the guard saw it. */
 export interface PageEntry {
   readonly guid: string;
@@ -287,7 +383,7 @@ export interface PageEntry {
 }
 
 function readPages(response: ProbeResponse): readonly PageEntry[] {
-  const entries = dataList(response);
+  const entries = dataList(response, 'waechterAntwortUnerwartet');
   const body = response.body as JsonObject;
   const meta = body['meta'];
   const count = isObject(meta) ? meta['count'] : undefined;
@@ -370,20 +466,13 @@ export async function checkInstance(
 
   const { categories, editMasterData } = readCategories(
     await context.client.get({ path: operations.wikiCategories.template }),
+    'waechterAntwortUnerwartet',
   );
-  const named = categories.filter(
-    (category) => category.name === identificationCategoryName,
-  );
-  const [identification] = named;
-  if (identification === undefined) {
-    throw refuse('kennkategorieFehlt');
-  }
-  if (named.length > 1) {
-    throw refuse('kennkategorieMehrfach');
-  }
-  if (identification.canEdit || identification.canDelete) {
-    throw refuse('kennkategorieBearbeitbar');
-  }
+  const identification = findIdentification(categories, {
+    missing: 'kennkategorieFehlt',
+    multiple: 'kennkategorieMehrfach',
+    editable: 'kennkategorieBearbeitbar',
+  });
   const { writeCategory } = settings;
   if (writeCategory === identification.id) {
     throw refuse('schreibKategorieIstKennung');

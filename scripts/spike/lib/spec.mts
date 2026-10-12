@@ -98,17 +98,94 @@ export function findOperation(
   method: Method,
   template: string,
 ): JsonObject | undefined {
+  const operation = findPathItem(document, method, template)?.[method];
+  return isObject(operation) ? operation : undefined;
+}
+
+/**
+ * Finds the path item that holds an operation, for the parameters it
+ * declares for every operation on its path.
+ *
+ * @param document - The OpenAPI document of the instance.
+ * @param method - HTTP method in lower case.
+ * @param template - Full path including the prefix, such as `/api/persons/{}`.
+ * @returns The path item, or `undefined` if the instance does not document the operation.
+ */
+export function findPathItem(
+  document: OpenApiDocument,
+  method: Method,
+  template: string,
+): JsonObject | undefined {
   const wanted = normalizeTemplate(template);
   const prefix = basePath(document);
   for (const [path, item] of Object.entries(document.paths)) {
-    if (normalizeTemplate(`${prefix}${path}`) === wanted && isObject(item)) {
-      const operation = item[method];
-      if (isObject(operation)) {
-        return operation;
-      }
+    if (
+      normalizeTemplate(`${prefix}${path}`) === wanted &&
+      isObject(item) &&
+      isObject(item[method])
+    ) {
+      return item;
     }
   }
   return undefined;
+}
+
+/** A type of a parameter, as a fixed word. */
+export type ParameterType =
+  | 'Text'
+  | 'ganze Zahl'
+  | 'Zahl'
+  | 'Wahrheitswert'
+  | 'Liste'
+  | 'Objekt'
+  | 'unbekannt';
+
+/** The fixed words of {@link ParameterType}. */
+export const parameterTypes: readonly ParameterType[] = [
+  'Text',
+  'ganze Zahl',
+  'Zahl',
+  'Wahrheitswert',
+  'Liste',
+  'Objekt',
+  'unbekannt',
+];
+
+/** What a probe may know about one declared parameter. */
+export interface ParameterDetails {
+  readonly name: string;
+  /** Where the parameter goes: `query`, `path`, `header` or `cookie`. */
+  readonly location: string;
+  readonly required: boolean;
+  readonly type: ParameterType;
+  /** The type of the entries of a list. */
+  readonly itemType: ParameterType | undefined;
+  readonly deprecated: boolean;
+  /** How many values an enumeration allows, never the values themselves. */
+  readonly enumCount: number | undefined;
+}
+
+function typeWord(value: unknown): ParameterType {
+  // OpenAPI 3.1 allows a list of types, such as ["string", "null"].
+  const type: unknown = Array.isArray(value)
+    ? (value as readonly unknown[]).find((entry) => entry !== 'null')
+    : value;
+  switch (type) {
+    case 'string':
+      return 'Text';
+    case 'integer':
+      return 'ganze Zahl';
+    case 'number':
+      return 'Zahl';
+    case 'boolean':
+      return 'Wahrheitswert';
+    case 'array':
+      return 'Liste';
+    case 'object':
+      return 'Objekt';
+    default:
+      return 'unbekannt';
+  }
 }
 
 /**
@@ -269,6 +346,59 @@ export class Schemas {
       }
     }
     return names;
+  }
+
+  /**
+   * Describes every parameter an operation declares, together with those
+   * its path item declares for every operation on the path.
+   *
+   * A parameter of the operation replaces one of the path item with the
+   * same name and location, as OpenAPI defines it. Type, list entries and
+   * enumeration come from `schema` in OpenAPI 3 and from the parameter
+   * itself in Swagger 2. Of an enumeration only the number of its values
+   * is kept.
+   *
+   * @param operation - The operation object.
+   * @param pathItem - The path item that holds it, if known.
+   * @returns One description per parameter, in declaration order.
+   */
+  parameterDetails(
+    operation: JsonObject,
+    pathItem?: JsonObject,
+  ): readonly ParameterDetails[] {
+    const found = new Map<string, ParameterDetails>();
+    for (const source of [pathItem?.['parameters'], operation['parameters']]) {
+      if (!Array.isArray(source)) {
+        continue;
+      }
+      for (const item of source) {
+        const parameter = this.resolve(item);
+        const name = parameter?.['name'];
+        const location = parameter?.['in'];
+        if (
+          parameter === undefined ||
+          typeof name !== 'string' ||
+          typeof location !== 'string'
+        ) {
+          continue;
+        }
+        const schema = this.resolve(parameter['schema']) ?? parameter;
+        const items = this.resolve(schema['items']);
+        const values = schema['enum'] ?? items?.['enum'];
+        const key = `${location} ${name}`;
+        found.delete(key);
+        found.set(key, {
+          name,
+          location,
+          required: parameter['required'] === true,
+          type: typeWord(schema['type']),
+          itemType: items === undefined ? undefined : typeWord(items['type']),
+          deprecated: parameter['deprecated'] === true,
+          enumCount: Array.isArray(values) ? values.length : undefined,
+        });
+      }
+    }
+    return [...found.values()];
   }
 
   #pointer(reference: string): unknown {

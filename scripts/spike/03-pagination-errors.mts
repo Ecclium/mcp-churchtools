@@ -22,27 +22,19 @@
 import { randomUUID } from 'node:crypto';
 
 import { readCategoryId } from './lib/env.mts';
-import type { Guard, Json } from './lib/guard.mts';
+import type { Json } from './lib/guard.mts';
 import { pathFor, type Client, type ProbeResponse } from './lib/http.mts';
+import {
+  entries,
+  exact,
+  invalidValues,
+  limits,
+  pagination,
+} from './lib/listing.mts';
 import { operations } from './lib/operations.mts';
 import { main, type ProbeDefinition } from './lib/probe.mts';
 import { describeResponse } from './lib/report.mts';
-import {
-  Schemas,
-  findOperation,
-  isObject,
-  type JsonObject,
-} from './lib/spec.mts';
-
-const limits = [1, 2, 100, 1000] as const;
-const invalidValues = [
-  ['page', '0'],
-  ['page', '-1'],
-  ['page', 'x'],
-  ['limit', '0'],
-  ['limit', '-1'],
-  ['limit', 'x'],
-] as const;
+import { Schemas, findOperation, type JsonObject } from './lib/spec.mts';
 
 const words = [
   'probe',
@@ -76,27 +68,6 @@ const words = [
   ...limits,
   ...invalidValues.flat(),
 ];
-
-function entries(body: unknown): number | undefined {
-  const data = isObject(body) ? body['data'] : undefined;
-  return Array.isArray(data) ? data.length : undefined;
-}
-
-function pagination(body: unknown): JsonObject | undefined {
-  const meta = isObject(body) ? body['meta'] : undefined;
-  const value = isObject(meta) ? meta['pagination'] : undefined;
-  return isObject(value) ? value : undefined;
-}
-
-// Exact numbers are allowed here on purpose: the question is how many
-// entries come back and what the instance reports as its limit.
-function exact(guard: Guard, value: number | undefined, missing: string): Json {
-  if (value === undefined) {
-    return missing;
-  }
-  guard.allowFixed(value);
-  return value;
-}
 
 async function listPages(
   client: Client,
