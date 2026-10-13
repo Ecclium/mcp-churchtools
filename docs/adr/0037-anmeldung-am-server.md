@@ -63,4 +63,4 @@ Gewählt ist die dritte Option.
 ## Umsetzung
 
 - `.gitleaks.toml` erkennt Bearer-Tokens in einer Kopfzeile schon heute (Regel `http-bearer-token`) und beschreibt, wo die eigene Regel für die statischen Tokens hinkommt.
-- Die Schnittstelle der Anmeldung folgt in Phase 1, HTTP und OAuth folgen in Phase 7.
+- Die Schnittstelle der Anmeldung steht seit dem 13.10.2026 in `plugin-api`, in `packages/plugin-api/src/context.ts`: `Identity` mit Quelle (`stdio`, `bearer` oder `oauth`), Subjekt und Scopes (`read`, `write`) und der Port `TenantResolver`, der daraus Mandant und Akteur ableitet (ADR 0003). Die Identität im Betrieb über stdio aus der Konfiguration folgt mit der Konfiguration in Phase 1, HTTP und OAuth folgen in Phase 7.
