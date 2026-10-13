@@ -12,4 +12,19 @@
  *
  * @packageDocumentation
  */
-export {};
+export type {
+  Actor,
+  ActorKind,
+  FeatureKey,
+  Identity,
+  IdentitySource,
+  Mode,
+  RedactionLevel,
+  RunId,
+  Scope,
+  TenantAssignment,
+  TenantContext,
+  TenantId,
+  TenantResolver,
+} from './context.js';
+export type { Clock, LogFields, Logger, LogValue } from './logger.js';
