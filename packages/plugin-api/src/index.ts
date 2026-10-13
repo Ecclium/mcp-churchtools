@@ -12,4 +12,62 @@
  *
  * @packageDocumentation
  */
-export {};
+export type {
+  Actor,
+  ActorKind,
+  FeatureKey,
+  Identity,
+  IdentitySource,
+  Mode,
+  RedactionLevel,
+  RunId,
+  Scope,
+  TenantAssignment,
+  TenantContext,
+  TenantId,
+  TenantResolver,
+} from './context.js';
+export type { Clock, LogFields, Logger, LogValue } from './logger.js';
+export { errorCodes, type ErrorCode } from './errors.js';
+export {
+  classify,
+  dataClasses,
+  dataClassOf,
+  type DataClass,
+} from './data-class.js';
+export {
+  defineTool,
+  type Exposure,
+  type ObjectSchema,
+  type ReadToolMeta,
+  type ReplayGuard,
+  type Reversible,
+  type RightRef,
+  type Sensitivity,
+  type Tier,
+  type ToolCall,
+  type ToolDefinition,
+  type ToolDescription,
+  type ToolDomain,
+  type ToolMeta,
+  type ToolMetaCommon,
+  type ToolName,
+  type ToolSpec,
+  type UnattendedRule,
+  type WriteToolMeta,
+} from './tool.js';
+export type {
+  GrantedRights,
+  Me,
+  Permissions,
+  ReadApi,
+  RightValue,
+} from './read-api.js';
+export type { Plugin, PluginHost } from './plugin.js';
+export type {
+  AuditEventV1,
+  AuditOutcome,
+  AuditType,
+  ConfirmationPath,
+  ProviderInfo,
+} from './audit.js';

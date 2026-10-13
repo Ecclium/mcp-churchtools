@@ -147,10 +147,32 @@ export function dependencyRules(
     {
       name: 'no-undeclared-npm',
       severity: 'error',
-      comment:
-        'ADR 0022: code of a package imports only npm packages its own package.json declares for run time. The workspace root declares the development tools, which would otherwise be importable from everywhere. Tests are exempt: they use the test tools of the root.',
-      from: { path: '^packages/', pathNot: testFile },
+      comment: `ADR 0022: code of a package imports only npm packages its own package.json declares for run time. The workspace root declares the development tools, which would otherwise be importable from everywhere. Tests are exempt: they use the test tools of the root. ${pluginApi} has its own rule.`,
+      from: {
+        path: '^packages/',
+        pathNot: [testFile, `^packages/${escape(pluginApi)}/`],
+      },
       to: { dependencyTypes: ['npm-no-pkg', 'npm-unknown', 'npm-dev'] },
+    },
+    {
+      // A peer dependency also sits under devDependencies, so that the
+      // package can be built and tested in the workspace. dependency-cruiser
+      // then reports both types, and only the peer type makes it allowed.
+      name: 'plugin-api-peers-only',
+      severity: 'error',
+      comment: `ADR 0022: code of ${pluginApi} imports npm packages only as peer dependencies, which every plugin brings itself, so that core and plugins share one copy. A dependency for run time would ship a second copy with the published package. It imports no built-in module of Node.js either: the contract does no input or output of its own. Tests are exempt.`,
+      from: { path: `^packages/${escape(pluginApi)}/`, pathNot: testFile },
+      to: {
+        dependencyTypes: [
+          'core',
+          'npm',
+          'npm-optional',
+          'npm-no-pkg',
+          'npm-unknown',
+          'npm-dev',
+        ],
+        dependencyTypesNot: ['npm-peer'],
+      },
     },
     {
       name: 'no-import-outside-packages',

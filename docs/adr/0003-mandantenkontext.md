@@ -42,7 +42,12 @@ Gewählt ist die dritte Option.
 
 ## Umsetzung
 
-- Die Paketbeschreibungen von `core` und `plugin-api` nennen den Mandantenkontext (ADR 0022). Beide Pakete sind noch leer.
-- Typ, `TenantResolver` und der Test mit zwei Mandanten folgen in Phase 1.
+- Die Paketbeschreibungen von `core` und `plugin-api` nennen den Mandantenkontext (ADR 0022).
+- Typ und Port stehen seit dem 13.10.2026 in `plugin-api`, in `packages/plugin-api/src/context.ts`:
+  - `TenantContext` hat die Felder aus dem Entscheid und dazu den Lauf des Runners, alle nur lesbar. Die Basis-URL der Instanz steht als ihr Origin in einer Zeichenkette, die freigeschalteten Funktionen stehen in einer Liste, weil sich ein `URL` und ein `Set` an Ort und Stelle ändern liessen und der Kern das ganze Objekt einfrieren soll.
+  - `TenantId` trägt eine Marke. So geht eine gewöhnliche Zeichenkette, etwa aus der Eingabe eines Tools, nicht aus Versehen als Mandant durch. Eine `TenantId` erzeugen nur der Kern und der `TenantResolver`, den er benutzt.
+  - `TenantResolver.resolve` leitet aus einer geprüften Identität (ADR 0037) Mandant und Akteur ab. Gehört kein Mandant zur Identität, liefert er `undefined`, und der Aufrufer lehnt die Anfrage ab.
+  - Typtests belegen, dass sich Felder des Kontexts über seinen Typ nicht ändern lassen und eine gewöhnliche Zeichenkette keine `TenantId` ist.
+- Das Erzeugen des Kontexts, der `TenantResolver` für den Betrieb über stdio und der Test mit zwei Mandanten folgen in Phase 1 im Kern.
 - ADR 0053 löst ADR 0018 ab. «Für jede Anfrage entsteht eine Server-Instanz» im Kontext heisst seitdem: über HTTP eine Instanz pro Anfrage, über stdio eine pro Verbindung, in beiden Fällen ohne Daten einer Anfrage. Der Mandantenkontext entsteht weiter für jeden Aufruf eines Tools neu.
 - Zustand auf Modulebene meldet die ESLint-Regel `[arch:module-state]` nach ADR 0051 (vorgeschlagen): `let` und `var` des Moduls, jedes `new` beim Laden und statische Felder ohne `readonly`. Nicht jede Form, einen Kontext aufzubewahren, erkennt sie, etwa ein verändertes Objekt in einer Konstante oder eine Closure.
