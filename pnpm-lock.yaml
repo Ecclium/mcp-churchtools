@@ -122,6 +122,9 @@ importers:
       '@ecclium/mcp-churchtools-testkit':
         specifier: workspace:*
         version: link:../testkit
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
 
   packages/runner:
     dependencies:

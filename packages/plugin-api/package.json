@@ -20,7 +20,11 @@
       }
     }
   },
+  "peerDependencies": {
+    "zod": "^4.6.5"
+  },
   "devDependencies": {
-    "@ecclium/mcp-churchtools-testkit": "workspace:*"
+    "@ecclium/mcp-churchtools-testkit": "workspace:*",
+    "zod": "4.6.5"
   }
 }

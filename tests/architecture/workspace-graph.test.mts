@@ -39,7 +39,38 @@ const checks = [
   'solution-build',
   'solution-root',
   'solution-tests',
+  'peer-dependencies',
+  'peer-dev-copy',
 ] as const;
+
+/**
+ * Peer dependencies per package (ADR 0022). Only the plugin API has one: zod,
+ * which every plugin brings itself, so that core and plugins share one copy
+ * with its global registry. The plugin API has no dependency for run time of
+ * its own and bundles none.
+ */
+const allowedPeers: Readonly<Record<string, readonly string[]>> = {
+  'plugin-api': ['zod'],
+};
+
+const caretRange = /^\^(\d+)\.(\d+)\.(\d+)$/;
+const exactVersion = /^(\d+)\.(\d+)\.(\d+)$/;
+
+/**
+ * Tells whether an exact version lies in a caret range of a major version
+ * above zero, the only form a peer dependency may take here.
+ */
+function inCaretRange(range: string, version: string): boolean {
+  const low = caretRange.exec(range)?.slice(1).map(Number);
+  const found = exactVersion.exec(version)?.slice(1).map(Number);
+  if (low === undefined || found === undefined || low[0] === 0) return false;
+  if (found[0] !== low[0]) return false;
+  for (const index of [1, 2]) {
+    const [a, b] = [found[index] ?? 0, low[index] ?? 0];
+    if (a !== b) return a > b;
+  }
+  return true;
+}
 
 interface Manifest {
   readonly name: string;
@@ -47,6 +78,8 @@ interface Manifest {
   readonly devDependencies?: Readonly<Record<string, string>>;
   readonly peerDependencies?: Readonly<Record<string, string>>;
   readonly optionalDependencies?: Readonly<Record<string, string>>;
+  readonly bundleDependencies?: boolean | readonly string[];
+  readonly bundledDependencies?: boolean | readonly string[];
 }
 
 const readFile = (path: string): string | undefined => ts.sys.readFile(path);
@@ -116,6 +149,38 @@ function checkWorkspaceGraph(root: string, boundaries: Boundaries): Finding[] {
         'testkit-dev-only',
         `${pkg.dir}: ${testOnly} belongs under devDependencies, and nothing else from the workspace does`,
       );
+    }
+    const peers = Object.keys(manifest.peerDependencies ?? {});
+    // npm packs bundled dependencies into the package; true means all.
+    const bundled =
+      manifest.bundleDependencies ?? manifest.bundledDependencies ?? [];
+    const ownNpm = [
+      ...Object.keys({
+        ...manifest.dependencies,
+        ...manifest.optionalDependencies,
+      }).filter((name) => !dirByName.has(name)),
+      ...(bundled === true ? ['every dependency, bundled'] : []),
+      ...(typeof bundled === 'boolean' ? [] : bundled),
+    ];
+    const wantedPeers = allowedPeers[pkg.dir] ?? [];
+    if (
+      !sameSet(peers, wantedPeers) ||
+      (wantedPeers.length > 0 && ownNpm.length > 0)
+    ) {
+      report(
+        'peer-dependencies',
+        `${pkg.dir}: peers ${peers.join(', ') || 'none'}, own npm packages ${ownNpm.join(', ') || 'none'}`,
+      );
+    }
+    for (const peer of peers) {
+      const range = manifest.peerDependencies?.[peer] ?? '';
+      const copy = manifest.devDependencies?.[peer] ?? '';
+      if (!inCaretRange(range, copy)) {
+        report(
+          'peer-dev-copy',
+          `${pkg.dir}: ${peer} needs a single caret range such as ^1.2.3 and an exact copy in it under devDependencies, found ${range} and ${copy || 'no copy'}`,
+        );
+      }
     }
     const build = references(root, `packages/${pkg.dir}/tsconfig.json`);
     const expectedBuild = runtime
@@ -293,6 +358,73 @@ const cases: readonly {
     },
   },
   {
+    check: 'peer-dependencies',
+    name: 'core declares zod as a peer dependency',
+    change: (root) => {
+      edit(root, 'packages/core/package.json', (c) => {
+        depsOf(c, 'peerDependencies')['zod'] = '^4.6.5';
+        depsOf(c, 'devDependencies')['zod'] = '4.6.5';
+      });
+    },
+  },
+  {
+    check: 'peer-dependencies',
+    name: 'the plugin API declares a second peer dependency',
+    change: (root) => {
+      edit(root, 'packages/plugin-api/package.json', (c) => {
+        depsOf(c, 'peerDependencies')['ecclium-example'] = '^1.0.0';
+        depsOf(c, 'devDependencies')['ecclium-example'] = '1.0.0';
+      });
+    },
+  },
+  {
+    check: 'peer-dependencies',
+    name: 'the plugin API declares an npm package for run time',
+    change: (root) => {
+      edit(root, 'packages/plugin-api/package.json', (c) => {
+        depsOf(c, 'dependencies')['ecclium-example'] = '1.0.0';
+      });
+    },
+  },
+  {
+    check: 'peer-dependencies',
+    name: 'the plugin API bundles zod into its package',
+    change: (root) => {
+      edit(root, 'packages/plugin-api/package.json', (c) => {
+        c['bundleDependencies'] = ['zod'];
+      });
+    },
+  },
+  {
+    check: 'peer-dependencies',
+    name: 'the plugin API bundles every dependency into its package',
+    change: (root) => {
+      edit(root, 'packages/plugin-api/package.json', (c) => {
+        c['bundledDependencies'] = true;
+      });
+    },
+  },
+  ...(
+    [
+      ['has no copy of zod for development', '^4.6.5', undefined],
+      ['has a copy of zod above the range', '^4.6.5', '5.7.0'],
+      ['has a copy of zod below the range', '^4.6.5', '4.6.4'],
+      ['has a copy of zod that is not pinned', '^4.6.5', '^4.6.5'],
+      ['declares zod without a caret range', '>=4.6.5', '4.6.5'],
+    ] as const
+  ).map(([name, range, copy]) => ({
+    check: 'peer-dev-copy' as const,
+    name: `the plugin API ${name}`,
+    change: (root: string) => {
+      edit(root, 'packages/plugin-api/package.json', (c) => {
+        depsOf(c, 'peerDependencies')['zod'] = range;
+        const dev = depsOf(c, 'devDependencies');
+        if (copy === undefined) delete dev['zod'];
+        else dev['zod'] = copy;
+      });
+    },
+  })),
+  {
     check: 'solution-tests',
     name: 'the workspace tests leave out core',
     change: (root) => {
@@ -304,6 +436,29 @@ const cases: readonly {
     },
   },
 ];
+
+describe('inCaretRange', () => {
+  it.each(['4.6.5', '4.6.9', '4.7.0', '4.99.0'])(
+    'accepts %s for ^4.6.5',
+    (version) => {
+      expect(inCaretRange('^4.6.5', version)).toBe(true);
+    },
+  );
+
+  it.each(['4.6.4', '4.5.9', '5.0.0', '3.9.9', '4.7.0-beta.1', '^4.6.5'])(
+    'refuses %s for ^4.6.5',
+    (version) => {
+      expect(inCaretRange('^4.6.5', version)).toBe(false);
+    },
+  );
+
+  it.each(['>=4.6.5', '~4.6.5', '^4.6.5 || ^5.0.0', '^0.1.0', '4.6.5'])(
+    'refuses the range %s',
+    (range) => {
+      expect(inCaretRange(range, '4.6.5')).toBe(false);
+    },
+  );
+});
 
 describe('workspace graph', () => {
   it('matches boundaries.json', () => {

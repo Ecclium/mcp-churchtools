@@ -180,6 +180,18 @@ const coreManifest = JSON.parse(
   devDependencies?: Record<string, string>;
 };
 
+const pluginApiManifest = JSON.parse(
+  readFileSync(join(workspaceRoot, 'packages/plugin-api/package.json'), 'utf8'),
+) as Record<string, unknown> & {
+  devDependencies?: Record<string, string>;
+};
+
+/** An installed npm package that no manifest of the workspace names. */
+const examplePackage = (name: string): Record<string, string> => ({
+  [`node_modules/${name}/package.json`]: `${JSON.stringify({ name, version: '1.0.0', main: 'index.js' })}\n`,
+  [`node_modules/${name}/index.js`]: 'module.exports = {};\n',
+});
+
 const cases: readonly Case[] = [
   ...tableCases,
   {
@@ -269,6 +281,82 @@ const cases: readonly Case[] = [
       })}\n`,
       'packages/core/src/forbidden.ts':
         "import 'ecclium-example-dev';\nexport {};\n",
+    },
+  },
+  {
+    // Only the plugin API may rely on a peer dependency.
+    rule: 'no-undeclared-npm',
+    name: 'core imports an npm package it declares as peer and for development',
+    files: {
+      ...examplePackage('ecclium-example-peer'),
+      'packages/core/package.json': `${JSON.stringify({
+        ...coreManifest,
+        devDependencies: {
+          ...coreManifest.devDependencies,
+          'ecclium-example-peer': '1.0.0',
+        },
+        peerDependencies: { 'ecclium-example-peer': '^1.0.0' },
+      })}\n`,
+      'packages/core/src/forbidden.ts':
+        "import 'ecclium-example-peer';\nexport {};\n",
+    },
+  },
+  {
+    rule: 'plugin-api-peers-only',
+    name: 'the plugin API imports an npm package it declares only for development',
+    files: {
+      ...examplePackage('ecclium-example-dev'),
+      'packages/plugin-api/package.json': `${JSON.stringify({
+        ...pluginApiManifest,
+        devDependencies: {
+          ...pluginApiManifest.devDependencies,
+          'ecclium-example-dev': '1.0.0',
+        },
+      })}\n`,
+      'packages/plugin-api/src/forbidden.ts':
+        "import 'ecclium-example-dev';\nexport {};\n",
+    },
+  },
+  {
+    rule: 'plugin-api-peers-only',
+    name: 'the plugin API imports an npm package it declares for run time',
+    files: {
+      ...examplePackage('ecclium-example-runtime'),
+      'packages/plugin-api/package.json': `${JSON.stringify({
+        ...pluginApiManifest,
+        dependencies: { 'ecclium-example-runtime': '1.0.0' },
+      })}\n`,
+      'packages/plugin-api/src/forbidden.ts':
+        "import 'ecclium-example-runtime';\nexport {};\n",
+    },
+  },
+  {
+    rule: 'plugin-api-peers-only',
+    name: 'the plugin API imports an npm package it declares as optional',
+    files: {
+      ...examplePackage('ecclium-example-optional'),
+      'packages/plugin-api/package.json': `${JSON.stringify({
+        ...pluginApiManifest,
+        optionalDependencies: { 'ecclium-example-optional': '1.0.0' },
+      })}\n`,
+      'packages/plugin-api/src/forbidden.ts':
+        "import 'ecclium-example-optional';\nexport {};\n",
+    },
+  },
+  {
+    rule: 'plugin-api-peers-only',
+    name: 'the plugin API imports a built-in module of Node.js',
+    files: {
+      'packages/plugin-api/src/forbidden.ts': "import 'node:fs';\nexport {};\n",
+    },
+  },
+  {
+    rule: 'plugin-api-peers-only',
+    name: 'the plugin API imports an installed npm package it does not declare',
+    files: {
+      ...examplePackage('ecclium-example-undeclared'),
+      'packages/plugin-api/src/forbidden.ts':
+        "import 'ecclium-example-undeclared';\nexport {};\n",
     },
   },
   {
@@ -429,6 +517,13 @@ const allowedCases: readonly Omit<Case, 'rule'>[] = [
     name: 'the server imports the mount',
     files: {
       'packages/server/src/allowed.ts': `import '${nameOf('core')}/mcp';\nexport {};\n`,
+    },
+  },
+  {
+    name: 'the plugin API imports zod, its peer dependency',
+    files: {
+      'packages/plugin-api/src/allowed.ts':
+        "import type { ZodType } from 'zod';\nimport { z } from 'zod';\nexport type Schema = ZodType;\nexport const schema = z;\n",
     },
   },
   {
