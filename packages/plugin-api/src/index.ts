@@ -28,3 +28,11 @@ export type {
   TenantResolver,
 } from './context.js';
 export type { Clock, LogFields, Logger, LogValue } from './logger.js';
+export { errorCodes, type ErrorCode } from './errors.js';
+export type {
+  AuditEventV1,
+  AuditOutcome,
+  AuditType,
+  ConfirmationPath,
+  ProviderInfo,
+} from './audit.js';
