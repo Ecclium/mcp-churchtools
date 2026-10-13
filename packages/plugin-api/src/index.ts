@@ -29,6 +29,12 @@ export type {
 } from './context.js';
 export type { Clock, LogFields, Logger, LogValue } from './logger.js';
 export { errorCodes, type ErrorCode } from './errors.js';
+export {
+  classify,
+  dataClasses,
+  dataClassOf,
+  type DataClass,
+} from './data-class.js';
 export type {
   AuditEventV1,
   AuditOutcome,
