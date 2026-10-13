@@ -115,6 +115,8 @@ Von Hand beobachtet: Auf der Testinstanz brachte jeder vorgegebene Personenstatu
 
 Von Hand beobachtet: Das OpenAPI-Dokument der Instanz nennt einen «permission cache», den manche Operationen leeren. Offen bleibt, ob das Erneuern allein einen veralteten Stand leert (bei der Rückkehr war er schon leer), ob ein Entzug in der Weboberfläche den Speicher leert, wann er von selbst abläuft, ob er je Person oder je Token gilt und welche Operationen ihn sonst leeren. Bei der Rückkehr prüfte `02-permissions` nur die Rechteliste, nicht den Zugriff auf Daten. In e1 bis e1d wechselten Rechteliste und Daten stets gemeinsam. Ob ein Entzug wirkt, zeigt demnach `GET /api/permissions/global` mit dem Token des betroffenen Kontos (Schluss).
 
+Antwort von ChurchTools in der Entwickler-Community vom 13.10.2026 auf die Frage nach diesem Verhalten: Es ist ein Fehler in der Invalidierung des Zwischenspeichers. Spätestens nach dem nächsten Cron-Job stimmen die Rechte wieder, und der Fehler wird für die kommende Version behoben. Wie oft dieser Cron-Job läuft und in welcher Version der Fehler behoben ist, sagt die Antwort nicht. Ob ein Entzug danach sofort wirkt, zeigt erst ein Lauf mit Entzug und `02-permissions` an dieser Version (offen).
+
 ### Paginierung und Fehler
 
 **F6, belegt (`03-pagination-errors`).** `meta.pagination` von `GET /api/wiki/pages` hat vier Felder, alle Zahlen: `total`, `limit`, `current` und `lastPage`. Daneben steht `meta.count`. Eine Seite hinter der letzten antwortet mit 200, einer leeren Liste in `data` und denselben vier Feldern. Das Ende einer Liste zeigt also `lastPage`, kein Fehler. `GET /api/wiki/categories/{id}/pages` und die Versionsliste einer Seite haben keine Paginierung, nur `meta.count` (`04-wiki-read`).
