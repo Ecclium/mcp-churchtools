@@ -6,4 +6,15 @@
  *
  * @packageDocumentation
  */
-export {};
+export {
+  assertNoCanary,
+  assertPlanted,
+  findCanaries,
+  makeCanaries,
+  makeCanary,
+  makeControlValue,
+  type Canary,
+  type CanaryFinding,
+  type CanaryKind,
+  type CanarySet,
+} from './canary.js';

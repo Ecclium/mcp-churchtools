@@ -359,6 +359,39 @@ const cases: readonly Case[] = [
         "import 'ecclium-example-undeclared';\nexport {};\n",
     },
   },
+  ...(
+    [
+      [
+        'a module of core',
+        'packages/core/src/forbidden.ts',
+        "import { revealSecret } from './http/secret.js';\nexport const read = revealSecret;\n",
+      ],
+      [
+        'a module of core for types only',
+        'packages/core/src/forbidden.ts',
+        "import type { revealSecret } from './http/secret.js';\nexport type Read = typeof revealSecret;\n",
+      ],
+      [
+        'a module of core at run time with import()',
+        'packages/core/src/forbidden.ts',
+        "export const load = async (): Promise<unknown> => import('./http/secret.js');\n",
+      ],
+      [
+        'a test of core outside the folder',
+        'packages/core/src/forbidden.test.ts',
+        "import './http/secret.js';\nexport {};\n",
+      ],
+      [
+        'a folder next to the outbound path',
+        'packages/core/src/httpx/forbidden.ts',
+        "import '../http/secret.js';\nexport {};\n",
+      ],
+    ] as const
+  ).map(([who, path, source]) => ({
+    rule: 'egress-internals',
+    name: `${who} imports a module of the outbound path other than its entry point`,
+    files: { [path]: source },
+  })),
   {
     rule: 'no-import-outside-packages',
     name: 'core imports a file of the repository outside packages/',
@@ -537,6 +570,20 @@ const allowedCases: readonly Omit<Case, 'rule'>[] = [
     files: {
       'packages/core/src/churchtools/allowed.ts':
         "import './index.js';\nexport {};\n",
+    },
+  },
+  {
+    name: 'a module of core imports the entry point of the outbound path',
+    files: {
+      'packages/core/src/allowed.ts':
+        "import { Secret } from './http/index.js';\nexport const make = (v: string): Secret => new Secret(v);\n",
+    },
+  },
+  {
+    name: 'a module of the outbound path imports the secret module',
+    files: {
+      'packages/core/src/http/allowed.ts':
+        "import { revealSecret } from './secret.js';\nexport const read = revealSecret;\n",
     },
   },
   {

@@ -220,6 +220,17 @@ export function dependencyRules(
       to: { path: [...networkTargets] },
     },
     {
+      name: 'egress-internals',
+      severity: 'error',
+      comment:
+        'ADR 0054: only modules of the outbound path import its modules other than its entry point. One of them turns a secret back into its value, which no other module may do. Tests in the packages are not exempt. Code outside the packages is not cruised; tests/architecture/reveal-secret.test.mts covers it.',
+      from: { pathNot: at('egress') },
+      to: {
+        path: at('egress'),
+        pathNot: pathPattern(`${places.egress.paths[0] ?? ''}index.ts`),
+      },
+    },
+    {
       name: 'raw-client-only-in-core',
       severity: 'error',
       comment: `${adr('rawClient')}: only the listed core modules import the raw ChurchTools client; the entry point of core does not pass it on.`,

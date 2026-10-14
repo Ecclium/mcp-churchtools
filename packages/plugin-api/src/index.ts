@@ -28,7 +28,13 @@ export type {
   TenantResolver,
 } from './context.js';
 export type { Clock, LogFields, Logger, LogValue } from './logger.js';
-export { errorCodes, type ErrorCode } from './errors.js';
+export {
+  EccliumError,
+  errorCodes,
+  isEccliumError,
+  type EccliumErrorOptions,
+  type ErrorCode,
+} from './errors.js';
 export {
   classify,
   dataClasses,
