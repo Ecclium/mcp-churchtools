@@ -5,4 +5,36 @@
  *
  * @packageDocumentation
  */
-export {};
+export {
+  configProblemCodes,
+  type ConfigProblem,
+  type ConfigProblemCode,
+  type ConfigReport,
+  type ConfigResult,
+  type ConfigSources,
+  configWarningCodes,
+  type ConfigWarningCode,
+  defaultStdioSubject,
+  type EccliumConfig,
+  loadConfig,
+  maxReportedProblems,
+  proxyVariableName,
+  type SettingKey,
+  type SettingReport,
+  type ShownValue,
+  tlsVariableName,
+  type TokenFileCode,
+  tokenFileCodes,
+  type TokenFileStats,
+  type TokenFileSystem,
+  tokenVariableName,
+  type Transport,
+  unsupportedVariableNames,
+  type ValueOrigin,
+  type Variable,
+  type VariableKind,
+  type VariableName,
+  variableNames,
+  variablePrefix,
+  variables,
+} from './config/index.js';
