@@ -40,5 +40,6 @@ describe('@ecclium/mcp-churchtools-core', () => {
     expect(entry.createStdioTenantResolver).toBeTypeOf('function');
     expect(Object.keys(entry)).not.toContain('toTenantId');
     expect(Object.keys(entry)).not.toContain('defaultTenantId');
+    expect(Object.keys(entry)).not.toContain('createTenantContext');
   });
 });

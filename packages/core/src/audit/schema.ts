@@ -172,9 +172,10 @@ export const auditEventV1Schema = z
 
 /**
  * Values the sink writes instead of an invalid required field. Each one
- * passes the schema. The configuration must refuse the tenant `invalid` and
- * the actor `invalid`, and the registry the tool `ct_unknown`, so that a
- * placeholder is never taken for a real value.
+ * passes the schema. The factory of the tenant context refuses the tenant
+ * `invalid`, the actor `invalid`, the zero UUID as run or event and the
+ * tool `ct_unknown`, and the registry will refuse that tool as well, so
+ * that a placeholder is never taken for a real value.
  */
 export const auditPlaceholders = Object.freeze({
   eventId: '00000000-0000-0000-0000-000000000000',
