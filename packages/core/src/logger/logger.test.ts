@@ -358,6 +358,13 @@ describe('createLogger', () => {
     const { log, lines } = make();
     expect(Object.isFrozen(log)).toBe(true);
     expect(Object.keys(log)).toEqual(['debug', 'info', 'warn', 'error']);
+    // A value hung on a method would reach every holder of the logger.
+    for (const method of Object.values(log)) {
+      expect(Object.isFrozen(method)).toBe(true);
+      expect(() => {
+        (method as unknown as Record<string, unknown>)['stash'] = 'value';
+      }).toThrow(TypeError);
+    }
     // eslint-disable-next-line @typescript-eslint/unbound-method -- the point is to call it detached
     const info: (event: string) => unknown = log.info;
     expect(info('a')).toBeUndefined();

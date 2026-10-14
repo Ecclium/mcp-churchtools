@@ -268,10 +268,12 @@ export function createLogger(options: LoggerOptions): Logger {
       log(level, event, input);
     };
 
+  // The methods are frozen as well: a tool that hung a value on one could
+  // pass it to the next call that shares the logger.
   return Object.freeze({
-    debug: at('debug'),
-    info: at('info'),
-    warn: at('warn'),
-    error: at('error'),
+    debug: Object.freeze(at('debug')),
+    info: Object.freeze(at('info')),
+    warn: Object.freeze(at('warn')),
+    error: Object.freeze(at('error')),
   });
 }
