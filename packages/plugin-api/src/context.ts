@@ -27,9 +27,9 @@ export type ActorKind = 'service' | 'user' | 'runner' | 'operator';
 
 /**
  * The actor of a request or run. It goes into every audit event, so `id` is
- * a neutral name: over stdio one from the configuration, otherwise derived
- * from source and subject of a checked sign-in (ADR 0003). It is never the
- * name or the e-mail address of a person.
+ * a neutral name derived from source and subject of a checked sign-in,
+ * over stdio `stdio:` and the subject from the configuration (ADR 0003,
+ * ADR 0055). It is never the name or the e-mail address of a person.
  */
 export interface Actor {
   /** Kind of actor. */

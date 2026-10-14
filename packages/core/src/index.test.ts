@@ -32,4 +32,13 @@ describe('@ecclium/mcp-churchtools-core', () => {
     expect(Object.keys(entry)).not.toContain('fitsVariable');
     expect(Object.keys(entry)).not.toContain('environmentSchema');
   });
+
+  // Only the core makes a tenant, through the resolver and the factory of
+  // the context (ADR 0003).
+  it('passes on the identity over stdio but no way to make a tenant', () => {
+    expect(entry.createStdioIdentity).toBeTypeOf('function');
+    expect(entry.createStdioTenantResolver).toBeTypeOf('function');
+    expect(Object.keys(entry)).not.toContain('toTenantId');
+    expect(Object.keys(entry)).not.toContain('defaultTenantId');
+  });
 });

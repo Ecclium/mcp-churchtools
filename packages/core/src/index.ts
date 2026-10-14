@@ -38,3 +38,7 @@ export {
   variablePrefix,
   variables,
 } from './config/index.js';
+export {
+  createStdioIdentity,
+  createStdioTenantResolver,
+} from './identity/index.js';

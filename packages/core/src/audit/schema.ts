@@ -65,7 +65,7 @@ export const objectDomains: readonly string[] = Object.freeze([
 ]);
 
 // Regular expressions without flags, like those of the logger. An actor ID
-// is a neutral name such as stdio:local-operator, never an e-mail address: no
+// is a neutral name such as stdio:local-stdio, never an e-mail address: no
 // capital letter, no dot, no @ and no space. A name as a slug would fit, so
 // the identity must not make one (ADR 0003).
 const actorIdPattern = /^[a-z][a-z0-9_-]{0,31}(?::[a-z0-9_-]{1,64})?$/;
