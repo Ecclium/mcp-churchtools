@@ -2,7 +2,8 @@
  * The single outbound path of core (ADR 0022, draft ADR 0009). Its HTTP
  * client will check the host allow-list before it opens a connection and be
  * the only code in the packages that opens network connections. It follows
- * in phase 1.
+ * in phase 1. The check of the configured address is here already, because
+ * the allow-list will hold exactly the origin it gives (ADR 0055).
  *
  * Other modules reach the outbound path only through this entry point. It
  * passes on {@link Secret}, but not `revealSecret`: only modules inside this
@@ -10,4 +11,10 @@
  *
  * @packageDocumentation
  */
+export {
+  type OriginCode,
+  originCodes,
+  type OriginResult,
+  parseChurchToolsOrigin,
+} from './origin.js';
 export { Secret } from './secret.js';

@@ -16,6 +16,7 @@ import {
 import { z } from 'zod';
 
 import {
+  hostPattern,
   modes,
   tenantIdPattern,
   timestampPattern,
@@ -72,9 +73,6 @@ const hashPattern = /^[0-9a-f]{64}$/;
 const vendorPattern = /^[a-z][a-z0-9-]{0,31}$/;
 const modelPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
 const countryPattern = /^[A-Z]{2}$/;
-// A host name in lower case without port, user, path or a dot at the end.
-const hostPattern =
-  /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
 // A term such as eu_gdpr, never text with spaces or dots. Which terms exist
 // is still open; until then any term of this form fits.
 const termPattern = /^[a-z][a-z0-9_]{0,31}$/;

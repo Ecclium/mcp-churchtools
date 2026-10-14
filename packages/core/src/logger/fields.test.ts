@@ -3,6 +3,7 @@ import { makeCanaries } from '@ecclium/mcp-churchtools-testkit';
 import { describe, expect, it } from 'vitest';
 
 import {
+  hostPattern,
   isBoolean,
   isErrorCode,
   isEventName,
@@ -247,6 +248,7 @@ describe('canary values', () => {
 describe('the exported patterns', () => {
   it('have no flags, so that a schema that uses them keeps no state', () => {
     for (const pattern of [
+      hostPattern,
       tenantIdPattern,
       toolNamePattern,
       uuidPattern,

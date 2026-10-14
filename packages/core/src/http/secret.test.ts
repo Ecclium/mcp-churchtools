@@ -323,7 +323,11 @@ describe('revealSecret', () => {
     for (const entry of [core, http] as Record<string, unknown>[]) {
       expect(Object.values(entry)).not.toContain(revealSecret);
     }
-    expect(Object.keys(http)).toEqual(['Secret']);
+    expect(Object.keys(http)).toEqual([
+      'originCodes',
+      'parseChurchToolsOrigin',
+      'Secret',
+    ]);
   });
 });
 
