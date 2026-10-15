@@ -5,4 +5,9 @@
  *
  * @packageDocumentation
  */
-export {};
+export {
+  createOutput,
+  maxOutputLength,
+  type Output,
+  type OutputOptions,
+} from './write.js';
