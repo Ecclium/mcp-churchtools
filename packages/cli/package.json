@@ -5,6 +5,9 @@
   "description": "Ecclium MCP für ChurchTools, in Entwicklung: verbindet KI-Assistenten mit der Gemeindesoftware ChurchTools. Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Hersteller von ChurchTools.",
   "license": "Apache-2.0",
   "type": "module",
+  "bin": {
+    "ecclium": "./dist/bin.js"
+  },
   "exports": {
     ".": {
       "@ecclium/source": "./src/index.ts",
