@@ -36,6 +36,7 @@ export const placeKeys = [
   'stderr',
   'plugins',
   'moduleState',
+  'environment',
 ] as const;
 
 /** Key of a place in the code that a rule refers to. */
@@ -260,7 +261,8 @@ const packageOf = (path: string): string =>
  * client, and shares no path with another place (ADR 0022).
  * Registration with the MCP SDK stays in single files of the mount or of
  * the package for tests (ADR 0024). Mutable state at module level is
- * allowed only file by file (ADR 0051).
+ * allowed only file by file (ADR 0051), and so is reading the environment
+ * (ADR 0055).
  */
 function checkExceptions(
   places: Partial<Record<PlaceKey, Place>>,
@@ -313,9 +315,11 @@ function checkExceptions(
       );
     }
   }
-  for (const path of places.moduleState?.paths ?? []) {
-    if (path.endsWith('/')) {
-      report(`places.moduleState: "${path}" must be one file`);
+  for (const key of ['moduleState', 'environment'] as const) {
+    for (const path of places[key]?.paths ?? []) {
+      if (path.endsWith('/')) {
+        report(`places.${key}: "${path}" must be one file`);
+      }
     }
   }
   for (const path of places.mcpMountImporters?.paths ?? []) {

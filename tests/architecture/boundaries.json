@@ -140,6 +140,11 @@
       "adr": "0051",
       "description": "Modules that may keep mutable state at module level. Each entry is one file with its own ADR.",
       "paths": []
+    },
+    "environment": {
+      "adr": "0055",
+      "description": "Code that may read the environment and the arguments of the process: only the entry of the command line, which hands them to the core as parameters. Other code could otherwise read the token from them past the Secret.",
+      "paths": ["packages/cli/src/bin.ts"]
     }
   }
 }

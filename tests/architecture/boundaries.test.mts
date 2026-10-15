@@ -367,6 +367,13 @@ describe('loading boundaries.json', () => {
       message: /places\.moduleState: "packages\/core\/src\/" must be one file/,
     },
     {
+      name: 'a folder as the place that reads the environment',
+      change: (m) => {
+        place(m, 'environment').paths = ['packages/cli/src/'];
+      },
+      message: /places\.environment: "packages\/cli\/src\/" must be one file/,
+    },
+    {
       name: 'the package of the mount among its importers',
       change: (m) => {
         place(m, 'mcpMountImporters').paths = ['packages/core/src/'];
