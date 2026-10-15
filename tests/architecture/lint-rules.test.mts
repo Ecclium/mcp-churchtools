@@ -412,6 +412,8 @@ const locations: readonly {
   { path: 'packages/cli/src/output/probe.ts', allowed: ['stdout', 'stderr'] },
   { path: 'packages/cli/src/outputx/probe.ts', allowed: [] },
   { path: 'packages/cli/src/stdio/probe.ts', allowed: [] },
+  { path: 'packages/cli/src/notices/probe.ts', allowed: ['stderr'] },
+  { path: 'packages/cli/src/noticesx/probe.ts', allowed: [] },
   { path: 'packages/cli/src/bin.ts', allowed: ['environment'] },
   { path: 'packages/cli/src/binary.ts', allowed: [] },
   { path: 'packages/cli/src/bin.test.ts', allowed: ['module-state'] },

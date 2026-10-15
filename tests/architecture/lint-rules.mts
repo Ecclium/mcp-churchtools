@@ -99,7 +99,7 @@ function messages(boundaries: Boundaries): Record<Concern, string> {
     console:
       '[arch:console] Code in the packages writes through the logger or the output module of the command line, never through console (ADR 0053).',
     stdout: `[arch:stdout] Only the output module of the command line writes to stdout. In the stdio mode stdout carries the MCP protocol (${adr('stdout')}).`,
-    stderr: `[arch:stderr] Only the logger, the output module of the command line and the start of the elicitation spike in testkit write to stderr (${adr('stderr')}).`,
+    stderr: `[arch:stderr] Only the logger, the output module and the start notices of the command line and the start of the elicitation spike in testkit write to stderr (${adr('stderr')}).`,
     process:
       '[arch:process] Use process and globalThis only through a property such as process.exitCode. Passed on or taken apart, they hide writes to stdout and stderr from these rules (ADR 0053).',
     environment: `[arch:environment] Only the entry of the command line reads the environment and the arguments and hands them to the core as parameters. Other code could read the token from them past the Secret, also through the diagnostic report of the process (${adr('environment')}).`,

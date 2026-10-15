@@ -515,6 +515,23 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'no-stdout-from-stdio-modules',
+    name: 'the start notices import the output module',
+    files: {
+      'packages/cli/src/notices/forbidden.ts':
+        "import '../output/index.js';\nexport {};\n",
+    },
+  },
+  {
+    rule: 'no-stdout-from-stdio-modules',
+    name: 'the catalog of texts reaches the output module through another module',
+    files: {
+      'packages/cli/src/messages/forbidden.ts':
+        "import '../helper.js';\nexport {};\n",
+      'packages/cli/src/helper.ts': "import './output/index.js';\nexport {};\n",
+    },
+  },
+  {
     rule: 'no-stdout-in-stdio-paths',
     name: 'the start of the elicitation spike reaches the output module of the command line',
     files: {
@@ -537,6 +554,27 @@ const allowedCases: readonly Omit<Case, 'rule'>[] = [
     name: 'a test of core imports the testkit',
     files: {
       'packages/core/src/allowed.test.ts': `import '${nameOf('testkit')}';\nexport {};\n`,
+    },
+  },
+  {
+    name: 'the output module imports the catalog of texts',
+    files: {
+      'packages/cli/src/output/allowed.ts':
+        "import '../messages/index.js';\nexport {};\n",
+    },
+  },
+  {
+    name: 'a test of the start notices imports the output module',
+    files: {
+      'packages/cli/src/notices/allowed.test.ts':
+        "import '../output/index.js';\nexport {};\n",
+    },
+  },
+  {
+    name: 'the stdio start of the command line imports the start notices',
+    files: {
+      'packages/cli/src/stdio/allowed.ts':
+        "import '../notices/index.js';\nexport {};\n",
     },
   },
   {

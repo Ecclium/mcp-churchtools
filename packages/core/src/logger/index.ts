@@ -1,7 +1,8 @@
 /**
  * Logger: writes JSON Lines with allowlisted fields to stderr. Apart from the
- * messages of the command line for operators, it is the only code in the
- * packages that writes to stderr. It does not use `console` (ADR 0053).
+ * messages and start notices of the command line and the start of the
+ * elicitation spike in testkit, it is the only code in the packages that
+ * writes to stderr. It does not use `console` (ADR 0053).
  * Which fields a line may carry, and who may set them, is decided in
  * ADR 0054.
  *

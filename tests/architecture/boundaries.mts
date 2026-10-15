@@ -32,6 +32,7 @@ export const placeKeys = [
   'mcpMountImporters',
   'mcpSdk',
   'stdioEntries',
+  'stdioReachable',
   'stdout',
   'stderr',
   'plugins',
