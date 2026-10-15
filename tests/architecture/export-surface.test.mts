@@ -20,7 +20,10 @@ import { pathPattern } from './dependency-rules.mts';
 // packages could use them through a permitted import (ADR 0024). This test
 // follows each export of every entry point to its declaration with the
 // TypeScript checker. The entry point of the mount itself, the subpath ./mcp
-// of core, is the one place allowed to export the mount.
+// of core, is the one place allowed to export the mount. No entry point may
+// pass on the factory of the stderr writer either: tools and workflows import
+// core and could then write any text to stderr (ADR 0054). Its type
+// LineWriter stays allowed, because the context of a call needs it.
 
 const boundaries = loadBoundaries();
 const { rawClient, mcpMount } = boundaries.places;
@@ -33,6 +36,19 @@ const hidden: readonly RegExp[] = [
   /(^|\/)node_modules\/@modelcontextprotocol\//,
 ];
 
+const lineWriter = 'packages/core/src/logger/line-writer.ts';
+
+/** Single exports that no entry point may pass on, by file and name. */
+const hiddenSymbols: readonly {
+  readonly file: RegExp;
+  readonly names: readonly string[];
+}[] = [
+  {
+    file: toPattern(lineWriter),
+    names: ['createStderrWriter', 'StderrLineWriter'],
+  },
+];
+
 const compilerOptions: ts.CompilerOptions = {
   module: ts.ModuleKind.NodeNext,
   moduleResolution: ts.ModuleResolutionKind.NodeNext,
@@ -43,8 +59,15 @@ const compilerOptions: ts.CompilerOptions = {
   types: [],
 };
 
-/** Files that declare what the given module exports, relative to root. */
-function exportOrigins(root: string, entry: string): string[] {
+interface Declaration {
+  /** The file of the declaration, relative to root. */
+  readonly file: string;
+  /** The name under which it is declared, not the exported alias. */
+  readonly name: string;
+}
+
+/** Declarations behind what the given module exports. */
+function exportDeclarations(root: string, entry: string): Declaration[] {
   const file = join(root, entry);
   const program = ts.createProgram([file], compilerOptions);
   const checker = program.getTypeChecker();
@@ -52,21 +75,42 @@ function exportOrigins(root: string, entry: string): string[] {
   if (source === undefined) throw new Error(`cannot read ${entry}`);
   const module = checker.getSymbolAtLocation(source);
   if (module === undefined) return [];
-  return checker.getExportsOfModule(module).flatMap((symbol) => {
-    const target =
-      symbol.flags & ts.SymbolFlags.Alias
-        ? checker.getAliasedSymbol(symbol)
-        : symbol;
-    return (target.declarations ?? []).map((declaration) =>
-      relative(root, declaration.getSourceFile().fileName),
-    );
-  });
+  const visited = new Set<ts.Symbol>([module]);
+  const declarationsOf = (symbols: readonly ts.Symbol[]): Declaration[] =>
+    symbols.flatMap((symbol) => {
+      const target =
+        symbol.flags & ts.SymbolFlags.Alias
+          ? checker.getAliasedSymbol(symbol)
+          : symbol;
+      const own = (target.declarations ?? []).map((declaration) => ({
+        file: relative(root, declaration.getSourceFile().fileName),
+        name: target.getName(),
+      }));
+      // A namespace export such as `export * as logger from ...` passes on
+      // every export of that module, so those count as well.
+      if (!(target.flags & ts.SymbolFlags.ValueModule) || visited.has(target)) {
+        return own;
+      }
+      visited.add(target);
+      return [...own, ...declarationsOf(checker.getExportsOfModule(target))];
+    });
+  return declarationsOf(checker.getExportsOfModule(module));
 }
 
+/** Files that declare what the given module exports, relative to root. */
+const exportOrigins = (root: string, entry: string): string[] =>
+  exportDeclarations(root, entry).map(({ file }) => file);
+
+/** Exports that the module must not have, as file or as file and name. */
 const hiddenOrigins = (root: string, entry: string): string[] =>
-  exportOrigins(root, entry).filter((origin) =>
-    hidden.some((pattern) => pattern.test(origin)),
-  );
+  exportDeclarations(root, entry).flatMap(({ file, name }) => [
+    ...(hidden.some((pattern) => pattern.test(file)) ? [file] : []),
+    ...(hiddenSymbols.some(
+      (symbol) => symbol.file.test(file) && symbol.names.includes(name),
+    )
+      ? [`${file}#${name}`]
+      : []),
+  ]);
 
 /** The source behind every export of every package, except the mount. */
 const entryPoints = boundaries.packages.flatMap((pkg) => {
@@ -101,6 +145,12 @@ function writeTree(files: Readonly<Record<string, string>>): string {
       'export const rawClient = { get: (): void => undefined };\n',
     'packages/core/src/mcp/mount.ts':
       'export const mount = (): void => undefined;\n',
+    [lineWriter]: [
+      'export interface LineWriter { write(line: string): boolean }',
+      'export interface StderrLineWriter extends LineWriter { stats(): number }',
+      'export const createStderrWriter = (): StderrLineWriter => ({ write: () => true, stats: () => 0 });',
+      '',
+    ].join('\n'),
     'node_modules/@modelcontextprotocol/server/package.json':
       '{ "name": "@modelcontextprotocol/server", "type": "module", "exports": { ".": { "types": "./index.d.ts" } } }\n',
     'node_modules/@modelcontextprotocol/server/index.d.ts':
@@ -154,6 +204,46 @@ const leaks: readonly {
     },
   },
   {
+    name: 'the factory of the stderr writer',
+    entry: coreEntry,
+    files: {
+      [coreEntry]:
+        "export { createStderrWriter } from './logger/line-writer.js';\n",
+    },
+  },
+  {
+    name: 'the factory of the stderr writer in a namespace',
+    entry: coreEntry,
+    files: {
+      [coreEntry]: "export * as writer from './logger/line-writer.js';\n",
+    },
+  },
+  {
+    name: 'the factory of the stderr writer in the namespace of an entry',
+    entry: coreEntry,
+    files: {
+      [coreEntry]: "export * as logger from './logger/index.js';\n",
+      'packages/core/src/logger/index.ts':
+        "export { createStderrWriter } from './line-writer.js';\n",
+    },
+  },
+  {
+    name: 'the stderr writer imported as a namespace and exported again',
+    entry: coreEntry,
+    files: {
+      [coreEntry]:
+        "import * as writer from './logger/line-writer.js';\nexport { writer };\n",
+    },
+  },
+  {
+    name: 'the type of the stderr writer under another name',
+    entry: coreEntry,
+    files: {
+      [coreEntry]:
+        "export type { StderrLineWriter as Writer } from './logger/line-writer.js';\n",
+    },
+  },
+  {
     name: 'the mount, passed on by the server',
     entry: 'packages/server/src/index.ts',
     files: {
@@ -178,7 +268,7 @@ describe('entry points of the packages', { timeout }, () => {
   });
 
   it.each(entryPoints)(
-    '%s exports nothing from the raw client, the mount or the MCP SDK',
+    '%s exports nothing from the raw client, the mount, the MCP SDK or the stderr writer',
     (entry) => {
       expect(hiddenOrigins(workspaceRoot, entry)).toEqual([]);
     },
@@ -188,16 +278,36 @@ describe('entry points of the packages', { timeout }, () => {
     expect(hiddenOrigins(writeTree(files), entry)).not.toEqual([]);
   });
 
-  it('have a failing example for every forbidden origin', () => {
-    const origins = leaks.flatMap(({ entry, files }) =>
-      exportOrigins(writeTree(files), entry),
+  it('have a failing example for every forbidden origin and name', () => {
+    const declarations = leaks.flatMap(({ entry, files }) =>
+      exportDeclarations(writeTree(files), entry),
     );
     for (const pattern of hidden) {
       expect(
-        origins.some((origin) => pattern.test(origin)),
+        declarations.some(({ file }) => pattern.test(file)),
         String(pattern),
       ).toBe(true);
     }
+    for (const symbol of hiddenSymbols) {
+      for (const name of symbol.names) {
+        expect(
+          declarations.some(
+            (declaration) =>
+              symbol.file.test(declaration.file) && declaration.name === name,
+          ),
+          name,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it('accept the type of the line writer, which the context of a call needs', () => {
+    const root = writeTree({
+      [coreEntry]:
+        "export type { LineWriter } from './logger/line-writer.js';\n",
+    });
+    expect(exportOrigins(root, coreEntry)).toEqual([lineWriter]);
+    expect(hiddenOrigins(root, coreEntry)).toEqual([]);
   });
 
   it('accept an export declared in the package itself', () => {

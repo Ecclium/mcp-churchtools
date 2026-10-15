@@ -43,6 +43,14 @@ export const toolNamePattern = /^ct_[a-z0-9_]{1,60}$/;
 export const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+/**
+ * A host name in lower case without port, user, path or a dot at the end,
+ * for the schema of the audit and the address of ChurchTools (ADR 0055).
+ * Never give it a flag.
+ */
+export const hostPattern =
+  /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
+
 /** A time in ISO 8601, in UTC, with milliseconds and a year of four digits. */
 export const timestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 

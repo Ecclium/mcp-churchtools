@@ -22,7 +22,7 @@ const now = Date.parse('2026-10-13T08:00:00.000Z');
 const base: AuditDraft = {
   type: 'tool_call',
   tenantId: 'demo-tenant',
-  actor: { kind: 'service', id: 'stdio:local-operator' },
+  actor: { kind: 'user', id: 'stdio:local-stdio' },
   mode: 'interactive',
   tool: 'ct_group_search',
   outcome: 'ok',
@@ -31,7 +31,7 @@ const base: AuditDraft = {
 };
 
 const baseLine =
-  '{"v":1,"eventId":"a1b2c3d4-0000-4000-8000-000000000001","ts":"2026-10-13T08:00:00.000Z","type":"tool_call","tenantId":"demo-tenant","actor":{"kind":"service","id":"stdio:local-operator"},"mode":"interactive","tool":"ct_group_search","outcome":"ok","objectRefs":["group:12"],"durationMs":12}';
+  '{"v":1,"eventId":"a1b2c3d4-0000-4000-8000-000000000001","ts":"2026-10-13T08:00:00.000Z","type":"tool_call","tenantId":"demo-tenant","actor":{"kind":"user","id":"stdio:local-stdio"},"mode":"interactive","tool":"ct_group_search","outcome":"ok","objectRefs":["group:12"],"durationMs":12}';
 
 interface LogLine {
   readonly event: string;
@@ -201,7 +201,7 @@ describe('a valid event', () => {
     class Draft {
       readonly type = 'tool_call';
       readonly tenantId = 'demo-tenant';
-      readonly actor = { kind: 'service', id: 'stdio:local-operator' };
+      readonly actor = { kind: 'user', id: 'stdio:local-stdio' };
       readonly mode = 'interactive';
       readonly tool = 'ct_group_search';
       readonly outcome = 'ok';

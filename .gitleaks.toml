@@ -136,7 +136,10 @@ description = "ChurchTools token assigned to a variable or setting"
 # variable (ADR 0023). Either way the value never belongs in the repository,
 # so a token assigned directly (CT_TOKEN=..., churchtoolsToken: "...") is a
 # leak. Assignments to *_FILE, *_PATH and *_DIR are paths and are allowed.
-regex = '''(?i)\b(?:CT|CHURCHTOOLS)_?[A-Z0-9_]*TOKEN[A-Z0-9_]*["'\x60]?\s*[:=]\s*["'\x60]?([A-Za-z0-9._~+/=-]{16,})'''
+# The variables of this project carry the prefix ECCLIUM_ (ADR 0055), and
+# an underscore is a word character, so the prefix is named here; a free
+# underscore before CT would also catch unrelated names like FOO_CT_TOKEN.
+regex = '''(?i)\b(?:ECCLIUM_)?(?:CT|CHURCHTOOLS)_?[A-Z0-9_]*TOKEN[A-Z0-9_]*["'\x60]?\s*[:=]\s*["'\x60]?([A-Za-z0-9._~+/=-]{16,})'''
 secretGroup = 1
 keywords = ["ct_", "churchtools"]
 tags = ["secret", "churchtools"]

@@ -7,9 +7,10 @@
 import type { Clock } from '@ecclium/mcp-churchtools-plugin-api';
 
 /**
- * The time of the system. Frozen, so that no module can replace its method
- * for every other module. Tests pass a fake clock instead.
+ * The time of the system. Frozen, method and all, so that no module can
+ * replace the method or hang a value on it for every other module that
+ * shares the clock. Tests pass a fake clock instead.
  */
 export const systemClock: Clock = Object.freeze({
-  now: (): number => Date.now(),
+  now: Object.freeze((): number => Date.now()),
 });

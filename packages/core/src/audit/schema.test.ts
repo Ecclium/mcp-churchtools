@@ -44,7 +44,7 @@ const valid: AuditEventV1 = {
   ts: '2026-10-13T08:00:00.000Z',
   type: 'tool_call',
   tenantId: 'demo-tenant',
-  actor: { kind: 'service', id: 'stdio:local-operator' },
+  actor: { kind: 'user', id: 'stdio:local-stdio' },
   mode: 'interactive',
   outcome: 'ok',
   objectRefs: ['person:1'],
@@ -198,7 +198,7 @@ describe('the field schemas', () => {
   it.each([
     [
       'actorId',
-      ['stdio:local-operator', 'service', 'oidc:4f2a-7c'],
+      ['stdio:local-stdio', 'service', 'oidc:4f2a-7c'],
       [
         'max.mustermann@example.org',
         'Max Mustermann',

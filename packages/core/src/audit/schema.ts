@@ -16,6 +16,7 @@ import {
 import { z } from 'zod';
 
 import {
+  hostPattern,
   modes,
   tenantIdPattern,
   timestampPattern,
@@ -64,7 +65,7 @@ export const objectDomains: readonly string[] = Object.freeze([
 ]);
 
 // Regular expressions without flags, like those of the logger. An actor ID
-// is a neutral name such as stdio:local-operator, never an e-mail address: no
+// is a neutral name such as stdio:local-stdio, never an e-mail address: no
 // capital letter, no dot, no @ and no space. A name as a slug would fit, so
 // the identity must not make one (ADR 0003).
 const actorIdPattern = /^[a-z][a-z0-9_-]{0,31}(?::[a-z0-9_-]{1,64})?$/;
@@ -72,9 +73,6 @@ const hashPattern = /^[0-9a-f]{64}$/;
 const vendorPattern = /^[a-z][a-z0-9-]{0,31}$/;
 const modelPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
 const countryPattern = /^[A-Z]{2}$/;
-// A host name in lower case without port, user, path or a dot at the end.
-const hostPattern =
-  /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
 // A term such as eu_gdpr, never text with spaces or dots. Which terms exist
 // is still open; until then any term of this form fits.
 const termPattern = /^[a-z][a-z0-9_]{0,31}$/;
@@ -174,9 +172,10 @@ export const auditEventV1Schema = z
 
 /**
  * Values the sink writes instead of an invalid required field. Each one
- * passes the schema. The configuration must refuse the tenant `invalid` and
- * the actor `invalid`, and the registry the tool `ct_unknown`, so that a
- * placeholder is never taken for a real value.
+ * passes the schema. The factory of the tenant context refuses the tenant
+ * `invalid`, the actor `invalid`, the zero UUID as run or event and the
+ * tool `ct_unknown`, and the registry will refuse that tool as well, so
+ * that a placeholder is never taken for a real value.
  */
 export const auditPlaceholders = Object.freeze({
   eventId: '00000000-0000-0000-0000-000000000000',

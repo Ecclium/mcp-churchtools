@@ -8,6 +8,7 @@
  * @packageDocumentation
  */
 export {
+  hostPattern,
   isBoolean,
   isErrorCode,
   isEventName,

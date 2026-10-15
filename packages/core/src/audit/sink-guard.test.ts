@@ -35,7 +35,7 @@ describe('the sink with a bug in a field check', () => {
     const draft: AuditDraft = {
       type: 'tool_call',
       tenantId: 'Max Mustermann',
-      actor: { kind: 'service', id: 'stdio:local-operator' },
+      actor: { kind: 'user', id: 'stdio:local-stdio' },
       mode: 'interactive',
       outcome: 'ok',
       objectRefs: [],
