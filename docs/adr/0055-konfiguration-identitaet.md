@@ -39,7 +39,7 @@ Geprüft an Node.js 24.21.0 und zod 4.6.5:
 - **Lesen der Token-Datei:**
   - `readFileSync` auf einem Deskriptor liest bis zum Ende, auch wenn die Datei nach der Prüfung der Grösse gewachsen ist.
   - Nach einem Treffer eines regulären Ausdrucks steht die Eingabe in `RegExp.$_`, lesbar für jeden Code im Prozess.
-- **Befehle:** `parseArgs` aus `node:util` wiederholt ein unerwartetes Argument wörtlich in seiner Fehlermeldung.
+- **Befehle:** `parseArgs` aus `node:util` wiederholt eine unbekannte Option wörtlich in seiner Fehlermeldung. Eine Option, die zweimal im Aufruf steht, nimmt es ohne Fehler an.
 
 ## Optionen
 
@@ -56,7 +56,7 @@ Jede Variable trägt das Präfix `ECCLIUM_`. Werte werden exakt geprüft, die To
 
 - Der Vorrang lautet: Flag der Kommandozeile, dann Umgebung, dann `config.yaml`, dann Voreinstellung. Ein Geheimnis in `config.yaml` bricht den Start ab.
 - In Phase 1 gibt es nur Umgebung, Dateien über `*_FILE` und Voreinstellungen. `config.yaml` und Flags für Werte folgen später. Optionen eines Befehls wie `--show-values` sind keine Konfiguration.
-- Der Kern liest `process.env` nie selbst. Die Kommandozeile reicht die Umgebung als Parameter weiter. Eine Architekturregel erlaubt das Lesen von `process.env` nur ihrem Einstieg.
+- Der Kern liest `process.env` nie selbst. Die Kommandozeile reicht die Umgebung als Parameter weiter. Eine Architekturregel weist das Lesen von `process.env`, `process.argv` und `process.report` ausserhalb ihres Einstiegs ab, in den Formen, die sie im Code sieht, ebenso einen Aufruf von `parseArgs` ohne `args`, der `process.argv` selbst liest. Was sie nicht sieht, steht unter «Konsequenzen». Auch ein Argument kann ein Token enthalten, und der Bericht des Prozesses nennt die ganze Umgebung.
 
 ### Namen
 
@@ -65,7 +65,7 @@ Jede Variable trägt das Präfix `ECCLIUM_`. Werte werden exakt geprüft, die To
 - `ECCLIUM_EGRESS_PROXY` bricht ab, bis ein ausdrücklicher Proxy mit ADR 0035 kommt.
 - Mandant, Modus, Transport und Akteur sind keine Variablen. `ECCLIUM_TENANT`, `ECCLIUM_MODE`, `ECCLIUM_TRANSPORT` und `ECCLIUM_ACTOR` sind deshalb unbekannt und brechen ab.
 - Die eigenen Variablen des Repositorys mit diesem Präfix, etwa die der Proben, haben keine Ausnahme. Server und Proben laufen nicht in derselben Shell, und Tests mit Kindprozessen geben eine ausdrücklich gefilterte Umgebung weiter.
-- Ein Tippfehler im Präfix selbst, etwa `ECLIUM_READ_ONLY`, fällt nicht auf. Es bleiben dann die sicheren Voreinstellungen, und ohne Adresse oder Token bricht der Start ohnehin ab.
+- Ein Tippfehler im Präfix selbst, etwa `ECLIUM_READ_ONLY`, fällt nicht auf. Es bleiben dann die Voreinstellungen, und ohne Adresse oder Token bricht der Start ab. Eine Ausnahme: Steht über stdio das Token in `ECCLIUM_CHURCHTOOLS_TOKEN` und hat der Name der Token-Datei einen solchen Tippfehler, gilt das Token aus der Umgebung, nur mit der Warnung beim Start. Der Abbruch für zwei Quellen greift dann nicht.
 - `NODE_TLS_REJECT_UNAUTHORIZED` mit dem Wert `0` bricht den Start ab, in jeder Schreibweise des Namens, weil Node.js ihn unter Windows ohne Rücksicht darauf liest. Mit diesem Wert prüfte Node.js die Zertifikate von ChurchTools nicht mehr. Es ist die einzige Variable ohne Präfix, die der Lader liest.
 
 ### Werte
@@ -128,9 +128,9 @@ Grenzen:
 ### Token aus der Umgebung
 
 - `ECCLIUM_CHURCHTOOLS_TOKEN` gilt nur, wenn die Wurzel der Komposition den Server über stdio startet. Das legt der Befehl fest, nie eine Variable.
-- Jeder Start meldet die Warnung, dass das Token im Klartext in der Konfiguration des Assistenten steht und jedem Kindprozess sichtbar wäre.
+- Jeder Start meldet die Warnung, dass das Token im Klartext in der Konfiguration des Assistenten steht und andere Programme desselben Benutzers es lesen können, solange der Server läuft.
 - Stehen Datei und Variable zusammen, bricht der Start ab, statt eine Quelle stillschweigend vorzuziehen.
-- Nach dem Laden entfernt die Kommandozeile die Variable aus `process.env`. Unter Linux zeigt `/proc/<pid>/environ` weiter den Stand beim Start.
+- Bevor die Kommandozeile etwas anderes tut, kopiert sie die Umgebung für den Lader und entfernt die Variable in jeder Schreibweise aus `process.env`, auch bei einem falschen Aufruf. Kindprozesse und anderer Code im Prozess sehen sie danach nicht mehr. Andere Programme desselben Benutzers sehen weiter den Stand beim Start, unter Linux in `/proc/<pid>/environ`, unter macOS etwa mit `ps eww`.
 
 ### Identität und Mandant über stdio
 
@@ -168,8 +168,11 @@ Grenzen:
 - Host und ein abweichendes Subjekt sind maskiert, mit `--show-values` sichtbar. So passt die Ausgabe ohne Bearbeitung in ein öffentliches Issue.
 - Namen unbekannter Variablen nennt er, wenn sie dem Muster `^ECCLIUM_[A-Z0-9_]{1,64}$` folgen, damit sich ein Tippfehler finden lässt.
 - Er fragt ChurchTools nicht an und sagt das.
-- Fehler beim Aufruf erscheinen mit festen Texten, nie mit der Meldung von `parseArgs`.
-- Exit-Codes:
+- Der Aufruf kennt nur `--show-values` und `-h` oder `--help`. Eine Option, die zweimal vorkommt, weist er ab, weil `parseArgs` sie annähme.
+- Fehler beim Aufruf erscheinen mit festen Texten auf stderr, nie mit der Meldung von `parseArgs` und nie mit einem Argument, weil darin ein Token stehen kann.
+- Der Bericht geht nach stdout. Kann stdout nicht mehr schreiben, etwa weil der Leser einer Pipe fehlt, bleibt der Exit-Code der der Gültigkeit.
+- Ein interner Fehler ergibt eine feste Zeile auf stderr, ohne Stack und ohne Meldung. Den geworfenen Wert liest die Kommandozeile nicht.
+- Exit-Codes, nach `sysexits.h`:
 
   | Code | Bedeutung               |
   | ---- | ----------------------- |
@@ -178,20 +181,46 @@ Grenzen:
   | 70   | interner Fehler         |
   | 78   | ungültige Konfiguration |
 
+  Die Codes meiden 1, den Code von Node.js für eine nicht gefangene Ausnahme. So gilt ein Absturz nie als ungültige Konfiguration.
+
 ### Startmeldungen
 
 - Der Kern meldet Probleme und Warnungen nur als Codes. Die deutschen Texte stehen in einem Katalog in `packages/cli/src/messages/`.
-- Vor dem Start über stdio schreibt `packages/cli/src/notices/` sie nach stderr, Zeile für Zeile mit `writeSync`, nie über `process.stderr`. Der Ort schreibt nur Texte aus dem Katalog und ist damit kein Kanal für freien Text.
+- Vor dem Start über stdio schreibt `packages/cli/src/notices/` sie nach stderr, Zeile für Zeile mit `writeSync`, nie über `process.stderr`. Der Ort schreibt nur Texte aus dem Katalog und ist damit kein Kanal für freien Text: Einen Text des Katalogs machen nur `problemText` und `warningText`. Der Typ weist eine gewöhnliche Zeichenkette ab, ein Cast oder eine Typprüfung käme darum herum, das muss eine Durchsicht finden.
+- Jede Zeile prüft ein Stolperdraht gegen eine Positivliste der Zeichen: druckbares ASCII, die Umlaute und die Anführungszeichen «» und ‹›. Bleibt eine Zeile abgerissen, hören die Startmeldungen auf und versuchen einen Zeilenumbruch. Gelingt auch der nicht, melden sie die Zeile als abgerissen, und der Start über stdio entscheidet, was vor der ersten Logzeile geschieht.
 - ADR 0053 legt fest, dass nach stderr nur der Logger und die Meldungen der Kommandozeile schreiben, und dass die Orte im Code in `tests/architecture/boundaries.json` stehen. Die Startmeldungen sind solche Meldungen der Kommandozeile, nur aus einem Ordner, den der Betrieb über stdio erreichen darf. Der neue Ort setzt ADR 0053 deshalb um, er ändert es nicht.
+- Katalog und Startmeldungen erreichen die Orte, die nach stdout schreiben, nie, auch nicht über ein anderes Modul. Das prüft eine eigene Regel, schon bevor der Start über stdio sie importiert.
+- Startmeldungen erscheinen nur, bevor der Zeilenschreiber des Loggers besteht. Eine Meldung, die mitten in der Zeile abbricht, nähme sonst der nächsten Logzeile ihre Form als JSON.
+- Der Start über stdio kommt aus einem eigenen Einstieg unter `packages/cli/src/stdio/`, nie über den Befehl der Kommandozeile. So erfasst die Regel für den Betrieb über stdio den ganzen Prozess.
 
 ## Konsequenzen
 
 - **Strenge Fehler beim Start:** Wer `READ_ONLY` aus einer alten Vorlage ohne Präfix übernimmt, bekommt keine Wirkung. Wer `ecclium_read_only` schreibt, bekommt einen Abbruch mit dem richtigen Namen.
 - **Proben und Server getrennt:** Die Proben des Repositorys und der Server laufen nicht in derselben Shell, und jeder Test mit Kindprozessen gibt seine Umgebung ausdrücklich vor.
 - **Subjekt als Name:** Ein Name in der Form `max-mustermann` passt auf das Muster des Subjekts. Das Muster schliesst E-Mail-Adressen, Leerzeichen, Punkte und Grossbuchstaben aus, aber keinen Namen als Bezeichnung. Pseudonyme und Kontingente folgen dem Subjekt.
-- **Token in der Umgebung:** Es steht im Klartext in der Konfiguration des Assistenten. Unter Linux kann derselbe Benutzer es in `/proc` lesen, solange der Prozess läuft.
+- **Token in der Umgebung:** Es steht im Klartext in der Konfiguration des Assistenten. Andere Programme desselben Benutzers können es unter Linux und macOS lesen, solange der Prozess läuft, auch nachdem die Kommandozeile die Variable entfernt hat.
+- **Grenzen der Regeln:** `[arch:environment]` und `[arch:require]` lesen Code, nicht was zur Laufzeit geschieht. `node:vm`, das Tests für Objekte aus einem anderen Realm brauchen, der Konstruktor eines Funktionswerts, ein Lesen von `/proc/self/environ` oder `/proc/self/cmdline` über das Dateisystem und der Code von Abhängigkeiten bleiben ihnen verborgen. Bei `parseArgs` sieht die Regel nur einen Aufruf unter diesem Namen ohne einen Schlüssel `args`: eine umbenannte oder weitergereichte Funktion, `args: undefined` und eine Option namens `args` entgehen ihr. Eine Regel gegen Importe aus `node:util` ausser im Befehl der Kommandozeile, die ein eigener Pull Request bringt, schliesst das umbenannte `parseArgs` mit ein.
 - **Token-Datei:** Ordner über der Datei und Zugriffslisten von macOS prüft der Server nicht. Unter macOS besteht `/dev/fd/0` jede Prüfung, wenn stdin aus einer eigenen Datei mit den Rechten 0600 kommt. Unter Windows gibt es keine Token-Datei.
 - **Namen in der Ausgabe:** Unbekannte Variablennamen erscheinen in `config check` und in den Startmeldungen. Ein Name trägt nie einen Wert, eine erfundene Bezeichnung könnte aber Text tragen.
 - **Host sichtbar:** Mit `--show-values` zeigt `config check` den Host der Instanz.
+- **Host verborgen:** Ohne `--show-values` zeigt `config check` nicht, ob die Konfiguration auf die Testinstanz oder einen produktiven Tenant zeigt (Threat Model, T23).
+- **Tippfehler im Namen der Token-Datei:** Über stdio gilt dann still das Token aus der Umgebung, wie unter «Namen» beschrieben. Nur die Warnung beim Start zeigt es.
+- **Absturz vor dem Fang:** Scheitert der Prozess, bevor die Kommandozeile Fehler fängt, etwa beim Laden eines Moduls, endet er mit dem Code 1 von Node.js und einem Stack auf stderr.
 - **Zustand von zod:** Die Schemas von zod auf Modulebene ändern beim ersten Prüfen innere Zwischenspeicher, wie in ADR 0054.
 - **Lesen der Umgebung:** Andere Pakete könnten `process.env` lesen, wenn die Regel dazu fehlt. Deshalb steht sie, bevor ein Paket die Umgebung braucht.
+
+## Umsetzung
+
+- Kern, gemergt am 15.10.2026:
+  - `packages/core/src/config/` mit der Tabelle in `variables.ts`, den Codes in `codes.ts`, dem Lesen der Token-Datei in `token-file.ts` und dem Lader in `load.ts`;
+  - die Prüfung der Adresse in `packages/core/src/http/origin.ts`;
+  - Identität und `TenantResolver` über stdio in `packages/core/src/identity/stdio.ts`;
+  - der Mandantenkontext in `packages/core/src/tenant/`;
+  - `tests/token-file.test.mts` mit `tests/fixtures/config/read-token-file.mts` für eine FIFO in einem Kindprozess.
+- Kommandozeile:
+  - der Katalog der Texte in `packages/cli/src/messages/`, die Startmeldungen in `packages/cli/src/notices/` und die Ausgabe in `packages/cli/src/output/`, mit der gemeinsamen Schleife für Teilschreibvorgänge in `packages/cli/src/send.ts`;
+  - `ecclium config check` in `packages/cli/src/commands/config-check.ts`, `main.ts`, `exit-codes.ts` und `bin.ts`, mit dem Eintrag `bin` in `packages/cli/package.json`;
+  - die Übernahme der Umgebung in `packages/cli/src/environment.ts` und `tests/token-environment.test.mts` mit `tests/fixtures/config/take-environment.mts`, der zeigt, dass ein Kindprozess das Token nicht mehr sieht.
+- Regeln: der Ort `environment` mit der ESLint-Regel `[arch:environment]` für `process.env`, `process.argv`, `process.report` und `parseArgs` ohne `args`, `eval`, `Function` und die Importe `getBuiltinModule`, `binding` und `dlopen` unter `[arch:require]`, der Ort `stdioReachable` mit der Regel `no-stdout-from-stdio-modules` von dependency-cruiser, ein Test, der im Syntaxbaum der Schreiber `process` und `console` sucht, und die Regel `churchtools-token-assignment` von gitleaks, die auch `ECCLIUM_CHURCHTOOLS_TOKEN` erkennt.
+- `.env.example` nennt die Variablen mit Präfix, `tests/env-example.test.mts` gleicht die Datei mit der Tabelle ab.
+- Offen: der Start über stdio mit den Startmeldungen vor dem Zeilenschreiber und dem Test mit Kanarienwerten im Kindprozess, die Prüfung des Tokens mit `whoami`, die Variable für die Drosselung und die Registrierung der Suchtools nach `ECCLIUM_SEARCH_TOOLS`.
