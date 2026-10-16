@@ -13,6 +13,11 @@ import { describe, expect, it } from 'vitest';
 // so a child process, started from source with the network guard inherited
 // through NODE_OPTIONS, writes three lines onto its real fd 2. The package
 // tests check what a line holds; this test checks only how lines land.
+// The inherited guard loads node:process, which makes fd 2 non-blocking
+// when it is a pipe, so in the case of a pipe the lines land on a
+// non-blocking fd 2; a file keeps its flags. Whether the modules of the
+// packages keep fd 2 blocking is checked in
+// tests/blocking-descriptors.test.mts (ADR 0054).
 // Package tests cannot start child processes, so this test lives here.
 
 const fixture = fileURLToPath(
