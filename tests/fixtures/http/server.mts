@@ -95,6 +95,13 @@ export function throughServer(
       seen.alpn = tls.alpnProtocol;
     });
     tls.on('error', () => undefined);
+    // When one side of a pair is destroyed, Node.js 24.21.0 ends the other,
+    // 24.15.0 does not. A server that closes its connection ends the input
+    // of the transport here, as a closed TCP connection would, on every
+    // version.
+    tls.on('close', () => {
+      if (!client.readableEnded) client.push(null);
+    });
     server.emit('connection', tls);
     return client as unknown as Socket;
   });
