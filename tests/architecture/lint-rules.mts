@@ -33,6 +33,7 @@ export const concernIds = [
   'util-module',
   'subprocess',
   'network',
+  'diagnostics',
   'mcp-register',
   'module-state',
 ] as const;
@@ -117,6 +118,8 @@ function messages(boundaries: Boundaries): Record<Concern, string> {
     'mcp-register': `[arch:mcp-register] Only the mount, and in testkit the server of the elicitation spike, register tools, prompts, resources and handlers with the MCP SDK, so that every call runs through the one pipeline (${adr('mcpRegistration')}).`,
     'module-state': `[arch:module-state] Code in the packages keeps no mutable state at module level. State that outlives a request is created in the composition root, as a named port or a named exception (${adr('moduleState')}).`,
     network: `[arch:network] Only the outbound path in core opens network connections, after it checks the host allow-list (${adr('egress')}).`,
+    diagnostics:
+      '[arch:diagnostics] No code in the packages imports node:diagnostics_channel. undici publishes the headers of every request there, the token among them, and the answers as well, so a subscriber would read them past the Secret (ADR 0056).',
   };
 }
 
@@ -272,6 +275,7 @@ function restrictions(
           // module makes fd 1 and fd 2 non-blocking. One concern for all
           // names, so that an import reports once.
           ...whole('process', 'process'),
+          ...whole('diagnostics', 'diagnostics_channel'),
           ...(forbid('util-module') ? whole('util-module', 'util', 'sys') : []),
           ...(forbid('stdout') ? whole('stdout', 'tty') : []),
           ...whole('require', 'module'),
@@ -311,6 +315,10 @@ function restrictions(
             message: message['util-module'],
           }))
         : []),
+      ...['ImportExpression', 'TSImportType'].map((node) => ({
+        selector: importOf('diagnostics_channel', node),
+        message: message.diagnostics,
+      })),
       { selector: importOf('module'), message: message.require },
       {
         selector: importOf('child_process|worker_threads|cluster'),

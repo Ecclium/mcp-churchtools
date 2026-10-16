@@ -232,6 +232,31 @@ const probes: readonly {
   { code: "await import('sys');", concerns: ['util-module'] },
 
   {
+    code: "import { subscribe } from 'node:diagnostics_channel';",
+    concerns: ['diagnostics'],
+  },
+  {
+    code: "import diagnostics from 'diagnostics_channel';",
+    concerns: ['diagnostics'],
+  },
+  {
+    code: "import type { Channel } from 'node:diagnostics_channel';",
+    concerns: ['diagnostics'],
+  },
+  {
+    code: "export * from 'node:diagnostics_channel';",
+    concerns: ['diagnostics'],
+  },
+  {
+    code: "await import('node:diagnostics_channel');",
+    concerns: ['diagnostics'],
+  },
+  {
+    code: "type Channels = typeof import('diagnostics_channel');",
+    concerns: ['diagnostics'],
+  },
+
+  {
     code: "import { spawnSync } from 'node:child_process';",
     concerns: ['subprocess'],
   },

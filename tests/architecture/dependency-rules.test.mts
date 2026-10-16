@@ -556,6 +556,30 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'no-diagnostics-channel',
+    name: 'tools subscribes to a diagnostics channel',
+    files: {
+      'packages/tools/src/forbidden.ts':
+        "import { subscribe } from 'node:diagnostics_channel';\nexport const listen = subscribe;\n",
+    },
+  },
+  {
+    rule: 'no-diagnostics-channel',
+    name: 'the outbound path imports diagnostics_channel as well',
+    files: {
+      'packages/core/src/http/forbidden.ts':
+        "import diagnostics from 'diagnostics_channel';\nexport const channels = diagnostics;\n",
+    },
+  },
+  {
+    rule: 'no-diagnostics-channel',
+    name: 'a test of a package imports its types',
+    files: {
+      'packages/core/src/forbidden.test.ts':
+        "import type { Channel } from 'node:diagnostics_channel';\nexport type Seen = Channel;\n",
+    },
+  },
+  {
     rule: 'no-util-module',
     name: 'the start notices import sys with import()',
     files: {
@@ -716,11 +740,13 @@ const allowedCases: readonly Omit<Case, 'rule'>[] = [
 // Paths of rules that may still match no module of the workspace. No package
 // opens a network connection before the HTTP transport of phase 1. The test
 // below fails as soon as one of these paths matches, so the entry goes when
-// the first module needs the rule. node:process is refused everywhere, so
-// its path matches nothing for as long as the packages keep the rule.
+// the first module needs the rule. node:process and node:diagnostics_channel
+// are refused everywhere, so their paths match nothing for as long as the
+// packages keep the rules.
 const notYetMatched: readonly string[] = [
   ...networkTargets.map((pattern) => `network-only-in-egress.to: ${pattern}`),
   'no-process-module.to: ^(node:)?process$',
+  'no-diagnostics-channel.to: ^(node:)?diagnostics_channel$',
 ];
 
 describe('the copy of the workspace', () => {

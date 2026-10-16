@@ -273,6 +273,14 @@ export function dependencyRules(
       to: { path: '^(node:)?process$' },
     },
     {
+      name: 'no-diagnostics-channel',
+      severity: 'error',
+      comment:
+        'ADR 0056: undici publishes the headers of every request on diagnostics channels, the Authorization header with the token among them, and the answers as well. A subscriber would read them past the Secret, so no module of the packages imports node:diagnostics_channel, tests included. Imports for types only count as well.',
+      from: { path: '^packages/' },
+      to: { path: '^(node:)?diagnostics_channel$' },
+    },
+    {
       name: 'no-util-module-in-stdio-paths',
       severity: 'error',
       comment: `${adr('utilModule')}: the start over stdio never reaches a file of the place utilModule, which loads node:util and so makes fd 2 non-blocking. Tests there are exempt.`,
