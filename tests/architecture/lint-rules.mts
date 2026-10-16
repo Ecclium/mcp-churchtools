@@ -7,7 +7,8 @@ import { moduleStateRule } from './module-state-rule.mts';
 // and loaded by eslint.config.mjs. dependency-cruiser sees imports; these
 // rules see what code does with them: writing to stdout or stderr, using
 // console, reading the environment, loading modules past the import
-// checks, starting processes, importing the MCP SDK, registering with it,
+// checks, loading modules that make fd 1 or fd 2 non-blocking, starting
+// processes, importing the MCP SDK, registering with it,
 // opening network connections and keeping state at module level.
 //
 // Every restriction carries an id such as [arch:stdout] and its ADR in the
@@ -29,6 +30,7 @@ export const concernIds = [
   'mcp-sdk',
   'dynamic-import',
   'require',
+  'util-module',
   'subprocess',
   'network',
   'mcp-register',
@@ -84,6 +86,7 @@ const liftable: readonly (readonly [Concern, PlaceKey])[] = [
   ['network', 'egress'],
   ['mcp-register', 'mcpRegistration'],
   ['environment', 'environment'],
+  ['util-module', 'utilModule'],
 ];
 
 /** The places of boundaries.json that lift a restriction. */
@@ -101,13 +104,14 @@ function messages(boundaries: Boundaries): Record<Concern, string> {
     stdout: `[arch:stdout] Only the output module of the command line writes to stdout. In the stdio mode stdout carries the MCP protocol (${adr('stdout')}).`,
     stderr: `[arch:stderr] Only the logger, the output module and the start notices of the command line and the start of the elicitation spike in testkit write to stderr (${adr('stderr')}).`,
     process:
-      '[arch:process] Use process and globalThis only through a property such as process.exitCode. Passed on or taken apart, they hide writes to stdout and stderr from these rules (ADR 0053).',
+      '[arch:process] Use process and globalThis only through a property such as process.exitCode, and never import node:process: its ES module makes fd 1 and fd 2 non-blocking (ADR 0054). Passed on or taken apart, they hide writes to stdout and stderr from these rules (ADR 0053).',
     environment: `[arch:environment] Only the entry of the command line reads the environment and the arguments and hands them to the core as parameters. Other code could read the token from them past the Secret, also through the diagnostic report of the process (${adr('environment')}).`,
     'mcp-sdk': `[arch:mcp-sdk] Only the mount in core, the server and the elicitation spike in testkit import the MCP SDK (${adr('mcpSdk')}).`,
     'dynamic-import':
       '[arch:dynamic-import] import() takes a fixed string, so that the architecture checks see what it loads (ADR 0022).',
     require:
       '[arch:require] Modules are loaded only with import, and no code runs from a string: never through node:module, require, process.getBuiltinModule, eval or Function, which the architecture checks do not see (ADR 0022).',
+    'util-module': `[arch:util-module] Only the command of the command line, for parseArgs, the canary values of testkit and the tests of the packages load node:util. Its ES module makes fd 2 non-blocking, and the writers then lose log and audit lines. Take type checks from node:util/types (${adr('utilModule')}).`,
     subprocess:
       '[arch:subprocess] The packages start no child processes, workers or cluster members, which can share stdout with the MCP protocol (ADR 0053).',
     'mcp-register': `[arch:mcp-register] Only the mount, and in testkit the server of the elicitation spike, register tools, prompts, resources and handlers with the MCP SDK, so that every call runs through the one pipeline (${adr('mcpRegistration')}).`,
@@ -209,12 +213,6 @@ function restrictions(
       message: message[concern],
     },
   ];
-  const processImports = (names: readonly string[], concern: Concern) =>
-    builtin('process').map((name) => ({
-      name,
-      importNames: [...names],
-      message: message[concern],
-    }));
   const whole = (concern: Concern, ...names: readonly string[]) =>
     builtin(...names).map((name) => ({ name, message: message[concern] }));
   return {
@@ -270,16 +268,11 @@ function restrictions(
       {
         paths: [
           ...whole('console', 'console'),
-          ...processImports(['default'], 'process'),
-          ...processImports(
-            ['getBuiltinModule', 'binding', 'dlopen'],
-            'require',
-          ),
-          ...(forbid('stdout') ? processImports(['stdout'], 'stdout') : []),
-          ...(forbid('environment')
-            ? processImports(['env', 'argv', 'report'], 'environment')
-            : []),
-          ...(forbid('stderr') ? processImports(['stderr'], 'stderr') : []),
+          // Every import of node:process, also a single name: its ES
+          // module makes fd 1 and fd 2 non-blocking. One concern for all
+          // names, so that an import reports once.
+          ...whole('process', 'process'),
+          ...(forbid('util-module') ? whole('util-module', 'util', 'sys') : []),
           ...(forbid('stdout') ? whole('stdout', 'tty') : []),
           ...whole('require', 'module'),
           ...whole('subprocess', 'child_process', 'worker_threads', 'cluster'),
@@ -308,6 +301,16 @@ function restrictions(
         message: message.console,
       })),
       { selector: importOf('process'), message: message.process },
+      {
+        selector: importOf('process', 'TSImportType'),
+        message: message.process,
+      },
+      ...(forbid('util-module')
+        ? ['ImportExpression', 'TSImportType'].map((node) => ({
+            selector: importOf('util|sys', node),
+            message: message['util-module'],
+          }))
+        : []),
       { selector: importOf('module'), message: message.require },
       {
         selector: importOf('child_process|worker_threads|cluster'),
@@ -416,24 +419,46 @@ export function architectureLintConfig(
   const paths = [...new Set(lifted.map((entry) => entry.path))].sort(
     (a, b) => a.length - b.length,
   );
+  // Tests of the packages may load node:util: some check what Node.js
+  // prints with inspect. The build leaves out *.test.ts only, so only that
+  // form counts as a test. A later block replaces the rules as a whole, so
+  // each block has a sibling for its tests that lifts util-module as well.
+  const forTests = (allowed: ReadonlySet<Concern>): Set<Concern> =>
+    new Set([...allowed, 'util-module']);
+  const tests = 'packages/*/src/**/*.test.ts';
   return [
     {
       name: 'architecture: packages',
       files: [`packages/*/src/**/*.${sources}`],
       rules: restrictions(message, new Set()),
     },
-    ...paths.map((path) => ({
-      name: `architecture: ${path}`,
-      files: [path.endsWith('/') ? `${path}**/*.${sources}` : path],
-      rules: restrictions(
-        message,
-        new Set(
-          lifted
-            .filter((entry) => path.startsWith(entry.path))
-            .map((entry) => entry.concern),
-        ),
-      ),
-    })),
+    {
+      name: 'architecture: packages (tests)',
+      files: [tests],
+      rules: restrictions(message, forTests(new Set())),
+    },
+    ...paths.flatMap((path) => {
+      const allowed = new Set(
+        lifted
+          .filter((entry) => path.startsWith(entry.path))
+          .map((entry) => entry.concern),
+      );
+      const block: Linter.Config = {
+        name: `architecture: ${path}`,
+        files: [path.endsWith('/') ? `${path}**/*.${sources}` : path],
+        rules: restrictions(message, allowed),
+      };
+      return path.endsWith('/')
+        ? [
+            block,
+            {
+              name: `architecture: ${path} (tests)`,
+              files: [`${path}**/*.test.ts`],
+              rules: restrictions(message, forTests(allowed)),
+            },
+          ]
+        : [block];
+    }),
     {
       name: 'architecture: module state',
       files: [`packages/*/src/**/*.${sources}`],

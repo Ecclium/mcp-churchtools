@@ -7,8 +7,6 @@
  *
  * @packageDocumentation
  */
-// node:util/types and not node:util: loading node:util as an ES module
-// makes fd 2 non-blocking.
 import { isProxy } from 'node:util/types';
 
 const invalidEnvironment = 'The environment cannot be taken over.';

@@ -5,8 +5,6 @@
  *
  * @packageDocumentation
  */
-// node:util/types and not node:util: loading node:util as an ES module
-// makes fd 2 non-blocking, as a probe on Node.js 24 showed.
 import { isProxy } from 'node:util/types';
 
 /** The shape of `writeSync` from `node:fs`, as the writers call it. */

@@ -38,6 +38,7 @@ export const placeKeys = [
   'plugins',
   'moduleState',
   'environment',
+  'utilModule',
 ] as const;
 
 /** Key of a place in the code that a rule refers to. */
@@ -263,7 +264,9 @@ const packageOf = (path: string): string =>
  * Registration with the MCP SDK stays in single files of the mount or of
  * the package for tests (ADR 0024). Mutable state at module level is
  * allowed only file by file (ADR 0051), and so is reading the environment
- * (ADR 0055).
+ * (ADR 0055). Loading node:util is allowed only in single files of the
+ * command line or of the package for tests, outside the places of the start
+ * over stdio (ADR 0054).
  */
 function checkExceptions(
   places: Partial<Record<PlaceKey, Place>>,
@@ -316,11 +319,25 @@ function checkExceptions(
       );
     }
   }
-  for (const key of ['moduleState', 'environment'] as const) {
+  for (const key of ['moduleState', 'environment', 'utilModule'] as const) {
     for (const path of places[key]?.paths ?? []) {
       if (path.endsWith('/')) {
         report(`places.${key}: "${path}" must be one file`);
       }
+    }
+  }
+  const stdio = [
+    ...(places.stdioEntries?.paths ?? []),
+    ...(places.stdioReachable?.paths ?? []),
+  ];
+  for (const path of places.utilModule?.paths ?? []) {
+    if (
+      !['cli', testOnly].includes(packageOf(path)) ||
+      stdio.some((place) => path.startsWith(place) || place === path)
+    ) {
+      report(
+        `places.utilModule: "${path}" must be a file of the command line or of ${testOnly}, outside the places of the start over stdio`,
+      );
     }
   }
   for (const path of places.mcpMountImporters?.paths ?? []) {

@@ -147,6 +147,11 @@
       "description": "Modules that may keep mutable state at module level. Each entry is one file with its own ADR.",
       "paths": []
     },
+    "utilModule": {
+      "adr": "0054",
+      "description": "Files that may load node:util, whose ES module makes fd 2 non-blocking: the command of the command line for parseArgs and the canary values of testkit, which use inspect. Each entry is one file in the command line or in testkit, outside the places of the start over stdio.",
+      "paths": ["packages/cli/src/main.ts", "packages/testkit/src/canary.ts"]
+    },
     "environment": {
       "adr": "0055",
       "description": "Code that may read the environment and the arguments of the process: only the entry of the command line, which hands them to the core as parameters. Other code could otherwise read the token from them past the Secret.",

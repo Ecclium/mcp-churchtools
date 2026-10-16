@@ -7,7 +7,8 @@
  * @packageDocumentation
  */
 // parseArgs exists only in node:util, whose ES module makes fd 2
-// non-blocking. The start over stdio never loads this module.
+// non-blocking. This file is in the place utilModule, and the start over
+// stdio never loads it (ADR 0054).
 import { parseArgs } from 'node:util';
 import { isProxy } from 'node:util/types';
 

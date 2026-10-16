@@ -23,9 +23,11 @@ import { describe, expect, it } from 'vitest';
 //   another way to make those checks, not only a change of the docs.
 // - A module of the packages fails: it loads something that makes fd 2
 //   non-blocking. Fix the import.
-// Only modules without relative imports can be loaded from source. The rest
-// of the packages relies on the architecture rules, which see imports, not
-// what a module does while it loads.
+// Only modules without relative imports can be loaded from source. For the
+// rest of the packages, the architecture rules refuse node:util, node:sys
+// and node:process; they see imports, not what a module does while it
+// loads. Other modules that make fd 2 non-blocking, such as node:assert,
+// node:repl and node:test, are an open point in docs/STATUS.md.
 
 const fixture = fileURLToPath(
   new URL('fixtures/blocking/write.mts', import.meta.url),

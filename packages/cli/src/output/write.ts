@@ -2,7 +2,7 @@
  * Writes the output of the command line for operators, line by line with
  * `writeSync` on fd 1 and fd 2. It never touches `process.stdout` or
  * `process.stderr`, whose streams can buffer, reorder or turn a descriptor
- * non-blocking (ADR 0053).
+ * non-blocking (ADR 0053, ADR 0054).
  *
  * @packageDocumentation
  */

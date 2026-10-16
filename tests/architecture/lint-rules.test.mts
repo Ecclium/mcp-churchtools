@@ -69,7 +69,7 @@ const probes: readonly {
 
   { code: "process.stdout.write('x');", concerns: ['stdout'] },
   { code: "process['stdout'].write('x');", concerns: ['stdout'] },
-  { code: "import { stdout } from 'node:process';", concerns: ['stdout'] },
+  { code: "import { stdout } from 'node:process';", concerns: ['process'] },
   {
     code: "import { writeSync } from 'node:fs';\nwriteSync(1, 'x');",
     concerns: ['stdout'],
@@ -103,7 +103,7 @@ const probes: readonly {
     code: "import { writeFileSync } from 'node:fs';\nwriteFileSync('/dev/fd/2', 'x');",
     concerns: ['stderr'],
   },
-  { code: "import { stderr } from 'process';", concerns: ['stderr'] },
+  { code: "import { stderr } from 'process';", concerns: ['process'] },
   {
     code: "import { writeSync } from 'node:fs';\nwriteSync(2, 'x');",
     concerns: ['stderr'],
@@ -126,27 +126,31 @@ const probes: readonly {
   { code: 'const home = process.env.HOME;', concerns: ['environment'] },
   { code: "process['env'];", concerns: ['environment'] },
   { code: 'delete process.env.X;', concerns: ['environment'] },
-  { code: "import { env } from 'node:process';", concerns: ['environment'] },
+  { code: "import { env } from 'node:process';", concerns: ['process'] },
   {
     code: "import { env as variables } from 'process';",
-    concerns: ['environment'],
+    concerns: ['process'],
   },
   { code: 'const [, , first] = process.argv;', concerns: ['environment'] },
   { code: "process['argv'];", concerns: ['environment'] },
-  { code: "import { argv } from 'node:process';", concerns: ['environment'] },
+  { code: "import { argv } from 'node:process';", concerns: ['process'] },
   { code: 'process.report.getReport();', concerns: ['environment'] },
-  { code: "import { report } from 'process';", concerns: ['environment'] },
+  { code: "import { report } from 'process';", concerns: ['process'] },
   {
     code: "import { parseArgs } from 'node:util';\nparseArgs({ options: {} });",
-    concerns: ['environment'],
+    concerns: ['environment', 'util-module'],
   },
   {
     code: "import { parseArgs } from 'node:util';\nparseArgs();",
-    concerns: ['environment'],
+    concerns: ['environment', 'util-module'],
   },
   {
     code: "import * as util from 'node:util';\nutil.parseArgs({ strict: true });",
-    concerns: ['environment'],
+    concerns: ['environment', 'util-module'],
+  },
+  {
+    code: "import { parseArgs } from 'node:util';\nparseArgs({ args: [], options: {} });",
+    concerns: ['util-module'],
   },
 
   {
@@ -193,9 +197,39 @@ const probes: readonly {
   { code: "globalThis.Function('x');", concerns: ['require'] },
   {
     code: "import { getBuiltinModule } from 'node:process';",
-    concerns: ['require'],
+    concerns: ['process'],
   },
-  { code: "import { binding as b } from 'process';", concerns: ['require'] },
+  { code: "import { binding as b } from 'process';", concerns: ['process'] },
+  { code: "import { execArgv } from 'node:process';", concerns: ['process'] },
+  { code: "import { platform } from 'node:process';", concerns: ['process'] },
+  { code: "export { platform } from 'node:process';", concerns: ['process'] },
+  {
+    code: "export type Process = typeof import('node:process');",
+    concerns: ['process'],
+  },
+
+  { code: "import { types } from 'node:util';", concerns: ['util-module'] },
+  { code: "import { types } from 'util';", concerns: ['util-module'] },
+  { code: "import util from 'node:util';", concerns: ['util-module'] },
+  { code: "import 'node:util';", concerns: ['util-module'] },
+  { code: "import {} from 'node:util';", concerns: ['util-module'] },
+  {
+    code: "import { type InspectOptions } from 'node:util';",
+    concerns: ['util-module'],
+  },
+  {
+    code: "import type { InspectOptions } from 'node:util';",
+    concerns: ['util-module'],
+  },
+  { code: "export { types } from 'node:util';", concerns: ['util-module'] },
+  { code: "export * from 'util';", concerns: ['util-module'] },
+  { code: "await import('node:util');", concerns: ['util-module'] },
+  {
+    code: "export type Util = typeof import('node:util');",
+    concerns: ['util-module'],
+  },
+  { code: "import { parseArgs } from 'node:sys';", concerns: ['util-module'] },
+  { code: "await import('sys');", concerns: ['util-module'] },
 
   {
     code: "import { spawnSync } from 'node:child_process';",
@@ -363,9 +397,10 @@ const allowed: readonly string[] = [
   'process.exitCode = 1;',
   "process.on('exit', () => undefined);",
   'const platform = process.platform;',
-  "import { execArgv } from 'node:process';",
+  "import { isProxy } from 'node:util/types';",
+  "import { isMap } from 'util/types';",
+  "await import('node:util/types');",
   'export const evaluate = { eval: (): void => undefined };',
-  "import { parseArgs } from 'node:util';\nparseArgs({ args: [], options: {} });",
   'export const kind = (value: unknown): string => typeof value;',
   "import { readFileSync } from 'node:fs';",
   "import { writeSync } from 'node:fs';\nwriteSync(3, 'x');",
@@ -404,7 +439,10 @@ const locations: readonly {
   readonly allowed: readonly Concern[];
 }[] = [
   { path: 'packages/core/src/probe.ts', allowed: [] },
-  { path: 'packages/core/src/probe.test.ts', allowed: ['module-state'] },
+  {
+    path: 'packages/core/src/probe.test.ts',
+    allowed: ['module-state', 'util-module'],
+  },
   { path: 'packages/core/src/probe.test.mts', allowed: [] },
   { path: 'packages/core/src/probe.mts', allowed: [] },
   { path: 'packages/core/src/logger/probe.ts', allowed: ['stderr'] },
@@ -416,7 +454,22 @@ const locations: readonly {
   { path: 'packages/cli/src/noticesx/probe.ts', allowed: [] },
   { path: 'packages/cli/src/bin.ts', allowed: ['environment'] },
   { path: 'packages/cli/src/binary.ts', allowed: [] },
-  { path: 'packages/cli/src/bin.test.ts', allowed: ['module-state'] },
+  { path: 'packages/cli/src/main.ts', allowed: ['util-module'] },
+  {
+    path: 'packages/cli/src/main.test.ts',
+    allowed: ['module-state', 'util-module'],
+  },
+  { path: 'packages/cli/src/mainline.ts', allowed: [] },
+  { path: 'packages/testkit/src/canary.ts', allowed: ['util-module'] },
+  { path: 'packages/testkit/src/canary-extra.ts', allowed: [] },
+  {
+    path: 'packages/core/src/logger/probe.test.ts',
+    allowed: ['stderr', 'module-state', 'util-module'],
+  },
+  {
+    path: 'packages/cli/src/bin.test.ts',
+    allowed: ['module-state', 'util-module'],
+  },
   { path: 'packages/core/src/mcp/probe.ts', allowed: ['mcp-sdk'] },
   {
     path: 'packages/core/src/mcp/mount.ts',
@@ -439,7 +492,7 @@ const locations: readonly {
   { path: 'packages/testkit/src/mcp-spike/log.ts', allowed: ['mcp-sdk'] },
   {
     path: 'packages/testkit/src/mcp-spike/probe.test.ts',
-    allowed: ['mcp-sdk', 'module-state'],
+    allowed: ['mcp-sdk', 'module-state', 'util-module'],
   },
   { path: 'packages/testkit/src/mcp-spikex/probe.ts', allowed: [] },
   { path: 'packages/testkit/src/probe.ts', allowed: [] },
