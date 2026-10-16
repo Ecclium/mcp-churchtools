@@ -18,3 +18,12 @@ export {
   type CanaryKind,
   type CanarySet,
 } from './canary.js';
+export {
+  type ChurchToolsDoubleOptions,
+  createChurchToolsDouble,
+  doubleOrigin,
+  doubleUserAgent,
+  type InterceptOptions,
+  type MockedCall,
+  type MockedHttpTransport,
+} from './http-double/index.js';

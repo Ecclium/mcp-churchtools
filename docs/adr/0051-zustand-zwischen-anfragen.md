@@ -1,6 +1,6 @@
 # ADR 0051: Zustand zwischen Anfragen
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 16.10.2026
 - Datum: 10.10.2026
 - Fällt vor: Phase 1
 
@@ -55,4 +55,4 @@ Gewählt ist die dritte Option.
 ## Umsetzung
 
 - Die Regel `ecclium-arch/no-module-state` steht in `tests/architecture/module-state-rule.mts` und wird über `tests/architecture/lint-rules.mts` für den Code der Pakete eingebunden, in einem eigenen Block, weil sie keine der geteilten ESLint-Regeln ist. Der Ort `moduleState` in `tests/architecture/boundaries.json` ist leer und nimmt nur einzelne Dateien. `tests/architecture/lint-rules.test.mts` belegt jede Form, die die Regel meldet, mit einem Beispiel und prüft Beispiele, die erlaubt bleiben.
-- Der Pool der Verbindungen und der Zähler der Drosselung folgen in Phase 1 mit dem ausgehenden Weg und dem ChurchTools-Client.
+- Der Pool der Verbindungen ist der Agent von undici, den jeder Transport für seine eine Origin baut, mit dem Cache der TLS-Sitzungen seines Connectors (ADR 0056). Die Composition Root baut ihn, ein Neustart verwirft ihn. Der Zähler der Drosselung folgt in Phase 1 mit dem ChurchTools-Client.

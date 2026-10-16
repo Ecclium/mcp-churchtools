@@ -288,6 +288,56 @@ describe('loading boundaries.json', () => {
       message: /places\.rawClientImporters: .* must be one module/,
     },
     {
+      name: 'a test double of the transport outside testkit',
+      change: (m) => {
+        place(m, 'httpDouble').paths = ['packages/core/src/churchtools/'];
+      },
+      message:
+        /places\.httpDouble: "packages\/core\/src\/churchtools\/" must be one folder directly under src\/ of testkit/,
+    },
+    {
+      name: 'the whole of testkit as test double of the transport',
+      change: (m) => {
+        place(m, 'httpDouble').paths = ['packages/testkit/src/'];
+      },
+      message:
+        /places\.httpDouble: "packages\/testkit\/src\/" must be one folder directly under src\/ of testkit/,
+    },
+    {
+      name: 'a builder of the transport in core',
+      change: (m) => {
+        place(m, 'transportBuilders').paths = [
+          'packages/core/src/churchtools/',
+        ];
+      },
+      message:
+        /places\.transportBuilders: "packages\/core\/src\/churchtools\/" must be a folder of the command line, below its src\//,
+    },
+    {
+      name: 'a builder of the transport in another package',
+      change: (m) => {
+        place(m, 'transportBuilders').paths = ['packages/tools/src/'];
+      },
+      message:
+        /places\.transportBuilders: "packages\/tools\/src\/" must be a folder of the command line/,
+    },
+    {
+      name: 'a file of the command line as builder of the transport',
+      change: (m) => {
+        place(m, 'transportBuilders').paths = ['packages/cli/src/main.ts'];
+      },
+      message:
+        /places\.transportBuilders: "packages\/cli\/src\/main\.ts" must be a folder of the command line, below its src\//,
+    },
+    {
+      name: 'the whole command line as builder of the transport',
+      change: (m) => {
+        place(m, 'transportBuilders').paths = ['packages/cli/src/'];
+      },
+      message:
+        /places\.transportBuilders: "packages\/cli\/src\/" must be a folder of the command line, below its src\//,
+    },
+    {
       name: 'an outbound path outside core',
       change: (m) => {
         place(m, 'egress').paths = ['packages/server/src/stdio/'];

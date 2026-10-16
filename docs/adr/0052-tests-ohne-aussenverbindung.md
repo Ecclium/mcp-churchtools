@@ -69,7 +69,7 @@ Gewählt ist Option 6, für den Namensraum der Weg b mit c als Rückfall im selb
 
 ## Konsequenzen
 
-- Ein Test, der einen Server braucht, bindet ihn an `127.0.0.1` oder `::1` und spricht ihn über diese Adresse an, nie über `localhost`. Tests des ausgehenden Wegs übergeben `fetch` oder einen Dispatcher. `vi.spyOn`, nock und ähnliches Abfangen auf `net`, `dns` und `dgram` gehen nicht.
+- Ein Test, der einen Server braucht, bindet ihn an `127.0.0.1` oder `::1` und spricht ihn über diese Adresse an, nie über `localhost`. Tests des ausgehenden Wegs geben dem Transport einen `MockAgent` von undici oder, für TLS, einen schon verbundenen Socket aus einem Stream-Paar im Speicher (ADR 0056). `vi.spyOn`, nock und ähnliches Abfangen auf `net`, `dns` und `dgram` gehen nicht.
 - Ein Kindprozess mit Node.js, der das Netz versucht, endet mit Code 70. Ein Test, der den genauen Code eines solchen Prozesses erwartet, sieht diesen Code.
 - Ein Werkzeug, das im Testprozess Worker-Threads startet, läuft dort nicht.
 - In den Jobs `check`, `compat` und `minimum` steht Docker für Build und Prüfungen nicht zur Verfügung.

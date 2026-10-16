@@ -66,10 +66,20 @@ export const unsupportedVariableNames = Object.freeze([
 export const proxyVariableName = 'ECCLIUM_EGRESS_PROXY';
 
 /**
- * The only variable without the prefix that the loader reads. With the
- * value 0, Node.js would check no certificate of ChurchTools.
+ * One of the two variables without the prefix that the loader reads. With
+ * the value 0, Node.js would check no certificate of ChurchTools.
  */
 export const tlsVariableName = 'NODE_TLS_REJECT_UNAUTHORIZED';
+
+/**
+ * The other variable without the prefix that the loader reads. It switches
+ * on the debug output of Node.js modules, which goes to stderr past the
+ * logger: undici writes the address, path and query of each request, the
+ * section `stream` the first bytes of every chunk of an answer and of the
+ * input over stdio, `net` the host (ADR 0056). Which sections exist changes
+ * with every release, so the loader refuses any section.
+ */
+export const debugVariableName = 'NODE_DEBUG';
 
 /**
  * A neutral name for whoever calls over stdio, such as `local-stdio`: no

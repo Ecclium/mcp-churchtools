@@ -898,6 +898,43 @@ describe('loadConfig and refused settings', () => {
     },
   );
 
+  // Every section of NODE_DEBUG writes past the logger to stderr: undici
+  // the address, path and query of each request, stream the bytes of
+  // answers and of the input over stdio, net the host. Any pattern with
+  // more than blanks counts, also one that names no section today.
+  it.each([
+    'undici',
+    'fetch',
+    'websocket',
+    'UNDICI',
+    'stream',
+    'STREAM',
+    'str*',
+    'net',
+    'net,stream',
+    'http,tls',
+    'http, fetch ',
+    '*',
+    ',x',
+    ' module ',
+    'unknown-section',
+  ])('refuses NODE_DEBUG=%j', (value) => {
+    expect(problems(load({ ...valid(), NODE_DEBUG: value }))).toEqual([
+      ['debug_output_enabled', 'NODE_DEBUG'],
+    ]);
+  });
+
+  it.each(['', ' ', ',', ' , ', '\t'])('accepts NODE_DEBUG=%j', (value) => {
+    expect(load({ ...valid(), NODE_DEBUG: value }).ok).toBe(true);
+  });
+
+  it.each(['node_debug', 'Node_Debug'])('refuses %s=net as well', (name) => {
+    expect(problems(load({ ...valid(), [name]: 'net' }))).toEqual([
+      ['debug_output_enabled', 'NODE_DEBUG'],
+    ]);
+    expect(load({ ...valid(), [name]: ',' }).ok).toBe(true);
+  });
+
   it('reports warnings also when the load fails', () => {
     const result = load({
       ECCLIUM_CHURCHTOOLS_TOKEN_FILE: tokenPath,
@@ -923,6 +960,7 @@ describe('loadConfig and its problems', () => {
     proxy_unsupported: () => load({ ...valid(), ECCLIUM_EGRESS_PROXY: 'x' }),
     tls_check_disabled: () =>
       load({ ...valid(), NODE_TLS_REJECT_UNAUTHORIZED: '0' }),
+    debug_output_enabled: () => load({ ...valid(), NODE_DEBUG: 'undici' }),
     empty_value: () => load({ ...valid(), ECCLIUM_READ_ONLY: '' }),
     value_too_long: () => load({ ...valid(), ECCLIUM_READ_ONLY: 'xxxxxx' }),
     invalid_choice: () => load({ ...valid(), ECCLIUM_READ_ONLY: 'yes' }),
@@ -1006,16 +1044,20 @@ describe('loadConfig and its problems', () => {
       ECCLIUM_CHURCHTOOLS_TOKEN_FILE: tokenPath,
       ECCLIUM_TOOLSETS: 'x',
       NODE_TLS_REJECT_UNAUTHORIZED: '0',
+      NODE_DEBUG: 'undici',
+      ECCLIUM_EGRESS_PROXY: 'x',
     };
     for (let index = 0; index < 40; index += 1) {
       environment[`ECCLIUM_UNKNOWN_${String(index)}`] = 'x';
     }
     const result = load(environment);
     expect(result.report.problems).toHaveLength(maxReportedProblems);
-    expect(result.report.omittedProblems).toBe(43 - maxReportedProblems);
-    expect(problems(result).slice(0, 6)).toEqual([
+    expect(result.report.omittedProblems).toBe(45 - maxReportedProblems);
+    expect(problems(result).slice(0, 8)).toEqual([
       ['url_not_https', 'ECCLIUM_CHURCHTOOLS_URL'],
       ['tls_check_disabled', 'NODE_TLS_REJECT_UNAUTHORIZED'],
+      ['debug_output_enabled', 'NODE_DEBUG'],
+      ['proxy_unsupported', 'ECCLIUM_EGRESS_PROXY'],
       ['unsupported_variable', 'ECCLIUM_TOOLSETS'],
       ['unknown_variable', 'ECCLIUM_UNKNOWN_0'],
       ['unknown_variable', 'ECCLIUM_UNKNOWN_1'],
@@ -1077,6 +1119,7 @@ describe('loadConfig and what it gives out', () => {
         ECCLIUM_TOOLSETS: value,
         ECCLIUM_EGRESS_PROXY: value,
         NODE_TLS_REJECT_UNAUTHORIZED: value,
+        NODE_DEBUG: `undici,${value}`,
       };
       assertPlanted(input, canaries.all, 'environment');
       const result = load(input, 'stdio', files);

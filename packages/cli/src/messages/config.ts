@@ -36,9 +36,10 @@ export interface Message {
 }
 
 // A name the loader may report: the prefix and capitals, digits and
-// underscores, or the one variable of Node.js it reads. Anything else is
-// never put into a text.
-const namePattern = /^ECCLIUM_[A-Z0-9_]{1,64}$|^NODE_TLS_REJECT_UNAUTHORIZED$/;
+// underscores, or one of the two variables of Node.js it reads. Anything
+// else is never put into a text.
+const namePattern =
+  /^ECCLIUM_[A-Z0-9_]{1,64}$|^NODE_TLS_REJECT_UNAUTHORIZED$|^NODE_DEBUG$/;
 
 const quote = (name: string): string => `‹${name}›`;
 
@@ -154,6 +155,12 @@ const problems: Readonly<
     message(
       `Die Variable ${name} hat den Wert 0.`,
       'Damit prüfte Node.js die Zertifikate von ChurchTools nicht mehr, und das Token könnte an einen fremden Server gehen.',
+      'Entfernen Sie die Variable aus der Konfiguration des KI-Assistenten.',
+    ),
+  debug_output_enabled: (name = quote('NODE_DEBUG')) =>
+    message(
+      `Die Variable ${name} schaltet die Diagnose von Node.js ein.`,
+      'Damit schriebe Node.js am Protokoll vorbei nach stderr, je nach Sektion Adresse, Pfad und Suchbegriffe jeder Anfrage an ChurchTools oder Teile der Antworten.',
       'Entfernen Sie die Variable aus der Konfiguration des KI-Assistenten.',
     ),
   empty_value: (name) =>

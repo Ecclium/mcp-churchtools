@@ -223,11 +223,33 @@ export function dependencyRules(
       name: 'egress-internals',
       severity: 'error',
       comment:
-        'ADR 0054: only modules of the outbound path import its modules other than its entry point. One of them turns a secret back into its value, which no other module may do. Tests in the packages are not exempt. Code outside the packages is not cruised; tests/architecture/reveal-secret.test.mts covers it.',
+        'ADR 0054: only modules of the outbound path import its modules other than its entry points: index.ts, compose.ts and compose-mock.ts, the subpaths ./http and ./http/testing of core, whose importers transport-only-from-composition-root and mocked-transport-only-in-testkit narrow (ADR 0056). One of the other modules turns a secret back into its value, which no other module may do. Tests in the packages are not exempt. Code outside the packages is not cruised; tests/architecture/reveal-secret.test.mts covers it.',
       from: { pathNot: at('egress') },
       to: {
         path: at('egress'),
-        pathNot: pathPattern(`${places.egress.paths[0] ?? ''}index.ts`),
+        pathNot: [
+          pathPattern(`${places.egress.paths[0] ?? ''}index.ts`),
+          pathPattern(`${places.egress.paths[0] ?? ''}compose.ts`),
+          pathPattern(`${places.egress.paths[0] ?? ''}compose-mock.ts`),
+        ],
+      },
+    },
+    {
+      name: 'transport-only-from-composition-root',
+      severity: 'error',
+      comment: `${adr('transportBuilders')}: only the composition root builds an HTTP transport, through the subpath ./http of core, so that no tool builds one with an origin of its own. Tests in the packages are not exempt.`,
+      from: { pathNot: [...at('egress'), ...at('transportBuilders')] },
+      to: {
+        path: pathPattern(`${places.egress.paths[0] ?? ''}compose.ts`),
+      },
+    },
+    {
+      name: 'mocked-transport-only-in-testkit',
+      severity: 'error',
+      comment: `${adr('httpDouble')}: only the test double in testkit builds the transport on a MockAgent, through the subpath ./http/testing of core, so that no module that ships builds one. The module itself is part of the build of core, and only tests import testkit.`,
+      from: { pathNot: [...at('egress'), ...at('httpDouble')] },
+      to: {
+        path: pathPattern(`${places.egress.paths[0] ?? ''}compose-mock.ts`),
       },
     },
     {
@@ -271,6 +293,14 @@ export function dependencyRules(
       comment: `${adr('utilModule')}: loading node:process as an ES module makes fd 1 and fd 2 non-blocking, so no module of the packages imports it, tests included. Imports for types only count as well.`,
       from: { path: '^packages/' },
       to: { path: '^(node:)?process$' },
+    },
+    {
+      name: 'no-diagnostics-channel',
+      severity: 'error',
+      comment:
+        'ADR 0056: undici publishes the headers of every request on diagnostics channels, the Authorization header with the token among them, and the answers as well. A subscriber would read them past the Secret, so no module of the packages imports node:diagnostics_channel, tests included. Imports for types only count as well.',
+      from: { path: '^packages/' },
+      to: { path: '^(node:)?diagnostics_channel$' },
     },
     {
       name: 'no-util-module-in-stdio-paths',

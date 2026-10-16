@@ -24,7 +24,6 @@ import extractDepcruiseOptions from 'dependency-cruiser/config-utl/extract-depcr
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { loadBoundaries, workspaceRoot } from './boundaries.mts';
-import { networkTargets } from './dependency-rules.mts';
 
 // Each dependency-cruiser rule is proven by a forbidden example: the test
 // copies the packages into a temporary folder, adds one file that breaks
@@ -556,6 +555,74 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'transport-only-from-composition-root',
+    name: 'tools builds a transport through the subpath of core',
+    files: {
+      'packages/tools/src/forbidden.ts': `import { createHttpTransport } from '${nameOf('core')}/http';\nexport const build = createHttpTransport;\n`,
+    },
+  },
+  {
+    rule: 'transport-only-from-composition-root',
+    name: 'a module of core next to the outbound path builds a transport',
+    files: {
+      'packages/core/src/churchtools/forbidden.ts':
+        "import { createHttpTransport } from '../http/compose.js';\nexport const build = createHttpTransport;\n",
+    },
+  },
+  {
+    rule: 'transport-only-from-composition-root',
+    name: 'a test of the command line outside the composition root builds a transport',
+    files: {
+      'packages/cli/src/forbidden.test.ts': `import { createHttpTransport } from '${nameOf('core')}/http';\nexport const build = createHttpTransport;\n`,
+    },
+  },
+  {
+    rule: 'mocked-transport-only-in-testkit',
+    name: 'tools builds the transport on a MockAgent',
+    files: {
+      'packages/tools/src/forbidden.ts': `import { createMockedHttpTransport } from '${nameOf('core')}/http/testing';\nexport const build = createMockedHttpTransport;\n`,
+    },
+  },
+  {
+    rule: 'mocked-transport-only-in-testkit',
+    name: 'testkit outside its double builds the transport on a MockAgent',
+    files: {
+      'packages/testkit/src/forbidden.ts': `import { createMockedHttpTransport } from '${nameOf('core')}/http/testing';\nexport const build = createMockedHttpTransport;\n`,
+    },
+  },
+  {
+    rule: 'egress-internals',
+    name: 'a module of core imports the build path of the transport',
+    files: {
+      'packages/core/src/churchtools/forbidden.ts':
+        "import { createTransport } from '../http/transport.js';\nexport const build = createTransport;\n",
+    },
+  },
+  {
+    rule: 'no-diagnostics-channel',
+    name: 'tools subscribes to a diagnostics channel',
+    files: {
+      'packages/tools/src/forbidden.ts':
+        "import { subscribe } from 'node:diagnostics_channel';\nexport const listen = subscribe;\n",
+    },
+  },
+  {
+    rule: 'no-diagnostics-channel',
+    name: 'the outbound path imports diagnostics_channel as well',
+    files: {
+      'packages/core/src/http/forbidden.ts':
+        "import diagnostics from 'diagnostics_channel';\nexport const channels = diagnostics;\n",
+    },
+  },
+  {
+    rule: 'no-diagnostics-channel',
+    name: 'a test of a package imports its types',
+    files: {
+      'packages/core/src/forbidden.test.ts':
+        "import type { Channel } from 'node:diagnostics_channel';\nexport type Seen = Channel;\n",
+    },
+  },
+  {
     rule: 'no-util-module',
     name: 'the start notices import sys with import()',
     files: {
@@ -659,6 +726,25 @@ const allowedCases: readonly Omit<Case, 'rule'>[] = [
     },
   },
   {
+    name: 'the composition root builds a transport through the subpath of core',
+    files: {
+      'packages/cli/src/stdio/allowed.ts': `import { createHttpTransport } from '${nameOf('core')}/http';\nexport const build = createHttpTransport;\n`,
+    },
+  },
+  {
+    name: 'the double in testkit builds the transport on a MockAgent',
+    files: {
+      'packages/testkit/src/http-double/allowed.ts': `import { createMockedHttpTransport } from '${nameOf('core')}/http/testing';\nexport const build = createMockedHttpTransport;\n`,
+    },
+  },
+  {
+    name: 'a module of core imports the type of the transport',
+    files: {
+      'packages/core/src/churchtools/allowed.ts':
+        "import type { HttpTransport } from '../http/index.js';\nexport type Transport = HttpTransport;\n",
+    },
+  },
+  {
     name: 'the server imports the mount',
     files: {
       'packages/server/src/allowed.ts': `import '${nameOf('core')}/mcp';\nexport {};\n`,
@@ -713,14 +799,13 @@ const allowedCases: readonly Omit<Case, 'rule'>[] = [
   },
 ];
 
-// Paths of rules that may still match no module of the workspace. No package
-// opens a network connection before the HTTP transport of phase 1. The test
-// below fails as soon as one of these paths matches, so the entry goes when
-// the first module needs the rule. node:process is refused everywhere, so
-// its path matches nothing for as long as the packages keep the rule.
+// Paths of rules that match no module of the workspace. node:process and
+// node:diagnostics_channel are refused everywhere, so their paths match
+// nothing for as long as the packages keep the rules. The test below fails
+// as soon as one of these paths matches.
 const notYetMatched: readonly string[] = [
-  ...networkTargets.map((pattern) => `network-only-in-egress.to: ${pattern}`),
   'no-process-module.to: ^(node:)?process$',
+  'no-diagnostics-channel.to: ^(node:)?diagnostics_channel$',
 ];
 
 describe('the copy of the workspace', () => {

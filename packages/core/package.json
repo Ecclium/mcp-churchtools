@@ -14,10 +14,21 @@
       "@ecclium/source": "./src/mcp/mount.ts",
       "types": "./dist/mcp/mount.d.ts",
       "default": "./dist/mcp/mount.js"
+    },
+    "./http": {
+      "@ecclium/source": "./src/http/compose.ts",
+      "types": "./dist/http/compose.d.ts",
+      "default": "./dist/http/compose.js"
+    },
+    "./http/testing": {
+      "@ecclium/source": "./src/http/compose-mock.ts",
+      "types": "./dist/http/compose-mock.d.ts",
+      "default": "./dist/http/compose-mock.js"
     }
   },
   "dependencies": {
     "@ecclium/mcp-churchtools-plugin-api": "workspace:*",
+    "undici": "8.12.2",
     "zod": "4.6.5"
   },
   "devDependencies": {
