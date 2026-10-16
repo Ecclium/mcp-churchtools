@@ -1,6 +1,6 @@
 # ADR 0058: Elastic License 2.0 für das ganze Repository
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 16.10.2026
 - Datum: 16.10.2026
 - Fällt vor: Phase 8
 
@@ -39,7 +39,7 @@ Gewählt sind die dritte Option zur Lizenz und die zweite Option zu Beiträgen.
 
 - **Lizenz:** Das ganze Repository steht unter der Elastic License 2.0, jedes Paket unter `packages/` eingeschlossen, auch `plugin-api` und `testkit`. `LICENSE` enthält den Text der ELv2 unverändert aus der Quelle, und das Feld `license` jedes Pakets lautet `Elastic-2.0`. Ausgenommen bleiben Dateien, die eine eigene Lizenz nennen, etwa die Schriften in `brand/fonts/`.
 - **Ab wann:** Die ELv2 gilt ab dem Commit, der sie einführt. Alles, was vorher auf `main` lag, bleibt unter der Apache License 2.0 nutzbar.
-- **Lizenzgeber:** `NOTICE` nennt ihn als Rechteinhaber. Nur er darf den Quellcode selbst als Dienst anbieten oder anderen das erlauben.
+- **Lizenzgeber:** `NOTICE` nennt ihn als Rechteinhaber, vorerst mit der Sammelbezeichnung «Die Autorinnen und Autoren von Ecclium». Wer genau Lizenzgeber ist, klärt eine juristische Prüfung vor dem ersten Release. Nur der Lizenzgeber darf den Quellcode selbst als Dienst anbieten oder anderen das erlauben.
 - **Beiträge:** Jeder Commit in einem Pull Request trägt ein Sign-off nach dem DCO 1.1, unverändert. Beiträge gehen unter der Apache License 2.0 ein, und das Projekt gibt sie mit dem übrigen Quellcode unter der ELv2 weiter. Es gibt kein CLA. Vor dem ersten Beitrag von aussen prüft eine Juristin oder ein Jurist diese Regel.
 - **Weiter wie bisher:** Für das Sign-off gilt eine bekannte Identität, ein dauerhaftes Pseudonym genügt, anonyme Beiträge werden nicht angenommen. Fremder Quelltext kommt nicht in den Kern. Ist eine Ausnahme nötig, wird sie vorher entschieden, im Code markiert und in `NOTICE` mit Quelle und Lizenz vermerkt. Name und Logo von Ecclium sind nicht Teil der Lizenz des Quellcodes, ihren Gebrauch regelt `TRADEMARKS.md`.
 - **Zusage:** `PROMISE.md` bleibt. Was im kostenlosen Kern ist, wandert nicht hinter eine Bezahlschranke. «Freier Kern» heisst kostenlos nutzbar und selbst betreibbar, nicht Open Source.
@@ -60,3 +60,12 @@ Gewählt sind die dritte Option zur Lizenz und die zweite Option zu Beiträgen.
   - **Beiträge:** Ob Beiträge unter der Apache License 2.0 und ein unverändertes DCO den Lizenzgeber ausreichend absichern, ist juristisch nicht geprüft.
   - **Renovate:** Dass die Commits von Renovate als rein technische Änderungen keine Rechte begründen, ist eine Annahme, juristisch nicht geprüft.
   - **Lizenzgeber:** Eine Sammelbezeichnung als Rechteinhaber macht unklar, wer Verstösse abmahnt und Erlaubnisse erteilt.
+
+## Umsetzung
+
+- Lizenztext: `LICENSE`, der Text der ELv2 unverändert aus dem Repository von Elasticsearch, `licenses/ELASTIC-LICENSE-2.0.txt`, geholt am 16.10.2026, SHA-256 `48255018b41fc0e965b1115af7e6779bc218bb8a6747d561da800d5022622aa2`. Hinweise und Rechteinhaber: `NOTICE`. Zusage: `PROMISE.md`. Beiträge und DCO: `CONTRIBUTING.md`. Kurzfassung für Betreibende: `README.md`, Abschnitt «Lizenz».
+- Lizenzfeld jedes Pakets: `packages/*/package.json`. `tests/packages.test.mts` prüft, dass jedes Paket `Elastic-2.0` nennt.
+- Prüfung des Sign-offs wie bisher: `scripts/ci/check-dco.mts`, im Git-Hook (`lefthook.yml`) und im Job `dco` (`.github/workflows/pr-meta.yml`).
+- Pull Requests: Die Vorlage fragt nach der Bestätigung, dass ein Beitrag unter der Apache License 2.0 eingeht.
+- Offen: die juristische Prüfung der Regel für Beiträge vor dem ersten Beitrag von aussen und die Klärung des Lizenzgebers vor dem ersten Release.
+- Offen: dass jedes Tarball und jedes Image `LICENSE` und `NOTICE` enthält, mit einer Prüfung im Release-Pfad (ADR 0040).
