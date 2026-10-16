@@ -59,7 +59,7 @@ commit-msg:
         { printf '\n%40000s\n' ''
           sed '/^# -\{24\} >8 -\{24\}$/,$d' {1}
         } | mise exec -- gitleaks stdin --redact --verbose --no-banner --ignore-gitleaks-allow -c .gitleaks.toml
-    # The message needs a Signed-off-by trailer of the author (ADR 0002),
+    # The message needs a Signed-off-by trailer of the author (ADR 0058),
     # which `git commit --signoff` adds. The dco job in CI runs the same
     # script over every commit of a pull request, so a commit that skipped
     # this hook is still caught there.
