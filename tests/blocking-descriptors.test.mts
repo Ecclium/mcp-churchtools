@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
 import process from 'node:process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -18,6 +19,9 @@ import { describe, expect, it } from 'vitest';
 //   the test, not of the code.
 // - node:util or node:process fails: Node.js changed, and the facts in
 //   ADR 0054 are out of date. Update the docs.
+// - undici fails: undici or Node.js no longer makes fd 2 non-blocking
+//   while undici loads, and the facts in ADR 0056 are out of date. Update
+//   the docs.
 // - node:util/types fails: the type checks of the core and the command
 //   line come from it, so the writers would lose lines. The code needs
 //   another way to make those checks, not only a change of the docs.
@@ -113,6 +117,21 @@ describe('fd 2 after loading a module', () => {
         fileURLToPath(new URL('fixtures/blocking/warn.mts', import.meta.url)),
       ).href;
       expect((await run(warning)).again).toBeGreaterThan(0);
+    },
+    timeout,
+  );
+
+  // undici loads node:assert as CommonJS while it loads, which turns fd 2
+  // non-blocking. Every process that loads the outbound path of core pays
+  // that (ADR 0056). A red run here means undici or Node.js changed.
+  it.concurrent(
+    'does not block after loading undici',
+    async () => {
+      const core = fileURLToPath(
+        new URL('../packages/core/package.json', import.meta.url),
+      );
+      const undici = pathToFileURL(createRequire(core).resolve('undici')).href;
+      expect((await run(undici)).again).toBeGreaterThan(0);
     },
     timeout,
   );
