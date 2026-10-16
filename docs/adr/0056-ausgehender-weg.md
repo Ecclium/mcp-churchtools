@@ -68,3 +68,24 @@ Gewählt ist die dritte Option.
   - **Code am Kern vorbei:** Eine Abhängigkeit, die selbst eine Verbindung öffnet, sieht die Positivliste nicht (ADR 0009).
   - **Prüfung des Tokens im Ziel:** Sie fängt ein Token, das versehentlich in Pfad oder Query gerät, nicht eines, das jemand gezielt anders kodiert.
 - Der Cache der TLS-Sitzungen in `buildConnector` gehört zum Pool und damit zur benannten Ausnahme aus ADR 0051: je Transport, ohne Inhalte aus ChurchTools, ein Neustart verwirft ihn.
+
+## Umsetzung
+
+- **Transport:** `packages/core/src/http/transport.ts` mit dem Agent und seinem Connector, den festen Grenzen `transportLimits`, der Warteschlange vor dem Pool, der Prüfung des User-Agents und dem Lesen der Antwort. Die Prüfung des Ziels steht in `target.ts`, die Kategorien der Fehler in `failure.ts`, der Filter der Kopfzeilen in `response-headers.ts`. `http/index.ts` gibt anderen Modulen von core nur die Typen des Transports weiter.
+- **Fabriken:** `packages/core/src/http/compose.ts` hinter dem Subpfad `./http` baut den echten Transport, `packages/core/src/http/compose-mock.ts` hinter `./http/testing` den auf einem `MockAgent`. `createChurchToolsDouble` in `packages/testkit/src/http-double/` umhüllt ihn für Tests.
+- **Regeln:** Die Orte `transportBuilders` (`packages/cli/src/stdio/`) und `httpDouble` (`packages/testkit/src/http-double/`) in `tests/architecture/boundaries.json`, deren Lage das Laden prüft. Die Regeln `transport-only-from-composition-root`, `mocked-transport-only-in-testkit` und `no-diagnostics-channel` von dependency-cruiser und `[arch:diagnostics]` in ESLint. `tests/architecture/export-surface.test.mts` hält die Fabriken in ihren Subpfaden und den internen Bauweg aus jedem Einstieg.
+- **Start:** `packages/core/src/config/load.ts` weist jedes `NODE_DEBUG` mit einer Sektion ab, mit dem Problem `debug_output_enabled`.
+- **Tests:** `packages/core/src/http/*.test.ts` mit dem `MockAgent`, einem Dispatcher des Tests, der nur auf Anweisung antwortet, und einem Stream-Paar im Speicher decken den Ordner zu 100 Prozent ab. `tests/http-transport-tls.test.mts` prüft in eigenen Prozessen Vertrauen, Name, ALPN, User-Agent, Fristen, Abbruch, die Grenze des Pools, abgewiesene Antworten, die schon ganz angekommen sind, und das Freigeben einer Verbindung. `tests/blocking-descriptors.test.mts` zeigt fd 2 nach dem Laden von undici, `tests/undici-pin.test.mts` hält Version und gebündelten Code fest.
+- **Gebündelter Code von undici 8.12.2,** geprüft am 16.10.2026:
+
+  | Code                           | Lizenz | Datei                            | SHA-256               | Ergebnis                           |
+  | ------------------------------ | ------ | -------------------------------- | --------------------- | ---------------------------------- |
+  | llhttp 9.3.1 als WASM          | MIT    | `lib/llhttp/llhttp-wasm.js`      | `5d8313d6fe8145d8...` | keine Advisory bei GitHub oder OSV |
+  | llhttp 9.3.1 als WASM mit SIMD | MIT    | `lib/llhttp/llhttp_simd-wasm.js` | `a3f30f3307ab3c19...` | wie oben                           |
+  | Milo als WASM                  | ISC    | `lib/milo/no-simd.js`            | `ece090d1e2e962e0...` | abgeschaltet (`useMilo: false`)    |
+  | Milo als WASM mit SIMD         | ISC    | `lib/milo/simd.js`               | `3bc5b7120aa8732d...` | abgeschaltet                       |
+
+  Die vollen Prüfsummen stehen in `tests/undici-pin.test.mts`. Code des Projekts für `fetch` liegt unter `lib/web/`, der Transport benutzt ihn nicht.
+
+- **Mindestalter:** undici 8.12.2 kam am 16.10.2026 mit einer Ausnahme vom Mindestalter von drei Tagen in `pnpm-workspace.yaml`, wegen der acht Advisories für 8.0.0 bis 8.12.1. Die Ausnahme fällt weg, sobald die Version drei Tage alt ist.
+- **Offen:** Die Warnung des Starts über stdio, wenn `NODE_EXTRA_CA_CERTS`, `NODE_USE_SYSTEM_CA` oder `--use-system-ca` den Speicher der vertrauten Zertifikate erweitern, als Text des Katalogs mit einem Test im Kindprozess. Sie entsteht mit dem Start über stdio, zusammen mit dem Umgang mit fd 2 (ADR 0054).
