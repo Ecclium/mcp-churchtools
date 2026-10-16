@@ -259,6 +259,30 @@ export function dependencyRules(
       to: { path: at('stdout'), reachable: true },
     },
     {
+      name: 'no-util-module',
+      severity: 'error',
+      comment: `${adr('utilModule')}: loading node:util as an ES module makes fd 2 non-blocking, so no module of the packages imports it or its old name node:sys, apart from the files of the place utilModule and the tests. Imports for types only count as well; node:util/types stays allowed.`,
+      from: { path: '^packages/', pathNot: [testFile, ...at('utilModule')] },
+      to: { path: '^(node:)?(util|sys)$' },
+    },
+    {
+      name: 'no-process-module',
+      severity: 'error',
+      comment: `${adr('utilModule')}: loading node:process as an ES module makes fd 1 and fd 2 non-blocking, so no module of the packages imports it, tests included. Imports for types only count as well.`,
+      from: { path: '^packages/' },
+      to: { path: '^(node:)?process$' },
+    },
+    {
+      name: 'no-util-module-in-stdio-paths',
+      severity: 'error',
+      comment: `${adr('utilModule')}: the start over stdio never reaches a file of the place utilModule, which loads node:util and so makes fd 2 non-blocking. Tests there are exempt.`,
+      from: {
+        path: [...at('stdioEntries'), ...at('stdioReachable')],
+        pathNot: testFile,
+      },
+      to: { path: at('utilModule'), reachable: true },
+    },
+    {
       name: 'plugins-only-plugin-api',
       severity: 'error',
       comment: `${adr('plugins')}: a plugin imports only the plugin API, as a plugin of a third party must. Its tests may use the testkit.`,

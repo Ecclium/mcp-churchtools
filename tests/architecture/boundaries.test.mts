@@ -374,6 +374,37 @@ describe('loading boundaries.json', () => {
       message: /places\.environment: "packages\/cli\/src\/" must be one file/,
     },
     {
+      name: 'a folder as a place that may load node:util',
+      change: (m) => {
+        place(m, 'utilModule').paths = ['packages/cli/src/'];
+      },
+      message: /places\.utilModule: "packages\/cli\/src\/" must be one file/,
+    },
+    {
+      name: 'a file of core as a place that may load node:util',
+      change: (m) => {
+        place(m, 'utilModule').paths = ['packages/core/src/index.ts'];
+      },
+      message:
+        /places\.utilModule: "packages\/core\/src\/index\.ts" must be a file of the command line or of testkit/,
+    },
+    {
+      name: 'a file of the stdio start as a place that may load node:util',
+      change: (m) => {
+        place(m, 'utilModule').paths = ['packages/cli/src/stdio/index.ts'];
+      },
+      message:
+        /places\.utilModule: "packages\/cli\/src\/stdio\/index\.ts" must be a file of the command line or of testkit, outside the places of the start over stdio/,
+    },
+    {
+      name: 'a start notice as a place that may load node:util',
+      change: (m) => {
+        place(m, 'utilModule').paths = ['packages/cli/src/notices/index.ts'];
+      },
+      message:
+        /places\.utilModule: "packages\/cli\/src\/notices\/index\.ts" must be a file of the command line or of testkit, outside the places of the start over stdio/,
+    },
+    {
       name: 'the package of the mount among its importers',
       change: (m) => {
         place(m, 'mcpMountImporters').paths = ['packages/core/src/'];

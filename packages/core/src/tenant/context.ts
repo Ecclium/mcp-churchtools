@@ -7,7 +7,7 @@
  *
  * @packageDocumentation
  */
-import { types } from 'node:util';
+import { isProxy } from 'node:util/types';
 
 import type {
   Actor,
@@ -79,7 +79,7 @@ function fail(message: string): never {
 // A plain object whose own properties can be read without running its
 // code: no proxy, and Object.prototype or no prototype.
 const isPlain = (value: unknown): value is object => {
-  if (typeof value !== 'object' || value === null || types.isProxy(value)) {
+  if (typeof value !== 'object' || value === null || isProxy(value)) {
     return false;
   }
   const prototype: unknown = Object.getPrototypeOf(value);
@@ -133,7 +133,7 @@ const copyFeatures = (value: unknown): readonly FeatureKey[] | undefined => {
   if (
     typeof value !== 'object' ||
     value === null ||
-    types.isProxy(value) ||
+    isProxy(value) ||
     !Array.isArray(value) ||
     Object.getPrototypeOf(value) !== Array.prototype
   ) {
@@ -166,7 +166,7 @@ const isAbortSignal = (value: unknown): value is AbortSignal => {
   if (
     typeof value !== 'object' ||
     value === null ||
-    types.isProxy(value) ||
+    isProxy(value) ||
     !(value instanceof AbortSignal)
   ) {
     return false;

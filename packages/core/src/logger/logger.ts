@@ -4,7 +4,7 @@
  *
  * @packageDocumentation
  */
-import { types } from 'node:util';
+import { isProxy } from 'node:util/types';
 
 import type {
   Clock,
@@ -120,7 +120,7 @@ const emptyRecord = (): Record<string, LogValue> =>
 // proxy, and a plain object with Object.prototype or no prototype. Any other
 // object, such as an error, a Map or a class instance, is refused whole.
 const isPlainObject = (value: unknown): value is object => {
-  if (typeof value !== 'object' || value === null || types.isProxy(value)) {
+  if (typeof value !== 'object' || value === null || isProxy(value)) {
     return false;
   }
   const prototype: unknown = Object.getPrototypeOf(value);

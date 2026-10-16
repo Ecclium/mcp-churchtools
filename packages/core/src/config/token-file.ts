@@ -13,7 +13,7 @@
 import { Buffer } from 'node:buffer';
 import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
-import { types } from 'node:util';
+import { isProxy } from 'node:util/types';
 
 /**
  * The reasons to refuse a token file, frozen. A code never carries the path
@@ -100,7 +100,7 @@ const refuse = <T>(code: TokenFileCode): TokenFileResult<T> =>
 // error not named here, such as ENOTDIR, is unsafe. EMLINK is how some
 // systems refuse a link under O_NOFOLLOW.
 const openCode = (error: unknown): TokenFileCode => {
-  if (typeof error !== 'object' || error === null || types.isProxy(error)) {
+  if (typeof error !== 'object' || error === null || isProxy(error)) {
     return 'token_file_unsafe';
   }
   switch (Object.getOwnPropertyDescriptor(error, 'code')?.value) {

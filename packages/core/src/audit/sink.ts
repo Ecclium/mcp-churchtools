@@ -5,7 +5,7 @@
  * @packageDocumentation
  */
 import { randomUUID } from 'node:crypto';
-import { types } from 'node:util';
+import { isProxy } from 'node:util/types';
 
 import type {
   AuditEventV1,
@@ -151,7 +151,7 @@ const bareActor = (kind: string, id: string): Line => {
 
 // An object whose own properties can be read without running its code.
 const isPlainTarget = (value: unknown): value is object =>
-  typeof value === 'object' && value !== null && !types.isProxy(value);
+  typeof value === 'object' && value !== null && !isProxy(value);
 
 // An own data property, or the marker for an accessor. Inherited properties
 // do not count.

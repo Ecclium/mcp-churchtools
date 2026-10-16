@@ -16,9 +16,9 @@ import { describe, expect, it } from 'vitest';
 
 // The places that write with writeSync to fd 1 and fd 2 never name process
 // or console: touching process.stdout or process.stderr makes the
-// descriptor non-blocking, and so does loading node:process as a module,
-// console writes free text, and closing fd 2 would end the log as well
-// (ADR 0053, ADR 0054). Lint lifts some of these rules in a place for
+// descriptor non-blocking, and so does loading node:process or node:util as
+// a module, console writes free text, and closing fd 2 would end the log
+// as well (ADR 0053, ADR 0054). Lint lifts some of these rules in a place for
 // stdout or stderr, so this test reads the sources themselves. It looks
 // at the syntax tree: identifiers, keys in brackets and module names, so
 // that neither a comment nor a string such as 'https://' can hide a name.
@@ -41,7 +41,16 @@ const forbidden = new Set([
   'closeSync',
 ]);
 
-const processModules = new Set(['process', 'node:process']);
+// Modules whose ES module makes fd 1 or fd 2 non-blocking when it loads
+// (ADR 0054); node:sys is the old name of node:util.
+const forbiddenModules = new Set([
+  'process',
+  'node:process',
+  'util',
+  'node:util',
+  'sys',
+  'node:sys',
+]);
 
 /** The forbidden names and modules a source uses, in order. */
 const namesIn = (code: string): string[] => {
@@ -73,7 +82,7 @@ const namesIn = (code: string): string[] => {
     if (
       module !== undefined &&
       ts.isStringLiteralLike(module) &&
-      processModules.has(module.text)
+      forbiddenModules.has(module.text)
     ) {
       found.push(module.text);
     }
@@ -146,6 +155,9 @@ describe('the sources of the writers', () => {
     ['handle.close();', ['close']],
     ['const { stderr } = globalThis.process;', ['process']],
     ["import { stderr } from 'node:process';", ['node:process']],
+    ["import { types } from 'node:util';", ['node:util']],
+    ["export * from 'util';", ['util']],
+    ["await import('node:sys');", ['node:sys']],
     ["import { stdout as out } from 'process';", ['process']],
     ["export { platform } from 'node:process';", ['node:process']],
     ["await import('node:process');", ['node:process']],
@@ -159,6 +171,7 @@ describe('the sources of the writers', () => {
     '// process.stdout.write',
     "const text = 'process console close';",
     "import { writeSync } from 'node:fs';",
+    "import { isProxy } from 'node:util/types';",
     'const closed = true;',
     '/** console */ export {};',
   ])('ignore %j', (code) => {
