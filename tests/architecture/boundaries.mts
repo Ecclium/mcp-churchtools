@@ -26,6 +26,7 @@ export interface PackageBoundary {
 export const placeKeys = [
   'egress',
   'transportBuilders',
+  'httpDouble',
   'rawClient',
   'rawClientImporters',
   'mcpMount',
@@ -304,6 +305,18 @@ function checkExceptions(
     ) {
       report(
         `places.transportBuilders: "${path}" must be a folder of the command line, below its src/`,
+      );
+    }
+  }
+  // The transport on a MockAgent is for tests only. One folder of the
+  // package for tests may import it (ADR 0056).
+  for (const path of places.httpDouble?.paths ?? []) {
+    if (
+      packageOf(path) !== testOnly ||
+      !/^packages\/[^/]+\/src\/[^/]+\/$/.test(path)
+    ) {
+      report(
+        `places.httpDouble: "${path}" must be one folder directly under src/ of ${testOnly}`,
       );
     }
   }

@@ -45,6 +45,7 @@ const hidden: readonly RegExp[] = [
 const lineWriter = 'packages/core/src/logger/line-writer.ts';
 const transportModule = 'packages/core/src/http/transport.ts';
 const composeModule = 'packages/core/src/http/compose.ts';
+const mockModule = 'packages/core/src/http/compose-mock.ts';
 const egressEntry = 'packages/core/src/http/index.ts';
 
 /**
@@ -68,6 +69,11 @@ const hiddenSymbols: readonly {
     file: toPattern(composeModule),
     names: ['createHttpTransport'],
     allowedIn: [composeModule],
+  },
+  {
+    file: toPattern(mockModule),
+    names: ['createMockedHttpTransport'],
+    allowedIn: [mockModule],
   },
 ];
 
@@ -192,6 +198,11 @@ function writeTree(files: Readonly<Record<string, string>>): string {
       'export const createHttpTransport = (): HttpTransport => createTransport();',
       '',
     ].join('\n'),
+    [mockModule]: [
+      "import { createTransport, type HttpTransport } from './transport.js';",
+      'export const createMockedHttpTransport = (): HttpTransport => createTransport();',
+      '',
+    ].join('\n'),
     'node_modules/@modelcontextprotocol/server/package.json':
       '{ "name": "@modelcontextprotocol/server", "type": "module", "exports": { ".": { "types": "./index.d.ts" } } }\n',
     'node_modules/@modelcontextprotocol/server/index.d.ts':
@@ -314,6 +325,14 @@ const leaks: readonly {
     },
   },
   {
+    name: 'the transport on a MockAgent through the entry point of testkit',
+    entry: 'packages/testkit/src/index.ts',
+    files: {
+      'packages/testkit/src/index.ts':
+        "export { createMockedHttpTransport } from '../../core/src/http/compose-mock.js';\n",
+    },
+  },
+  {
     name: 'the mount, passed on by the server',
     entry: 'packages/server/src/index.ts',
     files: {
@@ -336,7 +355,7 @@ describe('entry points of the packages', { timeout }, () => {
       ),
     );
     expect(entryPoints).toEqual(
-      expect.arrayContaining([composeModule, egressEntry]),
+      expect.arrayContaining([composeModule, mockModule, egressEntry]),
     );
   });
 

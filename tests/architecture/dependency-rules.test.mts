@@ -577,6 +577,20 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'mocked-transport-only-in-testkit',
+    name: 'tools builds the transport on a MockAgent',
+    files: {
+      'packages/tools/src/forbidden.ts': `import { createMockedHttpTransport } from '${nameOf('core')}/http/testing';\nexport const build = createMockedHttpTransport;\n`,
+    },
+  },
+  {
+    rule: 'mocked-transport-only-in-testkit',
+    name: 'testkit outside its double builds the transport on a MockAgent',
+    files: {
+      'packages/testkit/src/forbidden.ts': `import { createMockedHttpTransport } from '${nameOf('core')}/http/testing';\nexport const build = createMockedHttpTransport;\n`,
+    },
+  },
+  {
     rule: 'egress-internals',
     name: 'a module of core imports the build path of the transport',
     files: {
@@ -715,6 +729,12 @@ const allowedCases: readonly Omit<Case, 'rule'>[] = [
     name: 'the composition root builds a transport through the subpath of core',
     files: {
       'packages/cli/src/stdio/allowed.ts': `import { createHttpTransport } from '${nameOf('core')}/http';\nexport const build = createHttpTransport;\n`,
+    },
+  },
+  {
+    name: 'the double in testkit builds the transport on a MockAgent',
+    files: {
+      'packages/testkit/src/http-double/allowed.ts': `import { createMockedHttpTransport } from '${nameOf('core')}/http/testing';\nexport const build = createMockedHttpTransport;\n`,
     },
   },
   {

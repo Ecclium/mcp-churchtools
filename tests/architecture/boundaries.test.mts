@@ -288,6 +288,22 @@ describe('loading boundaries.json', () => {
       message: /places\.rawClientImporters: .* must be one module/,
     },
     {
+      name: 'a test double of the transport outside testkit',
+      change: (m) => {
+        place(m, 'httpDouble').paths = ['packages/core/src/churchtools/'];
+      },
+      message:
+        /places\.httpDouble: "packages\/core\/src\/churchtools\/" must be one folder directly under src\/ of testkit/,
+    },
+    {
+      name: 'the whole of testkit as test double of the transport',
+      change: (m) => {
+        place(m, 'httpDouble').paths = ['packages/testkit/src/'];
+      },
+      message:
+        /places\.httpDouble: "packages\/testkit\/src\/" must be one folder directly under src\/ of testkit/,
+    },
+    {
       name: 'a builder of the transport in core',
       change: (m) => {
         place(m, 'transportBuilders').paths = [

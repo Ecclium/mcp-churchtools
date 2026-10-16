@@ -76,6 +76,11 @@
       "description": "The composition root: the only code outside the outbound path that imports the factory of the HTTP transport, the subpath ./http of core. Each entry is a folder of the command line.",
       "paths": ["packages/cli/src/stdio/"]
     },
+    "httpDouble": {
+      "adr": "0056",
+      "description": "The test double for ChurchTools in testkit: the only code outside the outbound path that imports the transport on a MockAgent, the subpath ./http/testing of core. One folder directly under src/ of testkit.",
+      "paths": ["packages/testkit/src/http-double/"]
+    },
     "rawClient": {
       "adr": "0024",
       "description": "The raw ChurchTools client.",

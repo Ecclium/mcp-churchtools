@@ -223,13 +223,14 @@ export function dependencyRules(
       name: 'egress-internals',
       severity: 'error',
       comment:
-        'ADR 0054: only modules of the outbound path import its modules other than its entry points: index.ts and compose.ts, the subpath ./http of core, whose importers transport-only-from-composition-root narrows (ADR 0056). One of the other modules turns a secret back into its value, which no other module may do. Tests in the packages are not exempt. Code outside the packages is not cruised; tests/architecture/reveal-secret.test.mts covers it.',
+        'ADR 0054: only modules of the outbound path import its modules other than its entry points: index.ts, compose.ts and compose-mock.ts, the subpaths ./http and ./http/testing of core, whose importers transport-only-from-composition-root and mocked-transport-only-in-testkit narrow (ADR 0056). One of the other modules turns a secret back into its value, which no other module may do. Tests in the packages are not exempt. Code outside the packages is not cruised; tests/architecture/reveal-secret.test.mts covers it.',
       from: { pathNot: at('egress') },
       to: {
         path: at('egress'),
         pathNot: [
           pathPattern(`${places.egress.paths[0] ?? ''}index.ts`),
           pathPattern(`${places.egress.paths[0] ?? ''}compose.ts`),
+          pathPattern(`${places.egress.paths[0] ?? ''}compose-mock.ts`),
         ],
       },
     },
@@ -240,6 +241,15 @@ export function dependencyRules(
       from: { pathNot: [...at('egress'), ...at('transportBuilders')] },
       to: {
         path: pathPattern(`${places.egress.paths[0] ?? ''}compose.ts`),
+      },
+    },
+    {
+      name: 'mocked-transport-only-in-testkit',
+      severity: 'error',
+      comment: `${adr('httpDouble')}: only the test double in testkit builds the transport on a MockAgent, through the subpath ./http/testing of core, so that no module that ships builds one. The module itself is part of the build of core, and only tests import testkit.`,
+      from: { pathNot: [...at('egress'), ...at('httpDouble')] },
+      to: {
+        path: pathPattern(`${places.egress.paths[0] ?? ''}compose-mock.ts`),
       },
     },
     {
