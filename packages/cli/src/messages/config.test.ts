@@ -46,6 +46,8 @@ const variableOf = (code: ConfigProblemCode): string => {
       return 'ECCLIUM_TOOLSETS';
     case 'tls_check_disabled':
       return 'NODE_TLS_REJECT_UNAUTHORIZED';
+    case 'debug_output_enabled':
+      return 'NODE_DEBUG';
     case 'redaction_strict_unsupported':
     case 'stdio_only':
       return 'ECCLIUM_REDACTION';
@@ -153,6 +155,8 @@ describe('the catalog of messages', () => {
       'NODE_TLS_REJECT_UNAUTHORIZED_X',
     ],
     ['the variable of TLS with a value', 'NODE_TLS_REJECT_UNAUTHORIZED=0'],
+    ['the debug variable with a value', 'NODE_DEBUG=stream'],
+    ['the debug variable in small letters', 'node_debug'],
     [
       'the variable of TLS with something before it',
       'x_NODE_TLS_REJECT_UNAUTHORIZED',

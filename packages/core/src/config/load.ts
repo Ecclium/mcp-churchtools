@@ -18,6 +18,7 @@ import type { LogLevel } from '../logger/index.js';
 import type { ConfigProblemCode, ConfigWarningCode } from './codes.js';
 import { readTokenFile, type TokenFileSystem } from './token-file.js';
 import {
+  debugVariableName,
   fitsVariable,
   type PlainVariableName,
   proxyVariableName,
@@ -172,6 +173,12 @@ const asciiUpper = (text: string): string => {
   return upper;
 };
 
+// NODE_DEBUG holds patterns separated by commas, and Node.js switches on
+// every section a pattern names, with * for any run of characters. Any
+// pattern with more than blanks counts, whichever section it names.
+const switchesOnDebugOutput = (value: string): boolean =>
+  value.split(',').some((pattern) => pattern.trim() !== '');
+
 const record = <T extends object>(fields: T): T =>
   Object.freeze({ __proto__: null, ...fields });
 
@@ -191,10 +198,11 @@ interface Ranked {
 }
 
 // The order of the problems: the variables in table order, then the
-// variable of TLS, then the names of a proxy and of later phases, then
-// unknown names by code unit, then those too odd to name.
+// variables of TLS and of debug output, then the names of a proxy and of
+// later phases, then unknown names by code unit, then those too odd to name.
 const tlsRank = variableNames.length;
-const proxyRank = tlsRank + 1;
+const debugRank = tlsRank + 1;
+const proxyRank = debugRank + 1;
 const unsupportedRank = proxyRank + 1;
 const unknownRank = unsupportedRank + unsupportedVariableNames.length;
 
@@ -263,8 +271,9 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     add(code, variableNames.indexOf(name), name);
   };
 
-  // The snapshot. Only names with the prefix and the variable of TLS are
-  // read at all; the values of others are never touched.
+  // The snapshot. Only names with the prefix and the variables of TLS and
+  // of debug output are read at all; the values of others are never
+  // touched.
   const given = new Map<VariableName, string>();
   for (const key of Object.keys(environment)) {
     const prefixed =
@@ -276,12 +285,22 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       !prefixed &&
       key.length === tlsVariableName.length &&
       asciiUpper(key) === tlsVariableName;
-    if (!prefixed && !tls) continue;
+    const debug =
+      !prefixed &&
+      key.length === debugVariableName.length &&
+      asciiUpper(key) === debugVariableName;
+    if (!prefixed && !tls && !debug) continue;
     const value = ownData(environment, key);
     if (value === undefined) continue;
     if (typeof value !== 'string') throw new TypeError(invalidSources);
     if (tls) {
       if (value === '0') add('tls_check_disabled', tlsRank, tlsVariableName);
+      continue;
+    }
+    if (debug) {
+      if (switchesOnDebugOutput(value)) {
+        add('debug_output_enabled', debugRank, debugVariableName);
+      }
       continue;
     }
     // Names are sorted out before any value is looked at, so a name that

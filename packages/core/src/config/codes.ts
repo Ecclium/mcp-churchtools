@@ -16,6 +16,7 @@ export const configProblemCodes = Object.freeze([
   'unsupported_variable',
   'proxy_unsupported',
   'tls_check_disabled',
+  'debug_output_enabled',
   'empty_value',
   'value_too_long',
   'invalid_choice',
