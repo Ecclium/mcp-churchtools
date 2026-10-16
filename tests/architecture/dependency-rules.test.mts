@@ -540,6 +540,66 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'no-util-module',
+    name: 'core imports node:util',
+    files: {
+      'packages/core/src/forbidden.ts':
+        "import { types } from 'node:util';\nexport const checks = types;\n",
+    },
+  },
+  {
+    rule: 'no-process-module',
+    name: 'tools imports process',
+    files: {
+      'packages/tools/src/forbidden.ts':
+        "import { platform } from 'process';\nexport const name = platform;\n",
+    },
+  },
+  {
+    rule: 'no-util-module',
+    name: 'the start notices import sys with import()',
+    files: {
+      'packages/cli/src/notices/forbidden.ts':
+        "export const load = async (): Promise<unknown> => import('node:sys');\n",
+    },
+  },
+  {
+    rule: 'no-process-module',
+    name: 'the command imports node:process as well',
+    files: {
+      'packages/cli/src/main.ts':
+        "import { platform } from 'node:process';\nexport const name = platform;\n",
+    },
+  },
+  {
+    rule: 'no-process-module',
+    name: 'a test of core imports node:process',
+    files: {
+      'packages/core/src/forbidden.test.ts':
+        "import { platform } from 'node:process';\nexport const name = platform;\n",
+    },
+  },
+  {
+    rule: 'no-util-module-in-stdio-paths',
+    name: 'the stdio start of the command line imports the command',
+    files: {
+      // An empty command, so that the rule for stdout does not fire too.
+      'packages/cli/src/main.ts': 'export {};\n',
+      'packages/cli/src/stdio/forbidden.ts':
+        "import '../main.js';\nexport {};\n",
+    },
+  },
+  {
+    rule: 'no-util-module-in-stdio-paths',
+    name: 'the start notices reach the command through another module',
+    files: {
+      'packages/cli/src/main.ts': 'export {};\n',
+      'packages/cli/src/notices/forbidden.ts':
+        "import '../helper.js';\nexport {};\n",
+      'packages/cli/src/helper.ts': "import './main.js';\nexport {};\n",
+    },
+  },
+  {
     rule: 'plugins-only-plugin-api',
     name: 'the example plugin imports core',
     files: {
@@ -554,6 +614,20 @@ const allowedCases: readonly Omit<Case, 'rule'>[] = [
     name: 'a test of core imports the testkit',
     files: {
       'packages/core/src/allowed.test.ts': `import '${nameOf('testkit')}';\nexport {};\n`,
+    },
+  },
+  {
+    name: 'core imports node:util/types',
+    files: {
+      'packages/core/src/allowed.ts':
+        "import { isProxy } from 'node:util/types';\nexport const check = isProxy;\n",
+    },
+  },
+  {
+    name: 'a test of core imports node:util',
+    files: {
+      'packages/core/src/allowed.test.ts':
+        "import { inspect } from 'node:util';\nexport const show = inspect;\n",
     },
   },
   {
@@ -642,10 +716,12 @@ const allowedCases: readonly Omit<Case, 'rule'>[] = [
 // Paths of rules that may still match no module of the workspace. No package
 // opens a network connection before the HTTP transport of phase 1. The test
 // below fails as soon as one of these paths matches, so the entry goes when
-// the first module needs the rule.
-const notYetMatched: readonly string[] = networkTargets.map(
-  (pattern) => `network-only-in-egress.to: ${pattern}`,
-);
+// the first module needs the rule. node:process is refused everywhere, so
+// its path matches nothing for as long as the packages keep the rule.
+const notYetMatched: readonly string[] = [
+  ...networkTargets.map((pattern) => `network-only-in-egress.to: ${pattern}`),
+  'no-process-module.to: ^(node:)?process$',
+];
 
 describe('the copy of the workspace', () => {
   const base = realpathSync(mkdtempSync(join(tmpdir(), 'ecclium-copy-')));
