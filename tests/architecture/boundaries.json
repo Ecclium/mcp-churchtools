@@ -71,6 +71,11 @@
       "description": "The single outbound path of core: the only code that opens network connections, after it checks the host allow-list.",
       "paths": ["packages/core/src/http/"]
     },
+    "transportBuilders": {
+      "adr": "0056",
+      "description": "The composition root: the only code outside the outbound path that imports the factory of the HTTP transport, the subpath ./http of core. Each entry is a folder of the command line.",
+      "paths": ["packages/cli/src/stdio/"]
+    },
     "rawClient": {
       "adr": "0024",
       "description": "The raw ChurchTools client.",

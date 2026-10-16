@@ -25,6 +25,7 @@ export interface PackageBoundary {
 /** Keys of the places in the code that a rule refers to. */
 export const placeKeys = [
   'egress',
+  'transportBuilders',
   'rawClient',
   'rawClientImporters',
   'mcpMount',
@@ -290,6 +291,20 @@ function checkExceptions(
       others.some((other) => other.startsWith(path) || path.startsWith(other))
     ) {
       report(`places.egress: "${path}" shares a path with another place`);
+    }
+  }
+  // The factory of the transport takes the origin as configured, so every
+  // importer decides where the token goes. Only the composition root in the
+  // command line may import it (ADR 0056).
+  for (const path of places.transportBuilders?.paths ?? []) {
+    if (
+      packageOf(path) !== 'cli' ||
+      !path.endsWith('/') ||
+      /^packages\/[^/]+\/src\/$/.test(path)
+    ) {
+      report(
+        `places.transportBuilders: "${path}" must be a folder of the command line, below its src/`,
+      );
     }
   }
   for (const path of places.rawClientImporters?.paths ?? []) {

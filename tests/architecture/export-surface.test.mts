@@ -23,7 +23,13 @@ import { pathPattern } from './dependency-rules.mts';
 // of core, is the one place allowed to export the mount. No entry point may
 // pass on the factory of the stderr writer either: tools and workflows import
 // core and could then write any text to stderr (ADR 0054). Its type
-// LineWriter stays allowed, because the context of a call needs it.
+// LineWriter stays allowed, because the context of a call needs it. The
+// factory of the HTTP transport leaves core only through its own subpath
+// ./http, whose importers a rule of dependency-cruiser limits to the
+// composition root, and the build path of the transport, which takes a
+// dispatcher and a socket, leaves it through no entry at all (ADR 0056).
+// The entry point of the outbound path inside core is checked as well,
+// because every module of core may import it.
 
 const boundaries = loadBoundaries();
 const { rawClient, mcpMount } = boundaries.places;
@@ -37,15 +43,31 @@ const hidden: readonly RegExp[] = [
 ];
 
 const lineWriter = 'packages/core/src/logger/line-writer.ts';
+const transportModule = 'packages/core/src/http/transport.ts';
+const composeModule = 'packages/core/src/http/compose.ts';
+const egressEntry = 'packages/core/src/http/index.ts';
 
-/** Single exports that no entry point may pass on, by file and name. */
+/**
+ * Single exports that no entry point may pass on, by file and name, except
+ * the entry points named in `allowedIn`.
+ */
 const hiddenSymbols: readonly {
   readonly file: RegExp;
   readonly names: readonly string[];
+  readonly allowedIn?: readonly string[];
 }[] = [
   {
     file: toPattern(lineWriter),
     names: ['createStderrWriter', 'StderrLineWriter'],
+  },
+  {
+    file: toPattern(transportModule),
+    names: ['createTransport', 'createAgent'],
+  },
+  {
+    file: toPattern(composeModule),
+    names: ['createHttpTransport'],
+    allowedIn: [composeModule],
   },
 ];
 
@@ -106,13 +128,19 @@ const hiddenOrigins = (root: string, entry: string): string[] =>
   exportDeclarations(root, entry).flatMap(({ file, name }) => [
     ...(hidden.some((pattern) => pattern.test(file)) ? [file] : []),
     ...(hiddenSymbols.some(
-      (symbol) => symbol.file.test(file) && symbol.names.includes(name),
+      (symbol) =>
+        symbol.file.test(file) &&
+        symbol.names.includes(name) &&
+        !(symbol.allowedIn ?? []).includes(entry),
     )
       ? [`${file}#${name}`]
       : []),
   ]);
 
-/** The source behind every export of every package, except the mount. */
+/**
+ * The source behind every export of every package, except the mount, and
+ * the entry point of the outbound path inside core.
+ */
 const entryPoints = boundaries.packages.flatMap((pkg) => {
   const manifest = JSON.parse(
     readFileSync(
@@ -127,6 +155,7 @@ const entryPoints = boundaries.packages.flatMap((pkg) => {
       (entry) => !mcpMount.paths.some((path) => toPattern(path).test(entry)),
     );
 });
+entryPoints.push(egressEntry);
 
 const temporaryFolders: string[] = [];
 afterAll(() => {
@@ -149,6 +178,18 @@ function writeTree(files: Readonly<Record<string, string>>): string {
       'export interface LineWriter { write(line: string): boolean }',
       'export interface StderrLineWriter extends LineWriter { stats(): number }',
       'export const createStderrWriter = (): StderrLineWriter => ({ write: () => true, stats: () => 0 });',
+      '',
+    ].join('\n'),
+    [transportModule]: [
+      'export interface HttpTransport { close(): Promise<void> }',
+      'export const createAgent = (): unknown => undefined;',
+      'export const createTransport = (): HttpTransport => ({ close: () => Promise.resolve() });',
+      '',
+    ].join('\n'),
+    [composeModule]: [
+      "import { createTransport, type HttpTransport } from './transport.js';",
+      "export type { HttpTransport } from './transport.js';",
+      'export const createHttpTransport = (): HttpTransport => createTransport();',
       '',
     ].join('\n'),
     'node_modules/@modelcontextprotocol/server/package.json':
@@ -244,6 +285,35 @@ const leaks: readonly {
     },
   },
   {
+    name: 'the factory of the transport through the entry point of core',
+    entry: coreEntry,
+    files: {
+      [coreEntry]:
+        "export { createHttpTransport as transport } from './http/compose.js';\n",
+    },
+  },
+  {
+    name: 'the build path of the transport through the outbound path',
+    entry: egressEntry,
+    files: {
+      [egressEntry]: "export { createTransport } from './transport.js';\n",
+    },
+  },
+  {
+    name: 'the agent of the transport through the subpath of the factory',
+    entry: composeModule,
+    files: {
+      [composeModule]: "export { createAgent } from './transport.js';\n",
+    },
+  },
+  {
+    name: 'the factory of the transport through the outbound path',
+    entry: egressEntry,
+    files: {
+      [egressEntry]: "export * from './compose.js';\n",
+    },
+  },
+  {
     name: 'the mount, passed on by the server',
     entry: 'packages/server/src/index.ts',
     files: {
@@ -264,6 +334,9 @@ describe('entry points of the packages', { timeout }, () => {
       expect.arrayContaining(
         boundaries.packages.map((pkg) => `packages/${pkg.dir}/src/index.ts`),
       ),
+    );
+    expect(entryPoints).toEqual(
+      expect.arrayContaining([composeModule, egressEntry]),
     );
   });
 
@@ -308,6 +381,15 @@ describe('entry points of the packages', { timeout }, () => {
     });
     expect(exportOrigins(root, coreEntry)).toEqual([lineWriter]);
     expect(hiddenOrigins(root, coreEntry)).toEqual([]);
+  });
+
+  it('accept the factory of the transport in its own subpath and its type in the outbound path', () => {
+    const root = writeTree({
+      [egressEntry]: "export type { HttpTransport } from './transport.js';\n",
+    });
+    expect(hiddenOrigins(root, composeModule)).toEqual([]);
+    expect(exportOrigins(root, egressEntry)).toEqual([transportModule]);
+    expect(hiddenOrigins(root, egressEntry)).toEqual([]);
   });
 
   it('accept an export declared in the package itself', () => {

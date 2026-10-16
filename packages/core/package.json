@@ -14,6 +14,11 @@
       "@ecclium/source": "./src/mcp/mount.ts",
       "types": "./dist/mcp/mount.d.ts",
       "default": "./dist/mcp/mount.js"
+    },
+    "./http": {
+      "@ecclium/source": "./src/http/compose.ts",
+      "types": "./dist/http/compose.d.ts",
+      "default": "./dist/http/compose.js"
     }
   },
   "dependencies": {
