@@ -4,7 +4,7 @@
  *
  * @packageDocumentation
  */
-import { types } from 'node:util';
+import { isProxy } from 'node:util/types';
 
 import type { ErrorCode, RightRef } from '@ecclium/mcp-churchtools-plugin-api';
 
@@ -78,10 +78,10 @@ const isErrorCode = (value: unknown): value is ErrorCode =>
   typeof value === 'string' && Object.hasOwn(fixedSentences, value);
 
 // An object whose properties can be read without running code of the thrown
-// value. util.types.isProxy runs no trap, also not for a revoked proxy or
+// value. isProxy runs no trap, also not for a revoked proxy or
 // one from another realm.
 const isPlainTarget = (value: unknown): value is object =>
-  typeof value === 'object' && value !== null && !types.isProxy(value);
+  typeof value === 'object' && value !== null && !isProxy(value);
 
 // An own data property, never inherited and never through a getter. Each
 // field is read once into a local, so a value cannot change between the

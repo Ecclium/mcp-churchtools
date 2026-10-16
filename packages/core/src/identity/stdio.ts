@@ -6,7 +6,7 @@
  *
  * @packageDocumentation
  */
-import { types } from 'node:util';
+import { isProxy } from 'node:util/types';
 
 import type {
   Identity,
@@ -28,7 +28,7 @@ const writeScopes: readonly Scope[] = Object.freeze(['read', 'write']);
 // An own data property of a plain object, never through a getter or a
 // proxy, which could give another value on every read.
 const ownData = (object: unknown, key: string): unknown => {
-  if (typeof object !== 'object' || object === null || types.isProxy(object)) {
+  if (typeof object !== 'object' || object === null || isProxy(object)) {
     return undefined;
   }
   const descriptor = Object.getOwnPropertyDescriptor(object, key);

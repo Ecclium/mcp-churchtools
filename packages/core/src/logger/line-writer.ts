@@ -5,7 +5,7 @@
  * @packageDocumentation
  */
 import { writeSync as fsWriteSync } from 'node:fs';
-import { types } from 'node:util';
+import { isProxy } from 'node:util/types';
 
 /** Writes one line. Implemented by the stderr writer and by fakes in tests. */
 export interface LineWriter {
@@ -84,7 +84,7 @@ const isLine = (value: unknown): value is string => {
 // thrown value.
 const codeOf = (error: unknown): unknown => {
   try {
-    if (typeof error !== 'object' || error === null || types.isProxy(error)) {
+    if (typeof error !== 'object' || error === null || isProxy(error)) {
       return undefined;
     }
     const property = Object.getOwnPropertyDescriptor(error, 'code');
@@ -106,8 +106,8 @@ const codeOf = (error: unknown): unknown => {
  * not drain stderr costs lines, not time. EPIPE and EBADF close the writer
  * for good. Nothing is ever thrown and nothing is written about a failure.
  *
- * The writer never touches `process.stderr`: doing so makes fd 2
- * non-blocking.
+ * The writer never touches `process.stderr`, and its module loads neither
+ * node:util nor node:process: each makes fd 2 non-blocking (ADR 0054).
  *
  * @param options - Replacement for `writeSync` and the number of attempts.
  * @returns The writer.

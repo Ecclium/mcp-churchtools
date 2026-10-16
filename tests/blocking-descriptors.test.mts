@@ -126,6 +126,8 @@ describe('fd 2 after loading a module', () => {
   it.concurrent.each([
     'packages/cli/src/environment.ts',
     'packages/cli/src/send.ts',
+    'packages/core/src/config/token-file.ts',
+    'packages/core/src/logger/line-writer.ts',
   ])(
     'blocks after loading %s from source',
     async (path) => {

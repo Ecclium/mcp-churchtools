@@ -6,7 +6,12 @@
  *
  * @packageDocumentation
  */
-import { types } from 'node:util';
+import {
+  isBoxedPrimitive,
+  isMap,
+  isProxy,
+  isSet as isSetObject,
+} from 'node:util/types';
 
 import { parseChurchToolsOrigin, Secret } from '../http/index.js';
 import type { LogLevel } from '../logger/index.js';
@@ -139,11 +144,11 @@ const reportableNamePattern = /^ECCLIUM_[A-Z0-9_]{1,64}$/;
 const isRecord = (value: unknown): value is object =>
   typeof value === 'object' &&
   value !== null &&
-  !types.isProxy(value) &&
+  !isProxy(value) &&
   !Array.isArray(value) &&
-  !types.isMap(value) &&
-  !types.isSet(value) &&
-  !types.isBoxedPrimitive(value);
+  !isMap(value) &&
+  !isSetObject(value) &&
+  !isBoxedPrimitive(value);
 
 // An own data property. A getter would run code of the caller and could
 // give another value on every read, so an accessor is refused unread.
