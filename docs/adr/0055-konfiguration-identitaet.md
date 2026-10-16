@@ -66,7 +66,8 @@ Jede Variable trägt das Präfix `ECCLIUM_`. Werte werden exakt geprüft, die To
 - Mandant, Modus, Transport und Akteur sind keine Variablen. `ECCLIUM_TENANT`, `ECCLIUM_MODE`, `ECCLIUM_TRANSPORT` und `ECCLIUM_ACTOR` sind deshalb unbekannt und brechen ab.
 - Die eigenen Variablen des Repositorys mit diesem Präfix, etwa die der Proben, haben keine Ausnahme. Server und Proben laufen nicht in derselben Shell, und Tests mit Kindprozessen geben eine ausdrücklich gefilterte Umgebung weiter.
 - Ein Tippfehler im Präfix selbst, etwa `ECLIUM_READ_ONLY`, fällt nicht auf. Es bleiben dann die Voreinstellungen, und ohne Adresse oder Token bricht der Start ab. Eine Ausnahme: Steht über stdio das Token in `ECCLIUM_CHURCHTOOLS_TOKEN` und hat der Name der Token-Datei einen solchen Tippfehler, gilt das Token aus der Umgebung, nur mit der Warnung beim Start. Der Abbruch für zwei Quellen greift dann nicht.
-- `NODE_TLS_REJECT_UNAUTHORIZED` mit dem Wert `0` bricht den Start ab, in jeder Schreibweise des Namens, weil Node.js ihn unter Windows ohne Rücksicht darauf liest. Mit diesem Wert prüfte Node.js die Zertifikate von ChurchTools nicht mehr. Es ist die einzige Variable ohne Präfix, die der Lader liest.
+- `NODE_TLS_REJECT_UNAUTHORIZED` mit dem Wert `0` bricht den Start ab, in jeder Schreibweise des Namens, weil Node.js ihn unter Windows ohne Rücksicht darauf liest. Mit diesem Wert prüfte Node.js die Zertifikate von ChurchTools nicht mehr.
+- `NODE_DEBUG` bricht den Start ab, sobald eines seiner Muster mehr als Leerzeichen enthält, ebenfalls in jeder Schreibweise des Namens. Node.js schriebe sonst am Logger vorbei nach stderr, mit einer Sektion von undici Adresse, Pfad und Query jeder Anfrage, mit `stream` Teile der Antworten (ADR 0056). Ausser diesen beiden liest der Lader keine Variable ohne Präfix.
 
 ### Werte
 
