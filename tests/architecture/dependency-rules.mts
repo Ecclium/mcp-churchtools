@@ -252,6 +252,13 @@ export function dependencyRules(
       to: { path: at('stdout'), reachable: true },
     },
     {
+      name: 'no-stdout-from-stdio-modules',
+      severity: 'error',
+      comment: `${adr('stdioReachable')}: the start notices and their texts are there for the start over stdio, so they never reach a module that writes to stdout, even before that start imports them. Tests there are exempt.`,
+      from: { path: at('stdioReachable'), pathNot: testFile },
+      to: { path: at('stdout'), reachable: true },
+    },
+    {
       name: 'plugins-only-plugin-api',
       severity: 'error',
       comment: `${adr('plugins')}: a plugin imports only the plugin API, as a plugin of a third party must. Its tests may use the testkit.`,

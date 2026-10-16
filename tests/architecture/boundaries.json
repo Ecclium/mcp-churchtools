@@ -117,6 +117,11 @@
         "packages/testkit/src/mcp-spike/stdio.ts"
       ]
     },
+    "stdioReachable": {
+      "adr": "0053",
+      "description": "Modules of the command line that the start over stdio may import: the start notices and the catalog of their texts. Nothing reachable from here may be a stdout place, already before the start imports them.",
+      "paths": ["packages/cli/src/messages/", "packages/cli/src/notices/"]
+    },
     "stdout": {
       "adr": "0053",
       "description": "Code that may write to stdout.",
@@ -124,8 +129,9 @@
     },
     "stderr": {
       "adr": "0053",
-      "description": "Code that may write to stderr: the logger, the messages of the command line for operators and the start of the elicitation spike, which writes its record there.",
+      "description": "Code that may write to stderr: the logger, the messages of the command line for operators, the start notices of the command line, which the start over stdio may reach, and the start of the elicitation spike, which writes its record there.",
       "paths": [
+        "packages/cli/src/notices/",
         "packages/cli/src/output/",
         "packages/core/src/logger/",
         "packages/testkit/src/mcp-spike/stdio.ts"
@@ -140,6 +146,11 @@
       "adr": "0051",
       "description": "Modules that may keep mutable state at module level. Each entry is one file with its own ADR.",
       "paths": []
+    },
+    "environment": {
+      "adr": "0055",
+      "description": "Code that may read the environment and the arguments of the process: only the entry of the command line, which hands them to the core as parameters. Other code could otherwise read the token from them past the Secret.",
+      "paths": ["packages/cli/src/bin.ts"]
     }
   }
 }

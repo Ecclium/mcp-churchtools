@@ -6,7 +6,7 @@
 
 ## Kontext
 
-Ein Login-Token von ChurchTools trägt alle Rechte seines Kontos (Threat Model, T4). Personendaten dürfen weder das Protokoll noch eine Fehlermeldung erreichen (T5). ADR 0053 legt fest, dass im Betrieb über stdio nur der Logger auf stderr schreibt und dass das Audit über denselben Weg geht. ADR 0024 führt jeden Aufruf eines Tools durch eine Pipeline, die Fehler in einen Code übersetzt. Vor der Pipeline braucht der Kern deshalb vier Bausteine: einen Typ für Geheimnisse, einen Fehler mit stabilem Code, einen Logger und eine Senke für das Audit. Alle vier nehmen Werte von Code an, dem sie nicht trauen: von Plugins, von Tools und, über deren Fehler, von ChurchTools.
+Ein Login-Token von ChurchTools trägt alle Rechte seines Kontos (Threat Model, T4). Personendaten dürfen weder das Protokoll noch eine Fehlermeldung erreichen (T5). ADR 0053 legt fest, dass im Betrieb über stdio nach den Startmeldungen der Kommandozeile (ADR 0055) nur der Logger auf stderr schreibt und dass das Audit über denselben Weg geht. ADR 0024 führt jeden Aufruf eines Tools durch eine Pipeline, die Fehler in einen Code übersetzt. Vor der Pipeline braucht der Kern deshalb vier Bausteine: einen Typ für Geheimnisse, einen Fehler mit stabilem Code, einen Logger und eine Senke für das Audit. Alle vier nehmen Werte von Code an, dem sie nicht trauen: von Plugins, von Tools und, über deren Fehler, von ChurchTools.
 
 Geprüft an Node.js 24.21.0, zod 4.6.5 und TypeScript 6.0.3. Die Tests der Bausteine zeigen jeden Befund, soweit er nicht nur eine Messung ist:
 
@@ -89,4 +89,6 @@ Gewählt sind jeweils das private Feld, die Marke, das eigene Lesen, `writeSync`
 - `packages/core/src/logger/` mit `fields.ts`, `line-writer.ts`, `logger.ts` und ihren Tests, `packages/core/src/clock.ts`, `tests/logger-output.test.mts` mit `tests/fixtures/logger/output.mts`.
 - `packages/core/src/audit/` mit `schema.ts`, `sink.ts` und ihren Tests.
 - Die Kanarienwerte zur Laufzeit in `packages/testkit/src/canary.ts`.
-- Offen: die Handler und der eine Zeilenschreiber in der Wurzel der Komposition, die Prüfung der Platzhalter in Konfiguration und Registry, und die Prüfung der Konfiguration mit den Mustern des Audits.
+- Die Konfiguration weist das Subjekt `invalid` ab und prüft den Host der Adresse mit dem Muster für Hosts aus `packages/core/src/logger/fields.ts`. Der Mandantenkontext prüft Mandant und Akteur gegen die Muster des Audits und weist den Mandanten und den Akteur `invalid` ab (ADR 0055).
+- Laut einer Probe mit Node.js 24.21 macht schon das Laden von `node:util` als ES-Modul fd 2 nicht blockierend, auch nur für `types`, und `node:process` fd 1 und fd 2. Am 15.10.2026 importierten acht Module des Kerns `types` aus `node:util`, der Logger und sein Zeilenschreiber eingeschlossen. Im Betrieb über stdio wäre fd 2 damit nicht blockierend, mit den Folgen unter «Verlust und Stillstand beim Schreiben». Die Kommandozeile nimmt `isProxy` schon aus `node:util/types`, nur ihr Befehl lädt `node:util` für `parseArgs`, und den erreicht der Start über stdio nicht.
+- Offen: die Handler und der eine Zeilenschreiber in der Wurzel der Komposition, die Prüfung des Platzhalters `ct_unknown` in der Registry und, in einem eigenen Pull Request, die Umstellung der Importe des Kerns auf `node:util/types` mit einer Regel gegen Importe aus `node:util` und `node:process`.

@@ -114,13 +114,40 @@ const probes: readonly {
   },
 
   { code: 'const proc = process;', concerns: ['process'] },
-  { code: 'const { env } = process;', concerns: ['process'] },
+  { code: 'const { env } = process;', concerns: ['environment', 'process'] },
   { code: "Reflect.get(process, 'stdout');", concerns: ['process'] },
   { code: "const key = 'stdout';\nprocess[key];", concerns: ['process'] },
   { code: 'globalThis.process.exitCode = 1;', concerns: ['process'] },
   { code: 'const root = globalThis;', concerns: ['process'] },
   { code: "import proc from 'node:process';", concerns: ['process'] },
   { code: "await import('node:process');", concerns: ['process'] },
+
+  { code: "process.env['LANG'];", concerns: ['environment'] },
+  { code: 'const home = process.env.HOME;', concerns: ['environment'] },
+  { code: "process['env'];", concerns: ['environment'] },
+  { code: 'delete process.env.X;', concerns: ['environment'] },
+  { code: "import { env } from 'node:process';", concerns: ['environment'] },
+  {
+    code: "import { env as variables } from 'process';",
+    concerns: ['environment'],
+  },
+  { code: 'const [, , first] = process.argv;', concerns: ['environment'] },
+  { code: "process['argv'];", concerns: ['environment'] },
+  { code: "import { argv } from 'node:process';", concerns: ['environment'] },
+  { code: 'process.report.getReport();', concerns: ['environment'] },
+  { code: "import { report } from 'process';", concerns: ['environment'] },
+  {
+    code: "import { parseArgs } from 'node:util';\nparseArgs({ options: {} });",
+    concerns: ['environment'],
+  },
+  {
+    code: "import { parseArgs } from 'node:util';\nparseArgs();",
+    concerns: ['environment'],
+  },
+  {
+    code: "import * as util from 'node:util';\nutil.parseArgs({ strict: true });",
+    concerns: ['environment'],
+  },
 
   {
     code: "import { McpServer } from '@modelcontextprotocol/server';",
@@ -155,6 +182,20 @@ const probes: readonly {
   { code: "import mod from 'node:module';", concerns: ['require'] },
   { code: "await import('module');", concerns: ['require'] },
   { code: "process.getBuiltinModule('node:fs');", concerns: ['require'] },
+  { code: "eval('process.env');", concerns: ['require'] },
+  { code: "(0, eval)('process.env');", concerns: ['require'] },
+  { code: "globalThis.eval('process.env');", concerns: ['require'] },
+  {
+    code: "export const read = (): unknown => new Function('return process.env')();",
+    concerns: ['require'],
+  },
+  { code: 'const Make = Function;', concerns: ['require'] },
+  { code: "globalThis.Function('x');", concerns: ['require'] },
+  {
+    code: "import { getBuiltinModule } from 'node:process';",
+    concerns: ['require'],
+  },
+  { code: "import { binding as b } from 'process';", concerns: ['require'] },
 
   {
     code: "import { spawnSync } from 'node:child_process';",
@@ -319,10 +360,13 @@ const probes: readonly {
 
 /** Code that no restriction may touch. */
 const allowed: readonly string[] = [
-  "process.env['LANG'];",
   'process.exitCode = 1;',
   "process.on('exit', () => undefined);",
-  "import { env } from 'node:process';",
+  'const platform = process.platform;',
+  "import { execArgv } from 'node:process';",
+  'export const evaluate = { eval: (): void => undefined };',
+  "import { parseArgs } from 'node:util';\nparseArgs({ args: [], options: {} });",
+  'export const kind = (value: unknown): string => typeof value;',
   "import { readFileSync } from 'node:fs';",
   "import { writeSync } from 'node:fs';\nwriteSync(3, 'x');",
   "await import('./local.js');",
@@ -368,6 +412,11 @@ const locations: readonly {
   { path: 'packages/cli/src/output/probe.ts', allowed: ['stdout', 'stderr'] },
   { path: 'packages/cli/src/outputx/probe.ts', allowed: [] },
   { path: 'packages/cli/src/stdio/probe.ts', allowed: [] },
+  { path: 'packages/cli/src/notices/probe.ts', allowed: ['stderr'] },
+  { path: 'packages/cli/src/noticesx/probe.ts', allowed: [] },
+  { path: 'packages/cli/src/bin.ts', allowed: ['environment'] },
+  { path: 'packages/cli/src/binary.ts', allowed: [] },
+  { path: 'packages/cli/src/bin.test.ts', allowed: ['module-state'] },
   { path: 'packages/core/src/mcp/probe.ts', allowed: ['mcp-sdk'] },
   {
     path: 'packages/core/src/mcp/mount.ts',
