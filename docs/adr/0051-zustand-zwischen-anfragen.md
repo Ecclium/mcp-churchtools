@@ -1,6 +1,6 @@
 # ADR 0051: Zustand zwischen Anfragen
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 16.10.2026
 - Datum: 10.10.2026
 - Fällt vor: Phase 1
 
