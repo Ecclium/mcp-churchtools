@@ -6,7 +6,7 @@ Ecclium steht am Anfang. Den aktuellen Stand finden Sie in [docs/STATUS.md](docs
 
 ## Developer Certificate of Origin
 
-Ecclium verlangt kein Contributor License Agreement (CLA), mit dem Sie dem Projekt weitergehende Rechte einräumen. Stattdessen bestätigen Sie mit jedem Commit das Developer Certificate of Origin 1.1 (DCO) der Linux Foundation: Sie dürfen den Beitrag unter der Apache License 2.0 einreichen, unter der Beiträge eingehen. Verbindlich ist der englische Wortlaut:
+Ecclium verlangt kein Contributor License Agreement (CLA), mit dem Sie dem Projekt Rechte über die Apache License 2.0 hinaus einräumen. Stattdessen bestätigen Sie mit jedem Commit das Developer Certificate of Origin 1.1 (DCO) der Linux Foundation: Sie dürfen den Beitrag unter der Apache License 2.0 einreichen, unter der Beiträge eingehen. Verbindlich ist der englische Wortlaut:
 
 ```text
 Developer's Certificate of Origin 1.1
@@ -43,7 +43,7 @@ Sinngemäss auf Deutsch, ohne rechtliche Verbindlichkeit: Mit Ihrem Beitrag best
 - (c) dass Sie ihn unverändert und direkt von einer Person erhalten haben, die (a), (b) oder (c) bestätigt hat,
 - (d) und dass Sie verstehen und damit einverstanden sind: Projekt und Beitrag sind öffentlich, und ein Nachweis des Beitrags samt den Personendaten, die Sie mitschicken, auch Ihrem Sign-off, wird dauerhaft aufbewahrt und darf im Einklang mit dem Projekt oder den beteiligten Open-Source-Lizenzen weitergegeben werden.
 
-Die Open-Source-Lizenz, unter der Sie einreichen, ist für Ecclium die Apache License 2.0. Das Projekt selbst steht unter der Elastic License 2.0, die keine Open-Source-Lizenz ist, und gibt Ihren Beitrag mit dem übrigen Quellcode unter ihr weiter. So kann es ihn auch selbst als gehosteten Dienst betreiben, ohne dass Sie ihm weitergehende Rechte einräumen ([ADR 0058](docs/adr/0058-elastic-license-2-0.md)).
+Die Open-Source-Lizenz, unter der Sie einreichen, ist für Ecclium die Apache License 2.0, ihr Text liegt in [LICENSES/Apache-2.0.txt](LICENSES/Apache-2.0.txt). Das Projekt selbst steht unter der Elastic License 2.0, die keine Open-Source-Lizenz ist, und gibt Ihren Beitrag mit dem übrigen Quellcode unter ihr weiter. Rechte über die Apache License 2.0 hinaus räumen Sie ihm nicht ein ([ADR 0058](docs/adr/0058-elastic-license-2-0.md)).
 
 Das Sign-off ist eine Zeile am Ende der Commit-Message. Git setzt sie mit `git commit -s`:
 

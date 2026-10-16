@@ -3,7 +3,9 @@ Copyright 2026 Die Autorinnen und Autoren von Ecclium
 
 Der Quellcode steht unter der Elastic License 2.0. Der Lizenztext liegt in
 der Datei LICENSE. Was vor dem Wechsel zu dieser Lizenz in diesem Repository
-veröffentlicht war, steht weiter unter der Apache License, Version 2.0.
+veröffentlicht war, auch auf anderen Branches oder in Pull Requests, steht
+weiter unter der Apache License, Version 2.0. Ihr Text liegt in
+LICENSES/Apache-2.0.txt.
 
 Beiträge gehen unter der Apache License, Version 2.0 ein. Das Projekt gibt
 sie mit dem übrigen Quellcode unter der Elastic License 2.0 weiter.
