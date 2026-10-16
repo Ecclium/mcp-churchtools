@@ -39,4 +39,4 @@ Gewählt ist die dritte Option.
 
 ## Umsetzung
 
-- Lizenz bei der Weitergabe: Seit dem 16.10.2026 gibt weiter, wer das Pro-Modul mit dem Kern weitergibt, den Kern unter der Elastic License 2.0, mit `NOTICE`. ADR 0058 ersetzt die Konsequenz zur Apache License 2.0.
+- Lizenz bei der Weitergabe: Seit dem Wechsel, den ADR 0058 umsetzt, gibt weiter, wer das Pro-Modul mit dem Kern weitergibt, den Kern unter der Elastic License 2.0, mit `NOTICE`. ADR 0058 ersetzt die Konsequenz zur Apache License 2.0.

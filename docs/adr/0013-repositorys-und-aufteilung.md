@@ -44,4 +44,4 @@ Zwischen den Teilen gilt:
 - Index mit den betrieblichen Nummern: `docs/adr/README.md`.
 - Nachweise für die Versionen des Markenpakets: `docs/STATUS.md`.
 - Tabelle der erlaubten Importe: `tests/architecture/boundaries.json` (ADR 0022).
-- Lizenz des Kerns: Seit dem 16.10.2026 steht der Kern unter der Elastic License 2.0. ADR 0058 ersetzt die Aussage zur Lizenz im Entscheid.
+- Lizenz des Kerns: Seit dem Wechsel, den ADR 0058 umsetzt, steht der Kern unter der Elastic License 2.0. ADR 0058 ersetzt die Aussage zur Lizenz im Entscheid.
