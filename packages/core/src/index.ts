@@ -42,3 +42,16 @@ export {
   createStdioIdentity,
   createStdioTenantResolver,
 } from './identity/index.js';
+export {
+  type CatalogEntry,
+  type CatalogOptions,
+  createToolCatalog,
+  descriptionBudget,
+  type OutputShape,
+  type RefusalReason,
+  refusalReasons,
+  RegistryRefusal,
+  type ShapeNode,
+  type ToolCatalog,
+  untrustedWarning,
+} from './registry/index.js';

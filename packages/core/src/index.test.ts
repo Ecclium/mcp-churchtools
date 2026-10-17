@@ -17,6 +17,11 @@ describe('@ecclium/mcp-churchtools-core', () => {
     expect(entry.configProblemCodes).toContain('token_missing');
   });
 
+  it('passes on the registry of tools', () => {
+    expect(entry.createToolCatalog).toBeTypeOf('function');
+    expect(entry.refusalReasons).toContain('tool_meta');
+  });
+
   // A zod schema can be widened after it is made, and a pattern recompiled
   // in place, so neither leaves the core; nor does the reader of the token
   // file, whose file functions are only for tests (ADR 0055).

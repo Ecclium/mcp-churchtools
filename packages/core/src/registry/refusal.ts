@@ -49,9 +49,11 @@ const sentences: Readonly<Record<RefusalReason, string>> = Object.freeze({
   description_budget: 'The descriptions of all tools are longer than allowed.',
 });
 
-// A plugin name as npm allows it. The length is checked before a pattern
-// runs. Never give it a flag.
-const pluginNamePattern =
+/**
+ * A plugin name as npm allows it. Check the length (at most 214) before the
+ * pattern runs. Never give it a flag.
+ */
+export const pluginNamePattern =
   /^(?:@[a-z0-9][a-z0-9._~-]{0,99}\/)?[a-z0-9][a-z0-9._~-]{0,99}$/;
 
 const safe = (
