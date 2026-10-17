@@ -20,6 +20,7 @@ export const variableNames = Object.freeze([
   'ECCLIUM_CHURCHTOOLS_URL',
   'ECCLIUM_CHURCHTOOLS_TOKEN_FILE',
   'ECCLIUM_CHURCHTOOLS_TOKEN',
+  'ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE',
   'ECCLIUM_READ_ONLY',
   'ECCLIUM_REDACTION',
   'ECCLIUM_SEARCH_TOOLS',
@@ -100,7 +101,40 @@ export const reservedStdioSubjects = Object.freeze(['invalid'] as const);
 
 /** How the loader reads the value of a variable. */
 export type VariableKind =
-  'origin' | 'path' | 'token' | 'boolean' | 'choice' | 'subject';
+  'origin' | 'path' | 'token' | 'integer' | 'boolean' | 'choice' | 'subject';
+
+/** The range of the requests per minute to ChurchTools (ADR 0057). */
+export const requestsPerMinuteRange = Object.freeze({ min: 1, max: 500 });
+
+/**
+ * Tells whether a value is a whole number of requests per minute: digits
+ * only, no leading zero, within {@link requestsPerMinuteRange}. Checked sign
+ * by sign, without a regular expression or `Number()`, which would take
+ * `3e2` or blanks.
+ *
+ * @param value - The value as given.
+ * @returns Whether it fits.
+ * @example
+ * ```ts
+ * isRequestsPerMinute('300'); // true
+ * isRequestsPerMinute('0300'); // false
+ * ```
+ */
+export function isRequestsPerMinute(value: string): boolean {
+  if (typeof value !== 'string' || value.length < 1 || value.length > 3) {
+    return false;
+  }
+  let number = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x30 || code > 0x39) return false;
+    if (index === 0 && code === 0x30) return false;
+    number = number * 10 + (code - 0x30);
+  }
+  return (
+    number >= requestsPerMinuteRange.min && number <= requestsPerMinuteRange.max
+  );
+}
 
 /** One row of the table. */
 export interface Variable {
@@ -158,6 +192,15 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: undefined,
     secret: true,
     stdioOnly: true,
+  }),
+  row({
+    name: 'ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE',
+    kind: 'integer',
+    maxLength: 3,
+    choices: [],
+    defaultValue: '300',
+    secret: false,
+    stdioOnly: false,
   }),
   row({
     name: 'ECCLIUM_READ_ONLY',
@@ -226,6 +269,10 @@ export const variableSchemas: Readonly<
     .min(1)
     .max(4096)
     .refine((value) => isAbsolute(value)),
+  ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE: z
+    .string()
+    .max(3)
+    .refine((value) => isRequestsPerMinute(value)),
   ECCLIUM_READ_ONLY: choiceOf('ECCLIUM_READ_ONLY'),
   ECCLIUM_REDACTION: choiceOf('ECCLIUM_REDACTION'),
   ECCLIUM_SEARCH_TOOLS: choiceOf('ECCLIUM_SEARCH_TOOLS'),
@@ -244,6 +291,8 @@ export const environmentSchema = z.strictObject({
   ECCLIUM_CHURCHTOOLS_URL: variableSchemas.ECCLIUM_CHURCHTOOLS_URL.optional(),
   ECCLIUM_CHURCHTOOLS_TOKEN_FILE:
     variableSchemas.ECCLIUM_CHURCHTOOLS_TOKEN_FILE.optional(),
+  ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE:
+    variableSchemas.ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE.optional(),
   ECCLIUM_READ_ONLY: variableSchemas.ECCLIUM_READ_ONLY.optional(),
   ECCLIUM_REDACTION: variableSchemas.ECCLIUM_REDACTION.optional(),
   ECCLIUM_SEARCH_TOOLS: variableSchemas.ECCLIUM_SEARCH_TOOLS.optional(),

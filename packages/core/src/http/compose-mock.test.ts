@@ -54,6 +54,7 @@ describe('createMockedHttpTransport', () => {
         headers: {
           authorization: `Login ${canary.value}`,
           accept: 'application/json',
+          'accept-encoding': 'identity',
           'user-agent': userAgent,
         },
       },

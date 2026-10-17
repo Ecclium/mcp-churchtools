@@ -61,6 +61,7 @@ describe('createChurchToolsDouble', () => {
         headers: {
           authorization: `Login ${canary.value}`,
           accept: 'application/json',
+          'accept-encoding': 'identity',
           'user-agent': doubleUserAgent,
         },
       },

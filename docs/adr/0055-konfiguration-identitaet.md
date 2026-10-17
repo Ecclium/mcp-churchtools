@@ -79,16 +79,17 @@ Jede Variable trägt das Präfix `ECCLIUM_`. Werte werden exakt geprüft, die To
 
 ### Tabelle der Variablen (Phase 1)
 
-| Variable                         | Werte                            | Voreinstellung | Geheimnis  | Nur über stdio       | Beim Start                                                                      |
-| -------------------------------- | -------------------------------- | -------------- | ---------- | -------------------- | ------------------------------------------------------------------------------- |
-| `ECCLIUM_CHURCHTOOLS_URL`        | kanonische Origin mit `https`    | keine          | nein       | nein                 | fehlt oder ungültig: Abbruch                                                    |
-| `ECCLIUM_CHURCHTOOLS_TOKEN_FILE` | absoluter Pfad                   | keine          | der Inhalt | nein                 | eine Prüfung der Datei scheitert: Abbruch                                       |
-| `ECCLIUM_CHURCHTOOLS_TOKEN`      | Login-Token                      | keine          | ja         | ja                   | sonst Abbruch; mit `_FILE` zusammen Abbruch; über stdio Warnung bei jedem Start |
-| `ECCLIUM_READ_ONLY`              | `true`, `false`                  | `true`         | nein       | nein                 | ungültig: Abbruch                                                               |
-| `ECCLIUM_REDACTION`              | `standard`, `off`, `strict`      | `standard`     | nein       | `off` nur über stdio | `strict` bricht ab, bis die vollständige Maskierung steht; `off` warnt          |
-| `ECCLIUM_SEARCH_TOOLS`           | `true`, `false`                  | `false`        | nein       | nein                 | `true`: Startmeldung, die beide Suchtools nennt                                 |
-| `ECCLIUM_STDIO_SUBJECT`          | Bezeichnung nach Muster          | `local-stdio`  | nein       | ja                   | ungültig oder `invalid`: Abbruch                                                |
-| `ECCLIUM_LOG_LEVEL`              | `debug`, `info`, `warn`, `error` | `info`         | nein       | nein                 | ungültig: Abbruch                                                               |
+| Variable                                  | Werte                            | Voreinstellung | Geheimnis  | Nur über stdio       | Beim Start                                                                      |
+| ----------------------------------------- | -------------------------------- | -------------- | ---------- | -------------------- | ------------------------------------------------------------------------------- |
+| `ECCLIUM_CHURCHTOOLS_URL`                 | kanonische Origin mit `https`    | keine          | nein       | nein                 | fehlt oder ungültig: Abbruch                                                    |
+| `ECCLIUM_CHURCHTOOLS_TOKEN_FILE`          | absoluter Pfad                   | keine          | der Inhalt | nein                 | eine Prüfung der Datei scheitert: Abbruch                                       |
+| `ECCLIUM_CHURCHTOOLS_TOKEN`               | Login-Token                      | keine          | ja         | ja                   | sonst Abbruch; mit `_FILE` zusammen Abbruch; über stdio Warnung bei jedem Start |
+| `ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE` | ganze Zahl von 1 bis 500         | `300`          | nein       | nein                 | ungültig: Abbruch, ohne den Wert zu nennen                                      |
+| `ECCLIUM_READ_ONLY`                       | `true`, `false`                  | `true`         | nein       | nein                 | ungültig: Abbruch                                                               |
+| `ECCLIUM_REDACTION`                       | `standard`, `off`, `strict`      | `standard`     | nein       | `off` nur über stdio | `strict` bricht ab, bis die vollständige Maskierung steht; `off` warnt          |
+| `ECCLIUM_SEARCH_TOOLS`                    | `true`, `false`                  | `false`        | nein       | nein                 | `true`: Startmeldung, die beide Suchtools nennt                                 |
+| `ECCLIUM_STDIO_SUBJECT`                   | Bezeichnung nach Muster          | `local-stdio`  | nein       | ja                   | ungültig oder `invalid`: Abbruch                                                |
+| `ECCLIUM_LOG_LEVEL`                       | `debug`, `info`, `warn`, `error` | `info`         | nein       | nein                 | ungültig: Abbruch                                                               |
 
 Fest und nicht konfigurierbar sind:
 
@@ -96,7 +97,7 @@ Fest und nicht konfigurierbar sind:
 - der Modus: die Wurzel der Komposition legt ihn fest;
 - die Liste der Funktionen: im freien Kern leer.
 
-Eine Variable für die Drosselung kommt mit dem ChurchTools-Client dazu, ebenso jede weitere Variable einer späteren Phase.
+Die Variable für die Drosselung kam mit dem ChurchTools-Client dazu (ADR 0057). Jede weitere Variable kommt mit ihrer Phase.
 
 ### Adresse der Instanz
 
@@ -224,4 +225,5 @@ Grenzen:
   - die Übernahme der Umgebung in `packages/cli/src/environment.ts` und `tests/token-environment.test.mts` mit `tests/fixtures/config/take-environment.mts`, der zeigt, dass ein Kindprozess das Token nicht mehr sieht.
 - Regeln, gemergt am 16.10.2026: der Ort `environment` mit der ESLint-Regel `[arch:environment]` für `process.env`, `process.argv`, `process.report` und `parseArgs` ohne `args`, `eval` und `Function` unter `[arch:require]` (Importe aus `node:process` weist seither `[arch:process]` ab, ADR 0054), der Ort `stdioReachable` mit der Regel `no-stdout-from-stdio-modules` von dependency-cruiser und ein Test, der im Syntaxbaum der Schreiber `process` und `console` sucht. Die Regel `churchtools-token-assignment` von gitleaks, die auch `ECCLIUM_CHURCHTOOLS_TOKEN` erkennt, kam mit dem Kern am 15.10.2026.
 - `.env.example` nennt die Variablen mit Präfix, `tests/env-example.test.mts` gleicht die Datei mit der Tabelle ab.
-- Offen: der Start über stdio mit den Startmeldungen vor dem Zeilenschreiber und dem Test mit Kanarienwerten im Kindprozess, die Prüfung des Tokens mit `whoami`, die Variable für die Drosselung und die Registrierung der Suchtools nach `ECCLIUM_SEARCH_TOOLS`.
+- Variable für die Drosselung: `ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE` in `packages/core/src/config/variables.ts`, Zeichen für Zeichen geprüft, mit dem Problem `invalid_integer` und der Zeile «Anfragen je Minute» in `ecclium config check` (ADR 0057).
+- Offen: der Start über stdio mit den Startmeldungen vor dem Zeilenschreiber und dem Test mit Kanarienwerten im Kindprozess, die Prüfung des Tokens mit `whoami` und die Registrierung der Suchtools nach `ECCLIUM_SEARCH_TOOLS`.

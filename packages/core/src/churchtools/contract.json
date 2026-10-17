@@ -1,0 +1,147 @@
+{
+  "whoami": {
+    "method": "get",
+    "path": "/api/whoami",
+    "query": [
+      "only_allow_authenticated"
+    ],
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "guid": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "firstName": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "lastName": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "email": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 254
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "guid",
+            "firstName",
+            "lastName",
+            "email"
+          ]
+        },
+        "meta": {
+          "type": "object",
+          "properties": {
+            "simulatingUserId": {
+              "type": "null"
+            }
+          }
+        }
+      },
+      "required": [
+        "data"
+      ]
+    }
+  },
+  "permissions": {
+    "method": "get",
+    "path": "/api/permissions/global",
+    "query": [],
+    "value": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "maxItems": 10000,
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          }
+        }
+      ]
+    }
+  },
+  "pagedMeta": {
+    "meta": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "pagination": {
+          "type": "object",
+          "properties": {
+            "total": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "current": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "lastPage": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "total",
+            "limit",
+            "current",
+            "lastPage"
+          ]
+        }
+      },
+      "required": [
+        "pagination"
+      ]
+    }
+  },
+  "countedMeta": {
+    "meta": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "count"
+      ]
+    }
+  }
+}

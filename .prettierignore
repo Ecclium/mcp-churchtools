@@ -8,3 +8,6 @@ pnpm-lock.yaml
 
 # The licence text stays exactly as published.
 LICENSE
+
+# Written by a test as a file snapshot, compared byte by byte.
+packages/core/src/churchtools/contract.json

@@ -196,6 +196,12 @@ const problems: Readonly<
       'Setzen Sie einen der erlaubten Werte.',
     );
   },
+  invalid_integer: (name = quote('ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE')) =>
+    message(
+      `Der Wert von ${name} ist keine erlaubte Zahl.`,
+      'Erlaubt ist eine ganze Zahl von 1 bis 500, nur mit Ziffern und ohne Null am Anfang.',
+      'Setzen Sie eine Zahl in diesem Bereich oder entfernen Sie die Variable, dann gilt die Voreinstellung 300.',
+    ),
   url_missing: (name = url) =>
     message(
       'Die Adresse der ChurchTools-Instanz fehlt.',

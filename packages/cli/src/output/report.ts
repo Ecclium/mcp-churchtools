@@ -30,6 +30,7 @@ export interface ReportOptions {
 const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
   churchtoolsOrigin: 'ChurchTools-Adresse',
   churchtoolsToken: 'Token',
+  churchtoolsRequestsPerMinute: 'Anfragen je Minute',
   readOnly: 'Nur lesen',
   redaction: 'Maskierung',
   searchTools: 'Suchtools',
@@ -71,6 +72,8 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
         !showValues
         ? { text: masked, hides: 'subject' }
         : { text: quote(shown.value) };
+    case 'integer':
+      return { text: formatNumber(shown.value) };
     case 'origin': {
       // A port other than 443 stays visible: it names no instance.
       const port = shown.port === '' ? '' : `:${shown.port}`;

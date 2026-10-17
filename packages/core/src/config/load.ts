@@ -43,6 +43,8 @@ export interface EccliumConfig {
   readonly churchtoolsOrigin: string;
   readonly churchtoolsToken: Secret;
   readonly tokenSource: 'file' | 'environment';
+  /** Requests per minute to ChurchTools, for the throttle (ADR 0057). */
+  readonly churchtoolsRequestsPerMinute: number;
   readonly readOnly: boolean;
   /** `strict` is refused until the full redaction exists. */
   readonly redaction: 'off' | 'standard';
@@ -55,6 +57,7 @@ export interface EccliumConfig {
 export type SettingKey =
   | 'churchtoolsOrigin'
   | 'churchtoolsToken'
+  | 'churchtoolsRequestsPerMinute'
   | 'readOnly'
   | 'redaction'
   | 'searchTools'
@@ -72,6 +75,7 @@ export type ValueOrigin = 'environment' | 'file' | 'default';
 export type ShownValue =
   | { readonly kind: 'boolean'; readonly value: boolean }
   | { readonly kind: 'choice'; readonly value: string }
+  | { readonly kind: 'integer'; readonly value: number }
   | { readonly kind: 'origin'; readonly host: string; readonly port: string }
   | { readonly kind: 'hidden' }
   | { readonly kind: 'none' };
@@ -472,6 +476,31 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     );
   }
 
+  // The requests per minute: digits only, checked sign by sign. The value
+  // kept is the number, and a refused value never reaches the report.
+  const rateName = 'ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE';
+  const rateVariable = row(rateName);
+  const rateRead = read(rateVariable);
+  let rate:
+    { readonly value: number; readonly origin: ValueOrigin } | undefined;
+  if (rateRead.state === 'unset') {
+    rate = { value: Number(rateVariable.defaultValue), origin: 'default' };
+  } else if (rateRead.state === 'set') {
+    if (fitsVariable(rateName, rateRead.value)) {
+      rate = { value: Number(rateRead.value), origin: 'environment' };
+    } else {
+      report('invalid_integer', rateName);
+    }
+  }
+  setting(
+    'churchtoolsRequestsPerMinute',
+    rateName,
+    rate === undefined ? 'invalid' : rate.origin,
+    rate === undefined
+      ? shownNone
+      : record({ kind: 'integer', value: rate.value }),
+  );
+
   const readOnly = choose('ECCLIUM_READ_ONLY');
   show('readOnly', 'ECCLIUM_READ_ONLY', readOnly, 'boolean');
 
@@ -541,6 +570,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     sorted.length > 0 ||
     origin === undefined ||
     token === undefined ||
+    rate === undefined ||
     readOnly === undefined ||
     redaction === undefined ||
     searchTools === undefined ||
@@ -556,6 +586,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       churchtoolsOrigin: origin,
       churchtoolsToken: token,
       tokenSource,
+      churchtoolsRequestsPerMinute: rate.value,
       readOnly: readOnly.value === 'true',
       redaction: redaction.value as 'off' | 'standard',
       searchTools: searchTools.value === 'true',
