@@ -1,0 +1,150 @@
+import { loadConfig } from '@ecclium/mcp-churchtools-core';
+import type { TenantAssignment } from '@ecclium/mcp-churchtools-plugin-api';
+import {
+  assertNoCanary,
+  assertPlanted,
+  createChurchToolsDouble,
+  doubleOrigin,
+  examplePlugin,
+  makeCanaries,
+} from '@ecclium/mcp-churchtools-testkit';
+import { afterEach, describe, expect, it } from 'vitest';
+
+import { createAuditSink } from '../audit/index.js';
+import { createToolCatalog } from '../registry/index.js';
+import { createToolPipeline, type ToolRequest } from './pipeline.js';
+
+// Canaries in the token, in the input and in answers of ChurchTools must
+// never reach audit or log, and reach the result only where a tool returns
+// them on purpose. Tokens and values are made at run time; requests go
+// through the real transport on the ChurchTools double.
+
+const canary = makeCanaries();
+const loaded = loadConfig({
+  environment: {
+    ECCLIUM_CHURCHTOOLS_URL: doubleOrigin,
+    ECCLIUM_CHURCHTOOLS_TOKEN: canary.token.value,
+  },
+  transport: 'stdio',
+});
+if (!loaded.ok) throw new Error('the configuration of the test is invalid');
+
+const open: { close(): Promise<void> }[] = [];
+afterEach(async () => {
+  await Promise.all(open.splice(0).map((item) => item.close()));
+});
+
+const whoamiPath = '/api/whoami?only_allow_authenticated=true';
+const json = { headers: { 'content-type': 'application/json' } };
+
+const request = (): ToolRequest => ({
+  assignment: {
+    tenantId: 'default',
+    actor: { kind: 'user', id: 'stdio:local-stdio' },
+  } as unknown as TenantAssignment,
+  mode: 'interactive',
+  redaction: 'standard',
+  readOnly: true,
+  features: [],
+  signal: new AbortController().signal,
+});
+
+const setup = () => {
+  const double = createChurchToolsDouble({
+    token: loaded.config.churchtoolsToken,
+  });
+  open.push(double);
+  const catalog = createToolCatalog({
+    plugins: [examplePlugin],
+    readOnly: true,
+  });
+  const lines: string[] = [];
+  const writer = Object.freeze({
+    write: (line: string) => {
+      lines.push(line);
+      return true;
+    },
+  });
+  const clock = Object.freeze({ now: Object.freeze(() => 0) });
+  const pipeline = createToolPipeline({
+    catalog,
+    audit: createAuditSink({ writer, clock, isKnownTool: catalog.has }),
+    transport: double.transport,
+    origin: doubleOrigin,
+    requestsPerMinute: 300,
+    clock,
+    logging: { writer, minLevel: 'debug' },
+  });
+  return { double, pipeline, lines };
+};
+
+describe('canaries', () => {
+  it('leave the token out of result, audit and log of a reading call', async () => {
+    const { double, pipeline, lines } = setup();
+    double.intercept({ path: whoamiPath, method: 'GET' }).reply(
+      200,
+      JSON.stringify({
+        data: {
+          id: 7,
+          guid: '00000000-0000-0000-0000-000000000007',
+          firstName: 'Person',
+          lastName: 'A',
+          email: canary.email.value,
+        },
+      }),
+      json,
+    );
+    const outcome = await pipeline.call('ct_example_profile', {}, request());
+    // The token reached ChurchTools, so the check below proves something.
+    assertPlanted(double.calls(), [canary.token], 'request');
+    expect(outcome.ok).toBe(true);
+    assertNoCanary([outcome, lines], [canary.token], 'call');
+    // The address the tool returns on purpose stays out of audit and log.
+    assertPlanted(outcome, [canary.email], 'result');
+    assertNoCanary(lines, canary.all, 'audit and log');
+  });
+
+  it('leave the values of an error body out of outcome, audit and log', async () => {
+    const { double, pipeline, lines } = setup();
+    const body = {
+      message: canary.token.value,
+      translatedMessage: canary.email.value,
+      args: [canary.name.value],
+      errors: [{ value: canary.phone.value }],
+    };
+    assertPlanted(body, canary.all, 'error body');
+    double
+      .intercept({ path: whoamiPath, method: 'GET' })
+      .reply(403, JSON.stringify(body), json);
+    const outcome = await pipeline.call('ct_example_profile', {}, request());
+    expect(!outcome.ok && outcome.error.code).toBe('permission');
+    assertNoCanary([outcome, lines], canary.all, 'call');
+  });
+
+  it('leave a refused input out of outcome, audit and log', async () => {
+    const { pipeline, lines } = setup();
+    const input = {
+      email: canary.email.value,
+      [canary.name.value]: canary.phone.value,
+    };
+    assertPlanted(input, [canary.email, canary.phone], 'input');
+    const outcome = await pipeline.call('ct_example_echo', input, request());
+    expect(!outcome.ok && outcome.error.code).toBe('validation');
+    assertNoCanary([outcome, lines], canary.all, 'call');
+  });
+
+  it('leave an accepted input out of audit and log', async () => {
+    const { pipeline, lines } = setup();
+    const outcome = await pipeline.call(
+      'ct_example_echo',
+      {
+        email: canary.email.value,
+        phone: canary.phone.value,
+        notes: [canary.name.value],
+      },
+      request(),
+    );
+    assertPlanted(outcome, [canary.email, canary.phone, canary.name], 'result');
+    assertNoCanary(lines, canary.all, 'audit and log');
+  });
+});
