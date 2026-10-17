@@ -55,3 +55,10 @@ export {
   type ToolCatalog,
   untrustedWarning,
 } from './registry/index.js';
+export {
+  createToolPipeline,
+  type ToolOutcome,
+  type ToolPipeline,
+  type ToolPipelineOptions,
+  type ToolRequest,
+} from './pipeline/index.js';

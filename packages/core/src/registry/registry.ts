@@ -55,26 +55,15 @@ export interface CatalogEntry {
 
 /** The frozen list of checked tools. */
 export interface ToolCatalog {
+  /** Every tool, sorted by name, frozen. */
+  readonly list: () => readonly CatalogEntry[];
+  /** The tool of a name, or `undefined` when there is none. */
+  readonly get: (name: string) => CatalogEntry | undefined;
   /**
-   * Lists the tools.
-   *
-   * @returns Every tool, sorted by name, frozen.
+   * Whether a tool of a name exists, as the audit sink asks. A property,
+   * not a method, so it can be passed on without `this`.
    */
-  list(): readonly CatalogEntry[];
-  /**
-   * Finds a tool.
-   *
-   * @param name - Any name.
-   * @returns The tool, or `undefined` when there is none of this name.
-   */
-  get(name: string): CatalogEntry | undefined;
-  /**
-   * Tells whether a tool exists, as the audit sink asks.
-   *
-   * @param name - Any name.
-   * @returns Whether the catalog has a tool of this name.
-   */
-  has(name: string): boolean;
+  readonly has: (name: string) => boolean;
 }
 
 /** What the composition root hands to {@link createToolCatalog}. */
