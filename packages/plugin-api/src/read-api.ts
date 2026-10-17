@@ -15,8 +15,8 @@ export interface Me {
   readonly firstName: string;
   /** Last name. */
   readonly lastName: string;
-  /** E-mail address. */
-  readonly email: string;
+  /** E-mail address, or `null` when the account has none. */
+  readonly email: string | null;
 }
 
 /** A right that is set: `true`, or a list of numbers, never empty. */
