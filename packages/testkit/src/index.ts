@@ -27,3 +27,9 @@ export {
   type MockedCall,
   type MockedHttpTransport,
 } from './http-double/index.js';
+export {
+  exampleEchoTool,
+  examplePlugin,
+  exampleProfileTool,
+  exampleWriteTool,
+} from './plugins/example/index.js';
