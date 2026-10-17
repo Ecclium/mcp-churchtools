@@ -67,3 +67,12 @@ Gewählt ist die dritte Option.
   - **Unbenannter Rechtename:** Ist der unbenannte Name in `churchdb` (F5) kein druckbares ASCII, sind die Rechte auf dieser Instanz immer `unknown`.
   - **Ungültiges Token bei den Rechten:** Ob `GET /api/permissions/global` auf ein ungültiges Token mit 401 oder mit 200 und anonymen Rechten antwortet, ist nicht belegt. Deshalb belegt nur whoami eine Anmeldung.
   - **Kodierung:** Dass ChurchTools mit `accept-encoding: identity` unkomprimiert antwortet, zeigt erst der erste Lauf.
+
+## Umsetzung
+
+- **Client:** `packages/core/src/churchtools/` mit `client.ts` (Fabrik, `whoami`, `permissions`), `request.ts` (Reihenfolge von Mandant, Drosselung, Transport und Lesen), `answer.ts`, `json-shape.ts` und `retry-after.ts` (Lesen der Antwort), `query.ts` (Seiten und `ids[]`), `schemas.ts` und `rights.ts`. Kein Einstieg von core gibt den Client weiter.
+- **Drosselung:** `packages/core/src/throttle/`, nur vom Client gebaut.
+- **Variable:** `ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE` in `packages/core/src/config/variables.ts` (ADR 0055).
+- **Vertragsabgleich:** `packages/core/src/churchtools/contract.json`, festgehalten von `contract.test.ts`, und `scripts/contract/check.mts` mit README.
+- **Tests:** `packages/core/src/churchtools/*.test.ts` und `packages/core/src/throttle/*.test.ts` über das Double für ChurchTools aus testkit decken beide Ordner zu 100 Prozent ab.
+- Offen: der erste Lauf gegen die Testinstanz und die Form von «Alle» bei den Rechten für Personen und Gruppen (`docs/STATUS.md`, Offen).
