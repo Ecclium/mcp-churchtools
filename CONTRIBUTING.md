@@ -6,7 +6,7 @@ Ecclium steht am Anfang. Den aktuellen Stand finden Sie in [docs/STATUS.md](docs
 
 ## Developer Certificate of Origin
 
-Ecclium verlangt kein Contributor License Agreement (CLA), mit dem Sie dem Projekt weitergehende Rechte einräumen. Stattdessen bestätigen Sie mit jedem Commit das Developer Certificate of Origin 1.1 (DCO) der Linux Foundation: Sie dürfen den Beitrag unter der Lizenz des Projekts einreichen. Verbindlich ist der englische Wortlaut:
+Ecclium verlangt kein Contributor License Agreement (CLA), mit dem Sie dem Projekt Rechte über die Apache License 2.0 hinaus einräumen. Stattdessen bestätigen Sie mit jedem Commit das Developer Certificate of Origin 1.1 (DCO) der Linux Foundation: Sie dürfen den Beitrag unter der Apache License 2.0 einreichen, unter der Beiträge eingehen. Verbindlich ist der englische Wortlaut:
 
 ```text
 Developer's Certificate of Origin 1.1
@@ -43,6 +43,8 @@ Sinngemäss auf Deutsch, ohne rechtliche Verbindlichkeit: Mit Ihrem Beitrag best
 - (c) dass Sie ihn unverändert und direkt von einer Person erhalten haben, die (a), (b) oder (c) bestätigt hat,
 - (d) und dass Sie verstehen und damit einverstanden sind: Projekt und Beitrag sind öffentlich, und ein Nachweis des Beitrags samt den Personendaten, die Sie mitschicken, auch Ihrem Sign-off, wird dauerhaft aufbewahrt und darf im Einklang mit dem Projekt oder den beteiligten Open-Source-Lizenzen weitergegeben werden.
 
+Die Open-Source-Lizenz, unter der Sie einreichen, ist für Ecclium die Apache License 2.0, ihr Text liegt in [LICENSES/Apache-2.0.txt](LICENSES/Apache-2.0.txt). Das Projekt selbst steht unter der Elastic License 2.0, die keine Open-Source-Lizenz ist, und gibt Ihren Beitrag mit dem übrigen Quellcode unter ihr weiter. Rechte über die Apache License 2.0 hinaus räumen Sie ihm nicht ein ([ADR 0058](docs/adr/0058-elastic-license-2-0.md)).
+
 Das Sign-off ist eine Zeile am Ende der Commit-Message. Git setzt sie mit `git commit -s`:
 
 ```text
@@ -63,7 +65,7 @@ Name und E-Mail-Adresse im Sign-off müssen zum Autor oder zur Autorin des Commi
 
 - Code, Bezeichner, Kommentare, Commit-Messages, Issues und Pull Requests auf Englisch.
 - Texte für Menschen, also README, Dokumentation und Meldungen der Kommandozeile, auf Deutsch zuerst, nach Kapitel 9 der [Markenrichtlinie](brand/README.md): Anrede «Sie», Schweizer Schreibweise mit `ss`, Anführungszeichen «so», keine Geviertstriche, keine Ausrufezeichen.
-- Kommentare erklären das Warum. Wo ein Architekturentscheid die Begründung trägt, nennen sie seine Nummer, etwa «ADR 0002». Die Entscheide stehen in [docs/adr/](docs/adr/README.md).
+- Kommentare erklären das Warum. Wo ein Architekturentscheid die Begründung trägt, nennen sie seine Nummer, etwa «ADR 0022». Die Entscheide stehen in [docs/adr/](docs/adr/README.md).
 
 ## Keine echten Daten
 
@@ -81,7 +83,7 @@ Ein Git-Hook aus der Einrichtung unten prüft jeden Commit und jede Commit-Messa
 
 ## Fremder Quelltext und Clean Room
 
-Fremder Quelltext wird nicht in den Kern kopiert, auch nicht unter einer freien Lizenz. Ist eine Ausnahme nötig, wird sie vorher entschieden, im Code markiert und in `NOTICE` mit Quelle und Lizenz vermerkt ([ADR 0002](docs/adr/0002-apache-2-0-und-dco.md)).
+Fremder Quelltext wird nicht in den Kern kopiert, auch nicht unter einer freien Lizenz. Ist eine Ausnahme nötig, wird sie vorher entschieden, im Code markiert und in `NOTICE` mit Quelle und Lizenz vermerkt ([ADR 0058](docs/adr/0058-elastic-license-2-0.md)).
 
 Das gilt besonders für andere quelloffene MCP-Server für ChurchTools. Ecclium übernimmt aus ihnen keinen Quelltext, auch keine einzelnen Funktionen oder Tests, auch nicht unter einer freien Lizenz wie MIT. Ideen, der Zuschnitt von Tools und Namensschemata dürfen einfliessen, Code nicht. So bleibt die Herkunft jeder Zeile im Kern klar. Für den Fork eines dieser Projekte, den der Maintainer betreibt, gilt zusätzlich die Trennung aus [ADR 0017](docs/adr/0017-clean-room-gegenueber-fork.md). Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Hersteller von ChurchTools.
 

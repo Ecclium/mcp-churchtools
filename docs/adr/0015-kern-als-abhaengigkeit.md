@@ -36,3 +36,7 @@ Gewählt ist die dritte Option.
 - Eine Änderung, die das Pro-Modul braucht, erscheint zuerst in einem Release des Kerns. Das Pro-Modul setzt deshalb den Release-Pfad voraus (ADR 0040).
 - Wer das Pro-Modul zusammen mit dem Kern weitergibt, gibt den Kern unter der Apache License 2.0 weiter, mit den Hinweisen aus `NOTICE` (ADR 0002).
 - Restrisiko: Ob das Pro-Modul wirklich nur die Schnittstelle benutzt, kann dieses Repository nicht prüfen, weil es den Code des Pro-Moduls nicht sieht. Zur Laufzeit gelten für das Pro-Modul dieselben Grenzen wie für jede Erweiterung: die feste Pipeline (ADR 0024) und die Regeln für Erweiterungen (ADR 0041).
+
+## Umsetzung
+
+- Lizenz bei der Weitergabe: Seit dem Wechsel, den ADR 0058 umsetzt, gibt weiter, wer das Pro-Modul mit dem Kern weitergibt, den Kern unter der Elastic License 2.0, mit `NOTICE`. ADR 0058 ersetzt die Konsequenz zur Apache License 2.0.

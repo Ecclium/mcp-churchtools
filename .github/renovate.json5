@@ -28,7 +28,7 @@
   // only for the required checks (ADR 0021).
   platformAutomerge: false,
 
-  // Every commit needs a sign-off of its author (ADR 0002). Renovate commits
+  // Every commit needs a sign-off of its author (ADR 0058). Renovate commits
   // through the GitHub API, so the author is this account. The sign-off
   // goes into the body, not into commitTrailers: when GitHub merges a pull
   // request automatically, the squash commit keeps the body but not the

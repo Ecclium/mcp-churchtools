@@ -4,10 +4,12 @@ import { describe, expect, it } from 'vitest';
 
 // Every workspace package loads by its package name, and its exports lead to
 // the TypeScript source first. Tests and type checks therefore never depend
-// on an earlier build (ADR 0022).
+// on an earlier build (ADR 0022). Every package names the licence of the
+// repository, so that a new package cannot ship under another (ADR 0058).
 
 interface Manifest {
   readonly name: string;
+  readonly license?: unknown;
   readonly exports: Readonly<Record<string, Readonly<Record<string, string>>>>;
 }
 
@@ -23,6 +25,13 @@ const manifests: readonly Manifest[] = await Promise.all(
 );
 
 describe('workspace packages', () => {
+  it.each(manifests)(
+    '$name is under the Elastic License 2.0',
+    ({ license }) => {
+      expect(license).toBe('Elastic-2.0');
+    },
+  );
+
   it.each(manifests)('$name exports its source first', ({ exports }) => {
     expect(exports['.']?.['@ecclium/source']).toBe('./src/index.ts');
     for (const [subpath, conditions] of Object.entries(exports)) {

@@ -30,4 +30,5 @@ Entwurf: Vorgesehen ist die dritte Option.
 - Restrisiken: Ein Widerruf wirkt erst mit dem Ablauf der Lizenz. Das ist der Preis dafür, dass keine Installation mit dem Lizenzgeber sprechen muss.
 - Der Lizenzgeber erfährt nicht, wo und wie oft Ecclium läuft.
 - Wer die privaten Schlüssel verwahrt und wie Lizenzen ausgestellt werden, gehört nicht in dieses Repository.
+- Die öffentlichen Schlüssel, die Prüfung und die Stufe, die Funktionen des Zusatzmoduls freischaltet, sind die Funktion für Lizenzschlüssel im Sinn der Elastic License 2.0 (ADR 0058). Lizenznehmende dürfen sie nicht verschieben, ändern, abschalten oder umgehen, auch nicht in einer eigenen Fassung des Kerns.
 - Offen: Welche Angaben die Nutzdaten enthalten, wird vor Phase 9 festgelegt.

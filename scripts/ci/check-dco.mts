@@ -2,7 +2,7 @@
  * Checks the sign-off of the Developer Certificate of Origin in commits.
  *
  * Every commit carries a `Signed-off-by` trailer whose name and e-mail
- * address are those of its author (ADR 0002, CONTRIBUTING.md). Trailers are
+ * address are those of its author (ADR 0058, CONTRIBUTING.md). Trailers are
  * read by Git itself, so the check sees exactly what Git and GitHub show.
  *
  * A merge commit needs no sign-off only if it has exactly two parents and

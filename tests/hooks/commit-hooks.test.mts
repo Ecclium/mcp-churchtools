@@ -12,7 +12,7 @@ import { createRepository, type Repository } from '../support/git.mts';
 // that must not become public, in the staged files, their names and the
 // commit message (ADR 0014), a commit while a .gitleaksignore could silence
 // findings, and a commit whose message lacks the sign-off of its author
-// (ADR 0002). This test installs the hooks into a temporary repository and
+// (ADR 0058). This test installs the hooks into a temporary repository and
 // commits through them, as a contributor would. Every commit that must fail
 // has a counterpart that passes, so the test cannot pass merely because the
 // hook fails for another reason, such as a missing tool.
