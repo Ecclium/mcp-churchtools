@@ -72,6 +72,7 @@ describe('the table of variables', () => {
       ['ECCLIUM_CHURCHTOOLS_URL', undefined, false, false],
       ['ECCLIUM_CHURCHTOOLS_TOKEN_FILE', undefined, false, false],
       ['ECCLIUM_CHURCHTOOLS_TOKEN', undefined, true, true],
+      ['ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE', '300', false, false],
       ['ECCLIUM_READ_ONLY', 'true', false, false],
       ['ECCLIUM_REDACTION', 'standard', false, false],
       ['ECCLIUM_SEARCH_TOOLS', 'false', false, false],
@@ -227,6 +228,7 @@ describe('fitsVariable', () => {
       const failing: [PlainVariableName, string][] = [
         ['ECCLIUM_CHURCHTOOLS_URL', 'http://demo.example'],
         ['ECCLIUM_CHURCHTOOLS_TOKEN_FILE', 'token-file'],
+        ['ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE', '0'],
         ['ECCLIUM_READ_ONLY', 'TRUE'],
         ['ECCLIUM_REDACTION', 'none'],
         ['ECCLIUM_SEARCH_TOOLS', 'yes'],

@@ -141,6 +141,7 @@ describe('loadConfig with a good configuration', () => {
       churchtoolsOrigin: address,
       churchtoolsToken: undefined,
       tokenSource: 'file',
+      churchtoolsRequestsPerMinute: 300,
       readOnly: true,
       redaction: 'standard',
       searchTools: false,
@@ -174,6 +175,12 @@ describe('loadConfig with a good configuration', () => {
         'ECCLIUM_CHURCHTOOLS_TOKEN_FILE',
         'file',
         { kind: 'hidden' },
+      ],
+      [
+        'churchtoolsRequestsPerMinute',
+        'ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE',
+        'default',
+        { kind: 'integer', value: 300 },
       ],
       [
         'readOnly',
@@ -622,6 +629,73 @@ describe('loadConfig and the values of variables', () => {
   );
 
   it.each([
+    ['1', 1],
+    ['300', 300],
+    ['500', 500],
+    ['42', 42],
+  ])('takes %j requests per minute', (value, number) => {
+    const result = load({
+      ...valid(),
+      ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE: value,
+    });
+    expect(result.ok && result.config.churchtoolsRequestsPerMinute).toBe(
+      number,
+    );
+    expect(setting(result, 'churchtoolsRequestsPerMinute')).toMatchObject({
+      origin: 'environment',
+      shown: { kind: 'integer', value: number },
+    });
+  });
+
+  it('defaults to 300 requests per minute', () => {
+    const result = load(valid());
+    expect(result.ok && result.config.churchtoolsRequestsPerMinute).toBe(300);
+    expect(setting(result, 'churchtoolsRequestsPerMinute')).toMatchObject({
+      origin: 'default',
+      shown: { kind: 'integer', value: 300 },
+    });
+  });
+
+  it.each([
+    '0',
+    '501',
+    '030',
+    '3e2',
+    ' 30',
+    '30 ',
+    '-1',
+    '+1',
+    '1.5',
+    'abc',
+    '999',
+  ])('refuses %j requests per minute without showing the value', (value) => {
+    const result = load({
+      ...valid(),
+      ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE: value,
+    });
+    expect(problems(result)).toEqual([
+      ['invalid_integer', 'ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE'],
+    ]);
+    expect(setting(result, 'churchtoolsRequestsPerMinute')).toMatchObject({
+      origin: 'invalid',
+      shown: { kind: 'none' },
+    });
+  });
+
+  it.each(['1000', '0300', ' 300', '300 '])(
+    'refuses %j requests per minute as too long',
+    (value) => {
+      expect(
+        problems(
+          load({ ...valid(), ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE: value }),
+        ),
+      ).toEqual([
+        ['value_too_long', 'ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE'],
+      ]);
+    },
+  );
+
+  it.each([
     ['ECCLIUM_REDACTION', ['Standard', 'STANDARD', 'Off', 'off ', 'none']],
     ['ECCLIUM_LOG_LEVEL', ['DEBUG', 'trace', 'Info', 'warn ', 'all']],
   ])('refuses each wrong choice for %s', (name, values) => {
@@ -964,6 +1038,8 @@ describe('loadConfig and its problems', () => {
     empty_value: () => load({ ...valid(), ECCLIUM_READ_ONLY: '' }),
     value_too_long: () => load({ ...valid(), ECCLIUM_READ_ONLY: 'xxxxxx' }),
     invalid_choice: () => load({ ...valid(), ECCLIUM_READ_ONLY: 'yes' }),
+    invalid_integer: () =>
+      load({ ...valid(), ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE: '0' }),
     url_missing: () => load({ ECCLIUM_CHURCHTOOLS_TOKEN_FILE: tokenPath }),
     url_too_long: () => withAddress(`https://${'a'.repeat(300)}.example`),
     url_invalid: () => withAddress('demo.example'),

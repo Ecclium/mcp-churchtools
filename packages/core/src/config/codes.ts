@@ -20,6 +20,7 @@ export const configProblemCodes = Object.freeze([
   'empty_value',
   'value_too_long',
   'invalid_choice',
+  'invalid_integer',
   'url_missing',
   ...originCodes,
   'token_missing',

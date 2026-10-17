@@ -83,6 +83,7 @@ describe('renderConfigReport', () => {
         'Token',
         'verborgen (aus der Datei in ‹ECCLIUM_CHURCHTOOLS_TOKEN_FILE›, Eigentümer und Dateirechte geprüft)',
       ),
+      row('Anfragen je Minute', '300 (Voreinstellung)'),
       row('Nur lesen', 'ja (Voreinstellung)'),
       row('Maskierung', '‹standard› (Voreinstellung)'),
       row('Suchtools', 'nein (Voreinstellung)'),
@@ -91,6 +92,28 @@ describe('renderConfigReport', () => {
       hostNote,
       valid,
     ]);
+  });
+
+  it('shows the requests per minute from the environment, and never a refused one', () => {
+    expect(
+      render({ ...minimal(), ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE: '120' }),
+    ).toContain(
+      row(
+        'Anfragen je Minute',
+        '120 (aus ‹ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE›)',
+      ),
+    );
+    const lines = render({
+      ...minimal(),
+      ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE: '987',
+    });
+    expect(lines).toContain(
+      row(
+        'Anfragen je Minute',
+        'ungültig (aus ‹ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE›, siehe die Probleme unten)',
+      ),
+    );
+    expect(lines.join('\n')).not.toContain('987');
   });
 
   it('reports a value equal to the default as set', () => {
