@@ -323,6 +323,7 @@ describe('permissions', () => {
         data: {
           churchwiki: {
             view: [3, 4],
+            'view category': [0, 2],
             edit: [],
             admin: false,
             'view own': true,
@@ -335,7 +336,9 @@ describe('permissions', () => {
     const result = await client.permissions(ctx());
     expect(result).toEqual({
       kind: 'known',
-      granted: { churchwiki: { view: [3, 4], 'view own': true } },
+      granted: {
+        churchwiki: { view: [3, 4], 'view category': [0, 2], 'view own': true },
+      },
     });
     if (result.kind !== 'known') return;
     expect(Object.getPrototypeOf(result.granted)).toBeNull();
@@ -358,7 +361,8 @@ describe('permissions', () => {
     ['an empty name', { data: { churchwiki: { '': true } } }],
     ['a name that is not ASCII', { data: { churchwiki: { vièw: true } } }],
     ['a value that is a number', { data: { churchwiki: { view: 1 } } }],
-    ['a list with 0', { data: { churchwiki: { view: [0] } } }],
+    ['a list with -1', { data: { churchwiki: { view: [0, -1] } } }],
+    ['a list with 1.5', { data: { churchwiki: { view: [1.5] } } }],
     ['a list with a text', { data: { churchwiki: { view: ['1'] } } }],
     [
       'a list of 10001 IDs',
