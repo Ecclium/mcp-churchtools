@@ -180,6 +180,7 @@ describe('a request', () => {
     expect(call?.headers).toEqual({
       authorization: `Login ${canary.value}`,
       accept: 'application/json',
+      'accept-encoding': 'identity',
       'user-agent': userAgent,
     });
     expect(call?.body ?? null).toBeNull();
@@ -197,7 +198,11 @@ describe('a request', () => {
     expect(authorization).toBe(`Login ${canary.value}`);
     assertNoCanary(others, [canary], 'other headers');
     assertNoCanary(call?.fullUrl, [canary], 'address');
-    expect(Object.keys(others)).toEqual(['accept', 'user-agent']);
+    expect(Object.keys(others)).toEqual([
+      'accept',
+      'accept-encoding',
+      'user-agent',
+    ]);
     expect(call?.fullUrl).not.toContain('login_token');
     expect(call?.fullUrl).not.toContain('with_session');
   });

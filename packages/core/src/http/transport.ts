@@ -372,6 +372,7 @@ export function createTransport(
         headers: {
           authorization: `Login ${revealSecret(token)}`,
           accept: 'application/json',
+          'accept-encoding': 'identity',
           'user-agent': userAgent,
         },
         signal: controller.signal,

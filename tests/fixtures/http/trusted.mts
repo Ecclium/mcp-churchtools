@@ -19,8 +19,10 @@ const categoryOf = (call: Promise<unknown>): Promise<unknown> =>
 describe('a transport against a trusted certificate', () => {
   it('answers over TLS and HTTP/1.1 for the name of the origin', async () => {
     const agents: (string | undefined)[] = [];
+    const codings: (string | undefined)[] = [];
     const { transport, seen } = throughServer('a', (request, response) => {
       agents.push(request.headers['user-agent']);
+      codings.push(request.headers['accept-encoding']);
       response.end('ok');
     });
     const answer = await transport.get(target('/api/whoami'), {
@@ -30,6 +32,7 @@ describe('a transport against a trusted certificate', () => {
     expect(new TextDecoder().decode(answer.body)).toBe('ok');
     expect(seen.alpn).toBe('http/1.1');
     expect(agents).toEqual([userAgent]);
+    expect(codings).toEqual(['identity']);
     await transport.close();
   });
 
