@@ -89,7 +89,7 @@
     "rawClientImporters": {
       "adr": "0024",
       "description": "Core modules outside the client folder that may import the raw client. Each entry is one file, added when the module exists.",
-      "paths": []
+      "paths": ["packages/core/src/pipeline/read-api.ts"]
     },
     "mcpMount": {
       "adr": "0024",
