@@ -4,6 +4,7 @@ import {
   type PluginHost,
   type ToolDefinition,
 } from '@ecclium/mcp-churchtools-plugin-api';
+import { examplePlugin } from '@ecclium/mcp-churchtools-testkit';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
@@ -113,6 +114,25 @@ describe('createToolCatalog', () => {
     expect(entry?.shape.root.fields.id).toEqual({
       kind: 'leaf',
       dataClass: 'personId',
+    });
+  });
+
+  it('takes the example plugin, written with defineTool and its own zod', () => {
+    const catalog = createToolCatalog({
+      plugins: [examplePlugin],
+      readOnly: false,
+    });
+    expect(catalog.list().map((entry) => entry.name)).toEqual([
+      'ct_example_echo',
+      'ct_example_note_write',
+      'ct_example_profile',
+    ]);
+    expect(catalog.get('ct_example_echo')?.shape.root.fields).toMatchObject({
+      phone: { kind: 'leaf', dataClass: 'phone' },
+      notes: {
+        kind: 'array',
+        element: { kind: 'leaf', dataClass: 'untrusted' },
+      },
     });
   });
 
