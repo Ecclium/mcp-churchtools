@@ -96,6 +96,8 @@ Vom Maintainer bestätigt am 25.09.2026:
 - Lizenz (ADR 0058), entschieden am 16.10.2026: Das ganze Repository, `plugin-api` eingeschlossen, steht vor dem ersten Release unter der Elastic License 2.0. Was vorher in diesem Repository veröffentlicht war, auch auf anderen Branches oder in Pull Requests, bleibt unter der Apache License 2.0 nutzbar. Beiträge kommen weiter mit dem DCO, gehen unter der Apache License 2.0 ein, und das Projekt gibt sie unter der Elastic License 2.0 weiter, ohne CLA. Rechteinhaber in `NOTICE` bleibt vorerst «Die Autorinnen und Autoren von Ecclium». Der Text der Lizenz kommt unverändert aus der Quelle von Elastic. Der Maintainer nimmt ADR 0058 an, ADR 0002 ist abgelöst.
 - ID 0 in Listen der Rechte, entschieden am 17.10.2026: Im ersten Lauf des Clients stand die 0 bei sieben Rechten mit Listen, jedes Mal neben weiteren IDs. Der Client nimmt sie als gewöhnliche ID an. Sie gewährt nur das Recht auf das Objekt 0 und heisst nie «alle». Sie zu verwerfen hätte echte Rechte unterschlagen, etwa an einer Kategorie des Wikis. Festgehalten in ADR 0057.
 
+- Registry und Pipeline der Tools, entschieden am 17.10.2026: Ein Ergebnis über 64 KiB ist ein Fehler mit dem Hinweis, enger zu suchen, und wird nie gekürzt, weil ein gekürztes Ergebnis eine Vollständigkeit vortäuschen kann. Ein Plugin oder Tool, das die Registry ablehnt, bricht den Start ab, damit kein Server unbemerkt ohne die erwarteten Tools läuft. Die Beschreibungen der Tools sind englisch, weil das Modell sie liest. Festgehalten in ADR 0024 (Umsetzung).
+
 ## Grundsatzentscheide
 
 Diese Grundsatzfragen sind entschieden.
