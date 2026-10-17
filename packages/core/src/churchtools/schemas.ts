@@ -64,5 +64,16 @@ export const whoamiSchema = z.object({
   meta: z.object({ simulatingUserId: z.null().optional() }).optional(),
 });
 
+/**
+ * An ID in the list of a right. ChurchTools 3.137 lists 0 next to other IDs,
+ * for categories of the wiki, songs and comments, stations and campus; older
+ * tables count from 0. A 0 is an ID like any other and never means «all»
+ * (ADR 0057).
+ */
+const rightId = z.number().int().nonnegative();
+
 /** The value of one right: a boolean or a list of IDs (F5, F30). */
-export const rightValueSchema = z.union([z.boolean(), z.array(id).max(10_000)]);
+export const rightValueSchema = z.union([
+  z.boolean(),
+  z.array(rightId).max(10_000),
+]);
