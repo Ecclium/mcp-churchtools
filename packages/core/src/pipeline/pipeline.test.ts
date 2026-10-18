@@ -377,6 +377,37 @@ describe('a call without a tenant', () => {
     expect(logLines).toEqual([]);
   });
 
+  it('ends with network when the request is already aborted, like every cancelled call', async () => {
+    let runs = 0;
+    const { pipeline, events, auditLines, logLines } = setup([
+      testTool('ct_count', () => {
+        runs += 1;
+        return Promise.resolve({ text: 'x' });
+      }),
+    ]);
+    const controller = new AbortController();
+    controller.abort('a reason of the client');
+    const outcome = await pipeline.call(
+      'ct_count',
+      {},
+      request({ assignment: undefined, signal: controller.signal }),
+    );
+    expect(outcome).toEqual({
+      ok: false,
+      error: { code: 'network', message: fixedSentences.network },
+    });
+    expect(runs).toBe(0);
+    expect(auditLines).toHaveLength(1);
+    expect(events()[0]).toMatchObject({
+      tenantId: 'invalid',
+      actor: { kind: 'service', id: 'invalid' },
+      tool: 'ct_count',
+      outcome: 'error',
+      errorCode: 'network',
+    });
+    expect(logLines).toEqual([]);
+  });
+
   it('answers not_found for an unknown tool, audited as ct_unknown', async () => {
     const { pipeline, events, auditLines, logLines } = setup();
     const outcome = await pipeline.call(

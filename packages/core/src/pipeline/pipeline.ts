@@ -282,6 +282,10 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     const readOnly = request.readOnly;
     const features = [...request.features];
     const requestSignal = request.signal;
+    // A request the client has already cancelled ends as network, like
+    // every aborted call, also without a tenant: the mount stops waiting
+    // for the resolver on an abort and passes no tenant (ADR 0024).
+    if (isAborted(requestSignal)) return failed('network');
     // Without a tenant, or with an answer the copy could not read, there is
     // no context to run the tool in. The call ends before a listener or a
     // context exists, with one audit line that holds the placeholders and
@@ -291,7 +295,6 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     const forward = (): void => {
       controller.abort(abortReason);
     };
-    if (isAborted(requestSignal)) return failed('network');
     Reflect.apply(addListener as () => void, requestSignal, ['abort', forward]);
     run.detach = (): void => {
       Reflect.apply(removeListener as () => void, requestSignal, [
