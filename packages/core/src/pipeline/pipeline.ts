@@ -3,7 +3,8 @@
  * stages are fixed in this code; no plugin adds or removes one:
  *
  * 1. find the tool in the catalog,
- * 2. make the context of the call, with a signal of its own,
+ * 2. make the context of the call, with a signal of its own, or end with
+ *    `auth` when the call has no tenant,
  * 3. `gate`,
  * 4. `validateInput`,
  * 5. `execute` with read access that is revoked afterwards,
@@ -32,7 +33,7 @@ import {
   type TenantContext,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
-import type { AuditSink } from '../audit/index.js';
+import { type AuditSink, auditPlaceholders } from '../audit/index.js';
 import { createChurchToolsClient } from '../churchtools/index.js';
 import {
   describeError,
@@ -59,8 +60,13 @@ import {
 
 /** What the mount knows about one call, besides name and input. */
 export interface ToolRequest {
-  /** Tenant and actor, from the resolver of the checked identity. */
-  readonly assignment: TenantAssignment;
+  /**
+   * Tenant and actor, from the resolver of the checked identity, or
+   * `undefined` when the resolver assigns no tenant. A call without a
+   * tenant ends with `auth` before any code of the tool runs, and is
+   * audited all the same.
+   */
+  readonly assignment: TenantAssignment | undefined;
   /** How the call runs, set by the composition root only. */
   readonly mode: Mode;
   /** The level of redaction. */
@@ -225,12 +231,18 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
 
     // 2. Copies of what the gate, the stages and the audit rely on, taken
     // before any code of the tool runs, and a signal of the call's own.
+    const assignment = request.assignment;
     const mode = request.mode;
     const redaction = request.redaction;
     run.redaction = redaction;
     const readOnly = request.readOnly;
     const features = [...request.features];
     const requestSignal = request.signal;
+    // Without a tenant there is no context to run the tool in. The call
+    // ends before a listener or a context exists, with one audit line that
+    // holds the placeholders and without a log line, since only a context
+    // writes one (ADR 0024).
+    if (assignment === undefined) return failed('auth');
     const controller = new AbortController();
     const forward = (): void => {
       controller.abort(abortReason);
@@ -244,7 +256,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       ]);
     };
     const ctx = createTenantContext({
-      assignment: request.assignment,
+      assignment,
       instance: origin,
       mode,
       redaction,
@@ -396,10 +408,13 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
           ? Math.min(Math.max(elapsed, 0), maxDurationMs)
           : 0;
         const errorCode = outcome.ok ? undefined : outcome.error.code;
+        // Without an assignment the audit takes its placeholders, which no
+        // context accepts as real values, so a call without a tenant is no
+        // invalid field for the sink to report.
         audit.record({
           type: 'tool_call',
-          tenantId: assignment?.tenantId ?? '',
-          actor: assignment?.actor ?? { kind: 'service', id: '' },
+          tenantId: assignment?.tenantId ?? auditPlaceholders.tenantId,
+          actor: assignment?.actor ?? auditPlaceholders.actor,
           // An invalid value becomes a placeholder in the sink.
           mode: mode as Mode,
           tool: run.entry?.name ?? 'ct_unknown',

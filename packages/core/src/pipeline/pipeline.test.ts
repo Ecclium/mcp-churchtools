@@ -326,6 +326,74 @@ describe('the gate', () => {
   });
 });
 
+describe('a call without a tenant', () => {
+  it('ends with auth before the tool runs, audited with placeholders and without a log line', async () => {
+    let runs = 0;
+    const { pipeline, events, auditLines, logLines } = setup([
+      testTool('ct_count', () => {
+        runs += 1;
+        return Promise.resolve({ text: 'x' });
+      }),
+    ]);
+    const controller = new AbortController();
+    const outcome = await pipeline.call(
+      'ct_count',
+      {},
+      request({ assignment: undefined, signal: controller.signal }),
+    );
+    expect(outcome).toEqual({
+      ok: false,
+      error: { code: 'auth', message: fixedSentences.auth },
+    });
+    expect(runs).toBe(0);
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+    // The raw lines: the sink reports an invalid field in a line of its
+    // own, so a filtered list of events would hide one.
+    expect(auditLines).toHaveLength(1);
+    expect(events()[0]).toMatchObject({
+      type: 'tool_call',
+      tenantId: 'invalid',
+      actor: { kind: 'service', id: 'invalid' },
+      mode: 'interactive',
+      tool: 'ct_count',
+      outcome: 'error',
+      errorCode: 'auth',
+      objectRefs: [],
+    });
+    expect(logLines).toEqual([]);
+  });
+
+  it('ends with auth before the input is checked', async () => {
+    const { pipeline, auditLines, logLines } = setup();
+    const outcome = await pipeline.call(
+      'ct_example_echo',
+      { other: 'x' },
+      request({ assignment: undefined }),
+    );
+    expect(!outcome.ok && outcome.error.code).toBe('auth');
+    expect(auditLines).toHaveLength(1);
+    expect(logLines).toEqual([]);
+  });
+
+  it('answers not_found for an unknown tool, audited as ct_unknown', async () => {
+    const { pipeline, events, auditLines, logLines } = setup();
+    const outcome = await pipeline.call(
+      'ct_nothing',
+      {},
+      request({ assignment: undefined }),
+    );
+    expect(!outcome.ok && outcome.error.code).toBe('not_found');
+    expect(auditLines).toHaveLength(1);
+    expect(events()[0]).toMatchObject({
+      tenantId: 'invalid',
+      actor: { kind: 'service', id: 'invalid' },
+      tool: 'ct_unknown',
+      errorCode: 'not_found',
+    });
+    expect(logLines).toEqual([]);
+  });
+});
+
 describe('the input', () => {
   const nest = (levels: number): unknown => {
     let value: unknown = 'x';
