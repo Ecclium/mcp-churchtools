@@ -34,6 +34,12 @@ export const networkTargets: readonly string[] = [
   '(^|/)node_modules/undici/',
 ];
 
+/**
+ * The source behind the subpath ./composition of core, which hands the
+ * composition root the stderr writer, the logger and the audit sink.
+ */
+const compositionEntry = 'packages/core/src/composition.ts';
+
 const escape = (text: string): string =>
   text.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
@@ -242,6 +248,14 @@ export function dependencyRules(
       to: {
         path: pathPattern(`${places.egress.paths[0] ?? ''}compose.ts`),
       },
+    },
+    {
+      name: 'composition-only-from-composition-root',
+      severity: 'error',
+      comment:
+        'ADR 0054: only the composition root, the place transportBuilders, imports the subpath ./composition of core with the stderr writer, the logger and the audit sink, so that no tool, plugin or workflow can write any text to stderr. Tests in the packages are not exempt: the tests of core import the modules behind it.',
+      from: { pathNot: at('transportBuilders') },
+      to: { path: pathPattern(compositionEntry) },
     },
     {
       name: 'mocked-transport-only-in-testkit',

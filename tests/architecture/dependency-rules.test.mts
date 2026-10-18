@@ -577,6 +577,35 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'composition-only-from-composition-root',
+    name: 'tools builds the stderr writer through the subpath of core',
+    files: {
+      'packages/tools/src/forbidden.ts': `import { createStderrWriter } from '${nameOf('core')}/composition';\nexport const build = createStderrWriter;\n`,
+    },
+  },
+  {
+    rule: 'composition-only-from-composition-root',
+    name: 'the server builds the logger through the subpath of core',
+    files: {
+      'packages/server/src/forbidden.ts': `import { createLogger } from '${nameOf('core')}/composition';\nexport const build = createLogger;\n`,
+    },
+  },
+  {
+    rule: 'composition-only-from-composition-root',
+    name: 'a test of core imports the subpath by a relative path',
+    files: {
+      'packages/core/src/forbidden.test.ts':
+        "import { createStderrWriter } from './composition.js';\nexport const build = createStderrWriter;\n",
+    },
+  },
+  {
+    rule: 'composition-only-from-composition-root',
+    name: 'a test of the command line outside the composition root imports the subpath',
+    files: {
+      'packages/cli/src/forbidden.test.ts': `import { createAuditSink } from '${nameOf('core')}/composition';\nexport const build = createAuditSink;\n`,
+    },
+  },
+  {
     rule: 'mocked-transport-only-in-testkit',
     name: 'tools builds the transport on a MockAgent',
     files: {
@@ -743,6 +772,18 @@ const allowedCases: readonly Omit<Case, 'rule'>[] = [
     name: 'the composition root builds a transport through the subpath of core',
     files: {
       'packages/cli/src/stdio/allowed.ts': `import { createHttpTransport } from '${nameOf('core')}/http';\nexport const build = createHttpTransport;\n`,
+    },
+  },
+  {
+    name: 'the composition root builds the stderr writer through the subpath of core',
+    files: {
+      'packages/cli/src/stdio/allowed.ts': `import { createStderrWriter } from '${nameOf('core')}/composition';\nexport const build = createStderrWriter;\n`,
+    },
+  },
+  {
+    name: 'a test of the composition root imports the subpath of core',
+    files: {
+      'packages/cli/src/stdio/allowed.test.ts': `import { createLogger } from '${nameOf('core')}/composition';\nexport const build = createLogger;\n`,
     },
   },
   {
