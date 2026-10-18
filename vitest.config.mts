@@ -20,7 +20,35 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       include: ['packages/*/src/**/*.ts'],
-      exclude: ['packages/*/src/**/*.test.ts'],
+      // The test double of the outbound path is code for tests, not for the
+      // product, and has its own tests.
+      exclude: [
+        'packages/*/src/**/*.test.ts',
+        'packages/core/src/http/compose-mock.ts',
+      ],
+      // They apply only with coverage on, as in the job
+      // coverage-security-core: every line and branch of redaction and of
+      // the outbound path, at least 80 percent of core (ADR 0024).
+      thresholds: {
+        'packages/core/src/**': {
+          statements: 80,
+          branches: 80,
+          functions: 80,
+          lines: 80,
+        },
+        'packages/core/src/redaction/**': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        'packages/core/src/http/**': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+      },
     },
   },
 });
