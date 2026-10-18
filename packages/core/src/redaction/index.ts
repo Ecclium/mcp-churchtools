@@ -22,6 +22,7 @@ export {
   minPhoneDigits,
   visiblePhoneDigits,
 } from './mask.js';
+export { maskErrorDescription, maskMessage } from './message.js';
 export {
   cleanText,
   type CleanedText,
