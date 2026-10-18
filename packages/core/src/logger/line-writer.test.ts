@@ -203,6 +203,53 @@ describe('createStderrWriter', () => {
     expect(writer.stats()).toMatchObject({ written: 1, failed: 2, partial: 1 });
   });
 
+  it('starts the first line on a line of its own after a torn line', () => {
+    const fake = fakeWriteSync();
+    const writer = createStderrWriter({
+      writeSync: fake.writeSync,
+      afterTornLine: true,
+    });
+    expect(writer.write(line)).toBe(true);
+    writer.write(line);
+    expect(fake.calls.map((call) => call.text)).toEqual([
+      `\n${line}\n`,
+      `${line}\n`,
+    ]);
+    // What a reader of stderr sees after a notice that lost its line break.
+    const stderr = `a torn notice${fake.calls.map((call) => call.sent).join('')}`;
+    expect(stderr.split('\n')).toEqual(['a torn notice', line, line, '']);
+    expect(writer.stats()).toMatchObject({ written: 2, failed: 0, partial: 0 });
+  });
+
+  it('keeps the line break for the next line while the first finds no room', () => {
+    let busy = true;
+    const fake = fakeWriteSync((call) => {
+      if (busy) throw systemError('EAGAIN');
+      return call.length;
+    });
+    const writer = createStderrWriter({
+      writeSync: fake.writeSync,
+      afterTornLine: true,
+    });
+    expect(writer.write(line)).toBe(false);
+    busy = false;
+    expect(writer.write(line)).toBe(true);
+    expect(fake.calls.at(-1)?.text).toBe(`\n${line}\n`);
+    expect(writer.stats()).toMatchObject({ written: 1, failed: 1, partial: 0 });
+  });
+
+  it.each([false, undefined, 'true', 1])(
+    'starts the first line without a line break when afterTornLine is %j',
+    (afterTornLine) => {
+      const fake = fakeWriteSync();
+      createStderrWriter({
+        writeSync: fake.writeSync,
+        afterTornLine: afterTornLine as boolean,
+      }).write(line);
+      expect(fake.calls.map((call) => call.text)).toEqual([`${line}\n`]);
+    },
+  );
+
   it.each(['EPIPE', 'EBADF'])('closes for good on %s', (code) => {
     const fake = fakeWriteSync(() => {
       throw systemError(code);
