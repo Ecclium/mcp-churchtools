@@ -27,6 +27,7 @@ import { pluginNamePattern, RegistryRefusal } from './refusal.js';
 import {
   checkInputSchema,
   checkOutputSchema,
+  type ObjectJsonSchema,
   type OutputShape,
 } from './schema.js';
 
@@ -48,6 +49,11 @@ export interface CatalogEntry {
   readonly description: string;
   /** The input schema, a closed object. */
   readonly input: ZodType;
+  /**
+   * The input schema as the mount advertises it, derived once when the tool
+   * was added, frozen.
+   */
+  readonly inputSchema: ObjectJsonSchema;
   /** The output schema, checked when the tool was added. */
   readonly output: ZodType;
   /** What each field of the output holds, kept when the tool was added. */
@@ -140,7 +146,8 @@ const checkTool = (
   if (description === undefined) {
     throw new RegistryRefusal('tool_description', where);
   }
-  if (!checkInputSchema(fields.input)) {
+  const inputSchema = checkInputSchema(fields.input);
+  if (inputSchema === undefined) {
     throw new RegistryRefusal('tool_input', where);
   }
   const shape = checkOutputSchema(fields.output);
@@ -157,6 +164,7 @@ const checkTool = (
     meta,
     description: renderDescription(description, meta.requiredRights),
     input: fields.input as ZodType,
+    inputSchema,
     output: fields.output as ZodType,
     shape,
     execute: (call: ToolCall<unknown>): Promise<unknown> =>

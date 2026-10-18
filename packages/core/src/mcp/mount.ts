@@ -36,13 +36,9 @@ import {
 
 import { fixedSentences } from '../errors/index.js';
 import type { ToolPipeline } from '../pipeline/index.js';
-import type { ToolCatalog } from '../registry/index.js';
+import type { ObjectJsonSchema, ToolCatalog } from '../registry/index.js';
 import { deriveAnnotations } from './annotations.js';
-import {
-  deriveInputSchema,
-  deriveOutputSchema,
-  type ObjectJsonSchema,
-} from './schema.js';
+import { deriveOutputSchema } from './schema.js';
 import { serializeOutcome } from './serialize.js';
 
 /** What the composition root builds the mount from, once at the start. */
@@ -120,9 +116,10 @@ const isVersion = (value: unknown): value is string => {
 };
 
 /**
- * Builds the mount from the catalog. It derives the input schema, the
- * output schema and the annotations of every tool once and freezes the list
- * of tools; every instance the factory builds shares that list.
+ * Builds the mount from the catalog. It takes the input schema of every
+ * tool as the registry derived it, derives the output schema and the
+ * annotations once and freezes the list of tools; every instance the
+ * factory builds shares that list.
  *
  * Each instance is built in a fixed order: the server with the throwing
  * validator and without capabilities, then the capability `tools` with
@@ -146,8 +143,6 @@ const isVersion = (value: unknown): value is string => {
  * @param options - Catalog, pipeline, identity, resolver, the settings of
  *   every call, the logger and the version.
  * @returns The mount, frozen.
- * @throws {RegistryRefusal} With the reason `tool_input` when the input
- *   schema of a tool cannot be advertised. The start then stops.
  * @throws {TypeError} When the version breaks its form; the message never
  *   holds the value.
  * @example
@@ -169,14 +164,13 @@ export function createMcpMount(options: McpMountOptions): McpMount {
   const tools: Tool[] = [];
   const outputSchemas = new Map<string, ObjectJsonSchema>();
   for (const entry of catalog.list()) {
-    const inputSchema = deriveInputSchema(entry);
     const outputSchema = deriveOutputSchema(entry.shape);
     outputSchemas.set(entry.name, outputSchema);
     tools.push(
       Object.freeze({
         name: entry.name,
         description: entry.description,
-        inputSchema,
+        inputSchema: entry.inputSchema,
         outputSchema,
         annotations: deriveAnnotations(entry.meta),
       }),

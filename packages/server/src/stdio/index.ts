@@ -109,8 +109,6 @@ const connectionErrorEvent = 'mcp_stdio_error';
  * @param options - What the mount needs, the version, and the streams if
  *   not stdin and stdout.
  * @returns The running server, frozen.
- * @throws {RegistryRefusal} With the reason `tool_input` when the input
- *   schema of a tool cannot be advertised. The start then stops.
  * @throws {TypeError} When the version breaks its form; the message never
  *   holds the value.
  * @example

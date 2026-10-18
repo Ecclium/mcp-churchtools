@@ -18,6 +18,7 @@ export {
 } from './registry.js';
 export type {
   LeafType,
+  ObjectJsonSchema,
   OutputShape,
   ShapeNode,
   ShapePresence,
