@@ -8,8 +8,9 @@ import { moduleStateRule } from './module-state-rule.mts';
 // rules see what code does with them: writing to stdout or stderr, using
 // console, reading the environment, loading modules past the import
 // checks, loading modules that make fd 1 or fd 2 non-blocking, starting
-// processes, importing the MCP SDK, registering with it,
-// opening network connections and keeping state at module level.
+// processes, importing the MCP SDK, registering with it, compiling JSON
+// schemas with it, opening network connections and keeping state at
+// module level.
 //
 // Every restriction carries an id such as [arch:stdout] and its ADR in the
 // message, so the tests can prove each one on its own. Several restrictions
@@ -35,6 +36,7 @@ export const concernIds = [
   'network',
   'diagnostics',
   'mcp-register',
+  'mcp-json-schema',
   'module-state',
 ] as const;
 
@@ -116,6 +118,8 @@ function messages(boundaries: Boundaries): Record<Concern, string> {
     subprocess:
       '[arch:subprocess] The packages start no child processes, workers or cluster members, which can share stdout with the MCP protocol (ADR 0053).',
     'mcp-register': `[arch:mcp-register] Only the mount, and in testkit the server of the elicitation spike, register tools, prompts, resources and handlers with the MCP SDK, so that every call runs through the one pipeline (${adr('mcpRegistration')}).`,
+    'mcp-json-schema':
+      '[arch:mcp-json-schema] Only tests use fromJsonSchema, elicitInput or the JSON Schema validators of the MCP SDK from ./validators or ./_shims. They compile schemas with the bundled Ajv, which resolves URIs with the bundled fast-uri and its known advisories (ADR 0059).',
     'module-state': `[arch:module-state] Code in the packages keeps no mutable state at module level. State that outlives a request is created in the composition root, as a named port or a named exception (${adr('moduleState')}).`,
     network: `[arch:network] Only the outbound path in core opens network connections, after it checks the host allow-list (${adr('egress')}).`,
     diagnostics:
@@ -157,6 +161,26 @@ const networkModules = [
  */
 const registration =
   'registerTool|registerPrompt|registerResource|setRequestHandler|setNotificationHandler|fallbackRequestHandler|fallbackNotificationHandler|removeRequestHandler|removeNotificationHandler|registerCapabilities|readCallback';
+
+/**
+ * Names of the MCP SDK that compile a JSON schema with the bundled Ajv, or
+ * hand out Ajv itself. Ajv resolves $id and $ref with the bundled fast-uri,
+ * which has known advisories in version 2.3.1. fromJsonSchema compiles with
+ * a validator of its own module, so the throwing validator that the mount
+ * gives every instance does not cover it. Like registration, the rule
+ * matches them by name. Checked against version 2.3.1 of the SDK
+ * (ADR 0059).
+ */
+const jsonSchemaNames =
+  'fromJsonSchema|elicitInput|DefaultJsonSchemaValidator|AjvJsonSchemaValidator';
+
+/**
+ * Subpaths of the server package that hand out Ajv: ./validators/ajv,
+ * ./validators/cf-worker and ./_shims, whose Node.js variant exports Ajv as
+ * DefaultJsonSchemaValidator (ADR 0059).
+ */
+const jsonSchemaPaths =
+  '^@modelcontextprotocol/server/(validators|_shims)(/|$)';
 
 /** Globals that open network connections. */
 const networkGlobals = [
@@ -291,6 +315,14 @@ function restrictions(
                 },
               ]
             : []),
+          ...(forbid('mcp-json-schema')
+            ? [
+                {
+                  regex: jsonSchemaPaths,
+                  message: message['mcp-json-schema'],
+                },
+              ]
+            : []),
           ...(forbid('network')
             ? [{ regex: '^undici(/|$)', message: message.network }]
             : []),
@@ -384,6 +416,24 @@ function restrictions(
             `ObjectPattern > Property[key.value=/^(${registration})$/]`,
           ].map((selector) => ({ selector, message: message['mcp-register'] }))
         : []),
+      ...(forbid('mcp-json-schema')
+        ? [
+            // Any mention of a name, not only a call: an import or export,
+            // a property read, a destructured key or a type. A key built
+            // from a variable or by concatenation is not seen.
+            `Identifier[name=/^(${jsonSchemaNames})$/]`,
+            `MemberExpression[property.value=/^(${jsonSchemaNames})$/]`,
+            `MemberExpression[property.type='TemplateLiteral'][property.quasis.0.value.cooked=/^(${jsonSchemaNames})$/]`,
+            `ObjectPattern > Property[key.value=/^(${jsonSchemaNames})$/]`,
+            ...['ImportExpression', 'TSImportType'].map(
+              (node) =>
+                `${node}[source.value=/${jsonSchemaPaths.replaceAll('/', String.raw`\x2F`)}/]`,
+            ),
+          ].map((selector) => ({
+            selector,
+            message: message['mcp-json-schema'],
+          }))
+        : []),
       ...(forbid('network')
         ? declarationsOf(networkGlobals.join('|')).map((selector) => ({
             selector,
@@ -428,11 +478,14 @@ export function architectureLintConfig(
     (a, b) => a.length - b.length,
   );
   // Tests of the packages may load node:util: some check what Node.js
-  // prints with inspect. The build leaves out *.test.ts only, so only that
-  // form counts as a test. A later block replaces the rules as a whole, so
-  // each block has a sibling for its tests that lifts util-module as well.
+  // prints with inspect. They may also compile JSON schemas with the Ajv
+  // of the MCP SDK, to check results against the schema the mount reports
+  // and to prove that elicitInput meets the throwing validator (ADR 0059).
+  // The build leaves out *.test.ts only, so only that form counts as a
+  // test. A later block replaces the rules as a whole, so each block has a
+  // sibling for its tests that lifts both as well.
   const forTests = (allowed: ReadonlySet<Concern>): Set<Concern> =>
-    new Set([...allowed, 'util-module']);
+    new Set([...allowed, 'util-module', 'mcp-json-schema']);
   const tests = 'packages/*/src/**/*.test.ts';
   return [
     {

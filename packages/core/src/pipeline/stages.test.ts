@@ -1,22 +1,45 @@
+import type { DataClass } from '@ecclium/mcp-churchtools-plugin-api';
 import { describe, expect, it } from 'vitest';
 
 import type { ShapeNode } from '../registry/index.js';
-import { mapLeaves, markUntrusted, redact, resultBytes } from './stages.js';
+import {
+  mapLeaves,
+  markUntrusted,
+  redact,
+  resultBytes,
+  resultReserveBytes,
+} from './stages.js';
 
-const leaf = (dataClass?: 'email' | 'none'): ShapeNode => ({
+// Nodes of a kept shape. The stages read only kinds, classes and children.
+const present = { optional: false, nullable: false } as const;
+const leaf = (dataClass?: DataClass): ShapeNode => ({
   kind: 'leaf',
   dataClass,
+  types: ['string'],
+  ...present,
+});
+const object = (fields: Record<string, ShapeNode>): ShapeNode => ({
+  kind: 'object',
+  fields,
+  ...present,
+});
+const array = (element: ShapeNode): ShapeNode => ({
+  kind: 'array',
+  element,
+  ...present,
+});
+const tuple = (...items: ShapeNode[]): ShapeNode => ({
+  kind: 'tuple',
+  items,
+  ...present,
 });
 
-const root: ShapeNode = {
-  kind: 'object',
-  fields: {
-    email: leaf('email'),
-    list: { kind: 'array', element: leaf() },
-    pair: { kind: 'tuple', items: [leaf('none'), leaf()] },
-    nested: { kind: 'object', fields: { a: leaf() } },
-  },
-};
+const root = object({
+  email: leaf('email'),
+  list: array(leaf()),
+  pair: tuple(leaf('none'), leaf()),
+  nested: object({ a: leaf() }),
+});
 
 describe('mapLeaves', () => {
   it('applies the step to every leaf with its class and freezes every copy', () => {
@@ -55,9 +78,7 @@ describe('mapLeaves', () => {
   });
 
   it('passes a missing container on as it is', () => {
-    expect(
-      mapLeaves(undefined, { kind: 'array', element: leaf() }, () => 'x'),
-    ).toBeUndefined();
+    expect(mapLeaves(undefined, array(leaf()), () => 'x')).toBeUndefined();
   });
 });
 
@@ -69,22 +90,16 @@ const open = `<<data-${boundary}>>`;
 const close = `<</data-${boundary}>>`;
 
 // A synthetic record with a field of every class the stages treat.
-const record: ShapeNode = {
-  kind: 'object',
-  fields: {
-    id: leaf('none'),
-    email: { kind: 'leaf', dataClass: 'email' },
-    phone: { kind: 'leaf', dataClass: 'phone' },
-    birthdate: { kind: 'leaf', dataClass: 'birthdate' },
-    first: { kind: 'leaf', dataClass: 'name.first' },
-    plain: leaf(),
-    notes: {
-      kind: 'array',
-      element: { kind: 'leaf', dataClass: 'untrusted' },
-    },
-    missing: { kind: 'leaf', dataClass: 'email' },
-  },
-};
+const record = object({
+  id: leaf('none'),
+  email: leaf('email'),
+  phone: leaf('phone'),
+  birthdate: leaf('birthdate'),
+  first: leaf('name.first'),
+  plain: leaf(),
+  notes: array(leaf('untrusted')),
+  missing: leaf('email'),
+});
 
 const input = {
   id: 7,
@@ -163,14 +178,11 @@ describe('redact and markUntrusted', () => {
   });
 
   it('leave numbers and booleans as they are and copy along the shape', () => {
-    const shape: ShapeNode = {
-      kind: 'object',
-      fields: {
-        n: { kind: 'leaf', dataClass: 'untrusted' },
-        b: leaf('none'),
-        pair: { kind: 'tuple', items: [leaf('none'), leaf()] },
-      },
-    };
+    const shape = object({
+      n: leaf('untrusted'),
+      b: leaf('none'),
+      pair: tuple(leaf('none'), leaf()),
+    });
     const value = { n: 1, b: true, pair: ['a', null] };
     const copy = markUntrusted(
       redact(value, shape, 'standard'),
@@ -183,7 +195,37 @@ describe('redact and markUntrusted', () => {
 });
 
 describe('resultBytes', () => {
-  it('counts UTF-8 bytes of the JSON', () => {
-    expect(resultBytes({ name: 'Ä' })).toBe(13);
+  // The fixed reserve of 1 KiB for the rest of the message (ADR 0024).
+  const reserve = 1024;
+
+  // Both copies as a JSON writer puts them into a message, counted on
+  // their own: the brackets and the comma of the array are not theirs.
+  const asSent = (value: unknown): number =>
+    Buffer.byteLength(JSON.stringify([value, JSON.stringify(value)])) - 3;
+
+  it('counts the JSON, the JSON as escaped text and the reserve', () => {
+    // {"name":"Ä"} has 13 bytes, as escaped text with its quotes 19.
+    expect(resultBytes({ name: 'Ä' })).toBe(13 + 19 + reserve);
+    expect(resultReserveBytes).toBe(reserve);
+  });
+
+  it('counts a quote six times, a line break five times and a letter twice', () => {
+    const empty = resultBytes({ text: '' });
+    expect(resultBytes({ text: '"'.repeat(10) }) - empty).toBe(60);
+    expect(resultBytes({ text: '\n'.repeat(10) }) - empty).toBe(50);
+    expect(resultBytes({ text: 'x'.repeat(10) }) - empty).toBe(20);
+  });
+
+  it.each([
+    ['quotes', { text: '"a" "b"' }],
+    ['line breaks and tabs', { text: 'a\r\nb\tc' }],
+    ['a backslash', { text: 'C:\\temp\\' }],
+    ['text beyond ASCII', { text: `Z${u(0xfc)}rich ${u(0x1f600)}` }],
+    ['a lone surrogate', { text: String.fromCharCode(0xd800) }],
+    ['a control character', { text: u(0x01) }],
+    ['line and paragraph separators', { text: u(0x2028, 0x2029) }],
+    ['nested values', { list: [1, null, true], inner: { text: '"x"' } }],
+  ])('counts %s as a JSON writer sends them', (_, value) => {
+    expect(resultBytes(value)).toBe(asSent(value) + reserve);
   });
 });

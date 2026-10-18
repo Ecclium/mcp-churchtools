@@ -318,11 +318,272 @@ describe('the gate', () => {
     const outcome = await pipeline.call('ct_nothing', {}, request());
     expect(!outcome.ok && outcome.error.code).toBe('not_found');
     expect(events()[0]).toMatchObject({
+      tenantId: 'default',
+      actor: { kind: 'user', id: 'stdio:local-stdio' },
       tool: 'ct_unknown',
       outcome: 'error',
       errorCode: 'not_found',
     });
     expect(logs()).toEqual([]);
+  });
+});
+
+describe('a call without a tenant', () => {
+  it('ends with auth before the tool runs, audited with placeholders and without a log line', async () => {
+    let runs = 0;
+    const { pipeline, events, auditLines, logLines } = setup([
+      testTool('ct_count', () => {
+        runs += 1;
+        return Promise.resolve({ text: 'x' });
+      }),
+    ]);
+    const controller = new AbortController();
+    const outcome = await pipeline.call(
+      'ct_count',
+      {},
+      request({ assignment: undefined, signal: controller.signal }),
+    );
+    expect(outcome).toEqual({
+      ok: false,
+      error: { code: 'auth', message: fixedSentences.auth },
+    });
+    expect(runs).toBe(0);
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+    // The raw lines: the sink reports an invalid field in a line of its
+    // own, so a filtered list of events would hide one.
+    expect(auditLines).toHaveLength(1);
+    expect(events()[0]).toMatchObject({
+      type: 'tool_call',
+      tenantId: 'invalid',
+      actor: { kind: 'service', id: 'invalid' },
+      mode: 'interactive',
+      tool: 'ct_count',
+      outcome: 'error',
+      errorCode: 'auth',
+      objectRefs: [],
+    });
+    expect(logLines).toEqual([]);
+  });
+
+  it('ends with auth before the input is checked', async () => {
+    const { pipeline, auditLines, logLines } = setup();
+    const outcome = await pipeline.call(
+      'ct_example_echo',
+      { other: 'x' },
+      request({ assignment: undefined }),
+    );
+    expect(!outcome.ok && outcome.error.code).toBe('auth');
+    expect(auditLines).toHaveLength(1);
+    expect(logLines).toEqual([]);
+  });
+
+  it('ends with network when the request is already aborted, like every cancelled call', async () => {
+    let runs = 0;
+    const { pipeline, events, auditLines, logLines } = setup([
+      testTool('ct_count', () => {
+        runs += 1;
+        return Promise.resolve({ text: 'x' });
+      }),
+    ]);
+    const controller = new AbortController();
+    controller.abort('a reason of the client');
+    const outcome = await pipeline.call(
+      'ct_count',
+      {},
+      request({ assignment: undefined, signal: controller.signal }),
+    );
+    expect(outcome).toEqual({
+      ok: false,
+      error: { code: 'network', message: fixedSentences.network },
+    });
+    expect(runs).toBe(0);
+    expect(auditLines).toHaveLength(1);
+    expect(events()[0]).toMatchObject({
+      tenantId: 'invalid',
+      actor: { kind: 'service', id: 'invalid' },
+      tool: 'ct_count',
+      outcome: 'error',
+      errorCode: 'network',
+    });
+    expect(logLines).toEqual([]);
+  });
+
+  it('answers not_found for an unknown tool, audited as ct_unknown', async () => {
+    const { pipeline, events, auditLines, logLines } = setup();
+    const outcome = await pipeline.call(
+      'ct_nothing',
+      {},
+      request({ assignment: undefined }),
+    );
+    expect(!outcome.ok && outcome.error.code).toBe('not_found');
+    expect(auditLines).toHaveLength(1);
+    expect(events()[0]).toMatchObject({
+      tenantId: 'invalid',
+      actor: { kind: 'service', id: 'invalid' },
+      tool: 'ct_unknown',
+      errorCode: 'not_found',
+    });
+    expect(logLines).toEqual([]);
+  });
+});
+
+describe('an assignment the pipeline cannot read', () => {
+  const actor = { kind: 'user', id: 'stdio:local-stdio' };
+  // Every trap runs the code of the case, so a proxy whose traps throw shows
+  // both a trap that ran and an audit line that got lost.
+  const trapsOf = (code: () => never): ProxyHandler<object> => ({
+    get: code,
+    getOwnPropertyDescriptor: code,
+    getPrototypeOf: code,
+    has: code,
+    ownKeys: code,
+  });
+  const revoked = (): unknown => {
+    const { proxy, revoke } = Proxy.revocable(
+      { tenantId: 'default', actor },
+      {},
+    );
+    revoke();
+    return proxy;
+  };
+  const cases: readonly (readonly [string, (code: () => never) => unknown])[] =
+    [
+      ['null', () => null],
+      [
+        'a proxy',
+        (code) => new Proxy({ tenantId: 'default', actor }, trapsOf(code)),
+      ],
+      ['a revoked proxy', revoked],
+      [
+        'a getter for the tenant',
+        (code) => ({
+          get tenantId(): never {
+            return code();
+          },
+          actor,
+        }),
+      ],
+      [
+        'a getter for the actor',
+        (code) => ({
+          tenantId: 'default',
+          get actor(): never {
+            return code();
+          },
+        }),
+      ],
+      [
+        'an actor that is a proxy',
+        (code) => ({
+          tenantId: 'default',
+          actor: new Proxy(actor, trapsOf(code)),
+        }),
+      ],
+      [
+        'a getter for the kind of the actor',
+        (code) => ({
+          tenantId: 'default',
+          actor: {
+            get kind(): never {
+              return code();
+            },
+            id: actor.id,
+          },
+        }),
+      ],
+      [
+        'a getter for the id of the actor',
+        (code) => ({
+          tenantId: 'default',
+          actor: {
+            kind: actor.kind,
+            get id(): never {
+              return code();
+            },
+          },
+        }),
+      ],
+      ['no tenant', () => ({ actor })],
+      [
+        'an inherited tenant',
+        () =>
+          Object.assign(Object.create({ tenantId: 'default' }) as object, {
+            actor,
+          }),
+      ],
+    ];
+
+  it.each(cases)(
+    'ends with auth for %s, audited once and without running its code',
+    async (_label, make) => {
+      let ran = 0;
+      const code = (): never => {
+        ran += 1;
+        throw new Error('trap');
+      };
+      let runs = 0;
+      const { pipeline, events, auditLines, logLines } = setup([
+        testTool('ct_count', () => {
+          runs += 1;
+          return Promise.resolve({ text: 'x' });
+        }),
+      ]);
+      const controller = new AbortController();
+      const outcome = await pipeline.call(
+        'ct_count',
+        {},
+        request({
+          assignment: make(code) as TenantAssignment,
+          signal: controller.signal,
+        }),
+      );
+      expect(outcome).toEqual({
+        ok: false,
+        error: { code: 'auth', message: fixedSentences.auth },
+      });
+      expect(ran).toBe(0);
+      expect(runs).toBe(0);
+      expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+      // The raw lines, as above: a report line of the sink would count.
+      expect(auditLines).toHaveLength(1);
+      expect(events()[0]).toMatchObject({
+        type: 'tool_call',
+        tenantId: 'invalid',
+        actor: { kind: 'service', id: 'invalid' },
+        tool: 'ct_count',
+        outcome: 'error',
+        errorCode: 'auth',
+      });
+      expect(logLines).toEqual([]);
+    },
+  );
+
+  it('audits the tenant and actor it copied, whatever changes later', async () => {
+    const original = {
+      tenantId: 'default',
+      actor: { kind: 'user', id: 'stdio:local-stdio' },
+    };
+    const { pipeline, events, auditLines } = setup([
+      testTool('ct_changes', () => {
+        original.tenantId = 'other';
+        original.actor.id = 'stdio:other';
+        return Promise.resolve({ text: 'x' });
+      }),
+    ]);
+    const outcome = await pipeline.call(
+      'ct_changes',
+      {},
+      request({ assignment: original as unknown as TenantAssignment }),
+    );
+    expect(outcome.ok).toBe(true);
+    expect(original.tenantId).toBe('other');
+    expect(auditLines).toHaveLength(1);
+    expect(events()[0]).toMatchObject({
+      tenantId: 'default',
+      actor: { kind: 'user', id: 'stdio:local-stdio' },
+      tool: 'ct_changes',
+      outcome: 'ok',
+    });
   });
 });
 
@@ -458,28 +719,56 @@ describe('the output', () => {
     expect(logs()).toEqual(['tool_output_invalid', 'tool_call']);
   });
 
-  it('refuses a result above 64 KiB and takes one at the limit', async () => {
-    // {"text":"…"} adds 11 bytes to the text.
-    const { pipeline, logs } = setup([
-      testTool('ct_large', () =>
-        Promise.resolve({ text: 'x'.repeat(64 * 1024 - 10) }),
-      ),
-      testTool('ct_limit', () =>
-        Promise.resolve({ text: 'x'.repeat(64 * 1024 - 11) }),
-      ),
-    ]);
-    const large = await pipeline.call('ct_large', {}, request());
-    expect(large).toEqual({
-      ok: false,
-      error: {
-        code: 'upstream',
-        message:
-          'The result is larger than 64 KiB. Narrow the request, for example with a more specific search.',
-      },
-    });
-    expect(logs()).toContain('tool_result_too_large');
-    expect((await pipeline.call('ct_limit', {}, request())).ok).toBe(true);
-  });
+  // What the client receives of a result: the JSON of the data, the same
+  // JSON as escaped text, both as a JSON writer puts them into a message,
+  // and 1 KiB for the rest of the message (ADR 0024).
+  const sent = (data: unknown): number =>
+    Buffer.byteLength(JSON.stringify([data, JSON.stringify(data)])) - 3 + 1024;
+
+  // {"text":""} takes 11 bytes, as escaped text 17. On the wire a quote
+  // costs 6 bytes, a line break 5 and a letter 2, so each pair is exactly
+  // at the limit and one byte over it.
+  it.each([
+    [
+      'full of quotes',
+      '"'.repeat(10_745) + '\n\n' + 'xx',
+      '"'.repeat(10_746) + '\n' + 'xx',
+    ],
+    [
+      'full of line breaks',
+      '\n'.repeat(12_896) + 'xx',
+      '\n'.repeat(12_895) + '"' + 'xx',
+    ],
+    ['full of letters', 'x'.repeat(32_242), 'x'.repeat(32_240) + '\n'],
+  ])(
+    'takes a result %s at 64 KiB as sent and refuses one a byte over',
+    async (_, limit, over) => {
+      expect(sent({ text: limit })).toBe(64 * 1024);
+      expect(sent({ text: over })).toBe(64 * 1024 + 1);
+      const { pipeline, logs } = setup([
+        testTool('ct_limit', () => Promise.resolve({ text: limit })),
+        testTool('ct_over', () => Promise.resolve({ text: over })),
+      ]);
+      expect(await pipeline.call('ct_limit', {}, request())).toEqual({
+        ok: true,
+        data: { text: limit },
+      });
+      expect(logs()).toEqual(['tool_call']);
+      expect(await pipeline.call('ct_over', {}, request())).toEqual({
+        ok: false,
+        error: {
+          code: 'upstream',
+          message:
+            'The result is larger than 64 KiB. Narrow the request, for example with a more specific search.',
+        },
+      });
+      expect(logs()).toEqual([
+        'tool_call',
+        'tool_result_too_large',
+        'tool_call',
+      ]);
+    },
+  );
 });
 
 describe('redaction and the data envelope', () => {
@@ -585,8 +874,9 @@ describe('redaction and the data envelope', () => {
     const output = z.object({
       text: classify(z.string().max(100_000), 'untrusted'),
     });
-    // {"text":"…"} adds 11 bytes, the envelope 51 more.
-    const fits = 64 * 1024 - 11 - 51;
+    // {"text":""} takes 11 bytes and 17 as escaped text, the reserve 1024,
+    // the envelope 51 bytes in each copy, and every letter 2.
+    const fits = (64 * 1024 - 11 - 17 - 1024 - 2 * 51) / 2;
     const { pipeline } = setup([
       testTool('ct_fits', () => Promise.resolve({ text: 'x'.repeat(fits) }), {
         output,

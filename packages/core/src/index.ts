@@ -47,11 +47,13 @@ export {
   type CatalogOptions,
   createToolCatalog,
   descriptionBudget,
+  type LeafType,
   type OutputShape,
   type RefusalReason,
   refusalReasons,
   RegistryRefusal,
   type ShapeNode,
+  type ShapePresence,
   type ToolCatalog,
   untrustedWarning,
 } from './registry/index.js';

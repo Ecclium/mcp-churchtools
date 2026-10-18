@@ -114,6 +114,9 @@ describe('createToolCatalog', () => {
     expect(entry?.shape.root.fields.id).toEqual({
       kind: 'leaf',
       dataClass: 'personId',
+      types: ['number'],
+      optional: false,
+      nullable: false,
     });
   });
 
@@ -215,25 +218,31 @@ describe('createToolCatalog', () => {
         readOnly: true,
       }).list()[0]?.description.length ?? 0;
     const sectionless = rendered - description.limits.length;
-    const tools = (count: number, last: number) =>
+    // Enough tools to fill the budget. Their limits, 1 to 1000 code units
+    // each, spread the rest of the budget, so the descriptions together are
+    // exactly as long as the budget, or one code unit longer.
+    const count = Math.ceil(descriptionBudget / (sectionless + 1000));
+    const spare = descriptionBudget - count * sectionless;
+    expect(spare).toBeLessThan(count * 1000);
+    const tools = (total: number) =>
       Array.from({ length: count }, (_, i) =>
         tool(`ct_t${String(i)}`, {
           description: {
             ...description,
-            limits: 'x'.repeat(i === count - 1 ? last : 1000),
+            limits: 'x'.repeat(
+              Math.floor(total / count) + (i < total % count ? 1 : 0),
+            ),
           },
         }),
       );
-    const full = Math.floor(descriptionBudget / (sectionless + 1000));
-    const rest = descriptionBudget - full * (sectionless + 1000) - sectionless;
     expect(
       createToolCatalog({
-        plugins: [plugin('core', adding(...tools(full + 1, rest)))],
+        plugins: [plugin('core', adding(...tools(spare)))],
         readOnly: true,
       }).list(),
-    ).toHaveLength(full + 1);
+    ).toHaveLength(count);
     refuses(
-      [plugin('core', adding(...tools(full + 1, rest + 1)))],
+      [plugin('core', adding(...tools(spare + 1)))],
       'description_budget',
     );
   });
@@ -246,10 +255,18 @@ describe('createToolCatalog', () => {
         description: { ...description, limits: 'x'.repeat(1000) },
       };
     };
-    const reads = Array.from({ length: 20 }, (_, i) =>
+    // As many reading tools as fit; the same number of writing tools, whose
+    // descriptions are longer, pushes the catalog over the budget.
+    const length =
+      createToolCatalog({
+        plugins: [plugin('core', adding(long('ct_r0', false)))],
+        readOnly: true,
+      }).list()[0]?.description.length ?? descriptionBudget;
+    const count = Math.floor(descriptionBudget / length);
+    const reads = Array.from({ length: count }, (_, i) =>
       long(`ct_r${String(i)}`, false),
     );
-    const writes = Array.from({ length: 20 }, (_, i) =>
+    const writes = Array.from({ length: count }, (_, i) =>
       long(`ct_w${String(i)}`, true),
     );
     expect(
@@ -257,7 +274,7 @@ describe('createToolCatalog', () => {
         plugins: [plugin('core', adding(...reads, ...writes))],
         readOnly: true,
       }).list(),
-    ).toHaveLength(20);
+    ).toHaveLength(count);
     refuses(
       [plugin('core', adding(...reads, ...writes))],
       'description_budget',

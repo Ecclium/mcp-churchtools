@@ -16,4 +16,9 @@ export {
   createToolCatalog,
   type ToolCatalog,
 } from './registry.js';
-export type { OutputShape, ShapeNode } from './schema.js';
+export type {
+  LeafType,
+  OutputShape,
+  ShapeNode,
+  ShapePresence,
+} from './schema.js';

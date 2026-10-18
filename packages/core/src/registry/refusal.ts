@@ -42,7 +42,8 @@ const sentences: Readonly<Record<RefusalReason, string>> = Object.freeze({
   tool_meta: 'A tool has incomplete or contradictory metadata.',
   tool_description:
     'A tool has a description with a missing or invalid section.',
-  tool_input: 'A tool has an input schema that is not a closed object.',
+  tool_input:
+    'A tool has an input schema that is not a closed object or cannot be advertised as JSON Schema.',
   tool_output: 'A tool has an output schema the registry does not accept.',
   tool_sensitivity:
     'A tool declares a lower sensitivity than its output holds.',

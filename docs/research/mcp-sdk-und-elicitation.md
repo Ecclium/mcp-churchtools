@@ -1,6 +1,6 @@
 # MCP-SDK und Elicitation: Befunde
 
-Stand: 11.10.2026, Prüfung von `@modelcontextprotocol/server` 2.3.1
+Stand: 18.10.2026, Prüfung von `@modelcontextprotocol/server` 2.3.1
 
 Dieses Dokument hält fest, was Ecclium über das MCP-SDK in Version 2 und über Rückfragen an Nutzerinnen und Nutzer (Elicitation) wissen muss, und worauf sich jede Aussage stützt. Der Entscheid, der darauf aufbaut, steht in [ADR 0053](../adr/0053-mcp-sdk-und-instanzmodell.md). Der erste Teil ist die Prüfung des SDK. Der zweite Teil beschreibt den Spike zu Elicitation mit echten Clients und wie seine Läufe ablaufen. Die Ergebnisse der Läufe stehen im Abschnitt «Ergebnisse».
 
@@ -64,7 +64,7 @@ Laut OSV, abgerufen am 11.10.2026, haben `ajv` 8.18.0, `ajv-formats` 3.0.1, `fas
 | GHSA-qw65-cvwx-89v3 | CVE-2026-84292 | hoch    | 3.1.7          | 28.09.2026     | eingeschleuste Authority über einen ungeprüften Port        |
 | GHSA-hrr3-gc8f-f4qj | CVE-2026-86472 | mittel  | 3.1.8          | 29.09.2026     | uneinheitliche Gross- und Kleinschreibung des Hosts         |
 
-ajv benutzt `fast-uri`, um `$id` und `$ref` aufzulösen, wenn es ein JSON-Schema übersetzt. Das SDK übersetzt ein Schema mit ajv nur an zwei Stellen: in `fromJsonSchema()`, das ein JSON-Schema als Schema für ein Tool verpackt, und im veralteten `elicitInput` der Ära 2025, das angenommenen Inhalt gegen das `requestedSchema` prüft. Schemas aus zod prüft zod, und `inputRequired.elicit` übersetzt nichts und prüft keine Antwort. Auch der Shim prüft angenommenen Inhalt nicht (Quelltext `src/server/server.ts`, `src/fromJsonSchema.ts`). Ob ein Wert vom Client `fast-uri` über einen dieser beiden Wege erreicht, etwa über ein Format für URIs, ist nicht geprüft. Eine neuere Version des SDK, die eine behobene Version bündeln könnte, gibt es am 11.10.2026 nicht.
+ajv benutzt `fast-uri`, um `$id` und `$ref` aufzulösen, wenn es ein JSON-Schema übersetzt. Das SDK übersetzt ein Schema mit ajv nur an zwei Stellen: in `fromJsonSchema()`, das ein JSON-Schema als Schema für ein Tool verpackt, und im veralteten `elicitInput` der Ära 2025, das angenommenen Inhalt gegen das `requestedSchema` prüft. Schemas aus zod prüft zod, und `inputRequired.elicit` übersetzt nichts und prüft keine Antwort. Auch der Shim prüft angenommenen Inhalt nicht (Quelltext `src/server/server.ts`, `src/fromJsonSchema.ts`). Ob ein Wert vom Client `fast-uri` über einen dieser beiden Wege erreicht, etwa über ein Format für URIs, war am 11.10.2026 nicht geprüft. Eine neuere Version des SDK, die eine behobene Version bündeln könnte, gibt es am 11.10.2026 nicht. Am 18.10.2026 ist es an den Dateien von 2.3.1 geprüft: Ein Wert eines Clients erreicht `fast-uri` nur, wenn Code `fromJsonSchema` oder `elicitInput` aufruft oder Ajv selbst benutzt. Vier Wachen sperren diese Wege, und ein Test zählt über ganze Sitzungen beider Ären mit feindlichen Eingaben keinen Aufruf von `fast-uri` ([ADR 0059](../adr/0059-gebuendelter-code-im-mcp-sdk.md)).
 
 ## Einstieg über stdio und Instanzen
 
@@ -119,7 +119,8 @@ ajv benutzt `fast-uri`, um `$id` und `$ref` aufzulösen, wenn es ein JSON-Schema
 
 - Ein unbekanntes oder abgeschaltetes Tool endet als -32602, ein Fehler bei der Prüfung der Eingabe als Ergebnis mit `isError`, eine fehlerhafte Anfrage `tools/call` als -32602. Keines davon erreicht einen Handler von Ecclium oder `onerror` (Quelltext `src/server/mcp.ts`).
 - Das Serverpaket hat keine Middleware zwischen einer MCP-Methode und ihrem Handler. `fallbackRequestHandler` greift nur bei Methoden, für die kein Handler registriert ist. Seine Middleware für HTTP (`requireBearerAuth`, `hostHeaderValidationResponse`, `originValidationResponse`, `oauthMetadataResponse`) prüft eine Anfrage vor `createMcpHandler`, nicht pro Methode.
-- Ein Transport, der die Nachrichten beobachtet, sieht diese Fälle. Der Spike benutzt einen solchen, um sie zu protokollieren. Ob er auch als Haken für das Audit taugt, und ob ein Schema, das die Prüfung der Eingabe umhüllt, die bessere Wahl ist, entscheidet der Bau des Mounts in Phase 1.
+- Ein Transport, der die Nachrichten beobachtet, sieht diese Fälle. Der Spike benutzt einen solchen, um sie zu protokollieren. Ob er auch als Haken für das Audit taugt, und ob ein Schema, das die Prüfung der Eingabe umhüllt, die bessere Wahl ist, sollte der Bau des Mounts entscheiden.
+- Der Mount nimmt seit dem 18.10.2026 keinen dieser Wege. Er registriert kein Tool mit `registerTool`, sondern beantwortet `tools/list` und `tools/call` mit eigenen Handlern über `setRequestHandler`. Ein unbekanntes Tool und eine Eingabe, die nicht passt, erreichen so die Pipeline und ihr Audit. Vor diesen Handlern lehnt das SDK nur noch eine Anfrage in falscher Form, einen `requestState`, der kein String ist, und in der Ära 2026 einen fehlenden oder falschen Umschlag `_meta` ab (ADR 0053, Umsetzung).
 
 ## Namen der Registrierung
 
@@ -341,6 +342,5 @@ Für die Bestätigung von Schreibvorgängen in Phase 5 heisst das: Über Elicita
 
 ## Offene Punkte
 
-- Ob ein Wert vom Client den gebündelten Code von `fast-uri` erreicht.
 - Wie der Code-Tab von Claude Desktop Ablehnen und Abbrechen sendet und ob ein Eintrag in `claude_desktop_config.json` dort dasselbe ergibt (Lauf 7 B und C, Lauf 8).
 - Wie sich andere Clients als Claude Code und Claude Desktop bei Rückfragen verhalten.
