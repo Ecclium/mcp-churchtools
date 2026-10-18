@@ -8,23 +8,50 @@ import { describe, expect, it } from 'vitest';
 // has no entry in the lockfile, so neither the licence check nor
 // deps-review nor Renovate sees it. ADR 0053 lists it, with licence and
 // known advisories, and this test keeps the list in line with the
-// installed package. It lives in testkit, the only package that depends on
-// the SDK, because pnpm installs it nowhere else.
+// installed package.
+//
+// ADR 0059 shows for one version that no value of a client reaches the
+// bundled fast-uri. So every package of the workspace that depends on the
+// SDK pins exactly the version that ADR 0053 pins and ADR 0059 names as
+// checked, and a new version turns this test red until a person has
+// checked it again. The test lives in testkit, one of the packages that
+// depend on the SDK, so it reads the copy pnpm installed for them.
 //
 // The bundled code is found by the paths the build tool of the SDK writes:
 // a comment //#region with node_modules/.pnpm/... before every bundled
 // part, and the same paths in the sources of the source maps. Neither is a
 // contract, so an empty result fails instead of passing.
 
-const adrFile = fileURLToPath(
-  new URL(
-    '../../../../docs/adr/0053-mcp-sdk-und-instanzmodell.md',
-    import.meta.url,
-  ),
+const workspaceRoot = fileURLToPath(new URL('../../../../', import.meta.url));
+
+const adrFile = join(
+  workspaceRoot,
+  'docs/adr/0053-mcp-sdk-und-instanzmodell.md',
+);
+const checkedAdrFile = join(
+  workspaceRoot,
+  'docs/adr/0059-gebuendelter-code-im-mcp-sdk.md',
 );
 
 const advice =
   'Update the list in the Umsetzung section of ADR 0053, check the bundled packages for known advisories and check the registration names of [arch:mcp-register] against the new version (ADR 0024).';
+
+const pinAdvice =
+  'Every package that depends on the MCP SDK pins exactly the version that ADR 0053 pins and ADR 0059 names as checked. A new version needs the checks of both ADRs first: the bundled code and its advisories, and every path of ADR 0059 by which a value of a client could reach fast-uri. A new dependent needs an ADR that allows the SDK there.';
+
+const sdk = '@modelcontextprotocol/server';
+
+// The packages that depend on the SDK: testkit for the elicitation spike
+// (ADR 0053) and core for the mount (ADR 0059). The server joins with the
+// start over stdio.
+const dependents: readonly string[] = ['packages/core', 'packages/testkit'];
+
+const dependencyFields: readonly string[] = [
+  'dependencies',
+  'devDependencies',
+  'peerDependencies',
+  'optionalDependencies',
+];
 
 /** A bundled package as name@version. */
 type Bundled = string;
@@ -106,6 +133,88 @@ function listedInAdr(text: string): {
   return { pinned, rows };
 }
 
+/** The version the section Umsetzung of ADR 0059 names as checked. */
+function checkedInAdr(text: string): string | undefined {
+  const section = text.split(/^## Umsetzung$/m)[1] ?? '';
+  return /Geprüft ist `@modelcontextprotocol\/server` (\d+\.\d+\.\d+)/.exec(
+    section,
+  )?.[1];
+}
+
+/** A manifest of the workspace that names the SDK. */
+interface Dependent {
+  /** The folder of the package, relative to the workspace. */
+  readonly dir: string;
+  /** The field of the manifest, such as dependencies. */
+  readonly field: string;
+  /** What the manifest asks for. */
+  readonly specifier: unknown;
+}
+
+/** Every manifest of the workspace that names the SDK, the root's included. */
+function dependentsIn(root: string): Dependent[] {
+  const dirs = [
+    '.',
+    ...readdirSync(join(root, 'packages'), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => `packages/${entry.name}`)
+      .sort(),
+  ];
+  return dirs.flatMap((dir) => {
+    const own = manifest(join(root, dir));
+    return dependencyFields.flatMap((field) => {
+      const listed = own[field];
+      if (typeof listed !== 'object' || listed === null) return [];
+      if (!Object.hasOwn(listed, sdk)) return [];
+      const specifier = (listed as Readonly<Record<string, unknown>>)[sdk];
+      return [{ dir, field, specifier }];
+    });
+  });
+}
+
+/** The installed version and the versions the two ADRs name. */
+interface Versions {
+  /** The version of the installed package. */
+  readonly installed: string;
+  /** From ADR 0053, Gepinnt ist. */
+  readonly pinned: string | undefined;
+  /** From ADR 0059, Geprüft ist. */
+  readonly checked: string | undefined;
+}
+
+/**
+ * Compares the manifests that name the SDK with the installed version and
+ * the two ADRs. Only the exact version counts, so a range fails as well.
+ *
+ * @returns One line per difference, empty if all agree.
+ */
+function pinDifferences(
+  found: readonly Dependent[],
+  expected: readonly string[],
+  versions: Versions,
+): string[] {
+  const lines: string[] = [];
+  if (versions.pinned !== versions.installed) {
+    lines.push(`ADR 0053 pins ${versions.pinned ?? 'no version'}`);
+  }
+  if (versions.checked !== versions.installed) {
+    lines.push(`ADR 0059 checked ${versions.checked ?? 'no version'}`);
+  }
+  for (const { dir, field, specifier } of found) {
+    if (specifier !== versions.installed) {
+      lines.push(`${dir} asks for ${JSON.stringify(specifier)} in ${field}`);
+    }
+  }
+  const dirs = new Set(found.map(({ dir }) => dir));
+  for (const dir of expected) {
+    if (!dirs.has(dir)) lines.push(`${dir} does not depend on the SDK`);
+  }
+  for (const dir of dirs) {
+    if (!expected.includes(dir)) lines.push(`${dir} depends on the SDK`);
+  }
+  return lines;
+}
+
 /**
  * Compares the bundled packages with the listed ones.
  *
@@ -138,15 +247,6 @@ const manifest = (root: string): Readonly<Record<string, unknown>> =>
 describe('bundled code of the MCP SDK', () => {
   const adr = listedInAdr(readFileSync(adrFile, 'utf8'));
   const found = bundledIn(serverRoot);
-
-  it('is the version that testkit pins and ADR 0053 names', () => {
-    const testkit = manifest(fileURLToPath(new URL('../../', import.meta.url)));
-    const pin = (testkit['dependencies'] as Readonly<Record<string, string>>)[
-      '@modelcontextprotocol/server'
-    ];
-    expect(manifest(serverRoot)['version'], advice).toBe(pin);
-    expect(adr.pinned, advice).toBe(pin);
-  });
 
   it('finds bundled code at all', () => {
     // Without the markers of the build tool this check would see nothing.
@@ -184,5 +284,75 @@ describe('bundled code of the MCP SDK', () => {
       )['@modelcontextprotocol/core'],
     );
     expect([...bundledIn(coreRoot)]).toEqual([]);
+  });
+});
+
+describe('the pin of the MCP SDK', () => {
+  const installed = String(manifest(serverRoot)['version']);
+  const versions: Versions = {
+    installed,
+    pinned: listedInAdr(readFileSync(adrFile, 'utf8')).pinned,
+    checked: checkedInAdr(readFileSync(checkedAdrFile, 'utf8')),
+  };
+  const found = dependentsIn(workspaceRoot);
+
+  it('is the version every dependent pins and ADR 0053 and ADR 0059 name', () => {
+    expect(pinDifferences(found, dependents, versions), pinAdvice).toEqual([]);
+  });
+
+  it('is the copy every dependent resolves', () => {
+    // With the isolated layout of pnpm, each dependent links the SDK in its
+    // own node_modules, and all links lead to the one installed copy.
+    const copy = realpathSync(serverRoot);
+    for (const dir of dependents) {
+      const link = join(workspaceRoot, dir, 'node_modules', sdk);
+      expect(realpathSync(link), dir).toBe(copy);
+    }
+  });
+
+  it('notices a pin that no longer fits', () => {
+    const [major, minor, patch] = installed.split('.');
+    const next = `${major ?? ''}.${minor ?? ''}.${String(Number(patch) + 1)}`;
+    const core = (specifier: unknown): Dependent[] =>
+      found.map((entry) =>
+        entry.dir === 'packages/core' ? { ...entry, specifier } : entry,
+      );
+    expect(pinDifferences(core(next), dependents, versions)).toEqual([
+      `packages/core asks for "${next}" in dependencies`,
+    ]);
+    expect(pinDifferences(core(`^${installed}`), dependents, versions)).toEqual(
+      [`packages/core asks for "^${installed}" in dependencies`],
+    );
+    expect(
+      pinDifferences(
+        found.filter((entry) => entry.dir !== 'packages/core'),
+        dependents,
+        versions,
+      ),
+    ).toEqual(['packages/core does not depend on the SDK']);
+    expect(
+      pinDifferences(
+        [
+          ...found,
+          {
+            dir: 'packages/tools',
+            field: 'dependencies',
+            specifier: installed,
+          },
+        ],
+        dependents,
+        versions,
+      ),
+    ).toEqual(['packages/tools depends on the SDK']);
+    expect(
+      pinDifferences(found, dependents, { ...versions, checked: next }),
+    ).toEqual([`ADR 0059 checked ${next}`]);
+    expect(
+      pinDifferences(found, dependents, {
+        ...versions,
+        pinned: undefined,
+        checked: checkedInAdr('## Umsetzung\n'),
+      }),
+    ).toEqual(['ADR 0053 pins no version', 'ADR 0059 checked no version']);
   });
 });
