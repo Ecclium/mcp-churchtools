@@ -36,16 +36,38 @@ const isHidden = (codePoint: number, next: number | undefined): boolean => {
   if (codePoint >= 0x200b && codePoint <= 0x200d) return true;
   if (codePoint >= 0x2060 && codePoint <= 0x2064) return true;
   if (codePoint === 0xfeff) return true;
-  // Tag characters. Variation selectors stay, because emoji and CJK script
-  // need them.
+  // Other characters that show nothing: the soft hyphen, the grapheme
+  // joiner, the Mongolian vowel separator, the Hangul fillers and the
+  // interlinear annotation marks.
+  if (
+    codePoint === 0xad ||
+    codePoint === 0x034f ||
+    codePoint === 0x180e ||
+    codePoint === 0x115f ||
+    codePoint === 0x1160 ||
+    codePoint === 0x3164 ||
+    codePoint === 0xffa0
+  ) {
+    return true;
+  }
+  if (codePoint >= 0xfff9 && codePoint <= 0xfffb) return true;
+  // The supplement of variation selectors serves no text in use and can
+  // hide a whole message in one visible character. The variation
+  // selectors U+FE00 to U+FE0F stay, because emoji and CJK script need
+  // them.
+  if (codePoint >= 0xe0100 && codePoint <= 0xe01ef) return true;
+  // Tag characters.
   return codePoint >= 0xe0000 && codePoint <= 0xe007f;
 };
 
 /**
  * Removes tag characters (U+E0000 to U+E007F), controls of the writing
  * direction (U+061C, U+200E, U+200F, U+202A to U+202E, U+2066 to U+2069),
- * characters of zero width (U+200B to U+200D, U+2060 to U+2064, U+FEFF) and
- * controls other than line feed, tab and the carriage return of a CR LF.
+ * characters of zero width (U+200B to U+200D, U+2060 to U+2064, U+FEFF),
+ * other characters that show nothing (U+00AD, U+034F, U+180E, U+115F,
+ * U+1160, U+3164, U+FFA0, U+FFF9 to U+FFFB), the supplement of variation
+ * selectors (U+E0100 to U+E01EF) and controls other than line feed, tab and
+ * the carriage return of a CR LF.
  * The text is not normalised otherwise, so names keep their spelling.
  *
  * @param text - Any text.
