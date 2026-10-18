@@ -7,6 +7,14 @@
  * @packageDocumentation
  */
 export {
+  boundaryBytes,
+  chooseBoundary,
+  drawBoundary,
+  maxBoundaryDraws,
+  type RandomBytes,
+  wrapInEnvelope,
+} from './envelope.js';
+export {
   maskBirthdate,
   maskedValue,
   maskEmail,
