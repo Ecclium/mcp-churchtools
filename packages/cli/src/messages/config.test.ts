@@ -284,6 +284,17 @@ describe('the catalog of messages', () => {
     expect(text).not.toMatch(/Kindprozess|startet, sähe/);
   });
 
+  // The search tools come with a later version. Until then the value is
+  // valid and changes nothing, and the notice must not claim otherwise.
+  it('says that the search tools come only with a later version', () => {
+    const message = warningMessage('search_tools_enabled');
+    expect(message.what).toContain('erst mit einer späteren Version');
+    expect(message.why).toContain('Bis dahin wirkt die Einstellung nicht.');
+    expect(message.why).toContain('‹ct_persons_search›');
+    expect(message.why).toContain('‹ct_groups_search›');
+    expect(textOf(message)).not.toMatch(/sind freigegeben\.|kann damit/);
+  });
+
   it('tells the token in the environment from the one in the file', () => {
     const fromEnvironment = problemMessage({
       code: 'token_invalid',
@@ -317,8 +328,18 @@ describe('the catalog of messages', () => {
       'warningMessage',
       'warningText',
     ];
-    expect(Object.keys(await import('./index.js')).sort()).toEqual(exported);
     expect(Object.keys(await import('./config.js')).sort()).toEqual(exported);
+    // The texts of the start over stdio come from their own module, which
+    // its test checks the same way.
+    expect(Object.keys(await import('./index.js')).sort()).toEqual(
+      [
+        ...exported,
+        'refusalMessage',
+        'refusalText',
+        'startMessage',
+        'startText',
+      ].sort(),
+    );
     // @ts-expect-error A plain string is no text of the catalog.
     const forged: MessageText = 'Freier Text.';
     expect(forged).toBe('Freier Text.');

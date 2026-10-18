@@ -19,9 +19,10 @@ import {
 
 /**
  * A text from this catalog. Only the catalog makes one, through
- * {@link problemText} and {@link warningText}, so the start notices refuse
- * a plain string at the type level. A cast or a type predicate still gets
- * around that, which a review has to catch.
+ * {@link problemText}, {@link warningText} and the texts of the start over
+ * stdio in `start.ts`, so the start notices refuse a plain string at the
+ * type level. A cast or a type predicate still gets around that, which a
+ * review has to catch.
  */
 export type MessageText = string & { readonly __ecclium: 'MessageText' };
 
@@ -437,10 +438,12 @@ const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({
     'Personendaten erreichen den KI-Assistenten unmaskiert.',
     `Setzen Sie ${quote('ECCLIUM_REDACTION')} auf ‹standard›, wenn das nicht gewollt ist.`,
   ),
+  // The value is valid before the tools exist and changes nothing yet, so
+  // that a configuration written for a later version still starts.
   search_tools_enabled: message(
-    'Die Suchtools ‹ct_persons_search› und ‹ct_groups_search› sind freigegeben.',
-    'Der KI-Assistent kann damit Personen und Gruppen der Instanz suchen und ihre Namen sehen.',
-    `Setzen Sie ${quote('ECCLIUM_SEARCH_TOOLS')} auf ‹false›, wenn er diese Daten nicht sehen soll.`,
+    'Die Suchtools sind freigegeben, kommen aber erst mit einer späteren Version.',
+    'Bis dahin wirkt die Einstellung nicht. Mit ‹ct_persons_search› und ‹ct_groups_search› wird der KI-Assistent dann Personen und Gruppen der Instanz suchen und ihre Namen sehen können.',
+    `Setzen Sie ${quote('ECCLIUM_SEARCH_TOOLS')} auf ‹false›, wenn er diese Daten auch später nicht sehen soll.`,
   ),
 });
 

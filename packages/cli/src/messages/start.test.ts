@@ -1,0 +1,150 @@
+import {
+  type RefusalReason,
+  refusalReasons,
+} from '@ecclium/mcp-churchtools-core';
+import { describe, expect, it } from 'vitest';
+
+import { maxNoticeLength } from '../notices/index.js';
+import { isTextLine } from '../send.js';
+import {
+  type Message,
+  refusalMessage,
+  refusalText,
+  type StartNoticeCode,
+  startMessage,
+  startText,
+} from './index.js';
+
+// The three parts as the catalog joins them.
+const textOf = (message: Message): string =>
+  `${message.what} ${message.why} ${message.action}`;
+
+const startCodes: readonly StartNoticeCode[] = ['usage', 'internal'];
+
+/** Every message of the module, with a label for the report. */
+const everyMessage: [string, Message][] = [
+  ...startCodes.map((code): [string, Message] => [code, startMessage(code)]),
+  ...refusalReasons.map((reason): [string, Message] => [
+    `the refusal ${reason}`,
+    refusalMessage(reason),
+  ]),
+];
+
+const everyText: [string, string][] = [
+  ...startCodes.map((code): [string, string] => [code, startText(code)]),
+  ...refusalReasons.map((reason): [string, string] => [
+    `the refusal ${reason}`,
+    refusalText(reason),
+  ]),
+];
+
+// Characters chapter 9 of brand/README.md rules out, the no-break space
+// among them. It is made from its code point, so that no hidden character
+// stands in the source.
+const ruledOut = new RegExp(`[ß—–!"„“”'‚‘’${String.fromCodePoint(0xa0)}]`);
+
+describe('the texts of the start over stdio', () => {
+  it.each(everyMessage)(
+    'says what, why and what to do for %s',
+    (_, message) => {
+      expect(Object.keys(message)).toEqual(['what', 'why', 'action']);
+      expect(Object.isFrozen(message)).toBe(true);
+      for (const part of [message.what, message.why, message.action]) {
+        expect(part.length).toBeGreaterThan(10);
+        expect(part).toMatch(/^[A-ZÄÖÜ‹«]/);
+        expect(part).toMatch(/\.$/);
+        expect(part).not.toMatch(/\s{2}|^\s|\s$/);
+      }
+    },
+  );
+
+  // Chapter 9 of brand/README.md: «Sie», ss, quotes «so», no em dash, no
+  // exclamation mark, numbers from 1000 up as 4'096, none of the words it
+  // lists.
+  it.each(everyMessage)(
+    'follows the rules of the brand in %s',
+    (_, message) => {
+      const text = textOf(message);
+      expect(text.replace(/(?<=\d)'(?=\d{3})/g, '')).not.toMatch(ruledOut);
+      expect(text).not.toMatch(/\d{4}/);
+      expect(text.split('«').length).toBe(text.split('»').length);
+      expect(text.split('‹').length).toBe(text.split('›').length);
+      expect(text).not.toMatch(/\b(du|dein|deine|dich|dir)\b/i);
+      expect(text).not.toMatch(
+        /revolutionär|nahtlos|einzigartig|smart|magisch|mühelos|einfach|100 % sicher/i,
+      );
+    },
+  );
+
+  // The start notices leave out a text that breaks their tripwire, so a
+  // text of this module that broke it would never reach the operator. The
+  // tripwire allows printable ASCII, the umlauts and the quotes «» and ‹›.
+  it.each(everyText)('passes the tripwire of the notices in %s', (_, text) => {
+    expect(isTextLine(text, maxNoticeLength)).toBe(true);
+  });
+
+  it('joins the three parts with one space each', () => {
+    for (const code of startCodes) {
+      expect(startText(code)).toBe(textOf(startMessage(code)));
+    }
+    for (const reason of refusalReasons) {
+      expect(refusalText(reason)).toBe(textOf(refusalMessage(reason)));
+    }
+  });
+
+  it('gives every reason of the registry a text of its own', () => {
+    const whats = refusalReasons.map((reason) => refusalMessage(reason).what);
+    expect(new Set(whats).size).toBe(refusalReasons.length);
+    expect(refusalReasons).toContain('plugin_reserved');
+    expect(refusalMessage('plugin_reserved').what).toContain('vorbehalten');
+  });
+
+  // The registry refuses an input schema that is no closed object and one
+  // that cannot be advertised as JSON Schema with the same reason.
+  it('names both cases of an input schema the registry refuses', () => {
+    const { what } = refusalMessage('tool_input');
+    expect(what).toContain('kein geschlossenes Objekt');
+    expect(what).toContain('nicht als JSON Schema melden');
+  });
+
+  it('says that a refusal is no mistake of the configuration', () => {
+    for (const reason of refusalReasons) {
+      expect(refusalMessage(reason).why).toContain('Ecclium startet deshalb');
+      expect(refusalMessage(reason).action).toContain(
+        'nicht in Ihrer Konfiguration',
+      );
+    }
+  });
+
+  // An argument can hold a token, so the text for a wrong call names only
+  // the command.
+  it('names only the command in the text for a wrong call', () => {
+    const text = startText('usage');
+    expect(text).toContain('‹ecclium stdio›');
+    expect(text).toContain('weil darin ein Token stehen könnte');
+    expect(startText('internal')).toContain('internen Fehler');
+  });
+
+  it.each([
+    ['toString', 'toString'],
+    ['no string', 7],
+  ])('refuses %s as a reason or a code', (_, value) => {
+    expect(() => refusalText(value as RefusalReason)).toThrow(
+      new TypeError('The refusal reason is unknown.'),
+    );
+    expect(() => startText(value as StartNoticeCode)).toThrow(
+      new TypeError('The start code is unknown.'),
+    );
+  });
+
+  // The start notices take only texts of the catalog. A function that made
+  // one from any three strings would open them to free text.
+  it('exports no function that makes a text from free text', async () => {
+    expect(Object.keys(await import('./start.js')).sort()).toEqual([
+      'refusalMessage',
+      'refusalText',
+      'startMessage',
+      'startText',
+    ]);
+  });
+});
