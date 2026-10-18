@@ -133,7 +133,10 @@ const isVersion = (value: unknown): value is string => {
  * of the resolver that is no object, or a rejection, counts as no tenant,
  * which the pipeline audits and ends with `auth`. So does an object the
  * pipeline cannot read without running its code, such as a proxy or one
- * with a getter (ADR 0024). A call without arguments counts as one with
+ * with a getter (ADR 0024). The mount waits for the resolver only until
+ * the client cancels the call or the connection ends; the call then runs
+ * into the pipeline without a tenant, which ends it as `network` and
+ * audits it. A call without arguments counts as one with
  * none, as in the tools the SDK registers itself. The handler never throws:
  * the SDK would send the message of an error as it is.
  *
@@ -198,9 +201,33 @@ export function createMcpMount(options: McpMountOptions): McpMount {
     },
   });
 
-  const resolveAssignment = async (): Promise<TenantAssignment | undefined> => {
+  // The question to the resolver runs against the signal of the request.
+  // A resolver of an extension that never answers would otherwise hold the
+  // call before the pipeline and its audit, beyond a cancellation and the
+  // end of the connection, both of which abort the signal. An abort counts
+  // as no tenant, and the pipeline ends the call as network (ADR 0024).
+  const resolveAssignment = async (
+    signal: AbortSignal,
+  ): Promise<TenantAssignment | undefined> => {
+    // Removes the listener once either side has settled.
+    const settled = new AbortController();
     try {
-      const answer: unknown = await resolver.resolve(identity);
+      // An aborted signal fires no further event, so the race below could
+      // not end; the catch makes this no tenant as well.
+      signal.throwIfAborted();
+      const aborted = new Promise<undefined>((resolve) => {
+        signal.addEventListener(
+          'abort',
+          () => {
+            resolve(undefined);
+          },
+          { once: true, signal: settled.signal },
+        );
+      });
+      const answered = Promise.resolve(resolver.resolve(identity));
+      // A rejection after the abort must not end as an unhandled one.
+      answered.catch(() => undefined);
+      const answer: unknown = await Promise.race([answered, aborted]);
       return typeof answer === 'object' &&
         answer !== null &&
         !Array.isArray(answer)
@@ -208,6 +235,8 @@ export function createMcpMount(options: McpMountOptions): McpMount {
         : undefined;
     } catch {
       return undefined;
+    } finally {
+      settled.abort();
     }
   };
 
@@ -223,7 +252,8 @@ export function createMcpMount(options: McpMountOptions): McpMount {
       // A call without arguments counts as one with none, as in the tools
       // the SDK registers itself; the pipeline checks it like any input.
       const input = request.params.arguments ?? {};
-      const assignment = await resolveAssignment();
+      const { signal } = ctx.mcpReq;
+      const assignment = await resolveAssignment(signal);
       const outcome = await pipeline.call(
         name,
         input,
@@ -233,7 +263,7 @@ export function createMcpMount(options: McpMountOptions): McpMount {
           redaction,
           readOnly,
           features: noFeatures,
-          signal: ctx.mcpReq.signal,
+          signal,
         }),
       );
       return instance.server.projectCallToolResult(

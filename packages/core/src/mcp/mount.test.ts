@@ -1,3 +1,4 @@
+import { getEventListeners } from 'node:events';
 import { PassThrough } from 'node:stream';
 
 import { loadConfig } from '@ecclium/mcp-churchtools-core';
@@ -233,6 +234,8 @@ interface Connection {
   readonly received: readonly Json[];
   /** The id of the last request the client sent. */
   readonly lastId: () => number;
+  /** Ends the connection from the side of the server. */
+  readonly close: () => Promise<void>;
 }
 
 const connect = async (
@@ -285,6 +288,7 @@ const connect = async (
       } as unknown as JSONRPCMessage),
     received,
     lastId: () => lastId,
+    close: () => handle.close(),
   };
 };
 
@@ -599,6 +603,56 @@ describe('the resolver of the tenant', () => {
     expect(resolve).toHaveBeenCalledTimes(2);
     expect(resolve.mock.calls[0]?.[0]).toBe(identity);
     expect(resolve.mock.calls[1]?.[0]).toBe(identity);
+  });
+
+  it.each(['cancels the call', 'ends the connection'])(
+    'audits a call whose resolver never answers once the client %s',
+    async (how) => {
+      const resolve = vi.fn(() => new Promise<never>(() => undefined));
+      const { factory, audit, logs } = setup({
+        resolver: resolverOf(resolve),
+      });
+      const connection = await legacy.open(factory);
+      void call(legacy, connection, 'ct_example_echo', {});
+      await vi.waitFor(() => {
+        expect(resolve).toHaveBeenCalledTimes(1);
+      });
+      if (how === 'cancels the call') {
+        await connection.notify('notifications/cancelled', {
+          requestId: connection.lastId(),
+          reason: 'test',
+        });
+      } else {
+        await connection.close();
+      }
+      await vi.waitFor(() => {
+        expect(audit()).toHaveLength(1);
+      });
+      expect(audit()).toMatchObject([
+        {
+          tool: 'ct_example_echo',
+          outcome: 'error',
+          errorCode: 'network',
+          tenantId: auditPlaceholders.tenantId,
+          actor: auditPlaceholders.actor,
+        },
+      ]);
+      expect(logs()).toEqual([]);
+    },
+  );
+
+  it('leaves no listener on the signal of the request once it has answered', async () => {
+    const listeners: number[] = [];
+    const pipeline: ToolPipeline = {
+      call: (_name, _input, request) => {
+        listeners.push(getEventListeners(request.signal, 'abort').length);
+        return Promise.resolve({ ok: true, data: { text: 'ok' } });
+      },
+    };
+    const { factory } = setup({ pipeline });
+    const connection = await modern.open(factory);
+    await call(modern, connection, 'ct_test_context', {});
+    expect(listeners).toEqual([0]);
   });
 });
 
