@@ -42,9 +42,13 @@ const pinAdvice =
 const sdk = '@modelcontextprotocol/server';
 
 // The packages that depend on the SDK: testkit for the elicitation spike
-// (ADR 0053) and core for the mount (ADR 0059). The server joins with the
-// start over stdio.
-const dependents: readonly string[] = ['packages/core', 'packages/testkit'];
+// (ADR 0053), core for the mount and the server for the start over stdio
+// (ADR 0059).
+const dependents: readonly string[] = [
+  'packages/core',
+  'packages/server',
+  'packages/testkit',
+];
 
 const dependencyFields: readonly string[] = [
   'dependencies',

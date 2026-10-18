@@ -9,11 +9,17 @@
       "@ecclium/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./stdio": {
+      "@ecclium/source": "./src/stdio/index.ts",
+      "types": "./dist/stdio/index.d.ts",
+      "default": "./dist/stdio/index.js"
     }
   },
   "dependencies": {
     "@ecclium/mcp-churchtools-core": "workspace:*",
-    "@ecclium/mcp-churchtools-plugin-api": "workspace:*"
+    "@ecclium/mcp-churchtools-plugin-api": "workspace:*",
+    "@modelcontextprotocol/server": "2.3.1"
   },
   "devDependencies": {
     "@ecclium/mcp-churchtools-testkit": "workspace:*"

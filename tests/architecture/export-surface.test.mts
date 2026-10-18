@@ -29,7 +29,10 @@ import { pathPattern } from './dependency-rules.mts';
 // composition root, and the build path of the transport, which takes a
 // dispatcher and a socket, leaves it through no entry at all (ADR 0056).
 // The entry point of the outbound path inside core is checked as well,
-// because every module of core may import it.
+// because every module of core may import it. The subpath ./stdio of the
+// server, which the composition root imports, exports only what its own
+// folder declares: no type of core either, so that it cannot pass on the
+// options or the factory of the mount under another name (ADR 0053).
 
 const boundaries = loadBoundaries();
 const { rawClient, mcpMount } = boundaries.places;
@@ -47,6 +50,8 @@ const transportModule = 'packages/core/src/http/transport.ts';
 const composeModule = 'packages/core/src/http/compose.ts';
 const mockModule = 'packages/core/src/http/compose-mock.ts';
 const egressEntry = 'packages/core/src/http/index.ts';
+const serverStdioEntry = 'packages/server/src/stdio/index.ts';
+const serverStdioFolder = 'packages/server/src/stdio/';
 
 /**
  * Single exports that no entry point may pass on, by file and name, except
@@ -129,6 +134,12 @@ function exportDeclarations(root: string, entry: string): Declaration[] {
 const exportOrigins = (root: string, entry: string): string[] =>
   exportDeclarations(root, entry).map(({ file }) => file);
 
+/** Exports of the stdio entry of the server declared outside its folder. */
+const foreignToServerStdio = (root: string): string[] =>
+  exportDeclarations(root, serverStdioEntry)
+    .filter(({ file }) => !file.startsWith(serverStdioFolder))
+    .map(({ file, name }) => `${file}#${name}`);
+
 /** Exports that the module must not have, as file or as file and name. */
 const hiddenOrigins = (root: string, entry: string): string[] =>
   exportDeclarations(root, entry).flatMap(({ file, name }) => [
@@ -204,9 +215,11 @@ function writeTree(files: Readonly<Record<string, string>>): string {
       '',
     ].join('\n'),
     'node_modules/@modelcontextprotocol/server/package.json':
-      '{ "name": "@modelcontextprotocol/server", "type": "module", "exports": { ".": { "types": "./index.d.ts" } } }\n',
+      '{ "name": "@modelcontextprotocol/server", "type": "module", "exports": { ".": { "types": "./index.d.ts" }, "./stdio": { "types": "./stdio.d.ts" } } }\n',
     'node_modules/@modelcontextprotocol/server/index.d.ts':
       'export declare const McpServer: unknown;\n',
+    'node_modules/@modelcontextprotocol/server/stdio.d.ts':
+      'export declare const serveStdio: unknown;\n',
     ...files,
   };
   for (const [path, content] of Object.entries(all)) {
@@ -340,6 +353,14 @@ const leaks: readonly {
         "export { mount } from '../../core/src/mcp/mount.js';\n",
     },
   },
+  {
+    name: 'the entry of the SDK over stdio, passed on by the stdio entry of the server',
+    entry: serverStdioEntry,
+    files: {
+      [serverStdioEntry]:
+        "export { serveStdio } from '@modelcontextprotocol/server/stdio';\n",
+    },
+  },
 ];
 
 // Each test builds a TypeScript program and needs well under a second.
@@ -355,9 +376,44 @@ describe('entry points of the packages', { timeout }, () => {
       ),
     );
     expect(entryPoints).toEqual(
-      expect.arrayContaining([composeModule, mockModule, egressEntry]),
+      expect.arrayContaining([
+        composeModule,
+        mockModule,
+        egressEntry,
+        serverStdioEntry,
+      ]),
     );
   });
+
+  it('let the stdio entry of the server export only what its own folder declares', () => {
+    expect(exportOrigins(workspaceRoot, serverStdioEntry)).not.toEqual([]);
+    expect(foreignToServerStdio(workspaceRoot)).toEqual([]);
+  });
+
+  it.each([
+    [
+      'a type of core',
+      "export type { ToolCatalog as Catalog } from '../../../core/src/index.js';\n",
+    ],
+    [
+      'the entry of the SDK',
+      "export { serveStdio } from '@modelcontextprotocol/server/stdio';\n",
+    ],
+    [
+      'a module of the server outside the folder',
+      "export * from '../index.js';\n",
+    ],
+  ])(
+    'refuse an export of the stdio entry of the server from %s',
+    (_name, code) => {
+      const root = writeTree({
+        [serverStdioEntry]: code,
+        'packages/core/src/index.ts': 'export interface ToolCatalog {}\n',
+        'packages/server/src/index.ts': 'export const server = 1;\n',
+      });
+      expect(foreignToServerStdio(root)).not.toEqual([]);
+    },
+  );
 
   it.each(entryPoints)(
     '%s exports nothing from the raw client, the mount, the MCP SDK or the stderr writer',
