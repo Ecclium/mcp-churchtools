@@ -673,6 +673,20 @@ const cases: readonly Case[] = [
       'packages/testkit/src/plugins/example/forbidden.ts': `import '${nameOf('core')}';\nexport {};\n`,
     },
   },
+  {
+    rule: 'plugins-only-plugin-api',
+    name: 'a tool of the core imports core',
+    files: {
+      'packages/tools/src/base/forbidden.ts': `import '${nameOf('core')}';\nexport {};\n`,
+    },
+  },
+  {
+    rule: 'plugins-only-plugin-api',
+    name: 'the plugin of the core imports core',
+    files: {
+      'packages/tools/src/core-plugin.ts': `import '${nameOf('core')}';\nexport {};\n`,
+    },
+  },
 ];
 
 // Imports the rules must let pass.
@@ -761,6 +775,18 @@ const allowedCases: readonly Omit<Case, 'rule'>[] = [
     name: 'the example plugin imports the plugin API',
     files: {
       'packages/testkit/src/plugins/example/allowed.ts': `import '${nameOf('plugin-api')}';\nexport {};\n`,
+    },
+  },
+  {
+    name: 'a tool of the core imports zod and the plugin API',
+    files: {
+      'packages/tools/src/base/allowed.ts': `import { z } from 'zod';\nimport '${nameOf('plugin-api')}';\nexport const schema = z;\n`,
+    },
+  },
+  {
+    name: 'a test of a tool of the core imports core and the testkit',
+    files: {
+      'packages/tools/src/base/allowed.test.ts': `import '${nameOf('core')}';\nimport '${nameOf('testkit')}';\nexport {};\n`,
     },
   },
   {

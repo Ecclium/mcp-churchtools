@@ -152,8 +152,12 @@
     },
     "plugins": {
       "adr": "0022",
-      "description": "Plugins as a third party would write them. They may import only the plugin API.",
-      "paths": ["packages/testkit/src/plugins/"]
+      "description": "Plugins as a third party would write them: the example plugin in testkit, and the plugin of the free core with its tools in the tools package. Of the packages of the workspace they may import only the plugin API. This rule leaves npm packages such as zod, which every plugin brings itself, to the other rules.",
+      "paths": [
+        "packages/testkit/src/plugins/",
+        "packages/tools/src/base/",
+        "packages/tools/src/core-plugin.ts"
+      ]
     },
     "moduleState": {
       "adr": "0051",
