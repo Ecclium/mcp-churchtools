@@ -4,8 +4,18 @@
  *
  * @packageDocumentation
  */
-import type { DataClass } from '@ecclium/mcp-churchtools-plugin-api';
+import type {
+  DataClass,
+  RedactionLevel,
+} from '@ecclium/mcp-churchtools-plugin-api';
 
+import {
+  cleanText,
+  maskBirthdate,
+  maskEmail,
+  maskPhone,
+  wrapInEnvelope,
+} from '../redaction/index.js';
 import type { ShapeNode } from '../registry/index.js';
 
 /** The deepest nesting of the input of a tool. */
@@ -131,39 +141,80 @@ export function mapLeaves(
   }
 }
 
+// The mask of a class, if the class has one. The registry lets these
+// classes only on strings, so a mask never changes the type of a value.
+const maskOf = (
+  dataClass: DataClass | undefined,
+): ((text: string) => string) | undefined => {
+  switch (dataClass) {
+    case 'email':
+      return maskEmail;
+    case 'phone':
+      return maskPhone;
+    case 'birthdate':
+      return maskBirthdate;
+    default:
+      return undefined;
+  }
+};
+
 /**
- * The stage `redact`. It walks every leaf with its data class. The
- * masking of e-mail addresses, phone numbers and dates of birth follows
- * in its own change; until then no tool of the core is registered, so no
- * result leaves the server.
+ * The stage `redact`. It masks e-mail addresses, phone numbers and dates of
+ * birth by their data class, unless the level is `off`; any other level
+ * masks, so a level the core does not know yet fails closed. Every other
+ * string loses its hidden characters, with a note at its end when some were
+ * removed, at every level, because hidden characters carry instructions,
+ * not personal data. A leaf without a class stays unmasked in phase 1.
  *
  * @param value - The checked result.
  * @param root - The kept shape of the result.
+ * @param level - The level of redaction of the call.
  * @returns The result, copied and frozen.
  * @example
  * ```ts
- * redact({ email: 'max.mustermann@example.org' }, shape.root);
+ * redact({ email: 'max.mustermann@example.org' }, shape.root, 'standard');
+ * // { email: 'm***@example.org' }
  * ```
  */
-export function redact(value: unknown, root: ShapeNode): unknown {
-  return mapLeaves(value, root, (leaf) => leaf);
+export function redact(
+  value: unknown,
+  root: ShapeNode,
+  level: RedactionLevel,
+): unknown {
+  return mapLeaves(value, root, (leaf, dataClass) => {
+    if (typeof leaf !== 'string') return leaf;
+    const mask = level === 'off' ? undefined : maskOf(dataClass);
+    return mask === undefined ? cleanText(leaf) : mask(leaf);
+  });
 }
 
 /**
- * The stage `markUntrusted`. It walks every leaf with its data class. The
- * data envelope for the class `untrusted` and the cleaning of Unicode
- * follow in their own change, like the masking.
+ * The stage `markUntrusted`. It puts every string of the class `untrusted`
+ * into the data envelope with the boundary of the call. It runs after
+ * `redact`, so the text it wraps is cleaned, and a note on removed
+ * characters stands inside the envelope.
  *
  * @param value - The redacted result.
  * @param root - The kept shape of the result.
+ * @param boundary - The boundary of the call, which the result does not
+ *   hold.
  * @returns The result, copied and frozen.
  * @example
  * ```ts
- * markUntrusted({ note: 'Text' }, shape.root);
+ * markUntrusted({ note: 'Text' }, shape.root, 'a1b2c3d4e5f6a7b8');
+ * // { note: '<<data-a1b2c3d4e5f6a7b8>>Text<</data-a1b2c3d4e5f6a7b8>>' }
  * ```
  */
-export function markUntrusted(value: unknown, root: ShapeNode): unknown {
-  return mapLeaves(value, root, (leaf) => leaf);
+export function markUntrusted(
+  value: unknown,
+  root: ShapeNode,
+  boundary: string,
+): unknown {
+  return mapLeaves(value, root, (leaf, dataClass) =>
+    dataClass === 'untrusted' && typeof leaf === 'string'
+      ? wrapInEnvelope(leaf, boundary)
+      : leaf,
+  );
 }
 
 /**

@@ -8,15 +8,17 @@
  * 4. `validateInput`,
  * 5. `execute` with read access that is revoked afterwards,
  * 6. `validateOutput`, which drops every field the schema does not declare,
- * 7. `redact` and 8. `markUntrusted`,
+ * 7. `redact` and 8. `markUntrusted` with a boundary drawn for the call,
  * 9. the limit on the size of the result,
  * 10. `audit`, in `finally`, also when a stage fails.
+ *
+ * The message of a failed call is masked like a result before it leaves.
  *
  * `serialize`, the only stage that knows MCP, lives in the mount.
  *
  * @packageDocumentation
  */
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 
 import {
   type AuditOutcome,
@@ -39,6 +41,11 @@ import {
 } from '../errors/index.js';
 import type { HttpTransport } from '../http/index.js';
 import type { LineWriter, LogLevel } from '../logger/index.js';
+import {
+  chooseBoundary,
+  maskErrorDescription,
+  type RandomBytes,
+} from '../redaction/index.js';
 import type { CatalogEntry, ToolCatalog } from '../registry/index.js';
 import { createTenantContext } from '../tenant/context.js';
 import { createReadAccess, type ReadAccess } from './read-api.js';
@@ -107,6 +114,11 @@ export interface ToolPipelineOptions {
     readonly writer: LineWriter;
     readonly minLevel: LogLevel;
   };
+  /**
+   * The source of random bytes for the boundary of the data envelope,
+   * `randomBytes` of `node:crypto` unless a test fixes the boundary.
+   */
+  readonly random?: RandomBytes;
 }
 
 // The longest duration the audit accepts.
@@ -165,6 +177,7 @@ const failed = (
 /** The state of one call, for its `finally`. */
 interface Run {
   entry?: CatalogEntry;
+  redaction?: RedactionLevel;
   ctx?: TenantContext;
   access?: ReadAccess;
   detach?: () => void;
@@ -188,6 +201,7 @@ interface Run {
  */
 export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
   const { catalog, audit, clock, logging, origin } = options;
+  const random = options.random ?? randomBytes;
   const client = createChurchToolsClient({
     transport: options.transport,
     origin,
@@ -213,6 +227,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     // before any code of the tool runs, and a signal of the call's own.
     const mode = request.mode;
     const redaction = request.redaction;
+    run.redaction = redaction;
     const readOnly = request.readOnly;
     const features = [...request.features];
     const requestSignal = request.signal;
@@ -301,11 +316,20 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     }
 
     // 7. redact and 8. markUntrusted, along the shape kept at registration.
+    // The boundary is drawn after redact, so it is checked against the
+    // cleaned text that the envelope will hold.
     const root = entry.shape.root;
-    const data = markUntrusted(
-      redact(parsedOutput.data, root),
-      root,
-    ) as Readonly<Record<string, unknown>>;
+    const redacted = redact(parsedOutput.data, root, redaction);
+    let boundary: string;
+    try {
+      boundary = chooseBoundary(JSON.stringify(redacted), random);
+    } catch {
+      ctx.log.warn('tool_boundary_failed');
+      return failed('internal');
+    }
+    const data = markUntrusted(redacted, root, boundary) as Readonly<
+      Record<string, unknown>
+    >;
 
     // 9. The size of the result.
     if (resultBytes(data) > maxResultBytes) {
@@ -347,6 +371,16 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         input,
         request,
       ));
+      // A call that fails before the level is copied is masked as standard.
+      if (!outcome.ok) {
+        const error = maskErrorDescription(
+          outcome.error,
+          run.redaction ?? 'standard',
+        );
+        if (error !== outcome.error) {
+          outcome = Object.freeze({ __proto__: null, ok: false, error });
+        }
+      }
     } catch {
       // The outermost catch calls nothing, describeError included.
       outcome = internalOutcome;
