@@ -1,5 +1,10 @@
 import { loadConfig } from '@ecclium/mcp-churchtools-core';
-import type { TenantAssignment } from '@ecclium/mcp-churchtools-plugin-api';
+import {
+  EccliumError,
+  type Plugin,
+  type TenantAssignment,
+  type ToolDefinition,
+} from '@ecclium/mcp-churchtools-plugin-api';
 import {
   assertNoCanary,
   assertPlanted,
@@ -9,6 +14,7 @@ import {
   makeCanaries,
 } from '@ecclium/mcp-churchtools-testkit';
 import { afterEach, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 import { createAuditSink } from '../audit/index.js';
 import { createToolCatalog } from '../registry/index.js';
@@ -16,7 +22,7 @@ import { createToolPipeline, type ToolRequest } from './pipeline.js';
 
 // Canaries in the token, in the input and in answers of ChurchTools must
 // never reach audit or log, and reach the result only where a tool returns
-// them on purpose. Tokens and values are made at run time; requests go
+// them on purpose, and then masked where their class has a mask. Tokens and values are made at run time; requests go
 // through the real transport on the ChurchTools double.
 
 const canary = makeCanaries();
@@ -49,13 +55,51 @@ const request = (): ToolRequest => ({
   signal: new AbortController().signal,
 });
 
+// A tool that fails with contact data in its message, as a careless tool
+// might. A plain object, not defineTool: core and the plugin interface
+// resolve different copies of zod in the workspace.
+const failingPlugin: Plugin = {
+  name: 'failing-plugin',
+  version: '1.0.0',
+  register(host): undefined {
+    host.addTool({
+      name: 'ct_test_fails',
+      meta: {
+        capability: 'read',
+        domain: 'base',
+        requiredRights: [],
+        tier: 'free',
+        sensitivity: 'none',
+        unattended: 'policy',
+        routineStable: false,
+      },
+      description: {
+        purpose: 'Serves a test.',
+        useWhen: 'A test needs it.',
+        avoidWhen: 'Anything else.',
+        limits: 'None.',
+      },
+      input: z.object({}),
+      output: z.object({}),
+      execute: () =>
+        Promise.reject(
+          new EccliumError(
+            'not_found',
+            `No person ${canary.email.value} with ${canary.phone.value}.`,
+          ),
+        ),
+    } as unknown as ToolDefinition);
+    return undefined;
+  },
+};
+
 const setup = () => {
   const double = createChurchToolsDouble({
     token: loaded.config.churchtoolsToken,
   });
   open.push(double);
   const catalog = createToolCatalog({
-    plugins: [examplePlugin],
+    plugins: [examplePlugin, failingPlugin],
     readOnly: true,
   });
   const lines: string[] = [];
@@ -99,8 +143,12 @@ describe('canaries', () => {
     assertPlanted(double.calls(), [canary.token], 'request');
     expect(outcome.ok).toBe(true);
     assertNoCanary([outcome, lines], [canary.token], 'call');
-    // The address the tool returns on purpose stays out of audit and log.
-    assertPlanted(outcome, [canary.email], 'result');
+    // The address the tool returns on purpose reaches the result masked
+    // and stays out of audit and log.
+    assertNoCanary(outcome, [canary.email], 'result');
+    expect(outcome.ok && outcome.data.email).toBe(
+      `${canary.email.value.charAt(0)}***@example.org`,
+    );
     assertNoCanary(lines, canary.all, 'audit and log');
   });
 
@@ -144,7 +192,17 @@ describe('canaries', () => {
       },
       request(),
     );
-    assertPlanted(outcome, [canary.email, canary.phone, canary.name], 'result');
+    // Free text reaches the result in its envelope, contact data masked.
+    assertPlanted(outcome, [canary.name], 'result');
+    assertNoCanary(outcome, [canary.email, canary.phone], 'result');
     assertNoCanary(lines, canary.all, 'audit and log');
+  });
+
+  it('leave contact data in the message of a failed call out of the outcome', async () => {
+    const { pipeline, lines } = setup();
+    const outcome = await pipeline.call('ct_test_fails', {}, request());
+    expect(!outcome.ok && outcome.error.code).toBe('not_found');
+    expect(!outcome.ok && outcome.error.message).toContain('***@example.org');
+    assertNoCanary([outcome, lines], canary.all, 'call');
   });
 });

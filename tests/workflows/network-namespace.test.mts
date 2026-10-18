@@ -8,8 +8,9 @@ import { describe, expect, it } from 'vitest';
 
 import { jobsOf } from '../support/workflows.mts';
 
-// Build and checks of the jobs check, compat and minimum run in a network
-// namespace with loopback only (ADR 0052). These tests read the workflows
+// Build and checks of the jobs check, compat and minimum, and the tests with
+// coverage of coverage-security-core, run in a network namespace with
+// loopback only (ADR 0052). These tests read the workflows
 // and the wrapper as text, run shellcheck over the wrapper, and in CI check
 // from inside the namespace that only loopback is there. A text check sees
 // only the spellings it knows; the review sees the rest.
@@ -17,10 +18,18 @@ import { jobsOf } from '../support/workflows.mts';
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
 const wrapper = 'scripts/ci/without-network.sh';
 const wrapped = `bash ${wrapper} pnpm run ci:check`;
-const checkJobs: readonly string[] = ['check', 'compat', 'minimum'];
+const wrappedCoverage = `bash ${wrapper} pnpm run ci:coverage`;
+// Each job of ci.yml that must run the checks or the tests, with the one
+// wrapped command it runs.
+const checkJobs: Readonly<Record<string, string>> = {
+  check: wrapped,
+  compat: wrapped,
+  minimum: wrapped,
+  'coverage-security-core': wrappedCoverage,
+};
 // Any way to run the checks or the tests of the repository.
 const runsChecks =
-  /\bci:check\b|\bpnpm\s+(?:run\s+)?(?:check|test)\b|\bvitest\b/;
+  /\bci:(?:check|coverage)\b|\bpnpm\s+(?:run\s+)?(?:check|test|coverage:security)\b|\bvitest\b/;
 
 // GitHub runs workflow files ending in .yml and .yaml alike.
 export const workflowFile = /\.ya?ml$/;
@@ -47,7 +56,15 @@ export function namespaceViolations(
 ): string[] {
   const found: string[] = [];
   for (const [name, text] of files) {
-    for (const [job, body] of jobsOf(text)) {
+    const jobs = jobsOf(text);
+    if (name === 'ci.yml') {
+      for (const job of Object.keys(checkJobs)) {
+        if (!jobs.some(([present]) => present === job)) {
+          found.push(`${name} ${job}: the job is missing`);
+        }
+      }
+    }
+    for (const [job, body] of jobs) {
       const where = `${name} ${job}`;
       let wrappedSteps = 0;
       for (const step of stepsOf(body)) {
@@ -55,9 +72,16 @@ export function namespaceViolations(
         const block = /^ {6}(?:- | {2})run: [|>]/m.test(step);
         if (!block && !runsChecks.test(run)) continue;
         if (block && !runsChecks.test(step)) continue;
-        if (run !== wrapped) {
+        if (run !== wrapped && run !== wrappedCoverage) {
           found.push(`${where}: runs the checks with network`);
           continue;
+        }
+        if (
+          name === 'ci.yml' &&
+          Object.hasOwn(checkJobs, job) &&
+          run !== checkJobs[job]
+        ) {
+          found.push(`${where}: runs other checks than its own`);
         }
         wrappedSteps += 1;
         if (!/^ {10}MISE_OFFLINE: 1$/m.test(step)) {
@@ -69,7 +93,11 @@ export function namespaceViolations(
           );
         }
       }
-      if (name === 'ci.yml' && checkJobs.includes(job) && wrappedSteps !== 1) {
+      if (
+        name === 'ci.yml' &&
+        Object.hasOwn(checkJobs, job) &&
+        wrappedSteps !== 1
+      ) {
         found.push(
           `${where}: needs exactly one step that runs the checks without network`,
         );
@@ -133,12 +161,14 @@ export function wrapperViolations(text: string): string[] {
 }
 
 describe('the network namespace of the check jobs', () => {
-  it('runs the checks of check, compat and minimum only without network', () => {
+  it('runs the checks of check, compat, minimum and coverage-security-core only without network', () => {
     expect(namespaceViolations(workflows())).toEqual([]);
   });
 
   const ci = read('.github/workflows/ci.yml');
   const compat = jobsOf(ci).find(([job]) => job === 'compat')?.[1] ?? '';
+  const coverage =
+    jobsOf(ci).find(([job]) => job === 'coverage-security-core')?.[1] ?? '';
 
   it.each([
     [
@@ -150,6 +180,38 @@ describe('the network namespace of the check jobs', () => {
       ci.replace(
         compat,
         compat.replace(`run: ${wrapped}`, 'run: pnpm run ci:check'),
+      ),
+    ],
+    [
+      'the coverage job without the wrapper',
+      ci.replace(
+        coverage,
+        coverage.replace(
+          `run: ${wrappedCoverage}`,
+          'run: pnpm run ci:coverage',
+        ),
+      ),
+    ],
+    [
+      'the coverage job without coverage',
+      ci.replace(
+        coverage,
+        coverage.replace(`run: ${wrappedCoverage}`, `run: ${wrapped}`),
+      ),
+    ],
+    [
+      'a check job that runs the coverage instead',
+      ci.replace(
+        compat,
+        compat.replace(`run: ${wrapped}`, `run: ${wrappedCoverage}`),
+      ),
+    ],
+    ['no coverage job', ci.replace(coverage, '')],
+    [
+      'tests with coverage in another job',
+      ci.replace(
+        '        run: actionlint',
+        '        run: pnpm run coverage:security\n      - name: Lint\n        run: actionlint',
       ),
     ],
     [

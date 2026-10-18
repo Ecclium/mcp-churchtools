@@ -158,6 +158,62 @@ describe('checkOutputSchema', () => {
     expect(checkOutputSchema(schema)).toBeUndefined();
   });
 
+  it.each(['email', 'phone', 'birthdate', 'untrusted'] as const)(
+    'refuses the class %s on a leaf that is no string',
+    (dataClass) => {
+      for (const leaf of [
+        z.number(),
+        z.boolean(),
+        z.enum(['a', 'b']),
+        z.literal('a'),
+        z.templateLiteral(['a-', z.number()]),
+        z.null(),
+      ]) {
+        expect(
+          checkOutputSchema(z.object({ a: classify(leaf, dataClass) })),
+        ).toBeUndefined();
+      }
+      expect(
+        checkOutputSchema(
+          z.object({
+            a: z.union([classify(z.string(), dataClass), z.number()]),
+          }),
+        ),
+      ).toBeUndefined();
+      // classify takes no union, but the registry of zod does.
+      const union = z.union([z.string(), z.literal('a')]);
+      z.globalRegistry.add(union, {
+        [Symbol.for('ecclium.mcp-churchtools.data-class.v1')]: dataClass,
+      });
+      expect(checkOutputSchema(z.object({ a: union }))).toBeUndefined();
+      expect(
+        checkOutputSchema(
+          z.object({
+            a: classify(z.string().max(5), dataClass).nullable(),
+            b: z.union([classify(z.string(), dataClass), z.null()]),
+          }),
+        )?.root.fields,
+      ).toEqual({
+        a: { kind: 'leaf', dataClass },
+        b: { kind: 'leaf', dataClass },
+      });
+    },
+  );
+
+  it('keeps other classes on leaves that are no string', () => {
+    expect(
+      checkOutputSchema(
+        z.object({
+          a: classify(z.number(), 'personId'),
+          b: z.union([classify(z.number(), 'amount'), z.boolean()]),
+        }),
+      )?.root.fields,
+    ).toEqual({
+      a: { kind: 'leaf', dataClass: 'personId' },
+      b: { kind: 'leaf', dataClass: 'amount' },
+    });
+  });
+
   it('takes a wrapped option of a union and the smallest maximum of an array', () => {
     const shape = checkOutputSchema(
       z.object({

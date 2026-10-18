@@ -259,6 +259,39 @@ jobs:
       - name: Check that the checks changed no tracked file
         run: git diff --exit-code
 
+  # The tests with coverage and its thresholds: every line and branch of
+  # redaction and of the outbound path, at least 80 percent of core (ADR
+  # 0024). A job of its own, so that a drop in the security core shows by
+  # name and does not hide in a total. The thresholds stand in
+  # vitest.config.mts and apply only with coverage on.
+  coverage-security-core:
+    name: coverage-security-core
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Node.js, pnpm and the tools
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+        with:
+          version: 2026.10.9
+          cache: false
+      - name: Install the dependencies from the lockfile
+        run: pnpm install --frozen-lockfile
+      - name: Check that the install changed no tracked file
+        run: git diff --exit-code
+      - name: Build, then run the tests with coverage without network
+        # The same network namespace as the check jobs (ADR 0052).
+        env:
+          MISE_OFFLINE: 1
+        run: bash scripts/ci/without-network.sh pnpm run ci:coverage
+      - name: Check that the tests changed no tracked file
+        run: git diff --exit-code
+
   deps-review:
     name: deps-review
     # Compares the dependencies of the base and the head of a pull request.
