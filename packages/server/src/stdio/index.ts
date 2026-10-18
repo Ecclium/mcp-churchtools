@@ -10,7 +10,7 @@
  * with a limit of {@link maxStdioMessageBytes} on the input it holds
  * unread instead of the 10 MiB of the SDK: input past it ends the
  * connection. Signals and the exit of the process belong to the
- * composition root.
+ * composition root, which the server tells when the connection has ended.
  *
  * By default the transport reads stdin and writes stdout of the process.
  * Tests pass streams of their own; the transport of the SDK still writes
@@ -87,11 +87,46 @@ export interface StdioServer {
    * stops reading input. It never rejects.
    */
   close(): Promise<void>;
+  /**
+   * Settles once the connection has ended, whichever way: the end or the
+   * close of the input, an error of the output, unread input past
+   * {@link maxStdioMessageBytes} or {@link StdioServer.close}. It never
+   * rejects, and the composition root ends the process on it.
+   */
+  readonly closed: Promise<void>;
 }
 
 // The event of an error of the connection. It carries no field: the SDK
 // puts what a client sent into the message of such an error.
 const connectionErrorEvent = 'mcp_stdio_error';
+
+// The transport of the SDK with a signal when it has closed. Every way to
+// the end of a connection runs through its close: the end and the close of
+// the input, an error of the output, input past the limit and the close of
+// the handle of serveStdio. serveStdio takes onclose for itself, so the
+// signal hangs on close and touches no callback of the SDK. It also comes
+// when closing fails, so that the composition root never waits for an end
+// that has already happened.
+class ClosingStdioTransport extends StdioServerTransport {
+  readonly #ended: () => void;
+
+  constructor(
+    input: Readable | undefined,
+    output: Writable | undefined,
+    ended: () => void,
+  ) {
+    super(input, output, { maxBufferSize: maxStdioMessageBytes });
+    this.#ended = ended;
+  }
+
+  override async close(): Promise<void> {
+    try {
+      await super.close();
+    } finally {
+      this.#ended();
+    }
+  }
+}
 
 /**
  * Builds the mount and serves it over stdio. The first message of the
@@ -104,11 +139,12 @@ const connectionErrorEvent = 'mcp_stdio_error';
  * `mcp_stdio_error` and never its message. Input past the limit also ends
  * the connection. Every message in it is dropped without an answer and
  * without an audit line. That can also hit a message just under 1 MiB
- * that a client sends right before another.
+ * that a client sends right before another. `closed` settles once the
+ * connection has ended, whichever way.
  *
  * @param options - What the mount needs, the version, and the streams if
  *   not stdin and stdout.
- * @returns The running server, frozen.
+ * @returns The running server, frozen: `close` and `closed`.
  * @throws {TypeError} When the version breaks its form; the message never
  *   holds the value.
  * @example
@@ -116,6 +152,7 @@ const connectionErrorEvent = 'mcp_stdio_error';
  * const server = startStdioServer({ catalog, pipeline, identity, resolver,
  *   mode: 'interactive', redaction: 'standard', readOnly: true, logger,
  *   version: '0.1.0' });
+ * await server.closed;
  * ```
  */
 export function startStdioServer(options: StdioServerOptions): StdioServer {
@@ -131,11 +168,13 @@ export function startStdioServer(options: StdioServerOptions): StdioServer {
     logger,
     version: options.version,
   });
+  let ended = (): void => undefined;
+  const closed = new Promise<void>((resolve) => {
+    ended = resolve;
+  });
   // Without streams the transport of the SDK takes stdin and stdout of the
   // process itself, so this module never touches process.stdout (ADR 0053).
-  const transport = new StdioServerTransport(input, output, {
-    maxBufferSize: maxStdioMessageBytes,
-  });
+  const transport = new ClosingStdioTransport(input, output, ended);
   const handle = serveStdio(mount.factory, {
     legacy: 'serve',
     transport,
@@ -151,5 +190,6 @@ export function startStdioServer(options: StdioServerOptions): StdioServer {
     close: async (): Promise<void> => {
       await handle.close();
     },
+    closed,
   });
 }
