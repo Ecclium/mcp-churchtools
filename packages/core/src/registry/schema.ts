@@ -79,11 +79,24 @@ const wrapperTypes: readonly string[] = [
   'readonly',
 ];
 
+// Classes whose leaves the pipeline masks or wraps in the data envelope.
+// Their leaves must be strings, so that a mask or an envelope never changes
+// the type of a value (ADR 0024).
+const textClasses: readonly DataClass[] = [
+  'email',
+  'phone',
+  'birthdate',
+  'untrusted',
+];
+
 const unsafeNames: readonly string[] = [
   '__proto__',
   'constructor',
   'prototype',
 ];
+
+const isTextClass = (dataClass: DataClass | undefined): boolean =>
+  dataClass !== undefined && textClasses.includes(dataClass);
 
 interface Internals {
   readonly type: string;
@@ -180,7 +193,9 @@ class OutputWalk {
     if (internals === undefined || hasCustomCheck(internals.def)) {
       return undefined;
     }
-    if (leafTypes.includes(internals.type)) return this.leaf(schema);
+    if (leafTypes.includes(internals.type)) {
+      return this.leaf(schema, internals.type);
+    }
     if (internals.type === 'union') return this.union(schema, internals);
     if (depth >= maxSchemaDepth) return undefined;
     switch (internals.type) {
@@ -195,23 +210,26 @@ class OutputWalk {
     }
   }
 
-  private leaf(schema: unknown): ShapeNode | undefined {
+  private leaf(schema: unknown, type: string): ShapeNode | undefined {
     let dataClass: DataClass | undefined;
     try {
       dataClass = dataClassOf(schema as z.core.$ZodType);
     } catch {
       return undefined;
     }
+    if (isTextClass(dataClass) && type !== 'string') return undefined;
     this.count(dataClass);
     return freezeNode({ kind: 'leaf', dataClass });
   }
 
   // A union of leaves only, such as a string or null. All classified options
-  // must agree, so no option lowers the class of the field.
+  // must agree, so no option lowers the class of the field. A class the
+  // pipeline masks or wraps allows only strings and null as options.
   private union(schema: unknown, internals: Internals): ShapeNode | undefined {
     const options = internals.def.options;
     if (!Array.isArray(options) || options.length === 0) return undefined;
     let dataClass: DataClass | undefined;
+    let onlyText = true;
     try {
       dataClass = dataClassOf(schema as z.core.$ZodType);
       for (const option of options as unknown[]) {
@@ -231,6 +249,12 @@ class OutputWalk {
         ) {
           return undefined;
         }
+        if (
+          optionInternals.type !== 'string' &&
+          optionInternals.type !== 'null'
+        ) {
+          onlyText = false;
+        }
         const optionClass = dataClassOf(option as z.core.$ZodType);
         if (optionClass === undefined) continue;
         if (dataClass !== undefined && dataClass !== optionClass) {
@@ -242,6 +266,7 @@ class OutputWalk {
       return undefined;
     }
     if (this.nodes > maxSchemaNodes) return undefined;
+    if (isTextClass(dataClass) && !onlyText) return undefined;
     this.count(dataClass);
     return freezeNode({ kind: 'leaf', dataClass });
   }
@@ -296,6 +321,9 @@ class OutputWalk {
  * at most {@link maxArrayLength}, tuples without rest, unions of leaves, the
  * wrappers `optional`, `nullable`, `default` and `readonly`, and the leaves
  * string, number, boolean, literal, enum, template literal and null.
+ * The classes `email`, `phone`, `birthdate` and `untrusted` fit only a
+ * string, or a union of strings and null, because the pipeline masks or
+ * wraps their values as text.
  * Refused are loose objects and catch-alls, `any`, `unknown`, records,
  * custom checks such as `refine`, transforms and pipes, `lazy`, bigint,
  * dates and every other form, and schemas of another major version of zod.
