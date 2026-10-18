@@ -236,7 +236,7 @@ describe('the size of a message', () => {
     expect(maxStdioMessageBytes).toBe(1_048_576);
   });
 
-  it('answers a message of exactly 1 MiB', async () => {
+  it('answers a message of exactly 1 MiB that arrives alone in one chunk', async () => {
     const { write, reply, calls, events } = setup();
     write(callOfLength(1, maxStdioMessageBytes));
     expect(at(await reply(1), 'result', 'structuredContent')).toEqual({
@@ -244,6 +244,34 @@ describe('the size of a message', () => {
     });
     expect(calls).toHaveLength(1);
     expect(events).toEqual([]);
+  });
+
+  // The limit holds for the input the transport has not read yet, the
+  // rest of an unfinished message plus the chunk that just came in, not
+  // for one message. The same two messages, each under 1 MiB, pass in
+  // chunks of their own and end the connection in one chunk together.
+  it('answers two messages under 1 MiB in chunks of their own', async () => {
+    const { write, reply, calls, events } = setup();
+    write(callOfLength(1, 600_000));
+    write(callOfLength(2, 600_000));
+    await reply(1);
+    await reply(2);
+    expect(calls).toHaveLength(2);
+    expect(events).toEqual([]);
+  });
+
+  it('ends the connection on the same two messages in one chunk, without an answer', async () => {
+    const { write, input, received, calls, events } = setup();
+    write(callOfLength(1, 600_000) + callOfLength(2, 600_000));
+    await vi.waitFor(() => {
+      expect(input.listenerCount('data')).toBe(0);
+    });
+    expect(events).toEqual([
+      { level: 'error', event: 'mcp_stdio_error', fields: undefined },
+    ]);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(received()).toEqual([]);
+    expect(calls).toEqual([]);
   });
 
   it('ends the connection on a message one byte larger', async () => {
