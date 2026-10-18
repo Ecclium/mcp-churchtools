@@ -69,6 +69,26 @@ describe('maskMessage', () => {
       'Then 1980-**-*** and 17.05.*****',
     ],
     [
+      'dates with short parts and slashes',
+      'Born 5.3.1980, 1980/05/17, 17/05/1980 or 2026-1-5.',
+      'Born 1980, 1980, 1980 or 2026.',
+    ],
+    [
+      'a number with a bracket after the country code',
+      'Call +41 0 (00) 123 45 67',
+      'Call +41 0 (0*) *** ** **',
+    ],
+    [
+      'a number that opens with a bracket',
+      'Call (000) 123 45 67.',
+      'Call (000) 1** ** **.',
+    ],
+    [
+      'a number with two separators in a row',
+      'Call 000  123 45 67',
+      'Call 000  1** ** **',
+    ],
+    [
       'an address with digits',
       'Mail 1234567@example.org now',
       'Mail 1***@example.org now',
@@ -81,9 +101,11 @@ describe('maskMessage', () => {
     'The input is not valid.',
     'Narrow the search to at most 50 results of 64 KiB.',
     'Page 123456 of 2 at 12:30',
-    'Two separators 123  4567 or a trailing one 123456-',
+    'Three separators 123   4567 or a trailing one 123456-',
     'A plus without digits + or with few +123',
-    'Version 3.137.0 and 2026-1-5',
+    'Version 3.137.0 and 3.13.70',
+    'Not dates: 202.4.5, 2026-1-, 2026-1.5, 26-123-4, 202-1-23, 1.2.345, 1.2.34',
+    'A bracket ( 1 or (12) 34 or ( ) 5',
   ])('leaves %j as it is', (text) => {
     expect(maskMessage(text)).toBe(text);
   });
