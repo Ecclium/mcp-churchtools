@@ -114,6 +114,9 @@ describe('createToolCatalog', () => {
     expect(entry?.shape.root.fields.id).toEqual({
       kind: 'leaf',
       dataClass: 'personId',
+      types: ['number'],
+      optional: false,
+      nullable: false,
     });
   });
 

@@ -1,22 +1,39 @@
+import type { DataClass } from '@ecclium/mcp-churchtools-plugin-api';
 import { describe, expect, it } from 'vitest';
 
 import type { ShapeNode } from '../registry/index.js';
 import { mapLeaves, markUntrusted, redact, resultBytes } from './stages.js';
 
-const leaf = (dataClass?: 'email' | 'none'): ShapeNode => ({
+// Nodes of a kept shape. The stages read only kinds, classes and children.
+const present = { optional: false, nullable: false } as const;
+const leaf = (dataClass?: DataClass): ShapeNode => ({
   kind: 'leaf',
   dataClass,
+  types: ['string'],
+  ...present,
+});
+const object = (fields: Record<string, ShapeNode>): ShapeNode => ({
+  kind: 'object',
+  fields,
+  ...present,
+});
+const array = (element: ShapeNode): ShapeNode => ({
+  kind: 'array',
+  element,
+  ...present,
+});
+const tuple = (...items: ShapeNode[]): ShapeNode => ({
+  kind: 'tuple',
+  items,
+  ...present,
 });
 
-const root: ShapeNode = {
-  kind: 'object',
-  fields: {
-    email: leaf('email'),
-    list: { kind: 'array', element: leaf() },
-    pair: { kind: 'tuple', items: [leaf('none'), leaf()] },
-    nested: { kind: 'object', fields: { a: leaf() } },
-  },
-};
+const root = object({
+  email: leaf('email'),
+  list: array(leaf()),
+  pair: tuple(leaf('none'), leaf()),
+  nested: object({ a: leaf() }),
+});
 
 describe('mapLeaves', () => {
   it('applies the step to every leaf with its class and freezes every copy', () => {
@@ -55,9 +72,7 @@ describe('mapLeaves', () => {
   });
 
   it('passes a missing container on as it is', () => {
-    expect(
-      mapLeaves(undefined, { kind: 'array', element: leaf() }, () => 'x'),
-    ).toBeUndefined();
+    expect(mapLeaves(undefined, array(leaf()), () => 'x')).toBeUndefined();
   });
 });
 
@@ -69,22 +84,16 @@ const open = `<<data-${boundary}>>`;
 const close = `<</data-${boundary}>>`;
 
 // A synthetic record with a field of every class the stages treat.
-const record: ShapeNode = {
-  kind: 'object',
-  fields: {
-    id: leaf('none'),
-    email: { kind: 'leaf', dataClass: 'email' },
-    phone: { kind: 'leaf', dataClass: 'phone' },
-    birthdate: { kind: 'leaf', dataClass: 'birthdate' },
-    first: { kind: 'leaf', dataClass: 'name.first' },
-    plain: leaf(),
-    notes: {
-      kind: 'array',
-      element: { kind: 'leaf', dataClass: 'untrusted' },
-    },
-    missing: { kind: 'leaf', dataClass: 'email' },
-  },
-};
+const record = object({
+  id: leaf('none'),
+  email: leaf('email'),
+  phone: leaf('phone'),
+  birthdate: leaf('birthdate'),
+  first: leaf('name.first'),
+  plain: leaf(),
+  notes: array(leaf('untrusted')),
+  missing: leaf('email'),
+});
 
 const input = {
   id: 7,
@@ -163,14 +172,11 @@ describe('redact and markUntrusted', () => {
   });
 
   it('leave numbers and booleans as they are and copy along the shape', () => {
-    const shape: ShapeNode = {
-      kind: 'object',
-      fields: {
-        n: { kind: 'leaf', dataClass: 'untrusted' },
-        b: leaf('none'),
-        pair: { kind: 'tuple', items: [leaf('none'), leaf()] },
-      },
-    };
+    const shape = object({
+      n: leaf('untrusted'),
+      b: leaf('none'),
+      pair: tuple(leaf('none'), leaf()),
+    });
     const value = { n: 1, b: true, pair: ['a', null] };
     const copy = markUntrusted(
       redact(value, shape, 'standard'),

@@ -1,16 +1,33 @@
-import { classify } from '@ecclium/mcp-churchtools-plugin-api';
+import { classify, type DataClass } from '@ecclium/mcp-churchtools-plugin-api';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import {
   checkInputSchema,
   checkOutputSchema,
+  type LeafType,
   maxArrayLength,
   maxSchemaDepth,
   maxSchemaNodes,
+  type ShapeNode,
+  type ShapePresence,
 } from './schema.js';
 
 const name = () => classify(z.string().max(100), 'name.last');
+
+// A kept leaf, present and not null unless the test says otherwise.
+const leaf = (
+  dataClass: DataClass | undefined,
+  types: readonly LeafType[],
+  presence: Partial<ShapePresence> = {},
+): ShapeNode => ({
+  kind: 'leaf',
+  dataClass,
+  types,
+  optional: false,
+  nullable: false,
+  ...presence,
+});
 
 describe('checkOutputSchema', () => {
   it('keeps the class of every field, frozen and without prototypes', () => {
@@ -36,16 +53,34 @@ describe('checkOutputSchema', () => {
     // elements of fixed and kind carry no class.
     expect(shape.unclassified).toBe(6);
     const { fields } = shape.root;
-    expect(fields.id).toEqual({ kind: 'leaf', dataClass: 'personId' });
-    expect(fields.last).toEqual({ kind: 'leaf', dataClass: 'name.last' });
-    expect(fields.note).toEqual({ kind: 'leaf', dataClass: 'untrusted' });
+    expect(fields.id).toEqual(leaf('personId', ['number']));
+    expect(fields.last).toEqual(
+      leaf('name.last', ['string'], { optional: true }),
+    );
+    expect(fields.note).toEqual(
+      leaf('untrusted', ['string'], { nullable: true }),
+    );
     expect(fields.tags).toEqual({
       kind: 'array',
-      element: { kind: 'leaf', dataClass: 'none' },
+      element: leaf('none', ['string']),
+      optional: false,
+      nullable: false,
     });
-    expect(fields.either).toEqual({ kind: 'leaf', dataClass: 'email' });
-    expect(fields.pair?.kind).toBe('tuple');
-    expect(fields.nested?.kind).toBe('object');
+    expect(fields.either).toEqual(leaf('email', ['string', 'null']));
+    expect(fields.kind).toEqual(leaf(undefined, ['string']));
+    expect(fields.nothing).toEqual(leaf(undefined, ['null']));
+    expect(fields.pair).toEqual({
+      kind: 'tuple',
+      items: [leaf(undefined, ['string']), leaf('none', ['boolean'])],
+      optional: false,
+      nullable: false,
+    });
+    expect(fields.nested).toEqual({
+      kind: 'object',
+      fields: { count: leaf(undefined, ['number']) },
+      optional: false,
+      nullable: false,
+    });
     expect(Object.isFrozen(shape)).toBe(true);
     expect(Object.isFrozen(shape.root.fields)).toBe(true);
     expect(Object.getPrototypeOf(shape.root.fields)).toBeNull();
@@ -56,10 +91,80 @@ describe('checkOutputSchema', () => {
     const email = classify(z.string(), 'email');
     const shape = checkOutputSchema(z.object({ email }));
     z.globalRegistry.remove(email);
-    expect(shape?.root.fields.email).toEqual({
-      kind: 'leaf',
-      dataClass: 'email',
+    expect(shape?.root.fields.email).toEqual(leaf('email', ['string']));
+  });
+
+  it('keeps the types of JSON of every leaf', () => {
+    const shape = checkOutputSchema(
+      z.object({
+        text: z.string(),
+        count: z.number().int(),
+        flag: z.boolean(),
+        nothing: z.null(),
+        literal: z.literal(['a', 1, true, null]),
+        names: z.enum(['a', 'b']),
+        numbers: z.enum({ one: 1, two: 2 }),
+        mixed: z.enum({ one: 1, two: 'two' }),
+        template: z.templateLiteral(['id-', z.number()]),
+        union: z.union([z.literal('x'), z.boolean(), z.number()]),
+      }),
+    );
+    const types = Object.fromEntries(
+      Object.entries(shape?.root.fields ?? {}).map(([key, node]) => [
+        key,
+        node.kind === 'leaf' ? node.types : node.kind,
+      ]),
+    );
+    expect(types).toEqual({
+      text: ['string'],
+      count: ['number'],
+      flag: ['boolean'],
+      nothing: ['null'],
+      literal: ['string', 'number', 'boolean', 'null'],
+      names: ['string'],
+      numbers: ['number'],
+      mixed: ['string', 'number'],
+      template: ['string'],
+      union: ['string', 'number', 'boolean'],
     });
+    for (const node of Object.values(shape?.root.fields ?? {})) {
+      expect(node.kind === 'leaf' && Object.isFrozen(node.types)).toBe(true);
+    }
+  });
+
+  it('keeps whether a value may be missing, as zod decides it for the output', () => {
+    const schema = z.object({
+      plain: z.string(),
+      optional: z.string().optional(),
+      defaulted: z.string().default('x'),
+      defaultOverOptional: z.string().optional().default('x'),
+      optionalOverDefault: z.string().default('x').optional(),
+      nullable: z.string().nullable(),
+      nullish: z.string().nullish(),
+      nullableOverDefault: z.string().default('x').nullable(),
+      readonlyOptional: z.string().optional().readonly(),
+      unionWithOptional: z.union([z.string().optional(), z.null()]),
+      unionWithDefault: z.union([z.string().default('x'), z.null()]),
+      defaultedUnion: z.union([z.string().optional(), z.null()]).default(null),
+      unionWithNullable: z.union([z.string().nullable(), z.number()]),
+      list: z.array(z.string()).max(2).optional(),
+      pair: z.tuple([z.string()]).nullable(),
+      nested: z.object({ a: z.string() }).nullish(),
+    });
+    const fields = Object.entries(checkOutputSchema(schema)?.root.fields ?? {});
+    expect(
+      fields.filter(([, node]) => !node.optional).map(([key]) => key),
+    ).toEqual(z.toJSONSchema(schema, { io: 'output' }).required);
+    expect(
+      fields.filter(([, node]) => node.nullable).map(([key]) => key),
+    ).toEqual([
+      'nullable',
+      'nullish',
+      'nullableOverDefault',
+      'unionWithNullable',
+      'pair',
+      'nested',
+    ]);
   });
 
   it('derives the sensitivity none from classes without personal data', () => {
@@ -194,8 +299,8 @@ describe('checkOutputSchema', () => {
           }),
         )?.root.fields,
       ).toEqual({
-        a: { kind: 'leaf', dataClass },
-        b: { kind: 'leaf', dataClass },
+        a: leaf(dataClass, ['string'], { nullable: true }),
+        b: leaf(dataClass, ['string', 'null']),
       });
     },
   );
@@ -209,8 +314,8 @@ describe('checkOutputSchema', () => {
         }),
       )?.root.fields,
     ).toEqual({
-      a: { kind: 'leaf', dataClass: 'personId' },
-      b: { kind: 'leaf', dataClass: 'amount' },
+      a: leaf('personId', ['number']),
+      b: leaf('amount', ['number', 'boolean']),
     });
   });
 
@@ -221,7 +326,9 @@ describe('checkOutputSchema', () => {
         b: z.array(z.string()).max(3).max(7),
       }),
     );
-    expect(shape?.root.fields.a).toEqual({ kind: 'leaf', dataClass: 'email' });
+    expect(shape?.root.fields.a).toEqual(
+      leaf('email', ['string', 'null'], { optional: true }),
+    );
   });
 
   it.each([
@@ -229,12 +336,31 @@ describe('checkOutputSchema', () => {
     ['checks that are no list', { type: 'string', checks: 'custom' }],
     ['a union without options', { type: 'union', options: [] }],
     ['an object without shape', { type: 'object', shape: null }],
+    ['a literal without values', { type: 'literal', values: [] }],
+    ['a literal whose values are no list', { type: 'literal', values: 'a' }],
+    ['an enum without entries', { type: 'enum', entries: null }],
+    [
+      'an enum with a number that is not finite',
+      { type: 'enum', entries: { a: Number.NaN } },
+    ],
   ])('refuses a field whose definition has %s', (_, def) => {
     const fake = { _zod: { version: { major: 4 }, def } };
     expect(
       checkOutputSchema(z.object({ a: fake as unknown as z.ZodString })),
     ).toBeUndefined();
   });
+
+  it.each([
+    ['a bigint', z.literal(1n)],
+    ['undefined', z.literal(undefined)],
+    ['a bigint next to a string', z.literal(['a', 1n])],
+    ['a bigint in a union', z.union([z.literal(1n), z.null()])],
+  ])(
+    'refuses a literal of %s, which JSON does not carry as it is',
+    (_, literal) => {
+      expect(checkOutputSchema(z.object({ a: literal }))).toBeUndefined();
+    },
+  );
 
   it('refuses a tuple with a refused item', () => {
     expect(
