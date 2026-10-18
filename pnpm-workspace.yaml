@@ -19,9 +19,7 @@ ignoreWorkspaceCycles: true
 # date and gives the reason, such as `# 29.09.2026: security fix for ...`.
 # scripts/check-pnpm-settings.mts rejects an exception without one.
 minimumReleaseAge: 4320
-minimumReleaseAgeExclude:
-  # 16.10.2026: security fix, eight advisories of 15.10.2026 affect undici 8.0.0 to 8.12.1, so the outbound path takes 8.12.2 before it is three days old. Published with provenance by a trusted publisher. Remove on 18.10.2026, when the version reaches the minimum age.
-  - undici@8.12.2
+minimumReleaseAgeExclude: []
 # Fail when no version in the requested range is old enough, instead of
 # falling back to a newer one.
 minimumReleaseAgeStrict: true

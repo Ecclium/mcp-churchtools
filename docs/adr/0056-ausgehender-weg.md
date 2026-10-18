@@ -87,5 +87,5 @@ Gewählt ist die dritte Option.
 
   Die vollen Prüfsummen stehen in `tests/undici-pin.test.mts`. Code des Projekts für `fetch` liegt unter `lib/web/`, der Transport benutzt ihn nicht.
 
-- **Mindestalter:** undici 8.12.2 kam am 16.10.2026 mit einer Ausnahme vom Mindestalter von drei Tagen in `pnpm-workspace.yaml`, wegen der acht Advisories für 8.0.0 bis 8.12.1. Die Ausnahme fällt weg, sobald die Version drei Tage alt ist.
+- **Mindestalter:** undici 8.12.2 kam am 16.10.2026 mit einer Ausnahme vom Mindestalter von drei Tagen in `pnpm-workspace.yaml`, wegen der acht Advisories für 8.0.0 bis 8.12.1. Seit dem 18.10.2026 ist die Version drei Tage alt, und die Ausnahme ist entfernt.
 - **Offen:** Die Warnung des Starts über stdio, wenn `NODE_EXTRA_CA_CERTS`, `NODE_USE_SYSTEM_CA` oder `--use-system-ca` den Speicher der vertrauten Zertifikate erweitern, als Text des Katalogs mit einem Test im Kindprozess. Sie entsteht mit dem Start über stdio, zusammen mit dem Umgang mit fd 2 (ADR 0054).
