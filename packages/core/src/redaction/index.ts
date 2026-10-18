@@ -7,6 +7,14 @@
  * @packageDocumentation
  */
 export {
+  maskBirthdate,
+  maskedValue,
+  maskEmail,
+  maskPhone,
+  minPhoneDigits,
+  visiblePhoneDigits,
+} from './mask.js';
+export {
   cleanText,
   type CleanedText,
   hiddenCharactersNote,
