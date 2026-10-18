@@ -46,7 +46,11 @@ afterEach(async () => {
   await Promise.all(open.splice(0).map((server) => server.close()));
 });
 
-const catalog = createToolCatalog({ plugins: [examplePlugin], readOnly: true });
+const catalog = createToolCatalog({
+  core: examplePlugin,
+  plugins: [],
+  readOnly: true,
+});
 
 const done: ToolOutcome = Object.freeze({
   ok: true,

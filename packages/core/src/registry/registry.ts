@@ -1,7 +1,7 @@
 /**
  * The registry of tools and the host plugins add their tools to (ADR 0024).
- * The free core adds its own tools through the same host. Every tool is
- * checked when it is added; the first refusal stops the start.
+ * The free core adds its own tools first, through the same host. Every tool
+ * is checked when it is added; the first refusal stops the start.
  *
  * @packageDocumentation
  */
@@ -36,6 +36,12 @@ export interface CatalogEntry {
   readonly name: ToolName;
   /** Name of the plugin that added it. */
   readonly plugin: string;
+  /**
+   * Whether the free core added it or another plugin. It follows from the
+   * list the composition root put the plugin in, never from its name, its
+   * version or the order of the plugins.
+   */
+  readonly origin: 'core' | 'plugin';
   /** The checked metadata, frozen. */
   readonly meta: ToolMeta;
   /** The rendered description the model reads. */
@@ -68,11 +74,25 @@ export interface ToolCatalog {
 
 /** What the composition root hands to {@link createToolCatalog}. */
 export interface CatalogOptions {
-  /** The plugins, the free core first. */
+  /**
+   * The plugin of the free core. It registers first, and its tools have the
+   * origin `core`. It is required, so that no composition root can leave
+   * the core out and let a plugin take the names of its tools.
+   */
+  readonly core: Plugin;
+  /**
+   * The other plugins, in the order they register. Their tools have the
+   * origin `plugin`, and none of them may carry the name reserved for the
+   * core.
+   */
   readonly plugins: readonly Plugin[];
   /** Whether write tools stay out of the catalog. */
   readonly readOnly: boolean;
 }
+
+// The name of the package of the core. A plugin under this name would pass
+// for the core wherever a log, an audit line or a refusal names the plugin.
+const reservedPluginName = '@ecclium/mcp-churchtools';
 
 const rank: Readonly<Record<Sensitivity, number>> = Object.freeze({
   __proto__: null,
@@ -95,7 +115,11 @@ const isVersion = (value: unknown): value is string => {
 const toolKeys = ['name', 'meta', 'description', 'input', 'output', 'execute'];
 
 // Checks one tool and makes its entry, or throws the refusal.
-const checkTool = (tool: unknown, plugin: string): CatalogEntry => {
+const checkTool = (
+  tool: unknown,
+  plugin: string,
+  origin: CatalogEntry['origin'],
+): CatalogEntry => {
   const fields = readFields(tool, toolKeys, toolKeys);
   if (fields === undefined || typeof fields.execute !== 'function') {
     throw new RegistryRefusal('tool_invalid', { plugin });
@@ -129,6 +153,7 @@ const checkTool = (tool: unknown, plugin: string): CatalogEntry => {
     __proto__: null,
     name: name as ToolName,
     plugin,
+    origin,
     meta,
     description: renderDescription(description, meta.requiredRights),
     input: fields.input as ZodType,
@@ -155,6 +180,7 @@ const settle = (result: unknown): void => {
 // during the call, and returns the tools it added.
 const registerPlugin = (
   plugin: unknown,
+  origin: CatalogEntry['origin'],
   plugins: ReadonlySet<string>,
   taken: ReadonlySet<string>,
 ): { readonly name: string; readonly tools: readonly CatalogEntry[] } => {
@@ -174,6 +200,11 @@ const registerPlugin = (
   ) {
     throw new RegistryRefusal('plugin_invalid');
   }
+  // Before the check for duplicates, so that a plugin under the name of the
+  // core is refused as such even when the core carries that name.
+  if (origin === 'plugin' && name === reservedPluginName) {
+    throw new RegistryRefusal('plugin_reserved', { plugin: name });
+  }
   if (plugins.has(name)) {
     throw new RegistryRefusal('plugin_duplicate', { plugin: name });
   }
@@ -184,7 +215,7 @@ const registerPlugin = (
     if (!open) throw new RegistryRefusal('host_revoked', { plugin: name });
     if (refusal !== undefined) throw refusal;
     try {
-      const entry = checkTool(tool, name);
+      const entry = checkTool(tool, name, origin);
       if (taken.has(entry.name) || tools.some((t) => t.name === entry.name)) {
         throw new RegistryRefusal('tool_duplicate', {
           plugin: name,
@@ -219,37 +250,50 @@ const registerPlugin = (
 };
 
 /**
- * Builds the catalog of tools from the plugins.
+ * Builds the catalog of tools from the plugin of the core and the other
+ * plugins.
  *
- * Each plugin registers synchronously with a host of its own, which is
- * valid only while its `register` runs. The tools of a plugin count only
- * when `register` returns `undefined`: all of them or none. With
- * `readOnly`, write tools stay out of the catalog. The catalog is sorted by
- * name, compared by code units, and the rendered descriptions of all its
- * tools together may hold at most 25'000 code units.
+ * The core registers first, then the other plugins in their order, so no
+ * plugin can take the name of a tool of the core. Each plugin registers
+ * synchronously with a host of its own, which is valid only while its
+ * `register` runs. The tools of a plugin count only when `register`
+ * returns `undefined`: all of them or none. A tool has the origin of the
+ * list its plugin came in. With `readOnly`, write tools stay out of the
+ * catalog. The catalog is sorted by name, compared by code units, and the
+ * rendered descriptions of all its tools together may hold at most 25'000
+ * code units.
  *
- * @param options - The plugins and whether the server only reads.
+ * @param options - The plugin of the core, the other plugins and whether
+ *   the server only reads.
  * @returns The frozen catalog.
  * @throws {RegistryRefusal} On the first plugin or tool the registry
- *   refuses. The start then stops.
+ *   refuses, among them another plugin under the name of the core
+ *   (`plugin_reserved`). The start then stops.
  * @example
  * ```ts
- * const catalog = createToolCatalog({ plugins: [corePlugin], readOnly: true });
- * catalog.has('ct_whoami'); // true
+ * const catalog = createToolCatalog({
+ *   core: corePlugin,
+ *   plugins: [],
+ *   readOnly: true,
+ * });
+ * catalog.get('ct_whoami')?.origin; // 'core'
  * ```
  */
 export function createToolCatalog(options: CatalogOptions): ToolCatalog {
   const plugins = new Set<string>();
   const byName = new Map<string, CatalogEntry>();
-  for (const plugin of options.plugins) {
+  const register = (plugin: unknown, origin: CatalogEntry['origin']): void => {
     const { name, tools } = registerPlugin(
       plugin,
+      origin,
       plugins,
       new Set(byName.keys()),
     );
     plugins.add(name);
     for (const tool of tools) byName.set(tool.name, tool);
-  }
+  };
+  register(options.core, 'core');
+  for (const plugin of options.plugins) register(plugin, 'plugin');
   const kept = [...byName.values()].filter(
     (tool) => !options.readOnly || tool.meta.capability === 'read',
   );

@@ -10,6 +10,7 @@ import { toolNamePattern } from '../logger/fields.js';
 /** Every reason the registry gives, frozen. */
 export const refusalReasons = Object.freeze([
   'plugin_invalid',
+  'plugin_reserved',
   'plugin_duplicate',
   'plugin_threw',
   'plugin_async',
@@ -32,6 +33,7 @@ export type RefusalReason = (typeof refusalReasons)[number];
 const sentences: Readonly<Record<RefusalReason, string>> = Object.freeze({
   __proto__: null,
   plugin_invalid: 'A plugin has no valid name, version or register function.',
+  plugin_reserved: 'A plugin has the name that is reserved for the core.',
   plugin_duplicate: 'Two plugins have the same name.',
   plugin_threw: 'A plugin threw while it registered its tools.',
   plugin_async: 'A plugin registered its tools asynchronously.',

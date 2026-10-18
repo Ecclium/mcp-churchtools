@@ -63,7 +63,8 @@ const mount = (): {
   const double = createChurchToolsDouble({ token });
   open.push(double);
   const catalog = createToolCatalog({
-    plugins: [examplePlugin],
+    core: examplePlugin,
+    plugins: [],
     readOnly: true,
   });
   const pipeline = createToolPipeline({

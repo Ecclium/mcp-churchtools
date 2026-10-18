@@ -99,7 +99,8 @@ const setup = () => {
   });
   open.push(double);
   const catalog = createToolCatalog({
-    plugins: [examplePlugin, failingPlugin],
+    core: examplePlugin,
+    plugins: [failingPlugin],
     readOnly: true,
   });
   const lines: string[] = [];

@@ -115,7 +115,8 @@ describe('deriveOutputSchema', () => {
 
   it('derives a schema for every tool of the example plugin', () => {
     const catalog = createToolCatalog({
-      plugins: [examplePlugin],
+      core: examplePlugin,
+      plugins: [],
       readOnly: false,
     });
     for (const entry of catalog.list()) {
@@ -310,7 +311,8 @@ describe('deriveInputSchema', () => {
 
   it('converts the input of every tool of the example plugin, built with its own zod', () => {
     const catalog = createToolCatalog({
-      plugins: [examplePlugin],
+      core: examplePlugin,
+      plugins: [],
       readOnly: false,
     });
     for (const entry of catalog.list()) {

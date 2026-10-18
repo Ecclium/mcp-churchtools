@@ -1,12 +1,13 @@
 // Child process for tests/mcp-stdio.test.mts. It builds the server over
 // stdio from source, as a composition root does: the configuration in
-// code, the example plugin of testkit, the test double of ChurchTools in
-// place of an instance, mode interactive, and the line writer, logger and
-// audit of core on the real fd 2. It reaches the mount only through the
-// stdio entry of the server, which the test checks on this file. The test
-// starts it with hooks.mts, which maps the .js imports of the packages to
-// their source, with the condition @ecclium/source and with an environment
-// of its own that keeps NODE_OPTIONS with the network guard.
+// code, the example plugin of testkit in place of the plugin of the core,
+// the test double of ChurchTools in place of an instance, mode
+// interactive, and the line writer, logger and audit of core on the real
+// fd 2. It reaches the mount only through the stdio entry of the server,
+// which the test checks on this file. The test starts it with hooks.mts,
+// which maps the .js imports of the packages to their source, with the
+// condition @ecclium/source and with an environment of its own that keeps
+// NODE_OPTIONS with the network guard.
 //
 // The token is a canary that the test passes in STDIO_FIXTURE_TOKEN. The
 // first argument switches what the process does besides serving: «serve»
@@ -80,7 +81,8 @@ double.intercept(whoami).reply(503, '{}', json);
 double.intercept(whoami).reply(200, account, json).delay(60_000);
 
 const catalog = createToolCatalog({
-  plugins: [examplePlugin],
+  core: examplePlugin,
+  plugins: [],
   readOnly: config.readOnly,
 });
 const pipeline = createToolPipeline({

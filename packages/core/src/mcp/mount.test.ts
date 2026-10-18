@@ -161,8 +161,8 @@ const setup = (
   open.push(double);
   const contexts: unknown[] = [];
   const catalog = createToolCatalog({
+    core: examplePlugin,
     plugins: [
-      examplePlugin,
       testPlugin(
         testTool('ct_test_context', ({ ctx }) => {
           contexts.push(ctx);

@@ -137,7 +137,8 @@ const setup = (
   const double = createChurchToolsDouble({ token });
   open.push(double);
   const catalog = createToolCatalog({
-    plugins: [examplePlugin, testPlugin(...tools)],
+    core: examplePlugin,
+    plugins: [testPlugin(...tools)],
     readOnly,
   });
   const auditLines: string[] = [];
@@ -1050,7 +1051,8 @@ describe('the outermost catch', () => {
     const double = createChurchToolsDouble({ token });
     open.push(double);
     const catalog = createToolCatalog({
-      plugins: [examplePlugin],
+      core: examplePlugin,
+      plugins: [],
       readOnly: true,
     });
     let reads = 0;
