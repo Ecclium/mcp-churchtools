@@ -1,5 +1,9 @@
 import { classify } from '@ecclium/mcp-churchtools-plugin-api';
 import { examplePlugin } from '@ecclium/mcp-churchtools-testkit';
+import {
+  Ajv,
+  AjvJsonSchemaValidator,
+} from '@modelcontextprotocol/server/validators/ajv';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
@@ -73,7 +77,8 @@ describe('deriveOutputSchema', () => {
         pair: {
           type: 'array',
           prefixItems: [{ type: 'string' }, { type: ['number', 'null'] }],
-          items: false,
+          minItems: 2,
+          maxItems: 2,
         },
         nested: {
           type: ['object', 'null'],
@@ -118,6 +123,68 @@ describe('deriveOutputSchema', () => {
       expect(schema.type).toBe('object');
       expect(schema.additionalProperties).toBe(false);
     }
+  });
+
+  describe('a tuple, checked as a client checks a result', () => {
+    // The engine of a client of the 2025 era built on version 1 of the
+    // TypeScript SDK: draft-07, with the options the SDK names as the
+    // equivalent of its default there. The formats it also adds are left
+    // out, because the output schema has no format.
+    const draft07 = (): AjvJsonSchemaValidator =>
+      new AjvJsonSchemaValidator(
+        new Ajv({
+          strict: false,
+          validateFormats: true,
+          validateSchema: false,
+          allErrors: true,
+        }),
+      );
+    const engines = [
+      ['2020-12', () => new AjvJsonSchemaValidator()],
+      ['draft-07', draft07],
+    ] as const;
+    // The schema as the client receives it, after JSON.
+    const schema = JSON.parse(
+      JSON.stringify(
+        deriveOutputSchema(
+          shapeOf(
+            z.object({
+              pair: z.tuple([z.string().max(10), z.number().optional()]),
+            }),
+          ),
+        ),
+      ),
+    ) as Readonly<Record<string, unknown>>;
+
+    it.each(engines)(
+      'takes a tuple of its length under %s',
+      (_name, engine) => {
+        const check = engine().getValidator(schema);
+        expect(check({ pair: ['a', 1] }).valid).toBe(true);
+        // The copy of the pipeline writes a missing item as null.
+        expect(check({ pair: ['a', null] }).valid).toBe(true);
+      },
+    );
+
+    it.each(engines)(
+      'refuses a tuple of another length under %s',
+      (_name, engine) => {
+        const check = engine().getValidator(schema);
+        for (const pair of [[], ['a'], ['a', 1, 2]]) {
+          expect(check({ pair }).valid).toBe(false);
+        }
+      },
+    );
+
+    it('checks the type of each item under 2020-12 only', () => {
+      // The price of serving draft-07: there a tuple is a check of its
+      // length alone.
+      const swapped = { pair: [1, 'a'] };
+      expect(
+        new AjvJsonSchemaValidator().getValidator(schema)(swapped).valid,
+      ).toBe(false);
+      expect(draft07().getValidator(schema)(swapped).valid).toBe(true);
+    });
   });
 });
 

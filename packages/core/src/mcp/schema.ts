@@ -6,7 +6,7 @@
  * schema of the tool. Masks, the note on removed characters and the data
  * envelope change strings after `validateOutput`, so every string is
  * advertised without length, pattern, format or enum. Objects stay closed,
- * arrays have no bounds.
+ * arrays have no bounds, and a tuple is bounded by its length.
  *
  * The input schema is converted from the zod schema of the tool and then
  * rebuilt from a list of allowed keywords. Descriptions and every other
@@ -60,6 +60,14 @@ const outputNode = (node: ShapeNode, inArray: boolean): JsonObject => {
         type: typeOf(['array'], nullable),
         items: outputNode(node.element, true),
       });
+    // The length bounds a tuple, not items: false. A client of the 2025
+    // era may check the result with a draft-07 engine, the default of
+    // version 1 of the TypeScript SDK, which does not know prefixItems
+    // and reads items: false as "no item at all", so every tuple would
+    // fail there (ADR 0053). The copy of the pipeline always writes every
+    // item, so a correct result has exactly this length, and under
+    // 2020-12 maxItems forbids an extra item as items: false did. Under
+    // draft-07 only the length is checked, not the type of each item.
     case 'tuple':
       return Object.freeze({
         __proto__: null,
@@ -67,7 +75,8 @@ const outputNode = (node: ShapeNode, inArray: boolean): JsonObject => {
         prefixItems: Object.freeze(
           node.items.map((item) => outputNode(item, true)),
         ),
-        items: false,
+        minItems: node.items.length,
+        maxItems: node.items.length,
       });
     case 'object': {
       const properties = Object.create(null) as Record<string, JsonObject>;
@@ -92,9 +101,11 @@ const outputNode = (node: ShapeNode, inArray: boolean): JsonObject => {
  * registry kept. Every leaf has only its types of JSON, so a masked value,
  * a note on removed characters or a data envelope still fits. A field that
  * may be missing is not required, and one that may be null allows null.
- * Every object is closed. An array has no bounds, a tuple exactly its
- * items; an item that may be missing allows null, because JSON writes a
- * missing item as null.
+ * Every object is closed. An array has no bounds. A tuple lists its items
+ * in `prefixItems` and has exactly their number as `minItems` and
+ * `maxItems`, without `items: false`, which a draft-07 engine of an older
+ * client reads as no item at all. An item that may be missing allows
+ * null, because JSON writes a missing item as null.
  *
  * @param shape - The shape the registry kept for the output of a tool.
  * @returns The schema, frozen, without prototypes and without `$schema`,
