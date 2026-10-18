@@ -9,7 +9,7 @@
     "typecheck": "tsc -b",
     "lint": "eslint --max-warnings 0 .",
     "test": "vitest run",
-    "coverage:security": "vitest run --coverage",
+    "coverage:security": "vitest run --coverage --exclude 'tests/architecture/**'",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "pnpm run format:check && pnpm run typecheck && pnpm run lint && pnpm run check:arch && pnpm run check:licenses && pnpm run check:pnpm && pnpm run check:links && pnpm run test",

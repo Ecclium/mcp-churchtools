@@ -47,7 +47,12 @@ describe('the thresholds of coverage', () => {
     const { scripts } = JSON.parse(
       readFileSync(`${workspace}package.json`, 'utf8'),
     ) as { scripts: Record<string, string> };
-    expect(scripts['coverage:security']).toBe('vitest run --coverage');
+    // The architecture tests run no code of the packages and, under the
+    // instrumentation of coverage, run past their own time limits; the
+    // check jobs run them.
+    expect(scripts['coverage:security']).toBe(
+      "vitest run --coverage --exclude 'tests/architecture/**'",
+    );
     expect(scripts['ci:coverage']).toBe(
       'pnpm run build && pnpm run coverage:security',
     );
