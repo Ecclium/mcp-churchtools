@@ -16,7 +16,7 @@ import {
 
 // Proves each ESLint architecture restriction with code that breaks it, at
 // every place of boundaries.json and next to it (ADR 0053, ADR 0022, ADR
-// 0024, ADR 0051). ESLint
+// 0024, ADR 0051, ADR 0059). ESLint
 // finds its configuration from the workspace root, as `pnpm lint` does, but
 // runs without type information: the project service refuses paths that do
 // not exist on disk. Only the architecture rules are reported.
@@ -319,6 +319,75 @@ const probes: readonly {
     concerns: ['mcp-register'],
   },
 
+  {
+    code: "import { fromJsonSchema } from '@modelcontextprotocol/server';",
+    concerns: ['mcp-json-schema', 'mcp-sdk'],
+  },
+  {
+    code: "export { fromJsonSchema as wrap } from '@modelcontextprotocol/server';",
+    concerns: ['mcp-json-schema', 'mcp-sdk'],
+  },
+  {
+    code: "import { DefaultJsonSchemaValidator } from '@modelcontextprotocol/server/_shims';",
+    concerns: ['mcp-json-schema', 'mcp-sdk'],
+  },
+  {
+    code: "import '@modelcontextprotocol/server/_shims';",
+    concerns: ['mcp-json-schema', 'mcp-sdk'],
+  },
+  {
+    code: "import { Ajv as Engine } from '@modelcontextprotocol/server/validators/ajv';",
+    concerns: ['mcp-json-schema', 'mcp-sdk'],
+  },
+  {
+    code: "export * from '@modelcontextprotocol/server/validators/cf-worker';",
+    concerns: ['mcp-json-schema', 'mcp-sdk'],
+  },
+  {
+    code: "await import('@modelcontextprotocol/server/validators/ajv');",
+    concerns: ['mcp-json-schema', 'mcp-sdk'],
+  },
+  {
+    code: "type Shims = typeof import('@modelcontextprotocol/server/_shims');",
+    concerns: ['mcp-json-schema', 'mcp-sdk'],
+  },
+  {
+    code: "export const schema = sdk.fromJsonSchema({ type: 'object' });",
+    concerns: ['mcp-json-schema'],
+  },
+  {
+    code: "await ctx.mcpReq.elicitInput({ message: 'x', requestedSchema });",
+    concerns: ['mcp-json-schema'],
+  },
+  {
+    code: "await server['elicitInput']({ message: 'x', requestedSchema });",
+    concerns: ['mcp-json-schema'],
+  },
+  {
+    code: "await server[`elicitInput`]({ message: 'x', requestedSchema });",
+    concerns: ['mcp-json-schema'],
+  },
+  {
+    code: 'const { elicitInput } = ctx.mcpReq;',
+    concerns: ['mcp-json-schema'],
+  },
+  {
+    code: "const { 'elicitInput': ask } = ctx.mcpReq;",
+    concerns: ['mcp-json-schema'],
+  },
+  {
+    code: 'export const ask = server.elicitInput.bind(server);',
+    concerns: ['mcp-json-schema'],
+  },
+  {
+    code: 'export const validator = new AjvJsonSchemaValidator();',
+    concerns: ['mcp-json-schema', 'module-state'],
+  },
+  {
+    code: 'export type Validator = DefaultJsonSchemaValidator;',
+    concerns: ['mcp-json-schema'],
+  },
+
   { code: 'let count = 0;', concerns: ['module-state'] },
   { code: 'export let count = 0;', concerns: ['module-state'] },
   { code: 'var count = 0;', concerns: ['module-state'] },
@@ -453,6 +522,9 @@ const allowed: readonly string[] = [
   'export class Host {\n  addTool(): void {}\n}',
   'const fetch = (): void => undefined;\nfetch();',
   "import { readFile } from 'node:fs/promises';\nexport const read = readFile;",
+  'export const options = (jsonSchemaValidator: object): object => ({ jsonSchemaValidator });',
+  "export const name = 'fromJsonSchema';",
+  'export const ask = { elicit: (): void => undefined };',
 ];
 
 /**
@@ -466,7 +538,7 @@ const locations: readonly {
   { path: 'packages/core/src/probe.ts', allowed: [] },
   {
     path: 'packages/core/src/probe.test.ts',
-    allowed: ['module-state', 'util-module'],
+    allowed: ['mcp-json-schema', 'module-state', 'util-module'],
   },
   { path: 'packages/core/src/probe.test.mts', allowed: [] },
   { path: 'packages/core/src/probe.mts', allowed: [] },
@@ -482,18 +554,18 @@ const locations: readonly {
   { path: 'packages/cli/src/main.ts', allowed: ['util-module'] },
   {
     path: 'packages/cli/src/main.test.ts',
-    allowed: ['module-state', 'util-module'],
+    allowed: ['mcp-json-schema', 'module-state', 'util-module'],
   },
   { path: 'packages/cli/src/mainline.ts', allowed: [] },
   { path: 'packages/testkit/src/canary.ts', allowed: ['util-module'] },
   { path: 'packages/testkit/src/canary-extra.ts', allowed: [] },
   {
     path: 'packages/core/src/logger/probe.test.ts',
-    allowed: ['stderr', 'module-state', 'util-module'],
+    allowed: ['stderr', 'mcp-json-schema', 'module-state', 'util-module'],
   },
   {
     path: 'packages/cli/src/bin.test.ts',
-    allowed: ['module-state', 'util-module'],
+    allowed: ['mcp-json-schema', 'module-state', 'util-module'],
   },
   { path: 'packages/core/src/mcp/probe.ts', allowed: ['mcp-sdk'] },
   {
@@ -501,6 +573,10 @@ const locations: readonly {
     allowed: ['mcp-sdk', 'mcp-register'],
   },
   { path: 'packages/core/src/mcp/mount-extra.ts', allowed: ['mcp-sdk'] },
+  {
+    path: 'packages/core/src/mcp/probe.test.ts',
+    allowed: ['mcp-sdk', 'mcp-json-schema', 'module-state', 'util-module'],
+  },
   { path: 'packages/core/src/mcpx/probe.ts', allowed: [] },
   { path: 'packages/server/src/probe.ts', allowed: ['mcp-sdk'] },
   { path: 'packages/server/src/stdio/probe.ts', allowed: ['mcp-sdk'] },
@@ -517,7 +593,7 @@ const locations: readonly {
   { path: 'packages/testkit/src/mcp-spike/log.ts', allowed: ['mcp-sdk'] },
   {
     path: 'packages/testkit/src/mcp-spike/probe.test.ts',
-    allowed: ['mcp-sdk', 'module-state', 'util-module'],
+    allowed: ['mcp-sdk', 'mcp-json-schema', 'module-state', 'util-module'],
   },
   { path: 'packages/testkit/src/mcp-spikex/probe.ts', allowed: [] },
   { path: 'packages/testkit/src/probe.ts', allowed: [] },

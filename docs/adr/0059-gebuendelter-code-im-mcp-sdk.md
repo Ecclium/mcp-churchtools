@@ -54,8 +54,8 @@ Jede neue Version des SDK braucht eine neue Prüfung: den gebündelten Code nach
 ## Umsetzung
 
 - Geprüft ist `@modelcontextprotocol/server` 2.3.1, am 18.10.2026, an den Dateien des installierten Pakets. Die Fundstellen im Kontext gelten nur für diese Version.
-- Stand 18.10.2026 ist keine der vier Wachen gebaut. Sie kommen mit dem Mount:
+- Gebaut ist die Regel `[arch:mcp-json-schema]` in `tests/architecture/lint-rules.mts`, für alle Dateien unter `packages/*/src/` ausser `*.test.ts`. Sie erkennt die vier Namen als Bezeichner, als Schlüssel in Klammern oder in einem Muster und die beiden Unterpfade in `import`, `export`, `import()` und `typeof import()`. `tests/architecture/lint-rules.test.mts` belegt jede Form mit einem verbotenen Beispiel an jedem Ort aus `tests/architecture/boundaries.json`, auch im Mount, und dass Tests ausgenommen sind. Gegenprobe am 18.10.2026: Ohne das Muster für die Importe, ohne einen der Selektoren oder ohne die Ausnahme für Tests wird der Test rot.
+- Die übrigen drei Wachen kommen mit dem Mount:
   - der werfende Validator im Mount in `packages/core/src/mcp/`;
-  - die Regel `[arch:mcp-json-schema]` in `tests/architecture/lint-rules.mts`;
   - der Test der Erreichbarkeit mit dem Mount, der Verweis auf ihn folgt hier;
   - der Pin-Test in `packages/testkit/src/mcp-spike/bundled-code.test.ts`, mit der Abhängigkeit in `core` und `server`.
