@@ -131,10 +131,11 @@ const isVersion = (value: unknown): value is string => {
  *
  * A call resolves tenant and actor for the identity of the start; an answer
  * of the resolver that is no object, or a rejection, counts as no tenant,
- * which the pipeline audits and ends with `auth`. A call without arguments
- * counts as one with none, as in the tools the SDK registers itself. The
- * handler never throws: the SDK would send the message of an error as it
- * is.
+ * which the pipeline audits and ends with `auth`. So does an object the
+ * pipeline cannot read without running its code, such as a proxy or one
+ * with a getter (ADR 0024). A call without arguments counts as one with
+ * none, as in the tools the SDK registers itself. The handler never throws:
+ * the SDK would send the message of an error as it is.
  *
  * @param options - Catalog, pipeline, identity, resolver, the settings of
  *   every call, the logger and the version.

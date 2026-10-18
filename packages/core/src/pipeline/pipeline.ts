@@ -4,7 +4,7 @@
  *
  * 1. find the tool in the catalog,
  * 2. make the context of the call, with a signal of its own, or end with
- *    `auth` when the call has no tenant,
+ *    `auth` when the call has no tenant or none the pipeline can read,
  * 3. `gate`,
  * 4. `validateInput`,
  * 5. `execute` with read access that is revoked afterwards,
@@ -13,6 +13,10 @@
  * 9. the limit on the size of the result as the client receives it,
  * 10. `audit`, in `finally`, also when a stage fails.
  *
+ * Tenant and actor are copied once, before the first stage, through own
+ * data properties only. The context and the audit use that copy, so no
+ * getter and no trap of the resolver's answer can cost the audit line.
+ *
  * The message of a failed call is masked like a result before it leaves.
  *
  * `serialize`, the only stage that knows MCP, lives in the mount.
@@ -20,6 +24,7 @@
  * @packageDocumentation
  */
 import { randomBytes, randomUUID } from 'node:crypto';
+import { isProxy } from 'node:util/types';
 
 import {
   type AuditOutcome,
@@ -64,7 +69,9 @@ export interface ToolRequest {
    * Tenant and actor, from the resolver of the checked identity, or
    * `undefined` when the resolver assigns no tenant. A call without a
    * tenant ends with `auth` before any code of the tool runs, and is
-   * audited all the same.
+   * audited all the same. The pipeline reads it once, through own data
+   * properties only, and runs no getter and no trap of a proxy; an
+   * assignment it cannot read that way counts as none.
    */
   readonly assignment: TenantAssignment | undefined;
   /** How the call runs, set by the composition root only. */
@@ -165,6 +172,40 @@ const abortReason = 'ecclium_call_aborted';
 const isAborted = (signal: AbortSignal): boolean =>
   Reflect.apply(abortedGetter as () => boolean, signal, []);
 
+// An object whose own properties can be read without running its code.
+// isProxy runs no trap, also not for a revoked proxy.
+const isPlainTarget = (value: unknown): value is object =>
+  typeof value === 'object' && value !== null && !isProxy(value);
+
+// An own data property, never inherited and never through a getter. An
+// accessor reads as a missing key.
+const ownData = (target: object, key: string): unknown => {
+  const property = Object.getOwnPropertyDescriptor(target, key);
+  return property !== undefined && Object.hasOwn(property, 'value')
+    ? property.value
+    : undefined;
+};
+
+// Tenant and actor of the resolver's answer, copied into a frozen record
+// (ADR 0024). An answer that is a proxy or holds one as its actor, or whose
+// tenant, actor, kind or id is missing or an accessor, cannot be read
+// without running its code and counts as no assignment. A value that can be
+// read is copied as it is: the context refuses one that is not valid.
+const copyAssignment = (value: unknown): TenantAssignment | undefined => {
+  if (!isPlainTarget(value)) return undefined;
+  const tenantId = ownData(value, 'tenantId');
+  const actor = ownData(value, 'actor');
+  if (tenantId === undefined || !isPlainTarget(actor)) return undefined;
+  const kind = ownData(actor, 'kind');
+  const id = ownData(actor, 'id');
+  if (kind === undefined || id === undefined) return undefined;
+  return Object.freeze({
+    __proto__: null,
+    tenantId,
+    actor: Object.freeze({ __proto__: null, kind, id }),
+  }) as unknown as TenantAssignment;
+};
+
 const failed = (
   code: ErrorCode,
   message?: string,
@@ -182,6 +223,8 @@ const failed = (
 
 /** The state of one call, for its `finally`. */
 interface Run {
+  /** The copy of tenant and actor, the only one stages and audit read. */
+  assignment?: TenantAssignment;
   entry?: CatalogEntry;
   redaction?: RedactionLevel;
   ctx?: TenantContext;
@@ -231,17 +274,18 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
 
     // 2. Copies of what the gate, the stages and the audit rely on, taken
     // before any code of the tool runs, and a signal of the call's own.
-    const assignment = request.assignment;
+    // Tenant and actor were copied before the first stage.
+    const assignment = run.assignment;
     const mode = request.mode;
     const redaction = request.redaction;
     run.redaction = redaction;
     const readOnly = request.readOnly;
     const features = [...request.features];
     const requestSignal = request.signal;
-    // Without a tenant there is no context to run the tool in. The call
-    // ends before a listener or a context exists, with one audit line that
-    // holds the placeholders and without a log line, since only a context
-    // writes one (ADR 0024).
+    // Without a tenant, or with an answer the copy could not read, there is
+    // no context to run the tool in. The call ends before a listener or a
+    // context exists, with one audit line that holds the placeholders and
+    // without a log line, since only a context writes one (ADR 0024).
     if (assignment === undefined) return failed('auth');
     const controller = new AbortController();
     const forward = (): void => {
@@ -374,10 +418,11 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     let outcome = internalOutcome;
     let auditOutcome: AuditOutcome = 'error';
     const start = now();
-    let assignment: TenantAssignment | undefined;
     let mode: Mode | undefined;
     try {
-      assignment = request.assignment;
+      // Before the first stage, so that the call of an unknown tool is
+      // audited with its tenant as well.
+      run.assignment = copyAssignment(request.assignment);
       mode = request.mode;
       ({ outcome, audit: auditOutcome } = await stages(
         run,
@@ -408,13 +453,14 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
           ? Math.min(Math.max(elapsed, 0), maxDurationMs)
           : 0;
         const errorCode = outcome.ok ? undefined : outcome.error.code;
-        // Without an assignment the audit takes its placeholders, which no
-        // context accepts as real values, so a call without a tenant is no
-        // invalid field for the sink to report.
+        // Tenant and actor come from the frozen copy only, which runs no
+        // code of the resolver's answer. Without one the audit takes its
+        // placeholders, which no context accepts as real values, so a call
+        // without a tenant is no invalid field for the sink to report.
         audit.record({
           type: 'tool_call',
-          tenantId: assignment?.tenantId ?? auditPlaceholders.tenantId,
-          actor: assignment?.actor ?? auditPlaceholders.actor,
+          tenantId: run.assignment?.tenantId ?? auditPlaceholders.tenantId,
+          actor: run.assignment?.actor ?? auditPlaceholders.actor,
           // An invalid value becomes a placeholder in the sink.
           mode: mode as Mode,
           tool: run.entry?.name ?? 'ct_unknown',

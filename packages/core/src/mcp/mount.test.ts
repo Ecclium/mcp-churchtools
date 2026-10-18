@@ -530,6 +530,31 @@ describe('the resolver of the tenant', () => {
     ['a string', () => Promise.resolve('demo-tenant')],
     ['a number', () => Promise.resolve(1)],
     ['an array', () => Promise.resolve([])],
+    // Both reach the pipeline, which cannot read them without running
+    // their code.
+    [
+      'an object whose tenant is a getter that throws',
+      () =>
+        Promise.resolve({
+          get tenantId(): never {
+            throw new Error('person-id-1');
+          },
+          actor: { kind: 'user', id: 'stdio:local-stdio' },
+        }),
+    ],
+    [
+      'a proxy',
+      () =>
+        Promise.resolve(
+          new Proxy(
+            {
+              tenantId: 'default',
+              actor: { kind: 'user', id: 'stdio:local-stdio' },
+            },
+            {},
+          ),
+        ),
+    ],
     ['a rejection', () => Promise.reject(new Error('person-id-1'))],
     [
       'a throw',

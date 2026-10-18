@@ -318,6 +318,8 @@ describe('the gate', () => {
     const outcome = await pipeline.call('ct_nothing', {}, request());
     expect(!outcome.ok && outcome.error.code).toBe('not_found');
     expect(events()[0]).toMatchObject({
+      tenantId: 'default',
+      actor: { kind: 'user', id: 'stdio:local-stdio' },
       tool: 'ct_unknown',
       outcome: 'error',
       errorCode: 'not_found',
@@ -391,6 +393,166 @@ describe('a call without a tenant', () => {
       errorCode: 'not_found',
     });
     expect(logLines).toEqual([]);
+  });
+});
+
+describe('an assignment the pipeline cannot read', () => {
+  const actor = { kind: 'user', id: 'stdio:local-stdio' };
+  // Every trap runs the code of the case, so a proxy whose traps throw shows
+  // both a trap that ran and an audit line that got lost.
+  const trapsOf = (code: () => never): ProxyHandler<object> => ({
+    get: code,
+    getOwnPropertyDescriptor: code,
+    getPrototypeOf: code,
+    has: code,
+    ownKeys: code,
+  });
+  const revoked = (): unknown => {
+    const { proxy, revoke } = Proxy.revocable(
+      { tenantId: 'default', actor },
+      {},
+    );
+    revoke();
+    return proxy;
+  };
+  const cases: readonly (readonly [string, (code: () => never) => unknown])[] =
+    [
+      ['null', () => null],
+      [
+        'a proxy',
+        (code) => new Proxy({ tenantId: 'default', actor }, trapsOf(code)),
+      ],
+      ['a revoked proxy', revoked],
+      [
+        'a getter for the tenant',
+        (code) => ({
+          get tenantId(): never {
+            return code();
+          },
+          actor,
+        }),
+      ],
+      [
+        'a getter for the actor',
+        (code) => ({
+          tenantId: 'default',
+          get actor(): never {
+            return code();
+          },
+        }),
+      ],
+      [
+        'an actor that is a proxy',
+        (code) => ({
+          tenantId: 'default',
+          actor: new Proxy(actor, trapsOf(code)),
+        }),
+      ],
+      [
+        'a getter for the kind of the actor',
+        (code) => ({
+          tenantId: 'default',
+          actor: {
+            get kind(): never {
+              return code();
+            },
+            id: actor.id,
+          },
+        }),
+      ],
+      [
+        'a getter for the id of the actor',
+        (code) => ({
+          tenantId: 'default',
+          actor: {
+            kind: actor.kind,
+            get id(): never {
+              return code();
+            },
+          },
+        }),
+      ],
+      ['no tenant', () => ({ actor })],
+      [
+        'an inherited tenant',
+        () =>
+          Object.assign(Object.create({ tenantId: 'default' }) as object, {
+            actor,
+          }),
+      ],
+    ];
+
+  it.each(cases)(
+    'ends with auth for %s, audited once and without running its code',
+    async (_label, make) => {
+      let ran = 0;
+      const code = (): never => {
+        ran += 1;
+        throw new Error('trap');
+      };
+      let runs = 0;
+      const { pipeline, events, auditLines, logLines } = setup([
+        testTool('ct_count', () => {
+          runs += 1;
+          return Promise.resolve({ text: 'x' });
+        }),
+      ]);
+      const controller = new AbortController();
+      const outcome = await pipeline.call(
+        'ct_count',
+        {},
+        request({
+          assignment: make(code) as TenantAssignment,
+          signal: controller.signal,
+        }),
+      );
+      expect(outcome).toEqual({
+        ok: false,
+        error: { code: 'auth', message: fixedSentences.auth },
+      });
+      expect(ran).toBe(0);
+      expect(runs).toBe(0);
+      expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0);
+      // The raw lines, as above: a report line of the sink would count.
+      expect(auditLines).toHaveLength(1);
+      expect(events()[0]).toMatchObject({
+        type: 'tool_call',
+        tenantId: 'invalid',
+        actor: { kind: 'service', id: 'invalid' },
+        tool: 'ct_count',
+        outcome: 'error',
+        errorCode: 'auth',
+      });
+      expect(logLines).toEqual([]);
+    },
+  );
+
+  it('audits the tenant and actor it copied, whatever changes later', async () => {
+    const original = {
+      tenantId: 'default',
+      actor: { kind: 'user', id: 'stdio:local-stdio' },
+    };
+    const { pipeline, events, auditLines } = setup([
+      testTool('ct_changes', () => {
+        original.tenantId = 'other';
+        original.actor.id = 'stdio:other';
+        return Promise.resolve({ text: 'x' });
+      }),
+    ]);
+    const outcome = await pipeline.call(
+      'ct_changes',
+      {},
+      request({ assignment: original as unknown as TenantAssignment }),
+    );
+    expect(outcome.ok).toBe(true);
+    expect(original.tenantId).toBe('other');
+    expect(auditLines).toHaveLength(1);
+    expect(events()[0]).toMatchObject({
+      tenantId: 'default',
+      actor: { kind: 'user', id: 'stdio:local-stdio' },
+      tool: 'ct_changes',
+      outcome: 'ok',
+    });
   });
 });
 
