@@ -7,9 +7,10 @@
  * serves it with `serveStdio` of the SDK, which picks the era from the
  * first message of a connection and binds one instance to it. Older
  * clients are served, not refused (ADR 0053). The transport is built here,
- * with a limit of {@link maxStdioMessageBytes} per message instead of the
- * 10 MiB of the SDK: a larger message ends the connection. Signals and the
- * exit of the process belong to the composition root.
+ * with a limit of {@link maxStdioMessageBytes} on the input it holds
+ * unread instead of the 10 MiB of the SDK: input past it ends the
+ * connection. Signals and the exit of the process belong to the
+ * composition root.
  *
  * By default the transport reads stdin and writes stdout of the process.
  * Tests pass streams of their own; the transport of the SDK still writes
@@ -37,10 +38,16 @@ import {
 } from '@modelcontextprotocol/server/stdio';
 
 /**
- * The largest message a client may send over stdio, in bytes, line break
- * included: 1 MiB. The largest input the pipeline takes, 1000 values, fits
- * many times over; a larger message ends the connection before anything
- * parses it (ADR 0053).
+ * The most input the transport over stdio holds unread, in bytes: 1 MiB
+ * instead of the 10 MiB of the SDK. The SDK checks it before it splits
+ * lines, against the rest of an unfinished message plus the chunk that
+ * just came in, so it is no limit per message. On a pipe a chunk holds at
+ * most 64 KiB, so a message of up to 1 MiB less 64 KiB, line break
+ * included, always passes. Input past the limit ends the connection before
+ * anything parses it, and every message in it is dropped without an
+ * answer. The pipeline limits the depth and the number of values of an
+ * input, not its size, so this is the only bound on size before the schema
+ * of the tool (ADR 0053).
  */
 export const maxStdioMessageBytes = 1024 * 1024;
 
@@ -92,10 +99,12 @@ const connectionErrorEvent = 'mcp_stdio_error';
  * envelope of 2026 binds an instance of that era, `initialize` one of the
  * 2025 era. Each instance comes from the factory of the mount.
  *
- * An error of the connection, such as a message that is no JSON-RPC or one
- * larger than {@link maxStdioMessageBytes}, writes the fixed event
- * `mcp_stdio_error` and never its message. A message that is too large
- * also ends the connection.
+ * An error of the connection, such as a message that is no JSON-RPC or
+ * unread input past {@link maxStdioMessageBytes}, writes the fixed event
+ * `mcp_stdio_error` and never its message. Input past the limit also ends
+ * the connection. Every message in it is dropped without an answer and
+ * without an audit line. That can also hit a message just under 1 MiB
+ * that a client sends right before another.
  *
  * @param options - What the mount needs, the version, and the streams if
  *   not stdin and stdout.
