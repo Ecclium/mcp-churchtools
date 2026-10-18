@@ -748,9 +748,9 @@ describe('the start', () => {
 });
 
 describe('errors', () => {
-  it('answers with the fixed sentence when the pipeline rejects', async () => {
+  it('answers with the fixed sentence and writes a fixed event when the pipeline rejects', async () => {
     const canary = makeCanary('name').value;
-    const { factory } = setup({
+    const { factory, logs } = setup({
       pipeline: { call: () => Promise.reject(new Error(canary)) },
     });
     const connection = await modern.open(factory);
@@ -760,6 +760,10 @@ describe('errors', () => {
       isError: true,
     });
     expect(JSON.stringify(connection.received)).not.toContain(canary);
+    expect(logs()).toEqual([
+      expect.objectContaining({ level: 'error', event: 'mcp_call_failed' }),
+    ]);
+    expect(JSON.stringify(logs())).not.toContain(canary);
   });
 
   it('writes a fixed event for an error of the instance, never its message', () => {

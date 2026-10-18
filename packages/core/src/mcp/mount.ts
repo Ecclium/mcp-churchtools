@@ -106,6 +106,7 @@ const internalResult = serializeOutcome(
 // into the message of an error, so the message never reaches the log.
 const validatorEvent = 'mcp_validator_refused';
 const instanceErrorEvent = 'mcp_server_error';
+const callFailedEvent = 'mcp_call_failed';
 
 const isVersion = (value: unknown): value is string => {
   if (typeof value !== 'string' || value.length < 1 || value.length > 32) {
@@ -136,9 +137,11 @@ const isVersion = (value: unknown): value is string => {
  * with a getter (ADR 0024). The mount waits for the resolver only until
  * the client cancels the call or the connection ends; the call then runs
  * into the pipeline without a tenant, which ends it as `network` and
- * audits it. A call without arguments counts as one with
- * none, as in the tools the SDK registers itself. The handler never throws:
- * the SDK would send the message of an error as it is.
+ * audits it. A call without arguments counts as one with none, as in the
+ * tools the SDK registers itself. The handler never throws: the SDK would
+ * send the message of an error as it is. A call that fails in the mount
+ * itself gets the fixed sentence of `internal`, and the logger gets the
+ * fixed event `mcp_call_failed` without fields.
  *
  * @param options - Catalog, pipeline, identity, resolver, the settings of
  *   every call, the logger and the version.
@@ -271,7 +274,10 @@ export function createMcpMount(options: McpMountOptions): McpMount {
         outputSchemas.get(name),
       );
     } catch {
-      // The SDK would send the message of the error to the client.
+      // The SDK would send the message of the error to the client. The
+      // answer points the operator to the log, and no audit line covers
+      // this path, so the fixed event is the only trace of the call.
+      report(callFailedEvent);
       return internalResult;
     }
   };
