@@ -9,7 +9,7 @@
  * 5. `execute` with read access that is revoked afterwards,
  * 6. `validateOutput`, which drops every field the schema does not declare,
  * 7. `redact` and 8. `markUntrusted` with a boundary drawn for the call,
- * 9. the limit on the size of the result,
+ * 9. the limit on the size of the result as the client receives it,
  * 10. `audit`, in `finally`, also when a stage fails.
  *
  * The message of a failed call is masked like a result before it leaves.
@@ -331,7 +331,9 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       Record<string, unknown>
     >;
 
-    // 9. The size of the result.
+    // 9. The size of the result as the client receives it: both copies
+    // the mount sends and the reserve for the rest of the message (ADR
+    // 0024).
     if (resultBytes(data) > maxResultBytes) {
       ctx.log.warn('tool_result_too_large');
       return failed('upstream', tooLarge);

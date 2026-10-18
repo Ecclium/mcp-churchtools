@@ -458,28 +458,56 @@ describe('the output', () => {
     expect(logs()).toEqual(['tool_output_invalid', 'tool_call']);
   });
 
-  it('refuses a result above 64 KiB and takes one at the limit', async () => {
-    // {"text":"…"} adds 11 bytes to the text.
-    const { pipeline, logs } = setup([
-      testTool('ct_large', () =>
-        Promise.resolve({ text: 'x'.repeat(64 * 1024 - 10) }),
-      ),
-      testTool('ct_limit', () =>
-        Promise.resolve({ text: 'x'.repeat(64 * 1024 - 11) }),
-      ),
-    ]);
-    const large = await pipeline.call('ct_large', {}, request());
-    expect(large).toEqual({
-      ok: false,
-      error: {
-        code: 'upstream',
-        message:
-          'The result is larger than 64 KiB. Narrow the request, for example with a more specific search.',
-      },
-    });
-    expect(logs()).toContain('tool_result_too_large');
-    expect((await pipeline.call('ct_limit', {}, request())).ok).toBe(true);
-  });
+  // What the client receives of a result: the JSON of the data, the same
+  // JSON as escaped text, both as a JSON writer puts them into a message,
+  // and 1 KiB for the rest of the message (ADR 0024).
+  const sent = (data: unknown): number =>
+    Buffer.byteLength(JSON.stringify([data, JSON.stringify(data)])) - 3 + 1024;
+
+  // {"text":""} takes 11 bytes, as escaped text 17. On the wire a quote
+  // costs 6 bytes, a line break 5 and a letter 2, so each pair is exactly
+  // at the limit and one byte over it.
+  it.each([
+    [
+      'full of quotes',
+      '"'.repeat(10_745) + '\n\n' + 'xx',
+      '"'.repeat(10_746) + '\n' + 'xx',
+    ],
+    [
+      'full of line breaks',
+      '\n'.repeat(12_896) + 'xx',
+      '\n'.repeat(12_895) + '"' + 'xx',
+    ],
+    ['full of letters', 'x'.repeat(32_242), 'x'.repeat(32_240) + '\n'],
+  ])(
+    'takes a result %s at 64 KiB as sent and refuses one a byte over',
+    async (_, limit, over) => {
+      expect(sent({ text: limit })).toBe(64 * 1024);
+      expect(sent({ text: over })).toBe(64 * 1024 + 1);
+      const { pipeline, logs } = setup([
+        testTool('ct_limit', () => Promise.resolve({ text: limit })),
+        testTool('ct_over', () => Promise.resolve({ text: over })),
+      ]);
+      expect(await pipeline.call('ct_limit', {}, request())).toEqual({
+        ok: true,
+        data: { text: limit },
+      });
+      expect(logs()).toEqual(['tool_call']);
+      expect(await pipeline.call('ct_over', {}, request())).toEqual({
+        ok: false,
+        error: {
+          code: 'upstream',
+          message:
+            'The result is larger than 64 KiB. Narrow the request, for example with a more specific search.',
+        },
+      });
+      expect(logs()).toEqual([
+        'tool_call',
+        'tool_result_too_large',
+        'tool_call',
+      ]);
+    },
+  );
 });
 
 describe('redaction and the data envelope', () => {
@@ -585,8 +613,9 @@ describe('redaction and the data envelope', () => {
     const output = z.object({
       text: classify(z.string().max(100_000), 'untrusted'),
     });
-    // {"text":"…"} adds 11 bytes, the envelope 51 more.
-    const fits = 64 * 1024 - 11 - 51;
+    // {"text":""} takes 11 bytes and 17 as escaped text, the reserve 1024,
+    // the envelope 51 bytes in each copy, and every letter 2.
+    const fits = (64 * 1024 - 11 - 17 - 1024 - 2 * 51) / 2;
     const { pipeline } = setup([
       testTool('ct_fits', () => Promise.resolve({ text: 'x'.repeat(fits) }), {
         output,

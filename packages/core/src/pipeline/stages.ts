@@ -24,8 +24,15 @@ export const maxInputDepth = 16;
 /** The most values in the input of a tool, containers included. */
 export const maxInputElements = 1000;
 
-/** The most UTF-8 bytes of a result of a tool. */
+/** The most UTF-8 bytes of a result of a tool as the client receives it. */
 export const maxResultBytes = 64 * 1024;
+
+/**
+ * The part of {@link maxResultBytes} kept for what the mount puts around
+ * the data: the envelope of the JSON-RPC message, the type of the text
+ * block and `_meta` (ADR 0024).
+ */
+export const resultReserveBytes = 1024;
 
 const encoder = new TextEncoder();
 
@@ -218,16 +225,27 @@ export function markUntrusted(
 }
 
 /**
- * The size of a result as the client receives it, in UTF-8 bytes of its
- * JSON.
+ * The size of a result as the client receives it, in UTF-8 bytes (ADR
+ * 0024). The mount sends the data twice: once as their JSON, and once as
+ * text that holds this JSON, which the message escapes a second time. Both
+ * copies count as they are sent, so a quote of the data costs six bytes, a
+ * line break five and a plain letter two. {@link resultReserveBytes} stands
+ * for the rest of the message, so the pipeline needs no type of MCP. The
+ * count holds only while the mount writes the text exactly as
+ * `JSON.stringify` writes the data, without indentation.
  *
- * @param value - The result.
- * @returns The number of bytes.
+ * @param value - The result, after `markUntrusted`.
+ * @returns The number of bytes, the reserve included.
  * @example
  * ```ts
- * resultBytes({ name: 'Ä' }); // 13
+ * resultBytes({ name: 'Ä' }); // 13 + 19 + 1024 = 1056
  * ```
  */
 export function resultBytes(value: unknown): number {
-  return encoder.encode(JSON.stringify(value)).byteLength;
+  const json = JSON.stringify(value);
+  return (
+    encoder.encode(json).byteLength +
+    encoder.encode(JSON.stringify(json)).byteLength +
+    resultReserveBytes
+  );
 }

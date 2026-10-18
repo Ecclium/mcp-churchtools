@@ -2,7 +2,13 @@ import type { DataClass } from '@ecclium/mcp-churchtools-plugin-api';
 import { describe, expect, it } from 'vitest';
 
 import type { ShapeNode } from '../registry/index.js';
-import { mapLeaves, markUntrusted, redact, resultBytes } from './stages.js';
+import {
+  mapLeaves,
+  markUntrusted,
+  redact,
+  resultBytes,
+  resultReserveBytes,
+} from './stages.js';
 
 // Nodes of a kept shape. The stages read only kinds, classes and children.
 const present = { optional: false, nullable: false } as const;
@@ -189,7 +195,37 @@ describe('redact and markUntrusted', () => {
 });
 
 describe('resultBytes', () => {
-  it('counts UTF-8 bytes of the JSON', () => {
-    expect(resultBytes({ name: 'Ä' })).toBe(13);
+  // The fixed reserve of 1 KiB for the rest of the message (ADR 0024).
+  const reserve = 1024;
+
+  // Both copies as a JSON writer puts them into a message, counted on
+  // their own: the brackets and the comma of the array are not theirs.
+  const asSent = (value: unknown): number =>
+    Buffer.byteLength(JSON.stringify([value, JSON.stringify(value)])) - 3;
+
+  it('counts the JSON, the JSON as escaped text and the reserve', () => {
+    // {"name":"Ä"} has 13 bytes, as escaped text with its quotes 19.
+    expect(resultBytes({ name: 'Ä' })).toBe(13 + 19 + reserve);
+    expect(resultReserveBytes).toBe(reserve);
+  });
+
+  it('counts a quote six times, a line break five times and a letter twice', () => {
+    const empty = resultBytes({ text: '' });
+    expect(resultBytes({ text: '"'.repeat(10) }) - empty).toBe(60);
+    expect(resultBytes({ text: '\n'.repeat(10) }) - empty).toBe(50);
+    expect(resultBytes({ text: 'x'.repeat(10) }) - empty).toBe(20);
+  });
+
+  it.each([
+    ['quotes', { text: '"a" "b"' }],
+    ['line breaks and tabs', { text: 'a\r\nb\tc' }],
+    ['a backslash', { text: 'C:\\temp\\' }],
+    ['text beyond ASCII', { text: `Z${u(0xfc)}rich ${u(0x1f600)}` }],
+    ['a lone surrogate', { text: String.fromCharCode(0xd800) }],
+    ['a control character', { text: u(0x01) }],
+    ['line and paragraph separators', { text: u(0x2028, 0x2029) }],
+    ['nested values', { list: [1, null, true], inner: { text: '"x"' } }],
+  ])('counts %s as a JSON writer sends them', (_, value) => {
+    expect(resultBytes(value)).toBe(asSent(value) + reserve);
   });
 });
