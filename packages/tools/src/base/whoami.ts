@@ -11,11 +11,11 @@
  */
 import {
   classify,
+  defineTool,
   EccliumError,
   type GrantedRights,
   type RightValue,
   type ToolCall,
-  type ToolDefinition,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { z } from 'zod';
 
@@ -77,7 +77,6 @@ const output = z.object({
 
 type Input = z.output<typeof input>;
 type Output = z.input<typeof output>;
-type Definition = ToolDefinition<Input, Output>;
 
 // Code units decide the order, as in the catalog of the core, so it depends
 // neither on a locale nor on the order of the answer. Names within one
@@ -157,7 +156,7 @@ const execute = async ({ read }: ToolCall<Input>): Promise<Output> => {
  * }
  * ```
  */
-export const whoamiTool: Definition = {
+export const whoamiTool = defineTool({
   name: 'ct_whoami',
   meta: {
     capability: 'read',
@@ -183,4 +182,4 @@ export const whoamiTool: Definition = {
   input,
   output,
   execute,
-};
+});
