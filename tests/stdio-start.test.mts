@@ -437,6 +437,17 @@ describe.each(eras)('the stdio start in the $name era', { timeout }, (era) => {
     ]);
   });
 
+  it('gives the log line of the call the event ID of its audit line', () => {
+    const [audit, ...rest] = auditOf(finished.stderr);
+    expect(rest).toEqual([]);
+    const calls = jsonLines(finished.stderr).filter(
+      (line) => line['event'] === 'tool_call',
+    );
+    expect(calls).toHaveLength(1);
+    expect(audit?.['eventId']).toMatch(/^[0-9a-f-]{36}$/);
+    expect(calls[0]?.['eventId']).toBe(audit?.['eventId']);
+  });
+
   it('sends the token only in the header of each request', () => {
     expect(server.requests.map((request) => request.path)).toEqual([
       '/api/whoami?only_allow_authenticated=true',

@@ -239,6 +239,93 @@ describe('fields the sink sets itself', () => {
   });
 });
 
+describe('the ID of a tool call', () => {
+  const callId = '7c9e6679-7425-40de-944b-e07fc1f90ae7';
+
+  /** A sink that counts the calls of its ID source. */
+  const counting = (): ReturnType<typeof make> & {
+    readonly idCalls: () => number;
+  } => {
+    let calls = 0;
+    return {
+      ...make({
+        newId: () => {
+          calls += 1;
+          return firstId;
+        },
+      }),
+      idCalls: () => calls,
+    };
+  };
+
+  it('writes the given ID and draws none of its own', () => {
+    const { sink, audit, logs, idCalls } = counting();
+    sink.record(base, callId);
+    expect(audit()).toEqual([baseLine.replace(firstId, callId)]);
+    expect(logs()).toEqual([]);
+    expect(idCalls()).toBe(0);
+  });
+
+  it('names the given ID in its reports', () => {
+    const { sink, logs } = make();
+    sink.record({ ...base, mode: 'admin' } as unknown as AuditDraft, callId);
+    expect(logs()).toEqual([
+      {
+        ts: '2026-10-13T08:00:00.000Z',
+        level: 'error',
+        event: 'audit_invalid_mode',
+        tenantId: 'demo-tenant',
+        eventId: callId,
+        code: 'validation',
+      },
+    ]);
+  });
+
+  it('keeps a field eventId of the draft reserved, also next to a given ID', () => {
+    const { sink, audit, logs } = make();
+    sink.record({ ...base, eventId: secondId } as AuditDraft, callId);
+    expect(event(audit())['eventId']).toBe(callId);
+    expect(logs()).toEqual([
+      expect.objectContaining({
+        event: 'audit_reserved_event_id',
+        eventId: callId,
+      }),
+    ]);
+  });
+
+  it.each([
+    ['in upper case', callId.toUpperCase()],
+    ['no UUID', 'event-1'],
+    ['empty', ''],
+    ['the nil UUID', nilId],
+    ['a number', 7],
+    ['an object that reads as the ID', { toString: () => callId }],
+  ])(
+    'uses the nil UUID for a given ID that is %s, and draws none',
+    (_what, given) => {
+      const { sink, audit, logs, idCalls } = counting();
+      sink.record(base, given as string);
+      expect(event(audit())['eventId']).toBe(nilId);
+      expect(logs()).toEqual([
+        expect.objectContaining({
+          event: 'audit_invalid_event_id',
+          eventId: nilId,
+          code: 'validation',
+        }),
+      ]);
+      expect(idCalls()).toBe(0);
+    },
+  );
+
+  it('draws its own ID when the given one is undefined', () => {
+    const { sink, audit, logs, idCalls } = counting();
+    sink.record(base, undefined);
+    expect(audit()).toEqual([baseLine]);
+    expect(logs()).toEqual([]);
+    expect(idCalls()).toBe(1);
+  });
+});
+
 describe('an invalid event', () => {
   it('is written with placeholders and one log line per field, in order', () => {
     const { sink, lines } = make();

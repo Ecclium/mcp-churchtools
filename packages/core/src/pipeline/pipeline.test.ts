@@ -8,6 +8,7 @@ import {
   type PluginHost,
   type ReadApi,
   type TenantAssignment,
+  type TenantContext,
   type ToolDefinition,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import {
@@ -19,7 +20,7 @@ import {
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
-import { createAuditSink } from '../audit/index.js';
+import { auditPlaceholders, createAuditSink } from '../audit/index.js';
 import { fixedSentences } from '../errors/index.js';
 import type { RandomBytes } from '../redaction/index.js';
 import { createToolCatalog } from '../registry/index.js';
@@ -256,6 +257,67 @@ describe('a call that succeeds', () => {
   it('takes a tool that returns a value instead of a promise', async () => {
     const { pipeline } = setup([testTool('ct_sync', () => ({ text: 'x' }))]);
     expect((await pipeline.call('ct_sync', {}, request())).ok).toBe(true);
+  });
+});
+
+describe('the ID of the event', () => {
+  // The lines the context of a call writes, those of its tool included,
+  // carry the ID of its audit line, so log and audit can be joined (ADR
+  // 0054).
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  const parse = (lines: readonly string[]): Record<string, unknown>[] =>
+    lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+  const otherId = '11111111-1111-4111-8111-111111111111';
+
+  it('is the same in the log lines and the audit line of a call', async () => {
+    const { pipeline, events, logLines } = setup([
+      testTool('ct_logging', ({ ctx }) => {
+        // A tool cannot set the ID: the field is bound by the core only.
+        (ctx as TenantContext).log.info('test_step', { eventId: otherId });
+        return Promise.resolve({ text: 1 });
+      }),
+    ]);
+    const outcome = await pipeline.call('ct_logging', {}, request());
+    expect(!outcome.ok && outcome.error.code).toBe('internal');
+    const [event, ...rest] = events();
+    expect(rest).toEqual([]);
+    const id = event?.['eventId'];
+    expect(id).toMatch(uuid);
+    expect(id).not.toBe(auditPlaceholders.eventId);
+    const logs = parse(logLines);
+    expect(logs.map((line) => line['event'])).toEqual([
+      'test_step',
+      'tool_output_invalid',
+      'tool_call',
+    ]);
+    expect(logs[0]).toMatchObject({ eventId: id, dropped: 1 });
+    expect(logs.map((line) => line['eventId'])).toEqual([id, id, id]);
+  });
+
+  it('is new for each call', async () => {
+    const { pipeline, events, logLines } = setup();
+    await pipeline.call('ct_example_echo', {}, request());
+    await pipeline.call('ct_example_echo', {}, request());
+    const ids = events().map((event) => event['eventId']);
+    expect(parse(logLines).map((line) => line['eventId'])).toEqual(ids);
+    expect(new Set(ids).size).toBe(2);
+  });
+
+  it('is a real ID for a call that ends before its context, without a report', async () => {
+    const { pipeline, events, auditLines, logLines } = setup();
+    await pipeline.call('ct_nothing', {}, request());
+    await pipeline.call(
+      'ct_example_echo',
+      {},
+      request({ assignment: undefined }),
+    );
+    // The raw lines: a report of the sink would be a line of its own.
+    expect(auditLines).toHaveLength(2);
+    for (const event of events()) {
+      expect(event['eventId']).toMatch(uuid);
+      expect(event['eventId']).not.toBe(auditPlaceholders.eventId);
+    }
+    expect(logLines).toEqual([]);
   });
 });
 
