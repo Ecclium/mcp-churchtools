@@ -100,7 +100,7 @@ stdout gehört dem Protokoll MCP. Alles andere schreibt Ecclium nach stderr, in 
 
 1. Beim Start Hinweise als deutscher Text, je Hinweis eine Zeile, etwa die Warnung, wenn das Token in der Variable steht. Ist die Konfiguration ungültig, endet der Server nach den Hinweisen mit 78.
 2. Danach schreibt Ecclium nur noch Zeilen in JSON, je Zeile ein Ereignis. Logzeilen tragen das Feld `event`, etwa `http_response` für jede Anfrage an ChurchTools, ab der Stufe aus `ECCLIUM_LOG_LEVEL`. Jeder Aufruf eines Tools ergibt eine Zeile des Audits mit `type` gleich `tool_call`, dem Mandanten `default`, dem Subjekt `stdio:local-stdio` aus `ECCLIUM_STDIO_SUBJECT`, dem Modus `interactive`, dem Namen des Tools, dem Ausgang und bei einem Fehler dessen Code.
-3. Beim Ende die Zeile `stdio_closed`, die im Feld `count` nennt, wie viele Zeilen verloren gingen. Nach einem Signal steht davor `process_sigterm` oder `process_sigint`. Diese Zeilen schreibt Ecclium bei jeder Stufe aus `ECCLIUM_LOG_LEVEL`.
+3. Beim Ende die Zeile `stdio_closed`, die im Feld `count` nennt, wie viele Zeilen verloren gingen. Kam vor dem Ende ein Signal, steht davor `process_sigterm` oder `process_sigint`. Kommt es erst danach, folgt seine Zeile. Diese Zeilen schreibt Ecclium bei jeder Stufe aus `ECCLIUM_LOG_LEVEL`.
 
 Node.js selbst kann weitere Zeilen schreiben, etwa eine Warnung, wenn es die Datei aus `NODE_EXTRA_CA_CERTS` nicht laden kann. Überspringen Sie Zeilen, die kein JSON sind.
 
@@ -128,4 +128,4 @@ Kommt das erste Signal erst nach dem Ende der Verbindung, steht es im Log, und d
 - `ct_whoami` verlangt kein Recht in ChurchTools. Geprüft ist das bisher nur mit einem Konto, das zwei Rechte im Wiki hatte, nicht mit einem Konto ganz ohne Rechte.
 - Rechte, die das Konto über eine Gruppe erhält, können fehlen. Ein entzogenes Recht kann noch eine Weile erscheinen, auf einer Testinstanz mit ChurchTools 3.137 einmal mindestens etwa zwanzig Minuten lang (siehe [Befunde zur API von ChurchTools](../research/churchtools-api.md)).
 - Ein Client, der stderr nicht liest, verliert Zeilen des Logs und des Audits, wie oben beschrieben.
-- Der KI-Assistent kann, was er über Ecclium liest, über ein anderes Tool desselben Clients weitergeben, etwa nach einer Injection. Betreiben Sie Ecclium nicht im selben Client wie Server mit freiem Netzzugriff.
+- Der KI-Assistent kann, was er über Ecclium liest, über ein anderes Tool desselben Clients weitergeben, etwa nach einer Injection, auch über ein eingebautes Tool des Clients mit Netzzugriff. Betreiben Sie Ecclium nicht im selben Client wie Server mit freiem Netzzugriff, und prüfen Sie, welche eingebauten Tools mit Netzzugriff Ihr Client anbietet.
