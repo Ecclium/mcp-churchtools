@@ -153,6 +153,17 @@ describe('the texts of the output', () => {
     },
   );
 
+  it('names both commands in the usage, the help and the text for an unknown command', () => {
+    for (const text of [usageLine, usageProblemTexts.command]) {
+      expect(text).toContain('ecclium stdio');
+      expect(text).toContain('ecclium config check');
+    }
+    expect(helpLines).toContainEqual(expect.stringMatching(/^ {2}stdio +\S/));
+    expect(helpLines).toContainEqual(
+      expect.stringMatching(/^ {2}config check +\S/),
+    );
+  });
+
   it('repeats the usage at the start of the help', () => {
     expect(helpLines[0]).toBe(usageLine);
     expect(Object.isFrozen(helpLines)).toBe(true);

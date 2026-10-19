@@ -7,13 +7,15 @@
  */
 
 /** The short form of the call. */
-export const usageLine = 'Aufruf: ecclium config check [--show-values]';
+export const usageLine =
+  'Aufruf: ecclium stdio oder ecclium config check [--show-values]';
 
 /** The help, for `--help` and `-h`. */
 export const helpLines: readonly string[] = Object.freeze([
   usageLine,
-  'Prüft die Konfiguration aus der Umgebung, ohne ChurchTools anzufragen.',
-  '  --show-values  zeigt auch den Host und ein abweichendes Subjekt',
+  '  stdio          startet den Server für einen KI-Assistenten über stdio',
+  '  config check   prüft die Konfiguration aus der Umgebung, ohne ChurchTools anzufragen',
+  '  --show-values  zeigt bei der Prüfung auch den Host und ein abweichendes Subjekt',
   '  -h, --help     zeigt diese Hilfe',
 ]);
 
@@ -24,7 +26,7 @@ export type UsageProblem = 'command' | 'option' | 'repeated' | 'value';
 export const usageProblemTexts: Readonly<Record<UsageProblem, string>> =
   Object.freeze({
     command:
-      'Der Befehl ist unvollständig oder unbekannt. Diese Version von Ecclium kennt nur ‹ecclium config check›. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
+      'Der Befehl ist unvollständig oder unbekannt. Diese Version von Ecclium kennt nur ‹ecclium stdio› und ‹ecclium config check›. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
     option:
       'Eine Option ist unbekannt. Ecclium nennt sie nicht, weil darin ein Token stehen könnte. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
     repeated:

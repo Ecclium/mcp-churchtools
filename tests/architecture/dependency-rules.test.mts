@@ -716,6 +716,45 @@ const cases: readonly Case[] = [
       'packages/tools/src/core-plugin.ts': `import '${nameOf('core')}';\nexport {};\n`,
     },
   },
+  {
+    rule: 'bin-imports-only-environment',
+    name: 'the executable imports the command line statically',
+    files: {
+      'packages/cli/src/bin.ts':
+        "import './environment.js';\nimport './main.js';\nexport {};\n",
+    },
+  },
+  {
+    rule: 'bin-imports-only-environment',
+    name: 'the executable imports the types of the command line',
+    files: {
+      'packages/cli/src/bin.ts':
+        "import type { RunOptions } from './main.js';\nexport type Options = RunOptions;\n",
+    },
+  },
+  {
+    rule: 'bin-imports-only-environment',
+    name: 'the executable imports the output module statically',
+    files: {
+      'packages/cli/src/bin.ts': "import './output/index.js';\nexport {};\n",
+    },
+  },
+  {
+    rule: 'bin-loads-only-main-or-stdio',
+    name: 'the executable loads the output module with import()',
+    files: {
+      'packages/cli/src/bin.ts':
+        "export const load = async (): Promise<unknown> => import('./output/index.js');\n",
+    },
+  },
+  {
+    rule: 'bin-loads-only-main-or-stdio',
+    name: 'the executable loads the second stage of the stdio start with import()',
+    files: {
+      'packages/cli/src/bin.ts':
+        "export const load = async (): Promise<unknown> => import('./stdio/serve.js');\n",
+    },
+  },
 ];
 
 // Imports the rules must let pass.

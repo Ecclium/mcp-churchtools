@@ -1,8 +1,10 @@
 /**
- * The command line `ecclium` (ADR 0055). It takes over the environment,
- * reads the arguments and runs the command; in this version the only one
- * is `ecclium config check`. Wrong calls get fixed German texts on stderr,
- * never an argument, and every exit code comes from `exit-codes.ts`.
+ * The command line `ecclium` (ADR 0055), for every call but
+ * `ecclium stdio`, which the executable hands to the start over stdio. It
+ * takes over the environment, reads the arguments and runs the command; in
+ * this version the only one is `ecclium config check`. Wrong calls get
+ * fixed German texts on stderr, never an argument, and every exit code
+ * comes from `exit-codes.ts`.
  *
  * @packageDocumentation
  */
