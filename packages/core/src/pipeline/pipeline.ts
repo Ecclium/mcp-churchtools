@@ -223,6 +223,8 @@ const failed = (
 
 /** The state of one call, for its `finally`. */
 interface Run {
+  /** The ID of the call, bound to its log lines and given to the audit. */
+  eventId?: string;
   /** The copy of tenant and actor, the only one stages and audit read. */
   assignment?: TenantAssignment;
   entry?: CatalogEntry;
@@ -313,7 +315,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       signal: controller.signal,
       logging,
       tool: entry.name,
-      eventId: randomUUID(),
+      eventId: run.eventId,
     });
     run.ctx = ctx;
 
@@ -427,6 +429,14 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       // audited with its tenant as well.
       run.assignment = copyAssignment(request.assignment);
       mode = request.mode;
+      // One ID per call, drawn after these copies, so that an ID source
+      // that throws still leaves tenant, actor and mode to the audit line,
+      // and before the first stage and the first log line. The context
+      // binds it to the log lines of the call and the sink writes it into
+      // the audit line, so both can be joined (ADR 0054). It travels as an
+      // argument of record, never as a field a tool or plugin could set.
+      // Without it the sink draws an ID of its own.
+      run.eventId = randomUUID();
       ({ outcome, audit: auditOutcome } = await stages(
         run,
         name,
@@ -460,18 +470,21 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         // code of the resolver's answer. Without one the audit takes its
         // placeholders, which no context accepts as real values, so a call
         // without a tenant is no invalid field for the sink to report.
-        audit.record({
-          type: 'tool_call',
-          tenantId: run.assignment?.tenantId ?? auditPlaceholders.tenantId,
-          actor: run.assignment?.actor ?? auditPlaceholders.actor,
-          // An invalid value becomes a placeholder in the sink.
-          mode: mode as Mode,
-          tool: run.entry?.name ?? 'ct_unknown',
-          outcome: auditOutcome,
-          ...(errorCode === undefined ? {} : { errorCode }),
-          objectRefs: [],
-          durationMs,
-        });
+        audit.record(
+          {
+            type: 'tool_call',
+            tenantId: run.assignment?.tenantId ?? auditPlaceholders.tenantId,
+            actor: run.assignment?.actor ?? auditPlaceholders.actor,
+            // An invalid value becomes a placeholder in the sink.
+            mode: mode as Mode,
+            tool: run.entry?.name ?? 'ct_unknown',
+            outcome: auditOutcome,
+            ...(errorCode === undefined ? {} : { errorCode }),
+            objectRefs: [],
+            durationMs,
+          },
+          run.eventId,
+        );
         run.ctx?.log.info('tool_call', {
           durationMs,
           ...(errorCode === undefined ? {} : { code: errorCode }),

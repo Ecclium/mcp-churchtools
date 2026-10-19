@@ -29,7 +29,9 @@ import {
 
 /**
  * What a producer hands to the sink. The sink alone sets `v`, `eventId` and
- * `ts`; `seq` and `prevHash` belong to a sink that chains its events.
+ * `ts`; `seq` and `prevHash` belong to a sink that chains its events. The ID
+ * of a tool call comes as an argument of its own, never as a field of the
+ * draft (ADR 0054).
  */
 export type AuditDraft = Omit<
   AuditEventV1,
@@ -58,8 +60,13 @@ export interface AuditSink {
    * an invalid field is replaced or left out, and reported in a log line.
    *
    * @param draft - The event without `v`, `eventId` and `ts`.
+   * @param eventId - The ID the pipeline drew for a tool call and bound to
+   *   the log lines of its context, so that log and audit share it. The
+   *   sink checks a given ID like one of its own and also refuses the nil
+   *   UUID, the placeholder of a failed ID. When the ID is missing, the
+   *   sink draws one with `newId`.
    */
-  record(draft: AuditDraft): void;
+  record(draft: AuditDraft, eventId?: string): void;
   /**
    * Returns how many audit lines could not be written whole.
    *
@@ -412,13 +419,14 @@ function fill(
 
 /**
  * Creates the audit sink. Each record writes one line with `v`, `eventId`
- * from `newId`, `ts` from the clock and the fields of the draft in a fixed
- * order, then one log line per invalid field, with an event such as
- * `audit_invalid_tenant_id`, the code `validation` and the ID of the event.
- * Only own data properties of the draft are read; a getter, a proxy, an
- * unknown key or a value that breaks its pattern never reaches the line.
- * zod is asked only whether a value passes, never for its error, which can
- * hold the value. A line that cannot be written is counted and dropped.
+ * as given or else from `newId`, `ts` from the clock and the fields of the
+ * draft in a fixed order, then one log line per invalid field, with an
+ * event such as `audit_invalid_tenant_id`, the code `validation` and the ID
+ * of the event. Only own data properties of the draft are read; a getter, a
+ * proxy, an unknown key or a value that breaks its pattern never reaches
+ * the line. zod is asked only whether a value passes, never for its error,
+ * which can hold the value. A line that cannot be written is counted and
+ * dropped.
  *
  * @param options - Writer, clock, registry check and ID source.
  * @returns The sink, frozen.
@@ -427,6 +435,8 @@ function fill(
  * ```ts
  * const audit = createAuditSink({ writer, clock: systemClock, isKnownTool });
  * audit.record({ type: 'tool_call', tenantId, actor, mode, outcome: 'ok', objectRefs: [], durationMs: 12 });
+ * // A tool call: the ID its context binds to its log lines.
+ * audit.record(draft, eventId);
  * ```
  */
 export function createAuditSink(options: AuditSinkOptions): AuditSink {
@@ -454,15 +464,24 @@ export function createAuditSink(options: AuditSinkOptions): AuditSink {
     }
   };
 
-  const record = (draft: AuditDraft): void => {
+  const record = (draft: AuditDraft, eventId?: string): void => {
     const reports: Report[] = [];
     const report = (event: string, count?: number): void => {
       reports.push(count === undefined ? { event } : { event, count });
     };
-    let id: unknown;
-    try {
-      id = newId();
-    } catch {
+    // The ID of a tool call comes from the pipeline, which bound it to the
+    // log lines of the call (ADR 0054). Only code that holds the sink can
+    // pass it; a draft field eventId is still reserved. The nil UUID is the
+    // placeholder for a failed ID, so a given one counts as invalid, as the
+    // tenant context refuses it too.
+    let id: unknown = eventId;
+    if (id === undefined) {
+      try {
+        id = newId();
+      } catch {
+        id = undefined;
+      }
+    } else if (id === placeholders.eventId) {
       id = undefined;
     }
     if (!isUuid(id)) {
