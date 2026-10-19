@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "ecclium": {
+      "command": "/pfad/zu/node",
+      "args": ["/pfad/zum/checkout/packages/cli/dist/bin.js", "stdio"],
+      "env": {
+        "ECCLIUM_CHURCHTOOLS_URL": "https://example.church.tools",
+        "ECCLIUM_CHURCHTOOLS_TOKEN_FILE": "/pfad/zur/token-datei"
+      }
+    }
+  }
+}
