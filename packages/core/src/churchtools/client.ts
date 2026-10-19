@@ -125,7 +125,12 @@ export function createChurchToolsClient(
       id: person.id,
       firstName: person.firstName,
       lastName: person.lastName,
-      email: person.email === null || person.email === '' ? null : person.email,
+      email:
+        person.email === undefined ||
+        person.email === null ||
+        person.email === ''
+          ? null
+          : person.email,
     });
   };
 
