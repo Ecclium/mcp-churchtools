@@ -56,7 +56,7 @@ Jede Variable trägt das Präfix `ECCLIUM_`. Werte werden exakt geprüft, die To
 
 - Der Vorrang lautet: Flag der Kommandozeile, dann Umgebung, dann `config.yaml`, dann Voreinstellung. Ein Geheimnis in `config.yaml` bricht den Start ab.
 - In Phase 1 gibt es nur Umgebung, Dateien über `*_FILE` und Voreinstellungen. `config.yaml` und Flags für Werte folgen später. Optionen eines Befehls wie `--show-values` sind keine Konfiguration.
-- Der Kern liest `process.env` nie selbst. Die Kommandozeile reicht die Umgebung als Parameter weiter. Eine Architekturregel weist das Lesen von `process.env`, `process.argv` und `process.report` ausserhalb ihres Einstiegs ab, in den Formen, die sie im Code sieht, ebenso einen Aufruf von `parseArgs` ohne `args`, der `process.argv` selbst liest. Was sie nicht sieht, steht unter «Konsequenzen». Auch ein Argument kann ein Token enthalten, und der Bericht des Prozesses nennt die ganze Umgebung.
+- Der Kern liest `process.env` nie selbst. Die Kommandozeile reicht die Umgebung als Parameter weiter. Eine Architekturregel weist das Lesen von `process.env`, `process.argv`, `process.execArgv` und `process.report` ausserhalb ihres Einstiegs ab, in den Formen, die sie im Code sieht, ebenso einen Aufruf von `parseArgs` ohne `args`, der `process.argv` selbst liest. Was sie nicht sieht, steht unter «Konsequenzen». Auch ein Argument kann ein Token enthalten, und der Bericht des Prozesses nennt die ganze Umgebung.
 
 ### Namen
 
@@ -67,7 +67,8 @@ Jede Variable trägt das Präfix `ECCLIUM_`. Werte werden exakt geprüft, die To
 - Die eigenen Variablen des Repositorys mit diesem Präfix, etwa die der Proben, haben keine Ausnahme. Server und Proben laufen nicht in derselben Shell, und Tests mit Kindprozessen geben eine ausdrücklich gefilterte Umgebung weiter.
 - Ein Tippfehler im Präfix selbst, etwa `ECLIUM_READ_ONLY`, fällt nicht auf. Es bleiben dann die Voreinstellungen, und ohne Adresse oder Token bricht der Start ab. Eine Ausnahme: Steht über stdio das Token in `ECCLIUM_CHURCHTOOLS_TOKEN` und hat der Name der Token-Datei einen solchen Tippfehler, gilt das Token aus der Umgebung, nur mit der Warnung beim Start. Der Abbruch für zwei Quellen greift dann nicht.
 - `NODE_TLS_REJECT_UNAUTHORIZED` mit dem Wert `0` bricht den Start ab, in jeder Schreibweise des Namens, weil Node.js ihn unter Windows ohne Rücksicht darauf liest. Mit diesem Wert prüfte Node.js die Zertifikate von ChurchTools nicht mehr.
-- `NODE_DEBUG` bricht den Start ab, sobald eines seiner Muster mehr als Leerzeichen enthält, ebenfalls in jeder Schreibweise des Namens. Node.js schriebe sonst am Logger vorbei nach stderr, mit einer Sektion von undici Adresse, Pfad und Query jeder Anfrage, mit `stream` Teile der Antworten (ADR 0056). Ausser diesen beiden liest der Lader keine Variable ohne Präfix.
+- `NODE_DEBUG` bricht den Start ab, sobald eines seiner Muster mehr als Leerzeichen enthält, ebenfalls in jeder Schreibweise des Namens. Node.js schriebe sonst am Logger vorbei nach stderr, mit einer Sektion von undici Adresse, Pfad und Query jeder Anfrage, mit `stream` Teile der Antworten (ADR 0056).
+- Für die Einstellungen von Node.js zu TLS liest der Lader ausserdem `NODE_OPTIONS`, `NODE_EXTRA_CA_CERTS`, `NODE_USE_SYSTEM_CA`, `SSL_CERT_FILE` und `SSL_CERT_DIR`, ebenfalls in jeder Schreibweise des Namens, und die Optionen, mit denen Node.js gestartet ist, die ihm die Kommandozeile als `execArgv` weiterreicht. Was er daraus macht, legt ADR 0056 fest. Ausser diesen sieben liest der Lader keine Variable ohne Präfix, und keine Meldung nennt einen ihrer Werte.
 
 ### Werte
 
@@ -87,7 +88,7 @@ Jede Variable trägt das Präfix `ECCLIUM_`. Werte werden exakt geprüft, die To
 | `ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE` | ganze Zahl von 1 bis 500         | `300`          | nein       | nein                 | ungültig: Abbruch, ohne den Wert zu nennen                                      |
 | `ECCLIUM_READ_ONLY`                       | `true`, `false`                  | `true`         | nein       | nein                 | ungültig: Abbruch                                                               |
 | `ECCLIUM_REDACTION`                       | `standard`, `off`, `strict`      | `standard`     | nein       | `off` nur über stdio | `strict` bricht ab, bis die vollständige Maskierung steht; `off` warnt          |
-| `ECCLIUM_SEARCH_TOOLS`                    | `true`, `false`                  | `false`        | nein       | nein                 | `true`: Startmeldung, die beide Suchtools nennt                                 |
+| `ECCLIUM_SEARCH_TOOLS`                    | `true`, `false`                  | `false`        | nein       | nein                 | `true`: Startmeldung, dass die Suchtools erst mit einer späteren Version kommen |
 | `ECCLIUM_STDIO_SUBJECT`                   | Bezeichnung nach Muster          | `local-stdio`  | nein       | ja                   | ungültig oder `invalid`: Abbruch                                                |
 | `ECCLIUM_LOG_LEVEL`                       | `debug`, `info`, `warn`, `error` | `info`         | nein       | nein                 | ungültig: Abbruch                                                               |
 
@@ -160,6 +161,7 @@ Grenzen:
 ### Freigabe der Suchtools
 
 - `ct_persons_search` und `ct_groups_search` werden nur mit `ECCLIUM_SEARCH_TOOLS=true` registriert. Der Start meldet das dann mit beiden Namen.
+- Solange es die Suchtools noch nicht gibt, bleibt `true` gültig und wirkungslos, damit eine Konfiguration für eine spätere Version trotzdem startet. Die Startmeldung sagt dann, dass die Suchtools erst mit einer späteren Version kommen und die Einstellung bis dahin nicht wirkt. Mit den Suchtools gilt wieder die Meldung mit beiden Namen. Erwogen war, `true` bis dahin abzuweisen wie die Variablen späterer Phasen. Das hätte Tabelle, `.env.example`, Lader und Tests jetzt und mit den Suchtools wieder geändert.
 - In Phase 2 ersetzt `ECCLIUM_TOOLSETS` diesen Schalter.
 
 ### `ecclium config check`
@@ -188,12 +190,20 @@ Grenzen:
 ### Startmeldungen
 
 - Der Kern meldet Probleme und Warnungen nur als Codes. Die deutschen Texte stehen in einem Katalog in `packages/cli/src/messages/`.
-- Vor dem Start über stdio schreibt `packages/cli/src/notices/` sie nach stderr, Zeile für Zeile mit `writeSync`, nie über `process.stderr`. Der Ort schreibt nur Texte aus dem Katalog und ist damit kein Kanal für freien Text: Einen Text des Katalogs machen nur `problemText` und `warningText`. Der Typ weist eine gewöhnliche Zeichenkette ab, ein Cast oder eine Typprüfung käme darum herum, das muss eine Durchsicht finden.
-- Jede Zeile prüft ein Stolperdraht gegen eine Positivliste der Zeichen: druckbares ASCII, die Umlaute und die Anführungszeichen «» und ‹›. Bleibt eine Zeile abgerissen, hören die Startmeldungen auf und versuchen einen Zeilenumbruch. Gelingt auch der nicht, melden sie die Zeile als abgerissen, und der Start über stdio entscheidet, was vor der ersten Logzeile geschieht.
+- Vor dem Start über stdio schreibt `packages/cli/src/notices/` sie nach stderr, Zeile für Zeile mit `writeSync`, nie über `process.stderr`. Der Ort schreibt nur Texte aus dem Katalog und ist damit kein Kanal für freien Text: Einen Text des Katalogs machen nur `problemText`, `warningText` und, für den Start über stdio, `startText` und `refusalText`. Der Typ weist eine gewöhnliche Zeichenkette ab, ein Cast oder eine Typprüfung käme darum herum, das muss eine Durchsicht finden.
+- Jede Zeile prüft ein Stolperdraht gegen eine Positivliste der Zeichen: druckbares ASCII, die Umlaute und die Anführungszeichen «» und ‹›. Bleibt eine Zeile abgerissen, hören die Startmeldungen auf und versuchen einen Zeilenumbruch. Gelingt auch der nicht, melden sie die Zeile als abgerissen, und der Zeilenschreiber beginnt seine erste Zeile dann mit einem Zeilenumbruch.
 - ADR 0053 legt fest, dass nach stderr nur der Logger und die Meldungen der Kommandozeile schreiben, und dass die Orte im Code in `tests/architecture/boundaries.json` stehen. Die Startmeldungen sind solche Meldungen der Kommandozeile, nur aus einem Ordner, den der Betrieb über stdio erreichen darf. Der neue Ort setzt ADR 0053 deshalb um, er ändert es nicht.
 - Katalog und Startmeldungen erreichen die Orte, die nach stdout schreiben, nie, auch nicht über ein anderes Modul. Das prüft eine eigene Regel, schon bevor der Start über stdio sie importiert.
 - Startmeldungen erscheinen nur, bevor der Zeilenschreiber des Loggers besteht. Eine Meldung, die mitten in der Zeile abbricht, nähme sonst der nächsten Logzeile ihre Form als JSON.
-- Der Start über stdio kommt aus einem eigenen Einstieg unter `packages/cli/src/stdio/`, nie über den Befehl der Kommandozeile. So erfasst die Regel für den Betrieb über stdio den ganzen Prozess.
+- Der Start über stdio kommt aus einem eigenen Einstieg unter `packages/cli/src/stdio/`, nie über den Befehl der Kommandozeile. So erfasst die Regel für den Betrieb über stdio den Prozess ab diesem Einstieg. Der Einstieg der Kommandozeile davor, `bin.ts`, ist ein eigens bewachter Teil desselben Prozesses (siehe «Start über stdio»).
+
+### Start über stdio
+
+- Der Start über stdio ist der Unterbefehl `ecclium stdio` des einen Befehls `ecclium`, damit ein späterer Aufruf über `npx` oder einen Container den Befehl gleich nennt. Er nimmt kein weiteres Argument an, auch `--help` nicht. Jedes weitere Argument weist er mit einem festen Text und dem Code 64 ab, ohne es zu zerlegen oder zu wiederholen. Erwogen waren ein eigener Befehl, der `npx` ohne Angabe des Befehls mehrdeutig machte, und der Start über stdio für `ecclium` ohne Argumente: Wer nur `ecclium` tippt, bekäme dann statt der Hilfe einen wartenden Server.
+- Der Einstieg `packages/cli/src/bin.ts` übernimmt für jeden Befehl zuerst die Umgebung und lädt erst dann mit `import()` und einer festen Zeichenkette entweder den Einstieg des Starts unter `packages/cli/src/stdio/` oder den Befehl der Kommandozeile in `main.ts`. So lädt der Start `main.ts` nie, dessen `node:util` fd 2 nicht blockierend machte, bevor die Startmeldungen hinausgehen (ADR 0054). Zwei Regeln lassen `bin.ts` statisch nur `environment.ts` und mit `import()` nur `main.ts` und den Einstieg des Starts importieren, und ein Test hält seine Importe fest.
+- Der Start läuft in zwei Stufen. Die erste weist Argumente ab, lädt die Konfiguration, baut den Katalog der Tools und schreibt die Startmeldungen, alles bevor Server, SDK und undici laden. Eine ungültige Konfiguration endet mit 78, eine Ablehnung der Registry mit 70, beide nach ihren Startmeldungen und ohne Zeilenschreiber. Erst dann lädt sie die zweite Stufe, die Zeilenschreiber, Logger, Audit, Transport, Pipeline und Server baut.
+- Der Start fragt ChurchTools nicht an, wie `ecclium config check`. Ob ChurchTools das Token annimmt, zeigt ein Aufruf von `ct_whoami`. So geht das Token nicht bei jedem Start eines Clients hinaus.
+- Er endet mit den Codes von `ecclium config check`, mit 0, sobald der Client die Verbindung beendet hat, und dazu mit 130 nach `SIGINT` und 143 nach `SIGTERM`, 128 und die Nummer des Signals, wie eine Shell es meldet. Ein zweites Signal beendet ihn sofort.
 
 ## Konsequenzen
 
@@ -210,6 +220,7 @@ Grenzen:
 - **Absturz vor dem Fang:** Scheitert der Prozess, bevor die Kommandozeile Fehler fängt, etwa beim Laden eines Moduls, endet er mit dem Code 1 von Node.js und einem Stack auf stderr.
 - **Zustand von zod:** Die Schemas von zod auf Modulebene ändern beim ersten Prüfen innere Zwischenspeicher, wie in ADR 0054.
 - **Lesen der Umgebung:** Andere Pakete könnten `process.env` lesen, wenn die Regel dazu fehlt. Deshalb steht sie, bevor ein Paket die Umgebung braucht.
+- **Bundle:** Ein Bundle ohne Aufteilung des Codes zöge `main.ts` und damit `node:util` wieder vor die Startmeldungen. Der Release-Pfad in Phase 8 prüft, dass der Weg über stdio im ausgelieferten Paket `node:util` nicht lädt.
 
 ## Umsetzung
 
@@ -223,7 +234,10 @@ Grenzen:
   - der Katalog der Texte in `packages/cli/src/messages/`, die Startmeldungen in `packages/cli/src/notices/` und die Ausgabe in `packages/cli/src/output/`, mit der gemeinsamen Schleife für Teilschreibvorgänge in `packages/cli/src/send.ts`;
   - `ecclium config check` in `packages/cli/src/commands/config-check.ts`, `main.ts`, `exit-codes.ts` und `bin.ts`, mit dem Eintrag `bin` in `packages/cli/package.json`;
   - die Übernahme der Umgebung in `packages/cli/src/environment.ts` und `tests/token-environment.test.mts` mit `tests/fixtures/config/take-environment.mts`, der zeigt, dass ein Kindprozess das Token nicht mehr sieht.
-- Regeln, gemergt am 16.10.2026: der Ort `environment` mit der ESLint-Regel `[arch:environment]` für `process.env`, `process.argv`, `process.report` und `parseArgs` ohne `args`, `eval` und `Function` unter `[arch:require]` (Importe aus `node:process` weist seither `[arch:process]` ab, ADR 0054), der Ort `stdioReachable` mit der Regel `no-stdout-from-stdio-modules` von dependency-cruiser und ein Test, der im Syntaxbaum der Schreiber `process` und `console` sucht. Die Regel `churchtools-token-assignment` von gitleaks, die auch `ECCLIUM_CHURCHTOOLS_TOKEN` erkennt, kam mit dem Kern am 15.10.2026.
+- Regeln, gemergt am 16.10.2026: der Ort `environment` mit der ESLint-Regel `[arch:environment]` für `process.env`, `process.argv`, `process.report` und `parseArgs` ohne `args`, seit dem 19.10.2026 auch für `process.execArgv`, `eval` und `Function` unter `[arch:require]` (Importe aus `node:process` weist seither `[arch:process]` ab, ADR 0054), der Ort `stdioReachable` mit der Regel `no-stdout-from-stdio-modules` von dependency-cruiser und ein Test, der im Syntaxbaum der Schreiber `process` und `console` sucht. Die Regel `churchtools-token-assignment` von gitleaks, die auch `ECCLIUM_CHURCHTOOLS_TOKEN` erkennt, kam mit dem Kern am 15.10.2026.
 - `.env.example` nennt die Variablen mit Präfix, `tests/env-example.test.mts` gleicht die Datei mit der Tabelle ab.
 - Variable für die Drosselung: `ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE` in `packages/core/src/config/variables.ts`, Zeichen für Zeichen geprüft, mit dem Problem `invalid_integer` und der Zeile «Anfragen je Minute» in `ecclium config check` (ADR 0057).
-- Offen: der Start über stdio mit den Startmeldungen vor dem Zeilenschreiber und dem Test mit Kanarienwerten im Kindprozess, die Prüfung des Tokens mit `whoami` und die Registrierung der Suchtools nach `ECCLIUM_SEARCH_TOOLS`.
+- Start über stdio, seit dem 19.10.2026: der Unterbefehl `ecclium stdio` in `packages/cli/src/bin.ts`, die erste Stufe in `packages/cli/src/stdio/index.ts`, der Katalog aus dem Plugin des Kerns in `catalog.ts` und die zweite Stufe in `serve.ts`, die Texte für den Start und für jeden Grund einer Ablehnung der Registry in `packages/cli/src/messages/start.ts`, die Version in `packages/cli/src/version.ts` und die Codes 130 und 143 in `exit-codes.ts`. Die Regeln `bin-imports-only-environment` und `bin-loads-only-main-or-stdio` von dependency-cruiser stehen in `tests/architecture/dependency-rules.mts`. `tests/stdio-start.test.mts` prüft den echten Prozess mit Kanarienwerten. Die Startmeldungen gehen vor dem Zeilenschreiber hinaus, danach steht auf stderr nur JSON. Die Beispiele für Clients stehen in `docs/betrieb/stdio.md` und `docs/betrieb/beispiele/`, `tests/client-examples.test.mts` gleicht sie ab.
+- Einstellungen von Node.js für TLS, seit dem 19.10.2026: Der Lader liest dafür `NODE_OPTIONS`, `NODE_EXTRA_CA_CERTS`, `NODE_USE_SYSTEM_CA`, `SSL_CERT_FILE` und `SSL_CERT_DIR` und das neue Feld `execArgv` seiner Quellen, das `run()` und `startStdio()` aus `bin.ts` erhalten (ADR 0056).
+- Prüfung des Tokens: Der Start ruft `whoami` nicht auf, das zeigt erst ein Aufruf von `ct_whoami` (siehe «Start über stdio»).
+- Offen: die Registrierung der Suchtools nach `ECCLIUM_SEARCH_TOOLS`. Bis sie kommen, nimmt der Start `true` an und meldet, dass die Suchtools erst mit einer späteren Version kommen.

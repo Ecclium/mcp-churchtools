@@ -52,7 +52,7 @@ Gewählt ist die dritte Option.
 - **Kein Cache, keine Wiederholung:** whoami und die Rechte werden bei jedem Aufruf neu gelesen. Der Client wiederholt nichts, auch nicht bei 5xx oder einem Fehler des Netzes.
 - **Abbruch:** `ctx.signal` geht unverändert an den Transport. Fehler des Transports gibt der Client unverändert weiter.
 - **Protokoll:** Der Client schreibt nur über `ctx.log`, mit festen Ereignissen je Operation und nur den Feldern `status` und `code`. Pfad, Namen, Werte, Medientyp und Retry-After schreibt er nie. Die Zeile je Anfrage schreibt der Transport.
-- **User-Agent und Cookies:** Der User-Agent hat die Form `Ecclium/<version>` mit der Version des Produktpakets. Quelle und Setzen kommen mit der Composition Root, der Client setzt keinen. Cookies sieht der Client nie, der Transport verwirft sie.
+- **User-Agent und Cookies:** Der User-Agent hat die Form `Ecclium/<version>` mit der Version des Produktpakets. Die Version ist eine Konstante der Kommandozeile, die ein Test mit der Version in ihrem `package.json` gleich hält. `package.json` zur Laufzeit zu lesen, ginge in `dist/` und in einem Bundle über verschiedene Pfade, und ein Import von JSON läge ausserhalb der Quellen, die der Build übersetzt. Die Composition Root übergibt den User-Agent beim Bau des Transports, der Client setzt keinen. Cookies sieht der Client nie, der Transport verwirft sie.
 - **Vertragsabgleich:** Eine Beschreibung der Schemas als JSON Schema im Modus `input` liegt im Repository und wird in einem Test festgehalten. Ein Skript gleicht sie lokal mit dem OpenAPI-Dokument der Instanz ab und gibt nur Struktur aus. Es läuft nicht in CI. Der Modus `input` gilt, weil der Abgleich prüft, was ChurchTools sendet, und `output` jedes Objekt fälschlich als geschlossen beschriebe.
 
 ## Konsequenzen
@@ -75,5 +75,6 @@ Gewählt ist die dritte Option.
 - **Variable:** `ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE` in `packages/core/src/config/variables.ts` (ADR 0055).
 - **Vertragsabgleich:** `packages/core/src/churchtools/contract.json`, festgehalten von `contract.test.ts`, und `scripts/contract/check.mts` mit README.
 - **Tests:** `packages/core/src/churchtools/*.test.ts` und `packages/core/src/throttle/*.test.ts` über das Double für ChurchTools aus testkit decken beide Ordner zu 100 Prozent ab.
+- **User-Agent:** seit dem 19.10.2026 `userAgent` in `packages/cli/src/version.ts`, heute `Ecclium/0.0.0`, mit derselben Version, die der Mount in `serverInfo` meldet (ADR 0053). `version.test.ts` hält beide gleich der Version in `packages/cli/package.json` und in den Formen, die Mount und Transport annehmen. Der Start über stdio übergibt ihn an `createHttpTransport`.
 - **Erster Lauf:** am 17.10.2026 gegen die Testinstanz, mit dem Vertragsabgleich. Die Befunde stehen in `docs/research/churchtools-api.md` (Rechte, Weitere Befunde).
 - Offen: die Form von «Alle» bei den Rechten für Personen und Gruppen (`docs/STATUS.md`, Offen).
