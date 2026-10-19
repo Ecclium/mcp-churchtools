@@ -16,6 +16,13 @@ export const exitCodes = Object.freeze({
   internal: 70,
   /** The configuration is invalid. */
   invalidConfig: 78,
+  /**
+   * The server over stdio ended after SIGINT: 128 and the number of the
+   * signal, as a shell reports a process that the signal ended.
+   */
+  interrupted: 130,
+  /** The server over stdio ended after SIGTERM, 128 and 15. */
+  terminated: 143,
 } as const);
 
 /** An exit code of the command line. */

@@ -82,13 +82,16 @@ const lastLine = (text: string): string | undefined =>
 
 describe('the exit codes', () => {
   // After sysexits.h, and never 1, which Node.js gives a process that ends
-  // with an uncaught exception.
+  // with an uncaught exception. The codes after a signal are 128 and its
+  // number, as a shell reports them.
   it('keep their numbers', () => {
     expect(exitCodes).toEqual({
       ok: 0,
       usage: 64,
       internal: 70,
       invalidConfig: 78,
+      interrupted: 130,
+      terminated: 143,
     });
     expect(Object.isFrozen(exitCodes)).toBe(true);
   });
