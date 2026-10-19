@@ -10,7 +10,7 @@ Ein Lauf mit Claude Code und Claude Desktop unter macOS steht noch aus. Bis dahi
 
 ## Voraussetzungen
 
-- macOS oder Linux, eine Shell wie zsh oder bash und Git.
+- macOS auf Apple Silicon (arm64) oder Linux auf x64, eine Shell wie zsh oder bash und Git. Für andere Plattformen siehe «Einrichtung» in [CONTRIBUTING.md](../../CONTRIBUTING.md).
 - mise, der Versionsmanager, über den das Projekt Node.js und pnpm in festen Versionen bezieht. Wie Sie mise einrichten, steht in [CONTRIBUTING.md](../../CONTRIBUTING.md) unter «Einrichtung».
 - Claude Desktop oder Claude Code.
 - Ein eigenes Dienstkonto in ChurchTools mit einem Login-Token, nicht Ihr persönliches Konto. In ChurchTools kann auch ein Personenstatus Rechte vergeben, und Rechte aus Gruppen zeigt `ct_whoami` womöglich nicht. Geben Sie dem Dienstkonto deshalb einen eigenen Status ohne Berechtigungen, nehmen Sie es in keine Gruppe auf und vergeben Sie ihm direkt nur die Rechte, die seine Tools brauchen. `ct_whoami` verlangt kein Recht.
@@ -72,7 +72,7 @@ Die Beispiele setzen nur die Adresse und die Token-Datei. Alle übrigen Einstell
 
 ## Claude Desktop
 
-Claude Desktop liest seine Server aus der Datei `claude_desktop_config.json`, unter macOS im Ordner `~/Library/Application Support/Claude/`. Übernehmen Sie den Eintrag `ecclium` aus [beispiele/claude-desktop.json](beispiele/claude-desktop.json) unter `mcpServers`, neben allfällige andere Server, und ersetzen Sie die Platzhalter durch Ihre Adresse und Ihre absoluten Pfade. Beenden Sie danach Claude Desktop ganz und starten Sie es neu, damit es den Eintrag liest.
+Claude Desktop liest seine Server aus der Datei `claude_desktop_config.json`, unter macOS im Ordner `~/Library/Application Support/Claude/`. Übernehmen Sie den Eintrag `ecclium` aus [beispiele/claude-desktop.json](beispiele/claude-desktop.json) unter `mcpServers`, neben allfällige andere Server, und ersetzen Sie die Platzhalter durch Ihre Adresse und Ihre absoluten Pfade. Ein Server mit freiem Netzzugriff gehört nicht in denselben Client, siehe «Grenzen». Beenden Sie danach Claude Desktop ganz und starten Sie es neu, damit es den Eintrag liest.
 
 ## Claude Code
 
@@ -92,15 +92,17 @@ Im Checkout liegt absichtlich keine Datei `.mcp.json`. Claude Code böte den Ser
 - Ein Aufruf sendet nacheinander zwei Anfragen an ChurchTools: `GET /api/whoami` für das Konto und `GET /api/permissions/global` für seine Rechte. Andere Adressen als die aus `ECCLIUM_CHURCHTOOLS_URL` fragt der Server nicht an.
 - Das Ergebnis nennt die Personen-ID, Vor- und Nachname und die E-Mail-Adresse des Dienstkontos. Die E-Mail-Adresse ist maskiert: das erste Zeichen, drei Sterne und die Domain, etwa `m***@example.org`. Vor- und Nachname maskiert diese Version nicht.
 - Dazu kommen die gesetzten Rechte je Modul, nach Namen sortiert. Rechte, die das Konto nicht hat, fehlen. Ein Recht mit einer Liste von IDs, etwa für einzelne Wiki-Kategorien, zeigt die 10 kleinsten IDs und ihre Gesamtzahl. Hat das Konto mehr als 150 gesetzte Rechte, gibt das Tool statt der Liste einen Fehler mit dem Rat, dem Dienstkonto nur die Rechte seiner Tools zu geben. Kennt Ecclium die Form der Antwort zu den Rechten nicht, stehen sie als unbekannt da.
-- Lehnt ChurchTools das Token ab, erhält der KI-Assistent den Fehler `auth`, ist ChurchTools nicht erreichbar, den Fehler `network`, jeweils mit einem festen englischen Satz. Keine Fehlermeldung nennt einen Wert aus der Konfiguration oder aus ChurchTools.
+- Lehnt ChurchTools das Token ab oder ist ChurchTools nicht erreichbar, erhält der KI-Assistent nur einen festen englischen Satz. Den Code, `auth` oder `network`, nennt die Zeile des Audits auf stderr. Keine Fehlermeldung nennt einen Wert aus der Konfiguration oder aus ChurchTools.
 
 ## Log und Audit auf stderr
 
 stdout gehört dem Protokoll MCP. Alles andere schreibt Ecclium nach stderr, in dieser Reihenfolge:
 
 1. Beim Start Hinweise als deutscher Text, je Hinweis eine Zeile, etwa die Warnung, wenn das Token in der Variable steht. Ist die Konfiguration ungültig, endet der Server nach den Hinweisen mit 78.
-2. Danach nur noch Zeilen in JSON, je Zeile ein Ereignis. Logzeilen tragen das Feld `event`, etwa `http_response` für jede Anfrage an ChurchTools, ab der Stufe aus `ECCLIUM_LOG_LEVEL`. Jeder Aufruf eines Tools ergibt eine Zeile des Audits mit `type` gleich `tool_call`, dem Mandanten `default`, dem Subjekt `stdio:local-stdio` aus `ECCLIUM_STDIO_SUBJECT`, dem Modus `interactive`, dem Namen des Tools, dem Ausgang und bei einem Fehler dessen Code.
-3. Beim Ende die Zeile `stdio_closed`, die im Feld `count` nennt, wie viele Zeilen verloren gingen.
+2. Danach schreibt Ecclium nur noch Zeilen in JSON, je Zeile ein Ereignis. Logzeilen tragen das Feld `event`, etwa `http_response` für jede Anfrage an ChurchTools, ab der Stufe aus `ECCLIUM_LOG_LEVEL`. Jeder Aufruf eines Tools ergibt eine Zeile des Audits mit `type` gleich `tool_call`, dem Mandanten `default`, dem Subjekt `stdio:local-stdio` aus `ECCLIUM_STDIO_SUBJECT`, dem Modus `interactive`, dem Namen des Tools, dem Ausgang und bei einem Fehler dessen Code.
+3. Beim Ende die Zeile `stdio_closed`, die im Feld `count` nennt, wie viele Zeilen verloren gingen. Nach einem Signal steht davor `process_sigterm` oder `process_sigint`. Diese Zeilen schreibt Ecclium bei jeder Stufe aus `ECCLIUM_LOG_LEVEL`.
+
+Node.js selbst kann weitere Zeilen schreiben, etwa eine Warnung, wenn es die Datei aus `NODE_EXTRA_CA_CERTS` nicht laden kann. Überspringen Sie Zeilen, die kein JSON sind.
 
 Weder das Token noch Namen, E-Mail-Adressen oder andere Werte aus den Antworten von ChurchTools stehen in diesen Zeilen. Tests mit erfundenen Werten prüfen das. Wohin die Zeilen gehen, bestimmt der Client. Ecclium schreibt keine eigene Datei.
 
@@ -108,14 +110,16 @@ Ecclium wartet nicht auf stderr. Liest der Client stderr nicht oder zu langsam, 
 
 Der Server endet mit einem dieser Codes:
 
-| Code | Bedeutung                                                                 |
-| ---- | ------------------------------------------------------------------------- |
-| 0    | Der Client hat stdin geschlossen, und der Server hat sich beendet.        |
-| 64   | Nach `stdio` stand ein weiteres Argument.                                 |
-| 70   | Ein interner Fehler, gemeldet mit einer festen Meldung ohne Einzelheiten. |
-| 78   | Die Konfiguration ist ungültig.                                           |
-| 130  | Der Server hat sich nach dem Signal `SIGINT` beendet.                     |
-| 143  | Der Server hat sich nach dem Signal `SIGTERM` beendet.                    |
+| Code | Bedeutung                                                                                                                         |
+| ---- | --------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | Die Verbindung hat geendet: Der Client hat stdin geschlossen, stdout ist abgebrochen, oder die ungelesene Eingabe lag über 1 MiB. |
+| 64   | Nach `stdio` stand ein weiteres Argument.                                                                                         |
+| 70   | Ein interner Fehler, gemeldet mit einer festen Meldung ohne Einzelheiten.                                                         |
+| 78   | Die Konfiguration ist ungültig.                                                                                                   |
+| 130  | Der Server hat sich nach dem Signal `SIGINT` beendet, das vor dem Ende der Verbindung kam.                                        |
+| 143  | Der Server hat sich nach dem Signal `SIGTERM` beendet, das vor dem Ende der Verbindung kam.                                       |
+
+Kommt das erste Signal erst nach dem Ende der Verbindung, steht es im Log, und der Code bleibt 0. Ein zweites Signal beendet den Server sofort, mit dem Code dieses zweiten Signals.
 
 ## Grenzen
 
@@ -124,3 +128,4 @@ Der Server endet mit einem dieser Codes:
 - `ct_whoami` verlangt kein Recht in ChurchTools. Geprüft ist das bisher nur mit einem Konto, das zwei Rechte im Wiki hatte, nicht mit einem Konto ganz ohne Rechte.
 - Rechte, die das Konto über eine Gruppe erhält, können fehlen. Ein entzogenes Recht kann noch eine Weile erscheinen, auf einer Testinstanz mit ChurchTools 3.137 einmal mindestens etwa zwanzig Minuten lang (siehe [Befunde zur API von ChurchTools](../research/churchtools-api.md)).
 - Ein Client, der stderr nicht liest, verliert Zeilen des Logs und des Audits, wie oben beschrieben.
+- Der KI-Assistent kann, was er über Ecclium liest, über ein anderes Tool desselben Clients weitergeben, etwa nach einer Injection. Betreiben Sie Ecclium nicht im selben Client wie Server mit freiem Netzzugriff.
