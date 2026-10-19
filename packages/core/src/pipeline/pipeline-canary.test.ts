@@ -1,9 +1,9 @@
 import { loadConfig } from '@ecclium/mcp-churchtools-core';
 import {
+  defineTool,
   EccliumError,
   type Plugin,
   type TenantAssignment,
-  type ToolDefinition,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import {
   assertNoCanary,
@@ -56,39 +56,41 @@ const request = (): ToolRequest => ({
 });
 
 // A tool that fails with contact data in its message, as a careless tool
-// might. A plain object, not defineTool: core and the plugin interface
-// resolve different copies of zod in the workspace.
+// might. It is built with defineTool like the tool of a plugin, since
+// nothing in it needs to bypass the types of the plugin interface.
 const failingPlugin: Plugin = {
   name: 'failing-plugin',
   version: '1.0.0',
   register(host): undefined {
-    host.addTool({
-      name: 'ct_test_fails',
-      meta: {
-        capability: 'read',
-        domain: 'base',
-        requiredRights: [],
-        tier: 'free',
-        sensitivity: 'none',
-        unattended: 'policy',
-        routineStable: false,
-      },
-      description: {
-        purpose: 'Serves a test.',
-        useWhen: 'A test needs it.',
-        avoidWhen: 'Anything else.',
-        limits: 'None.',
-      },
-      input: z.object({}),
-      output: z.object({}),
-      execute: () =>
-        Promise.reject(
-          new EccliumError(
-            'not_found',
-            `No person ${canary.email.value} with ${canary.phone.value}.`,
+    host.addTool(
+      defineTool({
+        name: 'ct_test_fails',
+        meta: {
+          capability: 'read',
+          domain: 'base',
+          requiredRights: [],
+          tier: 'free',
+          sensitivity: 'none',
+          unattended: 'policy',
+          routineStable: false,
+        },
+        description: {
+          purpose: 'Serves a test.',
+          useWhen: 'A test needs it.',
+          avoidWhen: 'Anything else.',
+          limits: 'None.',
+        },
+        input: z.object({}),
+        output: z.object({}),
+        execute: () =>
+          Promise.reject(
+            new EccliumError(
+              'not_found',
+              `No person ${canary.email.value} with ${canary.phone.value}.`,
+            ),
           ),
-        ),
-    } as unknown as ToolDefinition);
+      }),
+    );
     return undefined;
   },
 };

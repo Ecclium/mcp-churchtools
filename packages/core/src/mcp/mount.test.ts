@@ -97,8 +97,9 @@ const readMeta = {
   routineStable: false,
 } as const;
 
-// A plain tool of the test, not defineTool: core and the plugin interface
-// resolve different copies of zod in the workspace.
+// A plain tool of the test, not defineTool: a test swaps parts such as the
+// input schema through `extra` and may return its result without a promise,
+// which the types of defineTool refuse.
 const testTool = (
   name: `ct_${string}`,
   execute: (call: {

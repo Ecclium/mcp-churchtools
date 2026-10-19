@@ -11,11 +11,11 @@
  */
 import {
   classify,
+  defineTool,
   EccliumError,
   type GrantedRights,
   type RightValue,
   type ToolCall,
-  type ToolDefinition,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { z } from 'zod';
 
@@ -77,7 +77,6 @@ const output = z.object({
 
 type Input = z.output<typeof input>;
 type Output = z.input<typeof output>;
-type Definition = ToolDefinition<Input, Output>;
 
 // Code units decide the order, as in the catalog of the core, so it depends
 // neither on a locale nor on the order of the answer. Names within one
@@ -157,7 +156,7 @@ const execute = async ({ read }: ToolCall<Input>): Promise<Output> => {
  * }
  * ```
  */
-export const whoamiTool: Definition = {
+export const whoamiTool = defineTool({
   name: 'ct_whoami',
   meta: {
     capability: 'read',
@@ -180,13 +179,7 @@ export const whoamiTool: Definition = {
     limits:
       'A right with a list of IDs shows the 10 lowest IDs and their total count. An account with more than 150 set rights is too large to list and returns an error instead. Rights the account holds through a group may be missing. A revoked right can still show for a while after the revocation.',
   },
-  // The plugin API types its schemas with the copy of zod next to it, which
-  // in the workspace is 4.6.7, while this package pins the version of core,
-  // so that core and the tools share one copy at run time. The two copies
-  // differ in types only, so defineTool cannot take these schemas, and the
-  // casts cross that boundary instead. They go away once both use the same
-  // version.
-  input: input as unknown as Definition['input'],
-  output: output as unknown as Definition['output'],
+  input,
+  output,
   execute,
-};
+});

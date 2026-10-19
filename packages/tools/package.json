@@ -15,7 +15,7 @@
     "@ecclium/mcp-churchtools-core": "workspace:*",
     "@ecclium/mcp-churchtools-docs-index": "workspace:*",
     "@ecclium/mcp-churchtools-plugin-api": "workspace:*",
-    "zod": "4.6.5"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@ecclium/mcp-churchtools-testkit": "workspace:*"

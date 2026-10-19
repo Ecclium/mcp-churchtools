@@ -62,8 +62,9 @@ const readMeta = {
   routineStable: false,
 } as const;
 
-// A plain tool of the test, not defineTool: core and the plugin interface
-// resolve different copies of zod in the workspace.
+// A plain tool of the test, not defineTool: a test swaps parts through
+// `extra` and may return a result of the wrong type or without a promise,
+// which the types of defineTool refuse.
 const testTool = (
   name: `ct_${string}`,
   execute: (call: { readonly read: ReadApi; readonly ctx: unknown }) => unknown,
