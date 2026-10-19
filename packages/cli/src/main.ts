@@ -120,16 +120,19 @@ const readCall = (args: readonly string[]): Call => {
  * @param args - The arguments after the name of the program.
  * @param environment - The environment of the process, which loses the
  *   token.
+ * @param execArgv - The options Node.js was started with, which the check
+ *   of the configuration reads for the options of TLS.
  * @param runOptions - Replacements for tests.
  * @returns The exit code.
  * @example
  * ```ts
- * process.exitCode = run(process.argv.slice(2), process.env);
+ * process.exitCode = run(process.argv.slice(2), environment, process.execArgv);
  * ```
  */
 export function run(
   args: readonly string[],
   environment: Record<string, string | undefined>,
+  execArgv: readonly string[],
   runOptions: RunOptions = {},
 ): ExitCode {
   let output: Output | undefined;
@@ -152,6 +155,7 @@ export function run(
       case 'check':
         return checkConfig({
           environment: taken,
+          execArgv,
           showValues: call.showValues,
           output,
           tokenFiles: runOptions.tokenFiles,

@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
  * The executable of the command line, `ecclium`. It is the only module in
- * the packages that may read the environment (ADR 0055). Before anything
- * else it takes the token out of `process.env`, in every spelling of its
- * name, so that no module loaded after it and no child process sees the
- * token. Only then does it load what the call asks for, with `import()`:
+ * the packages that may read the environment, the arguments and the
+ * options of Node.js (ADR 0055). Before anything else it takes the token
+ * out of `process.env`, in every spelling of its name, so that no module
+ * loaded after it and no child process sees the token. Only then does it
+ * load what the call asks for, with `import()`:
  * `ecclium stdio` loads the start over stdio, every other call the command
  * line in `main.ts`. So the start over stdio never loads `main.ts`, whose
  * `node:util` makes fd 2 non-blocking before the start notices go out
@@ -36,10 +37,15 @@ if (environment === undefined) {
 } else if (process.argv[2] === 'stdio') {
   const { startStdio } = await import('./stdio/index.js');
   // undefined means the server runs: it sets the exit code itself when the
-  // connection ends.
-  const code = await startStdio(process.argv.slice(3), environment);
+  // connection ends. Both calls get the options of Node.js, so that the
+  // start and `ecclium config check` report the same settings of TLS.
+  const code = await startStdio(
+    process.argv.slice(3),
+    environment,
+    process.execArgv,
+  );
   if (code !== undefined) process.exitCode = code;
 } else {
   const { run } = await import('./main.js');
-  process.exitCode = run(process.argv.slice(2), environment);
+  process.exitCode = run(process.argv.slice(2), environment, process.execArgv);
 }

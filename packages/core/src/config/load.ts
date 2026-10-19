@@ -20,11 +20,16 @@ import { readTokenFile, type TokenFileSystem } from './token-file.js';
 import {
   debugVariableName,
   fitsVariable,
+  nodeOptionsVariableName,
   type PlainVariableName,
   proxyVariableName,
   reservedStdioSubjects,
+  tlsKeylogOption,
+  tlsTraceOption,
   tlsVariableName,
   tokenVariableName,
+  trustStoreOptions,
+  trustStoreVariableNames,
   unsupportedVariableNames,
   type Variable,
   type VariableName,
@@ -94,9 +99,10 @@ export interface ConfigProblem {
   readonly code: ConfigProblemCode;
   /**
    * The variable: a known name, the right name for one in the wrong case,
-   * the variable of TLS, or an unknown name in capitals, digits and
-   * underscores of at most 64 characters after the prefix. Absent for any
-   * other name.
+   * the variable of TLS, `NODE_OPTIONS` for an option of TLS in it, or an
+   * unknown name in capitals, digits and underscores of at most 64
+   * characters after the prefix. Absent for any other name and for an
+   * option Node.js was started with.
    */
   readonly variable?: string;
 }
@@ -132,6 +138,12 @@ export interface ConfigSources {
   /** The environment, such as `process.env`, which the loader never changes. */
   readonly environment: Readonly<Record<string, string | undefined>>;
   readonly transport: Transport;
+  /**
+   * The options Node.js was started with, such as `process.execArgv`,
+   * which the loader never changes. It reads them, like `NODE_OPTIONS`,
+   * only for the options of TLS. None when absent.
+   */
+  readonly execArgv?: readonly string[];
   /** The file functions for the token file, only for tests. */
   readonly tokenFiles?: TokenFileSystem;
 }
@@ -183,6 +195,82 @@ const asciiUpper = (text: string): string => {
 const switchesOnDebugOutput = (value: string): boolean =>
   value.split(',').some((pattern) => pattern.trim() !== '');
 
+// The variables without the prefix that the loader reads, in capitals.
+const nodeVariableNames: readonly string[] = Object.freeze([
+  tlsVariableName,
+  debugVariableName,
+  nodeOptionsVariableName,
+  ...trustStoreVariableNames,
+]);
+
+// Windows looks up the names of the environment without regard to case,
+// so there Node.js also reads node_tls_reject_unauthorized. Every spelling
+// counts, on every platform. The length first, so that a huge name costs
+// nothing.
+const nodeVariableOf = (key: string): string | undefined =>
+  nodeVariableNames.find(
+    (name) => key.length === name.length && asciiUpper(key) === name,
+  );
+
+// The options in NODE_OPTIONS, split as Node.js splits them: a space ends
+// an option outside double quotes, a double quote opens or closes a quoted
+// part anywhere in an option, and inside one a backslash takes the next
+// character as it is. A tab or a single quote is a plain character. Node.js
+// refuses an unclosed quote; the options read until then still count.
+const nodeOptionsOf = (value: string): string[] => {
+  const options: string[] = [];
+  let option: string | undefined;
+  let quoted = false;
+  for (let index = 0; index < value.length; index += 1) {
+    let character = value.charAt(index);
+    if (quoted && character === '\\') {
+      index += 1;
+      if (index === value.length) break;
+      character = value.charAt(index);
+    } else if (!quoted && character === ' ') {
+      if (option !== undefined) options.push(option);
+      option = undefined;
+      continue;
+    } else if (character === '"') {
+      quoted = !quoted;
+      continue;
+    }
+    option = (option ?? '') + character;
+  }
+  if (option !== undefined) options.push(option);
+  return options;
+};
+
+// The name of an option as Node.js compares it: the part before an equals
+// sign, with every underscore as a hyphen, so that --use_system_ca counts
+// as --use-system-ca. Capitals stay, because Node.js refuses them.
+const optionName = (option: string): string => {
+  const equals = option.indexOf('=');
+  return (equals < 0 ? option : option.slice(0, equals)).replaceAll('_', '-');
+};
+
+// The options Node.js was started with, as a plain array of strings read
+// index by index as own data properties: a getter is refused unread, and
+// a hole counts as no string. The proxy first, as Array.isArray throws on
+// a revoked one.
+const optionList = (value: unknown): readonly string[] => {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    isProxy(value) ||
+    !Array.isArray(value)
+  ) {
+    throw new TypeError(invalidSources);
+  }
+  const options: string[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const option = ownData(value, String(index));
+    if (typeof option !== 'string') throw new TypeError(invalidSources);
+    options.push(option);
+  }
+  return options;
+};
+
 const record = <T extends object>(fields: T): T =>
   Object.freeze({ __proto__: null, ...fields });
 
@@ -202,11 +290,14 @@ interface Ranked {
 }
 
 // The order of the problems: the variables in table order, then the
-// variables of TLS and of debug output, then the names of a proxy and of
-// later phases, then unknown names by code unit, then those too odd to name.
+// variables of TLS and of debug output, then the options that log TLS,
+// then the names of a proxy and of later phases, then unknown names by
+// code unit, then those too odd to name.
 const tlsRank = variableNames.length;
 const debugRank = tlsRank + 1;
-const proxyRank = debugRank + 1;
+const keylogRank = debugRank + 1;
+const traceRank = keylogRank + 1;
+const proxyRank = traceRank + 1;
 const unsupportedRank = proxyRank + 1;
 const unknownRank = unsupportedRank + unsupportedVariableNames.length;
 
@@ -231,18 +322,27 @@ const shownHidden: ShownValue = record({ kind: 'hidden' });
  * of the environment, never inherited and never through a getter. A
  * variable is recognised by its prefix in any case; only an exact known
  * name gives a value. Every value is checked against the table, and the
- * token goes only into a `Secret`.
+ * token goes only into a `Secret`. The variables of Node.js that weaken
+ * TLS count in any spelling of their names, its options also with
+ * underscores: `--tls-keylog` and `--trace-tls` stop the start, a wider
+ * trust store gives a warning.
  *
- * @param sources - The environment, the transport and, for tests, the
- *   file functions for the token file.
+ * @param sources - The environment, the transport, the options Node.js
+ *   was started with and, for tests, the file functions for the token
+ *   file.
  * @returns The configuration with its report when nothing is wrong, else
  *   the report alone.
  * @throws {TypeError} When the sources or the environment are no plain
- *   record, a variable with the prefix is no string or has a getter, or
- *   the transport is unknown. Never for a wrong value.
+ *   record, the options no plain array of strings, a variable that the
+ *   loader reads is no string or has a getter, or the transport is
+ *   unknown. Never for a wrong value.
  * @example
  * ```ts
- * const result = loadConfig({ environment: process.env, transport: 'stdio' });
+ * const result = loadConfig({
+ *   environment,
+ *   transport: 'stdio',
+ *   execArgv: process.execArgv,
+ * });
  * if (!result.ok) report(result.report.problems);
  * ```
  */
@@ -250,11 +350,13 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   if (!isRecord(sources)) throw new TypeError(invalidSources);
   const environment = ownData(sources, 'environment');
   const transport = ownData(sources, 'transport');
+  const execArgv = ownData(sources, 'execArgv');
   const tokenFiles = ownData(sources, 'tokenFiles');
   if (!isRecord(environment)) throw new TypeError(invalidSources);
   if (tokenFiles !== undefined && !isRecord(tokenFiles)) {
     throw new TypeError(invalidSources);
   }
+  const startOptions = execArgv === undefined ? [] : optionList(execArgv);
   if (transport !== 'stdio' && transport !== 'http') {
     throw new TypeError('The transport is unknown.');
   }
@@ -275,36 +377,40 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     add(code, variableNames.indexOf(name), name);
   };
 
-  // The snapshot. Only names with the prefix and the variables of TLS and
-  // of debug output are read at all; the values of others are never
-  // touched.
+  // The snapshot. Only names with the prefix and the variables of Node.js
+  // listed above are read at all; the values of others are never touched.
   const given = new Map<VariableName, string>();
+  const inNodeOptions = new Set<string>();
+  let trustStoreExtended = false;
   for (const key of Object.keys(environment)) {
     const prefixed =
       asciiUpper(key.slice(0, variablePrefix.length)) === variablePrefix;
-    // Windows looks up the names of the environment without regard to
-    // case, so there Node.js also reads node_tls_reject_unauthorized. Every
-    // spelling counts, on every platform.
-    const tls =
-      !prefixed &&
-      key.length === tlsVariableName.length &&
-      asciiUpper(key) === tlsVariableName;
-    const debug =
-      !prefixed &&
-      key.length === debugVariableName.length &&
-      asciiUpper(key) === debugVariableName;
-    if (!prefixed && !tls && !debug) continue;
+    const node = prefixed ? undefined : nodeVariableOf(key);
+    if (!prefixed && node === undefined) continue;
     const value = ownData(environment, key);
     if (value === undefined) continue;
     if (typeof value !== 'string') throw new TypeError(invalidSources);
-    if (tls) {
+    if (node === tlsVariableName) {
       if (value === '0') add('tls_check_disabled', tlsRank, tlsVariableName);
       continue;
     }
-    if (debug) {
+    if (node === debugVariableName) {
       if (switchesOnDebugOutput(value)) {
         add('debug_output_enabled', debugRank, debugVariableName);
       }
+      continue;
+    }
+    if (node === nodeOptionsVariableName) {
+      for (const option of nodeOptionsOf(value)) {
+        inNodeOptions.add(optionName(option));
+      }
+      continue;
+    }
+    if (node !== undefined) {
+      // A variable of the trust store. Node.js documents only the value 1
+      // for NODE_USE_SYSTEM_CA; any value counts, so that a release that
+      // takes more is still caught. An empty one does nothing.
+      if (isSet(value)) trustStoreExtended = true;
       continue;
     }
     // Names are sorted out before any value is looked at, so a name that
@@ -326,6 +432,25 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       add('unknown_variable', unknownRank, key);
     } else {
       add('unknown_variable', unknownRank + 1);
+    }
+  }
+
+  // The options of TLS, in NODE_OPTIONS and among those Node.js was started
+  // with, compared by name only. Nothing of an option, such as the path
+  // after --tls-keylog, reaches the report.
+  const startedWith = new Set(startOptions.map(optionName));
+  for (const [names, variable] of [
+    [inNodeOptions, nodeOptionsVariableName],
+    [startedWith, undefined],
+  ] as const) {
+    if (names.has(tlsKeylogOption)) {
+      add('tls_keylog_enabled', keylogRank, variable);
+    }
+    if (names.has(tlsTraceOption)) {
+      add('tls_trace_enabled', traceRank, variable);
+    }
+    if (trustStoreOptions.some((option) => names.has(option))) {
+      trustStoreExtended = true;
     }
   }
 
@@ -521,6 +646,10 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   const searchTools = choose('ECCLIUM_SEARCH_TOOLS');
   if (searchTools?.value === 'true') warnings.add('search_tools_enabled');
   show('searchTools', 'ECCLIUM_SEARCH_TOOLS', searchTools, 'boolean');
+
+  // A wider trust store stays allowed for an instance with a certificate
+  // of its own authority, with a warning on every start (ADR 0056).
+  if (trustStoreExtended) warnings.add('trust_store_extended');
 
   // The subject must fit the pattern, and the placeholder of the audit is
   // refused although it fits.

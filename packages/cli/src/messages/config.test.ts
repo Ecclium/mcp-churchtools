@@ -12,7 +12,7 @@ import {
   variableNames,
   variables,
 } from '@ecclium/mcp-churchtools-core';
-import { makeCanary } from '@ecclium/mcp-churchtools-testkit';
+import { assertNoCanary, makeCanary } from '@ecclium/mcp-churchtools-testkit';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -48,6 +48,9 @@ const variableOf = (code: ConfigProblemCode): string => {
       return 'NODE_TLS_REJECT_UNAUTHORIZED';
     case 'debug_output_enabled':
       return 'NODE_DEBUG';
+    case 'tls_keylog_enabled':
+    case 'tls_trace_enabled':
+      return 'NODE_OPTIONS';
     case 'redaction_strict_unsupported':
     case 'stdio_only':
       return 'ECCLIUM_REDACTION';
@@ -62,13 +65,15 @@ const variableOf = (code: ConfigProblemCode): string => {
 };
 
 // Every name the loader can report with a problem: the known variables,
-// the names of later phases and of a proxy, the variable of TLS and the
-// longest unknown name it shows.
+// the names of later phases and of a proxy, the variable of TLS, the
+// variable with the options of Node.js and the longest unknown name it
+// shows.
 const reportedNames: readonly string[] = [
   ...variableNames,
   ...unsupportedVariableNames,
   proxyVariableName,
   tlsVariableName,
+  'NODE_OPTIONS',
   `ECCLIUM_${'A'.repeat(64)}`,
 ];
 
@@ -148,7 +153,7 @@ describe('the catalog of messages', () => {
     ['a name with a value', 'ECCLIUM_READ_ONLY=false'],
     ['a name with a space', 'ECCLIUM_READ ONLY'],
     ['a name of 65 characters after the prefix', `ECCLIUM_${'A'.repeat(65)}`],
-    ['another variable of Node.js', 'NODE_OPTIONS'],
+    ['a variable of Node.js reported only by a warning', 'NODE_EXTRA_CA_CERTS'],
     ['a name with something before the prefix', 'x_ECCLIUM_READ_ONLY'],
     [
       'the variable of TLS with more after it',
@@ -293,6 +298,69 @@ describe('the catalog of messages', () => {
     expect(message.why).toContain('‹ct_persons_search›');
     expect(message.why).toContain('‹ct_groups_search›');
     expect(textOf(message)).not.toMatch(/sind freigegeben\.|kann damit/);
+  });
+
+  // One warning stands for every setting that extends the trust store, as
+  // the report of the loader names none of them.
+  it('names every setting that extends the trust store in its warning', () => {
+    const text = warningText('trust_store_extended');
+    for (const name of [
+      'NODE_EXTRA_CA_CERTS',
+      'NODE_USE_SYSTEM_CA',
+      'SSL_CERT_FILE',
+      'SSL_CERT_DIR',
+      '--use-system-ca',
+      '--use-openssl-ca',
+    ]) {
+      expect(text).toContain(`‹${name}›`);
+    }
+    expect(text).toContain('das Token mitlesen');
+  });
+
+  it.each([
+    ['tls_keylog_enabled', '--tls-keylog'],
+    ['tls_trace_enabled', '--trace-tls'],
+  ] as const)('tells for %s where the option was found', (code, option) => {
+    const inVariable = problemMessage({ code, variable: 'NODE_OPTIONS' });
+    expect(inVariable.what).toBe(
+      `Die Option ‹${option}› steht in ‹NODE_OPTIONS›.`,
+    );
+    expect(inVariable.action).toContain('aus ‹NODE_OPTIONS›');
+    const started = problemMessage({ code });
+    expect(started.what).toBe(`Node.js läuft mit der Option ‹${option}›.`);
+    expect(started.action).toContain('aus dem Befehl');
+    expect(textOf(started)).not.toContain('NODE_OPTIONS');
+  });
+
+  // The loader reads the paths of certificates and of a key log, but its
+  // report, and so every text, holds only codes and names.
+  it('never shows the path of a certificate or of a key log', () => {
+    const canary = makeCanary('token');
+    const path = `/path/${canary.value}`;
+    const result = loadConfig({
+      environment: {
+        ECCLIUM_CHURCHTOOLS_URL: 'https://example.church.tools',
+        [tokenVariableName]: makeCanary('token').value,
+        NODE_EXTRA_CA_CERTS: `${path}/ca.pem`,
+        SSL_CERT_FILE: `${path}/cert.pem`,
+        SSL_CERT_DIR: path,
+        NODE_OPTIONS: `--tls-keylog=${path}/keys`,
+      },
+      transport: 'stdio',
+      execArgv: ['--tls-keylog', `${path}/keys`, '--trace-tls'],
+    });
+    const texts = [
+      ...result.report.problems.map((problem) => problemText(problem)),
+      ...result.report.warnings.map((code) => warningText(code)),
+    ];
+    expect(texts).toEqual([
+      problemText({ code: 'tls_keylog_enabled' }),
+      problemText({ code: 'tls_keylog_enabled', variable: 'NODE_OPTIONS' }),
+      problemText({ code: 'tls_trace_enabled' }),
+      warningText('token_from_environment'),
+      warningText('trust_store_extended'),
+    ]);
+    assertNoCanary(texts, [canary], 'texts');
   });
 
   it('tells the token in the environment from the one in the file', () => {

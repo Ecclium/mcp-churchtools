@@ -82,6 +82,8 @@ const refusalOf = (error: unknown): RefusalReason | undefined => {
  * @param args - The arguments after `ecclium stdio`.
  * @param environment - The environment of the process, which loses the
  *   token.
+ * @param execArgv - The options Node.js was started with, which the loader
+ *   reads for the options of TLS.
  * @param startOptions - Replacements for tests.
  * @returns 64 for an argument, 78 for an invalid configuration, 70 for a
  *   refusal of the registry or an internal error, or undefined once the
@@ -89,13 +91,14 @@ const refusalOf = (error: unknown): RefusalReason | undefined => {
  *   ends.
  * @example
  * ```ts
- * const code = await startStdio(args, environment);
+ * const code = await startStdio(args, environment, execArgv);
  * if (code !== undefined) process.exitCode = code;
  * ```
  */
 export async function startStdio(
   args: readonly string[],
   environment: Record<string, string | undefined>,
+  execArgv: readonly string[],
   startOptions: StdioStartOptions = {},
 ): Promise<ExitCode | undefined> {
   const { writeSync, ...replacements } = startOptions;
@@ -107,7 +110,11 @@ export async function startStdio(
       notices([startText('usage')]);
       return exitCodes.usage;
     }
-    const loaded = loadConfig({ environment: taken, transport: 'stdio' });
+    const loaded = loadConfig({
+      environment: taken,
+      transport: 'stdio',
+      execArgv,
+    });
     const texts = [
       ...loaded.report.problems.map((problem) => problemText(problem)),
       ...loaded.report.warnings.map((code) => warningText(code)),

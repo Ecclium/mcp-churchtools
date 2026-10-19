@@ -14,6 +14,11 @@ const source = (path: string): string =>
 const code = (text: string): string =>
   text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 
+// Code on one line, so that a call reads the same however prettier wraps
+// its arguments.
+const flat = (text: string): string =>
+  text.replaceAll(/\s+/g, ' ').replaceAll('( ', '(').replaceAll(', )', ')');
+
 describe('the executable of the command line', () => {
   const body = code(source('bin.ts'));
 
@@ -46,6 +51,7 @@ describe('the executable of the command line', () => {
     expect(body.indexOf('process.')).toBe(body.indexOf('process.env'));
     expect(first).toBeLessThan(body.indexOf('process.env'));
     expect(first).toBeLessThan(body.indexOf('process.argv'));
+    expect(first).toBeLessThan(body.indexOf('process.execArgv'));
     expect(first).toBeLessThan(body.indexOf('import('));
   });
 
@@ -56,17 +62,20 @@ describe('the executable of the command line', () => {
 
   // A guard such as import.meta.main would turn the command into a silent
   // exit with 0 once a bundle imports this code, and process.exit could
-  // cut off an answer on stdout (ADR 0055).
+  // cut off an answer on stdout (ADR 0055). Both get the options of
+  // Node.js, so that the start and the check report the same settings of
+  // TLS.
   it('hands ecclium stdio to the start over stdio and every other call to run, once each and unguarded', () => {
     expect(body).toContain("process.argv[2] === 'stdio'");
     expect(body.match(/\bstartStdio\(/g)).toHaveLength(1);
-    expect(body).toContain(
-      'await startStdio(process.argv.slice(3), environment);',
+    expect(flat(body)).toContain(
+      'await startStdio(process.argv.slice(3), environment, process.execArgv);',
     );
     expect(body.match(/\brun\(/g)).toHaveLength(1);
-    expect(body).toContain(
-      'process.exitCode = run(process.argv.slice(2), environment);',
+    expect(flat(body)).toContain(
+      'process.exitCode = run(process.argv.slice(2), environment, process.execArgv);',
     );
+    expect(body.match(/\bprocess\.execArgv\b/g)).toHaveLength(2);
     expect(body).not.toMatch(/import\.meta|\bprocess\.exit\(/);
   });
 

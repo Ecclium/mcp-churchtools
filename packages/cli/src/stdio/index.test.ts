@@ -71,11 +71,15 @@ const spellings: readonly string[] = [
 
 const decoder = new TextDecoder();
 
-/** Runs the first stage with a fake writeSync and the replacements. */
+/**
+ * Runs the first stage with a fake writeSync and the replacements, and
+ * with the options of Node.js, by default none.
+ */
 const start = async (
   args: readonly string[],
   environment: Environment,
   options: Omit<StdioStartOptions, 'writeSync'> = {},
+  execArgv: readonly string[] = [],
 ) => {
   const bytes: number[] = [];
   const writeSync: WriteSyncFn = (fd, buffer, offset, length) => {
@@ -85,7 +89,10 @@ const start = async (
     }
     return length;
   };
-  const code = await startStdio(args, environment, { ...options, writeSync });
+  const code = await startStdio(args, environment, execArgv, {
+    ...options,
+    writeSync,
+  });
   const stderr = (): string => decoder.decode(new Uint8Array(bytes));
   return { code, stderr };
 };
@@ -160,6 +167,32 @@ describe('the first stage of the start over stdio', () => {
       assertNoCanary(stderr(), [token], 'stderr');
     },
   );
+
+  // The loader reads the path of a certificate and of a key log, but the
+  // notices name only the settings.
+  it('refuses a key log and warns about the trust store without a path', async () => {
+    const canary = makeCanary('token');
+    const path = `/path/${canary.value}`;
+    const environment: Environment = {
+      ECCLIUM_CHURCHTOOLS_URL: doubleOrigin,
+      [tokenVariableName]: makeCanary('token').value,
+      NODE_EXTRA_CA_CERTS: `${path}/ca.pem`,
+    };
+    const { code, stderr } = await start([], environment, {}, [
+      '--tls-keylog',
+      `${path}/keys`,
+    ]);
+    expect(code).toBe(exitCodes.invalidConfig);
+    expect(stderr()).toBe(
+      [
+        problemText({ code: 'tls_keylog_enabled' }),
+        warningText('token_from_environment'),
+        warningText('trust_store_extended'),
+        '',
+      ].join('\n'),
+    );
+    assertNoCanary(stderr(), [canary], 'stderr');
+  });
 
   it('starts the server after the notices and removes the token', async () => {
     const token = makeCanary('token');

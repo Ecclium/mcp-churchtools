@@ -7,13 +7,18 @@ import {
   defaultStdioSubject,
   environmentSchema,
   fitsVariable,
+  nodeOptionsVariableName,
   type PlainVariableName,
   plainVariableNames,
   proxyVariableName,
   reservedStdioSubjects,
   stdioSubjectPattern,
+  tlsKeylogOption,
+  tlsTraceOption,
   tlsVariableName,
   tokenVariableName,
+  trustStoreOptions,
+  trustStoreVariableNames,
   unsupportedVariableNames,
   type Variable,
   variableNames,
@@ -55,8 +60,30 @@ describe('the table of variables', () => {
     expect(Object.isFrozen(unsupportedVariableNames)).toBe(true);
   });
 
-  it('reads one variable without the prefix, the one of TLS', () => {
+  it('names the variable that turns off the check of certificates', () => {
     expect(tlsVariableName).toBe('NODE_TLS_REJECT_UNAUTHORIZED');
+  });
+
+  // Node.js reads these names without the prefix, and they weaken TLS.
+  it('names the settings of Node.js for TLS that the loader reads', () => {
+    expect(nodeOptionsVariableName).toBe('NODE_OPTIONS');
+    expect(trustStoreVariableNames).toEqual([
+      'NODE_EXTRA_CA_CERTS',
+      'NODE_USE_SYSTEM_CA',
+      'SSL_CERT_FILE',
+      'SSL_CERT_DIR',
+    ]);
+    expect(trustStoreOptions).toEqual(['--use-system-ca', '--use-openssl-ca']);
+    expect(Object.isFrozen(trustStoreVariableNames)).toBe(true);
+    expect(Object.isFrozen(trustStoreOptions)).toBe(true);
+    expect([tlsKeylogOption, tlsTraceOption]).toEqual([
+      '--tls-keylog',
+      '--trace-tls',
+    ]);
+    for (const name of [nodeOptionsVariableName, ...trustStoreVariableNames]) {
+      expect(name.startsWith(variablePrefix), name).toBe(false);
+      expect(name).toMatch(/^[A-Z_]+$/);
+    }
   });
 
   // The rows as the table in ADR 0055 lists them.

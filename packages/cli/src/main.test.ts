@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { exitCodes } from './exit-codes.js';
 import { run, type RunOptions } from './main.js';
-import { problemText } from './messages/index.js';
+import { problemText, warningText } from './messages/index.js';
 import {
   helpLines,
   internalErrorText,
@@ -34,13 +34,15 @@ const decoder = new TextDecoder();
 
 /**
  * Runs the command line with a fake writeSync that records every call
- * before it answers. `fail` may throw for a descriptor.
+ * before it answers. `fail` may throw for a descriptor, and `execArgv`
+ * stands for the options Node.js was started with, by default none.
  */
 const capture = (
   args: readonly string[],
   environment: Environment,
   options: Omit<RunOptions, 'writeSync'> & {
     readonly fail?: (fd: number) => void;
+    readonly execArgv?: readonly string[];
   } = {},
 ): Captured => {
   const calls: { stream: number; count: number }[] = [];
@@ -56,7 +58,7 @@ const capture = (
     taken.set(fd, bytes);
     return length;
   };
-  const code = run(args, environment, {
+  const code = run(args, environment, options.execArgv ?? [], {
     tokenFiles: options.tokenFiles,
     load: options.load,
     writeSync,
@@ -153,6 +155,42 @@ describe('the command line', () => {
     expect(result.code).toBe(exitCodes.ok);
     expect(result.stderr).toBe('');
     expect(result.stdout).toContain('\nBeim Start meldet Ecclium:\n');
+  });
+
+  // The same notices as the start over stdio, for the variables and for
+  // the options Node.js was started with, and never a path.
+  it.each<[string, () => Environment, readonly string[]]>([
+    [
+      'a certificate in the environment',
+      () => ({
+        ...validEnvironment(),
+        NODE_EXTRA_CA_CERTS: join(folder, 'ca.pem'),
+      }),
+      [],
+    ],
+    ['an option of Node.js', validEnvironment, ['--use_system_ca']],
+  ])(
+    'warns in the report about a trust store extended by %s',
+    (_, environment, execArgv) => {
+      const result = capture(check, environment(), { execArgv });
+      expect(result.code).toBe(exitCodes.ok);
+      expect(result.stderr).toBe('');
+      expect(result.stdout).toContain(
+        `  - ${warningText('trust_store_extended')}\n`,
+      );
+      expect(result.stdout).not.toContain(folderCanary);
+    },
+  );
+
+  it('refuses a key log among the options of Node.js without its path', () => {
+    const result = capture(check, validEnvironment(), {
+      execArgv: ['--tls-keylog', join(folder, 'keys')],
+    });
+    expect(result.code).toBe(exitCodes.invalidConfig);
+    expect(result.stdout).toContain(
+      `  - ${problemText({ code: 'tls_keylog_enabled' })}\n`,
+    );
+    expect(result.stdout + result.stderr).not.toContain(folderCanary);
   });
 
   it.each([[check], [['--jsn']]])(
@@ -323,7 +361,7 @@ describe('the command line', () => {
 
     it('gives 70 when the output cannot be made', () => {
       expect(
-        run(check, validEnvironment(), {
+        run(check, validEnvironment(), [], {
           writeSync: 'fd' as unknown as WriteSyncFn,
         }),
       ).toBe(exitCodes.internal);

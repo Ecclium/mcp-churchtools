@@ -108,7 +108,7 @@ function messages(boundaries: Boundaries): Record<Concern, string> {
     stderr: `[arch:stderr] Only the logger, the output module and the start notices of the command line and the start of the elicitation spike in testkit write to stderr (${adr('stderr')}).`,
     process:
       '[arch:process] Use process and globalThis only through a property such as process.exitCode, and never import node:process: its ES module makes fd 1 and fd 2 non-blocking (ADR 0054). Passed on or taken apart, they hide writes to stdout and stderr from these rules (ADR 0053).',
-    environment: `[arch:environment] Only the entry of the command line reads the environment and the arguments and hands them to the core as parameters. Other code could read the token from them past the Secret, also through the diagnostic report of the process (${adr('environment')}).`,
+    environment: `[arch:environment] Only the entry of the command line reads the environment, the arguments and the options of Node.js and hands them to the core as parameters. Other code could read the token from them past the Secret, also through the diagnostic report of the process (${adr('environment')}).`,
     'mcp-sdk': `[arch:mcp-sdk] Only the mount in core, the server and the elicitation spike in testkit import the MCP SDK (${adr('mcpSdk')}).`,
     'dynamic-import':
       '[arch:dynamic-import] import() takes a fixed string, so that the architecture checks see what it loads (ADR 0022).',
@@ -276,7 +276,7 @@ function restrictions(
         ? [{ object: 'process', property: 'stdout', message: message.stdout }]
         : []),
       ...(forbid('environment')
-        ? ['env', 'argv', 'report'].map((property) => ({
+        ? ['env', 'argv', 'execArgv', 'report'].map((property) => ({
             object: 'process',
             property,
             message: message.environment,

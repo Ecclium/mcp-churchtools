@@ -37,10 +37,10 @@ export interface Message {
 }
 
 // A name the loader may report: the prefix and capitals, digits and
-// underscores, or one of the two variables of Node.js it reads. Anything
-// else is never put into a text.
+// underscores, or one of the variables of Node.js it reports by name.
+// Anything else is never put into a text.
 const namePattern =
-  /^ECCLIUM_[A-Z0-9_]{1,64}$|^NODE_TLS_REJECT_UNAUTHORIZED$|^NODE_DEBUG$/;
+  /^ECCLIUM_[A-Z0-9_]{1,64}$|^NODE_TLS_REJECT_UNAUTHORIZED$|^NODE_DEBUG$|^NODE_OPTIONS$/;
 
 const quote = (name: string): string => `‹${name}›`;
 
@@ -111,6 +111,25 @@ const tokenFile = quote('ECCLIUM_CHURCHTOOLS_TOKEN_FILE');
 const tokenVariable = quote('ECCLIUM_CHURCHTOOLS_TOKEN');
 const example = 'https://example.church.tools';
 
+// Where an option of TLS was found: in NODE_OPTIONS, which the loader then
+// names, or else among the options Node.js was started with.
+const optionFound = (
+  option: string,
+  raw: string | undefined,
+  why: string,
+): Message =>
+  raw === 'NODE_OPTIONS'
+    ? message(
+        `Die Option ${quote(option)} steht in ${quote(raw)}.`,
+        why,
+        `Entfernen Sie die Option aus ${quote(raw)} in der Konfiguration des KI-Assistenten.`,
+      )
+    : message(
+        `Node.js läuft mit der Option ${quote(option)}.`,
+        why,
+        'Entfernen Sie die Option aus dem Befehl, mit dem der KI-Assistent Ecclium startet.',
+      );
+
 // One function per code. It gets the quoted name of the variable and the
 // name itself, or undefined for both when the problem names none or a name
 // that breaks the pattern.
@@ -163,6 +182,18 @@ const problems: Readonly<
       `Die Variable ${name} schaltet die Diagnose von Node.js ein.`,
       'Damit schriebe Node.js am Protokoll vorbei nach stderr, je nach Sektion Adresse, Pfad und Suchbegriffe jeder Anfrage an ChurchTools oder Teile der Antworten.',
       'Entfernen Sie die Variable aus der Konfiguration des KI-Assistenten.',
+    ),
+  tls_keylog_enabled: (_name, raw) =>
+    optionFound(
+      '--tls-keylog',
+      raw,
+      'Damit schriebe Node.js die Schlüssel jeder TLS-Verbindung in eine Datei, und wer zusätzlich den Verkehr mitschneidet, könnte das Token lesen.',
+    ),
+  tls_trace_enabled: (_name, raw) =>
+    optionFound(
+      '--trace-tls',
+      raw,
+      'Damit schriebe Node.js den Ablauf jeder TLS-Verbindung zu ChurchTools am Protokoll vorbei nach stderr.',
     ),
   empty_value: (name) =>
     message(
@@ -444,6 +475,13 @@ const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({
     'Die Suchtools sind freigegeben, kommen aber erst mit einer späteren Version.',
     'Bis dahin wirkt die Einstellung nicht. Mit ‹ct_persons_search› und ‹ct_groups_search› wird der KI-Assistent dann Personen und Gruppen der Instanz suchen und ihre Namen sehen können.',
     `Setzen Sie ${quote('ECCLIUM_SEARCH_TOOLS')} auf ‹false›, wenn er diese Daten auch später nicht sehen soll.`,
+  ),
+  // One text for every setting: the report of the loader names none of
+  // them, and never the path of a certificate.
+  trust_store_extended: message(
+    'Node.js vertraut nicht nur den mitgelieferten Zertifizierungsstellen.',
+    'Mindestens eine der Einstellungen ‹NODE_EXTRA_CA_CERTS›, ‹NODE_USE_SYSTEM_CA›, ‹SSL_CERT_FILE›, ‹SSL_CERT_DIR›, ‹--use-system-ca› und ‹--use-openssl-ca› ist gesetzt. Wer eine der zusätzlichen Zertifizierungsstellen kontrolliert, kann sich als Ihre ChurchTools-Instanz ausgeben und das Token mitlesen.',
+    'Behalten Sie die Einstellung nur, wenn das Zertifikat Ihrer Instanz von einer eigenen Zertifizierungsstelle stammt. Sonst entfernen Sie sie aus der Konfiguration des KI-Assistenten.',
   ),
 });
 

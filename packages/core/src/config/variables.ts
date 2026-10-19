@@ -67,13 +67,13 @@ export const unsupportedVariableNames = Object.freeze([
 export const proxyVariableName = 'ECCLIUM_EGRESS_PROXY';
 
 /**
- * One of the two variables without the prefix that the loader reads. With
- * the value 0, Node.js would check no certificate of ChurchTools.
+ * A variable without the prefix that the loader reads. With the value 0,
+ * Node.js would check no certificate of ChurchTools.
  */
 export const tlsVariableName = 'NODE_TLS_REJECT_UNAUTHORIZED';
 
 /**
- * The other variable without the prefix that the loader reads. It switches
+ * Another variable without the prefix that the loader reads. It switches
  * on the debug output of Node.js modules, which goes to stderr past the
  * logger: undici writes the address, path and query of each request, the
  * section `stream` the first bytes of every chunk of an answer and of the
@@ -81,6 +81,46 @@ export const tlsVariableName = 'NODE_TLS_REJECT_UNAUTHORIZED';
  * with every release, so the loader refuses any section.
  */
 export const debugVariableName = 'NODE_DEBUG';
+
+/**
+ * The variable with options for Node.js, as on its command line. The
+ * loader reads it, like the options Node.js was started with, only for the
+ * options of TLS below.
+ */
+export const nodeOptionsVariableName = 'NODE_OPTIONS';
+
+/**
+ * Variables without the prefix that make Node.js trust more certificate
+ * authorities than the ones it brings, frozen. `SSL_CERT_FILE` and
+ * `SSL_CERT_DIR` count with `--use-openssl-ca` and in a build of Node.js
+ * that uses the store of OpenSSL by default. They stay allowed, so that an
+ * instance with a certificate of its own authority still works, and the
+ * start warns (ADR 0056).
+ */
+export const trustStoreVariableNames = Object.freeze([
+  'NODE_EXTRA_CA_CERTS',
+  'NODE_USE_SYSTEM_CA',
+  'SSL_CERT_FILE',
+  'SSL_CERT_DIR',
+] as const);
+
+/** The options of Node.js that extend the trust store as well, frozen. */
+export const trustStoreOptions = Object.freeze([
+  '--use-system-ca',
+  '--use-openssl-ca',
+] as const);
+
+/**
+ * The option that writes the keys of every TLS session to a file. Whoever
+ * also records the traffic could read the token, so it stops the start.
+ */
+export const tlsKeylogOption = '--tls-keylog';
+
+/**
+ * The option that writes a trace of every TLS session to stderr, past the
+ * logger, so it stops the start like `NODE_DEBUG`.
+ */
+export const tlsTraceOption = '--trace-tls';
 
 /**
  * A neutral name for whoever calls over stdio, such as `local-stdio`: no

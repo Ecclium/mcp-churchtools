@@ -19,6 +19,11 @@ import { type Output, renderConfigReport } from '../output/index.js';
 export interface ConfigCheckOptions {
   /** The copy of the environment, as the command line took it over. */
   readonly environment: Readonly<Record<string, string>>;
+  /**
+   * The options Node.js was started with, so that the report shows the
+   * same notices for the options of TLS as the start over stdio.
+   */
+  readonly execArgv: readonly string[];
   /** Shows the host and a subject other than the default. */
   readonly showValues: boolean;
   readonly output: Output;
@@ -39,7 +44,12 @@ export interface ConfigCheckOptions {
  *   inconsistent; the command line turns that into an internal error.
  * @example
  * ```ts
- * checkConfig({ environment, showValues: false, output: createOutput() });
+ * checkConfig({
+ *   environment,
+ *   execArgv,
+ *   showValues: false,
+ *   output: createOutput(),
+ * });
  * ```
  */
 export function checkConfig(
@@ -49,6 +59,7 @@ export function checkConfig(
   const result = load({
     environment: options.environment,
     transport: 'stdio',
+    execArgv: options.execArgv,
     tokenFiles: options.tokenFiles,
   });
   // Rendered whole before the first line goes out, so that an
