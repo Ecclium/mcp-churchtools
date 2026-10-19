@@ -79,10 +79,10 @@ Claude Desktop liest seine Server aus der Datei `claude_desktop_config.json`, un
 In Claude Code tragen Sie den Server mit einem Befehl für Ihren Benutzer ein. Ersetzen Sie vorher die Platzhalter:
 
 ```sh
-claude mcp add --scope user --transport stdio --env ECCLIUM_CHURCHTOOLS_URL=https://example.church.tools --env ECCLIUM_CHURCHTOOLS_TOKEN_FILE=/pfad/zur/token-datei ecclium -- /pfad/zu/node /pfad/zum/checkout/packages/cli/dist/bin.js stdio
+claude mcp add-json --scope user ecclium '{"type":"stdio","command":"/pfad/zu/node","args":["/pfad/zum/checkout/packages/cli/dist/bin.js","stdio"],"env":{"ECCLIUM_CHURCHTOOLS_URL":"https://example.church.tools","ECCLIUM_CHURCHTOOLS_TOKEN_FILE":"/pfad/zur/token-datei"}}'
 ```
 
-Die Optionen stehen vor dem Namen `ecclium`, alles nach `--` startet den Server. Mit `--scope user` gilt der Server in jedem Projekt Ihres Benutzers. Der Befehl steht danach in der History der Shell, er enthält aber nur den Pfad der Token-Datei, nicht das Token. Dieselben Angaben in der Form der Konfiguration von Claude Code stehen in [beispiele/claude-code.json](beispiele/claude-code.json). `claude mcp list` führt den Server danach auf, `claude mcp remove --scope user ecclium` trägt ihn wieder aus.
+Der Befehl übergibt den Eintrag als JSON in einfachen Anführungszeichen. Die kürzere Form `claude mcp add` mit `--env` nahm Claude Code 2.1.302 so nicht an: `--env` nahm dort alle folgenden Wörter bis `--`, auch den Namen des Servers. Mit `--scope user` gilt der Server in jedem Projekt Ihres Benutzers. Der Befehl steht danach in der History der Shell, er enthält aber nur den Pfad der Token-Datei, nicht das Token. Dieselben Angaben in der Form der Konfiguration von Claude Code stehen in [beispiele/claude-code.json](beispiele/claude-code.json). `claude mcp list` führt den Server danach auf, `claude mcp remove --scope user ecclium` trägt ihn wieder aus.
 
 Im Checkout liegt absichtlich keine Datei `.mcp.json`. Claude Code böte den Server sonst jedem an, der Claude Code im Checkout startet, auch ohne Dienstkonto und Token-Datei.
 

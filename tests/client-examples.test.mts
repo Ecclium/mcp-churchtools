@@ -17,7 +17,7 @@ import { createStdioCatalog } from '../packages/cli/src/stdio/catalog.ts';
 // variables that hold no secret and only placeholders in them, the
 // executable that packages/cli/package.json names, a configuration that
 // loads without a problem or a warning and gives exactly ct_whoami, and the
-// line `claude mcp add` of the page in step with its example (ADR 0055).
+// line `claude mcp add-json` of the page in step with its example (ADR 0055).
 
 /** A server as both clients list it under `mcpServers`. */
 interface Server {
@@ -174,37 +174,27 @@ describe('the page on the operation over stdio', () => {
     expect(page).not.toContain('"mcpServers"');
   });
 
-  it('registers with claude mcp add exactly the server of the example for Claude Code', () => {
+  // claude mcp add takes every word after --env as a variable up to --, the
+  // name of the server included, so Claude Code 2.1.302 refused the short
+  // form. The page passes the entry as JSON with claude mcp add-json.
+  it('registers with claude mcp add-json exactly the server of the example for Claude Code', () => {
     const lines = page
       .split('\n')
-      .filter((line) => line.startsWith('claude mcp add '));
+      .filter((line) => line.startsWith('claude mcp add'));
     expect(lines).toHaveLength(1);
-    const words = (lines[0] ?? '').split(' ').slice(3);
-    const separator = words.indexOf('--');
-    expect(separator).toBeGreaterThan(0);
-    const options = words.slice(0, separator - 1);
-    const name = words[separator - 1];
-    const started = words.slice(separator + 1);
-
-    const flags = options.filter((_, index) => index % 2 === 0);
-    const values = options.filter((_, index) => index % 2 === 1);
-    expect(flags).toEqual(['--scope', '--transport', '--env', '--env']);
-    const [scope, transport, ...pairs] = values;
-    expect(scope).toBe('user');
+    const prefix = 'claude mcp add-json --scope user ';
+    const line = lines[0] ?? '';
+    expect(line.startsWith(prefix)).toBe(true);
+    const rest = line.slice(prefix.length);
+    const space = rest.indexOf(' ');
+    const name = rest.slice(0, space);
+    const quoted = rest.slice(space + 1);
+    expect(quoted.startsWith("'") && quoted.endsWith("'")).toBe(true);
+    const entry = JSON.parse(quoted.slice(1, -1)) as Server;
 
     const { config } = parse('claude-code.json');
-    const server = config.mcpServers[name ?? ''];
     expect(Object.keys(config.mcpServers)).toEqual([name]);
-    expect(transport).toBe(server?.type);
-    expect(
-      Object.fromEntries(
-        pairs.map((pair) => {
-          const at = pair.indexOf('=');
-          return [pair.slice(0, at), pair.slice(at + 1)];
-        }),
-      ),
-    ).toEqual(server?.env);
-    expect(started).toEqual([server?.command, ...(server?.args ?? [])]);
+    expect(entry).toEqual(config.mcpServers[name]);
   });
 });
 
