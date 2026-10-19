@@ -114,6 +114,8 @@ export interface Session {
   readonly logged: (match: (line: Json) => boolean) => Promise<Json>;
   /** Ends stdin and waits for the exit of the child. */
   readonly finish: () => Promise<Finished>;
+  /** Waits for the exit of the child and leaves stdin open. */
+  readonly ended: () => Promise<Finished>;
 }
 
 const timeouts = { timeout: 20_000, interval: 10 };
@@ -142,11 +144,17 @@ export function startSession(
   child.stderr.on('data', (chunk: Buffer) => {
     stderr += chunk.toString('utf8');
   });
+  // close, not exit: Node.js may report the exit before the last output
+  // of the child, such as a line written while it exits, has arrived.
   const exited = new Promise<number | null>((resolve) => {
-    child.on('exit', (code) => {
+    child.on('close', (code) => {
       resolve(code);
     });
   });
+  const ended = async (): Promise<Finished> => {
+    const code = await exited;
+    return { code, stdout, stderr };
+  };
   // Waits until find returns a value, and gives up at once with the end of
   // stderr when the child has ended without it.
   const until = (find: () => Json | undefined, what: string): Promise<Json> => {
@@ -179,11 +187,11 @@ export function startSession(
       ),
     logged: (match) =>
       until(() => jsonLines(stderr).find(match), 'such line on stderr'),
-    finish: async () => {
+    finish: () => {
       child.stdin.end();
-      const code = await exited;
-      return { code, stdout, stderr };
+      return ended();
     },
+    ended,
   };
 }
 
