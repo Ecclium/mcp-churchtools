@@ -196,6 +196,10 @@ export function serve(options: ServeOptions): ExitCode | undefined {
   const clock = systemClock;
   const minLevel = config.logLevel;
   const logger = createLogger({ writer, clock, minLevel });
+  // The fixed events of a signal and of the end, at every level of the
+  // log: the count of lost lines is the only trace of that loss, and the
+  // signal explains the exit code (ADR 0054).
+  const processLogger = createLogger({ writer, clock, minLevel: 'info' });
 
   const crash =
     (event: string) =>
@@ -250,7 +254,7 @@ export function serve(options: ServeOptions): ExitCode | undefined {
         return;
       }
       signalCode = code;
-      logger.info(event);
+      processLogger.info(event);
       // Closing ends the connection, and the end below ends the process.
       void server.close();
     };
@@ -273,7 +277,7 @@ export function serve(options: ServeOptions): ExitCode | undefined {
         // The process ends either way, and the reason would name nothing
         // an operator could act on.
       }
-      logger.info(closedEvent, {
+      processLogger.info(closedEvent, {
         count: Math.min(writer.stats().failed, maxCount),
       });
     });

@@ -46,20 +46,28 @@ const [firstName = '', lastName = ''] = canary.name.cores;
 const allCanaries = [canary.token, canary.email, canary.name];
 const maskedEmail = `${canary.email.value.charAt(0)}***@example.org`;
 
-const loaded = loadConfig({
-  environment: {
-    ECCLIUM_CHURCHTOOLS_URL: doubleOrigin,
-    ECCLIUM_CHURCHTOOLS_TOKEN: canary.token.value,
-  },
-  transport: 'stdio',
-});
-if (!loaded.ok) throw new Error('the configuration of the test is invalid');
-const config: EccliumConfig = loaded.config;
+/** The configuration of the test, at the level of the log given. */
+const configAt = (level: EccliumConfig['logLevel']): EccliumConfig => {
+  const loaded = loadConfig({
+    environment: {
+      ECCLIUM_CHURCHTOOLS_URL: doubleOrigin,
+      ECCLIUM_CHURCHTOOLS_TOKEN: canary.token.value,
+      ECCLIUM_LOG_LEVEL: level,
+    },
+    transport: 'stdio',
+  });
+  if (!loaded.ok) throw new Error('the configuration of the test is invalid');
+  return loaded.config;
+};
+const config = configAt('info');
 
 const json = { headers: { 'content-type': 'application/json' } };
 
 const open: MockedHttpTransport[] = [];
 afterEach(async () => {
+  // Before the real timers, so that the stub of setTimeout does not put
+  // the fake one back.
+  vi.unstubAllGlobals();
   vi.useRealTimers();
   // The end of the connection closes the transport already; a second
   // close may fail, which says nothing here.
@@ -101,8 +109,11 @@ const setup = (
     readonly afterTornLine?: boolean;
     readonly answer?: boolean;
     readonly failTransport?: boolean;
+    readonly logLevel?: EccliumConfig['logLevel'];
   } = {},
 ) => {
+  const configured =
+    options.logLevel === undefined ? config : configAt(options.logLevel);
   const bytes: number[] = [];
   const writeSync: WriteSyncFn = (fd, buffer, offset, length) => {
     expect(fd).toBe(2);
@@ -162,8 +173,8 @@ const setup = (
   });
   const fake = fakeHost();
   const code = serve({
-    config,
-    catalog: createStdioCatalog(config),
+    config: configured,
+    catalog: createStdioCatalog(configured),
     afterTornLine: options.afterTornLine ?? false,
     writeSync,
     createTransport,
@@ -295,6 +306,19 @@ describe('the second stage of the start over stdio', () => {
     expect(session.exits).toEqual([]);
   });
 
+  // The level filters the lines of the server, the transport and the
+  // pipeline, never the signal and the count of lost lines.
+  it.each(['warn', 'error'] as const)(
+    'writes the signal and the end also at the level %s',
+    async (logLevel) => {
+      const session = setup({ logLevel });
+      session.signals.get('SIGTERM')?.();
+      expect(at(await session.ended(), 'count')).toBe(0);
+      expect(session.events()).toEqual(['process_sigterm', 'stdio_closed']);
+      expect(session.exitCodes).toEqual([143]);
+    },
+  );
+
   it('ends with 130 after SIGINT and at once on a second signal', async () => {
     const session = setup();
     session.signals.get('SIGINT')?.();
@@ -306,9 +330,12 @@ describe('the second stage of the start over stdio', () => {
   });
 
   // vi.waitFor would move the fake clock itself, so the test waits for
-  // the exit code with turns of the event loop instead.
+  // the exit code with turns of the event loop instead. The spy wraps the
+  // fake setTimeout, so it comes after the fake timers.
   it('ends the process at the deadline when something still holds it', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout'] });
+    const timers = vi.fn(globalThis.setTimeout);
+    vi.stubGlobal('setTimeout', timers);
     const session = setup();
     session.input.end();
     for (
@@ -319,6 +346,14 @@ describe('the second stage of the start over stdio', () => {
       await new Promise((resolve) => setImmediate(resolve));
     }
     expect(session.exitCodes).toEqual([0]);
+    // The deadline itself holds nothing: a clean end does not wait for it.
+    // Found by its delay, since the end may arm other timers.
+    const index = timers.mock.calls.findIndex(
+      ([, delay]) => delay === closeDeadlineMs,
+    );
+    const deadline = timers.mock.results[index];
+    if (deadline?.type !== 'return') throw new Error('no deadline armed');
+    expect(deadline.value.hasRef()).toBe(false);
     vi.advanceTimersByTime(closeDeadlineMs - 1);
     expect(session.exits).toEqual([]);
     vi.advanceTimersByTime(1);
