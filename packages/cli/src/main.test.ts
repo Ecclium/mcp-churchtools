@@ -75,7 +75,7 @@ const address = 'https://example.church.tools';
 const check = ['config', 'check'];
 
 const valid =
-  'Die Konfiguration ist gültig. ChurchTools wurde nicht angefragt. Ob das Token gilt, zeigt erst der Start.';
+  'Die Konfiguration ist gültig. ChurchTools wurde nicht angefragt. Ob ChurchTools das Token annimmt, zeigt erst ein Aufruf von ‹ct_whoami›.';
 const invalid =
   'Mit dieser Konfiguration startet Ecclium nicht. ChurchTools wurde nicht angefragt. Beheben Sie die Probleme und prüfen Sie dann erneut mit ‹ecclium config check›.';
 
