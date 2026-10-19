@@ -124,9 +124,12 @@ describe('whoami', () => {
     expect(double.calls()).toHaveLength(1);
   });
 
+  // undefined leaves the key out of the JSON: an account that may not see
+  // persons gets its own person without the e-mail.
   it.each([
     ['', null],
     [null, null],
+    [undefined, null],
   ])('gives null for the e-mail address %j', async (email, expected) => {
     const { double, client, ctx } = setup();
     double

@@ -97,7 +97,9 @@ const setup = () => {
     clock,
     logging: { writer, minLevel: 'debug' },
   });
-  const answerWhoami = (status = 200): void => {
+  // An account that may not see persons gets its own person without the
+  // e-mail, so withEmail false leaves the key out.
+  const answerWhoami = (status = 200, withEmail = true): void => {
     double.intercept({ path: whoamiPath, method: 'GET' }).reply(
       status,
       JSON.stringify({
@@ -106,7 +108,7 @@ const setup = () => {
           guid: '00000000-0000-0000-0000-000000000007',
           firstName,
           lastName,
-          email: canary.email.value,
+          ...(withEmail ? { email: canary.email.value } : {}),
         },
       }),
       json,
@@ -141,6 +143,21 @@ const manyRights = (count: number): Record<string, true> =>
   );
 
 describe('ct_whoami', () => {
+  it('returns null for the e-mail address of an account that does not see it', async () => {
+    const { answerWhoami, answerPermissions, call } = setup();
+    answerWhoami(200, false);
+    answerPermissions(200, { churchwiki: { view: true } });
+    const outcome = await call();
+    expect(outcome.ok && outcome.data).toMatchObject({
+      id: 7,
+      email: null,
+      rights: {
+        status: 'known',
+        modules: [{ module: 'churchwiki', rights: [{ right: 'view' }] }],
+      },
+    });
+  });
+
   it('returns the account and its set rights by module, sorted by code units', async () => {
     const { answerWhoami, answerPermissions, call, paths } = setup();
     answerWhoami();

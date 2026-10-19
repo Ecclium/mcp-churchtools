@@ -6,7 +6,7 @@ In dieser Version bietet der Server nur das Tool `ct_whoami` an. Es zeigt, mit w
 
 Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Hersteller von ChurchTools.
 
-Ein Lauf mit Claude Code und Claude Desktop unter macOS steht noch aus. Bis dahin prüfen nur die Tests im Repository die Beispiele dieser Seite, noch keiner der beiden Clients. Windows deckt diese Seite nicht ab: Dort kann Ecclium die Token-Datei nicht sicher lesen und lehnt sie ab ([ADR 0055](../adr/0055-konfiguration-identitaet.md)).
+Geprüft am 19.10.2026 unter macOS 27.0 mit Claude Code 2.1.302 und Claude Desktop 2.31226.1: In beiden Clients erschien der Server mit genau `ct_whoami` und antwortete mit dem Konto und seinen Rechten. Mit einem Dienstkonto, das nur das Wiki sehen darf, ist das in Claude Code geprüft. Windows deckt diese Seite nicht ab: Dort kann Ecclium die Token-Datei nicht sicher lesen und lehnt sie ab ([ADR 0055](../adr/0055-konfiguration-identitaet.md)).
 
 ## Voraussetzungen
 
@@ -79,10 +79,10 @@ Claude Desktop liest seine Server aus der Datei `claude_desktop_config.json`, un
 In Claude Code tragen Sie den Server mit einem Befehl für Ihren Benutzer ein. Ersetzen Sie vorher die Platzhalter:
 
 ```sh
-claude mcp add --scope user --transport stdio --env ECCLIUM_CHURCHTOOLS_URL=https://example.church.tools --env ECCLIUM_CHURCHTOOLS_TOKEN_FILE=/pfad/zur/token-datei ecclium -- /pfad/zu/node /pfad/zum/checkout/packages/cli/dist/bin.js stdio
+claude mcp add-json --scope user ecclium '{"type":"stdio","command":"/pfad/zu/node","args":["/pfad/zum/checkout/packages/cli/dist/bin.js","stdio"],"env":{"ECCLIUM_CHURCHTOOLS_URL":"https://example.church.tools","ECCLIUM_CHURCHTOOLS_TOKEN_FILE":"/pfad/zur/token-datei"}}'
 ```
 
-Die Optionen stehen vor dem Namen `ecclium`, alles nach `--` startet den Server. Mit `--scope user` gilt der Server in jedem Projekt Ihres Benutzers. Der Befehl steht danach in der History der Shell, er enthält aber nur den Pfad der Token-Datei, nicht das Token. Dieselben Angaben in der Form der Konfiguration von Claude Code stehen in [beispiele/claude-code.json](beispiele/claude-code.json). `claude mcp list` führt den Server danach auf, `claude mcp remove --scope user ecclium` trägt ihn wieder aus.
+Der Befehl übergibt den Eintrag als JSON in einfachen Anführungszeichen. Die kürzere Form `claude mcp add` mit `--env` nahm Claude Code 2.1.302 so nicht an: `--env` nahm dort alle folgenden Wörter bis `--`, auch den Namen des Servers. Mit `--scope user` gilt der Server in jedem Projekt Ihres Benutzers. Der Befehl steht danach in der History der Shell, er enthält aber nur den Pfad der Token-Datei, nicht das Token. Dieselben Angaben in der Form der Konfiguration von Claude Code stehen in [beispiele/claude-code.json](beispiele/claude-code.json). `claude mcp list` führt den Server danach auf, `claude mcp remove --scope user ecclium` trägt ihn wieder aus.
 
 Im Checkout liegt absichtlich keine Datei `.mcp.json`. Claude Code böte den Server sonst jedem an, der Claude Code im Checkout startet, auch ohne Dienstkonto und Token-Datei.
 
@@ -90,7 +90,7 @@ Im Checkout liegt absichtlich keine Datei `.mcp.json`. Claude Code böte den Ser
 
 - Ein einziges Tool, `ct_whoami`, ohne Argumente und nur lesend. Seine Beschreibung ist englisch, wie alle Texte für das Modell.
 - Ein Aufruf sendet nacheinander zwei Anfragen an ChurchTools: `GET /api/whoami` für das Konto und `GET /api/permissions/global` für seine Rechte. Andere Adressen als die aus `ECCLIUM_CHURCHTOOLS_URL` fragt der Server nicht an.
-- Das Ergebnis nennt die Personen-ID, Vor- und Nachname und die E-Mail-Adresse des Dienstkontos. Die E-Mail-Adresse ist maskiert: das erste Zeichen, drei Sterne und die Domain, etwa `m***@example.org`. Vor- und Nachname maskiert diese Version nicht.
+- Das Ergebnis nennt die Personen-ID, Vor- und Nachname und die E-Mail-Adresse des Dienstkontos. Die E-Mail-Adresse ist maskiert: das erste Zeichen, drei Sterne und die Domain, etwa `m***@example.org`. Vor- und Nachname maskiert diese Version nicht. Darf das Dienstkonto keine Personen sehen, liefert ChurchTools seine E-Mail-Adresse nicht mit, und dort steht `null`.
 - Dazu kommen die gesetzten Rechte je Modul, nach Namen sortiert. Rechte, die das Konto nicht hat, fehlen. Ein Recht mit einer Liste von IDs, etwa für einzelne Wiki-Kategorien, zeigt die 10 kleinsten IDs und ihre Gesamtzahl. Hat das Konto mehr als 150 gesetzte Rechte, gibt das Tool statt der Liste einen Fehler mit dem Rat, dem Dienstkonto nur die Rechte seiner Tools zu geben. Kennt Ecclium die Form der Antwort zu den Rechten nicht, stehen sie als unbekannt da.
 - Lehnt ChurchTools das Token ab oder ist ChurchTools nicht erreichbar, erhält der KI-Assistent nur einen festen englischen Satz. Den Code, `auth` oder `network`, nennt die Zeile des Audits auf stderr. Keine Fehlermeldung nennt einen Wert aus der Konfiguration oder aus ChurchTools.
 

@@ -59,7 +59,9 @@ export const whoamiSchema = z.object({
     guid: z.string().min(1).max(64, { abort: true }).refine(wellFormed),
     firstName: text(255),
     lastName: text(255),
-    email: text(254).nullable(),
+    // Missing for an account that may not see persons: ChurchTools then
+    // sends 17 fields of the person instead of 40, without the e-mail.
+    email: text(254).nullable().optional(),
   }),
   meta: z.object({ simulatingUserId: z.null().optional() }).optional(),
 });
