@@ -56,8 +56,9 @@ const request = (): ToolRequest => ({
 });
 
 // A tool that fails with contact data in its message, as a careless tool
-// might. A plain object, not defineTool: core and the plugin interface
-// resolve different copies of zod in the workspace.
+// might. A plain object, not defineTool, like the tools of the other tests
+// of core: registry and pipeline check at run time whatever a plugin hands
+// over.
 const failingPlugin: Plugin = {
   name: 'failing-plugin',
   version: '1.0.0',

@@ -23,9 +23,9 @@ const tool = (
   name: `ct_${string}`,
   extra: Record<string, unknown> = {},
 ): ToolDefinition =>
-  // A plain object, not defineTool: core and the plugin interface resolve
-  // different copies of zod in the workspace, and the registry must take
-  // either.
+  // A plain object, not defineTool: `extra` makes a tool invalid on
+  // purpose, which the types of defineTool refuse, and the registry checks
+  // at run time whatever a plugin hands over.
   ({
     name,
     meta: {
