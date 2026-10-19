@@ -6,7 +6,7 @@ In dieser Version bietet der Server nur das Tool `ct_whoami` an. Es zeigt, mit w
 
 Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Hersteller von ChurchTools.
 
-Ein Lauf mit Claude Code und Claude Desktop unter macOS steht noch aus. Bis dahin prüfen nur die Tests im Repository die Beispiele dieser Seite, noch keiner der beiden Clients. Windows deckt diese Seite nicht ab: Dort kann Ecclium die Token-Datei nicht sicher lesen und lehnt sie ab ([ADR 0055](../adr/0055-konfiguration-identitaet.md)).
+Geprüft am 19.10.2026 unter macOS 27.0 mit Claude Code 2.1.302 und Claude Desktop 2.31226.1: In beiden Clients erschien der Server mit genau `ct_whoami` und antwortete mit dem Konto und seinen Rechten. Mit einem Dienstkonto, das nur das Wiki sehen darf, ist das in Claude Code geprüft. Windows deckt diese Seite nicht ab: Dort kann Ecclium die Token-Datei nicht sicher lesen und lehnt sie ab ([ADR 0055](../adr/0055-konfiguration-identitaet.md)).
 
 ## Voraussetzungen
 
