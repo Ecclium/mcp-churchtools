@@ -444,7 +444,11 @@ describe.each(eras)('the stdio start in the $name era', { timeout }, (era) => {
       (line) => line['event'] === 'tool_call',
     );
     expect(calls).toHaveLength(1);
-    expect(audit?.['eventId']).toMatch(/^[0-9a-f-]{36}$/);
+    expect(audit?.['eventId']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+    // The nil UUID is the placeholder of a failed ID, not an ID.
+    expect(audit?.['eventId']).not.toBe('00000000-0000-0000-0000-000000000000');
     expect(calls[0]?.['eventId']).toBe(audit?.['eventId']);
   });
 

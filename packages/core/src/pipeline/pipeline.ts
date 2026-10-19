@@ -425,15 +425,18 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     const start = now();
     let mode: Mode | undefined;
     try {
-      // One ID per call, drawn first: the context binds it to the log lines
-      // of the call and the sink writes it into the audit line, so both can
-      // be joined (ADR 0054). It travels as an argument of record, never as
-      // a field a tool or plugin could set.
-      run.eventId = randomUUID();
       // Before the first stage, so that the call of an unknown tool is
       // audited with its tenant as well.
       run.assignment = copyAssignment(request.assignment);
       mode = request.mode;
+      // One ID per call, drawn after these copies, so that an ID source
+      // that throws still leaves tenant, actor and mode to the audit line,
+      // and before the first stage and the first log line. The context
+      // binds it to the log lines of the call and the sink writes it into
+      // the audit line, so both can be joined (ADR 0054). It travels as an
+      // argument of record, never as a field a tool or plugin could set.
+      // Without it the sink draws an ID of its own.
+      run.eventId = randomUUID();
       ({ outcome, audit: auditOutcome } = await stages(
         run,
         name,

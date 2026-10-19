@@ -62,8 +62,9 @@ export interface AuditSink {
    * @param draft - The event without `v`, `eventId` and `ts`.
    * @param eventId - The ID the pipeline drew for a tool call and bound to
    *   the log lines of its context, so that log and audit share it. The
-   *   sink checks it like an ID of its own and draws one with `newId` when
-   *   it is missing.
+   *   sink checks a given ID like one of its own and also refuses the nil
+   *   UUID, the placeholder of a failed ID. When the ID is missing, the
+   *   sink draws one with `newId`.
    */
   record(draft: AuditDraft, eventId?: string): void;
   /**
