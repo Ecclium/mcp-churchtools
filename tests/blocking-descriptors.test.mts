@@ -36,8 +36,10 @@ import { describe, expect, it } from 'vitest';
 // non-blocking, only after them (ADR 0054). For the rest of the packages,
 // the architecture rules refuse node:util, node:sys and node:process; they
 // see imports, not what a module does while it loads. Other modules that
-// make fd 2 non-blocking, such as node:assert, node:repl and node:test, are
-// an open point in docs/STATUS.md.
+// make fd 2 non-blocking, such as node:assert, node:repl and node:test, get
+// no rule of their own: over stdio, fd 2 is non-blocking after the SDK and
+// undici load anyway, and this test keeps the first stage of the start
+// blocking (ADR 0054).
 
 const fixture = fileURLToPath(
   new URL('fixtures/blocking/write.mts', import.meta.url),

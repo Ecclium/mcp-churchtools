@@ -11,7 +11,6 @@ import { createServer as createTlsServer } from 'node:https';
 import { createServer as createTcpServer, type Server } from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -30,7 +29,7 @@ import {
   findOpenssl,
   makeCertificate,
 } from './support/certificates.mts';
-import { blockedMarker } from './support/no-network.mts';
+import { blockedMarker, guardPreload } from './support/no-network.mts';
 import {
   at,
   type Era,
@@ -48,10 +47,10 @@ import {
 // The real start over stdio, as a client runs it: `ecclium stdio`, that is
 // packages/cli/src/bin.ts, in a child process from source, with the
 // resolution hook of the stdio test, the condition @ecclium/source, the
-// network guard inherited through NODE_OPTIONS (ADR 0052), only the
-// variables a client sets for the server and the token in a file with mode
-// 0600 in a temporary folder. The unit tests of the start replace the
-// process, the stderr writer and the transport; here all of them are real.
+// network guard alone in NODE_OPTIONS (ADR 0052), only the variables a
+// client sets for the server and the token in a file with mode 0600 in a
+// temporary folder. The unit tests of the start replace the process, the
+// stderr writer and the transport; here all of them are real.
 //
 // The configuration takes neither an IP address nor localhost as the
 // address of ChurchTools, and the guard refuses every name resolution. So
@@ -127,8 +126,9 @@ const launch = (options: Launch): Session => {
     {
       // Only these variables: the network guard, and the address and the
       // token as a client sets them. The shell that runs the tests may hold
-      // variables of the project.
-      NODE_OPTIONS: process.env['NODE_OPTIONS'] ?? '',
+      // variables of the project, and options of Node.js in NODE_OPTIONS,
+      // such as one for TLS, would change what the start reports.
+      NODE_OPTIONS: guardPreload,
       ECCLIUM_CHURCHTOOLS_URL: options.origin,
       ...(options.token === 'variable'
         ? { ECCLIUM_CHURCHTOOLS_TOKEN: canary.token.value }
