@@ -24,13 +24,15 @@ import {
 } from './index.js';
 
 // Every name the loader can report with a problem: the known variables,
-// the names of later phases and of a proxy, the variable of TLS and the
-// longest unknown name it shows.
+// the names of later phases and of a proxy, the variable of TLS, the
+// variable with the options of Node.js and the longest unknown name it
+// shows.
 const reportedNames: readonly string[] = [
   ...variableNames,
   ...unsupportedVariableNames,
   proxyVariableName,
   tlsVariableName,
+  'NODE_OPTIONS',
   `ECCLIUM_${'A'.repeat(64)}`,
 ];
 
@@ -152,6 +154,17 @@ describe('the texts of the output', () => {
       }
     },
   );
+
+  it('names both commands in the usage, the help and the text for an unknown command', () => {
+    for (const text of [usageLine, usageProblemTexts.command]) {
+      expect(text).toContain('ecclium stdio');
+      expect(text).toContain('ecclium config check');
+    }
+    expect(helpLines).toContainEqual(expect.stringMatching(/^ {2}stdio +\S/));
+    expect(helpLines).toContainEqual(
+      expect.stringMatching(/^ {2}config check +\S/),
+    );
+  });
 
   it('repeats the usage at the start of the help', () => {
     expect(helpLines[0]).toBe(usageLine);

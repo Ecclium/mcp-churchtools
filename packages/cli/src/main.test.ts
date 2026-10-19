@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { exitCodes } from './exit-codes.js';
 import { run, type RunOptions } from './main.js';
-import { problemText } from './messages/index.js';
+import { problemText, warningText } from './messages/index.js';
 import {
   helpLines,
   internalErrorText,
@@ -34,13 +34,15 @@ const decoder = new TextDecoder();
 
 /**
  * Runs the command line with a fake writeSync that records every call
- * before it answers. `fail` may throw for a descriptor.
+ * before it answers. `fail` may throw for a descriptor, and `execArgv`
+ * stands for the options Node.js was started with, by default none.
  */
 const capture = (
   args: readonly string[],
   environment: Environment,
   options: Omit<RunOptions, 'writeSync'> & {
     readonly fail?: (fd: number) => void;
+    readonly execArgv?: readonly string[];
   } = {},
 ): Captured => {
   const calls: { stream: number; count: number }[] = [];
@@ -56,7 +58,7 @@ const capture = (
     taken.set(fd, bytes);
     return length;
   };
-  const code = run(args, environment, {
+  const code = run(args, environment, options.execArgv ?? [], {
     tokenFiles: options.tokenFiles,
     load: options.load,
     writeSync,
@@ -73,7 +75,7 @@ const address = 'https://example.church.tools';
 const check = ['config', 'check'];
 
 const valid =
-  'Die Konfiguration ist gültig. ChurchTools wurde nicht angefragt. Ob das Token gilt, zeigt erst der Start.';
+  'Die Konfiguration ist gültig. ChurchTools wurde nicht angefragt. Ob ChurchTools das Token annimmt, zeigt erst ein Aufruf von ‹ct_whoami›.';
 const invalid =
   'Mit dieser Konfiguration startet Ecclium nicht. ChurchTools wurde nicht angefragt. Beheben Sie die Probleme und prüfen Sie dann erneut mit ‹ecclium config check›.';
 
@@ -82,13 +84,16 @@ const lastLine = (text: string): string | undefined =>
 
 describe('the exit codes', () => {
   // After sysexits.h, and never 1, which Node.js gives a process that ends
-  // with an uncaught exception.
+  // with an uncaught exception. The codes after a signal are 128 and its
+  // number, as a shell reports them.
   it('keep their numbers', () => {
     expect(exitCodes).toEqual({
       ok: 0,
       usage: 64,
       internal: 70,
       invalidConfig: 78,
+      interrupted: 130,
+      terminated: 143,
     });
     expect(Object.isFrozen(exitCodes)).toBe(true);
   });
@@ -150,6 +155,42 @@ describe('the command line', () => {
     expect(result.code).toBe(exitCodes.ok);
     expect(result.stderr).toBe('');
     expect(result.stdout).toContain('\nBeim Start meldet Ecclium:\n');
+  });
+
+  // The same notices as the start over stdio, for the variables and for
+  // the options Node.js was started with, and never a path.
+  it.each<[string, () => Environment, readonly string[]]>([
+    [
+      'a certificate in the environment',
+      () => ({
+        ...validEnvironment(),
+        NODE_EXTRA_CA_CERTS: join(folder, 'ca.pem'),
+      }),
+      [],
+    ],
+    ['an option of Node.js', validEnvironment, ['--use_system_ca']],
+  ])(
+    'warns in the report about a trust store extended by %s',
+    (_, environment, execArgv) => {
+      const result = capture(check, environment(), { execArgv });
+      expect(result.code).toBe(exitCodes.ok);
+      expect(result.stderr).toBe('');
+      expect(result.stdout).toContain(
+        `  - ${warningText('trust_store_extended')}\n`,
+      );
+      expect(result.stdout).not.toContain(folderCanary);
+    },
+  );
+
+  it('refuses a key log among the options of Node.js without its path', () => {
+    const result = capture(check, validEnvironment(), {
+      execArgv: ['--tls-keylog', join(folder, 'keys')],
+    });
+    expect(result.code).toBe(exitCodes.invalidConfig);
+    expect(result.stdout).toContain(
+      `  - ${problemText({ code: 'tls_keylog_enabled' })}\n`,
+    );
+    expect(result.stdout + result.stderr).not.toContain(folderCanary);
   });
 
   it.each([[check], [['--jsn']]])(
@@ -320,7 +361,7 @@ describe('the command line', () => {
 
     it('gives 70 when the output cannot be made', () => {
       expect(
-        run(check, validEnvironment(), {
+        run(check, validEnvironment(), [], {
           writeSync: 'fd' as unknown as WriteSyncFn,
         }),
       ).toBe(exitCodes.internal);

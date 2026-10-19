@@ -58,6 +58,12 @@ export interface StderrWriterOptions {
   readonly writeSync?: WriteSyncFn;
   /** System calls per line at most, 1 to 16. */
   readonly maxAttempts?: number;
+  /**
+   * Whether stderr ends in a line without its line break, such as a start
+   * notice that was cut off. The first line then starts with a line break,
+   * so that it stands on a line of its own. Only `true` turns it on.
+   */
+  readonly afterTornLine?: boolean;
 }
 
 /** System calls per line, unless the options say otherwise. */
@@ -105,11 +111,15 @@ const codeOf = (error: unknown): unknown => {
  * own. EAGAIN is tried again at once, without waiting: a reader that does
  * not drain stderr costs lines, not time. EPIPE and EBADF close the writer
  * for good. Nothing is ever thrown and nothing is written about a failure.
+ * With `afterTornLine`, the first line starts with a line break in the same
+ * way, after a line of another writer that lost its break, such as a start
+ * notice.
  *
  * The writer never touches `process.stderr`, and its module loads neither
  * node:util nor node:process: each makes fd 2 non-blocking (ADR 0054).
  *
- * @param options - Replacement for `writeSync` and the number of attempts.
+ * @param options - Replacement for `writeSync`, the number of attempts and
+ *   whether stderr ends in a torn line.
  * @returns The writer.
  * @throws {TypeError} If `maxAttempts` is not a whole number from 1 to 16.
  * @example
@@ -140,7 +150,9 @@ export function createStderrWriter(
   let reentrant = 0;
   let closed = false;
   let writing = false;
-  let broken = false;
+  // A torn line before the first one is repaired like a part of an own
+  // line that was lost.
+  let broken = options.afterTornLine === true;
 
   // Bytes sent before the attempts ran out.
   const send = (bytes: Uint8Array): number => {

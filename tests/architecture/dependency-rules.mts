@@ -34,6 +34,27 @@ export const networkTargets: readonly string[] = [
   '(^|/)node_modules/undici/',
 ];
 
+/**
+ * The source behind the subpath ./composition of core, which hands the
+ * composition root the stderr writer, the logger and the audit sink.
+ */
+const compositionEntry = 'packages/core/src/composition.ts';
+
+/** The executable of the command line. */
+const binEntry = 'packages/cli/src/bin.ts';
+
+/** What the executable imports statically: the takeover of the environment. */
+const binImports: readonly string[] = ['packages/cli/src/environment.ts'];
+
+/**
+ * What the executable loads with import(): the command line and the start
+ * over stdio.
+ */
+const binLoads: readonly string[] = [
+  'packages/cli/src/main.ts',
+  'packages/cli/src/stdio/index.ts',
+];
+
 const escape = (text: string): string =>
   text.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 
@@ -244,6 +265,14 @@ export function dependencyRules(
       },
     },
     {
+      name: 'composition-only-from-composition-root',
+      severity: 'error',
+      comment:
+        'ADR 0054: only the composition root, the place transportBuilders, imports the subpath ./composition of core with the stderr writer, the logger and the audit sink, so that no tool, plugin or workflow can write any text to stderr. Tests in the packages are not exempt: the tests of core import the modules behind it.',
+      from: { pathNot: at('transportBuilders') },
+      to: { path: pathPattern(compositionEntry) },
+    },
+    {
       name: 'mocked-transport-only-in-testkit',
       severity: 'error',
       comment: `${adr('httpDouble')}: only the test double in testkit builds the transport on a MockAgent, through the subpath ./http/testing of core, so that no module that ships builds one. The module itself is part of the build of core, and only tests import testkit.`,
@@ -311,6 +340,20 @@ export function dependencyRules(
         pathNot: testFile,
       },
       to: { path: at('utilModule'), reachable: true },
+    },
+    {
+      name: 'bin-imports-only-environment',
+      severity: 'error',
+      comment: `${adr('environment')}: the executable of the command line imports statically only the module that takes over the environment, so that the token has left the environment before any other module loads. Imports for types only count as well.`,
+      from: { path: pathPattern(binEntry) },
+      to: { dynamic: false, pathNot: binImports.map(pathPattern) },
+    },
+    {
+      name: 'bin-loads-only-main-or-stdio',
+      severity: 'error',
+      comment: `${adr('utilModule')}: the executable of the command line loads with import() only the command line and the start over stdio, so that the start over stdio never loads the command line, whose node:util makes fd 2 non-blocking before the start notices go out.`,
+      from: { path: pathPattern(binEntry) },
+      to: { dynamic: true, pathNot: binLoads.map(pathPattern) },
     },
     {
       name: 'plugins-only-plugin-api',

@@ -577,6 +577,35 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'composition-only-from-composition-root',
+    name: 'tools builds the stderr writer through the subpath of core',
+    files: {
+      'packages/tools/src/forbidden.ts': `import { createStderrWriter } from '${nameOf('core')}/composition';\nexport const build = createStderrWriter;\n`,
+    },
+  },
+  {
+    rule: 'composition-only-from-composition-root',
+    name: 'the server builds the logger through the subpath of core',
+    files: {
+      'packages/server/src/forbidden.ts': `import { createLogger } from '${nameOf('core')}/composition';\nexport const build = createLogger;\n`,
+    },
+  },
+  {
+    rule: 'composition-only-from-composition-root',
+    name: 'a test of core imports the subpath by a relative path',
+    files: {
+      'packages/core/src/forbidden.test.ts':
+        "import { createStderrWriter } from './composition.js';\nexport const build = createStderrWriter;\n",
+    },
+  },
+  {
+    rule: 'composition-only-from-composition-root',
+    name: 'a test of the command line outside the composition root imports the subpath',
+    files: {
+      'packages/cli/src/forbidden.test.ts': `import { createAuditSink } from '${nameOf('core')}/composition';\nexport const build = createAuditSink;\n`,
+    },
+  },
+  {
     rule: 'mocked-transport-only-in-testkit',
     name: 'tools builds the transport on a MockAgent',
     files: {
@@ -673,6 +702,59 @@ const cases: readonly Case[] = [
       'packages/testkit/src/plugins/example/forbidden.ts': `import '${nameOf('core')}';\nexport {};\n`,
     },
   },
+  {
+    rule: 'plugins-only-plugin-api',
+    name: 'a tool of the core imports core',
+    files: {
+      'packages/tools/src/base/forbidden.ts': `import '${nameOf('core')}';\nexport {};\n`,
+    },
+  },
+  {
+    rule: 'plugins-only-plugin-api',
+    name: 'the plugin of the core imports core',
+    files: {
+      'packages/tools/src/core-plugin.ts': `import '${nameOf('core')}';\nexport {};\n`,
+    },
+  },
+  {
+    rule: 'bin-imports-only-environment',
+    name: 'the executable imports the command line statically',
+    files: {
+      'packages/cli/src/bin.ts':
+        "import './environment.js';\nimport './main.js';\nexport {};\n",
+    },
+  },
+  {
+    rule: 'bin-imports-only-environment',
+    name: 'the executable imports the types of the command line',
+    files: {
+      'packages/cli/src/bin.ts':
+        "import type { RunOptions } from './main.js';\nexport type Options = RunOptions;\n",
+    },
+  },
+  {
+    rule: 'bin-imports-only-environment',
+    name: 'the executable imports the output module statically',
+    files: {
+      'packages/cli/src/bin.ts': "import './output/index.js';\nexport {};\n",
+    },
+  },
+  {
+    rule: 'bin-loads-only-main-or-stdio',
+    name: 'the executable loads the output module with import()',
+    files: {
+      'packages/cli/src/bin.ts':
+        "export const load = async (): Promise<unknown> => import('./output/index.js');\n",
+    },
+  },
+  {
+    rule: 'bin-loads-only-main-or-stdio',
+    name: 'the executable loads the second stage of the stdio start with import()',
+    files: {
+      'packages/cli/src/bin.ts':
+        "export const load = async (): Promise<unknown> => import('./stdio/serve.js');\n",
+    },
+  },
 ];
 
 // Imports the rules must let pass.
@@ -732,6 +814,18 @@ const allowedCases: readonly Omit<Case, 'rule'>[] = [
     },
   },
   {
+    name: 'the composition root builds the stderr writer through the subpath of core',
+    files: {
+      'packages/cli/src/stdio/allowed.ts': `import { createStderrWriter } from '${nameOf('core')}/composition';\nexport const build = createStderrWriter;\n`,
+    },
+  },
+  {
+    name: 'a test of the composition root imports the subpath of core',
+    files: {
+      'packages/cli/src/stdio/allowed.test.ts': `import { createLogger } from '${nameOf('core')}/composition';\nexport const build = createLogger;\n`,
+    },
+  },
+  {
     name: 'the double in testkit builds the transport on a MockAgent',
     files: {
       'packages/testkit/src/http-double/allowed.ts': `import { createMockedHttpTransport } from '${nameOf('core')}/http/testing';\nexport const build = createMockedHttpTransport;\n`,
@@ -761,6 +855,18 @@ const allowedCases: readonly Omit<Case, 'rule'>[] = [
     name: 'the example plugin imports the plugin API',
     files: {
       'packages/testkit/src/plugins/example/allowed.ts': `import '${nameOf('plugin-api')}';\nexport {};\n`,
+    },
+  },
+  {
+    name: 'a tool of the core imports zod and the plugin API',
+    files: {
+      'packages/tools/src/base/allowed.ts': `import { z } from 'zod';\nimport '${nameOf('plugin-api')}';\nexport const schema = z;\n`,
+    },
+  },
+  {
+    name: 'a test of a tool of the core imports core and the testkit',
+    files: {
+      'packages/tools/src/base/allowed.test.ts': `import '${nameOf('core')}';\nimport '${nameOf('testkit')}';\nexport {};\n`,
     },
   },
   {

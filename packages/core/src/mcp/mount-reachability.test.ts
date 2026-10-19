@@ -98,7 +98,8 @@ const mount = (): {
     },
   });
   const catalog = createToolCatalog({
-    plugins: [examplePlugin],
+    core: examplePlugin,
+    plugins: [],
     readOnly: true,
   });
   const pipeline = createToolPipeline({

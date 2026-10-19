@@ -43,10 +43,10 @@ import {
 import { createLogger } from '../logger/index.js';
 import { createToolPipeline, type ToolPipeline } from '../pipeline/index.js';
 import { maxResultBytes, resultBytes } from '../pipeline/stages.js';
-import { createToolCatalog, RegistryRefusal } from '../registry/index.js';
+import { createToolCatalog } from '../registry/index.js';
 import { deriveAnnotations } from './annotations.js';
 import { createMcpMount, type McpMountOptions } from './mount.js';
-import { deriveInputSchema, deriveOutputSchema } from './schema.js';
+import { deriveOutputSchema } from './schema.js';
 
 // Drives the mount in process through the serving entry of the SDK, in
 // both eras, with the test playing the client in raw JSON-RPC. Every
@@ -155,14 +155,13 @@ const parsed = (target: readonly string[]): readonly Json[] =>
 const setup = (
   overrides: Partial<McpMountOptions> = {},
   tools: readonly ToolDefinition[] = [],
-  mounted = true,
 ): Setup => {
   const double = createChurchToolsDouble({ token });
   open.push(double);
   const contexts: unknown[] = [];
   const catalog = createToolCatalog({
+    core: examplePlugin,
     plugins: [
-      examplePlugin,
       testPlugin(
         testTool('ct_test_context', ({ ctx }) => {
           contexts.push(ctx);
@@ -211,11 +210,7 @@ const setup = (
   };
   return {
     options,
-    factory: mounted
-      ? createMcpMount(options).factory
-      : () => {
-          throw new Error('not mounted');
-        },
+    factory: createMcpMount(options).factory,
     audit: () => parsed(auditLines),
     logs: () => parsed(logLines),
     contexts,
@@ -354,7 +349,7 @@ describe.each(eras)('the list of tools in the $name era', (era) => {
     const expected = options.catalog.list().map((entry) => ({
       name: entry.name,
       description: entry.description,
-      inputSchema: deriveInputSchema(entry),
+      inputSchema: entry.inputSchema,
       outputSchema: deriveOutputSchema(entry.shape),
       annotations: deriveAnnotations(entry.meta),
     }));
@@ -706,26 +701,26 @@ describe('the factory', () => {
 });
 
 describe('the start', () => {
-  it('stops when the input schema of a tool cannot be advertised', () => {
-    const { options } = setup(
-      {},
-      [
-        testTool('ct_test_date', () => ({ text: 'ok' }), {
-          input: z.object({ when: z.date() }),
-        }),
-      ],
-      false,
+  it('advertises the input schema of the catalog and converts none itself', async () => {
+    const { options } = setup();
+    // Entries whose zod schema JSON Schema cannot hold. The registry
+    // refuses such a schema, so a mount that converted the input again
+    // could stop on a catalog the registry took.
+    const entries = Object.freeze(
+      options.catalog
+        .list()
+        .map((entry) =>
+          Object.freeze({ ...entry, input: z.object({ when: z.date() }) }),
+        ),
     );
-    expect(() => createMcpMount(options)).toThrow(RegistryRefusal);
-    try {
-      createMcpMount(options);
-    } catch (error) {
-      expect(error).toMatchObject({
-        reason: 'tool_input',
-        plugin: 'test-plugin',
-        tool: 'ct_test_date',
-      });
-    }
+    const catalog = Object.freeze({ ...options.catalog, list: () => entries });
+    const mount = createMcpMount({ ...options, catalog });
+    const connection = await modern.open(mount.factory);
+    const reply = await modern.ask(connection, 'tools/list');
+    const tools = at(reply, 'result', 'tools') as readonly Json[];
+    expect(tools.map((tool) => tool['inputSchema'])).toEqual(
+      JSON.parse(JSON.stringify(entries.map((entry) => entry.inputSchema))),
+    );
   });
 
   it.each(['', 'a b', '1'.repeat(33), 'vä', '1.0\n', 1])(

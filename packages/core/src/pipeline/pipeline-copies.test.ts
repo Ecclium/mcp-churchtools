@@ -87,7 +87,11 @@ describe('the pipeline before execute', () => {
       token: loaded.config.churchtoolsToken,
     });
     open.push(double);
-    const catalog = createToolCatalog({ plugins: [plugin], readOnly: true });
+    const catalog = createToolCatalog({
+      core: plugin,
+      plugins: [],
+      readOnly: true,
+    });
     const lines: string[] = [];
     const writer = Object.freeze({
       write: (line: string) => {

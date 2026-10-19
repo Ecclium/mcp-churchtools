@@ -73,7 +73,7 @@
     },
     "transportBuilders": {
       "adr": "0056",
-      "description": "The composition root: the only code outside the outbound path that imports the factory of the HTTP transport, the subpath ./http of core. Each entry is a folder of the command line.",
+      "description": "The composition root: the only code outside the outbound path that imports the factory of the HTTP transport, the subpath ./http of core, and the only code at all that imports the stderr writer, the logger and the audit sink through the subpath ./composition of core. Each entry is a folder of the command line.",
       "paths": ["packages/cli/src/stdio/"]
     },
     "httpDouble": {
@@ -152,8 +152,12 @@
     },
     "plugins": {
       "adr": "0022",
-      "description": "Plugins as a third party would write them. They may import only the plugin API.",
-      "paths": ["packages/testkit/src/plugins/"]
+      "description": "Plugins as a third party would write them: the example plugin in testkit, and the plugin of the free core with its tools in the tools package. Of the packages of the workspace they may import only the plugin API. This rule leaves npm packages such as zod, which every plugin brings itself, to the other rules.",
+      "paths": [
+        "packages/testkit/src/plugins/",
+        "packages/tools/src/base/",
+        "packages/tools/src/core-plugin.ts"
+      ]
     },
     "moduleState": {
       "adr": "0051",

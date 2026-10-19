@@ -27,15 +27,30 @@ import { describe, expect, it } from 'vitest';
 //   another way to make those checks, not only a change of the docs.
 // - A module of the packages fails: it loads something that makes fd 2
 //   non-blocking. Fix the import.
-// Only modules without relative imports can be loaded from source. For the
-// rest of the packages, the architecture rules refuse node:util, node:sys
-// and node:process; they see imports, not what a module does while it
-// loads. Other modules that make fd 2 non-blocking, such as node:assert,
-// node:repl and node:test, are an open point in docs/STATUS.md.
+// Without help, only modules without relative imports load from source.
+// The first stage of the start over stdio imports the packages, so its
+// child runs with the resolution hook of the stdio test and the condition
+// @ecclium/source, as that test runs the server; a control with the hook
+// alone shows that the hook keeps fd 2 blocking. The start writes its
+// notices in that stage and loads the server, which makes fd 2
+// non-blocking, only after them (ADR 0054). For the rest of the packages,
+// the architecture rules refuse node:util, node:sys and node:process; they
+// see imports, not what a module does while it loads. Other modules that
+// make fd 2 non-blocking, such as node:assert, node:repl and node:test, get
+// no rule of their own: over stdio, fd 2 is non-blocking after the SDK and
+// undici load anyway, and this test keeps the first stage of the start
+// blocking (ADR 0054).
 
 const fixture = fileURLToPath(
   new URL('fixtures/blocking/write.mts', import.meta.url),
 );
+
+// The packages from source: their .js imports mapped to the .ts files, and
+// the packages resolved to their source by name.
+const fromSource: readonly string[] = [
+  '--conditions=@ecclium/source',
+  `--import=${new URL('fixtures/stdio/hooks.mts', import.meta.url).href}`,
+];
 
 const source = (path: string): string =>
   pathToFileURL(fileURLToPath(new URL(`../${path}`, import.meta.url))).href;
@@ -45,10 +60,16 @@ interface Result {
   readonly written: number;
 }
 
-/** Runs the child for one target and gives what it reported on fd 1. */
-const run = (target: string): Promise<Result> =>
+/**
+ * Runs the child for one target, with the options of Node.js before the
+ * fixture, and gives what it reported on fd 1.
+ */
+const run = (
+  target: string,
+  options: readonly string[] = [],
+): Promise<Result> =>
   new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [fixture, target], {
+    const child = spawn(process.execPath, [...options, fixture, target], {
       env: {},
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -153,6 +174,29 @@ describe('fd 2 after loading a module', () => {
     'blocks after loading %s from source',
     async (path) => {
       const result = await run(source(path));
+      expect(result.again).toBe(0);
+      expect(result.written).toBe(4 * 1024 * 1024);
+    },
+    timeout,
+  );
+
+  it.concurrent(
+    'blocks with the resolution hook when the child loads nothing',
+    async () => {
+      const result = await run('none', fromSource);
+      expect(result.again).toBe(0);
+      expect(result.written).toBe(4 * 1024 * 1024);
+    },
+    timeout,
+  );
+
+  // The first stage of the start over stdio with everything it imports:
+  // core, the tools, the catalog of texts and the start notices. A static
+  // import of the second stage would load the server, its SDK and undici.
+  it.concurrent.each(['packages/cli/src/stdio/index.ts'])(
+    'blocks after loading %s with its packages from source',
+    async (path) => {
+      const result = await run(source(path), fromSource);
       expect(result.again).toBe(0);
       expect(result.written).toBe(4 * 1024 * 1024);
     },

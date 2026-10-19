@@ -46,7 +46,11 @@ afterEach(async () => {
   await Promise.all(open.splice(0).map((server) => server.close()));
 });
 
-const catalog = createToolCatalog({ plugins: [examplePlugin], readOnly: true });
+const catalog = createToolCatalog({
+  core: examplePlugin,
+  plugins: [],
+  readOnly: true,
+});
 
 const done: ToolOutcome = Object.freeze({
   ok: true,
@@ -340,11 +344,11 @@ describe('an error of the connection', () => {
 });
 
 describe('the running server', () => {
-  it('is frozen and holds nothing but close', () => {
+  it('is frozen and holds nothing but close and closed', () => {
     const { server } = setup();
     expect(Object.isFrozen(server)).toBe(true);
     expect(Object.getPrototypeOf(server)).toBeNull();
-    expect(Reflect.ownKeys(server)).toEqual(['close']);
+    expect(Reflect.ownKeys(server)).toEqual(['close', 'closed']);
   });
 
   it('stops reading once closed, also when closed twice', async () => {
@@ -361,5 +365,63 @@ describe('the running server', () => {
     expect(() => setup({ version: 'a b' })).toThrow(
       new TypeError('The version of the server is invalid.'),
     );
+  });
+});
+
+/** Whether the promise has settled by the next turn of the event loop. */
+const settledSoon = async (promise: Promise<void>): Promise<boolean> => {
+  const later = new Promise<boolean>((resolve) => {
+    setImmediate(() => {
+      resolve(false);
+    });
+  });
+  return Promise.race([promise.then(() => true), later]);
+};
+
+describe('the end of the connection', () => {
+  it('stays open while the client keeps its input open', async () => {
+    const { server, send, reply } = setup();
+    send(initialize);
+    await reply(1);
+    expect(await settledSoon(server.closed)).toBe(false);
+  });
+
+  it('settles closed when the input ends', async () => {
+    const { server, input } = setup();
+    input.end();
+    await expect(server.closed).resolves.toBeUndefined();
+    expect(input.listenerCount('data')).toBe(0);
+  });
+
+  it('settles closed when unread input passes the limit', async () => {
+    const { server, write, events } = setup();
+    write(callOfLength(1, maxStdioMessageBytes + 1));
+    await expect(server.closed).resolves.toBeUndefined();
+    expect(events).toEqual([
+      { level: 'error', event: 'mcp_stdio_error', fields: undefined },
+    ]);
+  });
+
+  it('settles closed on close, also when closed twice', async () => {
+    const { server } = setup();
+    const { closed } = server;
+    await server.close();
+    await server.close();
+    await expect(server.closed).resolves.toBeUndefined();
+    expect(server.closed).toBe(closed);
+  });
+
+  it('settles closed and never rejects when closing the transport fails', async () => {
+    const input = new PassThrough();
+    // The transport pauses its input once it stops reading.
+    input.pause = (): never => {
+      throw new Error('the input cannot pause');
+    };
+    const { server } = setup({ input });
+    await vi.waitFor(() => {
+      expect(input.listenerCount('data')).toBe(1);
+    });
+    input.end();
+    await expect(server.closed).resolves.toBeUndefined();
   });
 });

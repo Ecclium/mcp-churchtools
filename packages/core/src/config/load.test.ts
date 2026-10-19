@@ -27,6 +27,7 @@ import {
 import type { TokenFileStats, TokenFileSystem } from './token-file.js';
 import {
   tokenVariableName,
+  trustStoreVariableNames,
   unsupportedVariableNames,
   variableNames,
   variableSchemas,
@@ -111,7 +112,13 @@ const load = (
   environment: Environment,
   transport: Transport = 'stdio',
   files: TokenFileSystem = memoryFiles().fs,
-): ConfigResult => loadConfig({ environment, transport, tokenFiles: files });
+  execArgv?: readonly string[],
+): ConfigResult =>
+  loadConfig({ environment, transport, execArgv, tokenFiles: files });
+
+/** The options of the start alone, with a good configuration. */
+const started = (execArgv: readonly string[]): ConfigResult =>
+  load(valid(), 'stdio', memoryFiles().fs, execArgv);
 
 /** The problems as [code] or [code, variable]. */
 const problems = (result: ConfigResult): string[][] =>
@@ -1019,6 +1026,201 @@ describe('loadConfig and refused settings', () => {
   });
 });
 
+describe('loadConfig and the settings of Node.js for TLS', () => {
+  const certificate = '/path/to/ca.pem';
+  const tab = String.fromCodePoint(0x09);
+
+  // Every spelling counts, as for NODE_TLS_REJECT_UNAUTHORIZED.
+  it.each(
+    trustStoreVariableNames.flatMap((name) => [
+      name,
+      name.toLowerCase(),
+      `${name.charAt(0)}${name.slice(1).toLowerCase()}`,
+    ]),
+  )('warns when %s extends the trust store', (name) => {
+    const value =
+      name.toUpperCase() === 'NODE_USE_SYSTEM_CA' ? '1' : certificate;
+    const result = load({ ...valid(), [name]: value });
+    expect(result.ok).toBe(true);
+    expect(result.report.problems).toEqual([]);
+    expect(result.report.warnings).toEqual(['trust_store_extended']);
+  });
+
+  // Node.js documents only 1, but a later release may take more.
+  it.each(['0', 'true', ' '])('warns for NODE_USE_SYSTEM_CA=%j', (value) => {
+    expect(
+      load({ ...valid(), NODE_USE_SYSTEM_CA: value }).report.warnings,
+    ).toEqual(['trust_store_extended']);
+  });
+
+  it.each(trustStoreVariableNames)('does not warn for an empty %s', (name) => {
+    const result = load({ ...valid(), [name]: '' });
+    expect(result.ok).toBe(true);
+    expect(result.report.warnings).toEqual([]);
+  });
+
+  it('warns once for several settings, after the other warnings', () => {
+    const result = load(
+      {
+        ...valid(),
+        ECCLIUM_REDACTION: 'off',
+        NODE_EXTRA_CA_CERTS: certificate,
+        SSL_CERT_DIR: '/path/to/certs',
+        NODE_OPTIONS: '--use-openssl-ca',
+      },
+      'stdio',
+      memoryFiles().fs,
+      ['--use-system-ca'],
+    );
+    expect(result.report.warnings).toEqual([
+      'redaction_off',
+      'trust_store_extended',
+    ]);
+  });
+
+  // Node.js reads an option also with underscores, and in NODE_OPTIONS a
+  // double quote anywhere opens or closes a quoted part.
+  it.each([
+    ['--use-system-ca'],
+    ['--use_system_ca'],
+    ['--use-openssl-ca'],
+    ['--use_openssl-ca'],
+    ['--conditions=@ecclium/source', '--use-system-ca'],
+  ])('warns for the options of the start %j', (...execArgv) => {
+    const result = started(execArgv);
+    expect(result.ok).toBe(true);
+    expect(result.report.warnings).toEqual(['trust_store_extended']);
+  });
+
+  it.each([
+    '--use-system-ca',
+    '--use_system_ca',
+    '--use-openssl-ca',
+    '--max-old-space-size=100 --use_openssl_ca',
+    '  --use-system-ca  ',
+    '"--use-system-ca"',
+    '--use"-"system-ca',
+    '"--use-sys\\tem-ca"',
+  ])('warns for NODE_OPTIONS=%j', (value) => {
+    for (const name of ['NODE_OPTIONS', 'node_options']) {
+      const result = load({ ...valid(), [name]: value });
+      expect(result.ok, name).toBe(true);
+      expect(result.report.warnings, name).toEqual(['trust_store_extended']);
+    }
+  });
+
+  // Node.js refuses each of these or does not read it as the option.
+  it.each([
+    ['--no-use-system-ca'],
+    ['--use-bundled-ca'],
+    ['--USE-SYSTEM-CA'],
+    ['-use-system-ca'],
+    ['--use-system-cax'],
+    ['--title=--use-system-ca'],
+    ['--import', 'use-system-ca'],
+  ])('does not warn for the options of the start %j', (...execArgv) => {
+    expect(started(execArgv).report.warnings).toEqual([]);
+  });
+
+  // Quotes keep a space inside one option, and only a space separates
+  // options: Node.js reads what follows a tab as part of the same option.
+  it.each([
+    '--title="a --use-system-ca"',
+    '"--title=a --use-system-ca"',
+    `${tab}--use-system-ca`,
+    `--title=a${tab}--use-system-ca`,
+    '--no-use-system-ca',
+  ])('does not warn for NODE_OPTIONS=%j', (value) => {
+    expect(load({ ...valid(), NODE_OPTIONS: value }).report.warnings).toEqual(
+      [],
+    );
+  });
+
+  it.each([
+    [['--tls-keylog=/path/to/keys'], 'tls_keylog_enabled'],
+    [['--tls_keylog', '/path/to/keys'], 'tls_keylog_enabled'],
+    [['--trace-tls'], 'tls_trace_enabled'],
+    [['--trace_tls'], 'tls_trace_enabled'],
+  ])('refuses the options of the start %j without a name', (execArgv, code) => {
+    expect(problems(started(execArgv))).toEqual([[code]]);
+  });
+
+  it.each([
+    ['--tls-keylog=/path/to/keys', 'tls_keylog_enabled'],
+    ['--tls_keylog "/path/to/a file"', 'tls_keylog_enabled'],
+    ['--max-old-space-size=100 --trace-tls', 'tls_trace_enabled'],
+    ['"--trace_tls"', 'tls_trace_enabled'],
+  ])('refuses NODE_OPTIONS=%j and names it', (value, code) => {
+    expect(problems(load({ ...valid(), node_options: value }))).toEqual([
+      [code, 'NODE_OPTIONS'],
+    ]);
+  });
+
+  it('reports each option of TLS once per place, in a fixed order', () => {
+    const result = load(
+      {
+        ...valid(),
+        NODE_OPTIONS: '--trace-tls --tls-keylog=/path/to/keys',
+        node_options: '--tls-keylog=/path/to/keys',
+        NODE_DEBUG: 'tls',
+      },
+      'stdio',
+      memoryFiles().fs,
+      ['--trace-tls', '--tls-keylog', '/path/to/keys', '--trace-tls'],
+    );
+    expect(problems(result)).toEqual([
+      ['debug_output_enabled', 'NODE_DEBUG'],
+      ['tls_keylog_enabled'],
+      ['tls_keylog_enabled', 'NODE_OPTIONS'],
+      ['tls_trace_enabled'],
+      ['tls_trace_enabled', 'NODE_OPTIONS'],
+    ]);
+  });
+
+  it('takes the options of the start frozen and never changes them', () => {
+    const execArgv = Object.freeze(['--use-system-ca']);
+    expect(started(execArgv).report.warnings).toEqual(['trust_store_extended']);
+    expect(execArgv).toEqual(['--use-system-ca']);
+  });
+
+  it('refuses options of the start that are no plain array of strings', () => {
+    const getter = vi.fn(() => '--trace-tls');
+    const withGetter = Object.defineProperty(['--use-system-ca'], '1', {
+      get: getter,
+      enumerable: true,
+    });
+    const { proxy, revoke } = Proxy.revocable(['--trace-tls'], {});
+    revoke();
+    const holey: string[] = [];
+    holey[1] = '--trace-tls';
+    for (const execArgv of [
+      withGetter,
+      new Proxy(['--trace-tls'], {}),
+      proxy,
+      holey,
+      ['--trace-tls', 1],
+      '--trace-tls',
+      { 0: '--trace-tls', length: 1 },
+      null,
+    ]) {
+      expect(() => started(execArgv as unknown as readonly string[])).toThrow(
+        new TypeError(invalidSources),
+      );
+    }
+    expect(getter).not.toHaveBeenCalled();
+  });
+
+  it('refuses a getter on a variable of Node.js without calling it', () => {
+    const getter = vi.fn(() => '--trace-tls');
+    const environment = Object.defineProperty(valid(), 'NODE_OPTIONS', {
+      get: getter,
+      enumerable: true,
+    });
+    expect(() => load(environment)).toThrow(invalidSources);
+    expect(getter).not.toHaveBeenCalled();
+  });
+});
+
 describe('loadConfig and its problems', () => {
   const withAddress = (value: string): ConfigResult =>
     load({ ...valid(), ECCLIUM_CHURCHTOOLS_URL: value });
@@ -1035,6 +1237,8 @@ describe('loadConfig and its problems', () => {
     tls_check_disabled: () =>
       load({ ...valid(), NODE_TLS_REJECT_UNAUTHORIZED: '0' }),
     debug_output_enabled: () => load({ ...valid(), NODE_DEBUG: 'undici' }),
+    tls_keylog_enabled: () => started(['--tls-keylog=/path/to/keys']),
+    tls_trace_enabled: () => load({ ...valid(), NODE_OPTIONS: '--trace-tls' }),
     empty_value: () => load({ ...valid(), ECCLIUM_READ_ONLY: '' }),
     value_too_long: () => load({ ...valid(), ECCLIUM_READ_ONLY: 'xxxxxx' }),
     invalid_choice: () => load({ ...valid(), ECCLIUM_READ_ONLY: 'yes' }),
@@ -1101,6 +1305,8 @@ describe('loadConfig and its problems', () => {
     redaction_off: () => load({ ...valid(), ECCLIUM_REDACTION: 'off' }),
     search_tools_enabled: () =>
       load({ ...valid(), ECCLIUM_SEARCH_TOOLS: 'true' }),
+    trust_store_extended: () =>
+      load({ ...valid(), NODE_EXTRA_CA_CERTS: '/path/to/ca.pem' }),
   };
 
   it.each([...configProblemCodes])('can report the problem %s', (code) => {
@@ -1121,23 +1327,26 @@ describe('loadConfig and its problems', () => {
       ECCLIUM_TOOLSETS: 'x',
       NODE_TLS_REJECT_UNAUTHORIZED: '0',
       NODE_DEBUG: 'undici',
+      NODE_OPTIONS: '--trace-tls',
       ECCLIUM_EGRESS_PROXY: 'x',
     };
     for (let index = 0; index < 40; index += 1) {
       environment[`ECCLIUM_UNKNOWN_${String(index)}`] = 'x';
     }
-    const result = load(environment);
+    const result = load(environment, 'stdio', memoryFiles().fs, [
+      '--tls-keylog=/path/to/keys',
+    ]);
     expect(result.report.problems).toHaveLength(maxReportedProblems);
-    expect(result.report.omittedProblems).toBe(45 - maxReportedProblems);
+    expect(result.report.omittedProblems).toBe(47 - maxReportedProblems);
     expect(problems(result).slice(0, 8)).toEqual([
       ['url_not_https', 'ECCLIUM_CHURCHTOOLS_URL'],
       ['tls_check_disabled', 'NODE_TLS_REJECT_UNAUTHORIZED'],
       ['debug_output_enabled', 'NODE_DEBUG'],
+      ['tls_keylog_enabled'],
+      ['tls_trace_enabled', 'NODE_OPTIONS'],
       ['proxy_unsupported', 'ECCLIUM_EGRESS_PROXY'],
       ['unsupported_variable', 'ECCLIUM_TOOLSETS'],
       ['unknown_variable', 'ECCLIUM_UNKNOWN_0'],
-      ['unknown_variable', 'ECCLIUM_UNKNOWN_1'],
-      ['unknown_variable', 'ECCLIUM_UNKNOWN_10'],
     ]);
   });
 
@@ -1196,9 +1405,19 @@ describe('loadConfig and what it gives out', () => {
         ECCLIUM_EGRESS_PROXY: value,
         NODE_TLS_REJECT_UNAUTHORIZED: value,
         NODE_DEBUG: `undici,${value}`,
+        NODE_EXTRA_CA_CERTS: `/${canaries.name.value}/${value}.pem`,
+        NODE_USE_SYSTEM_CA: value,
+        SSL_CERT_FILE: `/${value}.pem`,
+        SSL_CERT_DIR: `/${canaries.email.value}`,
+        NODE_OPTIONS: `--tls-keylog=/${value} --${value} "${canaries.phone.value}"`,
       };
+      // The path of a key log and of a certificate, and an unknown option.
+      const execArgv = ['--tls_keylog', `/${value}`, `--${value}=${value}`];
       assertPlanted(input, canaries.all, 'environment');
-      const result = load(input, 'stdio', files);
+      assertPlanted(execArgv, [canaries.token], 'options');
+      const result = load(input, 'stdio', files, execArgv);
+      expect(result.report.warnings).toContain('trust_store_extended');
+      expect(codes(result)).toContain('tls_keylog_enabled');
       expect(result.ok).toBe(false);
       assertNoCanary(JSON.stringify(result), canaries.all, 'result as JSON');
       assertNoCanary(

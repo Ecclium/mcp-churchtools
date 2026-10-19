@@ -23,7 +23,9 @@ import { pathPattern } from './dependency-rules.mts';
 // of core, is the one place allowed to export the mount. No entry point may
 // pass on the factory of the stderr writer either: tools and workflows import
 // core and could then write any text to stderr (ADR 0054). Its type
-// LineWriter stays allowed, because the context of a call needs it. The
+// LineWriter stays allowed, because the context of a call needs it. The one
+// exception is the subpath ./composition of core, whose importers a rule of
+// dependency-cruiser limits to the composition root. The
 // factory of the HTTP transport leaves core only through its own subpath
 // ./http, whose importers a rule of dependency-cruiser limits to the
 // composition root, and the build path of the transport, which takes a
@@ -50,6 +52,7 @@ const transportModule = 'packages/core/src/http/transport.ts';
 const composeModule = 'packages/core/src/http/compose.ts';
 const mockModule = 'packages/core/src/http/compose-mock.ts';
 const egressEntry = 'packages/core/src/http/index.ts';
+const compositionEntry = 'packages/core/src/composition.ts';
 const serverStdioEntry = 'packages/server/src/stdio/index.ts';
 const serverStdioFolder = 'packages/server/src/stdio/';
 
@@ -65,6 +68,7 @@ const hiddenSymbols: readonly {
   {
     file: toPattern(lineWriter),
     names: ['createStderrWriter', 'StderrLineWriter'],
+    allowedIn: [compositionEntry],
   },
   {
     file: toPattern(transportModule),
@@ -301,6 +305,15 @@ const leaks: readonly {
     },
   },
   {
+    name: 'the factory of the stderr writer through the entry point of core from the composition subpath',
+    entry: coreEntry,
+    files: {
+      [coreEntry]: "export * from './composition.js';\n",
+      [compositionEntry]:
+        "export { createStderrWriter, type StderrLineWriter } from './logger/line-writer.js';\n",
+    },
+  },
+  {
     name: 'the type of the stderr writer under another name',
     entry: coreEntry,
     files: {
@@ -379,6 +392,7 @@ describe('entry points of the packages', { timeout }, () => {
       expect.arrayContaining([
         composeModule,
         mockModule,
+        compositionEntry,
         egressEntry,
         serverStdioEntry,
       ]),
@@ -456,6 +470,18 @@ describe('entry points of the packages', { timeout }, () => {
     });
     expect(exportOrigins(root, coreEntry)).toEqual([lineWriter]);
     expect(hiddenOrigins(root, coreEntry)).toEqual([]);
+  });
+
+  it('accept the stderr writer in the composition subpath of core', () => {
+    const root = writeTree({
+      [compositionEntry]:
+        "export { createStderrWriter, type StderrLineWriter } from './logger/line-writer.js';\n",
+    });
+    expect(exportOrigins(root, compositionEntry)).toEqual([
+      lineWriter,
+      lineWriter,
+    ]);
+    expect(hiddenOrigins(root, compositionEntry)).toEqual([]);
   });
 
   it('accept the factory of the transport in its own subpath and its type in the outbound path', () => {

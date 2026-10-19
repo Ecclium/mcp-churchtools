@@ -7,6 +7,14 @@
  * of zod changes no tool. The mount derives the schema it advertises from
  * the kept shape, not from the schema of the tool.
  *
+ * The input schema the mount advertises is derived here, once, when the
+ * tool is added, so an input schema that cannot be advertised stops the
+ * start in the registry, before any server is built. It is converted from
+ * the zod schema of the tool and then rebuilt from a list of allowed
+ * keywords. Descriptions and every other annotation from the registry of
+ * zod stay behind: no check of the registry reads them, and the model
+ * reads the list of tools in every session.
+ *
  * The check reads internals of zod 4 (`_zod.def`), which zod marks as
  * internal. It is tested with the version core pins.
  *
@@ -17,7 +25,7 @@ import {
   dataClassOf,
   type Sensitivity,
 } from '@ecclium/mcp-churchtools-plugin-api';
-import type { z } from 'zod';
+import { z } from 'zod';
 
 /** The deepest nesting of objects, arrays and tuples in an output schema. */
 export const maxSchemaDepth = 16;
@@ -518,19 +526,195 @@ export function checkOutputSchema(schema: unknown): OutputShape | undefined {
   });
 }
 
+/** A JSON Schema of an object as the mount advertises it, frozen. */
+export interface ObjectJsonSchema {
+  /** An object, as MCP requires for input and structured output. */
+  readonly type: 'object';
+  /** The other keywords. */
+  readonly [keyword: string]: unknown;
+}
+
+type JsonObject = Readonly<Record<string, unknown>>;
+
+// Keywords of JSON Schema 2020-12 that the input schema keeps, by what
+// their value is: one schema, a map of schemas or a list of schemas. They
+// and the plain values below are the keywords of the vocabularies
+// applicator, validation and format that the converter of zod writes.
+// Every other keyword is dropped: description, title, examples, default,
+// deprecated and every key with x-, which are text of the plugin, and
+// $schema, because JSON Schema 2020-12 is the default of MCP.
+const schemaKeywords: readonly string[] = [
+  'items',
+  'additionalProperties',
+  'not',
+  'propertyNames',
+];
+const mapKeywords: readonly string[] = ['properties', 'patternProperties'];
+const listKeywords: readonly string[] = [
+  'prefixItems',
+  'anyOf',
+  'oneOf',
+  'allOf',
+];
+
+// A reference needs the definition it points to, and without it any value
+// would pass. zod writes one for a recursive schema and for one with an id
+// in the registry of zod; such an input schema cannot be advertised.
+const referenceKeywords: readonly string[] = [
+  '$ref',
+  '$dynamicRef',
+  '$recursiveRef',
+  '$defs',
+  'definitions',
+];
+
+const isString = (value: unknown): boolean => typeof value === 'string';
+const isStrings = (value: unknown): boolean =>
+  Array.isArray(value) && value.every(isString);
+const isNumber = (value: unknown): boolean =>
+  typeof value === 'number' && Number.isFinite(value);
+
+// Keywords with a plain value and the form that value must have, so that a
+// value set through the registry of zod never makes a schema a client
+// cannot read.
+const valueKeywords: readonly (readonly [
+  string,
+  (value: unknown) => boolean,
+])[] = [
+  ['type', (value) => isString(value) || isStrings(value)],
+  ['required', isStrings],
+  ['enum', (value) => Array.isArray(value)],
+  ['const', () => true],
+  ['format', isString],
+  ['pattern', isString],
+  ['minLength', isNumber],
+  ['maxLength', isNumber],
+  ['minimum', isNumber],
+  ['maximum', isNumber],
+  ['exclusiveMinimum', isNumber],
+  ['exclusiveMaximum', isNumber],
+  ['multipleOf', isNumber],
+  ['minItems', isNumber],
+  ['maxItems', isNumber],
+  ['minProperties', isNumber],
+  ['maxProperties', isNumber],
+  ['uniqueItems', (value) => typeof value === 'boolean'],
+];
+
+const isObject = (value: unknown): value is JsonObject =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+// A frozen copy of a plain value of JSON, with objects without prototype.
+const copyJson = (value: unknown): unknown => {
+  if (Array.isArray(value)) return Object.freeze(value.map(copyJson));
+  if (!isObject(value)) return value;
+  const copy = Object.create(null) as Record<string, unknown>;
+  for (const [key, entry] of Object.entries(value)) copy[key] = copyJson(entry);
+  return Object.freeze(copy);
+};
+
+/** The rebuild of one converted input schema, with its counter. */
+class InputRebuild {
+  nodes = 0;
+
+  // A schema from its allowed keywords, or undefined when the mount cannot
+  // advertise it.
+  schema(value: unknown): unknown {
+    if (typeof value === 'boolean') return value;
+    if (!isObject(value)) return undefined;
+    this.nodes += 1;
+    if (this.nodes > maxSchemaNodes) return undefined;
+    const kept = Object.create(null) as Record<string, unknown>;
+    for (const [keyword, entry] of Object.entries(value)) {
+      if (referenceKeywords.includes(keyword)) return undefined;
+      let copy: unknown;
+      if (schemaKeywords.includes(keyword)) copy = this.schema(entry);
+      else if (mapKeywords.includes(keyword)) copy = this.map(entry);
+      else if (listKeywords.includes(keyword)) copy = this.list(entry);
+      else {
+        const fits = valueKeywords.find(([name]) => name === keyword)?.[1];
+        if (fits === undefined) continue;
+        copy = fits(entry) ? copyJson(entry) : undefined;
+      }
+      if (copy === undefined) return undefined;
+      kept[keyword] = copy;
+    }
+    return Object.freeze(kept);
+  }
+
+  private map(value: unknown): unknown {
+    if (!isObject(value)) return undefined;
+    const kept = Object.create(null) as Record<string, unknown>;
+    for (const [name, entry] of Object.entries(value)) {
+      const schema = this.schema(entry);
+      if (schema === undefined) return undefined;
+      kept[name] = schema;
+    }
+    return Object.freeze(kept);
+  }
+
+  private list(value: unknown): unknown {
+    if (!Array.isArray(value)) return undefined;
+    const kept: unknown[] = [];
+    for (const entry of value as unknown[]) {
+      const schema = this.schema(entry);
+      if (schema === undefined) return undefined;
+      kept.push(schema);
+    }
+    return Object.freeze(kept);
+  }
+}
+
 /**
- * Checks the input schema of a tool: a closed object of zod 4. Its fields
- * may use any form, because the input goes to the tool, not to the model.
+ * Checks the input schema of a tool and derives the JSON Schema the mount
+ * advertises for it. The schema must be a closed object of zod 4. Its
+ * fields may use any form that JSON Schema can hold, because the input
+ * goes to the tool, not to the model. The converter of the zod that core
+ * pins turns the schema into JSON Schema for its input, and the result is
+ * rebuilt from the keywords of structure and validation only, so no
+ * description and no other entry of the registry of zod reaches the list
+ * of tools. The pipeline still validates every input with the schema of
+ * the tool.
  *
  * @param schema - The input schema as the plugin hands it over.
- * @returns Whether the registry accepts it.
+ * @returns The schema the mount advertises, frozen, without prototypes and
+ *   without `$schema`, or `undefined` when the registry does not accept the
+ *   input schema: when it is no closed object of zod 4, when zod cannot
+ *   convert it, when the result holds a reference, a keyword with a value
+ *   of the wrong form or more than {@link maxSchemaNodes} schemas, or when
+ *   its root is no object.
  * @example
  * ```ts
- * checkInputSchema(z.object({ query: z.string().max(100) })); // true
- * checkInputSchema(z.looseObject({})); // false
+ * checkInputSchema(z.object({ query: z.string().max(100) }));
+ * // { type: 'object', properties: { query: { type: 'string',
+ * //   maxLength: 100 } }, required: ['query'] }
+ * checkInputSchema(z.looseObject({})); // undefined
  * ```
  */
-export function checkInputSchema(schema: unknown): boolean {
+export function checkInputSchema(
+  schema: unknown,
+): ObjectJsonSchema | undefined {
   const internals = internalsOf(schema);
-  return internals?.type === 'object' && isClosedObject(internals);
+  if (internals?.type !== 'object' || !isClosedObject(internals)) {
+    return undefined;
+  }
+  // The converter of the zod core pins, not ~standard.jsonSchema of the
+  // schema. Both read the same accessors of the zod the plugin built its
+  // schema with, ~standard among them, but there the function that getter
+  // returns would make the whole result. Here the walk is code core pins
+  // and tests, and the rebuild below decides what is kept (ADR 0024).
+  let converted: unknown;
+  try {
+    converted = z.toJSONSchema(schema as z.ZodType, {
+      target: 'draft-2020-12',
+      io: 'input',
+      unrepresentable: 'throw',
+    });
+  } catch {
+    return undefined;
+  }
+  const rebuilt = new InputRebuild().schema(converted);
+  return isObject(rebuilt) && rebuilt.type === 'object'
+    ? (rebuilt as ObjectJsonSchema)
+    : undefined;
 }

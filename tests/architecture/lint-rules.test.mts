@@ -134,6 +134,12 @@ const probes: readonly {
   { code: 'const [, , first] = process.argv;', concerns: ['environment'] },
   { code: "process['argv'];", concerns: ['environment'] },
   { code: "import { argv } from 'node:process';", concerns: ['process'] },
+  { code: 'const options = process.execArgv;', concerns: ['environment'] },
+  { code: "process['execArgv'];", concerns: ['environment'] },
+  {
+    code: 'const { execArgv } = process;',
+    concerns: ['environment', 'process'],
+  },
   { code: 'process.report.getReport();', concerns: ['environment'] },
   { code: "import { report } from 'process';", concerns: ['process'] },
   {

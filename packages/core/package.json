@@ -24,6 +24,11 @@
       "@ecclium/source": "./src/http/compose-mock.ts",
       "types": "./dist/http/compose-mock.d.ts",
       "default": "./dist/http/compose-mock.js"
+    },
+    "./composition": {
+      "@ecclium/source": "./src/composition.ts",
+      "types": "./dist/composition.d.ts",
+      "default": "./dist/composition.js"
     }
   },
   "dependencies": {

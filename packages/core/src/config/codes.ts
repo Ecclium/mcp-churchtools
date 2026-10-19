@@ -17,6 +17,8 @@ export const configProblemCodes = Object.freeze([
   'proxy_unsupported',
   'tls_check_disabled',
   'debug_output_enabled',
+  'tls_keylog_enabled',
+  'tls_trace_enabled',
   'empty_value',
   'value_too_long',
   'invalid_choice',
@@ -40,6 +42,7 @@ export const configWarningCodes = Object.freeze([
   'token_from_environment',
   'redaction_off',
   'search_tools_enabled',
+  'trust_store_extended',
 ] as const);
 
 /** What the start reports although it goes on. */
