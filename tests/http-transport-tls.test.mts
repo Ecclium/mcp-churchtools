@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { makeCanary } from '@ecclium/mcp-churchtools-testkit';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { findOpenssl, makeCertificate } from './support/certificates.mts';
 import { withoutNetworkGuard } from './support/no-network.mts';
 
 // The HTTP transport against a TLS server in memory (ADR 0056). Node.js
@@ -33,23 +34,6 @@ interface Report {
   readonly numPendingTests: number;
   readonly numTodoTests: number;
 }
-
-// An openssl that can add a subjectAltName. macOS brings LibreSSL under
-// /usr/bin, Homebrew a current OpenSSL.
-const findOpenssl = (): string => {
-  for (const candidate of [
-    'openssl',
-    '/opt/homebrew/bin/openssl',
-    '/usr/local/bin/openssl',
-    '/usr/bin/openssl',
-  ]) {
-    const help = spawnSync(candidate, ['req', '-help'], { encoding: 'utf8' });
-    if (`${help.stdout}${help.stderr}`.includes('-addext')) return candidate;
-  }
-  throw new Error(
-    'No openssl with -addext found; install OpenSSL 1.1.1 or newer.',
-  );
-};
 
 let folder = '';
 const runs = new Map<
@@ -105,39 +89,11 @@ const runFixture = (
 beforeAll(() => {
   folder = mkdtempSync(join(tmpdir(), 'ecclium-tls-'));
   const openssl = findOpenssl();
-  for (const [name, host] of [
-    ['a', 'demo.example'],
-    ['b', 'other.example'],
-  ] as const) {
-    const made = spawnSync(
-      openssl,
-      [
-        'req',
-        '-x509',
-        '-newkey',
-        'ec',
-        '-pkeyopt',
-        'ec_paramgen_curve:prime256v1',
-        '-nodes',
-        '-days',
-        '1',
-        '-subj',
-        `/CN=${host}`,
-        '-addext',
-        `subjectAltName=DNS:${host}`,
-        '-keyout',
-        join(folder, `${name}.key`),
-        '-out',
-        join(folder, `${name}.crt`),
-      ],
-      { encoding: 'utf8' },
-    );
-    if (made.status !== 0) throw new Error(`openssl failed: ${made.stderr}`);
-  }
+  const a = makeCertificate(openssl, folder, 'a', 'demo.example');
+  const b = makeCertificate(openssl, folder, 'b', 'other.example');
   writeFileSync(
     join(folder, 'trusted.pem'),
-    readFileSync(join(folder, 'a.crt'), 'utf8') +
-      readFileSync(join(folder, 'b.crt'), 'utf8'),
+    readFileSync(a.cert, 'utf8') + readFileSync(b.cert, 'utf8'),
   );
   runFixture('untrusted', 'untrusted.mts', {});
   runFixture('untrusted with the check switched off', 'untrusted.mts', {
