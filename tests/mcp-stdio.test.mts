@@ -104,7 +104,7 @@ const start = (
     {
       // Only these variables: the network guard and the token. The shell
       // that runs the tests may hold variables of the project.
-      NODE_OPTIONS: process.env['NODE_OPTIONS'] ?? '',
+      NODE_OPTIONS: guardPreload,
       STDIO_FIXTURE_TOKEN: token,
     },
   );
