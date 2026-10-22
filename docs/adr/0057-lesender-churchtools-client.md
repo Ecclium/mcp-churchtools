@@ -63,7 +63,7 @@ Gewählt ist die dritte Option.
 - Die Drosselung schützt das Kontingent der Gemeinde vor Ecclium selbst, nicht vor anderen Programmen hinter derselben IP-Adresse. Ein 429 leert den Eimer nicht.
 - `email-exact` aus der Suche nach Personen geht nicht durch die Prüfung der Namen im Transport, weil er einen Bindestrich enthält. Kein Tool in Phase 1 braucht ihn.
 - **Restrisiken:**
-  - **Form von «Alle»:** Wie ChurchTools «Alle» bei `view alldata`, `security level person` und `security level group` kodiert, ist nicht belegt. Hat es eine andere Form als eine Liste von IDs, sind die Rechte eines solchen Kontos `unknown`. Das sperrt nur das Schreiben.
+  - **Form von «Alle»:** Am 22.10.2026 an ChurchTools 3.137 belegt: «Alle» erscheint bei `view alldata` als Liste mehrerer positiver IDs, bei `security level person` und `security level group` als Liste mit genau einer positiven ID, wie eine einzelne Stufe. Der Client nimmt die Rechte eines solchen Kontos also an. Liefert eine andere Version oder Instanz eine andere Form als eine Liste von IDs ab 0, sind sie `unknown`. Das sperrt nur das Schreiben.
   - **Namen der Rechte:** Im ersten Lauf war jeder Name druckbares ASCII. Liefert eine andere Instanz oder Version einen anderen Namen, sind ihre Rechte immer `unknown`.
   - **Ungültiges Token bei den Rechten:** Im ersten Lauf antwortete `GET /api/permissions/global` auf ein ungültiges Token mit 401. Belegt ist das nur für diese Version, deshalb belegt weiterhin nur whoami eine Anmeldung.
   - **Kodierung:** Im ersten Lauf antwortete ChurchTools mit `accept-encoding: identity` unkomprimiert. Belegt ist das für ChurchTools 3.137.
@@ -77,4 +77,4 @@ Gewählt ist die dritte Option.
 - **Tests:** `packages/core/src/churchtools/*.test.ts` und `packages/core/src/throttle/*.test.ts` über das Double für ChurchTools aus testkit decken beide Ordner zu 100 Prozent ab.
 - **User-Agent:** seit dem 19.10.2026 `userAgent` in `packages/cli/src/version.ts`, heute `Ecclium/0.0.0`, mit derselben Version, die der Mount in `serverInfo` meldet (ADR 0053). `version.test.ts` hält beide gleich der Version in `packages/cli/package.json` und in den Formen, die Mount und Transport annehmen. Der Start über stdio übergibt ihn an `createHttpTransport`.
 - **Erster Lauf:** am 17.10.2026 gegen die Testinstanz, mit dem Vertragsabgleich. Die Befunde stehen in `docs/research/churchtools-api.md` (Rechte, Weitere Befunde).
-- Offen: die Form von «Alle» bei den Rechten für Personen und Gruppen (`docs/STATUS.md`, Offen).
+- **Form von «Alle»:** am 22.10.2026 gegen die Testinstanz belegt, bei allen drei Rechten eine Liste positiver IDs. Der Client bleibt unverändert (`docs/research/churchtools-api.md`, F30).
