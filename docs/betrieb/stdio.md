@@ -192,6 +192,32 @@ Was die Suchtools tun und was nicht:
 - Passt der Name des Dienstkontos zum Begriff, kann sein eigener Datensatz unter den Treffern sein.
 - Die Zeile des Audits nennt das Tool und den Ausgang, nie den Suchbegriff, einen Namen oder eine Kennung.
 
+## Smoke-Test
+
+Mit `scripts/smoke.mts` prüfen Sie, ob der gebaute Server mit Ihrem Dienstkonto wie erwartet antwortet, ohne einen Client einzurichten. Der Smoke-Test startet den Server zweimal über stdio, einmal in der neueren und einmal in der älteren Fassung des Protokolls MCP. Er ruft `ct_whoami` auf und prüft die Antworten, die Zahl der Anfragen an ChurchTools, die Audit-Datei und das Ende des Servers. Er liest nur, schreibt nichts in ChurchTools und gibt nur die Form der Antworten aus, keine Namen, Kennungen, Adressen und nie das Token. Für den Server legt er einen eigenen Zustandsordner im temporären Ordner an und löscht ihn danach wieder.
+
+```sh
+env -i ECCLIUM_CHURCHTOOLS_URL=https://example.church.tools ECCLIUM_CHURCHTOOLS_TOKEN_FILE=/pfad/zur/token-datei /pfad/zu/node /pfad/zum/checkout/scripts/smoke.mts
+```
+
+Der Server bekommt nur die Adresse, die Token-Datei, den Zustandsordner und `ECCLIUM_READ_ONLY=true`, auch wenn Ihre Shell etwas anderes setzt. Das Token nimmt der Smoke-Test nur aus der Datei. Variablen wie `NODE_OPTIONS` oder `NODE_EXTRA_CA_CERTS` weist er ab.
+
+Die Suchtools ruft der Smoke-Test nur auf einer Testinstanz mit synthetischen Daten auf, die eine Wiki-Kategorie `testinstanz-kennung` trägt, wie sie die Proben in `scripts/spike/` verlangen. Setzen Sie dafür `ECCLIUM_SMOKE_ALLOW_SEARCH` auf den ersten Teil des Hosts, von Hand getippt und nicht aus der Variablen der Adresse kopiert, und `ECCLIUM_SMOKE_QUERY` auf einen Suchbegriff. Der Smoke-Test liest dann mit dem Token zuerst die Wiki-Kategorien und die Version von ChurchTools. Sieht das Konto nicht genau eine solche Kategorie, die es weder bearbeiten noch löschen darf, bricht er ab, ohne den Server zu starten. Sonst sucht er Personen und Gruppen mit dem Begriff, Personen mit einem erfundenen Begriff ohne Treffer und mit einem Begriff nur aus Leerzeichen, den der Server abweisen muss, ohne ChurchTools zu fragen.
+
+Die Ausgabe ist JSON. `ergebnis` sagt `bestanden` oder `gescheitert`, `fehler` nennt die gescheiterten Prüfungen und `befunde` Hinweise, die den Lauf nicht scheitern lassen, etwa `sicherheitsstufe`, wenn das Konto eine Sicherheitsstufe hat. Der Smoke-Test endet mit einem dieser Codes:
+
+| Code | Bedeutung                                                                                                     |
+| ---- | ------------------------------------------------------------------------------------------------------------- |
+| 0    | Alle Prüfungen sind bestanden.                                                                                |
+| 1    | Mindestens eine Prüfung ist gescheitert, siehe `fehler`.                                                      |
+| 64   | Nach dem Befehl stand ein Argument.                                                                           |
+| 69   | Die Instanz war für das Lesen der Wiki-Kategorien nicht erreichbar.                                           |
+| 70   | Ein interner Fehler, oder die Ausgabe ist zurückgehalten, weil sie womöglich Daten aus ChurchTools enthielte. |
+| 77   | Die Kennkategorie fehlt, ist doppelt oder bearbeitbar, oder der Schalter passt nicht zum Host.                |
+| 78   | Eine Variable fehlt oder ist ungültig, die Token-Datei ist unsicher, oder der Server ist nicht gebaut.        |
+
+Unter Windows läuft der Smoke-Test nicht, weil es dort über stdio keine Audit-Datei gibt.
+
 ## Grenzen
 
 - Nur `ct_whoami` und mit Freigabe die beiden Suchtools. Weitere Tools für Personen, Gruppen und das Wiki und Tools, die schreiben, kommen mit späteren Versionen.
