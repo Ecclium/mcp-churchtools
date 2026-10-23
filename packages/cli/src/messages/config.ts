@@ -110,6 +110,7 @@ const urlLength =
 const tokenFile = quote('ECCLIUM_CHURCHTOOLS_TOKEN_FILE');
 const tokenVariable = quote('ECCLIUM_CHURCHTOOLS_TOKEN');
 const stateDir = quote('ECCLIUM_STATE_DIR');
+const searchTools = quote('ECCLIUM_SEARCH_TOOLS');
 const auditDir = quote('audit');
 const example = 'https://example.church.tools';
 
@@ -554,6 +555,14 @@ const problems: Readonly<
       'Das Dateisystem meldete einen Fehler. Seine Meldung zeigt Ecclium nicht, weil sie den Pfad enthält.',
       `Prüfen Sie Eigentümer und Rechte des Ordners aus ${name}.`,
     ),
+  // Reported for the folder, which is what is missing; the value of the
+  // switch itself is valid.
+  search_tools_without_state_dir: (name = stateDir) =>
+    message(
+      `Die Suchtools sind mit ${searchTools} freigegeben, aber ${name} ist nicht gesetzt.`,
+      `Ein Ergebnis von ‹ct_persons_search› und ‹ct_groups_search› gibt Ecclium nur heraus, wenn seine Zeile in der Audit-Datei steht, und die Audit-Datei liegt im Ordner aus ${name}. Unter Windows gibt es sie im Betrieb über stdio nicht, und damit auch keine Suchtools.`,
+      `Setzen Sie ${name} auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 oder ${searchTools} auf ‹false›.`,
+    ),
 });
 
 const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({
@@ -567,12 +576,12 @@ const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({
     'Personendaten erreichen den KI-Assistenten unmaskiert.',
     `Setzen Sie ${quote('ECCLIUM_REDACTION')} auf ‹standard›, wenn das nicht gewollt ist.`,
   ),
-  // The value is valid before the tools exist and changes nothing yet, so
-  // that a configuration written for a later version still starts.
+  // On every start, because the search tools let the AI assistant see
+  // names of persons and groups (ADR 0060).
   search_tools_enabled: message(
-    'Die Suchtools sind freigegeben, kommen aber erst mit einer späteren Version.',
-    'Bis dahin wirkt die Einstellung nicht. Mit ‹ct_persons_search› und ‹ct_groups_search› wird der KI-Assistent dann Personen und Gruppen der Instanz suchen und ihre Namen sehen können.',
-    `Setzen Sie ${quote('ECCLIUM_SEARCH_TOOLS')} auf ‹false›, wenn er diese Daten auch später nicht sehen soll.`,
+    'Die Suchtools ‹ct_persons_search› und ‹ct_groups_search› sind freigegeben.',
+    'Der KI-Assistent kann damit Personen und Gruppen der Instanz nach Namen suchen und sieht Kennung und Name jedes Treffers. Jeder Aufruf steht in der Audit-Datei.',
+    `Setzen Sie ${quote('ECCLIUM_SEARCH_TOOLS')} auf ‹false›, wenn er diese Daten nicht sehen soll.`,
   ),
   // One text for every setting: the report of the loader names none of
   // them, and never the path of a certificate.

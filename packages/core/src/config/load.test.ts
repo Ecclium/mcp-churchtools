@@ -1551,8 +1551,20 @@ describe('loadConfig and its problems', () => {
     token_from_environment: () =>
       load({ ECCLIUM_CHURCHTOOLS_URL: address, [tokenVariableName]: token() }),
     redaction_off: () => load({ ...valid(), ECCLIUM_REDACTION: 'off' }),
-    search_tools_enabled: () =>
+    search_tools_without_state_dir: () =>
       load({ ...valid(), ECCLIUM_SEARCH_TOOLS: 'true' }),
+    search_tools_enabled: () =>
+      load(
+        {
+          ...valid(),
+          ECCLIUM_SEARCH_TOOLS: 'true',
+          ECCLIUM_STATE_DIR: stateDirPath,
+        },
+        'stdio',
+        memoryFiles().fs,
+        undefined,
+        memoryFolder().fs,
+      ),
     trust_store_extended: () =>
       load({ ...valid(), NODE_EXTRA_CA_CERTS: '/path/to/ca.pem' }),
   };
@@ -1566,6 +1578,40 @@ describe('loadConfig and its problems', () => {
     const result = cases[code]();
     expect(result.ok).toBe(true);
     expect(result.report.warnings).toEqual([code]);
+  });
+
+  // The search tools need the folder of the audit file over stdio
+  // (ADR 0028, ADR 0060). A folder that is set but refused reports only
+  // its own problem, and the switch alone stays a valid value.
+  it('asks for the folder of state only when the search tools are enabled and it is unset', () => {
+    const missing = load({ ...valid(), ECCLIUM_SEARCH_TOOLS: 'true' });
+    expect(missing.ok).toBe(false);
+    expect(missing.report.problems).toEqual([
+      {
+        code: 'search_tools_without_state_dir',
+        variable: 'ECCLIUM_STATE_DIR',
+      },
+    ]);
+    expect(setting(missing, 'searchTools')?.shown).toEqual({
+      kind: 'boolean',
+      value: true,
+    });
+    expect(
+      codes(
+        load(
+          {
+            ...valid(),
+            ECCLIUM_SEARCH_TOOLS: 'true',
+            ECCLIUM_STATE_DIR: stateDirPath,
+          },
+          'stdio',
+          memoryFiles().fs,
+          undefined,
+          memoryFolder({ folder: { mode: 0o40750 } }).fs,
+        ),
+      ),
+    ).toEqual(['state_dir_mode']);
+    expect(load({ ...valid(), ECCLIUM_SEARCH_TOOLS: 'false' }).ok).toBe(true);
   });
 
   it('lists 32 problems in a fixed order and counts the rest', () => {

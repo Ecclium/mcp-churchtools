@@ -150,11 +150,29 @@ describe('the command line', () => {
       ECCLIUM_CHURCHTOOLS_URL: address,
       [tokenVariableName]: makeCanary('token').value,
       ECCLIUM_REDACTION: 'off',
-      ECCLIUM_SEARCH_TOOLS: 'true',
     });
     expect(result.code).toBe(exitCodes.ok);
     expect(result.stderr).toBe('');
     expect(result.stdout).toContain('\nBeim Start meldet Ecclium:\n');
+  });
+
+  // The search tools need the folder of the audit file over stdio, and the
+  // check says so before any start (ADR 0028, ADR 0060).
+  it('refuses enabled search tools without the folder of the audit file', () => {
+    const result = capture(check, {
+      ECCLIUM_CHURCHTOOLS_URL: address,
+      [tokenVariableName]: makeCanary('token').value,
+      ECCLIUM_SEARCH_TOOLS: 'true',
+    });
+    expect(result.code).toBe(exitCodes.invalidConfig);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain(
+      problemText({
+        code: 'search_tools_without_state_dir',
+        variable: 'ECCLIUM_STATE_DIR',
+      }),
+    );
+    expect(lastLine(result.stdout)).toBe(invalid);
   });
 
   // The same notices as the start over stdio, for the variables and for

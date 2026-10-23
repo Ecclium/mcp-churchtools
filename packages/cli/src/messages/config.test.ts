@@ -289,15 +289,26 @@ describe('the catalog of messages', () => {
     expect(text).not.toMatch(/Kindprozess|startet, sähe/);
   });
 
-  // The search tools come with a later version. Until then the value is
-  // valid and changes nothing, and the notice must not claim otherwise.
-  it('says that the search tools come only with a later version', () => {
+  // The notice on every start with the search tools names both and what
+  // the AI assistant then sees (ADR 0060).
+  it('names both search tools and what the AI assistant sees with them', () => {
     const message = warningMessage('search_tools_enabled');
-    expect(message.what).toContain('erst mit einer späteren Version');
-    expect(message.why).toContain('Bis dahin wirkt die Einstellung nicht.');
-    expect(message.why).toContain('‹ct_persons_search›');
-    expect(message.why).toContain('‹ct_groups_search›');
-    expect(textOf(message)).not.toMatch(/sind freigegeben\.|kann damit/);
+    expect(message.what).toContain('‹ct_persons_search›');
+    expect(message.what).toContain('‹ct_groups_search›');
+    expect(message.why).toContain('Kennung und Name jedes Treffers');
+    expect(message.why).toContain('Audit-Datei');
+    expect(textOf(message)).not.toMatch(/späteren Version|wirkt .*nicht/);
+  });
+
+  it('asks for the folder of the audit file when the search tools are enabled', () => {
+    const message = problemMessage({
+      code: 'search_tools_without_state_dir',
+      variable: 'ECCLIUM_STATE_DIR',
+    });
+    expect(message.what).toContain('‹ECCLIUM_SEARCH_TOOLS›');
+    expect(message.what).toContain('‹ECCLIUM_STATE_DIR› ist nicht gesetzt');
+    expect(message.why).toContain('Unter Windows');
+    expect(message.action).toContain('Rechten 700');
   });
 
   // One warning stands for every setting that extends the trust store, as
