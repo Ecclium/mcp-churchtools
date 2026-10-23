@@ -670,8 +670,8 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   show('searchTools', 'ECCLIUM_SEARCH_TOOLS', searchTools, 'boolean');
 
   // The folder of state may stay unset: then there is no audit file. A set
-  // one is only looked at, never created, and the start checks it again
-  // before it writes (ADR 0028).
+  // one is only looked at, never created, and the start checks its folder
+  // audit and the file again before it writes (ADR 0028).
   const stateDirName = 'ECCLIUM_STATE_DIR';
   const stateDirRead = read(row(stateDirName));
   let stateDir: string | undefined;

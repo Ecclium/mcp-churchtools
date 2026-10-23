@@ -1504,6 +1504,7 @@ describe('loadConfig and its problems', () => {
     subject_reserved: () =>
       load({ ...valid(), ECCLIUM_STDIO_SUBJECT: 'invalid' }),
     state_dir_relative: () => withStateDir('path/to/state'),
+    state_dir_too_long: () => withStateDir(`/${'\u00e4'.repeat(500)}`),
     state_dir_not_normalized: () => withStateDir(`${stateDirPath}/`),
     state_dir_platform: () =>
       withStateDir(stateDirPath, memoryFolder({ getuid: () => undefined }).fs),

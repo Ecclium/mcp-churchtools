@@ -476,10 +476,16 @@ const problems: Readonly<
       'Ecclium normalisiert nichts, damit es genau den Ordner prüft, den Sie angeben. Mit einem Schrägstrich am Ende folgte die Prüfung sogar einem Link.',
       'Schreiben Sie den Pfad ohne Schrägstrich am Ende, ohne doppelte Schrägstriche und ohne ‹.› oder ‹..›.',
     ),
+  state_dir_too_long: (name = stateDir) =>
+    message(
+      `Der Pfad in ${name} ist zu lang.`,
+      `In UTF-8 hat er mehr als 960 Bytes, und der Pfad einer Audit-Datei darin überschritte die Grenze von 1'024 Bytes für Pfade unter macOS. Zeichen ausserhalb von ASCII wie Umlaute zählen mehrfach.`,
+      'Wählen Sie einen kürzeren Pfad.',
+    ),
   state_dir_platform: (name = stateDir) =>
     message(
       `Der Ordner in ${name} lässt sich auf diesem System nicht sicher prüfen.`,
-      'Es fehlen die Prüfung des Eigentümers oder das Öffnen ohne Links, etwa unter Windows. Dort gibt es im Betrieb über stdio keine Audit-Datei und keine Suchtools.',
+      'Es fehlt die Prüfung des Eigentümers oder das Öffnen ohne Links, etwa unter Windows. Dort gibt es im Betrieb über stdio keine Audit-Datei und keine Suchtools.',
       'Entfernen Sie die Variable auf diesem System.',
     ),
   state_dir_missing: (name = stateDir) =>
@@ -534,7 +540,7 @@ const problems: Readonly<
     message(
       `Der Ordner ${auditDir} im Ordner aus ${name} gehört einem anderen Benutzer.`,
       'Wem der Ordner gehört, der kann die Audit-Datei darin lesen, austauschen oder löschen.',
-      `Entfernen Sie den Ordner ${auditDir}. Ecclium legt ihn beim Start als der Benutzer an, unter dem es läuft.`,
+      `Verschieben Sie den Ordner ${auditDir}, damit frühere Audit-Dateien erhalten bleiben. Ecclium legt ihn beim Start als der Benutzer an, unter dem es läuft.`,
     ),
   audit_dir_mode: (name = stateDir) =>
     message(

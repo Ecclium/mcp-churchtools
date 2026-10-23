@@ -36,7 +36,7 @@ const starts: Readonly<Record<StartNoticeCode, Message>> = Object.freeze({
   ),
   audit_file_required: message(
     'Ein Tool mit Personendaten der besonderen Kategorie ist eingeschaltet, aber ‹ECCLIUM_STATE_DIR› ist nicht gesetzt.',
-    'Die Ergebnisse eines solchen Tools gibt Ecclium nur heraus, wenn ihre Zeile in der Audit-Datei steht, und die Audit-Datei liegt in diesem Ordner.',
+    'Ein Ergebnis eines solchen Tools gibt Ecclium nur heraus, wenn seine Zeile in der Audit-Datei steht, und die Audit-Datei liegt in diesem Ordner.',
     'Setzen Sie ‹ECCLIUM_STATE_DIR› auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 oder schalten Sie das Tool aus.',
   ),
 });
@@ -51,8 +51,8 @@ const noPath =
 // file (ADR 0028).
 const auditFiles: Readonly<Record<AuditFileCode, Message>> = Object.freeze({
   audit_file_platform: message(
-    'Die Audit-Datei lässt sich auf diesem System nicht sicher anlegen.',
-    'Es fehlen die Prüfung des Eigentümers oder das Öffnen ohne Links, etwa unter Windows.',
+    'Die Audit-Datei lässt sich auf diesem System nicht sicher anlegen, und der Start bricht ab.',
+    'Es fehlt die Prüfung des Eigentümers oder das Öffnen ohne Links, etwa unter Windows.',
     `Entfernen Sie ${stateDir} auf diesem System.`,
   ),
   audit_file_folder_unavailable: message(

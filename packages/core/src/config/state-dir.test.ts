@@ -125,11 +125,31 @@ describe('checkStateDir with file functions', () => {
     expect(codeOf({ audit: { mode: 0o40700 } })).toBe('ok');
   });
 
-  it('refuses a relative path before anything else', () => {
+  it('refuses the platform before the form of the path', () => {
     const { fs, looked } = fake({ getuid: () => undefined });
     expect(checkStateDir('path/to/state', fs)).toEqual({
       ok: false,
+      code: 'state_dir_platform',
+    });
+    expect(looked).toEqual([]);
+  });
+
+  it('refuses a relative path without looking at the disk', () => {
+    const { fs, looked } = fake();
+    expect(checkStateDir('path/to/state', fs)).toEqual({
+      ok: false,
       code: 'state_dir_relative',
+    });
+    expect(looked).toEqual([]);
+  });
+
+  // An umlaut takes two bytes in UTF-8: 479 of them and the slash are 959
+  // bytes, 480 are 961.
+  it('counts the length of the path in bytes', () => {
+    expect(codeOf({}, `/${'\u00e4'.repeat(479)}`)).toBe('ok');
+    const { fs, looked } = fake();
+    expect(checkStateDir(`/${'\u00e4'.repeat(480)}`, fs)).toMatchObject({
+      code: 'state_dir_too_long',
     });
     expect(looked).toEqual([]);
   });
@@ -325,6 +345,7 @@ describe('stateDirCodes', () => {
     (code) => {
       const cases: Record<StateDirCode, () => string> = {
         state_dir_relative: () => codeOf({}, 'state'),
+        state_dir_too_long: () => codeOf({}, `/${'\u00e4'.repeat(500)}`),
         state_dir_not_normalized: () => codeOf({}, `${path}/`),
         state_dir_platform: () => codeOf({ getuid: () => undefined }),
         state_dir_missing: () =>

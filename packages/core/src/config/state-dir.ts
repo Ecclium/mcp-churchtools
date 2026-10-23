@@ -18,9 +18,10 @@ import { isProxy } from 'node:util/types';
  * path.
  */
 export const stateDirCodes = Object.freeze([
+  'state_dir_platform',
   'state_dir_relative',
   'state_dir_not_normalized',
-  'state_dir_platform',
+  'state_dir_too_long',
   'state_dir_missing',
   'state_dir_symlink',
   'state_dir_not_directory',
@@ -72,10 +73,13 @@ export type StateDirResult =
   { readonly ok: true } | { readonly ok: false; readonly code: StateDirCode };
 
 /**
- * The longest path of the folder: with `/audit/` and the name of an audit
- * file it stays below PATH_MAX of macOS, 1024 bytes.
+ * The longest path of the folder, in characters and in bytes of UTF-8:
+ * with `/audit/` and the name of an audit file it stays below PATH_MAX of
+ * macOS, 1024 bytes.
  */
 export const maxStateDirLength = 960;
+
+const encoder = new TextEncoder();
 
 const nodeFileSystem: StateDirFileSystem = Object.freeze({
   lstatSync,
@@ -161,7 +165,8 @@ const checkFolder = (
  * the user, not a link, without rights for the group or others. A missing
  * folder `audit` is fine, the start creates it; one that is there must
  * pass the same checks. Without the ID of the user or the flags the audit
- * file needs, as on Windows, the platform is refused.
+ * file needs, as on Windows, the platform is refused first. A path of more
+ * than {@link maxStateDirLength} bytes in UTF-8 is refused as too long.
  *
  * Folders above the folder of state are trusted: `lstat` follows links
  * there.
@@ -184,13 +189,9 @@ export function checkStateDir(
   if (typeof path !== 'string') {
     throw new TypeError('The path of the folder of state must be a string.');
   }
-  if (!isAbsolute(path)) return refuse('state_dir_relative');
-  if (!isNormalizedAbsolutePath(path)) {
-    return refuse('state_dir_not_normalized');
-  }
   // Without these flags or the ID of the user, the start could not open
-  // the audit file safely, so the check stops here instead of passing a
-  // folder the start must refuse.
+  // the audit file safely. First, so that Windows gets this code and not
+  // one about the form of a path it writes differently.
   const { O_NOFOLLOW, O_DIRECTORY, O_NOCTTY } = fs.constants;
   const uid = fs.getuid();
   if (
@@ -200,6 +201,15 @@ export function checkStateDir(
     uid === undefined
   ) {
     return refuse('state_dir_platform');
+  }
+  if (!isAbsolute(path)) return refuse('state_dir_relative');
+  if (!isNormalizedAbsolutePath(path)) {
+    return refuse('state_dir_not_normalized');
+  }
+  // The loader bounds the characters; a character outside ASCII takes more
+  // than one byte in a path.
+  if (encoder.encode(path).length > maxStateDirLength) {
+    return refuse('state_dir_too_long');
   }
 
   let folder: StateDirStats;
