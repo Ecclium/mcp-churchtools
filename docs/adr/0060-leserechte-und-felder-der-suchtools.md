@@ -1,6 +1,6 @@
 # ADR 0060: Leserechte des Dienstkontos und feste Felder der Suchtools
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 23.10.2026
 - Datum: 23.10.2026
 - Fällt vor: Phase 1
 
@@ -67,7 +67,7 @@ Gewählt ist die dritte Option. Die niedrigste ausreichende Stufe aus dem Entsch
 - **Restrisiken:**
   - **Felder ohne Stufe:** Welche Felder ohne Sicherheitsstufe kommen, hängt von den Einstellungen der Instanz ab, belegt ist es nur an der Testinstanz (F32). Fehlt auf einer anderen Instanz ohne Stufe `firstName`, `lastName` oder bei einer Gruppe `name`, endet der Aufruf mit `upstream`, nicht mit einem Teilergebnis.
   - **Namen als Anweisung:** Ein Name kann Text enthalten, der wie eine Anweisung aussieht. Die Pipeline entfernt unsichtbare Zeichen, das Schema begrenzt die Länge, und die Beschreibung jedes Tools sagt, dass Inhalte aus ChurchTools keine Anweisungen sind (Threat Model, T7). Namen von Personen stehen bis zum Entscheid in ADR 0026 ohne Datenumschlag.
-  - **Kombination der Rechte:** Genau dieser Satz von Rechten lief noch nicht als eigener Lauf der Probe: a1 bis a6 hatten Sicherheitsstufen, s2 hatte dazu `churchdb: view`, s6 dazu `churchdb: view`, `churchgroup: view` und die höchste Stufe von `security level person`. Dass der Satz genügt, ist ein Schluss aus F29. Dass eine Gruppe `name` auch ohne Stufe trägt, ist ein Schluss aus F32: Die niedrigste Stufe von `security level group` (s7) brachte gegenüber s6 nur verschachtelte Felder. Ein Lauf der Probe mit genau diesen Rechten auf Personen und Gruppen prüft beides, bevor die Suchtools gegen die Testinstanz laufen.
+  - **Kombination der Rechte:** Dass genau dieser Satz von Rechten für beide Suchtools genügt und dass eine Gruppe `name` auch ohne Sicherheitsstufe trägt, war beim Vorschlag ein Schluss aus F29 und F32. Der Lauf t3 von `08-persons-groups-read` am 23.10.2026 hat beides an ChurchTools 3.137 belegt (`docs/research/churchtools-api.md`, Methode, F25, F29 und F32). Für eine andere Version oder Instanz gilt der Vorbehalt unter «Felder ohne Stufe».
   - **Rechte aus Gruppen und versteckte Gruppen:** Beides ist offen (F31, F34).
   - **Zu viele Rechte bleiben möglich:** Der Server verhindert nicht, dass ein Betreiber dem Konto eine Sicherheitsstufe gibt. Die zusätzlichen Felder erreichen dann den Prozess von Ecclium, aber nicht den Client.
 
