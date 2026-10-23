@@ -151,7 +151,9 @@ export function checkWriteEnvironment(
 /** The variable of a switch and the hints if it is missing or wrong. */
 export interface SwitchHints {
   readonly variable:
-    'ECCLIUM_SPIKE_ALLOW_WRITE' | 'ECCLIUM_SPIKE_ALLOW_PERSONS';
+    | 'ECCLIUM_SPIKE_ALLOW_WRITE'
+    | 'ECCLIUM_SPIKE_ALLOW_PERSONS'
+    | 'ECCLIUM_SMOKE_ALLOW_SEARCH';
   readonly missing: HintKey;
   readonly wrong: HintKey;
 }
