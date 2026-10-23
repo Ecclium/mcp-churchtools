@@ -170,7 +170,7 @@ Grenzen:
 ### Freigabe der Suchtools
 
 - `ct_persons_search` und `ct_groups_search` werden nur mit `ECCLIUM_SEARCH_TOOLS=true` registriert. Der Start meldet das dann mit beiden Namen.
-- Solange es die Suchtools noch nicht gibt, bleibt `true` gültig und wirkungslos, damit eine Konfiguration für eine spätere Version trotzdem startet. Die Startmeldung sagt dann, dass die Suchtools erst mit einer späteren Version kommen und die Einstellung bis dahin nicht wirkt. Mit den Suchtools gilt wieder die Meldung mit beiden Namen. Erwogen war, `true` bis dahin abzuweisen wie die Variablen späterer Phasen. Das hätte Tabelle, `.env.example`, Lader und Tests jetzt und mit den Suchtools wieder geändert.
+- Solange es die Suchtools noch nicht gab, blieb `true` gültig und wirkungslos, damit eine Konfiguration für eine spätere Version trotzdem startete. Die Startmeldung sagte dann, dass die Suchtools erst mit einer späteren Version kommen und die Einstellung bis dahin nicht wirkt. Mit den Suchtools gilt wieder die Meldung mit beiden Namen. Erwogen war, `true` bis dahin abzuweisen wie die Variablen späterer Phasen. Das hätte Tabelle, `.env.example`, Lader und Tests jetzt und mit den Suchtools wieder geändert.
 - Seit dem 23.10.2026 gibt es die Suchtools, und die Startmeldung nennt beide Namen. Über stdio verlangen sie den Zustandsordner für die Audit-Datei (ADR 0028): Fehlt er, meldet der Lader das Problem `search_tools_without_state_dir` an `ECCLIUM_STATE_DIR`, weil der Ordner fehlt und nicht der Wert des Schalters falsch ist, und `ecclium config check` und der Start enden mit 78.
 - In Phase 2 ersetzt `ECCLIUM_TOOLSETS` diesen Schalter.
 

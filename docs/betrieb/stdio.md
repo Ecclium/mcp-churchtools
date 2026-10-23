@@ -180,12 +180,12 @@ Geben Sie dem Dienstkonto dafür direkt diese Rechte, neben den übrigen:
 - «Personen eines Bereiches sehen» (`churchdb: view alldata`) nur für die Bereiche, in denen gesucht werden soll, «Alle» nur, wenn die ganze Instanz durchsuchbar sein soll.
 - «Gruppen eines Gruppentyps sehen - ausser versteckte» (`churchgroup: view groups of grouptype`) nur für die Gruppentypen, in denen gesucht werden soll.
 
-Geben Sie ihm keine Sicherheitsstufe, weder «Personendaten sehen - bis zum gewählten Sicherheitslevel» noch «Gruppeninfos sehen - bis zum gewählten Sicherheitslevel». Kennung und Name kommen ohne sie, und schon die niedrigste Stufe schickt E-Mail-Adresse, Telefon, Geburtstag, Postleitzahl und Ort jeder gefundenen Person an Ecclium. Ecclium gäbe sie nicht weiter, aber sie lägen im Arbeitsspeicher des Servers. Auch «"Personen" sehen», «"Gruppen" sehen» und «Mitgliederliste sehen» brauchen die Suchtools nicht. Hat das Konto mehr Rechte, weist Ecclium es nicht ab. Welche es hat, zeigt `ct_whoami`.
+Geben Sie ihm keine Sicherheitsstufe, weder «Personendaten sehen - bis zum gewählten Sicherheitslevel» noch «Gruppeninfos sehen - bis zum gewählten Sicherheitslevel». Kennung und Name kommen ohne sie, und schon die niedrigste Stufe schickt E-Mail-Adresse, Telefon, Geburtstag, Postleitzahl und Ort jeder gefundenen Person an Ecclium. Ecclium gäbe sie nicht weiter, aber sie lägen im Arbeitsspeicher des Servers. Auch «‹Personen› sehen», «‹Gruppen› sehen» und «Mitgliederliste sehen» brauchen die Suchtools nicht. Hat das Konto mehr Rechte, weist Ecclium es nicht ab. Welche es hat, zeigt `ct_whoami`.
 
 Was die Suchtools tun und was nicht:
 
 - `ct_persons_search` sendet `GET /api/persons`, `ct_groups_search` `GET /api/groups`, je mit genau dem Suchbegriff, der ersten Seite und 51 Einträgen. Kommt ein 51. Eintrag, sagt das Ergebnis, dass es mehr Treffer gibt. Zahlen wie die Gesamtzahl der Treffer gibt Ecclium nicht weiter, weil offen ist, ob ChurchTools darin Einträge mitzählt, die das Konto nicht sehen darf.
-- Ein Begriff trifft einen Namen ganz, am Anfang oder in der Mitte, auch kleingeschrieben, bei Personen auch Vor- und Nachname in dieser Reihenfolge, aber nicht in der umgekehrten und nie die E-Mail-Adresse. Er hat 1 bis 100 Zeichen ohne Leerzeichen am Rand und ohne Steuerzeichen. Eine Suche ohne Begriff, die alle Personen zeigte, lehnt Ecclium ab.
+- Ein Begriff trifft den Anfang oder einen Teil eines Namens, auch kleingeschrieben, bei Personen auch einen ganzen Vor- oder Nachnamen und Vor- und Nachname in dieser Reihenfolge, aber nicht in der umgekehrten und nie die E-Mail-Adresse. Ob ein ganzer Name einer Gruppe trifft, ist nicht geprüft. Er hat 1 bis 100 Zeichen ohne Leerzeichen am Rand und ohne Steuerzeichen. Eine Suche ohne Begriff, die alle Personen zeigte, lehnt Ecclium ab.
 - Namen von Personen gibt diese Version unmaskiert und ohne Datenumschlag weiter, wie bei `ct_whoami`. Namen von Gruppen stehen im Datenumschlag, weil Personen der Gemeinde sie frei wählen.
 - Ein leeres Ergebnis kann auch heissen, dass dem Konto das Recht fehlt: ChurchTools antwortet dann mit einer leeren Liste, nicht mit einem Fehler. Das Ergebnis sagt das und nennt das Recht.
 - Personen ausserhalb der Bereiche des Kontos und Gruppen ausserhalb seiner Gruppentypen findet die Suche nicht, ohne Fehler. Gruppen mit der Sichtbarkeit «intern» findet sie dagegen auch ohne Recht auf Gruppen. Ob versteckte Gruppen ausgelassen werden, ist nicht geprüft.
@@ -195,7 +195,7 @@ Was die Suchtools tun und was nicht:
 ## Grenzen
 
 - Nur `ct_whoami` und mit Freigabe die beiden Suchtools. Weitere Tools für Personen, Gruppen und das Wiki und Tools, die schreiben, kommen mit späteren Versionen.
-- Der Start fragt ChurchTools nicht an. Ein ungültiges oder entzogenes Token zeigt sich erst beim ersten Aufruf von `ct_whoami`.
+- Der Start fragt ChurchTools nicht an. Ein ungültiges oder entzogenes Token zeigt sich erst beim ersten Aufruf eines Tools.
 - `ct_whoami` verlangt kein Recht in ChurchTools. Geprüft ist das bisher nur mit einem Konto, das zwei Rechte im Wiki hatte, nicht mit einem Konto ganz ohne Rechte.
 - Rechte, die das Konto über eine Gruppe erhält, können fehlen. Ein entzogenes Recht kann noch eine Weile erscheinen, auf einer Testinstanz mit ChurchTools 3.137 einmal mindestens etwa zwanzig Minuten lang (siehe [Befunde zur API von ChurchTools](../research/churchtools-api.md)).
 - Ein Client, der stderr nicht liest, verliert Zeilen des Logs und, ohne Audit-Datei, des Audits, wie oben beschrieben.
