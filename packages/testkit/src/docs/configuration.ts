@@ -74,6 +74,10 @@ export function renderConfigurationReference(): string {
     '| --- | --- | --- | --- | --- |',
   ];
   for (const variable of variables) {
+    // A secret has no default, and the page would never show one.
+    if (variable.secret && variable.defaultValue !== undefined) {
+      throw new TypeError(`a secret with a default: ${variable.name}`);
+    }
     const defaultValue =
       variable.defaultValue === undefined
         ? 'keine'

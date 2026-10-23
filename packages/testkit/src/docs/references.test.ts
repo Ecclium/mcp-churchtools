@@ -38,10 +38,17 @@ describe('renderToolsReference', () => {
 
   it('names the switch of the search tools and none for ct_whoami', () => {
     expect(page).toContain(
-      '| `ct_persons_search` | `persons` | besonders schützenswert | nie | nein | `ECCLIUM_SEARCH_TOOLS=true` |',
+      '| `ct_persons_search` | `persons` | besonders schützenswert | nie | nein | `ECCLIUM_SEARCH_TOOLS=true` mit `ECCLIUM_STATE_DIR` |',
     );
     expect(page).toContain(
       '| `ct_whoami` | `base` | personenbezogen | nie | nein | immer |',
+    );
+  });
+
+  it('shows containers that may be missing or null, not only their leaves', () => {
+    expect(page).toContain('| `rights.modules` | Liste |  | nein | ja |');
+    expect(page).toContain(
+      '| `rights.modules[].rights[].ids` | Liste |  | ja | nein |',
     );
   });
 

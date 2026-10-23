@@ -171,7 +171,8 @@ const maskOf = (
  * masks, so a level the core does not know yet fails closed. Every other
  * string loses its hidden characters, with a note at its end when some were
  * removed, at every level, because hidden characters carry instructions,
- * not personal data. A leaf without a class stays unmasked in phase 1.
+ * not personal data. A leaf without a class cannot reach this stage since
+ * the registry refuses it (ADR 0026); it would stay unmasked here.
  *
  * @param value - The checked result.
  * @param root - The kept shape of the result.
