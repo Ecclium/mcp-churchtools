@@ -11,6 +11,7 @@ import { z } from 'zod';
 
 import { parseChurchToolsOrigin } from '../http/index.js';
 import { logLevels } from '../logger/index.js';
+import { isNormalizedAbsolutePath, maxStateDirLength } from './state-dir.js';
 
 /** The prefix of every variable. The loader recognises it in any case. */
 export const variablePrefix = 'ECCLIUM_';
@@ -24,6 +25,7 @@ export const variableNames = Object.freeze([
   'ECCLIUM_READ_ONLY',
   'ECCLIUM_REDACTION',
   'ECCLIUM_SEARCH_TOOLS',
+  'ECCLIUM_STATE_DIR',
   'ECCLIUM_STDIO_SUBJECT',
   'ECCLIUM_LOG_LEVEL',
 ] as const);
@@ -54,7 +56,6 @@ export const plainVariableNames: readonly PlainVariableName[] = Object.freeze(
 export const unsupportedVariableNames = Object.freeze([
   'ECCLIUM_TOOLSETS',
   'ECCLIUM_WRITE_CONFIRMATION',
-  'ECCLIUM_STATE_DIR',
   'ECCLIUM_EGRESS',
   'ECCLIUM_EGRESS_ALLOW_LAN',
   'ECCLIUM_ALLOWED_HOSTS',
@@ -202,8 +203,10 @@ const row = (variable: Variable): Variable =>
  * The table, frozen, in the order of {@link variableNames}. The bound of
  * the address only keeps huge values from the parser: the check of the
  * address has its own, lower one, which a longer address reaches first.
- * The bound of the path is PATH_MAX on Linux, and the one of the token the
- * longest value a `Secret` takes.
+ * The bound of the token file is PATH_MAX on Linux, the one of the folder
+ * of state lower, so that the path of an audit file in it stays below
+ * PATH_MAX of macOS (ADR 0028), and the one of the token the longest value
+ * a `Secret` takes.
  */
 export const variables: readonly Variable[] = Object.freeze([
   row({
@@ -270,6 +273,15 @@ export const variables: readonly Variable[] = Object.freeze([
     stdioOnly: false,
   }),
   row({
+    name: 'ECCLIUM_STATE_DIR',
+    kind: 'path',
+    maxLength: maxStateDirLength,
+    choices: [],
+    defaultValue: undefined,
+    secret: false,
+    stdioOnly: true,
+  }),
+  row({
     name: 'ECCLIUM_STDIO_SUBJECT',
     kind: 'subject',
     maxLength: 32,
@@ -316,6 +328,11 @@ export const variableSchemas: Readonly<
   ECCLIUM_READ_ONLY: choiceOf('ECCLIUM_READ_ONLY'),
   ECCLIUM_REDACTION: choiceOf('ECCLIUM_REDACTION'),
   ECCLIUM_SEARCH_TOOLS: choiceOf('ECCLIUM_SEARCH_TOOLS'),
+  ECCLIUM_STATE_DIR: z
+    .string()
+    .min(1)
+    .max(maxStateDirLength)
+    .refine((value) => isNormalizedAbsolutePath(value)),
   ECCLIUM_STDIO_SUBJECT: z.string().max(32).regex(stdioSubjectPattern),
   ECCLIUM_LOG_LEVEL: choiceOf('ECCLIUM_LOG_LEVEL'),
 });
@@ -336,6 +353,7 @@ export const environmentSchema = z.strictObject({
   ECCLIUM_READ_ONLY: variableSchemas.ECCLIUM_READ_ONLY.optional(),
   ECCLIUM_REDACTION: variableSchemas.ECCLIUM_REDACTION.optional(),
   ECCLIUM_SEARCH_TOOLS: variableSchemas.ECCLIUM_SEARCH_TOOLS.optional(),
+  ECCLIUM_STATE_DIR: variableSchemas.ECCLIUM_STATE_DIR.optional(),
   ECCLIUM_STDIO_SUBJECT: variableSchemas.ECCLIUM_STDIO_SUBJECT.optional(),
   ECCLIUM_LOG_LEVEL: variableSchemas.ECCLIUM_LOG_LEVEL.optional(),
 });

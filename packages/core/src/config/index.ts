@@ -29,6 +29,12 @@ export {
   type ValueOrigin,
 } from './load.js';
 export {
+  type StateDirCode,
+  stateDirCodes,
+  type StateDirFileSystem,
+  type StateDirStats,
+} from './state-dir.js';
+export {
   type TokenFileCode,
   tokenFileCodes,
   type TokenFileStats,

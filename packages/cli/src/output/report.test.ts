@@ -4,6 +4,7 @@ import {
   loadConfig,
   maxReportedProblems,
   type SettingReport,
+  type StateDirFileSystem,
   type TokenFileSystem,
   tokenVariableName,
 } from '@ecclium/mcp-churchtools-core';
@@ -46,8 +47,30 @@ const goodFile = (): { files: TokenFileSystem; token: string } => {
   return { files, token };
 };
 
-const load = (environment: Environment): ConfigResult =>
-  loadConfig({ environment, transport: 'stdio', tokenFiles: goodFile().files });
+/** A folder of state in memory, of the user with 0700, or with 0755. */
+const folder = (mode = 0o40700): StateDirFileSystem => ({
+  lstatSync: (path) => {
+    if (path.endsWith('/audit')) {
+      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    }
+    return {
+      isDirectory: () => true,
+      isSymbolicLink: () => false,
+      uid: 1000,
+      mode,
+    };
+  },
+  getuid: () => 1000,
+  constants: { O_NOFOLLOW: 1, O_DIRECTORY: 2, O_NOCTTY: 4 },
+});
+
+const load = (environment: Environment, folders = folder()): ConfigResult =>
+  loadConfig({
+    environment,
+    transport: 'stdio',
+    tokenFiles: goodFile().files,
+    stateDirFiles: folders,
+  });
 
 const render = (environment: Environment, showValues = false) => {
   const result = load(environment);
@@ -87,11 +110,89 @@ describe('renderConfigReport', () => {
       row('Nur lesen', 'ja (Voreinstellung)'),
       row('Maskierung', '‹standard› (Voreinstellung)'),
       row('Suchtools', 'nein (Voreinstellung)'),
+      row(
+        'Zustandsordner',
+        'keine Audit-Datei (‹ECCLIUM_STATE_DIR› ist nicht gesetzt)',
+      ),
       row('Subjekt über stdio', '‹local-stdio› (Voreinstellung)'),
       row('Stufe des Logs', '‹info› (Voreinstellung)'),
       hostNote,
       valid,
     ]);
+  });
+
+  it('masks the folder of state unless asked to show it', () => {
+    const environment = {
+      ...minimal(),
+      ECCLIUM_STATE_DIR: '/path/to/state',
+    };
+    const masked = render(environment);
+    expect(masked).toContain(
+      row('Zustandsordner', '[verborgen] (aus ‹ECCLIUM_STATE_DIR›)'),
+    );
+    expect(masked).toContain(
+      'Verborgen sind der Host und der Zustandsordner, damit Sie die Ausgabe ohne Bearbeitung weitergeben können. Mit ‹--show-values› zeigt der Befehl beide.',
+    );
+    expect(masked.join('\n')).not.toContain('/path/to/state');
+    expect(render(environment, true)).toContain(
+      row('Zustandsordner', '‹/path/to/state› (aus ‹ECCLIUM_STATE_DIR›)'),
+    );
+  });
+
+  it('names host, subject and folder of state when all three are masked', () => {
+    expect(
+      render({
+        ...minimal(),
+        ECCLIUM_STDIO_SUBJECT: 'team-a',
+        ECCLIUM_STATE_DIR: '/path/to/state',
+      }),
+    ).toContain(
+      'Verborgen sind der Host, das Subjekt und der Zustandsordner, damit Sie die Ausgabe ohne Bearbeitung weitergeben können. Mit ‹--show-values› zeigt der Befehl alle.',
+    );
+  });
+
+  it('names the folder of state alone when only it is masked', () => {
+    const result = load({ ...minimal(), ECCLIUM_STATE_DIR: '/path/to/state' });
+    const report: ConfigReport = {
+      ...result.report,
+      settings: result.report.settings.filter(
+        (setting) => setting.key !== 'churchtoolsOrigin',
+      ),
+    };
+    expect(
+      renderConfigReport(report, { valid: true, showValues: false }),
+    ).toContain(
+      'Verborgen ist der Zustandsordner, damit Sie die Ausgabe ohne Bearbeitung weitergeben können. Mit ‹--show-values› zeigt der Befehl ihn.',
+    );
+  });
+
+  it('says only «gesetzt» for a folder of state outside printable ASCII', () => {
+    const lines = render(
+      { ...minimal(), ECCLIUM_STATE_DIR: '/pfad/zum/ordner-ä' },
+      true,
+    );
+    expect(lines).toContain(
+      row('Zustandsordner', 'gesetzt (aus ‹ECCLIUM_STATE_DIR›)'),
+    );
+    expect(lines.join('\n')).not.toContain('ordner-');
+  });
+
+  it('shows a refused folder of state as invalid, with its problem', () => {
+    const lines = renderConfigReport(
+      load(
+        { ...minimal(), ECCLIUM_STATE_DIR: '/path/to/state' },
+        folder(0o40755),
+      ).report,
+      { valid: false, showValues: true },
+    );
+    expect(lines).toContain(
+      row(
+        'Zustandsordner',
+        'ungültig (aus ‹ECCLIUM_STATE_DIR›, siehe die Probleme unten)',
+      ),
+    );
+    expect(lines.join('\n')).toContain('«chmod 700»');
+    expect(lines.join('\n')).not.toContain('/path/to/state');
   });
 
   it('shows the requests per minute from the environment, and never a refused one', () => {
@@ -359,6 +460,10 @@ describe('renderConfigReport', () => {
     [
       'a value that shows nothing',
       broken((setting) => ({ ...setting, shown: { kind: 'none' } })),
+    ],
+    [
+      'a setting other than the folder of state that is unset',
+      broken((setting) => ({ ...setting, origin: 'unset' })),
     ],
     [
       'an unknown transport',

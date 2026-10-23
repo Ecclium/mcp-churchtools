@@ -1,4 +1,7 @@
 import { Buffer } from 'node:buffer';
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { inspect } from 'node:util';
 
 import {
@@ -7,7 +10,7 @@ import {
   makeCanaries,
   makeCanary,
 } from '@ecclium/mcp-churchtools-testkit';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { Secret } from '../http/index.js';
@@ -24,6 +27,7 @@ import {
   maxReportedProblems,
   type Transport,
 } from './load.js';
+import type { StateDirFileSystem } from './state-dir.js';
 import type { TokenFileStats, TokenFileSystem } from './token-file.js';
 import {
   tokenVariableName,
@@ -108,13 +112,89 @@ const valid = (): Environment => ({
   ECCLIUM_CHURCHTOOLS_TOKEN_FILE: tokenPath,
 });
 
+const stateDirPath = '/path/to/state';
+
+/** What lstat finds at a path: a folder with these fields, or an error. */
+type Entry =
+  | {
+      readonly directory?: boolean;
+      readonly symlink?: boolean;
+      readonly uid?: number;
+      readonly mode?: number;
+    }
+  | { readonly error: string };
+
+interface MemoryFolder {
+  readonly fs: StateDirFileSystem;
+  readonly looked: string[];
+}
+
+/**
+ * File functions over the folder of state in memory: by default a folder
+ * of the user with 0700 and no folder audit yet.
+ */
+const memoryFolder = (
+  options: {
+    readonly folder?: Entry;
+    readonly audit?: Entry;
+    readonly getuid?: () => number | undefined;
+  } = {},
+): MemoryFolder => {
+  const looked: string[] = [];
+  const entryOf = (path: string): Entry =>
+    path.endsWith('/audit')
+      ? (options.audit ?? { error: 'ENOENT' })
+      : (options.folder ?? {});
+  const fs: StateDirFileSystem = {
+    lstatSync: (path) => {
+      looked.push(path);
+      const entry = entryOf(path);
+      if ('error' in entry) {
+        throw Object.assign(new Error(`${entry.error}: lstat '${path}'`), {
+          code: entry.error,
+        });
+      }
+      return {
+        isDirectory: () => entry.directory ?? true,
+        isSymbolicLink: () => entry.symlink ?? false,
+        uid: entry.uid ?? 1000,
+        mode: entry.mode ?? 0o40700,
+      };
+    },
+    getuid: options.getuid ?? (() => 1000),
+    constants: { O_NOFOLLOW: 1, O_DIRECTORY: 2, O_NOCTTY: 4 },
+  };
+  return { fs, looked };
+};
+
 const load = (
   environment: Environment,
   transport: Transport = 'stdio',
   files: TokenFileSystem = memoryFiles().fs,
   execArgv?: readonly string[],
+  folders: StateDirFileSystem = memoryFolder().fs,
 ): ConfigResult =>
-  loadConfig({ environment, transport, execArgv, tokenFiles: files });
+  loadConfig({
+    environment,
+    transport,
+    execArgv,
+    tokenFiles: files,
+    stateDirFiles: folders,
+  });
+
+/** A good configuration with a folder of state. */
+const withStateDir = (
+  value: string,
+  folders: StateDirFileSystem = memoryFolder().fs,
+  transport: Transport = 'stdio',
+): ConfigResult =>
+  load(
+    { ...valid(), ECCLIUM_STATE_DIR: value },
+    transport,
+    memoryFiles().fs,
+    undefined,
+    folders,
+  );
 
 /** The options of the start alone, with a good configuration. */
 const started = (execArgv: readonly string[]): ConfigResult =>
@@ -152,9 +232,11 @@ describe('loadConfig with a good configuration', () => {
       readOnly: true,
       redaction: 'standard',
       searchTools: false,
+      stateDir: undefined,
       stdioSubject: 'local-stdio',
       logLevel: 'info',
     });
+    expect(Object.hasOwn(result.config, 'stateDir')).toBe(true);
     expect(result.config.churchtoolsToken).toBeInstanceOf(Secret);
     expect(result.report.problems).toEqual([]);
     expect(result.report.omittedProblems).toBe(0);
@@ -207,6 +289,7 @@ describe('loadConfig with a good configuration', () => {
         'default',
         { kind: 'boolean', value: false },
       ],
+      ['stateDir', 'ECCLIUM_STATE_DIR', 'unset', { kind: 'none' }],
       [
         'stdioSubject',
         'ECCLIUM_STDIO_SUBJECT',
@@ -229,6 +312,7 @@ describe('loadConfig with a good configuration', () => {
       ECCLIUM_READ_ONLY: 'false',
       ECCLIUM_REDACTION: 'off',
       ECCLIUM_SEARCH_TOOLS: 'true',
+      ECCLIUM_STATE_DIR: stateDirPath,
       ECCLIUM_STDIO_SUBJECT: 'local-operator-2',
       ECCLIUM_LOG_LEVEL: 'debug',
     });
@@ -239,6 +323,7 @@ describe('loadConfig with a good configuration', () => {
       readOnly: false,
       redaction: 'off',
       searchTools: true,
+      stateDir: stateDirPath,
       stdioSubject: 'local-operator-2',
       logLevel: 'debug',
     });
@@ -278,6 +363,118 @@ describe('loadConfig with a good configuration', () => {
   it('loads over http without the rules of stdio', () => {
     const result = load(valid(), 'http');
     expect(result.ok && result.config.transport).toBe('http');
+  });
+});
+
+describe('loadConfig and the folder of state', () => {
+  it('leaves the folder unset without looking at the disk', () => {
+    const folder = memoryFolder();
+    const result = load(
+      valid(),
+      'stdio',
+      memoryFiles().fs,
+      undefined,
+      folder.fs,
+    );
+    expect(result.ok && result.config.stateDir).toBeUndefined();
+    expect(setting(result, 'stateDir')).toMatchObject({
+      variable: 'ECCLIUM_STATE_DIR',
+      origin: 'unset',
+      shown: { kind: 'none' },
+    });
+    expect(folder.looked).toEqual([]);
+  });
+
+  it('takes a checked folder and looks at it and at its folder audit', () => {
+    const folder = memoryFolder({ audit: { mode: 0o40700 } });
+    const result = withStateDir(stateDirPath, folder.fs);
+    expect(result.ok && result.config.stateDir).toBe(stateDirPath);
+    expect(setting(result, 'stateDir')).toMatchObject({
+      origin: 'environment',
+      shown: { kind: 'path', value: stateDirPath },
+    });
+    expect(folder.looked).toEqual([stateDirPath, `${stateDirPath}/audit`]);
+  });
+
+  it('refuses the folder and keeps its path out of the report', () => {
+    const result = withStateDir(
+      stateDirPath,
+      memoryFolder({ folder: { mode: 0o40755 } }).fs,
+    );
+    expect(result.ok).toBe(false);
+    expect(problems(result)).toEqual([['state_dir_mode', 'ECCLIUM_STATE_DIR']]);
+    expect(setting(result, 'stateDir')).toMatchObject({
+      origin: 'invalid',
+      shown: { kind: 'none' },
+    });
+    expect(JSON.stringify(result.report)).not.toContain(stateDirPath);
+  });
+
+  it.each([
+    ['an empty value', '', [['empty_value', 'ECCLIUM_STATE_DIR']]],
+    [
+      'a value of 961 characters',
+      `/${'a'.repeat(960)}`,
+      [['value_too_long', 'ECCLIUM_STATE_DIR']],
+    ],
+  ])('refuses %s without looking at the disk', (_name, value, expected) => {
+    const folder = memoryFolder();
+    expect(problems(withStateDir(value, folder.fs))).toEqual(expected);
+    expect(folder.looked).toEqual([]);
+  });
+
+  it('takes a path of 960 characters', () => {
+    const value = `/${'a'.repeat(959)}`;
+    expect(withStateDir(value).ok).toBe(true);
+  });
+
+  it('refuses the folder over http without looking at the disk', () => {
+    const folder = memoryFolder();
+    const result = withStateDir(stateDirPath, folder.fs, 'http');
+    expect(problems(result)).toEqual([['stdio_only', 'ECCLIUM_STATE_DIR']]);
+    expect(folder.looked).toEqual([]);
+  });
+
+  it('reports the folder after the search tools and before the subject', () => {
+    const result = load({
+      ...valid(),
+      ECCLIUM_STDIO_SUBJECT: 'Local',
+      ECCLIUM_STATE_DIR: 'state',
+      ECCLIUM_SEARCH_TOOLS: 'yes',
+    });
+    expect(problems(result)).toEqual([
+      ['invalid_choice', 'ECCLIUM_SEARCH_TOOLS'],
+      ['state_dir_relative', 'ECCLIUM_STATE_DIR'],
+      ['subject_invalid', 'ECCLIUM_STDIO_SUBJECT'],
+    ]);
+  });
+
+  describe('on the disk', () => {
+    const base = mkdtempSync(join(tmpdir(), 'ecclium-load-state-'));
+
+    afterAll(() => {
+      rmSync(base, { recursive: true, force: true });
+    });
+
+    const loadFromDisk = (value: string): ConfigResult =>
+      loadConfig({
+        environment: { ...valid(), ECCLIUM_STATE_DIR: value },
+        transport: 'stdio',
+        tokenFiles: memoryFiles().fs,
+      });
+
+    it('checks the real folder when no file functions are given', () => {
+      expect(problems(loadFromDisk(join(base, 'missing')))).toEqual([
+        ['state_dir_missing', 'ECCLIUM_STATE_DIR'],
+      ]);
+    });
+
+    it('creates nothing, not even the folder audit', () => {
+      const folder = join(base, 'state');
+      mkdirSync(folder, { mode: 0o700 });
+      expect(loadFromDisk(folder).ok).toBe(true);
+      expect(existsSync(join(folder, 'audit'))).toBe(false);
+    });
   });
 });
 
@@ -452,6 +649,13 @@ describe('loadConfig and its sources', () => {
         tokenFiles: 'fs' as unknown as TokenFileSystem,
       }),
     ).toThrow(invalidSources);
+    expect(() =>
+      loadConfig({
+        environment: valid(),
+        transport: 'stdio',
+        stateDirFiles: 'fs' as unknown as StateDirFileSystem,
+      }),
+    ).toThrow(invalidSources);
   });
 
   it('never changes the environment', () => {
@@ -555,7 +759,6 @@ describe('loadConfig and the names of variables', () => {
     expect(unsupportedVariableNames).toEqual([
       'ECCLIUM_TOOLSETS',
       'ECCLIUM_WRITE_CONFIRMATION',
-      'ECCLIUM_STATE_DIR',
       'ECCLIUM_EGRESS',
       'ECCLIUM_EGRESS_ALLOW_LAN',
       'ECCLIUM_ALLOWED_HOSTS',
@@ -1300,6 +1503,50 @@ describe('loadConfig and its problems', () => {
     subject_invalid: () => load({ ...valid(), ECCLIUM_STDIO_SUBJECT: 'Local' }),
     subject_reserved: () =>
       load({ ...valid(), ECCLIUM_STDIO_SUBJECT: 'invalid' }),
+    state_dir_relative: () => withStateDir('path/to/state'),
+    state_dir_not_normalized: () => withStateDir(`${stateDirPath}/`),
+    state_dir_platform: () =>
+      withStateDir(stateDirPath, memoryFolder({ getuid: () => undefined }).fs),
+    state_dir_missing: () =>
+      withStateDir(
+        stateDirPath,
+        memoryFolder({ folder: { error: 'ENOENT' } }).fs,
+      ),
+    state_dir_symlink: () =>
+      withStateDir(
+        stateDirPath,
+        memoryFolder({ folder: { symlink: true } }).fs,
+      ),
+    state_dir_not_directory: () =>
+      withStateDir(
+        stateDirPath,
+        memoryFolder({ folder: { directory: false } }).fs,
+      ),
+    state_dir_owner: () =>
+      withStateDir(stateDirPath, memoryFolder({ folder: { uid: 0 } }).fs),
+    state_dir_mode: () =>
+      withStateDir(
+        stateDirPath,
+        memoryFolder({ folder: { mode: 0o40750 } }).fs,
+      ),
+    state_dir_unsafe: () =>
+      withStateDir(
+        stateDirPath,
+        memoryFolder({ folder: { error: 'EACCES' } }).fs,
+      ),
+    audit_dir_symlink: () =>
+      withStateDir(stateDirPath, memoryFolder({ audit: { symlink: true } }).fs),
+    audit_dir_not_directory: () =>
+      withStateDir(
+        stateDirPath,
+        memoryFolder({ audit: { directory: false } }).fs,
+      ),
+    audit_dir_owner: () =>
+      withStateDir(stateDirPath, memoryFolder({ audit: { uid: 0 } }).fs),
+    audit_dir_mode: () =>
+      withStateDir(stateDirPath, memoryFolder({ audit: { mode: 0o40701 } }).fs),
+    audit_dir_unsafe: () =>
+      withStateDir(stateDirPath, memoryFolder({ audit: { error: 'EIO' } }).fs),
     token_from_environment: () =>
       load({ ECCLIUM_CHURCHTOOLS_URL: address, [tokenVariableName]: token() }),
     redaction_off: () => load({ ...valid(), ECCLIUM_REDACTION: 'off' }),
