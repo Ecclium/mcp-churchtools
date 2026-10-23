@@ -246,10 +246,14 @@ const initialize: Json = {
 const code = (text: string): string =>
   text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 
-/** An audit file in memory that records its lines and when it closed. */
+/**
+ * An audit file in memory that records its lines and, when it closes, the
+ * events on stderr up to then, as `seen` gives them.
+ */
 const fakeAuditFile = (failed = 0) => {
   const lines: string[] = [];
-  const events: string[] = [];
+  const events: unknown[][] = [];
+  const state = { seen: (): unknown[] => [] };
   const file: NonNullable<ServeOptions['auditFile']> = {
     write: (line) => {
       lines.push(line);
@@ -257,7 +261,7 @@ const fakeAuditFile = (failed = 0) => {
     },
     ready: () => true,
     close: () => {
-      events.push('closed');
+      events.push(state.seen().filter((event) => event !== undefined));
     },
     counts: () => ({
       written: lines.length,
@@ -268,13 +272,14 @@ const fakeAuditFile = (failed = 0) => {
       closed: events.length > 0,
     }),
   };
-  return { file, lines, events };
+  return { file, lines, events, state };
 };
 
 describe('the second stage with an audit file', () => {
   it('writes each audit line into the file and closes it before the last line', async () => {
     const audit = fakeAuditFile(3);
     const session = setup({ answer: true, auditFile: audit.file });
+    audit.state.seen = () => [...session.events()];
     session.send(initialize);
     await session.reply(1);
     session.send({ jsonrpc: '2.0', method: 'notifications/initialized' });
@@ -299,12 +304,15 @@ describe('the second stage with an audit file', () => {
     expect(
       session.lines().find((line) => line['event'] === 'audit_file_closed'),
     ).toMatchObject({ level: 'info', count: 3 });
-    expect(audit.events).toEqual(['closed']);
+    // Closed once, after audit_file_closed and before stdio_closed.
+    expect(audit.events).toHaveLength(1);
+    expect(audit.events[0]?.at(-1)).toBe('audit_file_closed');
   });
 
   it('closes the file after a signal, before the last line', async () => {
     const audit = fakeAuditFile();
     const session = setup({ auditFile: audit.file });
+    audit.state.seen = () => [...session.events()];
     session.signals.get('SIGTERM')?.();
     await session.ended();
     expect(session.events()).toEqual([
@@ -312,14 +320,14 @@ describe('the second stage with an audit file', () => {
       'audit_file_closed',
       'stdio_closed',
     ]);
-    expect(audit.events).toEqual(['closed']);
+    expect(audit.events).toEqual([['process_sigterm', 'audit_file_closed']]);
   });
 
   it('closes the file when the start fails after the writer', () => {
     const audit = fakeAuditFile();
     const session = setup({ failTransport: true, auditFile: audit.file });
     expect(session.code).toBe(70);
-    expect(audit.events).toEqual(['closed']);
+    expect(audit.events).toHaveLength(1);
   });
 
   it('writes no audit_file_closed without a file', async () => {
