@@ -5,7 +5,7 @@
 
 # Ecclium MCP für ChurchTools
 
-**In Entwicklung.** Es gibt noch keine veröffentlichte Version. Aus dem Quellcode lässt sich ein erster Server bauen, der einen KI-Assistenten über stdio anbindet und nur das Tool `ct_whoami` anbietet. Wie, steht in [docs/betrieb/stdio.md](docs/betrieb/stdio.md). Was fertig ist und was als Nächstes kommt, steht in [docs/STATUS.md](docs/STATUS.md).
+**In Entwicklung.** Es gibt noch keine veröffentlichte Version. Aus dem Quellcode lässt sich ein erster Server bauen, der einen KI-Assistenten über stdio anbindet und das Tool `ct_whoami` anbietet, auf ausdrücklichen Wunsch auch die Suchtools für Personen und Gruppen. Wie, steht in [docs/betrieb/stdio.md](docs/betrieb/stdio.md). Was fertig ist und was als Nächstes kommt, steht in [docs/STATUS.md](docs/STATUS.md).
 
 Ecclium verbindet KI-Assistenten mit der Gemeindesoftware ChurchTools. Der Assistent kann Daten lesen und, wo die Gemeinde es erlaubt, auch schreiben. Wiederkehrende Aufgaben wie der wöchentliche Dienstplan-Bericht laufen nach Zeitplan. Jede Änderung wird vorher gezeigt, gekennzeichnet und protokolliert und lässt sich zurücknehmen. Der Quellcode von Ecclium ist öffentlich, Ecclium lässt sich selbst betreiben und legt besonderen Wert auf Daten- und Informationssicherheit.
 
