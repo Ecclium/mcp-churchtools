@@ -33,3 +33,7 @@ export {
   exampleProfileTool,
   exampleWriteTool,
 } from './plugins/example/index.js';
+export {
+  createSpecialPlugin,
+  type SpecialPluginOptions,
+} from './plugins/special/index.js';

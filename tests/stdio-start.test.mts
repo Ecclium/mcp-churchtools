@@ -1,9 +1,12 @@
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import {
   chmodSync,
+  existsSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -22,7 +25,11 @@ import {
 } from '@ecclium/mcp-churchtools-testkit';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { warningText } from '../packages/cli/src/messages/index.ts';
+import {
+  auditFileText,
+  problemText,
+  warningText,
+} from '../packages/cli/src/messages/index.ts';
 import { fixedSentences } from '../packages/core/src/errors/index.ts';
 import {
   type Certificate,
@@ -765,4 +772,133 @@ describe('stderr that nobody reads', { timeout }, () => {
     expect(closed?.['count']).toBeGreaterThan(0);
     expect(code).toBe(0);
   });
+});
+
+// The audit file at the real start (ADR 0028): with ECCLIUM_STATE_DIR the
+// start writes every audit line into a file of its own first and the copy
+// to stderr after it. Calls of an unknown tool need no instance, so these
+// cases run without a server of this test.
+describe('the audit file of the real start', { timeout }, () => {
+  /** A folder of state with the mode given, inside the folder of the test. */
+  const stateDirWith = (mode: number): string => {
+    const made = mkdtempSync(join(folder, 'state-'));
+    chmodSync(made, mode);
+    return made;
+  };
+
+  /** Starts with the folder of state and calls an unknown tool n times. */
+  const callUnknown = async (
+    stateDir: string,
+    calls: number,
+    pauseStderr = false,
+  ): Promise<Finished> => {
+    const session = launch({
+      origin: `https://${host}`,
+      env: { ECCLIUM_STATE_DIR: stateDir },
+    });
+    if (pauseStderr) session.child.stderr.pause();
+    await modern.open(session);
+    for (let id = 2; id < calls + 2; id += 1) {
+      session.send({
+        jsonrpc: '2.0',
+        id,
+        method: 'tools/call',
+        params: modern.params({ name: 'ct_not_there', arguments: {} }),
+      });
+    }
+    await session.response(calls + 1);
+    if (pauseStderr) {
+      let last = Date.now();
+      session.child.stderr.on('data', () => {
+        last = Date.now();
+      });
+      session.child.stderr.resume();
+      await vi.waitFor(
+        () => {
+          if (Date.now() - last < 300) throw new Error('stderr still drains');
+        },
+        { timeout: 20_000, interval: 50 },
+      );
+    }
+    return session.finish();
+  };
+
+  /** The lines of the one audit file in the folder of state. */
+  const fileLines = (stateDir: string): Json[] => {
+    const audit = join(stateDir, 'audit');
+    const names = readdirSync(audit);
+    expect(names).toHaveLength(1);
+    const path = join(audit, names[0] ?? '');
+    expect(statSync(audit).mode & 0o777).toBe(0o700);
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    return jsonLines(readFileSync(path, 'utf8'));
+  };
+
+  it('writes each audit line into a file with 0600 in a folder with 0700, the same as the copy', async () => {
+    const stateDir = stateDirWith(0o700);
+    const { code, stderr } = await callUnknown(stateDir, 3);
+    expect(code).toBe(0);
+    const inFile = fileLines(stateDir);
+    expect(inFile).toHaveLength(3);
+    expect(inFile).toEqual(auditOf(stderr));
+    expect(inFile[0]).toMatchObject({
+      tool: 'ct_unknown',
+      outcome: 'error',
+      errorCode: 'not_found',
+    });
+    const events = eventsOf(stderr);
+    expect(events.slice(-2)).toEqual(['audit_file_closed', 'stdio_closed']);
+    expect(
+      jsonLines(stderr).find((line) => line['event'] === 'audit_file_closed'),
+    ).toMatchObject({ count: 0 });
+  });
+
+  it('keeps every audit line in the file while nobody reads stderr', async () => {
+    const stateDir = stateDirWith(0o700);
+    const calls = 1000;
+    const { code, stdout, stderr } = await callUnknown(stateDir, calls, true);
+    expect(code).toBe(0);
+    expect(jsonLines(stdout)).toHaveLength(calls + 1);
+    expect(fileLines(stateDir)).toHaveLength(calls);
+    // stderr lost copies, the file lost nothing.
+    const closed = jsonLines(stderr).findLast(
+      (line) => line['event'] === 'stdio_closed',
+    );
+    expect(closed?.['count']).toBeGreaterThan(0);
+  });
+
+  it('ends with 78 for a folder of state that others may open, and creates nothing', async () => {
+    const stateDir = stateDirWith(0o755);
+    const session = launch({
+      origin: `https://${host}`,
+      env: { ECCLIUM_STATE_DIR: stateDir },
+    });
+    const { code, stdout, stderr } = await session.ended();
+    expect(code).toBe(78);
+    expect(stdout).toBe('');
+    expect(linesOf(stderr)).toEqual([
+      problemText({ code: 'state_dir_mode', variable: 'ECCLIUM_STATE_DIR' }),
+    ]);
+    expect(existsSync(join(stateDir, 'audit'))).toBe(false);
+    assertNoCanary(stderr, [canary.token], 'stderr');
+  });
+
+  it.skipIf(process.getuid?.() === 0)(
+    'ends with 78 when the folder audit cannot be created',
+    async () => {
+      const stateDir = stateDirWith(0o500);
+      const session = launch({
+        origin: `https://${host}`,
+        env: { ECCLIUM_STATE_DIR: stateDir },
+      });
+      const { code, stdout, stderr } = await session.ended();
+      chmodSync(stateDir, 0o700);
+      expect(code).toBe(78);
+      expect(stdout).toBe('');
+      expect(linesOf(stderr)).toEqual([
+        auditFileText('audit_file_folder_unavailable'),
+      ]);
+      expect(stderr).not.toContain(stateDir);
+    },
+  );
 });
