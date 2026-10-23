@@ -1,8 +1,11 @@
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import {
   chmodSync,
+  closeSync,
   existsSync,
+  fstatSync,
   mkdtempSync,
+  openSync,
   readdirSync,
   readFileSync,
   rmSync,
@@ -828,10 +831,16 @@ describe('the audit file of the real start', { timeout }, () => {
     const audit = join(stateDir, 'audit');
     const names = readdirSync(audit);
     expect(names).toHaveLength(1);
-    const path = join(audit, names[0] ?? '');
     expect(statSync(audit).mode & 0o777).toBe(0o700);
-    expect(statSync(path).mode & 0o777).toBe(0o600);
-    return jsonLines(readFileSync(path, 'utf8'));
+    // Mode and content through one descriptor, so both belong to the same
+    // file.
+    const fd = openSync(join(audit, names[0] ?? ''), 'r');
+    try {
+      expect(fstatSync(fd).mode & 0o777).toBe(0o600);
+      return jsonLines(readFileSync(fd, 'utf8'));
+    } finally {
+      closeSync(fd);
+    }
   };
 
   it('writes each audit line into a file with 0600 in a folder with 0700, the same as the copy', async () => {
