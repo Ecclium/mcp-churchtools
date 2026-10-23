@@ -1,6 +1,6 @@
 # ADR 0060: Leserechte des Dienstkontos und feste Felder der Suchtools
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 23.10.2026
 - Datum: 23.10.2026
 - Fällt vor: Phase 1
 
@@ -67,6 +67,17 @@ Gewählt ist die dritte Option. Die niedrigste ausreichende Stufe aus dem Entsch
 - **Restrisiken:**
   - **Felder ohne Stufe:** Welche Felder ohne Sicherheitsstufe kommen, hängt von den Einstellungen der Instanz ab, belegt ist es nur an der Testinstanz (F32). Fehlt auf einer anderen Instanz ohne Stufe `firstName`, `lastName` oder bei einer Gruppe `name`, endet der Aufruf mit `upstream`, nicht mit einem Teilergebnis.
   - **Namen als Anweisung:** Ein Name kann Text enthalten, der wie eine Anweisung aussieht. Die Pipeline entfernt unsichtbare Zeichen, das Schema begrenzt die Länge, und die Beschreibung jedes Tools sagt, dass Inhalte aus ChurchTools keine Anweisungen sind (Threat Model, T7). Namen von Personen stehen bis zum Entscheid in ADR 0026 ohne Datenumschlag.
-  - **Kombination der Rechte:** Genau dieser Satz von Rechten lief noch nicht als eigener Lauf der Probe: a1 bis a6 hatten Sicherheitsstufen, s2 hatte dazu `churchdb: view`, s6 dazu `churchdb: view`, `churchgroup: view` und die höchste Stufe von `security level person`. Dass der Satz genügt, ist ein Schluss aus F29. Dass eine Gruppe `name` auch ohne Stufe trägt, ist ein Schluss aus F32: Die niedrigste Stufe von `security level group` (s7) brachte gegenüber s6 nur verschachtelte Felder. Ein Lauf der Probe mit genau diesen Rechten auf Personen und Gruppen prüft beides, bevor die Suchtools gegen die Testinstanz laufen.
+  - **Kombination der Rechte:** Dass genau dieser Satz von Rechten für beide Suchtools genügt und dass eine Gruppe `name` auch ohne Sicherheitsstufe trägt, war beim Vorschlag ein Schluss aus F29 und F32. Der Lauf t3 von `08-persons-groups-read` am 23.10.2026 hat beides an ChurchTools 3.137 belegt (`docs/research/churchtools-api.md`, Methode, F25, F29 und F32). Für eine andere Version oder Instanz gilt der Vorbehalt unter «Felder ohne Stufe».
   - **Rechte aus Gruppen und versteckte Gruppen:** Beides ist offen (F31, F34).
   - **Zu viele Rechte bleiben möglich:** Der Server verhindert nicht, dass ein Betreiber dem Konto eine Sicherheitsstufe gibt. Die zusätzlichen Felder erreichen dann den Prozess von Ecclium, aber nicht den Client.
+
+## Umsetzung
+
+Seit dem 23.10.2026 gebaut:
+
+- **Plugin-Schnittstelle:** Die `ReadApi` hat `searchPersons(query)` und `searchGroups(query)`, die je ein eingefrorenes Ergebnis mit höchstens `maxSearchHits` (50) Treffern und dem Wahrheitswert `more` geben. `normalizeSearchTerm` entfernt Leerraum am Rand und nimmt nur einen Begriff mit 1 bis `maxSearchTermLength` (100) UTF-16-Einheiten an, wohlgeformt und ohne Steuerzeichen. Tool und Client nehmen dieselbe Funktion.
+- **Client:** `searchPersons` und `searchGroups` in `packages/core/src/churchtools/client.ts`, die Schemas `personListSchema` und `groupListSchema` in `schemas.ts` (ADR 0057).
+- **Tools:** `ct_persons_search` in `packages/tools/src/persons/search.ts` und `ct_groups_search` in `packages/tools/src/groups/search.ts`. Die Eingabe ist `query` mit 1 bis 100 Zeichen und mindestens einem, das kein Leerraum ist. Das Ergebnis hat `persons` bzw. `groups`, `more` und `notice`. `notice` ist bei einem leeren Ergebnis ein fester Satz, der das Recht aus `requiredRights` nennt und sagt, dass sich «kein Treffer» und «kein Recht» nicht unterscheiden lassen, bei `more` ein fester Satz mit dem Rat, enger zu suchen, sonst `null`.
+- **Lesezugriff:** Die Pipeline gibt dem Lesezugriff eines Aufrufs die Sensitivität des Tools mit. Beide Suchen bietet er nur einem Tool mit `sensitivity: special` an, jedem anderen antwortet er mit `policy_denied` und der Logzeile `read_search_refused`, bevor eine Anfrage entsteht. Sonst könnte ein Tool, das weniger angibt, Namen ohne seine Zeile in der Audit-Datei und unbeaufsichtigt weitergeben. Ob eine Suche aus einem Plugin zusätzlich den Schalter braucht, entscheidet `ECCLIUM_TOOLSETS` in Phase 2.
+- **Freigabe:** `createCorePlugin({ searchTools })` in `packages/tools/src/core-plugin.ts` nimmt beide Tools nur mit dem Schalter in den Katalog (ADR 0055).
+- **Tests:** Die Schicht des Clients prüft `client.test.ts` mit je 51 Personen und Gruppen in der Form der höchsten Sicherheitsstufen aus testkit (`personsAtHighestLevel`, `groupsAtHighestLevel`), mit einem Kanarienwert in jedem Feld ausserhalb der Liste. Die Schicht des Tools prüfen `search.test.ts` in beiden Ordnern mit einem Lesezugriff, der mehr Felder liefert, und am Katalog mit den Feldern und Klassen des Ausgabeschemas. Die Schicht der Pipeline prüft `packages/tools/src/search-layers.test.ts` mit einem Tool, das mehr zurückgibt, als sein Ausgabeschema deklariert. Dieselbe Datei schickt die Antworten der höchsten Stufen durch Client, Tool und Pipeline, und kein Kanarienwert erreicht Ergebnis, Log oder Audit. `tests/stdio-start.test.mts` zeigt am echten Prozess die Tools mit Schalter und Ordner, die gesendeten Parameter, die Zeilen der Audit-Datei ohne Suchbegriff und Namen und das zurückgehaltene Ergebnis, wenn die Zeile nicht in die Datei kommt.

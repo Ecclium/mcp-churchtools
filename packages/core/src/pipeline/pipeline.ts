@@ -360,7 +360,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     if (!parsedInput.success) return failed('validation');
 
     // 5. execute, raced against the signal of the call.
-    const access = createReadAccess(client, ctx);
+    const access = createReadAccess(client, ctx, entry.meta.sensitivity);
     run.access = access;
     const aborted = new Promise<never>((_resolve, reject) => {
       controller.signal.addEventListener(

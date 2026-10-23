@@ -143,6 +143,23 @@ interface Contract {
     readonly path: string;
     readonly query: readonly string[];
   };
+  readonly searchPersons: ListOperation;
+  readonly searchGroups: ListOperation;
+}
+
+// A search: a list whose entries under `data` the client reads.
+interface ListOperation {
+  readonly path: string;
+  readonly query: readonly string[];
+  readonly response: {
+    readonly properties: {
+      readonly data: {
+        readonly items: {
+          readonly properties: Readonly<Record<string, unknown>>;
+        };
+      };
+    };
+  };
 }
 
 const words = [
@@ -153,6 +170,8 @@ const words = [
   'operationen',
   'whoami',
   'permissions',
+  'searchPersons',
+  'searchGroups',
   'dokumentiert',
   'veraltet',
   'parameter',
@@ -204,16 +223,23 @@ export function run(
     const metaNames = Object.keys(
       contract.whoami.response.properties.meta.properties,
     );
+    const lists = [contract.searchPersons, contract.searchGroups];
+    const entryNames = lists.flatMap((list) =>
+      Object.keys(list.response.properties.data.items.properties),
+    );
     const queryNames = [
       ...contract.whoami.query,
       ...contract.permissions.query,
+      ...lists.flatMap((list) => list.query),
     ];
     guard.allowFixed(
       ...dataNames,
       ...metaNames,
+      ...entryNames,
       ...queryNames,
       contract.whoami.path,
       contract.permissions.path,
+      ...lists.map((list) => list.path),
     );
 
     const whoami = findOperation(
@@ -244,6 +270,28 @@ export function run(
           : schemas.queryParameters(operation);
       return Object.fromEntries(names.map((name) => [name, found.has(name)]));
     };
+    // For a search: whether the instance documents it, the parameters it
+    // sends and the fields of one entry of `data`.
+    const compareList = (list: ListOperation): Json => {
+      const operation = findOperation(state.specification, 'get', list.path);
+      const body =
+        operation === undefined
+          ? undefined
+          : schemas.responseSchema(operation, 200);
+      const entry = schemas.items(schemas.properties(body).get('data'));
+      return {
+        dokumentiert: operation !== undefined,
+        veraltet: operation?.['deprecated'] === true,
+        parameter: declared(operation, list.query),
+        felder: {
+          data: compareFields(
+            schemas,
+            entry,
+            Object.keys(list.response.properties.data.items.properties),
+          ),
+        },
+      } as unknown as Json;
+    };
 
     const output: Json = {
       abgleich: 'churchtools-client',
@@ -271,6 +319,8 @@ export function run(
           veraltet: permissions?.['deprecated'] === true,
           werteAlsMap: isObject(schemas.additionalProperties(permissionsData)),
         },
+        searchPersons: compareList(contract.searchPersons),
+        searchGroups: compareList(contract.searchGroups),
       },
     } as unknown as Json;
     return writeResult(output, guard, io);

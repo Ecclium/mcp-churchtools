@@ -19,6 +19,11 @@ export {
   type CanarySet,
 } from './canary.js';
 export {
+  groupsAtHighestLevel,
+  type HighestLevelList,
+  personsAtHighestLevel,
+} from './fixtures/highest-level.js';
+export {
   type ChurchToolsDoubleOptions,
   createChurchToolsDouble,
   doubleOrigin,

@@ -256,8 +256,10 @@ describe('ToolDefinition and defineTool', () => {
 });
 
 describe('ReadApi', () => {
-  it('starts with whoami and permissions only', () => {
-    expectTypeOf<keyof ReadApi>().toEqualTypeOf<'whoami' | 'permissions'>();
+  it('holds the account, its rights and the two searches by name only', () => {
+    expectTypeOf<keyof ReadApi>().toEqualTypeOf<
+      'whoami' | 'permissions' | 'searchPersons' | 'searchGroups'
+    >();
   });
 
   it('holds only set rights, or unknown', () => {

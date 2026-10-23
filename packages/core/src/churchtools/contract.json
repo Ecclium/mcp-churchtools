@@ -85,6 +85,91 @@
       ]
     }
   },
+  "searchPersons": {
+    "method": "get",
+    "path": "/api/persons",
+    "query": [
+      "query",
+      "page",
+      "limit"
+    ],
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "data": {
+          "maxItems": 51,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "firstName": {
+                "type": "string",
+                "maxLength": 255
+              },
+              "lastName": {
+                "type": "string",
+                "maxLength": 255
+              }
+            },
+            "required": [
+              "id",
+              "firstName",
+              "lastName"
+            ]
+          }
+        }
+      },
+      "required": [
+        "data"
+      ]
+    }
+  },
+  "searchGroups": {
+    "method": "get",
+    "path": "/api/groups",
+    "query": [
+      "query",
+      "page",
+      "limit"
+    ],
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "data": {
+          "maxItems": 51,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 255
+              }
+            },
+            "required": [
+              "id",
+              "name"
+            ]
+          }
+        }
+      },
+      "required": [
+        "data"
+      ]
+    }
+  },
   "pagedMeta": {
     "meta": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

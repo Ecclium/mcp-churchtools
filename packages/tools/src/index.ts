@@ -8,4 +8,6 @@
  * @packageDocumentation
  */
 export { whoamiTool } from './base/whoami.js';
-export { corePlugin } from './core-plugin.js';
+export { createCorePlugin, type CorePluginOptions } from './core-plugin.js';
+export { groupsSearchTool } from './groups/search.js';
+export { personsSearchTool } from './persons/search.js';

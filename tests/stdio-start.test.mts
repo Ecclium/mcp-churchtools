@@ -892,6 +892,23 @@ describe('the audit file of the real start', { timeout }, () => {
     assertNoCanary(stderr, [canary.token], 'stderr');
   });
 
+  it('ends with 78 for enabled search tools without a folder of state, before any connection', async () => {
+    const session = launch({
+      origin: `https://${host}`,
+      env: { ECCLIUM_SEARCH_TOOLS: 'true' },
+    });
+    const { code, stdout, stderr } = await session.ended();
+    expect(code).toBe(78);
+    expect(stdout).toBe('');
+    expect(linesOf(stderr)).toEqual([
+      problemText({
+        code: 'search_tools_without_state_dir',
+        variable: 'ECCLIUM_STATE_DIR',
+      }),
+      warningText('search_tools_enabled'),
+    ]);
+  });
+
   it.skipIf(process.getuid?.() === 0)(
     'ends with 78 when the folder audit cannot be created',
     async () => {
@@ -911,3 +928,231 @@ describe('the audit file of the real start', { timeout }, () => {
     },
   );
 });
+
+// The search tools at the real start (ADR 0060, ADR 0028): with
+// ECCLIUM_SEARCH_TOOLS and a folder of state the start lists them, a call
+// returns ID and names, and its line stands in the audit file without the
+// term or a name. When the line cannot reach the file, the result stays
+// back. The server of this test plays ChurchTools: persons whose names are
+// canaries, a group whose name is one.
+describe.skipIf(process.getuid?.() === 0)(
+  'the search tools at the real start',
+  { timeout },
+  () => {
+    const term = makeCanary('name');
+    const person = makeCanaries();
+    const [personFirst = '', personLast = ''] = person.name.cores;
+    const group = makeCanary('name');
+
+    /** A folder of state with 0700 inside the folder of the test. */
+    const freshStateDir = (): string => {
+      const made = mkdtempSync(join(folder, 'search-'));
+      chmodSync(made, 0o700);
+      return made;
+    };
+
+    // Answers the two searches; with `lock`, a search for persons first
+    // deletes the audit file and locks its folder, so the line of the call
+    // cannot reach a file.
+    const searches =
+      (stateDir: string, lock: boolean): Answer =>
+      (request, response) => {
+        const url = request.url ?? '';
+        if (url.startsWith('/api/persons?')) {
+          if (lock) {
+            const audit = join(stateDir, 'audit');
+            for (const name of readdirSync(audit)) rmSync(join(audit, name));
+            chmodSync(audit, 0o500);
+          }
+          json(response, {
+            data: [
+              {
+                id: 11,
+                firstName: personFirst,
+                lastName: personLast,
+                email: person.email.value,
+                mobile: person.phone.value,
+              },
+            ],
+            meta: { count: 1 },
+          });
+        } else if (url.startsWith('/api/groups?')) {
+          json(response, {
+            data: [{ id: 21, name: group.value, information: {} }],
+            meta: { count: 1 },
+          });
+        } else {
+          churchTools(request, response);
+        }
+      };
+
+    /** Calls one search tool with the term and waits for the answer. */
+    const search = (
+      session: Session,
+      era: Era,
+      id: number,
+      name: string,
+    ): Promise<Json> => {
+      session.send({
+        jsonrpc: '2.0',
+        id,
+        method: 'tools/call',
+        params: era.params({ name, arguments: { query: term.value } }),
+      });
+      return session.response(id);
+    };
+
+    /** The lines of the one audit file in a folder of state. */
+    const fileLines = (stateDir: string): Json[] => {
+      const audit = join(stateDir, 'audit');
+      const names = readdirSync(audit);
+      expect(names).toHaveLength(1);
+      return jsonLines(readFileSync(join(audit, names[0] ?? ''), 'utf8'));
+    };
+
+    describe.each(eras)('in the $name era', (era) => {
+      let stateDir = '';
+      let server: TestServer;
+      let listed: Json;
+      let persons: Json;
+      let groups: Json;
+      let finished: Finished;
+
+      beforeAll(async () => {
+        stateDir = freshStateDir();
+        server = await serveTls(searches(stateDir, false));
+        const launched = overTls(server.origin);
+        const session = launch({
+          ...launched,
+          env: {
+            ...launched.env,
+            ECCLIUM_SEARCH_TOOLS: 'true',
+            ECCLIUM_STATE_DIR: stateDir,
+          },
+        });
+        await era.open(session);
+        session.send({
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'tools/list',
+          params: era.params({}),
+        });
+        listed = await session.response(2);
+        persons = await search(session, era, 3, 'ct_persons_search');
+        groups = await search(session, era, 4, 'ct_groups_search');
+        finished = await session.finish();
+      }, timeout);
+
+      it('lists the two search tools next to ct_whoami and warns at the start', () => {
+        const tools = at(listed, 'result', 'tools') as Json[];
+        expect(tools.map((tool) => tool['name'])).toEqual([
+          'ct_groups_search',
+          'ct_persons_search',
+          'ct_whoami',
+        ]);
+        expect(linesOf(finished.stderr)).toContain(
+          warningText('search_tools_enabled'),
+        );
+        expect(protocolViolations(finished.stdout)).toEqual([]);
+      });
+
+      it('returns ID and names of the person and of the group, nothing else', () => {
+        expect(at(persons, 'result', 'isError')).toBeUndefined();
+        expect(at(persons, 'result', 'structuredContent')).toEqual({
+          persons: [{ id: 11, firstName: personFirst, lastName: personLast }],
+          more: false,
+          notice: null,
+        });
+        const named = at(groups, 'result', 'structuredContent', 'groups', 0);
+        expect((named as Json)['id']).toBe(21);
+        expect(String((named as Json)['name'])).toContain(group.value);
+        assertNoCanary(
+          finished.stdout,
+          [person.email, person.phone, canary.token],
+          'stdout',
+        );
+      });
+
+      it('sends exactly query, page and limit for each search', () => {
+        const paths = server.requests.map((seen) => seen.path);
+        expect(paths).toHaveLength(2);
+        for (const [index, pathname] of [
+          '/api/persons',
+          '/api/groups',
+        ].entries()) {
+          const url = new URL(
+            paths[index] ?? '',
+            'https://placeholder.example',
+          );
+          expect(url.pathname).toBe(pathname);
+          expect([...url.searchParams]).toEqual([
+            ['query', term.value],
+            ['page', '1'],
+            ['limit', '51'],
+          ]);
+        }
+      });
+
+      it('records both calls in the audit file, without the term or a name', () => {
+        const inFile = fileLines(stateDir);
+        expect(inFile).toEqual(auditOf(finished.stderr));
+        expect(inFile.map((line) => [line['tool'], line['outcome']])).toEqual([
+          ['ct_persons_search', 'ok'],
+          ['ct_groups_search', 'ok'],
+        ]);
+        assertNoCanary(
+          [inFile, finished.stderr],
+          [term, person.name, group, person.email, person.phone],
+          'audit and stderr',
+        );
+      });
+    });
+
+    describe('when the line cannot reach the audit file', () => {
+      let stateDir = '';
+      let persons: Json;
+      let finished: Finished;
+
+      beforeAll(async () => {
+        stateDir = freshStateDir();
+        const server = await serveTls(searches(stateDir, true));
+        const launched = overTls(server.origin);
+        const session = launch({
+          ...launched,
+          env: {
+            ...launched.env,
+            ECCLIUM_SEARCH_TOOLS: 'true',
+            ECCLIUM_STATE_DIR: stateDir,
+          },
+        });
+        await modern.open(session);
+        persons = await search(session, modern, 2, 'ct_persons_search');
+        finished = await session.finish();
+      }, timeout);
+
+      afterAll(() => {
+        if (stateDir !== '') chmodSync(join(stateDir, 'audit'), 0o700);
+      });
+
+      it('holds the result back with policy_denied and never writes a name to stdout', () => {
+        expect(at(persons, 'result', 'isError')).toBe(true);
+        expect(at(persons, 'result', 'content', 0, 'text')).toBe(
+          'The call could not be recorded in the audit file, so its result is held back. Ask the operator to check the audit file.',
+        );
+        assertNoCanary(finished.stdout, [person.name], 'stdout');
+        expect(protocolViolations(finished.stdout)).toEqual([]);
+      });
+
+      it('says denied in the copy on stderr', () => {
+        expect(auditOf(finished.stderr)).toEqual([
+          expect.objectContaining({
+            tool: 'ct_persons_search',
+            outcome: 'denied',
+            errorCode: 'policy_denied',
+          }),
+        ]);
+        assertNoCanary(finished.stderr, [term, person.name], 'stderr');
+      });
+    });
+  },
+);

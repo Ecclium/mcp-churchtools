@@ -34,6 +34,7 @@ export const configProblemCodes = Object.freeze([
   'subject_invalid',
   'subject_reserved',
   ...stateDirCodes,
+  'search_tools_without_state_dir',
 ] as const);
 
 /** Why the configuration cannot start the server. */

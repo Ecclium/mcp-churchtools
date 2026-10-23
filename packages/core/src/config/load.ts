@@ -665,6 +665,8 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   }
   show('redaction', 'ECCLIUM_REDACTION', redaction, 'choice');
 
+  // Enabled search tools let the AI assistant see names of persons and
+  // groups, which every start says (ADR 0055, ADR 0060).
   const searchTools = choose('ECCLIUM_SEARCH_TOOLS');
   if (searchTools?.value === 'true') warnings.add('search_tools_enabled');
   show('searchTools', 'ECCLIUM_SEARCH_TOOLS', searchTools, 'boolean');
@@ -699,6 +701,18 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       stateDirValid = false;
       setting('stateDir', stateDirName, 'invalid', shownNone);
     }
+  }
+
+  // The search tools give results only with their line in the audit file,
+  // so over stdio they need its folder (ADR 0028, ADR 0060). Reported here
+  // already, so that `ecclium config check` names it before a start. A
+  // folder that is set but refused has its own problem.
+  if (
+    transport === 'stdio' &&
+    searchTools?.value === 'true' &&
+    stateDirRead.state === 'unset'
+  ) {
+    report('search_tools_without_state_dir', stateDirName);
   }
 
   // A wider trust store stays allowed for an instance with a certificate

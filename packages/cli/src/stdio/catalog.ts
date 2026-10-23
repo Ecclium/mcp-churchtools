@@ -11,13 +11,16 @@ import {
   type EccliumConfig,
   type ToolCatalog,
 } from '@ecclium/mcp-churchtools-core';
-import { corePlugin } from '@ecclium/mcp-churchtools-tools';
+import { createCorePlugin } from '@ecclium/mcp-churchtools-tools';
 
 /**
  * Builds the catalog of the server over stdio from the plugin of the core.
- * With `readOnly`, write tools stay out of it.
+ * With `readOnly`, write tools stay out of it. `ct_persons_search` and
+ * `ct_groups_search` join it only with `searchTools` (ADR 0055, ADR 0060);
+ * the start then needs the folder of the audit file (ADR 0028).
  *
- * @param config - The checked configuration; only `readOnly` counts.
+ * @param config - The checked configuration; `readOnly` and `searchTools`
+ *   count.
  * @returns The frozen catalog.
  * @throws {RegistryRefusal} When the registry refuses the plugin or one of
  *   its tools. The start then stops.
@@ -28,10 +31,10 @@ import { corePlugin } from '@ecclium/mcp-churchtools-tools';
  * ```
  */
 export function createStdioCatalog(
-  config: Pick<EccliumConfig, 'readOnly'>,
+  config: Pick<EccliumConfig, 'readOnly' | 'searchTools'>,
 ): ToolCatalog {
   return createToolCatalog({
-    core: corePlugin,
+    core: createCorePlugin({ searchTools: config.searchTools }),
     plugins: [],
     readOnly: config.readOnly,
   });

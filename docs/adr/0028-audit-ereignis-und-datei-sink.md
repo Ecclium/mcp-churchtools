@@ -95,4 +95,5 @@ Das ADR bleibt «Vorgeschlagen», bis diese Teile darin stehen und der Maintaine
   - Tests am echten Prozess in `tests/stdio-start.test.mts` und, mit dem Test-Plugin `createSpecialPlugin` aus `testkit` und dem Szenario `audit-file` des Fixtures, in `tests/mcp-stdio.test.mts`. `tests/blocking-descriptors.test.mts` zeigt, dass der Schreiber fd 2 blockierend lässt;
   - volle Abdeckung für `packages/core/src/audit/` und `packages/core/src/pipeline/` im Job `coverage-security-core`;
   - die Seiten [Betrieb über stdio](../betrieb/stdio.md) und [Datenschutz](../privacy.md) und das Threat Model.
+- Seit dem 23.10.2026 laufen die Suchtools `ct_persons_search` und `ct_groups_search` mit `sensitivity: special` hinter dieser Sperre. Mit `ECCLIUM_SEARCH_TOOLS=true` und ohne `ECCLIUM_STATE_DIR` endet schon `ecclium config check` mit 78. `tests/stdio-start.test.mts` zeigt am echten Prozess, dass ein Suchtool sein Ergebnis zurückhält, wenn seine Zeile nicht in die Datei kommt (ADR 0060).
 - Offen: alles unter «Folgt vor Phase 4» und die Klärung des Datenschutzrechts. Ob ChurchTools Lesezugriffe über die API selbst je Konto protokolliert, ist nicht geprüft.
