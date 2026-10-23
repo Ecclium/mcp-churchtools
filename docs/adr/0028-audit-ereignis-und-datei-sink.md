@@ -86,4 +86,13 @@ Das ADR bleibt «Vorgeschlagen», bis diese Teile darin stehen und der Maintaine
 
 ## Umsetzung
 
-- Offen: alles. Gebaut wird in Phase 1 der Teil «Ordner und Datei» und «Audit, Sperre und Start», vor den Suchtools.
+- Seit dem 23.10.2026 gebaut, vor den Suchtools:
+  - die Variable und die Prüfung des Ordners in `packages/core/src/config/state-dir.ts` (ADR 0055);
+  - der Schreiber der Audit-Datei in `packages/core/src/audit/file-writer.ts` mit Öffnen, Schreiben, Neuöffnen, Wechsel des Tages, `ready` und `close`, getestet mit Dateifunktionen im Speicher und an echten Ordnern;
+  - die Senke mit `file`, der Rückgabe von `record`, der Option `required`, `hasFile` und `ready` in `packages/core/src/audit/sink.ts` (ADR 0054);
+  - die Wache im `gate` und das Zurückhalten in `packages/core/src/pipeline/pipeline.ts` (ADR 0024);
+  - das Öffnen in der ersten Stufe des Starts in `packages/cli/src/stdio/index.ts`, die Übergabe an die Senke und `audit_file_closed` in `serve.ts` und die Texte in `packages/cli/src/messages/start.ts`;
+  - Tests am echten Prozess in `tests/stdio-start.test.mts` und, mit dem Test-Plugin `createSpecialPlugin` aus `testkit` und dem Szenario `audit-file` des Fixtures, in `tests/mcp-stdio.test.mts`. `tests/blocking-descriptors.test.mts` zeigt, dass der Schreiber fd 2 blockierend lässt;
+  - volle Abdeckung für `packages/core/src/audit/` und `packages/core/src/pipeline/` im Job `coverage-security-core`;
+  - die Seiten [Betrieb über stdio](../betrieb/stdio.md) und [Datenschutz](../privacy.md) und das Threat Model.
+- Offen: alles unter «Folgt vor Phase 4» und die Klärung des Datenschutzrechts. Ob ChurchTools Lesezugriffe über die API selbst je Konto protokolliert, ist nicht geprüft.
