@@ -6,6 +6,7 @@
  *
  * @packageDocumentation
  */
+import { maxSearchHits } from '@ecclium/mcp-churchtools-plugin-api';
 import { z } from 'zod';
 
 const count = z.number().int().nonnegative();
@@ -64,6 +65,35 @@ export const whoamiSchema = z.object({
     email: text(254).nullable().optional(),
   }),
   meta: z.object({ simulatingUserId: z.null().optional() }).optional(),
+});
+
+/**
+ * The most entries a search asks for: one more than it gives, so that a
+ * further visible entry says there are more hits (ADR 0060).
+ */
+export const searchPageLimit = maxSearchHits + 1;
+
+/**
+ * The answer of `GET /api/persons` with `query`, only the fields a search
+ * passes on (ADR 0060, `docs/research/churchtools-api.md`, F25, F32). The
+ * names come without a security level and may be empty; `null` or a
+ * missing name is an error, never a hit without a name. `meta` is not
+ * read: whether its counts include persons the account may not see is
+ * open (F26).
+ */
+export const personListSchema = z.object({
+  data: z
+    .array(z.object({ id, firstName: text(255), lastName: text(255) }))
+    .max(searchPageLimit),
+});
+
+/**
+ * The answer of `GET /api/groups` with `query`, only ID and name of each
+ * group (ADR 0060, F25, F32). The name is the same top-level field at every
+ * security level of groups.
+ */
+export const groupListSchema = z.object({
+  data: z.array(z.object({ id, name: text(255) })).max(searchPageLimit),
 });
 
 /**

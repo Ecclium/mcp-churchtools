@@ -73,6 +73,38 @@ describe('the contract check', () => {
     });
   });
 
+  it('reports the parameters and the fields of one entry of each search', () => {
+    const output = capture();
+    expect(run(withState(), contract, output.io)).toBe(0);
+    type Search = {
+      dokumentiert: boolean;
+      veraltet: boolean;
+      parameter: Record<string, boolean>;
+      felder: { data: Record<string, { deklariert: boolean; typ: string }> };
+    };
+    const result = JSON.parse(output.stdout()) as {
+      operationen: { searchPersons: Search; searchGroups: Search };
+    };
+    const { searchPersons, searchGroups } = result.operationen;
+    expect(searchPersons.dokumentiert).toBe(true);
+    expect(searchPersons.veraltet).toBe(false);
+    expect(searchPersons.parameter).toEqual({
+      query: true,
+      page: true,
+      limit: true,
+    });
+    expect(searchPersons.felder.data).toMatchObject({
+      id: { deklariert: true, typ: 'integer' },
+      firstName: { deklariert: true, typ: 'string' },
+      lastName: { deklariert: true, typ: 'string' },
+    });
+    expect(Object.keys(searchGroups.felder.data)).toEqual(['id', 'name']);
+    expect(searchGroups.felder.data.name).toMatchObject({
+      deklariert: true,
+      typ: 'string',
+    });
+  });
+
   it('says not documented when the document lacks an operation', () => {
     const output = capture();
     const document = { ...specification, paths: {} };

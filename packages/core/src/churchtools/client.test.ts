@@ -9,8 +9,10 @@ import {
   assertPlanted,
   createChurchToolsDouble,
   doubleOrigin,
+  groupsAtHighestLevel,
   makeCanaries,
   makeCanary,
+  personsAtHighestLevel,
 } from '@ecclium/mcp-churchtools-testkit';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -427,6 +429,300 @@ describe('permissions', () => {
   });
 });
 
+describe('searchPersons and searchGroups', () => {
+  // Matches the path without the query; the test reads what was sent from
+  // the calls of the double.
+  const at = (pathname: string) => (path: string) =>
+    path.split('?')[0] === pathname;
+  const persons = (count: number) =>
+    Array.from({ length: count }, (_, index) => ({
+      id: index + 1,
+      firstName: 'Person',
+      lastName: `P${String(index + 1)}`,
+    }));
+  const groupList = (count: number) =>
+    Array.from({ length: count }, (_, index) => ({
+      id: index + 1,
+      name: `Gruppe ${String(index + 1)}`,
+    }));
+  const list = (data: unknown, meta: unknown = { count: 1 }) =>
+    JSON.stringify({ data, meta });
+
+  it('sends exactly query, page 1 and limit 51 and gives the hits of the list only', async () => {
+    const { double, client, ctx } = setup();
+    double.intercept({ path: at('/api/persons'), method: 'GET' }).reply(
+      200,
+      list([
+        { ...persons(1)[0], email: 'max.mustermann@example.org', guid: 'g' },
+        { id: 9, firstName: '', lastName: 'B', title: 'x' },
+      ]),
+      json,
+    );
+    const result = await client.searchPersons(ctx(), '  Person ');
+    expect(result).toEqual({
+      hits: [
+        { id: 1, firstName: 'Person', lastName: 'P1' },
+        { id: 9, firstName: '', lastName: 'B' },
+      ],
+      more: false,
+    });
+    expect(Object.isFrozen(result)).toBe(true);
+    expect(Object.isFrozen(result.hits)).toBe(true);
+    expect(Object.getPrototypeOf(result)).toBeNull();
+    for (const hit of result.hits) {
+      expect(Object.isFrozen(hit)).toBe(true);
+      expect(Object.getPrototypeOf(hit)).toBeNull();
+      expect(Object.keys(hit)).toEqual(['id', 'firstName', 'lastName']);
+    }
+    const calls = double.calls();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.path).toBe('/api/persons');
+    expect(calls[0]?.searchParams).toEqual({
+      query: 'Person',
+      page: '1',
+      limit: '51',
+    });
+  });
+
+  it('gives 50 hits and more for 51 entries, and no more for 50 or none', async () => {
+    const { double, client, ctx } = setup();
+    for (const count of [51, 50, 0]) {
+      double
+        .intercept({ path: at('/api/persons'), method: 'GET' })
+        .reply(200, list(persons(count)), json);
+    }
+    const full = await client.searchPersons(ctx(), 'Person');
+    expect(full.hits).toHaveLength(50);
+    expect(full.hits.at(-1)?.id).toBe(50);
+    expect(full.more).toBe(true);
+    const fifty = await client.searchPersons(ctx(), 'Person');
+    expect(fifty.hits).toHaveLength(50);
+    expect(fifty.more).toBe(false);
+    expect(await client.searchPersons(ctx(), 'Person')).toEqual({
+      hits: [],
+      more: false,
+    });
+  });
+
+  it('reads no number from meta, whatever it says', async () => {
+    const { double, client, ctx } = setup();
+    double.intercept({ path: at('/api/persons'), method: 'GET' }).reply(
+      200,
+      list(persons(2), {
+        count: 900,
+        all: 'x',
+        pagination: { total: -1, lastPage: null },
+      }),
+      json,
+    );
+    expect(await client.searchPersons(ctx(), 'Person')).toEqual({
+      hits: persons(2),
+      more: false,
+    });
+  });
+
+  it.each([
+    ['52 entries', list(persons(52))],
+    ['no data', JSON.stringify({ meta: { count: 0 } })],
+    ['data no list', JSON.stringify({ data: { id: 1 } })],
+    ['a first name null', list([{ id: 1, firstName: null, lastName: 'A' }])],
+    ['no last name', list([{ id: 1, firstName: 'P' }])],
+    [
+      'a last name that is a number',
+      list([{ id: 1, firstName: 'P', lastName: 1 }]),
+    ],
+    ['id 0', list([{ id: 0, firstName: 'P', lastName: 'A' }])],
+    ['id "1"', list([{ id: '1', firstName: 'P', lastName: 'A' }])],
+    ['no id', list([{ firstName: 'P', lastName: 'A' }])],
+    [
+      'a name of 256 characters',
+      list([{ id: 1, firstName: 'a'.repeat(256), lastName: 'A' }]),
+    ],
+    [
+      'a lone surrogate',
+      list([{ id: 1, firstName: 'a\uD800', lastName: 'A' }]),
+    ],
+    ['an entry that is no object', list([1])],
+  ])('gives upstream for %s, never a part', async (_, body) => {
+    const { double, client, ctx, lines } = setup();
+    double
+      .intercept({ path: at('/api/persons'), method: 'GET' })
+      .reply(200, body, json);
+    expect(await codeOf(client.searchPersons(ctx(), 'Person'))).toBe(
+      'upstream',
+    );
+    expect(lines.map((line) => line.event)).toEqual([
+      'churchtools_persons_refused',
+    ]);
+  });
+
+  it('takes names of 255 characters', async () => {
+    const { double, client, ctx } = setup();
+    const long = 'a'.repeat(255);
+    double
+      .intercept({ path: at('/api/persons'), method: 'GET' })
+      .reply(200, list([{ id: 1, firstName: long, lastName: long }]), json);
+    expect((await client.searchPersons(ctx(), 'a')).hits[0]?.firstName).toBe(
+      long,
+    );
+  });
+
+  it.each([
+    ['an empty term', ''],
+    ['a term of spaces', '   '],
+    ['a term with a line break', 'Person\nA'],
+    ['a term of 101 characters', 'a'.repeat(101)],
+    ['a term with a lone surrogate', 'a\uD800'],
+  ])(
+    'refuses %s with validation, before a request and a place of the throttle',
+    async (_, query) => {
+      const { double, client, ctx, lines } = setup(6);
+      let thrown: unknown;
+      try {
+        await client.searchPersons(ctx(), query);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(isEccliumError(thrown) && thrown.code).toBe('validation');
+      expect(isEccliumError(thrown) && thrown.message).toBe(
+        'The search term needs 1 to 100 characters after removing spaces at both ends, and no control characters.',
+      );
+      expect(await codeOf(client.searchGroups(ctx(), query))).toBe(
+        'validation',
+      );
+      expect(lines.map((line) => line.event)).toEqual([
+        'churchtools_persons_term_refused',
+        'churchtools_groups_term_refused',
+      ]);
+      expect(double.calls()).toHaveLength(0);
+      // The throttle of 6 per minute holds one place; it is still free.
+      double
+        .intercept({ path: at('/api/persons'), method: 'GET' })
+        .reply(200, list([]), json);
+      expect((await client.searchPersons(ctx(), 'Person')).hits).toEqual([]);
+    },
+  );
+
+  it('refuses a term that is no string, as a plugin could pass one', async () => {
+    const { client, ctx } = setup();
+    // The types forbid it; a plugin built without them can still do it.
+    const query = { query: 'Person' } as unknown as string;
+    expect(await codeOf(client.searchPersons(ctx(), query))).toBe('validation');
+  });
+
+  it.each([
+    [401, 'auth'],
+    [403, 'permission'],
+    [404, 'upstream'],
+    [400, 'internal'],
+    [500, 'upstream'],
+    [429, 'rate_limited'],
+  ])('maps status %i to %s for both searches', async (status, code) => {
+    const { double, client, ctx, lines } = setup();
+    double
+      .intercept({ path: at('/api/persons'), method: 'GET' })
+      .reply(status, '{}', json);
+    double
+      .intercept({ path: at('/api/groups'), method: 'GET' })
+      .reply(status, '{}', json);
+    expect(await codeOf(client.searchPersons(ctx(), 'Person'))).toBe(code);
+    expect(await codeOf(client.searchGroups(ctx(), 'Gruppe'))).toBe(code);
+    expect(lines).toEqual([
+      { event: 'churchtools_persons_status', fields: { status, code } },
+      { event: 'churchtools_groups_status', fields: { status, code } },
+    ]);
+  });
+
+  it('refuses a context of another instance before it sends', async () => {
+    const { double, client, ctx } = setup();
+    expect(
+      await codeOf(client.searchGroups(ctx('https://other.example'), 'G')),
+    ).toBe('internal');
+    expect(double.calls()).toHaveLength(0);
+  });
+
+  it('searches groups with exactly query, page and limit and gives ID and name only', async () => {
+    const { double, client, ctx } = setup();
+    double.intercept({ path: at('/api/groups'), method: 'GET' }).reply(
+      200,
+      list([
+        { id: 4, name: 'Gruppe A', guid: 'g', information: { note: 'x' } },
+        { id: 5, name: '' },
+      ]),
+      json,
+    );
+    const result = await client.searchGroups(ctx(), 'Gruppe');
+    expect(result).toEqual({
+      hits: [
+        { id: 4, name: 'Gruppe A' },
+        { id: 5, name: '' },
+      ],
+      more: false,
+    });
+    expect(Object.getPrototypeOf(result.hits[0])).toBeNull();
+    expect(double.calls()[0]?.path).toBe('/api/groups');
+    expect(double.calls()[0]?.searchParams).toEqual({
+      query: 'Gruppe',
+      page: '1',
+      limit: '51',
+    });
+  });
+
+  it('gives 50 groups and more for 51 entries', async () => {
+    const { double, client, ctx } = setup();
+    double
+      .intercept({ path: at('/api/groups'), method: 'GET' })
+      .reply(200, list(groupList(51)), json);
+    const result = await client.searchGroups(ctx(), 'Gruppe');
+    expect(result.hits).toHaveLength(50);
+    expect(result.more).toBe(true);
+  });
+
+  it.each([
+    ['a name null', list([{ id: 1, name: null }])],
+    ['no name', list([{ id: 1 }])],
+    ['52 entries', list(groupList(52))],
+  ])('gives upstream for a group list with %s', async (_, body) => {
+    const { double, client, ctx, lines } = setup();
+    double
+      .intercept({ path: at('/api/groups'), method: 'GET' })
+      .reply(200, body, json);
+    expect(await codeOf(client.searchGroups(ctx(), 'Gruppe'))).toBe('upstream');
+    expect(lines.map((line) => line.event)).toEqual([
+      'churchtools_groups_refused',
+    ]);
+  });
+
+  // The layer of the client (ADR 0060): an answer at the highest security
+  // levels, 51 entries with every field, gives only ID and names, and none
+  // of the other fields reaches the result or the log.
+  it('takes 51 persons at the highest level and keeps only ID and names', async () => {
+    const { double, client, ctx, lines } = setup();
+    const answer = personsAtHighestLevel(persons(51));
+    assertPlanted(JSON.parse(answer.body), answer.canaries, 'answer');
+    double
+      .intercept({ path: at('/api/persons'), method: 'GET' })
+      .reply(200, answer.body, json);
+    const result = await client.searchPersons(ctx(), 'Person');
+    expect(result).toEqual({ hits: persons(50), more: true });
+    assertNoCanary(result, answer.canaries, 'result');
+    assertNoCanary(lines, answer.canaries, 'log');
+  });
+
+  it('takes 51 groups at the highest level and keeps only ID and name', async () => {
+    const { double, client, ctx, lines } = setup();
+    const answer = groupsAtHighestLevel(groupList(51));
+    assertPlanted(JSON.parse(answer.body), answer.canaries, 'answer');
+    double
+      .intercept({ path: at('/api/groups'), method: 'GET' })
+      .reply(200, answer.body, json);
+    const result = await client.searchGroups(ctx(), 'Gruppe');
+    expect(result).toEqual({ hits: groupList(50), more: true });
+    assertNoCanary(result, answer.canaries, 'result');
+    assertNoCanary(lines, answer.canaries, 'log');
+  });
+});
+
 describe('the client', () => {
   it.each([
     'https://example.church.tools/',
@@ -499,9 +795,14 @@ describe('the client', () => {
     expect(await codeOf(client.whoami(ctx()))).toBe('network');
   });
 
-  it('is frozen and shows nothing but its two operations', () => {
+  it('is frozen and shows nothing but its four operations', () => {
     const { client } = setup();
-    expect(Object.keys(client)).toEqual(['whoami', 'permissions']);
+    expect(Object.keys(client)).toEqual([
+      'whoami',
+      'permissions',
+      'searchPersons',
+      'searchGroups',
+    ]);
     expect(Object.isFrozen(client)).toBe(true);
   });
 });

@@ -10,7 +10,9 @@ import { z } from 'zod';
 
 import {
   countedMetaSchema,
+  groupListSchema,
   pagedMetaSchema,
+  personListSchema,
   rightValueSchema,
   whoamiSchema,
 } from './schemas.js';
@@ -39,6 +41,18 @@ export function describeContract() {
       path: '/api/permissions/global',
       query: [],
       value: schema(rightValueSchema),
+    },
+    searchPersons: {
+      method: 'get',
+      path: '/api/persons',
+      query: ['query', 'page', 'limit'],
+      response: schema(personListSchema),
+    },
+    searchGroups: {
+      method: 'get',
+      path: '/api/groups',
+      query: ['query', 'page', 'limit'],
+      response: schema(groupListSchema),
     },
     pagedMeta: { meta: schema(pagedMetaSchema) },
     countedMeta: { meta: schema(countedMetaSchema) },

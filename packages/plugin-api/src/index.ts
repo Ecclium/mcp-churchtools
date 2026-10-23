@@ -62,12 +62,18 @@ export {
   type UnattendedRule,
   type WriteToolMeta,
 } from './tool.js';
-export type {
-  GrantedRights,
-  Me,
-  Permissions,
-  ReadApi,
-  RightValue,
+export {
+  maxSearchHits,
+  maxSearchTermLength,
+  normalizeSearchTerm,
+  type GrantedRights,
+  type GroupHit,
+  type Me,
+  type Permissions,
+  type PersonHit,
+  type ReadApi,
+  type RightValue,
+  type SearchHits,
 } from './read-api.js';
 export type { Plugin, PluginHost } from './plugin.js';
 export type {

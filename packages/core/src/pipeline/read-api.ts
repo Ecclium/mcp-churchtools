@@ -8,9 +8,12 @@
  */
 import {
   EccliumError,
+  type GroupHit,
   type Me,
   type Permissions,
+  type PersonHit,
   type ReadApi,
+  type SearchHits,
   type TenantContext,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
@@ -49,6 +52,10 @@ export function createReadAccess(
     whoami: (): Promise<Me> => guard(() => client.whoami(ctx)),
     permissions: (): Promise<Permissions> =>
       guard(() => client.permissions(ctx)),
+    searchPersons: (query: string): Promise<SearchHits<PersonHit>> =>
+      guard(() => client.searchPersons(ctx, query)),
+    searchGroups: (query: string): Promise<SearchHits<GroupHit>> =>
+      guard(() => client.searchGroups(ctx, query)),
   });
   return Object.freeze({
     __proto__: null,
