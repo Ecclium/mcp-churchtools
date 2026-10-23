@@ -23,6 +23,8 @@ export const refusalReasons = Object.freeze([
   'tool_input',
   'tool_output',
   'tool_sensitivity',
+  'tool_unclassified',
+  'tool_unmasked',
   'description_budget',
 ] as const);
 
@@ -49,6 +51,9 @@ const sentences: Readonly<Record<RefusalReason, string>> = Object.freeze({
   tool_output: 'A tool has an output schema the registry does not accept.',
   tool_sensitivity:
     'A tool declares a lower sensitivity than its output holds.',
+  tool_unclassified: 'A tool has an output field without a data class.',
+  tool_unmasked:
+    'A tool has an output field of a data class the core cannot mask yet.',
   description_budget: 'The descriptions of all tools are longer than allowed.',
 });
 

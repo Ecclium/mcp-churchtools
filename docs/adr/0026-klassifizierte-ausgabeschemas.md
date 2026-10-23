@@ -83,5 +83,5 @@ Gewählt ist zu jeder der drei Fragen die erste Option.
 ## Umsetzung
 
 - Seit Phase 1: die Klassen in der Plugin-Schnittstelle (`packages/plugin-api/src/data-class.ts`), die Masken für `email`, `phone` und `birthdate` (`packages/core/src/redaction/mask.ts`) in der Stufe `redact`, die Säuberung und der Datenumschlag (`packages/core/src/redaction/`) in den Stufen `redact` und `markUntrusted` und die Maskierung von Fehlermeldungen (`packages/core/src/redaction/message.ts`) auf dem Weg der Fehler der Pipeline (ADR 0024).
-- Phase 2: Die Registry weist Blätter ohne Klasse und Blätter mit `address` oder `amount` ab. Folgt.
+- Seit dem 23.10.2026: Die Registry weist ein Tool mit einem Blatt ohne Klasse ab (`tool_unclassified`) und eines mit einem Blatt der Klasse `address` oder `amount` (`tool_unmasked`), in `packages/core/src/registry/registry.ts`, gezählt beim Prüfen des Ausgabeschemas in `schema.ts`. Ein Test geht alle Tools des Kerns durch.
 - Phase 4: `strict`, die Masken für `address`, `amount` und `name.last`, Pseudonyme und die Prüfung von Freitext. Folgt.

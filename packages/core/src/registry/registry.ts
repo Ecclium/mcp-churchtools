@@ -155,6 +155,13 @@ const checkTool = (
   if (rank[meta.sensitivity] < rank[shape.minimumSensitivity]) {
     throw new RegistryRefusal('tool_sensitivity', where);
   }
+  // Every field says what it holds, so none leaves unmasked by oversight,
+  // and none holds an address or an amount before the core can mask them
+  // (ADR 0026).
+  if (shape.unclassified > 0) {
+    throw new RegistryRefusal('tool_unclassified', where);
+  }
+  if (shape.unmasked > 0) throw new RegistryRefusal('tool_unmasked', where);
   const run = fields.execute;
   return Object.freeze({
     __proto__: null,

@@ -75,7 +75,7 @@ const testTool = (
     meta: readMeta,
     description,
     input: z.object({}),
-    output: z.object({ text: z.string().max(100_000) }),
+    output: z.object({ text: classify(z.string().max(100_000), 'none') }),
     execute,
     ...extra,
   }) as unknown as ToolDefinition;

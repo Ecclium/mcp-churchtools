@@ -2,12 +2,13 @@ import { getEventListeners } from 'node:events';
 import { PassThrough } from 'node:stream';
 
 import { loadConfig } from '@ecclium/mcp-churchtools-core';
-import type {
-  Logger,
-  Plugin,
-  PluginHost,
-  TenantResolver,
-  ToolDefinition,
+import {
+  classify,
+  type Logger,
+  type Plugin,
+  type PluginHost,
+  type TenantResolver,
+  type ToolDefinition,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import {
   createChurchToolsDouble,
@@ -113,7 +114,7 @@ const testTool = (
     meta: readMeta,
     description,
     input: z.object({}),
-    output: z.object({ text: z.string().max(100_000) }),
+    output: z.object({ text: classify(z.string().max(100_000), 'none') }),
     execute,
     ...extra,
   }) as unknown as ToolDefinition;

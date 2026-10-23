@@ -36,6 +36,17 @@ describe('@ecclium/mcp-churchtools-tools', () => {
     ).toEqual([['ct_whoami', '@ecclium/mcp-churchtools', 'core']]);
   });
 
+  it('gives every leaf of every tool of the core a class with a mask (ADR 0026)', () => {
+    const shapes = withSearch
+      .list()
+      .map((tool) => [tool.name, tool.shape.unclassified, tool.shape.unmasked]);
+    expect(shapes).toEqual([
+      ['ct_groups_search', 0, 0],
+      ['ct_persons_search', 0, 0],
+      ['ct_whoami', 0, 0],
+    ]);
+  });
+
   it('adds both search tools of the core when they are enabled', () => {
     expect(
       withSearch.list().map((tool) => [tool.name, tool.plugin, tool.origin]),

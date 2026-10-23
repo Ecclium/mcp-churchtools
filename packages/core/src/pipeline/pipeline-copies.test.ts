@@ -1,10 +1,11 @@
 import { loadConfig } from '@ecclium/mcp-churchtools-core';
-import type {
-  Plugin,
-  PluginHost,
-  TenantAssignment,
-  TenantContext,
-  ToolDefinition,
+import {
+  classify,
+  type Plugin,
+  type PluginHost,
+  type TenantAssignment,
+  type TenantContext,
+  type ToolDefinition,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import {
   createChurchToolsDouble,
@@ -65,7 +66,7 @@ describe('the pipeline before execute', () => {
         limits: 'None.',
       },
       input: z.object({}),
-      output: z.object({ frozen: z.boolean() }),
+      output: z.object({ frozen: classify(z.boolean(), 'none') }),
       execute: ({ ctx }: { ctx: Record<string, unknown> }) => {
         const frozen = Object.isFrozen(ctx);
         ctx.mode = 'operator';
