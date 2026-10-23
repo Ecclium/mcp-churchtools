@@ -6,7 +6,7 @@ In der Voreinstellung bietet der Server nur das Tool `ct_whoami` an. Es zeigt, m
 
 Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Hersteller von ChurchTools.
 
-Geprüft am 19.10.2026 unter macOS 27.0 mit Claude Code 2.1.302 und Claude Desktop 2.31226.1: In beiden Clients erschien der Server mit genau `ct_whoami` und antwortete mit dem Konto und seinen Rechten. Mit einem Dienstkonto, das nur das Wiki sehen darf, ist das in Claude Code geprüft. Windows deckt diese Seite nicht ab: Dort kann Ecclium die Token-Datei nicht sicher lesen und lehnt sie ab ([ADR 0055](../adr/0055-konfiguration-identitaet.md)).
+Geprüft am 19.10.2026 unter macOS 27.0 mit Claude Code 2.1.302 und Claude Desktop 2.31226.1: In beiden Clients erschien der Server mit genau `ct_whoami` und antwortete mit dem Konto und seinen Rechten. Am 23.10.2026 liefen auch die Suchtools in beiden Clients, mit Claude Code 2.1.308 und Claude Desktop 3.6556.2. Mit einem Dienstkonto, das nur das Wiki sehen darf, ist das in Claude Code geprüft. Windows deckt diese Seite nicht ab: Dort kann Ecclium die Token-Datei nicht sicher lesen und lehnt sie ab ([ADR 0055](../adr/0055-konfiguration-identitaet.md)).
 
 ## Voraussetzungen
 
@@ -72,7 +72,7 @@ Die Beispiele setzen nur die Adresse und die Token-Datei. Alle übrigen Einstell
 
 ## Claude Desktop
 
-Claude Desktop liest seine Server aus der Datei `claude_desktop_config.json`, unter macOS im Ordner `~/Library/Application Support/Claude/`. Übernehmen Sie den Eintrag `ecclium` aus [beispiele/claude-desktop.json](beispiele/claude-desktop.json) unter `mcpServers`, neben allfällige andere Server, und ersetzen Sie die Platzhalter durch Ihre Adresse und Ihre absoluten Pfade. Ein Server mit freiem Netzzugriff gehört nicht in denselben Client, siehe «Grenzen». Beenden Sie danach Claude Desktop ganz und starten Sie es neu, damit es den Eintrag liest.
+Claude Desktop liest seine Server aus der Datei `claude_desktop_config.json`, unter macOS im Ordner `~/Library/Application Support/Claude/`. Übernehmen Sie den Eintrag `ecclium` aus [beispiele/claude-desktop.json](beispiele/claude-desktop.json) unter `mcpServers`, neben allfällige andere Server, und ersetzen Sie die Platzhalter durch Ihre Adresse und Ihre absoluten Pfade. Ein Server mit freiem Netzzugriff gehört nicht in denselben Client, siehe «Grenzen». Beenden Sie Claude Desktop ganz, bevor Sie die Datei ändern: Läuft es noch, kann es sie mit seinem alten Stand überschreiben. Starten Sie es danach neu, damit es den Eintrag liest.
 
 ## Claude Code
 
