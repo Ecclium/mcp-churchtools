@@ -1,9 +1,10 @@
 import { loadConfig } from '@ecclium/mcp-churchtools-core';
-import type {
-  Plugin,
-  PluginHost,
-  TenantAssignment,
-  ToolDefinition,
+import {
+  classify,
+  type Plugin,
+  type PluginHost,
+  type TenantAssignment,
+  type ToolDefinition,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import {
   createChurchToolsDouble,
@@ -70,7 +71,7 @@ const tool = (name: `ct_${string}`, sensitivity: Sensitivity): ToolDefinition =>
     },
     description,
     input: z.strictObject({ query: z.string().max(10) }),
-    output: z.object({ text: z.string() }),
+    output: z.object({ text: classify(z.string(), 'none') }),
     execute: () => {
       runs.push(name);
       return Promise.resolve({ text: 'found' });

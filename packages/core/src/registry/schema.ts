@@ -76,11 +76,19 @@ export type ShapeNode =
 export interface OutputShape {
   /** The shape of the result, an object. */
   readonly root: ShapeNode & { readonly kind: 'object' };
-  /** Leaves without a data class. They stay unmasked in phase 1. */
+  /** Leaves without a data class. The registry refuses a tool with one. */
   readonly unclassified: number;
+  /**
+   * Leaves of a class the core cannot mask yet, `address` and `amount`.
+   * The registry refuses a tool with one until their masks exist (ADR 0026).
+   */
+  readonly unmasked: number;
   /** The lowest sensitivity the classes of the output allow. */
   readonly minimumSensitivity: Sensitivity;
 }
+
+// Classes without a mask until phase 4 (ADR 0026).
+const unmaskedClasses: readonly DataClass[] = ['address', 'amount'];
 
 // Classes that make a tool hold personal data.
 const personalClasses: readonly DataClass[] = [
@@ -305,6 +313,7 @@ const unwrap = (schema: unknown): Unwrapped | undefined => {
 class OutputWalk {
   nodes = 0;
   unclassified = 0;
+  unmasked = 0;
   personal = false;
 
   // Returns undefined for any form the registry does not accept.
@@ -480,8 +489,12 @@ class OutputWalk {
   }
 
   private count(dataClass: DataClass | undefined): void {
-    if (dataClass === undefined) this.unclassified += 1;
-    else if (personalClasses.includes(dataClass)) this.personal = true;
+    if (dataClass === undefined) {
+      this.unclassified += 1;
+      return;
+    }
+    if (unmaskedClasses.includes(dataClass)) this.unmasked += 1;
+    if (personalClasses.includes(dataClass)) this.personal = true;
   }
 }
 
@@ -509,7 +522,7 @@ class OutputWalk {
  * @example
  * ```ts
  * checkOutputSchema(z.object({ id: classify(z.number(), 'personId') }));
- * // { root: …, unclassified: 0, minimumSensitivity: 'personal' }
+ * // { root: …, unclassified: 0, unmasked: 0, minimumSensitivity: 'personal' }
  * ```
  */
 export function checkOutputSchema(schema: unknown): OutputShape | undefined {
@@ -522,6 +535,7 @@ export function checkOutputSchema(schema: unknown): OutputShape | undefined {
     __proto__: null,
     root,
     unclassified: walk.unclassified,
+    unmasked: walk.unmasked,
     minimumSensitivity: walk.personal ? 'personal' : 'none',
   });
 }

@@ -129,7 +129,7 @@ Vor einem Pull Request muss dieser Befehl ohne Fehler durchlaufen:
 mise exec -- pnpm check
 ```
 
-Er prüft nacheinander Formatierung, Typen, Lint und die Architekturregeln, danach drei Dinge, die über den Code hinausgehen: die Lizenzen der Abhängigkeiten aller Pakete im Workspace, die Schutzeinstellungen von pnpm und die relativen Links in der Dokumentation. Zuletzt laufen die Tests. Die einzelnen Schritte gibt es auch als eigene Befehle, etwa `pnpm lint`, `pnpm check:arch`, `pnpm test` oder `pnpm check:licenses`. `pnpm format` behebt die Formatierung.
+Er prüft nacheinander Formatierung, Typen, Lint und die Architekturregeln, danach drei Dinge, die über den Code hinausgehen: die Lizenzen der Abhängigkeiten aller Pakete im Workspace, die Schutzeinstellungen von pnpm und die relativen Links in der Dokumentation. Zuletzt laufen die Tests. Die einzelnen Schritte gibt es auch als eigene Befehle, etwa `pnpm lint`, `pnpm check:arch`, `pnpm test` oder `pnpm check:licenses`. `pnpm format` behebt die Formatierung. Hat sich ein Tool oder eine Variable geändert, führen Sie `pnpm docs:generate` aus. Der Befehl schreibt die Referenzen `docs/tools.md` und `docs/configuration.md` neu. Ein Test vergleicht beide mit dem Code und scheitert, solange sie veraltet sind.
 
 Dabei gilt:
 

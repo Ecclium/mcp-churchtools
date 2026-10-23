@@ -67,7 +67,7 @@ Mit `env -i` sieht die Prüfung nur diese beiden Variablen und keine aus Ihrer S
 
 Ob ChurchTools das Token annimmt, zeigt erst ein Aufruf von `ct_whoami`, denn auch der Start fragt ChurchTools nicht an.
 
-Die Beispiele setzen nur die Adresse und die Token-Datei. Alle übrigen Einstellungen behalten ihre Voreinstellung: nur lesen, Maskierung `standard`, keine Suchtools, keine Audit-Datei, Stufe des Logs `info`. Alle Variablen stehen mit Erklärung in [.env.example](../../.env.example). Den Ordner für die Audit-Datei empfehlen wir zusätzlich, siehe «Audit-Datei».
+Die Beispiele setzen nur die Adresse und die Token-Datei. Alle übrigen Einstellungen behalten ihre Voreinstellung: nur lesen, Maskierung `standard`, keine Suchtools, keine Audit-Datei, Stufe des Logs `info`. Alle Variablen stehen mit Erklärung in [.env.example](../../.env.example) und in der Referenz [docs/configuration.md](../configuration.md), die Tools mit ihren Feldern in [docs/tools.md](../tools.md). Den Ordner für die Audit-Datei empfehlen wir zusätzlich, siehe «Audit-Datei».
 
 ## Claude Desktop
 

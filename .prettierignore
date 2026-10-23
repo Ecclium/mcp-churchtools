@@ -11,3 +11,8 @@ LICENSE
 
 # Written by a test as a file snapshot, compared byte by byte.
 packages/core/src/churchtools/contract.json
+
+# Written by a test as file snapshots from the catalog of the tools and the
+# table of the variables, compared byte by byte (pnpm docs:generate).
+docs/tools.md
+docs/configuration.md

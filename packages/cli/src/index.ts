@@ -7,4 +7,6 @@
  *
  * @packageDocumentation
  */
-export {};
+// Plain texts for the generated reference, no texts of the catalog of
+// messages, so they stay out of its entry (see its test).
+export { variableDescriptions } from './messages/variables.js';

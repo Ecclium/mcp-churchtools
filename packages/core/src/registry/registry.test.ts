@@ -649,6 +649,54 @@ describe('refusals', () => {
       }),
       'tool_sensitivity',
     ],
+    [
+      'an output field without a class',
+      tool('ct_x', {
+        output: z.object({
+          id: classify(z.number(), 'personId'),
+          note: z.string(),
+        }),
+      }),
+      'tool_unclassified',
+    ],
+    [
+      'an unclassified field in an array',
+      tool('ct_x', {
+        output: z.object({ ids: z.array(z.number()).max(5) }),
+      }),
+      'tool_unclassified',
+    ],
+    [
+      'a union without a class on any option',
+      tool('ct_x', {
+        output: z.object({ value: z.union([z.string(), z.number()]) }),
+      }),
+      'tool_unclassified',
+    ],
+    [
+      'an unclassified optional field in a nested object',
+      tool('ct_x', {
+        output: z.object({
+          id: classify(z.number(), 'personId'),
+          more: z.object({ note: z.string().optional() }),
+        }),
+      }),
+      'tool_unclassified',
+    ],
+    [
+      'an output field with the class address',
+      tool('ct_x', {
+        output: z.object({ city: classify(z.string(), 'address') }),
+      }),
+      'tool_unmasked',
+    ],
+    [
+      'an output field with the class amount',
+      tool('ct_x', {
+        output: z.object({ sum: classify(z.number(), 'amount') }),
+      }),
+      'tool_unmasked',
+    ],
   ] as const)('refuses %s', (_, value, reason) => {
     refuses([plugin('core', adding(value))], reason);
   });

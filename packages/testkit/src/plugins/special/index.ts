@@ -7,6 +7,7 @@
  * @packageDocumentation
  */
 import {
+  classify,
   defineTool,
   type Plugin,
   type PluginHost,
@@ -54,7 +55,7 @@ export function createSpecialPlugin(options: SpecialPluginOptions): Plugin {
       limits: 'Returns one text.',
     },
     input: z.object({}),
-    output: z.object({ text: z.string().max(200) }),
+    output: z.object({ text: classify(z.string().max(200), 'none') }),
     execute: () => {
       options.during?.();
       return Promise.resolve({ text: options.text });
