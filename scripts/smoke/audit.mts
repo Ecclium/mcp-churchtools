@@ -84,9 +84,17 @@ export function auditFits(
         call.expect === 'ok'
           ? line['outcome'] === 'ok' && !('errorCode' in line)
           : line['outcome'] === 'error' && line['errorCode'] === call.expect;
+      const actor = line['actor'];
       return (
         line['v'] === 1 &&
+        typeof line['eventId'] === 'string' &&
+        typeof line['ts'] === 'string' &&
         line['type'] === 'tool_call' &&
+        line['tenantId'] === 'default' &&
+        typeof actor === 'object' &&
+        actor !== null &&
+        line['mode'] === 'interactive' &&
+        typeof line['durationMs'] === 'number' &&
         line['tool'] === call.tool &&
         outcomeFits &&
         Array.isArray(refs) &&

@@ -138,7 +138,7 @@ export const hints = {
   smokeWindows:
     'Abbruch: Unter Windows gibt es über stdio keine Audit-Datei. Der Smoke-Test läuft dort nicht.',
   smokeUmgebungUnsicher:
-    'Abbruch: Eine Variable ist gesetzt, die Node.js Code oder Zertifikate unterschiebt (NODE_OPTIONS, NODE_DEBUG, NODE_PATH, NODE_EXTRA_CA_CERTS oder NODE_TLS_REJECT_UNAUTHORIZED=0). Starten Sie den Smoke-Test mit env -i, wie in docs/betrieb/stdio.md beschrieben.',
+    'Abbruch: Eine Variable ist gesetzt, die Node.js Code, Zertifikate oder einen Proxy unterschiebt (NODE_OPTIONS, NODE_DEBUG, NODE_PATH, NODE_EXTRA_CA_CERTS, NODE_USE_SYSTEM_CA, SSL_CERT_FILE, SSL_CERT_DIR, NODE_USE_ENV_PROXY oder NODE_TLS_REJECT_UNAUTHORIZED=0). Starten Sie den Smoke-Test mit env -i, wie in docs/betrieb/stdio.md beschrieben.',
   smokeAdresseFehlt: 'Abbruch: ECCLIUM_CHURCHTOOLS_URL fehlt.',
   smokeAdresseUngueltig:
     'Abbruch: ECCLIUM_CHURCHTOOLS_URL muss eine https-Adresse ohne Benutzer, Pfad, Query, Fragment und Schrägstrich am Ende sein.',
@@ -147,6 +147,8 @@ export const hints = {
   smokeTokenVariable:
     'Abbruch: ECCLIUM_CHURCHTOOLS_TOKEN ist gesetzt. Der Smoke-Test nimmt das Token nur aus der Datei in ECCLIUM_CHURCHTOOLS_TOKEN_FILE. Lassen Sie die Variable im Aufruf weg.',
   smokeTokenDateiFehlt: 'Abbruch: ECCLIUM_CHURCHTOOLS_TOKEN_FILE fehlt.',
+  smokeTokenDateiRelativ:
+    'Abbruch: ECCLIUM_CHURCHTOOLS_TOKEN_FILE muss ein absoluter Pfad sein, ohne ~ und ohne Variable.',
   smokeTokenDateiNichtGefunden:
     'Abbruch: Die Token-Datei wurde nicht gefunden. Prüfen Sie den Pfad in ECCLIUM_CHURCHTOOLS_TOKEN_FILE.',
   smokeTokenDateiUnsicher:
@@ -171,6 +173,8 @@ export const hints = {
     'Abbruch: Das Konto sieht mehr als eine Kategorie «testinstanz-kennung». Die Suchtools wurden nicht aufgerufen.',
   smokeKennkategorieBearbeitbar:
     'Abbruch: Das Konto darf die Kennkategorie bearbeiten oder löschen. Es darf sie nur sehen. Die Suchtools wurden nicht aufgerufen.',
+  smokeTokenAbgewiesen:
+    'Abbruch: ChurchTools weist das Token des Dienstkontos ab. Prüfen Sie die Token-Datei, etwa nach einem Erneuern des Tokens. Die Suchtools wurden nicht aufgerufen.',
   smokeBuildFehlt:
     'Abbruch: Der gebaute Server fehlt (packages/cli/dist/bin.js). Bauen Sie zuerst mit pnpm build, wie in docs/betrieb/stdio.md beschrieben.',
   smokeZustandsordner:

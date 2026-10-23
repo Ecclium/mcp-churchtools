@@ -10,6 +10,7 @@
  *
  * @packageDocumentation
  */
+import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
@@ -30,6 +31,17 @@ if (import.meta.main) {
   };
   process.on('uncaughtException', crash);
   process.on('unhandledRejection', crash);
+  // An interrupt ends the process without the `finally` of the course, so
+  // the folders of state it knows of go here. The server ends by itself
+  // when its stdin closes with this process.
+  const folders = new Set<string>();
+  const interrupt = (code: number) => (): void => {
+    for (const folder of folders)
+      rmSync(folder, { recursive: true, force: true });
+    process.exit(code);
+  };
+  process.on('SIGINT', interrupt(130));
+  process.on('SIGTERM', interrupt(143));
   process.exitCode = await runSmoke({
     env: process.env,
     args: process.argv.slice(2),
@@ -37,6 +49,10 @@ if (import.meta.main) {
     fetch,
     platform: process.platform,
     tmpdir: tmpdir(),
+    track: (folder, exists) => {
+      if (exists) folders.add(folder);
+      else folders.delete(folder);
+    },
     server: {
       executable: process.execPath,
       preArgs: [],

@@ -79,6 +79,11 @@ export interface SmokeDependencies {
   readonly deadlines?: Deadlines;
   /** Makes the term that matches nothing. */
   readonly missTerm?: () => string;
+  /**
+   * Learns of each folder of state while it exists, so that the entry can
+   * remove it after an interrupt, when no `finally` runs.
+   */
+  readonly track?: (folder: string, exists: boolean) => void;
 }
 
 // A refusal of the guard: the instance counts as productive, or the switch
@@ -171,7 +176,7 @@ const blockLocal = (guard: Guard, settings: SmokeSettings): void => {
  * @param guard - Takes every value of the answers onto its block list.
  * @param fetch - For the two reads.
  * @returns The version of ChurchTools as major and minor number, if the instance names it.
- * @throws {SpikeError} If an answer has another form, or the identification category is missing, double or editable.
+ * @throws {SpikeError} If ChurchTools refuses the token, an answer has another form, or the identification category is missing, double or editable.
  */
 async function passGuard(
   settings: SmokeSettings,
@@ -182,8 +187,14 @@ async function passGuard(
     { origin: settings.origin, token: settings.token, guard, fetch },
     [operations.wikiCategories.template, operations.info.template],
   );
+  const answer = await client.get({ path: operations.wikiCategories.template });
+  // A refused token is a matter of the configuration, not a sign of a
+  // productive instance; every other unexpected answer still is.
+  if (answer.status === 401) {
+    throw new SpikeError('KONFIGURATION', 'smokeTokenAbgewiesen');
+  }
   const { categories } = readCategories(
-    await client.get({ path: operations.wikiCategories.template }),
+    answer,
     'smokeWaechterAntwortUnerwartet',
   );
   findIdentification(categories, {
@@ -258,6 +269,7 @@ export async function runSmoke(deps: SmokeDependencies): Promise<number> {
     const order: readonly Era[] = ['2026', '2025'];
     for (const era of order) {
       const stateDir = makeStateDir(deps.tmpdir);
+      deps.track?.(stateDir, true);
       guard.block(stateDir);
       try {
         const env: Record<string, string> = {
@@ -278,10 +290,17 @@ export async function runSmoke(deps: SmokeDependencies): Promise<number> {
           env,
           deps.deadlines ?? defaultDeadlines,
         );
-        const outcome = await runEra(era, session, search, guard, {
-          token: settings.token,
-          query: settings.search?.query,
-        });
+        let outcome;
+        try {
+          outcome = await runEra(era, session, search, guard, {
+            token: settings.token,
+            query: settings.search?.query,
+          });
+        } finally {
+          // After a failure of the course itself the server still runs,
+          // with its folder of state about to go.
+          session.dispose();
+        }
         const banned = [settings.token, ...outcome.seen];
         if (settings.search !== undefined) banned.push(settings.search.query);
         const audited = auditFits(
@@ -298,6 +317,7 @@ export async function runSmoke(deps: SmokeDependencies): Promise<number> {
         for (const finding of outcome.findings) findings.add(finding);
       } finally {
         rmSync(stateDir, { recursive: true, force: true });
+        deps.track?.(stateDir, false);
       }
     }
     output['aeren'] = eras;

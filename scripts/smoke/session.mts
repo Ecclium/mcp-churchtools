@@ -53,6 +53,11 @@ export interface Session {
    * @returns How it ended.
    */
   finish(): Promise<Ended>;
+  /**
+   * Ends the process at once if it still runs, after a failure of the
+   * smoke test itself, so that no server stays behind.
+   */
+  dispose(): void;
   /** Everything the process wrote to stdout so far. */
   stdout(): string;
   /** Everything the process wrote to stderr so far. */
@@ -69,8 +74,12 @@ export interface Deadlines {
   readonly end: number;
 }
 
-/** The deadlines of a real run. */
-export const defaultDeadlines: Deadlines = { answer: 30_000, end: 15_000 };
+/**
+ * The deadlines of a real run. ct_whoami sends two requests one after the
+ * other, each of which the server may wait for up to 30 seconds, so one
+ * answer may take longer than that.
+ */
+export const defaultDeadlines: Deadlines = { answer: 75_000, end: 15_000 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -111,7 +120,9 @@ export function startServer(
       resolve({ code });
     });
   });
+  const state = { closed: false };
   void ended.then(() => {
+    state.closed = true;
     for (const settle of waiting.values()) settle({ kind: 'none' });
     waiting.clear();
   });
@@ -129,7 +140,9 @@ export function startServer(
       return;
     }
     const id = message['id'];
-    if (typeof id !== 'number') return;
+    // A request of the server can carry the same number; only an answer
+    // settles a request of the smoke test.
+    if (typeof id !== 'number' || 'method' in message) return;
     const settle = waiting.get(id);
     if (settle === undefined) return;
     waiting.delete(id);
@@ -165,6 +178,8 @@ export function startServer(
 
   return {
     request(method, params) {
+      // A process that has ended answers nothing more; no need to wait.
+      if (state.closed) return Promise.resolve({ kind: 'none' });
       const id = nextId;
       nextId += 1;
       return new Promise<Answer>((resolve) => {
@@ -199,6 +214,11 @@ export function startServer(
         code: deadline.passed ? null : code,
         killed: deadline.passed,
       };
+    },
+    dispose() {
+      if (state.closed) return;
+      child.stdin.end();
+      child.kill('SIGKILL');
     },
     stdout: () => stdout,
     stderr: () => stderr,

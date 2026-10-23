@@ -86,7 +86,9 @@ export const courseWords = [
   'ja',
   'nein',
   'nur JSON-RPC',
+  'nur JSON',
   'fremde Zeilen',
+  'stderr',
   'ct_whoami',
   'ct_persons_search',
   'ct_groups_search',
@@ -108,6 +110,7 @@ export const courseCodes = [
   'suche_leerzeichen',
   'anfragen',
   'stdout',
+  'stderr',
   'ende',
   'protokoll',
   'token',
@@ -132,9 +135,10 @@ const isId = (value: unknown): value is number =>
 const isName = (value: unknown): value is string =>
   typeof value === 'string' && value.length <= 255;
 
-// The data envelope of the pipeline: a random boundary, the text, the same
-// boundary again (ADR 0024).
-const envelope = /^<<data-([0-9a-f]+)>>([\s\S]*)<<\/data-\1>>$/;
+// The data envelope of the pipeline: a boundary of 16 random hex digits,
+// the text without the closing marker, the same boundary again (ADR 0024).
+const envelope =
+  /^<<data-([0-9a-f]{16})>>((?:(?!<<\/data-\1>>)[\s\S])*)<<\/data-\1>>$/;
 
 const clientMeta = {
   'io.modelcontextprotocol/protocolVersion': '2026-07-28',
@@ -165,18 +169,56 @@ export function jsonLines(text: string): JsonLine[] {
   return lines;
 }
 
+// Fields of log and audit lines whose values come from a fixed vocabulary
+// of the server, such as the level `info` or the mode `interactive`.
+const vocabularyFields: ReadonlySet<string> = new Set([
+  'level',
+  'event',
+  'type',
+  'tenantId',
+  'mode',
+  'outcome',
+  'tool',
+  'errorCode',
+  'code',
+  'kind',
+  'id',
+  'redaction',
+]);
+
+const vocabulary = (value: unknown, words: Set<string>): void => {
+  if (Array.isArray(value)) {
+    for (const item of value) vocabulary(item, words);
+  } else if (isRecord(value)) {
+    for (const [key, entry] of Object.entries(value)) {
+      words.add(key.toLowerCase());
+      if (vocabularyFields.has(key) && typeof entry === 'string') {
+        words.add(entry.toLowerCase());
+      }
+      vocabulary(entry, words);
+    }
+  }
+};
+
 /**
  * Tells whether a JSON value holds one of the texts anywhere, in a key or
  * a value, as a whole word and ignoring case.
+ *
+ * A text that is itself part of a key or of a fixed word of the lines,
+ * such as a group named «Default» or the term «tool», cannot be told from
+ * that word and is left out, so it does not raise a false alarm.
  *
  * @param value - Any parsed JSON.
  * @param texts - Texts that must not appear; shorter than 3 characters are skipped.
  * @returns Whether one of them appears.
  */
 export function holdsAny(value: unknown, texts: readonly string[]): boolean {
+  const words = new Set<string>();
+  vocabulary(value, words);
   const parts = texts
     .filter((text) => text.length >= 3)
-    .map((text) => text.toLowerCase());
+    .map((text) => text.toLowerCase())
+    .filter((part) => ![...words].some((word) => containsWord(word, part)));
   const visit = (item: unknown): boolean => {
     if (typeof item === 'string' || typeof item === 'number') {
       const text = String(item).toLowerCase();
@@ -195,15 +237,26 @@ export function holdsAny(value: unknown, texts: readonly string[]): boolean {
 
 interface ToolResult {
   readonly isError: boolean;
+  /** The structured data, only if the text copy says the same. */
   readonly data: Record<string, unknown> | undefined;
 }
 
+// A result carries its data twice, as text and structured (ADR 0024). A
+// client may read either, so both must say the same.
 const toolResult = (answer: Answer): ToolResult | undefined => {
   if (answer.kind !== 'result' || !isRecord(answer.result)) return undefined;
   const structured = answer.result['structuredContent'];
+  const content = answer.result['content'];
+  const first: unknown = Array.isArray(content) ? content[0] : undefined;
+  const text = isRecord(first) ? first['text'] : undefined;
+  const same =
+    isRecord(structured) &&
+    Array.isArray(content) &&
+    content.length === 1 &&
+    text === JSON.stringify(structured);
   return {
     isError: answer.result['isError'] === true,
-    data: isRecord(structured) ? structured : undefined,
+    data: same ? structured : undefined,
   };
 };
 
@@ -312,8 +365,11 @@ export async function runEra(
       isId(me['id']) &&
       isName(me['firstName']) &&
       isName(me['lastName']) &&
+      // The masked forms of the pipeline: the first character or `*`,
+      // three stars and the domain, or `[masked]` (ADR 0024).
       (email === null ||
-        (typeof email === 'string' && /^[^@*]\*\*\*@[^@\s]+$/.test(email))) &&
+        (typeof email === 'string' &&
+          /^(?:[A-Za-z0-9*]\*\*\*@[^@\s]+|\[masked\])$/.test(email))) &&
       isRecord(rights) &&
       ((rights['status'] === 'known' && Array.isArray(modules)) ||
         (rights['status'] === 'unknown' && modules === null));
@@ -501,6 +557,20 @@ export async function runEra(
   const foreign = session.foreignLines();
   report['stdout'] = foreign === 0 ? 'nur JSON-RPC' : 'fremde Zeilen';
   if (foreign !== 0) failures.add('stdout');
+
+  // Text on stderr may only come before the first JSON line: the start
+  // notes, written before any call, so they cannot hold an answer. After
+  // them the server writes only JSON (docs/betrieb/stdio.md), and a text
+  // line there could carry a name the checks of JSON lines do not see.
+  const raw = session.stderr().split('\n');
+  const firstJson = raw.findIndex((line) => jsonLines(line).length === 1);
+  const textAfter =
+    firstJson !== -1 &&
+    raw
+      .slice(firstJson)
+      .some((line) => line !== '' && jsonLines(line).length === 0);
+  report['stderr'] = textAfter ? 'fremde Zeilen' : 'nur JSON';
+  if (textAfter) failures.add('stderr');
 
   // The end of a connection: code 0, no audit line lost in the file, no
   // line lost on stderr, and stdio_closed as the last line (ADR 0054).

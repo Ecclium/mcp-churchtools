@@ -94,9 +94,21 @@ const toolNames = [
 ];
 
 const result = (data: Record<string, unknown>): Record<string, unknown> => ({
-  content: [{ type: 'text', text: JSON.stringify(data) }],
+  content: [
+    {
+      type: 'text',
+      text: scenario === 'text-mismatch' ? '{}' : JSON.stringify(data),
+    },
+  ],
   structuredContent: data,
 });
+
+// The masked forms the pipeline gives an address, or none.
+const emails: Readonly<Record<string, string>> = {
+  'masked-letter': `m***@example.org`,
+  'masked-star': `****@example.org`,
+  'masked-literal': '[masked]',
+};
 
 const callTool = (name: string, args: Record<string, unknown>): unknown => {
   calls.push(name);
@@ -105,15 +117,19 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
     event('http_response', { status: 200 });
     event('http_response', { status: 200 });
     audit(name);
+    if (scenario === 'text-stderr') {
+      process.stderr.write(`Warnung ${canary}Konto\n`);
+    }
     const rights =
       scenario === 'security-level'
         ? [{ right: 'security level person', ids: [1], idCount: 1 }]
         : [{ right: 'view' }];
     return result({
       id: 4711,
-      firstName: `${canary}Konto`,
+      firstName:
+        scenario === 'lone-surrogate' ? `${canary}\uD800` : `${canary}Konto`,
       lastName: `${canary}Dienst`,
-      email: null,
+      email: emails[scenario] ?? null,
       rights: {
         status: 'known',
         modules: [{ module: 'churchwiki', rights }],

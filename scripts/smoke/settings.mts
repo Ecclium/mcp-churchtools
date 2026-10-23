@@ -14,6 +14,8 @@
  *
  * @packageDocumentation
  */
+import { isAbsolute } from 'node:path';
+
 import {
   checkNodeEnvironment,
   readPrivateFile,
@@ -115,6 +117,18 @@ export function readSmokeSettings(env: Environment): SmokeSettings {
   } catch {
     throw new SpikeError('KONFIGURATION', 'smokeUmgebungUnsicher');
   }
+  // The reads of the guard send the token. These variables would let
+  // Node.js trust other certificates or send it through a proxy.
+  for (const name of [
+    'NODE_USE_SYSTEM_CA',
+    'SSL_CERT_FILE',
+    'SSL_CERT_DIR',
+    'NODE_USE_ENV_PROXY',
+  ]) {
+    if ((env[name] ?? '') !== '') {
+      throw new SpikeError('KONFIGURATION', 'smokeUmgebungUnsicher');
+    }
+  }
   const origin = readSmokeOrigin(env);
   // The server would take the token from this variable too, but then the
   // smoke test would have to hand it on in the environment of the child.
@@ -124,6 +138,10 @@ export function readSmokeSettings(env: Environment): SmokeSettings {
   const tokenFile = env['ECCLIUM_CHURCHTOOLS_TOKEN_FILE'] ?? '';
   if (tokenFile === '') {
     throw new SpikeError('KONFIGURATION', 'smokeTokenDateiFehlt');
+  }
+  // The server takes only an absolute path; say so here, before it starts.
+  if (!isAbsolute(tokenFile)) {
+    throw new SpikeError('KONFIGURATION', 'smokeTokenDateiRelativ');
   }
   const token = readPrivateFile(
     tokenFile,

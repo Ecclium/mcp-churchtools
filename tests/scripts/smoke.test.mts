@@ -90,6 +90,8 @@ interface Options {
   readonly env?: { readonly [name: string]: string };
   readonly scenario?: string;
   readonly categories?: unknown;
+  /** The reads of the guard fail on the network or get a 401. */
+  readonly guardAnswer?: 'network' | 'refused';
   readonly args?: readonly string[];
   readonly platform?: string;
   readonly server?: ServerStart;
@@ -121,6 +123,12 @@ const run = async (options: Options = {}): Promise<Run> => {
         authorization: new Headers(init.headers).get('authorization'),
         method: init.method ?? 'GET',
       });
+      if (options.guardAnswer === 'network') {
+        return Promise.reject(new TypeError('fetch failed'));
+      }
+      if (options.guardAnswer === 'refused') {
+        return Promise.resolve(new Response('', { status: 401 }));
+      }
       if (input.pathname === '/api/wiki/categories') {
         return Promise.resolve(
           jsonResponse({
@@ -245,6 +253,17 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     ]);
     expect(result.records).toHaveLength(2);
     for (const record of result.records) {
+      expect(
+        Object.keys(record.variables).filter((name) =>
+          name.startsWith('ECCLIUM_'),
+        ),
+      ).toEqual([
+        'ECCLIUM_CHURCHTOOLS_TOKEN_FILE',
+        'ECCLIUM_CHURCHTOOLS_URL',
+        'ECCLIUM_READ_ONLY',
+        'ECCLIUM_SEARCH_TOOLS',
+        'ECCLIUM_STATE_DIR',
+      ]);
       expect(record.variables['ECCLIUM_SEARCH_TOOLS']).toBe('true');
       expect(record.calls).toEqual([
         'ct_whoami',
@@ -275,6 +294,11 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
       'smokeKennkategorieBearbeitbar',
     ],
     [
+      'with a category the account may delete',
+      [{ ...identification, permissions: { canEdit: false, canDelete: true } }],
+      'smokeKennkategorieBearbeitbar',
+    ],
+    [
       'with an answer of another form',
       { unexpected: true },
       'smokeWaechterAntwortUnerwartet',
@@ -290,6 +314,19 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
       expectClean(result);
     },
   );
+
+  it('ends with 78 when ChurchTools refuses the token, and with 69 without the network, starting no server', async () => {
+    const refused = await run({ env: search, guardAnswer: 'refused' });
+    expect(refused.code).toBe(smokeExitCodes.configuration);
+    expect(refused.stderr).toContain(hints.smokeTokenAbgewiesen);
+    expect(refused.records).toEqual([]);
+    const offline = await run({ env: search, guardAnswer: 'network' });
+    expect(offline.code).toBe(smokeExitCodes.unavailable);
+    expect(offline.stderr).toContain(hints.smokeNetz);
+    expect(offline.records).toEqual([]);
+    expectClean(refused);
+    expectClean(offline);
+  });
 
   it('refuses a switch that does not fit the host, before any request', async () => {
     const result = await run({
@@ -328,6 +365,17 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
       'smokeTokenVariable',
     ],
     ['NODE_OPTIONS', { NODE_OPTIONS: guardPreload }, 'smokeUmgebungUnsicher'],
+    ['a proxy for fetch', { NODE_USE_ENV_PROXY: '1' }, 'smokeUmgebungUnsicher'],
+    [
+      'other certificates',
+      { SSL_CERT_FILE: '/etc/ssl/cert.pem' },
+      'smokeUmgebungUnsicher',
+    ],
+    [
+      'a relative token file',
+      { ECCLIUM_CHURCHTOOLS_TOKEN_FILE: 'token' },
+      'smokeTokenDateiRelativ',
+    ],
     [
       'the placeholder address',
       { ECCLIUM_CHURCHTOOLS_URL: 'https://example.church.tools' },
@@ -392,6 +440,8 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     ['leak-log', 'protokoll'],
     ['foreign-stdout', 'stdout'],
     ['token-stderr', 'token'],
+    ['text-stderr', 'stderr'],
+    ['text-mismatch', 'whoami'],
     ['exit-1', 'ende'],
   ] as const)(
     'fails when the server breaks it: %s',
@@ -404,6 +454,24 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
       expectClean(result);
     },
   );
+
+  it.each(['masked-letter', 'masked-star', 'masked-literal', 'lone-surrogate'])(
+    'passes with every form the server gives an account: %s',
+    async (scenario) => {
+      const result = await run({ scenario });
+      expect(result.code).toBe(smokeExitCodes.ok);
+      expect(stateDirsLeft()).toEqual([]);
+      expectClean(result);
+    },
+  );
+
+  it('raises no false alarm for a term that is a fixed word of the log', async () => {
+    const result = await run({
+      env: { ...search, ECCLIUM_SMOKE_QUERY: 'interactive' },
+    });
+    expect(result.code).toBe(smokeExitCodes.ok);
+    expect(report(result)['fehler']).toEqual([]);
+  });
 
   it('passes with a finding when the account holds a security level or finds nobody', async () => {
     const level = await run({ scenario: 'security-level' });
