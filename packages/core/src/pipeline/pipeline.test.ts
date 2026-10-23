@@ -1125,6 +1125,8 @@ describe('the outermost catch', () => {
         record: () => {
           throw new Error('audit');
         },
+        hasFile: false,
+        ready: () => false,
         failures: () => 0,
       },
       transport: double.transport,

@@ -42,6 +42,7 @@ export {
   variablePrefix,
   variables,
 } from './config/index.js';
+export { type AuditFileCode, auditFileCodes } from './audit/index.js';
 export {
   createStdioIdentity,
   createStdioTenantResolver,
