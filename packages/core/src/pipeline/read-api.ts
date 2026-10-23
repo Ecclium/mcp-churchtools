@@ -14,6 +14,7 @@ import {
   type PersonHit,
   type ReadApi,
   type SearchHits,
+  type Sensitivity,
   type TenantContext,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
@@ -32,10 +33,12 @@ export interface ReadAccess {
  *
  * @param client - The raw client of the instance.
  * @param ctx - The context of the call. Its signal aborts every request.
+ * @param sensitivity - The sensitivity of the calling tool. Only `special`
+ *   may search persons and groups; any other gets `policy_denied`.
  * @returns The access, frozen and without prototype.
  * @example
  * ```ts
- * const access = createReadAccess(client, ctx);
+ * const access = createReadAccess(client, ctx, entry.meta.sensitivity);
  * try { await tool.execute({ ctx, input, read: access.read }); }
  * finally { access.revoke(); }
  * ```
@@ -43,19 +46,30 @@ export interface ReadAccess {
 export function createReadAccess(
   client: ChurchToolsClient,
   ctx: TenantContext,
+  sensitivity: Sensitivity,
 ): ReadAccess {
   let revoked = false;
   const guard = <T>(run: () => Promise<T>): Promise<T> =>
     revoked ? Promise.reject(new EccliumError('internal')) : run();
+  // Persons and groups reveal religious affiliation. Only a tool of the
+  // sensitivity special may search them: only its result waits for its
+  // line in the audit file, and only it never runs unattended (ADR 0028,
+  // ADR 0060). A tool that declares less could otherwise pass on names
+  // without either.
+  const special = <T>(run: () => Promise<T>): Promise<T> => {
+    if (revoked || sensitivity === 'special') return guard(run);
+    ctx.log.warn('read_search_refused', { code: 'policy_denied' });
+    return Promise.reject(new EccliumError('policy_denied'));
+  };
   const read: ReadApi = Object.freeze({
     __proto__: null,
     whoami: (): Promise<Me> => guard(() => client.whoami(ctx)),
     permissions: (): Promise<Permissions> =>
       guard(() => client.permissions(ctx)),
     searchPersons: (query: string): Promise<SearchHits<PersonHit>> =>
-      guard(() => client.searchPersons(ctx, query)),
+      special(() => client.searchPersons(ctx, query)),
     searchGroups: (query: string): Promise<SearchHits<GroupHit>> =>
-      guard(() => client.searchGroups(ctx, query)),
+      special(() => client.searchGroups(ctx, query)),
   });
   return Object.freeze({
     __proto__: null,

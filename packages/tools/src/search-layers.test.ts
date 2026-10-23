@@ -158,6 +158,7 @@ describe('the three layers together', () => {
     expect(outcome.ok && outcome.data.groups).toHaveLength(50);
     expect(outcome.ok && outcome.data.more).toBe(true);
     assertNoCanary(outcome, answer.canaries, 'result');
+    expect(lines.length).toBeGreaterThan(0);
     assertNoCanary(lines, answer.canaries, 'log');
     expect(drafts).toHaveLength(1);
     assertNoCanary(drafts, answer.canaries, 'audit');
@@ -239,5 +240,39 @@ describe('the layer of the pipeline', () => {
       'notice',
     ]);
     assertNoCanary([outcome, lines, drafts], leak.all, 'result, log, audit');
+  });
+});
+
+// A tool that declares less than the sensitivity special may not search:
+// its result would neither wait for its audit line nor be barred from
+// running unattended (ADR 0028, ADR 0060).
+describe('the read access of a tool below special', () => {
+  it('refuses the search with policy_denied before any request', async () => {
+    const plugin: Plugin = {
+      name: '@ecclium/test-search-layers',
+      version: '0.0.0',
+      register(host): undefined {
+        host.addTool({
+          ...personsSearchTool,
+          meta: {
+            ...personsSearchTool.meta,
+            sensitivity: 'personal',
+            unattended: 'policy',
+          },
+        });
+        return undefined;
+      },
+    };
+    const { double, lines, pipeline } = setup(
+      createToolCatalog({ core: plugin, plugins: [], readOnly: true }),
+    );
+    const outcome = await pipeline.call(
+      'ct_persons_search',
+      { query: 'Person' },
+      request(),
+    );
+    expect(!outcome.ok && outcome.error.code).toBe('policy_denied');
+    expect(double.calls()).toEqual([]);
+    expect(lines.join('\n')).toContain('read_search_refused');
   });
 });
