@@ -711,6 +711,20 @@ const cases: readonly Case[] = [
   },
   {
     rule: 'plugins-only-plugin-api',
+    name: 'a search tool for persons imports core',
+    files: {
+      'packages/tools/src/persons/forbidden.ts': `import '${nameOf('core')}';\nexport {};\n`,
+    },
+  },
+  {
+    rule: 'plugins-only-plugin-api',
+    name: 'a search tool for groups imports core',
+    files: {
+      'packages/tools/src/groups/forbidden.ts': `import '${nameOf('core')}';\nexport {};\n`,
+    },
+  },
+  {
+    rule: 'plugins-only-plugin-api',
     name: 'the plugin of the core imports core',
     files: {
       'packages/tools/src/core-plugin.ts': `import '${nameOf('core')}';\nexport {};\n`,

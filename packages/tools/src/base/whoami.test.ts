@@ -15,7 +15,7 @@ import {
 } from '@ecclium/mcp-churchtools-testkit';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { corePlugin } from '../core-plugin.js';
+import { createCorePlugin } from '../core-plugin.js';
 import { maxListedRights } from './whoami.js';
 
 // ct_whoami runs through the pipeline of the core on the double of
@@ -89,7 +89,7 @@ const setup = () => {
   const clock = Object.freeze({ now: Object.freeze(() => 0) });
   const pipeline = createToolPipeline({
     catalog: createToolCatalog({
-      core: corePlugin,
+      core: createCorePlugin({ searchTools: false }),
       plugins: [],
       readOnly: true,
     }),
