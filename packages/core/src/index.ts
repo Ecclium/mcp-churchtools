@@ -19,6 +19,7 @@ export {
   loadConfig,
   maxReportedProblems,
   proxyVariableName,
+  requestsPerMinuteRange,
   type SettingKey,
   type SettingReport,
   type ShownValue,

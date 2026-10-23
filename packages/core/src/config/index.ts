@@ -43,6 +43,7 @@ export {
 export {
   defaultStdioSubject,
   proxyVariableName,
+  requestsPerMinuteRange,
   tlsVariableName,
   tokenVariableName,
   unsupportedVariableNames,
