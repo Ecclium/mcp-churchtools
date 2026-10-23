@@ -1,6 +1,6 @@
 # ADR 0057: Lesender ChurchTools-Client
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 23.10.2026
 - Datum: 17.10.2026
 - Fällt vor: Phase 1
 

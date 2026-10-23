@@ -133,6 +133,58 @@ export const hints = {
     'Abbruch: Die Rechte des Kontos passen nicht. Erlaubt sind genau: das Wiki und die Kennkategorie sehen, dazu die Leserechte für Personen und Gruppen aus dem README. Richten Sie die Rechte so ein, wie im README beschrieben. Es wurden keine Personendaten gelesen.',
   spezifikationUngueltig:
     'Abbruch: Die Instanz liefert unter dem erwarteten Pfad kein OpenAPI-Dokument.',
+  smokeAufruf:
+    'Abbruch: Der Smoke-Test nimmt keine Argumente. Er liest alles aus der Umgebung, siehe docs/betrieb/stdio.md.',
+  smokeWindows:
+    'Abbruch: Unter Windows gibt es über stdio keine Audit-Datei. Der Smoke-Test läuft dort nicht.',
+  smokeUmgebungUnsicher:
+    'Abbruch: Eine Variable ist gesetzt, die Node.js Code, Zertifikate oder einen Proxy unterschiebt (NODE_OPTIONS, NODE_DEBUG, NODE_PATH, NODE_EXTRA_CA_CERTS, NODE_USE_SYSTEM_CA, SSL_CERT_FILE, SSL_CERT_DIR, NODE_USE_ENV_PROXY oder NODE_TLS_REJECT_UNAUTHORIZED=0). Starten Sie den Smoke-Test mit env -i, wie in docs/betrieb/stdio.md beschrieben.',
+  smokeAdresseFehlt: 'Abbruch: ECCLIUM_CHURCHTOOLS_URL fehlt.',
+  smokeAdresseUngueltig:
+    'Abbruch: ECCLIUM_CHURCHTOOLS_URL muss eine https-Adresse ohne Benutzer, Pfad, Query, Fragment und Schrägstrich am Ende sein.',
+  smokePlatzhalter:
+    'Abbruch: ECCLIUM_CHURCHTOOLS_URL ist noch der Platzhalter aus der Doku. Tragen Sie die Adresse Ihrer Instanz ein.',
+  smokeTokenVariable:
+    'Abbruch: ECCLIUM_CHURCHTOOLS_TOKEN ist gesetzt. Der Smoke-Test nimmt das Token nur aus der Datei in ECCLIUM_CHURCHTOOLS_TOKEN_FILE. Lassen Sie die Variable im Aufruf weg.',
+  smokeTokenDateiFehlt: 'Abbruch: ECCLIUM_CHURCHTOOLS_TOKEN_FILE fehlt.',
+  smokeTokenDateiRelativ:
+    'Abbruch: ECCLIUM_CHURCHTOOLS_TOKEN_FILE muss ein absoluter Pfad sein, ohne ~ und ohne Variable.',
+  smokeTokenDateiNichtGefunden:
+    'Abbruch: Die Token-Datei wurde nicht gefunden. Prüfen Sie den Pfad in ECCLIUM_CHURCHTOOLS_TOKEN_FILE.',
+  smokeTokenDateiUnsicher:
+    'Abbruch: Die Token-Datei muss eine reguläre Datei des aufrufenden Benutzers sein, ohne Rechte für andere, höchstens 4 KiB gross und ausserhalb eines Git-Arbeitsbaums.',
+  smokeTokenUngueltig:
+    'Abbruch: Die Token-Datei muss genau eine Zeile aus druckbaren ASCII-Zeichen ohne Leerzeichen enthalten.',
+  smokeSuchbegriffOhneSchalter:
+    'Abbruch: ECCLIUM_SMOKE_QUERY ist gesetzt, ECCLIUM_SMOKE_ALLOW_SEARCH fehlt. Die Suchtools ruft der Smoke-Test nur mit dem Schalter auf.',
+  smokeSuchbegriffFehlt:
+    'Abbruch: Mit ECCLIUM_SMOKE_ALLOW_SEARCH braucht der Smoke-Test einen Suchbegriff in ECCLIUM_SMOKE_QUERY.',
+  smokeSuchbegriffUngueltig:
+    'Abbruch: ECCLIUM_SMOKE_QUERY braucht 1 bis 100 Zeichen ohne Leerzeichen am Rand und ohne Steuerzeichen.',
+  smokeSchalterFehlt:
+    'Abbruch: ECCLIUM_SMOKE_ALLOW_SEARCH fehlt. Die Suchtools wurden nicht aufgerufen.',
+  smokeSchalterFalsch:
+    'Abbruch: ECCLIUM_SMOKE_ALLOW_SEARCH passt nicht zum Host. Tippen Sie den ersten Teil des Hosts von Hand, nicht aus der Variablen der Adresse. Die Suchtools wurden nicht aufgerufen.',
+  smokeWaechterAntwortUnerwartet:
+    'Abbruch: Eine Antwort, die der Wächter des Smoke-Tests prüft, hat nicht die dokumentierte Form. Die Instanz gilt deshalb als produktiv. Die Suchtools wurden nicht aufgerufen.',
+  smokeKennkategorieFehlt:
+    'Abbruch: Das Konto sieht keine Kategorie «testinstanz-kennung». Die Instanz gilt deshalb als produktiv. Die Suchtools wurden nicht aufgerufen.',
+  smokeKennkategorieMehrfach:
+    'Abbruch: Das Konto sieht mehr als eine Kategorie «testinstanz-kennung». Die Suchtools wurden nicht aufgerufen.',
+  smokeKennkategorieBearbeitbar:
+    'Abbruch: Das Konto darf die Kennkategorie bearbeiten oder löschen. Es darf sie nur sehen. Die Suchtools wurden nicht aufgerufen.',
+  smokeTokenAbgewiesen:
+    'Abbruch: ChurchTools weist das Token des Dienstkontos ab. Prüfen Sie die Token-Datei, etwa nach einem Erneuern des Tokens. Die Suchtools wurden nicht aufgerufen.',
+  smokeBuildFehlt:
+    'Abbruch: Der gebaute Server fehlt (packages/cli/dist/bin.js). Bauen Sie zuerst mit pnpm build, wie in docs/betrieb/stdio.md beschrieben.',
+  smokeZustandsordner:
+    'Abbruch: Der Smoke-Test konnte im temporären Ordner keinen eigenen Zustandsordner anlegen.',
+  smokeNetz:
+    'Abbruch: Die Instanz ist für den Wächter nicht erreichbar. Code siehe oben. Die Suchtools wurden nicht aufgerufen.',
+  smokeIntern:
+    'Abbruch: Unerwarteter Fehler im Smoke-Test. Es wurde nichts aus den Antworten ausgegeben.',
+  smokeZurueckgehalten:
+    'Ausgabe zurückgehalten: An den genannten Stellen stünden womöglich Daten aus der Instanz. Nichts davon wurde ausgegeben.',
   netz: 'Abbruch: Die Instanz ist nicht erreichbar. Code siehe oben.',
   antwort:
     'Abbruch: Die Instanz hat eine Antwort geliefert, die die Probe nicht verarbeiten kann. Code siehe oben.',

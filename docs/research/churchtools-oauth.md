@@ -118,7 +118,13 @@ Von den geprüften Wegen beendete also nur das Löschen der Anwendung den Zugang
 - Er gab genau das bestehende Login-Token der Person zurück, erzeugte kein neues, und das bisherige galt weiter.
 - Ein falsches Passwort und ein unbekannter Benutzername ergaben dieselbe Antwort 400 mit gleichem Inhalt.
 
-Ob das Konto bestimmte Rechte braucht, ist nicht geprüft: Die Testperson hatte das Recht `login to external system`. Eine Befristung des Tokens nennt die Dokumentation nicht, gemessen ist sie nicht. Ein erneuertes Token macht das alte ungültig (`docs/research/churchtools-api.md`, F23).
+Am 23.10.2026 wiederholt, mit dem Dienstkonto des Servers auf der Testinstanz, das das Recht `login to external system` nicht hat. Ein Skript, das nicht committet ist, sandte je genau eine Anfrage und gab nur Status, Schlüssel der Antwort und einen Vergleich mit dem Token aus der Token-Datei aus, keinen Wert:
+
+- Ohne Zwei-Faktor-Anmeldung antwortete der Endpunkt mit 200, in `data` mit `personId` und `token`, und das Token war genau das aus der Token-Datei. Ein Recht `login to external system` braucht das Konto dafür also nicht.
+- Nachdem der Maintainer die Zwei-Faktor-Anmeldung für das Konto eingeschaltet hatte, antwortete der Endpunkt mit 400 in der Form der übrigen Fehler (`message`, `translatedMessage`, `messageKey`, `args`, `errors`), ohne das Token.
+- Das Login-Token galt danach weiter: `ct_whoami` lief mit ihm und zeigte dieselben Rechte.
+
+Wer das Passwort eines Kontos mit Zwei-Faktor-Anmeldung kennt, erhält über diesen Endpunkt also kein Token, geprüft an einem Konto. Ob andere Wege das zweite Merkmal umgehen, ist nicht geprüft. Eine Befristung des Tokens nennt die Dokumentation nicht, gemessen ist sie nicht. Ein erneuertes Token macht das alte ungültig (`docs/research/churchtools-api.md`, F23).
 
 **O13, offen.** Der Spike setzte keinen Header `Origin` und hat die Freigabe anderer Domains nicht geprüft. Verwandt: Schreibende Anfragen mit Login-Token, ohne Sitzung und ohne Cookie, brauchten kein CSRF-Token (`docs/research/churchtools-api.md`, F12). Das beantwortet die Frage nicht, weil auch die Proben keinen Header `Origin` setzten.
 

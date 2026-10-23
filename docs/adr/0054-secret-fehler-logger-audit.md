@@ -1,6 +1,6 @@
 # ADR 0054: Secret, Fehler mit stabilem Code, Logger und Audit als JSON Lines
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 23.10.2026
 - Datum: 14.10.2026
 - Fällt vor: Phase 1
 

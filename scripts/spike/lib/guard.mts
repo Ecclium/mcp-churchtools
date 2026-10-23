@@ -212,9 +212,11 @@ export class Guard {
       this.#blockedNumbers.add(text.replace(/^-/, ''));
     }
     if (text.length >= 3) {
+      // encodeURIComponent throws on a lone surrogate, which an answer may
+      // hold; the well-formed copy only replaces it.
       for (const form of [
         text.toLowerCase(),
-        encodeURIComponent(text).toLowerCase(),
+        encodeURIComponent(text.toWellFormed()).toLowerCase(),
       ]) {
         this.#blockedText.add(form);
         if (strict) {
