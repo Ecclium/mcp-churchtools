@@ -693,6 +693,42 @@ describe('searchPersons and searchGroups', () => {
     ]);
   });
 
+  // The limits fit 51 entries at the highest security level, and no more:
+  // an answer above 1 MiB or with more than 100'000 elements is refused.
+  it('refuses a search answer above 1 MiB and one above 100000 elements', async () => {
+    const { double, client, ctx } = setup();
+    const padded = persons(51).map((entry) => ({
+      ...entry,
+      note: 'a'.repeat(21_000),
+    }));
+    expect(list(padded).length).toBeGreaterThan(1024 * 1024);
+    double
+      .intercept({ path: at('/api/persons'), method: 'GET' })
+      .reply(200, list(padded), json);
+    expect(await codeOf(client.searchPersons(ctx(), 'Person'))).toBe(
+      'upstream',
+    );
+    const crowded = [
+      { ...persons(1)[0], ids: Array.from({ length: 100_000 }, () => 1) },
+    ];
+    expect(list(crowded).length).toBeLessThan(1024 * 1024);
+    double
+      .intercept({ path: at('/api/persons'), method: 'GET' })
+      .reply(200, list(crowded), json);
+    expect(await codeOf(client.searchPersons(ctx(), 'Person'))).toBe(
+      'upstream',
+    );
+    const below = [
+      { ...persons(1)[0], ids: Array.from({ length: 99_000 }, () => 1) },
+    ];
+    double
+      .intercept({ path: at('/api/persons'), method: 'GET' })
+      .reply(200, list(below), json);
+    expect((await client.searchPersons(ctx(), 'Person')).hits).toEqual(
+      persons(1),
+    );
+  });
+
   // The layer of the client (ADR 0060): an answer at the highest security
   // levels, 51 entries with every field, gives only ID and names, and none
   // of the other fields reaches the result or the log.

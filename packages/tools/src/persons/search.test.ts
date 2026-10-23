@@ -245,6 +245,25 @@ describe('the layer of the tool', () => {
     assertNoCanary(result, leak.all, 'result of the tool');
   });
 
+  // The tool checks the term itself, not only the client behind it.
+  it('refuses a term with a control character without reading', async () => {
+    let reads = 0;
+    const read = {
+      searchPersons: () => {
+        reads += 1;
+        return Promise.resolve({ hits: [], more: false });
+      },
+    } as unknown as ReadApi;
+    await expect(
+      personsSearchTool.execute({
+        ctx: {} as TenantContext,
+        input: { query: 'Person\u001bA' },
+        read,
+      }),
+    ).rejects.toMatchObject({ code: 'validation' });
+    expect(reads).toBe(0);
+  });
+
   it('declares exactly ID and names in its output, each with its class', () => {
     const catalog = createToolCatalog({
       core: createCorePlugin({ searchTools: true }),

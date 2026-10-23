@@ -12,6 +12,7 @@ import type {
 } from '@ecclium/mcp-churchtools-plugin-api';
 import {
   assertNoCanary,
+  assertPlanted,
   createChurchToolsDouble,
   doubleOrigin,
   makeCanaries,
@@ -180,10 +181,14 @@ describe('ct_groups_search', () => {
   });
 
   it('keeps the search term and the names out of log and audit', async () => {
-    const { lines, drafts, answer, call } = setup();
+    const { double, lines, drafts, answer, call } = setup();
     const term = makeCanary('name');
     answer([{ id: 4, name: canary.name.value }]);
     const outcome = await call({ query: term.value });
+    // The term reached ChurchTools and the name the result, so the checks
+    // below prove something.
+    assertPlanted(double.calls(), [term], 'request');
+    expect(lines.length).toBeGreaterThan(0);
     expect(outcome.ok && outcome.data.groups).toEqual([
       { id: 4, name: enveloped(canary.name.value) },
     ]);
@@ -218,6 +223,25 @@ describe('the layer of the tool', () => {
       notice: null,
     });
     assertNoCanary(result, leak.all, 'result of the tool');
+  });
+
+  // The tool checks the term itself, not only the client behind it.
+  it('refuses a term with a control character without reading', async () => {
+    let reads = 0;
+    const read = {
+      searchGroups: () => {
+        reads += 1;
+        return Promise.resolve({ hits: [], more: false });
+      },
+    } as unknown as ReadApi;
+    await expect(
+      groupsSearchTool.execute({
+        ctx: {} as TenantContext,
+        input: { query: 'Gruppe\u0007A' },
+        read,
+      }),
+    ).rejects.toMatchObject({ code: 'validation' });
+    expect(reads).toBe(0);
   });
 
   it('declares exactly ID and name in its output, each with its class', () => {
