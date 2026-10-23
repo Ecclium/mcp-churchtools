@@ -32,7 +32,7 @@ Geben Sie dem Konto keine Sicherheitsstufe, weder «Personendaten sehen - bis zu
 
 ## Login-Token
 
-Das Login-Token holen Sie als das Konto selbst: Melden Sie sich als Dienstkonto an, wählen Sie über das Profilbild oben rechts «Mein Profil» und dort im Abschnitt «Login-Token» den Knopf «Login-Token anzeigen». Danach erscheint dort auch der Knopf, mit dem Sie das Token erneuern.
+Das Login-Token holen Sie als das Konto selbst: Melden Sie sich als Dienstkonto an, wählen Sie über das Profilbild oben rechts «Mein Profil» und dort im Abschnitt «Login-Token» den Knopf «Login-Token anzeigen». Danach erscheint dort auch der Knopf «Login-Token erneuern».
 
 Legen Sie das Token in eine Datei, die nur Ihr Benutzer lesen kann, wie unter [Token-Datei](stdio.md#token-datei) beschrieben. Wer das Token kennt, handelt als dieses Konto, bis es in ChurchTools erneuert ist. Geben Sie es nie auf der Kommandozeile ein und nie in eine Konfiguration, die andere lesen.
 
