@@ -16,6 +16,7 @@ import {
 import { parseChurchToolsOrigin, Secret } from '../http/index.js';
 import type { LogLevel } from '../logger/index.js';
 import type { ConfigProblemCode, ConfigWarningCode } from './codes.js';
+import { checkStateDir, type StateDirFileSystem } from './state-dir.js';
 import { readTokenFile, type TokenFileSystem } from './token-file.js';
 import {
   debugVariableName,
@@ -54,6 +55,12 @@ export interface EccliumConfig {
   /** `strict` is refused until the full redaction exists. */
   readonly redaction: 'off' | 'standard';
   readonly searchTools: boolean;
+  /**
+   * The checked folder of state, or undefined when the variable is not
+   * set. With it, the start over stdio writes the audit file into its
+   * folder `audit` (ADR 0028).
+   */
+  readonly stateDir: string | undefined;
   readonly stdioSubject: string;
   readonly logLevel: LogLevel;
 }
@@ -66,6 +73,7 @@ export type SettingKey =
   | 'readOnly'
   | 'redaction'
   | 'searchTools'
+  | 'stateDir'
   | 'stdioSubject'
   | 'logLevel';
 
@@ -74,14 +82,16 @@ export type ValueOrigin = 'environment' | 'file' | 'default';
 
 /**
  * What the report may show of a value: an entry of the table, or a value
- * that passed its check, such as the subject or the host of the address.
- * Never a refused value, and never anything of the token.
+ * that passed its check, such as the subject, the host of the address or
+ * the folder of state. Never a refused value, and never anything of the
+ * token, not even the path of its file.
  */
 export type ShownValue =
   | { readonly kind: 'boolean'; readonly value: boolean }
   | { readonly kind: 'choice'; readonly value: string }
   | { readonly kind: 'integer'; readonly value: number }
   | { readonly kind: 'origin'; readonly host: string; readonly port: string }
+  | { readonly kind: 'path'; readonly value: string }
   | { readonly kind: 'hidden' }
   | { readonly kind: 'none' };
 
@@ -90,7 +100,12 @@ export interface SettingReport {
   readonly key: SettingKey;
   /** The variable that set the value, or would set it. */
   readonly variable: VariableName;
-  readonly origin: ValueOrigin | 'missing' | 'invalid';
+  /**
+   * Where the value comes from. `unset` is a setting without a default
+   * that may stay unset, such as the folder of state; `missing` is one the
+   * configuration needs.
+   */
+  readonly origin: ValueOrigin | 'unset' | 'missing' | 'invalid';
   readonly shown: ShownValue;
 }
 
@@ -110,7 +125,8 @@ export interface ConfigProblem {
 /**
  * What the loader found, deeply frozen. It never holds the token, the path
  * of the token file or a value it refused. It does hold the checked host,
- * port and subject, which the command line masks unless asked to show them.
+ * port, folder of state and subject, which the command line masks unless
+ * asked to show them.
  */
 export interface ConfigReport {
   readonly transport: Transport;
@@ -146,6 +162,8 @@ export interface ConfigSources {
   readonly execArgv?: readonly string[];
   /** The file functions for the token file, only for tests. */
   readonly tokenFiles?: TokenFileSystem;
+  /** The file functions for the folder of state, only for tests. */
+  readonly stateDirFiles?: StateDirFileSystem;
 }
 
 /** The most problems a report lists. */
@@ -329,7 +347,7 @@ const shownHidden: ShownValue = record({ kind: 'hidden' });
  *
  * @param sources - The environment, the transport, the options Node.js
  *   was started with and, for tests, the file functions for the token
- *   file.
+ *   file and the folder of state.
  * @returns The configuration with its report when nothing is wrong, else
  *   the report alone.
  * @throws {TypeError} When the sources or the environment are no plain
@@ -352,8 +370,12 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   const transport = ownData(sources, 'transport');
   const execArgv = ownData(sources, 'execArgv');
   const tokenFiles = ownData(sources, 'tokenFiles');
+  const stateDirFiles = ownData(sources, 'stateDirFiles');
   if (!isRecord(environment)) throw new TypeError(invalidSources);
   if (tokenFiles !== undefined && !isRecord(tokenFiles)) {
+    throw new TypeError(invalidSources);
+  }
+  if (stateDirFiles !== undefined && !isRecord(stateDirFiles)) {
     throw new TypeError(invalidSources);
   }
   const startOptions = execArgv === undefined ? [] : optionList(execArgv);
@@ -647,6 +669,38 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   if (searchTools?.value === 'true') warnings.add('search_tools_enabled');
   show('searchTools', 'ECCLIUM_SEARCH_TOOLS', searchTools, 'boolean');
 
+  // The folder of state may stay unset: then there is no audit file. A set
+  // one is only looked at, never created, and the start checks its folder
+  // audit and the file again before it writes (ADR 0028).
+  const stateDirName = 'ECCLIUM_STATE_DIR';
+  const stateDirRead = read(row(stateDirName));
+  let stateDir: string | undefined;
+  let stateDirValid = true;
+  if (stateDirRead.state === 'unset') {
+    setting('stateDir', stateDirName, 'unset', shownNone);
+  } else if (stateDirRead.state === 'invalid') {
+    stateDirValid = false;
+    setting('stateDir', stateDirName, 'invalid', shownNone);
+  } else {
+    const checked = checkStateDir(
+      stateDirRead.value,
+      stateDirFiles as StateDirFileSystem | undefined,
+    );
+    if (checked.ok) {
+      stateDir = stateDirRead.value;
+      setting(
+        'stateDir',
+        stateDirName,
+        'environment',
+        record({ kind: 'path', value: stateDir }),
+      );
+    } else {
+      report(checked.code, stateDirName);
+      stateDirValid = false;
+      setting('stateDir', stateDirName, 'invalid', shownNone);
+    }
+  }
+
   // A wider trust store stays allowed for an instance with a certificate
   // of its own authority, with a warning on every start (ADR 0056).
   if (trustStoreExtended) warnings.add('trust_store_extended');
@@ -703,6 +757,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     readOnly === undefined ||
     redaction === undefined ||
     searchTools === undefined ||
+    !stateDirValid ||
     subject === undefined ||
     logLevel === undefined
   ) {
@@ -719,6 +774,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       readOnly: readOnly.value === 'true',
       redaction: redaction.value as 'off' | 'standard',
       searchTools: searchTools.value === 'true',
+      stateDir,
       stdioSubject: subject.value,
       logLevel: logLevel.value as LogLevel,
     }),

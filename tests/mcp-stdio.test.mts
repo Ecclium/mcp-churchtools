@@ -1,5 +1,12 @@
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -96,16 +103,19 @@ afterAll(() => {
 });
 
 const start = (
-  scenario: 'serve' | 'stray-line' | 'connect',
+  scenario: 'serve' | 'stray-line' | 'connect' | 'audit-file',
+  env: Readonly<Record<string, string>> = {},
 ): FixtureSession => {
   const token = makeCanary('token').value;
   const session = startSession(
     ['--conditions=@ecclium/source', `--import=${hooks}`, fixture, scenario],
     {
-      // Only these variables: the network guard and the token. The shell
-      // that runs the tests may hold variables of the project.
+      // Only these variables: the network guard, the token and those of a
+      // scenario. The shell that runs the tests may hold variables of the
+      // project.
       NODE_OPTIONS: guardPreload,
       STDIO_FIXTURE_TOKEN: token,
+      ...env,
     },
   );
   children.push(session.child);
@@ -308,6 +318,99 @@ describe.each(eras)('the stdio server in the $name era', { timeout }, (era) => {
     expect(run.finished.stderr).not.toContain(run.session.token);
   });
 });
+
+// A tool with sensitivity special at a real audit file and the real fd 2
+// (ADR 0028): its first call deletes the file and locks the folder audit,
+// so its line cannot reach a file, and its result stays back. The second
+// call finds no file the gate could use and does not run. A locked folder
+// locks nothing for root, so the case does not run as root.
+describe.skipIf(process.getuid?.() === 0)(
+  'a tool with sensitivity special at a real audit file',
+  { timeout },
+  () => {
+    const data = makeCanary('name');
+    let stateDir = '';
+    let first: Json = {};
+    let second: Json = {};
+    let finished: Finished;
+
+    beforeAll(async () => {
+      stateDir = mkdtempSync(join(tmpdir(), 'ecclium-stdio-audit-'));
+      const session = start('audit-file', {
+        STDIO_FIXTURE_STATE_DIR: stateDir,
+        STDIO_FIXTURE_DATA: data.value,
+      });
+      await modern.open(session);
+      session.send({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: modern.params({ name: 'ct_test_special', arguments: {} }),
+      });
+      first = await session.response(2);
+      session.send({
+        jsonrpc: '2.0',
+        id: 3,
+        method: 'tools/call',
+        params: modern.params({ name: 'ct_test_special', arguments: {} }),
+      });
+      second = await session.response(3);
+      finished = await session.finish();
+    }, timeout);
+
+    afterAll(() => {
+      if (stateDir === '') return;
+      chmodSync(join(stateDir, 'audit'), 0o700);
+      rmSync(stateDir, { recursive: true, force: true });
+    });
+
+    it('holds the result back and never writes it to stdout', () => {
+      expect(at(first, 'result', 'isError')).toBe(true);
+      expect(at(first, 'result', 'content', 0, 'text')).toBe(
+        'The call could not be recorded in the audit file, so its result is held back. Ask the operator to check the audit file.',
+      );
+      expect(finished.stdout).not.toContain(data.value);
+      expect(protocolViolations(finished.stdout)).toEqual([]);
+    });
+
+    it('says denied in the copy on stderr and logs audit_withheld with the same ID', () => {
+      const lines = jsonLines(finished.stderr);
+      const audit = lines.filter((line) => line['type'] === 'tool_call');
+      expect(audit[0]).toMatchObject({
+        tool: 'ct_test_special',
+        outcome: 'denied',
+        errorCode: 'policy_denied',
+      });
+      const withheld = lines.filter(
+        (line) => line['event'] === 'audit_withheld',
+      );
+      expect(withheld).toHaveLength(1);
+      expect(withheld[0]).toMatchObject({
+        level: 'warn',
+        code: 'policy_denied',
+        eventId: audit[0]?.['eventId'],
+      });
+      expect(finished.stderr).not.toContain(data.value);
+    });
+
+    it('lets the next call not run, since the gate finds no file', () => {
+      expect(at(second, 'result', 'content', 0, 'text')).toBe(
+        'The audit file of the server cannot record this call now, so the tool did not run. Ask the operator to check the audit file.',
+      );
+      const audit = jsonLines(finished.stderr).filter(
+        (line) => line['type'] === 'tool_call',
+      );
+      expect(audit[1]).toMatchObject({
+        outcome: 'denied',
+        errorCode: 'policy_denied',
+      });
+    });
+
+    it('leaves the deleted file gone and no new one in the locked folder', () => {
+      expect(readdirSync(join(stateDir, 'audit'))).toEqual([]);
+    });
+  },
+);
 
 describe('the checks of the stdio test', { timeout }, () => {
   it('hand the network guard to the child', () => {

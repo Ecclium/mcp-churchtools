@@ -13,14 +13,20 @@
 // first argument switches what the process does besides serving: «serve»
 // nothing, «stray-line» writes a line of its own to stdout, «connect»
 // tries a connection to a documentation address, which the network guard
-// must refuse.
+// must refuse. «audit-file» opens the audit file in the folder of state
+// STDIO_FIXTURE_STATE_DIR and adds the tool ct_test_special of testkit,
+// which returns STDIO_FIXTURE_DATA; its first call deletes the audit file
+// and locks the folder audit before it returns (ADR 0028).
 //
 // The double answers whoami three times, in this order: with an account,
 // with the status 503 and, for a call the test cancels, not before a
 // minute has passed. An abort clears that wait.
+import { chmodSync, readdirSync, rmSync } from 'node:fs';
 import net from 'node:net';
+import { join } from 'node:path';
 import process from 'node:process';
 
+import { openAuditFile } from '../../../packages/core/src/audit/file-writer.ts';
 import { createAuditSink } from '../../../packages/core/src/audit/index.ts';
 import {
   createStdioIdentity,
@@ -39,6 +45,7 @@ import {
   doubleOrigin,
 } from '../../../packages/testkit/src/http-double/index.ts';
 import { examplePlugin } from '../../../packages/testkit/src/plugins/example/index.ts';
+import { createSpecialPlugin } from '../../../packages/testkit/src/plugins/special/index.ts';
 
 const [scenario = 'serve'] = process.argv.slice(2);
 
@@ -80,14 +87,44 @@ double.intercept(whoami).reply(200, account, json);
 double.intercept(whoami).reply(503, '{}', json);
 double.intercept(whoami).reply(200, account, json).delay(60_000);
 
+const stateDir = process.env['STDIO_FIXTURE_STATE_DIR'] ?? '';
+const auditFolder = join(stateDir, 'audit');
+let broken = false;
+const opened =
+  scenario === 'audit-file'
+    ? openAuditFile({ stateDir, clock, pid: process.pid })
+    : undefined;
+if (opened !== undefined && !opened.ok) throw new Error(opened.code);
+const file = opened?.writer;
+
 const catalog = createToolCatalog({
   core: examplePlugin,
-  plugins: [],
+  plugins:
+    scenario === 'audit-file'
+      ? [
+          createSpecialPlugin({
+            text: process.env['STDIO_FIXTURE_DATA'] ?? '',
+            during: () => {
+              if (broken) return;
+              broken = true;
+              for (const name of readdirSync(auditFolder)) {
+                rmSync(join(auditFolder, name));
+              }
+              chmodSync(auditFolder, 0o500);
+            },
+          }),
+        ]
+      : [],
   readOnly: config.readOnly,
 });
 const pipeline = createToolPipeline({
   catalog,
-  audit: createAuditSink({ writer, clock, isKnownTool: catalog.has }),
+  audit: createAuditSink({
+    writer,
+    clock,
+    isKnownTool: catalog.has,
+    ...(file === undefined ? {} : { file }),
+  }),
   transport: double.transport,
   origin: config.churchtoolsOrigin,
   requestsPerMinute: config.churchtoolsRequestsPerMinute,

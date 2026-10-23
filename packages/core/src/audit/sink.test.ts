@@ -2,13 +2,15 @@ import { runInNewContext } from 'node:vm';
 
 import type { AuditEventV1 } from '@ecclium/mcp-churchtools-plugin-api';
 import { assertNoCanary, makeCanaries } from '@ecclium/mcp-churchtools-testkit';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import type { LineWriter } from '../logger/index.js';
 import {
   type AuditDraft,
   auditEventV1Schema,
+  auditFieldSchemas,
+  type AuditFileTarget,
   auditLimits,
   type AuditSinkOptions,
   createAuditSink,
@@ -183,7 +185,7 @@ describe('a valid event', () => {
     });
     // eslint-disable-next-line @typescript-eslint/unbound-method -- record is a closure and works detached
     const record: (draft: AuditDraft) => unknown = sink.record;
-    expect(record(base)).toBeUndefined();
+    expect(record(base)).toBe(true);
     expect(audit()).toHaveLength(1);
     sink.record(base);
     expect(clockCalls).toBe(2);
@@ -636,6 +638,19 @@ describe('the provider', () => {
     expect(lines.join('\n')).not.toContain(value);
   });
 
+  it.each([
+    ['a string', 'example-ai'],
+    ['null', null],
+    ['a proxy', new Proxy({ ...provider }, {})],
+  ])('is left out and reported when it is %s', (_name, value) => {
+    const { sink, audit, logs } = make();
+    expect(
+      sink.record({ ...base, provider: value } as unknown as AuditDraft),
+    ).toBe(false);
+    expect(event(audit())).not.toHaveProperty('provider');
+    expect(events(logs())).toEqual(['audit_invalid_provider']);
+  });
+
   it('is written with its known keys only', () => {
     const canary = makeCanaries().token;
     const { sink, audit, logs } = make();
@@ -1034,6 +1049,9 @@ describe('createAuditSink', () => {
       { writer, isKnownTool },
       { writer, clock },
       { writer, clock, isKnownTool, newId: 'x' },
+      { writer, clock, isKnownTool, file: { write: () => true } },
+      { writer, clock, isKnownTool, file: { ready: () => true } },
+      { writer, clock, isKnownTool, file: null },
     ]) {
       expect(() => createAuditSink(options as never)).toThrow(
         new TypeError(
@@ -1049,7 +1067,258 @@ describe('createAuditSink', () => {
   });
 });
 
+describe('with an audit file', () => {
+  interface Target {
+    readonly lines: string[];
+    readonly order: string[];
+    readonly file: AuditFileTarget;
+    readonly writer: LineWriter;
+  }
+
+  /** A file and a writer that record their lines and their order. */
+  const targets = (
+    fileWrite: (line: string) => boolean = () => true,
+    writerWrite: (line: string) => boolean = () => true,
+    ready: () => boolean = () => true,
+  ): Target & { lines: string[]; copies: string[] } => {
+    const lines: string[] = [];
+    const copies: string[] = [];
+    const order: string[] = [];
+    return {
+      lines,
+      copies,
+      order,
+      file: {
+        write: (line) => {
+          order.push('file');
+          lines.push(line);
+          return fileWrite(line);
+        },
+        ready,
+      },
+      writer: {
+        write: (line) => {
+          order.push('stderr');
+          copies.push(line);
+          return writerWrite(line);
+        },
+      },
+    };
+  };
+
+  const sinkOver = (target: Target, extra: Partial<AuditSinkOptions> = {}) =>
+    createAuditSink({
+      writer: target.writer,
+      file: target.file,
+      clock: { now: () => now },
+      isKnownTool: (name) => name === 'ct_group_search',
+      newId: () => firstId,
+      ...extra,
+    });
+
+  const parsed = (line: string | undefined): Record<string, unknown> =>
+    JSON.parse(line ?? '') as Record<string, unknown>;
+
+  it('writes the line into the file first, then the copy, and counts it', () => {
+    const target = targets();
+    const sink = sinkOver(target);
+    expect(sink.record(base)).toBe(true);
+    expect(target.order).toEqual(['file', 'stderr']);
+    expect(target.lines).toEqual([baseLine]);
+    expect(target.copies).toEqual([baseLine]);
+    expect(sink.failures()).toBe(0);
+    expect(sink.hasFile).toBe(true);
+  });
+
+  it('counts a line the file did not take, and still writes the copy', () => {
+    const target = targets(() => false);
+    const sink = sinkOver(target);
+    expect(sink.record(base)).toBe(false);
+    expect(target.copies).toEqual([baseLine]);
+    expect(sink.failures()).toBe(1);
+  });
+
+  it.each([
+    [
+      'throws',
+      (): boolean => {
+        throw new Error('file');
+      },
+    ],
+    ['answers with no boolean', () => 1 as unknown as boolean],
+  ])('counts a line as lost when the file %s', (_name, write) => {
+    const sink = sinkOver(targets(write));
+    expect(sink.record(base)).toBe(false);
+    expect(sink.failures()).toBe(1);
+  });
+
+  it('lets a lost copy change nothing when the file took the line', () => {
+    const target = targets(
+      () => true,
+      () => false,
+    );
+    const sink = sinkOver(target);
+    expect(sink.record(base)).toBe(true);
+    expect(sink.failures()).toBe(0);
+    const throwing = targets(
+      () => true,
+      () => {
+        throw new Error('stderr');
+      },
+    );
+    expect(sinkOver(throwing).record(base)).toBe(true);
+  });
+
+  it('copies a required line the file did not take as held back', () => {
+    const target = targets(() => false);
+    const sink = sinkOver(target);
+    expect(sink.record(base, firstId, { required: true })).toBe(false);
+    expect(parsed(target.lines[0])).toMatchObject({ outcome: 'ok' });
+    const copy = target.copies[0] ?? '';
+    expect(parsed(copy)).toMatchObject({
+      outcome: 'denied',
+      errorCode: 'policy_denied',
+      durationMs: 12,
+    });
+    // The error code stands before the duration, as in any denied line.
+    expect(copy.indexOf('"errorCode"')).toBeLessThan(
+      copy.indexOf('"durationMs"'),
+    );
+    expect(auditEventV1Schema.safeParse(parsed(copy)).success).toBe(true);
+  });
+
+  it('writes a required line it had to change as held back, in file and copy', () => {
+    const target = targets();
+    const sink = sinkOver(target);
+    expect(
+      sink.record({ ...base, tenantId: 'Demo Tenant' }, firstId, {
+        required: true,
+      }),
+    ).toBe(false);
+    for (const line of [target.lines[0], target.copies[0]]) {
+      expect(parsed(line)).toMatchObject({
+        outcome: 'denied',
+        errorCode: 'policy_denied',
+        tenantId: 'invalid',
+      });
+    }
+    expect(sink.failures()).toBe(0);
+  });
+
+  it('holds back a required line when the clock fails', () => {
+    const target = targets();
+    const sink = sinkOver(target, {
+      clock: {
+        now: () => {
+          throw new Error('clock');
+        },
+      },
+    });
+    expect(sink.record(base, firstId, { required: true })).toBe(false);
+    expect(parsed(target.lines[0])).toMatchObject({
+      outcome: 'denied',
+      errorCode: 'policy_denied',
+      ts: '1970-01-01T00:00:00.000Z',
+    });
+  });
+
+  it('keeps ok in a line that is not required, also when it reports', () => {
+    const target = targets(() => false);
+    const sink = sinkOver(target);
+    expect(sink.record({ ...base, tenantId: 'Demo Tenant' })).toBe(false);
+    expect(parsed(target.lines[0])).toMatchObject({ outcome: 'ok' });
+    expect(parsed(target.copies[0])).toMatchObject({ outcome: 'ok' });
+  });
+
+  it('never changes a required line with another outcome', () => {
+    const target = targets(() => false);
+    const sink = sinkOver(target);
+    sink.record({ ...base, outcome: 'error', errorCode: 'upstream' }, firstId, {
+      required: true,
+    });
+    expect(parsed(target.copies[0])).toMatchObject({
+      outcome: 'error',
+      errorCode: 'upstream',
+    });
+  });
+
+  it.each([
+    [true, true],
+    [false, false],
+    [1 as unknown as boolean, false],
+  ])('passes on ready of the file: %s gives %s', (answer, expected) => {
+    expect(sinkOver(targets(undefined, undefined, () => answer)).ready()).toBe(
+      expected,
+    );
+  });
+
+  it('is not ready when ready of the file throws', () => {
+    const sink = sinkOver(
+      targets(undefined, undefined, () => {
+        throw new Error('ready');
+      }),
+    );
+    expect(sink.ready()).toBe(false);
+  });
+});
+
+describe('without an audit file', () => {
+  it('has no file, is never ready and returns whether the writer took the line', () => {
+    const { sink } = make();
+    expect(sink.hasFile).toBe(false);
+    expect(sink.ready()).toBe(false);
+    expect(sink.record(base)).toBe(true);
+    const lost = make({ writer: { write: () => false } });
+    expect(lost.sink.record(base)).toBe(false);
+  });
+
+  it('writes a required line it had to change as held back', () => {
+    const { sink, audit } = make();
+    expect(
+      sink.record({ ...base, tenantId: 'Demo Tenant' }, firstId, {
+        required: true,
+      }),
+    ).toBe(false);
+    expect(event(audit())).toMatchObject({
+      outcome: 'denied',
+      errorCode: 'policy_denied',
+    });
+  });
+
+  it('writes a required line the writer did not take unchanged', () => {
+    const lines: string[] = [];
+    const { sink } = make({
+      writer: {
+        write: (line) => {
+          lines.push(line);
+          return false;
+        },
+      },
+    });
+    expect(sink.record(base, firstId, { required: true })).toBe(false);
+    expect(lines).toEqual([baseLine]);
+  });
+});
+
 describe('zod inside the sink', () => {
+  // zod answers yes or no for a primitive and does not throw; should it
+  // ever throw, the value counts as invalid and the record goes on.
+  it('counts a value as invalid when zod throws while it checks it', () => {
+    const spy = vi
+      .spyOn(auditFieldSchemas.mode, 'safeParse')
+      .mockImplementation(() => {
+        throw new Error('zod');
+      });
+    try {
+      const { sink, audit, logs } = make();
+      expect(sink.record(base)).toBe(false);
+      expect(event(audit())).toMatchObject({ mode: 'unattended' });
+      expect(events(logs())).toEqual(['audit_invalid_mode']);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('is never asked for an error, so no error map sees a value', () => {
     const canary = makeCanaries().token;
     let calls = 0;

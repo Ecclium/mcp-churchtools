@@ -109,6 +109,8 @@ const urlLength =
   'Eine Adresse hat mit https, Host und Port höchstens 268 Zeichen.';
 const tokenFile = quote('ECCLIUM_CHURCHTOOLS_TOKEN_FILE');
 const tokenVariable = quote('ECCLIUM_CHURCHTOOLS_TOKEN');
+const stateDir = quote('ECCLIUM_STATE_DIR');
+const auditDir = quote('audit');
 const example = 'https://example.church.tools';
 
 // Where an option of TLS was found: in NODE_OPTIONS, which the loader then
@@ -436,6 +438,12 @@ const problems: Readonly<
           'Über HTTP kommt das Subjekt aus der Anmeldung jeder Anfrage.',
           'Entfernen Sie die Variable für den Betrieb über HTTP.',
         );
+      case 'ECCLIUM_STATE_DIR':
+        return message(
+          `${quote(raw)} gilt vorerst nur im Betrieb über stdio.`,
+          'Für den Betrieb über HTTP folgt die Audit-Datei mit einer späteren Version.',
+          'Entfernen Sie die Variable für den Betrieb über HTTP.',
+        );
       default:
         return message(
           `${name ?? 'Diese Einstellung'} ist nur im Betrieb über stdio erlaubt.`,
@@ -455,6 +463,96 @@ const problems: Readonly<
       `Das Subjekt ‹invalid› in ${name} ist reserviert.`,
       'Das Audit verwendet es als Platzhalter für einen fehlenden Akteur.',
       'Wählen Sie eine andere neutrale Bezeichnung, etwa ‹local-stdio›.',
+    ),
+  state_dir_relative: (name = stateDir) =>
+    message(
+      `Der Pfad in ${name} ist nicht absolut.`,
+      'Der KI-Assistent startet Ecclium aus einem unbekannten Ordner, und eine Tilde wird nicht ersetzt.',
+      'Geben Sie den vollständigen Pfad an, der mit / beginnt.',
+    ),
+  state_dir_not_normalized: (name = stateDir) =>
+    message(
+      `Der Pfad in ${name} ist nicht in seiner eindeutigen Form geschrieben.`,
+      'Ecclium normalisiert nichts, damit es genau den Ordner prüft, den Sie angeben. Mit einem Schrägstrich am Ende folgte die Prüfung sogar einem Link.',
+      'Schreiben Sie den Pfad ohne Schrägstrich am Ende, ohne doppelte Schrägstriche und ohne ‹.› oder ‹..›.',
+    ),
+  state_dir_too_long: (name = stateDir) =>
+    message(
+      `Der Pfad in ${name} ist zu lang.`,
+      `In UTF-8 hat er mehr als 960 Bytes, und der Pfad einer Audit-Datei darin überschritte die Grenze von 1'024 Bytes für Pfade unter macOS. Zeichen ausserhalb von ASCII wie Umlaute zählen mehrfach.`,
+      'Wählen Sie einen kürzeren Pfad.',
+    ),
+  state_dir_platform: (name = stateDir) =>
+    message(
+      `Der Ordner in ${name} lässt sich auf diesem System nicht sicher prüfen.`,
+      'Es fehlt die Prüfung des Eigentümers oder das Öffnen ohne Links, etwa unter Windows. Dort gibt es im Betrieb über stdio keine Audit-Datei und keine Suchtools.',
+      'Entfernen Sie die Variable auf diesem System.',
+    ),
+  state_dir_missing: (name = stateDir) =>
+    message(
+      `Den Ordner in ${name} gibt es nicht.`,
+      'Ecclium legt ihn nicht selbst an, damit er nur mit den Rechten entsteht, die Sie wählen.',
+      'Legen Sie den Ordner mit den Rechten 700 an, etwa mit «mkdir -m 700» und dem Pfad, oder prüfen Sie den Pfad.',
+    ),
+  state_dir_symlink: (name = stateDir) =>
+    message(
+      `Der Pfad in ${name} endet in einem symbolischen Link.`,
+      'Ein Link könnte auf einen fremden Ordner zeigen, deshalb folgt Ecclium ihm nicht.',
+      'Geben Sie den Pfad des Ordners selbst an.',
+    ),
+  state_dir_not_directory: (name = stateDir) =>
+    message(
+      `Der Pfad in ${name} zeigt nicht auf einen Ordner.`,
+      `Ecclium legt darin den Ordner ${auditDir} mit der Audit-Datei an.`,
+      'Geben Sie den Pfad eines Ordners an.',
+    ),
+  state_dir_owner: (name = stateDir) =>
+    message(
+      `Der Ordner in ${name} gehört einem anderen Benutzer.`,
+      'Wem der Ordner gehört, der kann die Audit-Datei darin lesen, austauschen oder löschen.',
+      'Legen Sie den Ordner als der Benutzer an, unter dem Ecclium läuft.',
+    ),
+  state_dir_mode: (name = stateDir) =>
+    message(
+      `Der Ordner in ${name} ist auch für die Gruppe oder für andere Benutzer zugänglich.`,
+      'Dann könnten andere Benutzer die Audit-Datei lesen oder Dateien darin anlegen.',
+      'Setzen Sie die Rechte des Ordners mit «chmod 700» auf 700.',
+    ),
+  state_dir_unsafe: (name = stateDir) =>
+    message(
+      `Der Ordner in ${name} liess sich nicht sicher prüfen.`,
+      'Das Dateisystem meldete einen Fehler. Seine Meldung zeigt Ecclium nicht, weil sie den Pfad enthält.',
+      'Prüfen Sie den Pfad und die Rechte der Ordner darüber.',
+    ),
+  audit_dir_symlink: (name = stateDir) =>
+    message(
+      `Der Ordner ${auditDir} im Ordner aus ${name} ist ein symbolischer Link.`,
+      'Ein Link könnte auf einen fremden Ordner zeigen, deshalb folgt Ecclium ihm nicht.',
+      `Entfernen Sie den Link. Ecclium legt den Ordner ${auditDir} beim Start selbst an.`,
+    ),
+  audit_dir_not_directory: (name = stateDir) =>
+    message(
+      `Im Ordner aus ${name} ist ${auditDir} kein Ordner.`,
+      `Ecclium schreibt die Audit-Datei in den Ordner ${auditDir}.`,
+      `Verschieben Sie, was unter dem Namen ${auditDir} steht. Ecclium legt den Ordner beim Start selbst an.`,
+    ),
+  audit_dir_owner: (name = stateDir) =>
+    message(
+      `Der Ordner ${auditDir} im Ordner aus ${name} gehört einem anderen Benutzer.`,
+      'Wem der Ordner gehört, der kann die Audit-Datei darin lesen, austauschen oder löschen.',
+      `Verschieben Sie den Ordner ${auditDir}, damit frühere Audit-Dateien erhalten bleiben. Ecclium legt ihn beim Start als der Benutzer an, unter dem es läuft.`,
+    ),
+  audit_dir_mode: (name = stateDir) =>
+    message(
+      `Der Ordner ${auditDir} im Ordner aus ${name} ist auch für die Gruppe oder für andere Benutzer zugänglich.`,
+      'Dann könnten andere Benutzer die Audit-Datei lesen.',
+      `Setzen Sie die Rechte von ${auditDir} mit «chmod 700» auf 700.`,
+    ),
+  audit_dir_unsafe: (name = stateDir) =>
+    message(
+      `Der Ordner ${auditDir} im Ordner aus ${name} liess sich nicht sicher prüfen.`,
+      'Das Dateisystem meldete einen Fehler. Seine Meldung zeigt Ecclium nicht, weil sie den Pfad enthält.',
+      `Prüfen Sie Eigentümer und Rechte des Ordners aus ${name}.`,
     ),
 });
 

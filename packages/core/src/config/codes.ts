@@ -7,6 +7,7 @@
  * @packageDocumentation
  */
 import { originCodes } from '../http/index.js';
+import { stateDirCodes } from './state-dir.js';
 import { tokenFileCodes } from './token-file.js';
 
 /** Why the configuration cannot start the server, frozen. */
@@ -32,6 +33,7 @@ export const configProblemCodes = Object.freeze([
   'stdio_only',
   'subject_invalid',
   'subject_reserved',
+  ...stateDirCodes,
 ] as const);
 
 /** Why the configuration cannot start the server. */

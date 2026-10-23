@@ -80,7 +80,10 @@ const setup = () => {
   const audit: AuditSink = Object.freeze({
     record: (draft: AuditDraft) => {
       drafts.push(draft);
+      return true;
     },
+    hasFile: false,
+    ready: () => false,
     failures: () => 0,
   });
   const clock = Object.freeze({ now: Object.freeze(() => 0) });

@@ -402,6 +402,8 @@ describe('the catalog of messages', () => {
     expect(Object.keys(await import('./index.js')).sort()).toEqual(
       [
         ...exported,
+        'auditFileMessage',
+        'auditFileText',
         'refusalMessage',
         'refusalText',
         'startMessage',

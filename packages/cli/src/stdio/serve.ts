@@ -7,11 +7,14 @@
  * Here the one stderr writer of the process comes into being, with the
  * logger and the audit sink that write through it, the handlers of the
  * process, the transport to the instance, the pipeline and the server.
- * The start asks ChurchTools nothing: `ct_whoami` checks the token, so the
- * token leaves the process only for a call. When the connection ends, the
- * transport closes, the event `stdio_closed` counts the lines stderr lost,
- * and the process ends with the code of an earlier signal or 0. All state
- * lives in the closure of {@link serve}.
+ * The audit sink writes into the audit file that the first stage opened,
+ * if there is one (ADR 0028). The start asks ChurchTools nothing:
+ * `ct_whoami` checks the token, so the token leaves the process only for a
+ * call. When the connection ends, the transport closes, the event
+ * `audit_file_closed` counts the lines the audit file lost, the file
+ * closes, the event `stdio_closed` counts the lines stderr lost, and the
+ * process ends with the code of an earlier signal or 0. All state lives
+ * in the closure of {@link serve}.
  *
  * @packageDocumentation
  */
@@ -25,6 +28,7 @@ import {
   type ToolCatalog,
 } from '@ecclium/mcp-churchtools-core';
 import {
+  type AuditFileWriter,
   createAuditSink,
   createDefaultTenantLogger,
   createLogger,
@@ -107,6 +111,11 @@ export interface ServeOptions extends ServeReplacements {
   readonly catalog: ToolCatalog;
   /** Whether the start notices left a line without its line break. */
   readonly afterTornLine: boolean;
+  /**
+   * The audit file the first stage opened, which serve closes when the
+   * connection ends or the start fails.
+   */
+  readonly auditFile?: AuditFileWriter;
 }
 
 // Fixed events of the start. They carry no field but a code or a count:
@@ -117,6 +126,7 @@ const rejectionEvent = 'process_unhandled_rejection';
 const startFailedEvent = 'stdio_start_failed';
 const sigtermEvent = 'process_sigterm';
 const sigintEvent = 'process_sigint';
+const auditFileClosedEvent = 'audit_file_closed';
 const closedEvent = 'stdio_closed';
 
 /**
@@ -185,7 +195,7 @@ const codeOf = (value: unknown): ErrorCode => {
  * ```
  */
 export function serve(options: ServeOptions): ExitCode | undefined {
-  const { config, catalog } = options;
+  const { config, catalog, auditFile } = options;
   const host = options.host ?? processHost();
   const writer = createStderrWriter({
     afterTornLine: options.afterTornLine,
@@ -226,7 +236,12 @@ export function serve(options: ServeOptions): ExitCode | undefined {
     });
     const pipeline = createToolPipeline({
       catalog,
-      audit: createAuditSink({ writer, clock, isKnownTool: catalog.has }),
+      audit: createAuditSink({
+        writer,
+        clock,
+        isKnownTool: catalog.has,
+        ...(auditFile === undefined ? {} : { file: auditFile }),
+      }),
       transport,
       origin: config.churchtoolsOrigin,
       requestsPerMinute: config.churchtoolsRequestsPerMinute,
@@ -277,6 +292,14 @@ export function serve(options: ServeOptions): ExitCode | undefined {
         // The process ends either way, and the reason would name nothing
         // an operator could act on.
       }
+      // After the transport: a call that still ends writes its line into
+      // the file. stdio_closed stays the last line.
+      if (auditFile !== undefined) {
+        processLogger.info(auditFileClosedEvent, {
+          count: Math.min(auditFile.counts().failed, maxCount),
+        });
+        auditFile.close();
+      }
       processLogger.info(closedEvent, {
         count: Math.min(writer.stats().failed, maxCount),
       });
@@ -285,6 +308,7 @@ export function serve(options: ServeOptions): ExitCode | undefined {
   } catch (error) {
     logger.error(startFailedEvent, { code: codeOf(error) });
     void transport?.close().catch(() => undefined);
+    auditFile?.close();
     return exitCodes.internal;
   }
 }

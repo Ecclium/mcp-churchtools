@@ -147,6 +147,25 @@ const internalOutcome: ToolOutcome = Object.freeze({
   }),
 });
 
+// A tool with sensitivity special runs only with an audit file that can
+// take its line, and its result goes out only once the line is in the
+// file (ADR 0028). Two fixed sentences, so that the model can tell a call
+// that never ran from one whose result was held back.
+const auditNotReady =
+  'The audit file of the server cannot record this call now, so the tool did not run. Ask the operator to check the audit file.';
+const auditWithheld =
+  'The call could not be recorded in the audit file, so its result is held back. Ask the operator to check the audit file.';
+
+const withheldOutcome: ToolOutcome = Object.freeze({
+  __proto__: null,
+  ok: false,
+  error: Object.freeze({
+    __proto__: null,
+    code: 'policy_denied',
+    message: auditWithheld,
+  }),
+});
+
 const tooLarge =
   'The result is larger than 64 KiB. Narrow the request, for example with a more specific search.';
 
@@ -328,6 +347,11 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     if (meta.tier === 'pro' && features.length === 0) {
       return failed('license_required');
     }
+    // Before the input is checked and ChurchTools is asked, so that a
+    // broken audit file costs no read and no quota (ADR 0028).
+    if (meta.sensitivity === 'special' && !auditReady()) {
+      return failed('policy_denied', auditNotReady);
+    }
 
     // 4. validateInput. The message of zod could repeat the input, so the
     // error carries the fixed sentence only.
@@ -405,6 +429,16 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     };
   };
 
+  // Only true counts, and a sink that throws is not ready.
+  const auditReady = (): boolean => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-boolean-literal-compare -- see above
+      return audit.ready() === true;
+    } catch {
+      return false;
+    }
+  };
+
   // A clock that throws must not cost the audit of the call.
   const now = (): number => {
     try {
@@ -458,11 +492,16 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       outcome = internalOutcome;
       auditOutcome = 'error';
     } finally {
+      // Whether the result needs its line in the audit file, read before
+      // anything here can throw (ADR 0028).
+      const special = run.entry?.meta.sensitivity === 'special';
+      let recorded = false;
+      let durationMs = 0;
       try {
         run.access?.revoke();
         run.detach?.();
         const elapsed = Math.round(now() - start);
-        const durationMs = Number.isFinite(elapsed)
+        durationMs = Number.isFinite(elapsed)
           ? Math.min(Math.max(elapsed, 0), maxDurationMs)
           : 0;
         const errorCode = outcome.ok ? undefined : outcome.error.code;
@@ -470,27 +509,44 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         // code of the resolver's answer. Without one the audit takes its
         // placeholders, which no context accepts as real values, so a call
         // without a tenant is no invalid field for the sink to report.
-        audit.record(
-          {
-            type: 'tool_call',
-            tenantId: run.assignment?.tenantId ?? auditPlaceholders.tenantId,
-            actor: run.assignment?.actor ?? auditPlaceholders.actor,
-            // An invalid value becomes a placeholder in the sink.
-            mode: mode as Mode,
-            tool: run.entry?.name ?? 'ct_unknown',
-            outcome: auditOutcome,
-            ...(errorCode === undefined ? {} : { errorCode }),
-            objectRefs: [],
-            durationMs,
-          },
-          run.eventId,
-        );
+        // Only true counts, also from a sink without types.
+        recorded =
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-boolean-literal-compare -- see above
+          audit.record(
+            {
+              type: 'tool_call',
+              tenantId: run.assignment?.tenantId ?? auditPlaceholders.tenantId,
+              actor: run.assignment?.actor ?? auditPlaceholders.actor,
+              // An invalid value becomes a placeholder in the sink.
+              mode: mode as Mode,
+              tool: run.entry?.name ?? 'ct_unknown',
+              outcome: auditOutcome,
+              ...(errorCode === undefined ? {} : { errorCode }),
+              objectRefs: [],
+              durationMs,
+            },
+            run.eventId,
+            { required: special && outcome.ok },
+          ) === true;
+      } catch {
+        // The audit never decides the outcome of a reading call, except
+        // for the result of a tool with sensitivity special below.
+      }
+      // Whatever threw above: the result of a tool with sensitivity special
+      // goes out only with its line in the audit file (ADR 0028).
+      const withheld = outcome.ok && special && !recorded;
+      if (withheld) outcome = withheldOutcome;
+      try {
+        const errorCode = outcome.ok ? undefined : outcome.error.code;
+        if (withheld) {
+          run.ctx?.log.warn('audit_withheld', { code: 'policy_denied' });
+        }
         run.ctx?.log.info('tool_call', {
           durationMs,
           ...(errorCode === undefined ? {} : { code: errorCode }),
         });
       } catch {
-        // Audit and log never decide the outcome of a reading call.
+        // The log never decides the outcome.
       }
     }
     return outcome;

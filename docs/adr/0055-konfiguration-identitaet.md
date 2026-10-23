@@ -61,7 +61,7 @@ Jede Variable trägt das Präfix `ECCLIUM_`. Werte werden exakt geprüft, die To
 ### Namen
 
 - Der Start bricht bei jeder Variable mit dem Präfix ab, die nicht genau ein bekannter Name ist. Das Präfix wird ohne Rücksicht auf die Schreibweise erkannt.
-- Ein bekannter Name in anderer Schreibweise ergibt eine Meldung mit dem richtigen Namen. Namen späterer Phasen ergeben «wird von dieser Version noch nicht unterstützt»: `ECCLIUM_TOOLSETS`, `ECCLIUM_WRITE_CONFIRMATION`, `ECCLIUM_STATE_DIR`, `ECCLIUM_EGRESS`, `ECCLIUM_EGRESS_ALLOW_LAN` und `ECCLIUM_ALLOWED_HOSTS`.
+- Ein bekannter Name in anderer Schreibweise ergibt eine Meldung mit dem richtigen Namen. Namen späterer Phasen ergeben «wird von dieser Version noch nicht unterstützt»: `ECCLIUM_TOOLSETS`, `ECCLIUM_WRITE_CONFIRMATION`, `ECCLIUM_EGRESS`, `ECCLIUM_EGRESS_ALLOW_LAN` und `ECCLIUM_ALLOWED_HOSTS`. `ECCLIUM_STATE_DIR` stand bis zum 23.10.2026 auch auf dieser Liste und ist seither für die Audit-Datei freigeschaltet (ADR 0028).
 - `ECCLIUM_EGRESS_PROXY` bricht ab, bis ein ausdrücklicher Proxy mit ADR 0035 kommt.
 - Mandant, Modus, Transport und Akteur sind keine Variablen. `ECCLIUM_TENANT`, `ECCLIUM_MODE`, `ECCLIUM_TRANSPORT` und `ECCLIUM_ACTOR` sind deshalb unbekannt und brechen ab.
 - Die eigenen Variablen des Repositorys mit diesem Präfix, etwa die der Proben, haben keine Ausnahme. Server und Proben laufen nicht in derselben Shell, und Tests mit Kindprozessen geben eine ausdrücklich gefilterte Umgebung weiter.
@@ -75,22 +75,23 @@ Jede Variable trägt das Präfix `ECCLIUM_`. Werte werden exakt geprüft, die To
 - Jeder Wert ist genau so zu schreiben, wie die Tabelle ihn nennt. Wahrheitswerte sind genau `true` oder `false`, Aufzählungen exakt.
 - Ein leerer Wert ist ein Fehler, nicht «nicht gesetzt».
 - Jeder Wert hat eine Höchstlänge, die vor jedem Muster geprüft wird. Kein Wert wird gekürzt, umgewandelt oder normalisiert.
-- Keine Meldung und keine Fehlermeldung enthält einen eingegebenen Wert, weil ein Token in der falschen Variable stehen kann. Der Bericht des Laders enthält nie das Token, den Pfad der Token-Datei oder einen abgewiesenen Wert. Er nennt Werte aus der Tabelle und geprüfte Werte, darunter Host und Port der Adresse und das Subjekt. Diese maskiert die Kommandozeile, wie der Abschnitt zu `ecclium config check` festlegt.
+- Keine Meldung und keine Fehlermeldung enthält einen eingegebenen Wert, weil ein Token in der falschen Variable stehen kann. Der Bericht des Laders enthält nie das Token, den Pfad der Token-Datei oder einen abgewiesenen Wert. Er nennt Werte aus der Tabelle und geprüfte Werte, darunter Host und Port der Adresse, den Zustandsordner und das Subjekt. Diese maskiert die Kommandozeile, wie der Abschnitt zu `ecclium config check` festlegt.
 - zod wird nur gefragt, ob ein Wert passt, nie nach seinem Fehler. Das Token und die Adresse prüft eigener Code, weil zod sie umwandeln würde.
 
 ### Tabelle der Variablen (Phase 1)
 
-| Variable                                  | Werte                            | Voreinstellung | Geheimnis  | Nur über stdio       | Beim Start                                                                      |
-| ----------------------------------------- | -------------------------------- | -------------- | ---------- | -------------------- | ------------------------------------------------------------------------------- |
-| `ECCLIUM_CHURCHTOOLS_URL`                 | kanonische Origin mit `https`    | keine          | nein       | nein                 | fehlt oder ungültig: Abbruch                                                    |
-| `ECCLIUM_CHURCHTOOLS_TOKEN_FILE`          | absoluter Pfad                   | keine          | der Inhalt | nein                 | eine Prüfung der Datei scheitert: Abbruch                                       |
-| `ECCLIUM_CHURCHTOOLS_TOKEN`               | Login-Token                      | keine          | ja         | ja                   | sonst Abbruch; mit `_FILE` zusammen Abbruch; über stdio Warnung bei jedem Start |
-| `ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE` | ganze Zahl von 1 bis 500         | `300`          | nein       | nein                 | ungültig: Abbruch, ohne den Wert zu nennen                                      |
-| `ECCLIUM_READ_ONLY`                       | `true`, `false`                  | `true`         | nein       | nein                 | ungültig: Abbruch                                                               |
-| `ECCLIUM_REDACTION`                       | `standard`, `off`, `strict`      | `standard`     | nein       | `off` nur über stdio | `strict` bricht ab, bis die vollständige Maskierung steht; `off` warnt          |
-| `ECCLIUM_SEARCH_TOOLS`                    | `true`, `false`                  | `false`        | nein       | nein                 | `true`: Startmeldung, dass die Suchtools erst mit einer späteren Version kommen |
-| `ECCLIUM_STDIO_SUBJECT`                   | Bezeichnung nach Muster          | `local-stdio`  | nein       | ja                   | ungültig oder `invalid`: Abbruch                                                |
-| `ECCLIUM_LOG_LEVEL`                       | `debug`, `info`, `warn`, `error` | `info`         | nein       | nein                 | ungültig: Abbruch                                                               |
+| Variable                                  | Werte                                                 | Voreinstellung | Geheimnis  | Nur über stdio       | Beim Start                                                                      |
+| ----------------------------------------- | ----------------------------------------------------- | -------------- | ---------- | -------------------- | ------------------------------------------------------------------------------- |
+| `ECCLIUM_CHURCHTOOLS_URL`                 | kanonische Origin mit `https`                         | keine          | nein       | nein                 | fehlt oder ungültig: Abbruch                                                    |
+| `ECCLIUM_CHURCHTOOLS_TOKEN_FILE`          | absoluter Pfad                                        | keine          | der Inhalt | nein                 | eine Prüfung der Datei scheitert: Abbruch                                       |
+| `ECCLIUM_CHURCHTOOLS_TOKEN`               | Login-Token                                           | keine          | ja         | ja                   | sonst Abbruch; mit `_FILE` zusammen Abbruch; über stdio Warnung bei jedem Start |
+| `ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE` | ganze Zahl von 1 bis 500                              | `300`          | nein       | nein                 | ungültig: Abbruch, ohne den Wert zu nennen                                      |
+| `ECCLIUM_READ_ONLY`                       | `true`, `false`                                       | `true`         | nein       | nein                 | ungültig: Abbruch                                                               |
+| `ECCLIUM_REDACTION`                       | `standard`, `off`, `strict`                           | `standard`     | nein       | `off` nur über stdio | `strict` bricht ab, bis die vollständige Maskierung steht; `off` warnt          |
+| `ECCLIUM_SEARCH_TOOLS`                    | `true`, `false`                                       | `false`        | nein       | nein                 | `true`: Startmeldung, dass die Suchtools erst mit einer späteren Version kommen |
+| `ECCLIUM_STATE_DIR`                       | absoluter, normalisierter Pfad, höchstens 960 Zeichen | keine          | nein       | ja                   | eine Prüfung des Ordners scheitert: Abbruch; nicht gesetzt: keine Audit-Datei   |
+| `ECCLIUM_STDIO_SUBJECT`                   | Bezeichnung nach Muster                               | `local-stdio`  | nein       | ja                   | ungültig oder `invalid`: Abbruch                                                |
+| `ECCLIUM_LOG_LEVEL`                       | `debug`, `info`, `warn`, `error`                      | `info`         | nein       | nein                 | ungültig: Abbruch                                                               |
 
 Fest und nicht konfigurierbar sind:
 
@@ -98,7 +99,7 @@ Fest und nicht konfigurierbar sind:
 - der Modus: die Wurzel der Komposition legt ihn fest;
 - die Liste der Funktionen: im freien Kern leer.
 
-Die Variable für die Drosselung kam mit dem ChurchTools-Client dazu (ADR 0057). Jede weitere Variable kommt mit ihrer Phase.
+Die Variable für die Drosselung kam mit dem ChurchTools-Client dazu (ADR 0057), die für den Zustandsordner mit der Audit-Datei (ADR 0028). Jede weitere Variable kommt mit ihrer Phase.
 
 ### Adresse der Instanz
 
@@ -135,6 +136,14 @@ Grenzen:
 - Stehen Datei und Variable zusammen, bricht der Start ab, statt eine Quelle stillschweigend vorzuziehen.
 - Bevor die Kommandozeile etwas anderes tut, kopiert sie die Umgebung für den Lader und entfernt die Variable in jeder Schreibweise aus `process.env`, auch bei einem falschen Aufruf. Kindprozesse und anderer Code im Prozess sehen sie danach nicht mehr. Andere Programme desselben Benutzers sehen weiter den Stand beim Start, unter Linux in `/proc/<pid>/environ`, unter macOS etwa mit `ps eww`.
 
+### Zustandsordner
+
+- `ECCLIUM_STATE_DIR` nennt einen Ordner für Zustand des Servers. Mit ihm schreibt der Start über stdio die Audit-Datei in den Unterordner `audit` (ADR 0028). Ohne die Variable gibt es keine Audit-Datei, und das ist gültig.
+- Der Wert muss ein absoluter Pfad in seiner eindeutigen Form sein: kein Trenner am Ende, kein `.`, kein `..` und kein `//`. Der Lader normalisiert nichts, damit er genau den Ordner prüft, den die Konfiguration nennt. Mit einem Trenner am Ende folgte `lstat` einem Link. Höchstens 960 Zeichen und 960 Bytes in UTF-8, damit der Pfad einer Audit-Datei darin unter der Grenze von 1'024 Bytes für Pfade unter macOS bleibt. Die Zeichen prüft der Lader wie bei jeder Variable, die Bytes die Prüfung des Ordners mit dem Code `state_dir_too_long`.
+- Der Lader prüft mit `lstat`, ohne einem Link an der letzten Stelle zu folgen: ein Ordner, kein Link, dem eigenen Benutzer gehörend, ohne Rechte für Gruppe oder andere. Einen vorhandenen Unterordner `audit` prüft er ebenso, ein fehlender ist in Ordnung. Er legt nichts an und öffnet nichts, damit `ecclium config check` auf der Platte nichts ändert.
+- Fehlen `process.getuid`, `O_NOFOLLOW`, `O_DIRECTORY` oder `O_NOCTTY`, wie unter Windows, bricht der Start mit einem eigenen Code ab, vor jeder Prüfung des Pfads, der dort anders geschrieben wird. Dort gibt es über stdio weder die Audit-Datei noch Tools mit `sensitivity: special`.
+- Jede Prüfung hat ihren eigenen Code, und kein Code und keine Meldung nennt den Pfad. Ordner über dem Zustandsordner gelten als vertrauenswürdig, wie bei der Token-Datei.
+
 ### Identität und Mandant über stdio
 
 - Die Identität über stdio hat die Quelle `stdio` und das Subjekt aus `ECCLIUM_STDIO_SUBJECT`.
@@ -169,7 +178,7 @@ Grenzen:
 - Der Befehl zeigt jede Einstellung mit ihrer Herkunft: Umgebung, Datei oder Voreinstellung.
 - Ein Geheimnis zeigt er nie, weder Wert noch Länge noch Anfang, nur «verborgen» und die Quelle. Bei einer Datei steht dazu, dass Eigentümer und Dateirechte geprüft sind.
 - Den Pfad zur Token-Datei und ungültige Werte zeigt er nie.
-- Host und ein abweichendes Subjekt sind maskiert, mit `--show-values` sichtbar. So passt die Ausgabe ohne Bearbeitung in ein öffentliches Issue.
+- Host, ein abweichendes Subjekt und der Zustandsordner sind maskiert, mit `--show-values` sichtbar. So passt die Ausgabe ohne Bearbeitung in ein öffentliches Issue. Den Zustandsordner zeigt er auch dann nur in druckbarem ASCII, sonst als «gesetzt», weil der Schreiber der Ausgabe andere Zeichen samt der ganzen Zeile verwirft. Ein nicht gesetzter Zustandsordner erscheint als «keine Audit-Datei».
 - Namen unbekannter Variablen nennt er, wenn sie dem Muster `^ECCLIUM_[A-Z0-9_]{1,64}$` folgen, damit sich ein Tippfehler finden lässt.
 - Er fragt ChurchTools nicht an und sagt das.
 - Der Aufruf kennt nur `--show-values` und `-h` oder `--help`. Eine Option, die zweimal vorkommt, weist er ab, weil `parseArgs` sie annähme.
@@ -201,7 +210,7 @@ Grenzen:
 
 - Der Start über stdio ist der Unterbefehl `ecclium stdio` des einen Befehls `ecclium`, damit ein späterer Aufruf über `npx` oder einen Container den Befehl gleich nennt. Er nimmt kein weiteres Argument an, auch `--help` nicht. Jedes weitere Argument weist er mit einem festen Text und dem Code 64 ab, ohne es zu zerlegen oder zu wiederholen. Erwogen waren ein eigener Befehl, der `npx` ohne Angabe des Befehls mehrdeutig machte, und der Start über stdio für `ecclium` ohne Argumente: Wer nur `ecclium` tippt, bekäme dann statt der Hilfe einen wartenden Server.
 - Der Einstieg `packages/cli/src/bin.ts` übernimmt für jeden Befehl zuerst die Umgebung und lädt erst dann mit `import()` und einer festen Zeichenkette entweder den Einstieg des Starts unter `packages/cli/src/stdio/` oder den Befehl der Kommandozeile in `main.ts`. So lädt der Start `main.ts` nie, dessen `node:util` fd 2 nicht blockierend machte, bevor die Startmeldungen hinausgehen (ADR 0054). Zwei Regeln lassen `bin.ts` statisch nur `environment.ts` und mit `import()` nur `main.ts` und den Einstieg des Starts importieren, und ein Test hält seine Importe fest.
-- Der Start läuft in zwei Stufen. Die erste weist Argumente ab, lädt die Konfiguration, baut den Katalog der Tools und schreibt die Startmeldungen, alles bevor Server, SDK und undici laden. Eine ungültige Konfiguration endet mit 78, eine Ablehnung der Registry mit 70, beide nach ihren Startmeldungen und ohne Zeilenschreiber. Erst dann lädt sie die zweite Stufe, die Zeilenschreiber, Logger, Audit, Transport, Pipeline und Server baut.
+- Der Start läuft in zwei Stufen. Die erste weist Argumente ab, lädt die Konfiguration, baut den Katalog der Tools und schreibt die Startmeldungen, alles bevor Server, SDK und undici laden. Eine ungültige Konfiguration endet mit 78, eine Ablehnung der Registry mit 70, beide nach ihren Startmeldungen und ohne Zeilenschreiber. Steht ein Tool mit `sensitivity: special` im Katalog und fehlt der Zustandsordner, endet sie ebenfalls mit 78. Ist der Zustandsordner gesetzt, öffnet sie die Audit-Datei, solange fd 2 noch blockiert, und endet mit 78, wenn das scheitert (ADR 0028). Erst dann lädt sie die zweite Stufe, die Zeilenschreiber, Logger, Audit, Transport, Pipeline und Server baut.
 - Der Start fragt ChurchTools nicht an, wie `ecclium config check`. Ob ChurchTools das Token annimmt, zeigt ein Aufruf von `ct_whoami`. So geht das Token nicht bei jedem Start eines Clients hinaus.
 - Er endet mit den Codes von `ecclium config check`, mit 0, sobald der Client die Verbindung beendet hat, und dazu mit 130 nach `SIGINT` und 143 nach `SIGTERM`, 128 und die Nummer des Signals, wie eine Shell es meldet. Ein zweites Signal beendet ihn sofort.
 
@@ -215,6 +224,7 @@ Grenzen:
 - **Token-Datei:** Ordner über der Datei und Zugriffslisten von macOS prüft der Server nicht. Unter macOS besteht `/dev/fd/0` jede Prüfung, wenn stdin aus einer eigenen Datei mit den Rechten 0600 kommt. Unter Windows gibt es keine Token-Datei.
 - **Namen in der Ausgabe:** Unbekannte Variablennamen erscheinen in `config check` und in den Startmeldungen. Ein Name trägt nie einen Wert, eine erfundene Bezeichnung könnte aber Text tragen.
 - **Host sichtbar:** Mit `--show-values` zeigt `config check` den Host der Instanz.
+- **Zustandsordner sichtbar:** Mit `--show-values` zeigt `config check` den Pfad des Zustandsordners. Er kann den Namen eines Benutzers enthalten.
 - **Host verborgen:** Ohne `--show-values` zeigt `config check` nicht, ob die Konfiguration auf die Testinstanz oder einen produktiven Tenant zeigt (Threat Model, T23).
 - **Tippfehler im Namen der Token-Datei:** Über stdio gilt dann still das Token aus der Umgebung, wie unter «Namen» beschrieben. Nur die Warnung beim Start zeigt es.
 - **Absturz vor dem Fang:** Scheitert der Prozess, bevor die Kommandozeile Fehler fängt, etwa beim Laden eines Moduls, endet er mit dem Code 1 von Node.js und einem Stack auf stderr.
@@ -240,4 +250,5 @@ Grenzen:
 - Start über stdio, seit dem 19.10.2026: der Unterbefehl `ecclium stdio` in `packages/cli/src/bin.ts`, die erste Stufe in `packages/cli/src/stdio/index.ts`, der Katalog aus dem Plugin des Kerns in `catalog.ts` und die zweite Stufe in `serve.ts`, die Texte für den Start und für jeden Grund einer Ablehnung der Registry in `packages/cli/src/messages/start.ts`, die Version in `packages/cli/src/version.ts` und die Codes 130 und 143 in `exit-codes.ts`. Die Regeln `bin-imports-only-environment` und `bin-loads-only-main-or-stdio` von dependency-cruiser stehen in `tests/architecture/dependency-rules.mts`. `tests/stdio-start.test.mts` prüft den echten Prozess mit Kanarienwerten. Die Startmeldungen gehen vor dem Zeilenschreiber hinaus, danach schreibt Ecclium auf stderr nur JSON. Node.js selbst kann weitere Zeilen schreiben (ADR 0054). Die Beispiele für Clients stehen in `docs/betrieb/stdio.md` und `docs/betrieb/beispiele/`, `tests/client-examples.test.mts` gleicht sie ab.
 - Einstellungen von Node.js für TLS, seit dem 19.10.2026: Der Lader liest dafür `NODE_OPTIONS`, `NODE_EXTRA_CA_CERTS`, `NODE_USE_SYSTEM_CA`, `SSL_CERT_FILE` und `SSL_CERT_DIR` und das neue Feld `execArgv` seiner Quellen, das `run()` und `startStdio()` aus `bin.ts` erhalten (ADR 0056).
 - Prüfung des Tokens: Der Start ruft `whoami` nicht auf, das zeigt erst ein Aufruf von `ct_whoami` (siehe «Start über stdio»).
+- Zustandsordner, seit dem 23.10.2026: `ECCLIUM_STATE_DIR` in der Tabelle in `variables.ts`, die Prüfung des Ordners in `packages/core/src/config/state-dir.ts` mit der Naht `stateDirFiles` im Lader und in `ecclium config check`, die Herkunft `unset` und die Art `path` im Bericht, die Zeile «Zustandsordner» in `packages/cli/src/output/report.ts` und die Texte der Codes in `packages/cli/src/messages/config.ts`. Die erste Stufe des Starts öffnet mit dem Ordner die Audit-Datei, bevor die zweite lädt, und endet mit 78, wenn das scheitert oder ein Tool mit `sensitivity: special` ohne den Ordner im Katalog steht (ADR 0028). `tests/stdio-start.test.mts` zeigt das am echten Prozess.
 - Offen: die Registrierung der Suchtools nach `ECCLIUM_SEARCH_TOOLS`. Bis sie kommen, nimmt der Start `true` an und meldet, dass die Suchtools erst mit einer späteren Version kommen.

@@ -48,6 +48,7 @@ const hidden: readonly RegExp[] = [
 ];
 
 const lineWriter = 'packages/core/src/logger/line-writer.ts';
+const auditFileModule = 'packages/core/src/audit/file-writer.ts';
 const transportModule = 'packages/core/src/http/transport.ts';
 const composeModule = 'packages/core/src/http/compose.ts';
 const mockModule = 'packages/core/src/http/compose-mock.ts';
@@ -68,6 +69,12 @@ const hiddenSymbols: readonly {
   {
     file: toPattern(lineWriter),
     names: ['createStderrWriter', 'StderrLineWriter'],
+    allowedIn: [compositionEntry],
+  },
+  {
+    // Whoever holds it could open audit files of their own (ADR 0028).
+    file: toPattern(auditFileModule),
+    names: ['openAuditFile'],
     allowedIn: [compositionEntry],
   },
   {
@@ -201,6 +208,11 @@ function writeTree(files: Readonly<Record<string, string>>): string {
       'export const createStderrWriter = (): StderrLineWriter => ({ write: () => true, stats: () => 0 });',
       '',
     ].join('\n'),
+    [auditFileModule]: [
+      "export const auditFileCodes = ['audit_file_unsafe'] as const;",
+      'export const openAuditFile = (): unknown => undefined;',
+      '',
+    ].join('\n'),
     [transportModule]: [
       'export interface HttpTransport { close(): Promise<void> }',
       'export const createAgent = (): unknown => undefined;',
@@ -311,6 +323,22 @@ const leaks: readonly {
       [coreEntry]: "export * from './composition.js';\n",
       [compositionEntry]:
         "export { createStderrWriter, type StderrLineWriter } from './logger/line-writer.js';\n",
+    },
+  },
+  {
+    name: 'the opener of the audit file through the entry point of core',
+    entry: coreEntry,
+    files: {
+      [coreEntry]: "export { openAuditFile } from './audit/file-writer.js';\n",
+    },
+  },
+  {
+    name: 'the opener of the audit file through the entry point of core from the composition subpath',
+    entry: coreEntry,
+    files: {
+      [coreEntry]: "export * from './composition.js';\n",
+      [compositionEntry]:
+        "export { openAuditFile } from './audit/file-writer.js';\n",
     },
   },
   {
@@ -469,6 +497,18 @@ describe('entry points of the packages', { timeout }, () => {
         "export type { LineWriter } from './logger/line-writer.js';\n",
     });
     expect(exportOrigins(root, coreEntry)).toEqual([lineWriter]);
+    expect(hiddenOrigins(root, coreEntry)).toEqual([]);
+  });
+
+  it('accept the opener of the audit file in the composition subpath and its codes in core', () => {
+    const root = writeTree({
+      [compositionEntry]:
+        "export { openAuditFile } from './audit/file-writer.js';\n",
+      [coreEntry]: "export { auditFileCodes } from './audit/file-writer.js';\n",
+    });
+    expect(exportOrigins(root, compositionEntry)).toEqual([auditFileModule]);
+    expect(hiddenOrigins(root, compositionEntry)).toEqual([]);
+    expect(exportOrigins(root, coreEntry)).toEqual([auditFileModule]);
     expect(hiddenOrigins(root, coreEntry)).toEqual([]);
   });
 

@@ -2,9 +2,10 @@
  * The report of `ecclium config check` in German (ADR 0055). It shows each
  * setting with its origin, the problems and the notices of the start, and
  * never a secret: the token only as «verborgen» with its source, never the
- * path of the token file and never a refused value. The host and a subject
- * other than the default are masked unless the operator asks for them, so
- * that the output fits into a public issue as it is.
+ * path of the token file and never a refused value. The host, a subject
+ * other than the default and the folder of state are masked unless the
+ * operator asks for them, so that the output fits into a public issue as
+ * it is.
  *
  * @packageDocumentation
  */
@@ -23,7 +24,10 @@ import { formatNumber, problemText, warningText } from '../messages/index.js';
 export interface ReportOptions {
   /** Whether the loader found the configuration valid. */
   readonly valid: boolean;
-  /** Shows the host and a subject other than the default. */
+  /**
+   * Shows the host, a subject other than the default and the folder of
+   * state.
+   */
   readonly showValues: boolean;
 }
 
@@ -34,6 +38,7 @@ const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
   readOnly: 'Nur lesen',
   redaction: 'Maskierung',
   searchTools: 'Suchtools',
+  stateDir: 'Zustandsordner',
   stdioSubject: 'Subjekt über stdio',
   logLevel: 'Stufe des Logs',
 });
@@ -53,14 +58,32 @@ const quote = (text: string): string => `‹${text}›`;
 
 const inconsistent = 'The report of the configuration is inconsistent.';
 
+type Hidden = 'host' | 'subject' | 'path';
+
 interface Value {
   readonly text: string;
-  readonly hides?: 'host' | 'subject';
+  readonly hides?: Hidden;
 }
+
+// A path is shown only in printable ASCII. Anything else could be a
+// character the writer refuses, which would drop the whole line silently,
+// or one that changes how a terminal shows the line.
+const isPrintable = (text: string): boolean => {
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    if (code < 0x20 || code > 0x7e) return false;
+  }
+  return text.length > 0;
+};
 
 const valueOf = (setting: SettingReport, showValues: boolean): Value => {
   if (setting.origin === 'missing') return { text: 'fehlt' };
   if (setting.origin === 'invalid') return { text: 'ungültig' };
+  // Only the folder of state may stay unset without a default.
+  if (setting.origin === 'unset') {
+    if (setting.key !== 'stateDir') throw new TypeError(inconsistent);
+    return { text: 'keine Audit-Datei' };
+  }
   const shown = setting.shown;
   switch (shown.kind) {
     case 'boolean':
@@ -81,6 +104,12 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
         ? { text: `https://${shown.host}${port}` }
         : { text: `https://${masked}${port}`, hides: 'host' };
     }
+    case 'path':
+      // The path can hold the name of a user, so it is masked by default.
+      if (!showValues) return { text: masked, hides: 'path' };
+      return isPrintable(shown.value)
+        ? { text: quote(shown.value) }
+        : { text: 'gesetzt' };
     case 'hidden':
       return { text: 'verborgen' };
     case 'none':
@@ -97,6 +126,7 @@ const originOf = (setting: SettingReport): string => {
       return `aus ${variable}`;
     case 'file':
       return `aus der Datei in ${variable}, Eigentümer und Dateirechte geprüft`;
+    case 'unset':
     case 'missing':
       return `${variable} ist nicht gesetzt`;
     case 'invalid':
@@ -104,13 +134,27 @@ const originOf = (setting: SettingReport): string => {
   }
 };
 
-const maskedNote = (host: boolean, subject: boolean): string => {
-  const [what, which] =
-    host && subject
-      ? ['Verborgen sind der Host und das Subjekt', 'beide']
-      : host
-        ? ['Verborgen ist der Host', 'ihn']
-        : ['Verborgen ist das Subjekt', 'es'];
+// What a masked value is called, with the pronoun that stands for it.
+const hiddenNames: Readonly<Record<Hidden, readonly [string, string]>> =
+  Object.freeze({
+    host: ['der Host', 'ihn'],
+    subject: ['das Subjekt', 'es'],
+    path: ['der Zustandsordner', 'ihn'],
+  });
+
+const maskedNote = (hidden: readonly Hidden[]): string => {
+  const names = hidden.map((entry) => hiddenNames[entry][0]);
+  const last = names.pop() ?? '';
+  const what =
+    names.length === 0
+      ? `Verborgen ist ${last}`
+      : `Verborgen sind ${names.join(', ')} und ${last}`;
+  const which =
+    names.length === 0
+      ? hiddenNames[hidden[0] ?? 'host'][1]
+      : names.length === 1
+        ? 'beide'
+        : 'alle';
   return `${what}, damit Sie die Ausgabe ohne Bearbeitung weitergeben können. Mit ‹--show-values› zeigt der Befehl ${which}.`;
 };
 
@@ -146,8 +190,7 @@ export function renderConfigReport(
   const lines = [
     `Prüfung der Konfiguration für den Betrieb ${transports[report.transport]}`,
   ];
-  let hidesHost = false;
-  let hidesSubject = false;
+  const hidden = new Set<Hidden>();
   for (const setting of report.settings) {
     if (
       !Object.hasOwn(labels, setting.key) ||
@@ -156,14 +199,21 @@ export function renderConfigReport(
       throw new TypeError(inconsistent);
     }
     const value = valueOf(setting, options.showValues);
-    if (value.hides === 'host') hidesHost = true;
-    if (value.hides === 'subject') hidesSubject = true;
+    if (value.hides !== undefined) hidden.add(value.hides);
     lines.push(
       `  ${labels[setting.key].padEnd(valueColumn)}${value.text} (${originOf(setting)})`,
     );
   }
-  if (hidesHost || hidesSubject)
-    lines.push(maskedNote(hidesHost, hidesSubject));
+  if (hidden.size > 0) {
+    // In the order of the note, whatever the order of the settings.
+    lines.push(
+      maskedNote(
+        (['host', 'subject', 'path'] as const).filter((entry) =>
+          hidden.has(entry),
+        ),
+      ),
+    );
+  }
 
   const total = report.problems.length + report.omittedProblems;
   if (total > 0) {

@@ -1,4 +1,6 @@
 import {
+  type AuditFileCode,
+  auditFileCodes,
   type RefusalReason,
   refusalReasons,
 } from '@ecclium/mcp-churchtools-core';
@@ -7,6 +9,8 @@ import { describe, expect, it } from 'vitest';
 import { maxNoticeLength } from '../notices/index.js';
 import { isTextLine } from '../send.js';
 import {
+  auditFileMessage,
+  auditFileText,
   type Message,
   refusalMessage,
   refusalText,
@@ -19,7 +23,11 @@ import {
 const textOf = (message: Message): string =>
   `${message.what} ${message.why} ${message.action}`;
 
-const startCodes: readonly StartNoticeCode[] = ['usage', 'internal'];
+const startCodes: readonly StartNoticeCode[] = [
+  'usage',
+  'internal',
+  'audit_file_required',
+];
 
 /** Every message of the module, with a label for the report. */
 const everyMessage: [string, Message][] = [
@@ -28,6 +36,10 @@ const everyMessage: [string, Message][] = [
     `the refusal ${reason}`,
     refusalMessage(reason),
   ]),
+  ...auditFileCodes.map((code): [string, Message] => [
+    `the audit file ${code}`,
+    auditFileMessage(code),
+  ]),
 ];
 
 const everyText: [string, string][] = [
@@ -35,6 +47,10 @@ const everyText: [string, string][] = [
   ...refusalReasons.map((reason): [string, string] => [
     `the refusal ${reason}`,
     refusalText(reason),
+  ]),
+  ...auditFileCodes.map((code): [string, string] => [
+    `the audit file ${code}`,
+    auditFileText(code),
   ]),
 ];
 
@@ -90,6 +106,19 @@ describe('the texts of the start over stdio', () => {
     for (const reason of refusalReasons) {
       expect(refusalText(reason)).toBe(textOf(refusalMessage(reason)));
     }
+    for (const code of auditFileCodes) {
+      expect(auditFileText(code)).toBe(textOf(auditFileMessage(code)));
+    }
+  });
+
+  it('gives every reason of the audit file a text of its own, without a path', () => {
+    const whats = auditFileCodes.map((code) => auditFileMessage(code).what);
+    expect(new Set(whats).size).toBe(auditFileCodes.length);
+    for (const code of auditFileCodes) {
+      expect(auditFileText(code)).toContain('ECCLIUM_STATE_DIR');
+      expect(auditFileText(code)).not.toMatch(/\/[a-z]/);
+    }
+    expect(startText('audit_file_required')).toContain('‹ECCLIUM_STATE_DIR›');
   });
 
   it('gives every reason of the registry a text of its own', () => {
@@ -135,12 +164,17 @@ describe('the texts of the start over stdio', () => {
     expect(() => startText(value as StartNoticeCode)).toThrow(
       new TypeError('The start code is unknown.'),
     );
+    expect(() => auditFileText(value as AuditFileCode)).toThrow(
+      new TypeError('The audit file code is unknown.'),
+    );
   });
 
   // The start notices take only texts of the catalog. A function that made
   // one from any three strings would open them to free text.
   it('exports no function that makes a text from free text', async () => {
     expect(Object.keys(await import('./start.js')).sort()).toEqual([
+      'auditFileMessage',
+      'auditFileText',
       'refusalMessage',
       'refusalText',
       'startMessage',

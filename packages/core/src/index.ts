@@ -22,6 +22,10 @@ export {
   type SettingKey,
   type SettingReport,
   type ShownValue,
+  type StateDirCode,
+  stateDirCodes,
+  type StateDirFileSystem,
+  type StateDirStats,
   tlsVariableName,
   type TokenFileCode,
   tokenFileCodes,
@@ -38,6 +42,7 @@ export {
   variablePrefix,
   variables,
 } from './config/index.js';
+export { type AuditFileCode, auditFileCodes } from './audit/index.js';
 export {
   createStdioIdentity,
   createStdioTenantResolver,

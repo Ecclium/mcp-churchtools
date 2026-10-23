@@ -15,9 +15,12 @@ export {
   confirmationPaths,
   objectDomains,
 } from './schema.js';
+export { type AuditFileCode, auditFileCodes } from './file-writer.js';
 export {
   type AuditDraft,
+  type AuditFileTarget,
   type AuditSink,
   type AuditSinkOptions,
   createAuditSink,
+  type RecordOptions,
 } from './sink.js';

@@ -1,6 +1,8 @@
 /**
  * The audit sink: one audit line per event, written through the line writer
- * of the logger onto the same stream (ADR 0054).
+ * of the logger onto the same stream (ADR 0054). With an audit file, each
+ * line goes into the file first and then as a copy onto that stream, and
+ * the file is where a line counts (ADR 0028).
  *
  * @packageDocumentation
  */
@@ -38,10 +40,42 @@ export type AuditDraft = Omit<
   'v' | 'eventId' | 'ts' | 'seq' | 'prevHash'
 >;
 
+/**
+ * The audit file as the sink sees it: a line writer that also tells
+ * whether it can take a line now (ADR 0028).
+ */
+export interface AuditFileTarget extends LineWriter {
+  /**
+   * Tells whether the file can take a line now.
+   *
+   * @returns Whether the file is ready.
+   */
+  ready(): boolean;
+}
+
+/** Options of `record` of {@link AuditSink}. */
+export interface RecordOptions {
+  /**
+   * Whether the result of the call goes out only when its line is
+   * recorded, as for a tool with `sensitivity: special`. A line with the
+   * outcome `ok` that the sink cannot record as it is then says `denied`
+   * with `policy_denied` instead (ADR 0028).
+   */
+  readonly required?: boolean;
+}
+
 /** Options of {@link createAuditSink}. */
 export interface AuditSinkOptions {
-  /** The line writer of the logger. */
+  /**
+   * The line writer of the logger: for the log lines of the sink and, with
+   * an audit file, for the copy of each audit line.
+   */
   readonly writer: LineWriter;
+  /**
+   * The audit file over stdio, the target that counts when it is given.
+   * Without it, the writer of the logger is the target.
+   */
+  readonly file?: AuditFileTarget;
   /** The time of each event. */
   readonly clock: Clock;
   /**
@@ -56,8 +90,10 @@ export interface AuditSinkOptions {
 /** Records audit events. */
 export interface AuditSink {
   /**
-   * Writes one audit line for the event, synchronously. It never throws:
-   * an invalid field is replaced or left out, and reported in a log line.
+   * Writes one audit line for the event, synchronously, with an audit file
+   * first into the file and then as a copy onto the stream of the logger.
+   * It never throws: an invalid field is replaced or left out, and
+   * reported in a log line.
    *
    * @param draft - The event without `v`, `eventId` and `ts`.
    * @param eventId - The ID the pipeline drew for a tool call and bound to
@@ -65,10 +101,24 @@ export interface AuditSink {
    *   sink checks a given ID like one of its own and also refuses the nil
    *   UUID, the placeholder of a failed ID. When the ID is missing, the
    *   sink draws one with `newId`.
+   * @param options - Whether the result of the call needs its line.
+   * @returns Whether the whole line reached its target, the audit file if
+   *   there is one, and the sink had nothing to report. A lost copy on the
+   *   stream of the logger changes nothing when there is a file.
    */
-  record(draft: AuditDraft, eventId?: string): void;
+  record(draft: AuditDraft, eventId?: string, options?: RecordOptions): boolean;
+  /** Whether the sink writes into an audit file. */
+  readonly hasFile: boolean;
   /**
-   * Returns how many audit lines could not be written whole.
+   * Tells whether the audit file can take a line now. Without a file it is
+   * always false.
+   *
+   * @returns Whether a line could be recorded in the file.
+   */
+  ready(): boolean;
+  /**
+   * Returns how many audit lines could not be written whole into their
+   * target, the audit file if there is one.
    *
    * @returns The count.
    */
@@ -90,6 +140,10 @@ interface Report {
 }
 
 const maxCount = 1_000_000;
+
+// The outcome and code of a line whose call holds back its result.
+const withheldOutcome = 'denied';
+const withheldCode = 'policy_denied';
 
 // Stands for a getter or a setter, which is never called.
 const accessor: unique symbol = Symbol('accessor');
@@ -202,8 +256,9 @@ interface Copied {
 // list is walked.
 const copyList = (value: unknown, limit: number): Copied => {
   if (!isPlainTarget(value) || !Array.isArray(value)) return {};
-  const length = own(value, 'length');
-  if (typeof length !== 'number') return {};
+  // The length of an array is an own data property that is always a
+  // number, and no code can redefine it.
+  const length = own(value, 'length') as number;
   const count = Math.min(length, maxCount);
   if (length > limit) return { count };
   const list: string[] = [];
@@ -224,7 +279,8 @@ const toJson = (value: Json): string => {
   }
   const object = value as Readonly<Record<string, Json>>;
   return `{${Object.keys(object)
-    .map((key) => `${JSON.stringify(key)}:${toJson(object[key] ?? '')}`)
+    // Only own keys of the line, each with a value.
+    .map((key) => `${JSON.stringify(key)}:${toJson(object[key] as Json)}`)
     .join(',')}}`;
 };
 
@@ -428,7 +484,16 @@ function fill(
  * which can hold the value. A line that cannot be written is counted and
  * dropped.
  *
- * @param options - Writer, clock, registry check and ID source.
+ * With an audit file, the line goes into the file first and then as a copy
+ * through the writer of the logger, and only the file decides what
+ * `record` returns. With `required`, a line with the outcome `ok` says
+ * `denied` with `policy_denied` as soon as the sink has something to
+ * report, and the copy says so when the file did not take the line, so
+ * that no line says `ok` for a result the pipeline then holds back
+ * (ADR 0028).
+ *
+ * @param options - Writer, clock, registry check, ID source and the audit
+ *   file.
  * @returns The sink, frozen.
  * @throws {TypeError} If an option is not valid, with a fixed message.
  * @example
@@ -440,18 +505,45 @@ function fill(
  * ```
  */
 export function createAuditSink(options: AuditSinkOptions): AuditSink {
-  const { writer, clock, isKnownTool, newId = randomUUID } = options;
+  const { writer, clock, isKnownTool, newId = randomUUID, file } = options;
   if (
     typeof (writer as Partial<LineWriter> | null)?.write !== 'function' ||
     typeof (clock as Partial<Clock> | null)?.now !== 'function' ||
     typeof isKnownTool !== 'function' ||
-    typeof newId !== 'function'
+    typeof newId !== 'function' ||
+    (file !== undefined &&
+      (typeof (file as Partial<AuditFileTarget> | null)?.write !== 'function' ||
+        typeof (file as Partial<AuditFileTarget> | null)?.ready !== 'function'))
   ) {
     throw new TypeError(
       'The audit sink needs a writer, a clock, a tool check and an ID source.',
     );
   }
   let failures = 0;
+
+  // A write that throws counts as lost, like one that returns false.
+  const send = (target: LineWriter, line: string): boolean => {
+    try {
+      // Only true counts, also when a writer without types answers with
+      // another value.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-boolean-literal-compare -- see above
+      return target.write(line) === true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Turns a line with the outcome ok into one that says its result was held
+  // back, with the error code before the duration, where the schema puts
+  // it.
+  const withhold = (line: Line): void => {
+    // Always there: a required field that fails gets its placeholder.
+    const duration = line['durationMs'] as Json;
+    Reflect.deleteProperty(line, 'durationMs');
+    line['outcome'] = withheldOutcome;
+    line['errorCode'] = withheldCode;
+    line['durationMs'] = duration;
+  };
 
   const knows = (name: string): boolean => {
     try {
@@ -464,7 +556,11 @@ export function createAuditSink(options: AuditSinkOptions): AuditSink {
     }
   };
 
-  const record = (draft: AuditDraft, eventId?: string): void => {
+  const record = (
+    draft: AuditDraft,
+    eventId?: string,
+    recordOptions?: RecordOptions,
+  ): boolean => {
     const reports: Report[] = [];
     const report = (event: string, count?: number): void => {
       reports.push(count === undefined ? { event } : { event, count });
@@ -526,15 +622,25 @@ export function createAuditSink(options: AuditSinkOptions): AuditSink {
       tenantValid = false;
     }
 
-    let written: boolean;
-    try {
-      written = writer.write(toJson(line));
-    } catch {
-      written = false;
+    // A required line that the sink had to change never says ok.
+    const required = recordOptions?.required === true;
+    if (required && reports.length > 0 && line['outcome'] === 'ok') {
+      withhold(line);
     }
-    if (!written) failures += 1;
 
-    if (reports.length === 0) return;
+    let recorded: boolean;
+    if (file === undefined) {
+      recorded = send(writer, toJson(line));
+    } else {
+      recorded = send(file, toJson(line));
+      // The copy tells the client what the file says, or that the result
+      // is held back when the file did not take the line.
+      if (!recorded && required && line['outcome'] === 'ok') withhold(line);
+      send(writer, toJson(line));
+    }
+    if (!recorded) failures += 1;
+
+    if (reports.length === 0) return recorded;
     try {
       const log = createLogger({
         writer,
@@ -552,7 +658,23 @@ export function createAuditSink(options: AuditSinkOptions): AuditSink {
     } catch {
       // Reporting never makes the record fail.
     }
+    return false;
   };
 
-  return Object.freeze({ record, failures: () => failures });
+  const ready = (): boolean => {
+    if (file === undefined) return false;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-boolean-literal-compare -- only true counts, as for the writer
+      return file.ready() === true;
+    } catch {
+      return false;
+    }
+  };
+
+  return Object.freeze({
+    record,
+    hasFile: file !== undefined,
+    ready,
+    failures: () => failures,
+  });
 }

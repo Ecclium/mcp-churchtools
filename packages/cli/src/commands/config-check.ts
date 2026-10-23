@@ -9,6 +9,7 @@ import {
   type ConfigResult,
   type ConfigSources,
   loadConfig,
+  type StateDirFileSystem,
   type TokenFileSystem,
 } from '@ecclium/mcp-churchtools-core';
 
@@ -24,11 +25,16 @@ export interface ConfigCheckOptions {
    * same notices for the options of TLS as the start over stdio.
    */
   readonly execArgv: readonly string[];
-  /** Shows the host and a subject other than the default. */
+  /**
+   * Shows the host, a subject other than the default and the folder of
+   * state.
+   */
   readonly showValues: boolean;
   readonly output: Output;
   /** Replaces the file functions for the token file, for tests. */
   readonly tokenFiles?: TokenFileSystem | undefined;
+  /** Replaces the file functions for the folder of state, for tests. */
+  readonly stateDirFiles?: StateDirFileSystem | undefined;
   /** Replaces the loader, for tests. */
   readonly load?: ((sources: ConfigSources) => ConfigResult) | undefined;
 }
@@ -61,6 +67,7 @@ export function checkConfig(
     transport: 'stdio',
     execArgv: options.execArgv,
     tokenFiles: options.tokenFiles,
+    stateDirFiles: options.stateDirFiles,
   });
   // Rendered whole before the first line goes out, so that an
   // inconsistent report never leaves half a report on stdout.

@@ -30,6 +30,7 @@ export {
 export {
   createStderrWriter,
   defaultMaxAttempts,
+  isWritableLine,
   type LineWriter,
   type LineWriterStats,
   maxLineLength,

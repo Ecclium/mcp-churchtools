@@ -68,7 +68,7 @@ Mit `env -i` sieht die Prüfung nur diese beiden Variablen und keine aus Ihrer S
 
 Ob ChurchTools das Token annimmt, zeigt erst ein Aufruf von `ct_whoami`, denn auch der Start fragt ChurchTools nicht an.
 
-Die Beispiele setzen nur die Adresse und die Token-Datei. Alle übrigen Einstellungen behalten ihre Voreinstellung: nur lesen, Maskierung `standard`, keine Suchtools, Stufe des Logs `info`. Alle Variablen stehen mit Erklärung in [.env.example](../../.env.example).
+Die Beispiele setzen nur die Adresse und die Token-Datei. Alle übrigen Einstellungen behalten ihre Voreinstellung: nur lesen, Maskierung `standard`, keine Suchtools, keine Audit-Datei, Stufe des Logs `info`. Alle Variablen stehen mit Erklärung in [.env.example](../../.env.example). Den Ordner für die Audit-Datei empfehlen wir zusätzlich, siehe «Audit-Datei».
 
 ## Claude Desktop
 
@@ -98,15 +98,15 @@ Im Checkout liegt absichtlich keine Datei `.mcp.json`. Claude Code böte den Ser
 
 stdout gehört dem Protokoll MCP. Alles andere schreibt Ecclium nach stderr, in dieser Reihenfolge:
 
-1. Beim Start Hinweise als deutscher Text, je Hinweis eine Zeile, etwa die Warnung, wenn das Token in der Variable steht. Ist die Konfiguration ungültig, endet der Server nach den Hinweisen mit 78.
+1. Beim Start Hinweise als deutscher Text, je Hinweis eine Zeile, etwa die Warnung, wenn das Token in der Variable steht. Ist die Konfiguration ungültig oder lässt sich die Audit-Datei nicht öffnen, endet der Server nach den Hinweisen mit 78.
 2. Danach schreibt Ecclium nur noch Zeilen in JSON, je Zeile ein Ereignis. Logzeilen tragen das Feld `event`, etwa `http_response` für jede Anfrage an ChurchTools, ab der Stufe aus `ECCLIUM_LOG_LEVEL`. Jeder Aufruf eines Tools ergibt eine Zeile des Audits mit `type` gleich `tool_call`, dem Mandanten `default`, dem Subjekt `stdio:local-stdio` aus `ECCLIUM_STDIO_SUBJECT`, dem Modus `interactive`, dem Namen des Tools, dem Ausgang und bei einem Fehler dessen Code. Die Logzeilen eines Aufrufs, darunter `tool_call`, tragen die `eventId` seiner Zeile im Audit, die Zeilen des Transports wie `http_response` tragen keine.
-3. Beim Ende die Zeile `stdio_closed`, die im Feld `count` nennt, wie viele Zeilen verloren gingen. Kam vor dem Ende ein Signal, steht davor `process_sigterm` oder `process_sigint`. Kommt es erst danach, folgt seine Zeile. Diese Zeilen schreibt Ecclium bei jeder Stufe aus `ECCLIUM_LOG_LEVEL`.
+3. Beim Ende mit Audit-Datei die Zeile `audit_file_closed`, die im Feld `count` nennt, wie viele Zeilen des Audits nicht ganz in die Datei kamen, dann die Zeile `stdio_closed`, die im Feld `count` nennt, wie viele Zeilen auf stderr verloren gingen. Kam vor dem Ende ein Signal, steht davor `process_sigterm` oder `process_sigint`. Kommt es erst danach, folgt seine Zeile. Diese Zeilen schreibt Ecclium bei jeder Stufe aus `ECCLIUM_LOG_LEVEL`.
 
 Node.js selbst kann weitere Zeilen schreiben, etwa eine Warnung, wenn es die Datei aus `NODE_EXTRA_CA_CERTS` nicht laden kann. Überspringen Sie Zeilen, die kein JSON sind.
 
-Weder das Token noch Namen, E-Mail-Adressen oder andere Werte aus den Antworten von ChurchTools stehen in diesen Zeilen. Tests mit erfundenen Werten prüfen das. Wohin die Zeilen gehen, bestimmt der Client. Ecclium schreibt keine eigene Datei.
+Weder das Token noch Namen, E-Mail-Adressen oder andere Werte aus den Antworten von ChurchTools stehen in diesen Zeilen. Tests mit erfundenen Werten prüfen das. Wohin die Zeilen gehen, bestimmt der Client. Ohne `ECCLIUM_STATE_DIR` schreibt Ecclium keine eigene Datei, mit dem Ordner nur die Audit-Datei, siehe «Audit-Datei».
 
-Ecclium wartet nicht auf stderr. Liest der Client stderr nicht oder zu langsam, gehen Zeilen verloren, auch Zeilen des Audits. Ecclium zählt sie und nennt die Zahl beim Ende, doch auch diese letzte Zeile kann verloren gehen. Die Antworten auf stdout erreichen den Client trotzdem.
+Ecclium wartet nicht auf stderr. Liest der Client stderr nicht oder zu langsam, gehen Zeilen verloren, auch Zeilen des Audits. Ecclium zählt sie und nennt die Zahl beim Ende, doch auch diese letzte Zeile kann verloren gehen. Die Antworten auf stdout erreichen den Client trotzdem. Mit der Audit-Datei sind die Zeilen des Audits auf stderr nur Kopien. Jede Zeile geht zuerst in die Datei, und was sie dort nicht aufnimmt, zählt `audit_file_closed`.
 
 Der Server endet mit einem dieser Codes:
 
@@ -115,11 +115,52 @@ Der Server endet mit einem dieser Codes:
 | 0    | Die Verbindung hat geendet: Der Client hat stdin geschlossen, stdout ist abgebrochen, oder die ungelesene Eingabe lag über 1 MiB. |
 | 64   | Nach `stdio` stand ein weiteres Argument.                                                                                         |
 | 70   | Ein interner Fehler, gemeldet mit einer festen Meldung ohne Einzelheiten.                                                         |
-| 78   | Die Konfiguration ist ungültig.                                                                                                   |
+| 78   | Die Konfiguration ist ungültig, oder die Audit-Datei lässt sich nicht öffnen.                                                     |
 | 130  | Der Server hat sich nach dem Signal `SIGINT` beendet, das vor dem Ende der Verbindung kam.                                        |
 | 143  | Der Server hat sich nach dem Signal `SIGTERM` beendet, das vor dem Ende der Verbindung kam.                                       |
 
 Kommt das erste Signal erst nach dem Ende der Verbindung, steht es im Log, und der Code bleibt 0. Ein zweites Signal beendet den Server sofort, mit dem Code dieses zweiten Signals.
+
+## Audit-Datei
+
+Mit `ECCLIUM_STATE_DIR` schreibt Ecclium jede Zeile des Audits zuerst in eine eigene Datei und erst danach als Kopie nach stderr. Das Audit liegt dann bei Ihnen, gleich was der Client mit stderr macht. Ohne die Variable gibt es keine Audit-Datei, und das Audit geht nur nach stderr. Mit den Suchtools für Personen und Gruppen wird der Ordner nötig: Deren Ergebnis gibt Ecclium nur heraus, wenn seine Zeile ganz in der Audit-Datei steht.
+
+Legen Sie einen Ordner auf einer lokalen Platte an, als Ihr Benutzer und ausserhalb des Checkouts. Der Befehl legt jeden fehlenden Ordner auf dem Weg mit den Rechten 700 an:
+
+```sh
+(umask 077 && mkdir -p /pfad/zum/zustandsordner)
+```
+
+Nehmen Sie keinen Ordner auf einem Netzlaufwerk: Antwortet es nicht, hält es bei jedem Schreiben den ganzen Server an. Nehmen Sie auch keinen Ordner, den ein Dienst synchronisiert, unter macOS etwa iCloud Drive mit «Schreibtisch» und «Dokumente», denn er kopiert die Audit-Datei an andere Orte. Dasselbe gilt für Backups: Erfasst eines den Ordner, liegen Kopien der Datei dort.
+
+Setzen Sie die Variable in der Konfiguration des Clients neben die Adresse und die Token-Datei, im Abschnitt `env` des Eintrags `ecclium`:
+
+```json
+"ECCLIUM_STATE_DIR": "/pfad/zum/zustandsordner"
+```
+
+`config check` prüft den Ordner, wenn Sie die Variable dort ebenfalls setzen, und legt nichts an. Der Start bricht mit 78 und einem Hinweis ab, wenn eine dieser Bedingungen nicht erfüllt ist:
+
+- Der Pfad ist absolut und eindeutig geschrieben, ohne `/` am Ende, ohne `//`, `.` und `..`, mit höchstens 960 Zeichen und in UTF-8 höchstens 960 Bytes. Ein Umlaut zählt dabei doppelt.
+- Der Ordner ist ein Ordner und kein symbolischer Link, gehört Ihrem Benutzer, und weder die Gruppe noch andere haben Rechte darauf. Dasselbe gilt für einen Ordner `audit` darin.
+- Ecclium kann darin beim Start den Ordner `audit` mit den Rechten 700 anlegen, falls er fehlt, und eine neue Datei mit den Rechten 600 öffnen.
+
+In der Datei steht:
+
+- Je Start und UTC-Tag eine Datei `audit-JJJJ-MM-TT-hhmmss-<Prozess>-<Nummer>.jsonl` mit dem Datum und der Uhrzeit des Öffnens in UTC. Ecclium öffnet nie eine Datei, die schon da ist.
+- Dieselben Zeilen wie auf stderr: Zeit, Mandant, Subjekt, Modus, Tool, Ausgang, bei einem Fehler sein Code, die Dauer und die ID des Ereignisses. Keine Inhalte aus ChurchTools, keine IDs von Personen oder Gruppen und kein Token.
+- Eine Zeile zählt nur, wenn sie mit einem Zeilenumbruch endet. Eine Zeile, die mit `~` endet, und ein letztes Stück ohne Zeilenumbruch sind Reste einer Zeile, die nicht ganz in die Datei kam. Überspringen Sie solche Zeilen wie Zeilen, die kein JSON sind.
+
+Löscht jemand die Datei, während der Server läuft, legt Ecclium eine neue an, mit höchstens 64 Versuchen je Start. Danach laufen Tools mit Personendaten der besonderen Kategorie erst nach einem Neustart wieder. Lässt sich die Datei nicht beschreiben, etwa weil die Platte voll ist, geht die Zeile verloren, und der Server zählt sie. Das Ergebnis eines Tools mit Personendaten der besonderen Kategorie, etwa der späteren Suchtools, hält er dann zurück.
+
+Grenzen der Audit-Datei:
+
+- Ecclium löscht die Dateien in dieser Version nicht, sie wachsen, eine je Start und Tag. Wie lange Sie sie aufbewahren, entscheiden Sie.
+- Eine geschriebene Zeile übersteht einen Absturz des Servers oder des Clients, aber keinen Stromausfall und keinen Absturz des Betriebssystems.
+- Die Datei schützt nicht gegen Ihren eigenen Benutzer: Wer unter ihm Programme ausführt, kann sie lesen, ändern oder löschen. Ecclium erkennt nur, dass sie gelöscht wurde.
+- Unter Windows lassen sich Eigentümer und Rechte des Ordners nicht prüfen. Dort gibt es keine Audit-Datei, und ein gesetztes `ECCLIUM_STATE_DIR` bricht den Start ab.
+- Ob das Datenschutzrecht Ihrer Gemeinde ein Protokoll der Lesezugriffe verlangt, etwa mindestens ein Jahr lang und getrennt vom System, ist nicht geklärt. Die Audit-Datei liegt auf demselben Rechner wie der Server und damit vermutlich nicht getrennt vom System. Ecclium verspricht keine Konformität mit einem Datenschutzrecht. Was Ecclium sonst ablegt, steht unter [Datenschutz](../privacy.md).
+- Ob ChurchTools die Lesezugriffe über die API selbst je Konto protokolliert, ist nicht geprüft.
 
 ## Grenzen
 
@@ -127,5 +168,5 @@ Kommt das erste Signal erst nach dem Ende der Verbindung, steht es im Log, und d
 - Der Start fragt ChurchTools nicht an. Ein ungültiges oder entzogenes Token zeigt sich erst beim ersten Aufruf von `ct_whoami`.
 - `ct_whoami` verlangt kein Recht in ChurchTools. Geprüft ist das bisher nur mit einem Konto, das zwei Rechte im Wiki hatte, nicht mit einem Konto ganz ohne Rechte.
 - Rechte, die das Konto über eine Gruppe erhält, können fehlen. Ein entzogenes Recht kann noch eine Weile erscheinen, auf einer Testinstanz mit ChurchTools 3.137 einmal mindestens etwa zwanzig Minuten lang (siehe [Befunde zur API von ChurchTools](../research/churchtools-api.md)).
-- Ein Client, der stderr nicht liest, verliert Zeilen des Logs und des Audits, wie oben beschrieben.
+- Ein Client, der stderr nicht liest, verliert Zeilen des Logs und, ohne Audit-Datei, des Audits, wie oben beschrieben.
 - Der KI-Assistent kann, was er über Ecclium liest, über ein anderes Tool desselben Clients weitergeben, etwa nach einer Injection, auch über ein eingebautes Tool des Clients mit Netzzugriff. Betreiben Sie Ecclium nicht im selben Client wie Server mit freiem Netzzugriff, und prüfen Sie, welche eingebauten Tools mit Netzzugriff Ihr Client anbietet.

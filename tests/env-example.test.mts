@@ -3,6 +3,7 @@ import { parseEnv } from 'node:util';
 
 import {
   loadConfig,
+  type StateDirFileSystem,
   type TokenFileSystem,
   tokenVariableName,
   variableNames,
@@ -57,6 +58,26 @@ const goodFile = (): TokenFileSystem => {
   };
 };
 
+/**
+ * One good folder of state in memory: the path in the file is a
+ * placeholder, a folder of the user with 0700 and no folder audit yet.
+ */
+const goodFolder = (): StateDirFileSystem => ({
+  lstatSync: (path) => {
+    if (path.endsWith('/audit')) {
+      throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+    }
+    return {
+      isDirectory: () => true,
+      isSymbolicLink: () => false,
+      uid: 1000,
+      mode: 0o40700,
+    };
+  },
+  getuid: () => 1000,
+  constants: { O_NOFOLLOW: 1, O_DIRECTORY: 2, O_NOCTTY: 4 },
+});
+
 describe('.env.example', () => {
   it('has only comments, empty lines and plain assignments', () => {
     expect(text.endsWith('\n')).toBe(true);
@@ -96,6 +117,7 @@ describe('.env.example', () => {
       environment: values,
       transport: 'stdio',
       tokenFiles: goodFile(),
+      stateDirFiles: goodFolder(),
     });
     expect(result.report.problems).toEqual([]);
     expect(result.report.warnings).toEqual([]);
