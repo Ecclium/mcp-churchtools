@@ -819,8 +819,9 @@ describe('the writer of the audit file and a new file', () => {
   it.each(['ESTALE', 'EFBIG'])(
     'leaves the piece in the old file after %s and writes the line anew',
     (code) => {
+      // The piece, its repair and the repair before closing all fail.
       const { writer, closed, content } = opened({
-        write: script(4, code, code),
+        write: script(4, code, code, code),
       });
       expect(writer.write('{"v":1}')).toBe(true);
       expect(closed).toEqual([folderFd, fileFd, folderFd]);
@@ -893,6 +894,85 @@ describe('the writer of the audit file and a new file', () => {
     expect(opens(calls)).toHaveLength(1 + maxReopens);
     expect(writer.counts().reopened).toBe(maxReopens);
     expect(writer.ready()).toBe(false);
+  });
+
+  it('repairs a piece that lacks only its break before it closes the file', () => {
+    const { writer, content } = opened({ write: script(-2, 'EIO', 'EIO') });
+    expect(writer.write('{"v":1}')).toBe(false);
+    expect(content(fileFd)).toBe('{"v":1}');
+    writer.close();
+    expect(content(fileFd)).toBe('{"v":1}~\n');
+  });
+
+  it('repairs a piece in the old file on a new UTC day', () => {
+    let now = clock.now();
+    const { writer, content } = opened(
+      { write: script(-2, 'EIO', 'EIO') },
+      { now: () => now },
+    );
+    expect(writer.write('{"v":1}')).toBe(false);
+    now += day;
+    expect(writer.write('{"v":2}')).toBe(true);
+    expect(content(fileFd)).toBe('{"v":1}~\n');
+    expect(content(fileFd + 1)).toBe('{"v":2}\n');
+  });
+
+  it('never closes a descriptor that names another file, on a new day or at close', () => {
+    let now = clock.now();
+    let armed = false;
+    const { writer, closed } = opened(
+      {
+        fstat: (fd) =>
+          armed && fd === fileFd ? stats({ kind: 'file', ino: 7 }) : undefined,
+      },
+      { now: () => now },
+    );
+    armed = true;
+    now += day;
+    expect(writer.write('{"v":1}')).toBe(true);
+    writer.close();
+    // The folder twice and the new file, never the old descriptor.
+    expect(closed).toEqual([folderFd, folderFd, fileFd + 1]);
+  });
+
+  it('tries the file of a new day once and keeps the bound for lost files', () => {
+    let now = clock.now();
+    let refuse = true;
+    const deleted = new Set<number>();
+    const { writer, calls, content } = opened(
+      {
+        open: (path) => {
+          if (refuse && path.includes('2026-10-24')) throw fsError('EACCES');
+          return undefined;
+        },
+        fstat: (fd) =>
+          deleted.has(fd)
+            ? stats({ kind: 'file', ino: 200 + fd, nlink: 0 })
+            : undefined,
+      },
+      { now: () => now },
+    );
+    now += day;
+    for (let line = 0; line < maxReopens + 6; line += 1) {
+      expect(writer.write('{"v":1}')).toBe(true);
+    }
+    expect(opens(calls)).toHaveLength(2);
+    expect(content(fileFd)).toBe('{"v":1}\n'.repeat(maxReopens + 6));
+    refuse = false;
+    deleted.add(fileFd);
+    expect(writer.write('{"v":2}')).toBe(true);
+    expect(content(fileFd + 1)).toBe('{"v":2}\n');
+  });
+
+  it('starts a file for each new day without using the bound for lost files', () => {
+    let now = clock.now();
+    const { writer, calls } = opened({}, { now: () => now });
+    for (let days = 0; days < maxReopens + 6; days += 1) {
+      now += day;
+      expect(writer.write('{"v":1}')).toBe(true);
+    }
+    expect(opens(calls)).toHaveLength(maxReopens + 7);
+    expect(writer.counts().reopened).toBe(maxReopens + 6);
   });
 
   it('starts a new file on a new UTC day and closes the old one', () => {

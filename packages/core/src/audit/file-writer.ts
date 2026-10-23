@@ -2,8 +2,9 @@
  * Writes the audit file over stdio (ADR 0028): one file per process and
  * UTC day in the folder `audit` of the folder of state, the folder with
  * 0700, the file with 0600. Every check runs on the open descriptor and is
- * then matched against the path, so neither a link nor a file swapped in
- * between gets past them. Nothing here names a path in what it returns,
+ * then matched against the path. That keeps links out and makes a swap
+ * between check and open unlikely, but without `openat` in Node.js it
+ * cannot rule one out (ADR 0028). Nothing here names a path in what it returns,
  * and nothing throws once the file is open.
  *
  * Only the composition root reaches it, through the subpath
@@ -108,7 +109,7 @@ export interface AuditFileCounts {
   readonly written: number;
   /** Lines lost, in whole or in part. */
   readonly failed: number;
-  /** Lost lines of which a piece reached the file. */
+  /** Lines of which a piece was left behind in a file. */
   readonly partial: number;
   /** Lines refused because they were no line of printable ASCII. */
   readonly rejected: number;
@@ -163,12 +164,16 @@ export const auditFileMode = 0o600;
 /** Names tried per open before the writer gives up. */
 export const maxNameAttempts = 16;
 
-/** System calls per line at most, as for the stderr writer. */
+/**
+ * System calls per run of bytes at most, as for the stderr writer: for a
+ * line, for the repair of a piece, and again in a new file.
+ */
 export const maxWriteAttempts = 4;
 
 /**
- * New files per process at most, after the first one: for a deleted file,
- * a lost descriptor and each new UTC day.
+ * New files per process at most, after the first one, for a deleted file
+ * or a lost descriptor. A new UTC day is tried once per day and does not
+ * count, so that a long run keeps one file per day.
  */
 export const maxReopens = 64;
 
@@ -426,6 +431,9 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
   let torn = false;
   // Whether the last line reached the file whole.
   let lastOk = true;
+  // The last UTC day a new file was tried for, so that a day that cannot
+  // be opened is tried once, not with every line.
+  let dayTried: string | undefined;
 
   const closeQuietly = (target: number): void => {
     try {
@@ -441,7 +449,8 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
   const forget = (own: boolean): void => {
     const current = fd;
     fd = undefined;
-    if (own && current !== undefined) closeQuietly(current);
+    if (!own || current === undefined) return;
+    closeOwn(current, torn);
   };
 
   // Forgets a file that was deleted or is no longer the one opened.
@@ -458,11 +467,9 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
     else if (stats.nlink === 0) forget(true);
   };
 
-  // A new file with every check of the first one, within the bound per
-  // process. The caller closes a file that is still open.
-  const reopen = (stamp: Stamp): boolean => {
-    if (opensLeft === 0) return false;
-    opensLeft -= 1;
+  // A new file with every check of the first one. The caller closes a file
+  // that is still open.
+  const openNext = (stamp: Stamp): boolean => {
     const folder = openFolder();
     if (typeof folder === 'string') return false;
     const next = openFile(stamp, folder);
@@ -472,6 +479,14 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
     lastOk = true;
     reopened += 1;
     return true;
+  };
+
+  // A new file for a deleted file or a lost descriptor, within the bound
+  // per process.
+  const reopen = (stamp: Stamp): boolean => {
+    if (opensLeft === 0) return false;
+    opensLeft -= 1;
+    return openNext(stamp);
   };
 
   interface Sent {
@@ -525,6 +540,14 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
     return result;
   };
 
+  // Closes an own file. A piece at its end gets its repair first: without
+  // a later line, a piece that lacks only its line break would otherwise
+  // stay a valid line at the end of the file.
+  const closeOwn = (target: number, withPiece: boolean): void => {
+    if (withPiece) send(target, repairBytes);
+    closeQuietly(target);
+  };
+
   const lose = (): false => {
     failed += 1;
     lastOk = false;
@@ -545,13 +568,24 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
       tried = true;
       return reopen(stamp);
     };
-    // A new UTC day starts a new file, never an earlier day. If the new
-    // file cannot be opened, the line goes into the old one.
-    if (fd !== undefined && stamp !== undefined && stamp.date > date) {
-      const old = fd;
-      if (tryReopen()) closeQuietly(old);
-    }
+    // First, so that only the own file is closed below: verify forgets a
+    // descriptor that is no longer the file opened.
     verify();
+    // A new UTC day starts a new file, never an earlier day, and is tried
+    // once per day. If the new file cannot be opened, the line goes into
+    // the old one.
+    if (
+      fd !== undefined &&
+      stamp !== undefined &&
+      stamp.date > date &&
+      stamp.date !== dayTried
+    ) {
+      dayTried = stamp.date;
+      tried = true;
+      const old = fd;
+      const oldTorn = torn;
+      if (openNext(stamp)) closeOwn(old, oldTorn);
+    }
     if (fd === undefined) tryReopen();
     const target = fd;
     if (target === undefined) return lose();
@@ -589,6 +623,8 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
 
   const close = (): void => {
     closed = true;
+    // A descriptor that is no longer the file opened is never closed.
+    verify();
     forget(true);
   };
 
