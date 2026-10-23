@@ -1,14 +1,16 @@
 /**
- * Opens the audit file over stdio (ADR 0028): one file per process and UTC
- * day in the folder `audit` of the folder of state, the folder with 0700,
- * the file with 0600. Every check runs on the open descriptor and is then
- * matched against the path, so neither a link nor a file swapped in
- * between gets past them. Nothing here names a path in what it returns.
+ * Writes the audit file over stdio (ADR 0028): one file per process and
+ * UTC day in the folder `audit` of the folder of state, the folder with
+ * 0700, the file with 0600. Every check runs on the open descriptor and is
+ * then matched against the path, so neither a link nor a file swapped in
+ * between gets past them. Nothing here names a path in what it returns,
+ * and nothing throws once the file is open.
  *
  * Only the composition root reaches it, through the subpath
- * `./composition` of core. Its runtime imports are built-in modules and the
- * pattern of a timestamp, so that the first stage of the start can load it
- * while fd 2 still blocks.
+ * `./composition` of core. Besides the rule for a line and the timestamp of
+ * the logger it loads only `node:fs`, `node:path` and `node:util/types`,
+ * which leave fd 2 blocking, so that the first stage of the start can open
+ * the file before the startup notices are written (ADR 0054).
  *
  * @packageDocumentation
  */
@@ -110,6 +112,8 @@ export interface AuditFileCounts {
   readonly partial: number;
   /** Lines refused because they were no line of printable ASCII. */
   readonly rejected: number;
+  /** New files after the first one. */
+  readonly reopened: number;
   /** Whether the writer is closed for good. */
   readonly closed: boolean;
 }
@@ -123,6 +127,15 @@ export interface AuditFileWriter extends LineWriter {
    * @returns Whether the whole line is in the file.
    */
   write(line: string): boolean;
+  /**
+   * Tells whether the file can take a line now: open, still linked, and the
+   * last line reached it whole. A deleted or lost file gets one try of a
+   * new one, within the bound per process. After a failed line only the
+   * next line shows whether the file takes lines again. It never throws.
+   *
+   * @returns Whether the file is ready.
+   */
+  ready(): boolean;
   /**
    * Closes the file for good. Later lines count as lost and open nothing.
    * It never throws.
@@ -152,6 +165,12 @@ export const maxNameAttempts = 16;
 
 /** System calls per line at most, as for the stderr writer. */
 export const maxWriteAttempts = 4;
+
+/**
+ * New files per process at most, after the first one: for a deleted file,
+ * a lost descriptor and each new UTC day.
+ */
+export const maxReopens = 64;
 
 const encoder = new TextEncoder();
 
@@ -393,18 +412,78 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
   // Every descriptor the writer keeps is 3 or more: the open refuses any
   // other.
   let fd: number | undefined = opened.fd;
+  let date = opened.date;
+  let dev = opened.dev;
+  let ino = opened.ino;
   let closed = false;
+  let opensLeft = maxReopens;
   let written = 0;
   let failed = 0;
   let partial = 0;
   let rejected = 0;
+  let reopened = 0;
   // Whether the file ends in a piece of a line without its repair.
   let torn = false;
+  // Whether the last line reached the file whole.
+  let lastOk = true;
+
+  const closeQuietly = (target: number): void => {
+    try {
+      fs.closeSync(target);
+    } catch {
+      // The descriptor is given up either way.
+    }
+  };
+
+  // Gives up the file. A descriptor that may now belong to someone else,
+  // because fstat failed or names another file, is never closed: closing
+  // it would close their file.
+  const forget = (own: boolean): void => {
+    const current = fd;
+    fd = undefined;
+    if (own && current !== undefined) closeQuietly(current);
+  };
+
+  // Forgets a file that was deleted or is no longer the one opened.
+  const verify = (): void => {
+    if (fd === undefined) return;
+    let stats: AuditFileStats;
+    try {
+      stats = fs.fstatSync(fd);
+    } catch {
+      forget(false);
+      return;
+    }
+    if (stats.dev !== dev || stats.ino !== ino) forget(false);
+    else if (stats.nlink === 0) forget(true);
+  };
+
+  // A new file with every check of the first one, within the bound per
+  // process. The caller closes a file that is still open.
+  const reopen = (stamp: Stamp): boolean => {
+    if (opensLeft === 0) return false;
+    opensLeft -= 1;
+    const folder = openFolder();
+    if (typeof folder === 'string') return false;
+    const next = openFile(stamp, folder);
+    if (typeof next === 'string') return false;
+    ({ fd, date, dev, ino } = next);
+    torn = false;
+    lastOk = true;
+    reopened += 1;
+    return true;
+  };
+
+  interface Sent {
+    readonly sent: number;
+    /** The code of the call that stopped the line, if one did. */
+    readonly code?: unknown;
+  }
 
   // Bytes sent before the attempts ran out or a call failed. With O_APPEND
   // each call writes at the end, and exactly four arguments keep a
   // position out: one would write over the file instead of after it.
-  const send = (target: number, bytes: Uint8Array): number => {
+  const send = (target: number, bytes: Uint8Array): Sent => {
     let offset = 0;
     for (
       let attempt = 0;
@@ -418,11 +497,38 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
         if (Number.isInteger(count) && count > 0 && count <= rest) {
           offset += count;
         }
-      } catch {
-        break;
+      } catch (error) {
+        return { sent: offset, code: errorCode(error) };
       }
     }
-    return offset;
+    return { sent: offset };
+  };
+
+  // One try of the line in the open file. Returns the code that stopped
+  // it, or true when the whole line is in the file.
+  const attempt = (target: number, line: string): true | Sent => {
+    const prefix = torn ? repair : '';
+    const bytes = encoder.encode(`${prefix}${line}\n`);
+    const result = send(target, bytes);
+    if (result.sent === bytes.length) {
+      torn = false;
+      return true;
+    }
+    if (result.sent > prefix.length) {
+      // A piece of the line is in the file: close it at once.
+      partial += 1;
+      torn = send(target, repairBytes).sent !== repairBytes.length;
+    } else if (result.sent === prefix.length) {
+      // At most the repair went out, nothing of the line itself.
+      torn = false;
+    }
+    return result;
+  };
+
+  const lose = (): false => {
+    failed += 1;
+    lastOk = false;
+    return false;
   };
 
   const write = (line: string): boolean => {
@@ -430,48 +536,68 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
       rejected += 1;
       return false;
     }
-    if (fd === undefined) {
-      failed += 1;
-      return false;
+    if (closed) return lose();
+    // At most one new file per line.
+    let tried = false;
+    const stamp = stampOf(clock);
+    const tryReopen = (): boolean => {
+      if (tried || stamp === undefined) return false;
+      tried = true;
+      return reopen(stamp);
+    };
+    // A new UTC day starts a new file, never an earlier day. If the new
+    // file cannot be opened, the line goes into the old one.
+    if (fd !== undefined && stamp !== undefined && stamp.date > date) {
+      const old = fd;
+      if (tryReopen()) closeQuietly(old);
     }
-    const prefix = torn ? repair : '';
-    const bytes = encoder.encode(`${prefix}${line}\n`);
-    const sent = send(fd, bytes);
-    if (sent === bytes.length) {
-      torn = false;
-      written += 1;
-      return true;
+    verify();
+    if (fd === undefined) tryReopen();
+    const target = fd;
+    if (target === undefined) return lose();
+    let result = attempt(target, line);
+    if (
+      result !== true &&
+      (result.code === 'EBADF' ||
+        result.code === 'ESTALE' ||
+        result.code === 'EFBIG')
+    ) {
+      // The file is gone or full for good. A piece stays at its end, and
+      // the line goes into a new file. After EBADF the descriptor may
+      // already belong to someone else.
+      forget(result.code !== 'EBADF');
+      tryReopen();
+      const next = fd;
+      if (next !== undefined) result = attempt(next, line);
     }
-    failed += 1;
-    if (sent > prefix.length) {
-      // A piece of the line is in the file: close it at once.
-      partial += 1;
-      torn = send(fd, repairBytes) !== repairBytes.length;
-    } else if (sent === prefix.length) {
-      // At most the repair went out, nothing of the line itself.
-      torn = false;
-    }
-    return false;
+    if (result !== true) return lose();
+    // A file deleted while the line was written lost the line with it.
+    verify();
+    if (fd === undefined) return lose();
+    written += 1;
+    lastOk = true;
+    return true;
+  };
+
+  const ready = (): boolean => {
+    if (closed) return false;
+    verify();
+    if (fd !== undefined) return lastOk;
+    const stamp = stampOf(clock);
+    return stamp !== undefined && reopen(stamp);
   };
 
   const close = (): void => {
     closed = true;
-    const current = fd;
-    fd = undefined;
-    if (current === undefined) return;
-    try {
-      fs.closeSync(current);
-    } catch {
-      // Closed for good either way.
-    }
+    forget(true);
   };
 
   const counts = (): AuditFileCounts =>
-    Object.freeze({ written, failed, partial, rejected, closed });
+    Object.freeze({ written, failed, partial, rejected, reopened, closed });
 
   return Object.freeze({
     __proto__: null,
     ok: true,
-    writer: Object.freeze({ write, close, counts }),
+    writer: Object.freeze({ write, ready, close, counts }),
   });
 }

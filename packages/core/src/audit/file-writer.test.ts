@@ -21,6 +21,7 @@ import {
   type AuditFileSystem,
   type AuditFileWriter,
   maxNameAttempts,
+  maxReopens,
   maxWriteAttempts,
   openAuditFile,
 } from './file-writer.js';
@@ -174,9 +175,12 @@ const fake = (hooks: Hooks = {}): Fake => {
 const fileFd = 11;
 
 /** An open writer over the fake, with the fake. */
-const opened = (hooks: Hooks = {}): Fake & { writer: AuditFileWriter } => {
+const opened = (
+  hooks: Hooks = {},
+  time: { now: () => number } = clock,
+): Fake & { writer: AuditFileWriter } => {
   const files = fake(hooks);
-  const result = openAuditFile({ stateDir, clock, pid, fs: files.fs });
+  const result = openAuditFile({ stateDir, clock: time, pid, fs: files.fs });
   if (!result.ok) throw new Error(result.code);
   return { ...files, writer: result.writer };
 };
@@ -582,6 +586,7 @@ describe('the writer of the audit file', () => {
       failed: 0,
       partial: 0,
       rejected: 0,
+      reopened: 0,
       closed: false,
     });
   });
@@ -730,6 +735,277 @@ describe('the writer of the audit file', () => {
   });
 });
 
+describe('the writer of the audit file and a new file', () => {
+  const day = 24 * 60 * 60 * 1000;
+  const opens = (calls: readonly string[]): string[] =>
+    calls.filter((call) => call.startsWith('open') && call.includes('.jsonl'));
+
+  /** A fake whose files can be deleted, with fstat showing no link. */
+  const deletable = (hooks: Hooks = {}) => {
+    const deleted = new Set<number>();
+    const files = opened({
+      fstat: (fd) =>
+        deleted.has(fd)
+          ? stats({ kind: 'file', ino: 200 + fd, nlink: 0 })
+          : undefined,
+      ...hooks,
+    });
+    return { ...files, deleted };
+  };
+
+  it('opens a new file when the file was deleted, and closes the old one', () => {
+    const { writer, deleted, closed, content, calls } = deletable();
+    deleted.add(fileFd);
+    expect(writer.write('{"v":1}')).toBe(true);
+    expect(closed).toEqual([folderFd, fileFd, folderFd]);
+    expect(opens(calls)).toEqual([
+      `open ${folderPath}/${nameOf(1)} ${String(fileFlags)} 600`,
+      `open ${folderPath}/${nameOf(2)} ${String(fileFlags)} 600`,
+    ]);
+    expect(content(fileFd + 1)).toBe('{"v":1}\n');
+    expect(writer.counts()).toMatchObject({ written: 1, reopened: 1 });
+  });
+
+  it('counts a line as lost when the file is deleted while it is written', () => {
+    const { writer, deleted, content } = deletable({
+      write: (fd) => {
+        deleted.add(fd);
+        return undefined;
+      },
+    });
+    expect(writer.write('{"v":1}')).toBe(false);
+    expect(content(fileFd)).toBe('{"v":1}\n');
+    expect(writer.counts()).toMatchObject({ written: 0, failed: 1 });
+    expect(writer.ready()).toBe(true);
+    expect(writer.counts().reopened).toBe(1);
+  });
+
+  it.each([
+    [
+      'an fstat that throws',
+      (): AuditFileStats => {
+        throw fsError('EBADF');
+      },
+    ],
+    ['an fstat of another file', () => stats({ kind: 'file', ino: 7 })],
+    [
+      'an fstat on another device',
+      () => stats({ kind: 'file', ino: 211, dev: 2 }),
+    ],
+  ])('gives up a descriptor after %s without closing it', (_name, fstat) => {
+    let armed = false;
+    const { writer, closed, content } = opened({
+      fstat: (fd) => (armed && fd === fileFd ? fstat() : undefined),
+    });
+    armed = true;
+    expect(writer.write('{"v":1}')).toBe(true);
+    // Only the folder, twice: the old descriptor may be someone else's.
+    expect(closed).toEqual([folderFd, folderFd]);
+    expect(content(fileFd + 1)).toBe('{"v":1}\n');
+  });
+
+  it('writes the line into a new file after EBADF, without closing the old one', () => {
+    const { writer, closed, content } = opened({
+      write: (fd) => {
+        if (fd === fileFd) throw fsError('EBADF');
+        return undefined;
+      },
+    });
+    expect(writer.write('{"v":1}')).toBe(true);
+    expect(closed).toEqual([folderFd, folderFd]);
+    expect(content(fileFd + 1)).toBe('{"v":1}\n');
+  });
+
+  it.each(['ESTALE', 'EFBIG'])(
+    'leaves the piece in the old file after %s and writes the line anew',
+    (code) => {
+      const { writer, closed, content } = opened({
+        write: script(4, code, code),
+      });
+      expect(writer.write('{"v":1}')).toBe(true);
+      expect(closed).toEqual([folderFd, fileFd, folderFd]);
+      expect(content(fileFd)).toBe('{"v"');
+      expect(content(fileFd + 1)).toBe('{"v":1}\n');
+      expect(writer.counts()).toMatchObject({ written: 1, partial: 1 });
+    },
+  );
+
+  it('loses the line when the new file cannot be opened, and tries again', () => {
+    let refuse = true;
+    const { writer, deleted, content, calls } = deletable({
+      open: (path) => {
+        if (refuse && path.endsWith('.jsonl') && !path.endsWith(nameOf(1))) {
+          throw fsError('EACCES');
+        }
+        return undefined;
+      },
+    });
+    deleted.add(fileFd);
+    expect(writer.write('{"v":1}')).toBe(false);
+    expect(writer.ready()).toBe(false);
+    refuse = false;
+    expect(writer.write('{"v":2}')).toBe(true);
+    // The names 2 and 3 were tried and refused, 4 is the next one.
+    expect(opens(calls)).toHaveLength(4);
+    expect(content(fileFd + 1)).toBe('{"v":2}\n');
+  });
+
+  it('loses the line when the folder for the new file is gone', () => {
+    let armed = false;
+    const { writer, deleted, calls } = deletable({
+      mkdir: () => {
+        if (armed) throw fsError('ENOENT');
+      },
+    });
+    armed = true;
+    deleted.add(fileFd);
+    expect(writer.write('{"v":1}')).toBe(false);
+    expect(opens(calls)).toHaveLength(1);
+  });
+
+  it('opens at most one new file per line', () => {
+    const { writer, deleted, calls } = deletable({
+      write: (fd) => {
+        if (fd !== fileFd) throw fsError('EBADF');
+        return undefined;
+      },
+    });
+    deleted.add(fileFd);
+    expect(writer.write('{"v":1}')).toBe(false);
+    expect(opens(calls)).toHaveLength(2);
+  });
+
+  it(`opens at most ${String(maxReopens)} new files per process`, () => {
+    const deleted = new Set<number>();
+    const { writer, calls } = opened({
+      fstat: (fd) =>
+        deleted.has(fd)
+          ? stats({ kind: 'file', ino: 200 + fd, nlink: 0 })
+          : undefined,
+      write: (fd) => {
+        deleted.add(fd);
+        return undefined;
+      },
+    });
+    for (let line = 0; line < maxReopens + 3; line += 1) {
+      expect(writer.write('{"v":1}')).toBe(false);
+    }
+    expect(opens(calls)).toHaveLength(1 + maxReopens);
+    expect(writer.counts().reopened).toBe(maxReopens);
+    expect(writer.ready()).toBe(false);
+  });
+
+  it('starts a new file on a new UTC day and closes the old one', () => {
+    let now = clock.now();
+    const { writer, closed, content, calls } = opened({}, { now: () => now });
+    expect(writer.write('{"v":1}')).toBe(true);
+    now += day;
+    expect(writer.write('{"v":2}')).toBe(true);
+    expect(opens(calls)[1]).toBe(
+      `open ${folderPath}/audit-2026-10-24-055230-${String(pid)}-2.jsonl ${String(fileFlags)} 600`,
+    );
+    expect(closed).toEqual([folderFd, folderFd, fileFd]);
+    expect(content(fileFd)).toBe('{"v":1}\n');
+    expect(content(fileFd + 1)).toBe('{"v":2}\n');
+  });
+
+  it('never starts a file for an earlier day', () => {
+    let now = clock.now();
+    const { writer, calls } = opened({}, { now: () => now });
+    now -= day;
+    expect(writer.write('{"v":1}')).toBe(true);
+    expect(opens(calls)).toHaveLength(1);
+  });
+
+  it('writes into the old file when the file of a new day cannot be opened', () => {
+    let now = clock.now();
+    const { writer, closed, content } = opened(
+      {
+        open: (path) => {
+          if (path.includes('2026-10-24')) throw fsError('ENOSPC');
+          return undefined;
+        },
+      },
+      { now: () => now },
+    );
+    now += day;
+    expect(writer.write('{"v":1}')).toBe(true);
+    expect(closed).toEqual([folderFd, folderFd]);
+    expect(content(fileFd)).toBe('{"v":1}\n');
+  });
+
+  it('writes without a change of day when the clock fails', () => {
+    let fails = false;
+    const { writer, content } = opened(
+      {},
+      {
+        now: () => {
+          if (fails) throw new Error('clock');
+          return clock.now();
+        },
+      },
+    );
+    fails = true;
+    expect(writer.write('{"v":1}')).toBe(true);
+    expect(content(fileFd)).toBe('{"v":1}\n');
+  });
+
+  it('opens no new file when the clock fails', () => {
+    let fails = false;
+    const deleted = new Set<number>();
+    const { writer, calls } = opened(
+      {
+        fstat: (fd) =>
+          deleted.has(fd)
+            ? stats({ kind: 'file', ino: 200 + fd, nlink: 0 })
+            : undefined,
+      },
+      {
+        now: () => {
+          if (fails) throw new Error('clock');
+          return clock.now();
+        },
+      },
+    );
+    fails = true;
+    deleted.add(fileFd);
+    expect(writer.write('{"v":1}')).toBe(false);
+    expect(writer.ready()).toBe(false);
+    expect(opens(calls)).toHaveLength(1);
+  });
+
+  it('is ready while the last line reached the file, and not after a lost one', () => {
+    const { writer, calls } = opened({
+      write: script(undefined as never, 'ENOSPC'),
+    });
+    expect(writer.ready()).toBe(true);
+    expect(writer.write('{"v":1}')).toBe(true);
+    expect(writer.ready()).toBe(true);
+    expect(writer.write('{"v":2}')).toBe(false);
+    expect(writer.ready()).toBe(false);
+    // Only a line shows whether the file takes lines again.
+    expect(opens(calls)).toHaveLength(1);
+    expect(writer.write('{"v":3}')).toBe(true);
+    expect(writer.ready()).toBe(true);
+  });
+
+  it('opens a new file for ready when the file was deleted', () => {
+    const { writer, deleted, calls } = deletable();
+    deleted.add(fileFd);
+    expect(writer.ready()).toBe(true);
+    expect(opens(calls)).toHaveLength(2);
+  });
+
+  it('is closed for good: not ready, no line and no new file', () => {
+    const { writer, calls } = opened();
+    writer.close();
+    expect(writer.ready()).toBe(false);
+    expect(writer.write('{"v":1}')).toBe(false);
+    expect(opens(calls)).toHaveLength(1);
+    expect(writer.counts()).toMatchObject({ failed: 1, closed: true });
+  });
+});
+
 describe('openAuditFile on the disk', () => {
   const base = mkdtempSync(join(tmpdir(), 'ecclium-audit-file-'));
   const fresh = (name: string): string => {
@@ -795,6 +1071,51 @@ describe('openAuditFile on the disk', () => {
     expect(readdirSync(audit).sort()).toEqual([nameOf(1), nameOf(2)]);
     expect(statSync(target).size).toBe(0);
     if (result.ok) result.writer.close();
+  });
+
+  it('writes into a new file when the file was deleted', () => {
+    const folder = fresh('deleted');
+    const result = open(folder);
+    if (!result.ok) throw new Error(result.code);
+    expect(result.writer.write('{"v":1}')).toBe(true);
+    rmSync(join(folder, 'audit', nameOf(1)));
+    expect(result.writer.ready()).toBe(true);
+    expect(result.writer.write('{"v":2}')).toBe(true);
+    result.writer.close();
+    expect(readdirSync(join(folder, 'audit'))).toEqual([nameOf(2)]);
+    expect(readFileSync(join(folder, 'audit', nameOf(2)), 'utf8')).toBe(
+      '{"v":2}\n',
+    );
+  });
+
+  it('writes into a new folder audit when the folder was deleted', () => {
+    const folder = fresh('deleted-folder');
+    const result = open(folder);
+    if (!result.ok) throw new Error(result.code);
+    rmSync(join(folder, 'audit'), { recursive: true });
+    expect(result.writer.write('{"v":1}')).toBe(true);
+    result.writer.close();
+    expect(statSync(join(folder, 'audit')).mode & 0o777).toBe(0o700);
+    expect(readdirSync(join(folder, 'audit'))).toEqual([nameOf(2)]);
+  });
+
+  it('starts a new file on the disk on a new UTC day', () => {
+    const folder = fresh('day');
+    let now = clock.now();
+    const result = openAuditFile({
+      stateDir: folder,
+      clock: { now: () => now },
+      pid,
+    });
+    if (!result.ok) throw new Error(result.code);
+    expect(result.writer.write('{"v":1}')).toBe(true);
+    now += 24 * 60 * 60 * 1000;
+    expect(result.writer.write('{"v":2}')).toBe(true);
+    result.writer.close();
+    expect(readdirSync(join(folder, 'audit')).sort()).toEqual([
+      nameOf(1),
+      `audit-2026-10-24-055230-${String(pid)}-2.jsonl`,
+    ]);
   });
 
   it('refuses a folder audit that is a link to a good folder', () => {
