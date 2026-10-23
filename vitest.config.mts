@@ -28,7 +28,9 @@ export default defineConfig({
       ],
       // They apply only with coverage on, as in the job
       // coverage-security-core: every line and branch of redaction and of
-      // the outbound path, at least 80 percent of core (ADR 0024).
+      // the outbound path, at least 80 percent of core (ADR 0024), and
+      // every line and branch of the audit and the pipeline, which hold
+      // back the result of a tool without its audit line (ADR 0028).
       thresholds: {
         'packages/core/src/**': {
           statements: 80,
@@ -43,6 +45,18 @@ export default defineConfig({
           lines: 100,
         },
         'packages/core/src/http/**': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        'packages/core/src/audit/**': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        'packages/core/src/pipeline/**': {
           statements: 100,
           branches: 100,
           functions: 100,

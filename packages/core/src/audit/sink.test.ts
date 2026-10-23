@@ -2,13 +2,14 @@ import { runInNewContext } from 'node:vm';
 
 import type { AuditEventV1 } from '@ecclium/mcp-churchtools-plugin-api';
 import { assertNoCanary, makeCanaries } from '@ecclium/mcp-churchtools-testkit';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import type { LineWriter } from '../logger/index.js';
 import {
   type AuditDraft,
   auditEventV1Schema,
+  auditFieldSchemas,
   type AuditFileTarget,
   auditLimits,
   type AuditSinkOptions,
@@ -635,6 +636,19 @@ describe('the provider', () => {
     expect(event(audit())).not.toHaveProperty('provider');
     expect(events(logs())).toEqual([`audit_invalid_provider_${name}`]);
     expect(lines.join('\n')).not.toContain(value);
+  });
+
+  it.each([
+    ['a string', 'example-ai'],
+    ['null', null],
+    ['a proxy', new Proxy({ ...provider }, {})],
+  ])('is left out and reported when it is %s', (_name, value) => {
+    const { sink, audit, logs } = make();
+    expect(
+      sink.record({ ...base, provider: value } as unknown as AuditDraft),
+    ).toBe(false);
+    expect(event(audit())).not.toHaveProperty('provider');
+    expect(events(logs())).toEqual(['audit_invalid_provider']);
   });
 
   it('is written with its known keys only', () => {
@@ -1287,6 +1301,24 @@ describe('without an audit file', () => {
 });
 
 describe('zod inside the sink', () => {
+  // zod answers yes or no for a primitive and does not throw; should it
+  // ever throw, the value counts as invalid and the record goes on.
+  it('counts a value as invalid when zod throws while it checks it', () => {
+    const spy = vi
+      .spyOn(auditFieldSchemas.mode, 'safeParse')
+      .mockImplementation(() => {
+        throw new Error('zod');
+      });
+    try {
+      const { sink, audit, logs } = make();
+      expect(sink.record(base)).toBe(false);
+      expect(event(audit())).toMatchObject({ mode: 'unattended' });
+      expect(events(logs())).toEqual(['audit_invalid_mode']);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('is never asked for an error, so no error map sees a value', () => {
     const canary = makeCanaries().token;
     let calls = 0;

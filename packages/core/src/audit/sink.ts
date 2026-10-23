@@ -256,8 +256,9 @@ interface Copied {
 // list is walked.
 const copyList = (value: unknown, limit: number): Copied => {
   if (!isPlainTarget(value) || !Array.isArray(value)) return {};
-  const length = own(value, 'length');
-  if (typeof length !== 'number') return {};
+  // The length of an array is an own data property that is always a
+  // number, and no code can redefine it.
+  const length = own(value, 'length') as number;
   const count = Math.min(length, maxCount);
   if (length > limit) return { count };
   const list: string[] = [];
@@ -278,7 +279,8 @@ const toJson = (value: Json): string => {
   }
   const object = value as Readonly<Record<string, Json>>;
   return `{${Object.keys(object)
-    .map((key) => `${JSON.stringify(key)}:${toJson(object[key] ?? '')}`)
+    // Only own keys of the line, each with a value.
+    .map((key) => `${JSON.stringify(key)}:${toJson(object[key] as Json)}`)
     .join(',')}}`;
 };
 
@@ -535,7 +537,8 @@ export function createAuditSink(options: AuditSinkOptions): AuditSink {
   // back, with the error code before the duration, where the schema puts
   // it.
   const withhold = (line: Line): void => {
-    const duration = line['durationMs'] ?? 0;
+    // Always there: a required field that fails gets its placeholder.
+    const duration = line['durationMs'] as Json;
     Reflect.deleteProperty(line, 'durationMs');
     line['outcome'] = withheldOutcome;
     line['errorCode'] = withheldCode;
