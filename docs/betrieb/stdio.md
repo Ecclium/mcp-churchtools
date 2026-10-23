@@ -13,8 +13,7 @@ Geprüft am 19.10.2026 unter macOS 27.0 mit Claude Code 2.1.302 und Claude Deskt
 - macOS auf Apple Silicon (arm64) oder Linux auf x64, eine Shell wie zsh oder bash und Git. Für andere Plattformen siehe «Einrichtung» in [CONTRIBUTING.md](../../CONTRIBUTING.md).
 - mise, der Versionsmanager, über den das Projekt Node.js und pnpm in festen Versionen bezieht. Wie Sie mise einrichten, steht in [CONTRIBUTING.md](../../CONTRIBUTING.md) unter «Einrichtung».
 - Claude Desktop oder Claude Code.
-- Ein eigenes Dienstkonto in ChurchTools mit einem Login-Token, nicht Ihr persönliches Konto. In ChurchTools kann auch ein Personenstatus Rechte vergeben, und Rechte aus Gruppen zeigt `ct_whoami` womöglich nicht. Geben Sie dem Dienstkonto deshalb einen eigenen Status ohne Berechtigungen, nehmen Sie es in keine Gruppe auf und vergeben Sie ihm direkt nur die Rechte, die seine Tools brauchen. `ct_whoami` verlangt kein Recht, die Rechte der Suchtools stehen unter «Suchtools».
-- Eine sachliche Bezeichnung als Vor- und Nachname des Dienstkontos statt des Namens einer Person. Der KI-Assistent sieht beide unmaskiert.
+- Ein eigenes Dienstkonto in ChurchTools mit einem Login-Token, nicht Ihr persönliches Konto. Wie Sie es anlegen, welche Rechte es braucht und wie Sie sein Token holen und erneuern, steht unter [Dienstkonto in ChurchTools](dienstkonto.md).
 
 ## Bauen
 
@@ -175,12 +174,7 @@ So schalten Sie sie ein: Setzen Sie im Abschnitt `env` des Eintrags `ecclium` ne
 
 Ohne den Ordner meldet `config check` ein Problem, und der Start bricht mit 78 ab. Unter Windows gibt es über stdio keine Audit-Datei und damit keine Suchtools. Bei jedem Start meldet Ecclium auf stderr, dass die Suchtools freigegeben sind.
 
-Geben Sie dem Dienstkonto dafür direkt diese Rechte, neben den übrigen:
-
-- «Personen eines Bereiches sehen» (`churchdb: view alldata`) nur für die Bereiche, in denen gesucht werden soll, «Alle» nur, wenn die ganze Instanz durchsuchbar sein soll.
-- «Gruppen eines Gruppentyps sehen - ausser versteckte» (`churchgroup: view groups of grouptype`) nur für die Gruppentypen, in denen gesucht werden soll.
-
-Geben Sie ihm keine Sicherheitsstufe, weder «Personendaten sehen - bis zum gewählten Sicherheitslevel» noch «Gruppeninfos sehen - bis zum gewählten Sicherheitslevel». Kennung und Name kommen ohne sie, und schon die niedrigste Stufe schickt E-Mail-Adresse, Telefon, Geburtstag, Postleitzahl und Ort jeder gefundenen Person an Ecclium. Ecclium gäbe sie nicht weiter, aber sie lägen im Arbeitsspeicher des Servers. Auch «‹Personen› sehen», «‹Gruppen› sehen» und «Mitgliederliste sehen» brauchen die Suchtools nicht. Hat das Konto mehr Rechte, weist Ecclium es nicht ab. Welche es hat, zeigt `ct_whoami`.
+Geben Sie dem Dienstkonto dafür die Rechte der Suchtools aus der Tabelle unter [Rechte](dienstkonto.md#rechte), nur für die Bereiche und Gruppentypen, in denen gesucht werden soll, und keine Sicherheitsstufe. Hat das Konto mehr Rechte, weist Ecclium es nicht ab. Welche es hat, zeigt `ct_whoami`.
 
 Was die Suchtools tun und was nicht:
 
@@ -200,21 +194,21 @@ Mit `scripts/smoke.mts` prüfen Sie, ob der gebaute Server mit Ihrem Dienstkonto
 env -i ECCLIUM_CHURCHTOOLS_URL=https://example.church.tools ECCLIUM_CHURCHTOOLS_TOKEN_FILE=/pfad/zur/token-datei /pfad/zu/node /pfad/zum/checkout/scripts/smoke.mts
 ```
 
-Der Server bekommt nur die Adresse, die Token-Datei, den Zustandsordner und `ECCLIUM_READ_ONLY=true`, auch wenn Ihre Shell etwas anderes setzt. Das Token nimmt der Smoke-Test nur aus der Datei. Variablen wie `NODE_OPTIONS` oder `NODE_EXTRA_CA_CERTS` weist er ab.
+Der Server bekommt nur die Adresse, die Token-Datei, den Zustandsordner und `ECCLIUM_READ_ONLY=true`, auch wenn Ihre Shell etwas anderes setzt, mit dem Schalter für die Suchtools unten dazu `ECCLIUM_SEARCH_TOOLS=true`. Das Token nimmt der Smoke-Test nur aus der Datei, unter einem absoluten Pfad. Variablen wie `NODE_OPTIONS`, `NODE_EXTRA_CA_CERTS` oder `NODE_USE_ENV_PROXY` weist er ab. Schreibt der Server nach seinen Startmeldungen Text auf stderr, der kein JSON ist, gilt das als Fehler, weil darin unbemerkt ein Name stehen könnte.
 
 Die Suchtools ruft der Smoke-Test nur auf einer Testinstanz mit synthetischen Daten auf, die eine Wiki-Kategorie `testinstanz-kennung` trägt, wie sie die Proben in `scripts/spike/` verlangen. Setzen Sie dafür `ECCLIUM_SMOKE_ALLOW_SEARCH` auf den ersten Teil des Hosts, von Hand getippt und nicht aus der Variablen der Adresse kopiert, und `ECCLIUM_SMOKE_QUERY` auf einen Suchbegriff. Der Smoke-Test liest dann mit dem Token zuerst die Wiki-Kategorien und die Version von ChurchTools. Sieht das Konto nicht genau eine solche Kategorie, die es weder bearbeiten noch löschen darf, bricht er ab, ohne den Server zu starten. Sonst sucht er Personen und Gruppen mit dem Begriff, Personen mit einem erfundenen Begriff ohne Treffer und mit einem Begriff nur aus Leerzeichen, den der Server abweisen muss, ohne ChurchTools zu fragen.
 
 Die Ausgabe ist JSON. `ergebnis` sagt `bestanden` oder `gescheitert`, `fehler` nennt die gescheiterten Prüfungen und `befunde` Hinweise, die den Lauf nicht scheitern lassen, etwa `sicherheitsstufe`, wenn das Konto eine Sicherheitsstufe hat. Der Smoke-Test endet mit einem dieser Codes:
 
-| Code | Bedeutung                                                                                                     |
-| ---- | ------------------------------------------------------------------------------------------------------------- |
-| 0    | Alle Prüfungen sind bestanden.                                                                                |
-| 1    | Mindestens eine Prüfung ist gescheitert, siehe `fehler`.                                                      |
-| 64   | Nach dem Befehl stand ein Argument.                                                                           |
-| 69   | Die Instanz war für das Lesen der Wiki-Kategorien nicht erreichbar.                                           |
-| 70   | Ein interner Fehler, oder die Ausgabe ist zurückgehalten, weil sie womöglich Daten aus ChurchTools enthielte. |
-| 77   | Die Kennkategorie fehlt, ist doppelt oder bearbeitbar, oder der Schalter passt nicht zum Host.                |
-| 78   | Eine Variable fehlt oder ist ungültig, die Token-Datei ist unsicher, oder der Server ist nicht gebaut.        |
+| Code | Bedeutung                                                                                                                                                                                                               |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | Alle Prüfungen sind bestanden.                                                                                                                                                                                          |
+| 1    | Mindestens eine Prüfung ist gescheitert, siehe `fehler`.                                                                                                                                                                |
+| 64   | Nach dem Befehl stand ein Argument.                                                                                                                                                                                     |
+| 69   | Die Instanz war für das Lesen der Wiki-Kategorien nicht erreichbar, etwa wegen Netz, TLS, Zeitlimit, einer Weiterleitung oder einer zu grossen Antwort.                                                                 |
+| 70   | Ein interner Fehler, oder die Ausgabe ist zurückgehalten, weil sie womöglich Daten aus ChurchTools enthielte.                                                                                                           |
+| 77   | Die Kennkategorie fehlt, ist doppelt, bearbeitbar oder löschbar, die Antwort zu den Wiki-Kategorien hat eine andere Form, oder der Schalter passt nicht zum Host.                                                       |
+| 78   | Eine Variable fehlt oder ist ungültig, die Token-Datei ist unsicher, ChurchTools weist das Token ab, der temporäre Ordner ist nicht beschreibbar, der Server ist nicht gebaut, oder der Smoke-Test läuft unter Windows. |
 
 Unter Windows läuft der Smoke-Test nicht, weil es dort über stdio keine Audit-Datei gibt.
 
