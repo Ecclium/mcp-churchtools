@@ -106,7 +106,7 @@ Node.js selbst kann weitere Zeilen schreiben, etwa eine Warnung, wenn es die Dat
 
 Weder das Token noch Namen, E-Mail-Adressen oder andere Werte aus den Antworten von ChurchTools stehen in diesen Zeilen. Tests mit erfundenen Werten prüfen das. Wohin die Zeilen gehen, bestimmt der Client. Ohne `ECCLIUM_STATE_DIR` schreibt Ecclium keine eigene Datei, mit dem Ordner nur die Audit-Datei, siehe «Audit-Datei».
 
-Ecclium wartet nicht auf stderr. Liest der Client stderr nicht oder zu langsam, gehen Zeilen verloren, auch Zeilen des Audits. Ecclium zählt sie und nennt die Zahl beim Ende, doch auch diese letzte Zeile kann verloren gehen. Die Antworten auf stdout erreichen den Client trotzdem. Mit der Audit-Datei sind die Zeilen des Audits auf stderr nur Kopien, und das Audit steht ganz in der Datei.
+Ecclium wartet nicht auf stderr. Liest der Client stderr nicht oder zu langsam, gehen Zeilen verloren, auch Zeilen des Audits. Ecclium zählt sie und nennt die Zahl beim Ende, doch auch diese letzte Zeile kann verloren gehen. Die Antworten auf stdout erreichen den Client trotzdem. Mit der Audit-Datei sind die Zeilen des Audits auf stderr nur Kopien. Jede Zeile geht zuerst in die Datei, und was sie dort nicht aufnimmt, zählt `audit_file_closed`.
 
 Der Server endet mit einem dieser Codes:
 
@@ -123,7 +123,7 @@ Kommt das erste Signal erst nach dem Ende der Verbindung, steht es im Log, und d
 
 ## Audit-Datei
 
-Mit `ECCLIUM_STATE_DIR` schreibt Ecclium jede Zeile des Audits zuerst in eine eigene Datei und erst danach als Kopie nach stderr. Das Audit liegt dann bei Ihnen, gleich was der Client mit stderr macht. Ohne die Variable gibt es keine Audit-Datei, und das Audit geht nur nach stderr. Mit den Suchtools für Personen und Gruppen wird der Ordner nötig: Ihr Ergebnis gibt Ecclium nur heraus, wenn seine Zeile ganz in der Audit-Datei steht.
+Mit `ECCLIUM_STATE_DIR` schreibt Ecclium jede Zeile des Audits zuerst in eine eigene Datei und erst danach als Kopie nach stderr. Das Audit liegt dann bei Ihnen, gleich was der Client mit stderr macht. Ohne die Variable gibt es keine Audit-Datei, und das Audit geht nur nach stderr. Mit den Suchtools für Personen und Gruppen wird der Ordner nötig: Deren Ergebnis gibt Ecclium nur heraus, wenn seine Zeile ganz in der Audit-Datei steht.
 
 Legen Sie einen Ordner auf einer lokalen Platte an, als Ihr Benutzer und ausserhalb des Checkouts. Der Befehl legt jeden fehlenden Ordner auf dem Weg mit den Rechten 700 an:
 
@@ -141,7 +141,7 @@ Setzen Sie die Variable in der Konfiguration des Clients neben die Adresse und d
 
 `config check` prüft den Ordner, wenn Sie die Variable dort ebenfalls setzen, und legt nichts an. Der Start bricht mit 78 und einem Hinweis ab, wenn eine dieser Bedingungen nicht erfüllt ist:
 
-- Der Pfad ist absolut und eindeutig geschrieben, ohne `/` am Ende, ohne `//`, `.` und `..`, mit höchstens 960 Zeichen.
+- Der Pfad ist absolut und eindeutig geschrieben, ohne `/` am Ende, ohne `//`, `.` und `..`, mit höchstens 960 Zeichen und in UTF-8 höchstens 960 Bytes. Ein Umlaut zählt dabei doppelt.
 - Der Ordner ist ein Ordner und kein symbolischer Link, gehört Ihrem Benutzer, und weder die Gruppe noch andere haben Rechte darauf. Dasselbe gilt für einen Ordner `audit` darin.
 - Ecclium kann darin beim Start den Ordner `audit` mit den Rechten 700 anlegen, falls er fehlt, und eine neue Datei mit den Rechten 600 öffnen.
 
@@ -149,9 +149,9 @@ In der Datei steht:
 
 - Je Start und UTC-Tag eine Datei `audit-JJJJ-MM-TT-hhmmss-<Prozess>-<Nummer>.jsonl` mit dem Datum und der Uhrzeit des Öffnens in UTC. Ecclium öffnet nie eine Datei, die schon da ist.
 - Dieselben Zeilen wie auf stderr: Zeit, Mandant, Subjekt, Modus, Tool, Ausgang, bei einem Fehler sein Code, die Dauer und die ID des Ereignisses. Keine Inhalte aus ChurchTools, keine IDs von Personen oder Gruppen und kein Token.
-- Eine Zeile, die mit `~` endet, ist das Stück einer Zeile, die nicht ganz in die Datei kam. Überspringen Sie solche Zeilen wie Zeilen, die kein JSON sind.
+- Eine Zeile zählt nur, wenn sie mit einem Zeilenumbruch endet. Eine Zeile, die mit `~` endet, und ein letztes Stück ohne Zeilenumbruch sind Reste einer Zeile, die nicht ganz in die Datei kam. Überspringen Sie solche Zeilen wie Zeilen, die kein JSON sind.
 
-Löscht jemand die Datei, während der Server läuft, legt Ecclium eine neue an. Lässt sich die Datei nicht beschreiben, etwa weil die Platte voll ist, geht die Zeile verloren, und der Server zählt sie. Das Ergebnis eines Suchtools hält er dann zurück.
+Löscht jemand die Datei, während der Server läuft, legt Ecclium eine neue an, mit höchstens 64 Versuchen je Start. Danach laufen Tools mit Personendaten der besonderen Kategorie erst nach einem Neustart wieder. Lässt sich die Datei nicht beschreiben, etwa weil die Platte voll ist, geht die Zeile verloren, und der Server zählt sie. Das Ergebnis eines Tools mit Personendaten der besonderen Kategorie, etwa der späteren Suchtools, hält er dann zurück.
 
 Grenzen der Audit-Datei:
 

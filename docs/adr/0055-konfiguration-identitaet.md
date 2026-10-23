@@ -139,9 +139,9 @@ Grenzen:
 ### Zustandsordner
 
 - `ECCLIUM_STATE_DIR` nennt einen Ordner für Zustand des Servers. Mit ihm schreibt der Start über stdio die Audit-Datei in den Unterordner `audit` (ADR 0028). Ohne die Variable gibt es keine Audit-Datei, und das ist gültig.
-- Der Wert muss ein absoluter Pfad in seiner eindeutigen Form sein: kein Trenner am Ende, kein `.`, kein `..` und kein `//`. Der Lader normalisiert nichts, damit er genau den Ordner prüft, den die Konfiguration nennt. Mit einem Trenner am Ende folgte `lstat` einem Link. Höchstens 960 Zeichen, damit der Pfad einer Audit-Datei darin unter der Grenze von 1024 Bytes für Pfade unter macOS bleibt.
+- Der Wert muss ein absoluter Pfad in seiner eindeutigen Form sein: kein Trenner am Ende, kein `.`, kein `..` und kein `//`. Der Lader normalisiert nichts, damit er genau den Ordner prüft, den die Konfiguration nennt. Mit einem Trenner am Ende folgte `lstat` einem Link. Höchstens 960 Zeichen und 960 Bytes in UTF-8, damit der Pfad einer Audit-Datei darin unter der Grenze von 1'024 Bytes für Pfade unter macOS bleibt. Die Zeichen prüft der Lader wie bei jeder Variable, die Bytes die Prüfung des Ordners mit dem Code `state_dir_too_long`.
 - Der Lader prüft mit `lstat`, ohne einem Link an der letzten Stelle zu folgen: ein Ordner, kein Link, dem eigenen Benutzer gehörend, ohne Rechte für Gruppe oder andere. Einen vorhandenen Unterordner `audit` prüft er ebenso, ein fehlender ist in Ordnung. Er legt nichts an und öffnet nichts, damit `ecclium config check` auf der Platte nichts ändert.
-- Fehlen `process.getuid`, `O_NOFOLLOW`, `O_DIRECTORY` oder `O_NOCTTY`, wie unter Windows, bricht der Start mit einem eigenen Code ab. Dort gibt es über stdio weder die Audit-Datei noch Tools mit `sensitivity: special`.
+- Fehlen `process.getuid`, `O_NOFOLLOW`, `O_DIRECTORY` oder `O_NOCTTY`, wie unter Windows, bricht der Start mit einem eigenen Code ab, vor jeder Prüfung des Pfads, der dort anders geschrieben wird. Dort gibt es über stdio weder die Audit-Datei noch Tools mit `sensitivity: special`.
 - Jede Prüfung hat ihren eigenen Code, und kein Code und keine Meldung nennt den Pfad. Ordner über dem Zustandsordner gelten als vertrauenswürdig, wie bei der Token-Datei.
 
 ### Identität und Mandant über stdio
