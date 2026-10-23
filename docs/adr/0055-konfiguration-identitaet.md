@@ -1,6 +1,6 @@
 # ADR 0055: Konfiguration, Identität und Mandantenkontext, mit der Tabelle der Variablen
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 23.10.2026
 - Datum: 14.10.2026
 - Fällt vor: Phase 1
 

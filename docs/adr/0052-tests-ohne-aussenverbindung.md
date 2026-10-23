@@ -1,6 +1,6 @@
 # ADR 0052: Tests ohne Aussenverbindung
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 23.10.2026
 - Datum: 11.10.2026
 - Fällt vor: Phase 1
 
