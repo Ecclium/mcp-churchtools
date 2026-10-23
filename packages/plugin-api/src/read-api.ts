@@ -182,9 +182,10 @@ export interface ReadApi {
    */
   searchPersons(query: string): Promise<SearchHits<PersonHit>>;
   /**
-   * Searches groups by name, of the group types the account may see. An
-   * empty list can also mean that the account lacks the right to see the
-   * type of a group.
+   * Searches groups by name, of the group types the account may see, and
+   * groups of the visibility «intern», which ChurchTools shows without any
+   * right on groups. An empty list can also mean that the account lacks the
+   * right to see the type of a group.
    *
    * @param query - The search term, see {@link normalizeSearchTerm}.
    * @returns At most {@link maxSearchHits} groups with ID and name.
