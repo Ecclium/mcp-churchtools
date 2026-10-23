@@ -1,0 +1,189 @@
+import { chmodSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { tokenVariableName } from '@ecclium/mcp-churchtools-core';
+import { doubleOrigin, makeCanary } from '@ecclium/mcp-churchtools-testkit';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
+
+import { exitCodes } from '../exit-codes.js';
+import { auditFileText, startText } from '../messages/index.js';
+import type { WriteSyncFn } from '../send.js';
+import { startStdio, type StdioStartOptions } from './index.js';
+import type { ServeOptions } from './serve.js';
+
+// The first stage and the audit file (ADR 0028): it opens the file before
+// the second stage loads, while fd 2 still blocks, and refuses a tool with
+// sensitivity special without the folder. The second stage is a mock that
+// records what it gets and what the folder held when it loaded.
+
+const state = vi.hoisted(() => ({
+  folder: '',
+  atLoad: undefined as string[] | undefined,
+  served: [] as ServeOptions[],
+  serveThrows: false,
+  special: false,
+}));
+
+vi.mock(import('./serve.js'), async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  // The moment the second stage loads: the file must be there already.
+  try {
+    state.atLoad = fs.readdirSync(path.join(state.folder, 'audit'));
+  } catch {
+    state.atLoad = [];
+  }
+  return {
+    closeDeadlineMs: 5000,
+    serve: (options: ServeOptions) => {
+      state.served.push(options);
+      if (state.serveThrows) throw new Error('serve');
+      return undefined;
+    },
+  } as unknown as typeof import('./serve.js');
+});
+
+vi.mock(import('./catalog.js'), async (importOriginal) => {
+  const original = await importOriginal();
+  return {
+    ...original,
+    createStdioCatalog: (
+      config: Parameters<typeof original.createStdioCatalog>[0],
+    ) => {
+      const catalog = original.createStdioCatalog(config);
+      if (!state.special) return catalog;
+      const special = {
+        name: 'ct_test_special',
+        meta: { sensitivity: 'special' },
+      };
+      return { ...catalog, list: () => [...catalog.list(), special] } as never;
+    },
+  };
+});
+
+const base = mkdtempSync(join(tmpdir(), 'ecclium-start-audit-'));
+let folders = 0;
+const freshFolder = (): string => {
+  folders += 1;
+  const folder = join(base, `state-${String(folders)}`);
+  rmSync(folder, { recursive: true, force: true });
+  // mkdtemp gives 0700, the folder of state needs the same.
+  const made = mkdtempSync(`${folder}-`);
+  chmodSync(made, 0o700);
+  return made;
+};
+
+afterEach(() => {
+  for (const options of state.served) options.auditFile?.close();
+  state.served.length = 0;
+  state.serveThrows = false;
+  state.special = false;
+});
+
+afterAll(() => {
+  rmSync(base, { recursive: true, force: true });
+});
+
+const environment = (
+  stateDir?: string,
+): Record<string, string | undefined> => ({
+  ECCLIUM_CHURCHTOOLS_URL: doubleOrigin,
+  [tokenVariableName]: makeCanary('token').value,
+  ...(stateDir === undefined ? {} : { ECCLIUM_STATE_DIR: stateDir }),
+});
+
+const decoder = new TextDecoder();
+
+const start = async (
+  stateDir: string | undefined,
+  options: Omit<StdioStartOptions, 'writeSync'> = {},
+) => {
+  const bytes: number[] = [];
+  const writeSync: WriteSyncFn = (_fd, buffer, offset, length) => {
+    for (const byte of buffer.subarray(offset, offset + length))
+      bytes.push(byte);
+    return length;
+  };
+  const code = await startStdio([], environment(stateDir), [], {
+    ...options,
+    writeSync,
+  });
+  return { code, stderr: decoder.decode(new Uint8Array(bytes)) };
+};
+
+describe('the first stage and the audit file', () => {
+  it('opens the file before the second stage loads and hands it over', async () => {
+    const folder = freshFolder();
+    state.folder = folder;
+    const { code } = await start(folder);
+    expect(code).toBeUndefined();
+    expect(state.atLoad).toHaveLength(1);
+    expect(state.atLoad?.[0]).toMatch(
+      /^audit-\d{4}-\d{2}-\d{2}-\d{6}-\d+-1\.jsonl$/,
+    );
+    const [served] = state.served;
+    expect(served?.auditFile?.ready()).toBe(true);
+    expect(readdirSync(join(folder, 'audit'))).toEqual(state.atLoad);
+  });
+
+  it('hands over no file without the folder', async () => {
+    const { code } = await start(undefined);
+    expect(code).toBeUndefined();
+    expect(state.served[0]?.auditFile).toBeUndefined();
+  });
+
+  it('refuses a tool with sensitivity special without the folder', async () => {
+    state.special = true;
+    const { code, stderr } = await start(undefined);
+    expect(code).toBe(exitCodes.invalidConfig);
+    expect(stderr).toContain(startText('audit_file_required'));
+    expect(state.served).toEqual([]);
+  });
+
+  it('starts a tool with sensitivity special with the folder', async () => {
+    state.special = true;
+    const { code } = await start(freshFolder());
+    expect(code).toBeUndefined();
+    expect(state.served[0]?.auditFile).toBeDefined();
+  });
+
+  it('ends with its notice after the others and 78 when the file cannot be opened', async () => {
+    const { code, stderr } = await start(freshFolder(), {
+      openAuditFile: () => ({ ok: false, code: 'audit_file_unavailable' }),
+    });
+    expect(code).toBe(exitCodes.invalidConfig);
+    const lines = stderr.split('\n').filter((line) => line !== '');
+    expect(lines.at(-1)).toBe(auditFileText('audit_file_unavailable'));
+    expect(lines.length).toBeGreaterThan(1);
+    expect(state.served).toEqual([]);
+  });
+
+  it('closes the open file when the second stage throws', async () => {
+    state.serveThrows = true;
+    const closed: string[] = [];
+    const { code, stderr } = await start(freshFolder(), {
+      openAuditFile: () => ({
+        ok: true,
+        writer: {
+          write: () => true,
+          ready: () => true,
+          close: () => {
+            closed.push('closed');
+          },
+          counts: () => ({
+            written: 0,
+            failed: 0,
+            partial: 0,
+            rejected: 0,
+            reopened: 0,
+            closed: false,
+          }),
+        },
+      }),
+    });
+    expect(code).toBe(exitCodes.internal);
+    expect(stderr).toContain(startText('internal'));
+    expect(closed).toEqual(['closed']);
+  });
+});

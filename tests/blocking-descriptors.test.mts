@@ -191,9 +191,15 @@ describe('fd 2 after loading a module', () => {
   );
 
   // The first stage of the start over stdio with everything it imports:
-  // core, the tools, the catalog of texts and the start notices. A static
-  // import of the second stage would load the server, its SDK and undici.
-  it.concurrent.each(['packages/cli/src/stdio/index.ts'])(
+  // core, the tools, the catalog of texts, the start notices and, through
+  // the composition subpath, the writer of the audit file, which the first
+  // stage opens before its notices (ADR 0028). A static import of the
+  // second stage would load the server, its SDK and undici.
+  it.concurrent.each([
+    'packages/cli/src/stdio/index.ts',
+    'packages/core/src/composition.ts',
+    'packages/core/src/audit/file-writer.ts',
+  ])(
     'blocks after loading %s with its packages from source',
     async (path) => {
       const result = await run(source(path), fromSource);

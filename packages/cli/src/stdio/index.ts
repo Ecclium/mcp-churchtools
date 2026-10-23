@@ -6,10 +6,11 @@
  *
  * The start runs in two stages (ADR 0054, ADR 0055). This first stage takes
  * over the environment, refuses every argument, loads the configuration,
- * builds the catalog of tools and writes the start notices, all before the
- * server, its SDK and undici load, which make fd 2 non-blocking. So the
- * notices go out on a descriptor that still blocks, and an invalid
- * configuration or a refusal of the registry ends the start without them.
+ * builds the catalog of tools, opens the audit file and writes the start
+ * notices, all before the server, its SDK and undici load, which make
+ * fd 2 non-blocking. So the notices go out on a descriptor that still
+ * blocks, and an invalid configuration, a refusal of the registry or an
+ * audit file that cannot be opened ends the start without them.
  * Only then does it load the second stage, `serve.ts`, with `import()`.
  * Importing this module starts nothing.
  *
@@ -25,10 +26,16 @@ import {
   type ToolCatalog,
   tokenVariableName,
 } from '@ecclium/mcp-churchtools-core';
+import {
+  type AuditFileWriter,
+  openAuditFile,
+  systemClock,
+} from '@ecclium/mcp-churchtools-core/composition';
 
 import { takeEnvironment } from '../environment.js';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
 import {
+  auditFileText,
   type MessageText,
   problemText,
   refusalText,
@@ -47,6 +54,8 @@ export interface StdioStartOptions extends ServeReplacements {
    * stderr writer.
    */
   readonly writeSync?: WriteSyncFn;
+  /** Replaces the opener of the audit file. */
+  readonly openAuditFile?: typeof openAuditFile;
 }
 
 // The reason of a refusal of the registry, read as an own data property of
@@ -75,9 +84,12 @@ const refusalOf = (error: unknown): RefusalReason | undefined => {
  * refused with a fixed text that repeats none of them, without parsing
  * them. The problems and warnings of the configuration, and a refusal of
  * the registry, go out as start notices in German before anything else
- * writes to stderr. Until the stderr writer exists, everything is caught:
- * an internal error gives one fixed notice and 70, never a stack or a
- * message.
+ * writes to stderr. With `ECCLIUM_STATE_DIR` it opens the audit file
+ * before the notices; a tool with sensitivity special without the folder,
+ * or a file that cannot be opened, ends the start with a notice and 78
+ * (ADR 0028). Until the stderr writer exists, everything is caught: an
+ * internal error gives one fixed notice and 70, never a stack or a
+ * message, and closes an audit file that is already open.
  *
  * @param args - The arguments after `ecclium stdio`.
  * @param environment - The environment of the process, which loses the
@@ -85,8 +97,9 @@ const refusalOf = (error: unknown): RefusalReason | undefined => {
  * @param execArgv - The options Node.js was started with, which the loader
  *   reads for the options of TLS.
  * @param startOptions - Replacements for tests.
- * @returns 64 for an argument, 78 for an invalid configuration, 70 for a
- *   refusal of the registry or an internal error, or undefined once the
+ * @returns 64 for an argument, 78 for an invalid configuration or an
+ *   audit file that is missing or cannot be opened, 70 for a refusal of
+ *   the registry or an internal error, or undefined once the
  *   server runs: the process then gets its exit code when the connection
  *   ends.
  * @example
@@ -101,9 +114,14 @@ export async function startStdio(
   execArgv: readonly string[],
   startOptions: StdioStartOptions = {},
 ): Promise<ExitCode | undefined> {
-  const { writeSync, ...replacements } = startOptions;
+  const {
+    writeSync,
+    openAuditFile: open = openAuditFile,
+    ...replacements
+  } = startOptions;
   const notices = (texts: readonly MessageText[]): boolean =>
     writeNotices(texts, writeSync === undefined ? {} : { writeSync }).torn;
+  let auditFile: AuditFileWriter | undefined;
   try {
     const taken = takeEnvironment(environment, [tokenVariableName]);
     if (!Array.isArray(args) || args.length > 0) {
@@ -132,6 +150,27 @@ export async function startStdio(
       notices([...texts, refusalText(reason)]);
       return exitCodes.internal;
     }
+    // A tool with sensitivity special gives results only with its line in
+    // the audit file, so it never runs without the folder (ADR 0028).
+    const { stateDir } = loaded.config;
+    if (
+      stateDir === undefined &&
+      catalog.list().some((entry) => entry.meta.sensitivity === 'special')
+    ) {
+      notices([...texts, startText('audit_file_required')]);
+      return exitCodes.invalidConfig;
+    }
+    // Opened while fd 2 still blocks and before the notices, so that a
+    // file that cannot be opened reports with them. Whoever sets the
+    // folder wants the audit kept by the server, so the start stops then.
+    if (stateDir !== undefined) {
+      const opened = open({ stateDir, clock: systemClock, pid: process.pid });
+      if (!opened.ok) {
+        notices([...texts, auditFileText(opened.code)]);
+        return exitCodes.invalidConfig;
+      }
+      auditFile = opened.writer;
+    }
     const torn = notices(texts);
     // Only now: the server, its SDK and undici make fd 2 non-blocking
     // while they load.
@@ -144,10 +183,13 @@ export async function startStdio(
       config: loaded.config,
       catalog,
       afterTornLine: torn,
+      ...(auditFile === undefined ? {} : { auditFile }),
     });
   } catch {
     // The thrown value is never looked at: its message or its properties
     // could hold a value of the configuration, and a proxy would run code.
+    // Closing twice is harmless, if serve closed the file already.
+    auditFile?.close();
     notices([startText('internal')]);
     return exitCodes.internal;
   }

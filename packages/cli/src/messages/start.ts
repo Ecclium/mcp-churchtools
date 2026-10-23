@@ -1,7 +1,8 @@
 /**
  * The German texts of the start over stdio (ADR 0055): a wrong call of
- * `ecclium stdio`, an internal error before the server runs, and the
- * refusal of a plugin or a tool by the registry (ADR 0024). The start
+ * `ecclium stdio`, an internal error before the server runs, the refusal
+ * of a plugin or a tool by the registry (ADR 0024), and an audit file that
+ * is missing or cannot be opened (ADR 0028). The start
  * notices write them to stderr before the line writer exists. No text
  * repeats an argument, because an argument can hold a token, and the text
  * of a refusal depends on its reason alone, without the names of plugin
@@ -9,12 +10,15 @@
  *
  * @packageDocumentation
  */
-import type { RefusalReason } from '@ecclium/mcp-churchtools-core';
+import type {
+  AuditFileCode,
+  RefusalReason,
+} from '@ecclium/mcp-churchtools-core';
 
 import type { Message, MessageText } from './config.js';
 
 /** The texts of the start over stdio besides the refusals of the registry. */
-export type StartNoticeCode = 'usage' | 'internal';
+export type StartNoticeCode = 'usage' | 'internal' | 'audit_file_required';
 
 const message = (what: string, why: string, action: string): Message =>
   Object.freeze({ what, why, action });
@@ -29,6 +33,47 @@ const starts: Readonly<Record<StartNoticeCode, Message>> = Object.freeze({
     'Der Start über stdio ist mit einem internen Fehler abgebrochen.',
     'Einzelheiten zeigt Ecclium nicht, weil sie Werte der Konfiguration enthalten könnten.',
     'Versuchen Sie es erneut und melden Sie den Fehler, wenn er bleibt.',
+  ),
+  audit_file_required: message(
+    'Ein Tool mit Personendaten der besonderen Kategorie ist eingeschaltet, aber ‹ECCLIUM_STATE_DIR› ist nicht gesetzt.',
+    'Die Ergebnisse eines solchen Tools gibt Ecclium nur heraus, wenn ihre Zeile in der Audit-Datei steht, und die Audit-Datei liegt in diesem Ordner.',
+    'Setzen Sie ‹ECCLIUM_STATE_DIR› auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 oder schalten Sie das Tool aus.',
+  ),
+});
+
+const stateDir = '‹ECCLIUM_STATE_DIR›';
+const configCheck = 'Prüfen Sie ihn mit «ecclium config check».';
+const noPath =
+  'Die Meldung des Dateisystems zeigt Ecclium nicht, weil sie den Pfad enthält.';
+
+// One text per reason the audit file could not be opened. Each says that
+// the start stops, because with the folder set the audit belongs into the
+// file (ADR 0028).
+const auditFiles: Readonly<Record<AuditFileCode, Message>> = Object.freeze({
+  audit_file_platform: message(
+    'Die Audit-Datei lässt sich auf diesem System nicht sicher anlegen.',
+    'Es fehlen die Prüfung des Eigentümers oder das Öffnen ohne Links, etwa unter Windows.',
+    `Entfernen Sie ${stateDir} auf diesem System.`,
+  ),
+  audit_file_folder_unavailable: message(
+    `Ecclium konnte den Ordner ‹audit› im Ordner aus ${stateDir} nicht anlegen oder öffnen, und der Start bricht ab.`,
+    `Ist ${stateDir} gesetzt, startet Ecclium nur mit der Audit-Datei. ${noPath}`,
+    `Prüfen Sie, ob der Ordner aus ${stateDir} besteht und Ihr Benutzer darin schreiben darf.`,
+  ),
+  audit_file_folder_unsafe: message(
+    `Der Ordner ‹audit› im Ordner aus ${stateDir} ist kein privater Ordner Ihres Benutzers, und der Start bricht ab.`,
+    'Er ist ein Link, kein Ordner, gehört einem anderen Benutzer oder ist für andere zugänglich. Dann könnten andere die Audit-Datei lesen oder austauschen.',
+    configCheck,
+  ),
+  audit_file_unavailable: message(
+    'Ecclium konnte keine neue Audit-Datei anlegen, und der Start bricht ab.',
+    `Das Dateisystem lehnte das Anlegen ab, etwa weil kein Platz mehr frei ist oder der Ordner nur gelesen werden kann. ${noPath}`,
+    `Prüfen Sie freien Platz und Rechte im Ordner aus ${stateDir}.`,
+  ),
+  audit_file_unsafe: message(
+    'Die neue Audit-Datei bestand die Prüfung nach dem Öffnen nicht, und der Start bricht ab.',
+    'Sie war keine gewöhnliche Datei Ihres Benutzers, oder der Ordner änderte sich, während Ecclium sie öffnete.',
+    `Prüfen Sie den Ordner aus ${stateDir} und starten Sie erneut.`,
   ),
 });
 
@@ -124,6 +169,41 @@ export function startMessage(code: StartNoticeCode): Message {
  */
 export function startText(code: StartNoticeCode): MessageText {
   return joined(startMessage(code));
+}
+
+/**
+ * The message for an audit file that could not be opened. It names no
+ * path.
+ *
+ * @param code - Why the file could not be opened.
+ * @returns The message in its three parts, frozen.
+ * @throws {TypeError} When the code is none of the catalog.
+ * @example
+ * ```ts
+ * auditFileMessage('audit_file_unavailable').action;
+ * ```
+ */
+export function auditFileMessage(code: AuditFileCode): Message {
+  const given: unknown = code;
+  if (typeof given !== 'string' || !Object.hasOwn(auditFiles, given)) {
+    throw new TypeError('The audit file code is unknown.');
+  }
+  return auditFiles[code];
+}
+
+/**
+ * The text for an audit file that could not be opened, in one line.
+ *
+ * @param code - Why the file could not be opened.
+ * @returns The text of the catalog.
+ * @throws {TypeError} When the code is none of the catalog.
+ * @example
+ * ```ts
+ * writeNotices([auditFileText('audit_file_unsafe')]);
+ * ```
+ */
+export function auditFileText(code: AuditFileCode): MessageText {
+  return joined(auditFileMessage(code));
 }
 
 /**

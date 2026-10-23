@@ -17,6 +17,7 @@ import { createStdioCatalog } from './catalog.js';
 import {
   closeDeadlineMs,
   serve,
+  type ServeOptions,
   type ServeReplacements,
   type StdioHost,
 } from './serve.js';
@@ -110,6 +111,7 @@ const setup = (
     readonly answer?: boolean;
     readonly failTransport?: boolean;
     readonly logLevel?: EccliumConfig['logLevel'];
+    readonly auditFile?: ServeOptions['auditFile'];
   } = {},
 ) => {
   const configured =
@@ -181,6 +183,9 @@ const setup = (
     input,
     output,
     host: fake.host,
+    ...(options.auditFile === undefined
+      ? {}
+      : { auditFile: options.auditFile }),
   });
   const stderr = (): string => decoder.decode(new Uint8Array(bytes));
   /** Every line on the fake fd 2 so far, parsed. */
@@ -240,6 +245,90 @@ const initialize: Json = {
 // Code without comments, so that a word in a comment counts for nothing.
 const code = (text: string): string =>
   text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+
+/** An audit file in memory that records its lines and when it closed. */
+const fakeAuditFile = (failed = 0) => {
+  const lines: string[] = [];
+  const events: string[] = [];
+  const file: NonNullable<ServeOptions['auditFile']> = {
+    write: (line) => {
+      lines.push(line);
+      return true;
+    },
+    ready: () => true,
+    close: () => {
+      events.push('closed');
+    },
+    counts: () => ({
+      written: lines.length,
+      failed,
+      partial: 0,
+      rejected: 0,
+      reopened: 0,
+      closed: events.length > 0,
+    }),
+  };
+  return { file, lines, events };
+};
+
+describe('the second stage with an audit file', () => {
+  it('writes each audit line into the file and closes it before the last line', async () => {
+    const audit = fakeAuditFile(3);
+    const session = setup({ answer: true, auditFile: audit.file });
+    session.send(initialize);
+    await session.reply(1);
+    session.send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    session.send({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'ct_whoami', arguments: {} },
+    });
+    await session.reply(2);
+    session.input.end();
+    await session.ended();
+    // The line in the file is the copy on stderr.
+    const copies = session
+      .stderr()
+      .split('\n')
+      .filter((line) => line.startsWith('{"v":1,'));
+    expect(audit.lines).toEqual(copies);
+    expect(audit.lines).toHaveLength(1);
+    const events = session.events().filter((event) => event !== undefined);
+    expect(events.slice(-2)).toEqual(['audit_file_closed', 'stdio_closed']);
+    expect(
+      session.lines().find((line) => line['event'] === 'audit_file_closed'),
+    ).toMatchObject({ level: 'info', count: 3 });
+    expect(audit.events).toEqual(['closed']);
+  });
+
+  it('closes the file after a signal, before the last line', async () => {
+    const audit = fakeAuditFile();
+    const session = setup({ auditFile: audit.file });
+    session.signals.get('SIGTERM')?.();
+    await session.ended();
+    expect(session.events()).toEqual([
+      'process_sigterm',
+      'audit_file_closed',
+      'stdio_closed',
+    ]);
+    expect(audit.events).toEqual(['closed']);
+  });
+
+  it('closes the file when the start fails after the writer', () => {
+    const audit = fakeAuditFile();
+    const session = setup({ failTransport: true, auditFile: audit.file });
+    expect(session.code).toBe(70);
+    expect(audit.events).toEqual(['closed']);
+  });
+
+  it('writes no audit_file_closed without a file', async () => {
+    const session = setup();
+    session.signals.get('SIGTERM')?.();
+    await session.ended();
+    expect(session.events()).toEqual(['process_sigterm', 'stdio_closed']);
+  });
+});
 
 describe('the second stage of the start over stdio', () => {
   it('answers ct_whoami with the e-mail masked and writes no canary to stderr', async () => {

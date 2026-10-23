@@ -15,6 +15,8 @@ export {
   warningText,
 } from './config.js';
 export {
+  auditFileMessage,
+  auditFileText,
   refusalMessage,
   refusalText,
   type StartNoticeCode,
