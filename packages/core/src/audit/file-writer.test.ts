@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -18,7 +19,9 @@ import {
   auditFileCodes,
   type AuditFileStats,
   type AuditFileSystem,
+  type AuditFileWriter,
   maxNameAttempts,
+  maxWriteAttempts,
   openAuditFile,
 } from './file-writer.js';
 
@@ -72,6 +75,11 @@ interface Hooks {
   readonly fstat?: (fd: number) => AuditFileStats | undefined;
   readonly lstat?: (path: string) => AuditFileStats | undefined;
   readonly close?: (fd: number) => void;
+  /**
+   * How many of the bytes a call takes, or undefined for all of them. It
+   * may throw like writeSync.
+   */
+  readonly write?: (fd: number, bytes: Uint8Array) => number | undefined;
   readonly getuid?: () => number | undefined;
   readonly constants?: AuditFileSystem['constants'];
 }
@@ -80,6 +88,10 @@ interface Fake {
   readonly fs: AuditFileSystem;
   readonly calls: string[];
   readonly closed: number[];
+  /** What reached each descriptor, as text. */
+  readonly content: (fd: number) => string;
+  /** The number of arguments of each call of writeSync. */
+  readonly arities: number[];
 }
 
 /**
@@ -90,6 +102,8 @@ interface Fake {
 const fake = (hooks: Hooks = {}): Fake => {
   const calls: string[] = [];
   const closed: number[] = [];
+  const arities: number[] = [];
+  const bytesOf = new Map<number, number[]>();
   const fdOfPath = new Map<string, number>();
   let nextFd = 11;
   const fs: AuditFileSystem = {
@@ -120,7 +134,26 @@ const fake = (hooks: Hooks = {}): Fake => {
       (path === folderPath
         ? stats({ kind: 'dir' })
         : stats({ kind: 'file', ino: 200 + (fdOfPath.get(path) ?? 0) })),
-    writeSync: () => 0,
+    writeSync: (...args: unknown[]) => {
+      arities.push(args.length);
+      const [fd, buffer, offset, length] = args as [
+        number,
+        Uint8Array,
+        number,
+        number,
+      ];
+      calls.push(`write ${String(fd)} ${String(offset)} ${String(length)}`);
+      const bytes = buffer.subarray(offset, offset + length);
+      const taken = hooks.write?.(fd, bytes) ?? length;
+      // A count outside the contract writes nothing, as a bad answer of a
+      // call that did not happen.
+      const kept =
+        Number.isInteger(taken) && taken > 0 && taken <= length ? taken : 0;
+      const target = bytesOf.get(fd) ?? [];
+      target.push(...bytes.subarray(0, kept));
+      bytesOf.set(fd, target);
+      return taken;
+    },
     closeSync: (fd) => {
       closed.push(fd);
       hooks.close?.(fd);
@@ -128,7 +161,35 @@ const fake = (hooks: Hooks = {}): Fake => {
     getuid: hooks.getuid ?? (() => 1000),
     constants: hooks.constants ?? fakeConstants,
   };
-  return { fs, calls, closed };
+  return {
+    fs,
+    calls,
+    closed,
+    arities,
+    content: (fd) =>
+      new TextDecoder().decode(new Uint8Array(bytesOf.get(fd) ?? [])),
+  };
+};
+
+const fileFd = 11;
+
+/** An open writer over the fake, with the fake. */
+const opened = (hooks: Hooks = {}): Fake & { writer: AuditFileWriter } => {
+  const files = fake(hooks);
+  const result = openAuditFile({ stateDir, clock, pid, fs: files.fs });
+  if (!result.ok) throw new Error(result.code);
+  return { ...files, writer: result.writer };
+};
+
+/** Answers of writeSync in turn, then all of each call. */
+const script = (
+  ...answers: (number | string)[]
+): ((fd: number, bytes: Uint8Array) => number | undefined) => {
+  return (_fd, bytes) => {
+    const answer = answers.shift();
+    if (typeof answer === 'string') throw fsError(answer);
+    return answer === -2 ? bytes.length - 1 : answer;
+  };
 };
 
 const codeOf = (hooks: Hooks): string => {
@@ -464,11 +525,11 @@ describe('openAuditFile with file functions', () => {
     const { fs, closed } = fake();
     const result = openAuditFile({ stateDir, clock, pid, fs });
     if (!result.ok) throw new Error('not opened');
-    expect(result.writer.counts()).toEqual({ closed: false });
+    expect(result.writer.counts().closed).toBe(false);
     result.writer.close();
     result.writer.close();
     expect(closed).toEqual([folderFd, 11]);
-    expect(result.writer.counts()).toEqual({ closed: true });
+    expect(result.writer.counts().closed).toBe(true);
   });
 
   it('is closed for good when closing throws', () => {
@@ -504,6 +565,171 @@ describe('openAuditFile with file functions', () => {
   });
 });
 
+describe('the writer of the audit file', () => {
+  it('appends each line with its line break, in one call', () => {
+    const { writer, content, arities, calls } = opened();
+    expect(writer.write('{"v":1}')).toBe(true);
+    expect(writer.write('{"v":2}')).toBe(true);
+    expect(content(fileFd)).toBe('{"v":1}\n{"v":2}\n');
+    // Exactly four arguments: a position would write over the file.
+    expect(arities).toEqual([4, 4]);
+    expect(calls.filter((call) => call.startsWith('write'))).toEqual([
+      `write ${String(fileFd)} 0 8`,
+      `write ${String(fileFd)} 0 8`,
+    ]);
+    expect(writer.counts()).toEqual({
+      written: 2,
+      failed: 0,
+      partial: 0,
+      rejected: 0,
+      closed: false,
+    });
+  });
+
+  it.each([
+    ['an empty line', ''],
+    ['a line break', 'a\nb'],
+    ['a carriage return', 'a\rb'],
+    ['a tab', 'a\tb'],
+    ['an umlaut', '\u00fc'],
+    ['a line separator', 'a\u2028b'],
+    ['a line too long', 'a'.repeat(65_537)],
+    ['no string', 1],
+  ])('refuses %s without a call', (_name, line) => {
+    const { writer, calls } = opened();
+    expect(writer.write(line as string)).toBe(false);
+    expect(writer.counts().rejected).toBe(1);
+    expect(calls.some((call) => call.startsWith('write'))).toBe(false);
+  });
+
+  it('takes a line of 65536 characters', () => {
+    expect(opened().writer.write('a'.repeat(65_536))).toBe(true);
+  });
+
+  it('continues a partial write at its offset', () => {
+    const { writer, content, calls } = opened({ write: script(3) });
+    expect(writer.write('{"v":1}')).toBe(true);
+    expect(content(fileFd)).toBe('{"v":1}\n');
+    expect(calls.filter((call) => call.startsWith('write'))).toEqual([
+      `write ${String(fileFd)} 0 8`,
+      `write ${String(fileFd)} 3 5`,
+    ]);
+  });
+
+  it.each([0, -1, Number.NaN, 1.5, 9])(
+    'counts %s bytes from writeSync as no progress',
+    (count) => {
+      const { writer, content } = opened({
+        write: script(count, count, count),
+      });
+      expect(writer.write('{"v":1}')).toBe(true);
+      expect(content(fileFd)).toBe('{"v":1}\n');
+    },
+  );
+
+  it(`gives up after ${String(maxWriteAttempts)} calls without progress`, () => {
+    const { writer, content, calls } = opened({ write: script(0, 0, 0, 0) });
+    expect(writer.write('{"v":1}')).toBe(false);
+    expect(calls.filter((call) => call.startsWith('write'))).toHaveLength(
+      maxWriteAttempts,
+    );
+    expect(content(fileFd)).toBe('');
+    expect(writer.counts()).toMatchObject({ failed: 1, partial: 0 });
+    // Nothing reached the file, so the next line needs no repair.
+    expect(writer.write('{"v":2}')).toBe(true);
+    expect(content(fileFd)).toBe('{"v":2}\n');
+  });
+
+  it.each(['ENOSPC', 'EDQUOT', 'EIO'])(
+    'loses the line on %s and writes the next one',
+    (code) => {
+      const { writer, content } = opened({ write: script(code) });
+      expect(writer.write('{"v":1}')).toBe(false);
+      expect(writer.write('{"v":2}')).toBe(true);
+      expect(content(fileFd)).toBe('{"v":2}\n');
+      expect(writer.counts()).toMatchObject({ written: 1, failed: 1 });
+    },
+  );
+
+  it('stops on a thrown value that is no error', () => {
+    const { writer } = opened({
+      write: () => {
+        throw new Proxy(fsError('EAGAIN'), {});
+      },
+    });
+    expect(writer.write('{"v":1}')).toBe(false);
+  });
+
+  it('closes a piece of a line with a tilde at once', () => {
+    const { writer, content } = opened({ write: script(4, 'ENOSPC') });
+    expect(writer.write('{"v":1}')).toBe(false);
+    expect(content(fileFd)).toBe('{"v"~\n');
+    expect(writer.counts()).toMatchObject({ failed: 1, partial: 1 });
+    expect(writer.write('{"v":2}')).toBe(true);
+    expect(content(fileFd)).toBe('{"v"~\n{"v":2}\n');
+  });
+
+  it('never turns a piece that lacks only its break into a valid line', () => {
+    const { writer, content } = opened({ write: script(-2, 'EIO') });
+    expect(writer.write('{"v":1}')).toBe(false);
+    const [piece] = content(fileFd).split('\n');
+    expect(piece).toBe('{"v":1}~');
+    expect(() => JSON.parse(piece ?? '') as unknown).toThrow(SyntaxError);
+  });
+
+  it('repairs a piece with the next line when the repair fails', () => {
+    const { writer, content } = opened({
+      write: script(4, 'ENOSPC', 'ENOSPC'),
+    });
+    expect(writer.write('{"v":1}')).toBe(false);
+    expect(content(fileFd)).toBe('{"v"');
+    expect(writer.write('{"v":2}')).toBe(true);
+    expect(content(fileFd)).toBe('{"v"~\n{"v":2}\n');
+  });
+
+  it('keeps a piece invalid when the repair stops after the tilde', () => {
+    const { writer, content } = opened({
+      write: script(4, 'ENOSPC', 1, 'EIO'),
+    });
+    expect(writer.write('{"v":1}')).toBe(false);
+    expect(content(fileFd)).toBe('{"v"~');
+    expect(writer.write('{"v":2}')).toBe(true);
+    expect(content(fileFd)).toBe('{"v"~~\n{"v":2}\n');
+  });
+
+  it('repairs again after a line of which only the tilde went out', () => {
+    const { writer, content } = opened({
+      write: script(4, 'ENOSPC', 'ENOSPC', 1, 'EIO'),
+    });
+    expect(writer.write('{"v":1}')).toBe(false);
+    expect(writer.write('{"v":2}')).toBe(false);
+    expect(content(fileFd)).toBe('{"v"~');
+    expect(writer.counts()).toMatchObject({ failed: 2, partial: 1 });
+    expect(writer.write('{"v":3}')).toBe(true);
+    expect(content(fileFd)).toBe('{"v"~~\n{"v":3}\n');
+  });
+
+  it('needs no repair after a line of which only the repair went out', () => {
+    const { writer, content } = opened({
+      write: script(4, 'ENOSPC', 'ENOSPC', 2, 'ENOSPC'),
+    });
+    expect(writer.write('{"v":1}')).toBe(false);
+    expect(writer.write('{"v":2}')).toBe(false);
+    expect(content(fileFd)).toBe('{"v"~\n');
+    expect(writer.counts()).toMatchObject({ failed: 2, partial: 1 });
+    expect(writer.write('{"v":3}')).toBe(true);
+    expect(content(fileFd)).toBe('{"v"~\n{"v":3}\n');
+  });
+
+  it('counts a line after close as lost, without a call', () => {
+    const { writer, calls } = opened();
+    writer.close();
+    expect(writer.write('{"v":1}')).toBe(false);
+    expect(calls.some((call) => call.startsWith('write'))).toBe(false);
+    expect(writer.counts()).toMatchObject({ failed: 1, closed: true });
+  });
+});
+
 describe('openAuditFile on the disk', () => {
   const base = mkdtempSync(join(tmpdir(), 'ecclium-audit-file-'));
   const fresh = (name: string): string => {
@@ -530,6 +756,18 @@ describe('openAuditFile on the disk', () => {
     expect(file.mode & 0o777).toBe(0o600);
     expect(file.size).toBe(0);
     if (result.ok) result.writer.close();
+  });
+
+  it('writes lines into the file on the disk', () => {
+    const folder = fresh('lines');
+    const result = open(folder);
+    if (!result.ok) throw new Error(result.code);
+    expect(result.writer.write('{"v":1}')).toBe(true);
+    expect(result.writer.write('{"v":2}')).toBe(true);
+    result.writer.close();
+    expect(readFileSync(join(folder, 'audit', nameOf(1)), 'utf8')).toBe(
+      '{"v":1}\n{"v":2}\n',
+    );
   });
 
   it('opens a second file in the same folder with the next free number', () => {

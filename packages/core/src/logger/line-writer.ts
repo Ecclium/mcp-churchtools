@@ -74,9 +74,22 @@ export const maxLineLength = 65_536;
 
 const encoder = new TextEncoder();
 
-// One line of printable ASCII. A line break inside would split a JSON line
-// in two, and anything outside ASCII has no place in a line of known fields.
-const isLine = (value: unknown): value is string => {
+/**
+ * Tells whether a value is one line the writers take: 1 to
+ * {@link maxLineLength} characters of printable ASCII. A line break inside
+ * would split a JSON line in two, and anything outside ASCII has no place
+ * in a line of known fields. The writer of the audit file uses the same
+ * rule (ADR 0028).
+ *
+ * @param value - Any value.
+ * @returns Whether it is such a line.
+ * @example
+ * ```ts
+ * isWritableLine('{"v":1}'); // true
+ * isWritableLine('a\nb'); // false
+ * ```
+ */
+export const isWritableLine = (value: unknown): value is string => {
   if (typeof value !== 'string') return false;
   if (value.length < 1 || value.length > maxLineLength) return false;
   for (let index = 0; index < value.length; index += 1) {
@@ -187,7 +200,7 @@ export function createStderrWriter(
     }
     writing = true;
     try {
-      if (!isLine(line)) {
+      if (!isWritableLine(line)) {
         rejected += 1;
         return false;
       }

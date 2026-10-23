@@ -26,7 +26,11 @@ import { isProxy } from 'node:util/types';
 import type { Clock } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { auditDirName, isNormalizedAbsolutePath } from '../config/state-dir.js';
-import { toTimestamp } from '../logger/index.js';
+import {
+  isWritableLine,
+  type LineWriter,
+  toTimestamp,
+} from '../logger/index.js';
 
 /**
  * Why the audit file could not be opened, frozen. A code never carries a
@@ -98,12 +102,27 @@ export interface AuditFileOptions {
 
 /** Counts of the writer, as a frozen snapshot. */
 export interface AuditFileCounts {
+  /** Lines written whole. */
+  readonly written: number;
+  /** Lines lost, in whole or in part. */
+  readonly failed: number;
+  /** Lost lines of which a piece reached the file. */
+  readonly partial: number;
+  /** Lines refused because they were no line of printable ASCII. */
+  readonly rejected: number;
   /** Whether the writer is closed for good. */
   readonly closed: boolean;
 }
 
 /** The open audit file. */
-export interface AuditFileWriter {
+export interface AuditFileWriter extends LineWriter {
+  /**
+   * Appends the line and a line break to the file. It never throws.
+   *
+   * @param line - One line of printable ASCII, without a line break.
+   * @returns Whether the whole line is in the file.
+   */
+  write(line: string): boolean;
   /**
    * Closes the file for good. Later lines count as lost and open nothing.
    * It never throws.
@@ -128,8 +147,19 @@ export const auditDirMode = 0o700;
 /** The mode of an audit file. */
 export const auditFileMode = 0o600;
 
-/** Names tried per open before the writer gives up, 1 to 16. */
+/** Names tried per open before the writer gives up. */
 export const maxNameAttempts = 16;
+
+/** System calls per line at most, as for the stderr writer. */
+export const maxWriteAttempts = 4;
+
+const encoder = new TextEncoder();
+
+// Closes a piece of a line that lost its end. A line break alone could
+// turn a piece that lacks only its break into a valid line; with the
+// tilde before it, the piece is never valid JSON.
+const repair = '~\n';
+const repairBytes = encoder.encode(repair);
 
 const nodeFileSystem: AuditFileSystem = Object.freeze({
   mkdirSync: (path: string, mode: number) => {
@@ -364,6 +394,65 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
   // other.
   let fd: number | undefined = opened.fd;
   let closed = false;
+  let written = 0;
+  let failed = 0;
+  let partial = 0;
+  let rejected = 0;
+  // Whether the file ends in a piece of a line without its repair.
+  let torn = false;
+
+  // Bytes sent before the attempts ran out or a call failed. With O_APPEND
+  // each call writes at the end, and exactly four arguments keep a
+  // position out: one would write over the file instead of after it.
+  const send = (target: number, bytes: Uint8Array): number => {
+    let offset = 0;
+    for (
+      let attempt = 0;
+      attempt < maxWriteAttempts && offset < bytes.length;
+      attempt += 1
+    ) {
+      const rest = bytes.length - offset;
+      try {
+        const count = fs.writeSync(target, bytes, offset, rest);
+        // A count outside its contract counts as no progress.
+        if (Number.isInteger(count) && count > 0 && count <= rest) {
+          offset += count;
+        }
+      } catch {
+        break;
+      }
+    }
+    return offset;
+  };
+
+  const write = (line: string): boolean => {
+    if (!isWritableLine(line)) {
+      rejected += 1;
+      return false;
+    }
+    if (fd === undefined) {
+      failed += 1;
+      return false;
+    }
+    const prefix = torn ? repair : '';
+    const bytes = encoder.encode(`${prefix}${line}\n`);
+    const sent = send(fd, bytes);
+    if (sent === bytes.length) {
+      torn = false;
+      written += 1;
+      return true;
+    }
+    failed += 1;
+    if (sent > prefix.length) {
+      // A piece of the line is in the file: close it at once.
+      partial += 1;
+      torn = send(fd, repairBytes) !== repairBytes.length;
+    } else if (sent === prefix.length) {
+      // At most the repair went out, nothing of the line itself.
+      torn = false;
+    }
+    return false;
+  };
 
   const close = (): void => {
     closed = true;
@@ -377,11 +466,12 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
     }
   };
 
-  const counts = (): AuditFileCounts => Object.freeze({ closed });
+  const counts = (): AuditFileCounts =>
+    Object.freeze({ written, failed, partial, rejected, closed });
 
   return Object.freeze({
     __proto__: null,
     ok: true,
-    writer: Object.freeze({ close, counts }),
+    writer: Object.freeze({ write, close, counts }),
   });
 }
