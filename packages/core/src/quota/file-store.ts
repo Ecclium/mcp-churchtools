@@ -23,6 +23,7 @@ import {
   constants,
   fstatSync,
   fsyncSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -123,6 +124,7 @@ export interface QuotaFileSystem {
   readonly fsyncSync: (fd: number) => void;
   readonly closeSync: (fd: number) => void;
   readonly renameSync: (from: string, to: string) => void;
+  readonly linkSync: (existing: string, path: string) => void;
   readonly unlinkSync: (path: string) => void;
   readonly readdirSync: (path: string) => string[];
   /** The ID of the user, or undefined on a platform without one. */
@@ -144,6 +146,7 @@ const nodeFileSystem: QuotaFileSystem = Object.freeze({
   fsyncSync,
   closeSync,
   renameSync,
+  linkSync,
   unlinkSync,
   readdirSync: (path: string) => readdirSync(path),
   getuid: () => process.getuid?.(),
@@ -204,7 +207,7 @@ const platformFlags = (
   | undefined => {
   const { O_RDONLY, O_WRONLY, O_CREAT, O_EXCL, O_NOFOLLOW, O_NOCTTY } =
     fs.constants;
-  const { O_DIRECTORY } = fs.constants;
+  const { O_DIRECTORY, O_NONBLOCK } = fs.constants;
   const uid = fs.getuid();
   if (
     O_RDONLY === undefined ||
@@ -214,12 +217,15 @@ const platformFlags = (
     O_NOFOLLOW === undefined ||
     O_NOCTTY === undefined ||
     O_DIRECTORY === undefined ||
+    O_NONBLOCK === undefined ||
     uid === undefined
   ) {
     return undefined;
   }
   return {
-    read: O_RDONLY | O_NOFOLLOW | O_NOCTTY,
+    // O_NONBLOCK, so that a FIFO in place of the file never holds the
+    // open; a regular file reads as before.
+    read: O_RDONLY | O_NOFOLLOW | O_NOCTTY | O_NONBLOCK,
     create: O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_NOCTTY,
     folder: O_RDONLY | O_DIRECTORY | O_NOFOLLOW,
     uid,
@@ -294,6 +300,12 @@ export function prepareQuotaFolder(
   }
 }
 
+/** Device and inode of a file or folder. */
+interface Identity {
+  readonly dev: number;
+  readonly ino: number;
+}
+
 /** The counters of one tenant and day: per actor, per key. */
 type Counts = Record<string, Partial<Record<QuotaKey, number>>>;
 
@@ -305,6 +317,11 @@ const safeHost = (host: unknown): string =>
   typeof host === 'string' && /^[\x21-\x7e]{1,255}$/.test(host)
     ? host
     : 'unknown';
+
+// What follows the day in the name of a lock moved aside and of a
+// temporary file: the ID of the process and 16 hexadecimal signs.
+const staleSuffix = /^\.json\.lock\.\d{1,10}\.[0-9a-f]{16}\.stale$/;
+const temporarySuffix = /^\.\d{1,10}\.[0-9a-f]{16}\.tmp$/;
 
 const isCount = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
@@ -436,8 +453,10 @@ export function createFileQuotaStore(
     return flags;
   };
 
-  // The folder must still be a folder of the user and no link.
-  const checkFolder = (uid: number): void => {
+  // The folder must still be a folder of the user and no link. Its device
+  // and inode are kept, so that every later step can see whether the
+  // folder was swapped in the meantime, as the audit file does (ADR 0028).
+  const checkFolder = (uid: number): Identity => {
     let stats: QuotaFileStats;
     try {
       stats = fs.lstatSync(folder);
@@ -451,6 +470,43 @@ export function createFileQuotaStore(
     ) {
       throw unavailable();
     }
+    return { dev: stats.dev, ino: stats.ino };
+  };
+
+  // The folder is still the one checked.
+  const sameFolder = (checked: Identity): void => {
+    let now: QuotaFileStats;
+    try {
+      now = fs.lstatSync(folder);
+    } catch {
+      throw unavailable();
+    }
+    if (
+      now.isSymbolicLink() ||
+      now.dev !== checked.dev ||
+      now.ino !== checked.ino
+    ) {
+      throw unavailable();
+    }
+  };
+
+  // The open descriptor is still what the path leads to, in the folder
+  // checked.
+  const samePlace = (
+    stats: QuotaFileStats,
+    path: string,
+    checked: Identity,
+  ): void => {
+    let atPath: QuotaFileStats;
+    try {
+      atPath = fs.lstatSync(path);
+    } catch {
+      throw unavailable();
+    }
+    if (atPath.dev !== stats.dev || atPath.ino !== stats.ino) {
+      throw unavailable();
+    }
+    sameFolder(checked);
   };
 
   const readAll = (fd: number, size: number): Uint8Array => {
@@ -478,6 +534,7 @@ export function createFileQuotaStore(
     tenantId: string,
     day: IsoDate,
     flags: { readonly read: number; readonly uid: number },
+    checked: Identity,
   ): Counts => {
     let fd: number;
     try {
@@ -498,6 +555,7 @@ export function createFileQuotaStore(
       ) {
         throw unavailable();
       }
+      samePlace(stats, path, checked);
       let text: string;
       try {
         text = decoder.decode(readAll(fd, stats.size));
@@ -533,6 +591,7 @@ export function createFileQuotaStore(
     day: IsoDate,
     counts: Counts,
     flags: { readonly create: number },
+    checked: Identity,
   ): void => {
     const bytes = encoder.encode(
       `${JSON.stringify({ v: 1, tenant: tenantId, day, counts })}\n`,
@@ -547,10 +606,12 @@ export function createFileQuotaStore(
     }
     let moved = false;
     try {
+      samePlace(fs.fstatSync(fd), temporary, checked);
       writeAll(fd, bytes);
       fs.fsyncSync(fd);
       fs.closeSync(fd);
       fd = -1;
+      sameFolder(checked);
       fs.renameSync(temporary, path);
       moved = true;
     } catch {
@@ -576,13 +637,17 @@ export function createFileQuotaStore(
   // Takes the lock of a file, or fails once the wait is over. A lock older
   // than orphanLockMs is moved aside under a name of this process and
   // removed; if what was moved is not the lock that was judged old, another
-  // process took the place in between, and it is put back.
+  // process took the place in between, and it is put back. Every path
+  // through the loop either waits, ends, or meets the deadline, so that a
+  // lock it cannot clear never holds the process.
   const lock = async (
     path: string,
     flags: { readonly create: number },
-  ): Promise<{ readonly dev: number; readonly ino: number }> => {
+    checked: Identity,
+  ): Promise<Identity> => {
     const deadline = clock.now() + lockWaitMs;
-    for (;;) {
+    for (let attempt = 0; ; attempt += 1) {
+      if (attempt > 0 && clock.now() >= deadline) throw unavailable();
       let fd: number | undefined;
       try {
         fd = fs.openSync(path, flags.create, quotaFileMode);
@@ -598,6 +663,7 @@ export function createFileQuotaStore(
             ),
           );
           const stats = fs.fstatSync(fd);
+          samePlace(stats, path, checked);
           return { dev: stats.dev, ino: stats.ino };
         } catch {
           try {
@@ -627,27 +693,38 @@ export function createFileQuotaStore(
         const aside = `${path}.${String(pid)}.${randomBytes(8).toString('hex')}.stale`;
         try {
           fs.renameSync(path, aside);
+        } catch (error) {
+          // Only a lock another process cleared first is no failure.
+          if (errorCode(error) !== 'ENOENT') throw unavailable();
+          continue;
+        }
+        try {
           const moved = fs.lstatSync(aside);
-          if (moved.dev !== held.dev || moved.ino !== held.ino) {
-            fs.renameSync(aside, path);
-          } else {
-            fs.unlinkSync(aside);
+          if (
+            moved.dev !== held.dev ||
+            moved.ino !== held.ino ||
+            moved.mtimeMs !== held.mtimeMs
+          ) {
+            // A link, not a rename: a lock a third process made in the
+            // meantime stays, and only this copy goes.
+            try {
+              fs.linkSync(aside, path);
+            } catch (error) {
+              if (errorCode(error) !== 'EEXIST') throw unavailable();
+            }
           }
+          fs.unlinkSync(aside);
         } catch {
-          // Another process cleared it first.
+          throw unavailable();
         }
         continue;
       }
-      if (held !== undefined && clock.now() >= deadline) throw unavailable();
       if (held !== undefined) await sleep(lockRetryMs);
     }
   };
 
   // Removes the lock only while it is still this one.
-  const unlock = (
-    path: string,
-    mine: { readonly dev: number; readonly ino: number },
-  ): void => {
+  const unlock = (path: string, mine: Identity): void => {
     try {
       const stats = fs.lstatSync(path);
       if (stats.dev === mine.dev && stats.ino === mine.ino) fs.unlinkSync(path);
@@ -656,28 +733,32 @@ export function createFileQuotaStore(
     }
   };
 
-  // Removes the files of the tenant for earlier days, once per day. Only
-  // names of exactly this form, and unlink never follows a link.
-  const cleanUp = (tenantId: string, day: IsoDate): void => {
+  // Removes the files of the tenant for earlier days, once per day: the
+  // file, its lock, a lock moved aside and a temporary file a process left
+  // behind. Only names of exactly these forms, and unlink never follows a
+  // link.
+  const cleanUp = (tenantId: string, day: IsoDate, checked: Identity): void => {
     if (cleaned.get(tenantId) === day) return;
     cleaned.set(tenantId, day);
     let names: string[];
     try {
+      sameFolder(checked);
       names = fs.readdirSync(folder);
     } catch {
       return;
     }
-    const prefix = `${tenantId}-`;
     for (const name of names) {
-      if (!name.startsWith(prefix)) continue;
-      const rest = name.slice(prefix.length);
+      const temporary = name.startsWith(`.${tenantId}-`);
+      if (!temporary && !name.startsWith(`${tenantId}-`)) continue;
+      const rest = name.slice(tenantId.length + (temporary ? 2 : 1));
       const earlier = rest.slice(0, 10);
       const suffix = rest.slice(10);
-      if (
-        isIsoDate(earlier) &&
-        earlier < day &&
-        (suffix === '.json' || suffix === '.json.lock')
-      ) {
+      const leftOver = temporary
+        ? temporarySuffix.test(suffix)
+        : suffix === '.json' ||
+          suffix === '.json.lock' ||
+          staleSuffix.test(suffix);
+      if (isIsoDate(earlier) && earlier < day && leftOver) {
         try {
           fs.unlinkSync(`${folder}/${name}`);
         } catch {
@@ -694,11 +775,11 @@ export function createFileQuotaStore(
   ): Promise<number> => {
     const { tenantId, actor } = subjectOf(ctx, key, day);
     const flags = flagsOrFail();
-    checkFolder(flags.uid);
+    const checked = checkFolder(flags.uid);
     const path = `${folder}/${tenantId}-${day}.json`;
-    const mine = await lock(`${path}.lock`, flags);
+    const mine = await lock(`${path}.lock`, flags, checked);
     try {
-      const counts = readCounts(path, tenantId, day, flags);
+      const counts = readCounts(path, tenantId, day, flags, checked);
       const entry =
         counts[actor] ??
         (Object.create(null) as Partial<Record<QuotaKey, number>>);
@@ -707,11 +788,11 @@ export function createFileQuotaStore(
       entry[key] = value;
       counts[actor] = entry;
       if (Object.keys(counts).length > maxQuotaActors) throw unavailable();
-      writeCounts(path, tenantId, day, counts, flags);
+      writeCounts(path, tenantId, day, counts, flags, checked);
       return value;
     } finally {
       unlock(`${path}.lock`, mine);
-      cleanUp(tenantId, day);
+      cleanUp(tenantId, day, checked);
     }
   };
 
@@ -722,13 +803,14 @@ export function createFileQuotaStore(
   ): Promise<number> => {
     const { tenantId, actor } = subjectOf(ctx, key, day);
     const flags = flagsOrFail();
-    checkFolder(flags.uid);
+    const checked = checkFolder(flags.uid);
     // A rename replaces the file whole, so a read needs no lock.
     const counts = readCounts(
       `${folder}/${tenantId}-${day}.json`,
       tenantId,
       day,
       flags,
+      checked,
     );
     return Promise.resolve(counts[actor]?.[key] ?? 0);
   };

@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import {
   chmodSync,
   closeSync,
@@ -5,6 +6,7 @@ import {
   existsSync,
   fstatSync,
   fsyncSync,
+  linkSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
@@ -38,6 +40,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import {
   createFileQuotaStore,
   type FileQuotaStoreOptions,
+  maxQuotaActors,
   maxQuotaFileBytes,
   orphanLockMs,
   prepareQuotaFolder,
@@ -82,6 +85,7 @@ const nodeFs: QuotaFileSystem = Object.freeze({
   fsyncSync,
   closeSync,
   renameSync,
+  linkSync,
   unlinkSync,
   readdirSync: (path: string) => readdirSync(path),
   getuid: () => process.getuid?.(),
@@ -153,6 +157,10 @@ describe('the file of quotas', () => {
       'demo-tenant-2026-10-25.json',
       'other-tenant-2026-10-23.json',
       'demo-tenant-2026-10-23.json.bak',
+      'demo-tenant-2026-10-23.json.lock.4242.0123456789abcdef.stale',
+      'demo-tenant-2026-10-23.json.lock.x.stale',
+      '.demo-tenant-2026-10-23.4242.0123456789abcdef.tmp',
+      '.demo-tenant-2026-10-24.4242.0123456789abcdef.tmp',
       'notes.txt',
     ];
     for (const name of names) {
@@ -163,6 +171,8 @@ describe('the file of quotas', () => {
       [
         `demo-tenant-${day}.json`,
         'demo-tenant-2026-10-23.json.bak',
+        'demo-tenant-2026-10-23.json.lock.x.stale',
+        '.demo-tenant-2026-10-24.4242.0123456789abcdef.tmp',
         'demo-tenant-2026-10-25.json',
         'notes.txt',
         'other-tenant-2026-10-23.json',
@@ -248,6 +258,48 @@ describe('the file of quotas', () => {
     expect(readdirSync(join(state, 'quota'))).toEqual([
       `demo-tenant-${day}.json`,
     ]);
+  });
+
+  it('fails at once, and holds nothing, when it cannot move a lock left behind', async () => {
+    const state = freshState();
+    const lock = `${fileOf(state)}.lock`;
+    writeFileSync(lock, '{}', { mode: 0o600 });
+    const old = (Date.now() - orphanLockMs - 5000) / 1000;
+    utimesSync(lock, old, old);
+    const refusing: QuotaFileSystem = {
+      ...nodeFs,
+      renameSync: () => {
+        throw Object.assign(new Error('EACCES'), { code: 'EACCES' });
+      },
+    };
+    const started = Date.now();
+    await expect(
+      open(state, { fs: refusing }).increment(ctx, key, day),
+    ).rejects.toThrow(failure);
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(existsSync(lock)).toBe(true);
+  });
+
+  it('meets the deadline also when the lock comes and goes', async () => {
+    const state = freshState();
+    let now = Date.now();
+    const flickering: QuotaFileSystem = {
+      ...nodeFs,
+      openSync: (path, flags, mode) => {
+        if (path.endsWith('.lock')) {
+          now += 300;
+          throw Object.assign(new Error('EEXIST'), { code: 'EEXIST' });
+        }
+        return openSync(path, flags, mode);
+      },
+    };
+    await expect(
+      open(state, { fs: flickering, clock: { now: () => now } }).increment(
+        ctx,
+        key,
+        day,
+      ),
+    ).rejects.toThrow(failure);
   });
 
   it('leaves a lock that is no longer its own', async () => {
@@ -340,6 +392,91 @@ describe('the file of quotas', () => {
     expect(existsSync(`${file}.lock`)).toBe(false);
   });
 
+  it('refuses a file with more actors than the bound, and the actor beyond it', async () => {
+    const state = freshState();
+    const actors = (count: number) =>
+      Object.fromEntries(
+        Array.from({ length: count }, (_, index) => [
+          `user:stdio:a${String(index)}`,
+          { special_reads: 1 },
+        ]),
+      );
+    writeFileSync(
+      fileOf(state),
+      JSON.stringify({
+        v: 1,
+        tenant: 'demo-tenant',
+        day,
+        counts: actors(maxQuotaActors + 1),
+      }),
+      { mode: 0o600 },
+    );
+    await expect(open(state).read(ctx, key, day)).rejects.toThrow(failure);
+    writeFileSync(
+      fileOf(state),
+      JSON.stringify({
+        v: 1,
+        tenant: 'demo-tenant',
+        day,
+        counts: actors(maxQuotaActors),
+      }),
+      { mode: 0o600 },
+    );
+    await expect(open(state).increment(ctx, key, day)).rejects.toThrow(failure);
+    await expect(
+      open(state).increment(
+        quotaContext('demo-tenant', 'user', 'stdio:a7'),
+        key,
+        day,
+      ),
+    ).resolves.toBe(2);
+  });
+
+  it('refuses a FIFO in place of the file without waiting for a writer', async () => {
+    const state = freshState();
+    const made = spawnSync('mkfifo', ['-m', '600', fileOf(state)], {
+      stdio: 'ignore',
+    });
+    expect(made.status).toBe(0);
+    const started = Date.now();
+    await expect(open(state).read(ctx, key, day)).rejects.toThrow(failure);
+    await expect(open(state).increment(ctx, key, day)).rejects.toThrow(failure);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it('refuses to go on when the folder is swapped after its check', async () => {
+    const state = freshState();
+    const folder = join(state, 'quota');
+    let looks = 0;
+    const swapping: QuotaFileSystem = {
+      ...nodeFs,
+      lstatSync: (path) => {
+        const stats = lstatSync(path);
+        if (path !== folder) return stats;
+        looks += 1;
+        return looks === 1
+          ? stats
+          : {
+              isFile: () => stats.isFile(),
+              isDirectory: () => stats.isDirectory(),
+              isSymbolicLink: () => stats.isSymbolicLink(),
+              uid: stats.uid,
+              mode: stats.mode,
+              nlink: stats.nlink,
+              size: stats.size,
+              dev: stats.dev,
+              ino: stats.ino + 1,
+              mtimeMs: stats.mtimeMs,
+            };
+      },
+    };
+    await expect(
+      open(state, { fs: swapping }).increment(ctx, key, day),
+    ).rejects.toThrow(failure);
+    expect(existsSync(fileOf(state))).toBe(false);
+    expect(readdirSync(folder)).toEqual([]);
+  });
+
   it('refuses a folder quota that became a link', async () => {
     const state = freshState();
     const other = join(base, `elsewhere-${String(folders)}`);
@@ -350,12 +487,27 @@ describe('the file of quotas', () => {
     expect(readdirSync(other)).toEqual([]);
   });
 
-  it('refuses files of another user', async () => {
+  it('refuses a file of another user in its own folder', async () => {
     const state = freshState();
     await open(state).increment(ctx, key, day);
+    // Only the file on its descriptor names another owner.
     const stranger: QuotaFileSystem = {
       ...nodeFs,
-      getuid: () => (process.getuid?.() ?? 0) + 1,
+      fstatSync: (fd) => {
+        const stats = fstatSync(fd);
+        return {
+          isFile: () => stats.isFile(),
+          isDirectory: () => stats.isDirectory(),
+          isSymbolicLink: () => stats.isSymbolicLink(),
+          uid: stats.uid + 1,
+          mode: stats.mode,
+          nlink: stats.nlink,
+          size: stats.size,
+          dev: stats.dev,
+          ino: stats.ino,
+          mtimeMs: stats.mtimeMs,
+        };
+      },
     };
     await expect(
       open(state, { fs: stranger }).read(ctx, key, day),
