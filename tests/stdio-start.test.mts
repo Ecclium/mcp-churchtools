@@ -1138,13 +1138,24 @@ describe.skipIf(process.getuid?.() === 0)(
       let first: Json;
       let second: Json;
       let secondRun: Finished;
-      const day = new Date().toISOString().slice(0, 10);
+      let day = '';
       const counted = (): unknown =>
         JSON.parse(
           readFileSync(join(stateDir, 'quota', `default-${day}.json`), 'utf8'),
         );
 
       beforeAll(async () => {
+        // The children count on the UTC day of their own clock. Close to
+        // midnight, the test waits for the new day, so that both runs count
+        // on the day of the file.
+        const now = Date.now();
+        const untilMidnight = 86_400_000 - (now % 86_400_000);
+        if (untilMidnight < 20_000) {
+          await new Promise((resolve) => {
+            setTimeout(resolve, untilMidnight + 1000);
+          });
+        }
+        day = new Date().toISOString().slice(0, 10);
         stateDir = freshStateDir();
         const quota = join(stateDir, 'quota');
         mkdirSync(quota, { mode: 0o700 });

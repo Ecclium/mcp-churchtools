@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import {
   chmodSync,
   closeSync,
@@ -430,18 +429,6 @@ describe('the file of quotas', () => {
         day,
       ),
     ).resolves.toBe(2);
-  });
-
-  it('refuses a FIFO in place of the file without waiting for a writer', async () => {
-    const state = freshState();
-    const made = spawnSync('mkfifo', ['-m', '600', fileOf(state)], {
-      stdio: 'ignore',
-    });
-    expect(made.status).toBe(0);
-    const started = Date.now();
-    await expect(open(state).read(ctx, key, day)).rejects.toThrow(failure);
-    await expect(open(state).increment(ctx, key, day)).rejects.toThrow(failure);
-    expect(Date.now() - started).toBeLessThan(1000);
   });
 
   it('refuses to go on when the folder is swapped after its check', async () => {

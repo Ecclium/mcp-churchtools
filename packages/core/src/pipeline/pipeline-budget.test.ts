@@ -57,6 +57,7 @@ const description = {
 const tool = (
   name: `ct_${string}`,
   sensitivity: 'personal' | 'special',
+  tier: 'free' | 'pro' = 'free',
 ): ToolDefinition =>
   ({
     name,
@@ -64,7 +65,7 @@ const tool = (
       capability: 'read',
       domain: 'wiki',
       requiredRights: [],
-      tier: 'free',
+      tier,
       sensitivity,
       unattended: 'never',
       routineStable: false,
@@ -85,6 +86,7 @@ const testPlugin: Plugin = {
     host.addTool(tool('ct_test_special', 'special'));
     host.addTool(tool('ct_test_other_special', 'special'));
     host.addTool(tool('ct_test_personal', 'personal'));
+    host.addTool(tool('ct_test_pro_special', 'special', 'pro'));
     return undefined;
   },
 };
@@ -176,7 +178,7 @@ const unavailable =
 
 describe('the daily read budget', () => {
   it(`lets ${String(specialReadBudget)} calls of all special tools through and refuses the next until the day ends`, async () => {
-    const { call, time, audits, logs } = setup();
+    const { call, time, audits, logs, quota } = setup();
     for (let index = 0; index < specialReadBudget; index += 1) {
       const name =
         index % 2 === 0 ? 'ct_test_special' : 'ct_test_other_special';
@@ -192,6 +194,10 @@ describe('the daily read budget', () => {
       error: { code: 'policy_denied', message: exhausted },
     });
     expect(runs).toHaveLength(specialReadBudget);
+    // A call above the budget counts as well.
+    expect(await quota?.read(ctx, 'special_reads', day)).toBe(
+      specialReadBudget + 2,
+    );
     // The audit line says denied, the log line why, under the same ID.
     const denied = audits().at(-1);
     expect(denied).toMatchObject({
@@ -230,6 +236,10 @@ describe('the daily read budget', () => {
       false,
     );
     expect((await call('ct_test_special', { other: 1 })).ok).toBe(false);
+    expect(await call('ct_test_pro_special')).toMatchObject({
+      ok: false,
+      error: { code: 'license_required' },
+    });
     expect((await call('ct_test_personal')).ok).toBe(true);
     expect(await quota?.read(ctx, 'special_reads', day)).toBe(0);
     expect((await call('ct_test_special')).ok).toBe(true);
