@@ -1,6 +1,6 @@
 /**
- * Contract between the core and its plugins: tenant context, tool contract
- * and audit event.
+ * Contract between the core and its plugins: tenant context, tool contract,
+ * audit event and the port for quotas.
  *
  * Published separately, with its own semantic version, so that a plugin can
  * be built against this package alone. It imports no other workspace package
@@ -76,6 +76,13 @@ export {
   type SearchHits,
 } from './read-api.js';
 export type { Plugin, PluginHost } from './plugin.js';
+export {
+  isIsoDate,
+  quotaKeys,
+  type IsoDate,
+  type QuotaKey,
+  type QuotaStore,
+} from './quota.js';
 export type {
   AuditEventV1,
   AuditOutcome,
