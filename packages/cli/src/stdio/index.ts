@@ -96,9 +96,9 @@ const refusalOf = (error: unknown): RefusalReason | undefined => {
  * the folder of the read budget before the notices; a tool with
  * sensitivity special without the folder, a file that cannot be opened or
  * a folder that cannot be used ends the start with a notice and 78
- * (ADR 0028, ADR 0063). Until the stderr writer exists, everything is caught: an
- * internal error gives one fixed notice and 70, never a stack or a
- * message, and closes an audit file that is already open.
+ * (ADR 0028, ADR 0063). Until the stderr writer exists, everything is
+ * caught: an internal error gives one fixed notice and 70, never a stack
+ * or a message, and closes an audit file that is already open.
  *
  * @param args - The arguments after `ecclium stdio`.
  * @param environment - The environment of the process, which loses the

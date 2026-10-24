@@ -3,11 +3,11 @@
  * `ecclium stdio`, an internal error before the server runs, the refusal
  * of a plugin or a tool by the registry (ADR 0024), an audit file that is
  * missing or cannot be opened (ADR 0028), a folder for the read budget
- * that cannot be used (ADR 0063), and the toolsets of the start (ADR 0062). The start notices write them to stderr before the line
- * writer exists. No text
- * repeats an argument, because an argument can hold a token, and the text
- * of a refusal depends on its reason alone, without the names of plugin
- * and tool.
+ * that cannot be used (ADR 0063), and the toolsets of the start
+ * (ADR 0062). The start notices write them to stderr before the line
+ * writer exists. No text repeats an argument, because an argument can
+ * hold a token, and the text of a refusal depends on its reason alone,
+ * without the names of plugin and tool.
  *
  * @packageDocumentation
  */

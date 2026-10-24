@@ -178,12 +178,13 @@ const checkFolder = (
 };
 
 /**
- * Checks the folder of state and, if there are, its folders `audit` and
+ * Checks the folder of state and, if they exist, its folders `audit` and
  * `quota`. The path must be absolute and normalised. The folder must be a
  * folder of the user, not a link, without rights for the group or others.
  * A missing folder `audit` or `quota` is fine, the start creates it; one
- * that is there must pass the same checks. Without the ID of the user or the flags the audit
- * file needs, as on Windows, the platform is refused first. A path of more
+ * that is there must pass the same checks. Without the ID of the user or
+ * the flags the audit file needs, as on Windows, the platform is refused
+ * first. A path of more
  * than {@link maxStateDirLength} bytes in UTF-8 is refused as too long.
  *
  * Folders above the folder of state are trusted: `lstat` follows links
