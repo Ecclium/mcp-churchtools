@@ -36,9 +36,12 @@ describe('renderToolsReference', () => {
     }
   });
 
-  it('names the switch of the search tools and none for ct_whoami', () => {
+  it('names the toolset of the search tools and none for ct_whoami', () => {
     expect(page).toContain(
-      '| `ct_persons_search` | `persons` | besonders schützenswert | nie | nein | `ECCLIUM_SEARCH_TOOLS=true` mit `ECCLIUM_STATE_DIR` |',
+      '| `ct_persons_search` | `persons` | besonders schützenswert | nie | nein | `persons` in `ECCLIUM_TOOLSETS`, mit `ECCLIUM_STATE_DIR` |',
+    );
+    expect(page).toContain(
+      '| `ct_groups_search` | `groups` | besonders schützenswert | nie | nein | `persons` in `ECCLIUM_TOOLSETS`, mit `ECCLIUM_STATE_DIR` |',
     );
     expect(page).toContain(
       '| `ct_whoami` | `base` | personenbezogen | nie | nein | immer |',
