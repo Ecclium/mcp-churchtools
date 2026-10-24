@@ -34,6 +34,7 @@ import {
   trustStoreVariableNames,
   unsupportedVariableNames,
   variableNames,
+  variables,
   variableSchemas,
 } from './variables.js';
 
@@ -1660,7 +1661,11 @@ describe('loadConfig and its problems', () => {
     const result = load({ ...valid(), ECCLIUM_TOOLSETS: value });
     expect(problems(result)).toEqual([
       [
-        value.length > 35 ? 'value_too_long' : 'invalid_toolsets',
+        value.length >
+        (variables.find(({ name }) => name === 'ECCLIUM_TOOLSETS')?.maxLength ??
+          0)
+          ? 'value_too_long'
+          : 'invalid_toolsets',
         'ECCLIUM_TOOLSETS',
       ],
     ]);

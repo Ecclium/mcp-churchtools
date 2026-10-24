@@ -207,7 +207,7 @@ describe('the texts of the start over stdio', () => {
   it('names a toolset without tools and how to turn it off', () => {
     const message = emptyToolsetMessage('songs');
     expect(message.what).toBe(
-      'Das Toolset ‹songs› bringt in dieser Version noch keine Tools mit.',
+      'Das Toolset ‹songs› bietet in dieser Version keine Tools an.',
     );
     expect(message.action).toContain('‹ECCLIUM_TOOLSETS›');
     expect(emptyToolsetText('songs')).toBe(textOf(message));

@@ -41,7 +41,6 @@ export {
   type TokenFileSystem,
 } from './token-file.js';
 export {
-  allToolsets,
   defaultStdioSubject,
   proxyVariableName,
   requestsPerMinuteRange,

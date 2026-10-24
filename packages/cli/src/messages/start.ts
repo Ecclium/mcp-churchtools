@@ -314,8 +314,9 @@ export function toolsetsText(toolsets: readonly ToolsetName[]): MessageText {
 }
 
 /**
- * The message for a toolset that is on but brings no tool in this
- * version, so that it does not stay silent (ADR 0062).
+ * The message for a toolset that is on but offers no tool in this
+ * version, so that it does not stay silent (ADR 0062): it brings none yet,
+ * or only tools that write while the server only reads.
  *
  * @param toolset - The toolset without a tool.
  * @returns The message in its three parts, frozen.
@@ -328,9 +329,9 @@ export function toolsetsText(toolsets: readonly ToolsetName[]): MessageText {
 export function emptyToolsetMessage(toolset: ToolsetName): Message {
   const name = toolsetProse([toolset]);
   return message(
-    `Das Toolset ${name} bringt in dieser Version noch keine Tools mit.`,
-    'Seine Tools kommen mit einer späteren Version. Bis dahin bietet der Server dafür nichts an.',
-    `Lassen Sie es eingeschaltet, wenn eine spätere Version seine Tools anbieten soll, oder entfernen Sie es aus ${toolsetsVariable}.`,
+    `Das Toolset ${name} bietet in dieser Version keine Tools an.`,
+    'Seine Tools kommen mit einer späteren Version, oder es hat nur Tools, die schreiben, und der Server liest nur.',
+    `Lassen Sie es eingeschaltet, wenn eine spätere Version seine Tools anbieten soll. Sonst entfernen Sie es aus ${toolsetsVariable}, und steht dort ‹all›, nennen Sie stattdessen die übrigen Toolsets einzeln.`,
   );
 }
 

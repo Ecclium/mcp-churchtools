@@ -113,6 +113,8 @@ const tokenVariable = quote('ECCLIUM_CHURCHTOOLS_TOKEN');
 const stateDir = quote('ECCLIUM_STATE_DIR');
 const toolsets = quote('ECCLIUM_TOOLSETS');
 const personsToolset = quote('persons');
+// With all, there is no name to remove.
+const insteadOfAll = `Steht dort ${quote('all')}, nennen Sie stattdessen die übrigen Toolsets einzeln.`;
 // The names of the toolsets as German prose: ‹a›, ‹b› und ‹c›.
 const toolsetList = `${toolsetNames.slice(0, -1).map(quote).join(', ')} und ${quote(toolsetNames.at(-1) ?? '')}`;
 const auditDir = quote('audit');
@@ -172,13 +174,13 @@ const problems: Readonly<
       'Sie gehört zu einer späteren Version. Ein Wert, den Ecclium nicht anwendet, soll nicht still übergangen werden.',
       'Entfernen Sie die Variable.',
     ),
-  // Whatever its value: ignored, the switch would let the search tools
-  // vanish without a word (ADR 0062).
+  // Refused whatever its value, so that no configuration loses its search
+  // tools without a word (ADR 0062).
   search_tools_replaced: (name = quote('ECCLIUM_SEARCH_TOOLS')) =>
     message(
       `Die Variable ${name} gibt es nicht mehr.`,
       `An ihre Stelle tritt ${toolsets}. Ecclium übergeht sie nicht still, damit die Suchtools nicht unbemerkt wegfallen.`,
-      `Ersetzen Sie ‹ECCLIUM_SEARCH_TOOLS=true› durch ‹ECCLIUM_TOOLSETS=persons› oder entfernen Sie die Variable.`,
+      `Ersetzen Sie ${quote('ECCLIUM_SEARCH_TOOLS=true')} durch ${quote('ECCLIUM_TOOLSETS=persons')} oder entfernen Sie die Variable.`,
     ),
   proxy_unsupported: (name = quote('ECCLIUM_EGRESS_PROXY')) =>
     message(
@@ -579,7 +581,7 @@ const problems: Readonly<
     message(
       `Das Toolset ${personsToolset} ist in ${toolsets} eingeschaltet, aber ${name} ist nicht gesetzt.`,
       `Ein Ergebnis seiner Tools gibt Ecclium nur heraus, wenn seine Zeile in der Audit-Datei steht, und die Audit-Datei liegt im Ordner aus ${name}. Unter Windows gibt es sie im Betrieb über stdio nicht, und damit auch dieses Toolset nicht.`,
-      `Setzen Sie ${name} auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 oder entfernen Sie ${personsToolset} aus ${toolsets}.`,
+      `Setzen Sie ${name} auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 oder entfernen Sie ${personsToolset} aus ${toolsets}. ${insteadOfAll}`,
     ),
 });
 
@@ -599,7 +601,7 @@ const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({
   persons_toolset_enabled: message(
     `Das Toolset ${personsToolset} ist eingeschaltet.`,
     'Der KI-Assistent kann damit Personen und Gruppen der Instanz nach Namen suchen und sieht Kennung und Name jedes Treffers. Jeder Aufruf steht in der Audit-Datei.',
-    `Entfernen Sie ${personsToolset} aus ${toolsets}, wenn er diese Daten nicht sehen soll.`,
+    `Entfernen Sie ${personsToolset} aus ${toolsets}, wenn er diese Daten nicht sehen soll. ${insteadOfAll}`,
   ),
   // One text for every setting: the report of the loader names none of
   // them, and never the path of a certificate.

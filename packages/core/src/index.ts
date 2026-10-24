@@ -6,7 +6,6 @@
  * @packageDocumentation
  */
 export {
-  allToolsets,
   configProblemCodes,
   type ConfigProblem,
   type ConfigProblemCode,
