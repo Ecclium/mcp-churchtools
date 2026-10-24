@@ -30,6 +30,7 @@ import {
   type ObjectJsonSchema,
   type OutputShape,
 } from './schema.js';
+import { isToolsetName, toolsetOf, type ToolsetName } from './toolsets.js';
 
 /** A checked tool as the pipeline runs it. */
 export interface CatalogEntry {
@@ -94,7 +95,34 @@ export interface CatalogOptions {
   readonly plugins: readonly Plugin[];
   /** Whether write tools stay out of the catalog. */
   readonly readOnly: boolean;
+  /**
+   * The toolsets the operator turned on (ADR 0062). The catalog keeps a
+   * tool only when its area is always on or belongs to one of them, for
+   * the tools of the core and of plugins alike. Without the option only the
+   * area that is always on stays, the safe side for a composition root that
+   * forgets it. Every tool is checked before, also one that stays out.
+   */
+  readonly toolsets?: ReadonlySet<ToolsetName>;
 }
+
+// A frozen copy of the toolsets, so that a later change of the set changes
+// no catalog, and with a name that is not a toolset refused.
+const readToolsets = (value: unknown): ReadonlySet<string> => {
+  if (value === undefined) return new Set();
+  if (!(value instanceof Set)) throw new TypeError('toolsets is no set');
+  const names = [...(value as Set<unknown>)];
+  if (!names.every(isToolsetName)) throw new TypeError('unknown toolset');
+  return new Set<string>(names);
+};
+
+// Whether the catalog offers a tool of this area.
+const offered = (
+  tool: CatalogEntry,
+  toolsets: ReadonlySet<string>,
+): boolean => {
+  const toolset = toolsetOf(tool.meta.domain);
+  return toolset === 'base' || (toolset !== undefined && toolsets.has(toolset));
+};
 
 // The name of the package of the core. A plugin under this name would pass
 // for the core wherever a log, an audit line or a refusal names the plugin.
@@ -295,6 +323,7 @@ const registerPlugin = (
  * ```
  */
 export function createToolCatalog(options: CatalogOptions): ToolCatalog {
+  const toolsets = readToolsets(options.toolsets);
   const plugins = new Set<string>();
   const byName = new Map<string, CatalogEntry>();
   const register = (plugin: unknown, origin: CatalogEntry['origin']): void => {
@@ -310,7 +339,9 @@ export function createToolCatalog(options: CatalogOptions): ToolCatalog {
   register(options.core, 'core');
   for (const plugin of options.plugins) register(plugin, 'plugin');
   const kept = [...byName.values()].filter(
-    (tool) => !options.readOnly || tool.meta.capability === 'read',
+    (tool) =>
+      (!options.readOnly || tool.meta.capability === 'read') &&
+      offered(tool, toolsets),
   );
   let length = 0;
   for (const tool of kept) length += tool.description.length;

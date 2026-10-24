@@ -18,13 +18,14 @@ import {
 // every leaf has a data class, and the input schema the mount advertises.
 
 const catalog = createToolCatalog({
-  core: createCorePlugin({ searchTools: false }),
+  core: createCorePlugin(),
   plugins: [],
   readOnly: true,
 });
 
 const withSearch = createToolCatalog({
-  core: createCorePlugin({ searchTools: true }),
+  core: createCorePlugin(),
+  toolsets: new Set(['persons'] as const),
   plugins: [],
   readOnly: true,
 });
@@ -57,10 +58,8 @@ describe('@ecclium/mcp-churchtools-tools', () => {
     ]);
   });
 
-  it('reads the switch once, when the plugin is built', () => {
-    const options = { searchTools: false };
-    const plugin = createCorePlugin(options);
-    options.searchTools = true;
+  it('offers only ct_whoami without a toolset, and is frozen', () => {
+    const plugin = createCorePlugin();
     expect(
       createToolCatalog({ core: plugin, plugins: [], readOnly: true })
         .list()
@@ -74,7 +73,7 @@ describe('@ecclium/mcp-churchtools-tools', () => {
     try {
       createToolCatalog({
         core: examplePlugin,
-        plugins: [createCorePlugin({ searchTools: false })],
+        plugins: [createCorePlugin()],
         readOnly: true,
       });
     } catch (error) {

@@ -34,8 +34,9 @@ export function createStdioCatalog(
   config: Pick<EccliumConfig, 'readOnly' | 'searchTools'>,
 ): ToolCatalog {
   return createToolCatalog({
-    core: createCorePlugin({ searchTools: config.searchTools }),
+    core: createCorePlugin(),
     plugins: [],
     readOnly: config.readOnly,
+    toolsets: new Set(config.searchTools ? (['persons'] as const) : []),
   });
 }

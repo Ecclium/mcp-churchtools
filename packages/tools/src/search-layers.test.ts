@@ -117,7 +117,8 @@ const groups = (count: number) =>
 
 describe('the three layers together', () => {
   const catalog = createToolCatalog({
-    core: createCorePlugin({ searchTools: true }),
+    core: createCorePlugin(),
+    toolsets: new Set(['persons'] as const),
     plugins: [],
     readOnly: true,
   });
@@ -199,7 +200,12 @@ describe('the layer of the pipeline', () => {
       total: leak.name.value,
     });
     const { lines, drafts, pipeline } = setup(
-      createToolCatalog({ core: plugin, plugins: [], readOnly: true }),
+      createToolCatalog({
+        core: plugin,
+        plugins: [],
+        readOnly: true,
+        toolsets: new Set(['persons'] as const),
+      }),
     );
     const outcome = await pipeline.call(
       'ct_persons_search',
@@ -224,7 +230,12 @@ describe('the layer of the pipeline', () => {
       meta: { total: leak.phone.value },
     });
     const { lines, drafts, pipeline } = setup(
-      createToolCatalog({ core: plugin, plugins: [], readOnly: true }),
+      createToolCatalog({
+        core: plugin,
+        plugins: [],
+        readOnly: true,
+        toolsets: new Set(['persons'] as const),
+      }),
     );
     const outcome = await pipeline.call(
       'ct_groups_search',
@@ -264,7 +275,12 @@ describe('the read access of a tool below special', () => {
       },
     };
     const { double, lines, pipeline } = setup(
-      createToolCatalog({ core: plugin, plugins: [], readOnly: true }),
+      createToolCatalog({
+        core: plugin,
+        plugins: [],
+        readOnly: true,
+        toolsets: new Set(['persons'] as const),
+      }),
     );
     const outcome = await pipeline.call(
       'ct_persons_search',

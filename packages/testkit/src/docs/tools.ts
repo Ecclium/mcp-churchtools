@@ -170,12 +170,13 @@ const toolSection = (
  */
 export function renderToolsReference(): string {
   const byDefault = createToolCatalog({
-    core: createCorePlugin({ searchTools: false }),
+    core: createCorePlugin(),
     plugins: [],
     readOnly: true,
   });
   const all = createToolCatalog({
-    core: createCorePlugin({ searchTools: true }),
+    core: createCorePlugin(),
+    toolsets: new Set(['persons'] as const),
     plugins: [],
     readOnly: true,
   });

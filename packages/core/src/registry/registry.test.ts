@@ -48,7 +48,8 @@ const writeTool = (name: `ct_${string}`): ToolDefinition =>
   tool(name, {
     meta: {
       capability: 'write',
-      domain: 'wiki',
+      // Always offered, so that the tests of writing need no toolset.
+      domain: 'base',
       requiredRights: [{ module: 'churchwiki', right: 'edit' }],
       tier: 'free',
       sensitivity: 'none',
@@ -131,6 +132,7 @@ describe('createToolCatalog', () => {
       core: emptyCore,
       plugins: [examplePlugin],
       readOnly: false,
+      toolsets: new Set(['wiki'] as const),
     });
     expect(catalog.list().map((entry) => entry.name)).toEqual([
       'ct_example_echo',
@@ -202,6 +204,96 @@ describe('createToolCatalog', () => {
     expect(catalog.get('toString')).toBeUndefined();
   });
 
+  describe('toolsets', () => {
+    const inArea = (name: `ct_${string}`, domain: string): ToolDefinition =>
+      tool(name, { meta: { ...tool(name).meta, domain } });
+    const core = plugin(
+      'core',
+      adding(
+        tool('ct_whoami'),
+        inArea('ct_groups_get', 'groups'),
+        inArea('ct_events_list', 'events'),
+        inArea('ct_docs_search', 'docs'),
+      ),
+    );
+    const names = (toolsets?: ReadonlySet<'persons' | 'events'>) =>
+      createToolCatalog({ core, plugins: [], readOnly: true, toolsets })
+        .list()
+        .map((entry) => entry.name);
+
+    it('offers only the area that is always on without a toolset', () => {
+      expect(names()).toEqual(['ct_whoami']);
+      expect(names(new Set())).toEqual(['ct_whoami']);
+    });
+
+    it('offers the areas of each toolset that is on', () => {
+      expect(names(new Set(['persons'] as const))).toEqual([
+        'ct_groups_get',
+        'ct_whoami',
+      ]);
+      expect(names(new Set(['persons', 'events'] as const))).toEqual([
+        'ct_events_list',
+        'ct_groups_get',
+        'ct_whoami',
+      ]);
+    });
+
+    it('offers no tool of an area without a toolset', () => {
+      expect(names(new Set(['persons', 'events'] as const))).not.toContain(
+        'ct_docs_search',
+      );
+    });
+
+    it('filters the tools of plugins the same way', () => {
+      const catalog = createToolCatalog({
+        core: emptyCore,
+        plugins: [plugin('extra', adding(inArea('ct_extra_groups', 'groups')))],
+        readOnly: true,
+      });
+      expect(catalog.has('ct_extra_groups')).toBe(false);
+    });
+
+    it('still refuses an invalid tool that no toolset offers', () => {
+      refuses(
+        [
+          plugin(
+            'extra',
+            adding(
+              tool('ct_extra_x', {
+                meta: { ...tool('ct_extra_x').meta, domain: 'groups' },
+                output: z.object({ note: z.string() }),
+              }),
+            ),
+          ),
+        ],
+        'tool_unclassified',
+      );
+    });
+
+    it('refuses a set with a name that is no toolset', () => {
+      expect(() =>
+        createToolCatalog({
+          core,
+          plugins: [],
+          readOnly: true,
+          toolsets: new Set(['all']) as unknown as ReadonlySet<'persons'>,
+        }),
+      ).toThrow(TypeError);
+    });
+
+    it('keeps its own copy of the set', () => {
+      const toolsets = new Set<'persons'>();
+      const catalog = createToolCatalog({
+        core,
+        plugins: [],
+        readOnly: true,
+        toolsets,
+      });
+      toolsets.add('persons');
+      expect(catalog.has('ct_groups_get')).toBe(false);
+    });
+  });
+
   it('keeps write tools out when the server only reads', () => {
     const core = plugin(
       'core',
@@ -213,9 +305,12 @@ describe('createToolCatalog', () => {
         .map((entry) => entry.name),
     ).toEqual(['ct_whoami']);
     expect(
-      createToolCatalog({ core, plugins: [], readOnly: false }).has(
-        'ct_wiki_write',
-      ),
+      createToolCatalog({
+        core,
+        plugins: [],
+        readOnly: false,
+        toolsets: new Set(['wiki'] as const),
+      }).has('ct_wiki_write'),
     ).toBe(true);
   });
 

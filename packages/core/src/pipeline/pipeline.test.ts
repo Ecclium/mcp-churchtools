@@ -142,6 +142,8 @@ const setup = (
     core: examplePlugin,
     plugins: [testPlugin(...tools)],
     readOnly,
+    // The write tool of the example plugin is in the area of the wiki.
+    toolsets: new Set(['wiki'] as const),
   });
   const auditLines: string[] = [];
   const logLines: string[] = [];
