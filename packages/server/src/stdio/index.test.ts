@@ -50,6 +50,7 @@ const catalog = createToolCatalog({
   core: examplePlugin,
   plugins: [],
   readOnly: true,
+  toolsets: new Set(['wiki'] as const),
 });
 
 const done: ToolOutcome = Object.freeze({

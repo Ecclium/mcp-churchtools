@@ -17,7 +17,12 @@ import type { ReadApi } from './read-api.js';
  */
 export type ToolName = `ct_${string}`;
 
-/** The area of ChurchTools a tool belongs to. */
+/**
+ * The area of ChurchTools a tool belongs to. The operator turns areas on
+ * in groups, the toolsets, and the server offers only the tools of those
+ * (ADR 0062). `base` is always on and reserved for the tools of the core,
+ * such as `ct_whoami`: the registry refuses a tool of another plugin there.
+ */
 export type ToolDomain =
   | 'base'
   | 'persons'

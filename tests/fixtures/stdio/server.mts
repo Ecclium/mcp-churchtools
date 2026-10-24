@@ -116,6 +116,7 @@ const catalog = createToolCatalog({
         ]
       : [],
   readOnly: config.readOnly,
+  toolsets: new Set(['persons', 'wiki'] as const),
 });
 const pipeline = createToolPipeline({
   catalog,

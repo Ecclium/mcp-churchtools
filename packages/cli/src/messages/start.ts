@@ -116,6 +116,9 @@ const refusals: Readonly<Record<RefusalReason, Message>> = Object.freeze({
   tool_meta: refusal(
     'Ein Tool hat unvollständige oder widersprüchliche Metadaten.',
   ),
+  tool_domain_reserved: refusal(
+    'Ein Tool eines Plugins liegt im Bereich ‹base›, der dem Kern vorbehalten ist.',
+  ),
   tool_description: refusal(
     'In der Beschreibung eines Tools fehlt ein Abschnitt, oder ein Abschnitt ist ungültig.',
   ),

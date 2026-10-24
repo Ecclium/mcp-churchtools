@@ -19,6 +19,7 @@ export const refusalReasons = Object.freeze([
   'tool_name',
   'tool_duplicate',
   'tool_meta',
+  'tool_domain_reserved',
   'tool_description',
   'tool_input',
   'tool_output',
@@ -44,6 +45,8 @@ const sentences: Readonly<Record<RefusalReason, string>> = Object.freeze({
   tool_name: 'A tool has a name that is not allowed.',
   tool_duplicate: 'Two tools have the same name.',
   tool_meta: 'A tool has incomplete or contradictory metadata.',
+  tool_domain_reserved:
+    'A tool of a plugin is in the area base, which is reserved for the core.',
   tool_description:
     'A tool has a description with a missing or invalid section.',
   tool_input:

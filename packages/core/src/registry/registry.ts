@@ -105,13 +105,15 @@ export interface CatalogOptions {
   readonly toolsets?: ReadonlySet<ToolsetName>;
 }
 
-// A frozen copy of the toolsets, so that a later change of the set changes
-// no catalog, and with a name that is not a toolset refused.
+// A copy of the toolsets of its own, so that a later change of the set
+// changes no catalog, and with a name that is not a toolset refused.
 const readToolsets = (value: unknown): ReadonlySet<string> => {
   if (value === undefined) return new Set();
-  if (!(value instanceof Set)) throw new TypeError('toolsets is no set');
+  if (!(value instanceof Set)) throw new TypeError('The toolsets are no set.');
   const names = [...(value as Set<unknown>)];
-  if (!names.every(isToolsetName)) throw new TypeError('unknown toolset');
+  if (!names.every(isToolsetName)) {
+    throw new TypeError('A toolset is unknown.');
+  }
   return new Set<string>(names);
 };
 
@@ -190,6 +192,12 @@ const checkTool = (
     throw new RegistryRefusal('tool_unclassified', where);
   }
   if (shape.unmasked > 0) throw new RegistryRefusal('tool_unmasked', where);
+  // The area base is always on, so a tool of a plugin there would pass
+  // every choice of toolsets (ADR 0062). Checked last, so that every other
+  // refusal of such a tool stays as it was.
+  if (origin === 'plugin' && meta.domain === 'base') {
+    throw new RegistryRefusal('tool_domain_reserved', where);
+  }
   const run = fields.execute;
   return Object.freeze({
     __proto__: null,

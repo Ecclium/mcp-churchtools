@@ -90,7 +90,7 @@ const description = {
 
 const readMeta = {
   capability: 'read',
-  domain: 'base',
+  domain: 'wiki',
   requiredRights: [],
   tier: 'free',
   sensitivity: 'none',
@@ -173,6 +173,7 @@ const setup = (
       ),
     ],
     readOnly: true,
+    toolsets: new Set(['wiki'] as const),
   });
   const auditLines: string[] = [];
   const logLines: string[] = [];

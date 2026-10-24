@@ -147,6 +147,7 @@ const setup = async (requestsPerMinute: number) => {
     core: examplePlugin,
     plugins: [],
     readOnly: true,
+    toolsets: new Set(['wiki'] as const),
   });
   const audit = createAuditSink({
     writer,

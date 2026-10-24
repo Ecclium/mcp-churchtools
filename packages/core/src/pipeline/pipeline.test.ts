@@ -54,7 +54,7 @@ const description = {
 
 const readMeta = {
   capability: 'read',
-  domain: 'base',
+  domain: 'wiki',
   requiredRights: [],
   tier: 'free',
   sensitivity: 'none',
@@ -142,7 +142,8 @@ const setup = (
     core: examplePlugin,
     plugins: [testPlugin(...tools)],
     readOnly,
-    // The write tool of the example plugin is in the area of the wiki.
+    // The tools of the example plugin and of these tests are in the area of
+    // the wiki.
     toolsets: new Set(['wiki'] as const),
   });
   const auditLines: string[] = [];
@@ -1119,6 +1120,7 @@ describe('the outermost catch', () => {
       core: examplePlugin,
       plugins: [],
       readOnly: true,
+      toolsets: new Set(['wiki'] as const),
     });
     let reads = 0;
     const pipeline = createToolPipeline({

@@ -67,7 +67,7 @@ const failingPlugin: Plugin = {
         name: 'ct_test_fails',
         meta: {
           capability: 'read',
-          domain: 'base',
+          domain: 'wiki',
           requiredRights: [],
           tier: 'free',
           sensitivity: 'none',
@@ -104,6 +104,7 @@ const setup = () => {
     core: examplePlugin,
     plugins: [failingPlugin],
     readOnly: true,
+    toolsets: new Set(['wiki'] as const),
   });
   const lines: string[] = [];
   const writer = Object.freeze({
