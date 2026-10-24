@@ -67,7 +67,7 @@ Mit `env -i` sieht die Prüfung nur diese beiden Variablen und keine aus Ihrer S
 
 Ob ChurchTools das Token annimmt, zeigt erst ein Aufruf von `ct_whoami`, denn auch der Start fragt ChurchTools nicht an.
 
-Die Beispiele setzen nur die Adresse und die Token-Datei. Alle übrigen Einstellungen behalten ihre Voreinstellung: nur lesen, Maskierung `standard`, keine Suchtools, keine Audit-Datei, Stufe des Logs `info`. Alle Variablen stehen mit Erklärung in [.env.example](../../.env.example) und in der Referenz [docs/configuration.md](../configuration.md), die Tools mit ihren Feldern in [docs/tools.md](../tools.md). Den Ordner für die Audit-Datei empfehlen wir zusätzlich, siehe «Audit-Datei».
+Die Beispiele setzen nur die Adresse und die Token-Datei. Alle übrigen Einstellungen behalten ihre Voreinstellung: nur lesen, Maskierung `standard`, kein Toolset und damit nur `ct_whoami`, keine Audit-Datei, Stufe des Logs `info`. Alle Variablen stehen mit Erklärung in [.env.example](../../.env.example) und in der Referenz [docs/configuration.md](../configuration.md), die Tools mit ihren Feldern in [docs/tools.md](../tools.md). Den Ordner für die Audit-Datei empfehlen wir zusätzlich, siehe «Audit-Datei».
 
 ## Claude Desktop
 
@@ -87,7 +87,7 @@ Im Checkout liegt absichtlich keine Datei `.mcp.json`. Claude Code böte den Ser
 
 ## Was der KI-Assistent sieht
 
-- Ohne Suchtools ein einziges Tool, `ct_whoami`, ohne Argumente und nur lesend. Seine Beschreibung ist englisch, wie alle Texte für das Modell. Was die Suchtools zeigen, steht unter «Suchtools».
+- Ohne Toolset ein einziges Tool, `ct_whoami`, ohne Argumente und nur lesend. Seine Beschreibung ist englisch, wie alle Texte für das Modell. Was die Suchtools zeigen, steht unter «Suchtools».
 - Ein Aufruf sendet nacheinander zwei Anfragen an ChurchTools: `GET /api/whoami` für das Konto und `GET /api/permissions/global` für seine Rechte. Andere Adressen als die aus `ECCLIUM_CHURCHTOOLS_URL` fragt der Server nicht an.
 - Das Ergebnis nennt die Personen-ID, Vor- und Nachname und die E-Mail-Adresse des Dienstkontos. Die E-Mail-Adresse ist maskiert: das erste Zeichen, drei Sterne und die Domain, etwa `m***@example.org`. Vor- und Nachname maskiert diese Version nicht. Darf das Dienstkonto keine Personen sehen, liefert ChurchTools seine E-Mail-Adresse nicht mit, und dort steht `null`.
 - Dazu kommen die gesetzten Rechte je Modul, nach Namen sortiert. Rechte, die das Konto nicht hat, fehlen. Ein Recht mit einer Liste von IDs, etwa für einzelne Wiki-Kategorien, zeigt die 10 kleinsten IDs und ihre Gesamtzahl. Hat das Konto mehr als 150 gesetzte Rechte, gibt das Tool statt der Liste einen Fehler mit dem Rat, dem Dienstkonto nur die Rechte seiner Tools zu geben. Kennt Ecclium die Form der Antwort zu den Rechten nicht, stehen sie als unbekannt da.
@@ -122,7 +122,7 @@ Kommt das erste Signal erst nach dem Ende der Verbindung, steht es im Log, und d
 
 ## Audit-Datei
 
-Mit `ECCLIUM_STATE_DIR` schreibt Ecclium jede Zeile des Audits zuerst in eine eigene Datei und erst danach als Kopie nach stderr. Das Audit liegt dann bei Ihnen, gleich was der Client mit stderr macht. Ohne die Variable gibt es keine Audit-Datei, und das Audit geht nur nach stderr. Mit den Suchtools für Personen und Gruppen wird der Ordner nötig: Deren Ergebnis gibt Ecclium nur heraus, wenn seine Zeile ganz in der Audit-Datei steht.
+Mit `ECCLIUM_STATE_DIR` schreibt Ecclium jede Zeile des Audits zuerst in eine eigene Datei und erst danach als Kopie nach stderr. Das Audit liegt dann bei Ihnen, gleich was der Client mit stderr macht. Ohne die Variable gibt es keine Audit-Datei, und das Audit geht nur nach stderr. Mit dem Toolset `persons` wird der Ordner nötig: Das Ergebnis seiner Suchtools gibt Ecclium nur heraus, wenn seine Zeile ganz in der Audit-Datei steht.
 
 Legen Sie einen Ordner auf einer lokalen Platte an, als Ihr Benutzer und ausserhalb des Checkouts. Der Befehl legt jeden fehlenden Ordner auf dem Weg mit den Rechten 700 an:
 
@@ -161,18 +161,32 @@ Grenzen der Audit-Datei:
 - Ob das Datenschutzrecht Ihrer Gemeinde ein Protokoll der Lesezugriffe verlangt, etwa mindestens ein Jahr lang und getrennt vom System, ist nicht geklärt. Die Audit-Datei liegt auf demselben Rechner wie der Server und damit vermutlich nicht getrennt vom System. Ecclium verspricht keine Konformität mit einem Datenschutzrecht. Was Ecclium sonst ablegt, steht unter [Datenschutz](../privacy.md).
 - Ob ChurchTools die Lesezugriffe über die API selbst je Konto protokolliert, ist nicht geprüft.
 
+## Toolsets
+
+Welche Tools der Server neben `ct_whoami` anbietet, legen Sie mit `ECCLIUM_TOOLSETS` fest: eine mit Komma getrennte Liste von Bereichen, ohne Leerzeichen ([ADR 0062](../adr/0062-toolsets.md)).
+
+| Toolset     | Bereiche                                    | Tools in dieser Version                 |
+| ----------- | ------------------------------------------- | --------------------------------------- |
+| `persons`   | Personen und Gruppen                        | `ct_persons_search`, `ct_groups_search` |
+| `events`    | Events und Dienste                          | keine                                   |
+| `calendars` | Kalender, Termine, Ressourcen und Buchungen | keine                                   |
+| `wiki`      | Wiki                                        | keine                                   |
+| `songs`     | Songs                                       | keine                                   |
+
+`all` schaltet alle ein, auch die Toolsets späterer Versionen. Ist die Variable leer oder nicht gesetzt, bietet der Server nur `ct_whoami` an. Beim Start nennt Ecclium auf stderr die Toolsets, die eingeschaltet sind, und jedes, das in dieser Version noch keine Tools mitbringt. Ein unbekannter Name, ein doppelter oder `all` neben einem anderen Namen bricht den Start ab. Die frühere Variable `ECCLIUM_SEARCH_TOOLS` bricht den Start ebenfalls ab, mit dem Hinweis auf `ECCLIUM_TOOLSETS=persons`.
+
 ## Suchtools
 
-`ct_persons_search` sucht Personen, `ct_groups_search` Gruppen nach ihrem Namen. Beide lesen nur und geben je Treffer nur die Kennung und den Namen weiter, höchstens 50 Treffer je Aufruf, ohne weitere Seiten. Gibt es mehr, sagt das Ergebnis es. Personen und Gruppen einer Gemeinde lassen auf die Religionszugehörigkeit schliessen. Deshalb bietet Ecclium die beiden Tools nur an, wenn Sie es ausdrücklich einstellen, und gibt ein Ergebnis nur heraus, wenn seine Zeile in der Audit-Datei steht ([ADR 0060](../adr/0060-leserechte-und-felder-der-suchtools.md)).
+`ct_persons_search` sucht Personen, `ct_groups_search` Gruppen nach ihrem Namen. Beide lesen nur und geben je Treffer nur die Kennung und den Namen weiter, höchstens 50 Treffer je Aufruf, ohne weitere Seiten. Gibt es mehr, sagt das Ergebnis es. Personen und Gruppen einer Gemeinde lassen auf die Religionszugehörigkeit schliessen. Deshalb bietet Ecclium die beiden Tools nur mit dem Toolset `persons` an und gibt ein Ergebnis nur heraus, wenn seine Zeile in der Audit-Datei steht ([ADR 0060](../adr/0060-leserechte-und-felder-der-suchtools.md)).
 
-So schalten Sie sie ein: Setzen Sie im Abschnitt `env` des Eintrags `ecclium` neben der Adresse und der Token-Datei `ECCLIUM_SEARCH_TOOLS` auf `true` und `ECCLIUM_STATE_DIR` auf einen Ordner nach «Audit-Datei»:
+So schalten Sie sie ein: Setzen Sie im Abschnitt `env` des Eintrags `ecclium` neben der Adresse und der Token-Datei `ECCLIUM_TOOLSETS` auf `persons` und `ECCLIUM_STATE_DIR` auf einen Ordner nach «Audit-Datei»:
 
 ```json
-"ECCLIUM_SEARCH_TOOLS": "true",
+"ECCLIUM_TOOLSETS": "persons",
 "ECCLIUM_STATE_DIR": "/pfad/zum/zustandsordner"
 ```
 
-Ohne den Ordner meldet `config check` ein Problem, und der Start bricht mit 78 ab. Unter Windows gibt es über stdio keine Audit-Datei und damit keine Suchtools. Bei jedem Start meldet Ecclium auf stderr, dass die Suchtools freigegeben sind.
+Ohne den Ordner meldet `config check` ein Problem, und der Start bricht mit 78 ab. Unter Windows gibt es über stdio keine Audit-Datei und damit kein Toolset `persons`. Bei jedem Start meldet Ecclium auf stderr, dass das Toolset `persons` eingeschaltet ist.
 
 Geben Sie dem Dienstkonto dafür die Rechte der Suchtools aus der Tabelle unter [Rechte](dienstkonto.md#rechte), nur für die Bereiche und Gruppentypen, in denen gesucht werden soll, und keine Sicherheitsstufe. Hat das Konto mehr Rechte, weist Ecclium es nicht ab. Welche es hat, zeigt `ct_whoami`.
 
@@ -194,7 +208,7 @@ Mit `scripts/smoke.mts` prüfen Sie, ob der gebaute Server mit Ihrem Dienstkonto
 env -i ECCLIUM_CHURCHTOOLS_URL=https://example.church.tools ECCLIUM_CHURCHTOOLS_TOKEN_FILE=/pfad/zur/token-datei /pfad/zu/node /pfad/zum/checkout/scripts/smoke.mts
 ```
 
-Der Server bekommt nur die Adresse, die Token-Datei, den Zustandsordner und `ECCLIUM_READ_ONLY=true`, auch wenn Ihre Shell etwas anderes setzt, mit dem Schalter für die Suchtools unten dazu `ECCLIUM_SEARCH_TOOLS=true`. Das Token nimmt der Smoke-Test nur aus der Datei, unter einem absoluten Pfad. Variablen wie `NODE_OPTIONS`, `NODE_EXTRA_CA_CERTS` oder `NODE_USE_ENV_PROXY` weist er ab. Schreibt der Server nach seinen Startmeldungen Text auf stderr, der kein JSON ist, gilt das als Fehler, weil darin unbemerkt ein Name stehen könnte.
+Der Server bekommt nur die Adresse, die Token-Datei, den Zustandsordner und `ECCLIUM_READ_ONLY=true`, auch wenn Ihre Shell etwas anderes setzt, mit dem Schalter für die Suchtools unten dazu `ECCLIUM_TOOLSETS=persons`. Das Token nimmt der Smoke-Test nur aus der Datei, unter einem absoluten Pfad. Variablen wie `NODE_OPTIONS`, `NODE_EXTRA_CA_CERTS` oder `NODE_USE_ENV_PROXY` weist er ab. Schreibt der Server nach seinen Startmeldungen Text auf stderr, der kein JSON ist, gilt das als Fehler, weil darin unbemerkt ein Name stehen könnte.
 
 Die Suchtools ruft der Smoke-Test nur auf einer Testinstanz mit synthetischen Daten auf, die eine Wiki-Kategorie `testinstanz-kennung` trägt, wie sie die Proben in `scripts/spike/` verlangen. Setzen Sie dafür `ECCLIUM_SMOKE_ALLOW_SEARCH` auf den ersten Teil des Hosts, von Hand getippt und nicht aus der Variablen der Adresse kopiert, und `ECCLIUM_SMOKE_QUERY` auf einen Suchbegriff. Der Smoke-Test liest dann mit dem Token zuerst die Wiki-Kategorien und die Version von ChurchTools. Sieht das Konto nicht genau eine solche Kategorie, die es weder bearbeiten noch löschen darf, bricht er ab, ohne den Server zu starten. Sonst sucht er Personen und Gruppen mit dem Begriff, Personen mit einem erfundenen Begriff ohne Treffer und mit einem Begriff nur aus Leerzeichen, den der Server abweisen muss, ohne ChurchTools zu fragen.
 
