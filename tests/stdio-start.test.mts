@@ -892,7 +892,26 @@ describe('the audit file of the real start', { timeout }, () => {
     assertNoCanary(stderr, [canary.token], 'stderr');
   });
 
-  it('ends with 78 for enabled search tools without a folder of state, before any connection', async () => {
+  it('ends with 78 for the toolset persons without a folder of state, before any connection', async () => {
+    const session = launch({
+      origin: `https://${host}`,
+      env: { ECCLIUM_TOOLSETS: 'persons' },
+    });
+    const { code, stdout, stderr } = await session.ended();
+    expect(code).toBe(78);
+    expect(stdout).toBe('');
+    expect(linesOf(stderr)).toEqual([
+      problemText({
+        code: 'toolsets_without_state_dir',
+        variable: 'ECCLIUM_STATE_DIR',
+      }),
+      warningText('persons_toolset_enabled'),
+    ]);
+  });
+
+  // The switch of phase 1 for the search tools stops the start with a
+  // pointer to the toolset that replaced it (ADR 0062).
+  it('ends with 78 for the replaced switch of the search tools, before any connection', async () => {
     const session = launch({
       origin: `https://${host}`,
       env: { ECCLIUM_SEARCH_TOOLS: 'true' },
@@ -902,10 +921,9 @@ describe('the audit file of the real start', { timeout }, () => {
     expect(stdout).toBe('');
     expect(linesOf(stderr)).toEqual([
       problemText({
-        code: 'search_tools_without_state_dir',
-        variable: 'ECCLIUM_STATE_DIR',
+        code: 'search_tools_replaced',
+        variable: 'ECCLIUM_SEARCH_TOOLS',
       }),
-      warningText('search_tools_enabled'),
     ]);
   });
 
@@ -929,8 +947,8 @@ describe('the audit file of the real start', { timeout }, () => {
   );
 });
 
-// The search tools at the real start (ADR 0060, ADR 0028): with
-// ECCLIUM_SEARCH_TOOLS and a folder of state the start lists them, a call
+// The search tools at the real start (ADR 0060, ADR 0028): with the
+// toolset persons and a folder of state the start lists them, a call
 // returns ID and names, and its line stands in the audit file without the
 // term or a name. When the line cannot reach the file, the result stays
 // back. The server of this test plays ChurchTools: persons whose names are
@@ -1026,7 +1044,7 @@ describe.skipIf(process.getuid?.() === 0)(
           ...launched,
           env: {
             ...launched.env,
-            ECCLIUM_SEARCH_TOOLS: 'true',
+            ECCLIUM_TOOLSETS: 'persons',
             ECCLIUM_STATE_DIR: stateDir,
           },
         });
@@ -1051,7 +1069,7 @@ describe.skipIf(process.getuid?.() === 0)(
           'ct_whoami',
         ]);
         expect(linesOf(finished.stderr)).toContain(
-          warningText('search_tools_enabled'),
+          warningText('persons_toolset_enabled'),
         );
         expect(protocolViolations(finished.stdout)).toEqual([]);
       });
@@ -1121,7 +1139,7 @@ describe.skipIf(process.getuid?.() === 0)(
           ...launched,
           env: {
             ...launched.env,
-            ECCLIUM_SEARCH_TOOLS: 'true',
+            ECCLIUM_TOOLSETS: 'persons',
             ECCLIUM_STATE_DIR: stateDir,
           },
         });

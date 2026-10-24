@@ -14,7 +14,7 @@ Ecclium liest seine Konfiguration aus Variablen der Umgebung. Jede trägt das Pr
 | `ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE` | ganze Zahl von 1 bis 500 | `300` | nein | nein |
 | `ECCLIUM_READ_ONLY` | `true`, `false` | `true` | nein | nein |
 | `ECCLIUM_REDACTION` | `standard`, `off`, `strict` | `standard` | nein | nein |
-| `ECCLIUM_SEARCH_TOOLS` | `true`, `false` | `false` | nein | nein |
+| `ECCLIUM_TOOLSETS` | Liste aus `persons`, `events`, `calendars`, `wiki`, `songs`, mit Komma getrennt, oder `all` | leer | nein | nein |
 | `ECCLIUM_STATE_DIR` | absoluter Pfad | keine | nein | ja |
 | `ECCLIUM_STDIO_SUBJECT` | Bezeichnung mit höchstens 32 Zeichen | `local-stdio` | nein | ja |
 | `ECCLIUM_LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` | nein | nein |
@@ -43,9 +43,9 @@ Legt fest, ob der Server nur liest. Mit `true` registriert er keine Schreib-Tool
 
 Stufe der Maskierung. `standard` maskiert E-Mail-Adressen, Telefonnummern und Geburtsdaten. `off` schaltet die Masken ab, nur im Betrieb über stdio und mit einer Warnung beim Start. `strict` bricht den Start ab, bis die vollständige Maskierung steht.
 
-## `ECCLIUM_SEARCH_TOOLS`
+## `ECCLIUM_TOOLSETS`
 
-Mit `true` bietet der Server die Suchtools `ct_persons_search` und `ct_groups_search` an. Sie verlangen `ECCLIUM_STATE_DIR` für die Audit-Datei, sonst startet der Server über stdio nicht.
+Legt fest, welche Bereiche von Tools der Server anbietet: eine mit Komma getrennte Liste aus `persons` (Personen und Gruppen), `events` (Events und Dienste), `calendars` (Kalender, Termine, Ressourcen und Buchungen), `wiki` und `songs`, ohne Leerzeichen, oder `all` für alle. Leer oder nicht gesetzt bietet der Server nur `ct_whoami` an. `persons` verlangt im Betrieb über stdio `ECCLIUM_STATE_DIR` für die Audit-Datei. Die Variable ersetzt `ECCLIUM_SEARCH_TOOLS`: Statt `ECCLIUM_SEARCH_TOOLS=true` gilt `ECCLIUM_TOOLSETS=persons`.
 
 ## `ECCLIUM_STATE_DIR`
 
@@ -63,9 +63,14 @@ Legt fest, ab welcher Stufe der Server Zeilen des Logs auf stderr schreibt.
 
 Diese Namen gehören zu späteren Versionen. Ist einer gesetzt, bricht der Start mit einem Hinweis ab, statt die Variable still zu übergehen.
 
-- `ECCLIUM_TOOLSETS`
 - `ECCLIUM_WRITE_CONFIRMATION`
 - `ECCLIUM_EGRESS`
 - `ECCLIUM_EGRESS_ALLOW_LAN`
 - `ECCLIUM_ALLOWED_HOSTS`
 - `ECCLIUM_EGRESS_PROXY`: Einen Proxy für ausgehende Verbindungen gibt es erst in einer späteren Version.
+
+## Nicht mehr gültig
+
+Diese Namen gibt es nicht mehr. Ist einer gesetzt, bricht der Start mit einem Hinweis auf die Variable ab, die ihn ersetzt.
+
+- `ECCLIUM_SEARCH_TOOLS`: Statt `ECCLIUM_SEARCH_TOOLS=true` gilt `ECCLIUM_TOOLSETS=persons`.

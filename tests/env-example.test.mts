@@ -21,7 +21,8 @@ import { environmentSchema } from '../packages/core/src/config/variables.ts';
 const text = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
 const lines = text.split('\n').slice(0, -1);
 
-const assignment = /^(ECCLIUM_[A-Z0-9_]+)=([^\s#"'`=]+)$/;
+// A value may be empty: ECCLIUM_TOOLSETS takes that as no toolset.
+const assignment = /^(ECCLIUM_[A-Z0-9_]+)=([^\s#"'`=]*)$/;
 const comment = /^#( [^\s].*)?$/;
 
 const assignments = lines.flatMap((line) => {

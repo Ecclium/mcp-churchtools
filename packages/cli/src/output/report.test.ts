@@ -109,7 +109,7 @@ describe('renderConfigReport', () => {
       row('Anfragen je Minute', '300 (Voreinstellung)'),
       row('Nur lesen', 'ja (Voreinstellung)'),
       row('Maskierung', '‹standard› (Voreinstellung)'),
-      row('Suchtools', 'nein (Voreinstellung)'),
+      row('Toolsets', 'keine (Voreinstellung)'),
       row(
         'Zustandsordner',
         'keine Audit-Datei (‹ECCLIUM_STATE_DIR› ist nicht gesetzt)',
@@ -237,12 +237,12 @@ describe('renderConfigReport', () => {
     const lines = render({
       ...minimal(),
       ECCLIUM_READ_ONLY: 'false',
-      ECCLIUM_SEARCH_TOOLS: 'true',
+      ECCLIUM_TOOLSETS: 'songs,wiki',
       ECCLIUM_LOG_LEVEL: 'debug',
     });
     expect(lines).toContain(row('Nur lesen', 'nein (aus ‹ECCLIUM_READ_ONLY›)'));
     expect(lines).toContain(
-      row('Suchtools', 'ja (aus ‹ECCLIUM_SEARCH_TOOLS›)'),
+      row('Toolsets', '‹wiki›, ‹songs› (aus ‹ECCLIUM_TOOLSETS›)'),
     );
     expect(lines).toContain(
       row('Stufe des Logs', '‹debug› (aus ‹ECCLIUM_LOG_LEVEL›)'),
@@ -272,12 +272,14 @@ describe('renderConfigReport', () => {
     const lines = render({
       ...minimal(),
       ECCLIUM_REDACTION: 'off',
-      ECCLIUM_SEARCH_TOOLS: 'true',
+      ECCLIUM_TOOLSETS: 'persons',
     });
     const start = lines.indexOf('Beim Start meldet Ecclium:');
     expect(lines.slice(start + 1, -1)).toEqual([
       expect.stringMatching(/^ {2}- Die Maskierung ist ausgeschaltet\. /),
-      expect.stringMatching(/^ {2}- Die Suchtools /),
+      expect.stringMatching(
+        /^ {2}- Das Toolset ‹persons› ist eingeschaltet\. /,
+      ),
     ]);
   });
 

@@ -37,7 +37,7 @@ const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
   churchtoolsRequestsPerMinute: 'Anfragen je Minute',
   readOnly: 'Nur lesen',
   redaction: 'Maskierung',
-  searchTools: 'Suchtools',
+  toolsets: 'Toolsets',
   stateDir: 'Zustandsordner',
   stdioSubject: 'Subjekt über stdio',
   logLevel: 'Stufe des Logs',
@@ -95,6 +95,13 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
         !showValues
         ? { text: masked, hides: 'subject' }
         : { text: quote(shown.value) };
+    case 'list':
+      return {
+        text:
+          shown.values.length === 0
+            ? 'keine'
+            : shown.values.map(quote).join(', '),
+      };
     case 'integer':
       return { text: formatNumber(shown.value) };
     case 'origin': {

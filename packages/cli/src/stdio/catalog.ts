@@ -15,11 +15,11 @@ import { createCorePlugin } from '@ecclium/mcp-churchtools-tools';
 
 /**
  * Builds the catalog of the server over stdio from the plugin of the core.
- * With `readOnly`, write tools stay out of it. `ct_persons_search` and
- * `ct_groups_search` join it only with `searchTools` (ADR 0055, ADR 0060);
- * the start then needs the folder of the audit file (ADR 0028).
+ * With `readOnly`, write tools stay out of it. Besides `ct_whoami`, it
+ * holds only the tools of the toolsets the operator turned on (ADR 0062);
+ * with `persons`, the start needs the folder of the audit file (ADR 0028).
  *
- * @param config - The checked configuration; `readOnly` and `searchTools`
+ * @param config - The checked configuration; `readOnly` and `toolsets`
  *   count.
  * @returns The frozen catalog.
  * @throws {RegistryRefusal} When the registry refuses the plugin or one of
@@ -31,12 +31,12 @@ import { createCorePlugin } from '@ecclium/mcp-churchtools-tools';
  * ```
  */
 export function createStdioCatalog(
-  config: Pick<EccliumConfig, 'readOnly' | 'searchTools'>,
+  config: Pick<EccliumConfig, 'readOnly' | 'toolsets'>,
 ): ToolCatalog {
   return createToolCatalog({
     core: createCorePlugin(),
     plugins: [],
     readOnly: config.readOnly,
-    toolsets: new Set(config.searchTools ? (['persons'] as const) : []),
+    toolsets: new Set(config.toolsets),
   });
 }

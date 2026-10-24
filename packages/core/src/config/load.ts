@@ -15,6 +15,7 @@ import {
 
 import { parseChurchToolsOrigin, Secret } from '../http/index.js';
 import type { LogLevel } from '../logger/index.js';
+import type { ToolsetName } from '../registry/toolsets.js';
 import type { ConfigProblemCode, ConfigWarningCode } from './codes.js';
 import { checkStateDir, type StateDirFileSystem } from './state-dir.js';
 import { readTokenFile, type TokenFileSystem } from './token-file.js';
@@ -24,7 +25,9 @@ import {
   nodeOptionsVariableName,
   type PlainVariableName,
   proxyVariableName,
+  readToolsetList,
   reservedStdioSubjects,
+  searchToolsVariableName,
   tlsKeylogOption,
   tlsTraceOption,
   tlsVariableName,
@@ -54,7 +57,11 @@ export interface EccliumConfig {
   readonly readOnly: boolean;
   /** `strict` is refused until the full redaction exists. */
   readonly redaction: 'off' | 'standard';
-  readonly searchTools: boolean;
+  /**
+   * The toolsets the operator turned on, frozen, in the order of the
+   * names of the toolsets; empty for none (ADR 0062).
+   */
+  readonly toolsets: readonly ToolsetName[];
   /**
    * The checked folder of state, or undefined when the variable is not
    * set. With it, the start over stdio writes the audit file into its
@@ -72,7 +79,7 @@ export type SettingKey =
   | 'churchtoolsRequestsPerMinute'
   | 'readOnly'
   | 'redaction'
-  | 'searchTools'
+  | 'toolsets'
   | 'stateDir'
   | 'stdioSubject'
   | 'logLevel';
@@ -89,6 +96,7 @@ export type ValueOrigin = 'environment' | 'file' | 'default';
 export type ShownValue =
   | { readonly kind: 'boolean'; readonly value: boolean }
   | { readonly kind: 'choice'; readonly value: string }
+  | { readonly kind: 'list'; readonly values: readonly string[] }
   | { readonly kind: 'integer'; readonly value: number }
   | { readonly kind: 'origin'; readonly host: string; readonly port: string }
   | { readonly kind: 'path'; readonly value: string }
@@ -309,15 +317,25 @@ interface Ranked {
 
 // The order of the problems: the variables in table order, then the
 // variables of TLS and of debug output, then the options that log TLS,
-// then the names of a proxy and of later phases, then unknown names by
-// code unit, then those too odd to name.
+// then the names of a proxy, of later phases and of the replaced switch
+// for the search tools, then unknown names by code unit, then those too
+// odd to name.
 const tlsRank = variableNames.length;
 const debugRank = tlsRank + 1;
 const keylogRank = debugRank + 1;
 const traceRank = keylogRank + 1;
 const proxyRank = traceRank + 1;
 const unsupportedRank = proxyRank + 1;
-const unknownRank = unsupportedRank + unsupportedVariableNames.length;
+const replacedRank = unsupportedRank + unsupportedVariableNames.length;
+const unknownRank = replacedRank + 1;
+
+// The toolsets whose tools give results only with their line in the audit
+// file, because they hold special data (ADR 0028, ADR 0060). The loader
+// sees no tool, so it keeps this list to name the problem before a start;
+// the start itself checks every tool of its catalog as the second guard.
+const toolsetsWithAuditFile: readonly ToolsetName[] = Object.freeze([
+  'persons',
+]);
 
 type Read =
   | { readonly state: 'unset' }
@@ -444,6 +462,8 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     const known = (variableNames as readonly string[]).indexOf(upper);
     if (upper === proxyVariableName) {
       add('proxy_unsupported', proxyRank, proxyVariableName);
+    } else if (upper === searchToolsVariableName) {
+      add('search_tools_replaced', replacedRank, searchToolsVariableName);
     } else if (unsupported >= 0) {
       add('unsupported_variable', unsupportedRank + unsupported, upper);
     } else if (known >= 0 && key !== upper) {
@@ -665,11 +685,39 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   }
   show('redaction', 'ECCLIUM_REDACTION', redaction, 'choice');
 
-  // Enabled search tools let the AI assistant see names of persons and
-  // groups, which every start says (ADR 0055, ADR 0060).
-  const searchTools = choose('ECCLIUM_SEARCH_TOOLS');
-  if (searchTools?.value === 'true') warnings.add('search_tools_enabled');
-  show('searchTools', 'ECCLIUM_SEARCH_TOOLS', searchTools, 'boolean');
+  // The toolsets. Unlike any other variable, an empty value is valid and
+  // means none, as when the variable is not set (ADR 0062). The toolset
+  // persons lets the AI assistant see names of persons and groups, which
+  // every start says (ADR 0060).
+  const toolsetsName = 'ECCLIUM_TOOLSETS';
+  const toolsetsRead: Read =
+    given.get(toolsetsName) === ''
+      ? Object.freeze({ state: 'set', value: '' })
+      : read(row(toolsetsName));
+  let toolsets:
+    | { readonly value: readonly ToolsetName[]; readonly origin: ValueOrigin }
+    | undefined;
+  if (toolsetsRead.state === 'unset') {
+    toolsets = { value: Object.freeze([]), origin: 'default' };
+  } else if (toolsetsRead.state === 'set') {
+    const list = readToolsetList(toolsetsRead.value);
+    if (list === undefined || !fitsVariable(toolsetsName, toolsetsRead.value)) {
+      report('invalid_toolsets', toolsetsName);
+    } else {
+      toolsets = { value: list, origin: 'environment' };
+    }
+  }
+  if (toolsets?.value.includes('persons') === true) {
+    warnings.add('persons_toolset_enabled');
+  }
+  setting(
+    'toolsets',
+    toolsetsName,
+    toolsets === undefined ? 'invalid' : toolsets.origin,
+    toolsets === undefined
+      ? shownNone
+      : record({ kind: 'list', values: toolsets.value }),
+  );
 
   // The folder of state may stay unset: then there is no audit file. A set
   // one is only looked at, never created, and the start checks its folder
@@ -703,16 +751,17 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     }
   }
 
-  // The search tools give results only with their line in the audit file,
-  // so over stdio they need its folder (ADR 0028, ADR 0060). Reported here
-  // already, so that `ecclium config check` names it before a start. A
-  // folder that is set but refused has its own problem.
+  // Over stdio, the tools of these toolsets need the folder of the audit
+  // file (ADR 0028, ADR 0060). Reported here already, so that `ecclium
+  // config check` names it before a start. A folder that is set but
+  // refused has its own problem.
   if (
     transport === 'stdio' &&
-    searchTools?.value === 'true' &&
+    toolsets?.value.some((name) => toolsetsWithAuditFile.includes(name)) ===
+      true &&
     stateDirRead.state === 'unset'
   ) {
-    report('search_tools_without_state_dir', stateDirName);
+    report('toolsets_without_state_dir', stateDirName);
   }
 
   // A wider trust store stays allowed for an instance with a certificate
@@ -770,7 +819,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     rate === undefined ||
     readOnly === undefined ||
     redaction === undefined ||
-    searchTools === undefined ||
+    toolsets === undefined ||
     !stateDirValid ||
     subject === undefined ||
     logLevel === undefined
@@ -787,7 +836,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       churchtoolsRequestsPerMinute: rate.value,
       readOnly: readOnly.value === 'true',
       redaction: redaction.value as 'off' | 'standard',
-      searchTools: searchTools.value === 'true',
+      toolsets: toolsets.value,
       stateDir,
       stdioSubject: subject.value,
       logLevel: logLevel.value as LogLevel,

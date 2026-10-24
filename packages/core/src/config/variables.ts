@@ -11,6 +11,11 @@ import { z } from 'zod';
 
 import { parseChurchToolsOrigin } from '../http/index.js';
 import { logLevels } from '../logger/index.js';
+import {
+  isToolsetName,
+  type ToolsetName,
+  toolsetNames,
+} from '../registry/toolsets.js';
 import { isNormalizedAbsolutePath, maxStateDirLength } from './state-dir.js';
 
 /** The prefix of every variable. The loader recognises it in any case. */
@@ -24,7 +29,7 @@ export const variableNames = Object.freeze([
   'ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE',
   'ECCLIUM_READ_ONLY',
   'ECCLIUM_REDACTION',
-  'ECCLIUM_SEARCH_TOOLS',
+  'ECCLIUM_TOOLSETS',
   'ECCLIUM_STATE_DIR',
   'ECCLIUM_STDIO_SUBJECT',
   'ECCLIUM_LOG_LEVEL',
@@ -54,12 +59,19 @@ export const plainVariableNames: readonly PlainVariableName[] = Object.freeze(
  * start with a message that this version does not support it yet.
  */
 export const unsupportedVariableNames = Object.freeze([
-  'ECCLIUM_TOOLSETS',
   'ECCLIUM_WRITE_CONFIRMATION',
   'ECCLIUM_EGRESS',
   'ECCLIUM_EGRESS_ALLOW_LAN',
   'ECCLIUM_ALLOWED_HOSTS',
 ] as const);
+
+/**
+ * The switch of phase 1 for the two search tools, which `ECCLIUM_TOOLSETS`
+ * replaces (ADR 0062). Set with any value, it stops the start with a
+ * pointer to the toolset `persons`, so that no configuration loses its
+ * search tools without a word.
+ */
+export const searchToolsVariableName = 'ECCLIUM_SEARCH_TOOLS';
 
 /**
  * The variable for a proxy of outbound connections. It stops the start
@@ -142,7 +154,14 @@ export const reservedStdioSubjects = Object.freeze(['invalid'] as const);
 
 /** How the loader reads the value of a variable. */
 export type VariableKind =
-  'origin' | 'path' | 'token' | 'integer' | 'boolean' | 'choice' | 'subject';
+  | 'origin'
+  | 'path'
+  | 'token'
+  | 'integer'
+  | 'boolean'
+  | 'choice'
+  | 'list'
+  | 'subject';
 
 /** The range of the requests per minute to ChurchTools (ADR 0057). */
 export const requestsPerMinuteRange = Object.freeze({ min: 1, max: 500 });
@@ -177,6 +196,43 @@ export function isRequestsPerMinute(value: string): boolean {
   );
 }
 
+/** The value of `ECCLIUM_TOOLSETS` that turns on every toolset. */
+export const allToolsets = 'all';
+
+/**
+ * Reads the value of `ECCLIUM_TOOLSETS`: names of toolsets separated by
+ * commas, each at most once, or `all` alone (ADR 0062). Empty means no
+ * toolset. Nothing is trimmed and no case is changed, like every other
+ * value of the table, so a blank or a capital is refused.
+ *
+ * @param value - The value as given.
+ * @returns The toolsets, frozen, in the order of {@link toolsetNames}, or
+ *   `undefined` when the value does not fit.
+ * @example
+ * ```ts
+ * readToolsetList('wiki,persons'); // ['persons', 'wiki']
+ * readToolsetList('all,wiki'); // undefined
+ * ```
+ */
+export function readToolsetList(
+  value: string,
+): readonly ToolsetName[] | undefined {
+  if (typeof value !== 'string' || value.length > toolsetListLength) {
+    return undefined;
+  }
+  if (value === '') return Object.freeze([]);
+  if (value === allToolsets) return toolsetNames;
+  const names = value.split(',');
+  const chosen = new Set<string>(names);
+  if (chosen.size !== names.length || !names.every(isToolsetName)) {
+    return undefined;
+  }
+  return Object.freeze(toolsetNames.filter((name) => chosen.has(name)));
+}
+
+// The longest value that can fit: every toolset once.
+const toolsetListLength = toolsetNames.join(',').length;
+
 /** One row of the table. */
 export interface Variable {
   readonly name: VariableName;
@@ -186,7 +242,10 @@ export interface Variable {
    * cuts a value.
    */
   readonly maxLength: number;
-  /** The values of a boolean or a choice, exactly as written; else empty. */
+  /**
+   * The values of a boolean or a choice, or the words of a list, exactly as
+   * written; else empty.
+   */
   readonly choices: readonly string[];
   /** The value when the variable is not set, or undefined for none. */
   readonly defaultValue: string | undefined;
@@ -264,11 +323,11 @@ export const variables: readonly Variable[] = Object.freeze([
     stdioOnly: false,
   }),
   row({
-    name: 'ECCLIUM_SEARCH_TOOLS',
-    kind: 'boolean',
-    maxLength: 5,
-    choices: ['true', 'false'],
-    defaultValue: 'false',
+    name: 'ECCLIUM_TOOLSETS',
+    kind: 'list',
+    maxLength: toolsetListLength,
+    choices: [...toolsetNames, allToolsets],
+    defaultValue: '',
     secret: false,
     stdioOnly: false,
   }),
@@ -327,7 +386,10 @@ export const variableSchemas: Readonly<
     .refine((value) => isRequestsPerMinute(value)),
   ECCLIUM_READ_ONLY: choiceOf('ECCLIUM_READ_ONLY'),
   ECCLIUM_REDACTION: choiceOf('ECCLIUM_REDACTION'),
-  ECCLIUM_SEARCH_TOOLS: choiceOf('ECCLIUM_SEARCH_TOOLS'),
+  ECCLIUM_TOOLSETS: z
+    .string()
+    .max(toolsetListLength)
+    .refine((value) => readToolsetList(value) !== undefined),
   ECCLIUM_STATE_DIR: z
     .string()
     .min(1)
@@ -352,7 +414,7 @@ export const environmentSchema = z.strictObject({
     variableSchemas.ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE.optional(),
   ECCLIUM_READ_ONLY: variableSchemas.ECCLIUM_READ_ONLY.optional(),
   ECCLIUM_REDACTION: variableSchemas.ECCLIUM_REDACTION.optional(),
-  ECCLIUM_SEARCH_TOOLS: variableSchemas.ECCLIUM_SEARCH_TOOLS.optional(),
+  ECCLIUM_TOOLSETS: variableSchemas.ECCLIUM_TOOLSETS.optional(),
   ECCLIUM_STATE_DIR: variableSchemas.ECCLIUM_STATE_DIR.optional(),
   ECCLIUM_STDIO_SUBJECT: variableSchemas.ECCLIUM_STDIO_SUBJECT.optional(),
   ECCLIUM_LOG_LEVEL: variableSchemas.ECCLIUM_LOG_LEVEL.optional(),

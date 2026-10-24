@@ -6,6 +6,7 @@
  * @packageDocumentation
  */
 export {
+  allToolsets,
   configProblemCodes,
   type ConfigProblem,
   type ConfigProblemCode,
@@ -20,6 +21,7 @@ export {
   maxReportedProblems,
   proxyVariableName,
   requestsPerMinuteRange,
+  searchToolsVariableName,
   type SettingKey,
   type SettingReport,
   type ShownValue,

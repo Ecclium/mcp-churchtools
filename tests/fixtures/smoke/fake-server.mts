@@ -19,7 +19,7 @@ import { createInterface } from 'node:readline';
 const env = process.env;
 const scenario = env['FAKE_SCENARIO'] ?? 'normal';
 const canary = env['FAKE_CANARY'] ?? 'canary';
-const searchTools = env['ECCLIUM_SEARCH_TOOLS'] === 'true';
+const searchTools = env['ECCLIUM_TOOLSETS'] === 'persons';
 const calls: string[] = [];
 
 const record = (): void => {

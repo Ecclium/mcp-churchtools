@@ -158,17 +158,17 @@ describe('the command line', () => {
 
   // The search tools need the folder of the audit file over stdio, and the
   // check says so before any start (ADR 0028, ADR 0060).
-  it('refuses enabled search tools without the folder of the audit file', () => {
+  it('refuses the toolset persons without the folder of the audit file', () => {
     const result = capture(check, {
       ECCLIUM_CHURCHTOOLS_URL: address,
       [tokenVariableName]: makeCanary('token').value,
-      ECCLIUM_SEARCH_TOOLS: 'true',
+      ECCLIUM_TOOLSETS: 'persons',
     });
     expect(result.code).toBe(exitCodes.invalidConfig);
     expect(result.stderr).toBe('');
     expect(result.stdout).toContain(
       problemText({
-        code: 'search_tools_without_state_dir',
+        code: 'toolsets_without_state_dir',
         variable: 'ECCLIUM_STATE_DIR',
       }),
     );
@@ -414,7 +414,7 @@ describe('the command line', () => {
         ECCLIUM_CHURCHTOOLS_TOKEN_FILE: goodPath,
         ECCLIUM_READ_ONLY: canary,
         ECCLIUM_REDACTION: canary,
-        ECCLIUM_SEARCH_TOOLS: canary,
+        ECCLIUM_TOOLSETS: canary,
         ECCLIUM_STDIO_SUBJECT: `Z${canary}`,
         ECCLIUM_LOG_LEVEL: canary,
         ECCLIUM_FOO: canary,

@@ -231,7 +231,7 @@ describe('loadConfig with a good configuration', () => {
       churchtoolsRequestsPerMinute: 300,
       readOnly: true,
       redaction: 'standard',
-      searchTools: false,
+      toolsets: [],
       stateDir: undefined,
       stdioSubject: 'local-stdio',
       logLevel: 'info',
@@ -283,12 +283,7 @@ describe('loadConfig with a good configuration', () => {
         'default',
         { kind: 'choice', value: 'standard' },
       ],
-      [
-        'searchTools',
-        'ECCLIUM_SEARCH_TOOLS',
-        'default',
-        { kind: 'boolean', value: false },
-      ],
+      ['toolsets', 'ECCLIUM_TOOLSETS', 'default', { kind: 'list', values: [] }],
       ['stateDir', 'ECCLIUM_STATE_DIR', 'unset', { kind: 'none' }],
       [
         'stdioSubject',
@@ -311,7 +306,7 @@ describe('loadConfig with a good configuration', () => {
       ECCLIUM_CHURCHTOOLS_URL: 'https://demo.example:8443/',
       ECCLIUM_READ_ONLY: 'false',
       ECCLIUM_REDACTION: 'off',
-      ECCLIUM_SEARCH_TOOLS: 'true',
+      ECCLIUM_TOOLSETS: 'wiki,persons',
       ECCLIUM_STATE_DIR: stateDirPath,
       ECCLIUM_STDIO_SUBJECT: 'local-operator-2',
       ECCLIUM_LOG_LEVEL: 'debug',
@@ -322,7 +317,7 @@ describe('loadConfig with a good configuration', () => {
       churchtoolsOrigin: 'https://demo.example:8443',
       readOnly: false,
       redaction: 'off',
-      searchTools: true,
+      toolsets: ['persons', 'wiki'],
       stateDir: stateDirPath,
       stdioSubject: 'local-operator-2',
       logLevel: 'debug',
@@ -334,8 +329,13 @@ describe('loadConfig with a good configuration', () => {
     });
     expect(result.report.warnings).toEqual([
       'redaction_off',
-      'search_tools_enabled',
+      'persons_toolset_enabled',
     ]);
+    expect(Object.isFrozen(result.config.toolsets)).toBe(true);
+    expect(setting(result, 'toolsets')?.shown).toEqual({
+      kind: 'list',
+      values: ['persons', 'wiki'],
+    });
   });
 
   it('names the environment as origin even for the default value', () => {
@@ -435,15 +435,15 @@ describe('loadConfig and the folder of state', () => {
     expect(folder.looked).toEqual([]);
   });
 
-  it('reports the folder after the search tools and before the subject', () => {
+  it('reports the folder after the toolsets and before the subject', () => {
     const result = load({
       ...valid(),
       ECCLIUM_STDIO_SUBJECT: 'Local',
       ECCLIUM_STATE_DIR: 'state',
-      ECCLIUM_SEARCH_TOOLS: 'yes',
+      ECCLIUM_TOOLSETS: 'yes',
     });
     expect(problems(result)).toEqual([
-      ['invalid_choice', 'ECCLIUM_SEARCH_TOOLS'],
+      ['invalid_toolsets', 'ECCLIUM_TOOLSETS'],
       ['state_dir_relative', 'ECCLIUM_STATE_DIR'],
       ['subject_invalid', 'ECCLIUM_STDIO_SUBJECT'],
     ]);
@@ -493,7 +493,7 @@ describe('loadConfig and its sources', () => {
     const polluted = {
       ECCLIUM_READ_ONLY: 'false',
       ECCLIUM_REDACTION: 'off',
-      ECCLIUM_SEARCH_TOOLS: 'true',
+      ECCLIUM_TOOLSETS: 'persons',
       ECCLIUM_CHURCHTOOLS_URL: address,
     };
     const result = (() => {
@@ -757,7 +757,6 @@ describe('loadConfig and the names of variables', () => {
 
   it('refuses each name of a later phase as not yet supported', () => {
     expect(unsupportedVariableNames).toEqual([
-      'ECCLIUM_TOOLSETS',
       'ECCLIUM_WRITE_CONFIRMATION',
       'ECCLIUM_EGRESS',
       'ECCLIUM_EGRESS_ALLOW_LAN',
@@ -827,7 +826,8 @@ describe('loadConfig and the values of variables', () => {
     });
   });
 
-  it.each(variableNames)(
+  // Only an empty list of toolsets is valid, as none (ADR 0062).
+  it.each(variableNames.filter((name) => name !== 'ECCLIUM_TOOLSETS'))(
     'refuses an empty %s and applies no default',
     (name) => {
       const environment =
@@ -1435,14 +1435,17 @@ describe('loadConfig and its problems', () => {
   > = {
     unknown_variable: () => load({ ...valid(), ECCLIUM_REDONLY: 'true' }),
     miscased_variable: () => load({ ...valid(), ecclium_read_only: 'true' }),
-    unsupported_variable: () => load({ ...valid(), ECCLIUM_TOOLSETS: 'x' }),
+    unsupported_variable: () => load({ ...valid(), ECCLIUM_EGRESS: 'x' }),
     proxy_unsupported: () => load({ ...valid(), ECCLIUM_EGRESS_PROXY: 'x' }),
+    search_tools_replaced: () =>
+      load({ ...valid(), ECCLIUM_SEARCH_TOOLS: 'true' }),
     tls_check_disabled: () =>
       load({ ...valid(), NODE_TLS_REJECT_UNAUTHORIZED: '0' }),
     debug_output_enabled: () => load({ ...valid(), NODE_DEBUG: 'undici' }),
     tls_keylog_enabled: () => started(['--tls-keylog=/path/to/keys']),
     tls_trace_enabled: () => load({ ...valid(), NODE_OPTIONS: '--trace-tls' }),
     empty_value: () => load({ ...valid(), ECCLIUM_READ_ONLY: '' }),
+    invalid_toolsets: () => load({ ...valid(), ECCLIUM_TOOLSETS: 'groups' }),
     value_too_long: () => load({ ...valid(), ECCLIUM_READ_ONLY: 'xxxxxx' }),
     invalid_choice: () => load({ ...valid(), ECCLIUM_READ_ONLY: 'yes' }),
     invalid_integer: () =>
@@ -1551,13 +1554,13 @@ describe('loadConfig and its problems', () => {
     token_from_environment: () =>
       load({ ECCLIUM_CHURCHTOOLS_URL: address, [tokenVariableName]: token() }),
     redaction_off: () => load({ ...valid(), ECCLIUM_REDACTION: 'off' }),
-    search_tools_without_state_dir: () =>
-      load({ ...valid(), ECCLIUM_SEARCH_TOOLS: 'true' }),
-    search_tools_enabled: () =>
+    toolsets_without_state_dir: () =>
+      load({ ...valid(), ECCLIUM_TOOLSETS: 'persons' }),
+    persons_toolset_enabled: () =>
       load(
         {
           ...valid(),
-          ECCLIUM_SEARCH_TOOLS: 'true',
+          ECCLIUM_TOOLSETS: 'persons',
           ECCLIUM_STATE_DIR: stateDirPath,
         },
         'stdio',
@@ -1580,28 +1583,24 @@ describe('loadConfig and its problems', () => {
     expect(result.report.warnings).toEqual([code]);
   });
 
-  // The search tools need the folder of the audit file over stdio
+  // The tools of persons need the folder of the audit file over stdio
   // (ADR 0028, ADR 0060). A folder that is set but refused reports only
-  // its own problem, and the switch alone stays a valid value.
-  it('asks for the folder of state only when the search tools are enabled and it is unset', () => {
-    const missing = load({ ...valid(), ECCLIUM_SEARCH_TOOLS: 'true' });
-    expect(missing.ok).toBe(false);
-    expect(missing.report.problems).toEqual([
-      {
-        code: 'search_tools_without_state_dir',
-        variable: 'ECCLIUM_STATE_DIR',
-      },
-    ]);
-    expect(setting(missing, 'searchTools')?.shown).toEqual({
-      kind: 'boolean',
-      value: true,
-    });
+  // its own problem, and the toolsets alone stay a valid value.
+  it('asks for the folder of state only when persons is on and it is unset', () => {
+    for (const value of ['persons', 'wiki,persons', 'all']) {
+      const missing = load({ ...valid(), ECCLIUM_TOOLSETS: value });
+      expect(missing.ok, value).toBe(false);
+      expect(missing.report.problems, value).toEqual([
+        { code: 'toolsets_without_state_dir', variable: 'ECCLIUM_STATE_DIR' },
+      ]);
+      expect(setting(missing, 'toolsets')?.origin, value).toBe('environment');
+    }
     expect(
       codes(
         load(
           {
             ...valid(),
-            ECCLIUM_SEARCH_TOOLS: 'true',
+            ECCLIUM_TOOLSETS: 'persons',
             ECCLIUM_STATE_DIR: stateDirPath,
           },
           'stdio',
@@ -1611,14 +1610,87 @@ describe('loadConfig and its problems', () => {
         ),
       ),
     ).toEqual(['state_dir_mode']);
-    expect(load({ ...valid(), ECCLIUM_SEARCH_TOOLS: 'false' }).ok).toBe(true);
+    for (const value of ['', 'wiki', 'events,calendars,wiki,songs']) {
+      expect(load({ ...valid(), ECCLIUM_TOOLSETS: value }).ok, value).toBe(
+        true,
+      );
+    }
+  });
+
+  // Unlike any other variable, an empty value means no toolset, as when
+  // the variable is not set (ADR 0062).
+  it('takes an empty list of toolsets as none, from the environment', () => {
+    const result = load({ ...valid(), ECCLIUM_TOOLSETS: '' });
+    expect(result.ok && result.config.toolsets).toEqual([]);
+    expect(setting(result, 'toolsets')).toEqual({
+      key: 'toolsets',
+      variable: 'ECCLIUM_TOOLSETS',
+      origin: 'environment',
+      shown: { kind: 'list', values: [] },
+    });
+    expect(result.report.warnings).toEqual([]);
+  });
+
+  it('turns on every toolset with all and shows their names', () => {
+    const result = load(
+      { ...valid(), ECCLIUM_TOOLSETS: 'all', ECCLIUM_STATE_DIR: stateDirPath },
+      'stdio',
+      memoryFiles().fs,
+      undefined,
+      memoryFolder().fs,
+    );
+    const names = ['persons', 'events', 'calendars', 'wiki', 'songs'];
+    expect(result.ok && result.config.toolsets).toEqual(names);
+    expect(setting(result, 'toolsets')?.shown).toEqual({
+      kind: 'list',
+      values: names,
+    });
+  });
+
+  it.each([
+    'Persons',
+    'persons,',
+    'persons, wiki',
+    'persons,persons',
+    'all,wiki',
+    'groups',
+    'true',
+    'persons,events,calendars,wiki,songs,x',
+  ])('refuses the toolsets %j and shows no value', (value) => {
+    const result = load({ ...valid(), ECCLIUM_TOOLSETS: value });
+    expect(problems(result)).toEqual([
+      [
+        value.length > 35 ? 'value_too_long' : 'invalid_toolsets',
+        'ECCLIUM_TOOLSETS',
+      ],
+    ]);
+    expect(setting(result, 'toolsets')).toMatchObject({
+      origin: 'invalid',
+      shown: { kind: 'none' },
+    });
+  });
+
+  // The switch of phase 1 gave the search tools; whoever still sets it
+  // learns of the toolset that replaced it, whatever its value.
+  it.each([
+    ['ECCLIUM_SEARCH_TOOLS', 'true'],
+    ['ECCLIUM_SEARCH_TOOLS', 'false'],
+    ['ECCLIUM_SEARCH_TOOLS', ''],
+    ['ecclium_search_tools', 'true'],
+  ])('refuses %s=%j and points to the toolsets', (name, value) => {
+    const result = load({ ...valid(), [name]: value });
+    expect(problems(result)).toEqual([
+      ['search_tools_replaced', 'ECCLIUM_SEARCH_TOOLS'],
+    ]);
+    expect(setting(result, 'toolsets')?.origin).toBe('default');
   });
 
   it('lists 32 problems in a fixed order and counts the rest', () => {
     const environment: Environment = {
       ECCLIUM_CHURCHTOOLS_URL: 'http://demo.example',
       ECCLIUM_CHURCHTOOLS_TOKEN_FILE: tokenPath,
-      ECCLIUM_TOOLSETS: 'x',
+      ECCLIUM_WRITE_CONFIRMATION: 'x',
+      ECCLIUM_SEARCH_TOOLS: 'x',
       NODE_TLS_REJECT_UNAUTHORIZED: '0',
       NODE_DEBUG: 'undici',
       NODE_OPTIONS: '--trace-tls',
@@ -1631,15 +1703,16 @@ describe('loadConfig and its problems', () => {
       '--tls-keylog=/path/to/keys',
     ]);
     expect(result.report.problems).toHaveLength(maxReportedProblems);
-    expect(result.report.omittedProblems).toBe(47 - maxReportedProblems);
-    expect(problems(result).slice(0, 8)).toEqual([
+    expect(result.report.omittedProblems).toBe(48 - maxReportedProblems);
+    expect(problems(result).slice(0, 9)).toEqual([
       ['url_not_https', 'ECCLIUM_CHURCHTOOLS_URL'],
       ['tls_check_disabled', 'NODE_TLS_REJECT_UNAUTHORIZED'],
       ['debug_output_enabled', 'NODE_DEBUG'],
       ['tls_keylog_enabled'],
       ['tls_trace_enabled', 'NODE_OPTIONS'],
       ['proxy_unsupported', 'ECCLIUM_EGRESS_PROXY'],
-      ['unsupported_variable', 'ECCLIUM_TOOLSETS'],
+      ['unsupported_variable', 'ECCLIUM_WRITE_CONFIRMATION'],
+      ['search_tools_replaced', 'ECCLIUM_SEARCH_TOOLS'],
       ['unknown_variable', 'ECCLIUM_UNKNOWN_0'],
     ]);
   });

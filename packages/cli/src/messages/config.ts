@@ -14,6 +14,7 @@ import {
   type ConfigProblem,
   type ConfigProblemCode,
   type ConfigWarningCode,
+  toolsetNames,
   variables,
 } from '@ecclium/mcp-churchtools-core';
 
@@ -110,7 +111,10 @@ const urlLength =
 const tokenFile = quote('ECCLIUM_CHURCHTOOLS_TOKEN_FILE');
 const tokenVariable = quote('ECCLIUM_CHURCHTOOLS_TOKEN');
 const stateDir = quote('ECCLIUM_STATE_DIR');
-const searchTools = quote('ECCLIUM_SEARCH_TOOLS');
+const toolsets = quote('ECCLIUM_TOOLSETS');
+const personsToolset = quote('persons');
+// The names of the toolsets as German prose: ‹a›, ‹b› und ‹c›.
+const toolsetList = `${toolsetNames.slice(0, -1).map(quote).join(', ')} und ${quote(toolsetNames.at(-1) ?? '')}`;
 const auditDir = quote('audit');
 const example = 'https://example.church.tools';
 
@@ -167,6 +171,14 @@ const problems: Readonly<
       `${name ?? 'Eine Variable'} wird von dieser Version noch nicht unterstützt.`,
       'Sie gehört zu einer späteren Version. Ein Wert, den Ecclium nicht anwendet, soll nicht still übergangen werden.',
       'Entfernen Sie die Variable.',
+    ),
+  // Whatever its value: ignored, the switch would let the search tools
+  // vanish without a word (ADR 0062).
+  search_tools_replaced: (name = quote('ECCLIUM_SEARCH_TOOLS')) =>
+    message(
+      `Die Variable ${name} gibt es nicht mehr.`,
+      `An ihre Stelle tritt ${toolsets}. Ecclium übergeht sie nicht still, damit die Suchtools nicht unbemerkt wegfallen.`,
+      `Ersetzen Sie ‹ECCLIUM_SEARCH_TOOLS=true› durch ‹ECCLIUM_TOOLSETS=persons› oder entfernen Sie die Variable.`,
     ),
   proxy_unsupported: (name = quote('ECCLIUM_EGRESS_PROXY')) =>
     message(
@@ -231,6 +243,12 @@ const problems: Readonly<
       'Setzen Sie einen der erlaubten Werte.',
     );
   },
+  invalid_toolsets: (name = toolsets) =>
+    message(
+      `Der Wert von ${name} ist nicht erlaubt.`,
+      `Erlaubt ist eine mit Komma getrennte Liste aus ${toolsetList}, jeder Name höchstens einmal und ohne Leerzeichen, oder allein ‹all›. Ein leerer Wert schaltet kein Toolset ein.`,
+      'Setzen Sie eine solche Liste, etwa ‹persons,wiki›, oder entfernen Sie die Variable.',
+    ),
   invalid_integer: (name = quote('ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE')) =>
     message(
       `Der Wert von ${name} ist keine erlaubte Zahl.`,
@@ -555,13 +573,13 @@ const problems: Readonly<
       'Das Dateisystem meldete einen Fehler. Seine Meldung zeigt Ecclium nicht, weil sie den Pfad enthält.',
       `Prüfen Sie Eigentümer und Rechte des Ordners aus ${name}.`,
     ),
-  // Reported for the folder, which is what is missing; the value of the
-  // switch itself is valid.
-  search_tools_without_state_dir: (name = stateDir) =>
+  // Reported for the folder, which is what is missing; the toolsets
+  // themselves are valid. Only persons needs the folder so far.
+  toolsets_without_state_dir: (name = stateDir) =>
     message(
-      `Die Suchtools sind mit ${searchTools} freigegeben, aber ${name} ist nicht gesetzt.`,
-      `Ein Ergebnis von ‹ct_persons_search› und ‹ct_groups_search› gibt Ecclium nur heraus, wenn seine Zeile in der Audit-Datei steht, und die Audit-Datei liegt im Ordner aus ${name}. Unter Windows gibt es sie im Betrieb über stdio nicht, und damit auch keine Suchtools.`,
-      `Setzen Sie ${name} auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 oder ${searchTools} auf ‹false›.`,
+      `Das Toolset ${personsToolset} ist in ${toolsets} eingeschaltet, aber ${name} ist nicht gesetzt.`,
+      `Ein Ergebnis seiner Tools gibt Ecclium nur heraus, wenn seine Zeile in der Audit-Datei steht, und die Audit-Datei liegt im Ordner aus ${name}. Unter Windows gibt es sie im Betrieb über stdio nicht, und damit auch dieses Toolset nicht.`,
+      `Setzen Sie ${name} auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 oder entfernen Sie ${personsToolset} aus ${toolsets}.`,
     ),
 });
 
@@ -576,12 +594,12 @@ const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({
     'Personendaten erreichen den KI-Assistenten unmaskiert.',
     `Setzen Sie ${quote('ECCLIUM_REDACTION')} auf ‹standard›, wenn das nicht gewollt ist.`,
   ),
-  // On every start, because the search tools let the AI assistant see
+  // On every start, because the tools of persons let the AI assistant see
   // names of persons and groups (ADR 0060).
-  search_tools_enabled: message(
-    'Die Suchtools ‹ct_persons_search› und ‹ct_groups_search› sind freigegeben.',
+  persons_toolset_enabled: message(
+    `Das Toolset ${personsToolset} ist eingeschaltet.`,
     'Der KI-Assistent kann damit Personen und Gruppen der Instanz nach Namen suchen und sieht Kennung und Name jedes Treffers. Jeder Aufruf steht in der Audit-Datei.',
-    `Setzen Sie ${quote('ECCLIUM_SEARCH_TOOLS')} auf ‹false›, wenn er diese Daten nicht sehen soll.`,
+    `Entfernen Sie ${personsToolset} aus ${toolsets}, wenn er diese Daten nicht sehen soll.`,
   ),
   // One text for every setting: the report of the loader names none of
   // them, and never the path of a certificate.
