@@ -69,6 +69,17 @@ export const objectDomains: readonly string[] = Object.freeze([
 // capital letter, no dot, no @ and no space. A name as a slug would fit, so
 // the identity must not make one (ADR 0003).
 const actorIdPattern = /^[a-z][a-z0-9_-]{0,31}(?::[a-z0-9_-]{1,64})?$/;
+
+/**
+ * Tells whether a value is the ID of an actor as the audit takes it, such
+ * as `stdio:local-stdio`. The store of quotas checks it before it keeps a
+ * counter for the actor (ADR 0063).
+ *
+ * @param value - Any value.
+ * @returns Whether it fits.
+ */
+export const isActorId = (value: unknown): value is string =>
+  typeof value === 'string' && value.length <= 97 && actorIdPattern.test(value);
 const hashPattern = /^[0-9a-f]{64}$/;
 const vendorPattern = /^[a-z][a-z0-9-]{0,31}$/;
 const modelPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;

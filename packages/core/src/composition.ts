@@ -27,4 +27,9 @@ export {
   createStderrWriter,
   type StderrLineWriter,
 } from './logger/index.js';
+export {
+  createFileQuotaStore,
+  type FileQuotaStoreOptions,
+  prepareQuotaDir,
+} from './quota/index.js';
 export { createDefaultTenantLogger } from './tenant/default-logger.js';

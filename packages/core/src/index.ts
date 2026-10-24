@@ -45,6 +45,7 @@ export {
   variables,
 } from './config/index.js';
 export { type AuditFileCode, auditFileCodes } from './audit/index.js';
+export { type QuotaDirCode, quotaDirCodes } from './quota/index.js';
 export {
   createStdioIdentity,
   createStdioTenantResolver,
