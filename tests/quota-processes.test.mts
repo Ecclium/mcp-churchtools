@@ -74,10 +74,10 @@ describe('two processes that count against one file of quotas', () => {
         count(stateDir, times, startAt),
         count(stateDir, times, startAt),
       ]);
-      expect(
-        [...(first ?? []), ...(second ?? [])].sort((a, b) => a - b),
-      ).toEqual(Array.from({ length: 2 * times }, (_, index) => index + 1));
-      for (const counts of [first ?? [], second ?? []]) {
+      expect([...first, ...second].sort((a, b) => a - b)).toEqual(
+        Array.from({ length: 2 * times }, (_, index) => index + 1),
+      );
+      for (const counts of [first, second]) {
         expect(counts).toEqual([...counts].sort((a, b) => a - b));
       }
       const quota = join(stateDir, 'quota');
