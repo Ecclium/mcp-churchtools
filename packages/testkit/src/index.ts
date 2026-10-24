@@ -42,3 +42,11 @@ export {
   createSpecialPlugin,
   type SpecialPluginOptions,
 } from './plugins/special/index.js';
+export {
+  createMemoryQuotaStore,
+  type OpenQuotaStore,
+  quotaContext,
+  type QuotaMemory,
+  type QuotaStoreCheck,
+  quotaStoreChecks,
+} from './quota/index.js';
