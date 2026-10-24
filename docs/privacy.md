@@ -24,6 +24,15 @@ Nur wenn `ECCLIUM_STATE_DIR` gesetzt ist, schreibt Ecclium eine Audit-Datei in d
 - **Getrennt vom System:** Die Datei liegt auf demselben Rechner wie der Server und ist damit vermutlich nicht getrennt vom System, wie es manche Rechte für Protokolle verlangen.
 - **Kopie auf stderr:** Jede Zeile geht zusätzlich als Kopie nach stderr. Wohin der Client stderr schreibt, bestimmt er, Claude Desktop etwa in eine Logdatei je Server. Diese Kopien schützt und löscht Ecclium nicht.
 
+### Zähler des Lesebudgets
+
+Nur wenn `ECCLIUM_STATE_DIR` gesetzt ist, zählt Ecclium im Ordner `quota` darin die Aufrufe der Tools mit Personendaten der besonderen Kategorie, für das Lesebudget von 200 Aufrufen je Subjekt und UTC-Tag ([ADR 0063](adr/0063-quotastore-als-datei.md)).
+
+- **Inhalt:** eine Datei je Mandant und UTC-Tag mit einer Zahl je Akteur, etwa für `user:stdio:local-stdio`. Keine Namen, keine Suchbegriffe und keine Inhalte aus ChurchTools.
+- **Sperrdatei:** Während einer Zählung liegt daneben eine Sperrdatei mit der Nummer des Prozesses, dem Namen des Rechners und der Zeit. Der Name eines Rechners enthält oft einen Personennamen, etwa den seines Besitzers. Ecclium entfernt die Sperrdatei nach jeder Zählung. Endet ein Prozess mitten in einer Zählung, bleibt sie liegen, bis die nächste Zählung sie nach zehn Sekunden ersetzt oder der nächste Tag sie entfernt.
+- **Wer sie lesen kann:** wie bei der Audit-Datei, der Ordner mit den Rechten 700, die Dateien mit 600.
+- **Frist:** Beim ersten Zählen an einem neuen Tag entfernt Ecclium die Dateien früherer Tage.
+
 ### Token-Datei
 
 Die Datei mit dem Login-Token legen Sie selbst an. Ecclium liest sie und schreibt sie nie. Wie Sie sie schützen, steht unter [Betrieb über stdio](betrieb/stdio.md).

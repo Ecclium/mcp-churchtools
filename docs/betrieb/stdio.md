@@ -199,6 +199,7 @@ Was die Suchtools tun und was nicht:
 - Personen ausserhalb der Bereiche des Kontos und Gruppen ausserhalb seiner Gruppentypen findet die Suche nicht, ohne Fehler. Gruppen mit der Sichtbarkeit «intern» findet sie dagegen auch ohne Recht auf Gruppen. Ob versteckte Gruppen ausgelassen werden, ist nicht geprüft.
 - Passt der Name des Dienstkontos zum Begriff, kann sein eigener Datensatz unter den Treffern sein.
 - Die Zeile des Audits nennt das Tool und den Ausgang, nie den Suchbegriff, einen Namen oder eine Kennung.
+- Beide Suchtools zusammen und jedes weitere Tool mit Personendaten der besonderen Kategorie haben ein Lesebudget von 200 Aufrufen je Subjekt und UTC-Tag. Danach antworten sie bis 00:00 UTC mit einer Ablehnung, und das Log nennt den Grund mit `read_budget_exhausted`. Die Zähler liegen im Ordner `quota` des Zustandsordners und überstehen einen Neustart ([ADR 0063](../adr/0063-quotastore-als-datei.md)). Was darin steht, sagt [Datenschutz](../privacy.md).
 
 ## Smoke-Test
 
