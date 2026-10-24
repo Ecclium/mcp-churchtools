@@ -10,7 +10,15 @@ import { z } from 'zod';
 
 import { descriptionBudget, untrustedWarning } from './description.js';
 import { type RefusalReason, RegistryRefusal } from './refusal.js';
-import { createToolCatalog } from './registry.js';
+import { type CatalogOptions, createToolCatalog } from './registry.js';
+import { toolsetNames } from './toolsets.js';
+
+// The tools of these tests are in the area of the wiki, and every catalog
+// turns that toolset on unless a test names its own: a tool of a plugin in
+// the area base is refused (ADR 0062).
+const wiki = new Set(['wiki'] as const);
+const catalogOf = (options: CatalogOptions) =>
+  createToolCatalog({ toolsets: wiki, ...options });
 
 const description = {
   purpose: 'Reads a value.',
@@ -30,7 +38,7 @@ const tool = (
     name,
     meta: {
       capability: 'read',
-      domain: 'base',
+      domain: 'wiki',
       requiredRights: [],
       tier: 'free',
       sensitivity: 'personal',
@@ -91,16 +99,14 @@ const refuses = (
   readOnly = false,
   core: Plugin = emptyCore,
 ): RegistryRefusal => {
-  const refusal = refusalOf(() =>
-    createToolCatalog({ core, plugins, readOnly }),
-  );
+  const refusal = refusalOf(() => catalogOf({ core, plugins, readOnly }));
   expect(refusal.reason).toBe(reason);
   return refusal;
 };
 
 describe('createToolCatalog', () => {
   it('lists the tools of all plugins sorted by name, frozen', () => {
-    const catalog = createToolCatalog({
+    const catalog = catalogOf({
       core: plugin('core', adding(tool('ct_whoami'), tool('ct_b_read'))),
       plugins: [plugin('@ecclium/example', adding(tool('ct_a_read')))],
       readOnly: true,
@@ -127,10 +133,11 @@ describe('createToolCatalog', () => {
   });
 
   it('takes the example plugin, written with defineTool and its own zod', () => {
-    const catalog = createToolCatalog({
+    const catalog = catalogOf({
       core: emptyCore,
       plugins: [examplePlugin],
       readOnly: false,
+      toolsets: new Set(['wiki'] as const),
     });
     expect(catalog.list().map((entry) => entry.name)).toEqual([
       'ct_example_echo',
@@ -154,7 +161,7 @@ describe('createToolCatalog', () => {
   });
 
   it('keeps the input schema the mount advertises, without the text of zod', () => {
-    const catalog = createToolCatalog({
+    const catalog = catalogOf({
       core: plugin(
         'core',
         adding(
@@ -177,7 +184,7 @@ describe('createToolCatalog', () => {
   });
 
   it('sorts by code units, not by locale', () => {
-    const catalog = createToolCatalog({
+    const catalog = catalogOf({
       core: plugin('core', adding(tool('ct_b'), tool('ct_a_b'), tool('ct_a'))),
       plugins: [],
       readOnly: true,
@@ -190,7 +197,7 @@ describe('createToolCatalog', () => {
   });
 
   it('tells the audit sink which tools exist, without the prototype', () => {
-    const catalog = createToolCatalog({
+    const catalog = catalogOf({
       core: plugin('core', adding(tool('ct_whoami'))),
       plugins: [],
       readOnly: true,
@@ -202,20 +209,144 @@ describe('createToolCatalog', () => {
     expect(catalog.get('toString')).toBeUndefined();
   });
 
+  describe('toolsets', () => {
+    const inArea = (name: `ct_${string}`, domain: string): ToolDefinition =>
+      tool(name, { meta: { ...tool(name).meta, domain } });
+    const core = plugin(
+      'core',
+      adding(
+        inArea('ct_whoami', 'base'),
+        inArea('ct_groups_get', 'groups'),
+        inArea('ct_events_list', 'events'),
+        inArea('ct_docs_search', 'docs'),
+      ),
+    );
+    const names = (toolsets?: ReadonlySet<'persons' | 'events'>) =>
+      catalogOf({ core, plugins: [], readOnly: true, toolsets })
+        .list()
+        .map((entry) => entry.name);
+
+    it('offers only the area that is always on without a toolset', () => {
+      expect(names()).toEqual(['ct_whoami']);
+      expect(names(new Set())).toEqual(['ct_whoami']);
+    });
+
+    it('offers the areas of each toolset that is on', () => {
+      expect(names(new Set(['persons'] as const))).toEqual([
+        'ct_groups_get',
+        'ct_whoami',
+      ]);
+      expect(names(new Set(['persons', 'events'] as const))).toEqual([
+        'ct_events_list',
+        'ct_groups_get',
+        'ct_whoami',
+      ]);
+    });
+
+    it('offers no tool of an area without a toolset, even with all on', () => {
+      const all = createToolCatalog({
+        core,
+        plugins: [],
+        readOnly: true,
+        toolsets: new Set(toolsetNames),
+      });
+      expect(all.has('ct_docs_search')).toBe(false);
+      expect(all.has('ct_events_list')).toBe(true);
+    });
+
+    it('filters the tools of plugins the same way', () => {
+      const catalog = catalogOf({
+        core: emptyCore,
+        plugins: [plugin('extra', adding(inArea('ct_extra_groups', 'groups')))],
+        readOnly: true,
+      });
+      expect(catalog.has('ct_extra_groups')).toBe(false);
+    });
+
+    it('still refuses an invalid tool that no toolset offers', () => {
+      refuses(
+        [
+          plugin(
+            'extra',
+            adding(
+              tool('ct_extra_x', {
+                meta: { ...tool('ct_extra_x').meta, domain: 'groups' },
+                output: z.object({ note: z.string() }),
+              }),
+            ),
+          ),
+        ],
+        'tool_unclassified',
+      );
+    });
+
+    // Only the core may use the area that is always on; a tool of a plugin
+    // there would pass every choice of toolsets.
+    it('refuses a tool of a plugin in the area base, after every other check', () => {
+      const refusal = refuses(
+        [plugin('extra', adding(inArea('ct_extra_base', 'base')))],
+        'tool_domain_reserved',
+      );
+      expect(refusal.plugin).toBe('extra');
+      expect(refusal.tool).toBe('ct_extra_base');
+      refuses(
+        [
+          plugin(
+            'extra',
+            adding(
+              tool('ct_extra_base', {
+                meta: { ...tool('ct_extra_base').meta, domain: 'base' },
+                output: z.object({ note: z.string() }),
+              }),
+            ),
+          ),
+        ],
+        'tool_unclassified',
+      );
+      expect(names()).toEqual(['ct_whoami']);
+    });
+
+    it('refuses a set with a name that is no toolset', () => {
+      expect(() =>
+        catalogOf({
+          core,
+          plugins: [],
+          readOnly: true,
+          toolsets: new Set(['all']) as unknown as ReadonlySet<'persons'>,
+        }),
+      ).toThrow(TypeError);
+    });
+
+    it('keeps its own copy of the set', () => {
+      const toolsets = new Set<'persons'>();
+      const catalog = catalogOf({
+        core,
+        plugins: [],
+        readOnly: true,
+        toolsets,
+      });
+      toolsets.add('persons');
+      expect(catalog.has('ct_groups_get')).toBe(false);
+    });
+  });
+
   it('keeps write tools out when the server only reads', () => {
     const core = plugin(
       'core',
       adding(tool('ct_whoami'), writeTool('ct_wiki_write')),
     );
     expect(
-      createToolCatalog({ core, plugins: [], readOnly: true })
+      catalogOf({ core, plugins: [], readOnly: true })
         .list()
         .map((entry) => entry.name),
     ).toEqual(['ct_whoami']);
     expect(
-      createToolCatalog({ core, plugins: [], readOnly: false }).has(
-        'ct_wiki_write',
-      ),
+      catalogOf({
+        core,
+        plugins: [],
+        readOnly: false,
+        toolsets: new Set(['wiki'] as const),
+      }).has('ct_wiki_write'),
     ).toBe(true);
   });
 
@@ -225,7 +356,7 @@ describe('createToolCatalog', () => {
         return Promise.resolve({ id: this === undefined ? 1 : 2 });
       },
     });
-    const catalog = createToolCatalog({
+    const catalog = catalogOf({
       core: plugin('core', adding(original)),
       plugins: [],
       readOnly: true,
@@ -238,7 +369,7 @@ describe('createToolCatalog', () => {
   });
 
   it('takes a tool of the pro tier; the gate checks the licence', () => {
-    const catalog = createToolCatalog({
+    const catalog = catalogOf({
       core: plugin(
         'core',
         adding(
@@ -253,7 +384,7 @@ describe('createToolCatalog', () => {
 
   it(`takes descriptions of ${String(descriptionBudget)} code units and refuses more`, () => {
     const rendered =
-      createToolCatalog({
+      catalogOf({
         core: plugin('core', adding(tool('ct_t0'))),
         plugins: [],
         readOnly: true,
@@ -277,7 +408,7 @@ describe('createToolCatalog', () => {
         }),
       );
     expect(
-      createToolCatalog({
+      catalogOf({
         core: plugin('core', adding(...tools(spare))),
         plugins: [],
         readOnly: true,
@@ -300,7 +431,7 @@ describe('createToolCatalog', () => {
     // As many reading tools as fit; the same number of writing tools, whose
     // descriptions are longer, pushes the catalog over the budget.
     const length =
-      createToolCatalog({
+      catalogOf({
         core: plugin('core', adding(long('ct_r0', false))),
         plugins: [],
         readOnly: true,
@@ -313,7 +444,7 @@ describe('createToolCatalog', () => {
       long(`ct_w${String(i)}`, true),
     );
     expect(
-      createToolCatalog({
+      catalogOf({
         core: plugin('core', adding(...reads, ...writes)),
         plugins: [],
         readOnly: true,
@@ -341,14 +472,14 @@ describe('the core and the other plugins', () => {
   });
 
   it('gives a tool the origin of the list of its plugin, never of its name', () => {
-    const catalog = createToolCatalog({
+    const catalog = catalogOf({
       core: plugin('@ecclium/example', adding(tool('ct_a'))),
       plugins: [plugin('test-core', adding(tool('ct_b')))],
       readOnly: true,
     });
     expect(catalog.get('ct_a')?.origin).toBe('core');
     expect(catalog.get('ct_b')?.origin).toBe('plugin');
-    const named = createToolCatalog({
+    const named = catalogOf({
       core: plugin(reserved, adding(tool('ct_whoami'))),
       plugins: [],
       readOnly: true,
@@ -368,7 +499,7 @@ describe('the core and the other plugins', () => {
     const refusal = refuses([plugin(reserved, counting)], 'plugin_reserved');
     expect(refusal.plugin).toBe(reserved);
     expect(calls).toBe(0);
-    const catalog = createToolCatalog({
+    const catalog = catalogOf({
       core: emptyCore,
       plugins: [plugin(`${reserved}-extra`, counting)],
       readOnly: true,
@@ -413,7 +544,7 @@ describe('the core and the other plugins', () => {
 describe('the plugin host', () => {
   it('is frozen, without prototype, and has only addTool', () => {
     let seen: PluginHost | undefined;
-    createToolCatalog({
+    catalogOf({
       core: emptyCore,
       plugins: [
         plugin('core', (host) => {
@@ -430,7 +561,7 @@ describe('the plugin host', () => {
 
   it('refuses a tool added after register returned', () => {
     let kept: PluginHost | undefined;
-    const catalog = createToolCatalog({
+    const catalog = catalogOf({
       core: plugin('core', (host) => {
         kept = host;
         return undefined;
@@ -528,7 +659,7 @@ describe('the plugin host', () => {
 
   it('takes no tool of a plugin that is refused', () => {
     expect(() =>
-      createToolCatalog({
+      catalogOf({
         core: emptyCore,
         plugins: [
           plugin('core', (host) => {
@@ -729,7 +860,7 @@ describe('refusals', () => {
   );
 
   it('takes a sensitivity above the output', () => {
-    const catalog = createToolCatalog({
+    const catalog = catalogOf({
       core: plugin(
         'core',
         adding(

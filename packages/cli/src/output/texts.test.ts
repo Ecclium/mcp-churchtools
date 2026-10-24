@@ -50,7 +50,7 @@ const reports = (): readonly (readonly [string, readonly string[]])[] => {
   const valid = loaded({
     ...base,
     ECCLIUM_REDACTION: 'off',
-    ECCLIUM_SEARCH_TOOLS: 'true',
+    ECCLIUM_TOOLSETS: 'persons',
     ECCLIUM_STDIO_SUBJECT: 'team-a',
   });
   const invalid = loaded({ ECCLIUM_READ_ONLY: 'yes', ECCLIUM_REDONLY: 'x' });

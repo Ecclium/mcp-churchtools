@@ -16,6 +16,12 @@ export {
   createToolCatalog,
   type ToolCatalog,
 } from './registry.js';
+export {
+  isToolsetName,
+  toolsetNames,
+  type ToolsetName,
+  toolsetOf,
+} from './toolsets.js';
 export type {
   LeafType,
   ObjectJsonSchema,

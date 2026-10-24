@@ -11,6 +11,8 @@ import {
   type CatalogEntry,
   createToolCatalog,
   type ShapeNode,
+  toolsetNames,
+  toolsetOf,
 } from '@ecclium/mcp-churchtools-core';
 import type { DataClass } from '@ecclium/mcp-churchtools-plugin-api';
 import { createCorePlugin } from '@ecclium/mcp-churchtools-tools';
@@ -108,24 +110,25 @@ const rightsOf = (entry: CatalogEntry): string =>
         .map(({ module, right }) => `${code(right)} in ${code(module)}`)
         .join(', ');
 
-/**
- * The switch that offers a tool beyond the default catalog. Today only the
- * two search tools need one (ADR 0055).
- */
-export const searchToolsSwitch = 'ECCLIUM_SEARCH_TOOLS=true';
+// The settings without which the server does not offer a tool: its
+// toolset (ADR 0062), the folder of the audit file for special data over
+// stdio (ADR 0028), and, for a tool that writes, ECCLIUM_READ_ONLY=false.
+const offeredLabel = (entry: CatalogEntry): string => {
+  const { domain, sensitivity, capability } = entry.meta;
+  const toolset = toolsetOf(domain);
+  // The catalog of the page offers no tool of an area without a toolset.
+  if (toolset === undefined) throw new TypeError(`no toolset for ${domain}`);
+  const needs = [
+    ...(toolset === 'base'
+      ? []
+      : [`${code(toolset)} in ${code('ECCLIUM_TOOLSETS')}`]),
+    ...(sensitivity === 'special' ? [code('ECCLIUM_STATE_DIR')] : []),
+    ...(capability === 'write' ? [code('ECCLIUM_READ_ONLY=false')] : []),
+  ];
+  return needs.length === 0 ? 'immer' : needs.join(', mit ');
+};
 
-/** The folder the search tools need over stdio (ADR 0028). */
-export const searchToolsFolder = 'ECCLIUM_STATE_DIR';
-
-const offeredLabel = (offered: string | undefined): string =>
-  offered === undefined
-    ? 'immer'
-    : `${code(offered)} mit ${code(searchToolsFolder)}`;
-
-const toolSection = (
-  entry: CatalogEntry,
-  offered: string | undefined,
-): string[] => {
+const toolSection = (entry: CatalogEntry): string[] => {
   const { meta } = entry;
   const lines = [
     `## ${code(entry.name)}`,
@@ -134,7 +137,7 @@ const toolSection = (
     `- Sensibilität: ${sensitivityLabels[meta.sensitivity]}`,
     `- Unbeaufsichtigt: ${unattendedLabels[meta.unattended]}`,
     `- Für Routinen stabil: ${yesNo(meta.routineStable)}`,
-    `- Angeboten: ${offeredLabel(offered)}`,
+    `- Angeboten: ${offeredLabel(entry)}`,
     `- Rechte in ChurchTools: ${rightsOf(entry)}`,
     '',
     '### Beschreibung',
@@ -159,8 +162,8 @@ const toolSection = (
 
 /**
  * Renders the reference of the tools of the core, with every tool the core
- * can offer, sorted by name, and notes which switch offers a tool that the
- * default catalog leaves out.
+ * can offer, also those that write, sorted by name, and notes the toolset
+ * and the other settings each one needs.
  *
  * @returns The Markdown of `docs/tools.md`, ending with a line break.
  * @example
@@ -169,19 +172,12 @@ const toolSection = (
  * ```
  */
 export function renderToolsReference(): string {
-  const byDefault = createToolCatalog({
-    core: createCorePlugin({ searchTools: false }),
+  const entries = createToolCatalog({
+    core: createCorePlugin(),
     plugins: [],
-    readOnly: true,
-  });
-  const all = createToolCatalog({
-    core: createCorePlugin({ searchTools: true }),
-    plugins: [],
-    readOnly: true,
-  });
-  const offered = (entry: CatalogEntry): string | undefined =>
-    byDefault.get(entry.name) === undefined ? searchToolsSwitch : undefined;
-  const entries = all.list();
+    readOnly: false,
+    toolsets: new Set(toolsetNames),
+  }).list();
   const lines = [
     '# Tools',
     '',
@@ -198,7 +194,7 @@ export function renderToolsReference(): string {
   ];
   const legend = [
     '',
-    '«Unbeaufsichtigt» sagt, ob eine Routine das Tool ohne Aufsicht aufrufen darf: nie oder nur so, wie die Richtlinie des Betreibers es erlaubt. «Für Routinen stabil» heisst, dass Routinen sich auf Name und Eingabe des Tools verlassen dürfen, eine inkompatible Änderung daran ist eine neue Hauptversion. «Angeboten» nennt die Einstellungen, ohne die der Server das Tool nicht anbietet.',
+    '«Unbeaufsichtigt» sagt, ob eine Routine das Tool ohne Aufsicht aufrufen darf: nie oder nur so, wie die Richtlinie des Betreibers es erlaubt. «Für Routinen stabil» heisst, dass Routinen sich auf Name und Eingabe des Tools verlassen dürfen, eine inkompatible Änderung daran ist eine neue Hauptversion. «Angeboten» nennt die Einstellungen, ohne die der Server das Tool nicht anbietet. Statt des Namens eines Toolsets genügt `all` in `ECCLIUM_TOOLSETS`.',
   ];
   // Said only while it holds, so that the first tool that writes changes
   // the page instead of leaving a false sentence on it.
@@ -208,12 +204,12 @@ export function renderToolsReference(): string {
   for (const entry of entries) {
     const { meta } = entry;
     lines.push(
-      `| ${code(entry.name)} | ${code(meta.domain)} | ${sensitivityLabels[meta.sensitivity]} | ${unattendedLabels[meta.unattended]} | ${yesNo(meta.routineStable)} | ${offeredLabel(offered(entry))} |`,
+      `| ${code(entry.name)} | ${code(meta.domain)} | ${sensitivityLabels[meta.sensitivity]} | ${unattendedLabels[meta.unattended]} | ${yesNo(meta.routineStable)} | ${offeredLabel(entry)} |`,
     );
   }
   lines.push(...legend);
   for (const entry of entries) {
-    lines.push('', ...toolSection(entry, offered(entry)));
+    lines.push('', ...toolSection(entry));
   }
   lines.push(
     '',

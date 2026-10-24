@@ -62,7 +62,7 @@ const tool = (name: `ct_${string}`, sensitivity: Sensitivity): ToolDefinition =>
     name,
     meta: {
       capability: 'read',
-      domain: 'base',
+      domain: 'wiki',
       requiredRights: [],
       tier: 'free',
       sensitivity,
@@ -135,6 +135,7 @@ const setup = (
     core: examplePlugin,
     plugins: [testPlugin],
     readOnly: true,
+    toolsets: new Set(['wiki'] as const),
   });
   const fileLines: string[] = [];
   const stderr: string[] = [];

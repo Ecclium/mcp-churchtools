@@ -90,7 +90,8 @@ const setup = () => {
   });
   const pipeline = createToolPipeline({
     catalog: createToolCatalog({
-      core: createCorePlugin({ searchTools: true }),
+      core: createCorePlugin(),
+      toolsets: new Set(['persons'] as const),
       plugins: [],
       readOnly: true,
     }),
@@ -246,7 +247,8 @@ describe('the layer of the tool', () => {
 
   it('declares exactly ID and name in its output, each with its class', () => {
     const catalog = createToolCatalog({
-      core: createCorePlugin({ searchTools: true }),
+      core: createCorePlugin(),
+      toolsets: new Set(['persons'] as const),
       plugins: [],
       readOnly: true,
     });

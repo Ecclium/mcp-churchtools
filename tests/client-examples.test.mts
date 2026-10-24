@@ -148,13 +148,13 @@ describe.each(examples)('the example for $client', ({ file, keys }) => {
     ]);
   });
 
-  it('loads without a problem or a warning, read-only and without search tools', () => {
+  it('loads without a problem or a warning, read-only and without a toolset', () => {
     const result = loadExample(server);
     expect(result.report.problems).toEqual([]);
     expect(result.report.warnings).toEqual([]);
     expect(result).toMatchObject({
       ok: true,
-      config: { readOnly: true, searchTools: false },
+      config: { readOnly: true, toolsets: [] },
     });
   });
 

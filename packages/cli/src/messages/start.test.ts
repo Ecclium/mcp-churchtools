@@ -3,6 +3,8 @@ import {
   auditFileCodes,
   type RefusalReason,
   refusalReasons,
+  type ToolsetName,
+  toolsetNames,
 } from '@ecclium/mcp-churchtools-core';
 import { describe, expect, it } from 'vitest';
 
@@ -11,12 +13,16 @@ import { isTextLine } from '../send.js';
 import {
   auditFileMessage,
   auditFileText,
+  emptyToolsetMessage,
+  emptyToolsetText,
   type Message,
   refusalMessage,
   refusalText,
   type StartNoticeCode,
   startMessage,
   startText,
+  toolsetsMessage,
+  toolsetsText,
 } from './index.js';
 
 // The three parts as the catalog joins them.
@@ -40,6 +46,12 @@ const everyMessage: [string, Message][] = [
     `the audit file ${code}`,
     auditFileMessage(code),
   ]),
+  ['one toolset', toolsetsMessage(['wiki'])],
+  ['every toolset', toolsetsMessage(toolsetNames)],
+  ...toolsetNames.map((name): [string, Message] => [
+    `the toolset ${name} without tools`,
+    emptyToolsetMessage(name),
+  ]),
 ];
 
 const everyText: [string, string][] = [
@@ -51,6 +63,11 @@ const everyText: [string, string][] = [
   ...auditFileCodes.map((code): [string, string] => [
     `the audit file ${code}`,
     auditFileText(code),
+  ]),
+  ['every toolset', toolsetsText(toolsetNames)],
+  ...toolsetNames.map((name): [string, string] => [
+    `the toolset ${name} without tools`,
+    emptyToolsetText(name),
   ]),
 ];
 
@@ -169,16 +186,71 @@ describe('the texts of the start over stdio', () => {
     );
   });
 
+  it('names the toolsets of the start as German prose', () => {
+    expect(toolsetsMessage(['persons']).what).toBe(
+      'Eingeschaltet ist das Toolset ‹persons›.',
+    );
+    expect(toolsetsMessage(['persons']).why).toContain('nur seine Tools');
+    expect(toolsetsMessage(['persons', 'wiki']).what).toBe(
+      'Eingeschaltet sind die Toolsets ‹persons› und ‹wiki›.',
+    );
+    expect(toolsetsMessage(toolsetNames).what).toBe(
+      'Eingeschaltet sind die Toolsets ‹persons›, ‹events›, ‹calendars›, ‹wiki› und ‹songs›.',
+    );
+    expect(toolsetsMessage(['persons', 'wiki']).why).toContain(
+      'nur ihre Tools',
+    );
+    expect(toolsetsText(['wiki'])).toBe(textOf(toolsetsMessage(['wiki'])));
+    expect(Object.isFrozen(toolsetsMessage(['wiki']))).toBe(true);
+  });
+
+  it('names a toolset without tools and how to turn it off', () => {
+    const message = emptyToolsetMessage('songs');
+    expect(message.what).toBe(
+      'Das Toolset ‹songs› bietet in dieser Version keine Tools an.',
+    );
+    expect(message.action).toContain('‹ECCLIUM_TOOLSETS›');
+    expect(emptyToolsetText('songs')).toBe(textOf(message));
+  });
+
+  // Only a name of the list of toolsets reaches a text.
+  it.each([
+    ['no toolset', []],
+    ['all', ['all']],
+    ['a name that is no toolset', ['groups']],
+    ['toString', ['toString']],
+    ['a string', 'persons'],
+    ['no array', 7],
+  ])('refuses %s as toolsets', (_, value) => {
+    expect(() => toolsetsText(value as readonly ToolsetName[])).toThrow(
+      new TypeError('The toolsets are unknown.'),
+    );
+  });
+
+  it.each([
+    ['all', 'all'],
+    ['toString', 'toString'],
+    ['no string', 7],
+  ])('refuses %s as a toolset without tools', (_, value) => {
+    expect(() => emptyToolsetText(value as ToolsetName)).toThrow(
+      new TypeError('The toolsets are unknown.'),
+    );
+  });
+
   // The start notices take only texts of the catalog. A function that made
   // one from any three strings would open them to free text.
   it('exports no function that makes a text from free text', async () => {
     expect(Object.keys(await import('./start.js')).sort()).toEqual([
       'auditFileMessage',
       'auditFileText',
+      'emptyToolsetMessage',
+      'emptyToolsetText',
       'refusalMessage',
       'refusalText',
       'startMessage',
       'startText',
+      'toolsetsMessage',
+      'toolsetsText',
     ]);
   });
 });

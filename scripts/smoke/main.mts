@@ -5,12 +5,12 @@
  * protocol, each time with exactly these variables: the address and the
  * token file from the environment, `ECCLIUM_READ_ONLY=true` whatever the
  * shell says, a folder of state of its own in the temporary folder, and
- * with the switch `ECCLIUM_SEARCH_TOOLS=true`. Without the switch it calls
- * only `ct_whoami`, so on a productive instance nothing but the account of
- * the server is read. With the switch it first reads the wiki categories
- * itself and goes on only if the account sees exactly one identification
- * category of the test instance, which it may neither edit nor delete
- * (ADR 0049).
+ * with its switch the toolset `ECCLIUM_TOOLSETS=persons`. Without the
+ * switch it calls only `ct_whoami`, so on a productive instance nothing
+ * but the account of the server is read. With the switch it first reads
+ * the wiki categories itself and goes on only if the account sees exactly
+ * one identification category of the test instance, which it may neither
+ * edit nor delete (ADR 0049).
  *
  * It writes nothing into ChurchTools. Its folders of state it removes
  * again. Its result is JSON of fixed words, checked by the guard of the
@@ -279,7 +279,7 @@ export async function runSmoke(deps: SmokeDependencies): Promise<number> {
           // register a writing tool (ADR 0055).
           ECCLIUM_READ_ONLY: 'true',
           ECCLIUM_STATE_DIR: stateDir,
-          ...(search === undefined ? {} : { ECCLIUM_SEARCH_TOOLS: 'true' }),
+          ...(search === undefined ? {} : { ECCLIUM_TOOLSETS: 'persons' }),
           ...deps.server.env,
         };
         const session = startServer(

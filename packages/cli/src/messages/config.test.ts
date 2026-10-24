@@ -289,26 +289,49 @@ describe('the catalog of messages', () => {
     expect(text).not.toMatch(/Kindprozess|startet, sähe/);
   });
 
-  // The notice on every start with the search tools names both and what
-  // the AI assistant then sees (ADR 0060).
-  it('names both search tools and what the AI assistant sees with them', () => {
-    const message = warningMessage('search_tools_enabled');
-    expect(message.what).toContain('‹ct_persons_search›');
-    expect(message.what).toContain('‹ct_groups_search›');
+  // The notice on every start with the toolset persons names what the AI
+  // assistant then sees (ADR 0060).
+  it('names the toolset persons and what the AI assistant sees with it', () => {
+    const message = warningMessage('persons_toolset_enabled');
+    expect(message.what).toContain('‹persons›');
     expect(message.why).toContain('Kennung und Name jedes Treffers');
     expect(message.why).toContain('Audit-Datei');
+    expect(message.action).toContain('‹ECCLIUM_TOOLSETS›');
     expect(textOf(message)).not.toMatch(/späteren Version|wirkt .*nicht/);
   });
 
-  it('asks for the folder of the audit file when the search tools are enabled', () => {
+  it('asks for the folder of the audit file when persons is on', () => {
     const message = problemMessage({
-      code: 'search_tools_without_state_dir',
+      code: 'toolsets_without_state_dir',
       variable: 'ECCLIUM_STATE_DIR',
     });
-    expect(message.what).toContain('‹ECCLIUM_SEARCH_TOOLS›');
+    expect(message.what).toContain('‹persons›');
+    expect(message.what).toContain('‹ECCLIUM_TOOLSETS›');
     expect(message.what).toContain('‹ECCLIUM_STATE_DIR› ist nicht gesetzt');
     expect(message.why).toContain('Unter Windows');
     expect(message.action).toContain('Rechten 700');
+  });
+
+  it('points from the replaced switch to the toolset persons', () => {
+    const message = problemMessage({
+      code: 'search_tools_replaced',
+      variable: 'ECCLIUM_SEARCH_TOOLS',
+    });
+    expect(message.what).toContain('‹ECCLIUM_SEARCH_TOOLS› gibt es nicht mehr');
+    expect(message.why).toContain('‹ECCLIUM_TOOLSETS›');
+    expect(message.action).toContain('‹ECCLIUM_TOOLSETS=persons›');
+  });
+
+  it('names every toolset and all for a list that is not allowed', () => {
+    const message = problemMessage({
+      code: 'invalid_toolsets',
+      variable: 'ECCLIUM_TOOLSETS',
+    });
+    expect(message.why).toContain(
+      '‹persons›, ‹events›, ‹calendars›, ‹wiki› und ‹songs›',
+    );
+    expect(message.why).toContain('allein ‹all›');
+    expect(message.why).toContain('ohne Leerzeichen');
   });
 
   // One warning stands for every setting that extends the trust store, as
@@ -415,10 +438,14 @@ describe('the catalog of messages', () => {
         ...exported,
         'auditFileMessage',
         'auditFileText',
+        'emptyToolsetMessage',
+        'emptyToolsetText',
         'refusalMessage',
         'refusalText',
         'startMessage',
         'startText',
+        'toolsetsMessage',
+        'toolsetsText',
       ].sort(),
     );
     // @ts-expect-error A plain string is no text of the catalog.

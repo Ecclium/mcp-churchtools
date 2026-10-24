@@ -20,6 +20,7 @@ export {
   maxReportedProblems,
   proxyVariableName,
   requestsPerMinuteRange,
+  searchToolsVariableName,
   type SettingKey,
   type SettingReport,
   type ShownValue,
@@ -61,6 +62,10 @@ export {
   type ShapeNode,
   type ShapePresence,
   type ToolCatalog,
+  isToolsetName,
+  toolsetNames,
+  type ToolsetName,
+  toolsetOf,
   untrustedWarning,
 } from './registry/index.js';
 export {

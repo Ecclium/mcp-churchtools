@@ -13,48 +13,32 @@ import { whoamiTool } from './base/whoami.js';
 import { groupsSearchTool } from './groups/search.js';
 import { personsSearchTool } from './persons/search.js';
 
-/** What the composition root decides for the plugin of the core. */
-export interface CorePluginOptions {
-  /**
-   * Whether `ct_persons_search` and `ct_groups_search` join the catalog. In
-   * phase 1 they do only when the operator enables them, so that a server
-   * on a productive tenant offers only `ct_whoami` unless someone decided
-   * otherwise (`ECCLIUM_SEARCH_TOOLS`, ADR 0055).
-   */
-  readonly searchTools: boolean;
-}
-
 /**
  * Builds the plugin of the free core, under the name of the package of the
- * server, which the catalog reserves for it. It always adds `ct_whoami`,
- * and the two search tools only with `searchTools`.
+ * server, which the catalog reserves for it. It adds every tool of the
+ * core. Which of them the catalog offers decides the composition root with
+ * the toolsets of the operator (`ECCLIUM_TOOLSETS`, ADR 0062): without any,
+ * a server on a productive tenant offers only `ct_whoami`.
  *
- * @param options - Whether the search tools are enabled.
  * @returns The plugin, frozen.
  * @example
  * ```ts
  * const catalog = createToolCatalog({
- *   core: createCorePlugin({ searchTools: false }),
+ *   core: createCorePlugin(),
  *   plugins: [],
  *   readOnly: true,
  * });
  * catalog.get('ct_whoami')?.origin; // 'core'
  * ```
  */
-export function createCorePlugin(options: CorePluginOptions): Plugin {
-  // Read once, so that a later change of the options changes no catalog.
-  // Only true enables them, also for a caller without the types.
-  const value: unknown = options.searchTools;
-  const searchTools = value === true;
+export function createCorePlugin(): Plugin {
   return Object.freeze({
     name: '@ecclium/mcp-churchtools',
     version: '0.0.0',
     register(host: PluginHost): undefined {
       host.addTool(whoamiTool);
-      if (searchTools) {
-        host.addTool(personsSearchTool);
-        host.addTool(groupsSearchTool);
-      }
+      host.addTool(personsSearchTool);
+      host.addTool(groupsSearchTool);
       return undefined;
     },
   });

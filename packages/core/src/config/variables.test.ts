@@ -3,7 +3,9 @@ import { z } from 'zod';
 
 import { Secret } from '../http/index.js';
 import { logLevels, redactionLevels } from '../logger/index.js';
+import { toolsetNames } from '../registry/toolsets.js';
 import {
+  allToolsets,
   defaultStdioSubject,
   environmentSchema,
   fitsVariable,
@@ -11,7 +13,9 @@ import {
   type PlainVariableName,
   plainVariableNames,
   proxyVariableName,
+  readToolsetList,
   reservedStdioSubjects,
+  searchToolsVariableName,
   stdioSubjectPattern,
   tlsKeylogOption,
   tlsTraceOption,
@@ -51,6 +55,7 @@ describe('the table of variables', () => {
       ...variableNames,
       ...unsupportedVariableNames,
       proxyVariableName,
+      searchToolsVariableName,
     ];
     for (const name of names) {
       expect(name.startsWith(variablePrefix), name).toBe(true);
@@ -102,7 +107,7 @@ describe('the table of variables', () => {
       ['ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE', '300', false, false],
       ['ECCLIUM_READ_ONLY', 'true', false, false],
       ['ECCLIUM_REDACTION', 'standard', false, false],
-      ['ECCLIUM_SEARCH_TOOLS', 'false', false, false],
+      ['ECCLIUM_TOOLSETS', '', false, false],
       ['ECCLIUM_STATE_DIR', undefined, false, true],
       ['ECCLIUM_STDIO_SUBJECT', 'local-stdio', false, true],
       ['ECCLIUM_LOG_LEVEL', 'info', false, false],
@@ -129,14 +134,23 @@ describe('the table of variables', () => {
 
   it('lists the choices exactly, and only for booleans and choices', () => {
     expect(row('ECCLIUM_READ_ONLY').choices).toEqual(['true', 'false']);
-    expect(row('ECCLIUM_SEARCH_TOOLS').choices).toEqual(['true', 'false']);
+    expect(row('ECCLIUM_TOOLSETS').choices).toEqual([
+      'persons',
+      'events',
+      'calendars',
+      'wiki',
+      'songs',
+      'all',
+    ]);
     expect(new Set(row('ECCLIUM_REDACTION').choices)).toEqual(
       new Set(redactionLevels),
     );
     expect(row('ECCLIUM_LOG_LEVEL').choices).toEqual([...logLevels]);
     for (const variable of variables) {
       expect(variable.choices.length > 0, variable.name).toBe(
-        variable.kind === 'boolean' || variable.kind === 'choice',
+        variable.kind === 'boolean' ||
+          variable.kind === 'choice' ||
+          variable.kind === 'list',
       );
     }
   });
@@ -195,7 +209,10 @@ describe('fitsVariable', () => {
     ['ECCLIUM_CHURCHTOOLS_TOKEN_FILE', '/path/to/token-file'],
     ['ECCLIUM_READ_ONLY', 'false'],
     ['ECCLIUM_REDACTION', 'off'],
-    ['ECCLIUM_SEARCH_TOOLS', 'true'],
+    ['ECCLIUM_TOOLSETS', ''],
+    ['ECCLIUM_TOOLSETS', 'persons'],
+    ['ECCLIUM_TOOLSETS', 'all'],
+    ['ECCLIUM_TOOLSETS', 'songs,wiki,calendars,events,persons'],
     ['ECCLIUM_STATE_DIR', '/path/to/state'],
     ['ECCLIUM_STATE_DIR', '/'],
     ['ECCLIUM_STATE_DIR', `/${'a'.repeat(959)}`],
@@ -223,7 +240,20 @@ describe('fitsVariable', () => {
     ['ECCLIUM_READ_ONLY', 'true '],
     ['ECCLIUM_READ_ONLY', '1'],
     ['ECCLIUM_READ_ONLY', 'yes'],
-    ['ECCLIUM_SEARCH_TOOLS', 'False'],
+    ['ECCLIUM_TOOLSETS', 'Persons'],
+    ['ECCLIUM_TOOLSETS', ' persons'],
+    ['ECCLIUM_TOOLSETS', 'persons '],
+    ['ECCLIUM_TOOLSETS', 'persons, wiki'],
+    ['ECCLIUM_TOOLSETS', 'persons,'],
+    ['ECCLIUM_TOOLSETS', ',persons'],
+    ['ECCLIUM_TOOLSETS', 'persons,,wiki'],
+    ['ECCLIUM_TOOLSETS', 'persons,persons'],
+    ['ECCLIUM_TOOLSETS', 'all,wiki'],
+    ['ECCLIUM_TOOLSETS', 'wiki,all'],
+    ['ECCLIUM_TOOLSETS', 'all,all'],
+    ['ECCLIUM_TOOLSETS', 'groups'],
+    ['ECCLIUM_TOOLSETS', 'base'],
+    ['ECCLIUM_TOOLSETS', 'true'],
     ['ECCLIUM_REDACTION', 'Standard'],
     ['ECCLIUM_REDACTION', 'none'],
     ['ECCLIUM_STATE_DIR', ''],
@@ -270,7 +300,7 @@ describe('fitsVariable', () => {
         ['ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE', '0'],
         ['ECCLIUM_READ_ONLY', 'TRUE'],
         ['ECCLIUM_REDACTION', 'none'],
-        ['ECCLIUM_SEARCH_TOOLS', 'yes'],
+        ['ECCLIUM_TOOLSETS', 'yes'],
         ['ECCLIUM_STATE_DIR', 'state'],
         ['ECCLIUM_STDIO_SUBJECT', 'Max'],
         ['ECCLIUM_LOG_LEVEL', 'INFO'],
@@ -298,7 +328,7 @@ describe('fitsVariable', () => {
     expect(read).toEqual([]);
   });
 
-  it.each([tokenVariableName, 'toString', 'ECCLIUM_TOOLSETS'])(
+  it.each([tokenVariableName, 'toString', searchToolsVariableName])(
     'throw for %s, which has no schema',
     (name) => {
       expect(() => fitsVariable(name as PlainVariableName, 'value')).toThrow(
@@ -326,7 +356,8 @@ describe('environmentSchema', () => {
       environmentSchema.safeParse({ [tokenVariableName]: 'value' }).success,
     ).toBe(false);
     expect(
-      environmentSchema.safeParse({ ECCLIUM_TOOLSETS: 'read' }).success,
+      environmentSchema.safeParse({ [searchToolsVariableName]: 'true' })
+        .success,
     ).toBe(false);
   });
 
@@ -334,5 +365,39 @@ describe('environmentSchema', () => {
     expect(
       environmentSchema.safeParse({ ECCLIUM_READ_ONLY: 'TRUE' }).success,
     ).toBe(false);
+  });
+});
+
+describe('readToolsetList', () => {
+  it('gives the toolsets once each, frozen, in the order of the names', () => {
+    const list = readToolsetList('wiki,persons');
+    expect(list).toEqual(['persons', 'wiki']);
+    expect(Object.isFrozen(list)).toBe(true);
+  });
+
+  it('gives no toolset for an empty value and every one for all', () => {
+    expect(readToolsetList('')).toEqual([]);
+    expect(Object.isFrozen(readToolsetList(''))).toBe(true);
+    expect(allToolsets).toBe('all');
+    expect(readToolsetList(allToolsets)).toEqual([...toolsetNames]);
+    expect(Object.isFrozen(readToolsetList(allToolsets))).toBe(true);
+  });
+
+  it('refuses a value longer than every toolset once', () => {
+    const longest = toolsetNames.join(',');
+    expect(readToolsetList(longest)).toHaveLength(toolsetNames.length);
+    expect(row('ECCLIUM_TOOLSETS').maxLength).toBe(longest.length);
+    expect(readToolsetList(`${longest},`)).toBeUndefined();
+  });
+
+  it('refuses a value that is no string', () => {
+    expect(readToolsetList(['persons'] as unknown as string)).toBeUndefined();
+  });
+
+  it('names the replaced switch for the search tools', () => {
+    expect(searchToolsVariableName).toBe('ECCLIUM_SEARCH_TOOLS');
+    expect(variableNames).not.toContain(searchToolsVariableName);
+    expect(variableNames).toContain('ECCLIUM_TOOLSETS');
+    expect(unsupportedVariableNames).not.toContain('ECCLIUM_TOOLSETS');
   });
 });

@@ -19,7 +19,7 @@ import { createInterface } from 'node:readline';
 const env = process.env;
 const scenario = env['FAKE_SCENARIO'] ?? 'normal';
 const canary = env['FAKE_CANARY'] ?? 'canary';
-const searchTools = env['ECCLIUM_SEARCH_TOOLS'] === 'true';
+const personsToolset = env['ECCLIUM_TOOLSETS'] === 'persons';
 const calls: string[] = [];
 
 const record = (): void => {
@@ -73,7 +73,7 @@ const send = (message: Record<string, unknown>): void => {
   process.stdout.write(`${JSON.stringify(message)}\n`);
 };
 
-process.stderr.write('Hinweis: Die Suchtools sind freigegeben.\n');
+process.stderr.write('Hinweis: Das Toolset persons ist eingeschaltet.\n');
 if (scenario === 'foreign-stdout') process.stdout.write('hallo\n');
 if (scenario === 'token-stderr') {
   process.stderr.write(
@@ -88,7 +88,7 @@ const annotations = {
   openWorldHint: true,
 };
 const toolNames = [
-  ...(searchTools ? ['ct_groups_search', 'ct_persons_search'] : []),
+  ...(personsToolset ? ['ct_groups_search', 'ct_persons_search'] : []),
   'ct_whoami',
   ...(scenario === 'write-tool' ? ['ct_wiki_page_create'] : []),
 ];

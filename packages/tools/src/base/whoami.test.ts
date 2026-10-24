@@ -89,7 +89,7 @@ const setup = () => {
   const clock = Object.freeze({ now: Object.freeze(() => 0) });
   const pipeline = createToolPipeline({
     catalog: createToolCatalog({
-      core: createCorePlugin({ searchTools: false }),
+      core: createCorePlugin(),
       plugins: [],
       readOnly: true,
     }),

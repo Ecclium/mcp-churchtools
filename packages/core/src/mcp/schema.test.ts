@@ -105,6 +105,7 @@ describe('deriveOutputSchema', () => {
       core: examplePlugin,
       plugins: [],
       readOnly: false,
+      toolsets: new Set(['wiki'] as const),
     });
     for (const entry of catalog.list()) {
       const schema = deriveOutputSchema(entry.shape);

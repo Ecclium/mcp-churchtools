@@ -261,10 +261,10 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
         'ECCLIUM_CHURCHTOOLS_TOKEN_FILE',
         'ECCLIUM_CHURCHTOOLS_URL',
         'ECCLIUM_READ_ONLY',
-        'ECCLIUM_SEARCH_TOOLS',
         'ECCLIUM_STATE_DIR',
+        'ECCLIUM_TOOLSETS',
       ]);
-      expect(record.variables['ECCLIUM_SEARCH_TOOLS']).toBe('true');
+      expect(record.variables['ECCLIUM_TOOLSETS']).toBe('persons');
       expect(record.calls).toEqual([
         'ct_whoami',
         'ct_persons_search',

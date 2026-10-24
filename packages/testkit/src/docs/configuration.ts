@@ -10,6 +10,7 @@ import { variableDescriptions } from '@ecclium/mcp-churchtools';
 import {
   proxyVariableName,
   requestsPerMinuteRange,
+  searchToolsVariableName,
   unsupportedVariableNames,
   type Variable,
   variablePrefix,
@@ -36,6 +37,12 @@ const valuesOf = (variable: Variable): string => {
     case 'boolean':
     case 'choice':
       return variable.choices.map(code).join(', ');
+    case 'list': {
+      // The last word stands alone, like `all`.
+      const words = variable.choices.map(code);
+      const alone = words.pop() ?? '';
+      return `Liste aus ${words.join(', ')}, mit Komma getrennt, oder ${alone}`;
+    }
     case 'integer': {
       if (variable.name !== 'ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE') {
         throw new TypeError(`no range known for ${variable.name}`);
@@ -81,7 +88,9 @@ export function renderConfigurationReference(): string {
     const defaultValue =
       variable.defaultValue === undefined
         ? 'keine'
-        : code(variable.defaultValue);
+        : variable.defaultValue === ''
+          ? 'leer'
+          : code(variable.defaultValue);
     lines.push(
       `| ${code(variable.name)} | ${valuesOf(variable)} | ${defaultValue} | ${yesNo(variable.secret)} | ${yesNo(variable.stdioOnly)} |`,
     );
@@ -102,6 +111,12 @@ export function renderConfigurationReference(): string {
     '',
     ...unsupportedVariableNames.map((name) => `- ${code(name)}`),
     `- ${code(proxyVariableName)}: Einen Proxy für ausgehende Verbindungen gibt es erst in einer späteren Version.`,
+    '',
+    '## Nicht mehr gültig',
+    '',
+    'Diese Namen gibt es nicht mehr. Ist einer gesetzt, bricht der Start mit einem Hinweis auf die Variable ab, die ihn ersetzt.',
+    '',
+    `- ${code(searchToolsVariableName)}: Statt ${code(`${searchToolsVariableName}=true`)} gilt ${code('ECCLIUM_TOOLSETS=persons')}.`,
   );
   return `${lines.join('\n')}\n`;
 }

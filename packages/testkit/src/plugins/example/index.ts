@@ -23,7 +23,7 @@ export const exampleProfileTool = defineTool({
   name: 'ct_example_profile',
   meta: {
     capability: 'read',
-    domain: 'base',
+    domain: 'wiki',
     requiredRights: [],
     tier: 'free',
     sensitivity: 'personal',
@@ -61,7 +61,7 @@ export const exampleEchoTool = defineTool({
   name: 'ct_example_echo',
   meta: {
     capability: 'read',
-    domain: 'base',
+    domain: 'wiki',
     requiredRights: [],
     tier: 'free',
     sensitivity: 'personal',

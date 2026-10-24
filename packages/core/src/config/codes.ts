@@ -16,6 +16,7 @@ export const configProblemCodes = Object.freeze([
   'miscased_variable',
   'unsupported_variable',
   'proxy_unsupported',
+  'search_tools_replaced',
   'tls_check_disabled',
   'debug_output_enabled',
   'tls_keylog_enabled',
@@ -24,6 +25,7 @@ export const configProblemCodes = Object.freeze([
   'value_too_long',
   'invalid_choice',
   'invalid_integer',
+  'invalid_toolsets',
   'url_missing',
   ...originCodes,
   'token_missing',
@@ -34,7 +36,7 @@ export const configProblemCodes = Object.freeze([
   'subject_invalid',
   'subject_reserved',
   ...stateDirCodes,
-  'search_tools_without_state_dir',
+  'toolsets_without_state_dir',
 ] as const);
 
 /** Why the configuration cannot start the server. */
@@ -44,7 +46,7 @@ export type ConfigProblemCode = (typeof configProblemCodes)[number];
 export const configWarningCodes = Object.freeze([
   'token_from_environment',
   'redaction_off',
-  'search_tools_enabled',
+  'persons_toolset_enabled',
   'trust_store_extended',
 ] as const);
 

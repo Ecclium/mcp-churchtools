@@ -1,0 +1,59 @@
+# ADR 0062: Toolsets statt eines Schalters je Tool
+
+- Status: Vorgeschlagen
+- Datum: 24.10.2026
+- Fällt vor: Phase 2
+
+## Kontext
+
+In Phase 1 gab es neben `ct_whoami` zwei Tools, die Namen von Personen und Gruppen weitergeben: `ct_persons_search` und `ct_groups_search`. Der Server bot sie nur mit `ECCLIUM_SEARCH_TOOLS=true` an, damit ein Server auf einem produktiven Tenant ohne ausdrückliche Einstellung nur `ct_whoami` anbietet (ADR 0055, ADR 0060). ADR 0055 hielt fest, dass `ECCLIUM_TOOLSETS` diesen Schalter in Phase 2 ersetzt, und führte den Namen bis dahin unter den Variablen späterer Phasen.
+
+Phase 2 bringt lesende Tools für Personen, Gruppen, Events, Dienste, Kalender, Termine, Ressourcen, Buchungen, das Wiki und Songs. Jedes Tool nennt in seinen Metadaten einen dieser Bereiche (`domain` in der Schnittstelle für Plugins), dazu `base` für `ct_whoami`, `docs` für den Index der Dokumentation und `api` für generische Tools. Ein Schalter je Tool hiesse eine Variable je Tool. Was der KI-Assistent sehen darf, entscheidet ein Betreiber aber eher nach Bereichen: das Wiki ja, Personen nein.
+
+Die Rechte des Dienstkontos bleiben die eigentliche Grenze, ChurchTools setzt sie durch (ADR 0060). Was der Server anbietet, bestimmt zusätzlich, welche Tools das Modell überhaupt kennt: Je weniger Tools, desto weniger Daten erreichen den KI-Assistenten, und desto weniger Platz brauchen die Beschreibungen, die zusammen höchstens 25'000 Zeichen haben dürfen (ADR 0024). Tools aus Plugins tragen dieselben Bereiche und müssen derselben Einstellung folgen, sonst ginge an ihr vorbei, was ein Plugin anbietet.
+
+## Optionen
+
+1. **Ein Schalter je Tool,** wie `ECCLIUM_SEARCH_TOOLS`: fein, aber mit Phase 2 ein gutes Dutzend Variablen, und jedes neue Tool bringt eine weitere.
+2. **Eine Liste von Namen einzelner Tools:** ebenso fein und mit nur einer Variable. Der Betreiber müsste aber jedes Tool kennen, und ein neues Tool einer späteren Version fehlte, bis er es nachträgt.
+3. **Toolsets nach Bereich, gefiltert im Plugin des Kerns:** einfach, gilt aber nur für die Tools des Kerns. Ein Plugin entschiede selbst, ob es sich daran hält.
+4. **Toolsets nach Bereich, gefiltert im Katalog des Kerns:** eine Variable, wenige feste Namen, und der Filter gilt für die Tools des Kerns und der Plugins gleich.
+
+## Entscheid
+
+Gewählt ist die vierte Option.
+
+- **Variable:** `ECCLIUM_TOOLSETS` ist eine mit Komma getrennte Liste aus `persons`, `events`, `calendars`, `wiki` und `songs`, jeder Name höchstens einmal, ohne Leerzeichen und in Kleinbuchstaben, oder allein `all`. `all` schaltet jedes Toolset der laufenden Version ein. Ein unbekannter Name, ein doppelter, ein leerer Eintrag oder `all` neben einem anderen Namen bricht den Start mit dem Problem `invalid_toolsets` ab. Ein Wert, der länger ist als alle fünf Namen zusammen, ergibt wie bei jeder Variable `value_too_long`. Wie bei jeder Variable nennt die Meldung den Wert nicht, sondern die erlaubten Namen.
+- **Voreinstellung:** Leer oder nicht gesetzt schaltet kein Toolset ein, der Server bietet dann nur `ct_whoami` an. Das gilt bis Phase 4, dann entscheidet ein eigenes ADR über eine andere Voreinstellung. Anders als bei jeder anderen Variable ist ein leerer Wert gültig: Eine leere Liste hat hier eine eigene Bedeutung, und `.env.example` und die Konfiguration eines Clients schreiben sie so. Er ist zugleich die vorsichtigste Einstellung.
+- **Bereiche:** `persons` umfasst `persons` und `groups`, `events` umfasst `events` und `services`, `calendars` umfasst `calendars`, `appointments`, `resources` und `bookings`. `wiki` und `songs` stehen für sich. `base` ist immer eingeschaltet. `docs` und `api` gehören zu keinem Toolset, bis ein ADR sie zuordnet, und der Server bietet ihre Tools bis dahin nicht an. Die fünf Namen gelten von Anfang an, auch für Bereiche, die in dieser Version noch keine Tools haben.
+- **Filter:** Der Katalog des Kerns nimmt die Toolsets als Option und behält ein Tool nur, wenn sein Bereich immer eingeschaltet ist oder zu einem eingeschalteten Toolset gehört, für die Tools des Kerns und der Plugins gleich. Ohne die Option bleibt nur `base`, damit eine Wurzel der Komposition, die sie vergisst, nichts weiter anbietet. Geprüft wird jedes Tool vorher, auch eines, das danach wegfällt, damit ein fehlerhaftes Tool den Start immer abbricht. Ein Tool eines Plugins ausserhalb der eingeschalteten Toolsets ist kein Fehler, der Server bietet es nur nicht an. `ECCLIUM_READ_ONLY` gilt zusätzlich.
+- **Bereich des Kerns:** `base` ist den Tools des Kerns vorbehalten. Ein Tool eines anderen Plugins in diesem Bereich weist die Registry mit `tool_domain_reserved` ab, nach allen übrigen Prüfungen, weil es sonst jede Wahl der Toolsets umginge.
+- **Alter Schalter:** `ECCLIUM_SEARCH_TOOLS` bricht den Start mit jedem Wert und in jeder Schreibweise ab, mit dem Problem `search_tools_replaced` und dem Hinweis auf `ECCLIUM_TOOLSETS=persons`. Er gilt nicht als Alias weiter, damit es nicht zwei Wege für dieselbe Einstellung gibt und keine Konfiguration ihre Suchtools ohne ein Wort verliert.
+- **Audit-Datei:** Über stdio verlangt ein Toolset mit Tools, die `sensitivity: special` tragen, `ECCLIUM_STATE_DIR` (ADR 0028). Der Lader sieht keine Tools. Er führt deshalb die Liste dieser Toolsets selbst, heute nur `persons`, und meldet sonst das Problem `toolsets_without_state_dir` an `ECCLIUM_STATE_DIR`, damit `ecclium config check` es vor einem Start nennt. Der Start prüft daneben jedes Tool seines Katalogs und endet ohne den Ordner mit 78, wie bisher.
+- **Meldungen:** Mit `persons` warnt jeder Start, dass der KI-Assistent Namen von Personen und Gruppen sieht (`persons_toolset_enabled`, bisher `search_tools_enabled`). Sind Toolsets eingeschaltet, nennt der Start über stdio sie in einer Meldung und dazu jedes, das in seinem Katalog kein Tool hat, weil es in dieser Version noch keine mitbringt oder nur Tools, die schreiben, während der Server nur liest. Ohne Toolset sagt er dazu nichts.
+- **Konfiguration:** Die geprüfte Konfiguration hält die Toolsets als eingefrorene Liste in der Reihenfolge ihrer Namen. `all` löst der Lader dabei auf, und `ecclium config check` zeigt die Namen.
+- **ADR 0055:** In dessen Tabelle tritt diese Zeile an die Stelle von `ECCLIUM_SEARCH_TOOLS`:
+
+| Variable           | Werte                                                                             | Voreinstellung | Geheimnis | Nur über stdio | Beim Start                                                                                                    |
+| ------------------ | --------------------------------------------------------------------------------- | -------------- | --------- | -------------- | ------------------------------------------------------------------------------------------------------------- |
+| `ECCLIUM_TOOLSETS` | Liste aus `persons`, `events`, `calendars`, `wiki` und `songs`, oder allein `all` | leer           | nein      | nein           | ungültig: Abbruch; mit `persons` Warnung und über stdio ohne Zustandsordner Abbruch; Meldung mit den Toolsets |
+
+## Konsequenzen
+
+- Eine Variable für alle Bereiche, mit fünf festen Namen. Ein weiteres Toolset braucht einen neuen Namen und ein ADR.
+- `all` schaltet nach einem Update auch die Toolsets der neuen Version ein. Wer das nicht will, nennt die Toolsets einzeln.
+- Der Bereich eines Tools ist eine Angabe seines Plugins, wie die übrigen Metadaten. Der Filter verlässt sich darauf. Ein Plugin, das einen falschen Bereich angibt, bekommt seine Tools mit einem anderen Toolset, aber nie ohne eines. Für besondere Daten bleiben die Audit-Datei und die Suchen des Lesezugriffs nur für Tools mit `sensitivity: special` die Grenze (ADR 0028, ADR 0060).
+- Toolsets begrenzen, was der Server anbietet, nicht, was das Konto lesen darf. Fehlen dem Dienstkonto die Rechte eines eingeschalteten Toolsets, bleiben die Ergebnisse leer (ADR 0060).
+- Eine Konfiguration mit `ECCLIUM_SEARCH_TOOLS` startet nicht mehr. Es gibt noch keine veröffentlichte Version, betroffen sind nur Konfigurationen aus dem Quellcode, und die Meldung nennt den Ersatz.
+- Die Liste der Toolsets, die den Ordner der Audit-Datei verlangen, ist mit jedem neuen Tool mit `sensitivity: special` nachzuführen. Fehlt ein Eintrag, endet der Start trotzdem mit 78, aber `ecclium config check` meldet es nicht vorher.
+- Das Budget von 25'000 Zeichen für die Beschreibungen gilt für die angebotenen Tools. Mit `all` zählen alle. Die Referenz `docs/tools.md` entsteht aus dem Katalog mit allen Toolsets, so dass CI ein überschrittenes Budget meldet, bevor ein Betreiber darauf stösst.
+
+## Umsetzung
+
+Seit dem 24.10.2026 gebaut:
+
+- **Katalog:** `packages/core/src/registry/toolsets.ts` mit den Namen, der Zuordnung der Bereiche in `toolsetOf` und mit `isToolsetName`, dazu die Option `toolsets` von `createToolCatalog` und die Ablehnung `tool_domain_reserved` in `registry.ts` und `refusal.ts`. Ein Wert, der kein Set ist oder einen anderen Namen enthält, wirft einen `TypeError`. Die Zuordnung jedes Bereichs prüft `toolsets.test.ts`, Tests mit Plugins und Gegenproben stehen in `registry.test.ts`. Die Plugins für Tests in testkit liegen seither in den Bereichen `wiki` und `persons`, und ihre Tests schalten diese Toolsets ein.
+- **Plugin des Kerns:** `createCorePlugin()` in `packages/tools/src/core-plugin.ts` nimmt keine Option mehr und fügt jedes Tool des Kerns hinzu.
+- **Konfiguration:** die Zeile `ECCLIUM_TOOLSETS` mit der Art `list`, `readToolsetList` und `searchToolsVariableName` in `packages/core/src/config/variables.ts`, das Lesen mit den Problemen `invalid_toolsets`, `search_tools_replaced` und `toolsets_without_state_dir` und der Warnung `persons_toolset_enabled` in `load.ts` und `codes.ts`, das Feld `toolsets` der Konfiguration und die Art `list` im Bericht.
+- **Kommandozeile:** die Texte in `packages/cli/src/messages/config.ts` und `start.ts`, die Zeile «Toolsets» in `output/report.ts`, der Katalog des Starts in `stdio/catalog.ts` und die Meldungen in `stdio/index.ts`. `tests/stdio-start.test.mts` zeigt am echten Prozess das Ende mit 78 für `persons` ohne Ordner und für den alten Schalter.
+- **Referenzen, Beispiel und Smoke-Test:** `docs/configuration.md` und `docs/tools.md` mit der Spalte «Angeboten» aus den Toolsets, `.env.example` mit `ECCLIUM_TOOLSETS=` und der Smoke-Test mit `ECCLIUM_TOOLSETS=persons`.

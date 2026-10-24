@@ -41,7 +41,7 @@ export function createSpecialPlugin(options: SpecialPluginOptions): Plugin {
     name: 'ct_test_special',
     meta: {
       capability: 'read',
-      domain: 'base',
+      domain: 'persons',
       requiredRights: [],
       tier: 'free',
       sensitivity: 'special',

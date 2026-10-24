@@ -7,7 +7,13 @@ import { doubleOrigin, makeCanary } from '@ecclium/mcp-churchtools-testkit';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 
 import { exitCodes } from '../exit-codes.js';
-import { auditFileText, startText } from '../messages/index.js';
+import {
+  auditFileText,
+  emptyToolsetText,
+  startText,
+  toolsetsText,
+  warningText,
+} from '../messages/index.js';
 import type { WriteSyncFn } from '../send.js';
 import { startStdio, type StdioStartOptions } from './index.js';
 import type { ServeOptions } from './serve.js';
@@ -87,10 +93,12 @@ afterAll(() => {
 
 const environment = (
   stateDir?: string,
+  extra: Record<string, string> = {},
 ): Record<string, string | undefined> => ({
   ECCLIUM_CHURCHTOOLS_URL: doubleOrigin,
   [tokenVariableName]: makeCanary('token').value,
   ...(stateDir === undefined ? {} : { ECCLIUM_STATE_DIR: stateDir }),
+  ...extra,
 });
 
 const decoder = new TextDecoder();
@@ -98,6 +106,7 @@ const decoder = new TextDecoder();
 const start = async (
   stateDir: string | undefined,
   options: Omit<StdioStartOptions, 'writeSync'> = {},
+  extra: Record<string, string> = {},
 ) => {
   const bytes: number[] = [];
   const writeSync: WriteSyncFn = (_fd, buffer, offset, length) => {
@@ -105,7 +114,7 @@ const start = async (
       bytes.push(byte);
     return length;
   };
-  const code = await startStdio([], environment(stateDir), [], {
+  const code = await startStdio([], environment(stateDir, extra), [], {
     ...options,
     writeSync,
   });
@@ -185,5 +194,63 @@ describe('the first stage and the audit file', () => {
     expect(code).toBe(exitCodes.internal);
     expect(stderr).toContain(startText('internal'));
     expect(closed).toEqual(['closed']);
+  });
+});
+
+// The toolsets of the start (ADR 0062): the notices name those that are
+// on, and each one that brings no tool, after the warnings.
+describe('the first stage and the toolsets', () => {
+  const lines = (stderr: string): string[] =>
+    stderr.split('\n').filter((line) => line !== '');
+
+  it('says nothing of toolsets when none is on', async () => {
+    const { code, stderr } = await start(undefined);
+    expect(code).toBeUndefined();
+    expect(lines(stderr)).toEqual([warningText('token_from_environment')]);
+  });
+
+  it('names the toolsets that are on and each one without tools', async () => {
+    const { code, stderr } = await start(
+      undefined,
+      {},
+      { ECCLIUM_TOOLSETS: 'songs,wiki' },
+    );
+    expect(code).toBeUndefined();
+    expect(lines(stderr)).toEqual([
+      warningText('token_from_environment'),
+      toolsetsText(['wiki', 'songs']),
+      emptyToolsetText('wiki'),
+      emptyToolsetText('songs'),
+    ]);
+  });
+
+  it('names the toolset persons, whose tools are in the catalog', async () => {
+    const { code, stderr } = await start(
+      freshFolder(),
+      {},
+      { ECCLIUM_TOOLSETS: 'persons' },
+    );
+    expect(code).toBeUndefined();
+    expect(lines(stderr)).toEqual([
+      warningText('token_from_environment'),
+      warningText('persons_toolset_enabled'),
+      toolsetsText(['persons']),
+    ]);
+  });
+
+  it('names the toolsets also when the start stops for the folder', async () => {
+    state.special = true;
+    const { code, stderr } = await start(
+      undefined,
+      {},
+      { ECCLIUM_TOOLSETS: 'wiki' },
+    );
+    expect(code).toBe(exitCodes.invalidConfig);
+    expect(lines(stderr)).toEqual([
+      warningText('token_from_environment'),
+      toolsetsText(['wiki']),
+      emptyToolsetText('wiki'),
+      startText('audit_file_required'),
+    ]);
   });
 });

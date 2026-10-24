@@ -101,6 +101,7 @@ const mount = (): {
     core: examplePlugin,
     plugins: [],
     readOnly: true,
+    toolsets: new Set(['wiki'] as const),
   });
   const pipeline = createToolPipeline({
     catalog,

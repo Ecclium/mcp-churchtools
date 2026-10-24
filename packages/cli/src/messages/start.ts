@@ -1,18 +1,21 @@
 /**
  * The German texts of the start over stdio (ADR 0055): a wrong call of
  * `ecclium stdio`, an internal error before the server runs, the refusal
- * of a plugin or a tool by the registry (ADR 0024), and an audit file that
- * is missing or cannot be opened (ADR 0028). The start
- * notices write them to stderr before the line writer exists. No text
+ * of a plugin or a tool by the registry (ADR 0024), an audit file that is
+ * missing or cannot be opened (ADR 0028), and the toolsets of the start
+ * (ADR 0062). The start notices write them to stderr before the line
+ * writer exists. No text
  * repeats an argument, because an argument can hold a token, and the text
  * of a refusal depends on its reason alone, without the names of plugin
  * and tool.
  *
  * @packageDocumentation
  */
-import type {
-  AuditFileCode,
-  RefusalReason,
+import {
+  type AuditFileCode,
+  isToolsetName,
+  type RefusalReason,
+  type ToolsetName,
 } from '@ecclium/mcp-churchtools-core';
 
 import type { Message, MessageText } from './config.js';
@@ -112,6 +115,9 @@ const refusals: Readonly<Record<RefusalReason, Message>> = Object.freeze({
   tool_duplicate: refusal('Zwei Tools tragen denselben Namen.'),
   tool_meta: refusal(
     'Ein Tool hat unvollständige oder widersprüchliche Metadaten.',
+  ),
+  tool_domain_reserved: refusal(
+    'Ein Tool eines Plugins liegt im Bereich ‹base›, der dem Kern vorbehalten ist.',
   ),
   tool_description: refusal(
     'In der Beschreibung eines Tools fehlt ein Abschnitt, oder ein Abschnitt ist ungültig.',
@@ -246,4 +252,100 @@ export function refusalMessage(reason: RefusalReason): Message {
  */
 export function refusalText(reason: RefusalReason): MessageText {
   return joined(refusalMessage(reason));
+}
+
+const toolsetsVariable = '‹ECCLIUM_TOOLSETS›';
+
+// Names of toolsets as German prose: ‹a›, ‹b› und ‹c›. Only a name of the
+// list of toolsets reaches a text, and at least one.
+const toolsetProse = (toolsets: unknown): string => {
+  if (
+    !Array.isArray(toolsets) ||
+    toolsets.length === 0 ||
+    !toolsets.every(isToolsetName)
+  ) {
+    throw new TypeError('The toolsets are unknown.');
+  }
+  const quoted = toolsets.map((name) => `‹${name}›`);
+  const last = quoted.pop() ?? '';
+  return quoted.length === 0 ? last : `${quoted.join(', ')} und ${last}`;
+};
+
+/**
+ * The message that names the toolsets of the start (ADR 0062). Without a
+ * toolset the start says nothing, as the reference of the configuration
+ * names the default.
+ *
+ * @param toolsets - The toolsets of the configuration, at least one.
+ * @returns The message in its three parts, frozen.
+ * @throws {TypeError} When the list is no array, is empty or holds a name
+ *   that is no toolset.
+ * @example
+ * ```ts
+ * toolsetsMessage(['persons', 'wiki']).what;
+ * // 'Eingeschaltet sind die Toolsets ‹persons› und ‹wiki›.'
+ * ```
+ */
+export function toolsetsMessage(toolsets: readonly ToolsetName[]): Message {
+  const names = toolsetProse(toolsets);
+  return message(
+    toolsets.length === 1
+      ? `Eingeschaltet ist das Toolset ${names}.`
+      : `Eingeschaltet sind die Toolsets ${names}.`,
+    `Der Server bietet neben ‹ct_whoami› nur ${toolsets.length === 1 ? 'seine' : 'ihre'} Tools an.`,
+    `Ändern Sie ${toolsetsVariable}, wenn der KI-Assistent andere Bereiche lesen soll.`,
+  );
+}
+
+/**
+ * The text that names the toolsets of the start, in one line.
+ *
+ * @param toolsets - The toolsets of the configuration, at least one.
+ * @returns The text of the catalog.
+ * @throws {TypeError} When the list is no array, is empty or holds a name
+ *   that is no toolset.
+ * @example
+ * ```ts
+ * writeNotices([toolsetsText(config.toolsets)]);
+ * ```
+ */
+export function toolsetsText(toolsets: readonly ToolsetName[]): MessageText {
+  return joined(toolsetsMessage(toolsets));
+}
+
+/**
+ * The message for a toolset that is on but offers no tool in this
+ * version, so that it does not stay silent (ADR 0062): it brings none yet,
+ * or only tools that write while the server only reads.
+ *
+ * @param toolset - The toolset without a tool.
+ * @returns The message in its three parts, frozen.
+ * @throws {TypeError} When the name is no toolset.
+ * @example
+ * ```ts
+ * emptyToolsetMessage('songs').what;
+ * ```
+ */
+export function emptyToolsetMessage(toolset: ToolsetName): Message {
+  const name = toolsetProse([toolset]);
+  return message(
+    `Das Toolset ${name} bietet in dieser Version keine Tools an.`,
+    'Seine Tools kommen mit einer späteren Version, oder es hat nur Tools, die schreiben, und der Server liest nur.',
+    `Lassen Sie es eingeschaltet, wenn eine spätere Version seine Tools anbieten soll. Sonst entfernen Sie es aus ${toolsetsVariable}, und steht dort ‹all›, nennen Sie stattdessen die übrigen Toolsets einzeln.`,
+  );
+}
+
+/**
+ * The text for a toolset without a tool, in one line.
+ *
+ * @param toolset - The toolset without a tool.
+ * @returns The text of the catalog.
+ * @throws {TypeError} When the name is no toolset.
+ * @example
+ * ```ts
+ * writeNotices([emptyToolsetText('songs')]);
+ * ```
+ */
+export function emptyToolsetText(toolset: ToolsetName): MessageText {
+  return joined(emptyToolsetMessage(toolset));
 }
