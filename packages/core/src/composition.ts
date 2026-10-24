@@ -30,6 +30,6 @@ export {
 export {
   createFileQuotaStore,
   type FileQuotaStoreOptions,
-  prepareQuotaDir,
+  prepareQuotaFolder,
 } from './quota/index.js';
 export { createDefaultTenantLogger } from './tenant/default-logger.js';

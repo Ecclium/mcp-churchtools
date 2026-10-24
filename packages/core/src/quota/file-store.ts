@@ -45,11 +45,10 @@ import {
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { actorKinds, isActorId } from '../audit/schema.js';
-import { isNormalizedAbsolutePath } from '../config/state-dir.js';
+import { isNormalizedAbsolutePath, quotaDirName } from '../config/state-dir.js';
 import { isTenantId } from '../logger/index.js';
 
-/** The name of the folder for the files of quotas in the folder of state. */
-export const quotaDirName = 'quota';
+export { quotaDirName };
 
 /** The mode of the folder `quota`. */
 export const quotaDirMode = 0o700;
@@ -76,14 +75,14 @@ const lockRetryMs = 25;
  * Why the folder `quota` cannot be used, frozen. A code never carries the
  * path or the message of the file system.
  */
-export const quotaDirCodes = Object.freeze([
-  'quota_dir_platform',
-  'quota_dir_unavailable',
-  'quota_dir_unsafe',
+export const quotaFolderCodes = Object.freeze([
+  'quota_folder_platform',
+  'quota_folder_unavailable',
+  'quota_folder_unsafe',
 ] as const);
 
 /** Why the folder `quota` cannot be used. */
-export type QuotaDirCode = (typeof quotaDirCodes)[number];
+export type QuotaFolderCode = (typeof quotaFolderCodes)[number];
 
 /** What the store learns about an open descriptor or a path. */
 export interface QuotaFileStats {
@@ -244,26 +243,29 @@ const folderOf = (stateDir: string): string =>
  *   path.
  * @example
  * ```ts
- * const prepared = prepareQuotaDir(stateDir);
+ * const prepared = prepareQuotaFolder(stateDir);
  * if (!prepared.ok) report(prepared.code);
  * ```
  */
-export function prepareQuotaDir(
+export function prepareQuotaFolder(
   stateDir: string,
   fs: QuotaFileSystem = nodeFileSystem,
-): { readonly ok: true } | { readonly ok: false; readonly code: QuotaDirCode } {
+):
+  | { readonly ok: true }
+  | { readonly ok: false; readonly code: QuotaFolderCode } {
   if (typeof stateDir !== 'string' || !isNormalizedAbsolutePath(stateDir)) {
     throw new TypeError('The store of quotas needs a folder of state.');
   }
-  const refuse = (code: QuotaDirCode) =>
+  const refuse = (code: QuotaFolderCode) =>
     Object.freeze({ __proto__: null, ok: false as const, code });
   const flags = platformFlags(fs);
-  if (flags === undefined) return refuse('quota_dir_platform');
+  if (flags === undefined) return refuse('quota_folder_platform');
   const folder = folderOf(stateDir);
   try {
     fs.mkdirSync(folder, quotaDirMode);
   } catch (error) {
-    if (errorCode(error) !== 'EEXIST') return refuse('quota_dir_unavailable');
+    if (errorCode(error) !== 'EEXIST')
+      return refuse('quota_folder_unavailable');
   }
   let fd: number;
   try {
@@ -272,17 +274,17 @@ export function prepareQuotaDir(
     const code = errorCode(error);
     return refuse(
       code === 'ELOOP' || code === 'ENOTDIR' || code === 'EMLINK'
-        ? 'quota_dir_unsafe'
-        : 'quota_dir_unavailable',
+        ? 'quota_folder_unsafe'
+        : 'quota_folder_unavailable',
     );
   }
   try {
     const stats = fs.fstatSync(fd);
     return stats.isDirectory() && isPrivate(stats, flags.uid)
       ? Object.freeze({ __proto__: null, ok: true as const })
-      : refuse('quota_dir_unsafe');
+      : refuse('quota_folder_unsafe');
   } catch {
-    return refuse('quota_dir_unsafe');
+    return refuse('quota_folder_unsafe');
   } finally {
     try {
       fs.closeSync(fd);
@@ -356,7 +358,7 @@ const parseCounts = (
 
 /**
  * Builds the store of quotas over the folder `quota` of the folder of
- * state, which {@link prepareQuotaDir} made. Each file belongs to one
+ * state, which {@link prepareQuotaFolder} made. Each file belongs to one
  * tenant and UTC day; the store takes tenant and actor from the context
  * and checks them, the key and the day before it builds a name. Files of
  * the same tenant for earlier days it removes when it first counts on a

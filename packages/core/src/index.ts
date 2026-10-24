@@ -46,8 +46,8 @@ export {
 } from './config/index.js';
 export { type AuditFileCode, auditFileCodes } from './audit/index.js';
 export {
-  type QuotaDirCode,
-  quotaDirCodes,
+  type QuotaFolderCode,
+  quotaFolderCodes,
   specialReadBudget,
 } from './quota/index.js';
 export {

@@ -40,7 +40,7 @@ import {
   type FileQuotaStoreOptions,
   maxQuotaFileBytes,
   orphanLockMs,
-  prepareQuotaDir,
+  prepareQuotaFolder,
   type QuotaFileSystem,
 } from './index.js';
 
@@ -59,7 +59,7 @@ const freshState = (): string => {
   folders += 1;
   const state = join(base, `state-${String(folders)}`);
   mkdirSync(state, { mode: 0o700 });
-  const prepared = prepareQuotaDir(state);
+  const prepared = prepareQuotaFolder(state);
   if (!prepared.ok) throw new Error(prepared.code);
   return state;
 };
@@ -405,7 +405,7 @@ describe('the file of quotas', () => {
   });
 });
 
-describe('prepareQuotaDir', () => {
+describe('prepareQuotaFolder', () => {
   const freshParent = (): string => {
     folders += 1;
     const state = join(base, `parent-${String(folders)}`);
@@ -415,18 +415,18 @@ describe('prepareQuotaDir', () => {
 
   it('creates the folder quota with 0700 and takes it again', () => {
     const state = freshParent();
-    expect(prepareQuotaDir(state)).toEqual({ ok: true });
+    expect(prepareQuotaFolder(state)).toEqual({ ok: true });
     expect(statSync(join(state, 'quota')).mode & 0o777).toBe(0o700);
-    expect(prepareQuotaDir(state)).toEqual({ ok: true });
+    expect(prepareQuotaFolder(state)).toEqual({ ok: true });
   });
 
   it('refuses a folder with rights for others', () => {
     const state = freshParent();
     mkdirSync(join(state, 'quota'), { mode: 0o750 });
     chmodSync(join(state, 'quota'), 0o750);
-    expect(prepareQuotaDir(state)).toEqual({
+    expect(prepareQuotaFolder(state)).toEqual({
       ok: false,
-      code: 'quota_dir_unsafe',
+      code: 'quota_folder_unsafe',
     });
   });
 
@@ -435,34 +435,34 @@ describe('prepareQuotaDir', () => {
     const other = join(base, `target-${String(folders)}`);
     mkdirSync(other, { mode: 0o700 });
     symlinkSync(other, join(state, 'quota'));
-    expect(prepareQuotaDir(state)).toEqual({
+    expect(prepareQuotaFolder(state)).toEqual({
       ok: false,
-      code: 'quota_dir_unsafe',
+      code: 'quota_folder_unsafe',
     });
   });
 
   it('reports a folder of state that is gone', () => {
-    expect(prepareQuotaDir(join(base, 'missing'))).toEqual({
+    expect(prepareQuotaFolder(join(base, 'missing'))).toEqual({
       ok: false,
-      code: 'quota_dir_unavailable',
+      code: 'quota_folder_unavailable',
     });
   });
 
   it('refuses a folder of another user and a platform without the checks', () => {
     const state = freshParent();
     expect(
-      prepareQuotaDir(state, {
+      prepareQuotaFolder(state, {
         ...nodeFs,
         getuid: () => (process.getuid?.() ?? 0) + 1,
       }),
-    ).toEqual({ ok: false, code: 'quota_dir_unsafe' });
+    ).toEqual({ ok: false, code: 'quota_folder_unsafe' });
     expect(
-      prepareQuotaDir(state, { ...nodeFs, getuid: () => undefined }),
-    ).toEqual({ ok: false, code: 'quota_dir_platform' });
+      prepareQuotaFolder(state, { ...nodeFs, getuid: () => undefined }),
+    ).toEqual({ ok: false, code: 'quota_folder_platform' });
   });
 
   it('throws for a folder of state that is no absolute normalised path', () => {
-    expect(() => prepareQuotaDir('state')).toThrow(TypeError);
-    expect(() => prepareQuotaDir('/a/../b')).toThrow(TypeError);
+    expect(() => prepareQuotaFolder('state')).toThrow(TypeError);
+    expect(() => prepareQuotaFolder('/a/../b')).toThrow(TypeError);
   });
 });
