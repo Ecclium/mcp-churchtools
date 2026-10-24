@@ -2,8 +2,8 @@
  * The German texts of the start over stdio (ADR 0055): a wrong call of
  * `ecclium stdio`, an internal error before the server runs, the refusal
  * of a plugin or a tool by the registry (ADR 0024), an audit file that is
- * missing or cannot be opened (ADR 0028), and the toolsets of the start
- * (ADR 0062). The start notices write them to stderr before the line
+ * missing or cannot be opened (ADR 0028), a folder for the read budget
+ * that cannot be used (ADR 0063), and the toolsets of the start (ADR 0062). The start notices write them to stderr before the line
  * writer exists. No text
  * repeats an argument, because an argument can hold a token, and the text
  * of a refusal depends on its reason alone, without the names of plugin
@@ -14,6 +14,7 @@
 import {
   type AuditFileCode,
   isToolsetName,
+  type QuotaFolderCode,
   type RefusalReason,
   type ToolsetName,
 } from '@ecclium/mcp-churchtools-core';
@@ -77,6 +78,26 @@ const auditFiles: Readonly<Record<AuditFileCode, Message>> = Object.freeze({
     'Die neue Audit-Datei bestand die Prüfung nach dem Öffnen nicht, und der Start bricht ab.',
     'Sie war keine gewöhnliche Datei Ihres Benutzers, oder der Ordner änderte sich, während Ecclium sie öffnete.',
     `Prüfen Sie den Ordner aus ${stateDir} und starten Sie erneut.`,
+  ),
+});
+
+// One text per reason the folder quota cannot be used. Each says that the
+// start stops: without it, no tool with special data would run (ADR 0063).
+const quotaFolders: Readonly<Record<QuotaFolderCode, Message>> = Object.freeze({
+  quota_folder_platform: message(
+    'Der Ordner für das Lesebudget lässt sich auf diesem System nicht sicher anlegen, und der Start bricht ab.',
+    'Es fehlt die Prüfung des Eigentümers oder das Öffnen ohne Links, etwa unter Windows.',
+    `Entfernen Sie ${stateDir} auf diesem System.`,
+  ),
+  quota_folder_unavailable: message(
+    `Ecclium konnte den Ordner ‹quota› im Ordner aus ${stateDir} nicht anlegen oder öffnen, und der Start bricht ab.`,
+    `Darin zählt Ecclium die Aufrufe der Tools mit Personendaten der besonderen Kategorie für das Lesebudget. ${noPath}`,
+    `Prüfen Sie, ob der Ordner aus ${stateDir} besteht und Ihr Benutzer darin schreiben darf.`,
+  ),
+  quota_folder_unsafe: message(
+    `Der Ordner ‹quota› im Ordner aus ${stateDir} ist kein privater Ordner Ihres Benutzers, und der Start bricht ab.`,
+    'Er ist ein Link, kein Ordner, gehört einem anderen Benutzer oder ist für andere zugänglich. Dann könnten andere die Zähler des Lesebudgets ändern.',
+    configCheck,
   ),
 });
 
@@ -216,6 +237,40 @@ export function auditFileMessage(code: AuditFileCode): Message {
  */
 export function auditFileText(code: AuditFileCode): MessageText {
   return joined(auditFileMessage(code));
+}
+
+/**
+ * The message for a folder `quota` that cannot be used. It names no path.
+ *
+ * @param code - Why the folder cannot be used.
+ * @returns The message in its three parts, frozen.
+ * @throws {TypeError} When the code is none of the catalog.
+ * @example
+ * ```ts
+ * quotaFolderMessage('quota_folder_unsafe').action;
+ * ```
+ */
+export function quotaFolderMessage(code: QuotaFolderCode): Message {
+  const given: unknown = code;
+  if (typeof given !== 'string' || !Object.hasOwn(quotaFolders, given)) {
+    throw new TypeError('The quota folder code is unknown.');
+  }
+  return quotaFolders[code];
+}
+
+/**
+ * The text for a folder `quota` that cannot be used, in one line.
+ *
+ * @param code - Why the folder cannot be used.
+ * @returns The text of the catalog.
+ * @throws {TypeError} When the code is none of the catalog.
+ * @example
+ * ```ts
+ * writeNotices([quotaFolderText('quota_folder_unsafe')]);
+ * ```
+ */
+export function quotaFolderText(code: QuotaFolderCode): MessageText {
+  return joined(quotaFolderMessage(code));
 }
 
 /**

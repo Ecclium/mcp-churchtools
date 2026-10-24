@@ -30,6 +30,7 @@ import {
 import {
   type AuditFileWriter,
   openAuditFile,
+  prepareQuotaFolder,
   systemClock,
 } from '@ecclium/mcp-churchtools-core/composition';
 
@@ -40,6 +41,7 @@ import {
   emptyToolsetText,
   type MessageText,
   problemText,
+  quotaFolderText,
   refusalText,
   startText,
   toolsetsText,
@@ -59,6 +61,8 @@ export interface StdioStartOptions extends ServeReplacements {
   readonly writeSync?: WriteSyncFn;
   /** Replaces the opener of the audit file. */
   readonly openAuditFile?: typeof openAuditFile;
+  /** Replaces the check of the folder of the read budget. */
+  readonly prepareQuotaFolder?: typeof prepareQuotaFolder;
 }
 
 // The reason of a refusal of the registry, read as an own data property of
@@ -88,10 +92,11 @@ const refusalOf = (error: unknown): RefusalReason | undefined => {
  * them. The problems and warnings of the configuration, a refusal of the
  * registry, and the toolsets that are on, each one without a tool named,
  * go out as start notices in German before anything else writes to
- * stderr. With `ECCLIUM_STATE_DIR` it opens the audit file
- * before the notices; a tool with sensitivity special without the folder,
- * or a file that cannot be opened, ends the start with a notice and 78
- * (ADR 0028). Until the stderr writer exists, everything is caught: an
+ * stderr. With `ECCLIUM_STATE_DIR` it opens the audit file and prepares
+ * the folder of the read budget before the notices; a tool with
+ * sensitivity special without the folder, a file that cannot be opened or
+ * a folder that cannot be used ends the start with a notice and 78
+ * (ADR 0028, ADR 0063). Until the stderr writer exists, everything is caught: an
  * internal error gives one fixed notice and 70, never a stack or a
  * message, and closes an audit file that is already open.
  *
@@ -121,6 +126,7 @@ export async function startStdio(
   const {
     writeSync,
     openAuditFile: open = openAuditFile,
+    prepareQuotaFolder: prepare = prepareQuotaFolder,
     ...replacements
   } = startOptions;
   const notices = (texts: readonly MessageText[]): boolean =>
@@ -189,6 +195,15 @@ export async function startStdio(
         return exitCodes.invalidConfig;
       }
       auditFile = opened.writer;
+      // The counters of the read budget lie next to the audit file. The
+      // folder is made and checked here as well, and the second stage
+      // builds the store over it (ADR 0063).
+      const prepared = prepare(stateDir);
+      if (!prepared.ok) {
+        notices([...texts, quotaFolderText(prepared.code)]);
+        auditFile.close();
+        return exitCodes.invalidConfig;
+      }
     }
     const torn = notices(texts);
     // Only now: the server, its SDK and undici make fd 2 non-blocking

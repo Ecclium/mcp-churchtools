@@ -18,6 +18,7 @@
  *
  * @packageDocumentation
  */
+import { hostname } from 'node:os';
 import type { Readable, Writable } from 'node:stream';
 
 import {
@@ -31,6 +32,7 @@ import {
   type AuditFileWriter,
   createAuditSink,
   createDefaultTenantLogger,
+  createFileQuotaStore,
   createLogger,
   createStderrWriter,
   describeError,
@@ -247,6 +249,19 @@ export function serve(options: ServeOptions): ExitCode | undefined {
       requestsPerMinute: config.churchtoolsRequestsPerMinute,
       clock,
       logging: { writer, minLevel },
+      // The counters of the read budget, in the folder the first stage
+      // prepared. Without the folder of state there is no store, and no
+      // tool with sensitivity special runs (ADR 0063).
+      ...(config.stateDir === undefined
+        ? {}
+        : {
+            quota: createFileQuotaStore({
+              stateDir: config.stateDir,
+              clock,
+              pid: process.pid,
+              host: hostname(),
+            }),
+          }),
     });
     const server = startStdioServer({
       catalog,

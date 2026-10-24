@@ -19,6 +19,8 @@ export {
   auditFileText,
   emptyToolsetMessage,
   emptyToolsetText,
+  quotaFolderMessage,
+  quotaFolderText,
   refusalMessage,
   refusalText,
   type StartNoticeCode,
