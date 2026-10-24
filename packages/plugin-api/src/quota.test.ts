@@ -8,7 +8,7 @@ describe('the port for quotas', () => {
     expect(Object.isFrozen(quotaKeys)).toBe(true);
   });
 
-  it.each(['2026-10-24', '2000-01-01', '2028-02-29', '9999-12-31'])(
+  it.each(['2026-10-24', '1970-01-01', '2028-02-29', '9999-12-31'])(
     'takes the day %s',
     (value) => {
       expect(isIsoDate(value)).toBe(true);
@@ -21,7 +21,7 @@ describe('the port for quotas', () => {
     '2026-13-01',
     '2026-00-10',
     '2026-10-00',
-    '1999-12-31',
+    '1969-12-31',
     '2026-1-24',
     '2026-10-24T00:00:00Z',
     ' 2026-10-24',

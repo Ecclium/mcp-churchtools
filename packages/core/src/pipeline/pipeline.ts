@@ -6,7 +6,8 @@
  * 2. make the context of the call, with a signal of its own, or end with
  *    `auth` when the call has no tenant or none the pipeline can read,
  * 3. `gate`,
- * 4. `validateInput`,
+ * 4. `validateInput`, and for a tool with sensitivity special the count
+ *    against the daily read budget,
  * 5. `execute` with read access that is revoked afterwards,
  * 6. `validateOutput`, which drops every field the schema does not declare,
  * 7. `redact` and 8. `markUntrusted` with a boundary drawn for the call,
@@ -33,6 +34,7 @@ import {
   type ErrorCode,
   type FeatureKey,
   type Mode,
+  type QuotaStore,
   type RedactionLevel,
   type TenantAssignment,
   type TenantContext,
@@ -53,6 +55,11 @@ import {
   type RandomBytes,
 } from '../redaction/index.js';
 import type { CatalogEntry, ToolCatalog } from '../registry/index.js';
+import {
+  isoDateOf,
+  quotaTimeoutMs,
+  specialReadBudget,
+} from '../quota/budget.js';
 import { createTenantContext } from '../tenant/context.js';
 import { createReadAccess, type ReadAccess } from './read-api.js';
 import {
@@ -132,6 +139,11 @@ export interface ToolPipelineOptions {
    * `randomBytes` of `node:crypto` unless a test fixes the boundary.
    */
   readonly random?: RandomBytes;
+  /**
+   * The store of the daily read budget (ADR 0063). Without it, a tool with
+   * sensitivity special does not run.
+   */
+  readonly quota?: QuotaStore;
 }
 
 // The longest duration the audit accepts.
@@ -165,6 +177,12 @@ const withheldOutcome: ToolOutcome = Object.freeze({
     message: auditWithheld,
   }),
 });
+
+// A call above the daily read budget, and one the store could not count
+// (ADR 0063).
+const budgetExhausted = `The daily budget of ${String(specialReadBudget)} calls of tools with special personal data is used up. It resets at 00:00 UTC.`;
+const budgetUnavailable =
+  'The server cannot count this call against the daily read budget now, so the tool did not run. Ask the operator to check the folder of state.';
 
 const tooLarge =
   'The result is larger than 64 KiB. Narrow the request, for example with a more specific search.';
@@ -359,6 +377,27 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     const parsedInput = entry.input.safeParse(input);
     if (!parsedInput.success) return failed('validation');
 
+    // The daily read budget, counted once the input is valid and before
+    // ChurchTools is asked, so that a call that fails before costs nothing.
+    // A call above the budget counts as well, which changes nothing (ADR
+    // 0063).
+    if (entry.meta.sensitivity === 'special') {
+      const counted = await countRead(ctx);
+      if (counted !== 'ok') {
+        ctx.log.warn(
+          counted === 'exhausted'
+            ? 'read_budget_exhausted'
+            : 'read_budget_unavailable',
+        );
+        return failed(
+          'policy_denied',
+          counted === 'exhausted' ? budgetExhausted : budgetUnavailable,
+        );
+      }
+      // An abort while the store counted would pass unseen below.
+      if (controller.signal.aborted) return failed('network');
+    }
+
     // 5. execute, raced against the signal of the call.
     const access = createReadAccess(client, ctx, entry.meta.sensitivity);
     run.access = access;
@@ -427,6 +466,43 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       outcome: Object.freeze({ __proto__: null, ok: true, data }),
       audit: 'ok',
     };
+  };
+
+  // Counts one call against the daily read budget. A store that is
+  // missing, throws, takes too long or answers with no count of 1 or more
+  // counts as unavailable.
+  const countRead = async (
+    ctx: TenantContext,
+  ): Promise<'ok' | 'exhausted' | 'unavailable'> => {
+    const store = options.quota;
+    const day = isoDateOf(now());
+    if (store === undefined || day === undefined) return 'unavailable';
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const counting = Promise.resolve().then(() =>
+      store.increment(ctx, 'special_reads', day),
+    );
+    // Whichever loses must not end as an unhandled rejection.
+    counting.catch(() => undefined);
+    const late = new Promise<undefined>((resolve) => {
+      timer = setTimeout(() => {
+        resolve(undefined);
+      }, quotaTimeoutMs);
+    });
+    try {
+      const counted: unknown = await Promise.race([counting, late]);
+      if (
+        typeof counted !== 'number' ||
+        !Number.isSafeInteger(counted) ||
+        counted < 1
+      ) {
+        return 'unavailable';
+      }
+      return counted > specialReadBudget ? 'exhausted' : 'ok';
+    } catch {
+      return 'unavailable';
+    } finally {
+      clearTimeout(timer);
+    }
   };
 
   // Only true counts, and a sink that throws is not ready.

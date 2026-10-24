@@ -4,6 +4,7 @@
  *
  * @packageDocumentation
  */
+export { isoDateOf, quotaTimeoutMs, specialReadBudget } from './budget.js';
 export {
   createFileQuotaStore,
   type FileQuotaStoreOptions,

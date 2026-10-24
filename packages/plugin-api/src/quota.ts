@@ -28,7 +28,7 @@ const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * Tells whether a value is a day of the calendar as `YYYY-MM-DD`, from
- * 2000 to 9999. A store checks every day itself before it builds a name
+ * 1970 to 9999. A store checks every day itself before it builds a name
  * of a file or a key from it.
  *
  * @param value - Any value.
@@ -44,7 +44,7 @@ export function isIsoDate(value: unknown): value is IsoDate {
   const year = Number(value.slice(0, 4));
   const month = Number(value.slice(5, 7));
   const day = Number(value.slice(8, 10));
-  if (year < 2000) return false;
+  if (year < 1970) return false;
   const date = new Date(Date.UTC(year, month - 1, day));
   return (
     date.getUTCFullYear() === year &&
