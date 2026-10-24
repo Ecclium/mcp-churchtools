@@ -25,6 +25,7 @@ import {
   RegistryRefusal,
   type ToolCatalog,
   tokenVariableName,
+  toolsetOf,
 } from '@ecclium/mcp-churchtools-core';
 import {
   type AuditFileWriter,
@@ -36,10 +37,12 @@ import { takeEnvironment } from '../environment.js';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
 import {
   auditFileText,
+  emptyToolsetText,
   type MessageText,
   problemText,
   refusalText,
   startText,
+  toolsetsText,
   warningText,
 } from '../messages/index.js';
 import { writeNotices } from '../notices/index.js';
@@ -82,9 +85,10 @@ const refusalOf = (error: unknown): RefusalReason | undefined => {
  * first, in every spelling of its name, so that child processes and other
  * code no longer see it, also when the start ends early. Every argument is
  * refused with a fixed text that repeats none of them, without parsing
- * them. The problems and warnings of the configuration, and a refusal of
- * the registry, go out as start notices in German before anything else
- * writes to stderr. With `ECCLIUM_STATE_DIR` it opens the audit file
+ * them. The problems and warnings of the configuration, a refusal of the
+ * registry, and the toolsets that are on, each one without a tool named,
+ * go out as start notices in German before anything else writes to
+ * stderr. With `ECCLIUM_STATE_DIR` it opens the audit file
  * before the notices; a tool with sensitivity special without the folder,
  * or a file that cannot be opened, ends the start with a notice and 78
  * (ADR 0028). Until the stderr writer exists, everything is caught: an
@@ -150,6 +154,21 @@ export async function startStdio(
       notices([...texts, refusalText(reason)]);
       return exitCodes.internal;
     }
+    // Which toolsets are on, and each one that brings no tool of the
+    // catalog, so that a toolset of a later version does not stay silent
+    // (ADR 0062). Without a toolset the start says nothing more.
+    const { toolsets } = loaded.config;
+    if (toolsets.length > 0) texts.push(toolsetsText(toolsets));
+    texts.push(
+      ...toolsets
+        .filter(
+          (name) =>
+            !catalog
+              .list()
+              .some((entry) => toolsetOf(entry.meta.domain) === name),
+        )
+        .map((name) => emptyToolsetText(name)),
+    );
     // A tool with sensitivity special gives results only with its line in
     // the audit file, so it never runs without the folder (ADR 0028).
     const { stateDir } = loaded.config;

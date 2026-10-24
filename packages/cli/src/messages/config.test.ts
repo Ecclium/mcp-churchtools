@@ -438,10 +438,14 @@ describe('the catalog of messages', () => {
         ...exported,
         'auditFileMessage',
         'auditFileText',
+        'emptyToolsetMessage',
+        'emptyToolsetText',
         'refusalMessage',
         'refusalText',
         'startMessage',
         'startText',
+        'toolsetsMessage',
+        'toolsetsText',
       ].sort(),
     );
     // @ts-expect-error A plain string is no text of the catalog.

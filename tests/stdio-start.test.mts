@@ -31,6 +31,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   auditFileText,
   problemText,
+  toolsetsText,
   warningText,
 } from '../packages/cli/src/messages/index.ts';
 import { fixedSentences } from '../packages/core/src/errors/index.ts';
@@ -1071,6 +1072,7 @@ describe.skipIf(process.getuid?.() === 0)(
         expect(linesOf(finished.stderr)).toContain(
           warningText('persons_toolset_enabled'),
         );
+        expect(linesOf(finished.stderr)).toContain(toolsetsText(['persons']));
         expect(protocolViolations(finished.stdout)).toEqual([]);
       });
 
