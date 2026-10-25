@@ -246,7 +246,11 @@ export const groupMembersPageLimit = 50;
 /** The last page of the members of a group a read may ask for. */
 export const maxGroupMembersPage = 1000;
 
-/** The longest name of a person, of a group and of a group of a person. */
+/**
+ * The longest name of a person, of a group, of an event, of a calendar, of
+ * a service, of a group of services and of an agenda, and the longest
+ * title of an item of an agenda, of a song and of an arrangement.
+ */
 export const maxNameLength = 255;
 
 /** The longest meeting time of a group the core reads. */
@@ -369,6 +373,258 @@ export interface GroupMemberList {
    * later page can be empty.
    */
   readonly more: boolean;
+}
+
+/**
+ * The form of a date with time, as ChurchTools writes the start and end of
+ * an event and the start of an item of an agenda: with «T», seconds,
+ * without fractions and with `Z` (`docs/research/churchtools-api.md`, F37).
+ * Any other form is no answer the core knows.
+ */
+export const dateTimePattern: RegExp =
+  /^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$/;
+
+/**
+ * The most days a list of events covers, both ends included (ADR 0064).
+ * A list of events takes a span of time instead of pages, because `page`
+ * showed no effect there (F38).
+ */
+export const maxEventDays = 31;
+
+/**
+ * The most events a list passes on, the earliest first. The core asks
+ * ChurchTools for one more, so that it can tell whether more follow
+ * (ADR 0064).
+ */
+export const maxEvents = 50;
+
+/**
+ * The longest note of an event the core reads, in UTF-16 code units. Note
+ * and description together keep one event within one result of a tool,
+ * even when every character grows to six bytes there.
+ */
+export const maxEventNoteLength = 2_000;
+
+/** The longest description of an event the core reads, see the note. */
+export const maxEventDescriptionLength = 7_000;
+
+/**
+ * The most items of one agenda the core reads. ChurchTools gives an agenda
+ * in one answer; a longer one is no answer the core knows.
+ */
+export const maxAgendaItems = 500;
+
+/** The longest note of an item of an agenda the core reads. */
+export const maxAgendaNoteLength = 1_000;
+
+/**
+ * The form of the type of an item of an agenda: a word ChurchTools sets,
+ * not text people write, so it needs no data envelope. Any other form is no
+ * answer the core knows.
+ */
+export const agendaItemTypePattern: RegExp = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
+
+/**
+ * The most services and the most groups of services the core reads.
+ * ChurchTools lists each in one answer; a longer list is no answer the
+ * core knows.
+ */
+export const maxServices = 1000;
+
+/**
+ * The most assignments of one event the core reads. ChurchTools gives them
+ * with the event; a longer list is no answer the core knows.
+ */
+export const maxEventAssignments = 500;
+
+// Whether a value is a day of the calendar that exists, in the form of
+// calendarDatePattern, so that 2026-02-30 is refused like a wrong form.
+const dayOf = (value: unknown): number | undefined => {
+  if (typeof value !== 'string' || !calendarDatePattern.test(value)) {
+    return undefined;
+  }
+  const time = Date.parse(`${value}T00:00:00Z`);
+  if (!Number.isFinite(time)) return undefined;
+  return new Date(time).toISOString().slice(0, 10) === value ? time : undefined;
+};
+
+/**
+ * Whether two days span a list of events: both days of the calendar that
+ * exist, as `JJJJ-MM-TT` (see {@link calendarDatePattern}), the last not
+ * before the first, and at most {@link maxEventDays} days, both ends
+ * included. Only such a span ever reaches ChurchTools.
+ *
+ * @param from - The first day.
+ * @param to - The last day.
+ * @returns Whether the span fits.
+ * @example
+ * ```ts
+ * isEventWindow('2026-10-01', '2026-10-31'); // true
+ * isEventWindow('2026-10-01', '2026-11-01'); // false, 32 days
+ * ```
+ */
+export function isEventWindow(from: unknown, to: unknown): boolean {
+  const first = dayOf(from);
+  const last = dayOf(to);
+  if (first === undefined || last === undefined || last < first) return false;
+  return (last - first) / 86_400_000 + 1 <= maxEventDays;
+}
+
+/**
+ * An event in a list: what ChurchTools gives to an account with the right
+ * to see the events of its calendar (ADR 0064).
+ */
+export interface EventEntry {
+  /** The numeric ID of the event. */
+  readonly id: number;
+  /** Name of the event, at most {@link maxNameLength} characters. */
+  readonly name: string;
+  /** The start, see {@link dateTimePattern}. */
+  readonly startDate: string;
+  /** The end, see {@link dateTimePattern}. */
+  readonly endDate: string;
+  /** Whether the event is canceled. */
+  readonly isCanceled: boolean;
+  /**
+   * The numeric ID of the calendar, or `null` when ChurchTools names it with
+   * another identifier than a whole number from 1.
+   */
+  readonly calendarId: number | null;
+  /** Name of the calendar, at most {@link maxNameLength} characters. */
+  readonly calendarName: string;
+}
+
+/** The events of a span of days. */
+export interface EventList {
+  /**
+   * At most {@link maxEvents}, sorted by their start, then by ID, so that
+   * the same answer always gives the same list.
+   */
+  readonly events: readonly EventEntry[];
+  /** Whether ChurchTools gave more events than the list holds. */
+  readonly more: boolean;
+}
+
+/** One event, read by ID, with its note and description, never assignments. */
+export interface EventDetails extends EventEntry {
+  /**
+   * The note of the event, text people wrote, at most
+   * {@link maxEventNoteLength} code units, or `null` without one.
+   */
+  readonly note: string | null;
+  /**
+   * The description of the event, text people wrote, at most
+   * {@link maxEventDescriptionLength} code units, or `null` without one.
+   */
+  readonly description: string | null;
+}
+
+/** The song of an item of an agenda, as the agenda names it. */
+export interface AgendaSong {
+  /** The numeric ID of the song. */
+  readonly songId: number;
+  /** The numeric ID of the arrangement, or `null` without one. */
+  readonly arrangementId: number | null;
+  /** Title of the song, at most {@link maxNameLength} characters. */
+  readonly title: string;
+  /** Name of the arrangement, or `null` without one. */
+  readonly arrangement: string | null;
+}
+
+/** An item of an agenda, without the persons responsible for it. */
+export interface AgendaItem {
+  /** The position of the item in the agenda. */
+  readonly position: number;
+  /** The type of the item, see {@link agendaItemTypePattern}. */
+  readonly type: string;
+  /** Title of the item, at most {@link maxNameLength} characters. */
+  readonly title: string;
+  /** The start, see {@link dateTimePattern}, or `null` without one. */
+  readonly start: string | null;
+  /** The duration in seconds, or `null` without one. */
+  readonly duration: number | null;
+  /** Whether the item comes before the event starts. */
+  readonly isBeforeEvent: boolean;
+  /**
+   * The note of the item, text people wrote, at most
+   * {@link maxAgendaNoteLength} code units, or `null` without one.
+   */
+  readonly note: string | null;
+  /** The song of the item, or `null` for an item without one. */
+  readonly song: AgendaSong | null;
+}
+
+/** The agenda of one event. */
+export interface Agenda {
+  /** Name of the agenda, at most {@link maxNameLength} characters. */
+  readonly name: string;
+  /** Whether the agenda is final. */
+  readonly isFinal: boolean;
+  /** At most {@link maxAgendaItems}, in the order of ChurchTools. */
+  readonly items: readonly AgendaItem[];
+}
+
+/** A service, such as a team role of an event. */
+export interface Service {
+  /** The numeric ID of the service. */
+  readonly id: number;
+  /** Name of the service, at most {@link maxNameLength} characters. */
+  readonly name: string;
+  /** The numeric ID of the group of services it belongs to. */
+  readonly serviceGroupId: number;
+  /**
+   * Whether the service hides the names of the persons assigned to it. The
+   * core then passes on no person of its assignments (ADR 0064).
+   */
+  readonly hidesNames: boolean;
+}
+
+/** A group of services. */
+export interface ServiceGroup {
+  /** The numeric ID of the group. */
+  readonly id: number;
+  /** Name of the group, at most {@link maxNameLength} characters. */
+  readonly name: string;
+}
+
+/** The services and groups of services of the instance. */
+export interface ServiceList {
+  /** At most {@link maxServices}, sorted by ID. */
+  readonly services: readonly Service[];
+  /** At most {@link maxServices}, sorted by ID. */
+  readonly serviceGroups: readonly ServiceGroup[];
+}
+
+/** The person assigned to a service, when the core may name it. */
+export interface AssignedPerson {
+  /** The numeric ID of the person. */
+  readonly personId: number;
+  /** First name, at most {@link maxNameLength} characters. */
+  readonly firstName: string;
+  /** Last name, at most {@link maxNameLength} characters. */
+  readonly lastName: string;
+}
+
+/** An assignment of a person to a service of an event. */
+export interface Assignment {
+  /** The numeric ID of the service. */
+  readonly serviceId: number;
+  /**
+   * Name of the service, or `null` when the service is missing in the list
+   * of services.
+   */
+  readonly serviceName: string | null;
+  /** Whether the assigned person accepted. */
+  readonly isAccepted: boolean;
+  /** Whether the assignment is agreed. */
+  readonly agreed: boolean;
+  /**
+   * The assigned person, or `null`: when the service hides the names, when
+   * it is missing in the list of services, or when ChurchTools gives no
+   * whole number from 1 as the ID of the person (ADR 0064). The person who
+   * requested the assignment is never read.
+   */
+  readonly person: AssignedPerson | null;
 }
 
 /**
