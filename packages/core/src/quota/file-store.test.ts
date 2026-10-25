@@ -186,7 +186,10 @@ describe('the file of quotas', () => {
       ...nodeFs,
       openSync: (path, flags, mode) => {
         const fd = openSync(path, flags, mode);
-        if (path.endsWith('.lock')) lockFds.add(fd);
+        // Only the lock as it is made; unlock opens it again to read it.
+        if (path.endsWith('.lock') && (flags & constants.O_CREAT) !== 0) {
+          lockFds.add(fd);
+        }
         return fd;
       },
       writeSync: (fd, buffer, offset, length) => {
@@ -313,6 +316,22 @@ describe('the file of quotas', () => {
           unlinkSync(lock);
           writeFileSync(lock, 'other', { mode: 0o600 });
         }
+      },
+    };
+    await open(state, { fs: taking }).increment(ctx, key, day);
+    expect(readFileSync(lock, 'utf8')).toBe('other');
+  });
+
+  // Linux often gives the new lock the inode of the one just removed. The
+  // lock written in place stands for that on every platform.
+  it('leaves a lock of another on the inode of its own', async () => {
+    const state = freshState();
+    const lock = `${fileOf(state)}.lock`;
+    const taking: QuotaFileSystem = {
+      ...nodeFs,
+      renameSync: (from, to) => {
+        renameSync(from, to);
+        if (to === fileOf(state)) writeFileSync(lock, 'other');
       },
     };
     await open(state, { fs: taking }).increment(ctx, key, day);

@@ -306,6 +306,11 @@ interface Identity {
   readonly ino: number;
 }
 
+/** A lock this process holds: where it lies and what it wrote into it. */
+interface HeldLock extends Identity {
+  readonly bytes: Uint8Array;
+}
+
 /** The counters of one tenant and day: per actor, per key. */
 type Counts = Record<string, Partial<Record<QuotaKey, number>>>;
 
@@ -644,7 +649,7 @@ export function createFileQuotaStore(
     path: string,
     flags: { readonly create: number },
     checked: Identity,
-  ): Promise<Identity> => {
+  ): Promise<HeldLock> => {
     const deadline = clock.now() + lockWaitMs;
     for (let attempt = 0; ; attempt += 1) {
       if (attempt > 0 && clock.now() >= deadline) throw unavailable();
@@ -656,15 +661,15 @@ export function createFileQuotaStore(
       }
       if (fd !== undefined) {
         try {
-          writeAll(
-            fd,
-            encoder.encode(
-              `${JSON.stringify({ pid, host, ts: new Date(clock.now()).toISOString() })}\n`,
-            ),
+          // The random ID makes the content of every lock its own, so that
+          // unlock can tell it from a later lock on the same inode.
+          const bytes = encoder.encode(
+            `${JSON.stringify({ pid, host, ts: new Date(clock.now()).toISOString(), id: randomBytes(8).toString('hex') })}\n`,
           );
+          writeAll(fd, bytes);
           const stats = fs.fstatSync(fd);
           samePlace(stats, path, checked);
-          return { dev: stats.dev, ino: stats.ino };
+          return { dev: stats.dev, ino: stats.ino, bytes };
         } catch {
           try {
             fs.unlinkSync(path);
@@ -723,13 +728,49 @@ export function createFileQuotaStore(
     }
   };
 
-  // Removes the lock only while it is still this one.
-  const unlock = (path: string, mine: Identity): void => {
+  // Removes the lock only while it is still this one: the same device and
+  // inode, and the same bytes. Linux often gives a new file the inode of
+  // one just removed, so a lock another process set after taking this one
+  // over can sit on the same inode (ADR 0063). Never throws, so that the
+  // result of a count stands.
+  const unlock = (
+    path: string,
+    mine: HeldLock,
+    flags: { readonly read: number },
+  ): void => {
+    let fd: number;
     try {
-      const stats = fs.lstatSync(path);
-      if (stats.dev === mine.dev && stats.ino === mine.ino) fs.unlinkSync(path);
+      fd = fs.openSync(path, flags.read);
     } catch {
-      // Gone already, or no longer this lock.
+      // Gone already, or no longer a file this store may open.
+      return;
+    }
+    let same = false;
+    try {
+      const stats = fs.fstatSync(fd);
+      if (
+        stats.isFile() &&
+        stats.dev === mine.dev &&
+        stats.ino === mine.ino &&
+        stats.size === mine.bytes.length
+      ) {
+        const bytes = readAll(fd, stats.size);
+        same = bytes.every((byte, index) => byte === mine.bytes[index]);
+      }
+    } catch {
+      // Not readable as this lock: it stays.
+    } finally {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // The lock was only read.
+      }
+    }
+    if (!same) return;
+    try {
+      fs.unlinkSync(path);
+    } catch {
+      // Gone already.
     }
   };
 
@@ -791,7 +832,7 @@ export function createFileQuotaStore(
       writeCounts(path, tenantId, day, counts, flags, checked);
       return value;
     } finally {
-      unlock(`${path}.lock`, mine);
+      unlock(`${path}.lock`, mine, flags);
       cleanUp(tenantId, day, checked);
     }
   };
