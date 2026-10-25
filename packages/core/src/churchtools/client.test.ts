@@ -892,7 +892,7 @@ describe('the wiki', () => {
       data: entries,
       meta: {
         count: entries.length,
-        pagination: { total: entries.length, limit: 50, current, lastPage },
+        pagination: { total: entries.length, limit: 25, current, lastPage },
       },
     });
   const pageAnswer = (data: Record<string, unknown> = {}) =>
@@ -919,34 +919,27 @@ describe('the wiki', () => {
       .intercept({ path: '/api/wiki/categories', method: 'GET' })
       .reply(200, categoryList(2), json);
     const result = await client.wikiCategories(ctx());
-    expect(result).toEqual({
-      categories: [
-        { id: 1, name: 'Kategorie 1' },
-        { id: 2, name: 'Kategorie 2' },
-      ],
-      more: false,
-    });
+    expect(result).toEqual([
+      { id: 1, name: 'Kategorie 1' },
+      { id: 2, name: 'Kategorie 2' },
+    ]);
     expect(Object.isFrozen(result)).toBe(true);
-    expect(Object.isFrozen(result.categories)).toBe(true);
-    expect(Object.getPrototypeOf(result)).toBeNull();
-    for (const category of result.categories) {
+    for (const category of result) {
       expect(Object.getPrototypeOf(category)).toBeNull();
       expect(Object.isFrozen(category)).toBe(true);
     }
     expect(double.calls()[0]?.searchParams).toEqual({});
   });
 
-  it('gives 100 categories and more for 101, and upstream above 1000', async () => {
+  it('gives all of 1000 categories, and upstream above 1000', async () => {
     const { double, client, ctx, lines } = setup();
     double
       .intercept({ path: '/api/wiki/categories', method: 'GET' })
-      .reply(200, categoryList(101), json);
+      .reply(200, categoryList(1000), json);
     double
       .intercept({ path: '/api/wiki/categories', method: 'GET' })
       .reply(200, categoryList(1001), json);
-    const result = await client.wikiCategories(ctx());
-    expect(result.categories).toHaveLength(100);
-    expect(result.more).toBe(true);
+    expect(await client.wikiCategories(ctx())).toHaveLength(1000);
     expect(await codeOf(client.wikiCategories(ctx()))).toBe('upstream');
     expect(lines.map((line) => line.event)).toEqual([
       'churchtools_wiki_categories_refused',
@@ -965,7 +958,7 @@ describe('the wiki', () => {
     expect(await codeOf(client.wikiCategories(ctx()))).toBe('upstream');
   });
 
-  it('lists the pages of a category with exactly the category, the page and limit 50', async () => {
+  it('lists the pages of a category with exactly the category, the page and limit 25', async () => {
     const { double, client, ctx } = setup();
     const name = makeCanary('name');
     const email = makeCanary('email');
@@ -1001,8 +994,20 @@ describe('the wiki', () => {
     expect(double.calls()[0]?.searchParams).toEqual({
       'wiki_category_ids[]': '4',
       page: '2',
-      limit: '50',
+      limit: '25',
     });
+  });
+
+  it('takes exactly 25 entries', async () => {
+    const { double, client, ctx } = setup();
+    double
+      .intercept({ path: at('/api/wiki/pages'), method: 'GET' })
+      .reply(
+        200,
+        pageList(Array.from({ length: 25 }, (_, i) => entry(i + 1))),
+        json,
+      );
+    expect((await client.wikiPages(ctx(), 4, 1)).pages).toHaveLength(25);
   });
 
   it('says no more on the last page and on a page behind it', async () => {
@@ -1022,8 +1027,8 @@ describe('the wiki', () => {
 
   it.each([
     [
-      '51 entries',
-      pageList(Array.from({ length: 51 }, (_, i) => entry(i + 1))),
+      '26 entries',
+      pageList(Array.from({ length: 26 }, (_, i) => entry(i + 1))),
     ],
     ['a GUID of another form', pageList([{ ...entry(1), guid: 'Startseite' }])],
     ['no isMarkdown', pageList([{ ...entry(1), isMarkdown: undefined }])],
@@ -1048,7 +1053,7 @@ describe('the wiki', () => {
     [-1, 1],
     [1.5, 1],
     [4, Number.NaN],
-    [4, 10_001],
+    [4, 1001],
     ['4' as unknown as number, 1],
   ])(
     'refuses the category %j and page %j before any request',

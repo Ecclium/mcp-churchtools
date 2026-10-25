@@ -13,14 +13,14 @@ import {
   isWikiPageGuid,
   maxSearchHits,
   maxSearchTermLength,
-  maxWikiCategories,
+  maxWikiListPage,
   type Me,
   normalizeSearchTerm,
   type Permissions,
   type PersonHit,
   type SearchHits,
   type TenantContext,
-  type WikiCategories,
+  type WikiCategory,
   wikiPageListLimit,
   type WikiPage,
   type WikiPageList,
@@ -93,16 +93,17 @@ export interface ChurchToolsClient {
     query: string,
   ): Promise<SearchHits<GroupHit>>;
   /**
-   * Lists the categories of the wiki with `GET /api/wiki/categories`.
+   * Lists the categories of the wiki with `GET /api/wiki/categories`, all
+   * of them from the one answer.
    *
    * @throws {EccliumError} `upstream` for a category without ID or name,
    *   or more than 1000; every error of the request.
    */
-  wikiCategories(ctx: TenantContext): Promise<WikiCategories>;
+  wikiCategories(ctx: TenantContext): Promise<readonly WikiCategory[]>;
   /**
    * Lists one page of the pages of a category with `GET /api/wiki/pages`,
    * sending only the category in `wiki_category_ids[]`, `page` and
-   * `limit=50`.
+   * `limit=25`.
    *
    * @throws {EccliumError} `validation` for an ID or page that is no whole
    *   number from 1, before the throttle and any request; `upstream` for
@@ -115,7 +116,8 @@ export interface ChurchToolsClient {
   ): Promise<WikiPageList>;
   /**
    * Reads one page of the wiki by its GUID, in its newest version or, with
-   * `version`, in exactly that one (F19).
+   * `version`, in exactly that one. F19 shows the route of one version for
+   * the newest version of a page; an older one is not yet shown.
    *
    * @throws {EccliumError} `validation` for an ID, GUID or version that does
    *   not fit, before the throttle and any request; `not_found` for a page
@@ -150,9 +152,9 @@ const searchLimits = Object.freeze({
   maxElements: 100_000,
 });
 
-// The lists of the wiki carry an object of the person who last changed
-// each page, which the client drops. The limits fit 1000 categories and 50
-// pages with it.
+// Each entry of the list of pages carries objects of the persons who
+// created and last changed the page, which the client drops. The limits
+// fit 1000 categories and 25 pages with them.
 const wikiListLimits = Object.freeze({
   maxResponseBytes: 1024 * 1024,
   maxElements: 100_000,
@@ -164,12 +166,8 @@ const wikiPageLimits = Object.freeze({
   maxElements: 20_000,
 });
 
-/** The most pages of the list of pages a request asks for. */
-export const maxWikiListPage = 10_000;
-
 // In English for the model; printable ASCII, like every message (ADR 0054).
-const invalidWikiInput =
-  'A category ID, a page of the list and a version are whole numbers from 1, and a page is addressed by its GUID.';
+const invalidWikiInput = `A category ID and a version are whole numbers from 1, a page of the list is a whole number from 1 to ${String(maxWikiListPage)}, and a wiki page is addressed by its GUID.`;
 
 // In English for the model; printable ASCII, like every message (ADR 0054).
 const invalidTerm = `The search term needs 1 to ${String(maxSearchTermLength)} characters after removing spaces at both ends, and no control characters.`;
@@ -367,7 +365,7 @@ export function createChurchToolsClient(
 
   const wikiCategories = async (
     ctx: TenantContext,
-  ): Promise<WikiCategories> => {
+  ): Promise<readonly WikiCategory[]> => {
     const url = new URL('/api/wiki/categories', origin);
     const root = await fetchAnswer(ctx, path, url, wikiListLimits, {
       status: 'churchtools_wiki_categories_status',
@@ -380,18 +378,11 @@ export function createChurchToolsClient(
       });
       throw new EccliumError('upstream');
     }
-    const entries = parsed.data.data;
-    return Object.freeze({
-      __proto__: null,
-      categories: Object.freeze(
-        entries
-          .slice(0, maxWikiCategories)
-          .map((entry) =>
-            Object.freeze({ __proto__: null, id: entry.id, name: entry.name }),
-          ),
+    return Object.freeze(
+      parsed.data.data.map((entry) =>
+        Object.freeze({ __proto__: null, id: entry.id, name: entry.name }),
       ),
-      more: entries.length > maxWikiCategories,
-    });
+    );
   };
 
   const wikiPages = async (

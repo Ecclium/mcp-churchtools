@@ -146,13 +146,21 @@ export function normalizeSearchTerm(value: unknown): string | undefined {
 }
 
 /**
- * The most categories of the wiki a list gives. ChurchTools lists every
- * category the account may see on one page; the list keeps the first.
+ * The most categories of the wiki the core reads. ChurchTools lists every
+ * category the account may see in one answer, without pages; a longer
+ * list is no answer the core knows.
  */
-export const maxWikiCategories = 100;
+export const maxWikiCategories = 1000;
 
-/** The most pages of the wiki one page of their list holds. */
-export const wikiPageListLimit = 50;
+/**
+ * The most pages of the wiki one page of their list holds. 25 titles of
+ * 255 characters fit into one result of a tool even when every character
+ * doubles in length when it is written as JSON.
+ */
+export const wikiPageListLimit = 25;
+
+/** The last page of the list of pages of a category a read may ask for. */
+export const maxWikiListPage = 1000;
 
 /** The longest name of a category and title of a page of the wiki. */
 export const maxWikiTitleLength = 255;
@@ -163,14 +171,6 @@ export interface WikiCategory {
   readonly id: number;
   /** Name of the category, at most 255 characters, possibly empty. */
   readonly name: string;
-}
-
-/** The categories of the wiki the account may see. */
-export interface WikiCategories {
-  /** At most {@link maxWikiCategories}, in the order of ChurchTools. */
-  readonly categories: readonly WikiCategory[];
-  /** Whether ChurchTools listed more categories than the list holds. */
-  readonly more: boolean;
 }
 
 /** A page of the wiki in a list, without its text. */
@@ -203,7 +203,12 @@ export interface WikiPage extends WikiPageEntry {
   readonly text: string;
 }
 
-const guidForm =
+/**
+ * The form of the GUID of a wiki page, as the OpenAPI document of
+ * ChurchTools gives it, for {@link isWikiPageGuid} and for the input
+ * schemas of tools.
+ */
+export const wikiPageGuidPattern: RegExp =
   /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
 
 /**
@@ -221,7 +226,7 @@ const guidForm =
  * ```
  */
 export function isWikiPageGuid(value: unknown): value is string {
-  return typeof value === 'string' && guidForm.test(value);
+  return typeof value === 'string' && wikiPageGuidPattern.test(value);
 }
 
 /**
@@ -275,11 +280,13 @@ export interface ReadApi {
   /**
    * Lists the categories of the wiki the account may see, with ID and name.
    *
-   * @returns At most {@link maxWikiCategories} categories.
+   * @returns All of them, in the order of ChurchTools, at most
+   *   {@link maxWikiCategories}.
    * @throws {EccliumError} `permission` without the right `view` in
-   *   `churchwiki`; every error of the request.
+   *   `churchwiki`; `upstream` for more than {@link maxWikiCategories};
+   *   every error of the request.
    */
-  wikiCategories(): Promise<WikiCategories>;
+  wikiCategories(): Promise<readonly WikiCategory[]>;
   /**
    * Lists the pages of one category of the wiki, one page of the list at a
    * time, without their text. An empty list can also mean that the
@@ -287,10 +294,11 @@ export interface ReadApi {
    * with an empty list, not with an error.
    *
    * @param categoryId - The ID of the category.
-   * @param page - The page of the list, from 1.
+   * @param page - The page of the list, from 1 to {@link maxWikiListPage}.
    * @returns At most {@link wikiPageListLimit} pages.
-   * @throws {EccliumError} `validation` for an ID or page that is no whole
-   *   number from 1, before any request; every error of the request.
+   * @throws {EccliumError} `validation` for an ID that is no whole number
+   *   from 1 or a page outside 1 to {@link maxWikiListPage}, before any
+   *   request; every error of the request.
    */
   wikiPages(categoryId: number, page: number): Promise<WikiPageList>;
   /**

@@ -219,7 +219,7 @@
       "type": "object",
       "properties": {
         "data": {
-          "maxItems": 50,
+          "maxItems": 25,
           "type": "array",
           "items": {
             "type": "object",

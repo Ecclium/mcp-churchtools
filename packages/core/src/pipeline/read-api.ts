@@ -16,7 +16,7 @@ import {
   type SearchHits,
   type Sensitivity,
   type TenantContext,
-  type WikiCategories,
+  type WikiCategory,
   type WikiPage,
   type WikiPageList,
 } from '@ecclium/mcp-churchtools-plugin-api';
@@ -73,7 +73,7 @@ export function createReadAccess(
       special(() => client.searchPersons(ctx, query)),
     searchGroups: (query: string): Promise<SearchHits<GroupHit>> =>
       special(() => client.searchGroups(ctx, query)),
-    wikiCategories: (): Promise<WikiCategories> =>
+    wikiCategories: (): Promise<readonly WikiCategory[]> =>
       guard(() => client.wikiCategories(ctx)),
     wikiPages: (categoryId: number, page: number): Promise<WikiPageList> =>
       guard(() => client.wikiPages(ctx, categoryId, page)),

@@ -9,6 +9,7 @@
 import {
   isWikiPageGuid,
   maxSearchHits,
+  maxWikiCategories,
   maxWikiTitleLength,
   wikiPageListLimit,
 } from '@ecclium/mcp-churchtools-plugin-api';
@@ -102,12 +103,6 @@ export const groupListSchema = z.object({
 });
 
 /**
- * The most categories the client reads from one answer. It gives the first
- * {@link maxWikiCategories}; more than this many is no answer it knows.
- */
-export const maxWikiCategoryEntries = 1000;
-
-/**
  * The longest text of a wiki page the client reads, in UTF-16 code units.
  * The limit of the answer bounds it as well; a tool passes the text on in
  * parts.
@@ -118,14 +113,15 @@ const pageGuid = z.string().refine(isWikiPageGuid);
 
 /**
  * The answer of `GET /api/wiki/categories`, only ID and name of each
- * category. The gate of the probes reads the same fields from it before
- * every run against the test instance and refuses any other form
- * (`docs/research/churchtools-api.md`, «Kategorien des Wikis»).
+ * category. The gates of the probes read both, among other fields, before
+ * every run against the test instance and refuse any other form
+ * (`docs/research/churchtools-api.md`, «Kategorien des Wikis»). More than
+ * {@link maxWikiCategories} is no answer the client knows.
  */
 export const wikiCategoryListSchema = z.object({
   data: z
     .array(z.object({ id, name: text(maxWikiTitleLength) }))
-    .max(maxWikiCategoryEntries),
+    .max(maxWikiCategories),
 });
 
 /**

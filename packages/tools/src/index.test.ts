@@ -2,6 +2,7 @@ import {
   createToolCatalog,
   RegistryRefusal,
 } from '@ecclium/mcp-churchtools-core';
+import { wikiPageListLimit } from '@ecclium/mcp-churchtools-plugin-api';
 import { examplePlugin } from '@ecclium/mcp-churchtools-testkit';
 import { describe, expect, it } from 'vitest';
 
@@ -15,6 +16,8 @@ import {
   wikiPageGetTool,
   wikiPagesListTool,
 } from './index.js';
+import { categoriesPerCall } from './wiki/categories.js';
+import { maxPartBytes } from './wiki/parts.js';
 
 // The entry hands out the plugin of the free core. The registry of the core
 // takes it as the core and keeps each tool with its metadata, a shape whose
@@ -249,12 +252,24 @@ describe.each([
 });
 
 describe('the input of the tools of the wiki', () => {
-  it('asks for no argument to list the categories', () => {
+  it('asks only for an optional page of 1 to 40 to list the categories', () => {
     expect(withWiki.get('ct_wiki_categories_list')?.inputSchema).toEqual({
       type: 'object',
-      properties: {},
+      properties: { page: { type: 'integer', minimum: 1, maximum: 40 } },
       additionalProperties: false,
     });
+  });
+
+  it('names in each description the numbers its tool applies', () => {
+    expect(wikiCategoriesListTool.description.limits).toContain(
+      `At most ${String(categoriesPerCall)} categories per call`,
+    );
+    expect(wikiPagesListTool.description.limits).toContain(
+      `At most ${String(wikiPageListLimit)} pages per call`,
+    );
+    expect(wikiPageGetTool.description.limits).toContain(
+      `at most ${String(maxPartBytes)} bytes`,
+    );
   });
 
   it('asks for a category and an optional page of 1 to 1000 to list pages', () => {

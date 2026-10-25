@@ -23,12 +23,19 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { createCorePlugin } from '../core-plugin.js';
 import {
-  moreCategoriesVisible,
+  categoriesPerCall,
   noCategoryVisible,
+  pastLastCategory,
   wikiCategoriesListTool,
 } from './categories.js';
 import { pageNotFound, partOutOfRange, wikiPageGetTool } from './page.js';
-import { noPageListed, pastLastPage, wikiPagesListTool } from './pages.js';
+import {
+  emptyPageMoreFollow,
+  noPageListed,
+  pastLastPage,
+  wikiPagesListTool,
+} from './pages.js';
+import { splitIntoParts } from './parts.js';
 import { categoryRefused, wikiRefused } from './rights.js';
 
 // The three tools of the wiki run through the pipeline of the core on the
@@ -172,6 +179,7 @@ describe('ct_wiki_categories_list', () => {
       .reply(200, categoryList(2), json);
     const outcome = await call('ct_wiki_categories_list', {});
     expect(outcome.ok && outcome.data).toEqual({
+      page: 1,
       categories: [
         { id: 1, name: enveloped('Kategorie 1') },
         { id: 2, name: enveloped('Kategorie 2') },
@@ -181,20 +189,54 @@ describe('ct_wiki_categories_list', () => {
     });
   });
 
-  it('names the right for an empty list and says when there are more', async () => {
+  it('pages through the categories, 25 per call', async () => {
+    const { double, call } = setup();
+    for (let index = 0; index < 3; index += 1) {
+      double
+        .intercept({ path: '/api/wiki/categories', method: 'GET' })
+        .reply(200, categoryList(51), json);
+    }
+    const first = await call('ct_wiki_categories_list', {});
+    const third = await call('ct_wiki_categories_list', { page: 3 });
+    const fourth = await call('ct_wiki_categories_list', { page: 4 });
+    expect(categoriesPerCall).toBe(25);
+    expect(first.ok && first.data.categories).toHaveLength(25);
+    expect(first.ok && first.data.more).toBe(true);
+    expect(third.ok && third.data).toEqual({
+      page: 3,
+      categories: [{ id: 51, name: enveloped('Kategorie 51') }],
+      more: false,
+      notice: null,
+    });
+    expect(fourth.ok && fourth.data.notice).toBe(pastLastCategory);
+  });
+
+  it('names the right for an empty list', async () => {
     const { double, call } = setup();
     double
       .intercept({ path: '/api/wiki/categories', method: 'GET' })
       .reply(200, categoryList(0), json);
-    double
-      .intercept({ path: '/api/wiki/categories', method: 'GET' })
-      .reply(200, categoryList(101), json);
     const empty = await call('ct_wiki_categories_list', {});
     expect(empty.ok && empty.data.notice).toBe(noCategoryVisible);
     expect(noCategoryVisible).toContain('"view category" in churchwiki');
-    const full = await call('ct_wiki_categories_list', {});
-    expect(full.ok && full.data.categories).toHaveLength(100);
-    expect(full.ok && full.data.notice).toBe(moreCategoriesVisible);
+  });
+
+  it('passes 25 names of 255 quotes and of 255 wide characters within the limit of a result', async () => {
+    const { double, call } = setup();
+    for (const sign of ['"', '語']) {
+      double.intercept({ path: '/api/wiki/categories', method: 'GET' }).reply(
+        200,
+        JSON.stringify({
+          data: Array.from({ length: 25 }, (_, index) => ({
+            id: index + 1,
+            name: sign.repeat(255),
+          })),
+        }),
+        json,
+      );
+      const outcome = await call('ct_wiki_categories_list', {});
+      expect(outcome.ok && outcome.data.categories).toHaveLength(25);
+    }
   });
 
   it('names the right view when ChurchTools refuses the wiki', async () => {
@@ -210,9 +252,13 @@ describe('ct_wiki_categories_list', () => {
     });
   });
 
-  it('refuses an argument the model made up, before any request', async () => {
+  it.each([
+    ['a page 0', { page: 0 }],
+    ['a page beyond 40', { page: 41 }],
+    ['an argument the model made up', { limit: 100 }],
+  ])('refuses %s with validation, before any request', async (_, input) => {
     const { double, call } = setup();
-    const outcome = await call('ct_wiki_categories_list', { page: 2 });
+    const outcome = await call('ct_wiki_categories_list', input);
     expect(!outcome.ok && outcome.error.code).toBe('validation');
     expect(double.calls()).toEqual([]);
   });
@@ -248,7 +294,7 @@ describe('ct_wiki_pages_list', () => {
     expect(double.calls()[0]?.searchParams).toEqual({
       'wiki_category_ids[]': '4',
       page: '1',
-      limit: '50',
+      limit: '25',
     });
   });
 
@@ -269,6 +315,59 @@ describe('ct_wiki_pages_list', () => {
       pages: [],
       more: false,
       notice: pastLastPage,
+    });
+  });
+
+  // ChurchTools may count pages the account cannot see, so an empty page
+  // with further ones reported does not end the list.
+  it('says that further pages may follow when an empty page still has more', async () => {
+    const { double, call } = setup();
+    double
+      .intercept({ path: atPages, method: 'GET' })
+      .reply(200, pageList(0, 2, 5), json);
+    const outcome = await call('ct_wiki_pages_list', {
+      categoryId: 4,
+      page: 2,
+    });
+    expect(outcome.ok && outcome.data).toMatchObject({
+      pages: [],
+      more: true,
+      notice: emptyPageMoreFollow,
+    });
+  });
+
+  it('passes 25 titles of 255 quotes and of 255 wide characters within the limit of a result', async () => {
+    const { double, call } = setup();
+    for (const sign of ['"', '語']) {
+      double.intercept({ path: atPages, method: 'GET' }).reply(
+        200,
+        JSON.stringify({
+          data: Array.from({ length: 25 }, (_, index) => ({
+            ...pageEntry(index + 1),
+            title: sign.repeat(255),
+          })),
+          meta: {
+            pagination: { total: 25, limit: 25, current: 1, lastPage: 1 },
+          },
+        }),
+        json,
+      );
+      const outcome = await call('ct_wiki_pages_list', { categoryId: 4 });
+      expect(outcome.ok && outcome.data.pages).toHaveLength(25);
+    }
+  });
+
+  it('names both rights when ChurchTools refuses the list', async () => {
+    const { double, call } = setup();
+    double.intercept({ path: atPages, method: 'GET' }).reply(403, '{}', json);
+    const outcome = await call('ct_wiki_pages_list', { categoryId: 4 });
+    expect(!outcome.ok && outcome.error).toEqual({
+      code: 'permission',
+      message: categoryRefused,
+      missingRights: [
+        { module: 'churchwiki', right: 'view' },
+        { module: 'churchwiki', right: 'view category' },
+      ],
     });
   });
 
@@ -326,9 +425,9 @@ describe('ct_wiki_page_get', () => {
       part: 2,
       parts: 3,
     });
-    const text = outcome.ok ? String(outcome.data.text) : '';
-    // The part begins at a line, right after the break that ended part 1.
-    expect(text).toMatch(/^<<data-[^>]+>>Zeile \d+\n/u);
+    expect(outcome.ok && outcome.data.text).toEqual(
+      enveloped(splitIntoParts(lines.join('\n'))[1] ?? ''),
+    );
   });
 
   it('passes the largest part of a text of quotes within the limit of a result', async () => {
@@ -376,7 +475,10 @@ describe('ct_wiki_page_get', () => {
       {
         code: 'permission',
         message: categoryRefused,
-        missingRights: [{ module: 'churchwiki', right: 'view category' }],
+        missingRights: [
+          { module: 'churchwiki', right: 'view' },
+          { module: 'churchwiki', right: 'view category' },
+        ],
       },
     ],
   ])(
@@ -440,10 +542,7 @@ describe('the layer of the tools', () => {
   it('copies only ID and name of a category', async () => {
     const read = {
       wikiCategories: () =>
-        Promise.resolve({
-          categories: [{ id: 1, name: 'A', note: leak.name.value }],
-          more: false,
-        }),
+        Promise.resolve([{ id: 1, name: 'A', note: leak.name.value }]),
     } as unknown as ReadApi;
     const result = await wikiCategoriesListTool.execute({
       ...call,
@@ -509,5 +608,63 @@ describe('the layer of the tools', () => {
       text: '<p>Text</p>',
     });
     assertNoCanary(result, leak.all, 'result of the tool');
+  });
+});
+
+// The fields of each result with their classes: free text stands in the
+// data envelope, everything else describes the wiki, not a person.
+describe('the output of the tools of the wiki', () => {
+  const catalog = createToolCatalog({
+    core: createCorePlugin(),
+    toolsets: new Set(['wiki'] as const),
+    plugins: [],
+    readOnly: true,
+  });
+  const classes = (name: string, path: readonly string[]): unknown => {
+    let node = catalog.get(name)?.shape.root as unknown as {
+      fields?: Record<string, unknown>;
+      element?: unknown;
+      dataClass?: unknown;
+    };
+    for (const step of path) {
+      node = (
+        step === '[]' ? node.element : node.fields?.[step]
+      ) as typeof node;
+    }
+    return Object.fromEntries(
+      Object.entries(node.fields ?? {}).map(([key, value]) => [
+        key,
+        (value as { dataClass?: unknown }).dataClass ?? 'object',
+      ]),
+    );
+  };
+
+  it('declares exactly its fields, each with its class', () => {
+    expect(classes('ct_wiki_categories_list', [])).toEqual({
+      page: 'none',
+      categories: 'object',
+      more: 'none',
+      notice: 'none',
+    });
+    expect(classes('ct_wiki_categories_list', ['categories', '[]'])).toEqual({
+      id: 'none',
+      name: 'untrusted',
+    });
+    expect(classes('ct_wiki_pages_list', ['pages', '[]'])).toEqual({
+      guid: 'none',
+      title: 'untrusted',
+      isMarkdown: 'none',
+      version: 'none',
+    });
+    expect(classes('ct_wiki_page_get', [])).toEqual({
+      categoryId: 'none',
+      guid: 'none',
+      title: 'untrusted',
+      isMarkdown: 'none',
+      version: 'none',
+      part: 'none',
+      parts: 'none',
+      text: 'untrusted',
+    });
   });
 });

@@ -5,8 +5,10 @@ import {
   maxSearchHits,
   maxSearchTermLength,
   maxWikiCategories,
+  maxWikiListPage,
   maxWikiTitleLength,
   normalizeSearchTerm,
+  wikiPageGuidPattern,
   wikiPageListLimit,
 } from './index.js';
 
@@ -64,14 +66,21 @@ describe('normalizeSearchTerm', () => {
 });
 
 describe('the limits of the wiki', () => {
-  it('lists 100 categories, 50 pages a page and titles of 255 characters', () => {
-    expect(maxWikiCategories).toBe(100);
-    expect(wikiPageListLimit).toBe(50);
+  it('reads 1000 categories, 25 pages a page and titles of 255 characters', () => {
+    expect(maxWikiCategories).toBe(1000);
+    expect(wikiPageListLimit).toBe(25);
+    expect(maxWikiListPage).toBe(1000);
     expect(maxWikiTitleLength).toBe(255);
   });
 });
 
 describe('isWikiPageGuid', () => {
+  it('checks the same form as the pattern it exports, whole and without flags', () => {
+    expect(wikiPageGuidPattern.flags).toBe('');
+    expect(wikiPageGuidPattern.source.startsWith('^')).toBe(true);
+    expect(wikiPageGuidPattern.source.endsWith('$')).toBe(true);
+  });
+
   it('takes a GUID in lower and in upper case', () => {
     expect(isWikiPageGuid('00000000-0000-4000-8000-000000000001')).toBe(true);
     expect(isWikiPageGuid('ABCDEF01-2345-4678-9ABC-DEF012345678')).toBe(true);

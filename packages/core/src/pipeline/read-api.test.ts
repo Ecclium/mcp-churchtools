@@ -5,7 +5,7 @@ import {
   type PersonHit,
   type SearchHits,
   type TenantContext,
-  type WikiCategories,
+  type WikiCategory,
   type WikiPage,
   type WikiPageList,
 } from '@ecclium/mcp-churchtools-plugin-api';
@@ -25,10 +25,7 @@ const groups: SearchHits<GroupHit> = {
   more: true,
 };
 const guid = '00000000-0000-4000-8000-000000000001';
-const categories: WikiCategories = {
-  categories: [{ id: 4, name: 'Kategorie A' }],
-  more: false,
-};
+const categories: readonly WikiCategory[] = [{ id: 4, name: 'Kategorie A' }];
 const pages: WikiPageList = {
   pages: [{ guid, title: 'Seite A', isMarkdown: true, version: 2 }],
   more: false,

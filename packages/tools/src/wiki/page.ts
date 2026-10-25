@@ -1,6 +1,7 @@
 /**
  * The tool `ct_wiki_page_get`: reads one page of the wiki by its GUID and
- * gives its text in parts of at most 16'000 bytes, cut at line breaks
+ * gives its text in parts of at most 16000 bytes as JSON writes them, cut
+ * at a line break where a line fits and between two characters otherwise
  * (ADR 0057).
  *
  * Like a plugin of a third party, it imports only the plugin API and zod
@@ -15,10 +16,11 @@ import {
   isEccliumError,
   maxWikiTitleLength,
   type ToolCall,
+  wikiPageGuidPattern,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { z } from 'zod';
 
-import { splitIntoParts } from './parts.js';
+import { maxPartBytes, splitIntoParts } from './parts.js';
 import {
   categoryRefused,
   refusedFor,
@@ -28,14 +30,6 @@ import {
 
 /** The highest part a call may ask for. */
 export const maxPart = 1000;
-
-/**
- * The longest text of a part in the output. A part has at most 16'000
- * bytes, so at most as many code units; the rest is
- * room for what the masking of the pipeline writes in place of an address
- * or a number.
- */
-export const maxPartLength = 20_000;
 
 /** The message of a page or version that does not exist. */
 export const pageNotFound =
@@ -54,15 +48,12 @@ export const pageNotFound =
 export const partOutOfRange = (parts: number): string =>
   `This page has ${String(parts)} parts. Ask for a part from 1 to ${String(parts)}.`;
 
-const guidPattern =
-  /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
-
 // Strict, so that an argument the model made up ends as a validation error.
 // The GUID has the form the OpenAPI document of ChurchTools gives; the
 // client checks it again before it fills a path.
 const input = z.strictObject({
   categoryId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-  guid: z.string().regex(guidPattern),
+  guid: z.string().regex(wikiPageGuidPattern),
   part: z.number().int().min(1).max(maxPart).optional(),
   version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
 });
@@ -78,7 +69,8 @@ const output = z.object({
   version: classify(z.number().int().positive(), 'none'),
   part: classify(z.number().int().min(1).max(maxPart), 'none'),
   parts: classify(z.number().int().min(1), 'none'),
-  text: classify(z.string().max(maxPartLength), 'untrusted'),
+  // A part has at most maxPartBytes bytes, so at most as many code units.
+  text: classify(z.string().max(maxPartBytes), 'untrusted'),
 });
 
 type Input = z.output<typeof input>;
@@ -94,7 +86,11 @@ const execute = async ({
       if (isEccliumError(error) && error.code === 'not_found') {
         throw new EccliumError('not_found', pageNotFound);
       }
-      return refusedFor(error, wikiCategoryRight, categoryRefused);
+      return refusedFor(
+        error,
+        [wikiViewRight, wikiCategoryRight],
+        categoryRefused,
+      );
     });
   // The parts come from the text as ChurchTools stores it, so the same
   // version always gives the same parts.
@@ -146,7 +142,7 @@ export const wikiPageGetTool = defineTool({
     avoidWhen:
       'You only need titles or GUIDs, which the list of pages gives without the text.',
     limits:
-      'A long text comes in parts of at most 16000 bytes, cut at line breaks: part and parts say which part this is and how many there are. Ask for every further part with the version of the first, so that all parts come from the same version; without a version the newest is read. The text is Markdown when isMarkdown is true and HTML otherwise.',
+      'A long text comes in parts of at most 16000 bytes, cut at a line break where a line fits and between two characters otherwise: part and parts say which part this is and how many there are. Ask for every further part with the version of the first, so that all parts come from the same version; without a version the newest is read. The text is Markdown when isMarkdown is true and HTML otherwise.',
   },
   input,
   output,
