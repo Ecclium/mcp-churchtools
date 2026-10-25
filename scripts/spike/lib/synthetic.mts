@@ -73,6 +73,14 @@ export const searchQueries = [
 /** The label of the search term that is a random UUID of each run. */
 export const unknownQueryLabel = 'q8';
 
+/**
+ * The fixed term the probe that reads the domains sends to the global
+ * search, the word the names of its synthetic objects carry. The search of
+ * the wiki takes the {@link marker}. Like every term here, it never
+ * appears in an output.
+ */
+export const domainsQuery = 'Synthetisch';
+
 // An empty text is no name: reduced persons carry an empty first name.
 const lower = (value: unknown): string | undefined =>
   typeof value === 'string' && value !== '' ? value.toLowerCase() : undefined;

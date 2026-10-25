@@ -117,6 +117,32 @@ export const hints = {
     'Abbruch: ECCLIUM_SPIKE_OTHER_GROUP_ID fehlt oder ist keine positive ganze Zahl. Es wurden keine Personendaten gelesen.',
   gruppenGleich:
     'Abbruch: ECCLIUM_SPIKE_GROUP_ID und ECCLIUM_SPIKE_OTHER_GROUP_ID nennen dieselbe Gruppe. Es wurden keine Personendaten gelesen.',
+  kalenderIdFehlt:
+    'Abbruch: ECCLIUM_SPIKE_CALENDAR_ID fehlt oder ist keine positive ganze Zahl. Es wurden keine Personendaten gelesen.',
+  terminIdFehlt:
+    'Abbruch: ECCLIUM_SPIKE_APPOINTMENT_ID fehlt oder ist keine positive ganze Zahl. Es wurden keine Personendaten gelesen.',
+  serienterminIdFehlt:
+    'Abbruch: ECCLIUM_SPIKE_SERIES_APPOINTMENT_ID fehlt oder ist keine positive ganze Zahl. Es wurden keine Personendaten gelesen.',
+  ressourcentypIdFehlt:
+    'Abbruch: ECCLIUM_SPIKE_RESOURCE_TYPE_ID fehlt oder ist keine positive ganze Zahl. Es wurden keine Personendaten gelesen.',
+  ressourceIdFehlt:
+    'Abbruch: ECCLIUM_SPIKE_RESOURCE_ID fehlt oder ist keine positive ganze Zahl. Es wurden keine Personendaten gelesen.',
+  dienstgruppeIdFehlt:
+    'Abbruch: ECCLIUM_SPIKE_SERVICE_GROUP_ID fehlt oder ist keine positive ganze Zahl. Es wurden keine Personendaten gelesen.',
+  dienstIdFehlt:
+    'Abbruch: ECCLIUM_SPIKE_SERVICE_ID fehlt oder ist keine positive ganze Zahl. Es wurden keine Personendaten gelesen.',
+  andererDienstIdFehlt:
+    'Abbruch: ECCLIUM_SPIKE_OTHER_SERVICE_ID fehlt oder ist keine positive ganze Zahl. Es wurden keine Personendaten gelesen.',
+  eventIdFehlt:
+    'Abbruch: ECCLIUM_SPIKE_EVENT_ID fehlt oder ist keine positive ganze Zahl. Es wurden keine Personendaten gelesen.',
+  liedkategorieIdFehlt:
+    'Abbruch: ECCLIUM_SPIKE_SONG_CATEGORY_ID fehlt oder ist keine positive ganze Zahl. Es wurden keine Personendaten gelesen.',
+  liedIdFehlt:
+    'Abbruch: ECCLIUM_SPIKE_SONG_ID fehlt oder ist keine positive ganze Zahl. Es wurden keine Personendaten gelesen.',
+  anderesLiedIdFehlt:
+    'Abbruch: ECCLIUM_SPIKE_OTHER_SONG_ID fehlt oder ist keine positive ganze Zahl. Es wurden keine Personendaten gelesen.',
+  bereichsIdsGleich:
+    'Abbruch: Zwei Variablen nennen dasselbe Objekt: ECCLIUM_SPIKE_APPOINTMENT_ID und ECCLIUM_SPIKE_SERIES_APPOINTMENT_ID, ECCLIUM_SPIKE_SERVICE_ID und ECCLIUM_SPIKE_OTHER_SERVICE_ID oder ECCLIUM_SPIKE_SONG_ID und ECCLIUM_SPIKE_OTHER_SONG_ID. Es wurden keine Personendaten gelesen.',
   personenWaechterOperationFehlt:
     'Abbruch: Die Instanz dokumentiert eine Operation nicht, die der Wächter für Personendaten braucht. Sie gilt deshalb als produktiv. Es wurden keine Personendaten gelesen.',
   personenWaechterAntwortUnerwartet:
@@ -130,7 +156,7 @@ export const hints = {
   personenWeitereKategorien:
     'Abbruch: Das Konto sieht ausser der Kennkategorie weitere Kategorien. Schränken Sie seine Rechte ein, wie im README beschrieben. Es wurden keine Personendaten gelesen.',
   personenZuWeitBerechtigt:
-    'Abbruch: Die Rechte des Kontos passen nicht. Erlaubt sind genau: das Wiki und die Kennkategorie sehen, dazu die Leserechte für Personen und Gruppen aus dem README. Richten Sie die Rechte so ein, wie im README beschrieben. Es wurden keine Personendaten gelesen.',
+    'Abbruch: Die Rechte des Kontos passen nicht. Erlaubt sind genau: das Wiki und die Kennkategorie sehen, dazu die Leserechte, die das README für diese Probe nennt. Richten Sie die Rechte so ein, wie im README beschrieben. Es wurden keine Personendaten gelesen.',
   spezifikationUngueltig:
     'Abbruch: Die Instanz liefert unter dem erwarteten Pfad kein OpenAPI-Dokument.',
   smokeAufruf:

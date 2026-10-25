@@ -75,6 +75,25 @@ describe('spikeVariables', () => {
       ]),
     );
   });
+
+  it('holds the IDs of the probe that reads the domains as well', () => {
+    expect(spikeVariables).toEqual(
+      expect.arrayContaining([
+        'ECCLIUM_SPIKE_CALENDAR_ID',
+        'ECCLIUM_SPIKE_APPOINTMENT_ID',
+        'ECCLIUM_SPIKE_SERIES_APPOINTMENT_ID',
+        'ECCLIUM_SPIKE_RESOURCE_TYPE_ID',
+        'ECCLIUM_SPIKE_RESOURCE_ID',
+        'ECCLIUM_SPIKE_SERVICE_GROUP_ID',
+        'ECCLIUM_SPIKE_SERVICE_ID',
+        'ECCLIUM_SPIKE_OTHER_SERVICE_ID',
+        'ECCLIUM_SPIKE_EVENT_ID',
+        'ECCLIUM_SPIKE_SONG_CATEGORY_ID',
+        'ECCLIUM_SPIKE_SONG_ID',
+        'ECCLIUM_SPIKE_OTHER_SONG_ID',
+      ]),
+    );
+  });
 });
 
 describe('readOrigin', () => {
