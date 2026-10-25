@@ -258,7 +258,6 @@ describe('the first stage and the toolsets', () => {
     expect(lines(stderr)).toEqual([
       warningText('token_from_environment'),
       toolsetsText(['wiki', 'songs']),
-      emptyToolsetText('wiki'),
       emptyToolsetText('songs'),
     ]);
   });
@@ -282,13 +281,13 @@ describe('the first stage and the toolsets', () => {
     const { code, stderr } = await start(
       undefined,
       {},
-      { ECCLIUM_TOOLSETS: 'wiki' },
+      { ECCLIUM_TOOLSETS: 'songs' },
     );
     expect(code).toBe(exitCodes.invalidConfig);
     expect(lines(stderr)).toEqual([
       warningText('token_from_environment'),
-      toolsetsText(['wiki']),
-      emptyToolsetText('wiki'),
+      toolsetsText(['songs']),
+      emptyToolsetText('songs'),
       startText('audit_file_required'),
     ]);
   });

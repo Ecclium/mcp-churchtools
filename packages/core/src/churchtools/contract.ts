@@ -15,6 +15,9 @@ import {
   personListSchema,
   rightValueSchema,
   whoamiSchema,
+  wikiCategoryListSchema,
+  wikiPageListSchema,
+  wikiPageSchema,
 } from './schemas.js';
 
 /**
@@ -53,6 +56,31 @@ export function describeContract() {
       path: '/api/groups',
       query: ['query', 'page', 'limit'],
       response: schema(groupListSchema),
+    },
+    wikiCategories: {
+      method: 'get',
+      path: '/api/wiki/categories',
+      query: [],
+      response: schema(wikiCategoryListSchema),
+    },
+    wikiPages: {
+      method: 'get',
+      path: '/api/wiki/pages',
+      query: ['wiki_category_ids[]', 'page', 'limit'],
+      response: schema(wikiPageListSchema),
+    },
+    // A page and one of its versions have the same form (F19).
+    wikiPage: {
+      method: 'get',
+      path: '/api/wiki/categories/{categoryId}/pages/{identifier}',
+      query: [],
+      response: schema(wikiPageSchema),
+    },
+    wikiPageVersion: {
+      method: 'get',
+      path: '/api/wiki/categories/{categoryId}/pages/{identifier}/versions/{version}',
+      query: [],
+      response: schema(wikiPageSchema),
     },
     pagedMeta: { meta: schema(pagedMetaSchema) },
     countedMeta: { meta: schema(countedMetaSchema) },

@@ -1,8 +1,8 @@
 /**
- * The reading ChurchTools client of phase 1 (ADR 0057): `whoami`,
- * `permissions` and the searches of persons and groups by name (ADR 0060),
- * each with exactly one request through the transport of its origin, a
- * throttle per client, fixed limits and own schemas.
+ * The reading ChurchTools client (ADR 0057): `whoami`, `permissions`, the
+ * searches of persons and groups by name (ADR 0060) and the wiki, each with
+ * exactly one request through the transport of its origin, a throttle per
+ * client, fixed limits and own schemas.
  *
  * @packageDocumentation
  */
@@ -10,19 +10,25 @@ import {
   type Clock,
   EccliumError,
   type GroupHit,
+  isWikiPageGuid,
   maxSearchHits,
   maxSearchTermLength,
+  maxWikiListPage,
   type Me,
   normalizeSearchTerm,
   type Permissions,
   type PersonHit,
   type SearchHits,
   type TenantContext,
+  type WikiCategory,
+  wikiPageListLimit,
+  type WikiPage,
+  type WikiPageList,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { type HttpTransport, parseChurchToolsOrigin } from '../http/index.js';
 import { createRequestThrottle } from '../throttle/index.js';
-import { appendPage } from './query.js';
+import { appendIds, appendPage, urlOfPath } from './query.js';
 import { fetchAnswer, type RequestPath } from './request.js';
 import { toPermissions } from './rights.js';
 import {
@@ -30,6 +36,9 @@ import {
   personListSchema,
   searchPageLimit,
   whoamiSchema,
+  wikiCategoryListSchema,
+  wikiPageListSchema,
+  wikiPageSchema,
 } from './schemas.js';
 
 /** What a client is built from. */
@@ -83,6 +92,45 @@ export interface ChurchToolsClient {
     ctx: TenantContext,
     query: string,
   ): Promise<SearchHits<GroupHit>>;
+  /**
+   * Lists the categories of the wiki with `GET /api/wiki/categories`, all
+   * of them from the one answer.
+   *
+   * @throws {EccliumError} `upstream` for a category without ID or name,
+   *   or more than 1000; every error of the request.
+   */
+  wikiCategories(ctx: TenantContext): Promise<readonly WikiCategory[]>;
+  /**
+   * Lists one page of the pages of a category with `GET /api/wiki/pages`,
+   * sending only the category in `wiki_category_ids[]`, `page` and
+   * `limit=25`.
+   *
+   * @throws {EccliumError} `validation` for an ID or page that is no whole
+   *   number from 1, before the throttle and any request; `upstream` for
+   *   an entry that does not fit; every error of the request.
+   */
+  wikiPages(
+    ctx: TenantContext,
+    categoryId: number,
+    page: number,
+  ): Promise<WikiPageList>;
+  /**
+   * Reads one page of the wiki by its GUID, in its newest version or, with
+   * `version`, in exactly that one. F19 shows the route of one version for
+   * the newest version of a page; an older one is not yet shown.
+   *
+   * @throws {EccliumError} `validation` for an ID, GUID or version that does
+   *   not fit, before the throttle and any request; `not_found` for a page
+   *   or version that does not exist; `upstream` for an answer that does
+   *   not fit, also another version than asked for; every error of the
+   *   request.
+   */
+  wikiPage(
+    ctx: TenantContext,
+    categoryId: number,
+    guid: string,
+    version?: number,
+  ): Promise<WikiPage>;
 }
 
 const whoamiLimits = Object.freeze({
@@ -103,6 +151,23 @@ const searchLimits = Object.freeze({
   maxResponseBytes: 1024 * 1024,
   maxElements: 100_000,
 });
+
+// Each entry of the list of pages carries objects of the persons who
+// created and last changed the page, which the client drops. The limits
+// fit 1000 categories and 25 pages with them.
+const wikiListLimits = Object.freeze({
+  maxResponseBytes: 1024 * 1024,
+  maxElements: 100_000,
+});
+
+// A page carries its whole text; a tool passes it on in parts.
+const wikiPageLimits = Object.freeze({
+  maxResponseBytes: 4 * 1024 * 1024,
+  maxElements: 20_000,
+});
+
+// In English for the model; printable ASCII, like every message (ADR 0054).
+const invalidWikiInput = `A category ID and a version are whole numbers from 1, a page of the list is a whole number from 1 to ${String(maxWikiListPage)}, and a wiki page is addressed by its GUID.`;
 
 // In English for the model; printable ASCII, like every message (ADR 0054).
 const invalidTerm = `The search term needs 1 to ${String(maxSearchTermLength)} characters after removing spaces at both ends, and no control characters.`;
@@ -138,6 +203,9 @@ const toHits = <Hit>(entries: readonly Hit[]): SearchHits<Hit> =>
     hits: Object.freeze(entries.slice(0, maxSearchHits)),
     more: entries.length > maxSearchHits,
   });
+
+const isWholeFromOne = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 1;
 
 const isPlain = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -287,5 +355,126 @@ export function createChurchToolsClient(
     );
   };
 
-  return Object.freeze({ whoami, permissions, searchPersons, searchGroups });
+  // Refuses what may not fill a path or a query before the throttle gives
+  // a place, so that an invalid value costs no request.
+  const checkWikiInput = (ctx: TenantContext, valid: boolean): void => {
+    if (valid) return;
+    ctx.log.warn('churchtools_wiki_input_refused', { code: 'validation' });
+    throw new EccliumError('validation', invalidWikiInput);
+  };
+
+  const wikiCategories = async (
+    ctx: TenantContext,
+  ): Promise<readonly WikiCategory[]> => {
+    const url = new URL('/api/wiki/categories', origin);
+    const root = await fetchAnswer(ctx, path, url, wikiListLimits, {
+      status: 'churchtools_wiki_categories_status',
+      refused: 'churchtools_wiki_categories_refused',
+    });
+    const parsed = wikiCategoryListSchema.safeParse(root);
+    if (!parsed.success) {
+      ctx.log.warn('churchtools_wiki_categories_refused', {
+        code: 'upstream',
+      });
+      throw new EccliumError('upstream');
+    }
+    return Object.freeze(
+      parsed.data.data.map((entry) =>
+        Object.freeze({ __proto__: null, id: entry.id, name: entry.name }),
+      ),
+    );
+  };
+
+  const wikiPages = async (
+    ctx: TenantContext,
+    categoryId: number,
+    page: number,
+  ): Promise<WikiPageList> => {
+    checkWikiInput(
+      ctx,
+      isWholeFromOne(categoryId) &&
+        isWholeFromOne(page) &&
+        page <= maxWikiListPage,
+    );
+    const url = new URL('/api/wiki/pages', origin);
+    appendIds(url.searchParams, 'wiki_category_ids[]', [categoryId]);
+    appendPage(url.searchParams, page, wikiPageListLimit);
+    const root = await fetchAnswer(ctx, path, url, wikiListLimits, {
+      status: 'churchtools_wiki_pages_status',
+      refused: 'churchtools_wiki_pages_refused',
+    });
+    const parsed = wikiPageListSchema.safeParse(root);
+    if (!parsed.success) {
+      ctx.log.warn('churchtools_wiki_pages_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    return Object.freeze({
+      __proto__: null,
+      pages: Object.freeze(
+        parsed.data.data.map((entry) =>
+          Object.freeze({
+            __proto__: null,
+            guid: entry.guid,
+            title: entry.title,
+            isMarkdown: entry.isMarkdown,
+            version: entry.version,
+          }),
+        ),
+      ),
+      more: page < parsed.data.meta.pagination.lastPage,
+    });
+  };
+
+  const wikiPage = async (
+    ctx: TenantContext,
+    categoryId: number,
+    guid: string,
+    version?: number,
+  ): Promise<WikiPage> => {
+    checkWikiInput(
+      ctx,
+      isWholeFromOne(categoryId) &&
+        isWikiPageGuid(guid) &&
+        (version === undefined || isWholeFromOne(version)),
+    );
+    // Only checked values fill the path: a whole number, a GUID and, for
+    // one version, a whole number. The built URL must have exactly that
+    // path and no query (ADR 0057).
+    const page = `/api/wiki/categories/${String(categoryId)}/pages/${guid}`;
+    const pathname =
+      version === undefined ? page : `${page}/versions/${String(version)}`;
+    const url = urlOfPath(origin, pathname);
+    const root = await fetchAnswer(ctx, path, url, wikiPageLimits, {
+      status: 'churchtools_wiki_page_status',
+      refused: 'churchtools_wiki_page_refused',
+      missing: 'churchtools_wiki_page_missing',
+    });
+    const parsed = wikiPageSchema.safeParse(root);
+    if (
+      !parsed.success ||
+      (version !== undefined && parsed.data.data.version !== version)
+    ) {
+      ctx.log.warn('churchtools_wiki_page_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    const data = parsed.data.data;
+    return Object.freeze({
+      __proto__: null,
+      guid,
+      title: data.title,
+      isMarkdown: data.isMarkdown,
+      version: data.version,
+      text: data.text ?? '',
+    });
+  };
+
+  return Object.freeze({
+    whoami,
+    permissions,
+    searchPersons,
+    searchGroups,
+    wikiCategories,
+    wikiPages,
+    wikiPage,
+  });
 }

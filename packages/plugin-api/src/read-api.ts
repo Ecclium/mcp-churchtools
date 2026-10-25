@@ -146,6 +146,90 @@ export function normalizeSearchTerm(value: unknown): string | undefined {
 }
 
 /**
+ * The most categories of the wiki the core reads. ChurchTools lists every
+ * category the account may see in one answer, without pages; a longer
+ * list is no answer the core knows.
+ */
+export const maxWikiCategories = 1000;
+
+/**
+ * The most pages of the wiki one page of their list holds. 25 titles of
+ * 255 characters fit into one result of a tool even when every character
+ * doubles in length when it is written as JSON.
+ */
+export const wikiPageListLimit = 25;
+
+/** The last page of the list of pages of a category a read may ask for. */
+export const maxWikiListPage = 1000;
+
+/** The longest name of a category and title of a page of the wiki. */
+export const maxWikiTitleLength = 255;
+
+/** A category of the wiki: only ID and name. */
+export interface WikiCategory {
+  /** The numeric ID of the category. */
+  readonly id: number;
+  /** Name of the category, at most 255 characters, possibly empty. */
+  readonly name: string;
+}
+
+/** A page of the wiki in a list, without its text. */
+export interface WikiPageEntry {
+  /** The GUID of the page, the only way the core addresses a page. */
+  readonly guid: string;
+  /** Title of the page, at most 255 characters, possibly empty. */
+  readonly title: string;
+  /** Whether the page is written in Markdown; otherwise it is HTML. */
+  readonly isMarkdown: boolean;
+  /** The version of the page, which grows with every change of its text. */
+  readonly version: number;
+}
+
+/** One page of the list of pages of a category. */
+export interface WikiPageList {
+  /** At most {@link wikiPageListLimit} pages, in the order of ChurchTools. */
+  readonly pages: readonly WikiPageEntry[];
+  /**
+   * Whether ChurchTools reports a later page of the list. It comes from the
+   * pagination of ChurchTools, which may count pages the account cannot
+   * see, so a later page can be empty.
+   */
+  readonly more: boolean;
+}
+
+/** A page of the wiki with its text, in one version. */
+export interface WikiPage extends WikiPageEntry {
+  /** The whole text, Markdown or HTML, as ChurchTools stores it. */
+  readonly text: string;
+}
+
+/**
+ * The form of the GUID of a wiki page, as the OpenAPI document of
+ * ChurchTools gives it, for {@link isWikiPageGuid} and for the input
+ * schemas of tools.
+ */
+export const wikiPageGuidPattern: RegExp =
+  /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
+
+/**
+ * Whether a value has the form of the GUID of a wiki page, as the OpenAPI
+ * document of ChurchTools gives it. The core addresses pages only by GUID,
+ * because ChurchTools reports `identifier` as deprecated (ADR 0057), and
+ * only a value of this form ever fills a path.
+ *
+ * @param value - The value to check.
+ * @returns Whether it is a GUID.
+ * @example
+ * ```ts
+ * isWikiPageGuid('00000000-0000-4000-8000-000000000001'); // true
+ * isWikiPageGuid('../whoami'); // false
+ * ```
+ */
+export function isWikiPageGuid(value: unknown): value is string {
+  return typeof value === 'string' && wikiPageGuidPattern.test(value);
+}
+
+/**
  * Reads from ChurchTools for one call of a tool, with the account of the
  * server and through the one outbound path of the core. A tool never sees a
  * token and cannot choose what host it reads from. The core revokes it when
@@ -193,4 +277,46 @@ export interface ReadApi {
    *   term, before any request; every error of the request.
    */
   searchGroups(query: string): Promise<SearchHits<GroupHit>>;
+  /**
+   * Lists the categories of the wiki the account may see, with ID and name.
+   *
+   * @returns All of them, in the order of ChurchTools, at most
+   *   {@link maxWikiCategories}.
+   * @throws {EccliumError} `permission` without the right `view` in
+   *   `churchwiki`; `upstream` for more than {@link maxWikiCategories};
+   *   every error of the request.
+   */
+  wikiCategories(): Promise<readonly WikiCategory[]>;
+  /**
+   * Lists the pages of one category of the wiki, one page of the list at a
+   * time, without their text. An empty list can also mean that the
+   * account lacks the right to see the category: ChurchTools then answers
+   * with an empty list, not with an error.
+   *
+   * @param categoryId - The ID of the category.
+   * @param page - The page of the list, from 1 to {@link maxWikiListPage}.
+   * @returns At most {@link wikiPageListLimit} pages.
+   * @throws {EccliumError} `validation` for an ID that is no whole number
+   *   from 1 or a page outside 1 to {@link maxWikiListPage}, before any
+   *   request; every error of the request.
+   */
+  wikiPages(categoryId: number, page: number): Promise<WikiPageList>;
+  /**
+   * Reads one page of the wiki with its whole text, in its newest version
+   * or in the version asked for.
+   *
+   * @param categoryId - The ID of the category of the page.
+   * @param guid - The GUID of the page, see {@link isWikiPageGuid}.
+   * @param version - The version to read; the newest when left out.
+   * @returns The page.
+   * @throws {EccliumError} `validation` for an ID, GUID or version that does
+   *   not fit, before any request; `permission` without the right to see
+   *   the category; `not_found` for a page or version that does not exist;
+   *   every error of the request.
+   */
+  wikiPage(
+    categoryId: number,
+    guid: string,
+    version?: number,
+  ): Promise<WikiPage>;
 }

@@ -725,6 +725,13 @@ const cases: readonly Case[] = [
   },
   {
     rule: 'plugins-only-plugin-api',
+    name: 'a tool of the wiki imports core',
+    files: {
+      'packages/tools/src/wiki/forbidden.ts': `import '${nameOf('core')}';\nexport {};\n`,
+    },
+  },
+  {
+    rule: 'plugins-only-plugin-api',
     name: 'the plugin of the core imports core',
     files: {
       'packages/tools/src/core-plugin.ts': `import '${nameOf('core')}';\nexport {};\n`,

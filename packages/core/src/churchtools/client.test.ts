@@ -831,14 +831,349 @@ describe('the client', () => {
     expect(await codeOf(client.whoami(ctx()))).toBe('network');
   });
 
-  it('is frozen and shows nothing but its four operations', () => {
+  it('is frozen and shows nothing but its seven operations', () => {
     const { client } = setup();
     expect(Object.keys(client)).toEqual([
       'whoami',
       'permissions',
       'searchPersons',
       'searchGroups',
+      'wikiCategories',
+      'wikiPages',
+      'wikiPage',
     ]);
     expect(Object.isFrozen(client)).toBe(true);
+  });
+});
+
+describe('the wiki', () => {
+  const guid = '00000000-0000-4000-8000-000000000001';
+  const pagePath = `/api/wiki/categories/4/pages/${guid}`;
+  const at = (pathname: string) => (path: string) =>
+    path.split('?')[0] === pathname;
+  // The object ChurchTools puts in meta for the person who created and
+  // who last changed a page (`docs/research/churchtools-api.md`,
+  // «Personendaten in Wiki-Antworten»), with canaries in every text.
+  const personMeta = (name: string, email: string) => ({
+    title: name,
+    domainType: 'person',
+    domainIdentifier: '7',
+    apiUrl: `https://example.church.tools/api/persons/7?${email}`,
+    domainAttributes: {
+      firstName: name,
+      lastName: name,
+      guid: '00000000-0000-0000-0000-000000000007',
+      isArchived: false,
+    },
+  });
+  const entry = (index: number, name = 'Person', email = 'x') => ({
+    guid: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+    identifier: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+    title: `Seite ${String(index)}`,
+    version: index,
+    isMarkdown: index % 2 === 1,
+    onStartpage: false,
+    redirectTo: null,
+    wikiCategory: { id: 4, name: 'Kategorie', permissions: {} },
+    permissions: { canEdit: false, canDelete: false },
+    meta: {
+      createdDate: '2026-10-09T08:00:00Z',
+      createdPerson: personMeta(name, email),
+      modifiedDate: '2026-10-09T08:00:00Z',
+      modifiedPerson: personMeta(name, email),
+    },
+  });
+  const pageList = (
+    entries: readonly unknown[],
+    current = 1,
+    lastPage = 1,
+  ): string =>
+    JSON.stringify({
+      data: entries,
+      meta: {
+        count: entries.length,
+        pagination: { total: entries.length, limit: 25, current, lastPage },
+      },
+    });
+  const pageAnswer = (data: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      data: { ...entry(2), text: '# Titel\n\nText', ...data },
+    });
+  const categoryList = (count: number, extra: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      data: Array.from({ length: count }, (_, index) => ({
+        id: index + 1,
+        name: `Kategorie ${String(index + 1)}`,
+        nameTranslated: `Kategorie ${String(index + 1)}`,
+        sortKey: index,
+        permissions: { canEdit: false, canDelete: false },
+        ...extra,
+      })),
+      meta: { count },
+      permissions: { editMasterData: false },
+    });
+
+  it('lists the categories with ID and name only, without a query', async () => {
+    const { double, client, ctx } = setup();
+    double
+      .intercept({ path: '/api/wiki/categories', method: 'GET' })
+      .reply(200, categoryList(2), json);
+    const result = await client.wikiCategories(ctx());
+    expect(result).toEqual([
+      { id: 1, name: 'Kategorie 1' },
+      { id: 2, name: 'Kategorie 2' },
+    ]);
+    expect(Object.isFrozen(result)).toBe(true);
+    for (const category of result) {
+      expect(Object.getPrototypeOf(category)).toBeNull();
+      expect(Object.isFrozen(category)).toBe(true);
+    }
+    expect(double.calls()[0]?.searchParams).toEqual({});
+  });
+
+  it('gives all of 1000 categories, and upstream above 1000', async () => {
+    const { double, client, ctx, lines } = setup();
+    double
+      .intercept({ path: '/api/wiki/categories', method: 'GET' })
+      .reply(200, categoryList(1000), json);
+    double
+      .intercept({ path: '/api/wiki/categories', method: 'GET' })
+      .reply(200, categoryList(1001), json);
+    expect(await client.wikiCategories(ctx())).toHaveLength(1000);
+    expect(await codeOf(client.wikiCategories(ctx()))).toBe('upstream');
+    expect(lines.map((line) => line.event)).toEqual([
+      'churchtools_wiki_categories_refused',
+    ]);
+  });
+
+  it.each([
+    ['a name null', { name: null }],
+    ['an ID 0', { id: 0 }],
+    ['a name of 256 characters', { name: 'x'.repeat(256) }],
+  ])('gives upstream for a category with %s', async (_, extra) => {
+    const { double, client, ctx } = setup();
+    double
+      .intercept({ path: '/api/wiki/categories', method: 'GET' })
+      .reply(200, categoryList(1, extra), json);
+    expect(await codeOf(client.wikiCategories(ctx()))).toBe('upstream');
+  });
+
+  it('lists the pages of a category with exactly the category, the page and limit 25', async () => {
+    const { double, client, ctx } = setup();
+    const name = makeCanary('name');
+    const email = makeCanary('email');
+    double
+      .intercept({ path: at('/api/wiki/pages'), method: 'GET' })
+      .reply(
+        200,
+        pageList([entry(1, name.value, email.value), entry(2)], 2, 3),
+        json,
+      );
+    const result = await client.wikiPages(ctx(), 4, 2);
+    expect(result).toEqual({
+      pages: [
+        {
+          guid: '00000000-0000-4000-8000-000000000001',
+          title: 'Seite 1',
+          isMarkdown: true,
+          version: 1,
+        },
+        {
+          guid: '00000000-0000-4000-8000-000000000002',
+          title: 'Seite 2',
+          isMarkdown: false,
+          version: 2,
+        },
+      ],
+      more: true,
+    });
+    assertNoCanary(result, [name, email], 'pages');
+    expect(Object.getPrototypeOf(result.pages[0])).toBeNull();
+    expect(Object.isFrozen(result.pages)).toBe(true);
+    expect(double.calls()[0]?.path).toBe('/api/wiki/pages');
+    expect(double.calls()[0]?.searchParams).toEqual({
+      'wiki_category_ids[]': '4',
+      page: '2',
+      limit: '25',
+    });
+  });
+
+  it('takes exactly 25 entries', async () => {
+    const { double, client, ctx } = setup();
+    double
+      .intercept({ path: at('/api/wiki/pages'), method: 'GET' })
+      .reply(
+        200,
+        pageList(Array.from({ length: 25 }, (_, i) => entry(i + 1))),
+        json,
+      );
+    expect((await client.wikiPages(ctx(), 4, 1)).pages).toHaveLength(25);
+  });
+
+  it('says no more on the last page and on a page behind it', async () => {
+    const { double, client, ctx } = setup();
+    double
+      .intercept({ path: at('/api/wiki/pages'), method: 'GET' })
+      .reply(200, pageList([entry(1)], 3, 3), json);
+    double
+      .intercept({ path: at('/api/wiki/pages'), method: 'GET' })
+      .reply(200, pageList([], 4, 3), json);
+    expect((await client.wikiPages(ctx(), 4, 3)).more).toBe(false);
+    expect(await client.wikiPages(ctx(), 4, 4)).toEqual({
+      pages: [],
+      more: false,
+    });
+  });
+
+  it.each([
+    [
+      '26 entries',
+      pageList(Array.from({ length: 26 }, (_, i) => entry(i + 1))),
+    ],
+    ['a GUID of another form', pageList([{ ...entry(1), guid: 'Startseite' }])],
+    ['no isMarkdown', pageList([{ ...entry(1), isMarkdown: undefined }])],
+    ['a version 0', pageList([{ ...entry(1), version: 0 }])],
+    ['no pagination', JSON.stringify({ data: [entry(1)], meta: { count: 1 } })],
+  ])('gives upstream for a page list with %s', async (_, body) => {
+    const { double, client, ctx, lines } = setup();
+    double
+      .intercept({ path: at('/api/wiki/pages'), method: 'GET' })
+      .reply(200, body, json);
+    expect(await codeOf(client.wikiPages(ctx(), 4, 1))).toBe('upstream');
+    expect(lines.map((line) => line.event)).toEqual([
+      'churchtools_wiki_pages_refused',
+    ]);
+  });
+
+  // The types forbid most of these; a plugin built without them can still
+  // pass them.
+  it.each([
+    [0, 1],
+    [4, 0],
+    [-1, 1],
+    [1.5, 1],
+    [4, Number.NaN],
+    [4, 1001],
+    ['4' as unknown as number, 1],
+  ])(
+    'refuses the category %j and page %j before any request',
+    async (categoryId, page) => {
+      const { double, client, ctx, lines } = setup();
+      expect(await codeOf(client.wikiPages(ctx(), categoryId, page))).toBe(
+        'validation',
+      );
+      expect(double.calls()).toHaveLength(0);
+      expect(lines.map((line) => line.event)).toEqual([
+        'churchtools_wiki_input_refused',
+      ]);
+    },
+  );
+
+  it('reads a page by its GUID in the newest version, without the persons of meta', async () => {
+    const { double, client, ctx } = setup();
+    const name = makeCanary('name');
+    const email = makeCanary('email');
+    double.intercept({ path: pagePath, method: 'GET' }).reply(
+      200,
+      pageAnswer({
+        guid,
+        meta: { modifiedPerson: personMeta(name.value, email.value) },
+      }),
+      json,
+    );
+    const page = await client.wikiPage(ctx(), 4, guid);
+    expect(page).toEqual({
+      guid,
+      title: 'Seite 2',
+      isMarkdown: false,
+      version: 2,
+      text: '# Titel\n\nText',
+    });
+    assertNoCanary(page, [name, email], 'page');
+    expect(Object.isFrozen(page)).toBe(true);
+    expect(Object.getPrototypeOf(page)).toBeNull();
+    expect(double.calls()[0]?.searchParams).toEqual({});
+  });
+
+  it('reads exactly the version asked for, and refuses another one', async () => {
+    const { double, client, ctx, lines } = setup();
+    double
+      .intercept({ path: `${pagePath}/versions/2`, method: 'GET' })
+      .reply(200, pageAnswer(), json);
+    double
+      .intercept({ path: `${pagePath}/versions/3`, method: 'GET' })
+      .reply(200, pageAnswer(), json);
+    expect((await client.wikiPage(ctx(), 4, guid, 2)).version).toBe(2);
+    expect(await codeOf(client.wikiPage(ctx(), 4, guid, 3))).toBe('upstream');
+    expect(lines.map((line) => line.event)).toEqual([
+      'churchtools_wiki_page_refused',
+    ]);
+  });
+
+  it('reads a page without text as empty', async () => {
+    const { double, client, ctx } = setup();
+    double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, pageAnswer({ text: null }), json);
+    expect((await client.wikiPage(ctx(), 4, guid)).text).toBe('');
+  });
+
+  it.each([
+    [404, 'not_found', 'churchtools_wiki_page_missing'],
+    [403, 'permission', 'churchtools_wiki_page_status'],
+    [401, 'auth', 'churchtools_wiki_page_status'],
+    [500, 'upstream', 'churchtools_wiki_page_status'],
+  ])('maps status %i of a page to %s', async (status, code, event) => {
+    const { double, client, ctx, lines } = setup();
+    double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(status, '{}', json);
+    expect(await codeOf(client.wikiPage(ctx(), 4, guid))).toBe(code);
+    expect(lines).toEqual([{ event, fields: { status, code } }]);
+  });
+
+  // A 404 means a missing page only where one object is read by its ID;
+  // the lists have fixed paths, so there it stays upstream.
+  it('keeps 404 of the lists as upstream', async () => {
+    const { double, client, ctx } = setup();
+    double
+      .intercept({ path: '/api/wiki/categories', method: 'GET' })
+      .reply(404, '{}', json);
+    double
+      .intercept({ path: at('/api/wiki/pages'), method: 'GET' })
+      .reply(404, '{}', json);
+    expect(await codeOf(client.wikiCategories(ctx()))).toBe('upstream');
+    expect(await codeOf(client.wikiPages(ctx(), 4, 1))).toBe('upstream');
+  });
+
+  it.each([
+    [4, 'Startseite', undefined],
+    [4, '../../whoami', undefined],
+    [4, `${guid}/versions`, undefined],
+    [4, guid.slice(1), undefined],
+    [0, guid, undefined],
+    [4, guid, 0],
+    [4, guid, 1.5],
+  ])(
+    'refuses the category %j, GUID %j and version %j before any request',
+    async (categoryId, id, version) => {
+      const { double, client, ctx } = setup();
+      expect(
+        await codeOf(client.wikiPage(ctx(), categoryId, id, version)),
+      ).toBe('validation');
+      expect(double.calls()).toHaveLength(0);
+    },
+  );
+
+  it.each([
+    ['no title', { title: undefined }],
+    ['a text that is a number', { text: 1 }],
+    ['a version 0', { version: 0 }],
+  ])('gives upstream for a page with %s', async (_, data) => {
+    const { double, client, ctx } = setup();
+    double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, pageAnswer(data), json);
+    expect(await codeOf(client.wikiPage(ctx(), 4, guid))).toBe('upstream');
   });
 });

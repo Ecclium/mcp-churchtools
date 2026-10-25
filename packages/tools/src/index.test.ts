@@ -2,6 +2,7 @@ import {
   createToolCatalog,
   RegistryRefusal,
 } from '@ecclium/mcp-churchtools-core';
+import { wikiPageListLimit } from '@ecclium/mcp-churchtools-plugin-api';
 import { examplePlugin } from '@ecclium/mcp-churchtools-testkit';
 import { describe, expect, it } from 'vitest';
 
@@ -11,7 +12,12 @@ import {
   groupsSearchTool,
   personsSearchTool,
   whoamiTool,
+  wikiCategoriesListTool,
+  wikiPageGetTool,
+  wikiPagesListTool,
 } from './index.js';
+import { categoriesPerCall } from './wiki/categories.js';
+import { maxPartBytes } from './wiki/parts.js';
 
 // The entry hands out the plugin of the free core. The registry of the core
 // takes it as the core and keeps each tool with its metadata, a shape whose
@@ -26,6 +32,13 @@ const catalog = createToolCatalog({
 const withSearch = createToolCatalog({
   core: createCorePlugin(),
   toolsets: new Set(['persons'] as const),
+  plugins: [],
+  readOnly: true,
+});
+
+const withWiki = createToolCatalog({
+  core: createCorePlugin(),
+  toolsets: new Set(['wiki'] as const),
   plugins: [],
   readOnly: true,
 });
@@ -55,6 +68,19 @@ describe('@ecclium/mcp-churchtools-tools', () => {
       ['ct_groups_search', '@ecclium/mcp-churchtools', 'core'],
       ['ct_persons_search', '@ecclium/mcp-churchtools', 'core'],
       ['ct_whoami', '@ecclium/mcp-churchtools', 'core'],
+    ]);
+  });
+
+  it('adds the three tools of the wiki with the toolset wiki, each fully classified', () => {
+    expect(
+      withWiki
+        .list()
+        .map((tool) => [tool.name, tool.origin, tool.shape.unclassified]),
+    ).toEqual([
+      ['ct_whoami', 'core', 0],
+      ['ct_wiki_categories_list', 'core', 0],
+      ['ct_wiki_page_get', 'core', 0],
+      ['ct_wiki_pages_list', 'core', 0],
     ]);
   });
 
@@ -88,6 +114,9 @@ describe.each([
   ['ct_whoami', whoamiTool],
   ['ct_persons_search', personsSearchTool],
   ['ct_groups_search', groupsSearchTool],
+  ['ct_wiki_categories_list', wikiCategoriesListTool],
+  ['ct_wiki_pages_list', wikiPagesListTool],
+  ['ct_wiki_page_get', wikiPageGetTool],
 ])('the description of %s', (_, tool) => {
   it('has four sections of one line each, naming no tool', () => {
     const sections = Object.entries(tool.description);
@@ -191,5 +220,89 @@ describe.each([
     expect(tool?.description).toContain(
       `Required ChurchTools rights: "${right.right}" in ${right.module}.`,
     );
+  });
+});
+
+const view = { module: 'churchwiki', right: 'view' };
+const viewCategory = { module: 'churchwiki', right: 'view category' };
+
+describe.each([
+  ['ct_wiki_categories_list', [view]],
+  ['ct_wiki_pages_list', [view, viewCategory]],
+  ['ct_wiki_page_get', [view, viewCategory]],
+])('%s in the catalog', (name, rights) => {
+  const tool = withWiki.get(name);
+
+  it('reads only, holds personal data, runs unattended only by policy and names its rights', () => {
+    expect(tool?.meta).toEqual({
+      capability: 'read',
+      domain: 'wiki',
+      requiredRights: rights,
+      tier: 'free',
+      sensitivity: 'personal',
+      unattended: 'policy',
+      routineStable: false,
+    });
+    expect(tool?.description).toContain(
+      `Required ChurchTools rights: ${rights
+        .map((right) => `"${right.right}" in ${right.module}`)
+        .join(', ')}.`,
+    );
+  });
+});
+
+describe('the input of the tools of the wiki', () => {
+  it('asks only for an optional page of 1 to 40 to list the categories', () => {
+    expect(withWiki.get('ct_wiki_categories_list')?.inputSchema).toEqual({
+      type: 'object',
+      properties: { page: { type: 'integer', minimum: 1, maximum: 40 } },
+      additionalProperties: false,
+    });
+  });
+
+  it('names in each description the numbers its tool applies', () => {
+    expect(wikiCategoriesListTool.description.limits).toContain(
+      `At most ${String(categoriesPerCall)} categories per call`,
+    );
+    expect(wikiPagesListTool.description.limits).toContain(
+      `At most ${String(wikiPageListLimit)} pages per call`,
+    );
+    expect(wikiPageGetTool.description.limits).toContain(
+      `at most ${String(maxPartBytes)} bytes`,
+    );
+  });
+
+  it('asks for a category and an optional page of 1 to 1000 to list pages', () => {
+    const schema = withWiki.get('ct_wiki_pages_list')
+      ?.inputSchema as unknown as {
+      properties: Record<string, unknown>;
+      required: unknown;
+    };
+    expect(Object.keys(schema.properties)).toEqual(['categoryId', 'page']);
+    expect(schema.required).toEqual(['categoryId']);
+    expect(schema.properties['page']).toMatchObject({
+      type: 'integer',
+      minimum: 1,
+      maximum: 1000,
+    });
+  });
+
+  it('asks for a category, a GUID and an optional part and version to read a page', () => {
+    const schema = withWiki.get('ct_wiki_page_get')?.inputSchema as unknown as {
+      properties: Record<string, unknown>;
+      required: unknown;
+    };
+    expect(Object.keys(schema.properties)).toEqual([
+      'categoryId',
+      'guid',
+      'part',
+      'version',
+    ]);
+    expect(schema.required).toEqual(['categoryId', 'guid']);
+    expect(schema.properties['guid']).toMatchObject({
+      type: 'string',
+      pattern:
+        '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$',
+    });
   });
 });

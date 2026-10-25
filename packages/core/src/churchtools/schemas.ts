@@ -6,7 +6,13 @@
  *
  * @packageDocumentation
  */
-import { maxSearchHits } from '@ecclium/mcp-churchtools-plugin-api';
+import {
+  isWikiPageGuid,
+  maxSearchHits,
+  maxWikiCategories,
+  maxWikiTitleLength,
+  wikiPageListLimit,
+} from '@ecclium/mcp-churchtools-plugin-api';
 import { z } from 'zod';
 
 const count = z.number().int().nonnegative();
@@ -94,6 +100,63 @@ export const personListSchema = z.object({
  */
 export const groupListSchema = z.object({
   data: z.array(z.object({ id, name: text(255) })).max(searchPageLimit),
+});
+
+/**
+ * The longest text of a wiki page the client reads, in UTF-16 code units.
+ * The limit of the answer bounds it as well; a tool passes the text on in
+ * parts.
+ */
+export const maxWikiTextLength = 2_000_000;
+
+const pageGuid = z.string().refine(isWikiPageGuid);
+
+/**
+ * The answer of `GET /api/wiki/categories`, only ID and name of each
+ * category. The gates of the probes read both, among other fields, before
+ * every run against the test instance and refuse any other form
+ * (`docs/research/churchtools-api.md`, «Kategorien des Wikis»). More than
+ * {@link maxWikiCategories} is no answer the client knows.
+ */
+export const wikiCategoryListSchema = z.object({
+  data: z
+    .array(z.object({ id, name: text(maxWikiTitleLength) }))
+    .max(maxWikiCategories),
+});
+
+/**
+ * The answer of `GET /api/wiki/pages` for one category, only the fields a
+ * list passes on (F6, F9, «Kennung einer Seite», «Listen ohne Text»).
+ * `meta.createdPerson` and `meta.modifiedPerson`, which carry names of
+ * persons, are not read (ADR 0057).
+ */
+export const wikiPageListSchema = z.object({
+  data: z
+    .array(
+      z.object({
+        guid: pageGuid,
+        title: text(maxWikiTitleLength),
+        isMarkdown: z.boolean(),
+        version: id,
+      }),
+    )
+    .max(wikiPageListLimit),
+  meta: pagedMetaSchema,
+});
+
+/**
+ * The answer of `GET /api/wiki/categories/{id}/pages/{guid}` and of one
+ * version of a page, which has the same form (F19). `text` may be null for
+ * a page without text; the client reads it as empty. The GUID comes from
+ * the request, so the answer need not repeat it.
+ */
+export const wikiPageSchema = z.object({
+  data: z.object({
+    title: text(maxWikiTitleLength),
+    isMarkdown: z.boolean(),
+    version: id,
+    text: text(maxWikiTextLength).nullable(),
+  }),
 });
 
 /**

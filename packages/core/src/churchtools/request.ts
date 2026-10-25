@@ -37,6 +37,12 @@ export interface OperationEvents {
   readonly status: string;
   /** An answer with status 200 that is not read. */
   readonly refused: string;
+  /**
+   * An answer with status 404 of an operation that reads one object by its
+   * ID: it then ends with `not_found`. Left out, a 404 is `upstream`,
+   * because the path of every other operation is fixed and exists.
+   */
+  readonly missing?: string;
 }
 
 /**
@@ -96,6 +102,14 @@ export async function fetchAnswer(
   });
   const read = readAnswer(response, { maxElements: limits.maxElements });
   if (read.ok) return read.root;
+  if (
+    read.reason === 'status' &&
+    response.status === 404 &&
+    events.missing !== undefined
+  ) {
+    ctx.log.warn(events.missing, { status: 404, code: 'not_found' });
+    throw new EccliumError('not_found');
+  }
   if (read.reason === 'status') {
     ctx.log.warn(events.status, { status: response.status, code: read.code });
   } else {
