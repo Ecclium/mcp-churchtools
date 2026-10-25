@@ -72,3 +72,26 @@ export function appendIds(
   }
   for (const id of ids) params.append(name, String(id));
 }
+
+/**
+ * Builds the URL of a path that the client filled with checked values and
+ * makes sure that parsing kept exactly that path and added no query. A
+ * value that slipped past its check, such as a dot segment or a question
+ * mark, throws instead of reaching another path (ADR 0057).
+ *
+ * @param origin - The canonical origin of the client.
+ * @param pathname - The path, starting with a slash.
+ * @returns The URL, without a query.
+ * @throws {TypeError} When the URL has another path or a query.
+ * @example
+ * ```ts
+ * urlOfPath('https://example.church.tools', '/api/wiki/categories/4/pages');
+ * ```
+ */
+export function urlOfPath(origin: string, pathname: string): URL {
+  const url = new URL(pathname, origin);
+  if (url.pathname !== pathname || url.search !== '' || url.hash !== '') {
+    throw new TypeError('A path must stay exactly as it was built.');
+  }
+  return url;
+}

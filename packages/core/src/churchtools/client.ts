@@ -28,7 +28,7 @@ import {
 
 import { type HttpTransport, parseChurchToolsOrigin } from '../http/index.js';
 import { createRequestThrottle } from '../throttle/index.js';
-import { appendIds, appendPage } from './query.js';
+import { appendIds, appendPage, urlOfPath } from './query.js';
 import { fetchAnswer, type RequestPath } from './request.js';
 import { toPermissions } from './rights.js';
 import {
@@ -447,12 +447,12 @@ export function createChurchToolsClient(
         (version === undefined || isWholeFromOne(version)),
     );
     // Only checked values fill the path: a whole number, a GUID and, for
-    // one version, a whole number (ADR 0057).
+    // one version, a whole number. The built URL must have exactly that
+    // path and no query (ADR 0057).
     const page = `/api/wiki/categories/${String(categoryId)}/pages/${guid}`;
-    const url = new URL(
-      version === undefined ? page : `${page}/versions/${String(version)}`,
-      origin,
-    );
+    const pathname =
+      version === undefined ? page : `${page}/versions/${String(version)}`;
+    const url = urlOfPath(origin, pathname);
     const root = await fetchAnswer(ctx, path, url, wikiPageLimits, {
       status: 'churchtools_wiki_page_status',
       refused: 'churchtools_wiki_page_refused',

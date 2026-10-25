@@ -6,7 +6,7 @@ import {
 } from '@ecclium/mcp-churchtools-testkit';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { appendIds, appendPage } from './query.js';
+import { appendIds, appendPage, urlOfPath } from './query.js';
 import {
   countedMetaSchema,
   pagedMetaSchema,
@@ -187,5 +187,26 @@ describe('the schemas of meta', () => {
     }
     expect(countedMetaSchema.parse({ count: 3 })).toEqual({ count: 3 });
     expect(countedMetaSchema.safeParse({ count: -1 }).success).toBe(false);
+  });
+});
+
+describe('urlOfPath', () => {
+  const origin = 'https://example.church.tools';
+
+  it('keeps a path of checked values as it is', () => {
+    const path =
+      '/api/wiki/categories/4/pages/00000000-0000-4000-8000-000000000001/versions/2';
+    const url = urlOfPath(origin, path);
+    expect(url.href).toBe(`${origin}${path}`);
+  });
+
+  it.each([
+    ['a dot segment', '/api/wiki/categories/4/pages/../../whoami'],
+    ['a query', '/api/wiki/categories/4/pages/x?login_token=1'],
+    ['a fragment', '/api/wiki/categories/4/pages/x#y'],
+    ['an encoded dot segment', '/api/wiki/categories/4/pages/%2e%2e/x'],
+    ['a backslash', '/api/wiki/categories/4/pages\\x'],
+  ])('throws for %s, before any request', (_, path) => {
+    expect(() => urlOfPath(origin, path)).toThrow(TypeError);
   });
 });
