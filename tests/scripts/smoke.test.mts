@@ -271,6 +271,10 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
         'ct_groups_search',
         'ct_persons_search',
         'ct_persons_search',
+        'ct_persons_get',
+        'ct_persons_get_groups',
+        'ct_groups_get',
+        'ct_groups_get_members',
       ]);
     }
     expect(stateDirsLeft()).toEqual([]);
@@ -442,6 +446,10 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     ['token-stderr', 'token'],
     ['text-stderr', 'stderr'],
     ['text-mismatch', 'whoami'],
+    ['person-extra', 'person'],
+    ['membership-no-envelope', 'gruppen_der_person'],
+    ['group-bare-note', 'gruppe'],
+    ['member-status', 'mitglieder'],
     ['exit-1', 'ende'],
   ] as const)(
     'fails when the server breaks it: %s',
@@ -473,10 +481,14 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     expect(report(result)['fehler']).toEqual([]);
   });
 
-  it('passes with a finding when the account holds a security level or finds nobody', async () => {
+  it('passes with a finding when the account holds a security level of persons or finds nobody', async () => {
     const level = await run({ scenario: 'security-level' });
     expect(level.code).toBe(smokeExitCodes.ok);
     expect(report(level)['befunde']).toEqual(['sicherheitsstufe']);
+    // The lowest level of groups belongs to the rights of ct_groups_get.
+    const groupLevel = await run({ env: search, scenario: 'group-level' });
+    expect(groupLevel.code).toBe(smokeExitCodes.ok);
+    expect(report(groupLevel)['befunde']).toEqual([]);
     const nobody = await run({ env: search, scenario: 'no-hits' });
     expect(nobody.code).toBe(smokeExitCodes.ok);
     expect(report(nobody)['befunde']).toEqual(['keine_personen_gefunden']);
@@ -522,7 +534,67 @@ describe.skipIf(process.getuid?.() === 0)(
         json(response, {
           data: {
             churchdb: { 'view alldata': [2] },
+            churchgroup: {
+              'view groups of grouptype': [3],
+              'security level group': [1],
+            },
             churchwiki: { view: true, 'view category': [12] },
+          },
+        });
+      } else if (url.pathname === '/api/persons/11') {
+        json(response, {
+          data: {
+            id: 11,
+            guid: '00000000-0000-0000-0000-000000000011',
+            firstName: `${canary}Erika`,
+            lastName: `${canary}Muster`,
+            isArchived: false,
+          },
+        });
+      } else if (url.pathname === '/api/persons/11/groups') {
+        json(response, {
+          data: [
+            {
+              group: { domainIdentifier: '21', title: `${canary}Gruppe` },
+              person: { title: '' },
+              groupTypeRoleId: 8,
+              groupMemberStatus: 'active',
+            },
+          ],
+          meta: { count: 1 },
+        });
+      } else if (url.pathname === '/api/groups/21') {
+        json(response, {
+          data: {
+            id: 21,
+            name: `${canary}Gruppe`,
+            information: {
+              meetingTime: `${canary}Dienstag`,
+              note: '',
+              maxMembers: null,
+              targetGroupId: null,
+              dateOfFoundation: null,
+              endDate: null,
+            },
+          },
+        });
+      } else if (url.pathname === '/api/groups/21/members') {
+        json(response, {
+          data: [
+            {
+              personId: 11,
+              person: {
+                domainAttributes: {
+                  firstName: `${canary}Erika`,
+                  lastName: `${canary}Muster`,
+                },
+              },
+              groupTypeRoleId: 8,
+              groupMemberStatus: 'active',
+            },
+          ],
+          meta: {
+            pagination: { total: 1, limit: 50, current: 1, lastPage: 1 },
           },
         });
       } else if (url.pathname === '/api/persons') {
@@ -622,9 +694,9 @@ describe.skipIf(process.getuid?.() === 0)(
         fehler: [],
         ergebnis: 'bestanden',
       });
-      // Per era: two for ct_whoami, one for each search with a term, none
-      // for the term of spaces.
-      expect(requests).toHaveLength(10);
+      // Per era: two for ct_whoami, one for each search with a term and
+      // each read by ID, none for the term of spaces.
+      expect(requests).toHaveLength(18);
       expect(stateDirsLeft()).toEqual([]);
       expectClean(result);
     });

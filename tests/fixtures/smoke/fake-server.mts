@@ -1,5 +1,5 @@
 // A stand-in for `ecclium stdio` in the tests of the smoke test. It speaks
-// JSON-RPC over stdio in both eras, answers the three tools with synthetic
+// JSON-RPC over stdio in both eras, answers the seven tools with synthetic
 // canary values and writes log, audit lines on stderr and an audit file in
 // the form of the real server. FAKE_SCENARIO breaks one thing at a time,
 // so that each check of the smoke test can be seen to fail. FAKE_RECORD
@@ -132,7 +132,9 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
     const rights =
       scenario === 'security-level'
         ? [{ right: 'security level person', ids: [1], idCount: 1 }]
-        : [{ right: 'view' }];
+        : scenario === 'group-level'
+          ? [{ right: 'security level group', ids: [1], idCount: 1 }]
+          : [{ right: 'view' }];
     return result({
       id: 4711,
       firstName:
@@ -143,6 +145,75 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
         status: 'known',
         modules: [{ module: 'churchwiki', rights }],
       },
+    });
+  }
+  const wrap = (text: string): string =>
+    `<<data-a1b2c3d4e5f6a7b8>>${text}<</data-a1b2c3d4e5f6a7b8>>`;
+  if (name === 'ct_persons_get') {
+    event('http_response', { status: 200 });
+    audit(name);
+    return result({
+      id: args['personId'],
+      firstName: `${canary}Erika`,
+      lastName: `${canary}Muster`,
+      isArchived: false,
+      ...(scenario === 'person-extra' ? { email: 'x@example.org' } : {}),
+    });
+  }
+  if (name === 'ct_persons_get_groups') {
+    event('http_response', { status: 200 });
+    audit(name);
+    const groupName = `${canary}Gruppe`;
+    return result({
+      personId: args['personId'],
+      groups: [
+        {
+          groupId: 921,
+          groupName:
+            scenario === 'membership-no-envelope' ? groupName : wrap(groupName),
+          groupTypeRoleId: 8,
+          groupMemberStatus: 'active',
+        },
+      ],
+      more: false,
+      notice: null,
+    });
+  }
+  if (name === 'ct_groups_get') {
+    event('http_response', { status: 200 });
+    audit(name);
+    const note = `${canary}Notiz`;
+    return result({
+      id: args['groupId'],
+      name: wrap(`${canary}Gruppe`),
+      details: {
+        meetingTime: wrap(`${canary}Dienstag`),
+        note: scenario === 'group-bare-note' ? note : wrap(note),
+        maxMembers: 12,
+        targetGroupId: null,
+        dateOfFoundation: '2020-01-01',
+        endDate: null,
+      },
+      notice: null,
+    });
+  }
+  if (name === 'ct_groups_get_members') {
+    event('http_response', { status: 200 });
+    audit(name);
+    return result({
+      groupId: args['groupId'],
+      page: 1,
+      members: [
+        {
+          personId: 811,
+          firstName: `${canary}Erika`,
+          lastName: `${canary}Muster`,
+          groupTypeRoleId: 8,
+          groupMemberStatus: scenario === 'member-status' ? 'Aktiv' : 'active',
+        },
+      ],
+      more: false,
+      notice: null,
     });
   }
   const query = typeof args['query'] === 'string' ? args['query'] : '';
