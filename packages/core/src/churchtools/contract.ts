@@ -9,7 +9,11 @@
 import { z } from 'zod';
 
 import {
+  agendaSchema,
   countedMetaSchema,
+  eventAssignmentsSchema,
+  eventListSchema,
+  eventSchema,
   groupListSchema,
   groupMemberListSchema,
   groupSchema,
@@ -18,6 +22,8 @@ import {
   personListSchema,
   personSchema,
   rightValueSchema,
+  serviceGroupListSchema,
+  serviceListSchema,
   whoamiSchema,
   wikiCategoryListSchema,
   wikiPageListSchema,
@@ -109,6 +115,44 @@ export function describeContract() {
       path: '/api/wiki/categories/{categoryId}/pages/{identifier}/versions/{version}',
       query: [],
       response: schema(wikiPageSchema),
+    },
+    events: {
+      method: 'get',
+      path: '/api/events',
+      query: ['from', 'to', 'limit'],
+      response: schema(eventListSchema),
+    },
+    // One event read twice: for the event without its assignments, and
+    // for its assignments without the event (ADR 0064).
+    event: {
+      method: 'get',
+      path: '/api/events/{eventId}',
+      query: [],
+      response: schema(eventSchema),
+    },
+    eventAssignments: {
+      method: 'get',
+      path: '/api/events/{eventId}',
+      query: [],
+      response: schema(eventAssignmentsSchema),
+    },
+    eventAgenda: {
+      method: 'get',
+      path: '/api/events/{eventId}/agenda',
+      query: [],
+      response: schema(agendaSchema),
+    },
+    services: {
+      method: 'get',
+      path: '/api/services',
+      query: [],
+      response: schema(serviceListSchema),
+    },
+    serviceGroups: {
+      method: 'get',
+      path: '/api/servicegroups',
+      query: [],
+      response: schema(serviceGroupListSchema),
     },
     pagedMeta: { meta: schema(pagedMetaSchema) },
     countedMeta: { meta: schema(countedMetaSchema) },

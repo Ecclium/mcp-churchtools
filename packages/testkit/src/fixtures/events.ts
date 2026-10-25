@@ -103,12 +103,18 @@ const keptEventFields = [
   'isCanceled',
 ] as const;
 
-// An event in the list: the list carries no assignments without `include`.
-const listEventShape: Readonly<Record<string, Shape>> = drop(
-  eventShape,
-  'eventServices',
-  ...keptEventFields,
+// The calendar of an event without the two fields an event keeps.
+const keptCalendarShape: Readonly<Record<string, Shape>> = drop(
+  calendarReference,
+  'domainIdentifier',
+  'title',
 );
+
+// An event in the list: the list carries no assignments without `include`.
+const listEventShape: Readonly<Record<string, Shape>> = {
+  ...drop(eventShape, 'eventServices', 'calendar', ...keptEventFields),
+  calendar: keptCalendarShape,
+};
 
 /** An event as a test gives it to {@link eventsAnswer}. */
 export interface EventFixture extends Omit<EventEntry, 'calendarId'> {
@@ -161,12 +167,10 @@ export interface EventDetailsFixture extends Omit<EventDetails, 'calendarId'> {
   readonly calendarId: number | string;
 }
 
-const singleEventShape: Readonly<Record<string, Shape>> = drop(
-  eventShape,
-  ...keptEventFields,
-  'note',
-  'description',
-);
+const singleEventShape: Readonly<Record<string, Shape>> = {
+  ...drop(eventShape, ...keptEventFields, 'calendar', 'note', 'description'),
+  calendar: keptCalendarShape,
+};
 
 /**
  * Builds an answer of `GET /api/events/{eventId}` for the read of one event:

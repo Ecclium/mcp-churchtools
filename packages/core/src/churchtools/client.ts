@@ -1,20 +1,30 @@
 /**
  * The reading ChurchTools client (ADR 0057): `whoami`, `permissions`, the
  * searches of persons and groups by name (ADR 0060), one person, the
- * groups of a person, one group and its members (ADR 0064) and the wiki,
- * each with exactly one request through the transport of its origin, a
+ * groups of a person, one group and its members, the events of a span of
+ * days, one event, its agenda and its assignments, and the services
+ * (ADR 0064), and the wiki, each with exactly one request through the
+ * transport of its origin, the services and the assignments with two, a
  * throttle per client, fixed limits and own schemas.
  *
  * @packageDocumentation
  */
 import {
+  type Agenda,
+  type Assignment,
   type Clock,
   EccliumError,
+  type EventDetails,
+  type EventEntry,
+  type EventList,
   type Group,
   type GroupHit,
   type GroupMemberList,
   groupMembersPageLimit,
+  isEventWindow,
   isWikiPageGuid,
+  maxEventDays,
+  maxEvents,
   maxGroupMembersPage,
   maxPersonGroups,
   maxSearchHits,
@@ -27,6 +37,7 @@ import {
   type PersonGroupList,
   type PersonHit,
   type SearchHits,
+  type ServiceList,
   type TenantContext,
   type WikiCategory,
   wikiPageListLimit,
@@ -36,10 +47,21 @@ import {
 
 import { type HttpTransport, parseChurchToolsOrigin } from '../http/index.js';
 import { createRequestThrottle } from '../throttle/index.js';
-import { appendIds, appendPage, urlOfPath } from './query.js';
+import {
+  appendIds,
+  appendLimit,
+  appendPage,
+  appendSpan,
+  urlOfPath,
+} from './query.js';
 import { fetchAnswer, type RequestPath } from './request.js';
 import { toPermissions } from './rights.js';
 import {
+  agendaSchema,
+  eventAssignmentsSchema,
+  eventListSchema,
+  eventSchema,
+  eventsRequestLimit,
   groupListSchema,
   groupMemberListSchema,
   groupSchema,
@@ -47,6 +69,8 @@ import {
   personListSchema,
   personSchema,
   searchPageLimit,
+  serviceGroupListSchema,
+  serviceListSchema,
   whoamiSchema,
   wikiCategoryListSchema,
   wikiPageListSchema,
@@ -183,6 +207,55 @@ export interface ChurchToolsClient {
     guid: string,
     version?: number,
   ): Promise<WikiPage>;
+  /**
+   * Lists the events of a span of days with `GET /api/events`, sending only
+   * `from`, `to` and `limit=51`, never `include`, `direction` or `canceled`
+   * (ADR 0064). The events are sorted by start and ID, and at most 50 pass.
+   *
+   * @throws {EccliumError} `validation` for a span that does not fit, before
+   *   the throttle and any request; `upstream` for an entry that does not
+   *   fit or more than 1000 entries; every error of the request.
+   */
+  events(ctx: TenantContext, from: string, to: string): Promise<EventList>;
+  /**
+   * Reads one event with `GET /api/events/{eventId}`, by its numeric ID
+   * only, with note and description and never its assignments (ADR 0064).
+   *
+   * @throws {EccliumError} `validation` for an ID that is no whole number
+   *   from 1, before the throttle and any request; `permission` for 403;
+   *   `not_found` for 404; `upstream` for an answer that does not fit;
+   *   every error of the request.
+   */
+  event(ctx: TenantContext, eventId: number): Promise<EventDetails>;
+  /**
+   * Reads the agenda of one event with `GET /api/events/{eventId}/agenda`,
+   * without the persons responsible for its items (ADR 0064).
+   *
+   * @throws {EccliumError} As {@link ChurchToolsClient.event}.
+   */
+  eventAgenda(ctx: TenantContext, eventId: number): Promise<Agenda>;
+  /**
+   * Reads the services with `GET /api/services` and the groups of services
+   * with `GET /api/servicegroups`, each sorted by ID (ADR 0064).
+   *
+   * @throws {EccliumError} `upstream` for an entry that does not fit or more
+   *   than 1000 entries; every error of the requests.
+   */
+  services(ctx: TenantContext): Promise<ServiceList>;
+  /**
+   * Reads the assignments of one event with `GET /api/events/{eventId}`,
+   * only `eventServices`, and the services with `GET /api/services`, and
+   * names the person of an assignment only where the service lets it
+   * (ADR 0064): without `hidePersonName`, with the service in the list,
+   * and with a whole number from 1 as ID of the person.
+   *
+   * @throws {EccliumError} As {@link ChurchToolsClient.event}, and as
+   *   {@link ChurchToolsClient.services}.
+   */
+  eventAssignments(
+    ctx: TenantContext,
+    eventId: number,
+  ): Promise<readonly Assignment[]>;
 }
 
 const whoamiLimits = Object.freeze({
@@ -241,6 +314,32 @@ const wikiPageLimits = Object.freeze({
   maxElements: 20_000,
 });
 
+// The list of events: the answer may hold more entries than asked for,
+// because whether limit cuts it is not shown (F38). The limits fit 1000
+// events with every field but the assignments.
+const eventListLimits = Object.freeze({
+  maxResponseBytes: 4 * 1024 * 1024,
+  maxElements: 200_000,
+});
+
+// One event with all its assignments, which carry the person assigned and
+// the person who requested it, and one agenda with all its items: the
+// limits fit 500 of them with every field.
+const eventLimits = Object.freeze({
+  maxResponseBytes: 2 * 1024 * 1024,
+  maxElements: 100_000,
+});
+
+// The services or the groups of services, each list in one answer with
+// every field: the limits fit 1000 entries.
+const serviceLimits = Object.freeze({
+  maxResponseBytes: 4 * 1024 * 1024,
+  maxElements: 200_000,
+});
+
+// In English for the model; printable ASCII, like every message (ADR 0054).
+const invalidEventInput = `An event ID is a whole number from 1, and a span of events runs from one day to another as YYYY-MM-DD, at most ${String(maxEventDays)} days with both ends.`;
+
 // In English for the model; printable ASCII, like every message (ADR 0054).
 const invalidWikiInput = `A category ID and a version are whole numbers from 1, a page of the list is a whole number from 1 to ${String(maxWikiListPage)}, and a wiki page is addressed by its GUID.`;
 
@@ -297,6 +396,30 @@ const isWholeFromOne = (value: unknown): value is number =>
 
 const isPlain = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
+
+// An event of a list or a single read, built from the read fields only.
+const toEventEntry = (entry: {
+  readonly id: number;
+  readonly name: string;
+  readonly startDate: string;
+  readonly endDate: string;
+  readonly isCanceled: boolean;
+  readonly calendar: {
+    readonly domainIdentifier: string;
+    readonly title: string;
+  };
+}): EventEntry =>
+  Object.freeze({
+    __proto__: null,
+    id: entry.id,
+    name: entry.name,
+    startDate: entry.startDate,
+    endDate: entry.endDate,
+    isCanceled: entry.isCanceled,
+    // The same rule as for the identifier of a group (ADR 0064).
+    calendarId: groupIdOf(entry.calendar.domainIdentifier),
+    calendarName: entry.calendar.title,
+  });
 
 /**
  * Builds the client of one origin. Exactly one client exists per origin, so
@@ -705,6 +828,235 @@ export function createChurchToolsClient(
     });
   };
 
+  // Refuses a span or an ID that may not fill a query or a path before the
+  // throttle gives a place, so that an invalid value costs no request.
+  const checkEventInput = (ctx: TenantContext, valid: boolean): void => {
+    if (valid) return;
+    ctx.log.warn('churchtools_event_input_refused', { code: 'validation' });
+    throw new EccliumError('validation', invalidEventInput);
+  };
+
+  const events = async (
+    ctx: TenantContext,
+    from: string,
+    to: string,
+  ): Promise<EventList> => {
+    checkEventInput(ctx, isEventWindow(from, to));
+    // Exactly from, to and limit go out (ADR 0064).
+    const url = new URL('/api/events', origin);
+    appendSpan(url.searchParams, from, to);
+    appendLimit(url.searchParams, eventsRequestLimit);
+    const root = await fetchAnswer(ctx, path, url, eventListLimits, {
+      status: 'churchtools_events_status',
+      refused: 'churchtools_events_refused',
+    });
+    const parsed = eventListSchema.safeParse(root);
+    if (!parsed.success) {
+      ctx.log.warn('churchtools_events_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    // Sorted before the cut, so that the same answer always gives the same
+    // events, also when ChurchTools sends more or in another order.
+    const entries = parsed.data.data
+      .map((entry) => toEventEntry(entry))
+      .sort(
+        (a, b) =>
+          (a.startDate < b.startDate
+            ? -1
+            : a.startDate > b.startDate
+              ? 1
+              : 0) || a.id - b.id,
+      );
+    return Object.freeze({
+      __proto__: null,
+      events: Object.freeze(entries.slice(0, maxEvents)),
+      more: entries.length > maxEvents,
+    });
+  };
+
+  const event = async (
+    ctx: TenantContext,
+    eventId: number,
+  ): Promise<EventDetails> => {
+    checkEventInput(ctx, isWholeFromOne(eventId));
+    const url = urlOfPath(origin, `/api/events/${String(eventId)}`);
+    const root = await fetchAnswer(ctx, path, url, eventLimits, {
+      status: 'churchtools_event_status',
+      refused: 'churchtools_event_refused',
+      missing: 'churchtools_event_missing',
+    });
+    const parsed = eventSchema.safeParse(root);
+    if (!parsed.success) {
+      ctx.log.warn('churchtools_event_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    const data = parsed.data.data;
+    return Object.freeze({
+      __proto__: null,
+      ...toEventEntry(data),
+      note: data.note ?? null,
+      description: data.description ?? null,
+    });
+  };
+
+  const eventAgenda = async (
+    ctx: TenantContext,
+    eventId: number,
+  ): Promise<Agenda> => {
+    checkEventInput(ctx, isWholeFromOne(eventId));
+    const url = urlOfPath(origin, `/api/events/${String(eventId)}/agenda`);
+    const root = await fetchAnswer(ctx, path, url, eventLimits, {
+      status: 'churchtools_agenda_status',
+      refused: 'churchtools_agenda_refused',
+      missing: 'churchtools_agenda_missing',
+    });
+    const parsed = agendaSchema.safeParse(root);
+    if (!parsed.success) {
+      ctx.log.warn('churchtools_agenda_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    const data = parsed.data.data;
+    return Object.freeze({
+      __proto__: null,
+      name: data.name ?? '',
+      isFinal: data.isFinal,
+      items: Object.freeze(
+        data.items.map((item) =>
+          Object.freeze({
+            __proto__: null,
+            position: item.position,
+            type: item.type,
+            title: item.title ?? '',
+            start: item.start ?? null,
+            duration: item.duration ?? null,
+            isBeforeEvent: item.isBeforeEvent,
+            note: item.note ?? null,
+            song:
+              item.song === undefined || item.song === null
+                ? null
+                : Object.freeze({
+                    __proto__: null,
+                    songId: item.song.songId,
+                    arrangementId: item.song.arrangementId ?? null,
+                    title: item.song.title,
+                    arrangement: item.song.arrangement ?? null,
+                  }),
+          }),
+        ),
+      ),
+    });
+  };
+
+  const services = async (ctx: TenantContext): Promise<ServiceList> => {
+    const servicesRoot = await fetchAnswer(
+      ctx,
+      path,
+      new URL('/api/services', origin),
+      serviceLimits,
+      {
+        status: 'churchtools_services_status',
+        refused: 'churchtools_services_refused',
+      },
+    );
+    const parsedServices = serviceListSchema.safeParse(servicesRoot);
+    if (!parsedServices.success) {
+      ctx.log.warn('churchtools_services_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    const groupsRoot = await fetchAnswer(
+      ctx,
+      path,
+      new URL('/api/servicegroups', origin),
+      serviceLimits,
+      {
+        status: 'churchtools_service_groups_status',
+        refused: 'churchtools_service_groups_refused',
+      },
+    );
+    const parsedGroups = serviceGroupListSchema.safeParse(groupsRoot);
+    if (!parsedGroups.success) {
+      ctx.log.warn('churchtools_service_groups_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    return Object.freeze({
+      __proto__: null,
+      services: Object.freeze(
+        [...parsedServices.data.data]
+          .sort((a, b) => a.id - b.id)
+          .map((entry) =>
+            Object.freeze({
+              __proto__: null,
+              id: entry.id,
+              name: entry.name,
+              serviceGroupId: entry.serviceGroupId,
+              hidesNames: entry.hidePersonName,
+            }),
+          ),
+      ),
+      serviceGroups: Object.freeze(
+        [...parsedGroups.data.data]
+          .sort((a, b) => a.id - b.id)
+          .map((entry) =>
+            Object.freeze({ __proto__: null, id: entry.id, name: entry.name }),
+          ),
+      ),
+    });
+  };
+
+  const eventAssignments = async (
+    ctx: TenantContext,
+    eventId: number,
+  ): Promise<readonly Assignment[]> => {
+    checkEventInput(ctx, isWholeFromOne(eventId));
+    const url = urlOfPath(origin, `/api/events/${String(eventId)}`);
+    const root = await fetchAnswer(ctx, path, url, eventLimits, {
+      status: 'churchtools_event_assignments_status',
+      refused: 'churchtools_event_assignments_refused',
+      missing: 'churchtools_event_assignments_missing',
+    });
+    const parsed = eventAssignmentsSchema.safeParse(root);
+    if (!parsed.success) {
+      ctx.log.warn('churchtools_event_assignments_refused', {
+        code: 'upstream',
+      });
+      throw new EccliumError('upstream');
+    }
+    // The services say which hide the names of the persons assigned. The
+    // core reads them itself, so that no tool ever sees such a name
+    // (ADR 0064).
+    const list = await services(ctx);
+    const byId = new Map(list.services.map((entry) => [entry.id, entry]));
+    return Object.freeze(
+      parsed.data.data.eventServices.map((entry): Assignment => {
+        const service = byId.get(entry.serviceId);
+        const attributes = entry.person?.domainAttributes;
+        // Only a service that shows names, an ID from 1 and a last name let
+        // the person through; a placeholder of a hidden name has an ID
+        // below 1 (F37).
+        const named =
+          service !== undefined &&
+          !service.hidesNames &&
+          isWholeFromOne(entry.personId) &&
+          typeof attributes?.lastName === 'string';
+        return Object.freeze({
+          __proto__: null,
+          serviceId: entry.serviceId,
+          serviceName: service?.name ?? null,
+          isAccepted: entry.isAccepted,
+          agreed: entry.agreed,
+          person: named
+            ? Object.freeze({
+                __proto__: null,
+                personId: entry.personId as number,
+                firstName: attributes.firstName ?? '',
+                lastName: attributes.lastName as string,
+              })
+            : null,
+        });
+      }),
+    );
+  };
+
   return Object.freeze({
     whoami,
     permissions,
@@ -717,5 +1069,10 @@ export function createChurchToolsClient(
     wikiCategories,
     wikiPages,
     wikiPage,
+    events,
+    event,
+    eventAgenda,
+    services,
+    eventAssignments,
   });
 }

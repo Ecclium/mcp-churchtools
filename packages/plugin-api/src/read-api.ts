@@ -765,4 +765,66 @@ export interface ReadApi {
     guid: string,
     version?: number,
   ): Promise<WikiPage>;
+  /**
+   * Lists the events of a span of days, of the calendars whose events the
+   * account may see. An empty list can also mean that the account lacks
+   * that right: ChurchTools then answers with an empty list, not with an
+   * error.
+   *
+   * @param from - The first day, see {@link isEventWindow}.
+   * @param to - The last day, see {@link isEventWindow}.
+   * @returns At most {@link maxEvents} events.
+   * @throws {EccliumError} `validation` for a span that does not fit, before
+   *   any request; every error of the request.
+   */
+  events(from: string, to: string): Promise<EventList>;
+  /**
+   * Reads one event by its numeric ID, with note and description, never
+   * its assignments (ADR 0064).
+   *
+   * @param eventId - The ID of the event, a whole number from 1.
+   * @returns The event.
+   * @throws {EccliumError} `validation` for an ID that is no whole number
+   *   from 1, before any request; `permission` when the account may not see
+   *   the events of its calendar; `not_found` for an event that does not
+   *   exist; every error of the request.
+   */
+  event(eventId: number): Promise<EventDetails>;
+  /**
+   * Reads the agenda of one event, without the persons responsible for its
+   * items. ChurchTools gives it with the right to see the agendas of the
+   * calendar, also without the right to see the event.
+   *
+   * @param eventId - The ID of the event, a whole number from 1.
+   * @returns The agenda.
+   * @throws {EccliumError} `validation` for an ID that is no whole number
+   *   from 1, before any request; `permission` when the account may not see
+   *   the agendas of the calendar; `not_found` for an event without agenda
+   *   or one that does not exist; every error of the request.
+   */
+  eventAgenda(eventId: number): Promise<Agenda>;
+  /**
+   * Lists the services and groups of services of the instance. ChurchTools
+   * gives them to every account, without a right.
+   *
+   * @returns All of them.
+   * @throws {EccliumError} `upstream` for more than {@link maxServices};
+   *   every error of the request.
+   */
+  services(): Promise<ServiceList>;
+  /**
+   * Lists the assignments of persons to the services of one event, with the
+   * name of each service. The core reads the services as well and passes
+   * on a person only where it may name it (see {@link Assignment.person}).
+   * An empty list can also mean that the account may not see the groups of
+   * services: ChurchTools then gives the event without its assignments.
+   *
+   * @param eventId - The ID of the event, a whole number from 1.
+   * @returns At most {@link maxEventAssignments}, in the order of
+   *   ChurchTools.
+   * @throws {EccliumError} `policy_denied` for a tool whose result does not
+   *   wait for its line in the audit file (ADR 0064); otherwise as
+   *   {@link ReadApi.event}.
+   */
+  eventAssignments(eventId: number): Promise<readonly Assignment[]>;
 }

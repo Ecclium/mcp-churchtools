@@ -402,7 +402,12 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     }
 
     // 5. execute, raced against the signal of the call.
-    const access = createReadAccess(client, ctx, entry.meta.sensitivity);
+    const access = createReadAccess(
+      client,
+      ctx,
+      entry.meta.sensitivity,
+      entry.asSpecial,
+    );
     run.access = access;
     const aborted = new Promise<never>((_resolve, reject) => {
       controller.signal.addEventListener(
