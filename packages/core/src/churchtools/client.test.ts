@@ -9,9 +9,13 @@ import {
   assertPlanted,
   createChurchToolsDouble,
   doubleOrigin,
+  groupAtHighestLevel,
+  groupMembersAtHighestLevel,
   groupsAtHighestLevel,
   makeCanaries,
   makeCanary,
+  personAtHighestLevel,
+  personGroupsAtHighestLevel,
   personsAtHighestLevel,
 } from '@ecclium/mcp-churchtools-testkit';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -831,13 +835,17 @@ describe('the client', () => {
     expect(await codeOf(client.whoami(ctx()))).toBe('network');
   });
 
-  it('is frozen and shows nothing but its seven operations', () => {
+  it('is frozen and shows nothing but its eleven operations', () => {
     const { client } = setup();
     expect(Object.keys(client)).toEqual([
       'whoami',
       'permissions',
       'searchPersons',
       'searchGroups',
+      'person',
+      'personGroups',
+      'group',
+      'groupMembers',
       'wikiCategories',
       'wikiPages',
       'wikiPage',
@@ -1175,5 +1183,445 @@ describe('the wiki', () => {
       .intercept({ path: pagePath, method: 'GET' })
       .reply(200, pageAnswer(data), json);
     expect(await codeOf(client.wikiPage(ctx(), 4, guid))).toBe('upstream');
+  });
+});
+
+describe('persons and groups by ID', () => {
+  const at = (pathname: string) => (path: string) =>
+    path.split('?')[0] === pathname;
+  const one = { id: 7, firstName: 'Person', lastName: 'A', isArchived: false };
+  const details = {
+    meetingTime: 'Dienstag, 19 Uhr',
+    note: 'Notiz der Gruppe',
+    maxMembers: 12,
+    targetGroupId: 2,
+    dateOfFoundation: '1950-03-01',
+    endDate: null,
+  };
+  const membership = (index: number) => ({
+    groupId: index,
+    groupName: `Gruppe ${String(index)}`,
+    groupTypeRoleId: 8,
+    groupMemberStatus: 'active',
+  });
+  const member = (index: number) => ({
+    personId: index,
+    firstName: 'Person',
+    lastName: `P${String(index)}`,
+    groupTypeRoleId: 8,
+    groupMemberStatus: 'active',
+  });
+  // An answer as JSON with one field of the data replaced or removed.
+  const changed = (
+    body: string,
+    change: (data: Record<string, unknown>) => void,
+  ): string => {
+    const root = JSON.parse(body) as { data: Record<string, unknown> };
+    change(root.data);
+    return JSON.stringify(root);
+  };
+
+  it('reads a person by ID with exactly the four fields, at the highest level', async () => {
+    const { double, client, ctx } = setup();
+    const answer = personAtHighestLevel(one);
+    assertPlanted(JSON.parse(answer.body), answer.canaries, 'answer');
+    double
+      .intercept({ path: '/api/persons/7', method: 'GET' })
+      .reply(200, answer.body, json);
+    const result = await client.person(ctx(), 7);
+    expect(result).toEqual(one);
+    assertNoCanary(result, answer.canaries, 'person');
+    expect(Object.isFrozen(result)).toBe(true);
+    expect(Object.getPrototypeOf(result)).toBeNull();
+    expect(double.calls()[0]?.searchParams).toEqual({});
+  });
+
+  it.each([
+    [
+      'no isArchived',
+      (data: Record<string, unknown>) => delete data.isArchived,
+    ],
+    [
+      'isArchived as text',
+      (data: Record<string, unknown>) => (data.isArchived = 'nein'),
+    ],
+    [
+      'a first name of 256 characters',
+      (data: Record<string, unknown>) => (data.firstName = 'x'.repeat(256)),
+    ],
+    ['no last name', (data: Record<string, unknown>) => delete data.lastName],
+    ['an ID 0', (data: Record<string, unknown>) => (data.id = 0)],
+  ])('gives upstream for a person with %s', async (_, change) => {
+    const { double, client, ctx, lines } = setup();
+    double
+      .intercept({ path: '/api/persons/7', method: 'GET' })
+      .reply(200, changed(personAtHighestLevel(one).body, change), json);
+    expect(await codeOf(client.person(ctx(), 7))).toBe('upstream');
+    expect(lines.map((line) => line.event)).toEqual([
+      'churchtools_person_refused',
+    ]);
+  });
+
+  it.each([
+    ['person', '/api/persons/7', 'churchtools_person'],
+    ['personGroups', '/api/persons/7/groups', 'churchtools_person_groups'],
+    ['group', '/api/groups/7', 'churchtools_group'],
+    ['groupMembers', '/api/groups/7/members', 'churchtools_group_members'],
+  ] as const)(
+    'maps 404 of %s to not_found and 403 to permission',
+    async (operation, pathname, prefix) => {
+      const { double, client, ctx, lines } = setup();
+      for (const status of [404, 403, 401, 500]) {
+        double
+          .intercept({ path: at(pathname), method: 'GET' })
+          .reply(status, '{}', json);
+      }
+      const read = () =>
+        operation === 'groupMembers'
+          ? client.groupMembers(ctx(), 7, 1)
+          : client[operation](ctx(), 7);
+      expect(await codeOf(read())).toBe('not_found');
+      expect(await codeOf(read())).toBe('permission');
+      expect(await codeOf(read())).toBe('auth');
+      expect(await codeOf(read())).toBe('upstream');
+      expect(lines).toEqual([
+        {
+          event: `${prefix}_missing`,
+          fields: { status: 404, code: 'not_found' },
+        },
+        {
+          event: `${prefix}_status`,
+          fields: { status: 403, code: 'permission' },
+        },
+        { event: `${prefix}_status`, fields: { status: 401, code: 'auth' } },
+        {
+          event: `${prefix}_status`,
+          fields: { status: 500, code: 'upstream' },
+        },
+      ]);
+    },
+  );
+
+  // The types forbid most of these; a plugin built without them can still
+  // pass them. Only a checked whole number fills a path.
+  it.each([
+    0,
+    -1,
+    1.5,
+    Number.NaN,
+    Number.MAX_SAFE_INTEGER + 1,
+    '7' as unknown as number,
+    '7/../../whoami' as unknown as number,
+  ])('refuses the ID %j before any request', async (value) => {
+    const { double, client, ctx, lines } = setup();
+    for (const call of [
+      client.person(ctx(), value),
+      client.personGroups(ctx(), value),
+      client.group(ctx(), value),
+      client.groupMembers(ctx(), value, 1),
+    ]) {
+      expect(await codeOf(call)).toBe('validation');
+    }
+    expect(double.calls()).toHaveLength(0);
+    expect(new Set(lines.map((line) => line.event))).toEqual(
+      new Set(['churchtools_read_input_refused']),
+    );
+  });
+
+  it('reads the groups of a person without parameters and keeps group, role and status only', async () => {
+    const { double, client, ctx } = setup();
+    const answer = personGroupsAtHighestLevel([
+      membership(3),
+      { ...membership(4), groupId: 'g-4', groupMemberStatus: 'requested' },
+    ]);
+    assertPlanted(JSON.parse(answer.body), answer.canaries, 'answer');
+    double
+      .intercept({ path: '/api/persons/7/groups', method: 'GET' })
+      .reply(200, answer.body, json);
+    const result = await client.personGroups(ctx(), 7);
+    expect(result).toEqual({
+      groups: [
+        { ...membership(3) },
+        {
+          groupId: null,
+          groupName: 'Gruppe 4',
+          groupTypeRoleId: 8,
+          groupMemberStatus: 'requested',
+        },
+      ],
+      more: false,
+    });
+    assertNoCanary(result, answer.canaries, 'groups of a person');
+    expect(Object.isFrozen(result.groups)).toBe(true);
+    expect(Object.getPrototypeOf(result.groups[0])).toBeNull();
+    expect(double.calls()[0]?.searchParams).toEqual({});
+  });
+
+  it.each([
+    ['12', 12],
+    ['9007199254740991', Number.MAX_SAFE_INTEGER],
+    ['9007199254740993', null],
+    ['012', null],
+    ['0', null],
+    ['-3', null],
+    ['1e3', null],
+    [' 12', null],
+    ['', null],
+  ])('reads the group identifier %j as the ID %j', async (identifier, id) => {
+    const { double, client, ctx } = setup();
+    double
+      .intercept({ path: '/api/persons/7/groups', method: 'GET' })
+      .reply(
+        200,
+        personGroupsAtHighestLevel([{ ...membership(1), groupId: identifier }])
+          .body,
+        json,
+      );
+    expect((await client.personGroups(ctx(), 7)).groups[0]?.groupId).toBe(id);
+  });
+
+  it('gives 50 groups and more for 51, all of 1000, and upstream above 1000', async () => {
+    const { double, client, ctx } = setup();
+    const list = (count: number) =>
+      personGroupsAtHighestLevel(
+        Array.from({ length: count }, (_, index) => membership(index + 1)),
+      ).body;
+    for (const count of [50, 51, 1000, 1001]) {
+      double
+        .intercept({ path: '/api/persons/7/groups', method: 'GET' })
+        .reply(200, list(count), json);
+    }
+    const fifty = await client.personGroups(ctx(), 7);
+    expect([fifty.groups.length, fifty.more]).toEqual([50, false]);
+    const more = await client.personGroups(ctx(), 7);
+    expect([more.groups.length, more.more]).toEqual([50, true]);
+    expect((await client.personGroups(ctx(), 7)).more).toBe(true);
+    expect(await codeOf(client.personGroups(ctx(), 7))).toBe('upstream');
+  });
+
+  it.each(['Active', 'aktiv seit Januar', 'to-delete', 'x'.repeat(33), ''])(
+    'gives upstream for the status %j of a membership',
+    async (status) => {
+      const { double, client, ctx } = setup();
+      double
+        .intercept({ path: '/api/persons/7/groups', method: 'GET' })
+        .reply(
+          200,
+          personGroupsAtHighestLevel([
+            { ...membership(1), groupMemberStatus: status },
+          ]).body,
+          json,
+        );
+      expect(await codeOf(client.personGroups(ctx(), 7))).toBe('upstream');
+    },
+  );
+
+  it('gives upstream for a group identifier of more than 32 characters', async () => {
+    const { double, client, ctx } = setup();
+    double
+      .intercept({ path: '/api/persons/7/groups', method: 'GET' })
+      .reply(
+        200,
+        personGroupsAtHighestLevel([
+          { ...membership(1), groupId: '1'.repeat(33) },
+        ]).body,
+        json,
+      );
+    expect(await codeOf(client.personGroups(ctx(), 7))).toBe('upstream');
+  });
+
+  it('reads a group by ID with name and the six details, at the highest level', async () => {
+    const { double, client, ctx } = setup();
+    const answer = groupAtHighestLevel({ id: 3, name: 'Gruppe A', details });
+    assertPlanted(JSON.parse(answer.body), answer.canaries, 'answer');
+    double
+      .intercept({ path: '/api/groups/3', method: 'GET' })
+      .reply(200, answer.body, json);
+    const result = await client.group(ctx(), 3);
+    expect(result).toEqual({ id: 3, name: 'Gruppe A', details });
+    assertNoCanary(result, answer.canaries, 'group');
+    expect(Object.isFrozen(result.details)).toBe(true);
+    expect(Object.getPrototypeOf(result.details)).toBeNull();
+    expect(double.calls()[0]?.searchParams).toEqual({});
+  });
+
+  it('gives no details when ChurchTools sends none of them', async () => {
+    const { double, client, ctx } = setup();
+    const answer = groupAtHighestLevel({
+      id: 3,
+      name: 'Gruppe A',
+      details: null,
+    });
+    double
+      .intercept({ path: '/api/groups/3', method: 'GET' })
+      .reply(200, answer.body, json);
+    expect(await client.group(ctx(), 3)).toEqual({
+      id: 3,
+      name: 'Gruppe A',
+      details: null,
+    });
+  });
+
+  it('takes every detail as null', async () => {
+    const { double, client, ctx } = setup();
+    const empty = {
+      meetingTime: null,
+      note: null,
+      maxMembers: null,
+      targetGroupId: null,
+      dateOfFoundation: null,
+      endDate: null,
+    };
+    double
+      .intercept({ path: '/api/groups/3', method: 'GET' })
+      .reply(
+        200,
+        groupAtHighestLevel({ id: 3, name: '', details: empty }).body,
+        json,
+      );
+    expect((await client.group(ctx(), 3)).details).toEqual(empty);
+  });
+
+  it.each([
+    ['one detail missing', { meetingTime: undefined }],
+    ['a date with time', { dateOfFoundation: '2026-10-25T00:00:00Z' }],
+    ['an end in another form', { endDate: '25.10.2026' }],
+    ['a negative maximum', { maxMembers: -1 }],
+    ['a target group 0', { targetGroupId: 0 }],
+    ['a note of 10001 characters', { note: 'x'.repeat(10_001) }],
+    ['a meeting time of 256 characters', { meetingTime: 'x'.repeat(256) }],
+  ])('gives upstream for a group with %s', async (_, change) => {
+    const { double, client, ctx, lines } = setup();
+    const body = changed(
+      groupAtHighestLevel({ id: 3, name: 'Gruppe A', details }).body,
+      (data) => {
+        // A field set to undefined leaves the JSON, as for a missing one.
+        data.information = {
+          ...(data.information as Record<string, unknown>),
+          ...change,
+        };
+      },
+    );
+    double
+      .intercept({ path: '/api/groups/3', method: 'GET' })
+      .reply(200, body, json);
+    expect(await codeOf(client.group(ctx(), 3))).toBe('upstream');
+    expect(lines.map((line) => line.event)).toEqual([
+      'churchtools_group_refused',
+    ]);
+  });
+
+  it('takes a note of 10000 characters', async () => {
+    const { double, client, ctx } = setup();
+    const note = 'x'.repeat(10_000);
+    double
+      .intercept({ path: '/api/groups/3', method: 'GET' })
+      .reply(
+        200,
+        groupAtHighestLevel({ id: 3, name: 'A', details: { ...details, note } })
+          .body,
+        json,
+      );
+    expect((await client.group(ctx(), 3)).details?.note).toBe(note);
+  });
+
+  it('reads one page of members with exactly page and limit 50, at the highest level', async () => {
+    const { double, client, ctx } = setup();
+    const answer = groupMembersAtHighestLevel([member(1), member(2)], 3);
+    assertPlanted(JSON.parse(answer.body), answer.canaries, 'answer');
+    double
+      .intercept({ path: at('/api/groups/3/members'), method: 'GET' })
+      .reply(200, answer.body, json);
+    const result = await client.groupMembers(ctx(), 3, 2);
+    expect(result).toEqual({ members: [member(1), member(2)], more: true });
+    assertNoCanary(result, answer.canaries, 'members');
+    expect(Object.isFrozen(result.members)).toBe(true);
+    expect(Object.getPrototypeOf(result.members[0])).toBeNull();
+    expect(double.calls()[0]?.path).toBe('/api/groups/3/members');
+    expect(double.calls()[0]?.searchParams).toEqual({
+      page: '2',
+      limit: '50',
+    });
+  });
+
+  it('says no more on the last page and behind it, and takes 50 members', async () => {
+    const { double, client, ctx } = setup();
+    const fifty = Array.from({ length: 50 }, (_, index) => member(index + 1));
+    double
+      .intercept({ path: at('/api/groups/3/members'), method: 'GET' })
+      .reply(200, groupMembersAtHighestLevel(fifty, 3).body, json);
+    double
+      .intercept({ path: at('/api/groups/3/members'), method: 'GET' })
+      .reply(200, groupMembersAtHighestLevel([], 3).body, json);
+    const last = await client.groupMembers(ctx(), 3, 3);
+    expect([last.members.length, last.more]).toEqual([50, false]);
+    expect(await client.groupMembers(ctx(), 3, 4)).toEqual({
+      members: [],
+      more: false,
+    });
+  });
+
+  it.each([
+    [
+      '51 members',
+      groupMembersAtHighestLevel(
+        Array.from({ length: 51 }, (_, index) => member(index + 1)),
+        1,
+      ).body,
+    ],
+    [
+      'no pagination',
+      JSON.stringify({
+        data: [],
+        meta: { count: 0 },
+      }),
+    ],
+    [
+      'a member without first name',
+      changed(groupMembersAtHighestLevel([member(1)], 1).body, (data) => {
+        const entry = (data as unknown as Record<string, unknown>[])[0];
+        delete (
+          (entry?.person as Record<string, unknown>).domainAttributes as Record<
+            string,
+            unknown
+          >
+        ).firstName;
+      }),
+    ],
+    [
+      'a status in capitals',
+      groupMembersAtHighestLevel(
+        [{ ...member(1), groupMemberStatus: 'ACTIVE' }],
+        1,
+      ).body,
+    ],
+  ])('gives upstream for a page of members with %s', async (_, body) => {
+    const { double, client, ctx, lines } = setup();
+    double
+      .intercept({ path: at('/api/groups/3/members'), method: 'GET' })
+      .reply(200, body, json);
+    expect(await codeOf(client.groupMembers(ctx(), 3, 1))).toBe('upstream');
+    expect(lines.map((line) => line.event)).toEqual([
+      'churchtools_group_members_refused',
+    ]);
+  });
+
+  it.each([0, -1, 1.5, 1001, Number.NaN])(
+    'refuses the page %j of the members before any request',
+    async (page) => {
+      const { double, client, ctx } = setup();
+      expect(await codeOf(client.groupMembers(ctx(), 3, page))).toBe(
+        'validation',
+      );
+      expect(double.calls()).toHaveLength(0);
+    },
+  );
+
+  it('takes page 1000 of the members', async () => {
+    const { double, client, ctx } = setup();
+    double
+      .intercept({ path: at('/api/groups/3/members'), method: 'GET' })
+      .reply(200, groupMembersAtHighestLevel([], 1000).body, json);
+    expect((await client.groupMembers(ctx(), 3, 1000)).more).toBe(false);
   });
 });

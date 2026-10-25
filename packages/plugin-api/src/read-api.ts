@@ -420,6 +420,54 @@ export interface ReadApi {
    */
   searchGroups(query: string): Promise<SearchHits<GroupHit>>;
   /**
+   * Reads one person by its numeric ID, with ID, names and whether it is
+   * archived, never any other field (ADR 0064).
+   *
+   * @param personId - The ID of the person, a whole number from 1.
+   * @returns The person.
+   * @throws {EccliumError} `validation` for an ID that is no whole number
+   *   from 1, before any request; `permission` when the account may not
+   *   see the area of the person; `not_found` for a person that does not
+   *   exist; every error of the request.
+   */
+  person(personId: number): Promise<Person>;
+  /**
+   * Reads the groups of one person, with role and status of each
+   * membership. An empty list can also mean that the account may not see
+   * the person or the type of a group: ChurchTools then answers with an
+   * empty list, not with an error.
+   *
+   * @param personId - The ID of the person, a whole number from 1.
+   * @returns At most {@link maxPersonGroups} groups.
+   * @throws {EccliumError} As {@link ReadApi.person}.
+   */
+  personGroups(personId: number): Promise<PersonGroupList>;
+  /**
+   * Reads one group by its numeric ID, with name and the details of the
+   * lowest security level of groups (ADR 0064).
+   *
+   * @param groupId - The ID of the group, a whole number from 1.
+   * @returns The group.
+   * @throws {EccliumError} `validation` for an ID that is no whole number
+   *   from 1, before any request; `permission` when the account may not
+   *   see the type of the group; `not_found` for a group that does not
+   *   exist; every error of the request.
+   */
+  group(groupId: number): Promise<Group>;
+  /**
+   * Lists one page of the members of a group, with names, role and status.
+   * ChurchTools leaves out members the account may not see, without an
+   * entry in their place, and answers with an empty list when it may see
+   * none of them.
+   *
+   * @param groupId - The ID of the group, a whole number from 1.
+   * @param page - The page, from 1 to {@link maxGroupMembersPage}.
+   * @returns At most {@link groupMembersPageLimit} members.
+   * @throws {EccliumError} `validation` for an ID or page that does not
+   *   fit, before any request; otherwise as {@link ReadApi.group}.
+   */
+  groupMembers(groupId: number, page: number): Promise<GroupMemberList>;
+  /**
    * Lists the categories of the wiki the account may see, with ID and name.
    *
    * @returns All of them, in the order of ChurchTools, at most
