@@ -3,7 +3,7 @@
 // foreign canary objects and persons. The probe must print how the API
 // behaves and none of the values: no name, ID, date or search term. Its
 // guard must let the read rights on the domains through and nothing more,
-// while the guard of probe 08 stays as narrow as before.
+// and probe 08 must take the same rights, so both run with one set.
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -601,16 +601,36 @@ describe('the guard of probe 09', () => {
     expect(calls.map((call) => call.url.pathname)).toEqual(gatePaths);
   });
 
-  it('keeps the guard of probe 08 as narrow as before', async () => {
+  it('lets probe 08 run with the read rights on the domains', async () => {
     const setting = personsSetup();
     const wide = {
       ...narrowRights(setting.identification),
-      churchservice: { view: true },
+      churchservice: { view: true, 'view events': [1] },
     };
     expect(personsRightsWithin(wide, setting.identification)).toBe(false);
     expect(
       personsRightsWithin(wide, setting.identification, domainReadRights),
     ).toBe(true);
+    createState(setting.stateFile, personsState());
+    const instance = personsInstance(setting, { rights: wide });
+    const output = capture();
+    const code = await runProbe(personsProbe, {
+      env: setting.env,
+      fetch: instance.fetch,
+      io: output.io,
+      folder: spikeFolder,
+    });
+    expect(code).toBe(exitCodes.ok);
+    const result = JSON.parse(output.stdout()) as Record<string, unknown>;
+    expect(JSON.stringify(result['rechte'])).toContain('view events');
+  });
+
+  it('keeps every right beyond reading out of probe 08', async () => {
+    const setting = personsSetup();
+    const wide = {
+      ...narrowRights(setting.identification),
+      churchservice: { 'edit events': [1] },
+    };
     createState(setting.stateFile, personsState());
     const instance = personsInstance(setting, { rights: wide });
     const output = capture();

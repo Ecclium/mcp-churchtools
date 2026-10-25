@@ -23,10 +23,11 @@
  * - in the wiki the account may exactly see the wiki and the
  *   identification category;
  * - only the read rights the probe names may be set, with any value, since
- *   the probe asks how they look: for the probe that reads persons those of
- *   {@link personReadRights}, for the probe that reads the domains those of
- *   {@link domainReadRights}; every other right of every module is `false`
- *   or an empty list.
+ *   the probe asks how they look: the probes that read persons and the
+ *   domains both name those of {@link domainReadRights}, so they run with
+ *   the one set of rights of the read tools (ADR 0064); without a name the
+ *   guard allows those of {@link personReadRights}. Every other right of
+ *   every module is `false` or an empty list.
  *
  * Until then the probe holds a client for these two reads only. The client
  * that reaches persons, groups and search exists nowhere else: the token

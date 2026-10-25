@@ -46,7 +46,7 @@ import {
   pagination,
 } from './lib/listing.mts';
 import { operations, type OperationName } from './lib/operations.mts';
-import { passPersonsGate } from './lib/persons-gate.mts';
+import { domainReadRights, passPersonsGate } from './lib/persons-gate.mts';
 import { main, type ProbeDefinition } from './lib/probe.mts';
 import { describeResponse, reportWords } from './lib/report.mts';
 import {
@@ -433,7 +433,12 @@ export const probe: ProbeDefinition = {
     if (state === undefined || persons === undefined) {
       throw new SpikeError('INTERN');
     }
-    const pass = await passPersonsGate({ state }, persons.access);
+    // The same read rights as probe 09, so both run with the one set of
+    // rights the read tools get (ADR 0064).
+    const pass = await passPersonsGate(
+      { state, readRights: domainReadRights },
+      persons.access,
+    );
     const { personId, groupId, otherGroupId } = persons.settings;
     const reader = pass.client;
     const document = state.specification;
@@ -569,7 +574,7 @@ export const probe: ProbeDefinition = {
     const output: Record<string, Json> = {
       probe: '08-persons-groups-read',
       waechter: 'bestanden',
-      rechte: describeEffectiveRights(pass.rights, guard),
+      rechte: describeEffectiveRights(pass.rights, guard, domainReadRights),
       operationen: Object.fromEntries(
         personOperations.map((name) => [
           name,
