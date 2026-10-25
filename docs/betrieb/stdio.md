@@ -165,15 +165,19 @@ Grenzen der Audit-Datei:
 
 Welche Tools der Server neben `ct_whoami` anbietet, legen Sie mit `ECCLIUM_TOOLSETS` fest: eine mit Komma getrennte Liste von Bereichen, ohne Leerzeichen ([ADR 0062](../adr/0062-toolsets.md)).
 
-| Toolset     | Bereiche                                    | Tools in dieser Version                 |
-| ----------- | ------------------------------------------- | --------------------------------------- |
-| `persons`   | Personen und Gruppen                        | `ct_persons_search`, `ct_groups_search` |
-| `events`    | Events und Dienste                          | keine                                   |
-| `calendars` | Kalender, Termine, Ressourcen und Buchungen | keine                                   |
-| `wiki`      | Wiki                                        | keine                                   |
-| `songs`     | Songs                                       | keine                                   |
+| Toolset     | Bereiche                                    | Tools in dieser Version                                             |
+| ----------- | ------------------------------------------- | ------------------------------------------------------------------- |
+| `persons`   | Personen und Gruppen                        | `ct_persons_search`, `ct_groups_search`                             |
+| `events`    | Events und Dienste                          | keine                                                               |
+| `calendars` | Kalender, Termine, Ressourcen und Buchungen | keine                                                               |
+| `wiki`      | Wiki                                        | `ct_wiki_categories_list`, `ct_wiki_pages_list`, `ct_wiki_page_get` |
+| `songs`     | Songs                                       | keine                                                               |
 
 `all` schaltet alle ein, auch die Toolsets späterer Versionen. Ist die Variable leer oder nicht gesetzt, bietet der Server nur `ct_whoami` an. Beim Start nennt Ecclium auf stderr die Toolsets, die eingeschaltet sind, und jedes, das in dieser Version noch keine Tools mitbringt. Ein unbekannter Name, ein doppelter oder `all` neben einem anderen Namen bricht den Start ab. Die frühere Variable `ECCLIUM_SEARCH_TOOLS` bricht den Start ebenfalls ab, mit dem Hinweis auf `ECCLIUM_TOOLSETS=persons`.
+
+## Wiki
+
+`ct_wiki_categories_list` nennt die Kategorien des Wikis, die das Dienstkonto sehen darf, `ct_wiki_pages_list` die Seiten einer Kategorie mit Titel und Version, aber ohne Text, beide 25 je Aufruf mit weiteren Seiten. `ct_wiki_page_get` liest eine Seite und gibt einen langen Text in Teilen von höchstens 16'000 Bytes, geschnitten an einem Zeilenumbruch, wo eine Zeile hineinpasst, sonst zwischen zwei Zeichen. Den Text maskiert Ecclium nicht, auch keine E-Mail-Adressen oder Telefonnummern darin ([ADR 0026](../adr/0026-klassifizierte-ausgabeschemas.md)). Namen, Titel und Text stehen im Datenumschlag, Personen aus den Metadaten der Antworten von ChurchTools gibt keines der drei Tools weiter. Sie brauchen keinen Zustandsordner. Schalten Sie sie mit `ECCLIUM_TOOLSETS=wiki` ein, die Rechte des Dienstkontos stehen unter [Dienstkonto](dienstkonto.md#rechte).
 
 ## Suchtools
 
