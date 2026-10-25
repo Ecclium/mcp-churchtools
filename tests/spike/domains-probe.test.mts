@@ -3,7 +3,7 @@
 // foreign canary objects and persons. The probe must print how the API
 // behaves and none of the values: no name, ID, date or search term. Its
 // guard must let the read rights on the domains through and nothing more,
-// while the guard of probe 08 stays as narrow as before.
+// and probe 08 must take the same rights, so both run with one set.
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -391,17 +391,70 @@ describe('probe 09', () => {
     expect(section(exists.result, 'unbekannt')).toEqual({});
   });
 
-  it('searches the wiki with the marker in the identification category only', async () => {
+  it('searches the wiki with the marker in the identification category and once without one', async () => {
     const { result, calls, setting } = await run();
     const wiki = calls.filter(
       (call) => call.url.pathname === '/api/wiki/search',
     );
-    expect(wiki).toHaveLength(1);
-    expect(wiki[0]?.url.searchParams.get('query')).toBe('Spikeprobe');
+    expect(wiki).toHaveLength(2);
+    for (const call of wiki) {
+      expect(call.url.searchParams.get('query')).toBe('Spikeprobe');
+    }
     expect(wiki[0]?.url.searchParams.getAll('wiki_category_ids[]')).toEqual([
       String(setting.identification),
     ]);
+    expect(wiki[1]?.url.searchParams.getAll('wiki_category_ids[]')).toEqual([]);
     expect(section(result, 'personen')['wikiSearch']).toBe('0');
+    expect(section(result, 'ergebnisse')['wikiSearchAll']).toBe(
+      'erlaubt mit Einträgen',
+    );
+    expect(section(result, 'treffer')['wikiSearchAll']).toBe('1');
+  });
+
+  it('searches the songs by the fixed term, without a category', async () => {
+    const { result, calls } = await run();
+    const searched = calls.filter(
+      (call) =>
+        call.url.pathname === '/api/songs' &&
+        call.url.searchParams.has('query'),
+    );
+    expect(searched).toHaveLength(1);
+    expect(searched[0]?.url.searchParams.get('query')).toBe('Synthetisch');
+    expect(searched[0]?.url.searchParams.getAll('song_category_ids[]')).toEqual(
+      [],
+    );
+    expect(section(result, 'ergebnisse')['songsQuery']).toBe(
+      'erlaubt mit Einträgen',
+    );
+    expect(seen(result, 'songsQuery')).toEqual({
+      sc1: 'ja',
+      l1: 'ja',
+      l2: 'ja',
+    });
+  });
+
+  it.each([
+    [undefined, 'keine'],
+    ['echt', { anzahl: '1', name: 'echt', kennung: 'positive Zahl' }],
+    [
+      'Platzhalter',
+      { anzahl: '1', name: 'Platzhalter', kennung: 'positive Zahl' },
+    ],
+  ] as const)(
+    'tells whether a hidden name is real (%s) and prints no name',
+    async (hiddenName, expected) => {
+      const { code, result, output, setting } = await run(
+        hiddenName === undefined ? {} : { hiddenName },
+      );
+      expect(code).toBe(exitCodes.ok);
+      expect(result['verborgen']).toEqual(expected);
+      expect(leaks(output, setting.forbidden)).toEqual([]);
+    },
+  );
+
+  it('cannot tell a hidden name when the event is denied', async () => {
+    const { result } = await run({ denied: ['event'], hiddenName: 'echt' });
+    expect(result['verborgen']).toBe('unbekannt');
   });
 
   it('searches once per domain type the document declares, and names each by a label', async () => {
@@ -443,6 +496,7 @@ describe('probe 09', () => {
     expect(sichtbar['search:d2']).toBeUndefined();
     expect(section(result, 'treffer')).toEqual({
       wikiSearch: '1',
+      wikiSearchAll: '1',
       'search:d1': '0',
       'search:d2': '0',
       'search:d3': '2–9',
@@ -601,16 +655,36 @@ describe('the guard of probe 09', () => {
     expect(calls.map((call) => call.url.pathname)).toEqual(gatePaths);
   });
 
-  it('keeps the guard of probe 08 as narrow as before', async () => {
+  it('lets probe 08 run with the read rights on the domains', async () => {
     const setting = personsSetup();
     const wide = {
       ...narrowRights(setting.identification),
-      churchservice: { view: true },
+      churchservice: { view: true, 'view events': [1] },
     };
     expect(personsRightsWithin(wide, setting.identification)).toBe(false);
     expect(
       personsRightsWithin(wide, setting.identification, domainReadRights),
     ).toBe(true);
+    createState(setting.stateFile, personsState());
+    const instance = personsInstance(setting, { rights: wide });
+    const output = capture();
+    const code = await runProbe(personsProbe, {
+      env: setting.env,
+      fetch: instance.fetch,
+      io: output.io,
+      folder: spikeFolder,
+    });
+    expect(code).toBe(exitCodes.ok);
+    const result = JSON.parse(output.stdout()) as Record<string, unknown>;
+    expect(JSON.stringify(result['rechte'])).toContain('view events');
+  });
+
+  it('keeps every right beyond reading out of probe 08', async () => {
+    const setting = personsSetup();
+    const wide = {
+      ...narrowRights(setting.identification),
+      churchservice: { 'edit events': [1] },
+    };
     createState(setting.stateFile, personsState());
     const instance = personsInstance(setting, { rights: wide });
     const output = capture();

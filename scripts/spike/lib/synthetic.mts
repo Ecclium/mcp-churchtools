@@ -75,7 +75,8 @@ export const unknownQueryLabel = 'q8';
 
 /**
  * The fixed term the probe that reads the domains sends to the global
- * search, the word the names of its synthetic objects carry. The search of
+ * search and to the list of songs, the word the names of its synthetic
+ * objects carry. The search of
  * the wiki takes the {@link marker}. Like every term here, it never
  * appears in an output.
  */
@@ -146,4 +147,41 @@ export function syntheticIn(entry: unknown): {
     found,
     comparable: names.pairs.length > 0 || names.titles.length > 0,
   };
+}
+
+/** What the name of a reduced person turned out to be. */
+export type HiddenName = 'echt' | 'Platzhalter' | 'nicht vergleichbar';
+
+/**
+ * Tells whether a reduced person, as a service that hides names gives it,
+ * still carries a real name. It compares its last name and the words of
+ * its title in memory with the names of the synthetic persons; a reduced
+ * person on the test instance can only be one of them.
+ *
+ * @param person - The object `person` of one assignment.
+ * @returns «echt» if a word is a name of a synthetic person, «Platzhalter»
+ *   if there are words and none is, «nicht vergleichbar» without a word.
+ */
+export function hiddenNameIn(person: unknown): HiddenName {
+  if (!isObject(person)) {
+    return 'nicht vergleichbar';
+  }
+  const attributes = person['domainAttributes'];
+  const texts = [
+    isObject(attributes) ? lower(attributes['lastName']) : undefined,
+    lower(person['title']),
+  ].filter((text): text is string => text !== undefined);
+  const words = texts.flatMap((text) =>
+    text.split(/[^\p{L}]+/u).filter((word) => word !== ''),
+  );
+  if (words.length === 0) {
+    return 'nicht vergleichbar';
+  }
+  const names = new Set(
+    syntheticPersons.flatMap(({ firstName, lastName }) => [
+      firstName.toLowerCase(),
+      lastName.toLowerCase(),
+    ]),
+  );
+  return words.some((word) => names.has(word)) ? 'echt' : 'Platzhalter';
 }
