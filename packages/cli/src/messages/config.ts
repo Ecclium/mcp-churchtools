@@ -632,7 +632,7 @@ const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({
   // ADR 0064).
   persons_toolset_enabled: message(
     `Das Toolset ${personsToolset} ist eingeschaltet.`,
-    'Der KI-Assistent kann damit Personen und Gruppen der Instanz nach Namen suchen und sieht Kennung und Name jedes Treffers. Er liest auch die Gruppen einer Person, die Angaben einer Gruppe und ihre Mitglieder mit Rolle und Stand der Mitgliedschaft, keine Kontaktdaten. Jeder Aufruf steht in der Audit-Datei.',
+    'Der KI-Assistent kann damit Personen und Gruppen der Instanz nach Namen suchen und sieht Kennung und Name jedes Treffers. Er liest auch die Gruppen einer Person, die Angaben einer Gruppe mit ihrer Notiz und die Namen ihrer Mitglieder mit Rolle und Stand der Mitgliedschaft. Kontaktdaten liest er nicht. Jeder Aufruf steht in der Audit-Datei.',
     `Entfernen Sie ${personsToolset} aus ${toolsets}, wenn er diese Daten nicht sehen soll. ${insteadOfAll}`,
   ),
   // One text for every setting: the report of the loader names none of
