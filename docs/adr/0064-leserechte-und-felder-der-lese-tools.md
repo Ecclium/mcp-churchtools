@@ -1,6 +1,6 @@
 # ADR 0064: Leserechte des Dienstkontos und feste Felder der Lese-Tools
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 25.10.2026
 - Datum: 25.10.2026
 - Fällt vor: Phase 2
 
