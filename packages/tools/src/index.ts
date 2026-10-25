@@ -11,3 +11,6 @@ export { whoamiTool } from './base/whoami.js';
 export { createCorePlugin } from './core-plugin.js';
 export { groupsSearchTool } from './groups/search.js';
 export { personsSearchTool } from './persons/search.js';
+export { wikiCategoriesListTool } from './wiki/categories.js';
+export { wikiPageGetTool } from './wiki/page.js';
+export { wikiPagesListTool } from './wiki/pages.js';

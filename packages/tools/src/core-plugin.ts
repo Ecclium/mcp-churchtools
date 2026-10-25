@@ -12,6 +12,9 @@ import type { Plugin, PluginHost } from '@ecclium/mcp-churchtools-plugin-api';
 import { whoamiTool } from './base/whoami.js';
 import { groupsSearchTool } from './groups/search.js';
 import { personsSearchTool } from './persons/search.js';
+import { wikiCategoriesListTool } from './wiki/categories.js';
+import { wikiPageGetTool } from './wiki/page.js';
+import { wikiPagesListTool } from './wiki/pages.js';
 
 /**
  * Builds the plugin of the free core, under the name of the package of the
@@ -39,6 +42,9 @@ export function createCorePlugin(): Plugin {
       host.addTool(whoamiTool);
       host.addTool(personsSearchTool);
       host.addTool(groupsSearchTool);
+      host.addTool(wikiCategoriesListTool);
+      host.addTool(wikiPagesListTool);
+      host.addTool(wikiPageGetTool);
       return undefined;
     },
   });

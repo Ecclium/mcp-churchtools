@@ -30,11 +30,24 @@ describe('the catalog over stdio', () => {
     },
   );
 
+  it('adds the three tools of the wiki for the toolset wiki, none of them special', () => {
+    const catalog = createStdioCatalog({ readOnly: true, toolsets: ['wiki'] });
+    expect(catalog.list().map((entry) => entry.name)).toEqual([
+      'ct_whoami',
+      'ct_wiki_categories_list',
+      'ct_wiki_page_get',
+      'ct_wiki_pages_list',
+    ]);
+    for (const entry of catalog.list()) {
+      expect(entry.meta.sensitivity).not.toBe('special');
+    }
+  });
+
   // The other toolsets have no tool of the core yet.
   it('adds no tool for a toolset without tools', () => {
     const catalog = createStdioCatalog({
       readOnly: true,
-      toolsets: ['events', 'calendars', 'wiki', 'songs'],
+      toolsets: ['events', 'calendars', 'songs'],
     });
     expect(catalog.list().map((entry) => entry.name)).toEqual(['ct_whoami']);
   });
