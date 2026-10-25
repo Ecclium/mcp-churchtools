@@ -230,7 +230,7 @@
                 "properties": {
                   "domainIdentifier": {
                     "type": "string",
-                    "maxLength": 32
+                    "maxLength": 255
                   },
                   "title": {
                     "type": "string",
@@ -452,15 +452,11 @@
                 "lastPage"
               ]
             }
-          },
-          "required": [
-            "pagination"
-          ]
+          }
         }
       },
       "required": [
-        "data",
-        "meta"
+        "data"
       ]
     }
   },

@@ -144,7 +144,9 @@ export const personGroupListSchema = z.object({
     .array(
       z.object({
         group: z.object({
-          domainIdentifier: z.string().max(32, { abort: true }),
+          // Any text up to this length; only a plain whole number from 1
+          // becomes the ID of the group, any other gives none (ADR 0064).
+          domainIdentifier: z.string().max(maxNameLength, { abort: true }),
           title: text(maxNameLength),
         }),
         groupTypeRoleId: id,
@@ -200,26 +202,35 @@ export const groupSchema = z.object({
  * F34): the ID and the names of the person, and role and status of the
  * membership. Of `meta`, only `pagination.lastPage` is read, for whether
  * another page follows; whether its counts include members the account
- * may not see is open (F26).
+ * may not see is open (F26). A page with members must carry it.
  */
-export const groupMemberListSchema = z.object({
-  data: z
-    .array(
-      z.object({
-        personId: id,
-        person: z.object({
-          domainAttributes: z.object({
-            firstName: text(maxNameLength),
-            lastName: text(maxNameLength),
+export const groupMemberListSchema = z
+  .object({
+    data: z
+      .array(
+        z.object({
+          personId: id,
+          person: z.object({
+            domainAttributes: z.object({
+              firstName: text(maxNameLength),
+              lastName: text(maxNameLength),
+            }),
           }),
+          groupTypeRoleId: id,
+          groupMemberStatus: memberStatus,
         }),
-        groupTypeRoleId: id,
-        groupMemberStatus: memberStatus,
-      }),
-    )
-    .max(groupMembersPageLimit),
-  meta: z.object({ pagination: z.object({ lastPage: count }) }),
-});
+      )
+      .max(groupMembersPageLimit),
+    // Optional only for a page without members: whether ChurchTools sends
+    // the pagination for a page behind the last one, no probe has shown
+    // (F26). Such a page then says that no page follows.
+    meta: z
+      .object({ pagination: z.object({ lastPage: count }).optional() })
+      .optional(),
+  })
+  .refine(
+    (root) => root.meta?.pagination !== undefined || root.data.length === 0,
+  );
 
 /**
  * The longest text of a wiki page the client reads, in UTF-16 code units.

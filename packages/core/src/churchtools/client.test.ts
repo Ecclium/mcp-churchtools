@@ -1367,6 +1367,8 @@ describe('persons and groups by ID', () => {
     ['1e3', null],
     [' 12', null],
     ['', null],
+    ['00000000-0000-4000-8000-000000000021', null],
+    ['x'.repeat(255), null],
   ])('reads the group identifier %j as the ID %j', async (identifier, id) => {
     const { double, client, ctx } = setup();
     double
@@ -1416,14 +1418,14 @@ describe('persons and groups by ID', () => {
     },
   );
 
-  it('gives upstream for a group identifier of more than 32 characters', async () => {
+  it('gives upstream for a group identifier of more than 255 characters', async () => {
     const { double, client, ctx } = setup();
     double
       .intercept({ path: '/api/persons/7/groups', method: 'GET' })
       .reply(
         200,
         personGroupsAtHighestLevel([
-          { ...membership(1), groupId: '1'.repeat(33) },
+          { ...membership(1), groupId: '1'.repeat(256) },
         ]).body,
         json,
       );
@@ -1570,10 +1572,14 @@ describe('persons and groups by ID', () => {
       ).body,
     ],
     [
-      'no pagination',
+      'members but no pagination',
       JSON.stringify({
-        data: [],
-        meta: { count: 0 },
+        data: (
+          JSON.parse(groupMembersAtHighestLevel([member(1)], 1).body) as {
+            data: unknown;
+          }
+        ).data,
+        meta: { count: 1 },
       }),
     ],
     [
@@ -1616,6 +1622,19 @@ describe('persons and groups by ID', () => {
       expect(double.calls()).toHaveLength(0);
     },
   );
+
+  // Whether ChurchTools sends the pagination for a page behind the last
+  // one, no probe has shown (F26); such a page says that none follows.
+  it('takes a page without members and without pagination as the last one', async () => {
+    const { double, client, ctx } = setup();
+    double
+      .intercept({ path: at('/api/groups/3/members'), method: 'GET' })
+      .reply(200, JSON.stringify({ data: [], meta: { count: 0 } }), json);
+    expect(await client.groupMembers(ctx(), 3, 4)).toEqual({
+      members: [],
+      more: false,
+    });
+  });
 
   it('takes page 1000 of the members', async () => {
     const { double, client, ctx } = setup();

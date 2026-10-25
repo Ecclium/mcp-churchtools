@@ -588,7 +588,7 @@ export function createChurchToolsClient(
           }),
         ),
       ),
-      more: page < parsed.data.meta.pagination.lastPage,
+      more: page < (parsed.data.meta?.pagination?.lastPage ?? 0),
     });
   };
 
