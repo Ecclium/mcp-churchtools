@@ -33,6 +33,7 @@ import {
   emptyMemberPageMoreFollow,
   groupsGetMembersTool,
   noMemberListed,
+  noMemberOnFirstPage,
   pastLastMemberPage,
 } from './groups/members.js';
 import { personsGetTool } from './persons/get.js';
@@ -457,6 +458,7 @@ describe('ct_groups_get_members', () => {
 
   it.each([
     [1, 1, noMemberListed],
+    [1, 5, noMemberOnFirstPage],
     [3, 2, pastLastMemberPage],
     [2, 5, emptyMemberPageMoreFollow],
   ])(
@@ -740,4 +742,82 @@ describe('the read access of a tool below special', () => {
       expect(lines.join('\n')).toContain('read_search_refused');
     },
   );
+});
+
+// A refusal and a missing object end with a fixed message: the body of
+// such an answer, which ChurchTools fills with its own texts, reaches
+// neither the result nor the log nor the audit.
+describe('the body of a refusal', () => {
+  const leak = makeCanaries();
+  const body = JSON.stringify({
+    message: leak.name.value,
+    translatedMessage: leak.email.value,
+    messageKey: leak.phone.value,
+    args: { personId: leak.token.value },
+    errors: [],
+  });
+
+  it.each([
+    ['ct_persons_get', '/api/persons/7', { personId: 7 }],
+    ['ct_persons_get_groups', '/api/persons/7/groups', { personId: 7 }],
+    ['ct_groups_get', '/api/groups/3', { groupId: 3 }],
+    ['ct_groups_get_members', '/api/groups/3/members', { groupId: 3 }],
+  ])('stays out of %s for 403 and 404', async (name, pathname, input) => {
+    for (const status of [403, 404]) {
+      const { double, lines, drafts, call } = setup();
+      double
+        .intercept({ path: at(pathname), method: 'GET' })
+        .reply(status, body, json);
+      const outcome = await call(name, input);
+      expect(outcome.ok).toBe(false);
+      assertNoCanary([outcome, lines, drafts], leak.all, 'result, log, audit');
+    }
+  });
+});
+
+// The largest results the limits allow still fit into one result of 64
+// KiB (ADR 0024): a group with a note of 10000 quotes, which the two
+// copies of the result each escape, and a page of 50 members with names
+// of 255 letters. Longer names of persons and groups beyond ASCII can
+// exceed it; the call then ends with an error, as for the search tools
+// (ADR 0060, ADR 0064).
+describe('the largest results', () => {
+  it('passes a group with the longest note of quotes and the longest name and meeting time', async () => {
+    const { double, call } = setup();
+    double.intercept({ path: '/api/groups/3', method: 'GET' }).reply(
+      200,
+      groupAtHighestLevel({
+        id: 3,
+        name: '"'.repeat(255),
+        details: {
+          ...details,
+          meetingTime: '"'.repeat(255),
+          note: '"'.repeat(10_000),
+        },
+      }).body,
+      json,
+    );
+    const outcome = await call('ct_groups_get', { groupId: 3 });
+    expect(outcome.ok).toBe(true);
+  });
+
+  it('passes a page of 50 members with names of 255 letters', async () => {
+    const { double, call } = setup();
+    double
+      .intercept({ path: at('/api/groups/3/members'), method: 'GET' })
+      .reply(
+        200,
+        groupMembersAtHighestLevel(
+          Array.from({ length: 50 }, (_, index) => ({
+            ...member(index + 1),
+            firstName: 'a'.repeat(255),
+            lastName: 'b'.repeat(255),
+          })),
+          1,
+        ).body,
+        json,
+      );
+    const outcome = await call('ct_groups_get_members', { groupId: 3 });
+    expect(outcome.ok && outcome.data.members).toHaveLength(50);
+  });
 });
