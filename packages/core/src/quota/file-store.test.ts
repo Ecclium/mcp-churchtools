@@ -125,17 +125,22 @@ describe('the file of quotas', () => {
       key,
       day,
     );
-    const file = fileOf(state);
-    expect(statSync(file).mode & 0o777).toBe(0o600);
-    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({
-      v: 1,
-      tenant: 'demo-tenant',
-      day,
-      counts: {
-        'service:stdio:local-stdio': { special_reads: 1 },
-        'user:stdio:other': { special_reads: 1 },
-      },
-    });
+    // Mode and content from one descriptor, so that both are of one file.
+    const fd = openSync(fileOf(state), 'r');
+    try {
+      expect(fstatSync(fd).mode & 0o777).toBe(0o600);
+      expect(JSON.parse(readFileSync(fd, 'utf8'))).toEqual({
+        v: 1,
+        tenant: 'demo-tenant',
+        day,
+        counts: {
+          'service:stdio:local-stdio': { special_reads: 1 },
+          'user:stdio:other': { special_reads: 1 },
+        },
+      });
+    } finally {
+      closeSync(fd);
+    }
     expect(readdirSync(join(state, 'quota'))).toEqual([
       `demo-tenant-${day}.json`,
     ]);
