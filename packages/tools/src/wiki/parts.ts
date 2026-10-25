@@ -46,7 +46,8 @@ const jsonSize = (text: string): number => {
 /**
  * Cuts a text into parts of at most `limit` bytes as JSON writes them. A
  * part ends after the last line break that fits; a line longer than a
- * part is cut between two code points. The same text always gives the
+ * part is cut between two code points, never between a carriage return
+ * and its line feed. The same text always gives the
  * same parts, and the parts joined give the text.
  *
  * @param text - The text, Markdown or HTML.
@@ -57,7 +58,7 @@ const jsonSize = (text: string): number => {
  *   could ever fit.
  * @example
  * ```ts
- * splitIntoParts('ab\ncd\n', 4); // ['ab\n', 'cd\n']
+ * splitIntoParts('ab\ncd\n', 6); // ['ab\n', 'cd\n']
  * ```
  */
 export function splitIntoParts(
@@ -76,7 +77,16 @@ export function splitIntoParts(
   for (const point of text) {
     const cost = jsonBytes(point);
     while (bytes + cost > limit) {
-      const cut = lastBreak > start ? lastBreak : index;
+      let cut = lastBreak > start ? lastBreak : index;
+      // A carriage return and the line feed after it stay together.
+      if (
+        cut === index &&
+        point === '\n' &&
+        cut - 1 > start &&
+        text.charCodeAt(cut - 1) === 0x0d
+      ) {
+        cut -= 1;
+      }
       parts.push(text.slice(start, cut));
       // What follows the cut has no line break, so it carries none over.
       bytes = jsonSize(text.slice(cut, index));

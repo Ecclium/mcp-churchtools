@@ -82,6 +82,28 @@ describe('splitIntoParts', () => {
     expect(splitIntoParts('a\ud800', 6)).toEqual(['a', '\ud800']);
   });
 
+  // The bytes of each kind of character as JSON writes it: six per part of
+  // six bytes for one byte, three for two and one for six.
+  it.each([
+    ['\b', 2],
+    ['\f', 2],
+    ['\r', 2],
+    ['\t', 2],
+    ['\u000b', 6],
+    ['\u0000', 6],
+    ['\u007f', 1],
+    ['ä', 2],
+    ['€', 3],
+  ])('counts %j as %i bytes', (sign, bytes) => {
+    const parts = splitIntoParts(sign.repeat(12), 6);
+    expect(parts.every((part) => part.length === 6 / bytes)).toBe(true);
+  });
+
+  it('keeps a carriage return with its line feed when a line is cut', () => {
+    const parts = splitIntoParts(`${'a'.repeat(15_998)}\r\nb`);
+    expect(parts).toEqual(['a'.repeat(15_998), '\r\nb']);
+  });
+
   it.each([1, 2, 3, 4, 5])(
     'gives parts that join to the text and each fit, for mixed text %i',
     (seed) => {
