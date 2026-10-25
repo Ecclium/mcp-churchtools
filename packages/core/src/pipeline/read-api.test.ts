@@ -5,6 +5,9 @@ import {
   type PersonHit,
   type SearchHits,
   type TenantContext,
+  type WikiCategories,
+  type WikiPage,
+  type WikiPageList,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { describe, expect, it } from 'vitest';
 
@@ -21,6 +24,22 @@ const groups: SearchHits<GroupHit> = {
   hits: [{ id: 3, name: 'Gruppe A' }],
   more: true,
 };
+const guid = '00000000-0000-4000-8000-000000000001';
+const categories: WikiCategories = {
+  categories: [{ id: 4, name: 'Kategorie A' }],
+  more: false,
+};
+const pages: WikiPageList = {
+  pages: [{ guid, title: 'Seite A', isMarkdown: true, version: 2 }],
+  more: false,
+};
+const page: WikiPage = {
+  guid,
+  title: 'Seite A',
+  isMarkdown: true,
+  version: 2,
+  text: 'Text',
+};
 const lines: string[] = [];
 const ctx = Object.freeze({
   instance: 'https://example.church.tools',
@@ -35,6 +54,7 @@ const ctx = Object.freeze({
 const fakeClient = () => {
   const seen: TenantContext[] = [];
   const queries: string[] = [];
+  const wiki: unknown[][] = [];
   const client: Client = {
     whoami: (context) => {
       seen.push(context);
@@ -54,8 +74,22 @@ const fakeClient = () => {
       queries.push(query);
       return Promise.resolve(groups);
     },
+    wikiCategories: (context) => {
+      seen.push(context);
+      return Promise.resolve(categories);
+    },
+    wikiPages: (context, categoryId, number) => {
+      seen.push(context);
+      wiki.push([categoryId, number]);
+      return Promise.resolve(pages);
+    },
+    wikiPage: (context, categoryId, id, version) => {
+      seen.push(context);
+      wiki.push([categoryId, id, version]);
+      return Promise.resolve(page);
+    },
   };
-  return { client, seen, queries };
+  return { client, seen, queries, wiki };
 };
 
 describe('createReadAccess', () => {
@@ -91,6 +125,9 @@ describe('createReadAccess', () => {
         read.permissions(),
         read.searchPersons('Person'),
         read.searchGroups('Gruppe'),
+        read.wikiCategories(),
+        read.wikiPages(4, 1),
+        read.wikiPage(4, guid),
       ]) {
         const error: unknown = await call.catch((thrown: unknown) => thrown);
         expect(isEccliumError(error) && error.code).toBe('internal');
@@ -118,6 +155,26 @@ describe('createReadAccess', () => {
       await expect(read.whoami()).resolves.toBe(me);
       expect(seen).toEqual([ctx]);
       expect(lines).toEqual(['read_search_refused', 'read_search_refused']);
+    },
+  );
+
+  // The wiki is no special data: a tool of every sensitivity reads it,
+  // with the context of the call and the arguments as given.
+  it.each(['none', 'personal', 'special'] as const)(
+    'reads the wiki for a tool of the sensitivity %s',
+    async (sensitivity) => {
+      const { client, seen, wiki } = fakeClient();
+      const { read } = createReadAccess(client, ctx, sensitivity);
+      await expect(read.wikiCategories()).resolves.toBe(categories);
+      await expect(read.wikiPages(4, 2)).resolves.toBe(pages);
+      await expect(read.wikiPage(4, guid)).resolves.toBe(page);
+      await expect(read.wikiPage(4, guid, 3)).resolves.toBe(page);
+      expect(seen).toEqual([ctx, ctx, ctx, ctx]);
+      expect(wiki).toEqual([
+        [4, 2],
+        [4, guid, undefined],
+        [4, guid, 3],
+      ]);
     },
   );
 });

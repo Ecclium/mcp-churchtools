@@ -63,9 +63,13 @@ export {
   type WriteToolMeta,
 } from './tool.js';
 export {
+  isWikiPageGuid,
   maxSearchHits,
   maxSearchTermLength,
+  maxWikiCategories,
+  maxWikiTitleLength,
   normalizeSearchTerm,
+  wikiPageListLimit,
   type GrantedRights,
   type GroupHit,
   type Me,
@@ -74,6 +78,11 @@ export {
   type ReadApi,
   type RightValue,
   type SearchHits,
+  type WikiCategories,
+  type WikiCategory,
+  type WikiPage,
+  type WikiPageEntry,
+  type WikiPageList,
 } from './read-api.js';
 export type { Plugin, PluginHost } from './plugin.js';
 export {
