@@ -11,8 +11,12 @@ import { z } from 'zod';
 import {
   countedMetaSchema,
   groupListSchema,
+  groupMemberListSchema,
+  groupSchema,
   pagedMetaSchema,
+  personGroupListSchema,
   personListSchema,
+  personSchema,
   rightValueSchema,
   whoamiSchema,
   wikiCategoryListSchema,
@@ -56,6 +60,30 @@ export function describeContract() {
       path: '/api/groups',
       query: ['query', 'page', 'limit'],
       response: schema(groupListSchema),
+    },
+    person: {
+      method: 'get',
+      path: '/api/persons/{personId}',
+      query: [],
+      response: schema(personSchema),
+    },
+    personGroups: {
+      method: 'get',
+      path: '/api/persons/{personId}/groups',
+      query: [],
+      response: schema(personGroupListSchema),
+    },
+    group: {
+      method: 'get',
+      path: '/api/groups/{groupId}',
+      query: [],
+      response: schema(groupSchema),
+    },
+    groupMembers: {
+      method: 'get',
+      path: '/api/groups/{groupId}/members',
+      query: ['page', 'limit'],
+      response: schema(groupMemberListSchema),
     },
     wikiCategories: {
       method: 'get',

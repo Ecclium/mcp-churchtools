@@ -9,7 +9,11 @@ import { describe, expect, it } from 'vitest';
 import { maxListedIds, maxListedRights } from './base/whoami.js';
 import {
   createCorePlugin,
+  groupsGetMembersTool,
+  groupsGetTool,
   groupsSearchTool,
+  personsGetGroupsTool,
+  personsGetTool,
   personsSearchTool,
   whoamiTool,
   wikiCategoriesListTool,
@@ -55,17 +59,25 @@ describe('@ecclium/mcp-churchtools-tools', () => {
       .list()
       .map((tool) => [tool.name, tool.shape.unclassified, tool.shape.unmasked]);
     expect(shapes).toEqual([
+      ['ct_groups_get', 0, 0],
+      ['ct_groups_get_members', 0, 0],
       ['ct_groups_search', 0, 0],
+      ['ct_persons_get', 0, 0],
+      ['ct_persons_get_groups', 0, 0],
       ['ct_persons_search', 0, 0],
       ['ct_whoami', 0, 0],
     ]);
   });
 
-  it('adds both search tools of the core when they are enabled', () => {
+  it('adds the six tools of persons and groups with the toolset persons', () => {
     expect(
       withSearch.list().map((tool) => [tool.name, tool.plugin, tool.origin]),
     ).toEqual([
+      ['ct_groups_get', '@ecclium/mcp-churchtools', 'core'],
+      ['ct_groups_get_members', '@ecclium/mcp-churchtools', 'core'],
       ['ct_groups_search', '@ecclium/mcp-churchtools', 'core'],
+      ['ct_persons_get', '@ecclium/mcp-churchtools', 'core'],
+      ['ct_persons_get_groups', '@ecclium/mcp-churchtools', 'core'],
       ['ct_persons_search', '@ecclium/mcp-churchtools', 'core'],
       ['ct_whoami', '@ecclium/mcp-churchtools', 'core'],
     ]);
@@ -113,7 +125,11 @@ describe('@ecclium/mcp-churchtools-tools', () => {
 describe.each([
   ['ct_whoami', whoamiTool],
   ['ct_persons_search', personsSearchTool],
+  ['ct_persons_get', personsGetTool],
+  ['ct_persons_get_groups', personsGetGroupsTool],
   ['ct_groups_search', groupsSearchTool],
+  ['ct_groups_get', groupsGetTool],
+  ['ct_groups_get_members', groupsGetMembersTool],
   ['ct_wiki_categories_list', wikiCategoriesListTool],
   ['ct_wiki_pages_list', wikiPagesListTool],
   ['ct_wiki_page_get', wikiPageGetTool],
@@ -220,6 +236,74 @@ describe.each([
     expect(tool?.description).toContain(
       `Required ChurchTools rights: "${right.right}" in ${right.module}.`,
     );
+  });
+});
+
+const viewAllData = { module: 'churchdb', right: 'view alldata' };
+const viewGroups = { module: 'churchgroup', right: 'view groups of grouptype' };
+const groupLevel = { module: 'churchgroup', right: 'security level group' };
+const id = {
+  type: 'integer',
+  exclusiveMinimum: 0,
+  maximum: Number.MAX_SAFE_INTEGER,
+};
+
+// The four reads by ID of ADR 0064: special like the searches, each with
+// the rights that open its read, and an input of IDs only.
+describe.each([
+  ['ct_persons_get', 'persons', [viewAllData], { personId: id }, ['personId']],
+  [
+    'ct_persons_get_groups',
+    'persons',
+    [viewAllData, viewGroups],
+    { personId: id },
+    ['personId'],
+  ],
+  [
+    'ct_groups_get',
+    'groups',
+    [viewGroups, groupLevel],
+    { groupId: id },
+    ['groupId'],
+  ],
+  [
+    'ct_groups_get_members',
+    'groups',
+    [viewGroups, viewAllData],
+    { groupId: id, page: { type: 'integer', minimum: 1, maximum: 1000 } },
+    ['groupId'],
+  ],
+])('%s in the catalog', (name, domain, rights, properties, required) => {
+  const tool = withSearch.get(name);
+
+  it('reads only, holds special data, never runs unattended and names its rights', () => {
+    expect(tool?.meta).toEqual({
+      capability: 'read',
+      domain,
+      requiredRights: rights,
+      tier: 'free',
+      sensitivity: 'special',
+      unattended: 'never',
+      routineStable: false,
+    });
+    expect(tool?.description).toContain(
+      `Required ChurchTools rights: ${rights
+        .map((right) => `"${right.right}" in ${right.module}`)
+        .join(', ')}.`,
+    );
+  });
+
+  it('gives every leaf of its output a data class with a mask', () => {
+    expect([tool?.shape.unclassified, tool?.shape.unmasked]).toEqual([0, 0]);
+  });
+
+  it('advertises only the IDs it reads by, and a page for the members', () => {
+    expect(tool?.inputSchema).toEqual({
+      type: 'object',
+      properties,
+      required,
+      additionalProperties: false,
+    });
   });
 });
 

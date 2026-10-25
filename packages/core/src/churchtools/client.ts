@@ -1,22 +1,30 @@
 /**
  * The reading ChurchTools client (ADR 0057): `whoami`, `permissions`, the
- * searches of persons and groups by name (ADR 0060) and the wiki, each with
- * exactly one request through the transport of its origin, a throttle per
- * client, fixed limits and own schemas.
+ * searches of persons and groups by name (ADR 0060), one person, the
+ * groups of a person, one group and its members (ADR 0064) and the wiki,
+ * each with exactly one request through the transport of its origin, a
+ * throttle per client, fixed limits and own schemas.
  *
  * @packageDocumentation
  */
 import {
   type Clock,
   EccliumError,
+  type Group,
   type GroupHit,
+  type GroupMemberList,
+  groupMembersPageLimit,
   isWikiPageGuid,
+  maxGroupMembersPage,
+  maxPersonGroups,
   maxSearchHits,
   maxSearchTermLength,
   maxWikiListPage,
   type Me,
   normalizeSearchTerm,
   type Permissions,
+  type Person,
+  type PersonGroupList,
   type PersonHit,
   type SearchHits,
   type TenantContext,
@@ -33,7 +41,11 @@ import { fetchAnswer, type RequestPath } from './request.js';
 import { toPermissions } from './rights.js';
 import {
   groupListSchema,
+  groupMemberListSchema,
+  groupSchema,
+  personGroupListSchema,
   personListSchema,
+  personSchema,
   searchPageLimit,
   whoamiSchema,
   wikiCategoryListSchema,
@@ -92,6 +104,46 @@ export interface ChurchToolsClient {
     ctx: TenantContext,
     query: string,
   ): Promise<SearchHits<GroupHit>>;
+  /**
+   * Reads one person with `GET /api/persons/{personId}`, by its numeric ID
+   * only (ADR 0064).
+   *
+   * @throws {EccliumError} `validation` for an ID that is no whole number
+   *   from 1, before the throttle and any request; `permission` for 403;
+   *   `not_found` for 404; `upstream` for an answer without the four
+   *   fields; every error of the request.
+   */
+  person(ctx: TenantContext, personId: number): Promise<Person>;
+  /**
+   * Reads the groups of one person with `GET /api/persons/{personId}/groups`,
+   * without any parameter (ADR 0064).
+   *
+   * @throws {EccliumError} As {@link ChurchToolsClient.person}, and
+   *   `upstream` for more than 1000 groups.
+   */
+  personGroups(ctx: TenantContext, personId: number): Promise<PersonGroupList>;
+  /**
+   * Reads one group with `GET /api/groups/{groupId}`, by its numeric ID
+   * only (ADR 0064).
+   *
+   * @throws {EccliumError} As {@link ChurchToolsClient.person}, and
+   *   `upstream` for a part of the details of the lowest level.
+   */
+  group(ctx: TenantContext, groupId: number): Promise<Group>;
+  /**
+   * Reads one page of the members of a group with
+   * `GET /api/groups/{groupId}/members`, sending only `page` and
+   * `limit=50`, never `personFields[]` or `include` (ADR 0064).
+   *
+   * @throws {EccliumError} `validation` for an ID that is no whole number
+   *   from 1 or a page outside 1 to 1000, before the throttle and any
+   *   request; otherwise as {@link ChurchToolsClient.person}.
+   */
+  groupMembers(
+    ctx: TenantContext,
+    groupId: number,
+    page: number,
+  ): Promise<GroupMemberList>;
   /**
    * Lists the categories of the wiki with `GET /api/wiki/categories`, all
    * of them from the one answer.
@@ -152,6 +204,29 @@ const searchLimits = Object.freeze({
   maxElements: 100_000,
 });
 
+// One person or one group, in the form of the highest security level with
+// every field, and a group with many roles: an account with more rights
+// than the read needs still gets its answer, and the client drops the
+// other fields (ADR 0064).
+const objectLimits = Object.freeze({
+  maxResponseBytes: 1024 * 1024,
+  maxElements: 20_000,
+});
+
+// Each membership carries objects of the group and the person with about
+// 50 fields; the limits fit 1000 groups of a person with them.
+const personGroupsLimits = Object.freeze({
+  maxResponseBytes: 4 * 1024 * 1024,
+  maxElements: 200_000,
+});
+
+// One page of 50 members, each with the objects of its group and person,
+// also with fields a request with personFields[] would add.
+const groupMembersLimits = Object.freeze({
+  maxResponseBytes: 1024 * 1024,
+  maxElements: 50_000,
+});
+
 // Each entry of the list of pages carries objects of the persons who
 // created and last changed the page, which the client drops. The limits
 // fit 1000 categories and 25 pages with them.
@@ -168,6 +243,19 @@ const wikiPageLimits = Object.freeze({
 
 // In English for the model; printable ASCII, like every message (ADR 0054).
 const invalidWikiInput = `A category ID and a version are whole numbers from 1, a page of the list is a whole number from 1 to ${String(maxWikiListPage)}, and a wiki page is addressed by its GUID.`;
+
+// In English for the model; printable ASCII, like every message (ADR 0054).
+const invalidReadInput = `A person ID and a group ID are whole numbers from 1, and a page of the members of a group is a whole number from 1 to ${String(maxGroupMembersPage)}.`;
+
+// The identifier of a group in a membership, a text such as "12". Only a
+// whole number from 1 in its plain form counts as the ID of the group.
+const groupIdentifier = /^[1-9][0-9]{0,15}$/;
+
+const groupIdOf = (identifier: string): number | null => {
+  if (!groupIdentifier.test(identifier)) return null;
+  const value = Number(identifier);
+  return Number.isSafeInteger(value) ? value : null;
+};
 
 // In English for the model; printable ASCII, like every message (ADR 0054).
 const invalidTerm = `The search term needs 1 to ${String(maxSearchTermLength)} characters after removing spaces at both ends, and no control characters.`;
@@ -355,6 +443,155 @@ export function createChurchToolsClient(
     );
   };
 
+  // Refuses an ID or page that may not fill a path or a query before the
+  // throttle gives a place, so that an invalid value costs no request.
+  // Only a checked whole number fills a path, and the built URL must keep
+  // exactly that path (ADR 0057).
+  const checkReadInput = (ctx: TenantContext, valid: boolean): void => {
+    if (valid) return;
+    ctx.log.warn('churchtools_read_input_refused', { code: 'validation' });
+    throw new EccliumError('validation', invalidReadInput);
+  };
+
+  const person = async (
+    ctx: TenantContext,
+    personId: number,
+  ): Promise<Person> => {
+    checkReadInput(ctx, isWholeFromOne(personId));
+    const url = urlOfPath(origin, `/api/persons/${String(personId)}`);
+    const root = await fetchAnswer(ctx, path, url, objectLimits, {
+      status: 'churchtools_person_status',
+      refused: 'churchtools_person_refused',
+      missing: 'churchtools_person_missing',
+    });
+    const parsed = personSchema.safeParse(root);
+    if (!parsed.success) {
+      ctx.log.warn('churchtools_person_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    const data = parsed.data.data;
+    return Object.freeze({
+      __proto__: null,
+      id: data.id,
+      firstName: data.firstName,
+      lastName: data.lastName,
+      isArchived: data.isArchived,
+    });
+  };
+
+  const personGroups = async (
+    ctx: TenantContext,
+    personId: number,
+  ): Promise<PersonGroupList> => {
+    checkReadInput(ctx, isWholeFromOne(personId));
+    // Without show_overdue_groups and the other switches, so the list holds
+    // what ChurchTools shows without them (ADR 0064).
+    const url = urlOfPath(origin, `/api/persons/${String(personId)}/groups`);
+    const root = await fetchAnswer(ctx, path, url, personGroupsLimits, {
+      status: 'churchtools_person_groups_status',
+      refused: 'churchtools_person_groups_refused',
+      missing: 'churchtools_person_groups_missing',
+    });
+    const parsed = personGroupListSchema.safeParse(root);
+    if (!parsed.success) {
+      ctx.log.warn('churchtools_person_groups_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    const entries = parsed.data.data;
+    return Object.freeze({
+      __proto__: null,
+      groups: Object.freeze(
+        entries.slice(0, maxPersonGroups).map((entry) =>
+          Object.freeze({
+            __proto__: null,
+            groupId: groupIdOf(entry.group.domainIdentifier),
+            groupName: entry.group.title,
+            groupTypeRoleId: entry.groupTypeRoleId,
+            groupMemberStatus: entry.groupMemberStatus,
+          }),
+        ),
+      ),
+      more: entries.length > maxPersonGroups,
+    });
+  };
+
+  const group = async (ctx: TenantContext, groupId: number): Promise<Group> => {
+    checkReadInput(ctx, isWholeFromOne(groupId));
+    const url = urlOfPath(origin, `/api/groups/${String(groupId)}`);
+    const root = await fetchAnswer(ctx, path, url, objectLimits, {
+      status: 'churchtools_group_status',
+      refused: 'churchtools_group_refused',
+      missing: 'churchtools_group_missing',
+    });
+    const parsed = groupSchema.safeParse(root);
+    if (!parsed.success) {
+      ctx.log.warn('churchtools_group_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    const data = parsed.data.data;
+    const details = data.information;
+    // The schema takes the details all together or not at all, so one
+    // missing field means none came.
+    return Object.freeze({
+      __proto__: null,
+      id: data.id,
+      name: data.name,
+      details:
+        details.meetingTime === undefined
+          ? null
+          : Object.freeze({
+              __proto__: null,
+              meetingTime: details.meetingTime,
+              note: details.note ?? null,
+              maxMembers: details.maxMembers ?? null,
+              targetGroupId: details.targetGroupId ?? null,
+              dateOfFoundation: details.dateOfFoundation ?? null,
+              endDate: details.endDate ?? null,
+            }),
+    });
+  };
+
+  const groupMembers = async (
+    ctx: TenantContext,
+    groupId: number,
+    page: number,
+  ): Promise<GroupMemberList> => {
+    checkReadInput(
+      ctx,
+      isWholeFromOne(groupId) &&
+        isWholeFromOne(page) &&
+        page <= maxGroupMembersPage,
+    );
+    const url = urlOfPath(origin, `/api/groups/${String(groupId)}/members`);
+    appendPage(url.searchParams, page, groupMembersPageLimit);
+    const root = await fetchAnswer(ctx, path, url, groupMembersLimits, {
+      status: 'churchtools_group_members_status',
+      refused: 'churchtools_group_members_refused',
+      missing: 'churchtools_group_members_missing',
+    });
+    const parsed = groupMemberListSchema.safeParse(root);
+    if (!parsed.success) {
+      ctx.log.warn('churchtools_group_members_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    return Object.freeze({
+      __proto__: null,
+      members: Object.freeze(
+        parsed.data.data.map((entry) =>
+          Object.freeze({
+            __proto__: null,
+            personId: entry.personId,
+            firstName: entry.person.domainAttributes.firstName,
+            lastName: entry.person.domainAttributes.lastName,
+            groupTypeRoleId: entry.groupTypeRoleId,
+            groupMemberStatus: entry.groupMemberStatus,
+          }),
+        ),
+      ),
+      more: page < (parsed.data.meta?.pagination?.lastPage ?? 0),
+    });
+  };
+
   // Refuses what may not fill a path or a query before the throttle gives
   // a place, so that an invalid value costs no request.
   const checkWikiInput = (ctx: TenantContext, valid: boolean): void => {
@@ -473,6 +710,10 @@ export function createChurchToolsClient(
     permissions,
     searchPersons,
     searchGroups,
+    person,
+    personGroups,
+    group,
+    groupMembers,
     wikiCategories,
     wikiPages,
     wikiPage,

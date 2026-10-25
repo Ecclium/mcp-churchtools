@@ -5,8 +5,9 @@
  * `server/discover` and sends the metadata of the client with every
  * request, 2025 opens with `initialize`, as the chat of Claude Desktop
  * does (ADR 0053). In each process the smoke test lists the tools, calls
- * `ct_whoami` and, with the switch, the two search tools, closes stdin and
- * checks how the process ended.
+ * `ct_whoami` and, with the switch, the two search tools and the four
+ * reads by ID with the first person and the first group they found,
+ * closes stdin and checks how the process ended.
  *
  * Every check yields a fixed word. Values from the answers never go into
  * the result: they go onto the block list of the guard and into the list
@@ -94,6 +95,10 @@ export const courseWords = [
   'ct_groups_search',
   'ct_persons_search ohne Treffer',
   'ct_persons_search nur Leerzeichen',
+  'ct_persons_get',
+  'ct_persons_get_groups',
+  'ct_groups_get',
+  'ct_groups_get_members',
   'code',
   'anderer',
   ...exitCodesOfServer,
@@ -108,6 +113,10 @@ export const courseCodes = [
   'gruppensuche',
   'suche_ohne_treffer',
   'suche_leerzeichen',
+  'person',
+  'gruppen_der_person',
+  'gruppe',
+  'mitglieder',
   'anfragen',
   'stdout',
   'stderr',
@@ -134,6 +143,16 @@ const isId = (value: unknown): value is number =>
 
 const isName = (value: unknown): value is string =>
   typeof value === 'string' && value.length <= 255;
+
+const isIdOrNull = (value: unknown): boolean => value === null || isId(value);
+
+const isCount = (value: unknown): boolean =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+
+// The status of a membership and a day without time, as the tools give
+// them (ADR 0064).
+const memberStatus = /^[a-z_]{1,32}$/;
+const day = /^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])$/;
 
 // The data envelope of the pipeline: a boundary of 16 random hex digits,
 // the text without the closing marker, the same boundary again (ADR 0024).
@@ -312,13 +331,23 @@ export async function runEra(
   if (started && era === '2025') session.notify('notifications/initialized');
 
   let whoamiCalls = 0;
-  let searchCalls = 0;
+  // Every call but ct_whoami and the refused blank term asks ChurchTools
+  // exactly once.
+  let readCalls = 0;
   if (started) {
     // tools/list: exactly the expected tools, all of them only reading.
     const expected =
       search === undefined
         ? ['ct_whoami']
-        : ['ct_groups_search', 'ct_persons_search', 'ct_whoami'];
+        : [
+            'ct_groups_get',
+            'ct_groups_get_members',
+            'ct_groups_search',
+            'ct_persons_get',
+            'ct_persons_get_groups',
+            'ct_persons_search',
+            'ct_whoami',
+          ];
     const listed = await session.request('tools/list', params({}));
     const tools =
       listed.kind === 'result' && isRecord(listed.result)
@@ -388,14 +417,14 @@ export async function runEra(
           Array.isArray(module['rights']) &&
           module['rights'].some(
             (right: unknown) =>
-              isRecord(right) &&
-              (right['right'] === 'security level person' ||
-                right['right'] === 'security level group'),
+              isRecord(right) && right['right'] === 'security level person',
           ),
       );
-    // An account with a security level still passes: the tools pass on
-    // only their fields. The finding says that it gets more than it needs
-    // (ADR 0060).
+    // An account with a security level of persons still passes: the tools
+    // pass on only their fields. The finding says that it gets more than
+    // it needs. A level of groups is no finding: ct_groups_get needs the
+    // lowest, and the rights name the levels only by ID, so the course
+    // cannot tell the lowest from a higher one (ADR 0060, ADR 0064).
     if (levels) findings.add('sicherheitsstufe');
     results.push({
       tool: 'ct_whoami',
@@ -410,7 +439,7 @@ export async function runEra(
 
     if (search !== undefined) {
       // ct_persons_search with the term: only ID and names, at most 50.
-      searchCalls += 1;
+      readCalls += 1;
       const persons = await callTool(
         'ct_persons_search',
         { query: search.query },
@@ -446,6 +475,11 @@ export async function runEra(
       guard.blockAll(persons?.data);
       if (!personsFit) failures.add('personensuche');
       const personCount = Array.isArray(personList) ? personList.length : 0;
+      const firstPerson: unknown =
+        personsFit && personCount > 0 && Array.isArray(personList)
+          ? personList[0]
+          : undefined;
+      const personId = isRecord(firstPerson) ? firstPerson['id'] : undefined;
       if (personsFit && personCount === 0) {
         findings.add('keine_personen_gefunden');
       }
@@ -457,7 +491,7 @@ export async function runEra(
       });
 
       // ct_groups_search with the term: ID and name, the name enveloped.
-      searchCalls += 1;
+      readCalls += 1;
       const groups = await callTool(
         'ct_groups_search',
         { query: search.query },
@@ -493,6 +527,11 @@ export async function runEra(
       guard.blockAll(groups?.data);
       if (!groupsFit) failures.add('gruppensuche');
       const groupCount = Array.isArray(groupList) ? groupList.length : 0;
+      const firstGroup: unknown =
+        groupsFit && groupCount > 0 && Array.isArray(groupList)
+          ? groupList[0]
+          : undefined;
+      const groupId = isRecord(firstGroup) ? firstGroup['id'] : undefined;
       if (groupsFit && groupCount === 0) {
         findings.add('keine_gruppen_gefunden');
       }
@@ -506,7 +545,7 @@ export async function runEra(
 
       // A term that matches nothing: an empty list with the note on the
       // right, since no match and a missing right look the same (ADR 0060).
-      searchCalls += 1;
+      readCalls += 1;
       const miss = await callTool(
         'ct_persons_search',
         { query: search.missTerm },
@@ -540,6 +579,194 @@ export async function runEra(
         tool: 'ct_persons_search nur Leerzeichen',
         ergebnis: refused ? 'abgewiesen' : 'nicht abgewiesen',
       });
+
+      // The text inside the envelope of an untrusted text, onto the lists.
+      const seeEnveloped = (value: unknown): boolean => {
+        if (typeof value !== 'string') return false;
+        const inner = envelope.exec(value);
+        seeValue(inner?.[2] ?? value);
+        return inner !== null;
+      };
+
+      if (isId(personId)) {
+        // ct_persons_get with the first person: ID, names, archived.
+        readCalls += 1;
+        const read = await callTool('ct_persons_get', { personId }, 'ok');
+        const data = read?.isError === false ? read.data : undefined;
+        const fits =
+          data !== undefined &&
+          sameKeys(data, ['firstName', 'id', 'isArchived', 'lastName']) &&
+          data['id'] === personId &&
+          isName(data['firstName']) &&
+          isName(data['lastName']) &&
+          typeof data['isArchived'] === 'boolean';
+        if (data !== undefined) {
+          seeValue(data['firstName']);
+          seeValue(data['lastName']);
+        }
+        guard.blockAll(read?.data);
+        if (!fits) failures.add('person');
+        results.push({
+          tool: 'ct_persons_get',
+          ergebnis: fits ? 'ok' : 'gescheitert',
+        });
+
+        // ct_persons_get_groups: group, role and status, the name enveloped.
+        readCalls += 1;
+        const listed = await callTool(
+          'ct_persons_get_groups',
+          { personId },
+          'ok',
+        );
+        const groupsOf = listed?.isError === false ? listed.data : undefined;
+        const memberships = groupsOf?.['groups'];
+        let enveloped = true;
+        const groupsFit =
+          groupsOf !== undefined &&
+          sameKeys(groupsOf, ['groups', 'more', 'notice', 'personId']) &&
+          groupsOf['personId'] === personId &&
+          Array.isArray(memberships) &&
+          memberships.length <= 50 &&
+          memberships.every(
+            (entry: unknown) =>
+              isRecord(entry) &&
+              sameKeys(entry, [
+                'groupId',
+                'groupMemberStatus',
+                'groupName',
+                'groupTypeRoleId',
+              ]) &&
+              isIdOrNull(entry['groupId']) &&
+              isId(entry['groupTypeRoleId']) &&
+              typeof entry['groupMemberStatus'] === 'string' &&
+              memberStatus.test(entry['groupMemberStatus']),
+          ) &&
+          typeof groupsOf['more'] === 'boolean' &&
+          (groupsOf['notice'] === null ||
+            typeof groupsOf['notice'] === 'string') &&
+          (memberships.length > 0 || typeof groupsOf['notice'] === 'string');
+        if (Array.isArray(memberships)) {
+          for (const entry of memberships) {
+            const name = isRecord(entry) ? entry['groupName'] : undefined;
+            if (!seeEnveloped(name)) enveloped = false;
+          }
+        }
+        guard.blockAll(listed?.data);
+        if (!groupsFit || !enveloped) failures.add('gruppen_der_person');
+        const membershipCount = Array.isArray(memberships)
+          ? memberships.length
+          : 0;
+        results.push({
+          tool: 'ct_persons_get_groups',
+          ergebnis: groupsFit && enveloped ? 'ok' : 'gescheitert',
+          treffer: countClass(membershipCount),
+          mehr: groupsOf?.['more'] === true ? 'ja' : 'nein',
+        });
+      }
+
+      if (isId(groupId)) {
+        // ct_groups_get with the first group: name and the six details,
+        // the texts enveloped, or no details with the note on the level.
+        readCalls += 1;
+        const read = await callTool('ct_groups_get', { groupId }, 'ok');
+        const data = read?.isError === false ? read.data : undefined;
+        const detail = data?.['details'];
+        const texts = [data?.['name']];
+        const detailsFit =
+          detail === null ||
+          (isRecord(detail) &&
+            sameKeys(detail, [
+              'dateOfFoundation',
+              'endDate',
+              'maxMembers',
+              'meetingTime',
+              'note',
+              'targetGroupId',
+            ]) &&
+            [detail['meetingTime'], detail['note']].every(
+              (text) => text === null || typeof text === 'string',
+            ) &&
+            (detail['maxMembers'] === null || isCount(detail['maxMembers'])) &&
+            isIdOrNull(detail['targetGroupId']) &&
+            [detail['dateOfFoundation'], detail['endDate']].every(
+              (date) =>
+                date === null || (typeof date === 'string' && day.test(date)),
+            ));
+        if (isRecord(detail)) {
+          for (const text of [detail['meetingTime'], detail['note']]) {
+            if (text !== null) texts.push(text);
+          }
+        }
+        const allEnveloped = texts.every((text) => seeEnveloped(text));
+        const fits =
+          data !== undefined &&
+          sameKeys(data, ['details', 'id', 'name', 'notice']) &&
+          data['id'] === groupId &&
+          detailsFit &&
+          allEnveloped &&
+          (detail === null) === (typeof data['notice'] === 'string');
+        guard.blockAll(read?.data);
+        if (!fits) failures.add('gruppe');
+        results.push({
+          tool: 'ct_groups_get',
+          ergebnis: fits ? 'ok' : 'gescheitert',
+          hinweis: typeof data?.['notice'] === 'string' ? 'ja' : 'nein',
+          umschlag: allEnveloped ? 'ja' : 'nein',
+        });
+
+        // ct_groups_get_members, page 1: ID, names, role and status.
+        readCalls += 1;
+        const listed = await callTool(
+          'ct_groups_get_members',
+          { groupId },
+          'ok',
+        );
+        const page = listed?.isError === false ? listed.data : undefined;
+        const members = page?.['members'];
+        const membersFit =
+          page !== undefined &&
+          sameKeys(page, ['groupId', 'members', 'more', 'notice', 'page']) &&
+          page['groupId'] === groupId &&
+          page['page'] === 1 &&
+          Array.isArray(members) &&
+          members.length <= 50 &&
+          members.every(
+            (entry: unknown) =>
+              isRecord(entry) &&
+              sameKeys(entry, [
+                'firstName',
+                'groupMemberStatus',
+                'groupTypeRoleId',
+                'lastName',
+                'personId',
+              ]) &&
+              isId(entry['personId']) &&
+              isName(entry['firstName']) &&
+              isName(entry['lastName']) &&
+              isId(entry['groupTypeRoleId']) &&
+              typeof entry['groupMemberStatus'] === 'string' &&
+              memberStatus.test(entry['groupMemberStatus']),
+          ) &&
+          typeof page['more'] === 'boolean' &&
+          (page['notice'] === null || typeof page['notice'] === 'string') &&
+          (members.length > 0 || typeof page['notice'] === 'string');
+        if (Array.isArray(members)) {
+          for (const entry of members) {
+            if (isRecord(entry)) {
+              seeValue(entry['firstName']);
+              seeValue(entry['lastName']);
+            }
+          }
+        }
+        guard.blockAll(listed?.data);
+        if (!membersFit) failures.add('mitglieder');
+        results.push({
+          tool: 'ct_groups_get_members',
+          ergebnis: membersFit ? 'ok' : 'gescheitert',
+          treffer: countClass(Array.isArray(members) ? members.length : 0),
+          mehr: page?.['more'] === true ? 'ja' : 'nein',
+        });
+      }
     }
     report['aufrufe'] = results;
   }
@@ -548,9 +775,10 @@ export async function runEra(
   const lines = jsonLines(session.stderr());
   const events = lines.filter((line) => typeof line['event'] === 'string');
 
-  // ct_whoami asks ChurchTools twice, each search with a term once.
+  // ct_whoami asks ChurchTools twice, each search with a term and each
+  // read by ID once.
   const requests = events.filter((line) => line['event'] === 'http_response');
-  const requestsFit = requests.length === whoamiCalls * 2 + searchCalls;
+  const requestsFit = requests.length === whoamiCalls * 2 + readCalls;
   report['anfragen'] = requestsFit ? 'wie erwartet' : 'abweichend';
   if (!requestsFit) failures.add('anfragen');
 

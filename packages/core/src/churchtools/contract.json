@@ -170,6 +170,296 @@
       ]
     }
   },
+  "person": {
+    "method": "get",
+    "path": "/api/persons/{personId}",
+    "query": [],
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "firstName": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "lastName": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "isArchived": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "firstName",
+            "lastName",
+            "isArchived"
+          ]
+        }
+      },
+      "required": [
+        "data"
+      ]
+    }
+  },
+  "personGroups": {
+    "method": "get",
+    "path": "/api/persons/{personId}/groups",
+    "query": [],
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "data": {
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "group": {
+                "type": "object",
+                "properties": {
+                  "domainIdentifier": {
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 255
+                  }
+                },
+                "required": [
+                  "domainIdentifier",
+                  "title"
+                ]
+              },
+              "groupTypeRoleId": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "groupMemberStatus": {
+                "type": "string",
+                "pattern": "^[a-z_]{1,32}$"
+              }
+            },
+            "required": [
+              "group",
+              "groupTypeRoleId",
+              "groupMemberStatus"
+            ]
+          }
+        }
+      },
+      "required": [
+        "data"
+      ]
+    }
+  },
+  "group": {
+    "method": "get",
+    "path": "/api/groups/{groupId}",
+    "query": [],
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "name": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "information": {
+              "type": "object",
+              "properties": {
+                "meetingTime": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 255
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "note": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 10000
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "maxMembers": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "targetGroupId": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "dateOfFoundation": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "endDate": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])$"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "information"
+          ]
+        }
+      },
+      "required": [
+        "data"
+      ]
+    }
+  },
+  "groupMembers": {
+    "method": "get",
+    "path": "/api/groups/{groupId}/members",
+    "query": [
+      "page",
+      "limit"
+    ],
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "data": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "personId": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "person": {
+                "type": "object",
+                "properties": {
+                  "domainAttributes": {
+                    "type": "object",
+                    "properties": {
+                      "firstName": {
+                        "type": "string",
+                        "maxLength": 255
+                      },
+                      "lastName": {
+                        "type": "string",
+                        "maxLength": 255
+                      }
+                    },
+                    "required": [
+                      "firstName",
+                      "lastName"
+                    ]
+                  }
+                },
+                "required": [
+                  "domainAttributes"
+                ]
+              },
+              "groupTypeRoleId": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 9007199254740991
+              },
+              "groupMemberStatus": {
+                "type": "string",
+                "pattern": "^[a-z_]{1,32}$"
+              }
+            },
+            "required": [
+              "personId",
+              "person",
+              "groupTypeRoleId",
+              "groupMemberStatus"
+            ]
+          }
+        },
+        "meta": {
+          "type": "object",
+          "properties": {
+            "pagination": {
+              "type": "object",
+              "properties": {
+                "lastPage": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "lastPage"
+              ]
+            }
+          }
+        }
+      },
+      "required": [
+        "data"
+      ]
+    }
+  },
   "wikiCategories": {
     "method": "get",
     "path": "/api/wiki/categories",

@@ -256,12 +256,16 @@ describe('ToolDefinition and defineTool', () => {
 });
 
 describe('ReadApi', () => {
-  it('holds the account, its rights, the two searches by name and the wiki only', () => {
+  it('holds the account, its rights, persons and groups and the wiki only', () => {
     expectTypeOf<keyof ReadApi>().toEqualTypeOf<
       | 'whoami'
       | 'permissions'
       | 'searchPersons'
       | 'searchGroups'
+      | 'person'
+      | 'personGroups'
+      | 'group'
+      | 'groupMembers'
       | 'wikiCategories'
       | 'wikiPages'
       | 'wikiPage'

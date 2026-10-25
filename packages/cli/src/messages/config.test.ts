@@ -295,6 +295,8 @@ describe('the catalog of messages', () => {
     const message = warningMessage('persons_toolset_enabled');
     expect(message.what).toContain('‹persons›');
     expect(message.why).toContain('Kennung und Name jedes Treffers');
+    expect(message.why).toContain('Namen ihrer Mitglieder');
+    expect(message.why).toContain('Kontaktdaten liest er nicht');
     expect(message.why).toContain('Audit-Datei');
     expect(message.action).toContain('‹ECCLIUM_TOOLSETS›');
     expect(textOf(message)).not.toMatch(/späteren Version|wirkt .*nicht/);

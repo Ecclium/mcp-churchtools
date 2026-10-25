@@ -1064,10 +1064,14 @@ describe.skipIf(process.getuid?.() === 0)(
         finished = await session.finish();
       }, timeout);
 
-      it('lists the two search tools next to ct_whoami and warns at the start', () => {
+      it('lists the six tools of persons and groups next to ct_whoami and warns at the start', () => {
         const tools = at(listed, 'result', 'tools') as Json[];
         expect(tools.map((tool) => tool['name'])).toEqual([
+          'ct_groups_get',
+          'ct_groups_get_members',
           'ct_groups_search',
+          'ct_persons_get',
+          'ct_persons_get_groups',
           'ct_persons_search',
           'ct_whoami',
         ]);

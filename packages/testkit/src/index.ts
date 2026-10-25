@@ -19,8 +19,14 @@ export {
   type CanarySet,
 } from './canary.js';
 export {
+  groupAtHighestLevel,
+  groupMembersAtHighestLevel,
   groupsAtHighestLevel,
+  type HighestLevelAnswer,
   type HighestLevelList,
+  personAtHighestLevel,
+  type PersonGroupFixture,
+  personGroupsAtHighestLevel,
   personsAtHighestLevel,
 } from './fixtures/highest-level.js';
 export {

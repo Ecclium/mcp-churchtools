@@ -230,6 +230,148 @@ export function isWikiPageGuid(value: unknown): value is string {
 }
 
 /**
+ * The most memberships the groups of a person pass on. ChurchTools lists
+ * them in one answer without pages; a longer list says so with `more`
+ * (ADR 0064).
+ */
+export const maxPersonGroups = 50;
+
+/**
+ * The most members one page of the members of a group holds. Every page
+ * counts against the read budget, so a list of persons serves no export
+ * in one call (ADR 0064).
+ */
+export const groupMembersPageLimit = 50;
+
+/** The last page of the members of a group a read may ask for. */
+export const maxGroupMembersPage = 1000;
+
+/** The longest name of a person, of a group and of a group of a person. */
+export const maxNameLength = 255;
+
+/** The longest meeting time of a group the core reads. */
+export const maxGroupMeetingTimeLength = 255;
+
+/**
+ * The longest note of a group the core reads, in UTF-16 code units. It
+ * keeps one group with its note within one result of a tool, even when
+ * every character doubles in length when it is written as JSON.
+ */
+export const maxGroupNoteLength = 10_000;
+
+/**
+ * The form of the status of a membership, such as `active`: a word
+ * ChurchTools sets, not text people write, so it needs no data envelope.
+ * Any other form is no answer the core knows.
+ */
+export const groupMemberStatusPattern: RegExp = /^[a-z_]{1,32}$/;
+
+/**
+ * The form of a date without time, as ChurchTools writes the start of a
+ * membership (`docs/research/churchtools-api.md`, F32). The founding and
+ * the end of a group take only this form until a probe shows theirs.
+ */
+export const calendarDatePattern: RegExp =
+  /^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])$/;
+
+/**
+ * One person, read by ID: only ID, names and whether the person is
+ * archived, as ChurchTools gives them to an account without a security
+ * level (ADR 0064). Either name may be empty.
+ */
+export interface Person {
+  /** The numeric ID of the person. */
+  readonly id: number;
+  /** First name, at most {@link maxNameLength} characters. */
+  readonly firstName: string;
+  /** Last name, at most {@link maxNameLength} characters. */
+  readonly lastName: string;
+  /** Whether the person is archived. */
+  readonly isArchived: boolean;
+}
+
+/** A group a person belongs to, with the role and status of the membership. */
+export interface PersonGroup {
+  /**
+   * The numeric ID of the group, or `null` when ChurchTools names it with
+   * another identifier than a whole number from 1.
+   */
+  readonly groupId: number | null;
+  /** Name of the group, at most {@link maxNameLength} characters. */
+  readonly groupName: string;
+  /** The ID of the role of the person in the group. */
+  readonly groupTypeRoleId: number;
+  /** The status of the membership, see {@link groupMemberStatusPattern}. */
+  readonly groupMemberStatus: string;
+}
+
+/** The groups of one person. */
+export interface PersonGroupList {
+  /** At most {@link maxPersonGroups}, in the order of ChurchTools. */
+  readonly groups: readonly PersonGroup[];
+  /** Whether ChurchTools listed more groups than the list holds. */
+  readonly more: boolean;
+}
+
+/**
+ * What the lowest security level of groups adds to a group (ADR 0064). A
+ * text or number the group lacks is `null`.
+ */
+export interface GroupDetails {
+  /** When the group meets, as people of the congregation wrote it. */
+  readonly meetingTime: string | null;
+  /** The note of the group, text people of the congregation wrote. */
+  readonly note: string | null;
+  /** The most members the group takes. */
+  readonly maxMembers: number | null;
+  /** The ID of the target group. */
+  readonly targetGroupId: number | null;
+  /** The day the group was founded, see {@link calendarDatePattern}. */
+  readonly dateOfFoundation: string | null;
+  /** The day the group ends, see {@link calendarDatePattern}. */
+  readonly endDate: string | null;
+}
+
+/** One group, read by ID. */
+export interface Group {
+  /** The numeric ID of the group. */
+  readonly id: number;
+  /** Name of the group, at most {@link maxNameLength} characters. */
+  readonly name: string;
+  /**
+   * The details of the lowest security level, or `null` when ChurchTools
+   * sent none of them: the account then lacks that level for the group.
+   */
+  readonly details: GroupDetails | null;
+}
+
+/** A member of a group, with the role and status of the membership. */
+export interface GroupMember {
+  /** The numeric ID of the person. */
+  readonly personId: number;
+  /** First name, at most {@link maxNameLength} characters. */
+  readonly firstName: string;
+  /** Last name, at most {@link maxNameLength} characters. */
+  readonly lastName: string;
+  /** The ID of the role of the person in the group. */
+  readonly groupTypeRoleId: number;
+  /** The status of the membership, see {@link groupMemberStatusPattern}. */
+  readonly groupMemberStatus: string;
+}
+
+/** One page of the members of a group. */
+export interface GroupMemberList {
+  /** At most {@link groupMembersPageLimit}, in the order of ChurchTools. */
+  readonly members: readonly GroupMember[];
+  /**
+   * Whether ChurchTools reports a later page. It comes from the pagination
+   * of ChurchTools, which may count members the account cannot see, so a
+   * later page can be empty.
+   */
+  readonly more: boolean;
+}
+
+/**
  * Reads from ChurchTools for one call of a tool, with the account of the
  * server and through the one outbound path of the core. A tool never sees a
  * token and cannot choose what host it reads from. The core revokes it when
@@ -277,6 +419,54 @@ export interface ReadApi {
    *   term, before any request; every error of the request.
    */
   searchGroups(query: string): Promise<SearchHits<GroupHit>>;
+  /**
+   * Reads one person by its numeric ID, with ID, names and whether it is
+   * archived, never any other field (ADR 0064).
+   *
+   * @param personId - The ID of the person, a whole number from 1.
+   * @returns The person.
+   * @throws {EccliumError} `validation` for an ID that is no whole number
+   *   from 1, before any request; `permission` when the account may not
+   *   see the area of the person; `not_found` for a person that does not
+   *   exist; every error of the request.
+   */
+  person(personId: number): Promise<Person>;
+  /**
+   * Reads the groups of one person, with role and status of each
+   * membership. An empty list can also mean that the account may not see
+   * the person or the type of a group: ChurchTools then answers with an
+   * empty list, not with an error.
+   *
+   * @param personId - The ID of the person, a whole number from 1.
+   * @returns At most {@link maxPersonGroups} groups.
+   * @throws {EccliumError} As {@link ReadApi.person}.
+   */
+  personGroups(personId: number): Promise<PersonGroupList>;
+  /**
+   * Reads one group by its numeric ID, with name and the details of the
+   * lowest security level of groups (ADR 0064).
+   *
+   * @param groupId - The ID of the group, a whole number from 1.
+   * @returns The group.
+   * @throws {EccliumError} `validation` for an ID that is no whole number
+   *   from 1, before any request; `permission` when the account may not
+   *   see the type of the group; `not_found` for a group that does not
+   *   exist; every error of the request.
+   */
+  group(groupId: number): Promise<Group>;
+  /**
+   * Lists one page of the members of a group, with names, role and status.
+   * ChurchTools leaves out members the account may not see, without an
+   * entry in their place, and answers with an empty list when it may see
+   * none of them.
+   *
+   * @param groupId - The ID of the group, a whole number from 1.
+   * @param page - The page, from 1 to {@link maxGroupMembersPage}.
+   * @returns At most {@link groupMembersPageLimit} members.
+   * @throws {EccliumError} `validation` for an ID or page that does not
+   *   fit, before any request; otherwise as {@link ReadApi.group}.
+   */
+  groupMembers(groupId: number, page: number): Promise<GroupMemberList>;
   /**
    * Lists the categories of the wiki the account may see, with ID and name.
    *

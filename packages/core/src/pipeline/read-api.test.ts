@@ -1,7 +1,11 @@
 import {
+  type Group,
   type GroupHit,
+  type GroupMemberList,
   isEccliumError,
   type Me,
+  type Person,
+  type PersonGroupList,
   type PersonHit,
   type SearchHits,
   type TenantContext,
@@ -22,6 +26,36 @@ const persons: SearchHits<PersonHit> = {
 };
 const groups: SearchHits<GroupHit> = {
   hits: [{ id: 3, name: 'Gruppe A' }],
+  more: true,
+};
+const person: Person = {
+  id: 2,
+  firstName: 'Person',
+  lastName: 'B',
+  isArchived: false,
+};
+const personGroups: PersonGroupList = {
+  groups: [
+    {
+      groupId: 3,
+      groupName: 'Gruppe A',
+      groupTypeRoleId: 8,
+      groupMemberStatus: 'active',
+    },
+  ],
+  more: false,
+};
+const group: Group = { id: 3, name: 'Gruppe A', details: null };
+const members: GroupMemberList = {
+  members: [
+    {
+      personId: 2,
+      firstName: 'Person',
+      lastName: 'B',
+      groupTypeRoleId: 8,
+      groupMemberStatus: 'active',
+    },
+  ],
   more: true,
 };
 const guid = '00000000-0000-4000-8000-000000000001';
@@ -52,6 +86,7 @@ const fakeClient = () => {
   const seen: TenantContext[] = [];
   const queries: string[] = [];
   const wiki: unknown[][] = [];
+  const ids: unknown[][] = [];
   const client: Client = {
     whoami: (context) => {
       seen.push(context);
@@ -71,6 +106,26 @@ const fakeClient = () => {
       queries.push(query);
       return Promise.resolve(groups);
     },
+    person: (context, personId) => {
+      seen.push(context);
+      ids.push(['person', personId]);
+      return Promise.resolve(person);
+    },
+    personGroups: (context, personId) => {
+      seen.push(context);
+      ids.push(['personGroups', personId]);
+      return Promise.resolve(personGroups);
+    },
+    group: (context, groupId) => {
+      seen.push(context);
+      ids.push(['group', groupId]);
+      return Promise.resolve(group);
+    },
+    groupMembers: (context, groupId, number) => {
+      seen.push(context);
+      ids.push(['groupMembers', groupId, number]);
+      return Promise.resolve(members);
+    },
     wikiCategories: (context) => {
       seen.push(context);
       return Promise.resolve(categories);
@@ -86,7 +141,7 @@ const fakeClient = () => {
       return Promise.resolve(page);
     },
   };
-  return { client, seen, queries, wiki };
+  return { client, seen, queries, wiki, ids };
 };
 
 describe('createReadAccess', () => {
@@ -122,6 +177,10 @@ describe('createReadAccess', () => {
         read.permissions(),
         read.searchPersons('Person'),
         read.searchGroups('Gruppe'),
+        read.person(2),
+        read.personGroups(2),
+        read.group(3),
+        read.groupMembers(3, 1),
         read.wikiCategories(),
         read.wikiPages(4, 1),
         read.wikiPage(4, guid),
@@ -133,11 +192,27 @@ describe('createReadAccess', () => {
     },
   );
 
+  it('reads persons and groups by ID with the context and the arguments of the call', async () => {
+    const { client, seen, ids } = fakeClient();
+    const { read } = createReadAccess(client, ctx, 'special');
+    await expect(read.person(2)).resolves.toBe(person);
+    await expect(read.personGroups(2)).resolves.toBe(personGroups);
+    await expect(read.group(3)).resolves.toBe(group);
+    await expect(read.groupMembers(3, 4)).resolves.toBe(members);
+    expect(seen).toEqual([ctx, ctx, ctx, ctx]);
+    expect(ids).toEqual([
+      ['person', 2],
+      ['personGroups', 2],
+      ['group', 3],
+      ['groupMembers', 3, 4],
+    ]);
+  });
+
   // Persons and groups only for a tool of the sensitivity special, whose
   // result waits for its audit line and which never runs unattended
-  // (ADR 0028, ADR 0060).
+  // (ADR 0028, ADR 0060, ADR 0064).
   it.each(['none', 'personal'] as const)(
-    'refuses both searches to a tool of the sensitivity %s, without reading',
+    'refuses both searches and the four reads by ID to a tool of the sensitivity %s, without reading',
     async (sensitivity) => {
       lines.length = 0;
       const { client, seen } = fakeClient();
@@ -145,13 +220,19 @@ describe('createReadAccess', () => {
       for (const call of [
         read.searchPersons('Person'),
         read.searchGroups('Gruppe'),
+        read.person(2),
+        read.personGroups(2),
+        read.group(3),
+        read.groupMembers(3, 1),
       ]) {
         const error: unknown = await call.catch((thrown: unknown) => thrown);
         expect(isEccliumError(error) && error.code).toBe('policy_denied');
       }
       await expect(read.whoami()).resolves.toBe(me);
       expect(seen).toEqual([ctx]);
-      expect(lines).toEqual(['read_search_refused', 'read_search_refused']);
+      expect(lines).toEqual(
+        Array.from({ length: 6 }, () => 'read_search_refused'),
+      );
     },
   );
 

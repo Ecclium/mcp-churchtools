@@ -8,9 +8,13 @@
  */
 import {
   EccliumError,
+  type Group,
   type GroupHit,
+  type GroupMemberList,
   type Me,
   type Permissions,
+  type Person,
+  type PersonGroupList,
   type PersonHit,
   type ReadApi,
   type SearchHits,
@@ -37,7 +41,8 @@ export interface ReadAccess {
  * @param client - The raw client of the instance.
  * @param ctx - The context of the call. Its signal aborts every request.
  * @param sensitivity - The sensitivity of the calling tool. Only `special`
- *   may search persons and groups; any other gets `policy_denied`.
+ *   may search and read persons and groups; any other gets
+ *   `policy_denied`.
  * @returns The access, frozen and without prototype.
  * @example
  * ```ts
@@ -55,10 +60,10 @@ export function createReadAccess(
   const guard = <T>(run: () => Promise<T>): Promise<T> =>
     revoked ? Promise.reject(new EccliumError('internal')) : run();
   // Persons and groups reveal religious affiliation. Only a tool of the
-  // sensitivity special may search them: only its result waits for its
-  // line in the audit file, and only it never runs unattended (ADR 0028,
-  // ADR 0060). A tool that declares less could otherwise pass on names
-  // without either.
+  // sensitivity special may search or read them: only its result waits
+  // for its line in the audit file, and only it never runs unattended
+  // (ADR 0028, ADR 0060, ADR 0064). A tool that declares less could
+  // otherwise pass on names and memberships without either.
   const special = <T>(run: () => Promise<T>): Promise<T> => {
     if (revoked || sensitivity === 'special') return guard(run);
     ctx.log.warn('read_search_refused', { code: 'policy_denied' });
@@ -73,6 +78,14 @@ export function createReadAccess(
       special(() => client.searchPersons(ctx, query)),
     searchGroups: (query: string): Promise<SearchHits<GroupHit>> =>
       special(() => client.searchGroups(ctx, query)),
+    person: (personId: number): Promise<Person> =>
+      special(() => client.person(ctx, personId)),
+    personGroups: (personId: number): Promise<PersonGroupList> =>
+      special(() => client.personGroups(ctx, personId)),
+    group: (groupId: number): Promise<Group> =>
+      special(() => client.group(ctx, groupId)),
+    groupMembers: (groupId: number, page: number): Promise<GroupMemberList> =>
+      special(() => client.groupMembers(ctx, groupId, page)),
     wikiCategories: (): Promise<readonly WikiCategory[]> =>
       guard(() => client.wikiCategories(ctx)),
     wikiPages: (categoryId: number, page: number): Promise<WikiPageList> =>

@@ -7,7 +7,13 @@
  * @packageDocumentation
  */
 import {
+  calendarDatePattern,
+  groupMembersPageLimit,
+  groupMemberStatusPattern,
   isWikiPageGuid,
+  maxGroupMeetingTimeLength,
+  maxGroupNoteLength,
+  maxNameLength,
   maxSearchHits,
   maxWikiCategories,
   maxWikiTitleLength,
@@ -101,6 +107,130 @@ export const personListSchema = z.object({
 export const groupListSchema = z.object({
   data: z.array(z.object({ id, name: text(255) })).max(searchPageLimit),
 });
+
+/**
+ * The answer of `GET /api/persons/{personId}`, only the four fields the
+ * read passes on (ADR 0064, `docs/research/churchtools-api.md`, F32). The
+ * names come without a security level and may be empty; `guid` and every
+ * other field are not read.
+ */
+export const personSchema = z.object({
+  data: z.object({
+    id,
+    firstName: text(maxNameLength),
+    lastName: text(maxNameLength),
+    isArchived: z.boolean(),
+  }),
+});
+
+/**
+ * The most groups of one person the client reads. ChurchTools lists them
+ * in one answer without pages (F26); a longer list is no answer the client
+ * knows. The read passes on the first 50 of them.
+ */
+export const maxPersonGroupEntries = 1000;
+
+const memberStatus = z.string().regex(groupMemberStatusPattern);
+
+/**
+ * The answer of `GET /api/persons/{personId}/groups` without parameters,
+ * only what the read passes on (ADR 0064, F34): of the group the
+ * identifier in `domainIdentifier` and the name in `title`, and role and
+ * status of the membership. The object `person`, whose names ChurchTools
+ * leaves empty here, and `meta` are not read.
+ */
+export const personGroupListSchema = z.object({
+  data: z
+    .array(
+      z.object({
+        group: z.object({
+          // Any text up to this length; only a plain whole number from 1
+          // becomes the ID of the group, any other gives none (ADR 0064).
+          domainIdentifier: z.string().max(maxNameLength, { abort: true }),
+          title: text(maxNameLength),
+        }),
+        groupTypeRoleId: id,
+        groupMemberStatus: memberStatus,
+      }),
+    )
+    .max(maxPersonGroupEntries),
+});
+
+const calendarDate = z.string().regex(calendarDatePattern);
+
+/**
+ * The six details of the lowest security level of groups that the read
+ * passes on (ADR 0064, F32), in the object `information`. Without that
+ * level, ChurchTools leaves them out instead of sending `null`.
+ */
+const groupDetailsSchema = z.object({
+  meetingTime: text(maxGroupMeetingTimeLength).nullable().optional(),
+  note: text(maxGroupNoteLength).nullable().optional(),
+  maxMembers: count.nullable().optional(),
+  targetGroupId: id.nullable().optional(),
+  dateOfFoundation: calendarDate.nullable().optional(),
+  endDate: calendarDate.nullable().optional(),
+});
+
+const groupDetailKeys = Object.freeze(
+  Object.keys(groupDetailsSchema.shape),
+) as readonly (keyof z.output<typeof groupDetailsSchema>)[];
+
+/**
+ * The answer of `GET /api/groups/{groupId}`, only ID, name and the six
+ * details (ADR 0064, F32). The details come all together or not at all: a
+ * part of them is no form a probe has shown, so the client refuses it.
+ * `settings.qrCodeCheckinAutomaticEmail`, the seventh field of the lowest
+ * level, and every other field are not read.
+ */
+export const groupSchema = z.object({
+  data: z.object({
+    id,
+    name: text(maxNameLength),
+    information: groupDetailsSchema.refine((details) => {
+      const present = groupDetailKeys.filter(
+        (key) => details[key] !== undefined,
+      ).length;
+      return present === 0 || present === groupDetailKeys.length;
+    }),
+  }),
+});
+
+/**
+ * One page of the answer of `GET /api/groups/{groupId}/members` without
+ * `personFields[]` and `include`, only what the read passes on (ADR 0064,
+ * F34): the ID and the names of the person, and role and status of the
+ * membership. Of `meta`, only `pagination.lastPage` is read, for whether
+ * another page follows; whether its counts include members the account
+ * may not see is open (F26). A page with members must carry it.
+ */
+export const groupMemberListSchema = z
+  .object({
+    data: z
+      .array(
+        z.object({
+          personId: id,
+          person: z.object({
+            domainAttributes: z.object({
+              firstName: text(maxNameLength),
+              lastName: text(maxNameLength),
+            }),
+          }),
+          groupTypeRoleId: id,
+          groupMemberStatus: memberStatus,
+        }),
+      )
+      .max(groupMembersPageLimit),
+    // Optional only for a page without members: whether ChurchTools sends
+    // the pagination for a page behind the last one, no probe has shown
+    // (F26). Such a page then says that no page follows.
+    meta: z
+      .object({ pagination: z.object({ lastPage: count }).optional() })
+      .optional(),
+  })
+  .refine(
+    (root) => root.meta?.pagination !== undefined || root.data.length === 0,
+  );
 
 /**
  * The longest text of a wiki page the client reads, in UTF-16 code units.

@@ -10,7 +10,11 @@
 import type { Plugin, PluginHost } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { whoamiTool } from './base/whoami.js';
+import { groupsGetTool } from './groups/get.js';
+import { groupsGetMembersTool } from './groups/members.js';
 import { groupsSearchTool } from './groups/search.js';
+import { personsGetTool } from './persons/get.js';
+import { personsGetGroupsTool } from './persons/groups.js';
 import { personsSearchTool } from './persons/search.js';
 import { wikiCategoriesListTool } from './wiki/categories.js';
 import { wikiPageGetTool } from './wiki/page.js';
@@ -41,7 +45,11 @@ export function createCorePlugin(): Plugin {
     register(host: PluginHost): undefined {
       host.addTool(whoamiTool);
       host.addTool(personsSearchTool);
+      host.addTool(personsGetTool);
+      host.addTool(personsGetGroupsTool);
       host.addTool(groupsSearchTool);
+      host.addTool(groupsGetTool);
+      host.addTool(groupsGetMembersTool);
       host.addTool(wikiCategoriesListTool);
       host.addTool(wikiPagesListTool);
       host.addTool(wikiPageGetTool);

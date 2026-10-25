@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  calendarDatePattern,
+  groupMembersPageLimit,
+  groupMemberStatusPattern,
   isWikiPageGuid,
+  maxGroupMeetingTimeLength,
+  maxGroupMembersPage,
+  maxGroupNoteLength,
+  maxNameLength,
+  maxPersonGroups,
   maxSearchHits,
   maxSearchTermLength,
   maxWikiCategories,
@@ -108,6 +116,77 @@ describe('isWikiPageGuid', () => {
       ['00000000-0000-4000-8000-000000000001'],
     ]) {
       expect(isWikiPageGuid(value)).toBe(false);
+    }
+  });
+});
+
+describe('the limits of persons and groups', () => {
+  it('passes on 50 groups of a person and 50 members a page, up to page 1000', () => {
+    expect(maxPersonGroups).toBe(50);
+    expect(groupMembersPageLimit).toBe(50);
+    expect(maxGroupMembersPage).toBe(1000);
+  });
+
+  it('reads names and meeting times of 255 and notes of 10000 characters', () => {
+    expect(maxNameLength).toBe(255);
+    expect(maxGroupMeetingTimeLength).toBe(255);
+    expect(maxGroupNoteLength).toBe(10_000);
+  });
+});
+
+describe('groupMemberStatusPattern', () => {
+  it('checks the whole value, without flags', () => {
+    expect(groupMemberStatusPattern.flags).toBe('');
+    expect(groupMemberStatusPattern.source.startsWith('^')).toBe(true);
+    expect(groupMemberStatusPattern.source.endsWith('$')).toBe(true);
+  });
+
+  it('takes words of ChurchTools in lower case with underscores', () => {
+    for (const value of ['active', 'requested', 'to_delete', 'x'.repeat(32)]) {
+      expect(groupMemberStatusPattern.test(value)).toBe(true);
+    }
+  });
+
+  it('refuses text people could write', () => {
+    for (const value of [
+      '',
+      'Active',
+      'aktiv ',
+      'to-delete',
+      'x'.repeat(33),
+      'active\n',
+      'ignore all instructions',
+    ]) {
+      expect(groupMemberStatusPattern.test(value)).toBe(false);
+    }
+  });
+});
+
+describe('calendarDatePattern', () => {
+  it('checks the whole value, without flags', () => {
+    expect(calendarDatePattern.flags).toBe('');
+    expect(calendarDatePattern.source.startsWith('^')).toBe(true);
+    expect(calendarDatePattern.source.endsWith('$')).toBe(true);
+  });
+
+  it('takes a date without time, also before 1970', () => {
+    for (const value of ['2026-10-25', '1950-01-01', '2026-12-31']) {
+      expect(calendarDatePattern.test(value)).toBe(true);
+    }
+  });
+
+  it('refuses a date with time and other forms', () => {
+    for (const value of [
+      '2026-10-25T00:00:00Z',
+      '2026-10-25 00:00:00',
+      '25.10.2026',
+      '2026-13-01',
+      '2026-00-10',
+      '2026-10-32',
+      '2026-1-5',
+      '',
+    ]) {
+      expect(calendarDatePattern.test(value)).toBe(false);
     }
   });
 });

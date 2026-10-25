@@ -628,10 +628,11 @@ const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({
     `Setzen Sie ${quote('ECCLIUM_REDACTION')} auf ‹standard›, wenn das nicht gewollt ist.`,
   ),
   // On every start, because the tools of persons let the AI assistant see
-  // names of persons and groups (ADR 0060).
+  // names of persons and groups and their memberships (ADR 0060,
+  // ADR 0064).
   persons_toolset_enabled: message(
     `Das Toolset ${personsToolset} ist eingeschaltet.`,
-    'Der KI-Assistent kann damit Personen und Gruppen der Instanz nach Namen suchen und sieht Kennung und Name jedes Treffers. Jeder Aufruf steht in der Audit-Datei.',
+    'Der KI-Assistent kann damit Personen und Gruppen der Instanz nach Namen suchen und sieht Kennung und Name jedes Treffers. Er liest auch die Gruppen einer Person, die Angaben einer Gruppe mit ihrer Notiz und die Namen ihrer Mitglieder mit Rolle und Stand der Mitgliedschaft. Kontaktdaten liest er nicht. Jeder Aufruf steht in der Audit-Datei.',
     `Entfernen Sie ${personsToolset} aus ${toolsets}, wenn er diese Daten nicht sehen soll. ${insteadOfAll}`,
   ),
   // One text for every setting: the report of the loader names none of
