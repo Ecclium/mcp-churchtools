@@ -15,6 +15,7 @@ import {
   assertNoCanary,
   assertPlanted,
   createChurchToolsDouble,
+  createMemoryQuotaStore,
   doubleOrigin,
   groupsAtHighestLevel,
   makeCanaries,
@@ -91,6 +92,8 @@ const setup = (catalog: ToolCatalog) => {
     failures: () => 0,
   });
   const pipeline = createToolPipeline({
+    // Tools with sensitivity special count against the read budget.
+    quota: createMemoryQuotaStore(),
     catalog,
     audit,
     transport: double.transport,

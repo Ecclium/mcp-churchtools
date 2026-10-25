@@ -46,6 +46,7 @@ import {
 } from '../../../packages/testkit/src/http-double/index.ts';
 import { examplePlugin } from '../../../packages/testkit/src/plugins/example/index.ts';
 import { createSpecialPlugin } from '../../../packages/testkit/src/plugins/special/index.ts';
+import { createMemoryQuotaStore } from '../../../packages/testkit/src/quota/index.ts';
 
 const [scenario = 'serve'] = process.argv.slice(2);
 
@@ -131,6 +132,8 @@ const pipeline = createToolPipeline({
   requestsPerMinute: config.churchtoolsRequestsPerMinute,
   clock,
   logging: { writer, minLevel: config.logLevel },
+  // The tool with sensitivity special counts against the read budget.
+  quota: createMemoryQuotaStore(),
 });
 
 startStdioServer({

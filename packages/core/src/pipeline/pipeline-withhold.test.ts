@@ -8,6 +8,7 @@ import {
 } from '@ecclium/mcp-churchtools-plugin-api';
 import {
   createChurchToolsDouble,
+  createMemoryQuotaStore,
   doubleOrigin,
   examplePlugin,
   makeCanary,
@@ -166,6 +167,8 @@ const setup = (
       isKnownTool: catalog.has,
     });
   const pipeline = createToolPipeline({
+    // Tools with sensitivity special count against the read budget.
+    quota: createMemoryQuotaStore(),
     catalog,
     audit,
     transport: double.transport,

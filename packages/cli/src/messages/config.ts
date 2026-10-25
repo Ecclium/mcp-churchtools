@@ -118,6 +118,7 @@ const insteadOfAll = `Steht dort ${quote('all')}, nennen Sie stattdessen die üb
 // The names of the toolsets as German prose: ‹a›, ‹b› und ‹c›.
 const toolsetList = `${toolsetNames.slice(0, -1).map(quote).join(', ')} und ${quote(toolsetNames.at(-1) ?? '')}`;
 const auditDir = quote('audit');
+const quotaDir = quote('quota');
 const example = 'https://example.church.tools';
 
 // Where an option of TLS was found: in NODE_OPTIONS, which the loader then
@@ -572,6 +573,36 @@ const problems: Readonly<
   audit_dir_unsafe: (name = stateDir) =>
     message(
       `Der Ordner ${auditDir} im Ordner aus ${name} liess sich nicht sicher prüfen.`,
+      'Das Dateisystem meldete einen Fehler. Seine Meldung zeigt Ecclium nicht, weil sie den Pfad enthält.',
+      `Prüfen Sie Eigentümer und Rechte des Ordners aus ${name}.`,
+    ),
+  quota_dir_symlink: (name = stateDir) =>
+    message(
+      `Der Ordner ${quotaDir} im Ordner aus ${name} ist ein symbolischer Link.`,
+      'Ein Link könnte auf einen fremden Ordner zeigen, deshalb folgt Ecclium ihm nicht.',
+      `Entfernen Sie den Link. Ecclium legt den Ordner ${quotaDir} beim Start selbst an.`,
+    ),
+  quota_dir_not_directory: (name = stateDir) =>
+    message(
+      `Im Ordner aus ${name} ist ${quotaDir} kein Ordner.`,
+      `Ecclium zählt im Ordner ${quotaDir} die Aufrufe für das Lesebudget.`,
+      `Verschieben Sie, was unter dem Namen ${quotaDir} steht. Ecclium legt den Ordner beim Start selbst an.`,
+    ),
+  quota_dir_owner: (name = stateDir) =>
+    message(
+      `Der Ordner ${quotaDir} im Ordner aus ${name} gehört einem anderen Benutzer.`,
+      'Wem der Ordner gehört, der kann die Zähler des Lesebudgets darin ändern oder löschen.',
+      `Entfernen Sie den Ordner ${quotaDir}. Ecclium legt ihn beim Start als der Benutzer an, unter dem es läuft.`,
+    ),
+  quota_dir_mode: (name = stateDir) =>
+    message(
+      `Der Ordner ${quotaDir} im Ordner aus ${name} ist auch für die Gruppe oder für andere Benutzer zugänglich.`,
+      'Dann könnten andere Benutzer die Zähler des Lesebudgets ändern.',
+      `Setzen Sie die Rechte von ${quotaDir} mit «chmod 700» auf 700.`,
+    ),
+  quota_dir_unsafe: (name = stateDir) =>
+    message(
+      `Der Ordner ${quotaDir} im Ordner aus ${name} liess sich nicht sicher prüfen.`,
       'Das Dateisystem meldete einen Fehler. Seine Meldung zeigt Ecclium nicht, weil sie den Pfad enthält.',
       `Prüfen Sie Eigentümer und Rechte des Ordners aus ${name}.`,
     ),

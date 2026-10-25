@@ -440,6 +440,8 @@ describe('the catalog of messages', () => {
         'auditFileText',
         'emptyToolsetMessage',
         'emptyToolsetText',
+        'quotaFolderMessage',
+        'quotaFolderText',
         'refusalMessage',
         'refusalText',
         'startMessage',

@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -10,6 +10,7 @@ import { exitCodes } from '../exit-codes.js';
 import {
   auditFileText,
   emptyToolsetText,
+  quotaFolderText,
   startText,
   toolsetsText,
   warningText,
@@ -165,6 +166,44 @@ describe('the first stage and the audit file', () => {
     const lines = stderr.split('\n').filter((line) => line !== '');
     expect(lines.at(-1)).toBe(auditFileText('audit_file_unavailable'));
     expect(lines.length).toBeGreaterThan(1);
+    expect(state.served).toEqual([]);
+  });
+
+  // The folder of the read budget lies next to the audit file (ADR 0063).
+  it('prepares the folder quota with 0700 before the second stage loads', async () => {
+    const folder = freshFolder();
+    const { code } = await start(folder);
+    expect(code).toBeUndefined();
+    expect(statSync(join(folder, 'quota')).mode & 0o777).toBe(0o700);
+  });
+
+  it('ends with its notice and 78, and closes the audit file, when the folder quota cannot be used', async () => {
+    const closed: string[] = [];
+    const { code, stderr } = await start(freshFolder(), {
+      openAuditFile: () => ({
+        ok: true,
+        writer: {
+          write: () => true,
+          ready: () => true,
+          close: () => {
+            closed.push('closed');
+          },
+          counts: () => ({
+            written: 0,
+            failed: 0,
+            partial: 0,
+            rejected: 0,
+            reopened: 0,
+            closed: false,
+          }),
+        },
+      }),
+      prepareQuotaFolder: () => ({ ok: false, code: 'quota_folder_unsafe' }),
+    });
+    expect(code).toBe(exitCodes.invalidConfig);
+    const lines = stderr.split('\n').filter((line) => line !== '');
+    expect(lines.at(-1)).toBe(quotaFolderText('quota_folder_unsafe'));
+    expect(closed).toEqual(['closed']);
     expect(state.served).toEqual([]);
   });
 

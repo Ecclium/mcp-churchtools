@@ -14,6 +14,7 @@ import {
   assertNoCanary,
   assertPlanted,
   createChurchToolsDouble,
+  createMemoryQuotaStore,
   doubleOrigin,
   makeCanaries,
   makeCanary,
@@ -89,6 +90,8 @@ const setup = () => {
     failures: () => 0,
   });
   const pipeline = createToolPipeline({
+    // Tools with sensitivity special count against the read budget.
+    quota: createMemoryQuotaStore(),
     catalog: createToolCatalog({
       core: createCorePlugin(),
       toolsets: new Set(['persons'] as const),

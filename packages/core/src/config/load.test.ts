@@ -138,6 +138,7 @@ const memoryFolder = (
   options: {
     readonly folder?: Entry;
     readonly audit?: Entry;
+    readonly quota?: Entry;
     readonly getuid?: () => number | undefined;
   } = {},
 ): MemoryFolder => {
@@ -145,7 +146,9 @@ const memoryFolder = (
   const entryOf = (path: string): Entry =>
     path.endsWith('/audit')
       ? (options.audit ?? { error: 'ENOENT' })
-      : (options.folder ?? {});
+      : path.endsWith('/quota')
+        ? (options.quota ?? { error: 'ENOENT' })
+        : (options.folder ?? {});
   const fs: StateDirFileSystem = {
     lstatSync: (path) => {
       looked.push(path);
@@ -386,7 +389,7 @@ describe('loadConfig and the folder of state', () => {
     expect(folder.looked).toEqual([]);
   });
 
-  it('takes a checked folder and looks at it and at its folder audit', () => {
+  it('takes a checked folder and looks at it and at its folders audit and quota', () => {
     const folder = memoryFolder({ audit: { mode: 0o40700 } });
     const result = withStateDir(stateDirPath, folder.fs);
     expect(result.ok && result.config.stateDir).toBe(stateDirPath);
@@ -394,7 +397,11 @@ describe('loadConfig and the folder of state', () => {
       origin: 'environment',
       shown: { kind: 'path', value: stateDirPath },
     });
-    expect(folder.looked).toEqual([stateDirPath, `${stateDirPath}/audit`]);
+    expect(folder.looked).toEqual([
+      stateDirPath,
+      `${stateDirPath}/audit`,
+      `${stateDirPath}/quota`,
+    ]);
   });
 
   it('refuses the folder and keeps its path out of the report', () => {
@@ -1552,6 +1559,19 @@ describe('loadConfig and its problems', () => {
       withStateDir(stateDirPath, memoryFolder({ audit: { mode: 0o40701 } }).fs),
     audit_dir_unsafe: () =>
       withStateDir(stateDirPath, memoryFolder({ audit: { error: 'EIO' } }).fs),
+    quota_dir_symlink: () =>
+      withStateDir(stateDirPath, memoryFolder({ quota: { symlink: true } }).fs),
+    quota_dir_not_directory: () =>
+      withStateDir(
+        stateDirPath,
+        memoryFolder({ quota: { directory: false } }).fs,
+      ),
+    quota_dir_owner: () =>
+      withStateDir(stateDirPath, memoryFolder({ quota: { uid: 0 } }).fs),
+    quota_dir_mode: () =>
+      withStateDir(stateDirPath, memoryFolder({ quota: { mode: 0o40701 } }).fs),
+    quota_dir_unsafe: () =>
+      withStateDir(stateDirPath, memoryFolder({ quota: { error: 'EIO' } }).fs),
     token_from_environment: () =>
       load({ ECCLIUM_CHURCHTOOLS_URL: address, [tokenVariableName]: token() }),
     redaction_off: () => load({ ...valid(), ECCLIUM_REDACTION: 'off' }),

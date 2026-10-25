@@ -17,6 +17,7 @@ import {
   checkStateDir,
   isNormalizedAbsolutePath,
   maxStateDirLength,
+  quotaDirName,
   type StateDirCode,
   stateDirCodes,
   type StateDirFileSystem,
@@ -42,6 +43,7 @@ type Entry =
 interface FakeOptions {
   readonly folder?: Entry;
   readonly audit?: Entry;
+  readonly quota?: Entry;
   readonly getuid?: () => number | undefined;
   readonly constants?: StateDirFileSystem['constants'];
 }
@@ -62,7 +64,9 @@ const fake = (options: FakeOptions = {}): Fake => {
       looked.push(target);
       const entry = target.endsWith(`/${auditDirName}`)
         ? (options.audit ?? { error: fsError('ENOENT') })
-        : (options.folder ?? {});
+        : target.endsWith(`/${quotaDirName}`)
+          ? (options.quota ?? { error: fsError('ENOENT') })
+          : (options.folder ?? {});
       if ('error' in entry) throw entry.error;
       return {
         isDirectory: () => {
@@ -115,10 +119,14 @@ describe('isNormalizedAbsolutePath', () => {
 });
 
 describe('checkStateDir with file functions', () => {
-  it('passes a folder of the user with 0700 and no folder audit yet', () => {
+  it('passes a folder of the user with 0700 and no folder audit or quota yet', () => {
     const { fs, looked } = fake();
     expect(checkStateDir(path, fs)).toEqual({ ok: true });
-    expect(looked).toEqual([path, `${path}/${auditDirName}`]);
+    expect(looked).toEqual([
+      path,
+      `${path}/${auditDirName}`,
+      `${path}/${quotaDirName}`,
+    ]);
   });
 
   it('passes a folder audit that passes the same checks', () => {
@@ -204,6 +212,13 @@ describe('checkStateDir with file functions', () => {
     [{ audit: { uid: 0 } }, 'audit_dir_owner'],
     [{ audit: { mode: 0o40750 } }, 'audit_dir_mode'],
     [{ audit: { throws: true } }, 'audit_dir_unsafe'],
+    [{ quota: { error: fsError('EACCES') } }, 'quota_dir_unsafe'],
+    [{ quota: { symlink: true } }, 'quota_dir_symlink'],
+    [{ quota: { directory: false } }, 'quota_dir_not_directory'],
+    [{ quota: { uid: 0 } }, 'quota_dir_owner'],
+    [{ quota: { mode: 0o40750 } }, 'quota_dir_mode'],
+    [{ quota: { throws: true } }, 'quota_dir_unsafe'],
+    [{ audit: { mode: 0o40750 }, quota: { uid: 0 } }, 'audit_dir_mode'],
   ] as const)('refuses %j with %s', (options, code) => {
     expect(codeOf(options)).toBe(code);
   });
@@ -217,10 +232,10 @@ describe('checkStateDir with file functions', () => {
     expect(codeOf({ folder: { mode: 0o42700 } })).toBe('ok');
   });
 
-  it('looks at the folder audit of the root folder without a double slash', () => {
+  it('looks at the folders audit and quota of the root folder without a double slash', () => {
     const { fs, looked } = fake({ folder: { uid: 0 }, getuid: () => 0 });
     expect(checkStateDir('/', fs)).toEqual({ ok: true });
-    expect(looked).toEqual(['/', '/audit']);
+    expect(looked).toEqual(['/', '/audit', '/quota']);
   });
 
   it('gives frozen results without a prototype', () => {
@@ -312,6 +327,16 @@ describe('checkStateDir on the disk', () => {
     expect(checkStateDir(folder)).toMatchObject({ code: 'audit_dir_mode' });
   });
 
+  it('refuses a folder quota that is a link to a good folder, and one with 0755', () => {
+    const linked = fresh('quota-link');
+    symlinkSync(fresh('quota-target'), join(linked, quotaDirName));
+    expect(checkStateDir(linked)).toMatchObject({ code: 'quota_dir_symlink' });
+    const open = fresh('quota-open');
+    mkdirSync(join(open, quotaDirName));
+    chmodSync(join(open, quotaDirName), 0o755);
+    expect(checkStateDir(open)).toMatchObject({ code: 'quota_dir_mode' });
+  });
+
   it('refuses a file named audit', () => {
     const folder = fresh('audit-file');
     writeFileSync(join(folder, auditDirName), '', { mode: 0o600 });
@@ -360,6 +385,11 @@ describe('stateDirCodes', () => {
         audit_dir_owner: () => codeOf({ audit: { uid: 7 } }),
         audit_dir_mode: () => codeOf({ audit: { mode: 0o40707 } }),
         audit_dir_unsafe: () => codeOf({ audit: { error: fsError('EIO') } }),
+        quota_dir_symlink: () => codeOf({ quota: { symlink: true } }),
+        quota_dir_not_directory: () => codeOf({ quota: { directory: false } }),
+        quota_dir_owner: () => codeOf({ quota: { uid: 7 } }),
+        quota_dir_mode: () => codeOf({ quota: { mode: 0o40707 } }),
+        quota_dir_unsafe: () => codeOf({ quota: { error: fsError('EIO') } }),
       };
       expect(cases[code]()).toBe(code);
     },

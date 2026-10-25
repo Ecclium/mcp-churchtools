@@ -4,6 +4,7 @@ import {
   closeSync,
   existsSync,
   fstatSync,
+  mkdirSync,
   mkdtempSync,
   openSync,
   readdirSync,
@@ -35,6 +36,7 @@ import {
   warningText,
 } from '../packages/cli/src/messages/index.ts';
 import { fixedSentences } from '../packages/core/src/errors/index.ts';
+import { specialReadBudget } from '../packages/core/src/quota/index.ts';
 import {
   type Certificate,
   findOpenssl,
@@ -1125,6 +1127,106 @@ describe.skipIf(process.getuid?.() === 0)(
           [term, person.name, group, person.email, person.phone],
           'audit and stderr',
         );
+      });
+    });
+
+    // The read budget at the real start (ADR 0063): the counter lies in the
+    // folder of state and survives a restart. The file says that the actor
+    // has one call left today.
+    describe('the read budget across a restart', () => {
+      let stateDir = '';
+      let first: Json;
+      let second: Json;
+      let secondRun: Finished;
+      let day = '';
+      const counted = (): unknown =>
+        JSON.parse(
+          readFileSync(join(stateDir, 'quota', `default-${day}.json`), 'utf8'),
+        );
+
+      beforeAll(async () => {
+        // The children count on the UTC day of their own clock. Close to
+        // midnight, the test waits for the new day, so that both runs count
+        // on the day of the file.
+        const now = Date.now();
+        const untilMidnight = 86_400_000 - (now % 86_400_000);
+        if (untilMidnight < 20_000) {
+          await new Promise((resolve) => {
+            setTimeout(resolve, untilMidnight + 1000);
+          });
+        }
+        day = new Date().toISOString().slice(0, 10);
+        stateDir = freshStateDir();
+        const quota = join(stateDir, 'quota');
+        mkdirSync(quota, { mode: 0o700 });
+        chmodSync(quota, 0o700);
+        writeFileSync(
+          join(quota, `default-${day}.json`),
+          JSON.stringify({
+            v: 1,
+            tenant: 'default',
+            day,
+            counts: {
+              'user:stdio:local-stdio': {
+                special_reads: specialReadBudget - 1,
+              },
+            },
+          }),
+          { mode: 0o600 },
+        );
+        const server = await serveTls(searches(stateDir, false));
+        const run = async (): Promise<readonly [Json, Finished]> => {
+          const launched = overTls(server.origin);
+          const session = launch({
+            ...launched,
+            env: {
+              ...launched.env,
+              ECCLIUM_TOOLSETS: 'persons',
+              ECCLIUM_STATE_DIR: stateDir,
+            },
+          });
+          await modern.open(session);
+          const answer = await search(session, modern, 2, 'ct_persons_search');
+          return [answer, await session.finish()];
+        };
+        [first] = await run();
+        [second, secondRun] = await run();
+      }, timeout);
+
+      it('lets the last call of the day through and counts every call in the file', () => {
+        expect(at(first, 'result', 'isError')).toBeUndefined();
+        expect(counted()).toMatchObject({
+          counts: {
+            'user:stdio:local-stdio': {
+              special_reads: specialReadBudget + 1,
+            },
+          },
+        });
+      });
+
+      it('refuses the next call after the restart, with the reason in the log', () => {
+        expect(at(second, 'result', 'isError')).toBe(true);
+        expect(at(second, 'result', 'content', 0, 'text')).toBe(
+          `The daily budget of ${String(specialReadBudget)} calls of tools with special personal data is used up. It resets at 00:00 UTC.`,
+        );
+        const denied = auditOf(secondRun.stderr).at(-1);
+        expect(denied).toMatchObject({
+          tool: 'ct_persons_search',
+          outcome: 'denied',
+          errorCode: 'policy_denied',
+        });
+        const reason = jsonLines(secondRun.stderr).find(
+          (line) => line['event'] === 'read_budget_exhausted',
+        );
+        expect(reason?.['eventId']).toBe(denied?.['eventId']);
+        expect(protocolViolations(secondRun.stdout)).toEqual([]);
+        assertNoCanary(secondRun.stdout, [person.name], 'stdout');
+      });
+
+      it('leaves no lock and no other file in the folder quota', () => {
+        expect(readdirSync(join(stateDir, 'quota'))).toEqual([
+          `default-${day}.json`,
+        ]);
       });
     });
 

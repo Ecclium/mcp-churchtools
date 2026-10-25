@@ -1,6 +1,8 @@
 import {
   type AuditFileCode,
   auditFileCodes,
+  quotaFolderCodes,
+  type QuotaFolderCode,
   type RefusalReason,
   refusalReasons,
   type ToolsetName,
@@ -16,6 +18,8 @@ import {
   emptyToolsetMessage,
   emptyToolsetText,
   type Message,
+  quotaFolderMessage,
+  quotaFolderText,
   refusalMessage,
   refusalText,
   type StartNoticeCode,
@@ -46,6 +50,10 @@ const everyMessage: [string, Message][] = [
     `the audit file ${code}`,
     auditFileMessage(code),
   ]),
+  ...quotaFolderCodes.map((code): [string, Message] => [
+    `the folder quota ${code}`,
+    quotaFolderMessage(code),
+  ]),
   ['one toolset', toolsetsMessage(['wiki'])],
   ['every toolset', toolsetsMessage(toolsetNames)],
   ...toolsetNames.map((name): [string, Message] => [
@@ -63,6 +71,10 @@ const everyText: [string, string][] = [
   ...auditFileCodes.map((code): [string, string] => [
     `the audit file ${code}`,
     auditFileText(code),
+  ]),
+  ...quotaFolderCodes.map((code): [string, string] => [
+    `the folder quota ${code}`,
+    quotaFolderText(code),
   ]),
   ['every toolset', toolsetsText(toolsetNames)],
   ...toolsetNames.map((name): [string, string] => [
@@ -136,6 +148,19 @@ describe('the texts of the start over stdio', () => {
       expect(auditFileText(code)).not.toMatch(/\/[a-z]/);
     }
     expect(startText('audit_file_required')).toContain('‹ECCLIUM_STATE_DIR›');
+  });
+
+  it('gives every reason of the folder quota a text of its own, without a path', () => {
+    const whats = quotaFolderCodes.map((code) => quotaFolderMessage(code).what);
+    expect(new Set(whats).size).toBe(quotaFolderCodes.length);
+    for (const code of quotaFolderCodes) {
+      expect(quotaFolderText(code)).toContain('ECCLIUM_STATE_DIR');
+      expect(quotaFolderText(code)).toContain('bricht ab');
+      expect(quotaFolderText(code)).not.toMatch(/\/[a-z]/);
+    }
+    expect(() => quotaFolderText('toString' as QuotaFolderCode)).toThrow(
+      new TypeError('The quota folder code is unknown.'),
+    );
   });
 
   it('gives every reason of the registry a text of its own', () => {
@@ -245,6 +270,8 @@ describe('the texts of the start over stdio', () => {
       'auditFileText',
       'emptyToolsetMessage',
       'emptyToolsetText',
+      'quotaFolderMessage',
+      'quotaFolderText',
       'refusalMessage',
       'refusalText',
       'startMessage',

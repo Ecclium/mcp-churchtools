@@ -33,6 +33,11 @@ export const stateDirCodes = Object.freeze([
   'audit_dir_owner',
   'audit_dir_mode',
   'audit_dir_unsafe',
+  'quota_dir_symlink',
+  'quota_dir_not_directory',
+  'quota_dir_owner',
+  'quota_dir_mode',
+  'quota_dir_unsafe',
 ] as const);
 
 /** The reason to refuse a folder of state. */
@@ -40,6 +45,12 @@ export type StateDirCode = (typeof stateDirCodes)[number];
 
 /** The name of the folder for the audit files inside the folder of state. */
 export const auditDirName = 'audit';
+
+/**
+ * The name of the folder for the counters of the read budget inside the
+ * folder of state (ADR 0063).
+ */
+export const quotaDirName = 'quota';
 
 /** What the check learns about a path, without following a link. */
 export interface StateDirStats {
@@ -145,6 +156,13 @@ const auditDirChecks: Checks = Object.freeze({
   mode: 'audit_dir_mode',
 });
 
+const quotaDirChecks: Checks = Object.freeze({
+  symlink: 'quota_dir_symlink',
+  notDirectory: 'quota_dir_not_directory',
+  owner: 'quota_dir_owner',
+  mode: 'quota_dir_mode',
+});
+
 // A folder of the user without rights for the group or others, never
 // reached through a link at its last part.
 const checkFolder = (
@@ -160,12 +178,13 @@ const checkFolder = (
 };
 
 /**
- * Checks the folder of state and, if there is one, its folder `audit`.
- * The path must be absolute and normalised. The folder must be a folder of
- * the user, not a link, without rights for the group or others. A missing
- * folder `audit` is fine, the start creates it; one that is there must
- * pass the same checks. Without the ID of the user or the flags the audit
- * file needs, as on Windows, the platform is refused first. A path of more
+ * Checks the folder of state and, if they exist, its folders `audit` and
+ * `quota`. The path must be absolute and normalised. The folder must be a
+ * folder of the user, not a link, without rights for the group or others.
+ * A missing folder `audit` or `quota` is fine, the start creates it; one
+ * that is there must pass the same checks. Without the ID of the user or
+ * the flags the audit file needs, as on Windows, the platform is refused
+ * first. A path of more
  * than {@link maxStateDirLength} bytes in UTF-8 is refused as too long.
  *
  * Folders above the folder of state are trusted: `lstat` follows links
@@ -227,16 +246,26 @@ export function checkStateDir(
     return refuse('state_dir_unsafe');
   }
 
-  let audit: StateDirStats;
-  try {
-    audit = fs.lstatSync(`${path === '/' ? '' : path}/${auditDirName}`);
-  } catch (error) {
-    return errorCode(error) === 'ENOENT' ? passed : refuse('audit_dir_unsafe');
-  }
-  try {
-    const code = checkFolder(audit, uid, auditDirChecks);
-    return code === undefined ? passed : refuse(code);
-  } catch {
-    return refuse('audit_dir_unsafe');
-  }
+  // A folder inside, if it is there: the same checks, with its own codes.
+  const checkInside = (
+    name: string,
+    checks: Checks,
+    unsafe: StateDirCode,
+  ): StateDirCode | undefined => {
+    let inside: StateDirStats;
+    try {
+      inside = fs.lstatSync(`${path === '/' ? '' : path}/${name}`);
+    } catch (error) {
+      return errorCode(error) === 'ENOENT' ? undefined : unsafe;
+    }
+    try {
+      return checkFolder(inside, uid, checks);
+    } catch {
+      return unsafe;
+    }
+  };
+  const code =
+    checkInside(auditDirName, auditDirChecks, 'audit_dir_unsafe') ??
+    checkInside(quotaDirName, quotaDirChecks, 'quota_dir_unsafe');
+  return code === undefined ? passed : refuse(code);
 }

@@ -1,5 +1,6 @@
 // Resolution hook for the child processes of tests/mcp-stdio.test.mts,
-// tests/stdio-start.test.mts and tests/blocking-descriptors.test.mts,
+// tests/stdio-start.test.mts, tests/blocking-descriptors.test.mts and
+// tests/quota-processes.test.mts,
 // loaded with --import before the script the child runs. The packages
 // import their own modules under the names of the build, ending in .js,
 // while the child runs their TypeScript source, which Node.js loads only

@@ -46,6 +46,11 @@ export {
 } from './config/index.js';
 export { type AuditFileCode, auditFileCodes } from './audit/index.js';
 export {
+  type QuotaFolderCode,
+  quotaFolderCodes,
+  specialReadBudget,
+} from './quota/index.js';
+export {
   createStdioIdentity,
   createStdioTenantResolver,
 } from './identity/index.js';
