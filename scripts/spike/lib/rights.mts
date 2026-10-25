@@ -2,11 +2,12 @@
  * Describes the effective rights of the account, without any value.
  *
  * A right is effective if its value is neither `false` nor an empty list.
- * Its name appears only if a fixed table in this file holds it: the read
- * rights the guard for personal data allows and the two rights on the
- * wiki. These are words of the product, so they pass as fixed words and
- * no value from an answer can withhold them. The guard has already
- * refused every other right; one that turns up anyway ends the probe.
+ * Its name appears only if it is one of the read rights the guard for
+ * personal data let the probe hold, from the fixed tables of
+ * `persons-gate.mts`, or one of the two rights on the wiki. These are words
+ * of the product, so they pass as fixed words and no value from an answer
+ * can withhold them. The guard has already refused every other right; one
+ * that turns up anyway ends the probe.
  *
  * A list appears as a count class and as classes of its entries, never
  * with an entry: a positive whole number, zero, a negative number, a
@@ -18,16 +19,12 @@
  */
 import { SpikeError } from './errors.mts';
 import type { Guard, Json } from './guard.mts';
-import { personReadRights } from './persons-gate.mts';
+import { personReadRights, type ReadRights } from './persons-gate.mts';
 import { isObject, type JsonObject } from './spec.mts';
 import { countClass, countClasses } from './structure.mts';
 
-/** The rights whose names may appear, by module. */
-export const describedRights: Readonly<Record<string, readonly string[]>> = {
-  churchdb: personReadRights.churchdb,
-  churchgroup: personReadRights.churchgroup,
-  churchwiki: ['view', 'view category'],
-};
+/** The two rights on the wiki whose names may appear. */
+const wikiRights: readonly string[] = ['view', 'view category'];
 
 /** The classes of the entries of a list of rights. */
 export const entryClasses = [
@@ -126,17 +123,28 @@ function describeValue(value: unknown): Json {
  *
  * @param data - `data` of `GET /api/permissions/global`, as the guard checked it.
  * @param guard - The guard of the run.
+ * @param readRights - The read rights the guard let the probe hold. Default: those of the probe that reads persons.
  * @returns For each module with an effective right, each such right and the class of its value.
- * @throws {SpikeError} If an effective right is not in {@link describedRights}.
+ * @throws {SpikeError} If an effective right is neither in `readRights` nor one of the two rights on the wiki.
  */
-export function describeEffectiveRights(data: JsonObject, guard: Guard): Json {
+export function describeEffectiveRights(
+  data: JsonObject,
+  guard: Guard,
+  readRights: ReadRights = personReadRights,
+): Json {
   guard.allowFixed(...rightsWords);
   const result: Record<string, Json> = {};
   for (const [module, rights] of Object.entries(data)) {
     if (!isObject(rights)) {
       throw new SpikeError('INTERN');
     }
-    const known = describedRights[module] ?? [];
+    // Only own entries count, as in the guard.
+    const known: readonly string[] =
+      module === 'churchwiki'
+        ? wikiRights
+        : Object.hasOwn(readRights, module)
+          ? (readRights[module] ?? [])
+          : [];
     const effective: Record<string, Json> = {};
     for (const [name, value] of Object.entries(rights)) {
       if (value === false || (Array.isArray(value) && value.length === 0)) {

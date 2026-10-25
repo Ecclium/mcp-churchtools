@@ -43,6 +43,18 @@ export const spikeVariables = [
   'ECCLIUM_SPIKE_PERSON_ID',
   'ECCLIUM_SPIKE_GROUP_ID',
   'ECCLIUM_SPIKE_OTHER_GROUP_ID',
+  'ECCLIUM_SPIKE_CALENDAR_ID',
+  'ECCLIUM_SPIKE_APPOINTMENT_ID',
+  'ECCLIUM_SPIKE_SERIES_APPOINTMENT_ID',
+  'ECCLIUM_SPIKE_RESOURCE_TYPE_ID',
+  'ECCLIUM_SPIKE_RESOURCE_ID',
+  'ECCLIUM_SPIKE_SERVICE_GROUP_ID',
+  'ECCLIUM_SPIKE_SERVICE_ID',
+  'ECCLIUM_SPIKE_OTHER_SERVICE_ID',
+  'ECCLIUM_SPIKE_EVENT_ID',
+  'ECCLIUM_SPIKE_SONG_CATEGORY_ID',
+  'ECCLIUM_SPIKE_SONG_ID',
+  'ECCLIUM_SPIKE_OTHER_SONG_ID',
 ] as const;
 
 /** The environment of a probe, as far as the probes read it. */
@@ -152,21 +164,45 @@ export function readCategoryId(
   return Number(raw);
 }
 
-/** The variables that name a synthetic person or group of the test instance. */
+/** The variables that name a synthetic object of the test instance. */
 export type ObjectIdVariable =
   | 'ECCLIUM_SPIKE_PERSON_ID'
   | 'ECCLIUM_SPIKE_GROUP_ID'
-  | 'ECCLIUM_SPIKE_OTHER_GROUP_ID';
+  | 'ECCLIUM_SPIKE_OTHER_GROUP_ID'
+  | 'ECCLIUM_SPIKE_CALENDAR_ID'
+  | 'ECCLIUM_SPIKE_APPOINTMENT_ID'
+  | 'ECCLIUM_SPIKE_SERIES_APPOINTMENT_ID'
+  | 'ECCLIUM_SPIKE_RESOURCE_TYPE_ID'
+  | 'ECCLIUM_SPIKE_RESOURCE_ID'
+  | 'ECCLIUM_SPIKE_SERVICE_GROUP_ID'
+  | 'ECCLIUM_SPIKE_SERVICE_ID'
+  | 'ECCLIUM_SPIKE_OTHER_SERVICE_ID'
+  | 'ECCLIUM_SPIKE_EVENT_ID'
+  | 'ECCLIUM_SPIKE_SONG_CATEGORY_ID'
+  | 'ECCLIUM_SPIKE_SONG_ID'
+  | 'ECCLIUM_SPIKE_OTHER_SONG_ID';
 
 const objectIdHints: Readonly<Record<ObjectIdVariable, HintKey>> = {
   ECCLIUM_SPIKE_PERSON_ID: 'personIdFehlt',
   ECCLIUM_SPIKE_GROUP_ID: 'gruppenIdFehlt',
   ECCLIUM_SPIKE_OTHER_GROUP_ID: 'andereGruppenIdFehlt',
+  ECCLIUM_SPIKE_CALENDAR_ID: 'kalenderIdFehlt',
+  ECCLIUM_SPIKE_APPOINTMENT_ID: 'terminIdFehlt',
+  ECCLIUM_SPIKE_SERIES_APPOINTMENT_ID: 'serienterminIdFehlt',
+  ECCLIUM_SPIKE_RESOURCE_TYPE_ID: 'ressourcentypIdFehlt',
+  ECCLIUM_SPIKE_RESOURCE_ID: 'ressourceIdFehlt',
+  ECCLIUM_SPIKE_SERVICE_GROUP_ID: 'dienstgruppeIdFehlt',
+  ECCLIUM_SPIKE_SERVICE_ID: 'dienstIdFehlt',
+  ECCLIUM_SPIKE_OTHER_SERVICE_ID: 'andererDienstIdFehlt',
+  ECCLIUM_SPIKE_EVENT_ID: 'eventIdFehlt',
+  ECCLIUM_SPIKE_SONG_CATEGORY_ID: 'liedkategorieIdFehlt',
+  ECCLIUM_SPIKE_SONG_ID: 'liedIdFehlt',
+  ECCLIUM_SPIKE_OTHER_SONG_ID: 'anderesLiedIdFehlt',
 };
 
 /**
- * Reads the ID of a synthetic person or group from the environment. The
- * variable must be set.
+ * Reads the ID of a synthetic object from the environment. The variable
+ * must be set.
  *
  * @param env - Environment of the process.
  * @param name - Name of the variable.

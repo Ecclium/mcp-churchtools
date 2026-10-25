@@ -1,13 +1,14 @@
 /**
  * The guard for personal data (ADR 0049).
  *
- * The probe that reads persons, groups and search passes through here
- * before its first request with personal data. Persons and groups are data
- * of special categories, so this probe runs only on the test instance with
- * synthetic data. Whatever the guard cannot check, it treats as a reason
- * to stop: an operation the instance does not document, an answer of
- * another form, a right it does not know. The instance then counts as
- * productive, and no personal data is read.
+ * The probes that read persons, groups and search, and the domains such as
+ * events, services and songs, pass through here before their first
+ * request with personal data. Persons and groups are data of special
+ * categories, and the domains name persons too, so these probes run only
+ * on the test instance with synthetic data. Whatever the guard cannot
+ * check, it treats as a reason to stop: an operation the instance does not
+ * document, an answer of another form, a right it does not know. The
+ * instance then counts as productive, and no personal data is read.
  *
  * Before any request, from the environment alone:
  * - the base URL is not the placeholder of the README;
@@ -21,10 +22,11 @@
  *   and can neither edit nor delete it, nor edit master data;
  * - in the wiki the account may exactly see the wiki and the
  *   identification category;
- * - in the modules of persons and groups only the read rights of
- *   {@link personReadRights} may be set, with any value, since the probe
- *   asks how they look; every other right of every module is `false` or an
- *   empty list.
+ * - only the read rights the probe names may be set, with any value, since
+ *   the probe asks how they look: for the probe that reads persons those of
+ *   {@link personReadRights}, for the probe that reads the domains those of
+ *   {@link domainReadRights}; every other right of every module is `false`
+ *   or an empty list.
  *
  * Until then the probe holds a client for these two reads only. The client
  * that reaches persons, groups and search exists nowhere else: the token
@@ -51,6 +53,12 @@ import { operations, type OperationName } from './operations.mts';
 import { findOperation, isObject, type JsonObject } from './spec.mts';
 
 /**
+ * Read rights the guard lets the account hold, by module, with any value.
+ * Rights in the wiki never count here: the guard checks them on its own.
+ */
+export type ReadRights = Readonly<Record<string, readonly string[]>>;
+
+/**
  * The read rights on persons and groups the account may hold, by module.
  * They are words of the product, as the rights response of ChurchTools
  * names them (docs/research/churchtools-api.md).
@@ -72,7 +80,26 @@ export const personReadRights = {
     'view groups of grouptype',
     'security level group',
   ],
-} as const;
+} as const satisfies ReadRights;
+
+/**
+ * The read rights the probe that reads the domains may hold: those on
+ * persons and groups, since events and services name persons, and the
+ * read rights on services, events, agendas and songs, on calendars and on
+ * resources. Names of the product, like {@link personReadRights}.
+ */
+export const domainReadRights = {
+  ...personReadRights,
+  churchservice: [
+    'view',
+    'view events',
+    'view servicegroup',
+    'view agenda',
+    'view songcategory',
+  ],
+  churchcal: ['view', 'view category'],
+  churchresource: ['view', 'view resource'],
+} as const satisfies ReadRights;
 
 /** The operations the guard reads with before it lets the probe read persons. */
 export const personsGateOperations: readonly OperationName[] = [
@@ -147,17 +174,19 @@ function refuse(hint: HintKey): SpikeError {
  * persons may hold.
  *
  * Allowed in `churchwiki` are exactly `view` true and `view category` the
- * identification category. In `churchdb` and `churchgroup` the rights of
- * {@link personReadRights} may hold any value. Every other right of every
- * module, `edit masterdata` included, must be `false` or an empty list.
+ * identification category. In the other modules the rights of `readRights`
+ * may hold any value. Every other right of every module, `edit masterdata`
+ * included, must be `false` or an empty list.
  *
  * @param data - `data` of `GET /api/permissions/global`.
  * @param identification - ID of the identification category.
+ * @param readRights - The read rights the probe may hold. Default: those of the probe that reads persons.
  * @returns Whether the rights are narrow enough.
  */
 export function personsRightsWithin(
   data: unknown,
   identification: number,
+  readRights: ReadRights = personReadRights,
 ): boolean {
   if (!isObject(data)) {
     return false;
@@ -174,9 +203,11 @@ export function personsRightsWithin(
     if (!isObject(rights)) {
       return false;
     }
+    // Only own entries count, so a module named like a property of every
+    // object finds nothing; the wiki keeps only the two checks above.
     const readable: readonly string[] =
-      module === 'churchdb' || module === 'churchgroup'
-        ? personReadRights[module]
+      module !== 'churchwiki' && Object.hasOwn(readRights, module)
+        ? (readRights[module] ?? [])
         : [];
     for (const [name, value] of Object.entries(rights)) {
       if (
@@ -201,6 +232,8 @@ export function personsRightsWithin(
  */
 export interface PersonsGateContext {
   readonly state: SpikeState;
+  /** The read rights the account may hold. Default: {@link personReadRights}. */
+  readonly readRights?: ReadRights;
 }
 
 /** What the probe gets once the guard lets it read persons. */
@@ -264,7 +297,13 @@ export async function passPersonsGate(
   if (rights.status !== 200 || rights.kind !== 'JSON' || !isObject(data)) {
     throw refuse('personenWaechterAntwortUnerwartet');
   }
-  if (!personsRightsWithin(data, identification.id)) {
+  if (
+    !personsRightsWithin(
+      data,
+      identification.id,
+      context.readRights ?? personReadRights,
+    )
+  ) {
     throw refuse('personenZuWeitBerechtigt');
   }
   return {

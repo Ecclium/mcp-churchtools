@@ -13,9 +13,9 @@
  * fill a template only if it has the form of an ID, and it is encoded.
  *
  * The client of every probe refuses the paths whose answers carry personal
- * data, before any request. A probe that reads persons first gets a client
- * for the two reads of the guard for personal data only. The guard alone
- * hands out {@link createPersonsClient}, once its checks have passed
+ * data, before any request. A probe that reads personal data first gets a
+ * client for the two reads of the guard for personal data only. The guard
+ * alone hands out {@link createPersonsClient}, once its checks have passed
  * (ADR 0049).
  *
  * The write probes get a second client, {@link createWriteClient}, from the
@@ -345,11 +345,25 @@ function baseHeaders(): Headers {
   });
 }
 
+// One pattern per prefix: `{}` takes any one segment, and the prefix must
+// end where a name ends, so `/api/groupsx` stays outside `/api/groups`
+// while `/api/persons.json` falls inside `/api/persons`.
+const personalPatterns: readonly RegExp[] = personalPrefixes.map(
+  (prefix) =>
+    new RegExp(
+      `^${prefix
+        .split('{}')
+        .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('[^/]+')}(?![a-z0-9_])`,
+    ),
+);
+
 /**
  * Tells whether a path lies below one of the {@link personalPrefixes}.
  *
  * The path is compared decoded once, without doubled slashes and ignoring
- * case. A path that cannot be decoded counts as personal. Other spellings,
+ * case. A `{}` in a prefix stands for any one segment. A path that cannot
+ * be decoded counts as personal. Other spellings,
  * such as dot segments or a semicolon that only appear after decoding, are
  * not resolved here: the clients refuse every path that still carries `%`
  * or `;` or a segment starting with a dot, see {@link isPlainPath}. No probe
@@ -366,10 +380,7 @@ export function isPersonalPath(pathname: string): boolean {
     return true;
   }
   const path = decoded.replace(/\/{2,}/g, '/').toLowerCase();
-  return personalPrefixes.some(
-    (prefix) =>
-      path.startsWith(prefix) && !/[a-z0-9_]/.test(path.charAt(prefix.length)),
-  );
+  return personalPatterns.some((pattern) => pattern.test(path));
 }
 
 /**
@@ -450,8 +461,8 @@ export function createClient(options: ClientOptions): Client {
 
 /**
  * Creates a client that reaches only the given paths, and none with
- * personal data. A probe that reads persons gets it for the reads of the
- * guard for personal data, before that guard has passed.
+ * personal data. A probe that reads personal data gets it for the reads of
+ * the guard for personal data, before that guard has passed.
  *
  * @param options - Origin, token, guard and limits.
  * @param paths - The only paths it sends to, exactly, without query.
@@ -465,9 +476,9 @@ export function createGateClient(
 }
 
 /**
- * Creates the client that reads persons, groups and search. Only the
- * guard for personal data calls this, after all its checks have passed
- * (ADR 0049).
+ * Creates the client that reads persons, groups, search and the domains
+ * with personal data. Only the guard for personal data calls this, after
+ * all its checks have passed (ADR 0049).
  *
  * @param options - Origin, token, guard and limits.
  * @returns A client that also reaches the paths with personal data.

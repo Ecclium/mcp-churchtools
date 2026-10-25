@@ -14,7 +14,7 @@
  * A probe that reads personal data likewise passes the checks of the guard
  * for personal data that need no request. It gets a client for the two
  * reads of that guard only, and an opaque handle. Only that guard turns
- * the handle into a client that reaches persons, groups and search.
+ * the handle into a client that reaches the paths with personal data.
  *
  * @packageDocumentation
  */
@@ -106,7 +106,7 @@ export interface ProbeDefinition {
   readonly state: 'create' | 'read';
   /** Which account the probe runs with. Default: the read account. */
   readonly account?: 'read' | 'write';
-  /** Set for the probe that reads persons, groups and search. */
+  /** Set for the probes that read persons, groups, search and the domains. */
   readonly personalData?: true;
   readonly run: (context: ProbeContext) => Promise<Json>;
 }

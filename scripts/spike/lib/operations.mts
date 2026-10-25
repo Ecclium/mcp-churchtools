@@ -9,10 +9,13 @@
  * client the guard of the test environment hands out (ADR 0049).
  *
  * The operations on persons, groups and search are marked `personal`:
- * their answers carry personal data. The general client refuses every path
- * below {@link personalPrefixes}. Only the guard for personal data hands
- * out a client that reaches them, and only to the probe that reads persons
- * on the test instance (ADR 0049).
+ * their answers carry personal data. So are those on events, agendas,
+ * services, appointments, bookings, songs and the search of the wiki: an
+ * event names who serves, an appointment or a booking who made it, a song
+ * who changed it. The general client refuses every path below
+ * {@link personalPrefixes}. Only the guard for personal data hands out a
+ * client that reaches them, and only to the probes that read persons and
+ * the domains on the test instance (ADR 0049).
  *
  * @packageDocumentation
  */
@@ -76,6 +79,42 @@ export const operations = {
     personal: true,
   },
   search: { method: 'get', template: '/api/search', personal: true },
+  calendars: { method: 'get', template: '/api/calendars' },
+  calendarAppointments: {
+    method: 'get',
+    template: '/api/calendars/appointments',
+    personal: true,
+  },
+  calendarAppointment: {
+    method: 'get',
+    template: '/api/calendars/{}/appointments/{}',
+    personal: true,
+  },
+  events: { method: 'get', template: '/api/events', personal: true },
+  event: { method: 'get', template: '/api/events/{}', personal: true },
+  eventAgenda: {
+    method: 'get',
+    template: '/api/events/{}/agenda',
+    personal: true,
+  },
+  eventAgendaSongs: {
+    method: 'get',
+    template: '/api/events/{}/agenda/songs',
+    personal: true,
+  },
+  services: { method: 'get', template: '/api/services', personal: true },
+  serviceGroups: { method: 'get', template: '/api/servicegroups' },
+  resourceTypes: { method: 'get', template: '/api/resourcetypes' },
+  resources: { method: 'get', template: '/api/resources' },
+  bookings: { method: 'get', template: '/api/bookings', personal: true },
+  songs: { method: 'get', template: '/api/songs', personal: true },
+  song: { method: 'get', template: '/api/songs/{}', personal: true },
+  songArrangements: {
+    method: 'get',
+    template: '/api/songs/{}/arrangements',
+    personal: true,
+  },
+  wikiSearch: { method: 'get', template: '/api/wiki/search', personal: true },
 } as const satisfies Readonly<Record<string, OperationTemplate>>;
 
 /** The name of one operation. */
@@ -83,10 +122,19 @@ export type OperationName = keyof typeof operations;
 
 /**
  * The paths below which answers carry personal data. Every operation
- * marked `personal` lies below one of them.
+ * marked `personal` lies below one of them. As in the templates, `{}`
+ * stands for one segment of the path: the appointments lie below each
+ * calendar, while the list of calendars itself names no person.
  */
 export const personalPrefixes = [
   '/api/persons',
   '/api/groups',
   '/api/search',
+  '/api/events',
+  '/api/services',
+  '/api/bookings',
+  '/api/songs',
+  '/api/wiki/search',
+  '/api/calendars/appointments',
+  '/api/calendars/{}/appointments',
 ] as const;

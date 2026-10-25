@@ -153,6 +153,19 @@ const json = (schema: unknown): unknown => ({
   content: { 'application/json': { schema } },
 });
 
+// A list of one schema with the usual meta, and one object of it in data.
+const listOf = (name: string): unknown => ({
+  type: 'object',
+  properties: {
+    data: { type: 'array', items: { $ref: `#/components/schemas/${name}` } },
+    meta: { $ref: '#/components/schemas/ListMeta' },
+  },
+});
+const dataOf = (name: string): unknown => ({
+  type: 'object',
+  properties: { data: { $ref: `#/components/schemas/${name}` } },
+});
+
 /** A synthetic OpenAPI document with the operations the probes use. */
 export const specification = {
   openapi: '3.0.3',
@@ -434,6 +447,204 @@ export const specification = {
         },
       },
     },
+    '/calendars': {
+      get: {
+        responses: { '200': json(listOf('Calendar')) },
+      },
+    },
+    '/calendars/appointments': {
+      get: {
+        parameters: [
+          {
+            name: 'calendar_ids[]',
+            in: 'query',
+            required: true,
+            schema: { type: 'array', items: { type: 'integer' } },
+          },
+          { name: 'from', in: 'query', schema: { type: 'string' } },
+          { name: 'to', in: 'query', schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': json(listOf('AppointmentEntry')),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+    },
+    '/calendars/{calendarId}/appointments/{appointmentId}': {
+      get: {
+        parameters: [
+          {
+            name: 'calendarId',
+            in: 'path',
+            required: true,
+            schema: { type: 'integer' },
+          },
+          {
+            name: 'appointmentId',
+            in: 'path',
+            required: true,
+            schema: { type: 'integer' },
+          },
+        ],
+        responses: {
+          '200': json(dataOf('AppointmentEntry')),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+    },
+    '/events': {
+      get: {
+        parameters: [
+          { name: 'from', in: 'query', schema: { type: 'string' } },
+          { name: 'to', in: 'query', schema: { type: 'string' } },
+          { name: 'canceled', in: 'query', schema: { type: 'boolean' } },
+          {
+            name: 'direction',
+            in: 'query',
+            schema: { type: 'string', enum: ['forward', 'backward'] },
+          },
+          {
+            name: 'include',
+            in: 'query',
+            schema: {
+              type: 'array',
+              items: { type: 'string', enum: ['eventServices'] },
+            },
+          },
+          { $ref: '#/components/parameters/Page' },
+          { name: 'limit', in: 'query', schema: { type: 'integer' } },
+        ],
+        responses: {
+          '200': json(listOf('Event')),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+    },
+    '/events/{eventId}': {
+      parameters: [
+        {
+          name: 'eventId',
+          in: 'path',
+          required: true,
+          schema: { type: 'integer' },
+        },
+      ],
+      get: {
+        responses: {
+          '200': json(dataOf('Event')),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+    },
+    '/events/{eventId}/agenda': {
+      get: {
+        responses: {
+          '200': json(dataOf('Agenda')),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+    },
+    '/events/{eventId}/agenda/songs': {
+      get: {
+        responses: {
+          '200': json(listOf('AgendaSong')),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+    },
+    '/services': {
+      get: { responses: { '200': json(listOf('Service')) } },
+    },
+    '/servicegroups': {
+      get: { responses: { '200': json(listOf('ServiceGroup')) } },
+    },
+    '/resourcetypes': {
+      get: { responses: { '200': json(listOf('ResourceType')) } },
+    },
+    '/resources': {
+      get: { responses: { '200': json(listOf('Resource')) } },
+    },
+    '/bookings': {
+      get: {
+        parameters: [
+          {
+            name: 'resource_ids[]',
+            in: 'query',
+            required: true,
+            schema: { type: 'array', items: { type: 'integer' } },
+          },
+          { name: 'from', in: 'query', schema: { type: 'string' } },
+          { name: 'to', in: 'query', schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': json(listOf('BookingEntry')),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+    },
+    '/songs': {
+      get: {
+        parameters: [
+          {
+            name: 'song_category_ids[]',
+            in: 'query',
+            schema: { type: 'array', items: { type: 'integer' } },
+          },
+          { name: 'query', in: 'query', schema: { type: 'string' } },
+          { $ref: '#/components/parameters/Page' },
+          { name: 'limit', in: 'query', schema: { type: 'integer' } },
+        ],
+        responses: {
+          '200': json(listOf('Song')),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+    },
+    '/songs/{songId}': {
+      get: {
+        parameters: [
+          {
+            name: 'songId',
+            in: 'path',
+            required: true,
+            schema: { type: 'integer' },
+          },
+        ],
+        responses: {
+          '200': json(dataOf('Song')),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+    },
+    '/songs/{songId}/arrangements': {
+      get: {
+        responses: {
+          '200': json(listOf('Arrangement')),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+    },
+    '/wiki/search': {
+      get: {
+        parameters: [
+          {
+            name: 'query',
+            in: 'query',
+            required: true,
+            schema: { type: 'string' },
+          },
+          {
+            name: 'wiki_category_ids[]',
+            in: 'query',
+            schema: { type: 'array', items: { type: 'integer' } },
+          },
+        ],
+        responses: {
+          '200': json({ $ref: '#/components/schemas/SearchList' }),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+    },
   },
   components: {
     parameters: {
@@ -549,6 +760,185 @@ export const specification = {
       Error: {
         type: 'object',
         properties: { message: { type: 'string' }, args: { type: 'object' } },
+      },
+      Span: {
+        type: 'object',
+        properties: {
+          startDate: { type: 'string' },
+          endDate: { type: 'string' },
+        },
+      },
+      Calendar: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          name: { type: 'string' },
+          isPublic: { type: 'boolean' },
+        },
+      },
+      Appointment: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          caption: { type: 'string' },
+          startDate: { type: 'string' },
+          endDate: { type: 'string' },
+          allDay: { type: 'boolean' },
+          repeatId: { type: 'integer' },
+          calendar: { $ref: '#/components/schemas/Calendar' },
+          meta: {
+            type: 'object',
+            properties: {
+              createdPerson: { $ref: '#/components/schemas/SearchResult' },
+            },
+          },
+        },
+      },
+      AppointmentEntry: {
+        type: 'object',
+        properties: {
+          base: { $ref: '#/components/schemas/Appointment' },
+          calculated: { $ref: '#/components/schemas/Span' },
+        },
+      },
+      EventService: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          personId: { type: 'integer' },
+          serviceId: { type: 'integer' },
+          agreed: { type: 'boolean' },
+          person: { $ref: '#/components/schemas/SearchResult' },
+        },
+      },
+      Event: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          guid: { type: 'string' },
+          name: { type: 'string' },
+          startDate: { type: 'string' },
+          endDate: { type: 'string' },
+          eventServices: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/EventService' },
+          },
+        },
+      },
+      AgendaSong: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          songId: { type: 'integer' },
+          arrangementId: { type: 'integer' },
+          title: { type: 'string' },
+        },
+      },
+      AgendaItem: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          title: { type: 'string' },
+          type: { type: 'string' },
+          song: { $ref: '#/components/schemas/AgendaSong' },
+          responsible: {
+            type: 'object',
+            properties: {
+              persons: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    person: { $ref: '#/components/schemas/SearchResult' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      Agenda: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          name: { type: 'string' },
+          isFinal: { type: 'boolean' },
+          items: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/AgendaItem' },
+          },
+        },
+      },
+      Service: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          name: { type: 'string' },
+          serviceGroupId: { type: 'integer' },
+        },
+      },
+      ServiceGroup: {
+        type: 'object',
+        properties: { id: { type: 'integer' }, name: { type: 'string' } },
+      },
+      ResourceType: {
+        type: 'object',
+        properties: { id: { type: 'integer' }, name: { type: 'string' } },
+      },
+      Resource: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          name: { type: 'string' },
+          resourceTypeId: { type: 'integer' },
+        },
+      },
+      Booking: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          caption: { type: 'string' },
+          resource: { $ref: '#/components/schemas/Resource' },
+          person: { $ref: '#/components/schemas/SearchResult' },
+        },
+      },
+      BookingEntry: {
+        type: 'object',
+        properties: {
+          base: { $ref: '#/components/schemas/Booking' },
+          calculated: { $ref: '#/components/schemas/Span' },
+        },
+      },
+      SongCategory: {
+        type: 'object',
+        properties: { id: { type: 'integer' }, name: { type: 'string' } },
+      },
+      Arrangement: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          name: { type: 'string' },
+          isDefault: { type: 'boolean' },
+        },
+      },
+      Song: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          name: { type: 'string' },
+          category: { $ref: '#/components/schemas/SongCategory' },
+          arrangements: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/Arrangement' },
+          },
+          meta: {
+            type: 'object',
+            properties: {
+              modifiedDate: { type: 'string' },
+              modifiedPerson: { $ref: '#/components/schemas/SearchResult' },
+            },
+          },
+        },
       },
       Pagination: {
         type: 'object',
