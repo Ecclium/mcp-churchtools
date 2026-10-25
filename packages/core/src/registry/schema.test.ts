@@ -167,6 +167,40 @@ describe('checkOutputSchema', () => {
     ]);
   });
 
+  // The registry treats a tool that names persons like a special one
+  // (ADR 0064): the ID and the names of a person, at any depth.
+  it('notes whether a leaf names a person', () => {
+    for (const dataClass of ['personId', 'name.first', 'name.last'] as const) {
+      const leaf =
+        dataClass === 'personId'
+          ? classify(z.number(), dataClass)
+          : classify(z.string(), dataClass);
+      expect(
+        checkOutputSchema(
+          z.object({
+            list: z.array(z.object({ x: leaf.nullable() })).max(3),
+          }),
+        )?.namesPersons,
+        dataClass,
+      ).toBe(true);
+    }
+    for (const dataClass of [
+      'none',
+      'untrusted',
+      'email',
+      'phone',
+      'birthdate',
+      'address',
+      'amount',
+    ] as const) {
+      expect(
+        checkOutputSchema(z.object({ x: classify(z.string(), dataClass) }))
+          ?.namesPersons,
+        dataClass,
+      ).toBe(false);
+    }
+  });
+
   it('derives the sensitivity none from classes without personal data', () => {
     const shape = checkOutputSchema(
       z.object({ text: classify(z.string(), 'untrusted'), n: z.number() }),

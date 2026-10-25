@@ -329,12 +329,15 @@ const unsupportedRank = proxyRank + 1;
 const replacedRank = unsupportedRank + unsupportedVariableNames.length;
 const unknownRank = replacedRank + 1;
 
-// The toolsets whose tools give results only with their line in the audit
-// file, because they hold special data (ADR 0028, ADR 0060). The loader
-// sees no tool, so it keeps this list to name the problem before a start;
-// the start itself checks every tool of its catalog as the second guard.
+// The toolsets with tools that give results only with their line in the
+// audit file, because they hold special data or name persons: persons, and
+// events for the assignments to services (ADR 0028, ADR 0060, ADR 0064).
+// The loader sees no tool, so it keeps this list to name the problem
+// before a start; the start itself checks every tool of its catalog as the
+// second guard.
 const toolsetsWithAuditFile: readonly ToolsetName[] = Object.freeze([
   'persons',
+  'events',
 ]);
 
 type Read =

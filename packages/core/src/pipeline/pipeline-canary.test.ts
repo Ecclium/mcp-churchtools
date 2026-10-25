@@ -9,6 +9,7 @@ import {
   assertNoCanary,
   assertPlanted,
   createChurchToolsDouble,
+  createMemoryQuotaStore,
   doubleOrigin,
   examplePlugin,
   makeCanaries,
@@ -116,7 +117,16 @@ const setup = () => {
   const clock = Object.freeze({ now: Object.freeze(() => 0) });
   const pipeline = createToolPipeline({
     catalog,
-    audit: createAuditSink({ writer, clock, isKnownTool: catalog.has }),
+    // ct_example_profile names a person, so its result needs its line in an
+    // audit file and counts against the read budget (ADR 0064). A file in
+    // memory takes every line.
+    audit: createAuditSink({
+      writer,
+      file: { write: () => true, ready: () => true },
+      clock,
+      isKnownTool: catalog.has,
+    }),
+    quota: createMemoryQuotaStore(),
     transport: double.transport,
     origin: doubleOrigin,
     requestsPerMinute: 300,

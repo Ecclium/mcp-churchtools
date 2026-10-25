@@ -79,11 +79,25 @@ const tool = (
     },
   }) as unknown as ToolDefinition;
 
+// A tool with sensitivity personal that passes on the first name of a
+// person counts like a special one (ADR 0064).
+const namesTool = (): ToolDefinition =>
+  ({
+    ...tool('ct_test_names', 'personal'),
+    meta: { ...tool('ct_test_names', 'personal').meta, unattended: 'policy' },
+    output: z.object({ first: classify(z.string(), 'name.first') }),
+    execute: () => {
+      runs.push('ct_test_names');
+      return Promise.resolve({ first: 'Person' });
+    },
+  }) as unknown as ToolDefinition;
+
 const testPlugin: Plugin = {
   name: 'test-plugin',
   version: '1.0.0',
   register(host: PluginHost): undefined {
     host.addTool(tool('ct_test_special', 'special'));
+    host.addTool(namesTool());
     host.addTool(tool('ct_test_other_special', 'special'));
     host.addTool(tool('ct_test_personal', 'personal'));
     host.addTool(tool('ct_test_pro_special', 'special', 'pro'));
@@ -246,6 +260,20 @@ describe('the daily read budget', () => {
     expect(await quota?.read(ctx, 'special_reads', day)).toBe(1);
   });
 
+  it('counts a tool that names persons against the same budget', async () => {
+    const { call, quota } = setup();
+    expect((await call('ct_test_names')).ok).toBe(true);
+    expect(await quota?.read(ctx, 'special_reads', day)).toBe(1);
+    for (let index = 1; index < specialReadBudget; index += 1) {
+      await quota?.increment(ctx, 'special_reads', day);
+    }
+    expect(await call('ct_test_names')).toEqual({
+      ok: false,
+      error: { code: 'policy_denied', message: exhausted },
+    });
+    expect(runs).toEqual(['ct_test_names']);
+  });
+
   it('does not run a tool with special data without a store, but every other tool', async () => {
     const { call, logs } = setup({ quota: null });
     expect(await call('ct_test_special')).toEqual({
@@ -256,6 +284,8 @@ describe('the daily read budget', () => {
     expect(logs().map((line) => line['event'])).toContain(
       'read_budget_unavailable',
     );
+    expect((await call('ct_test_names')).ok).toBe(false);
+    expect(runs).toEqual([]);
     expect((await call('ct_test_personal')).ok).toBe(true);
   });
 

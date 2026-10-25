@@ -21,7 +21,8 @@ import type { ServeOptions } from './serve.js';
 
 // The first stage and the audit file (ADR 0028): it opens the file before
 // the second stage loads, while fd 2 still blocks, and refuses a tool with
-// sensitivity special without the folder. The second stage is a mock that
+// sensitivity special, or one the catalog treats as such because it names
+// persons (ADR 0064), without the folder. The second stage is a mock that
 // records what it gets and what the folder held when it loaded.
 
 const state = vi.hoisted(() => ({
@@ -30,6 +31,7 @@ const state = vi.hoisted(() => ({
   served: [] as ServeOptions[],
   serveThrows: false,
   special: false,
+  names: false,
 }));
 
 vi.mock(import('./serve.js'), async () => {
@@ -59,12 +61,20 @@ vi.mock(import('./catalog.js'), async (importOriginal) => {
       config: Parameters<typeof original.createStdioCatalog>[0],
     ) => {
       const catalog = original.createStdioCatalog(config);
-      if (!state.special) return catalog;
-      const special = {
-        name: 'ct_test_special',
-        meta: { sensitivity: 'special' },
-      };
-      return { ...catalog, list: () => [...catalog.list(), special] } as never;
+      if (!state.special && !state.names) return catalog;
+      // The start reads what the catalog derived, not the sensitivity.
+      const added = state.special
+        ? {
+            name: 'ct_test_special',
+            meta: { sensitivity: 'special' },
+            asSpecial: true,
+          }
+        : {
+            name: 'ct_test_names',
+            meta: { sensitivity: 'personal' },
+            asSpecial: true,
+          };
+      return { ...catalog, list: () => [...catalog.list(), added] } as never;
     },
   };
 });
@@ -86,6 +96,7 @@ afterEach(() => {
   state.served.length = 0;
   state.serveThrows = false;
   state.special = false;
+  state.names = false;
 });
 
 afterAll(() => {
@@ -145,6 +156,14 @@ describe('the first stage and the audit file', () => {
 
   it('refuses a tool with sensitivity special without the folder', async () => {
     state.special = true;
+    const { code, stderr } = await start(undefined);
+    expect(code).toBe(exitCodes.invalidConfig);
+    expect(stderr).toContain(startText('audit_file_required'));
+    expect(state.served).toEqual([]);
+  });
+
+  it('refuses a tool that names persons without the folder', async () => {
+    state.names = true;
     const { code, stderr } = await start(undefined);
     expect(code).toBe(exitCodes.invalidConfig);
     expect(stderr).toContain(startText('audit_file_required'));

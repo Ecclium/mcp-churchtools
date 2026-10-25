@@ -85,6 +85,12 @@ export interface OutputShape {
   readonly unmasked: number;
   /** The lowest sensitivity the classes of the output allow. */
   readonly minimumSensitivity: Sensitivity;
+  /**
+   * Whether a leaf holds the ID or a name of a person, the classes
+   * `personId`, `name.first` and `name.last`. The registry derives from it
+   * which tools it treats like special ones (ADR 0064).
+   */
+  readonly namesPersons: boolean;
 }
 
 // Classes without a mask until phase 4 (ADR 0026).
@@ -99,6 +105,13 @@ const personalClasses: readonly DataClass[] = [
   'phone',
   'birthdate',
   'address',
+];
+
+// Classes that name a person: a tool that passes one on names persons.
+const personNameClasses: readonly DataClass[] = [
+  'personId',
+  'name.first',
+  'name.last',
 ];
 
 // Leaves that JSON carries as they are. A bigint makes JSON.stringify
@@ -315,6 +328,7 @@ class OutputWalk {
   unclassified = 0;
   unmasked = 0;
   personal = false;
+  namesPersons = false;
 
   // Returns undefined for any form the registry does not accept.
   visit(schema: unknown, depth: number): ShapeNode | undefined {
@@ -495,6 +509,7 @@ class OutputWalk {
     }
     if (unmaskedClasses.includes(dataClass)) this.unmasked += 1;
     if (personalClasses.includes(dataClass)) this.personal = true;
+    if (personNameClasses.includes(dataClass)) this.namesPersons = true;
   }
 }
 
@@ -522,7 +537,8 @@ class OutputWalk {
  * @example
  * ```ts
  * checkOutputSchema(z.object({ id: classify(z.number(), 'personId') }));
- * // { root: …, unclassified: 0, unmasked: 0, minimumSensitivity: 'personal' }
+ * // { root: …, unclassified: 0, unmasked: 0, minimumSensitivity: 'personal',
+ * //   namesPersons: true }
  * ```
  */
 export function checkOutputSchema(schema: unknown): OutputShape | undefined {
@@ -537,6 +553,7 @@ export function checkOutputSchema(schema: unknown): OutputShape | undefined {
     unclassified: walk.unclassified,
     unmasked: walk.unmasked,
     minimumSensitivity: walk.personal ? 'personal' : 'none',
+    namesPersons: walk.namesPersons,
   });
 }
 

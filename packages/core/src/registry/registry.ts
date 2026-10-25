@@ -60,6 +60,15 @@ export interface CatalogEntry {
   /** What each field of the output holds, kept when the tool was added. */
   readonly shape: OutputShape;
   /**
+   * Whether the pipeline treats the tool like one with the sensitivity
+   * special: its result leaves only with its line in the audit file, and
+   * every call counts against the read budget (ADR 0028, ADR 0063). True for
+   * a tool with the sensitivity special and for one whose output names
+   * persons outside the area base (ADR 0064). Derived from the output, so a
+   * tool cannot forget it; `unattended` stays as the tool declares it.
+   */
+  readonly asSpecial: boolean;
+  /**
    * Runs the tool. It calls the function the tool had when it was added,
    * without `this`, so the tool cannot swap it later.
    */
@@ -199,6 +208,13 @@ const checkTool = (
     throw new RegistryRefusal('tool_domain_reserved', where);
   }
   const run = fields.execute;
+  // A name of another person counts like special data for the audit file
+  // and the read budget, also in a tool of the sensitivity personal. Only
+  // the core may use the area base, where ct_whoami names the account
+  // itself (ADR 0064).
+  const asSpecial =
+    meta.sensitivity === 'special' ||
+    (shape.namesPersons && meta.domain !== 'base');
   return Object.freeze({
     __proto__: null,
     name: name as ToolName,
@@ -210,6 +226,7 @@ const checkTool = (
     inputSchema,
     output: fields.output as ZodType,
     shape,
+    asSpecial,
     execute: (call: ToolCall<unknown>): Promise<unknown> =>
       Reflect.apply(run, undefined, [call]) as Promise<unknown>,
   });

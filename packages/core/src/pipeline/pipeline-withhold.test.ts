@@ -27,8 +27,10 @@ import { createToolPipeline, type ToolRequest } from './pipeline.js';
 
 // A tool with sensitivity special gives its result only when its line is
 // in the audit file, and runs only when the file can take a line
-// (ADR 0028). Tools with sensitivity none or personal stay as they were.
-// The audit file is a target in memory whose answers a test sets.
+// (ADR 0028). A tool with sensitivity personal whose output names persons
+// counts as special here (ADR 0064). Tools with sensitivity none or
+// personal stay as they were otherwise. The audit file is a target in
+// memory whose answers a test sets.
 
 const loaded = loadConfig({
   environment: {
@@ -79,11 +81,26 @@ const tool = (name: `ct_${string}`, sensitivity: Sensitivity): ToolDefinition =>
     },
   }) as unknown as ToolDefinition;
 
+// A tool with sensitivity personal that passes on the first name of a
+// person, as the assignments to services do.
+const namesTool = (): ToolDefinition => ({
+  ...tool('ct_test_names', 'personal'),
+  output: z.object({
+    text: classify(z.string(), 'none'),
+    first: classify(z.string(), 'name.first'),
+  }),
+  execute: () => {
+    runs.push('ct_test_names');
+    return Promise.resolve({ text: 'found', first: 'Person' });
+  },
+});
+
 const testPlugin: Plugin = {
   name: 'test-plugin',
   version: '1.0.0',
   register(host: PluginHost): undefined {
     host.addTool(tool('ct_test_special', 'special'));
+    host.addTool(namesTool());
     host.addTool(tool('ct_test_personal', 'personal'));
     host.addTool(tool('ct_test_none', 'none'));
     return undefined;
@@ -333,6 +350,34 @@ describe('a tool with sensitivity special', () => {
   });
 });
 
+describe('a tool with sensitivity personal that names persons', () => {
+  it('gives its result when its line is in the audit file', async () => {
+    const { call, inFile } = setup();
+    expect(await call('ct_test_names')).toMatchObject({ ok: true });
+    expect(inFile()).toMatchObject([{ tool: 'ct_test_names', outcome: 'ok' }]);
+  });
+
+  it('holds its result back when the file does not take its line', async () => {
+    const { file, call } = setup();
+    file.write = () => false;
+    expect(await call('ct_test_names')).toMatchObject({
+      ok: false,
+      error: { code: 'policy_denied' },
+    });
+    expect(runs).toEqual(['ct_test_names']);
+  });
+
+  it('does not run when the file cannot take a line', async () => {
+    const { file, call } = setup();
+    file.ready = () => false;
+    expect(await call('ct_test_names')).toMatchObject({
+      ok: false,
+      error: { code: 'policy_denied' },
+    });
+    expect(runs).toEqual([]);
+  });
+});
+
 describe('the options of record', () => {
   const recording = () => {
     const calls: { tool: unknown; options: RecordOptions | undefined }[] = [];
@@ -353,12 +398,14 @@ describe('the options of record', () => {
     const { call } = setup({ audit });
     await call('ct_test_special');
     await call('ct_test_special', { query: 'far too long' });
+    await call('ct_test_names');
     await call('ct_test_personal');
     await call('ct_test_none');
     await call('ct_not_there');
     expect(calls).toEqual([
       { tool: 'ct_test_special', options: { required: true } },
       { tool: 'ct_test_special', options: { required: false } },
+      { tool: 'ct_test_names', options: { required: true } },
       { tool: 'ct_test_personal', options: { required: false } },
       { tool: 'ct_test_none', options: { required: false } },
       { tool: 'ct_unknown', options: { required: false } },

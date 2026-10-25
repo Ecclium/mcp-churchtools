@@ -6,8 +6,9 @@
  * 2. make the context of the call, with a signal of its own, or end with
  *    `auth` when the call has no tenant or none the pipeline can read,
  * 3. `gate`,
- * 4. `validateInput`, and for a tool with sensitivity special the count
- *    against the daily read budget,
+ * 4. `validateInput`, and for a tool with sensitivity special, or one the
+ *    catalog treats as such because it names persons, the count against
+ *    the daily read budget,
  * 5. `execute` with read access that is revoked afterwards,
  * 6. `validateOutput`, which drops every field the schema does not declare,
  * 7. `redact` and 8. `markUntrusted` with a boundary drawn for the call,
@@ -141,7 +142,7 @@ export interface ToolPipelineOptions {
   readonly random?: RandomBytes;
   /**
    * The store of the daily read budget (ADR 0063). Without it, a tool with
-   * sensitivity special does not run.
+   * sensitivity special, or one the catalog treats as such, does not run.
    */
   readonly quota?: QuotaStore;
 }
@@ -159,9 +160,10 @@ const internalOutcome: ToolOutcome = Object.freeze({
   }),
 });
 
-// A tool with sensitivity special runs only with an audit file that can
-// take its line, and its result goes out only once the line is in the
-// file (ADR 0028). Two fixed sentences, so that the model can tell a call
+// A tool with sensitivity special, and one the catalog treats as such
+// because it names persons, runs only with an audit file that can take its
+// line, and its result goes out only once the line is in the file
+// (ADR 0028, ADR 0064). Two fixed sentences, so that the model can tell a call
 // that never ran from one whose result was held back.
 const auditNotReady =
   'The audit file of the server cannot record this call now, so the tool did not run. Ask the operator to check the audit file.';
@@ -366,8 +368,9 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       return failed('license_required');
     }
     // Before the input is checked and ChurchTools is asked, so that a
-    // broken audit file costs no read and no quota (ADR 0028).
-    if (meta.sensitivity === 'special' && !auditReady()) {
+    // broken audit file costs no read and no quota (ADR 0028). A tool that
+    // names persons counts here like a special one (ADR 0064).
+    if (entry.asSpecial && !auditReady()) {
       return failed('policy_denied', auditNotReady);
     }
 
@@ -381,7 +384,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     // ChurchTools is asked, so that a call that fails before costs nothing.
     // A call above the budget counts as well, which changes nothing (ADR
     // 0063).
-    if (entry.meta.sensitivity === 'special') {
+    if (entry.asSpecial) {
       const counted = await countRead(ctx);
       if (counted !== 'ok') {
         ctx.log.warn(
@@ -569,8 +572,8 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       auditOutcome = 'error';
     } finally {
       // Whether the result needs its line in the audit file, read before
-      // anything here can throw (ADR 0028).
-      const special = run.entry?.meta.sensitivity === 'special';
+      // anything here can throw (ADR 0028, ADR 0064).
+      const special = run.entry?.asSpecial === true;
       let recorded = false;
       let durationMs = 0;
       try {
@@ -606,10 +609,10 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
           ) === true;
       } catch {
         // The audit never decides the outcome of a reading call, except
-        // for the result of a tool with sensitivity special below.
+        // for the result of a tool treated as special below.
       }
-      // Whatever threw above: the result of a tool with sensitivity special
-      // goes out only with its line in the audit file (ADR 0028).
+      // Whatever threw above: the result of a tool treated as special goes
+      // out only with its line in the audit file (ADR 0028).
       const withheld = outcome.ok && special && !recorded;
       if (withheld) outcome = withheldOutcome;
       try {

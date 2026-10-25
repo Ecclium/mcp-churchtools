@@ -302,12 +302,14 @@ describe('the catalog of messages', () => {
     expect(textOf(message)).not.toMatch(/späteren Version|wirkt .*nicht/);
   });
 
-  it('asks for the folder of the audit file when persons is on', () => {
+  it('asks for the folder of the audit file when persons or events is on', () => {
     const message = problemMessage({
       code: 'toolsets_without_state_dir',
       variable: 'ECCLIUM_STATE_DIR',
     });
     expect(message.what).toContain('‹persons›');
+    expect(message.what).toContain('‹events›');
+    expect(message.action).toContain('‹persons› und ‹events›');
     expect(message.what).toContain('‹ECCLIUM_TOOLSETS›');
     expect(message.what).toContain('‹ECCLIUM_STATE_DIR› ist nicht gesetzt');
     expect(message.why).toContain('Unter Windows');

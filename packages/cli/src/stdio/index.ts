@@ -175,12 +175,13 @@ export async function startStdio(
         )
         .map((name) => emptyToolsetText(name)),
     );
-    // A tool with sensitivity special gives results only with its line in
-    // the audit file, so it never runs without the folder (ADR 0028).
+    // A tool with sensitivity special, or one the catalog treats as such
+    // because it names persons, gives results only with its line in the
+    // audit file, so it never runs without the folder (ADR 0028, ADR 0064).
     const { stateDir } = loaded.config;
     if (
       stateDir === undefined &&
-      catalog.list().some((entry) => entry.meta.sensitivity === 'special')
+      catalog.list().some((entry) => entry.asSpecial)
     ) {
       notices([...texts, startText('audit_file_required')]);
       return exitCodes.invalidConfig;

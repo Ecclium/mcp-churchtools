@@ -111,10 +111,11 @@ const rightsOf = (entry: CatalogEntry): string =>
         .join(', ');
 
 // The settings without which the server does not offer a tool: its
-// toolset (ADR 0062), the folder of the audit file for special data over
-// stdio (ADR 0028), and, for a tool that writes, ECCLIUM_READ_ONLY=false.
+// toolset (ADR 0062), the folder of the audit file over stdio for special
+// data and names of persons (ADR 0028, ADR 0064), and, for a tool that
+// writes, ECCLIUM_READ_ONLY=false.
 const offeredLabel = (entry: CatalogEntry): string => {
-  const { domain, sensitivity, capability } = entry.meta;
+  const { domain, capability } = entry.meta;
   const toolset = toolsetOf(domain);
   // The catalog of the page offers no tool of an area without a toolset.
   if (toolset === undefined) throw new TypeError(`no toolset for ${domain}`);
@@ -122,7 +123,7 @@ const offeredLabel = (entry: CatalogEntry): string => {
     ...(toolset === 'base'
       ? []
       : [`${code(toolset)} in ${code('ECCLIUM_TOOLSETS')}`]),
-    ...(sensitivity === 'special' ? [code('ECCLIUM_STATE_DIR')] : []),
+    ...(entry.asSpecial ? [code('ECCLIUM_STATE_DIR')] : []),
     ...(capability === 'write' ? [code('ECCLIUM_READ_ONLY=false')] : []),
   ];
   return needs.length === 0 ? 'immer' : needs.join(', mit ');

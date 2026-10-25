@@ -209,6 +209,123 @@ describe('createToolCatalog', () => {
     expect(catalog.get('toString')).toBeUndefined();
   });
 
+  // A name of another person counts like special data for the audit file
+  // and the read budget, derived from the output, except in the area base
+  // that only the core may use (ADR 0064).
+  describe('tools treated as special', () => {
+    const withOutput = (
+      name: `ct_${string}`,
+      output: z.ZodObject,
+      meta: Record<string, unknown> = {},
+    ): ToolDefinition =>
+      tool(name, { meta: { ...tool(name).meta, ...meta }, output });
+    const asSpecialOf = (
+      definition: ToolDefinition,
+      origin: 'core' | 'plugin' = 'plugin',
+    ): boolean | undefined => {
+      const owner = plugin('test-plugin', adding(definition));
+      const catalog = catalogOf({
+        core: origin === 'core' ? owner : emptyCore,
+        plugins: origin === 'core' ? [] : [owner],
+        readOnly: true,
+      });
+      return catalog.get(definition.name)?.asSpecial;
+    };
+
+    it.each(['personId', 'name.first', 'name.last'] as const)(
+      'treats a personal tool with a leaf of %s as special',
+      (dataClass) => {
+        const leaf =
+          dataClass === 'personId'
+            ? classify(z.number(), dataClass)
+            : classify(z.string(), dataClass);
+        expect(
+          asSpecialOf(
+            withOutput(
+              'ct_test_names',
+              z.object({
+                items: z
+                  .array(
+                    z.object({
+                      person: z.object({ value: leaf }).nullable(),
+                    }),
+                  )
+                  .max(5),
+              }),
+              { unattended: 'policy' },
+            ),
+          ),
+        ).toBe(true);
+      },
+    );
+
+    it('treats a special tool as special, whatever its output', () => {
+      expect(
+        asSpecialOf(
+          withOutput(
+            'ct_test_special',
+            z.object({ text: classify(z.string(), 'untrusted') }),
+            { sensitivity: 'special' },
+          ),
+        ),
+      ).toBe(true);
+    });
+
+    it.each(['email', 'phone', 'birthdate', 'untrusted', 'none'] as const)(
+      'does not treat a tool with only a leaf of %s as special',
+      (dataClass) => {
+        expect(
+          asSpecialOf(
+            withOutput(
+              'ct_test_plain',
+              z.object({ value: classify(z.string(), dataClass) }),
+              { unattended: 'policy' },
+            ),
+          ),
+        ).toBe(false);
+      },
+    );
+
+    it('does not treat a tool of the core in the area base as special for its names', () => {
+      const definition = withOutput(
+        'ct_test_account',
+        z.object({ first: classify(z.string(), 'name.first') }),
+        { domain: 'base', unattended: 'policy' },
+      );
+      expect(asSpecialOf(definition, 'core')).toBe(false);
+    });
+
+    it('treats the same tool of the core outside base as special', () => {
+      const definition = withOutput(
+        'ct_test_account',
+        z.object({ first: classify(z.string(), 'name.first') }),
+        { unattended: 'policy' },
+      );
+      expect(asSpecialOf(definition, 'core')).toBe(true);
+    });
+
+    it('keeps unattended as the tool declares it', () => {
+      const owner = plugin(
+        'test-plugin',
+        adding(
+          withOutput(
+            'ct_test_names',
+            z.object({ id: classify(z.number(), 'personId') }),
+            { unattended: 'policy' },
+          ),
+        ),
+      );
+      const entry = catalogOf({
+        core: emptyCore,
+        plugins: [owner],
+        readOnly: true,
+      }).get('ct_test_names');
+      expect(entry?.asSpecial).toBe(true);
+      expect(entry?.meta.unattended).toBe('policy');
+      expect(entry?.meta.sensitivity).toBe('personal');
+    });
+  });
+
   describe('toolsets', () => {
     const inArea = (name: `ct_${string}`, domain: string): ToolDefinition =>
       tool(name, { meta: { ...tool(name).meta, domain } });
