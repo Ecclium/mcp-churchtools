@@ -839,3 +839,4 @@ Diese Grundsatzfragen sind entschieden.
   - Lauf an ChurchTools 3.137 in den Stufen d0 bis d6 und den Gegenproben x1 bis x6. Die Rechte jeder Stufe wurden in der Weboberfläche gesetzt und vor jedem Lauf mit `02-permissions` geprüft. Befunde F35 bis F40 in [`docs/research/churchtools-api.md`](research/churchtools-api.md).
   - Rückkehr des Dienstkontos: Es darf wieder nur das Wiki und die Kennkategorie sehen, geprüft mit `02-permissions`, und hat ein neues Token. `01-auth` erhielt mit dem alten Token 401.
   - Die Ausgaben aller Läufe nennen keinen Namen und keinen Host, gitleaks findet in ihnen nichts.
+- 25.10.2026, die Probe für Events, Dienste, Kalender, Ressourcen und Songs ist als `51a4a08` auf `main` (#135). Der Baum des Squash-Commits ist gleich dem letzten Stand des Branches.
