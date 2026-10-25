@@ -81,6 +81,8 @@ export function domainsSetup(
         // The two search terms, the dates sent and the names of the objects.
         'synthetisch',
         'spikeprobe',
+        // The placeholder of a hidden name.
+        'anonym',
         from,
         to,
         'kalender',
@@ -159,6 +161,11 @@ export interface DomainsInstanceOptions {
   readonly unknownExists?: boolean;
   /** The largest `limit` the lists echo; larger ones are cut to it. */
   readonly echoCap?: number;
+  /**
+   * How the assignment of `s2` hides its person: without a first name, with
+   * the real last name or with a placeholder. Default: not hidden.
+   */
+  readonly hiddenName?: 'echt' | 'Platzhalter';
 }
 
 /** The largest limit the synthetic lists accept. */
@@ -251,6 +258,13 @@ export function domainsInstance(
     domainIdentifier: String(id),
     domainAttributes: { guid: made(makeGuid()) },
   });
+  // A person as a service that hides names gives it: no first name, no GUID.
+  const reduced = (lastName: string): Record<string, unknown> => ({
+    title: lastName,
+    domainType: 'person',
+    domainIdentifier: String(setting.p2 + 1),
+    domainAttributes: { firstName: '', lastName, guid: null },
+  });
   const p1 = person(setting.personId, 'Anna Spikeprobe');
   const p2 = person(setting.p2 + 1, 'Bruno Spikeprobenberg');
   const calendar = {
@@ -328,7 +342,12 @@ export function domainsInstance(
         personId: setting.p2 + 1,
         serviceId: ids.s2,
         agreed: false,
-        person: p2,
+        person:
+          options.hiddenName === undefined
+            ? p2
+            : reduced(
+                options.hiddenName === 'echt' ? 'Spikeprobenberg' : 'Anonym',
+              ),
       },
     ],
   };
@@ -496,11 +515,16 @@ export function domainsInstance(
           : invalid('resource_ids', '');
       case 'songs': {
         const filter = query.getAll('song_category_ids[]');
+        const term = query.get('query')?.toLowerCase();
         const visible = [
           ...shown('l1', songs.l1),
           ...shown('l2', songs.l2),
           ...(filter.length === 0 ? [foreignSong] : []),
-        ];
+        ].filter(
+          (song) =>
+            term === undefined ||
+            String(song['name']).toLowerCase().includes(term),
+        );
         return filter.length === 0 || filter.includes(String(ids.sc1))
           ? listOf(url, visible)
           : listOf(url, []);

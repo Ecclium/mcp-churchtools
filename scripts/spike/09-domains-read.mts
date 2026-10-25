@@ -17,20 +17,22 @@
  *   appointments one by one;
  * - the events of the same six weeks, the synthetic event, its agenda and
  *   the songs of its agenda;
- * - the songs of the synthetic category, both synthetic songs and their
- *   arrangements;
+ * - the songs of the synthetic category, the songs that match a fixed
+ *   term, both synthetic songs and their arrangements;
  * - the events and the songs with `page` and `limit`, to see how they page
  *   and where `limit` ends;
- * - the search of the wiki with the marker in the identification category,
- *   and the global search with a fixed term, once per domain type the
+ * - the search of the wiki with the marker, once in the identification
+ *   category and once without a category, which the guard narrows to that
+ *   one, and the global search with a fixed term, once per domain type the
  *   instance declares;
  * - one unknown event, song and appointment.
  * Writes: nothing.
  * Answers: which operations and parameters the instance documents, how the
  * answers are built and how their dates look, whether the synthetic
  * objects appear and whether an answer names persons, how the lists page,
- * how an unknown ID fails, and, over the stages of the run, which right
- * each operation needs. Names, IDs, dates and search terms never appear:
+ * how an unknown ID fails, whether a hidden name in an assignment is the
+ * real one, and, over the stages of the run, which right each operation
+ * needs. Names, IDs, dates and search terms never appear:
  * the synthetic objects appear only as the labels of
  * {@link domainLabels}, the synthetic person only as `p1`, the domain types
  * as `d1`, `d2` and so on.
@@ -63,7 +65,7 @@ import {
   type JsonObject,
 } from './lib/spec.mts';
 import { countClass, countClasses } from './lib/structure.mts';
-import { domainsQuery, marker } from './lib/synthetic.mts';
+import { domainsQuery, hiddenNameIn, marker } from './lib/synthetic.mts';
 
 /** The labels under which the synthetic objects appear in the output. */
 export const domainLabels = [
@@ -393,6 +395,15 @@ const words = [
   'antwort',
   'fehlerschluessel',
   'echo',
+  'verborgen',
+  'anzahl',
+  'kennung',
+  'keine',
+  'echt',
+  'Platzhalter',
+  'nicht vergleichbar',
+  'positive Zahl',
+  'keine positive Zahl',
 ];
 
 /** One query of a request, in order. */
@@ -495,6 +506,49 @@ function scan(body: unknown): Scan {
   };
   visit(body, 0);
   return { ids, identifiers, personIds, persons };
+}
+
+/**
+ * What the assignments of an event show of a person whose name a service
+ * hides. On the test instance such an assignment carried a person without
+ * a first name (`docs/research/churchtools-api.md`, F37). The rest is
+ * compared in memory with the names of the synthetic persons; only the
+ * outcome for the first such assignment appears, never a name or an ID.
+ *
+ * @param response - The answer of `GET /api/events/{eventId}`, if any.
+ * @returns «unbekannt» without an answer 200, «keine» without such an
+ *   assignment, else how many there are, whether the name is real and
+ *   whether the person carries a positive ID.
+ */
+function describeHidden(response: ProbeResponse | undefined): Json {
+  if (response?.status !== 200 || response.kind !== 'JSON') {
+    return 'unbekannt';
+  }
+  const data = dataOf(response);
+  const assignments = isObject(data) ? data['eventServices'] : undefined;
+  if (!Array.isArray(assignments)) {
+    return 'unbekannt';
+  }
+  const reduced = (assignments as readonly unknown[]).filter((entry) => {
+    const person = isObject(entry) ? entry['person'] : undefined;
+    const attributes = isObject(person)
+      ? person['domainAttributes']
+      : undefined;
+    return isObject(attributes) && attributes['firstName'] === '';
+  });
+  const [first] = reduced;
+  if (!isObject(first)) {
+    return 'keine';
+  }
+  const id = first['personId'];
+  return {
+    anzahl: countClass(reduced.length),
+    name: hiddenNameIn(first['person']),
+    kennung:
+      typeof id === 'number' && Number.isInteger(id) && id > 0
+        ? 'positive Zahl'
+        : 'keine positive Zahl',
+  };
 }
 
 function metaForm(response: ProbeResponse): Json {
@@ -766,10 +820,10 @@ export const probe: ProbeDefinition = {
         /** For the global search: the labels its type checks, by `domainIdentifier`. */
         readonly identifiers?: readonly DomainLabel[];
       } = {},
-    ): Promise<void> => {
+    ): Promise<ProbeResponse | undefined> => {
       if (!documented.has(name)) {
         skip(target, 'nicht dokumentiert');
-        return;
+        return undefined;
       }
       const response = await reader.get({ path, query });
       const key = fixed(target);
@@ -778,14 +832,14 @@ export const probe: ProbeDefinition = {
         // of it is read.
         if (response.status === 200) {
           ergebnisse[key] = 'unbekannte ID vorhanden';
-          return;
+          return undefined;
         }
         ergebnisse[key] = resultOf(response);
         unbekannt[fixed(name)] = {
           antwort: describe(name, response),
           fehlerschluessel: describeErrorKeys(response.body, guard),
         };
-        return;
+        return undefined;
       }
       ergebnisse[key] = resultOf(response);
       const read = response.status === 200 && response.kind === 'JSON';
@@ -848,6 +902,7 @@ export const probe: ProbeDefinition = {
         }
       }
       recordError(name, response, options.sent);
+      return response;
     };
 
     const window: Query = [
@@ -885,7 +940,13 @@ export const probe: ProbeDefinition = {
       operations.events.template,
       declared('events', window),
     );
-    await call('event:e1', 'event', pathFor(operations.event.template, ids.e1));
+    const verborgen = describeHidden(
+      await call(
+        'event:e1',
+        'event',
+        pathFor(operations.event.template, ids.e1),
+      ),
+    );
     await call(
       'eventAgenda:e1',
       'eventAgenda',
@@ -922,6 +983,16 @@ export const probe: ProbeDefinition = {
       ['song_category_ids[]', String(ids.sc1)],
     ]);
     await call('songs', 'songs', operations.songs.template, songFilter);
+    // The search a tool for songs needs: the fixed term, no category.
+    if (needs('songsQuery', 'songs', ['query'])) {
+      await call(
+        'songsQuery',
+        'songs',
+        operations.songs.template,
+        [['query', domainsQuery]],
+        { sent: domainsQuery },
+      );
+    }
     for (const label of ['l1', 'l2'] as const) {
       await call(
         `song:${label}`,
@@ -935,7 +1006,9 @@ export const probe: ProbeDefinition = {
       );
     }
 
-    // The search of the wiki, in the identification category only.
+    // The search of the wiki, in the identification category, and once
+    // without a category: the guard has made sure the account sees no
+    // other one, so this shows whether the search needs the filter.
     if (needs('wikiSearch', 'wikiSearch', ['query'])) {
       await call(
         'wikiSearch',
@@ -947,6 +1020,13 @@ export const probe: ProbeDefinition = {
             ['wiki_category_ids[]', String(pass.identification)],
           ]),
         ],
+        { sent: marker },
+      );
+      await call(
+        'wikiSearchAll',
+        'wikiSearch',
+        operations.wikiSearch.template,
+        [['query', marker]],
         { sent: marker },
       );
     }
@@ -1118,6 +1198,7 @@ export const probe: ProbeDefinition = {
       ),
       domaenentypen,
       ergebnisse,
+      verborgen,
       sichtbar,
       vorkommen,
       treffer,

@@ -391,17 +391,70 @@ describe('probe 09', () => {
     expect(section(exists.result, 'unbekannt')).toEqual({});
   });
 
-  it('searches the wiki with the marker in the identification category only', async () => {
+  it('searches the wiki with the marker in the identification category and once without one', async () => {
     const { result, calls, setting } = await run();
     const wiki = calls.filter(
       (call) => call.url.pathname === '/api/wiki/search',
     );
-    expect(wiki).toHaveLength(1);
-    expect(wiki[0]?.url.searchParams.get('query')).toBe('Spikeprobe');
+    expect(wiki).toHaveLength(2);
+    for (const call of wiki) {
+      expect(call.url.searchParams.get('query')).toBe('Spikeprobe');
+    }
     expect(wiki[0]?.url.searchParams.getAll('wiki_category_ids[]')).toEqual([
       String(setting.identification),
     ]);
+    expect(wiki[1]?.url.searchParams.getAll('wiki_category_ids[]')).toEqual([]);
     expect(section(result, 'personen')['wikiSearch']).toBe('0');
+    expect(section(result, 'ergebnisse')['wikiSearchAll']).toBe(
+      'erlaubt mit Einträgen',
+    );
+    expect(section(result, 'treffer')['wikiSearchAll']).toBe('1');
+  });
+
+  it('searches the songs by the fixed term, without a category', async () => {
+    const { result, calls } = await run();
+    const searched = calls.filter(
+      (call) =>
+        call.url.pathname === '/api/songs' &&
+        call.url.searchParams.has('query'),
+    );
+    expect(searched).toHaveLength(1);
+    expect(searched[0]?.url.searchParams.get('query')).toBe('Synthetisch');
+    expect(searched[0]?.url.searchParams.getAll('song_category_ids[]')).toEqual(
+      [],
+    );
+    expect(section(result, 'ergebnisse')['songsQuery']).toBe(
+      'erlaubt mit Einträgen',
+    );
+    expect(seen(result, 'songsQuery')).toEqual({
+      sc1: 'ja',
+      l1: 'ja',
+      l2: 'ja',
+    });
+  });
+
+  it.each([
+    [undefined, 'keine'],
+    ['echt', { anzahl: '1', name: 'echt', kennung: 'positive Zahl' }],
+    [
+      'Platzhalter',
+      { anzahl: '1', name: 'Platzhalter', kennung: 'positive Zahl' },
+    ],
+  ] as const)(
+    'tells whether a hidden name is real (%s) and prints no name',
+    async (hiddenName, expected) => {
+      const { code, result, output, setting } = await run(
+        hiddenName === undefined ? {} : { hiddenName },
+      );
+      expect(code).toBe(exitCodes.ok);
+      expect(result['verborgen']).toEqual(expected);
+      expect(leaks(output, setting.forbidden)).toEqual([]);
+    },
+  );
+
+  it('cannot tell a hidden name when the event is denied', async () => {
+    const { result } = await run({ denied: ['event'], hiddenName: 'echt' });
+    expect(result['verborgen']).toBe('unbekannt');
   });
 
   it('searches once per domain type the document declares, and names each by a label', async () => {
@@ -443,6 +496,7 @@ describe('probe 09', () => {
     expect(sichtbar['search:d2']).toBeUndefined();
     expect(section(result, 'treffer')).toEqual({
       wikiSearch: '1',
+      wikiSearchAll: '1',
       'search:d1': '0',
       'search:d2': '0',
       'search:d3': '2–9',
