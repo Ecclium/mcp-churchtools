@@ -26,14 +26,18 @@ import type {
 
 import { type Canary, type CanaryKind, makeCanary } from '../canary.js';
 
-// A leaf holds a canary of its kind; an object holds fields; a list holds
-// one element of its shape.
-type Shape =
+/**
+ * The shape of an answer: a leaf holds a canary of its kind, an object
+ * holds fields, a list holds one element of its shape. For the fixtures of
+ * this package only.
+ */
+export type Shape =
   CanaryKind | { readonly [field: string]: Shape } | readonly [Shape];
 
 const text: CanaryKind = 'name';
 
-const meta: Shape = {
+/** `meta` of an object, for the fixtures of this package only. */
+export const meta: Shape = {
   createdDate: text,
   createdPerson: { id: text },
   modifiedDate: text,
@@ -221,8 +225,16 @@ export interface HighestLevelList {
   readonly canaries: readonly Canary[];
 }
 
-// Gives each path in a shape one canary, made once and kept in the map.
-const plant = (
+/**
+ * Gives each path in a shape one canary, made once and kept in the map. For
+ * the fixtures of this package only.
+ *
+ * @param shape - The shape.
+ * @param path - The path of the shape, the key of its canaries.
+ * @param made - The canaries made so far.
+ * @returns The planted value.
+ */
+export const plant = (
   shape: Shape,
   path: string,
   made: Map<string, Canary>,
@@ -297,9 +309,16 @@ export function groupsAtHighestLevel(
   return list(hits, groupShape);
 }
 
-// Drops fields from an object shape, so that a kept field holds no canary
-// that the value of the test would hide.
-const drop = (
+/**
+ * Drops fields from an object shape, so that a kept field holds no canary
+ * that the value of the test would hide. For the fixtures of this package
+ * only.
+ *
+ * @param shape - The shape.
+ * @param fields - The fields to drop.
+ * @returns The shape without them.
+ */
+export const drop = (
   shape: Readonly<Record<string, Shape>>,
   ...fields: readonly string[]
 ): Readonly<Record<string, Shape>> =>
@@ -313,10 +332,16 @@ const singlePersonShape = drop(personShape, 'isArchived');
 const isObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-// Puts the values of the test over a planted object, also in nested
-// objects, so that a kept field takes the value of the test and its
-// siblings keep their canaries.
-const over = (planted: unknown, kept: unknown): unknown => {
+/**
+ * Puts the values of the test over a planted object, also in nested
+ * objects, so that a kept field takes the value of the test and its
+ * siblings keep their canaries. For the fixtures of this package only.
+ *
+ * @param planted - The planted object.
+ * @param kept - The values of the test.
+ * @returns The object with them.
+ */
+export const over = (planted: unknown, kept: unknown): unknown => {
   if (!isObject(planted) || !isObject(kept)) return kept;
   const result: Record<string, unknown> = { ...planted };
   for (const [field, value] of Object.entries(kept)) {
@@ -329,7 +354,7 @@ const over = (planted: unknown, kept: unknown): unknown => {
 
 // A group and a person as a membership names them, with the fields
 // `08-persons-groups-read` described (`docs/research/churchtools-api.md`,
-// F34).
+// F34). The person also as an assignment to a service names it (F37).
 const groupReference: Readonly<Record<string, Shape>> = {
   title: text,
   domainType: text,
@@ -351,7 +376,8 @@ const groupReference: Readonly<Record<string, Shape>> = {
   infos: [text],
 };
 
-const personAttributes: Readonly<Record<string, Shape>> = {
+/** The attributes of a person as a reference names them, for this package. */
+export const personAttributes: Readonly<Record<string, Shape>> = {
   firstName: text,
   lastName: text,
   guid: 'token',
@@ -359,7 +385,8 @@ const personAttributes: Readonly<Record<string, Shape>> = {
   isArchived: text,
 };
 
-const personReference: Readonly<Record<string, Shape>> = {
+/** A person as a membership or an assignment names it, for this package. */
+export const personReference: Readonly<Record<string, Shape>> = {
   title: text,
   domainType: text,
   domainIdentifier: text,
@@ -439,7 +466,16 @@ export interface HighestLevelAnswer {
   readonly canaries: readonly Canary[];
 }
 
-const answer = (
+/**
+ * The body of an answer and its canaries. For the fixtures of this package
+ * only.
+ *
+ * @param data - The value of `data`.
+ * @param made - The canaries planted in it.
+ * @param meta - The value of `meta`, left out when undefined.
+ * @returns The answer, frozen.
+ */
+export const answer = (
   data: unknown,
   made: Map<string, Canary>,
   meta?: unknown,
