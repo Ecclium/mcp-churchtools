@@ -183,6 +183,14 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
     event('http_response', { status: 200 });
     audit(name);
     const note = `${canary}Notiz`;
+    if (scenario === 'group-no-details') {
+      return result({
+        id: args['groupId'],
+        name: wrap(`${canary}Gruppe`),
+        details: null,
+        notice: 'ChurchTools sent no details of this group.',
+      });
+    }
     return result({
       id: args['groupId'],
       name: wrap(`${canary}Gruppe`),

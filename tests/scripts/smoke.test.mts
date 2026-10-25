@@ -489,6 +489,10 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     const groupLevel = await run({ env: search, scenario: 'group-level' });
     expect(groupLevel.code).toBe(smokeExitCodes.ok);
     expect(report(groupLevel)['befunde']).toEqual([]);
+    // A group without details passes with its note on the level.
+    const bare = await run({ env: search, scenario: 'group-no-details' });
+    expect(bare.code).toBe(smokeExitCodes.ok);
+    expect(report(bare)['fehler']).toEqual([]);
     const nobody = await run({ env: search, scenario: 'no-hits' });
     expect(nobody.code).toBe(smokeExitCodes.ok);
     expect(report(nobody)['befunde']).toEqual(['keine_personen_gefunden']);

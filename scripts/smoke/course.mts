@@ -152,7 +152,7 @@ const isCount = (value: unknown): boolean =>
 // The status of a membership and a day without time, as the tools give
 // them (ADR 0064).
 const memberStatus = /^[a-z_]{1,32}$/;
-const day = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+const day = /^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])$/;
 
 // The data envelope of the pipeline: a boundary of 16 random hex digits,
 // the text without the closing marker, the same boundary again (ADR 0024).
@@ -422,8 +422,9 @@ export async function runEra(
       );
     // An account with a security level of persons still passes: the tools
     // pass on only their fields. The finding says that it gets more than
-    // it needs. The lowest level of groups is part of the rights of
-    // ct_groups_get and no finding (ADR 0060, ADR 0064).
+    // it needs. A level of groups is no finding: ct_groups_get needs the
+    // lowest, and the rights name the levels only by ID, so the course
+    // cannot tell the lowest from a higher one (ADR 0060, ADR 0064).
     if (levels) findings.add('sicherheitsstufe');
     results.push({
       tool: 'ct_whoami',
