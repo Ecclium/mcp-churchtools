@@ -14,19 +14,24 @@ describe('the catalog over stdio', () => {
   );
 
   it.each([true, false])(
-    'adds both search tools of the core with readOnly %s and the toolset persons',
+    'adds the six tools of persons and groups with readOnly %s and the toolset persons, all special',
     (readOnly) => {
       const catalog = createStdioCatalog({ readOnly, toolsets: ['persons'] });
       expect(catalog.list().map((entry) => entry.name)).toEqual([
+        'ct_groups_get',
+        'ct_groups_get_members',
         'ct_groups_search',
+        'ct_persons_get',
+        'ct_persons_get_groups',
         'ct_persons_search',
         'ct_whoami',
       ]);
-      for (const entry of catalog.list()) expect(entry.origin).toBe('core');
-      expect(catalog.get('ct_persons_search')?.meta.sensitivity).toBe(
-        'special',
-      );
-      expect(catalog.get('ct_groups_search')?.meta.sensitivity).toBe('special');
+      for (const entry of catalog.list()) {
+        expect(entry.origin).toBe('core');
+        if (entry.name !== 'ct_whoami') {
+          expect(entry.meta.sensitivity).toBe('special');
+        }
+      }
     },
   );
 

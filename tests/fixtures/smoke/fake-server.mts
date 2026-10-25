@@ -88,7 +88,16 @@ const annotations = {
   openWorldHint: true,
 };
 const toolNames = [
-  ...(personsToolset ? ['ct_groups_search', 'ct_persons_search'] : []),
+  ...(personsToolset
+    ? [
+        'ct_groups_get',
+        'ct_groups_get_members',
+        'ct_groups_search',
+        'ct_persons_get',
+        'ct_persons_get_groups',
+        'ct_persons_search',
+      ]
+    : []),
   'ct_whoami',
   ...(scenario === 'write-tool' ? ['ct_wiki_page_create'] : []),
 ];

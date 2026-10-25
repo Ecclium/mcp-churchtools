@@ -318,7 +318,15 @@ export async function runEra(
     const expected =
       search === undefined
         ? ['ct_whoami']
-        : ['ct_groups_search', 'ct_persons_search', 'ct_whoami'];
+        : [
+            'ct_groups_get',
+            'ct_groups_get_members',
+            'ct_groups_search',
+            'ct_persons_get',
+            'ct_persons_get_groups',
+            'ct_persons_search',
+            'ct_whoami',
+          ];
     const listed = await session.request('tools/list', params({}));
     const tools =
       listed.kind === 'result' && isRecord(listed.result)
