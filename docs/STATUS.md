@@ -840,3 +840,4 @@ Diese Grundsatzfragen sind entschieden.
   - Rückkehr des Dienstkontos: Es darf wieder nur das Wiki und die Kennkategorie sehen, geprüft mit `02-permissions`, und hat ein neues Token. `01-auth` erhielt mit dem alten Token 401.
   - Die Ausgaben aller Läufe nennen keinen Namen und keinen Host, gitleaks findet in ihnen nichts.
 - 25.10.2026, die Probe für Events, Dienste, Kalender, Ressourcen und Songs ist als `51a4a08` auf `main` (#135). Der Baum des Squash-Commits ist gleich dem letzten Stand des Branches.
+- 25.10.2026, die Befunde F35 bis F40 sind als `639556b` auf `main` (#136). Der Baum des Squash-Commits ist gleich dem letzten Stand des Branches.
