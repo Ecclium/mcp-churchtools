@@ -202,8 +202,17 @@ const checkArguments = (
 };
 
 // A piece of the template: text as it stands, or the name of the argument
-// whose value goes there.
-type Piece = { readonly text: string } | { readonly argument: string };
+// whose value goes there. Without a prototype, so that a property added to
+// Object.prototype cannot make an argument look like text.
+type Piece =
+  | { readonly kind: 'text'; readonly text: string }
+  | { readonly kind: 'argument'; readonly argument: string };
+
+const textPiece = (text: string): Piece =>
+  Object.freeze({ __proto__: null, kind: 'text', text });
+
+const argumentPiece = (argument: string): Piece =>
+  Object.freeze({ __proto__: null, kind: 'argument', argument });
 
 // Splits the template at its placeholders. Braces stand only in a
 // placeholder of a known argument, and every argument appears at least
@@ -227,13 +236,13 @@ const splitTemplate = (
     if (end === -1) return undefined;
     const name = text.slice(index + 1, end);
     if (!names.includes(name)) return undefined;
-    if (index > start) pieces.push({ text: text.slice(start, index) });
-    pieces.push({ argument: name });
+    if (index > start) pieces.push(textPiece(text.slice(start, index)));
+    pieces.push(argumentPiece(name));
     used.add(name);
     index = end + 1;
     start = index;
   }
-  if (start < text.length) pieces.push({ text: text.slice(start) });
+  if (start < text.length) pieces.push(textPiece(text.slice(start)));
   return used.size === names.length ? Object.freeze(pieces) : undefined;
 };
 
@@ -259,11 +268,17 @@ const valueOf = (
   }
   // The text of the person goes into their own message. Characters they
   // cannot see would reach the model all the same, so they go, as from
-  // text of ChurchTools, and every line break becomes a line feed.
+  // text of ChurchTools: CR LF becomes LF, a lone CR goes. What the
+  // cleaning keeps but a template may not hold, such as a format character
+  // outside its list, private use, an unassigned code point or a separator
+  // of lines, refuses the value; a tab may stay.
   const cleaned = removeHiddenCharacters(raw)
     .text.replaceAll('\r\n', '\n')
     .trim();
-  return cleaned.length >= 1 && cleaned.length <= argument.maxLength
+  const visible = cleaned
+    .split('\n')
+    .every((line) => !hiddenCharacter.test(line.replaceAll('\t', '')));
+  return visible && cleaned.length >= 1 && cleaned.length <= argument.maxLength
     ? cleaned
     : undefined;
 };
@@ -287,7 +302,9 @@ const fillWith =
     // One pass over the pieces: a value that holds braces stays as it is.
     const text = pieces
       .map((piece) =>
-        'text' in piece ? piece.text : (filled.get(piece.argument) as string),
+        piece.kind === 'text'
+          ? piece.text
+          : (filled.get(piece.argument) as string),
       )
       .join('');
     return { ok: true, text: `${text}\n\n${promptDataSentence}` };

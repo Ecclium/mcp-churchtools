@@ -494,6 +494,42 @@ describe('fill', () => {
     );
   });
 
+  it.each([
+    ['a format character outside the cleaning', String.fromCodePoint(0x0600)],
+    ['a character of private use', String.fromCodePoint(0xe000)],
+    ['an unassigned code point', String.fromCodePoint(0xfff0)],
+    ['a lone surrogate', String.fromCharCode(0xd800)],
+    ['a separator of lines', String.fromCodePoint(0x2028)],
+    ['a separator of paragraphs', String.fromCodePoint(0x2029)],
+  ])('refuses a text with %s that the cleaning keeps', (_, character) => {
+    expect(
+      filled({ samstag: '2026-10-31', stichworte: `Kaf${character}fee` }),
+    ).toEqual({ ok: false, argument: 'stichworte' });
+  });
+
+  it('keeps a tab, an umlaut and an emoji with its selector', () => {
+    const kept = `a\tb für ${String.fromCodePoint(0x2615, 0xfe0f)}`;
+    const result = filled({ samstag: '2026-10-31', stichworte: kept });
+    expect(result.ok && result.text).toContain(kept);
+  });
+
+  it('fills the same text when Object.prototype carries a text', () => {
+    const before = filled({ samstag: '2026-10-31', stichworte: 'Kaffee' });
+    Object.defineProperty(Object.prototype, 'text', {
+      value: 'EINGESCHLEUST',
+      configurable: true,
+      writable: true,
+    });
+    try {
+      const entry = checkPrompt(valid, 'example', 'plugin');
+      expect(
+        entry.fill({ samstag: '2026-10-31', stichworte: 'Kaffee' }),
+      ).toEqual(before);
+    } finally {
+      delete (Object.prototype as { text?: unknown }).text;
+    }
+  });
+
   it('counts the length after the cleaning', () => {
     const hidden = String.fromCodePoint(0x200b).repeat(30);
     expect(
@@ -504,8 +540,10 @@ describe('fill', () => {
     ).toMatchObject({ ok: true });
   });
 
-  it('takes a Saturday as a Saturday, also on a leap day and at the end of a year', () => {
+  it('takes a Saturday as a Saturday, also on a leap day and at the ends of the range', () => {
     for (const day of [
+      '1970-01-03',
+      '2020-02-29',
       '2024-03-02',
       '2028-01-01',
       '2033-12-31',
