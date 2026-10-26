@@ -288,6 +288,14 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
     });
   }
   if (name === 'ct_events_get_agenda') {
+    if (scenario === 'agenda-refused') {
+      event('http_response', { status: 403 });
+      audit(name, 'permission');
+      return {
+        content: [{ type: 'text', text: 'ChurchTools refused this agenda.' }],
+        isError: true,
+      };
+    }
     if (scenario === 'event-no-agenda') {
       event('http_response', { status: 404 });
       audit(name, 'not_found');
@@ -325,7 +333,6 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
     });
   }
   if (name === 'ct_services_get_assignments') {
-    event('http_response', { status: 200 });
     event('http_response', { status: 200 });
     event('http_response', { status: 200 });
     audit(name);

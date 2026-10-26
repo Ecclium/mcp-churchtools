@@ -469,6 +469,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     ['events-bad-date', 'events'],
     ['event-bare-note', 'event'],
     ['agenda-bad-type', 'ablauf'],
+    ['agenda-refused', 'ablauf'],
     ['assignment-extra', 'einteilungen'],
     ['services-bare-name', 'dienste'],
     ['exit-1', 'ende'],
@@ -851,8 +852,8 @@ describe.skipIf(process.getuid?.() === 0)(
       });
       // Per era: two for ct_whoami, one for each search with a term, each
       // read by ID and the list of events, none for the term of spaces,
-      // three for the assignments and two for the services.
-      expect(requests).toHaveLength(34);
+      // and two each for the assignments and the services.
+      expect(requests).toHaveLength(32);
       expect(stateDirsLeft()).toEqual([]);
       expectClean(result);
     });

@@ -312,7 +312,13 @@ interface ToolResult {
   readonly isError: boolean;
   /** The structured data, only if the text copy says the same. */
   readonly data: Record<string, unknown> | undefined;
+  /** The text of the first content block, empty without one. */
+  readonly text: string;
 }
+
+// The start of the message of ct_events_get_agenda for an agenda that does
+// not exist, which an event without agenda gives as well.
+const noAgendaText = 'There is no agenda for this ID';
 
 // A result carries its data twice, as text and structured (ADR 0024). A
 // client may read either, so both must say the same.
@@ -330,6 +336,7 @@ const toolResult = (answer: Answer): ToolResult | undefined => {
   return {
     isError: answer.result['isError'] === true,
     data: same ? structured : undefined,
+    text: typeof text === 'string' ? text : '',
   };
 };
 
@@ -958,7 +965,11 @@ export async function runEra(
           { eventId },
           'ok',
         );
-        if (agenda?.isError === true) {
+        // Only the error of a missing agenda is a finding; any other error
+        // of the tool fails the check.
+        const missing =
+          agenda?.isError === true && agenda.text.startsWith(noAgendaText);
+        if (missing) {
           calls[calls.length - 1] = {
             tool: 'ct_events_get_agenda',
             expect: 'not_found',
@@ -1046,9 +1057,9 @@ export async function runEra(
         }
 
         // ct_services_get_assignments: service, states and the person, or
-        // none where the service hides the names. It reads the event, the
-        // services and their groups.
-        readCalls += 3;
+        // none where the service hides the names. It reads the event and
+        // the services.
+        readCalls += 2;
         const listed = await callTool(
           'ct_services_get_assignments',
           { eventId },
@@ -1179,8 +1190,8 @@ export async function runEra(
   const events = lines.filter((line) => typeof line['event'] === 'string');
 
   // ct_whoami asks ChurchTools twice, each search with a term, each read
-  // by ID and each list of events once, the services twice and the
-  // assignments three times.
+  // by ID and each list of events once, the services and the assignments
+  // twice.
   const requests = events.filter((line) => line['event'] === 'http_response');
   const requestsFit = requests.length === whoamiCalls * 2 + readCalls;
   report['anfragen'] = requestsFit ? 'wie erwartet' : 'abweichend';
