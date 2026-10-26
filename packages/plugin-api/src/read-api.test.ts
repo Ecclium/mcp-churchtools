@@ -4,14 +4,22 @@ import {
   agendaItemTypePattern,
   assignmentsPageLimit,
   calendarDatePattern,
+  dateOrDateTimePattern,
   dateTimePattern,
   groupMembersPageLimit,
   groupMemberStatusPattern,
   isEventWindow,
+  isListIds,
   isWikiPageGuid,
   maxAgendaItems,
   maxAgendaNoteLength,
+  maxAppointmentDates,
+  maxAppointmentDescriptionLength,
+  maxAppointmentLinkLength,
+  maxAppointments,
   maxAssignmentsPage,
+  maxBookings,
+  maxCalendars,
   maxEventAssignments,
   maxEventDays,
   maxEventDescriptionLength,
@@ -20,8 +28,10 @@ import {
   maxGroupMeetingTimeLength,
   maxGroupMembersPage,
   maxGroupNoteLength,
+  maxListIds,
   maxNameLength,
   maxPersonGroups,
+  maxResources,
   maxSearchHits,
   maxSearchTermLength,
   maxServices,
@@ -329,5 +339,100 @@ describe('isEventWindow', () => {
     // Across the leap day of 2028: 31 days fit, 32 do not.
     expect(isEventWindow('2028-02-01', '2028-03-02')).toBe(true);
     expect(isEventWindow('2028-02-01', '2028-03-03')).toBe(false);
+  });
+});
+
+describe('the limits of calendars, appointments, resources and bookings', () => {
+  it('reads 1000 calendars, resources and types of resources', () => {
+    expect(maxCalendars).toBe(1000);
+    expect(maxResources).toBe(1000);
+  });
+
+  it('asks for at most 10 calendars or resources and passes on 50 appointments and 50 bookings', () => {
+    expect(maxListIds).toBe(10);
+    expect(maxAppointments).toBe(50);
+    expect(maxBookings).toBe(50);
+  });
+
+  it('reads descriptions of 7000 and links of 1000 code units and 500 dates of an appointment', () => {
+    expect(maxAppointmentDescriptionLength).toBe(7000);
+    expect(maxAppointmentLinkLength).toBe(1000);
+    expect(maxAppointmentDates).toBe(500);
+  });
+});
+
+describe('dateOrDateTimePattern', () => {
+  it('checks the whole value, without flags', () => {
+    expect(dateOrDateTimePattern.flags).toBe('');
+    expect(dateOrDateTimePattern.source.startsWith('^')).toBe(true);
+    expect(dateOrDateTimePattern.source.endsWith('$')).toBe(true);
+  });
+
+  it('takes every value of both forms it names', () => {
+    for (const value of [
+      '2026-10-25T09:30:00Z',
+      '1999-01-01T00:00:00Z',
+      '2026-12-31T23:59:59Z',
+      '2026-10-25',
+      '1969-12-31',
+    ]) {
+      expect(
+        dateTimePattern.test(value) || calendarDatePattern.test(value),
+      ).toBe(true);
+      expect(dateOrDateTimePattern.test(value)).toBe(true);
+    }
+  });
+
+  it('refuses every other form', () => {
+    for (const value of [
+      '2026-10-25T',
+      '2026-10-25T09:30:00',
+      '2026-10-25T09:30:00.000Z',
+      '2026-10-25T09:30Z',
+      '2026-10-25T24:00:00Z',
+      '2026-10-25 09:30:00Z',
+      '2026-10-25T09:30:00+01:00',
+      '2026-13-01',
+      '2026-10-32',
+      '25.10.2026',
+      '2026-10-25\n',
+      '',
+    ]) {
+      expect(dateOrDateTimePattern.test(value), value).toBe(false);
+    }
+  });
+});
+
+describe('isListIds', () => {
+  it('takes 1 to 10 whole numbers from 1, each once', () => {
+    expect(isListIds([1])).toBe(true);
+    expect(isListIds([8, 12])).toBe(true);
+    expect(isListIds([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])).toBe(true);
+    expect(isListIds([Number.MAX_SAFE_INTEGER])).toBe(true);
+  });
+
+  it('refuses an empty list, 11 IDs and the same ID twice', () => {
+    expect(isListIds([])).toBe(false);
+    expect(isListIds([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])).toBe(false);
+    expect(isListIds([8, 8])).toBe(false);
+  });
+
+  it('refuses every value that is no ID and every other form', () => {
+    for (const value of [
+      [0],
+      [-1],
+      [1.5],
+      [Number.MAX_SAFE_INTEGER + 1],
+      [Number.NaN],
+      ['8'],
+      [8, null],
+      '8',
+      8,
+      null,
+      undefined,
+      { 0: 8, length: 1 },
+    ]) {
+      expect(isListIds(value), JSON.stringify(value)).toBe(false);
+    }
   });
 });
