@@ -30,6 +30,18 @@ export {
   personsAtHighestLevel,
 } from './fixtures/highest-level.js';
 export {
+  type AppointmentDateFixture,
+  type AppointmentDetailsFixture,
+  appointmentAnswer,
+  type AppointmentFixture,
+  appointmentsAnswer,
+  type BookingFixture,
+  bookingsAnswer,
+  calendarsAnswer,
+  resourcesAnswer,
+  resourceTypesAnswer,
+} from './fixtures/calendars.js';
+export {
   agendaAnswer,
   type AssignmentFixture,
   eventAnswer,
