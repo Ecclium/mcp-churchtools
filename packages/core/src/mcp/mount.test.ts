@@ -1072,7 +1072,7 @@ describe.each(eras)('the prompts in the $name era', (era) => {
 
   it('refuses a name the prompt does not have without repeating it', async () => {
     const canary = makeCanary('name').value;
-    const { factory } = setup({}, [], [testPrompt]);
+    const { factory, logs } = setup({}, [], [testPrompt]);
     const connection = await era.open(factory);
     const reply = await era.ask(connection, 'prompts/get', {
       name: 'test_wochenende',
@@ -1087,6 +1087,30 @@ describe.each(eras)('the prompts in the $name era', (era) => {
       'The arguments are no object or hold a name this prompt does not have.',
     );
     expect(JSON.stringify(reply)).not.toContain(canary);
+    expect(logs().at(-1)).toEqual({
+      ts: '1970-01-01T00:00:00.000Z',
+      level: 'warn',
+      event: 'prompt_refused',
+      prompt: 'test_wochenende',
+      code: 'validation',
+    });
+  });
+
+  // The SDK checks the arguments as strings before the handler runs. Its
+  // refusal reaches neither the mount nor the log; the threat model keeps
+  // it as a remaining risk, and this test shows when the SDK changes it.
+  it('leaves a value that is no string to the SDK, without a log line', async () => {
+    const { factory, logs } = setup({}, [], [testPrompt]);
+    const connection = await era.open(factory);
+    const before = logs().length;
+    const reply = await era.ask(connection, 'prompts/get', {
+      name: 'test_wochenende',
+      arguments: { samstag: 20261031, stichworte: 'Kaffee' },
+    });
+    expect(at(reply, 'error', 'code')).toBe(-32603);
+    expect(at(reply, 'result')).toBeUndefined();
+    expect(String(at(reply, 'error', 'message'))).not.toContain('20261031');
+    expect(logs().slice(before)).toEqual([]);
   });
 
   it('answers a prompt also when the logger throws', async () => {
