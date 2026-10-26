@@ -10,7 +10,10 @@
  * the events of up to three spans of 31 days from a week before the day of
  * the run, and
  * with the first event found the event, its agenda and its assignments,
- * and the services, closes stdin and checks how the process ended.
+ * and the services, then the calendars, the appointments of the first
+ * calendar in the same spans and the first appointment, the resources and
+ * the bookings of the first resource, closes stdin and checks how the
+ * process ended.
  *
  * Every check yields a fixed word. Values from the answers never go into
  * the result: they go onto the block list of the guard and into the list
@@ -142,7 +145,15 @@ export const courseWords = [
   'ct_events_get_agenda',
   'ct_services_list',
   'ct_services_get_assignments',
+  'ct_calendars_list',
+  'ct_appointments_list',
+  'ct_appointments_get',
+  'ct_resources_list',
+  'ct_bookings_list',
   'verborgen',
+  'ganztaegig',
+  'nur Tag',
+  'mit Zeit',
   'code',
   'anderer',
   ...exitCodesOfServer,
@@ -177,6 +188,15 @@ export const courseCodes = [
   'einteilungen',
   'kein_event_gefunden',
   'kein_ablauf',
+  'kalender',
+  'termine',
+  'termin',
+  'ressourcen',
+  'buchungen',
+  'kein_kalender_gefunden',
+  'kein_termin_gefunden',
+  'keine_ressource_gefunden',
+  'keine_buchung_gefunden',
 ] as const;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -207,6 +227,10 @@ const day = /^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])$/;
 const dateTime =
   /^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$/;
 const itemType = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
+// The start and end of an appointment or a booking: a date with time, or
+// a day alone, which an entry of whole days may have (ADR 0064).
+const dateOrDay =
+  /^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z)?$/;
 
 // The data envelope of the pipeline: a boundary of 16 random hex digits,
 // the text without the closing marker, the same boundary again (ADR 0024).
@@ -401,6 +425,10 @@ export async function runEra(
       search === undefined
         ? ['ct_whoami']
         : [
+            'ct_appointments_get',
+            'ct_appointments_list',
+            'ct_bookings_list',
+            'ct_calendars_list',
             'ct_events_get',
             'ct_events_get_agenda',
             'ct_events_list',
@@ -410,6 +438,7 @@ export async function runEra(
             'ct_persons_get',
             'ct_persons_get_groups',
             'ct_persons_search',
+            'ct_resources_list',
             'ct_services_get_assignments',
             'ct_services_list',
             'ct_whoami',
@@ -1181,6 +1210,368 @@ export async function runEra(
         treffer: countClass(Array.isArray(services) ? services.length : 0),
         mehr: servicesData?.['more'] === true ? 'ja' : 'nein',
       });
+
+      // How a list of appointments or bookings gave the entries of whole
+      // days: with time, as a day alone, or none in the list (ADR 0064).
+      const wholeDays = (entries: readonly unknown[]): Json => {
+        const whole = entries.filter(
+          (entry) => isRecord(entry) && entry['allDay'] === true,
+        );
+        if (whole.length === 0) return 'keine';
+        return whole.every(
+          (entry) =>
+            isRecord(entry) &&
+            typeof entry['startDate'] === 'string' &&
+            day.test(entry['startDate']),
+        )
+          ? 'nur Tag'
+          : 'mit Zeit';
+      };
+      const datesFit = (entry: Record<string, unknown>): boolean =>
+        typeof entry['startDate'] === 'string' &&
+        dateOrDay.test(entry['startDate']) &&
+        typeof entry['endDate'] === 'string' &&
+        dateOrDay.test(entry['endDate']);
+
+      // ct_calendars_list, page 1: the calendars the account may see, the
+      // names enveloped.
+      readCalls += 1;
+      const calendarsRead = await callTool('ct_calendars_list', {}, 'ok');
+      const calendarsData =
+        calendarsRead?.isError === false ? calendarsRead.data : undefined;
+      const calendars = calendarsData?.['calendars'];
+      let calendarsEnveloped = true;
+      if (Array.isArray(calendars)) {
+        for (const entry of calendars) {
+          if (isRecord(entry) && !seeEnveloped(entry['name'])) {
+            calendarsEnveloped = false;
+          }
+        }
+      }
+      const calendarsFit =
+        calendarsData !== undefined &&
+        sameKeys(calendarsData, ['calendars', 'more', 'notice', 'page']) &&
+        calendarsData['page'] === 1 &&
+        Array.isArray(calendars) &&
+        calendars.length <= 25 &&
+        calendars.every(
+          (entry: unknown) =>
+            isRecord(entry) &&
+            sameKeys(entry, ['id', 'isPrivate', 'isPublic', 'name']) &&
+            isId(entry['id']) &&
+            typeof entry['isPublic'] === 'boolean' &&
+            typeof entry['isPrivate'] === 'boolean',
+        ) &&
+        calendarsEnveloped &&
+        noticeFits(calendarsData) &&
+        (calendars.length > 0 || typeof calendarsData['notice'] === 'string');
+      guard.blockAll(calendarsRead?.data);
+      if (!calendarsFit) failures.add('kalender');
+      const firstCalendar: unknown =
+        calendarsFit && Array.isArray(calendars) ? calendars[0] : undefined;
+      const calendarId = isRecord(firstCalendar)
+        ? firstCalendar['id']
+        : undefined;
+      if (calendarsFit && calendarId === undefined) {
+        findings.add('kein_kalender_gefunden');
+      }
+      results.push({
+        tool: 'ct_calendars_list',
+        ergebnis: calendarsFit ? 'ok' : 'gescheitert',
+        treffer: countClass(Array.isArray(calendars) ? calendars.length : 0),
+        mehr: calendarsData?.['more'] === true ? 'ja' : 'nein',
+      });
+
+      if (isId(calendarId)) {
+        // ct_appointments_list with the first calendar over the spans until
+        // one holds an appointment: the eight fields, the texts enveloped
+        // or null, the dates with time or as days alone.
+        let appointment: Record<string, unknown> | undefined;
+        let appointmentsFit = true;
+        let appointmentCount = 0;
+        let whole: Json = 'keine';
+        for (const span of search.spans) {
+          readCalls += 1;
+          const listed = await callTool(
+            'ct_appointments_list',
+            { calendarIds: [calendarId], from: span.from, to: span.to },
+            'ok',
+          );
+          const data = listed?.isError === false ? listed.data : undefined;
+          const entries = data?.['appointments'];
+          let enveloped = true;
+          if (Array.isArray(entries)) {
+            for (const entry of entries) {
+              if (!isRecord(entry)) continue;
+              if (!seeEnveloped(entry['title'])) enveloped = false;
+              if (!seeOptional(entry['subtitle'])) enveloped = false;
+              if (!seeOptional(entry['locationName'])) enveloped = false;
+            }
+          }
+          const fits =
+            data !== undefined &&
+            sameKeys(data, [
+              'appointments',
+              'from',
+              'more',
+              'notice',
+              'page',
+              'to',
+            ]) &&
+            data['from'] === span.from &&
+            data['to'] === span.to &&
+            data['page'] === 1 &&
+            Array.isArray(entries) &&
+            entries.length <= 25 &&
+            entries.every(
+              (entry: unknown) =>
+                isRecord(entry) &&
+                sameKeys(entry, [
+                  'allDay',
+                  'calendarId',
+                  'endDate',
+                  'id',
+                  'locationName',
+                  'startDate',
+                  'subtitle',
+                  'title',
+                ]) &&
+                isId(entry['id']) &&
+                entry['calendarId'] === calendarId &&
+                typeof entry['allDay'] === 'boolean' &&
+                datesFit(entry),
+            ) &&
+            enveloped &&
+            noticeFits(data) &&
+            (entries.length > 0 || typeof data['notice'] === 'string');
+          guard.blockAll(listed?.data);
+          if (!fits) {
+            appointmentsFit = false;
+            break;
+          }
+          const first: unknown = Array.isArray(entries)
+            ? entries[0]
+            : undefined;
+          if (isRecord(first)) {
+            appointment = first;
+            appointmentCount = Array.isArray(entries) ? entries.length : 0;
+            whole = wholeDays(Array.isArray(entries) ? entries : []);
+            break;
+          }
+        }
+        if (!appointmentsFit) failures.add('termine');
+        if (appointmentsFit && appointment === undefined) {
+          findings.add('kein_termin_gefunden');
+        }
+        results.push({
+          tool: 'ct_appointments_list',
+          ergebnis: appointmentsFit ? 'ok' : 'gescheitert',
+          treffer: countClass(appointmentCount),
+          ganztaegig: whole,
+        });
+
+        if (appointment !== undefined) {
+          // ct_appointments_get with the first appointment: the fields of
+          // the list without start and end, description, link and dates.
+          readCalls += 1;
+          const appointmentId = appointment['id'];
+          const read = await callTool(
+            'ct_appointments_get',
+            { calendarId, appointmentId },
+            'ok',
+          );
+          const data = read?.isError === false ? read.data : undefined;
+          const dates = data?.['dates'];
+          const textsFit =
+            data !== undefined &&
+            seeEnveloped(data['title']) &&
+            [
+              data['subtitle'],
+              data['locationName'],
+              data['description'],
+              data['link'],
+            ].every((text) => seeOptional(text));
+          const appointmentFits =
+            data !== undefined &&
+            sameKeys(data, [
+              'allDay',
+              'calendarId',
+              'dates',
+              'description',
+              'id',
+              'link',
+              'locationName',
+              'moreDates',
+              'subtitle',
+              'title',
+            ]) &&
+            data['id'] === appointmentId &&
+            data['calendarId'] === calendarId &&
+            typeof data['allDay'] === 'boolean' &&
+            typeof data['moreDates'] === 'boolean' &&
+            Array.isArray(dates) &&
+            dates.length <= 25 &&
+            dates.every(
+              (date: unknown) =>
+                isRecord(date) &&
+                sameKeys(date, ['endDate', 'startDate']) &&
+                datesFit(date),
+            ) &&
+            textsFit;
+          guard.blockAll(read?.data);
+          if (!appointmentFits) failures.add('termin');
+          results.push({
+            tool: 'ct_appointments_get',
+            ergebnis: appointmentFits ? 'ok' : 'gescheitert',
+            umschlag: textsFit ? 'ja' : 'nein',
+          });
+        }
+      }
+
+      // ct_resources_list, page 1: the resources the account may see with
+      // their type, the names enveloped. It reads resources and types.
+      readCalls += 2;
+      const resourcesRead = await callTool('ct_resources_list', {}, 'ok');
+      const resourcesData =
+        resourcesRead?.isError === false ? resourcesRead.data : undefined;
+      const resources = resourcesData?.['resources'];
+      let resourcesEnveloped = true;
+      if (Array.isArray(resources)) {
+        for (const entry of resources) {
+          if (!isRecord(entry)) continue;
+          if (!seeEnveloped(entry['name'])) resourcesEnveloped = false;
+          if (!seeOptional(entry['resourceTypeName'])) {
+            resourcesEnveloped = false;
+          }
+        }
+      }
+      const resourcesFit =
+        resourcesData !== undefined &&
+        sameKeys(resourcesData, ['more', 'notice', 'page', 'resources']) &&
+        resourcesData['page'] === 1 &&
+        Array.isArray(resources) &&
+        resources.length <= 25 &&
+        resources.every(
+          (entry: unknown) =>
+            isRecord(entry) &&
+            sameKeys(entry, [
+              'id',
+              'name',
+              'resourceTypeId',
+              'resourceTypeName',
+            ]) &&
+            isId(entry['id']) &&
+            isId(entry['resourceTypeId']),
+        ) &&
+        resourcesEnveloped &&
+        noticeFits(resourcesData) &&
+        (resources.length > 0 || typeof resourcesData['notice'] === 'string');
+      guard.blockAll(resourcesRead?.data);
+      if (!resourcesFit) failures.add('ressourcen');
+      const firstResource: unknown =
+        resourcesFit && Array.isArray(resources) ? resources[0] : undefined;
+      const resourceId = isRecord(firstResource)
+        ? firstResource['id']
+        : undefined;
+      if (resourcesFit && resourceId === undefined) {
+        findings.add('keine_ressource_gefunden');
+      }
+      results.push({
+        tool: 'ct_resources_list',
+        ergebnis: resourcesFit ? 'ok' : 'gescheitert',
+        treffer: countClass(Array.isArray(resources) ? resources.length : 0),
+        mehr: resourcesData?.['more'] === true ? 'ja' : 'nein',
+      });
+
+      if (isId(resourceId)) {
+        // ct_bookings_list with the first resource over the spans until one
+        // holds a booking: the seven fields, the title enveloped.
+        let bookingsFit = true;
+        let bookingCount = 0;
+        let whole: Json = 'keine';
+        for (const span of search.spans) {
+          readCalls += 1;
+          const listed = await callTool(
+            'ct_bookings_list',
+            { resourceIds: [resourceId], from: span.from, to: span.to },
+            'ok',
+          );
+          const data = listed?.isError === false ? listed.data : undefined;
+          const entries = data?.['bookings'];
+          let enveloped = true;
+          if (Array.isArray(entries)) {
+            for (const entry of entries) {
+              if (isRecord(entry) && !seeEnveloped(entry['title'])) {
+                enveloped = false;
+              }
+            }
+          }
+          const fits =
+            data !== undefined &&
+            sameKeys(data, [
+              'bookings',
+              'from',
+              'more',
+              'notice',
+              'page',
+              'to',
+            ]) &&
+            data['from'] === span.from &&
+            data['to'] === span.to &&
+            data['page'] === 1 &&
+            Array.isArray(entries) &&
+            entries.length <= 25 &&
+            entries.every(
+              (entry: unknown) =>
+                isRecord(entry) &&
+                sameKeys(entry, [
+                  'appointmentId',
+                  'endDate',
+                  'id',
+                  'resourceId',
+                  'startDate',
+                  'statusId',
+                  'title',
+                ]) &&
+                isId(entry['id']) &&
+                entry['resourceId'] === resourceId &&
+                isCount(entry['statusId']) &&
+                isIdOrNull(entry['appointmentId']) &&
+                datesFit(entry),
+            ) &&
+            enveloped &&
+            noticeFits(data) &&
+            (entries.length > 0 || typeof data['notice'] === 'string');
+          guard.blockAll(listed?.data);
+          if (!fits) {
+            bookingsFit = false;
+            break;
+          }
+          if (Array.isArray(entries) && entries.length > 0) {
+            bookingCount = entries.length;
+            // A booking carries no allDay; a day alone shows whole days.
+            whole = entries.some(
+              (entry) =>
+                isRecord(entry) &&
+                typeof entry['startDate'] === 'string' &&
+                day.test(entry['startDate']),
+            )
+              ? 'nur Tag'
+              : 'keine';
+            break;
+          }
+        }
+        if (!bookingsFit) failures.add('buchungen');
+        if (bookingsFit && bookingCount === 0) {
+          findings.add('keine_buchung_gefunden');
+        }
+        results.push({
+          tool: 'ct_bookings_list',
+          ergebnis: bookingsFit ? 'ok' : 'gescheitert',
+          treffer: countClass(bookingCount),
+          ganztaegig: whole,
+        });
+      }
     }
     report['aufrufe'] = results;
   }
@@ -1190,8 +1581,8 @@ export async function runEra(
   const events = lines.filter((line) => typeof line['event'] === 'string');
 
   // ct_whoami asks ChurchTools twice, each search with a term, each read
-  // by ID and each list of events once, the services and the assignments
-  // twice.
+  // by ID and each list of events, calendars, appointments and bookings
+  // once, the services, the assignments and the resources twice.
   const requests = events.filter((line) => line['event'] === 'http_response');
   const requestsFit = requests.length === whoamiCalls * 2 + readCalls;
   report['anfragen'] = requestsFit ? 'wie erwartet' : 'abweichend';

@@ -275,7 +275,9 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
         'ECCLIUM_STATE_DIR',
         'ECCLIUM_TOOLSETS',
       ]);
-      expect(record.variables['ECCLIUM_TOOLSETS']).toBe('persons,events');
+      expect(record.variables['ECCLIUM_TOOLSETS']).toBe(
+        'persons,events,calendars',
+      );
       expect(record.calls).toEqual([
         'ct_whoami',
         'ct_persons_search',
@@ -291,7 +293,22 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
         'ct_events_get_agenda',
         'ct_services_get_assignments',
         'ct_services_list',
+        'ct_calendars_list',
+        'ct_appointments_list',
+        'ct_appointments_get',
+        'ct_resources_list',
+        'ct_bookings_list',
       ]);
+    }
+    // The list of appointments of the stand-in holds one of whole days,
+    // as a day alone.
+    for (const era of report(result)['aeren'] as {
+      aufrufe: { tool: string; ganztaegig?: string }[];
+    }[]) {
+      expect(
+        era.aufrufe.find((call) => call.tool === 'ct_appointments_list')
+          ?.ganztaegig,
+      ).toBe('nur Tag');
     }
     expect(stateDirsLeft()).toEqual([]);
     expectClean(result);
@@ -472,6 +489,11 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     ['agenda-refused', 'ablauf'],
     ['assignment-extra', 'einteilungen'],
     ['services-bare-name', 'dienste'],
+    ['calendars-bare-name', 'kalender'],
+    ['appointments-bad-date', 'termine'],
+    ['appointment-extra', 'termin'],
+    ['resources-bare-type', 'ressourcen'],
+    ['bookings-bad-status', 'buchungen'],
     ['exit-1', 'ende'],
   ] as const)(
     'fails when the server breaks it: %s',
@@ -531,6 +553,11 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
         'ct_events_list',
         'ct_events_list',
         'ct_services_list',
+        'ct_calendars_list',
+        'ct_appointments_list',
+        'ct_appointments_get',
+        'ct_resources_list',
+        'ct_bookings_list',
       ]);
     }
     const noAgenda = await run({ env: search, scenario: 'event-no-agenda' });
@@ -539,6 +566,61 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     expect(report(noAgenda)['fehler']).toEqual([]);
     expectClean(noAgenda);
   });
+
+  it.each([
+    [
+      'no-calendars',
+      'kein_kalender_gefunden',
+      ['ct_calendars_list', 'ct_resources_list', 'ct_bookings_list'],
+    ],
+    [
+      'no-appointments',
+      'kein_termin_gefunden',
+      [
+        'ct_calendars_list',
+        'ct_appointments_list',
+        'ct_appointments_list',
+        'ct_appointments_list',
+        'ct_resources_list',
+        'ct_bookings_list',
+      ],
+    ],
+    [
+      'no-resources',
+      'keine_ressource_gefunden',
+      [
+        'ct_calendars_list',
+        'ct_appointments_list',
+        'ct_appointments_get',
+        'ct_resources_list',
+      ],
+    ],
+    [
+      'no-bookings',
+      'keine_buchung_gefunden',
+      [
+        'ct_calendars_list',
+        'ct_appointments_list',
+        'ct_appointments_get',
+        'ct_resources_list',
+        'ct_bookings_list',
+        'ct_bookings_list',
+        'ct_bookings_list',
+      ],
+    ],
+  ] as const)(
+    'passes with a finding for %s',
+    async (scenario, finding, calls) => {
+      const result = await run({ env: search, scenario });
+      expect(result.code).toBe(smokeExitCodes.ok);
+      expect(report(result)['befunde']).toEqual([finding]);
+      expect(report(result)['fehler']).toEqual([]);
+      for (const record of result.records) {
+        expect(record.calls.slice(14)).toEqual(calls);
+      }
+      expectClean(result);
+    },
+  );
 });
 
 // The real `ecclium stdio` from source, as in tests/stdio-start.test.mts:
@@ -753,6 +835,124 @@ describe.skipIf(process.getuid?.() === 0)(
           data: [{ id: 5, name: `${canary}Dienstgruppe` }],
           meta: { count: 1 },
         });
+      } else if (url.pathname === '/api/calendars') {
+        json(response, {
+          data: [
+            {
+              id: 8,
+              name: `${canary}Kalender`,
+              randomUrl: `${canary}Abo`,
+              isPublic: false,
+              isPrivate: false,
+            },
+          ],
+          meta: { count: 1 },
+        });
+      } else if (url.pathname === '/api/calendars/appointments') {
+        // One appointment with a place and one of whole days, as a day
+        // alone; the street of the place and the copies above appointment
+        // reach no output.
+        const base = {
+          id: 5,
+          title: `${canary}Termin`,
+          subtitle: null,
+          allDay: false,
+          calendar: { id: 8, randomUrl: `${canary}Abo` },
+          address: { name: `${canary}Saal`, street: `${canary}Strasse` },
+        };
+        json(response, {
+          data: [
+            {
+              appointment: {
+                base,
+                calculated: {
+                  startDate: '2026-10-25T18:00:00Z',
+                  endDate: '2026-10-25T19:00:00Z',
+                },
+              },
+              base,
+            },
+            {
+              appointment: {
+                base: {
+                  ...base,
+                  id: 6,
+                  allDay: true,
+                  address: null,
+                },
+                calculated: {
+                  startDate: '2026-10-26',
+                  endDate: '2026-10-26',
+                },
+              },
+            },
+          ],
+          meta: { count: 2 },
+        });
+      } else if (url.pathname === '/api/calendars/8/appointments/5') {
+        json(response, {
+          data: {
+            appointment: {
+              id: 5,
+              title: `${canary}Termin`,
+              subtitle: null,
+              allDay: false,
+              calendar: { id: 8, randomUrl: `${canary}Abo` },
+              address: { name: `${canary}Saal`, street: `${canary}Strasse` },
+              description: `${canary}Beschreibung`,
+              link: null,
+              onBehalfOfPid: 11,
+            },
+            additionalInfos: [],
+            calculatedDates: {
+              '2026-10-25': {
+                startDate: '2026-10-25T18:00:00Z',
+                endDate: '2026-10-25T19:00:00Z',
+                iCalUid: `${canary}Uid`,
+              },
+            },
+          },
+        });
+      } else if (url.pathname === '/api/resources') {
+        json(response, {
+          data: [
+            {
+              id: 8,
+              name: `${canary}Raum`,
+              resourceTypeId: 5,
+              randomString: `${canary}Zufall`,
+            },
+          ],
+          meta: { count: 1 },
+        });
+      } else if (url.pathname === '/api/resourcetypes') {
+        json(response, {
+          data: [{ id: 5, name: `${canary}Raeume` }],
+          meta: { count: 1 },
+        });
+      } else if (url.pathname === '/api/bookings') {
+        json(response, {
+          data: [
+            {
+              booking: {
+                base: {
+                  id: 2,
+                  title: `${canary}Buchung`,
+                  resourceId: 8,
+                  statusId: 2,
+                  appointmentId: 5,
+                  answeredPid: 11,
+                  caption: `${canary}Beschriftung`,
+                },
+                calculated: {
+                  startDate: '2026-10-25T18:00:00Z',
+                  endDate: '2026-10-25T19:00:00Z',
+                },
+              },
+            },
+          ],
+          meta: { count: 1 },
+        });
       } else if (url.pathname === '/api/persons') {
         json(response, {
           data: term.startsWith('zq')
@@ -851,9 +1051,10 @@ describe.skipIf(process.getuid?.() === 0)(
         ergebnis: 'bestanden',
       });
       // Per era: two for ct_whoami, one for each search with a term, each
-      // read by ID and the list of events, none for the term of spaces,
-      // and two each for the assignments and the services.
-      expect(requests).toHaveLength(32);
+      // read by ID and each list of events, calendars, appointments and
+      // bookings, none for the term of spaces, and two each for the
+      // assignments, the services and the resources.
+      expect(requests).toHaveLength(44);
       expect(stateDirsLeft()).toEqual([]);
       expectClean(result);
     });

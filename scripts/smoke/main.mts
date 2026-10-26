@@ -5,9 +5,9 @@
  * protocol, each time with exactly these variables: the address and the
  * token file from the environment, `ECCLIUM_READ_ONLY=true` whatever the
  * shell says, a folder of state of its own in the temporary folder, and
- * with its switch the toolsets `ECCLIUM_TOOLSETS=persons,events`. Without the
- * switch it calls only `ct_whoami`, so on a productive instance nothing
- * but the account of the server is read. With the switch it first reads
+ * with its switch the toolsets `ECCLIUM_TOOLSETS=persons,events,calendars`.
+ * Without the switch it calls only `ct_whoami`, so on a productive instance
+ * nothing but the account of the server is read. With the switch it first reads
  * the wiki categories itself and goes on only if the account sees exactly
  * one identification category of the test instance, which it may neither
  * edit nor delete (ADR 0049).
@@ -288,7 +288,7 @@ export async function runSmoke(deps: SmokeDependencies): Promise<number> {
           ECCLIUM_STATE_DIR: stateDir,
           ...(search === undefined
             ? {}
-            : { ECCLIUM_TOOLSETS: 'persons,events' }),
+            : { ECCLIUM_TOOLSETS: 'persons,events,calendars' }),
           ...deps.server.env,
         };
         const session = startServer(
