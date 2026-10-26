@@ -1,6 +1,7 @@
 /**
- * The registry of tools: the checks of every tool, the host plugins add
- * their tools to and the frozen catalog the pipeline runs (ADR 0024).
+ * The registry of tools and prompts: the checks of every tool and prompt,
+ * the host plugins add them to and the frozen catalog the pipeline and the
+ * mount use (ADR 0024, ADR 0065).
  *
  * @packageDocumentation
  */
@@ -16,6 +17,11 @@ export {
   createToolCatalog,
   type ToolCatalog,
 } from './registry.js';
+export {
+  type PromptEntry,
+  type PromptFilling,
+  promptDataSentence,
+} from './prompt.js';
 export {
   isToolsetName,
   toolsetNames,

@@ -248,9 +248,10 @@ describe.each(eras)('the stdio server in the $name era', { timeout }, (era) => {
     }
   });
 
-  it('opens the era and lists the tools without listChanged', () => {
+  it('opens the era and lists the tools and prompts without listChanged', () => {
     expect(at(run.opened, 'result', 'capabilities')).toEqual({
       tools: { listChanged: false },
+      prompts: { listChanged: false },
     });
     const names = (id: number) =>
       (at(answer(id), 'result', 'tools') as readonly Json[]).map(

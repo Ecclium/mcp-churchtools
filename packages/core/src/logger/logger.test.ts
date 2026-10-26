@@ -40,6 +40,7 @@ const order = [
   'runId',
   'eventId',
   'tool',
+  'prompt',
   'code',
   'mode',
   'redaction',
@@ -118,13 +119,17 @@ const only = (lines: readonly string[]): Record<string, unknown> => {
 
 describe('a log line', () => {
   it('holds every field in a fixed order, on one line of JSON', () => {
-    const { log, lines } = make({ bound: fullBound });
+    const { log, lines } = make({
+      bound: fullBound,
+      prompts: new Set(['dienstplan_wochenende']),
+    });
     log.info('cache_skipped', {
       attempt: 1,
       status: 404,
       count: 3,
       durationMs: 12,
       code: 'not_found',
+      prompt: 'dienstplan_wochenende',
       note: 'x',
     });
     const line = only(lines);
@@ -134,6 +139,7 @@ describe('a log line', () => {
       level: 'info',
       event: 'cache_skipped',
       ...fullBound,
+      prompt: 'dienstplan_wochenende',
       code: 'not_found',
       durationMs: 12,
       count: 3,
@@ -144,7 +150,7 @@ describe('a log line', () => {
     expect(lines[0]).not.toMatch(/[\n\r]/);
   });
 
-  it('is at most 544 characters long', () => {
+  it('is at most 619 characters long', () => {
     const { log, lines } = make({
       bound: {
         tenantId: `a${'b'.repeat(62)}` as TenantId,
@@ -155,8 +161,10 @@ describe('a log line', () => {
         redaction: 'standard',
         readOnly: false,
       },
+      prompts: new Set([`a${'b'.repeat(62)}`]),
     });
     const fields: Record<string, unknown> = {
+      prompt: `a${'b'.repeat(62)}`,
       code: 'confirmation_required',
       durationMs: 86_400_000,
       count: 1_000_000,
@@ -165,7 +173,55 @@ describe('a log line', () => {
     };
     for (let key = 0; key < maxDropped; key += 1) fields[key] = 0;
     log.debug('a'.repeat(64), fields as never);
-    expect(lines[0]).toHaveLength(544);
+    expect(lines[0]).toHaveLength(619);
+  });
+});
+
+describe('the field prompt', () => {
+  it('drops every name without a set of prompts, and counts it', () => {
+    const { log, lines } = make();
+    log.info('prompt_served', { prompt: 'dienstplan_wochenende' });
+    expect(only(lines)).toEqual({
+      ts: '2025-10-09T08:53:20.123Z',
+      level: 'info',
+      event: 'prompt_served',
+      dropped: 1,
+    });
+  });
+
+  it('keeps only a name of the set, so a tool cannot write text of its own there', () => {
+    const { log, parsed } = make({
+      prompts: new Set(['dienstplan_wochenende']),
+    });
+    log.info('prompt_served', { prompt: 'dienstplan_wochenende' });
+    log.info('tool_note', { prompt: 'anna_meier_1980_03_01' });
+    log.info('tool_note', { prompt: 'Böse\nZeile' });
+    expect(parsed().map((line) => [line['prompt'], line['dropped']])).toEqual([
+      ['dienstplan_wochenende', undefined],
+      [undefined, 1],
+      [undefined, 1],
+    ]);
+  });
+
+  it('keeps a copy of the set', () => {
+    const names = new Set(['dienstplan_wochenende']);
+    const { log, parsed } = make({ prompts: names });
+    names.delete('dienstplan_wochenende');
+    names.add('anna_meier');
+    log.info('a', { prompt: 'dienstplan_wochenende' });
+    log.info('a', { prompt: 'anna_meier' });
+    expect(parsed().map((line) => line['prompt'])).toEqual([
+      'dienstplan_wochenende',
+      undefined,
+    ]);
+  });
+
+  it.each([
+    ['an array', ['dienstplan_wochenende']],
+    ['a set with a name out of form', new Set(['Dienstplan'])],
+    ['a set with a number', new Set([1])],
+  ])('refuses %s with a fixed message', (_, prompts) => {
+    expect(() => make({ prompts: prompts as never })).toThrow(TypeError);
   });
 });
 

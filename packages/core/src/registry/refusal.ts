@@ -1,10 +1,12 @@
 /**
- * Why the registry refuses a plugin or a tool (ADR 0024). The start stops on
- * the first refusal: a server without the tools it should have would run
- * without anyone noticing.
+ * Why the registry refuses a plugin, a tool or a prompt (ADR 0024, ADR
+ * 0065). The start stops on the first refusal: a server without the tools
+ * it should have would run without anyone noticing.
  *
  * @packageDocumentation
  */
+import { promptNamePattern } from '@ecclium/mcp-churchtools-plugin-api';
+
 import { toolNamePattern } from '../logger/fields.js';
 
 /** Every reason the registry gives, frozen. */
@@ -27,9 +29,15 @@ export const refusalReasons = Object.freeze([
   'tool_unclassified',
   'tool_unmasked',
   'description_budget',
+  'prompt_invalid',
+  'prompt_name',
+  'prompt_duplicate',
+  'prompt_text',
+  'prompt_arguments',
+  'prompt_tools',
 ] as const);
 
-/** Why the registry refuses a plugin or a tool. */
+/** Why the registry refuses a plugin, a tool or a prompt. */
 export type RefusalReason = (typeof refusalReasons)[number];
 
 // Fixed sentences, so that no text of a plugin reaches a message.
@@ -58,6 +66,14 @@ const sentences: Readonly<Record<RefusalReason, string>> = Object.freeze({
   tool_unmasked:
     'A tool has an output field of a data class the core cannot mask yet.',
   description_budget: 'The descriptions of all tools are longer than allowed.',
+  prompt_invalid: 'A prompt is not an object with the fields of a prompt.',
+  prompt_name: 'A prompt has a name that is not allowed.',
+  prompt_duplicate: 'Two prompts have the same name.',
+  prompt_text:
+    'A prompt has a title, a description or a text that is not allowed.',
+  prompt_arguments: 'A prompt has arguments that are not allowed.',
+  prompt_tools:
+    'A prompt relies on no tool, too many or one that is not in the catalog.',
 });
 
 /**
@@ -77,9 +93,10 @@ const safe = (
     : undefined;
 
 /**
- * The refusal of a plugin or a tool by the registry. Its message is a fixed
- * sentence. It names plugin and tool only when their names have the form of
- * a package or a tool name, so no text of a plugin reaches a terminal.
+ * The refusal of a plugin, a tool or a prompt by the registry. Its message
+ * is a fixed sentence. It names plugin, tool and prompt only when their
+ * names have the form of a package, a tool or a prompt name, so no text of
+ * a plugin reaches a terminal.
  *
  * @example
  * ```ts
@@ -93,25 +110,35 @@ export class RegistryRefusal extends Error {
   readonly plugin: string | undefined;
   /** The tool, when its name has the form of a tool name. */
   readonly tool: string | undefined;
+  /** The prompt, when its name has the form of a prompt name. */
+  readonly prompt: string | undefined;
 
   /**
    * Makes the refusal with the fixed sentence of its reason.
    *
    * @param reason - Why the registry refused.
-   * @param where - The plugin and the tool, as far as they are known.
+   * @param where - The plugin and the tool or prompt, as far as they are
+   *   known.
    * @param where.plugin - Name of the plugin, kept only in the form of a
    *   package name.
    * @param where.tool - Name of the tool, kept only in the form of a tool
    *   name.
+   * @param where.prompt - Name of the prompt, kept only in the form of a
+   *   prompt name.
    */
   constructor(
     reason: RefusalReason,
-    where: { readonly plugin?: string; readonly tool?: string } = {},
+    where: {
+      readonly plugin?: string;
+      readonly tool?: string;
+      readonly prompt?: string;
+    } = {},
   ) {
     super(sentences[reason]);
     this.name = 'RegistryRefusal';
     this.reason = reason;
     this.plugin = safe(where.plugin, pluginNamePattern, 214);
     this.tool = safe(where.tool, toolNamePattern, 63);
+    this.prompt = safe(where.prompt, promptNamePattern, 63);
   }
 }

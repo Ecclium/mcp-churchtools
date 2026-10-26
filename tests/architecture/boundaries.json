@@ -162,6 +162,7 @@
         "packages/tools/src/events/",
         "packages/tools/src/groups/",
         "packages/tools/src/persons/",
+        "packages/tools/src/prompts/",
         "packages/tools/src/resources/",
         "packages/tools/src/search/",
         "packages/tools/src/services/",

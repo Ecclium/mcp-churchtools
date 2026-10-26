@@ -22,6 +22,8 @@ export { groupsSearchTool } from './groups/search.js';
 export { personsGetTool } from './persons/get.js';
 export { personsGetGroupsTool } from './persons/groups.js';
 export { personsSearchTool } from './persons/search.js';
+export { rotaWeekendPrompt } from './prompts/rota-weekend.js';
+export { wikiDraftPrompt } from './prompts/wiki-draft.js';
 export { resourcesListTool } from './resources/list.js';
 export { searchTool } from './search/global.js';
 export { servicesGetAssignmentsTool } from './services/assignments.js';

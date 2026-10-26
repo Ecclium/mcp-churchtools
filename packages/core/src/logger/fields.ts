@@ -9,6 +9,7 @@ import {
   type ErrorCode,
   errorCodes,
   type Mode,
+  promptNamePattern,
   type RedactionLevel,
   type ToolName,
 } from '@ecclium/mcp-churchtools-plugin-api';
@@ -87,6 +88,16 @@ export const isTenantId = (value: unknown): value is string =>
  */
 export const isToolName = (value: unknown): value is ToolName =>
   matches(value, toolNamePattern, 63);
+
+/**
+ * Tells whether a value is the name of a prompt, such as
+ * `dienstplan_wochenende` (ADR 0065).
+ *
+ * @param value - Any value.
+ * @returns Whether it fits.
+ */
+export const isPromptName = (value: unknown): value is string =>
+  matches(value, promptNamePattern, 63);
 
 /**
  * Tells whether a value is a UUID in lower case, as `randomUUID` makes it.

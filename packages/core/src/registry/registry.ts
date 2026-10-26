@@ -1,7 +1,8 @@
 /**
- * The registry of tools and the host plugins add their tools to (ADR 0024).
- * The free core adds its own tools first, through the same host. Every tool
- * is checked when it is added; the first refusal stops the start.
+ * The registry of tools and prompts and the host plugins add them to (ADR
+ * 0024, ADR 0065). The free core adds its own first, through the same host.
+ * Every tool and every prompt is checked when it is added; the first
+ * refusal stops the start.
  *
  * @packageDocumentation
  */
@@ -23,6 +24,7 @@ import {
 } from './description.js';
 import { checkMeta } from './meta.js';
 import { readFields } from './own.js';
+import { checkPrompt, type PromptEntry } from './prompt.js';
 import { pluginNamePattern, RegistryRefusal } from './refusal.js';
 import {
   checkInputSchema,
@@ -75,7 +77,7 @@ export interface CatalogEntry {
   readonly execute: (call: ToolCall<unknown>) => Promise<unknown>;
 }
 
-/** The frozen list of checked tools. */
+/** The frozen list of checked tools and of the prompts that rely on them. */
 export interface ToolCatalog {
   /** Every tool, sorted by name, frozen. */
   readonly list: () => readonly CatalogEntry[];
@@ -86,6 +88,13 @@ export interface ToolCatalog {
    * not a method, so it can be passed on without `this`.
    */
   readonly has: (name: string) => boolean;
+  /**
+   * Every prompt the catalog offers, sorted by name, frozen: the prompts
+   * whose tools it all offers (ADR 0065).
+   */
+  readonly prompts: () => readonly PromptEntry[];
+  /** The offered prompt of a name, or `undefined` when there is none. */
+  readonly prompt: (name: string) => PromptEntry | undefined;
 }
 
 /** What the composition root hands to {@link createToolCatalog}. */
@@ -244,14 +253,22 @@ const settle = (result: unknown): void => {
   }
 };
 
+// What one plugin added.
+interface Registered {
+  readonly name: string;
+  readonly tools: readonly CatalogEntry[];
+  readonly prompts: readonly PromptEntry[];
+}
+
 // Runs the register function of one plugin with a host that is valid only
-// during the call, and returns the tools it added.
+// during the call, and returns the tools and prompts it added.
 const registerPlugin = (
   plugin: unknown,
   origin: CatalogEntry['origin'],
   plugins: ReadonlySet<string>,
   taken: ReadonlySet<string>,
-): { readonly name: string; readonly tools: readonly CatalogEntry[] } => {
+  takenPrompts: ReadonlySet<string>,
+): Registered => {
   const fields = readFields(
     plugin,
     ['name', 'version', 'register'],
@@ -277,12 +294,29 @@ const registerPlugin = (
     throw new RegistryRefusal('plugin_duplicate', { plugin: name });
   }
   const tools: CatalogEntry[] = [];
+  const prompts: PromptEntry[] = [];
   let open = true;
   let refusal: RegistryRefusal | undefined;
-  const addTool = (tool: unknown): void => {
+  // Adds one checked entry, or keeps the refusal, so that a plugin that
+  // catches it and goes on is refused all the same.
+  const add = (
+    fallback: 'tool_invalid' | 'prompt_invalid',
+    run: () => void,
+  ) => {
     if (!open) throw new RegistryRefusal('host_revoked', { plugin: name });
     if (refusal !== undefined) throw refusal;
     try {
+      run();
+    } catch (error) {
+      refusal =
+        error instanceof RegistryRefusal
+          ? error
+          : new RegistryRefusal(fallback, { plugin: name });
+      throw refusal;
+    }
+  };
+  const addTool = (tool: unknown): void => {
+    add('tool_invalid', () => {
       const entry = checkTool(tool, name, origin);
       if (taken.has(entry.name) || tools.some((t) => t.name === entry.name)) {
         throw new RegistryRefusal('tool_duplicate', {
@@ -291,15 +325,28 @@ const registerPlugin = (
         });
       }
       tools.push(entry);
-    } catch (error) {
-      refusal =
-        error instanceof RegistryRefusal
-          ? error
-          : new RegistryRefusal('tool_invalid', { plugin: name });
-      throw refusal;
-    }
+    });
   };
-  const host: PluginHost = Object.freeze({ __proto__: null, addTool });
+  const addPrompt = (prompt: unknown): void => {
+    add('prompt_invalid', () => {
+      const entry = checkPrompt(prompt, name, origin);
+      if (
+        takenPrompts.has(entry.name) ||
+        prompts.some((p) => p.name === entry.name)
+      ) {
+        throw new RegistryRefusal('prompt_duplicate', {
+          plugin: name,
+          prompt: entry.name,
+        });
+      }
+      prompts.push(entry);
+    });
+  };
+  const host: PluginHost = Object.freeze({
+    __proto__: null,
+    addTool,
+    addPrompt,
+  });
   let result: unknown;
   try {
     result = Reflect.apply(fields.register, plugin, [host]);
@@ -314,12 +361,12 @@ const registerPlugin = (
   }
   // A plugin that caught a refusal and went on is refused all the same.
   if (refusal !== undefined) throw refusal;
-  return { name, tools };
+  return { name, tools, prompts };
 };
 
 /**
- * Builds the catalog of tools from the plugin of the core and the other
- * plugins.
+ * Builds the catalog of tools and prompts from the plugin of the core and
+ * the other plugins.
  *
  * The core registers first, then the other plugins in their order, so no
  * plugin can take the name of a tool of the core. Each plugin registers
@@ -329,14 +376,18 @@ const registerPlugin = (
  * list its plugin came in. With `readOnly`, write tools stay out of the
  * catalog. The catalog is sorted by name, compared by code units, and the
  * rendered descriptions of all its tools together may hold at most 25'000
- * code units.
+ * code units. Every tool a prompt relies on must have been added, also one
+ * the catalog then leaves out; the catalog offers a prompt only when it
+ * offers every one of its tools, so the prompts follow the toolsets
+ * (ADR 0065).
  *
  * @param options - The plugin of the core, the other plugins and whether
  *   the server only reads.
  * @returns The frozen catalog.
- * @throws {RegistryRefusal} On the first plugin or tool the registry
- *   refuses, among them another plugin under the name of the core
- *   (`plugin_reserved`). The start then stops.
+ * @throws {RegistryRefusal} On the first plugin, tool or prompt the
+ *   registry refuses, among them another plugin under the name of the core
+ *   (`plugin_reserved`) and a prompt that relies on a tool no plugin added
+ *   (`prompt_tools`). The start then stops.
  * @example
  * ```ts
  * const catalog = createToolCatalog({
@@ -351,15 +402,18 @@ export function createToolCatalog(options: CatalogOptions): ToolCatalog {
   const toolsets = readToolsets(options.toolsets);
   const plugins = new Set<string>();
   const byName = new Map<string, CatalogEntry>();
+  const promptsByName = new Map<string, PromptEntry>();
   const register = (plugin: unknown, origin: CatalogEntry['origin']): void => {
-    const { name, tools } = registerPlugin(
+    const { name, tools, prompts } = registerPlugin(
       plugin,
       origin,
       plugins,
       new Set(byName.keys()),
+      new Set(promptsByName.keys()),
     );
     plugins.add(name);
     for (const tool of tools) byName.set(tool.name, tool);
+    for (const prompt of prompts) promptsByName.set(prompt.name, prompt);
   };
   register(options.core, 'core');
   for (const plugin of options.plugins) register(plugin, 'plugin');
@@ -375,10 +429,29 @@ export function createToolCatalog(options: CatalogOptions): ToolCatalog {
   }
   const list = Object.freeze(kept.sort((a, b) => (a.name < b.name ? -1 : 1)));
   const index = new Map(list.map((tool) => [tool.name as string, tool]));
+  // A tool a prompt relies on that no plugin added is a mistake of the
+  // plugin, refused like a tool out of form. One the catalog leaves out,
+  // because of the toolsets or because it writes, leaves the prompt out.
+  for (const prompt of promptsByName.values()) {
+    if (!prompt.tools.every((tool) => byName.has(tool))) {
+      throw new RegistryRefusal('prompt_tools', {
+        plugin: prompt.plugin,
+        prompt: prompt.name,
+      });
+    }
+  }
+  const prompts = Object.freeze(
+    [...promptsByName.values()]
+      .filter((prompt) => prompt.tools.every((tool) => index.has(tool)))
+      .sort((a, b) => (a.name < b.name ? -1 : 1)),
+  );
+  const promptIndex = new Map(prompts.map((prompt) => [prompt.name, prompt]));
   return Object.freeze({
     __proto__: null,
     list: () => list,
     get: (name: string) => index.get(name),
     has: (name: string) => index.has(name),
+    prompts: () => prompts,
+    prompt: (name: string) => promptIndex.get(name),
   });
 }
