@@ -161,6 +161,20 @@ const refusals: Readonly<Record<RefusalReason, Message>> = Object.freeze({
   description_budget: refusal(
     'Die Beschreibungen aller Tools sind zusammen länger als erlaubt.',
   ),
+  prompt_invalid: refusal(
+    'Ein Prompt ist kein Objekt mit den Feldern eines Prompts.',
+  ),
+  prompt_name: refusal('Ein Prompt trägt einen Namen, der nicht erlaubt ist.'),
+  prompt_duplicate: refusal('Zwei Prompts tragen denselben Namen.'),
+  prompt_text: refusal(
+    'Ein Prompt hat einen Titel, eine Beschreibung oder einen Text, der nicht erlaubt ist, oder Platzhalter, die nicht zu seinen Argumenten passen.',
+  ),
+  prompt_arguments: refusal(
+    'Ein Prompt hat Argumente, die nicht erlaubt sind.',
+  ),
+  prompt_tools: refusal(
+    'Ein Prompt nennt kein Tool, zu viele Tools oder ein Tool, das es im Katalog nicht gibt.',
+  ),
 });
 
 // The three parts as one text. Not exported: a caller could otherwise

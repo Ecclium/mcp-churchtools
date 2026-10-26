@@ -8,6 +8,8 @@ import {
   maxPromptTextLength,
   maxPromptTitleLength,
   maxPromptTools,
+  type Plugin,
+  type PluginHost,
   type PromptArgument,
   promptArgumentNamePattern,
   type PromptDefinition,
@@ -127,5 +129,25 @@ describe('PromptDefinition', () => {
       weekday: 0,
     };
     expect([text.kind, short.kind, day.kind]).toEqual(['text', 'text', 'date']);
+  });
+
+  it('is added through the host', () => {
+    const added: string[] = [];
+    const host: PluginHost = {
+      addTool: () => undefined,
+      addPrompt: (definition) => {
+        added.push(definition.name);
+      },
+    };
+    const plugin: Plugin = {
+      name: 'example',
+      version: '0.0.0',
+      register: (target) => {
+        target.addPrompt(prompt);
+        return undefined;
+      },
+    };
+    plugin.register(host);
+    expect(added).toEqual(['dienstplan_wochenende']);
   });
 });

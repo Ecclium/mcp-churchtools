@@ -296,7 +296,7 @@ describe('ReadApi', () => {
 
 describe('Plugin and PluginHost', () => {
   it('use no name of the registration functions of the MCP SDK', () => {
-    expectTypeOf<keyof PluginHost>().toEqualTypeOf<'addTool'>();
+    expectTypeOf<keyof PluginHost>().toEqualTypeOf<'addTool' | 'addPrompt'>();
     expectTypeOf<keyof Plugin>().toEqualTypeOf<
       'name' | 'version' | 'register'
     >();
@@ -320,6 +320,9 @@ describe('Plugin and PluginHost', () => {
     const host: PluginHost = {
       addTool: (definition) => {
         added.push(definition.name);
+      },
+      addPrompt: (prompt) => {
+        added.push(prompt.name);
       },
     };
     const plugin: Plugin = {

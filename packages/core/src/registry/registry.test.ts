@@ -659,7 +659,7 @@ describe('the core and the other plugins', () => {
 });
 
 describe('the plugin host', () => {
-  it('is frozen, without prototype, and has only addTool', () => {
+  it('is frozen, without prototype, and has only addTool and addPrompt', () => {
     let seen: PluginHost | undefined;
     catalogOf({
       core: emptyCore,
@@ -673,7 +673,7 @@ describe('the plugin host', () => {
     });
     expect(Object.isFrozen(seen)).toBe(true);
     expect(Object.getPrototypeOf(seen)).toBeNull();
-    expect(Object.keys(seen ?? {})).toEqual(['addTool']);
+    expect(Object.keys(seen ?? {})).toEqual(['addTool', 'addPrompt']);
   });
 
   it('refuses a tool added after register returned', () => {
