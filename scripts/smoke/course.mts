@@ -866,6 +866,10 @@ export async function runEra(
       // A text of ChurchTools that may be missing: null, or enveloped.
       const seeOptional = (value: unknown): boolean =>
         value === null || seeEnveloped(value);
+      // Whether every check holds. Each check has run before, so that a
+      // failed one keeps no later text off the lists of the guard.
+      const allOf = (checks: readonly boolean[]): boolean =>
+        checks.every(Boolean);
       const noticeFits = (data: Record<string, unknown>): boolean =>
         typeof data['more'] === 'boolean' &&
         (data['notice'] === null || typeof data['notice'] === 'string');
@@ -953,12 +957,12 @@ export async function runEra(
         const data = read?.isError === false ? read.data : undefined;
         const textsFit =
           data !== undefined &&
-          [data['name'], data['calendarName']].every((text) =>
-            seeEnveloped(text),
-          ) &&
-          [data['note'], data['description']].every((text) =>
-            seeOptional(text),
-          );
+          allOf([
+            seeEnveloped(data['name']),
+            seeEnveloped(data['calendarName']),
+            seeOptional(data['note']),
+            seeOptional(data['description']),
+          ]);
         const eventFits =
           data !== undefined &&
           sameKeys(data, [
@@ -1017,10 +1021,10 @@ export async function runEra(
               const song = entry['song'];
               if (
                 isRecord(song) &&
-                !(
-                  seeEnveloped(song['title']) &&
-                  seeOptional(song['arrangement'])
-                )
+                !allOf([
+                  seeEnveloped(song['title']),
+                  seeOptional(song['arrangement']),
+                ])
               ) {
                 itemsEnveloped = false;
               }
@@ -1384,13 +1388,13 @@ export async function runEra(
           const dates = data?.['dates'];
           const textsFit =
             data !== undefined &&
-            seeEnveloped(data['title']) &&
-            [
-              data['subtitle'],
-              data['locationName'],
-              data['description'],
-              data['link'],
-            ].every((text) => seeOptional(text));
+            allOf([
+              seeEnveloped(data['title']),
+              seeOptional(data['subtitle']),
+              seeOptional(data['locationName']),
+              seeOptional(data['description']),
+              seeOptional(data['link']),
+            ]);
           const appointmentFits =
             data !== undefined &&
             sameKeys(data, [

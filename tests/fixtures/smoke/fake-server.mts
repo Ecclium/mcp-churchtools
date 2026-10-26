@@ -442,7 +442,10 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
         {
           id: 5,
           calendarId: 8,
-          title: wrap(`${canary}Termin`),
+          title:
+            scenario === 'appointments-bare-title'
+              ? `${canary}Termin`
+              : wrap(`${canary}Termin`),
           subtitle: null,
           allDay: false,
           locationName: wrap(`${canary}Saal`),
@@ -478,7 +481,10 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
       allDay: false,
       locationName: wrap(`${canary}Saal`),
       description: wrap(`${canary}Beschreibung`),
-      link: null,
+      link:
+        scenario === 'appointment-bare-link'
+          ? `${canary}Verweis`
+          : wrap(`${canary}Verweis`),
       dates: [
         { startDate: '2026-10-25T18:00:00Z', endDate: '2026-10-25T19:00:00Z' },
       ],
@@ -524,7 +530,10 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
           : [
               {
                 id: 2,
-                title: wrap(`${canary}Buchung`),
+                title:
+                  scenario === 'bookings-bare-title'
+                    ? `${canary}Buchung`
+                    : wrap(`${canary}Buchung`),
                 resourceId: 8,
                 statusId: scenario === 'bookings-bad-status' ? -1 : 2,
                 appointmentId: 5,
