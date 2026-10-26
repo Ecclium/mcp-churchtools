@@ -38,11 +38,13 @@ export const maxBookingPage = Math.ceil(maxBookings / bookingsPerCall);
 
 /**
  * The note of an empty first page. ChurchTools refuses the bookings of a
- * resource the account may not see instead of leaving them out (F36), so
- * an empty list means that the resources have no booking on these days.
+ * resource the account may not see instead of leaving them out (F36).
+ * That is shown for one resource; whether a list of resources with and
+ * without the right is refused as well is not, so the note does not claim
+ * more.
  */
 export const noBookingListed =
-  'No booking is listed: the resources named have no booking on these days.';
+  'No booking is listed for the resources named on these days. ChurchTools refuses the bookings of a single resource the service account may not see; whether it leaves such a resource out of a list of several instead is not verified.';
 
 /** The note of an empty later page. */
 export const pastLastBookingPage =
@@ -185,7 +187,7 @@ export const bookingsListTool = defineTool({
     avoidWhen:
       'You do not know the IDs of the resources, which another tool lists, or need appointments of a calendar.',
     limits:
-      'resourceIds names 1 to 10 resources, each once. from and to are days as YYYY-MM-DD, at most 31 days with both ends; times are in UTC, days alone for whole days. statusId is the number of the state in ChurchTools, whose meaning this tool does not know. At most 50, 25 per page: more is true when a further page follows, and a notice says when there are more than 50.',
+      'resourceIds names 1 to 10 resources, each once. from and to are days as YYYY-MM-DD, at most 31 days with both ends; times are in UTC, and a day alone may stand for whole days. statusId is the number of the state in ChurchTools, whose meaning this tool does not know. At most 50, 25 per page: more is true when a further page follows, and a notice says when there are more than 50.',
   },
   input,
   output,

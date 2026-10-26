@@ -45,11 +45,13 @@ export const maxAppointmentPage = Math.ceil(
 
 /**
  * The note of an empty first page. ChurchTools refuses the appointments of
- * a calendar the account may not see instead of leaving them out (F36), so
- * an empty list means that the calendars hold no appointment on these days.
+ * a calendar the account may not see instead of leaving them out (F36).
+ * That is shown for one calendar; whether a list of calendars with and
+ * without the right is refused as well or answered without the latter is
+ * not, so the note does not claim more.
  */
 export const noAppointmentListed =
-  'No appointment is listed: the calendars named hold no appointment on these days.';
+  'No appointment is listed for the calendars named on these days. ChurchTools refuses the appointments of a single calendar the service account may not see; whether it leaves such a calendar out of a list of several instead is not verified.';
 
 /** The note of an empty later page. */
 export const pastLastAppointmentPage =
@@ -206,7 +208,7 @@ export const appointmentsListTool = defineTool({
     avoidWhen:
       'You do not know the IDs of the calendars, which another tool lists, or need events with services or agendas.',
     limits:
-      'calendarIds names 1 to 10 calendars, each once. from and to are days as YYYY-MM-DD, at most 31 days with both ends; times are in UTC, days alone for whole days. Each date of a series is its own entry with the ID of the series. At most 50, 25 per page: more is true when a further page follows, and a notice says when there are more than 50.',
+      'calendarIds names 1 to 10 calendars, each once. from and to are days as YYYY-MM-DD, at most 31 days with both ends; times are in UTC, and a day alone may stand for whole days. Each date of a series is its own entry with the ID of the series. At most 50, 25 per page: more is true when a further page follows, and a notice says when there are more than 50.',
   },
   input,
   output,

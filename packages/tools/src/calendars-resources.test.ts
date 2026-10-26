@@ -574,7 +574,7 @@ describe('ct_appointments_list and ct_bookings_list', () => {
     },
   );
 
-  it('say so for days without appointments or bookings, without naming a right', async () => {
+  it('say so for days without appointments or bookings, and that a mixed list is not verified', async () => {
     const { double, call } = setup();
     double
       .intercept({ path: at('/api/calendars/appointments'), method: 'GET' })
@@ -594,7 +594,9 @@ describe('ct_appointments_list and ct_bookings_list', () => {
       ...days,
     });
     expect(bookings.ok && bookings.data.notice).toBe(noBookingListed);
-    expect(noAppointmentListed + noBookingListed).not.toContain('right');
+    // Refused for one calendar or resource (F36); a mixed list is open.
+    expect(noAppointmentListed).toContain('not verified');
+    expect(noBookingListed).toContain('not verified');
   });
 
   it.each([

@@ -135,7 +135,7 @@ export const appointmentsGetTool = defineTool({
     avoidWhen:
       'You need the appointments of some days, which another tool lists with their IDs.',
     limits:
-      'One appointment per call. Times are in UTC, days alone for whole days. dates holds at most the 25 earliest dates ChurchTools gives; moreDates is true when it gives more, then list the days you need. A description over 7000 or a link over 1000 characters ends the call with an error.',
+      'One appointment per call. Times are in UTC; a day alone may stand for whole days. dates holds at most the 25 earliest dates ChurchTools gives; moreDates is true when it gives more, then list the days you need. A description over 7000 or a link over 1000 characters ends the call with an error.',
   },
   input,
   output,
