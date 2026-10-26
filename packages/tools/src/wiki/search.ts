@@ -18,15 +18,11 @@ import {
   maxWikiTitleLength,
   normalizeSearchTerm,
   type ToolCall,
+  wikiPageGuidPattern,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { z } from 'zod';
 
-import {
-  categoryRefused,
-  refusedFor,
-  wikiCategoryRight,
-  wikiViewRight,
-} from './rights.js';
+import { refusedFor, wikiCategoryRight, wikiViewRight } from './rights.js';
 
 /**
  * The note of an empty result. How ChurchTools answers a search in a
@@ -34,6 +30,12 @@ import {
  * missing right may hide pages (F40).
  */
 export const noPageMatched = `No page matched. Pages of a category for which the service account lacks the right "${wikiCategoryRight.right}" in ${wikiCategoryRight.module} may be left out as well. ct_whoami shows the rights of the account.`;
+
+/**
+ * The message of a refused search. A search may cover every category, so
+ * it names the right for the categories searched, not for one.
+ */
+export const wikiSearchRefused = `ChurchTools refused the search in the wiki. The service account needs the right "${wikiViewRight.right}" in ${wikiViewRight.module} and the right "${wikiCategoryRight.right}" for the categories searched; ct_whoami shows the rights of the account.`;
 
 /** The note of a result with more hits than it lists. */
 export const morePagesMatched = `More than ${String(maxWikiSearchHits)} pages matched; this list holds the first ${String(maxWikiSearchHits)} in the order of ChurchTools. Search again with a more specific term or in one category.`;
@@ -58,7 +60,12 @@ const output = z.object({
   hits: z
     .array(
       z.object({
-        guid: classify(z.string(), 'none').nullable(),
+        // The form of a GUID also here, so that no other identifier passes
+        // outside the data envelope even if a layer before let it through.
+        guid: classify(
+          z.string().regex(wikiPageGuidPattern),
+          'none',
+        ).nullable(),
         categoryId: classify(z.number().int().positive(), 'none').nullable(),
         title: classify(z.string().max(maxWikiTitleLength), 'untrusted'),
         preview: classify(
@@ -87,7 +94,7 @@ const execute = async ({
   const { hits, more } = await read
     .searchWiki(term, categoryId)
     .catch((error: unknown) =>
-      refusedFor(error, [wikiViewRight, wikiCategoryRight], categoryRefused),
+      refusedFor(error, [wikiViewRight, wikiCategoryRight], wikiSearchRefused),
     );
   return {
     // Copied field by field, so nothing but the four fields can follow.

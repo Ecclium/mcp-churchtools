@@ -23,6 +23,7 @@ import {
   type RightRef,
   type SearchDomainType,
   type ToolCall,
+  wikiPageGuidPattern,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { z } from 'zod';
 
@@ -114,7 +115,12 @@ const output = z.object({
   wikiPages: z
     .array(
       z.object({
-        guid: classify(z.string(), 'none').nullable(),
+        // The form of a GUID also here, so that no other identifier passes
+        // outside the data envelope even if a layer before let it through.
+        guid: classify(
+          z.string().regex(wikiPageGuidPattern),
+          'none',
+        ).nullable(),
         title: classify(z.string().max(maxNameLength), 'untrusted'),
       }),
     )

@@ -36,6 +36,13 @@ export const arrangementsPerFoundSong = 3;
  */
 export const noSongMatched = `No song matched. ChurchTools also leaves out every song of a category for which the service account lacks the right "${songCategoryRight.right}" in ${songCategoryRight.module}, so no match and a missing right look the same. ct_whoami shows the rights of the account.`;
 
+/**
+ * The note of an empty first page when ChurchTools still reports further
+ * ones. Its pagination may count songs the account cannot see, so the page
+ * names the right as well, as an empty first page does (F36).
+ */
+export const noSongOnFirstPage = `No song is listed on this page, but ChurchTools reports further pages. ChurchTools leaves out every song of a category for which the service account lacks the right "${songCategoryRight.right}" in ${songCategoryRight.module}, and may still count them in its pages. ct_whoami shows the rights of the account; a later page may hold songs the account can see.`;
+
 /** The note of an empty later page when ChurchTools reports no further one. */
 export const pastLastSongPage =
   'This page of the songs is empty: the search has no further pages.';
@@ -60,7 +67,12 @@ const output = z.object({
   songs: z.array(songOutput(arrangementsPerFoundSong)).max(songsPageLimit),
   more: classify(z.boolean(), 'none'),
   notice: classify(
-    z.enum([noSongMatched, pastLastSongPage, emptySongPageMoreFollow]),
+    z.enum([
+      noSongMatched,
+      noSongOnFirstPage,
+      pastLastSongPage,
+      emptySongPageMoreFollow,
+    ]),
     'none',
   ).nullable(),
 });
@@ -79,13 +91,17 @@ const execute = async ({
     page,
     songs: songs.map((song) => songResult(song, arrangementsPerFoundSong)),
     more,
+    // An empty first page names the right also when further pages follow,
+    // since a missing right empties every page alike.
     notice:
       songs.length > 0
         ? null
-        : more
-          ? emptySongPageMoreFollow
-          : page === 1
-            ? noSongMatched
+        : page === 1
+          ? more
+            ? noSongOnFirstPage
+            : noSongMatched
+          : more
+            ? emptySongPageMoreFollow
             : pastLastSongPage,
   };
 };

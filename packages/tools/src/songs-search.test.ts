@@ -37,13 +37,14 @@ import { songNotFound, songRefused } from './songs/rights.js';
 import {
   emptySongPageMoreFollow,
   noSongMatched,
+  noSongOnFirstPage,
   pastLastSongPage,
   songsSearchTool,
 } from './songs/search.js';
-import { categoryRefused } from './wiki/rights.js';
 import {
   morePagesMatched,
   noPageMatched,
+  wikiSearchRefused,
   wikiSearchTool,
 } from './wiki/search.js';
 
@@ -380,6 +381,7 @@ describe('ct_songs_search', () => {
     for (const [lastPage, count] of [
       [0, 0],
       [3, 0],
+      [3, 0],
       [2, 0],
     ] as const) {
       double.intercept({ path: at('/api/songs'), method: 'GET' }).reply(
@@ -394,6 +396,12 @@ describe('ct_songs_search', () => {
     const first = await call('ct_songs_search', { query: 'Lied' });
     expect(first.ok && first.data.notice).toBe(noSongMatched);
     expect(noSongMatched).toContain('"view songcategory" in churchservice');
+    // An empty first page names the right also when further pages follow.
+    const firstOfMany = await call('ct_songs_search', { query: 'Lied' });
+    expect(
+      firstOfMany.ok && [firstOfMany.data.notice, firstOfMany.data.more],
+    ).toEqual([noSongOnFirstPage, true]);
+    expect(noSongOnFirstPage).toContain('"view songcategory" in churchservice');
     const between = await call('ct_songs_search', { query: 'Lied', page: 2 });
     expect(between.ok && [between.data.notice, between.data.more]).toEqual([
       emptySongPageMoreFollow,
@@ -523,7 +531,7 @@ describe('ct_wiki_search', () => {
     });
     expect(!refused.ok && [refused.error.code, refused.error.message]).toEqual([
       'permission',
-      categoryRefused,
+      wikiSearchRefused,
     ]);
   });
 });
@@ -813,6 +821,41 @@ describe('the layer of the pipeline', () => {
       const { lines, drafts, call } = setup(leaky(tool, result));
       const outcome = await call(name, input);
       expect(outcome.ok && outcome.data).toEqual(keptFields);
+      assertNoCanary([outcome, lines, drafts], leak.all, 'result, log, audit');
+    },
+  );
+
+  // The output schemas take a GUID only in its form, so no other
+  // identifier passes outside the data envelope (ADR 0064).
+  it.each([
+    [
+      'ct_wiki_search',
+      wikiSearchTool,
+      { query: 'Seite' },
+      {
+        hits: [{ guid: '42', categoryId: 12, title: 'A', preview: null }],
+        more: false,
+        notice: null,
+      },
+    ],
+    [
+      'ct_search',
+      searchTool,
+      { type: 'wiki_page', query: 'Seite' },
+      {
+        type: 'wiki_page',
+        ...empty,
+        wikiPages: [{ guid: leak.name.value, title: 'A' }],
+        more: false,
+        notice: null,
+      },
+    ],
+  ] as const)(
+    'refuses a GUID of another form from %s',
+    async (name, tool, input, result) => {
+      const { lines, drafts, call } = setup(leaky(tool, result));
+      const outcome = await call(name, input);
+      expect(outcome.ok).toBe(false);
       assertNoCanary([outcome, lines, drafts], leak.all, 'result, log, audit');
     },
   );
