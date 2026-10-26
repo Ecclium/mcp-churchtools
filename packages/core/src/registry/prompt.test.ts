@@ -121,6 +121,7 @@ describe('checkPrompt', () => {
       title: valid.title,
       description: valid.description,
       tools: ['ct_wiki_read'],
+      template: valid.text,
     });
     expect(entry.arguments).toEqual(valid.arguments);
     expect(Object.isFrozen(entry.arguments)).toBe(true);

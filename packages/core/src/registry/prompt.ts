@@ -54,6 +54,11 @@ export interface PromptEntry {
   /** The arguments, frozen, in the order of the plugin. */
   readonly arguments: readonly PromptArgument[];
   /**
+   * The template as the plugin added it, with its placeholders, for the
+   * reference of the prompts. A client gets a text only through `fill`.
+   */
+  readonly template: string;
+  /**
    * Fills the template with the values a client sent, after checking them
    * by the kind of their argument. A property, not a method, so it can be
    * passed on without `this`.
@@ -362,6 +367,7 @@ export function checkPrompt(
     description,
     tools,
     arguments: args,
+    template: text,
     fill: fillWith(pieces, args),
   });
 }
