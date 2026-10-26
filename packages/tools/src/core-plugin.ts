@@ -1,8 +1,8 @@
 /**
- * The plugin of the free core. It adds the tools of the core through the
- * same host as any other plugin and, like a plugin of a third party,
- * imports only the plugin API and zod (ADR 0022). The composition root
- * hands it to the catalog as the core, so its tools carry the origin
+ * The plugin of the free core. It adds the tools and prompts of the core
+ * through the same host as any other plugin and, like a plugin of a third
+ * party, imports only the plugin API and zod (ADR 0022). The composition
+ * root hands it to the catalog as the core, so its tools carry the origin
  * `core`, and no other plugin may take its name.
  *
  * @packageDocumentation
@@ -23,6 +23,8 @@ import { groupsSearchTool } from './groups/search.js';
 import { personsGetTool } from './persons/get.js';
 import { personsGetGroupsTool } from './persons/groups.js';
 import { personsSearchTool } from './persons/search.js';
+import { rotaWeekendPrompt } from './prompts/rota-weekend.js';
+import { wikiDraftPrompt } from './prompts/wiki-draft.js';
 import { resourcesListTool } from './resources/list.js';
 import { searchTool } from './search/global.js';
 import { servicesGetAssignmentsTool } from './services/assignments.js';
@@ -36,10 +38,12 @@ import { wikiSearchTool } from './wiki/search.js';
 
 /**
  * Builds the plugin of the free core, under the name of the package of the
- * server, which the catalog reserves for it. It adds every tool of the
- * core. Which of them the catalog offers decides the composition root with
- * the toolsets of the operator (`ECCLIUM_TOOLSETS`, ADR 0062): without any,
- * a server on a productive tenant offers only `ct_whoami`.
+ * server, which the catalog reserves for it. It adds every tool and both
+ * prompts of the core. Which of them the catalog offers decides the
+ * composition root with the toolsets of the operator (`ECCLIUM_TOOLSETS`,
+ * ADR 0062): without any, a server on a productive tenant offers only
+ * `ct_whoami` and no prompt, because each prompt needs its tools (ADR
+ * 0065).
  *
  * @returns The plugin, frozen.
  * @example
@@ -81,6 +85,8 @@ export function createCorePlugin(): Plugin {
       host.addTool(bookingsListTool);
       host.addTool(songsSearchTool);
       host.addTool(songsGetTool);
+      host.addPrompt(rotaWeekendPrompt);
+      host.addPrompt(wikiDraftPrompt);
       return undefined;
     },
   });

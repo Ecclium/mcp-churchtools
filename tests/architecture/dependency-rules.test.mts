@@ -788,6 +788,13 @@ const cases: readonly Case[] = [
   },
   {
     rule: 'plugins-only-plugin-api',
+    name: 'a prompt imports core',
+    files: {
+      'packages/tools/src/prompts/forbidden.ts': `import '${nameOf('core')}';\nexport {};\n`,
+    },
+  },
+  {
+    rule: 'plugins-only-plugin-api',
     name: 'the plugin of the core imports core',
     files: {
       'packages/tools/src/core-plugin.ts': `import '${nameOf('core')}';\nexport {};\n`,
