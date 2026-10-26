@@ -207,7 +207,14 @@ export function serve(options: ServeOptions): ExitCode | undefined {
   });
   const clock = systemClock;
   const minLevel = config.logLevel;
-  const logger = createLogger({ writer, clock, minLevel });
+  // Only this logger, which the mount gets, may name a prompt, and only one
+  // the catalog offers (ADR 0065).
+  const logger = createLogger({
+    writer,
+    clock,
+    minLevel,
+    prompts: new Set(catalog.prompts().map((prompt) => prompt.name)),
+  });
   // The fixed events of a signal and of the end, at every level of the
   // log: the count of lost lines is the only trace of that loss, and the
   // signal explains the exit code (ADR 0054).

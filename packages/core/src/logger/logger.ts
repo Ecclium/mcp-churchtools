@@ -76,6 +76,13 @@ export interface LoggerOptions {
   readonly minLevel: LogLevel;
   /** Fields for every line. */
   readonly bound?: BoundLogFields;
+  /**
+   * The names of the prompts a line may carry in the field `prompt`, which
+   * only the composition root sets for the logger of the mount (ADR 0065).
+   * A name outside this set is dropped and counted, so a tool cannot use
+   * the field for text of its own. Without it the field is always dropped.
+   */
+  readonly prompts?: ReadonlySet<string>;
 }
 
 /** The event of a line whose event name broke the pattern. */
@@ -168,14 +175,30 @@ const readBound = (bound: unknown): Readonly<Record<string, LogValue>> => {
   return Object.freeze(values);
 };
 
+// A copy of the names of the prompts, so that a later change of the set
+// changes no logger. A bad set is a mistake in the core, so it throws, with
+// a fixed message that never holds a value.
+const readPrompts = (value: unknown): ReadonlySet<string> => {
+  if (value === undefined) return new Set();
+  if (!(value instanceof Set)) {
+    throw new TypeError('The names of the prompts are no set.');
+  }
+  const names = [...(value as Set<unknown>)];
+  if (!names.every(isPromptName)) {
+    throw new TypeError('A name of a prompt is not valid.');
+  }
+  return new Set(names);
+};
+
 interface Admitted {
   readonly values: Readonly<Record<string, LogValue>>;
   readonly dropped: number;
 }
 
 // The fields of one call that may stand in a line. Every own key that does
-// not make it into the line counts as dropped.
-const admit = (input: unknown): Admitted => {
+// not make it into the line counts as dropped, also a name of a prompt that
+// is not one of the logger.
+const admit = (input: unknown, prompts: ReadonlySet<string>): Admitted => {
   if (input === undefined) return { values: emptyRecord(), dropped: 0 };
   try {
     if (!isPlainObject(input)) return { values: emptyRecord(), dropped: 1 };
@@ -185,7 +208,10 @@ const admit = (input: unknown): Admitted => {
     for (const field of fields) {
       if (field.bound) continue;
       const value = ownValue(input, field.name);
-      if (field.check(value)) {
+      if (
+        field.check(value) &&
+        (field.name !== 'prompt' || prompts.has(value as string))
+      ) {
         values[field.name] = value as LogValue;
         accepted += 1;
       }
@@ -209,9 +235,9 @@ const timestamp = (clock: Clock): string => {
 /**
  * Creates a logger. Each call writes one line with `ts`, `level` and
  * `event`, then the bound fields and the fields of the call in a fixed
- * order, then `dropped` if fields were dropped. A call may set only `code`,
- * `durationMs`, `count`, `status` and `attempt`; everything else is dropped
- * and counted. An event name that breaks the pattern becomes
+ * order, then `dropped` if fields were dropped. A call may set only
+ * `prompt`, with a name from `prompts`, `code`, `durationMs`, `count`,
+ * `status` and `attempt`; everything else is dropped and counted. An event name that breaks the pattern becomes
  * `invalid_event`. Fields are read as own data properties of a plain
  * object, so no getter, proxy trap or coercion of the caller runs.
  *
@@ -239,6 +265,7 @@ export function createLogger(options: LoggerOptions): Logger {
     throw new TypeError('The logger needs a writer, a clock and a level.');
   }
   const boundValues = readBound(bound);
+  const prompts = readPrompts(options.prompts);
   let busy = false;
 
   const log = (level: LogLevel, event: unknown, input: unknown): void => {
@@ -249,7 +276,7 @@ export function createLogger(options: LoggerOptions): Logger {
       line['ts'] = timestamp(clock);
       line['level'] = level;
       line['event'] = isEventName(event) ? event : replacedEventName;
-      const { values, dropped } = admit(input);
+      const { values, dropped } = admit(input, prompts);
       for (const field of fields) {
         const value = (field.bound ? boundValues : values)[field.name];
         if (value !== undefined) line[field.name] = value;

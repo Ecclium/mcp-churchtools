@@ -218,6 +218,7 @@ const setup = (
       writer: lines(logLines),
       clock: frozenClock,
       minLevel: 'debug',
+      prompts: new Set(catalog.prompts().map((prompt) => prompt.name)),
     }),
     version: '0.0.0',
     ...overrides,
