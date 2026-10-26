@@ -51,7 +51,7 @@ Kalender und Ressourcen nennt ChurchTools nur, soweit das Konto `view category` 
 
 Songs nennt ChurchTools nur aus den Kategorien, für die das Konto `view songcategory` hat. Einen Song einer anderen Kategorie lehnt es ab, und das Tool nennt das Recht. In einer Suche fehlt er ohne Fehler, und das Tool sagt, dass sich «kein Treffer» und ein fehlendes Recht nicht unterscheiden lassen. Von einem Song liest Ecclium nur Name, Kategorie, Autor, Copyright und CCLI-Nummer und je Arrangement Name, Tonart und ob es das Standard-Arrangement ist, nie Dateien, Links, Quellen oder Notizen.
 
-Die Suche im Wiki findet Seiten der Kategorien, die das Konto sehen darf. Wie ChurchTools eine Suche in einer Kategorie ohne Recht beantwortet, ist nicht geprüft. Ein leeres Ergebnis sagt deshalb, dass ein fehlendes Recht Seiten verbergen kann.
+Die Suche im Wiki soll nur Seiten der Kategorien finden, die das Konto sehen darf. Geprüft ist das nur an einem Konto, das eine einzige Kategorie sieht, und wie ChurchTools eine Suche in einer Kategorie ohne Recht beantwortet, ist nicht geprüft. Ein leeres Ergebnis sagt deshalb, dass ein fehlendes Recht Seiten verbergen kann. Ecclium verlässt sich hier wie bei allen Tools darauf, dass ChurchTools die Rechte durchsetzt.
 
 `ct_search` gehört zum Toolset `persons`, sucht aber neben Personen und Gruppen auch Songs und Seiten des Wikis. Wer `persons` einschaltet, lässt den KI-Assistenten damit auch die Titel von Songs und Seiten finden, die das Konto sehen darf, mit denselben Schutzmassnahmen wie bei Personen: Das Ergebnis geht nur mit seiner Zeile in der Audit-Datei hinaus, und jeder Aufruf zählt gegen das Lesebudget. Soll der Assistent über `ct_search` keine Songs oder Seiten finden, geben Sie dem Konto die Rechte dafür nicht.
 
