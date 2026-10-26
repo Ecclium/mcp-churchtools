@@ -40,6 +40,7 @@ const order = [
   'runId',
   'eventId',
   'tool',
+  'prompt',
   'code',
   'mode',
   'redaction',
@@ -125,6 +126,7 @@ describe('a log line', () => {
       count: 3,
       durationMs: 12,
       code: 'not_found',
+      prompt: 'dienstplan_wochenende',
       note: 'x',
     });
     const line = only(lines);
@@ -134,6 +136,7 @@ describe('a log line', () => {
       level: 'info',
       event: 'cache_skipped',
       ...fullBound,
+      prompt: 'dienstplan_wochenende',
       code: 'not_found',
       durationMs: 12,
       count: 3,
@@ -144,7 +147,7 @@ describe('a log line', () => {
     expect(lines[0]).not.toMatch(/[\n\r]/);
   });
 
-  it('is at most 544 characters long', () => {
+  it('is at most 619 characters long', () => {
     const { log, lines } = make({
       bound: {
         tenantId: `a${'b'.repeat(62)}` as TenantId,
@@ -157,6 +160,7 @@ describe('a log line', () => {
       },
     });
     const fields: Record<string, unknown> = {
+      prompt: `a${'b'.repeat(62)}`,
       code: 'confirmation_required',
       durationMs: 86_400_000,
       count: 1_000_000,
@@ -165,7 +169,7 @@ describe('a log line', () => {
     };
     for (let key = 0; key < maxDropped; key += 1) fields[key] = 0;
     log.debug('a'.repeat(64), fields as never);
-    expect(lines[0]).toHaveLength(544);
+    expect(lines[0]).toHaveLength(619);
   });
 });
 

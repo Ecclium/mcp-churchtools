@@ -188,6 +188,7 @@ describe('the server over stdio', () => {
     });
     expect(at(await reply(1), 'result', 'capabilities')).toEqual({
       tools: { listChanged: false },
+      prompts: { listChanged: false },
     });
   });
 

@@ -24,6 +24,7 @@ import {
   isEventName,
   isIntegerIn,
   isMode,
+  isPromptName,
   isRedactionLevel,
   isTenantId,
   isToolName,
@@ -102,6 +103,9 @@ const fields: readonly Field[] = Object.freeze(
     { name: 'runId', bound: true, check: isUuid },
     { name: 'eventId', bound: true, check: isUuid },
     { name: 'tool', bound: true, check: isToolName },
+    // The name of a prompt from the catalog, which the mount writes for a
+    // request that runs no tool and has no tenant (ADR 0065).
+    { name: 'prompt', bound: false, check: isPromptName },
     { name: 'code', bound: false, check: isErrorCode },
     { name: 'mode', bound: true, check: isMode },
     { name: 'redaction', bound: true, check: isRedactionLevel },

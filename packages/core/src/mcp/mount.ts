@@ -9,7 +9,9 @@
  * and `tools/call` with two handlers of its own, so an unknown tool and an
  * input that does not fit reach the pipeline and its audit instead of
  * ending in the SDK, and no object exists that could swap a handler later
- * (ADR 0053). Every instance gets a JSON Schema validator that always
+ * (ADR 0053). Prompts go the same way: no `registerPrompt`, but handlers of
+ * `prompts/list` and `prompts/get` that fill the templates of the catalog
+ * (ADR 0065). Every instance gets a JSON Schema validator that always
  * throws, so the bundled Ajv never compiles a schema for it (ADR 0059).
  *
  * @packageDocumentation
@@ -26,10 +28,16 @@ import type {
 import {
   type CallToolRequest,
   type CallToolResult,
+  type GetPromptRequest,
+  type GetPromptResult,
   type jsonSchemaValidator,
+  type ListPromptsResult,
   type ListToolsResult,
   McpServer,
   type McpServerFactory,
+  type Prompt,
+  ProtocolError,
+  ProtocolErrorCode,
   type ServerContext,
   type Tool,
 } from '@modelcontextprotocol/server';
@@ -104,6 +112,22 @@ const validatorEvent = 'mcp_validator_refused';
 const instanceErrorEvent = 'mcp_server_error';
 const callFailedEvent = 'mcp_call_failed';
 
+// Events of a request for a prompt. A prompt reaches no ChurchTools and
+// needs no tenant, so it gets a log line and no audit line (ADR 0065). The
+// line names a prompt only from the catalog, never a value of an argument.
+const promptServedEvent = 'prompt_served';
+const promptRefusedEvent = 'prompt_refused';
+const promptUnknownEvent = 'prompt_unknown';
+
+// The SDK sends the message of an error to the client as it is, so every
+// refusal of a prompt is a fixed sentence. It names at most an argument
+// from the catalog, whose name has the form of its pattern.
+const unknownPromptSentence = 'This server offers no prompt of that name.';
+const argumentsRefusedSentence =
+  'The arguments are no object or hold a name this prompt does not have.';
+const argumentRefusedSentence = (name: string): string =>
+  `The argument ${name} is missing or does not fit. Its description in the list of prompts says what it takes.`;
+
 const isVersion = (value: unknown): value is string => {
   if (typeof value !== 'string' || value.length < 1 || value.length > 32) {
     return false;
@@ -118,14 +142,17 @@ const isVersion = (value: unknown): value is string => {
 /**
  * Builds the mount from the catalog. It takes the input schema of every
  * tool as the registry derived it, derives the output schema and the
- * annotations once and freezes the list of tools; every instance the
- * factory builds shares that list.
+ * annotations once and freezes the list of tools and the list of prompts;
+ * every instance the factory builds shares both.
  *
  * Each instance is built in a fixed order: the server with the throwing
- * validator and without capabilities, then the capability `tools` with
- * `listChanged: false` before the handlers, because registering a handler
- * checks the capability, then the handlers of `tools/list` and
- * `tools/call` and a handler of errors that writes one fixed event.
+ * validator and without capabilities, then the capabilities `tools` and
+ * `prompts`, both with `listChanged: false`, before the handlers, because
+ * registering a handler checks the capability, then the handlers of
+ * `tools/list`, `tools/call`, `prompts/list` and `prompts/get` and a
+ * handler of errors that writes one fixed event. The capability `prompts`
+ * stands also when the catalog offers no prompt, so the answer to the
+ * handshake does not change with the toolsets.
  *
  * A call resolves tenant and actor for the identity of the start; an answer
  * of the resolver that is no object, or a rejection, counts as no tenant,
@@ -139,6 +166,13 @@ const isVersion = (value: unknown): value is string => {
  * send the message of an error as it is. A call that fails in the mount
  * itself gets the fixed sentence of `internal`, and the logger gets the
  * fixed event `mcp_call_failed` without fields.
+ *
+ * `prompts/list` gives every prompt of the catalog with its title, its
+ * description and its arguments, all required, and no cursor. `prompts/get`
+ * fills the template of the prompt with the checked values, as one message
+ * of the person, and writes `prompt_served`. An unknown name (event
+ * `prompt_unknown`) or arguments that do not fit (event `prompt_refused`
+ * with the code `validation`) end as invalid params with a fixed sentence.
  *
  * @param options - Catalog, pipeline, identity, resolver, the settings of
  *   every call, the logger and the version.
@@ -186,6 +220,39 @@ export function createMcpMount(options: McpMountOptions): McpMount {
       // Nothing else is left to tell.
     }
   };
+  const note = (
+    level: 'info' | 'warn',
+    event: string,
+    fields?: { readonly prompt: string; readonly code?: 'validation' },
+  ): void => {
+    try {
+      logger[level](event, fields);
+    } catch {
+      // The answer to the client does not depend on the log.
+    }
+  };
+
+  const prompts: Prompt[] = [];
+  for (const entry of catalog.prompts()) {
+    const args: NonNullable<Prompt['arguments']> = entry.arguments.map(
+      (argument) =>
+        Object.freeze({
+          name: argument.name,
+          description: argument.description,
+          required: true,
+        }),
+    );
+    Object.freeze(args);
+    prompts.push(
+      Object.freeze({
+        name: entry.name,
+        title: entry.title,
+        description: entry.description,
+        arguments: args,
+      }),
+    );
+  }
+  Object.freeze(prompts);
 
   // Only elicitInput of the 2025 era asks the validator of an instance,
   // and fromJsonSchema never does; the rule [arch:mcp-json-schema] keeps
@@ -239,6 +306,42 @@ export function createMcpMount(options: McpMountOptions): McpMount {
 
   const listTools = (): ListToolsResult => ({ tools });
 
+  const listPrompts = (): ListPromptsResult => ({ prompts });
+
+  // Throws only the refusals below, each with a fixed sentence, which the
+  // SDK sends as invalid params.
+  const getPrompt = (request: GetPromptRequest): GetPromptResult => {
+    const { name } = request.params;
+    const entry = catalog.prompt(name);
+    if (entry === undefined) {
+      note('warn', promptUnknownEvent);
+      throw new ProtocolError(
+        ProtocolErrorCode.InvalidParams,
+        unknownPromptSentence,
+      );
+    }
+    const filling = entry.fill(request.params.arguments);
+    if (!filling.ok) {
+      note('warn', promptRefusedEvent, {
+        prompt: entry.name,
+        code: 'validation',
+      });
+      throw new ProtocolError(
+        ProtocolErrorCode.InvalidParams,
+        filling.argument === undefined
+          ? argumentsRefusedSentence
+          : argumentRefusedSentence(filling.argument),
+      );
+    }
+    note('info', promptServedEvent, { prompt: entry.name });
+    return {
+      description: entry.description,
+      messages: [
+        { role: 'user', content: { type: 'text', text: filling.text } },
+      ],
+    };
+  };
+
   const callTool = async (
     instance: McpServer,
     request: CallToolRequest,
@@ -284,13 +387,18 @@ export function createMcpMount(options: McpMountOptions): McpMount {
       jsonSchemaValidator: refusingValidator,
     });
     // Before the handlers, because registering one checks the capability,
-    // and before the connection, after which the SDK refuses it. The list
-    // of tools never changes while the process runs.
-    instance.server.registerCapabilities({ tools: { listChanged: false } });
+    // and before the connection, after which the SDK refuses it. The lists
+    // of tools and prompts never change while the process runs.
+    instance.server.registerCapabilities({
+      tools: { listChanged: false },
+      prompts: { listChanged: false },
+    });
     instance.server.setRequestHandler('tools/list', listTools);
     instance.server.setRequestHandler('tools/call', (request, ctx) =>
       callTool(instance, request, ctx),
     );
+    instance.server.setRequestHandler('prompts/list', listPrompts);
+    instance.server.setRequestHandler('prompts/get', getPrompt);
     instance.server.onerror = () => {
       report(instanceErrorEvent);
     };
