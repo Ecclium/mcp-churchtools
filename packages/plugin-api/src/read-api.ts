@@ -1351,4 +1351,60 @@ export interface ReadApi {
     from: string,
     to: string,
   ): Promise<BookingList>;
+  /**
+   * Searches songs by a term, one page at a time, in the categories the
+   * account may see. An empty list can also mean that the account lacks
+   * the right to see a category: ChurchTools then answers with an empty
+   * list, not with an error.
+   *
+   * @param query - The search term, see {@link normalizeSearchTerm}.
+   * @param page - The page, from 1 to {@link maxSongsPage}.
+   * @returns At most {@link songsPageLimit} songs.
+   * @throws {EccliumError} `validation` for a term that is not a search
+   *   term or a page that does not fit, before any request; every error of
+   *   the request.
+   */
+  searchSongs(query: string, page: number): Promise<SongList>;
+  /**
+   * Reads one song by its numeric ID, with its arrangements.
+   *
+   * @param songId - The ID of the song, a whole number from 1.
+   * @returns The song.
+   * @throws {EccliumError} `validation` for an ID that is no whole number
+   *   from 1, before any request; `permission` when the account may not see
+   *   the category of the song; `not_found` for a song that does not exist;
+   *   every error of the request.
+   */
+  song(songId: number): Promise<Song>;
+  /**
+   * Searches pages of the wiki by a term, in all categories the account
+   * may see or in one of them. An empty list can also mean that the account
+   * lacks the right to see a category; how ChurchTools answers then is not
+   * shown.
+   *
+   * @param query - The search term, see {@link normalizeSearchTerm}.
+   * @param categoryId - The one category to search in; all when left out.
+   * @returns At most {@link maxWikiSearchHits} hits.
+   * @throws {EccliumError} `validation` for a term that is not a search
+   *   term or a category that is no whole number from 1, before any
+   *   request; `upstream` for more hits than the core reads from one
+   *   answer; every error of the request.
+   */
+  searchWiki(query: string, categoryId?: number): Promise<WikiSearchHits>;
+  /**
+   * Searches one type of objects by a term with the global search of
+   * ChurchTools: persons, groups, songs or pages of the wiki, each only as
+   * far as the account may see them. ChurchTools answers without the right
+   * with an empty list, not with an error.
+   *
+   * @param type - The type, see {@link isSearchDomainType}.
+   * @param query - The search term, see {@link normalizeSearchTerm}.
+   * @returns At most {@link maxSearchHits} hits of that type.
+   * @throws {EccliumError} `policy_denied` for a tool whose sensitivity is
+   *   not special, because a search may name persons (ADR 0064);
+   *   `validation` for a type or term that does not fit, before any
+   *   request; `upstream` for more hits than the core reads from one answer
+   *   or a hit of another type; every error of the request.
+   */
+  search(type: SearchDomainType, query: string): Promise<GlobalSearchHits>;
 }

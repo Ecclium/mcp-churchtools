@@ -18,6 +18,7 @@ import {
   eventAssignmentsSchema,
   eventListSchema,
   eventSchema,
+  globalSearchSchema,
   groupListSchema,
   groupMemberListSchema,
   groupSchema,
@@ -30,10 +31,13 @@ import {
   rightValueSchema,
   serviceGroupListSchema,
   serviceListSchema,
+  songListSchema,
+  songSchema,
   whoamiSchema,
   wikiCategoryListSchema,
   wikiPageListSchema,
   wikiPageSchema,
+  wikiSearchSchema,
 } from './schemas.js';
 
 /**
@@ -195,6 +199,30 @@ export function describeContract() {
       path: '/api/bookings',
       query: ['resource_ids[]', 'from', 'to'],
       response: schema(bookingListSchema),
+    },
+    songs: {
+      method: 'get',
+      path: '/api/songs',
+      query: ['query', 'page', 'limit'],
+      response: schema(songListSchema),
+    },
+    song: {
+      method: 'get',
+      path: '/api/songs/{songId}',
+      query: [],
+      response: schema(songSchema),
+    },
+    wikiSearch: {
+      method: 'get',
+      path: '/api/wiki/search',
+      query: ['query', 'wiki_category_ids[]'],
+      response: schema(wikiSearchSchema),
+    },
+    search: {
+      method: 'get',
+      path: '/api/search',
+      query: ['query', 'domain_types[]'],
+      response: schema(globalSearchSchema),
     },
     pagedMeta: { meta: schema(pagedMetaSchema) },
     countedMeta: { meta: schema(countedMetaSchema) },
