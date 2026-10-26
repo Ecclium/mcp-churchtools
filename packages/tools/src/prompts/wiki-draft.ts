@@ -18,7 +18,7 @@ const text = `Entwurf einer Seite für das Wiki in ChurchTools aus diesen Stichw
 {stichworte}
 
 Vorgehen:
-1. Die Kategorien des Wikis lesen.
+1. Die Kategorien des Wikis lesen, bei weiteren Seiten auch diese.
 2. Im Wiki nach zwei oder drei Begriffen aus den Stichworten suchen, um Seiten zum selben Thema zu finden, und eine passende Seite bei Bedarf lesen.
 3. Den Entwurf in Markdown schreiben: Titel, ein Satz zum Zweck der Seite, dann Abschnitte mit Überschriften. Nur verwenden, was in den Stichworten steht. Wo etwas fehlt, «[offen: …]» schreiben, statt etwas zu ergänzen.
 4. Eine Kategorie aus der Liste vorschlagen und die Wahl in einem Satz begründen. Passt keine, das sagen.

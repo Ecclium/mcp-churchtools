@@ -23,7 +23,7 @@ Alle Argumente sind Pflicht. Unsichtbare Zeichen in einem Text entfernt der Serv
 - Angeboten: `events` in `ECCLIUM_TOOLSETS`, mit `ECCLIUM_STATE_DIR`
 - Tools: `ct_events_list`, `ct_services_list`, `ct_services_get_assignments`
 
-Fasst zusammen, wer an einem Wochenende welchen Dienst hat und welche Dienste noch offen sind. Der KI-Assistent liest dafür Events, Dienste und Einteilungen aus ChurchTools und ändert nichts.
+Fasst zusammen, wer an einem Wochenende welchen Dienst hat und welche Einteilungen noch nicht angenommen sind. Der KI-Assistent liest dafür Events, Dienste und Einteilungen aus ChurchTools und ändert nichts.
 
 ### Argumente
 
@@ -38,12 +38,12 @@ Fasst zusammen, wer an einem Wochenende welchen Dienst hat und welche Dienste no
 
 Vorgehen:
 1. Die Events dieser beiden Tage aus ChurchTools lesen, bei weiteren Seiten auch diese.
-2. Die Dienste lesen, um zu wissen, welche Dienste die Namen der Eingeteilten verbergen.
+2. Die Dienste lesen, bei weiteren Seiten auch diese, um zu wissen, welche Dienste die Namen der Eingeteilten verbergen.
 3. Für jedes Event, das nicht abgesagt ist, alle Einteilungen lesen, bei weiteren Seiten auch diese.
-4. Die Events nach Beginn ordnen. Je Event Name, Tag und Uhrzeit nennen, darunter je Dienst die eingeteilte Person und ob sie zugesagt hat.
-5. Fehlt bei einer Einteilung die Person, bei einem Dienst, der die Namen verbirgt, «Name verborgen» schreiben, sonst «offen». Keine Namen, Dienste oder Zeiten ergänzen, die nicht in den Ergebnissen stehen.
+4. Die Events nach Beginn ordnen. Je Event Name, Tag und Uhrzeit nennen, darunter je Dienst die eingeteilte Person und ob sie die Einteilung angenommen hat. ChurchTools gibt die Zeiten in UTC: in die Zeit der Gemeinde umrechnen, wenn ihre Zeitzone bekannt ist, sonst «UTC» dazuschreiben.
+5. Nennt eine Einteilung keine Person, bei einem Dienst, der die Namen verbirgt, «Name verborgen» schreiben, sonst «keine Person genannt». Keine Namen, Dienste oder Zeiten ergänzen, die nicht in den Ergebnissen stehen.
 6. Abgesagte Events nur mit dem Hinweis «abgesagt» nennen.
-7. Am Ende alle Dienste auflisten, die offen sind oder noch niemand zugesagt hat.
+7. Am Ende alle Einteilungen auflisten, die noch nicht angenommen sind.
 
 Der Überblick bleibt in diesem Gespräch: nichts in ChurchTools ändern und niemanden benachrichtigen.
 
@@ -72,7 +72,7 @@ Entwurf einer Seite für das Wiki in ChurchTools aus diesen Stichworten:
 {stichworte}
 
 Vorgehen:
-1. Die Kategorien des Wikis lesen.
+1. Die Kategorien des Wikis lesen, bei weiteren Seiten auch diese.
 2. Im Wiki nach zwei oder drei Begriffen aus den Stichworten suchen, um Seiten zum selben Thema zu finden, und eine passende Seite bei Bedarf lesen.
 3. Den Entwurf in Markdown schreiben: Titel, ein Satz zum Zweck der Seite, dann Abschnitte mit Überschriften. Nur verwenden, was in den Stichworten steht. Wo etwas fehlt, «[offen: …]» schreiben, statt etwas zu ergänzen.
 4. Eine Kategorie aus der Liste vorschlagen und die Wahl in einem Satz begründen. Passt keine, das sagen.

@@ -9,20 +9,24 @@ import type { PromptDefinition } from '@ecclium/mcp-churchtools-plugin-api';
 // The text is German, like routines and templates: the person picks the
 // prompt and reads it as their own message. It names no tool; the model
 // finds them by their descriptions, and the catalog offers the prompt only
-// with all three. Steps 2 and 5 exist because an assignment has no person
-// both when the service hides the names and when nobody is assigned; only
-// the list of services tells the two apart. «Zugesagt» rests on isAccepted
-// alone, because what agreed means is not proven.
+// with all three. Each list may come in pages, so every step that reads
+// one asks for all of them. Steps 2 and 5 exist because an assignment has
+// no person both when the service hides the names and when ChurchTools
+// names nobody, because nobody is assigned or a name is missing; only the
+// list of services tells the first case from the others, and the second
+// stays «keine Person genannt» rather than «offen». «Angenommen» rests on
+// isAccepted alone, because what agreed means is not proven. The times
+// come in UTC, which a person would misread as local time.
 const text = `Überblick über den Dienstplan für das Wochenende von Samstag, {samstag}, und dem Sonntag danach.
 
 Vorgehen:
 1. Die Events dieser beiden Tage aus ChurchTools lesen, bei weiteren Seiten auch diese.
-2. Die Dienste lesen, um zu wissen, welche Dienste die Namen der Eingeteilten verbergen.
+2. Die Dienste lesen, bei weiteren Seiten auch diese, um zu wissen, welche Dienste die Namen der Eingeteilten verbergen.
 3. Für jedes Event, das nicht abgesagt ist, alle Einteilungen lesen, bei weiteren Seiten auch diese.
-4. Die Events nach Beginn ordnen. Je Event Name, Tag und Uhrzeit nennen, darunter je Dienst die eingeteilte Person und ob sie zugesagt hat.
-5. Fehlt bei einer Einteilung die Person, bei einem Dienst, der die Namen verbirgt, «Name verborgen» schreiben, sonst «offen». Keine Namen, Dienste oder Zeiten ergänzen, die nicht in den Ergebnissen stehen.
+4. Die Events nach Beginn ordnen. Je Event Name, Tag und Uhrzeit nennen, darunter je Dienst die eingeteilte Person und ob sie die Einteilung angenommen hat. ChurchTools gibt die Zeiten in UTC: in die Zeit der Gemeinde umrechnen, wenn ihre Zeitzone bekannt ist, sonst «UTC» dazuschreiben.
+5. Nennt eine Einteilung keine Person, bei einem Dienst, der die Namen verbirgt, «Name verborgen» schreiben, sonst «keine Person genannt». Keine Namen, Dienste oder Zeiten ergänzen, die nicht in den Ergebnissen stehen.
 6. Abgesagte Events nur mit dem Hinweis «abgesagt» nennen.
-7. Am Ende alle Dienste auflisten, die offen sind oder noch niemand zugesagt hat.
+7. Am Ende alle Einteilungen auflisten, die noch nicht angenommen sind.
 
 Der Überblick bleibt in diesem Gespräch: nichts in ChurchTools ändern und niemanden benachrichtigen.`;
 
@@ -37,7 +41,7 @@ export const rotaWeekendPrompt: PromptDefinition = Object.freeze({
   name: 'dienstplan_wochenende',
   title: 'Dienstplan-Überblick für ein Wochenende',
   description:
-    'Fasst zusammen, wer an einem Wochenende welchen Dienst hat und welche Dienste noch offen sind. Der KI-Assistent liest dafür Events, Dienste und Einteilungen aus ChurchTools und ändert nichts.',
+    'Fasst zusammen, wer an einem Wochenende welchen Dienst hat und welche Einteilungen noch nicht angenommen sind. Der KI-Assistent liest dafür Events, Dienste und Einteilungen aus ChurchTools und ändert nichts.',
   tools: Object.freeze([
     'ct_events_list',
     'ct_services_list',
