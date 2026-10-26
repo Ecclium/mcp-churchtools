@@ -71,11 +71,34 @@ describe('the catalog over stdio', () => {
     }
   });
 
-  // The other toolsets have no tool of the core yet.
+  // No tool of calendars, appointments, resources and bookings names a
+  // person, so none is treated like a special one and the toolset needs no
+  // folder of state (ADR 0064).
+  it('adds the five tools of calendars and resources for the toolset calendars, none treated as special', () => {
+    const catalog = createStdioCatalog({
+      readOnly: true,
+      toolsets: ['calendars'],
+    });
+    expect(catalog.list().map((entry) => entry.name)).toEqual([
+      'ct_appointments_get',
+      'ct_appointments_list',
+      'ct_bookings_list',
+      'ct_calendars_list',
+      'ct_resources_list',
+      'ct_whoami',
+    ]);
+    for (const entry of catalog.list()) {
+      expect(entry.origin).toBe('core');
+      expect(entry.meta.sensitivity).not.toBe('special');
+      expect(entry.asSpecial).toBe(false);
+    }
+  });
+
+  // The toolset songs has no tool of the core yet.
   it('adds no tool for a toolset without tools', () => {
     const catalog = createStdioCatalog({
       readOnly: true,
-      toolsets: ['calendars', 'songs'],
+      toolsets: ['songs'],
     });
     expect(catalog.list().map((entry) => entry.name)).toEqual(['ct_whoami']);
   });
