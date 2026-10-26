@@ -727,7 +727,12 @@ export function isListIds(value: unknown): value is readonly number[] {
   if (!Array.isArray(value) || value.length < 1 || value.length > maxListIds) {
     return false;
   }
-  const ids: readonly unknown[] = value;
+  // Read by index, because every and Set skip and fold the holes of a
+  // sparse array such as [, 8], which would then pass as undefined.
+  const ids: unknown[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    ids.push((value as readonly unknown[])[index]);
+  }
   return (
     ids.every(
       (id) => typeof id === 'number' && Number.isSafeInteger(id) && id >= 1,

@@ -91,6 +91,9 @@ describe('appendIds', () => {
     [[2 ** 53]],
     [['1' as unknown as number]],
     ['1,2' as unknown as number[]],
+    // A sparse array, whose hole would reach the query as undefined.
+    // eslint-disable-next-line no-sparse-arrays
+    [[, 1] as number[]],
   ])('refuses %j', (ids) => {
     expect(() =>
       query((p) => {

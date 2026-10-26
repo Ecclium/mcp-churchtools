@@ -426,6 +426,11 @@ describe('isListIds', () => {
       [Number.NaN],
       ['8'],
       [8, null],
+      // A sparse array: its hole would reach a query as undefined.
+      // eslint-disable-next-line no-sparse-arrays
+      [, 8],
+      // eslint-disable-next-line no-sparse-arrays
+      [8, , 9],
       '8',
       8,
       null,
