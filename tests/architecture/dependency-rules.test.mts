@@ -746,6 +746,34 @@ const cases: readonly Case[] = [
   },
   {
     rule: 'plugins-only-plugin-api',
+    name: 'a tool of the calendars imports core',
+    files: {
+      'packages/tools/src/calendars/forbidden.ts': `import '${nameOf('core')}';\nexport {};\n`,
+    },
+  },
+  {
+    rule: 'plugins-only-plugin-api',
+    name: 'a tool of the appointments imports core',
+    files: {
+      'packages/tools/src/appointments/forbidden.ts': `import '${nameOf('core')}';\nexport {};\n`,
+    },
+  },
+  {
+    rule: 'plugins-only-plugin-api',
+    name: 'a tool of the resources imports core',
+    files: {
+      'packages/tools/src/resources/forbidden.ts': `import '${nameOf('core')}';\nexport {};\n`,
+    },
+  },
+  {
+    rule: 'plugins-only-plugin-api',
+    name: 'a tool of the bookings imports core',
+    files: {
+      'packages/tools/src/bookings/forbidden.ts': `import '${nameOf('core')}';\nexport {};\n`,
+    },
+  },
+  {
+    rule: 'plugins-only-plugin-api',
     name: 'the plugin of the core imports core',
     files: {
       'packages/tools/src/core-plugin.ts': `import '${nameOf('core')}';\nexport {};\n`,

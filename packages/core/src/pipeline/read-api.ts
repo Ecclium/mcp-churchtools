@@ -8,7 +8,11 @@
  */
 import {
   type Agenda,
+  type AppointmentDetails,
+  type AppointmentList,
   type AssignmentList,
+  type BookingList,
+  type Calendar,
   EccliumError,
   type EventDetails,
   type EventList,
@@ -21,6 +25,7 @@ import {
   type PersonGroupList,
   type PersonHit,
   type ReadApi,
+  type ResourceList,
   type SearchHits,
   type Sensitivity,
   type ServiceList,
@@ -126,6 +131,28 @@ export function createReadAccess(
       page: number,
     ): Promise<AssignmentList> =>
       named(() => client.eventAssignments(ctx, eventId, page)),
+    // Calendars, appointments, resources and bookings name no person: no
+    // field they pass on is a person or a name of one (ADR 0064).
+    calendars: (): Promise<readonly Calendar[]> =>
+      guard(() => client.calendars(ctx)),
+    appointments: (
+      calendarIds: readonly number[],
+      from: string,
+      to: string,
+    ): Promise<AppointmentList> =>
+      guard(() => client.appointments(ctx, calendarIds, from, to)),
+    appointment: (
+      calendarId: number,
+      appointmentId: number,
+    ): Promise<AppointmentDetails> =>
+      guard(() => client.appointment(ctx, calendarId, appointmentId)),
+    resources: (): Promise<ResourceList> => guard(() => client.resources(ctx)),
+    bookings: (
+      resourceIds: readonly number[],
+      from: string,
+      to: string,
+    ): Promise<BookingList> =>
+      guard(() => client.bookings(ctx, resourceIds, from, to)),
   });
   return Object.freeze({
     __proto__: null,

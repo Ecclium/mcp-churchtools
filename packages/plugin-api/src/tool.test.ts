@@ -256,7 +256,7 @@ describe('ToolDefinition and defineTool', () => {
 });
 
 describe('ReadApi', () => {
-  it('holds the account, its rights, persons and groups, the wiki, events and services only', () => {
+  it('holds the account, its rights, persons and groups, the wiki, events, services, calendars and resources only', () => {
     expectTypeOf<keyof ReadApi>().toEqualTypeOf<
       | 'whoami'
       | 'permissions'
@@ -274,6 +274,11 @@ describe('ReadApi', () => {
       | 'eventAgenda'
       | 'services'
       | 'eventAssignments'
+      | 'calendars'
+      | 'appointments'
+      | 'appointment'
+      | 'resources'
+      | 'bookings'
     >();
   });
 

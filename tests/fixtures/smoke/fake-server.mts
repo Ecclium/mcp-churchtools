@@ -1,5 +1,5 @@
 // A stand-in for `ecclium stdio` in the tests of the smoke test. It speaks
-// JSON-RPC over stdio in both eras, answers the twelve tools with synthetic
+// JSON-RPC over stdio in both eras, answers the seventeen tools with synthetic
 // canary values and writes log, audit lines on stderr and an audit file in
 // the form of the real server. FAKE_SCENARIO breaks one thing at a time,
 // so that each check of the smoke test can be seen to fail. FAKE_RECORD
@@ -22,6 +22,7 @@ const canary = env['FAKE_CANARY'] ?? 'canary';
 const toolsets = (env['ECCLIUM_TOOLSETS'] ?? '').split(',');
 const personsToolset = toolsets.includes('persons');
 const eventsToolset = toolsets.includes('events');
+const calendarsToolset = toolsets.includes('calendars');
 const calls: string[] = [];
 
 const record = (): void => {
@@ -90,6 +91,14 @@ const annotations = {
   openWorldHint: true,
 };
 const toolNames = [
+  ...(calendarsToolset
+    ? [
+        'ct_appointments_get',
+        'ct_appointments_list',
+        'ct_bookings_list',
+        'ct_calendars_list',
+      ]
+    : []),
   ...(eventsToolset
     ? ['ct_events_get', 'ct_events_get_agenda', 'ct_events_list']
     : []),
@@ -103,6 +112,7 @@ const toolNames = [
         'ct_persons_search',
       ]
     : []),
+  ...(calendarsToolset ? ['ct_resources_list'] : []),
   ...(eventsToolset ? ['ct_services_get_assignments', 'ct_services_list'] : []),
   'ct_whoami',
   ...(scenario === 'write-tool' ? ['ct_wiki_page_create'] : []),
@@ -385,6 +395,154 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
       ],
       more: false,
       notice: null,
+    });
+  }
+  if (name === 'ct_calendars_list') {
+    event('http_response', { status: 200 });
+    audit(name);
+    const calendarName = `${canary}Kalender`;
+    return result({
+      page: 1,
+      calendars:
+        scenario === 'no-calendars'
+          ? []
+          : [
+              {
+                id: 8,
+                name:
+                  scenario === 'calendars-bare-name'
+                    ? calendarName
+                    : wrap(calendarName),
+                isPublic: false,
+                isPrivate: false,
+              },
+            ],
+      more: false,
+      notice: scenario === 'no-calendars' ? 'No calendar is listed.' : null,
+    });
+  }
+  if (name === 'ct_appointments_list') {
+    event('http_response', { status: 200 });
+    audit(name);
+    if (scenario === 'no-appointments') {
+      return result({
+        from: args['from'],
+        to: args['to'],
+        page: 1,
+        appointments: [],
+        more: false,
+        notice: 'No appointment is listed.',
+      });
+    }
+    return result({
+      from: args['from'],
+      to: args['to'],
+      page: 1,
+      appointments: [
+        {
+          id: 5,
+          calendarId: 8,
+          title:
+            scenario === 'appointments-bare-title'
+              ? `${canary}Termin`
+              : wrap(`${canary}Termin`),
+          subtitle: null,
+          allDay: false,
+          locationName: wrap(`${canary}Saal`),
+          startDate:
+            scenario === 'appointments-bad-date'
+              ? '2026-10-25 18:00'
+              : '2026-10-25T18:00:00Z',
+          endDate: '2026-10-25T19:00:00Z',
+        },
+        {
+          id: 6,
+          calendarId: 8,
+          title: wrap(`${canary}Tag`),
+          subtitle: null,
+          allDay: true,
+          locationName: null,
+          startDate: '2026-10-26',
+          endDate: '2026-10-26',
+        },
+      ],
+      more: false,
+      notice: null,
+    });
+  }
+  if (name === 'ct_appointments_get') {
+    event('http_response', { status: 200 });
+    audit(name);
+    return result({
+      id: args['appointmentId'],
+      calendarId: args['calendarId'],
+      title: wrap(`${canary}Termin`),
+      subtitle: null,
+      allDay: false,
+      locationName: wrap(`${canary}Saal`),
+      description: wrap(`${canary}Beschreibung`),
+      link:
+        scenario === 'appointment-bare-link'
+          ? `${canary}Verweis`
+          : wrap(`${canary}Verweis`),
+      dates: [
+        { startDate: '2026-10-25T18:00:00Z', endDate: '2026-10-25T19:00:00Z' },
+      ],
+      moreDates: false,
+      ...(scenario === 'appointment-extra' ? { street: 'Hauptstrasse' } : {}),
+    });
+  }
+  if (name === 'ct_resources_list') {
+    event('http_response', { status: 200 });
+    event('http_response', { status: 200 });
+    audit(name);
+    const typeName = `${canary}Raeume`;
+    return result({
+      page: 1,
+      resources:
+        scenario === 'no-resources'
+          ? []
+          : [
+              {
+                id: 8,
+                name: wrap(`${canary}Raum`),
+                resourceTypeId: 5,
+                resourceTypeName:
+                  scenario === 'resources-bare-type'
+                    ? typeName
+                    : wrap(typeName),
+              },
+            ],
+      more: false,
+      notice: scenario === 'no-resources' ? 'No resource is listed.' : null,
+    });
+  }
+  if (name === 'ct_bookings_list') {
+    event('http_response', { status: 200 });
+    audit(name);
+    return result({
+      from: args['from'],
+      to: args['to'],
+      page: 1,
+      bookings:
+        scenario === 'no-bookings'
+          ? []
+          : [
+              {
+                id: 2,
+                title:
+                  scenario === 'bookings-bare-title'
+                    ? `${canary}Buchung`
+                    : wrap(`${canary}Buchung`),
+                resourceId: 8,
+                statusId: scenario === 'bookings-bad-status' ? -1 : 2,
+                appointmentId: 5,
+                startDate: '2026-10-25T18:00:00Z',
+                endDate: '2026-10-25T19:00:00Z',
+              },
+            ],
+      more: false,
+      notice: scenario === 'no-bookings' ? 'No booking is listed.' : null,
     });
   }
   const query = typeof args['query'] === 'string' ? args['query'] : '';

@@ -1,6 +1,10 @@
 import {
   type Agenda,
+  type AppointmentDetails,
+  type AppointmentList,
   type AssignmentList,
+  type BookingList,
+  type Calendar,
   type EventDetails,
   type EventList,
   type Group,
@@ -11,6 +15,7 @@ import {
   type Person,
   type PersonGroupList,
   type PersonHit,
+  type ResourceList,
   type SearchHits,
   type ServiceList,
   type TenantContext,
@@ -102,6 +107,23 @@ const assignments: AssignmentList = {
   ],
   more: false,
 };
+const calendars: readonly Calendar[] = [
+  { id: 8, name: 'Kalender A', isPublic: false, isPrivate: false },
+];
+const appointments: AppointmentList = { appointments: [], more: false };
+const appointment: AppointmentDetails = {
+  id: 5,
+  calendarId: 8,
+  title: 'Termin A',
+  subtitle: null,
+  allDay: false,
+  locationName: null,
+  description: null,
+  link: null,
+  dates: [],
+};
+const resources: ResourceList = { resources: [], resourceTypes: [] };
+const bookings: BookingList = { bookings: [], more: false };
 const lines: string[] = [];
 const ctx = Object.freeze({
   instance: 'https://example.church.tools',
@@ -196,6 +218,31 @@ const fakeClient = () => {
       ids.push(['eventAssignments', eventId, number]);
       return Promise.resolve(assignments);
     },
+    calendars: (context) => {
+      seen.push(context);
+      ids.push(['calendars']);
+      return Promise.resolve(calendars);
+    },
+    appointments: (context, calendarIds, from, to) => {
+      seen.push(context);
+      ids.push(['appointments', calendarIds, from, to]);
+      return Promise.resolve(appointments);
+    },
+    appointment: (context, calendarId, appointmentId) => {
+      seen.push(context);
+      ids.push(['appointment', calendarId, appointmentId]);
+      return Promise.resolve(appointment);
+    },
+    resources: (context) => {
+      seen.push(context);
+      ids.push(['resources']);
+      return Promise.resolve(resources);
+    },
+    bookings: (context, resourceIds, from, to) => {
+      seen.push(context);
+      ids.push(['bookings', resourceIds, from, to]);
+      return Promise.resolve(bookings);
+    },
   };
   return { client, seen, queries, wiki, ids };
 };
@@ -245,6 +292,11 @@ describe('createReadAccess', () => {
         read.eventAgenda(2),
         read.services(),
         read.eventAssignments(2, 1),
+        read.calendars(),
+        read.appointments([8], '2026-10-25', '2026-10-31'),
+        read.appointment(8, 5),
+        read.resources(),
+        read.bookings([8], '2026-10-25', '2026-10-31'),
       ]) {
         const error: unknown = await call.catch((thrown: unknown) => thrown);
         expect(isEccliumError(error) && error.code).toBe('internal');
@@ -336,6 +388,34 @@ describe('createReadAccess', () => {
         ['event', 2],
         ['eventAgenda', 2],
         ['services'],
+      ]);
+    },
+  );
+
+  // Calendars, appointments, resources and bookings name no person: a tool
+  // of every sensitivity reads them, with the context and the arguments of
+  // the call (ADR 0064).
+  it.each(['none', 'personal', 'special'] as const)(
+    'reads calendars, appointments, resources and bookings for a tool of the sensitivity %s',
+    async (sensitivity) => {
+      const { client, seen, ids } = fakeClient();
+      const { read } = createReadAccess(client, ctx, sensitivity);
+      await expect(read.calendars()).resolves.toBe(calendars);
+      await expect(
+        read.appointments([8, 9], '2026-10-25', '2026-10-31'),
+      ).resolves.toBe(appointments);
+      await expect(read.appointment(8, 5)).resolves.toBe(appointment);
+      await expect(read.resources()).resolves.toBe(resources);
+      await expect(
+        read.bookings([8], '2026-10-25', '2026-10-31'),
+      ).resolves.toBe(bookings);
+      expect(seen).toEqual([ctx, ctx, ctx, ctx, ctx]);
+      expect(ids).toEqual([
+        ['calendars'],
+        ['appointments', [8, 9], '2026-10-25', '2026-10-31'],
+        ['appointment', 8, 5],
+        ['resources'],
+        ['bookings', [8], '2026-10-25', '2026-10-31'],
       ]);
     },
   );

@@ -155,10 +155,14 @@
       "description": "Plugins as a third party would write them: the example plugin in testkit, and the plugin of the free core with its tools in the tools package. Of the packages of the workspace they may import only the plugin API. This rule leaves npm packages such as zod, which every plugin brings itself, to the other rules.",
       "paths": [
         "packages/testkit/src/plugins/",
+        "packages/tools/src/appointments/",
         "packages/tools/src/base/",
+        "packages/tools/src/bookings/",
+        "packages/tools/src/calendars/",
         "packages/tools/src/events/",
         "packages/tools/src/groups/",
         "packages/tools/src/persons/",
+        "packages/tools/src/resources/",
         "packages/tools/src/services/",
         "packages/tools/src/wiki/",
         "packages/tools/src/core-plugin.ts"

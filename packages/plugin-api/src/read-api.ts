@@ -248,8 +248,10 @@ export const maxGroupMembersPage = 1000;
 
 /**
  * The longest name of a person, of a group, of an event, of a calendar, of
- * a service, of a group of services and of an agenda, and the longest
- * title of an item of an agenda, of a song and of an arrangement.
+ * a service, of a group of services, of an agenda, of a resource, of a type
+ * of resources and of the place of an appointment, and the longest title
+ * of an item of an agenda, of a song, of an arrangement, of an appointment
+ * and of a booking, and the longest subtitle of an appointment.
  */
 export const maxNameLength = 255;
 
@@ -385,9 +387,10 @@ export const dateTimePattern: RegExp =
   /^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$/;
 
 /**
- * The most days a list of events covers, both ends included (ADR 0064).
- * A list of events takes a span of time instead of pages, because `page`
- * showed no effect there (F38).
+ * The most days a list of events, appointments or bookings covers, both
+ * ends included (ADR 0064). Such a list takes a span of time instead of
+ * pages, because `page` showed no effect for events (F38) and appointments
+ * and bookings take none (F35).
  */
 export const maxEventDays = 31;
 
@@ -463,10 +466,11 @@ const dayOf = (value: unknown): number | undefined => {
 };
 
 /**
- * Whether two days span a list of events: both days of the calendar that
- * exist, as `JJJJ-MM-TT` (see {@link calendarDatePattern}), the last not
- * before the first, and at most {@link maxEventDays} days, both ends
- * included. Only such a span ever reaches ChurchTools.
+ * Whether two days span a list of events, appointments or bookings: both
+ * days of the calendar that exist, as `JJJJ-MM-TT` (see
+ * {@link calendarDatePattern}), the last not before the first, and at most
+ * {@link maxEventDays} days, both ends included. Only such a span ever
+ * reaches ChurchTools.
  *
  * @param from - The first day.
  * @param to - The last day.
@@ -646,6 +650,235 @@ export interface AssignmentList {
   /** At most {@link assignmentsPageLimit}, in the order of ChurchTools. */
   readonly assignments: readonly Assignment[];
   /** Whether the event has assignments on a later page. */
+  readonly more: boolean;
+}
+
+/**
+ * The most calendars the core reads. ChurchTools lists every calendar the
+ * account may see in one answer; a longer list is no answer the core knows.
+ */
+export const maxCalendars = 1000;
+
+/**
+ * The most resources and the most types of resources the core reads.
+ * ChurchTools lists each in one answer; a longer list is no answer the
+ * core knows.
+ */
+export const maxResources = 1000;
+
+/**
+ * The most calendars or resources one list of appointments or bookings
+ * names (ADR 0064). ChurchTools gives appointments and bookings only for
+ * the IDs a request names (`docs/research/churchtools-api.md`, F35).
+ */
+export const maxListIds = 10;
+
+/**
+ * The most appointments a list passes on, the earliest first. ChurchTools
+ * takes no `limit` for them (F35), so the core reads the whole answer and
+ * tells whether more came (ADR 0064).
+ */
+export const maxAppointments = 50;
+
+/** The most bookings a list passes on, see {@link maxAppointments}. */
+export const maxBookings = 50;
+
+/**
+ * The longest description of an appointment the core reads, in UTF-16 code
+ * units. Description and link together keep one appointment within one
+ * result of a tool, even when every character grows to six bytes there.
+ */
+export const maxAppointmentDescriptionLength = 7_000;
+
+/** The longest link of an appointment the core reads, see the description. */
+export const maxAppointmentLinkLength = 1_000;
+
+/**
+ * The most dates of one appointment the core reads, one for each time a
+ * series comes. ChurchTools gives them with the appointment; a longer list
+ * is no answer the core knows.
+ */
+export const maxAppointmentDates = 500;
+
+/**
+ * The form of the start and the end of an appointment and of a booking: a
+ * date with time as {@link dateTimePattern}, or a day alone as
+ * {@link calendarDatePattern}. The probe saw only the first form (F37);
+ * whether an entry for whole days comes with a day alone is not shown, so
+ * the core takes both and passes the value on as it came.
+ */
+export const dateOrDateTimePattern: RegExp =
+  /^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z)?$/;
+
+/**
+ * Whether a value names the calendars or resources of a list of
+ * appointments or bookings: 1 to {@link maxListIds} whole numbers from 1,
+ * each once. Only such a list ever reaches ChurchTools.
+ *
+ * @param value - The value to check.
+ * @returns Whether it fits.
+ * @example
+ * ```ts
+ * isListIds([8, 12]); // true
+ * isListIds([8, 8]); // false, twice the same
+ * ```
+ */
+export function isListIds(value: unknown): value is readonly number[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > maxListIds) {
+    return false;
+  }
+  // Read by index, because every and Set skip and fold the holes of a
+  // sparse array such as [, 8], which would then pass as undefined.
+  const ids: unknown[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    ids.push((value as readonly unknown[])[index]);
+  }
+  return (
+    ids.every(
+      (id) => typeof id === 'number' && Number.isSafeInteger(id) && id >= 1,
+    ) && new Set(ids).size === ids.length
+  );
+}
+
+/** A calendar the account may see. */
+export interface Calendar {
+  /** The numeric ID of the calendar. */
+  readonly id: number;
+  /** Name of the calendar, at most {@link maxNameLength} characters. */
+  readonly name: string;
+  /** Whether ChurchTools marks the calendar as public. */
+  readonly isPublic: boolean;
+  /** Whether ChurchTools marks the calendar as private. */
+  readonly isPrivate: boolean;
+}
+
+/**
+ * An appointment in a list: one entry for each time it comes in the span,
+ * so the entries of a series share the ID of the series (F37).
+ */
+export interface AppointmentEntry {
+  /** The numeric ID of the appointment, the same for every date of a series. */
+  readonly id: number;
+  /** The numeric ID of its calendar. */
+  readonly calendarId: number;
+  /** Title of the appointment, at most {@link maxNameLength} characters. */
+  readonly title: string;
+  /** Subtitle, at most {@link maxNameLength} characters, or `null`. */
+  readonly subtitle: string | null;
+  /** Whether the appointment lasts whole days. */
+  readonly allDay: boolean;
+  /**
+   * The name of its place, at most {@link maxNameLength} characters, or
+   * `null` without a place. Street, postal code, town and coordinates are
+   * never read (ADR 0064).
+   */
+  readonly locationName: string | null;
+  /** The start of this date, see {@link dateOrDateTimePattern}. */
+  readonly startDate: string;
+  /** The end of this date, see {@link dateOrDateTimePattern}. */
+  readonly endDate: string;
+}
+
+/** The appointments of a span of days in the calendars asked for. */
+export interface AppointmentList {
+  /**
+   * At most {@link maxAppointments}, sorted by their start, then by ID, so
+   * that the same answer always gives the same list.
+   */
+  readonly appointments: readonly AppointmentEntry[];
+  /** Whether ChurchTools gave more appointments than the list holds. */
+  readonly more: boolean;
+}
+
+/** One date of an appointment. */
+export interface AppointmentDate {
+  /** The start, see {@link dateOrDateTimePattern}. */
+  readonly startDate: string;
+  /** The end, see {@link dateOrDateTimePattern}. */
+  readonly endDate: string;
+}
+
+/** One appointment, read by ID, with its description, link and dates. */
+export interface AppointmentDetails extends Omit<
+  AppointmentEntry,
+  'startDate' | 'endDate'
+> {
+  /**
+   * The description, text people wrote, at most
+   * {@link maxAppointmentDescriptionLength} code units, or `null`.
+   */
+  readonly description: string | null;
+  /**
+   * The link, text people wrote, at most {@link maxAppointmentLinkLength}
+   * code units, or `null`.
+   */
+  readonly link: string | null;
+  /**
+   * The dates ChurchTools gives with the appointment, at most
+   * {@link maxAppointmentDates}, sorted by their start, then by their end.
+   * Whether ChurchTools gives every date of a series is not shown.
+   */
+  readonly dates: readonly AppointmentDate[];
+}
+
+/** A resource, such as a room, that the account may see. */
+export interface Resource {
+  /** The numeric ID of the resource. */
+  readonly id: number;
+  /** Name of the resource, at most {@link maxNameLength} characters. */
+  readonly name: string;
+  /** The numeric ID of its type. */
+  readonly resourceTypeId: number;
+}
+
+/** A type of resources, such as rooms. */
+export interface ResourceType {
+  /** The numeric ID of the type. */
+  readonly id: number;
+  /** Name of the type, at most {@link maxNameLength} characters. */
+  readonly name: string;
+}
+
+/** The resources the account may see and the types of resources. */
+export interface ResourceList {
+  /** At most {@link maxResources}, sorted by ID. */
+  readonly resources: readonly Resource[];
+  /** At most {@link maxResources}, sorted by ID. */
+  readonly resourceTypes: readonly ResourceType[];
+}
+
+/** A booking of a resource in a list. */
+export interface BookingEntry {
+  /** The numeric ID of the booking. */
+  readonly id: number;
+  /** Title of the booking, at most {@link maxNameLength} characters. */
+  readonly title: string;
+  /** The numeric ID of the resource booked. */
+  readonly resourceId: number;
+  /**
+   * The state of the booking, as the number ChurchTools gives. What the
+   * numbers mean is not shown.
+   */
+  readonly statusId: number;
+  /**
+   * The numeric ID of the appointment the booking belongs to, or `null`
+   * when ChurchTools gives none or no whole number from 1.
+   */
+  readonly appointmentId: number | null;
+  /** The start, see {@link dateOrDateTimePattern}. */
+  readonly startDate: string;
+  /** The end, see {@link dateOrDateTimePattern}. */
+  readonly endDate: string;
+}
+
+/** The bookings of a span of days of the resources asked for. */
+export interface BookingList {
+  /**
+   * At most {@link maxBookings}, sorted by their start, then by ID, so that
+   * the same answer always gives the same list.
+   */
+  readonly bookings: readonly BookingEntry[];
+  /** Whether ChurchTools gave more bookings than the list holds. */
   readonly more: boolean;
 }
 
@@ -853,4 +1086,75 @@ export interface ReadApi {
    *   {@link maxEventAssignments}.
    */
   eventAssignments(eventId: number, page: number): Promise<AssignmentList>;
+  /**
+   * Lists the calendars the account may see. An empty list can also mean
+   * that the account lacks the right to see a calendar: ChurchTools then
+   * answers with an empty list, not with an error.
+   *
+   * @returns All of them, sorted by ID, at most {@link maxCalendars}.
+   * @throws {EccliumError} `upstream` for more than {@link maxCalendars};
+   *   every error of the request.
+   */
+  calendars(): Promise<readonly Calendar[]>;
+  /**
+   * Lists the appointments of a span of days in the calendars named, one
+   * entry for each date, also of a series.
+   *
+   * @param calendarIds - The calendars, see {@link isListIds}.
+   * @param from - The first day, see {@link isEventWindow}.
+   * @param to - The last day, see {@link isEventWindow}.
+   * @returns At most {@link maxAppointments} appointments.
+   * @throws {EccliumError} `validation` for IDs or a span that do not fit,
+   *   before any request; `permission` when the account may not see a
+   *   calendar named; `upstream` for more entries than the core reads from
+   *   one answer; every error of the request.
+   */
+  appointments(
+    calendarIds: readonly number[],
+    from: string,
+    to: string,
+  ): Promise<AppointmentList>;
+  /**
+   * Reads one appointment by the IDs of its calendar and of itself, with
+   * description, link and dates.
+   *
+   * @param calendarId - The ID of the calendar, a whole number from 1.
+   * @param appointmentId - The ID of the appointment, a whole number from 1.
+   * @returns The appointment.
+   * @throws {EccliumError} `validation` for an ID that is no whole number
+   *   from 1, before any request; `permission` when the account may not
+   *   see the calendar; `not_found` for an appointment that does not exist;
+   *   every error of the request.
+   */
+  appointment(
+    calendarId: number,
+    appointmentId: number,
+  ): Promise<AppointmentDetails>;
+  /**
+   * Lists the resources the account may see and the types of resources.
+   * ChurchTools gives the types to every account; an empty list of
+   * resources can also mean that the account lacks the right to see them.
+   *
+   * @returns All of them.
+   * @throws {EccliumError} `upstream` for more than {@link maxResources};
+   *   every error of the request.
+   */
+  resources(): Promise<ResourceList>;
+  /**
+   * Lists the bookings of a span of days of the resources named.
+   *
+   * @param resourceIds - The resources, see {@link isListIds}.
+   * @param from - The first day, see {@link isEventWindow}.
+   * @param to - The last day, see {@link isEventWindow}.
+   * @returns At most {@link maxBookings} bookings.
+   * @throws {EccliumError} `validation` for IDs or a span that do not fit,
+   *   before any request; `permission` when the account may not see a
+   *   resource named; `upstream` for more entries than the core reads from
+   *   one answer; every error of the request.
+   */
+  bookings(
+    resourceIds: readonly number[],
+    from: string,
+    to: string,
+  ): Promise<BookingList>;
 }

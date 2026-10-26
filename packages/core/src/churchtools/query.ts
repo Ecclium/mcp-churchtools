@@ -62,15 +62,18 @@ export function appendIds(
   name: string,
   ids: readonly number[],
 ): void {
+  // Array.from reads every index, also the holes of a sparse array, which
+  // every would skip and the loop would append as undefined.
+  const given = Array.isArray(ids) ? Array.from(ids as unknown[]) : undefined;
   if (
-    !Array.isArray(ids) ||
-    ids.length < 1 ||
-    ids.length > maxIds ||
-    !ids.every(isPositiveInteger)
+    given === undefined ||
+    given.length < 1 ||
+    given.length > maxIds ||
+    !given.every(isPositiveInteger)
   ) {
     throw new TypeError('A list of IDs needs 1 to 100 positive whole numbers.');
   }
-  for (const id of ids) params.append(name, String(id));
+  for (const id of given) params.append(name, String(id));
 }
 
 // A day of the calendar in the form ChurchTools takes for a span.
