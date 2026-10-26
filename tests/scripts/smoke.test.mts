@@ -38,6 +38,21 @@ const host = 'demo.example';
 const token = `t${randomBytes(20).toString('hex')}`;
 const canary = `c${randomBytes(6).toString('hex')}`;
 const query = `Suchprobe${randomBytes(3).toString('hex')}`;
+const songQuery = `Liedprobe${randomBytes(3).toString('hex')}`;
+const pageGuid = '00000000-0000-4000-8000-000000000001';
+
+// The calls after the bookings: the songs, the first song, the wiki, the
+// first page it found, and the global search for each type.
+const songsAndSearches = [
+  'ct_songs_search',
+  'ct_songs_get',
+  'ct_wiki_search',
+  'ct_wiki_page_get',
+  'ct_search',
+  'ct_search',
+  'ct_search',
+  'ct_search',
+] as const;
 const missTerm = 'zqmissingterm';
 const timeout = 120_000;
 
@@ -173,7 +188,15 @@ const search = {
 /** Nothing from the instance, the token or the term reaches the output. */
 const expectClean = (result: Run): void => {
   const output = result.stdout + result.stderr;
-  for (const value of [canary, token, query, host, tokenFile, folder]) {
+  for (const value of [
+    canary,
+    token,
+    query,
+    songQuery,
+    host,
+    tokenFile,
+    folder,
+  ]) {
     expect(output).not.toContain(value);
   }
 };
@@ -276,7 +299,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
         'ECCLIUM_TOOLSETS',
       ]);
       expect(record.variables['ECCLIUM_TOOLSETS']).toBe(
-        'persons,events,calendars',
+        'persons,events,calendars,wiki,songs',
       );
       expect(record.calls).toEqual([
         'ct_whoami',
@@ -298,10 +321,12 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
         'ct_appointments_get',
         'ct_resources_list',
         'ct_bookings_list',
+        ...songsAndSearches,
       ]);
     }
     // The list of appointments of the stand-in holds one of whole days,
-    // as a day alone.
+    // as a day alone. The hits of the wiki carry a GUID, and no search
+    // gave a hit of another type.
     for (const era of report(result)['aeren'] as {
       aufrufe: { tool: string; ganztaegig?: string }[];
     }[]) {
@@ -309,6 +334,20 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
         era.aufrufe.find((call) => call.tool === 'ct_appointments_list')
           ?.ganztaegig,
       ).toBe('nur Tag');
+    }
+    for (const era of report(result)['aeren'] as {
+      artfremd: string;
+      aufrufe: { tool: string; guid?: string }[];
+    }[]) {
+      expect(era.artfremd).toBe('nein');
+      expect(
+        era.aufrufe
+          .filter((call) => call.guid !== undefined)
+          .map((call) => [call.tool, call.guid]),
+      ).toEqual([
+        ['ct_wiki_search', 'ja'],
+        ['ct_search wiki_page', 'ja'],
+      ]);
     }
     expect(stateDirsLeft()).toEqual([]);
     expectClean(result);
@@ -395,6 +434,16 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
       'a term with a control character',
       { ...search, ECCLIUM_SMOKE_QUERY: 'a\u0007b' },
       'smokeSuchbegriffUngueltig',
+    ],
+    [
+      'a term for songs without the switch',
+      { ECCLIUM_SMOKE_SONG_QUERY: songQuery },
+      'smokeLiedbegriffOhneSchalter',
+    ],
+    [
+      'a term for songs with a space at the end',
+      { ...search, ECCLIUM_SMOKE_SONG_QUERY: `${songQuery} ` },
+      'smokeLiedbegriffUngueltig',
     ],
     [
       'the token in a variable',
@@ -497,6 +546,14 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     ['bookings-bare-title', 'buchungen'],
     ['resources-bare-type', 'ressourcen'],
     ['bookings-bad-status', 'buchungen'],
+    ['songs-bare-name', 'lieder'],
+    ['song-extra', 'lied'],
+    ['wiki-bare-title', 'wikisuche'],
+    ['wiki-bad-guid', 'wikisuche'],
+    ['page-bare-text', 'seite'],
+    ['search-bare-title', 'globale_suche'],
+    ['search-other-list', 'globale_suche'],
+    ['search-foreign', 'globale_suche'],
     ['exit-1', 'ende'],
   ] as const)(
     'fails when the server breaks it: %s',
@@ -509,6 +566,17 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
       expectClean(result);
     },
   );
+
+  // Which type ChurchTools names in its hits is shown only for persons: the
+  // result says when the log names a hit of another type (ADR 0064).
+  it('says when a search gave a hit of another type than the one asked for', async () => {
+    const result = await run({ env: search, scenario: 'search-foreign' });
+    expect(result.code).toBe(smokeExitCodes.failed);
+    for (const era of report(result)['aeren'] as { artfremd: string }[]) {
+      expect(era.artfremd).toBe('ja');
+    }
+    expectClean(result);
+  });
 
   it.each(['masked-letter', 'masked-star', 'masked-literal', 'lone-surrogate'])(
     'passes with every form the server gives an account: %s',
@@ -561,6 +629,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
         'ct_appointments_get',
         'ct_resources_list',
         'ct_bookings_list',
+        ...songsAndSearches,
       ]);
     }
     const noAgenda = await run({ env: search, scenario: 'event-no-agenda' });
@@ -574,7 +643,12 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     [
       'no-calendars',
       'kein_kalender_gefunden',
-      ['ct_calendars_list', 'ct_resources_list', 'ct_bookings_list'],
+      [
+        'ct_calendars_list',
+        'ct_resources_list',
+        'ct_bookings_list',
+        ...songsAndSearches,
+      ],
     ],
     [
       'no-appointments',
@@ -586,6 +660,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
         'ct_appointments_list',
         'ct_resources_list',
         'ct_bookings_list',
+        ...songsAndSearches,
       ],
     ],
     [
@@ -596,6 +671,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
         'ct_appointments_list',
         'ct_appointments_get',
         'ct_resources_list',
+        ...songsAndSearches,
       ],
     ],
     [
@@ -609,6 +685,55 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
         'ct_bookings_list',
         'ct_bookings_list',
         'ct_bookings_list',
+        ...songsAndSearches,
+      ],
+    ],
+    [
+      'no-songs',
+      'kein_lied_gefunden',
+      [
+        'ct_calendars_list',
+        'ct_appointments_list',
+        'ct_appointments_get',
+        'ct_resources_list',
+        'ct_bookings_list',
+        ...songsAndSearches.filter((call) => call !== 'ct_songs_get'),
+      ],
+    ],
+    [
+      'no-pages',
+      'keine_seite_gefunden',
+      [
+        'ct_calendars_list',
+        'ct_appointments_list',
+        'ct_appointments_get',
+        'ct_resources_list',
+        'ct_bookings_list',
+        ...songsAndSearches.filter((call) => call !== 'ct_wiki_page_get'),
+      ],
+    ],
+    [
+      'page-no-guid',
+      'seite_ohne_guid',
+      [
+        'ct_calendars_list',
+        'ct_appointments_list',
+        'ct_appointments_get',
+        'ct_resources_list',
+        'ct_bookings_list',
+        ...songsAndSearches.filter((call) => call !== 'ct_wiki_page_get'),
+      ],
+    ],
+    [
+      'search-empty',
+      'globale_suche_ohne_treffer',
+      [
+        'ct_calendars_list',
+        'ct_appointments_list',
+        'ct_appointments_get',
+        'ct_resources_list',
+        'ct_bookings_list',
+        ...songsAndSearches,
       ],
     ],
   ] as const)(
@@ -639,6 +764,8 @@ describe.skipIf(process.getuid?.() === 0)(
     let close: () => Promise<void> = () => Promise.resolve();
     let server: ServerStart | undefined;
     const requests: string[] = [];
+    // The term each search of songs got, by its operation.
+    const songTerms: string[] = [];
 
     const json = (response: ServerResponse, body: unknown): void => {
       response.writeHead(200, { 'content-type': 'application/json' });
@@ -956,6 +1083,99 @@ describe.skipIf(process.getuid?.() === 0)(
           ],
           meta: { count: 1 },
         });
+      } else if (
+        url.pathname === '/api/songs' ||
+        url.pathname === '/api/songs/2'
+      ) {
+        // A song with its whole category, the files and the note of its
+        // arrangement, which reach no output.
+        const song = {
+          id: 2,
+          name: `${canary}Lied`,
+          category: { id: 4, name: `${canary}Kategorie` },
+          author: null,
+          copyright: `${canary}Verlag`,
+          ccli: null,
+          arrangements: [
+            {
+              id: 3,
+              name: `${canary}Standard`,
+              key: 'G',
+              isDefault: true,
+              files: [{ name: `${canary}Datei` }],
+            },
+          ],
+          note: `${canary}Notiz`,
+        };
+        if (url.pathname === '/api/songs') {
+          songTerms.push(`songs ${term}`);
+          json(response, {
+            data: [song],
+            meta: {
+              count: 1,
+              pagination: { total: 1, limit: 10, current: 1, lastPage: 1 },
+            },
+          });
+        } else {
+          json(response, { data: song });
+        }
+      } else if (url.pathname === '/api/wiki/search') {
+        json(response, {
+          data: [
+            {
+              title: `${canary}Seite`,
+              domainType: 'wiki_page',
+              domainIdentifier: pageGuid,
+              frontendUrl: `${canary}Verweis`,
+              domainAttributes: { wikiCategoryId: 12 },
+              preview: `${canary}Vorschau`,
+            },
+          ],
+          meta: { count: 1 },
+        });
+      } else if (url.pathname === `/api/wiki/categories/12/pages/${pageGuid}`) {
+        json(response, {
+          data: {
+            title: `${canary}Seite`,
+            isMarkdown: true,
+            version: 2,
+            text: `${canary}Text`,
+          },
+        });
+      } else if (url.pathname === '/api/search') {
+        // One hit of the type asked for, with the names of a person under
+        // domainAttributes, which reach no output.
+        const type = url.searchParams.get('domain_types[]') ?? '';
+        if (type === 'song') songTerms.push(`search ${term}`);
+        const hits: Readonly<Record<string, Record<string, unknown>>> = {
+          person: {
+            domainIdentifier: '11',
+            title: `${canary}Erika ${canary}Muster`,
+            domainAttributes: {
+              firstName: `${canary}Erika`,
+              lastName: `${canary}Muster`,
+            },
+          },
+          group: { domainIdentifier: '21', title: `${canary}Gruppe` },
+          song: {
+            domainIdentifier: '2',
+            title: `${canary}Lied`,
+            domainAttributes: [],
+          },
+          wiki_page: {
+            domainIdentifier: pageGuid,
+            title: `${canary}Seite`,
+            domainAttributes: { wikiCategoryId: 12 },
+          },
+        };
+        const hit = hits[type];
+        json(response, {
+          data:
+            hit === undefined
+              ? []
+              : [{ ...hit, domainType: type, apiUrl: `${canary}Api` }],
+          meta: { count: 1 },
+        });
       } else if (url.pathname === '/api/persons') {
         json(response, {
           data: term.startsWith('zq')
@@ -1043,6 +1263,7 @@ describe.skipIf(process.getuid?.() === 0)(
 
     it('passes with the switch, with the search tools in both eras', async () => {
       requests.length = 0;
+      songTerms.length = 0;
       const result = await run({ origin, server, env: search });
       expect(result.stderr).toBe('');
       expect(result.code).toBe(smokeExitCodes.ok);
@@ -1056,9 +1277,35 @@ describe.skipIf(process.getuid?.() === 0)(
       // Per era: two for ct_whoami, one for each search with a term, each
       // read by ID and each list of events, calendars, appointments and
       // bookings, none for the term of spaces, and two each for the
-      // assignments, the services and the resources.
-      expect(requests).toHaveLength(44);
+      // assignments, the services and the resources; then one each for the
+      // songs, the first song, the wiki, its first page and the four types
+      // of the global search.
+      expect(requests).toHaveLength(60);
+      // Without a term of its own the songs take the term of the persons.
+      expect(songTerms).toEqual(
+        Array.from({ length: 2 }, () => [
+          `songs ${query}`,
+          `search ${query}`,
+        ]).flat(),
+      );
       expect(stateDirsLeft()).toEqual([]);
+      expectClean(result);
+    });
+
+    it('gives the searches of songs their own term when there is one', async () => {
+      songTerms.length = 0;
+      const result = await run({
+        origin,
+        server,
+        env: { ...search, ECCLIUM_SMOKE_SONG_QUERY: songQuery },
+      });
+      expect(result.code).toBe(smokeExitCodes.ok);
+      expect(songTerms).toEqual(
+        Array.from({ length: 2 }, () => [
+          `songs ${songQuery}`,
+          `search ${songQuery}`,
+        ]).flat(),
+      );
       expectClean(result);
     });
   },

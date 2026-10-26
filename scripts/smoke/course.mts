@@ -12,8 +12,9 @@
  * with the first event found the event, its agenda and its assignments,
  * and the services, then the calendars, the appointments of the first
  * calendar in the same spans and the first appointment, the resources and
- * the bookings of the first resource, closes stdin and checks how the
- * process ended.
+ * the bookings of the first resource, then the songs and the first song,
+ * the wiki and the first page it found, and the global search once for
+ * each type, closes stdin and checks how the process ended.
  *
  * Every check yields a fixed word. Values from the answers never go into
  * the result: they go onto the block list of the guard and into the list
@@ -39,6 +40,8 @@ export interface Call {
 export interface SearchPlan {
   /** The term from the environment. */
   readonly query: string;
+  /** The term for the songs, if the environment gives one. */
+  readonly songQuery: string | undefined;
   /** A made-up term that matches nothing. */
   readonly missTerm: string;
   /** The spans of days to look for an event in, in order. */
@@ -150,6 +153,16 @@ export const courseWords = [
   'ct_appointments_get',
   'ct_resources_list',
   'ct_bookings_list',
+  'ct_songs_search',
+  'ct_songs_get',
+  'ct_wiki_search',
+  'ct_wiki_page_get',
+  'ct_search person',
+  'ct_search group',
+  'ct_search song',
+  'ct_search wiki_page',
+  'guid',
+  'artfremd',
   'verborgen',
   'ganztaegig',
   'nur Tag',
@@ -197,6 +210,15 @@ export const courseCodes = [
   'kein_termin_gefunden',
   'keine_ressource_gefunden',
   'keine_buchung_gefunden',
+  'lieder',
+  'lied',
+  'wikisuche',
+  'seite',
+  'globale_suche',
+  'kein_lied_gefunden',
+  'keine_seite_gefunden',
+  'seite_ohne_guid',
+  'globale_suche_ohne_treffer',
 ] as const;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -227,6 +249,9 @@ const day = /^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])$/;
 const dateTime =
   /^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$/;
 const itemType = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
+// The GUID of a page of the wiki (ADR 0057).
+const pageGuid =
+  /^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$/;
 // The start and end of an appointment or a booking: a date with time, or
 // a day alone, which an entry of whole days may have (ADR 0064).
 const dateOrDay =
@@ -370,6 +395,8 @@ export interface Secrets {
   readonly token: string;
   /** The search term: in no line of log or audit. */
   readonly query: string | undefined;
+  /** The term for the songs: in no line of log or audit. */
+  readonly songQuery: string | undefined;
 }
 
 /**
@@ -442,7 +469,13 @@ export async function runEra(
             'ct_search',
             'ct_services_get_assignments',
             'ct_services_list',
+            'ct_songs_get',
+            'ct_songs_search',
             'ct_whoami',
+            'ct_wiki_categories_list',
+            'ct_wiki_page_get',
+            'ct_wiki_pages_list',
+            'ct_wiki_search',
           ];
     const listed = await session.request('tools/list', params({}));
     const tools =
@@ -1577,6 +1610,305 @@ export async function runEra(
           ganztaegig: whole,
         });
       }
+
+      // A song as both reads of songs give it: ID, name, category, author,
+      // copyright, CCLI number and arrangements, every text enveloped or
+      // null (ADR 0064). Every text is seen before the checks combine.
+      const songFits = (song: unknown, arrangementsMax: number): boolean => {
+        if (!isRecord(song)) return false;
+        const arrangements = song['arrangements'];
+        const texts = allOf([
+          seeEnveloped(song['name']),
+          seeEnveloped(song['category']),
+          seeOptional(song['author']),
+          seeOptional(song['copyright']),
+          seeOptional(song['ccli']),
+          ...(Array.isArray(arrangements) ? arrangements : []).map(
+            (arrangement: unknown) =>
+              isRecord(arrangement) &&
+              allOf([
+                seeEnveloped(arrangement['name']),
+                seeOptional(arrangement['key']),
+              ]),
+          ),
+        ]);
+        return (
+          texts &&
+          sameKeys(song, [
+            'arrangements',
+            'author',
+            'category',
+            'ccli',
+            'copyright',
+            'id',
+            'moreArrangements',
+            'name',
+          ]) &&
+          isId(song['id']) &&
+          typeof song['moreArrangements'] === 'boolean' &&
+          Array.isArray(arrangements) &&
+          arrangements.length <= arrangementsMax &&
+          arrangements.every(
+            (arrangement: unknown) =>
+              isRecord(arrangement) &&
+              sameKeys(arrangement, ['id', 'isDefault', 'key', 'name']) &&
+              isId(arrangement['id']) &&
+              typeof arrangement['isDefault'] === 'boolean',
+          )
+        );
+      };
+
+      // ct_songs_search, page 1, with the term of the songs or the general
+      // one: up to 10 songs with up to 3 arrangements each.
+      readCalls += 1;
+      const songTerm = search.songQuery ?? search.query;
+      const songsRead = await callTool(
+        'ct_songs_search',
+        { query: songTerm },
+        'ok',
+      );
+      const songsData =
+        songsRead?.isError === false ? songsRead.data : undefined;
+      const songList = songsData?.['songs'];
+      const songChecks = Array.isArray(songList)
+        ? songList.map((song: unknown) => songFits(song, 3))
+        : [];
+      const songsOk =
+        songsData !== undefined &&
+        sameKeys(songsData, ['more', 'notice', 'page', 'songs']) &&
+        songsData['page'] === 1 &&
+        Array.isArray(songList) &&
+        songList.length <= 10 &&
+        songChecks.every(Boolean) &&
+        noticeFits(songsData) &&
+        (songList.length > 0 || typeof songsData['notice'] === 'string');
+      guard.blockAll(songsRead?.data);
+      if (!songsOk) failures.add('lieder');
+      const firstSong: unknown =
+        songsOk && Array.isArray(songList) ? songList[0] : undefined;
+      const songId = isRecord(firstSong) ? firstSong['id'] : undefined;
+      if (songsOk && songId === undefined) findings.add('kein_lied_gefunden');
+      results.push({
+        tool: 'ct_songs_search',
+        ergebnis: songsOk ? 'ok' : 'gescheitert',
+        treffer: countClass(Array.isArray(songList) ? songList.length : 0),
+        mehr: songsData?.['more'] === true ? 'ja' : 'nein',
+      });
+
+      if (isId(songId)) {
+        // ct_songs_get with the first song: the same fields, up to 20
+        // arrangements.
+        readCalls += 1;
+        const songRead = await callTool('ct_songs_get', { songId }, 'ok');
+        const songData =
+          songRead?.isError === false ? songRead.data : undefined;
+        const songOk =
+          songData !== undefined &&
+          songFits(songData, 20) &&
+          songData['id'] === songId;
+        guard.blockAll(songRead?.data);
+        if (!songOk) failures.add('lied');
+        results.push({
+          tool: 'ct_songs_get',
+          ergebnis: songOk ? 'ok' : 'gescheitert',
+        });
+      }
+
+      // ct_wiki_search with the term: up to 20 hits with GUID or null,
+      // category, title and preview, the texts enveloped or null.
+      readCalls += 1;
+      const wikiRead = await callTool(
+        'ct_wiki_search',
+        { query: search.query },
+        'ok',
+      );
+      const wikiData = wikiRead?.isError === false ? wikiRead.data : undefined;
+      const wikiHits = wikiData?.['hits'];
+      const hitChecks = Array.isArray(wikiHits)
+        ? wikiHits.map(
+            (entry: unknown) =>
+              isRecord(entry) &&
+              allOf([
+                seeEnveloped(entry['title']),
+                seeOptional(entry['preview']),
+              ]) &&
+              sameKeys(entry, ['categoryId', 'guid', 'preview', 'title']) &&
+              isIdOrNull(entry['categoryId']) &&
+              (entry['guid'] === null ||
+                (typeof entry['guid'] === 'string' &&
+                  pageGuid.test(entry['guid']))),
+          )
+        : [];
+      const wikiOk =
+        wikiData !== undefined &&
+        sameKeys(wikiData, ['hits', 'more', 'notice']) &&
+        Array.isArray(wikiHits) &&
+        wikiHits.length <= 20 &&
+        hitChecks.every(Boolean) &&
+        noticeFits(wikiData) &&
+        (wikiHits.length > 0 || typeof wikiData['notice'] === 'string');
+      guard.blockAll(wikiRead?.data);
+      if (!wikiOk) failures.add('wikisuche');
+      const hitCount = Array.isArray(wikiHits) ? wikiHits.length : 0;
+      // Whether ChurchTools named the pages it found with a GUID, which is
+      // not shown before this run (ADR 0064).
+      const withGuid = (hits: unknown): Json =>
+        !Array.isArray(hits) || hits.length === 0
+          ? 'keine'
+          : hits.every(
+                (entry: unknown) =>
+                  isRecord(entry) && typeof entry['guid'] === 'string',
+              )
+            ? 'ja'
+            : 'nein';
+      const wikiGuid = wikiOk ? withGuid(wikiHits) : 'keine';
+      if (wikiOk && hitCount === 0) findings.add('keine_seite_gefunden');
+      if (wikiGuid === 'nein') findings.add('seite_ohne_guid');
+      results.push({
+        tool: 'ct_wiki_search',
+        ergebnis: wikiOk ? 'ok' : 'gescheitert',
+        treffer: countClass(hitCount),
+        mehr: wikiData?.['more'] === true ? 'ja' : 'nein',
+        guid: wikiGuid,
+      });
+
+      const pageHit: unknown =
+        wikiOk && Array.isArray(wikiHits)
+          ? wikiHits.find(
+              (entry: unknown) =>
+                isRecord(entry) &&
+                typeof entry['guid'] === 'string' &&
+                isId(entry['categoryId']),
+            )
+          : undefined;
+      if (isRecord(pageHit)) {
+        // ct_wiki_page_get with the first hit that has GUID and category:
+        // the GUID of the search reads the page.
+        readCalls += 1;
+        const pageRead = await callTool(
+          'ct_wiki_page_get',
+          { categoryId: pageHit['categoryId'], guid: pageHit['guid'] },
+          'ok',
+        );
+        const pageData =
+          pageRead?.isError === false ? pageRead.data : undefined;
+        const pageOk =
+          pageData !== undefined &&
+          allOf([
+            seeEnveloped(pageData['title']),
+            seeEnveloped(pageData['text']),
+          ]) &&
+          sameKeys(pageData, [
+            'categoryId',
+            'guid',
+            'isMarkdown',
+            'part',
+            'parts',
+            'text',
+            'title',
+            'version',
+          ]) &&
+          pageData['categoryId'] === pageHit['categoryId'] &&
+          pageData['guid'] === pageHit['guid'] &&
+          typeof pageData['isMarkdown'] === 'boolean' &&
+          isId(pageData['version']) &&
+          pageData['part'] === 1 &&
+          isId(pageData['parts']);
+        guard.blockAll(pageRead?.data);
+        if (!pageOk) failures.add('seite');
+        results.push({
+          tool: 'ct_wiki_page_get',
+          ergebnis: pageOk ? 'ok' : 'gescheitert',
+        });
+      }
+
+      // ct_search once for each type: only the list of that type holds
+      // hits, a person with ID and a name outside the envelope, every other
+      // title enveloped, a page with a GUID or null (ADR 0064).
+      const searchLists = {
+        person: 'persons',
+        group: 'groups',
+        song: 'songs',
+        wiki_page: 'wikiPages',
+      } as const;
+      const searchTypes = ['person', 'group', 'song', 'wiki_page'] as const;
+      let searchEmpty = false;
+      for (const type of searchTypes) {
+        readCalls += 1;
+        const found = await callTool(
+          'ct_search',
+          { type, query: type === 'song' ? songTerm : search.query },
+          'ok',
+        );
+        const data = found?.isError === false ? found.data : undefined;
+        const hits = data?.[searchLists[type]];
+        const checks = Array.isArray(hits)
+          ? hits.map((entry: unknown) => {
+              if (!isRecord(entry)) return false;
+              if (type === 'person') {
+                seeValue(entry['name']);
+                return (
+                  sameKeys(entry, ['name', 'personId']) &&
+                  isId(entry['personId']) &&
+                  typeof entry['name'] === 'string' &&
+                  entry['name'].length <= 511
+                );
+              }
+              if (type === 'wiki_page') {
+                return (
+                  seeEnveloped(entry['title']) &&
+                  sameKeys(entry, ['guid', 'title']) &&
+                  (entry['guid'] === null ||
+                    (typeof entry['guid'] === 'string' &&
+                      pageGuid.test(entry['guid'])))
+                );
+              }
+              return (
+                seeEnveloped(entry['name']) &&
+                sameKeys(entry, ['id', 'name']) &&
+                isIdOrNull(entry['id'])
+              );
+            })
+          : [];
+        const othersEmpty = searchTypes
+          .filter((other) => other !== type)
+          .every((other) => {
+            const list = data?.[searchLists[other]];
+            return Array.isArray(list) && list.length === 0;
+          });
+        const fits =
+          data !== undefined &&
+          sameKeys(data, [
+            'groups',
+            'more',
+            'notice',
+            'persons',
+            'songs',
+            'type',
+            'wikiPages',
+          ]) &&
+          data['type'] === type &&
+          Array.isArray(hits) &&
+          hits.length <= 50 &&
+          checks.every(Boolean) &&
+          othersEmpty &&
+          noticeFits(data) &&
+          (hits.length > 0 || typeof data['notice'] === 'string');
+        guard.blockAll(found?.data);
+        if (!fits) failures.add('globale_suche');
+        const count = Array.isArray(hits) ? hits.length : 0;
+        if (fits && count === 0) searchEmpty = true;
+        results.push({
+          tool: `ct_search ${type}`,
+          ergebnis: fits ? 'ok' : 'gescheitert',
+          treffer: countClass(count),
+          mehr: data?.['more'] === true ? 'ja' : 'nein',
+          ...(type === 'wiki_page'
+            ? { guid: fits ? withGuid(hits) : 'keine' }
+            : {}),
+        });
+      }
+      if (searchEmpty) findings.add('globale_suche_ohne_treffer');
     }
     report['aufrufe'] = results;
   }
@@ -1592,6 +1924,19 @@ export async function runEra(
   const requestsFit = requests.length === whoamiCalls * 2 + readCalls;
   report['anfragen'] = requestsFit ? 'wie erwartet' : 'abweichend';
   if (!requestsFit) failures.add('anfragen');
+
+  // A hit of another type than the one asked for ends a search with
+  // upstream (ADR 0064). Which type ChurchTools names in its hits is shown
+  // only for persons, so the result says whether the log names one.
+  if (search !== undefined) {
+    report['artfremd'] = events.some(
+      (line) =>
+        line['event'] === 'churchtools_search_foreign' ||
+        line['event'] === 'churchtools_wiki_search_foreign',
+    )
+      ? 'ja'
+      : 'nein';
+  }
 
   const foreign = session.foreignLines();
   report['stdout'] = foreign === 0 ? 'nur JSON-RPC' : 'fremde Zeilen';
@@ -1634,6 +1979,7 @@ export async function runEra(
   // one. Log and audit carry neither, and the token appears nowhere.
   const banned = [secrets.token, ...seen];
   if (secrets.query !== undefined) banned.push(secrets.query);
+  if (secrets.songQuery !== undefined) banned.push(secrets.songQuery);
   if (holdsAny(lines, banned)) failures.add('protokoll');
   if (
     session.stdout().includes(secrets.token) ||

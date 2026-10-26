@@ -1,5 +1,5 @@
 // A stand-in for `ecclium stdio` in the tests of the smoke test. It speaks
-// JSON-RPC over stdio in both eras, answers the seventeen tools with synthetic
+// JSON-RPC over stdio in both eras, answers the twenty-four tools with synthetic
 // canary values and writes log, audit lines on stderr and an audit file in
 // the form of the real server. FAKE_SCENARIO breaks one thing at a time,
 // so that each check of the smoke test can be seen to fail. FAKE_RECORD
@@ -23,6 +23,9 @@ const toolsets = (env['ECCLIUM_TOOLSETS'] ?? '').split(',');
 const personsToolset = toolsets.includes('persons');
 const eventsToolset = toolsets.includes('events');
 const calendarsToolset = toolsets.includes('calendars');
+const wikiToolset = toolsets.includes('wiki');
+const songsToolset = toolsets.includes('songs');
+const pageGuid = '00000000-0000-4000-8000-000000000001';
 const calls: string[] = [];
 
 const record = (): void => {
@@ -115,7 +118,16 @@ const toolNames = [
   ...(calendarsToolset ? ['ct_resources_list'] : []),
   ...(personsToolset ? ['ct_search'] : []),
   ...(eventsToolset ? ['ct_services_get_assignments', 'ct_services_list'] : []),
+  ...(songsToolset ? ['ct_songs_get', 'ct_songs_search'] : []),
   'ct_whoami',
+  ...(wikiToolset
+    ? [
+        'ct_wiki_categories_list',
+        'ct_wiki_page_get',
+        'ct_wiki_pages_list',
+        'ct_wiki_search',
+      ]
+    : []),
   ...(scenario === 'write-tool' ? ['ct_wiki_page_create'] : []),
 ];
 
@@ -544,6 +556,131 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
             ],
       more: false,
       notice: scenario === 'no-bookings' ? 'No booking is listed.' : null,
+    });
+  }
+  if (name === 'ct_songs_search' || name === 'ct_songs_get') {
+    event('http_response', { status: 200 });
+    audit(name);
+    const songName = `${canary}Lied`;
+    const song = {
+      id: name === 'ct_songs_get' ? args['songId'] : 2,
+      name:
+        scenario === 'songs-bare-name' && name === 'ct_songs_search'
+          ? songName
+          : wrap(songName),
+      category: wrap(`${canary}Kategorie`),
+      author: wrap(`${canary}Autor`),
+      copyright: null,
+      ccli: null,
+      arrangements: [
+        { id: 3, name: wrap(`${canary}Standard`), key: null, isDefault: true },
+      ],
+      moreArrangements: false,
+      ...(scenario === 'song-extra' && name === 'ct_songs_get'
+        ? { lyrics: 'Strophe' }
+        : {}),
+    };
+    if (name === 'ct_songs_get') return result(song);
+    const none = scenario === 'no-songs';
+    return result({
+      page: 1,
+      songs: none ? [] : [song],
+      more: false,
+      notice: none ? 'No song matched.' : null,
+    });
+  }
+  if (name === 'ct_wiki_search') {
+    event('http_response', { status: 200 });
+    audit(name);
+    const title = `${canary}Seite`;
+    const hits =
+      scenario === 'no-pages'
+        ? []
+        : [
+            {
+              guid:
+                scenario === 'page-no-guid'
+                  ? null
+                  : scenario === 'wiki-bad-guid'
+                    ? '42'
+                    : pageGuid,
+              categoryId: 12,
+              title: scenario === 'wiki-bare-title' ? title : wrap(title),
+              preview: wrap(`${canary}Vorschau`),
+            },
+          ];
+    return result({
+      hits,
+      more: false,
+      notice: hits.length === 0 ? 'No page matched.' : null,
+    });
+  }
+  if (name === 'ct_wiki_page_get') {
+    event('http_response', { status: 200 });
+    audit(name);
+    const text = `${canary}Text`;
+    return result({
+      categoryId: args['categoryId'],
+      guid: args['guid'],
+      title: wrap(`${canary}Seite`),
+      isMarkdown: true,
+      version: 2,
+      part: 1,
+      parts: 1,
+      text: scenario === 'page-bare-text' ? text : wrap(text),
+    });
+  }
+  if (name === 'ct_search') {
+    const type = String(args['type']);
+    event('http_response', { status: 200 });
+    // A hit of another type: the real client ends with upstream and logs
+    // the event the smoke test reports.
+    if (scenario === 'search-foreign' && type === 'song') {
+      log({
+        ts: new Date().toISOString(),
+        level: 'warn',
+        event: 'churchtools_search_foreign',
+        code: 'upstream',
+      });
+      audit(name, 'upstream');
+      return {
+        content: [
+          { type: 'text', text: 'ChurchTools gave an unknown answer.' },
+        ],
+        isError: true,
+      };
+    }
+    audit(name);
+    const groupName = `${canary}Gruppe`;
+    const filled: Readonly<Record<string, Record<string, unknown>>> = {
+      person: { persons: [{ personId: 811, name: `${canary}Muster` }] },
+      group: {
+        groups: [
+          {
+            id: 921,
+            name:
+              scenario === 'search-bare-title' ? groupName : wrap(groupName),
+          },
+        ],
+      },
+      song: { songs: [{ id: 2, name: wrap(`${canary}Lied`) }] },
+      wiki_page: {
+        wikiPages: [{ guid: pageGuid, title: wrap(`${canary}Seite`) }],
+      },
+    };
+    const none = scenario === 'search-empty';
+    return result({
+      type,
+      persons: [],
+      groups: [],
+      songs: [],
+      wikiPages: [],
+      ...(none ? {} : filled[type]),
+      ...(scenario === 'search-other-list' && type === 'group'
+        ? { songs: [{ id: 2, name: wrap(`${canary}Lied`) }] }
+        : {}),
+      more: false,
+      notice: none ? 'No hit matched.' : null,
     });
   }
   const query = typeof args['query'] === 'string' ? args['query'] : '';
