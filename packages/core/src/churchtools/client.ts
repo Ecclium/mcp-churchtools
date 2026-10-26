@@ -1780,15 +1780,16 @@ export function createChurchToolsClient(
         preview: hit.preview ?? null,
       });
     });
-    // Only pages, and only of the category asked for: a hit of another
-    // type could carry the name of a person as its title.
+    // Only pages, and with a category asked for only pages that name
+    // exactly that category: a hit of another type could carry the name of
+    // a person as its title, and a page without a category could lie in
+    // one the search should have left out. ChurchTools enforces the rights
+    // of the categories; this check holds it to the category asked for.
     if (
       !hits.every(
         (hit) =>
           hit.type === 'wiki_page' &&
-          (categoryId === undefined ||
-            hit.categoryId === null ||
-            hit.categoryId === categoryId),
+          (categoryId === undefined || hit.categoryId === categoryId),
       )
     ) {
       ctx.log.warn('churchtools_wiki_search_foreign', { code: 'upstream' });

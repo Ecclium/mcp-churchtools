@@ -167,7 +167,7 @@ export function createReadAccess(
     searchWiki: (query: string, categoryId?: number): Promise<WikiSearchHits> =>
       guard(() => client.searchWiki(ctx, query, categoryId)),
     // The global search finds persons by name, whatever type a call asks
-    // for, so it is a search of persons like the two above (ADR 0064).
+    // for, so it is a search of persons like searchPersons (ADR 0064).
     search: (
       type: SearchDomainType,
       query: string,

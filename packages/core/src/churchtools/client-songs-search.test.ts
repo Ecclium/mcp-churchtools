@@ -222,9 +222,13 @@ describe('the search of songs', () => {
     double
       .intercept({ path: at('/api/songs'), method: 'GET' })
       .reply(200, JSON.stringify({ data: [] }), json);
+    // A page with songs but without pagination: only its meta is missing.
+    const withoutMeta = JSON.parse(songsAnswer([song(2)], 1).body) as {
+      data: unknown;
+    };
     double
       .intercept({ path: at('/api/songs'), method: 'GET' })
-      .reply(200, JSON.stringify({ data: songsAnswer([song(2)], 1) }), json);
+      .reply(200, JSON.stringify({ data: withoutMeta.data }), json);
     expect((await client.searchSongs(ctx(), 'Lied', 4)).more).toBe(false);
     expect(await client.searchSongs(ctx(), 'Lied', 9)).toEqual({
       songs: [],
@@ -393,23 +397,29 @@ describe('the search in the wiki', () => {
 
   it('gives no GUID for another form of identifier and no category for none, null, a list or a number below 1', async () => {
     const { double, client, ctx } = setup();
+    // PHP writes an empty map as an empty list: F carries one in place of
+    // its attributes.
+    const root = JSON.parse(
+      wikiSearchAnswer([
+        page('A', { domainIdentifier: '42' }),
+        page('B', { domainIdentifier: 'Seite B' }),
+        page('C', { wikiCategoryId: undefined, preview: undefined }),
+        page('D', { wikiCategoryId: null, preview: null }),
+        page('E', { wikiCategoryId: 0 }),
+        page('F'),
+      ]).body,
+    ) as { data: Record<string, unknown>[] };
+    const last = root.data[5];
+    if (last === undefined) throw new Error('the fixture has six hits');
+    last['domainAttributes'] = [];
     double
       .intercept({ path: at('/api/wiki/search'), method: 'GET' })
-      .reply(
-        200,
-        wikiSearchAnswer([
-          page('A', { domainIdentifier: '42' }),
-          page('B', { domainIdentifier: 'Seite B' }),
-          page('C', { wikiCategoryId: undefined, preview: undefined }),
-          page('D', { wikiCategoryId: null, preview: null }),
-          page('E', { wikiCategoryId: 0 }),
-        ]).body.replace('"title":"C"', '"title":"C","domainAttributes":[]'),
-        json,
-      );
+      .reply(200, JSON.stringify(root), json);
     const result = await client.searchWiki(ctx(), 'Seite');
     expect(result.hits.map((hit) => [hit.guid, hit.categoryId])).toEqual([
       [null, 12],
       [null, 12],
+      [guid, null],
       [guid, null],
       [guid, null],
       [guid, null],
@@ -420,6 +430,7 @@ describe('the search in the wiki', () => {
       null,
       null,
       'Ein Teil von E',
+      'Ein Teil von F',
     ]);
   });
 
@@ -457,6 +468,11 @@ describe('the search in the wiki', () => {
       'a hit of another category than the one asked for',
       { wikiCategoryId: 13 },
     ],
+    [
+      'a hit without a category when one was asked for',
+      { wikiCategoryId: undefined },
+    ],
+    ['a hit of the category 0 when one was asked for', { wikiCategoryId: 0 }],
   ])('gives upstream for %s', async (_, change) => {
     const { double, client, ctx, lines } = setup();
     double
