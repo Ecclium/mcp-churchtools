@@ -7,7 +7,11 @@
  * @packageDocumentation
  */
 import {
+  type Agenda,
+  type AssignmentList,
   EccliumError,
+  type EventDetails,
+  type EventList,
   type Group,
   type GroupHit,
   type GroupMemberList,
@@ -19,6 +23,7 @@ import {
   type ReadApi,
   type SearchHits,
   type Sensitivity,
+  type ServiceList,
   type TenantContext,
   type WikiCategory,
   type WikiPage,
@@ -43,10 +48,13 @@ export interface ReadAccess {
  * @param sensitivity - The sensitivity of the calling tool. Only `special`
  *   may search and read persons and groups; any other gets
  *   `policy_denied`.
+ * @param asSpecial - Whether the pipeline treats the calling tool like a
+ *   special one (ADR 0064). Only such a tool may read the assignments to
+ *   services, which name persons; any other gets `policy_denied`.
  * @returns The access, frozen and without prototype.
  * @example
  * ```ts
- * const access = createReadAccess(client, ctx, entry.meta.sensitivity);
+ * const access = createReadAccess(client, ctx, entry.meta.sensitivity, entry.asSpecial);
  * try { await tool.execute({ ctx, input, read: access.read }); }
  * finally { access.revoke(); }
  * ```
@@ -55,6 +63,7 @@ export function createReadAccess(
   client: ChurchToolsClient,
   ctx: TenantContext,
   sensitivity: Sensitivity,
+  asSpecial = false,
 ): ReadAccess {
   let revoked = false;
   const guard = <T>(run: () => Promise<T>): Promise<T> =>
@@ -67,6 +76,15 @@ export function createReadAccess(
   const special = <T>(run: () => Promise<T>): Promise<T> => {
     if (revoked || sensitivity === 'special') return guard(run);
     ctx.log.warn('read_search_refused', { code: 'policy_denied' });
+    return Promise.reject(new EccliumError('policy_denied'));
+  };
+  // The assignments to services name persons. Only a tool whose result
+  // waits for its line in the audit file and counts against the read
+  // budget may read them; a tool that declares its output as plain text
+  // could otherwise pass on names without either (ADR 0064).
+  const named = <T>(run: () => Promise<T>): Promise<T> => {
+    if (revoked || sensitivity === 'special' || asSpecial) return guard(run);
+    ctx.log.warn('read_names_refused', { code: 'policy_denied' });
     return Promise.reject(new EccliumError('policy_denied'));
   };
   const read: ReadApi = Object.freeze({
@@ -96,6 +114,18 @@ export function createReadAccess(
       version?: number,
     ): Promise<WikiPage> =>
       guard(() => client.wikiPage(ctx, categoryId, guid, version)),
+    events: (from: string, to: string): Promise<EventList> =>
+      guard(() => client.events(ctx, from, to)),
+    event: (eventId: number): Promise<EventDetails> =>
+      guard(() => client.event(ctx, eventId)),
+    eventAgenda: (eventId: number): Promise<Agenda> =>
+      guard(() => client.eventAgenda(ctx, eventId)),
+    services: (): Promise<ServiceList> => guard(() => client.services(ctx)),
+    eventAssignments: (
+      eventId: number,
+      page: number,
+    ): Promise<AssignmentList> =>
+      named(() => client.eventAssignments(ctx, eventId, page)),
   });
   return Object.freeze({
     __proto__: null,

@@ -47,6 +47,7 @@ export const configWarningCodes = Object.freeze([
   'token_from_environment',
   'redaction_off',
   'persons_toolset_enabled',
+  'events_toolset_enabled',
   'trust_store_extended',
 ] as const);
 

@@ -1,4 +1,8 @@
 import {
+  type Agenda,
+  type AssignmentList,
+  type EventDetails,
+  type EventList,
   type Group,
   type GroupHit,
   type GroupMemberList,
@@ -8,6 +12,7 @@ import {
   type PersonGroupList,
   type PersonHit,
   type SearchHits,
+  type ServiceList,
   type TenantContext,
   type WikiCategory,
   type WikiPage,
@@ -70,6 +75,32 @@ const page: WikiPage = {
   isMarkdown: true,
   version: 2,
   text: 'Text',
+};
+const events: EventList = { events: [], more: false };
+const event: EventDetails = {
+  id: 2,
+  name: 'Gottesdienst',
+  startDate: '2026-10-25T09:00:00Z',
+  endDate: '2026-10-25T10:30:00Z',
+  isCanceled: false,
+  calendarId: 8,
+  calendarName: 'Kalender A',
+  note: null,
+  description: null,
+};
+const agenda: Agenda = { name: 'Ablauf', isFinal: false, items: [] };
+const services: ServiceList = { services: [], serviceGroups: [] };
+const assignments: AssignmentList = {
+  assignments: [
+    {
+      serviceId: 11,
+      serviceName: 'Dienst A',
+      isAccepted: true,
+      agreed: true,
+      person: { personId: 2, firstName: 'Person', lastName: 'B' },
+    },
+  ],
+  more: false,
 };
 const lines: string[] = [];
 const ctx = Object.freeze({
@@ -140,6 +171,31 @@ const fakeClient = () => {
       wiki.push([categoryId, id, version]);
       return Promise.resolve(page);
     },
+    events: (context, from, to) => {
+      seen.push(context);
+      ids.push(['events', from, to]);
+      return Promise.resolve(events);
+    },
+    event: (context, eventId) => {
+      seen.push(context);
+      ids.push(['event', eventId]);
+      return Promise.resolve(event);
+    },
+    eventAgenda: (context, eventId) => {
+      seen.push(context);
+      ids.push(['eventAgenda', eventId]);
+      return Promise.resolve(agenda);
+    },
+    services: (context) => {
+      seen.push(context);
+      ids.push(['services']);
+      return Promise.resolve(services);
+    },
+    eventAssignments: (context, eventId, number) => {
+      seen.push(context);
+      ids.push(['eventAssignments', eventId, number]);
+      return Promise.resolve(assignments);
+    },
   };
   return { client, seen, queries, wiki, ids };
 };
@@ -184,6 +240,11 @@ describe('createReadAccess', () => {
         read.wikiCategories(),
         read.wikiPages(4, 1),
         read.wikiPage(4, guid),
+        read.events('2026-10-25', '2026-10-31'),
+        read.event(2),
+        read.eventAgenda(2),
+        read.services(),
+        read.eventAssignments(2, 1),
       ]) {
         const error: unknown = await call.catch((thrown: unknown) => thrown);
         expect(isEccliumError(error) && error.code).toBe('internal');
@@ -253,6 +314,65 @@ describe('createReadAccess', () => {
         [4, guid, undefined],
         [4, guid, 3],
       ]);
+    },
+  );
+
+  // Events, agendas and services name no person: a tool of every
+  // sensitivity reads them, with the context and the arguments of the call.
+  it.each(['none', 'personal', 'special'] as const)(
+    'reads events, agendas and services for a tool of the sensitivity %s',
+    async (sensitivity) => {
+      const { client, seen, ids } = fakeClient();
+      const { read } = createReadAccess(client, ctx, sensitivity);
+      await expect(read.events('2026-10-25', '2026-10-31')).resolves.toBe(
+        events,
+      );
+      await expect(read.event(2)).resolves.toBe(event);
+      await expect(read.eventAgenda(2)).resolves.toBe(agenda);
+      await expect(read.services()).resolves.toBe(services);
+      expect(seen).toEqual([ctx, ctx, ctx, ctx]);
+      expect(ids).toEqual([
+        ['events', '2026-10-25', '2026-10-31'],
+        ['event', 2],
+        ['eventAgenda', 2],
+        ['services'],
+      ]);
+    },
+  );
+
+  // The assignments name persons, so only a tool the pipeline treats like
+  // a special one reads them (ADR 0064).
+  it.each([
+    ['special', false],
+    ['personal', true],
+    ['none', true],
+  ] as const)(
+    'reads the assignments for a tool of the sensitivity %s treated as special: %s',
+    async (sensitivity, asSpecial) => {
+      const { client, seen, ids } = fakeClient();
+      const { read } = createReadAccess(client, ctx, sensitivity, asSpecial);
+      await expect(read.eventAssignments(2, 3)).resolves.toBe(assignments);
+      expect(seen).toEqual([ctx]);
+      expect(ids).toEqual([['eventAssignments', 2, 3]]);
+    },
+  );
+
+  it.each(['none', 'personal'] as const)(
+    'refuses the assignments to a tool of the sensitivity %s not treated as special, without reading',
+    async (sensitivity) => {
+      lines.length = 0;
+      const { client, seen } = fakeClient();
+      for (const access of [
+        createReadAccess(client, ctx, sensitivity),
+        createReadAccess(client, ctx, sensitivity, false),
+      ]) {
+        const error: unknown = await access.read
+          .eventAssignments(2, 1)
+          .catch((thrown: unknown) => thrown);
+        expect(isEccliumError(error) && error.code).toBe('policy_denied');
+      }
+      expect(seen).toEqual([]);
+      expect(lines).toEqual(['read_names_refused', 'read_names_refused']);
     },
   );
 });

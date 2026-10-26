@@ -32,7 +32,7 @@ Gewählt ist die dritte Option.
 - **Im Audit:** Das Audit verzeichnet einen solchen Aufruf mit `denied` und `policy_denied`, wie jede andere Ablehnung. Den Grund nennt die Logzeile `read_budget_exhausted` mit derselben ID des Ereignisses. Das Format des Audits bleibt unverändert.
 - **Fehler des Stores:** Fehlt der Store, wirft er, antwortet er nicht in 5 Sekunden oder gibt er keine ganze Zahl ab 1, endet der Aufruf mit `policy_denied`, einem eigenen festen Satz und der Logzeile `read_budget_unavailable`. Das trifft nur Tools mit `sensitivity: special`, nie `ct_whoami` und kein anderes Tool.
 - **Start über stdio:** Die erste Stufe legt den Ordner `quota` an und prüft ihn, gleich nach der Audit-Datei und noch bevor fd 2 nicht mehr blockiert. Scheitert das, endet der Start mit 78 und einer Meldung. Die zweite Stufe baut den Store. `ecclium config check` prüft einen vorhandenen Ordner `quota` wie den Ordner `audit`.
-- **Tools mit `personal`, die Namen anderer Personen ausgeben:** Für sie gilt das Lesebudget ebenfalls, wie für Phase 2 entschieden. Das ADR zu Rechten und Feldern der Lese-Tools legt fest, welche Tools das sind, und erweitert die Bedingung in der Pipeline. Bis dahin gibt es keines.
+- **Tools mit `personal`, die Namen anderer Personen ausgeben:** Für sie gilt das Lesebudget ebenfalls, wie für Phase 2 entschieden, mit demselben gemeinsamen Zähler. Welche Tools das sind, leitet die Registry aus dem Ausgabeschema ab (ADR 0064): ein Tool mit einem Blatt der Klasse `personId`, `name.first` oder `name.last` ausserhalb des Bereichs `base`. Die Bedingung in der Pipeline liest diese Ableitung statt der Sensitivität.
 - **Konformität:** Prüfungen in testkit, die jeder Store besteht, auch ein späterer Ersatz aus einem Plugin.
 
 ## Konsequenzen
@@ -55,3 +55,4 @@ Seit dem 24.10.2026 gebaut:
 - **Pipeline:** das Zählen nach `validateInput` in `packages/core/src/pipeline/pipeline.ts`, die Tests in `pipeline-budget.test.ts`.
 - **Start:** der Ordner in der ersten Stufe in `packages/cli/src/stdio/index.ts`, der Store in `serve.ts`, die Meldungen in `packages/cli/src/messages/config.ts` und `start.ts`.
 - **Tests:** die Prüfungen jedes Stores und ein Store im Arbeitsspeicher in `packages/testkit/src/quota/`, der Datei-Store gegen echte Ordner in `file-store.test.ts`, zwei Prozesse in `tests/quota-processes.test.mts` und das Budget über einen Neustart am echten Prozess in `tests/stdio-start.test.mts`.
+- **Tools, die Namen anderer Personen nennen:** seit dem 26.10.2026 zählt die Pipeline jedes Tool, das der Katalog wie eines mit `sensitivity: special` behandelt, als erstes `ct_services_get_assignments`. Die Tests stehen in `pipeline-budget.test.ts` und `packages/tools/src/events-services.test.ts`.

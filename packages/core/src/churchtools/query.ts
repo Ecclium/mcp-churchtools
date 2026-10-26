@@ -73,6 +73,59 @@ export function appendIds(
   for (const id of ids) params.append(name, String(id));
 }
 
+// A day of the calendar in the form ChurchTools takes for a span.
+const dayPattern = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+
+/**
+ * Appends a span of days as `from` and `to`, two days in the form
+ * `JJJJ-MM-TT` that the caller checked as a span (ADR 0064).
+ *
+ * @param params - The query to append to.
+ * @param from - The first day.
+ * @param to - The last day, not before the first.
+ * @throws {TypeError} When a day does not have the form or the last comes
+ *   before the first.
+ * @example
+ * ```ts
+ * appendSpan(url.searchParams, '2026-10-25', '2026-10-31'); // from=2026-10-25&to=2026-10-31
+ * ```
+ */
+export function appendSpan(
+  params: URLSearchParams,
+  from: string,
+  to: string,
+): void {
+  if (
+    typeof from !== 'string' ||
+    typeof to !== 'string' ||
+    !dayPattern.test(from) ||
+    !dayPattern.test(to) ||
+    to < from
+  ) {
+    throw new TypeError('A span needs two days as JJJJ-MM-TT, in order.');
+  }
+  params.append('from', from);
+  params.append('to', to);
+}
+
+/**
+ * Appends `limit` alone, from 1 to 100, for a list that takes no `page`.
+ *
+ * @param params - The query to append to.
+ * @param limit - The entries, from 1 to 100.
+ * @throws {TypeError} When the value is not a whole number in range.
+ * @example
+ * ```ts
+ * appendLimit(url.searchParams, 51); // limit=51
+ * ```
+ */
+export function appendLimit(params: URLSearchParams, limit: number): void {
+  if (!isPositiveInteger(limit) || limit > maxPageLimit) {
+    throw new TypeError('A limit needs a whole number from 1 to 100.');
+  }
+  params.append('limit', String(limit));
+}
+
 /**
  * Builds the URL of a path that the client filled with checked values and
  * makes sure that parsing kept exactly that path and added no query. A

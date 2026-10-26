@@ -5,7 +5,7 @@
  * protocol, each time with exactly these variables: the address and the
  * token file from the environment, `ECCLIUM_READ_ONLY=true` whatever the
  * shell says, a folder of state of its own in the temporary folder, and
- * with its switch the toolset `ECCLIUM_TOOLSETS=persons`. Without the
+ * with its switch the toolsets `ECCLIUM_TOOLSETS=persons,events`. Without the
  * switch it calls only `ct_whoami`, so on a productive instance nothing
  * but the account of the server is read. With the switch it first reads
  * the wiki categories itself and goes on only if the account sees exactly
@@ -35,7 +35,13 @@ import type { Io } from '../spike/lib/output.mts';
 import { hostValues } from '../spike/lib/probe.mts';
 import { countClasses } from '../spike/lib/structure.mts';
 import { auditFits, auditWords, readAuditLines } from './audit.mts';
-import { courseCodes, courseWords, runEra, type Era } from './course.mts';
+import {
+  courseCodes,
+  courseWords,
+  eventSpans,
+  runEra,
+  type Era,
+} from './course.mts';
 import { defaultDeadlines, startServer, type Deadlines } from './session.mts';
 import { readSmokeSettings, type SmokeSettings } from './settings.mts';
 
@@ -262,6 +268,7 @@ export async function runSmoke(deps: SmokeDependencies): Promise<number> {
             query: settings.search.query,
             missTerm:
               deps.missTerm?.() ?? `zq${randomBytes(12).toString('hex')}`,
+            spans: eventSpans(new Date()),
           };
     const failures = new Set<string>();
     const findings = new Set<string>();
@@ -279,7 +286,9 @@ export async function runSmoke(deps: SmokeDependencies): Promise<number> {
           // register a writing tool (ADR 0055).
           ECCLIUM_READ_ONLY: 'true',
           ECCLIUM_STATE_DIR: stateDir,
-          ...(search === undefined ? {} : { ECCLIUM_TOOLSETS: 'persons' }),
+          ...(search === undefined
+            ? {}
+            : { ECCLIUM_TOOLSETS: 'persons,events' }),
           ...deps.server.env,
         };
         const session = startServer(

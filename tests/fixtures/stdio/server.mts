@@ -96,7 +96,13 @@ const opened =
     ? openAuditFile({ stateDir, clock, pid: process.pid })
     : undefined;
 if (opened !== undefined && !opened.ok) throw new Error(opened.code);
-const file = opened?.writer;
+// ct_example_profile names a person, so its result needs its line in an
+// audit file (ADR 0064). Without the scenario of the real file, a file in
+// memory takes every line.
+const file = opened?.writer ?? {
+  write: (): boolean => true,
+  ready: (): boolean => true,
+};
 
 const catalog = createToolCatalog({
   core: examplePlugin,
@@ -125,7 +131,7 @@ const pipeline = createToolPipeline({
     writer,
     clock,
     isKnownTool: catalog.has,
-    ...(file === undefined ? {} : { file }),
+    file,
   }),
   transport: double.transport,
   origin: config.churchtoolsOrigin,

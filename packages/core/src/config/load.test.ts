@@ -1589,6 +1589,18 @@ describe('loadConfig and its problems', () => {
         undefined,
         memoryFolder().fs,
       ),
+    events_toolset_enabled: () =>
+      load(
+        {
+          ...valid(),
+          ECCLIUM_TOOLSETS: 'events',
+          ECCLIUM_STATE_DIR: stateDirPath,
+        },
+        'stdio',
+        memoryFiles().fs,
+        undefined,
+        memoryFolder().fs,
+      ),
     trust_store_extended: () =>
       load({ ...valid(), NODE_EXTRA_CA_CERTS: '/path/to/ca.pem' }),
   };
@@ -1604,11 +1616,18 @@ describe('loadConfig and its problems', () => {
     expect(result.report.warnings).toEqual([code]);
   });
 
-  // The tools of persons need the folder of the audit file over stdio
-  // (ADR 0028, ADR 0060). A folder that is set but refused reports only
-  // its own problem, and the toolsets alone stay a valid value.
-  it('asks for the folder of state only when persons is on and it is unset', () => {
-    for (const value of ['persons', 'wiki,persons', 'all']) {
+  // The tools of persons and events name persons and need the folder of
+  // the audit file over stdio (ADR 0028, ADR 0060, ADR 0064). A folder that
+  // is set but refused reports only its own problem, and the toolsets alone
+  // stay a valid value.
+  it('asks for the folder of state only when persons or events is on and it is unset', () => {
+    for (const value of [
+      'persons',
+      'wiki,persons',
+      'events',
+      'events,wiki',
+      'all',
+    ]) {
       const missing = load({ ...valid(), ECCLIUM_TOOLSETS: value });
       expect(missing.ok, value).toBe(false);
       expect(missing.report.problems, value).toEqual([
@@ -1631,7 +1650,7 @@ describe('loadConfig and its problems', () => {
         ),
       ),
     ).toEqual(['state_dir_mode']);
-    for (const value of ['', 'wiki', 'events,calendars,wiki,songs']) {
+    for (const value of ['', 'wiki', 'calendars,wiki,songs']) {
       expect(load({ ...valid(), ECCLIUM_TOOLSETS: value }).ok, value).toBe(
         true,
       );

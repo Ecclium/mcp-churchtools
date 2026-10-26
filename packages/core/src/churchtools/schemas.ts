@@ -7,14 +7,23 @@
  * @packageDocumentation
  */
 import {
+  agendaItemTypePattern,
   calendarDatePattern,
+  dateTimePattern,
   groupMembersPageLimit,
   groupMemberStatusPattern,
   isWikiPageGuid,
+  maxAgendaItems,
+  maxAgendaNoteLength,
+  maxEventAssignments,
+  maxEventDescriptionLength,
+  maxEventNoteLength,
+  maxEvents,
   maxGroupMeetingTimeLength,
   maxGroupNoteLength,
   maxNameLength,
   maxSearchHits,
+  maxServices,
   maxWikiCategories,
   maxWikiTitleLength,
   wikiPageListLimit,
@@ -231,6 +240,158 @@ export const groupMemberListSchema = z
   .refine(
     (root) => root.meta?.pagination !== undefined || root.data.length === 0,
   );
+
+const dateTime = z.string().regex(dateTimePattern);
+
+/**
+ * The most events the client asks for: one more than a list gives, so that
+ * a further event says that more follow (ADR 0064).
+ */
+export const eventsRequestLimit = maxEvents + 1;
+
+/**
+ * The most events the client reads from one answer. Whether `limit` cuts
+ * the list of events is not shown (F38): ChurchTools may send more than it
+ * was asked for, up to this many. A longer list is no answer the client
+ * knows.
+ */
+export const maxEventEntries = 1000;
+
+// The calendar of an event, a reference of a domain (F37): only the
+// identifier and the title. Any text up to this length as identifier; only
+// a plain whole number from 1 becomes the ID of the calendar.
+const calendarReference = z.object({
+  domainIdentifier: z.string().max(maxNameLength, { abort: true }),
+  title: text(maxNameLength),
+});
+
+const eventFields = {
+  id,
+  name: text(maxNameLength),
+  startDate: dateTime,
+  endDate: dateTime,
+  isCanceled: z.boolean(),
+  calendar: calendarReference,
+};
+
+/**
+ * The answer of `GET /api/events` with `from`, `to` and `limit`, only the
+ * fields a list passes on (ADR 0064, `docs/research/churchtools-api.md`,
+ * F37). Note, description, the IDs of persons in `adminIds` and
+ * `eventAdminIds`, the links of the calendar and `meta` are not read.
+ */
+export const eventListSchema = z.object({
+  data: z.array(z.object(eventFields)).max(maxEventEntries),
+});
+
+/**
+ * The answer of `GET /api/events/{eventId}` for the read of one event: the
+ * fields of the list with note and description, never `eventServices`
+ * (ADR 0064, F37). A note or description that is missing counts as none.
+ */
+export const eventSchema = z.object({
+  data: z.object({
+    ...eventFields,
+    note: text(maxEventNoteLength).nullable().optional(),
+    description: text(maxEventDescriptionLength).nullable().optional(),
+  }),
+});
+
+/**
+ * The answer of `GET /api/events/{eventId}` for the assignments: only
+ * `eventServices`, each with the service, both states, the ID of the person
+ * and the names of the assigned person (ADR 0064, F37). The person who
+ * requested it, its ID, the comment and every field of the event are not
+ * read. An assignment may name no person: the ID and the names may then be
+ * missing or `null`, and the core passes on no person.
+ */
+export const eventAssignmentsSchema = z.object({
+  data: z.object({
+    eventServices: z
+      .array(
+        z.object({
+          serviceId: id,
+          isAccepted: z.boolean(),
+          agreed: z.boolean(),
+          // Any whole number or null: ChurchTools sent a number below 1 for
+          // a service that hides the names (F37).
+          personId: z.number().int().nullable().optional(),
+          person: z
+            .object({
+              domainAttributes: z.object({
+                firstName: text(maxNameLength).nullable().optional(),
+                lastName: text(maxNameLength).nullable().optional(),
+              }),
+            })
+            .nullable()
+            .optional(),
+        }),
+      )
+      .max(maxEventAssignments),
+  }),
+});
+
+const agendaSong = z.object({
+  songId: id,
+  arrangementId: id.nullable().optional(),
+  title: text(maxNameLength),
+  arrangement: text(maxNameLength).nullable().optional(),
+});
+
+/**
+ * The answer of `GET /api/events/{eventId}/agenda`, only what the read
+ * passes on (ADR 0064, F37): name, whether final, and of each item its
+ * position, type, title, start, duration, whether it comes before the
+ * event, its note and its song. `responsible` and `serviceGroupNotes`,
+ * whose form is not known, and `meta` are not read. A name or title of
+ * `null` counts as empty, a missing start, duration, note or song as none.
+ */
+export const agendaSchema = z.object({
+  data: z.object({
+    name: text(maxNameLength).nullable(),
+    isFinal: z.boolean(),
+    items: z
+      .array(
+        z.object({
+          position: z.number().int(),
+          type: z.string().regex(agendaItemTypePattern),
+          title: text(maxNameLength).nullable(),
+          start: dateTime.nullable().optional(),
+          duration: count.nullable().optional(),
+          isBeforeEvent: z.boolean(),
+          note: text(maxAgendaNoteLength).nullable().optional(),
+          song: agendaSong.nullable().optional(),
+        }),
+      )
+      .max(maxAgendaItems),
+  }),
+});
+
+/**
+ * The answer of `GET /api/services`, only ID, name, group and
+ * `hidePersonName` of each service (ADR 0064, F37). Every account reads
+ * it, without a right (F36).
+ */
+export const serviceListSchema = z.object({
+  data: z
+    .array(
+      z.object({
+        id,
+        name: text(maxNameLength),
+        serviceGroupId: id,
+        hidePersonName: z.boolean(),
+      }),
+    )
+    .max(maxServices),
+});
+
+/**
+ * The answer of `GET /api/servicegroups`, only ID and name of each group
+ * (ADR 0064, F37).
+ */
+export const serviceGroupListSchema = z.object({
+  data: z.array(z.object({ id, name: text(maxNameLength) })).max(maxServices),
+});
 
 /**
  * The longest text of a wiki page the client reads, in UTF-16 code units.

@@ -30,6 +30,18 @@ export {
   personsAtHighestLevel,
 } from './fixtures/highest-level.js';
 export {
+  agendaAnswer,
+  type AssignmentFixture,
+  eventAnswer,
+  eventAssignmentsAnswer,
+  type EventDetailsFixture,
+  type EventFixture,
+  eventsAnswer,
+  type ServiceFixture,
+  serviceGroupsAnswer,
+  servicesAnswer,
+} from './fixtures/events.js';
+export {
   type ChurchToolsDoubleOptions,
   createChurchToolsDouble,
   doubleOrigin,

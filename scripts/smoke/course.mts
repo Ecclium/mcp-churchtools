@@ -6,8 +6,11 @@
  * request, 2025 opens with `initialize`, as the chat of Claude Desktop
  * does (ADR 0053). In each process the smoke test lists the tools, calls
  * `ct_whoami` and, with the switch, the two search tools and the four
- * reads by ID with the first person and the first group they found,
- * closes stdin and checks how the process ended.
+ * reads by ID with the first person and the first group they found, then
+ * the events of up to three spans of 31 days from a week before the day of
+ * the run, and
+ * with the first event found the event, its agenda and its assignments,
+ * and the services, closes stdin and checks how the process ended.
  *
  * Every check yields a fixed word. Values from the answers never go into
  * the result: they go onto the block list of the guard and into the list
@@ -26,7 +29,7 @@ export type Era = '2026' | '2025';
 export interface Call {
   readonly tool: string;
   /** `ok`, or an error with this code. */
-  readonly expect: 'ok' | 'validation';
+  readonly expect: 'ok' | 'validation' | 'not_found';
 }
 
 /** What the course needs for the search tools. */
@@ -35,6 +38,41 @@ export interface SearchPlan {
   readonly query: string;
   /** A made-up term that matches nothing. */
   readonly missTerm: string;
+  /** The spans of days to look for an event in, in order. */
+  readonly spans: readonly EventSpan[];
+}
+
+/** A span of days for ct_events_list. */
+export interface EventSpan {
+  /** The first day, as `JJJJ-MM-TT`. */
+  readonly from: string;
+  /** The last day, as `JJJJ-MM-TT`. */
+  readonly to: string;
+}
+
+/**
+ * The three spans of 31 days, one after the other, in which the course
+ * looks for an event (ADR 0064). The first starts a week before the UTC day
+ * of the run, so that an event of the last days still counts.
+ *
+ * @param now - The time of the run.
+ * @returns The spans, the earliest first.
+ */
+export function eventSpans(now: Date): readonly EventSpan[] {
+  const day = (offset: number): string =>
+    new Date(
+      Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate() + offset,
+      ),
+    )
+      .toISOString()
+      .slice(0, 10);
+  return [0, 1, 2].map((index) => ({
+    from: day(index * 31 - 7),
+    to: day(index * 31 + 23),
+  }));
 }
 
 /** The outcome of the course in one process. */
@@ -99,6 +137,12 @@ export const courseWords = [
   'ct_persons_get_groups',
   'ct_groups_get',
   'ct_groups_get_members',
+  'ct_events_list',
+  'ct_events_get',
+  'ct_events_get_agenda',
+  'ct_services_list',
+  'ct_services_get_assignments',
+  'verborgen',
   'code',
   'anderer',
   ...exitCodesOfServer,
@@ -126,6 +170,13 @@ export const courseCodes = [
   'sicherheitsstufe',
   'keine_personen_gefunden',
   'keine_gruppen_gefunden',
+  'events',
+  'event',
+  'ablauf',
+  'dienste',
+  'einteilungen',
+  'kein_event_gefunden',
+  'kein_ablauf',
 ] as const;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -149,10 +200,13 @@ const isIdOrNull = (value: unknown): boolean => value === null || isId(value);
 const isCount = (value: unknown): boolean =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 
-// The status of a membership and a day without time, as the tools give
-// them (ADR 0064).
+// The status of a membership, a day without time, a date with time and
+// the type of an item of an agenda, as the tools give them (ADR 0064).
 const memberStatus = /^[a-z_]{1,32}$/;
 const day = /^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])$/;
+const dateTime =
+  /^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$/;
+const itemType = /^[A-Za-z][A-Za-z0-9_]{0,31}$/;
 
 // The data envelope of the pipeline: a boundary of 16 random hex digits,
 // the text without the closing marker, the same boundary again (ADR 0024).
@@ -258,7 +312,13 @@ interface ToolResult {
   readonly isError: boolean;
   /** The structured data, only if the text copy says the same. */
   readonly data: Record<string, unknown> | undefined;
+  /** The text of the first content block, empty without one. */
+  readonly text: string;
 }
+
+// The start of the message of ct_events_get_agenda for an agenda that does
+// not exist, which an event without agenda gives as well.
+const noAgendaText = 'There is no agenda for this ID';
 
 // A result carries its data twice, as text and structured (ADR 0024). A
 // client may read either, so both must say the same.
@@ -276,6 +336,7 @@ const toolResult = (answer: Answer): ToolResult | undefined => {
   return {
     isError: answer.result['isError'] === true,
     data: same ? structured : undefined,
+    text: typeof text === 'string' ? text : '',
   };
 };
 
@@ -340,12 +401,17 @@ export async function runEra(
       search === undefined
         ? ['ct_whoami']
         : [
+            'ct_events_get',
+            'ct_events_get_agenda',
+            'ct_events_list',
             'ct_groups_get',
             'ct_groups_get_members',
             'ct_groups_search',
             'ct_persons_get',
             'ct_persons_get_groups',
             'ct_persons_search',
+            'ct_services_get_assignments',
+            'ct_services_list',
             'ct_whoami',
           ];
     const listed = await session.request('tools/list', params({}));
@@ -767,6 +833,354 @@ export async function runEra(
           mehr: page?.['more'] === true ? 'ja' : 'nein',
         });
       }
+
+      // A text of ChurchTools that may be missing: null, or enveloped.
+      const seeOptional = (value: unknown): boolean =>
+        value === null || seeEnveloped(value);
+      const noticeFits = (data: Record<string, unknown>): boolean =>
+        typeof data['more'] === 'boolean' &&
+        (data['notice'] === null || typeof data['notice'] === 'string');
+
+      // ct_events_list over the spans until one holds an event: ID, name,
+      // times, whether canceled and the calendar, the names enveloped.
+      let eventId: unknown;
+      let eventsFit = true;
+      let eventCount = 0;
+      for (const span of search.spans) {
+        readCalls += 1;
+        const listed = await callTool(
+          'ct_events_list',
+          { from: span.from, to: span.to },
+          'ok',
+        );
+        const data = listed?.isError === false ? listed.data : undefined;
+        const events = data?.['events'];
+        let enveloped = true;
+        if (Array.isArray(events)) {
+          for (const entry of events) {
+            if (!isRecord(entry)) continue;
+            if (!seeEnveloped(entry['name'])) enveloped = false;
+            if (!seeEnveloped(entry['calendarName'])) enveloped = false;
+          }
+        }
+        const fits =
+          data !== undefined &&
+          sameKeys(data, ['events', 'from', 'more', 'notice', 'page', 'to']) &&
+          data['from'] === span.from &&
+          data['to'] === span.to &&
+          data['page'] === 1 &&
+          Array.isArray(events) &&
+          events.length <= 25 &&
+          events.every(
+            (entry: unknown) =>
+              isRecord(entry) &&
+              sameKeys(entry, [
+                'calendarId',
+                'calendarName',
+                'endDate',
+                'id',
+                'isCanceled',
+                'name',
+                'startDate',
+              ]) &&
+              isId(entry['id']) &&
+              typeof entry['startDate'] === 'string' &&
+              dateTime.test(entry['startDate']) &&
+              typeof entry['endDate'] === 'string' &&
+              dateTime.test(entry['endDate']) &&
+              typeof entry['isCanceled'] === 'boolean' &&
+              isIdOrNull(entry['calendarId']),
+          ) &&
+          enveloped &&
+          noticeFits(data) &&
+          (events.length > 0 || typeof data['notice'] === 'string');
+        guard.blockAll(listed?.data);
+        if (!fits) {
+          eventsFit = false;
+          break;
+        }
+        const first: unknown = Array.isArray(events) ? events[0] : undefined;
+        if (isRecord(first)) {
+          eventId = first['id'];
+          eventCount = Array.isArray(events) ? events.length : 0;
+          break;
+        }
+      }
+      if (!eventsFit) failures.add('events');
+      if (eventsFit && eventId === undefined) {
+        findings.add('kein_event_gefunden');
+      }
+      results.push({
+        tool: 'ct_events_list',
+        ergebnis: eventsFit ? 'ok' : 'gescheitert',
+        treffer: countClass(eventCount),
+      });
+
+      if (isId(eventId)) {
+        // ct_events_get with the first event: the nine fields, the texts
+        // enveloped or null.
+        readCalls += 1;
+        const read = await callTool('ct_events_get', { eventId }, 'ok');
+        const data = read?.isError === false ? read.data : undefined;
+        const textsFit =
+          data !== undefined &&
+          [data['name'], data['calendarName']].every((text) =>
+            seeEnveloped(text),
+          ) &&
+          [data['note'], data['description']].every((text) =>
+            seeOptional(text),
+          );
+        const eventFits =
+          data !== undefined &&
+          sameKeys(data, [
+            'calendarId',
+            'calendarName',
+            'description',
+            'endDate',
+            'id',
+            'isCanceled',
+            'name',
+            'note',
+            'startDate',
+          ]) &&
+          data['id'] === eventId &&
+          typeof data['startDate'] === 'string' &&
+          dateTime.test(data['startDate']) &&
+          typeof data['isCanceled'] === 'boolean' &&
+          isIdOrNull(data['calendarId']) &&
+          textsFit;
+        guard.blockAll(read?.data);
+        if (!eventFits) failures.add('event');
+        results.push({
+          tool: 'ct_events_get',
+          ergebnis: eventFits ? 'ok' : 'gescheitert',
+          umschlag: textsFit ? 'ja' : 'nein',
+        });
+
+        // ct_events_get_agenda: the first ten items, or not_found for an
+        // event without agenda, which is a finding and no failure.
+        readCalls += 1;
+        const agenda = await callTool(
+          'ct_events_get_agenda',
+          { eventId },
+          'ok',
+        );
+        // Only the error of a missing agenda is a finding; any other error
+        // of the tool fails the check.
+        const missing =
+          agenda?.isError === true && agenda.text.startsWith(noAgendaText);
+        if (missing) {
+          calls[calls.length - 1] = {
+            tool: 'ct_events_get_agenda',
+            expect: 'not_found',
+          };
+          findings.add('kein_ablauf');
+          results.push({ tool: 'ct_events_get_agenda', ergebnis: 'keine' });
+        } else {
+          const plan = agenda?.data;
+          const items = plan?.['items'];
+          let itemsEnveloped = plan !== undefined && seeEnveloped(plan['name']);
+          if (Array.isArray(items)) {
+            for (const entry of items) {
+              if (!isRecord(entry)) continue;
+              if (!seeEnveloped(entry['title'])) itemsEnveloped = false;
+              if (!seeOptional(entry['note'])) itemsEnveloped = false;
+              const song = entry['song'];
+              if (
+                isRecord(song) &&
+                !(
+                  seeEnveloped(song['title']) &&
+                  seeOptional(song['arrangement'])
+                )
+              ) {
+                itemsEnveloped = false;
+              }
+            }
+          }
+          const agendaFits =
+            plan !== undefined &&
+            sameKeys(plan, [
+              'eventId',
+              'isFinal',
+              'items',
+              'more',
+              'name',
+              'notice',
+              'page',
+            ]) &&
+            plan['eventId'] === eventId &&
+            typeof plan['isFinal'] === 'boolean' &&
+            Array.isArray(items) &&
+            items.length <= 10 &&
+            items.every(
+              (entry: unknown) =>
+                isRecord(entry) &&
+                sameKeys(entry, [
+                  'duration',
+                  'isBeforeEvent',
+                  'note',
+                  'position',
+                  'song',
+                  'start',
+                  'title',
+                  'type',
+                ]) &&
+                typeof entry['position'] === 'number' &&
+                typeof entry['type'] === 'string' &&
+                itemType.test(entry['type']) &&
+                (entry['start'] === null ||
+                  (typeof entry['start'] === 'string' &&
+                    dateTime.test(entry['start']))) &&
+                (entry['duration'] === null || isCount(entry['duration'])) &&
+                typeof entry['isBeforeEvent'] === 'boolean' &&
+                (entry['song'] === null ||
+                  (isRecord(entry['song']) &&
+                    sameKeys(entry['song'], [
+                      'arrangement',
+                      'arrangementId',
+                      'songId',
+                      'title',
+                    ]) &&
+                    isId(entry['song']['songId']) &&
+                    isIdOrNull(entry['song']['arrangementId']))),
+            ) &&
+            itemsEnveloped &&
+            noticeFits(plan);
+          guard.blockAll(agenda?.data);
+          if (!agendaFits) failures.add('ablauf');
+          results.push({
+            tool: 'ct_events_get_agenda',
+            ergebnis: agendaFits ? 'ok' : 'gescheitert',
+            treffer: countClass(Array.isArray(items) ? items.length : 0),
+            mehr: plan?.['more'] === true ? 'ja' : 'nein',
+          });
+        }
+
+        // ct_services_get_assignments: service, states and the person, or
+        // none where the service hides the names. It reads the event and
+        // the services.
+        readCalls += 2;
+        const listed = await callTool(
+          'ct_services_get_assignments',
+          { eventId },
+          'ok',
+        );
+        const page = listed?.isError === false ? listed.data : undefined;
+        const assignments = page?.['assignments'];
+        let namesEnveloped = true;
+        let hidden = false;
+        if (Array.isArray(assignments)) {
+          for (const entry of assignments) {
+            if (!isRecord(entry)) continue;
+            if (!seeOptional(entry['serviceName'])) namesEnveloped = false;
+            const person = entry['person'];
+            if (isRecord(person)) {
+              seeValue(person['firstName']);
+              seeValue(person['lastName']);
+            } else {
+              hidden = true;
+            }
+          }
+        }
+        const assignmentsFit =
+          page !== undefined &&
+          sameKeys(page, [
+            'assignments',
+            'eventId',
+            'more',
+            'notice',
+            'page',
+          ]) &&
+          page['eventId'] === eventId &&
+          page['page'] === 1 &&
+          Array.isArray(assignments) &&
+          assignments.length <= 25 &&
+          assignments.every(
+            (entry: unknown) =>
+              isRecord(entry) &&
+              sameKeys(entry, [
+                'agreed',
+                'isAccepted',
+                'person',
+                'serviceId',
+                'serviceName',
+              ]) &&
+              isId(entry['serviceId']) &&
+              typeof entry['isAccepted'] === 'boolean' &&
+              typeof entry['agreed'] === 'boolean' &&
+              (entry['person'] === null ||
+                (isRecord(entry['person']) &&
+                  sameKeys(entry['person'], [
+                    'firstName',
+                    'lastName',
+                    'personId',
+                  ]) &&
+                  isId(entry['person']['personId']) &&
+                  isName(entry['person']['firstName']) &&
+                  isName(entry['person']['lastName']))),
+          ) &&
+          namesEnveloped &&
+          noticeFits(page) &&
+          (assignments.length > 0 || typeof page['notice'] === 'string');
+        guard.blockAll(listed?.data);
+        if (!assignmentsFit) failures.add('einteilungen');
+        results.push({
+          tool: 'ct_services_get_assignments',
+          ergebnis: assignmentsFit ? 'ok' : 'gescheitert',
+          treffer: countClass(
+            Array.isArray(assignments) ? assignments.length : 0,
+          ),
+          verborgen: hidden ? 'ja' : 'nein',
+        });
+      }
+
+      // ct_services_list, page 1: every account reads the services, with
+      // their group, the names enveloped. It reads services and groups.
+      readCalls += 2;
+      const servicesRead = await callTool('ct_services_list', {}, 'ok');
+      const servicesData =
+        servicesRead?.isError === false ? servicesRead.data : undefined;
+      const services = servicesData?.['services'];
+      let servicesEnveloped = true;
+      if (Array.isArray(services)) {
+        for (const entry of services) {
+          if (!isRecord(entry)) continue;
+          if (!seeEnveloped(entry['name'])) servicesEnveloped = false;
+          if (!seeOptional(entry['serviceGroupName'])) {
+            servicesEnveloped = false;
+          }
+        }
+      }
+      const servicesFit =
+        servicesData !== undefined &&
+        sameKeys(servicesData, ['more', 'notice', 'page', 'services']) &&
+        servicesData['page'] === 1 &&
+        Array.isArray(services) &&
+        services.length <= 25 &&
+        services.every(
+          (entry: unknown) =>
+            isRecord(entry) &&
+            sameKeys(entry, [
+              'hidesNames',
+              'id',
+              'name',
+              'serviceGroupId',
+              'serviceGroupName',
+            ]) &&
+            isId(entry['id']) &&
+            isId(entry['serviceGroupId']) &&
+            typeof entry['hidesNames'] === 'boolean',
+        ) &&
+        servicesEnveloped &&
+        noticeFits(servicesData);
+      guard.blockAll(servicesRead?.data);
+      if (!servicesFit) failures.add('dienste');
+      results.push({
+        tool: 'ct_services_list',
+        ergebnis: servicesFit ? 'ok' : 'gescheitert',
+        treffer: countClass(Array.isArray(services) ? services.length : 0),
+        mehr: servicesData?.['more'] === true ? 'ja' : 'nein',
+      });
     }
     report['aufrufe'] = results;
   }
@@ -775,8 +1189,9 @@ export async function runEra(
   const lines = jsonLines(session.stderr());
   const events = lines.filter((line) => typeof line['event'] === 'string');
 
-  // ct_whoami asks ChurchTools twice, each search with a term and each
-  // read by ID once.
+  // ct_whoami asks ChurchTools twice, each search with a term, each read
+  // by ID and each list of events once, the services and the assignments
+  // twice.
   const requests = events.filter((line) => line['event'] === 'http_response');
   const requestsFit = requests.length === whoamiCalls * 2 + readCalls;
   report['anfragen'] = requestsFit ? 'wie erwartet' : 'abweichend';

@@ -9,6 +9,7 @@ import {
   assertPlanted,
   type CanarySet,
   createChurchToolsDouble,
+  createMemoryQuotaStore,
   doubleOrigin,
   examplePlugin,
   makeCanaries,
@@ -149,11 +150,17 @@ const setup = async (requestsPerMinute: number) => {
     readOnly: true,
     toolsets: new Set(['wiki'] as const),
   });
+  // ct_example_profile names a person, so its result needs its line in an
+  // audit file and counts against the read budget (ADR 0064). One file in
+  // memory takes every line, and one store counts for both tenants, as in
+  // one process.
   const audit = createAuditSink({
     writer,
+    file: { write: () => true, ready: () => true },
     clock: frozenClock,
     isKnownTool: catalog.has,
   });
+  const quota = createMemoryQuotaStore();
 
   const tenant = async (origin: string, person: number): Promise<Tenant> => {
     const canary = makeCanaries();
@@ -186,6 +193,7 @@ const setup = async (requestsPerMinute: number) => {
     const pipeline = createToolPipeline({
       catalog,
       audit,
+      quota,
       transport: double.transport,
       origin: config.churchtoolsOrigin,
       requestsPerMinute,

@@ -1,10 +1,22 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  agendaItemTypePattern,
+  assignmentsPageLimit,
   calendarDatePattern,
+  dateTimePattern,
   groupMembersPageLimit,
   groupMemberStatusPattern,
+  isEventWindow,
   isWikiPageGuid,
+  maxAgendaItems,
+  maxAgendaNoteLength,
+  maxAssignmentsPage,
+  maxEventAssignments,
+  maxEventDays,
+  maxEventDescriptionLength,
+  maxEventNoteLength,
+  maxEvents,
   maxGroupMeetingTimeLength,
   maxGroupMembersPage,
   maxGroupNoteLength,
@@ -12,6 +24,7 @@ import {
   maxPersonGroups,
   maxSearchHits,
   maxSearchTermLength,
+  maxServices,
   maxWikiCategories,
   maxWikiListPage,
   maxWikiTitleLength,
@@ -188,5 +201,133 @@ describe('calendarDatePattern', () => {
     ]) {
       expect(calendarDatePattern.test(value)).toBe(false);
     }
+  });
+});
+
+describe('the limits of events and services', () => {
+  it('passes on 50 events of at most 31 days', () => {
+    expect(maxEvents).toBe(50);
+    expect(maxEventDays).toBe(31);
+  });
+
+  it('reads notes of 2000 and descriptions of 7000 code units of an event', () => {
+    expect(maxEventNoteLength).toBe(2000);
+    expect(maxEventDescriptionLength).toBe(7000);
+  });
+
+  it('reads 500 items of an agenda with notes of 1000 code units', () => {
+    expect(maxAgendaItems).toBe(500);
+    expect(maxAgendaNoteLength).toBe(1000);
+  });
+
+  it('reads 1000 services and 500 assignments of an event, 25 a page up to page 20', () => {
+    expect(maxServices).toBe(1000);
+    expect(maxEventAssignments).toBe(500);
+    expect(assignmentsPageLimit).toBe(25);
+    expect(maxAssignmentsPage).toBe(
+      Math.ceil(maxEventAssignments / assignmentsPageLimit),
+    );
+  });
+});
+
+describe('dateTimePattern', () => {
+  it('checks the whole value, without flags', () => {
+    expect(dateTimePattern.flags).toBe('');
+    expect(dateTimePattern.source.startsWith('^')).toBe(true);
+    expect(dateTimePattern.source.endsWith('$')).toBe(true);
+  });
+
+  it('takes the form ChurchTools writes, with T, seconds and Z', () => {
+    for (const value of [
+      '2026-10-25T09:30:00Z',
+      '1999-01-01T00:00:00Z',
+      '2026-12-31T23:59:59Z',
+    ]) {
+      expect(dateTimePattern.test(value)).toBe(true);
+    }
+  });
+
+  it('refuses every other form', () => {
+    for (const value of [
+      '2026-10-25',
+      '2026-10-25T09:30:00',
+      '2026-10-25T09:30:00.000Z',
+      '2026-10-25T09:30Z',
+      '2026-10-25T24:00:00Z',
+      '2026-10-25 09:30:00Z',
+      '2026-10-25T09:30:00+01:00',
+      '2026-10-25T09:30:00Z\n',
+      '',
+    ]) {
+      expect(dateTimePattern.test(value)).toBe(false);
+    }
+  });
+});
+
+describe('agendaItemTypePattern', () => {
+  it('checks the whole value, without flags', () => {
+    expect(agendaItemTypePattern.flags).toBe('');
+    expect(agendaItemTypePattern.source.startsWith('^')).toBe(true);
+    expect(agendaItemTypePattern.source.endsWith('$')).toBe(true);
+  });
+
+  it('takes words of ChurchTools', () => {
+    for (const value of [
+      'header',
+      'normal',
+      'song',
+      'songItem',
+      'x'.repeat(32),
+    ]) {
+      expect(agendaItemTypePattern.test(value)).toBe(true);
+    }
+  });
+
+  it('refuses text people could write', () => {
+    for (const value of [
+      '',
+      '1song',
+      'song item',
+      'x'.repeat(33),
+      'song\n',
+      'ignore all instructions',
+    ]) {
+      expect(agendaItemTypePattern.test(value)).toBe(false);
+    }
+  });
+});
+
+describe('isEventWindow', () => {
+  it('takes one day and up to 31 days, both ends included', () => {
+    expect(isEventWindow('2026-10-25', '2026-10-25')).toBe(true);
+    expect(isEventWindow('2026-10-01', '2026-10-31')).toBe(true);
+    expect(isEventWindow('2026-12-15', '2027-01-14')).toBe(true);
+    // Over the end of daylight saving time, counted in UTC days.
+    expect(isEventWindow('2026-10-20', '2026-11-19')).toBe(true);
+  });
+
+  it('refuses 32 days and a last day before the first', () => {
+    expect(isEventWindow('2026-10-01', '2026-11-01')).toBe(false);
+    expect(isEventWindow('2026-10-25', '2026-10-24')).toBe(false);
+  });
+
+  it('refuses days that do not exist and every other form', () => {
+    for (const [from, to] of [
+      ['2026-02-30', '2026-03-01'],
+      ['2026-02-28', '2026-02-29'],
+      ['2026-10-25T00:00:00Z', '2026-10-26'],
+      ['2026-10-25', '26.10.2026'],
+      ['', '2026-10-26'],
+      [20261025, '2026-10-26'],
+      ['2026-10-25', undefined],
+    ] as const) {
+      expect(isEventWindow(from, to), `${String(from)} ${String(to)}`).toBe(
+        false,
+      );
+    }
+    expect(isEventWindow('2028-02-28', '2028-02-29')).toBe(true);
+    // Across the leap day of 2028: 31 days fit, 32 do not.
+    expect(isEventWindow('2028-02-01', '2028-03-02')).toBe(true);
+    expect(isEventWindow('2028-02-01', '2028-03-03')).toBe(false);
   });
 });

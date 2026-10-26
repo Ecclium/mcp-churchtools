@@ -45,7 +45,7 @@ Stufe der Maskierung. `standard` maskiert E-Mail-Adressen, Telefonnummern und Ge
 
 ## `ECCLIUM_TOOLSETS`
 
-Legt fest, welche Bereiche von Tools der Server anbietet: eine mit Komma getrennte Liste aus `persons` (Personen und Gruppen), `events` (Events und Dienste), `calendars` (Kalender, Termine, Ressourcen und Buchungen), `wiki` und `songs`, ohne Leerzeichen, oder `all` für alle. Leer oder nicht gesetzt bietet der Server nur `ct_whoami` an. `persons` verlangt im Betrieb über stdio `ECCLIUM_STATE_DIR` für die Audit-Datei. Die Variable ersetzt `ECCLIUM_SEARCH_TOOLS`: Statt `ECCLIUM_SEARCH_TOOLS=true` gilt `ECCLIUM_TOOLSETS=persons`.
+Legt fest, welche Bereiche von Tools der Server anbietet: eine mit Komma getrennte Liste aus `persons` (Personen und Gruppen), `events` (Events und Dienste), `calendars` (Kalender, Termine, Ressourcen und Buchungen), `wiki` und `songs`, ohne Leerzeichen, oder `all` für alle. Leer oder nicht gesetzt bietet der Server nur `ct_whoami` an. `persons` und `events` verlangen im Betrieb über stdio `ECCLIUM_STATE_DIR` für die Audit-Datei. Die Variable ersetzt `ECCLIUM_SEARCH_TOOLS`: Statt `ECCLIUM_SEARCH_TOOLS=true` gilt `ECCLIUM_TOOLSETS=persons`.
 
 ## `ECCLIUM_STATE_DIR`
 

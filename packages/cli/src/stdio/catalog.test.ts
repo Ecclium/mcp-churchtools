@@ -48,11 +48,34 @@ describe('the catalog over stdio', () => {
     }
   });
 
+  // Only the tool of the assignments names persons, so only it is treated
+  // like a special one (ADR 0064).
+  it('adds the five tools of events and services for the toolset events, one treated as special', () => {
+    const catalog = createStdioCatalog({
+      readOnly: true,
+      toolsets: ['events'],
+    });
+    expect(catalog.list().map((entry) => entry.name)).toEqual([
+      'ct_events_get',
+      'ct_events_get_agenda',
+      'ct_events_list',
+      'ct_services_get_assignments',
+      'ct_services_list',
+      'ct_whoami',
+    ]);
+    for (const entry of catalog.list()) {
+      expect(entry.meta.sensitivity).not.toBe('special');
+      expect(entry.asSpecial).toBe(
+        entry.name === 'ct_services_get_assignments',
+      );
+    }
+  });
+
   // The other toolsets have no tool of the core yet.
   it('adds no tool for a toolset without tools', () => {
     const catalog = createStdioCatalog({
       readOnly: true,
-      toolsets: ['events', 'calendars', 'songs'],
+      toolsets: ['calendars', 'songs'],
     });
     expect(catalog.list().map((entry) => entry.name)).toEqual(['ct_whoami']);
   });

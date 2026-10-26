@@ -13,6 +13,7 @@ import {
 } from '@ecclium/mcp-churchtools-plugin-api';
 import {
   createChurchToolsDouble,
+  createMemoryQuotaStore,
   doubleOrigin,
   examplePlugin,
   makeCanary,
@@ -156,12 +157,17 @@ const setup = (
         return true;
       },
     },
+    // ct_example_profile names a person, so its result needs its line in
+    // an audit file and counts against the read budget (ADR 0064). A file
+    // in memory takes every line.
+    file: { write: () => true, ready: () => true },
     clock,
     isKnownTool: catalog.has,
   });
   const pipeline = createToolPipeline({
     catalog,
     audit,
+    quota: createMemoryQuotaStore(),
     transport: double.transport,
     origin: doubleOrigin,
     requestsPerMinute: 300,

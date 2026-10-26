@@ -113,6 +113,7 @@ const tokenVariable = quote('ECCLIUM_CHURCHTOOLS_TOKEN');
 const stateDir = quote('ECCLIUM_STATE_DIR');
 const toolsets = quote('ECCLIUM_TOOLSETS');
 const personsToolset = quote('persons');
+const eventsToolset = quote('events');
 // With all, there is no name to remove.
 const insteadOfAll = `Steht dort ${quote('all')}, nennen Sie stattdessen die übrigen Toolsets einzeln.`;
 // The names of the toolsets as German prose: ‹a›, ‹b› und ‹c›.
@@ -607,12 +608,13 @@ const problems: Readonly<
       `Prüfen Sie Eigentümer und Rechte des Ordners aus ${name}.`,
     ),
   // Reported for the folder, which is what is missing; the toolsets
-  // themselves are valid. Only persons needs the folder so far.
+  // themselves are valid. persons and events need the folder, because
+  // their tools name persons (ADR 0028, ADR 0064).
   toolsets_without_state_dir: (name = stateDir) =>
     message(
-      `Das Toolset ${personsToolset} ist in ${toolsets} eingeschaltet, aber ${name} ist nicht gesetzt.`,
-      `Ein Ergebnis seiner Tools gibt Ecclium nur heraus, wenn seine Zeile in der Audit-Datei steht, und die Audit-Datei liegt im Ordner aus ${name}. Unter Windows gibt es sie im Betrieb über stdio nicht, und damit auch dieses Toolset nicht.`,
-      `Setzen Sie ${name} auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 oder entfernen Sie ${personsToolset} aus ${toolsets}. ${insteadOfAll}`,
+      `In ${toolsets} ist ${personsToolset} oder ${eventsToolset} eingeschaltet, aber ${name} ist nicht gesetzt.`,
+      `Tools dieser Toolsets nennen Personen. Ein Ergebnis solcher Tools gibt Ecclium nur heraus, wenn seine Zeile in der Audit-Datei steht, und die Audit-Datei liegt im Ordner aus ${name}. Unter Windows gibt es sie im Betrieb über stdio nicht, und damit auch diese Toolsets nicht.`,
+      `Setzen Sie ${name} auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 oder entfernen Sie ${personsToolset} und ${eventsToolset} aus ${toolsets}, soweit sie dort stehen. ${insteadOfAll}`,
     ),
 });
 
@@ -634,6 +636,13 @@ const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({
     `Das Toolset ${personsToolset} ist eingeschaltet.`,
     'Der KI-Assistent kann damit Personen und Gruppen der Instanz nach Namen suchen und sieht Kennung und Name jedes Treffers. Er liest auch die Gruppen einer Person, die Angaben einer Gruppe mit ihrer Notiz und die Namen ihrer Mitglieder mit Rolle und Stand der Mitgliedschaft. Kontaktdaten liest er nicht. Jeder Aufruf steht in der Audit-Datei.',
     `Entfernen Sie ${personsToolset} aus ${toolsets}, wenn er diese Daten nicht sehen soll. ${insteadOfAll}`,
+  ),
+  // On every start, because the assignments to services let the AI
+  // assistant see the names of the persons who serve (ADR 0064).
+  events_toolset_enabled: message(
+    `Das Toolset ${eventsToolset} ist eingeschaltet.`,
+    'Der KI-Assistent kann damit Events, ihre Abläufe und die Dienste der Instanz lesen und sieht, wer in die Dienste eines Events eingeteilt ist, mit Kennung und Name, ausser bei Diensten, die die Namen verbergen. Kontaktdaten liest er nicht. Jeder Aufruf der Einteilungen steht in der Audit-Datei.',
+    `Entfernen Sie ${eventsToolset} aus ${toolsets}, wenn er diese Daten nicht sehen soll. ${insteadOfAll}`,
   ),
   // One text for every setting: the report of the loader names none of
   // them, and never the path of a certificate.
