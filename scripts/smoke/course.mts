@@ -439,6 +439,7 @@ export async function runEra(
             'ct_persons_get_groups',
             'ct_persons_search',
             'ct_resources_list',
+            'ct_search',
             'ct_services_get_assignments',
             'ct_services_list',
             'ct_whoami',

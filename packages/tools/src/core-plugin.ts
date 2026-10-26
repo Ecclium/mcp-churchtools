@@ -24,11 +24,15 @@ import { personsGetTool } from './persons/get.js';
 import { personsGetGroupsTool } from './persons/groups.js';
 import { personsSearchTool } from './persons/search.js';
 import { resourcesListTool } from './resources/list.js';
+import { searchTool } from './search/global.js';
 import { servicesGetAssignmentsTool } from './services/assignments.js';
 import { servicesListTool } from './services/list.js';
+import { songsGetTool } from './songs/get.js';
+import { songsSearchTool } from './songs/search.js';
 import { wikiCategoriesListTool } from './wiki/categories.js';
 import { wikiPageGetTool } from './wiki/page.js';
 import { wikiPagesListTool } from './wiki/pages.js';
+import { wikiSearchTool } from './wiki/search.js';
 
 /**
  * Builds the plugin of the free core, under the name of the package of the
@@ -60,9 +64,11 @@ export function createCorePlugin(): Plugin {
       host.addTool(groupsSearchTool);
       host.addTool(groupsGetTool);
       host.addTool(groupsGetMembersTool);
+      host.addTool(searchTool);
       host.addTool(wikiCategoriesListTool);
       host.addTool(wikiPagesListTool);
       host.addTool(wikiPageGetTool);
+      host.addTool(wikiSearchTool);
       host.addTool(eventsListTool);
       host.addTool(eventsGetTool);
       host.addTool(eventsGetAgendaTool);
@@ -73,6 +79,8 @@ export function createCorePlugin(): Plugin {
       host.addTool(appointmentsGetTool);
       host.addTool(resourcesListTool);
       host.addTool(bookingsListTool);
+      host.addTool(songsSearchTool);
+      host.addTool(songsGetTool);
       return undefined;
     },
   });

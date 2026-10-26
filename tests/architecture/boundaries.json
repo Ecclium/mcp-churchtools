@@ -163,7 +163,9 @@
         "packages/tools/src/groups/",
         "packages/tools/src/persons/",
         "packages/tools/src/resources/",
+        "packages/tools/src/search/",
         "packages/tools/src/services/",
+        "packages/tools/src/songs/",
         "packages/tools/src/wiki/",
         "packages/tools/src/core-plugin.ts"
       ]

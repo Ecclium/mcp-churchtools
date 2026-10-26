@@ -14,7 +14,7 @@ describe('the catalog over stdio', () => {
   );
 
   it.each([true, false])(
-    'adds the six tools of persons and groups with readOnly %s and the toolset persons, all special',
+    'adds the six tools of persons and groups and the global search with readOnly %s and the toolset persons, all special',
     (readOnly) => {
       const catalog = createStdioCatalog({ readOnly, toolsets: ['persons'] });
       expect(catalog.list().map((entry) => entry.name)).toEqual([
@@ -24,6 +24,7 @@ describe('the catalog over stdio', () => {
         'ct_persons_get',
         'ct_persons_get_groups',
         'ct_persons_search',
+        'ct_search',
         'ct_whoami',
       ]);
       for (const entry of catalog.list()) {
@@ -35,16 +36,20 @@ describe('the catalog over stdio', () => {
     },
   );
 
-  it('adds the three tools of the wiki for the toolset wiki, none of them special', () => {
+  // The search in the wiki names no person in a field of its own: its
+  // previews are text in the data envelope (ADR 0064).
+  it('adds the four tools of the wiki for the toolset wiki, none of them special or treated as special', () => {
     const catalog = createStdioCatalog({ readOnly: true, toolsets: ['wiki'] });
     expect(catalog.list().map((entry) => entry.name)).toEqual([
       'ct_whoami',
       'ct_wiki_categories_list',
       'ct_wiki_page_get',
       'ct_wiki_pages_list',
+      'ct_wiki_search',
     ]);
     for (const entry of catalog.list()) {
       expect(entry.meta.sensitivity).not.toBe('special');
+      expect(entry.asSpecial).toBe(false);
     }
   });
 
@@ -94,12 +99,22 @@ describe('the catalog over stdio', () => {
     }
   });
 
-  // The toolset songs has no tool of the core yet.
-  it('adds no tool for a toolset without tools', () => {
+  // Songs name no person of ChurchTools, so neither tool is treated like
+  // a special one and the toolset needs no folder of state (ADR 0064).
+  it('adds the two tools of songs for the toolset songs, none treated as special', () => {
     const catalog = createStdioCatalog({
       readOnly: true,
       toolsets: ['songs'],
     });
-    expect(catalog.list().map((entry) => entry.name)).toEqual(['ct_whoami']);
+    expect(catalog.list().map((entry) => entry.name)).toEqual([
+      'ct_songs_get',
+      'ct_songs_search',
+      'ct_whoami',
+    ]);
+    for (const entry of catalog.list()) {
+      expect(entry.origin).toBe('core');
+      expect(entry.meta.sensitivity).not.toBe('special');
+      expect(entry.asSpecial).toBe(false);
+    }
   });
 });

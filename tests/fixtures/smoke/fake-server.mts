@@ -113,6 +113,7 @@ const toolNames = [
       ]
     : []),
   ...(calendarsToolset ? ['ct_resources_list'] : []),
+  ...(personsToolset ? ['ct_search'] : []),
   ...(eventsToolset ? ['ct_services_get_assignments', 'ct_services_list'] : []),
   'ct_whoami',
   ...(scenario === 'write-tool' ? ['ct_wiki_page_create'] : []),
