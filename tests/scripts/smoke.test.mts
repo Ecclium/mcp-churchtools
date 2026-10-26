@@ -555,6 +555,10 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     ['search-person-enveloped', 'globale_suche'],
     ['search-other-list', 'globale_suche'],
     ['search-foreign', 'globale_suche'],
+    ['prompt-unfilled', 'prompts'],
+    ['prompt-friday', 'prompts'],
+    ['prompt-no-log', 'prompts'],
+    ['prompt-leak-log', 'protokoll'],
     ['exit-1', 'ende'],
   ] as const)(
     'fails when the server breaks it: %s',

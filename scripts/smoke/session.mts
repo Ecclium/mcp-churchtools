@@ -24,10 +24,18 @@ export interface Ended {
   readonly killed: boolean;
 }
 
-/** The answer to one request. */
+/**
+ * The answer to one request. An error keeps its code and message, so the
+ * smoke test can compare them with the fixed sentences of the server; it
+ * never prints them.
+ */
 export type Answer =
   | { readonly kind: 'result'; readonly result: unknown }
-  | { readonly kind: 'error' }
+  | {
+      readonly kind: 'error';
+      readonly code: number | undefined;
+      readonly message: string | undefined;
+    }
   | { readonly kind: 'none' };
 
 /** A running server. */
@@ -146,10 +154,17 @@ export function startServer(
     const settle = waiting.get(id);
     if (settle === undefined) return;
     waiting.delete(id);
+    const error = message['error'];
+    const code = isRecord(error) ? error['code'] : undefined;
+    const text = isRecord(error) ? error['message'] : undefined;
     settle(
       'result' in message
         ? { kind: 'result', result: message['result'] }
-        : { kind: 'error' },
+        : {
+            kind: 'error',
+            code: typeof code === 'number' ? code : undefined,
+            message: typeof text === 'string' ? text : undefined,
+          },
     );
   };
 
