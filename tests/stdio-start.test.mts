@@ -1283,3 +1283,118 @@ describe.skipIf(process.getuid?.() === 0)(
     });
   },
 );
+
+describe.each(eras)(
+  'the prompts of the real start in the $name era',
+  { timeout },
+  (era) => {
+    let server: TestServer;
+    let listed: Json;
+    let rota: Json;
+    let draft: Json;
+    let friday: Json;
+    let finished: Finished;
+    const keywords = `Kaffee ${canary.name.value}`;
+
+    beforeAll(async () => {
+      const stateDir = mkdtempSync(join(folder, 'prompts-'));
+      chmodSync(stateDir, 0o700);
+      server = await serveTls(churchTools);
+      const launched = overTls(server.origin);
+      const session = launch({
+        ...launched,
+        env: {
+          ...launched.env,
+          ECCLIUM_TOOLSETS: 'events,wiki',
+          ECCLIUM_STATE_DIR: stateDir,
+        },
+      });
+      await era.open(session);
+      const ask = (id: number, method: string, params: Json) => {
+        session.send({
+          jsonrpc: '2.0',
+          id,
+          method,
+          params: era.params(params),
+        });
+        return session.response(id);
+      };
+      listed = await ask(2, 'prompts/list', {});
+      rota = await ask(3, 'prompts/get', {
+        name: 'dienstplan_wochenende',
+        arguments: { samstag: '2026-10-31' },
+      });
+      draft = await ask(4, 'prompts/get', {
+        name: 'wiki_seite_entwerfen',
+        arguments: { stichworte: keywords },
+      });
+      friday = await ask(5, 'prompts/get', {
+        name: 'dienstplan_wochenende',
+        arguments: { samstag: '2026-10-30' },
+      });
+      finished = await session.finish();
+    }, timeout);
+
+    it('lists both prompts of the core with their required arguments', () => {
+      const prompts = at(listed, 'result', 'prompts') as readonly Json[];
+      expect(
+        prompts.map((prompt) => [prompt['name'], prompt['title']]),
+      ).toEqual([
+        ['dienstplan_wochenende', 'Dienstplan-Überblick für ein Wochenende'],
+        ['wiki_seite_entwerfen', 'Wiki-Seite aus Stichworten'],
+      ]);
+      expect(
+        prompts.map((prompt) =>
+          (prompt['arguments'] as readonly Json[]).map((argument) => [
+            argument['name'],
+            argument['required'],
+          ]),
+        ),
+      ).toEqual([[['samstag', true]], [['stichworte', true]]]);
+    });
+
+    it('returns each prompt as one message of the person and asks ChurchTools nothing', () => {
+      for (const [answer, start] of [
+        [
+          rota,
+          'Überblick über den Dienstplan für das Wochenende von Samstag, 2026-10-31,',
+        ],
+        [draft, 'Entwurf einer Seite für das Wiki in ChurchTools'],
+      ] as const) {
+        const messages = at(answer, 'result', 'messages') as readonly Json[];
+        expect(messages).toHaveLength(1);
+        expect(at(messages, 0, 'role')).toBe('user');
+        expect(at(messages, 0, 'content', 'type')).toBe('text');
+        expect(
+          String(at(messages, 0, 'content', 'text')).startsWith(start),
+        ).toBe(true);
+      }
+      expect(
+        String(at(draft, 'result', 'messages', 0, 'content', 'text')),
+      ).toContain(keywords);
+      expect(server.requests).toEqual([]);
+    });
+
+    it('refuses a Friday with invalid params and the fixed sentence', () => {
+      expect(at(friday, 'error', 'code')).toBe(-32602);
+      expect(at(friday, 'error', 'message')).toBe(
+        'The argument samstag is missing or does not fit. Its description in the list of prompts says what it takes.',
+      );
+    });
+
+    it('writes only JSON-RPC on stdout, a log line per prompt and no audit line', () => {
+      expect(protocolViolations(finished.stdout)).toEqual([]);
+      expect(
+        jsonLines(finished.stderr)
+          .filter((line) => String(line['event']).startsWith('prompt_'))
+          .map((line) => [line['event'], line['prompt'], line['code']]),
+      ).toEqual([
+        ['prompt_served', 'dienstplan_wochenende', undefined],
+        ['prompt_served', 'wiki_seite_entwerfen', undefined],
+        ['prompt_refused', 'dienstplan_wochenende', 'validation'],
+      ]);
+      expect(auditOf(finished.stderr)).toEqual([]);
+      expect(finished.stderr).not.toContain(canary.name.value);
+    });
+  },
+);
