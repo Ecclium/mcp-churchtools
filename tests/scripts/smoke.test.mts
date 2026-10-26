@@ -264,7 +264,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
         'ECCLIUM_STATE_DIR',
         'ECCLIUM_TOOLSETS',
       ]);
-      expect(record.variables['ECCLIUM_TOOLSETS']).toBe('persons');
+      expect(record.variables['ECCLIUM_TOOLSETS']).toBe('persons,events');
       expect(record.calls).toEqual([
         'ct_whoami',
         'ct_persons_search',
@@ -275,6 +275,11 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
         'ct_persons_get_groups',
         'ct_groups_get',
         'ct_groups_get_members',
+        'ct_events_list',
+        'ct_events_get',
+        'ct_events_get_agenda',
+        'ct_services_get_assignments',
+        'ct_services_list',
       ]);
     }
     expect(stateDirsLeft()).toEqual([]);
@@ -450,6 +455,11 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     ['membership-no-envelope', 'gruppen_der_person'],
     ['group-bare-note', 'gruppe'],
     ['member-status', 'mitglieder'],
+    ['events-bad-date', 'events'],
+    ['event-bare-note', 'event'],
+    ['agenda-bad-type', 'ablauf'],
+    ['assignment-extra', 'einteilungen'],
+    ['services-bare-name', 'dienste'],
     ['exit-1', 'ende'],
   ] as const)(
     'fails when the server breaks it: %s',
@@ -496,6 +506,26 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     const nobody = await run({ env: search, scenario: 'no-hits' });
     expect(nobody.code).toBe(smokeExitCodes.ok);
     expect(report(nobody)['befunde']).toEqual(['keine_personen_gefunden']);
+  });
+
+  it('passes with a finding when no span holds an event or the event has no agenda', async () => {
+    const noEvents = await run({ env: search, scenario: 'no-events' });
+    expect(noEvents.code).toBe(smokeExitCodes.ok);
+    expect(report(noEvents)['befunde']).toEqual(['kein_event_gefunden']);
+    // Three spans of 31 days, then the services; no read of an event.
+    for (const record of noEvents.records) {
+      expect(record.calls.slice(9)).toEqual([
+        'ct_events_list',
+        'ct_events_list',
+        'ct_events_list',
+        'ct_services_list',
+      ]);
+    }
+    const noAgenda = await run({ env: search, scenario: 'event-no-agenda' });
+    expect(noAgenda.code).toBe(smokeExitCodes.ok);
+    expect(report(noAgenda)['befunde']).toEqual(['kein_ablauf']);
+    expect(report(noAgenda)['fehler']).toEqual([]);
+    expectClean(noAgenda);
   });
 });
 
@@ -601,6 +631,116 @@ describe.skipIf(process.getuid?.() === 0)(
             pagination: { total: 1, limit: 50, current: 1, lastPage: 1 },
           },
         });
+      } else if (url.pathname === '/api/events') {
+        json(response, {
+          data: [
+            {
+              id: 31,
+              name: `${canary}Gottesdienst`,
+              startDate: '2026-10-25T09:00:00Z',
+              endDate: '2026-10-25T10:30:00Z',
+              isCanceled: false,
+              calendar: { domainIdentifier: '8', title: `${canary}Kalender` },
+            },
+          ],
+          meta: { count: 1 },
+        });
+      } else if (url.pathname === '/api/events/31') {
+        // One answer for the event and for its assignments, as ChurchTools
+        // gives it: the assignment of a service that hides the names
+        // carries a placeholder and no positive ID (F37).
+        json(response, {
+          data: {
+            id: 31,
+            name: `${canary}Gottesdienst`,
+            startDate: '2026-10-25T09:00:00Z',
+            endDate: '2026-10-25T10:30:00Z',
+            isCanceled: false,
+            calendar: { domainIdentifier: '8', title: `${canary}Kalender` },
+            note: `${canary}Notiz`,
+            description: null,
+            eventServices: [
+              {
+                serviceId: 11,
+                isAccepted: true,
+                agreed: true,
+                personId: 11,
+                person: {
+                  domainAttributes: {
+                    firstName: `${canary}Erika`,
+                    lastName: `${canary}Muster`,
+                  },
+                },
+                requesterPerson: {
+                  domainAttributes: {
+                    firstName: `${canary}Anfrage`,
+                    lastName: `${canary}Person`,
+                  },
+                },
+              },
+              {
+                serviceId: 14,
+                isAccepted: false,
+                agreed: false,
+                personId: 0,
+                person: {
+                  domainAttributes: {
+                    firstName: '',
+                    lastName: `${canary}Platzhalter`,
+                  },
+                },
+              },
+            ],
+          },
+        });
+      } else if (url.pathname === '/api/events/31/agenda') {
+        json(response, {
+          data: {
+            name: `${canary}Ablauf`,
+            isFinal: false,
+            items: [
+              {
+                position: 1,
+                type: 'song',
+                title: `${canary}Punkt`,
+                start: '2026-10-25T09:00:00Z',
+                duration: 300,
+                isBeforeEvent: false,
+                note: null,
+                song: {
+                  songId: 2,
+                  arrangementId: 3,
+                  title: `${canary}Lied`,
+                  arrangement: null,
+                },
+                responsible: { text: `${canary}Verantwortlich`, persons: [] },
+              },
+            ],
+          },
+        });
+      } else if (url.pathname === '/api/services') {
+        json(response, {
+          data: [
+            {
+              id: 11,
+              name: `${canary}DienstA`,
+              serviceGroupId: 5,
+              hidePersonName: false,
+            },
+            {
+              id: 14,
+              name: `${canary}DienstB`,
+              serviceGroupId: 5,
+              hidePersonName: true,
+            },
+          ],
+          meta: { count: 2 },
+        });
+      } else if (url.pathname === '/api/servicegroups') {
+        json(response, {
+          data: [{ id: 5, name: `${canary}Dienstgruppe` }],
+          meta: { count: 1 },
+        });
       } else if (url.pathname === '/api/persons') {
         json(response, {
           data: term.startsWith('zq')
@@ -698,9 +838,10 @@ describe.skipIf(process.getuid?.() === 0)(
         fehler: [],
         ergebnis: 'bestanden',
       });
-      // Per era: two for ct_whoami, one for each search with a term and
-      // each read by ID, none for the term of spaces.
-      expect(requests).toHaveLength(18);
+      // Per era: two for ct_whoami, one for each search with a term, each
+      // read by ID and the list of events, none for the term of spaces,
+      // three for the assignments and two for the services.
+      expect(requests).toHaveLength(34);
       expect(stateDirsLeft()).toEqual([]);
       expectClean(result);
     });

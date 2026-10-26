@@ -1,5 +1,5 @@
 // A stand-in for `ecclium stdio` in the tests of the smoke test. It speaks
-// JSON-RPC over stdio in both eras, answers the seven tools with synthetic
+// JSON-RPC over stdio in both eras, answers the twelve tools with synthetic
 // canary values and writes log, audit lines on stderr and an audit file in
 // the form of the real server. FAKE_SCENARIO breaks one thing at a time,
 // so that each check of the smoke test can be seen to fail. FAKE_RECORD
@@ -19,7 +19,9 @@ import { createInterface } from 'node:readline';
 const env = process.env;
 const scenario = env['FAKE_SCENARIO'] ?? 'normal';
 const canary = env['FAKE_CANARY'] ?? 'canary';
-const personsToolset = env['ECCLIUM_TOOLSETS'] === 'persons';
+const toolsets = (env['ECCLIUM_TOOLSETS'] ?? '').split(',');
+const personsToolset = toolsets.includes('persons');
+const eventsToolset = toolsets.includes('events');
 const calls: string[] = [];
 
 const record = (): void => {
@@ -88,6 +90,9 @@ const annotations = {
   openWorldHint: true,
 };
 const toolNames = [
+  ...(eventsToolset
+    ? ['ct_events_get', 'ct_events_get_agenda', 'ct_events_list']
+    : []),
   ...(personsToolset
     ? [
         'ct_groups_get',
@@ -98,6 +103,7 @@ const toolNames = [
         'ct_persons_search',
       ]
     : []),
+  ...(eventsToolset ? ['ct_services_get_assignments', 'ct_services_list'] : []),
   'ct_whoami',
   ...(scenario === 'write-tool' ? ['ct_wiki_page_create'] : []),
 ];
@@ -218,6 +224,156 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
           lastName: `${canary}Muster`,
           groupTypeRoleId: 8,
           groupMemberStatus: scenario === 'member-status' ? 'Aktiv' : 'active',
+        },
+      ],
+      more: false,
+      notice: null,
+    });
+  }
+  if (name === 'ct_events_list') {
+    event('http_response', { status: 200 });
+    audit(name);
+    const day = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+    const spanFits =
+      typeof args['from'] === 'string' &&
+      day.test(args['from']) &&
+      typeof args['to'] === 'string' &&
+      day.test(args['to']);
+    if (scenario === 'no-events' || !spanFits) {
+      return result({
+        from: args['from'],
+        to: args['to'],
+        page: 1,
+        events: [],
+        more: false,
+        notice: 'No event is listed for these days.',
+      });
+    }
+    return result({
+      from: args['from'],
+      to: args['to'],
+      page: 1,
+      events: [
+        {
+          id: 31,
+          name: wrap(`${canary}Gottesdienst`),
+          startDate:
+            scenario === 'events-bad-date'
+              ? '2026-10-25 09:00'
+              : '2026-10-25T09:00:00Z',
+          endDate: '2026-10-25T10:30:00Z',
+          isCanceled: false,
+          calendarId: 8,
+          calendarName: wrap(`${canary}Kalender`),
+        },
+      ],
+      more: false,
+      notice: null,
+    });
+  }
+  if (name === 'ct_events_get') {
+    event('http_response', { status: 200 });
+    audit(name);
+    const note = `${canary}Notiz`;
+    return result({
+      id: args['eventId'],
+      name: wrap(`${canary}Gottesdienst`),
+      startDate: '2026-10-25T09:00:00Z',
+      endDate: '2026-10-25T10:30:00Z',
+      isCanceled: false,
+      calendarId: 8,
+      calendarName: wrap(`${canary}Kalender`),
+      note: scenario === 'event-bare-note' ? note : wrap(note),
+      description: null,
+    });
+  }
+  if (name === 'ct_events_get_agenda') {
+    if (scenario === 'event-no-agenda') {
+      event('http_response', { status: 404 });
+      audit(name, 'not_found');
+      return {
+        content: [{ type: 'text', text: 'There is no agenda for this ID.' }],
+        isError: true,
+      };
+    }
+    event('http_response', { status: 200 });
+    audit(name);
+    return result({
+      eventId: args['eventId'],
+      page: 1,
+      name: wrap(`${canary}Ablauf`),
+      isFinal: false,
+      items: [
+        {
+          position: 1,
+          type: scenario === 'agenda-bad-type' ? 'Lied Eins' : 'song',
+          title: wrap(`${canary}Punkt`),
+          start: '2026-10-25T09:00:00Z',
+          duration: 300,
+          isBeforeEvent: false,
+          note: null,
+          song: {
+            songId: 2,
+            arrangementId: 3,
+            title: wrap(`${canary}Lied`),
+            arrangement: null,
+          },
+        },
+      ],
+      more: false,
+      notice: null,
+    });
+  }
+  if (name === 'ct_services_get_assignments') {
+    event('http_response', { status: 200 });
+    event('http_response', { status: 200 });
+    event('http_response', { status: 200 });
+    audit(name);
+    return result({
+      eventId: args['eventId'],
+      page: 1,
+      assignments: [
+        {
+          serviceId: 11,
+          serviceName: wrap(`${canary}Dienst`),
+          isAccepted: true,
+          agreed: true,
+          person: {
+            personId: 811,
+            firstName: `${canary}Erika`,
+            lastName: `${canary}Muster`,
+            ...(scenario === 'assignment-extra'
+              ? { email: 'x@example.org' }
+              : {}),
+          },
+        },
+        {
+          serviceId: 14,
+          serviceName: wrap(`${canary}Dienst`),
+          isAccepted: false,
+          agreed: false,
+          person: null,
+        },
+      ],
+      more: false,
+      notice: 'Some assignments name no person.',
+    });
+  }
+  if (name === 'ct_services_list') {
+    event('http_response', { status: 200 });
+    event('http_response', { status: 200 });
+    audit(name);
+    const serviceName = `${canary}Dienst`;
+    return result({
+      page: 1,
+      services: [
+        {
+          id: 11,
+          name:
+            scenario === 'services-bare-name' ? serviceName : wrap(serviceName),
+          serviceGroupId: 5,
+          serviceGroupName: wrap(`${canary}Dienstgruppe`),
+          hidesNames: false,
         },
       ],
       more: false,
