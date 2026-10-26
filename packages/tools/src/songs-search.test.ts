@@ -472,26 +472,32 @@ describe('ct_songs_get', () => {
     ]);
   });
 
-  it('gives 20 arrangements and says when the song has more', async () => {
-    const { double, call } = setup();
-    double.intercept({ path: '/api/songs/7', method: 'GET' }).reply(
-      200,
-      songAnswer(
-        song(7, {
-          arrangements: Array.from({ length: 21 }, (_, index) => ({
-            id: index + 1,
-            name: 'A',
-            key: null,
-            isDefault: index === 0,
-          })),
-        }),
-      ).body,
-      json,
-    );
-    const outcome = await call('ct_songs_get', { songId: 7 });
-    expect(outcome.ok && outcome.data['arrangements']).toHaveLength(20);
-    expect(outcome.ok && outcome.data['moreArrangements']).toBe(true);
-  });
+  it.each([
+    [20, false],
+    [21, true],
+  ])(
+    'gives 20 of %i arrangements and says whether the song has more: %s',
+    async (count, more) => {
+      const { double, call } = setup();
+      double.intercept({ path: '/api/songs/7', method: 'GET' }).reply(
+        200,
+        songAnswer(
+          song(7, {
+            arrangements: Array.from({ length: count }, (_, index) => ({
+              id: index + 1,
+              name: 'A',
+              key: null,
+              isDefault: index === 0,
+            })),
+          }),
+        ).body,
+        json,
+      );
+      const outcome = await call('ct_songs_get', { songId: 7 });
+      expect(outcome.ok && outcome.data['arrangements']).toHaveLength(20);
+      expect(outcome.ok && outcome.data['moreArrangements']).toBe(more);
+    },
+  );
 });
 
 describe('ct_wiki_search', () => {
