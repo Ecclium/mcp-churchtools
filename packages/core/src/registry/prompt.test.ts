@@ -216,7 +216,7 @@ describe('checkPrompt', () => {
     ],
     [
       'a text with CR LF',
-      { ...valid, text: valid.text.replace('\n', '\r\n') },
+      { ...valid, text: valid.text.replaceAll('\n', '\r\n') },
       'prompt_text',
     ],
     [
