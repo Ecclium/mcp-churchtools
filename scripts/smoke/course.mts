@@ -276,7 +276,11 @@ const promptDataSentence =
 const unknownPromptSentence = 'This server offers no prompt of that name.';
 const saturdayRefusedSentence =
   'The argument samstag is missing or does not fit. Its description in the list of prompts says what it takes.';
-const promptsOfCore = ['dienstplan_wochenende', 'wiki_seite_entwerfen'];
+// The prompts of the core with their arguments, each required.
+const promptsOfCore = [
+  ['dienstplan_wochenende', [['samstag', true]]],
+  ['wiki_seite_entwerfen', [['stichworte', true]]],
+];
 
 const clientMeta = {
   'io.modelcontextprotocol/protocolVersion': '2026-07-28',
@@ -554,11 +558,21 @@ export async function runEra(
       text.endsWith(`\n\n${promptDataSentence}`) &&
       !/[{}]/.test(text) &&
       !text.includes('ct_');
+    const argumentsOf = (prompt: Record<string, unknown>): unknown => {
+      const list = prompt['arguments'];
+      return Array.isArray(list)
+        ? list.map((argument: unknown) =>
+            isRecord(argument)
+              ? [argument['name'], argument['required']]
+              : null,
+          )
+        : null;
+    };
     let promptsFit =
       Array.isArray(promptList) &&
       JSON.stringify(
         promptList.map((prompt: unknown) =>
-          isRecord(prompt) ? prompt['name'] : null,
+          isRecord(prompt) ? [prompt['name'], argumentsOf(prompt)] : null,
         ),
       ) === JSON.stringify(search === undefined ? [] : promptsOfCore);
     if (search === undefined) {

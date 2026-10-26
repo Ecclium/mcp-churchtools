@@ -831,7 +831,16 @@ reader.on('line', (line) => {
         jsonrpc: '2.0',
         id,
         result: {
-          prompts: offeredPrompts.map((name) => ({ name, arguments: [] })),
+          prompts: offeredPrompts.map((name) => ({
+            name,
+            arguments: [
+              {
+                name:
+                  name === 'dienstplan_wochenende' ? 'samstag' : 'stichworte',
+                required: scenario !== 'prompt-optional',
+              },
+            ],
+          })),
         },
       });
       return;
