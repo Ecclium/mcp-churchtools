@@ -883,6 +883,200 @@ export interface BookingList {
 }
 
 /**
+ * The most songs one page of a search of songs holds. Ten songs with five
+ * texts of 255 characters and their first arrangements fit into one result
+ * of a tool even when every character doubles in length when it is written
+ * as JSON; 25 would not (ADR 0064).
+ */
+export const songsPageLimit = 10;
+
+/** The last page of a search of songs a read may ask for. */
+export const maxSongsPage = 1000;
+
+/**
+ * The most arrangements of one song the core reads. ChurchTools gives them
+ * with the song; a longer list is no answer the core knows.
+ */
+export const maxSongArrangements = 100;
+
+/**
+ * The longest key of an arrangement the core reads, such as `Am`. A key is
+ * short; a longer one is no answer the core knows.
+ */
+export const maxSongKeyLength = 32;
+
+/** An arrangement of a song, without its files, links and notes. */
+export interface SongArrangement {
+  /** The numeric ID of the arrangement. */
+  readonly id: number;
+  /** Name of the arrangement, at most {@link maxNameLength} characters. */
+  readonly name: string;
+  /**
+   * The key of the arrangement, at most {@link maxSongKeyLength}
+   * characters, or `null` without one.
+   */
+  readonly key: string | null;
+  /** Whether it is the default arrangement of the song. */
+  readonly isDefault: boolean;
+}
+
+/**
+ * A song the account may see: what ChurchTools gives to an account with the
+ * right to see its category (ADR 0064). Author, copyright and CCLI number
+ * are text people wrote, at most {@link maxNameLength} characters each, or
+ * `null` without one.
+ */
+export interface Song {
+  /** The numeric ID of the song. */
+  readonly id: number;
+  /** Name of the song, at most {@link maxNameLength} characters. */
+  readonly name: string;
+  /** Name of its category, at most {@link maxNameLength} characters. */
+  readonly categoryName: string;
+  /** The author, or `null`. */
+  readonly author: string | null;
+  /** The copyright, or `null`. */
+  readonly copyright: string | null;
+  /** The CCLI number, as ChurchTools stores it, or `null`. */
+  readonly ccli: string | null;
+  /**
+   * At most {@link maxSongArrangements}, the default arrangement first, the
+   * others in the order of ChurchTools.
+   */
+  readonly arrangements: readonly SongArrangement[];
+}
+
+/** One page of the songs a search found. */
+export interface SongList {
+  /** At most {@link songsPageLimit}, in the order of ChurchTools. */
+  readonly songs: readonly Song[];
+  /**
+   * Whether ChurchTools reports a later page. It comes from the pagination
+   * of ChurchTools, which may count songs the account cannot see, so a
+   * later page can be empty.
+   */
+  readonly more: boolean;
+}
+
+/**
+ * The most hits a search in the wiki passes on. ChurchTools gives every hit
+ * in one answer, without pages (`docs/research/churchtools-api.md`, F35);
+ * 20 hits with titles of 255 and previews of 1000 characters fit into one
+ * result of a tool (ADR 0064).
+ */
+export const maxWikiSearchHits = 20;
+
+/**
+ * The longest preview of a hit of a search in the wiki the core reads.
+ * How long ChurchTools makes it is not shown; a longer one is no answer the
+ * core knows.
+ */
+export const maxWikiPreviewLength = 1_000;
+
+/** A page of the wiki a search found, without its text. */
+export interface WikiSearchHit {
+  /**
+   * The GUID of the page, or `null` when ChurchTools names the page with
+   * another identifier, whose form is not shown.
+   */
+  readonly guid: string | null;
+  /**
+   * The numeric ID of the category of the page, or `null` when ChurchTools
+   * gives no whole number from 1.
+   */
+  readonly categoryId: number | null;
+  /** Title of the page, at most {@link maxWikiTitleLength} characters. */
+  readonly title: string;
+  /**
+   * A part of the text of the page, as ChurchTools gives it, at most
+   * {@link maxWikiPreviewLength} characters, or `null` without one.
+   */
+  readonly preview: string | null;
+}
+
+/** The hits of a search in the wiki. */
+export interface WikiSearchHits {
+  /** At most {@link maxWikiSearchHits}, in the order of ChurchTools. */
+  readonly hits: readonly WikiSearchHit[];
+  /** Whether ChurchTools gave more hits than the list holds. */
+  readonly more: boolean;
+}
+
+/**
+ * The types the global search of the core looks for, one per search, as
+ * `domain_types[]` of `GET /api/search` names them (F40). ChurchTools also
+ * names `action`, which it refuses alone and which the core never sends.
+ */
+export type SearchDomainType = 'person' | 'group' | 'song' | 'wiki_page';
+
+/** Every {@link SearchDomainType}, in a fixed order. */
+export const searchDomainTypes: readonly SearchDomainType[] = Object.freeze([
+  'person',
+  'group',
+  'song',
+  'wiki_page',
+]);
+
+/**
+ * Whether a value is a type the global search of the core looks for. Only
+ * such a value ever fills `domain_types[]`.
+ *
+ * @param value - The value to check.
+ * @returns Whether it is one of {@link searchDomainTypes}.
+ * @example
+ * ```ts
+ * isSearchDomainType('song'); // true
+ * isSearchDomainType('action'); // false
+ * ```
+ */
+export function isSearchDomainType(value: unknown): value is SearchDomainType {
+  return (
+    typeof value === 'string' &&
+    (searchDomainTypes as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * The longest title of a person the global search gives: a first and a
+ * last name of {@link maxNameLength} characters and a space between them.
+ */
+export const maxPersonTitleLength: number = 2 * maxNameLength + 1;
+
+/**
+ * A hit of the global search: only its ID and its title (ADR 0064). For a
+ * person, the title is its name.
+ */
+export interface GlobalSearchHit {
+  /**
+   * The numeric ID of the person, group or song. For a person it is always
+   * a whole number from 1; for a group or a song it is `null` when
+   * ChurchTools names it with another identifier. Always `null` for a page
+   * of the wiki.
+   */
+  readonly id: number | null;
+  /**
+   * The GUID of a page of the wiki, or `null` when ChurchTools names it with
+   * another identifier. Always `null` for every other type.
+   */
+  readonly guid: string | null;
+  /**
+   * The title, at most {@link maxPersonTitleLength} characters for a person
+   * and {@link maxNameLength} for every other type.
+   */
+  readonly title: string;
+}
+
+/** The hits of one search of the global search, all of one type. */
+export interface GlobalSearchHits {
+  /** The type searched for. */
+  readonly type: SearchDomainType;
+  /** At most {@link maxSearchHits}, in the order of ChurchTools. */
+  readonly hits: readonly GlobalSearchHit[];
+  /** Whether ChurchTools gave more hits than the list holds. */
+  readonly more: boolean;
+}
+
+/**
  * Reads from ChurchTools for one call of a tool, with the account of the
  * server and through the one outbound path of the core. A tool never sees a
  * token and cannot choose what host it reads from. The core revokes it when
