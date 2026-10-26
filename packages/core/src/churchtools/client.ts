@@ -11,9 +11,16 @@
  */
 import {
   type Agenda,
+  type AppointmentDate,
+  type AppointmentDetails,
+  type AppointmentEntry,
+  type AppointmentList,
   type Assignment,
   type AssignmentList,
   assignmentsPageLimit,
+  type BookingEntry,
+  type BookingList,
+  type Calendar,
   type Clock,
   EccliumError,
   type EventDetails,
@@ -24,11 +31,15 @@ import {
   type GroupMemberList,
   groupMembersPageLimit,
   isEventWindow,
+  isListIds,
   isWikiPageGuid,
+  maxAppointments,
   maxAssignmentsPage,
+  maxBookings,
   maxEventDays,
   maxEvents,
   maxGroupMembersPage,
+  maxListIds,
   maxPersonGroups,
   maxSearchHits,
   maxSearchTermLength,
@@ -39,6 +50,7 @@ import {
   type Person,
   type PersonGroupList,
   type PersonHit,
+  type ResourceList,
   type SearchHits,
   type Service,
   type ServiceList,
@@ -62,6 +74,10 @@ import { fetchAnswer, type RequestPath } from './request.js';
 import { toPermissions } from './rights.js';
 import {
   agendaSchema,
+  appointmentListSchema,
+  appointmentSchema,
+  bookingListSchema,
+  calendarListSchema,
   eventAssignmentsSchema,
   eventListSchema,
   eventSchema,
@@ -72,6 +88,8 @@ import {
   personGroupListSchema,
   personListSchema,
   personSchema,
+  resourceListSchema,
+  resourceTypeListSchema,
   searchPageLimit,
   serviceGroupListSchema,
   serviceListSchema,
@@ -264,6 +282,69 @@ export interface ChurchToolsClient {
     eventId: number,
     page: number,
   ): Promise<AssignmentList>;
+  /**
+   * Reads the calendars with `GET /api/calendars`, sorted by ID, never
+   * `randomUrl` (ADR 0064).
+   *
+   * @throws {EccliumError} `upstream` for an entry that does not fit or more
+   *   than 1000 entries; every error of the request.
+   */
+  calendars(ctx: TenantContext): Promise<readonly Calendar[]>;
+  /**
+   * Lists the appointments of a span of days in up to 10 calendars with
+   * `GET /api/calendars/appointments`, sending only `calendar_ids[]`,
+   * `from` and `to`, never `include[]` or `query` (ADR 0064). The entries,
+   * one for each date, are sorted by start and ID, and at most 50 pass.
+   *
+   * @throws {EccliumError} `validation` for IDs or a span that do not fit,
+   *   before the throttle and any request; `permission` for 403; `upstream`
+   *   for an entry that does not fit or more than 1000 entries; every error
+   *   of the request.
+   */
+  appointments(
+    ctx: TenantContext,
+    calendarIds: readonly number[],
+    from: string,
+    to: string,
+  ): Promise<AppointmentList>;
+  /**
+   * Reads one appointment with
+   * `GET /api/calendars/{calendarId}/appointments/{appointmentId}`, by the
+   * numeric IDs only, with description, link and its dates sorted by start
+   * (ADR 0064).
+   *
+   * @throws {EccliumError} `validation` for an ID that is no whole number
+   *   from 1, before the throttle and any request; `permission` for 403;
+   *   `not_found` for 404; `upstream` for an answer that does not fit;
+   *   every error of the request.
+   */
+  appointment(
+    ctx: TenantContext,
+    calendarId: number,
+    appointmentId: number,
+  ): Promise<AppointmentDetails>;
+  /**
+   * Reads the resources with `GET /api/resources` and the types of
+   * resources with `GET /api/resourcetypes`, each sorted by ID (ADR 0064).
+   *
+   * @throws {EccliumError} `upstream` for an entry that does not fit or more
+   *   than 1000 entries; every error of the requests.
+   */
+  resources(ctx: TenantContext): Promise<ResourceList>;
+  /**
+   * Lists the bookings of a span of days of up to 10 resources with
+   * `GET /api/bookings`, sending only `resource_ids[]`, `from` and `to`,
+   * never `include[]`, `query`, `person_id` or `status_ids[]` (ADR 0064).
+   * The bookings are sorted by start and ID, and at most 50 pass.
+   *
+   * @throws {EccliumError} As {@link ChurchToolsClient.appointments}.
+   */
+  bookings(
+    ctx: TenantContext,
+    resourceIds: readonly number[],
+    from: string,
+    to: string,
+  ): Promise<BookingList>;
 }
 
 const whoamiLimits = Object.freeze({
@@ -344,6 +425,31 @@ const serviceLimits = Object.freeze({
   maxResponseBytes: 4 * 1024 * 1024,
   maxElements: 200_000,
 });
+
+// The calendars, the resources or the types of resources, each list in one
+// answer with every field: the limits fit 1000 entries.
+const catalogLimits = Object.freeze({
+  maxResponseBytes: 4 * 1024 * 1024,
+  maxElements: 200_000,
+});
+
+// The appointments or bookings of a span, which take no limit (F35): each
+// entry carries the whole calendar or resource, the place and a copy of
+// its fields, which the client drops. The limits fit 1000 entries with
+// them, within the most the transport takes.
+const spanListLimits = Object.freeze({
+  maxResponseBytes: 8 * 1024 * 1024,
+  maxElements: 400_000,
+});
+
+// One appointment with its whole calendar and place and up to 500 dates.
+const appointmentLimits = Object.freeze({
+  maxResponseBytes: 1024 * 1024,
+  maxElements: 20_000,
+});
+
+// In English for the model; printable ASCII, like every message (ADR 0054).
+const invalidCalendarInput = `A calendar ID, an appointment ID and a resource ID are whole numbers from 1, a list names 1 to ${String(maxListIds)} calendars or resources, each once, and a span runs from one day to another as YYYY-MM-DD, at most ${String(maxEventDays)} days with both ends.`;
 
 // In English for the model; printable ASCII, like every message (ADR 0054).
 const invalidEventInput = `An event ID is a whole number from 1, a page of the assignments of an event is a whole number from 1 to ${String(maxAssignmentsPage)}, and a span of events runs from one day to another as YYYY-MM-DD, at most ${String(maxEventDays)} days with both ends.`;
@@ -428,6 +534,34 @@ const toEventEntry = (entry: {
     calendarId: groupIdOf(entry.calendar.domainIdentifier),
     calendarName: entry.calendar.title,
   });
+
+// Sorts entries of a span by their start, then by ID, so that the same
+// answer always gives the same list. A day alone sorts before the times of
+// that day, as text.
+const byStartAndId = <Entry extends { startDate: string; id: number }>(
+  a: Entry,
+  b: Entry,
+): number =>
+  (a.startDate < b.startDate ? -1 : a.startDate > b.startDate ? 1 : 0) ||
+  a.id - b.id;
+
+// The fields an appointment keeps in a list and a single read, built from
+// the read fields only.
+const appointmentFieldsOf = (base: {
+  readonly id: number;
+  readonly title: string;
+  readonly subtitle?: string | null | undefined;
+  readonly allDay: boolean;
+  readonly calendar: { readonly id: number };
+  readonly address?: { readonly name?: string | null | undefined } | null;
+}): Omit<AppointmentEntry, 'startDate' | 'endDate'> => ({
+  id: base.id,
+  calendarId: base.calendar.id,
+  title: base.title,
+  subtitle: base.subtitle ?? null,
+  allDay: base.allDay,
+  locationName: base.address?.name ?? null,
+});
 
 /**
  * Builds the client of one origin. Exactly one client exists per origin, so
@@ -1088,6 +1222,235 @@ export function createChurchToolsClient(
     });
   };
 
+  // A value that does not fit ends before the throttle gives a place, so
+  // that an invalid value costs no request.
+  const checkCalendarInput = (ctx: TenantContext, valid: boolean): void => {
+    if (valid) return;
+    ctx.log.warn('churchtools_calendar_input_refused', { code: 'validation' });
+    throw new EccliumError('validation', invalidCalendarInput);
+  };
+
+  const calendars = async (
+    ctx: TenantContext,
+  ): Promise<readonly Calendar[]> => {
+    const root = await fetchAnswer(
+      ctx,
+      path,
+      new URL('/api/calendars', origin),
+      catalogLimits,
+      {
+        status: 'churchtools_calendars_status',
+        refused: 'churchtools_calendars_refused',
+      },
+    );
+    const parsed = calendarListSchema.safeParse(root);
+    if (!parsed.success) {
+      ctx.log.warn('churchtools_calendars_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    return Object.freeze(
+      [...parsed.data.data]
+        .sort((a, b) => a.id - b.id)
+        .map((entry) =>
+          Object.freeze({
+            __proto__: null,
+            id: entry.id,
+            name: entry.name,
+            isPublic: entry.isPublic,
+            isPrivate: entry.isPrivate,
+          }),
+        ),
+    );
+  };
+
+  const appointments = async (
+    ctx: TenantContext,
+    calendarIds: readonly number[],
+    from: string,
+    to: string,
+  ): Promise<AppointmentList> => {
+    checkCalendarInput(ctx, isListIds(calendarIds) && isEventWindow(from, to));
+    // Exactly calendar_ids[], from and to go out (ADR 0064).
+    const url = new URL('/api/calendars/appointments', origin);
+    appendIds(url.searchParams, 'calendar_ids[]', calendarIds);
+    appendSpan(url.searchParams, from, to);
+    const root = await fetchAnswer(ctx, path, url, spanListLimits, {
+      status: 'churchtools_appointments_status',
+      refused: 'churchtools_appointments_refused',
+    });
+    const parsed = appointmentListSchema.safeParse(root);
+    if (!parsed.success) {
+      ctx.log.warn('churchtools_appointments_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    // Sorted before the cut, so that the same answer always gives the same
+    // appointments, whatever order ChurchTools sends.
+    const entries = parsed.data.data
+      .map(({ appointment }): AppointmentEntry =>
+        Object.freeze({
+          __proto__: null,
+          ...appointmentFieldsOf(appointment.base),
+          startDate: appointment.calculated.startDate,
+          endDate: appointment.calculated.endDate,
+        }),
+      )
+      .sort(byStartAndId);
+    return Object.freeze({
+      __proto__: null,
+      appointments: Object.freeze(entries.slice(0, maxAppointments)),
+      more: entries.length > maxAppointments,
+    });
+  };
+
+  const appointment = async (
+    ctx: TenantContext,
+    calendarId: number,
+    appointmentId: number,
+  ): Promise<AppointmentDetails> => {
+    checkCalendarInput(
+      ctx,
+      isWholeFromOne(calendarId) && isWholeFromOne(appointmentId),
+    );
+    const url = urlOfPath(
+      origin,
+      `/api/calendars/${String(calendarId)}/appointments/${String(appointmentId)}`,
+    );
+    const root = await fetchAnswer(ctx, path, url, appointmentLimits, {
+      status: 'churchtools_appointment_status',
+      refused: 'churchtools_appointment_refused',
+      missing: 'churchtools_appointment_missing',
+    });
+    const parsed = appointmentSchema.safeParse(root);
+    if (!parsed.success) {
+      ctx.log.warn('churchtools_appointment_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    const data = parsed.data.data;
+    // The keys of the dates have no known form; only the values count.
+    const dates = Object.values(data.calculatedDates)
+      .map((date): AppointmentDate =>
+        Object.freeze({
+          __proto__: null,
+          startDate: date.startDate,
+          endDate: date.endDate,
+        }),
+      )
+      .sort(
+        (a, b) =>
+          (a.startDate < b.startDate
+            ? -1
+            : a.startDate > b.startDate
+              ? 1
+              : 0) ||
+          (a.endDate < b.endDate ? -1 : a.endDate > b.endDate ? 1 : 0),
+      );
+    return Object.freeze({
+      __proto__: null,
+      ...appointmentFieldsOf(data.appointment),
+      description: data.appointment.description ?? null,
+      link: data.appointment.link ?? null,
+      dates: Object.freeze(dates),
+    });
+  };
+
+  const resources = async (ctx: TenantContext): Promise<ResourceList> => {
+    const resourcesRoot = await fetchAnswer(
+      ctx,
+      path,
+      new URL('/api/resources', origin),
+      catalogLimits,
+      {
+        status: 'churchtools_resources_status',
+        refused: 'churchtools_resources_refused',
+      },
+    );
+    const parsedResources = resourceListSchema.safeParse(resourcesRoot);
+    if (!parsedResources.success) {
+      ctx.log.warn('churchtools_resources_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    const typesRoot = await fetchAnswer(
+      ctx,
+      path,
+      new URL('/api/resourcetypes', origin),
+      catalogLimits,
+      {
+        status: 'churchtools_resource_types_status',
+        refused: 'churchtools_resource_types_refused',
+      },
+    );
+    const parsedTypes = resourceTypeListSchema.safeParse(typesRoot);
+    if (!parsedTypes.success) {
+      ctx.log.warn('churchtools_resource_types_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    return Object.freeze({
+      __proto__: null,
+      resources: Object.freeze(
+        [...parsedResources.data.data]
+          .sort((a, b) => a.id - b.id)
+          .map((entry) =>
+            Object.freeze({
+              __proto__: null,
+              id: entry.id,
+              name: entry.name,
+              resourceTypeId: entry.resourceTypeId,
+            }),
+          ),
+      ),
+      resourceTypes: Object.freeze(
+        [...parsedTypes.data.data]
+          .sort((a, b) => a.id - b.id)
+          .map((entry) =>
+            Object.freeze({ __proto__: null, id: entry.id, name: entry.name }),
+          ),
+      ),
+    });
+  };
+
+  const bookings = async (
+    ctx: TenantContext,
+    resourceIds: readonly number[],
+    from: string,
+    to: string,
+  ): Promise<BookingList> => {
+    checkCalendarInput(ctx, isListIds(resourceIds) && isEventWindow(from, to));
+    // Exactly resource_ids[], from and to go out (ADR 0064).
+    const url = new URL('/api/bookings', origin);
+    appendIds(url.searchParams, 'resource_ids[]', resourceIds);
+    appendSpan(url.searchParams, from, to);
+    const root = await fetchAnswer(ctx, path, url, spanListLimits, {
+      status: 'churchtools_bookings_status',
+      refused: 'churchtools_bookings_refused',
+    });
+    const parsed = bookingListSchema.safeParse(root);
+    if (!parsed.success) {
+      ctx.log.warn('churchtools_bookings_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    const entries = parsed.data.data
+      .map(({ booking }): BookingEntry =>
+        Object.freeze({
+          __proto__: null,
+          id: booking.base.id,
+          title: booking.base.title,
+          resourceId: booking.base.resourceId,
+          statusId: booking.base.statusId,
+          appointmentId: isWholeFromOne(booking.base.appointmentId)
+            ? booking.base.appointmentId
+            : null,
+          startDate: booking.calculated.startDate,
+          endDate: booking.calculated.endDate,
+        }),
+      )
+      .sort(byStartAndId);
+    return Object.freeze({
+      __proto__: null,
+      bookings: Object.freeze(entries.slice(0, maxBookings)),
+      more: entries.length > maxBookings,
+    });
+  };
+
   return Object.freeze({
     whoami,
     permissions,
@@ -1105,5 +1468,10 @@ export function createChurchToolsClient(
     eventAgenda,
     services,
     eventAssignments,
+    calendars,
+    appointments,
+    appointment,
+    resources,
+    bookings,
   });
 }

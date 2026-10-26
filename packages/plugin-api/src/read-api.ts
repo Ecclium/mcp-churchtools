@@ -1081,4 +1081,75 @@ export interface ReadApi {
    *   {@link maxEventAssignments}.
    */
   eventAssignments(eventId: number, page: number): Promise<AssignmentList>;
+  /**
+   * Lists the calendars the account may see. An empty list can also mean
+   * that the account lacks the right to see a calendar: ChurchTools then
+   * answers with an empty list, not with an error.
+   *
+   * @returns All of them, sorted by ID, at most {@link maxCalendars}.
+   * @throws {EccliumError} `upstream` for more than {@link maxCalendars};
+   *   every error of the request.
+   */
+  calendars(): Promise<readonly Calendar[]>;
+  /**
+   * Lists the appointments of a span of days in the calendars named, one
+   * entry for each date, also of a series.
+   *
+   * @param calendarIds - The calendars, see {@link isListIds}.
+   * @param from - The first day, see {@link isEventWindow}.
+   * @param to - The last day, see {@link isEventWindow}.
+   * @returns At most {@link maxAppointments} appointments.
+   * @throws {EccliumError} `validation` for IDs or a span that do not fit,
+   *   before any request; `permission` when the account may not see a
+   *   calendar named; `upstream` for more entries than the core reads from
+   *   one answer; every error of the request.
+   */
+  appointments(
+    calendarIds: readonly number[],
+    from: string,
+    to: string,
+  ): Promise<AppointmentList>;
+  /**
+   * Reads one appointment by the IDs of its calendar and of itself, with
+   * description, link and dates.
+   *
+   * @param calendarId - The ID of the calendar, a whole number from 1.
+   * @param appointmentId - The ID of the appointment, a whole number from 1.
+   * @returns The appointment.
+   * @throws {EccliumError} `validation` for an ID that is no whole number
+   *   from 1, before any request; `permission` when the account may not
+   *   see the calendar; `not_found` for an appointment that does not exist;
+   *   every error of the request.
+   */
+  appointment(
+    calendarId: number,
+    appointmentId: number,
+  ): Promise<AppointmentDetails>;
+  /**
+   * Lists the resources the account may see and the types of resources.
+   * ChurchTools gives the types to every account; an empty list of
+   * resources can also mean that the account lacks the right to see them.
+   *
+   * @returns All of them.
+   * @throws {EccliumError} `upstream` for more than {@link maxResources};
+   *   every error of the request.
+   */
+  resources(): Promise<ResourceList>;
+  /**
+   * Lists the bookings of a span of days of the resources named.
+   *
+   * @param resourceIds - The resources, see {@link isListIds}.
+   * @param from - The first day, see {@link isEventWindow}.
+   * @param to - The last day, see {@link isEventWindow}.
+   * @returns At most {@link maxBookings} bookings.
+   * @throws {EccliumError} `validation` for IDs or a span that do not fit,
+   *   before any request; `permission` when the account may not see a
+   *   resource named; `upstream` for more entries than the core reads from
+   *   one answer; every error of the request.
+   */
+  bookings(
+    resourceIds: readonly number[],
+    from: string,
+    to: string,
+  ): Promise<BookingList>;
 }

@@ -854,6 +854,11 @@ describe('the client', () => {
       'eventAgenda',
       'services',
       'eventAssignments',
+      'calendars',
+      'appointments',
+      'appointment',
+      'resources',
+      'bookings',
     ]);
     expect(Object.isFrozen(client)).toBe(true);
   });

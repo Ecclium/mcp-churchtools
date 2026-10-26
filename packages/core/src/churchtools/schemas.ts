@@ -9,12 +9,17 @@
 import {
   agendaItemTypePattern,
   calendarDatePattern,
+  dateOrDateTimePattern,
   dateTimePattern,
   groupMembersPageLimit,
   groupMemberStatusPattern,
   isWikiPageGuid,
   maxAgendaItems,
   maxAgendaNoteLength,
+  maxAppointmentDates,
+  maxAppointmentDescriptionLength,
+  maxAppointmentLinkLength,
+  maxCalendars,
   maxEventAssignments,
   maxEventDescriptionLength,
   maxEventNoteLength,
@@ -22,6 +27,7 @@ import {
   maxGroupMeetingTimeLength,
   maxGroupNoteLength,
   maxNameLength,
+  maxResources,
   maxSearchHits,
   maxServices,
   maxWikiCategories,
@@ -391,6 +397,149 @@ export const serviceListSchema = z.object({
  */
 export const serviceGroupListSchema = z.object({
   data: z.array(z.object({ id, name: text(maxNameLength) })).max(maxServices),
+});
+
+/**
+ * The answer of `GET /api/calendars`, only ID, name and whether public or
+ * private of each calendar (ADR 0064, F37). `randomUrl`, which may be the
+ * secret part of a link to subscribe to the calendar, and `meta` are not
+ * read.
+ */
+export const calendarListSchema = z.object({
+  data: z
+    .array(
+      z.object({
+        id,
+        name: text(maxNameLength),
+        isPublic: z.boolean(),
+        isPrivate: z.boolean(),
+      }),
+    )
+    .max(maxCalendars),
+});
+
+/**
+ * The most appointments or bookings the client reads from one answer.
+ * Neither list takes `limit` (F35), so ChurchTools gives every entry of the
+ * span. A longer list is no answer the client knows.
+ */
+export const maxSpanEntries = 1000;
+
+// The start and end of an appointment or a booking: the form with time the
+// probe saw, or a day alone, which an entry for whole days may have.
+const dayOrDateTime = z.string().regex(dateOrDateTimePattern);
+
+const span = z.object({ startDate: dayOrDateTime, endDate: dayOrDateTime });
+
+// The fields of an appointment a list and a single read pass on, in
+// `appointment.base` of a list and in `appointment` of a single read (F37).
+// Of the calendar only its ID, of the place only its name: the rest of the
+// calendar holds randomUrl, the rest of the place street, town and
+// coordinates (ADR 0064). A missing subtitle, place or name of a place
+// counts as none.
+const appointmentFields = {
+  id,
+  title: text(maxNameLength),
+  subtitle: text(maxNameLength).nullable().optional(),
+  allDay: z.boolean(),
+  calendar: z.object({ id }),
+  address: z
+    .object({ name: text(maxNameLength).nullable().optional() })
+    .nullable()
+    .optional(),
+};
+
+/**
+ * The answer of `GET /api/calendars/appointments` with `calendar_ids[]`,
+ * `from` and `to`: of each entry only `appointment.base` and the start and
+ * end in `appointment.calculated` (ADR 0064, F37). The copies `base` and
+ * `calculated` above `appointment`, which the document of the instance
+ * marks as deprecated, are not read, and neither are the start and end of
+ * the series in `base`.
+ */
+export const appointmentListSchema = z.object({
+  data: z
+    .array(
+      z.object({
+        appointment: z.object({
+          base: z.object(appointmentFields),
+          calculated: span,
+        }),
+      }),
+    )
+    .max(maxSpanEntries),
+});
+
+/**
+ * The answer of `GET /api/calendars/{calendarId}/appointments/{appointmentId}`:
+ * the fields of a list with description and link from `appointment`, and
+ * the start and end of each date in `calculatedDates` (ADR 0064, F37). The
+ * probe saw an object whose keys have no known form, so only its values
+ * are read; an empty list, which ChurchTools may send for no dates, counts
+ * like an empty object. `additionalInfos` is not read.
+ */
+export const appointmentSchema = z.object({
+  data: z.object({
+    appointment: z.object({
+      ...appointmentFields,
+      description: text(maxAppointmentDescriptionLength).nullable().optional(),
+      link: text(maxAppointmentLinkLength).nullable().optional(),
+    }),
+    calculatedDates: z.union([
+      z.array(span).max(maxAppointmentDates),
+      z
+        .record(z.string(), span)
+        .refine((dates) => Object.keys(dates).length <= maxAppointmentDates),
+    ]),
+  }),
+});
+
+/**
+ * The answer of `GET /api/resources`, only ID, name and type of each
+ * resource (ADR 0064, F37). The IDs of persons in `adminIds` and
+ * `randomString` are not read.
+ */
+export const resourceListSchema = z.object({
+  data: z
+    .array(z.object({ id, name: text(maxNameLength), resourceTypeId: id }))
+    .max(maxResources),
+});
+
+/**
+ * The answer of `GET /api/resourcetypes`, only ID and name of each type
+ * (ADR 0064, F37).
+ */
+export const resourceTypeListSchema = z.object({
+  data: z.array(z.object({ id, name: text(maxNameLength) })).max(maxResources),
+});
+
+/**
+ * The answer of `GET /api/bookings` with `resource_ids[]`, `from` and `to`:
+ * of each entry only ID, title, resource, state and appointment from
+ * `booking.base` and the start and end in `booking.calculated` (ADR 0064,
+ * F37). The person who answered the booking, the whole resource, the
+ * caption, description, place and note and the three keys above `booking`
+ * are not read.
+ */
+export const bookingListSchema = z.object({
+  data: z
+    .array(
+      z.object({
+        booking: z.object({
+          base: z.object({
+            id,
+            title: text(maxNameLength),
+            resourceId: id,
+            statusId: count,
+            // Any whole number or none: only a whole number from 1 counts
+            // as the ID of an appointment.
+            appointmentId: z.number().int().nullable().optional(),
+          }),
+          calculated: span,
+        }),
+      }),
+    )
+    .max(maxSpanEntries),
 });
 
 /**
