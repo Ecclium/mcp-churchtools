@@ -637,6 +637,13 @@ const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({
     'Der KI-Assistent kann damit Personen und Gruppen der Instanz nach Namen suchen und sieht Kennung und Name jedes Treffers. Er liest auch die Gruppen einer Person, die Angaben einer Gruppe mit ihrer Notiz und die Namen ihrer Mitglieder mit Rolle und Stand der Mitgliedschaft. Kontaktdaten liest er nicht. Jeder Aufruf steht in der Audit-Datei.',
     `Entfernen Sie ${personsToolset} aus ${toolsets}, wenn er diese Daten nicht sehen soll. ${insteadOfAll}`,
   ),
+  // On every start, because the assignments to services let the AI
+  // assistant see the names of the persons who serve (ADR 0064).
+  events_toolset_enabled: message(
+    `Das Toolset ${eventsToolset} ist eingeschaltet.`,
+    'Der KI-Assistent kann damit Events, ihre Abläufe und die Dienste der Instanz lesen und sieht, wer in die Dienste eines Events eingeteilt ist, mit Kennung und Name, ausser bei Diensten, die die Namen verbergen. Kontaktdaten liest er nicht. Jeder Aufruf der Einteilungen steht in der Audit-Datei.',
+    `Entfernen Sie ${eventsToolset} aus ${toolsets}, wenn er diese Daten nicht sehen soll. ${insteadOfAll}`,
+  ),
   // One text for every setting: the report of the loader names none of
   // them, and never the path of a certificate.
   trust_store_extended: message(

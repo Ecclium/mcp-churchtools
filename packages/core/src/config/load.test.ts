@@ -1589,6 +1589,18 @@ describe('loadConfig and its problems', () => {
         undefined,
         memoryFolder().fs,
       ),
+    events_toolset_enabled: () =>
+      load(
+        {
+          ...valid(),
+          ECCLIUM_TOOLSETS: 'events',
+          ECCLIUM_STATE_DIR: stateDirPath,
+        },
+        'stdio',
+        memoryFiles().fs,
+        undefined,
+        memoryFolder().fs,
+      ),
     trust_store_extended: () =>
       load({ ...valid(), NODE_EXTRA_CA_CERTS: '/path/to/ca.pem' }),
   };

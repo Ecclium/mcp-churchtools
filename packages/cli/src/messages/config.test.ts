@@ -302,6 +302,18 @@ describe('the catalog of messages', () => {
     expect(textOf(message)).not.toMatch(/späteren Version|wirkt .*nicht/);
   });
 
+  // The notice on every start with the toolset events names the persons in
+  // the assignments to services (ADR 0064).
+  it('names the toolset events and the persons assigned to services', () => {
+    const message = warningMessage('events_toolset_enabled');
+    expect(message.what).toContain('‹events›');
+    expect(message.why).toContain('eingeteilt');
+    expect(message.why).toContain('Namen verbergen');
+    expect(message.why).toContain('Kontaktdaten liest er nicht');
+    expect(message.why).toContain('Audit-Datei');
+    expect(message.action).toContain('‹ECCLIUM_TOOLSETS›');
+  });
+
   it('asks for the folder of the audit file when persons or events is on', () => {
     const message = problemMessage({
       code: 'toolsets_without_state_dir',

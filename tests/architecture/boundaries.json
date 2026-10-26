@@ -156,8 +156,10 @@
       "paths": [
         "packages/testkit/src/plugins/",
         "packages/tools/src/base/",
+        "packages/tools/src/events/",
         "packages/tools/src/groups/",
         "packages/tools/src/persons/",
+        "packages/tools/src/services/",
         "packages/tools/src/wiki/",
         "packages/tools/src/core-plugin.ts"
       ]

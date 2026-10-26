@@ -713,6 +713,10 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   if (toolsets?.value.includes('persons') === true) {
     warnings.add('persons_toolset_enabled');
   }
+  // The assignments to services name persons as well (ADR 0064).
+  if (toolsets?.value.includes('events') === true) {
+    warnings.add('events_toolset_enabled');
+  }
   setting(
     'toolsets',
     toolsetsName,
