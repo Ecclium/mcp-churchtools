@@ -7,6 +7,7 @@ import {
   type Calendar,
   type EventDetails,
   type EventList,
+  type GlobalSearchHits,
   type Group,
   type GroupHit,
   type GroupMemberList,
@@ -18,10 +19,13 @@ import {
   type ResourceList,
   type SearchHits,
   type ServiceList,
+  type Song,
+  type SongList,
   type TenantContext,
   type WikiCategory,
   type WikiPage,
   type WikiPageList,
+  type WikiSearchHits,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { describe, expect, it } from 'vitest';
 
@@ -124,6 +128,25 @@ const appointment: AppointmentDetails = {
 };
 const resources: ResourceList = { resources: [], resourceTypes: [] };
 const bookings: BookingList = { bookings: [], more: false };
+const song: Song = {
+  id: 2,
+  name: 'Lied A',
+  categoryName: 'Lieder',
+  author: null,
+  copyright: null,
+  ccli: null,
+  arrangements: [],
+};
+const songs: SongList = { songs: [song], more: false };
+const wikiHits: WikiSearchHits = {
+  hits: [{ guid, categoryId: 4, title: 'Seite A', preview: null }],
+  more: false,
+};
+const globalHits: GlobalSearchHits = {
+  type: 'song',
+  hits: [{ id: 2, guid: null, title: 'Lied A' }],
+  more: false,
+};
 const lines: string[] = [];
 const ctx = Object.freeze({
   instance: 'https://example.church.tools',
@@ -243,6 +266,26 @@ const fakeClient = () => {
       ids.push(['bookings', resourceIds, from, to]);
       return Promise.resolve(bookings);
     },
+    searchSongs: (context, query, number) => {
+      seen.push(context);
+      ids.push(['searchSongs', query, number]);
+      return Promise.resolve(songs);
+    },
+    song: (context, songId) => {
+      seen.push(context);
+      ids.push(['song', songId]);
+      return Promise.resolve(song);
+    },
+    searchWiki: (context, query, categoryId) => {
+      seen.push(context);
+      ids.push(['searchWiki', query, categoryId]);
+      return Promise.resolve(wikiHits);
+    },
+    search: (context, type, query) => {
+      seen.push(context);
+      ids.push(['search', type, query]);
+      return Promise.resolve(globalHits);
+    },
   };
   return { client, seen, queries, wiki, ids };
 };
@@ -297,6 +340,10 @@ describe('createReadAccess', () => {
         read.appointment(8, 5),
         read.resources(),
         read.bookings([8], '2026-10-25', '2026-10-31'),
+        read.searchSongs('Lied', 1),
+        read.song(2),
+        read.searchWiki('Seite'),
+        read.search('song', 'Lied'),
       ]) {
         const error: unknown = await call.catch((thrown: unknown) => thrown);
         expect(isEccliumError(error) && error.code).toBe('internal');
@@ -325,7 +372,7 @@ describe('createReadAccess', () => {
   // result waits for its audit line and which never runs unattended
   // (ADR 0028, ADR 0060, ADR 0064).
   it.each(['none', 'personal'] as const)(
-    'refuses both searches and the four reads by ID to a tool of the sensitivity %s, without reading',
+    'refuses both searches, the four reads by ID and the global search to a tool of the sensitivity %s, without reading',
     async (sensitivity) => {
       lines.length = 0;
       const { client, seen } = fakeClient();
@@ -337,6 +384,7 @@ describe('createReadAccess', () => {
         read.personGroups(2),
         read.group(3),
         read.groupMembers(3, 1),
+        read.search('song', 'Lied'),
       ]) {
         const error: unknown = await call.catch((thrown: unknown) => thrown);
         expect(isEccliumError(error) && error.code).toBe('policy_denied');
@@ -344,7 +392,7 @@ describe('createReadAccess', () => {
       await expect(read.whoami()).resolves.toBe(me);
       expect(seen).toEqual([ctx]);
       expect(lines).toEqual(
-        Array.from({ length: 6 }, () => 'read_search_refused'),
+        Array.from({ length: 7 }, () => 'read_search_refused'),
       );
     },
   );
@@ -417,6 +465,53 @@ describe('createReadAccess', () => {
         ['resources'],
         ['bookings', [8], '2026-10-25', '2026-10-31'],
       ]);
+    },
+  );
+
+  // Songs and the hits of the wiki name no person in a field of their own:
+  // a tool of every sensitivity reads them, with the context and the
+  // arguments of the call (ADR 0064).
+  it.each(['none', 'personal', 'special'] as const)(
+    'reads songs and searches the wiki for a tool of the sensitivity %s',
+    async (sensitivity) => {
+      const { client, seen, ids } = fakeClient();
+      const { read } = createReadAccess(client, ctx, sensitivity);
+      await expect(read.searchSongs('Lied', 3)).resolves.toBe(songs);
+      await expect(read.song(2)).resolves.toBe(song);
+      await expect(read.searchWiki('Seite')).resolves.toBe(wikiHits);
+      await expect(read.searchWiki('Seite', 4)).resolves.toBe(wikiHits);
+      expect(seen).toEqual([ctx, ctx, ctx, ctx]);
+      expect(ids).toEqual([
+        ['searchSongs', 'Lied', 3],
+        ['song', 2],
+        ['searchWiki', 'Seite', undefined],
+        ['searchWiki', 'Seite', 4],
+      ]);
+    },
+  );
+
+  it('searches over all for a tool of the sensitivity special', async () => {
+    const { client, seen, ids } = fakeClient();
+    const { read } = createReadAccess(client, ctx, 'special');
+    await expect(read.search('person', 'Person')).resolves.toBe(globalHits);
+    expect(seen).toEqual([ctx]);
+    expect(ids).toEqual([['search', 'person', 'Person']]);
+  });
+
+  // The global search finds persons whatever type a call asks for, so being
+  // treated like a special tool is not enough: only the sensitivity counts.
+  it.each(['none', 'personal'] as const)(
+    'refuses the global search to a tool of the sensitivity %s also when treated as special',
+    async (sensitivity) => {
+      lines.length = 0;
+      const { client, seen } = fakeClient();
+      const { read } = createReadAccess(client, ctx, sensitivity, true);
+      const error: unknown = await read
+        .search('song', 'Lied')
+        .catch((thrown: unknown) => thrown);
+      expect(isEccliumError(error) && error.code).toBe('policy_denied');
+      expect(seen).toEqual([]);
+      expect(lines).toEqual(['read_search_refused']);
     },
   );
 

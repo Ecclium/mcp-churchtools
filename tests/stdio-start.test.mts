@@ -1064,7 +1064,7 @@ describe.skipIf(process.getuid?.() === 0)(
         finished = await session.finish();
       }, timeout);
 
-      it('lists the six tools of persons and groups next to ct_whoami and warns at the start', () => {
+      it('lists the six tools of persons and groups and the global search next to ct_whoami and warns at the start', () => {
         const tools = at(listed, 'result', 'tools') as Json[];
         expect(tools.map((tool) => tool['name'])).toEqual([
           'ct_groups_get',
@@ -1073,6 +1073,7 @@ describe.skipIf(process.getuid?.() === 0)(
           'ct_persons_get',
           'ct_persons_get_groups',
           'ct_persons_search',
+          'ct_search',
           'ct_whoami',
         ]);
         expect(linesOf(finished.stderr)).toContain(

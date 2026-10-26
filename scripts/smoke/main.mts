@@ -5,9 +5,10 @@
  * protocol, each time with exactly these variables: the address and the
  * token file from the environment, `ECCLIUM_READ_ONLY=true` whatever the
  * shell says, a folder of state of its own in the temporary folder, and
- * with its switch the toolsets `ECCLIUM_TOOLSETS=persons,events,calendars`.
- * Without the switch it calls only `ct_whoami`, so on a productive instance
- * nothing but the account of the server is read. With the switch it first reads
+ * with its switch the toolsets
+ * `ECCLIUM_TOOLSETS=persons,events,calendars,wiki,songs`. Without the
+ * switch it calls only `ct_whoami`, so on a productive instance nothing but
+ * the account of the server is read. With the switch it first reads
  * the wiki categories itself and goes on only if the account sees exactly
  * one identification category of the test instance, which it may neither
  * edit nor delete (ADR 0049).
@@ -163,6 +164,9 @@ const blockLocal = (guard: Guard, settings: SmokeSettings): void => {
   guard.block(settings.token);
   guard.block(settings.tokenFile);
   if (settings.search !== undefined) guard.block(settings.search.query);
+  if (settings.search?.songQuery !== undefined) {
+    guard.block(settings.search.songQuery);
+  }
   try {
     guard.block(userInfo().username);
   } catch {
@@ -266,6 +270,7 @@ export async function runSmoke(deps: SmokeDependencies): Promise<number> {
         ? undefined
         : {
             query: settings.search.query,
+            songQuery: settings.search.songQuery,
             missTerm:
               deps.missTerm?.() ?? `zq${randomBytes(12).toString('hex')}`,
             spans: eventSpans(new Date()),
@@ -288,7 +293,7 @@ export async function runSmoke(deps: SmokeDependencies): Promise<number> {
           ECCLIUM_STATE_DIR: stateDir,
           ...(search === undefined
             ? {}
-            : { ECCLIUM_TOOLSETS: 'persons,events,calendars' }),
+            : { ECCLIUM_TOOLSETS: 'persons,events,calendars,wiki,songs' }),
           ...deps.server.env,
         };
         const session = startServer(
@@ -304,6 +309,7 @@ export async function runSmoke(deps: SmokeDependencies): Promise<number> {
           outcome = await runEra(era, session, search, guard, {
             token: settings.token,
             query: settings.search?.query,
+            songQuery: settings.search?.songQuery,
           });
         } finally {
           // After a failure of the course itself the server still runs,
@@ -312,6 +318,9 @@ export async function runSmoke(deps: SmokeDependencies): Promise<number> {
         }
         const banned = [settings.token, ...outcome.seen];
         if (settings.search !== undefined) banned.push(settings.search.query);
+        if (settings.search?.songQuery !== undefined) {
+          banned.push(settings.search.songQuery);
+        }
         const audited = auditFits(
           readAuditLines(stateDir),
           outcome.calls,

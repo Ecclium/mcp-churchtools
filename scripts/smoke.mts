@@ -5,8 +5,10 @@
  *
  * Without `ECCLIUM_SMOKE_ALLOW_SEARCH` it calls only `ct_whoami`. With it,
  * and only after it has found the identification category of the test
- * instance, it also calls the two search tools with the term from
- * `ECCLIUM_SMOKE_QUERY`. Usage: «Smoke-Test» in docs/betrieb/stdio.md.
+ * instance, it also calls the other read tools, the searches with the term
+ * from `ECCLIUM_SMOKE_QUERY`, those of songs with the one from
+ * `ECCLIUM_SMOKE_SONG_QUERY` when it is set. Usage: «Smoke-Test» in
+ * docs/betrieb/stdio.md.
  *
  * @packageDocumentation
  */

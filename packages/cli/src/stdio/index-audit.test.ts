@@ -32,6 +32,7 @@ const state = vi.hoisted(() => ({
   serveThrows: false,
   special: false,
   names: false,
+  noSongs: false,
 }));
 
 vi.mock(import('./serve.js'), async () => {
@@ -61,20 +62,31 @@ vi.mock(import('./catalog.js'), async (importOriginal) => {
       config: Parameters<typeof original.createStdioCatalog>[0],
     ) => {
       const catalog = original.createStdioCatalog(config);
-      if (!state.special && !state.names) return catalog;
+      if (!state.special && !state.names && !state.noSongs) return catalog;
+      // Every toolset brings tools of the core; a test takes those of the
+      // songs out to see the notice of a toolset without tools.
+      const kept = catalog
+        .list()
+        .filter((entry) => !state.noSongs || entry.meta.domain !== 'songs');
       // The start reads what the catalog derived, not the sensitivity.
       const added = state.special
-        ? {
-            name: 'ct_test_special',
-            meta: { sensitivity: 'special' },
-            asSpecial: true,
-          }
-        : {
-            name: 'ct_test_names',
-            meta: { sensitivity: 'personal' },
-            asSpecial: true,
-          };
-      return { ...catalog, list: () => [...catalog.list(), added] } as never;
+        ? [
+            {
+              name: 'ct_test_special',
+              meta: { sensitivity: 'special' },
+              asSpecial: true,
+            },
+          ]
+        : state.names
+          ? [
+              {
+                name: 'ct_test_names',
+                meta: { sensitivity: 'personal' },
+                asSpecial: true,
+              },
+            ]
+          : [];
+      return { ...catalog, list: () => [...kept, ...added] } as never;
     },
   };
 });
@@ -97,6 +109,7 @@ afterEach(() => {
   state.serveThrows = false;
   state.special = false;
   state.names = false;
+  state.noSongs = false;
 });
 
 afterAll(() => {
@@ -268,6 +281,7 @@ describe('the first stage and the toolsets', () => {
   });
 
   it('names the toolsets that are on and each one without tools', async () => {
+    state.noSongs = true;
     const { code, stderr } = await start(
       undefined,
       {},
@@ -297,6 +311,7 @@ describe('the first stage and the toolsets', () => {
 
   it('names the toolsets also when the start stops for the folder', async () => {
     state.special = true;
+    state.noSongs = true;
     const { code, stderr } = await start(
       undefined,
       {},

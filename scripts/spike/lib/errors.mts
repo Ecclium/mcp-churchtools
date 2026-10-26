@@ -187,6 +187,10 @@ export const hints = {
     'Abbruch: Mit ECCLIUM_SMOKE_ALLOW_SEARCH braucht der Smoke-Test einen Suchbegriff in ECCLIUM_SMOKE_QUERY.',
   smokeSuchbegriffUngueltig:
     'Abbruch: ECCLIUM_SMOKE_QUERY braucht 1 bis 100 Zeichen ohne Leerzeichen am Rand und ohne Steuerzeichen.',
+  smokeLiedbegriffOhneSchalter:
+    'Abbruch: ECCLIUM_SMOKE_SONG_QUERY ist gesetzt, ECCLIUM_SMOKE_ALLOW_SEARCH fehlt. Die Suchtools ruft der Smoke-Test nur mit dem Schalter auf.',
+  smokeLiedbegriffUngueltig:
+    'Abbruch: ECCLIUM_SMOKE_SONG_QUERY braucht 1 bis 100 Zeichen ohne Leerzeichen am Rand und ohne Steuerzeichen.',
   smokeSchalterFehlt:
     'Abbruch: ECCLIUM_SMOKE_ALLOW_SEARCH fehlt. Die Suchtools wurden nicht aufgerufen.',
   smokeSchalterFalsch:

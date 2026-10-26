@@ -3,9 +3,11 @@
  * searches of persons and groups by name (ADR 0060), one person, the
  * groups of a person, one group and its members, the events of a span of
  * days, one event, its agenda and its assignments, and the services
- * (ADR 0064), and the wiki, each with exactly one request through the
- * transport of its origin, the services and the assignments with two, a
- * throttle per client, fixed limits and own schemas.
+ * (ADR 0064), calendars, appointments, resources and bookings, songs, the
+ * search in the wiki and the global search, and the wiki, each with exactly
+ * one request through the transport of its origin, the services, the
+ * resources and the assignments with two, a throttle per client, fixed
+ * limits and own schemas.
  *
  * @packageDocumentation
  */
@@ -26,12 +28,15 @@ import {
   type EventDetails,
   type EventEntry,
   type EventList,
+  type GlobalSearchHit,
+  type GlobalSearchHits,
   type Group,
   type GroupHit,
   type GroupMemberList,
   groupMembersPageLimit,
   isEventWindow,
   isListIds,
+  isSearchDomainType,
   isWikiPageGuid,
   maxAppointmentDates,
   maxAppointments,
@@ -42,9 +47,12 @@ import {
   maxGroupMembersPage,
   maxListIds,
   maxPersonGroups,
+  maxNameLength,
   maxSearchHits,
   maxSearchTermLength,
+  maxSongsPage,
   maxWikiListPage,
+  maxWikiSearchHits,
   type Me,
   normalizeSearchTerm,
   type Permissions,
@@ -52,14 +60,20 @@ import {
   type PersonGroupList,
   type PersonHit,
   type ResourceList,
+  type SearchDomainType,
   type SearchHits,
   type Service,
   type ServiceList,
+  type Song,
+  type SongArrangement,
+  type SongList,
+  songsPageLimit,
   type TenantContext,
   type WikiCategory,
   wikiPageListLimit,
   type WikiPage,
   type WikiPageList,
+  type WikiSearchHits,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { type HttpTransport, parseChurchToolsOrigin } from '../http/index.js';
@@ -83,6 +97,7 @@ import {
   eventListSchema,
   eventSchema,
   eventsRequestLimit,
+  globalSearchSchema,
   groupListSchema,
   groupMemberListSchema,
   groupSchema,
@@ -90,15 +105,19 @@ import {
   personListSchema,
   personSchema,
   resourceListSchema,
+  maxSearchEntries,
   maxSpanEntries,
   resourceTypeListSchema,
   searchPageLimit,
   serviceGroupListSchema,
   serviceListSchema,
+  songListSchema,
+  songSchema,
   whoamiSchema,
   wikiCategoryListSchema,
   wikiPageListSchema,
   wikiPageSchema,
+  wikiSearchSchema,
 } from './schemas.js';
 
 /** What a client is built from. */
@@ -347,6 +366,59 @@ export interface ChurchToolsClient {
     from: string,
     to: string,
   ): Promise<BookingList>;
+  /**
+   * Searches songs with `GET /api/songs`, sending only `query`, `page` and
+   * `limit`, never `song_category_ids[]`, `ids[]`, `name` or `include`
+   * (ADR 0064). Each song keeps its arrangements, the default first.
+   *
+   * @throws {EccliumError} `validation` for a term or page that does not
+   *   fit, before any request; `upstream` for an answer that does not fit;
+   *   every error of the request.
+   */
+  searchSongs(
+    ctx: TenantContext,
+    query: string,
+    page: number,
+  ): Promise<SongList>;
+  /**
+   * Reads one song with `GET /api/songs/{songId}`, without `include`.
+   *
+   * @throws {EccliumError} `validation` for an ID that is no whole number
+   *   from 1, before any request; `permission` for 403; `not_found` for
+   *   404; `upstream` for an answer that does not fit or names another
+   *   song; every error of the request.
+   */
+  song(ctx: TenantContext, songId: number): Promise<Song>;
+  /**
+   * Searches the wiki with `GET /api/wiki/search`, sending only `query` and
+   * at most one ID in `wiki_category_ids[]` (ADR 0064). At most 20 hits
+   * pass, in the order of ChurchTools.
+   *
+   * @throws {EccliumError} `validation` for a term or category that does
+   *   not fit, before any request; `upstream` for more than 1000 hits, a
+   *   hit that is no page or lies in another category than the one asked
+   *   for, or an answer that does not fit; every error of the request.
+   */
+  searchWiki(
+    ctx: TenantContext,
+    query: string,
+    categoryId?: number,
+  ): Promise<WikiSearchHits>;
+  /**
+   * Searches one type with `GET /api/search`, sending only `query` and
+   * exactly one type in `domain_types[]`, never `action` (ADR 0064). At
+   * most 50 hits pass, in the order of ChurchTools.
+   *
+   * @throws {EccliumError} `validation` for a type or term that does not
+   *   fit, before any request; `upstream` for more than 1000 hits, a hit of
+   *   another type, a person without an ID or an answer that does not fit;
+   *   every error of the request.
+   */
+  search(
+    ctx: TenantContext,
+    type: SearchDomainType,
+    query: string,
+  ): Promise<GlobalSearchHits>;
 }
 
 const whoamiLimits = Object.freeze({
@@ -450,11 +522,38 @@ const appointmentLimits = Object.freeze({
   maxElements: 20_000,
 });
 
+// One page of 10 songs, each with up to 100 arrangements and every field
+// of them: the limits fit them with room.
+const songListLimits = Object.freeze({
+  maxResponseBytes: 4 * 1024 * 1024,
+  maxElements: 200_000,
+});
+
+// One song with up to 100 arrangements and every field of them.
+const songLimits = Object.freeze({
+  maxResponseBytes: 1024 * 1024,
+  maxElements: 50_000,
+});
+
+// The hits of a search without pages: each hit of the global search
+// carries links, infos and the attributes of its type, for a person both
+// names, and each hit of the wiki a preview. The limits fit 1000 of them.
+const searchListLimits = Object.freeze({
+  maxResponseBytes: 4 * 1024 * 1024,
+  maxElements: 200_000,
+});
+
 // In English for the model; printable ASCII, like every message (ADR 0054).
 const tooManyAppointments = `ChurchTools gave more than ${String(maxSpanEntries)} appointments for these calendars and days, more than Ecclium reads. Ask for fewer days or fewer calendars.`;
 
 // In English for the model; printable ASCII, like every message (ADR 0054).
 const tooManyBookings = `ChurchTools gave more than ${String(maxSpanEntries)} bookings for these resources and days, more than Ecclium reads. Ask for fewer days or fewer resources.`;
+
+// In English for the model; printable ASCII, like every message (ADR 0054).
+const tooManySearchHits = `ChurchTools gave more than ${String(maxSearchEntries)} hits for this term, more than Ecclium reads. Search with a longer or more specific term.`;
+
+// In English for the model; printable ASCII, like every message (ADR 0054).
+const tooManyWikiHits = `ChurchTools gave more than ${String(maxSearchEntries)} hits for this term, more than Ecclium reads. Search with a longer or more specific term, or in one category.`;
 
 // In English for the model; printable ASCII, like every message (ADR 0054).
 const tooManyDates = `This appointment has more than ${String(maxAppointmentDates)} dates, more than Ecclium reads. List its dates for a span of days instead.`;
@@ -477,6 +576,13 @@ const invalidEventInput = `An event ID is a whole number from 1, a page of the a
 
 // In English for the model; printable ASCII, like every message (ADR 0054).
 const invalidWikiInput = `A category ID and a version are whole numbers from 1, a page of the list is a whole number from 1 to ${String(maxWikiListPage)}, and a wiki page is addressed by its GUID.`;
+
+// In English for the model; printable ASCII, like every message (ADR 0054).
+const invalidSongInput = `A song ID is a whole number from 1, and a page of a search of songs is a whole number from 1 to ${String(maxSongsPage)}.`;
+
+// In English for the model; printable ASCII, like every message (ADR 0054).
+const invalidSearchInput =
+  'A search looks for one of the types person, group, song and wiki_page, and a category of the wiki is a whole number from 1.';
 
 // In English for the model; printable ASCII, like every message (ADR 0054).
 const invalidReadInput = `A person ID and a group ID are whole numbers from 1, and a page of the members of a group is a whole number from 1 to ${String(maxGroupMembersPage)}.`;
@@ -583,6 +689,47 @@ const appointmentFieldsOf = (base: {
   allDay: base.allDay,
   locationName: base.address?.name ?? null,
 });
+
+// A song, built from the read fields only. The default arrangement comes
+// first, the others keep the order of ChurchTools, so that a tool that
+// passes on only the first ones always keeps the default.
+const toSong = (song: {
+  readonly id: number;
+  readonly name: string;
+  readonly category: { readonly name: string };
+  readonly author?: string | null | undefined;
+  readonly copyright?: string | null | undefined;
+  readonly ccli?: string | null | undefined;
+  readonly arrangements: readonly {
+    readonly id: number;
+    readonly name: string;
+    readonly key?: string | null | undefined;
+    readonly isDefault: boolean;
+  }[];
+}): Song =>
+  Object.freeze({
+    __proto__: null,
+    id: song.id,
+    name: song.name,
+    categoryName: song.category.name,
+    author: song.author ?? null,
+    copyright: song.copyright ?? null,
+    ccli: song.ccli ?? null,
+    arrangements: Object.freeze(
+      [
+        ...song.arrangements.filter((arrangement) => arrangement.isDefault),
+        ...song.arrangements.filter((arrangement) => !arrangement.isDefault),
+      ].map((arrangement): SongArrangement =>
+        Object.freeze({
+          __proto__: null,
+          id: arrangement.id,
+          name: arrangement.name,
+          key: arrangement.key ?? null,
+          isDefault: arrangement.isDefault,
+        }),
+      ),
+    ),
+  });
 
 /**
  * Builds the client of one origin. Exactly one client exists per origin, so
@@ -1516,6 +1663,225 @@ export function createChurchToolsClient(
     });
   };
 
+  // Refuses a term, page, ID, category or type that may not fill a query or
+  // a path before the throttle gives a place, so that an invalid value
+  // costs no request.
+  const checkSearchTerm = (ctx: TenantContext, query: unknown): string => {
+    const term = normalizeSearchTerm(query);
+    if (term !== undefined) return term;
+    ctx.log.warn('churchtools_search_term_refused', { code: 'validation' });
+    throw new EccliumError('validation', invalidTerm);
+  };
+
+  const checkSongInput = (ctx: TenantContext, valid: boolean): void => {
+    if (valid) return;
+    ctx.log.warn('churchtools_song_input_refused', { code: 'validation' });
+    throw new EccliumError('validation', invalidSongInput);
+  };
+
+  const checkSearchInput = (ctx: TenantContext, valid: boolean): void => {
+    if (valid) return;
+    ctx.log.warn('churchtools_search_input_refused', { code: 'validation' });
+    throw new EccliumError('validation', invalidSearchInput);
+  };
+
+  const searchSongs = async (
+    ctx: TenantContext,
+    query: string,
+    page: number,
+  ): Promise<SongList> => {
+    const term = checkSearchTerm(ctx, query);
+    checkSongInput(ctx, isWholeFromOne(page) && page <= maxSongsPage);
+    // Exactly query, page and limit go out (ADR 0064).
+    const url = new URL('/api/songs', origin);
+    url.searchParams.append('query', term);
+    appendPage(url.searchParams, page, songsPageLimit);
+    const root = await fetchAnswer(ctx, path, url, songListLimits, {
+      status: 'churchtools_songs_status',
+      refused: 'churchtools_songs_refused',
+    });
+    const parsed = songListSchema.safeParse(root);
+    if (!parsed.success) {
+      ctx.log.warn('churchtools_songs_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    return Object.freeze({
+      __proto__: null,
+      songs: Object.freeze(parsed.data.data.map(toSong)),
+      more: page < (parsed.data.meta?.pagination?.lastPage ?? 0),
+    });
+  };
+
+  const song = async (ctx: TenantContext, songId: number): Promise<Song> => {
+    checkSongInput(ctx, isWholeFromOne(songId));
+    const url = urlOfPath(origin, `/api/songs/${String(songId)}`);
+    const root = await fetchAnswer(ctx, path, url, songLimits, {
+      status: 'churchtools_song_status',
+      refused: 'churchtools_song_refused',
+      missing: 'churchtools_song_missing',
+    });
+    const parsed = songSchema.safeParse(root);
+    // Only the song asked for, whose category ChurchTools checked.
+    if (!parsed.success || parsed.data.data.id !== songId) {
+      ctx.log.warn('churchtools_song_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    return toSong(parsed.data.data);
+  };
+
+  const searchWiki = async (
+    ctx: TenantContext,
+    query: string,
+    categoryId?: number,
+  ): Promise<WikiSearchHits> => {
+    const term = checkSearchTerm(ctx, query);
+    checkSearchInput(
+      ctx,
+      categoryId === undefined || isWholeFromOne(categoryId),
+    );
+    // Exactly query and at most one category go out (ADR 0064).
+    const url = new URL('/api/wiki/search', origin);
+    url.searchParams.append('query', term);
+    if (categoryId !== undefined) {
+      appendIds(url.searchParams, 'wiki_category_ids[]', [categoryId]);
+    }
+    const root = await fetchAnswer(ctx, path, url, searchListLimits, {
+      status: 'churchtools_wiki_search_status',
+      refused: 'churchtools_wiki_search_refused',
+    });
+    if (listLength(root['data']) > maxSearchEntries) {
+      ctx.log.warn('churchtools_wiki_search_refused', { code: 'upstream' });
+      throw new EccliumError('upstream', tooManyWikiHits);
+    }
+    const parsed = wikiSearchSchema.safeParse(root);
+    if (!parsed.success) {
+      ctx.log.warn('churchtools_wiki_search_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    const hits = parsed.data.data.map((hit) => {
+      const attributes = hit.domainAttributes;
+      const category =
+        attributes !== null &&
+        attributes !== undefined &&
+        !Array.isArray(attributes) &&
+        isWholeFromOne(attributes.wikiCategoryId)
+          ? attributes.wikiCategoryId
+          : null;
+      return Object.freeze({
+        __proto__: null,
+        type: hit.domainType,
+        // Which form the identifier of a page takes is not shown (F40).
+        // Only a GUID can address a page, so any other form passes as none.
+        guid: isWikiPageGuid(hit.domainIdentifier)
+          ? hit.domainIdentifier
+          : null,
+        categoryId: category,
+        title: hit.title,
+        preview: hit.preview ?? null,
+      });
+    });
+    // Only pages, and with a category asked for only pages that name
+    // exactly that category: a hit of another type could carry the name of
+    // a person as its title, and a page without a category could lie in
+    // one the search should have left out. ChurchTools enforces the rights
+    // of the categories; this check holds it to the category asked for.
+    if (
+      !hits.every(
+        (hit) =>
+          hit.type === 'wiki_page' &&
+          (categoryId === undefined || hit.categoryId === categoryId),
+      )
+    ) {
+      ctx.log.warn('churchtools_wiki_search_foreign', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    return Object.freeze({
+      __proto__: null,
+      hits: Object.freeze(
+        hits
+          .slice(0, maxWikiSearchHits)
+          .map(({ guid, categoryId: id, title, preview }) =>
+            Object.freeze({
+              __proto__: null,
+              guid,
+              categoryId: id,
+              title,
+              preview,
+            }),
+          ),
+      ),
+      more: hits.length > maxWikiSearchHits,
+    });
+  };
+
+  // A hit of the global search, built from the read fields only. A person
+  // needs an ID: without it, its name would go out without the person. A
+  // group or a song without one passes with none, a page only with a GUID.
+  const toGlobalHit = (
+    type: SearchDomainType,
+    hit: { readonly domainIdentifier: string; readonly title: string },
+  ): GlobalSearchHit | undefined => {
+    if (type !== 'person' && hit.title.length > maxNameLength) return undefined;
+    const id = type === 'wiki_page' ? null : groupIdOf(hit.domainIdentifier);
+    if (type === 'person' && id === null) return undefined;
+    return Object.freeze({
+      __proto__: null,
+      id,
+      guid:
+        type === 'wiki_page' && isWikiPageGuid(hit.domainIdentifier)
+          ? hit.domainIdentifier
+          : null,
+      title: hit.title,
+    });
+  };
+
+  const search = async (
+    ctx: TenantContext,
+    type: SearchDomainType,
+    query: string,
+  ): Promise<GlobalSearchHits> => {
+    const term = checkSearchTerm(ctx, query);
+    checkSearchInput(ctx, isSearchDomainType(type));
+    // Exactly query and one type go out, never action (ADR 0064).
+    const url = new URL('/api/search', origin);
+    url.searchParams.append('query', term);
+    url.searchParams.append('domain_types[]', type);
+    const root = await fetchAnswer(ctx, path, url, searchListLimits, {
+      status: 'churchtools_search_status',
+      refused: 'churchtools_search_refused',
+    });
+    if (listLength(root['data']) > maxSearchEntries) {
+      ctx.log.warn('churchtools_search_refused', { code: 'upstream' });
+      throw new EccliumError('upstream', tooManySearchHits);
+    }
+    const parsed = globalSearchSchema.safeParse(root);
+    if (!parsed.success) {
+      ctx.log.warn('churchtools_search_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    // Only the type asked for: a hit of another type, such as a person in
+    // a search of songs, would go out with the classes of the wrong type.
+    if (!parsed.data.data.every((hit) => hit.domainType === type)) {
+      ctx.log.warn('churchtools_search_foreign', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    const hits: GlobalSearchHit[] = [];
+    for (const entry of parsed.data.data) {
+      const hit = toGlobalHit(type, entry);
+      if (hit === undefined) {
+        ctx.log.warn('churchtools_search_refused', { code: 'upstream' });
+        throw new EccliumError('upstream');
+      }
+      hits.push(hit);
+    }
+    return Object.freeze({
+      __proto__: null,
+      type,
+      hits: Object.freeze(hits.slice(0, maxSearchHits)),
+      more: hits.length > maxSearchHits,
+    });
+  };
+
   return Object.freeze({
     whoami,
     permissions,
@@ -1538,5 +1904,9 @@ export function createChurchToolsClient(
     appointment,
     resources,
     bookings,
+    searchSongs,
+    song,
+    searchWiki,
+    search,
   });
 }

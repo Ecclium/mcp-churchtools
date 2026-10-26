@@ -2,7 +2,12 @@ import {
   createToolCatalog,
   RegistryRefusal,
 } from '@ecclium/mcp-churchtools-core';
-import { wikiPageListLimit } from '@ecclium/mcp-churchtools-plugin-api';
+import {
+  maxSearchHits,
+  maxWikiSearchHits,
+  songsPageLimit,
+  wikiPageListLimit,
+} from '@ecclium/mcp-churchtools-plugin-api';
 import { examplePlugin } from '@ecclium/mcp-churchtools-testkit';
 import { describe, expect, it } from 'vitest';
 
@@ -23,13 +28,19 @@ import {
   personsGetTool,
   personsSearchTool,
   resourcesListTool,
+  searchTool,
   servicesGetAssignmentsTool,
   servicesListTool,
+  songsGetTool,
+  songsSearchTool,
   whoamiTool,
   wikiCategoriesListTool,
   wikiPageGetTool,
   wikiPagesListTool,
+  wikiSearchTool,
 } from './index.js';
+import { arrangementsPerSong } from './songs/get.js';
+import { arrangementsPerFoundSong } from './songs/search.js';
 import { categoriesPerCall } from './wiki/categories.js';
 import { maxPartBytes } from './wiki/parts.js';
 
@@ -56,6 +67,12 @@ const withWiki = createToolCatalog({
   plugins: [],
   readOnly: true,
 });
+const withSongs = createToolCatalog({
+  core: createCorePlugin(),
+  toolsets: new Set(['songs'] as const),
+  plugins: [],
+  readOnly: true,
+});
 
 describe('@ecclium/mcp-churchtools-tools', () => {
   it('hands out the plugin of the core with ct_whoami only by default', () => {
@@ -75,11 +92,12 @@ describe('@ecclium/mcp-churchtools-tools', () => {
       ['ct_persons_get', 0, 0],
       ['ct_persons_get_groups', 0, 0],
       ['ct_persons_search', 0, 0],
+      ['ct_search', 0, 0],
       ['ct_whoami', 0, 0],
     ]);
   });
 
-  it('adds the six tools of persons and groups with the toolset persons', () => {
+  it('adds the six tools of persons and groups and the global search with the toolset persons', () => {
     expect(
       withSearch.list().map((tool) => [tool.name, tool.plugin, tool.origin]),
     ).toEqual([
@@ -89,11 +107,12 @@ describe('@ecclium/mcp-churchtools-tools', () => {
       ['ct_persons_get', '@ecclium/mcp-churchtools', 'core'],
       ['ct_persons_get_groups', '@ecclium/mcp-churchtools', 'core'],
       ['ct_persons_search', '@ecclium/mcp-churchtools', 'core'],
+      ['ct_search', '@ecclium/mcp-churchtools', 'core'],
       ['ct_whoami', '@ecclium/mcp-churchtools', 'core'],
     ]);
   });
 
-  it('adds the three tools of the wiki with the toolset wiki, each fully classified', () => {
+  it('adds the four tools of the wiki with the toolset wiki, each fully classified', () => {
     expect(
       withWiki
         .list()
@@ -103,6 +122,24 @@ describe('@ecclium/mcp-churchtools-tools', () => {
       ['ct_wiki_categories_list', 'core', 0],
       ['ct_wiki_page_get', 'core', 0],
       ['ct_wiki_pages_list', 'core', 0],
+      ['ct_wiki_search', 'core', 0],
+    ]);
+  });
+
+  it('adds the two tools of songs with the toolset songs, each fully classified', () => {
+    expect(
+      withSongs
+        .list()
+        .map((tool) => [
+          tool.name,
+          tool.origin,
+          tool.shape.unclassified,
+          tool.shape.unmasked,
+        ]),
+    ).toEqual([
+      ['ct_songs_get', 'core', 0, 0],
+      ['ct_songs_search', 'core', 0, 0],
+      ['ct_whoami', 'core', 0, 0],
     ]);
   });
 
@@ -153,6 +190,10 @@ describe.each([
   ['ct_appointments_get', appointmentsGetTool],
   ['ct_resources_list', resourcesListTool],
   ['ct_bookings_list', bookingsListTool],
+  ['ct_songs_search', songsSearchTool],
+  ['ct_songs_get', songsGetTool],
+  ['ct_wiki_search', wikiSearchTool],
+  ['ct_search', searchTool],
 ])('the description of %s', (_, tool) => {
   it('has four sections of one line each, naming no tool', () => {
     const sections = Object.entries(tool.description);
@@ -334,6 +375,7 @@ describe.each([
   ['ct_wiki_categories_list', [view]],
   ['ct_wiki_pages_list', [view, viewCategory]],
   ['ct_wiki_page_get', [view, viewCategory]],
+  ['ct_wiki_search', [view, viewCategory]],
 ])('%s in the catalog', (name, rights) => {
   const tool = withWiki.get(name);
 
@@ -408,5 +450,111 @@ describe('the input of the tools of the wiki', () => {
       pattern:
         '^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$',
     });
+  });
+});
+
+const viewSongs = { module: 'churchservice', right: 'view songcategory' };
+const term = {
+  type: 'string',
+  minLength: 1,
+  maxLength: 100,
+  pattern: '\\S',
+};
+
+describe.each([
+  [
+    'ct_songs_search',
+    { query: term, page: { type: 'integer', minimum: 1, maximum: 1000 } },
+    ['query'],
+  ],
+  ['ct_songs_get', { songId: id }, ['songId']],
+])('%s in the catalog', (name, properties, required) => {
+  const tool = withSongs.get(name);
+
+  it('reads only, holds no personal data, runs unattended only by policy and names its right', () => {
+    expect(tool?.meta).toEqual({
+      capability: 'read',
+      domain: 'songs',
+      requiredRights: [viewSongs],
+      tier: 'free',
+      sensitivity: 'none',
+      unattended: 'policy',
+      routineStable: false,
+    });
+    expect(tool?.asSpecial).toBe(false);
+    expect(tool?.description).toContain(
+      'Required ChurchTools rights: "view songcategory" in churchservice.',
+    );
+  });
+
+  it('advertises only a term and a page, or the ID of a song', () => {
+    expect(tool?.inputSchema).toEqual({
+      type: 'object',
+      properties,
+      required,
+      additionalProperties: false,
+    });
+  });
+});
+
+describe('ct_wiki_search and ct_search in the catalog', () => {
+  it('asks for a term and an optional category to search the wiki', () => {
+    expect(withWiki.get('ct_wiki_search')?.inputSchema).toEqual({
+      type: 'object',
+      properties: { query: term, categoryId: id },
+      required: ['query'],
+      additionalProperties: false,
+    });
+    expect(withWiki.get('ct_wiki_search')?.asSpecial).toBe(false);
+  });
+
+  // The global search finds persons, so it holds special data and never
+  // runs unattended, like the searches of persons and groups (ADR 0064).
+  it('holds special data, never runs unattended and names the rights of every type', () => {
+    const tool = withSearch.get('ct_search');
+    expect(tool?.meta).toEqual({
+      capability: 'read',
+      domain: 'persons',
+      requiredRights: [viewAllData, viewGroups, viewSongs, view, viewCategory],
+      tier: 'free',
+      sensitivity: 'special',
+      unattended: 'never',
+      routineStable: false,
+    });
+    expect(tool?.asSpecial).toBe(true);
+    expect([tool?.shape.unclassified, tool?.shape.unmasked]).toEqual([0, 0]);
+  });
+
+  it('asks for exactly one of four types, never action, and a term', () => {
+    expect(withSearch.get('ct_search')?.inputSchema).toEqual({
+      type: 'object',
+      properties: {
+        type: {
+          type: 'string',
+          enum: ['person', 'group', 'song', 'wiki_page'],
+        },
+        query: term,
+      },
+      required: ['type', 'query'],
+      additionalProperties: false,
+    });
+  });
+
+  it('names in each description the numbers its tool applies', () => {
+    expect(songsSearchTool.description.limits).toContain(
+      `At most ${String(songsPageLimit)} songs per call`,
+    );
+    expect(songsSearchTool.description.limits).toContain(
+      `Up to ${String(arrangementsPerFoundSong)} arrangements per song`,
+    );
+    expect(songsGetTool.description.limits).toContain(
+      `Up to ${String(arrangementsPerSong)} arrangements`,
+    );
+    expect(wikiSearchTool.description.limits).toContain(
+      `At most ${String(maxWikiSearchHits)} hits`,
+    );
+    expect(searchTool.description.limits).toContain(
+      `At most ${String(maxSearchHits)} hits per call`,
+    );
   });
 });

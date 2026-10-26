@@ -16,6 +16,7 @@ import {
   EccliumError,
   type EventDetails,
   type EventList,
+  type GlobalSearchHits,
   type Group,
   type GroupHit,
   type GroupMemberList,
@@ -26,13 +27,17 @@ import {
   type PersonHit,
   type ReadApi,
   type ResourceList,
+  type SearchDomainType,
   type SearchHits,
   type Sensitivity,
   type ServiceList,
+  type Song,
+  type SongList,
   type TenantContext,
   type WikiCategory,
   type WikiPage,
   type WikiPageList,
+  type WikiSearchHits,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import type { ChurchToolsClient } from '../churchtools/index.js';
@@ -51,8 +56,8 @@ export interface ReadAccess {
  * @param client - The raw client of the instance.
  * @param ctx - The context of the call. Its signal aborts every request.
  * @param sensitivity - The sensitivity of the calling tool. Only `special`
- *   may search and read persons and groups; any other gets
- *   `policy_denied`.
+ *   may search and read persons and groups and use the global search; any
+ *   other gets `policy_denied`.
  * @param asSpecial - Whether the pipeline treats the calling tool like a
  *   special one (ADR 0064). Only such a tool may read the assignments to
  *   services, which name persons; any other gets `policy_denied`.
@@ -153,6 +158,21 @@ export function createReadAccess(
       to: string,
     ): Promise<BookingList> =>
       guard(() => client.bookings(ctx, resourceIds, from, to)),
+    // Songs and the hits of the wiki name no person in a field of their
+    // own; titles, authors and previews are text in the data envelope.
+    searchSongs: (query: string, page: number): Promise<SongList> =>
+      guard(() => client.searchSongs(ctx, query, page)),
+    song: (songId: number): Promise<Song> =>
+      guard(() => client.song(ctx, songId)),
+    searchWiki: (query: string, categoryId?: number): Promise<WikiSearchHits> =>
+      guard(() => client.searchWiki(ctx, query, categoryId)),
+    // The global search finds persons by name, whatever type a call asks
+    // for, so it is a search of persons like searchPersons (ADR 0064).
+    search: (
+      type: SearchDomainType,
+      query: string,
+    ): Promise<GlobalSearchHits> =>
+      special(() => client.search(ctx, type, query)),
   });
   return Object.freeze({
     __proto__: null,

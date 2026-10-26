@@ -774,6 +774,20 @@ const cases: readonly Case[] = [
   },
   {
     rule: 'plugins-only-plugin-api',
+    name: 'a tool of the songs imports core',
+    files: {
+      'packages/tools/src/songs/forbidden.ts': `import '${nameOf('core')}';\nexport {};\n`,
+    },
+  },
+  {
+    rule: 'plugins-only-plugin-api',
+    name: 'the global search imports core',
+    files: {
+      'packages/tools/src/search/forbidden.ts': `import '${nameOf('core')}';\nexport {};\n`,
+    },
+  },
+  {
+    rule: 'plugins-only-plugin-api',
     name: 'the plugin of the core imports core',
     files: {
       'packages/tools/src/core-plugin.ts': `import '${nameOf('core')}';\nexport {};\n`,

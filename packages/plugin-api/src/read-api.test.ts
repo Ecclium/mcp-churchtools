@@ -10,6 +10,7 @@ import {
   groupMemberStatusPattern,
   isEventWindow,
   isListIds,
+  isSearchDomainType,
   isWikiPageGuid,
   maxAgendaItems,
   maxAgendaNoteLength,
@@ -31,14 +32,22 @@ import {
   maxListIds,
   maxNameLength,
   maxPersonGroups,
+  maxPersonTitleLength,
   maxResources,
   maxSearchHits,
   maxSearchTermLength,
   maxServices,
+  maxSongArrangements,
+  maxSongKeyLength,
+  maxSongsPage,
   maxWikiCategories,
   maxWikiListPage,
+  maxWikiPreviewLength,
+  maxWikiSearchHits,
   maxWikiTitleLength,
   normalizeSearchTerm,
+  searchDomainTypes,
+  songsPageLimit,
   wikiPageGuidPattern,
   wikiPageListLimit,
 } from './index.js';
@@ -438,6 +447,58 @@ describe('isListIds', () => {
       { 0: 8, length: 1 },
     ]) {
       expect(isListIds(value), JSON.stringify(value)).toBe(false);
+    }
+  });
+});
+
+describe('the limits of songs and of the searches in the wiki and over all', () => {
+  it('reads 10 songs a page, up to page 1000, and 100 arrangements with keys of 32 characters', () => {
+    expect(songsPageLimit).toBe(10);
+    expect(maxSongsPage).toBe(1000);
+    expect(maxSongArrangements).toBe(100);
+    expect(maxSongKeyLength).toBe(32);
+  });
+
+  it('passes on 20 hits of the wiki with previews of 1000 code units', () => {
+    expect(maxWikiSearchHits).toBe(20);
+    expect(maxWikiPreviewLength).toBe(1000);
+  });
+
+  it('takes the title of a person as two names and a space', () => {
+    expect(maxPersonTitleLength).toBe(511);
+  });
+});
+
+describe('isSearchDomainType', () => {
+  it('names exactly the four types, frozen and without action', () => {
+    expect(searchDomainTypes).toEqual(['person', 'group', 'song', 'wiki_page']);
+    expect(Object.isFrozen(searchDomainTypes)).toBe(true);
+    expect(searchDomainTypes).not.toContain('action');
+  });
+
+  it('takes each of the four types', () => {
+    for (const type of searchDomainTypes) {
+      expect(isSearchDomainType(type)).toBe(true);
+    }
+  });
+
+  it('refuses action and every other value', () => {
+    for (const value of [
+      'action',
+      'Person',
+      ' person',
+      'person ',
+      'wiki-page',
+      'wikiPage',
+      'songs',
+      '',
+      null,
+      undefined,
+      1,
+      ['person'],
+      { type: 'person' },
+    ]) {
+      expect(isSearchDomainType(value), JSON.stringify(value)).toBe(false);
     }
   });
 });

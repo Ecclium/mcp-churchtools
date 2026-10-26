@@ -3,7 +3,7 @@
  *
  * The address and the token file have the names the server reads, so the
  * values of a client configuration fit unchanged. The switch for the
- * search tools and the search term carry the prefix `ECCLIUM_SMOKE_`. The
+ * search tools and the search terms carry the prefix `ECCLIUM_SMOKE_`. The
  * smoke test never hands them to the server, which would refuse to start
  * with a variable it does not know (ADR 0055).
  *
@@ -30,12 +30,19 @@ export const smokeVariables = [
   'ECCLIUM_CHURCHTOOLS_TOKEN_FILE',
   'ECCLIUM_SMOKE_ALLOW_SEARCH',
   'ECCLIUM_SMOKE_QUERY',
+  'ECCLIUM_SMOKE_SONG_QUERY',
 ] as const;
 
 /** What the smoke test needs for the search tools. */
 export interface SearchSettings {
   /** The term both search tools get. Never printed. */
   readonly query: string;
+  /**
+   * The term the searches of songs get, for an instance whose songs do not
+   * carry the term of the persons; without it they take that term. Never
+   * printed.
+   */
+  readonly songQuery: string | undefined;
 }
 
 /** What the smoke test read from the environment. */
@@ -155,9 +162,13 @@ export function readSmokeSettings(env: Environment): SmokeSettings {
 
   const switchValue = env['ECCLIUM_SMOKE_ALLOW_SEARCH'] ?? '';
   const query = env['ECCLIUM_SMOKE_QUERY'] ?? '';
+  const songQuery = env['ECCLIUM_SMOKE_SONG_QUERY'] ?? '';
   if (switchValue === '') {
     if (query !== '') {
       throw new SpikeError('KONFIGURATION', 'smokeSuchbegriffOhneSchalter');
+    }
+    if (songQuery !== '') {
+      throw new SpikeError('KONFIGURATION', 'smokeLiedbegriffOhneSchalter');
     }
     return { origin, tokenFile, token, search: undefined };
   }
@@ -174,5 +185,13 @@ export function readSmokeSettings(env: Environment): SmokeSettings {
   if (!isSearchTerm(query)) {
     throw new SpikeError('KONFIGURATION', 'smokeSuchbegriffUngueltig');
   }
-  return { origin, tokenFile, token, search: { query } };
+  if (songQuery !== '' && !isSearchTerm(songQuery)) {
+    throw new SpikeError('KONFIGURATION', 'smokeLiedbegriffUngueltig');
+  }
+  return {
+    origin,
+    tokenFile,
+    token,
+    search: { query, songQuery: songQuery === '' ? undefined : songQuery },
+  };
 }

@@ -859,6 +859,10 @@ describe('the client', () => {
       'appointment',
       'resources',
       'bookings',
+      'searchSongs',
+      'song',
+      'searchWiki',
+      'search',
     ]);
     expect(Object.isFrozen(client)).toBe(true);
   });

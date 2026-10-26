@@ -54,6 +54,18 @@ export {
   servicesAnswer,
 } from './fixtures/events.js';
 export {
+  globalSearchAnswer,
+  type SearchHitFixture,
+  type WikiSearchHitFixture,
+  wikiSearchAnswer,
+} from './fixtures/search.js';
+export {
+  type ArrangementFixture,
+  songAnswer,
+  type SongFixture,
+  songsAnswer,
+} from './fixtures/songs.js';
+export {
   type ChurchToolsDoubleOptions,
   createChurchToolsDouble,
   doubleOrigin,

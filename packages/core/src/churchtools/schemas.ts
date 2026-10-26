@@ -28,10 +28,15 @@ import {
   maxGroupNoteLength,
   maxNameLength,
   maxResources,
+  maxPersonTitleLength,
   maxSearchHits,
   maxServices,
+  maxSongArrangements,
+  maxSongKeyLength,
   maxWikiCategories,
+  maxWikiPreviewLength,
   maxWikiTitleLength,
+  songsPageLimit,
   wikiPageListLimit,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { z } from 'zod';
@@ -540,6 +545,109 @@ export const bookingListSchema = z.object({
       }),
     )
     .max(maxSpanEntries),
+});
+
+// The fields of a song a search and a single read pass on (ADR 0064,
+// F37): of the category only its name, of each arrangement ID, name, key
+// and whether default. Files, links, sources, notes, `meta` and the rest
+// of the category are not read. A missing author, copyright, CCLI number
+// or key counts as none.
+const songFields = {
+  id,
+  name: text(maxNameLength),
+  category: z.object({ name: text(maxNameLength) }),
+  author: text(maxNameLength).nullable().optional(),
+  copyright: text(maxNameLength).nullable().optional(),
+  ccli: text(maxNameLength).nullable().optional(),
+  arrangements: z
+    .array(
+      z.object({
+        id,
+        name: text(maxNameLength),
+        key: text(maxSongKeyLength).nullable().optional(),
+        isDefault: z.boolean(),
+      }),
+    )
+    .max(maxSongArrangements),
+};
+
+/**
+ * The answer of `GET /api/songs` with `query`, `page` and `limit`, only the
+ * fields a search passes on (ADR 0064, F37, F38). Of `meta` only
+ * `pagination.lastPage` is read: whether its counts include songs the
+ * account may not see is not shown.
+ */
+export const songListSchema = z
+  .object({
+    data: z.array(z.object(songFields)).max(songsPageLimit),
+    // Optional only for a page without songs, as for the members of a
+    // group: a page behind the last one then says that no page follows.
+    meta: z
+      .object({ pagination: z.object({ lastPage: count }).optional() })
+      .optional(),
+  })
+  .refine(
+    (root) => root.meta?.pagination !== undefined || root.data.length === 0,
+  );
+
+/** The answer of `GET /api/songs/{songId}`, the same fields as a search. */
+export const songSchema = z.object({ data: z.object(songFields) });
+
+/**
+ * The most hits the client reads from one answer of the search in the wiki
+ * or the global search. Neither takes `page` or `limit` (F35), and whether
+ * ChurchTools limits their hits is not shown (F40). A longer list is no
+ * answer the client knows.
+ */
+export const maxSearchEntries = 1000;
+
+// The type and identifier of a hit, which the client checks, and its title
+// (F25, F40). The links, the icon, the infos and the initials are not read.
+const searchHitFields = {
+  domainType: text(64),
+  domainIdentifier: text(255),
+};
+
+/**
+ * The answer of `GET /api/search` with `query` and one type in
+ * `domain_types[]`, only type, identifier and title of each hit (ADR 0064,
+ * F40). `domainAttributes`, which holds both names of a person, is not
+ * read. The title takes the length of the name of a person; the client
+ * checks the shorter length of the other types.
+ */
+export const globalSearchSchema = z.object({
+  data: z
+    .array(z.object({ ...searchHitFields, title: text(maxPersonTitleLength) }))
+    .max(maxSearchEntries),
+});
+
+/**
+ * The answer of `GET /api/wiki/search` with `query` and at most one ID in
+ * `wiki_category_ids[]`: type, identifier, title, the ID of the category in
+ * `domainAttributes` and the preview of each hit (ADR 0064, F40). The
+ * category may be missing, `null` or an empty list, which PHP writes for
+ * an empty map; the client then names none. A missing preview counts as
+ * none.
+ */
+export const wikiSearchSchema = z.object({
+  data: z
+    .array(
+      z.object({
+        ...searchHitFields,
+        title: text(maxWikiTitleLength),
+        domainAttributes: z
+          .union([
+            z.object({
+              wikiCategoryId: z.number().int().nullable().optional(),
+            }),
+            z.array(z.never()).max(0),
+          ])
+          .nullable()
+          .optional(),
+        preview: text(maxWikiPreviewLength).nullable().optional(),
+      }),
+    )
+    .max(maxSearchEntries),
 });
 
 /**
