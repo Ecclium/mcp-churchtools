@@ -657,6 +657,38 @@ describe('ct_appointments_list and ct_bookings_list', () => {
   );
 });
 
+describe('an answer longer than the core reads', () => {
+  it.each([
+    [
+      'ct_appointments_list',
+      { calendarIds: [8], ...days },
+      '/api/calendars/appointments',
+      'Ask for fewer days or fewer calendars.',
+    ],
+    [
+      'ct_bookings_list',
+      { resourceIds: [8], ...days },
+      '/api/bookings',
+      'Ask for fewer days or fewer resources.',
+    ],
+  ] as const)(
+    '%s ends with upstream and says what to do',
+    async (name, input, pathname, hint) => {
+      const { double, call } = setup();
+      double
+        .intercept({ path: at(pathname), method: 'GET' })
+        .reply(
+          200,
+          JSON.stringify({ data: Array.from({ length: 1001 }, () => ({})) }),
+          json,
+        );
+      const outcome = await call(name, input);
+      expect(!outcome.ok && outcome.error.code).toBe('upstream');
+      expect(!outcome.ok && outcome.error.message).toContain(hint);
+    },
+  );
+});
+
 describe('ct_appointments_get', () => {
   it.each([
     [403, 'permission', appointmentRefused, [viewCategory]],

@@ -100,6 +100,21 @@ const codeOf = async (call: Promise<unknown>): Promise<string> => {
   throw new Error('expected the call to fail');
 };
 
+// The code and message of a call that fails.
+const errorOf = async (
+  call: Promise<unknown>,
+): Promise<{ code: string; message: string }> => {
+  try {
+    await call;
+  } catch (error) {
+    if (isEccliumError(error)) {
+      return { code: error.code, message: error.message };
+    }
+    throw error;
+  }
+  throw new Error('expected the call to fail');
+};
+
 const at = (pathname: string) => (path: string) =>
   path.split('?')[0] === pathname;
 
@@ -377,6 +392,44 @@ describe('the appointments of a span of days', () => {
     ).toBe('upstream');
   });
 
+  // ChurchTools checked the rights of the calendars asked for; an
+  // appointment of another calendar would pass them by.
+  it('gives upstream for an appointment of a calendar not asked for', async () => {
+    const { double, client, ctx, lines } = setup();
+    double
+      .intercept({ path: at('/api/calendars/appointments'), method: 'GET' })
+      .reply(
+        200,
+        appointmentsAnswer([
+          appointment(5),
+          appointment(6, 26, { calendarId: 9 }),
+        ]).body,
+        json,
+      );
+    expect(
+      await codeOf(client.appointments(ctx(), [8], '2026-10-25', '2026-10-31')),
+    ).toBe('upstream');
+    expect(lines.map((line) => line.event)).toEqual([
+      'churchtools_appointments_foreign',
+    ]);
+  });
+
+  it('says what to do when ChurchTools gives more than 1000 appointments', async () => {
+    const { double, client, ctx } = setup();
+    double
+      .intercept({ path: at('/api/calendars/appointments'), method: 'GET' })
+      .reply(
+        200,
+        JSON.stringify({ data: Array.from({ length: 1001 }, () => ({})) }),
+        json,
+      );
+    const error = await errorOf(
+      client.appointments(ctx(), [8], '2026-10-25', '2026-10-31'),
+    );
+    expect(error.code).toBe('upstream');
+    expect(error.message).toContain('Ask for fewer days or fewer calendars.');
+  });
+
   it('maps 403 to permission and every other status to its code', async () => {
     const { double, client, ctx, lines } = setup();
     for (const status of [403, 401, 404, 500]) {
@@ -553,7 +606,20 @@ describe('one appointment', () => {
         );
     }
     expect((await client.appointment(ctx(), 8, 5)).dates).toHaveLength(500);
+    const error = await errorOf(client.appointment(ctx(), 8, 5));
+    expect(error.code).toBe('upstream');
+    expect(error.message).toContain('List its dates for a span of days');
+  });
+
+  it('gives upstream for an appointment of another calendar than the one asked for', async () => {
+    const { double, client, ctx, lines } = setup();
+    double
+      .intercept({ path: '/api/calendars/8/appointments/5', method: 'GET' })
+      .reply(200, appointmentAnswer(details({ calendarId: 9 })).body, json);
     expect(await codeOf(client.appointment(ctx(), 8, 5))).toBe('upstream');
+    expect(lines.map((line) => line.event)).toEqual([
+      'churchtools_appointment_foreign',
+    ]);
   });
 
   it.each([
@@ -788,6 +854,39 @@ describe('the bookings of a span of days', () => {
     expect(lines.map((line) => line.event)).toEqual([
       'churchtools_bookings_refused',
     ]);
+  });
+
+  it('gives upstream for a booking of a resource not asked for', async () => {
+    const { double, client, ctx, lines } = setup();
+    double
+      .intercept({ path: at('/api/bookings'), method: 'GET' })
+      .reply(
+        200,
+        bookingsAnswer([booking(2), booking(3, 25, { resourceId: 9 })]).body,
+        json,
+      );
+    expect(
+      await codeOf(client.bookings(ctx(), [8], '2026-10-25', '2026-10-31')),
+    ).toBe('upstream');
+    expect(lines.map((line) => line.event)).toEqual([
+      'churchtools_bookings_foreign',
+    ]);
+  });
+
+  it('says what to do when ChurchTools gives more than 1000 bookings', async () => {
+    const { double, client, ctx } = setup();
+    double
+      .intercept({ path: at('/api/bookings'), method: 'GET' })
+      .reply(
+        200,
+        JSON.stringify({ data: Array.from({ length: 1001 }, () => ({})) }),
+        json,
+      );
+    const error = await errorOf(
+      client.bookings(ctx(), [8], '2026-10-25', '2026-10-31'),
+    );
+    expect(error.code).toBe('upstream');
+    expect(error.message).toContain('Ask for fewer days or fewer resources.');
   });
 
   it('maps 403 to permission', async () => {

@@ -33,6 +33,7 @@ import {
   isEventWindow,
   isListIds,
   isWikiPageGuid,
+  maxAppointmentDates,
   maxAppointments,
   maxAssignmentsPage,
   maxBookings,
@@ -89,6 +90,7 @@ import {
   personListSchema,
   personSchema,
   resourceListSchema,
+  maxSpanEntries,
   resourceTypeListSchema,
   searchPageLimit,
   serviceGroupListSchema,
@@ -447,6 +449,25 @@ const appointmentLimits = Object.freeze({
   maxResponseBytes: 1024 * 1024,
   maxElements: 20_000,
 });
+
+// In English for the model; printable ASCII, like every message (ADR 0054).
+const tooManyAppointments = `ChurchTools gave more than ${String(maxSpanEntries)} appointments for these calendars and days, more than Ecclium reads. Ask for fewer days or fewer calendars.`;
+
+// In English for the model; printable ASCII, like every message (ADR 0054).
+const tooManyBookings = `ChurchTools gave more than ${String(maxSpanEntries)} bookings for these resources and days, more than Ecclium reads. Ask for fewer days or fewer resources.`;
+
+// In English for the model; printable ASCII, like every message (ADR 0054).
+const tooManyDates = `This appointment has more than ${String(maxAppointmentDates)} dates, more than Ecclium reads. List its dates for a span of days instead.`;
+
+// The number of entries of a list in an answer, before its schema: a list
+// longer than the client reads ends with a message that says what to do,
+// not only with the generic sentence of upstream.
+const listLength = (value: unknown): number =>
+  Array.isArray(value)
+    ? value.length
+    : typeof value === 'object' && value !== null
+      ? Object.keys(value).length
+      : 0;
 
 // In English for the model; printable ASCII, like every message (ADR 0054).
 const invalidCalendarInput = `A calendar ID, an appointment ID and a resource ID are whole numbers from 1, a list names 1 to ${String(maxListIds)} calendars or resources, each once, and a span runs from one day to another as YYYY-MM-DD, at most ${String(maxEventDays)} days with both ends.`;
@@ -1278,9 +1299,24 @@ export function createChurchToolsClient(
       status: 'churchtools_appointments_status',
       refused: 'churchtools_appointments_refused',
     });
+    if (listLength(root['data']) > maxSpanEntries) {
+      ctx.log.warn('churchtools_appointments_refused', { code: 'upstream' });
+      throw new EccliumError('upstream', tooManyAppointments);
+    }
     const parsed = appointmentListSchema.safeParse(root);
     if (!parsed.success) {
       ctx.log.warn('churchtools_appointments_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    // Only the calendars asked for, whose rights ChurchTools checked: an
+    // appointment of any other calendar is no answer the client knows.
+    const asked = new Set(calendarIds);
+    if (
+      !parsed.data.data.every(({ appointment }) =>
+        asked.has(appointment.base.calendar.id),
+      )
+    ) {
+      ctx.log.warn('churchtools_appointments_foreign', { code: 'upstream' });
       throw new EccliumError('upstream');
     }
     // Sorted before the cut, so that the same answer always gives the same
@@ -1320,12 +1356,27 @@ export function createChurchToolsClient(
       refused: 'churchtools_appointment_refused',
       missing: 'churchtools_appointment_missing',
     });
+    const body = root['data'];
+    if (
+      typeof body === 'object' &&
+      body !== null &&
+      listLength((body as Record<string, unknown>)['calculatedDates']) >
+        maxAppointmentDates
+    ) {
+      ctx.log.warn('churchtools_appointment_refused', { code: 'upstream' });
+      throw new EccliumError('upstream', tooManyDates);
+    }
     const parsed = appointmentSchema.safeParse(root);
     if (!parsed.success) {
       ctx.log.warn('churchtools_appointment_refused', { code: 'upstream' });
       throw new EccliumError('upstream');
     }
     const data = parsed.data.data;
+    // Only the calendar asked for, whose right ChurchTools checked.
+    if (data.appointment.calendar.id !== calendarId) {
+      ctx.log.warn('churchtools_appointment_foreign', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
     // The keys of the dates have no known form; only the values count.
     const dates = Object.values(data.calculatedDates)
       .map((date): AppointmentDate =>
@@ -1423,9 +1474,23 @@ export function createChurchToolsClient(
       status: 'churchtools_bookings_status',
       refused: 'churchtools_bookings_refused',
     });
+    if (listLength(root['data']) > maxSpanEntries) {
+      ctx.log.warn('churchtools_bookings_refused', { code: 'upstream' });
+      throw new EccliumError('upstream', tooManyBookings);
+    }
     const parsed = bookingListSchema.safeParse(root);
     if (!parsed.success) {
       ctx.log.warn('churchtools_bookings_refused', { code: 'upstream' });
+      throw new EccliumError('upstream');
+    }
+    // Only the resources asked for, whose rights ChurchTools checked.
+    const asked = new Set(resourceIds);
+    if (
+      !parsed.data.data.every(({ booking }) =>
+        asked.has(booking.base.resourceId),
+      )
+    ) {
+      ctx.log.warn('churchtools_bookings_foreign', { code: 'upstream' });
       throw new EccliumError('upstream');
     }
     const entries = parsed.data.data
