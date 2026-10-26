@@ -614,7 +614,7 @@ const problems: Readonly<
     message(
       `In ${toolsets} ist ${personsToolset} oder ${eventsToolset} eingeschaltet, aber ${name} ist nicht gesetzt.`,
       `Tools dieser Toolsets nennen Personen. Ein Ergebnis solcher Tools gibt Ecclium nur heraus, wenn seine Zeile in der Audit-Datei steht, und die Audit-Datei liegt im Ordner aus ${name}. Unter Windows gibt es sie im Betrieb über stdio nicht, und damit auch diese Toolsets nicht.`,
-      `Setzen Sie ${name} auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 oder entfernen Sie ${personsToolset} und ${eventsToolset} aus ${toolsets}. ${insteadOfAll}`,
+      `Setzen Sie ${name} auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 oder entfernen Sie ${personsToolset} und ${eventsToolset} aus ${toolsets}, soweit sie dort stehen. ${insteadOfAll}`,
     ),
 });
 

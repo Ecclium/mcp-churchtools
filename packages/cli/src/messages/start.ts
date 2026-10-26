@@ -39,7 +39,7 @@ const starts: Readonly<Record<StartNoticeCode, Message>> = Object.freeze({
     'Versuchen Sie es erneut und melden Sie den Fehler, wenn er bleibt.',
   ),
   audit_file_required: message(
-    'Ein Tool mit Personendaten der besonderen Kategorie ist eingeschaltet, aber ‹ECCLIUM_STATE_DIR› ist nicht gesetzt.',
+    'Ein Tool mit Personendaten der besonderen Kategorie oder mit Namen anderer Personen ist eingeschaltet, aber ‹ECCLIUM_STATE_DIR› ist nicht gesetzt.',
     'Ein Ergebnis eines solchen Tools gibt Ecclium nur heraus, wenn seine Zeile in der Audit-Datei steht, und die Audit-Datei liegt in diesem Ordner.',
     'Setzen Sie ‹ECCLIUM_STATE_DIR› auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 oder schalten Sie das Tool aus.',
   ),
@@ -91,7 +91,7 @@ const quotaFolders: Readonly<Record<QuotaFolderCode, Message>> = Object.freeze({
   ),
   quota_folder_unavailable: message(
     `Ecclium konnte den Ordner ‹quota› im Ordner aus ${stateDir} nicht anlegen oder öffnen, und der Start bricht ab.`,
-    `Darin zählt Ecclium die Aufrufe der Tools mit Personendaten der besonderen Kategorie für das Lesebudget. ${noPath}`,
+    `Darin zählt Ecclium die Aufrufe der Tools mit Personendaten der besonderen Kategorie und mit Namen anderer Personen für das Lesebudget. ${noPath}`,
     `Prüfen Sie, ob der Ordner aus ${stateDir} besteht und Ihr Benutzer darin schreiben darf.`,
   ),
   quota_folder_unsafe: message(
