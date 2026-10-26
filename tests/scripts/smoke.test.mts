@@ -557,6 +557,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     ['search-foreign', 'globale_suche'],
     ['prompt-unfilled', 'prompts'],
     ['prompt-optional', 'prompts'],
+    ['prompt-no-sentence', 'prompts'],
     ['prompt-friday', 'prompts'],
     ['prompt-no-log', 'prompts'],
     ['prompt-leak-log', 'protokoll'],

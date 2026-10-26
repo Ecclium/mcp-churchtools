@@ -555,6 +555,30 @@ describe('fill', () => {
     }
   });
 
+  it('counts the weekday as ISO 8601 does, Sunday as 7', () => {
+    const entry = checkPrompt(
+      {
+        ...valid,
+        arguments: [
+          {
+            name: 'sonntag',
+            description: 'Ein Sonntag.',
+            kind: 'date',
+            weekday: 7,
+          },
+        ],
+        text: 'Am {sonntag}.',
+      },
+      'example',
+      'plugin',
+    );
+    expect(entry.fill({ sonntag: '2026-11-01' })).toMatchObject({ ok: true });
+    expect(entry.fill({ sonntag: '2026-10-31' })).toEqual({
+      ok: false,
+      argument: 'sonntag',
+    });
+  });
+
   it('takes any day when the argument names no weekday', () => {
     const entry = checkPrompt(
       {

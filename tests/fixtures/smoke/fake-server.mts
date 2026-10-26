@@ -799,7 +799,13 @@ const getPrompt = (id: number, params: Record<string, unknown>): void => {
       messages: [
         {
           role: 'user',
-          content: { type: 'text', text: `${text}\n\n${promptSentence}` },
+          content: {
+            type: 'text',
+            text:
+              scenario === 'prompt-no-sentence'
+                ? text
+                : `${text}\n\n${promptSentence}`,
+          },
         },
       ],
     },
