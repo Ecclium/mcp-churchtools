@@ -26,7 +26,7 @@ Nur wenn `ECCLIUM_STATE_DIR` gesetzt ist, schreibt Ecclium eine Audit-Datei in d
 
 ### Zähler des Lesebudgets
 
-Nur wenn `ECCLIUM_STATE_DIR` gesetzt ist, zählt Ecclium im Ordner `quota` darin die Aufrufe der Tools mit Personendaten der besonderen Kategorie, für das Lesebudget von 200 Aufrufen je Subjekt und UTC-Tag ([ADR 0063](adr/0063-quotastore-als-datei.md)).
+Nur wenn `ECCLIUM_STATE_DIR` gesetzt ist, zählt Ecclium im Ordner `quota` darin die Aufrufe der Tools mit Personendaten der besonderen Kategorie und der Tools, die Namen anderer Personen nennen, etwa die Einteilungen in Dienste, für das gemeinsame Lesebudget von 200 Aufrufen je Subjekt und UTC-Tag ([ADR 0063](adr/0063-quotastore-als-datei.md), [ADR 0064](adr/0064-leserechte-und-felder-der-lese-tools.md)).
 
 - **Inhalt:** eine Datei je Mandant und UTC-Tag mit einer Zahl je Akteur, also je Subjekt, etwa für `user:stdio:local-stdio`. Keine Namen, keine Suchbegriffe und keine Inhalte aus ChurchTools.
 - **Sperrdatei:** Während einer Zählung liegt daneben eine Sperrdatei mit der Nummer des Prozesses, dem Namen des Rechners, der Zeit und einer Zufallszahl. Der Name eines Rechners enthält oft einen Personennamen, etwa den seines Besitzers. Ecclium entfernt die Sperrdatei nach jeder Zählung. Endet ein Prozess mitten in einer Zählung, bleibt sie liegen, bis die nächste Zählung sie nach zehn Sekunden ersetzt oder das erste Zählen an einem späteren Tag sie entfernt.
