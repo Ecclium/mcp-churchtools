@@ -653,7 +653,17 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
     audit(name);
     const groupName = `${canary}Gruppe`;
     const filled: Readonly<Record<string, Record<string, unknown>>> = {
-      person: { persons: [{ personId: 811, name: `${canary}Muster` }] },
+      person: {
+        persons: [
+          {
+            personId: 811,
+            name:
+              scenario === 'search-person-enveloped'
+                ? wrap(`${canary}Muster`)
+                : `${canary}Muster`,
+          },
+        ],
+      },
       group: {
         groups: [
           {

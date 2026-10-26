@@ -552,6 +552,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     ['wiki-bad-guid', 'wikisuche'],
     ['page-bare-text', 'seite'],
     ['search-bare-title', 'globale_suche'],
+    ['search-person-enveloped', 'globale_suche'],
     ['search-other-list', 'globale_suche'],
     ['search-foreign', 'globale_suche'],
     ['exit-1', 'ende'],

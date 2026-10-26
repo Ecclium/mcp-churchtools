@@ -1846,12 +1846,16 @@ export async function runEra(
           ? hits.map((entry: unknown) => {
               if (!isRecord(entry)) return false;
               if (type === 'person') {
+                // The name of a person keeps the class of a last name and
+                // stays outside the envelope, so that the strict masking
+                // can shorten it (ADR 0026).
                 seeValue(entry['name']);
                 return (
                   sameKeys(entry, ['name', 'personId']) &&
                   isId(entry['personId']) &&
                   typeof entry['name'] === 'string' &&
-                  entry['name'].length <= 511
+                  entry['name'].length <= 511 &&
+                  !entry['name'].startsWith('<<data-')
                 );
               }
               if (type === 'wiki_page') {
