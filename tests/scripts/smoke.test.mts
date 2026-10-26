@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { eventSpans } from '../../scripts/smoke/course.mts';
 import {
   runSmoke,
   smokeExitCodes,
@@ -182,6 +183,16 @@ const report = (result: Run): { readonly [key: string]: unknown } =>
 
 const stateDirsLeft = (): string[] =>
   readdirSync(folder).filter((name) => name.startsWith('ecclium-smoke-'));
+
+describe('the spans of the events', () => {
+  it('cover three spans of 31 days from a week before the UTC day of the run', () => {
+    expect(eventSpans(new Date('2026-10-26T23:30:00Z'))).toEqual([
+      { from: '2026-10-19', to: '2026-11-18' },
+      { from: '2026-11-19', to: '2026-12-19' },
+      { from: '2026-12-20', to: '2027-01-19' },
+    ]);
+  });
+});
 
 describe('the smoke test against a stand-in of the server', { timeout }, () => {
   it('calls only ct_whoami without the switch, in both eras, and sends nothing itself', async () => {

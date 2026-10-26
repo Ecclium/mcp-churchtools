@@ -7,7 +7,8 @@
  * does (ADR 0053). In each process the smoke test lists the tools, calls
  * `ct_whoami` and, with the switch, the two search tools and the four
  * reads by ID with the first person and the first group they found, then
- * the events of up to three spans of 31 days from the day of the run, and
+ * the events of up to three spans of 31 days from a week before the day of
+ * the run, and
  * with the first event found the event, its agenda and its assignments,
  * and the services, closes stdin and checks how the process ended.
  *
@@ -50,8 +51,9 @@ export interface EventSpan {
 }
 
 /**
- * The three spans of 31 days from the UTC day of the run, one after the
- * other, in which the course looks for an event (ADR 0064).
+ * The three spans of 31 days, one after the other, in which the course
+ * looks for an event (ADR 0064). The first starts a week before the UTC day
+ * of the run, so that an event of the last days still counts.
  *
  * @param now - The time of the run.
  * @returns The spans, the earliest first.
@@ -68,8 +70,8 @@ export function eventSpans(now: Date): readonly EventSpan[] {
       .toISOString()
       .slice(0, 10);
   return [0, 1, 2].map((index) => ({
-    from: day(index * 31),
-    to: day(index * 31 + 30),
+    from: day(index * 31 - 7),
+    to: day(index * 31 + 23),
   }));
 }
 
