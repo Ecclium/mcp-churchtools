@@ -97,10 +97,9 @@ export const eventsGetTool = defineTool({
       'Reads one event of ChurchTools by its ID: name, start, end, whether it is canceled, its calendar, its note and its description.',
     useWhen:
       'You have the ID of an event and need its note or description, or want to check its times.',
-    avoidWhen:
-      'You need its agenda or who serves, which ct_events_get_agenda and ct_services_get_assignments read.',
+    avoidWhen: 'You need its agenda or who serves, which other tools read.',
     limits:
-      'One event per call, by ID only. Start and end are in UTC. A note or description longer than ChurchTools usually holds ends the call with an error.',
+      'One event per call, by ID only. Start and end are in UTC. A note over 2000 or a description over 7000 characters ends the call with an error.',
   },
   input,
   output,

@@ -1,6 +1,6 @@
 import {
   type Agenda,
-  type Assignment,
+  type AssignmentList,
   type EventDetails,
   type EventList,
   type Group,
@@ -90,15 +90,18 @@ const event: EventDetails = {
 };
 const agenda: Agenda = { name: 'Ablauf', isFinal: false, items: [] };
 const services: ServiceList = { services: [], serviceGroups: [] };
-const assignments: readonly Assignment[] = [
-  {
-    serviceId: 11,
-    serviceName: 'Dienst A',
-    isAccepted: true,
-    agreed: true,
-    person: { personId: 2, firstName: 'Person', lastName: 'B' },
-  },
-];
+const assignments: AssignmentList = {
+  assignments: [
+    {
+      serviceId: 11,
+      serviceName: 'Dienst A',
+      isAccepted: true,
+      agreed: true,
+      person: { personId: 2, firstName: 'Person', lastName: 'B' },
+    },
+  ],
+  more: false,
+};
 const lines: string[] = [];
 const ctx = Object.freeze({
   instance: 'https://example.church.tools',
@@ -188,9 +191,9 @@ const fakeClient = () => {
       ids.push(['services']);
       return Promise.resolve(services);
     },
-    eventAssignments: (context, eventId) => {
+    eventAssignments: (context, eventId, number) => {
       seen.push(context);
-      ids.push(['eventAssignments', eventId]);
+      ids.push(['eventAssignments', eventId, number]);
       return Promise.resolve(assignments);
     },
   };
@@ -241,7 +244,7 @@ describe('createReadAccess', () => {
         read.event(2),
         read.eventAgenda(2),
         read.services(),
-        read.eventAssignments(2),
+        read.eventAssignments(2, 1),
       ]) {
         const error: unknown = await call.catch((thrown: unknown) => thrown);
         expect(isEccliumError(error) && error.code).toBe('internal');
@@ -348,9 +351,9 @@ describe('createReadAccess', () => {
     async (sensitivity, asSpecial) => {
       const { client, seen, ids } = fakeClient();
       const { read } = createReadAccess(client, ctx, sensitivity, asSpecial);
-      await expect(read.eventAssignments(2)).resolves.toBe(assignments);
+      await expect(read.eventAssignments(2, 3)).resolves.toBe(assignments);
       expect(seen).toEqual([ctx]);
-      expect(ids).toEqual([['eventAssignments', 2]]);
+      expect(ids).toEqual([['eventAssignments', 2, 3]]);
     },
   );
 
@@ -364,7 +367,7 @@ describe('createReadAccess', () => {
         createReadAccess(client, ctx, sensitivity, false),
       ]) {
         const error: unknown = await access.read
-          .eventAssignments(2)
+          .eventAssignments(2, 1)
           .catch((thrown: unknown) => thrown);
         expect(isEccliumError(error) && error.code).toBe('policy_denied');
       }

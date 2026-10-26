@@ -12,9 +12,10 @@
  * @packageDocumentation
  */
 import {
+  assignmentsPageLimit,
   classify,
   defineTool,
-  maxEventAssignments,
+  maxAssignmentsPage,
   maxNameLength,
   type ToolCall,
 } from '@ecclium/mcp-churchtools-plugin-api';
@@ -27,17 +28,6 @@ import {
   serviceGroupRight,
 } from '../events/rights.js';
 import { readFailed } from '../persons/rights.js';
-
-/**
- * The most assignments one call gives. 25 assignments with names of the
- * person and the service of 255 letters fit into one result.
- */
-export const assignmentsPerCall = 25;
-
-/** The last page a call may ask for. */
-export const maxAssignmentPage = Math.ceil(
-  maxEventAssignments / assignmentsPerCall,
-);
 
 /**
  * The note of an empty first page. Without the right on the group of
@@ -61,7 +51,7 @@ export const someNamesWithheld =
 // Strict, so that an argument the model made up ends as a validation error.
 const input = z.strictObject({
   eventId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-  page: z.number().int().min(1).max(maxAssignmentPage).optional(),
+  page: z.number().int().min(1).max(maxAssignmentsPage).optional(),
 });
 
 // The names of persons keep their own classes outside the data envelope,
@@ -70,7 +60,7 @@ const input = z.strictObject({
 // like a special one (ADR 0064).
 const output = z.object({
   eventId: classify(z.number().int().positive(), 'none'),
-  page: classify(z.number().int().min(1).max(maxAssignmentPage), 'none'),
+  page: classify(z.number().int().min(1).max(maxAssignmentsPage), 'none'),
   assignments: z
     .array(
       z.object({
@@ -90,7 +80,7 @@ const output = z.object({
           .nullable(),
       }),
     )
-    .max(assignmentsPerCall),
+    .max(assignmentsPageLimit),
   more: classify(z.boolean(), 'none'),
   notice: classify(
     z.enum([noAssignmentListed, pastLastAssignmentPage, someNamesWithheld]),
@@ -105,15 +95,13 @@ const execute = async ({
   input: { eventId, page = 1 },
   read,
 }: ToolCall<Input>): Promise<Output> => {
-  const all = await read
-    .eventAssignments(eventId)
+  // The core pages through the assignments, so that every page counts
+  // against the read budget and no result outgrows its limit.
+  const { assignments: shown, more } = await read
+    .eventAssignments(eventId, page)
     .catch((error: unknown) =>
       readFailed(error, [eventsRight], eventRefused, eventNotFound),
     );
-  // ChurchTools gives every assignment with the event; the tool pages
-  // through them, so that no result outgrows its limit.
-  const first = (page - 1) * assignmentsPerCall;
-  const shown = all.slice(first, first + assignmentsPerCall);
   return {
     eventId,
     page,
@@ -135,7 +123,7 @@ const execute = async ({
               },
       }),
     ),
-    more: all.length > first + assignmentsPerCall,
+    more,
     notice:
       shown.length === 0
         ? page === 1
@@ -149,7 +137,7 @@ const execute = async ({
 
 /**
  * Lists the assignments to the services of one event,
- * {@link assignmentsPerCall} per call, each with service, status and the
+ * {@link assignmentsPageLimit} per call, each with service, status and the
  * person assigned, where the service shows names.
  *
  * @example

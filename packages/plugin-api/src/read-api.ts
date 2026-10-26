@@ -437,6 +437,20 @@ export const maxServices = 1000;
  */
 export const maxEventAssignments = 500;
 
+/**
+ * The most assignments one page of the assignments of an event holds. 25
+ * assignments with names of the person and the service of 255 letters fit
+ * into one result of a tool, and every page counts against the read budget,
+ * so the list serves no export in one call (ADR 0064).
+ */
+export const assignmentsPageLimit = 25;
+
+/**
+ * The last page of the assignments of an event a read may ask for:
+ * {@link maxEventAssignments} in pages of {@link assignmentsPageLimit}.
+ */
+export const maxAssignmentsPage = 20;
+
 // Whether a value is a day of the calendar that exists, in the form of
 // calendarDatePattern, so that 2026-02-30 is refused like a wrong form.
 const dayOf = (value: unknown): number | undefined => {
@@ -620,11 +634,19 @@ export interface Assignment {
   readonly agreed: boolean;
   /**
    * The assigned person, or `null`: when the service hides the names, when
-   * it is missing in the list of services, or when ChurchTools gives no
-   * whole number from 1 as the ID of the person (ADR 0064). The person who
-   * requested the assignment is never read.
+   * it is missing in the list of services, when ChurchTools gives no whole
+   * number from 1 as the ID of the person, or no last name (ADR 0064). The
+   * person who requested the assignment is never read.
    */
   readonly person: AssignedPerson | null;
+}
+
+/** One page of the assignments of an event. */
+export interface AssignmentList {
+  /** At most {@link assignmentsPageLimit}, in the order of ChurchTools. */
+  readonly assignments: readonly Assignment[];
+  /** Whether the event has assignments on a later page. */
+  readonly more: boolean;
 }
 
 /**
@@ -813,18 +835,22 @@ export interface ReadApi {
    */
   services(): Promise<ServiceList>;
   /**
-   * Lists the assignments of persons to the services of one event, with the
-   * name of each service. The core reads the services as well and passes
-   * on a person only where it may name it (see {@link Assignment.person}).
-   * An empty list can also mean that the account may not see the groups of
-   * services: ChurchTools then gives the event without its assignments.
+   * Lists one page of the assignments of persons to the services of one
+   * event, with the name of each service. The core reads the services as
+   * well and passes on a person only where it may name it (see
+   * {@link Assignment.person}). An empty list can also mean that the
+   * account may not see the groups of services: ChurchTools then gives the
+   * event without its assignments.
    *
    * @param eventId - The ID of the event, a whole number from 1.
-   * @returns At most {@link maxEventAssignments}, in the order of
+   * @param page - The page, from 1 to {@link maxAssignmentsPage}.
+   * @returns At most {@link assignmentsPageLimit}, in the order of
    *   ChurchTools.
    * @throws {EccliumError} `policy_denied` for a tool whose result does not
-   *   wait for its line in the audit file (ADR 0064); otherwise as
-   *   {@link ReadApi.event}.
+   *   wait for its line in the audit file (ADR 0064); `validation` for an
+   *   ID or page that does not fit, before any request; otherwise as
+   *   {@link ReadApi.event}, and `upstream` for more than
+   *   {@link maxEventAssignments}.
    */
-  eventAssignments(eventId: number): Promise<readonly Assignment[]>;
+  eventAssignments(eventId: number, page: number): Promise<AssignmentList>;
 }

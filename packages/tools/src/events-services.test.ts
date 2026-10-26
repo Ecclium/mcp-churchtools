@@ -229,6 +229,8 @@ const replyServices = (
 ) => {
   const list = servicesAnswer(services);
   const groups = serviceGroupsAnswer([{ id: 5, name: 'Dienstgruppe A' }]);
+  assertPlanted(JSON.parse(list.body), list.canaries, 'services');
+  assertPlanted(JSON.parse(groups.body), groups.canaries, 'groups');
   double
     .intercept({ path: '/api/services', method: 'GET' })
     .reply(200, list.body, json);
@@ -243,11 +245,18 @@ const replyAssignments = (
   assignments: readonly AssignmentFixture[],
   services: readonly ServiceFixture[] = [service(11)],
 ) => {
+  // The event, then the services; the groups of services are not read.
   const event = eventAssignmentsAnswer(assignments);
+  const list = servicesAnswer(services);
+  assertPlanted(JSON.parse(event.body), event.canaries, 'event');
+  assertPlanted(JSON.parse(list.body), list.canaries, 'services');
   double
     .intercept({ path: '/api/events/2', method: 'GET' })
     .reply(200, event.body, json);
-  return [...event.canaries, ...replyServices(double, services)];
+  double
+    .intercept({ path: '/api/services', method: 'GET' })
+    .reply(200, list.body, json);
+  return [...event.canaries, ...list.canaries];
 };
 
 // One page of a list in a result: its entries, more and the notice, or
@@ -487,7 +496,7 @@ describe('ct_events_list', () => {
       [25, 1, true, null],
       [25, 26, false, null],
       [25, 1, true, null],
-      [25, 26, true, fewerDaysNeeded],
+      [25, 26, false, fewerDaysNeeded],
       [5, 26, false, null],
     ]);
     double
@@ -756,7 +765,7 @@ describe('the read access of a tool not treated as special', () => {
           ...(servicesGetAssignmentsTool as unknown as ToolDefinition),
           output: z.object({ text: classify(z.string(), 'untrusted') }),
           execute: async ({ read }: { read: ReadApi }) => {
-            const assignments = await read.eventAssignments(2);
+            const assignments = await read.eventAssignments(2, 1);
             return { text: JSON.stringify(assignments) };
           },
         });
@@ -874,21 +883,24 @@ describe('the layer of the tools', () => {
   it('copies only service, states and the three fields of the person', async () => {
     const read = {
       eventAssignments: () =>
-        Promise.resolve([
-          {
-            serviceId: 11,
-            serviceName: 'Dienst 11',
-            isAccepted: true,
-            agreed: true,
-            person: {
-              personId: 1,
-              firstName: 'Person',
-              lastName: 'A',
-              email: leak.email.value,
+        Promise.resolve({
+          more: false,
+          assignments: [
+            {
+              serviceId: 11,
+              serviceName: 'Dienst 11',
+              isAccepted: true,
+              agreed: true,
+              person: {
+                personId: 1,
+                firstName: 'Person',
+                lastName: 'A',
+                email: leak.email.value,
+              },
+              requesterPerson: leak.name.value,
             },
-            requesterPerson: leak.name.value,
-          },
-        ]),
+          ],
+        }),
     } as unknown as ReadApi;
     const result = await servicesGetAssignmentsTool.execute({
       ctx,
@@ -1133,7 +1145,13 @@ describe('the largest results', () => {
         ).body,
         json,
       );
-    replyServices(double, [{ ...service(11), name: letters(255) }]);
+    double
+      .intercept({ path: '/api/services', method: 'GET' })
+      .reply(
+        200,
+        servicesAnswer([{ ...service(11), name: letters(255) }]).body,
+        json,
+      );
     const outcome = await call('ct_services_get_assignments', { eventId: 2 });
     expect(outcome.ok && outcome.data.assignments).toHaveLength(25);
   });

@@ -126,7 +126,7 @@ export const servicesListTool = defineTool({
     useWhen:
       'You need the name of a service that an assignment names by ID, or want to know which services exist.',
     avoidWhen:
-      'You want to know who serves at an event, which ct_services_get_assignments reads.',
+      'You want to know who serves at an event, which another tool reads.',
     limits:
       'At most 25 services per call: more is true when further services follow, then ask again with the next page number. The list holds every service of the instance.',
   },

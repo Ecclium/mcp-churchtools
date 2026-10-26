@@ -9,12 +9,17 @@ import { describe, expect, it } from 'vitest';
 import { maxListedIds, maxListedRights } from './base/whoami.js';
 import {
   createCorePlugin,
+  eventsGetAgendaTool,
+  eventsGetTool,
+  eventsListTool,
   groupsGetMembersTool,
   groupsGetTool,
   groupsSearchTool,
   personsGetGroupsTool,
   personsGetTool,
   personsSearchTool,
+  servicesGetAssignmentsTool,
+  servicesListTool,
   whoamiTool,
   wikiCategoriesListTool,
   wikiPageGetTool,
@@ -133,6 +138,11 @@ describe.each([
   ['ct_wiki_categories_list', wikiCategoriesListTool],
   ['ct_wiki_pages_list', wikiPagesListTool],
   ['ct_wiki_page_get', wikiPageGetTool],
+  ['ct_events_list', eventsListTool],
+  ['ct_events_get', eventsGetTool],
+  ['ct_events_get_agenda', eventsGetAgendaTool],
+  ['ct_services_list', servicesListTool],
+  ['ct_services_get_assignments', servicesGetAssignmentsTool],
 ])('the description of %s', (_, tool) => {
   it('has four sections of one line each, naming no tool', () => {
     const sections = Object.entries(tool.description);

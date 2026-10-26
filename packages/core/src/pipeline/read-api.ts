@@ -8,7 +8,7 @@
  */
 import {
   type Agenda,
-  type Assignment,
+  type AssignmentList,
   EccliumError,
   type EventDetails,
   type EventList,
@@ -121,8 +121,11 @@ export function createReadAccess(
     eventAgenda: (eventId: number): Promise<Agenda> =>
       guard(() => client.eventAgenda(ctx, eventId)),
     services: (): Promise<ServiceList> => guard(() => client.services(ctx)),
-    eventAssignments: (eventId: number): Promise<readonly Assignment[]> =>
-      named(() => client.eventAssignments(ctx, eventId)),
+    eventAssignments: (
+      eventId: number,
+      page: number,
+    ): Promise<AssignmentList> =>
+      named(() => client.eventAssignments(ctx, eventId, page)),
   });
   return Object.freeze({
     __proto__: null,

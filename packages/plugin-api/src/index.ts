@@ -64,6 +64,7 @@ export {
 } from './tool.js';
 export {
   agendaItemTypePattern,
+  assignmentsPageLimit,
   calendarDatePattern,
   dateTimePattern,
   groupMembersPageLimit,
@@ -72,6 +73,7 @@ export {
   isWikiPageGuid,
   maxAgendaItems,
   maxAgendaNoteLength,
+  maxAssignmentsPage,
   maxEventAssignments,
   maxEventDays,
   maxEventDescriptionLength,
@@ -96,6 +98,7 @@ export {
   type AgendaSong,
   type AssignedPerson,
   type Assignment,
+  type AssignmentList,
   type EventDetails,
   type EventEntry,
   type EventList,

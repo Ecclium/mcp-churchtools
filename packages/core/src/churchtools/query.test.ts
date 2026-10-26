@@ -6,7 +6,13 @@ import {
 } from '@ecclium/mcp-churchtools-testkit';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { appendIds, appendPage, urlOfPath } from './query.js';
+import {
+  appendIds,
+  appendLimit,
+  appendPage,
+  appendSpan,
+  urlOfPath,
+} from './query.js';
 import {
   countedMetaSchema,
   pagedMetaSchema,
@@ -153,6 +159,33 @@ describe('appendIds', () => {
     expect(
       (await double.transport.get(url, { maxResponseBytes: 64 })).status,
     ).toBe(200);
+  });
+});
+
+describe('appendSpan and appendLimit', () => {
+  it('append a span of two days and a limit alone', () => {
+    const params = new URLSearchParams();
+    appendSpan(params, '2026-10-25', '2026-10-31');
+    appendLimit(params, 51);
+    expect(params.toString()).toBe('from=2026-10-25&to=2026-10-31&limit=51');
+  });
+
+  it.each([
+    ['2026-10-31', '2026-10-25'],
+    ['2026-10-25T00:00:00Z', '2026-10-26'],
+    ['2026-10-25', '26.10.2026'],
+    ['2026-10-25&to=2027-01-01', '2026-10-26'],
+    [20261025 as unknown as string, '2026-10-26'],
+  ])('refuse the span %j to %j', (from, to) => {
+    expect(() => {
+      appendSpan(new URLSearchParams(), from, to);
+    }).toThrow(TypeError);
+  });
+
+  it.each([0, 101, 1.5, Number.NaN])('refuse the limit %j', (limit) => {
+    expect(() => {
+      appendLimit(new URLSearchParams(), limit);
+    }).toThrow(TypeError);
   });
 });
 

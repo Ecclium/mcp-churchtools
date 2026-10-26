@@ -128,7 +128,9 @@ const execute = async ({
         calendarName,
       }),
     ),
-    more: later || list.more,
+    // more promises a further page; that the days hold more than the core
+    // reads is the notice, because no page holds those events.
+    more: later,
     notice:
       events.length === 0
         ? page === 1
@@ -172,7 +174,7 @@ export const eventsListTool = defineTool({
     avoidWhen:
       'You need the services, the agenda or the note of an event, which other tools read.',
     limits:
-      'from and to are days as YYYY-MM-DD, at most 31 days with both ends; times are in UTC. At most 50 events for the days, 25 per page: more is true when a further page follows. Events of calendars the service account may not see are left out without a trace.',
+      'from and to are days as YYYY-MM-DD, at most 31 days with both ends; times are in UTC. At most 50 events for the days, 25 per page: more is true when a further page follows, and a notice says when the days hold more than 50. Events of calendars the service account may not see are left out without a trace.',
   },
   input,
   output,

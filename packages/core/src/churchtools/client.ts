@@ -12,6 +12,8 @@
 import {
   type Agenda,
   type Assignment,
+  type AssignmentList,
+  assignmentsPageLimit,
   type Clock,
   EccliumError,
   type EventDetails,
@@ -23,6 +25,7 @@ import {
   groupMembersPageLimit,
   isEventWindow,
   isWikiPageGuid,
+  maxAssignmentsPage,
   maxEventDays,
   maxEvents,
   maxGroupMembersPage,
@@ -37,6 +40,7 @@ import {
   type PersonGroupList,
   type PersonHit,
   type SearchHits,
+  type Service,
   type ServiceList,
   type TenantContext,
   type WikiCategory,
@@ -243,19 +247,23 @@ export interface ChurchToolsClient {
    */
   services(ctx: TenantContext): Promise<ServiceList>;
   /**
-   * Reads the assignments of one event with `GET /api/events/{eventId}`,
-   * only `eventServices`, and the services with `GET /api/services`, and
-   * names the person of an assignment only where the service lets it
-   * (ADR 0064): without `hidePersonName`, with the service in the list,
-   * and with a whole number from 1 as ID of the person.
+   * Reads one page of the assignments of one event with
+   * `GET /api/events/{eventId}`, only `eventServices`, and the services with
+   * `GET /api/services`, and names the person of an assignment only where
+   * the service lets it (ADR 0064): without `hidePersonName`, with the
+   * service in the list, with a whole number from 1 as ID of the person
+   * and with a last name. The groups of services are not read.
    *
-   * @throws {EccliumError} As {@link ChurchToolsClient.event}, and as
-   *   {@link ChurchToolsClient.services}.
+   * @throws {EccliumError} `validation` for an ID or page that does not
+   *   fit, before the throttle and any request; otherwise as
+   *   {@link ChurchToolsClient.event}, and `upstream` for services that do
+   *   not fit.
    */
   eventAssignments(
     ctx: TenantContext,
     eventId: number,
-  ): Promise<readonly Assignment[]>;
+    page: number,
+  ): Promise<AssignmentList>;
 }
 
 const whoamiLimits = Object.freeze({
@@ -338,7 +346,7 @@ const serviceLimits = Object.freeze({
 });
 
 // In English for the model; printable ASCII, like every message (ADR 0054).
-const invalidEventInput = `An event ID is a whole number from 1, and a span of events runs from one day to another as YYYY-MM-DD, at most ${String(maxEventDays)} days with both ends.`;
+const invalidEventInput = `An event ID is a whole number from 1, a page of the assignments of an event is a whole number from 1 to ${String(maxAssignmentsPage)}, and a span of events runs from one day to another as YYYY-MM-DD, at most ${String(maxEventDays)} days with both ends.`;
 
 // In English for the model; printable ASCII, like every message (ADR 0054).
 const invalidWikiInput = `A category ID and a version are whole numbers from 1, a page of the list is a whole number from 1 to ${String(maxWikiListPage)}, and a wiki page is addressed by its GUID.`;
@@ -947,7 +955,10 @@ export function createChurchToolsClient(
     });
   };
 
-  const services = async (ctx: TenantContext): Promise<ServiceList> => {
+  // The services alone, sorted by ID: the assignments need only them.
+  const serviceList = async (
+    ctx: TenantContext,
+  ): Promise<readonly Service[]> => {
     const servicesRoot = await fetchAnswer(
       ctx,
       path,
@@ -963,6 +974,23 @@ export function createChurchToolsClient(
       ctx.log.warn('churchtools_services_refused', { code: 'upstream' });
       throw new EccliumError('upstream');
     }
+    return Object.freeze(
+      [...parsedServices.data.data]
+        .sort((a, b) => a.id - b.id)
+        .map((entry) =>
+          Object.freeze({
+            __proto__: null,
+            id: entry.id,
+            name: entry.name,
+            serviceGroupId: entry.serviceGroupId,
+            hidesNames: entry.hidePersonName,
+          }),
+        ),
+    );
+  };
+
+  const services = async (ctx: TenantContext): Promise<ServiceList> => {
+    const listed = await serviceList(ctx);
     const groupsRoot = await fetchAnswer(
       ctx,
       path,
@@ -980,19 +1008,7 @@ export function createChurchToolsClient(
     }
     return Object.freeze({
       __proto__: null,
-      services: Object.freeze(
-        [...parsedServices.data.data]
-          .sort((a, b) => a.id - b.id)
-          .map((entry) =>
-            Object.freeze({
-              __proto__: null,
-              id: entry.id,
-              name: entry.name,
-              serviceGroupId: entry.serviceGroupId,
-              hidesNames: entry.hidePersonName,
-            }),
-          ),
-      ),
+      services: listed,
       serviceGroups: Object.freeze(
         [...parsedGroups.data.data]
           .sort((a, b) => a.id - b.id)
@@ -1006,8 +1022,14 @@ export function createChurchToolsClient(
   const eventAssignments = async (
     ctx: TenantContext,
     eventId: number,
-  ): Promise<readonly Assignment[]> => {
-    checkEventInput(ctx, isWholeFromOne(eventId));
+    page: number,
+  ): Promise<AssignmentList> => {
+    checkEventInput(
+      ctx,
+      isWholeFromOne(eventId) &&
+        isWholeFromOne(page) &&
+        page <= maxAssignmentsPage,
+    );
     const url = urlOfPath(origin, `/api/events/${String(eventId)}`);
     const root = await fetchAnswer(ctx, path, url, eventLimits, {
       status: 'churchtools_event_assignments_status',
@@ -1024,37 +1046,46 @@ export function createChurchToolsClient(
     // The services say which hide the names of the persons assigned. The
     // core reads them itself, so that no tool ever sees such a name
     // (ADR 0064).
-    const list = await services(ctx);
-    const byId = new Map(list.services.map((entry) => [entry.id, entry]));
-    return Object.freeze(
-      parsed.data.data.eventServices.map((entry): Assignment => {
-        const service = byId.get(entry.serviceId);
-        const attributes = entry.person?.domainAttributes;
-        // Only a service that shows names, an ID from 1 and a last name let
-        // the person through; a placeholder of a hidden name has an ID
-        // below 1 (F37).
-        const named =
-          service !== undefined &&
-          !service.hidesNames &&
-          isWholeFromOne(entry.personId) &&
-          typeof attributes?.lastName === 'string';
-        return Object.freeze({
-          __proto__: null,
-          serviceId: entry.serviceId,
-          serviceName: service?.name ?? null,
-          isAccepted: entry.isAccepted,
-          agreed: entry.agreed,
-          person: named
-            ? Object.freeze({
-                __proto__: null,
-                personId: entry.personId as number,
-                firstName: attributes.firstName ?? '',
-                lastName: attributes.lastName as string,
-              })
-            : null,
-        });
-      }),
+    const byId = new Map(
+      (await serviceList(ctx)).map((entry) => [entry.id, entry]),
     );
+    // ChurchTools gives every assignment with the event; the core pages
+    // through them, so that every page counts against the read budget.
+    const all = parsed.data.data.eventServices;
+    const first = (page - 1) * assignmentsPageLimit;
+    const shown = all.slice(first, first + assignmentsPageLimit);
+    const assignments = shown.map((entry): Assignment => {
+      const service = byId.get(entry.serviceId);
+      const attributes = entry.person?.domainAttributes;
+      // Only a service that shows names, an ID from 1 and a last name let
+      // the person through; a placeholder of a hidden name has an ID
+      // below 1 (F37).
+      const named =
+        service !== undefined &&
+        !service.hidesNames &&
+        isWholeFromOne(entry.personId) &&
+        typeof attributes?.lastName === 'string';
+      return Object.freeze({
+        __proto__: null,
+        serviceId: entry.serviceId,
+        serviceName: service?.name ?? null,
+        isAccepted: entry.isAccepted,
+        agreed: entry.agreed,
+        person: named
+          ? Object.freeze({
+              __proto__: null,
+              personId: entry.personId as number,
+              firstName: attributes.firstName ?? '',
+              lastName: attributes.lastName as string,
+            })
+          : null,
+      });
+    });
+    return Object.freeze({
+      __proto__: null,
+      assignments: Object.freeze(assignments),
+      more: all.length > first + assignmentsPageLimit,
+    });
   };
 
   return Object.freeze({

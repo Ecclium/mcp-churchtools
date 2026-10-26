@@ -296,10 +296,15 @@ describe('one event and its agenda', () => {
           .intercept({ path: at(pathname), method: 'GET' })
           .reply(status, '{}', json);
       }
-      expect(await codeOf(client[operation](ctx(), 7))).toBe('not_found');
-      expect(await codeOf(client[operation](ctx(), 7))).toBe('permission');
-      expect(await codeOf(client[operation](ctx(), 7))).toBe('auth');
-      expect(await codeOf(client[operation](ctx(), 7))).toBe('upstream');
+      // The assignments take a page as well.
+      const read = () =>
+        operation === 'eventAssignments'
+          ? client.eventAssignments(ctx(), 7, 1)
+          : client[operation](ctx(), 7);
+      expect(await codeOf(read())).toBe('not_found');
+      expect(await codeOf(read())).toBe('permission');
+      expect(await codeOf(read())).toBe('auth');
+      expect(await codeOf(read())).toBe('upstream');
       expect(lines).toEqual([
         {
           event: `${prefix}_missing`,
@@ -335,7 +340,8 @@ describe('one event and its agenda', () => {
     for (const call of [
       client.event(ctx(), value),
       client.eventAgenda(ctx(), value),
-      client.eventAssignments(ctx(), value),
+      client.eventAssignments(ctx(), value, 1),
+      client.eventAssignments(ctx(), 7, value),
     ]) {
       expect(await codeOf(call)).toBe('validation');
     }
@@ -572,7 +578,7 @@ describe('the assignments of an event', () => {
     ...extra,
   });
 
-  // The event, then the services and their groups.
+  // The event, then the services; the groups of services are not read.
   const reply = (
     double: ReturnType<typeof setup>['double'],
     assignments: readonly AssignmentFixture[],
@@ -580,17 +586,15 @@ describe('the assignments of an event', () => {
   ) => {
     const event = eventAssignmentsAnswer(assignments);
     const list = servicesAnswer(services);
-    const groups = serviceGroupsAnswer([{ id: 5, name: 'Dienstgruppe A' }]);
+    assertPlanted(JSON.parse(event.body), event.canaries, 'event');
+    assertPlanted(JSON.parse(list.body), list.canaries, 'services');
     double
       .intercept({ path: '/api/events/2', method: 'GET' })
       .reply(200, event.body, json);
     double
       .intercept({ path: '/api/services', method: 'GET' })
       .reply(200, list.body, json);
-    double
-      .intercept({ path: '/api/servicegroups', method: 'GET' })
-      .reply(200, groups.body, json);
-    return [...event.canaries, ...list.canaries, ...groups.canaries];
+    return [...event.canaries, ...list.canaries];
   };
 
   it('names the person of a service that shows names, and never the person who requested it', async () => {
@@ -609,7 +613,9 @@ describe('the assignments of an event', () => {
       ],
       [service(11)],
     );
-    const result = await client.eventAssignments(ctx(), 2);
+    const page = await client.eventAssignments(ctx(), 2, 1);
+    expect(page.more).toBe(false);
+    const result = page.assignments;
     expect(result).toEqual([
       {
         serviceId: 11,
@@ -631,7 +637,6 @@ describe('the assignments of an event', () => {
     expect(double.calls().map((call) => call.path)).toEqual([
       '/api/events/2',
       '/api/services',
-      '/api/servicegroups',
     ]);
   });
 
@@ -654,7 +659,7 @@ describe('the assignments of an event', () => {
     async (_, services, extra) => {
       const { double, client, ctx } = setup();
       reply(double, [assignment(11, extra)], services);
-      const [result] = await client.eventAssignments(ctx(), 2);
+      const [result] = (await client.eventAssignments(ctx(), 2, 1)).assignments;
       expect(result?.person).toBeNull();
       expect(JSON.stringify(result)).not.toContain('Person');
       expect(JSON.stringify(result)).not.toContain('Platzhalter');
@@ -679,10 +684,7 @@ describe('the assignments of an event', () => {
     double
       .intercept({ path: '/api/services', method: 'GET' })
       .reply(200, servicesAnswer([service(11)]).body, json);
-    double
-      .intercept({ path: '/api/servicegroups', method: 'GET' })
-      .reply(200, serviceGroupsAnswer([]).body, json);
-    const [result] = await client.eventAssignments(ctx(), 2);
+    const [result] = (await client.eventAssignments(ctx(), 2, 1)).assignments;
     expect(result).toEqual({
       serviceId: 11,
       serviceName: 'Dienst 11',
@@ -695,7 +697,10 @@ describe('the assignments of an event', () => {
   it('gives an empty list for an event without assignments, as without the right on the groups of services', async () => {
     const { double, client, ctx } = setup();
     reply(double, [], [service(11)]);
-    expect(await client.eventAssignments(ctx(), 2)).toEqual([]);
+    expect(await client.eventAssignments(ctx(), 2, 1)).toEqual({
+      assignments: [],
+      more: false,
+    });
   });
 
   it.each([
@@ -710,7 +715,7 @@ describe('the assignments of an event', () => {
       [{ ...assignment(11), ...change } as AssignmentFixture],
       [service(11)],
     );
-    expect(await codeOf(client.eventAssignments(ctx(), 2))).toBe('upstream');
+    expect(await codeOf(client.eventAssignments(ctx(), 2, 1))).toBe('upstream');
     expect(lines.map((line) => line.event)).toEqual([
       'churchtools_event_assignments_refused',
     ]);
@@ -723,6 +728,60 @@ describe('the assignments of an event', () => {
       Array.from({ length: 501 }, () => assignment(11)),
       [service(11)],
     );
-    expect(await codeOf(client.eventAssignments(ctx(), 2))).toBe('upstream');
+    expect(await codeOf(client.eventAssignments(ctx(), 2, 1))).toBe('upstream');
+  });
+
+  it('passes on no person with an ID from 1 but no last name', async () => {
+    const { double, client, ctx } = setup();
+    double.intercept({ path: '/api/events/2', method: 'GET' }).reply(
+      200,
+      changed(
+        eventAssignmentsAnswer([assignment(11)]).body,
+        (data: { eventServices: Record<string, unknown>[] }) => {
+          const [first] = data.eventServices;
+          if (first === undefined) return;
+          first['person'] = {
+            domainAttributes: { firstName: 'Person', lastName: null },
+          };
+        },
+      ),
+      json,
+    );
+    double
+      .intercept({ path: '/api/services', method: 'GET' })
+      .reply(200, servicesAnswer([service(11)]).body, json);
+    const [result] = (await client.eventAssignments(ctx(), 2, 1)).assignments;
+    expect(result?.person).toBeNull();
+  });
+
+  it('pages through the assignments, 25 a page, and reads all of them each time', async () => {
+    const { double, client, ctx } = setup();
+    const many = Array.from({ length: 30 }, (_, index) =>
+      assignment(11, { personId: index + 1 }),
+    );
+    for (let count = 0; count < 3; count += 1)
+      reply(double, many, [service(11)]);
+    const pages = [];
+    for (const number of [1, 2, 3]) {
+      const page = await client.eventAssignments(ctx(), 2, number);
+      pages.push([
+        page.assignments.length,
+        page.assignments[0]?.person?.personId,
+        page.more,
+      ]);
+    }
+    expect(pages).toEqual([
+      [25, 1, true],
+      [5, 26, false],
+      [0, undefined, false],
+    ]);
+  });
+
+  it('refuses page 21 before any request', async () => {
+    const { double, client, ctx } = setup();
+    expect(await codeOf(client.eventAssignments(ctx(), 2, 21))).toBe(
+      'validation',
+    );
+    expect(double.calls()).toHaveLength(0);
   });
 });

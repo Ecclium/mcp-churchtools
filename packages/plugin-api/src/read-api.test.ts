@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   agendaItemTypePattern,
+  assignmentsPageLimit,
   calendarDatePattern,
   dateTimePattern,
   groupMembersPageLimit,
@@ -10,6 +11,7 @@ import {
   isWikiPageGuid,
   maxAgendaItems,
   maxAgendaNoteLength,
+  maxAssignmentsPage,
   maxEventAssignments,
   maxEventDays,
   maxEventDescriptionLength,
@@ -218,9 +220,13 @@ describe('the limits of events and services', () => {
     expect(maxAgendaNoteLength).toBe(1000);
   });
 
-  it('reads 1000 services and 500 assignments of an event', () => {
+  it('reads 1000 services and 500 assignments of an event, 25 a page up to page 20', () => {
     expect(maxServices).toBe(1000);
     expect(maxEventAssignments).toBe(500);
+    expect(assignmentsPageLimit).toBe(25);
+    expect(maxAssignmentsPage).toBe(
+      Math.ceil(maxEventAssignments / assignmentsPageLimit),
+    );
   });
 });
 
@@ -320,5 +326,8 @@ describe('isEventWindow', () => {
       );
     }
     expect(isEventWindow('2028-02-28', '2028-02-29')).toBe(true);
+    // Across the leap day of 2028: 31 days fit, 32 do not.
+    expect(isEventWindow('2028-02-01', '2028-03-02')).toBe(true);
+    expect(isEventWindow('2028-02-01', '2028-03-03')).toBe(false);
   });
 });
