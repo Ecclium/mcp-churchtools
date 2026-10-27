@@ -273,8 +273,15 @@ function refuse(hint: HintKey): SpikeError {
   return new SpikeError('KONFIGURATION', hint);
 }
 
-/** The operations the guard reads with, before it hands out any client. */
-const gateReads = ['wikiCategories', 'permissionsGlobal', 'whoami'] as const;
+/**
+ * The operations the guard reads with, before it hands out any client,
+ * with the query parameters it sends there.
+ */
+const gateReads = {
+  wikiCategories: [],
+  permissionsGlobal: [],
+  whoami: ['only_allow_authenticated'],
+} as const satisfies Partial<Record<OperationName, readonly string[]>>;
 
 /**
  * The lists of the probes the seed reads to find its objects, with the
@@ -436,7 +443,10 @@ export function seedOperationsDocumented(document: OpenApiDocument): boolean {
     readonly template: string;
     readonly query: readonly string[];
   }[] = [
-    ...gateReads.map((name) => ({ ...operations[name], query: [] })),
+    ...Object.entries(gateReads).map(([name, query]) => ({
+      ...operations[name as keyof typeof gateReads],
+      query,
+    })),
     ...Object.entries(seedReadParameters).map(([name, query]) => ({
       ...operations[name as keyof typeof seedReadParameters],
       query,
@@ -492,7 +502,9 @@ export async function passSeedGate(
 
   const reads = createGateClient(
     secret.options,
-    gateReads.map((name) => operations[name].template),
+    Object.keys(gateReads).map(
+      (name) => operations[name as keyof typeof gateReads].template,
+    ),
   );
   const { categories } = readCategories(
     await reads.get({ path: operations.wikiCategories.template }),

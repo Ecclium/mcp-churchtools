@@ -238,6 +238,11 @@ describe('the guard of the seed, by reading', () => {
       'seedOperationFehlt',
     ],
     [
+      'if the instance does not declare the parameter the guard reads the account with',
+      { undeclared: ['get /whoami only_allow_authenticated'] },
+      'seedOperationFehlt',
+    ],
+    [
       'if the account holds one right too many',
       {
         rights: (identification) => ({
