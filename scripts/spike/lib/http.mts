@@ -24,11 +24,22 @@
  * and at most one of two fixed preconditions, and never repeats a request:
  * after a timeout nobody knows whether the instance wrote.
  *
+ * The seed of the test instance gets a third client,
+ * {@link createSeedClient}, from its own guard (ADR 0061). It sends only
+ * the write operations of the seed, each with its fixed query parameters
+ * and a JSON body, and likewise never repeats a request.
+ *
  * @packageDocumentation
  */
 import { SpikeError, type ErrorCode } from './errors.mts';
 import type { Guard, Json } from './guard.mts';
-import { operations, personalPrefixes } from './operations.mts';
+import {
+  operations,
+  personalPrefixes,
+  seedOperations,
+  seedWriteOperations,
+  type SeedWriteOperation,
+} from './operations.mts';
 import { isObject } from './spec.mts';
 
 /** The fetch function, replaceable in tests. */
@@ -269,7 +280,7 @@ function blockCookies(guard: Guard, cookies: readonly string[]): void {
 }
 
 interface Exchange {
-  readonly method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  readonly method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   readonly url: URL;
   readonly headers: Headers;
   readonly body?: string;
@@ -560,6 +571,117 @@ export function createWriteClient(options: ClientOptions): WriteClient {
       return exchange(options, {
         method:
           method === 'post' ? 'POST' : method === 'patch' ? 'PATCH' : 'DELETE',
+        url,
+        headers,
+        ...(body === undefined ? {} : { body }),
+        maxBytes: options.maxBytes ?? 5 * 1024 * 1024,
+        blockValues: true,
+      });
+    },
+  };
+}
+
+/** One request of the seed. */
+export interface SeedRequest {
+  readonly operation: SeedWriteOperation;
+  /** IDs for the placeholders of the template, in order. */
+  readonly parameters: readonly (string | number)[];
+  /** The JSON body, if the operation takes one. */
+  readonly body?: { readonly [key: string]: Json };
+}
+
+/** The client of the seed, bound to one instance and one token. */
+export interface SeedClient {
+  /**
+   * Sends one write request of the seed, once.
+   *
+   * @param request - Operation, IDs and body.
+   * @returns The response, already read and parsed.
+   * @throws {SpikeError} On network errors, redirects, oversized responses, and before any request if the request has another form.
+   */
+  send(request: SeedRequest): Promise<ProbeResponse>;
+}
+
+const seedMethods = {
+  post: 'POST',
+  put: 'PUT',
+  patch: 'PATCH',
+  delete: 'DELETE',
+} as const;
+
+/**
+ * Creates the client that writes for the seed. Only the guard of the seed
+ * calls this, after all its checks and the confirmation in the terminal
+ * (ADR 0061).
+ *
+ * Every placeholder takes a positive whole number, except the page of the
+ * wiki, which the write operations of ChurchTools accept only as its GUID.
+ * The query comes only from the fixed parameters of the operation.
+ *
+ * @param options - Origin, token, guard and limits.
+ * @returns A client that sends only the write operations of the seed.
+ * @example
+ * ```ts
+ * const seed = createSeedClient({ origin, token, guard });
+ * await seed.send({
+ *   operation: 'songCreate',
+ *   parameters: [],
+ *   body: { name: 'Seedprobe Lied A', categoryId: 7 },
+ * });
+ * ```
+ */
+export function createSeedClient(options: ClientOptions): SeedClient {
+  return {
+    async send(request: SeedRequest): Promise<ProbeResponse> {
+      if (
+        !(seedWriteOperations as readonly string[]).includes(request.operation)
+      ) {
+        throw new SpikeError('INTERN');
+      }
+      const template: {
+        readonly method: string;
+        readonly template: string;
+        readonly query?: readonly (readonly [string, string])[];
+      } = seedOperations[request.operation];
+      const { method } = template;
+      if (
+        method !== 'post' &&
+        method !== 'put' &&
+        method !== 'patch' &&
+        method !== 'delete'
+      ) {
+        throw new SpikeError('INTERN');
+      }
+      const wikiPage = request.operation === 'wikiPageDelete';
+      const valid = request.parameters.every((value, index) =>
+        wikiPage && index === 1
+          ? typeof value === 'string' && guidPattern.test(value)
+          : typeof value === 'number' &&
+            Number.isSafeInteger(value) &&
+            value > 0,
+      );
+      if (!valid) {
+        throw new SpikeError('INTERN');
+      }
+      const url = new URL(
+        pathFor(template.template, ...request.parameters),
+        options.origin,
+      );
+      if (url.origin !== options.origin || !isPlainPath(url.pathname)) {
+        throw new SpikeError('INTERN');
+      }
+      for (const [name, value] of template.query ?? []) {
+        url.searchParams.append(name, value);
+      }
+      const headers = baseHeaders();
+      headers.set('Authorization', `Login ${options.token}`);
+      let body: string | undefined;
+      if (request.body !== undefined) {
+        headers.set('Content-Type', 'application/json');
+        body = JSON.stringify(request.body);
+      }
+      return exchange(options, {
+        method: seedMethods[method],
         url,
         headers,
         ...(body === undefined ? {} : { body }),
