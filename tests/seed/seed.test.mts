@@ -471,6 +471,31 @@ describe('anlegen', () => {
     ).toMatchObject({ isMarkdown: false });
   });
 
+  it('uses only a resource of its own resource type', async () => {
+    const setting = seedSetup();
+    // The resource type of the seed exists, and a resource made by hand
+    // with the name of the seed lies in another type.
+    setting.instance.store.resourceTypes.push({
+      id: 5,
+      name: 'Seedprobe Räume',
+    });
+    setting.instance.store.resources.push({
+      id: 7,
+      name: 'Seedprobe Saal',
+      resourceTypeId: 6,
+    });
+    const result = await run(setting, 'anlegen');
+    expect(result.result['struktur']).toMatchObject({
+      rt: 'vorhanden',
+      r: 'angelegt',
+    });
+    const booking = setting.instance
+      .writes()
+      .find((call) => call.path === '/api/bookings');
+    expect(booking?.body).toMatchObject({ title: 'Seedprobe Technikprobe' });
+    expect(booking?.body).not.toMatchObject({ resourceId: 7 });
+  });
+
   it('takes the seed account out of a group the instance made it a member of', async () => {
     const setting = seedSetup({ creatorJoinsGroups: true });
     const result = await run(setting, 'anlegen');
