@@ -6,7 +6,8 @@
  * is noted with its status, and the seed goes on with what does not depend
  * on it. A network error, a timeout or an answer the client cannot read
  * stops the run: after such an error nobody knows whether the instance
- * wrote, so no further request goes out. Nothing is ever sent twice.
+ * wrote, so no further request goes out, and the write it hit is noted as
+ * «ungewiss» for a person to check. Nothing is ever sent twice.
  *
  * The report holds only labels of the data set, fixed words and status
  * codes. The course of the seed passes it through the same check as the
@@ -53,6 +54,7 @@ export const outcomes = [
   'geloescht',
   'nicht mehr vorhanden',
   'uebersprungen',
+  'ungewiss',
   'antwort unerwartet',
   'ohne Recht',
   'sendet Mails',
@@ -163,7 +165,7 @@ export class SeedRun {
    * @param section - The section of the report.
    * @param label - The label of the object.
    * @param request - Operation, IDs and body.
-   * @param gone - For a delete: whether 404 means that the object is already gone, as after deleting the event of an appointment.
+   * @param gone - For a delete: whether 404 means that the object is already gone, as after an earlier run that stopped half way.
    * @returns The answer if the instance accepted it, otherwise `undefined`.
    */
   async write(
@@ -183,7 +185,8 @@ export class SeedRun {
       response = await writer.send(request);
     } catch (error) {
       this.stop(error);
-      this.note(section, label, 'uebersprungen');
+      // The request went out; whether the instance wrote is not known.
+      this.note(section, label, 'ungewiss');
       return undefined;
     }
     if (gone && response.status === 404) {

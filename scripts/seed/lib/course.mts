@@ -31,6 +31,8 @@ import { Guard } from '../../spike/lib/guard.mts';
 import { createGateClient, type FetchFunction } from '../../spike/lib/http.mts';
 import { operations, specificationPath } from '../../spike/lib/operations.mts';
 import {
+  exitCodeFor,
+  exitCodes,
   installCrashHandlers,
   integrityLines,
   writeError,
@@ -258,7 +260,12 @@ export async function runSeed(dependencies: SeedDependencies): Promise<number> {
     } else {
       await resetAll(context);
     }
-    return writeResult(run.output(command, version), guard, io);
+    const code = writeResult(run.output(command, version), guard, io);
+    // A run that stopped leaves open what the instance wrote, so its code
+    // must not read as success.
+    return code === exitCodes.ok && run.stopped !== undefined
+      ? exitCodeFor(run.stopped)
+      : code;
   } catch (error) {
     return writeError(error, io);
   }

@@ -611,8 +611,12 @@ describe('anlegen', () => {
   it('stops after a network error on a write and sends nothing after it', async () => {
     const setting = seedSetup({ failAt: 'POST /api/songs' });
     const result = await run(setting, 'anlegen');
-    expect(result.code).toBe(exitCodes.ok);
-    expect(result.result).toMatchObject({ abbruch: 'NETZ_VERBINDUNG' });
+    // A stopped run must not read as success.
+    expect(result.code).toBe(exitCodes.network);
+    expect(result.result).toMatchObject({
+      abbruch: 'NETZ_VERBINDUNG',
+      lieder: { l1: 'ungewiss', l2: 'uebersprungen' },
+    });
     const calls = setting.instance.calls;
     const failed = calls.findIndex(
       (call) => call.method === 'POST' && call.path === '/api/songs',

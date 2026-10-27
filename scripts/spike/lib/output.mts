@@ -77,7 +77,13 @@ export function writeResult(output: Json, guard: Guard, io: Io): number {
   return exitCodes.withheld;
 }
 
-function exitCodeFor(code: ErrorCode): number {
+/**
+ * The exit code for an error code.
+ *
+ * @param code - The code of the error.
+ * @returns 2 for the environment, 70 for an internal error, otherwise 4.
+ */
+export function exitCodeFor(code: ErrorCode): number {
   switch (code) {
     case 'KONFIGURATION':
     case 'DATEI':
