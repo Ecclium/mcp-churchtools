@@ -21,7 +21,8 @@
  */
 import { isId } from '../../spike/lib/gate.mts';
 import type { Json } from '../../spike/lib/guard.mts';
-import type { SeedRequest } from '../../spike/lib/http.mts';
+import { pathFor, type SeedRequest } from '../../spike/lib/http.mts';
+import { operations } from '../../spike/lib/operations.mts';
 import type { SeedPass, SeedSettings } from '../../spike/lib/seed-gate.mts';
 import { isObject, type JsonObject } from '../../spike/lib/spec.mts';
 import {
@@ -655,9 +656,21 @@ async function assign(
   personIds: ReadonlyMap<PersonLabel, number>,
   spec: NonNullable<AppointmentSpec['event']>,
   eventId: number,
-  event: JsonObject,
 ): Promise<void> {
   const { run } = context;
+  // The list of events leaves the service requests out; only the single
+  // event carries them, as the read tools of the server see it too.
+  const response = await run.read(pathFor(operations.event.template, eventId));
+  const event = response?.status === 200 ? dataObject(response) : undefined;
+  if (event === undefined) {
+    noteAll(
+      run,
+      'einteilungen',
+      spec.assignments.map((assignment) => assignment.label),
+      unreadable(run),
+    );
+    return;
+  }
   const requests = Array.isArray(event['eventServices'])
     ? (event['eventServices'] as readonly unknown[]).filter(isObject)
     : [];
@@ -824,7 +837,7 @@ async function ensureAppointments(
       continue;
     }
     run.note('events', spec.label, 'angelegt');
-    await assign(context, ids, personIds, spec, eventId, event);
+    await assign(context, ids, personIds, spec, eventId);
     await fillAgenda(context, calendar, arrangementIds, spec, eventId);
   }
 }

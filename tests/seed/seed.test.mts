@@ -553,6 +553,29 @@ describe('anlegen', () => {
     ).toBe(false);
   });
 
+  it('assigns nobody if it cannot read the single event', async () => {
+    const setting = seedSetup({
+      refuse: new Map([['GET /api/events/{}', 403]]),
+    });
+    const result = await run(setting, 'anlegen');
+    expect(result.result['events']).toMatchObject({
+      e1: 'angelegt',
+      e2: 'angelegt',
+    });
+    expect(result.result['einteilungen']).toEqual({
+      e1s1pD: 'antwort unerwartet',
+      e2s1pA: 'antwort unerwartet',
+      e2s2pB: 'antwort unerwartet',
+      e2s2pC: 'antwort unerwartet',
+    });
+    expect(result.result['ablauf']).toMatchObject({ e2: 'angelegt' });
+    expect(
+      setting.instance
+        .writes()
+        .some((item) => item.path.includes('/servicerequests/')),
+    ).toBe(false);
+  });
+
   it('notes a refused write, skips what depends on it and goes on', async () => {
     const setting = seedSetup({
       refuse: new Map([['POST /api/persons', 403]]),

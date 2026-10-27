@@ -278,11 +278,13 @@ const gateReads = ['wikiCategories', 'permissionsGlobal', 'whoami'] as const;
 
 /**
  * The lists of the probes the seed reads to find its objects, with the
- * query parameters it sends there. The guard checks that the instance
- * declares each of them, so no filter is silently ignored.
+ * query parameters it sends there, and the single event it reads for its
+ * service requests. The guard checks that the instance declares each of
+ * them, so no filter is silently ignored.
  */
 export const seedReadParameters = {
   calendars: [],
+  event: [],
   resourceTypes: [],
   resources: [],
   serviceGroups: [],

@@ -57,7 +57,7 @@ export interface InstanceOptions {
   readonly undeclared?: readonly string[];
   /** Whether a new group gets the account that created it as a member. */
   readonly creatorJoinsGroups?: boolean;
-  /** Writes the instance refuses, as `METHOD /api/path` with `{}` for IDs. */
+  /** Requests the instance refuses, as `METHOD /api/path` with `{}` for IDs. */
   readonly refuse?: ReadonlyMap<string, number>;
   /** A write at which the network fails, in the same form. */
   readonly failAt?: string;
@@ -497,7 +497,15 @@ export class SeedInstance {
       return this.appointments(method, num(1), num(3), body);
     }
     if (path === '/api/events' && method === 'GET') {
-      return this.list(s.events);
+      // As on the instance, the list leaves the service requests out; only
+      // the single event carries them.
+      return this.list(
+        s.events.map((event) =>
+          Object.fromEntries(
+            Object.entries(event).filter(([key]) => key !== 'eventServices'),
+          ),
+        ),
+      );
     }
     if (parts[0] === 'events') {
       return this.event(method, parts, body);
@@ -636,6 +644,9 @@ export class SeedInstance {
     const event = s.events.find((item) => item['id'] === eventId);
     if (event === undefined) {
       return this.answer({}, 404);
+    }
+    if (parts.length === 2 && method === 'GET') {
+      return this.answer({ data: event });
     }
     if (parts.length === 2 && method === 'DELETE') {
       s.events.splice(s.events.indexOf(event), 1);
