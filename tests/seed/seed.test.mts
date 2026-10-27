@@ -146,6 +146,11 @@ describe('the guard of the seed, from the environment', () => {
       'seedStatusFehlt',
     ],
     [
+      'without the privacy fields',
+      { ECCLIUM_SEED_PRIVACY_WHO_ID: undefined },
+      'seedDatenschutzFehlt',
+    ],
+    [
       'with a group status that is no ID',
       { ECCLIUM_SEED_GROUP_STATUS_ID: '0' },
       'seedGruppenstatusFehlt',
@@ -426,6 +431,9 @@ describe('anlegen', () => {
         lastName: 'Seedprobe',
         departmentIds: [departmentId],
         statusId: 0,
+        privacyPolicyAgreementDate: '2026-10-27',
+        privacyPolicyAgreementTypeId: 3,
+        privacyPolicyAgreementWhoId: 1,
       });
     }
     for (const call of writes.filter((item) => item.path === '/api/services')) {

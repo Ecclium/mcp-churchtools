@@ -402,6 +402,9 @@ async function ensurePersons(
             departmentIds: [settings.departmentId],
             campusId: settings.campusId,
             statusId: settings.statusId,
+            privacyPolicyAgreementDate: dateOnly(context.now),
+            privacyPolicyAgreementTypeId: settings.privacy.typeId,
+            privacyPolicyAgreementWhoId: settings.privacy.whoId,
           },
         }),
     );

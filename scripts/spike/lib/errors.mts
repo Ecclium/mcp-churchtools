@@ -177,6 +177,8 @@ export const hints = {
     'Abbruch: ECCLIUM_SEED_DEPARTMENT_ID fehlt oder ist keine positive ganze Zahl.',
   seedStatusFehlt:
     'Abbruch: ECCLIUM_SEED_STATUS_ID fehlt oder ist keine ganze Zahl ab 0.',
+  seedDatenschutzFehlt:
+    'Abbruch: ECCLIUM_SEED_PRIVACY_TYPE_ID oder ECCLIUM_SEED_PRIVACY_WHO_ID fehlt oder ist keine positive ganze Zahl.',
   seedGruppenstatusFehlt:
     'Abbruch: ECCLIUM_SEED_GROUP_STATUS_ID fehlt oder ist keine positive ganze Zahl.',
   seedStandortFehlt:

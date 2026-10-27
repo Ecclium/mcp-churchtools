@@ -18,7 +18,7 @@ Jeder Name und jeder Titel beginnt mit dem Kennzeichen «Seedprobe», jede Perso
 - **Personen und Gruppen:** sechs Personen «Person A Seedprobe» bis «Person F Seedprobe» ohne Kontaktdaten und zwei Gruppen mit je vier von ihnen.
 - **Inhalte:** zwei Songs mit Arrangements, vier Termine ab dem ersten Samstag mindestens zwei Tage nach dem Lauf, darunter eine Serie und einer über den ganzen Tag mit einer Buchung, zwei Events mit Diensten, Einteilungen und einem Ablauf, eine Buchung und drei Seiten im Wiki: eine in Markdown, eine in HTML und eine lange, die die Lese-Tools in Teilen liefern.
 
-Bereich, Gruppenstatus und Standort kann die API nicht anlegen. Einen Status legt sie seit ChurchTools 3.138 nur mit einer Sicherheitsstufe an, die der Seed wählen müsste. Alle vier kommen deshalb aus der Umgebung, der Status am besten der der synthetischen Personen der Proben, damit das Dienstkonto die Personen des Seeds ebenso sieht.
+Bereich, Gruppenstatus und Standort kann die API nicht anlegen. Einen Status legt sie seit ChurchTools 3.138 nur mit einer Sicherheitsstufe an, die der Seed wählen müsste. Verlangt die Instanz für jede neue Person die Angaben zur Datenschutzerklärung, wie die Testinstanz, nimmt der Seed Art und Herkunft der Zustimmung ebenfalls aus der Umgebung, mit dem Tag des Laufs als Datum. Alle diese Werte kommen aus der Umgebung, der Status am besten der der synthetischen Personen der Proben, damit das Dienstkonto die Personen des Seeds ebenso sieht.
 
 ## Das Seed-Konto
 
@@ -50,6 +50,8 @@ env -i \
   ECCLIUM_SEED_TOKEN_FILE=/pfad/zur/token-seed \
   ECCLIUM_SEED_DEPARTMENT_ID=2 \
   ECCLIUM_SEED_STATUS_ID=0 \
+  ECCLIUM_SEED_PRIVACY_TYPE_ID=3 \
+  ECCLIUM_SEED_PRIVACY_WHO_ID=1 \
   ECCLIUM_SEED_GROUP_STATUS_ID=1 \
   ECCLIUM_SEED_CAMPUS_ID=2 \
   node scripts/seed/seed.mts pruefen

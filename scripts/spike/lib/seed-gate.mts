@@ -150,6 +150,8 @@ export const seedVariables = [
   'ECCLIUM_SEED_ALLOW_WRITE',
   'ECCLIUM_SEED_DEPARTMENT_ID',
   'ECCLIUM_SEED_STATUS_ID',
+  'ECCLIUM_SEED_PRIVACY_TYPE_ID',
+  'ECCLIUM_SEED_PRIVACY_WHO_ID',
   'ECCLIUM_SEED_GROUP_STATUS_ID',
   'ECCLIUM_SEED_CAMPUS_ID',
 ] as const;
@@ -163,6 +165,13 @@ export interface SeedSettings {
    * from 0, and the synthetic persons of the probes have status 0.
    */
   readonly statusId: number;
+  /**
+   * How and from whom the agreement to the privacy policy was obtained, as
+   * the instance numbers them. An instance with mandatory privacy fields
+   * refuses a new person without them (400); the seed takes the values of
+   * the synthetic persons of the probes.
+   */
+  readonly privacy: { readonly typeId: number; readonly whoId: number };
   /** The status the groups of the seed get. */
   readonly groupStatusId: number;
   /** The campus of the persons and groups of the seed. */
@@ -205,6 +214,14 @@ export function checkSeedEnvironment(
   return {
     departmentId: readId(env, 'ECCLIUM_SEED_DEPARTMENT_ID', 'seedBereichFehlt'),
     statusId: readId(env, 'ECCLIUM_SEED_STATUS_ID', 'seedStatusFehlt', true),
+    privacy: {
+      typeId: readId(
+        env,
+        'ECCLIUM_SEED_PRIVACY_TYPE_ID',
+        'seedDatenschutzFehlt',
+      ),
+      whoId: readId(env, 'ECCLIUM_SEED_PRIVACY_WHO_ID', 'seedDatenschutzFehlt'),
+    },
     groupStatusId: readId(
       env,
       'ECCLIUM_SEED_GROUP_STATUS_ID',
