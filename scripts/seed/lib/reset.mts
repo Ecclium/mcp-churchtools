@@ -4,9 +4,12 @@
  *
  * The order: pages of the wiki, then events, appointments, songs and
  * bookings. Events go before the songs, because the agenda of an event
- * names a song, and with `sendMail=false`, so nobody gets a mail. An
- * appointment or booking that went with its event answers 404 and counts
- * as already gone.
+ * names a song, and with `sendMail=false`, so nobody gets a mail. On
+ * ChurchTools 3.138 deleting an event leaves its appointment, so the seed
+ * deletes the appointment afterwards, and only once its event is gone:
+ * deleting an appointment would take the event along without
+ * `sendMail=false`. An object that is already gone answers 404 and counts
+ * as such.
  *
  * Structure, persons and groups stay, so the seed account needs no right
  * to delete persons or groups.
@@ -35,10 +38,13 @@ async function deleted(
   section: Parameters<SeedRun['note']>[0],
   label: string,
   request: Parameters<SeedRun['write']>[2],
-): Promise<void> {
+): Promise<boolean> {
   if ((await run.write(section, label, request, true)) !== undefined) {
     run.note(section, label, 'geloescht');
+    return true;
   }
+  // A 404 counts as gone; the run has noted it so.
+  return run.report.get(section)?.get(label) === 'nicht mehr vorhanden';
 }
 
 async function resetPages(context: CommandContext): Promise<void> {
@@ -61,7 +67,7 @@ async function resetPages(context: CommandContext): Promise<void> {
     const page = found.get(spec.label);
     if (page === 'mehrfach') {
       run.note('seiten', spec.label, 'mehrfach');
-    } else if (page !== undefined) {
+    } else if (typeof page === 'object') {
       await deleted(run, 'seiten', spec.label, {
         operation: 'wikiPageDelete',
         parameters: [category.id, page.guid],
@@ -101,22 +107,23 @@ async function resetDated(
     found: findOne(appointments, (base) => base['title'] === spec.title),
   }));
   const events = await readEvents(run, window);
-  if (events === undefined) {
-    noteAll(
-      run,
-      'events',
-      data.appointments.flatMap((spec) =>
-        spec.event === undefined ? [] : [spec.event.label],
-      ),
-      unreadable(run),
-    );
-    return;
-  }
+  // Appointments whose event is still there, or may be.
+  const held = new Set<string>();
   for (const { spec, found: appointment } of found) {
-    const appointmentId = idOf(appointment);
     if (spec.event === undefined) {
       continue;
     }
+    if (appointment === 'mehrfach') {
+      // Which event goes with which appointment is unclear; both stay.
+      run.note('events', spec.event.label, 'mehrfach');
+      continue;
+    }
+    if (events === undefined) {
+      run.note('events', spec.event.label, unreadable(run));
+      held.add(spec.label);
+      continue;
+    }
+    const appointmentId = idOf(appointment);
     // An event of the seed belongs to one of its appointments, or lies in
     // its calendar and carries the title of one.
     const own = events.filter(
@@ -129,20 +136,26 @@ async function resetDated(
     const ids = new Set(own.map((event) => event['id']).filter(isId));
     if (ids.size > 1) {
       run.note('events', spec.event.label, 'mehrfach');
+      held.add(spec.label);
       continue;
     }
     const [eventId] = ids;
-    if (eventId !== undefined) {
-      await deleted(run, 'events', spec.event.label, {
+    if (
+      eventId !== undefined &&
+      !(await deleted(run, 'events', spec.event.label, {
         operation: 'eventDelete',
         parameters: [eventId],
-      });
+      }))
+    ) {
+      held.add(spec.label);
     }
   }
   for (const { spec, found: appointment } of found) {
     if (appointment === 'mehrfach') {
       run.note('termine', spec.label, 'mehrfach');
-    } else if (appointment !== undefined) {
+    } else if (held.has(spec.label) && typeof appointment === 'object') {
+      run.note('termine', spec.label, 'uebersprungen');
+    } else if (typeof appointment === 'object') {
       await deleted(run, 'termine', spec.label, {
         operation: 'appointmentDelete',
         parameters: [calendar, appointment.id],
@@ -173,7 +186,7 @@ async function resetSongs(
     const song = found.get(spec.label);
     if (song === 'mehrfach') {
       run.note('lieder', spec.label, 'mehrfach');
-    } else if (song !== undefined) {
+    } else if (typeof song === 'object') {
       await deleted(run, 'lieder', spec.label, {
         operation: 'songDelete',
         parameters: [song.id],
@@ -213,7 +226,7 @@ async function resetBookings(
     const booking = findOne(bookings, (base) => base['title'] === target.title);
     if (booking === 'mehrfach') {
       run.note('buchungen', target.label, 'mehrfach');
-    } else if (booking !== undefined) {
+    } else if (typeof booking === 'object') {
       await deleted(run, 'buchungen', target.label, {
         operation: 'bookingDelete',
         parameters: [booking.id],

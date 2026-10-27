@@ -638,7 +638,8 @@ describe('zuruecksetzen', () => {
       seiten: { w1: 'geloescht', w2: 'geloescht', w3: 'geloescht' },
       events: { e1: 'geloescht', e2: 'geloescht' },
       termine: {
-        a1: 'nicht mehr vorhanden',
+        a1: 'geloescht',
+        a2: 'geloescht',
         a3: 'geloescht',
         a4: 'geloescht',
       },
@@ -652,6 +653,13 @@ describe('zuruecksetzen', () => {
       /^\/api\/events\/\d+$/.test(item.path),
     );
     expect(events).toHaveLength(2);
+    // Every event goes before the first appointment.
+    const firstAppointment = deletes.findIndex((item) =>
+      item.path.includes('/appointments/'),
+    );
+    expect(firstAppointment).toBeGreaterThan(
+      deletes.indexOf(events[1] as (typeof deletes)[number]),
+    );
     for (const call of events) {
       expect(call.query.get('sendMail')).toBe('false');
     }
@@ -669,6 +677,31 @@ describe('zuruecksetzen', () => {
     expect(store.appointments).toHaveLength(1);
     expect(store.songs).toHaveLength(1);
     expect(leaks(result.output, forbidden(setting))).toEqual([]);
+  });
+});
+
+describe('zuruecksetzen without its events', () => {
+  it('keeps an appointment whose event it could not delete', async () => {
+    const setting = seedSetup();
+    await run(setting, 'anlegen');
+    setting.instance.behave({
+      refuse: new Map([['DELETE /api/events/{}', 403]]),
+    });
+    const result = await run(setting, 'zuruecksetzen');
+    expect(result.result).toMatchObject({
+      events: { e1: { abgelehnt: 403 }, e2: { abgelehnt: 403 } },
+      termine: {
+        a1: 'uebersprungen',
+        a2: 'uebersprungen',
+        a3: 'geloescht',
+        a4: 'geloescht',
+      },
+    });
+    expect(
+      setting.instance.store.appointments.filter((item) =>
+        String(item['title']).startsWith('Seedprobe'),
+      ),
+    ).toHaveLength(3);
   });
 });
 

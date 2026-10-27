@@ -212,7 +212,7 @@ export class SeedInstance {
   readonly canaries: Canaries;
   readonly identification: number;
   private nextId = randomInt(1000, 5000);
-  private readonly options: InstanceOptions;
+  private options: InstanceOptions;
 
   /** The category of the seed, once created, and whether the account has rights on it. */
   seedCategory: { id: number; visible: boolean } | undefined;
@@ -278,6 +278,15 @@ export class SeedInstance {
   private id(): number {
     this.nextId += randomInt(1, 7);
     return this.nextId;
+  }
+
+  /**
+   * Changes how the instance behaves from now on, as between two runs.
+   *
+   * @param options - The options that change.
+   */
+  behave(options: InstanceOptions): void {
+    this.options = { ...this.options, ...options };
   }
 
   /**
@@ -649,15 +658,8 @@ export class SeedInstance {
       return this.answer({ data: event });
     }
     if (parts.length === 2 && method === 'DELETE') {
+      // As on ChurchTools 3.138, the appointment of the event stays.
       s.events.splice(s.events.indexOf(event), 1);
-      // Deleting the event takes its appointment along in these tests; the
-      // seed then counts the appointment as already gone.
-      const index = s.appointments.findIndex(
-        (item) => item['id'] === event['appointmentId'],
-      );
-      if (index >= 0) {
-        s.appointments.splice(index, 1);
-      }
       return this.gone();
     }
     if (parts[2] === 'servicerequests') {
