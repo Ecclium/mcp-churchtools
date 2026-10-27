@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   probe as inventory,
+  specificationMaxBytes,
   versionOf,
 } from '../../scripts/spike/00-inventory.mts';
 import { probe as auth } from '../../scripts/spike/01-auth.mts';
@@ -934,6 +935,24 @@ describe('00-inventory', () => {
       churchtoolsVersion: 'unbekannt',
       info: { status: 403 },
     });
+    expect(leaks(run.output, setting.forbidden)).toEqual([]);
+  });
+
+  it('takes an OpenAPI document above 32 MiB, as ChurchTools 3.138 sends one', async () => {
+    const setting = setup();
+    // ChurchTools 3.138 sent about 41 MB. A long description stands in for
+    // the size; the limit lies at 64 MiB.
+    const size = 40 * 1024 * 1024;
+    const instance = syntheticInstance(setting, {
+      document: {
+        ...specification,
+        info: { ...specification.info, description: ' '.repeat(size) },
+      },
+    });
+    const run = await runOne(inventory, setting.env, instance);
+    expect(run.code).toBe(exitCodes.ok);
+    expect(run.result).toMatchObject({ state: 'angelegt' });
+    expect(specificationMaxBytes).toBeGreaterThan(size);
     expect(leaks(run.output, setting.forbidden)).toEqual([]);
   });
 
