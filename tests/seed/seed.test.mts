@@ -8,6 +8,8 @@ import { describe, expect, it } from 'vitest';
 import { runSeed } from '../../scripts/seed/lib/course.mts';
 import { pages } from '../../scripts/seed/lib/data.mts';
 import { anchorSaturday } from '../../scripts/seed/lib/dates.mts';
+import { pageLimit, readList } from '../../scripts/seed/lib/find.mts';
+import { SeedRun } from '../../scripts/seed/lib/run.mts';
 import { hints, type HintKey } from '../../scripts/spike/lib/errors.mts';
 import { Guard } from '../../scripts/spike/lib/guard.mts';
 import {
@@ -608,6 +610,24 @@ describe('anlegen', () => {
     expect(leaks(result.output, forbidden(setting))).toEqual([]);
   });
 
+  it('creates nothing of the structure whose list it cannot read', async () => {
+    const setting = seedSetup({
+      refuse: new Map([['GET /api/calendars', 429]]),
+    });
+    for (const command of ['anlegen', 'anlegen', 'pruefen'] as const) {
+      const result = await run(setting, command);
+      expect(result.result['struktur']).toMatchObject({
+        c: 'antwort unerwartet',
+      });
+    }
+    const posts = setting.instance
+      .writes()
+      .filter((call) => call.method === 'POST')
+      .map((call) => call.path);
+    expect(posts).not.toContain('/api/calendars');
+    expect(posts).not.toContain('/api/wiki/categories');
+  });
+
   it('stops after a network error on a write and sends nothing after it', async () => {
     const setting = seedSetup({ failAt: 'POST /api/songs' });
     const result = await run(setting, 'anlegen');
@@ -677,6 +697,39 @@ describe('zuruecksetzen', () => {
     expect(store.appointments).toHaveLength(1);
     expect(store.songs).toHaveLength(1);
     expect(leaks(result.output, forbidden(setting))).toEqual([]);
+  });
+});
+
+describe('the lists of the seed', () => {
+  const answer = (count: number, meta: Record<string, unknown>): SeedRun =>
+    new SeedRun({
+      client: {
+        get: () =>
+          Promise.resolve({
+            status: 200,
+            headers: new Headers(),
+            setCookies: [],
+            body: {
+              data: Array.from({ length: count }, (_, index) => ({
+                id: index + 1,
+              })),
+              meta,
+            },
+            kind: 'JSON',
+          }),
+      },
+      writer: undefined,
+      guard: new Guard(),
+      wait: () => Promise.resolve(),
+    });
+
+  it('take a full page without pagination as unreadable, a shorter one as complete', async () => {
+    const full = answer(pageLimit, { count: pageLimit });
+    expect(await readList(full, '/api/events', [], true)).toBeUndefined();
+    const short = answer(pageLimit - 1, { count: pageLimit - 1 });
+    expect(await readList(short, '/api/events', [], true)).toHaveLength(
+      pageLimit - 1,
+    );
   });
 });
 

@@ -129,6 +129,10 @@ async function ensure(
     run.note(section, label, 'mehrfach');
     return undefined;
   }
+  if (found === 'unlesbar') {
+    run.note(section, label, unreadable(run));
+    return undefined;
+  }
   if (found !== undefined) {
     run.note(section, label, 'vorhanden');
     return found.id;

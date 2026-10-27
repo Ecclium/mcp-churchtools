@@ -38,9 +38,16 @@ export const pageLimit = 100;
 /** The most pages the seed reads of one list. */
 export const maxPages = 20;
 
-/** What the seed found for one object of the data set. */
+/**
+ * What the seed found for one object of the data set. «unlesbar» means the
+ * list could not be read, which is not the same as missing: the seed must
+ * not create the object then, or a second run would make it twice.
+ */
 export type Found =
-  { readonly id: number; readonly entry: JsonObject } | 'mehrfach' | undefined;
+  | { readonly id: number; readonly entry: JsonObject }
+  | 'mehrfach'
+  | 'unlesbar'
+  | undefined;
 
 /** The days the seed reads appointments, events and bookings in. */
 export interface Window {
@@ -96,8 +103,16 @@ export async function readList(
       return undefined;
     }
     all.push(...data);
+    if (!paged) {
+      return all;
+    }
     const lastPage = pagination(response.body)?.['lastPage'];
-    if (!paged || typeof lastPage !== 'number' || page >= lastPage) {
+    if (typeof lastPage !== 'number') {
+      // Without pagination a full page may hide more entries, as with the
+      // events, whose list does not page (F38).
+      return data.length < pageLimit ? all : undefined;
+    }
+    if (page >= lastPage) {
       return all;
     }
   }
@@ -157,7 +172,7 @@ export interface Structure {
 
 /**
  * Reads the lists of the structure and finds the objects of the seed.
- * A list that cannot be read leaves its objects `undefined`.
+ * A list that cannot be read leaves its objects «unlesbar».
  *
  * @param run - The run.
  * @returns What the seed found.
@@ -168,7 +183,7 @@ export async function findStructure(run: SeedRun): Promise<Structure> {
   const one = (
     entries: readonly JsonObject[] | undefined,
     matches: (entry: JsonObject) => boolean,
-  ): Found => (entries === undefined ? undefined : findOne(entries, matches));
+  ): Found => (entries === undefined ? 'unlesbar' : findOne(entries, matches));
 
   const groupTypes = await read(seedOperations.groupTypes.template);
   const calendars = await read(operations.calendars.template);

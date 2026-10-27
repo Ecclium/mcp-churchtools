@@ -35,16 +35,22 @@ import {
   type Found,
   type FoundPage,
 } from './find.mts';
-import type { Outcome } from './run.mts';
+import type { Outcome, SeedRun } from './run.mts';
 
-function presence(found: Found | FoundPage): Outcome {
+function presence(found: Found | FoundPage, run: SeedRun): Outcome {
   if (found === 'mehrfach') {
     return 'mehrfach';
+  }
+  if (found === 'unlesbar') {
+    return unreadable(run);
   }
   return found === undefined ? 'fehlt' : 'vorhanden';
 }
 
-function mails(found: Found): Outcome {
+function mails(found: Found, run: SeedRun): Outcome {
+  if (found === 'unlesbar') {
+    return unreadable(run);
+  }
   if (typeof found !== 'object') {
     return 'fehlt';
   }
@@ -65,17 +71,20 @@ export async function checkAll(context: CommandContext): Promise<void> {
   const { run, pass, now } = context;
   const found = await findStructure(run);
   const section = 'struktur';
-  run.note(section, structure.groupType.label, presence(found.groupType));
-  run.note(section, structure.calendar.label, presence(found.calendar));
-  run.note(section, structure.resourceType.label, presence(found.resourceType));
-  run.note(section, structure.resource.label, presence(found.resource));
-  run.note(section, structure.serviceGroup.label, presence(found.serviceGroup));
+  const note = (label: string, item: Found): void => {
+    run.note(section, label, presence(item, run));
+  };
+  note(structure.groupType.label, found.groupType);
+  note(structure.calendar.label, found.calendar);
+  note(structure.resourceType.label, found.resourceType);
+  note(structure.resource.label, found.resource);
+  note(structure.serviceGroup.label, found.serviceGroup);
   for (const spec of services) {
     const service = found.services.get(spec.label);
-    run.note(section, spec.label, presence(service));
-    run.note('pruefungen', `${spec.label}Mails`, mails(service));
+    note(spec.label, service);
+    run.note('pruefungen', `${spec.label}Mails`, mails(service, run));
   }
-  run.note(section, structure.songCategory.label, presence(found.songCategory));
+  note(structure.songCategory.label, found.songCategory);
   const category = pass.seedCategory;
   run.note(
     section,
@@ -92,7 +101,9 @@ export async function checkAll(context: CommandContext): Promise<void> {
     run.note(
       'personen',
       spec.label,
-      people === undefined ? unreadable(run) : presence(people.get(spec.label)),
+      people === undefined
+        ? unreadable(run)
+        : presence(people.get(spec.label), run),
     );
   }
 
@@ -106,7 +117,7 @@ export async function checkAll(context: CommandContext): Promise<void> {
       spec.label,
       teams === undefined && groupType !== undefined
         ? unreadable(run)
-        : presence(group),
+        : presence(group, run),
     );
     const groupId = idOf(group);
     if (groupId !== undefined) {
@@ -127,7 +138,13 @@ export async function checkAll(context: CommandContext): Promise<void> {
   const songList =
     songCategory === undefined ? undefined : await findSongs(run, songCategory);
   for (const spec of songs) {
-    run.note('lieder', spec.label, presence(songList?.get(spec.label)));
+    run.note(
+      'lieder',
+      spec.label,
+      songList === undefined && songCategory !== undefined
+        ? unreadable(run)
+        : presence(songList?.get(spec.label), run),
+    );
   }
 
   const data = datedData(now);
@@ -147,6 +164,7 @@ export async function checkAll(context: CommandContext): Promise<void> {
           : unreadable(run)
         : presence(
             findOne(appointments, (base) => base['title'] === spec.title),
+            run,
           ),
     );
   }
@@ -161,8 +179,13 @@ export async function checkAll(context: CommandContext): Promise<void> {
       'buchungen',
       spec.label,
       bookings === undefined
-        ? 'fehlt'
-        : presence(findOne(bookings, (base) => base['title'] === spec.title)),
+        ? resource === undefined
+          ? 'fehlt'
+          : unreadable(run)
+        : presence(
+            findOne(bookings, (base) => base['title'] === spec.title),
+            run,
+          ),
     );
   }
 
@@ -182,7 +205,7 @@ export async function checkAll(context: CommandContext): Promise<void> {
       spec.label,
       pageList === undefined
         ? unreadable(run)
-        : presence(pageList.get(spec.label)),
+        : presence(pageList.get(spec.label), run),
     );
   }
 }
