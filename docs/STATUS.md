@@ -204,6 +204,7 @@ Diese Grundsatzfragen sind entschieden.
 
 ## Offen
 
+- Spike-Konto auf dem produktiven Tenant: Am 07.10.2026 ist beschlossen, das Konto zu deaktivieren, das der Spike vor der Testinstanz dort nutzen sollte (Weitere Entscheide, Testumgebung). Am 27.10.2026 war es laut Maintainer noch nicht deaktiviert. Bis dahin gelten sein Login-Token und seine Rechte weiter. Deaktivieren heisst: alle Rechte entziehen, das Login-Token erneuern, ohne das neue abzulegen, und den Zugang sperren oder das Passwort ersetzen.
 - MCP-Prompts, vor dem Abschluss von Phase 2:
   - Ein Lauf der beiden Prompts in Claude Code und Claude Desktop gegen die Testinstanz steht aus, auch die Frage, wie Claude Desktop Prompts anbietet.
   - Ein dritter Prompt für die Diagnose der Rechte nach einem gescheiterten Zugriff folgt in einer späteren Phase, der Entwurf einer Seite des Wikis bekommt mit den Tools zum Schreiben eine neue Fassung.
@@ -930,3 +931,4 @@ Diese Grundsatzfragen sind entschieden.
   - Doku: ADR 0065, `docs/betrieb/stdio.md` mit «Prompts» und dem Smoke-Test, das Threat Model und das README.
   - Smoke-Test vom Checkout mit dem Dienstkonto des Servers und dem Satz aus ADR 0064, an ChurchTools 3.137 auf der Testinstanz: ohne Schalter bestanden, ohne Prompt in der Liste und mit der Ablehnung eines unbekannten Prompts, mit Schalter bestanden, mit dem bekannten Befund `globale_suche_ohne_treffer`. In beiden Ären listete der Server beide Prompts mit ihrem Argument, füllte beide als eine Nachricht der Person mit festem Satz am Ende, wies einen Freitag als Samstag ab und fragte ChurchTools dafür nicht an. Die Tools liefen wie bisher.
   - Typecheck, Lint, die Regeln von dependency-cruiser, das Format, die Links, die Lizenzen und die Tests laufen am letzten Commit grün, lokal mit 8'320 Tests, davon einer übersprungen, der nur in CI läuft.
+- 26.10.2026, die MCP-Prompts sind als `b01fd15` auf `main` (#142). Der Baum des Squash-Commits ist gleich dem letzten Stand des Branches.
