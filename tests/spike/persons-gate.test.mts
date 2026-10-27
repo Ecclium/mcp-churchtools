@@ -187,7 +187,7 @@ describe('the reach of the clients', () => {
     ]);
   });
 
-  it('is created only by the guard for personal data', () => {
+  it('is created only by the guard for personal data and the guard of the seed', () => {
     const users = readdirSync(spikeFolder, {
       recursive: true,
       withFileTypes: true,
@@ -199,7 +199,11 @@ describe('the reach of the clients', () => {
       )
       .map((file) => file.slice(spikeFolder.length))
       .sort();
-    expect(users).toEqual(['lib/http.mts', 'lib/persons-gate.mts']);
+    expect(users).toEqual([
+      'lib/http.mts',
+      'lib/persons-gate.mts',
+      'lib/seed-gate.mts',
+    ]);
   });
 });
 

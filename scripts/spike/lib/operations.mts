@@ -138,3 +138,133 @@ export const personalPrefixes = [
   '/api/calendars/appointments',
   '/api/calendars/{}/appointments',
 ] as const;
+
+/** One operation of the seed, with the query parameters it always sends. */
+export interface SeedOperationTemplate extends OperationTemplate {
+  /**
+   * Fixed query parameters. The client sends exactly these and no others,
+   * and the guard first checks that the instance declares each of them.
+   */
+  readonly query?: readonly (readonly [string, string])[];
+}
+
+/**
+ * The operations of the seed of the test instance beyond {@link operations}
+ * (ADR 0061). The seed reads the lists below to find the objects it made,
+ * and writes only with the operations in {@link seedWriteOperations}, through
+ * the client its guard hands out. `operations` stays as it is, so
+ * 00-inventory reports the same as before.
+ *
+ * Deleting an event takes `sendMail=false`, so that a reset of the
+ * synthetic data sends no mail to anybody.
+ */
+export const seedOperations = {
+  groupTypes: { method: 'get', template: '/api/group/grouptypes' },
+  songCategories: { method: 'get', template: '/api/song/categories' },
+  calendarAppointmentList: {
+    method: 'get',
+    template: '/api/calendars/{}/appointments',
+    personal: true,
+  },
+  groupTypeCreate: { method: 'post', template: '/api/group/grouptypes' },
+  calendarCreate: { method: 'post', template: '/api/calendars' },
+  resourceTypeCreate: { method: 'post', template: '/api/resourcetypes' },
+  resourceCreate: { method: 'post', template: '/api/resources' },
+  serviceGroupCreate: { method: 'post', template: '/api/servicegroups' },
+  serviceCreate: { method: 'post', template: '/api/services' },
+  songCategoryCreate: { method: 'post', template: '/api/song/categories' },
+  wikiCategoryCreate: { method: 'post', template: '/api/wiki/categories' },
+  personCreate: { method: 'post', template: '/api/persons', personal: true },
+  groupCreate: { method: 'post', template: '/api/groups', personal: true },
+  groupMemberAdd: {
+    method: 'put',
+    template: '/api/groups/{}/members/{}',
+    personal: true,
+  },
+  groupMemberRemove: {
+    method: 'delete',
+    template: '/api/groups/{}/members/{}',
+    personal: true,
+  },
+  appointmentCreate: {
+    method: 'post',
+    template: '/api/calendars/{}/appointments',
+    personal: true,
+  },
+  appointmentDelete: {
+    method: 'delete',
+    template: '/api/calendars/{}/appointments/{}',
+    personal: true,
+  },
+  bookingCreate: { method: 'post', template: '/api/bookings', personal: true },
+  bookingDelete: {
+    method: 'delete',
+    template: '/api/bookings/{}',
+    personal: true,
+  },
+  serviceRequestAssign: {
+    method: 'put',
+    template: '/api/events/{}/servicerequests/{}',
+    personal: true,
+  },
+  agendaCreate: {
+    method: 'put',
+    template: '/api/events/{}/agenda',
+    personal: true,
+  },
+  agendaItemCreate: {
+    method: 'post',
+    template: '/api/events/{}/agenda/items',
+    personal: true,
+  },
+  eventDelete: {
+    method: 'delete',
+    template: '/api/events/{}',
+    personal: true,
+    query: [['sendMail', 'false']],
+  },
+  songCreate: { method: 'post', template: '/api/songs', personal: true },
+  songDelete: { method: 'delete', template: '/api/songs/{}', personal: true },
+  arrangementCreate: {
+    method: 'post',
+    template: '/api/songs/{}/arrangements',
+    personal: true,
+  },
+  wikiPageCreate: operations.wikiPageCreate,
+  wikiPageDelete: operations.wikiPageDelete,
+} as const satisfies Readonly<Record<string, SeedOperationTemplate>>;
+
+/** The name of one operation of the seed. */
+export type SeedOperationName = keyof typeof seedOperations;
+
+/** The operations of the seed that write: every one that is not a GET. */
+export const seedWriteOperations = [
+  'groupTypeCreate',
+  'calendarCreate',
+  'resourceTypeCreate',
+  'resourceCreate',
+  'serviceGroupCreate',
+  'serviceCreate',
+  'songCategoryCreate',
+  'wikiCategoryCreate',
+  'personCreate',
+  'groupCreate',
+  'groupMemberAdd',
+  'groupMemberRemove',
+  'appointmentCreate',
+  'appointmentDelete',
+  'bookingCreate',
+  'bookingDelete',
+  'serviceRequestAssign',
+  'agendaCreate',
+  'agendaItemCreate',
+  'eventDelete',
+  'songCreate',
+  'songDelete',
+  'arrangementCreate',
+  'wikiPageCreate',
+  'wikiPageDelete',
+] as const satisfies readonly SeedOperationName[];
+
+/** One write operation of the seed. */
+export type SeedWriteOperation = (typeof seedWriteOperations)[number];

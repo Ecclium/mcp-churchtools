@@ -56,7 +56,7 @@ Ausser der Liste der Kategorien, `/api/permissions/global` und dem OpenAPI-Dokum
 - `05` und `07` senden ausserdem `POST`, `PATCH` und `DELETE`, nur an Seiten des Schreibbereichs, mit einem JSON-Body und ohne CSRF-Token oder Cookie. Eine Seite adressieren sie nur über ihre GUID. Eine schreibende Anfrage wird nie wiederholt: Nach einem Zeitlimit weiss niemand, ob die Instanz geschrieben hat. Vor jeder schreibenden Anfrage wartet `05` etwas mehr als eine Sekunde, weil die Instanz die Zeit der letzten Änderung nur in ganzen Sekunden nennt.
 - Das Token steht nur im Header `Authorization: Login`, nie in einer URL. Die Proben fordern keine Sitzung an.
 - Die Proben folgen keiner Weiterleitung, sie brechen mit `HTTP_REDIRECT` ab.
-- Jede Anfrage hat ein Zeitlimit von 20 Sekunden und eine Grössengrenze von 5 MiB, für das OpenAPI-Dokument 32 MiB.
+- Jede Anfrage hat ein Zeitlimit von 20 Sekunden und eine Grössengrenze von 5 MiB, für das OpenAPI-Dokument 64 MiB. ChurchTools 3.138 lieferte es im Oktober 2026 mit etwa 41 MB.
 - Eine Kennung aus einer Antwort kommt nur in einen Pfad, wenn sie die Form einer Kennung hat: eine positive ganze Zahl, oder höchstens 200 Zeichen aus ASCII-Buchstaben, Ziffern und `-_.~`, ohne Punkt oder Tilde am Anfang.
 - Der User-Agent ist `ecclium-spike`, damit die Anfragen in Zugriffsprotokollen erkennbar sind.
 

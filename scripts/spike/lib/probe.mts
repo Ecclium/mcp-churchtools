@@ -295,7 +295,7 @@ export async function runProbe(
  * @param prompt - Fixed text of the probe.
  * @returns The line, or `undefined` at the end of the input.
  */
-function askTerminal(prompt: string): Promise<string | undefined> {
+export function askTerminal(prompt: string): Promise<string | undefined> {
   return new Promise((resolve) => {
     const reader = createInterface({
       input: process.stdin,

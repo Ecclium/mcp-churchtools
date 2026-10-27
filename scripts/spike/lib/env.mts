@@ -106,13 +106,23 @@ export function checkNodeEnvironment(env: Environment): void {
  * accepted, so the token can go to exactly one origin.
  *
  * @param env - Environment of the process.
+ * @param variable - The variable that names the base URL. The seed of the test instance has its own (ADR 0061).
  * @returns The origin, such as `https://example.church.tools`.
  * @throws {SpikeError} If the variable is missing or has another form.
  */
-export function readOrigin(env: Environment): string {
-  const raw = env['ECCLIUM_SPIKE_BASE_URL'] ?? '';
+export function readOrigin(
+  env: Environment,
+  variable:
+    | 'ECCLIUM_SPIKE_BASE_URL'
+    | 'ECCLIUM_SEED_BASE_URL' = 'ECCLIUM_SPIKE_BASE_URL',
+): string {
+  const seed = variable === 'ECCLIUM_SEED_BASE_URL';
+  const raw = env[variable] ?? '';
   if (raw === '') {
-    throw new SpikeError('KONFIGURATION', 'basisUrlFehlt');
+    throw new SpikeError(
+      'KONFIGURATION',
+      seed ? 'seedBasisUrlFehlt' : 'basisUrlFehlt',
+    );
   }
   const url = URL.parse(raw);
   if (
@@ -123,7 +133,10 @@ export function readOrigin(env: Environment): string {
     url.pathname !== '/' ||
     /[?#@]/.test(raw)
   ) {
-    throw new SpikeError('KONFIGURATION', 'basisUrlUngueltig');
+    throw new SpikeError(
+      'KONFIGURATION',
+      seed ? 'seedBasisUrlUngueltig' : 'basisUrlUngueltig',
+    );
   }
   return url.origin;
 }
@@ -287,7 +300,8 @@ export function readPrivateFile(
  * Reads the ChurchTools token from its file.
  *
  * The reading probes take the token of the read account, the probes of the
- * write account take its own token from another variable (ADR 0049).
+ * write account take its own token from another variable (ADR 0049), and
+ * the seed of the test instance the token of its own account (ADR 0061).
  *
  * @param env - Environment of the process.
  * @param variable - The variable that names the token file.
@@ -298,21 +312,32 @@ export function readToken(
   env: Environment,
   variable:
     | 'ECCLIUM_SPIKE_TOKEN_FILE'
-    | 'ECCLIUM_SPIKE_WRITE_TOKEN_FILE' = 'ECCLIUM_SPIKE_TOKEN_FILE',
+    | 'ECCLIUM_SPIKE_WRITE_TOKEN_FILE'
+    | 'ECCLIUM_SEED_TOKEN_FILE' = 'ECCLIUM_SPIKE_TOKEN_FILE',
 ): string {
-  const write = variable === 'ECCLIUM_SPIKE_WRITE_TOKEN_FILE';
+  const tokenHints: Readonly<
+    Record<typeof variable, readonly [HintKey, HintKey]>
+  > = {
+    ECCLIUM_SPIKE_TOKEN_FILE: ['tokenDateiFehlt', 'tokenDateiNichtGefunden'],
+    ECCLIUM_SPIKE_WRITE_TOKEN_FILE: [
+      'schreibTokenDateiFehlt',
+      'schreibTokenDateiNichtGefunden',
+    ],
+    ECCLIUM_SEED_TOKEN_FILE: [
+      'seedTokenDateiFehlt',
+      'seedTokenDateiNichtGefunden',
+    ],
+  };
+  const [missing, notFound] = tokenHints[variable];
   const path = env[variable] ?? '';
   if (path === '') {
-    throw new SpikeError(
-      'KONFIGURATION',
-      write ? 'schreibTokenDateiFehlt' : 'tokenDateiFehlt',
-    );
+    throw new SpikeError('KONFIGURATION', missing);
   }
   const content = readPrivateFile(
     path,
     maxTokenBytes,
     'tokenDateiUnsicher',
-    write ? 'schreibTokenDateiNichtGefunden' : 'tokenDateiNichtGefunden',
+    notFound,
   );
   const token = content.replace(/\r?\n$/, '');
   if (!/^[\x21-\x7e]+$/.test(token)) {

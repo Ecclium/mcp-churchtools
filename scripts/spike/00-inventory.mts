@@ -71,6 +71,14 @@ export function versionOf(body: unknown): string | null {
   return null;
 }
 
+/**
+ * The size limit for the OpenAPI document. ChurchTools 3.138 sent it with
+ * about 41 MB in October 2026, up from about 9 MB in 3.137, so the limit
+ * leaves room above that. The state file holds the parsed document again,
+ * written without spaces, and has its own limit in `lib/env.mts`.
+ */
+export const specificationMaxBytes = 64 * 1024 * 1024;
+
 /** The probe, for tests and for {@link main}. */
 export const probe: ProbeDefinition = {
   name: '00-inventory',
@@ -81,7 +89,7 @@ export const probe: ProbeDefinition = {
     // version; its words are needed as keys, so they stay off the block list.
     const specification = await client.get({
       path: specificationPath,
-      maxBytes: 32 * 1024 * 1024,
+      maxBytes: specificationMaxBytes,
       blockValues: false,
     });
     const document =
