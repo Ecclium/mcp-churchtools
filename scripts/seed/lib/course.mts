@@ -13,6 +13,8 @@
  *
  * @packageDocumentation
  */
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -129,10 +131,15 @@ export function labels(): string[] {
 function scriptLines(scriptsFolder: string): string[] {
   const [node, heading, ...seed] = integrityLines(join(scriptsFolder, 'seed'));
   const shared = integrityLines(join(scriptsFolder, 'spike', 'lib')).slice(2);
+  // The seed also loads the size limit and the version from this probe.
+  const inventory = createHash('sha256')
+    .update(readFileSync(join(scriptsFolder, 'spike', '00-inventory.mts')))
+    .digest('hex');
   return [
     node ?? '',
     heading ?? '',
     ...seed.map((line) => line.replace('  ', '  seed/')),
+    `${inventory}  spike/00-inventory.mts`,
     ...shared.map((line) => line.replace('  ', '  spike/lib/')),
   ];
 }
