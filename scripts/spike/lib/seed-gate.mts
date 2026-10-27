@@ -83,6 +83,7 @@ export const seedRights = {
   churchdb: [
     'view',
     'view alldata',
+    'security level person',
     'create person',
     'write access',
     'edit masterdata',
@@ -124,6 +125,15 @@ export const seedRights = {
     'edit masterdata',
   ],
 } as const satisfies ReadRights;
+
+/**
+ * The lowest security level for persons. ChurchTools numbers its levels
+ * from 1 (`GET /api/securitylevels`). The seed account needs this one: with
+ * no level it may write no field of a person, so it cannot create one
+ * (`editSecurityLevelForPerson` 0, answer 403). A higher level it does not
+ * need, so the guard refuses it.
+ */
+export const lowestPersonLevel = 1;
 
 /** The variables that hold a token for another account. */
 const foreignTokenVariables = [
@@ -299,7 +309,8 @@ function idsWithin(value: unknown, allowed: readonly number[]): boolean {
  * In `churchwiki`: `view` true, `view category` the identification category
  * and at most the category of the seed, `edit category` at most the
  * category of the seed, `edit masterdata` any value, to create that
- * category. In `churchdb`, `view alldata` only the department of the seed.
+ * category. In `churchdb`, `view alldata` only the department of the seed
+ * and `security level person` at most the lowest level.
  * Every other right of {@link seedRights} any value. Every other right of
  * every module false or an empty list.
  *
@@ -333,7 +344,8 @@ export function seedRightsWithin(
   const people = data['churchdb'];
   if (
     isObject(people) &&
-    !idsWithin(people['view alldata'] ?? [], [departmentId])
+    (!idsWithin(people['view alldata'] ?? [], [departmentId]) ||
+      !idsWithin(people['security level person'] ?? [], [lowestPersonLevel]))
   ) {
     return false;
   }

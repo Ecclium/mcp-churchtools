@@ -24,14 +24,16 @@ Bereich, Gruppenstatus und Standort kann die API nicht anlegen. Einen Status leg
 
 Ein eigenes Konto nur für den Seed: mit einem Status ohne Berechtigungen, in keiner Gruppe, mit Zwei-Faktor-Anmeldung und einer eigenen Token-Datei mit den Rechten 600. Der Wächter verlangt genau diese Rechte, jedes andere steht auf «falsch» oder ist leer:
 
-| Modul            | Rechte                                                                                                                                                                                        |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `churchwiki`     | `view`, `view category` nur für die Kennkategorie und die Kategorie «Seedprobe», `edit category` höchstens für «Seedprobe», `edit masterdata`                                                 |
-| `churchdb`       | `view`, `view alldata` nur für den Bereich aus `ECCLIUM_SEED_DEPARTMENT_ID`, `create person`, `write access`, `edit masterdata`, dazu die Rechte auf Gruppen, die ChurchTools hier wiederholt |
-| `churchgroup`    | `view`, `create groups of grouptype`, `view groups of grouptype`, `edit group memberships of grouptype`, `edit masterdata`                                                                    |
-| `churchcal`      | `view`, `view category`, `edit category`, `admin church category`                                                                                                                             |
-| `churchresource` | `view`, `view resource`, `create bookings`, `administer bookings`, `edit masterdata`                                                                                                          |
-| `churchservice`  | `view`, `view servicegroup`, `edit servicegroup`, `view events`, `edit events`, `view agenda`, `edit agenda`, `view songcategory`, `edit songcategory`, `edit masterdata`                     |
+| Modul            | Rechte                                                                                                                                                                                                                                              |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `churchwiki`     | `view`, `view category` nur für die Kennkategorie und die Kategorie «Seedprobe», `edit category` höchstens für «Seedprobe», `edit masterdata`                                                                                                       |
+| `churchdb`       | `view`, `view alldata` nur für den Bereich aus `ECCLIUM_SEED_DEPARTMENT_ID`, `security level person` nur in der niedrigsten Stufe, `create person`, `write access`, `edit masterdata`, dazu die Rechte auf Gruppen, die ChurchTools hier wiederholt |
+| `churchgroup`    | `view`, `create groups of grouptype`, `view groups of grouptype`, `edit group memberships of grouptype`, `edit masterdata`                                                                                                                          |
+| `churchcal`      | `view`, `view category`, `edit category`, `admin church category`                                                                                                                                                                                   |
+| `churchresource` | `view`, `view resource`, `create bookings`, `administer bookings`, `edit masterdata`                                                                                                                                                                |
+| `churchservice`  | `view`, `view servicegroup`, `edit servicegroup`, `view events`, `edit events`, `view agenda`, `edit agenda`, `view songcategory`, `edit songcategory`, `edit masterdata`                                                                           |
+
+Ohne Sicherheitsstufe für Personen darf das Konto kein Feld einer Person schreiben und deshalb keine Person anlegen. ChurchTools antwortet dann mit 403. Die niedrigste Stufe genügt, sie zeigt dem Konto bei den Personen seines Bereichs auch Kontaktdaten. Dort liegen nur synthetische Personen. Legt der Seed eine Gruppe an, gibt ChurchTools dem Konto das Recht, sie zu bearbeiten (`edit group`). Der Wächter lässt das nicht durch, entfernen Sie es nach dem Lauf, der die Gruppen angelegt hat.
 
 Ausser im Wiki gelten die Rechte für «Alle», weil der Seed Kalender, Ressourcen, Dienstgruppen und Songkategorien selbst anlegt und dort danach schreibt. Im Wiki nie «Alle»: Sonst wird die Kennkategorie bearbeitbar, und der Wächter bricht ab.
 

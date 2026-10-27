@@ -147,7 +147,7 @@ export function seedAccountRights(
     churchdb: {
       view: true,
       'view alldata': [departmentId],
-      'security level person': [],
+      'security level person': [1],
       'create person': true,
       'write access': true,
       'delete persons': false,

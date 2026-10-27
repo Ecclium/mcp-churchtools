@@ -335,7 +335,13 @@ describe('seedRightsWithin', () => {
       (data) => {
         data['churchdb'] = {
           ...data['churchdb'],
-          'security level person': [1],
+          'security level person': [2],
+        };
+      },
+      (data) => {
+        data['churchdb'] = {
+          ...data['churchdb'],
+          'security level person': [1, 2],
         };
       },
       (data) => {
