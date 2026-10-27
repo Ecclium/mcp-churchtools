@@ -6,7 +6,10 @@
 import { randomInt, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
-import { identificationCategoryName } from '../../scripts/spike/lib/gate.mts';
+import {
+  identificationCategoryName,
+  isId,
+} from '../../scripts/spike/lib/gate.mts';
 import type { FetchFunction } from '../../scripts/spike/lib/http.mts';
 import {
   operations,
@@ -487,9 +490,17 @@ export class SeedInstance {
           ),
         );
       }
+      // The test instance demands the privacy fields for a new person.
+      if (
+        typeof body['privacyPolicyAgreementDate'] !== 'string' ||
+        !isId(body['privacyPolicyAgreementTypeId']) ||
+        !isId(body['privacyPolicyAgreementWhoId'])
+      ) {
+        return this.answer({}, 400);
+      }
       const item: Item = { ...body, id: this.id() };
       s.persons.push(item);
-      return this.created(item, 200);
+      return this.created(item);
     }
     if (path === '/api/groups') {
       if (method === 'GET') {
@@ -557,6 +568,9 @@ export class SeedInstance {
             )
             .map((item) => ({ booking: { base: item } })),
         );
+      }
+      if (typeof body['showInCal'] !== 'boolean') {
+        return this.answer({}, 400);
       }
       const item: Item = { ...body, id: this.id() };
       s.bookings.push(item);
