@@ -4,25 +4,25 @@ Der Seed legt die synthetischen Testdaten der Testinstanz an und setzt sie zurü
 
 ## Befehle
 
-| Befehl          | Was er tut                                                                                                                                                                                          |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pruefen`       | Alle Prüfungen des Wächters, dann für jedes Objekt des Datensatzes, ob es da ist. Schreibt nichts und fragt nicht nach.                                                                             |
-| `anlegen`       | Legt jedes Objekt an, das fehlt, und lässt jedes vorhandene stehen. Fragt vorher im Terminal nach.                                                                                                  |
-| `zuruecksetzen` | Löscht Seiten, Events, Termine, Songs und Buchungen mit dem Kennzeichen, in dieser Reihenfolge, Events mit `sendMail=false`. Struktur, Personen und Gruppen bleiben. Fragt vorher im Terminal nach. |
+| Befehl          | Was er tut                                                                                                                                                                                                           |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pruefen`       | Alle Prüfungen des Wächters, dann für Struktur, Personen, Gruppen, Songs, Termine, die Buchung und die Seiten, ob sie da sind. Events, Einteilungen und Ablauf prüft er nicht. Schreibt nichts und fragt nicht nach. |
+| `anlegen`       | Legt jedes Objekt an, das fehlt, und lässt jedes vorhandene stehen. Fragt vorher im Terminal nach.                                                                                                                   |
+| `zuruecksetzen` | Löscht Seiten, Events, Termine, Songs und Buchungen mit dem Kennzeichen, in dieser Reihenfolge, Events mit `sendMail=false`. Struktur, Personen und Gruppen bleiben. Fragt vorher im Terminal nach.                  |
 
 ## Datensatz
 
-Jeder Name und jeder Titel beginnt mit dem Kennzeichen «Seedprobe», jede Person trägt es als Nachnamen. Daran erkennt der Seed seine Objekte, eine State-Datei gibt es nicht. Objekte anderer Herkunft, etwa die der Proben mit «Spikeprobe» oder «Synthetisch», berührt er nicht. Was es zweimal gibt, meldet er als «mehrfach» und lässt es stehen.
+Jeder Name und jeder Titel beginnt mit dem Kennzeichen «Seedprobe», jede Person trägt es als Nachnamen. Daran erkennt der Seed seine Objekte, eine State-Datei gibt es nicht, und er sucht sie nur in seiner eigenen Struktur: Gruppen in seinem Gruppentyp, Songs in seiner Songkategorie, Buchungen an seiner Ressource, das prüft er in jedem Eintrag selbst. Objekte anderer Herkunft, etwa die der Proben mit «Spikeprobe» oder «Synthetisch», berührt er nicht. Was es zweimal gibt, meldet er als «mehrfach» und lässt es stehen.
 
 - **Struktur:** ein Gruppentyp, ein Kalender, ein Ressourcentyp mit einer Ressource, eine Dienstgruppe mit zwei Diensten, von denen einer die Namen verbirgt, eine Songkategorie und eine Kategorie des Wikis.
 - **Personen und Gruppen:** sechs Personen «Person A Seedprobe» bis «Person F Seedprobe» ohne Kontaktdaten und zwei Gruppen mit je vier von ihnen.
 - **Inhalte:** zwei Songs mit Arrangements, vier Termine ab dem ersten Samstag mindestens zwei Tage nach dem Lauf, darunter eine Serie und einer über den ganzen Tag mit einer Buchung, zwei Events mit Diensten, Einteilungen und einem Ablauf, eine Buchung und drei Seiten im Wiki: eine in Markdown, eine in HTML und eine lange, die die Lese-Tools in Teilen liefern.
 
-Bereich, Gruppenstatus und Standort kann die API nicht anlegen. Einen Status legt sie seit ChurchTools 3.138 nur mit einer Sicherheitsstufe an, die der Seed wählen müsste. Verlangt die Instanz für jede neue Person die Angaben zur Datenschutzerklärung, wie die Testinstanz, nimmt der Seed Art und Herkunft der Zustimmung ebenfalls aus der Umgebung, mit dem Tag des Laufs als Datum. Alle diese Werte kommen aus der Umgebung, der Status am besten der der synthetischen Personen der Proben, damit das Dienstkonto die Personen des Seeds ebenso sieht.
+Bereich und Gruppenstatus kann die API nicht anlegen. Einen Status legt sie seit ChurchTools 3.138 nur mit einer Sicherheitsstufe an, die der Seed wählen müsste. Den Standort nimmt der Seed aus der Umgebung, damit seine Personen und Gruppen neben denen der Proben liegen. Verlangt die Instanz für jede neue Person die Angaben zur Datenschutzerklärung, wie die Testinstanz, nimmt der Seed Art und Herkunft der Zustimmung ebenfalls aus der Umgebung, mit dem Tag des Laufs als Datum. Alle diese Werte kommen aus der Umgebung, der Status am besten der der synthetischen Personen der Proben, damit das Dienstkonto die Personen des Seeds ebenso sieht.
 
 ## Das Seed-Konto
 
-Ein eigenes Konto nur für den Seed: mit einem Status ohne Berechtigungen, in keiner Gruppe, mit Zwei-Faktor-Anmeldung und einer eigenen Token-Datei mit den Rechten 600. Der Wächter verlangt genau diese Rechte, jedes andere steht auf «falsch» oder ist leer:
+Ein eigenes Konto nur für den Seed: mit einem Status ohne Berechtigungen, in keiner Gruppe, mit Zwei-Faktor-Anmeldung und einer eigenen Token-Datei mit den Rechten 600. Der Wächter lässt höchstens diese Rechte zu, jedes andere muss auf «falsch» stehen oder leer sein:
 
 | Modul            | Rechte                                                                                                                                                                                                                                              |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -37,7 +37,7 @@ Ohne Sicherheitsstufe für Personen darf das Konto kein Feld einer Person schrei
 
 Ausser im Wiki gelten die Rechte für «Alle», weil der Seed Kalender, Ressourcen, Dienstgruppen und Songkategorien selbst anlegt und dort danach schreibt. Im Wiki nie «Alle»: Sonst wird die Kennkategorie bearbeitbar, und der Wächter bricht ab.
 
-Die Kategorie «Seedprobe» legt der Seed im ersten Lauf an, zusammen mit dem Kalender. Sehen und bearbeiten darf das Konto sie erst, wenn Sie ihm diese beiden Rechte geben. Die Seiten entstehen deshalb im zweiten Lauf von `anlegen`. Ein späterer Lauf legt die Kategorie nie noch einmal an.
+Die Kategorie «Seedprobe» legt der Seed im ersten Lauf an, zusammen mit dem Kalender. Sehen und bearbeiten darf das Konto sie erst, wenn Sie ihm diese beiden Rechte geben. Die Seiten entstehen deshalb im zweiten Lauf von `anlegen`. Ein späterer Lauf legt die Kategorie nie noch einmal an, weil das Konto sie ohne diese Rechte nicht sieht. Bricht der erste Lauf vor der Kategorie ab oder lehnt die Instanz sie ab, legen Sie die Kategorie «Seedprobe» von Hand an. Löschen Sie den Kalender von Hand, legt der nächste Lauf mit dem Kalender auch eine neue Kategorie an.
 
 ## Ausführung
 
@@ -71,27 +71,29 @@ Erst dann fragt er im Terminal nach und gibt den Client heraus, der schreibt. Wa
 
 ## Keine Nachrichten
 
-Personen haben keine E-Mail-Adresse und bekommen keine Einladung, Mitglieder kommen mit `informLeader: false` in eine Gruppe, die Dienste senden weder Anfragen noch Erinnerungen, und Events löscht der Seed mit `sendMail=false`. In einen Dienst teilt er erst ein, wenn er zurückgelesen hat, dass der Dienst keine Mails sendet. Macht ChurchTools das Seed-Konto zum Mitglied einer neuen Gruppe, nimmt der Seed es wieder heraus.
+Der Seed ist so gebaut, dass er keine Nachricht auslöst: Personen haben keine E-Mail-Adresse und bekommen keine Einladung, Mitglieder kommen mit `informLeader: false` in eine Gruppe, die Dienste senden weder Anfragen noch Erinnerungen, und Events löscht der Seed mit `sendMail=false`. Einen Termin mit Event löscht er erst, wenn das Event gelöscht ist, weil ChurchTools sonst das Event ohne `sendMail=false` mitnimmt. In einen Dienst teilt er erst ein, wenn er zurückgelesen hat, dass der Dienst keine Mails sendet, und er setzt Person und Zusage mit `isAccepted` in einem Aufruf. Macht ChurchTools das Seed-Konto zum Mitglied einer neuen Gruppe, nimmt der Seed es wieder heraus. Ob ChurchTools die Verwalter einer Ressource über eine Buchung benachrichtigt, ist nicht geprüft. Die Felder im Body prüft der Wächter nicht gegen das OpenAPI-Dokument.
 
 ## Fehler und Abbruch
 
-Lehnt die Instanz eine schreibende Anfrage ab, steht ihr Status in der Ausgabe, und der Seed macht mit allem weiter, was nicht davon abhängt. Nach einem Fehler im Netz oder einem Zeitlimit hört er auf, weil niemand weiss, ob die Instanz geschrieben hat, und nennt den Code unter `abbruch`. Keine Anfrage geht zweimal hinaus. Vor jeder schreibenden Anfrage wartet er etwas mehr als eine Sekunde.
+Lehnt die Instanz eine schreibende Anfrage ab, steht ihr Status in der Ausgabe, und der Seed macht mit allem weiter, was nicht davon abhängt. Kann er eine Liste nicht lesen, legt er nichts an, was darin stehen müsste, und meldet «antwort unerwartet». Nach einem Fehler im Netz oder einem Zeitlimit hört er auf, weil niemand weiss, ob die Instanz geschrieben hat, nennt den Code unter `abbruch` und meldet die Anfrage, die er zuletzt geschickt hat, als «ungewiss». Prüfen Sie dieses Objekt in der Weboberfläche. Keine Anfrage geht zweimal hinaus. Vor jeder schreibenden Anfrage wartet er etwas mehr als eine Sekunde.
 
-Ist ein Termin schon da, lässt der Seed auch sein Event, die Einteilungen und den Ablauf stehen. Ein Event, das ein früherer Lauf nur halb angelegt hat, braucht deshalb zuerst `zuruecksetzen`.
+Ist ein Termin schon da, lässt der Seed auch sein Event, die Einteilungen und den Ablauf stehen, und ist ein Song da, auch seine Arrangements. Ein Termin, ein Event oder ein Song, die ein früherer Lauf nur halb angelegt hat, etwa weil ein Dienst oder die Ressource fehlte, braucht deshalb zuerst `zuruecksetzen`.
+
+Termine, Events und Buchungen sucht der Seed von 90 Tagen vor bis 120 Tage nach dem Lauf. Liegt ein früherer Lauf weiter zurück, findet `anlegen` dessen Termine nicht mehr und legt einen zweiten Satz an, den `zuruecksetzen` ebenso wenig findet. Setzen Sie die Daten deshalb zurück, bevor 90 Tage vergangen sind.
 
 ## Ausgabe
 
-Wie bei den Proben stehen auf stderr zuerst die Version von Node.js und die SHA-256 der Dateien dieses Ordners und von `scripts/spike/lib/`. Vergleichen Sie sie mit dem Pull Request. Auf stdout steht JSON nur aus Kürzeln des Datensatzes (`st`, `pA`, `gH`, `a1`, `e2`, `w3` …), festen Wörtern wie «angelegt», «vorhanden», «fehlt» oder «geloescht» und Statuscodes. Keine IDs, keine Namen, keine Daten. Vor der Ausgabe prüft sie dieselbe Sicherung wie bei den Proben ([`scripts/spike/README.md`](../spike/README.md), «Sicherung vor jeder Ausgabe»).
+Wie bei den Proben stehen auf stderr zuerst die Version von Node.js und die SHA-256 der Dateien dieses Ordners, von `scripts/spike/00-inventory.mts` und von `scripts/spike/lib/`. Vergleichen Sie sie mit dem Pull Request. Auf stdout steht JSON nur aus Kürzeln des Datensatzes (`gy`, `pA`, `gH`, `a1`, `e2`, `w3` …), festen Wörtern wie «angelegt», «vorhanden», «fehlt» oder «geloescht» und Statuscodes. Keine IDs, keine Namen, keine Daten. Vor der Ausgabe prüft sie dieselbe Sicherung wie bei den Proben ([`scripts/spike/README.md`](../spike/README.md), «Sicherung vor jeder Ausgabe»).
 
 ## Codes
 
-| Code | Bedeutung                                                                              |
-| ---- | -------------------------------------------------------------------------------------- |
-| 0    | Gelaufen. Ob alles angelegt ist und ob der Seed abgebrochen hat, steht in der Ausgabe. |
-| 2    | Umgebung, Datei oder Wächter. Es wurde nichts geschrieben.                             |
-| 3    | Ausgabe zurückgehalten.                                                                |
-| 4    | Die Instanz ist nicht erreichbar oder liefert kein lesbares OpenAPI-Dokument.          |
-| 70   | Interner Fehler.                                                                       |
+| Code | Bedeutung                                                                                                                                                                      |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 0    | Gelaufen, ohne Abbruch. Ob alles angelegt ist, steht in der Ausgabe.                                                                                                           |
+| 2    | Umgebung, Datei oder Wächter. Es wurde nichts geschrieben.                                                                                                                     |
+| 3    | Ausgabe zurückgehalten.                                                                                                                                                        |
+| 4    | Die Instanz ist nicht erreichbar, liefert kein lesbares OpenAPI-Dokument, oder der Lauf hat nach einem Fehler im Netz abgebrochen. Den Code nennt die Ausgabe unter `abbruch`. |
+| 70   | Interner Fehler.                                                                                                                                                               |
 
 ## Tests
 
