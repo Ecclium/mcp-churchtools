@@ -159,7 +159,6 @@ export interface SeedOperationTemplate extends OperationTemplate {
  * synthetic data sends no mail to anybody.
  */
 export const seedOperations = {
-  statuses: { method: 'get', template: '/api/statuses' },
   groupTypes: { method: 'get', template: '/api/group/grouptypes' },
   songCategories: { method: 'get', template: '/api/song/categories' },
   calendarAppointmentList: {
@@ -167,7 +166,6 @@ export const seedOperations = {
     template: '/api/calendars/{}/appointments',
     personal: true,
   },
-  statusCreate: { method: 'post', template: '/api/statuses' },
   groupTypeCreate: { method: 'post', template: '/api/group/grouptypes' },
   calendarCreate: { method: 'post', template: '/api/calendars' },
   resourceTypeCreate: { method: 'post', template: '/api/resourcetypes' },
@@ -246,7 +244,6 @@ export type SeedOperationName = keyof typeof seedOperations;
 
 /** The operations of the seed that write: every one that is not a GET. */
 export const seedWriteOperations = [
-  'statusCreate',
   'groupTypeCreate',
   'calendarCreate',
   'resourceTypeCreate',

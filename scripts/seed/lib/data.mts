@@ -21,7 +21,6 @@ export const marker = 'Seedprobe';
 
 /** The structure the seed creates if it is missing and never deletes. */
 export const structure = {
-  status: { label: 'st', name: 'Seedprobe', shorty: 'SP' },
   groupType: {
     label: 'gy',
     name: 'Seedprobe Gruppen',

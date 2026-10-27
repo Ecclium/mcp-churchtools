@@ -14,11 +14,11 @@ Der Seed legt die synthetischen Testdaten der Testinstanz an und setzt sie zurü
 
 Jeder Name und jeder Titel beginnt mit dem Kennzeichen «Seedprobe», jede Person trägt es als Nachnamen. Daran erkennt der Seed seine Objekte, eine State-Datei gibt es nicht. Objekte anderer Herkunft, etwa die der Proben mit «Spikeprobe» oder «Synthetisch», berührt er nicht. Was es zweimal gibt, meldet er als «mehrfach» und lässt es stehen.
 
-- **Struktur:** ein Status, ein Gruppentyp, ein Kalender, ein Ressourcentyp mit einer Ressource, eine Dienstgruppe mit zwei Diensten, von denen einer die Namen verbirgt, eine Songkategorie und eine Kategorie des Wikis.
+- **Struktur:** ein Gruppentyp, ein Kalender, ein Ressourcentyp mit einer Ressource, eine Dienstgruppe mit zwei Diensten, von denen einer die Namen verbirgt, eine Songkategorie und eine Kategorie des Wikis.
 - **Personen und Gruppen:** sechs Personen «Person A Seedprobe» bis «Person F Seedprobe» ohne Kontaktdaten und zwei Gruppen mit je vier von ihnen.
 - **Inhalte:** zwei Songs mit Arrangements, vier Termine ab dem ersten Samstag mindestens zwei Tage nach dem Lauf, darunter eine Serie und einer über den ganzen Tag mit einer Buchung, zwei Events mit Diensten, Einteilungen und einem Ablauf, eine Buchung und drei Seiten im Wiki: eine in Markdown, eine in HTML und eine lange, die die Lese-Tools in Teilen liefern.
 
-Bereich, Gruppenstatus und Standort kann die API nicht anlegen. Sie kommen aus der Umgebung.
+Bereich, Gruppenstatus und Standort kann die API nicht anlegen. Einen Status legt sie seit ChurchTools 3.138 nur mit einer Sicherheitsstufe an, die der Seed wählen müsste. Alle vier kommen deshalb aus der Umgebung, der Status am besten der der synthetischen Personen der Proben, damit das Dienstkonto die Personen des Seeds ebenso sieht.
 
 ## Das Seed-Konto
 
@@ -47,6 +47,7 @@ env -i \
   ECCLIUM_SEED_ALLOW_WRITE=example \
   ECCLIUM_SEED_TOKEN_FILE=/pfad/zur/token-seed \
   ECCLIUM_SEED_DEPARTMENT_ID=2 \
+  ECCLIUM_SEED_STATUS_ID=0 \
   ECCLIUM_SEED_GROUP_STATUS_ID=1 \
   ECCLIUM_SEED_CAMPUS_ID=2 \
   node scripts/seed/seed.mts pruefen
@@ -56,7 +57,7 @@ Die Adresse oben ist der Platzhalter, den der Wächter abweist. `ECCLIUM_SEED_AL
 
 ## Der Wächter
 
-Vor jeder Anfrage prüft der Seed nur mit seiner Umgebung: Der Schalter passt zum Host, die Adresse ist nicht der Platzhalter, keine andere Token-Variable ist gesetzt (`ECCLIUM_SPIKE_TOKEN_FILE`, `ECCLIUM_SPIKE_WRITE_TOKEN_FILE`, `ECCLIUM_CHURCHTOOLS_TOKEN_FILE`, `ECCLIUM_CHURCHTOOLS_TOKEN`), und die drei IDs sind positive ganze Zahlen. Dann liest er das OpenAPI-Dokument und prüft lesend:
+Vor jeder Anfrage prüft der Seed nur mit seiner Umgebung: Der Schalter passt zum Host, die Adresse ist nicht der Platzhalter, keine andere Token-Variable ist gesetzt (`ECCLIUM_SPIKE_TOKEN_FILE`, `ECCLIUM_SPIKE_WRITE_TOKEN_FILE`, `ECCLIUM_CHURCHTOOLS_TOKEN_FILE`, `ECCLIUM_CHURCHTOOLS_TOKEN`), und die IDs sind ganze Zahlen, nur der Status darf 0 sein. Dann liest er das OpenAPI-Dokument und prüft lesend:
 
 - Die Instanz dokumentiert jede Operation des Seeds und jeden Parameter, den er sendet, auch `sendMail` beim Löschen eines Events.
 - Genau eine Kategorie heisst `testinstanz-kennung`, und das Konto darf sie weder bearbeiten noch löschen. Ausser ihr sieht es höchstens «Seedprobe». Fehlt sie, gilt die Instanz als produktiv.

@@ -11,8 +11,9 @@
  *   host, and the base URL is not the placeholder of the README;
  * - no other token variable is set, the token comes only from
  *   `ECCLIUM_SEED_TOKEN_FILE`;
- * - the IDs of department, group status and campus are positive whole
- *   numbers. The API cannot create departments or group statuses.
+ * - the IDs of department, status, group status and campus are whole
+ *   numbers. The API cannot create departments or group statuses, and a
+ *   status only with a security level the seed would have to choose.
  *
  * Then, by reading:
  * - the instance documents every operation of the seed and every fixed
@@ -138,6 +139,7 @@ export const seedVariables = [
   'ECCLIUM_SEED_TOKEN_FILE',
   'ECCLIUM_SEED_ALLOW_WRITE',
   'ECCLIUM_SEED_DEPARTMENT_ID',
+  'ECCLIUM_SEED_STATUS_ID',
   'ECCLIUM_SEED_GROUP_STATUS_ID',
   'ECCLIUM_SEED_CAMPUS_ID',
 ] as const;
@@ -146,15 +148,25 @@ export const seedVariables = [
 export interface SeedSettings {
   /** The department the persons of the seed belong to. */
   readonly departmentId: number;
+  /**
+   * The status of the persons of the seed. ChurchTools numbers statuses
+   * from 0, and the synthetic persons of the probes have status 0.
+   */
+  readonly statusId: number;
   /** The status the groups of the seed get. */
   readonly groupStatusId: number;
   /** The campus of the persons and groups of the seed. */
   readonly campusId: number;
 }
 
-function readId(env: Environment, name: string, hint: HintKey): number {
+function readId(
+  env: Environment,
+  name: string,
+  hint: HintKey,
+  zero = false,
+): number {
   const raw = env[name] ?? '';
-  if (!/^[1-9]\d{0,9}$/.test(raw)) {
+  if (!(zero && raw === '0') && !/^[1-9]\d{0,9}$/.test(raw)) {
     throw new SpikeError('KONFIGURATION', hint);
   }
   return Number(raw);
@@ -165,7 +177,7 @@ function readId(env: Environment, name: string, hint: HintKey): number {
  *
  * @param env - Environment of the process.
  * @param origin - Origin from the base URL.
- * @returns Department, group status and campus.
+ * @returns Department, status, group status and campus.
  * @throws {SpikeError} If the base URL is the placeholder, the switch is missing or does not fit the host, another token variable is set, or an ID is missing or invalid.
  */
 export function checkSeedEnvironment(
@@ -182,6 +194,7 @@ export function checkSeedEnvironment(
   }
   return {
     departmentId: readId(env, 'ECCLIUM_SEED_DEPARTMENT_ID', 'seedBereichFehlt'),
+    statusId: readId(env, 'ECCLIUM_SEED_STATUS_ID', 'seedStatusFehlt', true),
     groupStatusId: readId(
       env,
       'ECCLIUM_SEED_GROUP_STATUS_ID',
@@ -258,7 +271,6 @@ export const seedReadParameters = {
 
 /** The query parameters of the lists of the seed beyond the probes. */
 export const seedOwnReadParameters = {
-  statuses: [],
   groupTypes: [],
   songCategories: [],
   calendarAppointmentList: ['from', 'to'],

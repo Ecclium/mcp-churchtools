@@ -136,6 +136,16 @@ describe('the guard of the seed, from the environment', () => {
       'seedBereichFehlt',
     ],
     [
+      'without a status',
+      { ECCLIUM_SEED_STATUS_ID: undefined },
+      'seedStatusFehlt',
+    ],
+    [
+      'with a status that is no whole number',
+      { ECCLIUM_SEED_STATUS_ID: '-1' },
+      'seedStatusFehlt',
+    ],
+    [
       'with a group status that is no ID',
       { ECCLIUM_SEED_GROUP_STATUS_ID: '0' },
       'seedGruppenstatusFehlt',
@@ -263,7 +273,7 @@ describe('the guard of the seed, by reading', () => {
     expect(result.code).toBe(exitCodes.ok);
     expect(setting.instance.writes()).toEqual([]);
     expect(result.result['struktur']).toMatchObject({
-      st: 'fehlt',
+      gy: 'fehlt',
       w: 'fehlt',
     });
     expect(result.result['personen']).toMatchObject({ pA: 'fehlt' });
@@ -360,7 +370,6 @@ describe('anlegen', () => {
       seed: 'anlegen',
       churchtoolsVersion: '3.138',
       struktur: {
-        st: 'angelegt',
         gy: 'angelegt',
         c: 'angelegt',
         rt: 'angelegt',
@@ -410,6 +419,7 @@ describe('anlegen', () => {
       expect(call.body).toMatchObject({
         lastName: 'Seedprobe',
         departmentIds: [departmentId],
+        statusId: 0,
       });
     }
     for (const call of writes.filter((item) => item.path === '/api/services')) {
@@ -492,7 +502,11 @@ describe('anlegen', () => {
     const booking = setting.instance
       .writes()
       .find((call) => call.path === '/api/bookings');
-    expect(booking?.body).toMatchObject({ title: 'Seedprobe Technikprobe' });
+    expect(booking?.body).toMatchObject({
+      title: 'Seedprobe Technikprobe',
+      statusId: 2,
+      showInCal: false,
+    });
     expect(booking?.body).not.toMatchObject({ resourceId: 7 });
   });
 

@@ -146,7 +146,6 @@ const named =
 
 /** The structure of the seed as found on the instance. */
 export interface Structure {
-  status: Found;
   groupType: Found;
   calendar: Found;
   resourceType: Found;
@@ -171,7 +170,6 @@ export async function findStructure(run: SeedRun): Promise<Structure> {
     matches: (entry: JsonObject) => boolean,
   ): Found => (entries === undefined ? undefined : findOne(entries, matches));
 
-  const statuses = await read(seedOperations.statuses.template);
   const groupTypes = await read(seedOperations.groupTypes.template);
   const calendars = await read(operations.calendars.template);
   const resourceTypes = await read(operations.resourceTypes.template);
@@ -185,7 +183,6 @@ export async function findStructure(run: SeedRun): Promise<Structure> {
   const typeId = idOf(resourceType);
   const groupId = idOf(serviceGroup);
   return {
-    status: one(statuses, named(structure.status.name)),
     groupType: one(groupTypes, named(structure.groupType.name)),
     calendar: one(calendars, named(structure.calendar.name)),
     resourceType,

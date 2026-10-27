@@ -141,7 +141,6 @@ async function ensure(
 
 /** The IDs of the structure, where the seed found or made it. */
 interface StructureIds {
-  readonly status: number | undefined;
   readonly groupType: number | undefined;
   readonly calendar: number | undefined;
   readonly resource: number | undefined;
@@ -217,24 +216,6 @@ async function ensureStructure(context: CommandContext): Promise<StructureIds> {
   const { run } = context;
   const found = await findStructure(run);
   const section = 'struktur';
-  const status = await ensure(
-    run,
-    section,
-    structure.status.label,
-    found.status,
-    () =>
-      created(run, section, structure.status.label, {
-        operation: 'statusCreate',
-        parameters: [],
-        body: {
-          name: structure.status.name,
-          shorty: structure.status.shorty,
-          isMember: false,
-          isSearchable: false,
-          sortKey,
-        },
-      }),
-  );
   const groupType = await ensure(
     run,
     section,
@@ -351,7 +332,6 @@ async function ensureStructure(context: CommandContext): Promise<StructureIds> {
       }),
   );
   return {
-    status,
     groupType,
     calendar,
     resource,
@@ -393,7 +373,6 @@ async function ensureWikiCategory(
 
 async function ensurePersons(
   context: CommandContext,
-  status: number | undefined,
 ): Promise<Map<PersonLabel, number>> {
   const { run, settings } = context;
   const ids = new Map<PersonLabel, number>();
@@ -413,20 +392,18 @@ async function ensurePersons(
       'personen',
       spec.label,
       found.get(spec.label),
-      status === undefined
-        ? undefined
-        : () =>
-            created(run, 'personen', spec.label, {
-              operation: 'personCreate',
-              parameters: [],
-              body: {
-                firstName: spec.firstName,
-                lastName: spec.lastName,
-                departmentIds: [settings.departmentId],
-                campusId: settings.campusId,
-                statusId: status,
-              },
-            }),
+      () =>
+        created(run, 'personen', spec.label, {
+          operation: 'personCreate',
+          parameters: [],
+          body: {
+            firstName: spec.firstName,
+            lastName: spec.lastName,
+            departmentIds: [settings.departmentId],
+            campusId: settings.campusId,
+            statusId: settings.statusId,
+          },
+        }),
     );
     if (id !== undefined) {
       ids.set(spec.label, id);
@@ -881,6 +858,7 @@ async function ensureBookings(
             startDate: dateTime(spec.start),
             endDate: dateTime(spec.end),
             statusId: 2,
+            showInCal: false,
           },
         }),
     );
@@ -959,7 +937,7 @@ async function ensurePages(context: CommandContext): Promise<void> {
 export async function createAll(context: CommandContext): Promise<void> {
   const ids = await ensureStructure(context);
   await ensureWikiCategory(context, ids.fresh);
-  const personIds = await ensurePersons(context, ids.status);
+  const personIds = await ensurePersons(context);
   await ensureGroups(context, ids.groupType, personIds);
   const arrangementIds = await ensureSongs(context, ids.songCategory);
   await ensureAppointments(context, ids, arrangementIds, personIds);

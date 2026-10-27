@@ -65,7 +65,6 @@ export async function checkAll(context: CommandContext): Promise<void> {
   const { run, pass, now } = context;
   const found = await findStructure(run);
   const section = 'struktur';
-  run.note(section, structure.status.label, presence(found.status));
   run.note(section, structure.groupType.label, presence(found.groupType));
   run.note(section, structure.calendar.label, presence(found.calendar));
   run.note(section, structure.resourceType.label, presence(found.resourceType));

@@ -175,6 +175,8 @@ export const hints = {
     'Abbruch: Eine andere Token-Variable ist gesetzt (ECCLIUM_SPIKE_TOKEN_FILE, ECCLIUM_SPIKE_WRITE_TOKEN_FILE, ECCLIUM_CHURCHTOOLS_TOKEN_FILE oder ECCLIUM_CHURCHTOOLS_TOKEN). Der Seed liest das Token nur aus ECCLIUM_SEED_TOKEN_FILE. Lassen Sie die anderen Variablen im Aufruf weg.',
   seedBereichFehlt:
     'Abbruch: ECCLIUM_SEED_DEPARTMENT_ID fehlt oder ist keine positive ganze Zahl.',
+  seedStatusFehlt:
+    'Abbruch: ECCLIUM_SEED_STATUS_ID fehlt oder ist keine ganze Zahl ab 0.',
   seedGruppenstatusFehlt:
     'Abbruch: ECCLIUM_SEED_GROUP_STATUS_ID fehlt oder ist keine positive ganze Zahl.',
   seedStandortFehlt:

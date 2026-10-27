@@ -696,6 +696,7 @@ export function seedSetup(options: InstanceOptions = {}): SeedSetting {
       ECCLIUM_SEED_TOKEN_FILE: files.tokenFile,
       ECCLIUM_SEED_ALLOW_WRITE: seedSwitch,
       ECCLIUM_SEED_DEPARTMENT_ID: String(departmentId),
+      ECCLIUM_SEED_STATUS_ID: '0',
       ECCLIUM_SEED_GROUP_STATUS_ID: '1',
       ECCLIUM_SEED_CAMPUS_ID: '2',
     },
