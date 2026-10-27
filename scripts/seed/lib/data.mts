@@ -126,7 +126,7 @@ export interface AssignmentSpec {
   readonly label: string;
   readonly service: ServiceSpec['label'];
   readonly person: PersonLabel;
-  /** Whether the seed also accepts the request in the name of the person. */
+  /** Whether the assignment is confirmed, as if the person had accepted it. */
   readonly accept: boolean;
 }
 

@@ -406,7 +406,6 @@ describe('anlegen', () => {
       einteilungen: {
         e1s1pD: 'angelegt',
         e2s1pA: 'angelegt',
-        e2s1pAZusage: 'angelegt',
         e2s2pB: 'angelegt',
         e2s2pC: 'angelegt',
       },
@@ -448,6 +447,20 @@ describe('anlegen', () => {
     )) {
       expect(call.body).toMatchObject({ informLeader: false });
     }
+    const assignments = writes.filter((item) =>
+      item.path.includes('/servicerequests/'),
+    );
+    expect(assignments.map((item) => item.method)).toEqual([
+      'PUT',
+      'PUT',
+      'PUT',
+      'PUT',
+    ]);
+    expect(
+      assignments.map(
+        (item) => (item.body as Record<string, unknown>)['isAccepted'],
+      ),
+    ).toEqual([false, true, false, false]);
     expect(
       writes.some((item) => /invite|meetingrequests/.test(item.path)),
     ).toBe(false);

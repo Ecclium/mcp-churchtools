@@ -207,11 +207,6 @@ export const seedOperations = {
     template: '/api/events/{}/servicerequests/{}',
     personal: true,
   },
-  serviceRequestAccept: {
-    method: 'post',
-    template: '/api/events/{}/servicerequests/{}/accept',
-    personal: true,
-  },
   agendaCreate: {
     method: 'put',
     template: '/api/events/{}/agenda',
@@ -261,7 +256,6 @@ export const seedWriteOperations = [
   'bookingCreate',
   'bookingDelete',
   'serviceRequestAssign',
-  'serviceRequestAccept',
   'agendaCreate',
   'agendaItemCreate',
   'eventDelete',

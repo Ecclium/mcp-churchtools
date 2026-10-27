@@ -115,10 +115,7 @@ export function labels(): string[] {
         ? []
         : [
             spec.event.label,
-            ...spec.event.assignments.flatMap((assignment) => [
-              assignment.label,
-              `${assignment.label}Zusage`,
-            ]),
+            ...spec.event.assignments.map((assignment) => assignment.label),
             ...spec.event.agenda.map((item) => item.label),
           ]),
     ]),

@@ -698,29 +698,16 @@ async function assign(
       continue;
     }
     used.add(requestId);
+    // ChurchTools 3.138 requires isAccepted on this update and replaces the
+    // request with a new record, so the confirmation goes with it in one
+    // call instead of a later accept on an ID that may be gone.
     const assigned = await run.write('einteilungen', assignment.label, {
       operation: 'serviceRequestAssign',
       parameters: [eventId, requestId],
-      body: { personId },
+      body: { personId, isAccepted: assignment.accept },
     });
-    if (assigned === undefined) {
-      continue;
-    }
-    run.note('einteilungen', assignment.label, 'angelegt');
-    if (!assignment.accept) {
-      continue;
-    }
-    const accepted = await run.write(
-      'einteilungen',
-      `${assignment.label}Zusage`,
-      {
-        operation: 'serviceRequestAccept',
-        parameters: [eventId, requestId],
-        body: {},
-      },
-    );
-    if (accepted !== undefined) {
-      run.note('einteilungen', `${assignment.label}Zusage`, 'angelegt');
+    if (assigned !== undefined) {
+      run.note('einteilungen', assignment.label, 'angelegt');
     }
   }
 }

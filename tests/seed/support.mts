@@ -667,9 +667,14 @@ export class SeedInstance {
       if (request === undefined) {
         return this.answer({}, 404);
       }
-      if (parts[4] !== 'accept') {
-        request['personId'] = body['personId'];
+      // As on ChurchTools 3.138, the update needs isAccepted and replaces
+      // the request with a new record.
+      if (typeof body['isAccepted'] !== 'boolean') {
+        return this.answer({}, 400);
       }
+      request['id'] = this.id();
+      request['personId'] = body['personId'];
+      request['isAccepted'] = body['isAccepted'];
       return this.created(request, 200);
     }
     const items = s.agendas.get(eventId) ?? [];
