@@ -63,6 +63,8 @@ export interface InstanceOptions {
   readonly failAt?: string;
   /** Whether a new service sends mails, whatever the seed asks for. */
   readonly servicesSendMails?: boolean;
+  /** Whether the lists of groups, songs and bookings ignore their filter. */
+  readonly ignoreFilters?: boolean;
 }
 
 /** The seed account of the synthetic instance. */
@@ -267,6 +269,20 @@ export class SeedInstance {
       categoryId: otherCategory,
       arrangements: [],
     });
+    // A group and a booking with names of the seed, in a group type and on
+    // a resource of someone else.
+    const otherGroup = this.id();
+    this.store.groups.push({
+      id: otherGroup,
+      name: 'Seedprobe Hauskreis',
+      groupTypeId: this.id(),
+    });
+    this.store.members.set(otherGroup, new Set());
+    this.store.bookings.push({
+      id: this.id(),
+      resourceId: this.id(),
+      title: 'Seedprobe Technikprobe',
+    });
     this.store.persons.push({
       id: this.id(),
       firstName: 'Anna',
@@ -316,6 +332,10 @@ export class SeedInstance {
         'x-kanarie': this.canaries.headerValue,
       },
     });
+  }
+
+  private unfiltered(): boolean {
+    return this.options.ignoreFilters === true;
   }
 
   private list(items: readonly Item[]): Response {
@@ -474,8 +494,16 @@ export class SeedInstance {
     if (path === '/api/groups') {
       if (method === 'GET') {
         const type = Number(query.get('group_type_ids[]'));
+        // The list carries the group type under information.
         return this.list(
-          s.groups.filter((group) => group['groupTypeId'] === type),
+          s.groups
+            .filter(
+              (group) => this.unfiltered() || group['groupTypeId'] === type,
+            )
+            .map(({ groupTypeId, ...group }) => ({
+              ...group,
+              information: { groupTypeId },
+            })),
         );
       }
       const id = this.id();
@@ -524,7 +552,9 @@ export class SeedInstance {
         const resource = Number(query.get('resource_ids[]'));
         return this.list(
           s.bookings
-            .filter((item) => item['resourceId'] === resource)
+            .filter(
+              (item) => this.unfiltered() || item['resourceId'] === resource,
+            )
             .map((item) => ({ booking: { base: item } })),
         );
       }
@@ -538,8 +568,16 @@ export class SeedInstance {
     if (path === '/api/songs') {
       if (method === 'GET') {
         const category = Number(query.get('song_category_ids[]'));
+        // The list carries the category as an object.
         return this.list(
-          s.songs.filter((item) => item['categoryId'] === category),
+          s.songs
+            .filter(
+              (item) => this.unfiltered() || item['categoryId'] === category,
+            )
+            .map(({ categoryId, ...item }) => ({
+              ...item,
+              category: { id: categoryId },
+            })),
         );
       }
       const item: Item = { ...body, id: this.id(), arrangements: [] };

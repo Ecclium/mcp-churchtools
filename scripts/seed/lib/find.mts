@@ -5,9 +5,11 @@
  * recognises its objects by the exact names of the data set, which all
  * carry the marker. Content it looks for only inside the structure it
  * made itself: appointments in its calendar, bookings of its resource,
- * songs in its song category, pages in its category of the wiki. An object
- * that appears twice is reported as «mehrfach» and left alone, so the seed
- * never guesses which one is its own.
+ * songs in its song category, pages in its category of the wiki. Where the
+ * instance filters a list by a query parameter, the seed checks the
+ * container in each entry as well, so an ignored filter cannot lead it to
+ * an object of someone else. An object that appears twice is reported as
+ * «mehrfach» and left alone, so the seed never guesses which one is its own.
  *
  * @packageDocumentation
  */
@@ -283,7 +285,16 @@ export async function findGroups(
     return undefined;
   }
   return new Map(
-    groups.map((spec) => [spec.label, findOne(entries, named(spec.name))]),
+    groups.map((spec) => [
+      spec.label,
+      findOne(
+        entries,
+        (entry) =>
+          entry['name'] === spec.name &&
+          isObject(entry['information']) &&
+          entry['information']['groupTypeId'] === groupTypeId,
+      ),
+    ]),
   );
 }
 
@@ -333,7 +344,16 @@ export async function findSongs(
     return undefined;
   }
   return new Map(
-    songs.map((spec) => [spec.label, findOne(entries, named(spec.name))]),
+    songs.map((spec) => [
+      spec.label,
+      findOne(
+        entries,
+        (entry) =>
+          entry['name'] === spec.name &&
+          isObject(entry['category']) &&
+          entry['category']['id'] === categoryId,
+      ),
+    ]),
   );
 }
 
@@ -385,7 +405,7 @@ export async function readAppointments(
 
 /**
  * Reads the bookings of a resource in the window, by the base object of
- * each entry.
+ * each entry that names this resource.
  *
  * @param run - The run.
  * @param resourceId - The resource of the seed.
@@ -407,7 +427,12 @@ export async function readBookings(
     ],
     false,
   );
-  return entries?.map(baseOf).filter((base) => base !== undefined);
+  return entries
+    ?.map(baseOf)
+    .filter(
+      (base): base is JsonObject =>
+        base !== undefined && base['resourceId'] === resourceId,
+    );
 }
 
 /**

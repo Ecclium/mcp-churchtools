@@ -628,6 +628,38 @@ describe('anlegen', () => {
     expect(posts).not.toContain('/api/wiki/categories');
   });
 
+  it('keeps to its own group type, song category and resource if the instance ignores a filter', async () => {
+    const setting = seedSetup({ ignoreFilters: true });
+    const first = await run(setting, 'anlegen');
+    // The song made by hand in another category carries the name of l1.
+    expect(first.result['lieder']).toMatchObject({
+      l1: 'angelegt',
+      l2: 'angelegt',
+    });
+    const again = await run(setting, 'anlegen');
+    expect(again.result['lieder']).toMatchObject({
+      l1: 'vorhanden',
+      l2: 'vorhanden',
+    });
+    expect(again.result['gruppen']).toMatchObject({
+      gH: 'vorhanden',
+      gT: 'vorhanden',
+    });
+    expect(again.result['buchungen']).toMatchObject({ b1: 'vorhanden' });
+    const { store } = setting.instance;
+    const [handmade] = store.groups;
+    expect(store.members.get(Number(handmade?.['id']))?.size).toBe(0);
+    await run(setting, 'zuruecksetzen');
+    expect(store.songs.map((song) => song['name'])).toEqual([
+      'Seedprobe Lied A',
+    ]);
+    expect(
+      store.bookings.filter(
+        (booking) => booking['title'] === 'Seedprobe Technikprobe',
+      ),
+    ).toHaveLength(1);
+  });
+
   it('stops after a network error on a write and sends nothing after it', async () => {
     const setting = seedSetup({ failAt: 'POST /api/songs' });
     const result = await run(setting, 'anlegen');
@@ -690,7 +722,8 @@ describe('zuruecksetzen', () => {
     expect(
       store.persons.filter((item) => item['lastName'] === 'Seedprobe'),
     ).toHaveLength(6);
-    expect(store.groups).toHaveLength(2);
+    // The two groups of the seed and the one made by hand.
+    expect(store.groups).toHaveLength(3);
     expect(store.calendars).toHaveLength(2);
     // What was made by hand stays: an appointment and a song with titles of
     // the seed, elsewhere.
