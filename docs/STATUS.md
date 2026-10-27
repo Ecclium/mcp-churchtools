@@ -42,7 +42,9 @@ Der Smoke-Test steht (ADR 0049 und ADR 0055, Umsetzung). `scripts/smoke.mts` sta
 
 Die MCP-Prompts stehen (ADR 0065, vorgeschlagen). Ein Prompt ist eine feste Vorlage, die ein Plugin mit `addPrompt` anmeldet: Name, Titel, Beschreibung, die Tools, auf die er sich stützt, bis zu fünf Argumente der Arten Tag oder Text und ein Text mit Platzhaltern. Beim Abruf läuft kein Code des Plugins. Der Kern prüft die Werte, setzt sie in einem Durchgang ein und hängt einen festen Satz an, dass Texte aus ChurchTools Daten sind. Kein Text nennt ein Tool, und der Katalog bietet einen Prompt nur an, wenn er alle seine Tools anbietet. Der Mount beantwortet `prompts/list` und `prompts/get` mit eigenen Handlern, lehnt mit festen Sätzen ab und schreibt je Abruf eine Logzeile, keine Zeile ins Audit. `dienstplan_wochenende` nimmt einen Samstag und braucht das Toolset `events`, `wiki_seite_entwerfen` nimmt Stichworte bis 2'000 Zeichen, braucht `wiki` und legt die Seite nicht an. [`docs/prompts.md`](prompts.md) zeigt beide Texte.
 
-Nächster Schritt in Phase 2: der Seed der Testinstanz nach ADR 0061, damit jedes Lese-Tool gegen synthetische Daten mit Inhalt laufen kann.
+Der Seed der Testinstanz steht (ADR 0061, Umsetzung). `scripts/seed/seed.mts` prüft mit `pruefen`, legt mit `anlegen` an, was vom Datensatz fehlt, und löscht mit `zuruecksetzen` Seiten, Events, Termine, Songs und Buchungen mit dem Kennzeichen «Seedprobe». Er legt seine Struktur selbst an: Status, Gruppentyp, Kalender, Ressource, Dienstgruppe mit zwei Diensten, Songkategorie und eine Kategorie des Wikis. Dazu kommen sechs Personen, zwei Gruppen, zwei Songs, vier Termine mit zwei Events, Einteilungen und Ablauf, eine Buchung und drei Seiten, davon eine in HTML und eine lange. Er läuft nur hinter einem eigenen Wächter mit Schalter, eigenem Seed-Konto, Kennkategorie, fester Liste der Rechte und Bestätigung im Terminal, und er schickt niemandem eine Nachricht. [`scripts/seed/README.md`](../scripts/seed/README.md) beschreibt Konto, Rechte und Aufruf.
+
+Nächster Schritt in Phase 2: der Lauf des Seeds gegen die Testinstanz, danach `docs/security.md`, Threat Model, Vertragsabgleich und Smoke-Test mit allen Tools.
 
 ## Vorbedingungen Phase 0
 
@@ -204,6 +206,11 @@ Diese Grundsatzfragen sind entschieden.
 
 ## Offen
 
+- Seed der Testinstanz, vor dem Abschluss von Phase 2:
+  - Der Lauf gegen die Testinstanz steht aus. Erst er zeigt, ob die Instanz jedes Objekt über die API anlegen lässt und mit welchen Rechten. Was sie ablehnt, nennt der Seed mit seinem Status, und es kommt als Befund nach `docs/research/churchtools-api.md`.
+  - Ob «Alle» in den Rechten des Seed-Kontos auch einen Kalender, eine Ressource, eine Dienstgruppe oder eine Songkategorie umfasst, die erst nach der Vergabe entstehen, ist nicht geprüft. Wenn nicht, braucht das Konto die Rechte auf die neue Struktur nach dem ersten Lauf.
+  - Ob ChurchTools das Konto, das eine Gruppe anlegt, zu ihrem Mitglied macht, ist nicht geprüft. Der Seed nimmt es in diesem Fall wieder heraus.
+  - Das Dienstkonto des Servers braucht für den Lauf aller Lese-Tools Leserechte auf die Struktur des Seeds. Welche, legt der Abschluss der Phase fest.
 - Spike-Konto auf dem produktiven Tenant: Am 07.10.2026 ist beschlossen, das Konto zu deaktivieren, das der Spike vor der Testinstanz dort nutzen sollte (Weitere Entscheide, Testumgebung). Am 27.10.2026 war es laut Maintainer noch nicht deaktiviert. Bis dahin gelten sein Login-Token und seine Rechte weiter. Deaktivieren heisst: alle Rechte entziehen, das Login-Token erneuern, ohne das neue abzulegen, und den Zugang sperren oder das Passwort ersetzen.
 - MCP-Prompts, vor dem Abschluss von Phase 2:
   - Ein Lauf der beiden Prompts in Claude Code und Claude Desktop gegen die Testinstanz steht aus, auch die Frage, wie Claude Desktop Prompts anbietet.
