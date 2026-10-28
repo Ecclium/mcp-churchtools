@@ -228,7 +228,7 @@ export const searchTool = defineTool({
     avoidWhen:
       'You need more than ID and title, such as the category of a page, the arrangements of a song or the members of a group, or want contact details, which this search never returns. An empty term is refused.',
     limits:
-      'At most 50 hits per call and no further pages: more is true when more matched, then search with a more specific term. Only the list of the type asked for holds hits. An ID or GUID can be null when ChurchTools names a hit in another form. It finds only what the service account may see; an empty result can also mean a missing right.',
+      'At most 50 hits per call and no further pages: more is true when more matched, then search with a more specific term. Only the list of the type asked for holds hits. An ID or GUID can be null when ChurchTools names a hit in another form. Pages of the wiki it finds by their title only, not by their text, and the main page of a category under the name of the category. It finds only what the service account may see; an empty result can also mean a missing right.',
   },
   input,
   output,
