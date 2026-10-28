@@ -41,11 +41,14 @@ const query = `Suchprobe${randomBytes(3).toString('hex')}`;
 const songQuery = `Liedprobe${randomBytes(3).toString('hex')}`;
 const pageGuid = '00000000-0000-4000-8000-000000000001';
 
-// The calls after the bookings: the songs, the first song, the wiki, the
-// first page it found, and the global search for each type.
+// The calls after the bookings: the songs, the first song, the categories
+// of the wiki, the pages of the first, the search in the wiki, the first
+// page it found, and the global search for each type.
 const songsAndSearches = [
   'ct_songs_search',
   'ct_songs_get',
+  'ct_wiki_categories_list',
+  'ct_wiki_pages_list',
   'ct_wiki_search',
   'ct_wiki_page_get',
   'ct_search',
@@ -337,9 +340,16 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     }
     for (const era of report(result)['aeren'] as {
       artfremd: string;
-      aufrufe: { tool: string; guid?: string }[];
+      ohneAufruf: string[];
+      aufrufe: { tool: string; guid?: string; quelle?: string }[];
     }[]) {
       expect(era.artfremd).toBe('nein');
+      // Every listed tool had its call, the page read with the GUID of the
+      // search.
+      expect(era.ohneAufruf).toEqual([]);
+      expect(
+        era.aufrufe.find((call) => call.tool === 'ct_wiki_page_get')?.quelle,
+      ).toBe('suche');
       expect(
         era.aufrufe
           .filter((call) => call.guid !== undefined)
@@ -548,6 +558,9 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     ['bookings-bad-status', 'buchungen'],
     ['songs-bare-name', 'lieder'],
     ['song-extra', 'lied'],
+    ['categories-bare-name', 'wikikategorien'],
+    ['pages-bad-guid', 'wikiseiten'],
+    ['extra-tool', 'nicht_aufgerufen'],
     ['wiki-bare-title', 'wikisuche'],
     ['wiki-bad-guid', 'wikisuche'],
     ['page-bare-text', 'seite'],
@@ -708,6 +721,31 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
       ],
     ],
     [
+      'no-categories',
+      'keine_kategorie_gefunden',
+      [
+        'ct_calendars_list',
+        'ct_appointments_list',
+        'ct_appointments_get',
+        'ct_resources_list',
+        'ct_bookings_list',
+        ...songsAndSearches.filter((call) => call !== 'ct_wiki_pages_list'),
+      ],
+    ],
+    [
+      'no-wiki-pages',
+      'keine_wikiseite_gefunden',
+      [
+        'ct_calendars_list',
+        'ct_appointments_list',
+        'ct_appointments_get',
+        'ct_resources_list',
+        'ct_bookings_list',
+        ...songsAndSearches,
+      ],
+    ],
+    // Without a hit of the search the page comes from the list.
+    [
       'no-pages',
       'keine_seite_gefunden',
       [
@@ -716,7 +754,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
         'ct_appointments_get',
         'ct_resources_list',
         'ct_bookings_list',
-        ...songsAndSearches.filter((call) => call !== 'ct_wiki_page_get'),
+        ...songsAndSearches,
       ],
     ],
     [
@@ -728,7 +766,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
         'ct_appointments_get',
         'ct_resources_list',
         'ct_bookings_list',
-        ...songsAndSearches.filter((call) => call !== 'ct_wiki_page_get'),
+        ...songsAndSearches,
       ],
     ],
     [
@@ -756,6 +794,34 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
       expectClean(result);
     },
   );
+
+  it('reads the first listed page without a hit of the search', async () => {
+    const result = await run({ env: search, scenario: 'no-pages' });
+    for (const era of report(result)['aeren'] as {
+      aufrufe: { tool: string; quelle?: string }[];
+    }[]) {
+      expect(
+        era.aufrufe.find((call) => call.tool === 'ct_wiki_page_get')?.quelle,
+      ).toBe('liste');
+    }
+  });
+
+  it('names a tool it had nothing to call with, and passes', async () => {
+    const result = await run({ env: search, scenario: 'no-page-anywhere' });
+    expect(result.code).toBe(smokeExitCodes.ok);
+    expect(report(result)['befunde']).toEqual([
+      'keine_wikiseite_gefunden',
+      'keine_seite_gefunden',
+    ]);
+    expect(report(result)['fehler']).toEqual([]);
+    for (const era of report(result)['aeren'] as { ohneAufruf: string[] }[]) {
+      expect(era.ohneAufruf).toEqual(['ct_wiki_page_get']);
+    }
+    for (const record of result.records) {
+      expect(record.calls).not.toContain('ct_wiki_page_get');
+    }
+    expectClean(result);
+  });
 });
 
 // The real `ecclium stdio` from source, as in tests/stdio-start.test.mts:
@@ -1126,6 +1192,31 @@ describe.skipIf(process.getuid?.() === 0)(
         } else {
           json(response, { data: song });
         }
+      } else if (url.pathname === '/api/wiki/categories') {
+        json(response, {
+          data: [
+            {
+              id: 12,
+              name: `${canary}Kategorie`,
+              permissions: { canEdit: false, canDelete: false },
+            },
+          ],
+        });
+      } else if (url.pathname === '/api/wiki/pages') {
+        json(response, {
+          data: [
+            {
+              guid: pageGuid,
+              title: `${canary}Liste`,
+              isMarkdown: true,
+              version: 2,
+              meta: { createdPerson: { title: `${canary}Autor` } },
+            },
+          ],
+          meta: {
+            pagination: { total: 1, limit: 25, current: 1, lastPage: 1 },
+          },
+        });
       } else if (url.pathname === '/api/wiki/search') {
         json(response, {
           data: [
@@ -1285,9 +1376,10 @@ describe.skipIf(process.getuid?.() === 0)(
       // read by ID and each list of events, calendars, appointments and
       // bookings, none for the term of spaces, and two each for the
       // assignments, the services and the resources; then one each for the
-      // songs, the first song, the wiki, its first page and the four types
-      // of the global search.
-      expect(requests).toHaveLength(60);
+      // songs, the first song, the categories and the pages of the wiki,
+      // the search in it, its first page and the four types of the global
+      // search.
+      expect(requests).toHaveLength(64);
       // Without a term of its own the songs take the term of the persons.
       expect(songTerms).toEqual(
         Array.from({ length: 2 }, () => [

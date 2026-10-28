@@ -14,8 +14,10 @@
  * and the services, then the calendars, the appointments of the first
  * calendar in the same spans and the first appointment, the resources and
  * the bookings of the first resource, then the songs and the first song,
- * the wiki and the first page it found, and the global search once for
- * each type, closes stdin and checks how the process ended.
+ * the categories of the wiki and the pages of the first, the search in the
+ * wiki and the first page it found, or else the first listed page, and the
+ * global search once for each type. It checks that every listed tool had a
+ * call, closes stdin and checks how the process ended.
  *
  * Every check yields a fixed word. Values from the answers never go into
  * the result: they go onto the block list of the guard and into the list
@@ -157,8 +159,14 @@ export const courseWords = [
   'ct_bookings_list',
   'ct_songs_search',
   'ct_songs_get',
+  'ct_wiki_categories_list',
+  'ct_wiki_pages_list',
   'ct_wiki_search',
   'ct_wiki_page_get',
+  'ohneAufruf',
+  'quelle',
+  'suche',
+  'liste',
   'ct_search person',
   'ct_search group',
   'ct_search song',
@@ -215,10 +223,15 @@ export const courseCodes = [
   'keine_buchung_gefunden',
   'lieder',
   'lied',
+  'wikikategorien',
+  'wikiseiten',
   'wikisuche',
   'seite',
   'globale_suche',
+  'nicht_aufgerufen',
   'kein_lied_gefunden',
+  'keine_kategorie_gefunden',
+  'keine_wikiseite_gefunden',
   'keine_seite_gefunden',
   'seite_ohne_guid',
   'globale_suche_ohne_treffer',
@@ -466,6 +479,10 @@ export async function runEra(
   // Every call but ct_whoami and the refused blank term asks ChurchTools
   // exactly once.
   let readCalls = 0;
+  // The tools the server lists, and those the course could not call
+  // because ChurchTools gave nothing to call them with.
+  let listedTools: readonly string[] = [];
+  const withoutData = new Set<string>();
   if (started) {
     // tools/list: exactly the expected tools, all of them only reading.
     const expected =
@@ -517,6 +534,11 @@ export async function runEra(
       });
     report['tools'] = fits ? 'wie erwartet' : 'abweichend';
     if (!fits) failures.add('tools_list');
+    if (Array.isArray(tools)) {
+      listedTools = tools.map((tool: unknown) =>
+        isRecord(tool) && typeof tool['name'] === 'string' ? tool['name'] : '',
+      );
+    }
 
     // prompts/list and prompts/get: without the switch the server offers
     // no toolset and so no prompt, and refuses the first prompt as unknown;
@@ -891,6 +913,9 @@ export async function runEra(
           treffer: countClass(membershipCount),
           mehr: groupsOf?.['more'] === true ? 'ja' : 'nein',
         });
+      } else {
+        withoutData.add('ct_persons_get');
+        withoutData.add('ct_persons_get_groups');
       }
 
       if (isId(groupId)) {
@@ -995,6 +1020,9 @@ export async function runEra(
           treffer: countClass(Array.isArray(members) ? members.length : 0),
           mehr: page?.['more'] === true ? 'ja' : 'nein',
         });
+      } else {
+        withoutData.add('ct_groups_get');
+        withoutData.add('ct_groups_get_members');
       }
 
       // A text of ChurchTools that may be missing: null, or enveloped.
@@ -1299,6 +1327,10 @@ export async function runEra(
           ),
           verborgen: hidden ? 'ja' : 'nein',
         });
+      } else {
+        withoutData.add('ct_events_get');
+        withoutData.add('ct_events_get_agenda');
+        withoutData.add('ct_services_get_assignments');
       }
 
       // ct_services_list, page 1: every account reads the services, with
@@ -1563,7 +1595,12 @@ export async function runEra(
             ergebnis: appointmentFits ? 'ok' : 'gescheitert',
             umschlag: textsFit ? 'ja' : 'nein',
           });
+        } else {
+          withoutData.add('ct_appointments_get');
         }
+      } else {
+        withoutData.add('ct_appointments_list');
+        withoutData.add('ct_appointments_get');
       }
 
       // ct_resources_list, page 1: the resources the account may see with
@@ -1709,6 +1746,8 @@ export async function runEra(
           treffer: countClass(bookingCount),
           ganztaegig: whole,
         });
+      } else {
+        withoutData.add('ct_bookings_list');
       }
 
       // A song as both reads of songs give it: ID, name, category, author,
@@ -1812,6 +1851,115 @@ export async function runEra(
           tool: 'ct_songs_get',
           ergebnis: songOk ? 'ok' : 'gescheitert',
         });
+      } else {
+        withoutData.add('ct_songs_get');
+      }
+
+      // ct_wiki_categories_list, page 1: the categories the account may
+      // see, the names enveloped.
+      readCalls += 1;
+      const categoriesRead = await callTool(
+        'ct_wiki_categories_list',
+        {},
+        'ok',
+      );
+      const categoriesData =
+        categoriesRead?.isError === false ? categoriesRead.data : undefined;
+      const categories = categoriesData?.['categories'];
+      const categoryChecks = Array.isArray(categories)
+        ? categories.map(
+            (entry: unknown) =>
+              isRecord(entry) &&
+              allOf([seeEnveloped(entry['name'])]) &&
+              sameKeys(entry, ['id', 'name']) &&
+              isId(entry['id']),
+          )
+        : [];
+      const categoriesOk =
+        categoriesData !== undefined &&
+        sameKeys(categoriesData, ['categories', 'more', 'notice', 'page']) &&
+        categoriesData['page'] === 1 &&
+        Array.isArray(categories) &&
+        categories.length <= 25 &&
+        categoryChecks.every(Boolean) &&
+        noticeFits(categoriesData) &&
+        (categories.length > 0 || typeof categoriesData['notice'] === 'string');
+      guard.blockAll(categoriesRead?.data);
+      if (!categoriesOk) failures.add('wikikategorien');
+      const firstCategory: unknown =
+        categoriesOk && Array.isArray(categories) ? categories[0] : undefined;
+      const categoryId = isRecord(firstCategory)
+        ? firstCategory['id']
+        : undefined;
+      if (categoriesOk && categoryId === undefined) {
+        findings.add('keine_kategorie_gefunden');
+      }
+      results.push({
+        tool: 'ct_wiki_categories_list',
+        ergebnis: categoriesOk ? 'ok' : 'gescheitert',
+        treffer: countClass(Array.isArray(categories) ? categories.length : 0),
+        mehr: categoriesData?.['more'] === true ? 'ja' : 'nein',
+      });
+
+      // ct_wiki_pages_list, page 1 of the first category: GUID, title,
+      // format and version, the titles enveloped. Its first page is read
+      // below if the search finds none to read.
+      let listedPage: { categoryId: number; guid: string } | undefined;
+      if (isId(categoryId)) {
+        readCalls += 1;
+        const pagesRead = await callTool(
+          'ct_wiki_pages_list',
+          { categoryId },
+          'ok',
+        );
+        const pagesData =
+          pagesRead?.isError === false ? pagesRead.data : undefined;
+        const pages = pagesData?.['pages'];
+        const pageChecks = Array.isArray(pages)
+          ? pages.map(
+              (entry: unknown) =>
+                isRecord(entry) &&
+                allOf([seeEnveloped(entry['title'])]) &&
+                sameKeys(entry, ['guid', 'isMarkdown', 'title', 'version']) &&
+                typeof entry['guid'] === 'string' &&
+                pageGuid.test(entry['guid']) &&
+                typeof entry['isMarkdown'] === 'boolean' &&
+                isId(entry['version']),
+            )
+          : [];
+        const pagesOk =
+          pagesData !== undefined &&
+          sameKeys(pagesData, [
+            'categoryId',
+            'more',
+            'notice',
+            'page',
+            'pages',
+          ]) &&
+          pagesData['categoryId'] === categoryId &&
+          pagesData['page'] === 1 &&
+          Array.isArray(pages) &&
+          pages.length <= 25 &&
+          pageChecks.every(Boolean) &&
+          noticeFits(pagesData) &&
+          (pages.length > 0 || typeof pagesData['notice'] === 'string');
+        guard.blockAll(pagesRead?.data);
+        if (!pagesOk) failures.add('wikiseiten');
+        const firstPage: unknown =
+          pagesOk && Array.isArray(pages) ? pages[0] : undefined;
+        if (isRecord(firstPage) && typeof firstPage['guid'] === 'string') {
+          listedPage = { categoryId, guid: firstPage['guid'] };
+        } else if (pagesOk) {
+          findings.add('keine_wikiseite_gefunden');
+        }
+        results.push({
+          tool: 'ct_wiki_pages_list',
+          ergebnis: pagesOk ? 'ok' : 'gescheitert',
+          treffer: countClass(Array.isArray(pages) ? pages.length : 0),
+          mehr: pagesData?.['more'] === true ? 'ja' : 'nein',
+        });
+      } else {
+        withoutData.add('ct_wiki_pages_list');
       }
 
       // ct_wiki_search with the term: up to 20 hits with GUID or null,
@@ -1881,15 +2029,16 @@ export async function runEra(
                 isId(entry['categoryId']),
             )
           : undefined;
-      if (isRecord(pageHit)) {
-        // ct_wiki_page_get with the first hit that has GUID and category:
-        // the GUID of the search reads the page.
+      // The page to read: the first hit of the search that has GUID and
+      // category, so that the GUID of the search is shown to read a page,
+      // else the first page of the list.
+      const pageTarget = isRecord(pageHit)
+        ? { categoryId: pageHit['categoryId'], guid: pageHit['guid'] }
+        : listedPage;
+      if (pageTarget !== undefined) {
+        // ct_wiki_page_get: the page in its first part.
         readCalls += 1;
-        const pageRead = await callTool(
-          'ct_wiki_page_get',
-          { categoryId: pageHit['categoryId'], guid: pageHit['guid'] },
-          'ok',
-        );
+        const pageRead = await callTool('ct_wiki_page_get', pageTarget, 'ok');
         const pageData =
           pageRead?.isError === false ? pageRead.data : undefined;
         const pageOk =
@@ -1908,8 +2057,8 @@ export async function runEra(
             'title',
             'version',
           ]) &&
-          pageData['categoryId'] === pageHit['categoryId'] &&
-          pageData['guid'] === pageHit['guid'] &&
+          pageData['categoryId'] === pageTarget.categoryId &&
+          pageData['guid'] === pageTarget.guid &&
           typeof pageData['isMarkdown'] === 'boolean' &&
           isId(pageData['version']) &&
           pageData['part'] === 1 &&
@@ -1919,7 +2068,10 @@ export async function runEra(
         results.push({
           tool: 'ct_wiki_page_get',
           ergebnis: pageOk ? 'ok' : 'gescheitert',
+          quelle: isRecord(pageHit) ? 'suche' : 'liste',
         });
+      } else {
+        withoutData.add('ct_wiki_page_get');
       }
 
       // ct_search once for each type: only the list of that type holds
@@ -2015,6 +2167,21 @@ export async function runEra(
       if (searchEmpty) findings.add('globale_suche_ohne_treffer');
     }
     report['aufrufe'] = results;
+
+    // Every tool the server lists gets a call. A tool ChurchTools gave
+    // nothing to call with is named, and a finding above says why. Any
+    // other tool without a call fails the run, so that a tool added later
+    // cannot pass unseen.
+    const called = new Set(calls.map((call) => call.tool));
+    const uncalled = listedTools.filter((name) => !called.has(name));
+    if (search !== undefined) {
+      report['ohneAufruf'] = uncalled
+        .filter((name) => withoutData.has(name))
+        .sort();
+    }
+    if (uncalled.some((name) => !withoutData.has(name))) {
+      failures.add('nicht_aufgerufen');
+    }
   }
 
   const ended: Ended = await session.finish();
