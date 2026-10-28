@@ -1152,7 +1152,9 @@ export function createChurchToolsClient(
     from: string,
     to: string,
   ): Promise<EventList> => {
-    checkEventInput(ctx, isEventWindow(from, to));
+    // The day after 9999-12-31 has no year of four digits, so that last day
+    // is refused like any other span the query cannot carry.
+    checkEventInput(ctx, isEventWindow(from, to) && to < '9999-12-31');
     // Exactly from, to and limit go out (ADR 0064). ChurchTools reads `to`
     // of this list as the midnight at the start of that day («Range upper
     // bound at midnight, inclusive»), so the events of the last day would be

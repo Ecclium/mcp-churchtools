@@ -248,6 +248,7 @@ describe('the events of a span of days', () => {
     ['a date with time', '2026-10-25T00:00:00Z', '2026-10-26'],
     ['a path in a day', '2026-10-25/../whoami', '2026-10-26'],
     ['a number', 20261025 as unknown as string, '2026-10-26'],
+    ['the last day of the year 9999', '9999-12-31', '9999-12-31'],
   ])('refuses %s before any request', async (_, from, to) => {
     const { double, client, ctx, lines } = setup();
     expect(await codeOf(client.events(ctx(), from, to))).toBe('validation');
