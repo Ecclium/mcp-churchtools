@@ -40,6 +40,21 @@ describe('basePath', () => {
   });
 });
 
+describe('normalizeTemplate', () => {
+  // A path of the document can be megabytes long. Quadratic work would take
+  // minutes here, linear work takes milliseconds.
+  it('normalises a hostile path in linear time', () => {
+    const braces = '{'.repeat(200_000);
+    const slashes = `${'/'.repeat(200_000)}a`;
+    const started = performance.now();
+    expect(normalizeTemplate(braces)).toBe(braces);
+    expect(normalizeTemplate(slashes)).toBe(slashes);
+    expect(normalizeTemplate(`/a${'/'.repeat(200_000)}`)).toBe('/a');
+    expect(normalizeTemplate('///')).toBe('/');
+    expect(performance.now() - started).toBeLessThan(1_000);
+  });
+});
+
 describe('findOperation', () => {
   it('finds an operation by method and template, whatever the parameter names', () => {
     expect(normalizeTemplate('/a/{id}/b/{x}/')).toBe('/a/{}/b/{}');

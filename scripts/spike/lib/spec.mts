@@ -71,8 +71,19 @@ export function basePath(document: OpenApiDocument): string {
   } else if (typeof document['basePath'] === 'string') {
     prefix = document['basePath'];
   }
-  return prefix.replace(/\/+$/, '');
+  return withoutTrailingSlashes(prefix);
 }
+
+// The document comes from the instance, and a path in it can be megabytes
+// long. `/\/+$/` would try every run of slashes to the end of the text, and
+// a parameter without its closing brace would make `/\{[^}]*\}/` scan to
+// the end from every brace: both are quadratic. A loop and a parameter
+// that stops at the next brace stay linear.
+const withoutTrailingSlashes = (text: string): string => {
+  let end = text.length;
+  while (end > 0 && text.charCodeAt(end - 1) === 0x2f) end -= 1;
+  return text.slice(0, end);
+};
 
 /**
  * Normalises a path template, so that parameter names do not matter.
@@ -81,7 +92,7 @@ export function basePath(document: OpenApiDocument): string {
  * @returns The path with every parameter written as `{}`, without a trailing slash.
  */
 export function normalizeTemplate(path: string): string {
-  const normalized = path.replace(/\{[^}]*\}/g, '{}').replace(/\/+$/, '');
+  const normalized = withoutTrailingSlashes(path.replace(/\{[^{}]*\}/g, '{}'));
   return normalized === '' ? '/' : normalized;
 }
 

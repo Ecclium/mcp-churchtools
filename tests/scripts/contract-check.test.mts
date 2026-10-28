@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { allowsNull, run, typeClass } from '../../scripts/contract/check.mts';
 import { createState, instanceId } from '../../scripts/spike/lib/env.mts';
+import { hints } from '../../scripts/spike/lib/errors.mts';
 import {
   capture,
   origin,
@@ -493,5 +494,284 @@ describe('the contract check', () => {
       'integer',
     );
     expect(allowsNull({ anyOf: ['ref'] }, resolve)).toBe(false);
+  });
+});
+
+// A document with one operation whose answer is the given schema, and a
+// contract that reads the given fields of `data` from it.
+const oneOperation = (
+  thing: unknown,
+  components: Record<string, unknown> = {},
+  parameters: { operation?: unknown[]; path?: unknown[] } = {},
+) => ({
+  openapi: '3.0.3',
+  info: { title: 'Synthetic test document', version: '0.0.0' },
+  servers: [{ url: `${origin}/api` }],
+  paths: {
+    '/things': {
+      ...(parameters.path === undefined ? {} : { parameters: parameters.path }),
+      get: {
+        ...(parameters.operation === undefined
+          ? {}
+          : { parameters: parameters.operation }),
+        responses: {
+          '200': {
+            description: 'ok',
+            content: {
+              'application/json': {
+                schema: { type: 'object', properties: { data: thing } },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  components: { schemas: components },
+});
+const reading = (data: unknown, query: string[] = []) =>
+  JSON.stringify({
+    things: {
+      method: 'get',
+      path: '/api/things',
+      query,
+      response: { type: 'object', properties: { data } },
+    },
+  });
+const fieldsOf = (result: Result) => result.operationen['things']?.felder;
+const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
+
+describe('the contract check with fields in several parts', () => {
+  it('reads a field from every part of allOf that declares it', () => {
+    const client = {
+      type: 'object',
+      properties: {
+        outer: {
+          type: 'object',
+          properties: { a: { type: 'string' }, b: { type: 'string' } },
+          required: ['a', 'b'],
+        },
+      },
+    };
+    const result = check(
+      oneOperation(
+        { allOf: [ref('Base'), ref('More')] },
+        {
+          Base: {
+            type: 'object',
+            properties: {
+              outer: {
+                type: 'object',
+                required: ['a'],
+                properties: { a: { type: 'string' } },
+              },
+            },
+          },
+          More: {
+            type: 'object',
+            properties: {
+              outer: {
+                type: 'object',
+                required: ['b'],
+                properties: { b: { type: 'string' } },
+              },
+            },
+          },
+        },
+      ),
+      reading(client),
+    );
+    expect(fieldsOf(result)).toMatchObject({
+      'data.outer.a': { deklariert: true, pflicht: true },
+      'data.outer.b': { deklariert: true, pflicht: true },
+    });
+    expect(result.abweichungen).toEqual([]);
+  });
+
+  it('gives the same answer whatever the order of the parts', () => {
+    const client = {
+      type: 'object',
+      properties: { note: { type: 'string' } },
+    };
+    const plain = { properties: { note: { type: 'string' } } };
+    const nullable = { properties: { note: { nullable: true } } };
+    const forward = check(
+      oneOperation({ allOf: [plain, nullable] }),
+      reading(client),
+    );
+    const backward = check(
+      oneOperation({ allOf: [nullable, plain] }),
+      reading(client),
+    );
+    expect(fieldsOf(forward)).toEqual(fieldsOf(backward));
+    expect(fieldsOf(forward)?.['data.note']).toMatchObject({
+      typ: 'string',
+      nullable: true,
+    });
+    expect(forward.abweichungen).toEqual(backward.abweichungen);
+  });
+
+  it('reads the alternatives of oneOf together', () => {
+    const client = {
+      type: 'object',
+      properties: { id: { type: 'integer' }, guid: { type: 'string' } },
+      required: ['id', 'guid'],
+    };
+    const result = check(
+      oneOperation({
+        oneOf: [
+          {
+            type: 'object',
+            required: ['id', 'guid'],
+            properties: { id: { type: 'string' }, guid: { type: 'string' } },
+          },
+          {
+            type: 'object',
+            required: ['id'],
+            properties: {
+              id: { type: 'integer', nullable: true },
+              guid: { type: 'string' },
+            },
+          },
+          { type: 'null' },
+        ],
+      }),
+      reading(client),
+    );
+    // Two types: no other type to report. Null in one alternative counts.
+    // Required only where every alternative but null requires it.
+    expect(fieldsOf(result)).toMatchObject({
+      'data.id': { typ: 'mehrere', pflicht: true, nullable: true },
+      'data.guid': { typ: 'string', pflicht: false, nullable: false },
+    });
+    expect(result.abweichungen).toEqual([
+      { operation: 'things', feld: 'data', art: 'nullable' },
+      { operation: 'things', feld: 'data.id', art: 'nullable' },
+      { operation: 'things', feld: 'data.guid', art: 'nicht Pflicht' },
+    ]);
+  });
+
+  it('requires nothing that only some alternatives require', () => {
+    const client = {
+      type: 'object',
+      properties: { id: { type: 'integer' }, guid: { type: 'string' } },
+      required: ['id', 'guid'],
+    };
+    const result = check(
+      oneOperation({
+        type: 'object',
+        properties: { id: { type: 'integer' }, guid: { type: 'string' } },
+        oneOf: [{ required: ['id'] }, { required: ['guid'] }],
+      }),
+      reading(client),
+    );
+    expect(result.abweichungen).toEqual([
+      { operation: 'things', feld: 'data.id', art: 'nicht Pflicht' },
+      { operation: 'things', feld: 'data.guid', art: 'nicht Pflicht' },
+    ]);
+  });
+
+  it('reads the entries of every list among the alternatives', () => {
+    const client = {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: { a: { type: 'string' }, b: { type: 'string' } },
+      },
+    };
+    const result = check(
+      oneOperation({
+        oneOf: [
+          { type: 'array', items: { properties: { a: { type: 'string' } } } },
+          { type: 'array', items: { properties: { b: { type: 'string' } } } },
+        ],
+      }),
+      reading(client),
+    );
+    expect(fieldsOf(result)).toMatchObject({
+      'data[].a': { deklariert: true },
+      'data[].b': { deklariert: true },
+    });
+  });
+
+  it('finds no field of Object.prototype', () => {
+    // Parsed, so that __proto__ is an own key, as in contract.json.
+    const client: unknown = JSON.parse(
+      '{"type":"object","properties":{"constructor":{"type":"string"},"__proto__":{"type":"string"}}}',
+    );
+    const result = check(
+      oneOperation({ type: 'object', properties: {} }),
+      reading(client),
+    );
+    expect(fieldsOf(result)?.['data.constructor']).toMatchObject({
+      deklariert: false,
+    });
+    expect(fieldsOf(result)?.['data.__proto__']).toMatchObject({
+      deklariert: false,
+    });
+  });
+
+  it('takes the parameters the path declares for every operation on it', () => {
+    const result = check(
+      oneOperation(
+        { type: 'string' },
+        {},
+        {
+          path: [{ name: 'page', in: 'query', schema: { type: 'integer' } }],
+          operation: [{ name: 'limit', in: 'query', schema: {} }],
+        },
+      ),
+      reading({ type: 'string' }, ['page', 'limit', 'other']),
+    );
+    expect(result.operationen['things']?.parameter).toEqual({
+      page: true,
+      limit: true,
+      other: false,
+    });
+  });
+
+  it('stops with a fixed hint on a document that branches too much', () => {
+    // Every level refers twice to the next one: 2^20 ways down.
+    const components = Object.fromEntries(
+      Array.from({ length: 20 }, (_, level) => [
+        `Level${String(level)}`,
+        {
+          allOf: [
+            ref(`Level${String(level + 1)}`),
+            ref(`Level${String(level + 1)}`),
+          ],
+        },
+      ]),
+    );
+    const output = capture();
+    const code = run(
+      withState(oneOperation(ref('Level0'), components)),
+      reading({ type: 'object', properties: { x: { type: 'string' } } }),
+      output.io,
+    );
+    expect(code).not.toBe(0);
+    expect(output.stdout()).toBe('');
+    expect(output.stderr()).toContain(hints.dokumentZuVerschachtelt);
+  });
+
+  it.each([
+    ['no JSON', '{'],
+    ['a list', '[]'],
+    ['an entry that is no object', JSON.stringify({ x: 1 })],
+    [
+      'an unknown method',
+      JSON.stringify({ x: { method: 'head', path: '/api/x' } }),
+    ],
+    ['a method without a path', JSON.stringify({ x: { method: 'get' } })],
+    ['a path without a method', JSON.stringify({ x: { path: '/api/x' } })],
+    [
+      'parameters that are no list',
+      JSON.stringify({ x: { method: 'get', path: '/api/x', query: 'page' } }),
+    ],
+  ])('names the contract, not the state file, for %s', (_, text) => {
+    const output = capture();
+    expect(run(withState(), text, output.io)).not.toBe(0);
+    expect(output.stdout()).toBe('');
+    expect(output.stderr()).toContain(hints.vertragUngueltig);
   });
 });

@@ -48,6 +48,10 @@ export const hints = {
     'Abbruch: Die State-Datei existiert schon. 00-inventory legt sie neu an. Löschen Sie sie, um die Probe zu wiederholen.',
   stateDateiUnsicher:
     'Abbruch: Die State-Datei muss eine reguläre Datei des aufrufenden Benutzers sein, ohne Rechte für andere und ausserhalb eines Git-Arbeitsbaums.',
+  vertragUngueltig:
+    'Abbruch: contract.json ist beschädigt. Jede Operation braucht eine Methode, einen Pfad und eine Liste der Parameter. Prüfen Sie den Stand Ihres Checkouts.',
+  dokumentZuVerschachtelt:
+    'Abbruch: Das OpenAPI-Dokument in der State-Datei ist zu verschachtelt für den Abgleich. Es wurde nichts daraus ausgegeben.',
   stateDateiUngueltig:
     'Abbruch: Die State-Datei ist beschädigt oder stammt nicht von 00-inventory. Führen Sie zuerst 00-inventory aus.',
   kategorieFehlt:

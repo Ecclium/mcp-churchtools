@@ -34,6 +34,7 @@ import {
 } from '../spike/lib/output.mts';
 import {
   findOperation,
+  findPathItem,
   isObject,
   type JsonObject,
   type Method,
@@ -129,58 +130,121 @@ export function allowsNull(
   return schema !== undefined && typesOf(schema, resolve).nullable;
 }
 
-// The names a schema of the document lists as required, also in the parts
-// it combines.
-const requiredOf = (schemas: Schemas, node: unknown): ReadonlySet<string> => {
-  const found = new Set<string>();
-  const seen = new Set<JsonObject>();
-  const visit = (part: unknown, depth: number): void => {
-    const schema = schemas.resolve(part);
-    if (schema === undefined || seen.has(schema) || depth > maxDepth) return;
-    seen.add(schema);
-    const required = schema['required'];
-    if (Array.isArray(required))
-      for (const name of required)
-        if (typeof name === 'string') found.add(name);
-    for (const combiner of combiners) {
-      const parts = schema[combiner];
-      if (Array.isArray(parts))
-        for (const item of parts) visit(item, depth + 1);
-    }
-  };
-  visit(node, 0);
-  return found;
+// A document from the instance can branch through combiners on every
+// level. This bounds the work of one comparison: the check then fails
+// instead of giving a partial answer.
+const maxSteps = 100_000;
+
+/** The steps one comparison has left, counted against {@link maxSteps}. */
+interface Steps {
+  left: number;
+}
+
+const step = (steps: Steps): void => {
+  steps.left -= 1;
+  if (steps.left < 0)
+    throw new SpikeError('ANTWORT_UNGUELTIG', 'dokumentZuVerschachtelt');
 };
 
-// The schema of the entries of a list or of the values of a map in the
-// document, also where the list or map is one part of `oneOf` or `anyOf`,
-// as for a list that may be null.
-const contentOf = (
+const listOf = (value: unknown): readonly unknown[] =>
+  Array.isArray(value) ? value : [];
+
+// A part of `oneOf` or `anyOf` that only allows null, as for a field that
+// may be null. It requires and declares nothing.
+const onlyNull = (schema: JsonObject | undefined): boolean =>
+  schema !== undefined && schema['type'] === 'null';
+
+// What a schema of the document says about one part of it, such as one
+// property or the entries of a list, gathered from the schema and every
+// part it combines. Parts of `allOf` stay together, the alternatives of
+// `oneOf` and `anyOf` stay alternatives, so that a field declared in two
+// parts is read from both and the order of the parts does not matter. Only
+// the ancestors of a schema end a cycle, so that two alternatives may
+// share a referenced part.
+const gather = (
   schemas: Schemas,
   node: unknown,
-  key: 'items' | 'additionalProperties',
-): unknown => {
-  const seen = new Set<JsonObject>();
-  const visit = (part: unknown, depth: number): unknown => {
-    const schema = schemas.resolve(part);
-    if (schema === undefined || seen.has(schema) || depth > maxDepth)
-      return undefined;
-    seen.add(schema);
-    // `additionalProperties: true` allows any value but describes none.
-    const content = schema[key];
-    if (key === 'items' ? content !== undefined : isObject(content))
-      return content;
-    for (const combiner of combiners) {
-      const parts = schema[combiner];
-      if (!Array.isArray(parts)) continue;
-      for (const item of parts) {
-        const found = visit(item, depth + 1);
-        if (found !== undefined) return found;
-      }
-    }
+  pick: (schema: JsonObject) => unknown,
+  steps: Steps,
+  ancestors: ReadonlySet<JsonObject> = new Set(),
+  depth = 0,
+): JsonObject | undefined => {
+  const schema = schemas.resolve(node);
+  if (schema === undefined || ancestors.has(schema) || depth > maxDepth)
     return undefined;
-  };
-  return visit(node, 0);
+  step(steps);
+  const inner = new Set(ancestors).add(schema);
+  const parts: JsonObject[] = [];
+  const own = pick(schema);
+  // `additionalProperties: true` allows any value but describes none.
+  if (isObject(own)) parts.push(own);
+  for (const part of listOf(schema['allOf'])) {
+    const found = gather(schemas, part, pick, steps, inner, depth + 1);
+    if (found !== undefined) parts.push(found);
+  }
+  for (const combiner of ['oneOf', 'anyOf'] as const) {
+    const found = listOf(schema[combiner]).flatMap((part) => {
+      const one = gather(schemas, part, pick, steps, inner, depth + 1);
+      return one === undefined ? [] : [one];
+    });
+    if (found.length > 0) parts.push({ [combiner]: found });
+  }
+  if (parts.length === 0) return undefined;
+  return parts.length === 1 ? parts[0] : { allOf: parts };
+};
+
+// The declaration of one property, from every part of a schema.
+const propertyOf = (
+  schemas: Schemas,
+  node: unknown,
+  name: string,
+  steps: Steps,
+): JsonObject | undefined =>
+  gather(
+    schemas,
+    node,
+    (schema) => {
+      const properties = schema['properties'];
+      // Own keys only, so that a name such as `constructor` finds nothing
+      // of Object.prototype.
+      return isObject(properties) && Object.hasOwn(properties, name)
+        ? properties[name]
+        : undefined;
+    },
+    steps,
+  );
+
+// The names a schema of the document requires: its own, those of every
+// part of `allOf`, and of `oneOf` and `anyOf` only those every alternative
+// requires, leaving out an alternative that only allows null.
+const requiredOf = (
+  schemas: Schemas,
+  node: unknown,
+  steps: Steps,
+  ancestors: ReadonlySet<JsonObject> = new Set(),
+  depth = 0,
+): ReadonlySet<string> => {
+  const found = new Set<string>();
+  const schema = schemas.resolve(node);
+  if (schema === undefined || ancestors.has(schema) || depth > maxDepth)
+    return found;
+  step(steps);
+  const inner = new Set(ancestors).add(schema);
+  for (const name of listOf(schema['required']))
+    if (typeof name === 'string') found.add(name);
+  for (const part of listOf(schema['allOf']))
+    for (const name of requiredOf(schemas, part, steps, inner, depth + 1))
+      found.add(name);
+  for (const combiner of ['oneOf', 'anyOf'] as const) {
+    const sets = listOf(schema[combiner])
+      .filter((part) => !onlyNull(schemas.resolve(part)))
+      .map((part) => requiredOf(schemas, part, steps, inner, depth + 1));
+    const [first, ...rest] = sets;
+    if (first === undefined) continue;
+    for (const name of first)
+      if (rest.every((other) => other.has(name))) found.add(name);
+  }
+  return found;
 };
 
 // A schema of the client and the alternatives it combines with `anyOf`.
@@ -217,14 +281,19 @@ export interface FieldComparison {
  * schema of the document at the same place.
  *
  * Objects add their properties to the path, lists add `[]` and the values
- * of a map `{}`. Where the
- * client allows several forms with `anyOf`, every form counts. A field
- * that two forms share appears once.
+ * of a map `{}`. Where the client allows several forms with `anyOf`, every
+ * form counts. A field that two forms share appears once. In the document
+ * a field counts as declared if one part declares it, its type classes and
+ * whether it may be null come from every part that declares it, and it is
+ * required if the schema or a part of `allOf` requires it, or every
+ * alternative of `oneOf` or `anyOf`.
  *
  * @param schemas - The schemas of the document.
  * @param documented - The schema of the answer in the document.
  * @param wanted - The schema of the answer in the contract of the client.
  * @returns One entry per field, in the order of the contract.
+ * @throws {SpikeError} If the document needs more than {@link maxSteps}
+ *   steps to compare.
  */
 export function compareSchema(
   schemas: Schemas,
@@ -233,6 +302,7 @@ export function compareSchema(
 ): FieldComparison[] {
   const found = new Map<string, FieldComparison>();
   const resolve: Resolve = (node) => schemas.resolve(node);
+  const steps: Steps = { left: maxSteps };
   const walk = (
     document: unknown,
     client: unknown,
@@ -243,20 +313,19 @@ export function compareSchema(
     for (const part of alternatives(client)) {
       const properties = part['properties'];
       if (isObject(properties)) {
-        const declared = schemas.properties(document);
-        const required = requiredOf(schemas, document);
+        const required = requiredOf(schemas, document, steps);
         const clientRequired = Array.isArray(part['required'])
           ? (part['required'] as unknown[])
           : [];
         for (const [name, child] of Object.entries(properties)) {
           const fieldPath = path === '' ? name : `${path}.${name}`;
-          const documentChild = declared.get(name);
+          const documentChild = propertyOf(schemas, document, name, steps);
           const schema = schemas.resolve(documentChild);
           if (!found.has(fieldPath)) {
             found.set(fieldPath, {
               path: fieldPath,
               document: {
-                deklariert: declared.has(name),
+                deklariert: documentChild !== undefined,
                 typ: typeClass(schema, resolve),
                 pflicht: required.has(name),
                 nullable: allowsNull(schema, resolve),
@@ -273,7 +342,7 @@ export function compareSchema(
       }
       if (part['items'] !== undefined) {
         walk(
-          contentOf(schemas, document, 'items'),
+          gather(schemas, document, (schema) => schema['items'], steps),
           part['items'],
           `${path}[]`,
           depth + 1,
@@ -282,7 +351,12 @@ export function compareSchema(
       // A map such as the dates of an appointment, keyed by day.
       if (isObject(part['additionalProperties'])) {
         walk(
-          contentOf(schemas, document, 'additionalProperties'),
+          gather(
+            schemas,
+            document,
+            (schema) => schema['additionalProperties'],
+            steps,
+          ),
           part['additionalProperties'],
           `${path}{}`,
           depth + 1,
@@ -383,18 +457,24 @@ interface Operation {
 }
 
 // The operations of the contract in the order of the file. Building blocks
-// such as `pagedMeta` have no path and are part of the answers that use
-// them.
+// such as `pagedMeta` have neither method nor path and are part of the
+// answers that use them. An operation with a broken path, method or list
+// of parameters stops the check, so that it cannot drop out of the report.
 const operationsOf = (contract: unknown): Operation[] => {
-  if (!isObject(contract)) throw new SyntaxError('contract');
+  const broken = new SpikeError('DATEI', 'vertragUngueltig');
+  if (!isObject(contract)) throw broken;
   return Object.entries(contract).flatMap(([name, raw]): Operation[] => {
-    const entry = (isObject(raw) ? raw : {}) as Entry;
-    if (typeof entry.path !== 'string') return [];
+    if (!isObject(raw)) throw broken;
+    const entry = raw as Entry;
+    if (entry.method === undefined && entry.path === undefined) return [];
     const method = methods.find((known) => known === entry.method);
-    if (method === undefined) throw new SyntaxError('method');
-    const query = Array.isArray(entry.query)
-      ? entry.query.filter((item): item is string => typeof item === 'string')
-      : [];
+    if (method === undefined || typeof entry.path !== 'string') throw broken;
+    const query = entry.query ?? [];
+    if (
+      !Array.isArray(query) ||
+      !query.every((item): item is string => typeof item === 'string')
+    )
+      throw broken;
     return [
       {
         name,
@@ -452,7 +532,13 @@ export function run(
     checkNodeEnvironment(env);
     const origin = readOrigin(env);
     const state = readState(statePath(env), origin);
-    const operations = operationsOf(JSON.parse(contractText));
+    let contract: unknown;
+    try {
+      contract = JSON.parse(contractText);
+    } catch {
+      throw new SpikeError('DATEI', 'vertragUngueltig');
+    }
+    const operations = operationsOf(contract);
     const schemas = new Schemas(state.specification);
     const guard = new Guard();
     guard.allowFixed(...words);
@@ -466,10 +552,23 @@ export function run(
         operation.method,
         operation.path,
       );
-      const declaredQuery =
+      // The parameters of the operation and those its path declares for
+      // every operation on it.
+      const declaredQuery = new Set(
         documented === undefined
-          ? new Set<string>()
-          : schemas.queryParameters(documented);
+          ? []
+          : schemas
+              .parameterDetails(
+                documented,
+                findPathItem(
+                  state.specification,
+                  operation.method,
+                  operation.path,
+                ),
+              )
+              .filter((parameter) => parameter.location === 'query')
+              .map((parameter) => parameter.name),
+      );
       const body =
         documented === undefined
           ? undefined
@@ -511,8 +610,15 @@ export function run(
       // The rights: whether the document describes their values as a map,
       // as the client reads them.
       if (operation.value !== undefined) {
-        const data = schemas.properties(body).get('data');
-        entry['werteAlsMap'] = isObject(schemas.additionalProperties(data));
+        const steps: Steps = { left: maxSteps };
+        const data = propertyOf(schemas, body, 'data', steps);
+        entry['werteAlsMap'] =
+          gather(
+            schemas,
+            data,
+            (schema) => schema['additionalProperties'],
+            steps,
+          ) !== undefined;
       }
       report[operation.name] = entry;
     }
@@ -534,7 +640,9 @@ export function run(
   }
 }
 
-if (import.meta.url === `file://${process.argv[1] ?? ''}`) {
+// As in the other scripts: a comparison of URLs would miss a path with a
+// space or a symbolic link and end with 0 without running.
+if (import.meta.main) {
   const io: Io = {
     stdout: (text) => process.stdout.write(text),
     stderr: (text) => process.stderr.write(text),
