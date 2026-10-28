@@ -875,6 +875,7 @@ reader.on('line', (line) => {
         id,
         result: {
           tools: toolNames.map((name) => ({ name, annotations })),
+          ...(scenario === 'tools-cursor' ? { nextCursor: 'weiter' } : {}),
         },
       });
       return;
@@ -893,6 +894,7 @@ reader.on('line', (line) => {
               },
             ],
           })),
+          ...(scenario === 'prompts-cursor' ? { nextCursor: 'weiter' } : {}),
         },
       });
       return;

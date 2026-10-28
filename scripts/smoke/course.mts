@@ -519,8 +519,13 @@ export async function runEra(
       listed.kind === 'result' && isRecord(listed.result)
         ? listed.result['tools']
         : undefined;
+    // One page only: a further page could hold a tool the checks of tools,
+    // annotations and calls never see.
     const fits =
       Array.isArray(tools) &&
+      listed.kind === 'result' &&
+      isRecord(listed.result) &&
+      listed.result['nextCursor'] === undefined &&
       JSON.stringify(
         tools.map((tool: unknown) => (isRecord(tool) ? tool['name'] : null)),
       ) === JSON.stringify(expected) &&
@@ -592,6 +597,9 @@ export async function runEra(
     };
     let promptsFit =
       Array.isArray(promptList) &&
+      listedPrompts.kind === 'result' &&
+      isRecord(listedPrompts.result) &&
+      listedPrompts.result['nextCursor'] === undefined &&
       JSON.stringify(
         promptList.map((prompt: unknown) =>
           isRecord(prompt) ? [prompt['name'], argumentsOf(prompt)] : null,

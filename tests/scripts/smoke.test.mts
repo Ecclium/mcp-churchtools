@@ -561,6 +561,8 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     ['categories-bare-name', 'wikikategorien'],
     ['pages-bad-guid', 'wikiseiten'],
     ['extra-tool', 'nicht_aufgerufen'],
+    ['tools-cursor', 'tools_list'],
+    ['prompts-cursor', 'prompts'],
     ['wiki-bare-title', 'wikisuche'],
     ['wiki-bad-guid', 'wikisuche'],
     ['page-bare-text', 'seite'],
@@ -631,12 +633,27 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     const nobody = await run({ env: search, scenario: 'no-hits' });
     expect(nobody.code).toBe(smokeExitCodes.ok);
     expect(report(nobody)['befunde']).toEqual(['keine_personen_gefunden']);
+    for (const era of report(nobody)['aeren'] as { ohneAufruf: string[] }[]) {
+      expect(era.ohneAufruf).toEqual([
+        'ct_persons_get',
+        'ct_persons_get_groups',
+      ]);
+    }
   });
 
   it('passes with a finding when no span holds an event or the event has no agenda', async () => {
     const noEvents = await run({ env: search, scenario: 'no-events' });
     expect(noEvents.code).toBe(smokeExitCodes.ok);
     expect(report(noEvents)['befunde']).toEqual(['kein_event_gefunden']);
+    for (const era of report(noEvents)['aeren'] as {
+      ohneAufruf: string[];
+    }[]) {
+      expect(era.ohneAufruf).toEqual([
+        'ct_events_get',
+        'ct_events_get_agenda',
+        'ct_services_get_assignments',
+      ]);
+    }
     // Three spans of 31 days, then the services; no read of an event.
     for (const record of noEvents.records) {
       expect(record.calls.slice(9)).toEqual([
@@ -790,6 +807,19 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
       expect(report(result)['fehler']).toEqual([]);
       for (const record of result.records) {
         expect(record.calls.slice(14)).toEqual(calls);
+      }
+      // The tools that had nothing to be called with.
+      const withoutCall: Readonly<Record<string, readonly string[]>> = {
+        'no-calendars': ['ct_appointments_get', 'ct_appointments_list'],
+        'no-appointments': ['ct_appointments_get'],
+        'no-resources': ['ct_bookings_list'],
+        'no-songs': ['ct_songs_get'],
+        'no-categories': ['ct_wiki_pages_list'],
+      };
+      for (const era of report(result)['aeren'] as {
+        ohneAufruf: string[];
+      }[]) {
+        expect(era.ohneAufruf).toEqual(withoutCall[scenario] ?? []);
       }
       expectClean(result);
     },
