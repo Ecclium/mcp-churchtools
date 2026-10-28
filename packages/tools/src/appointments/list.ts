@@ -198,7 +198,9 @@ export const appointmentsListTool = defineTool({
     // Titles and places are free text that can name persons.
     sensitivity: 'personal',
     unattended: 'policy',
-    routineStable: false,
+    // A routine of the free core reads with it, so name and input are a
+    // public contract from phase 2 on (ADR 0064).
+    routineStable: true,
   },
   description: {
     purpose:

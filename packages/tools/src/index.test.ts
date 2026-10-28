@@ -81,6 +81,39 @@ describe('@ecclium/mcp-churchtools-tools', () => {
     ).toEqual([['ct_whoami', '@ecclium/mcp-churchtools', 'core']]);
   });
 
+  // Routines rely on the name and the input of a stable tool, and only a
+  // new major version may change them. The set is exactly the reads of the
+  // free routines (ADR 0064): a tool added here by mistake becomes a public
+  // contract, one dropped breaks routines.
+  it('marks exactly the six reads of the free routines as stable for routines', () => {
+    const everything = createToolCatalog({
+      core: createCorePlugin(),
+      toolsets: new Set([
+        'persons',
+        'events',
+        'calendars',
+        'wiki',
+        'songs',
+      ] as const),
+      plugins: [],
+      readOnly: true,
+    });
+    expect(everything.list()).toHaveLength(24);
+    expect(
+      everything
+        .list()
+        .filter((tool) => tool.meta.routineStable)
+        .map((tool) => tool.name),
+    ).toEqual([
+      'ct_appointments_list',
+      'ct_events_list',
+      'ct_services_get_assignments',
+      'ct_wiki_categories_list',
+      'ct_wiki_page_get',
+      'ct_wiki_pages_list',
+    ]);
+  });
+
   it('gives every leaf of every tool of the core a class with a mask (ADR 0026)', () => {
     const shapes = withSearch
       .list()
@@ -372,11 +405,11 @@ const view = { module: 'churchwiki', right: 'view' };
 const viewCategory = { module: 'churchwiki', right: 'view category' };
 
 describe.each([
-  ['ct_wiki_categories_list', [view]],
-  ['ct_wiki_pages_list', [view, viewCategory]],
-  ['ct_wiki_page_get', [view, viewCategory]],
-  ['ct_wiki_search', [view, viewCategory]],
-])('%s in the catalog', (name, rights) => {
+  ['ct_wiki_categories_list', [view], true],
+  ['ct_wiki_pages_list', [view, viewCategory], true],
+  ['ct_wiki_page_get', [view, viewCategory], true],
+  ['ct_wiki_search', [view, viewCategory], false],
+])('%s in the catalog', (name, rights, routineStable) => {
   const tool = withWiki.get(name);
 
   it('reads only, holds personal data, runs unattended only by policy and names its rights', () => {
@@ -387,7 +420,7 @@ describe.each([
       tier: 'free',
       sensitivity: 'personal',
       unattended: 'policy',
-      routineStable: false,
+      routineStable,
     });
     expect(tool?.description).toContain(
       `Required ChurchTools rights: ${rights

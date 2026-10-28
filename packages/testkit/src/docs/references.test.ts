@@ -92,10 +92,10 @@ describe('renderToolsReference', () => {
     // A tool that names other persons counts like a special one, ct_whoami
     // names only the account (ADR 0064).
     expect(page).toContain(
-      '| `ct_services_get_assignments` | `services` | personenbezogen | nach Richtlinie | nein | ja |',
+      '| `ct_services_get_assignments` | `services` | personenbezogen | nach Richtlinie | ja | ja |',
     );
     expect(page).toContain(
-      '| `ct_events_list` | `events` | personenbezogen | nach Richtlinie | nein | nein |',
+      '| `ct_events_list` | `events` | personenbezogen | nach Richtlinie | ja | nein |',
     );
     expect(page.match(/^- Lesebudget: ja$/gmu)).toHaveLength(8);
   });

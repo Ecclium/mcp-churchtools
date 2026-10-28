@@ -1,6 +1,6 @@
 # ADR 0065: MCP-Prompts als feste Vorlagen
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 28.10.2026
 - Datum: 26.10.2026
 - Fällt vor: Phase 2
 

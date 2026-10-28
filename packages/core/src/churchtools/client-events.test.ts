@@ -123,6 +123,29 @@ const entry = (index: number, day = 25): EventFixture => ({
 });
 
 describe('the events of a span of days', () => {
+  // ChurchTools takes `to` of the events as the midnight that begins the
+  // day; the client sends the day after, so that the last day counts.
+  it.each([
+    ['2026-11-01', '2026-11-01', '2026-11-02'],
+    ['2026-10-25', '2026-10-31', '2026-11-01'],
+    ['2026-12-31', '2026-12-31', '2027-01-01'],
+    ['2028-02-01', '2028-02-28', '2028-02-29'],
+  ])(
+    'sends the day after the last day for %s to %s',
+    async (from, to, sent) => {
+      const { double, client, ctx } = setup();
+      double
+        .intercept({ path: at('/api/events'), method: 'GET' })
+        .reply(200, eventsAnswer([]).body, json);
+      await client.events(ctx(), from, to);
+      expect(double.calls()[0]?.searchParams).toEqual({
+        from,
+        to: sent,
+        limit: '51',
+      });
+    },
+  );
+
   it('asks with exactly from, to and limit 51 and keeps only the fields of the list', async () => {
     const { double, client, ctx } = setup();
     const answer = eventsAnswer([entry(2), { ...entry(3), isCanceled: true }]);
@@ -142,7 +165,7 @@ describe('the events of a span of days', () => {
     expect(call?.path).toBe('/api/events');
     expect(call?.searchParams).toEqual({
       from: '2026-10-25',
-      to: '2026-10-31',
+      to: '2026-11-01',
       limit: '51',
     });
   });
@@ -225,6 +248,7 @@ describe('the events of a span of days', () => {
     ['a date with time', '2026-10-25T00:00:00Z', '2026-10-26'],
     ['a path in a day', '2026-10-25/../whoami', '2026-10-26'],
     ['a number', 20261025 as unknown as string, '2026-10-26'],
+    ['the last day of the year 9999', '9999-12-31', '9999-12-31'],
   ])('refuses %s before any request', async (_, from, to) => {
     const { double, client, ctx, lines } = setup();
     expect(await codeOf(client.events(ctx(), from, to))).toBe('validation');

@@ -11,6 +11,7 @@ import {
   appendLimit,
   appendPage,
   appendSpan,
+  dayAfter,
   urlOfPath,
 } from './query.js';
 import {
@@ -189,6 +190,28 @@ describe('appendSpan and appendLimit', () => {
     expect(() => {
       appendLimit(new URLSearchParams(), limit);
     }).toThrow(TypeError);
+  });
+});
+
+describe('dayAfter', () => {
+  it.each([
+    ['2026-10-31', '2026-11-01'],
+    ['2026-12-31', '2027-01-01'],
+    ['2028-02-28', '2028-02-29'],
+    ['2027-02-28', '2027-03-01'],
+  ])('gives the day after %s', (day, next) => {
+    expect(dayAfter(day)).toBe(next);
+  });
+
+  it.each([
+    '2026-02-30',
+    '2026-13-01',
+    '2026-10-31T00:00:00Z',
+    '31.10.2026',
+    '',
+    20261031 as unknown as string,
+  ])('refuses %j', (day) => {
+    expect(() => dayAfter(day)).toThrow(TypeError);
   });
 });
 
