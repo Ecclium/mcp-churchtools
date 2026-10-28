@@ -28,17 +28,18 @@ Die Maskierung arbeitet mit den Datenklassen, die jedes Feld eines Ergebnisses t
 - Freitext durchsucht die Maskierung nicht nach Mustern. Texte des Wikis, Notizen, Beschreibungen und Titel befreit die Pipeline nur von unsichtbaren Zeichen und setzt sie in den Datenumschlag. Steht in einer Seite des Wikis eine Telefonnummer, geht sie unmaskiert an den Client.
 - Namen von Personen stehen unverändert in den Ergebnissen der Tools, die Personen nennen. Nachnamen kürzt erst `strict`.
 - In der Meldung eines gescheiterten Aufrufs erkennt die Maske Kontaktdaten nur an ihrer Form. Einen Namen erkennt sie dort nicht, und jede Folge von sieben Ziffern maskiert sie wie eine Telefonnummer.
+- Mit `ECCLIUM_REDACTION=off` maskiert der Server nichts. Das geht nur über stdio und mit einer Warnung beim Start ([Konfiguration](configuration.md)).
 
 ## Datenumschlag
 
 Jeder Freitext aus ChurchTools steht in einem Ergebnis zwischen zwei Marken mit einer zufälligen Grenze, die für jeden Aufruf neu entsteht. Text aus ChurchTools kann den Umschlag nicht schliessen, weil er die Grenze nicht kennt. Die Beschreibungen der Tools sagen dem Modell, dass Inhalte aus ChurchTools Daten sind und keine Anweisungen. Ob das Modell einer Anweisung im Umschlag trotzdem folgt, entscheidet das Modell.
 
-Namen von Personen stehen ausserhalb des Umschlags, damit `strict` sie später kürzen kann. Ein Name, der wie eine Anweisung aussieht, erreicht das Modell also ohne Umschlag. Welche Felder Freitext sind, listet die [Referenz der Tools](tools.md) unter «Freitextfelder».
+Ohne Umschlag bleiben drei Arten von Text. Namen von Personen stehen ausserhalb, damit `strict` sie später kürzen kann. Ein Name, der wie eine Anweisung aussieht, erreicht das Modell also ohne Umschlag. Die Namen von Modulen und Rechten, die `ct_whoami` nennt, vergibt ChurchTools, und der Client lässt nur kurze Namen aus druckbaren Zeichen durch. Die Meldung eines gescheiterten Aufrufs steht nicht im Umschlag, die Maske prüft sie, wie oben beschrieben. Welche Felder Freitext sind, listet die [Referenz der Tools](tools.md) unter «Freitextfelder».
 
 ## Obergrenzen je Aufruf
 
 - Jedes Tool liest je Aufruf höchstens eine feste Zahl von Einträgen, etwa 25 Termine oder 50 Mitglieder einer Gruppe, und sagt, ob es weitere gibt. Die Grenze steht in der Beschreibung des Tools.
-- Ein Ergebnis ist höchstens 64 KiB gross, gemessen an dem, was der Client erhält. Ecclium kürzt nie ein Ergebnis. Wäre es grösser, endet der Aufruf mit einem Fehler, und eine lange Seite des Wikis liest ein Tool in Teilen.
+- Ein Ergebnis ist höchstens 64 KiB gross, gemessen an dem, was der Client erhält. Darin stehen die Daten zweimal, als Text und strukturiert, dazu eine Reserve von 1 KiB für die übrige Nachricht, für die Daten bleiben also knapp 32 KiB. Die Kennung einer Anfrage wählt der Client, eine sehr lange Kennung macht die Antwort grösser. Ecclium kürzt nie ein Ergebnis. Wäre es grösser, endet der Aufruf mit einem Fehler, und eine lange Seite des Wikis liest ein Tool in Teilen.
 - Die Obergrenze verhindert den Export in einem einzigen Aufruf, nicht den in vielen. Dafür gibt es das Lesebudget.
 
 ## Lesebudget und Audit-Datei
@@ -51,9 +52,9 @@ Die Tools, die in der Übersicht der [Referenz der Tools](tools.md) unter «Lese
 - Über stdio entsteht der Akteur aus dem Subjekt in `ECCLIUM_STDIO_SUBJECT`. Das Budget gilt also je Installation und Subjekt, nicht je Person, die den Client benutzt, und nicht je Person, deren Daten gelesen werden.
 - Wer den Zustandsordner schreiben kann, kann die Zähler löschen. Das Budget bremst ein Modell und einen Client, nicht den Betreiber.
 - Die 200 sind in dieser Version fest. Einstellbar wird das Budget mit der Richtlinie in Phase 5.
-- Die übrigen Tools zählen nicht. Für sie gilt nur die Obergrenze je Aufruf.
+- Die übrigen Tools zählen nicht, etwa die für das Wiki, Events, Termine und Buchungen. Für sie gilt nur die Obergrenze je Aufruf, obwohl auch ihr Freitext Personendaten enthalten kann, etwa eine Seite des Wikis mit Namen und Telefonnummern.
 
-Dieselben Tools geben ihr Ergebnis erst heraus, wenn ihre Zeile ganz in der Audit-Datei steht ([ADR 0028](adr/0028-audit-ereignis-und-datei-sink.md)). Ist eines davon eingeschaltet und `ECCLIUM_STATE_DIR` nicht gesetzt, startet der Server über stdio nicht.
+Dieselben Tools geben ihr Ergebnis erst heraus, wenn ihre Zeile ganz in der Audit-Datei steht ([ADR 0028](adr/0028-audit-ereignis-und-datei-sink.md)). Ist eines davon eingeschaltet und `ECCLIUM_STATE_DIR` nicht gesetzt, startet der Server über stdio nicht. Eine Zeile der Audit-Datei nennt Zeit, Akteur, Tool, Ausgang und Dauer, aber in dieser Version keine Kennungen gelesener Personen oder Objekte. Sie zeigt also, wann welches Tool lief, nicht wessen Daten es las ([Datenschutz](privacy.md)).
 
 ## Was später kommt
 
