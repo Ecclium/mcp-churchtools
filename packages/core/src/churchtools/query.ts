@@ -112,6 +112,34 @@ export function appendSpan(
 }
 
 /**
+ * The day after a day of the calendar, across the end of a month and of a
+ * year, in the form `JJJJ-MM-TT`.
+ *
+ * @param day - A day in the form `JJJJ-MM-TT` that exists.
+ * @returns The next day.
+ * @throws {TypeError} When the text is no day of the calendar.
+ * @example
+ * ```ts
+ * dayAfter('2026-12-31'); // '2027-01-01'
+ * ```
+ */
+export function dayAfter(day: string): string {
+  const time =
+    typeof day === 'string' && dayPattern.test(day)
+      ? Date.parse(`${day}T00:00:00Z`)
+      : Number.NaN;
+  // Date.parse rolls an impossible day such as 2026-02-30 over, so the
+  // day must come back unchanged before it counts.
+  if (
+    !Number.isFinite(time) ||
+    new Date(time).toISOString().slice(0, 10) !== day
+  ) {
+    throw new TypeError('A day needs the form JJJJ-MM-TT and must exist.');
+  }
+  return new Date(time + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+/**
  * Appends `limit` alone, from 1 to 100, for a list that takes no `page`.
  *
  * @param params - The query to append to.

@@ -83,6 +83,7 @@ import {
   appendLimit,
   appendPage,
   appendSpan,
+  dayAfter,
   urlOfPath,
 } from './query.js';
 import { fetchAnswer, type RequestPath } from './request.js';
@@ -1152,9 +1153,14 @@ export function createChurchToolsClient(
     to: string,
   ): Promise<EventList> => {
     checkEventInput(ctx, isEventWindow(from, to));
-    // Exactly from, to and limit go out (ADR 0064).
+    // Exactly from, to and limit go out (ADR 0064). ChurchTools reads `to`
+    // of this list as the midnight at the start of that day («Range upper
+    // bound at midnight, inclusive»), so the events of the last day would be
+    // missing, and a span of one day would list none. The client sends the
+    // day after, so that both ends are days of events, as for appointments
+    // and bookings, whose `to` is the last day itself.
     const url = new URL('/api/events', origin);
-    appendSpan(url.searchParams, from, to);
+    appendSpan(url.searchParams, from, dayAfter(to));
     appendLimit(url.searchParams, eventsRequestLimit);
     const root = await fetchAnswer(ctx, path, url, eventListLimits, {
       status: 'churchtools_events_status',
