@@ -430,17 +430,17 @@ describe('the three layers together', () => {
 describe('the five tools in the catalog', () => {
   it('name the right that opens their read, may run unattended by policy and are not treated as special', () => {
     const catalog = coreCatalog();
-    for (const [name, right] of [
-      ['ct_calendars_list', viewCategory],
-      ['ct_appointments_list', viewCategory],
-      ['ct_appointments_get', viewCategory],
-      ['ct_resources_list', viewResource],
-      ['ct_bookings_list', viewResource],
+    for (const [name, right, routineStable] of [
+      ['ct_calendars_list', viewCategory, false],
+      ['ct_appointments_list', viewCategory, true],
+      ['ct_appointments_get', viewCategory, false],
+      ['ct_resources_list', viewResource, false],
+      ['ct_bookings_list', viewResource, false],
     ] as const) {
       const listed = catalog.get(name);
       expect(listed?.meta.requiredRights, name).toEqual([right]);
       expect(listed?.meta.unattended, name).toBe('policy');
-      expect(listed?.meta.routineStable, name).toBe(false);
+      expect(listed?.meta.routineStable, name).toBe(routineStable);
       expect(listed?.asSpecial, name).toBe(false);
     }
   });

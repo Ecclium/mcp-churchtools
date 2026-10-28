@@ -132,7 +132,9 @@ export const wikiPageGetTool = defineTool({
     tier: 'free',
     sensitivity: 'personal',
     unattended: 'policy',
-    routineStable: false,
+    // A routine of the free core reads with it, so name and input are a
+    // public contract from phase 2 on (ADR 0064).
+    routineStable: true,
   },
   description: {
     purpose:
