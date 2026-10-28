@@ -78,14 +78,26 @@ describe('renderToolsReference', () => {
 
   it('names the toolset of the search tools and none for ct_whoami', () => {
     expect(page).toContain(
-      '| `ct_persons_search` | `persons` | besonders schützenswert | nie | nein | `persons` in `ECCLIUM_TOOLSETS`, mit `ECCLIUM_STATE_DIR` |',
+      '| `ct_persons_search` | `persons` | besonders schützenswert | nie | nein | ja | `persons` in `ECCLIUM_TOOLSETS`, mit `ECCLIUM_STATE_DIR` |',
     );
     expect(page).toContain(
-      '| `ct_groups_search` | `groups` | besonders schützenswert | nie | nein | `persons` in `ECCLIUM_TOOLSETS`, mit `ECCLIUM_STATE_DIR` |',
+      '| `ct_groups_search` | `groups` | besonders schützenswert | nie | nein | ja | `persons` in `ECCLIUM_TOOLSETS`, mit `ECCLIUM_STATE_DIR` |',
     );
     expect(page).toContain(
-      '| `ct_whoami` | `base` | personenbezogen | nie | nein | immer |',
+      '| `ct_whoami` | `base` | personenbezogen | nie | nein | nein | immer |',
     );
+  });
+
+  it('says which tools count against the read budget', () => {
+    // A tool that names other persons counts like a special one, ct_whoami
+    // names only the account (ADR 0064).
+    expect(page).toContain(
+      '| `ct_services_get_assignments` | `services` | personenbezogen | nach Richtlinie | nein | ja |',
+    );
+    expect(page).toContain(
+      '| `ct_events_list` | `events` | personenbezogen | nach Richtlinie | nein | nein |',
+    );
+    expect(page.match(/^- Lesebudget: ja$/gmu)).toHaveLength(8);
   });
 
   it('shows containers that may be missing or null, not only their leaves', () => {

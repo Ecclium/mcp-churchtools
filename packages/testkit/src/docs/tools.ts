@@ -138,6 +138,7 @@ const toolSection = (entry: CatalogEntry): string[] => {
     `- Sensibilität: ${sensitivityLabels[meta.sensitivity]}`,
     `- Unbeaufsichtigt: ${unattendedLabels[meta.unattended]}`,
     `- Für Routinen stabil: ${yesNo(meta.routineStable)}`,
+    `- Lesebudget: ${yesNo(entry.asSpecial)}`,
     `- Angeboten: ${offeredLabel(entry)}`,
     `- Rechte in ChurchTools: ${rightsOf(entry)}`,
     '',
@@ -190,12 +191,12 @@ export function renderToolsReference(): string {
     '',
     '## Übersicht',
     '',
-    '| Tool | Bereich | Sensibilität | Unbeaufsichtigt | Für Routinen stabil | Angeboten |',
-    '| --- | --- | --- | --- | --- | --- |',
+    '| Tool | Bereich | Sensibilität | Unbeaufsichtigt | Für Routinen stabil | Lesebudget | Angeboten |',
+    '| --- | --- | --- | --- | --- | --- | --- |',
   ];
   const legend = [
     '',
-    '«Unbeaufsichtigt» sagt, ob eine Routine das Tool ohne Aufsicht aufrufen darf: nie oder nur so, wie die Richtlinie des Betreibers es erlaubt. «Für Routinen stabil» heisst, dass Routinen sich auf Name und Eingabe des Tools verlassen dürfen, eine inkompatible Änderung daran ist eine neue Hauptversion. «Angeboten» nennt die Einstellungen, ohne die der Server das Tool nicht anbietet. Statt des Namens eines Toolsets genügt `all` in `ECCLIUM_TOOLSETS`.',
+    '«Unbeaufsichtigt» sagt, ob eine Routine das Tool ohne Aufsicht aufrufen darf: nie oder nur so, wie die Richtlinie des Betreibers es erlaubt. «Für Routinen stabil» heisst, dass Routinen sich auf Name und Eingabe des Tools verlassen dürfen, eine inkompatible Änderung daran ist eine neue Hauptversion. «Lesebudget» sagt, ob jeder Aufruf mit gültiger Eingabe gegen das gemeinsame Lesebudget je Akteur und UTC-Tag zählt und das Tool sein Ergebnis erst herausgibt, wenn seine Zeile in der Audit-Datei steht. Das gilt für jedes Tool mit besonders schützenswerten Daten und für jedes andere, das Namen oder Kennungen anderer Personen ausgibt. «Angeboten» nennt die Einstellungen, ohne die der Server das Tool nicht anbietet. Statt des Namens eines Toolsets genügt `all` in `ECCLIUM_TOOLSETS`.',
   ];
   // Said only while it holds, so that the first tool that writes changes
   // the page instead of leaving a false sentence on it.
@@ -205,7 +206,7 @@ export function renderToolsReference(): string {
   for (const entry of entries) {
     const { meta } = entry;
     lines.push(
-      `| ${code(entry.name)} | ${code(meta.domain)} | ${sensitivityLabels[meta.sensitivity]} | ${unattendedLabels[meta.unattended]} | ${yesNo(meta.routineStable)} | ${offeredLabel(entry)} |`,
+      `| ${code(entry.name)} | ${code(meta.domain)} | ${sensitivityLabels[meta.sensitivity]} | ${unattendedLabels[meta.unattended]} | ${yesNo(meta.routineStable)} | ${yesNo(entry.asSpecial)} | ${offeredLabel(entry)} |`,
     );
   }
   lines.push(...legend);

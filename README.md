@@ -17,7 +17,7 @@ Das Projekt steht am Anfang. Den aktuellen Stand, die offenen Punkte und den nä
 
 ## Sicherheit
 
-Melden Sie Sicherheitslücken bitte nicht in einem öffentlichen Issue, sondern vertraulich, wie in [SECURITY.md](SECURITY.md) beschrieben.
+Melden Sie Sicherheitslücken bitte nicht in einem öffentlichen Issue, sondern vertraulich, wie in [SECURITY.md](SECURITY.md) beschrieben. Wie Ecclium die Daten Ihrer Gemeinde schützt, wo dieser Schutz endet und was Sie im Betrieb beachten sollten, etwa neben anderen Tools im selben KI-Assistenten, steht in [docs/security.md](docs/security.md).
 
 ## Mitwirken
 

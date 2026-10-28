@@ -130,6 +130,8 @@ const toolNames = [
       ]
     : []),
   ...(scenario === 'write-tool' ? ['ct_wiki_page_create'] : []),
+  // A read tool the smoke test knows nothing of, as a later phase may add.
+  ...(scenario === 'extra-tool' ? ['ct_zz_extra_list'] : []),
 ];
 
 const result = (data: Record<string, unknown>): Record<string, unknown> => ({
@@ -590,12 +592,56 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
       notice: none ? 'No song matched.' : null,
     });
   }
+  if (name === 'ct_wiki_categories_list') {
+    event('http_response', { status: 200 });
+    audit(name);
+    const none = scenario === 'no-categories';
+    const categoryName = `${canary}Kategorie`;
+    return result({
+      page: 1,
+      categories: none
+        ? []
+        : [
+            {
+              id: 12,
+              name:
+                scenario === 'categories-bare-name'
+                  ? categoryName
+                  : wrap(categoryName),
+            },
+          ],
+      more: false,
+      notice: none ? 'No category is visible.' : null,
+    });
+  }
+  if (name === 'ct_wiki_pages_list') {
+    event('http_response', { status: 200 });
+    audit(name);
+    const none =
+      scenario === 'no-wiki-pages' || scenario === 'no-page-anywhere';
+    return result({
+      categoryId: args['categoryId'],
+      page: 1,
+      pages: none
+        ? []
+        : [
+            {
+              guid: scenario === 'pages-bad-guid' ? '42' : pageGuid,
+              title: wrap(`${canary}Liste`),
+              isMarkdown: true,
+              version: 2,
+            },
+          ],
+      more: false,
+      notice: none ? 'No page is listed.' : null,
+    });
+  }
   if (name === 'ct_wiki_search') {
     event('http_response', { status: 200 });
     audit(name);
     const title = `${canary}Seite`;
     const hits =
-      scenario === 'no-pages'
+      scenario === 'no-pages' || scenario === 'no-page-anywhere'
         ? []
         : [
             {
@@ -829,6 +875,7 @@ reader.on('line', (line) => {
         id,
         result: {
           tools: toolNames.map((name) => ({ name, annotations })),
+          ...(scenario === 'tools-cursor' ? { nextCursor: 'weiter' } : {}),
         },
       });
       return;
@@ -847,6 +894,7 @@ reader.on('line', (line) => {
               },
             ],
           })),
+          ...(scenario === 'prompts-cursor' ? { nextCursor: 'weiter' } : {}),
         },
       });
       return;

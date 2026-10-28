@@ -33,7 +33,7 @@ Vermuten Sie einen Vorfall mit Ecclium, etwa ein abgeflossenes Token, eine kompr
 
 ## Bedrohungen und Restrisiken
 
-Was Ecclium schützt, gegen wen, mit welchen Massnahmen und was offen bleibt, steht im [Threat Model](docs/threat-model.md).
+Was Ecclium schützt, gegen wen, mit welchen Massnahmen und was offen bleibt, steht im [Threat Model](docs/threat-model.md). Was Sie im Betrieb beachten sollten, etwa die Grenzen der Maskierung, das Lesebudget und andere Tools im selben KI-Assistenten, steht in [docs/security.md](docs/security.md).
 
 ## English
 
@@ -45,4 +45,4 @@ After the fix we publish a security advisory and, if you wish, credit you in it.
 
 If you suspect any incident involving Ecclium, such as a leaked token, a compromised installation or dependency, or unexpected write operations in ChurchTools, first change the passwords of the ChurchTools accounts that Ecclium uses and then revoke their tokens, before any analysis. A login token works without a second factor and carries all permissions of its account. Anyone who knows the password of an account can fetch its login token again, which is why the password comes first.
 
-What Ecclium protects, against whom, with which measures and what remains open is described in the [threat model](docs/threat-model.md), in German.
+What Ecclium protects, against whom, with which measures and what remains open is described in the [threat model](docs/threat-model.md), in German. What to keep in mind when running it, such as the limits of masking, the read budget and other tools in the same AI assistant, is described in [docs/security.md](docs/security.md), also in German.
