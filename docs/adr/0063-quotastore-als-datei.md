@@ -1,6 +1,6 @@
 # ADR 0063: Der `QuotaStore` als Datei und das Lesebudget
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 28.10.2026
 - Datum: 24.10.2026
 - Fällt vor: Phase 2
 
@@ -56,3 +56,4 @@ Seit dem 24.10.2026 gebaut:
 - **Start:** der Ordner in der ersten Stufe in `packages/cli/src/stdio/index.ts`, der Store in `serve.ts`, die Meldungen in `packages/cli/src/messages/config.ts` und `start.ts`.
 - **Tests:** die Prüfungen jedes Stores und ein Store im Arbeitsspeicher in `packages/testkit/src/quota/`, der Datei-Store gegen echte Ordner in `file-store.test.ts`, zwei Prozesse in `tests/quota-processes.test.mts` und das Budget über einen Neustart am echten Prozess in `tests/stdio-start.test.mts`.
 - **Tools, die Namen anderer Personen nennen:** seit dem 26.10.2026 zählt die Pipeline jedes Tool, das der Katalog wie eines mit `sensitivity: special` behandelt, als erstes `ct_services_get_assignments`. Die Tests stehen in `pipeline-budget.test.ts` und `packages/tools/src/events-services.test.ts`.
+- **Lauf gegen die Testinstanz:** Am 28.10.2026, an ChurchTools 3.138, rief ein Treiber den gebauten Server über stdio mit eigenem Zustandsordner 200-mal mit `ct_persons_search` auf, mit 250 ms zwischen zwei Aufrufen. Alle 200 gaben ein Ergebnis. Der 201. endete mit `policy_denied` und dem Satz zum Budget, ohne Anfrage an ChurchTools, mit `read_budget_exhausted` im Log und einer abgelehnten Zeile im Audit, während `ct_whoami` und `ct_songs_search` weiterliefen. Nach einem Neustart mit demselben Ordner blieb `ct_persons_search` gesperrt. Der Ordner `quota` hatte 0700, die eine Datei 0600. Ohne Pause wies die eigene Drosselung (ADR 0057) 17 der 200 Aufrufe mit `rate_limited` ab, und auch sie zählten, weil das `gate` zählt, bevor ein Aufruf den Client erreicht. Ein Client, der schneller fragt, als die Drosselung zulässt, verbraucht das Budget also auch mit abgewiesenen Aufrufen.

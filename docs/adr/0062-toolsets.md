@@ -1,6 +1,6 @@
 # ADR 0062: Toolsets statt eines Schalters je Tool
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 28.10.2026
 - Datum: 24.10.2026
 - Fällt vor: Phase 2
 
