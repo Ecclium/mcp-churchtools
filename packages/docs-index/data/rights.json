@@ -60,13 +60,26 @@
       "module": "churchcal",
       "name": "view",
       "kind": "boolean",
-      "pages": []
+      "label": {
+        "text": "„Kalender“ sehen",
+        "page": "/de/help/rechteverwaltung/kalender-berechtigen/28-gottesdienstkalender-fur-alle-sichtbar-machen/"
+      },
+      "pages": [
+        "/de/help/rechteverwaltung/kalender-berechtigen/28-gottesdienstkalender-fur-alle-sichtbar-machen/"
+      ]
     },
     {
       "module": "churchcal",
       "name": "view category",
       "kind": "list",
-      "pages": []
+      "label": {
+        "text": "Einzelnen Kalender sehen",
+        "page": "/de/help/rechteverwaltung/kalender-berechtigen/28-gottesdienstkalender-fur-alle-sichtbar-machen/"
+      },
+      "pages": [
+        "/de/help/churchtools-module/info-screen/wie-konfiguriere-ich-die-info-screen-anzeige/",
+        "/de/help/rechteverwaltung/kalender-berechtigen/28-gottesdienstkalender-fur-alle-sichtbar-machen/"
+      ]
     },
     {
       "module": "churchcheckin",
@@ -102,7 +115,14 @@
       "module": "churchcore",
       "name": "administer persons",
       "kind": "boolean",
-      "pages": []
+      "label": {
+        "text": "Berechtigungen verwalten",
+        "page": "/de/help/rechteverwaltung/grundlagen-rechteverwaltung-verstehen/gesperrte-berechtigungen/"
+      },
+      "pages": [
+        "/de/help/rechteverwaltung/grundlagen-rechteverwaltung-verstehen/28-warum-sehe-ich-die-rechteverwaltung-nicht/",
+        "/de/help/rechteverwaltung/grundlagen-rechteverwaltung-verstehen/gesperrte-berechtigungen/"
+      ]
     },
     {
       "module": "churchcore",
@@ -162,7 +182,13 @@
       "module": "churchcore",
       "name": "use church html templates",
       "kind": "list",
-      "pages": []
+      "label": {
+        "text": "Gemeinde-HTML-Vorlagen verwenden",
+        "page": "/de/help/churchtools-module/kommunikation-personen/wie-erstelle-ich-einen-serienbrief/"
+      },
+      "pages": [
+        "/de/help/churchtools-module/kommunikation-personen/wie-erstelle-ich-einen-serienbrief/"
+      ]
     },
     {
       "module": "churchcore",
@@ -186,7 +212,13 @@
       "module": "churchdb",
       "name": "administer global filters",
       "kind": "boolean",
-      "pages": []
+      "label": {
+        "text": "Globale Filter verwalten",
+        "page": "/de/help/churchtools-module/rund-ums-gruppenmodul/wie-erstelle-bearbeite-ich-eigene-ansichten-des-gruppenmoduls/"
+      },
+      "pages": [
+        "/de/help/churchtools-module/rund-ums-gruppenmodul/wie-erstelle-bearbeite-ich-eigene-ansichten-des-gruppenmoduls/"
+      ]
     },
     {
       "module": "churchdb",
@@ -240,7 +272,13 @@
       "module": "churchdb",
       "name": "edit bulkletter",
       "kind": "boolean",
-      "pages": []
+      "label": {
+        "text": "Serienbriefe erstellen",
+        "page": "/de/help/churchtools-module/kommunikation-personen/wie-erstelle-ich-einen-serienbrief/"
+      },
+      "pages": [
+        "/de/help/churchtools-module/kommunikation-personen/wie-erstelle-ich-einen-serienbrief/"
+      ]
     },
     {
       "module": "churchdb",
@@ -276,13 +314,25 @@
       "module": "churchdb",
       "name": "edit masterdata",
       "kind": "boolean",
-      "pages": []
+      "label": {
+        "text": "Stammdaten bearbeiten",
+        "page": "/de/help/churchtools-module/grundlagen-personen/0-filter/"
+      },
+      "pages": [
+        "/de/help/churchtools-module/grundlagen-personen/0-filter/"
+      ]
     },
     {
       "module": "churchdb",
       "name": "edit person visibility",
       "kind": "boolean",
-      "pages": []
+      "label": {
+        "text": "Personensichtbarkeit bearbeiten (verstecken, sichtbar machen)",
+        "page": "/de/help/churchtools-module/grundlagen-personen/personen-in-personenlisten-und-auswahlen-verstecken/"
+      },
+      "pages": [
+        "/de/help/churchtools-module/grundlagen-personen/personen-in-personenlisten-und-auswahlen-verstecken/"
+      ]
     },
     {
       "module": "churchdb",
@@ -312,12 +362,23 @@
       "module": "churchdb",
       "name": "security level group",
       "kind": "list",
-      "pages": []
+      "label": {
+        "text": "Gruppeninfos sehen – bis zum gewählten Sicherheitslevel",
+        "page": "/de/help/churchtools-module/gruppen-meine-gruppe/gruppeninfos-gruppenmitgliedsfelder-und-infos-zur-gruppenmitgliedschaft/"
+      },
+      "pages": [
+        "/de/help/churchtools-module/gruppen-meine-gruppe/gruppeninfos-gruppenmitgliedsfelder-und-infos-zur-gruppenmitgliedschaft/"
+      ]
     },
     {
       "module": "churchdb",
       "name": "security level person",
       "kind": "list",
+      "label": {
+        "text": "Personendaten sehen - bis zum gewählten Sicherheitslevel",
+        "finding": "F29",
+        "version": "3.137"
+      },
       "pages": []
     },
     {
@@ -336,13 +397,26 @@
       "module": "churchdb",
       "name": "view",
       "kind": "boolean",
-      "pages": []
+      "label": {
+        "text": "„Personen & Gruppen“ sehen",
+        "page": "/de/help/rechteverwaltung/berechtigungen/28-funktionen-und-ihre-anforderungen-im-uberblick/"
+      },
+      "pages": [
+        "/de/help/rechteverwaltung/berechtigungen/28-funktionen-und-ihre-anforderungen-im-uberblick/"
+      ]
     },
     {
       "module": "churchdb",
       "name": "view alldata",
       "kind": "list",
-      "pages": []
+      "label": {
+        "text": "Personen eines Bereiches sehen",
+        "page": "/de/help/rechteverwaltung/berechtigungen/28-funktionen-und-ihre-anforderungen-im-uberblick/"
+      },
+      "pages": [
+        "/de/help/rechteverwaltung/berechtigungen/28-funktionen-und-ihre-anforderungen-im-uberblick/",
+        "/de/help/rechteverwaltung/gruppen-berechtigen/0-gruppensichtbarkeiten/"
+      ]
     },
     {
       "module": "churchdb",
@@ -354,7 +428,14 @@
       "module": "churchdb",
       "name": "view comments",
       "kind": "list",
-      "pages": []
+      "label": {
+        "text": "Kommentare von Personen sehen",
+        "page": "/de/help/rechteverwaltung/gruppen-berechtigen/28-berechtigungsempfehlung-fur-bereichsleiter/"
+      },
+      "pages": [
+        "/de/help/rechteverwaltung/gruppen-berechtigen/28-berechtigungsempfehlung-fur-bereichsleiter/",
+        "/de/help/rechteverwaltung/gruppen-berechtigen/28-berechtigungsempfehlung-fur-die-gemeindeleitung/"
+      ]
     },
     {
       "module": "churchdb",
@@ -366,13 +447,25 @@
       "module": "churchdb",
       "name": "view groups of grouptype",
       "kind": "list",
-      "pages": []
+      "label": {
+        "text": "Gruppen eines Gruppentyps sehen – außer versteckte",
+        "page": "/de/help/rechteverwaltung/gruppen-berechtigen/0-gruppensichtbarkeiten/"
+      },
+      "pages": [
+        "/de/help/rechteverwaltung/gruppen-berechtigen/0-gruppensichtbarkeiten/"
+      ]
     },
     {
       "module": "churchdb",
       "name": "view hidden persons",
       "kind": "boolean",
-      "pages": []
+      "label": {
+        "text": "Auch versteckte Personen sehen",
+        "page": "/de/help/churchtools-module/grundlagen-personen/personen-in-personenlisten-und-auswahlen-verstecken/"
+      },
+      "pages": [
+        "/de/help/churchtools-module/grundlagen-personen/personen-in-personenlisten-und-auswahlen-verstecken/"
+      ]
     },
     {
       "module": "churchdb",
@@ -384,6 +477,11 @@
       "module": "churchdb",
       "name": "view memberliste",
       "kind": "boolean",
+      "label": {
+        "text": "Mitgliederliste sehen",
+        "finding": "F29",
+        "version": "3.137"
+      },
       "pages": []
     },
     {
@@ -438,7 +536,14 @@
       "module": "churchgroup",
       "name": "administer groups",
       "kind": "boolean",
-      "pages": []
+      "label": {
+        "text": "Gruppen verwalten, d.h. erstellen, löschen, etc.",
+        "page": "/de/help/rechteverwaltung/berechtigungen/28-funktionen-und-ihre-anforderungen-im-uberblick/"
+      },
+      "pages": [
+        "/de/help/churchtools-module/gruppen-meine-gruppe/gruppeninfos-gruppenmitgliedsfelder-und-infos-zur-gruppenmitgliedschaft/",
+        "/de/help/rechteverwaltung/berechtigungen/28-funktionen-und-ihre-anforderungen-im-uberblick/"
+      ]
     },
     {
       "module": "churchgroup",
@@ -462,25 +567,49 @@
       "module": "churchgroup",
       "name": "edit group",
       "kind": "list",
-      "pages": []
+      "label": {
+        "text": "Gruppe bearbeiten",
+        "page": "/de/help/rechteverwaltung/berechtigungen/28-funktionen-und-ihre-anforderungen-im-uberblick/"
+      },
+      "pages": [
+        "/de/help/rechteverwaltung/berechtigungen/28-funktionen-und-ihre-anforderungen-im-uberblick/"
+      ]
     },
     {
       "module": "churchgroup",
       "name": "edit group memberships of group",
       "kind": "list",
-      "pages": []
+      "label": {
+        "text": "Gruppenmitgliedschaften einer Gruppe bearbeiten",
+        "page": "/de/help/churchtools-module/gruppen-meine-gruppe/gruppeninfos-gruppenmitgliedsfelder-und-infos-zur-gruppenmitgliedschaft/"
+      },
+      "pages": [
+        "/de/help/churchtools-module/gruppen-meine-gruppe/gruppeninfos-gruppenmitgliedsfelder-und-infos-zur-gruppenmitgliedschaft/"
+      ]
     },
     {
       "module": "churchgroup",
       "name": "edit group memberships of grouptype",
       "kind": "list",
-      "pages": []
+      "label": {
+        "text": "Gruppenmitgliedschaften von Gruppen eines Gruppentyps bearbeiten",
+        "page": "/de/help/churchtools-module/gruppen-meine-gruppe/gruppeninfos-gruppenmitgliedsfelder-und-infos-zur-gruppenmitgliedschaft/"
+      },
+      "pages": [
+        "/de/help/churchtools-module/gruppen-meine-gruppe/gruppeninfos-gruppenmitgliedsfelder-und-infos-zur-gruppenmitgliedschaft/"
+      ]
     },
     {
       "module": "churchgroup",
       "name": "edit groups of grouptype",
       "kind": "list",
-      "pages": []
+      "label": {
+        "text": "Gruppen eines Gruppentyps bearbeiten – außer versteckte",
+        "page": "/de/help/rechteverwaltung/berechtigungen/28-funktionen-und-ihre-anforderungen-im-uberblick/"
+      },
+      "pages": [
+        "/de/help/rechteverwaltung/berechtigungen/28-funktionen-und-ihre-anforderungen-im-uberblick/"
+      ]
     },
     {
       "module": "churchgroup",
@@ -492,19 +621,38 @@
       "module": "churchgroup",
       "name": "security level group",
       "kind": "list",
-      "pages": []
+      "label": {
+        "text": "Gruppeninfos sehen – bis zum gewählten Sicherheitslevel",
+        "page": "/de/help/churchtools-module/gruppen-meine-gruppe/gruppeninfos-gruppenmitgliedsfelder-und-infos-zur-gruppenmitgliedschaft/"
+      },
+      "pages": [
+        "/de/help/churchtools-module/gruppen-meine-gruppe/gruppeninfos-gruppenmitgliedsfelder-und-infos-zur-gruppenmitgliedschaft/"
+      ]
     },
     {
       "module": "churchgroup",
       "name": "view",
       "kind": "boolean",
+      "label": {
+        "text": "‹Gruppen› sehen",
+        "finding": "F29",
+        "version": "3.137"
+      },
       "pages": []
     },
     {
       "module": "churchgroup",
       "name": "view group",
       "kind": "list",
-      "pages": []
+      "label": {
+        "text": "Gruppe inkl. ihrer Gruppenmitglieder sehen",
+        "page": "/de/help/rechteverwaltung/berechtigungen/28-funktionen-und-ihre-anforderungen-im-uberblick/"
+      },
+      "pages": [
+        "/de/help/rechteverwaltung/berechtigungen/28-funktionen-und-ihre-anforderungen-im-uberblick/",
+        "/de/help/rechteverwaltung/gruppen-berechtigen/0-gruppensichtbarkeiten/",
+        "/de/help/rechteverwaltung/gruppen-berechtigen/28-berechtigungsempfehlung-fur-die-gemeindeleitung/"
+      ]
     },
     {
       "module": "churchgroup",
@@ -522,7 +670,15 @@
       "module": "churchgroup",
       "name": "view groups of grouptype",
       "kind": "list",
-      "pages": []
+      "label": {
+        "text": "Gruppen eines Gruppentyps sehen – außer versteckte",
+        "page": "/de/help/rechteverwaltung/gruppen-berechtigen/0-gruppensichtbarkeiten/"
+      },
+      "pages": [
+        "/de/help/rechteverwaltung/gruppen-berechtigen/0-gruppensichtbarkeiten/",
+        "/de/help/rechteverwaltung/gruppen-berechtigen/28-berechtigungsempfehlung-fur-die-gemeindeleitung/",
+        "/de/help/rechteverwaltung/gruppen-berechtigen/berechtigungsempfehlung-fuer-das-admin-team/"
+      ]
     },
     {
       "module": "churchresource",
@@ -552,19 +708,37 @@
       "module": "churchresource",
       "name": "edit masterdata",
       "kind": "boolean",
-      "pages": []
+      "label": {
+        "text": "Stammdaten bearbeiten",
+        "page": "/de/help/churchtools-module/ressourcen-vorbereiten/wie-lege-ich-ressourcen-an/"
+      },
+      "pages": [
+        "/de/help/churchtools-module/ressourcen-vorbereiten/wie-lege-ich-ressourcen-an/",
+        "/de/help/churchtools-module/ressourcen-vorbereiten/wie-lege-ich-ressourcen-typen-an/"
+      ]
     },
     {
       "module": "churchresource",
       "name": "view",
       "kind": "boolean",
+      "label": {
+        "text": "‹Ressourcen› sehen",
+        "finding": "F36",
+        "version": "3.137"
+      },
       "pages": []
     },
     {
       "module": "churchresource",
       "name": "view resource",
       "kind": "list",
-      "pages": []
+      "label": {
+        "text": "Ressource sehen",
+        "page": "/de/help/churchtools-module/info-screen/wie-konfiguriere-ich-die-info-screen-anzeige/"
+      },
+      "pages": [
+        "/de/help/churchtools-module/info-screen/wie-konfiguriere-ich-die-info-screen-anzeige/"
+      ]
     },
     {
       "module": "churchservice",
@@ -594,7 +768,13 @@
       "module": "churchservice",
       "name": "edit masterdata",
       "kind": "boolean",
-      "pages": []
+      "label": {
+        "text": "Stammdaten bearbeiten",
+        "page": "/de/help/churchtools-module/events-planen/40-wie-passe-ich-dienste-fur-mein-event-an/"
+      },
+      "pages": [
+        "/de/help/churchtools-module/events-planen/40-wie-passe-ich-dienste-fur-mein-event-an/"
+      ]
     },
     {
       "module": "churchservice",
@@ -624,7 +804,13 @@
       "module": "churchservice",
       "name": "manage absent",
       "kind": "boolean",
-      "pages": []
+      "label": {
+        "text": "Abwesenheiten für alle Personen einsehen und pflegen",
+        "page": "/de/help/churchtools-module/mitarbeiter/wie-trage-ich-abwesenheiten-im-events-modul-ein/"
+      },
+      "pages": [
+        "/de/help/churchtools-module/mitarbeiter/wie-trage-ich-abwesenheiten-im-events-modul-ein/"
+      ]
     },
     {
       "module": "churchservice",
@@ -642,12 +828,22 @@
       "module": "churchservice",
       "name": "view agenda",
       "kind": "list",
+      "label": {
+        "text": "Ablaufpläne für einzelne Kalender sehen",
+        "finding": "F36",
+        "version": "3.137"
+      },
       "pages": []
     },
     {
       "module": "churchservice",
       "name": "view events",
       "kind": "list",
+      "label": {
+        "text": "Events von einzelnen Kalendern sehen",
+        "finding": "F36",
+        "version": "3.137"
+      },
       "pages": []
     },
     {
@@ -666,6 +862,11 @@
       "module": "churchservice",
       "name": "view servicegroup",
       "kind": "list",
+      "label": {
+        "text": "Dienste einzelner Dienstkategorien sehen",
+        "finding": "F36",
+        "version": "3.137"
+      },
       "pages": []
     },
     {
@@ -678,6 +879,11 @@
       "module": "churchservice",
       "name": "view songcategory",
       "kind": "list",
+      "label": {
+        "text": "Einzelne Song-Kategorien sehen",
+        "finding": "F36",
+        "version": "3.137"
+      },
       "pages": []
     },
     {
@@ -702,37 +908,73 @@
       "module": "churchwiki",
       "name": "view",
       "kind": "boolean",
-      "pages": []
+      "label": {
+        "text": "„Wiki“ sehen",
+        "page": "/de/help/rechteverwaltung/wiki-berechtigen/28-wie-kann-ich-alle-zukunftigen-wiki-kategorien-berechtigen/"
+      },
+      "pages": [
+        "/de/help/rechteverwaltung/wiki-berechtigen/28-wie-kann-ich-alle-zukunftigen-wiki-kategorien-berechtigen/"
+      ]
     },
     {
       "module": "churchwiki",
       "name": "view category",
       "kind": "list",
-      "pages": []
+      "label": {
+        "text": "Einzelne Wiki-Kategorien sehen",
+        "page": "/de/help/rechteverwaltung/wiki-berechtigen/28-wie-kann-ich-alle-zukunftigen-wiki-kategorien-berechtigen/"
+      },
+      "pages": [
+        "/de/help/rechteverwaltung/wiki-berechtigen/28-wie-kann-ich-alle-zukunftigen-wiki-kategorien-berechtigen/"
+      ]
     },
     {
       "module": "finance",
       "name": "edit accounting period",
       "kind": "list",
-      "pages": []
+      "label": {
+        "text": "Buchungen für Buchungsjahr und Mandant erstellen und bearbeiten",
+        "page": "/de/help/rechteverwaltung/finanzen-berechtigen/30-berechtigungen-fur-finanzen/"
+      },
+      "pages": [
+        "/de/help/rechteverwaltung/finanzen-berechtigen/30-berechtigungen-fur-finanzen/"
+      ]
     },
     {
       "module": "finance",
       "name": "edit masterdata",
       "kind": "boolean",
-      "pages": []
+      "label": {
+        "text": "Stammdaten bearbeiten",
+        "page": "/de/help/rechteverwaltung/finanzen-berechtigen/30-berechtigungen-fur-finanzen/"
+      },
+      "pages": [
+        "/de/help/rechteverwaltung/finanzen-berechtigen/30-berechtigungen-fur-finanzen/"
+      ]
     },
     {
       "module": "finance",
       "name": "view",
       "kind": "boolean",
-      "pages": []
+      "label": {
+        "text": "Finanzen sehen",
+        "page": "/de/help/rechteverwaltung/finanzen-berechtigen/30-berechtigungen-fur-finanzen/"
+      },
+      "pages": [
+        "/de/help/rechteverwaltung/finanzen-berechtigen/30-berechtigungen-fur-finanzen/"
+      ]
     },
     {
       "module": "finance",
       "name": "view accounting period",
       "kind": "list",
-      "pages": []
+      "label": {
+        "text": "Buchungsjahre und Mandanten sehen",
+        "page": "/de/help/rechteverwaltung/finanzen-berechtigen/30-berechtigungen-fur-finanzen/"
+      },
+      "pages": [
+        "/de/help/rechteverwaltung/finanzen-berechtigen/30-berechtigungen-fur-finanzen/"
+      ]
     },
     {
       "module": "post",
