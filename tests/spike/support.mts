@@ -204,6 +204,22 @@ export const specification = {
         },
       },
     },
+    '/permissions/definitions': {
+      get: {
+        responses: {
+          '200': json({
+            type: 'object',
+            properties: {
+              data: {
+                type: 'object',
+                additionalProperties: { type: 'object' },
+              },
+            },
+          }),
+          '403': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+    },
     '/wiki/pages': {
       get: {
         parameters: [

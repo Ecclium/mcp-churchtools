@@ -51,6 +51,65 @@ describe('Guard', () => {
     expect(guard.check({ 'Jugend%20Z%C3%BCrich': null })).toEqual(['/#0']);
   });
 
+  it('lets a public word pass that an answer also contains, but not one with a part of the host', () => {
+    const guard = new Guard();
+    guard.allowFixed('abschnitte');
+    guard.allowPublic('kalender');
+    guard.allowPublic('jugend-gruppen');
+    guard.blockAll({ label: 'Kalender', group: 'Jugend' });
+    expect(guard.check({ abschnitte: ['kalender', 'jugend-gruppen'] })).toEqual(
+      [],
+    );
+    guard.allowChecked('kalender');
+    expect(guard.check({ abschnitte: ['kalender'] })).toEqual([]);
+    guard.block('jugend');
+    expect(guard.check({ abschnitte: ['kalender', 'jugend-gruppen'] })).toEqual(
+      ['/abschnitte/1'],
+    );
+  });
+
+  it('blocks a public word by a number of the host, not by a number of an answer', () => {
+    const guard = new Guard();
+    guard.allowPublic('release-2026');
+    guard.allowPublic('stufe-42');
+    guard.blockAll({ id: 2026, port: 42 });
+    expect(guard.check(['release-2026', 'stufe-42'])).toEqual([]);
+    guard.block(2026);
+    // Two digits are too short for the block list of texts, so only the
+    // list of numbers catches them.
+    guard.block(42);
+    expect(guard.check(['release-2026', 'stufe-42'])).toEqual(['/0', '/1']);
+  });
+
+  it('takes as public words only lower-case slugs, codes, years and counts', () => {
+    const guard = new Guard();
+    for (const word of ['kalender', 'en-gb', 'x-default', '2026-10', '524']) {
+      expect(() => {
+        guard.allowPublic(word);
+      }, word).not.toThrow();
+    }
+    for (const word of [
+      'Kalender',
+      'zwei Worte',
+      'a--b',
+      '-a',
+      '',
+      'x'.repeat(65),
+    ]) {
+      expect(() => {
+        guard.allowPublic(word);
+      }, word).toThrow();
+    }
+  });
+
+  it('treats a word allowed only as checked strictly, even if it is public elsewhere', () => {
+    const guard = new Guard();
+    guard.allowPublic('kalender');
+    guard.allowChecked('kalender-ansicht');
+    guard.blockAll({ label: 'Kalender' });
+    expect(guard.check('kalender-ansicht')).toEqual(['/']);
+  });
+
   it('never lets short unknown text pass, although it is not blocked', () => {
     const guard = new Guard();
     guard.block('12');

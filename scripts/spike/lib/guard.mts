@@ -5,8 +5,9 @@
  *
  * 1. Allow list: each word must be known. Known are the fixed words of the
  *    probes, keys taken from the instance under a policy (declared in the
- *    specification, or lower-case right names), and the ChurchTools version
- *    as major and minor number.
+ *    specification, or lower-case right names), words from a public source
+ *    that no answer of the instance reaches, such as the slugs of the
+ *    academy, and the ChurchTools version as major and minor number.
  * 2. Block list: no key taken from the instance may contain anything that
  *    came from the instance or the local machine as a whole word: host and
  *    host parts, token, the values of the probe variables, user name and
@@ -14,7 +15,9 @@
  *    of the responses. Comparison ignores case and also looks for the
  *    URL-encoded form. A key the specification declares is not blocked by
  *    a value from a response that equals the whole key, see
- *    {@link Guard.allowDeclared}.
+ *    {@link Guard.allowDeclared}. A word from a public source is blocked
+ *    only by what could identify the instance or the local machine, not by
+ *    the values of the responses, see {@link Guard.allowPublic}.
  *
  * If either check fails, the probe prints nothing but the positions of the
  * findings, as JSON pointers whose unknown parts are replaced by numbers.
@@ -32,6 +35,9 @@ export type Json =
   | { readonly [key: string]: Json };
 
 const versionPattern = /^\d+\.\d+$/;
+
+// The form of a word from a public source, see Guard.allowPublic.
+const publicWordForm = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /**
  * Collects what may and what must not appear in the output of a probe.
@@ -52,6 +58,8 @@ export class Guard {
   readonly #blockedText = new Set<string>();
   readonly #strictText = new Set<string>();
   readonly #blockedNumbers = new Set<string>();
+  readonly #public = new Set<string>();
+  readonly #strictNumbers = new Set<string>();
 
   /**
    * Allows fixed words of the probes, such as keys, type names and classes.
@@ -102,6 +110,32 @@ export class Guard {
   allowDeclared(key: string): void {
     this.#checked.add(key);
     this.#declared.add(key);
+  }
+
+  /**
+   * Allows a word from a public source that no answer of the instance
+   * reaches, such as the slug of a section of the academy.
+   *
+   * Such a word does not come from the instance, so an equal word in an
+   * answer of the instance says nothing about it and does not block it: a
+   * German label of a right such as «Kalender» would otherwise withhold the
+   * section `kalender` of the academy. What could identify the instance or
+   * the local machine still blocks it as a whole word: the host and its
+   * parts, the token, the values of the variables, the user name, the home
+   * folder and the values of headers and cookies, see {@link Guard.block}.
+   *
+   * Only words of lower-case letters, digits and single hyphens, up to 64
+   * characters, are taken, the form of a slug, a language code, a year or
+   * a count. Anything else is a mistake of the probe.
+   *
+   * @param word - Word from a public source.
+   * @throws {Error} If the word has another form.
+   */
+  allowPublic(word: string): void {
+    if (word.length > 64 || !publicWordForm.test(word)) {
+      throw new Error('INTERN');
+    }
+    this.#public.add(word);
   }
 
   /**
@@ -200,6 +234,9 @@ export class Guard {
     if (word === this.#version) {
       return true;
     }
+    if (this.#public.has(word) && !this.#isBlockedStrictly(word)) {
+      return true;
+    }
     return (
       this.#checked.has(word) &&
       !this.#isBlocked(word, this.#declared.has(word))
@@ -210,6 +247,9 @@ export class Guard {
     const text = String(value).trim();
     if (/^-?\d+(?:\.\d+)?$/.test(text)) {
       this.#blockedNumbers.add(text.replace(/^-/, ''));
+      if (strict) {
+        this.#strictNumbers.add(text.replace(/^-/, ''));
+      }
     }
     if (text.length >= 3) {
       // encodeURIComponent throws on a lone surrogate, which an answer may
@@ -238,6 +278,23 @@ export class Guard {
     }
     for (const run of word.match(/\d+(?:\.\d+)*/g) ?? []) {
       if (this.#blockedNumbers.has(run)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Only what Guard.block added: the values that could identify the
+  // instance or the local machine, not those of the answers.
+  #isBlockedStrictly(word: string): boolean {
+    const lower = word.toLowerCase();
+    for (const blocked of this.#strictText) {
+      if (containsWord(lower, blocked)) {
+        return true;
+      }
+    }
+    for (const run of word.match(/\d+(?:\.\d+)*/g) ?? []) {
+      if (this.#strictNumbers.has(run)) {
         return true;
       }
     }

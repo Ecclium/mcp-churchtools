@@ -16,6 +16,10 @@
  * reads of that guard only, and an opaque handle. Only that guard turns
  * the handle into a client that reaches the paths with personal data.
  *
+ * A probe that reads the public help pages of ChurchTools also gets a
+ * client for the academy. It is a client of its own, without a token, so
+ * no way leads from the token to the academy (ADR 0027).
+ *
  * @packageDocumentation
  */
 import { homedir, userInfo } from 'node:os';
@@ -23,6 +27,7 @@ import { dirname } from 'node:path';
 import { createInterface } from 'node:readline';
 import { domainToUnicode, fileURLToPath } from 'node:url';
 
+import { createAcademyClient, type AcademyClient } from './academy.mts';
 import {
   checkNewState,
   checkNodeEnvironment,
@@ -83,6 +88,8 @@ export interface ProbeContext {
   readonly write: WriteSetup | undefined;
   /** For a probe that reads personal data: the handle for its guard. */
   readonly persons: PersonsSetup | undefined;
+  /** For a probe that reads the help pages: the client for the academy. */
+  readonly academy: AcademyClient | undefined;
   /** Waits, for example between two writes. Replaceable in tests. */
   readonly wait: (milliseconds: number) => Promise<void>;
 }
@@ -108,6 +115,8 @@ export interface ProbeDefinition {
   readonly account?: 'read' | 'write';
   /** Set for the probes that read persons, groups, search and the domains. */
   readonly personalData?: true;
+  /** Set for the probe that also reads the public help pages. */
+  readonly academy?: true;
   readonly run: (context: ProbeContext) => Promise<Json>;
 }
 
@@ -266,6 +275,16 @@ export async function runProbe(
             ),
             settings,
           };
+    const wait =
+      dependencies.wait ??
+      ((milliseconds: number) =>
+        new Promise<void>((resolve) => {
+          setTimeout(resolve, milliseconds);
+        }));
+    const academy =
+      definition.academy === true
+        ? createAcademyClient({ fetch: dependencies.fetch, wait })
+        : undefined;
     const output = await definition.run({
       origin,
       client,
@@ -275,12 +294,8 @@ export async function runProbe(
       state,
       write,
       persons,
-      wait:
-        dependencies.wait ??
-        ((milliseconds) =>
-          new Promise((resolve) => {
-            setTimeout(resolve, milliseconds);
-          })),
+      academy,
+      wait,
     });
     return writeResult(output, guard, io);
   } catch (error) {
