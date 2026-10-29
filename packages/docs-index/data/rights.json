@@ -1,0 +1,5 @@
+{
+  "format": "ecclium.docs.rights.v1",
+  "notice": "Fakten zu den Rechten von ChurchTools: Modul, Name und Art jedes Rechts aus der Antwort von GET /api/permissions/global, ohne die Werte einer Instanz. Bezeichnungen stammen aus Hilfeseiten der ChurchTools Academy, je mit dem Pfad ihrer Seite. Für sie gilt, was in academy.json steht.",
+  "entries": []
+}

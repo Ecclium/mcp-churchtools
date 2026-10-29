@@ -30,6 +30,12 @@ export {
   personsAtHighestLevel,
 } from './fixtures/highest-level.js';
 export {
+  syntheticFactFiles,
+  syntheticFacts,
+  syntheticRightsPage,
+  syntheticThingsPage,
+} from './fixtures/docs-facts.js';
+export {
   type AppointmentDateFixture,
   type AppointmentDetailsFixture,
   appointmentAnswer,

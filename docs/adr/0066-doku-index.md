@@ -1,0 +1,89 @@
+# ADR 0066: Doku-Index: Fakten, Bau und Suche, Toolset `docs`
+
+- Status: Vorgeschlagen
+- Datum: 29.10.2026
+- Fällt vor: Phase 3
+
+## Kontext
+
+[ADR 0027](0027-inhalte-des-doku-index.md) legt fest, was in den Index der Dokumentation kommt: Fakten aus dem OpenAPI-Dokument, Fakten zu den Rechten und der aufbereitete Text frei zugänglicher Hilfeseiten der Academy, nie eine Rohquelle. Offen ist, in welcher Form diese Inhalte im Repository liegen, wie daraus der Index entsteht, wie der Server darin sucht und welche Prüfungen verhindern, dass etwas hineinkommt, das nicht hineingehört. Die Befunde in [`churchtools-docs.md`](../research/churchtools-docs.md) zeigen, womit zu rechnen ist:
+
+- Jede der 851 Operationen an ChurchTools 3.138 trägt eine eigene `operationId`. 5 tragen die Erweiterung `x-internal`, 12 sind veraltet (D3).
+- Ohne Leerzeichen ist das Dokument 11,7 MiB gross, die Schemas allein 4,7 MiB (D7). Der Text der Hilfeseiten aus ADR 0027 liegt bei rund 500 KiB (D11). Der Index soll im Paket unter 5 MB bleiben.
+- Das Dokument nennt als Version 0.1.0, die Instanz meldet 3.138 (D2).
+- Beispiele und Vorgaben im Dokument nennen Hosts, einer davon unter `church.tools`, Beschreibungen nennen andere Hosts (D6). Hilfeseiten verlinken auf Instanzen unter `church.tools` und nennen solche Hosts auch im Text (D14).
+- Die Rechtedefinitionen verlangen laut Dokument `administer persons` und enthalten laut Dokument Werte der Instanz, das Dienstkonto bekam 403 (D8). `GET /api/permissions/global` nennt dagegen die Rechte, die die Instanz dem Konto zeigt, mit Modul, Namen und Art des Werts, auch solche ohne Wert (F30 in [`churchtools-api.md`](../research/churchtools-api.md)), aber ohne Bezeichnung. Am 29.10.2026 hat der Maintainer entschieden, dass das Dienstkonto kein weiteres Recht bekommt (ADR 0027, Umsetzung).
+- Gebaut wird das Repository mit `tsc -b`. Tests laufen immer aus dem Quelltext, nie gegen einen früheren Bau ([ADR 0022](0022-paketzuschnitt.md)). Skripte unter `scripts/` nutzen nur, was Node.js mitbringt ([ADR 0020](0020-werkzeugkette.md)).
+- Für die Suche war MiniSearch 7.2.0 vorgesehen: MIT, ohne Abhängigkeiten und seit über einem Jahr veröffentlicht. Keine seiner Versionen trägt aber einen Herkunftsnachweis oder stammt von einem vertrauenswürdigen Herausgeber (Registry von npm, abgefragt am 29.10.2026), und `lockfile-provenance` würde den Pull Request rot melden ([ADR 0050](0050-token-der-mise-action.md), Entscheid aus ADR 0021).
+- Code der Pakete hält keinen Zustand auf Modulebene, und Zustand zwischen Anfragen gibt es nur in benannten Ports und zwei benannten Ausnahmen ([ADR 0051](0051-zustand-zwischen-anfragen.md)).
+
+## Optionen
+
+Suche:
+
+1. **MiniSearch:** bewährt, mit Suche nach dem Anfang eines Worts und mit Unschärfe. Eine Abhängigkeit zur Laufzeit im Produktpaket ohne Herkunftsnachweis, und die Form der Serialisierung gehört der Bibliothek.
+2. **Eigene kleine Suche:** einige hundert Zeilen mit Tests, ohne Abhängigkeit, Serialisierung und Reproduzierbarkeit ganz in eigener Hand. Weniger Funktionen, und ihre Fehler sind die eigenen.
+
+Index:
+
+1. **Im Repository:** Jede Änderung der Fakten zieht eine grosse erzeugte Datei mit, die keine Durchsicht ernsthaft liest.
+2. **Beim Start aus den Fakten:** nichts Erzeugtes, aber jeder Start baut neu, und die Grenze für das Paket misst nicht, was ausgeliefert wird.
+3. **Beim Bau aus den Fakten:** Der Bau erzeugt eine Datei, die nicht im Repository liegt und reproduzierbar sein muss.
+
+## Entscheid
+
+Gewählt sind die eigene Suche, entschieden vom Maintainer am 29.10.2026, und der Bau des Index beim Bau des Repositorys.
+
+- **Fakten:** Drei Dateien unter `packages/docs-index/data/`, `operations.json`, `rights.json` und `academy.json`, dazu `SOURCES.json`. Schreiben soll sie `pnpm docs:refresh` aus den Quellen, nie eine Person. Jede der drei Dateien mit Fakten hat einen Kopf mit ihrem Format (`ecclium.docs.operations.v1` und so weiter) und einem Hinweis (`notice`) auf ihre Quelle und deren Bedingungen nach ADR 0027, dann höchstens 5'000 Einträge, sortiert nach ihrem Schlüssel. `SOURCES.json` trägt ihr Format und die Quellen. Alle vier liegen in kanonischer Form: JSON mit zwei Leerzeichen Einzug, die Felder in der Reihenfolge des Formats, ein Zeilenende am Schluss. Prettier fasst sie nicht an. Ein unbekanntes Feld ist ein Fehler. Kein Text enthält Steuerzeichen oder Zeichen, die man nicht sieht, etwa ein weiches Trennzeichen, ein Leerzeichen ohne Breite, einen Wechsel der Schreibrichtung oder ein TAG-Zeichen. Zeilenumbruch und Tabulator bleiben in Texten mit mehreren Zeilen. Keine Datei ist tiefer als 40 Ebenen verschachtelt.
+  - **Operation**, Schlüssel `operationId`, höchstens 128 Zeichen: Methode, Pfad, Tags, Kurzbeschreibung, Beschreibung, ob sie veraltet ist, Parameter mit Name, Ort, Pflicht, Schema und Beschreibung, Anfrage und Antworten mit Medientyp und Schema. Ein Schema reicht höchstens vier Schritte tief. Ein Schritt geht über `properties`, `items`, `additionalProperties`, `anyOf`, `oneOf` oder `allOf`, tiefer steht nur der Name des Schemas. Nie `servers`, `example`, `examples` oder `default`, weil sie Hosts und Werte tragen (D6). Operationen mit `x-internal` kommen nicht hinein: Sie sind nicht für Clients gedacht, und der generische Lesezugriff soll sie nicht erreichen. Veraltete kommen hinein, mit Vermerk. Alle übrigen kommen hinein, auch solche, die der generische Lesezugriff ausschliessen wird: Nachschlagen liest nichts aus ChurchTools.
+  - **Recht**, Schlüssel Modul (höchstens 32 Zeichen) und Name (höchstens 64): die Art des Werts, `boolean` oder `list`, aus `GET /api/permissions/global`, dazu wahlweise eine Bezeichnung mit dem Pfad der Hilfeseite, aus der sie stammt, und die Pfade der Hilfeseiten, die das Recht erklären. Nie ein Wert einer Instanz. Welche Operation welches Recht verlangt, steht nicht in diesem Format.
+  - **Hilfeseite**, Schlüssel ihr Pfad auf der Academy (`/de/…`): Titel, Abschnitt, Wissensbasis, Tag der letzten Änderung und Text. Der Text ist Markdown in beschränkter Form: Überschriften, Absätze, Listen, Tabellen und Code, ohne HTML. Ein Link steht nur in der Form `[Text](/de/…)` und zeigt auf einen Pfad der Academy. Definitionen von Links für spätere Verweise und Links in spitzen Klammern stehen nicht darin. Kein Text der Fakten enthält ein Bild.
+  - **`SOURCES.json`** nennt je Quelle die Abrufzeit in UTC und den SHA-256 der Rohquelle, beim OpenAPI-Dokument die Version des Dokuments und die der Instanz (D2), bei den Rechten die Version der Instanz und bei der Academy jede Seite mit Pfad und eigenem SHA-256. Einen Host nennt sie nicht. Eine Datei mit Einträgen braucht ihre Quelle, eine Quelle ihre Datei, die Seiten der Academy in `SOURCES.json` sind genau die Seiten in `academy.json`, und jeder Pfad der Academy in `rights.json` steht in `academy.json`.
+- **Bau:** `pnpm build` ruft nach `tsc -b` den Einstieg `packages/docs-index/dist/build/main.js` auf. Er liest die Fakten, prüft sie und schreibt eine einzige Datei `packages/docs-index/dist/docs-index.json` mit Quellen, Fakten und je einem Suchindex für Operationen, Rechte und Hilfeseiten. Ihr Inhalt ist sortiert und enthält keinen Zeitstempel des Baus und keine Zahl mit Nachkommastellen, damit Zeit, Zeitzone und Sprache des Rechners ihn nicht ändern. Bevor der Bau sie schreibt, prüft er sie mit denselben Regeln wie das Laden. Sie liegt nicht im Repository. Der Einstieg liegt im Paket und nicht unter `scripts/`, weil Skripte keine Pakete laden, und er schreibt nichts nach stdout.
+- **Reproduzierbar:** `pnpm ci:check` baut nach `pnpm build` mit `scripts/ci/check-docs-index-build.mts` ein zweites Mal, in einem eigenen Prozess mit anderer Zeitzone und Sprache, und verlangt denselben SHA-256.
+- **Grenzen, in Bytes:** die gebaute Datei höchstens 5'000'000, `operations.json` 2'500'000, `academy.json` 1'000'000, `rights.json` und `SOURCES.json` je 200'000. Darüber bricht der Bau ab. Reicht das nicht, ist der erste Hebel die Tiefe der Schemas, erst danach eine Grenze.
+- **Suche:** Je Quelle ein invertierter Index über Felder mit Gewicht:
+  - Operationen: `operationId` (4), Pfad (3), Kurzbeschreibung (3), Tags (2), Namen der Parameter (1), Beschreibung (1).
+  - Rechte: Name (4), Bezeichnung (4), Modul (2).
+  - Hilfeseiten: Titel (4), Abschnitt (2), Text (1).
+
+  Ein Wort entsteht nach NFKC in Kleinbuchstaben, ohne diakritische Zeichen, also «ä» wie «a», und mit «ss» für «ß». Wörter trennt alles, was weder Buchstabe noch Ziffer ist, und ein Grossbuchstabe nach einem Kleinbuchstaben, damit `getGroupsGroupIdMembers` zu «groups» und «members» führt. Wörter unter zwei Zeichen und eine kurze Liste von Füllwörtern zählen nicht, längere als 40 Zeichen werden gekürzt.
+
+  Ein Suchwort trifft ein Wort des Index ganz oder als dessen Anfang. Ab vier Zeichen trifft es auch einen Teil, etwa «mitglieder» in «gruppenmitglieder», ab fünf Zeichen auch ein Wort mit einem Tippfehler, also einem Zeichen mehr, weniger oder anders oder zwei vertauschten Nachbarn. Ein Anfang zählt weniger als ein ganzes Wort, ein Teil und ein Tippfehler weniger als ein Anfang.
+
+  Bewertet wird nach BM25, die mittlere Länge eines Felds nur über die Einträge, die es haben. Alle Wörter, die ein Suchwort trifft, teilen eine Seltenheit, gerechnet über die Einträge, die eines davon enthalten, damit ein seltenes längeres Wort nicht vor dem Suchwort selbst steht. Je Suchwort zählt nur sein bestes Wort. Ein Eintrag muss nur ein Suchwort treffen, seine Bewertung wächst mit dem Anteil der Suchwörter, die er trifft, und bei gleicher Bewertung entscheidet der Schlüssel. Eine Suche liest höchstens 1'000 Zeichen und 20 Wörter und gibt höchstens 100 Treffer. Der Index speichert nur ganze Zahlen, die Mittelwerte für BM25 rechnet das Laden.
+
+- **Laden:** `readDocsIndex()` liest die gebaute Datei, prüft sie mit zod und mit allen Regeln für die Fakten, prüft die Suchindexe gegen die Fakten und gibt ein eingefrorenes Objekt. Die Wurzel der Komposition ruft es einmal je Prozess auf und gibt das Ergebnis den Tools. Diese Daten sind unveränderlich, gleich für jeden Mandanten und ohne Bezug zu einer Anfrage. Sie sind deshalb kein Zustand zwischen Anfragen nach ADR 0051, so wenig wie der Code selbst. Auf Modulebene liegt nichts.
+- **Ergebnis:** Jeder Treffer und jeder Abruf nennt die Quelle, den Titel oder die `operationId`, den Link oder Pfad und das Abrufdatum (ADR 0027). Beim OpenAPI-Dokument ist das der Pfad `/system/runtime/swagger/openapi.json` auf der eigenen Instanz, mit beiden Versionen, CC BY 4.0 und dem Hinweis, dass Ecclium das Dokument aufbereitet hat. Bei einem Recht ist es der Pfad `/api/permissions/global` mit der Version der Instanz, für die Bezeichnung und jede erklärende Seite die Hilfeseite. Bei der Academy ist es der Link auf ihren Host. `docs-index` gibt nur Daten. Die Tools geben Namen von Operationen und Rechten mit der Datenklasse `none` aus und Texte mit `untrusted` im Datenumschlag (ADR 0024, ADR 0026, ADR 0027). Auch der Titel einer Hilfeseite ist fremder Text.
+- **Prüfungen,** in `pnpm check`, der zweite Bau in `pnpm ci:check`, je mit Gegenprobe, über die echten Dateien und über synthetische Fakten aus `testkit`:
+  - Format: Form, Längen, Zeichen, Tiefe, Reihenfolge, kanonische Schreibweise und die Bezüge zwischen den Dateien.
+  - Grösse: jede Datei unter ihrer Grenze, ebenso ein Bau im Speicher, damit kein Test vom Bau abhängt.
+  - Reproduzierbar: dieselben Fakten ergeben dieselben Bytes, auch zu einer anderen Zeit und in einer anderen Zeitzone. Eine andere Reihenfolge der Einträge weist schon das Format ab.
+  - Hosts: In Fakten, Index und `SOURCES.json` stehen als Host nur der Platzhalter `example.church.tools` und `churchtools.academy`, wie ADR 0027 es verlangt. Die Prüfung findet URLs mit Schema, auch Web-Links mit weniger Schrägstrichen wie `https:host` und mit umgekehrten Schrägstrichen, Ziele mit `//`, Hosts in eckigen Klammern, IPv4-Adressen, E-Mail-Adressen, jeden Namen unter `church.tools`, Namen mit `www.` und Namen mit den Endungen `academy`, `at`, `ch`, `church`, `com`, `de`, `eu`, `io`, `li`, `net`, `org` und `tools`. Vorher macht sie aus Punkten in voller Breite und ideografischen Punkten gewöhnliche Punkte und liest einen in Markdown geschützten Punkt als Punkt. E-Mail-Adressen sind nur mit dem Platzhalter `example.org` erlaubt. Jede Endung prüft sie nicht, weil sonst Pfade von Feldern wie `group.name` als Host gälten.
+  - Rohquellen: kein OpenAPI-Dokument im Baum, keine HTML-Seite und keine Antwort der Schnittstelle von WordPress mit einer Seite ausserhalb des Markenpakets unter `brand/`, das Vorlagen in HTML enthält, und kein HTML in einem Text der Fakten oder der gebauten Datei.
+  - Namensnennung: jede Hilfeseite mit Titel und Pfad, jeder Treffer und jeder Abruf mit den Angaben oben.
+  - Eine Meldung nennt Datei, Eintrag und Feld, nie einen Wert und nie einen Schlüssel aus der Datei, damit ein Fund nicht im öffentlichen Log von CI steht.
+- **Ort:** `docsFiles` sind die einzigen Module in `docs-index`, die `node:fs` laden: das Laden der gebauten Datei und das Lesen und Schreiben beim Bau. Eine Regel von dependency-cruiser hält das, Tests sind ausgenommen (ADR 0022). Den Ordner der Fakten legt der Bau fest, und ein Test lässt darin nur die vier Dateien und ein README zu.
+- **Toolset `docs`:** Die Doku-Tools bilden das Toolset `docs`. Es gehört zu `all`, voreingestellt ist es nicht. Sobald dieses ADR angenommen ist, gilt der Satz aus [ADR 0062](0062-toolsets.md) «`docs` und `api` gehören zu keinem Toolset, bis ein ADR sie zuordnet, und der Server bietet ihre Tools bis dahin nicht an» für `docs` nicht mehr. Für `api` gilt er weiter, bis das ADR zum generischen Lesezugriff entscheidet. Eingebaut wird `docs` mit den Doku-Tools.
+
+## Konsequenzen
+
+- Keine neue Abhängigkeit zur Laufzeit. Die Suche ist eigener Code mit eigenen Tests. Sie kennt keine Stammformen und keine Synonyme: «mitglied» findet «Gruppenmitglieder» über den Wortteil, «Teilnehmer» findet es nicht.
+- Der Index liegt im gebauten Paket, nicht im Repository. Wer den Quellcode ohne Bau startet, hat keinen Index. Sobald das Produktpaket gebündelt wird, braucht der Bau einen Schritt, der die Datei mitnimmt (ADR 0022).
+- Reproduzierbar ist der Bau für eine Version von Node.js. NFKC und die Klassen der Buchstaben hängen an den Daten von Unicode, die eine andere Version anders kennen kann. Der zweite Bau in CI läuft mit derselben Version wie der erste.
+- Die Prüfung der Hosts ist eine Heuristik. Ein Name mit einer Endung ausserhalb der Liste, ohne Schema und ohne `www.`, etwa unter `.app` oder `.info`, fällt ihr nicht auf. Hosts unter `church.tools`, die auf eine Gemeinde zeigen können, findet sie, wenn der Name in einem Stück steht, und gitleaks prüft sie zusätzlich ([ADR 0014](0014-oeffentlich-ab-dem-ersten-commit.md)). Ein Name, der mit anderen Zeichen getrennt ist, etwa mit `[.]` oder mit Hervorhebungen in Markdown, fällt ihr nicht auf.
+- Die Prüfung auf Rohquellen erkennt ein OpenAPI-Dokument und eine HTML-Seite an ihrer Form. Ein umgeschriebenes Dokument sieht sie nicht, dagegen hilft nur die Durchsicht jeder Änderung an `data/`. Das gepackte Produktpaket prüft erst der Release, wenn es gebündelt wird.
+- Ohne die Rechtedefinitionen tragen die Fakten zu den Rechten keine Bezeichnung aus ChurchTools selbst. Wo keine Hilfeseite ein Recht benennt, bleibt nur sein Name.
+- Das Format ist v1. Solange dieses ADR vorgeschlagen ist, darf es sich mit den echten Daten noch ändern.
+
+## Umsetzung
+
+Seit dem 29.10.2026 gebaut, mit leeren Fakten unter `data/` und synthetischen Fakten für die Tests:
+
+- **Fakten:** `packages/docs-index/src/facts.ts` mit den Formaten in zod, den Grenzen je Datei, der kanonischen Form und `parseFactFiles`, das jede Regel prüft und die Funde als `DocsFactsError` mit Datei, Feld und Regel meldet. `hosts.ts` prüft die Hosts, `raw-sources.ts` erkennt ein OpenAPI-Dokument, eine HTML-Seite und HTML in einem Text. [`packages/docs-index/data/README.md`](../../packages/docs-index/data/README.md) beschreibt die Dateien. Prettier lässt sie aus (`.prettierignore`).
+- **Suche:** `src/search/words.ts` macht aus einem Text die Wörter, `build.ts` den gespeicherten Index, `query.ts` prüft ihn und sucht.
+- **Bau und Laden:** `src/artifact.ts` baut die Datei und prüft sie beim Bau und beim Laden gleich streng, mit `DocsIndexError` ohne Werte. `src/build/files.ts` liest die Fakten und schreibt die Datei, `src/build/main.ts` ist der Einstieg in `pnpm build`, `src/load.ts` liest die gebaute Datei. `src/docs-index.ts` gibt Suche und Abruf mit Namensnennung.
+- **Reproduzierbar:** `scripts/ci/check-docs-index-build.mts` in `pnpm ci:check` baut ein zweites Mal mit der Zeitzone `Pacific/Kiritimati` und einer türkischen Sprache und vergleicht den SHA-256.
+- **Architektur:** der Ort `docsFiles` in `tests/architecture/boundaries.json` mit der Regel `docs-files-only-in-place`, `tests/docs-raw-sources.test.mts` über jede Datei, die Git kennt.
+- **Tests:** Die synthetischen Fakten in `packages/testkit/src/fixtures/docs-facts.ts` beschreiben nichts, was es gibt. Jede Prüfung hat einen Fall, der sie bricht, und die Tests unter `packages/docs-index/src/` zeigen auch, dass eine Frage nach den Mitgliedern eines Dings das passende Recht mit seiner Bezeichnung und Hilfeseite findet.
+- **Noch nicht gebaut:** `pnpm docs:refresh`, das die Fakten schreibt, die Schemas kürzt und Hosts, Bilder, HTML und unsichtbare Zeichen aus den Texten entfernt oder Hosts durch den Platzhalter ersetzt, denn die Prüfungen weisen nur ab. Ebenso die Doku-Tools und das Toolset `docs`.
