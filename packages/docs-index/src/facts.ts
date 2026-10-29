@@ -14,6 +14,9 @@
  */
 import { z } from 'zod';
 
+import { findHostsIn, walkStrings } from './hosts.js';
+import { hasHtmlTag } from './raw-sources.js';
+
 /** The names of the files under `data/`, by their role. */
 export const factFiles = Object.freeze({
   sources: 'SOURCES.json',
@@ -316,7 +319,10 @@ export type FactRule =
   | 'order'
   | 'depth'
   | 'source'
-  | 'reference';
+  | 'reference'
+  | 'host'
+  | 'html'
+  | 'link';
 
 /** One finding: where it is and which rule it breaks, never the value. */
 export interface FactViolation {
@@ -401,9 +407,12 @@ export function canonicalJson(value: unknown): string {
  * Checks every file under `data/` and returns the facts. Each file must
  * stay under its limit, parse as JSON, match its format, stand in
  * canonical form, keep its entries and lists sorted without duplicates
- * and keep every schema within {@link maxShapeDepth}. A file with entries
- * needs its source in `SOURCES.json` and the other way round, and every
- * page a right names must be a help page of `academy.json`.
+ * and keep every schema within {@link maxShapeDepth}. No string may name
+ * a host other than the two of ADR 0027 or hold markup of HTML, and a
+ * link in the text of a help page leads only to another help page. A
+ * file with entries needs its source in `SOURCES.json` and the other way
+ * round, and every page a right names must be a help page of
+ * `academy.json`.
  *
  * @param texts - The text of each file.
  * @returns The checked facts.
@@ -447,6 +456,7 @@ export function parseFactFiles(texts: FactFileTexts): Facts {
       'entries',
       violations,
     );
+    checkAcademyLinks(academy.entries, violations);
   }
   if (
     sources !== undefined &&
@@ -705,7 +715,39 @@ function parseFile<T>(
   if (canonicalJson(parsed.data) !== raw) {
     violations.push({ file, path: '', rule: 'canonical' });
   }
+  for (const { path } of findHostsIn(parsed.data)) {
+    violations.push({ file, path, rule: 'host' });
+  }
+  walkStrings(parsed.data, (path, text) => {
+    if (hasHtmlTag(text)) {
+      violations.push({ file, path, rule: 'html' });
+    }
+  });
   return parsed.data;
+}
+
+// A link in the text of a help page leads only to another help page, as a
+// path; an image never stays (ADR 0027). Bounded, so linear in time.
+const markdownLink = /(!?)\[[^\]\n]{0,500}\]\(([^)\s]{0,500})/g;
+const academyLinkTarget =
+  /^\/de\/(?:[a-z0-9%_-]+\/)*(?:[a-z0-9%_-]+\/?)?(?:#[a-z0-9_-]{1,100})?$/;
+
+function checkAcademyLinks(
+  pages: readonly AcademyPage[],
+  violations: FactViolation[],
+): void {
+  pages.forEach((page, index) => {
+    for (const match of page.text.matchAll(markdownLink)) {
+      if (match[1] === '!' || !academyLinkTarget.test(match[2] ?? '')) {
+        violations.push({
+          file: 'academy.json',
+          path: `entries[${String(index)}].text`,
+          rule: 'link',
+        });
+        return;
+      }
+    }
+  });
 }
 
 // The path of an issue holds only names of the format and indices: an

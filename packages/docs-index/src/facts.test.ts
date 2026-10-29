@@ -412,6 +412,69 @@ describe('parseFactFiles', () => {
   });
 });
 
+describe('parseFactFiles on foreign content', () => {
+  // A host under church.tools other than the placeholder is built at run
+  // time, because gitleaks refuses one written out in the repository.
+  const hosted = (label: string): string =>
+    [label, 'church', 'tools'].join('.');
+
+  function withPageText(text: string): FactFileTexts {
+    return changed((facts) => {
+      const page = facts.academy.entries[0];
+      if (page !== undefined) {
+        page.text = text;
+      }
+    });
+  }
+
+  it('rejects a foreign host without naming it', () => {
+    const texts = changed((facts) => {
+      firstOperation(facts).description = `See https://${hosted('gemeinde')}/`;
+    });
+    expect(violationsOf(texts)).toEqual([
+      { file: 'operations.json', path: 'entries[1].description', rule: 'host' },
+    ]);
+    expect(() => parseFactFiles(texts)).not.toThrow('gemeinde');
+  });
+
+  it('rejects a host in the notice of a file', () => {
+    const texts = changed((facts) => {
+      facts.rights.notice = 'Mehr unter www.vendor.example';
+    });
+    expect(violationsOf(texts)).toEqual([
+      { file: 'rights.json', path: 'notice', rule: 'host' },
+    ]);
+  });
+
+  it('rejects markup of HTML in a text', () => {
+    expect(violationsOf(withPageText('Ein <b>fetter</b> Text'))).toEqual([
+      { file: 'academy.json', path: 'entries[0].text', rule: 'html' },
+    ]);
+  });
+
+  it.each([
+    [
+      'a link with the host of the Academy',
+      '[x](https://churchtools.academy/de/help/)',
+    ],
+    ['a relative link', '[x](../gruppen/)'],
+    ['a link to an e-mail address', '[x](mailto:max.mustermann@example.org)'],
+    ['an image', '![Bild](/de/help/bild/)'],
+  ])('rejects %s in the text of a page', (_name, text) => {
+    expect(violationsOf(withPageText(text))).toEqual([
+      { file: 'academy.json', path: 'entries[0].text', rule: 'link' },
+    ]);
+  });
+
+  it.each([
+    ['a path', '[x](/de/help/gruppen/)'],
+    ['a path with an anchor', '[x](/de/help/gruppen/#rechte)'],
+    ['a path without slash at the end', '[x](/de/help/gruppen)'],
+  ])('accepts a link with %s', (_name, text) => {
+    expect(violationsOf(withPageText(text))).toEqual([]);
+  });
+});
+
 describe('shapeDepth', () => {
   it('counts every kind of step', () => {
     expect(shapeDepth({ type: ['string'] })).toBe(0);

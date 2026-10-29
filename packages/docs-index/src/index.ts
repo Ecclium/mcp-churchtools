@@ -41,3 +41,20 @@ export {
   shapeTypes,
   type Sources,
 } from './facts.js';
+export {
+  academyHost,
+  academyOrigin,
+  allowedHosts,
+  allowedMailDomain,
+  checkedEndings,
+  findForeignHosts,
+  findHostsIn,
+  type HostFinding,
+  type HostKind,
+  walkStrings,
+} from './hosts.js';
+export {
+  hasHtmlTag,
+  looksLikeHtmlPage,
+  looksLikeOpenApiDocument,
+} from './raw-sources.js';
