@@ -12,7 +12,7 @@
  *
  * @packageDocumentation
  */
-import { writeFileSync } from 'node:fs';
+import { renameSync, rmSync, writeFileSync } from 'node:fs';
 
 import { SpikeError } from '../../spike/lib/errors.mts';
 import { isObject, type OpenApiDocument } from '../../spike/lib/spec.mts';
@@ -211,14 +211,37 @@ export function factFileTexts(facts: RefreshedFacts): FactTexts {
 }
 
 /**
- * Writes the four files into a folder, all after all were made.
+ * Writes the four files into a folder: first each into a new file of its
+ * own next to it, flushed to the disk, and only when all four stand, each
+ * in place of the old one. A failure while writing leaves the old files
+ * as they were, so that no file holds new facts with the sources of old
+ * ones, or the other way round.
  *
  * @param texts - The text of each file.
  * @param dataDir - The folder, ending in `/`.
- * @throws {Error} If a file cannot be written.
+ * @throws {Error} If a file cannot be written; the new files are removed then.
  */
 export function writeFactFiles(texts: FactTexts, dataDir: URL): void {
-  for (const [name, text] of Object.entries(texts)) {
-    writeFileSync(new URL(name, dataDir), text, 'utf8');
+  const pending = Object.entries(texts).map(([name, text]) => ({
+    text,
+    target: new URL(name, dataDir),
+    temporary: new URL(`.${name}.refresh`, dataDir),
+  }));
+  try {
+    for (const file of pending) {
+      writeFileSync(file.temporary, file.text, { flag: 'wx', flush: true });
+    }
+  } catch (error) {
+    for (const file of pending) {
+      try {
+        rmSync(file.temporary, { force: true });
+      } catch {
+        // Not a file of this run, such as a folder in its place: it stays.
+      }
+    }
+    throw error;
+  }
+  for (const file of pending) {
+    renameSync(file.temporary, file.target);
   }
 }

@@ -260,6 +260,8 @@ export const hints = {
     'Abbruch: Eine Quelle hat eine Form, die pnpm docs:refresh nicht in Fakten übersetzen kann. Die Stelle steht darüber. Es wurde keine Datei geschrieben.',
   stateOhneVersion:
     'Abbruch: Die State-Datei nennt keine Version von ChurchTools. Führen Sie 00-inventory erneut aus.',
+  stateVeraltet:
+    'Abbruch: Die Instanz meldet eine andere Version von ChurchTools als die State-Datei. Führen Sie 00-inventory erneut aus. Es wurde keine Datei geschrieben.',
   academyNichtLesbar:
     'Abbruch: robots.txt der Academy ist nicht lesbar, verbietet einen Pfad des Refresh oder verlangt eine zu lange Pause. Es wurde keine Datei geschrieben.',
 } as const;

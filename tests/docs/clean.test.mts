@@ -370,3 +370,103 @@ describe('cleaning of the forms the first review found', () => {
     ).toBe('diesen Artikel');
   });
 });
+
+describe('cleaning of the forms the review of security found', () => {
+  it('removes a name under church.tools with letters outside ASCII as a whole', () => {
+    for (const label of [
+      'demo-ten' + char(0xe4) + 'nt',
+      'demo-tena' + char(0x301) + 'nt',
+      'my_demo-tenant',
+    ]) {
+      const text = cleanLine(`Instanz ${hosted(label)} hier`, 'de') ?? '';
+      expect(text).toBe('Instanz example.church.tools hier');
+      expect(findForeignHosts(text)).toEqual([]);
+    }
+    expect(
+      cleanLine(
+        `max.m${char(0xfc)}ller@${['demo-tenant', 'de'].join('.')} schreiben`,
+        'de',
+      ),
+    ).toBe('(E-Mail-Adresse entfernt) schreiben');
+  });
+
+  it('cleans a host after an ellipsis and with many labels', () => {
+    expect(
+      cleanLine(`Beispiel${char(0x2026)}${hosted('demo-tenant')}`, 'de'),
+    ).toBe('Beispiel...example.church.tools');
+    const long = `${Array.from({ length: 12 }, (_, index) => `l${String(index)}`).join('.')}.church.tools`;
+    expect(findForeignHosts(cleanLine(long, 'de') ?? '')).toEqual([]);
+    expect(cleanLine('1https://evil.example.app/x', 'en')).toBe(
+      '1(link removed)',
+    );
+  });
+
+  it('removes characters Unicode lets a renderer ignore', () => {
+    const hidden = [0xe0100, 0xfe0f, 0x34f, 0x3164, 0x180b].map(char).join('');
+    expect(normalizeText(`a${hidden}b`)).toBe('ab');
+  });
+
+  it('keeps a character reference as text', () => {
+    const text = htmlToMarkdown(
+      '<p>demo-tenant&amp;#46;church&amp;#46;tools und &amp;amp;</p>',
+      page,
+    );
+    expect(text).toBe('demo-tenant&amp;#46;church&amp;#46;tools und &amp;amp;');
+    expect(text).not.toMatch(/&#/);
+  });
+
+  it('keeps an address split over elements whole, so that it leaves whole', () => {
+    expect(
+      htmlToMarkdown('<p>max.mustermann@<b>demo-tenant.de</b></p>', page),
+    ).toBe('(E-Mail-Adresse entfernt)');
+  });
+
+  it('keeps a URL of the Academy only as the link to a German help page', () => {
+    expect(cleanLine('https://churchtools.academy/de/help/wiki/', 'de')).toBe(
+      'https://churchtools.academy/de/help/wiki/',
+    );
+    for (const url of [
+      'https://churchtools.academy/en/blog/x',
+      'https://churchtools.academy/wp-admin/',
+      'https://churchtools.academy/de/?p=1',
+    ]) {
+      expect(cleanLine(`siehe ${url}`, 'de')).toBe('siehe (Link entfernt)');
+    }
+    expect(
+      cleanBlock(
+        '[docs][a\\]b]\n[a\\]b]: https://churchtools.academy/de/x/',
+        'en',
+      ),
+    ).not.toMatch(/^\[a\\\]b\]:/m);
+  });
+
+  it('drops what a browser hides', () => {
+    expect(
+      htmlToMarkdown(
+        '<p>Sichtbar</p><div hidden>Versteckt</div><p aria-hidden="true">Auch</p><span style="display: none">Nein</span><p style="visibility:hidden">Nie</p>',
+        page,
+      ),
+    ).toBe('Sichtbar');
+  });
+
+  it('finds the end of a script only at its own end tag, also after a dotted capital I', () => {
+    expect(
+      htmlToMarkdown('<script>x</scriptfoo>Geheim</script><p>Text</p>', page),
+    ).toBe('Text');
+    const dotted = char(0x130).repeat(30);
+    expect(
+      htmlToMarkdown(
+        `${dotted}<script>${'A'.repeat(40)}>Geheim</script><p>Text</p>`,
+        page,
+      ),
+    ).toBe(`${dotted}\n\nText`);
+  });
+
+  it('stays linear for many raw text elements and deep nesting', () => {
+    const started = Date.now();
+    htmlToMarkdown('<title></title>'.repeat(40_000), page);
+    htmlToMarkdown(`${'<span>'.repeat(5000)}x${'</q>'.repeat(5000)}`, page);
+    htmlToMarkdown(`${'<div>'.repeat(5000)}tief${'</div>'.repeat(5000)}`, page);
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+});

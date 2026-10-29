@@ -175,6 +175,9 @@ describe('parseFactFiles', () => {
     ['a TAG character', 'Grup\u{E0041}pen'],
     ['a character for private use', 'Grup\uE000pen'],
     ['a lone surrogate', 'Grup\uD800pen'],
+    ['a variation selector', `Grup${String.fromCodePoint(0xe0100)}pen`],
+    ['a grapheme joiner', `Grup${String.fromCodePoint(0x34f)}pen`],
+    ['a filler of Hangul', `Grup${String.fromCodePoint(0x3164)}pen`],
   ])('rejects %s in a text', (_name, description) => {
     const texts = changed((facts) => {
       firstOperation(facts).description = description;

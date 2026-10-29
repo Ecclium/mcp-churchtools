@@ -14,8 +14,9 @@
  *
  * @packageDocumentation
  */
+export { academyPathOf } from './text.mts';
 import {
-  academyHost,
+  academyPathOf,
   cleanHosts,
   cleanLine,
   escapeMarkup,
@@ -29,6 +30,8 @@ interface Element {
   readonly href: string | undefined;
   /** The number an ordered list or one of its items starts with. */
   readonly number: number | undefined;
+  /** Whether a browser hides it, so that nobody reading the page sees it. */
+  readonly hidden: boolean;
   readonly children: Node[];
 }
 
@@ -105,6 +108,12 @@ const droppedTags: ReadonlySet<string> = new Set([
   'xmp',
 ]);
 
+// Whether an element leaves with its content: one of the dropped tags or
+// one a browser hides.
+function isDropped(element: Element): boolean {
+  return element.hidden || droppedTags.has(element.tag);
+}
+
 // Elements that stand as blocks of their own. Every other element is
 // read as part of a line of text.
 const blockTags: ReadonlySet<string> = new Set([
@@ -163,6 +172,7 @@ function parse(html: string): Element {
     tag: '#root',
     href: undefined,
     number: undefined,
+    hidden: false,
     children: [],
   };
   const stack: Element[] = [root];
@@ -263,21 +273,38 @@ function parse(html: string): Element {
       tag: tag.name,
       href: tag.href,
       number: tag.number,
+      hidden: tag.hidden,
       children: [],
     };
     top().children.push(element);
     if (rawTextTags.has(tag.name)) {
-      const end = html.toLowerCase().indexOf(`</${tag.name}`, position);
+      // The end tag of exactly this name, found in the text itself: a
+      // lower-cased copy can be longer than the text and would move the
+      // place, and lower-casing the page for every such element would
+      // cost time in the square of its length.
+      const endTag = new RegExp(`</${tag.name}(?=[\\s/>])`, 'gi');
+      endTag.lastIndex = position;
+      const end = endTag.exec(html)?.index ?? -1;
       position =
         end === -1 ? html.length : html.indexOf('>', end) + 1 || html.length;
       continue;
     }
-    if (!voidTags.has(tag.name) && !tag.selfClosing) {
+    // Deeper than any page of help goes, an element no longer opens a
+    // level: its content joins its parent, and the walks over the tree
+    // stay short.
+    if (
+      !voidTags.has(tag.name) &&
+      !tag.selfClosing &&
+      stack.length <= maxDepth
+    ) {
       stack.push(element);
     }
   }
   return root;
 }
+
+// How deep elements nest before they open no new level.
+const maxDepth = 200;
 
 interface Tag {
   readonly name: string;
@@ -285,6 +312,7 @@ interface Tag {
   readonly selfClosing: boolean;
   readonly href: string | undefined;
   readonly number: number | undefined;
+  readonly hidden: boolean;
   readonly end: number;
 }
 
@@ -303,11 +331,20 @@ function readTag(html: string, start: number): Tag | undefined {
   let position = start + head[0].length;
   let href: string | undefined;
   let number: number | undefined;
+  let hidden = false;
   let selfClosing = false;
   while (position < html.length) {
     const char = html[position] ?? '';
     if (char === '>') {
-      return { name, closing, selfClosing, href, number, end: position + 1 };
+      return {
+        name,
+        closing,
+        selfClosing,
+        href,
+        number,
+        hidden,
+        end: position + 1,
+      };
     }
     if (/\s/.test(char)) {
       position += 1;
@@ -348,6 +385,19 @@ function readTag(html: string, start: number): Tag | undefined {
         position = end;
       }
     }
+    // Text a browser hides is where an instruction would hide from a
+    // person who reads the page, so it leaves like a script.
+    if (
+      attribute === 'hidden' ||
+      (attribute === 'aria-hidden' && value?.trim().toLowerCase() === 'true') ||
+      (attribute === 'style' &&
+        value !== undefined &&
+        /(?:display\s{0,10}:\s{0,10}none|visibility\s{0,10}:\s{0,10}hidden)/i.test(
+          value,
+        ))
+    ) {
+      hidden = true;
+    }
     if (attribute === 'href' && value !== undefined) {
       href = decodeEntities(value);
     }
@@ -359,7 +409,15 @@ function readTag(html: string, start: number): Tag | undefined {
       number = Number(value.trim());
     }
   }
-  return { name, closing, selfClosing, href, number, end: html.length };
+  return {
+    name,
+    closing,
+    selfClosing,
+    href,
+    number,
+    hidden,
+    end: html.length,
+  };
 }
 
 // The entities WordPress writes by name; every other one it writes as a
@@ -453,35 +511,11 @@ export function decodeEntities(text: string): string {
 const linkStart = '\u0001';
 const linkMiddle = '\u0002';
 const linkEnd = '\u0003';
-
-/**
- * The path of a help page of the Academy for a link, in the form the
- * docs index takes: on the host of the Academy, under `/de/`, with
- * percent-codes in lower case, an anchor only of lower-case letters,
- * digits, `_` and `-`, and without a query.
- *
- * @param url - The resolved target of a link.
- * @returns The path with its anchor, or `undefined` if the link may not stay.
- */
-export function academyPathOf(url: URL): string | undefined {
-  // A link with a query, such as a search or `?p=` with the number of a
-  // post, leads to another page than its path, so it does not stay.
-  if (
-    url.protocol !== 'https:' ||
-    url.host !== academyHost ||
-    url.search !== ''
-  ) {
-    return undefined;
-  }
-  const path = url.pathname.replace(/%[0-9A-F]{2}/gi, (code) =>
-    code.toLowerCase(),
-  );
-  if (!/^\/de\/(?:[a-z0-9%_-]+\/)*(?:[a-z0-9%_-]+\/?)?$/.test(path)) {
-    return undefined;
-  }
-  const anchor = url.hash.slice(1);
-  return /^[a-z0-9_-]{1,100}$/.test(anchor) ? `${path}#${anchor}` : path;
-}
+// Marks of the brackets in the text of a page, until the end, so that the
+// cleaning of hosts still sees a bracket where one stands and no text
+// forms a link. They become escaped brackets at the end.
+const bracketOpen = '\u0004';
+const bracketClose = '\u0005';
 
 /**
  * Turns the HTML of a help page into Markdown in simple form.
@@ -492,9 +526,10 @@ export function academyPathOf(url: URL): string | undefined {
  */
 export function htmlToMarkdown(html: string, pageUrl: URL): string {
   const blocks = renderBlocks(parse(html), pageUrl);
-  // The whole text runs through the same cleaning again: a host split
-  // over two elements, such as `<b>name</b>.de`, is one only now.
+  // Hosts are cleaned on the whole text: a host or an address split over
+  // two elements, such as `<b>name</b>.de`, is whole only here.
   const text = escapeMarkup(cleanHosts(blocks.join('\n\n'), 'de'))
+    .replaceAll(`${bracketClose}(`, `${bracketClose} (`)
     .replaceAll('](', '] (')
     .replaceAll(`!${linkStart}`, `! ${linkStart}`)
     .replace(
@@ -504,6 +539,8 @@ export function htmlToMarkdown(html: string, pageUrl: URL): string {
       ),
       '[$1]($2)',
     )
+    .replaceAll(bracketOpen, '\\[')
+    .replaceAll(bracketClose, '\\]')
     // A mark no link holds any more, which would fail the check of
     // characters nobody sees.
     .replace(linkMarks, '');
@@ -527,7 +564,7 @@ function textOf(node: Node, flat: boolean): string {
   if (typeof node === 'string') {
     return node;
   }
-  if (droppedTags.has(node.tag)) {
+  if (isDropped(node)) {
     return '';
   }
   if (node.tag === 'br') {
@@ -539,13 +576,13 @@ function textOf(node: Node, flat: boolean): string {
     : inner;
 }
 
-// Cleans a piece of text from the page: characters, hosts, and the
-// brackets of Markdown, so that no text forms a link.
+// Prepares a piece of text from the page: its characters, and its
+// brackets as marks. Hosts are cleaned once on the whole text, where an
+// address split over two elements is whole again.
 function cleanText(text: string): string {
-  return cleanHosts(normalizeText(decodeEntities(text)), 'de').replace(
-    /[[\]]/g,
-    '\\$&',
-  );
+  return normalizeText(decodeEntities(text))
+    .replaceAll('[', bracketOpen)
+    .replaceAll(']', bracketClose);
 }
 
 // Renders the content of an element as blocks of Markdown: lines of text
@@ -572,7 +609,7 @@ function renderBlocks(element: Element, pageUrl: URL): string[] {
       }
       continue;
     }
-    if (typeof child !== 'string' && droppedTags.has(child.tag)) {
+    if (typeof child !== 'string' && isDropped(child)) {
       continue;
     }
     if (typeof child !== 'string' && blockTags.has(child.tag)) {
@@ -631,7 +668,7 @@ function inlineOf(node: Node, pageUrl: URL): string {
   if (typeof node === 'string') {
     return cleanText(node).replace(/\s+/g, ' ');
   }
-  if (droppedTags.has(node.tag)) {
+  if (isDropped(node)) {
     return '';
   }
   if (node.tag === 'br') {
@@ -731,7 +768,7 @@ function listOf(element: Element, pageUrl: URL): string[] {
     if (child.tag !== 'li') {
       // Content between the items, such as a nested list without its own
       // item, joins the last item.
-      if (blockTags.has(child.tag) && !droppedTags.has(child.tag)) {
+      if (blockTags.has(child.tag) && !isDropped(child)) {
         const nested = renderBlock(child, pageUrl).join('\n');
         if (nested !== '') {
           items.push(indent(nested, ordered ? 3 : 2));
@@ -766,7 +803,7 @@ function tableOf(element: Element): string[] {
   let caption = '';
   const visit = (node: Element) => {
     for (const child of node.children) {
-      if (typeof child === 'string' || droppedTags.has(child.tag)) {
+      if (typeof child === 'string' || isDropped(child)) {
         continue;
       }
       if (child.tag === 'caption') {

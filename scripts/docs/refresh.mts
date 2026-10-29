@@ -24,10 +24,13 @@
  */
 import { createHash } from 'node:crypto';
 import { statSync } from 'node:fs';
+import { domainToUnicode } from 'node:url';
+
+import { versionOf } from '../spike/00-inventory.mts';
 
 import { formatSize } from '../spike/lib/academy.mts';
 import { SpikeError } from '../spike/lib/errors.mts';
-import type { Json } from '../spike/lib/guard.mts';
+import { containsWord, type Json } from '../spike/lib/guard.mts';
 import { operations } from '../spike/lib/operations.mts';
 import { main, type ProbeDefinition } from '../spike/lib/probe.mts';
 import {
@@ -87,6 +90,42 @@ function count(
 }
 
 /**
+ * Refuses texts that name the instance the refresh read from: its host
+ * in ASCII and Unicode or its first label as a word. The cleaning removes
+ * hosts by their form, this check by the one host the refresh knows. It
+ * names only the file, never what it found.
+ *
+ * @param texts - The text of each file.
+ * @param origin - The origin of the instance.
+ * @throws {SpikeError} If a file names the instance.
+ */
+export function checkInstanceHost(
+  texts: Readonly<Record<string, string>>,
+  origin: string,
+): void {
+  const host = new URL(origin).hostname.toLowerCase();
+  const names = [host, domainToUnicode(host)].filter((name) => name !== '');
+  const first = host.split('.')[0] ?? '';
+  // Short labels and the labels of church.tools say nothing about which
+  // instance it is and would stand in many texts.
+  const label =
+    first.length >= 4 && first !== 'church' && first !== 'tools'
+      ? first
+      : undefined;
+  for (const [file, text] of Object.entries(texts)) {
+    const plain = text.toLowerCase().replaceAll('\\.', '.');
+    if (
+      names.some((name) => plain.includes(name)) ||
+      (label !== undefined &&
+        (containsWord(plain, label) ||
+          containsWord(plain, domainToUnicode(label))))
+    ) {
+      throw new SpikeError('ANTWORT_UNGUELTIG', 'quelleUngueltig', file);
+    }
+  }
+}
+
+/**
  * The refresh as a run of the probes' frame, which brings the checks of
  * the environment, the token file, the state file and the guard of the
  * output.
@@ -104,7 +143,14 @@ export function refreshDefinition(
     state: 'read',
     academy: true,
     academyAgent: refreshAgent,
-    async run({ client, guard, state, statePath, academy }): Promise<Json> {
+    async run({
+      client,
+      guard,
+      origin,
+      state,
+      statePath,
+      academy,
+    }): Promise<Json> {
       guard.allowFixed(...words);
       if (state === undefined || academy === undefined) {
         throw new SpikeError('INTERN');
@@ -130,6 +176,12 @@ export function refreshDefinition(
       const operationsNotice = openApiNotice(document, churchToolsVersion);
       const operationEntries = operationFacts(document);
 
+      // The rights carry the version of the state. If the instance has
+      // moved on since 00-inventory, the document is old as well.
+      const info = await client.get({ path: operations.info.template });
+      if (info.status !== 200 || versionOf(info.body) !== churchToolsVersion) {
+        throw new SpikeError('DATEI', 'stateVeraltet');
+      }
       const permissionsAt = utcSeconds(now());
       const answer = await client.get({
         path: operations.permissionsGlobal.template,
@@ -138,10 +190,13 @@ export function refreshDefinition(
         throw new SpikeError('ANTWORT_UNGUELTIG', 'quelleUngueltig', 'rights');
       }
       const rights = rightFacts(answer.body);
+      // The hash covers what rights.json publishes, not the whole answer:
+      // with its structure public, a hash of the answer would let anyone
+      // try the few values the account holds, such as IDs of the instance.
       const permissions = {
         retrievedAt: permissionsAt,
         sha256: createHash('sha256')
-          .update(JSON.stringify(answer.body), 'utf8')
+          .update(JSON.stringify(rights.entries), 'utf8')
           .digest('hex'),
         churchToolsVersion,
       };
@@ -157,6 +212,7 @@ export function refreshDefinition(
         permissions,
         academyOrigin: { retrievedAt: read.retrievedAt, pages: pages.fetched },
       });
+      checkInstanceHost(texts, origin);
       writeFactFiles(texts, dataDir);
 
       const sizes = Object.fromEntries(

@@ -55,6 +55,21 @@ describe('findForeignHosts', () => {
     ['a name with a checked ending', 'Siehe churchtools.de', ['name']],
     ['a Swiss name', 'gemeinde.ch', ['name']],
     ['a host under church.tools', hosted('demo-tenant'), ['church-tools']],
+    [
+      'a host under church.tools with an umlaut',
+      `Instanz ${hosted('demo-tenänt')}`,
+      ['church-tools'],
+    ],
+    [
+      'a host under church.tools with an underscore',
+      hosted('my_demo-tenant'),
+      ['church-tools'],
+    ],
+    [
+      'a name that ends in the placeholder',
+      hosted('demo-tenaexample'),
+      ['church-tools'],
+    ],
     ['the apex of church.tools', 'church.tools', ['church-tools']],
     [
       'a host under the placeholder',

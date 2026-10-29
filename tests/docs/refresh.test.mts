@@ -6,7 +6,14 @@
 // the instance and no raw source, and nothing of the sources may reach
 // its output.
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readdirSync, readFileSync, utimesSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -91,7 +98,10 @@ function syntheticDocument(licence = 'CC BY 4.0'): OpenApiDocument {
 // The instance answers only the rights, with a canary in a list; the
 // Academy answers robots.txt, both taxonomies and two help pages, one of
 // another section, with fields the refresh never asks for.
-function syntheticFetch(canaries: Canaries): {
+function syntheticFetch(
+  canaries: Canaries,
+  info: { version: string } = { version: '3.138.2' },
+): {
   fetch: FetchFunction;
   calls: { url: URL; agent: string | null; authorization: string | null }[];
 } {
@@ -122,6 +132,9 @@ function syntheticFetch(canaries: Canaries): {
           },
         }),
       );
+    }
+    if (input.origin === origin && input.pathname === '/api/info') {
+      return Promise.resolve(Response.json({ version: info.version }));
     }
     if (input.origin !== academyOrigin) {
       return Promise.resolve(new Response('', { status: 404 }));
@@ -187,6 +200,8 @@ function syntheticFetch(canaries: Canaries): {
 async function run(
   definitionFor: (dataDir: URL) => ProbeDefinition,
   document: OpenApiDocument = syntheticDocument(),
+  version = '3.138.2',
+  prepare: (dataDir: string) => void = () => undefined,
 ) {
   const canaries = makeCanaries();
   const privates = privateFiles(canaries.token);
@@ -204,7 +219,8 @@ async function run(
     ECCLIUM_SPIKE_TOKEN_FILE: privates.tokenFile,
     ECCLIUM_SPIKE_STATE_FILE: privates.stateFile,
   };
-  const instance = syntheticFetch(canaries);
+  prepare(dataDir);
+  const instance = syntheticFetch(canaries, { version });
   const output = capture();
   const waits: number[] = [];
   const code = await runProbe(definitionFor(pathToFileURL(`${dataDir}/`)), {
@@ -218,10 +234,12 @@ async function run(
     },
   });
   const texts = Object.fromEntries(
-    readdirSync(dataDir).map((name) => [
-      name,
-      readFileSync(join(dataDir, name), 'utf8'),
-    ]),
+    readdirSync(dataDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => [
+        entry.name,
+        readFileSync(join(dataDir, entry.name), 'utf8'),
+      ]),
   );
   return {
     code,
@@ -277,14 +295,8 @@ describe('pnpm docs:refresh', () => {
       string,
       unknown
     >;
-    const permissions = {
-      data: {
-        churchwiki: { view: true, 'view category': [result.canaries.number] },
-        churchcore: {
-          'administer persons': false,
-          [result.canaries.groupName]: true,
-        },
-      },
+    const rights = JSON.parse(result.texts['rights.json'] ?? '{}') as {
+      entries: unknown;
     };
     const sha = (text: string) =>
       createHash('sha256').update(text).digest('hex');
@@ -298,7 +310,8 @@ describe('pnpm docs:refresh', () => {
       },
       permissions: {
         retrievedAt: '2026-10-29T08:00:00Z',
-        sha256: sha(JSON.stringify(permissions)),
+        // Over what rights.json publishes, never over the values.
+        sha256: sha(JSON.stringify(rights.entries)),
         churchToolsVersion: '3.138',
       },
       academy: {
@@ -361,9 +374,11 @@ describe('pnpm docs:refresh', () => {
     );
     expect(academy.every((call) => call.authorization === null)).toBe(true);
     expect(instance.map((call) => call.url.pathname)).toEqual([
+      '/api/info',
       '/api/permissions/global',
     ]);
     expect(result.waits.length).toBe(academy.length - 1);
+    expect(result.waits.every((wait) => wait >= 3000)).toBe(true);
   });
 
   it('writes nothing and names only the place when a source has a form it cannot take', async () => {
@@ -389,5 +404,51 @@ describe('pnpm docs:refresh', () => {
     expect(
       result.calls.some((call) => call.url.pathname.endsWith('/docs')),
     ).toBe(false);
+  });
+
+  it('writes nothing when the instance reports another version than the state', async () => {
+    const result = await run(
+      (dataDir) => refreshDefinition(dataDir, clock),
+      syntheticDocument(),
+      '3.139.0',
+    );
+    expect(result.code).toBe(exitCodes.configuration);
+    expect(result.texts).toEqual({});
+    expect(result.output.stderr()).toContain(hints.stateVeraltet);
+  });
+
+  it('writes nothing when a text names the instance it read from', async () => {
+    const document = syntheticDocument();
+    const paths = document['paths'] as Record<
+      string,
+      Record<string, Record<string, unknown>>
+    >;
+    const operation = paths['/api/synthetic/things']?.['get'];
+    if (operation !== undefined) {
+      operation['summary'] = 'Things of Demo-Tenant';
+    }
+    const result = await run(
+      (dataDir) => refreshDefinition(dataDir, clock),
+      document,
+    );
+    expect(result.code).toBe(exitCodes.network);
+    expect(result.texts).toEqual({});
+    expect(result.output.stderr()).toContain('Stelle: operations.json');
+  });
+
+  it('keeps the old files when a new one cannot be written', async () => {
+    const result = await run(
+      (dataDir) => refreshDefinition(dataDir, clock),
+      syntheticDocument(),
+      '3.138.2',
+      (dataDir) => {
+        writeFileSync(join(dataDir, 'academy.json'), 'alt\n');
+        // A folder in place of the new file of academy.json makes that one
+        // write fail after the others.
+        mkdirSync(join(dataDir, '.academy.json.refresh'));
+      },
+    );
+    expect(result.code).toBe(exitCodes.internal);
+    expect(result.texts).toEqual({ 'academy.json': 'alt\n' });
   });
 });

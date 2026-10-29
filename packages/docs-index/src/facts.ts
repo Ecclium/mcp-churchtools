@@ -484,11 +484,14 @@ export function parseFactFiles(texts: FactFileTexts): Facts {
 
 // Control characters and characters a reader never sees: format
 // characters such as a soft hyphen, a zero-width space, a change of
-// direction or a TAG character, characters for private use and lone
-// surrogates. Inside a name they would hide a host from the check, and
-// in a text an instruction from the review of a change. Line breaks and
-// tabs stay in texts with several lines.
-const hiddenCharacter = /^[\p{Cc}\p{Cf}\p{Co}\p{Cs}]$/u;
+// direction or a TAG character, characters for private use, lone
+// surrogates and every character Unicode lets a renderer ignore, such as
+// the variation selectors, which can carry hidden text, and the fillers
+// of Hangul. Inside a name they would hide a host from the check, and in
+// a text an instruction from the review of a change. Line breaks and tabs
+// stay in texts with several lines.
+const hiddenCharacter =
+  /^[\p{Cc}\p{Cf}\p{Co}\p{Cs}\p{Default_Ignorable_Code_Point}]$/u;
 
 function withoutControls(text: string, lines: boolean): boolean {
   for (const char of text) {

@@ -63,9 +63,12 @@ const checkedEndings: ReadonlySet<string> = new Set([
 const vendorLabels: ReadonlySet<string> = new Set(['www', 'blog', 'forum']);
 
 // Control characters and characters nobody sees: format characters such
-// as a soft hyphen or a zero-width space, characters for private use and
-// lone surrogates. With the flag u a lone surrogate counts as \p{Cs}.
-const hiddenCharacters = /[\p{Cc}\p{Cf}\p{Co}\p{Cs}]/gu;
+// as a soft hyphen or a zero-width space, characters for private use,
+// lone surrogates and every character Unicode lets a renderer ignore,
+// such as the variation selectors, which can carry hidden text, and the
+// fillers of Hangul. With the flag u a lone surrogate counts as \p{Cs}.
+const hiddenCharacters =
+  /[\p{Cc}\p{Cf}\p{Co}\p{Cs}\p{Default_Ignorable_Code_Point}]/gu;
 // Dots that a browser reads as a dot in a name.
 const otherDots = /[\u3002\uff0e\uff61]/g;
 const lineSeparators = /[\u2028\u2029]/g;
@@ -79,14 +82,21 @@ const lineSeparators = /[\u2028\u2029]/g;
  * @returns The text in that form.
  */
 export function normalizeText(text: string): string {
-  return text
-    .replace(/\r\n?/g, '\n')
-    .replace(lineSeparators, '\n')
-    .replace(hiddenCharacters, (char) =>
-      char === '\n' || char === '\t' ? char : '',
-    )
-    .normalize('NFKC')
-    .replace(otherDots, '.');
+  return (
+    text
+      .replace(/\r\n?/g, '\n')
+      .replace(lineSeparators, '\n')
+      .replace(hiddenCharacters, keepLines)
+      .normalize('NFKC')
+      // NFKC can turn one invisible character into another, such as a
+      // filler of Hangul into the one of its letters.
+      .replace(hiddenCharacters, keepLines)
+      .replace(otherDots, '.')
+  );
+}
+
+function keepLines(char: string): string {
+  return char === '\n' || char === '\t' ? char : '';
 }
 
 /**
@@ -114,7 +124,7 @@ export function cleanHosts(text: string, language: NoteLanguage): string {
   // replaces changes: a dot escaped in code stays as it is.
   return text
     .replace(bracketedUrl, notes.link)
-    .replace(bracketAfterColon, '$1: $2[')
+    .replace(bracketAfterColon, '$1: $2$3')
     .replace(urlPattern, (match: string) => replaceUrl(match, notes.link))
     .replace(protocolRelative, (match: string, before: string, host: string) =>
       isAllowedHost(unescapeDots(host).toLowerCase())
@@ -132,35 +142,50 @@ export function cleanHosts(text: string, language: NoteLanguage): string {
 
 // Every pattern is bounded or follows a fixed text, so it runs in linear
 // time. Characters that end a word for the check end a URL here too, and
-// so do the marks of links that the conversion of HTML puts into a text
-// before it writes them as Markdown (html.mts).
-const urlEnd = String.raw`[^\s<>()[\]{}"'\x60|,;*\x01-\x03]`;
+// so do the marks of links and brackets that the conversion of HTML puts
+// into a text before it writes them as Markdown (html.mts).
+const urlEnd = String.raw`[^\s<>()[\]{}"'\x60|,;*\x01-\x05]`;
+// A bracket, also as the mark html.mts gives it until the end.
+const openBracket = String.raw`(?:\[|\x04)`;
+const closeBracket = String.raw`(?:\]|\x05)`;
 // A host in brackets, such as an IPv6 address, after a scheme of the web
 // or one with `//`. Any other word with a colon before a bracket, such
 // as `filter:[name]`, is text, and a space after its colon is enough for
 // the check, which takes any letter before `:[` for a scheme.
 const bracketedUrl = new RegExp(
-  String.raw`\b(?:(?:https?|ftps?|wss?):\/{0,3}|[a-z][a-z0-9+.-]{0,30}:\/\/)\[${urlEnd}{0,2000}(?:\]${urlEnd}{0,2000})?`,
+  String.raw`(?:(?:https?|ftps?|wss?):\/{0,3}|[a-z][a-z0-9+.-]{0,30}:\/\/)${openBracket}${urlEnd}{0,2000}(?:${closeBracket}${urlEnd}{0,2000})?`,
   'gi',
 );
-const bracketAfterColon = /([a-z]):(\/{0,3})\[/gi;
+const bracketAfterColon = new RegExp(
+  String.raw`([a-z]):(\/{0,3})(${openBracket})`,
+  'gi',
+);
+// No word boundary before the scheme: the check finds a URL inside a
+// word as well, such as in `1https://`.
+const urlPattern = new RegExp(
+  String.raw`(?:[a-z][a-z0-9+.-]{0,30}:\/\/|(?:https?|ftps?|wss?):\/{0,3})${urlEnd}{0,2000}`,
+  'gi',
+);
 // A dot, also escaped for Markdown as the check reads it.
 const dot = String.raw`\\?\.`;
-const urlPattern = new RegExp(
-  String.raw`\b(?:[a-z][a-z0-9+.-]{0,30}:\/\/|(?:https?|ftps?|wss?):\/{0,3})${urlEnd}{0,2000}`,
-  'gi',
-);
+// A label of a name: letters of every script, marks, digits, _ and -.
+// The check reads only ASCII, so a name that is ASCII only in its end,
+// such as one with an umlaut, must leave as a whole here.
+const label = String.raw`[\p{L}\p{M}\p{N}_-]`;
+const name = String.raw`${label}{1,63}(?:${dot}${label}{1,63}){1,30}`;
 const protocolRelative = new RegExp(
-  String.raw`(^|[\s<>()[\]{}"'\x60|,;*])\/\/([a-z0-9-]{1,63}(?:${dot}[a-z0-9-]{1,63}){1,10})${urlEnd}{0,2000}`,
-  'gim',
+  String.raw`(^|[\s<>()[\]{}"'\x60|,;*\x01-\x05])\/\/(${name})${urlEnd}{0,2000}`,
+  'gmu',
 );
 const mailPattern = new RegExp(
-  String.raw`\b(?:mailto:)?[a-z0-9._%+-]{1,64}@([a-z0-9-]{1,63}(?:${dot}[a-z0-9-]{1,63}){1,10})\b`,
-  'gi',
+  String.raw`(?<![\p{L}\p{M}\p{N}._%+-])(?:mailto:)?[\p{L}\p{M}\p{N}._%+-]{1,64}@(${name})(?!${label})`,
+  'gu',
 );
+// A name starts where no label goes on before it, also not one ended by
+// a dot: after `...`, which NFKC makes of an ellipsis, a name begins.
 const namePattern = new RegExp(
-  String.raw`(?<![a-z0-9.-])[a-z0-9-]{1,63}(?:${dot}[a-z0-9-]{1,63}){1,10}(?![a-z0-9-])`,
-  'gi',
+  String.raw`(?<!${label}|${label}${dot})${name}(?!${label})`,
+  'gu',
 );
 const octet = String.raw`(?:25[0-5]|2[0-4]\d|1?\d?\d)`;
 const ipv4Pattern = new RegExp(
@@ -172,6 +197,35 @@ function unescapeDots(text: string): string {
   return text.replaceAll('\\.', '.');
 }
 const trailingPunctuation = /[.,:;!?]+$/;
+
+/**
+ * The path of a help page of the Academy for a link, in the form the
+ * docs index takes: on the host of the Academy, under `/de/`, with
+ * percent-codes in lower case, an anchor only of lower-case letters,
+ * digits, `_` and `-`, and without a query.
+ *
+ * @param url - The resolved target of a link.
+ * @returns The path with its anchor, or `undefined` if the link may not stay.
+ */
+export function academyPathOf(url: URL): string | undefined {
+  // A link with a query, such as a search or `?p=` with the number of a
+  // post, leads to another page than its path, so it does not stay.
+  if (
+    url.protocol !== 'https:' ||
+    url.host !== academyHost ||
+    url.search !== ''
+  ) {
+    return undefined;
+  }
+  const path = url.pathname.replace(/%[0-9A-F]{2}/gi, (code) =>
+    code.toLowerCase(),
+  );
+  if (!/^\/de\/(?:[a-z0-9%_-]+\/)*(?:[a-z0-9%_-]+\/?)?$/.test(path)) {
+    return undefined;
+  }
+  const anchor = url.hash.slice(1);
+  return /^[a-z0-9_-]{1,100}$/.test(anchor) ? `${path}#${anchor}` : path;
+}
 
 function isAllowedHost(host: string): boolean {
   return host === academyHost || host === placeholderHost;
@@ -202,7 +256,15 @@ function replaceUrl(match: string, note: string): string {
   if (host === '') {
     return match;
   }
-  if (isAllowedHost(host)) {
+  // A URL of the Academy stays only as the link to a German help page
+  // (ADR 0027), any other one becomes a note like a foreign host.
+  if (host === academyHost) {
+    const parsed = URL.parse(url);
+    return parsed !== null && academyPathOf(parsed) !== undefined
+      ? match
+      : `${note}${punctuation}`;
+  }
+  if (host === placeholderHost) {
     return match;
   }
   if (isInstanceHost(host)) {
@@ -242,7 +304,8 @@ function replaceName(match: string, note: string): string {
 }
 
 /**
- * Makes a text safe for the checks of markup: a `<` that could start a
+ * Makes a text safe for the checks of markup: a character reference
+ * keeps its `&` as `&amp;`, a `<` that could start a
  * tag, a comment, a declaration or an autolink becomes `&lt;`, also in
  * code, an image `![` becomes `! [`, and a line that would define a link
  * for later reference gets a space before its colon. A reader and a model
@@ -252,10 +315,16 @@ function replaceName(match: string, note: string): string {
  * @returns The text without anything the checks read as markup.
  */
 export function escapeMarkup(text: string): string {
-  return text
-    .replace(/<(?=[A-Za-z/!?])/g, '&lt;')
-    .replaceAll('![', '! [')
-    .replace(/^([ ]{0,3}\[[^\]\n]*\]):/gm, '$1 :');
+  return (
+    text
+      // A character reference, also one that decoding left over such as
+      // `&#46;` from `&amp;#46;`, would turn into its character when
+      // the Markdown is shown, a dot of a host for instance. It stays text.
+      .replace(/&(?=#?[A-Za-z0-9]{1,32};)/g, '&amp;')
+      .replace(/<(?=[A-Za-z/!?])/g, '&lt;')
+      .replaceAll('![', '! [')
+      .replace(/^([ ]{0,3}\[(?:\\.|[^\]\\\n])*\]):/gm, '$1 :')
+  );
 }
 
 /**
