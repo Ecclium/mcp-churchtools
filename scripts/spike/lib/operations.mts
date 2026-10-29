@@ -37,6 +37,10 @@ export const operations = {
   info: { method: 'get', template: '/api/info' },
   whoami: { method: 'get', template: '/api/whoami' },
   permissionsGlobal: { method: 'get', template: '/api/permissions/global' },
+  permissionsDefinitions: {
+    method: 'get',
+    template: '/api/permissions/definitions',
+  },
   wikiPages: { method: 'get', template: '/api/wiki/pages' },
   wikiCategories: { method: 'get', template: '/api/wiki/categories' },
   wikiCategoryPages: {

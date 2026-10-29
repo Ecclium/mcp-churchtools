@@ -451,6 +451,7 @@ describe('the probes against a synthetic instance', () => {
         info: 'dokumentiert',
         whoami: 'dokumentiert',
         permissionsGlobal: 'dokumentiert',
+        permissionsDefinitions: 'dokumentiert',
         wikiPages: 'dokumentiert',
         wikiCategories: 'dokumentiert',
         wikiCategoryPages: 'dokumentiert',

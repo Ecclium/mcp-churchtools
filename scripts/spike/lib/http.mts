@@ -234,7 +234,16 @@ export function classifyNetworkError(error: unknown): ErrorCode {
   return 'NETZ';
 }
 
-async function readLimited(
+/**
+ * Reads a body up to a size limit and stops reading as soon as it is
+ * exceeded.
+ *
+ * @param response - The response whose body is read.
+ * @param maxBytes - Size limit in bytes.
+ * @returns The bytes of the body.
+ * @throws {SpikeError} If the body is larger than the limit.
+ */
+export async function readLimited(
   response: Response,
   maxBytes: number,
 ): Promise<Uint8Array> {
