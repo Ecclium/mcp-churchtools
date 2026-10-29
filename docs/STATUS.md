@@ -990,3 +990,4 @@ Diese Grundsatzfragen sind entschieden.
   - Typecheck, Lint, die Regeln von dependency-cruiser, das Format, die Links, die Lizenzen und die Tests laufen am letzten Commit grün, lokal mit 8'414 Tests, davon einer übersprungen, der nur in CI läuft.
   - Danach kehrte das Dienstkonto über die API auf «"Wiki" sehen» und die Kennkategorie zurück und erhielt ein neues Token. Mit dem alten Token scheiterte `ct_whoami` im Smoke-Test in beiden Ären, mit dem neuen nannte es nur die Rechte im Wiki.
 - 28.10.2026, die Abnahme und der Abschluss von Phase 2 sind als `277ffa2` auf `main` (#145). Der Baum des Squash-Commits ist gleich dem letzten Stand des Branches.
+- 29.10.2026, die Entscheide vor Phase 3 sind als `a5b7782` auf `main` (#146): ADR 0027 angenommen, der Plan für Phase 3 unter «Weitere Entscheide». Der Baum des Squash-Commits ist gleich dem letzten Stand des Branches.
