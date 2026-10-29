@@ -72,6 +72,7 @@ const words = [
   'operations.json',
   'rights.json',
   'academy.json',
+  'operation-rights.json',
   'geschrieben',
   'ja',
   'kategorien',

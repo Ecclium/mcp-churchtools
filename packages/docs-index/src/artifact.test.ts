@@ -125,9 +125,11 @@ describe('buildDocsIndex', () => {
         (_w, word) => `w${(at * 2_600 + word).toString(36)}`,
       ).join(' '),
     }));
+    // Without the mapping, whose operations these entries replace.
     const texts = syntheticFactFiles({
       ...facts,
       operations: { ...facts.operations, entries },
+      operationRights: { ...facts.operationRights, entries: [] },
     } as Facts);
     expect(problemOf(() => buildDocsIndex(texts))).toBe('size');
   });

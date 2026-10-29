@@ -1,7 +1,7 @@
 // The whole run of pnpm docs:refresh against a synthetic instance and a
 // synthetic Academy, through the frame of the probes: it reads the state
 // file, asks the instance for the rights and the Academy for its help
-// pages, writes the four files and prints only counts (ADR 0066). The
+// pages, writes the five files and prints only counts (ADR 0066). The
 // files it writes must pass the checks of the package, hold no value of
 // the instance and no raw source, and nothing of the sources may reach
 // its output.
@@ -63,6 +63,7 @@ const origin = `https://${hosted('demo-tenant')}`;
 const files = [
   'SOURCES.json',
   'academy.json',
+  'operation-rights.json',
   'operations.json',
   'rights.json',
 ];
@@ -256,7 +257,7 @@ async function run(
 const clock = () => new Date('2026-10-29T08:00:00Z');
 
 describe('pnpm docs:refresh', () => {
-  it('writes four files that pass the checks of the docs index', async () => {
+  it('writes five files that pass the checks of the docs index', async () => {
     const result = await run((dataDir) => refreshDefinition(dataDir, clock));
     expect(result.code, result.output.stderr()).toBe(exitCodes.ok);
     expect(Object.keys(result.texts).sort()).toEqual(files);
@@ -265,6 +266,7 @@ describe('pnpm docs:refresh', () => {
       'operations.json': result.texts['operations.json'] ?? '',
       'rights.json': result.texts['rights.json'] ?? '',
       'academy.json': result.texts['academy.json'] ?? '',
+      'operation-rights.json': result.texts['operation-rights.json'] ?? '',
     });
     expect(facts.operations.entries.map((entry) => entry.operationId)).toEqual([
       'getGlobalPermissions',

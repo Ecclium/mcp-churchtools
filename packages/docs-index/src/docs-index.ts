@@ -273,7 +273,9 @@ function createDocsIndex(facts: Facts, search: DocsIndexSearch): DocsIndex {
       }),
     ];
     const labelPage =
-      fact.label === undefined ? undefined : pages.get(fact.label.page);
+      fact.label === undefined || !('page' in fact.label)
+        ? undefined
+        : pages.get(fact.label.page);
     if (labelPage !== undefined) {
       attributions.push(pageAttribution(labelPage));
     }

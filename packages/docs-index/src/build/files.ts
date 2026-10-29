@@ -39,7 +39,7 @@ export function defaultBuildLocations(): BuildLocations {
 }
 
 /**
- * Reads the four files of facts from a folder.
+ * Reads the five files of facts from a folder.
  *
  * @param dataDir - The folder, ending in `/`.
  * @returns The text of each file.
@@ -56,6 +56,7 @@ export function readFactFiles(dataDir: URL): FactFileTexts {
     'operations.json': read(factFiles.operations),
     'rights.json': read(factFiles.rights),
     'academy.json': read(factFiles.academy),
+    'operation-rights.json': read(factFiles.operationRights),
   };
 }
 

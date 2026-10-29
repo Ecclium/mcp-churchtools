@@ -1,8 +1,10 @@
 /**
  * The facts of the docs index and their formats (ADR 0066): three files
  * under `data/` with facts from the OpenAPI document, the rights and the
- * help pages of the Academy, and `SOURCES.json` with when and from what
- * they came. `pnpm docs:refresh` writes them, never a person.
+ * help pages of the Academy, `SOURCES.json` with when and from what they
+ * came, and `operation-rights.json` with the rights each operation needs,
+ * mapped by hand in the project with evidence for every pairing.
+ * `pnpm docs:refresh` writes them, never a person.
  *
  * Every file must be in canonical form, so that the same facts always
  * give the same bytes and a review sees only real changes. A finding
@@ -23,6 +25,7 @@ export const factFiles = Object.freeze({
   operations: 'operations.json',
   rights: 'rights.json',
   academy: 'academy.json',
+  operationRights: 'operation-rights.json',
 } as const);
 
 /** The name of one file under `data/`. */
@@ -45,6 +48,7 @@ export const factFileLimits: Readonly<Record<FactFileName, number>> =
     'operations.json': 10_000_000,
     'rights.json': 200_000,
     'academy.json': 1_000_000,
+    'operation-rights.json': 200_000,
   });
 
 /** The formats the files carry in their field `format`. */
@@ -53,6 +57,7 @@ export const factFormats = Object.freeze({
   operations: 'ecclium.docs.operations.v1',
   rights: 'ecclium.docs.rights.v1',
   academy: 'ecclium.docs.academy.v1',
+  operationRights: 'ecclium.docs.operation-rights.v1',
 } as const);
 
 /**
@@ -198,13 +203,33 @@ export interface OperationFact {
   readonly responses: readonly OperationResponse[];
 }
 
-/** A label of a right and the help page it comes from. */
-export interface RightLabel {
+/**
+ * A label of a right from a help page, which names it right before the
+ * name of the right in parentheses, such as «Dinge sehen (view things)».
+ */
+export interface AcademyRightLabel {
   /** The label, foreign text from the Academy. */
   readonly text: string;
   /** The path of the help page that names it. */
   readonly page: string;
 }
+
+/**
+ * A label of a right as the web interface of ChurchTools shows it, where
+ * no help page names it, taken from a finding of the project that
+ * recorded it (ADR 0066).
+ */
+export interface FindingRightLabel {
+  /** The label, foreign text from ChurchTools. */
+  readonly text: string;
+  /** The finding in `docs/research/churchtools-api.md`, such as `F36`. */
+  readonly finding: string;
+  /** The version of ChurchTools the finding saw. */
+  readonly version: string;
+}
+
+/** A label of a right and where it comes from. */
+export type RightLabel = AcademyRightLabel | FindingRightLabel;
 
 /**
  * The facts about one right. Module, name and kind come from
@@ -219,7 +244,7 @@ export interface RightFact {
   readonly name: string;
   /** Whether its value is true or false or a list of IDs. */
   readonly kind: (typeof rightKinds)[number];
-  /** The label from a help page. */
+  /** The label from a help page or, failing that, from a finding. */
   readonly label?: RightLabel;
   /** The paths of the help pages that explain it, sorted. */
   readonly pages: readonly string[];
@@ -240,6 +265,130 @@ export interface AcademyPage {
   /** The prepared text in simple Markdown, foreign text from the Academy. */
   readonly text: string;
 }
+
+/** A right, by its module and its name. */
+export interface RightRef {
+  /** The module, such as `churchwiki`. */
+  readonly module: string;
+  /** The name of the right. */
+  readonly name: string;
+}
+
+/**
+ * What a read gives without a right, as a finding saw it: an answer 403,
+ * an answer without the entries the right opens, or entries without the
+ * fields it opens.
+ */
+export const withoutRight = Object.freeze([
+  'fields',
+  'omitted',
+  'refused',
+] as const);
+
+/**
+ * What a probe showed about a right: `necessary` when a counter-check
+ * without it lost the effect, `sufficient` when the effect showed with it
+ * and the probe never took it away.
+ */
+export const findingShows = Object.freeze(['necessary', 'sufficient'] as const);
+
+/**
+ * A finding of the project in `docs/research/churchtools-api.md`, by its
+ * number such as `F29` or the title of a further finding, with the version
+ * of ChurchTools its probe ran on.
+ */
+export interface FindingEvidence {
+  /** The kind of evidence. */
+  readonly kind: 'finding';
+  /** The number or title of the finding. */
+  readonly id: string;
+  /** The version of ChurchTools. */
+  readonly version: string;
+}
+
+/** A finding that shows a right a read needs. */
+export interface NeedFindingEvidence extends FindingEvidence {
+  /** What the probe showed. */
+  readonly shows: (typeof findingShows)[number];
+}
+
+/** The summary or description of the operation in the OpenAPI document. */
+export interface OpenApiEvidence {
+  /** The kind of evidence. */
+  readonly kind: 'openapi';
+}
+
+/**
+ * A help page that names the right for what the operation does. It
+ * describes the web interface, not the API, so it only stands next to a
+ * finding or the document (ADR 0066).
+ */
+export interface AcademyEvidence {
+  /** The kind of evidence. */
+  readonly kind: 'academy';
+  /** The path of the page. */
+  readonly page: string;
+}
+
+/** Evidence that an operation needs a right. */
+export type NeedEvidence =
+  NeedFindingEvidence | OpenApiEvidence | AcademyEvidence;
+
+/** Evidence that an operation needs no right or not a certain one. */
+export type PlainEvidence = FindingEvidence | OpenApiEvidence;
+
+/**
+ * A right an operation needs: one of `rights` opens it, as far as the
+ * evidence shows. It never claims that no other right or condition counts.
+ */
+export interface RightNeed {
+  /** The rights of which one suffices, sorted by module and name. */
+  readonly rights: readonly RightRef[];
+  /** What the read gives without them, only where a finding saw it. */
+  readonly without?: (typeof withoutRight)[number];
+  /** The evidence, sorted by kind and then number, title or page. */
+  readonly evidence: readonly NeedEvidence[];
+}
+
+/** A right a finding showed the operation does not need. */
+export interface NotNeededRight {
+  /** The right. */
+  readonly right: RightRef;
+  /** The evidence, sorted. */
+  readonly evidence: readonly PlainEvidence[];
+}
+
+/** An operation and the rights it needs, by evidence. */
+export interface OperationNeeds {
+  /** The ID of the operation, its key. */
+  readonly operationId: string;
+  /** What it needs, sorted by the first of the rights. */
+  readonly needs: readonly RightNeed[];
+  /** Rights a finding showed it does not need, sorted. */
+  readonly notNeeded?: readonly NotNeededRight[];
+}
+
+/** An operation that needs no right, by evidence. */
+export interface OperationWithoutRights {
+  /** The ID of the operation, its key. */
+  readonly operationId: string;
+  /** The evidence that it needs none. */
+  readonly none: readonly PlainEvidence[];
+}
+
+/** An operation without a mapping, and why, in German. */
+export interface OperationUnmapped {
+  /** The ID of the operation, its key. */
+  readonly operationId: string;
+  /** Why no mapping stands. */
+  readonly open: string;
+  /** Rights a finding showed it does not need, sorted. */
+  readonly notNeeded?: readonly NotNeededRight[];
+}
+
+/** One entry of `operation-rights.json`. */
+export type OperationRights =
+  OperationNeeds | OperationWithoutRights | OperationUnmapped;
 
 /** A file of facts: its format, the notice of its source and its entries. */
 export interface FactFile<F extends string, E> {
@@ -311,6 +460,11 @@ export interface Facts {
   readonly rights: FactFile<typeof factFormats.rights, RightFact>;
   /** `academy.json`. */
   readonly academy: FactFile<typeof factFormats.academy, AcademyPage>;
+  /** `operation-rights.json`. */
+  readonly operationRights: FactFile<
+    typeof factFormats.operationRights,
+    OperationRights
+  >;
 }
 
 /** The rules a finding can break. */
@@ -325,7 +479,9 @@ export type FactRule =
   | 'reference'
   | 'host'
   | 'html'
-  | 'link';
+  | 'link'
+  | 'evidence'
+  | 'conflict';
 
 /** One finding: where it is and which rule it breaks, never the value. */
 export interface FactViolation {
@@ -415,7 +571,8 @@ export function canonicalJson(value: unknown): string {
  * link in the text of a help page leads only to another help page. A
  * file with entries needs its source in `SOURCES.json` and the other way
  * round, and every page a right names must be a help page of
- * `academy.json`.
+ * `academy.json` that names the right. Every pairing of an operation and
+ * a right must name what exists and carry evidence that names the right.
  *
  * @param texts - The text of each file.
  * @returns The checked facts.
@@ -442,6 +599,12 @@ export function parseFactFiles(texts: FactFileTexts): Facts {
     academyFileSchema,
     violations,
   );
+  const operationRights = parseFile(
+    texts,
+    'operation-rights.json',
+    operationRightsFileSchema,
+    violations,
+  );
 
   if (sources !== undefined) {
     checkSourcePages(sources, violations);
@@ -461,13 +624,19 @@ export function parseFactFiles(texts: FactFileTexts): Facts {
     );
     checkAcademyLinks(academy.entries, violations);
   }
+  if (operationRights !== undefined) {
+    checkOperationRightsOrder(operationRights.entries, violations);
+  }
   if (
     sources !== undefined &&
     operations !== undefined &&
     rights !== undefined &&
-    academy !== undefined
+    academy !== undefined &&
+    operationRights !== undefined
   ) {
-    checkReferences({ sources, operations, rights, academy }, violations);
+    const facts = { sources, operations, rights, academy, operationRights };
+    checkReferences(facts, violations);
+    checkOperationRights(facts, violations);
   }
 
   if (
@@ -475,11 +644,12 @@ export function parseFactFiles(texts: FactFileTexts): Facts {
     sources === undefined ||
     operations === undefined ||
     rights === undefined ||
-    academy === undefined
+    academy === undefined ||
+    operationRights === undefined
   ) {
     throw new DocsFactsError(violations);
   }
-  return { sources, operations, rights, academy };
+  return { sources, operations, rights, academy, operationRights };
 }
 
 // Control characters and characters a reader never sees: format
@@ -602,8 +772,10 @@ const contentSchema = z.strictObject({
   schema: shapeSchema.optional(),
 });
 
+const operationIdSchema = z.string().regex(/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/);
+
 const operationSchema = z.strictObject({
-  operationId: z.string().regex(/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/),
+  operationId: operationIdSchema,
   method: z.enum(operationMethods),
   path: z.string().regex(/^\/[\x21-\x7e]{0,299}$/),
   tags: z.array(line(100)).max(20),
@@ -639,13 +811,85 @@ const operationSchema = z.strictObject({
     .max(50),
 });
 
+// A finding by its number, such as `F29`, or by the title of a further
+// finding, such as «Kategorie ohne Leserecht». The test of the repository
+// looks it up in `docs/research/churchtools-api.md`.
+const findingId = z.union([z.string().regex(/^F[1-9]\d{0,2}$/), line(120)]);
+
 const rightSchema = z.strictObject({
   module: asciiName(32),
   name: asciiName(64),
   kind: z.enum(rightKinds),
-  label: z.strictObject({ text: line(200), page: academyPath }).optional(),
+  label: z
+    .union([
+      z.strictObject({ text: line(200), page: academyPath }),
+      z.strictObject({
+        text: line(200),
+        finding: findingId,
+        version: churchToolsVersion,
+      }),
+    ])
+    .optional(),
   pages: z.array(academyPath).max(20),
 });
+
+const rightRefSchema = z.strictObject({
+  module: asciiName(32),
+  name: asciiName(64),
+});
+
+const openApiEvidenceSchema = z.strictObject({ kind: z.literal('openapi') });
+
+const plainEvidenceSchema = z.union([
+  z.strictObject({
+    kind: z.literal('finding'),
+    id: findingId,
+    version: churchToolsVersion,
+  }),
+  openApiEvidenceSchema,
+]);
+
+const needEvidenceSchema = z.union([
+  z.strictObject({
+    kind: z.literal('finding'),
+    id: findingId,
+    version: churchToolsVersion,
+    shows: z.enum(findingShows),
+  }),
+  openApiEvidenceSchema,
+  z.strictObject({ kind: z.literal('academy'), page: academyPath }),
+]);
+
+const notNeededSchema = z.strictObject({
+  right: rightRefSchema,
+  evidence: z.array(plainEvidenceSchema).min(1).max(10),
+});
+
+const operationRightsSchema = z.union([
+  z.strictObject({
+    operationId: operationIdSchema,
+    needs: z
+      .array(
+        z.strictObject({
+          rights: z.array(rightRefSchema).min(1).max(10),
+          without: z.enum(withoutRight).optional(),
+          evidence: z.array(needEvidenceSchema).min(1).max(10),
+        }),
+      )
+      .min(1)
+      .max(20),
+    notNeeded: z.array(notNeededSchema).min(1).max(20).optional(),
+  }),
+  z.strictObject({
+    operationId: operationIdSchema,
+    none: z.array(plainEvidenceSchema).min(1).max(10),
+  }),
+  z.strictObject({
+    operationId: operationIdSchema,
+    open: line(500),
+    notNeeded: z.array(notNeededSchema).min(1).max(20).optional(),
+  }),
+]);
 
 const academyPageSchema = z.strictObject({
   path: academyPath,
@@ -672,6 +916,10 @@ const operationsFileSchema = fileSchema(
 );
 const rightsFileSchema = fileSchema(factFormats.rights, rightSchema);
 const academyFileSchema = fileSchema(factFormats.academy, academyPageSchema);
+const operationRightsFileSchema = fileSchema(
+  factFormats.operationRights,
+  operationRightsSchema,
+);
 
 const sourcesSchema = z.strictObject({
   format: z.literal(factFormats.sources),
@@ -1080,23 +1328,244 @@ function checkReferences(facts: Facts, violations: FactViolation[]): void {
       rule: 'reference',
     });
   }
+  const texts = new Map(
+    facts.academy.entries.map((page) => [page.path, page.text]),
+  );
   facts.rights.entries.forEach((right, index) => {
     const at = `entries[${String(index)}]`;
-    if (right.label !== undefined && !pages.has(right.label.page)) {
-      violations.push({
-        file: 'rights.json',
-        path: `${at}.label.page`,
-        rule: 'reference',
-      });
-    }
-    right.pages.forEach((page, position) => {
-      if (!pages.has(page)) {
+    const { label } = right;
+    // A label from a help page stands right before the name in
+    // parentheses, as the pages of the rights management write it, so
+    // that no label is made up or taken from the wrong right. A label
+    // from a finding is checked by the test of the repository, which can
+    // read the findings.
+    if (label !== undefined && 'page' in label) {
+      const text = texts.get(label.page);
+      if (text === undefined) {
         violations.push({
           file: 'rights.json',
-          path: `${at}.pages[${String(position)}]`,
+          path: `${at}.label.page`,
           rule: 'reference',
         });
+      } else if (!text.includes(`${label.text} (${right.name})`)) {
+        violations.push({
+          file: 'rights.json',
+          path: `${at}.label`,
+          rule: 'evidence',
+        });
+      }
+    }
+    right.pages.forEach((page, position) => {
+      const text = texts.get(page);
+      const path = `${at}.pages[${String(position)}]`;
+      if (text === undefined) {
+        violations.push({ file: 'rights.json', path, rule: 'reference' });
+      } else if (
+        !text.includes(`(${right.name})`) &&
+        (label === undefined || !text.includes(label.text))
+      ) {
+        violations.push({ file: 'rights.json', path, rule: 'evidence' });
       }
     });
+  });
+}
+
+// The keys the entries of `operation-rights.json` sort by. Code units,
+// like every order of the facts.
+function evidenceKey(evidence: NeedEvidence | PlainEvidence): string {
+  switch (evidence.kind) {
+    case 'finding':
+      return `finding\u0000${evidence.id}`;
+    case 'academy':
+      return `academy\u0000${evidence.page}`;
+    case 'openapi':
+      return 'openapi';
+  }
+}
+
+function refKey(right: RightRef): string {
+  return `${right.module}\u0000${right.name}`;
+}
+
+function checkOperationRightsOrder(
+  entries: readonly OperationRights[],
+  violations: FactViolation[],
+): void {
+  const file = 'operation-rights.json';
+  checkSorted(
+    entries.map((entry) => entry.operationId),
+    file,
+    'entries',
+    violations,
+  );
+  entries.forEach((entry, index) => {
+    const at = `entries[${String(index)}]`;
+    if ('needs' in entry) {
+      checkSorted(
+        entry.needs.map((need) =>
+          need.rights[0] === undefined ? '' : refKey(need.rights[0]),
+        ),
+        file,
+        `${at}.needs`,
+        violations,
+      );
+      entry.needs.forEach((need, position) => {
+        const needAt = `${at}.needs[${String(position)}]`;
+        checkSorted(
+          need.rights.map(refKey),
+          file,
+          `${needAt}.rights`,
+          violations,
+        );
+        checkSorted(
+          need.evidence.map(evidenceKey),
+          file,
+          `${needAt}.evidence`,
+          violations,
+        );
+      });
+    }
+    if ('none' in entry) {
+      checkSorted(entry.none.map(evidenceKey), file, `${at}.none`, violations);
+    }
+    if ('notNeeded' in entry && entry.notNeeded !== undefined) {
+      checkSorted(
+        entry.notNeeded.map((item) => refKey(item.right)),
+        file,
+        `${at}.notNeeded`,
+        violations,
+      );
+      entry.notNeeded.forEach((item, position) => {
+        checkSorted(
+          item.evidence.map(evidenceKey),
+          file,
+          `${at}.notNeeded[${String(position)}].evidence`,
+          violations,
+        );
+      });
+    }
+  });
+}
+
+// Words of a text as a plain list, so that «view-category» and «view
+// category» name the same right and «views» does not name «view».
+function plainWords(value: string): string {
+  return ` ${value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()} `;
+}
+
+/**
+ * Whether a text names a right by its name as whole words, case and
+ * punctuation aside, as the OpenAPI document writes rights in changing
+ * forms (D5).
+ *
+ * @param value - The text, such as the description of an operation.
+ * @param name - The name of the right.
+ * @returns Whether the text names it.
+ * @example
+ * ```ts
+ * namesRight('Requires view-category permission.', 'view category'); // true
+ * ```
+ */
+export function namesRight(value: string, name: string): boolean {
+  return plainWords(value).includes(plainWords(name));
+}
+
+// Every pairing names an operation, rights and pages that exist, and its
+// evidence carries it: the document or a help page names one of its
+// rights, a help page never stands alone, because it describes the web
+// interface and not the API, and what a read gives without the right
+// only a probe can show (ADR 0066). No right stands twice in an entry, so
+// that no operation both needs a right and does not need it.
+function checkOperationRights(facts: Facts, violations: FactViolation[]): void {
+  const file = 'operation-rights.json';
+  const operations = new Map(
+    facts.operations.entries.map((operation) => [
+      operation.operationId,
+      operation,
+    ]),
+  );
+  const rights = new Set(facts.rights.entries.map(refKey));
+  const texts = new Map(
+    facts.academy.entries.map((page) => [page.path, page.text]),
+  );
+  const push = (path: string, rule: FactRule) => {
+    violations.push({ file, path, rule });
+  };
+
+  facts.operationRights.entries.forEach((entry, index) => {
+    const at = `entries[${String(index)}]`;
+    const operation = operations.get(entry.operationId);
+    if (operation === undefined) {
+      push(`${at}.operationId`, 'reference');
+    }
+    const described = `${operation?.summary ?? ''} ${operation?.description ?? ''}`;
+    const seen = new Set<string>();
+    const checkRight = (right: RightRef, path: string) => {
+      if (!rights.has(refKey(right))) {
+        push(path, 'reference');
+      }
+      if (seen.has(refKey(right))) {
+        push(path, 'conflict');
+      }
+      seen.add(refKey(right));
+    };
+    const checkPlain = (
+      evidence: readonly PlainEvidence[],
+      path: string,
+      right: RightRef,
+    ) => {
+      evidence.forEach((item, position) => {
+        if (item.kind === 'openapi' && !namesRight(described, right.name)) {
+          push(`${path}[${String(position)}]`, 'evidence');
+        }
+      });
+    };
+
+    if ('needs' in entry) {
+      entry.needs.forEach((need, position) => {
+        const needAt = `${at}.needs[${String(position)}]`;
+        need.rights.forEach((right, place) => {
+          checkRight(right, `${needAt}.rights[${String(place)}]`);
+        });
+        const findings = need.evidence.some((item) => item.kind === 'finding');
+        if (
+          !need.evidence.some(
+            (item) => item.kind === 'finding' || item.kind === 'openapi',
+          ) ||
+          (need.without !== undefined && !findings)
+        ) {
+          push(`${needAt}.evidence`, 'evidence');
+        }
+        need.evidence.forEach((item, place) => {
+          const itemAt = `${needAt}.evidence[${String(place)}]`;
+          if (item.kind === 'openapi') {
+            if (
+              !need.rights.some((right) => namesRight(described, right.name))
+            ) {
+              push(itemAt, 'evidence');
+            }
+          } else if (item.kind === 'academy') {
+            const text = texts.get(item.page);
+            if (text === undefined) {
+              push(`${itemAt}.page`, 'reference');
+            } else if (
+              !need.rights.some((right) => text.includes(`(${right.name})`))
+            ) {
+              push(itemAt, 'evidence');
+            }
+          }
+        });
+      });
+    }
+    if ('notNeeded' in entry && entry.notNeeded !== undefined) {
+      entry.notNeeded.forEach((item, position) => {
+        const itemAt = `${at}.notNeeded[${String(position)}]`;
+        checkRight(item.right, `${itemAt}.right`);
+        checkPlain(item.evidence, `${itemAt}.evidence`, item.right);
+      });
+    }
   });
 }
