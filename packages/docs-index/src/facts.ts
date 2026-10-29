@@ -34,12 +34,15 @@ export type FactFileTexts = Readonly<Record<FactFileName, string>>;
 /**
  * The largest size of each file in bytes (ADR 0066). The schemas of the
  * OpenAPI document are the largest part (D7), the help pages of the
- * Academy hold about 500 KiB of text (D11).
+ * Academy hold about 500 KiB of text (D11). The canonical form indents
+ * every level, so `operations.json` with schemas three steps deep takes
+ * about 7.4 MB in the repository and half of that compact in the built
+ * file, whose own limit is what the package carries.
  */
 export const factFileLimits: Readonly<Record<FactFileName, number>> =
   Object.freeze({
     'SOURCES.json': 200_000,
-    'operations.json': 2_500_000,
+    'operations.json': 10_000_000,
     'rights.json': 200_000,
     'academy.json': 1_000_000,
   });
@@ -481,11 +484,14 @@ export function parseFactFiles(texts: FactFileTexts): Facts {
 
 // Control characters and characters a reader never sees: format
 // characters such as a soft hyphen, a zero-width space, a change of
-// direction or a TAG character, characters for private use and lone
-// surrogates. Inside a name they would hide a host from the check, and
-// in a text an instruction from the review of a change. Line breaks and
-// tabs stay in texts with several lines.
-const hiddenCharacter = /^[\p{Cc}\p{Cf}\p{Co}\p{Cs}]$/u;
+// direction or a TAG character, characters for private use, lone
+// surrogates and every character Unicode lets a renderer ignore, such as
+// the variation selectors, which can carry hidden text, and the fillers
+// of Hangul. Inside a name they would hide a host from the check, and in
+// a text an instruction from the review of a change. Line breaks and tabs
+// stay in texts with several lines.
+const hiddenCharacter =
+  /^[\p{Cc}\p{Cf}\p{Co}\p{Cs}\p{Default_Ignorable_Code_Point}]$/u;
 
 function withoutControls(text: string, lines: boolean): boolean {
   for (const char of text) {
@@ -556,6 +562,9 @@ const slug = z
   .max(200)
   .regex(/^[a-z0-9%][a-z0-9%_-]*$/);
 
+// The bounds of a schema leave room above the largest the OpenAPI document
+// of ChurchTools 3.138 holds: an object with 319 properties, an `anyOf`
+// with 38 members and a description of 4'349 characters (ADR 0066).
 const shapeSchema: z.ZodType<Shape> = z.lazy(() =>
   z.strictObject({
     type: z.array(z.enum(shapeTypes)).min(1).max(shapeTypes.length).optional(),
@@ -566,13 +575,13 @@ const shapeSchema: z.ZodType<Shape> = z.lazy(() =>
       .max(100)
       .optional(),
     ref: line(200).optional(),
-    description: text(4000).optional(),
+    description: text(10_000).optional(),
     items: shapeSchema.optional(),
-    properties: z.array(shapePropertySchema).max(200).optional(),
+    properties: z.array(shapePropertySchema).max(500).optional(),
     additionalProperties: z.union([z.boolean(), shapeSchema]).optional(),
-    anyOf: z.array(shapeSchema).min(1).max(20).optional(),
-    oneOf: z.array(shapeSchema).min(1).max(20).optional(),
-    allOf: z.array(shapeSchema).min(1).max(20).optional(),
+    anyOf: z.array(shapeSchema).min(1).max(50).optional(),
+    oneOf: z.array(shapeSchema).min(1).max(50).optional(),
+    allOf: z.array(shapeSchema).min(1).max(50).optional(),
   }),
 );
 
@@ -584,11 +593,12 @@ const shapePropertySchema: z.ZodType<ShapeProperty> = z.lazy(() =>
   }),
 );
 
+// `*/*` stands for any media type, as some answers of the document say.
 const contentSchema = z.strictObject({
   mediaType: z
     .string()
     .max(100)
-    .regex(/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+*-]+$/i),
+    .regex(/^(?:\*\/\*|[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+*-]+)$/i),
   schema: shapeSchema.optional(),
 });
 

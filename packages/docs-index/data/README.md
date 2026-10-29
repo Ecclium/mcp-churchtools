@@ -4,7 +4,7 @@ Aus den Dateien dieses Ordners baut `pnpm build` den Index der Dokumentation von
 
 | Datei             | Inhalt                                                                                                                       | Quelle und Bedingungen                                                                                                                   |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `operations.json` | je Operation `operationId`, Methode, Pfad, Tags, Beschreibungen, Parameter und Schemas bis zur Tiefe 4, ohne Beispiele       | OpenAPI-Dokument von ChurchTools unter CC BY 4.0. Die Fakten sind von Ecclium bearbeitet und stehen ebenfalls unter CC BY 4.0.           |
+| `operations.json` | je Operation `operationId`, Methode, Pfad, Tags, Beschreibungen, Parameter und Schemas drei Schritte tief, ohne Beispiele    | OpenAPI-Dokument von ChurchTools unter CC BY 4.0. Die Fakten sind von Ecclium bearbeitet und stehen ebenfalls unter CC BY 4.0.           |
 | `rights.json`     | je Recht Modul, Name und Art des Werts, wo eine Hilfeseite sie nennt, die Bezeichnung und die Seiten, die das Recht erklären | Modul, Name und Art aus `GET /api/permissions/global` einer Instanz, ohne ihre Werte. Bezeichnungen aus der Academy, wie `academy.json`. |
 | `academy.json`    | je frei zugänglicher Hilfeseite Titel, Abschnitt, Wissensbasis, letzte Änderung und Text in Markdown beschränkter Form       | ChurchTools Academy. Alle Rechte liegen beim Hersteller, Ecclium gibt die Texte mit seiner Erlaubnis wieder, mit Namensnennung und Link. |
 | `SOURCES.json`    | je Quelle Abrufzeit und SHA-256, beim OpenAPI-Dokument seine Version und die der Instanz, bei der Academy jede Seite         | eigene Angaben des Projekts zu den Quellen, ohne fremden Inhalt                                                                          |
@@ -13,7 +13,7 @@ Die drei Dateien mit Fakten nennen in ihrem Feld `notice` selbst ihre Quelle und
 
 ## Wer die Dateien schreibt
 
-Schreiben soll sie `pnpm docs:refresh` aus den Quellen, keine Person von Hand. Das Skript ist noch nicht gebaut, bis zu seinem ersten Lauf sind die Dateien leer und gültig. Eine Rohquelle, also eine abgerufene Seite oder das OpenAPI-Dokument als Ganzes, liegt nie hier und nie im Paket.
+Sie schreibt `pnpm docs:refresh` aus den Quellen, keine Person von Hand. Wie das Skript liest, aufbereitet und aufgerufen wird, steht in [`scripts/docs/README.md`](../../../scripts/docs/README.md). Eine Rohquelle, also eine abgerufene Seite oder das OpenAPI-Dokument als Ganzes, liegt nie hier und nie im Paket.
 
 ## Was geprüft wird
 

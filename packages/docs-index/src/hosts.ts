@@ -176,8 +176,19 @@ const allowedNames: readonly string[] = Object.freeze([
   allowedMailDomain,
 ]);
 
+// The placeholder as a whole name, not as the end of a longer one.
+const placeholderName =
+  /(?<![\p{L}\p{M}\p{N}_.-])example\.church\.tools(?![\p{L}\p{M}\p{N}_-])/gu;
+
 function inspectToken(raw: string, found: Set<HostKind>): void {
   const token = raw.replaceAll('\\.', '.').replaceAll('\\', '/');
+  // The patterns below read names in ASCII. A name under church.tools
+  // with another letter, such as an umlaut, or with an underscore would
+  // pass them with its end, so any church.tools outside the placeholder
+  // counts.
+  if (token.replace(placeholderName, '').includes('church.tools')) {
+    found.add('church-tools');
+  }
   for (const pattern of [urlPattern, webPattern]) {
     for (const match of token.matchAll(pattern)) {
       const host = hostOf(match[1] ?? '');

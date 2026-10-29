@@ -256,6 +256,14 @@ export const hints = {
     'Abbruch: Die Instanz hat eine Antwort geliefert, die die Probe nicht verarbeiten kann. Code siehe oben.',
   intern:
     'Abbruch: Unerwarteter Fehler in der Probe. Es wurde nichts aus der Antwort ausgegeben.',
+  quelleUngueltig:
+    'Abbruch: Eine Quelle hat eine Form, die pnpm docs:refresh nicht in Fakten übersetzen kann. Die Stelle steht darüber. Es wurde keine Datei geschrieben.',
+  stateOhneVersion:
+    'Abbruch: Die State-Datei nennt keine Version von ChurchTools. Führen Sie 00-inventory erneut aus.',
+  stateVeraltet:
+    'Abbruch: Die Instanz meldet eine andere Version von ChurchTools als die State-Datei. Führen Sie 00-inventory erneut aus. Es wurde keine Datei geschrieben.',
+  academyNichtLesbar:
+    'Abbruch: robots.txt der Academy ist nicht lesbar, verbietet einen Pfad des Refresh oder verlangt eine zu lange Pause. Es wurde keine Datei geschrieben.',
 } as const;
 
 /** The key of one fixed hint. */
@@ -280,15 +288,27 @@ export class SpikeError extends Error {
   readonly hint: HintKey | undefined;
 
   /**
+   * Where in a source the problem is, as names of fields and indices,
+   * such as `operations[12].parameters[3].in`, never a value.
+   */
+  readonly where: string | undefined;
+
+  /**
    * Creates an error from a fixed code.
    *
    * @param code - One of the fixed error codes.
    * @param hint - Key of a fixed hint, if one fits.
+   * @param where - The place in a source, of field names and indices only.
+   *   Anything else is dropped, so that no value reaches the output.
    */
-  constructor(code: ErrorCode, hint?: HintKey) {
+  constructor(code: ErrorCode, hint?: HintKey, where?: string) {
     super(code);
     this.name = 'SpikeError';
     this.code = code;
     this.hint = hint;
+    this.where =
+      where !== undefined && /^[A-Za-z0-9_[\].]{1,200}$/.test(where)
+        ? where
+        : undefined;
   }
 }

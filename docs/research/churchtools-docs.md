@@ -1,6 +1,6 @@
 # Quellen des Doku-Index: Fragen und Befunde
 
-Stand: 29.10.2026, Befunde aus dem ersten Lauf von `10-docs-sources` an ChurchTools 3.138
+Stand: 29.10.2026, Befunde D1 bis D15 aus dem ersten Lauf von `10-docs-sources` an ChurchTools 3.138, D16 bis D19 aus den Läufen von `pnpm docs:refresh` am selben Tag
 
 Dieses Dokument hält fest, was der Index der Dokumentation aus seinen Quellen nehmen kann und worauf sich jede Aussage stützt. Welche Inhalte in den Index kommen, entscheidet [ADR 0027](../adr/0027-inhalte-des-doku-index.md). Die Befunde heissen D1, D2 und so weiter, die Befunde zur REST-API selbst stehen mit F-Nummern in [`churchtools-api.md`](churchtools-api.md). Eine Aussage gilt als belegt, wenn die Probe sie gezeigt hat. «Laut Dokument» heisst: so steht es im OpenAPI-Dokument, die Probe hat es nicht geprüft. Was offen bleibt, steht auch unter «Offen» in [`docs/STATUS.md`](../STATUS.md).
 
@@ -31,6 +31,10 @@ Dieses Dokument hält fest, was der Index der Dokumentation aus seinen Quellen n
 | D13 | Wann wurden die Hilfeseiten zuletzt geändert?                                                          | Academy | Belegt.           |
 | D14 | Was enthalten die Hilfeseiten ausser Text: Bilder, Videos, Links, Hosts von Instanzen?                 | Academy | Belegt.           |
 | D15 | Beschreibt das OpenAPI-Dokument jede Instanz derselben Version gleich?                                 | OpenAPI | Offen.            |
+| D16 | Wo behandelt die Academy Songs und die API?                                                            | Academy | Belegt.           |
+| D17 | Wie gross werden die Fakten und der gebaute Index?                                                     | alle    | Belegt.           |
+| D18 | Welche Namen tragen die Rechte in der Antwort von `GET /api/permissions/global`?                       | Rechte  | Belegt.           |
+| D19 | Was muss der Refresh aus den Texten entfernen?                                                         | alle    | Belegt.           |
 
 ## Befunde
 
@@ -69,3 +73,15 @@ Dieses Dokument hält fest, was der Index der Dokumentation aus seinen Quellen n
 **D13, belegt.** Die älteste letzte Änderung einer Hilfeseite stammt aus dem Oktober 2024, die neueste aus dem Oktober 2026. 8 Seiten wurden zuletzt 2024 geändert, 46 im Jahr 2025 und 470 im Jahr 2026. Ob die Seiten laufend einzeln geändert werden oder 2026 gesammelt, zeigt diese Verteilung nicht. Das Abrufdatum in jedem Ergebnis, das ADR 0027 verlangt, sagt in jedem Fall, wie alt ein Text ist.
 
 **D14, belegt.** 100 bis 999 Hilfeseiten enthalten Bilder, 10 bis 99 Videos oder eingebettete Rahmen, 10 bis 99 Tabellen und 10 bis 99 Code. 100 bis 999 Seiten verlinken auf die Academy selbst, 10 bis 99 auf Seiten des Herstellers, 10 bis 99 auf andere Hosts und 10 bis 99 auf Instanzen unter `church.tools`, keine auf den Host der Testinstanz. 2 bis 9 Seiten haben relative Links, 2 bis 9 Links auf eine E-Mail-Adresse. Im Text, ausserhalb von Links, nennen 10 bis 99 Seiten einen Host einer Instanz unter `church.tools`. Für den Index folgt, was ADR 0027 vorsieht: Bilder und Videos kommen nicht hinein, Links nur als Pfad der Academy, Links auf andere Hosts fallen weg, und ein Host einer Instanz im Text wird zum Platzhalter.
+
+### Läufe von `pnpm docs:refresh`
+
+Am 29.10.2026 lief `pnpm docs:refresh` viermal an der Testinstanz an ChurchTools 3.138, nach einem frischen `00-inventory` und mit dem Dienstkonto des Servers, das laut `02-permissions` weiter nur das Wiki und die Kennkategorie sah, und an der Academy mit dem User-Agent `ecclium-docs-refresh`. Zwischen den Läufen kamen Korrekturen aus den Befunden des ersten Laufs und aus der Durchsicht dazu. Die Zahlen unten stammen aus dem letzten Lauf, dessen Fakten unter `packages/docs-index/data/` liegen.
+
+**D16, belegt.** Die Liste der Kategorien, gelesen mit `pnpm docs:refresh --kategorien`, führt die Songs als Kategorie `songs` unter `events` und die API als Kategorie `api` unter `integrationen`, mit 6 Hilfeseiten. Unter `integrationen` steht auch `ccli-songselect`, die Verbindung zu einem Dienst für Liedtexte, die der Index nicht nimmt. Die Kategorie `songs` kommt mit `events` in den Index, `api` als einzige Kategorie ausserhalb der Abschnitte aus D11. Von 524 deutschen Hilfeseiten nimmt der Index damit 216.
+
+**D17, belegt.** `operations.json` hält 846 Operationen mit Schemas drei Schritte tief und ist in der kanonischen Form 7,2 MiB gross, kompakt rund 3,0 MB. Das Dokument hat in `paths` kein `$ref`, jedes Schema steht dort ausgeschrieben. 2'694 Schemas der Fakten tragen den Namen eines gleichen Schemas unter `components`. `academy.json` hält 216 Hilfeseiten mit 594 KB Text und ist 653 KiB gross, `rights.json` 15 KiB, `SOURCES.json` 46 KiB. Der gebaute Index ist 4'491'594 Bytes gross, die Grenze ist 5'000'000. Die letzte Änderung der Seiten fiel bei 5 in das Jahr 2024, bei 21 in 2025 und bei 190 in 2026.
+
+**D18, belegt.** Die Antwort nennt 123 Rechte in 11 Modulen. Jeder Name besteht aus kleinen Wörtern mit Leerzeichen, einer unter `churchdb` mit einem Schrägstrich: `push/pull archive`. Unter `churchdb` stehen elf Rechte der Gruppen ein zweites Mal, an 3.138 auch ohne Wert, etwa `view group`, `view groups of grouptype` und `security level group`. Als Spiegel eines Rechts von `churchgroup` belegt sind nach F30 nur zwei davon. Die Fakten führen sie, wie die Antwort sie nennt (ADR 0066).
+
+**D19, belegt.** In den Texten der Hilfeseiten wurden 24 Links auf andere Hosts zu «(Link entfernt)», 2 E-Mail-Adressen zu «(E-Mail-Adresse entfernt)» und 8 Hosts von Instanzen unter `church.tools` zum Platzhalter, meist in Beispielen für Adressen der API. In 15 Stellen der Hilfeseiten und 24 der Beschreibungen im OpenAPI-Dokument steht ein `<`, mit dem ein Tag beginnen könnte, als `&lt;`, meist in Platzhaltern wie `<id>` und in Beispielen für HTML. In den Beschreibungen des Dokuments wurden 2 Links auf andere Hosts zu «(link removed)». Drei Hilfeseiten haben Links in Links, die HTML nicht kennt. Der Refresh schliesst einen offenen Link, wenn ein neuer beginnt, wie Browser es tun.

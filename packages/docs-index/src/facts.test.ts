@@ -175,6 +175,9 @@ describe('parseFactFiles', () => {
     ['a TAG character', 'Grup\u{E0041}pen'],
     ['a character for private use', 'Grup\uE000pen'],
     ['a lone surrogate', 'Grup\uD800pen'],
+    ['a variation selector', `Grup${String.fromCodePoint(0xe0100)}pen`],
+    ['a grapheme joiner', `Grup${String.fromCodePoint(0x34f)}pen`],
+    ['a filler of Hangul', `Grup${String.fromCodePoint(0x3164)}pen`],
   ])('rejects %s in a text', (_name, description) => {
     const texts = changed((facts) => {
       firstOperation(facts).description = description;
@@ -405,6 +408,71 @@ describe('parseFactFiles', () => {
         rule: 'depth',
       },
     ]);
+  });
+
+  it('accepts a schema as large as the bounds and rejects one larger', () => {
+    // The real document holds 319 properties, 38 members of an anyOf and
+    // a description of 4'349 characters; the bounds leave room above.
+    const withSchema = (schema: Shape) =>
+      changed((facts) => {
+        const parameter = firstOperation(facts).parameters[0];
+        if (parameter !== undefined) {
+          parameter.schema = schema as Mutable<Shape>;
+        }
+      });
+    const properties = (count: number): Shape => ({
+      type: ['object'],
+      properties: Array.from({ length: count }, (_, index) => ({
+        name: `p${String(index).padStart(3, '0')}`,
+        required: false,
+        schema: { type: ['string'] },
+      })),
+    });
+    const members = (count: number): Shape => ({
+      anyOf: Array.from({ length: count }, () => ({ type: ['string'] })),
+    });
+    const described = (length: number): Shape => ({
+      type: ['string'],
+      description: 'd'.repeat(length),
+    });
+    const at = 'entries[1].parameters[0].schema';
+    expect(violationsOf(withSchema(properties(500)))).toEqual([]);
+    expect(violationsOf(withSchema(properties(501)))).toEqual([
+      { file: 'operations.json', path: `${at}.properties`, rule: 'format' },
+    ]);
+    expect(violationsOf(withSchema(members(50)))).toEqual([]);
+    expect(violationsOf(withSchema(members(51)))).toEqual([
+      { file: 'operations.json', path: `${at}.anyOf`, rule: 'format' },
+    ]);
+    expect(violationsOf(withSchema(described(10_000)))).toEqual([]);
+    expect(violationsOf(withSchema(described(10_001)))).toEqual([
+      { file: 'operations.json', path: `${at}.description`, rule: 'format' },
+    ]);
+  });
+
+  it.each([
+    ['*/*', true],
+    ['text/*', true],
+    ['*/json', false],
+    ['*', false],
+  ])('takes the media type %s: %s', (mediaType, accepted) => {
+    const texts = changed((facts) => {
+      const response = facts.operations.entries[0]?.responses[0];
+      if (response !== undefined) {
+        response.content = [{ mediaType }];
+      }
+    });
+    expect(violationsOf(texts)).toEqual(
+      accepted
+        ? []
+        : [
+            {
+              file: 'operations.json',
+              path: 'entries[0].responses[0].content[0].mediaType',
+              rule: 'format',
+            },
+          ],
+    );
   });
 
   it('rejects unsorted media types and a deep schema in a request', () => {

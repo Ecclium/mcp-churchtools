@@ -117,6 +117,8 @@ export interface ProbeDefinition {
   readonly personalData?: true;
   /** Set for the probe that also reads the public help pages. */
   readonly academy?: true;
+  /** The User-Agent for the academy, if not the one of the probes. */
+  readonly academyAgent?: string;
   readonly run: (context: ProbeContext) => Promise<Json>;
 }
 
@@ -283,7 +285,13 @@ export async function runProbe(
         }));
     const academy =
       definition.academy === true
-        ? createAcademyClient({ fetch: dependencies.fetch, wait })
+        ? createAcademyClient({
+            fetch: dependencies.fetch,
+            wait,
+            ...(definition.academyAgent === undefined
+              ? {}
+              : { userAgent: definition.academyAgent }),
+          })
         : undefined;
     const output = await definition.run({
       origin,

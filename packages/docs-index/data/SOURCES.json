@@ -1,3 +1,883 @@
 {
-  "format": "ecclium.docs.sources.v1"
+  "format": "ecclium.docs.sources.v1",
+  "openapi": {
+    "retrievedAt": "2026-10-29T18:44:39Z",
+    "sha256": "d042364741f448ade5f399045069709a51e39746b8d543f3d3205b1adac7503a",
+    "documentVersion": "0.1.0",
+    "churchToolsVersion": "3.138"
+  },
+  "permissions": {
+    "retrievedAt": "2026-10-29T19:30:26Z",
+    "sha256": "a127645be5038f0c534bc6f8e61ebc3a1b9a76ecda5ebfdf44e574f62c037a76",
+    "churchToolsVersion": "3.138"
+  },
+  "academy": {
+    "retrievedAt": "2026-10-29T19:30:26Z",
+    "pages": [
+      {
+        "path": "/de/help/churchtools-module/abonnements-erinnerungen/17-wie-abonniere-ich-einen-kalender/",
+        "sha256": "dd8faf7fdda144b311bd4369387c67d75f01050918f5ac68896d5448c26d3072"
+      },
+      {
+        "path": "/de/help/churchtools-module/abonnements-erinnerungen/17-wie-kann-ich-meine-termine-im-uberblick-behalten/",
+        "sha256": "a2d5193a577bc476354413f78969f0fe8c1820318939b73bb7e8f5e00ebe24cd"
+      },
+      {
+        "path": "/de/help/churchtools-module/abonnements-erinnerungen/17-wie-kann-ich-mich-an-meine-termine-erinnern-lassen/",
+        "sha256": "a3f1013192e4d56817945c9cfda11752064de17c4b16a2ad10230a1f44c92147"
+      },
+      {
+        "path": "/de/help/churchtools-module/abonnements-erinnerungen/17-wie-kann-ich-mich-uber-neue-termine-in-einem-kalender-informieren-lassen/",
+        "sha256": "6c37005bd0c80367dcebb5290087cdbbe07a934f4293210ec59d02716c39017c"
+      },
+      {
+        "path": "/de/help/churchtools-module/automatische-mitgliedschaft/37-welche-aktionen-kann-ich-ausfuhren-lassen/",
+        "sha256": "cf80d2795f4e8f992409c686d10b57a230648e999895d8833aeced16e20500e6"
+      },
+      {
+        "path": "/de/help/churchtools-module/automatische-mitgliedschaft/37-wie-stelle-ich-den-personenfilter-ein/",
+        "sha256": "9e7a08bd75c7a151a8c55f2617049b130df8a4ff80997691d19a0a5f16394c0b"
+      },
+      {
+        "path": "/de/help/churchtools-module/automatische-mitgliedschaft/automatische-mitgliedschaft-verstehen/",
+        "sha256": "db0ea192c4059a52c9dbc3b6c9c71e5868c29e21765c0f2eefd92f395f77ceb1"
+      },
+      {
+        "path": "/de/help/churchtools-module/automatische-mitgliedschaft/beispiel-alle-kleingruppenleiter-zusammenfassen/",
+        "sha256": "3dd006adc9cd1af84ebf68daae4d418a8898da7c09ec69569ef49ef6ff79c248"
+      },
+      {
+        "path": "/de/help/churchtools-module/automatische-mitgliedschaft/beispiel-menschen-vernetzen/",
+        "sha256": "8db0f0439d56d28fb6d1d519cfc27660e76180de09ca579e404152c313fcca79"
+      },
+      {
+        "path": "/de/help/churchtools-module/automatische-mitgliedschaft/beispiel-neue-leute-hinzufugen/",
+        "sha256": "7d6d87dfd09cf10c56bca7b159f5b75768141f360f6fd13e206214d149f1823c"
+      },
+      {
+        "path": "/de/help/churchtools-module/automatische-mitgliedschaft/beispiel-seminarteilnahme-festhalten/",
+        "sha256": "d4d7e6486aaa378d1e468196b9ddfb2acc19942174ab4c0620c919d4e1fecaf1"
+      },
+      {
+        "path": "/de/help/churchtools-module/einstellungen-fuer-das-personenmodul/0-auswahlfeld-anlegen/",
+        "sha256": "7f4dae87ce40f2ec51d64d1a14af76f0b4b8b34d4b8f42f53b856c5a68e7a7e4"
+      },
+      {
+        "path": "/de/help/churchtools-module/einstellungen-fuer-das-personenmodul/system-einstellungen-des-personenmoduls/",
+        "sha256": "f3073e1a1d4cf2f6b4eab29da43015dc4475943ceefd28d32ba1f7e11fe59db7"
+      },
+      {
+        "path": "/de/help/churchtools-module/einstellungen-fuer-das-personenmodul/was-sind-personenfelder/",
+        "sha256": "91fa45c1b233d443dbed2270338c246a19ff51d69cbd7a623c6c13355ad7ef3a"
+      },
+      {
+        "path": "/de/help/churchtools-module/einstellungen-fuer-das-personenmodul/wie-erstelle-bearbeite-ich-ein-eigenes-personenfeld/",
+        "sha256": "464d8bdb07f3a5fa48d6d18538f51564d2e96574109f302123365efa7ce6d921"
+      },
+      {
+        "path": "/de/help/churchtools-module/einstellungen-fuer-das-personenmodul/wie-erstelle-und-bearbeite-ich-einen-bereich/",
+        "sha256": "3129902141c7fb952c1ccb570d9e7092543ff61617a404d33694e29516871af1"
+      },
+      {
+        "path": "/de/help/churchtools-module/einstellungen-fuer-das-personenmodul/wie-erstelle-und-bearbeite-ich-einen-personenstatus/",
+        "sha256": "ef5ace54246170f37a61f06b23bae417dd49ea3144d715fcd31a48730ef8a3c7"
+      },
+      {
+        "path": "/de/help/churchtools-module/einstellungen-gruppen/37-wie-passe-ich-die-berechtigungen-fur-meine-gruppe-an/",
+        "sha256": "7fff6458d3be26d5d8e616ff8ecafd4a701badfe5824c2908569a4b4ab7e9c0c"
+      },
+      {
+        "path": "/de/help/churchtools-module/einstellungen-gruppen/37-wie-passe-ich-die-offentliche-seite-meiner-gruppe-an/",
+        "sha256": "6d01d52f8f7a1b495b3554bcf207e1430eea83eb004fd2aa18f0648f9b79ffa6"
+      },
+      {
+        "path": "/de/help/churchtools-module/einstellungen-gruppen/37-wie-treffe-ich-einstellungen-fur-die-anmeldung-zu-meiner-gruppe/",
+        "sha256": "23661709bdf414bfe933156a10b503b519670fe7f90b7717f2aca26b36b2ec3c"
+      },
+      {
+        "path": "/de/help/churchtools-module/einstellungen-gruppen/37-wie-treffe-ich-einstellungen-fur-mitglieder-meiner-gruppe/",
+        "sha256": "92bed284e3492f2534542db280da22cd3656703bde8a02280bcca85a93662e54"
+      },
+      {
+        "path": "/de/help/churchtools-module/einstellungen-gruppen/wie-nutze-erstelle-ich-personalisierte-bescheinigungen/",
+        "sha256": "3053830ba8a80cc967c88fdc2dd64535a81d23449bee35ad628ec682ba059617"
+      },
+      {
+        "path": "/de/help/churchtools-module/einstellungen-gruppen/wie-passe-ich-die-gruppenhomepage-meiner-obergruppe-an/",
+        "sha256": "9f9e24014b189f1e93f7c2650f4977a9e938ea69b6a61bce85a21a191a718753"
+      },
+      {
+        "path": "/de/help/churchtools-module/einstellungen-gruppen/wie-verbinde-ich-eine-newsletter-anwendung-mit-meiner-gruppe/",
+        "sha256": "7bef4d1f4ac99d032a9b99e5862b28e540e15a0e8a1f55581410d7b9ff99ed91"
+      },
+      {
+        "path": "/de/help/churchtools-module/events-durchfuehren/17-wie-fuhre-ich-veranstaltungen-mit-teilnehmerbegrenzungen-mithilfe-von-churchtools-durch/",
+        "sha256": "93a13b77d67043a5dcddd028014ee001ea723f021fe69d8aad295cbd95557074"
+      },
+      {
+        "path": "/de/help/churchtools-module/events-durchfuehren/veranstaltungen-mithilfe-von-churchtools-durchfuehren/",
+        "sha256": "520a8d48d1af8b0b947c7c13bf24792b77ecf0b4df51384cb76a530416667c48"
+      },
+      {
+        "path": "/de/help/churchtools-module/events-durchfuehren/wie-exportiere-ich-ablaufplane-zu-einer-projektions-software/",
+        "sha256": "7ba9c0630b9c305869cb2b5b6c88c9bd5d2264360fe9962e1f552f006cb1433e"
+      },
+      {
+        "path": "/de/help/churchtools-module/events-durchfuehren/wie-nutze-ich-die-live-agenda/",
+        "sha256": "d4cb2617e57562b085469711f1099a2a38dbc41e02b2eca825f5e09139e0f0cc"
+      },
+      {
+        "path": "/de/help/churchtools-module/events-planen/0-auslastung-von-mitarbeitern/",
+        "sha256": "409a4dce0a94f3f58bf36f2fc4df1f53555e4c73fdd052f3fc3adb3890b7fccc"
+      },
+      {
+        "path": "/de/help/churchtools-module/events-planen/0-event/",
+        "sha256": "5f9a782872327ef60f883b0eb25e436e7a366b5dc4914c70992c059f8144517f"
+      },
+      {
+        "path": "/de/help/churchtools-module/events-planen/0-personen-anfragen/",
+        "sha256": "92e38112cc7283a799d357a30b8c585b48998376ca348d712a42a8269022e3e1"
+      },
+      {
+        "path": "/de/help/churchtools-module/events-planen/40-eventplanung-mit-churchtools/",
+        "sha256": "82aec18d5ecc5c363251328f39dec913e34a8de83ecdb6dd3ad8ec4d1e984aca"
+      },
+      {
+        "path": "/de/help/churchtools-module/events-planen/40-mitarbeiterkommunikation-bei-events/",
+        "sha256": "c812703f804b5644dbbb3d53e913303234967641f96d3cd75210c7070dcb2903"
+      },
+      {
+        "path": "/de/help/churchtools-module/events-planen/40-wie-bearbeite-ich-einen-ablaufplan/",
+        "sha256": "323661ddf1e68a8879dc3cd5c91fd388bc3f87c882d63b8eff73ced34c40c44c"
+      },
+      {
+        "path": "/de/help/churchtools-module/events-planen/40-wie-besetze-ich-dienste-fur-mein-event/",
+        "sha256": "782f7b4257ce6394ec74d7a94aa12f7cbcf426237d8225748f5db6d121624dfd"
+      },
+      {
+        "path": "/de/help/churchtools-module/events-planen/40-wie-nutze-ich-den-event-chat/",
+        "sha256": "2b8b7d5120377f504e57dfaf381fbb6e40e765bffceaebdce4194ff95cb472b9"
+      },
+      {
+        "path": "/de/help/churchtools-module/events-planen/40-wie-passe-ich-dienste-fur-mein-event-an/",
+        "sha256": "2d267a5abf26c36b3b1fe321ea559c764e4af0009014d3d46e2b52931f95ea56"
+      },
+      {
+        "path": "/de/help/churchtools-module/events-planen/wie-verwende-ich-denselben-ablaufplan-fuer-mehrere-gottesdienste/",
+        "sha256": "bc6ab75bea9ba3a0b7b3f688814468b684577cef8fcdd0a7d4e8714d6c28efda"
+      },
+      {
+        "path": "/de/help/churchtools-module/events/0-churchservice-filter/",
+        "sha256": "57f8f43f40791f802d08690e038a26c228d80ba07266494fa80d2e03ae3c8337"
+      },
+      {
+        "path": "/de/help/churchtools-module/events/0-events/",
+        "sha256": "2add4eb90efd2154f5baf7efc4d886e2006929736e017153396dfe7230ebf862"
+      },
+      {
+        "path": "/de/help/churchtools-module/grundlagen-kalender/17-warum-sind-meine-vergangenen-termine-nicht-mehr-im-kalender-zu-sehen/",
+        "sha256": "f64355b6a6d6a04592ba7e6994cd8194779d7a1ab00187975c3f83c2aedd8be8"
+      },
+      {
+        "path": "/de/help/churchtools-module/grundlagen-kalender/wie-filtere-ich-nach-termin-tags/",
+        "sha256": "9b6a69238f787e7a4285c8d4c5a24959055a3d55a48be43677bdea06d5dcd465"
+      },
+      {
+        "path": "/de/help/churchtools-module/grundlagen-personen/0-empfehlungen-fur-die-grundeinrichtung/",
+        "sha256": "96f4dfe1224d34b0cdcfc2402c5582929007bc958ab185f1b9d17d319e5010c3"
+      },
+      {
+        "path": "/de/help/churchtools-module/grundlagen-personen/0-filter/",
+        "sha256": "8d35c4716089bea6badfa3b639b1996e9b3748dbee3ffed79b0cb5b4e6655931"
+      },
+      {
+        "path": "/de/help/churchtools-module/grundlagen-personen/0-kommentare/",
+        "sha256": "4f34c5fe1307455c3c73be74100f8d421a0ba134195115baadfd721a13297ad9"
+      },
+      {
+        "path": "/de/help/churchtools-module/grundlagen-personen/0-tag/",
+        "sha256": "230c6794a11b7041d929bb4b3770c0c61fdeb3531fe48e4dd06b6bb37406260f"
+      },
+      {
+        "path": "/de/help/churchtools-module/grundlagen-personen/0-wachstumspfad/",
+        "sha256": "869d046fb7199885d224034b4352652853fbd272da54d31a4f67ac93432c8df5"
+      },
+      {
+        "path": "/de/help/churchtools-module/grundlagen-personen/53-wie-fuge-ich-personen-zu-gruppen-hinzu/",
+        "sha256": "f6405158e69e879adbb8836b7fb02c6ddd3d056da3475baccb775415e7fbcc2f"
+      },
+      {
+        "path": "/de/help/churchtools-module/grundlagen-personen/53-wie-lade-ich-personen-zu-churchtools-ein/",
+        "sha256": "01cf0679142825a39783539402f7f6c7a1648183563b181b7ad81c19388faacc"
+      },
+      {
+        "path": "/de/help/churchtools-module/grundlagen-personen/follow-ups-verstehen/",
+        "sha256": "44f2b2df58d9d493969e029a4023e04701d4dbd25fee7953d0737794707990c8"
+      },
+      {
+        "path": "/de/help/churchtools-module/grundlagen-personen/personen-id-eines-nutzers-heraussuchen/",
+        "sha256": "d438b52b3e615df79926e2affe0645b1fa38fae8128e169f309892f5e9383805"
+      },
+      {
+        "path": "/de/help/churchtools-module/grundlagen-personen/personen-in-personenlisten-und-auswahlen-verstecken/",
+        "sha256": "0a7057cd358613638e0e4c8e74597f40ff3788279533d8a5e87656de99c713cc"
+      },
+      {
+        "path": "/de/help/churchtools-module/grundlagen-personen/wie-erstelle-und-bearbeite-ich-eine-person/",
+        "sha256": "c3ba5d9524a9dad186b9fc9bc385b1863a0d0f82227c63bba0269cf17ddbfc26"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppen-einstellungen-fuer-das-gruppenmodul/37-wie-passe-ich-die-rollen-eines-gruppentyps-an/",
+        "sha256": "bc535e4231131545a366e3c4c3a2a86af5a399975255f2302a067d3aa92e4b26"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppen-einstellungen-fuer-das-gruppenmodul/uebersicht-einstellungen-fuer-das-gruppenmodul/",
+        "sha256": "3b2e18e037409a6df83b9c3f2b313e52ef4293dde8472396045155ba451838b6"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppen-einstellungen-fuer-das-gruppenmodul/wie-verwalte-ich-gruppentypen/",
+        "sha256": "d353eb3ece49f14ac1479612cf1bab9384fb71629dea720d46a739963f68300d"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppen-gruppen-organisieren/gruppen-miteinander-vernetzen/",
+        "sha256": "daf61fd50bf713be25db79d3ba4afd4c33e12c41ceb5c9c47ed83e9cb69bc384"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppen-gruppen-organisieren/was-ist-die-hierarchie/",
+        "sha256": "ae39fe8d51360b9a03a0f7872455410edc13c21fe6df45b7b5535b6ca3150233"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppen-gruppen-organisieren/wie-organisiere-ich-meine-gruppen-mit-tags/",
+        "sha256": "fd53a3c155bdd08106f15a93ecf4da8af618f4307e4a3cb11029debe7290b9f5"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppen-meine-gruppe/37-wie-fuge-ich-uber-bzw-untergeordnete-gruppen-hinzu/",
+        "sha256": "6c965c8b1e73bc375d8a779097c84967a59e7d74f7b3b32f2026ee2190bb7615"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppen-meine-gruppe/37-wie-organisiere-ich-eine-freizeitanmeldung/",
+        "sha256": "276f4a32d377fac091863d022a690ed964897f2d66f32d67931ab0d06b484473"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppen-meine-gruppe/gruppeninfos-gruppenmitgliedsfelder-und-infos-zur-gruppenmitgliedschaft/",
+        "sha256": "e27df925439cc419c05518cad2e3e39407bf8b605a37f63c25ba1e40874a7d8c"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppen-meine-gruppe/uebersicht-einer-einzelnen-gruppe/",
+        "sha256": "6d4e722ccdfe51ffcc38e7ea58fc4051800cad95f3ca6327c74169685d020036"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppen-meine-gruppe/was-ist-die-historie/",
+        "sha256": "55d1400ad82afe12267863bd8dea6b1a0c7dd38735d7cd31d225b2f3aa69f17f"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppen-meine-gruppe/was-sind-gruppenmitgliedsstatus-und-welche-auswirkungen-haben-sie/",
+        "sha256": "9a97f41d07f575a60e75e14dfbaf81bfb4c9cc5b864c99b7d3ea18f0bb44ed98"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppen-meine-gruppe/wie-bearbeite-ich-die-mitglieder-einer-gruppe/",
+        "sha256": "dd5e659cfbbccc15b63a8ccb3cc939a610db931f89684157dcd2b11522f578fa"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppen-meine-gruppe/wie-erstelle-bearbeite-ich-gruppenmitgliedsfelder/",
+        "sha256": "3d75790a6626f5b27cf87bb326cd39d1bdfc79fa40cb86eb32659ec33765fb25"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppen-meine-gruppe/wie-erstelle-ich-eine-neue-gruppe/",
+        "sha256": "4fdd993da6d2604eacd28f9bfb531b97f932bbd8c6b19d51c87c9d6aaa7c5ae9"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppen-meine-gruppe/wie-erstelle-ich-eine-notiz/",
+        "sha256": "00bdb31c70da0b6c2463fd199a44feb98e49dff3c4a76c9fcc705c6b606a4844"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppen-meine-gruppe/wie-exportiere-ich-eine-gruppenmitgliederliste/",
+        "sha256": "c76178db0243ac47a0eeafda5510ccf40d8611c6479ac69cae48e45e1bfae706"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppen-meine-gruppe/wie-melde-ich-mich-von-einer-gruppe-ab/",
+        "sha256": "342af84b314c6a15220a9458f8a76ee54ae0133a9077ea715a7c7b3e436b8e83"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppen-meine-gruppe/wie-organisiere-ich-meine-kleingruppe-mit-churchtools/",
+        "sha256": "c65cfb67c0883ebfc50c49a3361d9a0d37124207e301ff99acffc09882d37368"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppen-meine-gruppe/wie-teile-ich-infos-zu-meiner-gruppe/",
+        "sha256": "d0975c1add3d30942bf61bdaa1705fe233f4a75feb1543500f47d8749e5ee761"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppen/kommunikation-in-der-gemeinde-fordern/",
+        "sha256": "b95277128f7733859ef4262435a3c0b7f115e31090e6abf006b4d2b86240a3d2"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppen/ueberblick-gruppen/",
+        "sha256": "0994d535926a9436808c917e8a739efd0ea4935fcd91ecef2d12934f3bc02f97"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppentreffen/wie-erstelle-bearbeite-ich-ein-gruppentreffen/",
+        "sha256": "6856191f94765f34b6b645964ea786530b2bd79dd4414ddecb5df1ecc8347a6b"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppentreffen/wie-exportiere-ich-anwesenheiten-und-treffen/",
+        "sha256": "5009511f6341f33f49049fd22f5aac56fd733cddfabff86acc989e022d9b7819"
+      },
+      {
+        "path": "/de/help/churchtools-module/gruppentreffen/wie-konfiguriere-ich-einstellungen-fur-treffen-meiner-gruppe/",
+        "sha256": "336ebc1738dd6fd5392a8b0fdb99efd3046fb31fb00097ab0a116b3a49f86e4b"
+      },
+      {
+        "path": "/de/help/churchtools-module/import-export-personen/0-wie-bereite-ich-eine-csv-datei-fur-den-import-vor/",
+        "sha256": "322891e00be49ec4c2b5f5869c8360f382b3ba217905ef6b224bd329fd671692"
+      },
+      {
+        "path": "/de/help/churchtools-module/import-export-personen/wie-exportiere-ich-personendaten/",
+        "sha256": "8adc9b9b52044255055ac73fe163035153b41fdc2b6ec8380444a4261687f5af"
+      },
+      {
+        "path": "/de/help/churchtools-module/import-export-personen/wie-importiere-ich-gruppenmitglieder/",
+        "sha256": "be052fb68bb439ee6eaab734b5e19b2c0f6187c8b4798a99d7ef2adedb9ebad3"
+      },
+      {
+        "path": "/de/help/churchtools-module/import-export-personen/wie-importiere-ich-personendaten-aus-einer-datei/",
+        "sha256": "a41a15284911133b5b00daa02c31d5c4fc7b32948a2763d36c550a33b0318320"
+      },
+      {
+        "path": "/de/help/churchtools-module/info-screen/was-ist-der-info-screen/",
+        "sha256": "ec08628a4d88443ade66f2dcd3230410c505f965e8d64bb77195dd48672f4c0a"
+      },
+      {
+        "path": "/de/help/churchtools-module/info-screen/wie-konfiguriere-ich-die-info-screen-anzeige/",
+        "sha256": "5f31d3003dbb6a3396362cfa10992438f8db55e1547f566c9c1c1beca2f388bf"
+      },
+      {
+        "path": "/de/help/churchtools-module/kalender-einbetten/17-kalender-einbetten-url-parameter/",
+        "sha256": "81df11c571f27553dde4868359c04e9ee7f15ab26382e490f2bd5b282e680239"
+      },
+      {
+        "path": "/de/help/churchtools-module/kalender-einbetten/17-wie-filtere-ich-die-kalendertermine-in-der-eingebetteten-listenansicht-eines-kalenders-nach-einem-suchbegriff/",
+        "sha256": "59b20a81d886ae0266ef9cee25ed2897d298f618b4a2d64f5af2ad9630b6eee7"
+      },
+      {
+        "path": "/de/help/churchtools-module/kalender-einbetten/kalender-einbetten-css-klassen/",
+        "sha256": "1172d2c61616f756c8113c7ff0695ab189680b3388ef6233a2e91bf425465b6d"
+      },
+      {
+        "path": "/de/help/churchtools-module/kalender-einbetten/wie-bette-ich-kalender-in-einer-webseite-ein/",
+        "sha256": "a1484e9093b6f96f4b6e4c49a01709e3b22ba5274191d81467467edb75565164"
+      },
+      {
+        "path": "/de/help/churchtools-module/kalender-einbetten/wie-blende-ich-ressourcen-in-einem-eingebetteten-kalender-aus/",
+        "sha256": "ed804b5797691e8b0acb9bf9be6a572ddb5d34fef8f20f4f0e419c600a163e88"
+      },
+      {
+        "path": "/de/help/churchtools-module/kalender-einbetten/wie-konnen-eingebettete-kalender-mit-css-angepasst-werden/",
+        "sha256": "1b68d946fe58a0d5edc4f15b712eb8b136b8e3870c178f20996bec4a091e9062"
+      },
+      {
+        "path": "/de/help/churchtools-module/kalender-erstellen-verwalten/17-wie-erstelle-ich-einen-kalender/",
+        "sha256": "dc5b463a4e423b52337c5ae81087a12781a308d4b1d5d9e4d9f57a4767d4085e"
+      },
+      {
+        "path": "/de/help/churchtools-module/kalender-erstellen-verwalten/17-wie-hinterlege-ich-eine-event-vorlage-fur-einen-bestimmten-kalender/",
+        "sha256": "8a1fdc8206cfc06b76d3a6003d666c819bb4e7e0f49fe0ef16fca55979f07791"
+      },
+      {
+        "path": "/de/help/churchtools-module/kalender-erstellen-verwalten/17-wie-importiere-ich-einen-externen-kalender-in-unseren-churchtools-kalender/",
+        "sha256": "fd8f3b65bc808a9ceb7965945240a96907be324d1858a057a31d92a455d2803a"
+      },
+      {
+        "path": "/de/help/churchtools-module/kalender-erstellen-verwalten/welche-kalenderkategorien-gibt-es/",
+        "sha256": "d5a3862e52ec1294d5dab60e6cd9544954a893e77d7aa528c303e797cdcaf088"
+      },
+      {
+        "path": "/de/help/churchtools-module/kalender-erstellen-verwalten/wie-verwalte-ich-termin-tags/",
+        "sha256": "bae4f1a9fa7308e4dc039008d01cec4ae7ab69c4d87dce3d2a29e474052d503f"
+      },
+      {
+        "path": "/de/help/churchtools-module/kalender/uberblick-kalender/",
+        "sha256": "3c3a520166248237153832e4576e1062b13295bc8b1fbb0f0b2305a3d97aebdb"
+      },
+      {
+        "path": "/de/help/churchtools-module/kommunikation-gruppen/37-wie-versende-ich-eine-e-mail-an-meine-gruppe/",
+        "sha256": "101f18c2329c319302e6d1cbce60c938ae381d30cf14426b5612782e5d7c90f7"
+      },
+      {
+        "path": "/de/help/churchtools-module/kommunikation-gruppen/37-wie-verwalte-ich-den-chat-fur-meine-gruppe/",
+        "sha256": "f80220c0c6663d338dc959c26f0c449a6f48c6a157772e6dc87cd4bf1abb3646"
+      },
+      {
+        "path": "/de/help/churchtools-module/kommunikation-gruppen/wie-lege-ich-automatische-e-mails-fur-meine-gruppen-an/",
+        "sha256": "02f9a38d531da2e8cd2a317d8bbed0c184777dc33c68f86b0d2150e14dd9e5e5"
+      },
+      {
+        "path": "/de/help/churchtools-module/kommunikation-personen/0-e-mail-dialog/",
+        "sha256": "af3ea5b87304b13afbb76aeaecba38342c53db279b612ab2d56bb2ea60805a50"
+      },
+      {
+        "path": "/de/help/churchtools-module/kommunikation-personen/35-wie-nutze-ich-e-mail-vorlagen/",
+        "sha256": "6ace80bc9a1eb28230cc02e88390e59ec250acf11df543f781d4270f50a8d860"
+      },
+      {
+        "path": "/de/help/churchtools-module/kommunikation-personen/personen-kontaktieren/",
+        "sha256": "7fd00fef29585ac6257ab88e655e33032c9fb1d43765c5d7fb5567b39026f5d0"
+      },
+      {
+        "path": "/de/help/churchtools-module/kommunikation-personen/wie-erstelle-bearbeite-ich-eine-serienbriefvorlage/",
+        "sha256": "1fe34d94a245556f61ca173e5a0681045529983b878a574e877a37c86ad8c1fc"
+      },
+      {
+        "path": "/de/help/churchtools-module/kommunikation-personen/wie-erstelle-ich-einen-serienbrief/",
+        "sha256": "d6f355797a2502351b777f261121d3a336109e6df3e17f475a49c15d2b051852"
+      },
+      {
+        "path": "/de/help/churchtools-module/kommunikation-personen/wie-kontaktiere-ich-eltern-meiner-kindergruppe/",
+        "sha256": "1e2edaf2f5a76f4a1be37f1969efc77cc2e4bc07e3cbcffa4e9134ebe1db1eaf"
+      },
+      {
+        "path": "/de/help/churchtools-module/mitarbeiter/0-dienst-praferenzen-eines-mitarbeiters/",
+        "sha256": "ec49ab9ee6bcec2b896f76a93a7d34dd64c0fd0fec27161c88ef34c727732828"
+      },
+      {
+        "path": "/de/help/churchtools-module/mitarbeiter/0-uberblick-und-erinnerungen-fur-eigene-dienste/",
+        "sha256": "662e6428a352f864f4ab8bd74adc903884c5892e3c8a4b01ebda8ee58e05422b"
+      },
+      {
+        "path": "/de/help/churchtools-module/mitarbeiter/wie-trage-ich-abwesenheiten-im-events-modul-ein/",
+        "sha256": "6d0fe8469dd5294b4b63b42fd06373c3a64485749792d7a96760e1f1cc05008b"
+      },
+      {
+        "path": "/de/help/churchtools-module/personen/uberblick-personen/",
+        "sha256": "7ff6b8888c4d85d1472994c88c47add47547eafa35adcd2f6def8a05cac4039c"
+      },
+      {
+        "path": "/de/help/churchtools-module/ressourcen-anfragen-und-buchen/wie-erstelle-ich-eine-buchungsanfrage-im-web/",
+        "sha256": "0a30e3468d3c3201a509c672b69bdfc333e40180d868d57b034ad890a4a0372f"
+      },
+      {
+        "path": "/de/help/churchtools-module/ressourcen-anfragen-und-buchen/wie-erstelle-losche-ich-eine-buchungsanfrage-in-der-app/",
+        "sha256": "98d521bcefab820eeb98855a8acf892cc5f9212953de7440c8b270728a3b2882"
+      },
+      {
+        "path": "/de/help/churchtools-module/ressourcen-vorbereiten/system-einstellungen-modul-ressourcen/",
+        "sha256": "8acc0085973e5a55700d5119fbc094dbb6c6da9b7d24244c452608401ce77e66"
+      },
+      {
+        "path": "/de/help/churchtools-module/ressourcen-vorbereiten/wie-lege-ich-ressourcen-an/",
+        "sha256": "243b9853d284be6168bf27a1933cf82dd831d308cdb19ffb26767bfbc8d900e1"
+      },
+      {
+        "path": "/de/help/churchtools-module/ressourcen-vorbereiten/wie-lege-ich-ressourcen-typen-an/",
+        "sha256": "620cabd4fd9da0abab051bf117ed8896675e1dc65c867febd8f71cceaa9e71d3"
+      },
+      {
+        "path": "/de/help/churchtools-module/ressourcen/uberblick-ressourcen-im-web/",
+        "sha256": "f4543501a3704668f13084f68f2644414d0e0fa068c68aaa034068f6dfec3249"
+      },
+      {
+        "path": "/de/help/churchtools-module/ressourcen/ueberblick-ressourcen-in-der-app/",
+        "sha256": "741d26a7e69283172d7f6267c538a605a749e648370bc37cbe6126b5d5499d22"
+      },
+      {
+        "path": "/de/help/churchtools-module/ressourcen/was-zeigt-der-status-einer-ressourcenbuchung/",
+        "sha256": "8ebd4c602eb6f5ebec10a83c49790f617f959a918f2ada4584293f086b25888b"
+      },
+      {
+        "path": "/de/help/churchtools-module/ressourcen/wie-filtere-ich-ressourcenbuchungen-im-web/",
+        "sha256": "fba0a7ccd54ca207bbd2f3e84002043b5976629e63b5bd0baedbd7aa9d44a244"
+      },
+      {
+        "path": "/de/help/churchtools-module/ressourcen/wie-filtere-ich-ressourcenbuchungen-in-der-app/",
+        "sha256": "17fb7da527380556cfdf88e9294135cf0c7087ebabaf8961f2ac32e675d09e58"
+      },
+      {
+        "path": "/de/help/churchtools-module/ressourcen/wofuer-kann-ich-ressourcen-nutzen/",
+        "sha256": "e9099dd20eac06a88ac28cc94bd021705559a5728e5f5130441cf7087787be67"
+      },
+      {
+        "path": "/de/help/churchtools-module/ressourcenanfragen-bearbeiten-und-verwalten/wie-bearbeite-ich-ressourcenanfragen/",
+        "sha256": "1adb968b8c6ccf94f87a3e3747f2e0acd236eb901143e66ed0c9323e3111f332"
+      },
+      {
+        "path": "/de/help/churchtools-module/ressourcenanfragen-bearbeiten-und-verwalten/wie-lese-ich-die-auslastungsanzeige-unserer-ressourcen/",
+        "sha256": "fb3155aa53739067b77191554a07f7026126145722ef2e0072a3c3e258f3d2e9"
+      },
+      {
+        "path": "/de/help/churchtools-module/routinen/beispiel-fuhrungszeugnisse-mit-antrag-auf-gebuhrenbefreiung/",
+        "sha256": "e851a420e2d8ecc8641b41f502757bca2d6b680b55bc39f4833cb87afa9a4334"
+      },
+      {
+        "path": "/de/help/churchtools-module/routinen/beispiel-vorlage-der-fuehrungszeugnisse-organisieren/",
+        "sha256": "cc2f4d6944fd7aebe015ead342bc188f099b59aa09bc2bdd4a405b93b9140de2"
+      },
+      {
+        "path": "/de/help/churchtools-module/routinen/routinen-verstehen/",
+        "sha256": "e49cb40f886a8303cf5a46ea0e9fda4fff53bcdd5af3ee744f3f702bbb482874"
+      },
+      {
+        "path": "/de/help/churchtools-module/routinen/was-sind-verzoegerungen-und-schleifen-in-routinen/",
+        "sha256": "49df7790600db65bad114e1bc32b3b60a2756c679b17da718df79c62e9363be7"
+      },
+      {
+        "path": "/de/help/churchtools-module/routinen/welche-routinenvorlagen-gibt-es/",
+        "sha256": "0893565fcf0e810b400c5da8e711b32f47c52ebf5c5ff3076773c771731bc14a"
+      },
+      {
+        "path": "/de/help/churchtools-module/routinen/wie-erstelle-bearbeite-ich-eine-routine/",
+        "sha256": "87e35e40f365d4ea92099f9283a93feaeb5e842bc8e288d11cc28ab46d1867f4"
+      },
+      {
+        "path": "/de/help/churchtools-module/routinen/wie-unterscheiden-sich-routinen-von-bisherigen-automatisierungsfunktionen/",
+        "sha256": "b76d456667d9cd1475708e9bf20d7236a10c17eec5e78d3035321e481c079f1b"
+      },
+      {
+        "path": "/de/help/churchtools-module/rund-ums-gruppenmodul/37-haufig-verwendete-gruppentypen/",
+        "sha256": "99c0fbaf7d5a224ac62bc547531ca6d78488174385940b8a232d8710809eda09"
+      },
+      {
+        "path": "/de/help/churchtools-module/rund-ums-gruppenmodul/37-was-sind-die-gruppensichtbarkeiten-und-was-bewirken-sie/",
+        "sha256": "2b550062ce06b8ccb4338015d40f178e81502d91b1fc703e2108e1b216665a0a"
+      },
+      {
+        "path": "/de/help/churchtools-module/rund-ums-gruppenmodul/mit-welchen-aktionen-kann-ich-mehrere-gruppen-gleichzeitig-bearbeiten/",
+        "sha256": "ba2d5f026ac04bf3b4eda579fdfae8f31e6197350492ff3bfe4e9050372a6a91"
+      },
+      {
+        "path": "/de/help/churchtools-module/rund-ums-gruppenmodul/was-sind-gruppenstatus-und-welche-auswirkungen-haben-sie/",
+        "sha256": "b869db6fd0b91e5718a83a42913e2059aba1a9b4dcee11bb83fd4c3fcb122023"
+      },
+      {
+        "path": "/de/help/churchtools-module/rund-ums-gruppenmodul/was-sind-gruppentypen-und-wofur-kann-ich-sie-benutzen/",
+        "sha256": "608b5e7c31b860398406e7128c2ec01a3edf154748b81985e7f9fcd886ef36ba"
+      },
+      {
+        "path": "/de/help/churchtools-module/rund-ums-gruppenmodul/was-sind-rollen-und-wozu-kann-ich-sie-verwenden/",
+        "sha256": "7f554f4cd94fdebcb5be2e97d84d70880e8eb4f800afd385dcbf23e673b95573"
+      },
+      {
+        "path": "/de/help/churchtools-module/rund-ums-gruppenmodul/wie-bearbeite-ich-mehrere-gruppen-gleichzeitig/",
+        "sha256": "76529f204a9243635e89f22dd783047e94f916f4fd4247cf7de84f0c2b74c60f"
+      },
+      {
+        "path": "/de/help/churchtools-module/rund-ums-gruppenmodul/wie-erstelle-bearbeite-ich-eigene-ansichten-des-gruppenmoduls/",
+        "sha256": "9be3fdf75d0763fd07c001bc7c373a517db83524e5709b593a3752e82b1b8d52"
+      },
+      {
+        "path": "/de/help/churchtools-module/rund-ums-gruppenmodul/wie-exportiere-ich-eine-gruppenliste/",
+        "sha256": "e28a78c1e0daadcbb5b1faa58906d9ed2d5daf0faf5796d07b89abc0677a3520"
+      },
+      {
+        "path": "/de/help/churchtools-module/seiten-anlegen-bearbeiten/0-wiki-seiten-bearbeiten/",
+        "sha256": "895e7178d790aea678d4654ab687606eb26f65dad5b58ace9e9c3f5ab5b65442"
+      },
+      {
+        "path": "/de/help/churchtools-module/seiten-anlegen-bearbeiten/dateien-und-links/",
+        "sha256": "e94741f276ad08367eaba5967bce7c1d114af78944522c368a68f8acab23380e"
+      },
+      {
+        "path": "/de/help/churchtools-module/seiten-anlegen-bearbeiten/wie-erstelle-ich-eine-neue-seite/",
+        "sha256": "ba50a0df82928dfe69cc4fa4b2b1d24b5c61e6959836ebe61604b86667e02516"
+      },
+      {
+        "path": "/de/help/churchtools-module/seiten-anlegen-bearbeiten/wie-fuge-ich-eine-neue-kategorie-hinzu/",
+        "sha256": "fd80d4c0086fff8e34a68ccd25c8bfdcdfe01306972b8ae8883910ac5b4a6ae6"
+      },
+      {
+        "path": "/de/help/churchtools-module/seiten-anlegen-bearbeiten/wie-richte-ich-eine-weiterleitung-fur-eine-wiki-seite-ein/",
+        "sha256": "528c72273e3ad9f12debe3ffdf0038ffa0fe7bdc698c168e60032c8994b67e12"
+      },
+      {
+        "path": "/de/help/churchtools-module/songs/songs/",
+        "sha256": "be95b3c37d5d8e40a8a7a29ca9fc4e026e07d547e5515c54a5015d14e4541794"
+      },
+      {
+        "path": "/de/help/churchtools-module/termine-erstellen/17-wie-erstelle-ich-eine-besprechungsanfrage/",
+        "sha256": "8fc362f058b3a977e7d4327e492eba65e21693dc04dc1083a698510433a9106a"
+      },
+      {
+        "path": "/de/help/churchtools-module/termine-erstellen/17-wie-erstelle-ich-einen-termin-mit-event/",
+        "sha256": "694c53348068234b2bfc70db4bd355a70189b9fffd7f3cdf0ac7405392a4ea25"
+      },
+      {
+        "path": "/de/help/churchtools-module/termine-erstellen/17-wie-erstelle-ich-einen-termin-mit-ressourcenbuchung/",
+        "sha256": "d9fec1a682cb1088636a3d69c1aded013b0294353b248d0e78b03afa5b8e485c"
+      },
+      {
+        "path": "/de/help/churchtools-module/termine-erstellen/17-wie-kann-ich-den-termin-titel-eines-eventtermins-automatisch-erganzen-lassen/",
+        "sha256": "22f664080b1ad313600fe1adaa9aee956f52f12b99e0b0a677b69a56433affcb"
+      },
+      {
+        "path": "/de/help/churchtools-module/termine-erstellen/17-wie-lege-ich-einen-termin-inkl-ressourcenbuchung-und-event-an/",
+        "sha256": "2d3c23d318e83ac5c8522519c2cf4faaddb1cba54126a194e093f15f6087ae1f"
+      },
+      {
+        "path": "/de/help/churchtools-module/termine-erstellen/wie-bearbeite-ich-einen-serien-termin/",
+        "sha256": "4698c1ba2ff9056d0a4b1ef01fb254546c58ac6d7f53ef463e44e5d2376161cf"
+      },
+      {
+        "path": "/de/help/churchtools-module/termine-erstellen/wie-erstelle-ich-einen-termin-mit-anmeldegruppe/",
+        "sha256": "70e9b20ca9dc6c005e62fbc983b78664d7b951a4abb0cd4b617bb5a08c52cad4"
+      },
+      {
+        "path": "/de/help/churchtools-module/termine-erstellen/wie-erstelle-ich-einen-termin/",
+        "sha256": "a54f1ffee6256f968578d0c24d0ef5f47b9eda009e4f97786b16df1bea31c5b9"
+      },
+      {
+        "path": "/de/help/churchtools-module/termine-erstellen/wie-nutze-ich-terminvorlagen/",
+        "sha256": "1b167b0f031c2040c8406f3d2138ddeb95fa14e31ebea2aa03ba86fbbab1f510"
+      },
+      {
+        "path": "/de/help/churchtools-module/verwalten-events/40-wie-lege-ich-eine-dienstkategorie-an/",
+        "sha256": "1ffc9d02874ada412620b0185125391e274742719564c04ac46952c0b28ca08a"
+      },
+      {
+        "path": "/de/help/churchtools-module/verwalten-events/40-wie-lege-ich-eine-eventvorlage-an/",
+        "sha256": "f68d19ef1e1fcd5c11eab3284947f87103b2e1dfb094e11af193fbff83589ed7"
+      },
+      {
+        "path": "/de/help/churchtools-module/verwalten-events/40-wie-lege-ich-einen-dienst-an/",
+        "sha256": "099ceba7440c0bedf809a29a997736c0202d7efb923322032436abe629f4bf78"
+      },
+      {
+        "path": "/de/help/churchtools-module/verwalten-events/40-wie-lege-ich-fakten-an/",
+        "sha256": "8ac4d0c4351d420343a94aeae9aa26f779135b2b2bac6c9823aeec8db1d62b1b"
+      },
+      {
+        "path": "/de/help/churchtools-module/verwalten-events/dienste-und-dienstkategorien/",
+        "sha256": "bdb25728dc2ac7e994fd82e6f8109e29cfc4fe3ca843711044e6f7103e5960de"
+      },
+      {
+        "path": "/de/help/churchtools-module/verwalten-events/tauschen-button/",
+        "sha256": "f2cff636e361cdd28d5fa75bd29485804fc7ac6755ef582ca8b359fe6492e4d0"
+      },
+      {
+        "path": "/de/help/churchtools-module/verwalten-events/warum-bekommt-ein-leiter-die-automatische-e-mail-neuigkeiten-in-dienst-nicht/",
+        "sha256": "731a128731536597c8cbba1bc5042190b4c1269fcf4f632b544f14e8f3c431de"
+      },
+      {
+        "path": "/de/help/churchtools-module/verwalten-events/wie-erstelle-ich-eine-ablaufplanvorlage/",
+        "sha256": "f88347bc45d49f8160b6fe9a102af150316274a7be7e1e5718538625f60a0a53"
+      },
+      {
+        "path": "/de/help/churchtools-module/weiteres-kalender/wie-kann-ich-meine-kalenderansicht-ausdrucken/",
+        "sha256": "bfdfe4b89c05ad99f47ea15873f3e59b833f361a4423de221693ae3afed03e52"
+      },
+      {
+        "path": "/de/help/churchtools-module/weiteres-kalender/wie-trage-ich-meine-abwesenheiten-ein/",
+        "sha256": "1555c325aaa1c4853936af4f0841773098b6c16290f255ba716491478aef40a0"
+      },
+      {
+        "path": "/de/help/churchtools-module/weiteres-personen/0-filtergruppen/",
+        "sha256": "976b4f8567dfab823de429cf0c88165b008ccba5554121fa7f362f0c4c93b344"
+      },
+      {
+        "path": "/de/help/churchtools-module/weiteres-personen/0-gruppenfelder-fur-komplexe-filter-nutzen/",
+        "sha256": "0ae775b46a1b8e257c2a74b60779afe607a36d3a17f4196fa07c3527c501b536"
+      },
+      {
+        "path": "/de/help/churchtools-module/weiteres-personen/0-personenarchiv/",
+        "sha256": "9f1416f083d5e93fa2c738150684b03e904a6cd474e9a2ec22e0be86fde79d8d"
+      },
+      {
+        "path": "/de/help/churchtools-module/weiteres-personen/wie-entferne-ich-externe-personen-aus-meiner-personenliste/",
+        "sha256": "644df9d938851010853e0df35aba40df92c2d904086c3ddf7b138784f341f58e"
+      },
+      {
+        "path": "/de/help/churchtools-module/weiteres-wiki/0-wiki-suche/",
+        "sha256": "8469a42b9e480fed9f358518c8272085be8998b67ab4266017c00ded39e87211"
+      },
+      {
+        "path": "/de/help/churchtools-module/weiteres-wiki/das-kontextmenue/",
+        "sha256": "ef412d8e9f2db67ea8bffc6852876a1e2a284e6dd9b3ee40efa42340ac1e2ee3"
+      },
+      {
+        "path": "/de/help/churchtools-module/weiteres-wiki/wie-kann-ich-mir-alle-seiten-einer-wiki-kategorie-anzeigen-lassen/",
+        "sha256": "65e60b77145a04664a66852476e25e7247aaae53b537e19f29c4a9eebb020c99"
+      },
+      {
+        "path": "/de/help/churchtools-module/weiteres-wiki/wiki-html-editor/",
+        "sha256": "dcfe4f7644cd7102fd30fc6037a5bdf571b8886d13e857bc7decbb2029649310"
+      },
+      {
+        "path": "/de/help/churchtools-module/wiki/0-wiki-2-0/",
+        "sha256": "0a9234120f6b53bc7e86db550a5d15781f6b772ad77a277fdfc3c1943e81b95b"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/beitraege-berechtigen/49-berechtigungen-fur-beitrage/",
+        "sha256": "69df3dfe01f2c0146daac75b2ee12228b392a8ca3d4e17a09a654309effe3588"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/berechtigungen-vergeben/wie-vergebe-ich-eine-globale-berechtigung/",
+        "sha256": "6c36b08d96737e10856e4c2821aa9b827704902134da53707b82e4151810ef0d"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/berechtigungen-vergeben/wie-vergebe-ich-eine-gruppeninterne-berechtigung/",
+        "sha256": "bdfdb44d7eda471af079e5c62c36aeae82436085b61bc6bc18e59d8a26d7e22a"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/berechtigungen/28-funktionen-und-ihre-anforderungen-im-uberblick/",
+        "sha256": "a97fd3878cdec0da9f0c3f4db8f2b586c001a667cef6f6da2ecbfe022689a722"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/berechtigungen/28-wodurch-erhalt-ein-nutzer-seine-berechtigungen/",
+        "sha256": "08cfaa8279b1235ab7dfb73a9d3319a4aa9d1952e069fe93a3e24b92179cd84e"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/berechtigungen/erklarung-des-berechtigungssystems-in-churchtools/",
+        "sha256": "cf3279994a856c1079ac55b524052a4f4260e3358364e15bcbcbf2444eecdc1a"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/berechtigungen/unterschied-zwischen-globalen-und-gruppeninternen-berechtigungen/",
+        "sha256": "b8d37b5509280c31203b993bb74e2056b3c84c375321f5aad849b6ca38ef0c2d"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/finanzen-berechtigen/30-berechtigungen-fur-finanzen/",
+        "sha256": "c9d234688d8a4e3bc22a6e36fc37456d5d0f6434d1eb7d40d0e7b24483695d25"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/grundlagen-rechteverwaltung-verstehen/28-filtermoglichkeiten-in-der-rechteverwaltung/",
+        "sha256": "7c5352fbfe8552e65d55d55540f1b785b24a71e93cca3f9974c3c8fef3fabec2"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/grundlagen-rechteverwaltung-verstehen/28-offene-oder-enge-rechteverwaltung-was-passt-zu-uns/",
+        "sha256": "9c184e6b3db80716a87dada1bb3ef79b0891c8e6e8b072fd296855927a2713e1"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/grundlagen-rechteverwaltung-verstehen/28-sinnvolle-rechteverwaltung-vom-groben-zum-feinen/",
+        "sha256": "afc562b95c3abdd0fe357e7329b9708ce3a3b4002cbfa4cf59664ab153a06e46"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/grundlagen-rechteverwaltung-verstehen/28-warum-sehe-ich-die-rechteverwaltung-nicht/",
+        "sha256": "b94806f59bb1c1c0bc1985f88c41eca962f5a690f4720ec7a2d24e49d7e3255a"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/grundlagen-rechteverwaltung-verstehen/28-wo-finde-ich-die-rechteverwaltung/",
+        "sha256": "cbea5919590e07dc8fa8a89724902dbf5b69e83089dff8dfb2b1abbb2cb17b1d"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/grundlagen-rechteverwaltung-verstehen/gesperrte-berechtigungen/",
+        "sha256": "82cea8cd94a682dcaacda3d2c54fddad0cdc5919861f9a7dadc11dec97baf5ed"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/grundlagen-rechteverwaltung-verstehen/was-ist-die-nicht-eingeloggte-person/",
+        "sha256": "5e18501b4672d80ea8f381a271484a60f90b65d90b5bd664377e91a08fa64143"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/gruppen-berechtigen/0-gruppensichtbarkeiten/",
+        "sha256": "08f27e7794406e342c810c8a677818263afcbc1160cd9293f41c0599fee9be75"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/gruppen-berechtigen/28-berechtigung-fur-die-untergeordneten-gruppen/",
+        "sha256": "44560e6938efd86e1ba45216e44407891cd08db030d813ae5cb1b4af228daf98"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/gruppen-berechtigen/28-berechtigungsempfehlung-fur-bereichsleiter/",
+        "sha256": "47772388465226f27a3cb71503d6e05cba70850759deb4979cfbe7c183b5dad2"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/gruppen-berechtigen/28-berechtigungsempfehlung-fur-die-gemeindeleitung/",
+        "sha256": "c054164b582d0a50de08c434825df5335dd6cc75b47f5c3cf8a77cc6e2db9e55"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/gruppen-berechtigen/28-berechtigungsempfehlung-fur-musikgruppen/",
+        "sha256": "c1b9eab77a923c8f97df12e1a17552cbbb34413b8731cbdbd4d36bc6b8bc3e54"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/gruppen-berechtigen/28-gruppe-fur-bereichsleiter-erstellen-und-berechtigen/",
+        "sha256": "859160f6e002c00bbc173b5bc87212e5b728c9a38ef2fa48b0457a95ca54caf8"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/gruppen-berechtigen/28-gruppe-fur-gemeindeleitung-erstellen-und-berechtigen/",
+        "sha256": "301f7dde837dcdf6d70c6fbbb2a3a8d83f20a210b7ff792a73eb42e5b52860fa"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/gruppen-berechtigen/28-wann-sind-rechte-von-gruppenmitgliedern-wirksam/",
+        "sha256": "e5f409ca63431e72d7941449093401941311fbb0f67f11ff80829b49cb1eac98"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/gruppen-berechtigen/28-wie-bekommt-eine-rolle-einer-ubergeordneten-gruppe-rechte-fur-eine-untergeordnete-gruppe/",
+        "sha256": "23e4f5baf78679ef6e81667af05689772eb7e935262a7e8524b60e3089ede592"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/gruppen-berechtigen/berechtigungsempfehlung-fuer-das-admin-team/",
+        "sha256": "1d24b3d0ff0b02452068c5e308da3a87494435c3652099df796726228b6c9ee6"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/gruppen-berechtigen/berechtigungsempfehlung-fur-kleingruppen/",
+        "sha256": "eb07b3744d097e9a7d7e3a8727ddb3afff7a08e57a17387e6a9d55e111a81d9a"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/gruppen-berechtigen/empfehlungen-fur-gruppenberechtigungen/",
+        "sha256": "85e2f285909bf51e050a7c0775e5767ae4ecd0c09b9e151aaccc2defcb778184"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/kalender-berechtigen/17-wie-passe-ich-die-kalenderberechtigungen-an/",
+        "sha256": "5f357f4f8c515ae2672be49cd98129a8035773f3aeb3f0e5e97336f97ca78296"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/kalender-berechtigen/28-gottesdienstkalender-fur-alle-sichtbar-machen/",
+        "sha256": "418eda1f24dac68cb9742d22f414f3bd7c132e0be312ee035f29854f33c4c3c9"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/konkrete-anwendungsfaelle/28-wie-finde-ich-fehler-in-der-rechtevergabe/",
+        "sha256": "7d1d738c273279a5fda9c02a2c33b36e068fd2ab3b6bc102b35acd7fbe060043"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/rechteverwaltung-anpassen/28-wie-kann-ich-herausfinden-wodurch-eine-person-berechtigt-ist/",
+        "sha256": "83d360ecbe8b4e2183142a9e4e732d19dbafc50c018a10d96db3197ea35b7541"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/rechteverwaltung-verstehen/ueberblick-rechteverwaltung/",
+        "sha256": "f503a7672c15e54250ee2b80763513107e0e3219cde22b075025ac9b55ba854e"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/sicherheitslevel-einstellen/28-wie-andere-ich-die-voreingestellten-sicherheitslevel/",
+        "sha256": "ac2ae29d6ba8e817dfaace302593fc1006292889261db41b48a67541b33b5a79"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/sicherheitslevel-einstellen/wie-aendere-ich-das-sicherheitslevel-eines-personenfeldes/",
+        "sha256": "dfb7b88aa242376bcb227a757a3ce9b50a100feba6a62398055621318cd1b427"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/sicherheitslevel/was-sind-sicherheitslevel/",
+        "sha256": "8408152fd2ad960c84b711ca5ceb27fd73b7ccda92813cb3af848726c43069ad"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/sicherheitslevel/welche-sicherheitslevel-gibt-es-und-wofur-werden-sie-verwendet/",
+        "sha256": "12d3d373cb89e8b9b0e4b293016034d0055a74bf7576834e02555f426d265d5a"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/wiki-berechtigen/0-wiki-berechtigungen/",
+        "sha256": "78f036fb863d9428d7305ddcdb7bbd674a1a4e687663b4f1297ed3754e73cd97"
+      },
+      {
+        "path": "/de/help/rechteverwaltung/wiki-berechtigen/28-wie-kann-ich-alle-zukunftigen-wiki-kategorien-berechtigen/",
+        "sha256": "626b81ba96540c804e2cdbfd952dceb643c6f99284bcecea4cf477fe96f16167"
+      },
+      {
+        "path": "/de/help/system-einstellungen/api/0-cors/",
+        "sha256": "8dce6579448c0a63bfa70126f8958e40cc066565bb199efb3228627dbf8a5b55"
+      },
+      {
+        "path": "/de/help/system-einstellungen/api/abgekuendigte-und-geloeschte-apis/",
+        "sha256": "905d997daeb6681fce929731961852e1d8adfe6e6fa8f67c5a3ac88eda2e7d65"
+      },
+      {
+        "path": "/de/help/system-einstellungen/api/api-alt/",
+        "sha256": "dd07cc0f6c1fcb5e29bee5d1a6ce28cc90f584731bb220aca3a75ff3601ce94b"
+      },
+      {
+        "path": "/de/help/system-einstellungen/api/api-authentifizierung/",
+        "sha256": "976b2478569dc427b43eae43381c405a5df47baacce91b94a155347f459da845"
+      },
+      {
+        "path": "/de/help/system-einstellungen/api/api-dokumentation/",
+        "sha256": "a10bcf2f992f383adf2c8a035c656e86926b5a7a43daa070bf18bf7a23128b79"
+      },
+      {
+        "path": "/de/help/system-einstellungen/api/uberblick-api/",
+        "sha256": "81dffd7c08060c2e3b64c277eb15d4d7becaa08e7653c9204b728b7e7f032816"
+      }
+    ]
+  }
 }

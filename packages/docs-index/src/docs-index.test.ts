@@ -167,12 +167,24 @@ describe('openDocsIndex', () => {
     ).toBe(true);
   });
 
-  it('opens the facts under data/ and finds nothing in them yet', () => {
-    const empty = openDocsIndex(
+  it('opens the facts under data/ and finds an operation, a right and a help page in them', () => {
+    const real = openDocsIndex(
       buildDocsIndex(readFactFiles(defaultBuildLocations().dataDir)),
     );
-    expect(empty.searchOperations('Gruppen', 10)).toEqual([]);
-    expect(empty.searchRights('Gruppen', 10)).toEqual([]);
-    expect(empty.searchAcademy('Gruppen', 10)).toEqual([]);
-  });
+    expect(
+      real.searchOperations('group members', 10).map((hit) => hit.operationId),
+    ).toContain('get-groups-id-members');
+    expect(
+      real
+        .searchRights('view group', 10)
+        .map((hit) => `${hit.module}: ${hit.name}`),
+    ).toContain('churchgroup: view group');
+    const pages = real.searchAcademy('Gruppen', 10);
+    expect(pages.length).toBeGreaterThan(0);
+    pages.forEach((hit) => {
+      expectAttribution(hit.attribution);
+    });
+    // The real facts take seconds to build and open, more on a runner of CI
+    // with coverage than the default of five seconds allows.
+  }, 60_000);
 });

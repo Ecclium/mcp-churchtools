@@ -1,5 +1,744 @@
 {
   "format": "ecclium.docs.rights.v1",
   "notice": "Fakten zu den Rechten von ChurchTools: Modul, Name und Art jedes Rechts aus der Antwort von GET /api/permissions/global, ohne die Werte einer Instanz. Bezeichnungen stammen aus Hilfeseiten der ChurchTools Academy, je mit dem Pfad ihrer Seite. Für sie gilt, was in academy.json steht.",
-  "entries": []
+  "entries": [
+    {
+      "module": "churchcal",
+      "name": "admin appointment tags",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchcal",
+      "name": "admin church category",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchcal",
+      "name": "admin group category",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchcal",
+      "name": "admin personal category",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchcal",
+      "name": "assistance mode",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchcal",
+      "name": "create group category",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchcal",
+      "name": "create personal category",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchcal",
+      "name": "edit calendar entry template",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchcal",
+      "name": "edit category",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchcal",
+      "name": "view",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchcal",
+      "name": "view category",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchcheckin",
+      "name": "create person",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchcheckin",
+      "name": "edit masterdata",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchcheckin",
+      "name": "view",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchcore",
+      "name": "administer church html templates",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchcore",
+      "name": "administer custom modules",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchcore",
+      "name": "administer persons",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchcore",
+      "name": "administer settings",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchcore",
+      "name": "edit languages",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchcore",
+      "name": "edit public profiles",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchcore",
+      "name": "edit translations masterdata",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchcore",
+      "name": "edit website releases",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchcore",
+      "name": "edit website staff",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchcore",
+      "name": "invite persons",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchcore",
+      "name": "login to external system",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchcore",
+      "name": "simulate persons",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchcore",
+      "name": "use church html templates",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchcore",
+      "name": "view links",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchcore",
+      "name": "view logfile",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchcore",
+      "name": "view website",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "administer global filters",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "administer groups",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "complex filter",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "create groups of grouptype",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "create person",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "create print labels",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "delete group",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "delete groups of grouptype",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "delete persons",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "edit bulkletter",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "edit group",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "edit group memberships",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "edit group memberships of group",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "edit group memberships of grouptype",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "edit groups of grouptype",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "edit masterdata",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "edit person visibility",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "edit relations",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "export data",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "push/pull archive",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "security level edit own data",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "security level group",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "security level person",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "security level view own data",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "send sms",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "view",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "view alldata",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "view archive",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "view comments",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "view group",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "view groups of grouptype",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "view hidden persons",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "view history",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "view memberliste",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "view person history",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "view person tags",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "view persons from campus",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "view station",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "view statistics",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "view tags",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchdb",
+      "name": "write access",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchgroup",
+      "name": "administer global views",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchgroup",
+      "name": "administer groups",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchgroup",
+      "name": "create groups of grouptype",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchgroup",
+      "name": "delete group",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchgroup",
+      "name": "delete groups of grouptype",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchgroup",
+      "name": "edit group",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchgroup",
+      "name": "edit group memberships of group",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchgroup",
+      "name": "edit group memberships of grouptype",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchgroup",
+      "name": "edit groups of grouptype",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchgroup",
+      "name": "edit masterdata",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchgroup",
+      "name": "security level group",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchgroup",
+      "name": "view",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchgroup",
+      "name": "view group",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchgroup",
+      "name": "view group history",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchgroup",
+      "name": "view group tags",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchgroup",
+      "name": "view groups of grouptype",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchresource",
+      "name": "administer bookings",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchresource",
+      "name": "assistance mode",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchresource",
+      "name": "create bookings",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchresource",
+      "name": "create virtual bookings",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchresource",
+      "name": "edit masterdata",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchresource",
+      "name": "view",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchresource",
+      "name": "view resource",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchservice",
+      "name": "edit agenda",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchservice",
+      "name": "edit agenda templates",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchservice",
+      "name": "edit events",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchservice",
+      "name": "edit fact",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchservice",
+      "name": "edit masterdata",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchservice",
+      "name": "edit servicegroup",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchservice",
+      "name": "edit songcategory",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchservice",
+      "name": "edit template",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchservice",
+      "name": "export facts",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchservice",
+      "name": "manage absent",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchservice",
+      "name": "use ccli",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchservice",
+      "name": "view",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchservice",
+      "name": "view agenda",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchservice",
+      "name": "view events",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchservice",
+      "name": "view fact",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchservice",
+      "name": "view history",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchservice",
+      "name": "view servicegroup",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchservice",
+      "name": "view song statistics",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchservice",
+      "name": "view songcategory",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchsync",
+      "name": "view",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchwiki",
+      "name": "edit category",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "churchwiki",
+      "name": "edit masterdata",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchwiki",
+      "name": "view",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "churchwiki",
+      "name": "view category",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "finance",
+      "name": "edit accounting period",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "finance",
+      "name": "edit masterdata",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "finance",
+      "name": "view",
+      "kind": "boolean",
+      "pages": []
+    },
+    {
+      "module": "finance",
+      "name": "view accounting period",
+      "kind": "list",
+      "pages": []
+    },
+    {
+      "module": "post",
+      "name": "moderate posts",
+      "kind": "boolean",
+      "pages": []
+    }
+  ]
 }
