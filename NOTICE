@@ -14,6 +14,27 @@ Die Schriften Archivo und DM Mono im Ordner brand/fonts/ stehen unter der
 SIL Open Font License, Version 1.1. Die Lizenztexte liegen im selben Ordner
 in OFL-Archivo.txt und OFL-DM-Mono.txt.
 
+Die Fakten des Doku-Index in packages/docs-index/data/ und der Index, der
+daraus beim Bau entsteht, stehen nicht unter der Elastic License 2.0:
+
+- operations.json enthält Fakten aus dem OpenAPI-Dokument «ChurchTools REST
+  API» von ChurchTools, Kontakt laut Dokument: German ChurchTools Forum. Das
+  Dokument steht unter der Lizenz Creative Commons Namensnennung 4.0
+  International (CC BY 4.0). Ihr Text liegt in LICENSES/CC-BY-4.0.txt.
+  Ecclium hat das Dokument bearbeitet: ausgewählte Felder, Schemas gekürzt,
+  ohne Beispiele, Vorgaben und Server, Links auf andere Hosts entfernt. Die
+  Fakten stehen ebenfalls unter CC BY 4.0.
+- academy.json enthält aufbereitete Texte frei zugänglicher Hilfeseiten der
+  ChurchTools Academy, https://churchtools.academy. © ChurchTools, alle
+  Rechte vorbehalten. Ecclium gibt die Texte mit Erlaubnis des Herstellers
+  wieder, mit Namensnennung und Link. Sie stehen unter keiner Lizenz des
+  Projekts.
+- rights.json enthält Modul, Name und Art der Rechte von ChurchTools aus der
+  Antwort einer Instanz, ohne deren Werte. Für Bezeichnungen aus der Academy
+  gilt, was für academy.json gilt.
+
+Jede dieser Dateien nennt ihre Quelle und deren Bedingungen auch selbst.
+
 Name und Logo von Ecclium sind nicht Teil der Lizenz des Quellcodes.
 
 ChurchTools ist eine Marke ihres Inhabers. Ecclium ist ein unabhängiges
