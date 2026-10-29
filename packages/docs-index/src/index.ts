@@ -80,3 +80,26 @@ export {
   stopWords,
   words,
 } from './search/words.js';
+export {
+  docsIndexFileName,
+  docsIndexFormat,
+  DocsIndexError,
+  type DocsIndexProblem,
+  maxDocsIndexBytes,
+  searchFields,
+} from './artifact.js';
+export {
+  type AcademyAttribution,
+  type AcademyHit,
+  type Attribution,
+  type DocsIndex,
+  type ExplainingPage,
+  type OpenApiAttribution,
+  openApiDocumentPath,
+  openDocsIndex,
+  type OperationHit,
+  permissionsPath,
+  type PermissionsAttribution,
+  type RightHit,
+} from './docs-index.js';
+export { defaultDocsIndexFile, readDocsIndex } from './load.js';

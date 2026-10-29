@@ -1,0 +1,170 @@
+import {
+  syntheticFactFiles,
+  syntheticRightsPage,
+  syntheticThingsPage,
+} from '@ecclium/mcp-churchtools-testkit';
+import { describe, expect, it } from 'vitest';
+
+import { buildDocsIndex } from './artifact.js';
+import { defaultBuildLocations, readFactFiles } from './build/files.js';
+import {
+  type Attribution,
+  type DocsIndex,
+  openApiDocumentPath,
+  openDocsIndex,
+  permissionsPath,
+} from './docs-index.js';
+
+// The docs index as the tools use it (ADR 0066): searches and lookups over
+// synthetic facts, each result with its attribution (ADR 0027).
+
+const index: DocsIndex = openDocsIndex(buildDocsIndex(syntheticFactFiles()));
+
+const academyLink = (path: string) => `https://churchtools.academy${path}`;
+
+function expectAttribution(attribution: Attribution): void {
+  expect(attribution.title).not.toBe('');
+  expect(attribution.retrieved).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  if (attribution.source === 'academy') {
+    expect(attribution.link).toMatch(/^https:\/\/churchtools\.academy\/de\//);
+  } else {
+    expect(attribution.path).toMatch(/^\/[a-z/.]+$/);
+  }
+}
+
+describe('openDocsIndex', () => {
+  it('finds the operation for members of a thing', () => {
+    const [first] = index.searchOperations('members of a thing', 5);
+    expect(first).toEqual({
+      operationId: 'getSyntheticThingMembers',
+      method: 'get',
+      path: '/api/synthetic/things/{thingId}/members',
+      summary: 'List the members of a synthetic thing',
+      deprecated: false,
+      attribution: {
+        source: 'openapi',
+        title: 'getSyntheticThingMembers',
+        path: openApiDocumentPath,
+        retrieved: '2026-10-29',
+        documentVersion: '0.1.0',
+        churchToolsVersion: '3.138',
+        license: 'CC BY 4.0',
+        adapted: true,
+      },
+    });
+  });
+
+  it('answers which right reads the members of a thing', () => {
+    const [first] = index.searchRights(
+      'Welches Recht brauche ich, um Mitglieder eines Dings zu lesen?',
+      5,
+    );
+    expect(first?.name).toBe('view thing members');
+    expect(first?.label).toBe('Mitglieder der Dinge sehen');
+    expect(first?.attributions).toEqual([
+      {
+        source: 'permissions',
+        title: 'synthetic: view thing members',
+        path: permissionsPath,
+        retrieved: '2026-10-29',
+        churchToolsVersion: '3.138',
+      },
+      {
+        source: 'academy',
+        title: 'Rechte für Dinge',
+        link: academyLink(syntheticRightsPage),
+        retrieved: '2026-10-29',
+      },
+    ]);
+  });
+
+  it('looks up a right with the pages that explain it', () => {
+    const right = index.getRight('synthetic', 'view thing members');
+    expect(right?.fact.kind).toBe('list');
+    expect(right?.pages).toEqual([
+      {
+        path: syntheticRightsPage,
+        title: 'Rechte für Dinge',
+        link: academyLink(syntheticRightsPage),
+      },
+      {
+        path: syntheticThingsPage,
+        title: 'Dinge verwalten',
+        link: academyLink(syntheticThingsPage),
+      },
+    ]);
+    expect(index.getRight('synthetic', 'view nothing')).toBeUndefined();
+    expect(index.getRight('other', 'view thing members')).toBeUndefined();
+  });
+
+  it('finds a help page by a part of a compound word', () => {
+    expect(
+      index.searchAcademy('Mitglieder', 5).map(({ path }) => path),
+    ).toEqual([syntheticRightsPage, syntheticThingsPage]);
+    const [hit] = index.searchAcademy('Gruppenmitglieder', 5);
+    expect(hit).toEqual({
+      path: syntheticThingsPage,
+      title: 'Dinge verwalten',
+      section: 'synthetisch',
+      attribution: {
+        source: 'academy',
+        title: 'Dinge verwalten',
+        link: academyLink(syntheticThingsPage),
+        retrieved: '2026-10-29',
+      },
+    });
+  });
+
+  it('looks up an operation and a help page with their text', () => {
+    const operation = index.getOperation('getSyntheticThing');
+    expect(operation?.fact.responses.map(({ status }) => status)).toEqual([
+      '200',
+      '404',
+    ]);
+    expect(operation?.attribution.title).toBe('getSyntheticThing');
+    expect(index.getOperation('getNothing')).toBeUndefined();
+    const page = index.getAcademyPage(syntheticThingsPage);
+    expect(page?.fact.text).toContain('Person A');
+    expect(index.getAcademyPage('/de/help/fehlt/')).toBeUndefined();
+  });
+
+  it('attributes every result of every search and lookup', () => {
+    const queries = ['thing', 'Dinge', 'sehen', 'synthetic', 'Rechte'];
+    for (const query of queries) {
+      for (const hit of index.searchOperations(query, 100)) {
+        expectAttribution(hit.attribution);
+        expectAttribution(
+          index.getOperation(hit.operationId)?.attribution as Attribution,
+        );
+      }
+      for (const hit of index.searchRights(query, 100)) {
+        expect(hit.attributions.length).toBeGreaterThan(0);
+        hit.attributions.forEach(expectAttribution);
+      }
+      for (const hit of index.searchAcademy(query, 100)) {
+        expectAttribution(hit.attribution);
+        expectAttribution(
+          index.getAcademyPage(hit.path)?.attribution as Attribution,
+        );
+      }
+    }
+  });
+
+  it('gives frozen results and facts', () => {
+    const operation = index.getOperation('getSyntheticThingMembers');
+    expect(Object.isFrozen(index)).toBe(true);
+    expect(Object.isFrozen(operation?.fact.parameters[0])).toBe(true);
+    expect(
+      Object.isFrozen(index.searchRights('Dinge', 5)[0]?.attributions),
+    ).toBe(true);
+  });
+
+  it('opens the facts under data/ and finds nothing in them yet', () => {
+    const empty = openDocsIndex(
+      buildDocsIndex(readFactFiles(defaultBuildLocations().dataDir)),
+    );
+    expect(empty.searchOperations('Gruppen', 10)).toEqual([]);
+    expect(empty.searchRights('Gruppen', 10)).toEqual([]);
+    expect(empty.searchAcademy('Gruppen', 10)).toEqual([]);
+  });
+});
