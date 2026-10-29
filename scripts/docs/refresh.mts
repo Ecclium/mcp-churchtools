@@ -90,8 +90,9 @@ function count(
 }
 
 /**
- * Refuses texts that name the instance the refresh read from: its host
- * in ASCII and Unicode or its first label as a word. The cleaning removes
+ * Refuses facts that name the instance the refresh read from: its host
+ * in ASCII and Unicode or its first label as a word, in what the files
+ * took from their sources. The cleaning removes
  * hosts by their form, this check by the one host the refresh knows. It
  * names only the file, never what it found.
  *
@@ -113,7 +114,14 @@ export function checkInstanceHost(
       ? first
       : undefined;
   for (const [file, text] of Object.entries(texts)) {
-    const plain = text.toLowerCase().replaceAll('\\.', '.');
+    // Only what came from the sources: the format and the notice are
+    // words of the project, and an instance may share a word with them.
+    const taken = Object.fromEntries(
+      Object.entries(JSON.parse(text) as Record<string, unknown>).filter(
+        ([key]) => key !== 'format' && key !== 'notice',
+      ),
+    );
+    const plain = JSON.stringify(taken).toLowerCase().replaceAll('\\.', '.');
     if (
       names.some((name) => plain.includes(name)) ||
       (label !== undefined &&

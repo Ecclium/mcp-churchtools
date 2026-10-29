@@ -27,6 +27,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   categoriesDefinition,
+  checkInstanceHost,
   refreshDefinition,
 } from '../../scripts/docs/refresh.mts';
 import { academyOrigin } from '../../scripts/spike/lib/academy.mts';
@@ -450,5 +451,36 @@ describe('pnpm docs:refresh', () => {
     );
     expect(result.code).toBe(exitCodes.internal);
     expect(result.texts).toEqual({ 'academy.json': 'alt\n' });
+  });
+});
+
+describe('checkInstanceHost', () => {
+  const file = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`;
+
+  it('looks only at what came from the sources, not at the format and the notice', () => {
+    const texts = {
+      'academy.json': file({
+        format: 'demo-tenant.docs.academy.v1',
+        notice: 'Von demo-tenant aufbereitet.',
+        entries: [{ text: 'Gruppen sehen' }],
+      }),
+    };
+    expect(() => {
+      checkInstanceHost(texts, origin);
+    }).not.toThrow();
+  });
+
+  it('names the file that holds the host or the first label of the instance', () => {
+    for (const text of [
+      hosted('demo-tenant'),
+      'Die Demo-Tenant sieht',
+    ] as const) {
+      expect(() => {
+        checkInstanceHost(
+          { 'academy.json': file({ format: 'x', entries: [{ text }] }) },
+          origin,
+        );
+      }).toThrow(expect.objectContaining({ where: 'academy.json' }) as unknown);
+    }
   });
 });
