@@ -2,8 +2,9 @@
  * Probe 10: the sources of the docs index.
  *
  * Reads: `GET /api/wiki/categories`, to tell the test instance by its
- * identification category. The OpenAPI document comes from the state file
- * of 00-inventory, without a request.
+ * identification category, and `GET /api/permissions/definitions`, if the
+ * instance documents it. The OpenAPI document comes from the state file of
+ * 00-inventory, without a request.
  * Writes: nothing.
  * Answers: what the docs index can take from the OpenAPI document
  * (ADR 0027): which keys `info` has, whether its licence is CC BY 4.0,
@@ -16,6 +17,13 @@
  * on the test instance: elsewhere they would show which modules are
  * active, which 00-inventory keeps back for the same reason.
  *
+ * Of the definitions of the rights it gives the structure of the answer,
+ * whether the modules and the rights of the tools appear in it, how many
+ * names of rights it holds, and whether it carries values of the
+ * instance: a text equal to the name of a wiki category the account sees,
+ * or lists of objects with an ID and a name. No name and no value of the
+ * answer reaches the output.
+ *
  * Usage: see README.md in this folder.
  *
  * @packageDocumentation
@@ -26,10 +34,12 @@ import type { Guard, Json } from './lib/guard.mts';
 import type { Client } from './lib/http.mts';
 import { operations } from './lib/operations.mts';
 import { main, type ProbeDefinition } from './lib/probe.mts';
+import { describeResponse } from './lib/report.mts';
 import {
   basePath,
   findOperation,
   isObject,
+  Schemas,
   type JsonObject,
   type OpenApiDocument,
 } from './lib/spec.mts';
@@ -64,6 +74,18 @@ export const toolRights = [
   { module: 'churchservice', right: 'view songcategory' },
   { module: 'churchwiki', right: 'view' },
   { module: 'churchwiki', right: 'view category' },
+] as const;
+
+/** The modules whose names the probe looks for in the definitions. */
+export const knownModules = [
+  'churchcore',
+  'churchdb',
+  'churchgroup',
+  'churchcal',
+  'churchresource',
+  'churchservice',
+  'churchwiki',
+  'churchcheckin',
 ] as const;
 
 /** One right of {@link toolRights}. */
@@ -348,6 +370,28 @@ export function namesToolRight(text: string, entry: ToolRight): boolean {
     : word(entry.right) && word(entry.module);
 }
 
+/**
+ * Tells whether a text names one of the given rights as whole words.
+ *
+ * @param text - Summary and description of an operation, in lower case.
+ * @param rights - Names of rights in lower case, such as `view alldata`.
+ * @returns Whether one of them appears in the text.
+ */
+export function namesAny(text: string, rights: ReadonlySet<string>): boolean {
+  for (const right of rights) {
+    let from = text.indexOf(right);
+    while (from !== -1) {
+      const before = from === 0 ? '' : text.charAt(from - 1);
+      const after = text.charAt(from + right.length);
+      if (!/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after)) {
+        return true;
+      }
+      from = text.indexOf(right, from + 1);
+    }
+  }
+  return false;
+}
+
 function descriptionOf(operation: JsonObject): string {
   return [operation['summary'], operation['description']]
     .filter((part): part is string => typeof part === 'string')
@@ -510,7 +554,18 @@ const words = [
   'mitText',
   'allgemeineWoerter',
   'rechteDerTools',
+  'rechteDerDefinitionen',
   'erweiterungen',
+  'rechte',
+  'definitionen',
+  'antwort',
+  'module',
+  'vorhanden',
+  'definiert',
+  'namen',
+  'werteDerInstanz',
+  'kategorienamen',
+  'auswahllisten',
   'anzahlSchemas',
   'hosts',
   'servers',
@@ -528,6 +583,7 @@ const words = [
   ...countClasses,
   ...hostClasses,
   ...toolRights.map(toolRightName),
+  ...knownModules,
 ];
 
 /**
@@ -642,12 +698,14 @@ const byName = <T,>([a]: readonly [string, T], [b]: readonly [string, T]) =>
  *
  * @param document - The OpenAPI document.
  * @param testInstance - Whether the names of the prefixes may appear.
+ * @param definedRights - Names of rights from the definitions, if read.
  * @param guard - Receives every word the description uses.
  * @returns The counts.
  */
 export function describeOperations(
   document: OpenApiDocument,
   testInstance: boolean,
+  definedRights: ReadonlySet<string> | undefined,
   guard: Guard,
 ): Json {
   const all = documentOperations(document);
@@ -659,6 +717,7 @@ export function describeOperations(
   const extensions = new Map<string, number>();
   let withText = 0;
   let generic = 0;
+  let defined = 0;
   const named = new Map<string, number>();
   for (const { method, path, operation } of all) {
     perMethod.set(method, (perMethod.get(method) ?? 0) + 1);
@@ -686,6 +745,9 @@ export function describeOperations(
     }
     if (rightWords.test(text)) {
       generic += 1;
+    }
+    if (definedRights !== undefined && namesAny(text, definedRights)) {
+      defined += 1;
     }
     for (const entry of toolRights) {
       if (namesToolRight(text, entry)) {
@@ -747,6 +809,8 @@ export function describeOperations(
     beschreibungen: {
       mitText: countClass(withText),
       allgemeineWoerter: countClass(generic),
+      rechteDerDefinitionen:
+        definedRights === undefined ? 'unbekannt' : countClass(defined),
       rechteDerTools: Object.fromEntries(
         toolRights.map((entry) => {
           const name = toolRightName(entry);
@@ -774,6 +838,7 @@ function describeCounts(counts: HostCounts): Json {
  * @param state - The state of 00-inventory.
  * @param instanceHost - Host of the instance in lower case.
  * @param testInstance - Whether the names of the prefixes may appear.
+ * @param definedRights - Names of rights from the definitions, if read.
  * @param guard - Receives every word the description uses.
  * @returns The description.
  */
@@ -781,6 +846,7 @@ export function describeDocument(
   state: SpikeState,
   instanceHost: string,
   testInstance: boolean,
+  definedRights: ReadonlySet<string> | undefined,
   guard: Guard,
 ): Json {
   const document = state.specification;
@@ -822,7 +888,12 @@ export function describeDocument(
     format: typeof openapi === 'string' ? 'OpenAPI 3' : 'Swagger 2',
     openapiVersion: versionShown ? version : 'anderer Wert',
     info: describeInfo(document, state.version, instanceHost, guard),
-    operationen: describeOperations(document, testInstance, guard),
+    operationen: describeOperations(
+      document,
+      testInstance,
+      definedRights,
+      guard,
+    ),
     anzahlSchemas: count(guard, Object.keys(schemas).length),
     hosts: {
       servers: describeCounts(hosts.servers),
@@ -834,32 +905,209 @@ export function describeDocument(
   };
 }
 
+/** What the probe learns from the list of wiki categories. */
+export interface Categories {
+  /** Whether the instance is the test instance. */
+  readonly testInstance: 'ja' | 'nein' | 'nicht dokumentiert' | 'unbekannt';
+  /** Names of the categories the account sees, empty if unknown. */
+  readonly names: readonly string[];
+}
+
 /**
- * Tells the test instance by the identification category of the wiki, as
- * the guard for personal data does (ADR 0049): exactly one visible
- * category must carry its name.
+ * Reads the wiki categories the account sees. Their names tell the test
+ * instance by its identification category, as the guard for personal data
+ * does (ADR 0049): exactly one visible category must carry its name.
  *
  * @param client - Client of the instance.
  * @param document - The OpenAPI document of the instance.
- * @returns `ja` or `nein`, `nicht dokumentiert` or `unbekannt` if the list cannot be read.
+ * @returns Whether it is the test instance, and the names of the categories.
  */
-export async function readTestInstance(
+export async function readCategories(
   client: Client,
   document: OpenApiDocument,
-): Promise<'ja' | 'nein' | 'nicht dokumentiert' | 'unbekannt'> {
+): Promise<Categories> {
   const { method, template } = operations.wikiCategories;
   if (findOperation(document, method, template) === undefined) {
-    return 'nicht dokumentiert';
+    return { testInstance: 'nicht dokumentiert', names: [] };
   }
   const response = await client.get({ path: template });
   const data = isObject(response.body) ? response.body['data'] : undefined;
   if (response.status !== 200 || !Array.isArray(data)) {
-    return 'unbekannt';
+    return { testInstance: 'unbekannt', names: [] };
   }
-  const marked = data.filter(
-    (entry) => isObject(entry) && entry['name'] === identificationCategoryName,
-  );
-  return marked.length === 1 ? 'ja' : 'nein';
+  const names = data
+    .map((entry) => (isObject(entry) ? entry['name'] : undefined))
+    .filter((name): name is string => typeof name === 'string');
+  const marked = names.filter((name) => name === identificationCategoryName);
+  return { testInstance: marked.length === 1 ? 'ja' : 'nein', names };
+}
+
+/**
+ * Tells whether the definitions define a right of the tools: the right
+ * appears as a key or as a text of an object, and its module as a key or
+ * a text of the same object or of one that holds it. So both
+ * `{"churchdb": {"view alldata": {}}}` and
+ * `[{"module": "churchdb", "auth": "view alldata"}]` count. The walk keeps
+ * its own stack.
+ *
+ * @param body - The parsed answer of the definitions.
+ * @param entry - One right of {@link toolRights}.
+ * @returns Whether the right is defined in its module.
+ */
+export function definesRight(body: unknown, entry: ToolRight): boolean {
+  const stack: { value: unknown; context: readonly string[] }[] = [
+    { value: body, context: [] },
+  ];
+  for (let item = stack.pop(); item !== undefined; item = stack.pop()) {
+    const { value, context } = item;
+    if (Array.isArray(value)) {
+      for (const inner of value) {
+        stack.push({ value: inner, context });
+      }
+      continue;
+    }
+    if (!isObject(value)) {
+      continue;
+    }
+    const texts = Object.values(value).filter(
+      (inner): inner is string => typeof inner === 'string',
+    );
+    const here = [...context, ...texts];
+    if (
+      (Object.hasOwn(value, entry.right) || texts.includes(entry.right)) &&
+      (here.includes(entry.module) || Object.hasOwn(value, entry.module))
+    ) {
+      return true;
+    }
+    for (const [key, inner] of Object.entries(value)) {
+      stack.push({ value: inner, context: [...here, key] });
+    }
+  }
+  return false;
+}
+
+const rightName = /^[a-z]+(?: [a-z]+){1,5}$/;
+
+interface DefinitionsWalk {
+  readonly strings: Set<string>;
+  readonly names: Set<string>;
+  lists: number;
+}
+
+// Collects every key and text of the answer, the texts and keys that have
+// the form of a right with more than one word, and counts the lists of
+// objects that each carry an ID and a name.
+function walkDefinitions(body: unknown): DefinitionsWalk {
+  const walk: DefinitionsWalk = {
+    strings: new Set(),
+    names: new Set(),
+    lists: 0,
+  };
+  const stack: unknown[] = [body];
+  for (let value = stack.pop(); value !== undefined; value = stack.pop()) {
+    if (typeof value === 'string') {
+      walk.strings.add(value);
+      if (value.length <= 60 && rightName.test(value)) {
+        walk.names.add(value);
+      }
+    } else if (Array.isArray(value)) {
+      if (
+        value.length > 0 &&
+        value.every(
+          (inner) =>
+            isObject(inner) &&
+            typeof inner['id'] === 'number' &&
+            ['name', 'caption', 'title', 'label', 'bezeichnung'].some(
+              (key) => typeof inner[key] === 'string',
+            ),
+        )
+      ) {
+        walk.lists += 1;
+      }
+      for (const inner of value as unknown[]) {
+        stack.push(inner);
+      }
+    } else if (isObject(value)) {
+      for (const [key, inner] of Object.entries(value)) {
+        walk.strings.add(key);
+        if (key.length <= 60 && rightName.test(key)) {
+          walk.names.add(key);
+        }
+        stack.push(inner);
+      }
+    }
+  }
+  return walk;
+}
+
+/** What the probe learns from the definitions of the rights. */
+export interface Definitions {
+  /** The description for the output. */
+  readonly output: Json;
+  /** Names of rights with more than one word, if the answer was read. */
+  readonly names: ReadonlySet<string> | undefined;
+}
+
+/**
+ * Reads the definitions of the rights, if the instance documents the
+ * operation, and describes them without any of their names or values.
+ *
+ * @param client - Client of the instance.
+ * @param document - The OpenAPI document of the instance.
+ * @param categories - Names of the wiki categories the account sees.
+ * @param guard - Receives every word the description uses.
+ * @returns The description and the names of rights for the descriptions.
+ */
+export async function readDefinitions(
+  client: Client,
+  document: OpenApiDocument,
+  categories: readonly string[],
+  guard: Guard,
+): Promise<Definitions> {
+  const { method, template } = operations.permissionsDefinitions;
+  const operation = findOperation(document, method, template);
+  if (operation === undefined) {
+    return { output: 'nicht dokumentiert', names: undefined };
+  }
+  const response = await client.get({ path: template });
+  const answer = describeResponse(response, {
+    guard,
+    schemas: new Schemas(document),
+    operation,
+    maxFields: 10,
+  });
+  if (response.status !== 200 || response.kind !== 'JSON') {
+    return { output: { antwort: answer }, names: undefined };
+  }
+  const walk = walkDefinitions(response.body);
+  return {
+    output: {
+      antwort: answer,
+      module: Object.fromEntries(
+        knownModules.map((name) => [
+          name,
+          walk.strings.has(name) ? 'vorhanden' : 'fehlt',
+        ]),
+      ),
+      rechteDerTools: Object.fromEntries(
+        toolRights.map((entry) => [
+          toolRightName(entry),
+          definesRight(response.body, entry) ? 'definiert' : 'fehlt',
+        ]),
+      ),
+      namen: countClass(walk.names.size),
+      werteDerInstanz: {
+        kategorienamen:
+          categories.length === 0
+            ? 'unbekannt'
+            : categories.some((name) => walk.strings.has(name))
+              ? 'ja'
+              : 'nein',
+        auswahllisten: countClass(walk.lists),
+      },
+    },
+    names: walk.names,
+  };
 }
 
 /** The probe, for tests and for {@link main}. */
@@ -874,18 +1122,27 @@ export const probe: ProbeDefinition = {
     if (state.version !== null) {
       guard.allowVersion(state.version);
     }
-    const testInstance = await readTestInstance(client, state.specification);
+    const document = state.specification;
+    const categories = await readCategories(client, document);
+    const definitions = await readDefinitions(
+      client,
+      document,
+      categories.names,
+      guard,
+    );
     const instanceHost = new URL(origin).hostname.toLowerCase();
     return {
       probe: '10-docs-sources',
       churchtoolsVersion: state.version ?? 'unbekannt',
-      testinstanz: testInstance,
+      testinstanz: categories.testInstance,
       openapi: describeDocument(
         state,
         instanceHost,
-        testInstance === 'ja',
+        categories.testInstance === 'ja',
+        definitions.names,
         guard,
       ),
+      rechte: { definitionen: definitions.output },
     };
   },
 };

@@ -10,6 +10,8 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyHost,
   countHosts,
+  definesRight,
+  namesAny,
   namesToolRight,
   prefixOf,
   probe,
@@ -63,6 +65,8 @@ interface Call {
 interface Answers {
   /** Names of the wiki categories the account sees. */
   readonly categories?: readonly string[];
+  /** Status of the definitions of the rights. Default: 200. */
+  readonly definitionsStatus?: number;
 }
 
 /** One run of the probe. */
@@ -146,9 +150,57 @@ function syntheticInstance(
         ),
       );
     }
+    if (
+      input.origin === origin &&
+      input.pathname === '/api/permissions/definitions'
+    ) {
+      const status = answers.definitionsStatus ?? 200;
+      return Promise.resolve(
+        Response.json(
+          status === 200
+            ? syntheticDefinitions(canaries)
+            : { message: canaries.personName, translatedMessage: 'nein' },
+          { status },
+        ),
+      );
+    }
     return Promise.resolve(new Response('', { status: 404 }));
   };
   return { fetch, calls };
+}
+
+// Definitions of rights in two shapes: modules as keys with rights as
+// keys, and a list of objects with module and right as texts. The labels
+// carry canary values, one right lists the wiki categories with their
+// names, and `view songcategory` is missing on purpose.
+function syntheticDefinitions(canaries: Canaries): unknown {
+  return {
+    data: {
+      churchdb: {
+        'view alldata': { label: canaries.personName, type: 'list' },
+      },
+      churchgroup: {
+        'view groups of grouptype': { label: canaries.groupName },
+        'security level group': { label: 'Sicherheitsstufe' },
+      },
+      churchwiki: {
+        view: { label: 'Wiki sehen' },
+        'view category': {
+          options: [
+            { id: canaries.number, name: identificationCategoryName },
+            { id: canaries.number + 1, name: canaries.groupName },
+          ],
+        },
+      },
+    },
+    modules: [
+      { module: 'churchcal', auth: 'view category' },
+      { module: 'churchresource', auth: 'view resource' },
+      { module: 'churchservice', auth: 'view events' },
+      { module: 'churchservice', auth: 'view agenda' },
+      { module: 'churchservice', auth: 'view servicegroup' },
+    ],
+  };
 }
 
 async function run(
@@ -297,15 +349,20 @@ describe('10-docs-sources, part OpenAPI', () => {
     const result = await run();
     expect(result.calls.map((call) => call.url.pathname)).toEqual([
       '/api/wiki/categories',
+      '/api/permissions/definitions',
     ]);
-    expect(result.calls[0]?.authorization).toMatch(/^Login ct-CANARY-/);
+    for (const call of result.calls) {
+      expect(call.authorization).toMatch(/^Login ct-CANARY-/);
+    }
     const without = await run({}, (document) => {
       const paths = { ...document.paths };
       delete paths['/wiki/categories'];
       return { ...document, paths };
     });
     expect(without.code).toBe(exitCodes.ok);
-    expect(without.calls).toEqual([]);
+    expect(without.calls.map((call) => call.url.pathname)).toEqual([
+      '/api/permissions/definitions',
+    ]);
     expect(without.result).toMatchObject({
       testinstanz: 'nicht dokumentiert',
     });
@@ -321,7 +378,119 @@ describe('10-docs-sources, part OpenAPI', () => {
   });
 });
 
+describe('10-docs-sources, part rights', () => {
+  it('describes the definitions without any of their names or values', async () => {
+    const result = await run();
+    expect(result.code, result.output.stdout()).toBe(exitCodes.ok);
+    expect(leaks(result.output, result.forbidden)).toEqual([]);
+    expect(result.output.stdout()).not.toContain(identificationCategoryName);
+    expect(result.result).toMatchObject({
+      rechte: {
+        definitionen: {
+          antwort: { status: 200, format: 'JSON' },
+          module: {
+            churchdb: 'vorhanden',
+            churchwiki: 'vorhanden',
+            churchcal: 'vorhanden',
+            churchcheckin: 'fehlt',
+          },
+          rechteDerTools: {
+            'view alldata in churchdb': 'definiert',
+            'view in churchwiki': 'definiert',
+            'view category in churchwiki': 'definiert',
+            'view category in churchcal': 'definiert',
+            'view events in churchservice': 'definiert',
+            'view songcategory in churchservice': 'fehlt',
+          },
+          namen: '2–9',
+          werteDerInstanz: { kategorienamen: 'ja', auswahllisten: '1' },
+        },
+      },
+      openapi: {
+        operationen: { beschreibungen: { rechteDerDefinitionen: '1' } },
+      },
+    });
+  });
+
+  it('reports a refusal and reads nothing more from it', async () => {
+    const result = await run({ definitionsStatus: 403 });
+    expect(result.code).toBe(exitCodes.ok);
+    expect(leaks(result.output, result.forbidden)).toEqual([]);
+    const definitions = (result.result as { rechte: { definitionen: object } })
+      .rechte.definitionen;
+    expect(definitions).toMatchObject({ antwort: { status: 403 } });
+    expect(Object.keys(definitions)).toEqual(['antwort']);
+    expect(result.result).toMatchObject({
+      openapi: {
+        operationen: { beschreibungen: { rechteDerDefinitionen: 'unbekannt' } },
+      },
+    });
+  });
+
+  it('does not call the definitions if the instance does not document them', async () => {
+    const result = await run({}, (document) => {
+      const paths = { ...document.paths };
+      delete paths['/permissions/definitions'];
+      return { ...document, paths };
+    });
+    expect(result.code).toBe(exitCodes.ok);
+    expect(result.calls.map((call) => call.url.pathname)).toEqual([
+      '/api/wiki/categories',
+    ]);
+    expect(result.result).toMatchObject({
+      rechte: { definitionen: 'nicht dokumentiert' },
+    });
+  });
+
+  it('says it cannot compare the categories when it could not read them', async () => {
+    const result = await run({ categories: [] });
+    expect(result.result).toMatchObject({
+      testinstanz: 'nein',
+      rechte: {
+        definitionen: { werteDerInstanz: { kategorienamen: 'unbekannt' } },
+      },
+    });
+  });
+});
+
 describe('the helpers of 10-docs-sources', () => {
+  it('finds a right in its module, in either shape, and not in another module', () => {
+    const alldata = { module: 'churchdb', right: 'view alldata' } as const;
+    expect(definesRight({ churchdb: { 'view alldata': {} } }, alldata)).toBe(
+      true,
+    );
+    expect(
+      definesRight([{ module: 'churchdb', auth: 'view alldata' }], alldata),
+    ).toBe(true);
+    expect(
+      definesRight(
+        { data: [{ name: 'churchdb', rights: [{ key: 'view alldata' }] }] },
+        alldata,
+      ),
+    ).toBe(true);
+    expect(definesRight({ churchgroup: { 'view alldata': {} } }, alldata)).toBe(
+      false,
+    );
+    expect(
+      definesRight(
+        [
+          { module: 'churchgroup', auth: 'view alldata' },
+          { module: 'churchdb' },
+        ],
+        alldata,
+      ),
+    ).toBe(false);
+  });
+
+  it('finds a defined right in a description only as whole words', () => {
+    const rights = new Set(['view alldata']);
+    expect(namesAny('needs view alldata.', rights)).toBe(true);
+    expect(namesAny('needs view alldatax or xview alldata', rights)).toBe(
+      false,
+    );
+    expect(namesAny('view alldata', rights)).toBe(true);
+  });
+
   it('puts every host into its class', () => {
     const instance = hosted('demo-tenant');
     expect(classifyHost(`${hosted('Demo-Tenant')}.`, instance)).toBe(
