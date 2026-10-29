@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   classifyHost,
+  classifyLink,
   countHosts,
   definesRight,
   namesAny,
@@ -21,12 +22,22 @@ import {
   type HostCounts,
 } from '../../scripts/spike/10-docs-sources.mts';
 import {
+  academyOrigin,
+  hreflangCodes,
+  pageFeatures,
+  parseRobots,
+  robotsAllow,
+} from '../../scripts/spike/lib/academy.mts';
+import {
   createState,
   instanceId,
   type Environment,
 } from '../../scripts/spike/lib/env.mts';
 import { identificationCategoryName } from '../../scripts/spike/lib/gate.mts';
-import type { FetchFunction } from '../../scripts/spike/lib/http.mts';
+import {
+  userAgent,
+  type FetchFunction,
+} from '../../scripts/spike/lib/http.mts';
 import { exitCodes } from '../../scripts/spike/lib/output.mts';
 import { runProbe } from '../../scripts/spike/lib/probe.mts';
 import type { OpenApiDocument } from '../../scripts/spike/lib/spec.mts';
@@ -55,10 +66,11 @@ const toolsReference = fileURLToPath(
 // stands in the repository.
 const hosted = (label: string): string => [label, 'church', 'tools'].join('.');
 
-/** One request the synthetic instance received. */
+/** One request the synthetic instance or academy received. */
 interface Call {
   readonly url: URL;
   readonly authorization: string | null;
+  readonly cookie: string | null;
 }
 
 /** How the synthetic instance answers. */
@@ -67,6 +79,10 @@ interface Answers {
   readonly categories?: readonly string[];
   /** Status of the definitions of the rights. Default: 200. */
   readonly definitionsStatus?: number;
+  /** The robots.txt of the academy. Default: only /wp-admin/ is closed. */
+  readonly robots?: string;
+  /** The slug of the first section of the academy. Default: `personen`. */
+  readonly sectionSlug?: string;
 }
 
 /** One run of the probe. */
@@ -75,6 +91,8 @@ interface Run {
   readonly output: Capture;
   readonly result: unknown;
   readonly calls: readonly Call[];
+  /** The pauses the probe asked for, in milliseconds. */
+  readonly waits: readonly number[];
   readonly forbidden: readonly string[];
 }
 
@@ -133,7 +151,14 @@ function syntheticInstance(
   const calls: Call[] = [];
   const fetch: FetchFunction = (input, init) => {
     const headers = new Headers(init.headers);
-    calls.push({ url: input, authorization: headers.get('authorization') });
+    calls.push({
+      url: input,
+      authorization: headers.get('authorization'),
+      cookie: headers.get('cookie'),
+    });
+    if (input.origin === academyOrigin) {
+      return Promise.resolve(syntheticAcademy(canaries, answers, input));
+    }
     if (input.origin === origin && input.pathname === '/api/wiki/categories') {
       const names = answers.categories ?? [identificationCategoryName];
       return Promise.resolve(
@@ -167,6 +192,129 @@ function syntheticInstance(
     return Promise.resolve(new Response('', { status: 404 }));
   };
   return { fetch, calls };
+}
+
+// The academy: robots.txt, the overview with its languages, the index of
+// the REST interface, two taxonomies and four help pages on two pages of
+// the list. The pages carry canary values in their text and in fields the
+// probe does not ask for, such as the authors.
+function syntheticAcademy(
+  canaries: Canaries,
+  answers: Answers,
+  url: URL,
+): Response {
+  const json = (body: unknown, total = 1, pages = 1): Response =>
+    Response.json(body, {
+      headers: {
+        'x-wp-total': String(total),
+        'x-wp-totalpages': String(pages),
+      },
+    });
+  const author = { author: 7, author_info: { name: canaries.personName } };
+  const instanceHost = new URL(origin).hostname;
+  switch (url.pathname) {
+    case '/robots.txt':
+      return new Response(
+        answers.robots ??
+          'User-agent: *\nDisallow: /wp-admin/\nSitemap: /x.xml\n',
+        { headers: { 'content-type': 'text/plain' } },
+      );
+    case '/de/help/':
+      return new Response(
+        '<link rel="alternate" hreflang="de" href="/de/help/">' +
+          '<link rel="alternate" hreflang="en" href="/en/help/">' +
+          '<link rel="alternate" hreflang="x-default" href="/help/">',
+        { headers: { 'content-type': 'text/html' } },
+      );
+    case '/de/wp-json/':
+      return json({
+        name: canaries.groupName,
+        namespaces: ['wp/v2', 'betterdocs', 'wpml/v1'],
+        routes: {
+          '/wp/v2/docs': {},
+          '/wp/v2/doc_category': {},
+          '/wp/v2/knowledge_base': {},
+        },
+      });
+    case '/de/wp-json/wp/v2/doc_category':
+      return json([
+        { id: 1, slug: answers.sectionSlug ?? 'personen', parent: 0 },
+        { id: 2, slug: 'personen-suchen', parent: 1 },
+        { id: 3, slug: 'rechteverwaltung-verstehen', parent: 0 },
+        { id: 4, slug: '%c3%bcber-uns', parent: 0 },
+      ]);
+    case '/de/wp-json/wp/v2/knowledge_base':
+      return json([{ id: 10, slug: 'churchtools', parent: 0 }]);
+    case '/de/wp-json/wp/v2/docs':
+      return url.searchParams.get('page') === '1'
+        ? json(
+            [
+              {
+                id: 101,
+                status: 'publish',
+                modified_gmt: '2026-10-28T17:55:24',
+                doc_category: [2],
+                knowledge_base: [10],
+                content: {
+                  rendered:
+                    `<p>${canaries.personName}</p><img src="/a.png">` +
+                    '<a href="https://churchtools.academy/de/help/a/">a</a>' +
+                    '<a href="/de/help/b/">b</a>' +
+                    `<a href="https://${instanceHost}/">i</a>` +
+                    `<a href="mailto:${canaries.personEmail}">m</a>`,
+                  protected: false,
+                },
+                ...author,
+              },
+              {
+                id: 102,
+                status: 'publish',
+                modified_gmt: '2019-03-01T08:00:00',
+                doc_category: [3],
+                knowledge_base: [],
+                content: {
+                  rendered: `<table><tr><td>${canaries.groupName}</td></tr></table> siehe ${hosted('demo-tenant')}`,
+                  protected: true,
+                },
+                ...author,
+              },
+            ],
+            4,
+            2,
+          )
+        : json(
+            [
+              {
+                id: 103,
+                status: 'private',
+                modified_gmt: '2026-01-05T10:00:00',
+                doc_category: [4],
+                content: {
+                  rendered:
+                    '<iframe src="https://vimeo.com/1"></iframe><pre>x</pre>' +
+                    '<a href="https://www.churchtools.de/">c</a>' +
+                    '<a href="https://vimeo.com/1">v</a>',
+                  protected: false,
+                },
+                ...author,
+              },
+              {
+                id: 104,
+                status: 'publish',
+                modified_gmt: '2026-02-05T10:00:00',
+                doc_category: [],
+                content: { rendered: 'kurz', protected: false },
+                ...author,
+              },
+            ],
+            4,
+            2,
+          );
+    case '/en/wp-json/wp/v2/docs':
+      return json([{ id: 1 }], 120, 120);
+    default:
+      return new Response('', { status: 404 });
+  }
 }
 
 // Definitions of rights in two shapes: modules as keys with rights as
@@ -222,12 +370,16 @@ async function run(
   };
   const instance = syntheticInstance(canaries, answers);
   const output = capture();
+  const waits: number[] = [];
   const code = await runProbe(probe, {
     env,
     fetch: instance.fetch,
     io: output.io,
     folder: spikeFolder,
-    wait: () => Promise.resolve(),
+    wait: (milliseconds) => {
+      waits.push(milliseconds);
+      return Promise.resolve();
+    },
   });
   const text = output.stdout();
   return {
@@ -235,6 +387,7 @@ async function run(
     output,
     result: text === '' ? undefined : JSON.parse(text),
     calls: instance.calls,
+    waits,
     forbidden: forbiddenTexts(canaries, files.folder, 'demo-tenant'),
   };
 }
@@ -347,11 +500,14 @@ describe('10-docs-sources, part OpenAPI', () => {
 
   it('reads only the categories, with GET and the token, and nothing if they are not documented', async () => {
     const result = await run();
-    expect(result.calls.map((call) => call.url.pathname)).toEqual([
+    const toInstance = result.calls.filter(
+      (call) => call.url.origin === origin,
+    );
+    expect(toInstance.map((call) => call.url.pathname)).toEqual([
       '/api/wiki/categories',
       '/api/permissions/definitions',
     ]);
-    for (const call of result.calls) {
+    for (const call of toInstance) {
       expect(call.authorization).toMatch(/^Login ct-CANARY-/);
     }
     const without = await run({}, (document) => {
@@ -360,9 +516,11 @@ describe('10-docs-sources, part OpenAPI', () => {
       return { ...document, paths };
     });
     expect(without.code).toBe(exitCodes.ok);
-    expect(without.calls.map((call) => call.url.pathname)).toEqual([
-      '/api/permissions/definitions',
-    ]);
+    expect(
+      without.calls
+        .filter((call) => call.url.origin === origin)
+        .map((call) => call.url.pathname),
+    ).toEqual(['/api/permissions/definitions']);
     expect(without.result).toMatchObject({
       testinstanz: 'nicht dokumentiert',
     });
@@ -434,9 +592,11 @@ describe('10-docs-sources, part rights', () => {
       return { ...document, paths };
     });
     expect(result.code).toBe(exitCodes.ok);
-    expect(result.calls.map((call) => call.url.pathname)).toEqual([
-      '/api/wiki/categories',
-    ]);
+    expect(
+      result.calls
+        .filter((call) => call.url.origin === origin)
+        .map((call) => call.url.pathname),
+    ).toEqual(['/api/wiki/categories']);
     expect(result.result).toMatchObject({
       rechte: { definitionen: 'nicht dokumentiert' },
     });
@@ -450,6 +610,202 @@ describe('10-docs-sources, part rights', () => {
         definitionen: { werteDerInstanz: { kategorienamen: 'unbekannt' } },
       },
     });
+  });
+});
+
+describe('10-docs-sources, part academy', () => {
+  it('describes the help pages with counts, classes and slugs, and none of their texts', async () => {
+    const result = await run();
+    expect(result.code, result.output.stdout()).toBe(exitCodes.ok);
+    expect(leaks(result.output, result.forbidden)).toEqual([]);
+    expect(result.output.stdout()).not.toMatch(/vimeo|author/i);
+    expect(result.result).toMatchObject({
+      academy: {
+        robots: {
+          status: 200,
+          eigeneGruppe: 'nein',
+          gruppeFuerAlle: 'ja',
+          pfade: { '/de/help/': 'erlaubt', '/de/wp-json/': 'erlaubt' },
+          crawlDelay: 'fehlt',
+          sitemap: 'ja',
+        },
+        hilfe: { status: 200, sprachen: ['de', 'en', 'x-default'] },
+        schnittstelle: {
+          status: 200,
+          namensraeume: { 'wp/v2': 'vorhanden', betterdocs: 'vorhanden' },
+          routen: { '/wp/v2/docs': 'vorhanden' },
+        },
+        gelesen: 'ja',
+        seiten: {
+          gemeldet: 4,
+          gelesen: 4,
+          veroeffentlicht: 3,
+          geschuetzt: 1,
+          geaendert: {
+            aeltestes: '2019-03',
+            neuestes: '2026-10',
+            jeJahr: { '2019': 1, '2026': 3 },
+          },
+          merkmale: { bilder: '1', videos: '1', tabellen: '1', code: '1' },
+          links: {
+            academy: '1',
+            relativ: '1',
+            email: '1',
+            hostDerInstanz: '1',
+            hersteller: '1',
+            andererHost: '1',
+            andereInstanz: '0',
+          },
+          hostsImText: { andereInstanz: '1', hostDerInstanz: '0' },
+        },
+        kategorien: 4,
+        abschnitte: {
+          personen: { seiten: 1 },
+          'rechteverwaltung-verstehen': { seiten: 1 },
+          '<abschnitt#1>': { seiten: 1 },
+          ohneZuordnung: { seiten: 1 },
+        },
+        wissensbasen: {
+          churchtools: { seiten: 1 },
+          ohneZuordnung: { seiten: 3 },
+        },
+        weitereSprachen: { en: 120 },
+      },
+    });
+  });
+
+  it('sends the academy no token and no cookie, asks for no author, and pauses between requests', async () => {
+    const result = await run();
+    const toAcademy = result.calls.filter(
+      (call) => call.url.origin === academyOrigin,
+    );
+    expect(toAcademy.map((call) => call.url.pathname)).toEqual([
+      '/robots.txt',
+      '/de/help/',
+      '/de/wp-json/',
+      '/de/wp-json/wp/v2/doc_category',
+      '/de/wp-json/wp/v2/knowledge_base',
+      '/de/wp-json/wp/v2/docs',
+      '/de/wp-json/wp/v2/docs',
+      '/en/wp-json/wp/v2/docs',
+    ]);
+    for (const call of toAcademy) {
+      expect(call.authorization).toBeNull();
+      expect(call.cookie).toBeNull();
+      expect(call.url.searchParams.get('_fields') ?? '').not.toMatch(/author/);
+    }
+    expect(result.waits).toEqual(toAcademy.slice(1).map(() => 3000));
+  });
+
+  it('reads nothing more when robots.txt forbids a path it needs', async () => {
+    const result = await run({
+      robots: 'User-agent: *\nDisallow: /de/wp-json/\n',
+    });
+    expect(result.code).toBe(exitCodes.ok);
+    expect(result.result).toMatchObject({
+      academy: {
+        robots: { pfade: { '/de/wp-json/': 'verboten' } },
+        gelesen: 'nein',
+        grund: 'robots.txt verbietet',
+      },
+    });
+    expect(
+      result.calls
+        .filter((call) => call.url.origin === academyOrigin)
+        .map((call) => call.url.pathname),
+    ).toEqual(['/robots.txt']);
+  });
+
+  it('follows a group for its own agent before the one for every agent', async () => {
+    const result = await run({
+      robots: `User-agent: *\nDisallow: /\n\nUser-agent: ${userAgent}\nAllow: /de/\nCrawl-delay: 5\n`,
+    });
+    expect(result.result).toMatchObject({
+      academy: {
+        robots: { eigeneGruppe: 'ja', crawlDelay: 5 },
+        gelesen: 'ja',
+      },
+    });
+    expect(result.waits.slice(1).every((wait) => wait === 5000)).toBe(true);
+  });
+
+  it('withholds the output if the slug of a section equals a part of the host', async () => {
+    const result = await run({ sectionSlug: 'example' });
+    expect(result.code).toBe(exitCodes.withheld);
+    expect(leaks(result.output, result.forbidden)).toEqual([]);
+  });
+
+  it('stops at a Crawl-delay longer than it may wait', async () => {
+    const result = await run({ robots: 'User-agent: *\nCrawl-delay: 60\n' });
+    expect(result.result).toMatchObject({
+      academy: { gelesen: 'nein', grund: 'Crawl-delay zu lang' },
+    });
+    expect(
+      result.calls.filter((call) => call.url.origin === academyOrigin),
+    ).toHaveLength(1);
+  });
+});
+
+describe('the helpers of the part academy', () => {
+  it('reads robots.txt: the longest rule wins, an allow wins a tie, * and $ match', () => {
+    const rules = parseRobots(
+      [
+        '# comment',
+        'User-agent: other',
+        'Disallow: /',
+        '',
+        'User-agent: *',
+        'Disallow: /de/',
+        'Allow: /de/help/',
+        'Disallow: /*.php$',
+        'Disallow: /de/x',
+        'Allow: /de/x',
+        'Disallow:',
+      ].join('\r\n'),
+      userAgent,
+    );
+    expect(rules.ownGroup).toBe(false);
+    expect(rules.starGroup).toBe(true);
+    expect(robotsAllow(rules, '/de/help/')).toBe(true);
+    expect(robotsAllow(rules, '/de/wp-json/')).toBe(false);
+    expect(robotsAllow(rules, '/en/a.php')).toBe(false);
+    expect(robotsAllow(rules, '/en/a.php/b')).toBe(true);
+    expect(robotsAllow(rules, '/de/x')).toBe(true);
+    expect(robotsAllow(rules, '/robots.txt')).toBe(true);
+    expect(robotsAllow(parseRobots('', userAgent), '/de/')).toBe(true);
+  });
+
+  it('finds the languages, the features and the links of a page', () => {
+    expect(
+      hreflangCodes(
+        '<link hreflang="DE"><link rel="x" hreflang=\'en-GB\'><link hreflang="toolongcode">',
+      ),
+    ).toEqual(['de', 'en-gb']);
+    const features = pageFeatures(
+      '<p>Text <b>fett</b></p><img src="a"><a href="/x">y</a><code>z</code>',
+    );
+    expect(features).toEqual({
+      images: true,
+      videos: false,
+      tables: false,
+      code: true,
+      links: ['/x'],
+      text: 'Text fett y z',
+    });
+    const instance = 'example.church.tools';
+    expect(classifyLink('/de/help/', instance)).toBe('relativ');
+    expect(classifyLink('#top', instance)).toBe('relativ');
+    expect(classifyLink('MAILTO:x@example.org', instance)).toBe('email');
+    expect(classifyLink('https://churchtools.academy/de/', instance)).toBe(
+      'academy',
+    );
+    expect(classifyLink('//churchtools.academy/de/', instance)).toBe('academy');
+    expect(classifyLink(`https://${instance}/`, instance)).toBe(
+      'hostDerInstanz',
+    );
+    expect(classifyLink(`https://${hosted('other')}/`, instance)).toBe(
+      'andereInstanz',
+    );
   });
 });
 

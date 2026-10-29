@@ -197,3 +197,212 @@ export function createAcademyClient(options: AcademyOptions): AcademyClient {
     },
   };
 }
+
+/** What `robots.txt` says for the paths a probe reads. */
+export interface RobotsRules {
+  /** Whether a group names the agent of the probes itself. */
+  readonly ownGroup: boolean;
+  /** Whether a group for every agent (`*`) exists. */
+  readonly starGroup: boolean;
+  /** The rules of the groups that apply, in order. */
+  readonly rules: readonly { readonly allow: boolean; readonly path: string }[];
+  /** The `Crawl-delay` of the groups that apply, in seconds, if any. */
+  readonly crawlDelay: number | undefined;
+  /** Whether the file names a sitemap. */
+  readonly sitemap: boolean;
+}
+
+/**
+ * Reads `robots.txt` as RFC 9309 describes it. The groups that name the
+ * agent apply, and only without such a group those for every agent.
+ *
+ * @param text - The content of `robots.txt`.
+ * @param agent - The product token of the probes, such as the User-Agent.
+ * @returns The rules that apply to the agent.
+ */
+export function parseRobots(text: string, agent: string): RobotsRules {
+  interface Group {
+    agents: string[];
+    rules: { allow: boolean; path: string }[];
+    crawlDelay: number | undefined;
+  }
+  const groups: Group[] = [];
+  let current: Group | undefined;
+  let sitemap = false;
+  let inAgents = false;
+  for (const raw of text.split(/\r\n|\r|\n/)) {
+    const hash = raw.indexOf('#');
+    const line = (hash === -1 ? raw : raw.slice(0, hash)).trim();
+    const colon = line.indexOf(':');
+    if (colon === -1) {
+      continue;
+    }
+    const key = line.slice(0, colon).trim().toLowerCase();
+    const value = line.slice(colon + 1).trim();
+    if (key === 'user-agent') {
+      if (current === undefined || !inAgents) {
+        current = { agents: [], rules: [], crawlDelay: undefined };
+        groups.push(current);
+      }
+      current.agents.push(value.toLowerCase());
+      inAgents = true;
+    } else if (key === 'sitemap') {
+      sitemap = sitemap || value !== '';
+    } else if (current !== undefined) {
+      inAgents = false;
+      if ((key === 'allow' || key === 'disallow') && value !== '') {
+        current.rules.push({ allow: key === 'allow', path: value });
+      } else if (
+        key === 'crawl-delay' &&
+        /^\d{1,6}(?:\.\d{1,3})?$/.test(value)
+      ) {
+        current.crawlDelay = Number(value);
+      }
+    }
+  }
+  const token = agent.toLowerCase();
+  const own = groups.filter((group) => group.agents.includes(token));
+  const star = groups.filter((group) => group.agents.includes('*'));
+  const applying = own.length > 0 ? own : star;
+  const delays = applying
+    .map((group) => group.crawlDelay)
+    .filter((delay): delay is number => delay !== undefined);
+  return {
+    ownGroup: own.length > 0,
+    starGroup: star.length > 0,
+    rules: applying.flatMap((group) => group.rules),
+    crawlDelay: delays.length === 0 ? undefined : Math.max(...delays),
+    sitemap,
+  };
+}
+
+// Matches a path against a rule of robots.txt: `*` stands for any run of
+// characters, a `$` at the end for the end of the path. A plain loop with
+// one point to go back to stays linear in practice and needs no regular
+// expression built from the file.
+function matchesRule(path: string, rule: string): boolean {
+  const anchored = rule.endsWith('$');
+  const pattern = anchored ? rule.slice(0, -1) : rule;
+  let p = 0;
+  let r = 0;
+  let star = -1;
+  let resume = 0;
+  while (p < path.length) {
+    if (r < pattern.length && pattern[r] === '*') {
+      star = r;
+      resume = p;
+      r += 1;
+    } else if (r < pattern.length && pattern[r] === path[p]) {
+      p += 1;
+      r += 1;
+    } else if (r === pattern.length && !anchored) {
+      return true;
+    } else if (star !== -1) {
+      r = star + 1;
+      resume += 1;
+      p = resume;
+    } else {
+      return false;
+    }
+  }
+  while (r < pattern.length && pattern[r] === '*') {
+    r += 1;
+  }
+  return r === pattern.length;
+}
+
+/**
+ * Tells whether the rules allow a path: the longest matching rule wins,
+ * and of two equally long ones the one that allows.
+ *
+ * @param rules - The rules from {@link parseRobots}.
+ * @param path - A path the probe wants to read.
+ * @returns Whether the path may be read.
+ */
+export function robotsAllow(rules: RobotsRules, path: string): boolean {
+  let best: { allow: boolean; length: number } | undefined;
+  for (const rule of rules.rules) {
+    if (!matchesRule(path, rule.path)) {
+      continue;
+    }
+    if (
+      best === undefined ||
+      rule.path.length > best.length ||
+      (rule.path.length === best.length && rule.allow)
+    ) {
+      best = { allow: rule.allow, length: rule.path.length };
+    }
+  }
+  return best?.allow ?? true;
+}
+
+const hreflangPattern =
+  /<link\b[^>]{0,500}?\bhreflang\s*=\s*["']([A-Za-z-]{2,10})["']/gi;
+const languageForm = /^(?:[a-z]{2}(?:-[a-z]{2})?|x-default)$/;
+
+/**
+ * Lists the languages a page links to with `hreflang`.
+ *
+ * @param html - The HTML of the page.
+ * @returns The codes in lower case, each once, in order.
+ */
+export function hreflangCodes(html: string): string[] {
+  const codes = new Set<string>();
+  for (const match of html.matchAll(hreflangPattern)) {
+    const code = (match[1] ?? '').toLowerCase();
+    if (languageForm.test(code)) {
+      codes.add(code);
+    }
+  }
+  return [...codes];
+}
+
+/** What a help page holds, without any of its text. */
+export interface PageFeatures {
+  readonly images: boolean;
+  readonly videos: boolean;
+  readonly tables: boolean;
+  readonly code: boolean;
+  /** The targets of its links, as written. */
+  readonly links: readonly string[];
+  /** The text without tags, for its size and for hosts in the text. */
+  readonly text: string;
+}
+
+const hrefPattern = /\bhref\s*=\s*["']([^"']{0,2048})["']/gi;
+
+/**
+ * Finds what a help page holds: images, videos and embedded frames,
+ * tables, code, the targets of its links, and its text without tags.
+ *
+ * @param html - The rendered content of the page.
+ * @returns The features of the page.
+ */
+export function pageFeatures(html: string): PageFeatures {
+  return {
+    images: /<img\b/i.test(html),
+    videos: /<(?:video|iframe|embed|object)\b/i.test(html),
+    tables: /<table\b/i.test(html),
+    code: /<(?:pre|code)\b/i.test(html),
+    links: [...html.matchAll(hrefPattern)].map((match) => match[1] ?? ''),
+    text: html
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  };
+}
+
+const bytesPerMebibyte = 1024 * 1024;
+
+/**
+ * Gives a number of bytes as text, so that no exact number reaches the
+ * output.
+ *
+ * @param bytes - A number of bytes.
+ * @returns MiB with one decimal, below 1 MiB whole KiB rounded up.
+ */
+export function formatSize(bytes: number): string {
+  return bytes < bytesPerMebibyte
+    ? `${String(Math.ceil(bytes / 1024))} KiB`
+    : `${(bytes / bytesPerMebibyte).toFixed(1)} MiB`;
+}

@@ -24,14 +24,36 @@
  * or lists of objects with an ID and a name. No name and no value of the
  * answer reaches the output.
  *
+ * Of the academy, the public help pages of the vendor, it reads
+ * `robots.txt` first and stops if that forbids a path it needs. Then it
+ * reads the overview of the help pages for its languages, the index of the
+ * REST interface of WordPress, the categories, the knowledge bases and
+ * every help page in German, and the number of help pages of each other
+ * language. It gives counts per section with the slug of the section, the
+ * size of the texts, the years of the last change, and as classes how
+ * many pages carry images, videos, tables, code and links of each class
+ * of host. It never asks for the authors of a page, and no text, link or
+ * host of the academy reaches the output.
+ *
  * Usage: see README.md in this folder.
  *
  * @packageDocumentation
  */
+import {
+  academyOrigin,
+  formatSize,
+  hreflangCodes,
+  maxAcademyPauseMs,
+  pageFeatures,
+  parseRobots,
+  robotsAllow,
+  type AcademyClient,
+  type AcademyResponse,
+} from './lib/academy.mts';
 import type { SpikeState } from './lib/env.mts';
 import { identificationCategoryName } from './lib/gate.mts';
 import type { Guard, Json } from './lib/guard.mts';
-import type { Client } from './lib/http.mts';
+import { userAgent, type Client } from './lib/http.mts';
 import { operations } from './lib/operations.mts';
 import { main, type ProbeDefinition } from './lib/probe.mts';
 import { describeResponse } from './lib/report.mts';
@@ -399,8 +421,6 @@ function descriptionOf(operation: JsonObject): string {
     .toLowerCase();
 }
 
-const bytesPerMebibyte = 1024 * 1024;
-
 /**
  * Gives the size of a part of the document as text, so that no exact
  * number of bytes reaches the output.
@@ -409,11 +429,9 @@ const bytesPerMebibyte = 1024 * 1024;
  * @returns Size in MiB with one decimal, below 1 MiB in whole KiB rounded up.
  */
 export function sizeOf(value: unknown): string {
-  const bytes =
-    value === undefined ? 0 : Buffer.byteLength(JSON.stringify(value), 'utf8');
-  return bytes < bytesPerMebibyte
-    ? `${String(Math.ceil(bytes / 1024))} KiB`
-    : `${(bytes / bytesPerMebibyte).toFixed(1)} MiB`;
+  return formatSize(
+    value === undefined ? 0 : Buffer.byteLength(JSON.stringify(value), 'utf8'),
+  );
 }
 
 const documentVersionForm = /^(\d{1,3})\.(\d{1,4})(?:\.\d{1,6})?$/;
@@ -496,6 +514,77 @@ function keysOf(
     return shown;
   });
 }
+
+/** The namespaces of the REST interface the probe looks for. */
+export const academyNamespaces = ['wp/v2', 'betterdocs', 'wpml/v1'] as const;
+
+/** The routes of the help pages and their taxonomies. */
+export const academyRoutes = [
+  '/wp/v2/docs',
+  '/wp/v2/doc_category',
+  '/wp/v2/knowledge_base',
+] as const;
+
+/** The paths the probe reads, checked against `robots.txt` first. */
+export const academyPaths = [
+  '/de/help/',
+  '/de/wp-json/',
+  '/de/wp-json/wp/v2/docs',
+  '/de/wp-json/wp/v2/doc_category',
+  '/de/wp-json/wp/v2/knowledge_base',
+] as const;
+
+/** Fixed words of the part about the academy. */
+const academyWords = [
+  'academy',
+  'robots',
+  'status',
+  'eigeneGruppe',
+  'gruppeFuerAlle',
+  'pfade',
+  'erlaubt',
+  'verboten',
+  'crawlDelay',
+  'sitemap',
+  'gelesen',
+  'grund',
+  'robots.txt verbietet',
+  'robots.txt nicht lesbar',
+  'Crawl-delay zu lang',
+  'Schnittstelle ohne Hilfeseiten',
+  'hilfe',
+  'sprachen',
+  'schnittstelle',
+  'namensraeume',
+  'routen',
+  'seiten',
+  'gemeldet',
+  'veroeffentlicht',
+  'geschuetzt',
+  'html',
+  'text',
+  'geaendert',
+  'aeltestes',
+  'neuestes',
+  'jeJahr',
+  'merkmale',
+  'bilder',
+  'videos',
+  'tabellen',
+  'code',
+  'links',
+  'relativ',
+  'email',
+  'hostsImText',
+  'abschnitte',
+  'wissensbasen',
+  'ohneZuordnung',
+  'kategorien',
+  'weitereSprachen',
+  ...academyNamespaces,
+  ...academyRoutes,
+  ...academyPaths,
+] as const;
 
 /** Fixed words of this probe. */
 const words = [
@@ -584,6 +673,7 @@ const words = [
   ...hostClasses,
   ...toolRights.map(toolRightName),
   ...knownModules,
+  ...academyWords,
 ];
 
 /**
@@ -1110,13 +1200,445 @@ export async function readDefinitions(
   };
 }
 
+/** At most this many pages of one list, so a wrong header cannot loop. */
+export const maxListPages = 40;
+
+/** At most this many other languages are counted. */
+export const maxOtherLanguages = 3;
+
+const slugForm = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const yearMonthForm = /^(\d{4})-(\d{2})/;
+
+function totalPages(response: AcademyResponse): number {
+  const value = Number(response.headers.get('x-wp-totalpages') ?? '1');
+  return Number.isInteger(value) && value >= 1
+    ? Math.min(value, maxListPages)
+    : 1;
+}
+
+async function readList(
+  academy: AcademyClient,
+  path: string,
+  perPage: number,
+  fields: string,
+): Promise<{
+  readonly entries: JsonObject[];
+  readonly total: number | undefined;
+}> {
+  const entries: JsonObject[] = [];
+  let total: number | undefined;
+  let pages = 1;
+  for (let page = 1; page <= pages; page += 1) {
+    const response = await academy.get({
+      path,
+      query: [
+        ['per_page', String(perPage)],
+        ['page', String(page)],
+        ['_fields', fields],
+      ],
+    });
+    if (response.status !== 200 || !Array.isArray(response.body)) {
+      break;
+    }
+    if (page === 1) {
+      pages = totalPages(response);
+      const reported = Number(response.headers.get('x-wp-total'));
+      total = Number.isInteger(reported) ? reported : undefined;
+    }
+    for (const entry of response.body as unknown[]) {
+      if (isObject(entry)) {
+        entries.push(entry);
+      }
+    }
+  }
+  return { entries, total };
+}
+
+/** A term of a taxonomy of the academy: its slug and its parent. */
+interface Term {
+  readonly slug: string;
+  readonly parent: number;
+}
+
+function termsOf(entries: readonly JsonObject[]): Map<number, Term> {
+  const terms = new Map<number, Term>();
+  for (const entry of entries) {
+    const id = entry['id'];
+    const slug = entry['slug'];
+    const parent = entry['parent'];
+    if (typeof id === 'number' && typeof slug === 'string') {
+      terms.set(id, { slug, parent: typeof parent === 'number' ? parent : 0 });
+    }
+  }
+  return terms;
+}
+
+// The section of a term is its topmost ancestor. A loop in the parents
+// ends the walk at the term seen twice.
+function rootOf(terms: ReadonlyMap<number, Term>, id: number): number {
+  const seen = new Set<number>();
+  let current = id;
+  for (;;) {
+    const term = terms.get(current);
+    if (term === undefined || term.parent === 0 || seen.has(current)) {
+      return current;
+    }
+    seen.add(current);
+    current = term.parent;
+  }
+}
+
+/** What the probe counts for one section. */
+interface Section {
+  pages: number;
+  bytes: number;
+}
+
+function addTo(
+  sections: Map<string, Section>,
+  name: string,
+  bytes: number,
+): void {
+  const section = sections.get(name) ?? { pages: 0, bytes: 0 };
+  section.pages += 1;
+  section.bytes += bytes;
+  sections.set(name, section);
+}
+
+function idsOf(value: unknown): number[] {
+  return Array.isArray(value)
+    ? value.filter((id): id is number => typeof id === 'number')
+    : [];
+}
+
+/** The classes of the links of a help page. */
+export const linkClasses = [
+  'academy',
+  'relativ',
+  'email',
+  ...hostClasses,
+] as const;
+
+/**
+ * Puts the target of a link into its class.
+ *
+ * @param link - The target as the page writes it.
+ * @param instanceHost - Host of the instance in lower case.
+ * @returns The class of the target.
+ */
+export function classifyLink(
+  link: string,
+  instanceHost: string,
+): (typeof linkClasses)[number] {
+  if (/^mailto:/i.test(link)) {
+    return 'email';
+  }
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(link) && !link.startsWith('//')) {
+    return 'relativ';
+  }
+  const url = URL.parse(link, academyOrigin);
+  if (url === null) {
+    return 'andererHost';
+  }
+  if (url.origin === academyOrigin) {
+    return 'academy';
+  }
+  return classifyHost(url.hostname, instanceHost);
+}
+
+function namedSections(
+  sections: ReadonlyMap<string, Section>,
+  hiddenLabel: string,
+  guard: Guard,
+): Json {
+  const result: Record<string, Json> = {};
+  let hidden = 0;
+  for (const [name, section] of [...sections].sort(byName)) {
+    let shown = name;
+    if (name === '') {
+      // Pages without a term of this taxonomy.
+      shown = 'ohneZuordnung';
+    } else if (slugForm.test(name) && name.length <= 64) {
+      guard.allowPublic(name);
+    } else {
+      hidden += 1;
+      shown = `<${hiddenLabel}#${String(hidden)}>`;
+      guard.allowFixed(shown);
+    }
+    const size = formatSize(section.bytes);
+    guard.allowFixed(size);
+    result[shown] = { seiten: count(guard, section.pages), text: size };
+  }
+  return result;
+}
+
+/**
+ * Reads the help pages of the academy and describes them with counts,
+ * classes and the slugs of their sections.
+ *
+ * @param academy - The client for the academy.
+ * @param instanceHost - Host of the instance in lower case.
+ * @param guard - Receives every word the description uses.
+ * @returns The description.
+ */
+export async function readAcademy(
+  academy: AcademyClient,
+  instanceHost: string,
+  guard: Guard,
+): Promise<Json> {
+  const robotsAnswer = await academy.get({ path: '/robots.txt' });
+  guard.allowFixed(robotsAnswer.status);
+  if (robotsAnswer.status !== 200 && robotsAnswer.status !== 404) {
+    return {
+      robots: { status: robotsAnswer.status },
+      gelesen: 'nein',
+      grund: 'robots.txt nicht lesbar',
+    };
+  }
+  const rules = parseRobots(
+    robotsAnswer.status === 200 ? robotsAnswer.text : '',
+    userAgent,
+  );
+  const allowed = academyPaths.every((path) => robotsAllow(rules, path));
+  const delay = rules.crawlDelay;
+  const robots: Json = {
+    status: robotsAnswer.status,
+    eigeneGruppe: rules.ownGroup ? 'ja' : 'nein',
+    gruppeFuerAlle: rules.starGroup ? 'ja' : 'nein',
+    pfade: Object.fromEntries(
+      academyPaths.map((path) => [
+        path,
+        robotsAllow(rules, path) ? 'erlaubt' : 'verboten',
+      ]),
+    ),
+    crawlDelay: delay === undefined ? 'fehlt' : count(guard, delay),
+    sitemap: rules.sitemap ? 'ja' : 'nein',
+  };
+  if (!allowed) {
+    return { robots, gelesen: 'nein', grund: 'robots.txt verbietet' };
+  }
+  if (delay !== undefined) {
+    if (delay * 1000 > maxAcademyPauseMs) {
+      return { robots, gelesen: 'nein', grund: 'Crawl-delay zu lang' };
+    }
+    academy.slowDown(delay * 1000);
+  }
+
+  const help = await academy.get({ path: '/de/help/' });
+  guard.allowFixed(help.status);
+  const languages = help.status === 200 ? hreflangCodes(help.text) : [];
+  guard.allowFixed(...languages);
+
+  const index = await academy.get({ path: '/de/wp-json/' });
+  guard.allowFixed(index.status);
+  const namespaces =
+    isObject(index.body) && Array.isArray(index.body['namespaces'])
+      ? (index.body['namespaces'] as unknown[])
+      : [];
+  const routes =
+    isObject(index.body) && isObject(index.body['routes'])
+      ? index.body['routes']
+      : {};
+  const interfaceDescription: Json = {
+    status: index.status,
+    namensraeume: Object.fromEntries(
+      academyNamespaces.map((name) => [
+        name,
+        namespaces.includes(name) ? 'vorhanden' : 'fehlt',
+      ]),
+    ),
+    routen: Object.fromEntries(
+      academyRoutes.map((route) => [
+        route,
+        Object.hasOwn(routes, route) ? 'vorhanden' : 'fehlt',
+      ]),
+    ),
+  };
+  if (index.status !== 200 || !Object.hasOwn(routes, '/wp/v2/docs')) {
+    return {
+      robots,
+      hilfe: { status: help.status, sprachen: languages },
+      schnittstelle: interfaceDescription,
+      gelesen: 'nein',
+      grund: 'Schnittstelle ohne Hilfeseiten',
+    };
+  }
+
+  const categories = await readList(
+    academy,
+    '/de/wp-json/wp/v2/doc_category',
+    100,
+    'id,slug,parent',
+  );
+  const bases = await readList(
+    academy,
+    '/de/wp-json/wp/v2/knowledge_base',
+    100,
+    'id,slug,parent',
+  );
+  // Only these fields: never the authors, who are people.
+  const docs = await readList(
+    academy,
+    '/de/wp-json/wp/v2/docs',
+    50,
+    'id,status,modified_gmt,content,doc_category,knowledge_base',
+  );
+  const categoryTerms = termsOf(categories.entries);
+  const baseTerms = termsOf(bases.entries);
+
+  const sections = new Map<string, Section>();
+  const knowledgeBases = new Map<string, Section>();
+  const years = new Map<string, number>();
+  const features = { bilder: 0, videos: 0, tabellen: 0, code: 0 };
+  const links = new Map<string, number>();
+  const textHosts = new Map<string, number>();
+  let published = 0;
+  let protectedPages = 0;
+  let htmlBytes = 0;
+  let textBytes = 0;
+  let oldest: string | undefined;
+  let newest: string | undefined;
+  for (const doc of docs.entries) {
+    if (doc['status'] === 'publish') {
+      published += 1;
+    }
+    const content = isObject(doc['content']) ? doc['content'] : {};
+    if (content['protected'] === true) {
+      protectedPages += 1;
+    }
+    const html =
+      typeof content['rendered'] === 'string' ? content['rendered'] : '';
+    const found = pageFeatures(html);
+    const bytes = Buffer.byteLength(found.text, 'utf8');
+    htmlBytes += Buffer.byteLength(html, 'utf8');
+    textBytes += bytes;
+    if (found.images) features.bilder += 1;
+    if (found.videos) features.videos += 1;
+    if (found.tables) features.tabellen += 1;
+    if (found.code) features.code += 1;
+    const linkSeen = new Set(
+      found.links.map((link) => classifyLink(link, instanceHost)),
+    );
+    for (const name of linkSeen) {
+      links.set(name, (links.get(name) ?? 0) + 1);
+    }
+    const hostCounts = emptyCounts();
+    countHosts(found.text, instanceHost, hostCounts);
+    for (const name of hostClasses) {
+      if (hostCounts.hosts[name] > 0) {
+        textHosts.set(name, (textHosts.get(name) ?? 0) + 1);
+      }
+    }
+    const modified = doc['modified_gmt'];
+    const month =
+      typeof modified === 'string' ? yearMonthForm.exec(modified) : null;
+    if (month !== null) {
+      const yearMonth = `${month[1] ?? ''}-${month[2] ?? ''}`;
+      const year = month[1] ?? '';
+      years.set(year, (years.get(year) ?? 0) + 1);
+      oldest = oldest === undefined || yearMonth < oldest ? yearMonth : oldest;
+      newest = newest === undefined || yearMonth > newest ? yearMonth : newest;
+    }
+    const roots = new Set(
+      idsOf(doc['doc_category']).map((id) => rootOf(categoryTerms, id)),
+    );
+    if (roots.size === 0) {
+      addTo(sections, '', bytes);
+    }
+    for (const root of roots) {
+      addTo(sections, categoryTerms.get(root)?.slug ?? '', bytes);
+    }
+    const baseRoots = new Set(
+      idsOf(doc['knowledge_base']).map((base) => rootOf(baseTerms, base)),
+    );
+    if (baseRoots.size === 0) {
+      addTo(knowledgeBases, '', bytes);
+    }
+    for (const root of baseRoots) {
+      addTo(knowledgeBases, baseTerms.get(root)?.slug ?? '', bytes);
+    }
+  }
+  if (oldest !== undefined && newest !== undefined) {
+    guard.allowFixed(oldest, newest);
+  }
+  guard.allowFixed(...years.keys());
+  guard.allowFixed(formatSize(htmlBytes), formatSize(textBytes));
+
+  const others: Record<string, Json> = {};
+  for (const code of languages
+    .filter((language) => /^[a-z]{2}$/.test(language) && language !== 'de')
+    .slice(0, maxOtherLanguages)) {
+    const path = `/${code}/wp-json/wp/v2/docs`;
+    if (!robotsAllow(rules, path)) {
+      others[code] = 'verboten';
+      continue;
+    }
+    const answer = await academy.get({
+      path,
+      query: [
+        ['per_page', '1'],
+        ['_fields', 'id'],
+      ],
+    });
+    const reported = Number(answer.headers.get('x-wp-total'));
+    others[code] =
+      answer.status === 200 && Number.isInteger(reported)
+        ? count(guard, reported)
+        : 'unbekannt';
+  }
+
+  return {
+    robots,
+    hilfe: { status: help.status, sprachen: languages },
+    schnittstelle: interfaceDescription,
+    gelesen: 'ja',
+    seiten: {
+      gemeldet:
+        docs.total === undefined ? 'unbekannt' : count(guard, docs.total),
+      gelesen: count(guard, docs.entries.length),
+      veroeffentlicht: count(guard, published),
+      geschuetzt: count(guard, protectedPages),
+      groesse: { html: formatSize(htmlBytes), text: formatSize(textBytes) },
+      geaendert:
+        oldest === undefined || newest === undefined
+          ? 'unbekannt'
+          : {
+              aeltestes: oldest,
+              neuestes: newest,
+              jeJahr: Object.fromEntries(
+                [...years]
+                  .sort(byName)
+                  .map(([year, pages]) => [year, count(guard, pages)]),
+              ),
+            },
+      merkmale: Object.fromEntries(
+        Object.entries(features).map(([name, pages]) => [
+          name,
+          countClass(pages),
+        ]),
+      ),
+      links: Object.fromEntries(
+        linkClasses.map((name) => [name, countClass(links.get(name) ?? 0)]),
+      ),
+      hostsImText: Object.fromEntries(
+        hostClasses.map((name) => [name, countClass(textHosts.get(name) ?? 0)]),
+      ),
+    },
+    kategorien: count(guard, categoryTerms.size),
+    abschnitte: namedSections(sections, 'abschnitt', guard),
+    wissensbasen: namedSections(knowledgeBases, 'wissensbasis', guard),
+    weitereSprachen: others,
+  };
+}
+
 /** The probe, for tests and for {@link main}. */
 export const probe: ProbeDefinition = {
   name: '10-docs-sources',
   state: 'read',
-  async run({ client, guard, origin, state }): Promise<Json> {
+  academy: true,
+  async run({ academy, client, guard, origin, state }): Promise<Json> {
     guard.allowFixed(...words);
-    if (state === undefined) {
+    if (state === undefined || academy === undefined) {
       throw new Error('INTERN');
     }
     if (state.version !== null) {
@@ -1143,6 +1665,7 @@ export const probe: ProbeDefinition = {
         guard,
       ),
       rechte: { definitionen: definitions.output },
+      academy: await readAcademy(academy, instanceHost, guard),
     };
   },
 };
