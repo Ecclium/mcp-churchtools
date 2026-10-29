@@ -27,6 +27,8 @@ import {
 interface Element {
   readonly tag: string;
   readonly href: string | undefined;
+  /** The number an ordered list or one of its items starts with. */
+  readonly number: number | undefined;
   readonly children: Node[];
 }
 
@@ -157,7 +159,12 @@ const closesParagraph: ReadonlySet<string> = new Set([
  * @returns The root element.
  */
 function parse(html: string): Element {
-  const root: Element = { tag: '#root', href: undefined, children: [] };
+  const root: Element = {
+    tag: '#root',
+    href: undefined,
+    number: undefined,
+    children: [],
+  };
   const stack: Element[] = [root];
   const top = () => stack[stack.length - 1] ?? root;
   const popTo = (index: number) => {
@@ -255,6 +262,7 @@ function parse(html: string): Element {
     const element: Element = {
       tag: tag.name,
       href: tag.href,
+      number: tag.number,
       children: [],
     };
     top().children.push(element);
@@ -276,12 +284,14 @@ interface Tag {
   readonly closing: boolean;
   readonly selfClosing: boolean;
   readonly href: string | undefined;
+  readonly number: number | undefined;
   readonly end: number;
 }
 
 const tagName = /^<(\/?)([a-zA-Z][a-zA-Z0-9-]{0,40})/;
 
-// Reads one tag that starts at `start`, with its attribute href, quotes
+// Reads one tag that starts at `start`, with its attributes href, start
+// and value, quotes
 // respected, up to its `>`.
 function readTag(html: string, start: number): Tag | undefined {
   const head = tagName.exec(html.slice(start, start + 44));
@@ -292,11 +302,12 @@ function readTag(html: string, start: number): Tag | undefined {
   const name = (head[2] ?? '').toLowerCase();
   let position = start + head[0].length;
   let href: string | undefined;
+  let number: number | undefined;
   let selfClosing = false;
   while (position < html.length) {
     const char = html[position] ?? '';
     if (char === '>') {
-      return { name, closing, selfClosing, href, end: position + 1 };
+      return { name, closing, selfClosing, href, number, end: position + 1 };
     }
     if (/\s/.test(char)) {
       position += 1;
@@ -340,8 +351,15 @@ function readTag(html: string, start: number): Tag | undefined {
     if (attribute === 'href' && value !== undefined) {
       href = decodeEntities(value);
     }
+    if (
+      (attribute === 'start' || attribute === 'value') &&
+      value !== undefined &&
+      /^\s{0,10}\d{1,6}\s{0,10}$/.test(value)
+    ) {
+      number = Number(value.trim());
+    }
   }
-  return { name, closing, selfClosing, href, end: html.length };
+  return { name, closing, selfClosing, href, number, end: html.length };
 }
 
 // The entities WordPress writes by name; every other one it writes as a
@@ -446,7 +464,13 @@ const linkEnd = '\u0003';
  * @returns The path with its anchor, or `undefined` if the link may not stay.
  */
 export function academyPathOf(url: URL): string | undefined {
-  if (url.protocol !== 'https:' || url.host !== academyHost) {
+  // A link with a query, such as a search or `?p=` with the number of a
+  // post, leads to another page than its path, so it does not stay.
+  if (
+    url.protocol !== 'https:' ||
+    url.host !== academyHost ||
+    url.search !== ''
+  ) {
     return undefined;
   }
   const path = url.pathname.replace(/%[0-9A-F]{2}/gi, (code) =>
@@ -536,7 +560,18 @@ function renderBlocks(element: Element, pageUrl: URL): string[] {
     }
     line = '';
   };
+  // The caption of a figure goes with the figure, mostly an image. A
+  // figure with a table keeps it, since there it names the table.
+  const captioned = element.tag === 'figure' && holds(element, 'table');
   for (const child of element.children) {
+    if (typeof child !== 'string' && child.tag === 'figcaption' && captioned) {
+      flush();
+      const caption = paragraphOf(inlineOf({ ...child, tag: 'span' }, pageUrl));
+      if (caption !== '') {
+        blocks.push(caption);
+      }
+      continue;
+    }
     if (typeof child !== 'string' && droppedTags.has(child.tag)) {
       continue;
     }
@@ -549,6 +584,14 @@ function renderBlocks(element: Element, pageUrl: URL): string[] {
   }
   flush();
   return blocks;
+}
+
+// Whether an element holds one of the given tag, at any depth.
+function holds(element: Element, tag: string): boolean {
+  return element.children.some(
+    (child) =>
+      typeof child !== 'string' && (child.tag === tag || holds(child, tag)),
+  );
 }
 
 // A paragraph: white space in a line as one space, line breaks from
@@ -678,7 +721,9 @@ function codeBlock(element: Element): string[] {
 function listOf(element: Element, pageUrl: URL): string[] {
   const ordered = element.tag === 'ol';
   const items: string[] = [];
-  let number = 1;
+  // `start` of the list and `value` of an item keep a list that a figure
+  // or a paragraph interrupts numbered on.
+  let number = element.number ?? 1;
   for (const child of element.children) {
     if (typeof child === 'string') {
       continue;
@@ -698,6 +743,7 @@ function listOf(element: Element, pageUrl: URL): string[] {
     if (content === '') {
       continue;
     }
+    number = child.number ?? number;
     const marker = ordered ? `${String(number)}. ` : '- ';
     number += 1;
     items.push(`${marker}${indent(content, marker.length).trimStart()}`);
@@ -717,12 +763,16 @@ function indent(text: string, width: number): string {
 // head, every row as wide as the widest.
 function tableOf(element: Element): string[] {
   const rows: string[][] = [];
+  let caption = '';
   const visit = (node: Element) => {
     for (const child of node.children) {
       if (typeof child === 'string' || droppedTags.has(child.tag)) {
         continue;
       }
-      if (child.tag === 'tr') {
+      if (child.tag === 'caption') {
+        // The caption names the table and stands as a line before it.
+        caption = cleanText(textOf(child, true)).replace(/\s+/g, ' ').trim();
+      } else if (child.tag === 'tr') {
         const cells = child.children
           .filter(
             (cell): cell is Element =>
@@ -752,6 +802,7 @@ function tableOf(element: Element): string[] {
     `| ${Array.from({ length: width }, (_, index) => cells[index] ?? '').join(' | ')} |`;
   const [head = [], ...body] = rows;
   return [
+    ...(caption === '' ? [] : [caption]),
     [
       line(head),
       line(Array.from({ length: width }, () => '---')),

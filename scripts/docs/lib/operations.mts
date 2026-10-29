@@ -186,7 +186,12 @@ function shapeOf(
   if (ref !== undefined) {
     out['ref'] = ref;
   }
-  const description = target['description'];
+  // Next to a `$ref`, OpenAPI 3.1 lets a schema say what the referenced
+  // one means in its place. That description is the more specific one.
+  const description =
+    typeof schema['description'] === 'string'
+      ? schema['description']
+      : target['description'];
   if (typeof description === 'string') {
     const text = cleanBlock(description, 'en');
     if (text !== undefined) {
@@ -251,9 +256,17 @@ function shapeOf(
     if (members.length > 50) {
       return fail(`${where}.${key}`);
     }
-    out[key] = (members as unknown[]).map((member, index) =>
+    const shapes = (members as unknown[]).map((member, index) =>
       shapeOf(member, depth + 1, `${where}.${key}[${String(index)}]`, context),
     );
+    // A member that keeps nothing in the format, such as one of only
+    // `required` or `not`, would read as «any value». In `allOf` it adds
+    // nothing then and leaves. In `anyOf` and `oneOf` it would turn a
+    // condition into a false statement, so the whole list leaves.
+    const kept = shapes.filter((shape) => Object.keys(shape).length > 0);
+    if (key === 'allOf' ? kept.length > 0 : kept.length === shapes.length) {
+      out[key] = kept;
+    }
   }
   return out;
 }
@@ -374,7 +387,12 @@ export function operationFacts(
 ): OperationFactEntry[] {
   const context = contextOf(document);
   const paths = isObject(document['paths']) ? document['paths'] : {};
-  const entries: { id: string; entry: OperationFactEntry }[] = [];
+  const entries: {
+    id: string;
+    order: number;
+    where: string;
+    entry: OperationFactEntry;
+  }[] = [];
   let index = 0;
   for (const path of Object.keys(paths).sort(compare)) {
     const item = paths[path];
@@ -391,15 +409,20 @@ export function operationFacts(
       if (operation['x-internal'] === true) {
         continue;
       }
-      entries.push(
-        operationOf(document, path, method, item, operation, where, context),
-      );
+      entries.push({
+        ...operationOf(document, path, method, item, operation, where, context),
+        order: index,
+        where,
+      });
     }
   }
-  entries.sort((a, b) => compare(a.id, b.id));
+  // Sorted by ID, two operations with the same ID stand side by side.
+  // The place names the later one in the order of the document, as every
+  // other place does.
+  entries.sort((a, b) => compare(a.id, b.id) || a.order - b.order);
   entries.forEach((entry, position) => {
     if (position > 0 && entries[position - 1]?.id === entry.id) {
-      fail(`operations[${String(position)}].operationId`);
+      fail(`${entry.where}.operationId`);
     }
   });
   return entries.map(({ entry }) => entry);

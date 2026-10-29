@@ -351,7 +351,7 @@ describe('operationFacts', () => {
     [
       'an ID used twice',
       withOperation({ operationId: 'getSyntheticThing', responses: {} }),
-      'operations[1].operationId',
+      'operations[3].operationId',
     ],
     [
       'an ID of another form',
@@ -730,5 +730,187 @@ describe('SpikeError', () => {
     );
     expect(where('a value: with spaces')).toBeUndefined();
     expect(where('x'.repeat(201))).toBeUndefined();
+  });
+});
+
+describe('operationFacts with the other forms of the document', () => {
+  const person = {
+    type: 'object',
+    description: 'A synthetic person.',
+    properties: { id: { type: 'integer' } },
+  };
+  const document: OpenApiDocument = {
+    openapi: '3.1.0',
+    info: {
+      title: 'Synthetic API',
+      version: '0.1.0',
+      license: { name: 'CC BY 4.0' },
+    },
+    paths: {
+      '/api/synthetic/forms': {
+        post: {
+          operationId: 'postSyntheticForm',
+          parameters: [{ $ref: '#/components/parameters/Limit' }],
+          requestBody: { $ref: '#/components/requestBodies/Form' },
+          responses: {
+            '200': {
+              description: 'Done.',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      owner: {
+                        $ref: '#/components/schemas/SyntheticPerson',
+                        description: 'The owner of the form.',
+                      },
+                      either: {
+                        type: 'object',
+                        properties: {
+                          a: { type: 'string' },
+                          b: { type: 'string' },
+                        },
+                        oneOf: [{ required: ['a'] }, { required: ['b'] }],
+                      },
+                      both: {
+                        allOf: [
+                          { $ref: '#/components/schemas/SyntheticPerson' },
+                          { required: ['id'] },
+                        ],
+                      },
+                      map: {
+                        type: 'object',
+                        additionalProperties: { type: 'integer' },
+                      },
+                      open: { type: 'object', additionalProperties: true },
+                    },
+                  },
+                },
+              },
+            },
+            '4XX': { $ref: '#/components/responses/Failure' },
+          },
+        },
+      },
+    },
+    components: {
+      schemas: { SyntheticPerson: person },
+      parameters: {
+        Limit: {
+          name: 'limit',
+          in: 'query',
+          required: false,
+          schema: { type: 'integer' },
+        },
+      },
+      requestBodies: {
+        Form: {
+          required: true,
+          description: 'The form.',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: { name: { type: 'string' } },
+              },
+            },
+          },
+        },
+      },
+      responses: { Failure: { description: 'It failed.' } },
+    },
+  };
+  const [entry] = operationFacts(document);
+
+  it('resolves parameters, bodies and answers from the components', () => {
+    expect(entry?.['parameters']).toEqual([
+      {
+        name: 'limit',
+        in: 'query',
+        required: false,
+        schema: { type: ['integer'] },
+      },
+    ]);
+    expect(entry?.['requestBody']).toEqual({
+      required: true,
+      description: 'The form.',
+      content: [
+        {
+          mediaType: 'application/json',
+          schema: {
+            type: ['object'],
+            properties: [
+              { name: 'name', required: false, schema: { type: ['string'] } },
+            ],
+          },
+        },
+      ],
+    });
+    expect((entry?.['responses'] as { status: string }[])[0]?.status).toBe(
+      '200',
+    );
+    expect((entry?.['responses'] as unknown[])[1]).toEqual({
+      status: '4XX',
+      description: 'It failed.',
+      content: [],
+    });
+  });
+
+  it('keeps the description next to a $ref, drops empty members and keeps additional properties', () => {
+    const responses = entry?.['responses'] as {
+      content: { schema?: Shape }[];
+    }[];
+    const properties = responses[0]?.content[0]?.schema?.properties ?? [];
+    const byName = Object.fromEntries(
+      properties.map((property) => [property.name, property.schema]),
+    );
+    expect(byName['owner']).toMatchObject({
+      type: ['object'],
+      ref: 'SyntheticPerson',
+      description: 'The owner of the form.',
+    });
+    // Either a or b is required: a list of two empty schemas would say
+    // something false, so it leaves.
+    expect(byName['either']?.oneOf).toBeUndefined();
+    expect(byName['both']?.allOf).toEqual([
+      expect.objectContaining({ ref: 'SyntheticPerson' }) as unknown,
+    ]);
+    expect(byName['map']?.additionalProperties).toEqual({ type: ['integer'] });
+    expect(byName['open']?.additionalProperties).toBe(true);
+  });
+
+  it('passes the checks of the docs index', () => {
+    const facts = parseFactFiles(
+      factFileTexts({
+        ...emptyFacts(),
+        operations: operationFacts(document),
+        operationsNotice: openApiNotice(document, '3.138'),
+      }),
+    );
+    expect(facts.operations.entries).toHaveLength(1);
+  });
+});
+
+describe('readAcademy with an empty list', () => {
+  it('reads a list for which WordPress reports 0 pages', async () => {
+    const empty = (path: string): AcademyResponse => ({
+      status: 200,
+      headers: new Headers(
+        path === '/robots.txt'
+          ? { 'content-type': 'text/plain' }
+          : { 'content-type': 'application/json', 'x-wp-totalpages': '0' },
+      ),
+      text: path === '/robots.txt' ? '' : '[]',
+      body: path === '/robots.txt' ? undefined : [],
+    });
+    const academy: AcademyClient = {
+      get: (request) => Promise.resolve(empty(request.path)),
+      slowDown: () => undefined,
+    };
+    const read = await readAcademy(
+      academy,
+      () => new Date('2026-10-29T08:00:00Z'),
+    );
+    expect(read.docs).toEqual([]);
   });
 });

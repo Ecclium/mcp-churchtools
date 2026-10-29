@@ -109,17 +109,22 @@ export function normalizeText(text: string): string {
  */
 export function cleanHosts(text: string, language: NoteLanguage): string {
   const notes = removalNotes[language];
-  // The check reads the Markdown escape of a dot as a dot, so it is one
-  // here.
+  // The check reads the Markdown escape of a dot as a dot, so every
+  // pattern below takes one as a dot too. Only what it removes or
+  // replaces changes: a dot escaped in code stays as it is.
   return text
-    .replaceAll('\\.', '.')
     .replace(bracketedUrl, notes.link)
+    .replace(bracketAfterColon, '$1: $2[')
     .replace(urlPattern, (match: string) => replaceUrl(match, notes.link))
     .replace(protocolRelative, (match: string, before: string, host: string) =>
-      isAllowedHost(host.toLowerCase()) ? match : `${before}${notes.link}`,
+      isAllowedHost(unescapeDots(host).toLowerCase())
+        ? match
+        : `${before}${notes.link}`,
     )
     .replace(mailPattern, (match: string, domain: string) =>
-      domain.toLowerCase() === placeholderMailDomain ? match : notes.mail,
+      unescapeDots(domain).toLowerCase() === placeholderMailDomain
+        ? match
+        : notes.mail,
     )
     .replace(namePattern, (match: string) => replaceName(match, notes.link))
     .replace(ipv4Pattern, notes.ip);
@@ -130,24 +135,42 @@ export function cleanHosts(text: string, language: NoteLanguage): string {
 // so do the marks of links that the conversion of HTML puts into a text
 // before it writes them as Markdown (html.mts).
 const urlEnd = String.raw`[^\s<>()[\]{}"'\x60|,;*\x01-\x03]`;
+// A host in brackets, such as an IPv6 address, after a scheme of the web
+// or one with `//`. Any other word with a colon before a bracket, such
+// as `filter:[name]`, is text, and a space after its colon is enough for
+// the check, which takes any letter before `:[` for a scheme.
 const bracketedUrl = new RegExp(
-  String.raw`\b[a-z][a-z0-9+.-]{0,30}:\/{0,3}\[${urlEnd}{0,2000}(?:\]${urlEnd}{0,2000})?`,
+  String.raw`\b(?:(?:https?|ftps?|wss?):\/{0,3}|[a-z][a-z0-9+.-]{0,30}:\/\/)\[${urlEnd}{0,2000}(?:\]${urlEnd}{0,2000})?`,
   'gi',
 );
+const bracketAfterColon = /([a-z]):(\/{0,3})\[/gi;
+// A dot, also escaped for Markdown as the check reads it.
+const dot = String.raw`\\?\.`;
 const urlPattern = new RegExp(
   String.raw`\b(?:[a-z][a-z0-9+.-]{0,30}:\/\/|(?:https?|ftps?|wss?):\/{0,3})${urlEnd}{0,2000}`,
   'gi',
 );
 const protocolRelative = new RegExp(
-  String.raw`(^|[\s<>()[\]{}"'\x60|,;*])\/\/([a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63}){1,10})${urlEnd}{0,2000}`,
+  String.raw`(^|[\s<>()[\]{}"'\x60|,;*])\/\/([a-z0-9-]{1,63}(?:${dot}[a-z0-9-]{1,63}){1,10})${urlEnd}{0,2000}`,
   'gim',
 );
-const mailPattern =
-  /\b(?:mailto:)?[a-z0-9._%+-]{1,64}@([a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63}){1,10})\b/gi;
-const namePattern =
-  /(?<![a-z0-9.-])[a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63}){1,10}(?![a-z0-9-])/gi;
-const ipv4Pattern =
-  /(?<![\d.])(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}(?![\d.])/g;
+const mailPattern = new RegExp(
+  String.raw`\b(?:mailto:)?[a-z0-9._%+-]{1,64}@([a-z0-9-]{1,63}(?:${dot}[a-z0-9-]{1,63}){1,10})\b`,
+  'gi',
+);
+const namePattern = new RegExp(
+  String.raw`(?<![a-z0-9.-])[a-z0-9-]{1,63}(?:${dot}[a-z0-9-]{1,63}){1,10}(?![a-z0-9-])`,
+  'gi',
+);
+const octet = String.raw`(?:25[0-5]|2[0-4]\d|1?\d?\d)`;
+const ipv4Pattern = new RegExp(
+  String.raw`(?<![\d.])${octet}(?:${dot}${octet}){3}(?![\d.]|\\\.)`,
+  'g',
+);
+
+function unescapeDots(text: string): string {
+  return text.replaceAll('\\.', '.');
+}
 const trailingPunctuation = /[.,:;!?]+$/;
 
 function isAllowedHost(host: string): boolean {
@@ -168,9 +191,9 @@ function replaceUrl(match: string, note: string): string {
   // A dot or comma after a URL ends the sentence, not the URL.
   const punctuation = trailingPunctuation.exec(match)?.[0] ?? '';
   // Browsers read a backslash in a URL as a slash, and so does the check.
-  const url = match
-    .slice(0, match.length - punctuation.length)
-    .replaceAll('\\', '/');
+  const url = unescapeDots(
+    match.slice(0, match.length - punctuation.length),
+  ).replaceAll('\\', '/');
   const scheme = /^[a-z][a-z0-9+.-]{0,30}:\/{0,3}/i.exec(url)?.[0] ?? '';
   const rest = url.slice(scheme.length);
   const end = rest.search(/[/?#]/);
@@ -199,7 +222,7 @@ function hostOf(authority: string): string {
 }
 
 function replaceName(match: string, note: string): string {
-  const name = match.toLowerCase();
+  const name = unescapeDots(match).toLowerCase();
   if (isAllowedHost(name) || name === placeholderMailDomain) {
     return match;
   }

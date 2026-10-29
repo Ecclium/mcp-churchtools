@@ -182,10 +182,12 @@ export async function readAcademy(
       }
       if (page === 1) {
         const total = Number(answer.headers.get('x-wp-totalpages') ?? '1');
-        if (!Number.isSafeInteger(total) || total < 1 || total > maxListPages) {
+        // WordPress sends 0 for a list without entries, whose first page
+        // was then the only one to read.
+        if (!Number.isSafeInteger(total) || total < 0 || total > maxListPages) {
           return fail(`academy.${name}`);
         }
-        pages = total;
+        pages = Math.max(1, total);
       }
       for (const entry of answer.body as unknown[]) {
         if (!isObject(entry)) {

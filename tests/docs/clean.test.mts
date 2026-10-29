@@ -188,7 +188,6 @@ describe('academyPathOf', () => {
     );
     expect(path('/de/help/%C3%A4rger/')).toBe('/de/help/%c3%a4rger/');
     expect(path('/de/help/x/#Gross')).toBe('/de/help/x/');
-    expect(path('/de/help/x/?a=1')).toBe('/de/help/x/');
   });
 
   it('refuses every other host, language and scheme', () => {
@@ -197,6 +196,8 @@ describe('academyPathOf', () => {
       '/en/help/wiki/',
       'http://churchtools.academy/de/help/',
       '/de/Help/',
+      '/de/help/x/?a=1',
+      '/de/?p=4711',
       'mailto:max.mustermann@example.org',
     ]) {
       expect(academyPathOf(new URL(href, page))).toBeUndefined();
@@ -319,5 +320,53 @@ describe('htmlToMarkdown with links in links', () => {
     ).toBe(
       '- [Innen](/de/help/b/)\n- [Aussen](/de/help/c/) [innen](/de/help/d/) weiter',
     );
+  });
+});
+
+describe('cleaning of the forms the first review found', () => {
+  it('keeps a word with a colon before a bracket as text', () => {
+    expect(cleanBlock('Use the syntax filter:[name] to filter.', 'en')).toBe(
+      'Use the syntax filter: [name] to filter.',
+    );
+    expect(findForeignHosts('filter: [name]')).toEqual([]);
+    expect(cleanLine('See https://[2001:db8::1]/x', 'en')).toBe(
+      'See (link removed)',
+    );
+  });
+
+  it('keeps an escaped dot in code and still finds a host written with one', () => {
+    expect(
+      htmlToMarkdown('<pre><code>^\\d+\\.\\d+$ und a\\.b</code></pre>', page),
+    ).toBe('```\n^\\d+\\.\\d+$ und a\\.b\n```');
+    expect(cleanLine('see example\\.com and 10\\.0\\.0\\.1', 'en')).toBe(
+      'see (link removed) and (address removed)',
+    );
+  });
+
+  it('numbers an ordered list on from its start and the value of an item', () => {
+    expect(
+      htmlToMarkdown(
+        '<ol><li>Eins</li><li>Zwei</li></ol><figure><img src="a.png"></figure><ol start="3"><li>Drei</li><li value="7">Sieben</li><li>Acht</li></ol>',
+        page,
+      ),
+    ).toBe('1. Eins\n2. Zwei\n\n3. Drei\n7. Sieben\n8. Acht');
+  });
+
+  it('keeps the caption of a table and drops the one of an image', () => {
+    expect(
+      htmlToMarkdown(
+        '<figure class="wp-block-table"><table><caption>Rechte</caption><tr><td>a</td></tr></table><figcaption>Tabelle: Angaben</figcaption></figure><figure><img src="a.png"><figcaption>Ein Bild</figcaption></figure>',
+        page,
+      ),
+    ).toBe('Rechte\n\n| a |\n| --- |\n\nTabelle: Angaben');
+  });
+
+  it('keeps no link with a query', () => {
+    expect(
+      htmlToMarkdown(
+        '<p><a href="https://churchtools.academy/de/?p=4711">diesen Artikel</a></p>',
+        page,
+      ),
+    ).toBe('diesen Artikel');
   });
 });
