@@ -58,3 +58,25 @@ export {
   looksLikeHtmlPage,
   looksLikeOpenApiDocument,
 } from './raw-sources.js';
+export {
+  buildSearchIndex,
+  type SearchDocument,
+  type SearchField,
+  type SerializedSearchIndex,
+} from './search/build.js';
+export {
+  matchWeights,
+  maxQueryWords,
+  maxSearchHits,
+  minPartLength,
+  minTypoLength,
+  prepareSearch,
+  type Searcher,
+  type SearchHit,
+} from './search/query.js';
+export {
+  maxWordLength,
+  minWordLength,
+  stopWords,
+  words,
+} from './search/words.js';
