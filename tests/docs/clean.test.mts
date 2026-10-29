@@ -308,3 +308,16 @@ describe('htmlToLine', () => {
     expect(htmlToLine('<img src="a.png">')).toBeUndefined();
   });
 });
+
+describe('htmlToMarkdown with links in links', () => {
+  it('closes an open link when a new one starts, as browsers do', () => {
+    expect(
+      htmlToMarkdown(
+        '<ul><li><a href="/de/help/a/"><a href="/de/help/b/">Innen</a></a></li><li><a href="/de/help/c/">Aussen <a href="/de/help/d/">innen</a> weiter</a></li></ul>',
+        page,
+      ),
+    ).toBe(
+      '- [Innen](/de/help/b/)\n- [Aussen](/de/help/c/) [innen](/de/help/d/) weiter',
+    );
+  });
+});

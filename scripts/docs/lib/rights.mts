@@ -34,11 +34,12 @@ export interface RightFacts {
 }
 
 // Every name of a module F30 saw is one lower-case word, every name of a
-// right lower-case words with single spaces. A name of another form could
-// carry a value of the instance, such as a name it chose, so it stays out
-// and is only counted.
+// right lower-case words, parted by a single space or, as in
+// `push/pull archive` of ChurchTools 3.138, a slash. A name of another
+// form could carry a value of the instance, such as a name it chose, so
+// it stays out and is only counted.
 const moduleName = /^[a-z][a-z0-9]{0,31}$/;
-const rightName = /^[a-z]+(?: [a-z]+)*$/;
+const rightName = /^[a-z]+(?:[ /][a-z]+)*$/;
 
 function compare(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;

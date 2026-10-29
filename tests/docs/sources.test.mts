@@ -419,7 +419,7 @@ describe('rightFacts', () => {
     data: {
       churchwiki: { view: true, 'view category': [17, 23] },
       churchcore: { 'administer persons': false, 'Chosen Name 7': true },
-      churchdb: { 'view group': [], view: false },
+      churchdb: { 'view group': [], view: false, 'push/pull archive': false },
     },
   };
 
@@ -429,6 +429,12 @@ describe('rightFacts', () => {
       {
         module: 'churchcore',
         name: 'administer persons',
+        kind: 'boolean',
+        pages: [],
+      },
+      {
+        module: 'churchdb',
+        name: 'push/pull archive',
         kind: 'boolean',
         pages: [],
       },
@@ -452,7 +458,7 @@ describe('rightFacts', () => {
     const facts = parseFactFiles(
       factFileTexts({ ...emptyFacts(), rights: rightFacts(answer).entries }),
     );
-    expect(facts.rights.entries).toHaveLength(5);
+    expect(facts.rights.entries).toHaveLength(6);
   });
 });
 

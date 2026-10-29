@@ -223,6 +223,14 @@ function parse(html: string): Element {
         popTo(index);
       }
     }
+    // A link inside a link does not exist in HTML: a new one closes the
+    // open one, as browsers do.
+    if (tag.name === 'a') {
+      const index = lastIndexOf(['a'], []);
+      if (index > 0) {
+        popTo(index);
+      }
+    }
     if (tag.name === 'li') {
       const index = lastIndexOf(['li'], ['ul', 'ol', 'menu']);
       if (index > 0) {
@@ -471,7 +479,10 @@ export function htmlToMarkdown(html: string, pageUrl: URL): string {
         'g',
       ),
       '[$1]($2)',
-    );
+    )
+    // A mark no link holds any more, which would fail the check of
+    // characters nobody sees.
+    .replace(linkMarks, '');
   return tidyLines(text);
 }
 
@@ -591,12 +602,29 @@ function inlineOf(node: Node, pageUrl: URL): string {
   if (node.tag !== 'a' || node.href === undefined) {
     return spaced;
   }
-  const text = inner.replace(/\s+/g, ' ').trim();
+  // Should a link still hold another, only the text of the inner one
+  // stays, so that the marks of links never nest.
+  const text = withoutLinks(inner).replace(/\s+/g, ' ').trim();
   const target = linkTarget(node.href, pageUrl);
   if (text === '' || target === undefined) {
     return spaced;
   }
-  return `${linkStart}${text}${linkMiddle}${target}${linkEnd}`;
+  // Space at either end of the text of a link stays outside the link, so
+  // that it still parts the link from its neighbours.
+  const before = /^\s/.test(inner) ? ' ' : '';
+  const after = /\s$/.test(inner) ? ' ' : '';
+  return `${before}${linkStart}${text}${linkMiddle}${target}${linkEnd}${after}`;
+}
+
+const markedLink = new RegExp(
+  `${linkStart}([^${linkMiddle}]*)${linkMiddle}[^${linkEnd}]*${linkEnd}`,
+  'g',
+);
+const linkMarks = new RegExp(`[${linkStart}${linkMiddle}${linkEnd}]`, 'g');
+
+// The text of a piece of a line with its links replaced by their text.
+function withoutLinks(text: string): string {
+  return text.replace(markedLink, '$1').replace(linkMarks, '');
 }
 
 function linkTarget(href: string, pageUrl: URL): string | undefined {

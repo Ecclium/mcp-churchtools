@@ -75,12 +75,14 @@ const words = [
 ];
 
 function count(
-  guard: { allowPublic(word: string): void },
+  guard: { allowFixed(...words: readonly number[]): void },
   value: number,
 ): number {
-  // Counts of the sources are public words of the form of a slug, so a
-  // count equal to a value of the instance does not withhold the output.
-  guard.allowPublic(String(value));
+  // A count is made by the refresh, not taken from an answer, so it is a
+  // fixed word, as the counts of the probes are. A value of the instance
+  // that happens to be equal, such as the 0 of a header, does not
+  // withhold it.
+  guard.allowFixed(value);
   return value;
 }
 

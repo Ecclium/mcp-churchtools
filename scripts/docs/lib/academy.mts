@@ -48,10 +48,12 @@ export const academySections: readonly string[] = Object.freeze([
 
 /**
  * Categories below other sections that the index takes as well, for the
- * areas without a section of their own: songs and the API (D11). Empty
- * until a listing of the categories shows one.
+ * areas without a section of their own (D11). The listing of 29.10.2026
+ * showed the songs as the category `songs` below `events`, which the
+ * index takes anyway, and the API as the category `api` below
+ * `integrationen`.
  */
-export const academyExtraCategories: readonly string[] = Object.freeze([]);
+export const academyExtraCategories: readonly string[] = Object.freeze(['api']);
 
 // The lists the refresh reads, with the fields it asks for.
 const lists = {
