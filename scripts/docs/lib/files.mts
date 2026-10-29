@@ -17,6 +17,7 @@ import { renameSync, rmSync, writeFileSync } from 'node:fs';
 import { SpikeError } from '../../spike/lib/errors.mts';
 import { isObject, type OpenApiDocument } from '../../spike/lib/spec.mts';
 import type { AcademyPageEntry } from './academy.mts';
+import type { OperationRightsEntry } from './mapping.mts';
 import { factDepth, type OperationFactEntry } from './operations.mts';
 import type { RightFactEntry } from './rights.mts';
 import { cleanLine } from './text.mts';
@@ -56,11 +57,12 @@ export interface AcademyOrigin {
   readonly pages: readonly { readonly path: string; readonly sha256: string }[];
 }
 
-/** Everything the four files hold. */
+/** Everything the five files hold. */
 export interface RefreshedFacts {
   readonly operations: readonly OperationFactEntry[];
   readonly rights: readonly RightFactEntry[];
   readonly academy: readonly AcademyPageEntry[];
+  readonly operationRights: readonly OperationRightsEntry[];
   readonly operationsNotice: string;
   readonly openapi: OpenApiOrigin;
   readonly permissions: PermissionsOrigin;
@@ -68,7 +70,7 @@ export interface RefreshedFacts {
 }
 
 const rightsNotice =
-  'Fakten zu den Rechten von ChurchTools: Modul, Name und Art jedes Rechts aus der Antwort von GET /api/permissions/global, ohne die Werte einer Instanz. Bezeichnungen stammen aus Hilfeseiten der ChurchTools Academy, je mit dem Pfad ihrer Seite. Für sie gilt, was in academy.json steht.';
+  'Fakten zu den Rechten von ChurchTools: Modul, Name und Art jedes Rechts aus der Antwort von GET /api/permissions/global, ohne die Werte einer Instanz. Bezeichnungen stammen aus Hilfeseiten der ChurchTools Academy, je mit dem Pfad ihrer Seite, und wo keine Seite ein Recht benennt, aus der Oberfläche von ChurchTools, wie ein Befund des Projekts sie festhält. Für die Bezeichnungen aus der Academy gilt, was in academy.json steht.';
 
 const academyNotice =
   'Texte frei zugänglicher Hilfeseiten der ChurchTools Academy, von Ecclium aufbereitet: ohne Bilder, Navigation und Skripte, Links nur als Pfad auf der Academy. © ChurchTools, alle Rechte vorbehalten. Ecclium gibt die Texte mit Erlaubnis des Herstellers wieder, mit Namensnennung und Link. Sie stehen unter keiner Lizenz des Projekts. Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Hersteller von ChurchTools.';
@@ -198,27 +200,51 @@ export function factFileTexts(facts: RefreshedFacts): FactTexts {
       notice: facts.operationsNotice,
       entries: facts.operations,
     }),
-    'rights.json': canonical({
-      format: 'ecclium.docs.rights.v1',
-      notice: rightsNotice,
-      entries: facts.rights.map(({ module, name, kind, pages }) => ({
-        module,
-        name,
-        kind,
-        pages,
-      })),
-    }),
+    'rights.json': rightsText(facts.rights),
     'academy.json': canonical({
       format: 'ecclium.docs.academy.v1',
       notice: academyNotice,
       entries: facts.academy,
     }),
-    'operation-rights.json': canonical({
-      format: 'ecclium.docs.operation-rights.v1',
-      notice: operationRightsNotice,
-      entries: [],
-    }),
+    'operation-rights.json': operationRightsText(facts.operationRights),
   };
+}
+
+/**
+ * Writes `rights.json`, each right with its label and pages, if the
+ * mapping gave it any.
+ *
+ * @param rights - The rights, sorted by module and name.
+ * @returns The text of the file.
+ */
+export function rightsText(rights: readonly RightFactEntry[]): string {
+  return canonical({
+    format: 'ecclium.docs.rights.v1',
+    notice: rightsNotice,
+    entries: rights.map(({ module, name, kind, label, pages }) => ({
+      module,
+      name,
+      kind,
+      ...(label === undefined ? {} : { label }),
+      pages,
+    })),
+  });
+}
+
+/**
+ * Writes `operation-rights.json` with the pairings of the mapping.
+ *
+ * @param entries - The pairings, sorted as the mapping reads them.
+ * @returns The text of the file.
+ */
+export function operationRightsText(
+  entries: readonly OperationRightsEntry[],
+): string {
+  return canonical({
+    format: 'ecclium.docs.operation-rights.v1',
+    notice: operationRightsNotice,
+    entries,
+  });
 }
 
 /**
@@ -232,7 +258,10 @@ export function factFileTexts(facts: RefreshedFacts): FactTexts {
  * @param dataDir - The folder, ending in `/`.
  * @throws {Error} If a file cannot be written; the new files are removed then.
  */
-export function writeFactFiles(texts: FactTexts, dataDir: URL): void {
+export function writeFactFiles(
+  texts: Readonly<Partial<FactTexts>>,
+  dataDir: URL,
+): void {
   const pending = Object.entries(texts).map(([name, text]) => ({
     text,
     target: new URL(name, dataDir),

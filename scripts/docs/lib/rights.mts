@@ -22,6 +22,15 @@ export interface RightFactEntry {
   readonly module: string;
   readonly name: string;
   readonly kind: 'boolean' | 'list';
+  /** The label, from the mapping by hand (`mapping.mts`). */
+  readonly label?:
+    | { readonly text: string; readonly page: string }
+    | {
+        readonly text: string;
+        readonly finding: string;
+        readonly version: string;
+      };
+  /** The explaining pages, from the mapping by hand. */
   readonly pages: readonly string[];
 }
 
