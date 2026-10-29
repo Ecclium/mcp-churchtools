@@ -184,5 +184,7 @@ describe('openDocsIndex', () => {
     pages.forEach((hit) => {
       expectAttribution(hit.attribution);
     });
-  });
+    // The real facts take seconds to build and open, more on a runner of CI
+    // with coverage than the default of five seconds allows.
+  }, 60_000);
 });

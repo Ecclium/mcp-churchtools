@@ -59,6 +59,8 @@ describe('buildDocsIndex', () => {
     vi.unstubAllEnvs();
   });
 
+  // The real facts take seconds to check, build and check again, more on
+  // a runner of CI with coverage than the default of five seconds allows.
   it('builds the facts under data/', () => {
     const text = buildDocsIndex(readFactFiles(defaultBuildLocations().dataDir));
     const { facts, search } = parseDocsIndex(text);
@@ -67,7 +69,7 @@ describe('buildDocsIndex', () => {
       facts.operations.entries.map(({ operationId }) => operationId),
     );
     expect(Buffer.byteLength(text)).toBeLessThanOrEqual(maxDocsIndexBytes);
-  });
+  }, 60_000);
 
   it('keeps the facts and indexes every source', () => {
     const { facts, search } = parseDocsIndex(
