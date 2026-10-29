@@ -49,7 +49,9 @@ import {
   robotsAllow,
   type AcademyClient,
   type AcademyResponse,
+  type RobotsRules,
 } from './lib/academy.mts';
+import { errorCodes, SpikeError } from './lib/errors.mts';
 import type { SpikeState } from './lib/env.mts';
 import { identificationCategoryName } from './lib/gate.mts';
 import type { Guard, Json } from './lib/guard.mts';
@@ -581,6 +583,10 @@ const academyWords = [
   'ohneZuordnung',
   'kategorien',
   'weitereSprachen',
+  'weitere',
+  'Fehler',
+  'fehler',
+  ...errorCodes,
   ...academyNamespaces,
   ...academyRoutes,
   ...academyPaths,
@@ -711,6 +717,9 @@ export function describeInfo(
     guard.allowFixed(documentVersion[0]);
   }
   const description = info['description'];
+  if (typeof description === 'string') {
+    guard.allowFixed(sizeOf(description));
+  }
   const identifier = licence?.['identifier'];
   return {
     schluessel: keysOf(info, infoKeys, guard),
@@ -775,6 +784,13 @@ export function describeInfo(
 
 function count(guard: Guard, value: number): number {
   guard.allowFixed(value);
+  return value;
+}
+
+// A count the academy reports itself: it comes from outside, so it is
+// checked like any public word.
+function publicCount(guard: Guard, value: number): number {
+  guard.allowPublic(String(value));
   return value;
 }
 
@@ -1078,28 +1094,40 @@ export function definesRight(body: unknown, entry: ToolRight): boolean {
 
 const rightName = /^[a-z]+(?: [a-z]+){1,5}$/;
 
+// Fields whose text names a right, in an answer that lists rights as
+// objects instead of keys.
+const rightFields: ReadonlySet<string> = new Set([
+  'auth',
+  'key',
+  'name',
+  'permission',
+  'right',
+]);
+
 interface DefinitionsWalk {
   readonly strings: Set<string>;
   readonly names: Set<string>;
   lists: number;
 }
 
-// Collects every key and text of the answer, the texts and keys that have
-// the form of a right with more than one word, and counts the lists of
-// objects that each carry an ID and a name.
+// Collects every key and text of the answer and counts the lists of
+// objects that each carry an ID and a name. As names of rights it takes
+// only what has the form of a right with more than one word and stands
+// where a right stands: a key whose value is an object, or the text of a
+// field that names a right. Other texts of that form, such as a label,
+// would count descriptions that name no right.
 function walkDefinitions(body: unknown): DefinitionsWalk {
   const walk: DefinitionsWalk = {
     strings: new Set(),
     names: new Set(),
     lists: 0,
   };
+  const isRightName = (text: string): boolean =>
+    text.length <= 60 && rightName.test(text);
   const stack: unknown[] = [body];
   for (let value = stack.pop(); value !== undefined; value = stack.pop()) {
     if (typeof value === 'string') {
       walk.strings.add(value);
-      if (value.length <= 60 && rightName.test(value)) {
-        walk.names.add(value);
-      }
     } else if (Array.isArray(value)) {
       if (
         value.length > 0 &&
@@ -1120,8 +1148,13 @@ function walkDefinitions(body: unknown): DefinitionsWalk {
     } else if (isObject(value)) {
       for (const [key, inner] of Object.entries(value)) {
         walk.strings.add(key);
-        if (key.length <= 60 && rightName.test(key)) {
-          walk.names.add(key);
+        if (
+          (isObject(inner) && isRightName(key)) ||
+          (typeof inner === 'string' &&
+            rightFields.has(key) &&
+            isRightName(inner))
+        ) {
+          walk.names.add(typeof inner === 'string' ? inner : key);
         }
         stack.push(inner);
       }
@@ -1209,49 +1242,88 @@ export const maxOtherLanguages = 3;
 const slugForm = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const yearMonthForm = /^(\d{4})-(\d{2})/;
 
-function totalPages(response: AcademyResponse): number {
-  const value = Number(response.headers.get('x-wp-totalpages') ?? '1');
-  return Number.isInteger(value) && value >= 1
-    ? Math.min(value, maxListPages)
-    : 1;
+/**
+ * Reads a count from a header of WordPress, such as `X-WP-Total`.
+ *
+ * @param response - An answer of the academy.
+ * @param name - Name of the header.
+ * @returns The count, or `undefined` if the header is missing or holds no count.
+ */
+function headerCount(
+  response: AcademyResponse,
+  name: string,
+): number | undefined {
+  const value = response.headers.get(name)?.trim();
+  return value !== undefined && /^\d{1,7}$/.test(value)
+    ? Number(value)
+    : undefined;
 }
 
+// The path with its query, encoded as the client sends it, so that
+// robots.txt judges the very request.
+function withQuery(
+  path: string,
+  query: readonly (readonly [string, string])[],
+): string {
+  const search = new URLSearchParams();
+  for (const [name, value] of query) {
+    search.append(name, value);
+  }
+  return `${path}?${search.toString()}`;
+}
+
+/** What reading one list of the academy gave. */
+interface ListResult {
+  /** The number of entries the academy reports, if it does. */
+  readonly total: number | undefined;
+  /** The number of entries read. */
+  readonly read: number;
+  /** Whether robots.txt forbade one of its pages, so reading stopped. */
+  readonly blocked: boolean;
+}
+
+// Reads a list page by page and hands each entry to `visit`, so that the
+// texts of hundreds of pages are never held at once. Before each page it
+// asks robots.txt about the path with its query.
 async function readList(
   academy: AcademyClient,
+  rules: RobotsRules,
   path: string,
   perPage: number,
   fields: string,
-): Promise<{
-  readonly entries: JsonObject[];
-  readonly total: number | undefined;
-}> {
-  const entries: JsonObject[] = [];
+  visit: (entry: JsonObject) => void,
+): Promise<ListResult> {
   let total: number | undefined;
+  let read = 0;
   let pages = 1;
   for (let page = 1; page <= pages; page += 1) {
-    const response = await academy.get({
-      path,
-      query: [
-        ['per_page', String(perPage)],
-        ['page', String(page)],
-        ['_fields', fields],
-      ],
-    });
+    const query = [
+      ['per_page', String(perPage)],
+      ['page', String(page)],
+      ['_fields', fields],
+    ] as const;
+    if (!robotsAllow(rules, withQuery(path, query))) {
+      return { total, read, blocked: true };
+    }
+    const response = await academy.get({ path, query });
     if (response.status !== 200 || !Array.isArray(response.body)) {
       break;
     }
     if (page === 1) {
-      pages = totalPages(response);
-      const reported = Number(response.headers.get('x-wp-total'));
-      total = Number.isInteger(reported) ? reported : undefined;
+      pages = Math.max(
+        1,
+        Math.min(headerCount(response, 'x-wp-totalpages') ?? 1, maxListPages),
+      );
+      total = headerCount(response, 'x-wp-total');
     }
     for (const entry of response.body as unknown[]) {
       if (isObject(entry)) {
-        entries.push(entry);
+        read += 1;
+        visit(entry);
       }
     }
   }
-  return { entries, total };
+  return { total, read, blocked: false };
 }
 
 /** A term of a taxonomy of the academy: its slug and its parent. */
@@ -1346,6 +1418,9 @@ export function classifyLink(
   return classifyHost(url.hostname, instanceHost);
 }
 
+/** At most this many sections or knowledge bases appear by name. */
+export const maxSections = 100;
+
 function namedSections(
   sections: ReadonlyMap<string, Section>,
   hiddenLabel: string,
@@ -1353,7 +1428,13 @@ function namedSections(
 ): Json {
   const result: Record<string, Json> = {};
   let hidden = 0;
-  for (const [name, section] of [...sections].sort(byName)) {
+  const sorted = [...sections].sort(byName);
+  if (sorted.length > maxSections) {
+    // The slugs come from outside. A cap keeps them from filling the
+    // output, whatever the academy sends.
+    result['weitere'] = countClass(sorted.length - maxSections);
+  }
+  for (const [name, section] of sorted.slice(0, maxSections)) {
     let shown = name;
     if (name === '') {
       // Pages without a term of this taxonomy.
@@ -1388,7 +1469,15 @@ export async function readAcademy(
 ): Promise<Json> {
   const robotsAnswer = await academy.get({ path: '/robots.txt' });
   guard.allowFixed(robotsAnswer.status);
-  if (robotsAnswer.status !== 200 && robotsAnswer.status !== 404) {
+  // A page in place of the file, such as a challenge in HTML, would read as
+  // a file without rules. Only plain text counts as robots.txt.
+  const plainText = (robotsAnswer.headers.get('content-type') ?? '')
+    .toLowerCase()
+    .startsWith('text/plain');
+  if (
+    (robotsAnswer.status !== 200 && robotsAnswer.status !== 404) ||
+    (robotsAnswer.status === 200 && !plainText)
+  ) {
     return {
       robots: { status: robotsAnswer.status },
       gelesen: 'nein',
@@ -1427,7 +1516,9 @@ export async function readAcademy(
   const help = await academy.get({ path: '/de/help/' });
   guard.allowFixed(help.status);
   const languages = help.status === 200 ? hreflangCodes(help.text) : [];
-  guard.allowFixed(...languages);
+  for (const language of languages) {
+    guard.allowPublic(language);
+  }
 
   const index = await academy.get({ path: '/de/wp-json/' });
   guard.allowFixed(index.status);
@@ -1464,27 +1555,26 @@ export async function readAcademy(
     };
   }
 
+  const categoryEntries: JsonObject[] = [];
   const categories = await readList(
     academy,
+    rules,
     '/de/wp-json/wp/v2/doc_category',
     100,
     'id,slug,parent',
+    (entry) => categoryEntries.push(entry),
   );
+  const baseEntries: JsonObject[] = [];
   const bases = await readList(
     academy,
+    rules,
     '/de/wp-json/wp/v2/knowledge_base',
     100,
     'id,slug,parent',
+    (entry) => baseEntries.push(entry),
   );
-  // Only these fields: never the authors, who are people.
-  const docs = await readList(
-    academy,
-    '/de/wp-json/wp/v2/docs',
-    50,
-    'id,status,modified_gmt,content,doc_category,knowledge_base',
-  );
-  const categoryTerms = termsOf(categories.entries);
-  const baseTerms = termsOf(bases.entries);
+  const categoryTerms = termsOf(categoryEntries);
+  const baseTerms = termsOf(baseEntries);
 
   const sections = new Map<string, Section>();
   const knowledgeBases = new Map<string, Section>();
@@ -1498,7 +1588,7 @@ export async function readAcademy(
   let textBytes = 0;
   let oldest: string | undefined;
   let newest: string | undefined;
-  for (const doc of docs.entries) {
+  const visit = (doc: JsonObject): void => {
     if (doc['status'] === 'publish') {
       published += 1;
     }
@@ -1557,11 +1647,30 @@ export async function readAcademy(
     for (const root of baseRoots) {
       addTo(knowledgeBases, baseTerms.get(root)?.slug ?? '', bytes);
     }
+  };
+  // Only these fields: never the authors, who are people.
+  const docs = await readList(
+    academy,
+    rules,
+    '/de/wp-json/wp/v2/docs',
+    50,
+    'id,status,modified_gmt,content,doc_category,knowledge_base',
+    visit,
+  );
+  if (categories.blocked || bases.blocked || docs.blocked) {
+    return {
+      robots,
+      hilfe: { status: help.status, sprachen: languages },
+      schnittstelle: interfaceDescription,
+      gelesen: 'nein',
+      grund: 'robots.txt verbietet',
+    };
   }
-  if (oldest !== undefined && newest !== undefined) {
-    guard.allowFixed(oldest, newest);
+  for (const word of [oldest, newest, ...years.keys()]) {
+    if (word !== undefined) {
+      guard.allowPublic(word);
+    }
   }
-  guard.allowFixed(...years.keys());
   guard.allowFixed(formatSize(htmlBytes), formatSize(textBytes));
 
   const others: Record<string, Json> = {};
@@ -1569,21 +1678,19 @@ export async function readAcademy(
     .filter((language) => /^[a-z]{2}$/.test(language) && language !== 'de')
     .slice(0, maxOtherLanguages)) {
     const path = `/${code}/wp-json/wp/v2/docs`;
-    if (!robotsAllow(rules, path)) {
+    const query = [
+      ['per_page', '1'],
+      ['_fields', 'id'],
+    ] as const;
+    if (!robotsAllow(rules, withQuery(path, query))) {
       others[code] = 'verboten';
       continue;
     }
-    const answer = await academy.get({
-      path,
-      query: [
-        ['per_page', '1'],
-        ['_fields', 'id'],
-      ],
-    });
-    const reported = Number(answer.headers.get('x-wp-total'));
+    const answer = await academy.get({ path, query });
+    const reported = headerCount(answer, 'x-wp-total');
     others[code] =
-      answer.status === 200 && Number.isInteger(reported)
-        ? count(guard, reported)
+      answer.status === 200 && reported !== undefined
+        ? publicCount(guard, reported)
         : 'unbekannt';
   }
 
@@ -1594,8 +1701,8 @@ export async function readAcademy(
     gelesen: 'ja',
     seiten: {
       gemeldet:
-        docs.total === undefined ? 'unbekannt' : count(guard, docs.total),
-      gelesen: count(guard, docs.entries.length),
+        docs.total === undefined ? 'unbekannt' : publicCount(guard, docs.total),
+      gelesen: count(guard, docs.read),
       veroeffentlicht: count(guard, published),
       geschuetzt: count(guard, protectedPages),
       groesse: { html: formatSize(htmlBytes), text: formatSize(textBytes) },
@@ -1629,6 +1736,31 @@ export async function readAcademy(
     wissensbasen: namedSections(knowledgeBases, 'wissensbasis', guard),
     weitereSprachen: others,
   };
+}
+
+/**
+ * Reads the academy like {@link readAcademy}, but a failed request there
+ * ends only this part, with its fixed code, and the parts about the
+ * instance still reach the output.
+ *
+ * @param academy - The client for the academy.
+ * @param instanceHost - Host of the instance in lower case.
+ * @param guard - Receives every word the description uses.
+ * @returns The description, or the fixed code of the failure.
+ */
+export async function readAcademySafely(
+  academy: AcademyClient,
+  instanceHost: string,
+  guard: Guard,
+): Promise<Json> {
+  try {
+    return await readAcademy(academy, instanceHost, guard);
+  } catch (error) {
+    if (error instanceof SpikeError) {
+      return { gelesen: 'nein', grund: 'Fehler', fehler: error.code };
+    }
+    throw error;
+  }
 }
 
 /** The probe, for tests and for {@link main}. */
@@ -1665,7 +1797,7 @@ export const probe: ProbeDefinition = {
         guard,
       ),
       rechte: { definitionen: definitions.output },
-      academy: await readAcademy(academy, instanceHost, guard),
+      academy: await readAcademySafely(academy, instanceHost, guard),
     };
   },
 };

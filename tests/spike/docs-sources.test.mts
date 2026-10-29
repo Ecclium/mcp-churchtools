@@ -83,6 +83,14 @@ interface Answers {
   readonly robots?: string;
   /** The slug of the first section of the academy. Default: `personen`. */
   readonly sectionSlug?: string;
+  /** The media type of robots.txt. Default: `text/plain`. */
+  readonly robotsType?: string;
+  /** Status of robots.txt. Default: 200. */
+  readonly robotsStatus?: number;
+  /** Whether the lists leave out `X-WP-Total`. */
+  readonly withoutTotals?: boolean;
+  /** Extra sections, each with one help page. Default: none. */
+  readonly extraSections?: number;
 }
 
 /** One run of the probe. */
@@ -137,7 +145,10 @@ function syntheticDocument(canaries: Canaries): OpenApiDocument {
             },
           ],
         },
-        post: { description: 'Zur Rechteverwaltung, nach rechts.' },
+        post: {
+          description:
+            'Zur Rechteverwaltung, nach rechts. Alle personen sehen.',
+        },
         delete: { deprecated: true, description: 'view' },
       },
     },
@@ -205,20 +216,35 @@ function syntheticAcademy(
 ): Response {
   const json = (body: unknown, total = 1, pages = 1): Response =>
     Response.json(body, {
-      headers: {
-        'x-wp-total': String(total),
-        'x-wp-totalpages': String(pages),
-      },
+      headers:
+        answers.withoutTotals === true
+          ? {}
+          : {
+              'x-wp-total': String(total),
+              'x-wp-totalpages': String(pages),
+            },
     });
+  const extra = Array.from(
+    { length: answers.extraSections ?? 0 },
+    (_, index) => index,
+  );
   const author = { author: 7, author_info: { name: canaries.personName } };
   const instanceHost = new URL(origin).hostname;
   switch (url.pathname) {
     case '/robots.txt':
-      return new Response(
-        answers.robots ??
-          'User-agent: *\nDisallow: /wp-admin/\nSitemap: /x.xml\n',
-        { headers: { 'content-type': 'text/plain' } },
-      );
+      return answers.robotsStatus === 301
+        ? new Response(null, {
+            status: 301,
+            headers: { location: `${origin}/` },
+          })
+        : new Response(
+            answers.robots ??
+              'User-agent: *\nDisallow: /wp-admin/\nSitemap: /x.xml\n',
+            {
+              status: answers.robotsStatus ?? 200,
+              headers: { 'content-type': answers.robotsType ?? 'text/plain' },
+            },
+          );
     case '/de/help/':
       return new Response(
         '<link rel="alternate" hreflang="de" href="/de/help/">' +
@@ -242,6 +268,11 @@ function syntheticAcademy(
         { id: 2, slug: 'personen-suchen', parent: 1 },
         { id: 3, slug: 'rechteverwaltung-verstehen', parent: 0 },
         { id: 4, slug: '%c3%bcber-uns', parent: 0 },
+        ...extra.map((index) => ({
+          id: 1000 + index,
+          slug: `abschnitt-${String(index)}`,
+          parent: 0,
+        })),
       ]);
     case '/de/wp-json/wp/v2/knowledge_base':
       return json([{ id: 10, slug: 'churchtools', parent: 0 }]);
@@ -306,6 +337,13 @@ function syntheticAcademy(
                 content: { rendered: 'kurz', protected: false },
                 ...author,
               },
+              ...extra.map((index) => ({
+                id: 2000 + index,
+                status: 'publish',
+                modified_gmt: '2026-03-01T00:00:00',
+                doc_category: [1000 + index],
+                content: { rendered: 'x', protected: false },
+              })),
             ],
             4,
             2,
@@ -325,7 +363,11 @@ function syntheticDefinitions(canaries: Canaries): unknown {
   return {
     data: {
       churchdb: {
-        'view alldata': { label: canaries.personName, type: 'list' },
+        'view alldata': {
+          label: canaries.personName,
+          description: 'alle personen sehen',
+          type: 'list',
+        },
       },
       churchgroup: {
         'view groups of grouptype': { label: canaries.groupName },
@@ -523,6 +565,17 @@ describe('10-docs-sources, part OpenAPI', () => {
     ).toEqual(['/api/permissions/definitions']);
     expect(without.result).toMatchObject({
       testinstanz: 'nicht dokumentiert',
+    });
+  });
+
+  it('registers the size of a long description with the guard', async () => {
+    const result = await run({}, (document) => ({
+      ...document,
+      info: { ...(document['info'] as object), description: 'x'.repeat(2000) },
+    }));
+    expect(result.code, result.output.stdout()).toBe(exitCodes.ok);
+    expect(result.result).toMatchObject({
+      openapi: { info: { beschreibung: '2 KiB' } },
     });
   });
 
@@ -735,6 +788,61 @@ describe('10-docs-sources, part academy', () => {
     expect(leaks(result.output, result.forbidden)).toEqual([]);
   });
 
+  it('treats a page in place of robots.txt as unreadable', async () => {
+    const result = await run({ robotsType: 'text/html; charset=UTF-8' });
+    expect(result.result).toMatchObject({
+      academy: { gelesen: 'nein', grund: 'robots.txt nicht lesbar' },
+    });
+    expect(
+      result.calls.filter((call) => call.url.origin === academyOrigin),
+    ).toHaveLength(1);
+  });
+
+  it('keeps the parts about the instance when a request to the academy fails', async () => {
+    const result = await run({ robotsStatus: 301 });
+    expect(result.code).toBe(exitCodes.ok);
+    expect(result.result).toMatchObject({
+      testinstanz: 'ja',
+      openapi: { format: 'OpenAPI 3' },
+      rechte: { definitionen: { antwort: { status: 200 } } },
+      academy: { gelesen: 'nein', grund: 'Fehler', fehler: 'HTTP_REDIRECT' },
+    });
+  });
+
+  it('asks robots.txt about each page of a list with its query', async () => {
+    const result = await run({ robots: 'User-agent: *\nDisallow: /*page=2\n' });
+    expect(result.result).toMatchObject({
+      academy: { gelesen: 'nein', grund: 'robots.txt verbietet' },
+    });
+    const docs = result.calls.filter(
+      (call) => call.url.pathname === '/de/wp-json/wp/v2/docs',
+    );
+    expect(docs.map((call) => call.url.searchParams.get('page'))).toEqual([
+      '1',
+    ]);
+  });
+
+  it('says unbekannt when the academy reports no total', async () => {
+    const result = await run({ withoutTotals: true });
+    expect(result.result).toMatchObject({
+      academy: {
+        gelesen: 'ja',
+        seiten: { gemeldet: 'unbekannt', gelesen: 2 },
+        weitereSprachen: { en: 'unbekannt' },
+      },
+    });
+  });
+
+  it('names at most a fixed number of sections', async () => {
+    const result = await run({ extraSections: 110 });
+    expect(result.code).toBe(exitCodes.ok);
+    const sections = (
+      result.result as { academy: { abschnitte: Record<string, unknown> } }
+    ).academy.abschnitte;
+    expect(sections['weitere']).toBe('10–99');
+    expect(Object.keys(sections)).toHaveLength(101);
+  });
+
   it('stops at a Crawl-delay longer than it may wait', async () => {
     const result = await run({ robots: 'User-agent: *\nCrawl-delay: 60\n' });
     expect(result.result).toMatchObject({
@@ -773,6 +881,33 @@ describe('the helpers of the part academy', () => {
     expect(robotsAllow(rules, '/de/x')).toBe(true);
     expect(robotsAllow(rules, '/robots.txt')).toBe(true);
     expect(robotsAllow(parseRobots('', userAgent), '/de/')).toBe(true);
+  });
+
+  it('reads robots.txt as RFC 9309 asks: other records, encoded octets, the query', () => {
+    const split = parseRobots(
+      `User-agent: ${userAgent}\nHost: example.org\nUser-agent: *\nDisallow: /de/\n`,
+      userAgent,
+    );
+    expect(split.ownGroup).toBe(true);
+    expect(robotsAllow(split, '/de/help/')).toBe(false);
+    const encoded = parseRobots('User-agent: *\nDisallow: /%64e/\n', userAgent);
+    expect(robotsAllow(encoded, '/de/help/')).toBe(false);
+    expect(robotsAllow(encoded, '/%64e/help/')).toBe(false);
+    const query = parseRobots('User-agent: *\nDisallow: /*?\n', userAgent);
+    expect(robotsAllow(query, '/de/wp-json/')).toBe(true);
+    expect(robotsAllow(query, '/de/wp-json/wp/v2/docs?page=1')).toBe(false);
+    const many = 'User-agent: *\nCrawl-delay: 1\n'.repeat(200_000);
+    expect(
+      parseRobots(`${many}User-agent: *\nCrawl-delay: 4\n`, userAgent)
+        .crawlDelay,
+    ).toBe(4);
+  });
+
+  it('strips the tags of a page in linear time', () => {
+    const started = performance.now();
+    const features = pageFeatures(`${'<'.repeat(300_000)}x`);
+    expect(performance.now() - started).toBeLessThan(3000);
+    expect(features.text.endsWith('x')).toBe(true);
   });
 
   it('finds the languages, the features and the links of a page', () => {

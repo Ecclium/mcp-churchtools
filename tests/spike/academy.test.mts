@@ -101,6 +101,8 @@ describe('the client for the academy', () => {
       { path: '/de/help/', query: [['search', 'x']] as const },
       { path: '/de/help/', query: [['page', '1&x=2']] as const },
       { path: '/de/help/', query: [['page', '']] as const },
+      { path: '/de/help/', query: [['_fields', 'id,author']] as const },
+      { path: '/de/help/', query: [['_fields', 'author_info']] as const },
     ];
     for (const request of refused) {
       const { client, calls } = academy();
@@ -144,6 +146,26 @@ describe('the client for the academy', () => {
   it('waits also after a request that failed', async () => {
     const { client, waits } = academy(() => new Response('', { status: 500 }));
     await client.get({ path: '/robots.txt' });
+    await client.get({ path: '/robots.txt' });
+    expect(waits).toEqual([academyPauseMs]);
+  });
+
+  it('waits also after a request that threw', async () => {
+    const waits: number[] = [];
+    let calls = 0;
+    const client = createAcademyClient({
+      fetch: () => {
+        calls += 1;
+        return calls === 1
+          ? Promise.reject(new TypeError('fetch failed'))
+          : Promise.resolve(new Response('ok'));
+      },
+      wait: (milliseconds) => {
+        waits.push(milliseconds);
+        return Promise.resolve();
+      },
+    });
+    expect(await codeOf(client.get({ path: '/robots.txt' }))).toBe('NETZ');
     await client.get({ path: '/robots.txt' });
     expect(waits).toEqual([academyPauseMs]);
   });

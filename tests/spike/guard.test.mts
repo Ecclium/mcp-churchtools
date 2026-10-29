@@ -81,6 +81,27 @@ describe('Guard', () => {
     expect(guard.check(['release-2026', 'stufe-42'])).toEqual(['/0', '/1']);
   });
 
+  it('takes as public words only lower-case slugs, codes, years and counts', () => {
+    const guard = new Guard();
+    for (const word of ['kalender', 'en-gb', 'x-default', '2026-10', '524']) {
+      expect(() => {
+        guard.allowPublic(word);
+      }, word).not.toThrow();
+    }
+    for (const word of [
+      'Kalender',
+      'zwei Worte',
+      'a--b',
+      '-a',
+      '',
+      'x'.repeat(65),
+    ]) {
+      expect(() => {
+        guard.allowPublic(word);
+      }, word).toThrow();
+    }
+  });
+
   it('treats a word allowed only as checked strictly, even if it is public elsewhere', () => {
     const guard = new Guard();
     guard.allowPublic('kalender');

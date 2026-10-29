@@ -58,6 +58,19 @@ const academyQueryNames: ReadonlySet<string> = new Set([
 
 const academyQueryValue = /^[A-Za-z0-9_,.]{1,200}$/;
 
+// The only fields a probe may ask for. The authors of a page are people,
+// so no field about them is among these, whatever a probe asks for.
+const academyFields: ReadonlySet<string> = new Set([
+  'id',
+  'slug',
+  'parent',
+  'status',
+  'modified_gmt',
+  'content',
+  'doc_category',
+  'knowledge_base',
+]);
+
 /** One request to the academy. */
 export interface AcademyRequest {
   /** One of the fixed paths, starting with `/`. */
@@ -119,7 +132,12 @@ function academyUrl(request: AcademyRequest): URL {
     throw new SpikeError('INTERN');
   }
   for (const [name, value] of request.query ?? []) {
-    if (!academyQueryNames.has(name) || !academyQueryValue.test(value)) {
+    if (
+      !academyQueryNames.has(name) ||
+      !academyQueryValue.test(value) ||
+      (name === '_fields' &&
+        !value.split(',').every((field) => academyFields.has(field)))
+    ) {
       throw new SpikeError('INTERN');
     }
     url.searchParams.append(name, value);
@@ -248,10 +266,18 @@ export function parseRobots(text: string, agent: string): RobotsRules {
       inAgents = true;
     } else if (key === 'sitemap') {
       sitemap = sitemap || value !== '';
-    } else if (current !== undefined) {
+    } else if (
+      current !== undefined &&
+      (key === 'allow' || key === 'disallow' || key === 'crawl-delay')
+    ) {
+      // Only a rule ends the list of agents of a group. Other records,
+      // such as `Host`, are ignored, as RFC 9309 asks.
       inAgents = false;
       if ((key === 'allow' || key === 'disallow') && value !== '') {
-        current.rules.push({ allow: key === 'allow', path: value });
+        current.rules.push({
+          allow: key === 'allow',
+          path: normalizeRobotsPath(value),
+        });
       } else if (
         key === 'crawl-delay' &&
         /^\d{1,6}(?:\.\d{1,3})?$/.test(value)
@@ -271,9 +297,29 @@ export function parseRobots(text: string, agent: string): RobotsRules {
     ownGroup: own.length > 0,
     starGroup: star.length > 0,
     rules: applying.flatMap((group) => group.rules),
-    crawlDelay: delays.length === 0 ? undefined : Math.max(...delays),
+    crawlDelay:
+      delays.length === 0
+        ? undefined
+        : delays.reduce((longest, delay) => Math.max(longest, delay)),
     sitemap,
   };
+}
+
+/**
+ * Brings a path or a rule of robots.txt into one form, so that encoded and
+ * plain octets compare equal, as RFC 9309 asks: an encoded unreserved
+ * character is decoded, every other code is written in upper case.
+ *
+ * @param path - Path with query, or the path of a rule.
+ * @returns The path in its normal form.
+ */
+export function normalizeRobotsPath(path: string): string {
+  return path.replace(/%([0-9A-Fa-f]{2})/g, (code: string, hex: string) => {
+    const character = String.fromCharCode(Number.parseInt(hex, 16));
+    return /^[A-Za-z0-9\-._~]$/.test(character)
+      ? character
+      : `%${hex.toUpperCase()}`;
+  });
 }
 
 // Matches a path against a rule of robots.txt: `*` stands for any run of
@@ -316,13 +362,15 @@ function matchesRule(path: string, rule: string): boolean {
  * and of two equally long ones the one that allows.
  *
  * @param rules - The rules from {@link parseRobots}.
- * @param path - A path the probe wants to read.
+ * @param path - A path the probe wants to read, with its query, since rules
+ *   such as `Disallow: /*?page=` look at the query too.
  * @returns Whether the path may be read.
  */
 export function robotsAllow(rules: RobotsRules, path: string): boolean {
+  const normal = normalizeRobotsPath(path);
   let best: { allow: boolean; length: number } | undefined;
   for (const rule of rules.rules) {
-    if (!matchesRule(path, rule.path)) {
+    if (!matchesRule(normal, rule.path)) {
       continue;
     }
     if (
@@ -385,8 +433,10 @@ export function pageFeatures(html: string): PageFeatures {
     tables: /<table\b/i.test(html),
     code: /<(?:pre|code)\b/i.test(html),
     links: [...html.matchAll(hrefPattern)].map((match) => match[1] ?? ''),
+    // A tag ends at the next `<` as well, so text full of `<` without `>`
+    // costs linear time, not quadratic.
     text: html
-      .replace(/<[^>]*>/g, ' ')
+      .replace(/<[^<>]*>/g, ' ')
       .replace(/\s+/g, ' ')
       .trim(),
   };

@@ -36,6 +36,9 @@ export type Json =
 
 const versionPattern = /^\d+\.\d+$/;
 
+// The form of a word from a public source, see Guard.allowPublic.
+const publicWordForm = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
 /**
  * Collects what may and what must not appear in the output of a probe.
  *
@@ -121,9 +124,17 @@ export class Guard {
    * parts, the token, the values of the variables, the user name, the home
    * folder and the values of headers and cookies, see {@link Guard.block}.
    *
+   * Only words of lower-case letters, digits and single hyphens, up to 64
+   * characters, are taken, the form of a slug, a language code, a year or
+   * a count. Anything else is a mistake of the probe.
+   *
    * @param word - Word from a public source.
+   * @throws {Error} If the word has another form.
    */
   allowPublic(word: string): void {
+    if (word.length > 64 || !publicWordForm.test(word)) {
+      throw new Error('INTERN');
+    }
     this.#public.add(word);
   }
 
