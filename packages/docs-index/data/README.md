@@ -2,18 +2,19 @@
 
 Aus den Dateien dieses Ordners baut `pnpm build` den Index der Dokumentation von ChurchTools, in dem die Doku-Tools nachschlagen sollen. Welche Inhalte hineinkommen, legt [ADR 0027](../../../docs/adr/0027-inhalte-des-doku-index.md) fest, Form, Bau und Prüfungen [ADR 0066](../../../docs/adr/0066-doku-index.md).
 
-| Datei             | Inhalt                                                                                                                       | Quelle und Bedingungen                                                                                                                   |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `operations.json` | je Operation `operationId`, Methode, Pfad, Tags, Beschreibungen, Parameter und Schemas drei Schritte tief, ohne Beispiele    | OpenAPI-Dokument von ChurchTools unter CC BY 4.0. Die Fakten sind von Ecclium bearbeitet und stehen ebenfalls unter CC BY 4.0.           |
-| `rights.json`     | je Recht Modul, Name und Art des Werts, wo eine Hilfeseite sie nennt, die Bezeichnung und die Seiten, die das Recht erklären | Modul, Name und Art aus `GET /api/permissions/global` einer Instanz, ohne ihre Werte. Bezeichnungen aus der Academy, wie `academy.json`. |
-| `academy.json`    | je frei zugänglicher Hilfeseite Titel, Abschnitt, Wissensbasis, letzte Änderung und Text in Markdown beschränkter Form       | ChurchTools Academy. Alle Rechte liegen beim Hersteller, Ecclium gibt die Texte mit seiner Erlaubnis wieder, mit Namensnennung und Link. |
-| `SOURCES.json`    | je Quelle Abrufzeit und SHA-256, beim OpenAPI-Dokument seine Version und die der Instanz, bei der Academy jede Seite         | eigene Angaben des Projekts zu den Quellen, ohne fremden Inhalt                                                                          |
+| Datei                   | Inhalt                                                                                                                             | Quelle und Bedingungen                                                                                                                   |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `operations.json`       | je Operation `operationId`, Methode, Pfad, Tags, Beschreibungen, Parameter und Schemas drei Schritte tief, ohne Beispiele          | OpenAPI-Dokument von ChurchTools unter CC BY 4.0. Die Fakten sind von Ecclium bearbeitet und stehen ebenfalls unter CC BY 4.0.           |
+| `rights.json`           | je Recht Modul, Name und Art des Werts, wo eine Hilfeseite sie nennt, die Bezeichnung und die Seiten, die das Recht erklären       | Modul, Name und Art aus `GET /api/permissions/global` einer Instanz, ohne ihre Werte. Bezeichnungen aus der Academy, wie `academy.json`. |
+| `operation-rights.json` | je Operation die Rechte, die sie verlangt, jede Paarung mit Beleg, oder dass sie keines verlangt, oder warum keine Zuordnung steht | eigene Arbeit des Projekts, von Hand zugeordnet, unter der Elastic License 2.0 wie der Quellcode                                         |
+| `academy.json`          | je frei zugänglicher Hilfeseite Titel, Abschnitt, Wissensbasis, letzte Änderung und Text in Markdown beschränkter Form             | ChurchTools Academy. Alle Rechte liegen beim Hersteller, Ecclium gibt die Texte mit seiner Erlaubnis wieder, mit Namensnennung und Link. |
+| `SOURCES.json`          | je Quelle Abrufzeit und SHA-256, beim OpenAPI-Dokument seine Version und die der Instanz, bei der Academy jede Seite               | eigene Angaben des Projekts zu den Quellen, ohne fremden Inhalt                                                                          |
 
-Die drei Dateien mit Fakten nennen in ihrem Feld `notice` selbst ihre Quelle und deren Bedingungen und stehen nicht unter der Elastic License 2.0 des Quellcodes.
+Die drei Dateien mit Fakten aus den Quellen nennen in ihrem Feld `notice` selbst ihre Quelle und deren Bedingungen und stehen nicht unter der Elastic License 2.0 des Quellcodes. `rights.json` nimmt Bezeichnungen aus der Academy und, wo keine Hilfeseite ein Recht benennt, aus der Oberfläche von ChurchTools, wie ein Befund in [`churchtools-api.md`](../../../docs/research/churchtools-api.md) sie festhält. `operation-rights.json` sagt in ihrem `notice`, dass sie eigene Arbeit des Projekts ist.
 
 ## Wer die Dateien schreibt
 
-Sie schreibt `pnpm docs:refresh` aus den Quellen, keine Person von Hand. Wie das Skript liest, aufbereitet und aufgerufen wird, steht in [`scripts/docs/README.md`](../../../scripts/docs/README.md). Eine Rohquelle, also eine abgerufene Seite oder das OpenAPI-Dokument als Ganzes, liegt nie hier und nie im Paket.
+Sie schreibt `pnpm docs:refresh` aus den Quellen, keine Person von Hand. Was eine Person beiträgt, die Bezeichnungen und erklärenden Seiten der Rechte und die Zuordnung von Operationen zu Rechten, steht in [`scripts/docs/rights-mapping.json`](../../../scripts/docs/rights-mapping.json), und der Refresh übernimmt es, nach einer Änderung allein mit `pnpm docs:refresh --nur-zuordnung`. Wie das Skript liest, aufbereitet und aufgerufen wird, steht in [`scripts/docs/README.md`](../../../scripts/docs/README.md). Eine Rohquelle, also eine abgerufene Seite oder das OpenAPI-Dokument als Ganzes, liegt nie hier und nie im Paket.
 
 ## Was geprüft wird
 
@@ -23,7 +24,8 @@ Sie schreibt `pnpm docs:refresh` aus den Quellen, keine Person von Hand. Wie das
 - Als Host stehen nur `example.church.tools` und `churchtools.academy` darin, als E-Mail-Adresse nur eine unter `example.org`.
 - Kein Text enthält HTML, ein Bild, Steuerzeichen oder Zeichen, die man nicht sieht, etwa ein weiches Trennzeichen oder ein Leerzeichen ohne Breite.
 - Ein Link in einer Hilfeseite steht nur in der Form `[Text](/de/…)` und führt zu einer anderen Hilfeseite. Definitionen von Links für spätere Verweise und Links in spitzen Klammern stehen nicht darin.
-- Eine Datei mit Einträgen hat ihre Quelle in `SOURCES.json` und umgekehrt, und jede Seite, die ein Recht nennt, steht in `academy.json`.
+- Eine Datei mit Fakten aus einer Quelle hat ihre Quelle in `SOURCES.json` und umgekehrt, und jede Seite, die ein Recht nennt, steht in `academy.json`. Eine Bezeichnung aus einer Hilfeseite steht dort vor dem Namen des Rechts in Klammern, und eine erklärende Seite nennt den Namen oder die Bezeichnung.
+- Jede Paarung von Operation und Recht nennt eine Operation, Rechte und Seiten, die es gibt, und hat einen Beleg: einen Befund des Projekts mit Version, die Beschreibung der Operation im OpenAPI-Dokument, die das Recht nennt, oder eine Hilfeseite, die es nennt, diese nur neben einem der beiden anderen. Was ohne das Recht geschieht, steht nur mit einem Befund. Kein Recht steht in einem Eintrag zweimal.
 - Der gebaute Index ist höchstens 5'000'000 Bytes gross. `pnpm ci:check` baut ihn ein zweites Mal in einer anderen Zeitzone und Sprache und verlangt dieselben Bytes.
 
-Eine Meldung nennt Datei, Eintrag und Feld, nie den Wert. In diesem Ordner liegen nur die vier Dateien und dieses README.
+Eine Meldung nennt Datei, Eintrag und Feld, nie den Wert. In diesem Ordner liegen nur die fünf Dateien und dieses README.
