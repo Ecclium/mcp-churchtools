@@ -19,20 +19,19 @@ import {
   DocsFactsError,
   type FactFileTexts,
   type Facts,
+  jsonDepth,
+  maxJsonDepth,
   parseFactFiles,
 } from './facts.js';
 import { findHostsIn, walkStrings } from './hosts.js';
-import {
-  hasHtmlTag,
-  looksLikeHtmlPage,
-  looksLikeOpenApiDocument,
-} from './raw-sources.js';
+import { hasHtmlTag } from './raw-sources.js';
 import {
   buildSearchIndex,
   type SearchField,
   type SerializedSearchIndex,
 } from './search/build.js';
-import { maxWordLength } from './search/words.js';
+import { checkSearchIndex } from './search/query.js';
+import { maxWordLength, words } from './search/words.js';
 
 /** The format of the built file. */
 export const docsIndexFormat = 'ecclium.docs-index.v1';
@@ -48,25 +47,35 @@ export const maxDocsIndexBytes = 5_000_000;
 
 /** The fields each source is searched in, with their weights. */
 export const searchFields = Object.freeze({
-  operations: Object.freeze([
-    { name: 'operationId', weight: 4 },
-    { name: 'path', weight: 3 },
-    { name: 'summary', weight: 3 },
-    { name: 'tags', weight: 2 },
-    { name: 'parameters', weight: 1 },
-    { name: 'description', weight: 1 },
+  operations: fieldList([
+    ['operationId', 4],
+    ['path', 3],
+    ['summary', 3],
+    ['tags', 2],
+    ['parameters', 1],
+    ['description', 1],
   ]),
-  rights: Object.freeze([
-    { name: 'name', weight: 4 },
-    { name: 'label', weight: 4 },
-    { name: 'module', weight: 2 },
+  rights: fieldList([
+    ['name', 4],
+    ['label', 4],
+    ['module', 2],
   ]),
-  academy: Object.freeze([
-    { name: 'title', weight: 4 },
-    { name: 'section', weight: 2 },
-    { name: 'text', weight: 1 },
+  academy: fieldList([
+    ['title', 4],
+    ['section', 2],
+    ['text', 1],
   ]),
-} satisfies Record<string, readonly SearchField[]>);
+});
+
+// Frozen down to each field, since the build and the check on load both
+// read these weights.
+function fieldList(
+  fields: readonly (readonly [string, number])[],
+): readonly SearchField[] {
+  return Object.freeze(
+    fields.map(([name, weight]) => Object.freeze({ name, weight })),
+  );
+}
 
 /** The search index of each source. */
 export interface DocsIndexSearch {
@@ -88,15 +97,7 @@ export interface DocsIndexContent {
 
 /** Why a built file cannot be made or used. */
 export type DocsIndexProblem =
-  | 'facts'
-  | 'format'
-  | 'host'
-  | 'html'
-  | 'json'
-  | 'missing'
-  | 'raw-source'
-  | 'search'
-  | 'size';
+  'facts' | 'format' | 'host' | 'html' | 'json' | 'missing' | 'search' | 'size';
 
 /**
  * The built docs index cannot be made or used. The message names the
@@ -206,14 +207,16 @@ export function buildDocsIndex(texts: FactFileTexts): string {
     },
   };
   const text = JSON.stringify(artifact);
-  checkBuilt(artifact, text);
+  // The built file must pass every check of loading, so that a mistake of
+  // the build fails the build and not the start of a server.
+  parseDocsIndex(text);
   return text;
 }
 
 /**
  * Reads a built file and checks it as strictly as the build: its size,
- * hosts, markup and the form of a raw source, its format, the facts with
- * {@link parseFactFiles} and the search indexes against the facts.
+ * its format, the facts with {@link parseFactFiles}, hosts and markup in
+ * every string and the search indexes against the facts.
  *
  * @param text - The text of a built file.
  * @returns The facts and the search indexes.
@@ -234,10 +237,9 @@ export function parseDocsIndex(text: string): DocsIndexContent {
   } catch {
     throw new DocsIndexError('json');
   }
-  // The same checks as after the build, before anything else reads the
-  // file: a file changed afterwards could hold a host or markup in a part
-  // that no check of the facts sees, such as the words of a search.
-  checkBuilt(json, text);
+  if (jsonDepth(json, maxJsonDepth + 1) > maxJsonDepth + 1) {
+    throw new DocsIndexError('format');
+  }
   const parsed = artifactSchema.safeParse(json);
   if (!parsed.success) {
     throw new DocsIndexError('format');
@@ -256,6 +258,11 @@ export function parseDocsIndex(text: string): DocsIndexContent {
     }
     throw error;
   }
+  // The same checks as after the build: a file changed afterwards could
+  // hold a host or markup where no check of the facts looks, such as in a
+  // word of a search. They run after the strict checks of the format, so
+  // that every key in a path they name comes from the format, not the file.
+  checkBuilt(json);
   const search: DocsIndexSearch = parsed.data.search;
   const expected = {
     operations: facts.operations.entries.map(({ operationId }) => operationId),
@@ -276,12 +283,30 @@ export function parseDocsIndex(text: string): DocsIndexContent {
         index.weights,
         fields.map(({ weight }) => weight),
       ) ||
-      !sameList(index.keys, expected[source])
+      !sameList(index.keys, expected[source]) ||
+      !index.terms.every(isWord)
     ) {
       throw new DocsIndexError('search', `search.${source}`);
     }
+    try {
+      checkSearchIndex(index);
+    } catch (error) {
+      if (error instanceof RangeError) {
+        throw new DocsIndexError('search', `search.${source}`, {
+          cause: error,
+        });
+      }
+      throw error;
+    }
   }
   return { facts, search };
+}
+
+// A word of the index is one word as the search makes it, otherwise no
+// query could ever reach it.
+function isWord(term: string): boolean {
+  const found = words(term);
+  return found.length === 1 && found[0] === term;
 }
 
 function sameList<T>(a: readonly T[], c: readonly T[]): boolean {
@@ -290,11 +315,10 @@ function sameList<T>(a: readonly T[], c: readonly T[]): boolean {
 
 // The built file is checked again as a whole, although its facts passed:
 // the search adds keys and words, and a mistake in the build must not
-// carry a host or markup into the package.
-function checkBuilt(artifact: unknown, text: string): void {
-  if (Buffer.byteLength(text, 'utf8') > maxDocsIndexBytes) {
-    throw new DocsIndexError('size');
-  }
+// carry a host or markup into the package. The form of a raw source is
+// not checked here: after the strict format no field could hold one, and
+// the check of the whole tree looks for it.
+function checkBuilt(artifact: unknown): void {
   const [host] = findHostsIn(artifact);
   if (host !== undefined) {
     throw new DocsIndexError('host', host.path);
@@ -304,9 +328,6 @@ function checkBuilt(artifact: unknown, text: string): void {
       throw new DocsIndexError('html', path);
     }
   });
-  if (looksLikeOpenApiDocument(text) || looksLikeHtmlPage(text)) {
-    throw new DocsIndexError('raw-source');
-  }
 }
 
 const count = z.int().nonnegative();

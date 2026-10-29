@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { buildSearchIndex, type SerializedSearchIndex } from './build.js';
 import {
   matchWeights,
+  maxQueryLength,
   maxQueryWords,
   maxSearchHits,
   prepareSearch,
@@ -168,6 +169,58 @@ describe('prepareSearch', () => {
     expect(keysFor(index('Rechte'), 'Rehcta')).toEqual([]);
   });
 
+  it('finds a word of four letters with one typo only from five', () => {
+    expect(keysFor(index('Recht'), 'Rcht')).toEqual([]);
+    expect(keysFor(index('Recht'), 'Rechz')).toEqual(['doc-0']);
+  });
+
+  it('ranks a whole word over a rarer word that starts with it', () => {
+    const texts = [
+      ...Array.from({ length: 10 }, () => 'Gruppe Termine'),
+      'Gruppenleiter Termine',
+    ];
+    const stored = buildSearchIndex(
+      title,
+      texts.map((text, at) => ({
+        key: `d${String(at).padStart(2, '0')}`,
+        texts: [text],
+      })),
+    );
+    const [first] = prepareSearch(stored).search('Gruppe', 11);
+    expect(first?.key).toBe('d00');
+  });
+
+  it('ranks a short field over a long one with the same word', () => {
+    expect(
+      keysFor(
+        index('Gruppen viele weitere Wörter dabei', 'Gruppen'),
+        'Gruppen',
+      ),
+    ).toEqual(['doc-1', 'doc-0']);
+  });
+
+  it('weighs a field most documents lack like any other', () => {
+    const stored = buildSearchIndex(
+      [
+        { name: 'name', weight: 4 },
+        { name: 'label', weight: 4 },
+      ],
+      [
+        ...Array.from({ length: 30 }, (_v, at) => ({
+          key: `k${String(at).padStart(2, '0')}`,
+          texts: [`wort${String(at)}`, ''],
+        })),
+        { key: 'm-label', texts: ['anders', 'Mitglieder'] },
+        { key: 'm-name', texts: ['Mitglieder', ''] },
+      ],
+    );
+    const hits = prepareSearch(stored).search('Mitglieder', 2);
+    const label = hits.find(({ key }) => key === 'm-label')?.score ?? 0;
+    const name = hits.find(({ key }) => key === 'm-name')?.score ?? 0;
+    expect(label / name).toBeGreaterThan(0.5);
+    expect(label / name).toBeLessThan(2);
+  });
+
   it('weighs the fields', () => {
     const stored = buildSearchIndex(
       [
@@ -187,10 +240,28 @@ describe('prepareSearch', () => {
     expect(keysFor(stored, 'Gruppen Mitglieder')).toEqual(['doc-1', 'doc-0']);
   });
 
+  it('scores by the share of query words a document matches', () => {
+    const searcher = prepareSearch(index('Gruppen', 'Rechte'));
+    const [whole] = searcher.search('Gruppen', 1);
+    const [half] = searcher.search('Gruppen Kalender', 1);
+    expect(half?.key).toBe('doc-0');
+    expect(half?.score).toBeCloseTo((whole?.score ?? 0) / 2, 10);
+  });
+
   it('counts only the best match of each query word', () => {
     const stored = index('grup gruppe gruppen gruppenleiter', 'grup');
-    const [first, second] = prepareSearch(stored).search('grup', 10);
-    expect(first?.score).toBeCloseTo(second?.score ?? 0, 0);
+    const hits = prepareSearch(stored).search('grup', 10);
+    const many = hits.find(({ key }) => key === 'doc-0')?.score ?? 0;
+    const one = hits.find(({ key }) => key === 'doc-1')?.score ?? 0;
+    // Four matching words in a longer text do not add up past one word.
+    expect(many / one).toBeLessThan(1.5);
+  });
+
+  it('orders equal scores by key, whichever word found them first', () => {
+    expect(keysFor(index('alpha', 'beta'), 'beta alpha')).toEqual([
+      'doc-0',
+      'doc-1',
+    ]);
   });
 
   it('orders equal scores by key', () => {
@@ -218,6 +289,13 @@ describe('prepareSearch', () => {
     expect(keysFor(stored, ['Rechte', ...filler].join(' '))).toEqual(['doc-0']);
   });
 
+  it(`looks at no more than ${String(maxQueryLength)} characters`, () => {
+    const stored = index('Rechte');
+    const filler = 'x'.repeat(maxQueryLength);
+    expect(keysFor(stored, `${filler} Rechte`)).toEqual([]);
+    expect(keysFor(stored, `Rechte ${filler}`)).toEqual(['doc-0']);
+  });
+
   it.each([[0], [maxSearchHits + 1], [1.5]])(
     'rejects the limit %s',
     (limit) => {
@@ -236,6 +314,7 @@ describe('prepareSearch', () => {
   it.each<[string, (stored: SerializedSearchIndex) => SerializedSearchIndex]>([
     ['no fields', (s) => ({ ...s, fields: [], weights: [] })],
     ['a weight too high', (s) => ({ ...s, weights: [11] })],
+    ['more weights than fields', (s) => ({ ...s, weights: [1, 1] })],
     ['lengths of another count', (s) => ({ ...s, lengths: [] })],
     ['a row of lengths too short', (s) => ({ ...s, lengths: [[], [1]] })],
     ['unsorted keys', (s) => ({ ...s, keys: [...s.keys].reverse() })],

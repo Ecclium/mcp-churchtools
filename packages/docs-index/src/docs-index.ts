@@ -125,10 +125,8 @@ export interface AcademyHit {
 export interface ExplainingPage {
   /** The path on the Academy. */
   readonly path: string;
-  /** The title. */
-  readonly title: string;
-  /** The link. */
-  readonly link: string;
+  /** Where it comes from: title, link and the day it was fetched. */
+  readonly attribution: AcademyAttribution;
 }
 
 /** The docs index, frozen. */
@@ -337,13 +335,7 @@ function createDocsIndex(facts: Facts, search: DocsIndexSearch): DocsIndex {
         const page = pages.get(path);
         return page === undefined
           ? []
-          : [
-              Object.freeze({
-                path,
-                title: page.title,
-                link: `${academyOrigin}${path}`,
-              }),
-            ];
+          : [Object.freeze({ path, attribution: pageAttribution(page) })];
       });
       return Object.freeze({
         fact,

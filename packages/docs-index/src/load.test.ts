@@ -89,7 +89,7 @@ describe('writeDocsIndex and readDocsIndex', () => {
     );
   });
 
-  it('refuse a file over the limit before reading it', () => {
+  it('refuse a file over the limit', () => {
     const path = join(folder(), docsIndexFileName);
     writeFileSync(path, ' '.repeat(maxDocsIndexBytes + 1));
     expect(() => readDocsIndex(pathToFileURL(path))).toThrow(

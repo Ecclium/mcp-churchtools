@@ -66,14 +66,14 @@ describe('openDocsIndex', () => {
         source: 'permissions',
         title: 'synthetic: view thing members',
         path: permissionsPath,
-        retrieved: '2026-10-29',
-        churchToolsVersion: '3.138',
+        retrieved: '2026-10-28',
+        churchToolsVersion: '3.137',
       },
       {
         source: 'academy',
         title: 'Rechte für Dinge',
         link: academyLink(syntheticRightsPage),
-        retrieved: '2026-10-29',
+        retrieved: '2026-10-27',
       },
     ]);
   });
@@ -84,13 +84,21 @@ describe('openDocsIndex', () => {
     expect(right?.pages).toEqual([
       {
         path: syntheticRightsPage,
-        title: 'Rechte für Dinge',
-        link: academyLink(syntheticRightsPage),
+        attribution: {
+          source: 'academy',
+          title: 'Rechte für Dinge',
+          link: academyLink(syntheticRightsPage),
+          retrieved: '2026-10-27',
+        },
       },
       {
         path: syntheticThingsPage,
-        title: 'Dinge verwalten',
-        link: academyLink(syntheticThingsPage),
+        attribution: {
+          source: 'academy',
+          title: 'Dinge verwalten',
+          link: academyLink(syntheticThingsPage),
+          retrieved: '2026-10-27',
+        },
       },
     ]);
     expect(index.getRight('synthetic', 'view nothing')).toBeUndefined();
@@ -110,7 +118,7 @@ describe('openDocsIndex', () => {
         source: 'academy',
         title: 'Dinge verwalten',
         link: academyLink(syntheticThingsPage),
-        retrieved: '2026-10-29',
+        retrieved: '2026-10-27',
       },
     });
   });

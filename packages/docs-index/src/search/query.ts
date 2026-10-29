@@ -3,12 +3,14 @@
  * matches a word of the index whole, as its start, from
  * {@link minPartLength} letters on as a part of it, which finds
  * «mitglieder» in «gruppenmitglieder», and from {@link minTypoLength}
- * letters on with one typo. Each kind of match counts less than the one
- * before. Each matching word scores by BM25 in every field it stands in,
- * times the weight of the field; for each query word only its best
- * matching word counts, so that a short prefix with many matches does not
- * outweigh a whole word. A document that matches more of the query words
- * ranks higher, and equal scores go by key.
+ * letters on with one typo. A start counts less than a whole word, a part
+ * or a typo less again. Each matching word scores by BM25 in every field
+ * it stands in, times the weight of the field. All words a query word
+ * matches share one rarity, taken from the documents that hold any of
+ * them, so that a rare longer word does not outrank the query word itself.
+ * For each query word only its best matching word counts, so that a short
+ * start with many matches does not add up. A document that matches more of
+ * the query words ranks higher, and equal scores go by key.
  *
  * @packageDocumentation
  */
@@ -34,6 +36,9 @@ export const maxQueryWords = 20;
 
 /** The most hits one search returns. */
 export const maxSearchHits = 100;
+
+/** How many characters of a query count; the rest is ignored. */
+export const maxQueryLength = 1000;
 
 // The usual constants of BM25: how fast repetitions saturate and how much
 // the length of a field matters.
@@ -82,28 +87,41 @@ export interface Searcher {
  * ```
  */
 export function prepareSearch(index: SerializedSearchIndex): Searcher {
-  checkIndex(index);
+  checkSearchIndex(index);
   const { fields, weights, keys, lengths, terms, postings } = index;
+  // The average length of a field counts only documents that have the
+  // field, as in Lucene; otherwise a field most documents lack, such as the
+  // label of a right, would weigh almost nothing where it does stand.
   const averages = fields.map((_name, field) => {
     let total = 0;
-    for (const row of lengths) {
-      total += row[field] ?? 0;
-    }
-    return keys.length === 0 ? 0 : total / keys.length;
-  });
-  const frequencies = postings.map((list) => {
     let count = 0;
-    for (let at = 0; at < list.length; at += 3) {
-      if (at === 0 || list[at] !== list[at - 3]) {
+    for (const row of lengths) {
+      const length = row[field] ?? 0;
+      if (length > 0) {
+        total += length;
         count += 1;
       }
     }
-    return count;
+    return count === 0 ? 0 : total / count;
   });
 
-  const scoreOf = (term: number, factor: number): Map<number, number> => {
-    const df = frequencies[term] ?? 0;
-    const idf = Math.log(1 + (keys.length - df + 0.5) / (df + 0.5));
+  const rarity = (matches: Map<number, number>): number => {
+    const documents = new Set<number>();
+    for (const term of matches.keys()) {
+      const list = postings[term] ?? [];
+      for (let at = 0; at < list.length; at += 3) {
+        documents.add(list[at] ?? 0);
+      }
+    }
+    const df = documents.size;
+    return Math.log(1 + (keys.length - df + 0.5) / (df + 0.5));
+  };
+
+  const scoreOf = (
+    term: number,
+    factor: number,
+    idf: number,
+  ): Map<number, number> => {
     const scores = new Map<number, number>();
     const list = postings[term] ?? [];
     for (let at = 0; at < list.length; at += 3) {
@@ -128,13 +146,18 @@ export function prepareSearch(index: SerializedSearchIndex): Searcher {
         `The limit must be a whole number from 1 to ${String(maxSearchHits)}.`,
       );
     }
-    const wanted = [...new Set(words(query))].slice(0, maxQueryWords);
+    const wanted = [...new Set(words(query.slice(0, maxQueryLength)))].slice(
+      0,
+      maxQueryWords,
+    );
     const totals = new Map<number, number>();
     const matched = new Map<number, number>();
     for (const word of wanted) {
       const best = new Map<number, number>();
-      for (const [term, factor] of matchingTerms(terms, word)) {
-        for (const [document, value] of scoreOf(term, factor)) {
+      const matches = matchingTerms(terms, word);
+      const idf = rarity(matches);
+      for (const [term, factor] of matches) {
+        for (const [document, value] of scoreOf(term, factor, idf)) {
           best.set(document, Math.max(best.get(document) ?? 0, value));
         }
       }
@@ -222,7 +245,19 @@ function withinOneEdit(a: string, c: string): boolean {
   );
 }
 
-function checkIndex(index: SerializedSearchIndex): void {
+/**
+ * Checks that a stored search index holds together, as
+ * {@link prepareSearch} does before it searches.
+ *
+ * @param index - The stored index of one source.
+ * @throws {RangeError} If lists differ in length, keys or words are not
+ *   sorted, or postings point outside the documents and fields.
+ * @example
+ * ```ts
+ * checkSearchIndex(index); // throws if the index was changed
+ * ```
+ */
+export function checkSearchIndex(index: SerializedSearchIndex): void {
   const { fields, weights, keys, lengths, terms, postings } = index;
   const fail = (): never => {
     throw new RangeError('The search index does not hold together.');

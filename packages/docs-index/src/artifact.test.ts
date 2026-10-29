@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   buildDocsIndex,
   docsIndexFormat,
+  searchFields,
   DocsIndexError,
   type DocsIndexProblem,
   maxDocsIndexBytes,
@@ -92,6 +93,10 @@ describe('buildDocsIndex', () => {
     expect(buildDocsIndex(syntheticFactFiles())).toBe(first);
   });
 
+  it('freezes the fields of the search down to each field', () => {
+    expect(Object.isFrozen(searchFields.rights[0])).toBe(true);
+  });
+
   it('holds no number with a fraction', () => {
     const artifact = JSON.parse(buildDocsIndex(syntheticFactFiles())) as Json;
     expect(numbersIn(artifact).every(Number.isInteger)).toBe(true);
@@ -168,6 +173,46 @@ describe('parseDocsIndex', () => {
       'search',
     ],
     [
+      'a search over another document',
+      () =>
+        tampered((artifact) => {
+          const keys = searchOf(artifact, 'operations')['keys'] as string[];
+          keys[keys.length - 1] = 'zzzOtherOperation';
+        }),
+      'search',
+    ],
+    [
+      'a word the search could never reach',
+      () =>
+        tampered((artifact) => {
+          const terms = searchOf(artifact, 'academy')['terms'] as string[];
+          terms[0] = terms[0]?.toUpperCase() ?? '';
+        }),
+      'search',
+    ],
+    [
+      'a posting outside the documents',
+      () =>
+        tampered((artifact) => {
+          const postings = searchOf(artifact, 'rights')[
+            'postings'
+          ] as number[][];
+          postings[0] = [99, 0, 1];
+        }),
+      'search',
+    ],
+    [
+      'a value nested too deep',
+      () =>
+        tampered((artifact) => {
+          artifact['sources'] = 'deep';
+        }).replace(
+          '"sources":"deep"',
+          `"sources":${'['.repeat(100_000)}${']'.repeat(100_000)}`,
+        ),
+      'format',
+    ],
+    [
       'other weights',
       () =>
         tampered((artifact) => {
@@ -194,15 +239,32 @@ describe('parseDocsIndex', () => {
       'html',
     ],
     [
-      'the form of an OpenAPI document',
+      'a key that is not part of the format',
       () =>
         tampered((artifact) => {
-          artifact['paths'] = {};
+          (artifact['operations'] as Json)['www.vendor.example'] = 1;
         }),
-      'raw-source',
+      'facts',
     ],
   ])('refuses %s', (_name, text, problem) => {
     expect(problemOf(() => parseDocsIndex(text()))).toBe(problem);
+  });
+
+  it('names no key from the file in a finding', () => {
+    const text = tampered((artifact) => {
+      (searchOf(artifact, 'academy')['terms'] as string[]).push(
+        'www.vendor.example',
+      );
+      (artifact['operations'] as Json)['gemeinde_zuerich'] = 1;
+    });
+    let caught: unknown;
+    try {
+      parseDocsIndex(text);
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as DocsIndexError).problem).toBe('facts');
+    expect(String(caught)).not.toContain('gemeinde_zuerich');
   });
 
   it('keeps the findings of a broken fact as its cause, without values', () => {

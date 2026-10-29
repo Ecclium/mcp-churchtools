@@ -48,13 +48,15 @@ export function syntheticFacts(): Facts {
         documentVersion: '0.1.0',
         churchToolsVersion: '3.138',
       },
+      // Each source on another day and the rights from another version,
+      // so that a test sees which source an attribution comes from.
       permissions: {
-        retrievedAt: '2026-10-29T08:01:00Z',
+        retrievedAt: '2026-10-28T08:01:00Z',
         sha256: '2'.repeat(64),
-        churchToolsVersion: '3.138',
+        churchToolsVersion: '3.137',
       },
       academy: {
-        retrievedAt: '2026-10-29T08:02:00Z',
+        retrievedAt: '2026-10-27T08:02:00Z',
         pages: [
           { path: syntheticRightsPage, sha256: '3'.repeat(64) },
           { path: syntheticThingsPage, sha256: '4'.repeat(64) },

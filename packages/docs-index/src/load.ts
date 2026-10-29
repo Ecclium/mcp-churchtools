@@ -10,13 +10,9 @@
  *
  * @packageDocumentation
  */
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 
-import {
-  docsIndexFileName,
-  DocsIndexError,
-  maxDocsIndexBytes,
-} from './artifact.js';
+import { docsIndexFileName, DocsIndexError } from './artifact.js';
 import { type DocsIndex, openDocsIndex } from './docs-index.js';
 
 /**
@@ -37,8 +33,8 @@ export function defaultDocsIndexFile(): URL {
  *
  * @param file - The built file, by default the one of this package.
  * @returns The index, frozen.
- * @throws {DocsIndexError} If the file is missing or too large, or breaks
- *   a rule. The error never names the path of the file.
+ * @throws {DocsIndexError} If the file is missing or breaks a rule, such
+ *   as its size. The error never names the path of the file.
  * @example
  * ```ts
  * const index = readDocsIndex();
@@ -47,15 +43,8 @@ export function defaultDocsIndexFile(): URL {
 export function readDocsIndex(file: URL = defaultDocsIndexFile()): DocsIndex {
   let text: string;
   try {
-    // Checked before reading, so that a huge file is never read whole.
-    if (statSync(file).size > maxDocsIndexBytes) {
-      throw new DocsIndexError('size');
-    }
     text = readFileSync(file, 'utf8');
-  } catch (error) {
-    if (error instanceof DocsIndexError) {
-      throw error;
-    }
+  } catch {
     // The error of the file system names the path, which may show the
     // home folder of the operator; only the kind of problem goes on.
     throw new DocsIndexError('missing');
