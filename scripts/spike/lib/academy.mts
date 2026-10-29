@@ -58,8 +58,10 @@ const academyQueryNames: ReadonlySet<string> = new Set([
 
 const academyQueryValue = /^[A-Za-z0-9_,.]{1,200}$/;
 
-// The only fields a probe may ask for. The authors of a page are people,
-// so no field about them is among these, whatever a probe asks for.
+// The only fields a probe or `pnpm docs:refresh` may ask for. The authors
+// of a page are people, so no field about them is among these, whatever
+// a caller asks for. The refresh needs the title and the link of a page
+// for the facts and their attribution (ADR 0027).
 const academyFields: ReadonlySet<string> = new Set([
   'id',
   'slug',
@@ -69,6 +71,8 @@ const academyFields: ReadonlySet<string> = new Set([
   'content',
   'doc_category',
   'knowledge_base',
+  'link',
+  'title',
 ]);
 
 /** One request to the academy. */
@@ -116,6 +120,11 @@ export interface AcademyOptions {
   readonly wait: (milliseconds: number) => Promise<void>;
   readonly timeoutMs?: number;
   readonly maxBytes?: number;
+  /**
+   * The User-Agent, also the product token `robots.txt` is read for.
+   * The probes send theirs, `pnpm docs:refresh` its own.
+   */
+  readonly userAgent?: string;
 }
 
 function academyUrl(request: AcademyRequest): URL {
@@ -174,7 +183,7 @@ export function createAcademyClient(options: AcademyOptions): AcademyClient {
           method: 'GET',
           headers: new Headers({
             Accept: 'application/json, text/plain;q=0.9, text/html;q=0.8',
-            'User-Agent': userAgent,
+            'User-Agent': options.userAgent ?? userAgent,
           }),
           credentials: 'omit',
           redirect: 'manual',

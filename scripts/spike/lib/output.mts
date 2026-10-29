@@ -105,6 +105,9 @@ export function exitCodeFor(code: ErrorCode): number {
 export function writeError(error: unknown, io: Io): number {
   if (error instanceof SpikeError) {
     io.stderr(`Code: ${error.code}\n`);
+    if (error.where !== undefined) {
+      io.stderr(`Stelle: ${error.where}\n`);
+    }
     const hint =
       error.hint ??
       (exitCodeFor(error.code) === exitCodes.network
