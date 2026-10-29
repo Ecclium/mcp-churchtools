@@ -1,6 +1,8 @@
 /**
  * The docs index as the tools use it (ADR 0066): search and lookup over
- * the operations, the rights and the help pages, every result with the
+ * the operations, the rights and the help pages, the lookups with the
+ * rights an operation needs and the operations that need a right, as far
+ * as the mapping by hand shows them with evidence, every result with the
  * attribution ADR 0027 asks for. Source, title or `operationId`, link or
  * path and the day the source was fetched; for the OpenAPI document also
  * its versions, its licence and that Ecclium prepared it.
@@ -16,8 +18,11 @@ import { type DocsIndexSearch, parseDocsIndex, rightKey } from './artifact.js';
 import type {
   AcademyPage,
   Facts,
+  NotNeededRight,
   OperationFact,
+  OperationRights,
   RightFact,
+  RightNeed,
   Sources,
 } from './facts.js';
 import { academyOrigin } from './hosts.js';
@@ -121,6 +126,34 @@ export interface AcademyHit {
   readonly attribution: AcademyAttribution;
 }
 
+/**
+ * An operation that needs a right, with the pairing that says so: the
+ * rights of which one suffices, what a read gives without them and the
+ * evidence.
+ */
+export interface NeedingOperation {
+  /** The `operationId`. */
+  readonly operationId: string;
+  /** The method of HTTP. */
+  readonly method: OperationFact['method'];
+  /** The path with its parameters. */
+  readonly path: string;
+  /** The pairing that names the right. */
+  readonly need: RightNeed;
+}
+
+/** An operation a finding showed does not need a right. */
+export interface NotNeedingOperation {
+  /** The `operationId`. */
+  readonly operationId: string;
+  /** The method of HTTP. */
+  readonly method: OperationFact['method'];
+  /** The path with its parameters. */
+  readonly path: string;
+  /** The right and the evidence. */
+  readonly notNeeded: NotNeededRight;
+}
+
 /** A page that explains a right. */
 export interface ExplainingPage {
   /** The path on the Academy. */
@@ -146,12 +179,15 @@ export interface DocsIndex {
    * Looks up an operation.
    *
    * @param operationId - Its ID.
-   * @returns Its facts and attribution, or undefined if there is none.
+   * @returns Its facts and attribution and, where the mapping has it, the
+   *   rights it needs, or undefined if there is no such operation.
    */
-  getOperation(
-    operationId: string,
-  ):
-    | { readonly fact: OperationFact; readonly attribution: OpenApiAttribution }
+  getOperation(operationId: string):
+    | {
+        readonly fact: OperationFact;
+        readonly attribution: OpenApiAttribution;
+        readonly rights?: OperationRights;
+      }
     | undefined;
   /**
    * Searches the rights.
@@ -167,8 +203,9 @@ export interface DocsIndex {
    *
    * @param module - Its module.
    * @param name - Its name.
-   * @returns Its facts, the pages that explain it and the attributions,
-   *   or undefined if there is none.
+   * @returns Its facts, the pages that explain it, the attributions and
+   *   the operations that need it or, by a finding, do not, each sorted by
+   *   `operationId`, or undefined if there is none.
    */
   getRight(
     module: string,
@@ -178,6 +215,8 @@ export interface DocsIndex {
         readonly fact: RightFact;
         readonly pages: readonly ExplainingPage[];
         readonly attributions: readonly Attribution[];
+        readonly neededBy: readonly NeedingOperation[];
+        readonly notNeededBy: readonly NotNeedingOperation[];
       }
     | undefined;
   /**
@@ -239,6 +278,47 @@ function createDocsIndex(facts: Facts, search: DocsIndexSearch): DocsIndex {
     ]),
   );
   const pages = new Map(facts.academy.entries.map((page) => [page.path, page]));
+  const mapping = new Map(
+    facts.operationRights.entries.map((entry) => [entry.operationId, entry]),
+  );
+  // Each right with the operations that name it, in the order of the
+  // mapping, which is sorted by `operationId`.
+  const neededBy = new Map<string, NeedingOperation[]>();
+  const notNeededBy = new Map<string, NotNeedingOperation[]>();
+  const add = <T>(lists: Map<string, T[]>, key: string, item: T) => {
+    const list = lists.get(key) ?? [];
+    list.push(Object.freeze(item));
+    lists.set(key, list);
+  };
+  for (const entry of facts.operationRights.entries) {
+    const operation = operations.get(entry.operationId);
+    if (operation === undefined) {
+      continue;
+    }
+    const { operationId, method, path } = operation;
+    if ('needs' in entry) {
+      for (const need of entry.needs) {
+        for (const right of need.rights) {
+          add(neededBy, rightKey(right.module, right.name), {
+            operationId,
+            method,
+            path,
+            need,
+          });
+        }
+      }
+    }
+    if ('notNeeded' in entry) {
+      for (const item of entry.notNeeded ?? []) {
+        add(notNeededBy, rightKey(item.right.module, item.right.name), {
+          operationId,
+          method,
+          path,
+          notNeeded: item,
+        });
+      }
+    }
+  }
 
   const day = (time: string | undefined) => (time ?? '').slice(0, 10);
 
@@ -311,9 +391,15 @@ function createDocsIndex(facts: Facts, search: DocsIndexSearch): DocsIndex {
       ),
     getOperation: (operationId: string) => {
       const fact = operations.get(operationId);
-      return fact === undefined
-        ? undefined
-        : Object.freeze({ fact, attribution: operationAttribution(fact) });
+      if (fact === undefined) {
+        return undefined;
+      }
+      const rights = mapping.get(operationId);
+      return Object.freeze({
+        fact,
+        attribution: operationAttribution(fact),
+        ...(rights === undefined ? {} : { rights }),
+      });
     },
     searchRights: (query: string, limit: number) =>
       Object.freeze(
@@ -339,10 +425,13 @@ function createDocsIndex(facts: Facts, search: DocsIndexSearch): DocsIndex {
           ? []
           : [Object.freeze({ path, attribution: pageAttribution(page) })];
       });
+      const key = rightKey(module, name);
       return Object.freeze({
         fact,
         pages: Object.freeze(explaining),
         attributions: rightAttributions(fact),
+        neededBy: Object.freeze([...(neededBy.get(key) ?? [])]),
+        notNeededBy: Object.freeze([...(notNeededBy.get(key) ?? [])]),
       });
     },
     searchAcademy: (query: string, limit: number) =>

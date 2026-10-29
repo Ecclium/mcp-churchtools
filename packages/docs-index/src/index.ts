@@ -112,6 +112,8 @@ export {
   type Attribution,
   type DocsIndex,
   type ExplainingPage,
+  type NeedingOperation,
+  type NotNeedingOperation,
   type OpenApiAttribution,
   openApiDocumentPath,
   openDocsIndex,

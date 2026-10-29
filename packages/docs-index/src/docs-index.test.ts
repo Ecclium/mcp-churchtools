@@ -123,6 +123,90 @@ describe('openDocsIndex', () => {
     });
   });
 
+  it('names the rights an operation needs, with their evidence', () => {
+    const members = index.getOperation('getSyntheticThingMembers');
+    expect(members?.rights).toEqual({
+      operationId: 'getSyntheticThingMembers',
+      needs: [
+        {
+          rights: [{ module: 'synthetic', name: 'view thing members' }],
+          without: 'omitted',
+          evidence: [
+            { kind: 'academy', page: syntheticRightsPage },
+            {
+              kind: 'finding',
+              id: 'Mitglieder ohne Recht',
+              version: '3.137',
+              shows: 'sufficient',
+            },
+            { kind: 'openapi' },
+          ],
+        },
+        {
+          rights: [{ module: 'synthetic', name: 'view things' }],
+          evidence: [
+            { kind: 'finding', id: 'F1', version: '3.137', shows: 'necessary' },
+          ],
+        },
+      ],
+    });
+    expect(index.getOperation('listSyntheticThings')?.rights).toEqual({
+      operationId: 'listSyntheticThings',
+      none: [{ kind: 'finding', id: 'F1', version: '3.137' }],
+    });
+    expect(
+      Object.isFrozen(index.getOperation('deleteSyntheticThing')?.rights),
+    ).toBe(true);
+  });
+
+  it('names the operations that need a right and those that do not', () => {
+    const things = index.getRight('synthetic', 'view things');
+    expect(
+      things?.neededBy.map(({ operationId, method, path, need }) => [
+        operationId,
+        method,
+        path,
+        need.rights.length,
+      ]),
+    ).toEqual([
+      ['getSyntheticThing', 'get', '/api/synthetic/things/{thingId}', 1],
+      [
+        'getSyntheticThingMembers',
+        'get',
+        '/api/synthetic/things/{thingId}/members',
+        1,
+      ],
+      ['postSyntheticThing', 'post', '/api/synthetic/things', 2],
+    ]);
+    expect(things?.notNeededBy).toEqual([]);
+    const view = index.getRight('synthetic', 'view');
+    expect(view?.neededBy).toEqual([]);
+    expect(view?.notNeededBy).toEqual([
+      {
+        operationId: 'getSyntheticThing',
+        method: 'get',
+        path: '/api/synthetic/things/{thingId}',
+        notNeeded: {
+          right: { module: 'synthetic', name: 'view' },
+          evidence: [{ kind: 'finding', id: 'F1', version: '3.137' }],
+        },
+      },
+    ]);
+    expect(Object.isFrozen(things?.neededBy[0])).toBe(true);
+  });
+
+  it('gives a label from a finding without the attribution of a page', () => {
+    const right = index.getRight('synthetic', 'edit things');
+    expect(right?.fact.label).toEqual({
+      text: 'Dinge bearbeiten',
+      finding: 'F2',
+      version: '3.137',
+    });
+    expect(right?.attributions.map(({ source }) => source)).toEqual([
+      'permissions',
+    ]);
+  });
+
   it('looks up an operation and a help page with their text', () => {
     const operation = index.getOperation('getSyntheticThing');
     expect(operation?.fact.responses.map(({ status }) => status)).toEqual([
