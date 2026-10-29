@@ -1,0 +1,435 @@
+import { readFileSync } from 'node:fs';
+
+import {
+  syntheticFactFiles,
+  syntheticFacts,
+  syntheticRightsPage,
+} from '@ecclium/mcp-churchtools-testkit';
+import { describe, expect, it } from 'vitest';
+
+import {
+  canonicalJson,
+  DocsFactsError,
+  factFileLimits,
+  factFiles,
+  type FactFileTexts,
+  type Facts,
+  type FactViolation,
+  maxShapeDepth,
+  parseFactFiles,
+  type Shape,
+  shapeDepth,
+} from './facts.js';
+
+// The checks of the facts (ADR 0066). Each rule has a case that breaks it
+// in otherwise valid synthetic facts, the counter-check to the synthetic
+// facts and the files under data/ passing.
+
+type Mutable<T> = T extends readonly (infer U)[]
+  ? Mutable<U>[]
+  : T extends object
+    ? { -readonly [K in keyof T]: Mutable<T[K]> }
+    : T;
+
+const dataDir = new URL('../data/', import.meta.url);
+
+function readData(): FactFileTexts {
+  const read = (name: string) => readFileSync(new URL(name, dataDir), 'utf8');
+  return {
+    'SOURCES.json': read(factFiles.sources),
+    'operations.json': read(factFiles.operations),
+    'rights.json': read(factFiles.rights),
+    'academy.json': read(factFiles.academy),
+  };
+}
+
+function violationsOf(texts: FactFileTexts): readonly FactViolation[] {
+  try {
+    parseFactFiles(texts);
+  } catch (error) {
+    if (error instanceof DocsFactsError) {
+      return error.violations;
+    }
+    throw error;
+  }
+  return [];
+}
+
+function changed(change: (facts: Mutable<Facts>) => void): FactFileTexts {
+  const facts = syntheticFacts() as Mutable<Facts>;
+  change(facts);
+  return syntheticFactFiles(facts);
+}
+
+function firstOperation(facts: Mutable<Facts>) {
+  const operation = facts.operations.entries[1];
+  if (operation === undefined) {
+    throw new Error('the synthetic facts lost an operation');
+  }
+  return operation;
+}
+
+function nest(depth: number): Shape {
+  let shape: Shape = { type: ['string'] };
+  for (let step = 0; step < depth; step += 1) {
+    shape = { type: ['array'], items: shape };
+  }
+  return shape;
+}
+
+describe('the files under data/', () => {
+  it('pass every check', () => {
+    const facts = parseFactFiles(readData());
+    expect(facts.sources.format).toBe('ecclium.docs.sources.v1');
+  });
+});
+
+describe('parseFactFiles', () => {
+  it('accepts the synthetic facts', () => {
+    const facts = parseFactFiles(syntheticFactFiles());
+    expect(facts.operations.entries).toHaveLength(5);
+    expect(facts.rights.entries).toHaveLength(4);
+    expect(facts.academy.entries).toHaveLength(2);
+  });
+
+  it('rejects a file over its limit before it parses it', () => {
+    const texts = {
+      ...syntheticFactFiles(),
+      'rights.json': ' '.repeat(factFileLimits['rights.json'] + 1),
+    };
+    expect(violationsOf(texts)).toEqual([
+      { file: 'rights.json', path: '', rule: 'size' },
+    ]);
+  });
+
+  it('rejects a file that is not JSON', () => {
+    const texts = { ...syntheticFactFiles(), 'SOURCES.json': '{' };
+    expect(violationsOf(texts)).toEqual([
+      { file: 'SOURCES.json', path: '', rule: 'json' },
+    ]);
+  });
+
+  it('rejects a file that is not in canonical form', () => {
+    const texts = syntheticFactFiles();
+    const compact = JSON.stringify(JSON.parse(texts['academy.json']));
+    expect(violationsOf({ ...texts, 'academy.json': compact })).toEqual([
+      { file: 'academy.json', path: '', rule: 'canonical' },
+    ]);
+  });
+
+  it('rejects fields in another order', () => {
+    const texts = syntheticFactFiles();
+    const sources = JSON.parse(texts['SOURCES.json']) as Record<
+      string,
+      unknown
+    >;
+    const reordered = { openapi: sources['openapi'], ...sources };
+    expect(
+      violationsOf({ ...texts, 'SOURCES.json': canonicalJson(reordered) }),
+    ).toEqual([{ file: 'SOURCES.json', path: '', rule: 'canonical' }]);
+  });
+
+  it('rejects an unknown field without naming it or its value', () => {
+    const sentinel = 'sentinel-value-7f3a';
+    const texts = changed((facts) => {
+      Object.assign(firstOperation(facts), { [sentinel]: sentinel });
+    });
+    const violations = violationsOf(texts);
+    expect(violations).toEqual([
+      { file: 'operations.json', path: 'entries[1]', rule: 'format' },
+    ]);
+    expect(() => parseFactFiles(texts)).toThrow(DocsFactsError);
+    expect(() => parseFactFiles(texts)).not.toThrow(sentinel);
+  });
+
+  it('rejects a wrong value without naming it', () => {
+    const sentinel = 'Sentinel-Method';
+    const texts = changed((facts) => {
+      Object.assign(firstOperation(facts), { method: sentinel });
+    });
+    expect(violationsOf(texts)).toEqual([
+      { file: 'operations.json', path: 'entries[1].method', rule: 'format' },
+    ]);
+    expect(() => parseFactFiles(texts)).not.toThrow(sentinel);
+  });
+
+  it.each([
+    ['a line break in a summary', 'summary', 'Get\nit'],
+    ['a control character in a description', 'description', 'Get\u0007it'],
+    ['an empty summary', 'summary', ''],
+  ])('rejects %s', (_name, field, value) => {
+    const texts = changed((facts) => {
+      Object.assign(firstOperation(facts), { [field]: value });
+    });
+    expect(violationsOf(texts)).toEqual([
+      { file: 'operations.json', path: `entries[1].${field}`, rule: 'format' },
+    ]);
+  });
+
+  it('keeps line breaks and tabs in a text', () => {
+    const texts = changed((facts) => {
+      firstOperation(facts).description = 'One\n\ttwo';
+    });
+    expect(violationsOf(texts)).toEqual([]);
+  });
+
+  it.each([
+    ['a day that does not exist', '2026-02-30'],
+    ['a day in another form', '30.06.2025'],
+  ])('rejects %s as the last change of a page', (_name, modified) => {
+    const texts = changed((facts) => {
+      const page = facts.academy.entries[0];
+      if (page !== undefined) {
+        page.modified = modified;
+      }
+    });
+    expect(violationsOf(texts)).toEqual([
+      { file: 'academy.json', path: 'entries[0].modified', rule: 'format' },
+    ]);
+  });
+
+  it.each([
+    ['an hour after 23', '2026-10-29T24:00:00Z'],
+    ['a time without Z', '2026-10-29T08:00:00'],
+  ])('rejects %s as the time of a source', (_name, retrievedAt) => {
+    const texts = changed((facts) => {
+      if (facts.sources.openapi !== undefined) {
+        facts.sources.openapi.retrievedAt = retrievedAt;
+      }
+    });
+    expect(violationsOf(texts)).toEqual([
+      { file: 'SOURCES.json', path: 'openapi.retrievedAt', rule: 'format' },
+    ]);
+  });
+
+  it.each([
+    ['a host', 'https://example.church.tools/de/help/'],
+    ['no language', '/help/synthetisch/'],
+    ['another language', '/en/help/synthetisch/'],
+    ['a query', '/de/help/?p=1'],
+  ])('rejects a path of a page with %s', (_name, path) => {
+    const texts = changed((facts) => {
+      const page = facts.academy.entries[1];
+      if (page !== undefined) {
+        page.path = path;
+      }
+    });
+    expect(violationsOf(texts)).toContainEqual({
+      file: 'academy.json',
+      path: 'entries[1].path',
+      rule: 'format',
+    });
+  });
+
+  it.each<[string, (facts: Mutable<Facts>) => void, FactViolation]>([
+    [
+      'operations',
+      (facts) => {
+        facts.operations.entries.reverse();
+      },
+      { file: 'operations.json', path: 'entries[1]', rule: 'order' },
+    ],
+    [
+      'two operations with one ID',
+      (facts) => {
+        const second = facts.operations.entries[2];
+        if (second !== undefined) {
+          second.operationId = firstOperation(facts).operationId;
+        }
+      },
+      { file: 'operations.json', path: 'entries[2]', rule: 'order' },
+    ],
+    [
+      'tags',
+      (facts) => {
+        firstOperation(facts).tags = ['b', 'a'];
+      },
+      { file: 'operations.json', path: 'entries[1].tags[1]', rule: 'order' },
+    ],
+    [
+      'parameters',
+      (facts) => {
+        const members = facts.operations.entries[2];
+        members?.parameters.reverse();
+      },
+      {
+        file: 'operations.json',
+        path: 'entries[2].parameters[1]',
+        rule: 'order',
+      },
+    ],
+    [
+      'answers',
+      (facts) => {
+        firstOperation(facts).responses.reverse();
+      },
+      {
+        file: 'operations.json',
+        path: 'entries[1].responses[1]',
+        rule: 'order',
+      },
+    ],
+    [
+      'properties',
+      (facts) => {
+        const body = firstOperation(facts).responses[0]?.content[0]?.schema;
+        body?.properties?.[0]?.schema.properties?.reverse();
+      },
+      {
+        file: 'operations.json',
+        path: 'entries[1].responses[0].content[0].schema.properties[0].schema.properties[1]',
+        rule: 'order',
+      },
+    ],
+    [
+      'kinds of value',
+      (facts) => {
+        const parameter = firstOperation(facts).parameters[0];
+        if (parameter !== undefined) {
+          parameter.schema = { type: ['string', 'null'] };
+        }
+      },
+      {
+        file: 'operations.json',
+        path: 'entries[1].parameters[0].schema.type[1]',
+        rule: 'order',
+      },
+    ],
+    [
+      'rights',
+      (facts) => {
+        facts.rights.entries.reverse();
+      },
+      { file: 'rights.json', path: 'entries[1]', rule: 'order' },
+    ],
+    [
+      'pages of a right',
+      (facts) => {
+        facts.rights.entries[2]?.pages.reverse();
+      },
+      { file: 'rights.json', path: 'entries[2].pages[1]', rule: 'order' },
+    ],
+    [
+      'help pages',
+      (facts) => {
+        facts.academy.entries.reverse();
+      },
+      { file: 'academy.json', path: 'entries[1]', rule: 'order' },
+    ],
+    [
+      'fetched pages',
+      (facts) => {
+        facts.sources.academy?.pages.reverse();
+      },
+      { file: 'SOURCES.json', path: 'academy.pages[1]', rule: 'order' },
+    ],
+  ])('rejects unsorted %s', (_name, change, violation) => {
+    expect(violationsOf(changed(change))).toContainEqual(violation);
+  });
+
+  it(`accepts a schema ${String(maxShapeDepth)} steps deep and rejects one deeper`, () => {
+    const at = (depth: number) =>
+      changed((facts) => {
+        const parameter = firstOperation(facts).parameters[0];
+        if (parameter !== undefined) {
+          parameter.schema = nest(depth) as Mutable<Shape>;
+        }
+      });
+    expect(violationsOf(at(maxShapeDepth))).toEqual([]);
+    expect(violationsOf(at(maxShapeDepth + 1))).toEqual([
+      {
+        file: 'operations.json',
+        path: 'entries[1].parameters[0].schema',
+        rule: 'depth',
+      },
+    ]);
+  });
+
+  it('rejects facts without their source and a source without facts', () => {
+    const withoutSource = changed((facts) => {
+      delete facts.sources.permissions;
+    });
+    expect(violationsOf(withoutSource)).toEqual([
+      { file: 'SOURCES.json', path: 'permissions', rule: 'source' },
+      { file: 'rights.json', path: 'entries', rule: 'source' },
+    ]);
+    const withoutFacts = changed((facts) => {
+      facts.operations.entries = [];
+    });
+    expect(violationsOf(withoutFacts)).toEqual([
+      { file: 'SOURCES.json', path: 'openapi', rule: 'source' },
+      { file: 'operations.json', path: 'entries', rule: 'source' },
+    ]);
+  });
+
+  it('rejects a right that names a page outside academy.json', () => {
+    const texts = changed((facts) => {
+      facts.academy.entries = facts.academy.entries.filter(
+        (page) => page.path === syntheticRightsPage,
+      );
+      if (facts.sources.academy !== undefined) {
+        facts.sources.academy.pages = facts.sources.academy.pages.filter(
+          (page) => page.path === syntheticRightsPage,
+        );
+      }
+    });
+    expect(violationsOf(texts)).toEqual([
+      { file: 'rights.json', path: 'entries[2].pages[1]', rule: 'reference' },
+    ]);
+  });
+
+  it('rejects a label from a page outside academy.json', () => {
+    const texts = changed((facts) => {
+      const right = facts.rights.entries[0];
+      if (right?.label !== undefined) {
+        right.label.page = '/de/help/synthetisch/fehlt/';
+      }
+    });
+    expect(violationsOf(texts)).toEqual([
+      { file: 'rights.json', path: 'entries[0].label.page', rule: 'reference' },
+    ]);
+  });
+
+  it('rejects fetched pages that differ from the help pages', () => {
+    const texts = changed((facts) => {
+      facts.sources.academy?.pages.pop();
+    });
+    expect(violationsOf(texts)).toEqual([
+      { file: 'SOURCES.json', path: 'academy.pages', rule: 'reference' },
+    ]);
+  });
+
+  it('collects the findings of every file', () => {
+    const texts = {
+      ...syntheticFactFiles(),
+      'SOURCES.json': '{',
+      'academy.json': '[]',
+    };
+    expect(violationsOf(texts)).toEqual([
+      { file: 'SOURCES.json', path: '', rule: 'json' },
+      { file: 'academy.json', path: '', rule: 'format' },
+    ]);
+  });
+});
+
+describe('shapeDepth', () => {
+  it('counts every kind of step', () => {
+    expect(shapeDepth({ type: ['string'] })).toBe(0);
+    expect(shapeDepth(nest(3))).toBe(3);
+    expect(
+      shapeDepth({
+        properties: [{ name: 'a', required: true, schema: nest(1) }],
+      }),
+    ).toBe(2);
+    expect(shapeDepth({ additionalProperties: true })).toBe(0);
+    expect(shapeDepth({ additionalProperties: nest(1) })).toBe(2);
+    expect(shapeDepth({ anyOf: [nest(0)], oneOf: [nest(2)] })).toBe(3);
+    expect(shapeDepth({ allOf: [nest(1)] })).toBe(2);
+  });
+});
+
+describe('canonicalJson', () => {
+  it('indents by two spaces and ends with a line break', () => {
+    expect(canonicalJson({ a: [1] })).toBe('{\n  "a": [\n    1\n  ]\n}\n');
+  });
+});
