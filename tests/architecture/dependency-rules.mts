@@ -324,6 +324,16 @@ export function dependencyRules(
       to: { path: '^(node:)?process$' },
     },
     {
+      name: 'docs-files-only-in-place',
+      severity: 'error',
+      comment: `${adr('docsFiles')}: the docs index loads node:fs only in the modules of the place docsFiles, which load the built index and build it. Every other module of docs-index works on data it is given, so that no lookup of a tool reaches the file system. Tests are exempt.`,
+      from: {
+        path: '^packages/docs-index/src/',
+        pathNot: [testFile, ...at('docsFiles')],
+      },
+      to: { path: '^(node:)?fs(/promises)?$' },
+    },
+    {
       name: 'no-diagnostics-channel',
       severity: 'error',
       comment:

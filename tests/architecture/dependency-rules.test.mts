@@ -839,6 +839,22 @@ const cases: readonly Case[] = [
         "export const load = async (): Promise<unknown> => import('./stdio/serve.js');\n",
     },
   },
+  {
+    rule: 'docs-files-only-in-place',
+    name: 'the search of the docs index reads a file',
+    files: {
+      'packages/docs-index/src/search/forbidden.ts':
+        "import { readFileSync } from 'node:fs';\nexport const read = readFileSync;\n",
+    },
+  },
+  {
+    rule: 'docs-files-only-in-place',
+    name: 'a module of the docs index writes through fs/promises',
+    files: {
+      'packages/docs-index/src/forbidden.ts':
+        "import { writeFile } from 'fs/promises';\nexport const write = writeFile;\n",
+    },
+  },
 ];
 
 // Imports the rules must let pass.
@@ -979,6 +995,13 @@ const allowedCases: readonly Omit<Case, 'rule'>[] = [
     files: {
       'packages/core/src/http/allowed.ts':
         "import 'node:https';\nimport 'dns';\nexport {};\n",
+    },
+  },
+  {
+    name: 'a test of the docs index reads a file',
+    files: {
+      'packages/docs-index/src/search/allowed.test.ts':
+        "import 'node:fs';\nexport {};\n",
     },
   },
   {

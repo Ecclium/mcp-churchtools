@@ -41,6 +41,7 @@ export const placeKeys = [
   'moduleState',
   'environment',
   'utilModule',
+  'docsFiles',
 ] as const;
 
 /** Key of a place in the code that a rule refers to. */

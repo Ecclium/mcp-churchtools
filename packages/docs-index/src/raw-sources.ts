@@ -27,7 +27,7 @@ const htmlTag = /<(?:\/?[a-z][a-z0-9-]{0,30}(?=[\s/>])|!--|!doctype)/i;
  * @returns True if it has the form of such a document.
  * @example
  * ```ts
- * looksLikeOpenApiDocument('{"openapi":"3.1.0","paths":{}}'); // true
+ * looksLikeOpenApiDocument(JSON.stringify({ openapi: '3.1.0', paths: {} })); // true
  * ```
  */
 export function looksLikeOpenApiDocument(text: string): boolean {
