@@ -470,3 +470,9 @@ describe('cleaning of the forms the review of security found', () => {
     expect(Date.now() - started).toBeLessThan(5000);
   });
 });
+
+describe('normalizeText and marks', () => {
+  it('removes an invisible character before NFKC, so that a letter and its mark join', () => {
+    expect(normalizeText(`a${char(0x34f)}${char(0x301)}`)).toBe(char(0xe1));
+  });
+});

@@ -66,8 +66,8 @@ describe('findForeignHosts', () => {
       ['church-tools'],
     ],
     [
-      'a name that ends in the placeholder',
-      hosted('demo-tenaexample'),
+      'a name with an umlaut that ends in the placeholder',
+      hosted('demo-tenäexample'),
       ['church-tools'],
     ],
     ['the apex of church.tools', 'church.tools', ['church-tools']],

@@ -87,10 +87,10 @@ export function normalizeText(text: string): string {
       .replace(/\r\n?/g, '\n')
       .replace(lineSeparators, '\n')
       .replace(hiddenCharacters, keepLines)
+      // NFKC comes after: an invisible character between a letter and its
+      // mark, such as a grapheme joiner, would keep them apart. No visible
+      // character turns into an invisible one with NFKC.
       .normalize('NFKC')
-      // NFKC can turn one invisible character into another, such as a
-      // filler of Hangul into the one of its letters.
-      .replace(hiddenCharacters, keepLines)
       .replace(otherDots, '.')
   );
 }
