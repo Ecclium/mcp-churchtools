@@ -17,8 +17,8 @@ import {
 import { afterAll, describe, expect, it } from 'vitest';
 
 // No raw source of the docs index in the tree (ADR 0027, ADR 0066): no
-// OpenAPI document anywhere and no HTML page outside brand/, the brand
-// package with HTML templates of its own. The files are those Git lists,
+// OpenAPI document anywhere and no HTML page and no answer of WordPress
+// outside brand/, the brand package with HTML templates of its own. The files are those Git lists,
 // tracked or new and not ignored, so a file is caught before its commit.
 
 const workspaceRoot = fileURLToPath(new URL('../', import.meta.url));
@@ -49,9 +49,6 @@ function treeFiles(root: string): readonly string[] {
 function rawSourcesIn(root: string): readonly RawSource[] {
   const found: RawSource[] = [];
   for (const file of treeFiles(root)) {
-    if (file.startsWith('brand/')) {
-      continue;
-    }
     let text: string;
     try {
       text = readFileSync(join(root, file), 'utf8');
@@ -59,7 +56,8 @@ function rawSourcesIn(root: string): readonly RawSource[] {
       // Listed but gone, such as a file deleted and not yet committed.
       continue;
     }
-    if (/\.html?$/i.test(file) || looksLikeHtmlPage(text)) {
+    const brand = file.startsWith('brand/');
+    if (!brand && (/\.html?$/i.test(file) || looksLikeHtmlPage(text))) {
       found.push({ file, kind: 'html' });
     }
     if (looksLikeOpenApiDocument(text)) {
@@ -107,11 +105,13 @@ describe('the search for raw sources', () => {
       'packages/docs-index/data/page.txt': '<!DOCTYPE html><html></html>',
       'docs/page.htm': 'Text',
       'brand/src/social/card.html': '<!doctype html><html></html>',
+      'brand/tokens/spec.yaml': 'openapi: 3.1.0\npaths: {}\n',
       'tests/fixture.ts': "const page = '<html><body></body></html>';\n",
       'ignored/page.html': '<!doctype html>',
       '.gitignore': 'ignored/\n',
     });
     expect(rawSourcesIn(root)).toEqual([
+      { file: 'brand/tokens/spec.yaml', kind: 'openapi' },
       { file: 'docs/page.htm', kind: 'html' },
       { file: 'packages/docs-index/data/openapi.json', kind: 'openapi' },
       { file: 'packages/docs-index/data/page.txt', kind: 'html' },

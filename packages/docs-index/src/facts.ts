@@ -479,13 +479,20 @@ export function parseFactFiles(texts: FactFileTexts): Facts {
   return { sources, operations, rights, academy };
 }
 
-// Every text is foreign and only ever shown, so no control character may
-// come in, apart from line breaks and tabs in texts with several lines.
+// Control characters and characters a reader never sees: format
+// characters such as a soft hyphen, a zero-width space, a change of
+// direction or a TAG character, characters for private use and lone
+// surrogates. Inside a name they would hide a host from the check, and
+// in a text an instruction from the review of a change. Line breaks and
+// tabs stay in texts with several lines.
+const hiddenCharacter = /^[\p{Cc}\p{Cf}\p{Co}\p{Cs}]$/u;
+
 function withoutControls(text: string, lines: boolean): boolean {
   for (const char of text) {
-    const code = char.codePointAt(0) ?? 0;
-    const allowed = lines && (code === 0x09 || code === 0x0a);
-    if ((code < 0x20 || (code >= 0x7f && code <= 0x9f)) && !allowed) {
+    if (lines && (char === '\t' || char === '\n')) {
+      continue;
+    }
+    if (hiddenCharacter.test(char)) {
       return false;
     }
   }
@@ -507,11 +514,13 @@ const text = (max: number) =>
     .refine((value) => withoutControls(value, true));
 
 // Printable ASCII without a space at either end, as F30 saw every name of
-// a module and of a right.
-const asciiName = z
-  .string()
-  .max(100)
-  .regex(/^[\x21-\x7e](?:[\x20-\x7e]*[\x21-\x7e])?$/);
+// a module and of a right. The tools give names out as names, not as
+// foreign text, so their length stays short (ADR 0066).
+const asciiName = (max: number) =>
+  z
+    .string()
+    .max(max)
+    .regex(/^[\x21-\x7e](?:[\x20-\x7e]*[\x21-\x7e])?$/);
 
 const sha256 = z.string().regex(/^[0-9a-f]{64}$/);
 
@@ -584,9 +593,9 @@ const contentSchema = z.strictObject({
 });
 
 const operationSchema = z.strictObject({
-  operationId: z.string().regex(/^[A-Za-z][A-Za-z0-9_.-]{0,199}$/),
+  operationId: z.string().regex(/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/),
   method: z.enum(operationMethods),
-  path: z.string().regex(/^\/[\x21-\x7e]{0,499}$/),
+  path: z.string().regex(/^\/[\x21-\x7e]{0,299}$/),
   tags: z.array(line(100)).max(20),
   summary: line(1000).optional(),
   description: text(20_000).optional(),
@@ -621,8 +630,8 @@ const operationSchema = z.strictObject({
 });
 
 const rightSchema = z.strictObject({
-  module: asciiName,
-  name: asciiName,
+  module: asciiName(32),
+  name: asciiName(64),
   kind: z.enum(rightKinds),
   label: z.strictObject({ text: line(200), page: academyPath }).optional(),
   pages: z.array(academyPath).max(20),
@@ -700,6 +709,12 @@ function parseFile<T>(
     violations.push({ file, path: '', rule: 'json' });
     return undefined;
   }
+  // zod and the checks below walk the value recursively, so a value nested
+  // deeper than any valid file is refused before they run.
+  if (jsonDepth(json) > maxJsonDepth) {
+    violations.push({ file, path: '', rule: 'depth' });
+    return undefined;
+  }
   const parsed = schema.safeParse(json);
   if (!parsed.success) {
     // zod runs every check of a field, so one field can fail twice, for
@@ -722,13 +737,24 @@ function parseFile<T>(
     if (hasHtmlTag(text)) {
       violations.push({ file, path, rule: 'html' });
     }
+    // No image stays in any text (ADR 0027).
+    if (text.includes('![')) {
+      violations.push({ file, path, rule: 'link' });
+    }
   });
   return parsed.data;
 }
 
 // A link in the text of a help page leads only to another help page, as a
-// path; an image never stays (ADR 0027). Bounded, so linear in time.
-const markdownLink = /(!?)\[[^\]\n]{0,500}\]\(([^)\s]{0,500})/g;
+// path (ADR 0027). Link texts may span lines. A definition of a link for
+// later reference and an autolink in angle brackets hide the target from
+// this check, so neither may stand. Bounded, so linear in time.
+// The target runs to the next closing parenthesis or space; no bound, so
+// that a long target cannot slip past. Each match consumes its target, so
+// the pattern stays linear.
+const markdownLink = /\]\(([^)\s]*)/g;
+const linkDefinition = /^[ ]{0,3}\[[^\]\n]*\]:/m;
+const autolink = /<[a-z][a-z0-9+.-]{1,30}:/i;
 const academyLinkTarget =
   /^\/de\/(?:[a-z0-9%_-]+\/)*(?:[a-z0-9%_-]+\/?)?(?:#[a-z0-9_-]{1,100})?$/;
 
@@ -737,8 +763,16 @@ function checkAcademyLinks(
   violations: FactViolation[],
 ): void {
   pages.forEach((page, index) => {
+    if (linkDefinition.test(page.text) || autolink.test(page.text)) {
+      violations.push({
+        file: 'academy.json',
+        path: `entries[${String(index)}].text`,
+        rule: 'link',
+      });
+      return;
+    }
     for (const match of page.text.matchAll(markdownLink)) {
-      if (match[1] === '!' || !academyLinkTarget.test(match[2] ?? '')) {
+      if (!academyLinkTarget.test(match[1] ?? '')) {
         violations.push({
           file: 'academy.json',
           path: `entries[${String(index)}].text`,
@@ -893,6 +927,46 @@ function checkShape(
       );
     }
   });
+}
+
+/**
+ * How deep a file of facts may nest: enough for a schema of
+ * {@link maxShapeDepth} steps inside an answer of an operation, and far
+ * from what overflows the stack of a recursive walk.
+ */
+export const maxJsonDepth = 40;
+
+/**
+ * How deep a parsed JSON value nests, counted without recursion, so that
+ * any value can be measured. It stops counting above `limit`.
+ *
+ * @param value - A parsed JSON value.
+ * @param limit - The depth from which the exact number does not matter.
+ * @returns The depth, 0 for a value that is no object or array, or
+ *   `limit + 1` for anything deeper than `limit`.
+ * @example
+ * ```ts
+ * jsonDepth({ a: [1] }); // 2
+ * ```
+ */
+export function jsonDepth(value: unknown, limit = maxJsonDepth): number {
+  let deepest = 0;
+  const stack: [unknown, number][] = [[value, 0]];
+  for (let next = stack.pop(); next !== undefined; next = stack.pop()) {
+    const [item, depth] = next;
+    if (typeof item !== 'object' || item === null) {
+      continue;
+    }
+    const level = depth + 1;
+    if (level > limit) {
+      return limit + 1;
+    }
+    deepest = Math.max(deepest, level);
+    for (const inner of Object.values(item)) {
+      stack.push([inner, level]);
+    }
+  }
+  return deepest;
 }
 
 /**

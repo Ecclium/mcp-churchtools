@@ -13,10 +13,18 @@
 // no nested quantifier, so it runs in linear time on any text.
 const jsonOpenApiKey = /"(?:openapi|swagger)"\s{0,20}:/;
 const jsonPathsKey = /"paths"\s{0,20}:/;
-const yamlOpenApiKey = /^(?:openapi|swagger)[ \t]{0,20}:/m;
-const yamlPathsKey = /^paths[ \t]{0,20}:/m;
-const htmlStart = /^\uFEFF?\s{0,200}<(?:!doctype\s{1,20}html|html[\s>])/i;
-const htmlTag = /<(?:\/?[a-z][a-z0-9-]{0,30}(?=[\s/>])|!--|!doctype)/i;
+const yamlOpenApiKey = /^\uFEFF?["']?(?:openapi|swagger)["']?[ \t]{0,20}:/m;
+const yamlPathsKey = /^["']?paths["']?[ \t]{0,20}:/m;
+// Comments may come before the page; each is bounded, and the pattern is
+// anchored at the start, so it stays linear.
+const htmlStart =
+  /^\uFEFF?\s{0,200}(?:<!--[\s\S]{0,2000}?-->\s{0,200}){0,10}<(?:!doctype\s{1,20}html|html|head|body)[\s>]/i;
+// The answer of the WordPress API for a page holds its HTML in a field
+// "rendered".
+const wordPressRendered = /"rendered"\s{0,20}:\s{0,20}"/;
+// A tag, a comment, a declaration such as a doctype or CDATA, or a
+// processing instruction: every kind of raw HTML that CommonMark passes on.
+const htmlTag = /<(?:\/?[a-z][a-z0-9-]{0,30}(?=[\s/>])|!--|![a-z[]|\?)/i;
 
 /**
  * Whether a text looks like an OpenAPI or Swagger document: in JSON with
@@ -38,8 +46,10 @@ export function looksLikeOpenApiDocument(text: string): boolean {
 }
 
 /**
- * Whether a text is an HTML page: it starts, after white space, with a
- * doctype for HTML or an element `html`.
+ * Whether a text is an HTML page: it starts, after white space and
+ * comments, with a doctype for HTML or an element `html`, `head` or
+ * `body`, or it is an answer of the WordPress API with a page in its field
+ * `rendered`.
  *
  * @param text - The content of a file.
  * @returns True if it has the form of an HTML page.
@@ -50,12 +60,12 @@ export function looksLikeOpenApiDocument(text: string): boolean {
  * ```
  */
 export function looksLikeHtmlPage(text: string): boolean {
-  return htmlStart.test(text);
+  return htmlStart.test(text) || wordPressRendered.test(text);
 }
 
 /**
- * Whether a text holds markup of HTML: a start or end tag, a comment or a
- * doctype. The prepared texts of the facts hold none, since the refresh
+ * Whether a text holds markup of HTML: a start or end tag, a comment, a
+ * declaration such as a doctype or CDATA, or a processing instruction. The prepared texts of the facts hold none, since the refresh
  * turns every page into simple Markdown (ADR 0066).
  *
  * @param text - A text of the facts.

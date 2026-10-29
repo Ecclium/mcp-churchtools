@@ -19,6 +19,8 @@ describe('looksLikeOpenApiDocument', () => {
     ['JSON', json({ openapi: '3.1.0', info: {}, paths: {} })],
     ['JSON with spaces', json({ swagger: '2.0', paths: {} }, 2)],
     ['YAML', 'openapi: 3.1.0\ninfo:\n  title: x\npaths:\n  /a: {}\n'],
+    ['YAML with a byte order mark', '\uFEFFopenapi: 3.1.0\npaths: {}\n'],
+    ['YAML with quoted keys', '\'openapi\': 3.1.0\n"paths": {}\n'],
   ])('finds %s', (_name, text) => {
     expect(looksLikeOpenApiDocument(text)).toBe(true);
   });
@@ -38,6 +40,10 @@ describe('looksLikeHtmlPage', () => {
     ['a doctype', '<!DOCTYPE html>\n<html lang="de"></html>'],
     ['an element html after white space', '\n  <html>'],
     ['a byte order mark', '\uFEFF<!doctype html>'],
+    ['a comment before the doctype', '<!-- saved -->\n<!DOCTYPE html>'],
+    ['a page that starts with head', '<head><title>x</title></head>'],
+    ['a page that starts with body', '<body class="page">'],
+    ['an answer of WordPress', json({ content: { rendered: '<p>x</p>' } })],
   ])('finds %s', (_name, text) => {
     expect(looksLikeHtmlPage(text)).toBe(true);
   });
@@ -60,6 +66,9 @@ describe('hasHtmlTag', () => {
     ['a comment', 'text <!-- hidden -->'],
     ['a doctype', '<!DOCTYPE html>'],
     ['a tag at the end', 'text <img'],
+    ['a processing instruction', '<?xml version="1.0"?>'],
+    ['CDATA', '<![CDATA[x]]>'],
+    ['a declaration', '<!ELEMENT x ANY>'],
   ])('finds %s', (_name, text) => {
     expect(hasHtmlTag(`${text} `)).toBe(true);
   });

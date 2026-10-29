@@ -10,6 +10,8 @@ import { describe, expect, it } from 'vitest';
 import {
   canonicalJson,
   DocsFactsError,
+  jsonDepth,
+  maxJsonDepth,
   factFileLimits,
   factFiles,
   type FactFileTexts,
@@ -163,6 +165,66 @@ describe('parseFactFiles', () => {
     });
     expect(violationsOf(texts)).toEqual([
       { file: 'operations.json', path: `entries[1].${field}`, rule: 'format' },
+    ]);
+  });
+
+  it.each([
+    ['a soft hyphen', 'Grup\u00ADpen'],
+    ['a zero-width space', 'Grup\u200Bpen'],
+    ['a change of direction', 'Grup\u202Epen'],
+    ['a TAG character', 'Grup\u{E0041}pen'],
+    ['a character for private use', 'Grup\uE000pen'],
+    ['a lone surrogate', 'Grup\uD800pen'],
+  ])('rejects %s in a text', (_name, description) => {
+    const texts = changed((facts) => {
+      firstOperation(facts).description = description;
+    });
+    expect(violationsOf(texts)).toEqual([
+      {
+        file: 'operations.json',
+        path: 'entries[1].description',
+        rule: 'format',
+      },
+    ]);
+  });
+
+  it.each<[string, (facts: Mutable<Facts>) => void, string, string]>([
+    [
+      'a right name over 64 characters',
+      (facts) => {
+        const right = facts.rights.entries[3];
+        if (right !== undefined) {
+          right.name = `view ${'x'.repeat(60)}`;
+        }
+      },
+      'rights.json',
+      'entries[3].name',
+    ],
+    [
+      'a module over 32 characters',
+      (facts) => {
+        const right = facts.rights.entries[3];
+        if (right !== undefined) {
+          right.module = 'z'.repeat(33);
+        }
+      },
+      'rights.json',
+      'entries[3].module',
+    ],
+    [
+      'an operationId over 128 characters',
+      (facts) => {
+        const last = facts.operations.entries[4];
+        if (last !== undefined) {
+          last.operationId = `z${'x'.repeat(128)}`;
+        }
+      },
+      'operations.json',
+      'entries[4].operationId',
+    ],
+  ])('rejects %s', (_name, change, file, path) => {
+    expect(violationsOf(changed(change))).toEqual([
+      { file, path, rule: 'format' },
     ]);
   });
 
@@ -345,6 +407,45 @@ describe('parseFactFiles', () => {
     ]);
   });
 
+  it('rejects unsorted media types and a deep schema in a request', () => {
+    const unsorted = changed((facts) => {
+      facts.operations.entries[4]?.requestBody?.content.push({
+        mediaType: 'application/a',
+      });
+    });
+    expect(violationsOf(unsorted)).toEqual([
+      {
+        file: 'operations.json',
+        path: 'entries[4].requestBody.content[1]',
+        rule: 'order',
+      },
+    ]);
+    const deep = changed((facts) => {
+      const body = facts.operations.entries[4]?.requestBody?.content[0];
+      if (body !== undefined) {
+        body.schema = nest(maxShapeDepth + 1) as Mutable<Shape>;
+      }
+    });
+    expect(violationsOf(deep)).toEqual([
+      {
+        file: 'operations.json',
+        path: 'entries[4].requestBody.content[0].schema',
+        rule: 'depth',
+      },
+    ]);
+  });
+
+  it('rejects a value nested too deep before it walks it', () => {
+    const levels = 60_000;
+    const texts = {
+      ...syntheticFactFiles(),
+      'operations.json': `{"format":"ecclium.docs.operations.v1","notice":"x","entries":[${'['.repeat(levels)}${']'.repeat(levels)}]}`,
+    };
+    expect(violationsOf(texts)).toEqual([
+      { file: 'operations.json', path: '', rule: 'depth' },
+    ]);
+  });
+
   it('rejects facts without their source and a source without facts', () => {
     const withoutSource = changed((facts) => {
       delete facts.sources.permissions;
@@ -446,6 +547,15 @@ describe('parseFactFiles on foreign content', () => {
     ]);
   });
 
+  it('rejects an image in a description of an operation', () => {
+    const texts = changed((facts) => {
+      firstOperation(facts).description = 'Siehe ![x](/bild.png)';
+    });
+    expect(violationsOf(texts)).toEqual([
+      { file: 'operations.json', path: 'entries[1].description', rule: 'link' },
+    ]);
+  });
+
   it('rejects markup of HTML in a text', () => {
     expect(violationsOf(withPageText('Ein <b>fetter</b> Text'))).toEqual([
       { file: 'academy.json', path: 'entries[0].text', rule: 'html' },
@@ -460,6 +570,17 @@ describe('parseFactFiles on foreign content', () => {
     ['a relative link', '[x](../gruppen/)'],
     ['a link to an e-mail address', '[x](mailto:max.mustermann@example.org)'],
     ['an image', '![Bild](/de/help/bild/)'],
+    [
+      'a link text over two lines',
+      '[ein\nLink](https://churchtools.academy/en/x/)',
+    ],
+    ['a definition of a link', 'Text [r]\n\n[r]: /de/help/gruppen/'],
+    ['an autolink', 'Siehe <https://churchtools.academy/de/help/>'],
+    ['a link text over 500 characters', `[${'a'.repeat(501)}](mailto:x)`],
+    [
+      'a long target that leaves the German pages',
+      `[x](/de/${'a'.repeat(497)}/../../en/x/)`,
+    ],
   ])('rejects %s in the text of a page', (_name, text) => {
     expect(violationsOf(withPageText(text))).toEqual([
       { file: 'academy.json', path: 'entries[0].text', rule: 'link' },
@@ -472,6 +593,16 @@ describe('parseFactFiles on foreign content', () => {
     ['a path without slash at the end', '[x](/de/help/gruppen)'],
   ])('accepts a link with %s', (_name, text) => {
     expect(violationsOf(withPageText(text))).toEqual([]);
+  });
+});
+
+describe('jsonDepth', () => {
+  it('counts objects and arrays without recursion', () => {
+    expect(jsonDepth('x')).toBe(0);
+    expect(jsonDepth({ a: [1] })).toBe(2);
+    expect(
+      jsonDepth(JSON.parse(`${'['.repeat(100_000)}${']'.repeat(100_000)}`)),
+    ).toBe(maxJsonDepth + 1);
   });
 });
 

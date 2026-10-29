@@ -24,6 +24,8 @@ describe('findForeignHosts', () => {
     ['paths of fields', 'group.name, person.id and meta.pagination.total'],
     ['file names', 'operations.json, index.ts and Node.js'],
     ['versions', 'ChurchTools 3.138.0 and 0.1.0'],
+    ['a version with five parts', '1.2.3.4.5'],
+    ['a scheme without a host', 'Requests use https: always'],
     ['the npm scope', '@ecclium/mcp-churchtools'],
     ['a comment in code', '// see above'],
   ])('allows %s', (_name, text) => {
@@ -70,6 +72,26 @@ describe('findForeignHosts', () => {
       ['name', 'url'],
     ],
     ['capital letters', 'WWW.VENDOR.EXAMPLE', ['www']],
+    ['a web link with one slash', 'https:/files.example/x', ['url']],
+    ['a web link without slashes', 'https:files.example', ['url']],
+    ['a web link with backslashes', 'https:\\\\files.example', ['url']],
+    ['an IPv6 address in a URL', 'http://[2001:db8::1]/', ['url']],
+    ['an IPv4 address', 'Server 192.0.2.10 antwortet', ['ip']],
+    [
+      'full-width dots',
+      ['gemeinde', 'church', 'tools'].join('\uFF0E'),
+      ['church-tools'],
+    ],
+    [
+      'ideographic full stops',
+      ['gemeinde', 'church', 'tools'].join('\u3002'),
+      ['church-tools'],
+    ],
+    [
+      'dots escaped for Markdown',
+      ['gemeinde', 'church', 'tools'].join('\\.'),
+      ['church-tools'],
+    ],
   ])('finds %s', (_name, text, kinds) => {
     expect(findForeignHosts(text)).toEqual(kinds);
   });

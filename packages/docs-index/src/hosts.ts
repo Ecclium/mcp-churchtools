@@ -48,7 +48,7 @@ export const checkedEndings = Object.freeze([
 
 /** The kinds of host the check tells apart. */
 export type HostKind =
-  'church-tools' | 'mail' | 'name' | 'protocol-relative' | 'url' | 'www';
+  'church-tools' | 'ip' | 'mail' | 'name' | 'protocol-relative' | 'url' | 'www';
 
 /** Where a value holds hosts that are not allowed, and of which kinds. */
 export interface HostFinding {
@@ -71,7 +71,13 @@ export interface HostFinding {
  */
 export function findForeignHosts(text: string): readonly HostKind[] {
   const found = new Set<HostKind>();
-  for (const token of text.toLowerCase().split(separators)) {
+  // NFKC turns full-width letters and dots into plain ones, as a browser
+  // would before it resolves a name.
+  const folded = text.normalize('NFKC').replace(otherDots, '.').toLowerCase();
+  if (bracketedHost.test(folded)) {
+    found.add('url');
+  }
+  for (const token of folded.split(separators)) {
     if (token !== '') {
       inspectToken(token, found);
     }
@@ -140,12 +146,24 @@ export function walkStrings(
 const plainKey = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 
 // Markdown and JSON put hosts between brackets, quotes and parentheses,
-// so these split words; a dot, a slash, a colon and @ stay inside.
-const separators = /[\s<>()[\]{}"'`|,;\\*]+/u;
+// so these split words; a dot, a slash, a colon, a backslash and @ stay
+// inside. Before the patterns run, a backslash counts as a slash, as
+// browsers read it in a URL, and a Markdown escape \. as a dot.
+const separators = /[\s<>()[\]{}"'`|,;*]+/u;
 
 // Every quantifier is bounded or follows a fixed text, so that no
 // pattern takes more than linear time on a long word.
+// Dots that NFKC keeps but a browser reads as a dot in a name: the
+// ideographic and the half-width ideographic full stop.
+const otherDots = /[\u3002\uFF61]/g;
 const urlPattern = /[a-z][a-z0-9+.-]{0,30}:\/\/([^/?#]{0,300})/g;
+// Browsers also follow a web link with fewer slashes, such as https:host.
+const webPattern = /(?:https?|ftps?|wss?):\/{0,3}([^/?#]{0,300})/g;
+// A host in brackets, as an IPv6 address in a URL. Brackets split words,
+// so this looks at the whole text.
+const bracketedHost = /[a-z]:\/{0,3}\[/;
+const ipv4Pattern =
+  /(?<![\d.])(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}(?![\d.])/;
 const protocolRelativePattern =
   /^\/\/([a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63}){1,10})/;
 const mailPattern =
@@ -158,12 +176,18 @@ const allowedNames: readonly string[] = Object.freeze([
   allowedMailDomain,
 ]);
 
-function inspectToken(token: string, found: Set<HostKind>): void {
-  for (const match of token.matchAll(urlPattern)) {
-    const host = hostOf(match[1] ?? '');
-    if (host !== '' && !isAllowedHost(host)) {
-      found.add('url');
+function inspectToken(raw: string, found: Set<HostKind>): void {
+  const token = raw.replaceAll('\\.', '.').replaceAll('\\', '/');
+  for (const pattern of [urlPattern, webPattern]) {
+    for (const match of token.matchAll(pattern)) {
+      const host = hostOf(match[1] ?? '');
+      if (host !== '' && !isAllowedHost(host)) {
+        found.add('url');
+      }
     }
+  }
+  if (ipv4Pattern.test(token)) {
+    found.add('ip');
   }
   const relative = protocolRelativePattern.exec(token);
   if (relative !== null && !isAllowedHost(relative[1] ?? '')) {
