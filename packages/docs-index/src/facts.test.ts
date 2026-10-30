@@ -741,25 +741,104 @@ describe('parseFactFiles', () => {
     ]);
   });
 
-  it('rejects evidence from the document for a right it does not name', () => {
+  it('takes only a finding as evidence that a right is not needed', () => {
     const texts = changed((facts) => {
       const read = facts.operationRights.entries[1];
       if (read !== undefined && 'notNeeded' in read) {
         const item = read.notNeeded?.[0];
         if (item !== undefined) {
-          item.right.name = 'edit things';
-          item.evidence.push({ kind: 'openapi' });
+          // A description names a right; it never shows one is not needed.
+          (item.evidence as unknown[]).push({ kind: 'openapi' });
         }
+      }
+    });
+    expect(violationsOf(texts)).toEqual([
+      { file: 'operation-rights.json', path: 'entries[1]', rule: 'format' },
+    ]);
+  });
+
+  it('takes a read as needing no right only with a finding', () => {
+    const texts = changed((facts) => {
+      const list = facts.operationRights.entries[3];
+      if (list !== undefined && 'none' in list) {
+        list.none = [{ kind: 'openapi' }];
       }
     });
     expect(violationsOf(texts)).toEqual([
       {
         file: 'operation-rights.json',
-        path: 'entries[1].notNeeded[0].evidence[1]',
+        path: 'entries[3].none',
         rule: 'evidence',
       },
     ]);
   });
+
+  it('wants the module where the document names a right whose name repeats', () => {
+    const texts = changed((facts) => {
+      // Another module with a right of the same name, which the
+      // description of the members does not tell apart.
+      facts.rights.entries.push({
+        module: 'zsynthetic',
+        name: 'view thing members',
+        kind: 'list',
+        pages: [],
+      });
+      const members = facts.operations.entries[2];
+      if (members !== undefined) {
+        members.summary = 'List the members of a thing';
+      }
+    });
+    expect(violationsOf(texts)).toEqual([
+      {
+        file: 'operation-rights.json',
+        path: 'entries[2].needs[0].evidence[2]',
+        rule: 'evidence',
+      },
+    ]);
+  });
+
+  it('rejects a mark of a link in a text the project writes', () => {
+    const texts = changed((facts) => {
+      const [unmapped, read] = facts.operationRights.entries;
+      if (unmapped !== undefined && 'open' in unmapped) {
+        unmapped.open = 'Siehe [Hilfe](javascript:void).';
+      }
+      if (read !== undefined && 'needs' in read) {
+        const evidence = read.needs[0]?.evidence[0];
+        if (evidence?.kind === 'finding') {
+          evidence.id = 'Befund [x]';
+        }
+      }
+      const label = facts.rights.entries[0]?.label;
+      if (label !== undefined) {
+        label.text = 'Dinge [bearbeiten]';
+      }
+    });
+    expect(violationsOf(texts)).toEqual([
+      { file: 'rights.json', path: 'entries[0].label', rule: 'link' },
+      { file: 'operation-rights.json', path: 'entries[0].open', rule: 'link' },
+      {
+        file: 'operation-rights.json',
+        path: 'entries[1].needs[0].evidence[0].id',
+        rule: 'link',
+      },
+    ]);
+  });
+
+  it.each(['F0', 'f29', 'F1000'])(
+    'rejects %s as the number of a finding',
+    (id) => {
+      const texts = changed((facts) => {
+        const label = facts.rights.entries[0]?.label;
+        if (label !== undefined && 'finding' in label) {
+          label.finding = id;
+        }
+      });
+      expect(violationsOf(texts)).toEqual([
+        { file: 'rights.json', path: 'entries[0].label', rule: 'format' },
+      ]);
+    },
+  );
 
   it('rejects pairings out of order', () => {
     const texts = changed((facts) => {

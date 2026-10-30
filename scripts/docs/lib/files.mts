@@ -70,7 +70,7 @@ export interface RefreshedFacts {
 }
 
 const rightsNotice =
-  'Fakten zu den Rechten von ChurchTools: Modul, Name und Art jedes Rechts aus der Antwort von GET /api/permissions/global, ohne die Werte einer Instanz. Bezeichnungen stammen aus Hilfeseiten der ChurchTools Academy, je mit dem Pfad ihrer Seite, und wo keine Seite ein Recht benennt, aus der Oberfläche von ChurchTools, wie ein Befund des Projekts sie festhält. Für die Bezeichnungen aus der Academy gilt, was in academy.json steht.';
+  'Fakten zu den Rechten von ChurchTools: Modul, Name und Art jedes Rechts aus der Antwort von GET /api/permissions/global, ohne die Werte einer Instanz. Bezeichnungen stammen aus Hilfeseiten der ChurchTools Academy, je mit dem Pfad ihrer Seite, und wo keine Seite ein Recht benennt, aus der Oberfläche von ChurchTools, wie ein Befund des Projekts sie festhält. Für die Bezeichnungen aus der Academy gilt, was in academy.json steht. Die Bezeichnungen aus der Oberfläche sind Wörter von ChurchTools und stehen wie diese unter keiner Lizenz des Projekts.';
 
 const academyNotice =
   'Texte frei zugänglicher Hilfeseiten der ChurchTools Academy, von Ecclium aufbereitet: ohne Bilder, Navigation und Skripte, Links nur als Pfad auf der Academy. © ChurchTools, alle Rechte vorbehalten. Ecclium gibt die Texte mit Erlaubnis des Herstellers wieder, mit Namensnennung und Link. Sie stehen unter keiner Lizenz des Projekts. Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Hersteller von ChurchTools.';
@@ -78,7 +78,7 @@ const academyNotice =
 // The mapping is work of the project, not taken from a source, and stands
 // under the licence of the code, unlike the other files (ADR 0066).
 const operationRightsNotice =
-  'Zuordnung von Operationen der API von ChurchTools zu den Rechten, die sie verlangen, von Hand erstellt im Projekt Ecclium. Jede Paarung hat einen Beleg: einen Befund des Projekts in docs/research/churchtools-api.md mit der Version von ChurchTools, an der die Probe lief, die Beschreibung der Operation im OpenAPI-Dokument oder eine Hilfeseite der ChurchTools Academy. Sie nennt, was belegt ist, nie alle Bedingungen einer Operation. Eigene Arbeit des Projekts ohne Texte aus den Quellen, unter der Elastic License 2.0 wie der Quellcode.';
+  'Zuordnung von Operationen der API von ChurchTools zu den Rechten, die sie verlangen, von Hand erstellt im Projekt Ecclium. Jede Paarung hat einen Beleg: einen Befund des Projekts in docs/research/churchtools-api.md mit der Version von ChurchTools, an der die Probe lief, die Beschreibung der Operation im OpenAPI-Dokument oder eine Hilfeseite der ChurchTools Academy. Sie nennt, was belegt ist, nie alle Bedingungen einer Operation. Eigene Arbeit des Projekts unter der Elastic License 2.0 wie der Quellcode. Operationen und Rechte nennt sie nur bei ihren Namen aus den Quellen, als Verweis, und sie enthält keine Texte daraus.';
 
 /** The licence the facts from the OpenAPI document stand under (ADR 0027). */
 export const openApiLicence = 'CC BY 4.0';

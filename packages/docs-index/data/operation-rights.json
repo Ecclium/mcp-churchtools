@@ -1,6 +1,6 @@
 {
   "format": "ecclium.docs.operation-rights.v1",
-  "notice": "Zuordnung von Operationen der API von ChurchTools zu den Rechten, die sie verlangen, von Hand erstellt im Projekt Ecclium. Jede Paarung hat einen Beleg: einen Befund des Projekts in docs/research/churchtools-api.md mit der Version von ChurchTools, an der die Probe lief, die Beschreibung der Operation im OpenAPI-Dokument oder eine Hilfeseite der ChurchTools Academy. Sie nennt, was belegt ist, nie alle Bedingungen einer Operation. Eigene Arbeit des Projekts ohne Texte aus den Quellen, unter der Elastic License 2.0 wie der Quellcode.",
+  "notice": "Zuordnung von Operationen der API von ChurchTools zu den Rechten, die sie verlangen, von Hand erstellt im Projekt Ecclium. Jede Paarung hat einen Beleg: einen Befund des Projekts in docs/research/churchtools-api.md mit der Version von ChurchTools, an der die Probe lief, die Beschreibung der Operation im OpenAPI-Dokument oder eine Hilfeseite der ChurchTools Academy. Sie nennt, was belegt ist, nie alle Bedingungen einer Operation. Eigene Arbeit des Projekts unter der Elastic License 2.0 wie der Quellcode. Operationen und Rechte nennt sie nur bei ihren Namen aus den Quellen, als Verweis, und sie enthält keine Texte daraus.",
   "entries": [
     {
       "operationId": "get-bookings",
@@ -46,10 +46,6 @@
           "rights": [
             {
               "module": "churchcal",
-              "name": "edit category"
-            },
-            {
-              "module": "churchcal",
               "name": "view category"
             }
           ],
@@ -60,9 +56,6 @@
               "id": "F36",
               "version": "3.137",
               "shows": "necessary"
-            },
-            {
-              "kind": "openapi"
             }
           ]
         }

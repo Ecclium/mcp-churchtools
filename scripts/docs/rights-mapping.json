@@ -487,10 +487,6 @@
           "rights": [
             {
               "module": "churchcal",
-              "name": "edit category"
-            },
-            {
-              "module": "churchcal",
               "name": "view category"
             }
           ],
@@ -501,9 +497,6 @@
               "id": "F36",
               "version": "3.137",
               "shows": "necessary"
-            },
-            {
-              "kind": "openapi"
             }
           ]
         }

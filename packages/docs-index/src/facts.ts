@@ -286,9 +286,10 @@ export const withoutRight = Object.freeze([
 ] as const);
 
 /**
- * What a probe showed about a right: `necessary` when a counter-check
- * without it lost the effect, `sufficient` when the effect showed with it
- * and the probe never took it away.
+ * What a probe showed about a right: `necessary` when the effect was
+ * missing without it, after a counter-check took it away or for an object
+ * the right with values does not name, `sufficient` when the effect showed
+ * with it and the probe never saw it without.
  */
 export const findingShows = Object.freeze(['necessary', 'sufficient'] as const);
 
@@ -334,7 +335,7 @@ export interface AcademyEvidence {
 export type NeedEvidence =
   NeedFindingEvidence | OpenApiEvidence | AcademyEvidence;
 
-/** Evidence that an operation needs no right or not a certain one. */
+/** Evidence that an operation needs no right. */
 export type PlainEvidence = FindingEvidence | OpenApiEvidence;
 
 /**
@@ -350,12 +351,15 @@ export interface RightNeed {
   readonly evidence: readonly NeedEvidence[];
 }
 
-/** A right a finding showed the operation does not need. */
+/**
+ * A right a finding showed the operation does not need. Only a probe can
+ * show that: a description that names a right says nothing about it.
+ */
 export interface NotNeededRight {
   /** The right. */
   readonly right: RightRef;
-  /** The evidence, sorted. */
-  readonly evidence: readonly PlainEvidence[];
+  /** The findings, sorted. */
+  readonly evidence: readonly FindingEvidence[];
 }
 
 /** An operation and the rights it needs, by evidence. */
@@ -372,7 +376,10 @@ export interface OperationNeeds {
 export interface OperationWithoutRights {
   /** The ID of the operation, its key. */
   readonly operationId: string;
-  /** The evidence that it needs none. */
+  /**
+   * The evidence that it needs none, at least one finding: only a probe
+   * shows that a read works without any right.
+   */
   readonly none: readonly PlainEvidence[];
 }
 
@@ -814,7 +821,10 @@ const operationSchema = z.strictObject({
 // A finding by its number, such as `F29`, or by the title of a further
 // finding, such as «Kategorie ohne Leserecht». The test of the repository
 // looks it up in `docs/research/churchtools-api.md`.
-const findingId = z.union([z.string().regex(/^F[1-9]\d{0,2}$/), line(120)]);
+const findingId = z.union([
+  z.string().regex(/^F[1-9]\d{0,2}$/),
+  line(120).refine((title) => !/^f\d/i.test(title)),
+]);
 
 const rightSchema = z.strictObject({
   module: asciiName(32),
@@ -840,12 +850,14 @@ const rightRefSchema = z.strictObject({
 
 const openApiEvidenceSchema = z.strictObject({ kind: z.literal('openapi') });
 
+const findingEvidenceSchema = z.strictObject({
+  kind: z.literal('finding'),
+  id: findingId,
+  version: churchToolsVersion,
+});
+
 const plainEvidenceSchema = z.union([
-  z.strictObject({
-    kind: z.literal('finding'),
-    id: findingId,
-    version: churchToolsVersion,
-  }),
+  findingEvidenceSchema,
   openApiEvidenceSchema,
 ]);
 
@@ -862,7 +874,7 @@ const needEvidenceSchema = z.union([
 
 const notNeededSchema = z.strictObject({
   right: rightRefSchema,
-  evidence: z.array(plainEvidenceSchema).min(1).max(10),
+  evidence: z.array(findingEvidenceSchema).min(1).max(10),
 });
 
 const operationRightsSchema = z.union([
@@ -1334,6 +1346,17 @@ function checkReferences(facts: Facts, violations: FactViolation[]): void {
   facts.rights.entries.forEach((right, index) => {
     const at = `entries[${String(index)}]`;
     const { label } = right;
+    if (
+      label !== undefined &&
+      (hasLinkMark(label.text) ||
+        ('finding' in label && hasLinkMark(label.finding)))
+    ) {
+      violations.push({
+        file: 'rights.json',
+        path: `${at}.label`,
+        rule: 'link',
+      });
+    }
     // A label from a help page stands right before the name in
     // parentheses, as the pages of the rights management write it, so
     // that no label is made up or taken from the wrong right. A label
@@ -1473,12 +1496,47 @@ export function namesRight(value: string, name: string): boolean {
   return plainWords(value).includes(plainWords(name));
 }
 
+/**
+ * Whether a text names a right so that it can only mean this one: by its
+ * name and, where the same name stands in more than one module, such as
+ * `view` or `view category`, also by its module.
+ *
+ * @param value - The text, such as the description of an operation.
+ * @param right - The right.
+ * @param rights - Every right of the facts, to know which names repeat.
+ * @returns Whether the text names it.
+ * @example
+ * ```ts
+ * documentNamesRight('Requires view in churchdb.', { module: 'churchdb', name: 'view' }, rights); // true
+ * ```
+ */
+export function documentNamesRight(
+  value: string,
+  right: RightRef,
+  rights: readonly RightRef[],
+): boolean {
+  const modules = rights.filter(({ name }) => name === right.name).length;
+  return (
+    namesRight(value, right.name) &&
+    (modules <= 1 || namesRight(value, right.module))
+  );
+}
+
+// Texts the project writes by hand or takes from a finding stand without
+// any link: a bracket could start a Markdown link, whose target the check
+// of the hosts does not see if it has no host, such as `javascript:`.
+function hasLinkMark(value: string): boolean {
+  return value.includes('[') || value.includes(']');
+}
+
 // Every pairing names an operation, rights and pages that exist, and its
-// evidence carries it: the document or a help page names one of its
-// rights, a help page never stands alone, because it describes the web
-// interface and not the API, and what a read gives without the right
-// only a probe can show (ADR 0066). No right stands twice in an entry, so
-// that no operation both needs a right and does not need it.
+// evidence carries it: the document names one of its rights, with its
+// module where the name repeats, or a help page names it, a help page
+// never stands alone, because it describes the web interface and not the
+// API, and what a read gives without the right only a probe can show, as
+// that a read needs no right (ADR 0066). No right stands twice in an
+// entry, so that no operation both needs a right and does not need it,
+// and no text the project writes holds a mark of a link.
 function checkOperationRights(facts: Facts, violations: FactViolation[]): void {
   const file = 'operation-rights.json';
   const operations = new Map(
@@ -1512,14 +1570,13 @@ function checkOperationRights(facts: Facts, violations: FactViolation[]): void {
       }
       seen.add(refKey(right));
     };
-    const checkPlain = (
-      evidence: readonly PlainEvidence[],
+    const checkTitles = (
+      evidence: readonly (NeedEvidence | PlainEvidence)[],
       path: string,
-      right: RightRef,
     ) => {
       evidence.forEach((item, position) => {
-        if (item.kind === 'openapi' && !namesRight(described, right.name)) {
-          push(`${path}[${String(position)}]`, 'evidence');
+        if (item.kind === 'finding' && hasLinkMark(item.id)) {
+          push(`${path}[${String(position)}].id`, 'link');
         }
       });
     };
@@ -1543,7 +1600,9 @@ function checkOperationRights(facts: Facts, violations: FactViolation[]): void {
           const itemAt = `${needAt}.evidence[${String(place)}]`;
           if (item.kind === 'openapi') {
             if (
-              !need.rights.some((right) => namesRight(described, right.name))
+              !need.rights.some((right) =>
+                documentNamesRight(described, right, facts.rights.entries),
+              )
             ) {
               push(itemAt, 'evidence');
             }
@@ -1558,13 +1617,23 @@ function checkOperationRights(facts: Facts, violations: FactViolation[]): void {
             }
           }
         });
+        checkTitles(need.evidence, `${needAt}.evidence`);
       });
+    }
+    if ('none' in entry) {
+      if (!entry.none.some((item) => item.kind === 'finding')) {
+        push(`${at}.none`, 'evidence');
+      }
+      checkTitles(entry.none, `${at}.none`);
+    }
+    if ('open' in entry && hasLinkMark(entry.open)) {
+      push(`${at}.open`, 'link');
     }
     if ('notNeeded' in entry && entry.notNeeded !== undefined) {
       entry.notNeeded.forEach((item, position) => {
         const itemAt = `${at}.notNeeded[${String(position)}]`;
         checkRight(item.right, `${itemAt}.right`);
-        checkPlain(item.evidence, `${itemAt}.evidence`, item.right);
+        checkTitles(item.evidence, `${itemAt}.evidence`);
       });
     }
   });

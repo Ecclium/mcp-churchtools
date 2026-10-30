@@ -1,6 +1,6 @@
 {
   "format": "ecclium.docs.rights.v1",
-  "notice": "Fakten zu den Rechten von ChurchTools: Modul, Name und Art jedes Rechts aus der Antwort von GET /api/permissions/global, ohne die Werte einer Instanz. Bezeichnungen stammen aus Hilfeseiten der ChurchTools Academy, je mit dem Pfad ihrer Seite, und wo keine Seite ein Recht benennt, aus der Oberfläche von ChurchTools, wie ein Befund des Projekts sie festhält. Für die Bezeichnungen aus der Academy gilt, was in academy.json steht.",
+  "notice": "Fakten zu den Rechten von ChurchTools: Modul, Name und Art jedes Rechts aus der Antwort von GET /api/permissions/global, ohne die Werte einer Instanz. Bezeichnungen stammen aus Hilfeseiten der ChurchTools Academy, je mit dem Pfad ihrer Seite, und wo keine Seite ein Recht benennt, aus der Oberfläche von ChurchTools, wie ein Befund des Projekts sie festhält. Für die Bezeichnungen aus der Academy gilt, was in academy.json steht. Die Bezeichnungen aus der Oberfläche sind Wörter von ChurchTools und stehen wie diese unter keiner Lizenz des Projekts.",
   "entries": [
     {
       "module": "churchcal",

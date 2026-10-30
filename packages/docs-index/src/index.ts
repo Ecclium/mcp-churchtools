@@ -14,6 +14,7 @@ export {
   canonicalJson,
   describeViolation,
   DocsFactsError,
+  documentNamesRight,
   type FactFile,
   type FactFileName,
   type FactFileTexts,

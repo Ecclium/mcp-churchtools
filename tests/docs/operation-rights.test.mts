@@ -11,7 +11,7 @@ import {
   type FactFileTexts,
   factFiles,
   type Facts,
-  namesRight,
+  documentNamesRight,
   type NeedEvidence,
   type PlainEvidence,
   parseFactFiles,
@@ -70,8 +70,9 @@ function findingText(id: string): string | undefined {
   }
   const block = [lines[start] ?? ''];
   for (const line of lines.slice(start + 1)) {
+    // Any bold start of a paragraph or an item begins the next finding.
     if (
-      /^\*\*F\d+,/.test(line) ||
+      line.startsWith('**') ||
       line.startsWith('#') ||
       line.startsWith('- **')
     ) {
@@ -112,6 +113,17 @@ const pageOf = new Map(
   facts.academy.entries.map((page) => [page.path, page.text]),
 );
 
+// A right as a finding writes it: with its module, or by its name alone
+// where no other module has a right of that name.
+function findingNames(text: string, right: RightRef): boolean {
+  const unique =
+    facts.rights.entries.filter(({ name }) => name === right.name).length === 1;
+  return (
+    text.includes(`\`${right.module}: ${right.name}\``) ||
+    (unique && text.includes(`\`${right.name}\``))
+  );
+}
+
 // Whether a piece of evidence names the right, as far as it can be read.
 function evidenceNames(
   evidence: NeedEvidence | PlainEvidence,
@@ -120,9 +132,13 @@ function evidenceNames(
 ): boolean {
   switch (evidence.kind) {
     case 'finding':
-      return (findingText(evidence.id) ?? '').includes(right.name);
+      return findingNames(findingText(evidence.id) ?? '', right);
     case 'openapi':
-      return namesRight(describedOf.get(operationId) ?? '', right.name);
+      return documentNamesRight(
+        describedOf.get(operationId) ?? '',
+        right,
+        facts.rights.entries,
+      );
     case 'academy':
       return (pageOf.get(evidence.page) ?? '').includes(`(${right.name})`);
   }
@@ -195,10 +211,21 @@ describe('the mapping of operations to rights', () => {
       if (label === undefined || !('finding' in label)) {
         return [];
       }
+      // The label right after the right it belongs to, so that no label
+      // of one right is taken for another the same finding names.
       const text = findingText(label.finding) ?? '';
-      return text.includes(label.text) && text.includes(right.name)
-        ? []
-        : [`${right.module}: ${right.name}`];
+      const unique =
+        facts.rights.entries.filter(({ name }) => name === right.name)
+          .length === 1;
+      const written = [
+        `\`${right.module}: ${right.name}\``,
+        ...(unique ? [`\`${right.name}\``] : []),
+      ].some(
+        (name) =>
+          text.includes(`${name}, «${label.text}»`) ||
+          text.includes(`${name} «${label.text}»`),
+      );
+      return written ? [] : [`${right.module}: ${right.name}`];
     });
     expect(unnamed).toEqual([]);
   });
