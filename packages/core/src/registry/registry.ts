@@ -23,6 +23,7 @@ import {
   descriptionBudget,
   perOperation,
   renderDescription,
+  rightsPerOperation,
 } from './description.js';
 import { checkMeta } from './meta.js';
 import { readFields } from './own.js';
@@ -177,11 +178,7 @@ const toolKeys = ['name', 'meta', 'description', 'input', 'output', 'execute'];
 const rightsLine = (
   meta: ToolMeta,
 ): readonly RightRef[] | typeof perOperation =>
-  meta.domain === 'api' &&
-  meta.sensitivity === 'special' &&
-  meta.requiredRights.length === 0
-    ? perOperation
-    : meta.requiredRights;
+  rightsPerOperation(meta) ? perOperation : meta.requiredRights;
 
 // Checks one tool and makes its entry, or throws the refusal.
 const checkTool = (

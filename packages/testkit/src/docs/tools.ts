@@ -10,6 +10,7 @@
 import {
   type CatalogEntry,
   createToolCatalog,
+  rightsPerOperation,
   type ShapeNode,
   toolsetNames,
   toolsetOf,
@@ -105,12 +106,16 @@ const leaves = (entry: CatalogEntry): readonly LeafRow[] => {
   return rows;
 };
 
+// The same rule as the description of the tool: the escape hatch needs the
+// rights of the operation it reads (ADR 0067).
 const rightsOf = (entry: CatalogEntry): string =>
-  entry.meta.requiredRights.length === 0
-    ? 'keine'
-    : entry.meta.requiredRights
-        .map(({ module, right }) => `${code(right)} in ${code(module)}`)
-        .join(', ');
+  rightsPerOperation(entry.meta)
+    ? `die der gelesenen Operation, wie ${code('ct_api_search_actions')} sie nennt`
+    : entry.meta.requiredRights.length === 0
+      ? 'keine'
+      : entry.meta.requiredRights
+          .map(({ module, right }) => `${code(right)} in ${code(module)}`)
+          .join(', ');
 
 // The settings without which the server does not offer a tool: its
 // toolset (ADR 0062), the folder of the audit file over stdio for special

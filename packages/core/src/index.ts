@@ -67,6 +67,7 @@ export {
   type RefusalReason,
   refusalReasons,
   RegistryRefusal,
+  rightsPerOperation,
   type ShapeNode,
   type ShapePresence,
   type ToolCatalog,

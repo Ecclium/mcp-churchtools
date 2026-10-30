@@ -189,7 +189,7 @@ Die sechs Tools des Toolsets `docs` schlagen in der Dokumentation von ChurchTool
 - `ct_docs_search_rights` sucht Rechte über Modul, Namen oder deutsche Bezeichnung, `ct_docs_get_right` liest ein Recht mit Bezeichnung, erklärenden Hilfeseiten und den Operationen, die es verlangen.
 - `ct_docs_search_academy` sucht Hilfeseiten, `ct_docs_read_academy` liest eine mit Titel und Link, eine lange in Teilen von höchstens 16'000 Bytes.
 
-So schalten Sie sie ein: Setzen Sie `ECCLIUM_TOOLSETS` auf `docs`. Jedes Ergebnis nennt seine Quelle mit Abrufdatum, beim OpenAPI-Dokument mit Lizenz CC BY 4.0, bei der Academy mit Link. Texte aus der Dokumentation stehen im Datenumschlag, weil sie aus dem Netz kommen. Mit `docs` liest der Start den Index einmal, das dauert etwa eine Sekunde und braucht einige Dutzend MiB Speicher. Ohne `docs` liest er ihn nicht. Fehlt der Index oder ist er beschädigt, bricht der Start mit einer Meldung und 70 ab. Installieren Sie Ecclium dann neu, im Quellcode mit `pnpm build`, oder nehmen Sie `docs` aus `ECCLIUM_TOOLSETS`.
+So schalten Sie sie ein: Setzen Sie `ECCLIUM_TOOLSETS` auf `docs`. Jedes Ergebnis nennt seine Quelle mit Abrufdatum, beim OpenAPI-Dokument mit Lizenz CC BY 4.0, bei der Academy mit Link. Texte aus der Dokumentation stehen im Datenumschlag, weil sie aus dem Netz kommen. Mit `docs` oder `api` liest der Start den Index einmal, das dauert etwa eine Sekunde und braucht einige Dutzend MiB Speicher. Ohne beide liest er ihn nicht. Fehlt der Index oder ist er beschädigt, bricht der Start mit einer Meldung und 70 ab. Installieren Sie Ecclium dann neu, im Quellcode mit `pnpm build`, oder nehmen Sie `docs` und `api` aus `ECCLIUM_TOOLSETS`.
 
 ## Lesender Zugriff auf die API
 

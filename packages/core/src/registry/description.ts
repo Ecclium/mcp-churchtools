@@ -10,6 +10,7 @@
 import type {
   RightRef,
   ToolDescription,
+  ToolMeta,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { readFields } from './own.js';
@@ -91,6 +92,29 @@ export function checkDescription(value: unknown): ToolDescription | undefined {
  * (ADR 0067).
  */
 export const perOperation = 'per-operation';
+
+/**
+ * Whether the rights of a tool are those of the operation it reads: a
+ * tool of the sensitivity `special` in the area `api` without rights of
+ * its own may read any operation of the escape hatch (ADR 0067). The
+ * description and the reference of the tools both follow this rule.
+ *
+ * @param meta - The checked metadata of the tool.
+ * @returns Whether its rights depend on the operation.
+ * @example
+ * ```ts
+ * rightsPerOperation({ domain: 'api', sensitivity: 'special', requiredRights: [] }); // true
+ * ```
+ */
+export function rightsPerOperation(
+  meta: Pick<ToolMeta, 'domain' | 'sensitivity' | 'requiredRights'>,
+): boolean {
+  return (
+    meta.domain === 'api' &&
+    meta.sensitivity === 'special' &&
+    meta.requiredRights.length === 0
+  );
+}
 
 /** The line of rights for a tool of the escape hatch. */
 export const perOperationRights =

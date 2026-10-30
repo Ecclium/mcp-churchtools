@@ -55,7 +55,7 @@ Alle Tools dieser Seite lesen nur.
 - Für Routinen stabil: nein
 - Lesebudget: ja
 - Angeboten: `api` in `ECCLIUM_TOOLSETS`, mit `ECCLIUM_STATE_DIR`
-- Rechte in ChurchTools: keine
+- Rechte in ChurchTools: die der gelesenen Operation, wie `ct_api_search_actions` sie nennt
 
 ### Beschreibung
 

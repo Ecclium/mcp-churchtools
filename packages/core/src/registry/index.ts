@@ -5,7 +5,11 @@
  *
  * @packageDocumentation
  */
-export { descriptionBudget, untrustedWarning } from './description.js';
+export {
+  descriptionBudget,
+  rightsPerOperation,
+  untrustedWarning,
+} from './description.js';
 export {
   type RefusalReason,
   refusalReasons,

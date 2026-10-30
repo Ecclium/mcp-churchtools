@@ -101,6 +101,11 @@ describe('renderToolsReference', () => {
     expect(page).toContain(
       '| `ct_api_execute_read` | `api` | besonders schützenswert | nie | nein | ja |',
     );
+    // The escape hatch needs the rights of the operation, as its
+    // description says (ADR 0067).
+    expect(page).toContain(
+      '- Rechte in ChurchTools: die der gelesenen Operation, wie `ct_api_search_actions` sie nennt',
+    );
   });
 
   it('shows containers that may be missing or null, not only their leaves', () => {
