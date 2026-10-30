@@ -19,6 +19,7 @@
  * @packageDocumentation
  */
 import { readFileSync } from 'node:fs';
+import { homedir, userInfo } from 'node:os';
 
 import { SpikeError } from '../spike/lib/errors.mts';
 import { catalogWords, compareCatalog, readCatalog } from './catalog.mts';
@@ -35,6 +36,7 @@ import {
   writeError,
   writeResult,
 } from '../spike/lib/output.mts';
+import { hostValues } from '../spike/lib/probe.mts';
 import {
   findOperation,
   findPathItem,
@@ -550,6 +552,17 @@ export function run(
     const guard = new Guard();
     guard.allowFixed(...words);
     if (state.version !== null) guard.allowVersion(state.version);
+    // What could identify the instance or this machine never leaves, also
+    // not in a name that only the document of the instance gives (part
+    // katalog), as in the probes.
+    for (const value of hostValues(origin)) guard.block(value);
+    guard.block(statePath(env));
+    try {
+      guard.block(userInfo().username);
+    } catch {
+      // Without a user name there is nothing to block.
+    }
+    guard.block(homedir());
 
     const report: Record<string, Json> = {};
     const deviations: Deviation[] = [];
@@ -630,8 +643,12 @@ export function run(
       report[operation.name] = entry;
     }
 
+    // Names of the generated part stand in the repository; a name only the
+    // document gives comes from the instance and stays subject to the
+    // block list.
     const catalogPart = compareCatalog(state.specification, catalog);
-    guard.allowFixed(...catalogWords, ...catalogPart.names);
+    guard.allowFixed(...catalogWords, ...catalogPart.fixed);
+    for (const name of catalogPart.fromDocument) guard.allowChecked(name);
 
     const output: Json = {
       abgleich: 'churchtools-client',

@@ -16,8 +16,10 @@
  *
  * Names of operations and parameters of the generated part stand in the
  * repository and may appear in the output. A name that only the document
- * gives appears only in the form of the names of the catalog, otherwise
- * as the fixed word `unlesbar`.
+ * gives comes from the instance: it appears only in the form the facts
+ * allow for such names, otherwise as the fixed word `unlesbar`, and the
+ * check of the contract puts it through the block list of the guard, so
+ * that a name holding the host or a local value withholds the output.
  *
  * @packageDocumentation
  */
@@ -69,9 +71,10 @@ interface CatalogDeviation {
   readonly art: (typeof catalogDeviationKinds)[number];
 }
 
-// The forms of the names the output takes from the document alone: those
-// of the operations and of the parameters of the catalog.
-const operationIdForm = /^[a-z][a-z0-9-]{0,99}$/;
+// The forms of the names the output takes from the document alone: an
+// operationId as the facts allow it and a parameter as ct_api_execute_read
+// takes it. Any other name stays out.
+const operationIdForm = /^[A-Za-z][A-Za-z0-9_.-]{0,127}$/;
 const parameterNameForm = /^[A-Za-z][A-Za-z0-9_.[\]-]{0,63}$/;
 
 const broken = (): SpikeError =>
@@ -156,10 +159,15 @@ const sameParameter = (
 
 /** What the part found. */
 export interface CatalogComparison {
-  /** The part of the result, fixed words and names of the catalog only. */
+  /** The part of the result. */
   readonly report: Json;
-  /** The names the output may show. */
-  readonly names: readonly string[];
+  /**
+   * The names of the generated part and the counts, which stand in the
+   * repository or say nothing about the instance.
+   */
+  readonly fixed: readonly string[];
+  /** The names only the document of the instance gives. */
+  readonly fromDocument: readonly string[];
 }
 
 /**
@@ -181,10 +189,12 @@ export function compareCatalog(
     // also stop on. The comparison of the client still runs.
     return {
       report: { abgleich: 'nicht moeglich' },
-      names: [],
+      fixed: [],
+      fromDocument: [],
     };
   }
   const names = new Set<string>();
+  const documentNames = new Set<string>();
   const known = new Map(catalog.map((entry) => [entry.operationId, entry]));
   const documented = new Map(
     fromDocument.map((entry) => [entry.operationId, entry]),
@@ -242,7 +252,7 @@ export function compareCatalog(
       const name = parameterNameForm.test(parameter.name)
         ? parameter.name
         : 'unlesbar';
-      names.add(name);
+      documentNames.add(name);
       deviations.push({
         operation: entry.operationId,
         feld: name,
@@ -256,7 +266,7 @@ export function compareCatalog(
     const name = operationIdForm.test(entry.operationId)
       ? entry.operationId
       : 'unlesbar';
-    names.add(name);
+    documentNames.add(name);
     deviations.push({ operation: name, art: 'neu im Dokument' });
   }
   names.add(String(catalog.length));
@@ -270,6 +280,7 @@ export function compareCatalog(
       gleich: same,
       abweichungen: deviations.map((deviation) => ({ ...deviation })),
     },
-    names: [...names],
+    fixed: [...names],
+    fromDocument: [...documentNames].filter((name) => !names.has(name)),
   };
 }

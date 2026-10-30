@@ -889,14 +889,14 @@ describe('the part katalog of the contract check', () => {
       { name: 'sort', in: 'query', schema: { type: 'string' } },
     ];
     things['deprecated'] = true;
-    // The other operation gone, two new ones, one with a name of another
-    // form than those of the catalog.
+    // The other operation gone and two new ones, one with a part in
+    // camelCase as many names of the catalog have.
     delete document.paths['/things/{thingId}'];
     document.paths['/widgets'] = {
       get: { operationId: 'get-widgets', responses: answer },
     };
-    document.paths['/gadgets'] = {
-      get: { operationId: 'getGadgets', responses: answer },
+    document.paths['/gadgets/{gadgetId}'] = {
+      get: { operationId: 'get-gadgets-gadgetId', responses: answer },
     };
     const result = checkCatalog(document, before).katalog;
     expect(result).toMatchObject({
@@ -910,8 +910,8 @@ describe('the part katalog of the contract check', () => {
       { operation: 'get-things', feld: 'limit', art: 'anderer Parameter' },
       { operation: 'get-things', feld: 'sort', art: 'neuer Parameter' },
       { operation: 'get-things-thingId', art: 'nicht im Dokument' },
+      { operation: 'get-gadgets-gadgetId', art: 'neu im Dokument' },
       { operation: 'get-widgets', art: 'neu im Dokument' },
-      { operation: 'unlesbar', art: 'neu im Dokument' },
     ]);
   });
 
@@ -933,6 +933,52 @@ describe('the part katalog of the contract check', () => {
     ]);
   });
 
+  it('names a change of deprecation and of the kind of answer', () => {
+    const marked = catalogDocument() as {
+      paths: Record<string, Record<string, Record<string, unknown>>>;
+    };
+    const markedThings = marked.paths['/things']?.['get'];
+    if (markedThings === undefined) throw new Error('form');
+    markedThings['deprecated'] = true;
+    const before = catalogOf(marked);
+    const document = catalogDocument() as {
+      paths: Record<string, Record<string, Record<string, unknown>>>;
+    };
+    const thing = document.paths['/things/{thingId}']?.['get'];
+    if (thing === undefined) throw new Error('form');
+    thing['responses'] = {
+      '200': {
+        description: 'A page.',
+        content: { 'text/html': { schema: { type: 'string' } } },
+      },
+    };
+    expect(checkCatalog(document, before).katalog.abweichungen).toEqual([
+      { operation: 'get-things', art: 'nicht mehr veraltet' },
+      { operation: 'get-things-thingId', art: 'andere Antwort' },
+    ]);
+  });
+
+  it('withholds the output when a name only the document gives holds the host', () => {
+    const document = catalogDocument() as {
+      paths: Record<string, Record<string, Record<string, unknown>>>;
+    };
+    // The test instance of these tests is example.church.tools.
+    document.paths['/hosted'] = {
+      get: { operationId: 'get-example-things', responses: answer },
+    };
+    const output = capture();
+    expect(
+      run(
+        withState(document),
+        contract,
+        output.io,
+        catalogOf(catalogDocument()),
+      ),
+    ).not.toBe(0);
+    expect(output.stdout()).toContain('"zurueckgehalten": true');
+    expect(output.stdout()).not.toContain('get-example-things');
+  });
+
   it('says so when the document has a form the facts cannot hold, and checks the client', () => {
     const document = catalogDocument() as {
       paths: Record<string, Record<string, Record<string, unknown>>>;
@@ -951,7 +997,7 @@ describe('the part katalog of the contract check', () => {
     ['no list of operations', 'export const x = 1;\n'],
     [
       'a line that is no JSON',
-      'frozenOperations([\n  {"operationId":\n  ]);\n',
+      'frozenOperations([\n  {"operationId":,\n  ]);\n',
     ],
     [
       'an operation without parameters',
