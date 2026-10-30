@@ -25,6 +25,7 @@ import { groupsSearchTool } from './groups/search.js';
 import { personsGetTool } from './persons/get.js';
 import { personsGetGroupsTool } from './persons/groups.js';
 import { personsSearchTool } from './persons/search.js';
+import { rightsDiagnosisPrompt } from './prompts/rights-diagnosis.js';
 import { rotaWeekendPrompt } from './prompts/rota-weekend.js';
 import { wikiDraftPrompt } from './prompts/wiki-draft.js';
 import { resourcesListTool } from './resources/list.js';
@@ -44,16 +45,18 @@ export interface CorePluginOptions {
    * The docs index, which the composition root loads only when the
    * toolset `docs` or `api` is on, once per process (ADR 0066, ADR 0067).
    * Without it the plugin adds neither the docs tools nor the tools of the
-   * escape hatch, whose search reads it too.
+   * escape hatch, whose search reads it too, nor the prompt of the rights
+   * diagnosis, which relies on the docs tools.
    */
   readonly docs?: DocsIndex;
 }
 
 /**
  * Builds the plugin of the free core, under the name of the package of the
- * server, which the catalog reserves for it. It adds every tool and both
- * prompts of the core, the six docs tools and the two tools of the escape
- * hatch only with a docs index. Which of
+ * server, which the catalog reserves for it. It adds every tool and every
+ * prompt of the core, the six docs tools, the two tools of the escape
+ * hatch and the prompt of the rights diagnosis only with a docs index.
+ * Which of
  * them the catalog offers decides the composition root with the toolsets
  * of the operator (`ECCLIUM_TOOLSETS`, ADR 0062): without any, a server on
  * a productive tenant offers only `ct_whoami` and no prompt, because each
@@ -107,6 +110,9 @@ export function createCorePlugin(options: CorePluginOptions = {}): Plugin {
       }
       host.addPrompt(rotaWeekendPrompt);
       host.addPrompt(wikiDraftPrompt);
+      // Its tools exist only with the docs index; without them the
+      // registry would refuse the prompt and stop the start (ADR 0065).
+      if (docs !== undefined) host.addPrompt(rightsDiagnosisPrompt);
       return undefined;
     },
   });

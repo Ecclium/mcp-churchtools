@@ -22,6 +22,7 @@ export { groupsSearchTool } from './groups/search.js';
 export { personsGetTool } from './persons/get.js';
 export { personsGetGroupsTool } from './persons/groups.js';
 export { personsSearchTool } from './persons/search.js';
+export { rightsDiagnosisPrompt } from './prompts/rights-diagnosis.js';
 export { rotaWeekendPrompt } from './prompts/rota-weekend.js';
 export { wikiDraftPrompt } from './prompts/wiki-draft.js';
 export { resourcesListTool } from './resources/list.js';

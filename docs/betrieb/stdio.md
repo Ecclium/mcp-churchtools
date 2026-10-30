@@ -286,12 +286,13 @@ Was die Suchtools tun und was nicht:
 
 Ein Prompt ist eine feste Vorlage für einen häufigen Ablauf. Sie wählen ihn in Ihrem KI-Assistenten aus, geben die Argumente ein, und sein Text erscheint im Gespräch als Ihre Nachricht. In Claude Code geben Sie ihn als Befehl ein, etwa `/mcp__ecclium__dienstplan_wochenende 2026-10-31`, wenn der Server in Ihrer Konfiguration `ecclium` heisst. Andere Clients wie Claude Desktop bieten Prompts in ihrer Oberfläche an, wenn sie Prompts unterstützen.
 
-| Prompt                  | Titel                                   | Argument                                           | Angeboten mit                     |
-| ----------------------- | --------------------------------------- | -------------------------------------------------- | --------------------------------- |
-| `dienstplan_wochenende` | Dienstplan-Überblick für ein Wochenende | `samstag`, ein Samstag als `JJJJ-MM-TT`            | `events`, mit `ECCLIUM_STATE_DIR` |
-| `wiki_seite_entwerfen`  | Wiki-Seite aus Stichworten              | `stichworte`, ein Text von höchstens 2'000 Zeichen | `wiki`                            |
+| Prompt                  | Titel                                              | Argument                                                                                                                 | Angeboten mit                     |
+| ----------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
+| `dienstplan_wochenende` | Dienstplan-Überblick für ein Wochenende            | `samstag`, ein Samstag als `JJJJ-MM-TT`                                                                                  | `events`, mit `ECCLIUM_STATE_DIR` |
+| `wiki_seite_entwerfen`  | Wiki-Seite aus Stichworten                         | `stichworte`, ein Text von höchstens 2'000 Zeichen                                                                       | `wiki`                            |
+| `rechte_diagnose`       | Rechte-Diagnose bei einem fehlgeschlagenen Zugriff | `zugriff`, ein Text von höchstens 2'000 Zeichen: das Tool, die `operationId` oder Methode und Pfad, gern mit der Meldung | `docs`                            |
 
-Der Server bietet einen Prompt nur an, wenn er alle Tools anbietet, auf die sich der Prompt stützt. Ohne Toolsets gibt es also keine Prompts. Für einen Prompt liest der Server nichts aus ChurchTools: Er prüft die Argumente, setzt sie in den Text und schreibt eine Zeile ins Log, keine ins Audit. Erst die Tools, die der KI-Assistent danach aufruft, lesen. Der Entwurf einer Seite bleibt ein Entwurf, Ecclium legt die Seite nicht an. Die Texte stehen ganz in [docs/prompts.md](../prompts.md).
+Der Server bietet einen Prompt nur an, wenn er alle Tools anbietet, auf die sich der Prompt stützt. Ohne Toolsets gibt es also keine Prompts. Für einen Prompt liest der Server nichts aus ChurchTools: Er prüft die Argumente, setzt sie in den Text und schreibt eine Zeile ins Log, keine ins Audit. Erst die Tools, die der KI-Assistent danach aufruft, lesen. Der Entwurf einer Seite bleibt ein Entwurf, Ecclium legt die Seite nicht an. Die Rechte-Diagnose liest das Konto des Servers und schlägt in der Dokumentation nach, die mit Ecclium kommt. Sie schlägt nur Rechte vor, die die Dokumentation mit Beleg verlangt, und rät von einer Sicherheitsstufe für Personen ab, wie die Anleitung zum [Dienstkonto](dienstkonto.md). Die Rechte vergeben Sie selbst in ChurchTools. Die Texte stehen ganz in [docs/prompts.md](../prompts.md).
 
 ## Smoke-Test
 
@@ -321,8 +322,8 @@ Unter Windows läuft der Smoke-Test nicht, weil es dort über stdio keine Audit-
 
 ## Grenzen
 
-- Nur `ct_whoami`, mit dem Toolset `persons` die sechs Tools für Personen und Gruppen und die globale Suche, mit `events` die fünf Tools für Events, Abläufe und Dienste, mit `calendars` die fünf Tools für Kalender, Termine, Ressourcen und Buchungen, mit `wiki` die vier Tools des Wikis und mit `songs` die zwei Tools für Songs. Tools, die schreiben, kommen mit späteren Versionen.
-- Zwei Prompts, je mit dem Toolset ihrer Tools. Ein Prompt beschreibt nur Schritte, was der KI-Assistent daraus macht, entscheidet das Modell.
+- Nur `ct_whoami`, mit dem Toolset `persons` die sechs Tools für Personen und Gruppen und die globale Suche, mit `events` die fünf Tools für Events, Abläufe und Dienste, mit `calendars` die fünf Tools für Kalender, Termine, Ressourcen und Buchungen, mit `wiki` die vier Tools des Wikis, mit `songs` die zwei Tools für Songs, mit `docs` die sechs Tools der Dokumentation und mit `api` die zwei Tools des lesenden Zugriffs auf die API. Tools, die schreiben, kommen mit späteren Versionen.
+- Drei Prompts, je mit dem Toolset ihrer Tools. Ein Prompt beschreibt nur Schritte, was der KI-Assistent daraus macht, entscheidet das Modell.
 - Der Start fragt ChurchTools nicht an. Ein ungültiges oder entzogenes Token zeigt sich erst beim ersten Aufruf eines Tools.
 - `ct_whoami` verlangt kein Recht in ChurchTools. Geprüft ist das bisher nur mit einem Konto, das zwei Rechte im Wiki hatte, nicht mit einem Konto ganz ohne Rechte.
 - Rechte, die das Konto über eine Gruppe erhält, können fehlen. Ein entzogenes Recht kann noch eine Weile erscheinen, auf einer Testinstanz mit ChurchTools 3.137 einmal mindestens etwa zwanzig Minuten lang (siehe [Befunde zur API von ChurchTools](../research/churchtools-api.md)).
