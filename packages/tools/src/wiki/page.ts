@@ -20,7 +20,7 @@ import {
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { z } from 'zod';
 
-import { maxPartBytes, splitIntoParts } from './parts.js';
+import { maxPartBytes, splitIntoParts } from '../parts.js';
 import {
   categoryRefused,
   refusedFor,

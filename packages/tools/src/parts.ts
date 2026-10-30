@@ -1,5 +1,6 @@
 /**
- * Cuts the text of a wiki page into parts that each fit into one result.
+ * Cuts a long text, the text of a wiki page, of a help page or the
+ * definition of an operation, into parts that each fit into one result.
  * A result is never shortened (ADR 0024), so a long text comes in parts
  * the model asks for one by one.
  *

@@ -42,7 +42,7 @@ import {
 import { arrangementsPerSong } from './songs/get.js';
 import { arrangementsPerFoundSong } from './songs/search.js';
 import { categoriesPerCall } from './wiki/categories.js';
-import { maxPartBytes } from './wiki/parts.js';
+import { maxPartBytes } from './parts.js';
 
 // The entry hands out the plugin of the free core. The registry of the core
 // takes it as the core and keeps each tool with its metadata, a shape whose
