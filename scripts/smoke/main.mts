@@ -5,10 +5,12 @@
  * protocol, each time with exactly these variables: the address and the
  * token file from the environment, `ECCLIUM_READ_ONLY=true` whatever the
  * shell says, a folder of state of its own in the temporary folder, and
- * with its switch the toolsets
- * `ECCLIUM_TOOLSETS=persons,events,calendars,wiki,songs`. Without the
- * switch it calls only `ct_whoami`, so on a productive instance nothing but
- * the account of the server is read. With the switch it first reads
+ * the toolsets: `docs` without its switch,
+ * `persons,events,calendars,wiki,songs,docs` with it and `api` as well
+ * with the second switch. Without the switch it reads from ChurchTools
+ * only through `ct_whoami`, so on a productive instance nothing but the
+ * account of the server is read; the docs tools read only the docs index
+ * of the build. With the switch it first reads
  * the wiki categories itself and goes on only if the account sees exactly
  * one identification category of the test instance, which it may neither
  * edit nor delete (ADR 0049).
@@ -98,6 +100,7 @@ export interface SmokeDependencies {
 const guardHints: ReadonlySet<HintKey> = new Set<HintKey>([
   'smokeSchalterFehlt',
   'smokeSchalterFalsch',
+  'smokeApiSchalterFalsch',
   'smokeWaechterAntwortUnerwartet',
   'smokeKennkategorieFehlt',
   'smokeKennkategorieMehrfach',
@@ -144,6 +147,7 @@ const topWords = [
   'smoketest',
   'ecclium',
   'suchtools',
+  'api',
   'churchtools',
   'kennkategorie',
   'gefunden',
@@ -216,6 +220,14 @@ async function passGuard(
   return info.status === 200 ? versionOf(info.body) : null;
 }
 
+// The toolsets of a run. The docs tools read only the docs index of the
+// build, so they come in every run (ADR 0066); the others read ChurchTools
+// and come only with the switch, the escape hatch only with the second.
+const toolsetsOf = (search: { readonly api: boolean } | undefined): string =>
+  search === undefined
+    ? 'docs'
+    : `persons,events,calendars,wiki,songs,docs${search.api ? ',api' : ''}`;
+
 const makeStateDir = (base: string): string => {
   try {
     // The resolved path: under macOS the temporary folder lies behind a
@@ -257,6 +269,7 @@ export async function runSmoke(deps: SmokeDependencies): Promise<number> {
     const output: Record<string, Json> = {
       smoketest: 'ecclium',
       suchtools: settings.search === undefined ? 'nein' : 'ja',
+      api: settings.search?.api === true ? 'ja' : 'nein',
     };
     if (settings.search !== undefined) {
       const version = await passGuard(settings, guard, deps.fetch);
@@ -269,6 +282,7 @@ export async function runSmoke(deps: SmokeDependencies): Promise<number> {
       settings.search === undefined
         ? undefined
         : {
+            api: settings.search.api,
             query: settings.search.query,
             songQuery: settings.search.songQuery,
             missTerm:
@@ -291,9 +305,9 @@ export async function runSmoke(deps: SmokeDependencies): Promise<number> {
           // register a writing tool (ADR 0055).
           ECCLIUM_READ_ONLY: 'true',
           ECCLIUM_STATE_DIR: stateDir,
-          ...(search === undefined
-            ? {}
-            : { ECCLIUM_TOOLSETS: 'persons,events,calendars,wiki,songs' }),
+          // Named one by one rather than with all, so that a later toolset
+          // in all does not join the run unseen.
+          ECCLIUM_TOOLSETS: toolsetsOf(search),
           ...deps.server.env,
         };
         const session = startServer(

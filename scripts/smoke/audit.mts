@@ -14,7 +14,8 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { holdsAny, type Call, type JsonLine } from './course.mts';
+import type { Call } from './answers.mts';
+import { holdsAny, type JsonLine } from './course.mts';
 
 /** The words the result of this check uses, for the allow list. */
 export const auditWords = ['audit', 'wie erwartet', 'abweichend'] as const;

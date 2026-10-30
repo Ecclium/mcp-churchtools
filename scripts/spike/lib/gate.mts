@@ -154,6 +154,7 @@ export interface SwitchHints {
     | 'ECCLIUM_SPIKE_ALLOW_WRITE'
     | 'ECCLIUM_SPIKE_ALLOW_PERSONS'
     | 'ECCLIUM_SMOKE_ALLOW_SEARCH'
+    | 'ECCLIUM_SMOKE_ALLOW_API'
     | 'ECCLIUM_SEED_ALLOW_WRITE';
   readonly missing: HintKey;
   readonly wrong: HintKey;

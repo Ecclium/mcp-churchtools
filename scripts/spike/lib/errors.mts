@@ -231,6 +231,10 @@ export const hints = {
     'Abbruch: ECCLIUM_SMOKE_ALLOW_SEARCH fehlt. Die Suchtools wurden nicht aufgerufen.',
   smokeSchalterFalsch:
     'Abbruch: ECCLIUM_SMOKE_ALLOW_SEARCH passt nicht zum Host. Tippen Sie den ersten Teil des Hosts von Hand, nicht aus der Variablen der Adresse. Die Suchtools wurden nicht aufgerufen.',
+  smokeApiOhneSuchschalter:
+    'Abbruch: ECCLIUM_SMOKE_ALLOW_API ist gesetzt, ECCLIUM_SMOKE_ALLOW_SEARCH fehlt. Die Escape Hatch ruft der Smoke-Test nur zusammen mit den Suchtools hinter dem Wächter der Testinstanz auf.',
+  smokeApiSchalterFalsch:
+    'Abbruch: ECCLIUM_SMOKE_ALLOW_API passt nicht zum Host. Tippen Sie den ersten Teil des Hosts von Hand, nicht aus der Variablen der Adresse. Die Escape Hatch wurde nicht aufgerufen.',
   smokeWaechterAntwortUnerwartet:
     'Abbruch: Eine Antwort, die der Wächter des Smoke-Tests prüft, hat nicht die dokumentierte Form. Die Instanz gilt deshalb als produktiv. Die Suchtools wurden nicht aufgerufen.',
   smokeKennkategorieFehlt:

@@ -2,10 +2,10 @@
  * What the smoke test reads from the environment.
  *
  * The address and the token file have the names the server reads, so the
- * values of a client configuration fit unchanged. The switch for the
- * search tools and the search terms carry the prefix `ECCLIUM_SMOKE_`. The
- * smoke test never hands them to the server, which would refuse to start
- * with a variable it does not know (ADR 0055).
+ * values of a client configuration fit unchanged. The switches for the
+ * search tools and the escape hatch and the search terms carry the prefix
+ * `ECCLIUM_SMOKE_`. The smoke test never hands them to the server, which
+ * would refuse to start with a variable it does not know (ADR 0055).
  *
  * The smoke test reads the token itself, but sends it only with the switch,
  * for the reads of its guard (ADR 0049). Without the switch it reads the
@@ -29,12 +29,18 @@ export const smokeVariables = [
   'ECCLIUM_CHURCHTOOLS_URL',
   'ECCLIUM_CHURCHTOOLS_TOKEN_FILE',
   'ECCLIUM_SMOKE_ALLOW_SEARCH',
+  'ECCLIUM_SMOKE_ALLOW_API',
   'ECCLIUM_SMOKE_QUERY',
   'ECCLIUM_SMOKE_SONG_QUERY',
 ] as const;
 
 /** What the smoke test needs for the search tools. */
 export interface SearchSettings {
+  /**
+   * Whether the second switch lets the smoke test call the escape hatch,
+   * which it takes only together with the switch for the search tools.
+   */
+  readonly api: boolean;
   /** The term both search tools get. Never printed. */
   readonly query: string;
   /**
@@ -161,6 +167,7 @@ export function readSmokeSettings(env: Environment): SmokeSettings {
   }
 
   const switchValue = env['ECCLIUM_SMOKE_ALLOW_SEARCH'] ?? '';
+  const apiValue = env['ECCLIUM_SMOKE_ALLOW_API'] ?? '';
   const query = env['ECCLIUM_SMOKE_QUERY'] ?? '';
   const songQuery = env['ECCLIUM_SMOKE_SONG_QUERY'] ?? '';
   if (switchValue === '') {
@@ -169,6 +176,12 @@ export function readSmokeSettings(env: Environment): SmokeSettings {
     }
     if (songQuery !== '') {
       throw new SpikeError('KONFIGURATION', 'smokeLiedbegriffOhneSchalter');
+    }
+    // The escape hatch passes on whole answers, so it runs only behind the
+    // guard of the test instance, which the switch for the search tools
+    // starts (ADR 0049, ADR 0067).
+    if (apiValue !== '') {
+      throw new SpikeError('KONFIGURATION', 'smokeApiOhneSuchschalter');
     }
     return { origin, tokenFile, token, search: undefined };
   }
@@ -188,10 +201,23 @@ export function readSmokeSettings(env: Environment): SmokeSettings {
   if (songQuery !== '' && !isSearchTerm(songQuery)) {
     throw new SpikeError('KONFIGURATION', 'smokeLiedbegriffUngueltig');
   }
+  // Typed by hand like the first switch, so that a copied address does not
+  // turn on the escape hatch by mistake.
+  if (apiValue !== '') {
+    checkSwitch(env, origin, {
+      variable: 'ECCLIUM_SMOKE_ALLOW_API',
+      missing: 'smokeApiSchalterFalsch',
+      wrong: 'smokeApiSchalterFalsch',
+    });
+  }
   return {
     origin,
     tokenFile,
     token,
-    search: { query, songQuery: songQuery === '' ? undefined : songQuery },
+    search: {
+      api: apiValue !== '',
+      query,
+      songQuery: songQuery === '' ? undefined : songQuery,
+    },
   };
 }
