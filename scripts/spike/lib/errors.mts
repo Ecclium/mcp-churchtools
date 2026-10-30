@@ -264,6 +264,8 @@ export const hints = {
     'Abbruch: Die Instanz meldet eine andere Version von ChurchTools als die State-Datei. Führen Sie 00-inventory erneut aus. Es wurde keine Datei geschrieben.',
   zuordnungUngueltig:
     'Abbruch: Die Zuordnung in scripts/docs/rights-mapping.json hat eine Form, die pnpm docs:refresh nicht übernehmen kann: eine andere Reihenfolge, einen Schlüssel zweimal, ein Recht zweimal in einem Eintrag, ein Recht, eine Operation oder eine Hilfeseite, die die Fakten nicht kennen, oder eine Bezeichnung, die ihre Seite nicht vor dem Namen des Rechts schreibt. Die Stelle steht darüber. Es wurde keine Datei geschrieben.',
+  katalogUngueltig:
+    'Abbruch: Eine Operation in packages/docs-index/data/operations.json hat eine Form, aus der pnpm docs:refresh den Katalog der Escape Hatch nicht schreiben kann. Die Stelle steht darüber. Der Katalog wurde nicht geschrieben.',
   academyNichtLesbar:
     'Abbruch: robots.txt der Academy ist nicht lesbar, verbietet einen Pfad des Refresh oder verlangt eine zu lange Pause. Es wurde keine Datei geschrieben.',
 } as const;

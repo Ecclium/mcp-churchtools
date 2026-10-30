@@ -300,6 +300,25 @@ writeFileSync(
 );
 
 describe('pnpm docs:refresh', () => {
+  it('writes the generated part of the operation catalog after the facts, when given its place', async () => {
+    const result = await run((dataDir) =>
+      refreshDefinition(
+        dataDir,
+        clock,
+        mappingFile,
+        new URL('generated.ts', dataDir),
+      ),
+    );
+    expect(result.code, result.output.stderr()).toBe(exitCodes.ok);
+    expect(Object.keys(result.texts).sort()).toEqual(
+      [...files, 'generated.ts'].sort(),
+    );
+    const catalog = result.texts['generated.ts'] ?? '';
+    expect(catalog).toContain('"operationId":"getGlobalPermissions"');
+    expect(catalog).toContain('"path":"/api/');
+    expect(catalog).toContain('frozenOperations([');
+  });
+
   it('writes five files that pass the checks of the docs index', async () => {
     const result = await run((dataDir) =>
       refreshDefinition(dataDir, clock, mappingFile),
