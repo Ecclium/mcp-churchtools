@@ -1142,7 +1142,10 @@ const getPrompt = (id: number, params: Record<string, unknown>): void => {
         ? `Diagnose der Rechte nach einem fehlgeschlagenen Zugriff auf ChurchTools. Fehlgeschlagen ist:\n\n${String(args['zugriff'])}\n\nVorgehen:`
         : `Entwurf einer Seite für das Wiki in ChurchTools aus diesen Stichworten:\n\n${String(args['stichworte'])}\n\nVorgehen:`;
   if (scenario === 'prompt-leak-log') {
-    event('prompt_served', { prompt: name, value: String(args['stichworte']) });
+    event('prompt_served', {
+      prompt: name,
+      value: args[argumentOf[name] ?? ''] ?? '',
+    });
   } else if (scenario !== 'prompt-no-log') {
     event('prompt_served', { prompt: name });
   }

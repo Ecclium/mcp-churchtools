@@ -687,6 +687,8 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     ['docs-bare-text', 'doku_hilfeseite'],
     ['docs-request', 'anfragen'],
     ['prompt-empty-access', 'prompts'],
+    // The value of the rights diagnosis, the only prompt without the switch.
+    ['prompt-leak-log', 'protokoll'],
   ] as const)(
     'fails without the switch when the server breaks it: %s',
     async (scenario, failure) => {
