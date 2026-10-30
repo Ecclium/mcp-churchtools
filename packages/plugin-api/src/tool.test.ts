@@ -2,6 +2,8 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 import { z } from 'zod';
 
 import {
+  type ApiOperation,
+  type ApiOperationResult,
   classify,
   defineTool,
   type ObjectSchema,
@@ -10,6 +12,7 @@ import {
   type PluginHost,
   type ReadApi,
   type RightValue,
+  type Sensitivity,
   type ToolCall,
   type ToolDefinition,
   type ToolDescription,
@@ -256,7 +259,7 @@ describe('ToolDefinition and defineTool', () => {
 });
 
 describe('ReadApi', () => {
-  it('holds the account, its rights, persons and groups, the wiki, events, services, calendars, resources, songs and the searches only', () => {
+  it('holds the account, its rights, persons and groups, the wiki, events, services, calendars, resources, songs, the searches and the escape hatch only', () => {
     expectTypeOf<keyof ReadApi>().toEqualTypeOf<
       | 'whoami'
       | 'permissions'
@@ -283,7 +286,16 @@ describe('ReadApi', () => {
       | 'song'
       | 'searchWiki'
       | 'search'
+      | 'operations'
+      | 'operation'
     >();
+  });
+
+  it('gives the sensitivity of an operation of the escape hatch in the values of Sensitivity', () => {
+    expectTypeOf<ApiOperation['sensitivity']>().toEqualTypeOf<Sensitivity>();
+    expectTypeOf<
+      ApiOperationResult['sensitivity']
+    >().toEqualTypeOf<Sensitivity>();
   });
 
   it('holds only set rights, or unknown', () => {

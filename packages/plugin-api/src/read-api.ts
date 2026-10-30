@@ -1077,6 +1077,108 @@ export interface GlobalSearchHits {
 }
 
 /**
+ * The kind of value a parameter of an operation of the escape hatch takes,
+ * as the core checks it (ADR 0067): a whole number, a number, `true` or
+ * `false`, a text, a day as `YYYY-MM-DD`, a moment as
+ * `YYYY-MM-DDTHH:MM:SSZ`, either of the two, one of fixed values, or the
+ * GUID of a page of the wiki.
+ */
+export type ApiParameterKind =
+  | 'integer'
+  | 'number'
+  | 'boolean'
+  | 'string'
+  | 'date'
+  | 'date-time'
+  | 'date-or-date-time'
+  | 'enum'
+  | 'guid';
+
+/** A parameter of an operation of the escape hatch. */
+export interface ApiParameter {
+  /** The name, such as `groupId` or `ids[]`. */
+  readonly name: string;
+  /** The kind of each value. */
+  readonly kind: ApiParameterKind;
+  /** Whether the operation needs it. Every path parameter does. */
+  readonly required: boolean;
+  /**
+   * Whether it takes a list, of 1 to {@link maxApiListValues} values. A
+   * path parameter never does.
+   */
+  readonly list: boolean;
+  /** The allowed values of the kind `enum`. */
+  readonly values?: readonly string[];
+}
+
+/**
+ * The most values of a parameter that takes a list. The core sends each
+ * value under the name of the parameter.
+ */
+export const maxApiListValues = 100;
+
+/** The longest text the core sends as the value of a parameter. */
+export const maxApiTextLength = 200;
+
+/**
+ * An operation the escape hatch reads, as the core lists it (ADR 0067).
+ * The list holds no value of a tenant: it comes from the documentation of
+ * ChurchTools and the classification of the core.
+ */
+export interface ApiOperation {
+  /** The ID of the operation in the OpenAPI document. */
+  readonly operationId: string;
+  /** The path with `/api` in front and its parameters in braces. */
+  readonly path: string;
+  /**
+   * How sensitive its answer is, by the classification of the core, with
+   * the values of `Sensitivity`. Written out, because the module of the
+   * metadata of tools imports this one.
+   */
+  readonly sensitivity: 'none' | 'personal' | 'special';
+  /** The parameters of the path, in the order of the path. */
+  readonly pathParameters: readonly ApiParameter[];
+  /**
+   * The parameters of the query the core sends, in the order of the
+   * document. A parameter it never sends is not listed.
+   */
+  readonly queryParameters: readonly ApiParameter[];
+}
+
+/** A value of a parameter of the path. */
+export type ApiPathValue = number | string;
+
+/** A value of a parameter of the query, or a list of them. */
+export type ApiQueryValue =
+  number | string | boolean | readonly (number | string | boolean)[];
+
+/** A read of one operation of the escape hatch. */
+export interface ApiOperationRequest {
+  /** The ID of the operation, as {@link ReadApi.operations} lists it. */
+  readonly operationId: string;
+  /** The values of the parameters of the path, by name. */
+  readonly path?: Readonly<Record<string, ApiPathValue>>;
+  /** The values of the parameters of the query, by name. */
+  readonly query?: Readonly<Record<string, ApiQueryValue>>;
+}
+
+/** The answer of a read of the escape hatch, already masked. */
+export interface ApiOperationResult {
+  /** The ID of the operation that was read. */
+  readonly operationId: string;
+  /** How sensitive its answer is, as {@link ApiOperation.sensitivity}. */
+  readonly sensitivity: 'none' | 'personal' | 'special';
+  /**
+   * The whole answer of ChurchTools as JSON text without indentation,
+   * masked by the core: secrets in full, e-mail addresses, phone numbers
+   * and dates of birth by the name of their field, e-mail addresses and
+   * phone numbers also by their form. Every other field stays as it was.
+   * It is never cut.
+   */
+  readonly json: string;
+}
+
+/**
  * Reads from ChurchTools for one call of a tool, with the account of the
  * server and through the one outbound path of the core. A tool never sees a
  * token and cannot choose what host it reads from. The core revokes it when
@@ -1407,4 +1509,32 @@ export interface ReadApi {
    *   or a hit of another type; every error of the request.
    */
   search(type: SearchDomainType, query: string): Promise<GlobalSearchHits>;
+  /**
+   * Lists the operations of the API that the escape hatch reads: only
+   * `GET`, each classified by hand in the core (ADR 0067). It asks
+   * ChurchTools nothing and names no value of a tenant, so every tool may
+   * call it.
+   *
+   * @returns The operations, sorted by `operationId`, frozen.
+   * @throws {EccliumError} `internal` after the call ended.
+   */
+  operations(): Promise<readonly ApiOperation[]>;
+  /**
+   * Reads one operation of {@link ReadApi.operations} by its
+   * `operationId`, the escape hatch (ADR 0067). The core builds the path
+   * only from the template and checks every value; the answer comes whole
+   * and masked as JSON text, never cut. Only a tool of the sensitivity
+   * `special` in the area `api` may call it, so that every answer waits
+   * for its line in the audit file and counts against the read budget.
+   *
+   * @param request - The operation and the values of its parameters.
+   * @returns The masked answer.
+   * @throws {EccliumError} `policy_denied` for any other tool and for an
+   *   operation the core does not read, before any request; `validation`
+   *   for an unknown operation or a value that does not fit, before any
+   *   request; `permission` without the right; `not_found` for a missing
+   *   object; `upstream` for an answer that is too large for one result,
+   *   with a hint on `limit` and filters; every error of the request.
+   */
+  operation(request: ApiOperationRequest): Promise<ApiOperationResult>;
 }

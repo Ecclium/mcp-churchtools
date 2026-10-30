@@ -8,6 +8,9 @@
  */
 import {
   type Agenda,
+  type ApiOperation,
+  type ApiOperationRequest,
+  type ApiOperationResult,
   type AppointmentDetails,
   type AppointmentList,
   type AssignmentList,
@@ -34,13 +37,19 @@ import {
   type Song,
   type SongList,
   type TenantContext,
+  type ToolDomain,
   type WikiCategory,
   type WikiPage,
   type WikiPageList,
   type WikiSearchHits,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
-import type { ChurchToolsClient } from '../churchtools/index.js';
+import {
+  type ChurchToolsClient,
+  listReadableOperations,
+  tooLargeAnswer,
+} from '../churchtools/index.js';
+import { renderForeignJson } from '../redaction/index.js';
 
 /** Read access of one call and the way to end it. */
 export interface ReadAccess {
@@ -61,10 +70,13 @@ export interface ReadAccess {
  * @param asSpecial - Whether the pipeline treats the calling tool like a
  *   special one (ADR 0064). Only such a tool may read the assignments to
  *   services, which name persons; any other gets `policy_denied`.
+ * @param domain - The area of the calling tool. Only a tool of the
+ *   sensitivity `special` in the area `api` may read an operation of the
+ *   escape hatch; any other gets `policy_denied` (ADR 0067).
  * @returns The access, frozen and without prototype.
  * @example
  * ```ts
- * const access = createReadAccess(client, ctx, entry.meta.sensitivity, entry.asSpecial);
+ * const access = createReadAccess(client, ctx, entry.meta.sensitivity, entry.asSpecial, entry.meta.domain);
  * try { await tool.execute({ ctx, input, read: access.read }); }
  * finally { access.revoke(); }
  * ```
@@ -74,6 +86,7 @@ export function createReadAccess(
   ctx: TenantContext,
   sensitivity: Sensitivity,
   asSpecial = false,
+  domain?: ToolDomain,
 ): ReadAccess {
   let revoked = false;
   const guard = <T>(run: () => Promise<T>): Promise<T> =>
@@ -96,6 +109,43 @@ export function createReadAccess(
     if (revoked || sensitivity === 'special' || asSpecial) return guard(run);
     ctx.log.warn('read_names_refused', { code: 'policy_denied' });
     return Promise.reject(new EccliumError('policy_denied'));
+  };
+  // The escape hatch passes on whole answers, not fixed fields. Only a
+  // tool of the sensitivity special in the area api may read it: only
+  // such a tool is offered just when the operator names the toolset api,
+  // and only its result waits for its line in the audit file and counts
+  // against the read budget (ADR 0067). The check runs before the catalog
+  // and before any request.
+  const escapeHatch = (
+    request: ApiOperationRequest,
+  ): Promise<ApiOperationResult> => {
+    if (!revoked && (sensitivity !== 'special' || domain !== 'api')) {
+      ctx.log.warn('read_operation_refused', { code: 'policy_denied' });
+      return Promise.reject(new EccliumError('policy_denied'));
+    }
+    return guard(async () => {
+      // Each part is read once, as the client does as well.
+      const { operationId, path, query } = request;
+      const answer = await client.operation(ctx, { operationId, path, query });
+      // The answer has no schema of its own; it leaves only through the
+      // mask, which follows the level of redaction of the call.
+      const written = renderForeignJson(answer.root, ctx.redaction);
+      if (!written.ok) {
+        ctx.log.warn(
+          written.reason === 'too_large'
+            ? 'read_operation_too_large'
+            : 'read_operation_collision',
+          { code: 'upstream' },
+        );
+        throw new EccliumError('upstream', tooLargeAnswer);
+      }
+      return Object.freeze({
+        __proto__: null,
+        operationId: answer.operationId,
+        sensitivity: answer.sensitivity,
+        json: written.text,
+      });
+    });
   };
   const read: ReadApi = Object.freeze({
     __proto__: null,
@@ -173,6 +223,11 @@ export function createReadAccess(
       query: string,
     ): Promise<GlobalSearchHits> =>
       special(() => client.search(ctx, type, query)),
+    // The list comes from the catalog of the core and names no value of a
+    // tenant, so every tool may search it (ADR 0067).
+    operations: (): Promise<readonly ApiOperation[]> =>
+      guard(() => Promise.resolve(listReadableOperations())),
+    operation: escapeHatch,
   });
   return Object.freeze({
     __proto__: null,
