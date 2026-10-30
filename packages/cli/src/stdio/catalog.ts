@@ -31,19 +31,22 @@ export interface StdioCatalogOptions {
  * Builds the catalog of the server over stdio from the plugin of the core.
  * With `readOnly`, write tools stay out of it. Besides `ct_whoami`, it
  * holds only the tools of the toolsets the operator turned on (ADR 0062);
- * with `persons`, the start needs the folder of the audit file (ADR 0028).
+ * with `persons`, `events` or `api`, the start needs the folder of the
+ * audit file (ADR 0028).
  *
- * The docs index is read only with the toolset `docs`, once per process
- * (ADR 0066). Reading and checking it takes about a second and tens of
- * MiB, and a client starts the server often, also when no tool is called.
+ * The docs index is read only with the toolset `docs` or `api`, once per
+ * process (ADR 0066, ADR 0067): the search of the escape hatch ranks its
+ * operations and shows their rights with it. Reading and checking it takes
+ * about a second and tens of MiB, and a client starts the server often,
+ * also when no tool is called.
  *
  * @param config - The checked configuration; `readOnly` and `toolsets`
  *   count.
  * @param options - Replacements for tests.
  * @returns The frozen catalog.
- * @throws {DocsIndexError} When `docs` is on and the docs index is missing
- *   or breaks a rule. The start then stops rather than leave the docs
- *   tools out without a word.
+ * @throws {DocsIndexError} When `docs` or `api` is on and the docs index
+ *   is missing or breaks a rule. The start then stops rather than leave
+ *   their tools out without a word.
  * @throws {RegistryRefusal} When the registry refuses the plugin or one of
  *   its tools. The start then stops.
  * @example
@@ -57,7 +60,9 @@ export function createStdioCatalog(
   options: StdioCatalogOptions = {},
 ): ToolCatalog {
   const { readDocs = () => readDocsIndex() } = options;
-  const docs = config.toolsets.includes('docs') ? readDocs() : undefined;
+  const docs = config.toolsets.some((name) => name === 'docs' || name === 'api')
+    ? readDocs()
+    : undefined;
   return createToolCatalog({
     core: createCorePlugin(docs === undefined ? {} : { docs }),
     plugins: [],
