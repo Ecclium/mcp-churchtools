@@ -597,4 +597,20 @@ describe('checkInstanceHost', () => {
       }).toThrow(expect.objectContaining({ where: 'academy.json' }) as unknown);
     }
   });
+
+  it('names a file with a hyphen in its name as the place', () => {
+    expect(() => {
+      checkInstanceHost(
+        {
+          'operation-rights.json': file({
+            format: 'x',
+            entries: [{ open: hosted('demo-tenant') }],
+          }),
+        },
+        origin,
+      );
+    }).toThrow(
+      expect.objectContaining({ where: 'operation-rights.json' }) as unknown,
+    );
+  });
 });
