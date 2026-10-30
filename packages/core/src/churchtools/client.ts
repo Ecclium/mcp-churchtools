@@ -4,10 +4,11 @@
  * groups of a person, one group and its members, the events of a span of
  * days, one event, its agenda and its assignments, and the services
  * (ADR 0064), calendars, appointments, resources and bookings, songs, the
- * search in the wiki and the global search, and the wiki, each with exactly
+ * search in the wiki and the global search, the wiki, and since ADR 0067
+ * one GET operation of the catalog of the escape hatch, each with exactly
  * one request through the transport of its origin, the services, the
  * resources and the assignments with two, a throttle per client, fixed
- * limits and own schemas.
+ * limits and own schemas, which only the escape hatch lacks.
  *
  * @packageDocumentation
  */
@@ -86,6 +87,11 @@ import {
   dayAfter,
   urlOfPath,
 } from './query.js';
+import {
+  type OperationAnswer,
+  type OperationRequest,
+  readOperation,
+} from './operation.js';
 import { fetchAnswer, type RequestPath } from './request.js';
 import { toPermissions } from './rights.js';
 import {
@@ -420,6 +426,21 @@ export interface ChurchToolsClient {
     type: SearchDomainType,
     query: string,
   ): Promise<GlobalSearchHits>;
+  /**
+   * Reads one GET operation of the catalog of the escape hatch by its
+   * `operationId` (ADR 0067), with the URL only from its template and the
+   * checked values. The answer has no schema of its own; the caller masks
+   * it before anything passes it on.
+   *
+   * @throws {EccliumError} `validation` for an unknown operation or a
+   *   value that does not fit, `policy_denied` for an operation the core
+   *   does not read, both before any request; `upstream` with a hint on
+   *   `limit` for an answer that is too large; every error of the request.
+   */
+  operation(
+    ctx: TenantContext,
+    request: OperationRequest,
+  ): Promise<OperationAnswer>;
 }
 
 const whoamiLimits = Object.freeze({
@@ -1916,5 +1937,9 @@ export function createChurchToolsClient(
     song,
     searchWiki,
     search,
+    operation: (
+      ctx: TenantContext,
+      request: OperationRequest,
+    ): Promise<OperationAnswer> => readOperation(ctx, path, request),
   });
 }
