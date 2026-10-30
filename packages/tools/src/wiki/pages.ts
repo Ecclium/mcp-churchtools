@@ -139,7 +139,7 @@ export const wikiPagesListTool = defineTool({
     avoidWhen:
       'You want the text of a page, or look for a word across the wiki: this tool lists one category and never searches.',
     limits:
-      'At most 25 pages per call: more is true when ChurchTools reports a further page of the list, then ask again with the next page number. A page can be empty while more is still true. An empty list can also mean that the service account lacks the right to see the category, because ChurchTools then returns no page instead of an error.',
+      'At most 25 pages per call: more is true when another page follows. A page can be empty while more is still true. An empty result can also mean a missing right.',
   },
   input,
   output,

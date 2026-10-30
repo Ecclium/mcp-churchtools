@@ -122,7 +122,7 @@ export const groupsSearchTool = defineTool({
     avoidWhen:
       'You want members, leaders, meeting times or other details of a group, which this tool never returns. An empty term is refused, so the tool cannot list all groups.',
     limits:
-      'At most 50 matches and no further pages: more is true when more groups matched, then search with a more specific term. It finds groups of the group types the service account may see, and groups with the visibility internal even without that right. An empty result can also mean that the account lacks the right, because ChurchTools then returns no group instead of an error.',
+      'At most 50 matches and no further pages: more is true when more groups matched, then search with a more specific term. It finds groups of the group types the service account may see, and groups with the visibility internal even without that right. An empty result can also mean a missing right.',
   },
   input,
   output,

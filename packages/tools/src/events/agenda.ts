@@ -163,7 +163,7 @@ export const eventsGetAgendaTool = defineTool({
     avoidWhen:
       'You need who is responsible for an item, which this tool never returns, or who serves.',
     limits:
-      'At most 10 items per call: more is true when further items follow, then ask again with the next page number. Start is in UTC, duration in seconds. A note longer than 1000 characters ends the call with an error.',
+      'At most 10 items per call: more is true when another page follows. Start is in UTC, duration in seconds. A note longer than 1000 characters ends the call with an error.',
   },
   input,
   output,

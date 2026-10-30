@@ -138,7 +138,7 @@ export const songsSearchTool = defineTool({
     avoidWhen:
       'You want lyrics, chords, sheet music, files or links of a song, which this tool never returns. An empty term is refused.',
     limits:
-      'At most 10 songs per call: more is true when ChurchTools reports a further page, then ask again with the next page number. Up to 3 arrangements per song, the default first; moreArrangements is true when a song has more. Songs of categories the service account may not see are left out without a trace.',
+      'At most 10 songs per call: more is true when another page follows. Up to 3 arrangements per song, the default first; moreArrangements is true when a song has more. Songs of categories the service account may not see are left out without a trace.',
   },
   input,
   output,

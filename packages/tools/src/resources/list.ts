@@ -132,7 +132,7 @@ export const resourcesListTool = defineTool({
     avoidWhen:
       'You need the bookings themselves, which another tool lists by resource.',
     limits:
-      'At most 25 resources per call: more is true when further resources follow, then ask again with the next page number. Resources the service account may not see are left out without a trace.',
+      'At most 25 resources per call: more is true when another page follows. Resources the service account may not see are left out without a trace.',
   },
   input,
   output,

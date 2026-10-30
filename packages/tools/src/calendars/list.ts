@@ -130,7 +130,7 @@ export const calendarsListTool = defineTool({
     avoidWhen:
       'You need the appointments themselves, which another tool lists by calendar.',
     limits:
-      'At most 25 calendars per call: more is true when further calendars follow, then ask again with the next page number. Calendars the service account may not see are left out without a trace.',
+      'At most 25 calendars per call: more is true when another page follows. Calendars the service account may not see are left out without a trace.',
   },
   input,
   output,
