@@ -168,6 +168,45 @@ describe('pnpm docs:refresh --nur-zuordnung', () => {
   });
 });
 
+describe('pnpm docs:refresh --nur-zuordnung with an instance', () => {
+  const hosted = (label: string): string =>
+    [label, 'church', 'tools'].join('.');
+
+  it('refuses texts that name the instance and writes nothing', () => {
+    const data = dataDir();
+    const rights = readFileSync(new URL('rights.json', data), 'utf8');
+    const mapping = syntheticMapping();
+    const operations = mapping['operations'] as { open?: string }[];
+    const unmapped = operations[0];
+    if (unmapped !== undefined) {
+      unmapped.open = 'An der Gemeindewiese geprüft.';
+    }
+    const io = { stdout: () => undefined, stderr: () => undefined };
+    const env = {
+      ECCLIUM_SPIKE_BASE_URL: `https://${hosted('gemeindewiese')}`,
+    };
+    expect(mainMapping(io, data, mappingFile(mapping), env)).not.toBe(
+      exitCodes.ok,
+    );
+    expect(readFileSync(new URL('rights.json', data), 'utf8')).toBe(rights);
+    // Without the instance the same text passes.
+    expect(mainMapping(io, data, mappingFile(mapping))).toBe(exitCodes.ok);
+  });
+
+  it('refuses an address that is not https', () => {
+    const err: string[] = [];
+    const io = {
+      stdout: () => undefined,
+      stderr: (text: string) => err.push(text),
+    };
+    expect(
+      mainMapping(io, dataDir(), mappingFile(syntheticMapping()), {
+        ECCLIUM_SPIKE_BASE_URL: 'http://example.church.tools',
+      }),
+    ).toBe(exitCodes.configuration);
+  });
+});
+
 describe('readMapping', () => {
   it.each([
     ['text that is not JSON', '{', 'mapping.json'],
@@ -249,6 +288,31 @@ describe('readMapping', () => {
       }),
       'mapping.operations[0].notNeeded[0].evidence[0].kind',
     ],
+    [
+      'the document as evidence that a right is not needed',
+      JSON.stringify({
+        format: mappingFormat,
+        rights: [],
+        operations: [
+          {
+            operationId: 'getSyntheticThing',
+            open: 'Offen.',
+            notNeeded: [
+              {
+                right: { module: 'synthetic', name: 'view' },
+                evidence: [{ kind: 'openapi' }],
+              },
+            ],
+          },
+        ],
+      }),
+      'mapping.operations[0].notNeeded[0].evidence[0].kind',
+    ],
+    [
+      'a key twice, of which a review would read the first',
+      `{"format": "${mappingFormat}", "rights": [], "operations": [{"operationId": "getSyntheticThing", "open": "Versteckt.", "open": "Offen."}]}`,
+      'mapping.key[133]',
+    ],
   ])('refuses %s and names its place', (_name, source, where) => {
     expect(placeOf(() => readMapping(source))).toBe(where);
   });
@@ -303,6 +367,22 @@ describe('applyMapping', () => {
     ],
   ])('stops at %s', (_name, change, where) => {
     expect(placeOf(() => applyMapping(read(change), facts()))).toBe(where);
+  });
+
+  it('stops at a right an entry both needs and does not need', () => {
+    const mapping = syntheticMapping();
+    const operations = mapping['operations'] as {
+      notNeeded?: { right: { name: string } }[];
+    }[];
+    const right = operations[1]?.notNeeded?.[0]?.right;
+    if (right !== undefined) {
+      right.name = 'view things';
+    }
+    expect(
+      placeOf(() =>
+        applyMapping(readMapping(JSON.stringify(mapping)), facts()),
+      ),
+    ).toBe('mapping.operations[1].notNeeded[0].right');
   });
 
   it('keeps every right of the facts, mapped or not', () => {

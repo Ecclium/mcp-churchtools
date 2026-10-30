@@ -192,16 +192,27 @@ function rightRef(value: unknown, where: string): RightRefEntry {
   };
 }
 
+// Where evidence stands decides what it may be: a pairing takes every
+// kind, with what a finding showed; that a read needs no right takes a
+// finding or the document; that it does not need a certain right only a
+// finding can show (ADR 0066).
+type EvidenceUse = 'need' | 'none' | 'notNeeded';
+
+const kindsFor = {
+  need: ['finding', 'openapi', 'academy'],
+  none: ['finding', 'openapi'],
+  notNeeded: ['finding'],
+} as const;
+
 function evidence(
   value: unknown,
   where: string,
-  withShows: boolean,
+  use: EvidenceUse,
 ): EvidenceEntry {
+  const withShows = use === 'need';
   const kind = oneOf(
     isObject(value) ? value['kind'] : undefined,
-    withShows
-      ? (['finding', 'openapi', 'academy'] as const)
-      : (['finding', 'openapi'] as const),
+    kindsFor[use],
     `${where}.kind`,
   );
   if (kind === 'openapi') {
@@ -237,11 +248,11 @@ function evidence(
 function evidenceList(
   value: unknown,
   where: string,
-  withShows: boolean,
+  use: EvidenceUse,
 ): readonly EvidenceEntry[] {
   return inOrder(
     list(value, where).map((item, index) =>
-      evidence(item, `${where}[${String(index)}]`, withShows),
+      evidence(item, `${where}[${String(index)}]`, use),
     ),
     evidenceKey,
     where,
@@ -258,7 +269,11 @@ function notNeededList(
       const entry = fields(item, at, ['right', 'evidence']);
       return {
         right: rightRef(entry['right'], `${at}.right`),
-        evidence: evidenceList(entry['evidence'], `${at}.evidence`, false),
+        evidence: evidenceList(
+          entry['evidence'],
+          `${at}.evidence`,
+          'notNeeded',
+        ),
       };
     }),
     (item) => refKey(item.right),
@@ -286,7 +301,7 @@ function need(value: unknown, where: string): NeedEntry {
             `${where}.without`,
           ),
         }),
-    evidence: evidenceList(item['evidence'], `${where}.evidence`, true),
+    evidence: evidenceList(item['evidence'], `${where}.evidence`, 'need'),
   };
   return result;
 }
@@ -318,7 +333,7 @@ function operation(value: unknown, where: string): OperationRightsEntry {
     const item = fields(value, where, ['operationId', 'none']);
     return {
       operationId: text(item['operationId'], `${where}.operationId`),
-      none: evidenceList(item['none'], `${where}.none`, false),
+      none: evidenceList(item['none'], `${where}.none`, 'none'),
     };
   }
   const item = fields(value, where, ['operationId', 'open'], ['notNeeded']);
@@ -363,6 +378,44 @@ function mappedRight(value: unknown, where: string): MappedRight {
 }
 
 /**
+ * Finds a key that an object of a JSON text holds twice.
+ *
+ * @param source - A text that `JSON.parse` accepted.
+ * @returns The position of the second key in the text, or undefined.
+ */
+function repeatedKey(source: string): number | undefined {
+  const objects: Set<string>[] = [];
+  // Strings, with their escapes, and the marks that open and close
+  // objects and arrays; a string followed by a colon is a key.
+  const token = /"(?:[^"\\]|\\.)*"|[{}[\]]/g;
+  const arrays: boolean[] = [];
+  for (const match of source.matchAll(token)) {
+    const [mark] = match;
+    if (mark === '{' || mark === '[') {
+      arrays.push(mark === '[');
+      if (mark === '{') {
+        objects.push(new Set());
+      }
+    } else if (mark === '}' || mark === ']') {
+      if (arrays.pop() === false) {
+        objects.pop();
+      }
+    } else if (
+      arrays.at(-1) === false &&
+      /^\s*:/.test(source.slice(match.index + mark.length))
+    ) {
+      const keys = objects.at(-1);
+      const key = JSON.parse(mark) as string;
+      if (keys?.has(key) === true) {
+        return match.index;
+      }
+      keys?.add(key);
+    }
+  }
+  return undefined;
+}
+
+/**
  * Reads the file of the mapping and checks its form and its order: every
  * list sorted as the format wants it and nothing twice, so that the file
  * reads like the facts it becomes.
@@ -377,6 +430,12 @@ export function readMapping(source: string): RightsMapping {
     json = JSON.parse(source);
   } catch {
     return fail('json');
+  }
+  // JSON.parse keeps the last of two equal keys, so a first one would
+  // stand in the file, seen by a review, without reaching the facts.
+  const twice = repeatedKey(source);
+  if (twice !== undefined) {
+    return fail(`key[${String(twice)}]`);
   }
   const file = fields(json, 'file', ['format', 'rights', 'operations']);
   if (file['format'] !== mappingFormat) {
@@ -405,7 +464,7 @@ export function readMapping(source: string): RightsMapping {
  * or a page the facts do not hold and a label from a help page that the
  * page does not write right before the name of the right stop the refresh
  * before it writes, for example when the Academy changed the text of a
- * page. Nothing stands twice, {@link readMapping} saw to that.
+ * page, and so does a right that an entry names twice.
  *
  * @param mapping - The mapping from {@link readMapping}.
  * @param facts - The facts the refresh made.
@@ -455,11 +514,20 @@ export function applyMapping(
     if (!operationIds.has(entry.operationId)) {
       fail(`${where}.operationId`);
     }
+    // No right twice in an entry, needed and not needed at once.
+    const seen = new Set<string>();
+    const once = (ref: RightRefEntry, at: string) => {
+      right(ref, at);
+      if (seen.has(refKey(ref))) {
+        fail(at);
+      }
+      seen.add(refKey(ref));
+    };
     if ('needs' in entry) {
       entry.needs.forEach((item, position) => {
         const at = `${where}.needs[${String(position)}]`;
         item.rights.forEach((ref, place) => {
-          right(ref, `${at}.rights[${String(place)}]`);
+          once(ref, `${at}.rights[${String(place)}]`);
         });
         item.evidence.forEach((piece, place) => {
           if (piece.kind === 'academy') {
@@ -470,7 +538,7 @@ export function applyMapping(
     }
     if ('notNeeded' in entry) {
       entry.notNeeded?.forEach((item, position) => {
-        right(item.right, `${where}.notNeeded[${String(position)}].right`);
+        once(item.right, `${where}.notNeeded[${String(position)}].right`);
       });
     }
   });

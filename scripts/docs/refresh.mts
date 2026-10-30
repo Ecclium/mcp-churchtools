@@ -22,7 +22,9 @@
  * With `--nur-zuordnung` it reads no source, only the files under
  * `data/` and the mapping, and writes `rights.json` and
  * `operation-rights.json` anew, so that a change of the mapping needs no
- * run against an instance.
+ * run against an instance. With `ECCLIUM_SPIKE_BASE_URL` set, it checks
+ * them for the name of that instance as the full refresh does, since the
+ * mapping holds texts a person wrote.
  *
  * It runs locally, never in CI and never behind the network block of
  * the tests. Usage: see README.md in this folder.
@@ -347,12 +349,16 @@ function field(entry: unknown, key: string, name: string): string {
  *
  * @param dataDir - The folder of the facts, ending in `/`.
  * @param mappingFile - The mapping by hand.
+ * @param origin - The instance whose name the files must not hold, if
+ *   one is known.
  * @returns The counts of what it wrote.
- * @throws {SpikeError} `DATEI` if a file or the mapping does not fit.
+ * @throws {SpikeError} `DATEI` if a file or the mapping does not fit,
+ *   `ANTWORT_UNGUELTIG` if a file names the instance.
  */
 export function refreshMapping(
   dataDir: URL = defaultDataDir,
   mappingFile: URL = defaultMappingFile,
+  origin?: string,
 ): Record<string, unknown> {
   const rights: RightFactEntry[] = dataEntries(
     dataDir,
@@ -379,15 +385,16 @@ export function refreshMapping(
       text: field(entry, 'text', factFileNames.academy),
     })),
   });
-  writeFactFiles(
-    {
-      [factFileNames.rights]: rightsText(mapped.rights),
-      [factFileNames.operationRights]: operationRightsText(
-        mapped.operationRights,
-      ),
-    },
-    dataDir,
-  );
+  const texts = {
+    [factFileNames.rights]: rightsText(mapped.rights),
+    [factFileNames.operationRights]: operationRightsText(
+      mapped.operationRights,
+    ),
+  };
+  if (origin !== undefined) {
+    checkInstanceHost(texts, origin);
+  }
+  writeFactFiles(texts, dataDir);
   return { refresh: 'zuordnung', zuordnung: mappingCounts(mapped) };
 }
 
@@ -398,15 +405,31 @@ export function refreshMapping(
  * @param io - Where to write.
  * @param dataDir - The folder of the facts.
  * @param mappingFile - The mapping by hand.
+ * @param env - The environment, for `ECCLIUM_SPIKE_BASE_URL`.
  * @returns The exit code.
  */
 export function mainMapping(
   io: Io,
   dataDir: URL = defaultDataDir,
   mappingFile: URL = defaultMappingFile,
+  env: Readonly<Record<string, string | undefined>> = {},
 ): number {
   try {
-    const counts = refreshMapping(dataDir, mappingFile);
+    const base = env['ECCLIUM_SPIKE_BASE_URL'];
+    let origin: string | undefined;
+    if (base !== undefined && base !== '') {
+      let url: URL | undefined;
+      try {
+        url = new URL(base);
+      } catch {
+        url = undefined;
+      }
+      if (url?.protocol !== 'https:') {
+        throw new SpikeError('KONFIGURATION', 'basisUrlUngueltig');
+      }
+      origin = url.origin;
+    }
+    const counts = refreshMapping(dataDir, mappingFile, origin);
     io.stdout(`${JSON.stringify(counts, null, 2)}\n`);
     return exitCodes.ok;
   } catch (error) {
@@ -465,7 +488,12 @@ if (import.meta.main) {
       stderr: (text) => process.stderr.write(text),
     };
     installCrashHandlers(io);
-    process.exitCode = mainMapping(io);
+    process.exitCode = mainMapping(
+      io,
+      defaultDataDir,
+      defaultMappingFile,
+      process.env,
+    );
   } else {
     const definition = process.argv.includes('--kategorien')
       ? categoriesDefinition()
