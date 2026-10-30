@@ -233,6 +233,7 @@ describe('rechte_diagnose', () => {
     for (const part of [
       'Nur Rechte nennen, die die Dokumentation mit Beleg verlangt.',
       'keine Sicherheitsstufe für Personen, kein Recht zum Schreiben oder Verwalten und nicht «Alle»',
+      'Eine Sicherheitsstufe für Gruppen nur in der niedrigsten Stufe.',
       'Keine Rechte vorschlagen, die die Dokumentation als nicht nötig nennt',
       'das sagen und davon abraten',
     ]) {
@@ -242,7 +243,7 @@ describe('rechte_diagnose', () => {
 
   it('tells a rule of Ecclium and a refused token from a missing right', () => {
     expect(rightsDiagnosisPrompt.text).toContain(
-      'öffnet kein Recht in ChurchTools',
+      'hilft kein Recht in ChurchTools.',
     );
     expect(rightsDiagnosisPrompt.text).toContain(
       'Ein abgewiesenes Token betrifft den Zugang des Kontos, nicht seine Rechte.',

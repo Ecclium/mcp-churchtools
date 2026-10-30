@@ -13,13 +13,15 @@ import {
 // person sees no error code, only the sentence of the error, and a single
 // value is the easiest to type as a command. What failed may be a tool, an
 // operationId or a request by method and path; for a tool the rights stand
-// in its description and in the lines of the error. Step 6 keeps the
-// diagnosis from widening the account beyond what the guide to the
-// service account allows: no security level of persons, which already
-// at its lowest sends contact data and birthday (ADR 0060, ADR 0064), no
-// right to write, no «Alle», no right a finding shows as not needed.
-// Step 7 tells failures without a missing right from those with one,
-// because a rule of Ecclium or a refused token opens with no right.
+// in its description and in the lines of the error. Step 6 holds the
+// proposals to what the guide to the service account allows: no security
+// level of persons, which already at its lowest sends contact data and
+// birthday, one of groups only at its lowest, no right to write, no
+// «Alle», no right a finding shows as not needed (ADR 0060, ADR 0064).
+// Whether the model keeps to it, the model decides. Step 7 tells failures
+// without a missing right from those with one, because no right in
+// ChurchTools lifts a rule of Ecclium, and a refused token is a matter of
+// access.
 const text = `Diagnose der Rechte nach einem fehlgeschlagenen Zugriff auf ChurchTools. Fehlgeschlagen ist:
 
 {zugriff}
@@ -30,8 +32,8 @@ Vorgehen:
 3. Jedes Recht, das die Operation oder das Tool verlangt, in der Dokumentation nachschlagen: Bezeichnung, was ohne das Recht geschieht, und die Hilfeseiten, die erklären, wo es vergeben wird.
 4. Die verlangten Rechte mit denen des Kontos vergleichen. Ein Recht mit einer Liste von IDs gilt nur für diese, etwa für bestimmte Bereiche, Gruppentypen oder Kategorien. Hat das Konto ein Recht, womöglich aber nicht für das gelesene Objekt, das sagen. Rechte, die das Konto über eine Gruppe erhält, kann die Liste seiner Rechte auslassen.
 5. Das Ergebnis nennen: je fehlendes Recht Modul, Name und Bezeichnung, für welche Objekte es nötig ist, und die Hilfeseite mit Titel und Link. Nur Rechte nennen, die die Dokumentation mit Beleg verlangt. Nennt sie für die Operation keine Rechte, das sagen: Dann ist offen, welches Recht fehlt, nicht, dass keines nötig ist.
-6. Keine Rechte vorschlagen, die die Dokumentation als nicht nötig nennt, keine Sicherheitsstufe für Personen, kein Recht zum Schreiben oder Verwalten und nicht «Alle». Verlangt der Zugriff eine Sicherheitsstufe für Personen, das sagen und davon abraten, weil schon die niedrigste Stufe E-Mail, Telefon, Geburtstag, Postleitzahl und Ort jeder gelesenen Person mitschickt.
-7. Liegt es nicht an einem Recht, das sagen: Ein abgewiesenes Token betrifft den Zugang des Kontos, nicht seine Rechte. Eine Regel von Ecclium, etwa ein fehlendes Toolset, das Lesebudget, die Audit-Datei oder eine Operation, die Ecclium nie liest, öffnet kein Recht in ChurchTools. Eine ungültige Eingabe liegt am Aufruf. Ein leeres Ergebnis kann «nichts gefunden» oder ein fehlendes Recht heissen.
+6. Keine Rechte vorschlagen, die die Dokumentation als nicht nötig nennt, keine Sicherheitsstufe für Personen, kein Recht zum Schreiben oder Verwalten und nicht «Alle». Eine Sicherheitsstufe für Gruppen nur in der niedrigsten Stufe. Verlangt der Zugriff eine Sicherheitsstufe für Personen, das sagen und davon abraten, weil schon die niedrigste Stufe E-Mail, Telefon, Geburtstag, Postleitzahl und Ort jeder gelesenen Person mitschickt.
+7. Liegt es nicht an einem Recht, das sagen: Ein abgewiesenes Token betrifft den Zugang des Kontos, nicht seine Rechte. Gegen eine Regel von Ecclium, etwa ein fehlendes Toolset, das Lesebudget, die Audit-Datei oder eine Operation, die Ecclium nie liest, hilft kein Recht in ChurchTools. Eine ungültige Eingabe liegt am Aufruf. Ein leeres Ergebnis kann «nichts gefunden» oder ein fehlendes Recht heissen.
 
 Die Diagnose bleibt in diesem Gespräch: nichts in ChurchTools ändern. Rechte vergibt eine Person, die in ChurchTools Rechte verwalten darf, danach lässt sich der Zugriff wiederholen.`;
 
