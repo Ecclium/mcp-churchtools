@@ -9,6 +9,7 @@
  */
 import type { Plugin, PluginHost } from '@ecclium/mcp-churchtools-plugin-api';
 
+import { addApiTools } from './api/index.js';
 import { appointmentsGetTool } from './appointments/get.js';
 import { appointmentsListTool } from './appointments/list.js';
 import { whoamiTool } from './base/whoami.js';
@@ -41,8 +42,9 @@ import { wikiSearchTool } from './wiki/search.js';
 export interface CorePluginOptions {
   /**
    * The docs index, which the composition root loads only when the
-   * toolset `docs` is on, once per process (ADR 0066). Without it the
-   * plugin adds no docs tool.
+   * toolset `docs` or `api` is on, once per process (ADR 0066, ADR 0067).
+   * Without it the plugin adds neither the docs tools nor the tools of the
+   * escape hatch, whose search reads it too.
    */
   readonly docs?: DocsIndex;
 }
@@ -50,7 +52,8 @@ export interface CorePluginOptions {
 /**
  * Builds the plugin of the free core, under the name of the package of the
  * server, which the catalog reserves for it. It adds every tool and both
- * prompts of the core, the six docs tools only with a docs index. Which of
+ * prompts of the core, the six docs tools and the two tools of the escape
+ * hatch only with a docs index. Which of
  * them the catalog offers decides the composition root with the toolsets
  * of the operator (`ECCLIUM_TOOLSETS`, ADR 0062): without any, a server on
  * a productive tenant offers only `ct_whoami` and no prompt, because each
@@ -100,6 +103,7 @@ export function createCorePlugin(options: CorePluginOptions = {}): Plugin {
       host.addTool(songsGetTool);
       if (docs !== undefined) {
         addDocsTools(host, docs);
+        addApiTools(host, docs);
       }
       host.addPrompt(rotaWeekendPrompt);
       host.addPrompt(wikiDraftPrompt);

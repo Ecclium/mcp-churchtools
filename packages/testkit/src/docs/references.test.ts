@@ -97,7 +97,10 @@ describe('renderToolsReference', () => {
     expect(page).toContain(
       '| `ct_events_list` | `events` | personenbezogen | nach Richtlinie | ja | nein |',
     );
-    expect(page.match(/^- Lesebudget: ja$/gmu)).toHaveLength(8);
+    expect(page.match(/^- Lesebudget: ja$/gmu)).toHaveLength(9);
+    expect(page).toContain(
+      '| `ct_api_execute_read` | `api` | besonders schützenswert | nie | nein | ja |',
+    );
   });
 
   it('shows containers that may be missing or null, not only their leaves', () => {

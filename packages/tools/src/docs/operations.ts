@@ -95,9 +95,12 @@ export const rightsNotes = Object.freeze({
     'Not mapped yet. The operation may need rights the documentation of Ecclium does not name.',
 } as const);
 
-// The mapping of one operation in the form of a result: one object for
-// every state, because the registry takes no union of objects.
-const rightsOutput = z.object({
+/**
+ * The mapping of one operation in the form of a result: one object for
+ * every state, because the registry takes no union of objects. The tools
+ * of the escape hatch show the rights the same way (ADR 0067).
+ */
+export const rightsOutput = z.object({
   status: classify(z.enum(['needs', 'none', 'open', 'unmapped']), 'none'),
   needs: z
     .array(
@@ -123,7 +126,18 @@ const rightsOutput = z.object({
   note: classify(z.enum(Object.values(rightsNotes)), 'none'),
 });
 
-const rightsOf = (
+/**
+ * The rights of one operation as {@link rightsOutput} shows them.
+ *
+ * @param entry - The mapping of the operation, if it has one.
+ * @param docs - The docs index, for the labels and the evidence.
+ * @returns The rights with their evidence, or the state without them.
+ * @example
+ * ```ts
+ * rightsOf(docs.getOperation('get-groups-groupId')?.rights, docs).status;
+ * ```
+ */
+export const rightsOf = (
   entry: OperationRights | undefined,
   docs: DocsIndex,
 ): z.input<typeof rightsOutput> => {

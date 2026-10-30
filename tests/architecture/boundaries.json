@@ -195,6 +195,11 @@
         "packages/docs-index/src/load.ts"
       ]
     },
+    "apiTools": {
+      "adr": "0067",
+      "description": "The tools of the escape hatch of the core. ct_api_search_actions searches the docs index the composition root loaded and shows the rights of the docs tools, so besides the plugin API and the modules of the plugins they may import the docs index and the docs tools, and nothing else of the workspace. They reach ChurchTools only through the read API. The plugin of the core may import them.",
+      "paths": ["packages/tools/src/api/"]
+    },
     "operationCatalog": {
       "adr": "0067",
       "description": "The operation catalog of the escape hatch: the part pnpm docs:refresh writes from the facts of the OpenAPI document and the classification of each operation by hand. Only the modules of the raw client import it, so that no other module chooses an operation past the checks of the client.",
