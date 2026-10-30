@@ -165,19 +165,30 @@ Grenzen der Audit-Datei:
 
 Welche Tools der Server neben `ct_whoami` anbietet, legen Sie mit `ECCLIUM_TOOLSETS` fest: eine mit Komma getrennte Liste von Bereichen, ohne Leerzeichen ([ADR 0062](../adr/0062-toolsets.md)).
 
-| Toolset     | Bereiche                                    | Tools in dieser Version                                                                                                                   |
-| ----------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `persons`   | Personen und Gruppen                        | `ct_persons_search`, `ct_persons_get`, `ct_persons_get_groups`, `ct_groups_search`, `ct_groups_get`, `ct_groups_get_members`, `ct_search` |
-| `events`    | Events und Dienste                          | `ct_events_list`, `ct_events_get`, `ct_events_get_agenda`, `ct_services_list`, `ct_services_get_assignments`                              |
-| `calendars` | Kalender, Termine, Ressourcen und Buchungen | `ct_calendars_list`, `ct_appointments_list`, `ct_appointments_get`, `ct_resources_list`, `ct_bookings_list`                               |
-| `wiki`      | Wiki                                        | `ct_wiki_categories_list`, `ct_wiki_pages_list`, `ct_wiki_page_get`, `ct_wiki_search`                                                     |
-| `songs`     | Songs                                       | `ct_songs_search`, `ct_songs_get`                                                                                                         |
+| Toolset     | Bereiche                                    | Tools in dieser Version                                                                                                                       |
+| ----------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `persons`   | Personen und Gruppen                        | `ct_persons_search`, `ct_persons_get`, `ct_persons_get_groups`, `ct_groups_search`, `ct_groups_get`, `ct_groups_get_members`, `ct_search`     |
+| `events`    | Events und Dienste                          | `ct_events_list`, `ct_events_get`, `ct_events_get_agenda`, `ct_services_list`, `ct_services_get_assignments`                                  |
+| `calendars` | Kalender, Termine, Ressourcen und Buchungen | `ct_calendars_list`, `ct_appointments_list`, `ct_appointments_get`, `ct_resources_list`, `ct_bookings_list`                                   |
+| `wiki`      | Wiki                                        | `ct_wiki_categories_list`, `ct_wiki_pages_list`, `ct_wiki_page_get`, `ct_wiki_search`                                                         |
+| `songs`     | Songs                                       | `ct_songs_search`, `ct_songs_get`                                                                                                             |
+| `docs`      | Dokumentation von ChurchTools               | `ct_docs_search_api`, `ct_docs_get_operation`, `ct_docs_search_rights`, `ct_docs_get_right`, `ct_docs_search_academy`, `ct_docs_read_academy` |
 
 `all` schaltet alle ein, auch die Toolsets späterer Versionen. Ist die Variable leer oder nicht gesetzt, bietet der Server nur `ct_whoami` an. Beim Start nennt Ecclium auf stderr die Toolsets, die eingeschaltet sind, und jedes, das in dieser Version noch keine Tools mitbringt. Ein unbekannter Name, ein doppelter oder `all` neben einem anderen Namen bricht den Start ab. Die frühere Variable `ECCLIUM_SEARCH_TOOLS` bricht den Start ebenfalls ab, mit dem Hinweis auf `ECCLIUM_TOOLSETS=persons`.
 
 ## Wiki
 
 `ct_wiki_categories_list` nennt die Kategorien des Wikis, die das Dienstkonto sehen darf, `ct_wiki_pages_list` die Seiten einer Kategorie mit Titel und Version, aber ohne Text, beide 25 je Aufruf mit weiteren Seiten. `ct_wiki_page_get` liest eine Seite und gibt einen langen Text in Teilen von höchstens 16'000 Bytes, geschnitten an einem Zeilenumbruch, wo eine Zeile hineinpasst, sonst zwischen zwei Zeichen. Den Text maskiert Ecclium nicht, auch keine E-Mail-Adressen oder Telefonnummern darin ([ADR 0026](../adr/0026-klassifizierte-ausgabeschemas.md)). `ct_wiki_search` sucht Seiten nach einem Begriff, in allen Kategorien, die das Konto sehen darf, oder in einer, und gibt die ersten 20 Treffer in der Folge von ChurchTools mit GUID, Kategorie, Titel und einem Ausschnitt des Texts. Weitere Seiten gibt es nicht. Gibt es mehr Treffer, sagt das Ergebnis, Sie sollen genauer oder in einer Kategorie suchen. Nennt ChurchTools eine Seite in einer anderen Form als mit ihrer GUID, steht dort `null`. Namen, Titel, Ausschnitte und Text stehen im Datenumschlag, Personen aus den Metadaten der Antworten von ChurchTools gibt keines der vier Tools weiter. Sie brauchen keinen Zustandsordner. Schalten Sie sie mit `ECCLIUM_TOOLSETS=wiki` ein, die Rechte des Dienstkontos stehen unter [Dienstkonto](dienstkonto.md#rechte).
+
+## Dokumentation
+
+Die sechs Tools des Toolsets `docs` schlagen in der Dokumentation von ChurchTools nach, die mit Ecclium ausgeliefert wird: den Operationen der API aus dem OpenAPI-Dokument, den Rechten und den frei zugänglichen deutschen Hilfeseiten der ChurchTools Academy ([ADR 0027](../adr/0027-inhalte-des-doku-index.md), [ADR 0066](../adr/0066-doku-index.md)). Sie lesen nichts aus ChurchTools und von keiner anderen Adresse, brauchen kein Recht und keinen Zustandsordner und zählen nicht gegen das Lesebudget.
+
+- `ct_docs_search_api` sucht Operationen über englische Wörter, `ct_docs_get_operation` liest eine Operation über ihre `operationId` oder über Methode und Pfad, etwa `GET /api/groups/12/members`, mit Parametern, Anfrage, Antworten und den Rechten, die sie verlangt. Die Rechte stehen nur, wo das Projekt sie mit einem Beleg zugeordnet hat, mit dem Befund und der Version von ChurchTools, an der er gefunden wurde.
+- `ct_docs_search_rights` sucht Rechte über Modul, Namen oder deutsche Bezeichnung, `ct_docs_get_right` liest ein Recht mit Bezeichnung, erklärenden Hilfeseiten und den Operationen, die es verlangen.
+- `ct_docs_search_academy` sucht Hilfeseiten, `ct_docs_read_academy` liest eine mit Titel und Link, eine lange in Teilen von höchstens 16'000 Bytes.
+
+So schalten Sie sie ein: Setzen Sie `ECCLIUM_TOOLSETS` auf `docs`. Jedes Ergebnis nennt seine Quelle mit Abrufdatum, beim OpenAPI-Dokument mit Lizenz CC BY 4.0, bei der Academy mit Link. Texte aus der Dokumentation stehen im Datenumschlag, weil sie aus dem Netz kommen. Mit `docs` liest der Start den Index einmal, das dauert etwa eine Sekunde und braucht einige Dutzend MiB Speicher. Ohne `docs` liest er ihn nicht. Fehlt der Index oder ist er beschädigt, bricht der Start mit einer Meldung und 70 ab. Installieren Sie Ecclium dann neu, im Quellcode mit `pnpm build`, oder nehmen Sie `docs` aus `ECCLIUM_TOOLSETS`.
 
 ## Songs
 
