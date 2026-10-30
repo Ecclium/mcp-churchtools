@@ -324,6 +324,7 @@ describe('revealSecret', () => {
       expect(Object.values(entry)).not.toContain(revealSecret);
     }
     expect(Object.keys(http)).toEqual([
+      'HttpTransportError',
       'originCodes',
       'parseChurchToolsOrigin',
       'Secret',

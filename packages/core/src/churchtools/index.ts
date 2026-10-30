@@ -11,3 +11,4 @@ export {
   type ChurchToolsClientOptions,
   createChurchToolsClient,
 } from './client.js';
+export type { OperationAnswer, OperationRequest } from './operation.js';

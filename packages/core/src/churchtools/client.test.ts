@@ -835,7 +835,7 @@ describe('the client', () => {
     expect(await codeOf(client.whoami(ctx()))).toBe('network');
   });
 
-  it('is frozen and shows nothing but its sixteen operations', () => {
+  it('is frozen and shows nothing but its operations', () => {
     const { client } = setup();
     expect(Object.keys(client)).toEqual([
       'whoami',
@@ -863,6 +863,7 @@ describe('the client', () => {
       'song',
       'searchWiki',
       'search',
+      'operation',
     ]);
     expect(Object.isFrozen(client)).toBe(true);
   });

@@ -23,10 +23,13 @@ const isSpace = (code: number): boolean =>
   code === 0x20 || code === 0x09 || code === 0x0a || code === 0x0d;
 
 // Separators between the digits of a phone number in running text, as in
-// +41 0 (00) 123-45/67.
+// +41 0 (00) 123-45/67, also the typographic hyphen and the en dash, which
+// NFKC leaves as they are.
 const isNumberSeparator = (code: number): boolean =>
   code === 0x20 ||
   code === 0x2d ||
+  code === 0x2010 ||
+  code === 0x2013 ||
   code === 0x2f ||
   code === 0x2e ||
   code === 0x28 ||
@@ -54,7 +57,14 @@ const maskAddressToken = (token: string): string => {
   );
 };
 
-const maskAddresses = (text: string): string => {
+/**
+ * Masks every token with `@` in a text as an e-mail address, without what
+ * encloses it, such as brackets or a full stop after it.
+ *
+ * @param text - A text, normalised and without hidden characters.
+ * @returns The text with each address masked.
+ */
+export const maskAddresses = (text: string): string => {
   let masked = '';
   let index = 0;
   while (index < text.length) {
@@ -80,14 +90,29 @@ const digitRun = (text: string, from: number, most: number): number => {
   return count;
 };
 
+// A year of four digits from 1000 to 2999, a month and a day in range.
+const isPlausibleDate = (year: string, month: number, day: number): boolean =>
+  (year.startsWith('1') || year.startsWith('2')) &&
+  month >= 1 &&
+  month <= 12 &&
+  day >= 1 &&
+  day <= 31;
+
 const isDateSeparator = (code: number): boolean =>
   code === 0x2e || code === 0x2f || code === 0x2d;
 
-// A date that starts at the index: a year of four digits, then month and
-// day of one or two digits, or day and month, then the year, with the same
-// dot, slash or hyphen between the parts and no digit after them. Returns
-// the end of the date and its year.
-const dateAt = (
+/**
+ * A date that starts at the index: a year of four digits, then month and
+ * day of one or two digits, or day and month, then the year, with the same
+ * dot, slash or hyphen between the parts. The year lies from 1000 to 2999,
+ * the month from 1 to 12 and the day from 1 to 31, so that a phone number
+ * such as 0000-30-12-34-56 is not taken for a date.
+ *
+ * @param text - A text.
+ * @param index - Where the date would start.
+ * @returns The end of the date and its year, or `undefined`.
+ */
+export const dateAt = (
   text: string,
   index: number,
 ): { readonly end: number; readonly year: string } | undefined => {
@@ -99,20 +124,34 @@ const dateAt = (
   if (middle < 1 || middle > 2) return undefined;
   if (text.charCodeAt(middleStart + middle) !== separator) return undefined;
   const lastStart = middleStart + middle + 1;
+  const month = Number(text.slice(middleStart, middleStart + middle));
   if (first === 4) {
     const last = digitRun(text, lastStart, 2);
     if (last < 1 || last > 2) return undefined;
-    return { end: lastStart + last, year: text.slice(index, index + 4) };
+    const year = text.slice(index, index + 4);
+    const day = Number(text.slice(lastStart, lastStart + last));
+    return isPlausibleDate(year, month, day)
+      ? { end: lastStart + last, year }
+      : undefined;
   }
   if (first > 2 || digitRun(text, lastStart, 4) !== 4) return undefined;
-  return { end: lastStart + 4, year: text.slice(lastStart, lastStart + 4) };
+  const year = text.slice(lastStart, lastStart + 4);
+  const day = Number(text.slice(index, index + first));
+  return isPlausibleDate(year, month, day)
+    ? { end: lastStart + 4, year }
+    : undefined;
 };
 
-// The end of a phone number that starts at the index: an optional + or (,
-// then digits with at most two separators between two of them. Returns the
-// index after its last digit, or -1 when the run has fewer digits than a
-// phone number.
-const phoneEndAt = (text: string, index: number): number => {
+/**
+ * The end of a phone number that starts at the index: an optional `+` or
+ * `(`, then digits with at most two separators between two of them.
+ *
+ * @param text - A text.
+ * @param index - Where the number would start.
+ * @returns The index after its last digit, or -1 when the run has fewer
+ *   digits than a phone number.
+ */
+export const phoneEndAt = (text: string, index: number): number => {
   let position = text.charCodeAt(index) === 0x2b ? index + 1 : index;
   let digits = 0;
   let lastDigitEnd = -1;

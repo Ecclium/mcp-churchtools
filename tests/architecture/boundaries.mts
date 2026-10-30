@@ -43,6 +43,7 @@ export const placeKeys = [
   'utilModule',
   'docsFiles',
   'docsTools',
+  'operationCatalog',
 ] as const;
 
 /** Key of a place in the code that a rule refers to. */

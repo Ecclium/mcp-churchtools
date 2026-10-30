@@ -49,6 +49,8 @@ Token-Datei und State-Datei müssen ausserhalb jedes Git-Arbeitsbaums liegen und
 
 Mit `pnpm docs:refresh --kategorien` liest das Skript nur die Kategorien der Academy und gibt ihre Slugs nach Abschnitt aus, etwa um zu entscheiden, ob eine Kategorie ausserhalb der Abschnitte dazukommt. Es schreibt dann nichts.
 
+Der volle Refresh schreibt nach den Fakten auch den erzeugten Teil des Katalogs der Escape Hatch, `packages/core/src/churchtools/catalog/generated.ts`: jede `GET`-Operation mit Pfad und Parametern, ohne Text des Dokuments (ADR 0067). Mit `pnpm docs:refresh --nur-katalog` schreibt das Skript nur diese Datei aus `operations.json` neu, ohne Token und ohne Netz. Eine neue Operation braucht danach eine Einstufung von Hand in `classification.ts` im selben Ordner, sonst bleibt ein Test rot.
+
 Nach einer Änderung der Zuordnung genügt `pnpm docs:refresh --nur-zuordnung`, ohne Token und ohne Netz. Es liest die Dateien unter `data/` und `rights-mapping.json` und schreibt nur `rights.json` und `operation-rights.json` neu. Setzen Sie dabei `ECCLIUM_SPIKE_BASE_URL` wie für die Proben, dann prüft es die beiden Dateien wie der volle Refresh darauf, dass sie den Namen Ihrer Instanz nicht nennen, denn die Zuordnung enthält Texte, die eine Person geschrieben hat:
 
 ```bash

@@ -19,6 +19,11 @@
  * prints their slugs by section, to decide which categories outside the
  * sections the index takes. It writes nothing then.
  *
+ * With `--nur-katalog` it reads no source, only `operations.json`
+ * under `data/`, and writes the generated part of the operation catalog
+ * of the escape hatch in the core anew (ADR 0067). The full refresh
+ * writes it as well, after the facts.
+ *
  * With `--nur-zuordnung` it reads no source, only the files under
  * `data/` and the mapping, and writes `rights.json` and
  * `operation-rights.json` anew, so that a change of the mapping needs no
@@ -65,6 +70,12 @@ import {
   rightsText,
   writeFactFiles,
 } from './lib/files.mts';
+import {
+  catalogOperations,
+  catalogText,
+  defaultCatalogFile,
+  writeCatalog,
+} from './lib/catalog.mts';
 import {
   type AppliedMapping,
   applyMapping,
@@ -173,12 +184,15 @@ export function checkInstanceHost(
  * @param dataDir - The folder to write into, ending in `/`.
  * @param now - The clock.
  * @param mappingFile - The mapping by hand.
+ * @param catalogFile - Where the generated part of the operation catalog
+ *   goes, or left out to write none, as in the tests of other files.
  * @returns The definition for the frame of the probes.
  */
 export function refreshDefinition(
   dataDir: URL = defaultDataDir,
   now: () => Date = () => new Date(),
   mappingFile: URL = defaultMappingFile,
+  catalogFile?: URL,
 ): ProbeDefinition {
   return {
     name: 'docs-refresh',
@@ -270,7 +284,11 @@ export function refreshDefinition(
         academyOrigin: { retrievedAt: read.retrievedAt, pages: pages.fetched },
       });
       checkInstanceHost(texts, origin);
+      // The catalog is made before anything is written, so that an
+      // operation it cannot take stops the run with no file changed.
+      const catalog = catalogText(catalogOperations(operationEntries));
       writeFactFiles(texts, dataDir);
+      if (catalogFile !== undefined) writeCatalog(catalog, catalogFile);
 
       const sizes = Object.fromEntries(
         Object.entries(texts).map(([name, text]) => {
@@ -438,6 +456,35 @@ export function mainMapping(
 }
 
 /**
+ * Writes the generated part of the operation catalog from
+ * `operations.json` under `data/` without reading any source, and prints
+ * how many operations it holds, or the code of an error and its hint.
+ *
+ * @param io - Where to write.
+ * @param dataDir - The folder of the facts.
+ * @param catalogFile - Where the generated part goes.
+ * @returns The exit code.
+ */
+export function mainCatalog(
+  io: Io,
+  dataDir: URL = defaultDataDir,
+  catalogFile: URL = defaultCatalogFile,
+): number {
+  try {
+    const operations = catalogOperations(
+      dataEntries(dataDir, factFileNames.operations),
+    );
+    writeCatalog(catalogText(operations), catalogFile);
+    io.stdout(
+      `${JSON.stringify({ refresh: 'katalog', operationen: operations.length }, null, 2)}\n`,
+    );
+    return exitCodes.ok;
+  } catch (error) {
+    return writeError(error, io);
+  }
+}
+
+/**
  * Lists the categories of the Academy by section and writes nothing.
  *
  * @param now - The clock.
@@ -482,11 +529,11 @@ export function categoriesDefinition(
 }
 
 if (import.meta.main) {
+  const io: Io = {
+    stdout: (text) => process.stdout.write(text),
+    stderr: (text) => process.stderr.write(text),
+  };
   if (process.argv.includes('--nur-zuordnung')) {
-    const io: Io = {
-      stdout: (text) => process.stdout.write(text),
-      stderr: (text) => process.stderr.write(text),
-    };
     installCrashHandlers(io);
     process.exitCode = mainMapping(
       io,
@@ -494,10 +541,18 @@ if (import.meta.main) {
       defaultMappingFile,
       process.env,
     );
+  } else if (process.argv.includes('--nur-katalog')) {
+    installCrashHandlers(io);
+    process.exitCode = mainCatalog(io, defaultDataDir, defaultCatalogFile);
   } else {
     const definition = process.argv.includes('--kategorien')
       ? categoriesDefinition()
-      : refreshDefinition();
+      : refreshDefinition(
+          defaultDataDir,
+          () => new Date(),
+          defaultMappingFile,
+          defaultCatalogFile,
+        );
     process.exitCode = await main(definition, import.meta.url);
   }
 }

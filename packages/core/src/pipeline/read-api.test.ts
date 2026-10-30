@@ -286,6 +286,9 @@ const fakeClient = () => {
       ids.push(['search', type, query]);
       return Promise.resolve(globalHits);
     },
+    // The read access has no method for the escape hatch yet; it comes
+    // with its first tool (ADR 0067).
+    operation: () => Promise.reject(new Error('not used')),
   };
   return { client, seen, queries, wiki, ids };
 };
