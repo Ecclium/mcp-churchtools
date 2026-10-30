@@ -14,7 +14,7 @@ Ecclium liest seine Konfiguration aus Variablen der Umgebung. Jede trägt das Pr
 | `ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE` | ganze Zahl von 1 bis 500 | `300` | nein | nein |
 | `ECCLIUM_READ_ONLY` | `true`, `false` | `true` | nein | nein |
 | `ECCLIUM_REDACTION` | `standard`, `off`, `strict` | `standard` | nein | nein |
-| `ECCLIUM_TOOLSETS` | Liste aus `persons`, `events`, `calendars`, `wiki`, `songs`, mit Komma getrennt, oder `all` | leer | nein | nein |
+| `ECCLIUM_TOOLSETS` | Liste aus `persons`, `events`, `calendars`, `wiki`, `songs`, `docs`, mit Komma getrennt, oder `all` | leer | nein | nein |
 | `ECCLIUM_STATE_DIR` | absoluter Pfad | keine | nein | ja |
 | `ECCLIUM_STDIO_SUBJECT` | Bezeichnung mit höchstens 32 Zeichen | `local-stdio` | nein | ja |
 | `ECCLIUM_LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` | nein | nein |

@@ -140,6 +140,7 @@ describe('the table of variables', () => {
       'calendars',
       'wiki',
       'songs',
+      'docs',
       'all',
     ]);
     expect(new Set(row('ECCLIUM_REDACTION').choices)).toEqual(

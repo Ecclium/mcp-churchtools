@@ -1679,7 +1679,7 @@ describe('loadConfig and its problems', () => {
       undefined,
       memoryFolder().fs,
     );
-    const names = ['persons', 'events', 'calendars', 'wiki', 'songs'];
+    const names = ['persons', 'events', 'calendars', 'wiki', 'songs', 'docs'];
     expect(result.ok && result.config.toolsets).toEqual(names);
     expect(setting(result, 'toolsets')?.shown).toEqual({
       kind: 'list',
@@ -1696,6 +1696,7 @@ describe('loadConfig and its problems', () => {
     'groups',
     'true',
     'persons,events,calendars,wiki,songs,x',
+    'persons,events,calendars,wiki,songs,docs,x',
   ])('refuses the toolsets %j and shows no value', (value) => {
     const result = load({ ...valid(), ECCLIUM_TOOLSETS: value });
     expect(problems(result)).toEqual([
