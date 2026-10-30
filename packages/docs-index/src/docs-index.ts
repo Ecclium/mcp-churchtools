@@ -80,9 +80,31 @@ export interface AcademyAttribution {
   readonly retrieved: string;
 }
 
+/** The file of the repository of Ecclium that holds the findings. */
+export const findingsPath = 'docs/research/churchtools-api.md';
+
+/**
+ * Where a label of a right comes from that no help page names: the web
+ * interface of ChurchTools as a finding of the project recorded it
+ * (ADR 0066).
+ */
+export interface FindingAttribution {
+  /** The source. */
+  readonly source: 'finding';
+  /** The number or title of the finding, such as `F36`. */
+  readonly title: string;
+  /** The file of the findings in the repository of Ecclium. */
+  readonly path: typeof findingsPath;
+  /** The version of ChurchTools the finding saw. */
+  readonly churchToolsVersion: string;
+}
+
 /** The attribution of a result. */
 export type Attribution =
-  AcademyAttribution | OpenApiAttribution | PermissionsAttribution;
+  | AcademyAttribution
+  | FindingAttribution
+  | OpenApiAttribution
+  | PermissionsAttribution;
 
 /** An operation the search found. */
 export interface OperationHit {
@@ -189,6 +211,22 @@ export interface DocsIndex {
         readonly rights?: OperationRights;
       }
     | undefined;
+  /**
+   * Finds the operations whose path fits a path as a request or a message
+   * writes it: with or without the base `/api`, with values such as
+   * `/groups/12/members` or with placeholders of any name such as
+   * `/groups/{id}/members`. A value fits a placeholder of the document, a
+   * placeholder only a placeholder, and a fixed part only the same text.
+   * Of all that fit, only those with the most fixed parts count, so that
+   * `/groups/members` finds that operation and not `/groups/{groupId}`.
+   *
+   * @param method - The method of HTTP in small letters, such as `get`.
+   * @param path - The path, starting with `/`, without query.
+   * @returns The `operationId` of each operation that fits best, sorted;
+   *   more than one only where the document has two such paths. Empty
+   *   when none fits or the path is not one.
+   */
+  findOperationsByPath(method: string, path: string): readonly string[];
   /**
    * Searches the rights.
    *
@@ -352,15 +390,39 @@ function createDocsIndex(facts: Facts, search: DocsIndexSearch): DocsIndex {
         churchToolsVersion: sources.permissions?.churchToolsVersion ?? '',
       }),
     ];
-    const labelPage =
-      fact.label === undefined || !('page' in fact.label)
-        ? undefined
-        : pages.get(fact.label.page);
-    if (labelPage !== undefined) {
-      attributions.push(pageAttribution(labelPage));
+    const { label } = fact;
+    if (label !== undefined && 'page' in label) {
+      const labelPage = pages.get(label.page);
+      if (labelPage !== undefined) {
+        attributions.push(pageAttribution(labelPage));
+      }
+    } else if (label !== undefined) {
+      // No help page names the right: the label is the wording of the web
+      // interface as the finding recorded it, so it names that finding.
+      attributions.push(
+        Object.freeze({
+          source: 'finding',
+          title: label.finding,
+          path: findingsPath,
+          churchToolsVersion: label.version,
+        }),
+      );
     }
     return Object.freeze(attributions);
   };
+
+  // The paths of the operations by method, cut into their parts once. A
+  // part in braces is a placeholder of the document.
+  const templates = new Map<
+    string,
+    { readonly operationId: string; readonly parts: readonly string[] }[]
+  >();
+  for (const fact of facts.operations.entries) {
+    const list = templates.get(fact.method) ?? [];
+    list.push({ operationId: fact.operationId, parts: fact.path.split('/') });
+    templates.set(fact.method, list);
+  }
+  const isPlaceholder = (part: string) => /^\{[^{}/]+\}$/u.test(part);
 
   const pick = <T>(
     hits: readonly SearchHit[],
@@ -400,6 +462,42 @@ function createDocsIndex(facts: Facts, search: DocsIndexSearch): DocsIndex {
         attribution: operationAttribution(fact),
         ...(rights === undefined ? {} : { rights }),
       });
+    },
+    findOperationsByPath: (method: string, path: string) => {
+      // The document writes its paths below the base /api of its servers.
+      const below = /^\/api(?=\/|$)/u.test(path) ? path.slice(4) : path;
+      const trimmed =
+        below.length > 1 && below.endsWith('/') ? below.slice(0, -1) : below;
+      if (!trimmed.startsWith('/') || /[?#\s]/u.test(trimmed)) {
+        return Object.freeze([]);
+      }
+      const asked = trimmed.split('/');
+      let best = -1;
+      let found: string[] = [];
+      for (const { operationId, parts } of templates.get(method) ?? []) {
+        if (parts.length !== asked.length) continue;
+        let fixed = 0;
+        const fits = parts.every((part, at) => {
+          const given = asked[at] ?? '';
+          if (isPlaceholder(part)) {
+            return (
+              given !== '' && (isPlaceholder(given) || !given.includes('{'))
+            );
+          }
+          if (part === given) {
+            fixed += 1;
+            return true;
+          }
+          return false;
+        });
+        if (!fits || fixed < best) continue;
+        if (fixed > best) {
+          best = fixed;
+          found = [];
+        }
+        found.push(operationId);
+      }
+      return Object.freeze(found.sort());
     },
     searchRights: (query: string, limit: number) =>
       Object.freeze(

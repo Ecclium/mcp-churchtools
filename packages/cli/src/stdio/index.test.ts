@@ -5,12 +5,14 @@ import {
   RegistryRefusal,
   tokenVariableName,
 } from '@ecclium/mcp-churchtools-core';
+import { DocsIndexError } from '@ecclium/mcp-churchtools-docs-index';
 import {
   assertNoCanary,
   createChurchToolsDouble,
   doubleOrigin,
   makeCanary,
   type MockedHttpTransport,
+  syntheticDocsIndex,
 } from '@ecclium/mcp-churchtools-testkit';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -41,12 +43,12 @@ vi.mock(import('./catalog.js'), async (importOriginal) => {
   return {
     ...original,
     createStdioCatalog: (
-      config: Parameters<typeof original.createStdioCatalog>[0],
+      ...args: Parameters<typeof original.createStdioCatalog>
     ) => {
       if (planted.reason !== undefined) {
         throw new RegistryRefusal(planted.reason, { plugin: 'example' });
       }
-      return original.createStdioCatalog(config);
+      return original.createStdioCatalog(...args);
     },
   };
 });
@@ -232,6 +234,57 @@ describe('the first stage of the start over stdio', () => {
       `${warningText('token_from_environment')}\n${refusalText('plugin_reserved')}\n`,
     );
   });
+
+  // The docs index is read only with the toolset docs, and without a
+  // usable index the start stops with its notice (ADR 0066).
+  it('reads the docs index once with the toolset docs and never without it', async () => {
+    const reads: number[] = [];
+    const readDocs = () => {
+      reads.push(1);
+      return syntheticDocsIndex();
+    };
+    const environment = (toolsets: string): Environment => ({
+      ECCLIUM_CHURCHTOOLS_URL: doubleOrigin,
+      [tokenVariableName]: makeCanary('token').value,
+      ECCLIUM_TOOLSETS: toolsets,
+    });
+    for (const toolsets of ['wiki', 'docs']) {
+      const { options, input, exitCodesSet } = serving();
+      const { code } = await start([], environment(toolsets), {
+        ...options,
+        readDocs,
+      });
+      expect(code).toBeUndefined();
+      input.end();
+      await vi.waitFor(() => {
+        expect(exitCodesSet).toEqual([exitCodes.ok]);
+      });
+      expect(reads, toolsets).toHaveLength(toolsets === 'docs' ? 1 : 0);
+    }
+  });
+
+  it.each(['missing', 'size'] as const)(
+    'ends with the toolset docs and a docs index that is %s with its notice and 70',
+    async (problem) => {
+      const { code, stderr } = await start(
+        [],
+        {
+          ECCLIUM_CHURCHTOOLS_URL: doubleOrigin,
+          [tokenVariableName]: makeCanary('token').value,
+          ECCLIUM_TOOLSETS: 'docs',
+        },
+        {
+          readDocs: () => {
+            throw new DocsIndexError(problem);
+          },
+        },
+      );
+      expect(code).toBe(exitCodes.internal);
+      expect(stderr()).toBe(
+        `${warningText('token_from_environment')}\n${startText('docs_index')}\n`,
+      );
+    },
+  );
 
   it('gives an internal error one fixed notice and 70', async () => {
     const token = makeCanary('token');

@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { descriptionBudget, untrustedWarning } from './description.js';
 import { type RefusalReason, RegistryRefusal } from './refusal.js';
 import { type CatalogOptions, createToolCatalog } from './registry.js';
-import { toolsetNames } from './toolsets.js';
+import { type ToolsetName, toolsetNames } from './toolsets.js';
 
 // The tools of these tests are in the area of the wiki, and every catalog
 // turns that toolset on unless a test names its own: a tool of a plugin in
@@ -335,7 +335,8 @@ describe('createToolCatalog', () => {
         inArea('ct_whoami', 'base'),
         inArea('ct_groups_get', 'groups'),
         inArea('ct_events_list', 'events'),
-        inArea('ct_docs_search', 'docs'),
+        inArea('ct_docs_search_api', 'docs'),
+        inArea('ct_api_search_actions', 'api'),
       ),
     );
     const names = (toolsets?: ReadonlySet<'persons' | 'events'>) =>
@@ -367,8 +368,23 @@ describe('createToolCatalog', () => {
         readOnly: true,
         toolsets: new Set(toolsetNames),
       });
-      expect(all.has('ct_docs_search')).toBe(false);
+      expect(all.has('ct_api_search_actions')).toBe(false);
+      expect(all.has('ct_docs_search_api')).toBe(true);
       expect(all.has('ct_events_list')).toBe(true);
+    });
+
+    it('offers the docs tools only with the toolset docs (ADR 0066)', () => {
+      const catalog = (toolsets: ReadonlySet<ToolsetName>) =>
+        createToolCatalog({ core, plugins: [], readOnly: true, toolsets })
+          .list()
+          .map((entry) => entry.name);
+      expect(catalog(new Set(['docs'] as const))).toEqual([
+        'ct_docs_search_api',
+        'ct_whoami',
+      ]);
+      expect(
+        catalog(new Set(['persons', 'events', 'wiki'] as const)),
+      ).not.toContain('ct_docs_search_api');
     });
 
     it('filters the tools of plugins the same way', () => {

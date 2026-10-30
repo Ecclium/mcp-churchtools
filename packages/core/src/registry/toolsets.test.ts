@@ -19,18 +19,19 @@ const expected: Readonly<
   bookings: 'calendars',
   wiki: 'wiki',
   songs: 'songs',
-  docs: undefined,
+  docs: 'docs',
   api: undefined,
 };
 
 describe('the toolsets', () => {
-  it('names five toolsets, frozen, in a fixed order', () => {
+  it('names six toolsets, frozen, in a fixed order', () => {
     expect(toolsetNames).toEqual([
       'persons',
       'events',
       'calendars',
       'wiki',
       'songs',
+      'docs',
     ]);
     expect(Object.isFrozen(toolsetNames)).toBe(true);
   });
@@ -55,7 +56,7 @@ describe('the toolsets', () => {
     },
   );
 
-  it('knows only the five names as toolsets', () => {
+  it('knows only the six names as toolsets', () => {
     for (const name of toolsetNames) expect(isToolsetName(name)).toBe(true);
     for (const value of ['all', 'base', 'groups', 'Persons', '', 1, null]) {
       expect(isToolsetName(value), String(value)).toBe(false);

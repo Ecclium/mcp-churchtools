@@ -801,6 +801,20 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'plugins-only-plugin-api',
+    name: 'the plugin of the core imports the docs index itself',
+    files: {
+      'packages/tools/src/core-plugin.ts': `import '${nameOf('docs-index')}';\nexport {};\n`,
+    },
+  },
+  {
+    rule: 'docs-tools-only-plugin-api-and-docs-index',
+    name: 'a docs tool imports core',
+    files: {
+      'packages/tools/src/docs/forbidden.ts': `import '${nameOf('core')}';\nexport {};\n`,
+    },
+  },
+  {
     rule: 'bin-imports-only-environment',
     name: 'the executable imports the command line statically',
     files: {

@@ -1,3 +1,5 @@
+import { DocsIndexError } from '@ecclium/mcp-churchtools-docs-index';
+import { syntheticDocsIndex } from '@ecclium/mcp-churchtools-testkit';
 import { describe, expect, it } from 'vitest';
 
 import { createStdioCatalog } from './catalog.js';
@@ -116,5 +118,55 @@ describe('the catalog over stdio', () => {
       expect(entry.meta.sensitivity).not.toBe('special');
       expect(entry.asSpecial).toBe(false);
     }
+  });
+
+  // The docs index is read only with the toolset docs, and the six docs
+  // tools need no state folder and name no person (ADR 0066).
+  it('reads the docs index only for the toolset docs and adds the six docs tools', () => {
+    let reads = 0;
+    const readDocs = () => {
+      reads += 1;
+      return syntheticDocsIndex();
+    };
+    const without = createStdioCatalog(
+      { readOnly: true, toolsets: ['persons', 'events', 'wiki'] },
+      { readDocs },
+    );
+    expect(reads).toBe(0);
+    expect(without.list().some(({ meta }) => meta.domain === 'docs')).toBe(
+      false,
+    );
+    const catalog = createStdioCatalog(
+      { readOnly: true, toolsets: ['docs'] },
+      { readDocs },
+    );
+    expect(reads).toBe(1);
+    expect(catalog.list().map((entry) => entry.name)).toEqual([
+      'ct_docs_get_operation',
+      'ct_docs_get_right',
+      'ct_docs_read_academy',
+      'ct_docs_search_academy',
+      'ct_docs_search_api',
+      'ct_docs_search_rights',
+      'ct_whoami',
+    ]);
+    for (const entry of catalog.list()) {
+      if (entry.name === 'ct_whoami') continue;
+      expect(entry.meta.sensitivity).toBe('none');
+      expect(entry.asSpecial).toBe(false);
+    }
+  });
+
+  it('lets the refusal of the docs index through, so that the start stops', () => {
+    expect(() =>
+      createStdioCatalog(
+        { readOnly: true, toolsets: ['docs'] },
+        {
+          readDocs: () => {
+            throw new DocsIndexError('missing');
+          },
+        },
+      ),
+    ).toThrow(DocsIndexError);
   });
 });

@@ -42,7 +42,7 @@ import {
 import { arrangementsPerSong } from './songs/get.js';
 import { arrangementsPerFoundSong } from './songs/search.js';
 import { categoriesPerCall } from './wiki/categories.js';
-import { maxPartBytes } from './wiki/parts.js';
+import { maxPartBytes } from './parts.js';
 
 // The entry hands out the plugin of the free core. The registry of the core
 // takes it as the core and keeps each tool with its metadata, a shape whose
@@ -328,7 +328,7 @@ describe.each([
 
   it('names its right in the description the model reads', () => {
     expect(tool?.description).toContain(
-      `Required ChurchTools rights: "${right.right}" in ${right.module}.`,
+      `ChurchTools rights: "${right.right}" in ${right.module}.`,
     );
   });
 });
@@ -381,7 +381,7 @@ describe.each([
       routineStable: false,
     });
     expect(tool?.description).toContain(
-      `Required ChurchTools rights: ${rights
+      `ChurchTools rights: ${rights
         .map((right) => `"${right.right}" in ${right.module}`)
         .join(', ')}.`,
     );
@@ -423,7 +423,7 @@ describe.each([
       routineStable,
     });
     expect(tool?.description).toContain(
-      `Required ChurchTools rights: ${rights
+      `ChurchTools rights: ${rights
         .map((right) => `"${right.right}" in ${right.module}`)
         .join(', ')}.`,
     );
@@ -516,7 +516,7 @@ describe.each([
     });
     expect(tool?.asSpecial).toBe(false);
     expect(tool?.description).toContain(
-      'Required ChurchTools rights: "view songcategory" in churchservice.',
+      'ChurchTools rights: "view songcategory" in churchservice.',
     );
   });
 

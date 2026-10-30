@@ -19,6 +19,8 @@ import {
 import type { PromptArgument } from '@ecclium/mcp-churchtools-plugin-api';
 import { createCorePlugin } from '@ecclium/mcp-churchtools-tools';
 
+import { syntheticDocsIndex } from '../fixtures/docs-facts.js';
+
 const code = (text: string): string => `\`${text}\``;
 
 // Numbers as the texts for people write them: 2'000.
@@ -116,7 +118,7 @@ const promptSection = (prompt: PromptEntry, catalog: ToolCatalog): string[] => {
  */
 export function renderPromptsReference(): string {
   const catalog = createToolCatalog({
-    core: createCorePlugin(),
+    core: createCorePlugin({ docs: syntheticDocsIndex() }),
     plugins: [],
     readOnly: false,
     toolsets: new Set(toolsetNames),

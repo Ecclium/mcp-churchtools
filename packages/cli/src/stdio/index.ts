@@ -33,6 +33,7 @@ import {
   prepareQuotaFolder,
   systemClock,
 } from '@ecclium/mcp-churchtools-core/composition';
+import { DocsIndexError } from '@ecclium/mcp-churchtools-docs-index';
 
 import { takeEnvironment } from '../environment.js';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
@@ -49,7 +50,7 @@ import {
 } from '../messages/index.js';
 import { writeNotices } from '../notices/index.js';
 import type { WriteSyncFn } from '../send.js';
-import { createStdioCatalog } from './catalog.js';
+import { createStdioCatalog, type StdioCatalogOptions } from './catalog.js';
 import type { ServeReplacements } from './serve.js';
 
 /** Replacements for tests. */
@@ -63,7 +64,18 @@ export interface StdioStartOptions extends ServeReplacements {
   readonly openAuditFile?: typeof openAuditFile;
   /** Replaces the check of the folder of the read budget. */
   readonly prepareQuotaFolder?: typeof prepareQuotaFolder;
+  /** Replaces the reader of the docs index. */
+  readonly readDocs?: StdioCatalogOptions['readDocs'];
 }
+
+// Whether a thrown value is the refusal of the docs index, without
+// running code of a proxy. Its properties are never read: the problem
+// says nothing the notice needs.
+const isDocsIndexError = (error: unknown): boolean =>
+  typeof error === 'object' &&
+  error !== null &&
+  !isProxy(error) &&
+  error instanceof DocsIndexError;
 
 // The reason of a refusal of the registry, read as an own data property of
 // a refusal of core. Any other value gives undefined, and the start then
@@ -127,6 +139,7 @@ export async function startStdio(
     writeSync,
     openAuditFile: open = openAuditFile,
     prepareQuotaFolder: prepare = prepareQuotaFolder,
+    readDocs,
     ...replacements
   } = startOptions;
   const notices = (texts: readonly MessageText[]): boolean =>
@@ -153,8 +166,17 @@ export async function startStdio(
     }
     let catalog: ToolCatalog;
     try {
-      catalog = createStdioCatalog(loaded.config);
+      catalog = createStdioCatalog(
+        loaded.config,
+        readDocs === undefined ? {} : { readDocs },
+      );
     } catch (error) {
+      // With the toolset docs and no usable index the start stops, like
+      // for any other setting it cannot meet (ADR 0066).
+      if (isDocsIndexError(error)) {
+        notices([...texts, startText('docs_index')]);
+        return exitCodes.internal;
+      }
       const reason = refusalOf(error);
       if (reason === undefined) throw error;
       notices([...texts, refusalText(reason)]);

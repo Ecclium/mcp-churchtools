@@ -14,6 +14,7 @@ import { appointmentsListTool } from './appointments/list.js';
 import { whoamiTool } from './base/whoami.js';
 import { bookingsListTool } from './bookings/list.js';
 import { calendarsListTool } from './calendars/list.js';
+import { addDocsTools, type DocsIndex } from './docs/index.js';
 import { eventsGetAgendaTool } from './events/agenda.js';
 import { eventsGetTool } from './events/get.js';
 import { eventsListTool } from './events/list.js';
@@ -36,15 +37,26 @@ import { wikiPageGetTool } from './wiki/page.js';
 import { wikiPagesListTool } from './wiki/pages.js';
 import { wikiSearchTool } from './wiki/search.js';
 
+/** What the composition root hands to the plugin of the core. */
+export interface CorePluginOptions {
+  /**
+   * The docs index, which the composition root loads only when the
+   * toolset `docs` is on, once per process (ADR 0066). Without it the
+   * plugin adds no docs tool.
+   */
+  readonly docs?: DocsIndex;
+}
+
 /**
  * Builds the plugin of the free core, under the name of the package of the
  * server, which the catalog reserves for it. It adds every tool and both
- * prompts of the core. Which of them the catalog offers decides the
- * composition root with the toolsets of the operator (`ECCLIUM_TOOLSETS`,
- * ADR 0062): without any, a server on a productive tenant offers only
- * `ct_whoami` and no prompt, because each prompt needs its tools (ADR
- * 0065).
+ * prompts of the core, the six docs tools only with a docs index. Which of
+ * them the catalog offers decides the composition root with the toolsets
+ * of the operator (`ECCLIUM_TOOLSETS`, ADR 0062): without any, a server on
+ * a productive tenant offers only `ct_whoami` and no prompt, because each
+ * prompt needs its tools (ADR 0065).
  *
+ * @param options - The docs index, if the toolset `docs` is on.
  * @returns The plugin, frozen.
  * @example
  * ```ts
@@ -56,7 +68,8 @@ import { wikiSearchTool } from './wiki/search.js';
  * catalog.get('ct_whoami')?.origin; // 'core'
  * ```
  */
-export function createCorePlugin(): Plugin {
+export function createCorePlugin(options: CorePluginOptions = {}): Plugin {
+  const { docs } = options;
   return Object.freeze({
     name: '@ecclium/mcp-churchtools',
     version: '0.0.0',
@@ -85,6 +98,9 @@ export function createCorePlugin(): Plugin {
       host.addTool(bookingsListTool);
       host.addTool(songsSearchTool);
       host.addTool(songsGetTool);
+      if (docs !== undefined) {
+        addDocsTools(host, docs);
+      }
       host.addPrompt(rotaWeekendPrompt);
       host.addPrompt(wikiDraftPrompt);
       return undefined;

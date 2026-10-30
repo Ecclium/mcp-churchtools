@@ -132,7 +132,7 @@ export const personsGetGroupsTool = defineTool({
     avoidWhen:
       'You want the members of a group: read the members of the group instead.',
     limits:
-      'At most 50 groups and no further pages: more is true when the person belongs to more groups. It lists the memberships ChurchTools shows by default, without its switches for past, inactive, requested or deleted ones, and only groups of the types the service account may see. An empty result can also mean that the account lacks a right, because ChurchTools then returns no group instead of an error.',
+      'At most 50 groups and no further pages: more is true when the person belongs to more groups. It lists the memberships ChurchTools shows by default, without its switches for past, inactive, requested or deleted ones, and only groups of the types the service account may see. An empty result can also mean a missing right.',
   },
   input,
   output,

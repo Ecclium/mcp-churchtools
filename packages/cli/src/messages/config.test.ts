@@ -344,7 +344,7 @@ describe('the catalog of messages', () => {
       variable: 'ECCLIUM_TOOLSETS',
     });
     expect(message.why).toContain(
-      '‹persons›, ‹events›, ‹calendars›, ‹wiki› und ‹songs›',
+      '‹persons›, ‹events›, ‹calendars›, ‹wiki›, ‹songs› und ‹docs›',
     );
     expect(message.why).toContain('allein ‹all›');
     expect(message.why).toContain('ohne Leerzeichen');

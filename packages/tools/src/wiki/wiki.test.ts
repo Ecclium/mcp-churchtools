@@ -35,7 +35,7 @@ import {
   pastLastPage,
   wikiPagesListTool,
 } from './pages.js';
-import { splitIntoParts } from './parts.js';
+import { splitIntoParts } from '../parts.js';
 import { categoryRefused, wikiRefused } from './rights.js';
 
 // The three tools of the wiki run through the pipeline of the core on the

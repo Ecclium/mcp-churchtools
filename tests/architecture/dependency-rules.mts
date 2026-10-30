@@ -16,6 +16,9 @@ import type { Boundaries, PlaceKey } from './boundaries.mts';
 /** Name of the package that plugins may import. */
 const pluginApi = 'plugin-api';
 
+/** Name of the package that the docs tools read. */
+const docsIndex = 'docs-index';
+
 /**
  * Test files, which may use test helpers that other code may not. The same
  * pattern as the tests Vitest runs and the files the build leaves out, so a
@@ -368,11 +371,30 @@ export function dependencyRules(
     {
       name: 'plugins-only-plugin-api',
       severity: 'error',
-      comment: `${adr('plugins')}: a plugin imports only the plugin API, as a plugin of a third party must. Its tests may use the testkit.`,
+      comment: `${adr('plugins')}: a plugin imports only the plugin API, as a plugin of a third party must. Its tests may use the testkit. The plugin of the core may add the docs tools, which read the docs index (${adr('docsTools')}).`,
       from: { path: at('plugins'), pathNot: testFile },
       to: {
         path: '^packages/',
-        pathNot: [`^packages/${pluginApi}/`, ...at('plugins')],
+        pathNot: [
+          `^packages/${pluginApi}/`,
+          ...at('plugins'),
+          ...at('docsTools'),
+        ],
+      },
+    },
+    {
+      name: 'docs-tools-only-plugin-api-and-docs-index',
+      severity: 'error',
+      comment: `${adr('docsTools')}: the docs tools import, of the workspace, only the plugin API, the modules of the plugins and the docs index they read. Their tests may use the testkit.`,
+      from: { path: at('docsTools'), pathNot: testFile },
+      to: {
+        path: '^packages/',
+        pathNot: [
+          `^packages/${pluginApi}/`,
+          `^packages/${docsIndex}/`,
+          ...at('plugins'),
+          ...at('docsTools'),
+        ],
       },
     },
   ];

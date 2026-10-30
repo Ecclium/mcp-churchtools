@@ -128,7 +128,7 @@ export const servicesListTool = defineTool({
     avoidWhen:
       'You want to know who serves at an event, which another tool reads.',
     limits:
-      'At most 25 services per call: more is true when further services follow, then ask again with the next page number. The list holds every service of the instance.',
+      'At most 25 services per call: more is true when another page follows. The list holds every service of the instance.',
   },
   input,
   output,

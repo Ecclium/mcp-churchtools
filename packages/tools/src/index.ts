@@ -12,7 +12,7 @@ export { appointmentsListTool } from './appointments/list.js';
 export { whoamiTool } from './base/whoami.js';
 export { bookingsListTool } from './bookings/list.js';
 export { calendarsListTool } from './calendars/list.js';
-export { createCorePlugin } from './core-plugin.js';
+export { type CorePluginOptions, createCorePlugin } from './core-plugin.js';
 export { eventsGetAgendaTool } from './events/agenda.js';
 export { eventsGetTool } from './events/get.js';
 export { eventsListTool } from './events/list.js';

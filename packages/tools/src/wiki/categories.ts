@@ -129,7 +129,7 @@ export const wikiCategoriesListTool = defineTool({
     avoidWhen:
       'You want the pages or the text of the wiki, which this tool never returns.',
     limits:
-      'At most 25 categories per call: more is true when further categories follow, then ask again with the next page number. Only the categories the service account may see appear, so a category can be missing because of a right.',
+      'At most 25 categories per call: more is true when another page follows. Only the categories the service account may see appear, so a category can be missing because of a right.',
   },
   input,
   output,

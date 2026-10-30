@@ -14,15 +14,17 @@ export const toolsetNames = Object.freeze([
   'calendars',
   'wiki',
   'songs',
+  'docs',
 ] as const);
 
 /** The name of a toolset. */
 export type ToolsetName = (typeof toolsetNames)[number];
 
 // The toolset of each area. `base` is always on, so that ct_whoami is there
-// without any setting. The areas of the index of the documentation and of
-// the generic API tools have no toolset yet: until an ADR gives them one,
-// the catalog offers none of their tools.
+// without any setting. The docs tools read only the index of the
+// documentation and form the toolset `docs` (ADR 0066). The generic API
+// tools have no toolset yet: until an ADR gives them one, the catalog
+// offers none of their tools.
 const toolsetOfDomain: Readonly<
   Record<ToolDomain, ToolsetName | 'base' | undefined>
 > = Object.freeze({
@@ -38,7 +40,7 @@ const toolsetOfDomain: Readonly<
   bookings: 'calendars',
   wiki: 'wiki',
   songs: 'songs',
-  docs: undefined,
+  docs: 'docs',
   api: undefined,
 });
 

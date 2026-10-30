@@ -22,7 +22,8 @@ import {
 import type { Message, MessageText } from './config.js';
 
 /** The texts of the start over stdio besides the refusals of the registry. */
-export type StartNoticeCode = 'usage' | 'internal' | 'audit_file_required';
+export type StartNoticeCode =
+  'usage' | 'internal' | 'audit_file_required' | 'docs_index';
 
 const message = (what: string, why: string, action: string): Message =>
   Object.freeze({ what, why, action });
@@ -42,6 +43,11 @@ const starts: Readonly<Record<StartNoticeCode, Message>> = Object.freeze({
     'Ein Tool mit Personendaten der besonderen Kategorie oder mit Namen anderer Personen ist eingeschaltet, aber ‹ECCLIUM_STATE_DIR› ist nicht gesetzt.',
     'Ein Ergebnis eines solchen Tools gibt Ecclium nur heraus, wenn seine Zeile in der Audit-Datei steht, und die Audit-Datei liegt in diesem Ordner.',
     'Setzen Sie ‹ECCLIUM_STATE_DIR› auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 oder schalten Sie das Tool aus.',
+  ),
+  docs_index: message(
+    'Das Toolset ‹docs› ist eingeschaltet, aber der Index der Dokumentation von ChurchTools fehlt oder ist beschädigt.',
+    'Die Tools von ‹docs› lesen nur diesen Index, der mit Ecclium ausgeliefert wird. Ohne ihn startet Ecclium nicht, statt die Tools ohne Meldung wegzulassen.',
+    'Installieren Sie Ecclium neu, im Quellcode mit «pnpm build», oder nehmen Sie ‹docs› aus ‹ECCLIUM_TOOLSETS›.',
   ),
 });
 
