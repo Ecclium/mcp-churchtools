@@ -1,7 +1,8 @@
 /**
  * Redaction of results and error messages (ADR 0024): masks for contact
- * data and dates of birth, the cleaning of hidden characters and the data
- * envelope for free text. Only the pipeline uses it; the entry point of
+ * data and dates of birth, the cleaning of hidden characters, the data
+ * envelope for free text and the mask of an answer of the escape hatch
+ * (ADR 0067). Only the pipeline uses it; the entry point of
  * core does not export it.
  *
  * @packageDocumentation
@@ -14,6 +15,15 @@ export {
   type RandomBytes,
   wrapInEnvelope,
 } from './envelope.js';
+export {
+  type FieldMask,
+  fieldMask,
+  foreignJsonCost,
+  type ForeignJsonText,
+  maskForeignText,
+  maxForeignJsonCost,
+  renderForeignJson,
+} from './foreign-json.js';
 export {
   maskBirthdate,
   maskedValue,
