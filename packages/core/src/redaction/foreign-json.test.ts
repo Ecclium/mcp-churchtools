@@ -44,6 +44,15 @@ describe('fieldMask', () => {
     ['mobile', 'phone'],
     ['Mobil', 'phone'],
     ['fax', 'phone'],
+    ['mobiles', 'phone'],
+    ['faxes', 'phone'],
+    ['randomUrl', 'secret'],
+    ['randomString', 'secret'],
+    ['iCalSourceUrl', 'secret'],
+    ['loginToken', 'secret'],
+    ['mail_smtp_args_password', 'secret'],
+    ['churchdb_mailjet_apisecret', 'secret'],
+    ['apiKey', 'secret'],
     ['birthday', 'birthdate'],
     ['dateOfBirth', 'birthdate'],
     ['birth_date', 'birthdate'],
@@ -76,6 +85,23 @@ describe('maskForeignText', () => {
     ).toBe(
       'Fragen an m***@example.org oder 000 1** ** **, sonst (000) 1** ** ** oder +41 00 *** ** **.',
     );
+  });
+
+  it.each([
+    ['0000-30-12-34-56', '0000-**-**-**-**'],
+    ['0000/1/23/45/67', '0000/*/**/**/**'],
+    ['05.17.1980', '05.17.****'],
+  ])('masks %s, which only looks like a date at its start', (text, result) => {
+    expect(maskForeignText(`Tel: ${text}`)).toBe(`Tel: ${result}`);
+  });
+
+  it('masks a phone number with typographic hyphens or en dashes as a whole', () => {
+    const hyphen = String.fromCodePoint(0x2011);
+    const dash = String.fromCodePoint(0x2013);
+    expect(maskForeignText(`Tel: 000${hyphen}123${hyphen}45${hyphen}67`)).toBe(
+      'Tel: [masked]',
+    );
+    expect(maskForeignText(`Tel: 000${dash}123 45 67`)).toBe('Tel: [masked]');
   });
 
   it.each([
@@ -140,6 +166,52 @@ describe('renderForeignJson', () => {
         fax: null,
       },
       meta: { count: 1 },
+    });
+  });
+
+  it('passes the mask of a field on to numbers right under it and to texts in objects below', () => {
+    expect(
+      render({
+        phone: 41001234567,
+        birthday: { date: '1980-05-17', shown: true },
+        emails: [{ address: 'privat@', contactLabelId: 3, primary: true }],
+        mobiles: [41001234567],
+        hasEmail: true,
+        editBirthday: false,
+        email: null,
+      }),
+    ).toEqual({
+      phone: '4100*******',
+      birthday: { date: '1980', shown: true },
+      emails: [{ address: '[masked]', contactLabelId: 3, primary: true }],
+      mobiles: ['4100*******'],
+      hasEmail: true,
+      editBirthday: false,
+      email: null,
+    });
+  });
+
+  it('hides the whole value of a field with a secret, also below it', () => {
+    expect(
+      render({
+        calendar: {
+          id: 2,
+          name: 'Gottesdienste',
+          randomUrl: 'a1b2c3d4e5f6',
+          iCalSourceUrl: 'https://example.church.tools/ical/x',
+          isPublic: true,
+        },
+        settings: { apiKey: 1234, tokens: { reading: 'abc' } },
+      }),
+    ).toEqual({
+      calendar: {
+        id: 2,
+        name: 'Gottesdienste',
+        randomUrl: '[masked]',
+        iCalSourceUrl: '[masked]',
+        isPublic: true,
+      },
+      settings: { apiKey: '[masked]', tokens: { reading: '[masked]' } },
     });
   });
 

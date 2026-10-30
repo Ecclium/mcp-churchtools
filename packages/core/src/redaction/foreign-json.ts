@@ -15,7 +15,7 @@
  */
 import type { RedactionLevel } from '@ecclium/mcp-churchtools-plugin-api';
 
-import { maskBirthdate, maskEmail, maskPhone } from './mask.js';
+import { maskBirthdate, maskedValue, maskEmail, maskPhone } from './mask.js';
 import { dateAt, maskAddresses, phoneEndAt } from './message.js';
 import { removeHiddenCharacters } from './unicode.js';
 
@@ -28,7 +28,7 @@ import { removeHiddenCharacters } from './unicode.js';
 export const maxForeignJsonCost = 61_440;
 
 /** The kinds of mask a field name can ask for. */
-export type FieldMask = 'email' | 'phone' | 'birthdate';
+export type FieldMask = 'secret' | 'email' | 'phone' | 'birthdate';
 
 /** What writing an answer gives. */
 export type ForeignJsonText =
@@ -53,6 +53,22 @@ const plainName = (name: string): string => {
   return plain;
 };
 
+// Fields that carry a secret: the parts of the subscription link of a
+// calendar, which the read tools never pass on (ADR 0064), and names that
+// say token, password, secret or key.
+const secretNames: readonly string[] = Object.freeze([
+  'randomurl',
+  'randomstring',
+  'icalsourceurl',
+]);
+const secretParts: readonly string[] = Object.freeze([
+  'token',
+  'password',
+  'passwort',
+  'secret',
+  'apikey',
+]);
+
 const birthdateNames: readonly string[] = Object.freeze([
   'birthday',
   'birthdate',
@@ -62,9 +78,12 @@ const birthdateNames: readonly string[] = Object.freeze([
 ]);
 
 /**
- * The mask a field name asks for: e-mail for a name that ends in `mail`
+ * The mask a field name asks for: the whole value hidden for a secret,
+ * that is `randomUrl`, `randomString`, `iCalSourceUrl` and every name that
+ * holds `token`, `password`, `passwort`, `secret` or `apikey`; e-mail for
+ * a name that ends in `mail`
  * or `mails`, phone for one that holds `phone`, `telefon` or `handy` or
- * ends in `mobile`, `mobil` or `fax`, and the date of birth for
+ * ends in `mobile`, `mobiles`, `mobil`, `fax` or `faxes`, and the date of birth for
  * `birthday`, `birthdate`, `dateofbirth`, `geburtsdatum`, `geburtstag` and
  * names that end in `birthday` or `birthdate`. The name is read in lower
  * case with letters and digits only.
@@ -75,18 +94,27 @@ const birthdateNames: readonly string[] = Object.freeze([
  * ```ts
  * fieldMask('phonePrivate'); // 'phone'
  * fieldMask('birthName'); // undefined
+ * fieldMask('randomUrl'); // 'secret'
  * ```
  */
 export function fieldMask(name: string): FieldMask | undefined {
   const plain = plainName(name);
+  if (
+    secretNames.includes(plain) ||
+    secretParts.some((part) => plain.includes(part))
+  ) {
+    return 'secret';
+  }
   if (plain.endsWith('mail') || plain.endsWith('mails')) return 'email';
   if (
     plain.includes('phone') ||
     plain.includes('telefon') ||
     plain.includes('handy') ||
     plain.endsWith('mobile') ||
+    plain.endsWith('mobiles') ||
     plain.endsWith('mobil') ||
-    plain.endsWith('fax')
+    plain.endsWith('fax') ||
+    plain.endsWith('faxes')
   ) {
     return 'phone';
   }
@@ -152,6 +180,7 @@ export function maskForeignText(text: string): string {
 
 const maskByField = (mask: FieldMask, text: string): string => {
   if (text === '') return text;
+  if (mask === 'secret') return maskedValue;
   if (mask === 'email') return maskEmail(text);
   if (mask === 'phone') return maskPhone(text);
   return maskBirthdate(text);
@@ -163,12 +192,16 @@ interface Walk {
   collided: boolean;
 }
 
-// A masked copy of a value of the parsed answer. A text under a field that
-// asks for a mask gets that mask, also inside a list; every other text and
-// every key gets the mask by form.
+// A masked copy of a value of the parsed answer. A field that asks for a
+// mask passes it on to every text below it, in lists and in objects, where
+// a key without a mask of its own keeps it; a number takes it only right
+// under the field, so that an ID in an object below keeps its value. Every
+// other text and every key gets the mask by form. Booleans and null carry
+// nothing to hide and stay.
 const masked = (
   value: unknown,
   mask: FieldMask | undefined,
+  direct: boolean,
   walk: Walk,
 ): unknown => {
   if (typeof value === 'string') {
@@ -176,16 +209,22 @@ const masked = (
       ? maskForeignText(value)
       : maskByField(mask, value);
   }
+  if (typeof value === 'number') {
+    return mask !== undefined && direct
+      ? maskByField(mask, String(value))
+      : value;
+  }
   if (Array.isArray(value)) {
-    return value.map((item: unknown) => masked(item, mask, walk));
+    return value.map((item: unknown) => masked(item, mask, direct, walk));
   }
   if (typeof value !== 'object' || value === null) return value;
   const copy = Object.create(null) as Record<string, unknown>;
   for (const [key, item] of Object.entries(value)) {
     const name = maskForeignText(key);
     if (Object.hasOwn(copy, name)) walk.collided = true;
+    const own = fieldMask(key);
     Object.defineProperty(copy, name, {
-      value: masked(item, fieldMask(key), walk),
+      value: masked(item, own ?? mask, own !== undefined, walk),
       enumerable: true,
       writable: true,
       configurable: true,
@@ -234,7 +273,7 @@ export function renderForeignJson(
   level: RedactionLevel,
 ): ForeignJsonText {
   const walk: Walk = { collided: false };
-  const value = level === 'off' ? root : masked(root, undefined, walk);
+  const value = level === 'off' ? root : masked(root, undefined, false, walk);
   if (walk.collided) return Object.freeze({ ok: false, reason: 'collision' });
   const text = JSON.stringify(value);
   if (foreignJsonCost(text) > maxForeignJsonCost) {
