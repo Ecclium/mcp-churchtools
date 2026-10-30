@@ -185,7 +185,10 @@ export interface OperationFact {
   readonly operationId: string;
   /** The method of HTTP. */
   readonly method: (typeof operationMethods)[number];
-  /** The path with its parameters, such as `/api/groups/{id}`. */
+  /**
+   * The path with its parameters as the document writes it, below the
+   * base `/api` of its `servers`, such as `/groups/{groupId}`.
+   */
   readonly path: string;
   /** The tags of the operation, sorted. */
   readonly tags: readonly string[];

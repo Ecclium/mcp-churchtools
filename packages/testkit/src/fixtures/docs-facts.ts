@@ -71,7 +71,7 @@ export function syntheticFacts(): Facts {
         {
           operationId: 'deleteSyntheticThing',
           method: 'delete',
-          path: '/api/synthetic/things/{thingId}',
+          path: '/synthetic/things/{thingId}',
           tags: ['Synthetic'],
           summary: 'Delete a synthetic thing',
           deprecated: true,
@@ -81,7 +81,7 @@ export function syntheticFacts(): Facts {
         {
           operationId: 'getSyntheticThing',
           method: 'get',
-          path: '/api/synthetic/things/{thingId}',
+          path: '/synthetic/things/{thingId}',
           tags: ['Synthetic'],
           summary: 'Get one synthetic thing',
           description:
@@ -128,7 +128,7 @@ export function syntheticFacts(): Facts {
         {
           operationId: 'getSyntheticThingMembers',
           method: 'get',
-          path: '/api/synthetic/things/{thingId}/members',
+          path: '/synthetic/things/{thingId}/members',
           tags: ['Synthetic'],
           summary: 'List the members of a synthetic thing',
           description: 'Requires the right view thing members.',
@@ -166,7 +166,7 @@ export function syntheticFacts(): Facts {
         {
           operationId: 'listSyntheticThings',
           method: 'get',
-          path: '/api/synthetic/things',
+          path: '/synthetic/things',
           tags: ['Synthetic'],
           summary: 'Search synthetic things by name',
           deprecated: false,
@@ -184,7 +184,7 @@ export function syntheticFacts(): Facts {
         {
           operationId: 'postSyntheticThing',
           method: 'post',
-          path: '/api/synthetic/things',
+          path: '/synthetic/things',
           tags: ['Synthetic'],
           summary: 'Create a synthetic thing',
           deprecated: false,

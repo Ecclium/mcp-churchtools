@@ -100,6 +100,7 @@ export {
   words,
 } from './search/words.js';
 export {
+  buildDocsIndex,
   docsIndexFileName,
   docsIndexFormat,
   DocsIndexError,
@@ -113,6 +114,8 @@ export {
   type Attribution,
   type DocsIndex,
   type ExplainingPage,
+  type FindingAttribution,
+  findingsPath,
   type NeedingOperation,
   type NotNeedingOperation,
   type OpenApiAttribution,

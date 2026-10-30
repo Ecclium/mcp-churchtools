@@ -10,6 +10,7 @@ import { defaultBuildLocations, readFactFiles } from './build/files.js';
 import {
   type Attribution,
   type DocsIndex,
+  findingsPath,
   openApiDocumentPath,
   openDocsIndex,
   permissionsPath,
@@ -24,6 +25,11 @@ const academyLink = (path: string) => `https://churchtools.academy${path}`;
 
 function expectAttribution(attribution: Attribution): void {
   expect(attribution.title).not.toBe('');
+  if (attribution.source === 'finding') {
+    expect(attribution.path).toBe(findingsPath);
+    expect(attribution.churchToolsVersion).toMatch(/^\d+\.\d+/);
+    return;
+  }
   expect(attribution.retrieved).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   if (attribution.source === 'academy') {
     expect(attribution.link).toMatch(/^https:\/\/churchtools\.academy\/de\//);
@@ -38,7 +44,7 @@ describe('openDocsIndex', () => {
     expect(first).toEqual({
       operationId: 'getSyntheticThingMembers',
       method: 'get',
-      path: '/api/synthetic/things/{thingId}/members',
+      path: '/synthetic/things/{thingId}/members',
       summary: 'List the members of a synthetic thing',
       deprecated: false,
       attribution: {
@@ -169,14 +175,14 @@ describe('openDocsIndex', () => {
         need.rights.length,
       ]),
     ).toEqual([
-      ['getSyntheticThing', 'get', '/api/synthetic/things/{thingId}', 1],
+      ['getSyntheticThing', 'get', '/synthetic/things/{thingId}', 1],
       [
         'getSyntheticThingMembers',
         'get',
-        '/api/synthetic/things/{thingId}/members',
+        '/synthetic/things/{thingId}/members',
         1,
       ],
-      ['postSyntheticThing', 'post', '/api/synthetic/things', 2],
+      ['postSyntheticThing', 'post', '/synthetic/things', 2],
     ]);
     expect(things?.notNeededBy).toEqual([]);
     const view = index.getRight('synthetic', 'view');
@@ -185,7 +191,7 @@ describe('openDocsIndex', () => {
       {
         operationId: 'getSyntheticThing',
         method: 'get',
-        path: '/api/synthetic/things/{thingId}',
+        path: '/synthetic/things/{thingId}',
         notNeeded: {
           right: { module: 'synthetic', name: 'view' },
           evidence: [{ kind: 'finding', id: 'F1', version: '3.137' }],
@@ -195,16 +201,59 @@ describe('openDocsIndex', () => {
     expect(Object.isFrozen(things?.neededBy[0])).toBe(true);
   });
 
-  it('gives a label from a finding without the attribution of a page', () => {
+  it('attributes a label from a finding to that finding, not to a page', () => {
     const right = index.getRight('synthetic', 'edit things');
     expect(right?.fact.label).toEqual({
       text: 'Dinge bearbeiten',
       finding: 'F2',
       version: '3.137',
     });
-    expect(right?.attributions.map(({ source }) => source)).toEqual([
-      'permissions',
+    expect(right?.attributions.slice(1)).toEqual([
+      {
+        source: 'finding',
+        title: 'F2',
+        path: findingsPath,
+        churchToolsVersion: '3.137',
+      },
     ]);
+    expect(right?.attributions[0]?.source).toBe('permissions');
+  });
+
+  it('finds operations by method and path as a request writes them', () => {
+    const find = (method: string, path: string) =>
+      index.findOperationsByPath(method, path);
+    expect(find('get', '/synthetic/things/{thingId}')).toEqual([
+      'getSyntheticThing',
+    ]);
+    expect(find('get', '/api/synthetic/things/12/members')).toEqual([
+      'getSyntheticThingMembers',
+    ]);
+    expect(find('get', '/synthetic/things/{id}/members/')).toEqual([
+      'getSyntheticThingMembers',
+    ]);
+    expect(find('get', '/api/synthetic/things')).toEqual([
+      'listSyntheticThings',
+    ]);
+    expect(find('post', '/synthetic/things')).toEqual(['postSyntheticThing']);
+    expect(find('delete', '/synthetic/things/7')).toEqual([
+      'deleteSyntheticThing',
+    ]);
+    // A fixed part fits only itself, a placeholder only a value or a
+    // placeholder, and the method counts.
+    for (const [method, path] of [
+      ['get', '/synthetic/thing/12'],
+      ['get', '/synthetic/things/12/members/3'],
+      ['get', '/synthetic/{things}'],
+      ['get', '/synthetic/things//members'],
+      ['get', '/synthetic/things/a{b}/members'],
+      ['put', '/synthetic/things/12'],
+      ['get', 'synthetic/things'],
+      ['get', '/synthetic/things?limit=5'],
+      ['get', '/apis/synthetic/things'],
+    ] as const) {
+      expect(find(method, path), path).toEqual([]);
+    }
+    expect(Object.isFrozen(find('get', '/synthetic/things'))).toBe(true);
   });
 
   it('looks up an operation and a help page with their text', () => {
@@ -258,6 +307,18 @@ describe('openDocsIndex', () => {
     expect(
       real.searchOperations('group members', 10).map((hit) => hit.operationId),
     ).toContain('get-groups-id-members');
+    // The two paths of the document of one form both fit a value; a fixed
+    // part wins over a placeholder.
+    expect(real.findOperationsByPath('get', '/api/groups/12/members')).toEqual([
+      'get-groups-id-members',
+    ]);
+    expect(real.findOperationsByPath('get', '/groups/members')).toEqual([
+      'get-groups-members',
+    ]);
+    expect(real.findOperationsByPath('get', '/tags/12')).toEqual([
+      'get-tags-domainType',
+      'get-tags-tagId',
+    ]);
     expect(
       real
         .searchRights('view group', 10)
