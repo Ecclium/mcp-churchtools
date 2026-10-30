@@ -37,6 +37,7 @@ const startCodes: readonly StartNoticeCode[] = [
   'usage',
   'internal',
   'audit_file_required',
+  'docs_index',
 ];
 
 /** Every message of the module, with a label for the report. */
