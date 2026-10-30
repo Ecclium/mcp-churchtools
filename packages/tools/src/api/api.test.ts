@@ -284,6 +284,22 @@ describe('ct_api_search_actions', () => {
     expect(double.calls()).toEqual([]);
   });
 
+  // The birthdays rank first for these words, but the core does not read
+  // them; the search ranks only among the operations it reads, so the one
+  // hit asked for is a readable one (ADR 0067).
+  it('ranks only among the operations the core reads, before the limit', async () => {
+    const { call } = setup();
+    const outcome = await call('ct_api_search_actions', {
+      query: 'birthdays wiki groups',
+      limit: 1,
+    });
+    const hits = outcome.ok
+      ? (outcome.data as { hits: { operationId: string }[] }).hits
+      : [];
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.operationId).not.toBe('get-persons-birthdays');
+  });
+
   it('keeps to the limit and says when more matched', async () => {
     const { call } = setup();
     const outcome = await call('ct_api_search_actions', {
