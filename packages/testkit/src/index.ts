@@ -30,6 +30,7 @@ export {
   personsAtHighestLevel,
 } from './fixtures/highest-level.js';
 export {
+  syntheticDocsIndex,
   syntheticFactFiles,
   syntheticFacts,
   syntheticRightsPage,

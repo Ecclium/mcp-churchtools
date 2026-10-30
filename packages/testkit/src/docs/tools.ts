@@ -17,6 +17,8 @@ import {
 import type { DataClass } from '@ecclium/mcp-churchtools-plugin-api';
 import { createCorePlugin } from '@ecclium/mcp-churchtools-tools';
 
+import { syntheticDocsIndex } from '../fixtures/docs-facts.js';
+
 /** One leaf of an output, with the path an operator reads. */
 interface LeafRow {
   readonly path: string;
@@ -175,7 +177,7 @@ const toolSection = (entry: CatalogEntry): string[] => {
  */
 export function renderToolsReference(): string {
   const entries = createToolCatalog({
-    core: createCorePlugin(),
+    core: createCorePlugin({ docs: syntheticDocsIndex() }),
     plugins: [],
     readOnly: false,
     toolsets: new Set(toolsetNames),

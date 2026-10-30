@@ -9,9 +9,12 @@
  * @packageDocumentation
  */
 import {
+  buildDocsIndex,
   canonicalJson,
+  type DocsIndex,
   type FactFileTexts,
   type Facts,
+  openDocsIndex,
 } from '@ecclium/mcp-churchtools-docs-index';
 
 /** The path of the synthetic help page on rights. */
@@ -400,4 +403,19 @@ export function syntheticFactFiles(
     'academy.json': canonicalJson(facts.academy),
     'operation-rights.json': canonicalJson(facts.operationRights),
   };
+}
+
+/**
+ * Builds and opens a docs index in memory, as the tools get it from the
+ * composition root, without a built file (ADR 0022).
+ *
+ * @param facts - The facts, by default {@link syntheticFacts}.
+ * @returns The index, frozen.
+ * @example
+ * ```ts
+ * createCorePlugin({ docs: syntheticDocsIndex() });
+ * ```
+ */
+export function syntheticDocsIndex(facts: Facts = syntheticFacts()): DocsIndex {
+  return openDocsIndex(buildDocsIndex(syntheticFactFiles(facts)));
 }
