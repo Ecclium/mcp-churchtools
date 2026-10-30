@@ -82,6 +82,7 @@ const refusals: Readonly<Record<RefusalReason, string>> = Object.freeze({
   communication: 'Ecclium does not read communication between persons.',
   scope: 'This operation lies outside the areas that Ecclium reads.',
   parameter: 'Ecclium cannot fill a path parameter of this operation safely.',
+  birthdate: 'Ecclium does not read birthdays beyond their year.',
 });
 
 /**

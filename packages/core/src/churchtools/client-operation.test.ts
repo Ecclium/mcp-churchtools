@@ -171,6 +171,10 @@ describe('ChurchToolsClient.operation', () => {
       'This operation lies outside the areas that Ecclium reads.',
     ],
     ['get-events-ical', 'Ecclium does not read exports.'],
+    [
+      'get-persons-birthdays',
+      'Ecclium does not read birthdays beyond their year.',
+    ],
     ['get-fields', 'Ecclium does not read deprecated operations.'],
     [
       'get-calendars-calendarId-appointments-appointmentId-ical',
@@ -232,18 +236,44 @@ describe('ChurchToolsClient.operation', () => {
     double
       .intercept({ path: at('/api/groups/1'), method: 'GET' })
       .reply(200, { data: {} }, json);
-    let reads = 0;
+    const reads = { operationId: 0, path: 0, query: 0 };
     const request = {
       get operationId() {
-        reads += 1;
-        return reads === 1 ? 'get-groups-groupId' : 'get-persons-id-logintoken';
+        reads.operationId += 1;
+        return reads.operationId === 1
+          ? 'get-groups-groupId'
+          : 'get-persons-id-logintoken';
       },
-      path: { groupId: 1 },
+      get path() {
+        reads.path += 1;
+        return reads.path === 1 ? { groupId: 1 } : { groupId: '../x' };
+      },
+      get query() {
+        reads.query += 1;
+        return reads.query === 1 ? undefined : { other: 1 };
+      },
     };
     const answer = await client.operation(ctx(), request);
     expect(answer.operationId).toBe('get-groups-groupId');
-    expect(reads).toBe(1);
+    expect(reads).toEqual({ operationId: 1, path: 1, query: 1 });
     expect(double.calls().map((call) => call.path)).toEqual(['/api/groups/1']);
+  });
+
+  it('never sends a filter the classification withholds', async () => {
+    const { double, client, ctx } = setup();
+    expect(
+      await errorOf(
+        client.operation(ctx(), {
+          operationId: 'get-persons',
+          query: { birthday_after: '1980-05-16' },
+        }),
+      ),
+    ).toEqual({
+      code: 'validation',
+      message:
+        'The parameter birthday_after has a form that Ecclium does not send.',
+    });
+    expect(double.calls()).toHaveLength(0);
   });
 
   it.each([

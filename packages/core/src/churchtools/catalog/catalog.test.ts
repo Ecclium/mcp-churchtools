@@ -250,6 +250,46 @@ describe('lookupOperation', () => {
     ).toEqual({ ok: false, reason: 'kind' });
   });
 
+  it('keeps a withheld parameter of the query declared but unsendable', () => {
+    const op = operation({
+      parameters: [
+        path('thingId'),
+        { name: 'born_after', in: 'query', required: false, kind: 'date' },
+        { name: 'limit', in: 'query', required: false, kind: 'integer' },
+      ],
+    });
+    expect(
+      lookup(op, allowed('special', undefined, ['born_after'])),
+    ).toMatchObject({
+      ok: true,
+      operation: {
+        queryParameters: [
+          { name: 'born_after', kind: 'unsupported' },
+          { name: 'limit', kind: 'integer' },
+        ],
+      },
+    });
+  });
+
+  it('refuses to withhold a parameter the query does not declare or one it needs', () => {
+    expect(
+      lookup(operation(), allowed('none', undefined, ['thingId'])),
+    ).toEqual({
+      ok: false,
+      reason: 'kind',
+    });
+    const needed = operation({
+      parameters: [
+        path('thingId'),
+        { name: 'from', in: 'query', required: true, kind: 'date' },
+      ],
+    });
+    expect(lookup(needed, allowed('none', undefined, ['from']))).toEqual({
+      ok: false,
+      reason: 'kind',
+    });
+  });
+
   it('reads an operation without path parameters', () => {
     expect(
       lookup(operation({ path: '/api/things', parameters: [] })),
@@ -339,6 +379,15 @@ describe('frozenOperations, allowed and excluded', () => {
     expect(Object.isFrozen(entry.pathKinds)).toBe(true);
     expect(entry.pathKinds).not.toBe(kinds);
     expect(allowed('none')).toEqual({ allowed: true, sensitivity: 'none' });
+    const withheld = ['born_after'];
+    const quiet = allowed('special', undefined, withheld);
+    expect(quiet).toEqual({
+      allowed: true,
+      sensitivity: 'special',
+      withoutQuery: ['born_after'],
+    });
+    expect(Object.isFrozen(quiet.withoutQuery)).toBe(true);
+    expect(quiet.withoutQuery).not.toBe(withheld);
     expect(excluded('secret')).toEqual({ allowed: false, reason: 'secret' });
     expect(Object.isFrozen(excluded('secret'))).toBe(true);
   });

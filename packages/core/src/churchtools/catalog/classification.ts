@@ -19,8 +19,12 @@ export const classification: Readonly<Record<string, Classification>> =
   Object.freeze({
     // Allowed: Persons and their relations. special: persons reveal
     // religious affiliation (ADR 0060, ADR 0064).
-    'get-persons': allowed('special'),
-    'get-persons-birthdays': allowed('special'),
+    // Without the filters by birthday, which would reveal the day the mask
+    // cuts to the year.
+    'get-persons': allowed('special', undefined, [
+      'birthday_after',
+      'birthday_before',
+    ]),
     'get-persons-relationships': allowed('special'),
     'get-persons-id': allowed('special'),
     'get-persons-id-events': allowed('special'),
@@ -459,6 +463,10 @@ export const classification: Readonly<Record<string, Classification>> =
     'get-sync-externalsystems-externalSystemId-adapterproxy-uri':
       excluded('media'),
     'get-website-starttest': excluded('media'),
+
+    // Excluded, birthdate: Lists of birthdays, which reveal the day and
+    // month the mask cuts to the year.
+    'get-persons-birthdays': excluded('birthdate'),
 
     // Excluded, deprecated: Marked as deprecated in the OpenAPI document.
     'get-calendars-calendarId-meetingrequestpersons': excluded('deprecated'),

@@ -75,6 +75,7 @@ describe('the classification of the core', () => {
     ['get-chat', 'communication'],
     ['get-campuses', 'scope'],
     ['get-persons-duplicates', 'scope'],
+    ['get-persons-birthdays', 'birthdate'],
   ])('excludes %s as %s', (operationId, reason) => {
     expect(entryOf(operationId)).toEqual({ allowed: false, reason });
     expect(findReadableOperation(operationId)).toEqual({ ok: false, reason });
@@ -112,6 +113,19 @@ describe('the classification of the core', () => {
         { name: 'groupId', kind: 'integer' },
       ]);
     }
+  });
+
+  it('never sends the filters by birthday, which would reveal the day', () => {
+    const found = findReadableOperation('get-persons');
+    expect(
+      found.ok &&
+        found.operation.queryParameters
+          .filter((parameter) => parameter.name.startsWith('birthday'))
+          .map((parameter) => [parameter.name, parameter.kind]),
+    ).toEqual([
+      ['birthday_after', 'unsupported'],
+      ['birthday_before', 'unsupported'],
+    ]);
   });
 
   it('knows no operation outside the generated part', () => {

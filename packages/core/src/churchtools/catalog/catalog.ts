@@ -186,6 +186,7 @@ const readable = (
   operation: GeneratedOperation,
   sensitivity: Sensitivity,
   pathKinds: Readonly<Record<string, string>>,
+  withoutQuery: readonly string[],
 ): LookupResult => {
   const refuse = (reason: RefusalReason): LookupResult =>
     Object.freeze({ ok: false, reason });
@@ -215,6 +216,13 @@ const readable = (
     if (checked === undefined) return refuse('kind');
     pathParameters.push(checked);
   }
+  // Every parameter the classification withholds is one of the query.
+  for (const name of withoutQuery) {
+    const declared = operation.parameters.some(
+      (parameter) => parameter.in === 'query' && parameter.name === name,
+    );
+    if (!declared) return refuse('kind');
+  }
   const queryParameters: QueryParameter[] = [];
   for (const parameter of operation.parameters) {
     if (parameter.in === 'path') {
@@ -227,14 +235,19 @@ const readable = (
       if (parameter.required) return refuse('kind');
       continue;
     }
-    if (parameter.required && parameter.kind === 'unsupported') {
+    // A withheld parameter stays declared, so that a request with it gets
+    // the message that Ecclium does not send it.
+    const kind = withoutQuery.includes(parameter.name)
+      ? 'unsupported'
+      : parameter.kind;
+    if (parameter.required && kind === 'unsupported') {
       return refuse('kind');
     }
     queryParameters.push(
       Object.freeze({
         name: parameter.name,
         required: parameter.required,
-        kind: parameter.kind,
+        kind,
         ...(parameter.list === true ? { list: true as const } : {}),
         ...(parameter.values === undefined ? {} : { values: parameter.values }),
       }),
@@ -288,5 +301,10 @@ export function lookupOperation(
     return Object.freeze({ ok: false, reason: 'unclassified' });
   }
   if (!entry.allowed) return Object.freeze({ ok: false, reason: entry.reason });
-  return readable(operation, entry.sensitivity, entry.pathKinds ?? {});
+  return readable(
+    operation,
+    entry.sensitivity,
+    entry.pathKinds ?? {},
+    entry.withoutQuery ?? [],
+  );
 }

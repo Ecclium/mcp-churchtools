@@ -71,7 +71,8 @@ export type PathKindOverride = 'integer' | 'guid';
 /**
  * Why an operation is excluded. The first seven are the fixed exclusions
  * of the escape hatch; the rest are reasons of the classification by hand
- * (ADR 0067).
+ * (ADR 0067). `birthdate` stands for an operation that reveals the day of
+ * a birthday, which the mask cuts to the year.
  */
 export const exclusionReasons = Object.freeze([
   'secret',
@@ -87,6 +88,7 @@ export const exclusionReasons = Object.freeze([
   'media',
   'parameter',
   'deprecated',
+  'birthdate',
 ] as const);
 
 /** Why an operation is excluded. */
@@ -99,6 +101,11 @@ export interface AllowedOperation {
   readonly sensitivity: Sensitivity;
   /** Kinds of path parameters that replace those of the document. */
   readonly pathKinds?: Readonly<Record<string, PathKindOverride>>;
+  /**
+   * Parameters of the query the core never sends for this operation, such
+   * as filters that would reveal what the mask hides.
+   */
+  readonly withoutQuery?: readonly string[];
 }
 
 /** An operation the escape hatch never reads, with the reason. */
@@ -117,25 +124,30 @@ export type Classification = AllowedOperation | ExcludedOperation;
  * @param sensitivity - How sensitive its answer is.
  * @param pathKinds - Kinds of path parameters that replace those of the
  *   document, where it names them wrongly or not at all.
+ * @param withoutQuery - Parameters of the query the core never sends for
+ *   this operation.
  * @returns The classification, frozen.
  * @example
  * ```ts
  * allowed('special', { groupId: 'integer' });
+ * allowed('special', undefined, ['birthday_after']);
  * ```
  */
 export function allowed(
   sensitivity: Sensitivity,
   pathKinds?: Readonly<Record<string, PathKindOverride>>,
+  withoutQuery?: readonly string[],
 ): AllowedOperation {
-  return Object.freeze(
-    pathKinds === undefined
-      ? { allowed: true, sensitivity }
-      : {
-          allowed: true,
-          sensitivity,
-          pathKinds: Object.freeze({ ...pathKinds }),
-        },
-  );
+  return Object.freeze({
+    allowed: true,
+    sensitivity,
+    ...(pathKinds === undefined
+      ? {}
+      : { pathKinds: Object.freeze({ ...pathKinds }) }),
+    ...(withoutQuery === undefined
+      ? {}
+      : { withoutQuery: Object.freeze([...withoutQuery]) }),
+  });
 }
 
 /**
