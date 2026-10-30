@@ -383,19 +383,18 @@ export function buildOperationUrl(
       parameter.kind === 'unsupported'
         ? notSent(parameter.name)
         : invalid(parameter.name);
+    // The length counts before Array.from, which would read every index
+    // of a sparse array.
     const values: readonly unknown[] | undefined =
       parameter.list === true
-        ? Array.isArray(value)
+        ? Array.isArray(value) &&
+          (value as unknown[]).length <= maxQueryListLength
           ? Array.from(value as unknown[])
           : undefined
         : Array.isArray(value)
           ? undefined
           : [value];
-    if (
-      values === undefined ||
-      values.length < 1 ||
-      values.length > maxQueryListLength
-    ) {
+    if (values === undefined || values.length < 1) {
       return refuse(wrong);
     }
     for (const item of values) {

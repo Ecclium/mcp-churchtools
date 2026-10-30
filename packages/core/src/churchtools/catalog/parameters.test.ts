@@ -409,7 +409,7 @@ describe('the checks of single values', () => {
     const keeps = (href: string) =>
       keepsTemplate(new URL(href), origin, template);
     expect(keeps(`${origin}/api/groups/1`)).toBe(true);
-    expect(keeps('https://elsewhere.example/api/groups/1')).toBe(false);
+    expect(keeps('https://other.example/api/groups/1')).toBe(false);
     expect(keeps(`${origin}/api/groupsx/1`)).toBe(false);
     expect(keeps(`${origin}/api/groups/1#x`)).toBe(false);
     expect(
