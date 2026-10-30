@@ -38,10 +38,11 @@ const valuesOf = (variable: Variable): string => {
     case 'choice':
       return variable.choices.map(code).join(', ');
     case 'list': {
-      // The last word stands alone, like `all`.
+      // The last word stands alone, like `all`. The only list is the one of
+      // the toolsets, where all leaves out api (ADR 0067).
       const words = variable.choices.map(code);
       const alone = words.pop() ?? '';
-      return `Liste aus ${words.join(', ')}, mit Komma getrennt, oder ${alone}`;
+      return `Liste aus ${words.join(', ')}, mit Komma getrennt, oder ${alone} für alle ausser ${code('api')}, oder ${code('all,api')}`;
     }
     case 'integer': {
       if (variable.name !== 'ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE') {

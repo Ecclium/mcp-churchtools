@@ -27,6 +27,7 @@ export {
   toolsetNames,
   type ToolsetName,
   toolsetOf,
+  toolsetsOfAll,
 } from './toolsets.js';
 export type {
   LeafType,

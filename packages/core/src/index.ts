@@ -74,6 +74,7 @@ export {
   toolsetNames,
   type ToolsetName,
   toolsetOf,
+  toolsetsOfAll,
   untrustedWarning,
 } from './registry/index.js';
 export {
