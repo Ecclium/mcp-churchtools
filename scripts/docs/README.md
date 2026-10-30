@@ -31,9 +31,9 @@ Nach stdout gehen nur Zahlen, Grössen und feste Wörter, nie ein Text, ein Link
   - `needs`: die Rechte, die sie verlangt. Jede Paarung nennt in `rights` die Rechte, von denen eines genügt, wo eine Quelle «oder» sagt, in `without` wahlweise, was ohne sie geschieht (`refused` für 403, `omitted` für fehlende Einträge, `fields` für fehlende Felder), und in `evidence` die Belege. Dazu wahlweise `notNeeded` mit Rechten, die ein Befund als nicht nötig zeigt.
   - `none`: Sie verlangt kein Recht, mit Belegen.
   - `open`: Es gibt keine belegte Zuordnung, mit dem Grund auf Deutsch.
-- Ein Beleg ist ein Befund in `docs/research/churchtools-api.md`, `{ "kind": "finding", "id": "F29", "version": "3.137", "shows": "necessary" }`, mit der Nummer oder dem Titel eines weiteren Befunds, der Version, an der die Probe lief, und bei `needs` mit `necessary` (eine Gegenprobe nahm die Wirkung weg) oder `sufficient` (nur mit dem Recht gesehen). Oder die Beschreibung der Operation im OpenAPI-Dokument, `{ "kind": "openapi" }`, die das Recht beim Namen nennen muss. Oder eine Hilfeseite, `{ "kind": "academy", "page": "/de/…" }`, nur neben einem der beiden anderen, weil sie die Oberfläche beschreibt, nicht die API. `without` braucht einen Befund.
+- Ein Beleg ist ein Befund in `docs/research/churchtools-api.md`, `{ "kind": "finding", "id": "F29", "version": "3.137", "shows": "necessary" }`, mit der Nummer oder dem Titel eines weiteren Befunds, der Version, an der die Probe lief, und bei `needs` mit `necessary` (ohne das Recht fehlte die Wirkung, nach einer Gegenprobe oder bei einem Objekt, das ein Recht mit Werten nicht nennt) oder `sufficient` (nur mit dem Recht gesehen). Oder die Beschreibung der Operation im OpenAPI-Dokument, `{ "kind": "openapi" }`, die das Recht beim Namen nennen muss und, wo es den Namen in mehreren Modulen gibt, auch das Modul. Oder eine Hilfeseite, `{ "kind": "academy", "page": "/de/…" }`, nur neben einem der beiden anderen, weil sie die Oberfläche beschreibt, nicht die API. `without` braucht einen Befund, `none` mindestens einen Befund und `notNeeded` nur Befunde. Ein Befund nennt ein Recht als `modul: name` oder, wo der Name nur in einem Modul vorkommt, als `name`, eine Bezeichnung gleich nach dem Recht, dem sie gehört. Eigene Texte wie der Grund bei `open` enthalten keine eckigen Klammern.
 
-Jede Liste steht sortiert, wie in den Dateien unter `data/`: Rechte nach Modul und Name, Operationen nach `operationId`, Paarungen nach ihrem ersten Recht, Belege nach Art und dann Nummer, Titel oder Seite. Der Refresh weist eine andere Reihenfolge und Doppeltes mit der Stelle zurück, ebenso ein Recht, eine Operation oder eine Seite, die die Fakten nicht kennen, und eine Bezeichnung, die ihre Seite nicht vor dem Namen schreibt. Die übrigen Regeln prüfen `pnpm build` und `pnpm check`, ein Test im Repository auch, dass jeder zitierte Befund die Operation und das Recht nennt.
+Jede Liste steht sortiert, wie in den Dateien unter `data/`: Rechte nach Modul und Name, Operationen nach `operationId`, Paarungen nach ihrem ersten Recht, Belege nach Art und dann Nummer, Titel oder Seite. Der Refresh weist eine andere Reihenfolge, einen Schlüssel zweimal und ein Recht zweimal in einem Eintrag mit der Stelle zurück, ebenso ein Recht, eine Operation oder eine Seite, die die Fakten nicht kennen, und eine Bezeichnung, die ihre Seite nicht vor dem Namen schreibt. Die übrigen Regeln prüfen `pnpm build` und `pnpm check`, ein Test im Repository auch, dass jeder zitierte Befund die Operation und das Recht nennt.
 
 ## Aufruf
 
@@ -49,4 +49,10 @@ Token-Datei und State-Datei müssen ausserhalb jedes Git-Arbeitsbaums liegen und
 
 Mit `pnpm docs:refresh --kategorien` liest das Skript nur die Kategorien der Academy und gibt ihre Slugs nach Abschnitt aus, etwa um zu entscheiden, ob eine Kategorie ausserhalb der Abschnitte dazukommt. Es schreibt dann nichts.
 
-Nach einer Änderung der Zuordnung genügt `pnpm docs:refresh --nur-zuordnung`, ohne Variablen und ohne Netz. Es liest die Dateien unter `data/` und `rights-mapping.json` und schreibt nur `rights.json` und `operation-rights.json` neu. Danach wieder `pnpm build` und `pnpm check`.
+Nach einer Änderung der Zuordnung genügt `pnpm docs:refresh --nur-zuordnung`, ohne Token und ohne Netz. Es liest die Dateien unter `data/` und `rights-mapping.json` und schreibt nur `rights.json` und `operation-rights.json` neu. Setzen Sie dabei `ECCLIUM_SPIKE_BASE_URL` wie für die Proben, dann prüft es die beiden Dateien wie der volle Refresh darauf, dass sie den Namen Ihrer Instanz nicht nennen, denn die Zuordnung enthält Texte, die eine Person geschrieben hat:
+
+```bash
+ECCLIUM_SPIKE_BASE_URL=https://example.church.tools pnpm docs:refresh --nur-zuordnung
+pnpm build
+pnpm check
+```

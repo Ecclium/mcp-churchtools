@@ -34,15 +34,18 @@ Elastic License 2.0:
   Antwort einer Instanz, ohne deren Werte. Für Bezeichnungen aus der Academy
   gilt, was für academy.json gilt. Wo keine Hilfeseite ein Recht benennt,
   steht die Bezeichnung aus der Oberfläche von ChurchTools, wie ein Befund des
-  Projekts sie festhält.
+  Projekts sie festhält. Auch diese Bezeichnungen stehen unter keiner Lizenz
+  des Projekts.
 
 Jede dieser Dateien nennt ihre Quelle und deren Bedingungen auch selbst. Die
 Bezeichnungen in rights.json stehen auch in scripts/docs/rights-mapping.json,
 aus der sie kommen, und dort gilt für sie dasselbe.
 
 operation-rights.json in packages/docs-index/data/, die Zuordnung von
-Operationen zu Rechten, ist eigene Arbeit des Projekts ohne Texte aus den
-Quellen und steht wie der Quellcode unter der Elastic License 2.0.
+Operationen zu Rechten, ist eigene Arbeit des Projekts und steht wie der
+Quellcode unter der Elastic License 2.0. Operationen und Rechte nennt sie nur
+bei ihren Namen aus den Quellen, als Verweis, und sie enthält keine Texte
+daraus.
 
 Name und Logo von Ecclium sind nicht Teil der Lizenz des Quellcodes.
 
