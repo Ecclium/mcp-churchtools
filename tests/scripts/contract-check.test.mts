@@ -3,6 +3,11 @@ import { readFileSync, rmSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { allowsNull, run, typeClass } from '../../scripts/contract/check.mts';
+import {
+  catalogOperations,
+  catalogText,
+} from '../../scripts/docs/lib/catalog.mts';
+import { operationFacts } from '../../scripts/docs/lib/operations.mts';
 import { createState, instanceId } from '../../scripts/spike/lib/env.mts';
 import { hints } from '../../scripts/spike/lib/errors.mts';
 import {
@@ -18,6 +23,16 @@ import {
 
 const contract = readFileSync(
   new URL('../../packages/core/src/churchtools/contract.json', import.meta.url),
+  'utf8',
+);
+
+// The generated part of the catalog of the escape hatch, which the check
+// compares with the document as well.
+const catalog = readFileSync(
+  new URL(
+    '../../packages/core/src/churchtools/catalog/generated.ts',
+    import.meta.url,
+  ),
   'utf8',
 );
 
@@ -70,7 +85,7 @@ const check = (
   contractText = contract,
 ): Result => {
   const output = capture();
-  expect(run(withState(document), contractText, output.io)).toBe(0);
+  expect(run(withState(document), contractText, output.io, catalog)).toBe(0);
   return JSON.parse(output.stdout()) as Result;
 };
 
@@ -445,20 +460,21 @@ describe('the contract check', () => {
   it('refuses a missing state file without reading anything else', () => {
     const output = capture();
     expect(
-      run({ ECCLIUM_SPIKE_BASE_URL: origin }, contract, output.io),
+      run({ ECCLIUM_SPIKE_BASE_URL: origin }, contract, output.io, catalog),
     ).not.toBe(0);
     expect(output.stdout()).toBe('');
   });
 
   it('refuses a contract that is no JSON or holds an unknown method', () => {
     const output = capture();
-    expect(run(withState(), '{', output.io)).not.toBe(0);
-    expect(run(withState(), '[]', output.io)).not.toBe(0);
+    expect(run(withState(), '{', output.io, catalog)).not.toBe(0);
+    expect(run(withState(), '[]', output.io, catalog)).not.toBe(0);
     expect(
       run(
         withState(),
         JSON.stringify({ x: { method: 'head', path: '/api/x' } }),
         output.io,
+        catalog,
       ),
     ).not.toBe(0);
     expect(output.stdout()).toBe('');
@@ -748,6 +764,7 @@ describe('the contract check with fields in several parts', () => {
       withState(oneOperation(ref('Level0'), components)),
       reading({ type: 'object', properties: { x: { type: 'string' } } }),
       output.io,
+      catalog,
     );
     expect(code).not.toBe(0);
     expect(output.stdout()).toBe('');
@@ -770,8 +787,184 @@ describe('the contract check with fields in several parts', () => {
     ],
   ])('names the contract, not the state file, for %s', (_, text) => {
     const output = capture();
-    expect(run(withState(), text, output.io)).not.toBe(0);
+    expect(run(withState(), text, output.io, catalog)).not.toBe(0);
     expect(output.stdout()).toBe('');
     expect(output.stderr()).toContain(hints.vertragUngueltig);
+  });
+});
+
+// A small document of its own for the part katalog: two GET operations,
+// one of them with a parameter of the path and one of the query, and a
+// POST, which the catalog leaves out.
+const answer = {
+  '200': {
+    description: 'The things.',
+    content: { 'application/json': { schema: { type: 'object' } } },
+  },
+};
+const catalogDocument = (): Record<string, unknown> => ({
+  openapi: '3.1.0',
+  info: { title: 'Synthetic API', version: '0.1.0' },
+  paths: {
+    '/things': {
+      get: {
+        operationId: 'get-things',
+        parameters: [
+          { name: 'limit', in: 'query', schema: { type: 'integer' } },
+        ],
+        responses: answer,
+      },
+      post: { operationId: 'post-things', responses: answer },
+    },
+    '/things/{thingId}': {
+      get: {
+        operationId: 'get-things-thingId',
+        parameters: [
+          {
+            name: 'thingId',
+            in: 'path',
+            required: true,
+            schema: { type: 'integer' },
+          },
+        ],
+        responses: answer,
+      },
+    },
+  },
+});
+
+// The generated part as the refresh writes it from a document.
+const catalogOf = (document: unknown): string =>
+  catalogText(catalogOperations(operationFacts(document as never)));
+
+interface CatalogResult {
+  katalog: {
+    abgleich: string;
+    operationen?: number;
+    imDokument?: number;
+    gleich?: number;
+    abweichungen?: { operation: string; feld?: string; art: string }[];
+  };
+}
+
+const checkCatalog = (
+  document: unknown,
+  catalogText: string,
+): CatalogResult => {
+  const output = capture();
+  expect(run(withState(document), contract, output.io, catalogText)).toBe(0);
+  return JSON.parse(output.stdout()) as CatalogResult;
+};
+
+describe('the part katalog of the contract check', () => {
+  it('finds nothing when the catalog is what the document gives', () => {
+    const document = catalogDocument();
+    expect(checkCatalog(document, catalogOf(document)).katalog).toEqual({
+      abgleich: 'moeglich',
+      operationen: 2,
+      imDokument: 2,
+      gleich: 2,
+      abweichungen: [],
+    });
+  });
+
+  it('reads the generated part of the core in its form', () => {
+    // The generated part of the core must at least read back in its form.
+    const result = checkCatalog(catalogDocument(), catalog).katalog;
+    expect(result.abgleich).toBe('moeglich');
+    expect(result.operationen).toBeGreaterThan(300);
+  });
+
+  it('names what the document adds, drops or changes', () => {
+    const before = catalogOf(catalogDocument());
+    const document = catalogDocument() as {
+      paths: Record<string, Record<string, Record<string, unknown>>>;
+    };
+    const things = document.paths['/things']?.['get'];
+    const thing = document.paths['/things/{thingId}']?.['get'];
+    if (things === undefined || thing === undefined) throw new Error('form');
+    // A parameter of another kind, a new one, and the operation deprecated.
+    things['parameters'] = [
+      { name: 'limit', in: 'query', schema: { type: 'string' } },
+      { name: 'sort', in: 'query', schema: { type: 'string' } },
+    ];
+    things['deprecated'] = true;
+    // The other operation gone, two new ones, one with a name of another
+    // form than those of the catalog.
+    delete document.paths['/things/{thingId}'];
+    document.paths['/widgets'] = {
+      get: { operationId: 'get-widgets', responses: answer },
+    };
+    document.paths['/gadgets'] = {
+      get: { operationId: 'getGadgets', responses: answer },
+    };
+    const result = checkCatalog(document, before).katalog;
+    expect(result).toMatchObject({
+      abgleich: 'moeglich',
+      operationen: 2,
+      imDokument: 3,
+      gleich: 0,
+    });
+    expect(result.abweichungen).toEqual([
+      { operation: 'get-things', art: 'veraltet' },
+      { operation: 'get-things', feld: 'limit', art: 'anderer Parameter' },
+      { operation: 'get-things', feld: 'sort', art: 'neuer Parameter' },
+      { operation: 'get-things-thingId', art: 'nicht im Dokument' },
+      { operation: 'get-widgets', art: 'neu im Dokument' },
+      { operation: 'unlesbar', art: 'neu im Dokument' },
+    ]);
+  });
+
+  it('names another path and a parameter the document drops', () => {
+    const before = catalogOf(catalogDocument());
+    const document = catalogDocument() as {
+      paths: Record<string, Record<string, Record<string, unknown>>>;
+    };
+    const things = document.paths['/things'];
+    if (things === undefined) throw new Error('form');
+    const get = things['get'];
+    if (get === undefined) throw new Error('form');
+    get['parameters'] = [];
+    delete document.paths['/things'];
+    document.paths['/stuff'] = { get };
+    expect(checkCatalog(document, before).katalog.abweichungen).toEqual([
+      { operation: 'get-things', art: 'anderer Pfad' },
+      { operation: 'get-things', feld: 'limit', art: 'Parameter fehlt' },
+    ]);
+  });
+
+  it('says so when the document has a form the facts cannot hold, and checks the client', () => {
+    const document = catalogDocument() as {
+      paths: Record<string, Record<string, Record<string, unknown>>>;
+    };
+    // The same operationId twice, on which the refresh stops as well.
+    document.paths['/others'] = {
+      get: { operationId: 'get-things', responses: answer },
+    };
+    expect(
+      checkCatalog(document, catalogOf(catalogDocument())).katalog,
+    ).toEqual({ abgleich: 'nicht moeglich' });
+  });
+
+  it.each([
+    ['an empty text', ''],
+    ['no list of operations', 'export const x = 1;\n'],
+    [
+      'a line that is no JSON',
+      'frozenOperations([\n  {"operationId":\n  ]);\n',
+    ],
+    [
+      'an operation without parameters',
+      'frozenOperations([\n  {"operationId":"get-x","method":"get","path":"/api/x","deprecated":false,"json":true},\n  ]);\n',
+    ],
+    [
+      'an operation with another method',
+      'frozenOperations([\n  {"operationId":"get-x","method":"post","path":"/api/x","deprecated":false,"json":true,"parameters":[]},\n  ]);\n',
+    ],
+  ])('refuses a catalog of another form: %s', (_, text) => {
+    const output = capture();
+    expect(run(withState(), contract, output.io, text)).not.toBe(0);
+    expect(output.stdout()).toBe('');
+    expect(output.stderr()).toContain(hints.katalogDateiUngueltig);
   });
 });

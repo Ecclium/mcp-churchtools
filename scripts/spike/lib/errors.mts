@@ -50,6 +50,8 @@ export const hints = {
     'Abbruch: Die State-Datei muss eine reguläre Datei des aufrufenden Benutzers sein, ohne Rechte für andere und ausserhalb eines Git-Arbeitsbaums.',
   vertragUngueltig:
     'Abbruch: contract.json ist beschädigt. Jede Operation braucht eine Methode, einen Pfad und eine Liste der Parameter. Prüfen Sie den Stand Ihres Checkouts.',
+  katalogDateiUngueltig:
+    'Abbruch: Der Katalog der Escape Hatch in packages/core/src/churchtools/catalog/generated.ts hat nicht die Form, die pnpm docs:refresh schreibt. Prüfen Sie den Stand Ihres Checkouts.',
   dokumentZuVerschachtelt:
     'Abbruch: Das OpenAPI-Dokument in der State-Datei ist zu verschachtelt für den Abgleich. Es wurde nichts daraus ausgegeben.',
   stateDateiUngueltig:
