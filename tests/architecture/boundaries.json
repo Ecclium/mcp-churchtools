@@ -168,7 +168,8 @@
         "packages/tools/src/services/",
         "packages/tools/src/songs/",
         "packages/tools/src/wiki/",
-        "packages/tools/src/core-plugin.ts"
+        "packages/tools/src/core-plugin.ts",
+        "packages/tools/src/parts.ts"
       ]
     },
     "moduleState": {
@@ -180,6 +181,11 @@
       "adr": "0054",
       "description": "Files that may load node:util, whose ES module makes fd 2 non-blocking: the command of the command line for parseArgs and the canary values of testkit, which use inspect. Each entry is one file in the command line or in testkit, outside the places of the start over stdio.",
       "paths": ["packages/cli/src/main.ts", "packages/testkit/src/canary.ts"]
+    },
+    "docsTools": {
+      "adr": "0066",
+      "description": "The docs tools of the core. They read the docs index the composition root loaded, so besides the plugin API and the modules of the plugins they may import the docs index, and nothing else of the workspace. The plugin of the core may import them.",
+      "paths": ["packages/tools/src/docs/"]
     },
     "docsFiles": {
       "adr": "0066",

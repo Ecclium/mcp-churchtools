@@ -7,7 +7,6 @@
  *
  * @packageDocumentation
  */
-import type { DocsIndex } from '@ecclium/mcp-churchtools-docs-index';
 import type { Plugin, PluginHost } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { appointmentsGetTool } from './appointments/get.js';
@@ -15,9 +14,7 @@ import { appointmentsListTool } from './appointments/list.js';
 import { whoamiTool } from './base/whoami.js';
 import { bookingsListTool } from './bookings/list.js';
 import { calendarsListTool } from './calendars/list.js';
-import { addAcademyTools } from './docs/academy.js';
-import { addOperationTools } from './docs/operations.js';
-import { addRightTools } from './docs/rights.js';
+import { addDocsTools, type DocsIndex } from './docs/index.js';
 import { eventsGetAgendaTool } from './events/agenda.js';
 import { eventsGetTool } from './events/get.js';
 import { eventsListTool } from './events/list.js';
@@ -102,9 +99,7 @@ export function createCorePlugin(options: CorePluginOptions = {}): Plugin {
       host.addTool(songsSearchTool);
       host.addTool(songsGetTool);
       if (docs !== undefined) {
-        addOperationTools(host, docs);
-        addRightTools(host, docs);
-        addAcademyTools(host, docs);
+        addDocsTools(host, docs);
       }
       host.addPrompt(rotaWeekendPrompt);
       host.addPrompt(wikiDraftPrompt);
