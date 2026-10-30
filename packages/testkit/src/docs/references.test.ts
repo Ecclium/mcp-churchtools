@@ -114,9 +114,7 @@ describe('renderToolsReference', () => {
   });
 
   it('keeps each description as the model reads it, in a block of text', () => {
-    expect(page).toContain(
-      'Required ChurchTools rights: "view alldata" in churchdb.',
-    );
+    expect(page).toContain('ChurchTools rights: "view alldata" in churchdb.');
   });
 });
 

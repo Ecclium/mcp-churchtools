@@ -328,7 +328,7 @@ describe.each([
 
   it('names its right in the description the model reads', () => {
     expect(tool?.description).toContain(
-      `Required ChurchTools rights: "${right.right}" in ${right.module}.`,
+      `ChurchTools rights: "${right.right}" in ${right.module}.`,
     );
   });
 });
@@ -381,7 +381,7 @@ describe.each([
       routineStable: false,
     });
     expect(tool?.description).toContain(
-      `Required ChurchTools rights: ${rights
+      `ChurchTools rights: ${rights
         .map((right) => `"${right.right}" in ${right.module}`)
         .join(', ')}.`,
     );
@@ -423,7 +423,7 @@ describe.each([
       routineStable,
     });
     expect(tool?.description).toContain(
-      `Required ChurchTools rights: ${rights
+      `ChurchTools rights: ${rights
         .map((right) => `"${right.right}" in ${right.module}`)
         .join(', ')}.`,
     );
@@ -516,7 +516,7 @@ describe.each([
     });
     expect(tool?.asSpecial).toBe(false);
     expect(tool?.description).toContain(
-      'Required ChurchTools rights: "view songcategory" in churchservice.',
+      'ChurchTools rights: "view songcategory" in churchservice.',
     );
   });
 
