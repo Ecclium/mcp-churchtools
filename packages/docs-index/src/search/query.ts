@@ -64,10 +64,17 @@ export interface Searcher {
    *
    * @param query - The text to look for.
    * @param limit - The most hits, from 1 to {@link maxSearchHits}.
+   * @param only - The keys of the documents that count; all when left
+   *   out. The others drop out before the limit, so that the best of these
+   *   are found however many others rank higher.
    * @returns The hits; none for a query without words.
    * @throws {RangeError} If the limit is out of range.
    */
-  search(query: string, limit: number): readonly SearchHit[];
+  search(
+    query: string,
+    limit: number,
+    only?: ReadonlySet<string>,
+  ): readonly SearchHit[];
 }
 
 /**
@@ -140,7 +147,11 @@ export function prepareSearch(index: SerializedSearchIndex): Searcher {
     return scores;
   };
 
-  const search = (query: string, limit: number): readonly SearchHit[] => {
+  const search = (
+    query: string,
+    limit: number,
+    only?: ReadonlySet<string>,
+  ): readonly SearchHit[] => {
     if (!Number.isInteger(limit) || limit < 1 || limit > maxSearchHits) {
       throw new RangeError(
         `The limit must be a whole number from 1 to ${String(maxSearchHits)}.`,
@@ -166,11 +177,13 @@ export function prepareSearch(index: SerializedSearchIndex): Searcher {
         matched.set(document, (matched.get(document) ?? 0) + 1);
       }
     }
-    const hits = [...totals].map(([document, total]) => ({
-      index: document,
-      key: keys[document] ?? '',
-      score: (total * (matched.get(document) ?? 0)) / wanted.length,
-    }));
+    const hits = [...totals]
+      .map(([document, total]) => ({
+        index: document,
+        key: keys[document] ?? '',
+        score: (total * (matched.get(document) ?? 0)) / wanted.length,
+      }))
+      .filter((hit) => only === undefined || only.has(hit.key));
     hits.sort((x, y) =>
       x.score !== y.score ? y.score - x.score : x.key < y.key ? -1 : 1,
     );

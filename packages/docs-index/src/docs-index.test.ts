@@ -39,6 +39,20 @@ function expectAttribution(attribution: Attribution): void {
 }
 
 describe('openDocsIndex', () => {
+  it('searches only the operations asked for', () => {
+    const all = index.searchOperations('members of a thing', 5);
+    expect(all.length).toBeGreaterThan(1);
+    const other = all[1]?.operationId ?? '';
+    expect(
+      index
+        .searchOperations('members of a thing', 5, new Set([other]))
+        .map((hit) => hit.operationId),
+    ).toEqual([other]);
+    expect(index.searchOperations('members of a thing', 5, new Set())).toEqual(
+      [],
+    );
+  });
+
   it('finds the operation for members of a thing', () => {
     const [first] = index.searchOperations('members of a thing', 5);
     expect(first).toEqual({

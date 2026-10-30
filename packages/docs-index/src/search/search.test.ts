@@ -311,6 +311,25 @@ describe('prepareSearch', () => {
     ).toHaveLength(2);
   });
 
+  // The escape hatch searches only the operations it reads (ADR 0067). The
+  // others drop out before the limit, so a better one elsewhere does not
+  // push them out.
+  it('ranks only the documents asked for, before the limit', () => {
+    const searcher = prepareSearch(
+      index('Gruppen Gruppen Mitglieder', 'Gruppen Mitglieder', 'Gruppen'),
+    );
+    expect(searcher.search('Gruppen Mitglieder', 1)[0]?.key).not.toBe('doc-2');
+    expect(
+      searcher
+        .search('Gruppen Mitglieder', 1, new Set(['doc-2']))
+        .map(({ key }) => key),
+    ).toEqual(['doc-2']);
+    expect(searcher.search('Gruppen', 10, new Set())).toEqual([]);
+    expect(
+      searcher.search('Gruppen', 10, new Set(['doc-1', 'doc-9'])),
+    ).toHaveLength(1);
+  });
+
   it.each<[string, (stored: SerializedSearchIndex) => SerializedSearchIndex]>([
     ['no fields', (s) => ({ ...s, fields: [], weights: [] })],
     ['a weight too high', (s) => ({ ...s, weights: [11] })],
