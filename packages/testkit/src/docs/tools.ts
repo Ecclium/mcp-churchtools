@@ -10,6 +10,7 @@
 import {
   type CatalogEntry,
   createToolCatalog,
+  rightsPerOperation,
   type ShapeNode,
   toolsetNames,
   toolsetOf,
@@ -105,12 +106,16 @@ const leaves = (entry: CatalogEntry): readonly LeafRow[] => {
   return rows;
 };
 
+// The same rule as the description of the tool: the escape hatch needs the
+// rights of the operation it reads (ADR 0067).
 const rightsOf = (entry: CatalogEntry): string =>
-  entry.meta.requiredRights.length === 0
-    ? 'keine'
-    : entry.meta.requiredRights
-        .map(({ module, right }) => `${code(right)} in ${code(module)}`)
-        .join(', ');
+  rightsPerOperation(entry.meta)
+    ? `die der gelesenen Operation, wie ${code('ct_api_search_actions')} sie nennt`
+    : entry.meta.requiredRights.length === 0
+      ? 'keine'
+      : entry.meta.requiredRights
+          .map(({ module, right }) => `${code(right)} in ${code(module)}`)
+          .join(', ');
 
 // The settings without which the server does not offer a tool: its
 // toolset (ADR 0062), the folder of the audit file over stdio for special
@@ -198,7 +203,7 @@ export function renderToolsReference(): string {
   ];
   const legend = [
     '',
-    '«Unbeaufsichtigt» sagt, ob eine Routine das Tool ohne Aufsicht aufrufen darf: nie oder nur so, wie die Richtlinie des Betreibers es erlaubt. «Für Routinen stabil» heisst, dass Routinen sich auf Name und Eingabe des Tools verlassen dürfen, eine inkompatible Änderung daran ist eine neue Hauptversion. «Lesebudget» sagt, ob jeder Aufruf mit gültiger Eingabe gegen das gemeinsame Lesebudget je Akteur und UTC-Tag zählt und das Tool sein Ergebnis erst herausgibt, wenn seine Zeile in der Audit-Datei steht. Das gilt für jedes Tool mit besonders schützenswerten Daten und für jedes andere, das Namen oder Kennungen anderer Personen ausgibt. «Angeboten» nennt die Einstellungen, ohne die der Server das Tool nicht anbietet. Statt des Namens eines Toolsets genügt `all` in `ECCLIUM_TOOLSETS`.',
+    '«Unbeaufsichtigt» sagt, ob eine Routine das Tool ohne Aufsicht aufrufen darf: nie oder nur so, wie die Richtlinie des Betreibers es erlaubt. «Für Routinen stabil» heisst, dass Routinen sich auf Name und Eingabe des Tools verlassen dürfen, eine inkompatible Änderung daran ist eine neue Hauptversion. «Lesebudget» sagt, ob jeder Aufruf mit gültiger Eingabe gegen das gemeinsame Lesebudget je Akteur und UTC-Tag zählt und das Tool sein Ergebnis erst herausgibt, wenn seine Zeile in der Audit-Datei steht. Das gilt für jedes Tool mit besonders schützenswerten Daten und für jedes andere, das Namen oder Kennungen anderer Personen ausgibt. «Angeboten» nennt die Einstellungen, ohne die der Server das Tool nicht anbietet. Statt des Namens eines Toolsets genügt `all` in `ECCLIUM_TOOLSETS`, ausser für `api`, das nur `all,api` oder der eigene Name einschaltet.',
   ];
   // Said only while it holds, so that the first tool that writes changes
   // the page instead of leaving a false sentence on it.

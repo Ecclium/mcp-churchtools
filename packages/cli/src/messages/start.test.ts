@@ -221,7 +221,7 @@ describe('the texts of the start over stdio', () => {
       'Eingeschaltet sind die Toolsets ‹persons› und ‹wiki›.',
     );
     expect(toolsetsMessage(toolsetNames).what).toBe(
-      'Eingeschaltet sind die Toolsets ‹persons›, ‹events›, ‹calendars›, ‹wiki›, ‹songs› und ‹docs›.',
+      'Eingeschaltet sind die Toolsets ‹persons›, ‹events›, ‹calendars›, ‹wiki›, ‹songs›, ‹docs› und ‹api›.',
     );
     expect(toolsetsMessage(['persons', 'wiki']).why).toContain(
       'nur ihre Tools',

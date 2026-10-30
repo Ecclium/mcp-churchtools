@@ -2,6 +2,7 @@ import { assertNoCanary, makeCanaries } from '@ecclium/mcp-churchtools-testkit';
 import { describe, expect, it } from 'vitest';
 
 import { maxResultBytes, resultBytes } from '../pipeline/stages.js';
+import { cleanText } from './unicode.js';
 import {
   fieldMask,
   foreignJsonCost,
@@ -281,6 +282,52 @@ describe('renderForeignJson', () => {
     }
   });
 
+  it('cleans hidden characters inside each text and key, with the note there, at every level', () => {
+    const rightToLeft = String.fromCodePoint(0x202e);
+    const root = {
+      [`ti${zeroWidth}tle`]: `Gem${rightToLeft}einde`,
+      list: [`a${zeroWidth}b`, 'plain'],
+    };
+    for (const level of ['off', 'standard'] as const) {
+      const written = renderForeignJson(root, level);
+      expect(written.ok).toBe(true);
+      const text = written.ok ? written.text : '';
+      // Valid JSON, and the stage redact of the pipeline finds nothing left
+      // to clean, so it never adds a note after the closing brace.
+      expect(JSON.parse(text)).toEqual({
+        'title [ecclium: 1 hidden characters removed]':
+          'Gemeinde [ecclium: 1 hidden characters removed]',
+        list: ['ab [ecclium: 1 hidden characters removed]', 'plain'],
+      });
+      expect(cleanText(text)).toBe(text);
+    }
+  });
+
+  it('keeps the note of the cleaning in a text the mask changed', () => {
+    const written = renderForeignJson(
+      {
+        note: `Kontakt max.mustermann@example.org${zeroWidth}`,
+        email: `max.mustermann${zeroWidth}@example.org`,
+        [`max@example.org${zeroWidth}`]: 1,
+      },
+      'standard',
+    );
+    expect(written.ok && JSON.parse(written.text)).toEqual({
+      note: 'Kontakt m***@example.org [ecclium: 1 hidden characters removed]',
+      email: 'm***@example.org [ecclium: 1 hidden characters removed]',
+      'm***@example.org [ecclium: 1 hidden characters removed]': 1,
+    });
+  });
+
+  it('refuses keys that are the same once cleaned', () => {
+    expect(
+      renderForeignJson(
+        { [`a${zeroWidth}`]: 1, [`a${String.fromCodePoint(0x200c)}`]: 2 },
+        'off',
+      ),
+    ).toEqual({ ok: false, reason: 'collision' });
+  });
+
   it('lets no canary through in a field with contact data or in free text', () => {
     const canaries = makeCanaries();
     const root = {
@@ -319,7 +366,8 @@ describe('renderForeignJson', () => {
       resultBytes({
         operationId:
           'get-calendars-calendarId-appointments-appointmentId-startDate',
-        json: `<<data-${boundary}>>${text}<</data-${boundary}>>`,
+        sensitivity: 'special',
+        answer: `<<data-${boundary}>>${text}<</data-${boundary}>>`,
       }),
     ).toBeLessThanOrEqual(maxResultBytes);
   });

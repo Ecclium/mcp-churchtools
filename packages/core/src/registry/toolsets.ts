@@ -15,16 +15,25 @@ export const toolsetNames = Object.freeze([
   'wiki',
   'songs',
   'docs',
+  'api',
 ] as const);
 
 /** The name of a toolset. */
 export type ToolsetName = (typeof toolsetNames)[number];
 
+/**
+ * The toolsets that `all` turns on: every one but `api`. The escape hatch
+ * passes on whole answers, not fixed fields, so an operator names `api`
+ * on purpose (ADR 0067).
+ */
+export const toolsetsOfAll: readonly ToolsetName[] = Object.freeze(
+  toolsetNames.filter((name) => name !== 'api'),
+);
+
 // The toolset of each area. `base` is always on, so that ct_whoami is there
 // without any setting. The docs tools read only the index of the
-// documentation and form the toolset `docs` (ADR 0066). The generic API
-// tools have no toolset yet: until an ADR gives them one, the catalog
-// offers none of their tools.
+// documentation and form the toolset `docs` (ADR 0066), the tools of the
+// escape hatch the toolset `api` (ADR 0067).
 const toolsetOfDomain: Readonly<
   Record<ToolDomain, ToolsetName | 'base' | undefined>
 > = Object.freeze({
@@ -41,7 +50,7 @@ const toolsetOfDomain: Readonly<
   wiki: 'wiki',
   songs: 'songs',
   docs: 'docs',
-  api: undefined,
+  api: 'api',
 });
 
 /**

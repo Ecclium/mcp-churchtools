@@ -17,7 +17,7 @@ import type { RedactionLevel } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { maskBirthdate, maskedValue, maskEmail, maskPhone } from './mask.js';
 import { dateAt, maskAddresses, phoneEndAt } from './message.js';
-import { removeHiddenCharacters } from './unicode.js';
+import { hiddenCharactersNote, removeHiddenCharacters } from './unicode.js';
 
 /**
  * The most bytes an answer may cost in a result, counted as the pipeline
@@ -186,11 +186,30 @@ const maskByField = (mask: FieldMask, text: string): string => {
   return maskBirthdate(text);
 };
 
-// Whether two keys of an object were the same after the mask, set by the
-// walk of one answer.
+// One walk of an answer: whether it masks, by the level of redaction, and
+// whether two keys of an object were the same after the mask.
 interface Walk {
+  readonly masking: boolean;
   collided: boolean;
 }
+
+// A text or key as it goes out: first cleaned of hidden characters, then
+// masked, and with the note of the cleaning in that very text, also
+// without masking and also when the mask changed the text. The stage
+// redact of the pipeline cleans the whole JSON text again and would put
+// its note after the closing brace, which leaves no valid JSON; cleaned
+// here, it finds nothing left (ADR 0024).
+const outgoing = (
+  text: string,
+  walk: Walk,
+  mask: (cleaned: string) => string,
+): string => {
+  const cleaned = removeHiddenCharacters(text);
+  const out = walk.masking ? mask(cleaned.text) : cleaned.text;
+  return cleaned.removed === 0
+    ? out
+    : out + hiddenCharactersNote(cleaned.removed);
+};
 
 // A masked copy of a value of the parsed answer. A field that asks for a
 // mask passes it on to every text below it, in lists and in objects, where
@@ -205,12 +224,12 @@ const masked = (
   walk: Walk,
 ): unknown => {
   if (typeof value === 'string') {
-    return mask === undefined
-      ? maskForeignText(value)
-      : maskByField(mask, value);
+    return outgoing(value, walk, (text) =>
+      mask === undefined ? maskForeignText(text) : maskByField(mask, text),
+    );
   }
   if (typeof value === 'number') {
-    return mask !== undefined && direct
+    return walk.masking && mask !== undefined && direct
       ? maskByField(mask, String(value))
       : value;
   }
@@ -220,7 +239,7 @@ const masked = (
   if (typeof value !== 'object' || value === null) return value;
   const copy = Object.create(null) as Record<string, unknown>;
   for (const [key, item] of Object.entries(value)) {
-    const name = maskForeignText(key);
+    const name = outgoing(key, walk, maskForeignText);
     if (Object.hasOwn(copy, name)) walk.collided = true;
     const own = fieldMask(key);
     Object.defineProperty(copy, name, {
@@ -272,8 +291,8 @@ export function renderForeignJson(
   root: unknown,
   level: RedactionLevel,
 ): ForeignJsonText {
-  const walk: Walk = { collided: false };
-  const value = level === 'off' ? root : masked(root, undefined, false, walk);
+  const walk: Walk = { masking: level !== 'off', collided: false };
+  const value = masked(root, undefined, false, walk);
   if (walk.collided) return Object.freeze({ ok: false, reason: 'collision' });
   const text = JSON.stringify(value);
   if (foreignJsonCost(text) > maxForeignJsonCost) {

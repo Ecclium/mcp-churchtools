@@ -157,16 +157,43 @@ describe('the catalog over stdio', () => {
     }
   });
 
-  it('lets the refusal of the docs index through, so that the start stops', () => {
-    expect(() =>
-      createStdioCatalog(
-        { readOnly: true, toolsets: ['docs'] },
-        {
-          readDocs: () => {
-            throw new DocsIndexError('missing');
-          },
+  // The search of the escape hatch ranks its operations and shows their
+  // rights with the docs index, so api reads it as well; the reader of
+  // the escape hatch is special (ADR 0067).
+  it('reads the docs index for the toolset api and adds its two tools only', () => {
+    let reads = 0;
+    const catalog = createStdioCatalog(
+      { readOnly: true, toolsets: ['api'] },
+      {
+        readDocs: () => {
+          reads += 1;
+          return syntheticDocsIndex();
         },
-      ),
-    ).toThrow(DocsIndexError);
+      },
+    );
+    expect(reads).toBe(1);
+    expect(catalog.list().map((entry) => entry.name)).toEqual([
+      'ct_api_execute_read',
+      'ct_api_search_actions',
+      'ct_whoami',
+    ]);
+    expect(catalog.get('ct_api_execute_read')?.asSpecial).toBe(true);
+    expect(catalog.get('ct_api_search_actions')?.asSpecial).toBe(false);
   });
+
+  it.each([['docs'], ['api']] as const)(
+    'lets the refusal of the docs index through for %s, so that the start stops',
+    (toolset) => {
+      expect(() =>
+        createStdioCatalog(
+          { readOnly: true, toolsets: [toolset] },
+          {
+            readDocs: () => {
+              throw new DocsIndexError('missing');
+            },
+          },
+        ),
+      ).toThrow(DocsIndexError);
+    },
+  );
 });

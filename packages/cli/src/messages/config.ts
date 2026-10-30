@@ -114,6 +114,7 @@ const stateDir = quote('ECCLIUM_STATE_DIR');
 const toolsets = quote('ECCLIUM_TOOLSETS');
 const personsToolset = quote('persons');
 const eventsToolset = quote('events');
+const apiToolset = quote('api');
 // With all, there is no name to remove.
 const insteadOfAll = `Steht dort ${quote('all')}, nennen Sie stattdessen die übrigen Toolsets einzeln.`;
 // The names of the toolsets as German prose: ‹a›, ‹b› und ‹c›.
@@ -250,7 +251,7 @@ const problems: Readonly<
   invalid_toolsets: (name = toolsets) =>
     message(
       `Der Wert von ${name} ist nicht erlaubt.`,
-      `Erlaubt ist eine mit Komma getrennte Liste aus ${toolsetList}, jeder Name höchstens einmal und ohne Leerzeichen, oder allein ‹all›. Ein leerer Wert schaltet kein Toolset ein.`,
+      `Erlaubt ist eine mit Komma getrennte Liste aus ${toolsetList}, jeder Name höchstens einmal und ohne Leerzeichen, oder ‹all› allein für alle ausser ${apiToolset}, oder ‹all,api› für alle. Ein leerer Wert schaltet kein Toolset ein.`,
       'Setzen Sie eine solche Liste, etwa ‹persons,wiki›, oder entfernen Sie die Variable.',
     ),
   invalid_integer: (name = quote('ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE')) =>
@@ -609,12 +610,13 @@ const problems: Readonly<
     ),
   // Reported for the folder, which is what is missing; the toolsets
   // themselves are valid. persons and events need the folder, because
-  // their tools name persons (ADR 0028, ADR 0064).
+  // their tools name persons, and api, because the escape hatch passes on
+  // whole answers (ADR 0028, ADR 0064, ADR 0067).
   toolsets_without_state_dir: (name = stateDir) =>
     message(
-      `In ${toolsets} ist ${personsToolset} oder ${eventsToolset} eingeschaltet, aber ${name} ist nicht gesetzt.`,
-      `Tools dieser Toolsets nennen Personen. Ein Ergebnis solcher Tools gibt Ecclium nur heraus, wenn seine Zeile in der Audit-Datei steht, und die Audit-Datei liegt im Ordner aus ${name}. Unter Windows gibt es sie im Betrieb über stdio nicht, und damit auch diese Toolsets nicht.`,
-      `Setzen Sie ${name} auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 oder entfernen Sie ${personsToolset} und ${eventsToolset} aus ${toolsets}, soweit sie dort stehen. ${insteadOfAll}`,
+      `In ${toolsets} ist ${personsToolset}, ${eventsToolset} oder ${apiToolset} eingeschaltet, aber ${name} ist nicht gesetzt.`,
+      `Tools dieser Toolsets nennen Personen oder geben ganze Antworten von ChurchTools weiter. Ein Ergebnis solcher Tools gibt Ecclium nur heraus, wenn seine Zeile in der Audit-Datei steht, und die Audit-Datei liegt im Ordner aus ${name}. Unter Windows gibt es sie im Betrieb über stdio nicht, und damit auch diese Toolsets nicht.`,
+      `Setzen Sie ${name} auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 oder entfernen Sie ${personsToolset}, ${eventsToolset} und ${apiToolset} aus ${toolsets}, soweit sie dort stehen. ${insteadOfAll}`,
     ),
 });
 
@@ -643,6 +645,13 @@ const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({
     `Das Toolset ${eventsToolset} ist eingeschaltet.`,
     'Der KI-Assistent kann damit Events, ihre Abläufe und die Dienste der Instanz lesen und sieht, wer in die Dienste eines Events eingeteilt ist, mit Kennung und Name, ausser bei Diensten, die die Namen verbergen. Kontaktdaten liest er nicht. Jeder Aufruf der Einteilungen steht in der Audit-Datei.',
     `Entfernen Sie ${eventsToolset} aus ${toolsets}, wenn er diese Daten nicht sehen soll. ${insteadOfAll}`,
+  ),
+  // On every start, because the escape hatch passes on whole answers of
+  // ChurchTools, not fixed fields (ADR 0067). all never turns it on.
+  api_toolset_enabled: message(
+    `Das Toolset ${apiToolset} ist eingeschaltet.`,
+    'Der KI-Assistent kann damit jede lesende Operation der API aufrufen, die Ecclium freigibt, und sieht die ganze Antwort, soweit das Dienstkonto sie sehen darf. E-Mail-Adressen, Telefonnummern und Geburtsdaten sind maskiert, Adressen, Notizen und andere Angaben nicht. Jeder Aufruf steht in der Audit-Datei und zählt gegen das Lesebudget.',
+    `Entfernen Sie ${apiToolset} aus ${toolsets}, wenn er das nicht soll.`,
   ),
   // One text for every setting: the report of the loader names none of
   // them, and never the path of a certificate.

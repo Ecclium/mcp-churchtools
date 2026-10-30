@@ -15,6 +15,7 @@ import {
   isToolsetName,
   type ToolsetName,
   toolsetNames,
+  toolsetsOfAll,
 } from '../registry/toolsets.js';
 import { isNormalizedAbsolutePath, maxStateDirLength } from './state-dir.js';
 
@@ -196,14 +197,19 @@ export function isRequestsPerMinute(value: string): boolean {
   );
 }
 
-/** The value of `ECCLIUM_TOOLSETS` that turns on every toolset. */
+/**
+ * The value of `ECCLIUM_TOOLSETS` that turns on every toolset but `api`
+ * (ADR 0062, ADR 0067).
+ */
 export const allToolsets = 'all';
 
 /**
  * Reads the value of `ECCLIUM_TOOLSETS`: names of toolsets separated by
- * commas, each at most once, or `all` alone (ADR 0062). Empty means no
- * toolset. Nothing is trimmed and no case is changed, like every other
- * value of the table, so a blank or a capital is refused.
+ * commas, each at most once, or `all` alone, or `all` with `api` and
+ * nothing else (ADR 0062, ADR 0067). `all` leaves out `api`, which an
+ * operator names on purpose, and `all,api` spares listing every other
+ * name. Empty means no toolset. Nothing is trimmed and no case is changed,
+ * like every other value of the table, so a blank or a capital is refused.
  *
  * @param value - The value as given.
  * @returns The toolsets, frozen, in the order of {@link toolsetNames}, or
@@ -211,6 +217,8 @@ export const allToolsets = 'all';
  * @example
  * ```ts
  * readToolsetList('wiki,persons'); // ['persons', 'wiki']
+ * readToolsetList('all'); // every toolset but 'api'
+ * readToolsetList('all,api'); // every toolset
  * readToolsetList('all,wiki'); // undefined
  * ```
  */
@@ -221,12 +229,14 @@ export function readToolsetList(
     return undefined;
   }
   if (value === '') return Object.freeze([]);
-  if (value === allToolsets) return toolsetNames;
+  if (value === allToolsets) return toolsetsOfAll;
   const names = value.split(',');
   const chosen = new Set<string>(names);
-  if (chosen.size !== names.length || !names.every(isToolsetName)) {
-    return undefined;
+  if (chosen.size !== names.length) return undefined;
+  if (chosen.has(allToolsets)) {
+    return chosen.size === 2 && chosen.has('api') ? toolsetNames : undefined;
   }
+  if (!names.every(isToolsetName)) return undefined;
   return Object.freeze(toolsetNames.filter((name) => chosen.has(name)));
 }
 

@@ -67,6 +67,7 @@ export {
   type RefusalReason,
   refusalReasons,
   RegistryRefusal,
+  rightsPerOperation,
   type ShapeNode,
   type ShapePresence,
   type ToolCatalog,
@@ -74,6 +75,7 @@ export {
   toolsetNames,
   type ToolsetName,
   toolsetOf,
+  toolsetsOfAll,
   untrustedWarning,
 } from './registry/index.js';
 export {

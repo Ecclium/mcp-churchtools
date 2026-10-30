@@ -407,6 +407,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       ctx,
       entry.meta.sensitivity,
       entry.asSpecial,
+      entry.meta.domain,
     );
     run.access = access;
     const aborted = new Promise<never>((_resolve, reject) => {

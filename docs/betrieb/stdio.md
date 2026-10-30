@@ -122,7 +122,7 @@ Kommt das erste Signal erst nach dem Ende der Verbindung, steht es im Log, und d
 
 ## Audit-Datei
 
-Mit `ECCLIUM_STATE_DIR` schreibt Ecclium jede Zeile des Audits zuerst in eine eigene Datei und erst danach als Kopie nach stderr. Das Audit liegt dann bei Ihnen, gleich was der Client mit stderr macht. Ohne die Variable gibt es keine Audit-Datei, und das Audit geht nur nach stderr. Mit den Toolsets `persons` und `events` wird der Ordner nötig: Das Ergebnis eines Tools, das Personen nennt, gibt Ecclium nur heraus, wenn seine Zeile ganz in der Audit-Datei steht.
+Mit `ECCLIUM_STATE_DIR` schreibt Ecclium jede Zeile des Audits zuerst in eine eigene Datei und erst danach als Kopie nach stderr. Das Audit liegt dann bei Ihnen, gleich was der Client mit stderr macht. Ohne die Variable gibt es keine Audit-Datei, und das Audit geht nur nach stderr. Mit den Toolsets `persons`, `events` und `api` wird der Ordner nötig: Das Ergebnis eines Tools, das Personen nennt oder ganze Antworten von ChurchTools weitergibt, gibt Ecclium nur heraus, wenn seine Zeile ganz in der Audit-Datei steht.
 
 Legen Sie einen Ordner auf einer lokalen Platte an, als Ihr Benutzer und ausserhalb des Checkouts. Der Befehl legt jeden fehlenden Ordner auf dem Weg mit den Rechten 700 an:
 
@@ -173,8 +173,9 @@ Welche Tools der Server neben `ct_whoami` anbietet, legen Sie mit `ECCLIUM_TOOLS
 | `wiki`      | Wiki                                        | `ct_wiki_categories_list`, `ct_wiki_pages_list`, `ct_wiki_page_get`, `ct_wiki_search`                                                         |
 | `songs`     | Songs                                       | `ct_songs_search`, `ct_songs_get`                                                                                                             |
 | `docs`      | Dokumentation von ChurchTools               | `ct_docs_search_api`, `ct_docs_get_operation`, `ct_docs_search_rights`, `ct_docs_get_right`, `ct_docs_search_academy`, `ct_docs_read_academy` |
+| `api`       | Lesender Zugriff auf die API                | `ct_api_search_actions`, `ct_api_execute_read`                                                                                                |
 
-`all` schaltet alle ein, auch die Toolsets späterer Versionen. Ist die Variable leer oder nicht gesetzt, bietet der Server nur `ct_whoami` an. Beim Start nennt Ecclium auf stderr die Toolsets, die eingeschaltet sind, und jedes, das in dieser Version noch keine Tools mitbringt. Ein unbekannter Name, ein doppelter oder `all` neben einem anderen Namen bricht den Start ab. Die frühere Variable `ECCLIUM_SEARCH_TOOLS` bricht den Start ebenfalls ab, mit dem Hinweis auf `ECCLIUM_TOOLSETS=persons`.
+`all` schaltet alle ein ausser `api`, auch die Toolsets späterer Versionen. `api` nennen Sie ausdrücklich, allein, in einer Liste oder als `all,api` für alle ([ADR 0067](../adr/0067-generischer-lesezugriff.md)). Ist die Variable leer oder nicht gesetzt, bietet der Server nur `ct_whoami` an. Beim Start nennt Ecclium auf stderr die Toolsets, die eingeschaltet sind, und jedes, das in dieser Version noch keine Tools mitbringt. Ein unbekannter Name, ein doppelter oder `all` neben einem anderen Namen als `api` bricht den Start ab. Die frühere Variable `ECCLIUM_SEARCH_TOOLS` bricht den Start ebenfalls ab, mit dem Hinweis auf `ECCLIUM_TOOLSETS=persons`.
 
 ## Wiki
 
@@ -188,7 +189,19 @@ Die sechs Tools des Toolsets `docs` schlagen in der Dokumentation von ChurchTool
 - `ct_docs_search_rights` sucht Rechte über Modul, Namen oder deutsche Bezeichnung, `ct_docs_get_right` liest ein Recht mit Bezeichnung, erklärenden Hilfeseiten und den Operationen, die es verlangen.
 - `ct_docs_search_academy` sucht Hilfeseiten, `ct_docs_read_academy` liest eine mit Titel und Link, eine lange in Teilen von höchstens 16'000 Bytes.
 
-So schalten Sie sie ein: Setzen Sie `ECCLIUM_TOOLSETS` auf `docs`. Jedes Ergebnis nennt seine Quelle mit Abrufdatum, beim OpenAPI-Dokument mit Lizenz CC BY 4.0, bei der Academy mit Link. Texte aus der Dokumentation stehen im Datenumschlag, weil sie aus dem Netz kommen. Mit `docs` liest der Start den Index einmal, das dauert etwa eine Sekunde und braucht einige Dutzend MiB Speicher. Ohne `docs` liest er ihn nicht. Fehlt der Index oder ist er beschädigt, bricht der Start mit einer Meldung und 70 ab. Installieren Sie Ecclium dann neu, im Quellcode mit `pnpm build`, oder nehmen Sie `docs` aus `ECCLIUM_TOOLSETS`.
+So schalten Sie sie ein: Setzen Sie `ECCLIUM_TOOLSETS` auf `docs`. Jedes Ergebnis nennt seine Quelle mit Abrufdatum, beim OpenAPI-Dokument mit Lizenz CC BY 4.0, bei der Academy mit Link. Texte aus der Dokumentation stehen im Datenumschlag, weil sie aus dem Netz kommen. Mit `docs` oder `api` liest der Start den Index einmal, das dauert etwa eine Sekunde und braucht einige Dutzend MiB Speicher. Ohne beide liest er ihn nicht. Fehlt der Index oder ist er beschädigt, bricht der Start mit einer Meldung und 70 ab. Installieren Sie Ecclium dann neu, im Quellcode mit `pnpm build`, oder nehmen Sie `docs` und `api` aus `ECCLIUM_TOOLSETS`.
+
+## Lesender Zugriff auf die API
+
+Für alles, was kein eigenes Tool hat, ruft `ct_api_execute_read` eine lesende Operation der API von ChurchTools auf, die Ecclium freigibt, und gibt die ganze Antwort weiter ([ADR 0067](../adr/0067-generischer-lesezugriff.md)). `ct_api_search_actions` sucht diese Operationen in der Dokumentation, die mit Ecclium ausgeliefert wird, und nennt je Operation Pfad, Parameter, Sensibilität und die Rechte, die das Projekt ihr mit Beleg zugeordnet hat. Die Suche fragt ChurchTools nicht.
+
+- Freigegeben sind nur Operationen mit `GET`, jede von Hand eingestuft: die Bereiche, für die Ecclium Tools hat, und die Rechte, mit ihren Stammdaten wie Gruppentypen und Rollen. Nie erreichbar sind Operationen mit Tokens oder Geheimnissen, Dateien, Finanzen, Protokollen, Exporten und Einstellungen, ebenso Seelsorge und Gesundheit, Kommunikation zwischen Personen, übergreifende Stammdaten und die Liste der Geburtstage. Ecclium weist sie ab, bevor es ChurchTools fragt.
+- Den Pfad baut Ecclium nur aus der Vorlage der Operation, mit geprüften Werten, und es sendet nur Parameter, die die Operation kennt. Eine Adresse, eine Kopfzeile oder ein anderer Host aus einer Eingabe gelangt nicht in die Anfrage.
+- Die Antwort geht als JSON-Text im Datenumschlag hinaus. Ecclium verbirgt Felder mit einem Geheimnis, etwa den Abo-Link eines Kalenders, ganz und maskiert E-Mail-Adressen, Telefonnummern und Geburtsdaten. Adressen, Angaben zur Konfession, Notizen und alle anderen Felder gehen unmaskiert hinaus, soweit das Dienstkonto sie sehen darf. Die eigentliche Grenze sind die Rechte des Dienstkontos.
+- Eine Antwort wird nie gekürzt. Passt sie nicht in ein Ergebnis, etwa 20 bis 30 KiB JSON, endet der Aufruf mit einem Hinweis, weniger Einträge mit `limit` oder einem Filter zu holen.
+- Lehnt ChurchTools eine Operation ab, nennt der Fehler die Rechte, die das Projekt ihr zugeordnet hat. Hat sie keine Zuordnung, verweist er auf `ct_api_search_actions`.
+
+So schalten Sie sie ein: Setzen Sie `ECCLIUM_TOOLSETS` auf `api` oder nehmen Sie `api` in die Liste auf, und setzen Sie `ECCLIUM_STATE_DIR` auf einen Ordner nach «Audit-Datei». `ct_api_execute_read` behandelt Ecclium wie die Tools für Personen: Sein Ergebnis geht nur mit seiner Zeile in der Audit-Datei hinaus, jeder Aufruf zählt gegen das Lesebudget, und es läuft nie unbeaufsichtigt. Ohne den Ordner meldet `config check` ein Problem, und der Start bricht mit 78 ab. Unter Windows gibt es über stdio kein Toolset `api`. Bei jedem Start meldet Ecclium auf stderr, dass `api` eingeschaltet ist und was unmaskiert bleibt. Wie `docs` liest der Start dafür den Index der Dokumentation und bricht ohne ihn mit 70 ab. Schalten Sie `api` nur für eine Instanz ein, deren Daten der KI-Assistent im Rahmen der Rechte des Dienstkontos sehen darf.
 
 ## Songs
 

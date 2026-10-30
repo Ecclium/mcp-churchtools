@@ -45,9 +45,9 @@ const starts: Readonly<Record<StartNoticeCode, Message>> = Object.freeze({
     'Setzen Sie ‹ECCLIUM_STATE_DIR› auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 oder schalten Sie das Tool aus.',
   ),
   docs_index: message(
-    'Das Toolset ‹docs› ist eingeschaltet, aber der Index der Dokumentation von ChurchTools fehlt oder ist beschädigt.',
-    'Die Tools von ‹docs› lesen nur diesen Index, der mit Ecclium ausgeliefert wird. Ohne ihn startet Ecclium nicht, statt die Tools ohne Meldung wegzulassen.',
-    'Installieren Sie Ecclium neu, im Quellcode mit «pnpm build», oder nehmen Sie ‹docs› aus ‹ECCLIUM_TOOLSETS›.',
+    'Das Toolset ‹docs› oder ‹api› ist eingeschaltet, aber der Index der Dokumentation von ChurchTools fehlt oder ist beschädigt.',
+    'Die Tools von ‹docs› lesen nur diesen Index, der mit Ecclium ausgeliefert wird, und die Suche von ‹api› findet darin die Operationen und ihre Rechte. Ohne ihn startet Ecclium nicht, statt die Tools ohne Meldung wegzulassen.',
+    'Installieren Sie Ecclium neu, im Quellcode mit «pnpm build», oder nehmen Sie ‹docs› und ‹api› aus ‹ECCLIUM_TOOLSETS›.',
   ),
 });
 

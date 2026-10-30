@@ -378,7 +378,7 @@ export function dependencyRules(
     {
       name: 'plugins-only-plugin-api',
       severity: 'error',
-      comment: `${adr('plugins')}: a plugin imports only the plugin API, as a plugin of a third party must. Its tests may use the testkit. The plugin of the core may add the docs tools, which read the docs index (${adr('docsTools')}).`,
+      comment: `${adr('plugins')}: a plugin imports only the plugin API, as a plugin of a third party must. Its tests may use the testkit. The plugin of the core may add the docs tools, which read the docs index (${adr('docsTools')}), and the tools of the escape hatch (${adr('apiTools')}).`,
       from: { path: at('plugins'), pathNot: testFile },
       to: {
         path: '^packages/',
@@ -386,6 +386,7 @@ export function dependencyRules(
           `^packages/${pluginApi}/`,
           ...at('plugins'),
           ...at('docsTools'),
+          ...at('apiTools'),
         ],
       },
     },
@@ -401,6 +402,22 @@ export function dependencyRules(
           `^packages/${docsIndex}/`,
           ...at('plugins'),
           ...at('docsTools'),
+        ],
+      },
+    },
+    {
+      name: 'api-tools-only-plugin-api-docs-index-and-docs-tools',
+      severity: 'error',
+      comment: `${adr('apiTools')}: the tools of the escape hatch import, of the workspace, only the plugin API, the modules of the plugins, the docs index and the docs tools, whose rights they show. They reach ChurchTools only through the read API. Their tests may use the testkit.`,
+      from: { path: at('apiTools'), pathNot: testFile },
+      to: {
+        path: '^packages/',
+        pathNot: [
+          `^packages/${pluginApi}/`,
+          `^packages/${docsIndex}/`,
+          ...at('plugins'),
+          ...at('docsTools'),
+          ...at('apiTools'),
         ],
       },
     },

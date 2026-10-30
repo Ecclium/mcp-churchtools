@@ -141,6 +141,7 @@ describe('the table of variables', () => {
       'wiki',
       'songs',
       'docs',
+      'api',
       'all',
     ]);
     expect(new Set(row('ECCLIUM_REDACTION').choices)).toEqual(
@@ -252,6 +253,9 @@ describe('fitsVariable', () => {
     ['ECCLIUM_TOOLSETS', 'all,wiki'],
     ['ECCLIUM_TOOLSETS', 'wiki,all'],
     ['ECCLIUM_TOOLSETS', 'all,all'],
+    ['ECCLIUM_TOOLSETS', 'all,api,wiki'],
+    ['ECCLIUM_TOOLSETS', 'all,api,api'],
+    ['ECCLIUM_TOOLSETS', 'all,docs'],
     ['ECCLIUM_TOOLSETS', 'groups'],
     ['ECCLIUM_TOOLSETS', 'base'],
     ['ECCLIUM_TOOLSETS', 'true'],
@@ -376,13 +380,29 @@ describe('readToolsetList', () => {
     expect(Object.isFrozen(list)).toBe(true);
   });
 
-  it('gives no toolset for an empty value and every one for all', () => {
+  it('gives no toolset for an empty value and every one but api for all', () => {
     expect(readToolsetList('')).toEqual([]);
     expect(Object.isFrozen(readToolsetList(''))).toBe(true);
     expect(allToolsets).toBe('all');
-    expect(readToolsetList(allToolsets)).toEqual([...toolsetNames]);
+    expect(readToolsetList(allToolsets)).toEqual(
+      toolsetNames.filter((name) => name !== 'api'),
+    );
     expect(Object.isFrozen(readToolsetList(allToolsets))).toBe(true);
   });
+
+  // all leaves out api, so all with api is the one way to name every
+  // toolset without listing them (ADR 0067).
+  it.each(['all,api', 'api,all'])('gives every toolset for %s', (value) => {
+    expect(readToolsetList(value)).toEqual([...toolsetNames]);
+    expect(Object.isFrozen(readToolsetList(value))).toBe(true);
+  });
+
+  it.each(['all,wiki', 'all,api,wiki', 'api,all,api', 'all,all', 'all,'])(
+    'refuses all with anything but api once: %s',
+    (value) => {
+      expect(readToolsetList(value)).toBeUndefined();
+    },
+  );
 
   it('refuses a value longer than every toolset once', () => {
     const longest = toolsetNames.join(',');

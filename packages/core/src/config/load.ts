@@ -338,6 +338,7 @@ const unknownRank = replacedRank + 1;
 const toolsetsWithAuditFile: readonly ToolsetName[] = Object.freeze([
   'persons',
   'events',
+  'api',
 ]);
 
 type Read =
@@ -716,6 +717,10 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   // The assignments to services name persons as well (ADR 0064).
   if (toolsets?.value.includes('events') === true) {
     warnings.add('events_toolset_enabled');
+  }
+  // The escape hatch passes on whole answers, not fixed fields (ADR 0067).
+  if (toolsets?.value.includes('api') === true) {
+    warnings.add('api_toolset_enabled');
   }
   setting(
     'toolsets',

@@ -10,6 +10,7 @@
 import type {
   RightRef,
   ToolDescription,
+  ToolMeta,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { readFields } from './own.js';
@@ -85,16 +86,56 @@ export function checkDescription(value: unknown): ToolDescription | undefined {
   });
 }
 
-const listRights = (rights: readonly RightRef[]): string =>
-  rights.length === 0
-    ? 'none'
-    : rights.map(({ module, right }) => `"${right}" in ${module}`).join(', ');
+/**
+ * The rights of a tool of the escape hatch that reads by operationId: they
+ * are those of the operation it is asked to read, not one fixed list
+ * (ADR 0067).
+ */
+export const perOperation = 'per-operation';
+
+/**
+ * Whether the rights of a tool are those of the operation it reads: a
+ * tool of the sensitivity `special` in the area `api` without rights of
+ * its own may read any operation of the escape hatch (ADR 0067). The
+ * description and the reference of the tools both follow this rule.
+ *
+ * @param meta - The checked metadata of the tool.
+ * @returns Whether its rights depend on the operation.
+ * @example
+ * ```ts
+ * rightsPerOperation({ domain: 'api', sensitivity: 'special', requiredRights: [] }); // true
+ * ```
+ */
+export function rightsPerOperation(
+  meta: Pick<ToolMeta, 'domain' | 'sensitivity' | 'requiredRights'>,
+): boolean {
+  return (
+    meta.domain === 'api' &&
+    meta.sensitivity === 'special' &&
+    meta.requiredRights.length === 0
+  );
+}
+
+/** The line of rights for a tool of the escape hatch. */
+export const perOperationRights =
+  'those of the operation, as ct_api_search_actions names them';
+
+const listRights = (
+  rights: readonly RightRef[] | typeof perOperation,
+): string =>
+  rights === perOperation
+    ? perOperationRights
+    : rights.length === 0
+      ? 'none'
+      : rights.map(({ module, right }) => `"${right}" in ${module}`).join(', ');
 
 /**
  * Renders the description the model reads.
  *
  * @param description - A checked description.
- * @param rights - The rights from the checked metadata.
+ * @param rights - The rights from the checked metadata, or
+ *   {@link perOperation} for a tool of the escape hatch, whose rights are
+ *   those of each operation.
  * @returns The text: purpose, when to use the tool and when not, its
  *   rights, its limits and {@link untrustedWarning}, one per line.
  * @example
@@ -105,7 +146,7 @@ const listRights = (rights: readonly RightRef[]): string =>
  */
 export function renderDescription(
   description: ToolDescription,
-  rights: readonly RightRef[],
+  rights: readonly RightRef[] | typeof perOperation,
 ): string {
   return [
     description.purpose,

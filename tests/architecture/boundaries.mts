@@ -43,6 +43,7 @@ export const placeKeys = [
   'utilModule',
   'docsFiles',
   'docsTools',
+  'apiTools',
   'operationCatalog',
 ] as const;
 

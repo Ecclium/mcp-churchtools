@@ -5,6 +5,7 @@ import {
   type AssignmentList,
   type BookingList,
   type Calendar,
+  EccliumError,
   type EventDetails,
   type EventList,
   type GlobalSearchHits,
@@ -158,7 +159,16 @@ const ctx = Object.freeze({
   }),
 }) as unknown as TenantContext;
 
-const fakeClient = () => {
+// What the fake client answers for an operation of the escape hatch.
+type OperationAnswer = () => ReturnType<Client['operation']>;
+const groupAnswer: OperationAnswer = () =>
+  Promise.resolve({
+    operationId: 'get-groups-groupId',
+    sensitivity: 'special',
+    root: { data: { name: 'Gruppe A', email: 'max.mustermann@example.org' } },
+  });
+
+const fakeClient = (operationAnswer: OperationAnswer = groupAnswer) => {
   const seen: TenantContext[] = [];
   const queries: string[] = [];
   const wiki: unknown[][] = [];
@@ -286,9 +296,11 @@ const fakeClient = () => {
       ids.push(['search', type, query]);
       return Promise.resolve(globalHits);
     },
-    // The read access has no method for the escape hatch yet; it comes
-    // with its first tool (ADR 0067).
-    operation: () => Promise.reject(new Error('not used')),
+    operation: (context, request) => {
+      seen.push(context);
+      ids.push(['operation', request]);
+      return operationAnswer();
+    },
   };
   return { client, seen, queries, wiki, ids };
 };
@@ -347,6 +359,8 @@ describe('createReadAccess', () => {
         read.song(2),
         read.searchWiki('Seite'),
         read.search('song', 'Lied'),
+        read.operations(),
+        read.operation({ operationId: 'get-groups-groupId' }),
       ]) {
         const error: unknown = await call.catch((thrown: unknown) => thrown);
         expect(isEccliumError(error) && error.code).toBe('internal');
@@ -553,4 +567,146 @@ describe('createReadAccess', () => {
       expect(lines).toEqual(['read_names_refused', 'read_names_refused']);
     },
   );
+});
+
+// The escape hatch (ADR 0067): the list of operations for every tool, the
+// read only for a tool of the sensitivity special in the area api, with
+// the answer masked by the level of the call.
+describe('the escape hatch in the read access', () => {
+  const ctxWith = (redaction: 'off' | 'standard'): TenantContext =>
+    Object.freeze({ ...ctx, redaction });
+
+  it.each(['none', 'personal', 'special'] as const)(
+    'lists the readable operations for a tool of the sensitivity %s, without the client',
+    async (sensitivity) => {
+      const { client, seen } = fakeClient();
+      const { read } = createReadAccess(client, ctx, sensitivity);
+      const listed = await read.operations();
+      expect(listed.length).toBeGreaterThan(0);
+      expect(Object.isFrozen(listed)).toBe(true);
+      const ids = listed.map((entry) => entry.operationId);
+      expect(ids).toEqual([...ids].sort());
+      expect(ids).toContain('get-wiki-categories');
+      expect(seen).toEqual([]);
+    },
+  );
+
+  it('reads an operation for a special tool in the area api and masks the answer', async () => {
+    const { client, seen, ids } = fakeClient();
+    const context = ctxWith('standard');
+    const { read } = createReadAccess(client, context, 'special', true, 'api');
+    const request = {
+      operationId: 'get-groups-groupId',
+      path: { groupId: 3 },
+      query: { include: ['tags'] },
+    };
+    await expect(read.operation(request)).resolves.toEqual({
+      operationId: 'get-groups-groupId',
+      sensitivity: 'special',
+      json: '{"data":{"name":"Gruppe A","email":"m***@example.org"}}',
+    });
+    expect(seen).toEqual([context]);
+    expect(ids).toEqual([['operation', request]]);
+  });
+
+  it('passes the answer unmasked with the level off, but cleaned', async () => {
+    const zeroWidth = String.fromCodePoint(0x200b);
+    const { client } = fakeClient(() =>
+      Promise.resolve({
+        operationId: 'get-groups-groupId',
+        sensitivity: 'special',
+        root: { email: `max.mustermann@example.org${zeroWidth}` },
+      }),
+    );
+    const { read } = createReadAccess(
+      client,
+      ctxWith('off'),
+      'special',
+      true,
+      'api',
+    );
+    const result = await read.operation({ operationId: 'get-groups-groupId' });
+    expect(JSON.parse(result.json)).toEqual({
+      email:
+        'max.mustermann@example.org [ecclium: 1 hidden characters removed]',
+    });
+  });
+
+  it.each([
+    ['none', 'api'],
+    ['personal', 'api'],
+    ['special', 'persons'],
+    ['special', 'docs'],
+    ['special', undefined],
+  ] as const)(
+    'refuses a read to a tool of the sensitivity %s in the area %s, without reading',
+    async (sensitivity, domain) => {
+      lines.length = 0;
+      const { client, seen } = fakeClient();
+      const { read } = createReadAccess(
+        client,
+        ctxWith('standard'),
+        sensitivity,
+        true,
+        domain,
+      );
+      const error: unknown = await read
+        .operation({ operationId: 'get-groups-groupId' })
+        .catch((thrown: unknown) => thrown);
+      expect(isEccliumError(error) && error.code).toBe('policy_denied');
+      expect(seen).toEqual([]);
+      expect(lines).toEqual(['read_operation_refused']);
+    },
+  );
+
+  it.each([
+    ['too large', { data: 'x'.repeat(40_000) }, 'read_operation_too_large'],
+    [
+      'with keys that are the same once masked',
+      { 'max@example.org': 1, 'mia@example.org': 2 },
+      'read_operation_collision',
+    ],
+  ])(
+    'ends with upstream and the hint on limit for an answer %s',
+    async (_name, root, line) => {
+      lines.length = 0;
+      const { client } = fakeClient(() =>
+        Promise.resolve({
+          operationId: 'get-groups',
+          sensitivity: 'special',
+          root,
+        }),
+      );
+      const { read } = createReadAccess(
+        client,
+        ctxWith('standard'),
+        'special',
+        true,
+        'api',
+      );
+      const error: unknown = await read
+        .operation({ operationId: 'get-groups' })
+        .catch((thrown: unknown) => thrown);
+      expect(isEccliumError(error) && error.code).toBe('upstream');
+      expect(error instanceof Error && error.message).toContain('limit');
+      expect(lines).toEqual([line]);
+    },
+  );
+
+  it('passes on an error of the client as it is', async () => {
+    const { client } = fakeClient(() =>
+      Promise.reject(new EccliumError('permission')),
+    );
+    const { read } = createReadAccess(
+      client,
+      ctxWith('standard'),
+      'special',
+      true,
+      'api',
+    );
+    const error: unknown = await read
+      .operation({ operationId: 'get-groups' })
+      .catch((thrown: unknown) => thrown);
+    expect(isEccliumError(error) && error.code).toBe('permission');
+  });
 });

@@ -193,10 +193,16 @@ export interface DocsIndex {
    *
    * @param query - The words to look for.
    * @param limit - The most hits, from 1 to 100.
+   * @param only - The `operationId` of the operations that count, such as
+   *   those the escape hatch reads; all when left out.
    * @returns The hits, best first.
    * @throws {RangeError} If the limit is out of range.
    */
-  searchOperations(query: string, limit: number): readonly OperationHit[];
+  searchOperations(
+    query: string,
+    limit: number,
+    only?: ReadonlySet<string>,
+  ): readonly OperationHit[];
   /**
    * Looks up an operation.
    *
@@ -435,10 +441,14 @@ function createDocsIndex(facts: Facts, search: DocsIndexSearch): DocsIndex {
 
   return Object.freeze({
     sources,
-    searchOperations: (query: string, limit: number) =>
+    searchOperations: (
+      query: string,
+      limit: number,
+      only?: ReadonlySet<string>,
+    ) =>
       Object.freeze(
         pick(
-          searchers.operations.search(query, limit),
+          searchers.operations.search(query, limit, only),
           facts.operations.entries,
         ).map((fact) =>
           Object.freeze({

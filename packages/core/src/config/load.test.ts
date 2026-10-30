@@ -1601,6 +1601,18 @@ describe('loadConfig and its problems', () => {
         undefined,
         memoryFolder().fs,
       ),
+    api_toolset_enabled: () =>
+      load(
+        {
+          ...valid(),
+          ECCLIUM_TOOLSETS: 'api',
+          ECCLIUM_STATE_DIR: stateDirPath,
+        },
+        'stdio',
+        memoryFiles().fs,
+        undefined,
+        memoryFolder().fs,
+      ),
     trust_store_extended: () =>
       load({ ...valid(), NODE_EXTRA_CA_CERTS: '/path/to/ca.pem' }),
   };
@@ -1620,13 +1632,16 @@ describe('loadConfig and its problems', () => {
   // the audit file over stdio (ADR 0028, ADR 0060, ADR 0064). A folder that
   // is set but refused reports only its own problem, and the toolsets alone
   // stay a valid value.
-  it('asks for the folder of state only when persons or events is on and it is unset', () => {
+  it('asks for the folder of state only when persons, events or api is on and it is unset', () => {
     for (const value of [
       'persons',
       'wiki,persons',
       'events',
       'events,wiki',
+      'api',
+      'docs,api',
       'all',
+      'all,api',
     ]) {
       const missing = load({ ...valid(), ECCLIUM_TOOLSETS: value });
       expect(missing.ok, value).toBe(false);
@@ -1650,7 +1665,7 @@ describe('loadConfig and its problems', () => {
         ),
       ),
     ).toEqual(['state_dir_mode']);
-    for (const value of ['', 'wiki', 'calendars,wiki,songs']) {
+    for (const value of ['', 'wiki', 'calendars,wiki,songs', 'docs']) {
       expect(load({ ...valid(), ECCLIUM_TOOLSETS: value }).ok, value).toBe(
         true,
       );
@@ -1671,7 +1686,42 @@ describe('loadConfig and its problems', () => {
     expect(result.report.warnings).toEqual([]);
   });
 
-  it('turns on every toolset with all and shows their names', () => {
+  // all leaves out api, and all,api names every toolset, with the warning
+  // of the escape hatch (ADR 0067).
+  it('turns on api only when named, with its warning', () => {
+    const start = (value: string) =>
+      load(
+        {
+          ...valid(),
+          ECCLIUM_TOOLSETS: value,
+          ECCLIUM_STATE_DIR: stateDirPath,
+        },
+        'stdio',
+        memoryFiles().fs,
+        undefined,
+        memoryFolder().fs,
+      );
+    const all = start('all');
+    expect(all.ok && all.config.toolsets).not.toContain('api');
+    expect(all.report.warnings).not.toContain('api_toolset_enabled');
+    const both = start('all,api');
+    expect(both.ok && both.config.toolsets).toEqual([
+      'persons',
+      'events',
+      'calendars',
+      'wiki',
+      'songs',
+      'docs',
+      'api',
+    ]);
+    expect(both.report.warnings).toEqual([
+      'persons_toolset_enabled',
+      'events_toolset_enabled',
+      'api_toolset_enabled',
+    ]);
+  });
+
+  it('turns on every toolset but api with all and shows their names', () => {
     const result = load(
       { ...valid(), ECCLIUM_TOOLSETS: 'all', ECCLIUM_STATE_DIR: stateDirPath },
       'stdio',

@@ -9,6 +9,7 @@
 import type {
   Plugin,
   PluginHost,
+  RightRef,
   Sensitivity,
   ToolCall,
   ToolMeta,
@@ -20,7 +21,9 @@ import { toolNamePattern } from '../logger/fields.js';
 import {
   checkDescription,
   descriptionBudget,
+  perOperation,
   renderDescription,
+  rightsPerOperation,
 } from './description.js';
 import { checkMeta } from './meta.js';
 import { readFields } from './own.js';
@@ -168,6 +171,15 @@ const isVersion = (value: unknown): value is string => {
 
 const toolKeys = ['name', 'meta', 'description', 'input', 'output', 'execute'];
 
+// The rights the description names. A tool of the sensitivity special in
+// the area api may read any operation of the escape hatch, so without
+// rights of its own its line names those of the operation, not none
+// (ADR 0067). Only such a tool may read the escape hatch at all.
+const rightsLine = (
+  meta: ToolMeta,
+): readonly RightRef[] | typeof perOperation =>
+  rightsPerOperation(meta) ? perOperation : meta.requiredRights;
+
 // Checks one tool and makes its entry, or throws the refusal.
 const checkTool = (
   tool: unknown,
@@ -230,7 +242,7 @@ const checkTool = (
     plugin,
     origin,
     meta,
-    description: renderDescription(description, meta.requiredRights),
+    description: renderDescription(description, rightsLine(meta)),
     input: fields.input as ZodType,
     inputSchema,
     output: fields.output as ZodType,

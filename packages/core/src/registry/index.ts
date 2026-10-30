@@ -5,7 +5,11 @@
  *
  * @packageDocumentation
  */
-export { descriptionBudget, untrustedWarning } from './description.js';
+export {
+  descriptionBudget,
+  rightsPerOperation,
+  untrustedWarning,
+} from './description.js';
 export {
   type RefusalReason,
   refusalReasons,
@@ -27,6 +31,7 @@ export {
   toolsetNames,
   type ToolsetName,
   toolsetOf,
+  toolsetsOfAll,
 } from './toolsets.js';
 export type {
   LeafType,

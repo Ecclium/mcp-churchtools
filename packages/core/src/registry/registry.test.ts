@@ -11,7 +11,7 @@ import { z } from 'zod';
 import { descriptionBudget, untrustedWarning } from './description.js';
 import { type RefusalReason, RegistryRefusal } from './refusal.js';
 import { type CatalogOptions, createToolCatalog } from './registry.js';
-import { type ToolsetName, toolsetNames } from './toolsets.js';
+import { type ToolsetName, toolsetNames, toolsetsOfAll } from './toolsets.js';
 
 // The tools of these tests are in the area of the wiki, and every catalog
 // turns that toolset on unless a test names its own: a tool of a plugin in
@@ -361,16 +361,22 @@ describe('createToolCatalog', () => {
       ]);
     });
 
-    it('offers no tool of an area without a toolset, even with all on', () => {
-      const all = createToolCatalog({
-        core,
-        plugins: [],
-        readOnly: true,
-        toolsets: new Set(toolsetNames),
-      });
+    // all leaves out api, which an operator names on purpose (ADR 0067).
+    it('offers the tools of the area api only with the toolset api', () => {
+      const offered = (toolsets: ReadonlySet<ToolsetName>) =>
+        createToolCatalog({ core, plugins: [], readOnly: true, toolsets });
+      const all = offered(new Set(toolsetsOfAll));
       expect(all.has('ct_api_search_actions')).toBe(false);
       expect(all.has('ct_docs_search_api')).toBe(true);
       expect(all.has('ct_events_list')).toBe(true);
+      expect(offered(new Set(toolsetNames)).has('ct_api_search_actions')).toBe(
+        true,
+      );
+      expect(
+        offered(new Set(['api'] as const))
+          .list()
+          .map((entry) => entry.name),
+      ).toEqual(['ct_api_search_actions', 'ct_whoami']);
     });
 
     it('offers the docs tools only with the toolset docs (ADR 0066)', () => {
@@ -1035,5 +1041,61 @@ describe('refusals', () => {
       [plugin('core', adding(tool('ct_x', { output: throwing })))],
       'tool_invalid',
     );
+  });
+});
+
+// A tool that reads the escape hatch reads whatever operation it is asked
+// for, so its description names the rights of the operation, not none
+// (ADR 0067). Every other tool keeps its own list.
+describe('the line of rights of the escape hatch', () => {
+  const api = new Set(['api'] as const);
+  const apiTool = (
+    name: `ct_${string}`,
+    sensitivity: 'special' | 'none',
+    requiredRights: readonly { module: string; right: string }[] = [],
+  ): ToolDefinition =>
+    tool(name, {
+      meta: {
+        capability: 'read',
+        domain: 'api',
+        requiredRights,
+        tier: 'free',
+        sensitivity,
+        unattended: sensitivity === 'special' ? 'never' : 'policy',
+        routineStable: false,
+      },
+      output: z.object({ text: classify(z.string(), 'untrusted') }),
+    });
+  const lineOf = (definition: ToolDefinition): string | undefined =>
+    createToolCatalog({
+      core: plugin('core', adding(definition)),
+      plugins: [],
+      readOnly: true,
+      toolsets: api,
+    })
+      .list()[0]
+      ?.description.split('\n')
+      .find((line) => line.startsWith('ChurchTools rights:'));
+
+  it('names the rights of the operation for a special tool in the area api without rights', () => {
+    expect(lineOf(apiTool('ct_api_read', 'special'))).toBe(
+      'ChurchTools rights: those of the operation, as ct_api_search_actions names them.',
+    );
+  });
+
+  it('keeps none for a tool of the area api that is not special', () => {
+    expect(lineOf(apiTool('ct_api_find', 'none'))).toBe(
+      'ChurchTools rights: none.',
+    );
+  });
+
+  it('keeps the rights a special tool of the area api names', () => {
+    expect(
+      lineOf(
+        apiTool('ct_api_read', 'special', [
+          { module: 'churchwiki', right: 'view' },
+        ]),
+      ),
+    ).toBe('ChurchTools rights: "view" in churchwiki.');
   });
 });

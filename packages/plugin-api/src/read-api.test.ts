@@ -14,6 +14,8 @@ import {
   isWikiPageGuid,
   maxAgendaItems,
   maxAgendaNoteLength,
+  maxApiListValues,
+  maxApiTextLength,
   maxAppointmentDates,
   maxAppointmentDescriptionLength,
   maxAppointmentLinkLength,
@@ -500,5 +502,12 @@ describe('isSearchDomainType', () => {
     ]) {
       expect(isSearchDomainType(value), JSON.stringify(value)).toBe(false);
     }
+  });
+});
+
+describe('the limits of the escape hatch', () => {
+  it('sends lists of at most 100 values and texts of at most 200 code units', () => {
+    expect(maxApiListValues).toBe(100);
+    expect(maxApiTextLength).toBe(200);
   });
 });

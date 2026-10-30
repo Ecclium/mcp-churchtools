@@ -314,14 +314,26 @@ describe('the catalog of messages', () => {
     expect(message.action).toContain('‹ECCLIUM_TOOLSETS›');
   });
 
-  it('asks for the folder of the audit file when persons or events is on', () => {
+  // The escape hatch passes on whole answers; the warning says what stays
+  // unmasked (ADR 0067).
+  it('names the toolset api and what its answers keep unmasked', () => {
+    const message = warningMessage('api_toolset_enabled');
+    expect(message.what).toBe('Das Toolset ‹api› ist eingeschaltet.');
+    expect(message.why).toContain('ganze Antwort');
+    expect(message.why).toContain('Adressen, Notizen und andere Angaben nicht');
+    expect(message.why).toContain('Audit-Datei');
+    expect(message.why).toContain('Lesebudget');
+    expect(message.action).toContain('‹api› aus ‹ECCLIUM_TOOLSETS›');
+  });
+
+  it('asks for the folder of the audit file when persons, events or api is on', () => {
     const message = problemMessage({
       code: 'toolsets_without_state_dir',
       variable: 'ECCLIUM_STATE_DIR',
     });
-    expect(message.what).toContain('‹persons›');
-    expect(message.what).toContain('‹events›');
-    expect(message.action).toContain('‹persons› und ‹events›');
+    expect(message.what).toContain('‹persons›, ‹events› oder ‹api›');
+    expect(message.why).toContain('ganze Antworten');
+    expect(message.action).toContain('‹persons›, ‹events› und ‹api›');
     expect(message.what).toContain('‹ECCLIUM_TOOLSETS›');
     expect(message.what).toContain('‹ECCLIUM_STATE_DIR› ist nicht gesetzt');
     expect(message.why).toContain('Unter Windows');
@@ -344,9 +356,10 @@ describe('the catalog of messages', () => {
       variable: 'ECCLIUM_TOOLSETS',
     });
     expect(message.why).toContain(
-      '‹persons›, ‹events›, ‹calendars›, ‹wiki›, ‹songs› und ‹docs›',
+      '‹persons›, ‹events›, ‹calendars›, ‹wiki›, ‹songs›, ‹docs› und ‹api›',
     );
-    expect(message.why).toContain('allein ‹all›');
+    expect(message.why).toContain('‹all› allein für alle ausser ‹api›');
+    expect(message.why).toContain('‹all,api› für alle');
     expect(message.why).toContain('ohne Leerzeichen');
   });
 

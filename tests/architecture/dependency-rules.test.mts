@@ -823,6 +823,21 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'docs-tools-only-plugin-api-and-docs-index',
+    name: 'a docs tool imports a tool of the escape hatch',
+    files: {
+      'packages/tools/src/docs/forbidden.ts':
+        "import '../api/index.js';\nexport {};\n",
+    },
+  },
+  {
+    rule: 'api-tools-only-plugin-api-docs-index-and-docs-tools',
+    name: 'a tool of the escape hatch imports core',
+    files: {
+      'packages/tools/src/api/forbidden.ts': `import '${nameOf('core')}';\nexport {};\n`,
+    },
+  },
+  {
     rule: 'bin-imports-only-environment',
     name: 'the executable imports the command line statically',
     files: {
