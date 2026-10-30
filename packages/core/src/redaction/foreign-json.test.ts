@@ -303,6 +303,22 @@ describe('renderForeignJson', () => {
     }
   });
 
+  it('keeps the note of the cleaning in a text the mask changed', () => {
+    const written = renderForeignJson(
+      {
+        note: `Kontakt max.mustermann@example.org${zeroWidth}`,
+        email: `max.mustermann${zeroWidth}@example.org`,
+        [`max@example.org${zeroWidth}`]: 1,
+      },
+      'standard',
+    );
+    expect(written.ok && JSON.parse(written.text)).toEqual({
+      note: 'Kontakt m***@example.org [ecclium: 1 hidden characters removed]',
+      email: 'm***@example.org [ecclium: 1 hidden characters removed]',
+      'm***@example.org [ecclium: 1 hidden characters removed]': 1,
+    });
+  });
+
   it('refuses keys that are the same once cleaned', () => {
     expect(
       renderForeignJson(
