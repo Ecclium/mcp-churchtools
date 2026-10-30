@@ -661,6 +661,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     ['docs-bare-summary', 'doku_operationen'],
     ['docs-license', 'doku_operationen'],
     ['docs-unmapped', 'doku_operation'],
+    ['docs-no-needs', 'doku_operation'],
     ['docs-bare-label', 'doku_rechte'],
     ['docs-right-unused', 'doku_recht'],
     ['docs-foreign-link', 'doku_academy'],

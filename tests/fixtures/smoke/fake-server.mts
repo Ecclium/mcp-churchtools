@@ -235,12 +235,14 @@ const docsAnswer = (
       path: '/api/groups/{id}/members',
       deprecated: false,
       summary: wrap('Get members of a group'),
-      rights:
-        scenario === 'docs-unmapped'
-          ? { status: 'unmapped', needs: [] }
-          : {
-              status: 'needs',
-              needs: [
+      // With docs-unmapped only the state is wrong, the needs stay, so that
+      // the check of each can be seen to fail on its own.
+      rights: {
+        status: scenario === 'docs-unmapped' ? 'unmapped' : 'needs',
+        needs:
+          scenario === 'docs-no-needs'
+            ? []
+            : [
                 {
                   oneOf: [
                     { ...rightOfGroups, label: wrap(rightOfGroups.label) },
@@ -249,7 +251,7 @@ const docsAnswer = (
                   evidence: [],
                 },
               ],
-            },
+      },
       part: 1,
       parts: 1,
       definition: wrap('GET /api/groups/{id}/members'),
