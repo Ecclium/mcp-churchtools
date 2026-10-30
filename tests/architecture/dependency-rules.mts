@@ -292,6 +292,13 @@ export function dependencyRules(
       to: { path: at('rawClient') },
     },
     {
+      name: 'operation-catalog-only-in-client',
+      severity: 'error',
+      comment: `${adr('operationCatalog')}: only the raw client imports the operation catalog of the escape hatch, so that no other module of core chooses an operation past the checks of the client. Tests are exempt.`,
+      from: { pathNot: [...at('rawClient'), testFile] },
+      to: { path: at('operationCatalog') },
+    },
+    {
       name: 'mcp-mount-only-in-server',
       severity: 'error',
       comment: `${adr('mcpMount')}: only the server uses the mount, the one registration with the MCP SDK.`,

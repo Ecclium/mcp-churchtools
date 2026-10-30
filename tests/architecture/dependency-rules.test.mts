@@ -490,6 +490,14 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'operation-catalog-only-in-client',
+    name: 'a listed importer of the raw client imports the operation catalog',
+    files: {
+      'packages/core/src/pipeline/read-api.ts':
+        "import '../churchtools/catalog/catalog.js';\nexport {};\n",
+    },
+  },
+  {
     rule: 'mcp-mount-only-in-server',
     name: 'tools imports the mount',
     files: {
@@ -873,6 +881,13 @@ const cases: readonly Case[] = [
 
 // Imports the rules must let pass.
 const allowedCases: readonly Omit<Case, 'rule'>[] = [
+  {
+    name: 'a module of the raw client imports the operation catalog',
+    files: {
+      'packages/core/src/churchtools/allowed.ts':
+        "import './catalog/catalog.js';\nexport {};\n",
+    },
+  },
   {
     name: 'a test of core imports the testkit',
     files: {
