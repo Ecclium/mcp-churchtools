@@ -262,6 +262,8 @@ export const hints = {
     'Abbruch: Die State-Datei nennt keine Version von ChurchTools. Führen Sie 00-inventory erneut aus.',
   stateVeraltet:
     'Abbruch: Die Instanz meldet eine andere Version von ChurchTools als die State-Datei. Führen Sie 00-inventory erneut aus. Es wurde keine Datei geschrieben.',
+  zuordnungUngueltig:
+    'Abbruch: Die Zuordnung in scripts/docs/rights-mapping.json hat eine Form, die pnpm docs:refresh nicht übernehmen kann: eine andere Reihenfolge, einen Schlüssel zweimal, ein Recht zweimal in einem Eintrag, ein Recht, eine Operation oder eine Hilfeseite, die die Fakten nicht kennen, oder eine Bezeichnung, die ihre Seite nicht vor dem Namen des Rechts schreibt. Die Stelle steht darüber. Es wurde keine Datei geschrieben.',
   academyNichtLesbar:
     'Abbruch: robots.txt der Academy ist nicht lesbar, verbietet einen Pfad des Refresh oder verlangt eine zu lange Pause. Es wurde keine Datei geschrieben.',
 } as const;
@@ -307,7 +309,7 @@ export class SpikeError extends Error {
     this.code = code;
     this.hint = hint;
     this.where =
-      where !== undefined && /^[A-Za-z0-9_[\].]{1,200}$/.test(where)
+      where !== undefined && /^[A-Za-z0-9_[\].-]{1,200}$/.test(where)
         ? where
         : undefined;
   }

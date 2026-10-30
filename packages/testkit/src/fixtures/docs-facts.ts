@@ -2,8 +2,9 @@
  * Synthetic facts of the docs index for tests (ADR 0066). They follow the
  * formats of `docs-index` but describe nothing that exists: a module
  * `synthetic` with things and their members, two help pages under
- * `/de/help/synthetisch/` and a person called «Person A». No operation,
- * right or page here is taken from ChurchTools.
+ * `/de/help/synthetisch/`, a person called «Person A» and a mapping of the
+ * operations to the rights with findings `F1` and `F2` that no document
+ * holds. No operation, right or page here is taken from ChurchTools.
  *
  * @packageDocumentation
  */
@@ -218,7 +219,7 @@ export function syntheticFacts(): Facts {
           module: 'synthetic',
           name: 'edit things',
           kind: 'list',
-          label: { text: 'Dinge bearbeiten', page: syntheticRightsPage },
+          label: { text: 'Dinge bearbeiten', finding: 'F2', version: '3.137' },
           pages: [syntheticRightsPage],
         },
         {
@@ -260,10 +261,11 @@ export function syntheticFacts(): Facts {
           text: [
             '# Rechte für Dinge',
             '',
-            'Wer die Mitglieder eines Dings sehen will, braucht das Recht **Mitglieder der Dinge sehen**.',
+            'Wer die Mitglieder eines Dings sehen will, braucht das Recht **Mitglieder der Dinge sehen (view thing members)**.',
             '',
-            '- Dinge sehen',
-            '- Dinge bearbeiten',
+            '- Modul «Dinge» sehen (view)',
+            '- Dinge sehen (view things)',
+            '- Dinge bearbeiten (edit things)',
             '',
             `Siehe auch [Dinge verwalten](${syntheticThingsPage}).`,
           ].join('\n'),
@@ -282,7 +284,95 @@ export function syntheticFacts(): Facts {
             '| Feld | Bedeutung |',
             '| --- | --- |',
             '| Name | Der Name des Dings |',
+            '',
+            'Die Liste braucht das Recht (view thing members).',
           ].join('\n'),
+        },
+      ],
+    },
+    operationRights: {
+      format: 'ecclium.docs.operation-rights.v1',
+      notice: 'Synthetische Zuordnung für Tests, aus keiner Quelle.',
+      entries: [
+        {
+          operationId: 'deleteSyntheticThing',
+          open: 'Kein Befund und keine Beschreibung nennt ein Recht.',
+        },
+        {
+          operationId: 'getSyntheticThing',
+          needs: [
+            {
+              rights: [{ module: 'synthetic', name: 'view things' }],
+              without: 'refused',
+              evidence: [
+                {
+                  kind: 'finding',
+                  id: 'F1',
+                  version: '3.137',
+                  shows: 'necessary',
+                },
+              ],
+            },
+          ],
+          notNeeded: [
+            {
+              right: { module: 'synthetic', name: 'view' },
+              evidence: [{ kind: 'finding', id: 'F1', version: '3.137' }],
+            },
+          ],
+        },
+        {
+          operationId: 'getSyntheticThingMembers',
+          needs: [
+            {
+              rights: [{ module: 'synthetic', name: 'view thing members' }],
+              without: 'omitted',
+              evidence: [
+                { kind: 'academy', page: syntheticRightsPage },
+                {
+                  kind: 'finding',
+                  id: 'Mitglieder ohne Recht',
+                  version: '3.137',
+                  shows: 'sufficient',
+                },
+                { kind: 'openapi' },
+              ],
+            },
+            {
+              rights: [{ module: 'synthetic', name: 'view things' }],
+              evidence: [
+                {
+                  kind: 'finding',
+                  id: 'F1',
+                  version: '3.137',
+                  shows: 'necessary',
+                },
+              ],
+            },
+          ],
+        },
+        {
+          operationId: 'listSyntheticThings',
+          none: [{ kind: 'finding', id: 'F1', version: '3.137' }],
+        },
+        {
+          operationId: 'postSyntheticThing',
+          needs: [
+            {
+              rights: [
+                { module: 'synthetic', name: 'edit things' },
+                { module: 'synthetic', name: 'view things' },
+              ],
+              evidence: [
+                {
+                  kind: 'finding',
+                  id: 'F2',
+                  version: '3.137',
+                  shows: 'sufficient',
+                },
+              ],
+            },
+          ],
         },
       ],
     },
@@ -308,5 +398,6 @@ export function syntheticFactFiles(
     'operations.json': canonicalJson(facts.operations),
     'rights.json': canonicalJson(facts.rights),
     'academy.json': canonicalJson(facts.academy),
+    'operation-rights.json': canonicalJson(facts.operationRights),
   };
 }

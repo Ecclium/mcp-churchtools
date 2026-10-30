@@ -1,7 +1,7 @@
 // The whole run of pnpm docs:refresh against a synthetic instance and a
 // synthetic Academy, through the frame of the probes: it reads the state
 // file, asks the instance for the rights and the Academy for its help
-// pages, writes the four files and prints only counts (ADR 0066). The
+// pages, writes the five files and prints only counts (ADR 0066). The
 // files it writes must pass the checks of the package, hold no value of
 // the instance and no raw source, and nothing of the sources may reach
 // its output.
@@ -63,6 +63,7 @@ const origin = `https://${hosted('demo-tenant')}`;
 const files = [
   'SOURCES.json',
   'academy.json',
+  'operation-rights.json',
   'operations.json',
   'rights.json',
 ];
@@ -255,9 +256,54 @@ async function run(
 
 const clock = () => new Date('2026-10-29T08:00:00Z');
 
+// A mapping by hand for the synthetic sources: a label from a finding, a
+// pairing with a finding and an operation that needs no right.
+const mappingFile = pathToFileURL(
+  join(mkdtempSync(join(tmpdir(), 'docs-mapping-')), 'rights-mapping.json'),
+);
+writeFileSync(
+  mappingFile,
+  JSON.stringify({
+    format: 'ecclium.docs.rights-mapping.v1',
+    rights: [
+      {
+        module: 'churchwiki',
+        name: 'view',
+        label: { text: 'Wiki sehen', finding: 'F1', version: '3.137' },
+        pages: [],
+      },
+    ],
+    operations: [
+      {
+        operationId: 'getGlobalPermissions',
+        none: [{ kind: 'finding', id: 'F1', version: '3.137' }],
+      },
+      {
+        operationId: 'listSyntheticThings',
+        needs: [
+          {
+            rights: [{ module: 'churchwiki', name: 'view category' }],
+            without: 'omitted',
+            evidence: [
+              {
+                kind: 'finding',
+                id: 'F1',
+                version: '3.137',
+                shows: 'necessary',
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  }),
+);
+
 describe('pnpm docs:refresh', () => {
-  it('writes four files that pass the checks of the docs index', async () => {
-    const result = await run((dataDir) => refreshDefinition(dataDir, clock));
+  it('writes five files that pass the checks of the docs index', async () => {
+    const result = await run((dataDir) =>
+      refreshDefinition(dataDir, clock, mappingFile),
+    );
     expect(result.code, result.output.stderr()).toBe(exitCodes.ok);
     expect(Object.keys(result.texts).sort()).toEqual(files);
     const facts = parseFactFiles({
@@ -265,6 +311,7 @@ describe('pnpm docs:refresh', () => {
       'operations.json': result.texts['operations.json'] ?? '',
       'rights.json': result.texts['rights.json'] ?? '',
       'academy.json': result.texts['academy.json'] ?? '',
+      'operation-rights.json': result.texts['operation-rights.json'] ?? '',
     });
     expect(facts.operations.entries.map((entry) => entry.operationId)).toEqual([
       'getGlobalPermissions',
@@ -288,17 +335,35 @@ describe('pnpm docs:refresh', () => {
       },
     ]);
     expect(facts.operations.notice).toContain('«Synthetic API»');
+    expect(facts.rights.entries[1]?.label).toEqual({
+      text: 'Wiki sehen',
+      finding: 'F1',
+      version: '3.137',
+    });
+    expect(
+      facts.operationRights.entries.map((entry) => entry.operationId),
+    ).toEqual(['getGlobalPermissions', 'listSyntheticThings']);
   });
 
   it('names its sources with time, hash and versions', async () => {
-    const result = await run((dataDir) => refreshDefinition(dataDir, clock));
+    const result = await run((dataDir) =>
+      refreshDefinition(dataDir, clock, mappingFile),
+    );
     const sources = JSON.parse(result.texts['SOURCES.json'] ?? '{}') as Record<
       string,
       unknown
     >;
+    // What came from the answer: without the labels of the mapping, whose
+    // findings name versions.
     const rights = JSON.parse(result.texts['rights.json'] ?? '{}') as {
-      entries: unknown;
+      entries: { module: string; name: string; kind: string }[];
     };
+    const answered = rights.entries.map(({ module, name, kind }) => ({
+      module,
+      name,
+      kind,
+      pages: [],
+    }));
     const sha = (text: string) =>
       createHash('sha256').update(text).digest('hex');
     expect(sources).toEqual({
@@ -312,7 +377,7 @@ describe('pnpm docs:refresh', () => {
       permissions: {
         retrievedAt: '2026-10-29T08:00:00Z',
         // Over what rights.json publishes, never over the values.
-        sha256: sha(JSON.stringify(rights.entries)),
+        sha256: sha(JSON.stringify(answered)),
         churchToolsVersion: '3.138',
       },
       academy: {
@@ -328,7 +393,9 @@ describe('pnpm docs:refresh', () => {
   });
 
   it('keeps every value of the instance and every raw source out of files and output', async () => {
-    const result = await run((dataDir) => refreshDefinition(dataDir, clock));
+    const result = await run((dataDir) =>
+      refreshDefinition(dataDir, clock, mappingFile),
+    );
     expect(leaks(result.output, result.forbidden)).toEqual([]);
     const all = Object.values(result.texts).join('\n').toLowerCase();
     // The placeholder may stand in the facts, in place of a host.
@@ -337,10 +404,18 @@ describe('pnpm docs:refresh', () => {
     )) {
       expect(all).not.toContain(secret);
     }
+    // What came from the answer: without the labels of the mapping, whose
+    // findings name versions.
     const rights = JSON.parse(result.texts['rights.json'] ?? '{}') as {
-      entries: unknown;
+      entries: { module: string; name: string; kind: string }[];
     };
-    expect(JSON.stringify(rights.entries)).not.toMatch(/\d/);
+    const answered = rights.entries.map(({ module, name, kind }) => ({
+      module,
+      name,
+      kind,
+      pages: [],
+    }));
+    expect(JSON.stringify(answered)).not.toMatch(/\d/);
     for (const text of Object.values(result.texts)) {
       expect(looksLikeOpenApiDocument(text)).toBe(false);
       expect(looksLikeHtmlPage(text)).toBe(false);
@@ -348,7 +423,9 @@ describe('pnpm docs:refresh', () => {
   });
 
   it('prints only counts and sizes', async () => {
-    const result = await run((dataDir) => refreshDefinition(dataDir, clock));
+    const result = await run((dataDir) =>
+      refreshDefinition(dataDir, clock, mappingFile),
+    );
     expect(JSON.parse(result.output.stdout())).toMatchObject({
       refresh: 'docs',
       churchtoolsVersion: '3.138',
@@ -361,11 +438,48 @@ describe('pnpm docs:refresh', () => {
         ohneWissensbasis: 0,
         ohneText: 0,
       },
+      zuordnung: {
+        mitBezeichnung: 1,
+        mitSeiten: 0,
+        brauchenRechte: 1,
+        ohneRecht: 1,
+        offen: 0,
+      },
     });
   });
 
+  it('stops before it writes when the mapping names what the facts do not hold', async () => {
+    const broken = pathToFileURL(
+      join(mkdtempSync(join(tmpdir(), 'docs-mapping-')), 'rights-mapping.json'),
+    );
+    writeFileSync(
+      broken,
+      JSON.stringify({
+        format: 'ecclium.docs.rights-mapping.v1',
+        rights: [
+          {
+            module: 'churchwiki',
+            name: 'view',
+            label: { text: 'Wiki sehen', page: '/de/help/gruppen/mitglieder/' },
+            pages: [],
+          },
+        ],
+        operations: [],
+      }),
+    );
+    const result = await run((dataDir) =>
+      refreshDefinition(dataDir, clock, broken),
+    );
+    expect(result.code).toBe(exitCodes.configuration);
+    expect(result.output.stderr()).toContain('Stelle: mapping.rights[0].label');
+    expect(result.output.stderr()).toContain(hints.zuordnungUngueltig);
+    expect(result.texts).toEqual({});
+  });
+
   it('asks the Academy with its own agent, without a token, and the instance only for the rights', async () => {
-    const result = await run((dataDir) => refreshDefinition(dataDir, clock));
+    const result = await run((dataDir) =>
+      refreshDefinition(dataDir, clock, mappingFile),
+    );
     const academy = result.calls.filter(
       (call) => call.url.origin === academyOrigin,
     );
@@ -384,7 +498,7 @@ describe('pnpm docs:refresh', () => {
 
   it('writes nothing and names only the place when a source has a form it cannot take', async () => {
     const result = await run(
-      (dataDir) => refreshDefinition(dataDir, clock),
+      (dataDir) => refreshDefinition(dataDir, clock, mappingFile),
       syntheticDocument('MIT'),
     );
     expect(result.code).toBe(exitCodes.network);
@@ -409,7 +523,7 @@ describe('pnpm docs:refresh', () => {
 
   it('writes nothing when the instance reports another version than the state', async () => {
     const result = await run(
-      (dataDir) => refreshDefinition(dataDir, clock),
+      (dataDir) => refreshDefinition(dataDir, clock, mappingFile),
       syntheticDocument(),
       '3.139.0',
     );
@@ -429,7 +543,7 @@ describe('pnpm docs:refresh', () => {
       operation['summary'] = 'Things of Demo-Tenant';
     }
     const result = await run(
-      (dataDir) => refreshDefinition(dataDir, clock),
+      (dataDir) => refreshDefinition(dataDir, clock, mappingFile),
       document,
     );
     expect(result.code).toBe(exitCodes.network);
@@ -439,7 +553,7 @@ describe('pnpm docs:refresh', () => {
 
   it('keeps the old files when a new one cannot be written', async () => {
     const result = await run(
-      (dataDir) => refreshDefinition(dataDir, clock),
+      (dataDir) => refreshDefinition(dataDir, clock, mappingFile),
       syntheticDocument(),
       '3.138.2',
       (dataDir) => {
@@ -482,5 +596,21 @@ describe('checkInstanceHost', () => {
         );
       }).toThrow(expect.objectContaining({ where: 'academy.json' }) as unknown);
     }
+  });
+
+  it('names a file with a hyphen in its name as the place', () => {
+    expect(() => {
+      checkInstanceHost(
+        {
+          'operation-rights.json': file({
+            format: 'x',
+            entries: [{ open: hosted('demo-tenant') }],
+          }),
+        },
+        origin,
+      );
+    }).toThrow(
+      expect.objectContaining({ where: 'operation-rights.json' }) as unknown,
+    );
   });
 });

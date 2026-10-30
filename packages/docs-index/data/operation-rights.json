@@ -1,0 +1,1561 @@
+{
+  "format": "ecclium.docs.operation-rights.v1",
+  "notice": "Zuordnung von Operationen der API von ChurchTools zu den Rechten, die sie verlangen, von Hand erstellt im Projekt Ecclium. Jede Paarung hat einen Beleg: einen Befund des Projekts in docs/research/churchtools-api.md mit der Version von ChurchTools, an der die Probe lief, die Beschreibung der Operation im OpenAPI-Dokument oder eine Hilfeseite der ChurchTools Academy. Sie nennt, was belegt ist, nie alle Bedingungen einer Operation. Eigene Arbeit des Projekts unter der Elastic License 2.0 wie der Quellcode. Operationen und Rechte nennt sie nur bei ihren Namen aus den Quellen, als Verweis, und sie enthält keine Texte daraus.",
+  "entries": [
+    {
+      "operationId": "get-bookings",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchresource",
+              "name": "view resource"
+            }
+          ],
+          "without": "refused",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchresource",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-calendars",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchcal",
+              "name": "view category"
+            }
+          ],
+          "without": "omitted",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchcal",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-calendars-appointments",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchcal",
+              "name": "view category"
+            }
+          ],
+          "without": "refused",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchcal",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-calendars-calendarId-appointments-appointmentId",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchcal",
+              "name": "view category"
+            }
+          ],
+          "without": "refused",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchcal",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-events",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchservice",
+              "name": "view events"
+            }
+          ],
+          "without": "omitted",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchcal",
+            "name": "view category"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchservice",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-events-id",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchservice",
+              "name": "view events"
+            }
+          ],
+          "without": "refused",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        },
+        {
+          "rights": [
+            {
+              "module": "churchservice",
+              "name": "view servicegroup"
+            }
+          ],
+          "without": "omitted",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchcal",
+            "name": "view category"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchservice",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-events-id-agenda",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchservice",
+              "name": "view agenda"
+            }
+          ],
+          "without": "refused",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchservice",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchservice",
+            "name": "view events"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-events-id-agenda-songs",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchservice",
+              "name": "view agenda"
+            }
+          ],
+          "without": "refused",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        },
+        {
+          "rights": [
+            {
+              "module": "churchservice",
+              "name": "view songcategory"
+            }
+          ],
+          "without": "omitted",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-groups",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchgroup",
+              "name": "security level group"
+            }
+          ],
+          "without": "fields",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137",
+              "shows": "sufficient"
+            }
+          ]
+        },
+        {
+          "rights": [
+            {
+              "module": "churchgroup",
+              "name": "view groups of grouptype"
+            }
+          ],
+          "without": "omitted",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchdb",
+            "name": "security level person"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchdb",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchdb",
+            "name": "view alldata"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchdb",
+            "name": "view memberliste"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchgroup",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-groups-groupId",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchgroup",
+              "name": "security level group"
+            }
+          ],
+          "without": "fields",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137",
+              "shows": "sufficient"
+            }
+          ]
+        },
+        {
+          "rights": [
+            {
+              "module": "churchgroup",
+              "name": "view groups of grouptype"
+            }
+          ],
+          "without": "refused",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchdb",
+            "name": "security level person"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchdb",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchdb",
+            "name": "view alldata"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchdb",
+            "name": "view memberliste"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchgroup",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-groups-groupId-newsletter-integrations",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchgroup",
+              "name": "administer groups"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "openapi"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-groups-id-members",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchdb",
+              "name": "view alldata"
+            }
+          ],
+          "without": "omitted",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        },
+        {
+          "rights": [
+            {
+              "module": "churchgroup",
+              "name": "view groups of grouptype"
+            }
+          ],
+          "without": "refused",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchdb",
+            "name": "security level person"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchdb",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchdb",
+            "name": "view memberliste"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchgroup",
+            "name": "security level group"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchgroup",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-permissions-global",
+      "none": [
+        {
+          "kind": "finding",
+          "id": "F5",
+          "version": "3.137"
+        },
+        {
+          "kind": "openapi"
+        }
+      ]
+    },
+    {
+      "operationId": "get-person-growpaths",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchdb",
+              "name": "view"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "openapi"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-person-growpaths-id",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchdb",
+              "name": "view"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "openapi"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-person-sexes",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchdb",
+              "name": "view"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "openapi"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-person-sexes-id",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchdb",
+              "name": "view"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "openapi"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-persons",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchdb",
+              "name": "security level person"
+            }
+          ],
+          "without": "fields",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        },
+        {
+          "rights": [
+            {
+              "module": "churchdb",
+              "name": "view alldata"
+            }
+          ],
+          "without": "omitted",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchdb",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchdb",
+            "name": "view memberliste"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchgroup",
+            "name": "security level group"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchgroup",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchgroup",
+            "name": "view groups of grouptype"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-persons-id",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchdb",
+              "name": "security level person"
+            }
+          ],
+          "without": "fields",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        },
+        {
+          "rights": [
+            {
+              "module": "churchdb",
+              "name": "view alldata"
+            }
+          ],
+          "without": "refused",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchdb",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchdb",
+            "name": "view memberliste"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchgroup",
+            "name": "security level group"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchgroup",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchgroup",
+            "name": "view groups of grouptype"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-persons-id-groups",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchdb",
+              "name": "view alldata"
+            }
+          ],
+          "without": "omitted",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        },
+        {
+          "rights": [
+            {
+              "module": "churchgroup",
+              "name": "view groups of grouptype"
+            }
+          ],
+          "without": "omitted",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchdb",
+            "name": "security level person"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchdb",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchdb",
+            "name": "view memberliste"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchgroup",
+            "name": "security level group"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchgroup",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-resources",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchresource",
+              "name": "view resource"
+            }
+          ],
+          "without": "omitted",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchresource",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-resourcetypes",
+      "none": [
+        {
+          "kind": "finding",
+          "id": "F36",
+          "version": "3.137"
+        }
+      ]
+    },
+    {
+      "operationId": "get-search",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchdb",
+              "name": "view alldata"
+            }
+          ],
+          "without": "omitted",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        },
+        {
+          "rights": [
+            {
+              "module": "churchgroup",
+              "name": "view groups of grouptype"
+            }
+          ],
+          "without": "omitted",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        },
+        {
+          "rights": [
+            {
+              "module": "churchservice",
+              "name": "view songcategory"
+            }
+          ],
+          "without": "omitted",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchdb",
+            "name": "security level person"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchdb",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchdb",
+            "name": "view memberliste"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchgroup",
+            "name": "security level group"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchgroup",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F29",
+              "version": "3.137"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-servicegroups",
+      "none": [
+        {
+          "kind": "finding",
+          "id": "F36",
+          "version": "3.137"
+        }
+      ]
+    },
+    {
+      "operationId": "get-services",
+      "none": [
+        {
+          "kind": "finding",
+          "id": "F36",
+          "version": "3.137"
+        }
+      ]
+    },
+    {
+      "operationId": "get-songs",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchservice",
+              "name": "edit songcategory"
+            },
+            {
+              "module": "churchservice",
+              "name": "view songcategory"
+            }
+          ],
+          "without": "omitted",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137",
+              "shows": "necessary"
+            },
+            {
+              "kind": "openapi"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchservice",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-songs-songId",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchservice",
+              "name": "edit songcategory"
+            },
+            {
+              "module": "churchservice",
+              "name": "view songcategory"
+            }
+          ],
+          "without": "refused",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137",
+              "shows": "necessary"
+            },
+            {
+              "kind": "openapi"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchservice",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-songs-songId-arrangements",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchservice",
+              "name": "edit songcategory"
+            },
+            {
+              "module": "churchservice",
+              "name": "view songcategory"
+            }
+          ],
+          "without": "refused",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "F36",
+              "version": "3.137",
+              "shows": "necessary"
+            },
+            {
+              "kind": "openapi"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-songs-songId-arrangements-arrangementId",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchservice",
+              "name": "edit songcategory"
+            },
+            {
+              "module": "churchservice",
+              "name": "view songcategory"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "openapi"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-whoami",
+      "none": [
+        {
+          "kind": "finding",
+          "id": "F4",
+          "version": "3.137"
+        }
+      ]
+    },
+    {
+      "operationId": "get-wiki-categories",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchwiki",
+              "name": "view category"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "openapi"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-wiki-categories-id-pages",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchwiki",
+              "name": "view category"
+            }
+          ],
+          "without": "refused",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Kategorie ohne Leserecht",
+              "version": "3.137",
+              "shows": "necessary"
+            },
+            {
+              "kind": "openapi"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-wiki-categories-id-pages-id-versions-id",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchwiki",
+              "name": "view category"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "openapi"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-wiki-categories-id-pages-identifier",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchwiki",
+              "name": "view category"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "openapi"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-wiki-categories-id-pages-identifier-versions",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchwiki",
+              "name": "view category"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "openapi"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-wiki-pages",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchwiki",
+              "name": "view category"
+            }
+          ],
+          "without": "omitted",
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Kategorie ohne Leserecht",
+              "version": "3.137",
+              "shows": "necessary"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-wiki-search",
+      "open": "Keine Probe hat der Suche im Wiki ein Recht entzogen, und das OpenAPI-Dokument nennt kein Recht beim Namen, nur Kategorien, die das Konto sehen darf."
+    }
+  ]
+}

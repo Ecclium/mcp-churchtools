@@ -7,8 +7,10 @@
  * the token file; and the German help pages of the Academy through the
  * REST interface of WordPress, with its own User-Agent, after
  * `robots.txt` and with a pause between two requests.
- * Writes: the four files under `packages/docs-index/data/`, only once
- * all of them are made. No raw source is written anywhere.
+ * Writes: the five files under `packages/docs-index/data/`, only once
+ * all of them are made, with the labels of the rights and the pairings of
+ * operations and rights from the mapping by hand in `rights-mapping.json`.
+ * No raw source is written anywhere.
  * Prints: counts, sizes and fixed words, never a text, a link or a host
  * of a source. The checks of the package then read the files: run
  * `pnpm build` and `pnpm check` afterwards.
@@ -17,13 +19,20 @@
  * prints their slugs by section, to decide which categories outside the
  * sections the index takes. It writes nothing then.
  *
+ * With `--nur-zuordnung` it reads no source, only the files under
+ * `data/` and the mapping, and writes `rights.json` and
+ * `operation-rights.json` anew, so that a change of the mapping needs no
+ * run against an instance. With `ECCLIUM_SPIKE_BASE_URL` set, it checks
+ * them for the name of that instance as the full refresh does, since the
+ * mapping holds texts a person wrote.
+ *
  * It runs locally, never in CI and never behind the network block of
  * the tests. Usage: see README.md in this folder.
  *
  * @packageDocumentation
  */
 import { createHash } from 'node:crypto';
-import { statSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { domainToUnicode } from 'node:url';
 
 import { versionOf } from '../spike/00-inventory.mts';
@@ -32,7 +41,14 @@ import { formatSize } from '../spike/lib/academy.mts';
 import { SpikeError } from '../spike/lib/errors.mts';
 import { containsWord, type Json } from '../spike/lib/guard.mts';
 import { operations } from '../spike/lib/operations.mts';
+import {
+  exitCodes,
+  installCrashHandlers,
+  type Io,
+  writeError,
+} from '../spike/lib/output.mts';
 import { main, type ProbeDefinition } from '../spike/lib/probe.mts';
+import { isObject } from '../spike/lib/spec.mts';
 import {
   academyPages,
   categoryTree,
@@ -42,12 +58,21 @@ import {
 } from './lib/academy.mts';
 import {
   documentVersionOf,
+  factFileNames,
   factFileTexts,
   openApiNotice,
+  operationRightsText,
+  rightsText,
   writeFactFiles,
 } from './lib/files.mts';
+import {
+  type AppliedMapping,
+  applyMapping,
+  defaultMappingFile,
+  readMapping,
+} from './lib/mapping.mts';
 import { operationFacts } from './lib/operations.mts';
-import { rightFacts } from './lib/rights.mts';
+import { type RightFactEntry, rightFacts } from './lib/rights.mts';
 
 /** The folder of the facts in the package `docs-index`. */
 export const defaultDataDir = new URL(
@@ -72,9 +97,16 @@ const words = [
   'operations.json',
   'rights.json',
   'academy.json',
+  'operation-rights.json',
   'geschrieben',
   'ja',
   'kategorien',
+  'zuordnung',
+  'mitBezeichnung',
+  'mitSeiten',
+  'brauchenRechte',
+  'ohneRecht',
+  'offen',
 ];
 
 function count(
@@ -140,11 +172,13 @@ export function checkInstanceHost(
  *
  * @param dataDir - The folder to write into, ending in `/`.
  * @param now - The clock.
+ * @param mappingFile - The mapping by hand.
  * @returns The definition for the frame of the probes.
  */
 export function refreshDefinition(
   dataDir: URL = defaultDataDir,
   now: () => Date = () => new Date(),
+  mappingFile: URL = defaultMappingFile,
 ): ProbeDefinition {
   return {
     name: 'docs-refresh',
@@ -198,9 +232,11 @@ export function refreshDefinition(
         throw new SpikeError('ANTWORT_UNGUELTIG', 'quelleUngueltig', 'rights');
       }
       const rights = rightFacts(answer.body);
-      // The hash covers what rights.json publishes, not the whole answer:
-      // with its structure public, a hash of the answer would let anyone
-      // try the few values the account holds, such as IDs of the instance.
+      // The hash covers what rights.json publishes from the answer, not the
+      // whole answer: with its structure public, a hash of the answer would
+      // let anyone try the few values the account holds, such as IDs of the
+      // instance. Labels and pages come from the mapping, not from this
+      // source, so the hash stays when only the mapping changes.
       const permissions = {
         retrievedAt: permissionsAt,
         sha256: createHash('sha256')
@@ -211,10 +247,23 @@ export function refreshDefinition(
 
       const read = await readAcademy(academy, now);
       const pages = academyPages(read);
+      // The mapping last, against the facts just made, so that a page
+      // whose text no longer holds a label stops the run before it writes.
+      const mapped = applyMapping(
+        readMapping(readFileSync(mappingFile, 'utf8')),
+        {
+          rights: rights.entries,
+          operationIds: operationEntries.map((entry) =>
+            String(entry['operationId']),
+          ),
+          academy: pages.entries,
+        },
+      );
       const texts = factFileTexts({
         operations: operationEntries,
-        rights: rights.entries,
+        rights: mapped.rights,
         academy: pages.entries,
+        operationRights: mapped.operationRights,
         operationsNotice,
         openapi,
         permissions,
@@ -245,10 +294,147 @@ export function refreshDefinition(
           ohneWissensbasis: count(guard, pages.withoutBase),
           ohneText: count(guard, pages.withoutText),
         },
+        zuordnung: mappingCounts(mapped, (value) => count(guard, value)),
         groessen: sizes,
       };
     },
   };
+}
+
+function mappingCounts(
+  mapped: AppliedMapping,
+  counted: (value: number) => number = (value) => value,
+): Record<string, number> {
+  const entries = mapped.operationRights;
+  return {
+    mitBezeichnung: counted(
+      mapped.rights.filter((right) => right.label !== undefined).length,
+    ),
+    mitSeiten: counted(
+      mapped.rights.filter((right) => right.pages.length > 0).length,
+    ),
+    brauchenRechte: counted(entries.filter((entry) => 'needs' in entry).length),
+    ohneRecht: counted(entries.filter((entry) => 'none' in entry).length),
+    offen: counted(entries.filter((entry) => 'open' in entry).length),
+  };
+}
+
+// A file under data/ as JSON, or the place of the mistake. They are
+// checked facts, written by an earlier refresh.
+function dataEntries(dataDir: URL, name: string): readonly unknown[] {
+  let json: unknown;
+  try {
+    json = JSON.parse(readFileSync(new URL(name, dataDir), 'utf8'));
+  } catch {
+    throw new SpikeError('DATEI', 'zuordnungUngueltig', `data.${name}`);
+  }
+  const entries = isObject(json) ? json['entries'] : undefined;
+  if (!Array.isArray(entries) || !entries.every(isObject)) {
+    throw new SpikeError('DATEI', 'zuordnungUngueltig', `data.${name}`);
+  }
+  return entries;
+}
+
+function field(entry: unknown, key: string, name: string): string {
+  const value = isObject(entry) ? entry[key] : undefined;
+  if (typeof value !== 'string') {
+    throw new SpikeError('DATEI', 'zuordnungUngueltig', `data.${name}`);
+  }
+  return value;
+}
+
+/**
+ * Applies the mapping to the facts under `data/` without reading any
+ * source, and writes `rights.json` and `operation-rights.json` anew.
+ *
+ * @param dataDir - The folder of the facts, ending in `/`.
+ * @param mappingFile - The mapping by hand.
+ * @param origin - The instance whose name the files must not hold, if
+ *   one is known.
+ * @returns The counts of what it wrote.
+ * @throws {SpikeError} `DATEI` if a file or the mapping does not fit,
+ *   `ANTWORT_UNGUELTIG` if a file names the instance.
+ */
+export function refreshMapping(
+  dataDir: URL = defaultDataDir,
+  mappingFile: URL = defaultMappingFile,
+  origin?: string,
+): Record<string, unknown> {
+  const rights: RightFactEntry[] = dataEntries(
+    dataDir,
+    factFileNames.rights,
+  ).map((entry) => {
+    const kind = field(entry, 'kind', factFileNames.rights);
+    if (kind !== 'boolean' && kind !== 'list') {
+      throw new SpikeError('DATEI', 'zuordnungUngueltig', 'data.rights.json');
+    }
+    return {
+      module: field(entry, 'module', factFileNames.rights),
+      name: field(entry, 'name', factFileNames.rights),
+      kind,
+      pages: [],
+    };
+  });
+  const mapped = applyMapping(readMapping(readFileSync(mappingFile, 'utf8')), {
+    rights,
+    operationIds: dataEntries(dataDir, factFileNames.operations).map((entry) =>
+      field(entry, 'operationId', factFileNames.operations),
+    ),
+    academy: dataEntries(dataDir, factFileNames.academy).map((entry) => ({
+      path: field(entry, 'path', factFileNames.academy),
+      text: field(entry, 'text', factFileNames.academy),
+    })),
+  });
+  const texts = {
+    [factFileNames.rights]: rightsText(mapped.rights),
+    [factFileNames.operationRights]: operationRightsText(
+      mapped.operationRights,
+    ),
+  };
+  if (origin !== undefined) {
+    checkInstanceHost(texts, origin);
+  }
+  writeFactFiles(texts, dataDir);
+  return { refresh: 'zuordnung', zuordnung: mappingCounts(mapped) };
+}
+
+/**
+ * Runs {@link refreshMapping} and prints its counts, or the code of an
+ * error and its hint.
+ *
+ * @param io - Where to write.
+ * @param dataDir - The folder of the facts.
+ * @param mappingFile - The mapping by hand.
+ * @param env - The environment, for `ECCLIUM_SPIKE_BASE_URL`.
+ * @returns The exit code.
+ */
+export function mainMapping(
+  io: Io,
+  dataDir: URL = defaultDataDir,
+  mappingFile: URL = defaultMappingFile,
+  env: Readonly<Record<string, string | undefined>> = {},
+): number {
+  try {
+    const base = env['ECCLIUM_SPIKE_BASE_URL'];
+    let origin: string | undefined;
+    if (base !== undefined && base !== '') {
+      let url: URL | undefined;
+      try {
+        url = new URL(base);
+      } catch {
+        url = undefined;
+      }
+      if (url?.protocol !== 'https:') {
+        throw new SpikeError('KONFIGURATION', 'basisUrlUngueltig');
+      }
+      origin = url.origin;
+    }
+    const counts = refreshMapping(dataDir, mappingFile, origin);
+    io.stdout(`${JSON.stringify(counts, null, 2)}\n`);
+    return exitCodes.ok;
+  } catch (error) {
+    return writeError(error, io);
+  }
 }
 
 /**
@@ -296,8 +482,22 @@ export function categoriesDefinition(
 }
 
 if (import.meta.main) {
-  const definition = process.argv.includes('--kategorien')
-    ? categoriesDefinition()
-    : refreshDefinition();
-  process.exitCode = await main(definition, import.meta.url);
+  if (process.argv.includes('--nur-zuordnung')) {
+    const io: Io = {
+      stdout: (text) => process.stdout.write(text),
+      stderr: (text) => process.stderr.write(text),
+    };
+    installCrashHandlers(io);
+    process.exitCode = mainMapping(
+      io,
+      defaultDataDir,
+      defaultMappingFile,
+      process.env,
+    );
+  } else {
+    const definition = process.argv.includes('--kategorien')
+      ? categoriesDefinition()
+      : refreshDefinition();
+    process.exitCode = await main(definition, import.meta.url);
+  }
 }

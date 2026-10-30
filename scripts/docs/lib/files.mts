@@ -1,5 +1,5 @@
 /**
- * Writes the four files of the docs index under `packages/docs-index/data/`
+ * Writes the five files of the docs index under `packages/docs-index/data/`
  * in their canonical form (ADR 0066): JSON with two spaces of indent, the
  * fields in the order of the format and a line break at the end. Each file
  * of facts carries its format, a notice of its source and its terms
@@ -17,16 +17,18 @@ import { renameSync, rmSync, writeFileSync } from 'node:fs';
 import { SpikeError } from '../../spike/lib/errors.mts';
 import { isObject, type OpenApiDocument } from '../../spike/lib/spec.mts';
 import type { AcademyPageEntry } from './academy.mts';
+import type { OperationRightsEntry } from './mapping.mts';
 import { factDepth, type OperationFactEntry } from './operations.mts';
 import type { RightFactEntry } from './rights.mts';
 import { cleanLine } from './text.mts';
 
-/** The names of the four files. */
+/** The names of the five files. */
 export const factFileNames = Object.freeze({
   sources: 'SOURCES.json',
   operations: 'operations.json',
   rights: 'rights.json',
   academy: 'academy.json',
+  operationRights: 'operation-rights.json',
 } as const);
 
 /** The text of each file, by its name. */
@@ -55,11 +57,12 @@ export interface AcademyOrigin {
   readonly pages: readonly { readonly path: string; readonly sha256: string }[];
 }
 
-/** Everything the four files hold. */
+/** Everything the five files hold. */
 export interface RefreshedFacts {
   readonly operations: readonly OperationFactEntry[];
   readonly rights: readonly RightFactEntry[];
   readonly academy: readonly AcademyPageEntry[];
+  readonly operationRights: readonly OperationRightsEntry[];
   readonly operationsNotice: string;
   readonly openapi: OpenApiOrigin;
   readonly permissions: PermissionsOrigin;
@@ -67,10 +70,15 @@ export interface RefreshedFacts {
 }
 
 const rightsNotice =
-  'Fakten zu den Rechten von ChurchTools: Modul, Name und Art jedes Rechts aus der Antwort von GET /api/permissions/global, ohne die Werte einer Instanz. Bezeichnungen stammen aus Hilfeseiten der ChurchTools Academy, je mit dem Pfad ihrer Seite. Für sie gilt, was in academy.json steht.';
+  'Fakten zu den Rechten von ChurchTools: Modul, Name und Art jedes Rechts aus der Antwort von GET /api/permissions/global, ohne die Werte einer Instanz. Bezeichnungen stammen aus Hilfeseiten der ChurchTools Academy, je mit dem Pfad ihrer Seite, und wo keine Seite ein Recht benennt, aus der Oberfläche von ChurchTools, wie ein Befund des Projekts sie festhält. Für die Bezeichnungen aus der Academy gilt, was in academy.json steht. Die Bezeichnungen aus der Oberfläche sind Wörter von ChurchTools und stehen wie diese unter keiner Lizenz des Projekts.';
 
 const academyNotice =
   'Texte frei zugänglicher Hilfeseiten der ChurchTools Academy, von Ecclium aufbereitet: ohne Bilder, Navigation und Skripte, Links nur als Pfad auf der Academy. © ChurchTools, alle Rechte vorbehalten. Ecclium gibt die Texte mit Erlaubnis des Herstellers wieder, mit Namensnennung und Link. Sie stehen unter keiner Lizenz des Projekts. Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Hersteller von ChurchTools.';
+
+// The mapping is work of the project, not taken from a source, and stands
+// under the licence of the code, unlike the other files (ADR 0066).
+const operationRightsNotice =
+  'Zuordnung von Operationen der API von ChurchTools zu den Rechten, die sie verlangen, von Hand erstellt im Projekt Ecclium. Jede Paarung hat einen Beleg: einen Befund des Projekts in docs/research/churchtools-api.md mit der Version von ChurchTools, an der die Probe lief, die Beschreibung der Operation im OpenAPI-Dokument oder eine Hilfeseite der ChurchTools Academy. Sie nennt, was belegt ist, nie alle Bedingungen einer Operation. Eigene Arbeit des Projekts unter der Elastic License 2.0 wie der Quellcode. Operationen und Rechte nennt sie nur bei ihren Namen aus den Quellen, als Verweis, und sie enthält keine Texte daraus.';
 
 /** The licence the facts from the OpenAPI document stand under (ADR 0027). */
 export const openApiLicence = 'CC BY 4.0';
@@ -151,7 +159,7 @@ function canonical(value: unknown): string {
 }
 
 /**
- * Writes the facts as the texts of the four files. A source without
+ * Writes the facts as the texts of the five files. A source without
  * entries stays out of `SOURCES.json`, as the checks demand.
  *
  * @param facts - The facts and their sources.
@@ -192,27 +200,56 @@ export function factFileTexts(facts: RefreshedFacts): FactTexts {
       notice: facts.operationsNotice,
       entries: facts.operations,
     }),
-    'rights.json': canonical({
-      format: 'ecclium.docs.rights.v1',
-      notice: rightsNotice,
-      entries: facts.rights.map(({ module, name, kind, pages }) => ({
-        module,
-        name,
-        kind,
-        pages,
-      })),
-    }),
+    'rights.json': rightsText(facts.rights),
     'academy.json': canonical({
       format: 'ecclium.docs.academy.v1',
       notice: academyNotice,
       entries: facts.academy,
     }),
+    'operation-rights.json': operationRightsText(facts.operationRights),
   };
 }
 
 /**
- * Writes the four files into a folder: first each into a new file of its
- * own next to it, flushed to the disk, and only when all four stand, each
+ * Writes `rights.json`, each right with its label and pages, if the
+ * mapping gave it any.
+ *
+ * @param rights - The rights, sorted by module and name.
+ * @returns The text of the file.
+ */
+export function rightsText(rights: readonly RightFactEntry[]): string {
+  return canonical({
+    format: 'ecclium.docs.rights.v1',
+    notice: rightsNotice,
+    entries: rights.map(({ module, name, kind, label, pages }) => ({
+      module,
+      name,
+      kind,
+      ...(label === undefined ? {} : { label }),
+      pages,
+    })),
+  });
+}
+
+/**
+ * Writes `operation-rights.json` with the pairings of the mapping.
+ *
+ * @param entries - The pairings, sorted as the mapping reads them.
+ * @returns The text of the file.
+ */
+export function operationRightsText(
+  entries: readonly OperationRightsEntry[],
+): string {
+  return canonical({
+    format: 'ecclium.docs.operation-rights.v1',
+    notice: operationRightsNotice,
+    entries,
+  });
+}
+
+/**
+ * Writes the files into a folder: first each into a new file of its
+ * own next to it, flushed to the disk, and only when all stand, each
  * in place of the old one. A failure while writing leaves the old files
  * as they were, so that no file holds new facts with the sources of old
  * ones, or the other way round.
@@ -221,7 +258,10 @@ export function factFileTexts(facts: RefreshedFacts): FactTexts {
  * @param dataDir - The folder, ending in `/`.
  * @throws {Error} If a file cannot be written; the new files are removed then.
  */
-export function writeFactFiles(texts: FactTexts, dataDir: URL): void {
+export function writeFactFiles(
+  texts: Readonly<Partial<FactTexts>>,
+  dataDir: URL,
+): void {
   const pending = Object.entries(texts).map(([name, text]) => ({
     text,
     target: new URL(name, dataDir),

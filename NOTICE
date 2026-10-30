@@ -14,8 +14,9 @@ Die Schriften Archivo und DM Mono im Ordner brand/fonts/ stehen unter der
 SIL Open Font License, Version 1.1. Die Lizenztexte liegen im selben Ordner
 in OFL-Archivo.txt und OFL-DM-Mono.txt.
 
-Die Fakten des Doku-Index in packages/docs-index/data/ und der Index, der
-daraus beim Bau entsteht, stehen nicht unter der Elastic License 2.0:
+Drei Dateien mit Fakten des Doku-Index in packages/docs-index/data/ und was
+der Index, der beim Bau entsteht, aus ihnen übernimmt, stehen nicht unter der
+Elastic License 2.0:
 
 - operations.json enthält Fakten aus dem OpenAPI-Dokument «ChurchTools REST
   API» von ChurchTools, Kontakt laut Dokument: German ChurchTools Forum. Das
@@ -31,9 +32,20 @@ daraus beim Bau entsteht, stehen nicht unter der Elastic License 2.0:
   Projekts.
 - rights.json enthält Modul, Name und Art der Rechte von ChurchTools aus der
   Antwort einer Instanz, ohne deren Werte. Für Bezeichnungen aus der Academy
-  gilt, was für academy.json gilt.
+  gilt, was für academy.json gilt. Wo keine Hilfeseite ein Recht benennt,
+  steht die Bezeichnung aus der Oberfläche von ChurchTools, wie ein Befund des
+  Projekts sie festhält. Auch diese Bezeichnungen stehen unter keiner Lizenz
+  des Projekts.
 
-Jede dieser Dateien nennt ihre Quelle und deren Bedingungen auch selbst.
+Jede dieser Dateien nennt ihre Quelle und deren Bedingungen auch selbst. Die
+Bezeichnungen in rights.json stehen auch in scripts/docs/rights-mapping.json,
+aus der sie kommen, und dort gilt für sie dasselbe.
+
+operation-rights.json in packages/docs-index/data/, die Zuordnung von
+Operationen zu Rechten, ist eigene Arbeit des Projekts und steht wie der
+Quellcode unter der Elastic License 2.0. Operationen und Rechte nennt sie nur
+bei ihren Namen aus den Quellen, als Verweis, und sie enthält keine Texte
+daraus.
 
 Name und Logo von Ecclium sind nicht Teil der Lizenz des Quellcodes.
 

@@ -107,14 +107,15 @@ describe('the default locations', () => {
     );
     expect(defaultDocsIndexFile().href).toBe(outFile.href);
     expect(existsSync(new URL('SOURCES.json', dataDir))).toBe(true);
-    expect(Object.keys(readFactFiles(dataDir))).toHaveLength(4);
+    expect(Object.keys(readFactFiles(dataDir))).toHaveLength(5);
   });
 
-  it('keep only the four files of facts and the README in data/', () => {
+  it('keep only the five files of facts and the README in data/', () => {
     expect(readdirSync(defaultBuildLocations().dataDir).sort()).toEqual([
       'README.md',
       'SOURCES.json',
       'academy.json',
+      'operation-rights.json',
       'operations.json',
       'rights.json',
     ]);

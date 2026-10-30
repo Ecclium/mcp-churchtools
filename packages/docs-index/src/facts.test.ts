@@ -4,6 +4,7 @@ import {
   syntheticFactFiles,
   syntheticFacts,
   syntheticRightsPage,
+  syntheticThingsPage,
 } from '@ecclium/mcp-churchtools-testkit';
 import { describe, expect, it } from 'vitest';
 
@@ -42,6 +43,7 @@ function readData(): FactFileTexts {
     'operations.json': read(factFiles.operations),
     'rights.json': read(factFiles.rights),
     'academy.json': read(factFiles.academy),
+    'operation-rights.json': read(factFiles.operationRights),
   };
 }
 
@@ -524,6 +526,7 @@ describe('parseFactFiles', () => {
     ]);
     const withoutFacts = changed((facts) => {
       facts.operations.entries = [];
+      facts.operationRights.entries = [];
     });
     expect(violationsOf(withoutFacts)).toEqual([
       { file: 'SOURCES.json', path: 'openapi', rule: 'source' },
@@ -549,13 +552,56 @@ describe('parseFactFiles', () => {
 
   it('rejects a label from a page outside academy.json', () => {
     const texts = changed((facts) => {
-      const right = facts.rights.entries[0];
-      if (right?.label !== undefined) {
-        right.label.page = '/de/help/synthetisch/fehlt/';
+      const label = facts.rights.entries[1]?.label;
+      if (label !== undefined && 'page' in label) {
+        label.page = '/de/help/synthetisch/fehlt/';
       }
     });
     expect(violationsOf(texts)).toEqual([
-      { file: 'rights.json', path: 'entries[0].label.page', rule: 'reference' },
+      { file: 'rights.json', path: 'entries[1].label.page', rule: 'reference' },
+    ]);
+  });
+
+  it('rejects a label its page does not write before the name', () => {
+    const texts = changed((facts) => {
+      const label = facts.rights.entries[3]?.label;
+      if (label !== undefined) {
+        // The page names this label, but for another right.
+        label.text = 'Dinge bearbeiten';
+      }
+    });
+    expect(violationsOf(texts)).toEqual([
+      { file: 'rights.json', path: 'entries[3].label', rule: 'evidence' },
+    ]);
+  });
+
+  it('accepts a label from a finding without a page', () => {
+    const facts = parseFactFiles(syntheticFactFiles());
+    expect(facts.rights.entries[0]?.label).toEqual({
+      text: 'Dinge bearbeiten',
+      finding: 'F2',
+      version: '3.137',
+    });
+  });
+
+  it('rejects a label from a finding without a version', () => {
+    const texts = changed((facts) => {
+      const label = facts.rights.entries[0]?.label;
+      if (label !== undefined && 'finding' in label) {
+        label.version = 'neu';
+      }
+    });
+    expect(violationsOf(texts)).toEqual([
+      { file: 'rights.json', path: 'entries[0].label.version', rule: 'format' },
+    ]);
+  });
+
+  it('rejects an explaining page that names neither the right nor its label', () => {
+    const texts = changed((facts) => {
+      facts.rights.entries[3]?.pages.push(syntheticThingsPage);
+    });
+    expect(violationsOf(texts)).toEqual([
+      { file: 'rights.json', path: 'entries[3].pages[1]', rule: 'evidence' },
     ]);
   });
 
@@ -565,6 +611,282 @@ describe('parseFactFiles', () => {
     });
     expect(violationsOf(texts)).toEqual([
       { file: 'SOURCES.json', path: 'academy.pages', rule: 'reference' },
+    ]);
+  });
+
+  it('rejects a pairing with an operation, a right or a page that does not exist', () => {
+    const texts = changed((facts) => {
+      const [unmapped, read, members] = facts.operationRights.entries;
+      if (unmapped !== undefined) {
+        unmapped.operationId = 'deleteSyntheticThingz';
+      }
+      if (read !== undefined && 'needs' in read) {
+        const right = read.needs[0]?.rights[0];
+        if (right !== undefined) {
+          right.name = 'view thingz';
+        }
+      }
+      if (members !== undefined && 'needs' in members) {
+        const evidence = members.needs[0]?.evidence[0];
+        if (evidence?.kind === 'academy') {
+          evidence.page = '/de/help/synthetisch/fehlt/';
+        }
+      }
+    });
+    expect(violationsOf(texts)).toEqual([
+      {
+        file: 'operation-rights.json',
+        path: 'entries[0].operationId',
+        rule: 'reference',
+      },
+      {
+        file: 'operation-rights.json',
+        path: 'entries[1].needs[0].rights[0]',
+        rule: 'reference',
+      },
+      {
+        file: 'operation-rights.json',
+        path: 'entries[2].needs[0].evidence[0].page',
+        rule: 'reference',
+      },
+    ]);
+  });
+
+  it('rejects evidence from the document that names none of the rights', () => {
+    const texts = changed((facts) => {
+      const operation = facts.operations.entries[2];
+      if (operation !== undefined) {
+        operation.description = 'Requires the right view things.';
+      }
+    });
+    expect(violationsOf(texts)).toEqual([
+      {
+        file: 'operation-rights.json',
+        path: 'entries[2].needs[0].evidence[2]',
+        rule: 'evidence',
+      },
+    ]);
+  });
+
+  it('rejects a help page as the only evidence and one that names no right', () => {
+    const texts = changed((facts) => {
+      const members = facts.operationRights.entries[2];
+      if (members !== undefined && 'needs' in members) {
+        const [need, other] = members.needs;
+        if (need !== undefined) {
+          need.evidence = need.evidence.slice(0, 1);
+          delete need.without;
+        }
+        if (other !== undefined) {
+          other.evidence = [{ kind: 'academy', page: syntheticThingsPage }];
+        }
+      }
+    });
+    expect(violationsOf(texts)).toEqual([
+      {
+        file: 'operation-rights.json',
+        path: 'entries[2].needs[0].evidence',
+        rule: 'evidence',
+      },
+      {
+        file: 'operation-rights.json',
+        path: 'entries[2].needs[1].evidence',
+        rule: 'evidence',
+      },
+      {
+        file: 'operation-rights.json',
+        path: 'entries[2].needs[1].evidence[0]',
+        rule: 'evidence',
+      },
+    ]);
+  });
+
+  it('rejects what a read gives without the right when no finding shows it', () => {
+    const texts = changed((facts) => {
+      const members = facts.operationRights.entries[2];
+      if (members !== undefined && 'needs' in members) {
+        const need = members.needs[0];
+        if (need !== undefined) {
+          need.evidence = need.evidence.filter(
+            (item) => item.kind === 'openapi',
+          );
+        }
+      }
+    });
+    expect(violationsOf(texts)).toEqual([
+      {
+        file: 'operation-rights.json',
+        path: 'entries[2].needs[0].evidence',
+        rule: 'evidence',
+      },
+    ]);
+  });
+
+  it('rejects a right that an operation both needs and does not need', () => {
+    const texts = changed((facts) => {
+      const read = facts.operationRights.entries[1];
+      if (read !== undefined && 'notNeeded' in read) {
+        const item = read.notNeeded?.[0];
+        if (item !== undefined) {
+          item.right.name = 'view things';
+        }
+      }
+    });
+    expect(violationsOf(texts)).toEqual([
+      {
+        file: 'operation-rights.json',
+        path: 'entries[1].notNeeded[0].right',
+        rule: 'conflict',
+      },
+    ]);
+  });
+
+  it('takes only a finding as evidence that a right is not needed', () => {
+    const texts = changed((facts) => {
+      const read = facts.operationRights.entries[1];
+      if (read !== undefined && 'notNeeded' in read) {
+        const item = read.notNeeded?.[0];
+        if (item !== undefined) {
+          // A description names a right; it never shows one is not needed.
+          (item.evidence as unknown[]).push({ kind: 'openapi' });
+        }
+      }
+    });
+    expect(violationsOf(texts)).toEqual([
+      { file: 'operation-rights.json', path: 'entries[1]', rule: 'format' },
+    ]);
+  });
+
+  it('takes a read as needing no right only with a finding', () => {
+    const texts = changed((facts) => {
+      const list = facts.operationRights.entries[3];
+      if (list !== undefined && 'none' in list) {
+        list.none = [{ kind: 'openapi' }];
+      }
+    });
+    expect(violationsOf(texts)).toEqual([
+      {
+        file: 'operation-rights.json',
+        path: 'entries[3].none',
+        rule: 'evidence',
+      },
+    ]);
+  });
+
+  it('wants the module where the document names a right whose name repeats', () => {
+    const texts = changed((facts) => {
+      // Another module with a right of the same name, which the
+      // description of the members does not tell apart.
+      facts.rights.entries.push({
+        module: 'zsynthetic',
+        name: 'view thing members',
+        kind: 'list',
+        pages: [],
+      });
+      const members = facts.operations.entries[2];
+      if (members !== undefined) {
+        members.summary = 'List the members of a thing';
+      }
+    });
+    expect(violationsOf(texts)).toEqual([
+      {
+        file: 'operation-rights.json',
+        path: 'entries[2].needs[0].evidence[2]',
+        rule: 'evidence',
+      },
+    ]);
+  });
+
+  it('rejects a mark of a link in a text the project writes', () => {
+    const texts = changed((facts) => {
+      const [unmapped, read] = facts.operationRights.entries;
+      if (unmapped !== undefined && 'open' in unmapped) {
+        unmapped.open = 'Siehe [Hilfe](javascript:void).';
+      }
+      if (read !== undefined && 'needs' in read) {
+        const evidence = read.needs[0]?.evidence[0];
+        if (evidence?.kind === 'finding') {
+          evidence.id = 'Befund [x]';
+        }
+      }
+      const label = facts.rights.entries[0]?.label;
+      if (label !== undefined) {
+        label.text = 'Dinge [bearbeiten]';
+      }
+    });
+    expect(violationsOf(texts)).toEqual([
+      { file: 'rights.json', path: 'entries[0].label', rule: 'link' },
+      { file: 'operation-rights.json', path: 'entries[0].open', rule: 'link' },
+      {
+        file: 'operation-rights.json',
+        path: 'entries[1].needs[0].evidence[0].id',
+        rule: 'link',
+      },
+    ]);
+  });
+
+  it.each(['F0', 'f29', 'F1000'])(
+    'rejects %s as the number of a finding',
+    (id) => {
+      const texts = changed((facts) => {
+        const label = facts.rights.entries[0]?.label;
+        if (label !== undefined && 'finding' in label) {
+          label.finding = id;
+        }
+      });
+      expect(violationsOf(texts)).toEqual([
+        { file: 'rights.json', path: 'entries[0].label', rule: 'format' },
+      ]);
+    },
+  );
+
+  it('rejects pairings out of order', () => {
+    const texts = changed((facts) => {
+      const [first, , members, , post] = facts.operationRights.entries;
+      if (members !== undefined && 'needs' in members) {
+        members.needs.reverse();
+        members.needs[1]?.evidence.reverse();
+      }
+      if (post !== undefined && 'needs' in post) {
+        post.needs[0]?.rights.reverse();
+      }
+      if (first !== undefined) {
+        facts.operationRights.entries.push(first);
+      }
+    });
+    expect(violationsOf(texts)).toEqual([
+      {
+        file: 'operation-rights.json',
+        path: 'entries[5]',
+        rule: 'order',
+      },
+      {
+        file: 'operation-rights.json',
+        path: 'entries[2].needs[1]',
+        rule: 'order',
+      },
+      {
+        file: 'operation-rights.json',
+        path: 'entries[2].needs[1].evidence[1]',
+        rule: 'order',
+      },
+      {
+        file: 'operation-rights.json',
+        path: 'entries[4].needs[0].rights[1]',
+        rule: 'order',
+      },
+    ]);
+  });
+
+  it('rejects an entry with both needs and a note', () => {
+    const texts = changed((facts) => {
+      const read = facts.operationRights.entries[1];
+      if (read !== undefined) {
+        Object.assign(read, { open: 'Offen.' });
+      }
+    });
+    expect(violationsOf(texts)).toEqual([
+      { file: 'operation-rights.json', path: 'entries[1]', rule: 'format' },
     ]);
   });
 
@@ -589,9 +911,10 @@ describe('parseFactFiles on foreign content', () => {
 
   function withPageText(text: string): FactFileTexts {
     return changed((facts) => {
+      // Added to the text, so that the page still names its rights.
       const page = facts.academy.entries[0];
       if (page !== undefined) {
-        page.text = text;
+        page.text = `${page.text}\n\n${text}`;
       }
     });
   }

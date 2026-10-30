@@ -211,6 +211,7 @@ function emptyFacts(): RefreshedFacts {
     operations: [],
     rights: [],
     academy: [],
+    operationRights: [],
     operationsNotice: 'Synthetische Fakten.',
     openapi: { ...origin, documentVersion: '0.1.0' },
     permissions: origin,

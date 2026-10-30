@@ -175,6 +175,7 @@ export function buildDocsIndex(texts: FactFileTexts): string {
     operations: facts.operations,
     rights: facts.rights,
     academy: facts.academy,
+    operationRights: facts.operationRights,
     search: {
       operations: buildSearchIndex(
         searchFields.operations,
@@ -251,6 +252,7 @@ export function parseDocsIndex(text: string): DocsIndexContent {
       'operations.json': canonicalJson(parsed.data.operations),
       'rights.json': canonicalJson(parsed.data.rights),
       'academy.json': canonicalJson(parsed.data.academy),
+      'operation-rights.json': canonicalJson(parsed.data.operationRights),
     });
   } catch (error) {
     if (error instanceof DocsFactsError) {
@@ -356,6 +358,7 @@ const artifactSchema = z.strictObject({
   operations: z.unknown(),
   rights: z.unknown(),
   academy: z.unknown(),
+  operationRights: z.unknown(),
   search: z.strictObject({
     operations: searchIndexSchema,
     rights: searchIndexSchema,
