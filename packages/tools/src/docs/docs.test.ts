@@ -246,7 +246,7 @@ describe('ct_docs_search_api', () => {
     });
   });
 
-  it('says more only when more matched and keeps to the default of 10', async () => {
+  it('says more only when more matched', async () => {
     const { data } = setup();
     const all = await data('ct_docs_search_api', { query: 'synthetic' });
     expect(all['hits']).toHaveLength(5);
@@ -500,7 +500,7 @@ describe('ct_docs_get_operation', () => {
   it.each([
     [{ operationId: '1bad' }],
     [{ operationId: 'a b' }],
-    [{ method: 'HEAD', path: '/api/synthetic/things' }],
+    [{ method: 'CONNECT', path: '/api/synthetic/things' }],
     [{ method: 'GET', path: 'api/synthetic/things' }],
     [{ method: 'GET', path: '/api/synthetic things' }],
     [{ operationId: 'getSyntheticThing', part: 0 }],

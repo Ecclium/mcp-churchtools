@@ -93,14 +93,20 @@ export function searchWithMore<T>(
  */
 export const apiPath = (path: string): string => `/api${path}`;
 
-/** The methods of HTTP of the facts, as a request writes them. */
+/**
+ * The methods of HTTP of the facts, as a request writes them: every one
+ * the facts allow, so that no operation of a later refresh breaks a
+ * result. A test holds the list equal to the methods of the facts.
+ */
 export const httpMethods = Object.freeze([
   'DELETE',
   'GET',
+  'HEAD',
   'OPTIONS',
   'PATCH',
   'POST',
   'PUT',
+  'TRACE',
 ] as const);
 
 /**
@@ -138,11 +144,15 @@ export const operationIdOutput = classify(
 export const methodOutput = classify(z.enum(httpMethods), 'none');
 
 /**
- * A path of the API with `/api`, outside the data envelope: printable
- * characters without spaces, as the facts allow them.
+ * A path of the API with `/api`, outside the data envelope. The facts
+ * allow any printable character without spaces; here only the characters
+ * of a path and the braces of a placeholder pass, no quotes, angle
+ * brackets or backticks, so that no free text reaches the model outside
+ * the envelope. A path with another character ends the call with an
+ * error rather than pass.
  */
 export const pathOutput = classify(
-  z.string().regex(/^\/api\/[\x21-\x7e]{0,299}$/),
+  z.string().regex(/^\/api\/[A-Za-z0-9\-._~{}/:@!$&()*+,;=%]{0,299}$/),
   'none',
 );
 
