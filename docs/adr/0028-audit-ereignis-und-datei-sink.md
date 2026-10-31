@@ -61,9 +61,27 @@ Für die Kopie auf stderr, sobald die Datei Kennungen trägt:
 1. **Die Kopie geht weiter, ohne Kennungen:** Wer Logs sammelt, behält die Ereignisse und den Anker der Kette, die Kennungen bleiben in der Datei.
 2. **Die Kopie entfällt:** Wer Logs sammelt, sieht die Aufrufe dann nicht mehr, und ADR 0053 müsste in diesem Punkt abgelöst werden.
 
+Für die Frist:
+
+1. **Fest zwölf Monate:** einfach, aber eine längere Vorgabe eines Kantons oder eines Reglements liesse sich nur mit eigenen Kopien erfüllen.
+2. **Eine Variable, die nur verlängert:** zwölf Monate als Untergrenze. Eine Gemeinde ohne Pflicht könnte die Daten nicht früher löschen.
+3. **Eine Variable von 1 bis 120 Monaten, voreingestellt auf zwölf, mit einer Warnung darunter:** Jede Gemeinde kann ihrer Vorgabe folgen, und wer kürzt, sieht beim Start, dass die Frist unter dem einen Jahr der DSV liegt.
+
+Für leere Dateien:
+
+1. **Beim geordneten Ende entfernen:** Die Prüfung beim Start bleibt, der Server löscht dafür aber Dateien, eng begrenzt.
+2. **Die Datei erst mit der ersten Zeile anlegen:** nie eine leere Datei, aber ein Ordner, der nicht taugt, fällt erst beim ersten Aufruf auf statt beim Start.
+3. **So lassen und dokumentieren:** nichts zu bauen, aber ein Ordner voller leerer Dateien, eine je Start.
+
+Für `fsync`:
+
+1. **Nie,** wie in Phase 1: Ein Absturz des Systems kostet Zeilen, die als geschrieben galten.
+2. **Nach jeder Zeile:** Keine Zeile geht so verloren, aber jeder Aufruf wartet auf die Platte.
+3. **Nach einer Messung:** nach jeder Zeile, wenn es wenig kostet, sonst an festen Stellen.
+
 ## Entscheid
 
-Gewählt ist für den Ort die vierte Option. Sie entsteht in Phase 1 in einer ersten Form für den Betrieb über stdio, Phase 4 baut den Datei-Sink darauf aus. Für das Protokoll der Lesezugriffe und für die Kennungen gilt jeweils die zweite Option, für die Kopie auf stderr die erste.
+Gewählt ist für den Ort die vierte Option. Sie entsteht in Phase 1 in einer ersten Form für den Betrieb über stdio, Phase 4 baut den Datei-Sink darauf aus. Für das Protokoll der Lesezugriffe und für die Kennungen gilt jeweils die zweite Option, für die Kopie auf stderr die erste, für die Frist die dritte, für leere Dateien die erste und für `fsync` die dritte.
 
 ### Ordner und Datei
 
@@ -72,7 +90,7 @@ Gewählt ist für den Ort die vierte Option. Sie entsteht in Phase 1 in einer er
 - **Datei:** eine je Prozess und UTC-Tag, mit dem Namen `audit-<JJJJ-MM-TT>-<hhmmss>-<pid>-<n>.jsonl`, Datum und Uhrzeit des Öffnens in UTC, die Kennung des Prozesses und eine Folgenummer, die nur aufwärts zählt. Geöffnet wird sie mit `O_WRONLY`, `O_APPEND`, `O_CREAT`, `O_EXCL`, `O_NOFOLLOW` und `O_NOCTTY` und dem Modus 0600, also nie eine Datei, die schon da ist, und nie über einen Link. Danach prüft der Server am Deskriptor, dass es eine gewöhnliche Datei mit genau einem Link ist, die ihm gehört und anderen keine Rechte gibt, dass der Pfad auf dieselbe Kombination aus Gerät und Inode zeigt und dass der Ordner `audit` noch derselbe ist. Ein Deskriptor unter 3 wird geschlossen und abgewiesen, weil eine Zeile sonst auf stdin, stdout oder stderr ginge. Kein Fehler und keine Meldung nennt einen Pfad.
 - **Schreiben:** jede Zeile mit einem `writeSync` an das Ende der Datei, ein Teilschreibvorgang am Versatz fortgesetzt, höchstens vier Aufrufe je Zeile. Die Datei nimmt nur Zeilen aus druckbarem ASCII wie der Zeilenschreiber für stderr. Ein abgerissenes Stück schliesst der Server in derselben Datei mit `~` und einem Zeilenumbruch ab. Mit einem Zeilenumbruch allein könnte aus einem Stück, dem nur der Zeilenumbruch fehlt, eine gültige Zeile werden. Gelingt das nicht, trägt die nächste Zeile den Abschluss, und vor dem Schliessen einer Datei versucht der Server ihn noch einmal. Leser zählen nur Zeilen, die mit einem Zeilenumbruch enden und nicht mit `~`, denn nach EFBIG oder EBADF kann ein Stück ohne Abschluss am Ende einer Datei bleiben.
 - **Neu öffnen:** Hat die Datei keinen Link mehr, weil jemand sie gelöscht hat, oder meldet das Schreiben EBADF, ESTALE oder EFBIG, öffnet der Server eine neue Datei mit allen Prüfungen, höchstens einmal je Zeile und mit höchstens 64 Versuchen je Prozess. Danach bleibt er ohne neue Datei, bis er neu startet, und Tools mit `sensitivity: special` laufen nicht. Einen Deskriptor, den `fstat` nicht mehr als die geöffnete Datei zeigt, schliesst er nie, denn er kann schon jemand anderem gehören. Bei ENOSPC, EDQUOT und EIO bleibt die Datei offen, und die Zeile ist verloren. Ein Stück einer Zeile bleibt am Ende der alten Datei stehen. Zeigt die Uhr nach dem Datum der offenen Datei einen neuen UTC-Tag, beginnt der Server eine neue Datei, nie rückwärts. Gelingt das nicht, schreibt er in der alten weiter und versucht diesen Tag nicht noch einmal. Ein Wechsel des Tages zählt nicht zu den 64 Versuchen, damit ein langer Lauf eine Datei je Tag behält.
-- **Kein `fsync`:** Eine geschriebene Zeile übersteht einen Absturz von Server oder Client, aber keinen Stromausfall und keinen Absturz des Betriebssystems. Was `fsync` je Zeile kostet, ist nicht gemessen.
+- **Kein `fsync` in Phase 1:** Eine geschriebene Zeile übersteht einen Absturz von Server oder Client, aber keinen Stromausfall und keinen Absturz des Betriebssystems. Ab Phase 4 gilt «`fsync`» unten.
 - **Ende:** Nach dem Schliessen des Transports schreibt der Server `audit_file_closed` mit der Zahl der verlorenen Zeilen, dann schliesst er die Datei, dann folgt `stdio_closed` wie bisher als letzte Zeile. Spätere Zeilen gelten als verloren und öffnen keine Datei mehr.
 - **Windows:** Ohne `getuid`, `O_NOFOLLOW`, `O_DIRECTORY` oder `O_NOCTTY` lassen sich Eigentümer und Links nicht prüfen. Dort gibt es über stdio weder die Audit-Datei noch Tools mit `sensitivity: special`, und ein gesetztes `ECCLIUM_STATE_DIR` bricht den Start mit einer eigenen Meldung ab.
 
@@ -84,8 +102,8 @@ Gewählt ist für den Ort die vierte Option. Sie entsteht in Phase 1 in einer er
 - **Wache im `gate`:** Für ein Tool mit `sensitivity: special` fragt das `gate`, ob die Audit-Datei bereit ist: offen, noch mit Link und das letzte Schreiben gelungen. Ist sie geschlossen oder gelöscht, versucht der Schreiber einmal, eine neue zu öffnen. Nach einem gescheiterten Schreiben zeigt erst die nächste Zeile, etwa die Zeile des abgewiesenen Aufrufs, ob die Datei wieder Zeilen aufnimmt. Ist sie nicht bereit, endet der Aufruf mit `policy_denied` und einem anderen festen Satz, bevor die Eingabe geprüft und ChurchTools gefragt wird. So kostet eine kaputte Datei keinen Lesezugriff und kein Kontingent. Die Aufzählung der Prüfungen im `gate` in ADR 0024 nennt Beispiele. Reihenfolge und Menge der Stufen bleiben, diese Prüfung ist Teil des `gate`.
 - **Start:** Ist ein Tool mit `sensitivity: special` registriert und fehlt `ECCLIUM_STATE_DIR`, startet der Server über stdio nicht, mit einer eigenen Meldung und dem Code 78. Ist der Ordner gesetzt, öffnet die erste Stufe des Starts die Datei, auch wenn nur `ct_whoami` registriert ist, solange fd 2 noch blockiert und bevor SDK und undici laden. Scheitert das, folgt eine Meldung mit den übrigen Startmeldungen und der Code 78. Wer den Ordner setzt, will das Audit beim Server.
 - **Keine IDs bis Phase 4:** `objectRefs` bleibt leer, bis die Kennungen nach «Objekt-IDs» unten gebaut sind. Bis dahin ist die Kopie nach stderr dieselbe Zeile wie in der Datei.
-- **Keine Löschung in Phase 1:** Die Dateien haben noch keine Frist und wachsen, eine je Start und Tag. Weil sie keine IDs tragen, ist eine Frist erst mit den IDs nötig.
-- **Keine neue Ausnahme nach ADR 0051:** Der Server hängt an die Datei nur an und liest sie nie. Sie trägt keine Inhalte und keinen Zustand zwischen zwei Anfragen. Der Schreiber hält nur Deskriptor, Datum und Zähler in einer Closure, die die Wurzel der Komposition baut und der Senke übergibt. `AuditSink` ist einer der Ports, die die Wurzel der Komposition zusammensetzt. Als Persistenz auf der Platte beschreibt `docs/privacy.md` die Datei ab Phase 1.
+- **Keine Löschung in Phase 1:** Die Dateien haben noch keine Frist und wachsen, eine je Start und Tag. Weil sie keine IDs tragen, ist eine Frist erst mit den IDs nötig. Ab Phase 4 gelten «Frist und Löschung» und «Leere Dateien» unten.
+- **Keine neue Ausnahme nach ADR 0051:** Der Server hängt an die Datei nur an und liest ihren Inhalt nie, auch nicht für die Kette. Sie trägt keine Inhalte und keinen Zustand zwischen zwei Anfragen. Der Schreiber hält nur Deskriptor, Datum, Zähler und ab Phase 4 den Kopf der Kette in einer Closure, die die Wurzel der Komposition baut und der Senke übergibt. `AuditSink` ist einer der Ports, die die Wurzel der Komposition zusammensetzt. Als Persistenz auf der Platte beschreibt `docs/privacy.md` die Datei ab Phase 1.
 - **Netzlaufwerke:** In Phase 1 rät die Doku zu einem lokalen Ordner, nicht auf einem Netzlaufwerk und nicht in einem synchronisierten Ordner. Eine Prüfung beim Start gibt es nicht, unter macOS lässt sich ein Netzlaufwerk nicht verlässlich erkennen.
 
 ### Recht
@@ -116,22 +134,69 @@ Gewählt ist für den Ort die vierte Option. Sie entsteht in Phase 1 in einer er
 - Jede Stufe lässt sie unverändert, `off`, `standard` und `strict`. Anders als `personId` bekommt sie in `strict` kein Pseudonym, weil sie keine Person bezeichnet. Sie dient dem Audit: Die Pipeline nimmt Felder dieser Klasse in die `objectRefs` auf.
 - Weitere Klassen für Kennungen entstehen nur, wenn ein Tool sie braucht.
 
-### Folgt vor Phase 4
+### Frist und Löschung
 
-- Eine Hash-Kette je Datei mit `seq` und `prevHash`, ein täglicher Kettenanker im Log und in der Metrikdatei, `ecclium audit verify` und `ecclium audit show`.
-- Eine Frist von zwölf Monaten mit Löschung, das JSON Schema `schemas/audit-event.v1.json` und ein Merkmal in der Datei für «gelesen, aber zurückgehalten». Mit IDs hängt die Gültigkeit einer Zeile vom Ergebnis ab, das Zurückhalten verrät dann etwas über das Ergebnis.
-- Ob `fsync` dazukommt.
+- **Variable:** `ECCLIUM_AUDIT_RETENTION_MONTHS` nennt die Frist in ganzen Monaten, von 1 bis 120, voreingestellt auf 12. Ein anderer Wert bricht den Start ab, wie bei jeder Variable mit einer Meldung, die die erlaubten Werte nennt und nicht den Wert. Unter 12 warnen `ecclium config check` und jeder Start, dass die Frist unter dem einen Jahr der DSV liegt, und brechen nicht ab. Ohne `ECCLIUM_STATE_DIR` bewirkt die Variable nichts, und beide sagen das.
+- **Zählung:** Eine Datei vom UTC-Tag im Namen bleibt mindestens bis zum Ende des Tages, der so viele Kalendermonate später liegt, wie die Frist nennt. Gibt es diesen Tag im Zielmonat nicht, gilt dessen letzter Tag. Gelöscht wird sie frühestens am Tag danach und nur, wenn auch ihre letzte Änderung so lange zurückliegt. So bleibt jede Zeile mindestens die volle Frist, auch in einer Datei, die nach einem gescheiterten Wechsel des Tages länger beschrieben wurde.
+- **Wann:** beim Start und bei jedem Wechsel des Tages.
+- **Was:** nur im Ordner `audit`, nur gewöhnliche Dateien, deren Name genau dem festen Muster entspricht, ohne einem Link zu folgen, und nur Dateien, die dem Benutzer gehören und anderen keine Rechte geben, wie beim Öffnen. Nie die eigene offene Datei. Andere Dateien im Ordner bleiben liegen. Keine Meldung nennt einen Pfad. Scheitert das Löschen, schreibt der Server eine Logzeile mit der Zahl der Dateien und läuft weiter.
+- **Kopien:** Kopien in Backups, in synchronisierten Ordnern, an einem getrennten Ort oder in Logs löscht Ecclium nicht.
+- **Tabelle von ADR 0055:** Diese Zeile kommt dazu:
 
-Das ADR bleibt «Vorgeschlagen», bis diese Teile darin stehen und der Maintainer geklärt hat, welches Datenschutzrecht für eine Gemeinde gilt und ob es ein Protokoll der Lesezugriffe verlangt. Wird es früher angenommen, löst ein neues ADR es vor Phase 4 ab.
+| Variable                         | Werte                    | Voreinstellung | Geheimnis | Nur über stdio | Beim Start                                                                                    |
+| -------------------------------- | ------------------------ | -------------- | --------- | -------------- | --------------------------------------------------------------------------------------------- |
+| `ECCLIUM_AUDIT_RETENTION_MONTHS` | ganze Zahl von 1 bis 120 | 12             | nein      | ja             | ungültig: Abbruch; unter 12: Warnung; ohne `ECCLIUM_STATE_DIR`: Meldung, dass sie nicht wirkt |
+
+### Leere Dateien
+
+- Der Start öffnet die Datei weiter in seiner ersten Stufe, damit ein Ordner, der nicht taugt, den Start sofort abbricht.
+- Beim geordneten Ende prüft der Server am Deskriptor, ob seine Datei null Bytes hat. Dann entfernt er sie nach dem Schliessen, wenn der Pfad noch auf dieselbe Kombination aus Gerät und Inode zeigt. Eine Datei mit einem Rest einer Zeile ist nicht leer und bleibt.
+- Leere Dateien, die ein Absturz oder ein Ende ohne Ordnung zurücklässt, entfernt die Löschung beim nächsten Start oder Wechsel des Tages, mit denselben Grenzen wie oben, sobald ihr Tag vor dem aktuellen UTC-Tag liegt. Leere Dateien des laufenden Tages bleiben bis dahin, weil sie einem laufenden Prozess gehören können.
+
+### Kette
+
+- Jede ganze Zeile der Datei trägt `seq` und `prevHash`. `seq` zählt die ganzen Zeilen einer Datei ab 1. `prevHash` ist der SHA-256 der vorigen ganzen Zeile in Bytes, ohne ihren Zeilenumbruch, hexadezimal geschrieben. Die erste Zeile hängt am Namen der Datei: Ihr `prevHash` ist der SHA-256 dieses Namens. So lassen sich Dateien nicht vertauschen oder umbenennen, ohne dass `ecclium audit verify` es sieht.
+- Die Felder füllt nur der Schreiber der Datei, nie der Erzeuger eines Ereignisses. Den Hash der letzten Zeile hält er selbst.
+- Reste einer Zeile gehören nicht zur Kette. Scheitert eine Zeile, trägt die nächste ganze Zeile dieselbe `seq` und den Hash der letzten ganzen Zeile.
+- Eine neue Datei, nach einem Wechsel des Tages oder einem Neuöffnen, beginnt eine neue Kette.
+- SHA-256 kommt aus `node:crypto`, ohne neue Abhängigkeit.
+
+### Kettenanker
+
+- Beim Schliessen einer Datei, also beim Ende, beim Wechsel des Tages und beim Neuöffnen, schreibt der Server eine eigene Logzeile auf stderr mit dem Namen der Datei, der `seq` und dem Hash ihrer letzten ganzen Zeile. Mit den Schreib-Tools kommt sie auch nach jedem Schreibvorgang, und sobald es die Metrikdatei des Runners gibt, steht der Anker auch dort.
+- Eine Datei ohne Zeile hat keinen Anker. Der Name der Datei nennt Datum, Uhrzeit, die Kennung des Prozesses und eine Folgenummer, keinen Pfad.
+- Wer Logs sammelt, und sei es nur mit einer Rotation, hat damit einen Anker ausserhalb der Datei. Wer den Rechner kontrolliert, muss dann auch jede Kopie des Logs fälschen. Fälschungssicher ist das nicht.
+
+### `audit verify` und `audit show`
+
+- `ecclium audit verify` prüft jede Datei im Ordner `audit` gegen ihre Kette und, wenn übergeben, gegen Anker aus einem Log. Es erkennt eine geänderte, fehlende oder zusätzliche Zeile, eine vertauschte Reihenfolge, eine umbenannte oder vertauschte Datei und eine Datei, deren letzte Zeile nicht zum Anker passt, auch eine, die nach dem Anker gekürzt wurde.
+- `ecclium audit show` fasst die Dateien als deutschen Klartext für Gemeindeleitende zusammen: je UTC-Tag und Tool die Zahl der Aufrufe je Ausgang und die zurückgehaltenen Ergebnisse. Es sucht auch nach einer Kennung wie `person:<Kennung>` und zeigt, wann, mit welchem Tool und unter welchem Subjekt ein Aufruf sie nannte, etwa für eine Auskunft. Die Läufe einer Routine mit `--run` kommen mit dem Runner.
+- Beide lesen nur, öffnen jede Datei, ohne einem Link zu folgen, prüfen Ordner und Dateien wie der Start und brauchen die Konfiguration über stdio mit `ECCLIUM_STATE_DIR`. Ihre Ausgabe nennt keine Pfade und Kennungen nur, wenn danach gefragt ist. Sie enden mit Codes nach sysexits und mit Meldungen auf Deutsch.
+
+### Gelesen, aber zurückgehalten
+
+- Hält die Pipeline ein Ergebnis zurück, nachdem ChurchTools geantwortet hat, und steht die Zeile trotzdem in der Datei, etwa weil die Senke sie gleich als Ablehnung schreibt, trägt die Zeile neben `denied` und `policy_denied` ein Merkmal dafür. Ohne das Merkmal sähe sie aus wie eine Ablehnung vor dem Lesen, etwa im `gate`. Es sagt dem Betreiber, dass der Server die Daten gelesen, aber nicht herausgegeben hat.
+- Mit Kennungen hängt die Gültigkeit einer Zeile vom Ergebnis ab, das Zurückhalten verrät dann etwas über das Ergebnis. Das Merkmal steht deshalb nur in der Datei. Nimmt die Datei die Zeile nicht auf, bleibt wie bisher die Logzeile `audit_withheld`.
+
+### `fsync`
+
+- Gemessen wird unter macOS und Linux, was `fsync` je Zeile kostet. Bleibt es auf beiden unter 1 ms je Zeile, folgt auf jede Zeile ein `fsync`, bevor `record` `true` gibt. Sonst folgt es beim Anker, beim Wechsel des Tages und beim Schliessen. Messung und Ergebnis stehen unter «Umsetzung».
+
+### Schema und Katalog
+
+- Eine Zeile der Datei ist als JSON Schema in `schemas/audit-event.v1.json` veröffentlicht, erzeugt aus dem zod-Schema in `core` mit `z.toJSONSchema` von zod 4, ohne neue Abhängigkeit. CI prüft wie bei `docs/tools.md`, dass die Datei der Erzeugung entspricht. Die Kopie auf stderr folgt demselben Schema ohne die Felder, die nur in die Datei gehören.
+- Ein Katalog nennt jeden Typ eines Ereignisses mit seinen Feldern und ihrer Bedeutung, ebenfalls aus dem Code erzeugt und in CI geprüft.
 
 ## Konsequenzen
 
 - Wer Tools mit `sensitivity: special` einschaltet, legt einmal einen privaten Ordner an und setzt eine Variable mehr. Das Audit liegt dann beim Server, gleich was der Client mit stderr macht.
 - **Was garantiert ist:** Jedes Ergebnis eines Tools mit `sensitivity: special`, das hinausgeht, hat seine Zeile ganz in der Datei. `ok` heisst an den Transport übergeben, nicht beim Client angekommen. Zeilen anderer Tools können in der Datei fehlen. Der Schreiber zählt sie und nennt die Zahl beim Ende in `audit_file_closed`.
-- **Der Betreiber selbst:** Die Datei schützt nicht gegen ihn. Er kann sie löschen, umbenennen, kürzen oder ändern, erkannt wird nur das Löschen. Backups und synchronisierte Ordner kopieren sie.
+- **Der Betreiber selbst:** Die Datei schützt nicht gegen ihn. Er kann sie löschen, umbenennen, kürzen oder ändern. Die Kette erkennt eine geänderte, fehlende oder vertauschte Zeile und eine umbenannte Datei, Zeilen, die am Ende fehlen, aber nur mit einem Anker. Wer die Datei ändern kann, kann auch die Kette neu berechnen, das zeigt erst der Anker in einer Kopie des Logs. Backups und synchronisierte Ordner kopieren die Datei.
+- **Löschen durch den Server:** Ab Phase 4 löscht der Server Dateien. Ein Fehler darin könnte mehr löschen als gewollt, deshalb die engen Grenzen und ein Test, der zeigt, dass nichts ausserhalb davon verschwindet. Leere Dateien des laufenden Tages bleiben bis zum nächsten Tag liegen.
+- **Anker:** Endet ein Prozess ohne Ordnung, fehlt der Anker seiner letzten Datei. Ein Anker auf stderr ist nur so viel wert wie die Sammlung der Logs, und liest ein Client stderr nicht, kann er verloren gehen.
 - **Zwischen Prüfung und Öffnen:** Derselbe Benutzer kann den Ordner oder `audit` zwischen Prüfung und Öffnen tauschen, weil Node.js kein `openat` hat. Der Abgleich der Inodes nach dem Öffnen macht das Fenster klein, schliesst es aber nicht.
 - **ACLs:** Geerbte ACLs prüft niemand. Unter macOS war eine Datei mit 0600 über eine geerbte ACL trotzdem für alle lesbar.
-- **Ohne `fsync`** gehen bei einem Absturz des Systems Zeilen verloren, die als geschrieben galten.
+- **Ohne `fsync`** gehen bei einem Absturz des Systems Zeilen verloren, die als geschrieben galten. Kommt `fsync` nach der Messung nur an festen Stellen, gilt das für die Zeilen seit dem letzten.
 - **Hängender Ordner:** Ein Ordner auf einem Netzlaufwerk, das nicht antwortet, hält bei jedem Schreiben den ganzen Server an, auch die Antworten und die Signale.
 - **Zurückgehaltene Aufrufe** haben bei ChurchTools gelesen und Kontingent verbraucht, und ihre Dauer verrät, dass sie liefen. Die Wache im `gate` vermeidet das, solange die Datei schon vorher kaputt ist.
 - **Uhr:** Uhrzeit, Datum der Datei und Wechsel des Tages kommen von der Uhr des Systems. Scheitert die Uhr, meldet die Senke die Zeit, und das Ergebnis eines Tools mit `sensitivity: special` wird zurückgehalten.
@@ -156,4 +221,5 @@ Das ADR bleibt «Vorgeschlagen», bis diese Teile darin stehen und der Maintaine
 - Seit dem 23.10.2026 laufen die Suchtools `ct_persons_search` und `ct_groups_search` mit `sensitivity: special` hinter dieser Sperre. Mit `ECCLIUM_SEARCH_TOOLS=true` und ohne `ECCLIUM_STATE_DIR` endet schon `ecclium config check` mit 78. `tests/stdio-start.test.mts` zeigt am echten Prozess, dass ein Suchtool sein Ergebnis zurückhält, wenn seine Zeile nicht in die Datei kommt (ADR 0060).
 - Seit dem 24.10.2026 tritt das Toolset `persons` an die Stelle von `ECCLIUM_SEARCH_TOOLS=true`: Mit `persons` und ohne `ECCLIUM_STATE_DIR` endet `ecclium config check` mit 78, und der Start prüft weiterhin jedes Tool seines Katalogs (ADR 0062).
 - Seit dem 26.10.2026 gelten Zurückhalten, Wache im `gate` und Prüfung beim Start auch für Tools, die der Katalog wie eines mit `sensitivity: special` behandelt, weil ihre Ausgabe Kennungen oder Namen anderer Personen trägt (ADR 0064), als erstes `ct_services_get_assignments` im Toolset `events`. Mit `events` und ohne `ECCLIUM_STATE_DIR` endet `ecclium config check` mit 78.
-- Offen: alles unter «Folgt vor Phase 4» und die Klärung des Datenschutzrechts. Ob ChurchTools Lesezugriffe über die API selbst je Konto protokolliert, ist nicht geprüft.
+- Seit dem 31.10.2026 entschieden und noch nicht gebaut: Schema, Katalog und Kennungen samt Klasse `groupId`, dann Kette, Anker, Frist, Löschung, leere Dateien und die Messung zu `fsync`, dann `ecclium audit verify` und `ecclium audit show`. Bis dahin bleibt `objectRefs` leer, und die Dateien haben weder Kette noch Frist.
+- Offen: Ob ChurchTools Lesezugriffe über die API selbst je Konto protokolliert, ist nicht geprüft.
