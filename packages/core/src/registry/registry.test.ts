@@ -184,6 +184,28 @@ describe('createToolCatalog', () => {
     expect(catalog.get('ct_y')?.inputRefs).toBeUndefined();
   });
 
+  // The pipeline replaces addresses and amounts with a marker, so the
+  // registry takes them since the level strict came (ADR 0026, ADR 0069).
+  it('accepts an output with an address and an amount', () => {
+    const catalog = catalogOf({
+      core: plugin(
+        'core',
+        adding(
+          tool('ct_x', {
+            output: z.object({
+              street: classify(z.string(), 'address'),
+              latitude: classify(z.number(), 'address').nullable(),
+              sum: classify(z.number(), 'amount').optional(),
+            }),
+          }),
+        ),
+      ),
+      plugins: [],
+      readOnly: true,
+    });
+    expect(catalog.get('ct_x')).toBeDefined();
+  });
+
   it('keeps the input schema the mount advertises, without the text of zod', () => {
     const catalog = catalogOf({
       core: plugin(
@@ -1007,18 +1029,11 @@ describe('refusals', () => {
       'tool_unclassified',
     ],
     [
-      'an output field with the class address',
+      'an address on a boolean, which no marker can stand for',
       tool('ct_x', {
-        output: z.object({ city: classify(z.string(), 'address') }),
+        output: z.object({ known: classify(z.boolean(), 'address') }),
       }),
-      'tool_unmasked',
-    ],
-    [
-      'an output field with the class amount',
-      tool('ct_x', {
-        output: z.object({ sum: classify(z.number(), 'amount') }),
-      }),
-      'tool_unmasked',
+      'tool_output',
     ],
   ] as const)('refuses %s', (_, value, reason) => {
     refuses([plugin('core', adding(value))], reason);

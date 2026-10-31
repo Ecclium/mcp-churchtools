@@ -78,11 +78,6 @@ export interface OutputShape {
   readonly root: ShapeNode & { readonly kind: 'object' };
   /** Leaves without a data class. The registry refuses a tool with one. */
   readonly unclassified: number;
-  /**
-   * Leaves of a class the core cannot mask yet, `address` and `amount`.
-   * The registry refuses a tool with one until their masks exist (ADR 0026).
-   */
-  readonly unmasked: number;
   /** The lowest sensitivity the classes of the output allow. */
   readonly minimumSensitivity: Sensitivity;
   /**
@@ -93,8 +88,17 @@ export interface OutputShape {
   readonly namesPersons: boolean;
 }
 
-// Classes without a mask until phase 4 (ADR 0026).
-const unmaskedClasses: readonly DataClass[] = ['address', 'amount'];
+/**
+ * Classes whose values the pipeline replaces with a marker as a whole:
+ * the street, postcode and coordinates of an address and an amount of
+ * money (ADR 0026, ADR 0069). Their leaves must be strings or numbers, so
+ * that the marker, a string, takes the place of a value of a known type
+ * and the mount can advertise both.
+ */
+export const markerClasses: readonly DataClass[] = Object.freeze([
+  'address',
+  'amount',
+]);
 
 // Classes that make a tool hold personal data.
 const personalClasses: readonly DataClass[] = [
@@ -154,6 +158,9 @@ const unsafeNames: readonly string[] = [
 
 const isTextClass = (dataClass: DataClass | undefined): boolean =>
   dataClass !== undefined && textClasses.includes(dataClass);
+
+const isMarkerClass = (dataClass: DataClass | undefined): boolean =>
+  dataClass !== undefined && markerClasses.includes(dataClass);
 
 /** The type and the definition of a schema of zod 4. */
 export interface Internals {
@@ -340,7 +347,6 @@ const unwrap = (schema: unknown): Unwrapped | undefined => {
 class OutputWalk {
   nodes = 0;
   unclassified = 0;
-  unmasked = 0;
   personal = false;
   namesPersons = false;
 
@@ -391,6 +397,13 @@ class OutputWalk {
     if (isTextClass(dataClass) && internals.type !== 'string') {
       return undefined;
     }
+    if (
+      isMarkerClass(dataClass) &&
+      internals.type !== 'string' &&
+      internals.type !== 'number'
+    ) {
+      return undefined;
+    }
     this.count(dataClass);
     return freezeNode({
       kind: 'leaf',
@@ -402,9 +415,10 @@ class OutputWalk {
 
   // A union of leaves only, such as a string or null. All classified options
   // must agree, so no option lowers the class of the field. A class the
-  // pipeline masks or wraps allows only strings and null as options. As in
-  // zod, the union may be missing when one of its options may, unless a
-  // wrapper around the union decides.
+  // pipeline masks or wraps allows only strings and null as options, one
+  // it replaces with a marker also numbers. As in zod, the union may be
+  // missing when one of its options may, unless a wrapper around the union
+  // decides.
   private union(
     schema: unknown,
     internals: Internals,
@@ -414,6 +428,7 @@ class OutputWalk {
     if (!Array.isArray(options) || options.length === 0) return undefined;
     let dataClass: DataClass | undefined;
     let onlyText = true;
+    let onlyTextOrNumber = true;
     let optional = false;
     let nullable = outer.nullable;
     const types = new Set<LeafType>();
@@ -435,6 +450,13 @@ class OutputWalk {
         if (optionType !== 'string' && optionType !== 'null') {
           onlyText = false;
         }
+        if (
+          optionType !== 'string' &&
+          optionType !== 'number' &&
+          optionType !== 'null'
+        ) {
+          onlyTextOrNumber = false;
+        }
         optional ||= unwrapped.optional === true;
         nullable ||= unwrapped.nullable;
         const optionClass = dataClassOf(option as z.core.$ZodType);
@@ -449,6 +471,7 @@ class OutputWalk {
     }
     if (this.nodes > maxSchemaNodes) return undefined;
     if (isTextClass(dataClass) && !onlyText) return undefined;
+    if (isMarkerClass(dataClass) && !onlyTextOrNumber) return undefined;
     this.count(dataClass);
     return freezeNode({
       kind: 'leaf',
@@ -521,7 +544,6 @@ class OutputWalk {
       this.unclassified += 1;
       return;
     }
-    if (unmaskedClasses.includes(dataClass)) this.unmasked += 1;
     if (personalClasses.includes(dataClass)) this.personal = true;
     if (personNameClasses.includes(dataClass)) this.namesPersons = true;
   }
@@ -538,7 +560,9 @@ class OutputWalk {
  * string, number, boolean, literal, enum, template literal and null.
  * The classes `email`, `phone`, `birthdate` and `untrusted` fit only a
  * string, or a union of strings and null, because the pipeline masks or
- * wraps their values as text.
+ * wraps their values as text. The classes `address` and `amount` fit a
+ * string or a number, or a union of them and null, because the pipeline
+ * replaces their values with a marker.
  * Refused are loose objects and catch-alls, `any`, `unknown`, records,
  * custom checks such as `refine`, transforms and pipes, `lazy`, bigint,
  * dates and every other form, literals and enums with a value JSON does not
@@ -551,7 +575,7 @@ class OutputWalk {
  * @example
  * ```ts
  * checkOutputSchema(z.object({ id: classify(z.number(), 'personId') }));
- * // { root: …, unclassified: 0, unmasked: 0, minimumSensitivity: 'personal',
+ * // { root: …, unclassified: 0, minimumSensitivity: 'personal',
  * //   namesPersons: true }
  * ```
  */
@@ -565,7 +589,6 @@ export function checkOutputSchema(schema: unknown): OutputShape | undefined {
     __proto__: null,
     root,
     unclassified: walk.unclassified,
-    unmasked: walk.unmasked,
     minimumSensitivity: walk.personal ? 'personal' : 'none',
     namesPersons: walk.namesPersons,
   });

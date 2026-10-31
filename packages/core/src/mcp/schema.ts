@@ -8,15 +8,18 @@
  * The output schema comes from the shape the registry kept, not from the
  * schema of the tool. Masks, the note on removed characters and the data
  * envelope change strings after `validateOutput`, so every string is
- * advertised without length, pattern, format or enum. Objects stay closed,
- * arrays have no bounds, and a tuple is bounded by its length.
+ * advertised without length, pattern, format or enum, and the marker that
+ * replaces an address or an amount is a string, also where the value was a
+ * number. Objects stay closed, arrays have no bounds, and a tuple is
+ * bounded by its length.
  *
  * @packageDocumentation
  */
-import type {
-  ObjectJsonSchema,
-  OutputShape,
-  ShapeNode,
+import {
+  markerClasses,
+  type ObjectJsonSchema,
+  type OutputShape,
+  type ShapeNode,
 } from '../registry/index.js';
 
 type JsonObject = Readonly<Record<string, unknown>>;
@@ -28,6 +31,16 @@ const typeOf = (types: readonly string[], nullable: boolean): unknown => {
   return all.length === 1 ? all[0] : Object.freeze([...all]);
 };
 
+// The types a leaf can have in a result. A marker takes the place of an
+// address or an amount, also of a number, so these leaves are strings as
+// well (ADR 0069).
+const leafTypes = (node: ShapeNode & { kind: 'leaf' }): readonly string[] =>
+  node.dataClass !== undefined &&
+  markerClasses.includes(node.dataClass) &&
+  !node.types.includes('string')
+    ? ['string', ...node.types]
+    : node.types;
+
 // The schema of one node of the kept shape. A value in an array is never
 // missing: the copy of the pipeline puts undefined in its place, which JSON
 // writes as null.
@@ -37,7 +50,7 @@ const outputNode = (node: ShapeNode, inArray: boolean): JsonObject => {
     case 'leaf':
       return Object.freeze({
         __proto__: null,
-        type: typeOf(node.types, nullable),
+        type: typeOf(leafTypes(node), nullable),
       });
     case 'array':
       return Object.freeze({

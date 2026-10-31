@@ -34,6 +34,25 @@ const expectFrozen = (schema: unknown): void => {
 };
 
 describe('deriveOutputSchema', () => {
+  // The marker of an address or an amount is a string (ADR 0069).
+  it('advertises addresses and amounts also as strings', () => {
+    expect(
+      deriveOutputSchema(
+        shapeOf(
+          z.object({
+            street: classify(z.string(), 'address'),
+            latitude: classify(z.number(), 'address').nullable(),
+            sum: classify(z.number(), 'amount'),
+          }),
+        ),
+      ).properties,
+    ).toEqual({
+      street: { type: 'string' },
+      latitude: { type: ['string', 'number', 'null'] },
+      sum: { type: ['string', 'number'] },
+    });
+  });
+
   it('advertises types, null and required fields, and no form of a string (golden)', () => {
     const schema = deriveOutputSchema(
       shapeOf(

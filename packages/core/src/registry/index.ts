@@ -39,10 +39,11 @@ export {
   toolsetOf,
   toolsetsOfAll,
 } from './toolsets.js';
-export type {
-  LeafType,
-  ObjectJsonSchema,
-  OutputShape,
-  ShapeNode,
-  ShapePresence,
+export {
+  type LeafType,
+  markerClasses,
+  type ObjectJsonSchema,
+  type OutputShape,
+  type ShapeNode,
+  type ShapePresence,
 } from './schema.js';

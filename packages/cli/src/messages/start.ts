@@ -164,9 +164,6 @@ const refusals: Readonly<Record<RefusalReason, Message>> = Object.freeze({
   tool_unclassified: refusal(
     'Das Ausgabeschema eines Tools hat ein Feld ohne Datenklasse.',
   ),
-  tool_unmasked: refusal(
-    'Das Ausgabeschema eines Tools hat ein Feld einer Datenklasse, die der Kern noch nicht maskieren kann.',
-  ),
   description_budget: refusal(
     'Die Beschreibungen aller Tools sind zusammen länger als erlaubt.',
   ),

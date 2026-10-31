@@ -178,6 +178,37 @@ describe('redact and markUntrusted', () => {
     });
   });
 
+  // Street, postcode, coordinates and amounts go as a whole (ADR 0069).
+  it('replace addresses and amounts with the marker at every level but off', () => {
+    const shape = object({
+      street: leaf('address'),
+      latitude: leaf('address'),
+      sum: leaf('amount'),
+      city: leaf('none'),
+      missing: leaf('address'),
+      empty: leaf('amount'),
+    });
+    const value = {
+      street: 'Musterstrasse 1',
+      latitude: 47.1,
+      sum: 120,
+      city: 'Musterstadt',
+      missing: null,
+      empty: '',
+    };
+    for (const level of ['standard', 'strict', 'unknown'] as const) {
+      expect(redact(value, shape, level as 'standard')).toEqual({
+        street: '[masked]',
+        latitude: '[masked]',
+        sum: '[masked]',
+        city: 'Musterstadt',
+        missing: null,
+        empty: '[masked]',
+      });
+    }
+    expect(redact(value, shape, 'off')).toEqual(value);
+  });
+
   it('leave numbers and booleans as they are and copy along the shape', () => {
     const shape = object({
       n: leaf('untrusted'),

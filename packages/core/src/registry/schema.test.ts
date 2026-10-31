@@ -344,14 +344,52 @@ describe('checkOutputSchema', () => {
       checkOutputSchema(
         z.object({
           a: classify(z.number(), 'personId'),
-          b: z.union([classify(z.number(), 'amount'), z.boolean()]),
+          b: z.union([classify(z.number(), 'none'), z.boolean()]),
         }),
       )?.root.fields,
     ).toEqual({
       a: leaf('personId', ['number']),
-      b: leaf('amount', ['number', 'boolean']),
+      b: leaf('none', ['number', 'boolean']),
     });
   });
+
+  // The pipeline replaces their values with a marker, a string (ADR 0069).
+  it.each(['address', 'amount'] as const)(
+    'takes the class %s on strings and numbers only',
+    (dataClass) => {
+      expect(
+        checkOutputSchema(
+          z.object({
+            a: classify(z.string(), dataClass),
+            b: classify(z.number(), dataClass).nullable(),
+            c: z.union([classify(z.number(), dataClass), z.string(), z.null()]),
+          }),
+        )?.root.fields,
+      ).toEqual({
+        a: leaf(dataClass, ['string']),
+        b: leaf(dataClass, ['number'], { nullable: true }),
+        c: leaf(dataClass, ['string', 'number', 'null']),
+      });
+      for (const other of [
+        z.boolean(),
+        z.enum(['a', 'b']),
+        z.literal(1),
+        z.templateLiteral(['a-', z.number()]),
+        z.null(),
+      ]) {
+        expect(
+          checkOutputSchema(z.object({ a: classify(other, dataClass) })),
+        ).toBeUndefined();
+      }
+      expect(
+        checkOutputSchema(
+          z.object({
+            a: z.union([classify(z.number(), dataClass), z.boolean()]),
+          }),
+        ),
+      ).toBeUndefined();
+    },
+  );
 
   it('takes a wrapped option of a union and the smallest maximum of an array', () => {
     const shape = checkOutputSchema(

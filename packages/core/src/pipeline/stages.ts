@@ -13,11 +13,12 @@ import { type ObjectDomain, objectRefOf } from '../audit/index.js';
 import {
   cleanText,
   maskBirthdate,
+  maskedValue,
   maskEmail,
   maskPhone,
   wrapInEnvelope,
 } from '../redaction/index.js';
-import type { ShapeNode } from '../registry/index.js';
+import { markerClasses, type ShapeNode } from '../registry/index.js';
 
 /** The deepest nesting of the input of a tool. */
 export const maxInputDepth = 16;
@@ -235,12 +236,13 @@ const maskOf = (
 
 /**
  * The stage `redact`. It masks e-mail addresses, phone numbers and dates of
- * birth by their data class, unless the level is `off`; any other level
- * masks, so a level the core does not know yet fails closed. Every other
- * string loses its hidden characters, with a note at its end when some were
- * removed, at every level, because hidden characters carry instructions,
- * not personal data. A leaf without a class cannot reach this stage since
- * the registry refuses it (ADR 0026); it would stay unmasked here.
+ * birth by their data class and replaces addresses and amounts with
+ * {@link maskedValue}, unless the level is `off`; any other level masks, so
+ * a level the core does not know yet fails closed. Every other string loses
+ * its hidden characters, with a note at its end when some were removed, at
+ * every level, because hidden characters carry instructions, not personal
+ * data. A leaf without a class cannot reach this stage since the registry
+ * refuses it (ADR 0026); it would stay unmasked here.
  *
  * @param value - The checked result.
  * @param root - The kept shape of the result.
@@ -258,6 +260,17 @@ export function redact(
   level: RedactionLevel,
 ): unknown {
   return mapLeaves(value, root, (leaf, dataClass) => {
+    // Street, postcode, coordinates and amounts go as a whole, numbers as
+    // well as text; the registry lets these classes only on both (ADR
+    // 0026, ADR 0069). A missing value stays missing.
+    if (
+      level !== 'off' &&
+      dataClass !== undefined &&
+      markerClasses.includes(dataClass) &&
+      (typeof leaf === 'string' || typeof leaf === 'number')
+    ) {
+      return maskedValue;
+    }
     if (typeof leaf !== 'string') return leaf;
     const mask = level === 'off' ? undefined : maskOf(dataClass);
     return mask === undefined ? cleanText(leaf) : mask(leaf);
