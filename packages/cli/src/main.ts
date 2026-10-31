@@ -1,8 +1,9 @@
 /**
  * The command line `ecclium` (ADR 0055), for every call but
  * `ecclium stdio`, which the executable hands to the start over stdio. It
- * takes over the environment, reads the arguments and runs the command; in
- * this version the only one is `ecclium config check`. Wrong calls get
+ * takes over the environment, reads the arguments and runs the command:
+ * `ecclium config check`, and `ecclium audit verify` and
+ * `ecclium audit show`, which read the audit files (ADR 0028). Wrong calls get
  * fixed German texts on stderr, never an argument, and every exit code
  * comes from `exit-codes.ts`.
  *
@@ -21,6 +22,8 @@ import {
   tokenVariableName,
 } from '@ecclium/mcp-churchtools-core';
 
+import { showAudit } from './commands/audit-show.js';
+import { verifyAudit } from './commands/audit-verify.js';
 import { checkConfig } from './commands/config-check.js';
 import { takeEnvironment } from './environment.js';
 import { type ExitCode, exitCodes } from './exit-codes.js';
@@ -45,17 +48,49 @@ export interface RunOptions {
   readonly load?: (sources: ConfigSources) => ConfigResult;
 }
 
-const command: readonly string[] = Object.freeze(['config', 'check']);
+/** A command: its words and the options it takes besides the help. */
+interface Command {
+  readonly words: readonly string[];
+  readonly options: readonly string[];
+}
+
+const commands: readonly Command[] = Object.freeze(
+  [
+    { words: ['config', 'check'], options: ['show-values'] },
+    { words: ['audit', 'verify'], options: ['log'] },
+    { words: ['audit', 'show'], options: ['object', 'since', 'until'] },
+  ].map((entry) =>
+    Object.freeze({
+      words: Object.freeze(entry.words),
+      options: Object.freeze(entry.options),
+    }),
+  ),
+);
 
 const options = Object.freeze({
   'show-values': Object.freeze({ type: 'boolean' }),
   help: Object.freeze({ type: 'boolean', short: 'h' }),
+  // Several logs, such as rotated ones (ADR 0028).
+  log: Object.freeze({ type: 'string', multiple: true }),
+  object: Object.freeze({ type: 'string' }),
+  since: Object.freeze({ type: 'string' }),
+  until: Object.freeze({ type: 'string' }),
 } as const);
+
+// The only option that may stand more than once.
+const repeatable: readonly string[] = Object.freeze(['log']);
 
 type Call =
   | { readonly kind: 'wrong'; readonly problem: UsageProblem }
   | { readonly kind: 'help' }
-  | { readonly kind: 'check'; readonly showValues: boolean };
+  | { readonly kind: 'check'; readonly showValues: boolean }
+  | { readonly kind: 'verify'; readonly logs: readonly string[] }
+  | {
+      readonly kind: 'show';
+      readonly object: string | undefined;
+      readonly since: string | undefined;
+      readonly until: string | undefined;
+    };
 
 // The kind of a refused call, from the code of the error of parseArgs
 // alone: its message repeats the argument, which can hold a token.
@@ -92,23 +127,47 @@ const readCall = (args: readonly string[]): Call => {
     return { kind: 'wrong', problem };
   }
   // parseArgs takes a repeated option and keeps the last one, so -hh and a
-  // doubled flag would pass without this.
+  // doubled flag would pass without this. Only the logs add up.
   const seen = new Set<string>();
   for (const token of parsed.tokens) {
     if (token.kind !== 'option') continue;
-    if (seen.has(token.name)) return { kind: 'wrong', problem: 'repeated' };
+    if (seen.has(token.name) && !repeatable.includes(token.name)) {
+      return { kind: 'wrong', problem: 'repeated' };
+    }
     seen.add(token.name);
   }
   const { positionals, values } = parsed;
-  const leading =
-    positionals.length <= command.length &&
-    positionals.every((word, index) => word === command[index]);
+  const leads = (entry: Command): boolean =>
+    positionals.length <= entry.words.length &&
+    positionals.every((word, index) => word === entry.words[index]);
   if (values.help === true) {
-    return leading ? { kind: 'help' } : { kind: 'wrong', problem: 'command' };
+    return commands.some(leads)
+      ? { kind: 'help' }
+      : { kind: 'wrong', problem: 'command' };
   }
-  return leading && positionals.length === command.length
-    ? { kind: 'check', showValues: values['show-values'] === true }
-    : { kind: 'wrong', problem: 'command' };
+  const chosen = commands.find(
+    (entry) => leads(entry) && positionals.length === entry.words.length,
+  );
+  if (chosen === undefined) return { kind: 'wrong', problem: 'command' };
+  // An option of another command is refused like an unknown one.
+  for (const name of seen) {
+    if (!chosen.options.includes(name)) {
+      return { kind: 'wrong', problem: 'option' };
+    }
+  }
+  switch (chosen.words.join(' ')) {
+    case 'audit verify':
+      return { kind: 'verify', logs: values.log ?? [] };
+    case 'audit show':
+      return {
+        kind: 'show',
+        object: values.object,
+        since: values.since,
+        until: values.until,
+      };
+    default:
+      return { kind: 'check', showValues: values['show-values'] === true };
+  }
 };
 
 /**
@@ -160,6 +219,16 @@ export function run(
           output,
           tokenFiles: runOptions.tokenFiles,
           load: runOptions.load,
+        });
+      case 'verify':
+        return verifyAudit({ environment: taken, logs: call.logs, output });
+      case 'show':
+        return showAudit({
+          environment: taken,
+          object: call.object,
+          since: call.since,
+          until: call.until,
+          output,
         });
     }
   } catch {
