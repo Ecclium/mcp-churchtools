@@ -196,10 +196,15 @@ export function renderVerifyReport(
       'Ergebnis: Nicht jede Datei liess sich lesen, sonst gibt es keinen Befund. Prüfen Sie die Rechte der Dateien und versuchen Sie es erneut.',
     );
   } else {
+    // A log without an anchor for any file, such as the log of another
+    // folder of state, checks nothing against anchors, which the result
+    // must not hide.
     lines.push(
       anchors === undefined
         ? 'Ergebnis: Die Ketten der Audit-Dateien sind ganz.'
-        : 'Ergebnis: Die Ketten der Audit-Dateien sind ganz und passen zu den Ankern aus dem Log.',
+        : report.anchors === 0
+          ? 'Ergebnis: Die Ketten der Audit-Dateien sind ganz. Das Log enthält aber keinen Anker zu einer dieser Dateien, gegen Anker ist nichts geprüft.'
+          : 'Ergebnis: Die Ketten der Audit-Dateien sind ganz und passen zu den Ankern aus dem Log.',
     );
   }
   return Object.freeze(lines);

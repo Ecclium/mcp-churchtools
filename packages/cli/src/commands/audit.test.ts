@@ -202,6 +202,18 @@ describe('ecclium audit verify', () => {
     );
   });
 
+  it('says when the log holds no anchor for any file', () => {
+    const { stateDir } = makeState({ [name]: lines });
+    const log = putLog(['no anchor in this line']);
+
+    const result = verify(stateDir, [log]);
+
+    expect(result.code).toBe(exitCodes.ok);
+    expect(result.stdout.at(-1)).toBe(
+      'Ergebnis: Die Ketten der Audit-Dateien sind ganz. Das Log enthält aber keinen Anker zu einer dieser Dateien, gegen Anker ist nichts geprüft.',
+    );
+  });
+
   it('finds a changed line and a changed last line with 65', () => {
     const changed = [...lines];
     changed[0] = (changed[0] ?? '').replace('"durationMs":3', '"durationMs":4');
