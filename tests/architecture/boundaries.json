@@ -215,6 +215,11 @@
       "description": "The pseudonyms of the level strict: the only module that imports @noble/ciphers for AES-256-GCM-SIV, so that no other code builds a cipher from a key for pseudonyms. One file of the redaction of core.",
       "paths": ["packages/core/src/redaction/pseudonym.ts"]
     },
+    "keys": {
+      "adr": "0069",
+      "description": "The keys of core: the holder of the secret behind the pseudonyms and the provider that derives the keys of a day from it. Only its own modules import its modules other than its entry index.ts, because one of them turns the secret back into its bytes.",
+      "paths": ["packages/core/src/keys/"]
+    },
     "environment": {
       "adr": "0055",
       "description": "Code that may read the environment and the arguments of the process: only the entry of the command line, which hands them to the core as parameters. Other code could otherwise read the token from them past the Secret.",

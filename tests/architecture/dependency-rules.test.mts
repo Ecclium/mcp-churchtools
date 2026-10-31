@@ -660,6 +660,22 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'keys-internals',
+    name: 'the configuration reads the bytes of a key',
+    files: {
+      'packages/core/src/config/forbidden.ts':
+        "import { revealKeyMaterial } from '../keys/key-material.js';\nexport const read = revealKeyMaterial;\n",
+    },
+  },
+  {
+    rule: 'keys-internals',
+    name: 'a test of the redaction reads the bytes of a key',
+    files: {
+      'packages/core/src/redaction/forbidden.test.ts':
+        "import { revealKeyMaterial } from '../keys/key-material.js';\nexport const read = revealKeyMaterial;\n",
+    },
+  },
+  {
     rule: 'mocked-transport-only-in-testkit',
     name: 'tools builds the transport on a MockAgent',
     files: {

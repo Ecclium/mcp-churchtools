@@ -265,6 +265,16 @@ export function dependencyRules(
       },
     },
     {
+      name: 'keys-internals',
+      severity: 'error',
+      comment: `${adr('keys')}: only modules of the keys import its modules other than its entry index.ts. One of them turns the secret for pseudonyms back into its bytes, which no other module may do. Tests in the packages are not exempt. Code outside the packages is not cruised; tests/architecture/reveal-key-material.test.mts covers it.`,
+      from: { pathNot: at('keys') },
+      to: {
+        path: at('keys'),
+        pathNot: [pathPattern(`${places.keys.paths[0] ?? ''}index.ts`)],
+      },
+    },
+    {
       name: 'transport-only-from-composition-root',
       severity: 'error',
       comment: `${adr('transportBuilders')}: only the composition root builds an HTTP transport, through the subpath ./http of core, so that no tool builds one with an origin of its own. Tests in the packages are not exempt.`,
