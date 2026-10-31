@@ -380,7 +380,13 @@ describe('the list of tools', () => {
   // In the level strict an ID of a person is a pseudonym in input and
   // output, a string (ADR 0069).
   it('advertises IDs of persons as pseudonyms in the level strict', async () => {
-    const { factory, options } = setup({ redaction: 'strict' });
+    const { factory, options } = setup({ redaction: 'strict' }, [
+      testTool('ct_test_person', () => ({ text: 'ok' }), {
+        input: z.object({
+          personId: classify(z.number().int().positive(), 'personId'),
+        }),
+      }),
+    ]);
     const connection = await modern.open(factory);
     const reply = await modern.ask(connection, 'tools/list');
     const tools = at(reply, 'result', 'tools') as {
@@ -396,6 +402,19 @@ describe('the list of tools', () => {
             JSON.parse(JSON.stringify(entry.strictInputSchema)) as unknown,
         ),
     );
+    const person = tools.find((tool) => tool.name === 'ct_test_person');
+    expect(person?.inputSchema).toEqual({
+      type: 'object',
+      properties: {
+        personId: {
+          type: 'string',
+          minLength: 42,
+          maxLength: 42,
+          pattern: '^p1_[a-z2-7]{39}$',
+        },
+      },
+      required: ['personId'],
+    });
     const profile = tools.find((tool) => tool.name === 'ct_example_profile');
     expect(profile?.outputSchema.properties.id).toEqual({ type: 'string' });
     expect(profile?.outputSchema.properties.lastName).toEqual({
