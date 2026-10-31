@@ -112,6 +112,12 @@ const contact = { email: makeCanary('email'), phone: makeCanary('phone') };
 const iban = ibanOf('CH', '00000000000000012');
 const ahv = ahvOf('000000001');
 const contactText = `Kontakt ${contact.email.value}, Telefon ${contact.phone.value}, IBAN ${printedIban(iban)}, AHV ${groupedAhv(ahv, '.')} bis bald`;
+// The same text as strict gives it: every value gone as a whole, so that
+// not even a part of a number written with spaces stays.
+const maskedContactText =
+  'Kontakt [email masked], Telefon [phone masked], IBAN [IBAN masked], AHV [AHV number masked] bis bald';
+const count = (text: string, part: string): number =>
+  text.split(part).length - 1;
 
 // The synthetic facts of the docs index with the contact text in every
 // summary of an operation, every title and text of the academy and the
@@ -971,6 +977,7 @@ describe.each(levels)('every tool at the level %s', (level) => {
         assertPlanted(outcome, [contact.email, contact.phone], 'free text');
         expect(text).toContain(printedIban(iban));
         expect(text).toContain(groupedAhv(ahv, '.'));
+        expect(count(text, contactText)).toBe(count(text, 'Kontakt '));
       }
       return;
     }
@@ -1003,6 +1010,9 @@ describe.each(levels)('every tool at the level %s', (level) => {
         expect(text).not.toContain(raw);
       }
       for (const marker of markers) expect(text).toContain(marker);
+      // Every copy of the contact text comes out masked as a whole.
+      expect(count(text, 'Kontakt ')).toBeGreaterThan(0);
+      expect(count(text, maskedContactText)).toBe(count(text, 'Kontakt '));
     }
   });
 });
