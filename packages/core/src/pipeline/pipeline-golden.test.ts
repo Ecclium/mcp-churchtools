@@ -111,7 +111,7 @@ const dataset = {
     {
       id: 13,
       firstName: 'Erika',
-      lastName: 'Müller',
+      lastName: 'Musterfrau',
       email: 'erika.musterfrau@example.org',
       birthdate: null,
       street: 'Musterweg 2',
@@ -123,8 +123,8 @@ const dataset = {
     },
     {
       id: 14,
-      firstName: 'Özlem',
-      lastName: 'Özdemir',
+      firstName: 'Anna',
+      lastName: 'Österfrau',
       email: null,
       phone: '0000 00 00 00',
       birthdate: '17.05.1980',
@@ -283,7 +283,7 @@ const expectedOff = {
     {
       id: 13,
       firstName: 'Erika',
-      lastName: 'Müller',
+      lastName: 'Musterfrau',
       email: 'erika.musterfrau@example.org',
       birthdate: null,
       street: 'Musterweg 2',
@@ -295,8 +295,8 @@ const expectedOff = {
     },
     {
       id: 14,
-      firstName: 'Özlem',
-      lastName: 'Özdemir',
+      firstName: 'Anna',
+      lastName: 'Österfrau',
       email: null,
       phone: '0000 00 00 00',
       birthdate: '17.05.1980',
@@ -332,7 +332,7 @@ const expectedStandard = {
     {
       id: 13,
       firstName: 'Erika',
-      lastName: 'Müller',
+      lastName: 'Musterfrau',
       email: 'e***@example.org',
       birthdate: null,
       street: '[masked]',
@@ -344,8 +344,8 @@ const expectedStandard = {
     },
     {
       id: 14,
-      firstName: 'Özlem',
-      lastName: 'Özdemir',
+      firstName: 'Anna',
+      lastName: 'Österfrau',
       email: null,
       phone: '0000 ** ** **',
       birthdate: '1980',
@@ -394,7 +394,7 @@ const expectedStrict = (pseudonyms: readonly string[]) => ({
     },
     {
       id: pseudonyms[2],
-      firstName: 'Özlem',
+      firstName: 'Anna',
       lastName: 'Ö.',
       email: null,
       phone: '0000 ** ** **',
@@ -427,11 +427,18 @@ describe('the golden result of each level', () => {
   });
 
   it('in strict also shortens last names, gives pseudonyms and checks free text', async () => {
+    // The pseudonyms come from the code under test, so their form and the
+    // absence of the IDs are checked on their own.
     const pseudonyms = await pseudonymsOf([12, 13, 14]);
     expect(new Set(pseudonyms).size).toBe(3);
-    expect(await dataOf('strict')).toBe(
-      JSON.stringify(expectedStrict(pseudonyms)),
-    );
+    for (const pseudonym of pseudonyms) {
+      expect(pseudonym).toMatch(/^p1_[a-z2-7]{39}$/u);
+    }
+    const strict = await dataOf('strict');
+    expect(strict).toBe(JSON.stringify(expectedStrict(pseudonyms)));
+    for (const id of ['12', '13', '14']) {
+      expect(strict).not.toContain(`"id":${id}`);
+    }
   });
 });
 
