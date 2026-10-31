@@ -7,6 +7,7 @@ import {
   objectDomains,
   objectRefOf,
 } from './index.js';
+import { objectRefFromText } from './object-ref.js';
 
 const guid = 'a1b2c3d4-0000-4000-8000-00000000000f';
 
@@ -102,5 +103,35 @@ describe('createObjectRefCollector', () => {
     const list = refs.list();
     expect(list.refs).toHaveLength(100);
     expect(list.omitted).toBe(99_902);
+  });
+});
+
+describe('objectRefFromText', () => {
+  it('makes the entry the audit writes from a typed ID', () => {
+    expect(objectRefFromText('person:12')).toBe('person:12');
+    expect(objectRefFromText('wiki_page:0')).toBe('wiki_page:0');
+    expect(objectRefFromText(`group:${guid.toUpperCase()}`)).toBe(
+      `group:${guid}`,
+    );
+  });
+
+  it('refuses every other text', () => {
+    for (const text of [
+      '',
+      'person',
+      ':12',
+      'person:',
+      'Person:12',
+      'people:12',
+      'person:Max',
+      'person:-1',
+      'person: 12',
+      'person:12:13',
+      `person:${'1'.repeat(17)}`,
+      `wiki_category:${guid}x`,
+      42 as unknown as string,
+    ]) {
+      expect(objectRefFromText(text)).toBeUndefined();
+    }
   });
 });
