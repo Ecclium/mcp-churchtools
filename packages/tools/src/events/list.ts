@@ -56,9 +56,9 @@ export const fewerDaysNeeded = `These days hold more than ${String(maxEvents)} e
 
 // Strict, so that an argument the model made up ends as a validation error.
 const input = z.strictObject({
-  from: z.string().regex(calendarDatePattern),
-  to: z.string().regex(calendarDatePattern),
-  page: z.number().int().min(1).max(maxEventPage).optional(),
+  from: classify(z.string().regex(calendarDatePattern), 'none'),
+  to: classify(z.string().regex(calendarDatePattern), 'none'),
+  page: classify(z.number().int().min(1).max(maxEventPage), 'none').optional(),
 });
 
 // People of the congregation name events and calendars, so both names are

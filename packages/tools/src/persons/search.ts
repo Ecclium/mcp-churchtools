@@ -47,7 +47,10 @@ const invalidTerm = `The search term needs 1 to ${String(maxSearchTermLength)} c
 // white space; the tool checks the rest itself, also what a pattern cannot
 // say, before it reads.
 const input = z.strictObject({
-  query: z.string().min(1).max(maxSearchTermLength).regex(/\S/),
+  query: classify(
+    z.string().min(1).max(maxSearchTermLength).regex(/\S/),
+    'none',
+  ),
 });
 
 // Only ID and names. The names keep their own classes and stay outside the

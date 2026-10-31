@@ -17,6 +17,7 @@ import {
   maxWikiSearchHits,
   maxWikiTitleLength,
   normalizeSearchTerm,
+  refersTo,
   type ToolCall,
   wikiPageGuidPattern,
 } from '@ecclium/mcp-churchtools-plugin-api';
@@ -44,13 +45,14 @@ const invalidTerm = `The search term needs 1 to ${String(maxSearchTermLength)} c
 
 // Strict, so that an argument the model made up ends as a validation error.
 const input = z.strictObject({
-  query: z.string().min(1).max(maxSearchTermLength).regex(/\S/),
-  categoryId: z
-    .number()
-    .int()
-    .positive()
-    .max(Number.MAX_SAFE_INTEGER)
-    .optional(),
+  query: classify(
+    z.string().min(1).max(maxSearchTermLength).regex(/\S/),
+    'none',
+  ),
+  categoryId: refersTo(
+    z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    'wiki_category',
+  ).optional(),
 });
 
 // Titles and previews are text people of the congregation write, so they

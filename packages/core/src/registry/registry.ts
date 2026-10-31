@@ -25,6 +25,7 @@ import {
   renderDescription,
   rightsPerOperation,
 } from './description.js';
+import { checkInputRefs, type InputRefNode } from './input-refs.js';
 import { checkMeta } from './meta.js';
 import { readFields } from './own.js';
 import { checkPrompt, type PromptEntry } from './prompt.js';
@@ -60,6 +61,11 @@ export interface CatalogEntry {
    * was added, frozen.
    */
   readonly inputSchema: ObjectJsonSchema;
+  /**
+   * Where the IDs of the input stand, kept when the tool was added, or
+   * `undefined` when the input has none (ADR 0028).
+   */
+  readonly inputRefs: InputRefNode | undefined;
   /** The output schema, checked when the tool was added. */
   readonly output: ZodType;
   /** What each field of the output holds, kept when the tool was added. */
@@ -207,8 +213,15 @@ const checkTool = (
     throw new RegistryRefusal('tool_description', where);
   }
   const inputSchema = checkInputSchema(fields.input);
-  if (inputSchema === undefined) {
+  const inputShape =
+    inputSchema === undefined ? undefined : checkInputRefs(fields.input);
+  if (inputSchema === undefined || inputShape === undefined) {
     throw new RegistryRefusal('tool_input', where);
+  }
+  // Every field of the input says what it holds, so that no ID leaves the
+  // audit through a class nobody set (ADR 0028).
+  if (inputShape.undeclared > 0) {
+    throw new RegistryRefusal('tool_input_unclassified', where);
   }
   const shape = checkOutputSchema(fields.output);
   if (shape === undefined) throw new RegistryRefusal('tool_output', where);
@@ -245,6 +258,7 @@ const checkTool = (
     description: renderDescription(description, rightsLine(meta)),
     input: fields.input as ZodType,
     inputSchema,
+    inputRefs: inputShape.refs,
     output: fields.output as ZodType,
     shape,
     asSpecial,

@@ -73,7 +73,7 @@ const tool = (name: `ct_${string}`, sensitivity: Sensitivity): ToolDefinition =>
       routineStable: false,
     },
     description,
-    input: z.strictObject({ query: z.string().max(10) }),
+    input: z.strictObject({ query: classify(z.string().max(10), 'none') }),
     output: z.object({ text: classify(z.string(), 'none') }),
     execute: () => {
       runs.push(name);

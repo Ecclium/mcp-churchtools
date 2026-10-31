@@ -42,7 +42,10 @@ export const pastLastResourcePage =
 
 // Strict, so that an argument the model made up ends as a validation error.
 const input = z.strictObject({
-  page: z.number().int().min(1).max(maxResourcePage).optional(),
+  page: classify(
+    z.number().int().min(1).max(maxResourcePage),
+    'none',
+  ).optional(),
 });
 
 // People of the congregation name resources and their types, so the names

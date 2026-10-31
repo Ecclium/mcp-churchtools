@@ -76,10 +76,13 @@ const searchOutput = z.object({
 // Strict, so that an argument the model made up ends as a validation
 // error. Module and name in the form the facts allow.
 const name = (max: number) =>
-  z
-    .string()
-    .max(max)
-    .regex(/^[\x21-\x7e](?:[\x20-\x7e]*[\x21-\x7e])?$/);
+  classify(
+    z
+      .string()
+      .max(max)
+      .regex(/^[\x21-\x7e](?:[\x20-\x7e]*[\x21-\x7e])?$/),
+    'none',
+  );
 const getInput = z.strictObject({ module: name(32), name: name(64) });
 
 const operationOutput = {

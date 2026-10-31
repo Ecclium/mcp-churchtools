@@ -37,7 +37,10 @@ export const noGroupDetails = `ChurchTools sent no details of this group, such a
 
 // Strict, so that an argument the model made up ends as a validation error.
 const input = z.strictObject({
-  groupId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  groupId: classify(
+    z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    'groupId',
+  ),
 });
 
 // Name, meeting time and note are text people of the congregation write,

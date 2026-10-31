@@ -152,6 +152,9 @@ const refusals: Readonly<Record<RefusalReason, Message>> = Object.freeze({
   tool_input: refusal(
     'Das Eingabeschema eines Tools ist kein geschlossenes Objekt oder lässt sich nicht als JSON Schema melden.',
   ),
+  tool_input_unclassified: refusal(
+    'Das Eingabeschema eines Tools hat ein Feld ohne Datenklasse und ohne Art eines Objekts.',
+  ),
   tool_output: refusal(
     'Das Ausgabeschema eines Tools erfüllt die Regeln für Tools nicht.',
   ),

@@ -43,13 +43,19 @@ export const parameterNamePattern = /^[A-Za-z][A-Za-z0-9_.[\]-]{0,63}$/;
 // The words of a search, as for the docs tools: not blank and without
 // control characters.
 const input = z.strictObject({
-  query: z
-    .string()
-    .min(1)
-    .max(maxDocsQueryLength)
-    .regex(/\S/u)
-    .regex(/^\P{Cc}*$/u),
-  limit: z.number().int().min(1).max(maxActionHits).optional(),
+  query: classify(
+    z
+      .string()
+      .min(1)
+      .max(maxDocsQueryLength)
+      .regex(/\S/u)
+      .regex(/^\P{Cc}*$/u),
+    'none',
+  ),
+  limit: classify(
+    z.number().int().min(1).max(maxActionHits),
+    'none',
+  ).optional(),
 });
 
 const sensitivityOutput = classify(

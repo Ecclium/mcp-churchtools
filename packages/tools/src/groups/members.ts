@@ -56,8 +56,14 @@ export const emptyMemberPageMoreFollow =
 
 // Strict, so that an argument the model made up ends as a validation error.
 const input = z.strictObject({
-  groupId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-  page: z.number().int().min(1).max(maxGroupMembersPage).optional(),
+  groupId: classify(
+    z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    'groupId',
+  ),
+  page: classify(
+    z.number().int().min(1).max(maxGroupMembersPage),
+    'none',
+  ).optional(),
 });
 
 // The names keep their own classes and stay outside the data envelope, as

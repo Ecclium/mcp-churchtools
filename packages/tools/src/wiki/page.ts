@@ -15,6 +15,7 @@ import {
   EccliumError,
   isEccliumError,
   maxWikiTitleLength,
+  refersTo,
   type ToolCall,
   wikiPageGuidPattern,
 } from '@ecclium/mcp-churchtools-plugin-api';
@@ -52,10 +53,17 @@ export const partOutOfRange = (parts: number): string =>
 // The GUID has the form the OpenAPI document of ChurchTools gives; the
 // client checks it again before it fills a path.
 const input = z.strictObject({
-  categoryId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-  guid: z.string().regex(wikiPageGuidPattern),
-  part: z.number().int().min(1).max(maxPart).optional(),
-  version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+  categoryId: refersTo(
+    z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    'wiki_category',
+  ),
+  guid: refersTo(z.string().regex(wikiPageGuidPattern), 'wiki_page'),
+  part: classify(z.number().int().min(1).max(maxPart), 'none').optional(),
+  // The number of a version of the page, no object of its own.
+  version: classify(
+    z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    'none',
+  ).optional(),
 });
 
 // Title and text are written by people of the congregation, so both stand

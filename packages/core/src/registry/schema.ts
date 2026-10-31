@@ -155,12 +155,21 @@ const unsafeNames: readonly string[] = [
 const isTextClass = (dataClass: DataClass | undefined): boolean =>
   dataClass !== undefined && textClasses.includes(dataClass);
 
-interface Internals {
+/** The type and the definition of a schema of zod 4. */
+export interface Internals {
   readonly type: string;
   readonly def: Readonly<Record<string, unknown>>;
 }
 
-const own = (value: unknown, key: string): unknown => {
+/**
+ * An own data property of a value, never inherited and never through a
+ * getter.
+ *
+ * @param value - Any value.
+ * @param key - The name of the property.
+ * @returns Its value, or `undefined`.
+ */
+export const own = (value: unknown, key: string): unknown => {
   if (typeof value !== 'object' || value === null) return undefined;
   const descriptor = Reflect.getOwnPropertyDescriptor(value, key);
   return descriptor !== undefined && 'value' in descriptor
@@ -168,9 +177,14 @@ const own = (value: unknown, key: string): unknown => {
     : undefined;
 };
 
-// The definition of a schema of zod 4, or undefined for anything else,
-// such as a schema of zod 3, which another copy of the registry would hold.
-const internalsOf = (schema: unknown): Internals | undefined => {
+/**
+ * The definition of a schema of zod 4, or `undefined` for anything else,
+ * such as a schema of zod 3, which another copy of the registry would hold.
+ *
+ * @param schema - Any value.
+ * @returns Type and definition of the schema.
+ */
+export const internalsOf = (schema: unknown): Internals | undefined => {
   const zod = own(schema, '_zod');
   if (own(own(zod, 'version'), 'major') !== 4) return undefined;
   const def = own(zod, 'def');

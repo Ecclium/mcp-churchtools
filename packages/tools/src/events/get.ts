@@ -14,6 +14,7 @@ import {
   maxEventDescriptionLength,
   maxEventNoteLength,
   maxNameLength,
+  refersTo,
   type ToolCall,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { z } from 'zod';
@@ -23,7 +24,10 @@ import { eventNotFound, eventRefused, eventsRight } from './rights.js';
 
 // Strict, so that an argument the model made up ends as a validation error.
 const input = z.strictObject({
-  eventId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  eventId: refersTo(
+    z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    'event',
+  ),
 });
 
 // Names, note and description are text people of the congregation wrote:

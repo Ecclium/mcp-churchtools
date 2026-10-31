@@ -39,12 +39,15 @@ export const maxDocsQueryLength = 200;
 
 // The words of a search: not blank and without control characters, so
 // that nothing but words reaches the search.
-const query = z
-  .string()
-  .min(1)
-  .max(maxDocsQueryLength)
-  .regex(/\S/u)
-  .regex(/^\P{Cc}*$/u);
+const query = classify(
+  z
+    .string()
+    .min(1)
+    .max(maxDocsQueryLength)
+    .regex(/\S/u)
+    .regex(/^\P{Cc}*$/u),
+  'none',
+);
 
 /**
  * The input of a search: the words and how many hits at most. Strict, so
@@ -52,7 +55,7 @@ const query = z
  */
 export const searchInput = z.strictObject({
   query,
-  limit: z.number().int().min(1).max(maxDocsHits).optional(),
+  limit: classify(z.number().int().min(1).max(maxDocsHits), 'none').optional(),
 });
 
 /** The checked input of a search. */

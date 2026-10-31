@@ -20,6 +20,7 @@ import {
   maxAppointments,
   maxListIds,
   maxNameLength,
+  refersTo,
   type ToolCall,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { z } from 'zod';
@@ -63,14 +64,20 @@ export const pastLastAppointmentPage =
  */
 export const fewerAppointmentsNeeded = `These calendars and days hold more than ${String(maxAppointments)} appointments, more than this tool lists. Ask for fewer days or fewer calendars.`;
 
-const id = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+const calendarId = refersTo(
+  z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  'calendar',
+);
 
 // Strict, so that an argument the model made up ends as a validation error.
 const input = z.strictObject({
-  calendarIds: z.array(id).min(1).max(maxListIds),
-  from: z.string().regex(calendarDatePattern),
-  to: z.string().regex(calendarDatePattern),
-  page: z.number().int().min(1).max(maxAppointmentPage).optional(),
+  calendarIds: z.array(calendarId).min(1).max(maxListIds),
+  from: classify(z.string().regex(calendarDatePattern), 'none'),
+  to: classify(z.string().regex(calendarDatePattern), 'none'),
+  page: classify(
+    z.number().int().min(1).max(maxAppointmentPage),
+    'none',
+  ).optional(),
 });
 
 // Title, subtitle and place are text people of the congregation wrote:

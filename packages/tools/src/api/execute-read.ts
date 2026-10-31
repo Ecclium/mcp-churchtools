@@ -40,13 +40,19 @@ export const maxAnswerLength = 61_440;
 // The values only roughly: names of parameters and values of simple kinds.
 // The core checks each against the catalog, so that there is one place
 // that decides what reaches ChurchTools (ADR 0067). Strict, so that an
-// argument the model made up ends as a validation error.
+// argument the model made up ends as a validation error. Which object a
+// value names depends on the operation, so the values carry the class
+// none here: the core records the IDs of the request from its own check
+// against the catalog (ADR 0028).
 const name = z.string().regex(parameterNamePattern);
-const text = z.string().max(maxApiTextLength);
-const number = z.number();
-const scalar = z.union([number, text, z.boolean()]);
+const text = classify(z.string().max(maxApiTextLength), 'none');
+const number = classify(z.number(), 'none');
+const scalar = z.union([number, text, classify(z.boolean(), 'none')]);
 const input = z.strictObject({
-  operationId: z.string().regex(/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/),
+  operationId: classify(
+    z.string().regex(/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/),
+    'none',
+  ),
   path: z.record(name, z.union([number, text])).optional(),
   query: z
     .record(name, z.union([scalar, z.array(scalar).max(maxApiListValues)]))
