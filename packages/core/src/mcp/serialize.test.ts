@@ -8,13 +8,14 @@ import {
   resultBytes,
   resultReserveBytes,
 } from '../pipeline/stages.js';
+import { sealRedacted } from '../redaction/redacted.js';
 import { serializeOutcome } from './serialize.js';
 
 const encoder = new TextEncoder();
 const bytes = (text: string): number => encoder.encode(text).byteLength;
 
 const success = (data: Record<string, unknown>): ToolOutcome =>
-  Object.freeze({ ok: true, data: Object.freeze(data) });
+  Object.freeze({ ok: true, data: sealRedacted(data) });
 
 // Text that JSON escapes in every way it can. Invisible characters come
 // from code points, so no tool rewrites them in this file.
@@ -102,6 +103,37 @@ describe('serializeOutcome for a success', () => {
     expect(bytes(JSON.stringify(result))).toBeLessThanOrEqual(
       maxResultBytes - resultReserveBytes + 58,
     );
+  });
+});
+
+describe('serializeOutcome for data without the mark of a redacted result', () => {
+  const internal = {
+    content: [{ type: 'text', text: fixedSentences.internal }],
+    isError: true,
+  };
+
+  it.each([
+    ['plain data', { email: 'max.mustermann@example.org' }],
+    ['a copy of marked data', { ...sealRedacted({ id: 1 }) }],
+    [
+      'a proxy that reports every property',
+      new Proxy(
+        {},
+        {
+          getOwnPropertyDescriptor: () => ({
+            value: true,
+            writable: false,
+            enumerable: false,
+            configurable: false,
+          }),
+        },
+      ),
+    ],
+  ])('sends the fixed sentence of internal instead of %s', (_name, data) => {
+    // A cast, as code compiled on its own could make, gets past the types
+    // but not past the check at run time (ADR 0026).
+    const forged = { ok: true, data } as unknown as ToolOutcome;
+    expect(serializeOutcome(forged)).toEqual(internal);
   });
 });
 

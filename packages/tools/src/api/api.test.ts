@@ -232,7 +232,7 @@ describe('ct_api_search_actions', () => {
     });
     expect(outcome.ok).toBe(true);
     const data = outcome.ok
-      ? (outcome.data as {
+      ? (outcome.data as unknown as {
           hits: {
             operationId: string;
             path: string;
@@ -294,7 +294,7 @@ describe('ct_api_search_actions', () => {
       limit: 1,
     });
     const hits = outcome.ok
-      ? (outcome.data as { hits: { operationId: string }[] }).hits
+      ? (outcome.data as unknown as { hits: { operationId: string }[] }).hits
       : [];
     expect(hits).toHaveLength(1);
     expect(hits[0]?.operationId).not.toBe('get-persons-birthdays');
@@ -308,7 +308,7 @@ describe('ct_api_search_actions', () => {
     });
     expect(outcome.ok && outcome.data).toMatchObject({ more: true });
     expect(
-      outcome.ok && (outcome.data as { hits: unknown[] }).hits,
+      outcome.ok && (outcome.data as unknown as { hits: unknown[] }).hits,
     ).toHaveLength(1);
     expect(defaultActionHits).toBe(5);
   });
@@ -339,7 +339,7 @@ describe('ct_api_execute_read', () => {
     });
     expect(outcome.ok).toBe(true);
     const data = outcome.ok
-      ? (outcome.data as {
+      ? (outcome.data as unknown as {
           operationId: string;
           sensitivity: string;
           answer: string;
@@ -370,7 +370,9 @@ describe('ct_api_execute_read', () => {
     );
     expect(
       JSON.parse(
-        unwrap(outcome.ok && (outcome.data as { answer: string }).answer),
+        unwrap(
+          outcome.ok && (outcome.data as unknown as { answer: string }).answer,
+        ),
       ),
     ).toEqual({ data: { email: 'max.mustermann@example.org' } });
   });

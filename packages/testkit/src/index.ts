@@ -101,6 +101,7 @@ export {
   type QuotaStoreCheck,
   quotaStoreChecks,
 } from './quota/index.js';
+export { redactedOutcome } from './redacted/index.js';
 export { ahvOf, groupedAhv, ibanOf, printedIban } from './synthetic-numbers.js';
 export {
   compatibilityForms,

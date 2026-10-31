@@ -12,7 +12,9 @@
  * 5. `execute` with read access that is revoked afterwards,
  * 6. `validateOutput`, which drops every field the schema does not declare,
  * 7. `redact` and 8. `markUntrusted` with a boundary drawn for the call,
- * 9. the limit on the size of the result as the client receives it,
+ * 9. the limit on the size of the result as the client receives it, and
+ *    the mark of a redacted result, the only kind the mount sends (ADR
+ *    0026),
  * 10. `audit`, in `finally`, also when a stage fails, with the IDs the
  *     call asks for and the IDs of the persons and groups its result
  *     names, derived from the schemas of the tool and the checked request
@@ -85,6 +87,7 @@ import {
   specialReadBudget,
 } from '../quota/budget.js';
 import { openPseudonyms, type Pseudonyms } from '../redaction/pseudonym.js';
+import { type Redacted, sealRedacted } from '../redaction/redacted.js';
 import { createTenantContext } from '../tenant/context.js';
 import { createReadAccess, type ReadAccess } from './read-api.js';
 import {
@@ -122,9 +125,13 @@ export interface ToolRequest {
   readonly signal: AbortSignal;
 }
 
-/** What a call returns, before the mount turns it into MCP. */
+/**
+ * What a call returns, before the mount turns it into MCP. The data of a
+ * success carry the mark of a redacted result, which only the pipeline
+ * gives and the mount checks at run time as well (ADR 0026).
+ */
 export type ToolOutcome =
-  | { readonly ok: true; readonly data: Readonly<Record<string, unknown>> }
+  | { readonly ok: true; readonly data: Redacted }
   | { readonly ok: false; readonly error: ErrorDescription };
 
 /** The pipeline of one ChurchTools instance. */
@@ -614,8 +621,14 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       ctx.log.warn('tool_result_too_large');
       return failed('upstream', tooLarge);
     }
+    // The mark of a redacted result, the only kind the mount sends (ADR
+    // 0026).
     return {
-      outcome: Object.freeze({ __proto__: null, ok: true, data }),
+      outcome: Object.freeze({
+        __proto__: null,
+        ok: true,
+        data: sealRedacted(data),
+      }),
       audit: 'ok',
     };
   };

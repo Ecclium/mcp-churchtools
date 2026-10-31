@@ -700,6 +700,28 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'redacted-mark-only-in-pipeline',
+    name: 'a tool marks its own result as redacted',
+    files: {
+      'packages/tools/src/forbidden.ts': `import { sealRedacted } from '${nameOf('core')}/redaction/testing';\nexport const seal = sealRedacted;\n`,
+    },
+  },
+  {
+    rule: 'redacted-mark-only-in-pipeline',
+    name: 'the mount outside its serialisation marks a result',
+    files: {
+      'packages/core/src/mcp/forbidden.ts':
+        "import { sealRedacted } from '../redaction/redacted.js';\nexport const seal = sealRedacted;\n",
+    },
+  },
+  {
+    rule: 'redacted-mark-only-in-pipeline',
+    name: 'testkit outside its stand-in outcomes marks a result',
+    files: {
+      'packages/testkit/src/forbidden.ts': `import { sealRedacted } from '${nameOf('core')}/redaction/testing';\nexport const seal = sealRedacted;\n`,
+    },
+  },
+  {
     rule: 'mocked-transport-only-in-testkit',
     name: 'tools builds the transport on a MockAgent',
     files: {

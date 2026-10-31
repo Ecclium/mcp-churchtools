@@ -45,6 +45,7 @@ import {
 import { createLogger } from '../logger/index.js';
 import { createToolPipeline, type ToolPipeline } from '../pipeline/index.js';
 import { maxResultBytes, resultBytes } from '../pipeline/stages.js';
+import { sealRedacted } from '../redaction/redacted.js';
 import { createToolCatalog } from '../registry/index.js';
 import { deriveAnnotations } from './annotations.js';
 import { createMcpMount, type McpMountOptions } from './mount.js';
@@ -723,7 +724,10 @@ describe('the resolver of the tenant', () => {
     const pipeline: ToolPipeline = {
       call: (_name, _input, request) => {
         listeners.push(getEventListeners(request.signal, 'abort').length);
-        return Promise.resolve({ ok: true, data: { text: 'ok' } });
+        return Promise.resolve({
+          ok: true,
+          data: sealRedacted({ text: 'ok' }),
+        });
       },
     };
     const { factory } = setup({ pipeline });

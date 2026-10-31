@@ -220,6 +220,20 @@
       "description": "Code that may turn IDs of persons into pseudonyms and back: the pipeline, which does it for every call in the level strict.",
       "paths": ["packages/core/src/pipeline/"]
     },
+    "redactedMark": {
+      "adr": "0026",
+      "description": "The mark of a redacted result: the only module that makes it and checks it. Only the place redactedUsers and tests import it, so that no other code makes a result that the mount sends. One file of the redaction of core, behind the subpath ./redaction/testing.",
+      "paths": ["packages/core/src/redaction/redacted.ts"]
+    },
+    "redactedUsers": {
+      "adr": "0026",
+      "description": "Code that may mark a result as redacted or read the mark: the pipeline, which marks the result of every call after redact, markUntrusted and the check of its size, the serialisation of the mount, which sends only a marked result, and in testkit the stand-in outcomes for tests of a server.",
+      "paths": [
+        "packages/core/src/pipeline/",
+        "packages/core/src/mcp/serialize.ts",
+        "packages/testkit/src/redacted/"
+      ]
+    },
     "keys": {
       "adr": "0069",
       "description": "The keys of core: the holder of the secret behind the pseudonyms and the provider that derives the keys of a day from it. Only its own modules import the holder other than through its entry index.ts, because it turns the secret back into its bytes, and only the composition root and tests import the provider, which gives the key of any day.",
