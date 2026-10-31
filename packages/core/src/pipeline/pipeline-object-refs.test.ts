@@ -129,8 +129,8 @@ const apiTool: ToolDefinition = {
   },
 } as unknown as ToolDefinition;
 
-// Takes the GUID of a page and names a person by a text, which a plugin
-// could fill with anything.
+// Takes the GUID of a page and names a group by a text, which a plugin
+// could fill with anything. The ID of a person must be a number (ADR 0069).
 const badIdsTool: ToolDefinition = {
   name: 'ct_test_bad_ids',
   meta: meta('wiki'),
@@ -139,7 +139,7 @@ const badIdsTool: ToolDefinition = {
     guid: refersTo(z.string().max(100), 'wiki_page'),
     owner: classify(z.string().max(50), 'none'),
   }),
-  output: z.object({ owner: classify(z.string().max(50), 'personId') }),
+  output: z.object({ owner: classify(z.string().max(50), 'groupId') }),
   execute: ({ input }: { readonly input: unknown }) =>
     Promise.resolve({ owner: (input as { owner: string }).owner }),
 } as unknown as ToolDefinition;
@@ -379,7 +379,7 @@ describe('the IDs of a call', () => {
       },
       {
         outcome: 'ok',
-        objectRefs: [`wiki_page:${guid.toLowerCase()}`, 'person:12'],
+        objectRefs: [`wiki_page:${guid.toLowerCase()}`, 'group:12'],
       },
     ]);
   });

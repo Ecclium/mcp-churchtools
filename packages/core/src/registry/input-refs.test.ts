@@ -193,6 +193,7 @@ describe('checkInputRefs', () => {
 
   it.each([
     ['a bigint', classify(z.bigint(), 'personId')],
+    ['a text for a person', classify(z.string().max(10), 'personId')],
     ['a date', refersTo(z.date(), 'event')],
     ['a boolean', classify(z.boolean(), 'groupId')],
   ])('refuses an ID that is %s, which has no form of an ID', (_what, leaf) => {

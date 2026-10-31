@@ -202,8 +202,11 @@ class InputWalk {
     const domain = kind ?? domainOfClass(dataClass);
     if (domain === undefined) return undefined;
     // An ID is a whole number or text such as a GUID; a bigint or a date
-    // would never have the form the audit takes.
+    // would never have the form the audit takes. The ID of a person is a
+    // number, because the level strict takes a pseudonym of a whole number
+    // in its place (ADR 0069).
     if (type !== 'number' && type !== 'string') throw new Refused();
+    if (domain === 'person' && type !== 'number') throw new Refused();
     return freeze({ kind: 'leaf', domain });
   }
 
@@ -311,9 +314,9 @@ class InputWalk {
  *   checked as a closed object.
  * @returns The kept shape, or `undefined` when the walk refuses the
  *   schema: a lazy schema, an ID inside a pipe, a kind next to a class
- *   other than `none`, an ID that is no number or text, leaves of a union
- *   that name different kinds, a
- *   class or kind the registry cannot read, or more than the bounds of
+ *   other than `none`, an ID that is no number or text, an ID of a
+ *   person that is no number, leaves of a union that name different kinds,
+ *   a class or kind the registry cannot read, or more than the bounds of
  *   nodes and depth of an output schema.
  * @throws {Error} Whatever else goes wrong while the schema is read, such
  *   as a getter of a definition that throws.

@@ -297,7 +297,7 @@ describe('checkOutputSchema', () => {
     expect(checkOutputSchema(schema)).toBeUndefined();
   });
 
-  it.each(['email', 'phone', 'birthdate', 'untrusted'] as const)(
+  it.each(['name.last', 'email', 'phone', 'birthdate', 'untrusted'] as const)(
     'refuses the class %s on a leaf that is no string',
     (dataClass) => {
       for (const leaf of [
@@ -351,6 +351,39 @@ describe('checkOutputSchema', () => {
       a: leaf('personId', ['number']),
       b: leaf('none', ['number', 'boolean']),
     });
+  });
+
+  // The level strict turns it into a pseudonym of a whole number (ADR 0069).
+  it('takes the class personId on numbers only', () => {
+    expect(
+      checkOutputSchema(
+        z.object({
+          a: classify(z.number().int(), 'personId'),
+          b: z.union([classify(z.number(), 'personId'), z.null()]),
+        }),
+      )?.root.fields,
+    ).toEqual({
+      a: leaf('personId', ['number']),
+      b: leaf('personId', ['number', 'null']),
+    });
+    for (const other of [
+      z.string(),
+      z.enum(['a', 'b']),
+      z.literal(1),
+      z.boolean(),
+      z.null(),
+    ]) {
+      expect(
+        checkOutputSchema(z.object({ a: classify(other, 'personId') })),
+      ).toBeUndefined();
+    }
+    expect(
+      checkOutputSchema(
+        z.object({
+          a: z.union([classify(z.number(), 'personId'), z.string()]),
+        }),
+      ),
+    ).toBeUndefined();
   });
 
   // The pipeline replaces their values with a marker, a string (ADR 0069).

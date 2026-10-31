@@ -140,15 +140,22 @@ const wrapperTypes: readonly string[] = [
   'readonly',
 ];
 
-// Classes whose leaves the pipeline masks or wraps in the data envelope.
-// Their leaves must be strings, so that a mask or an envelope never changes
-// the type of a value (ADR 0024).
+// Classes whose leaves the pipeline masks, shortens or wraps in the data
+// envelope. Their leaves must be strings, so that a mask or an envelope
+// never changes the type of a value (ADR 0024, ADR 0069).
 const textClasses: readonly DataClass[] = [
+  'name.last',
   'email',
   'phone',
   'birthdate',
   'untrusted',
 ];
+
+// The ID of a person: the level strict turns it into a pseudonym, which
+// holds a whole number, so its leaves must be numbers (ADR 0069). A text
+// would only fail at a call, not at the start.
+const isNumberClass = (dataClass: DataClass | undefined): boolean =>
+  dataClass === 'personId';
 
 const unsafeNames: readonly string[] = [
   '__proto__',
@@ -397,6 +404,9 @@ class OutputWalk {
     if (isTextClass(dataClass) && internals.type !== 'string') {
       return undefined;
     }
+    if (isNumberClass(dataClass) && internals.type !== 'number') {
+      return undefined;
+    }
     if (
       isMarkerClass(dataClass) &&
       internals.type !== 'string' &&
@@ -416,9 +426,9 @@ class OutputWalk {
   // A union of leaves only, such as a string or null. All classified options
   // must agree, so no option lowers the class of the field. A class the
   // pipeline masks or wraps allows only strings and null as options, one
-  // it replaces with a marker also numbers. As in zod, the union may be
-  // missing when one of its options may, unless a wrapper around the union
-  // decides.
+  // it replaces with a marker also numbers, and the ID of a person only
+  // numbers and null. As in zod, the union may be missing when one of its
+  // options may, unless a wrapper around the union decides.
   private union(
     schema: unknown,
     internals: Internals,
@@ -429,6 +439,7 @@ class OutputWalk {
     let dataClass: DataClass | undefined;
     let onlyText = true;
     let onlyTextOrNumber = true;
+    let onlyNumber = true;
     let optional = false;
     let nullable = outer.nullable;
     const types = new Set<LeafType>();
@@ -457,6 +468,9 @@ class OutputWalk {
         ) {
           onlyTextOrNumber = false;
         }
+        if (optionType !== 'number' && optionType !== 'null') {
+          onlyNumber = false;
+        }
         optional ||= unwrapped.optional === true;
         nullable ||= unwrapped.nullable;
         const optionClass = dataClassOf(option as z.core.$ZodType);
@@ -472,6 +486,7 @@ class OutputWalk {
     if (this.nodes > maxSchemaNodes) return undefined;
     if (isTextClass(dataClass) && !onlyText) return undefined;
     if (isMarkerClass(dataClass) && !onlyTextOrNumber) return undefined;
+    if (isNumberClass(dataClass) && !onlyNumber) return undefined;
     this.count(dataClass);
     return freezeNode({
       kind: 'leaf',
@@ -558,11 +573,13 @@ class OutputWalk {
  * at most {@link maxArrayLength}, tuples without rest, unions of leaves, the
  * wrappers `optional`, `nullable`, `default` and `readonly`, and the leaves
  * string, number, boolean, literal, enum, template literal and null.
- * The classes `email`, `phone`, `birthdate` and `untrusted` fit only a
- * string, or a union of strings and null, because the pipeline masks or
- * wraps their values as text. The classes `address` and `amount` fit a
- * string or a number, or a union of them and null, because the pipeline
- * replaces their values with a marker.
+ * The classes `name.last`, `email`, `phone`, `birthdate` and `untrusted`
+ * fit only a string, or a union of strings and null, because the pipeline
+ * shortens, masks or wraps their values as text. The classes `address` and
+ * `amount` fit a string or a number, or a union of them and null, because
+ * the pipeline replaces their values with a marker. The class `personId`
+ * fits only a number, or a union of numbers and null, because the level
+ * `strict` turns it into a pseudonym of a whole number.
  * Refused are loose objects and catch-alls, `any`, `unknown`, records,
  * custom checks such as `refine`, transforms and pipes, `lazy`, bigint,
  * dates and every other form, literals and enums with a value JSON does not
