@@ -210,6 +210,11 @@
       "description": "The operation catalog of the escape hatch: the part pnpm docs:refresh writes from the facts of the OpenAPI document and the classification of each operation by hand. Only the modules of the raw client import it, so that no other module chooses an operation past the checks of the client.",
       "paths": ["packages/core/src/churchtools/catalog/"]
     },
+    "aesGcmSiv": {
+      "adr": "0069",
+      "description": "The pseudonyms of the level strict: the only module that imports @noble/ciphers for AES-256-GCM-SIV, so that no other code builds a cipher from a key for pseudonyms. One file of the redaction of core.",
+      "paths": ["packages/core/src/redaction/pseudonym.ts"]
+    },
     "environment": {
       "adr": "0055",
       "description": "Code that may read the environment and the arguments of the process: only the entry of the command line, which hands them to the core as parameters. Other code could otherwise read the token from them past the Secret.",

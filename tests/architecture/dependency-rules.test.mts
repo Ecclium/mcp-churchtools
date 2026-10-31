@@ -636,6 +636,30 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'aes-gcm-siv-only-in-pseudonyms',
+    name: 'a module of the redaction next to the pseudonyms builds the cipher',
+    files: {
+      'packages/core/src/redaction/forbidden.ts':
+        "import { gcmsiv } from '@noble/ciphers/aes.js';\nexport const cipher = gcmsiv;\n",
+    },
+  },
+  {
+    rule: 'aes-gcm-siv-only-in-pseudonyms',
+    name: 'a test of core builds the cipher past the module',
+    files: {
+      'packages/core/src/redaction/forbidden.test.ts':
+        "import { gcmsiv } from '@noble/ciphers/aes.js';\nexport const cipher = gcmsiv;\n",
+    },
+  },
+  {
+    rule: 'aes-gcm-siv-only-in-pseudonyms',
+    name: 'a module of core imports another cipher of the library for types only',
+    files: {
+      'packages/core/src/keys/forbidden.ts':
+        "import type { Cipher } from '@noble/ciphers/utils.js';\nexport type Seal = Cipher;\n",
+    },
+  },
+  {
     rule: 'mocked-transport-only-in-testkit',
     name: 'tools builds the transport on a MockAgent',
     files: {

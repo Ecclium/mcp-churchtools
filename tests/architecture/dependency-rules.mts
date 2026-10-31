@@ -312,6 +312,13 @@ export function dependencyRules(
       to: { path: at('operationCatalog') },
     },
     {
+      name: 'aes-gcm-siv-only-in-pseudonyms',
+      severity: 'error',
+      comment: `${adr('aesGcmSiv')}: only the module of the pseudonyms imports @noble/ciphers, so that no other code builds a cipher from a key for pseudonyms or uses another cipher of the library past the review of this one. Tests in the packages are not exempt: the vectors of RFC 8452 go through the module as well. Imports for types only count as well.`,
+      from: { path: '^packages/', pathNot: at('aesGcmSiv') },
+      to: { path: '(^|/)node_modules/@noble/ciphers/' },
+    },
+    {
       name: 'mcp-mount-only-in-server',
       severity: 'error',
       comment: `${adr('mcpMount')}: only the server uses the mount, the one registration with the MCP SDK.`,
