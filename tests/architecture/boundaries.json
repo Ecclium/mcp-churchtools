@@ -76,6 +76,11 @@
       "description": "The composition root: the only code outside the outbound path that imports the factory of the HTTP transport, the subpath ./http of core, and the only code at all that imports the stderr writer, the logger and the audit sink through the subpath ./composition of core. Each entry is a folder of the command line.",
       "paths": ["packages/cli/src/stdio/"]
     },
+    "auditCommands": {
+      "adr": "0028",
+      "description": "The commands that read the audit files: the only code that imports the subpath ./audit of core with the reader of the folder audit, the check of the chains and the summary, because the audit files name the IDs of the persons whose data was read. Each entry is a folder of the command line.",
+      "paths": ["packages/cli/src/commands/"]
+    },
     "httpDouble": {
       "adr": "0056",
       "description": "The test double for ChurchTools in testkit: the only code outside the outbound path that imports the transport on a MockAgent, the subpath ./http/testing of core. One folder directly under src/ of testkit.",

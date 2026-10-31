@@ -43,6 +43,12 @@ export const networkTargets: readonly string[] = [
  */
 const compositionEntry = 'packages/core/src/composition.ts';
 
+/**
+ * The source behind the subpath ./audit of core, which hands the commands
+ * that read the audit files their reader.
+ */
+const auditCommandsEntry = 'packages/core/src/audit-commands.ts';
+
 /** The executable of the command line. */
 const binEntry = 'packages/cli/src/bin.ts';
 
@@ -274,6 +280,13 @@ export function dependencyRules(
         'ADR 0054: only the composition root, the place transportBuilders, imports the subpath ./composition of core with the stderr writer, the logger and the audit sink, so that no tool, plugin or workflow can write any text to stderr. Tests in the packages are not exempt: the tests of core import the modules behind it.',
       from: { pathNot: at('transportBuilders') },
       to: { path: pathPattern(compositionEntry) },
+    },
+    {
+      name: 'audit-files-only-in-audit-commands',
+      severity: 'error',
+      comment: `${adr('auditCommands')}: only the commands that read the audit files, the place auditCommands, import the subpath ./audit of core with the reader of the folder audit, so that no tool, plugin or workflow can read the IDs of persons in the audit files. Tests in the packages are not exempt: the tests of core import the modules behind it.`,
+      from: { pathNot: at('auditCommands') },
+      to: { path: pathPattern(auditCommandsEntry) },
     },
     {
       name: 'mocked-transport-only-in-testkit',
