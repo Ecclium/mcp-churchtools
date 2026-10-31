@@ -54,6 +54,7 @@ const auditFileModule = 'packages/core/src/audit/file-writer.ts';
 const transportModule = 'packages/core/src/http/transport.ts';
 const composeModule = 'packages/core/src/http/compose.ts';
 const mockModule = 'packages/core/src/http/compose-mock.ts';
+const redactedModule = 'packages/core/src/redaction/redacted.ts';
 const egressEntry = 'packages/core/src/http/index.ts';
 const compositionEntry = 'packages/core/src/composition.ts';
 const auditReaderModule = 'packages/core/src/audit/reader.ts';
@@ -100,6 +101,13 @@ const hiddenSymbols: readonly {
     file: toPattern(mockModule),
     names: ['createMockedHttpTransport'],
     allowedIn: [mockModule],
+  },
+  {
+    // Whoever holds it could mark a result as redacted that never went
+    // through the pipeline (ADR 0026).
+    file: toPattern(redactedModule),
+    names: ['sealRedacted'],
+    allowedIn: [redactedModule],
   },
 ];
 
@@ -242,6 +250,7 @@ function writeTree(files: Readonly<Record<string, string>>): string {
       'export const createMockedHttpTransport = (): HttpTransport => createTransport();',
       '',
     ].join('\n'),
+    [redactedModule]: 'export const sealRedacted = (): unknown => undefined;\n',
     'node_modules/@modelcontextprotocol/server/package.json':
       '{ "name": "@modelcontextprotocol/server", "type": "module", "exports": { ".": { "types": "./index.d.ts" }, "./stdio": { "types": "./stdio.d.ts" } } }\n',
     'node_modules/@modelcontextprotocol/server/index.d.ts':
@@ -406,6 +415,21 @@ const leaks: readonly {
     },
   },
   {
+    name: 'the mark of a redacted result through the entry point of core',
+    entry: coreEntry,
+    files: {
+      [coreEntry]: "export { sealRedacted } from './redaction/redacted.js';\n",
+    },
+  },
+  {
+    name: 'the mark of a redacted result through the entry point of testkit',
+    entry: 'packages/testkit/src/index.ts',
+    files: {
+      'packages/testkit/src/index.ts':
+        "export { sealRedacted } from '../../core/src/redaction/redacted.js';\n",
+    },
+  },
+  {
     name: 'the transport on a MockAgent through the entry point of testkit',
     entry: 'packages/testkit/src/index.ts',
     files: {
@@ -447,6 +471,7 @@ describe('entry points of the packages', { timeout }, () => {
       expect.arrayContaining([
         composeModule,
         mockModule,
+        redactedModule,
         compositionEntry,
         auditCommandsEntry,
         egressEntry,
