@@ -123,6 +123,6 @@ export function verifyAudit(options: AuditVerifyOptions): ExitCode {
   // Rendered whole before the first line goes out.
   const lines = renderVerifyReport(report, anchors);
   for (const line of lines) output.stdout(line);
-  if (hasDataFinding(report)) return exitCodes.dataError;
+  if (hasDataFinding(report, anchors)) return exitCodes.dataError;
   return report.findings.length > 0 ? exitCodes.ioError : exitCodes.ok;
 }

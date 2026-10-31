@@ -212,6 +212,52 @@ describe('ecclium audit verify', () => {
     expect(result.stdout.at(-1)).toBe(
       'Ergebnis: Die Ketten der Audit-Dateien sind ganz. Das Log enthält aber keinen Anker zu einer dieser Dateien, gegen Anker ist nichts geprüft.',
     );
+    // An anchor of a file past its retention checks nothing either.
+    const expired = putLog([anchorLine(fileName(1, '2020-01-01'), lines)]);
+    expect(verify(stateDir, [expired]).stdout.at(-1)).toBe(
+      result.stdout.at(-1),
+    );
+  });
+
+  it('counts pieces of lines and names an empty folder', () => {
+    const { stateDir } = makeState({
+      [name]: [lines[0] ?? '', '{"v":1,"half~', ...lines.slice(1)],
+    });
+    const empty = makeState({});
+
+    const withPiece = verify(stateDir);
+    const nothing = verify(empty.stateDir);
+
+    expect(withPiece.code).toBe(exitCodes.ok);
+    expect(withPiece.stdout).toContain(
+      '  Reste von Zeilen mit ‹~› am Ende, nicht in der Kette: 1',
+    );
+    expect(nothing.code).toBe(exitCodes.ok);
+    expect(nothing.stdout.at(-1)).toBe(
+      'Ergebnis: Im Ordner ‹audit› liegt keine Audit-Datei, es gibt nichts zu prüfen.',
+    );
+  });
+
+  it('fails when the log names more files than it keeps anchors for', () => {
+    // Anchors of expired files before the real one push it out; the check
+    // must not pass then, also when the file is cut.
+    const { stateDir } = makeState({ [name]: lines.slice(0, 2) });
+    const filler = Array.from(
+      { length: 100_000 },
+      (_, index) =>
+        `{"ts":"2020-01-01T00:00:00.000Z","level":"info","event":"audit_chain_anchor","file":"audit-2020-01-01-000000-1-${String(index + 1)}.jsonl","seq":1,"hash":"${'0'.repeat(64)}"}`,
+    );
+    const log = putLog([...filler, anchorLine(name, lines)]);
+
+    const result = verify(stateDir, [log]);
+
+    expect(result.code).toBe(exitCodes.dataError);
+    expect(result.stdout).toContain(
+      "  Anker übergangen, weil das Log mehr als 100'000 Dateien nennt: 1",
+    );
+    expect(result.stdout.at(-1)).toMatch(
+      /^Ergebnis: Das Log nennt Anker zu mehr als 100'000 Dateien/,
+    );
   });
 
   it('finds a changed line and a changed last line with 65', () => {
@@ -244,7 +290,7 @@ describe('ecclium audit verify', () => {
 
     expect(result.code).toBe(exitCodes.dataError);
     expect(result.stdout).toContain(
-      `  - ${fileName(5)}: Ein Anker im Log nennt diese Datei, sie fehlt aber im Ordner, und ihre Frist ist nicht abgelaufen.`,
+      `  - ${fileName(5)}: Ein Anker im Log nennt diese Datei, sie fehlt aber im Ordner, und ihre Frist nach ‹ECCLIUM_AUDIT_RETENTION_MONTHS› ist nicht abgelaufen. Prüfen Sie, ob diese Frist die des Servers ist und das Log zu diesem Zustandsordner gehört.`,
     );
   });
 
@@ -446,6 +492,7 @@ const verifyReport = (
   checked: 1_200,
   unchained: 3,
   lines: 45_678,
+  pieces: 2,
   others: 2,
   vanished: 1,
   anchors: 1_000,
@@ -468,6 +515,7 @@ const verifyReport = (
     { kind: 'folder_moved', file: fileName(6) },
   ],
   findingsOmitted: 1,
+  unreadable: 1,
   ...changes,
 });
 
@@ -531,6 +579,30 @@ const rendered = (): readonly (readonly [string, readonly string[]])[] => [
       verifyReport({
         findings: [{ kind: 'file_unreadable', file: fileName(1) }],
         findingsOmitted: 0,
+      }),
+      undefined,
+    ),
+  ],
+  [
+    'a report with left-out anchors only',
+    renderVerifyReport(
+      verifyReport({ findings: [], findingsOmitted: 0, unreadable: 0 }),
+      {
+        anchors: new Map(),
+        conflicts: [],
+        dropped: 1,
+      },
+    ),
+  ],
+  [
+    'a report of an empty folder',
+    renderVerifyReport(
+      verifyReport({
+        files: 0,
+        checked: 0,
+        findings: [],
+        findingsOmitted: 0,
+        unreadable: 0,
       }),
       undefined,
     ),

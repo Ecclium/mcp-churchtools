@@ -68,7 +68,7 @@ const findingTexts: Readonly<Record<AuditFindingKind, string>> = Object.freeze({
     'Nach der Zeile, die der Anker im Log nennt, stehen weitere Zeilen.',
   anchor_conflict: 'Das Log nennt zwei verschiedene Anker für diese Datei.',
   file_missing:
-    'Ein Anker im Log nennt diese Datei, sie fehlt aber im Ordner, und ihre Frist ist nicht abgelaufen.',
+    'Ein Anker im Log nennt diese Datei, sie fehlt aber im Ordner, und ihre Frist nach ‹ECCLIUM_AUDIT_RETENTION_MONTHS› ist nicht abgelaufen. Prüfen Sie, ob diese Frist die des Servers ist und das Log zu diesem Zustandsordner gehört.',
   file_unsafe:
     'Der Eintrag ist keine private Datei mit einem einzigen Link, etwa ein Link, ein Ordner oder eine Datei mit Rechten für andere. Ecclium hat ihn nicht gelesen.',
   file_unreadable: 'Die Datei liess sich nicht ganz lesen.',
@@ -111,15 +111,21 @@ const count = (value: number, one: string, many: string): string =>
   `${formatNumber(value)} ${value === 1 ? one : many}`;
 
 /**
- * Whether a report of `ecclium audit verify` has a finding about the data,
- * a file that could not be read aside.
+ * Whether `ecclium audit verify` must fail on the data: a finding other
+ * than a file that could not be read, listed or not, or anchors the check
+ * left out. Left-out anchors count, because lines put into a log before
+ * the real anchors would otherwise push them out unseen.
  *
  * @param report - The report.
- * @returns Whether it has such a finding.
+ * @param anchors - The anchors from the logs, if any were given.
+ * @returns Whether the data did not pass.
  */
-export const hasDataFinding = (report: AuditVerifyReport): boolean =>
-  report.findingsOmitted > 0 ||
-  report.findings.some((finding) => finding.kind !== 'file_unreadable');
+export const hasDataFinding = (
+  report: AuditVerifyReport,
+  anchors: AuditAnchorSet | undefined,
+): boolean =>
+  report.findings.length + report.findingsOmitted > report.unreadable ||
+  (anchors?.dropped ?? 0) > 0;
 
 /**
  * The lines of `ecclium audit verify`: the counts, the findings and the
@@ -142,6 +148,11 @@ export function renderVerifyReport(
     `  Dateien im Ordner ‹audit›: ${formatNumber(report.files)}, davon ganz geprüft ${formatNumber(report.checked)}`,
     `  Ganze Zeilen geprüft: ${formatNumber(report.lines)}`,
   ];
+  if (report.pieces > 0) {
+    lines.push(
+      `  Reste von Zeilen mit ‹~› am Ende, nicht in der Kette: ${formatNumber(report.pieces)}`,
+    );
+  }
   if (report.unchained > 0) {
     lines.push(
       `  Dateien ohne Kette, aus einer Version von Ecclium vor der Kette: ${formatNumber(report.unchained)}`,
@@ -187,9 +198,13 @@ export function renderVerifyReport(
       );
     }
   }
-  if (hasDataFinding(report)) {
+  if (total > report.unreadable) {
     lines.push(
       'Ergebnis: Die Audit-Dateien stimmen nicht mit ihren Ketten oder Ankern überein. Bewahren Sie die Dateien und das Log unverändert auf und klären Sie, wer Zugriff auf den Zustandsordner hatte.',
+    );
+  } else if ((anchors?.dropped ?? 0) > 0) {
+    lines.push(
+      `Ergebnis: Das Log nennt Anker zu mehr als ${formatNumber(maxAnchors)} Dateien, Ecclium hat die übrigen nicht geprüft und kann nicht sagen, ob jede Datei zu ihrem Anker passt. Prüfen Sie mit einem Log über einen kürzeren Zeitraum.`,
     );
   } else if (total > 0) {
     lines.push(
@@ -200,11 +215,13 @@ export function renderVerifyReport(
     // folder of state, checks nothing against anchors, which the result
     // must not hide.
     lines.push(
-      anchors === undefined
-        ? 'Ergebnis: Die Ketten der Audit-Dateien sind ganz.'
-        : report.anchors === 0
-          ? 'Ergebnis: Die Ketten der Audit-Dateien sind ganz. Das Log enthält aber keinen Anker zu einer dieser Dateien, gegen Anker ist nichts geprüft.'
-          : 'Ergebnis: Die Ketten der Audit-Dateien sind ganz und passen zu den Ankern aus dem Log.',
+      report.files === 0
+        ? 'Ergebnis: Im Ordner ‹audit› liegt keine Audit-Datei, es gibt nichts zu prüfen.'
+        : anchors === undefined
+          ? 'Ergebnis: Die Ketten der Audit-Dateien sind ganz.'
+          : report.anchorsMatched === 0
+            ? 'Ergebnis: Die Ketten der Audit-Dateien sind ganz. Das Log enthält aber keinen Anker zu einer dieser Dateien, gegen Anker ist nichts geprüft.'
+            : 'Ergebnis: Die Ketten der Audit-Dateien sind ganz und passen zu den Ankern aus dem Log.',
     );
   }
   return Object.freeze(lines);
