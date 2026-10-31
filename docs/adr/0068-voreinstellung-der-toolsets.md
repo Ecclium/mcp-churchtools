@@ -30,10 +30,7 @@ Dieses ADR ergänzt ADR 0062. Dort ersetzt es unter «Voreinstellung» den Satz 
 
 ## Konsequenzen
 
-- Eine neue Installation bietet ohne Einstellung nur `ct_whoami` an. Die Beispielkonfigurationen und `.env.example` zeigen weiter `ECCLIUM_TOOLSETS=` leer, und die Doku sagt, wie ein Betreiber Toolsets einschaltet.
+- Eine neue Installation bietet ohne Einstellung nur `ct_whoami` an. Die Beispielkonfigurationen setzen die Variable nicht, `.env.example` zeigt sie weiter leer, und die Doku sagt, wie ein Betreiber Toolsets einschaltet.
 - Wer die Doku-Tools will, nennt `docs`, auch wenn sie keine Daten der Gemeinde lesen.
+- Am Code ändert sich nichts: Der Katalog behandelt eine leere Liste seit dem 24.10.2026 so, gezeigt in `packages/core/src/registry/registry.test.ts`, und `docs/configuration.md` nennt «leer» als Voreinstellung (ADR 0062).
 - Eine andere Voreinstellung braucht ein neues ADR, das dieses ablöst.
-
-## Umsetzung
-
-Nichts zu bauen. Der Katalog behandelt eine leere Liste seit dem 24.10.2026 so, gezeigt in `packages/core/src/registry/registry.test.ts`, und `docs/configuration.md` nennt «leer» als Voreinstellung (ADR 0062, Umsetzung).
