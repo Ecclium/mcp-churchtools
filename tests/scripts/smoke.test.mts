@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import {
   chmodSync,
+  existsSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -55,6 +56,26 @@ const songsAndSearches = [
   'ct_search',
   'ct_search',
   'ct_search',
+] as const;
+// The calls of the docs tools after ct_whoami, in every run: a search and a
+// read of each source, which reach no ChurchTools.
+const docsCalls = [
+  'ct_docs_search_api',
+  'ct_docs_get_operation',
+  'ct_docs_search_rights',
+  'ct_docs_get_right',
+  'ct_docs_search_academy',
+  'ct_docs_read_academy',
+] as const;
+// The calls of the escape hatch at the end, with its switch: the search,
+// two reads and three refusals.
+const apiCalls = [
+  'ct_api_search_actions',
+  'ct_api_execute_read',
+  'ct_api_execute_read',
+  'ct_api_execute_read',
+  'ct_api_execute_read',
+  'ct_api_execute_read',
 ] as const;
 const missTerm = 'zqmissingterm';
 const timeout = 120_000;
@@ -188,6 +209,8 @@ const search = {
   ECCLIUM_SMOKE_QUERY: query,
 };
 
+const withApi = { ...search, ECCLIUM_SMOKE_ALLOW_API: 'demo' };
+
 /** Nothing from the instance, the token or the term reaches the output. */
 const expectClean = (result: Run): void => {
   const output = result.stdout + result.stderr;
@@ -221,11 +244,12 @@ describe('the spans of the events', () => {
 });
 
 describe('the smoke test against a stand-in of the server', { timeout }, () => {
-  it('calls only ct_whoami without the switch, in both eras, and sends nothing itself', async () => {
+  it('calls only ct_whoami and the docs tools without the switch, in both eras, and sends nothing itself', async () => {
     const result = await run();
     expect(result.code).toBe(smokeExitCodes.ok);
     expect(report(result)).toMatchObject({
       suchtools: 'nein',
+      api: 'nein',
       fehler: [],
       befunde: [],
       ergebnis: 'bestanden',
@@ -233,7 +257,8 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     expect(report(result)['aeren']).toHaveLength(2);
     expect(result.records).toHaveLength(2);
     for (const record of result.records) {
-      expect(record.calls).toEqual(['ct_whoami']);
+      expect(record.variables['ECCLIUM_TOOLSETS']).toBe('docs');
+      expect(record.calls).toEqual(['ct_whoami', ...docsCalls]);
     }
     expect(result.fetched).toEqual([]);
     expect(stateDirsLeft()).toEqual([]);
@@ -263,6 +288,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
         'ECCLIUM_CHURCHTOOLS_URL',
         'ECCLIUM_READ_ONLY',
         'ECCLIUM_STATE_DIR',
+        'ECCLIUM_TOOLSETS',
         'FAKE_CANARY',
         'FAKE_RECORD',
         'FAKE_SCENARIO',
@@ -302,10 +328,11 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
         'ECCLIUM_TOOLSETS',
       ]);
       expect(record.variables['ECCLIUM_TOOLSETS']).toBe(
-        'persons,events,calendars,wiki,songs',
+        'persons,events,calendars,wiki,songs,docs',
       );
       expect(record.calls).toEqual([
         'ct_whoami',
+        ...docsCalls,
         'ct_persons_search',
         'ct_groups_search',
         'ct_persons_search',
@@ -361,6 +388,54 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     }
     expect(stateDirsLeft()).toEqual([]);
     expectClean(result);
+  });
+
+  it('with the second switch also calls the escape hatch, behind the guard', async () => {
+    const result = await run({ env: withApi });
+    expect(result.code).toBe(smokeExitCodes.ok);
+    expect(report(result)).toMatchObject({
+      suchtools: 'ja',
+      api: 'ja',
+      kennkategorie: 'gefunden',
+      fehler: [],
+      ergebnis: 'bestanden',
+    });
+    expect(result.fetched.map((fetched) => fetched.path)).toEqual([
+      '/api/wiki/categories',
+      '/api/info',
+    ]);
+    expect(result.records).toHaveLength(2);
+    for (const record of result.records) {
+      expect(record.variables['ECCLIUM_TOOLSETS']).toBe(
+        'persons,events,calendars,wiki,songs,docs,api',
+      );
+      expect(record.calls.slice(-apiCalls.length)).toEqual([...apiCalls]);
+    }
+    for (const era of report(result)['aeren'] as {
+      warnung: string;
+      ohneAufruf: string[];
+      aufrufe: { tool: string; ergebnis: string }[];
+    }[]) {
+      expect(era.warnung).toBe('ja');
+      expect(era.ohneAufruf).toEqual([]);
+      expect(
+        era.aufrufe
+          .filter((call) => call.tool.startsWith('ct_api_'))
+          .map((call) => call.ergebnis),
+      ).toEqual(['ok', 'ok', 'ok', 'abgewiesen', 'abgewiesen', 'abgewiesen']);
+    }
+    expect(stateDirsLeft()).toEqual([]);
+    expectClean(result);
+  });
+
+  it('refuses a second switch that does not fit the host, before any request', async () => {
+    const result = await run({
+      env: { ...withApi, ECCLIUM_SMOKE_ALLOW_API: 'example' },
+    });
+    expect(result.code).toBe(smokeExitCodes.refused);
+    expect(result.stderr).toContain(hints.smokeApiSchalterFalsch);
+    expect(result.fetched).toEqual([]);
+    expect(result.records).toEqual([]);
   });
 
   it.each([
@@ -454,6 +529,11 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
       'a term for songs with a space at the end',
       { ...search, ECCLIUM_SMOKE_SONG_QUERY: `${songQuery} ` },
       'smokeLiedbegriffUngueltig',
+    ],
+    [
+      'the switch of the escape hatch without the one of the search tools',
+      { ECCLIUM_SMOKE_ALLOW_API: 'demo' },
+      'smokeApiOhneSuchschalter',
     ],
     [
       'the token in a variable',
@@ -576,6 +656,19 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     ['prompt-friday', 'prompts'],
     ['prompt-no-log', 'prompts'],
     ['prompt-leak-log', 'protokoll'],
+    ['prompt-no-diagnosis', 'prompts'],
+    ['prompt-empty-access', 'prompts'],
+    ['docs-bare-summary', 'doku_operationen'],
+    ['docs-license', 'doku_operationen'],
+    ['docs-unmapped', 'doku_operation'],
+    ['docs-no-needs', 'doku_operation'],
+    ['docs-bare-label', 'doku_rechte'],
+    ['docs-right-unused', 'doku_recht'],
+    ['docs-foreign-link', 'doku_academy'],
+    ['docs-no-pages', 'doku_academy'],
+    ['docs-bare-text', 'doku_hilfeseite'],
+    ['docs-request', 'anfragen'],
+    ['docs-missing-tool', 'tools_list'],
     ['exit-1', 'ende'],
   ] as const)(
     'fails when the server breaks it: %s',
@@ -588,6 +681,57 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
       expectClean(result);
     },
   );
+
+  // The docs tools run without the switch as well, so their checks hold
+  // there too.
+  it.each([
+    ['docs-bare-text', 'doku_hilfeseite'],
+    ['docs-request', 'anfragen'],
+    ['prompt-empty-access', 'prompts'],
+    // The value of the rights diagnosis, the only prompt without the switch.
+    ['prompt-leak-log', 'protokoll'],
+  ] as const)(
+    'fails without the switch when the server breaks it: %s',
+    async (scenario, failure) => {
+      const result = await run({ scenario });
+      expect(result.code).toBe(smokeExitCodes.failed);
+      expect(report(result)['fehler']).toContain(failure);
+      expectClean(result);
+    },
+  );
+
+  it.each([
+    ['api-search-bare', 'api_suche'],
+    ['api-broken-json', 'api_kategorien'],
+    ['api-no-categories', 'api_kategorien'],
+    ['api-rights-list', 'api_rechte'],
+    ['api-csrf-read', 'api_ausgeschlossen'],
+    ['api-unknown-read', 'api_unbekannt'],
+    ['api-path-read', 'api_pfad'],
+    ['api-no-warning', 'api_warnung'],
+    ['api-refusal-request', 'anfragen'],
+  ] as const)(
+    'fails when the server breaks the escape hatch: %s',
+    async (scenario, failure) => {
+      const result = await run({ env: withApi, scenario });
+      expect(result.code).toBe(smokeExitCodes.failed);
+      expect(report(result)['ergebnis']).toBe('gescheitert');
+      expect(report(result)['fehler']).toContain(failure);
+      expect(stateDirsLeft()).toEqual([]);
+      expectClean(result);
+    },
+  );
+
+  it('names the help page it had no hit to read with', async () => {
+    const result = await run({ env: search, scenario: 'docs-no-pages' });
+    expect(report(result)['fehler']).toEqual(['doku_academy']);
+    for (const era of report(result)['aeren'] as { ohneAufruf: string[] }[]) {
+      expect(era.ohneAufruf).toEqual(['ct_docs_read_academy']);
+    }
+    for (const record of result.records) {
+      expect(record.calls).not.toContain('ct_docs_read_academy');
+    }
+  });
 
   // Which type ChurchTools names in its hits is shown only for persons: the
   // result says when the log names a hit of another type (ADR 0064).
@@ -656,7 +800,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     }
     // Three spans of 31 days, then the services; no read of an event.
     for (const record of noEvents.records) {
-      expect(record.calls.slice(9)).toEqual([
+      expect(record.calls.slice(9 + docsCalls.length)).toEqual([
         'ct_events_list',
         'ct_events_list',
         'ct_events_list',
@@ -806,7 +950,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
       expect(report(result)['befunde']).toEqual([finding]);
       expect(report(result)['fehler']).toEqual([]);
       for (const record of result.records) {
-        expect(record.calls.slice(14)).toEqual(calls);
+        expect(record.calls.slice(14 + docsCalls.length)).toEqual(calls);
       }
       // The tools that had nothing to be called with.
       const withoutCall: Readonly<Record<string, readonly string[]>> = {
@@ -1373,13 +1517,25 @@ describe.skipIf(process.getuid?.() === 0)(
       await close();
     });
 
-    it('passes without the switch, with ct_whoami alone', async () => {
+    it('passes without the switch, with ct_whoami and the docs tools', async () => {
+      // The docs tools read the docs index that pnpm build writes, as in
+      // CI; without it the server stops at the start.
+      expect(
+        existsSync(
+          new URL(
+            '../../packages/docs-index/dist/docs-index.json',
+            import.meta.url,
+          ),
+        ),
+        'pnpm build writes the docs index',
+      ).toBe(true);
       requests.length = 0;
       const result = await run({ origin, server });
       expect(result.stderr).toBe('');
       expect(result.code).toBe(smokeExitCodes.ok);
       expect(report(result)).toMatchObject({
         suchtools: 'nein',
+        fehler: [],
         ergebnis: 'bestanden',
       });
       expect([...new Set(requests)].sort()).toEqual([
@@ -1417,6 +1573,35 @@ describe.skipIf(process.getuid?.() === 0)(
           `search ${query}`,
         ]).flat(),
       );
+      expect(stateDirsLeft()).toEqual([]);
+      expectClean(result);
+    });
+
+    it('passes with both switches, with the escape hatch reading two operations', async () => {
+      requests.length = 0;
+      const result = await run({ origin, server, env: withApi });
+      expect(result.stderr).toBe('');
+      expect(result.code).toBe(smokeExitCodes.ok);
+      expect(report(result)).toMatchObject({
+        suchtools: 'ja',
+        api: 'ja',
+        befunde: [],
+        fehler: [],
+        ergebnis: 'bestanden',
+      });
+      // Per era the 32 of the run with the switch, then one each for the
+      // categories of the wiki and the rights of the account; the three
+      // refusals send nothing.
+      expect(requests).toHaveLength(68);
+      expect(requests).not.toContain('/api/csrftoken');
+      // Per era the categories once for the tool of the wiki and once for
+      // the escape hatch, the rights once for ct_whoami and once for it.
+      for (const path of ['/api/wiki/categories', '/api/permissions/global']) {
+        expect(
+          requests.filter((request) => request === path),
+          path,
+        ).toHaveLength(4);
+      }
       expect(stateDirsLeft()).toEqual([]);
       expectClean(result);
     });

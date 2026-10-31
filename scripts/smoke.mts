@@ -3,12 +3,14 @@
  * instance. It reads only, prints only structure and never runs in CI
  * (ADR 0049, ADR 0052).
  *
- * Without `ECCLIUM_SMOKE_ALLOW_SEARCH` it calls only `ct_whoami`. With it,
- * and only after it has found the identification category of the test
- * instance, it also calls the other read tools, the searches with the term
- * from `ECCLIUM_SMOKE_QUERY`, those of songs with the one from
- * `ECCLIUM_SMOKE_SONG_QUERY` when it is set. Usage: «Smoke-Test» in
- * docs/betrieb/stdio.md.
+ * Without `ECCLIUM_SMOKE_ALLOW_SEARCH` it reads from ChurchTools only
+ * through `ct_whoami`, besides the docs tools, which read only the docs
+ * index of the build. With it, and only after it has found the
+ * identification category of the test instance, it also calls the other
+ * read tools, the searches with the term from `ECCLIUM_SMOKE_QUERY`, those
+ * of songs with the one from `ECCLIUM_SMOKE_SONG_QUERY` when it is set, and
+ * with `ECCLIUM_SMOKE_ALLOW_API` as well the escape hatch. Usage:
+ * «Smoke-Test» in docs/betrieb/stdio.md.
  *
  * @packageDocumentation
  */

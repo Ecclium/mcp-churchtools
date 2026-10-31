@@ -9,16 +9,20 @@
  * the client sends, and for each field the client reads, at any depth,
  * whether the document declares it, with its type class, required and
  * nullable. At the end it lists where the document departs from what the
- * client expects. Only fixed words and the names of the client leave the
- * script, through the guard of the spike.
+ * client expects. Under `katalog` it compares the catalog of the escape
+ * hatch with the document as well (`catalog.mts`). Only fixed words and
+ * the names of the client and of the catalog leave the script, through
+ * the guard of the spike.
  *
  * Usage: see README.md in this folder.
  *
  * @packageDocumentation
  */
 import { readFileSync } from 'node:fs';
+import { homedir, userInfo } from 'node:os';
 
 import { SpikeError } from '../spike/lib/errors.mts';
+import { catalogWords, compareCatalog, readCatalog } from './catalog.mts';
 import {
   checkNodeEnvironment,
   readOrigin,
@@ -32,6 +36,7 @@ import {
   writeError,
   writeResult,
 } from '../spike/lib/output.mts';
+import { hostValues } from '../spike/lib/probe.mts';
 import {
   findOperation,
   findPathItem,
@@ -521,12 +526,15 @@ const words = [
  * @param env - Environment of the process.
  * @param contractText - The text of contract.json.
  * @param io - Where to write.
+ * @param catalogText - The text of the generated part of the catalog of
+ *   the escape hatch.
  * @returns The exit code.
  */
 export function run(
   env: Readonly<Record<string, string | undefined>>,
   contractText: string,
   io: Io,
+  catalogText: string,
 ): number {
   try {
     checkNodeEnvironment(env);
@@ -539,10 +547,22 @@ export function run(
       throw new SpikeError('DATEI', 'vertragUngueltig');
     }
     const operations = operationsOf(contract);
+    const catalog = readCatalog(catalogText);
     const schemas = new Schemas(state.specification);
     const guard = new Guard();
     guard.allowFixed(...words);
     if (state.version !== null) guard.allowVersion(state.version);
+    // What could identify the instance or this machine never leaves, also
+    // not in a name that only the document of the instance gives (part
+    // katalog), as in the probes.
+    for (const value of hostValues(origin)) guard.block(value);
+    guard.block(statePath(env));
+    try {
+      guard.block(userInfo().username);
+    } catch {
+      // Without a user name there is nothing to block.
+    }
+    guard.block(homedir());
 
     const report: Record<string, Json> = {};
     const deviations: Deviation[] = [];
@@ -623,11 +643,19 @@ export function run(
       report[operation.name] = entry;
     }
 
+    // Names of the generated part stand in the repository; a name only the
+    // document gives comes from the instance and stays subject to the
+    // block list.
+    const catalogPart = compareCatalog(state.specification, catalog);
+    guard.allowFixed(...catalogWords, ...catalogPart.fixed);
+    for (const name of catalogPart.fromDocument) guard.allowChecked(name);
+
     const output: Json = {
       abgleich: 'churchtools-client',
       churchtoolsVersion: state.version ?? 'unbekannt',
       operationen: report,
       abweichungen: deviations.map((deviation) => ({ ...deviation })),
+      katalog: catalogPart.report,
     };
     return writeResult(output, guard, io);
   } catch (error) {
@@ -655,5 +683,12 @@ if (import.meta.main) {
     ),
     'utf8',
   );
-  process.exitCode = run(process.env, contractText, io);
+  const catalogText = readFileSync(
+    new URL(
+      '../../packages/core/src/churchtools/catalog/generated.ts',
+      import.meta.url,
+    ),
+    'utf8',
+  );
+  process.exitCode = run(process.env, contractText, io, catalogText);
 }

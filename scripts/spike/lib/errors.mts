@@ -50,6 +50,8 @@ export const hints = {
     'Abbruch: Die State-Datei muss eine reguläre Datei des aufrufenden Benutzers sein, ohne Rechte für andere und ausserhalb eines Git-Arbeitsbaums.',
   vertragUngueltig:
     'Abbruch: contract.json ist beschädigt. Jede Operation braucht eine Methode, einen Pfad und eine Liste der Parameter. Prüfen Sie den Stand Ihres Checkouts.',
+  katalogDateiUngueltig:
+    'Abbruch: Der Katalog der Escape Hatch in packages/core/src/churchtools/catalog/generated.ts hat nicht die Form, die pnpm docs:refresh schreibt. Prüfen Sie den Stand Ihres Checkouts.',
   dokumentZuVerschachtelt:
     'Abbruch: Das OpenAPI-Dokument in der State-Datei ist zu verschachtelt für den Abgleich. Es wurde nichts daraus ausgegeben.',
   stateDateiUngueltig:
@@ -231,6 +233,10 @@ export const hints = {
     'Abbruch: ECCLIUM_SMOKE_ALLOW_SEARCH fehlt. Die Suchtools wurden nicht aufgerufen.',
   smokeSchalterFalsch:
     'Abbruch: ECCLIUM_SMOKE_ALLOW_SEARCH passt nicht zum Host. Tippen Sie den ersten Teil des Hosts von Hand, nicht aus der Variablen der Adresse. Die Suchtools wurden nicht aufgerufen.',
+  smokeApiOhneSuchschalter:
+    'Abbruch: ECCLIUM_SMOKE_ALLOW_API ist gesetzt, ECCLIUM_SMOKE_ALLOW_SEARCH fehlt. Die Escape Hatch ruft der Smoke-Test nur zusammen mit den Suchtools hinter dem Wächter der Testinstanz auf.',
+  smokeApiSchalterFalsch:
+    'Abbruch: ECCLIUM_SMOKE_ALLOW_API passt nicht zum Host. Tippen Sie den ersten Teil des Hosts von Hand, nicht aus der Variablen der Adresse. Die Escape Hatch wurde nicht aufgerufen.',
   smokeWaechterAntwortUnerwartet:
     'Abbruch: Eine Antwort, die der Wächter des Smoke-Tests prüft, hat nicht die dokumentierte Form. Die Instanz gilt deshalb als produktiv. Die Suchtools wurden nicht aufgerufen.',
   smokeKennkategorieFehlt:
