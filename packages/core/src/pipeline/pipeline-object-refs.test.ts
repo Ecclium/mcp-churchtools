@@ -129,6 +129,41 @@ const apiTool: ToolDefinition = {
   },
 } as unknown as ToolDefinition;
 
+// Takes the GUID of a page and names a person by a text, which a plugin
+// could fill with anything.
+const badIdsTool: ToolDefinition = {
+  name: 'ct_test_bad_ids',
+  meta: meta('wiki'),
+  description,
+  input: z.strictObject({
+    guid: refersTo(z.string().max(100), 'wiki_page'),
+    owner: classify(z.string().max(50), 'none'),
+  }),
+  output: z.object({ owner: classify(z.string().max(50), 'personId') }),
+  execute: ({ input }: { readonly input: unknown }) =>
+    Promise.resolve({ owner: (input as { owner: string }).owner }),
+} as unknown as ToolDefinition;
+
+// Reads the members of a group through the escape hatch and asks for 100
+// persons, so that the call names 101 IDs.
+const apiManyTool: ToolDefinition = {
+  name: 'ct_test_api_many',
+  meta: meta('api'),
+  description,
+  input: z.strictObject({}),
+  output: z.object({ text: classify(z.string().max(1000), 'none') }),
+  execute: async ({ read }: { readonly read: ReadApi }) => {
+    const result = await read.operation({
+      operationId: 'get-groups-id-members',
+      path: { groupId: 3 },
+      query: {
+        'person_id[]': Array.from({ length: 100 }, (_, index) => index + 1),
+      },
+    });
+    return { text: result.json };
+  },
+} as unknown as ToolDefinition;
+
 // Its input has a check that throws on every value: a call the gate
 // refuses fits no schema the walk of the IDs could read.
 const throwingTool: ToolDefinition = {
@@ -154,6 +189,8 @@ const testPlugin: Plugin = {
     host.addTool(refsTool);
     host.addTool(apiTool);
     host.addTool(throwingTool);
+    host.addTool(badIdsTool);
+    host.addTool(apiManyTool);
     return undefined;
   },
 };
@@ -325,6 +362,44 @@ describe('the IDs of a call', () => {
     ]);
   });
 
+  it('keep a call with an ID the audit could not name from ChurchTools and its result in the server', async () => {
+    const { call, inFile } = setup();
+    const guid = 'A1B2C3D4-0000-4000-8000-000000000001';
+    const refused = await call('ct_test_bad_ids', { guid: 'Max', owner: '1' });
+    expect(!refused.ok && refused.error.code).toBe('validation');
+    const kept = await call('ct_test_bad_ids', { guid, owner: 'Max' });
+    expect(!kept.ok && kept.error.code).toBe('internal');
+    const named = await call('ct_test_bad_ids', { guid, owner: '12' });
+    expect(named.ok).toBe(true);
+    expect(inFile()).toMatchObject([
+      { errorCode: 'validation', objectRefs: [] },
+      {
+        errorCode: 'internal',
+        objectRefs: [`wiki_page:${guid.toLowerCase()}`],
+      },
+      {
+        outcome: 'ok',
+        objectRefs: [`wiki_page:${guid.toLowerCase()}`, 'person:12'],
+      },
+    ]);
+  });
+
+  it('are the first 100 of a read of the escape hatch, with the count of the others', async () => {
+    const { call, double, inFile } = setup();
+    double
+      .intercept({
+        path: (path: string) => path.split('?')[0] === '/api/groups/3/members',
+        method: 'GET',
+      })
+      .reply(200, { data: [] }, json);
+    expect((await call('ct_test_api_many', {})).ok).toBe(true);
+    const [line] = inFile();
+    const refs = line?.['objectRefs'] as string[];
+    expect(refs).toHaveLength(100);
+    expect(refs.slice(0, 2)).toEqual(['group:3', 'person:1']);
+    expect(line?.['objectRefsOmitted']).toBe(1);
+  });
+
   it('are none for an unknown tool', async () => {
     const { call, inFile } = setup();
     await call('ct_test_unknown', { personId: 5 });
@@ -371,9 +446,9 @@ describe('the IDs of a call', () => {
   });
 
   it('keep a result in the server when they cannot be derived', async () => {
-    // A shape that the redaction reads as it is and the walk of the IDs
-    // reads broken: the second read of the shape gives a list where the
-    // result is an object, which no loop can walk.
+    // A shape that the check of the IDs and the redaction read as it is
+    // and the walk of the IDs for the audit reads broken: the third read
+    // gives a list where the result is an object, which no loop can walk.
     let reads = 0;
     const adjust = (catalog: ToolCatalog): ToolCatalog => {
       const entry = catalog.get('ct_test_refs') as CatalogEntry;
@@ -396,7 +471,7 @@ describe('the IDs of a call', () => {
       Object.defineProperty(changed, 'shape', {
         get: () => {
           reads += 1;
-          return reads === 1 ? entry.shape : broken;
+          return reads <= 2 ? entry.shape : broken;
         },
       });
       return Object.freeze({
@@ -409,10 +484,11 @@ describe('the IDs of a call', () => {
     };
     const { call, inFile } = setup({ adjust });
     const outcome = await call('ct_test_refs', { personId: 5 });
-    expect(reads).toBe(2);
+    expect(reads).toBe(3);
     expect(outcome).toMatchObject({ ok: false, error: { code: 'internal' } });
+    // The IDs of the request stay, as for any call without a result.
     expect(inFile()).toMatchObject([
-      { outcome: 'error', errorCode: 'internal', objectRefs: [] },
+      { outcome: 'error', errorCode: 'internal', objectRefs: ['person:5'] },
     ]);
   });
 });

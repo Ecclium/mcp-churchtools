@@ -34,8 +34,10 @@ export interface ObjectRefCollector {
    *
    * @param domain - The kind of object.
    * @param value - The ID as a whole number or as text.
+   * @returns Whether the value has the form of an ID, also when it was
+   *   there already or beyond the first 100.
    */
-  add(domain: ObjectDomain, value: unknown): void;
+  add(domain: ObjectDomain, value: unknown): boolean;
   /**
    * Returns what was gathered.
    *
@@ -106,12 +108,14 @@ export function createObjectRefCollector(): ObjectRefCollector {
   const refs: string[] = [];
   let omitted = 0;
   return Object.freeze({
-    add(domain: ObjectDomain, value: unknown): void {
+    add(domain: ObjectDomain, value: unknown): boolean {
       const ref = objectRefOf(domain, value);
-      if (ref === undefined || seen.has(ref)) return;
+      if (ref === undefined) return false;
+      if (seen.has(ref)) return true;
       if (seen.size < maxTracked) seen.add(ref);
       if (refs.length < auditLimits.objectRefs) refs.push(ref);
       else omitted += 1;
+      return true;
     },
     list: (): ObjectRefList =>
       Object.freeze({

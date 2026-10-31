@@ -80,6 +80,7 @@ import { createReadAccess, type ReadAccess } from './read-api.js';
 import {
   collectOutputRefs,
   fitsInput,
+  outputIdsFit,
   markUntrusted,
   maxResultBytes,
   redact,
@@ -295,7 +296,8 @@ interface Run {
   output?: Readonly<Record<string, unknown>>;
 }
 
-// A call without a tool to name or an input that fits its schema has no IDs.
+// A call without a tool to name or without an input that fits its schema
+// has no IDs.
 const noRefs: ObjectRefList = Object.freeze({
   refs: Object.freeze([]),
   omitted: 0,
@@ -308,16 +310,20 @@ const adder =
     refs.add(domain, value);
   };
 
-// The IDs of the input of a call, if it fits the schema of the tool.
+// The IDs of an input that fits the schema of the tool, and whether each
+// value at a field of an ID has the form of one.
 const inputRefsOf = (
   entry: CatalogEntry,
   input: unknown,
-): ObjectRefCollector => {
+): { readonly refs: ObjectRefCollector; readonly fits: boolean } => {
   const refs = createObjectRefCollector();
+  let fits = true;
   if (entry.inputRefs !== undefined) {
-    collectInputRefs(input, entry.inputRefs, adder(refs));
+    collectInputRefs(input, entry.inputRefs, (domain, value) => {
+      if (!refs.add(domain, value)) fits = false;
+    });
   }
-  return refs;
+  return { refs, fits };
 };
 
 /**
@@ -426,7 +432,9 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     if (!fitsInput(input)) return failed('validation');
     const parsedInput = entry.input.safeParse(input);
     if (!parsedInput.success) return failed('validation');
-    const refs = inputRefsOf(entry, parsedInput.data);
+    // An ID the audit could not name does not reach ChurchTools (ADR 0028).
+    const { refs, fits } = inputRefsOf(entry, parsedInput.data);
+    if (!fits) return failed('validation');
     run.refs = refs;
 
     // The daily read budget, counted once the input is valid and before
@@ -494,6 +502,12 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     // 6. validateOutput.
     const parsedOutput = entry.output.safeParse(result);
     if (!parsedOutput.success) {
+      ctx.log.warn('tool_output_invalid');
+      return failed('internal');
+    }
+    // A result with an ID the audit could not name does not go out
+    // (ADR 0028).
+    if (!outputIdsFit(parsedOutput.data, entry.shape.root)) {
       ctx.log.warn('tool_output_invalid');
       return failed('internal');
     }
@@ -577,9 +591,10 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
 
   // The IDs of a call for its audit line (ADR 0028). A call that ended
   // before its input was checked, such as one the gate refused, names the
-  // IDs of its input if the input fits the schema. Only a result that goes
-  // out, or is held back after the read, adds the IDs of the persons and
-  // groups it names.
+  // IDs of its input if the input fits the schema. Only a call whose stages
+  // ended with a result adds the IDs of the persons and groups it names,
+  // also when the sink then holds that result back; a result over the
+  // limit of size or a failed stage adds none.
   const objectRefsOf = (
     run: Run,
     input: unknown,
@@ -593,10 +608,16 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         ? entry.input.safeParse(input)
         : undefined;
       if (parsed?.success !== true) return noRefs;
-      refs = inputRefsOf(entry, parsed.data);
+      refs = inputRefsOf(entry, parsed.data).refs;
     }
     if (ok && run.output !== undefined) {
-      collectOutputRefs(run.output, entry.shape.root, adder(refs));
+      // Walked whole first, so that a walk that fails leaves the IDs of
+      // the request as they are.
+      const found: [ObjectDomain, unknown][] = [];
+      collectOutputRefs(run.output, entry.shape.root, (domain, value) => {
+        found.push([domain, value]);
+      });
+      for (const [domain, value] of found) refs.add(domain, value);
     }
     return refs.list();
   };
@@ -672,6 +693,8 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         try {
           refs = objectRefsOf(run, input, outcome.ok);
         } catch {
+          // The IDs of the request, as a call without a result names them.
+          refs = run.refs?.list() ?? noRefs;
           if (outcome.ok) {
             outcome = internalOutcome;
             auditOutcome = 'error';

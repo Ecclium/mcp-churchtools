@@ -63,10 +63,10 @@ describe('objectRefOf', () => {
 describe('createObjectRefCollector', () => {
   it('keeps each entry once, in the order it came', () => {
     const refs = createObjectRefCollector();
-    refs.add('group', 7);
-    refs.add('person', 12);
-    refs.add('group', '7');
-    refs.add('person', 'Max');
+    expect(refs.add('group', 7)).toBe(true);
+    expect(refs.add('person', 12)).toBe(true);
+    expect(refs.add('group', '7')).toBe(true);
+    expect(refs.add('person', 'Max')).toBe(false);
     expect(refs.list()).toEqual({ refs: ['group:7', 'person:12'], omitted: 0 });
   });
 

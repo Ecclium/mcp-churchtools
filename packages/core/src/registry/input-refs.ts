@@ -152,7 +152,9 @@ class InputWalk {
     depth: number,
     pipe: boolean,
   ): InputRefNode | undefined {
-    if (leafTypes.includes(internals.type)) return this.leaf(schema);
+    if (leafTypes.includes(internals.type)) {
+      return this.leaf(schema, internals.type);
+    }
     const { def } = internals;
     switch (internals.type) {
       case 'object':
@@ -180,7 +182,7 @@ class InputWalk {
     }
   }
 
-  private leaf(schema: unknown): InputRefNode | undefined {
+  private leaf(schema: unknown, type: string): InputRefNode | undefined {
     let dataClass: DataClass | undefined;
     let kind: ObjectDomain | undefined;
     try {
@@ -193,15 +195,16 @@ class InputWalk {
       this.undeclared += 1;
       return undefined;
     }
-    if (kind !== undefined) {
-      // An ID of a person or a group has its class, not a kind.
-      if (dataClass !== undefined && dataClass !== 'none') {
-        throw new Refused();
-      }
-      return freeze({ kind: 'leaf', domain: kind });
+    // An ID of a person or a group has its class, not a kind.
+    if (kind !== undefined && dataClass !== undefined && dataClass !== 'none') {
+      throw new Refused();
     }
-    const domain = domainOfClass(dataClass);
-    return domain === undefined ? undefined : freeze({ kind: 'leaf', domain });
+    const domain = kind ?? domainOfClass(dataClass);
+    if (domain === undefined) return undefined;
+    // An ID is a whole number or text such as a GUID; a bigint or a date
+    // would never have the form the audit takes.
+    if (type !== 'number' && type !== 'string') throw new Refused();
+    return freeze({ kind: 'leaf', domain });
   }
 
   private object(
@@ -308,7 +311,8 @@ class InputWalk {
  *   checked as a closed object.
  * @returns The kept shape, or `undefined` when the walk refuses the
  *   schema: a lazy schema, an ID inside a pipe, a kind next to a class
- *   other than `none`, leaves of a union that name different kinds, a
+ *   other than `none`, an ID that is no number or text, leaves of a union
+ *   that name different kinds, a
  *   class or kind the registry cannot read, or more than the bounds of
  *   nodes and depth of an output schema.
  * @throws {Error} Whatever else goes wrong while the schema is read, such
@@ -368,7 +372,8 @@ const items = (value: unknown): unknown[] =>
  *
  * @param value - The input as the schema of the tool parsed it.
  * @param node - Where the IDs stand.
- * @param add - Takes the kind and the value of each ID, in order.
+ * @param add - Takes the kind and the value of each ID, in order, but no
+ *   missing or null one.
  * @example
  * ```ts
  * collectInputRefs({ calendarIds: [1, 2] }, shape.refs, refs.add);
@@ -381,7 +386,8 @@ export function collectInputRefs(
 ): void {
   switch (node.kind) {
     case 'leaf':
-      add(node.domain, value);
+      // A missing or null ID asks for nothing.
+      if (value !== null && value !== undefined) add(node.domain, value);
       return;
     case 'object': {
       if (!isPlainTarget(value) || Array.isArray(value)) return;

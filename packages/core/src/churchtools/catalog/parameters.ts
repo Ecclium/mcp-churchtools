@@ -418,6 +418,12 @@ export function buildOperationUrl(
       const text = queryText(parameter, item);
       if (text === undefined) return refuse(wrong);
       if (parameter.object !== undefined) {
+        // An ID in the query has the form of one, as in the path: no sign
+        // and no leading zero, so that the audit records the ID ChurchTools
+        // reads and a search for it finds the line (ADR 0028).
+        if (parameter.kind === 'integer' && pathInteger(item) === undefined) {
+          return refuse(wrong);
+        }
         objectRefs.push(Object.freeze([parameter.object, text] as const));
       }
       query.append(parameter.name, text);

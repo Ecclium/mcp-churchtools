@@ -191,6 +191,14 @@ describe('checkInputRefs', () => {
     expect(checkInputRefs(schema)).toBeUndefined();
   });
 
+  it.each([
+    ['a bigint', classify(z.bigint(), 'personId')],
+    ['a date', refersTo(z.date(), 'event')],
+    ['a boolean', classify(z.boolean(), 'groupId')],
+  ])('refuses an ID that is %s, which has no form of an ID', (_what, leaf) => {
+    expect(checkInputRefs(z.strictObject({ id: leaf }))).toBeUndefined();
+  });
+
   it('refuses a field that is no schema of zod 4', () => {
     const broken = z.strictObject({ a: none(z.string()) });
     Object.defineProperty(broken._zod.def.shape, 'a', { value: {} });
@@ -297,6 +305,19 @@ describe('collectInputRefs', () => {
       'person:9',
       'song:10',
     ]);
+  });
+
+  it('hands on no missing or null ID', () => {
+    expect(
+      refsOf(
+        z.strictObject({
+          a: person().nullable(),
+          b: person().optional(),
+          c: person(),
+        }),
+        { a: null, c: 3 },
+      ),
+    ).toEqual(['person:3']);
   });
 
   it('gives nothing for values of another form, a proxy or a getter', () => {

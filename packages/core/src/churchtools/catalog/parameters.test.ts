@@ -397,6 +397,27 @@ describe('buildOperationUrl, IDs for the audit', () => {
     expect(built.ok && Object.isFrozen(built.objectRefs)).toBe(true);
   });
 
+  it('takes an ID in the query only in the form of one', () => {
+    for (const value of ['0012', '-12', '00000000000000012', 0, -3]) {
+      expect(
+        build({ path: pathValues, query: { 'ids[]': [value] } }, named).ok,
+        String(value),
+      ).toBe(false);
+    }
+    const built = build(
+      { path: pathValues, query: { 'ids[]': [12, '13'] } },
+      named,
+    );
+    expect(built.ok && built.objectRefs.slice(2)).toEqual([
+      ['person', '12'],
+      ['person', '13'],
+    ]);
+    // A whole number in the query that names no object keeps its form.
+    expect(build({ path: pathValues, query: { 'ids[]': ['0012'] } }).ok).toBe(
+      true,
+    );
+  });
+
   it('gives none for an operation without such parameters', () => {
     const built = build({ path: pathValues, query: { 'ids[]': [3] } });
     expect(built.ok && built.objectRefs).toEqual([]);
