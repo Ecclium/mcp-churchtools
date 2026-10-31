@@ -32,7 +32,8 @@ export default defineConfig({
       // every line and branch of the audit and the pipeline, which hold
       // back the result of a tool without its audit line (ADR 0028), and
       // of the operation catalog, which decides what the escape hatch may
-      // read (ADR 0067).
+      // read (ADR 0067), and of the keys, which hold the secret behind the
+      // pseudonyms (ADR 0069).
       thresholds: {
         'packages/core/src/**': {
           statements: 80,
@@ -65,6 +66,12 @@ export default defineConfig({
           lines: 100,
         },
         'packages/core/src/churchtools/catalog/**': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        'packages/core/src/keys/**': {
           statements: 100,
           branches: 100,
           functions: 100,

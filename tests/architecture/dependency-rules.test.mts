@@ -636,6 +636,70 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'aes-gcm-siv-only-in-pseudonyms',
+    name: 'a module of the redaction next to the pseudonyms builds the cipher',
+    files: {
+      'packages/core/src/redaction/forbidden.ts':
+        "import { gcmsiv } from '@noble/ciphers/aes.js';\nexport const cipher = gcmsiv;\n",
+    },
+  },
+  {
+    rule: 'aes-gcm-siv-only-in-pseudonyms',
+    name: 'a test of core builds the cipher past the module',
+    files: {
+      'packages/core/src/redaction/forbidden.test.ts':
+        "import { gcmsiv } from '@noble/ciphers/aes.js';\nexport const cipher = gcmsiv;\n",
+    },
+  },
+  {
+    rule: 'aes-gcm-siv-only-in-pseudonyms',
+    name: 'a module of core imports another cipher of the library for types only',
+    files: {
+      'packages/core/src/keys/forbidden.ts':
+        "import type { Cipher } from '@noble/ciphers/utils.js';\nexport type Seal = Cipher;\n",
+    },
+  },
+  {
+    rule: 'keys-internals',
+    name: 'the configuration reads the bytes of a key',
+    files: {
+      'packages/core/src/config/forbidden.ts':
+        "import { revealKeyMaterial } from '../keys/key-material.js';\nexport const read = revealKeyMaterial;\n",
+    },
+  },
+  {
+    rule: 'keys-internals',
+    name: 'a test of the redaction reads the bytes of a key',
+    files: {
+      'packages/core/src/redaction/forbidden.test.ts':
+        "import { revealKeyMaterial } from '../keys/key-material.js';\nexport const read = revealKeyMaterial;\n",
+    },
+  },
+  {
+    rule: 'key-provider-only-from-composition-root',
+    name: 'the pipeline builds the provider of keys',
+    files: {
+      'packages/core/src/pipeline/forbidden.ts':
+        "import { createFileKeyProvider } from '../keys/file-provider.js';\nexport const build = createFileKeyProvider;\n",
+    },
+  },
+  {
+    rule: 'pseudonyms-only-in-pipeline',
+    name: 'the audit seals a pseudonym',
+    files: {
+      'packages/core/src/audit/forbidden.ts':
+        "import { sealGcmSiv } from '../redaction/pseudonym.js';\nexport const seal = sealGcmSiv;\n",
+    },
+  },
+  {
+    rule: 'pseudonyms-only-in-pipeline',
+    name: 'another module of the redaction opens the pseudonyms',
+    files: {
+      'packages/core/src/redaction/forbidden.ts':
+        "import { openPseudonyms } from './pseudonym.js';\nexport const open = openPseudonyms;\n",
+    },
+  },
+  {
     rule: 'mocked-transport-only-in-testkit',
     name: 'tools builds the transport on a MockAgent',
     files: {
@@ -918,6 +982,20 @@ const cases: readonly Case[] = [
 
 // Imports the rules must let pass.
 const allowedCases: readonly Omit<Case, 'rule'>[] = [
+  {
+    name: 'the pipeline opens the pseudonyms',
+    files: {
+      'packages/core/src/pipeline/allowed.ts':
+        "import { openPseudonyms } from '../redaction/pseudonym.js';\nexport const open = openPseudonyms;\n",
+    },
+  },
+  {
+    name: 'a test of the redaction builds the provider of keys',
+    files: {
+      'packages/core/src/redaction/allowed.test.ts':
+        "import { createFileKeyProvider } from '../keys/file-provider.js';\nexport const build = createFileKeyProvider;\n",
+    },
+  },
   {
     name: 'a module of the raw client imports the operation catalog',
     files: {

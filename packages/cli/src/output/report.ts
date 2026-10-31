@@ -37,6 +37,8 @@ const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
   churchtoolsRequestsPerMinute: 'Anfragen je Minute',
   readOnly: 'Nur lesen',
   redaction: 'Maskierung',
+  pseudonymKey: 'Pseudonym-Schlüssel',
+  pseudonymKeyPrevious: 'Früherer Schlüssel',
   toolsets: 'Toolsets',
   stateDir: 'Zustandsordner',
   auditRetentionMonths: 'Frist in Monaten',
@@ -80,10 +82,19 @@ const isPrintable = (text: string): boolean => {
 const valueOf = (setting: SettingReport, showValues: boolean): Value => {
   if (setting.origin === 'missing') return { text: 'fehlt' };
   if (setting.origin === 'invalid') return { text: 'ungültig' };
-  // Only the folder of state may stay unset without a default.
+  // Only the folder of state and the key files may stay unset without a
+  // default.
   if (setting.origin === 'unset') {
-    if (setting.key !== 'stateDir') throw new TypeError(inconsistent);
-    return { text: 'keine Audit-Datei' };
+    switch (setting.key) {
+      case 'stateDir':
+        return { text: 'keine Audit-Datei' };
+      case 'pseudonymKey':
+        return { text: 'kein Schlüssel' };
+      case 'pseudonymKeyPrevious':
+        return { text: 'kein Wechsel' };
+      default:
+        throw new TypeError(inconsistent);
+    }
   }
   const shown = setting.shown;
   switch (shown.kind) {

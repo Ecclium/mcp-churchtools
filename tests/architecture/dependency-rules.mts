@@ -265,6 +265,39 @@ export function dependencyRules(
       },
     },
     {
+      name: 'keys-internals',
+      severity: 'error',
+      comment: `${adr('keys')}: only modules of the keys import its modules other than its entry index.ts and the provider, which key-provider-only-from-composition-root narrows. The module of the holder turns the secret for pseudonyms back into its bytes, which no other module may do. Tests in the packages are not exempt. Code outside the packages is not cruised; tests/architecture/reveal-key-material.test.mts covers it.`,
+      from: { pathNot: at('keys') },
+      to: {
+        path: at('keys'),
+        pathNot: [
+          pathPattern(`${places.keys.paths[0] ?? ''}index.ts`),
+          pathPattern(`${places.keys.paths[0] ?? ''}file-provider.ts`),
+        ],
+      },
+    },
+    {
+      name: 'key-provider-only-from-composition-root',
+      severity: 'error',
+      comment: `${adr('keys')}: only the composition root, through the subpath ./composition of core, builds the provider of keys from the secret, because the provider gives the key of any tenant, principal and day to whoever holds it. Tests are exempt.`,
+      from: {
+        pathNot: [...at('keys'), pathPattern(compositionEntry), testFile],
+      },
+      to: {
+        path: pathPattern(`${places.keys.paths[0] ?? ''}file-provider.ts`),
+      },
+    },
+    {
+      name: 'pseudonyms-only-in-pipeline',
+      severity: 'error',
+      comment: `${adr('pseudonymUsers')}: only the pipeline turns IDs of persons into pseudonyms and back, so that no other module builds a cipher from a key for pseudonyms through the module of the pseudonyms. Tests are exempt.`,
+      from: {
+        pathNot: [...at('aesGcmSiv'), ...at('pseudonymUsers'), testFile],
+      },
+      to: { path: at('aesGcmSiv') },
+    },
+    {
       name: 'transport-only-from-composition-root',
       severity: 'error',
       comment: `${adr('transportBuilders')}: only the composition root builds an HTTP transport, through the subpath ./http of core, so that no tool builds one with an origin of its own. Tests in the packages are not exempt.`,
@@ -310,6 +343,13 @@ export function dependencyRules(
       comment: `${adr('operationCatalog')}: only the raw client imports the operation catalog of the escape hatch, so that no other module of core chooses an operation past the checks of the client. Tests are exempt.`,
       from: { pathNot: [...at('rawClient'), testFile] },
       to: { path: at('operationCatalog') },
+    },
+    {
+      name: 'aes-gcm-siv-only-in-pseudonyms',
+      severity: 'error',
+      comment: `${adr('aesGcmSiv')}: only the module of the pseudonyms imports @noble/ciphers, so that no other code builds a cipher from a key for pseudonyms or uses another cipher of the library past the review of this one. Tests in the packages are not exempt: the vectors of RFC 8452 go through the module as well. Imports for types only count as well.`,
+      from: { path: '^packages/', pathNot: at('aesGcmSiv') },
+      to: { path: '(^|/)node_modules/@noble/ciphers/' },
     },
     {
       name: 'mcp-mount-only-in-server',

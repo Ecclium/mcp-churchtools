@@ -14,6 +14,8 @@ Ecclium liest seine Konfiguration aus Variablen der Umgebung. Jede trägt das Pr
 | `ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE` | ganze Zahl von 1 bis 500 | `300` | nein | nein |
 | `ECCLIUM_READ_ONLY` | `true`, `false` | `true` | nein | nein |
 | `ECCLIUM_REDACTION` | `standard`, `off`, `strict` | `standard` | nein | nein |
+| `ECCLIUM_PSEUDONYM_KEY_FILE` | absoluter Pfad | keine | nein | nein |
+| `ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE` | absoluter Pfad | keine | nein | nein |
 | `ECCLIUM_TOOLSETS` | Liste aus `persons`, `events`, `calendars`, `wiki`, `songs`, `docs`, `api`, mit Komma getrennt, oder `all` für alle ausser `api`, oder `all,api` | leer | nein | nein |
 | `ECCLIUM_STATE_DIR` | absoluter Pfad | keine | nein | ja |
 | `ECCLIUM_AUDIT_RETENTION_MONTHS` | ganze Zahl von 1 bis 120 | `12` | nein | ja |
@@ -43,6 +45,14 @@ Legt fest, ob der Server nur liest. Mit `true` registriert er keine Schreib-Tool
 ## `ECCLIUM_REDACTION`
 
 Stufe der Maskierung. `standard` maskiert E-Mail-Adressen, Telefonnummern und Geburtsdaten. `off` schaltet die Masken ab, nur im Betrieb über stdio und mit einer Warnung beim Start. `strict` bricht den Start ab, bis die vollständige Maskierung steht.
+
+## `ECCLIUM_PSEUDONYM_KEY_FILE`
+
+Absoluter Pfad einer Datei mit dem Schlüssel für die Pseudonyme der Maskierung `strict`: genau 64 Zeichen aus `0` bis `9` und `a` bis `f`, höchstens mit einem Zeilenumbruch am Ende, so wie `openssl rand -hex 32` ihn schreibt. Die Datei muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 600. Wer den Schlüssel hat, kann jedes Pseudonym in die Kennung einer Person zurückübersetzen. Sichern Sie ihn trotzdem, damit Pseudonyme nach einer Wiederherstellung gleich bleiben. Ohne `strict` bewirkt der Schlüssel in dieser Version nichts.
+
+## `ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE`
+
+Nur während eines Wechsels des Schlüssels für Pseudonyme: absoluter Pfad einer Datei mit dem bisherigen Schlüssel, in derselben Form und mit denselben Rechten wie `ECCLIUM_PSEUDONYM_KEY_FILE`, die dann den neuen enthält. Ecclium übersetzt so auch Pseudonyme aus dem bisherigen Schlüssel zurück, neue entstehen nur mit dem neuen. Jeder Start warnt, solange die Variable gesetzt ist. Entfernen Sie sie, sobald der UTC-Tag nach dem Wechsel vorbei ist. Ohne `ECCLIUM_PSEUDONYM_KEY_FILE` oder mit demselben Schlüssel bricht der Start ab.
 
 ## `ECCLIUM_TOOLSETS`
 

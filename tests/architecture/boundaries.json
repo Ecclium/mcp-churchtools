@@ -210,6 +210,21 @@
       "description": "The operation catalog of the escape hatch: the part pnpm docs:refresh writes from the facts of the OpenAPI document and the classification of each operation by hand. Only the modules of the raw client import it, so that no other module chooses an operation past the checks of the client.",
       "paths": ["packages/core/src/churchtools/catalog/"]
     },
+    "aesGcmSiv": {
+      "adr": "0069",
+      "description": "The pseudonyms of the level strict: the only module that imports @noble/ciphers for AES-256-GCM-SIV, and only the place pseudonymUsers and tests import it, so that no other code builds a cipher from a key for pseudonyms. One file of the redaction of core.",
+      "paths": ["packages/core/src/redaction/pseudonym.ts"]
+    },
+    "pseudonymUsers": {
+      "adr": "0069",
+      "description": "Code that may turn IDs of persons into pseudonyms and back: the pipeline, which does it for every call in the level strict.",
+      "paths": ["packages/core/src/pipeline/"]
+    },
+    "keys": {
+      "adr": "0069",
+      "description": "The keys of core: the holder of the secret behind the pseudonyms and the provider that derives the keys of a day from it. Only its own modules import the holder other than through its entry index.ts, because it turns the secret back into its bytes, and only the composition root and tests import the provider, which gives the key of any day.",
+      "paths": ["packages/core/src/keys/"]
+    },
     "environment": {
       "adr": "0055",
       "description": "Code that may read the environment and the arguments of the process: only the entry of the command line, which hands them to the core as parameters. Other code could otherwise read the token from them past the Secret.",

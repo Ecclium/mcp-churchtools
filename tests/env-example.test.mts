@@ -17,6 +17,15 @@ import { environmentSchema } from '../packages/core/src/config/variables.ts';
 // .env.example documents every variable of the configuration that holds no
 // secret (ADR 0055). This test keeps it in step with the table of
 // variables in core: every name once, in table order, with its default.
+// The key files for pseudonyms stand only in comments, like the token: a
+// placeholder path there would stop every start that copies the file, and
+// the keys do something only with the level strict (ADR 0069).
+
+const commentedOnly: readonly string[] = [
+  tokenVariableName,
+  'ECCLIUM_PSEUDONYM_KEY_FILE',
+  'ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE',
+];
 
 const text = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');
 const lines = text.split('\n').slice(0, -1);
@@ -91,9 +100,9 @@ describe('.env.example', () => {
     }
   });
 
-  it('sets every variable without a secret once, in the order of the table', () => {
+  it('sets every other variable once, in the order of the table', () => {
     expect(assignments.map(([name]) => name)).toEqual(
-      variableNames.filter((name) => name !== tokenVariableName),
+      variableNames.filter((name) => !commentedOnly.includes(name)),
     );
   });
 
@@ -125,13 +134,16 @@ describe('.env.example', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('names the token variable only in comments, never with a value', () => {
-    expect(text).not.toContain(`${tokenVariableName}=`);
+  it.each(commentedOnly)('names %s only in comments', (name) => {
     const named = lines.filter((line) =>
-      line.split(/[^A-Z0-9_]/).includes(tokenVariableName),
+      line.split(/[^A-Z0-9_]/).includes(name),
     );
     expect(named.length).toBeGreaterThan(0);
     for (const line of named) expect(line.startsWith('#'), line).toBe(true);
+  });
+
+  it('never gives the token a value, not even in a comment', () => {
+    expect(text).not.toContain(`${tokenVariableName}=`);
   });
 
   it('names no variable that the table does not know', () => {

@@ -30,6 +30,8 @@ export const variableNames = Object.freeze([
   'ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE',
   'ECCLIUM_READ_ONLY',
   'ECCLIUM_REDACTION',
+  'ECCLIUM_PSEUDONYM_KEY_FILE',
+  'ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE',
   'ECCLIUM_TOOLSETS',
   'ECCLIUM_STATE_DIR',
   'ECCLIUM_AUDIT_RETENTION_MONTHS',
@@ -316,7 +318,7 @@ const row = (variable: Variable): Variable =>
  * The table, frozen, in the order of {@link variableNames}. The bound of
  * the address only keeps huge values from the parser: the check of the
  * address has its own, lower one, which a longer address reaches first.
- * The bound of the token file is PATH_MAX on Linux, the one of the folder
+ * The bound of the token file and of the key files is PATH_MAX on Linux, the one of the folder
  * of state lower, so that the path of an audit file in it stays below
  * PATH_MAX of macOS (ADR 0028), and the one of the token the longest value
  * a `Secret` takes.
@@ -373,6 +375,24 @@ export const variables: readonly Variable[] = Object.freeze([
     maxLength: 8,
     choices: ['standard', 'off', 'strict'],
     defaultValue: 'standard',
+    secret: false,
+    stdioOnly: false,
+  }),
+  row({
+    name: 'ECCLIUM_PSEUDONYM_KEY_FILE',
+    kind: 'path',
+    maxLength: 4096,
+    choices: [],
+    defaultValue: undefined,
+    secret: false,
+    stdioOnly: false,
+  }),
+  row({
+    name: 'ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE',
+    kind: 'path',
+    maxLength: 4096,
+    choices: [],
+    defaultValue: undefined,
     secret: false,
     stdioOnly: false,
   }),
@@ -449,6 +469,16 @@ export const variableSchemas: Readonly<
     .refine((value) => isRequestsPerMinute(value)),
   ECCLIUM_READ_ONLY: choiceOf('ECCLIUM_READ_ONLY'),
   ECCLIUM_REDACTION: choiceOf('ECCLIUM_REDACTION'),
+  ECCLIUM_PSEUDONYM_KEY_FILE: z
+    .string()
+    .min(1)
+    .max(4096)
+    .refine((value) => isAbsolute(value)),
+  ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE: z
+    .string()
+    .min(1)
+    .max(4096)
+    .refine((value) => isAbsolute(value)),
   ECCLIUM_TOOLSETS: z
     .string()
     .max(toolsetListLength)
@@ -481,6 +511,10 @@ export const environmentSchema = z.strictObject({
     variableSchemas.ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE.optional(),
   ECCLIUM_READ_ONLY: variableSchemas.ECCLIUM_READ_ONLY.optional(),
   ECCLIUM_REDACTION: variableSchemas.ECCLIUM_REDACTION.optional(),
+  ECCLIUM_PSEUDONYM_KEY_FILE:
+    variableSchemas.ECCLIUM_PSEUDONYM_KEY_FILE.optional(),
+  ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE:
+    variableSchemas.ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE.optional(),
   ECCLIUM_TOOLSETS: variableSchemas.ECCLIUM_TOOLSETS.optional(),
   ECCLIUM_STATE_DIR: variableSchemas.ECCLIUM_STATE_DIR.optional(),
   ECCLIUM_AUDIT_RETENTION_MONTHS:

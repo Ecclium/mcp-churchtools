@@ -109,6 +109,14 @@ describe('renderConfigReport', () => {
       row('Anfragen je Minute', '300 (Voreinstellung)'),
       row('Nur lesen', 'ja (Voreinstellung)'),
       row('Maskierung', '‹standard› (Voreinstellung)'),
+      row(
+        'Pseudonym-Schlüssel',
+        'kein Schlüssel (‹ECCLIUM_PSEUDONYM_KEY_FILE› ist nicht gesetzt)',
+      ),
+      row(
+        'Früherer Schlüssel',
+        'kein Wechsel (‹ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE› ist nicht gesetzt)',
+      ),
       row('Toolsets', 'keine (Voreinstellung)'),
       row(
         'Zustandsordner',
@@ -436,6 +444,34 @@ describe('renderConfigReport', () => {
 
   it('gives frozen lines', () => {
     expect(Object.isFrozen(render(minimal()))).toBe(true);
+  });
+
+  it('shows a key file for pseudonyms as hidden, with its variable', () => {
+    const report = load(minimal()).report;
+    const lines = renderConfigReport(
+      {
+        ...report,
+        settings: report.settings.map((setting) =>
+          setting.key === 'pseudonymKey' ||
+          setting.key === 'pseudonymKeyPrevious'
+            ? { ...setting, origin: 'file', shown: { kind: 'hidden' } }
+            : setting,
+        ),
+      },
+      { valid: true, showValues: true },
+    );
+    expect(lines).toContain(
+      row(
+        'Pseudonym-Schlüssel',
+        'verborgen (aus der Datei in ‹ECCLIUM_PSEUDONYM_KEY_FILE›, Eigentümer und Dateirechte geprüft)',
+      ),
+    );
+    expect(lines).toContain(
+      row(
+        'Früherer Schlüssel',
+        'verborgen (aus der Datei in ‹ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE›, Eigentümer und Dateirechte geprüft)',
+      ),
+    );
   });
 
   const broken = (change: (setting: SettingReport) => SettingReport) => {

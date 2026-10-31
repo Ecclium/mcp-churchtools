@@ -111,6 +111,15 @@ const urlLength =
 const tokenFile = quote('ECCLIUM_CHURCHTOOLS_TOKEN_FILE');
 const tokenVariable = quote('ECCLIUM_CHURCHTOOLS_TOKEN');
 const stateDir = quote('ECCLIUM_STATE_DIR');
+const keyFile = quote('ECCLIUM_PSEUDONYM_KEY_FILE');
+const previousKeyFile = quote('ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE');
+const keyCommand = '‹openssl rand -hex 32›';
+// What belongs into a key file: a new key, or in the file of the previous
+// key the one that was in use so far.
+const keyContent = (raw: string | undefined): string =>
+  raw === 'ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE'
+    ? 'Schreiben Sie den bisherigen Schlüssel unverändert hinein.'
+    : `Erzeugen Sie einen Schlüssel mit ${keyCommand} und schreiben Sie ihn in die Datei.`;
 const retention = quote('ECCLIUM_AUDIT_RETENTION_MONTHS');
 const toolsets = quote('ECCLIUM_TOOLSETS');
 const personsToolset = quote('persons');
@@ -443,6 +452,102 @@ const problems: Readonly<
       `Ein Token hat 1 bis ${formatNumber(4096)} sichtbare ASCII-Zeichen und ist kein Platzhalter.`,
       'Kopieren Sie das Login-Token des Dienstkontos erneut aus ChurchTools.',
     ),
+  pseudonym_key_file_relative: (name = keyFile) =>
+    message(
+      `Der Pfad zur Schlüsseldatei in ${name} ist nicht absolut.`,
+      'Der KI-Assistent startet Ecclium aus einem unbekannten Ordner, und eine Tilde wird nicht ersetzt.',
+      'Geben Sie den vollständigen Pfad an, der mit / beginnt.',
+    ),
+  pseudonym_key_file_platform: (name = keyFile) =>
+    message(
+      `Die Schlüsseldatei in ${name} lässt sich auf diesem System nicht sicher lesen.`,
+      'Es fehlt die Prüfung des Eigentümers oder das Öffnen ohne Links, etwa unter Windows. Einen anderen Weg für den Schlüssel gibt es nicht.',
+      `Entfernen Sie ${name}. Pseudonyme gibt es auf diesem System nicht.`,
+    ),
+  pseudonym_key_file_missing: (name = keyFile) =>
+    message(
+      `Die Schlüsseldatei in ${name} gibt es nicht.`,
+      'Ohne die Datei hat Ecclium keinen Schlüssel für Pseudonyme.',
+      `Prüfen Sie den Pfad in ${name}.`,
+    ),
+  pseudonym_key_file_symlink: (name = keyFile) =>
+    message(
+      `Der Pfad zur Schlüsseldatei in ${name} endet in einem symbolischen Link.`,
+      'Ein Link könnte auf eine fremde Datei zeigen, deshalb folgt Ecclium ihm nicht.',
+      'Geben Sie den Pfad der Datei selbst an.',
+    ),
+  pseudonym_key_file_unreadable: (name = keyFile) =>
+    message(
+      `Die Schlüsseldatei in ${name} lässt sich nicht lesen.`,
+      'Dem Benutzer, unter dem Ecclium läuft, fehlt das Recht dazu.',
+      'Prüfen Sie Eigentümer und Rechte der Datei. Empfohlen sind die Rechte 600.',
+    ),
+  pseudonym_key_file_not_regular: (name = keyFile) =>
+    message(
+      `Der Pfad in ${name} zeigt nicht auf eine gewöhnliche Datei.`,
+      'Ein Ordner, ein Gerät oder eine Pipe enthält keinen Schlüssel, und aus einer Pipe zu lesen könnte den Start aufhalten.',
+      'Geben Sie den Pfad einer gewöhnlichen Datei an.',
+    ),
+  pseudonym_key_file_owner: (name = keyFile) =>
+    message(
+      `Die Schlüsseldatei in ${name} gehört einem anderen Benutzer.`,
+      'Wem eine Datei gehört, der kann den Schlüssel darin austauschen.',
+      'Legen Sie die Datei als der Benutzer an, unter dem Ecclium läuft.',
+    ),
+  pseudonym_key_file_mode: (name = keyFile) =>
+    message(
+      `Die Schlüsseldatei in ${name} ist auch für die Gruppe oder für andere Benutzer zugänglich.`,
+      'Wer den Schlüssel liest, kann jedes Pseudonym in die Kennung einer Person zurückübersetzen.',
+      'Setzen Sie die Rechte der Datei mit «chmod 600» auf 600.',
+    ),
+  pseudonym_key_file_too_large: (name = keyFile) =>
+    message(
+      `Die Schlüsseldatei in ${name} ist zu gross.`,
+      `Sie hat mehr als ${formatNumber(4098)} Bytes, ein Schlüssel hat aber nur 64 Zeichen.`,
+      'Prüfen Sie, ob die Datei nur den Schlüssel enthält.',
+    ),
+  pseudonym_key_file_empty: (name = keyFile, raw) =>
+    message(
+      `Die Schlüsseldatei in ${name} ist leer.`,
+      'Sie enthält keinen Schlüssel, höchstens einen Zeilenumbruch.',
+      keyContent(raw),
+    ),
+  pseudonym_key_file_bom: (name = keyFile) =>
+    message(
+      `Die Schlüsseldatei in ${name} beginnt mit einer Byte-Order-Markierung.`,
+      'Manche Editoren setzen sie beim Speichern. Sie gehört nicht zum Schlüssel, und Ecclium entfernt sie nicht von sich aus.',
+      'Speichern Sie die Datei als UTF-8 ohne BOM oder als reinen Text.',
+    ),
+  pseudonym_key_file_characters: (name = keyFile) =>
+    message(
+      `Die Schlüsseldatei in ${name} enthält Zeichen, die in einem Schlüssel nicht vorkommen.`,
+      'Erlaubt sind 64 Zeichen aus 0 bis 9 und a bis f und ein einziger Zeilenumbruch am Ende. Leerzeichen, Tabulatoren und weitere Zeilen gehören nicht dazu.',
+      'Prüfen Sie die Datei, vielleicht steht dort mehr als der Schlüssel.',
+    ),
+  pseudonym_key_file_unsafe: (name = keyFile) =>
+    message(
+      `Die Schlüsseldatei in ${name} liess sich nicht sicher öffnen.`,
+      'Das Dateisystem meldete einen Fehler. Seine Meldung zeigt Ecclium nicht, weil sie den Pfad enthält.',
+      'Prüfen Sie den Pfad und die Ordner darüber.',
+    ),
+  pseudonym_key_invalid: (name = keyFile, raw) =>
+    message(
+      `Die Schlüsseldatei in ${name} enthält keinen gültigen Schlüssel.`,
+      'Ein Schlüssel hat genau 64 Zeichen aus 0 bis 9 und a bis f in Kleinbuchstaben, und nicht alle seine Bytes sind gleich.',
+      keyContent(raw),
+    ),
+  pseudonym_key_previous_without_current: () =>
+    message(
+      `${previousKeyFile} ist gesetzt, ${keyFile} aber nicht.`,
+      'Der frühere Schlüssel gilt nur während eines Wechsels, neben dem neuen.',
+      `Setzen Sie ${keyFile} auf die Datei mit dem neuen Schlüssel oder entfernen Sie ${previousKeyFile}.`,
+    ),
+  pseudonym_key_same: () =>
+    message(
+      `In ${keyFile} und ${previousKeyFile} steht derselbe Schlüssel.`,
+      'Ein Wechsel braucht einen neuen Schlüssel, sonst ändert sich nichts.',
+      `Schreiben Sie in die Datei aus ${keyFile} einen neuen Schlüssel, etwa mit ${keyCommand}, oder entfernen Sie ${previousKeyFile}.`,
+    ),
   redaction_strict_unsupported: () =>
     message(
       'Die Maskierung ‹strict› ist noch nicht verfügbar.',
@@ -645,6 +750,16 @@ const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({
     'Die Maskierung ist ausgeschaltet.',
     'Personendaten erreichen den KI-Assistenten unmaskiert.',
     `Setzen Sie ${quote('ECCLIUM_REDACTION')} auf ‹standard›, wenn das nicht gewollt ist.`,
+  ),
+  // On every start, because the previous key is a second secret on the
+  // disk that serves only for a day (ADR 0069). A pseudonym holds for the
+  // day it is made and the next, so from the second day after the change
+  // no pseudonym of the previous key is valid any more.
+  pseudonym_key_change: message(
+    `Ein früherer Schlüssel für Pseudonyme ist in ${previousKeyFile} gesetzt.`,
+    'Während eines Wechsels übersetzt Ecclium auch Pseudonyme aus dem früheren Schlüssel zurück, neue entstehen nur mit dem Schlüssel aus ' +
+      `${keyFile}. Gültig ist ein Pseudonym am Tag, an dem es entstand, und am folgenden UTC-Tag.`,
+    `Entfernen Sie ${previousKeyFile} und löschen Sie die Datei, sobald der UTC-Tag nach dem Wechsel vorbei ist.`,
   ),
   // On every start, because the tools of persons let the AI assistant see
   // names of persons and groups and their memberships (ADR 0060,

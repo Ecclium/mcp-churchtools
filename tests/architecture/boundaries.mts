@@ -46,6 +46,9 @@ export const placeKeys = [
   'docsTools',
   'apiTools',
   'operationCatalog',
+  'aesGcmSiv',
+  'pseudonymUsers',
+  'keys',
 ] as const;
 
 /** Key of a place in the code that a rule refers to. */

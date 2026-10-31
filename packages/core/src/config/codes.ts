@@ -7,6 +7,7 @@
  * @packageDocumentation
  */
 import { originCodes } from '../http/index.js';
+import { pseudonymKeyFileCodes } from './pseudonym-key-file.js';
 import { stateDirCodes } from './state-dir.js';
 import { tokenFileCodes } from './token-file.js';
 
@@ -33,6 +34,9 @@ export const configProblemCodes = Object.freeze([
   'token_conflict',
   ...tokenFileCodes,
   'redaction_strict_unsupported',
+  ...pseudonymKeyFileCodes,
+  'pseudonym_key_previous_without_current',
+  'pseudonym_key_same',
   'stdio_only',
   'subject_invalid',
   'subject_reserved',
@@ -48,6 +52,7 @@ export type ConfigProblemCode = (typeof configProblemCodes)[number];
 export const configWarningCodes = Object.freeze([
   'token_from_environment',
   'redaction_off',
+  'pseudonym_key_change',
   'persons_toolset_enabled',
   'events_toolset_enabled',
   'api_toolset_enabled',

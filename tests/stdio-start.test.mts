@@ -1646,3 +1646,78 @@ describe.each(eras)(
     });
   },
 );
+
+describe('the key files for pseudonyms', { timeout }, () => {
+  // The keys are made from a seed instead of written out, so that no secret
+  // scanner reads a test key as a leaked one (ADR 0069).
+  const keyOf = (seed: string): string =>
+    createHash('sha256').update(seed).digest('hex');
+  let keyFile = '';
+  let previousKeyFile = '';
+  beforeAll(() => {
+    keyFile = join(folder, 'pseudonym-key');
+    previousKeyFile = join(folder, 'pseudonym-key-previous');
+    writeFileSync(keyFile, `${keyOf('new')}\n`, { mode: 0o600 });
+    writeFileSync(previousKeyFile, `${keyOf('old')}\n`, { mode: 0o600 });
+    chmodSync(keyFile, 0o600);
+    chmodSync(previousKeyFile, 0o600);
+  });
+
+  it('shows both in config check as hidden and gives neither a key nor a path on any channel, even with --show-values', async () => {
+    const finished = await launch({
+      origin: `https://${host}`,
+      args: ['config', 'check', '--show-values'],
+      env: {
+        ECCLIUM_PSEUDONYM_KEY_FILE: keyFile,
+        ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE: previousKeyFile,
+      },
+    }).finish();
+    expect(finished.code).toBe(0);
+    expect(finished.stdout).toMatch(
+      /^ {2}Pseudonym-Schlüssel +verborgen \(aus der Datei in ‹ECCLIUM_PSEUDONYM_KEY_FILE›, Eigentümer und Dateirechte geprüft\)$/mu,
+    );
+    expect(finished.stdout).toMatch(
+      /^ {2}Früherer Schlüssel +verborgen \(aus der Datei in ‹ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE›, Eigentümer und Dateirechte geprüft\)$/mu,
+    );
+    const output = `${finished.stdout}${finished.stderr}`;
+    expect(output).toContain(warningText('pseudonym_key_change'));
+    for (const secret of [
+      keyOf('new'),
+      keyOf('old'),
+      keyFile,
+      previousKeyFile,
+      basename(keyFile),
+      basename(previousKeyFile),
+    ]) {
+      expect(output).not.toContain(secret);
+    }
+    assertNoCanary(output, [canary.token], 'config check');
+  });
+
+  it('ends with 78 for a key file that others may read, without the key or its path', async () => {
+    chmodSync(previousKeyFile, 0o644);
+    try {
+      const finished = await launch({
+        origin: `https://${host}`,
+        args: ['config', 'check'],
+        env: {
+          ECCLIUM_PSEUDONYM_KEY_FILE: keyFile,
+          ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE: previousKeyFile,
+        },
+      }).finish();
+      expect(finished.code).toBe(78);
+      const output = `${finished.stdout}${finished.stderr}`;
+      expect(output).toContain(
+        problemText({
+          code: 'pseudonym_key_file_mode',
+          variable: 'ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE',
+        }),
+      );
+      for (const secret of [keyOf('new'), keyOf('old'), previousKeyFile]) {
+        expect(output).not.toContain(secret);
+      }
+    } finally {
+      chmodSync(previousKeyFile, 0o600);
+    }
+  });
+});
