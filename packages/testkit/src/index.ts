@@ -19,6 +19,7 @@ export {
   type CanaryKind,
   type CanarySet,
 } from './canary.js';
+export { coreToolCatalog } from './catalog.js';
 export {
   groupAtHighestLevel,
   groupMembersAtHighestLevel,
