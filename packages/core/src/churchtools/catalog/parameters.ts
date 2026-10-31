@@ -9,6 +9,7 @@
  */
 import { isWikiPageGuid } from '@ecclium/mcp-churchtools-plugin-api';
 
+import type { ObjectDomain } from '../../audit/index.js';
 import { removeHiddenCharacters } from '../../redaction/index.js';
 import { urlOfPath } from '../query.js';
 import type {
@@ -25,8 +26,20 @@ export const maxQueryListLength = 100;
 
 /** What building the URL gives. */
 export type OperationUrl =
-  | { readonly ok: true; readonly url: URL }
+  | {
+      readonly ok: true;
+      readonly url: URL;
+      /**
+       * The checked values of the parameters that name an object, each
+       * with its kind, in the order of the request, for the audit
+       * (ADR 0028).
+       */
+      readonly objectRefs: readonly ObjectValue[];
+    }
   | { readonly ok: false; readonly message: string };
+
+/** A checked value of a parameter that names an object, with its kind. */
+export type ObjectValue = readonly [domain: ObjectDomain, value: string];
 
 const refuse = (message: string): OperationUrl =>
   Object.freeze({ ok: false, message });
@@ -349,6 +362,7 @@ export function buildOperationUrl(
   if (pathEntries === undefined) return refuse(unknownName('path'));
   if (queryEntries === undefined) return refuse(unknownName('query'));
 
+  const objectRefs: ObjectValue[] = [];
   const pathValues = new Map<string, string>();
   for (const [name, value] of pathEntries) {
     const parameter = operation.pathParameters.find(
@@ -359,6 +373,9 @@ export function buildOperationUrl(
     // Every path value passes the general check as well, after its kind.
     if (text === undefined || !isSafePathText(text)) {
       return refuse(invalid(parameter.name));
+    }
+    if (parameter.object !== undefined) {
+      objectRefs.push(Object.freeze([parameter.object, text] as const));
     }
     pathValues.set(parameter.name, encodeURIComponent(text));
   }
@@ -400,6 +417,15 @@ export function buildOperationUrl(
     for (const item of values) {
       const text = queryText(parameter, item);
       if (text === undefined) return refuse(wrong);
+      if (parameter.object !== undefined) {
+        // An ID in the query has the form of one, as in the path: no sign
+        // and no leading zero, so that the audit records the ID ChurchTools
+        // reads and a search for it finds the line (ADR 0028).
+        if (parameter.kind === 'integer' && pathInteger(item) === undefined) {
+          return refuse(wrong);
+        }
+        objectRefs.push(Object.freeze([parameter.object, text] as const));
+      }
       query.append(parameter.name, text);
     }
     given.add(parameter.name);
@@ -422,5 +448,9 @@ export function buildOperationUrl(
   if (!keepsTemplate(url, origin, operation.path)) return refuse(pathRefused);
   const search = query.toString();
   if (search !== '') url.search = search;
-  return Object.freeze({ ok: true, url });
+  return Object.freeze({
+    ok: true,
+    url,
+    objectRefs: Object.freeze(objectRefs),
+  });
 }

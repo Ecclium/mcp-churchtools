@@ -26,7 +26,10 @@ import {
 
 // Strict, so that an argument the model made up ends as a validation error.
 const input = z.strictObject({
-  personId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  personId: classify(
+    z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    'personId',
+  ),
 });
 
 // The names keep their own classes and stay outside the data envelope, as

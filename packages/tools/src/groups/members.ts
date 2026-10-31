@@ -56,15 +56,21 @@ export const emptyMemberPageMoreFollow =
 
 // Strict, so that an argument the model made up ends as a validation error.
 const input = z.strictObject({
-  groupId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-  page: z.number().int().min(1).max(maxGroupMembersPage).optional(),
+  groupId: classify(
+    z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    'groupId',
+  ),
+  page: classify(
+    z.number().int().min(1).max(maxGroupMembersPage),
+    'none',
+  ).optional(),
 });
 
 // The names keep their own classes and stay outside the data envelope, as
 // in the search (ADR 0026). Role and status are numbers and words of
 // ChurchTools.
 const output = z.object({
-  groupId: classify(z.number().int().positive(), 'none'),
+  groupId: classify(z.number().int().positive(), 'groupId'),
   page: classify(z.number().int().min(1).max(maxGroupMembersPage), 'none'),
   members: z
     .array(

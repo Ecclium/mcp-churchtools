@@ -44,7 +44,13 @@ export {
   variablePrefix,
   variables,
 } from './config/index.js';
-export { type AuditFileCode, auditFileCodes } from './audit/index.js';
+export {
+  auditEventJsonSchema,
+  type AuditFileCode,
+  auditFileCodes,
+  fileOnlyFields,
+  objectDomains,
+} from './audit/index.js';
 export {
   type QuotaFolderCode,
   quotaFolderCodes,

@@ -207,20 +207,26 @@ const searchOutput = z.object({
 });
 
 const getInput = z.strictObject({
-  operationId: z
-    .string()
-    .regex(/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/)
-    .optional(),
+  operationId: classify(
+    z.string().regex(/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/),
+    'none',
+  ).optional(),
   // As a request or a message writes it; the facts hold small letters.
-  method: z
-    .enum([...httpMethods, ...httpMethods.map((m) => m.toLowerCase())])
-    .optional(),
-  path: z
-    .string()
-    .max(400)
-    .regex(/^\/[\x21-\x7e]*$/)
-    .optional(),
-  part: z.number().int().min(1).max(maxDefinitionPart).optional(),
+  method: classify(
+    z.enum([...httpMethods, ...httpMethods.map((m) => m.toLowerCase())]),
+    'none',
+  ).optional(),
+  path: classify(
+    z
+      .string()
+      .max(400)
+      .regex(/^\/[\x21-\x7e]*$/),
+    'none',
+  ).optional(),
+  part: classify(
+    z.number().int().min(1).max(maxDefinitionPart),
+    'none',
+  ).optional(),
 });
 
 const getOutput = z.object({

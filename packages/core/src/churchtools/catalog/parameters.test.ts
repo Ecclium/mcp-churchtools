@@ -363,6 +363,74 @@ describe('buildOperationUrl, query', () => {
   });
 });
 
+describe('buildOperationUrl, IDs for the audit', () => {
+  const named = operation({
+    pathParameters: [
+      { name: 'thingId', kind: 'integer', object: 'event' },
+      { name: 'identifier', kind: 'guid', object: 'wiki_page' },
+      { name: 'kind', kind: 'enum', values: ['group', 'person'] },
+      { name: 'day', kind: 'date' },
+    ],
+    queryParameters: [
+      {
+        name: 'ids[]',
+        required: false,
+        kind: 'integer',
+        list: true,
+        object: 'person',
+      },
+      { name: 'limit', required: false, kind: 'integer' },
+    ],
+  });
+
+  it('gives the checked values of the parameters that name objects, in order', () => {
+    const built = build(
+      { path: pathValues, query: { limit: 5, 'ids[]': [3, 1] } },
+      named,
+    );
+    expect(built.ok && built.objectRefs).toEqual([
+      ['event', '12'],
+      ['wiki_page', guid],
+      ['person', '3'],
+      ['person', '1'],
+    ]);
+    expect(built.ok && Object.isFrozen(built.objectRefs)).toBe(true);
+  });
+
+  it('takes an ID in the query only in the form of one', () => {
+    for (const value of ['0012', '-12', '00000000000000012', 0, -3]) {
+      expect(
+        build({ path: pathValues, query: { 'ids[]': [value] } }, named).ok,
+        String(value),
+      ).toBe(false);
+    }
+    const built = build(
+      { path: pathValues, query: { 'ids[]': [12, '13'] } },
+      named,
+    );
+    expect(built.ok && built.objectRefs.slice(2)).toEqual([
+      ['person', '12'],
+      ['person', '13'],
+    ]);
+    // A whole number in the query that names no object keeps its form.
+    expect(build({ path: pathValues, query: { 'ids[]': ['0012'] } }).ok).toBe(
+      true,
+    );
+  });
+
+  it('gives none for an operation without such parameters', () => {
+    const built = build({ path: pathValues, query: { 'ids[]': [3] } });
+    expect(built.ok && built.objectRefs).toEqual([]);
+  });
+
+  it('gives nothing for a request it refuses', () => {
+    expect(build({ path: { ...pathValues, thingId: 'Max' } }, named)).toEqual({
+      ok: false,
+      message: expect.any(String) as string,
+    });
+  });
+});
+
 describe('the checks of single values', () => {
   it('isSafePathText refuses what ends or changes a path', () => {
     expect(isSafePathText('2026-10-30')).toBe(true);

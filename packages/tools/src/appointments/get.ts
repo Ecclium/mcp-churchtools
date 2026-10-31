@@ -14,6 +14,7 @@ import {
   maxAppointmentDescriptionLength,
   maxAppointmentLinkLength,
   maxNameLength,
+  refersTo,
   type ToolCall,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { z } from 'zod';
@@ -31,12 +32,12 @@ import {
  */
 export const datesPerCall = 25;
 
-const id = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+const id = () => z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 
 // Strict, so that an argument the model made up ends as a validation error.
 const input = z.strictObject({
-  calendarId: id,
-  appointmentId: id,
+  calendarId: refersTo(id(), 'calendar'),
+  appointmentId: refersTo(id(), 'appointment'),
 });
 
 // Title, subtitle, place, description and link are text people of the

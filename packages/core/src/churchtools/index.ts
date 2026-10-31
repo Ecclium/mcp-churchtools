@@ -11,6 +11,10 @@ export {
   type ChurchToolsClientOptions,
   createChurchToolsClient,
 } from './client.js';
-export type { OperationAnswer, OperationRequest } from './operation.js';
+export type {
+  ObjectValue,
+  OperationAnswer,
+  OperationRequest,
+} from './operation.js';
 export { tooLargeAnswer } from './operation.js';
 export { listReadableOperations } from './operation-list.js';

@@ -1122,7 +1122,18 @@ describe.skipIf(process.getuid?.() === 0)(
 
       it('records both calls in the audit file, without the term or a name', () => {
         const inFile = fileLines(stateDir);
-        expect(inFile).toEqual(auditOf(finished.stderr));
+        // The copy on stderr is the line of the file without the IDs of
+        // the persons and groups found, which only the file names
+        // (ADR 0028).
+        expect(auditOf(finished.stderr)).toEqual(
+          inFile.map((line) => ({ ...line, objectRefs: [] })),
+        );
+        const refs = inFile.map((line) => line['objectRefs'] as string[]);
+        expect(refs[0]?.length).toBeGreaterThan(0);
+        expect(refs[0]?.every((ref) => ref.startsWith('person:'))).toBe(true);
+        expect(refs[1]?.length).toBeGreaterThan(0);
+        expect(refs[1]?.every((ref) => ref.startsWith('group:'))).toBe(true);
+        expect(finished.stderr).not.toMatch(/person:|group:/u);
         expect(inFile.map((line) => [line['tool'], line['outcome']])).toEqual([
           ['ct_persons_search', 'ok'],
           ['ct_groups_search', 'ok'],

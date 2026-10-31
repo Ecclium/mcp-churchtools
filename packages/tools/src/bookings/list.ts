@@ -19,6 +19,7 @@ import {
   maxBookings,
   maxListIds,
   maxNameLength,
+  refersTo,
   type ToolCall,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { z } from 'zod';
@@ -56,14 +57,20 @@ export const pastLastBookingPage =
  */
 export const fewerBookingsNeeded = `These resources and days hold more than ${String(maxBookings)} bookings, more than this tool lists. Ask for fewer days or fewer resources.`;
 
-const id = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+const resourceId = refersTo(
+  z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  'resource',
+);
 
 // Strict, so that an argument the model made up ends as a validation error.
 const input = z.strictObject({
-  resourceIds: z.array(id).min(1).max(maxListIds),
-  from: z.string().regex(calendarDatePattern),
-  to: z.string().regex(calendarDatePattern),
-  page: z.number().int().min(1).max(maxBookingPage).optional(),
+  resourceIds: z.array(resourceId).min(1).max(maxListIds),
+  from: classify(z.string().regex(calendarDatePattern), 'none'),
+  to: classify(z.string().regex(calendarDatePattern), 'none'),
+  page: classify(
+    z.number().int().min(1).max(maxBookingPage),
+    'none',
+  ).optional(),
 });
 
 // The title is text people of the congregation wrote: untrusted, in the

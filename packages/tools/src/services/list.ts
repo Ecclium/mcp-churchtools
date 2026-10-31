@@ -35,7 +35,10 @@ export const pastLastServicePage =
 
 // Strict, so that an argument the model made up ends as a validation error.
 const input = z.strictObject({
-  page: z.number().int().min(1).max(maxServicePage).optional(),
+  page: classify(
+    z.number().int().min(1).max(maxServicePage),
+    'none',
+  ).optional(),
 });
 
 // People of the congregation name services and their groups, so the names

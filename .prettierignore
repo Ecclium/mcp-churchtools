@@ -23,6 +23,11 @@ docs/tools.md
 docs/prompts.md
 docs/configuration.md
 
+# Written by a test as file snapshots from the schema of the audit events
+# in the core, compared byte by byte (pnpm docs:generate, ADR 0028).
+docs/audit-events.md
+schemas/audit-event.v1.json
+
 # Written by pnpm docs:refresh with one operation per line, which a test
 # compares byte by byte with the facts (ADR 0067).
 packages/core/src/churchtools/catalog/generated.ts

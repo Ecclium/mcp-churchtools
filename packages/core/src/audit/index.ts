@@ -7,14 +7,23 @@
  */
 export {
   actorKinds,
+  auditEventJsonSchema,
   auditEventV1Schema,
   auditFieldSchemas,
   auditLimits,
   auditOutcomes,
   auditPlaceholders,
   confirmationPaths,
+  fileOnlyFields,
   objectDomains,
 } from './schema.js';
+export {
+  createObjectRefCollector,
+  type ObjectDomain,
+  type ObjectRefCollector,
+  type ObjectRefList,
+  objectRefOf,
+} from './object-ref.js';
 export { type AuditFileCode, auditFileCodes } from './file-writer.js';
 export {
   type AuditDraft,

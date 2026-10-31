@@ -45,7 +45,10 @@ export const pastLastCategory =
 
 // Strict, so that an argument the model made up ends as a validation error.
 const input = z.strictObject({
-  page: z.number().int().min(1).max(maxCategoryPage).optional(),
+  page: classify(
+    z.number().int().min(1).max(maxCategoryPage),
+    'none',
+  ).optional(),
 });
 
 // People of the congregation name the categories, so the name is untrusted

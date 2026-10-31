@@ -7,6 +7,8 @@
  */
 import type { Sensitivity } from '@ecclium/mcp-churchtools-plugin-api';
 
+import type { ObjectDomain } from '../../audit/index.js';
+
 /**
  * The kinds of value of a parameter, as the generated part names them. A
  * kind the core cannot send safely, such as an object or a parameter in a
@@ -93,6 +95,31 @@ export const exclusionReasons = Object.freeze([
 
 /** Why an operation is excluded. */
 export type ExclusionReason = (typeof exclusionReasons)[number];
+
+/**
+ * The parameters of an operation that hold IDs, each with the kind of
+ * object it names, or `null` for an ID of something outside the closed
+ * list of the audit, such as master data (ADR 0028).
+ */
+export type ObjectParameters = Readonly<Record<string, ObjectDomain | null>>;
+
+/**
+ * Freezes the tables of IDs of every operation and the map that holds
+ * them, so that no code can change what the audit records while it runs.
+ *
+ * @param tables - The tables by hand, keyed by `operationId`.
+ * @returns The same map, frozen in every level.
+ * @example
+ * ```ts
+ * frozenObjectParameters({ 'get-persons': { 'ids[]': 'person' } });
+ * ```
+ */
+export function frozenObjectParameters(
+  tables: Record<string, ObjectParameters>,
+): Readonly<Record<string, ObjectParameters>> {
+  for (const table of Object.values(tables)) Object.freeze(table);
+  return Object.freeze(tables);
+}
 
 /** An operation the escape hatch may read, with its sensitivity. */
 export interface AllowedOperation {

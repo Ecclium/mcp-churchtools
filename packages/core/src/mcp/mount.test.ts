@@ -383,11 +383,11 @@ describe('the list of tools', () => {
     const { factory } = setup({}, [
       testTool('ct_test_meta', () => ({ text: 'ok' }), {
         input: z.object({
-          query: z
-            .string()
-            .max(100)
-            .meta({ 'x-internal': hint, description: said }),
-          other: z.string().max(10).describe(said),
+          query: classify(
+            z.string().max(100).meta({ 'x-internal': hint, description: said }),
+            'none',
+          ),
+          other: classify(z.string().max(10).describe(said), 'none'),
         }),
       }),
     ]);
@@ -875,7 +875,9 @@ describe.each(eras)('the size of a result in the $name era', (era) => {
           text: fill((input as { extra: number }).extra),
         }),
         {
-          input: z.object({ extra: z.number().int().min(0).max(1) }),
+          input: z.object({
+            extra: classify(z.number().int().min(0).max(1), 'none'),
+          }),
         },
       ),
     ]);

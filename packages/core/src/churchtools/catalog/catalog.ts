@@ -10,11 +10,13 @@
  */
 import type { Sensitivity } from '@ecclium/mcp-churchtools-plugin-api';
 
+import { type ObjectDomain, objectDomains } from '../../audit/index.js';
 import type {
   CatalogParameter,
   Classification,
   ExclusionReason,
   GeneratedOperation,
+  ObjectParameters,
   ParameterKind,
 } from './types.js';
 
@@ -27,6 +29,8 @@ export interface PathParameter {
   readonly kind: PathKind;
   /** The allowed values of the kind `enum`. */
   readonly values?: readonly string[];
+  /** The kind of object its value names, for the audit (ADR 0028). */
+  readonly object?: ObjectDomain;
 }
 
 /** A parameter of the query of a readable operation. */
@@ -39,6 +43,8 @@ export interface QueryParameter {
   readonly list?: true;
   /** The allowed values of the kind `enum`. */
   readonly values?: readonly string[];
+  /** The kind of object each value names, for the audit (ADR 0028). */
+  readonly object?: ObjectDomain;
 }
 
 /** An operation the escape hatch may read. */
@@ -157,14 +163,20 @@ const namesInPath = (path: string): readonly string[] | undefined => {
 const pathParameter = (
   parameter: CatalogParameter,
   override: string | undefined,
+  object: ObjectDomain | undefined,
 ): PathParameter | undefined => {
   if (!parameter.required || parameter.list === true) return undefined;
+  const named = object === undefined ? {} : { object };
   if (override === 'integer' || override === 'guid') {
-    return Object.freeze({ name: parameter.name, kind: override });
+    return Object.freeze({ name: parameter.name, kind: override, ...named });
   }
   if (override !== undefined) return undefined;
   if (parameter.kind === 'integer' || parameter.kind === 'date') {
-    return Object.freeze({ name: parameter.name, kind: parameter.kind });
+    return Object.freeze({
+      name: parameter.name,
+      kind: parameter.kind,
+      ...named,
+    });
   }
   if (
     parameter.kind === 'enum' &&
@@ -176,9 +188,22 @@ const pathParameter = (
       name: parameter.name,
       kind: 'enum',
       values: parameter.values,
+      ...named,
     });
   }
   return undefined;
+};
+
+// The kind of object a parameter names, from the table by hand. Own
+// properties only, so that a name such as toString never reaches the
+// prototype.
+const objectOf = (
+  objects: ObjectParameters,
+  name: string,
+): ObjectDomain | undefined => {
+  if (!Object.hasOwn(objects, name)) return undefined;
+  const value = objects[name];
+  return value === null ? undefined : value;
 };
 
 // The readable form of an allowed operation, or the reason it is not.
@@ -187,6 +212,7 @@ const readable = (
   sensitivity: Sensitivity,
   pathKinds: Readonly<Record<string, string>>,
   withoutQuery: readonly string[],
+  objects: ObjectParameters,
 ): LookupResult => {
   const refuse = (reason: RefusalReason): LookupResult =>
     Object.freeze({ ok: false, reason });
@@ -202,6 +228,18 @@ const readable = (
   for (const name of Object.keys(pathKinds)) {
     if (!names.includes(name)) return refuse('kind');
   }
+  // Every entry of the table of IDs names a parameter of the path or the
+  // query with a kind of the closed list, or null.
+  for (const [name, object] of Object.entries(objects)) {
+    const declared = operation.parameters.some(
+      (parameter) =>
+        parameter.name === name &&
+        (parameter.in === 'path' || parameter.in === 'query'),
+    );
+    if (!declared || (object !== null && !objectDomains.includes(object))) {
+      return refuse('kind');
+    }
+  }
   const pathParameters: PathParameter[] = [];
   for (const name of names) {
     const declared = operation.parameters.filter(
@@ -212,7 +250,9 @@ const readable = (
       ? pathKinds[name]
       : undefined;
     const checked =
-      only === undefined ? undefined : pathParameter(only, override);
+      only === undefined
+        ? undefined
+        : pathParameter(only, override, objectOf(objects, name));
     if (checked === undefined) return refuse('kind');
     pathParameters.push(checked);
   }
@@ -243,6 +283,7 @@ const readable = (
     if (parameter.required && kind === 'unsupported') {
       return refuse('kind');
     }
+    const object = objectOf(objects, parameter.name);
     queryParameters.push(
       Object.freeze({
         name: parameter.name,
@@ -250,6 +291,7 @@ const readable = (
         kind,
         ...(parameter.list === true ? { list: true as const } : {}),
         ...(parameter.values === undefined ? {} : { values: parameter.values }),
+        ...(object === undefined ? {} : { object }),
       }),
     );
   }
@@ -272,6 +314,7 @@ const readable = (
  * @param operationId - The ID as the caller gave it.
  * @param operations - The generated part.
  * @param classification - The classification by hand, keyed by ID.
+ * @param objects - The parameters with IDs of each operation, keyed by ID.
  * @returns The readable operation, `unknown` for an ID the generated part
  *   does not know, or the reason the core refuses it.
  * @example
@@ -284,6 +327,7 @@ export function lookupOperation(
   operationId: unknown,
   operations: readonly GeneratedOperation[],
   classification: Readonly<Record<string, Classification>>,
+  objects: Readonly<Record<string, ObjectParameters>> = {},
 ): LookupResult {
   const operation =
     typeof operationId === 'string'
@@ -306,5 +350,8 @@ export function lookupOperation(
     entry.sensitivity,
     entry.pathKinds ?? {},
     entry.withoutQuery ?? [],
+    Object.hasOwn(objects, operation.operationId)
+      ? (objects[operation.operationId] ?? {})
+      : {},
   );
 }

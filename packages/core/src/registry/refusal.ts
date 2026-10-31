@@ -24,6 +24,7 @@ export const refusalReasons = Object.freeze([
   'tool_domain_reserved',
   'tool_description',
   'tool_input',
+  'tool_input_unclassified',
   'tool_output',
   'tool_sensitivity',
   'tool_unclassified',
@@ -59,6 +60,8 @@ const sentences: Readonly<Record<RefusalReason, string>> = Object.freeze({
     'A tool has a description with a missing or invalid section.',
   tool_input:
     'A tool has an input schema that is not a closed object or cannot be advertised as JSON Schema.',
+  tool_input_unclassified:
+    'A tool has an input field without a data class or a kind of object.',
   tool_output: 'A tool has an output schema the registry does not accept.',
   tool_sensitivity:
     'A tool declares a lower sensitivity than its output holds.',

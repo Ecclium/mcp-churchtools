@@ -15,6 +15,7 @@ import {
   maxAgendaItems,
   maxAgendaNoteLength,
   maxNameLength,
+  refersTo,
   type ToolCall,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { z } from 'zod';
@@ -40,8 +41,11 @@ export const pastLastAgendaPage =
 
 // Strict, so that an argument the model made up ends as a validation error.
 const input = z.strictObject({
-  eventId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-  page: z.number().int().min(1).max(maxAgendaPage).optional(),
+  eventId: refersTo(
+    z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    'event',
+  ),
+  page: classify(z.number().int().min(1).max(maxAgendaPage), 'none').optional(),
 });
 
 const text = (max: number) => classify(z.string().max(max), 'untrusted');

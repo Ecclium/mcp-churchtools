@@ -32,8 +32,14 @@ const base: AuditDraft = {
   durationMs: 12,
 };
 
+// The line on the stream of the logger, which never holds an ID, and the
+// line of the audit file (ADR 0028).
 const baseLine =
-  '{"v":1,"eventId":"a1b2c3d4-0000-4000-8000-000000000001","ts":"2026-10-13T08:00:00.000Z","type":"tool_call","tenantId":"demo-tenant","actor":{"kind":"user","id":"stdio:local-stdio"},"mode":"interactive","tool":"ct_group_search","outcome":"ok","objectRefs":["group:12"],"durationMs":12}';
+  '{"v":1,"eventId":"a1b2c3d4-0000-4000-8000-000000000001","ts":"2026-10-13T08:00:00.000Z","type":"tool_call","tenantId":"demo-tenant","actor":{"kind":"user","id":"stdio:local-stdio"},"mode":"interactive","tool":"ct_group_search","outcome":"ok","objectRefs":[],"durationMs":12}';
+const fileLine = baseLine.replace(
+  '"objectRefs":[]',
+  '"objectRefs":["group:12"]',
+);
 
 interface LogLine {
   readonly event: string;
@@ -87,6 +93,23 @@ const event = (lines: readonly string[]): Record<string, unknown> => {
 
 const events = (logs: readonly LogLine[]): string[] =>
   logs.map((line) => line.event);
+
+/** A sink with an audit file that takes every line, as make() without. */
+function makeWithFile(): ReturnType<typeof make> & {
+  readonly file: () => string[];
+} {
+  const fileLines: string[] = [];
+  const made = make({
+    file: {
+      write: (line) => {
+        fileLines.push(line);
+        return true;
+      },
+      ready: () => true,
+    },
+  });
+  return { ...made, file: () => [...fileLines] };
+}
 
 describe('a valid event', () => {
   it('gives exactly one line, and no log line', () => {
@@ -152,19 +175,20 @@ describe('a valid event', () => {
   });
 
   it('stays one bounded line at its largest', () => {
-    const { sink, lines, logs } = make();
+    const { sink, file, logs } = makeWithFile();
     sink.record({
       ...base,
       objectRefs: Array.from(
         { length: auditLimits.objectRefs },
-        () => 'wiki_page:0b0e9a3c-3f7e-4c62-9a55-6a1f0d2c7e11',
+        () => 'wiki_category:0b0e9a3c-3f7e-4c62-9a55-6a1f0d2c7e11',
       ),
+      objectRefsOmitted: auditLimits.objectRefsOmitted,
       pluginHashes: Array.from({ length: auditLimits.pluginHashes }, () =>
         'f'.repeat(64),
       ),
     });
-    expect(lines).toHaveLength(1);
-    expect(lines[0]?.length).toBeLessThan(16_384);
+    expect(file()).toHaveLength(1);
+    expect(file()[0]?.length).toBeLessThan(16_384);
     expect(logs()).toEqual([]);
   });
 
@@ -534,10 +558,11 @@ describe('lists', () => {
     ['no array', { length: 1, 0: 'group:12' }],
     ['a string', 'group:12'],
   ])('drop the whole object references for %s', (_what, objectRefs) => {
-    const { sink, audit, logs } = make();
+    const { sink, audit, file, logs } = makeWithFile();
     sink.record({ ...base, objectRefs } as unknown as AuditDraft);
-    expect(event(audit())['objectRefs']).toEqual([]);
+    expect(event(file())['objectRefs']).toEqual([]);
     expect(events(logs())).toEqual(['audit_invalid_object_refs']);
+    expect(file()[0]).not.toMatch(/ustermann/);
     expect(audit()[0]).not.toMatch(/ustermann/);
   });
 
@@ -576,21 +601,22 @@ describe('lists', () => {
         return undefined;
       },
     });
-    const { sink, audit } = make();
+    const { sink, file } = makeWithFile();
     sink.record({ ...base, objectRefs: iterated });
     sink.record({ ...base, objectRefs: withGetter });
     sink.record({ ...base, objectRefs: proxy });
     expect(calls).toBe(0);
     expect(
-      audit().map((line) => (JSON.parse(line) as AuditEventV1).objectRefs),
+      file().map((line) => (JSON.parse(line) as AuditEventV1).objectRefs),
     ).toEqual([['group:12'], [], []]);
   });
 
   it('copy no other property of a list', () => {
     const canary = makeCanaries().token;
     const refs = Object.assign(['group:12'], { note: canary.value });
-    const { sink, lines } = make();
+    const { sink, lines, file } = makeWithFile();
     sink.record({ ...base, objectRefs: refs });
+    expect(file()).toEqual([fileLine]);
     expect(lines).toEqual([baseLine]);
   });
 
@@ -1124,7 +1150,7 @@ describe('with an audit file', () => {
     const sink = sinkOver(target);
     expect(sink.record(base)).toBe(true);
     expect(target.order).toEqual(['file', 'stderr']);
-    expect(target.lines).toEqual([baseLine]);
+    expect(target.lines).toEqual([fileLine]);
     expect(target.copies).toEqual([baseLine]);
     expect(sink.failures()).toBe(0);
     expect(sink.hasFile).toBe(true);
@@ -1259,6 +1285,133 @@ describe('with an audit file', () => {
       }),
     );
     expect(sink.ready()).toBe(false);
+  });
+});
+
+describe('IDs and the other fields only for the file', () => {
+  const hundred = Array.from(
+    { length: auditLimits.objectRefs },
+    (_, index) => `person:${String(index + 1)}`,
+  );
+
+  it('keep the IDs in the file and write the copy with an empty list', () => {
+    const { sink, file, audit, logs } = makeWithFile();
+    expect(
+      sink.record({ ...base, objectRefs: hundred, objectRefsOmitted: 7 }),
+    ).toBe(true);
+    const line = event(file());
+    expect(line['objectRefs']).toEqual(hundred);
+    expect(line['objectRefsOmitted']).toBe(7);
+    const copy = event(audit());
+    expect(copy['objectRefs']).toEqual([]);
+    expect(copy).not.toHaveProperty('objectRefsOmitted');
+    expect(audit()[0]).not.toMatch(/person:/u);
+    expect(logs()).toEqual([]);
+    expect(auditEventV1Schema.safeParse(copy).success).toBe(true);
+  });
+
+  it('write no ID onto the stream without a file either', () => {
+    const { sink, audit } = make();
+    expect(
+      sink.record({ ...base, objectRefs: hundred, objectRefsOmitted: 7 }),
+    ).toBe(true);
+    expect(event(audit())['objectRefs']).toEqual([]);
+    expect(audit()[0]).not.toMatch(/person:|objectRefsOmitted/u);
+  });
+
+  it('put the count of left out IDs right after the IDs', () => {
+    const { sink, file } = makeWithFile();
+    sink.record({
+      ...base,
+      outcome: 'error',
+      errorCode: 'upstream',
+      objectRefs: hundred,
+      objectRefsOmitted: 1,
+    });
+    const keys = Object.keys(event(file()));
+    expect(keys.slice(keys.indexOf('objectRefs'))).toEqual([
+      'objectRefs',
+      'objectRefsOmitted',
+      'errorCode',
+      'durationMs',
+    ]);
+  });
+
+  it.each([
+    ['fewer than 100 IDs', { objectRefsOmitted: 3 }],
+    ['zero', { objectRefs: hundred, objectRefsOmitted: 0 }],
+    ['a fraction', { objectRefs: hundred, objectRefsOmitted: 1.5 }],
+    ['text', { objectRefs: hundred, objectRefsOmitted: '3' }],
+    ['too large', { objectRefs: hundred, objectRefsOmitted: 1_000_001 }],
+  ])('drop a count of left out IDs with %s, reported', (_what, fields) => {
+    const { sink, file, logs } = makeWithFile();
+    sink.record({ ...base, ...fields } as unknown as AuditDraft);
+    expect(event(file())).not.toHaveProperty('objectRefsOmitted');
+    expect(events(logs())).toEqual(['audit_invalid_object_refs_omitted']);
+  });
+
+  it('keep the mark of a held back result reserved for the sink', () => {
+    const { sink, file, logs } = makeWithFile();
+    sink.record({ ...base, withheldAfterRead: true } as unknown as AuditDraft);
+    expect(event(file())).not.toHaveProperty('withheldAfterRead');
+    expect(events(logs())).toEqual(['audit_reserved_withheld_after_read']);
+  });
+
+  it('mark a required line it had to change as read, in the file only', () => {
+    const { sink, file, audit } = makeWithFile();
+    expect(
+      sink.record({ ...base, tenantId: 'Demo Tenant' }, firstId, {
+        required: true,
+      }),
+    ).toBe(false);
+    const line = file()[0] ?? '';
+    expect(JSON.parse(line)).toMatchObject({
+      outcome: 'denied',
+      errorCode: 'policy_denied',
+      withheldAfterRead: true,
+      objectRefs: ['group:12'],
+    });
+    expect(line.indexOf('"errorCode"')).toBeLessThan(
+      line.indexOf('"withheldAfterRead"'),
+    );
+    expect(line.indexOf('"withheldAfterRead"')).toBeLessThan(
+      line.indexOf('"durationMs"'),
+    );
+    expect(auditEventV1Schema.safeParse(JSON.parse(line)).success).toBe(true);
+    const copy = event(audit());
+    expect(copy).toMatchObject({ outcome: 'denied', objectRefs: [] });
+    expect(copy).not.toHaveProperty('withheldAfterRead');
+  });
+
+  it('never mark a copy of a line the file did not take', () => {
+    const copies: string[] = [];
+    const sink = createAuditSink({
+      writer: {
+        write: (line) => {
+          copies.push(line);
+          return true;
+        },
+      },
+      file: { write: () => false, ready: () => true },
+      clock: { now: () => now },
+      isKnownTool: (name) => name === 'ct_group_search',
+      newId: () => firstId,
+    });
+    expect(sink.record(base, firstId, { required: true })).toBe(false);
+    expect(copies).toHaveLength(1);
+    expect(JSON.parse(copies[0] ?? '')).toMatchObject({
+      outcome: 'denied',
+      errorCode: 'policy_denied',
+      objectRefs: [],
+    });
+    expect(copies[0]).not.toContain('withheldAfterRead');
+  });
+
+  it('mark no line of a call that is not required', () => {
+    const { sink, file } = makeWithFile();
+    sink.record({ ...base, tenantId: 'Demo Tenant' });
+    expect(event(file())).toMatchObject({ outcome: 'ok' });
+    expect(event(file())).not.toHaveProperty('withheldAfterRead');
   });
 });
 

@@ -75,10 +75,13 @@ export const exampleEchoTool = defineTool({
     limits: 'At most 50 notes per call.',
   },
   input: z.strictObject({
-    email: text(254).optional(),
-    phone: text(50).optional(),
-    birthdate: text(10).optional(),
-    notes: z.array(text(2000)).max(50).optional(),
+    email: classify(text(254), 'email').optional(),
+    phone: classify(text(50), 'phone').optional(),
+    birthdate: classify(text(10), 'birthdate').optional(),
+    notes: z
+      .array(classify(text(2000), 'none'))
+      .max(50)
+      .optional(),
   }),
   output: z.object({
     email: classify(text(254), 'email').optional(),
@@ -112,7 +115,7 @@ export const exampleWriteTool = defineTool({
     avoidWhen: 'You want to write anything; this tool writes nothing.',
     limits: 'Writes nothing.',
   },
-  input: z.object({ note: text(200) }),
+  input: z.object({ note: classify(text(200), 'none') }),
   output: z.object({ done: classify(z.boolean(), 'none') }),
   execute: () => Promise.resolve({ done: true }),
 });

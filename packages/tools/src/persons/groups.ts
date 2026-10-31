@@ -38,7 +38,10 @@ export const moreGroupsListed = `The person belongs to more than ${String(maxPer
 
 // Strict, so that an argument the model made up ends as a validation error.
 const input = z.strictObject({
-  personId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  personId: classify(
+    z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    'personId',
+  ),
 });
 
 // People of the congregation name their groups, so the name stands in the
@@ -49,7 +52,7 @@ const output = z.object({
   groups: z
     .array(
       z.object({
-        groupId: classify(z.number().int().positive(), 'none').nullable(),
+        groupId: classify(z.number().int().positive(), 'groupId').nullable(),
         groupName: classify(z.string().max(maxNameLength), 'untrusted'),
         groupTypeRoleId: classify(z.number().int().positive(), 'none'),
         groupMemberStatus: classify(

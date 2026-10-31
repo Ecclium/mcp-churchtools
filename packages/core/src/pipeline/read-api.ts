@@ -49,6 +49,7 @@ import {
   listReadableOperations,
   tooLargeAnswer,
 } from '../churchtools/index.js';
+import type { ObjectDomain } from '../audit/index.js';
 import { renderForeignJson } from '../redaction/index.js';
 
 /** Read access of one call and the way to end it. */
@@ -73,6 +74,10 @@ export interface ReadAccess {
  * @param domain - The area of the calling tool. Only a tool of the
  *   sensitivity `special` in the area `api` may read an operation of the
  *   escape hatch; any other gets `policy_denied` (ADR 0067).
+ * @param onObjectRef - Takes the IDs a read asks for, with their kinds,
+ *   before the request is sent, for the audit of the call (ADR 0028): the
+ *   arguments of a read by ID and the checked values of a read of the
+ *   escape hatch that name objects.
  * @returns The access, frozen and without prototype.
  * @example
  * ```ts
@@ -87,8 +92,14 @@ export function createReadAccess(
   sensitivity: Sensitivity,
   asSpecial = false,
   domain?: ToolDomain,
+  onObjectRef?: (domain: ObjectDomain, value: unknown) => void,
 ): ReadAccess {
   let revoked = false;
+  // The IDs a read asks for, noted when it runs and before its request,
+  // so that the audit names them whatever the tool returns (ADR 0028).
+  const note = (domain: ObjectDomain, ...values: readonly unknown[]): void => {
+    for (const value of values) onObjectRef?.(domain, value);
+  };
   const guard = <T>(run: () => Promise<T>): Promise<T> =>
     revoked ? Promise.reject(new EccliumError('internal')) : run();
   // Persons and groups reveal religious affiliation. Only a tool of the
@@ -126,7 +137,13 @@ export function createReadAccess(
     return guard(async () => {
       // Each part is read once, as the client does as well.
       const { operationId, path, query } = request;
-      const answer = await client.operation(ctx, { operationId, path, query });
+      const answer = await client.operation(
+        ctx,
+        { operationId, path, query },
+        (objectRefs) => {
+          for (const [kind, value] of objectRefs) onObjectRef?.(kind, value);
+        },
+      );
       // The answer has no schema of its own; it leaves only through the
       // mask, which follows the level of redaction of the call.
       const written = renderForeignJson(answer.root, ctx.redaction);
@@ -157,35 +174,63 @@ export function createReadAccess(
     searchGroups: (query: string): Promise<SearchHits<GroupHit>> =>
       special(() => client.searchGroups(ctx, query)),
     person: (personId: number): Promise<Person> =>
-      special(() => client.person(ctx, personId)),
+      special(() => {
+        note('person', personId);
+        return client.person(ctx, personId);
+      }),
     personGroups: (personId: number): Promise<PersonGroupList> =>
-      special(() => client.personGroups(ctx, personId)),
+      special(() => {
+        note('person', personId);
+        return client.personGroups(ctx, personId);
+      }),
     group: (groupId: number): Promise<Group> =>
-      special(() => client.group(ctx, groupId)),
+      special(() => {
+        note('group', groupId);
+        return client.group(ctx, groupId);
+      }),
     groupMembers: (groupId: number, page: number): Promise<GroupMemberList> =>
-      special(() => client.groupMembers(ctx, groupId, page)),
+      special(() => {
+        note('group', groupId);
+        return client.groupMembers(ctx, groupId, page);
+      }),
     wikiCategories: (): Promise<readonly WikiCategory[]> =>
       guard(() => client.wikiCategories(ctx)),
     wikiPages: (categoryId: number, page: number): Promise<WikiPageList> =>
-      guard(() => client.wikiPages(ctx, categoryId, page)),
+      guard(() => {
+        note('wiki_category', categoryId);
+        return client.wikiPages(ctx, categoryId, page);
+      }),
     wikiPage: (
       categoryId: number,
       guid: string,
       version?: number,
     ): Promise<WikiPage> =>
-      guard(() => client.wikiPage(ctx, categoryId, guid, version)),
+      guard(() => {
+        note('wiki_category', categoryId);
+        note('wiki_page', guid);
+        return client.wikiPage(ctx, categoryId, guid, version);
+      }),
     events: (from: string, to: string): Promise<EventList> =>
       guard(() => client.events(ctx, from, to)),
     event: (eventId: number): Promise<EventDetails> =>
-      guard(() => client.event(ctx, eventId)),
+      guard(() => {
+        note('event', eventId);
+        return client.event(ctx, eventId);
+      }),
     eventAgenda: (eventId: number): Promise<Agenda> =>
-      guard(() => client.eventAgenda(ctx, eventId)),
+      guard(() => {
+        note('event', eventId);
+        return client.eventAgenda(ctx, eventId);
+      }),
     services: (): Promise<ServiceList> => guard(() => client.services(ctx)),
     eventAssignments: (
       eventId: number,
       page: number,
     ): Promise<AssignmentList> =>
-      named(() => client.eventAssignments(ctx, eventId, page)),
+      named(() => {
+        note('event', eventId);
+        return client.eventAssignments(ctx, eventId, page);
+      }),
     // Calendars, appointments, resources and bookings name no person: no
     // field they pass on is a person or a name of one (ADR 0064).
     calendars: (): Promise<readonly Calendar[]> =>
@@ -195,27 +240,43 @@ export function createReadAccess(
       from: string,
       to: string,
     ): Promise<AppointmentList> =>
-      guard(() => client.appointments(ctx, calendarIds, from, to)),
+      guard(() => {
+        note('calendar', ...calendarIds);
+        return client.appointments(ctx, calendarIds, from, to);
+      }),
     appointment: (
       calendarId: number,
       appointmentId: number,
     ): Promise<AppointmentDetails> =>
-      guard(() => client.appointment(ctx, calendarId, appointmentId)),
+      guard(() => {
+        note('calendar', calendarId);
+        note('appointment', appointmentId);
+        return client.appointment(ctx, calendarId, appointmentId);
+      }),
     resources: (): Promise<ResourceList> => guard(() => client.resources(ctx)),
     bookings: (
       resourceIds: readonly number[],
       from: string,
       to: string,
     ): Promise<BookingList> =>
-      guard(() => client.bookings(ctx, resourceIds, from, to)),
+      guard(() => {
+        note('resource', ...resourceIds);
+        return client.bookings(ctx, resourceIds, from, to);
+      }),
     // Songs and the hits of the wiki name no person in a field of their
     // own; titles, authors and previews are text in the data envelope.
     searchSongs: (query: string, page: number): Promise<SongList> =>
       guard(() => client.searchSongs(ctx, query, page)),
     song: (songId: number): Promise<Song> =>
-      guard(() => client.song(ctx, songId)),
+      guard(() => {
+        note('song', songId);
+        return client.song(ctx, songId);
+      }),
     searchWiki: (query: string, categoryId?: number): Promise<WikiSearchHits> =>
-      guard(() => client.searchWiki(ctx, query, categoryId)),
+      guard(() => {
+        if (categoryId !== undefined) note('wiki_category', categoryId);
+        return client.searchWiki(ctx, query, categoryId);
+      }),
     // The global search finds persons by name, whatever type a call asks
     // for, so it is a search of persons like searchPersons (ADR 0064).
     search: (

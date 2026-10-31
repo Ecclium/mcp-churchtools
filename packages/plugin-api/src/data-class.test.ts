@@ -11,6 +11,7 @@ const sharedKey = Symbol.for('ecclium.mcp-churchtools.data-class.v1');
 const everyClass: Readonly<Record<DataClass, true>> = {
   none: true,
   personId: true,
+  groupId: true,
   'name.first': true,
   'name.last': true,
   email: true,

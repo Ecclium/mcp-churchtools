@@ -58,8 +58,11 @@ const invalidTerm = `The search term needs 1 to ${String(maxSearchTermLength)} c
 
 // Strict, so that an argument the model made up ends as a validation error.
 const input = z.strictObject({
-  query: z.string().min(1).max(maxSearchTermLength).regex(/\S/),
-  page: z.number().int().min(1).max(maxSongsPage).optional(),
+  query: classify(
+    z.string().min(1).max(maxSearchTermLength).regex(/\S/),
+    'none',
+  ),
+  page: classify(z.number().int().min(1).max(maxSongsPage), 'none').optional(),
 });
 
 const output = z.object({

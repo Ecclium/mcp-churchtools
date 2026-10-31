@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import { objectDomains } from '../../audit/index.js';
 import {
   classification,
   findReadableOperation,
   generatedOperations,
   isFixedExclusion,
+  objectParameters,
 } from './index.js';
 import { exclusionReasons } from './types.js';
 
@@ -101,8 +103,8 @@ describe('the classification of the core', () => {
       'get-wiki-categories-id-pages-identifier',
     );
     expect(page.ok && page.operation.pathParameters).toEqual([
-      { name: 'wikiCategoryId', kind: 'integer' },
-      { name: 'identifier', kind: 'guid' },
+      { name: 'wikiCategoryId', kind: 'integer', object: 'wiki_category' },
+      { name: 'identifier', kind: 'guid', object: 'wiki_page' },
     ]);
     for (const operationId of [
       'get-groups-groupId-parents',
@@ -110,7 +112,7 @@ describe('the classification of the core', () => {
     ]) {
       const found = findReadableOperation(operationId);
       expect(found.ok && found.operation.pathParameters, operationId).toEqual([
-        { name: 'groupId', kind: 'integer' },
+        { name: 'groupId', kind: 'integer', object: 'group' },
       ]);
     }
   });
@@ -126,6 +128,65 @@ describe('the classification of the core', () => {
       ['birthday_after', 'unsupported'],
       ['birthday_before', 'unsupported'],
     ]);
+  });
+
+  it('names a kind of object or none for every parameter that looks like an ID', () => {
+    // Names such as personId, person_id, ids[], group_ids[], identifier,
+    // pageIdentifier or wiki_guids[].
+    const idLike = (name: string): boolean =>
+      /(?:^|_)(?:ids?|identifiers?|guids?)(?:\[\])?$/u.test(name) ||
+      /(?:Ids?|Identifiers?|Guids?)(?:\[\])?$/u.test(name);
+    const missing: string[] = [];
+    for (const operation of generatedOperations) {
+      if (entryOf(operation.operationId)?.allowed !== true) continue;
+      const table = Object.hasOwn(objectParameters, operation.operationId)
+        ? objectParameters[operation.operationId]
+        : undefined;
+      for (const parameter of operation.parameters) {
+        if (parameter.in !== 'path' && parameter.in !== 'query') continue;
+        if (!idLike(parameter.name)) continue;
+        if (table === undefined || !Object.hasOwn(table, parameter.name)) {
+          missing.push(`${operation.operationId} ${parameter.name}`);
+        }
+      }
+    }
+    expect(missing).toEqual([]);
+  });
+
+  it('keeps the table of IDs to allowed operations and known kinds', () => {
+    for (const [operationId, table] of Object.entries(objectParameters)) {
+      expect(entryOf(operationId)?.allowed, operationId).toBe(true);
+      for (const kind of Object.values(table)) {
+        if (kind !== null) expect(objectDomains).toContain(kind);
+      }
+    }
+    expect(Object.isFrozen(objectParameters)).toBe(true);
+    for (const table of Object.values(objectParameters)) {
+      expect(Object.isFrozen(table)).toBe(true);
+    }
+  });
+
+  it('records the persons and groups that lists of the escape hatch ask for', () => {
+    const objectOf = (operationId: string, name: string) => {
+      const found = findReadableOperation(operationId);
+      if (!found.ok) return undefined;
+      return [
+        ...found.operation.pathParameters,
+        ...found.operation.queryParameters,
+      ].find((parameter) => parameter.name === name)?.object;
+    };
+    expect(objectOf('get-persons', 'ids[]')).toBe('person');
+    expect(objectOf('get-groups-members', 'ids[]')).toBe('group');
+    expect(objectOf('get-bookings', 'person_id')).toBe('person');
+    expect(objectOf('get-groups-id-members', 'person_id[]')).toBe('person');
+    expect(objectOf('get-songs', 'ids[]')).toBe('song');
+    expect(objectOf('get-groups', 'tag_ids[]')).toBeUndefined();
+    expect(
+      objectOf(
+        'get-permissions-permissionDomainType-permissionDomainId',
+        'domainId',
+      ),
+    ).toBeUndefined();
   });
 
   it('knows no operation outside the generated part', () => {

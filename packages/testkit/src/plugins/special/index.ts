@@ -19,6 +19,11 @@ export interface SpecialPluginOptions {
   /** The text the tool returns, such as a canary. */
   readonly text: string;
   /**
+   * The ID of a group the result names, or none. With the ID of a person
+   * in the input, the audit file records both (ADR 0028).
+   */
+  readonly groupId?: number;
+  /**
    * Runs in each call before the tool returns, such as to delete the audit
    * file of the test.
    */
@@ -26,8 +31,9 @@ export interface SpecialPluginOptions {
 }
 
 /**
- * Creates the plugin with the tool `ct_test_special`, which returns the
- * text and runs `during` first.
+ * Creates the plugin with the tool `ct_test_special`, which takes the ID
+ * of a person if given, returns the text and the ID of a group and runs
+ * `during` first.
  *
  * @param options - The text and what runs in each call.
  * @returns The plugin, named `test-special`.
@@ -54,11 +60,19 @@ export function createSpecialPlugin(options: SpecialPluginOptions): Plugin {
       avoidWhen: 'You need anything else; this tool exists for tests.',
       limits: 'Returns one text.',
     },
-    input: z.object({}),
-    output: z.object({ text: classify(z.string().max(200), 'none') }),
+    input: z.object({
+      personId: classify(z.number().int().positive(), 'personId').optional(),
+    }),
+    output: z.object({
+      text: classify(z.string().max(200), 'none'),
+      groupId: classify(z.number().int().positive(), 'groupId').nullable(),
+    }),
     execute: () => {
       options.during?.();
-      return Promise.resolve({ text: options.text });
+      return Promise.resolve({
+        text: options.text,
+        groupId: options.groupId ?? null,
+      });
     },
   });
   return {

@@ -7,7 +7,11 @@
  *
  * @packageDocumentation
  */
-import { defineTool, type ToolCall } from '@ecclium/mcp-churchtools-plugin-api';
+import {
+  defineTool,
+  refersTo,
+  type ToolCall,
+} from '@ecclium/mcp-churchtools-plugin-api';
 import { z } from 'zod';
 
 import { readFailed } from '../persons/rights.js';
@@ -28,7 +32,10 @@ export const arrangementsPerSong = 20;
 
 // Strict, so that an argument the model made up ends as a validation error.
 const input = z.strictObject({
-  songId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  songId: refersTo(
+    z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    'song',
+  ),
 });
 
 const output = songOutput(arrangementsPerSong);

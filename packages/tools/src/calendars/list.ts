@@ -42,7 +42,10 @@ export const pastLastCalendarPage =
 
 // Strict, so that an argument the model made up ends as a validation error.
 const input = z.strictObject({
-  page: z.number().int().min(1).max(maxCalendarPage).optional(),
+  page: classify(
+    z.number().int().min(1).max(maxCalendarPage),
+    'none',
+  ).optional(),
 });
 
 // People of the congregation name calendars, so the names are untrusted and

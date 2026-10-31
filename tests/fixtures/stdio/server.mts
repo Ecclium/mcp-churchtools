@@ -16,7 +16,10 @@
 // must refuse. «audit-file» opens the audit file in the folder of state
 // STDIO_FIXTURE_STATE_DIR and adds the tool ct_test_special of testkit,
 // which returns STDIO_FIXTURE_DATA; its first call deletes the audit file
-// and locks the folder audit before it returns (ADR 0028).
+// and locks the folder audit before it returns (ADR 0028). «audit-ids»
+// opens the audit file the same way and adds the same tool, which then
+// leaves the file alone and names a group in its result, so that the
+// test can find the IDs of a call in the file and nowhere else.
 //
 // The double answers whoami three times, in this order: with an account,
 // with the status 503 and, for a call the test cancels, not before a
@@ -91,10 +94,10 @@ double.intercept(whoami).reply(200, account, json).delay(60_000);
 const stateDir = process.env['STDIO_FIXTURE_STATE_DIR'] ?? '';
 const auditFolder = join(stateDir, 'audit');
 let broken = false;
-const opened =
-  scenario === 'audit-file'
-    ? openAuditFile({ stateDir, clock, pid: process.pid })
-    : undefined;
+const withFile = scenario === 'audit-file' || scenario === 'audit-ids';
+const opened = withFile
+  ? openAuditFile({ stateDir, clock, pid: process.pid })
+  : undefined;
 if (opened !== undefined && !opened.ok) throw new Error(opened.code);
 // ct_example_profile names a person, so its result needs its line in an
 // audit file (ADR 0064). Without the scenario of the real file, a file in
@@ -121,7 +124,14 @@ const catalog = createToolCatalog({
             },
           }),
         ]
-      : [],
+      : scenario === 'audit-ids'
+        ? [
+            createSpecialPlugin({
+              text: process.env['STDIO_FIXTURE_DATA'] ?? '',
+              groupId: 815,
+            }),
+          ]
+        : [],
   readOnly: config.readOnly,
   toolsets: new Set(['persons', 'wiki'] as const),
 });

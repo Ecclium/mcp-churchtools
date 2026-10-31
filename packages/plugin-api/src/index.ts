@@ -39,7 +39,11 @@ export {
   classify,
   dataClasses,
   dataClassOf,
+  objectKindOf,
+  objectKinds,
+  refersTo,
   type DataClass,
+  type ObjectKind,
 } from './data-class.js';
 export {
   defineTool,

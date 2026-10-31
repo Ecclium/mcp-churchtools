@@ -12,7 +12,235 @@
  *
  * @packageDocumentation
  */
-import { allowed, type Classification, excluded } from './types.js';
+import {
+  allowed,
+  type Classification,
+  excluded,
+  frozenObjectParameters,
+  type ObjectParameters,
+} from './types.js';
+
+/**
+ * The parameters in path and query of each allowed operation that hold
+ * IDs, by hand, keyed by `operationId`: the kind of object each names, or
+ * `null` for master data and other IDs outside the closed list of the
+ * audit. The audit records the IDs a read of the escape hatch asks for
+ * from the values the core checked (ADR 0028). A test fails while a
+ * parameter of an allowed operation whose name looks like an ID has no
+ * entry here. `domainId` stays `null`: the kind of object it names
+ * depends on `domainType`.
+ */
+export const objectParameters: Readonly<Record<string, ObjectParameters>> =
+  frozenObjectParameters({
+    'get-agendatemplates-agendaId': { agendaId: null },
+    'get-bookings': {
+      person_id: 'person',
+      'resource_ids[]': 'resource',
+      'status_ids[]': null,
+    },
+    'get-bookings-id': { bookingId: 'booking' },
+    'get-calendars-appointments': { 'calendar_ids[]': 'calendar' },
+    'get-calendars-appointments-appointmentId-startDate': {
+      appointmentId: 'appointment',
+    },
+    'get-calendars-appointments-templates-id': { templateId: null },
+    'get-calendars-calendarId': { calendarId: 'calendar' },
+    'get-calendars-calendarId-appointments': { calendarId: 'calendar' },
+    'get-calendars-calendarId-appointments-appointmentId': {
+      appointmentId: 'appointment',
+      calendarId: 'calendar',
+    },
+    'get-calendars-calendarId-appointments-appointmentId-startDate': {
+      appointmentId: 'appointment',
+      calendarId: 'calendar',
+    },
+    'get-events-eventId-facts': { eventId: 'event' },
+    'get-events-eventId-facts-factId': { eventId: 'event', factId: null },
+    'get-events-eventId-services-serviceId-possiblepersons': {
+      eventId: 'event',
+      serviceId: 'service',
+    },
+    'get-events-facts': { 'event_id[]': 'event', 'fact_id[]': null },
+    'get-events-id': { eventId: 'event' },
+    'get-events-id-agenda': { eventId: 'event' },
+    'get-events-id-agenda-songs': { eventId: 'event' },
+    'get-events-id-possiblepersonsforservice': { serviceId: 'service' },
+    'get-group-agegroups-ageGroupId': { ageGroupId: null },
+    'get-group-groupcategories-groupCategoryId': { groupCategoryId: null },
+    'get-group-grouptypes-groupTypeId': { groupTypeId: null },
+    'get-group-meetingtemplates-meetingTemplateId': { meetingTemplateId: null },
+    'get-group-roles': { group_type_id: null },
+    'get-group-roles-roleId': { roleId: null },
+    'get-group-targetgroups-targetGroupId': { targetGroupId: null },
+    'get-groups': {
+      'agegroup_ids[]': null,
+      'campus_ids[]': null,
+      child_id: 'group',
+      'group_category_ids[]': null,
+      'group_status_ids[]': null,
+      'group_type_ids[]': null,
+      'ids[]': 'group',
+      parent_id: 'group',
+      'tag_ids[]': null,
+      'target_group_ids[]': null,
+    },
+    'get-groups-groupId': { groupId: 'group' },
+    'get-groups-groupId-children': {
+      groupId: 'group',
+      'agegroup_ids[]': null,
+      'campus_ids[]': null,
+      'group_category_ids[]': null,
+      'group_status_ids[]': null,
+      'group_type_ids[]': null,
+      'ids[]': 'group',
+      'tag_ids[]': null,
+      'target_group_ids[]': null,
+    },
+    'get-groups-groupId-meetings-meetingId': {
+      groupId: 'group',
+      meetingId: null,
+    },
+    'get-groups-groupId-meetings-meetingId-members': {
+      groupId: 'group',
+      meetingId: null,
+    },
+    'get-groups-groupId-memberids': {
+      groupId: 'group',
+      'person_id[]': 'person',
+      'role_ids[]': null,
+    },
+    'get-groups-groupId-memberpreview': { groupId: 'group' },
+    'get-groups-groupId-members-personId': {
+      groupId: 'group',
+      personId: 'person',
+    },
+    'get-groups-groupId-members-personId-meetings': {
+      groupId: 'group',
+      personId: 'person',
+    },
+    'get-groups-groupId-members-statistics': {
+      groupId: 'group',
+      'group_type_role_ids[]': null,
+    },
+    'get-groups-groupId-parents': {
+      groupId: 'group',
+      'agegroup_ids[]': null,
+      'campus_ids[]': null,
+      'group_category_ids[]': null,
+      'group_status_ids[]': null,
+      'group_type_ids[]': null,
+      'ids[]': 'group',
+      'tag_ids[]': null,
+      'target_group_ids[]': null,
+    },
+    'get-groups-hierarchies': {
+      'agegroup_ids[]': null,
+      'campus_ids[]': null,
+      'group_category_ids[]': null,
+      'group_status_ids[]': null,
+      'group_type_ids[]': null,
+      'ids[]': 'group',
+      'tag_ids[]': null,
+      'target_group_ids[]': null,
+    },
+    'get-groups-id-meetings': { groupId: 'group' },
+    'get-groups-id-members': {
+      groupId: 'group',
+      'person_id[]': 'person',
+      'role_ids[]': null,
+    },
+    'get-groups-id-roles': { groupId: 'group' },
+    'get-groups-id-statistics': { groupId: 'group' },
+    'get-groups-id-wiki-categories-pages': { groupId: 'group' },
+    'get-groups-ids': {
+      'agegroup_ids[]': null,
+      'campus_ids[]': null,
+      child_id: 'group',
+      'group_category_ids[]': null,
+      'group_status_ids[]': null,
+      'group_type_ids[]': null,
+      'ids[]': 'group',
+      parent_id: 'group',
+      'tag_ids[]': null,
+      'target_group_ids[]': null,
+    },
+    'get-groups-members': { 'ids[]': 'group' },
+    'get-permissions-assignment-targets': { groupId: 'group' },
+    'get-permissions-global-auths-authId-assignment-summary': {
+      authId: null,
+      data_id: null,
+    },
+    'get-permissions-global-auths-authId-persons': {
+      authId: null,
+      data_id: null,
+    },
+    'get-permissions-internal-events-eventId': { eventId: 'event' },
+    'get-permissions-internal-groups-groupId': { groupId: 'group' },
+    'get-permissions-internal-groups-groupId-auths-authId-persons': {
+      authId: null,
+      groupId: 'group',
+      data_id: null,
+    },
+    'get-permissions-internal-persons-id': { personId: 'person' },
+    'get-permissions-origins-global-persons-personId': { personId: 'person' },
+    'get-permissions-origins-internal-persons-personId': {
+      personId: 'person',
+      'group_ids[]': 'group',
+    },
+    'get-permissions-permissionDomainType': { domainId: null },
+    'get-permissions-permissionDomainType-permissionDomainId': {
+      domainId: null,
+    },
+    'get-person-relationshiptypes-id': { id: null },
+    'get-person-sexes-id': { id: null },
+    'get-persons': {
+      'campus_ids[]': null,
+      'ids[]': 'person',
+      'status_ids[]': null,
+    },
+    'get-persons-id': { personId: 'person' },
+    'get-persons-id-events': { personId: 'person' },
+    'get-persons-id-events-id-services': {
+      eventId: 'event',
+      personId: 'person',
+    },
+    'get-persons-id-groups': { personId: 'person' },
+    'get-persons-id-servicerequests': { personId: 'person' },
+    'get-persons-id-servicerequests-id': {
+      personId: 'person',
+      requestId: null,
+    },
+    'get-persons-personId-relationships': { personId: 'person' },
+    'get-resources-resourceId': { resourceId: 'resource' },
+    'get-resources-resourceId-statistics': { resourceId: 'resource' },
+    'get-resourcetypes-resourceTypeId': { resourceTypeId: null },
+    'get-servicegroups-id': { serviceGroupId: null },
+    'get-services-id': { serviceId: 'service' },
+    'get-song-categories-id': { songCategoryId: null },
+    'get-song-sources-id': { songSourceId: null },
+    'get-songs': { 'ids[]': 'song', 'song_category_ids[]': null },
+    'get-songs-songId': { songId: 'song' },
+    'get-songs-songId-arrangements': { songId: 'song' },
+    'get-songs-songId-arrangements-arrangementId': {
+      arrangementId: null,
+      songId: 'song',
+    },
+    'get-wiki-categories-id-pages': { wikiCategoryId: 'wiki_category' },
+    'get-wiki-categories-id-pages-id-versions-id': {
+      identifier: 'wiki_page',
+      wikiCategoryId: 'wiki_category',
+    },
+    'get-wiki-categories-id-pages-identifier': {
+      identifier: 'wiki_page',
+      wikiCategoryId: 'wiki_category',
+    },
+    'get-wiki-categories-id-pages-identifier-versions': {
+      identifier: 'wiki_page',
+      wikiCategoryId: 'wiki_category',
+    },
+    'get-wiki-pages': { 'wiki_category_ids[]': 'wiki_category' },
+    'get-wiki-search': { 'wiki_category_ids[]': 'wiki_category' },
+  });
 
 /** The classification by hand, keyed by `operationId`. */
 export const classification: Readonly<Record<string, Classification>> =

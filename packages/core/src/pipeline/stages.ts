@@ -9,6 +9,7 @@ import type {
   RedactionLevel,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
+import { type ObjectDomain, objectRefOf } from '../audit/index.js';
 import {
   cleanText,
   maskBirthdate,
@@ -146,6 +147,73 @@ export function mapLeaves(
       return Object.freeze(copy);
     }
   }
+}
+
+/**
+ * Hands the ID of every person and group a checked result names to `add`,
+ * along the shape the registry kept: the leaves of the classes `personId`
+ * and `groupId` (ADR 0028). It reads the result before `redact`, so that
+ * the audit records the IDs, whatever a level of redaction shows.
+ *
+ * @param value - A value that passed the output schema.
+ * @param node - The kept shape of that value.
+ * @param add - Takes the kind and the value of each ID, in order.
+ * @example
+ * ```ts
+ * collectOutputRefs({ id: 12 }, shape.root, refs.add); // adds person 12
+ * ```
+ */
+export function collectOutputRefs(
+  value: unknown,
+  node: ShapeNode,
+  add: (domain: ObjectDomain, value: unknown) => void,
+): void {
+  if (value === null || value === undefined) return;
+  switch (node.kind) {
+    case 'leaf':
+      if (node.dataClass === 'personId') add('person', value);
+      else if (node.dataClass === 'groupId') add('group', value);
+      return;
+    case 'array':
+      for (const item of value as readonly unknown[]) {
+        collectOutputRefs(item, node.element, add);
+      }
+      return;
+    case 'tuple':
+      node.items.forEach((item, index) => {
+        collectOutputRefs((value as readonly unknown[])[index], item, add);
+      });
+      return;
+    case 'object':
+      for (const [key, field] of Object.entries(
+        value as Readonly<Record<string, unknown>>,
+      )) {
+        const fieldNode = node.fields[key];
+        if (fieldNode !== undefined) collectOutputRefs(field, fieldNode, add);
+      }
+  }
+}
+
+/**
+ * Tells whether every ID of a person or a group that a checked result
+ * names has the form the audit takes, so that no ID leaves without its
+ * line naming it (ADR 0028).
+ *
+ * @param value - A value that passed the output schema.
+ * @param node - The kept shape of that value.
+ * @returns Whether every such ID fits.
+ * @example
+ * ```ts
+ * outputIdsFit({ id: 12 }, shape.root); // true
+ * outputIdsFit({ id: 'Max' }, shape.root); // false
+ * ```
+ */
+export function outputIdsFit(value: unknown, node: ShapeNode): boolean {
+  let fits = true;
+  collectOutputRefs(value, node, (domain, id) => {
+    if (objectRefOf(domain, id) === undefined) fits = false;
+  });
+  return fits;
 }
 
 // The mask of a class, if the class has one. The registry lets these

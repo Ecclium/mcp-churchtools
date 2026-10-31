@@ -73,11 +73,17 @@ const searchOutput = z.object({
 // Strict, so that an argument the model made up ends as a validation
 // error. The path in the form the facts allow.
 const readInput = z.strictObject({
-  path: z
-    .string()
-    .max(300)
-    .regex(/^\/de\/(?:[a-z0-9%_-]+\/)*[a-z0-9%_-]+\/?$/),
-  part: z.number().int().min(1).max(maxAcademyPart).optional(),
+  path: classify(
+    z
+      .string()
+      .max(300)
+      .regex(/^\/de\/(?:[a-z0-9%_-]+\/)*[a-z0-9%_-]+\/?$/),
+    'none',
+  ),
+  part: classify(
+    z.number().int().min(1).max(maxAcademyPart),
+    'none',
+  ).optional(),
 });
 
 const readOutput = z.object({

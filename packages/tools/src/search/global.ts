@@ -77,8 +77,11 @@ const invalidTerm = `The search term needs 1 to ${String(maxSearchTermLength)} c
 // Strict, so that an argument the model made up ends as a validation error.
 // The enum leaves out action, which ChurchTools refuses alone (F40).
 const input = z.strictObject({
-  type: z.enum(['person', 'group', 'song', 'wiki_page']),
-  query: z.string().min(1).max(maxSearchTermLength).regex(/\S/),
+  type: classify(z.enum(['person', 'group', 'song', 'wiki_page']), 'none'),
+  query: classify(
+    z.string().min(1).max(maxSearchTermLength).regex(/\S/),
+    'none',
+  ),
 });
 
 // One list for each type, because the classes depend on it: the name of a
@@ -99,7 +102,7 @@ const output = z.object({
   groups: z
     .array(
       z.object({
-        id: classify(z.number().int().positive(), 'none').nullable(),
+        id: classify(z.number().int().positive(), 'groupId').nullable(),
         name: classify(z.string().max(maxNameLength), 'untrusted'),
       }),
     )

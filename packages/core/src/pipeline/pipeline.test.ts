@@ -24,7 +24,11 @@ import { z } from 'zod';
 import { auditPlaceholders, createAuditSink } from '../audit/index.js';
 import { fixedSentences } from '../errors/index.js';
 import type { RandomBytes } from '../redaction/index.js';
-import { createToolCatalog } from '../registry/index.js';
+import {
+  type CatalogEntry,
+  createToolCatalog,
+  type ToolCatalog,
+} from '../registry/index.js';
 import { createToolPipeline, type ToolRequest } from './pipeline.js';
 import { maxInputDepth, maxInputElements } from './stages.js';
 
@@ -136,10 +140,11 @@ const setup = (
   tools: ToolDefinition[] = [],
   readOnly = false,
   random: RandomBytes = fixedRandom(boundaryBytesA),
+  adjust: (catalog: ToolCatalog) => ToolCatalog = (catalog) => catalog,
 ) => {
   const double = createChurchToolsDouble({ token });
   open.push(double);
-  const catalog = createToolCatalog({
+  const built = createToolCatalog({
     core: examplePlugin,
     plugins: [testPlugin(...tools)],
     readOnly,
@@ -147,6 +152,7 @@ const setup = (
     // the wiki.
     toolsets: new Set(['wiki'] as const),
   });
+  const catalog = adjust(built);
   const auditLines: string[] = [];
   const logLines: string[] = [];
   const clock = frozenClock();
@@ -708,11 +714,30 @@ describe('the input', () => {
   });
 
   it('takes the deepest and largest input the limits allow', async () => {
-    const { pipeline } = setup([
-      testTool('ct_any', () => Promise.resolve({ text: 'x' }), {
-        input: z.object({ v: z.unknown() }),
-      }),
-    ]);
+    // The registry refuses an input field that holds any value, since it
+    // carries no class (ADR 0028). These limits hold before the schema, so
+    // the entry of the catalog gets such a field after the registry.
+    const { pipeline } = setup(
+      [
+        testTool('ct_any', () => Promise.resolve({ text: 'x' }), {
+          input: z.object({ v: classify(z.string(), 'none') }),
+        }),
+      ],
+      false,
+      undefined,
+      (catalog) => {
+        const entry = catalog.get('ct_any');
+        const changed = Object.freeze({
+          ...entry,
+          input: z.object({ v: z.unknown() }),
+        }) as CatalogEntry;
+        return Object.freeze({
+          ...catalog,
+          get: (name: string) =>
+            name === 'ct_any' ? changed : catalog.get(name),
+        });
+      },
+    );
     let deep: unknown = 1;
     for (let level = 2; level < maxInputDepth; level += 1) deep = [deep];
     const wide = Array.from({ length: maxInputElements - 2 }, () => null);

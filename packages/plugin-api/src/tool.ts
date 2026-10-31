@@ -170,12 +170,20 @@ export interface ToolDefinition<Input = unknown, Result = unknown> {
   readonly meta: ToolMeta;
   /** Description for the model. */
   readonly description: ToolDescription;
-  /** Schema of the input; `execute` receives what it parses to. */
+  /**
+   * Schema of the input; `execute` receives what it parses to. Each leaf
+   * carries a data class (see `classify`) or, for the ID of an object
+   * other than a person or a group, a kind of object (see `refersTo`), or
+   * the registry refuses the tool with `tool_input_unclassified`. The audit
+   * records the IDs the input names (ADR 0028).
+   */
   readonly input: ZodType<Input>;
   /**
    * Schema of the result. The pipeline parses what `execute` returns with it,
    * so `execute` returns what the schema takes, before any transform. Each
-   * leaf should carry a data class (see `classify`), or it is not redacted.
+   * leaf carries a data class (see `classify`), or the registry refuses the
+   * tool with `tool_unclassified`. The audit records the IDs of the persons
+   * and groups it names.
    */
   readonly output: ZodType<unknown, Result>;
   /**

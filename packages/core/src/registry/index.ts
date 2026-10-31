@@ -27,6 +27,12 @@ export {
   promptDataSentence,
 } from './prompt.js';
 export {
+  checkInputRefs,
+  collectInputRefs,
+  type InputRefNode,
+  type InputShape,
+} from './input-refs.js';
+export {
   isToolsetName,
   toolsetNames,
   type ToolsetName,

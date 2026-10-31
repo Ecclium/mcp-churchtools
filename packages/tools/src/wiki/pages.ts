@@ -12,6 +12,7 @@ import {
   defineTool,
   maxWikiListPage,
   maxWikiTitleLength,
+  refersTo,
   type ToolCall,
   wikiPageListLimit,
 } from '@ecclium/mcp-churchtools-plugin-api';
@@ -45,8 +46,14 @@ export const emptyPageMoreFollow =
 
 // Strict, so that an argument the model made up ends as a validation error.
 const input = z.strictObject({
-  categoryId: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-  page: z.number().int().min(1).max(maxWikiListPage).optional(),
+  categoryId: refersTo(
+    z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    'wiki_category',
+  ),
+  page: classify(
+    z.number().int().min(1).max(maxWikiListPage),
+    'none',
+  ).optional(),
 });
 
 // Titles are text people of the congregation write, so they stand in the
