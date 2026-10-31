@@ -26,6 +26,7 @@ export interface PackageBoundary {
 export const placeKeys = [
   'egress',
   'transportBuilders',
+  'auditCommands',
   'httpDouble',
   'rawClient',
   'rawClientImporters',
@@ -309,6 +310,19 @@ function checkExceptions(
     ) {
       report(
         `places.transportBuilders: "${path}" must be a folder of the command line, below its src/`,
+      );
+    }
+  }
+  // The audit files name the IDs of persons. Only commands of the command
+  // line may read them (ADR 0028).
+  for (const path of places.auditCommands?.paths ?? []) {
+    if (
+      packageOf(path) !== 'cli' ||
+      !path.endsWith('/') ||
+      /^packages\/[^/]+\/src\/$/.test(path)
+    ) {
+      report(
+        `places.auditCommands: "${path}" must be a folder of the command line, below its src/`,
       );
     }
   }

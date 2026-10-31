@@ -613,6 +613,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     ['no-envelope', 'gruppensuche'],
     ['blank-request', 'anfragen'],
     ['audit-gap', 'audit'],
+    ['chain-broken', 'kette'],
     ['leak-log', 'protokoll'],
     ['foreign-stdout', 'stdout'],
     ['token-stderr', 'token'],

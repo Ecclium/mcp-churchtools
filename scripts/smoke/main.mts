@@ -37,7 +37,7 @@ import { operations } from '../spike/lib/operations.mts';
 import type { Io } from '../spike/lib/output.mts';
 import { hostValues } from '../spike/lib/probe.mts';
 import { countClasses } from '../spike/lib/structure.mts';
-import { auditFits, auditWords, readAuditLines } from './audit.mts';
+import { auditFits, auditWords, chainFits, readAuditLines } from './audit.mts';
 import {
   courseCodes,
   courseWords,
@@ -340,12 +340,15 @@ export async function runSmoke(deps: SmokeDependencies): Promise<number> {
           outcome.calls,
           banned,
         );
+        const chained = chainFits(deps.server, stateDir, session.stderr());
         eras.push({
           ...outcome.report,
           audit: audited ? 'wie erwartet' : 'abweichend',
+          kette: chained ? 'wie erwartet' : 'abweichend',
         });
         for (const failure of outcome.failures) failures.add(failure);
         if (!audited) failures.add('audit');
+        if (!chained) failures.add('kette');
         for (const finding of outcome.findings) findings.add(finding);
       } finally {
         rmSync(stateDir, { recursive: true, force: true });

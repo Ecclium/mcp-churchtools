@@ -90,7 +90,10 @@ describe('the exit codes', () => {
     expect(exitCodes).toEqual({
       ok: 0,
       usage: 64,
+      dataError: 65,
+      noInput: 66,
       internal: 70,
+      ioError: 74,
       invalidConfig: 78,
       interrupted: 130,
       terminated: 143,
@@ -246,6 +249,18 @@ describe('the command line', () => {
     [['config', 'check', '-hh'], 'repeated'],
     [['config', 'check', '-h', '--help'], 'repeated'],
     [['config', 'check', '--show-values', '--show-values'], 'repeated'],
+    [['audit'], 'command'],
+    [['audit', 'check'], 'command'],
+    [['audit', 'verify', 'extra'], 'command'],
+    [['audit', 'show', 'person:1'], 'command'],
+    [['audit', 'verify', '--show-values'], 'option'],
+    [['config', 'check', '--log', 'x'], 'option'],
+    [['audit', 'show', '--log=x'], 'option'],
+    [['audit', 'verify', '--object=person:1'], 'option'],
+    [['audit', 'verify', '--log'], 'value'],
+    [['audit', 'show', '--object'], 'value'],
+    [['audit', 'show', '--since', '--until'], 'value'],
+    [['audit', 'show', '--object', 'a', '--object', 'b'], 'repeated'],
   ])('refuses %j as %s with a fixed text on stderr', (args, problem) => {
     const result = capture(args, validEnvironment());
     expect(result.code).toBe(exitCodes.usage);
@@ -259,11 +274,29 @@ describe('the command line', () => {
     [['config', '--help']],
     [['config', 'check', '-h']],
     [['config', 'check', '--show-values', '--help']],
+    [['audit', '--help']],
+    [['audit', 'verify', '-h']],
+    [['audit', 'show', '--object', 'person:1', '--help']],
   ])('writes the help for %j to stdout', (args) => {
     const result = capture(args, {});
     expect(result.code).toBe(exitCodes.ok);
     expect(result.stderr).toBe('');
     expect(result.stdout).toBe(`${helpLines.join('\n')}\n`);
+  });
+
+  it.each([
+    [['audit', 'verify']],
+    [['audit', 'verify', '--log', '-', '--log', 'x']],
+    [['audit', 'show', '--object', 'person:1', '--since', '2026-10-01']],
+  ])('runs %j with the folder of state alone as its configuration', (args) => {
+    // Without the folder of state the command stops before it reads a log
+    // or a file, and the address and the token play no part.
+    const result = capture(args, validEnvironment());
+    expect(result.code).toBe(exitCodes.invalidConfig);
+    expect(result.stdout).toBe('');
+    expect(result.stderr.split('\n')[0]).toBe(
+      'Die Konfiguration hat 1 Problem:',
+    );
   });
 
   it('shows the host only with --show-values', () => {

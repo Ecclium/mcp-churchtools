@@ -151,7 +151,7 @@ In der Datei steht:
 - Eine Zeile zählt nur, wenn sie mit einem Zeilenumbruch endet. Eine Zeile, die mit `~` endet, und ein letztes Stück ohne Zeilenumbruch sind Reste einer Zeile, die nicht ganz in die Datei kam. Überspringen Sie solche Zeilen wie Zeilen, die kein JSON sind.
 - Jede ganze Zeile trägt am Ende `seq` und `prevHash`, eine Hash-Kette je Datei: `seq` zählt die ganzen Zeilen ab 1, `prevHash` ist der SHA-256 der vorigen ganzen Zeile, bei der ersten Zeile des Namens der Datei. Reste einer Zeile gehören nicht dazu. Die Kopie auf stderr hat beides nicht.
 
-Beim Schliessen einer Datei, beim Wechsel des UTC-Tages und bevor Ecclium eine gelöschte Datei ersetzt, schreibt es den Anker der Kette als eigene Logzeile auf stderr: `audit_chain_anchor` mit dem Namen der Datei, ohne Pfad, der `seq` und dem Hash ihrer letzten ganzen Zeile. Eine Datei ohne Zeile hat keinen Anker. Sammeln Sie das Log, etwa weil Ihr Client stderr in eine Logdatei schreibt, haben Sie damit einen Anker ausserhalb der Datei: Wer die Datei ändert, muss dann auch jede Kopie des Logs ändern. Ein Prüfbefehl für Kette und Anker folgt mit einer späteren Version. Am Anker schreibt Ecclium die Datei auch mit `fsync` auf die Platte, nicht nach jeder Zeile, weil das unter macOS rund 3 ms je Zeile kostet.
+Beim Schliessen einer Datei, beim Wechsel des UTC-Tages und bevor Ecclium eine gelöschte Datei ersetzt, schreibt es den Anker der Kette als eigene Logzeile auf stderr: `audit_chain_anchor` mit dem Namen der Datei, ohne Pfad, der `seq` und dem Hash ihrer letzten ganzen Zeile. Eine Datei ohne Zeile hat keinen Anker. Sammeln Sie das Log, etwa weil Ihr Client stderr in eine Logdatei schreibt, haben Sie damit einen Anker ausserhalb der Datei: Wer die Datei ändert, muss dann auch jede Kopie des Logs ändern. Kette und Anker prüft `ecclium audit verify`, siehe «Audit prüfen und auswerten». Am Anker schreibt Ecclium die Datei auch mit `fsync` auf die Platte, nicht nach jeder Zeile, weil das unter macOS rund 3 ms je Zeile kostet.
 
 Frist und Löschung: Die Dateien bleiben so viele Monate, wie `ECCLIUM_AUDIT_RETENTION_MONTHS` sagt, voreingestellt 12, einstellbar von 1 bis 120. Eine Datei bleibt mindestens bis zum Ende des Tages, der so viele Kalendermonate nach dem Tag in ihrem Namen liegt, und so lange nach ihrer letzten Änderung. Danach löscht Ecclium sie beim nächsten Start oder Wechsel des UTC-Tages. Ein laufender Server wechselt den Tag auch ohne Aufruf kurz nach Mitternacht in UTC, nach einem Ruhezustand des Rechners spätestens eine Stunde danach. Teilen sich mehrere Einträge oder Clients einen Zustandsordner, gilt für alle Dateien darin die kürzeste Frist, mit der einer von ihnen startet. Geht die Uhr des Rechners weit vor, löscht Ecclium auch Dateien, deren Frist nach der richtigen Zeit noch läuft. Unter zwölf Monaten warnt jeder Start, weil die Datenschutzverordnung der Schweiz ein Protokoll mindestens ein Jahr verlangt, wo sie eines verlangt. Ecclium löscht dabei nur im Ordner `audit`, nur gewöhnliche Dateien Ihres Benutzers mit dem Namen einer Audit-Datei, ohne Rechte für andere und ohne einem Link zu folgen, nie die Datei eines laufenden Tages. Die Logzeile `audit_files_deleted` nennt die Zahl gelöschter Dateien, `audit_files_not_deleted` die Zahl fälliger Dateien, die bleiben mussten, etwa weil eine davon anderen Rechte gibt. Eine Datei ohne Zeile entfernt der Server beim Ende selbst, eine leere Datei eines früheren Tages, etwa nach einem Absturz, die nächste Löschung, sobald ihre letzte Änderung eine Stunde zurückliegt.
 
@@ -166,6 +166,58 @@ Grenzen der Audit-Datei:
 - Unter Windows lassen sich Eigentümer und Rechte des Ordners nicht prüfen. Dort gibt es keine Audit-Datei, und ein gesetztes `ECCLIUM_STATE_DIR` bricht den Start ab.
 - Welches Datenschutzrecht für Ihre Gemeinde gilt und was es für ein Protokoll verlangt, steht unter [Datenschutz, «Welches Recht gilt»](../privacy.md#welches-recht-gilt). Die Audit-Datei liegt auf demselben Rechner wie der Server und damit nicht getrennt vom System. Trifft Sie etwa die Pflicht zum Protokoll nach der Datenschutzverordnung der Schweiz, verlangt sie diese Trennung, und die Dateien kopieren Sie dann selbst an einen getrennten Ort. Ecclium verspricht keine Konformität mit einem Datenschutzrecht. Was Ecclium sonst ablegt, steht ebenfalls unter [Datenschutz](../privacy.md).
 - Ob ChurchTools die Lesezugriffe über die API selbst je Konto protokolliert, ist nicht geprüft.
+
+## Audit prüfen und auswerten
+
+Zwei Befehle lesen die Audit-Dateien: `audit verify` prüft sie, `audit show` fasst sie zusammen. Beide brauchen nur `ECCLIUM_STATE_DIR` mit demselben Ordner wie in der Konfiguration des Clients, für `audit verify` auch eine abweichende Frist in `ECCLIUM_AUDIT_RETENTION_MONTHS`. Adresse und Token brauchen sie nicht, und die Token-Datei öffnen sie nie. Eine unbekannte Variable mit dem Präfix `ECCLIUM_` bricht sie ab wie den Start, die übrigen bekannten Variablen lesen sie nicht. Sie prüfen den Zustandsordner und den Ordner `audit` wie der Start, öffnen jede Datei, ohne einem Link zu folgen, und lesen nur: Sie legen nichts an, ändern nichts und löschen nichts. Ihre Ausgabe nennt keinen Pfad, nur die Namen der Dateien, und Kennungen nur, wenn Sie nach einer fragen.
+
+### Kette und Anker prüfen
+
+```sh
+env -i ECCLIUM_STATE_DIR=/pfad/zum/zustandsordner /pfad/zu/node /pfad/zum/checkout/packages/cli/dist/bin.js audit verify --log /pfad/zum/log
+```
+
+`audit verify` prüft jede Datei im Ordner `audit` gegen ihre Kette und, mit `--log`, gegen die Anker in einem Log, das stderr des Servers enthält. `--log` darf mehrmals stehen, etwa für ein rotiertes Log, und `-` liest stdin, etwa `cat altes.log neues.log | … audit verify --log -`. Als Anker zählt eine Zeile mit `{"ts":"` und dem Ereignis `audit_chain_anchor`, auch wenn ein Client eine Zeit oder seinen Namen davorsetzt. Packt ein Client die Zeilen von stderr selbst in JSON, findet `audit verify` darin keinen Anker und sagt das am Ende.
+
+Es meldet jeden Befund mit dem Namen der Datei und, wo es eine gibt, der Nummer der Zeile, nie mit ihrem Inhalt:
+
+- eine geänderte, entfernte, eingefügte oder verschobene Zeile, an der Stelle, an der die Kette bricht,
+- eine umbenannte oder vertauschte Datei an ihrer ersten Zeile,
+- mit einem Anker auch eine geänderte letzte Zeile, eine gekürzte Datei und Zeilen nach dem Anker,
+- eine Datei, die ein Anker nennt, die aber fehlt, solange ihre Frist nicht abgelaufen ist. Nach Ablauf der Frist zählt sie nur,
+- zwei verschiedene Anker im Log für dieselbe Datei,
+- einen Eintrag mit dem Namen einer Audit-Datei, der keine private Datei mit einem einzigen Link ist, etwa ein Link oder eine Datei mit Rechten für andere. Ihn liest `audit verify` nicht.
+
+Reste von Zeilen, die mit `~` enden, gehören nicht zur Kette. `audit verify` nennt ihre Zahl, damit Sie auch einen Rest sehen, den jemand eingefügt hat. Nennt ein Log Anker zu mehr als 100'000 Dateien, prüft es die übrigen nicht und endet mit 65. Prüfen Sie dann mit einem Log über einen kürzeren Zeitraum.
+
+Eine Datei ohne Anker ist kein Befund: Ein Absturz, ein Client, der stderr verwirft, oder ein Log, das niemand aufbewahrt, hinterlassen keinen. Ohne `--log` prüft `audit verify` nur die Ketten, eine gekürzte Datei oder eine geänderte letzte Zeile zeigt erst ein Anker. Die Datei eines laufenden Servers prüft es so weit, wie sie geschrieben ist. Dateien aus einer Version von Ecclium vor der Kette zählt es als «ohne Kette» und wertet sie nicht als Fehler, eine Datei mit nur einem Teil ihrer Zeilen in einer Kette schon. Die Kette erkennt keine Änderung durch jemanden, der auch die Kette neu berechnet, das zeigt erst ein Anker aus einer Kopie des Logs, die er nicht ändern konnte.
+
+| Code | Bedeutung                                                                                                         |
+| ---- | ----------------------------------------------------------------------------------------------------------------- |
+| 0    | Die Ketten sind ganz und passen zu den Ankern.                                                                    |
+| 64   | Der Aufruf ist falsch.                                                                                            |
+| 65   | Es gibt mindestens einen Befund.                                                                                  |
+| 66   | Der Ordner `audit` fehlt, oder ein Log lässt sich nicht lesen.                                                    |
+| 70   | Ein interner Fehler.                                                                                              |
+| 74   | Eine Datei liess sich nicht ganz lesen, sonst gibt es keinen Befund.                                              |
+| 78   | Die Konfiguration ist ungültig, etwa ohne `ECCLIUM_STATE_DIR` oder mit Rechten für andere auf dem Ordner `audit`. |
+
+Bei einem Befund bewahren Sie die Dateien und das Log unverändert auf, vergleichen sie mit einer Kopie an einem getrennten Ort, falls Sie eine haben, und klären, wer Zugriff auf den Zustandsordner hatte.
+
+### Aufrufe zählen und eine Kennung suchen
+
+```sh
+env -i ECCLIUM_STATE_DIR=/pfad/zum/zustandsordner /pfad/zu/node /pfad/zum/checkout/packages/cli/dist/bin.js audit show --since 2026-10-01 --until 2026-10-31
+env -i ECCLIUM_STATE_DIR=/pfad/zum/zustandsordner /pfad/zu/node /pfad/zum/checkout/packages/cli/dist/bin.js audit show --object person:42
+```
+
+`audit show` zählt je UTC-Tag und Tool die Aufrufe, ausgeführt, mit Fehler und abgelehnt, und wie viele Ergebnisse Ecclium nach dem Lesen zurückhielt. Der Tag kommt aus der Zeit der Zeile. Ohne `--since` und `--until` zeigt es alle Tage in den Dateien, mit ihnen die Tage dazwischen, beide eingeschlossen, jeweils in der Form JJJJ-MM-TT in UTC.
+
+Mit `--object` zeigt es stattdessen jeden Aufruf, der eine Kennung nennt, mit Zeit in UTC, Tool, Subjekt und Ausgang, etwa für die Auskunft an eine Person, wer ihre Daten über Ecclium gelesen hat. Die Kennung schreiben Sie wie im Audit, `person:42`, `group:7` oder `wiki_page:` mit einer GUID. Führende Nullen einer Zahl zählen nicht, `person:0042` sucht `person:42`. Andere Kennungen nennt die Ausgabe nicht. Sie zeigt die ersten 1'000 Treffer und darunter die Zahl aller. Eine Zeile nennt höchstens 100 Kennungen, mehr kann bisher nur `ct_api_execute_read` finden. Dann zählt `audit show`, in wie vielen Zeilen die gesuchte unter den fehlenden sein kann. Ohne Treffer kann eine Person trotzdem über Ecclium gelesen worden sein, etwa vor dem ältesten Tag im Ordner, bei einem Start ohne Zustandsordner, in einer Zeile, die nicht in die Datei kam, oder in einer Liste der Escape Hatch, deren Anfrage keine Kennungen nennt.
+
+Zeilen, die nicht zum Schema der Ereignisse passen, zählt `audit show` und lässt sie aus. Die Ketten prüft es nicht, das tut `audit verify`. Es endet mit 0, mit 74, wenn Dateien sich nicht lesen liessen, deren Aufrufe dann fehlen, und sonst mit denselben Codes wie `audit verify`. Die Läufe einer Routine zeigt es erst mit dem Runner.
+
+Die Ausgabe mit `--object` ist eine Auskunft über eine Person. Geben Sie sie nur an Stellen weiter, die sie bekommen dürfen.
 
 ## Toolsets
 

@@ -614,6 +614,28 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'audit-files-only-in-audit-commands',
+    name: 'tools reads the audit files through the subpath of core',
+    files: {
+      'packages/tools/src/forbidden.ts': `import { openAuditFolder } from '${nameOf('core')}/audit';\nexport const read = openAuditFolder;\n`,
+    },
+  },
+  {
+    rule: 'audit-files-only-in-audit-commands',
+    name: 'the start over stdio reads the audit files',
+    files: {
+      'packages/cli/src/stdio/forbidden.ts': `import { verifyAuditFiles } from '${nameOf('core')}/audit';\nexport const check = verifyAuditFiles;\n`,
+    },
+  },
+  {
+    rule: 'audit-files-only-in-audit-commands',
+    name: 'a module of core imports the subpath by a relative path',
+    files: {
+      'packages/core/src/pipeline/forbidden.ts':
+        "import { openAuditFolder } from '../audit-commands.js';\nexport const read = openAuditFolder;\n",
+    },
+  },
+  {
     rule: 'mocked-transport-only-in-testkit',
     name: 'tools builds the transport on a MockAgent',
     files: {
@@ -967,6 +989,12 @@ const allowedCases: readonly Omit<Case, 'rule'>[] = [
     name: 'a test of the composition root imports the subpath of core',
     files: {
       'packages/cli/src/stdio/allowed.test.ts': `import { createLogger } from '${nameOf('core')}/composition';\nexport const build = createLogger;\n`,
+    },
+  },
+  {
+    name: 'a command of the command line reads the audit files through the subpath of core',
+    files: {
+      'packages/cli/src/commands/allowed.ts': `import { openAuditFolder } from '${nameOf('core')}/audit';\nexport const read = openAuditFolder;\n`,
     },
   },
   {

@@ -29,6 +29,11 @@
       "@ecclium/source": "./src/composition.ts",
       "types": "./dist/composition.d.ts",
       "default": "./dist/composition.js"
+    },
+    "./audit": {
+      "@ecclium/source": "./src/audit-commands.ts",
+      "types": "./dist/audit-commands.d.ts",
+      "default": "./dist/audit-commands.js"
     }
   },
   "dependencies": {

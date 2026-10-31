@@ -338,6 +338,30 @@ describe('loading boundaries.json', () => {
         /places\.transportBuilders: "packages\/cli\/src\/" must be a folder of the command line, below its src\//,
     },
     {
+      name: 'a reader of the audit files in tools',
+      change: (m) => {
+        place(m, 'auditCommands').paths = ['packages/tools/src/'];
+      },
+      message:
+        /places\.auditCommands: "packages\/tools\/src\/" must be a folder of the command line/,
+    },
+    {
+      name: 'a file of the command line as reader of the audit files',
+      change: (m) => {
+        place(m, 'auditCommands').paths = ['packages/cli/src/main.ts'];
+      },
+      message:
+        /places\.auditCommands: "packages\/cli\/src\/main\.ts" must be a folder of the command line, below its src\//,
+    },
+    {
+      name: 'the whole command line as reader of the audit files',
+      change: (m) => {
+        place(m, 'auditCommands').paths = ['packages/cli/src/'];
+      },
+      message:
+        /places\.auditCommands: "packages\/cli\/src\/" must be a folder of the command line, below its src\//,
+    },
+    {
       name: 'an outbound path outside core',
       change: (m) => {
         place(m, 'egress').paths = ['packages/server/src/stdio/'];

@@ -626,6 +626,13 @@ const problems: Readonly<
       `Tools dieser Toolsets nennen Personen oder geben ganze Antworten von ChurchTools weiter. Ein Ergebnis solcher Tools gibt Ecclium nur heraus, wenn seine Zeile in der Audit-Datei steht, und die Audit-Datei liegt im Ordner aus ${name}. Unter Windows gibt es sie im Betrieb über stdio nicht, und damit auch diese Toolsets nicht.`,
       `Setzen Sie ${name} auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 oder entfernen Sie ${personsToolset}, ${eventsToolset} und ${apiToolset} aus ${toolsets}, soweit sie dort stehen. ${insteadOfAll}`,
     ),
+  // Only the commands that read the audit files report it (ADR 0028).
+  state_dir_required: (name = stateDir) =>
+    message(
+      `${name} ist nicht gesetzt.`,
+      `Die Befehle ‹ecclium audit verify› und ‹ecclium audit show› lesen die Audit-Dateien im Ordner aus ${name}, ohne ihn gibt es keine.`,
+      `Setzen Sie ${name} in der Shell auf denselben Ordner wie in der Konfiguration des KI-Assistenten. Adresse und Token braucht es dafür nicht.`,
+    ),
 });
 
 const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({

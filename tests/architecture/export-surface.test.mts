@@ -25,7 +25,9 @@ import { pathPattern } from './dependency-rules.mts';
 // core and could then write any text to stderr (ADR 0054). Its type
 // LineWriter stays allowed, because the context of a call needs it. The one
 // exception is the subpath ./composition of core, whose importers a rule of
-// dependency-cruiser limits to the composition root. The
+// dependency-cruiser limits to the composition root. The reader of the
+// audit files leaves core only through the subpath ./audit, whose
+// importers a rule limits to the commands that read them (ADR 0028). The
 // factory of the HTTP transport leaves core only through its own subpath
 // ./http, whose importers a rule of dependency-cruiser limits to the
 // composition root, and the build path of the transport, which takes a
@@ -54,6 +56,8 @@ const composeModule = 'packages/core/src/http/compose.ts';
 const mockModule = 'packages/core/src/http/compose-mock.ts';
 const egressEntry = 'packages/core/src/http/index.ts';
 const compositionEntry = 'packages/core/src/composition.ts';
+const auditReaderModule = 'packages/core/src/audit/reader.ts';
+const auditCommandsEntry = 'packages/core/src/audit-commands.ts';
 const serverStdioEntry = 'packages/server/src/stdio/index.ts';
 const serverStdioFolder = 'packages/server/src/stdio/';
 
@@ -76,6 +80,12 @@ const hiddenSymbols: readonly {
     file: toPattern(auditFileModule),
     names: ['openAuditFile'],
     allowedIn: [compositionEntry],
+  },
+  {
+    // Whoever holds it could read the IDs in the audit files (ADR 0028).
+    file: toPattern(auditReaderModule),
+    names: ['openAuditFolder'],
+    allowedIn: [auditCommandsEntry],
   },
   {
     file: toPattern(transportModule),
@@ -213,6 +223,8 @@ function writeTree(files: Readonly<Record<string, string>>): string {
       'export const openAuditFile = (): unknown => undefined;',
       '',
     ].join('\n'),
+    [auditReaderModule]:
+      'export const openAuditFolder = (): unknown => undefined;\n',
     [transportModule]: [
       'export interface HttpTransport { close(): Promise<void> }',
       'export const createAgent = (): unknown => undefined;',
@@ -342,6 +354,21 @@ const leaks: readonly {
     },
   },
   {
+    name: 'the reader of the audit files through the entry point of core',
+    entry: coreEntry,
+    files: {
+      [coreEntry]: "export { openAuditFolder } from './audit/reader.js';\n",
+    },
+  },
+  {
+    name: 'the reader of the audit files through the composition subpath',
+    entry: compositionEntry,
+    files: {
+      [compositionEntry]:
+        "export { openAuditFolder } from './audit/reader.js';\n",
+    },
+  },
+  {
     name: 'the type of the stderr writer under another name',
     entry: coreEntry,
     files: {
@@ -421,6 +448,7 @@ describe('entry points of the packages', { timeout }, () => {
         composeModule,
         mockModule,
         compositionEntry,
+        auditCommandsEntry,
         egressEntry,
         serverStdioEntry,
       ]),
@@ -510,6 +538,17 @@ describe('entry points of the packages', { timeout }, () => {
     expect(hiddenOrigins(root, compositionEntry)).toEqual([]);
     expect(exportOrigins(root, coreEntry)).toEqual([auditFileModule]);
     expect(hiddenOrigins(root, coreEntry)).toEqual([]);
+  });
+
+  it('accept the reader of the audit files in the audit subpath of core', () => {
+    const root = writeTree({
+      [auditCommandsEntry]:
+        "export { openAuditFolder } from './audit/reader.js';\n",
+    });
+    expect(exportOrigins(root, auditCommandsEntry)).toEqual([
+      auditReaderModule,
+    ]);
+    expect(hiddenOrigins(root, auditCommandsEntry)).toEqual([]);
   });
 
   it('accept the stderr writer in the composition subpath of core', () => {

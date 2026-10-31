@@ -337,6 +337,59 @@ const unsupportedRank = proxyRank + 1;
 const replacedRank = unsupportedRank + unsupportedVariableNames.length;
 const unknownRank = replacedRank + 1;
 
+/** What a name with the prefix is: a known variable or a problem. */
+type SortedName =
+  | { readonly kind: 'known'; readonly name: VariableName }
+  | {
+      readonly kind: 'problem';
+      readonly code: ConfigProblemCode;
+      readonly rank: number;
+      readonly variable?: string;
+    };
+
+// Names are sorted out before any value is looked at, so a name that is
+// wrong never has its value checked. Shared by both loaders, so that the
+// commands for the audit refuse the same names as the start.
+const sortName = (key: string): SortedName => {
+  const upper = asciiUpper(key);
+  const unsupported = (unsupportedVariableNames as readonly string[]).indexOf(
+    upper,
+  );
+  const known = (variableNames as readonly string[]).indexOf(upper);
+  const problem = (
+    code: ConfigProblemCode,
+    rank: number,
+    variable?: string,
+  ): SortedName =>
+    variable === undefined
+      ? { kind: 'problem', code, rank }
+      : { kind: 'problem', code, rank, variable };
+  if (upper === proxyVariableName) {
+    return problem('proxy_unsupported', proxyRank, proxyVariableName);
+  }
+  if (upper === searchToolsVariableName) {
+    return problem(
+      'search_tools_replaced',
+      replacedRank,
+      searchToolsVariableName,
+    );
+  }
+  if (unsupported >= 0) {
+    return problem(
+      'unsupported_variable',
+      unsupportedRank + unsupported,
+      upper,
+    );
+  }
+  if (known >= 0 && key !== upper) {
+    return problem('miscased_variable', known, upper);
+  }
+  if (known >= 0) return { kind: 'known', name: upper as VariableName };
+  return reportableNamePattern.test(key)
+    ? problem('unknown_variable', unknownRank, key)
+    : problem('unknown_variable', unknownRank + 1);
+};
+
 // The toolsets with tools that give results only with their line in the
 // audit file, because they hold special data or name persons: persons, and
 // events for the assignments to services (ADR 0028, ADR 0060, ADR 0064).
@@ -465,28 +518,9 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       if (isSet(value)) trustStoreExtended = true;
       continue;
     }
-    // Names are sorted out before any value is looked at, so a name that
-    // is wrong never has its value checked.
-    const upper = asciiUpper(key);
-    const unsupported = (unsupportedVariableNames as readonly string[]).indexOf(
-      upper,
-    );
-    const known = (variableNames as readonly string[]).indexOf(upper);
-    if (upper === proxyVariableName) {
-      add('proxy_unsupported', proxyRank, proxyVariableName);
-    } else if (upper === searchToolsVariableName) {
-      add('search_tools_replaced', replacedRank, searchToolsVariableName);
-    } else if (unsupported >= 0) {
-      add('unsupported_variable', unsupportedRank + unsupported, upper);
-    } else if (known >= 0 && key !== upper) {
-      add('miscased_variable', known, upper);
-    } else if (known >= 0) {
-      given.set(upper as VariableName, value);
-    } else if (reportableNamePattern.test(key)) {
-      add('unknown_variable', unknownRank, key);
-    } else {
-      add('unknown_variable', unknownRank + 1);
-    }
+    const sorted = sortName(key);
+    if (sorted.kind === 'known') given.set(sorted.name, value);
+    else add(sorted.code, sorted.rank, sorted.variable);
   }
 
   // The options of TLS, in NODE_OPTIONS and among those Node.js was started
@@ -901,5 +935,160 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       logLevel: logLevel.value as LogLevel,
     }),
     report: configReport,
+  });
+}
+
+/**
+ * The configuration of `ecclium audit verify` and `ecclium audit show`
+ * (ADR 0028): the folder of state and the retention, nothing more.
+ */
+export interface AuditConfig {
+  /** The checked folder of state, an absolute normalised path. */
+  readonly stateDir: string;
+  /** The retention of the audit files in whole months, 1 to 120. */
+  readonly auditRetentionMonths: number;
+}
+
+/** The configuration of the audit commands, or the problems that stop them. */
+export type AuditConfigResult =
+  | { readonly ok: true; readonly config: AuditConfig }
+  | {
+      readonly ok: false;
+      /** The first {@link maxReportedProblems} problems. */
+      readonly problems: readonly ConfigProblem[];
+      /** The problems beyond them. */
+      readonly omittedProblems: number;
+    };
+
+/** What the loader of the audit commands reads. */
+export interface AuditConfigSources {
+  /** The environment, which the loader never changes. */
+  readonly environment: Readonly<Record<string, string | undefined>>;
+  /** The file functions for the folder of state, only for tests. */
+  readonly stateDirFiles?: StateDirFileSystem;
+}
+
+/**
+ * Loads the configuration of the commands that read the audit files. It
+ * sorts every name with the prefix as the start does, so that an unknown,
+ * miscased or later name stops them as well, but it reads the value of
+ * `ECCLIUM_STATE_DIR` and `ECCLIUM_AUDIT_RETENTION_MONTHS` alone. It needs
+ * neither the address of ChurchTools nor the token and never opens the
+ * token file; the variables of Node.js play no part. The folder of state
+ * must be set and passes the same checks as at the start.
+ *
+ * @param sources - The environment and, for tests, the file functions for
+ *   the folder of state.
+ * @returns The folder and the retention, or the problems.
+ * @throws {TypeError} When the sources or the environment are no plain
+ *   record, or a variable with the prefix is no string or has a getter.
+ *   Never for a wrong value.
+ * @example
+ * ```ts
+ * const loaded = loadAuditConfig({ environment });
+ * if (loaded.ok) openAuditFolder({ stateDir: loaded.config.stateDir });
+ * ```
+ */
+export function loadAuditConfig(
+  sources: AuditConfigSources,
+): AuditConfigResult {
+  if (!isRecord(sources)) throw new TypeError(invalidSources);
+  const environment = ownData(sources, 'environment');
+  const stateDirFiles = ownData(sources, 'stateDirFiles');
+  if (!isRecord(environment)) throw new TypeError(invalidSources);
+  if (stateDirFiles !== undefined && !isRecord(stateDirFiles)) {
+    throw new TypeError(invalidSources);
+  }
+
+  const ranked: Ranked[] = [];
+  const add = (
+    code: ConfigProblemCode,
+    rank: number,
+    variable?: string,
+  ): void => {
+    ranked.push({
+      rank,
+      name: variable ?? '',
+      problem: record(variable === undefined ? { code } : { code, variable }),
+    });
+  };
+  const report = (code: ConfigProblemCode, name: VariableName): void => {
+    add(code, variableNames.indexOf(name), name);
+  };
+
+  const given = new Map<VariableName, string>();
+  for (const key of Object.keys(environment)) {
+    if (asciiUpper(key.slice(0, variablePrefix.length)) !== variablePrefix) {
+      continue;
+    }
+    const value = ownData(environment, key);
+    if (value === undefined) continue;
+    if (typeof value !== 'string') throw new TypeError(invalidSources);
+    const sorted = sortName(key);
+    if (sorted.kind === 'known') given.set(sorted.name, value);
+    else add(sorted.code, sorted.rank, sorted.variable);
+  }
+
+  const read = (variable: Variable): Read => {
+    const value = given.get(variable.name);
+    if (value === undefined) return unset;
+    if (value === '') {
+      report('empty_value', variable.name);
+      return invalid;
+    }
+    if (value.length > variable.maxLength) {
+      report('value_too_long', variable.name);
+      return invalid;
+    }
+    return Object.freeze({ state: 'set', value });
+  };
+
+  // The folder must be set: without it there are no audit files to read.
+  const stateDirName = 'ECCLIUM_STATE_DIR';
+  const stateDirRead = read(row(stateDirName));
+  let stateDir: string | undefined;
+  if (stateDirRead.state === 'unset') {
+    report('state_dir_required', stateDirName);
+  } else if (stateDirRead.state === 'set') {
+    const checked = checkStateDir(
+      stateDirRead.value,
+      stateDirFiles as StateDirFileSystem | undefined,
+    );
+    if (checked.ok) stateDir = stateDirRead.value;
+    else report(checked.code, stateDirName);
+  }
+
+  const retentionName = 'ECCLIUM_AUDIT_RETENTION_MONTHS';
+  const retentionVariable = row(retentionName);
+  const retentionRead = read(retentionVariable);
+  let retention: number | undefined;
+  if (retentionRead.state === 'unset') {
+    retention = Number(retentionVariable.defaultValue);
+  } else if (retentionRead.state === 'set') {
+    if (fitsVariable(retentionName, retentionRead.value)) {
+      retention = Number(retentionRead.value);
+    } else {
+      report('invalid_retention', retentionName);
+    }
+  }
+
+  if (ranked.length > 0 || stateDir === undefined || retention === undefined) {
+    const sorted = ranked.sort(
+      (left, right) =>
+        left.rank - right.rank ||
+        (left.name < right.name ? -1 : left.name > right.name ? 1 : 0),
+    );
+    const problems = Object.freeze(
+      sorted.slice(0, maxReportedProblems).map((entry) => entry.problem),
+    );
+    return record({
+      ok: false as const,
+      problems,
+      omittedProblems: sorted.length - problems.length,
+    });
+  }
+  return record({
+    ok: true as const,
+    config: record({ stateDir, auditRetentionMonths: retention }),
   });
 }
