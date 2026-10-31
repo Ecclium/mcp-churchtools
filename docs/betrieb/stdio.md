@@ -105,7 +105,7 @@ Node.js selbst kann weitere Zeilen schreiben, etwa eine Warnung, wenn es die Dat
 
 Weder das Token noch Namen, E-Mail-Adressen oder andere Werte aus den Antworten von ChurchTools stehen in diesen Zeilen. Tests mit erfundenen Werten prüfen das. Wohin die Zeilen gehen, bestimmt der Client. Ohne `ECCLIUM_STATE_DIR` schreibt Ecclium keine eigene Datei, mit dem Ordner nur die Audit-Datei, siehe «Audit-Datei».
 
-Ecclium wartet nicht auf stderr. Liest der Client stderr nicht oder zu langsam, gehen Zeilen verloren, auch Zeilen des Audits. Ecclium zählt sie und nennt die Zahl beim Ende, doch auch diese letzte Zeile kann verloren gehen. Die Antworten auf stdout erreichen den Client trotzdem. Mit der Audit-Datei sind die Zeilen des Audits auf stderr nur Kopien. Jede Zeile geht zuerst in die Datei, und was sie dort nicht aufnimmt, zählt `audit_file_closed`.
+Ecclium wartet nicht auf stderr. Liest der Client stderr nicht oder zu langsam, gehen Zeilen verloren, auch Zeilen des Audits. Ecclium zählt sie und nennt die Zahl beim Ende, doch auch diese letzte Zeile kann verloren gehen. Die Antworten auf stdout erreichen den Client trotzdem. Mit der Audit-Datei sind die Zeilen des Audits auf stderr nur Kopien, ohne die Kennungen der Objekte. Jede Zeile geht zuerst in die Datei, und was sie dort nicht aufnimmt, zählt `audit_file_closed`.
 
 Der Server endet mit einem dieser Codes:
 
@@ -147,14 +147,14 @@ Setzen Sie die Variable in der Konfiguration des Clients neben die Adresse und d
 In der Datei steht:
 
 - Je Start und UTC-Tag eine Datei `audit-JJJJ-MM-TT-hhmmss-<Prozess>-<Nummer>.jsonl` mit dem Datum und der Uhrzeit des Öffnens in UTC. Ecclium öffnet nie eine Datei, die schon da ist.
-- Dieselben Zeilen wie auf stderr: Zeit, Mandant, Subjekt, Modus, Tool, Ausgang, bei einem Fehler sein Code, die Dauer und die ID des Ereignisses. Keine Inhalte aus ChurchTools, keine IDs von Personen oder Gruppen und kein Token.
+- Je Aufruf eine Zeile mit Zeit, Mandant, Subjekt, Modus, Tool, Ausgang, bei einem Fehler seinem Code, der Dauer, der ID des Ereignisses und den Kennungen der Objekte, nach denen der Aufruf fragt, und der Personen und Gruppen, die sein Ergebnis nennt, etwa `person:12`. Die Kopie auf stderr ist dieselbe Zeile ohne die Kennungen. Keine Inhalte aus ChurchTools, keine Namen und kein Token. Alle Felder stehen unter [Audit-Ereignisse](../audit-events.md), das JSON Schema einer Zeile in [`schemas/audit-event.v1.json`](../../schemas/audit-event.v1.json).
 - Eine Zeile zählt nur, wenn sie mit einem Zeilenumbruch endet. Eine Zeile, die mit `~` endet, und ein letztes Stück ohne Zeilenumbruch sind Reste einer Zeile, die nicht ganz in die Datei kam. Überspringen Sie solche Zeilen wie Zeilen, die kein JSON sind.
 
 Löscht jemand die Datei, während der Server läuft, legt Ecclium eine neue an, mit höchstens 64 Versuchen je Start. Danach laufen Tools mit Personendaten der besonderen Kategorie erst nach einem Neustart wieder. Lässt sich die Datei nicht beschreiben, etwa weil die Platte voll ist, geht die Zeile verloren, und der Server zählt sie. Das Ergebnis eines Tools mit Personendaten der besonderen Kategorie, etwa eines Tools für Personen und Gruppen, hält er dann zurück.
 
 Grenzen der Audit-Datei:
 
-- Ecclium löscht die Dateien in dieser Version nicht, sie wachsen, eine je Start und Tag. Wie lange Sie sie aufbewahren, entscheiden Sie.
+- Ecclium löscht die Dateien in dieser Version noch nicht, sie wachsen, eine je Start und Tag. Weil sie Kennungen von Personen tragen, löschen Sie ältere Dateien bis zur Frist von Ecclium selbst, nach der Frist, die für Ihre Gemeinde gilt.
 - Eine geschriebene Zeile übersteht einen Absturz des Servers oder des Clients, aber keinen Stromausfall und keinen Absturz des Betriebssystems.
 - Die Datei schützt nicht gegen Ihren eigenen Benutzer: Wer unter ihm Programme ausführt, kann sie lesen, ändern oder löschen. Ecclium erkennt nur, dass sie gelöscht wurde.
 - Unter Windows lassen sich Eigentümer und Rechte des Ordners nicht prüfen. Dort gibt es keine Audit-Datei, und ein gesetztes `ECCLIUM_STATE_DIR` bricht den Start ab.
