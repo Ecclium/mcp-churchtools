@@ -143,9 +143,10 @@ export function makeCanary(kind: CanaryKind): Canary {
 }
 
 /**
- * Makes a canary from given random parts, in the same shapes as
- * {@link makeCanary}, for property tests that draw the parts themselves and
- * must make the same value again from the same seed (ADR 0070).
+ * Makes a canary from given random parts, in the shapes of
+ * {@link makeCanary} but for the e-mail address without the part after `+`,
+ * for property tests that draw the parts themselves and must make the same
+ * value again from the same seed (ADR 0070).
  *
  * @param kind - `email` from two parts, `name` from a first and a last
  *   name, `phone` from twelve digits.

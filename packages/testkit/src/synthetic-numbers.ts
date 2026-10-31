@@ -79,7 +79,7 @@ export function ahvOf(nine: string): string {
  * @returns The printed form.
  * @example
  * ```ts
- * groupedAhv(ahvOf('000000001'), '.'); // 756.0000.0000.0x
+ * groupedAhv(ahvOf('000000001'), '.'); // 756, two groups of four, then two
  * ```
  */
 export function groupedAhv(ahv: string, separator: '.' | ' ' | '-'): string {
