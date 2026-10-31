@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AuditEventV1",
+  "description": "One line of the audit file of Ecclium, version 1. The copy on stderr is the same line with an empty objectRefs and without objectRefsOmitted, withheldAfterRead, seq, prevHash. Not expressed here: an outcome of ok has no errorCode and error and denied have one, objectRefsOmitted comes only with 100 objectRefs, and withheldAfterRead only with denied and policy_denied.",
+  "readOnly": true,
+  "type": "object",
+  "properties": {
+    "v": {
+      "type": "number",
+      "const": 1
+    },
+    "eventId": {
+      "type": "string",
+      "maxLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "ts": {
+      "type": "string",
+      "maxLength": 24,
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
+    },
+    "type": {
+      "type": "string",
+      "const": "tool_call"
+    },
+    "tenantId": {
+      "type": "string",
+      "maxLength": 63,
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+    },
+    "actor": {
+      "readOnly": true,
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "service",
+            "user",
+            "runner",
+            "operator"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 97,
+          "pattern": "^[a-z][a-z0-9_-]{0,31}(?::[a-z0-9_-]{1,64})?$"
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "interactive",
+        "unattended",
+        "operator"
+      ]
+    },
+    "runId": {
+      "type": "string",
+      "maxLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "routineId": {
+      "type": "string",
+      "maxLength": 63,
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+    },
+    "tool": {
+      "type": "string",
+      "maxLength": 63,
+      "pattern": "^ct_[a-z0-9_]{1,60}$"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "error",
+        "denied"
+      ]
+    },
+    "confirmation": {
+      "type": "string",
+      "enum": [
+        "elicitation",
+        "echo",
+        "policy",
+        "operator"
+      ]
+    },
+    "policyHash": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "provider": {
+      "readOnly": true,
+      "type": "object",
+      "properties": {
+        "vendor": {
+          "type": "string",
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z0-9-]{0,31}$"
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"
+        },
+        "hostingCountry": {
+          "type": "string",
+          "maxLength": 2,
+          "pattern": "^[A-Z]{2}$"
+        },
+        "endpointHost": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$"
+        },
+        "transferBasis": {
+          "type": "string",
+          "maxLength": 32,
+          "pattern": "^[a-z][a-z0-9_]{0,31}$"
+        }
+      },
+      "required": [
+        "vendor",
+        "model",
+        "hostingCountry",
+        "endpointHost"
+      ],
+      "additionalProperties": false
+    },
+    "pluginHashes": {
+      "readOnly": true,
+      "maxItems": 64,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 64,
+        "pattern": "^[0-9a-f]{64}$"
+      }
+    },
+    "dataProtectionRegime": {
+      "type": "string",
+      "maxLength": 32,
+      "pattern": "^[a-z][a-z0-9_]{0,31}$"
+    },
+    "objectRefs": {
+      "readOnly": true,
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 50,
+        "pattern": "^(?:person|group|event|appointment|calendar|resource|booking|service|song|wiki_category|wiki_page):(?:[0-9]{1,16}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
+      }
+    },
+    "objectRefsOmitted": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 1000000
+    },
+    "errorCode": {
+      "type": "string",
+      "enum": [
+        "config",
+        "auth",
+        "permission",
+        "not_found",
+        "validation",
+        "conflict",
+        "rate_limited",
+        "upstream",
+        "network",
+        "policy_denied",
+        "confirmation_required",
+        "license_required",
+        "internal"
+      ]
+    },
+    "withheldAfterRead": {
+      "type": "boolean",
+      "const": true
+    },
+    "durationMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 86400000
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "prevHash": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "v",
+    "eventId",
+    "ts",
+    "type",
+    "tenantId",
+    "actor",
+    "mode",
+    "outcome",
+    "objectRefs",
+    "durationMs"
+  ],
+  "additionalProperties": false
+}

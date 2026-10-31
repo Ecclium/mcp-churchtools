@@ -1,6 +1,18 @@
-import { variableNames } from '@ecclium/mcp-churchtools-core';
+import {
+  auditEventV1Schema,
+  objectDomains,
+  variableNames,
+} from '@ecclium/mcp-churchtools-core';
 import { describe, expect, it } from 'vitest';
 
+import {
+  auditFieldMeanings,
+  auditFieldPaths,
+  auditTypeMeanings,
+  objectDomainLabels,
+  renderAuditEventSchema,
+  renderAuditEventsReference,
+} from './audit-events.js';
 import { renderConfigurationReference } from './configuration.js';
 import { renderPromptsReference } from './prompts.js';
 import { renderToolsReference } from './tools.js';
@@ -18,6 +30,18 @@ describe('the generated references', () => {
   it('matches docs/configuration.md', async () => {
     await expect(renderConfigurationReference()).toMatchFileSnapshot(
       '../../../../docs/configuration.md',
+    );
+  });
+
+  it('matches schemas/audit-event.v1.json', async () => {
+    await expect(renderAuditEventSchema()).toMatchFileSnapshot(
+      '../../../../schemas/audit-event.v1.json',
+    );
+  });
+
+  it('matches docs/audit-events.md', async () => {
+    await expect(renderAuditEventsReference()).toMatchFileSnapshot(
+      '../../../../docs/audit-events.md',
     );
   });
 
@@ -143,5 +167,46 @@ describe('renderConfigurationReference', () => {
 
   it('names the range of the requests per minute', () => {
     expect(page).toContain('ganze Zahl von 1 bis 500');
+  });
+});
+
+describe('the catalog of the audit events', () => {
+  it('gives every field of the schema a meaning, and no meaning to anything else', () => {
+    expect(Object.keys(auditFieldMeanings).sort()).toEqual(
+      [...auditFieldPaths()].sort(),
+    );
+  });
+
+  it('gives every type and every kind of object a meaning', () => {
+    expect(Object.keys(auditTypeMeanings)).toEqual(['tool_call']);
+    expect(Object.keys(objectDomainLabels).sort()).toEqual(
+      [...objectDomains].sort(),
+    );
+  });
+
+  it('describes the line of the file with every field of the schema', () => {
+    const schema = JSON.parse(renderAuditEventSchema()) as {
+      title: string;
+      properties: Record<string, unknown>;
+      additionalProperties: boolean;
+    };
+    expect(schema.title).toBe('AuditEventV1');
+    expect(Object.keys(schema.properties)).toEqual(
+      Object.keys(auditEventV1Schema.unwrap().shape),
+    );
+    expect(schema.additionalProperties).toBe(false);
+  });
+
+  it('says which fields the copy on stderr leaves out', () => {
+    const page = renderAuditEventsReference();
+    expect(page).toContain(
+      '| `objectRefs` | Liste mit höchstens 100 Einträgen, je Text nach festem Muster, höchstens 50 Zeichen | ja | leer |',
+    );
+    expect(page).toContain("ganze Zahl von 1 bis 1'000'000");
+    expect(page).toMatch(/\| `objectRefsOmitted` \|[^\n]*\| nein \| nein \|/u);
+    expect(page).toMatch(
+      /\| `withheldAfterRead` \| `true` \| nein \| nein \|/u,
+    );
+    expect(page).toMatch(/\| `tenantId` \|[^\n]*\| ja \| ja \|/u);
   });
 });
