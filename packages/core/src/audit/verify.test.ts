@@ -1,11 +1,20 @@
 import { createHash } from 'node:crypto';
 import {
   chmodSync,
+  closeSync,
+  constants,
+  fstatSync,
+  fsyncSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
+  readdirSync,
   readFileSync,
   rmSync,
+  unlinkSync,
   writeFileSync,
+  writeSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,7 +22,7 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { createLogger, maxLineLength } from '../logger/index.js';
-import { openAuditFile } from './file-writer.js';
+import { type AuditFileSystem, openAuditFile } from './file-writer.js';
 import { type AuditFolder, type AuditLine, openAuditFolder } from './reader.js';
 import {
   type AuditAnchor,
@@ -131,6 +140,7 @@ describe('verifyAuditFiles and the chain', () => {
       checked: 1,
       unchained: 0,
       lines: 5,
+      pieces: 0,
       others: 2,
       vanished: 0,
       anchors: 0,
@@ -138,6 +148,7 @@ describe('verifyAuditFiles and the chain', () => {
       anchorsExpired: 0,
       findings: [],
       findingsOmitted: 0,
+      unreadable: 0,
     });
     expect(Object.isFrozen(report)).toBe(true);
   });
@@ -202,6 +213,7 @@ describe('verifyAuditFiles and the chain', () => {
 
     expect(report.findings).toEqual([]);
     expect(report.lines).toBe(5);
+    expect(report.pieces).toBe(2);
   });
 
   it('finds lines of another form and goes on from them', () => {
@@ -442,6 +454,7 @@ describe('verifyAuditFiles and files it cannot read', () => {
 
     expect(report.checked).toBe(1);
     expect(report.vanished).toBe(2);
+    expect(report.unreadable).toBe(1);
     expect(report.anchorsExpired).toBe(1);
     expect(report.findings).toEqual([
       { kind: 'file_missing', file: nameOf(2) },
@@ -478,10 +491,14 @@ describe('verifyAuditFiles and files it cannot read', () => {
     const name = nameOf(1);
     const broken = Array.from({ length: maxFindings + 50 }, () => 'x');
 
-    const report = verify(folderOf({ [name]: textOf(broken) }));
+    const report = verify(
+      folderOf({ [name]: textOf(broken), [nameOf(2)]: 'unreadable' }),
+    );
 
     expect(report.findings).toHaveLength(maxFindings);
-    expect(report.findingsOmitted).toBe(50);
+    expect(report.findingsOmitted).toBe(51);
+    // An unreadable file beyond the list still counts as one.
+    expect(report.unreadable).toBe(1);
     expect(Object.isFrozen(report.findings[0])).toBe(true);
   });
 
@@ -585,7 +602,11 @@ describe('verifyAuditFiles with the writer and the reader', () => {
 
   // The files and the anchor as the server writes them: the writer of the
   // audit file and the logger with anchors.
-  const write = (pid: number): string[] => {
+  const write = (
+    pid: number,
+    folder = stateDir,
+    fs?: AuditFileSystem,
+  ): string[] => {
     const log: string[] = [];
     const logger = createLogger({
       writer: { write: (line) => log.push(line) > 0 },
@@ -593,7 +614,13 @@ describe('verifyAuditFiles with the writer and the reader', () => {
       minLevel: 'info',
       anchors: true,
     });
-    const opened = openAuditFile({ stateDir, clock, pid, retentionMonths: 12 });
+    const opened = openAuditFile({
+      stateDir: folder,
+      clock,
+      pid,
+      retentionMonths: 12,
+      ...(fs === undefined ? {} : { fs }),
+    });
     if (!opened.ok) throw new Error(opened.code);
     opened.writer.attach({
       anchor: ({ file, seq, hash }) => {
@@ -655,5 +682,62 @@ describe('verifyAuditFiles with the writer and the reader', () => {
       { kind: 'chain_link', file: first, line: 3 },
       { kind: 'anchor_mismatch', file: second },
     ]);
+  });
+
+  it('finds nothing in a file with a piece and a repeated seq, as the writer leaves them', () => {
+    // The second line reaches the disk only in half, then the disk fails:
+    // the writer leaves the piece, closes it with ~ before the third line
+    // and gives the third line the seq of the lost one (ADR 0028).
+    const folder = join(base, 'pieces');
+    mkdirSync(folder, { mode: 0o700 });
+    chmodSync(folder, 0o700);
+    let failure: 'waiting' | 'half' | 'done' = 'waiting';
+    const decoder = new TextDecoder();
+    const fs: AuditFileSystem = {
+      mkdirSync: (path, mode) => {
+        mkdirSync(path, { mode });
+      },
+      openSync: (path, flags, mode) => openSync(path, flags, mode),
+      fstatSync,
+      lstatSync,
+      writeSync: (fd, buffer, offset, length) => {
+        const text = decoder.decode(buffer.subarray(offset, offset + length));
+        if (failure === 'waiting' && text.includes('"n":2')) {
+          failure = 'half';
+          return writeSync(fd, buffer, offset, Math.floor(length / 2));
+        }
+        if (failure === 'half') {
+          failure = 'done';
+          throw Object.assign(new Error('EIO: write'), { code: 'EIO' });
+        }
+        return writeSync(fd, buffer, offset, length);
+      },
+      closeSync,
+      fsyncSync,
+      readdirSync: (path) => readdirSync(path),
+      unlinkSync,
+      getuid: () => process.getuid?.(),
+      constants,
+    };
+    const collector = createAnchorCollector();
+    for (const line of write(301, folder, fs)) collector.add(line);
+    const opened = openAuditFolder({ stateDir: folder });
+    if (!opened.ok) throw new Error(opened.code);
+
+    const report = verifyAuditFiles({
+      folder: opened.folder,
+      anchors: collector.result(),
+      retentionMonths: 12,
+      clock,
+    });
+
+    expect(failure).toBe('done');
+    expect(report).toMatchObject({
+      checked: 1,
+      lines: 2,
+      pieces: 1,
+      anchorsMatched: 1,
+      findings: [],
+    });
   });
 });

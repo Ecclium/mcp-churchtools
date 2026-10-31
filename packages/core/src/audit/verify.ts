@@ -130,6 +130,11 @@ export interface AuditVerifyReport {
   readonly unchained: number;
   /** The whole lines of the files read whole. */
   readonly lines: number;
+  /**
+   * The lines of the files read whole that end in `~`, pieces of lines
+   * outside the chain. Shown, so that pieces put into a file are seen.
+   */
+  readonly pieces: number;
   /** The other entries in the folder, which the check leaves alone. */
   readonly others: number;
   /** The files that went before they were read, such as by a sweep. */
@@ -144,6 +149,11 @@ export interface AuditVerifyReport {
   readonly findings: readonly AuditFinding[];
   /** The findings beyond them. */
   readonly findingsOmitted: number;
+  /**
+   * Of all findings, listed or not, those of the kind `file_unreadable`,
+   * which say nothing about the data.
+   */
+  readonly unreadable: number;
 }
 
 /** Options of {@link verifyAuditFiles}. */
@@ -396,7 +406,9 @@ export function verifyAuditFiles(
   const anchorOf = anchors?.anchors ?? new Map<string, AuditAnchor>();
   const findings: AuditFinding[] = [];
   let findingsOmitted = 0;
+  let unreadable = 0;
   const add = (kind: AuditFindingKind, file: string, line?: number): void => {
+    if (kind === 'file_unreadable') unreadable += 1;
     if (findings.length < maxFindings) {
       findings.push(
         Object.freeze(
@@ -417,6 +429,7 @@ export function verifyAuditFiles(
   let checked = 0;
   let unchained = 0;
   let lines = 0;
+  let pieces = 0;
   let vanished = 0;
   let anchorsMatched = 0;
   let anchorsExpired = 0;
@@ -450,8 +463,12 @@ export function verifyAuditFiles(
       lastHash: undefined,
     };
     let fileLines = 0;
+    let filePieces = 0;
     const outcome = folder.read(name, (line) => {
-      if (line.piece) return;
+      if (line.piece) {
+        filePieces += 1;
+        return;
+      }
       state.whole += 1;
       fileLines += 1;
       const kind = checkLine(state, line, anchor);
@@ -480,6 +497,7 @@ export function verifyAuditFiles(
     }
     checked += 1;
     lines += fileLines;
+    pieces += filePieces;
     if (state.mode === 'unchained') unchained += 1;
     if (anchor !== undefined) {
       const kind = compareAnchor(state, anchor);
@@ -502,6 +520,7 @@ export function verifyAuditFiles(
     checked,
     unchained,
     lines,
+    pieces,
     others: folder.others,
     vanished,
     anchors: anchorOf.size,
@@ -509,5 +528,6 @@ export function verifyAuditFiles(
     anchorsExpired,
     findings: Object.freeze(findings),
     findingsOmitted,
+    unreadable,
   });
 }
