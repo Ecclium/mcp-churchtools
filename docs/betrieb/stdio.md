@@ -158,7 +158,7 @@ Grenzen der Audit-Datei:
 - Eine geschriebene Zeile übersteht einen Absturz des Servers oder des Clients, aber keinen Stromausfall und keinen Absturz des Betriebssystems.
 - Die Datei schützt nicht gegen Ihren eigenen Benutzer: Wer unter ihm Programme ausführt, kann sie lesen, ändern oder löschen. Ecclium erkennt nur, dass sie gelöscht wurde.
 - Unter Windows lassen sich Eigentümer und Rechte des Ordners nicht prüfen. Dort gibt es keine Audit-Datei, und ein gesetztes `ECCLIUM_STATE_DIR` bricht den Start ab.
-- Welches Datenschutzrecht für Ihre Gemeinde gilt und was es für ein Protokoll verlangt, steht unter [Datenschutz, «Welches Recht gilt»](../privacy.md#welches-recht-gilt). Die Audit-Datei liegt auf demselben Rechner wie der Server und damit nicht getrennt vom System, wie es etwa die Datenschutzverordnung der Schweiz verlangt. Ecclium verspricht keine Konformität mit einem Datenschutzrecht. Was Ecclium sonst ablegt, steht ebenfalls unter [Datenschutz](../privacy.md).
+- Welches Datenschutzrecht für Ihre Gemeinde gilt und was es für ein Protokoll verlangt, steht unter [Datenschutz, «Welches Recht gilt»](../privacy.md#welches-recht-gilt). Die Audit-Datei liegt auf demselben Rechner wie der Server und damit nicht getrennt vom System. Trifft Sie etwa die Pflicht zum Protokoll nach der Datenschutzverordnung der Schweiz, verlangt sie diese Trennung, und die Dateien kopieren Sie dann selbst an einen getrennten Ort. Ecclium verspricht keine Konformität mit einem Datenschutzrecht. Was Ecclium sonst ablegt, steht ebenfalls unter [Datenschutz](../privacy.md).
 - Ob ChurchTools die Lesezugriffe über die API selbst je Konto protokolliert, ist nicht geprüft.
 
 ## Toolsets
