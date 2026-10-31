@@ -1,0 +1,102 @@
+# ADR 0069: Stufe `strict`: Pseudonyme, Masken und Prüfung von Freitext
+
+- Status: Vorgeschlagen am 31.10.2026
+- Datum: 31.10.2026
+- Fällt vor: Phase 4
+- Ergänzt: [ADR 0026](0026-klassifizierte-ausgabeschemas.md) und [ADR 0067](0067-generischer-lesezugriff.md)
+
+## Kontext
+
+[ADR 0026](0026-klassifizierte-ausgabeschemas.md) legt fest, was jede Stufe der Maskierung mit jeder Datenklasse tut. In `strict` werden Kennungen von Personen zu Pseudonymen, Nachnamen auf den ersten Buchstaben gekürzt, und Freitext wird auf E-Mail-Adressen, Telefonnummern, IBAN und AHV-Nummern geprüft. Pseudonyme entstehen dort mit AES-GCM-SIV nach RFC 8452, mit einem Schlüssel je Mandant, Prinzipal und UTC-Tag, den HKDF aus dem Geheimnis `pseudonym_key` ableitet. Beim Wechsel des Geheimnisses gelten das alte und das neue einen Tag lang nebeneinander. Steht AES-GCM-SIV in Phase 4 nicht in geprüfter Form zur Verfügung, gilt die Ausweichoption: HMAC mit einer Tabelle im Arbeitsspeicher.
+
+Offen geblieben sind die Bibliothek, die Datei des Geheimnisses und ihr Wechsel, die Form eines Pseudonyms und wie lange es gilt, welche Felder einer Adresse die Maske nimmt, wie die Prüfung von Freitext liest und was `strict` mit dem generischen Lesezugriff tut, dessen Antwort kein bekanntes Schema hat ([ADR 0067](0067-generischer-lesezugriff.md)).
+
+Dazu kommen diese Fakten:
+
+- Node.js 24.21.0 mit OpenSSL 3.5.8 kennt AES-GCM-SIV nicht: `crypto.getCiphers()` nennt kein Verfahren mit SIV (geprüft am 31.10.2026).
+- `@noble/ciphers` hat AES-GCM-SIV seit Version 0.4.0, damals unter dem Namen `siv`, also schon in der Version 1.0.0, die Cure53 im September 2024 geprüft hat. Seither sind die Änderungen öffentlich: der neue Name `gcmsiv` (1.3.0), neue Exporte (2.0.0), eine eigene Durchsicht im März 2026 (2.2.0) und eine Korrektur von POLYVAL für Prozessoren mit Big-Endian (2.3.0). Version 2.4.0 vom 27.08.2026 ist nicht eigens geprüft. Sie steht unter MIT, hat keine Abhängigkeiten, lädt kein eingebautes Modul von Node.js und ist mit Herkunftsnachweis über einen vertrauenswürdigen Herausgeber veröffentlicht.
+- Die MCP-Spezifikation 2026-07-28 kennt keine Sitzung ([ADR 0053](0053-mcp-sdk-und-instanzmodell.md)). Über stdio startet jeder Client seinen eigenen Prozess, oft mehrere am Tag.
+- Mitternacht UTC ist in der Schweiz 01:00 Uhr im Winter und 02:00 Uhr im Sommer.
+
+## Optionen
+
+Zum Verfahren der Pseudonyme:
+
+1. **AES-GCM-SIV aus `@noble/ciphers` 2.4.0:** ohne Zustand in die Kennung zurückzuübersetzen, wie ADR 0026 es vorsieht. Das Verfahren war in der geprüften Version, die Version selbst nicht.
+2. **HMAC mit einer Tabelle im Arbeitsspeicher:** keine Abhängigkeit, aber ein Pseudonym gälte nur, solange der Prozess lebt, und die Tabelle wäre Zustand über Anfragen hinweg mit eigenem ADR nach [ADR 0051](0051-zustand-zwischen-anfragen.md).
+3. **AES-SIV nach RFC 5297 aus derselben Bibliothek:** für deterministische Verschlüsselung gebaut, aber ein anderes Verfahren als das entschiedene, aus derselben Bibliothek mit demselben Vertrauen.
+
+Zur Gültigkeit eines Pseudonyms als Eingabe:
+
+1. **Am Tag der Ausgabe und am folgenden UTC-Tag.**
+2. **Nur am Tag der Ausgabe.**
+
+Zu `strict` und dem generischen Lesezugriff:
+
+1. **Der Start bricht ab, wenn beide zusammen eingeschaltet sind.**
+2. **Das Tool bleibt angeboten, weist in `strict` aber jede Antwort ab.**
+3. **Das Tool maskiert wie in `standard` und prüft Freitext zusätzlich.**
+
+## Entscheid
+
+Gewählt ist jeweils die erste Option, entschieden vom Maintainer am 31.10.2026.
+
+### Pseudonyme
+
+- **Verfahren:** AES-256-GCM-SIV aus `@noble/ciphers`, genau Version 2.4.0. Nur `packages/core/src/redaction/pseudonym.ts` importiert die Bibliothek, gehalten vom Ort `aesGcmSiv` in `tests/architecture/boundaries.json` und der Regel `aes-gcm-siv-only-in-pseudonyms`, und dieses Modul importiert ausser Tests nur die Pipeline (Ort `pseudonymUsers`, Regel `pseudonyms-only-in-pipeline`). Ein Test hält die Bibliothek an alle 24 Vektoren für AEAD_AES_256_GCM_SIV aus RFC 8452, Anhang C.2, und an die beiden Vektoren für den Überlauf des Zählers aus Anhang C.3. Das genügt, obwohl ADR 0026 eine geprüfte Form verlangt: Das Verfahren selbst war in der geprüften Version, die Änderungen seither liegen offen, und die Vektoren prüfen genau das, was Ecclium benutzt. Dass 2.4.0 selbst nicht geprüft ist, bleibt ein Restrisiko.
+- **Geheimnis:** `pseudonym_key` steht in einer Datei, die `ECCLIUM_PSEUDONYM_KEY_FILE` nennt: genau 64 Zeichen aus `0` bis `9` und `a` bis `f`, also 32 Byte, mit höchstens einem Zeilenumbruch am Ende, so wie `openssl rand -hex 32` sie schreibt. Die Datei prüft derselbe Leser wie die Token-Datei: absoluter Pfad, ohne Link, gewöhnliche Datei des Benutzers, keine Rechte für Gruppe und andere, ohne BOM, nur sichtbares ASCII. Jede seiner Ablehnungen hat für die Schlüsseldatei einen eigenen Code (`pseudonym_key_file_*`, `pseudonym_key_invalid`), damit die Meldung die richtige Variable nennt. Ein Schlüssel, dessen Bytes alle gleich sind, gilt als ungültig. Die Variable gilt nicht nur über stdio, weil auch die Geheimnisse des Self-Hostings denselben Schlüssel nennen. Ihren Pfad zeigt kein Bericht, auch nicht mit `--show-values`.
+- **Halter:** Das Geheimnis liegt in einem `KeyMaterial` mit den Bytes in einem privaten Feld. Jede Ausgabe gibt `[REDACTED]`, und nur die Module in `packages/core/src/keys/` lesen die Bytes, gehalten von der Regel `keys-internals` und, ausserhalb der Pakete, von einem Test des Namens. `Secret` bleibt dem Token: Sein Wert verlässt den Prozess nur auf dem ausgehenden Weg ([ADR 0054](0054-secret-fehler-logger-audit.md)), und ein Schlüssel gehört nie dorthin.
+- **Port:** Die Plugin-Schnittstelle bekommt den `KeyProvider` mit genau einer Methode, `dataKeys(ctx, purpose, day)`. Einziger Zweck ist `pseudonym`. Jeder Schlüssel gehört zu Mandant und Akteur des Kontexts und zum Tag. Ein Provider nimmt beide nur aus dem Kontext, wie der `QuotaStore` ([ADR 0063](0063-quotastore-als-datei.md)), und gibt frische Kopien von 32 Byte, die der Aufrufer nach Gebrauch löscht. Der erste Schlüssel ist der aktuelle, während eines Wechsels folgt der aus dem früheren Geheimnis. Die übrigen Zwecke und das Ein- und Auspacken von Schlüsseln kommen mit den Schreib-Tools.
+- **Ableitung:** Der Provider des Kerns leitet jeden Schlüssel mit HKDF und SHA-256 aus `node:crypto` ab, mit leerem Salz. `info` besteht aus der Bezeichnung `ecclium/key/v1`, dem Zweck, dem Mandanten, der Origin der ChurchTools-Instanz, der Art und der ID des Akteurs und dem UTC-Tag, jedes Teil mit seiner Länge in zwei Bytes davor, Big-Endian, damit keine zwei Listen von Teilen gleich lauten. Die Instanz steht darin, weil über stdio jeder Mandant `default` heisst: Zwei Server für zwei Instanzen mit derselben Schlüsseldatei und demselben Subjekt hätten sonst dieselben Schlüssel, und ein Pseudonym des einen öffnete im anderen als eine andere Person. Den Provider baut nur die Wurzel der Komposition, gehalten von der Regel `key-provider-only-from-composition-root`, weil er jedem, der ihn hat, den Schlüssel jedes Tages gibt. Er leitet bei jedem Aufruf neu ab und hält nichts Abgeleitetes. Was er über die Anfrage hinaus hält, sind nur die Geheimnisse aus der Konfiguration, wie das Token, kein Zustand nach ADR 0051.
+- **Prinzipal:** der Akteur des Aufrufs, über stdio `stdio:<Subjekt>` nach [ADR 0055](0055-konfiguration-identitaet.md), nie das Dienstkonto. Sonst sähen alle Nutzer eines Servers dieselben Pseudonyme.
+- **Chiffre:** Ein Pseudonym ist die Kennung der Person als 8 Bytes, Big-Endian, eine ganze Zahl von 0 bis 2^53 − 1 wie in den `objectRefs` ([ADR 0028](0028-audit-ereignis-und-datei-sink.md)), verschlüsselt mit dem aktuellen Schlüssel des Tages, einer festen Nonce aus 12 Null-Bytes und den zusätzlichen Daten `ecclium/pseudonym/v1/personId`. RFC 8452 rät in Abschnitt 9 davon ab, eine feste Nonce zur Regel zu machen, weil sie zeigt, dass zwei Klartexte gleich sind. Genau das soll ein Pseudonym zeigen: dieselbe Person gibt demselben Prinzipal am selben Tag dasselbe Pseudonym. Jeder Schlüssel dient nur einem Prinzipal an einem Tag, und mit dem Lesebudget von 200 Aufrufen versiegelt er höchstens einige tausend Kennungen, weit unter den Grenzen der RFC. Eine Instanz der Chiffre verschlüsselt nur einmal, darum entsteht für jedes Ver- und Entschlüsseln eine neue.
+- **Form:** `p1_` und 39 Zeichen Base32 nach RFC 4648 in Kleinbuchstaben ohne Auffüllung, zusammen 42 Zeichen. Kleinbuchstaben und keine weiteren Zeichen, damit ein Modell ein Pseudonym unverändert abschreibt. Das letzte Zeichen trägt zwei Bits der Bytes und drei Nullen; eine andere Schreibweise derselben Bytes gilt nicht.
+- **Gültigkeit:** Ausgegeben wird immer das Pseudonym des laufenden UTC-Tages. Zurückübersetzt wird eines am Tag seiner Ausgabe und am folgenden UTC-Tag, also mit höchstens vier Schlüsseln: heute und gestern, je aus dem aktuellen und dem früheren Geheimnis. So läuft ein Gespräch über Mitternacht UTC weiter. Alles andere, ein geändertes Zeichen, ein Pseudonym eines anderen Prinzipals, Mandanten oder einer anderen Instanz, eines von vorgestern, eine Zahl über 2^53 − 1, gilt als kein Pseudonym, ohne Grund.
+- **Wechsel:** Für einen Wechsel steht der bisherige Schlüssel in einer zweiten Datei, die `ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE` nennt, in derselben Form und mit denselben Prüfungen. Neue Pseudonyme entstehen nur mit dem neuen Schlüssel, zurückübersetzt wird mit beiden. Ein Pseudonym aus dem bisherigen Schlüssel gilt so bis zum Ende des UTC-Tages nach dem Wechsel, danach braucht kein gültiges Pseudonym die zweite Datei mehr. Solange sie gesetzt ist, nimmt der Server aber auch ein Pseudonym an, das jemand mit dem bisherigen Schlüssel neu macht. Wechselt der Betreiber den Schlüssel, weil er abhandengekommen ist, setzt er die zweite Datei deshalb gar nicht und verliert die Pseudonyme des Tages. Solange sie gesetzt ist, warnt jeder Start (`pseudonym_key_change`). Die zweite Datei ohne die erste und zweimal derselbe Schlüssel brechen den Start ab.
+- **Je Aufruf:** `openPseudonyms` holt die Schlüssel eines Aufrufs zu dessen Beginn und gibt `hide` und `reveal`, beide ohne weiteres Warten. Es kopiert die Schlüssel sofort und löscht die, die der Provider gab, wie der Port es verlangt. Je Tag nimmt es einen oder zwei Schlüssel mit 32 Byte, keinen aus lauter Nullen, sonst keinen. Ein Provider, der seine eigenen Listen herausgibt, liefert so beim nächsten Mal Nullen und wird abgewiesen, statt dass alle Prinzipale denselben Schlüssel bekommen. Die Pipeline löscht die Kopien mit `erase` in einem `finally`.
+
+### Masken
+
+Mit der Stufe `strict` kommen die Masken, die ADR 0026 offen lässt, entschieden mit dem Plan für Phase 4:
+
+- **Adressen:** Strasse, Zusatz, Postleitzahl und Koordinaten tragen `address` und werden zur Marke. Ort und Land bleiben stehen, in `standard` und `strict` gleich.
+- **Beträge** (`amount`) werden zur Marke, wie ADR 0026 es festhält.
+- **Nachnamen** (`name.last`) kürzt `strict` auf den ersten Buchstaben.
+
+Mit diesen Masken weist die Registry Blätter mit `address` und `amount` nicht mehr ab, und `tool_unmasked` fällt weg.
+
+### Prüfung von Freitext
+
+In `strict` prüft die Pipeline jeden Text der Klasse `untrusted` auf E-Mail-Adressen, Telefonnummern, IBAN und AHV-Nummern. Sie liest nach NFKC und ohne unsichtbare Zeichen Zeichen für Zeichen wie die Masken, ohne regulären Ausdruck auf Werten des Mandanten. Eine IBAN erkennt sie an ihrer Prüfsumme und eine AHV-Nummer an ihrer Prüfziffer, damit nicht jede Zahlenfolge fällt. Ein Treffer wird durch eine sichtbare Marke ersetzt.
+
+### Schemas in `strict`
+
+In `strict` zeigt `tools/list` für Felder der Klasse `personId` eine Zeichenkette statt einer Zahl, in Ein- und Ausgabe. Die Pipeline übersetzt ein Pseudonym vor `validateInput` in die Kennung und eine Kennung nach `validateOutput` in ein Pseudonym. Der Code der Tools bleibt unverändert und sieht nur Kennungen. Eine rohe Kennung oder etwas, das kein gültiges Pseudonym ist, in einem solchen Feld weist `strict` mit `validation` ab. Das Audit nennt weiter die Kennungen, nicht die Pseudonyme. `strict` ohne `ECCLIUM_PSEUDONYM_KEY_FILE` bricht den Start ab.
+
+### `strict` und der generische Lesezugriff
+
+`strict` zusammen mit dem Toolset `api` bricht den Start mit einer klaren Meldung ab. Die Antwort von `ct_api_execute_read` hat kein bekanntes Schema, die Maske nach Feldname und Form kennt weder Namen noch Kennungen, und `strict` soll nie weniger tun, als es verspricht. Wer `strict` will, verzichtet auf das Toolset `api`. Das ergänzt ADR 0067.
+
+## Konsequenzen
+
+- Eine neue Laufzeitabhängigkeit in `core`. Sie kommt ins Bündel des Produktpakets, sobald es eines gibt ([ADR 0022](0022-paketzuschnitt.md)), und Renovate behandelt sie wie jede Laufzeitabhängigkeit: sieben Tage warten, nie selbst mergen.
+- Pseudonyme sind eine Pseudonymisierung im Sinn von Art. 4 Nr. 5 DSGVO, keine Anonymisierung: Wer den Schlüssel hat, übersetzt jedes Pseudonym zurück, jedes Tages, weil sich die übrigen Teile der Ableitung erraten lassen. Die Datei gehört deshalb geschützt und, damit Pseudonyme nach einer Wiederherstellung gleich bleiben, in die Sicherung. `docs/privacy.md` sagt das mit der Doku der Stufe.
+- Geht der Schlüssel verloren, lassen sich die Pseudonyme des Tages nicht mehr zurückübersetzen. Sonst hängt nichts an ihnen: Das Audit speichert Kennungen, kein Pseudonym liegt auf der Platte.
+- Unter Windows lässt sich die Schlüsseldatei so wenig sicher lesen wie die Token-Datei. Über stdio gibt es `strict` dort nicht.
+- Clients mit demselben Subjekt sehen dieselben Pseudonyme, etwa Claude Desktop und Claude Code mit `local-stdio` auf einem Rechner. Wer das trennen will, gibt jedem ein eigenes Subjekt.
+- Ein Modell kann eine Person nicht über Tage wiedererkennen, und um Mitternacht UTC bekommt dieselbe Person im selben Gespräch ein neues Pseudonym. Das alte nimmt der Server bis zum Ende des folgenden Tages an.
+- **Restrisiken:**
+  - Version 2.4.0 der Bibliothek ist nicht eigens geprüft. Die Vektoren aus RFC 8452 prüfen die Ergebnisse, nicht jede Eigenschaft des Codes.
+  - JavaScript garantiert keine konstante Laufzeit. Wer Pseudonyme einreicht, ist das Modell des eigenen Clients, und eine Antwort verrät nur, ob ein Pseudonym gilt.
+  - Der Leser der Schlüsseldatei gibt den Schlüssel als Text weiter, wie das Token. Diesen Text kann JavaScript nicht löschen, er bleibt im Speicher des Prozesses, bis die Speicherbereinigung ihn freigibt, und steht so lange auch in einem Speicherabbild.
+  - AES-GCM-SIV bindet einen Text nicht an genau einen Schlüssel. Einen Text, der unter zwei der vier Schlüssel gilt, kann nur bauen, wer beide Schlüssel kennt. Dass ein beliebiger Text zufällig gilt, hat bei vier Schlüsseln die Wahrscheinlichkeit 4 · 2^−128.
+
+## Umsetzung
+
+- Seit dem 31.10.2026 gebaut sind die Pseudonyme, noch ohne die Stufe `strict`:
+  - `@noble/ciphers` 2.4.0 in `packages/core/package.json`, mit dem Test der Vektoren in `packages/core/src/redaction/rfc8452.test.ts` und der Regel `aes-gcm-siv-only-in-pseudonyms` mit Beispielen, die sie rot machen.
+  - Der Port `KeyProvider` in `packages/plugin-api/src/keys.ts`.
+  - `KeyMaterial` in `packages/core/src/keys/key-material.ts` mit der Regel `keys-internals` und dem Test `tests/architecture/reveal-key-material.test.mts`, der Provider des Kerns `createFileKeyProvider` in `packages/core/src/keys/file-provider.ts` mit der Regel `key-provider-only-from-composition-root`, und die Regel `pseudonyms-only-in-pipeline` für das Modul der Pseudonyme. Der Ort `keys` steht im Job `coverage-security-core` mit 100 Prozent.
+  - Die beiden Variablen in der Tabelle in `packages/core/src/config/variables.ts`, der Leser in `packages/core/src/config/pseudonym-key-file.ts`, die Probleme `pseudonym_key_file_*`, `pseudonym_key_invalid`, `pseudonym_key_previous_without_current` und `pseudonym_key_same` und die Warnung `pseudonym_key_change`, die Zeilen «Pseudonym-Schlüssel» und «Früherer Schlüssel» in `ecclium config check`. `.env.example` nennt beide nur in Kommentaren.
+  - `openPseudonyms` in `packages/core/src/redaction/pseudonym.ts`. Tests zeigen, dass zwei Prinzipale für dieselbe Person verschiedene Pseudonyme sehen, ein anderer Tag, ein anderer Mandant und eine andere Instanz ein anderes, dass ein Pseudonym am folgenden Tag und nach einem Wechsel des Schlüssels zurückkommt, am übernächsten nicht, und dass jedes einzeln geänderte Zeichen abgewiesen wird. Gegenproben ohne die Prüfung der letzten Bits, ohne die Schlüssel des Vortags und ohne den früheren Schlüssel lassen sie scheitern.
+- Folgt mit der Stufe `strict`: die Übersetzung in der Pipeline und die Schemas als Zeichenkette, der Abbruch ohne Schlüssel, die Masken für `address`, `amount` und `name.last`, die Prüfung von Freitext und der Abbruch mit dem Toolset `api`. Bis dahin weist die Konfiguration `strict` weiter ab (`redaction_strict_unsupported`), und nichts ruft `openPseudonyms` auf.
