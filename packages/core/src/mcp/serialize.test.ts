@@ -107,11 +107,6 @@ describe('serializeOutcome for a success', () => {
 });
 
 describe('serializeOutcome for data without the mark of a redacted result', () => {
-  const internal = {
-    content: [{ type: 'text', text: fixedSentences.internal }],
-    isError: true,
-  };
-
   it.each([
     ['plain data', { email: 'max.mustermann@example.org' }],
     ['a copy of marked data', { ...sealRedacted({ id: 1 }) }],
@@ -129,11 +124,12 @@ describe('serializeOutcome for data without the mark of a redacted result', () =
         },
       ),
     ],
-  ])('sends the fixed sentence of internal instead of %s', (_name, data) => {
+  ])('refuses %s', (_name, data) => {
     // A cast, as code compiled on its own could make, gets past the types
-    // but not past the check at run time (ADR 0026).
+    // but not past the check at run time (ADR 0026). The mount answers
+    // the throw with its fixed sentence and event.
     const forged = { ok: true, data } as unknown as ToolOutcome;
-    expect(serializeOutcome(forged)).toEqual(internal);
+    expect(() => serializeOutcome(forged)).toThrow(TypeError);
   });
 });
 
