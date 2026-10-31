@@ -110,6 +110,12 @@ describe('objectRefFromText', () => {
   it('makes the entry the audit writes from a typed ID', () => {
     expect(objectRefFromText('person:12')).toBe('person:12');
     expect(objectRefFromText('wiki_page:0')).toBe('wiki_page:0');
+    expect(objectRefFromText('person:0042')).toBe('person:42');
+    expect(objectRefFromText('group:000')).toBe('group:0');
+    // A GUID keeps its leading zeros.
+    expect(
+      objectRefFromText('wiki_page:00000000-0000-4000-8000-000000000001'),
+    ).toBe('wiki_page:00000000-0000-4000-8000-000000000001');
     expect(objectRefFromText(`group:${guid.toUpperCase()}`)).toBe(
       `group:${guid}`,
     );

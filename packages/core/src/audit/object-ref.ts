@@ -92,7 +92,8 @@ export function objectRefOf(
 /**
  * Makes the entry for an ID of an object as a person types it, such as
  * the value of `ecclium audit show --object`: a kind of the closed list,
- * a colon and the ID as digits or as a GUID in any case.
+ * a colon and the ID as digits or as a GUID in any case. Leading zeros of
+ * digits go, as the audit writes a number without them.
  *
  * @param text - The text, such as `person:12`.
  * @returns The entry as the audit writes it, a GUID in lower case, or
@@ -109,8 +110,12 @@ export function objectRefFromText(text: string): string | undefined {
   const colon = text.indexOf(':');
   if (colon < 1) return undefined;
   const domain = text.slice(0, colon);
+  // The audit writes a number without leading zeros, so 0042 is 42: a
+  // search for 0042 must not miss the lines that name 42.
+  const raw = text.slice(colon + 1);
+  const id = digits.test(raw) ? raw.replace(/^0+(?=[0-9])/, '') : raw;
   return objectDomains.includes(domain)
-    ? objectRefOf(domain as ObjectDomain, text.slice(colon + 1))
+    ? objectRefOf(domain as ObjectDomain, id)
     : undefined;
 }
 
