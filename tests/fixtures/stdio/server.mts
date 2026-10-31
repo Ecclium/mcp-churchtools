@@ -19,7 +19,11 @@
 // and locks the folder audit before it returns (ADR 0028). «audit-ids»
 // opens the audit file the same way and adds the same tool, which then
 // leaves the file alone and names a group in its result, so that the
-// test can find the IDs of a call in the file and nowhere else.
+// test can find the IDs of a call in the file and nowhere else. «strict»
+// starts with the level strict and the key file STDIO_FIXTURE_KEY_FILE,
+// opens the audit file the same way and adds that tool too, so that the
+// test can follow a pseudonym from the account to the input of a call and
+// find the IDs in the file only (ADR 0069).
 //
 // The double answers whoami three times, in this order: with an account,
 // with the status 503 and, for a call the test cancels, not before a
@@ -31,6 +35,7 @@ import process from 'node:process';
 
 import { openAuditFile } from '../../../packages/core/src/audit/file-writer.ts';
 import { createAuditSink } from '../../../packages/core/src/audit/index.ts';
+import { createFileKeyProvider } from '../../../packages/core/src/keys/file-provider.ts';
 import {
   createStdioIdentity,
   createStdioTenantResolver,
@@ -53,10 +58,17 @@ import { createMemoryQuotaStore } from '../../../packages/testkit/src/quota/inde
 
 const [scenario = 'serve'] = process.argv.slice(2);
 
+const strict = scenario === 'strict';
 const loaded = loadConfig({
   environment: {
     ECCLIUM_CHURCHTOOLS_URL: doubleOrigin,
     ECCLIUM_CHURCHTOOLS_TOKEN: process.env['STDIO_FIXTURE_TOKEN'] ?? '',
+    ...(strict
+      ? {
+          ECCLIUM_REDACTION: 'strict',
+          ECCLIUM_PSEUDONYM_KEY_FILE: process.env['STDIO_FIXTURE_KEY_FILE'],
+        }
+      : {}),
   },
   transport: 'stdio',
 });
@@ -94,7 +106,8 @@ double.intercept(whoami).reply(200, account, json).delay(60_000);
 const stateDir = process.env['STDIO_FIXTURE_STATE_DIR'] ?? '';
 const auditFolder = join(stateDir, 'audit');
 let broken = false;
-const withFile = scenario === 'audit-file' || scenario === 'audit-ids';
+const withFile =
+  scenario === 'audit-file' || scenario === 'audit-ids' || strict;
 const opened = withFile
   ? openAuditFile({ stateDir, clock, pid: process.pid, retentionMonths: 12 })
   : undefined;
@@ -124,7 +137,7 @@ const catalog = createToolCatalog({
             },
           }),
         ]
-      : scenario === 'audit-ids'
+      : scenario === 'audit-ids' || strict
         ? [
             createSpecialPlugin({
               text: process.env['STDIO_FIXTURE_DATA'] ?? '',
@@ -150,6 +163,10 @@ const pipeline = createToolPipeline({
   logging: { writer, minLevel: config.logLevel },
   // The tool with sensitivity special counts against the read budget.
   quota: createMemoryQuotaStore(),
+  // The keys of the pseudonyms, as the composition root builds them.
+  ...(config.pseudonymKey === undefined
+    ? {}
+    : { keys: createFileKeyProvider({ current: config.pseudonymKey }) }),
 });
 
 startStdioServer({

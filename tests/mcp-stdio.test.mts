@@ -1,10 +1,12 @@
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   chmodSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   rmSync,
+  writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
@@ -103,7 +105,8 @@ afterAll(() => {
 });
 
 const start = (
-  scenario: 'serve' | 'stray-line' | 'connect' | 'audit-file' | 'audit-ids',
+  scenario:
+    'serve' | 'stray-line' | 'connect' | 'audit-file' | 'audit-ids' | 'strict',
   env: Readonly<Record<string, string>> = {},
 ): FixtureSession => {
   const token = makeCanary('token').value;
@@ -473,6 +476,124 @@ describe('the IDs of a call at a real audit file', { timeout }, () => {
     expect(lines.some((line) => line['event'] === 'tool_call')).toBe(true);
     expect(finished.stderr).not.toMatch(/person:|group:/u);
     expect(finished.stdout).not.toMatch(/person:|group:/u);
+  });
+});
+
+// The level strict at a real process (ADR 0069): the list of tools shows
+// pseudonyms, the account comes back with one, the same pseudonym goes
+// into a call as the input of a person, a raw ID is refused, free text is
+// checked, and the IDs stand in the audit file only.
+describe('the level strict at a real process', { timeout }, () => {
+  const pseudonym = /^p1_[a-z2-7]{39}$/u;
+  let folder = '';
+  let stateDir = '';
+  let tools: Json[] = [];
+  let profile: Json = {};
+  let roundTrip: Json = {};
+  let raw: Json = {};
+  let echo: Json = {};
+  let finished: Finished;
+
+  beforeAll(async () => {
+    folder = mkdtempSync(join(tmpdir(), 'ecclium-stdio-strict-'));
+    const keyFile = join(folder, 'pseudonym-key');
+    // Made from a seed, so that no secret scanner reads it as a leaked key.
+    writeFileSync(
+      keyFile,
+      `${createHash('sha256').update('stdio-strict').digest('hex')}\n`,
+      { mode: 0o600 },
+    );
+    chmodSync(keyFile, 0o600);
+    stateDir = mkdtempSync(join(folder, 'state-'));
+    const session = start('strict', {
+      STDIO_FIXTURE_STATE_DIR: stateDir,
+      STDIO_FIXTURE_KEY_FILE: keyFile,
+      STDIO_FIXTURE_DATA: 'fest',
+    });
+    await modern.open(session);
+    const call = async (
+      id: number,
+      name: string,
+      args: Json,
+    ): Promise<Json> => {
+      session.send({
+        jsonrpc: '2.0',
+        id,
+        method: 'tools/call',
+        params: modern.params({ name, arguments: args }),
+      });
+      return session.response(id);
+    };
+    session.send({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+    tools = at(await session.response(2), 'result', 'tools') as Json[];
+    profile = await call(3, 'ct_example_profile', {});
+    const id = at(profile, 'result', 'structuredContent', 'id');
+    roundTrip = await call(4, 'ct_test_special', { personId: id });
+    raw = await call(5, 'ct_test_special', { personId: 1 });
+    echo = await call(6, 'ct_example_echo', {
+      notes: ['Mail an max.mustermann@example.org oder 000 000 12 34'],
+    });
+    finished = await session.finish();
+  }, timeout);
+
+  afterAll(() => {
+    if (folder !== '') rmSync(folder, { recursive: true, force: true });
+  });
+
+  it('shows the IDs of persons as strings in the list of tools', () => {
+    const of = (name: string): Json =>
+      tools.find((tool) => tool['name'] === name) ?? {};
+    expect(
+      at(of('ct_test_special'), 'inputSchema', 'properties', 'personId'),
+    ).toEqual({
+      type: 'string',
+      minLength: 42,
+      maxLength: 42,
+      pattern: '^p1_[a-z2-7]{39}$',
+    });
+    expect(
+      at(of('ct_example_profile'), 'outputSchema', 'properties', 'id'),
+    ).toEqual({ type: 'string' });
+  });
+
+  it('gives the account with its pseudonym and the first letter of its last name', () => {
+    const content = at(profile, 'result', 'structuredContent') as Json;
+    expect(content['id']).toMatch(pseudonym);
+    expect(content['lastName']).toBe('M.');
+    expect(content['firstName']).toBe('Max');
+    expect(content['email']).toBe('m***@example.org');
+  });
+
+  it('takes the pseudonym back as the input of a person and refuses a raw ID', () => {
+    expect(at(roundTrip, 'result', 'isError')).not.toBe(true);
+    expect(at(raw, 'result', 'isError')).toBe(true);
+    expect(JSON.stringify(at(raw, 'result', 'content'))).toContain(
+      'pseudonyms that start with p1_',
+    );
+  });
+
+  it('checks free text', () => {
+    const [note] = at(echo, 'result', 'structuredContent', 'notes') as string[];
+    expect(note).toContain('[email masked]');
+    expect(note).toContain('[phone masked]');
+    expect(note).not.toContain('example.org');
+  });
+
+  it('names the IDs in the audit file only, never a pseudonym', () => {
+    const folderOfAudit = join(stateDir, 'audit');
+    const lines = readdirSync(folderOfAudit).flatMap((name) =>
+      jsonLines(readFileSync(join(folderOfAudit, name), 'utf8')),
+    );
+    expect(lines.map((line) => line['objectRefs'])).toEqual([
+      ['person:1'],
+      ['person:1', 'group:815'],
+      [],
+      [],
+    ]);
+    expect(JSON.stringify(lines)).not.toContain('p1_');
+    expect(finished.stderr).not.toMatch(/person:|group:|p1_/u);
+    expect(finished.stdout).not.toMatch(/person:|group:/u);
+    expect(finished.code).toBe(0);
   });
 });
 
