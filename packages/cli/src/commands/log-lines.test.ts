@@ -108,6 +108,26 @@ describe('readLogLines', () => {
     expect(linesOf(folder).read).toBe(false);
   });
 
+  it('holds a line read a byte at a time in one buffer', () => {
+    const content = new TextEncoder().encode(`${'a'.repeat(3_000)}\nb\n`);
+    let offset = 0;
+    const fs = realFs({
+      readSync: (_fd, buffer) => {
+        if (offset >= content.length) return 0;
+        buffer[0] = content[offset] ?? 0;
+        offset += 1;
+        return 1;
+      },
+    });
+
+    expect(linesOf(put(''), 5_000, fs)).toEqual({
+      read: true,
+      lines: ['a'.repeat(3_000), 'b'],
+    });
+    offset = 0;
+    expect(linesOf(put(''), 2_000, fs).lines).toEqual(['b']);
+  });
+
   it('reads stdin for - and leaves it open', () => {
     const content = new TextEncoder().encode('from stdin\n');
     const opened: string[] = [];

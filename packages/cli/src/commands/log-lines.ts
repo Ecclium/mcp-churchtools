@@ -99,43 +99,41 @@ export function readLogLines(
   }
   const decoder = new TextDecoder();
   const buffer = new Uint8Array(logChunkSize);
-  // The current line: its parts, its length so far and whether it is too
-  // long, in which case its parts are dropped.
-  const current: { parts: Uint8Array[]; length: number; skipping: boolean } = {
-    parts: [],
-    length: 0,
-    skipping: false,
-  };
+  // The current line in one buffer that grows by doubling up to the limit
+  // and one byte more, for a carriage return, so that a pipe that hands
+  // over a byte at a time costs no more memory than a file. A line beyond
+  // the limit is dropped while it is read.
+  const current = { bytes: new Uint8Array(1_024), length: 0, skipping: false };
 
   const finish = (): void => {
     if (!current.skipping) {
-      const bytes = new Uint8Array(current.length);
-      let offset = 0;
-      for (const part of current.parts) {
-        bytes.set(part, offset);
-        offset += part.length;
-      }
+      const bytes = current.bytes.subarray(0, current.length);
       const end =
         bytes.length > 0 && bytes[bytes.length - 1] === carriageReturn
           ? bytes.length - 1
           : bytes.length;
       onLine(decoder.decode(bytes.subarray(0, end)));
     }
-    current.parts = [];
     current.length = 0;
     current.skipping = false;
   };
 
-  // The line may be one byte longer than the limit, for a carriage return.
   const take = (part: Uint8Array): void => {
     if (current.skipping) return;
-    current.length += part.length;
-    if (current.length > maxLineLength + 1) {
+    const length = current.length + part.length;
+    if (length > maxLineLength + 1) {
       current.skipping = true;
-      current.parts = [];
-    } else {
-      current.parts.push(part.slice());
+      return;
     }
+    if (length > current.bytes.length) {
+      let size = current.bytes.length * 2;
+      while (size < length) size *= 2;
+      const grown = new Uint8Array(Math.min(size, maxLineLength + 1));
+      grown.set(current.bytes.subarray(0, current.length));
+      current.bytes = grown;
+    }
+    current.bytes.set(part, current.length);
+    current.length = length;
   };
 
   try {
