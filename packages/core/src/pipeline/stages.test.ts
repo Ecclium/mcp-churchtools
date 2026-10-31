@@ -156,6 +156,49 @@ describe('redact and markUntrusted', () => {
     });
   });
 
+  // The level strict shortens last names and checks free text, after the
+  // cleaning and inside the envelope (ADR 0069).
+  it('shorten last names and check free text at the level strict (golden)', () => {
+    const shape = object({
+      first: leaf('name.first'),
+      last: leaf('name.last'),
+      notes: array(leaf('untrusted')),
+      plain: leaf('none'),
+    });
+    const value = {
+      first: 'Person',
+      last: `Muster${u(0x200b)}mann`,
+      notes: [
+        'Kontakt: max.mustermann@example.org, 000 000 12 34',
+        `Tel.${u(0x200b)} 000 000 12 34`,
+        'Treffen am 01.10.2026',
+      ],
+      plain: 'max.mustermann@example.org',
+    };
+    expect(
+      markUntrusted(redact(value, shape, 'strict'), shape, boundary),
+    ).toEqual({
+      first: 'Person',
+      last: 'M.',
+      notes: [
+        `${open}Kontakt: [email masked], [phone masked]${close}`,
+        `${open}Tel. [phone masked] [ecclium: 1 hidden characters removed]${close}`,
+        `${open}Treffen am 01.10.2026${close}`,
+      ],
+      plain: 'max.mustermann@example.org',
+    });
+    for (const level of ['standard', 'off'] as const) {
+      expect(redact(value, shape, level)).toMatchObject({
+        last: 'Mustermann [ecclium: 1 hidden characters removed]',
+        notes: [
+          'Kontakt: max.mustermann@example.org, 000 000 12 34',
+          'Tel. 000 000 12 34 [ecclium: 1 hidden characters removed]',
+          'Treffen am 01.10.2026',
+        ],
+      });
+    }
+  });
+
   it('mask at every level but off, also at one the core does not know', () => {
     for (const level of ['strict', 'unknown'] as const) {
       expect(redact(input, record, level as 'standard')).toMatchObject({

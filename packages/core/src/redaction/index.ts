@@ -29,6 +29,7 @@ export {
   maskBirthdate,
   maskedValue,
   maskEmail,
+  maskLastName,
   maskPhone,
   minPhoneDigits,
   visiblePhoneDigits,

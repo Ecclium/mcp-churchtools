@@ -4,6 +4,7 @@ import {
   maskBirthdate,
   maskedValue,
   maskEmail,
+  maskLastName,
   maskPhone,
   minPhoneDigits,
 } from './mask.js';
@@ -122,5 +123,24 @@ describe('maskBirthdate', () => {
     '',
   ])('masks %j as a whole', (value) => {
     expect(maskBirthdate(value)).toBe(maskedValue);
+  });
+});
+
+describe('maskLastName', () => {
+  it.each([
+    ['Mustermann', 'M.'],
+    ['  mustermann ', 'm.'],
+    [`${u(0xd6)}zdemir`, `${u(0xd6)}.`],
+    [`O${u(0x308)}zdemir`, `${u(0xd6)}.`],
+    [`${zeroWidth}Muster${tag}mann`, 'M.'],
+    [`${u(0x1f600)}mann`, `${u(0x1f600)}.`],
+    ['van Dyck', 'v.'],
+    ['M', 'M.'],
+  ])('shortens %j', (value, shortened) => {
+    expect(maskLastName(value)).toBe(shortened);
+  });
+
+  it.each(['', '   ', zeroWidth])('leaves an empty name empty: %j', (value) => {
+    expect(maskLastName(value)).toBe('');
   });
 });

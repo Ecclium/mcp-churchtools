@@ -15,6 +15,8 @@ import {
   maskBirthdate,
   maskedValue,
   maskEmail,
+  maskFreeText,
+  maskLastName,
   maskPhone,
   wrapInEnvelope,
 } from '../redaction/index.js';
@@ -217,11 +219,32 @@ export function outputIdsFit(value: unknown, node: ShapeNode): boolean {
   return fits;
 }
 
-// The mask of a class, if the class has one. The registry lets these
-// classes only on strings, so a mask never changes the type of a value.
+/**
+ * Whether a level does what `strict` does beyond `standard`. A level the
+ * core does not know yet counts, so that it fails closed (ADR 0069).
+ *
+ * @param level - The level of redaction of a call.
+ * @returns Whether it is neither `off` nor `standard`.
+ * @example
+ * ```ts
+ * isStrictLevel('strict'); // true
+ * ```
+ */
+export const isStrictLevel = (level: RedactionLevel): boolean =>
+  level !== 'off' && level !== 'standard';
+
+// The free text of the level strict: cleaned with its note first, then
+// checked, so that the check reads what the envelope will hold.
+const checkFreeText = (text: string): string => maskFreeText(cleanText(text));
+
+// The mask of a class at a level, if the class has one there. The registry
+// lets these classes only on strings, so a mask never changes the type of
+// a value.
 const maskOf = (
   dataClass: DataClass | undefined,
+  level: RedactionLevel,
 ): ((text: string) => string) | undefined => {
+  if (level === 'off') return undefined;
   switch (dataClass) {
     case 'email':
       return maskEmail;
@@ -229,6 +252,10 @@ const maskOf = (
       return maskPhone;
     case 'birthdate':
       return maskBirthdate;
+    case 'name.last':
+      return isStrictLevel(level) ? maskLastName : undefined;
+    case 'untrusted':
+      return isStrictLevel(level) ? checkFreeText : undefined;
     default:
       return undefined;
   }
@@ -238,11 +265,14 @@ const maskOf = (
  * The stage `redact`. It masks e-mail addresses, phone numbers and dates of
  * birth by their data class and replaces addresses and amounts with
  * {@link maskedValue}, unless the level is `off`; any other level masks, so
- * a level the core does not know yet fails closed. Every other string loses
- * its hidden characters, with a note at its end when some were removed, at
- * every level, because hidden characters carry instructions, not personal
- * data. A leaf without a class cannot reach this stage since the registry
- * refuses it (ADR 0026); it would stay unmasked here.
+ * a level the core does not know yet fails closed. In `strict` it also
+ * shortens last names to their first letter and checks every free text for
+ * e-mail addresses, phone numbers, IBAN and AHV numbers (ADR 0069). Every
+ * other string loses its hidden characters, with a note at its end when
+ * some were removed, at every level, because hidden characters carry
+ * instructions, not personal data. A leaf without a class cannot reach
+ * this stage since the registry refuses it (ADR 0026); it would stay
+ * unmasked here.
  *
  * @param value - The checked result.
  * @param root - The kept shape of the result.
@@ -272,7 +302,7 @@ export function redact(
       return maskedValue;
     }
     if (typeof leaf !== 'string') return leaf;
-    const mask = level === 'off' ? undefined : maskOf(dataClass);
+    const mask = maskOf(dataClass, level);
     return mask === undefined ? cleanText(leaf) : mask(leaf);
   });
 }
