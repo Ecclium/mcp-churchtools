@@ -1,9 +1,9 @@
 /**
  * Redaction of results and error messages (ADR 0024): masks for contact
  * data and dates of birth, the cleaning of hidden characters, the data
- * envelope for free text and the mask of an answer of the escape hatch
- * (ADR 0067). Only the pipeline uses it; the entry point of
- * core does not export it.
+ * envelope for free text, the mask of an answer of the escape hatch
+ * (ADR 0067) and the check of free text in the level strict (ADR 0069).
+ * Only the pipeline uses it; the entry point of core does not export it.
  *
  * @packageDocumentation
  */
@@ -15,6 +15,7 @@ export {
   type RandomBytes,
   wrapInEnvelope,
 } from './envelope.js';
+export { freeTextMarkers, maskFreeText } from './free-text.js';
 export {
   type FieldMask,
   fieldMask,
