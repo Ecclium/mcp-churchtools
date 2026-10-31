@@ -6,6 +6,7 @@ import { createObjectRefCollector, type ObjectDomain } from '../audit/index.js';
 import {
   checkInputRefs,
   collectInputRefs,
+  holdsPersons,
   type InputRefNode,
 } from './input-refs.js';
 
@@ -193,10 +194,36 @@ describe('checkInputRefs', () => {
 
   it.each([
     ['a bigint', classify(z.bigint(), 'personId')],
+    ['a text for a person', classify(z.string().max(10), 'personId')],
     ['a date', refersTo(z.date(), 'event')],
     ['a boolean', classify(z.boolean(), 'groupId')],
   ])('refuses an ID that is %s, which has no form of an ID', (_what, leaf) => {
     expect(checkInputRefs(z.strictObject({ id: leaf }))).toBeUndefined();
+  });
+
+  // Its keys are never read for IDs (ADR 0028, ADR 0069).
+  it.each([
+    ['a person', classify(z.string(), 'personId')],
+    ['a group', classify(z.string(), 'groupId')],
+    ['an event', refersTo(z.string(), 'event')],
+  ])('refuses a record keyed by %s', (_what, key) => {
+    expect(
+      checkInputRefs(
+        z.strictObject({ byKey: z.record(key, none(z.string())) }),
+      ),
+    ).toBeUndefined();
+  });
+
+  it('refuses a record keyed by a class it cannot read', () => {
+    const key = z.string();
+    z.globalRegistry.add(key, {
+      [Symbol.for('ecclium.mcp-churchtools.data-class.v1')]: 'secret',
+    });
+    expect(
+      checkInputRefs(
+        z.strictObject({ byKey: z.record(key, none(z.string())) }),
+      ),
+    ).toBeUndefined();
   });
 
   it('refuses a field that is no schema of zod 4', () => {
@@ -355,5 +382,41 @@ describe('collectInputRefs', () => {
     collectInputRefs(['x'], { kind: 'tuple', items: [null] }, add);
     expect(found).toEqual([]);
     expect(calls).toBe(0);
+  });
+});
+
+describe('holdsPersons', () => {
+  const person: InputRefNode = { kind: 'leaf', domain: 'person' };
+  const group: InputRefNode = { kind: 'leaf', domain: 'group' };
+
+  it('finds a person at any depth', () => {
+    const nodes: InputRefNode[] = [
+      person,
+      { kind: 'object', fields: { a: group, b: person } },
+      { kind: 'object', fields: {}, rest: person },
+      { kind: 'list', element: person },
+      { kind: 'record', value: person },
+      { kind: 'tuple', items: [null, person] },
+      { kind: 'tuple', items: [group], rest: person },
+      { kind: 'choice', options: [group, person] },
+    ];
+    for (const node of nodes) {
+      expect(holdsPersons(node), JSON.stringify(node)).toBe(true);
+    }
+  });
+
+  it('finds none where only other objects stand', () => {
+    const nodes: InputRefNode[] = [
+      group,
+      { kind: 'object', fields: { a: group } },
+      { kind: 'object', fields: {}, rest: group },
+      { kind: 'list', element: group },
+      { kind: 'record', value: group },
+      { kind: 'tuple', items: [null, group] },
+      { kind: 'choice', options: [group] },
+    ];
+    for (const node of nodes) {
+      expect(holdsPersons(node), JSON.stringify(node)).toBe(false);
+    }
   });
 });

@@ -1,6 +1,7 @@
 /**
  * Masks for e-mail addresses, phone numbers and dates of birth, the minimum
- * of redaction in phase 1 (ADR 0024). Each mask keeps a part the model can
+ * of redaction in phase 1 (ADR 0024), and the shortened last name of the
+ * level strict (ADR 0069). Each mask keeps a part the model can
  * work with and shows with asterisks that the rest is hidden. A value a
  * mask cannot read becomes {@link maskedValue} as a whole, so an unexpected
  * form never passes unmasked.
@@ -131,6 +132,33 @@ export function maskPhone(text: string): string {
     }
   }
   return digits >= minPhoneDigits ? masked : maskedValue;
+}
+
+/**
+ * Shortens a last name to its first letter and a dot, as the level
+ * `strict` shows it (ADR 0026, ADR 0069). The dot shows that the rest is
+ * hidden. The name is read without hidden characters and blanks at its
+ * ends and composed after NFC, so that an umlaut written as a letter with
+ * a combining mark stays one letter.
+ *
+ * A name of a single sign, as many names in Chinese or Korean script are,
+ * would stay whole as its first letter, so it becomes {@link maskedValue}.
+ *
+ * @param text - The last name as ChurchTools gives it.
+ * @returns The first letter and a dot, {@link maskedValue} for a name of
+ *   one sign, or an empty text for an empty name.
+ * @example
+ * ```ts
+ * maskLastName('Mustermann'); // 'M.'
+ * maskLastName('Özdemir'); // 'Ö.'
+ * ```
+ */
+export function maskLastName(text: string): string {
+  const value = prepare(text).normalize('NFC');
+  const first = value.codePointAt(0);
+  if (first === undefined) return '';
+  const sign = String.fromCodePoint(first);
+  return sign.length === value.length ? maskedValue : `${sign}.`;
 }
 
 /**

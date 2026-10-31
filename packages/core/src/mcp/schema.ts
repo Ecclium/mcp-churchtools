@@ -8,15 +8,21 @@
  * The output schema comes from the shape the registry kept, not from the
  * schema of the tool. Masks, the note on removed characters and the data
  * envelope change strings after `validateOutput`, so every string is
- * advertised without length, pattern, format or enum. Objects stay closed,
- * arrays have no bounds, and a tuple is bounded by its length.
+ * advertised without length, pattern, format or enum, and the marker that
+ * replaces an address or an amount is a string, also where the value was a
+ * number. Objects stay closed, arrays have no bounds, and a tuple is
+ * bounded by its length.
  *
  * @packageDocumentation
  */
-import type {
-  ObjectJsonSchema,
-  OutputShape,
-  ShapeNode,
+import type { RedactionLevel } from '@ecclium/mcp-churchtools-plugin-api';
+
+import { isStrictLevel } from '../redaction/pseudonym-form.js';
+import {
+  markerClasses,
+  type ObjectJsonSchema,
+  type OutputShape,
+  type ShapeNode,
 } from '../registry/index.js';
 
 type JsonObject = Readonly<Record<string, unknown>>;
@@ -28,22 +34,44 @@ const typeOf = (types: readonly string[], nullable: boolean): unknown => {
   return all.length === 1 ? all[0] : Object.freeze([...all]);
 };
 
+// The types a leaf can have in a result. A marker takes the place of an
+// address or an amount, also of a number, so these leaves are strings as
+// well, and in the level strict the ID of a person is its pseudonym, a
+// string only (ADR 0069).
+const leafTypes = (
+  node: ShapeNode & { kind: 'leaf' },
+  pseudonyms: boolean,
+): readonly string[] => {
+  if (pseudonyms && node.dataClass === 'personId') {
+    return node.types.includes('null') ? ['string', 'null'] : ['string'];
+  }
+  return node.dataClass !== undefined &&
+    markerClasses.includes(node.dataClass) &&
+    !node.types.includes('string')
+    ? ['string', ...node.types]
+    : node.types;
+};
+
 // The schema of one node of the kept shape. A value in an array is never
 // missing: the copy of the pipeline puts undefined in its place, which JSON
 // writes as null.
-const outputNode = (node: ShapeNode, inArray: boolean): JsonObject => {
+const outputNode = (
+  node: ShapeNode,
+  inArray: boolean,
+  pseudonyms: boolean,
+): JsonObject => {
   const nullable = node.nullable || (inArray && node.optional);
   switch (node.kind) {
     case 'leaf':
       return Object.freeze({
         __proto__: null,
-        type: typeOf(node.types, nullable),
+        type: typeOf(leafTypes(node, pseudonyms), nullable),
       });
     case 'array':
       return Object.freeze({
         __proto__: null,
         type: typeOf(['array'], nullable),
-        items: outputNode(node.element, true),
+        items: outputNode(node.element, true, pseudonyms),
       });
     // The length bounds a tuple, not items: false. A client of the 2025
     // era may check the result with a draft-07 engine, the default of
@@ -58,7 +86,7 @@ const outputNode = (node: ShapeNode, inArray: boolean): JsonObject => {
         __proto__: null,
         type: typeOf(['array'], nullable),
         prefixItems: Object.freeze(
-          node.items.map((item) => outputNode(item, true)),
+          node.items.map((item) => outputNode(item, true, pseudonyms)),
         ),
         minItems: node.items.length,
         maxItems: node.items.length,
@@ -67,7 +95,7 @@ const outputNode = (node: ShapeNode, inArray: boolean): JsonObject => {
       const properties = Object.create(null) as Record<string, JsonObject>;
       const required: string[] = [];
       for (const [name, field] of Object.entries(node.fields)) {
-        properties[name] = outputNode(field, false);
+        properties[name] = outputNode(field, false, pseudonyms);
         if (!field.optional) required.push(name);
       }
       return Object.freeze({
@@ -92,16 +120,27 @@ const outputNode = (node: ShapeNode, inArray: boolean): JsonObject => {
  * client reads as no item at all. An item that may be missing allows
  * null, because JSON writes a missing item as null.
  *
+ * In the level `strict` every ID of a person is advertised as a string,
+ * the pseudonym that stands for it (ADR 0069).
+ *
  * @param shape - The shape the registry kept for the output of a tool.
+ * @param level - The level of redaction of the server.
  * @returns The schema, frozen, without prototypes and without `$schema`,
  *   so it is JSON Schema 2020-12, the default of MCP.
  * @example
  * ```ts
- * deriveOutputSchema(entry.shape);
+ * deriveOutputSchema(entry.shape, 'standard');
  * // { type: 'object', properties: { email: { type: 'string' } },
  * //   required: ['email'], additionalProperties: false }
  * ```
  */
-export function deriveOutputSchema(shape: OutputShape): ObjectJsonSchema {
-  return outputNode(shape.root, false) as ObjectJsonSchema;
+export function deriveOutputSchema(
+  shape: OutputShape,
+  level: RedactionLevel,
+): ObjectJsonSchema {
+  return outputNode(
+    shape.root,
+    false,
+    isStrictLevel(level),
+  ) as ObjectJsonSchema;
 }

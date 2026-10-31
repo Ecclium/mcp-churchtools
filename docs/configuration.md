@@ -44,11 +44,11 @@ Legt fest, ob der Server nur liest. Mit `true` registriert er keine Schreib-Tool
 
 ## `ECCLIUM_REDACTION`
 
-Stufe der Maskierung. `standard` maskiert E-Mail-Adressen, Telefonnummern und Geburtsdaten. `off` schaltet die Masken ab, nur im Betrieb über stdio und mit einer Warnung beim Start. `strict` bricht den Start ab, bis die vollständige Maskierung steht.
+Stufe der Maskierung. `standard` maskiert E-Mail-Adressen, Telefonnummern und Geburtsdaten und ersetzt Strasse, Postleitzahl und Koordinaten einer Adresse und Beträge durch eine Marke. `off` schaltet die Masken ab, nur im Betrieb über stdio und mit einer Warnung beim Start. `strict` kürzt zusätzlich Nachnamen auf den ersten Buchstaben, ersetzt die Kennungen von Personen durch Pseudonyme und prüft Freitext auf E-Mail-Adressen, Telefonnummern, IBAN und AHV-Nummern. Es braucht `ECCLIUM_PSEUDONYM_KEY_FILE` und geht nicht zusammen mit dem Toolset `api`.
 
 ## `ECCLIUM_PSEUDONYM_KEY_FILE`
 
-Absoluter Pfad einer Datei mit dem Schlüssel für die Pseudonyme der Maskierung `strict`: genau 64 Zeichen aus `0` bis `9` und `a` bis `f`, höchstens mit einem Zeilenumbruch am Ende, so wie `openssl rand -hex 32` ihn schreibt. Die Datei muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 600. Wer den Schlüssel hat, kann jedes Pseudonym in die Kennung einer Person zurückübersetzen. Sichern Sie ihn trotzdem, damit Pseudonyme nach einer Wiederherstellung gleich bleiben. Ohne `strict` bewirkt der Schlüssel in dieser Version nichts.
+Absoluter Pfad einer Datei mit dem Schlüssel für die Pseudonyme der Maskierung `strict`: genau 64 Zeichen aus `0` bis `9` und `a` bis `f`, höchstens mit einem Zeilenumbruch am Ende, so wie `openssl rand -hex 32` ihn schreibt. Die Datei muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 600. Wer den Schlüssel hat, kann jedes Pseudonym in die Kennung einer Person zurückübersetzen. Sichern Sie ihn trotzdem, damit Pseudonyme nach einer Wiederherstellung gleich bleiben. Mit `strict` ist die Variable nötig, ohne `strict` bewirkt der Schlüssel in dieser Version nichts.
 
 ## `ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE`
 

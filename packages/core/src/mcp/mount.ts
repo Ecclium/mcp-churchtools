@@ -43,6 +43,7 @@ import {
 } from '@modelcontextprotocol/server';
 
 import { fixedSentences } from '../errors/index.js';
+import { isStrictLevel } from '../redaction/pseudonym-form.js';
 import type { ToolPipeline } from '../pipeline/index.js';
 import type { ObjectJsonSchema, ToolCatalog } from '../registry/index.js';
 import { deriveAnnotations } from './annotations.js';
@@ -197,14 +198,17 @@ export function createMcpMount(options: McpMountOptions): McpMount {
 
   const tools: Tool[] = [];
   const outputSchemas = new Map<string, ObjectJsonSchema>();
+  // In the level strict an ID of a person is a pseudonym in input and
+  // output, a string (ADR 0069).
+  const pseudonyms = isStrictLevel(redaction);
   for (const entry of catalog.list()) {
-    const outputSchema = deriveOutputSchema(entry.shape);
+    const outputSchema = deriveOutputSchema(entry.shape, redaction);
     outputSchemas.set(entry.name, outputSchema);
     tools.push(
       Object.freeze({
         name: entry.name,
         description: entry.description,
-        inputSchema: entry.inputSchema,
+        inputSchema: pseudonyms ? entry.strictInputSchema : entry.inputSchema,
         outputSchema,
         annotations: deriveAnnotations(entry.meta),
       }),

@@ -1,4 +1,13 @@
-import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+  chmodSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
 
 import { type EccliumConfig, loadConfig } from '@ecclium/mcp-churchtools-core';
@@ -9,7 +18,7 @@ import {
   makeCanaries,
   type MockedHttpTransport,
 } from '@ecclium/mcp-churchtools-testkit';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ExitCode } from '../exit-codes.js';
 import type { WriteSyncFn } from '../send.js';
@@ -48,13 +57,33 @@ const [firstName = '', lastName = ''] = canary.name.cores;
 const allCanaries = [canary.token, canary.email, canary.name];
 const maskedEmail = `${canary.email.value.charAt(0)}***@example.org`;
 
+// A key file for the level strict, with a key made from a seed instead of
+// written out, so that no secret scanner reads it as a leaked one.
+const keyFolder = mkdtempSync(join(tmpdir(), 'ecclium-serve-'));
+const keyFile = join(keyFolder, 'pseudonym-key');
+writeFileSync(
+  keyFile,
+  `${createHash('sha256').update('serve').digest('hex')}\n`,
+  { mode: 0o600 },
+);
+chmodSync(keyFile, 0o600);
+afterAll(() => {
+  rmSync(keyFolder, { recursive: true, force: true });
+});
+
 /** The configuration of the test, at the level of the log given. */
-const configAt = (level: EccliumConfig['logLevel']): EccliumConfig => {
+const configAt = (
+  level: EccliumConfig['logLevel'],
+  strict = false,
+): EccliumConfig => {
   const loaded = loadConfig({
     environment: {
       ECCLIUM_CHURCHTOOLS_URL: doubleOrigin,
       ECCLIUM_CHURCHTOOLS_TOKEN: canary.token.value,
       ECCLIUM_LOG_LEVEL: level,
+      ...(strict
+        ? { ECCLIUM_REDACTION: 'strict', ECCLIUM_PSEUDONYM_KEY_FILE: keyFile }
+        : {}),
     },
     transport: 'stdio',
   });
@@ -113,10 +142,12 @@ const setup = (
     readonly failTransport?: boolean;
     readonly logLevel?: EccliumConfig['logLevel'];
     readonly auditFile?: ServeOptions['auditFile'];
+    readonly config?: EccliumConfig;
   } = {},
 ) => {
   const configured =
-    options.logLevel === undefined ? config : configAt(options.logLevel);
+    options.config ??
+    (options.logLevel === undefined ? config : configAt(options.logLevel));
   const bytes: number[] = [];
   const writeSync: WriteSyncFn = (fd, buffer, offset, length) => {
     expect(fd).toBe(2);
@@ -561,6 +592,39 @@ describe('the second stage of the start over stdio', () => {
     ]);
     expect(session.exitCodes).toEqual([0]);
     expect(session.exits).toEqual([]);
+  });
+
+  // In the level strict the account comes back with its pseudonym and
+  // the first letter of its last name (ADR 0069).
+  it('answers ct_whoami with a pseudonym in the level strict', async () => {
+    const session = setup({ answer: true, config: configAt('info', true) });
+    expect(session.code).toBeUndefined();
+    session.send(initialize);
+    await session.reply(1);
+    session.send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    session.send({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name: 'ct_whoami', arguments: {} },
+    });
+    const result = at(await session.reply(2), 'result');
+    expect(at(result, 'isError')).toBeUndefined();
+    const content = at(result, 'structuredContent') as Json;
+    expect(content['id']).toMatch(/^p1_[a-z2-7]{39}$/u);
+    expect(content['lastName']).toBe(`${lastName.charAt(0)}.`);
+    expect(content['firstName']).toBe(firstName);
+    session.input.end();
+    await session.ended();
+    expect(session.stderr()).not.toContain(String(content['id']));
+  });
+
+  it('does not start in the level strict without a key', () => {
+    const session = setup({
+      config: { ...configAt('info', true), pseudonymKey: undefined },
+    });
+    expect(session.code).toBe(70);
+    expect(session.events()).toContain('stdio_start_failed');
   });
 
   it('ends with 143 when SIGTERM came before the end of the connection', async () => {

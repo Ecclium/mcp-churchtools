@@ -114,19 +114,19 @@ describe('@ecclium/mcp-churchtools-tools', () => {
     ]);
   });
 
-  it('gives every leaf of every tool of the core a class with a mask (ADR 0026)', () => {
+  it('gives every leaf of every tool of the core a class (ADR 0026)', () => {
     const shapes = withSearch
       .list()
-      .map((tool) => [tool.name, tool.shape.unclassified, tool.shape.unmasked]);
+      .map((tool) => [tool.name, tool.shape.unclassified]);
     expect(shapes).toEqual([
-      ['ct_groups_get', 0, 0],
-      ['ct_groups_get_members', 0, 0],
-      ['ct_groups_search', 0, 0],
-      ['ct_persons_get', 0, 0],
-      ['ct_persons_get_groups', 0, 0],
-      ['ct_persons_search', 0, 0],
-      ['ct_search', 0, 0],
-      ['ct_whoami', 0, 0],
+      ['ct_groups_get', 0],
+      ['ct_groups_get_members', 0],
+      ['ct_groups_search', 0],
+      ['ct_persons_get', 0],
+      ['ct_persons_get_groups', 0],
+      ['ct_persons_search', 0],
+      ['ct_search', 0],
+      ['ct_whoami', 0],
     ]);
   });
 
@@ -163,16 +163,11 @@ describe('@ecclium/mcp-churchtools-tools', () => {
     expect(
       withSongs
         .list()
-        .map((tool) => [
-          tool.name,
-          tool.origin,
-          tool.shape.unclassified,
-          tool.shape.unmasked,
-        ]),
+        .map((tool) => [tool.name, tool.origin, tool.shape.unclassified]),
     ).toEqual([
-      ['ct_songs_get', 'core', 0, 0],
-      ['ct_songs_search', 'core', 0, 0],
-      ['ct_whoami', 'core', 0, 0],
+      ['ct_songs_get', 'core', 0],
+      ['ct_songs_search', 'core', 0],
+      ['ct_whoami', 'core', 0],
     ]);
   });
 
@@ -387,8 +382,8 @@ describe.each([
     );
   });
 
-  it('gives every leaf of its output a data class with a mask', () => {
-    expect([tool?.shape.unclassified, tool?.shape.unmasked]).toEqual([0, 0]);
+  it('gives every leaf of its output a data class', () => {
+    expect(tool?.shape.unclassified).toBe(0);
   });
 
   it('advertises only the IDs it reads by, and a page for the members', () => {
@@ -555,7 +550,7 @@ describe('ct_wiki_search and ct_search in the catalog', () => {
       routineStable: false,
     });
     expect(tool?.asSpecial).toBe(true);
-    expect([tool?.shape.unclassified, tool?.shape.unmasked]).toEqual([0, 0]);
+    expect(tool?.shape.unclassified).toBe(0);
   });
 
   it('asks for exactly one of four types, never action, and a term', () => {

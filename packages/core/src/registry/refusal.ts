@@ -28,7 +28,6 @@ export const refusalReasons = Object.freeze([
   'tool_output',
   'tool_sensitivity',
   'tool_unclassified',
-  'tool_unmasked',
   'description_budget',
   'prompt_invalid',
   'prompt_name',
@@ -66,8 +65,6 @@ const sentences: Readonly<Record<RefusalReason, string>> = Object.freeze({
   tool_sensitivity:
     'A tool declares a lower sensitivity than its output holds.',
   tool_unclassified: 'A tool has an output field without a data class.',
-  tool_unmasked:
-    'A tool has an output field of a data class the core cannot mask yet.',
   description_budget: 'The descriptions of all tools are longer than allowed.',
   prompt_invalid: 'A prompt is not an object with the fields of a prompt.',
   prompt_name: 'A prompt has a name that is not allowed.',

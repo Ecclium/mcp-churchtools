@@ -34,6 +34,49 @@ const expectFrozen = (schema: unknown): void => {
 };
 
 describe('deriveOutputSchema', () => {
+  // The marker of an address or an amount is a string (ADR 0069).
+  it('advertises addresses and amounts also as strings', () => {
+    expect(
+      deriveOutputSchema(
+        shapeOf(
+          z.object({
+            street: classify(z.string(), 'address'),
+            latitude: classify(z.number(), 'address').nullable(),
+            sum: classify(z.number(), 'amount'),
+          }),
+        ),
+        'standard',
+      ).properties,
+    ).toEqual({
+      street: { type: 'string' },
+      latitude: { type: ['string', 'number', 'null'] },
+      sum: { type: ['string', 'number'] },
+    });
+  });
+
+  it('advertises an ID of a person as a string in the level strict', () => {
+    const shape = shapeOf(
+      z.object({
+        id: classify(z.number().int(), 'personId'),
+        owner: classify(z.number().int(), 'personId').nullable(),
+        either: z.union([classify(z.number(), 'personId'), z.null()]),
+        list: z.array(classify(z.number(), 'personId')).max(3),
+      }),
+    );
+    expect(deriveOutputSchema(shape, 'strict').properties).toEqual({
+      id: { type: 'string' },
+      owner: { type: ['string', 'null'] },
+      either: { type: ['string', 'null'] },
+      list: { type: 'array', items: { type: 'string' } },
+    });
+    expect(deriveOutputSchema(shape, 'standard').properties).toEqual({
+      id: { type: 'number' },
+      owner: { type: ['number', 'null'] },
+      either: { type: ['number', 'null'] },
+      list: { type: 'array', items: { type: 'number' } },
+    });
+  });
+
   it('advertises types, null and required fields, and no form of a string (golden)', () => {
     const schema = deriveOutputSchema(
       shapeOf(
@@ -50,6 +93,7 @@ describe('deriveOutputSchema', () => {
           either: z.union([z.literal('x'), z.number(), z.null()]),
         }),
       ),
+      'standard',
     );
     expect(schema).toEqual({
       type: 'object',
@@ -92,7 +136,10 @@ describe('deriveOutputSchema', () => {
 
   it('leaves out an empty list of required fields', () => {
     expect(
-      deriveOutputSchema(shapeOf(z.object({ a: z.string().optional() }))),
+      deriveOutputSchema(
+        shapeOf(z.object({ a: z.string().optional() })),
+        'standard',
+      ),
     ).toEqual({
       type: 'object',
       properties: { a: { type: 'string' } },
@@ -108,7 +155,7 @@ describe('deriveOutputSchema', () => {
       toolsets: new Set(['wiki'] as const),
     });
     for (const entry of catalog.list()) {
-      const schema = deriveOutputSchema(entry.shape);
+      const schema = deriveOutputSchema(entry.shape, 'standard');
       expect(schema.type).toBe('object');
       expect(schema.additionalProperties).toBe(false);
     }
@@ -141,6 +188,7 @@ describe('deriveOutputSchema', () => {
               pair: z.tuple([z.string().max(10), z.number().optional()]),
             }),
           ),
+          'standard',
         ),
       ),
     ) as Readonly<Record<string, unknown>>;

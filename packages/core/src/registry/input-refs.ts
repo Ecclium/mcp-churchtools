@@ -99,6 +99,20 @@ const domainOfClass = (
   return undefined;
 };
 
+// Whether a schema carries the class of an ID or a kind of object. A
+// class or kind it cannot read counts, so that the walk refuses it.
+const namesObject = (schema: unknown): boolean => {
+  try {
+    const dataClass = dataClassOf(schema as z.core.$ZodType);
+    return (
+      domainOfClass(dataClass) !== undefined ||
+      objectKindOf(schema as z.core.$ZodType) !== undefined
+    );
+  } catch {
+    return true;
+  }
+};
+
 const freeze = (node: InputRefNode): InputRefNode =>
   Object.freeze({ __proto__: null, ...node });
 
@@ -162,6 +176,10 @@ class InputWalk {
       case 'array':
         return this.wrap(this.visit(def.element, depth + 1, pipe), 'list');
       case 'record':
+        // The keys of a record are never read for IDs, so a key that names
+        // a person, a group or another object would pass the audit and the
+        // pseudonyms of strict unseen (ADR 0028, ADR 0069).
+        if (namesObject(def.keyType)) throw new Refused();
         return this.wrap(this.visit(def.valueType, depth + 1, pipe), 'record');
       case 'tuple':
         return this.tuple(def, depth, pipe);
@@ -202,8 +220,11 @@ class InputWalk {
     const domain = kind ?? domainOfClass(dataClass);
     if (domain === undefined) return undefined;
     // An ID is a whole number or text such as a GUID; a bigint or a date
-    // would never have the form the audit takes.
+    // would never have the form the audit takes. The ID of a person is a
+    // number, because the level strict takes a pseudonym of a whole number
+    // in its place (ADR 0069).
     if (type !== 'number' && type !== 'string') throw new Refused();
+    if (domain === 'person' && type !== 'number') throw new Refused();
     return freeze({ kind: 'leaf', domain });
   }
 
@@ -311,9 +332,10 @@ class InputWalk {
  *   checked as a closed object.
  * @returns The kept shape, or `undefined` when the walk refuses the
  *   schema: a lazy schema, an ID inside a pipe, a kind next to a class
- *   other than `none`, an ID that is no number or text, leaves of a union
- *   that name different kinds, a
- *   class or kind the registry cannot read, or more than the bounds of
+ *   other than `none`, an ID that is no number or text, an ID of a
+ *   person that is no number, leaves of a union that name different kinds,
+ *   a key of a record that names an object, a class or kind the registry
+ *   cannot read, or more than the bounds of
  *   nodes and depth of an output schema.
  * @throws {Error} Whatever else goes wrong while the schema is read, such
  *   as a getter of a definition that throws.
@@ -341,6 +363,40 @@ export function checkInputRefs(schema: unknown): InputShape | undefined {
     refs,
     undeclared: walk.undeclared,
   });
+}
+
+/**
+ * Whether the kept shape of an input holds an ID of a person anywhere,
+ * which the level `strict` takes as a pseudonym (ADR 0069).
+ *
+ * @param node - Where the IDs of an input stand.
+ * @returns Whether a leaf names a person.
+ * @example
+ * ```ts
+ * holdsPersons(shape.refs); // true for an input with a personId
+ * ```
+ */
+export function holdsPersons(node: InputRefNode): boolean {
+  switch (node.kind) {
+    case 'leaf':
+      return node.domain === 'person';
+    case 'object':
+      return (
+        Object.values(node.fields).some(holdsPersons) ||
+        (node.rest !== undefined && holdsPersons(node.rest))
+      );
+    case 'list':
+      return holdsPersons(node.element);
+    case 'record':
+      return holdsPersons(node.value);
+    case 'tuple':
+      return (
+        node.items.some((item) => item !== null && holdsPersons(item)) ||
+        (node.rest !== undefined && holdsPersons(node.rest))
+      );
+    case 'choice':
+      return node.options.some(holdsPersons);
+  }
 }
 
 // An object whose own properties can be read without running its code.

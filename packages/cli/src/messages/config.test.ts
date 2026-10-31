@@ -51,9 +51,10 @@ const variableOf = (code: ConfigProblemCode): string => {
     case 'tls_keylog_enabled':
     case 'tls_trace_enabled':
       return 'NODE_OPTIONS';
-    case 'redaction_strict_unsupported':
     case 'stdio_only':
       return 'ECCLIUM_REDACTION';
+    case 'redaction_strict_with_api':
+      return 'ECCLIUM_TOOLSETS';
     case 'subject_invalid':
     case 'subject_reserved':
       return 'ECCLIUM_STDIO_SUBJECT';

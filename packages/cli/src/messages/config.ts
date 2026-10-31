@@ -82,22 +82,11 @@ const field = (record: object, key: string): unknown => {
 const message = (what: string, why: string, action: string): Message =>
   Object.freeze({ what, why, action });
 
-// Values of the table that this version still refuses: strict until the
-// full redaction exists (ADR 0055). A message never offers them.
-const refusedChoices: Readonly<Record<string, readonly string[]>> =
-  Object.freeze({ ECCLIUM_REDACTION: Object.freeze(['strict']) });
-
 // The allowed values of a variable as German prose: ‹a› oder ‹b›.
 const choiceList = (name: string | undefined): string => {
-  const refused =
-    name !== undefined && Object.hasOwn(refusedChoices, name)
-      ? refusedChoices[name]
-      : undefined;
   const quoted = (
     variables.find((variable) => variable.name === name)?.choices ?? []
-  )
-    .filter((choice) => refused?.includes(choice) !== true)
-    .map(quote);
+  ).map(quote);
   const last = quoted.pop();
   if (last === undefined) return '';
   return quoted.length === 0 ? last : `${quoted.join(', ')} oder ${last}`;
@@ -536,6 +525,14 @@ const problems: Readonly<
       'Ein Schlüssel hat genau 64 Zeichen aus 0 bis 9 und a bis f in Kleinbuchstaben, und nicht alle seine Bytes sind gleich.',
       keyContent(raw),
     ),
+  // strict puts pseudonyms in place of the IDs of persons, made with this
+  // key (ADR 0069).
+  pseudonym_key_missing: (name = keyFile) =>
+    message(
+      `Die Maskierung ‹strict› ist gewählt, aber ${name} ist nicht gesetzt.`,
+      'In ‹strict› ersetzt Ecclium die Kennungen von Personen durch Pseudonyme, und die entstehen mit einem Schlüssel aus dieser Datei.',
+      `Legen Sie eine Datei mit einem Schlüssel an, etwa mit ${keyCommand}, geben Sie ihr die Rechte 600 und nennen Sie sie in ${name}. Sichern Sie die Datei. Oder wählen Sie ‹standard›.`,
+    ),
   pseudonym_key_previous_without_current: () =>
     message(
       `${previousKeyFile} ist gesetzt, ${keyFile} aber nicht.`,
@@ -547,12 +544,6 @@ const problems: Readonly<
       `In ${keyFile} und ${previousKeyFile} steht derselbe Schlüssel.`,
       'Ein Wechsel braucht einen neuen Schlüssel, sonst ändert sich nichts.',
       `Schreiben Sie in die Datei aus ${keyFile} einen neuen Schlüssel, etwa mit ${keyCommand}, oder entfernen Sie ${previousKeyFile}.`,
-    ),
-  redaction_strict_unsupported: () =>
-    message(
-      'Die Maskierung ‹strict› ist noch nicht verfügbar.',
-      'Die vollständige Maskierung folgt mit einer späteren Version, und Ecclium soll nie weniger maskieren, als Sie verlangen.',
-      'Verwenden Sie vorerst ‹standard›.',
     ),
   stdio_only: (name, raw) => {
     switch (raw) {
@@ -730,6 +721,14 @@ const problems: Readonly<
       `In ${toolsets} ist ${personsToolset}, ${eventsToolset} oder ${apiToolset} eingeschaltet, aber ${name} ist nicht gesetzt.`,
       `Tools dieser Toolsets nennen Personen oder geben ganze Antworten von ChurchTools weiter. Ein Ergebnis solcher Tools gibt Ecclium nur heraus, wenn seine Zeile in der Audit-Datei steht, und die Audit-Datei liegt im Ordner aus ${name}. Unter Windows gibt es sie im Betrieb über stdio nicht, und damit auch diese Toolsets nicht.`,
       `Setzen Sie ${name} auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 oder entfernen Sie ${personsToolset}, ${eventsToolset} und ${apiToolset} aus ${toolsets}, soweit sie dort stehen. ${insteadOfAll}`,
+    ),
+  // The answers of the escape hatch have no known schema, so strict could
+  // not keep its promise for them (ADR 0069).
+  redaction_strict_with_api: (name = toolsets) =>
+    message(
+      `Die Maskierung ‹strict› ist gewählt, und in ${name} ist ${apiToolset} eingeschaltet.`,
+      `${apiToolset} gibt ganze Antworten von ChurchTools weiter, deren Felder Ecclium nicht kennt. Darin kann ‹strict› weder Nachnamen kürzen noch Kennungen durch Pseudonyme ersetzen.`,
+      `Entfernen Sie ${apiToolset} aus ${name} oder wählen Sie ‹standard›.`,
     ),
   // Only the commands that read the audit files report it (ADR 0028).
   state_dir_required: (name = stateDir) =>

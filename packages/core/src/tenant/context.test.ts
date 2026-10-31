@@ -272,11 +272,9 @@ describe('createTenantContext refuses', () => {
     refuses({ ...valid(), redaction }, 'The redaction level is unknown.');
   });
 
-  it('strict redaction until the full redaction exists', () => {
-    refuses(
-      { ...valid(), redaction: 'strict' },
-      'The redaction level strict waits for the full redaction.',
-    );
+  // The pipeline turns IDs of persons into pseudonyms in strict (ADR 0069).
+  it('takes the redaction strict', () => {
+    expect(make({ ...valid(), redaction: 'strict' }).redaction).toBe('strict');
   });
 
   it.each(['false', 0, undefined])('the read-only flag %j', (readOnly) => {

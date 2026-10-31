@@ -25,7 +25,11 @@ import {
   renderDescription,
   rightsPerOperation,
 } from './description.js';
-import { checkInputRefs, type InputRefNode } from './input-refs.js';
+import {
+  checkInputRefs,
+  holdsPersons,
+  type InputRefNode,
+} from './input-refs.js';
 import { checkMeta } from './meta.js';
 import { readFields } from './own.js';
 import { checkPrompt, type PromptEntry } from './prompt.js';
@@ -62,6 +66,13 @@ export interface CatalogEntry {
    */
   readonly inputSchema: ObjectJsonSchema;
   /**
+   * The input schema as the mount advertises it in the level `strict`,
+   * with every ID of a person as its pseudonym, a string (ADR 0069). The
+   * same object as {@link CatalogEntry.inputSchema} for a tool without an
+   * ID of a person in its input.
+   */
+  readonly strictInputSchema: ObjectJsonSchema;
+  /**
    * Where the IDs of the input stand, kept when the tool was added, or
    * `undefined` when the input has none (ADR 0028).
    */
@@ -79,6 +90,12 @@ export interface CatalogEntry {
    * tool cannot forget it; `unattended` stays as the tool declares it.
    */
   readonly asSpecial: boolean;
+  /**
+   * Whether the input or the output holds the ID of a person, so that a
+   * call in the level `strict` needs the pseudonyms of its principal (ADR
+   * 0069). Derived from the schemas, never from the code of the tool.
+   */
+  readonly personIds: boolean;
   /**
    * Runs the tool. It calls the function the tool had when it was added,
    * without `this`, so the tool cannot swap it later.
@@ -218,6 +235,17 @@ const checkTool = (
   if (inputSchema === undefined || inputShape === undefined) {
     throw new RegistryRefusal('tool_input', where);
   }
+  // In the level strict an ID of a person in the input stands as its
+  // pseudonym, a string; derived here too, so that a schema the mount
+  // could not advertise stops the start (ADR 0069).
+  const personInput =
+    inputShape.refs !== undefined && holdsPersons(inputShape.refs);
+  const strictInputSchema = personInput
+    ? checkInputSchema(fields.input, { pseudonyms: true })
+    : inputSchema;
+  if (strictInputSchema === undefined) {
+    throw new RegistryRefusal('tool_input', where);
+  }
   // Every field of the input says what it holds, so that no ID leaves the
   // audit through a class nobody set (ADR 0028).
   if (inputShape.undeclared > 0) {
@@ -228,13 +256,11 @@ const checkTool = (
   if (rank[meta.sensitivity] < rank[shape.minimumSensitivity]) {
     throw new RegistryRefusal('tool_sensitivity', where);
   }
-  // Every field says what it holds, so none leaves unmasked by oversight,
-  // and none holds an address or an amount before the core can mask them
+  // Every field says what it holds, so none leaves unmasked by oversight
   // (ADR 0026).
   if (shape.unclassified > 0) {
     throw new RegistryRefusal('tool_unclassified', where);
   }
-  if (shape.unmasked > 0) throw new RegistryRefusal('tool_unmasked', where);
   // The area base is always on, so a tool of a plugin there would pass
   // every choice of toolsets (ADR 0062). Checked last, so that every other
   // refusal of such a tool stays as it was.
@@ -258,10 +284,12 @@ const checkTool = (
     description: renderDescription(description, rightsLine(meta)),
     input: fields.input as ZodType,
     inputSchema,
+    strictInputSchema,
     inputRefs: inputShape.refs,
     output: fields.output as ZodType,
     shape,
     asSpecial,
+    personIds: shape.personIds || personInput,
     execute: (call: ToolCall<unknown>): Promise<unknown> =>
       Reflect.apply(run, undefined, [call]) as Promise<unknown>,
   });

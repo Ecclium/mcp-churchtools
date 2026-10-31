@@ -8,7 +8,9 @@
  * logger and the audit sink that write through it, the handlers of the
  * process, the transport to the instance, the pipeline and the server.
  * The audit sink writes into the audit file that the first stage opened,
- * if there is one (ADR 0028). The start asks ChurchTools nothing:
+ * if there is one (ADR 0028). In the level `strict` the pipeline gets the
+ * provider of the keys for pseudonyms, built from the key files (ADR
+ * 0069). The start asks ChurchTools nothing:
  * `ct_whoami` checks the token, so the token leaves the process only for a
  * call. With an audit file, the start deletes the files of the folder
  * `audit` past their retention, and a timer starts the file of each new
@@ -36,6 +38,7 @@ import {
   type AuditFileWriter,
   createAuditSink,
   createDefaultTenantLogger,
+  createFileKeyProvider,
   createFileQuotaStore,
   createLogger,
   createStderrWriter,
@@ -319,6 +322,19 @@ export function serve(options: ServeOptions): ExitCode | undefined {
       logger: createDefaultTenantLogger({ writer, clock, minLevel }),
       clock,
     });
+    // The keys for the pseudonyms of the level strict, from the key files
+    // the loader read (ADR 0069). The loader refuses strict without a key,
+    // and the start does as well, so that no call runs without one.
+    if (config.redaction === 'strict' && config.pseudonymKey === undefined) {
+      throw new TypeError('The level strict has no key.');
+    }
+    const keys =
+      config.redaction === 'strict' && config.pseudonymKey !== undefined
+        ? createFileKeyProvider({
+            current: config.pseudonymKey,
+            previous: config.pseudonymKeyPrevious,
+          })
+        : undefined;
     const pipeline = createToolPipeline({
       catalog,
       audit: createAuditSink({
@@ -345,6 +361,7 @@ export function serve(options: ServeOptions): ExitCode | undefined {
               host: hostname(),
             }),
           }),
+      ...(keys === undefined ? {} : { keys }),
     });
     const server = startStdioServer({
       catalog,

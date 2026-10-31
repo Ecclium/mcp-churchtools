@@ -297,7 +297,7 @@ describe('checkOutputSchema', () => {
     expect(checkOutputSchema(schema)).toBeUndefined();
   });
 
-  it.each(['email', 'phone', 'birthdate', 'untrusted'] as const)(
+  it.each(['name.last', 'email', 'phone', 'birthdate', 'untrusted'] as const)(
     'refuses the class %s on a leaf that is no string',
     (dataClass) => {
       for (const leaf of [
@@ -344,14 +344,85 @@ describe('checkOutputSchema', () => {
       checkOutputSchema(
         z.object({
           a: classify(z.number(), 'personId'),
-          b: z.union([classify(z.number(), 'amount'), z.boolean()]),
+          b: z.union([classify(z.number(), 'none'), z.boolean()]),
         }),
       )?.root.fields,
     ).toEqual({
       a: leaf('personId', ['number']),
-      b: leaf('amount', ['number', 'boolean']),
+      b: leaf('none', ['number', 'boolean']),
     });
   });
+
+  // The level strict turns it into a pseudonym of a whole number (ADR 0069).
+  it('takes the class personId on numbers only', () => {
+    expect(
+      checkOutputSchema(
+        z.object({
+          a: classify(z.number().int(), 'personId'),
+          b: z.union([classify(z.number(), 'personId'), z.null()]),
+        }),
+      )?.root.fields,
+    ).toEqual({
+      a: leaf('personId', ['number']),
+      b: leaf('personId', ['number', 'null']),
+    });
+    for (const other of [
+      z.string(),
+      z.enum(['a', 'b']),
+      z.literal(1),
+      z.boolean(),
+      z.null(),
+    ]) {
+      expect(
+        checkOutputSchema(z.object({ a: classify(other, 'personId') })),
+      ).toBeUndefined();
+    }
+    expect(
+      checkOutputSchema(
+        z.object({
+          a: z.union([classify(z.number(), 'personId'), z.string()]),
+        }),
+      ),
+    ).toBeUndefined();
+  });
+
+  // The pipeline replaces their values with a marker, a string (ADR 0069).
+  it.each(['address', 'amount'] as const)(
+    'takes the class %s on strings and numbers only',
+    (dataClass) => {
+      expect(
+        checkOutputSchema(
+          z.object({
+            a: classify(z.string(), dataClass),
+            b: classify(z.number(), dataClass).nullable(),
+            c: z.union([classify(z.number(), dataClass), z.string(), z.null()]),
+          }),
+        )?.root.fields,
+      ).toEqual({
+        a: leaf(dataClass, ['string']),
+        b: leaf(dataClass, ['number'], { nullable: true }),
+        c: leaf(dataClass, ['string', 'number', 'null']),
+      });
+      for (const other of [
+        z.boolean(),
+        z.enum(['a', 'b']),
+        z.literal(1),
+        z.templateLiteral(['a-', z.number()]),
+        z.null(),
+      ]) {
+        expect(
+          checkOutputSchema(z.object({ a: classify(other, dataClass) })),
+        ).toBeUndefined();
+      }
+      expect(
+        checkOutputSchema(
+          z.object({
+            a: z.union([classify(z.number(), dataClass), z.boolean()]),
+          }),
+        ),
+      ).toBeUndefined();
+    },
+  );
 
   it('takes a wrapped option of a union and the smallest maximum of an array', () => {
     const shape = checkOutputSchema(
@@ -676,5 +747,65 @@ describe('checkInputSchema', () => {
       ),
     );
     expect(checkInputSchema(wide)?.type).toBe('object');
+  });
+});
+
+// In the level strict an ID of a person stands as its pseudonym (ADR 0069).
+describe('checkInputSchema with pseudonyms', () => {
+  const pseudonym = {
+    type: 'string',
+    minLength: 42,
+    maxLength: 42,
+    pattern: '^p1_[a-z2-7]{39}$',
+  };
+  const id = classify(
+    z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    'personId',
+  );
+
+  it('advertises every ID of a person as a pseudonym, and nothing else', () => {
+    const schema = z.strictObject({
+      personId: id,
+      maybe: id.optional(),
+      orNone: id.nullable(),
+      list: z.array(id).max(3),
+      copy: id.max(5),
+      page: classify(z.number().int(), 'none'),
+      groupId: classify(z.number().int(), 'groupId'),
+    });
+    expect(checkInputSchema(schema, { pseudonyms: true })).toEqual({
+      type: 'object',
+      properties: {
+        personId: pseudonym,
+        maybe: pseudonym,
+        orNone: { anyOf: [pseudonym, { type: 'null' }] },
+        list: { type: 'array', maxItems: 3, items: pseudonym },
+        copy: pseudonym,
+        page: {
+          type: 'integer',
+          minimum: Number.MIN_SAFE_INTEGER,
+          maximum: Number.MAX_SAFE_INTEGER,
+        },
+        groupId: {
+          type: 'integer',
+          minimum: Number.MIN_SAFE_INTEGER,
+          maximum: Number.MAX_SAFE_INTEGER,
+        },
+      },
+      required: ['personId', 'orNone', 'list', 'copy', 'page', 'groupId'],
+      additionalProperties: false,
+    });
+  });
+
+  it('keeps numbers without the option', () => {
+    expect(
+      checkInputSchema(z.strictObject({ personId: id }))?.properties,
+    ).toEqual({
+      personId: {
+        type: 'integer',
+        exclusiveMinimum: 0,
+        maximum: Number.MAX_SAFE_INTEGER,
+      },
+    });
   });
 });

@@ -1720,4 +1720,38 @@ describe('the key files for pseudonyms', { timeout }, () => {
       chmodSync(previousKeyFile, 0o600);
     }
   });
+
+  // strict puts pseudonyms in place of IDs of persons, made with the key,
+  // and does not go with the toolset api (ADR 0069).
+  it('ends with 0 for strict with a key, and with 78 without one or with the toolset api', async () => {
+    const check = (env: Readonly<Record<string, string>>) =>
+      launch({
+        origin: `https://${host}`,
+        args: ['config', 'check'],
+        env: { ECCLIUM_REDACTION: 'strict', ...env },
+      }).finish();
+    const valid = await check({ ECCLIUM_PSEUDONYM_KEY_FILE: keyFile });
+    expect(valid.code).toBe(0);
+    expect(`${valid.stdout}${valid.stderr}`).not.toContain(keyOf('new'));
+    const missing = await check({});
+    expect(missing.code).toBe(78);
+    expect(`${missing.stdout}${missing.stderr}`).toContain(
+      problemText({
+        code: 'pseudonym_key_missing',
+        variable: 'ECCLIUM_PSEUDONYM_KEY_FILE',
+      }),
+    );
+    const withApi = await check({
+      ECCLIUM_PSEUDONYM_KEY_FILE: keyFile,
+      ECCLIUM_TOOLSETS: 'api',
+      ECCLIUM_STATE_DIR: folder,
+    });
+    expect(withApi.code).toBe(78);
+    expect(`${withApi.stdout}${withApi.stderr}`).toContain(
+      problemText({
+        code: 'redaction_strict_with_api',
+        variable: 'ECCLIUM_TOOLSETS',
+      }),
+    );
+  });
 });

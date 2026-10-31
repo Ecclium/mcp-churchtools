@@ -13,6 +13,8 @@ import {
   isSet as isSetObject,
 } from 'node:util/types';
 
+import type { RedactionLevel } from '@ecclium/mcp-churchtools-plugin-api';
+
 import { parseChurchToolsOrigin, Secret } from '../http/index.js';
 import type { KeyMaterial } from '../keys/index.js';
 import type { LogLevel } from '../logger/index.js';
@@ -58,8 +60,12 @@ export interface EccliumConfig {
   /** Requests per minute to ChurchTools, for the throttle (ADR 0057). */
   readonly churchtoolsRequestsPerMinute: number;
   readonly readOnly: boolean;
-  /** `strict` is refused until the full redaction exists. */
-  readonly redaction: 'off' | 'standard';
+  /**
+   * The level of redaction. `off` only over stdio; `strict` only with
+   * {@link EccliumConfig.pseudonymKey} and without the toolset `api`
+   * (ADR 0069).
+   */
+  readonly redaction: RedactionLevel;
   /**
    * The secret for the pseudonyms of the level `strict`, or undefined when
    * the variable is not set (ADR 0069).
@@ -735,13 +741,12 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   const readOnly = choose('ECCLIUM_READ_ONLY');
   show('readOnly', 'ECCLIUM_READ_ONLY', readOnly, 'boolean');
 
-  // strict is refused until the full redaction exists, and off is allowed
-  // over stdio only, with a warning on every start.
+  // off is allowed over stdio only, with a warning on every start. strict
+  // needs the key file and refuses the toolset api, both checked below
+  // (ADR 0069).
   let redaction = choose('ECCLIUM_REDACTION');
-  if (redaction?.value === 'strict') {
-    report('redaction_strict_unsupported', 'ECCLIUM_REDACTION');
-    redaction = undefined;
-  } else if (redaction?.value === 'off' && transport !== 'stdio') {
+  const strict = redaction?.value === 'strict';
+  if (redaction?.value === 'off' && transport !== 'stdio') {
     report('stdio_only', 'ECCLIUM_REDACTION');
     redaction = undefined;
   } else if (redaction?.value === 'off') {
@@ -750,8 +755,8 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   show('redaction', 'ECCLIUM_REDACTION', redaction, 'choice');
 
   // The secret for pseudonyms and, while the operator changes it, the
-  // previous one (ADR 0069). Both may stay unset; the level strict will
-  // need the first. The files get the checks of the token file, and no
+  // previous one (ADR 0069). Both may stay unset, unless the level is
+  // strict, which needs the first. The files get the checks of the token file, and no
   // report holds their paths. The previous one alone, or the same bytes
   // twice, is an error rather than a key change that changes nothing.
   const readKey = (
@@ -779,6 +784,12 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   const previousName = 'ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE';
   const current = readKey(keyName);
   const previous = readKey(previousName);
+  // strict turns IDs of persons into pseudonyms with this key, so it does
+  // not start without one. A file that is set but refused has its own
+  // problem (ADR 0069).
+  if (strict && current.read.state === 'unset') {
+    report('pseudonym_key_missing', keyName);
+  }
   // Reported also when the previous file has a problem of its own, so that
   // the operator sees both at once.
   let previousValid = previous.read.state !== 'invalid';
@@ -843,8 +854,11 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     warnings.add('events_toolset_enabled');
   }
   // The escape hatch passes on whole answers, not fixed fields (ADR 0067).
+  // Their schema is unknown, so strict could not keep its promise for
+  // them and refuses the toolset (ADR 0069).
   if (toolsets?.value.includes('api') === true) {
     warnings.add('api_toolset_enabled');
+    if (strict) report('redaction_strict_with_api', toolsetsName);
   }
   setting(
     'toolsets',
@@ -1011,7 +1025,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       tokenSource,
       churchtoolsRequestsPerMinute: rate.value,
       readOnly: readOnly.value === 'true',
-      redaction: redaction.value as 'off' | 'standard',
+      redaction: redaction.value as RedactionLevel,
       pseudonymKey: current.key,
       pseudonymKeyPrevious: previous.key,
       toolsets: toolsets.value,

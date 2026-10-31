@@ -144,14 +144,21 @@ export const dateAt = (
 
 /**
  * The end of a phone number that starts at the index: an optional `+` or
- * `(`, then digits with at most two separators between two of them.
+ * `(`, then digits with at most two separators between two of them, or as
+ * many as the caller allows.
  *
  * @param text - A text.
  * @param index - Where the number would start.
+ * @param maxRun - The most separators in a row between two digits, two
+ *   unless the caller allows more, such as three for 044 / 123 45 67.
  * @returns The index after its last digit, or -1 when the run has fewer
  *   digits than a phone number.
  */
-export const phoneEndAt = (text: string, index: number): number => {
+export const phoneEndAt = (
+  text: string,
+  index: number,
+  maxRun: number = maxSeparatorRun,
+): number => {
   let position = text.charCodeAt(index) === 0x2b ? index + 1 : index;
   let digits = 0;
   let lastDigitEnd = -1;
@@ -168,10 +175,7 @@ export const phoneEndAt = (text: string, index: number): number => {
       break;
     }
     let gap = position;
-    while (
-      gap - position < maxSeparatorRun &&
-      isNumberSeparator(text.charCodeAt(gap))
-    ) {
+    while (gap - position < maxRun && isNumberSeparator(text.charCodeAt(gap))) {
       gap += 1;
     }
     if (gap === position || !isDigit(text.charCodeAt(gap))) break;

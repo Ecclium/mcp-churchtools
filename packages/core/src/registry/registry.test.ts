@@ -182,6 +182,48 @@ describe('createToolCatalog', () => {
       fields: { personId: { kind: 'leaf', domain: 'person' } },
     });
     expect(catalog.get('ct_y')?.inputRefs).toBeUndefined();
+    // Both name a person: ct_x in its input, ct_y in its output (ADR 0069).
+    expect(catalog.get('ct_x')?.personIds).toBe(true);
+    expect(catalog.get('ct_y')?.personIds).toBe(true);
+  });
+
+  it('notes a tool that names no person in input or output', () => {
+    const catalog = catalogOf({
+      core: plugin(
+        'core',
+        adding(
+          tool('ct_x', {
+            input: z.strictObject({ page: classify(z.number(), 'none') }),
+            output: z.object({ text: classify(z.string(), 'untrusted') }),
+          }),
+        ),
+      ),
+      plugins: [],
+      readOnly: true,
+    });
+    expect(catalog.get('ct_x')?.personIds).toBe(false);
+  });
+
+  // The pipeline replaces addresses and amounts with a marker, so the
+  // registry takes them since the level strict came (ADR 0026, ADR 0069).
+  it('accepts an output with an address and an amount', () => {
+    const catalog = catalogOf({
+      core: plugin(
+        'core',
+        adding(
+          tool('ct_x', {
+            output: z.object({
+              street: classify(z.string(), 'address'),
+              latitude: classify(z.number(), 'address').nullable(),
+              sum: classify(z.number(), 'amount').optional(),
+            }),
+          }),
+        ),
+      ),
+      plugins: [],
+      readOnly: true,
+    });
+    expect(catalog.get('ct_x')).toBeDefined();
   });
 
   it('keeps the input schema the mount advertises, without the text of zod', () => {
@@ -1007,18 +1049,11 @@ describe('refusals', () => {
       'tool_unclassified',
     ],
     [
-      'an output field with the class address',
+      'an address on a boolean, which no marker can stand for',
       tool('ct_x', {
-        output: z.object({ city: classify(z.string(), 'address') }),
+        output: z.object({ known: classify(z.boolean(), 'address') }),
       }),
-      'tool_unmasked',
-    ],
-    [
-      'an output field with the class amount',
-      tool('ct_x', {
-        output: z.object({ sum: classify(z.number(), 'amount') }),
-      }),
-      'tool_unmasked',
+      'tool_output',
     ],
   ] as const)('refuses %s', (_, value, reason) => {
     refuses([plugin('core', adding(value))], reason);

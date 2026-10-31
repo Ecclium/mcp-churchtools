@@ -366,7 +366,7 @@ describe.each(eras)('the list of tools in the $name era', (era) => {
       name: entry.name,
       description: entry.description,
       inputSchema: entry.inputSchema,
-      outputSchema: deriveOutputSchema(entry.shape),
+      outputSchema: deriveOutputSchema(entry.shape, 'standard'),
       annotations: deriveAnnotations(entry.meta),
     }));
     expect(at(reply, 'result', 'tools')).toEqual(
@@ -377,6 +377,70 @@ describe.each(eras)('the list of tools in the $name era', (era) => {
 });
 
 describe('the list of tools', () => {
+  it('advertises IDs of persons as numbers in the level standard', async () => {
+    const { factory } = setup({}, [
+      testTool('ct_test_person', () => ({ text: 'ok' }), {
+        input: z.object({
+          personId: classify(z.number().int().positive(), 'personId'),
+        }),
+      }),
+    ]);
+    const connection = await modern.open(factory);
+    const reply = await modern.ask(connection, 'tools/list');
+    const tools = at(reply, 'result', 'tools') as readonly Json[];
+    const person = tools.find((tool) => tool['name'] === 'ct_test_person');
+    expect(at(person ?? {}, 'inputSchema', 'properties', 'personId')).toEqual({
+      type: 'integer',
+      exclusiveMinimum: 0,
+      maximum: Number.MAX_SAFE_INTEGER,
+    });
+  });
+
+  // In the level strict an ID of a person is a pseudonym in input and
+  // output, a string (ADR 0069).
+  it('advertises IDs of persons as pseudonyms in the level strict', async () => {
+    const { factory, options } = setup({ redaction: 'strict' }, [
+      testTool('ct_test_person', () => ({ text: 'ok' }), {
+        input: z.object({
+          personId: classify(z.number().int().positive(), 'personId'),
+        }),
+      }),
+    ]);
+    const connection = await modern.open(factory);
+    const reply = await modern.ask(connection, 'tools/list');
+    const tools = at(reply, 'result', 'tools') as {
+      readonly name: string;
+      readonly inputSchema: unknown;
+      readonly outputSchema: { readonly properties: Record<string, unknown> };
+    }[];
+    expect(tools.map((tool) => tool.inputSchema)).toEqual(
+      options.catalog
+        .list()
+        .map(
+          (entry) =>
+            JSON.parse(JSON.stringify(entry.strictInputSchema)) as unknown,
+        ),
+    );
+    const person = tools.find((tool) => tool.name === 'ct_test_person');
+    expect(person?.inputSchema).toEqual({
+      type: 'object',
+      properties: {
+        personId: {
+          type: 'string',
+          minLength: 42,
+          maxLength: 42,
+          pattern: '^p1_[a-z2-7]{39}$',
+        },
+      },
+      required: ['personId'],
+    });
+    const profile = tools.find((tool) => tool.name === 'ct_example_profile');
+    expect(profile?.outputSchema.properties.id).toEqual({ type: 'string' });
+    expect(profile?.outputSchema.properties.lastName).toEqual({
+      type: 'string',
+    });
+  });
+
   it('keeps no text of the registry of zod in an input schema', async () => {
     const hint = 'internal-hint-of-the-plugin';
     const said = 'Describes the query for the model.';

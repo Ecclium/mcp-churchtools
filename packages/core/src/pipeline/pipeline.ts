@@ -18,6 +18,13 @@
  *     names, derived from the schemas of the tool and the checked request
  *     of the escape hatch, never from its code (ADR 0028).
  *
+ * In the level `strict`, a tool whose input or output holds an ID of a
+ * person gets the pseudonyms of its principal right after the context:
+ * every pseudonym in the input turns into its ID before `validateInput`,
+ * and a raw ID ends the call with `validation`; `redact` turns every ID in
+ * the result into its pseudonym. The code of the tool sees IDs only, the
+ * audit records IDs only, and the keys are erased in `finally` (ADR 0069).
+ *
  * Tenant and actor are copied once, before the first stage, through own
  * data properties only. The context and the audit use that copy, so no
  * getter and no trap of the resolver's answer can cost the audit line.
@@ -37,6 +44,7 @@ import {
   EccliumError,
   type ErrorCode,
   type FeatureKey,
+  type KeyProvider,
   type Mode,
   type QuotaStore,
   type RedactionLevel,
@@ -62,6 +70,7 @@ import type { HttpTransport } from '../http/index.js';
 import type { LineWriter, LogLevel } from '../logger/index.js';
 import {
   chooseBoundary,
+  isStrictLevel,
   maskErrorDescription,
   type RandomBytes,
 } from '../redaction/index.js';
@@ -75,6 +84,7 @@ import {
   quotaTimeoutMs,
   specialReadBudget,
 } from '../quota/budget.js';
+import { openPseudonyms, type Pseudonyms } from '../redaction/pseudonym.js';
 import { createTenantContext } from '../tenant/context.js';
 import { createReadAccess, type ReadAccess } from './read-api.js';
 import {
@@ -85,6 +95,8 @@ import {
   maxResultBytes,
   redact,
   resultBytes,
+  type RevealedInput,
+  revealInput,
 } from './stages.js';
 
 /** What the mount knows about one call, besides name and input. */
@@ -161,6 +173,12 @@ export interface ToolPipelineOptions {
    * sensitivity special, or one the catalog treats as such, does not run.
    */
   readonly quota?: QuotaStore;
+  /**
+   * The provider of the keys for pseudonyms, built by the composition root
+   * from the key files (ADR 0069). Without it, a call in the level
+   * `strict` of a tool with an ID of a person ends with `internal`.
+   */
+  readonly keys?: KeyProvider;
 }
 
 // The longest duration the audit accepts.
@@ -204,6 +222,11 @@ const budgetUnavailable =
 
 const tooLarge =
   'The result is larger than 64 KiB. Narrow the request, for example with a more specific search.';
+
+// A raw ID, a changed pseudonym or one of another principal at a field of
+// a person in the level strict (ADR 0069).
+const pseudonymExpected =
+  'IDs of persons on this server are pseudonyms that start with p1_. Pass them on as a tool returned them.';
 
 // The getter of AbortSignal itself: an own property `aborted` of a signal
 // could hide it (ADR 0055).
@@ -294,6 +317,13 @@ interface Run {
   refs?: ObjectRefCollector;
   /** The result as the output schema parsed it, before `redact`. */
   output?: Readonly<Record<string, unknown>>;
+  /**
+   * The pseudonyms of the call in the level `strict`, for a tool with an
+   * ID of a person, erased in `finally` (ADR 0069).
+   */
+  pseudonyms?: Pseudonyms;
+  /** The input with the IDs its pseudonyms stand for, or the refusal. */
+  revealed?: RevealedInput;
 }
 
 // A call without a tool to name or without an input that fits its schema
@@ -411,6 +441,29 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     });
     run.ctx = ctx;
 
+    // In strict, the pseudonyms of the call and the input with the IDs
+    // they stand for, before the gate, so that a call the gate refuses
+    // names the IDs of its input in the audit as well (ADR 0028, ADR
+    // 0069). Opening derives keys and asks nothing outside the process. A
+    // failure ends the call after the gate.
+    let keysFailed = false;
+    if (isStrictLevel(redaction) && entry.personIds) {
+      try {
+        if (options.keys === undefined) throw new TypeError('no keys');
+        run.pseudonyms = await openPseudonyms(options.keys, ctx);
+      } catch {
+        keysFailed = true;
+      }
+      const pseudonyms = run.pseudonyms;
+      if (
+        pseudonyms !== undefined &&
+        entry.inputRefs !== undefined &&
+        fitsInput(input)
+      ) {
+        run.revealed = revealInput(input, entry.inputRefs, pseudonyms.reveal);
+      }
+    }
+
     // 3. gate. Every write is refused until the core can confirm one.
     const { meta } = entry;
     if (meta.capability === 'write') return failed('policy_denied');
@@ -427,10 +480,22 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       return failed('policy_denied', auditNotReady);
     }
 
+    // Without its keys, a call in strict cannot turn IDs into pseudonyms.
+    if (keysFailed) {
+      ctx.log.warn('pseudonym_keys_unavailable');
+      return failed('internal');
+    }
+
     // 4. validateInput. The message of zod could repeat the input, so the
-    // error carries the fixed sentence only.
+    // error carries the fixed sentence only. In strict the schema checks
+    // the input with the IDs its pseudonyms stand for.
     if (!fitsInput(input)) return failed('validation');
-    const parsedInput = entry.input.safeParse(input);
+    if (run.revealed?.ok === false) {
+      return failed('validation', pseudonymExpected);
+    }
+    const parsedInput = entry.input.safeParse(
+      run.revealed === undefined ? input : run.revealed.value,
+    );
     if (!parsedInput.success) return failed('validation');
     // An ID the audit could not name does not reach ChurchTools (ADR 0028).
     const { refs, fits } = inputRefsOf(entry, parsedInput.data);
@@ -517,7 +582,20 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     // The boundary is drawn after redact, so it is checked against the
     // cleaned text that the envelope will hold.
     const root = entry.shape.root;
-    const redacted = redact(parsedOutput.data, root, redaction);
+    let redacted: unknown;
+    try {
+      redacted = redact(
+        parsedOutput.data,
+        root,
+        redaction,
+        run.pseudonyms?.hide,
+      );
+    } catch {
+      // In strict an ID of a person without its pseudonym never goes out
+      // (ADR 0069).
+      ctx.log.warn('tool_pseudonym_failed');
+      return failed('internal');
+    }
     let boundary: string;
     try {
       boundary = chooseBoundary(JSON.stringify(redacted), random);
@@ -604,8 +682,12 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     if (entry === undefined) return noRefs;
     let refs = run.refs;
     if (refs === undefined) {
-      const parsed = fitsInput(input)
-        ? entry.input.safeParse(input)
+      // In strict the IDs the pseudonyms of the input stand for. An input
+      // whose pseudonyms do not open is read as it came, so that a raw ID
+      // a model tried is named as well (ADR 0069).
+      const source = run.revealed?.ok === true ? run.revealed.value : input;
+      const parsed = fitsInput(source)
+        ? entry.input.safeParse(source)
         : undefined;
       if (parsed?.success !== true) return noRefs;
       refs = inputRefsOf(entry, parsed.data).refs;
@@ -728,6 +810,13 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       } catch {
         // The audit never decides the outcome of a reading call, except
         // for the result of a tool treated as special below.
+      }
+      // The keys of the call go once its line is written, also after a
+      // failure (ADR 0069).
+      try {
+        run.pseudonyms?.erase();
+      } catch {
+        // Erasing only fills bytes with zeros; nothing is left to undo.
       }
       // Whatever threw above: the result of a tool treated as special goes
       // out only with its line in the audit file (ADR 0028).
