@@ -4,8 +4,9 @@
  * the one stderr writer of the process, the logger and the audit sink that
  * write through it, the writer of the audit file over stdio (ADR 0028),
  * the clock of the system, the description of an error for the handlers
- * of the process, and a logger bound to the tenant `default` for the
- * transport over stdio.
+ * of the process, a logger bound to the tenant `default` for the
+ * transport over stdio, and the provider of the keys for the pseudonyms
+ * of the level `strict` (ADR 0069).
  *
  * Only the composition root may import this subpath, which a rule of
  * dependency-cruiser holds. Through the entry point of core the writer
@@ -24,6 +25,7 @@ export {
 export { createAuditSink } from './audit/index.js';
 export { systemClock } from './clock.js';
 export { describeError } from './errors/index.js';
+export { createFileKeyProvider, type FileKeys } from './keys/file-provider.js';
 export {
   createLogger,
   createStderrWriter,
