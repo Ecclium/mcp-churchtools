@@ -139,6 +139,28 @@ describe('the catalog of messages', () => {
     },
   );
 
+  it('asks for a new key in the key file and for the one in use so far in the file of the previous key', () => {
+    for (const code of [
+      'pseudonym_key_invalid',
+      'pseudonym_key_file_empty',
+    ] as const) {
+      const current = problemText({
+        code,
+        variable: 'ECCLIUM_PSEUDONYM_KEY_FILE',
+      });
+      const previous = problemText({
+        code,
+        variable: 'ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE',
+      });
+      expect(current).toContain('‹ECCLIUM_PSEUDONYM_KEY_FILE›');
+      expect(current).toContain('‹openssl rand -hex 32›');
+      expect(current).not.toContain('bisherigen');
+      expect(previous).toContain('‹ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE›');
+      expect(previous).toContain('den bisherigen Schlüssel unverändert');
+      expect(previous).not.toContain('openssl');
+    }
+  });
+
   it('names the variable it was given, in ‹›', () => {
     expect(
       problemText({ code: 'empty_value', variable: 'ECCLIUM_READ_ONLY' }),

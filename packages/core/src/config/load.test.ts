@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,6 +15,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { Secret } from '../http/index.js';
+import { KeyMaterial } from '../keys/index.js';
 import { isEventName } from '../logger/index.js';
 import {
   type ConfigProblemCode,
@@ -113,6 +115,74 @@ const valid = (): Environment => ({
   ECCLIUM_CHURCHTOOLS_URL: address,
   ECCLIUM_CHURCHTOOLS_TOKEN_FILE: tokenPath,
 });
+
+const keyPath = '/path/to/pseudonym-key';
+const previousKeyPath = '/path/to/pseudonym-key-previous';
+
+// A key as 64 hex digits, made from a seed instead of written out, so that
+// no secret scanner reads a test key as a leaked one.
+const keyHex = (seed: string): string =>
+  createHash('sha256').update(seed).digest('hex');
+
+/**
+ * File functions over several files in memory, each found by its path. A
+ * path without a file is missing. The checks before the open, the ID of
+ * the user and the flags, are those of the first file.
+ */
+const pathFiles = (
+  files: Readonly<Record<string, TokenFileSystem>>,
+): TokenFileSystem => {
+  let current: TokenFileSystem | undefined;
+  const open = (): TokenFileSystem => {
+    if (current === undefined) throw new Error('No file is open.');
+    return current;
+  };
+  const [first = memoryFiles().fs] = Object.values(files);
+  return {
+    openSync: (path, flags) => {
+      const file = Object.hasOwn(files, path) ? files[path] : undefined;
+      if (file === undefined) throw fsError('ENOENT');
+      current = file;
+      return file.openSync(path, flags);
+    },
+    fstatSync: (fd) => open().fstatSync(fd),
+    readSync: (fd, buffer, offset, length, position) =>
+      open().readSync(fd, buffer, offset, length, position),
+    closeSync: (fd) => {
+      open().closeSync(fd);
+      current = undefined;
+    },
+    getuid: first.getuid,
+    constants: first.constants,
+  };
+};
+
+/**
+ * A good configuration with a key file, and with a second one when its
+ * content is given. The token file stays good.
+ */
+const withKeys = (
+  key: TokenFileSystem | undefined,
+  previous?: TokenFileSystem,
+  transport: Transport = 'stdio',
+): ConfigResult => {
+  const files: Record<string, TokenFileSystem> = {
+    [tokenPath]: memoryFiles().fs,
+  };
+  const environment: Environment = { ...valid() };
+  if (key !== undefined) {
+    files[keyPath] = key;
+    environment['ECCLIUM_PSEUDONYM_KEY_FILE'] = keyPath;
+  }
+  if (previous !== undefined) {
+    files[previousKeyPath] = previous;
+    environment['ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE'] = previousKeyPath;
+  }
+  return load(environment, transport, pathFiles(files));
+};
+
+const keyFile = (seed: string, ending = '\n'): TokenFileSystem =>
+  memoryFiles(`${keyHex(seed)}${ending}`).fs;
 
 const stateDirPath = '/path/to/state';
 
@@ -288,6 +358,13 @@ describe('loadConfig with a good configuration', () => {
         'ECCLIUM_REDACTION',
         'default',
         { kind: 'choice', value: 'standard' },
+      ],
+      ['pseudonymKey', 'ECCLIUM_PSEUDONYM_KEY_FILE', 'unset', { kind: 'none' }],
+      [
+        'pseudonymKeyPrevious',
+        'ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE',
+        'unset',
+        { kind: 'none' },
       ],
       ['toolsets', 'ECCLIUM_TOOLSETS', 'default', { kind: 'list', values: [] }],
       ['stateDir', 'ECCLIUM_STATE_DIR', 'unset', { kind: 'none' }],
@@ -1629,6 +1706,69 @@ describe('loadConfig and its problems', () => {
       load(valid(), 'stdio', memoryFiles('xxREDACTEDxx\n').fs),
     redaction_strict_unsupported: () =>
       load({ ...valid(), ECCLIUM_REDACTION: 'strict' }),
+    pseudonym_key_file_relative: () =>
+      load({ ...valid(), ECCLIUM_PSEUDONYM_KEY_FILE: 'pseudonym-key' }),
+    // The token comes from the environment, so that only the key file meets
+    // the checks of the platform.
+    pseudonym_key_file_platform: () =>
+      load(
+        {
+          ECCLIUM_CHURCHTOOLS_URL: address,
+          [tokenVariableName]: token(),
+          ECCLIUM_PSEUDONYM_KEY_FILE: keyPath,
+        },
+        'stdio',
+        memoryFiles(undefined, { getuid: () => undefined }).fs,
+      ),
+    pseudonym_key_file_missing: () =>
+      load(
+        { ...valid(), ECCLIUM_PSEUDONYM_KEY_FILE: keyPath },
+        'stdio',
+        pathFiles({ [tokenPath]: memoryFiles().fs }),
+      ),
+    pseudonym_key_file_symlink: () =>
+      withKeys(
+        memoryFiles(undefined, {
+          open: () => {
+            throw fsError('ELOOP');
+          },
+        }).fs,
+      ),
+    pseudonym_key_file_unreadable: () =>
+      withKeys(
+        memoryFiles(undefined, {
+          open: () => {
+            throw fsError('EACCES');
+          },
+        }).fs,
+      ),
+    pseudonym_key_file_not_regular: () =>
+      withKeys(memoryFiles(keyHex('a'), { stats: { isFile: false } }).fs),
+    pseudonym_key_file_owner: () =>
+      withKeys(memoryFiles(keyHex('a'), { stats: { uid: 0 } }).fs),
+    pseudonym_key_file_mode: () =>
+      withKeys(memoryFiles(keyHex('a'), { stats: { mode: 0o100640 } }).fs),
+    pseudonym_key_file_too_large: () =>
+      withKeys(memoryFiles('a'.repeat(5000)).fs),
+    pseudonym_key_file_empty: () => withKeys(memoryFiles('\n').fs),
+    pseudonym_key_file_bom: () =>
+      withKeys(memoryFiles(`\xef\xbb\xbf${keyHex('a')}\n`).fs),
+    pseudonym_key_file_characters: () =>
+      withKeys(memoryFiles(`${keyHex('a')}\n\n`).fs),
+    pseudonym_key_file_unsafe: () =>
+      withKeys(
+        memoryFiles(undefined, {
+          open: () => {
+            throw fsError('ENOTDIR');
+          },
+        }).fs,
+      ),
+    pseudonym_key_invalid: () =>
+      withKeys(memoryFiles(keyHex('a').toUpperCase()).fs),
+    pseudonym_key_previous_without_current: () =>
+      withKeys(undefined, keyFile('a')),
+    pseudonym_key_same: () => withKeys(keyFile('a'), keyFile('a')),
+    pseudonym_key_change: () => withKeys(keyFile('new'), keyFile('old')),
     stdio_only: () => load({ ...valid(), ECCLIUM_REDACTION: 'off' }, 'http'),
     subject_invalid: () => load({ ...valid(), ECCLIUM_STDIO_SUBJECT: 'Local' }),
     subject_reserved: () =>
@@ -2127,5 +2267,128 @@ describe('loadConfig and what it gives out', () => {
       }),
     ).toThrow();
     expect(load(valid()).ok).toBe(true);
+  });
+});
+
+describe('loadConfig and the key files for pseudonyms', () => {
+  it('needs neither of them', () => {
+    const result = load(valid());
+    expect(result.ok && result.config.pseudonymKey).toBeUndefined();
+    expect(result.ok && result.config.pseudonymKeyPrevious).toBeUndefined();
+  });
+
+  it('reads a key with LF, with CR LF and without a line ending', () => {
+    for (const ending of ['\n', '\r\n', '']) {
+      const result = withKeys(keyFile('a', ending));
+      expect(result.ok, JSON.stringify(ending)).toBe(true);
+      if (!result.ok) continue;
+      expect(
+        result.config.pseudonymKey?.sameAs(new KeyMaterial(keyHex('a'))),
+      ).toBe(true);
+      expect(setting(result, 'pseudonymKey')).toMatchObject({
+        origin: 'file',
+        shown: { kind: 'hidden' },
+      });
+      expect(setting(result, 'pseudonymKeyPrevious')).toMatchObject({
+        origin: 'unset',
+      });
+      expect(result.report.warnings).toEqual([]);
+    }
+  });
+
+  it('reads both keys while the operator changes them, and warns', () => {
+    const result = withKeys(keyFile('new'), keyFile('old'));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(
+      result.config.pseudonymKey?.sameAs(new KeyMaterial(keyHex('new'))),
+    ).toBe(true);
+    expect(
+      result.config.pseudonymKeyPrevious?.sameAs(
+        new KeyMaterial(keyHex('old')),
+      ),
+    ).toBe(true);
+    expect(setting(result, 'pseudonymKeyPrevious')).toMatchObject({
+      origin: 'file',
+      shown: { kind: 'hidden' },
+    });
+    expect(result.report.warnings).toEqual(['pseudonym_key_change']);
+  });
+
+  it('names the variable of the file that fails', () => {
+    expect(problems(withKeys(keyFile('new'), memoryFiles('\n').fs))).toEqual([
+      ['pseudonym_key_file_empty', 'ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE'],
+    ]);
+    expect(problems(withKeys(memoryFiles('\n').fs, keyFile('old')))).toEqual([
+      ['pseudonym_key_file_empty', 'ECCLIUM_PSEUDONYM_KEY_FILE'],
+    ]);
+  });
+
+  it.each([
+    ['63 digits', keyHex('a').slice(1)],
+    ['65 digits', `${keyHex('a')}0`],
+    ['capitals', keyHex('a').toUpperCase()],
+    ['only zeros', '0'.repeat(64)],
+  ])('refuses a key of %s', (_name, content) => {
+    const result = withKeys(memoryFiles(`${content}\n`).fs);
+    expect(problems(result)).toEqual([
+      ['pseudonym_key_invalid', 'ECCLIUM_PSEUDONYM_KEY_FILE'],
+    ]);
+    expect(setting(result, 'pseudonymKey')).toMatchObject({
+      origin: 'invalid',
+      shown: { kind: 'none' },
+    });
+  });
+
+  it('names the previous key alone also when its file has a problem', () => {
+    expect(problems(withKeys(undefined, memoryFiles('\n').fs))).toEqual([
+      ['pseudonym_key_file_empty', 'ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE'],
+      [
+        'pseudonym_key_previous_without_current',
+        'ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE',
+      ],
+    ]);
+  });
+
+  it('refuses the previous key alone and the same key twice', () => {
+    for (const result of [
+      withKeys(undefined, keyFile('a')),
+      withKeys(keyFile('a'), keyFile('a')),
+    ]) {
+      expect(result.ok).toBe(false);
+      expect(result.report.warnings).toEqual([]);
+      expect(setting(result, 'pseudonymKeyPrevious')).toMatchObject({
+        origin: 'invalid',
+        shown: { kind: 'none' },
+      });
+    }
+  });
+
+  it('takes the key files over HTTP as well', () => {
+    expect(withKeys(keyFile('new'), keyFile('old'), 'http').ok).toBe(true);
+  });
+
+  it('holds neither a path nor a key in the report or the printed configuration', () => {
+    const result = withKeys(keyFile('new'), keyFile('old'));
+    expect(result.ok).toBe(true);
+    const printed = [
+      JSON.stringify(result.report),
+      inspect(result.report, { depth: Infinity }),
+      result.ok ? JSON.stringify(result.config) : '',
+      result.ok ? inspect(result.config, { depth: Infinity }) : '',
+    ];
+    for (const text of printed) {
+      for (const secret of [
+        keyPath,
+        previousKeyPath,
+        keyHex('new'),
+        keyHex('old'),
+      ]) {
+        expect(text).not.toContain(secret);
+      }
+    }
+    expect(result.ok && JSON.stringify(result.config)).toContain(
+      '"pseudonymKey":"[REDACTED]"',
+    );
   });
 });

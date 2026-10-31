@@ -1,6 +1,6 @@
 /**
- * Loads the configuration from the environment and the token file
- * (ADR 0055). The core never reads `process.env` itself: the command line
+ * Loads the configuration from the environment, the token file and the
+ * key files for pseudonyms (ADR 0055, ADR 0069). The core never reads `process.env` itself: the command line
  * passes the environment in. The loader reports every problem at once, by
  * code and variable, and never a value it was given.
  *
@@ -14,9 +14,11 @@ import {
 } from 'node:util/types';
 
 import { parseChurchToolsOrigin, Secret } from '../http/index.js';
+import type { KeyMaterial } from '../keys/index.js';
 import type { LogLevel } from '../logger/index.js';
 import type { ToolsetName } from '../registry/toolsets.js';
 import type { ConfigProblemCode, ConfigWarningCode } from './codes.js';
+import { readPseudonymKeyFile } from './pseudonym-key-file.js';
 import { checkStateDir, type StateDirFileSystem } from './state-dir.js';
 import { readTokenFile, type TokenFileSystem } from './token-file.js';
 import {
@@ -59,6 +61,17 @@ export interface EccliumConfig {
   /** `strict` is refused until the full redaction exists. */
   readonly redaction: 'off' | 'standard';
   /**
+   * The secret for the pseudonyms of the level `strict`, or undefined when
+   * the variable is not set (ADR 0069).
+   */
+  readonly pseudonymKey: KeyMaterial | undefined;
+  /**
+   * The previous secret while the operator changes it, or undefined. It
+   * never comes without {@link EccliumConfig.pseudonymKey} and never holds
+   * the same bytes.
+   */
+  readonly pseudonymKeyPrevious: KeyMaterial | undefined;
+  /**
    * The toolsets the operator turned on, frozen, in the order of the
    * names of the toolsets; empty for none (ADR 0062).
    */
@@ -86,6 +99,8 @@ export type SettingKey =
   | 'churchtoolsRequestsPerMinute'
   | 'readOnly'
   | 'redaction'
+  | 'pseudonymKey'
+  | 'pseudonymKeyPrevious'
   | 'toolsets'
   | 'stateDir'
   | 'auditRetentionMonths'
@@ -176,7 +191,10 @@ export interface ConfigSources {
    * only for the options of TLS. None when absent.
    */
   readonly execArgv?: readonly string[];
-  /** The file functions for the token file, only for tests. */
+  /**
+   * The file functions for the token file and the key files for
+   * pseudonyms, only for tests.
+   */
   readonly tokenFiles?: TokenFileSystem;
   /** The file functions for the folder of state, only for tests. */
   readonly stateDirFiles?: StateDirFileSystem;
@@ -731,6 +749,70 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   }
   show('redaction', 'ECCLIUM_REDACTION', redaction, 'choice');
 
+  // The secret for pseudonyms and, while the operator changes it, the
+  // previous one (ADR 0069). Both may stay unset; the level strict will
+  // need the first. The files get the checks of the token file, and no
+  // report holds their paths. The previous one alone, or the same bytes
+  // twice, is an error rather than a key change that changes nothing.
+  const readKey = (
+    name: 'ECCLIUM_PSEUDONYM_KEY_FILE' | 'ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE',
+  ): {
+    readonly given: boolean;
+    readonly read: Read;
+    readonly key: KeyMaterial | undefined;
+  } => {
+    const keyRead = read(row(name));
+    // A value that passed the checks of every variable, whatever its file
+    // holds. An empty or too long value has its own problem.
+    const given = keyRead.state === 'set';
+    if (keyRead.state !== 'set')
+      return { given, read: keyRead, key: undefined };
+    const fromFile = readPseudonymKeyFile(
+      keyRead.value,
+      tokenFiles as TokenFileSystem | undefined,
+    );
+    if (fromFile.ok) return { given, read: keyRead, key: fromFile.value };
+    report(fromFile.code, name);
+    return { given, read: invalid, key: undefined };
+  };
+  const keyName = 'ECCLIUM_PSEUDONYM_KEY_FILE';
+  const previousName = 'ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE';
+  const current = readKey(keyName);
+  const previous = readKey(previousName);
+  // Reported also when the previous file has a problem of its own, so that
+  // the operator sees both at once.
+  let previousValid = previous.read.state !== 'invalid';
+  if (previous.given && !current.given) {
+    report('pseudonym_key_previous_without_current', previousName);
+    previousValid = false;
+  } else if (
+    previous.key !== undefined &&
+    current.key !== undefined &&
+    current.key.sameAs(previous.key)
+  ) {
+    report('pseudonym_key_same', previousName);
+    previousValid = false;
+  } else if (previous.key !== undefined && current.key !== undefined) {
+    warnings.add('pseudonym_key_change');
+  }
+  const keyValid = current.read.state !== 'invalid';
+  setting(
+    'pseudonymKey',
+    keyName,
+    current.key !== undefined ? 'file' : keyValid ? 'unset' : 'invalid',
+    current.key !== undefined ? shownHidden : shownNone,
+  );
+  setting(
+    'pseudonymKeyPrevious',
+    previousName,
+    previous.key !== undefined && previousValid
+      ? 'file'
+      : previousValid
+        ? 'unset'
+        : 'invalid',
+    previous.key !== undefined && previousValid ? shownHidden : shownNone,
+  );
+
   // The toolsets. Unlike any other variable, an empty value is valid and
   // means none, as when the variable is not set (ADR 0062). The toolset
   // persons lets the AI assistant see names of persons and groups, which
@@ -910,6 +992,8 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     rate === undefined ||
     readOnly === undefined ||
     redaction === undefined ||
+    !keyValid ||
+    !previousValid ||
     toolsets === undefined ||
     !stateDirValid ||
     retention === undefined ||
@@ -928,6 +1012,8 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       churchtoolsRequestsPerMinute: rate.value,
       readOnly: readOnly.value === 'true',
       redaction: redaction.value as 'off' | 'standard',
+      pseudonymKey: current.key,
+      pseudonymKeyPrevious: previous.key,
       toolsets: toolsets.value,
       stateDir,
       auditRetentionMonths: retention.value,
