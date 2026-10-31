@@ -91,7 +91,7 @@ Die Tools des Toolsets `docs` und `ct_api_search_actions` schlagen in einem Inde
 
 ## Was später kommt
 
-- Phase 4: die Stufe `strict` mit gekürzten Nachnamen, Pseudonymen und der Suche nach Mustern in Freitext, dazu die Prüfung der Audit-Dateien gegen ihre Hash-Kette und den Anker im Log. Hash-Kette, Anker und Frist der Audit-Dateien gibt es schon, siehe [Datenschutz](privacy.md). Vorgesehen ist, dass `strict` bei `ct_api_execute_read` eine Antwort ohne bekanntes Schema abweist ([ADR 0067](adr/0067-generischer-lesezugriff.md)).
+- Phase 4: die Stufe `strict` mit gekürzten Nachnamen, Pseudonymen und der Suche nach Mustern in Freitext. Hash-Kette, Anker und Frist der Audit-Dateien gibt es schon, und `ecclium audit verify` prüft Kette und Anker, siehe [Datenschutz](privacy.md) und [Betrieb über stdio](betrieb/stdio.md#audit-prüfen-und-auswerten). Vorgesehen ist, dass `strict` bei `ct_api_execute_read` eine Antwort ohne bekanntes Schema abweist ([ADR 0067](adr/0067-generischer-lesezugriff.md)).
 - Phase 5: Tools, die schreiben, mit Bestätigung über eine Rückfrage im Client, eine Freigabe durch den Betreiber oder ein Echo, und was jeder dieser Wege beweist und was nicht. Dazu das Lesebudget in der Richtlinie.
 - Phase 6: der Runner für Routinen, dessen Modell keine Werkzeuge hat, eine Positivliste für ausgehende Verbindungen und Schalter als Dateien, die das Schreiben ohne Neustart abstellen.
 - Phase 8: eine Anleitung, wie Sie Pakete und Images vor der Installation prüfen.
