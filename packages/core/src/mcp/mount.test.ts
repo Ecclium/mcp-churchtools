@@ -43,8 +43,13 @@ import {
   createStdioTenantResolver,
 } from '../identity/index.js';
 import { createLogger } from '../logger/index.js';
-import { createToolPipeline, type ToolPipeline } from '../pipeline/index.js';
+import {
+  createToolPipeline,
+  type ToolOutcome,
+  type ToolPipeline,
+} from '../pipeline/index.js';
 import { maxResultBytes, resultBytes } from '../pipeline/stages.js';
+import { sealRedacted } from '../redaction/redacted.js';
 import { createToolCatalog } from '../registry/index.js';
 import { deriveAnnotations } from './annotations.js';
 import { createMcpMount, type McpMountOptions } from './mount.js';
@@ -723,7 +728,10 @@ describe('the resolver of the tenant', () => {
     const pipeline: ToolPipeline = {
       call: (_name, _input, request) => {
         listeners.push(getEventListeners(request.signal, 'abort').length);
-        return Promise.resolve({ ok: true, data: { text: 'ok' } });
+        return Promise.resolve({
+          ok: true,
+          data: sealRedacted({ text: 'ok' }),
+        });
       },
     };
     const { factory } = setup({ pipeline });
@@ -841,6 +849,31 @@ describe('errors', () => {
       expect.objectContaining({ level: 'error', event: 'mcp_call_failed' }),
     ]);
     expect(JSON.stringify(logs())).not.toContain(canary);
+  });
+
+  it('answers with the fixed sentence and writes a fixed event for a result without the mark', async () => {
+    const canary = makeCanary('email');
+    const { factory, logs } = setup({
+      pipeline: {
+        // A stand-in that hands over raw data, as a result that went past
+        // the pipeline would be (ADR 0026).
+        call: () =>
+          Promise.resolve({
+            ok: true,
+            data: { email: canary.value },
+          } as unknown as ToolOutcome),
+      },
+    });
+    const connection = await modern.open(factory);
+    const reply = await call(modern, connection, 'ct_test_context', {});
+    expect(at(reply, 'result')).toMatchObject({
+      content: [{ type: 'text', text: fixedSentences.internal }],
+      isError: true,
+    });
+    expect(JSON.stringify(connection.received)).not.toContain(canary.value);
+    expect(logs()).toEqual([
+      expect.objectContaining({ level: 'error', event: 'mcp_call_failed' }),
+    ]);
   });
 
   it('writes a fixed event for an error of the instance, never its message', () => {

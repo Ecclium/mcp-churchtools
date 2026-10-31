@@ -9,6 +9,7 @@
 export {
   assertNoCanary,
   assertPlanted,
+  canaryFrom,
   findCanaries,
   makeCanaries,
   makeCanary,
@@ -18,6 +19,7 @@ export {
   type CanaryKind,
   type CanarySet,
 } from './canary.js';
+export { coreToolCatalog } from './catalog.js';
 export {
   groupAtHighestLevel,
   groupMembersAtHighestLevel,
@@ -99,3 +101,14 @@ export {
   type QuotaStoreCheck,
   quotaStoreChecks,
 } from './quota/index.js';
+export { redactedOutcome } from './redacted/index.js';
+export { ahvOf, groupedAhv, ibanOf, printedIban } from './synthetic-numbers.js';
+export {
+  compatibilityForms,
+  hiddenCharacters,
+  lookalikeOf,
+  lookalikes,
+  searchable,
+  type VariantChoice,
+  variantOf,
+} from './variants.js';

@@ -8,6 +8,7 @@
 import type { CallToolResult, TextContent } from '@modelcontextprotocol/server';
 
 import type { ToolOutcome } from '../pipeline/index.js';
+import { isRedacted } from '../redaction/redacted.js';
 
 // A frozen block of text. The type of MCP has mutable fields, so the block
 // and its list are frozen in place and keep that type.
@@ -49,15 +50,23 @@ const failureText = (outcome: Extract<ToolOutcome, { ok: false }>): string => {
  * with one line `- module: right` each. The code of the error stays in log
  * and audit.
  *
+ * A success whose data lack the mark of a redacted result, which only the
+ * pipeline gives, throws, so that no result goes out past the pipeline,
+ * also not one that a cast made into a redacted result (ADR 0026). The
+ * mount then answers with the fixed sentence of `internal` and writes its
+ * fixed event, the trace an operator finds.
+ *
  * It never throws for an outcome of the pipeline, whose data are a frozen
  * tree of plain values of JSON.
  *
  * @param outcome - The outcome of `ToolPipeline.call`.
  * @returns The result for the client, frozen, with the data shared, not
  *   copied.
+ * @throws {TypeError} For the data of a success without the mark of a
+ *   redacted result.
  * @example
  * ```ts
- * serializeOutcome({ ok: true, data: { id: 1 } });
+ * serializeOutcome({ ok: true, data: sealRedacted({ id: 1 }) });
  * // { content: [{ type: 'text', text: '{"id":1}' }],
  * //   structuredContent: { id: 1 } }
  * serializeOutcome({ ok: false, error: { code: 'validation',
@@ -68,6 +77,9 @@ const failureText = (outcome: Extract<ToolOutcome, { ok: false }>): string => {
  */
 export function serializeOutcome(outcome: ToolOutcome): CallToolResult {
   if (outcome.ok) {
+    if (!isRedacted(outcome.data)) {
+      throw new TypeError('A result without the mark of the pipeline.');
+    }
     return Object.freeze({
       content: textBlock(JSON.stringify(outcome.data)),
       structuredContent: outcome.data,

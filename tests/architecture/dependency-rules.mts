@@ -298,6 +298,15 @@ export function dependencyRules(
       to: { path: at('aesGcmSiv') },
     },
     {
+      name: 'redacted-mark-only-in-pipeline',
+      severity: 'error',
+      comment: `${adr('redactedUsers')}: only the pipeline marks a result as redacted and only the serialisation of the mount reads the mark, and in testkit the stand-in outcomes for tests of a server mark one through the subpath ./redaction/testing of core, so that no other code makes a result that the mount sends. Tests are exempt.`,
+      from: {
+        pathNot: [...at('redactedMark'), ...at('redactedUsers'), testFile],
+      },
+      to: { path: at('redactedMark') },
+    },
+    {
       name: 'transport-only-from-composition-root',
       severity: 'error',
       comment: `${adr('transportBuilders')}: only the composition root builds an HTTP transport, through the subpath ./http of core, so that no tool builds one with an origin of its own. Tests in the packages are not exempt.`,

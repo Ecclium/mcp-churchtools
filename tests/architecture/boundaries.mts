@@ -48,6 +48,8 @@ export const placeKeys = [
   'operationCatalog',
   'aesGcmSiv',
   'pseudonymUsers',
+  'redactedMark',
+  'redactedUsers',
   'keys',
 ] as const;
 

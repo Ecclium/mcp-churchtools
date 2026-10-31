@@ -8,7 +8,11 @@ import {
   type ToolPipeline,
 } from '@ecclium/mcp-churchtools-core';
 import type { LogFields, Logger } from '@ecclium/mcp-churchtools-plugin-api';
-import { examplePlugin, makeCanary } from '@ecclium/mcp-churchtools-testkit';
+import {
+  examplePlugin,
+  makeCanary,
+  redactedOutcome,
+} from '@ecclium/mcp-churchtools-testkit';
 import {
   CLIENT_CAPABILITIES_META_KEY,
   CLIENT_INFO_META_KEY,
@@ -53,10 +57,7 @@ const catalog = createToolCatalog({
   toolsets: new Set(['wiki'] as const),
 });
 
-const done: ToolOutcome = Object.freeze({
-  ok: true,
-  data: Object.freeze({ email: 'm***@example.org' }),
-});
+const done: ToolOutcome = redactedOutcome({ email: 'm***@example.org' });
 
 interface Logged {
   readonly level: string;
