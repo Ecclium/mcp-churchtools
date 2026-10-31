@@ -17,6 +17,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 import { isEventName, maxLineLength } from '../logger/index.js';
 import {
+  type AuditChainAnchor,
   auditFileCodes,
   type AuditFileStats,
   type AuditFileSystem,
@@ -1171,6 +1172,130 @@ describe('the writer of the audit file and a new file', () => {
     expect(writer.write('{"v":1}')).toBe(false);
     expect(opens(calls)).toHaveLength(1);
     expect(writer.counts()).toMatchObject({ failed: 1, closed: true });
+  });
+});
+
+describe('the anchors of the writer', () => {
+  const day = 24 * 60 * 60 * 1000;
+
+  /** An open writer with a listener that keeps every anchor. */
+  const anchored = (hooks: Hooks = {}, time: { now: () => number } = clock) => {
+    const files = opened(hooks, time);
+    const anchors: AuditChainAnchor[] = [];
+    expect(
+      files.writer.attach({
+        anchor: (given) => {
+          anchors.push(given);
+        },
+      }),
+    ).toBe(true);
+    return { ...files, anchors };
+  };
+
+  /** The anchor of the last whole line of a text of a file. */
+  const headOf = (name: string, text: string): AuditChainAnchor => {
+    const lines = text.split('\n').slice(0, -1);
+    const last = lines.at(-1) ?? '';
+    return {
+      file: name,
+      seq: (JSON.parse(last) as { seq: number }).seq,
+      hash: sha256(last),
+    };
+  };
+
+  it('reports the head of the chain when the file closes', () => {
+    const { writer, anchors, content } = anchored();
+    writer.write('{"v":1}');
+    writer.write('{"v":2}');
+    expect(anchors).toEqual([]);
+    writer.close();
+    expect(anchors).toEqual([headOf(nameOf(1), content(fileFd))]);
+    expect(anchors[0]?.seq).toBe(2);
+    expect(Object.isFrozen(anchors[0])).toBe(true);
+    // Once: a second close finds no file.
+    writer.close();
+    expect(anchors).toHaveLength(1);
+  });
+
+  it('reports no anchor for a file without a whole line', () => {
+    const { writer, anchors } = anchored({ write: script(4, 'ENOSPC') });
+    expect(writer.write('{"v":1}')).toBe(false);
+    writer.close();
+    expect(anchors).toEqual([]);
+  });
+
+  it('reports the old file on a new UTC day, and the new one when it closes', () => {
+    let now = clock.now();
+    const { writer, anchors, content } = anchored({}, { now: () => now });
+    writer.write('{"v":1}');
+    now += day;
+    writer.write('{"v":2}');
+    expect(anchors).toEqual([headOf(nameOf(1), content(fileFd))]);
+    writer.close();
+    expect(anchors[1]).toEqual(
+      headOf(
+        `audit-2026-10-24-055230-${String(pid)}-2.jsonl`,
+        content(fileFd + 1),
+      ),
+    );
+  });
+
+  it('reports a file that was deleted before the new one', () => {
+    const deleted = new Set<number>();
+    const { writer, anchors, content } = anchored({
+      fstat: (fd) =>
+        deleted.has(fd)
+          ? stats({ kind: 'file', ino: 200 + fd, nlink: 0 })
+          : undefined,
+    });
+    writer.write('{"v":1}');
+    deleted.add(fileFd);
+    writer.write('{"v":2}');
+    expect(anchors).toEqual([headOf(nameOf(1), content(fileFd))]);
+  });
+
+  it('reports a file it gives up after EBADF without closing it', () => {
+    let fail = false;
+    const { writer, anchors, closed, content } = anchored({
+      write: (fd) => {
+        if (fail && fd === fileFd) throw fsError('EBADF');
+        return undefined;
+      },
+    });
+    writer.write('{"v":1}');
+    fail = true;
+    expect(writer.write('{"v":2}')).toBe(true);
+    expect(closed).toEqual([folderFd, folderFd]);
+    expect(anchors).toEqual([headOf(nameOf(1), content(fileFd))]);
+  });
+
+  it('takes one listener, only with a function, and survives one that throws', () => {
+    const { writer } = opened();
+    expect(writer.attach(null as never)).toBe(false);
+    expect(writer.attach({} as never)).toBe(false);
+    expect(writer.attach(new Proxy({ anchor: () => undefined }, {}))).toBe(
+      false,
+    );
+    expect(
+      writer.attach(
+        Object.defineProperty({}, 'anchor', {
+          get: () => () => undefined,
+        }) as never,
+      ),
+    ).toBe(false);
+    expect(
+      writer.attach({
+        anchor: () => {
+          throw new Error('listener');
+        },
+      }),
+    ).toBe(true);
+    expect(writer.attach({ anchor: () => undefined })).toBe(false);
+    writer.write('{"v":1}');
+    expect(() => {
+      writer.close();
+    }).not.toThrow();
+    expect(writer.counts().closed).toBe(true);
   });
 });
 

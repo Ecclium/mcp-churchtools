@@ -19,6 +19,7 @@ import { z } from 'zod';
 import {
   hostPattern,
   modes,
+  sha256Pattern,
   tenantIdPattern,
   timestampPattern,
   toolNamePattern,
@@ -96,7 +97,6 @@ const actorIdPattern = /^[a-z][a-z0-9_-]{0,31}(?::[a-z0-9_-]{1,64})?$/;
  */
 export const isActorId = (value: unknown): value is string =>
   typeof value === 'string' && value.length <= 97 && actorIdPattern.test(value);
-const hashPattern = /^[0-9a-f]{64}$/;
 const vendorPattern = /^[a-z][a-z0-9-]{0,31}$/;
 const modelPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
 const countryPattern = /^[A-Z]{2}$/;
@@ -127,7 +127,7 @@ export const auditFieldSchemas = Object.freeze({
   tool: text(63, toolNamePattern),
   outcome: z.enum(auditOutcomes),
   confirmation: z.enum(confirmationPaths),
-  hash: text(64, hashPattern),
+  hash: text(64, sha256Pattern),
   vendor: text(32, vendorPattern),
   model: text(64, modelPattern),
   hostingCountry: text(2, countryPattern),

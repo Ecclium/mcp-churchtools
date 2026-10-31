@@ -128,6 +128,32 @@ export interface AuditFileCounts {
   readonly closed: boolean;
 }
 
+/**
+ * The head of the chain of a file the writer gave up, for the anchor on
+ * the log (ADR 0028).
+ */
+export interface AuditChainAnchor {
+  /** The name of the file, without the folder. */
+  readonly file: string;
+  /** The seq of its last whole line. */
+  readonly seq: number;
+  /** The SHA-256 of its last whole line, in hex. */
+  readonly hash: string;
+}
+
+/**
+ * What the writer reports for the log. The first stage of the start opens
+ * the file before there is a logger, so the second stage attaches it.
+ */
+export interface AuditFileListener {
+  /**
+   * Gets the anchor of each file the writer gives up that has a whole
+   * line: when it closes, on a new UTC day and before a new file for a
+   * lost one. A file without a line has no anchor.
+   */
+  readonly anchor: (anchor: AuditChainAnchor) => void;
+}
+
 /** The open audit file. */
 export interface AuditFileWriter extends LineWriter {
   /**
@@ -154,6 +180,16 @@ export interface AuditFileWriter extends LineWriter {
    * It never throws.
    */
   close(): void;
+  /**
+   * Attaches the listener for the log, once. What the writer reports
+   * before goes nowhere. It never throws, and a listener that throws
+   * changes nothing.
+   *
+   * @param listener - Gets the anchors.
+   * @returns Whether it was attached: false for a second listener or one
+   *   without the function.
+   */
+  attach(listener: AuditFileListener): boolean;
   /**
    * Returns the counts.
    *
@@ -487,6 +523,9 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
   let reopened = 0;
   // Whether the last line reached the file whole.
   let lastOk = true;
+  // The functions of the listener, read once as own data properties.
+  let onAnchor: ((anchor: AuditChainAnchor) => void) | undefined;
+  let attached = false;
   // The last UTC day a new file was tried for, so that a day that cannot
   // be opened is tried once, not with every line.
   let dayTried: string | undefined;
@@ -529,15 +568,31 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
     return { sent: offset };
   };
 
-  // Gives up a file. A descriptor that may now belong to someone else,
-  // because fstat failed or names another file, is never closed: closing
-  // it would close their file. An own file with a piece at its end gets
-  // its repair first: without a later line, a piece that lacks only its
-  // line break would otherwise stay a valid line at the end of the file.
+  // The anchor of a file with a whole line, for the log. A listener that
+  // throws changes nothing here.
+  const anchor = (old: Current): void => {
+    if (old.seq === 0) return;
+    try {
+      onAnchor?.(
+        Object.freeze({ file: old.name, seq: old.seq, hash: old.hash }),
+      );
+    } catch {
+      // The anchor is lost; the file and its chain stay as they are.
+    }
+  };
+
+  // Gives up a file and reports its anchor. A descriptor that may now
+  // belong to someone else, because fstat failed or names another file,
+  // is never closed: closing it would close their file. An own file with
+  // a piece at its end gets its repair first: without a later line, a
+  // piece that lacks only its line break would otherwise stay a valid line
+  // at the end of the file.
   const retire = (old: Current, own: boolean): void => {
-    if (!own) return;
-    if (old.torn) send(old.fd, repairBytes);
-    closeQuietly(old.fd);
+    if (own) {
+      if (old.torn) send(old.fd, repairBytes);
+      closeQuietly(old.fd);
+    }
+    anchor(old);
   };
 
   // Gives up the open file.
@@ -689,12 +744,32 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
     drop(true);
   };
 
+  const attach = (given: AuditFileListener): boolean => {
+    if (
+      attached ||
+      typeof given !== 'object' ||
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a caller without types
+      given === null ||
+      isProxy(given)
+    ) {
+      return false;
+    }
+    const anchorOf: unknown = Object.getOwnPropertyDescriptor(
+      given,
+      'anchor',
+    )?.value;
+    if (typeof anchorOf !== 'function') return false;
+    attached = true;
+    onAnchor = anchorOf as (anchor: AuditChainAnchor) => void;
+    return true;
+  };
+
   const counts = (): AuditFileCounts =>
     Object.freeze({ written, failed, partial, rejected, reopened, closed });
 
   return Object.freeze({
     __proto__: null,
     ok: true,
-    writer: Object.freeze({ write, ready, close, counts }),
+    writer: Object.freeze({ write, ready, close, attach, counts }),
   });
 }

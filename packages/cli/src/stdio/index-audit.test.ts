@@ -217,6 +217,7 @@ describe('the first stage and the audit file', () => {
         writer: {
           write: () => true,
           ready: () => true,
+          attach: () => true,
           close: () => {
             closed.push('closed');
           },
@@ -248,6 +249,7 @@ describe('the first stage and the audit file', () => {
         writer: {
           write: () => true,
           ready: () => true,
+          attach: () => true,
           close: () => {
             closed.push('closed');
           },

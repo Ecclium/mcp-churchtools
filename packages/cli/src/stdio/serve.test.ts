@@ -246,14 +246,24 @@ const initialize: Json = {
 const code = (text: string): string =>
   text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 
+const anchorOfFake = {
+  file: 'audit-2026-10-23-055230-4242-1.jsonl',
+  seq: 1,
+  hash: 'a'.repeat(64),
+};
+
 /**
  * An audit file in memory that records its lines and, when it closes, the
- * events on stderr up to then, as `seen` gives them.
+ * events on stderr up to then, as `seen` gives them, and reports a fixed
+ * anchor when it has a line.
  */
 const fakeAuditFile = (failed = 0) => {
   const lines: string[] = [];
   const events: unknown[][] = [];
   const state = { seen: (): unknown[] => [] };
+  const listeners: Parameters<
+    NonNullable<ServeOptions['auditFile']>['attach']
+  >[0][] = [];
   const file: NonNullable<ServeOptions['auditFile']> = {
     write: (line) => {
       lines.push(line);
@@ -262,6 +272,13 @@ const fakeAuditFile = (failed = 0) => {
     ready: () => true,
     close: () => {
       events.push(state.seen().filter((event) => event !== undefined));
+      if (lines.length > 0) {
+        for (const listener of listeners) listener.anchor(anchorOfFake);
+      }
+    },
+    attach: (listener) => {
+      listeners.push(listener);
+      return true;
     },
     counts: () => ({
       written: lines.length,
@@ -307,10 +324,18 @@ describe('the second stage with an audit file', () => {
     );
     expect(session.stderr()).not.toContain('person:');
     const events = session.events().filter((event) => event !== undefined);
-    expect(events.slice(-2)).toEqual(['audit_file_closed', 'stdio_closed']);
+    expect(events.slice(-3)).toEqual([
+      'audit_file_closed',
+      'audit_chain_anchor',
+      'stdio_closed',
+    ]);
     expect(
       session.lines().find((line) => line['event'] === 'audit_file_closed'),
     ).toMatchObject({ level: 'info', count: 3 });
+    // The anchor of the chain stands on stderr with all three fields.
+    expect(
+      session.lines().find((line) => line['event'] === 'audit_chain_anchor'),
+    ).toMatchObject({ level: 'info', ...anchorOfFake });
     // Closed once, after audit_file_closed and before stdio_closed.
     expect(audit.events).toHaveLength(1);
     expect(audit.events[0]?.at(-1)).toBe('audit_file_closed');

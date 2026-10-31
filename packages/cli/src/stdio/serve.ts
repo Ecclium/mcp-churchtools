@@ -12,7 +12,8 @@
  * `ct_whoami` checks the token, so the token leaves the process only for a
  * call. When the connection ends, the transport closes, the event
  * `audit_file_closed` counts the lines the audit file lost, the file
- * closes, the event `stdio_closed` counts the lines stderr lost, and the
+ * closes with the anchor of its chain, `audit_chain_anchor`, if it has a
+ * line, the event `stdio_closed` counts the lines stderr lost, and the
  * process ends with the code of an earlier signal or 0. All state lives
  * in the closure of {@link serve}.
  *
@@ -129,6 +130,7 @@ const startFailedEvent = 'stdio_start_failed';
 const sigtermEvent = 'process_sigterm';
 const sigintEvent = 'process_sigint';
 const auditFileClosedEvent = 'audit_file_closed';
+const anchorEvent = 'audit_chain_anchor';
 const closedEvent = 'stdio_closed';
 
 /**
@@ -219,6 +221,21 @@ export function serve(options: ServeOptions): ExitCode | undefined {
   // log: the count of lost lines is the only trace of that loss, and the
   // signal explains the exit code (ADR 0054).
   const processLogger = createLogger({ writer, clock, minLevel: 'info' });
+  // The anchors of the chain of the audit file, at every level of the log
+  // as well, and only this logger may write their fields (ADR 0028).
+  if (auditFile !== undefined) {
+    const anchorLogger = createLogger({
+      writer,
+      clock,
+      minLevel: 'info',
+      anchors: true,
+    });
+    auditFile.attach({
+      anchor: ({ file, seq, hash }) => {
+        anchorLogger.info(anchorEvent, { file, seq, hash });
+      },
+    });
+  }
 
   const crash =
     (event: string) =>
