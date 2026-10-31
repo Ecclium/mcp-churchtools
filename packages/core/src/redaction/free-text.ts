@@ -59,12 +59,13 @@ const allDigits = (text: string): boolean => {
 const openers = '(<["\'';
 const closers = ')>]"\'.,;:!?';
 
-// An address: at least one character before the @, and after it a dot
-// with a last part of at least two characters that does not start with a
-// digit, so that «Treffpunkt@19.30» stays. The domain may be in any
-// script: strict hides more than the mask of standard reads.
+// An address: at least one character before the last @, and after it a
+// dot with a last part of at least two characters that does not start
+// with a digit, so that «Treffpunkt@19.30» stays. The last @, so that a
+// handle such as @max@example.org counts as well. The domain may be in
+// any script: strict hides more than the mask of standard reads.
 const isAddress = (text: string): boolean => {
-  const at = text.indexOf('@');
+  const at = text.lastIndexOf('@');
   if (at < 1) return false;
   const domain = text.slice(at + 1);
   const dot = domain.lastIndexOf('.');
@@ -210,15 +211,15 @@ export function ahvCheckDigitFits(digits: string): boolean {
 const ahvGroups: readonly number[] = Object.freeze([3, 4, 4, 2]);
 
 // The end of an AHV number that starts at the index, or -1: 756 and ten
-// more digits, in one run or in the groups 3, 4, 4 and 2 with the same dot
-// or space between them, with a valid check digit and no digit right
+// more digits, in one run or in the groups 3, 4, 4 and 2 with the same dot,
+// space or hyphen between them, with a valid check digit and no digit right
 // after it.
 const ahvEndAt = (text: string, start: number): number => {
   if (text.slice(start, start + 3) !== '756') return -1;
   let digits: string;
   let end: number;
   const separator = text.charCodeAt(start + 3);
-  if (separator === 0x2e || separator === 0x20) {
+  if (separator === 0x2e || separator === 0x20 || separator === 0x2d) {
     digits = '';
     end = start;
     for (const [index, size] of ahvGroups.entries()) {
@@ -239,11 +240,47 @@ const ahvEndAt = (text: string, start: number): number => {
   return ahvCheckDigitFits(digits) ? end : -1;
 };
 
+// The most separators between two digits of a phone number in free text:
+// three, so that a number written as 044 / 123 45 67 or 079 - 123 45 67
+// counts as one.
+const freeTextSeparatorRun = 3;
+
+const isDateMark = (code: number): boolean =>
+  code === 0x2e ||
+  code === 0x2d ||
+  code === 0x2f ||
+  code === 0x2010 ||
+  code === 0x2013;
+
+// Whether a run that starts with 0 is a date, a range of days or a time
+// rather than a phone number: groups of one or two digits and at most one
+// group of four, the year, with at least one dot, hyphen or slash between
+// them, as in 01.-03.10.2026, 05.03. 19.30 or 09.30-10.30. A phone number
+// has a group of three or more digits, or is written with spaces only.
+const isDateOrTime = (run: string): boolean => {
+  let group = 0;
+  let years = 0;
+  let marked = false;
+  for (let index = 0; index <= run.length; index += 1) {
+    const code = index < run.length ? run.charCodeAt(index) : 0x20;
+    if (isDigit(code)) {
+      group += 1;
+      continue;
+    }
+    if (group === 4) years += 1;
+    else if (group > 2) return false;
+    group = 0;
+    if (isDateMark(code)) marked = true;
+  }
+  return marked && years <= 1;
+};
+
 // IBAN, AHV numbers and phone numbers in a text whose addresses are
 // already masked. An IBAN starts where no letter or digit stands before
 // it, a number where no digit does. A date is copied as it is, so that
 // 01.10.2026 never reads as a phone number, as in the mask of the escape
-// hatch.
+// hatch, also in brackets, and a range of days or a time that starts with
+// 0 stays as well.
 const maskNumbers = (text: string): string => {
   let masked = '';
   let index = 0;
@@ -273,9 +310,22 @@ const maskNumbers = (text: string): string => {
         continue;
       }
     }
-    if (runStart && (code === 0x2b || code === 0x28 || code === 0x30)) {
-      const end = phoneEndAt(text, index);
-      if (end !== -1) {
+    // A bracket opens a number such as (000) 000 12 34, not a date or an
+    // AHV number in brackets, which the next sign starts.
+    const bracketed =
+      code === 0x28 &&
+      (dateAt(text, index + 1) !== undefined ||
+        ahvEndAt(text, index + 1) !== -1);
+    if (
+      runStart &&
+      !bracketed &&
+      (code === 0x2b || code === 0x28 || code === 0x30)
+    ) {
+      const end = phoneEndAt(text, index, freeTextSeparatorRun);
+      if (
+        end !== -1 &&
+        !(code === 0x30 && isDateOrTime(text.slice(index, end)))
+      ) {
         masked += freeTextMarkers.phone;
         index = end;
         continue;

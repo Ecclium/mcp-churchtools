@@ -81,6 +81,8 @@ describe('maskFreeText', () => {
     expect(maskFreeText('(<max.mustermann@example.org>)')).toBe(`(<${email}>)`);
     expect(maskFreeText('mailto:max.mustermann@example.org')).toBe(email);
     expect(maskFreeText('max@bücher.example')).toBe(email);
+    expect(maskFreeText('@max.mustermann@example.org')).toBe(email);
+    expect(maskFreeText('Mail (@max@example.org)')).toBe(`Mail (${email})`);
   });
 
   it('leaves an @ that is no address', () => {
@@ -103,12 +105,27 @@ describe('maskFreeText', () => {
     expect(maskFreeText('+41 00 000 12 34')).toBe(phone);
     expect(maskFreeText('(000) 000-12-34')).toBe(phone);
     expect(maskFreeText('Fax:0000001234')).toBe(`Fax:${phone}`);
+    // A run of short groups is a phone number when it has a group of three
+    // or is written with spaces only.
+    expect(maskFreeText('000.000.12.34')).toBe(phone);
+    expect(maskFreeText('00 00 12 34 56')).toBe(phone);
+    expect(maskFreeText('+41-00-12-34-56')).toBe(phone);
+    // Three separators between two digits, as in a number with a slash or
+    // a dash between spaces.
+    expect(maskFreeText('Tel. 000 / 000 12 34')).toBe(`Tel. ${phone}`);
+    expect(maskFreeText('000 - 000 12 34')).toBe(phone);
   });
 
   it('leaves dates, times and numbers that do not start like a phone number', () => {
     for (const text of [
       'am 01.10.2026 um 19:30',
       'am01.10.2026',
+      '(01.10.2026)',
+      '(2026-10-01)',
+      'Freizeit 01.-03.10.2026',
+      'Sa, 05.03. 19.30 Uhr',
+      'Zeit 09.30-10.30 Uhr',
+      'am 07.11.2026-09.11.2026',
       'CCLI 1234567',
       'Postfach 1234',
       '000 12',
@@ -158,7 +175,9 @@ describe('maskFreeText', () => {
   it('masks an AHV number in one run, with dots or with spaces', () => {
     expect(maskFreeText(`AHV ${person}.`)).toBe(`AHV ${ahv}.`);
     expect(maskFreeText(`AHV-Nr. ${dotted(person)}`)).toBe(`AHV-Nr. ${ahv}`);
+    expect(maskFreeText(`(${dotted(person)})`)).toBe(`(${ahv})`);
     expect(maskFreeText(dotted(person).replaceAll('.', ' '))).toBe(ahv);
+    expect(maskFreeText(dotted(person).replaceAll('.', '-'))).toBe(ahv);
   });
 
   it('leaves what looks like an AHV number without its check digit', () => {
