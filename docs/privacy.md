@@ -5,7 +5,7 @@
 ## Zuerst die Grenzen
 
 - Ecclium verspricht keine Konformität mit einem Datenschutzrecht. Welches Recht für Ihre Gemeinde gilt und was es verlangt, klären Sie. Was wir dazu gefunden haben, steht unter «Welches Recht gilt». Diese Seite ist keine Rechtsberatung.
-- Daten aus ChurchTools lassen auf die Religionszugehörigkeit einer Person schliessen, eine besondere Kategorie von Personendaten. Die Maskierung von Ecclium begrenzt den Schaden, sie anonymisiert nicht.
+- Daten aus ChurchTools lassen auf die Religionszugehörigkeit einer Person schliessen, nach DSGVO und DSG eine besondere Kategorie von Personendaten. Das KDG zählt die blosse Zugehörigkeit zu einer Kirche nicht dazu, religiöse Überzeugungen schon. Die Maskierung von Ecclium begrenzt den Schaden, sie anonymisiert nicht.
 - Was Ecclium auf der Platte ablegt, liegt auf demselben Rechner wie der Server, unter Ihrem Benutzer. Wer unter diesem Benutzer Programme ausführt oder den Rechner verwaltet, kann es lesen, ändern oder löschen. Backups und synchronisierte Ordner kopieren es.
 
 ## Welches Recht gilt
