@@ -8,9 +8,12 @@
  * own and checks afterwards: one valid line per call of a tool, in order,
  * with tool and outcome, at most 100 IDs of objects only in their fixed
  * form, and nothing of the search term, the answers or the token.
+ * Afterwards `ecclium audit verify` of the same build checks the chain of
+ * the files against the anchors in the stderr of the process.
  *
  * @packageDocumentation
  */
+import { spawnSync } from 'node:child_process';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -18,7 +21,12 @@ import type { Call } from './answers.mts';
 import { holdsAny, type JsonLine } from './course.mts';
 
 /** The words the result of this check uses, for the allow list. */
-export const auditWords = ['audit', 'wie erwartet', 'abweichend'] as const;
+export const auditWords = [
+  'audit',
+  'kette',
+  'wie erwartet',
+  'abweichend',
+] as const;
 
 const fileName = /^audit-\d{4}-\d{2}-\d{2}-\d{6}-\d+-\d+\.jsonl$/;
 
@@ -111,4 +119,52 @@ export function auditFits(
       );
     }) && !holdsAny(lines, banned)
   );
+}
+
+/** How the smoke test starts `ecclium` for a command other than stdio. */
+export interface AuditCommand {
+  /** Usually Node.js itself. */
+  readonly executable: string;
+  /** Arguments before the entry, empty in a real run. */
+  readonly preArgs: readonly string[];
+  /** The entry of the command `ecclium`. */
+  readonly entry: string;
+  /** More variables for the child, only in tests. */
+  readonly env?: Readonly<Record<string, string>>;
+}
+
+// The line of `ecclium audit verify` when every file named by an anchor
+// ends with the line of its anchor, and there is at least one.
+const anchoredLine =
+  /^ {2}Dateien mit einem Anker aus dem Log: ([1-9]\d*), davon passend \1,/m;
+
+/**
+ * Checks the audit files of one process with `ecclium audit verify` of the
+ * same build, with the stderr of the process as the log of its anchors
+ * (ADR 0028). It passes when the command ends with 0 and every anchor fits
+ * its file. The child gets only the folder of state, neither the address
+ * nor the token, which the command does not need.
+ *
+ * @param command - How to start `ecclium`.
+ * @param stateDir - The folder of state of the process.
+ * @param stderr - Everything the process wrote to stderr.
+ * @returns Whether the chains are whole and fit their anchors.
+ */
+export function chainFits(
+  command: AuditCommand,
+  stateDir: string,
+  stderr: string,
+): boolean {
+  const result = spawnSync(
+    command.executable,
+    [...command.preArgs, command.entry, 'audit', 'verify', '--log', '-'],
+    {
+      env: { ...command.env, ECCLIUM_STATE_DIR: stateDir },
+      input: stderr,
+      encoding: 'utf8',
+      timeout: 60_000,
+      maxBuffer: 1_048_576,
+    },
+  );
+  return result.status === 0 && anchoredLine.test(result.stdout);
 }

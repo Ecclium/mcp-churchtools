@@ -44,6 +44,18 @@ const record = (): void => {
     JSON.stringify({ variables, calls }),
   );
 };
+// `ecclium audit verify --log -` after each process: it reads the log and
+// answers as the real command does when every file has its anchor, or
+// ends with 65 in the scenario chain-broken.
+if (process.argv[2] === 'audit') {
+  readFileSync(0);
+  if (scenario === 'chain-broken') process.exit(65);
+  process.stdout.write(
+    'Prüfung der Audit-Dateien\n  Dateien mit einem Anker aus dem Log: 1, davon passend 1, nach Ablauf der Frist gelöscht 0\n',
+  );
+  process.exit(0);
+}
+
 record();
 
 const stateDir = env['ECCLIUM_STATE_DIR'] ?? '';
