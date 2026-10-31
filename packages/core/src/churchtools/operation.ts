@@ -19,6 +19,7 @@ import { HttpTransportError } from '../http/index.js';
 import {
   buildOperationUrl,
   findReadableOperation,
+  type ObjectValue,
   type RefusalReason,
 } from './catalog/index.js';
 import { fetchAnswer, type RequestPath } from './request.js';
@@ -57,6 +58,8 @@ export const operationLimits = Object.freeze({
 export const tooLargeAnswer =
   'The answer of ChurchTools is too large for one result. Ask for fewer entries with limit or a filter.';
 
+export type { ObjectValue } from './catalog/index.js';
+
 const unknownOperation =
   'No GET operation with this operationId is in the catalog of Ecclium. Look the operation up first.';
 
@@ -91,6 +94,9 @@ const refusals: Readonly<Record<RefusalReason, string>> = Object.freeze({
  * @param ctx - The context of the call.
  * @param path - Origin, transport and throttle of the client.
  * @param request - The operation and the values of its parameters.
+ * @param observe - Takes the checked values that name objects, with their
+ *   kinds, once the request is checked and before it is sent, for the
+ *   audit (ADR 0028).
  * @returns The ID, the sensitivity and the parsed root of the answer,
  *   frozen.
  * @throws {EccliumError} `validation` for an unknown operation or a value
@@ -109,6 +115,7 @@ export async function readOperation(
   ctx: TenantContext,
   path: RequestPath,
   request: OperationRequest,
+  observe?: (objectRefs: readonly ObjectValue[]) => void,
 ): Promise<OperationAnswer> {
   // Each part is read once, so that a getter cannot show the checks one
   // value and the request another.
@@ -133,6 +140,7 @@ export async function readOperation(
     });
     throw new EccliumError('validation', built.message);
   }
+  observe?.(built.objectRefs);
   let root: Readonly<Record<string, unknown>>;
   try {
     root = await fetchAnswer(ctx, path, built.url, operationLimits, {

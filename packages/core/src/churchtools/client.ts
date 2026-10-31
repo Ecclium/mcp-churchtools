@@ -88,6 +88,7 @@ import {
   urlOfPath,
 } from './query.js';
 import {
+  type ObjectValue,
   type OperationAnswer,
   type OperationRequest,
   readOperation,
@@ -432,6 +433,9 @@ export interface ChurchToolsClient {
    * checked values. The answer has no schema of its own; the caller masks
    * it before anything passes it on.
    *
+   * `observe` takes the checked values that name objects, with their
+   * kinds, before the request is sent, for the audit (ADR 0028).
+   *
    * @throws {EccliumError} `validation` for an unknown operation or a
    *   value that does not fit, `policy_denied` for an operation the core
    *   does not read, both before any request; `upstream` with a hint on
@@ -440,6 +444,7 @@ export interface ChurchToolsClient {
   operation(
     ctx: TenantContext,
     request: OperationRequest,
+    observe?: (objectRefs: readonly ObjectValue[]) => void,
   ): Promise<OperationAnswer>;
 }
 
@@ -1940,6 +1945,7 @@ export function createChurchToolsClient(
     operation: (
       ctx: TenantContext,
       request: OperationRequest,
-    ): Promise<OperationAnswer> => readOperation(ctx, path, request),
+      observe?: (objectRefs: readonly ObjectValue[]) => void,
+    ): Promise<OperationAnswer> => readOperation(ctx, path, request, observe),
   });
 }

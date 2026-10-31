@@ -112,6 +112,45 @@ describe('ChurchToolsClient.operation', () => {
     expect(JSON.stringify(lines)).not.toContain(canary.value);
   });
 
+  it('hands the IDs of the checked request to the audit before the request', async () => {
+    const { double, client, ctx } = setup();
+    double
+      .intercept({ path: at('/api/persons'), method: 'GET' })
+      .reply(403, { message: 'Forbidden' }, json);
+    const seen: unknown[] = [];
+    const calls: number[] = [];
+    await errorOf(
+      client.operation(
+        ctx(),
+        {
+          operationId: 'get-persons',
+          query: { 'ids[]': [7, 3], 'status_ids[]': [1] },
+        },
+        (objectRefs) => {
+          calls.push(double.calls().length);
+          seen.push(...objectRefs);
+        },
+      ),
+    );
+    // Before the request, and also for a request ChurchTools refuses.
+    expect(calls).toEqual([0]);
+    expect(seen).toEqual([
+      ['person', '7'],
+      ['person', '3'],
+    ]);
+    const refused: unknown[] = [];
+    await errorOf(
+      client.operation(
+        ctx(),
+        { operationId: 'get-groups-groupId', path: { groupId: 'Max' } },
+        (objectRefs) => {
+          refused.push(...objectRefs);
+        },
+      ),
+    );
+    expect(refused).toEqual([]);
+  });
+
   it('sends only the declared parameters of the query', async () => {
     const { double, client, ctx } = setup();
     double

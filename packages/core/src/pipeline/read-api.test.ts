@@ -296,9 +296,11 @@ const fakeClient = (operationAnswer: OperationAnswer = groupAnswer) => {
       ids.push(['search', type, query]);
       return Promise.resolve(globalHits);
     },
-    operation: (context, request) => {
+    operation: (context, request, observe) => {
       seen.push(context);
       ids.push(['operation', request]);
+      // The IDs the catalog would find in the checked request.
+      observe?.([['group', '3']]);
       return operationAnswer();
     },
   };
@@ -607,6 +609,31 @@ describe('the escape hatch in the read access', () => {
     });
     expect(seen).toEqual([context]);
     expect(ids).toEqual([['operation', request]]);
+  });
+
+  it('hands the IDs of the checked request to the audit of the call', async () => {
+    const { client } = fakeClient();
+    const found: unknown[] = [];
+    const { read } = createReadAccess(
+      client,
+      ctxWith('standard'),
+      'special',
+      true,
+      'api',
+      (domain, value) => {
+        found.push([domain, value]);
+      },
+    );
+    await read.operation({
+      operationId: 'get-groups-groupId',
+      path: { groupId: 3 },
+    });
+    expect(found).toEqual([['group', '3']]);
+    // Without a taker the read goes on as before.
+    const plain = createReadAccess(client, ctx, 'special', true, 'api');
+    await expect(
+      plain.read.operation({ operationId: 'get-groups-groupId' }),
+    ).resolves.toMatchObject({ operationId: 'get-groups-groupId' });
   });
 
   it('passes the answer unmasked with the level off, but cleaned', async () => {

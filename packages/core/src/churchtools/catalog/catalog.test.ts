@@ -12,6 +12,7 @@ import {
   excluded,
   frozenOperations,
   type GeneratedOperation,
+  type ObjectParameters,
 } from './types.js';
 
 // The lookup over a synthetic catalog (ADR 0067): each check that makes an
@@ -36,10 +37,14 @@ const operation = (
 const lookup = (
   op: GeneratedOperation,
   entry: Classification = allowed('none'),
+  objects?: ObjectParameters,
 ) =>
-  lookupOperation(op.operationId, frozenOperations([op]), {
-    [op.operationId]: entry,
-  });
+  lookupOperation(
+    op.operationId,
+    frozenOperations([op]),
+    { [op.operationId]: entry },
+    objects === undefined ? undefined : { [op.operationId]: objects },
+  );
 
 describe('lookupOperation', () => {
   it('gives a readable operation with its path and parameters', () => {
@@ -288,6 +293,112 @@ describe('lookupOperation', () => {
       ok: false,
       reason: 'kind',
     });
+  });
+
+  it('gives parameters with IDs the kind of object the table names', () => {
+    const op = operation({
+      parameters: [
+        path('thingId'),
+        {
+          name: 'person_ids[]',
+          in: 'query',
+          required: false,
+          kind: 'integer',
+          list: true,
+        },
+        { name: 'type_id', in: 'query', required: false, kind: 'integer' },
+      ],
+    });
+    expect(
+      lookup(op, allowed('special'), {
+        thingId: 'event',
+        'person_ids[]': 'person',
+        type_id: null,
+      }),
+    ).toMatchObject({
+      ok: true,
+      operation: {
+        pathParameters: [{ name: 'thingId', kind: 'integer', object: 'event' }],
+        queryParameters: [
+          { name: 'person_ids[]', object: 'person' },
+          { name: 'type_id', kind: 'integer' },
+        ],
+      },
+    });
+    const found = lookup(op, allowed('special'), { type_id: null });
+    expect(found.ok && found.operation.queryParameters[1]).not.toHaveProperty(
+      'object',
+    );
+  });
+
+  it('gives kinds of object to the path parameters of every safe kind', () => {
+    const op = operation({
+      path: '/api/things/{thingId}/{day}/{kind}/{guid}',
+      parameters: [
+        path('thingId'),
+        path('day', 'date'),
+        {
+          name: 'kind',
+          in: 'path',
+          required: true,
+          kind: 'enum',
+          values: ['a'],
+        },
+        path('guid', 'string'),
+      ],
+    });
+    const found = lookup(op, allowed('none', { guid: 'guid' }), {
+      thingId: 'event',
+      day: 'calendar',
+      kind: 'song',
+      guid: 'wiki_page',
+    });
+    expect(
+      found.ok && found.operation.pathParameters.map((entry) => entry.object),
+    ).toEqual(['event', 'calendar', 'song', 'wiki_page']);
+  });
+
+  it('refuses a table of IDs with an unknown parameter or kind', () => {
+    for (const objects of [
+      { other: 'event' },
+      { Accept: 'event' },
+      { thingId: 'mustermann' },
+    ] as unknown as ObjectParameters[]) {
+      const op = operation({
+        parameters: [
+          path('thingId'),
+          { name: 'Accept', in: 'header', required: false, kind: 'string' },
+        ],
+      });
+      expect(lookup(op, allowed('none'), objects)).toEqual({
+        ok: false,
+        reason: 'kind',
+      });
+    }
+  });
+
+  it('reads no kind of object from the prototype of the table', () => {
+    const op = operation({
+      path: '/api/things/{toString}',
+      parameters: [path('toString')],
+    });
+    expect(lookup(op, allowed('none'), {})).toMatchObject({
+      ok: true,
+      operation: { pathParameters: [{ name: 'toString', kind: 'integer' }] },
+    });
+    const found = lookupOperation(op.operationId, frozenOperations([op]), {
+      [op.operationId]: allowed('none'),
+    });
+    expect(found.ok && found.operation.pathParameters[0]).not.toHaveProperty(
+      'object',
+    );
+    const empty = lookupOperation(
+      op.operationId,
+      frozenOperations([op]),
+      { [op.operationId]: allowed('none') },
+      { [op.operationId]: undefined as unknown as ObjectParameters },
+    );
+    expect(empty).toMatchObject({ ok: true });
   });
 
   it('reads an operation without path parameters', () => {

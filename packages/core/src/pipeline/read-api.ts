@@ -49,6 +49,7 @@ import {
   listReadableOperations,
   tooLargeAnswer,
 } from '../churchtools/index.js';
+import type { ObjectDomain } from '../audit/index.js';
 import { renderForeignJson } from '../redaction/index.js';
 
 /** Read access of one call and the way to end it. */
@@ -73,6 +74,9 @@ export interface ReadAccess {
  * @param domain - The area of the calling tool. Only a tool of the
  *   sensitivity `special` in the area `api` may read an operation of the
  *   escape hatch; any other gets `policy_denied` (ADR 0067).
+ * @param onObjectRef - Takes the checked values of a read of the escape
+ *   hatch that name objects, with their kinds, before the request is sent,
+ *   for the audit of the call (ADR 0028).
  * @returns The access, frozen and without prototype.
  * @example
  * ```ts
@@ -87,6 +91,7 @@ export function createReadAccess(
   sensitivity: Sensitivity,
   asSpecial = false,
   domain?: ToolDomain,
+  onObjectRef?: (domain: ObjectDomain, value: string) => void,
 ): ReadAccess {
   let revoked = false;
   const guard = <T>(run: () => Promise<T>): Promise<T> =>
@@ -126,7 +131,13 @@ export function createReadAccess(
     return guard(async () => {
       // Each part is read once, as the client does as well.
       const { operationId, path, query } = request;
-      const answer = await client.operation(ctx, { operationId, path, query });
+      const answer = await client.operation(
+        ctx,
+        { operationId, path, query },
+        (objectRefs) => {
+          for (const [kind, value] of objectRefs) onObjectRef?.(kind, value);
+        },
+      );
       // The answer has no schema of its own; it leaves only through the
       // mask, which follows the level of redaction of the call.
       const written = renderForeignJson(answer.root, ctx.redaction);
