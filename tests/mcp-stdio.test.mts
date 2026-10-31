@@ -103,7 +103,7 @@ afterAll(() => {
 });
 
 const start = (
-  scenario: 'serve' | 'stray-line' | 'connect' | 'audit-file',
+  scenario: 'serve' | 'stray-line' | 'connect' | 'audit-file' | 'audit-ids',
   env: Readonly<Record<string, string>> = {},
 ): FixtureSession => {
   const token = makeCanary('token').value;
@@ -412,6 +412,69 @@ describe.skipIf(process.getuid?.() === 0)(
     });
   },
 );
+
+// The IDs of a call at a real audit file and the real fd 2 (ADR 0028): the
+// line in the file names the person of the input and the group of the
+// result, the copy on stderr has an empty list, and no line on stderr,
+// neither of the audit nor of the log, names either.
+describe('the IDs of a call at a real audit file', { timeout }, () => {
+  const data = makeCanary('name');
+  let stateDir = '';
+  let answer: Json = {};
+  let finished: Finished;
+
+  beforeAll(async () => {
+    stateDir = mkdtempSync(join(tmpdir(), 'ecclium-stdio-ids-'));
+    const session = start('audit-ids', {
+      STDIO_FIXTURE_STATE_DIR: stateDir,
+      STDIO_FIXTURE_DATA: data.value,
+    });
+    await modern.open(session);
+    session.send({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: modern.params({
+        name: 'ct_test_special',
+        arguments: { personId: 4711 },
+      }),
+    });
+    answer = await session.response(2);
+    finished = await session.finish();
+  }, timeout);
+
+  afterAll(() => {
+    if (stateDir !== '') rmSync(stateDir, { recursive: true, force: true });
+  });
+
+  it('gives the result', () => {
+    expect(at(answer, 'result', 'isError')).not.toBe(true);
+    expect(finished.code).toBe(0);
+  });
+
+  it('names the IDs in the line of the file', () => {
+    const folder = join(stateDir, 'audit');
+    const lines = readdirSync(folder).flatMap((name) =>
+      jsonLines(readFileSync(join(folder, name), 'utf8')),
+    );
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      tool: 'ct_test_special',
+      outcome: 'ok',
+      objectRefs: ['person:4711', 'group:815'],
+    });
+  });
+
+  it('names no ID on stderr, in the copy or in the log', () => {
+    const lines = jsonLines(finished.stderr);
+    const audit = lines.filter((line) => line['type'] === 'tool_call');
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({ outcome: 'ok', objectRefs: [] });
+    expect(lines.some((line) => line['event'] === 'tool_call')).toBe(true);
+    expect(finished.stderr).not.toMatch(/person:|group:/u);
+    expect(finished.stdout).not.toMatch(/person:|group:/u);
+  });
+});
 
 describe('the checks of the stdio test', { timeout }, () => {
   it('hand the network guard to the child', () => {
