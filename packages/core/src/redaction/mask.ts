@@ -141,8 +141,12 @@ export function maskPhone(text: string): string {
  * ends and composed after NFC, so that an umlaut written as a letter with
  * a combining mark stays one letter.
  *
+ * A name of a single sign, as many names in Chinese or Korean script are,
+ * would stay whole as its first letter, so it becomes {@link maskedValue}.
+ *
  * @param text - The last name as ChurchTools gives it.
- * @returns The first letter and a dot, or an empty text for an empty name.
+ * @returns The first letter and a dot, {@link maskedValue} for a name of
+ *   one sign, or an empty text for an empty name.
  * @example
  * ```ts
  * maskLastName('Mustermann'); // 'M.'
@@ -152,7 +156,9 @@ export function maskPhone(text: string): string {
 export function maskLastName(text: string): string {
   const value = prepare(text).normalize('NFC');
   const first = value.codePointAt(0);
-  return first === undefined ? '' : `${String.fromCodePoint(first)}.`;
+  if (first === undefined) return '';
+  const sign = String.fromCodePoint(first);
+  return sign.length === value.length ? maskedValue : `${sign}.`;
 }
 
 /**

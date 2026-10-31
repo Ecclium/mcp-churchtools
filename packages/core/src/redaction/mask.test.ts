@@ -135,7 +135,7 @@ describe('maskLastName', () => {
     [`${zeroWidth}Muster${tag}mann`, 'M.'],
     [`${u(0x1f600)}mann`, `${u(0x1f600)}.`],
     ['van Dyck', 'v.'],
-    ['M', 'M.'],
+    ['Mu', 'M.'],
   ])('shortens %j', (value, shortened) => {
     expect(maskLastName(value)).toBe(shortened);
   });
@@ -143,4 +143,12 @@ describe('maskLastName', () => {
   it.each(['', '   ', zeroWidth])('leaves an empty name empty: %j', (value) => {
     expect(maskLastName(value)).toBe('');
   });
+
+  // The first letter of a name of one sign is the whole name.
+  it.each(['M', u(0x738b), ` ${u(0xae40)} `, u(0x1f600)])(
+    'hides a name of one sign: %j',
+    (value) => {
+      expect(maskLastName(value)).toBe(maskedValue);
+    },
+  );
 });
