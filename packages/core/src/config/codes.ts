@@ -25,6 +25,7 @@ export const configProblemCodes = Object.freeze([
   'value_too_long',
   'invalid_choice',
   'invalid_integer',
+  'invalid_retention',
   'invalid_toolsets',
   'url_missing',
   ...originCodes,
@@ -50,6 +51,8 @@ export const configWarningCodes = Object.freeze([
   'events_toolset_enabled',
   'api_toolset_enabled',
   'trust_store_extended',
+  'audit_retention_short',
+  'audit_retention_without_state_dir',
 ] as const);
 
 /** What the start reports although it goes on. */

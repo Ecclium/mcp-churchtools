@@ -15,6 +15,8 @@
  * @packageDocumentation
  */
 export {
+  type AuditChainAnchor,
+  type AuditFileListener,
   type AuditFileResult,
   type AuditFileWriter,
   openAuditFile,

@@ -67,9 +67,9 @@ export const auditFieldMeanings: Readonly<Record<string, string>> =
     withheldAfterRead:
       'Der Server hat das Ergebnis gelesen, aber zurückgehalten, weil seine Zeile nicht so in die Datei kam, wie sie war. Die Zeile sagt dann `denied` mit `policy_denied`.',
     durationMs: 'Dauer des Aufrufs in Millisekunden.',
-    seq: 'Stelle der Zeile in der Hash-Kette ihrer Datei. Nur der Schreiber der Datei setzt sie, mit der Kette.',
+    seq: 'Stelle der Zeile in der Hash-Kette ihrer Datei, ab 1 für die erste ganze Zeile. Nur der Schreiber der Datei setzt sie. Ein Stück einer Zeile zählt nicht, die nächste ganze Zeile trägt dann dieselbe Stelle.',
     prevHash:
-      'SHA-256 der vorigen Zeile der Datei, bei der ersten Zeile des Namens der Datei. Nur der Schreiber der Datei setzt ihn, mit der Kette.',
+      'SHA-256 der vorigen ganzen Zeile der Datei, so wie sie dort steht, ohne ihren Zeilenumbruch, hexadezimal. Bei der ersten Zeile ist es der SHA-256 des Namens der Datei, damit sich Dateien nicht vertauschen oder umbenennen lassen. Nur der Schreiber der Datei setzt ihn.',
   });
 
 /** What each kind of object of `objectRefs` names, for operators. */

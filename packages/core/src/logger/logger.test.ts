@@ -49,8 +49,16 @@ const order = [
   'count',
   'status',
   'attempt',
+  'file',
+  'seq',
+  'hash',
   'dropped',
 ];
+const anchor = {
+  file: 'audit-2026-10-23-055230-4242-1.jsonl',
+  seq: 3,
+  hash: 'a'.repeat(64),
+};
 const isoTimestamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 /** A clock at a fixed time that counts its calls. */
@@ -122,8 +130,10 @@ describe('a log line', () => {
     const { log, lines } = make({
       bound: fullBound,
       prompts: new Set(['dienstplan_wochenende']),
+      anchors: true,
     });
     log.info('cache_skipped', {
+      ...anchor,
       attempt: 1,
       status: 404,
       count: 3,
@@ -145,12 +155,13 @@ describe('a log line', () => {
       count: 3,
       status: 404,
       attempt: 1,
+      ...anchor,
       dropped: 1,
     });
     expect(lines[0]).not.toMatch(/[\n\r]/);
   });
 
-  it('is at most 619 characters long', () => {
+  it('is at most 789 characters long', () => {
     const { log, lines } = make({
       bound: {
         tenantId: `a${'b'.repeat(62)}` as TenantId,
@@ -162,8 +173,12 @@ describe('a log line', () => {
         readOnly: false,
       },
       prompts: new Set([`a${'b'.repeat(62)}`]),
+      anchors: true,
     });
     const fields: Record<string, unknown> = {
+      file: `audit-2026-10-23-055230-${'9'.repeat(16)}-${'9'.repeat(16)}.jsonl`,
+      seq: Number.MAX_SAFE_INTEGER,
+      hash: 'f'.repeat(64),
       prompt: `a${'b'.repeat(62)}`,
       code: 'confirmation_required',
       durationMs: 86_400_000,
@@ -173,7 +188,49 @@ describe('a log line', () => {
     };
     for (let key = 0; key < maxDropped; key += 1) fields[key] = 0;
     log.debug('a'.repeat(64), fields as never);
-    expect(lines[0]).toHaveLength(619);
+    expect(lines[0]).toHaveLength(789);
+  });
+});
+
+describe('the fields of an anchor', () => {
+  it('drops them without anchors, and counts them', () => {
+    const { log, lines } = make();
+    log.info('audit_chain_anchor', anchor);
+    expect(only(lines)).toEqual({
+      ts: '2025-10-09T08:53:20.123Z',
+      level: 'info',
+      event: 'audit_chain_anchor',
+      dropped: 3,
+    });
+  });
+
+  it('keeps them with anchors, in their form only', () => {
+    const { log, parsed } = make({ anchors: true });
+    log.info('audit_chain_anchor', anchor);
+    log.info('a', { file: 'audit/audit-2026-10-23-055230-4242-1.jsonl' });
+    log.info('a', { file: 'audit-2026-10-23-055230-0-1.jsonl' });
+    log.info('a', { file: 'notes.jsonl' });
+    log.info('a', { seq: 0 });
+    log.info('a', { seq: 1.5 });
+    log.info('a', { hash: 'A'.repeat(64) });
+    log.info('a', { hash: 'a'.repeat(63) });
+    expect(
+      parsed().map((line) => [
+        line['file'],
+        line['seq'],
+        line['hash'],
+        line['dropped'],
+      ]),
+    ).toEqual([
+      [anchor.file, anchor.seq, anchor.hash, undefined],
+      ...Array.from({ length: 7 }, () => [undefined, undefined, undefined, 1]),
+    ]);
+  });
+
+  it('takes only true as anchors', () => {
+    const { log, lines } = make({ anchors: 'yes' as never });
+    log.info('audit_chain_anchor', anchor);
+    expect(only(lines)['dropped']).toBe(3);
   });
 });
 

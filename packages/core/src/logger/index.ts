@@ -9,18 +9,22 @@
  * @packageDocumentation
  */
 export {
+  auditFileNamePattern,
   hostPattern,
+  isAuditFileName,
   isBoolean,
   isErrorCode,
   isEventName,
   isIntegerIn,
   isMode,
   isRedactionLevel,
+  isSha256,
   isTenantId,
   isToolName,
   isUuid,
   modes,
   redactionLevels,
+  sha256Pattern,
   tenantIdPattern,
   timestampPattern,
   toolNamePattern,

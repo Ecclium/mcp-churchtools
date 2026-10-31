@@ -96,7 +96,7 @@ const auditFolder = join(stateDir, 'audit');
 let broken = false;
 const withFile = scenario === 'audit-file' || scenario === 'audit-ids';
 const opened = withFile
-  ? openAuditFile({ stateDir, clock, pid: process.pid })
+  ? openAuditFile({ stateDir, clock, pid: process.pid, retentionMonths: 12 })
   : undefined;
 if (opened !== undefined && !opened.ok) throw new Error(opened.code);
 // ct_example_profile names a person, so its result needs its line in an

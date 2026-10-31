@@ -39,6 +39,7 @@ const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
   redaction: 'Maskierung',
   toolsets: 'Toolsets',
   stateDir: 'Zustandsordner',
+  auditRetentionMonths: 'Frist in Monaten',
   stdioSubject: 'Subjekt über stdio',
   logLevel: 'Stufe des Logs',
 });

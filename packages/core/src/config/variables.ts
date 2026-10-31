@@ -32,6 +32,7 @@ export const variableNames = Object.freeze([
   'ECCLIUM_REDACTION',
   'ECCLIUM_TOOLSETS',
   'ECCLIUM_STATE_DIR',
+  'ECCLIUM_AUDIT_RETENTION_MONTHS',
   'ECCLIUM_STDIO_SUBJECT',
   'ECCLIUM_LOG_LEVEL',
 ] as const);
@@ -198,6 +199,49 @@ export function isRequestsPerMinute(value: string): boolean {
 }
 
 /**
+ * The range of the retention of the audit files in whole months
+ * (ADR 0028).
+ */
+export const retentionMonthsRange = Object.freeze({ min: 1, max: 120 });
+
+/**
+ * The retention below which every start warns: one year, as Art. 4 DSV
+ * asks of a log, which also covers the six months of the KDG-DVO
+ * (ADR 0028).
+ */
+export const recommendedRetentionMonths = 12;
+
+/**
+ * Tells whether a value is a whole number of months for the retention:
+ * digits only, no leading zero, within {@link retentionMonthsRange}.
+ * Checked sign by sign, like the requests per minute.
+ *
+ * @param value - The value as given.
+ * @returns Whether it fits.
+ * @example
+ * ```ts
+ * isRetentionMonths('12'); // true
+ * isRetentionMonths('012'); // false
+ * isRetentionMonths('121'); // false
+ * ```
+ */
+export function isRetentionMonths(value: string): boolean {
+  if (typeof value !== 'string' || value.length < 1 || value.length > 3) {
+    return false;
+  }
+  let number = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x30 || code > 0x39) return false;
+    if (index === 0 && code === 0x30) return false;
+    number = number * 10 + (code - 0x30);
+  }
+  return (
+    number >= retentionMonthsRange.min && number <= retentionMonthsRange.max
+  );
+}
+
+/**
  * The value of `ECCLIUM_TOOLSETS` that turns on every toolset but `api`
  * (ADR 0062, ADR 0067).
  */
@@ -351,6 +395,15 @@ export const variables: readonly Variable[] = Object.freeze([
     stdioOnly: true,
   }),
   row({
+    name: 'ECCLIUM_AUDIT_RETENTION_MONTHS',
+    kind: 'integer',
+    maxLength: 3,
+    choices: [],
+    defaultValue: String(recommendedRetentionMonths),
+    secret: false,
+    stdioOnly: true,
+  }),
+  row({
     name: 'ECCLIUM_STDIO_SUBJECT',
     kind: 'subject',
     maxLength: 32,
@@ -405,6 +458,10 @@ export const variableSchemas: Readonly<
     .min(1)
     .max(maxStateDirLength)
     .refine((value) => isNormalizedAbsolutePath(value)),
+  ECCLIUM_AUDIT_RETENTION_MONTHS: z
+    .string()
+    .max(3)
+    .refine((value) => isRetentionMonths(value)),
   ECCLIUM_STDIO_SUBJECT: z.string().max(32).regex(stdioSubjectPattern),
   ECCLIUM_LOG_LEVEL: choiceOf('ECCLIUM_LOG_LEVEL'),
 });
@@ -426,6 +483,8 @@ export const environmentSchema = z.strictObject({
   ECCLIUM_REDACTION: variableSchemas.ECCLIUM_REDACTION.optional(),
   ECCLIUM_TOOLSETS: variableSchemas.ECCLIUM_TOOLSETS.optional(),
   ECCLIUM_STATE_DIR: variableSchemas.ECCLIUM_STATE_DIR.optional(),
+  ECCLIUM_AUDIT_RETENTION_MONTHS:
+    variableSchemas.ECCLIUM_AUDIT_RETENTION_MONTHS.optional(),
   ECCLIUM_STDIO_SUBJECT: variableSchemas.ECCLIUM_STDIO_SUBJECT.optional(),
   ECCLIUM_LOG_LEVEL: variableSchemas.ECCLIUM_LOG_LEVEL.optional(),
 });

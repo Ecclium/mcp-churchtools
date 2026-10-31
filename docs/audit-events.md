@@ -44,8 +44,8 @@ Jede Zeile ist ein JSON-Objekt auf einer Zeile. Mit `ECCLIUM_STATE_DIR` geht sie
 | `errorCode` | `config`, `auth`, `permission`, `not_found`, `validation`, `conflict`, `rate_limited`, `upstream`, `network`, `policy_denied`, `confirmation_required`, `license_required`, `internal` | nein | ja | Fehlercode bei `error` und `denied`. |
 | `withheldAfterRead` | `true` | nein | nein | Der Server hat das Ergebnis gelesen, aber zurückgehalten, weil seine Zeile nicht so in die Datei kam, wie sie war. Die Zeile sagt dann `denied` mit `policy_denied`. |
 | `durationMs` | ganze Zahl von 0 bis 86'400'000 | ja | ja | Dauer des Aufrufs in Millisekunden. |
-| `seq` | ganze Zahl von 0 bis 9'007'199'254'740'991 | nein | nein | Stelle der Zeile in der Hash-Kette ihrer Datei. Nur der Schreiber der Datei setzt sie, mit der Kette. |
-| `prevHash` | Text nach festem Muster, höchstens 64 Zeichen | nein | nein | SHA-256 der vorigen Zeile der Datei, bei der ersten Zeile des Namens der Datei. Nur der Schreiber der Datei setzt ihn, mit der Kette. |
+| `seq` | ganze Zahl von 1 bis 9'007'199'254'740'991 | nein | nein | Stelle der Zeile in der Hash-Kette ihrer Datei, ab 1 für die erste ganze Zeile. Nur der Schreiber der Datei setzt sie. Ein Stück einer Zeile zählt nicht, die nächste ganze Zeile trägt dann dieselbe Stelle. |
+| `prevHash` | Text nach festem Muster, höchstens 64 Zeichen | nein | nein | SHA-256 der vorigen ganzen Zeile der Datei, so wie sie dort steht, ohne ihren Zeilenumbruch, hexadezimal. Bei der ersten Zeile ist es der SHA-256 des Namens der Datei, damit sich Dateien nicht vertauschen oder umbenennen lassen. Nur der Schreiber der Datei setzt ihn. |
 
 ## Bereiche der Kennungen
 

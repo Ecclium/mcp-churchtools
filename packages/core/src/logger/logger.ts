@@ -19,6 +19,7 @@ import type {
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import {
+  isAuditFileName,
   isBoolean,
   isErrorCode,
   isEventName,
@@ -26,6 +27,7 @@ import {
   isMode,
   isPromptName,
   isRedactionLevel,
+  isSha256,
   isTenantId,
   isToolName,
   isUuid,
@@ -83,6 +85,14 @@ export interface LoggerOptions {
    * the field for text of its own. Without it the field is always dropped.
    */
   readonly prompts?: ReadonlySet<string>;
+  /**
+   * Whether a line may carry the anchor of the chain of an audit file in
+   * `file`, `seq` and `hash`, which only the composition root sets for the
+   * logger it hands the writer of the audit file (ADR 0028). Without it
+   * the three fields are dropped and counted, so that no tool can write a
+   * hash or a name of a file into the log. Only `true` turns it on.
+   */
+  readonly anchors?: boolean;
 }
 
 /** The event of a line whose event name broke the pattern. */
@@ -121,8 +131,20 @@ const fields: readonly Field[] = Object.freeze(
     { name: 'count', bound: false, check: isIntegerIn(0, 1_000_000) },
     { name: 'status', bound: false, check: isIntegerIn(100, 599) },
     { name: 'attempt', bound: false, check: isIntegerIn(1, 10) },
+    // The anchor of the chain of an audit file, only for the logger the
+    // composition root makes with anchors (ADR 0028).
+    { name: 'file', bound: false, check: isAuditFileName },
+    {
+      name: 'seq',
+      bound: false,
+      check: isIntegerIn(1, Number.MAX_SAFE_INTEGER),
+    },
+    { name: 'hash', bound: false, check: isSha256 },
   ].map((field) => Object.freeze(field)),
 );
+
+// The fields only a logger with anchors may write.
+const anchorFields: readonly string[] = Object.freeze(['file', 'seq', 'hash']);
 
 const emptyRecord = (): Record<string, LogValue> =>
   Object.create(null) as Record<string, LogValue>;
@@ -197,8 +219,12 @@ interface Admitted {
 
 // The fields of one call that may stand in a line. Every own key that does
 // not make it into the line counts as dropped, also a name of a prompt that
-// is not one of the logger.
-const admit = (input: unknown, prompts: ReadonlySet<string>): Admitted => {
+// is not one of the logger and a field of an anchor without anchors.
+const admit = (
+  input: unknown,
+  prompts: ReadonlySet<string>,
+  anchors: boolean,
+): Admitted => {
   if (input === undefined) return { values: emptyRecord(), dropped: 0 };
   try {
     if (!isPlainObject(input)) return { values: emptyRecord(), dropped: 1 };
@@ -210,7 +236,8 @@ const admit = (input: unknown, prompts: ReadonlySet<string>): Admitted => {
       const value = ownValue(input, field.name);
       if (
         field.check(value) &&
-        (field.name !== 'prompt' || prompts.has(value as string))
+        (field.name !== 'prompt' || prompts.has(value as string)) &&
+        (anchors || !anchorFields.includes(field.name))
       ) {
         values[field.name] = value as LogValue;
         accepted += 1;
@@ -237,7 +264,8 @@ const timestamp = (clock: Clock): string => {
  * `event`, then the bound fields and the fields of the call in a fixed
  * order, then `dropped` if fields were dropped. A call may set only
  * `prompt`, with a name from `prompts`, `code`, `durationMs`, `count`,
- * `status` and `attempt`; everything else is dropped and counted. An event name that breaks the pattern becomes
+ * `status` and `attempt`, and with `anchors` also `file`, `seq` and
+ * `hash`; everything else is dropped and counted. An event name that breaks the pattern becomes
  * `invalid_event`. Fields are read as own data properties of a plain
  * object, so no getter, proxy trap or coercion of the caller runs.
  *
@@ -266,6 +294,8 @@ export function createLogger(options: LoggerOptions): Logger {
   }
   const boundValues = readBound(bound);
   const prompts = readPrompts(options.prompts);
+  // Only true counts, also from a caller without types.
+  const anchors = options.anchors === true;
   let busy = false;
 
   const log = (level: LogLevel, event: unknown, input: unknown): void => {
@@ -276,7 +306,7 @@ export function createLogger(options: LoggerOptions): Logger {
       line['ts'] = timestamp(clock);
       line['level'] = level;
       line['event'] = isEventName(event) ? event : replacedEventName;
-      const { values, dropped } = admit(input, prompts);
+      const { values, dropped } = admit(input, prompts, anchors);
       for (const field of fields) {
         const value = (field.bound ? boundValues : values)[field.name];
         if (value !== undefined) line[field.name] = value;

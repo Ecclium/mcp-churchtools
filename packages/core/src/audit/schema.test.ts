@@ -85,10 +85,16 @@ describe('auditEventV1Schema', () => {
       pluginHashes: ['b'.repeat(64)],
       dataProtectionRegime: 'ch_dsg',
       errorCode: 'policy_denied',
-      seq: 0,
+      seq: 1,
       prevHash: 'c'.repeat(64),
     };
     expect(passes(auditEventV1Schema, full)).toBe(true);
+  });
+
+  it('counts seq from 1, as the chain of a file does', () => {
+    expect(passes(auditEventV1Schema, { ...valid, seq: 0 })).toBe(false);
+    expect(passes(auditEventV1Schema, { ...valid, seq: 1.5 })).toBe(false);
+    expect(passes(auditEventV1Schema, { ...valid, seq: 1 })).toBe(true);
   });
 
   it('refuses an unknown key, also inside actor and provider', () => {

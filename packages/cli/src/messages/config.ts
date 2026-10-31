@@ -111,6 +111,7 @@ const urlLength =
 const tokenFile = quote('ECCLIUM_CHURCHTOOLS_TOKEN_FILE');
 const tokenVariable = quote('ECCLIUM_CHURCHTOOLS_TOKEN');
 const stateDir = quote('ECCLIUM_STATE_DIR');
+const retention = quote('ECCLIUM_AUDIT_RETENTION_MONTHS');
 const toolsets = quote('ECCLIUM_TOOLSETS');
 const personsToolset = quote('persons');
 const eventsToolset = quote('events');
@@ -259,6 +260,12 @@ const problems: Readonly<
       `Der Wert von ${name} ist keine erlaubte Zahl.`,
       'Erlaubt ist eine ganze Zahl von 1 bis 500, nur mit Ziffern und ohne Null am Anfang.',
       'Setzen Sie eine Zahl in diesem Bereich oder entfernen Sie die Variable, dann gilt die Voreinstellung 300.',
+    ),
+  invalid_retention: (name = retention) =>
+    message(
+      `Der Wert von ${name} ist keine erlaubte Zahl von Monaten.`,
+      'Erlaubt ist eine ganze Zahl von 1 bis 120, nur mit Ziffern und ohne Null am Anfang.',
+      'Setzen Sie eine Zahl in diesem Bereich oder entfernen Sie die Variable, dann bleiben die Audit-Dateien zwölf Monate.',
     ),
   url_missing: (name = url) =>
     message(
@@ -463,6 +470,7 @@ const problems: Readonly<
           'Entfernen Sie die Variable für den Betrieb über HTTP.',
         );
       case 'ECCLIUM_STATE_DIR':
+      case 'ECCLIUM_AUDIT_RETENTION_MONTHS':
         return message(
           `${quote(raw)} gilt vorerst nur im Betrieb über stdio.`,
           'Für den Betrieb über HTTP folgt die Audit-Datei mit einer späteren Version.',
@@ -659,6 +667,18 @@ const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({
     'Node.js vertraut nicht nur den mitgelieferten Zertifizierungsstellen.',
     'Mindestens eine der Einstellungen ‹NODE_EXTRA_CA_CERTS›, ‹NODE_USE_SYSTEM_CA›, ‹SSL_CERT_FILE›, ‹SSL_CERT_DIR›, ‹--use-system-ca› und ‹--use-openssl-ca› ist gesetzt. Wer eine der zusätzlichen Zertifizierungsstellen kontrolliert, kann sich als Ihre ChurchTools-Instanz ausgeben und das Token mitlesen.',
     'Behalten Sie die Einstellung nur, wenn das Zertifikat Ihrer Instanz von einer eigenen Zertifizierungsstelle stammt. Sonst entfernen Sie sie aus der Konfiguration des KI-Assistenten.',
+  ),
+  // On every start, because a retention below a year is shorter than what
+  // Art. 4 DSV asks of a log (ADR 0028). It is allowed all the same.
+  audit_retention_short: message(
+    `Die Audit-Dateien bleiben nach ${retention} weniger als zwölf Monate.`,
+    'Nach Ablauf der Frist löscht Ecclium sie, auch ältere Dateien, die schon im Ordner liegen, und auch die anderer Einträge mit demselben Zustandsordner. Verlangt Ihr Recht ein Protokoll der Zugriffe, ist das oft kürzer als gefordert, die Datenschutzverordnung der Schweiz etwa verlangt mindestens ein Jahr.',
+    `Prüfen Sie, wie lange Ihr Recht das Protokoll verlangt, und setzen Sie ${retention} danach oder entfernen Sie die Variable für zwölf Monate.`,
+  ),
+  audit_retention_without_state_dir: message(
+    `${retention} ist gesetzt, ${stateDir} aber nicht.`,
+    'Ohne den Zustandsordner schreibt Ecclium keine Audit-Datei, und die Frist bewirkt nichts.',
+    `Setzen Sie ${stateDir} auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 oder entfernen Sie ${retention}.`,
   ),
 });
 

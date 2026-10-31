@@ -55,6 +55,17 @@ export const hostPattern =
 /** A time in ISO 8601, in UTC, with milliseconds and a year of four digits. */
 export const timestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
+/** A SHA-256 in lower-case hex, also for the schema of the audit. */
+export const sha256Pattern = /^[0-9a-f]{64}$/;
+
+/**
+ * The name of an audit file, never a path: the UTC day and time of its
+ * opening, the ID of the process and a number in that process, such as
+ * `audit-2026-10-23-055230-4242-1.jsonl` (ADR 0028). Never give it a flag.
+ */
+export const auditFileNamePattern =
+  /^audit-\d{4}-\d{2}-\d{2}-\d{6}-[1-9]\d{0,15}-[1-9]\d{0,15}\.jsonl$/;
+
 const matches = (
   value: unknown,
   pattern: RegExp,
@@ -98,6 +109,24 @@ export const isToolName = (value: unknown): value is ToolName =>
  */
 export const isPromptName = (value: unknown): value is string =>
   matches(value, promptNamePattern, 63);
+
+/**
+ * Tells whether a value is a SHA-256 in lower-case hex.
+ *
+ * @param value - Any value.
+ * @returns Whether it fits.
+ */
+export const isSha256 = (value: unknown): value is string =>
+  matches(value, sha256Pattern, 64);
+
+/**
+ * Tells whether a value is the name of an audit file, without a folder.
+ *
+ * @param value - Any value.
+ * @returns Whether it fits.
+ */
+export const isAuditFileName = (value: unknown): value is string =>
+  matches(value, auditFileNamePattern, 63);
 
 /**
  * Tells whether a value is a UUID in lower case, as `randomUUID` makes it.
