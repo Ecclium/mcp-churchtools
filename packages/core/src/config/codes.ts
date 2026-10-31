@@ -33,8 +33,8 @@ export const configProblemCodes = Object.freeze([
   'token_missing',
   'token_conflict',
   ...tokenFileCodes,
-  'redaction_strict_unsupported',
   ...pseudonymKeyFileCodes,
+  'pseudonym_key_missing',
   'pseudonym_key_previous_without_current',
   'pseudonym_key_same',
   'stdio_only',
@@ -42,6 +42,7 @@ export const configProblemCodes = Object.freeze([
   'subject_reserved',
   ...stateDirCodes,
   'toolsets_without_state_dir',
+  'redaction_strict_with_api',
   'state_dir_required',
 ] as const);
 

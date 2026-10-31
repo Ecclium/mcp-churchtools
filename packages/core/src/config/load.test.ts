@@ -165,11 +165,12 @@ const withKeys = (
   key: TokenFileSystem | undefined,
   previous?: TokenFileSystem,
   transport: Transport = 'stdio',
+  extra: Environment = {},
 ): ConfigResult => {
   const files: Record<string, TokenFileSystem> = {
     [tokenPath]: memoryFiles().fs,
   };
-  const environment: Environment = { ...valid() };
+  const environment: Environment = { ...valid(), ...extra };
   if (key !== undefined) {
     files[keyPath] = key;
     environment['ECCLIUM_PSEUDONYM_KEY_FILE'] = keyPath;
@@ -1225,14 +1226,59 @@ describe('loadConfig and refused settings', () => {
     },
   );
 
+  // strict turns IDs of persons into pseudonyms with the key (ADR 0069).
   it.each(['stdio', 'http'] as const)(
-    'refuses strict redaction over %s',
+    'takes strict redaction with a key over %s',
+    (transport) => {
+      const result = withKeys(keyFile('a'), undefined, transport, {
+        ECCLIUM_REDACTION: 'strict',
+      });
+      expect(result.ok && result.config.redaction).toBe('strict');
+    },
+  );
+
+  it.each(['stdio', 'http'] as const)(
+    'refuses strict redaction without a key over %s',
     (transport) => {
       expect(
         problems(load({ ...valid(), ECCLIUM_REDACTION: 'strict' }, transport)),
-      ).toEqual([['redaction_strict_unsupported', 'ECCLIUM_REDACTION']]);
+      ).toEqual([['pseudonym_key_missing', 'ECCLIUM_PSEUDONYM_KEY_FILE']]);
     },
   );
+
+  it('names only the problem of a key file that strict cannot read', () => {
+    expect(
+      problems(
+        withKeys(
+          memoryFiles(keyHex('a').toUpperCase()).fs,
+          undefined,
+          'stdio',
+          { ECCLIUM_REDACTION: 'strict' },
+        ),
+      ),
+    ).toEqual([['pseudonym_key_invalid', 'ECCLIUM_PSEUDONYM_KEY_FILE']]);
+  });
+
+  // The answers of the escape hatch have no known schema (ADR 0069).
+  it.each(['api', 'all,api'])(
+    'refuses strict redaction with the toolsets %s',
+    (toolsets) => {
+      const result = withKeys(keyFile('a'), undefined, 'http', {
+        ECCLIUM_REDACTION: 'strict',
+        ECCLIUM_TOOLSETS: toolsets,
+      });
+      expect(problems(result)).toEqual([
+        ['redaction_strict_with_api', 'ECCLIUM_TOOLSETS'],
+      ]);
+      expect(result.report.warnings).toContain('api_toolset_enabled');
+    },
+  );
+
+  it('takes the toolset api with the redaction standard', () => {
+    expect(
+      withKeys(keyFile('a'), undefined, 'http', { ECCLIUM_TOOLSETS: 'api' }).ok,
+    ).toBe(true);
+  });
 
   it('allows redaction off over stdio only, with a warning', () => {
     const overHttp = load({ ...valid(), ECCLIUM_REDACTION: 'off' }, 'http');
@@ -1704,8 +1750,13 @@ describe('loadConfig and its problems', () => {
     token_file_unsafe: () => load(valid(), 'stdio', failingOpen('ENOTDIR')),
     token_invalid: () =>
       load(valid(), 'stdio', memoryFiles('xxREDACTEDxx\n').fs),
-    redaction_strict_unsupported: () =>
+    pseudonym_key_missing: () =>
       load({ ...valid(), ECCLIUM_REDACTION: 'strict' }),
+    redaction_strict_with_api: () =>
+      withKeys(keyFile('a'), undefined, 'http', {
+        ECCLIUM_REDACTION: 'strict',
+        ECCLIUM_TOOLSETS: 'api',
+      }),
     pseudonym_key_file_relative: () =>
       load({ ...valid(), ECCLIUM_PSEUDONYM_KEY_FILE: 'pseudonym-key' }),
     // The token comes from the environment, so that only the key file meets
