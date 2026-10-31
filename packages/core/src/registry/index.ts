@@ -29,6 +29,7 @@ export {
 export {
   checkInputRefs,
   collectInputRefs,
+  holdsPersons,
   type InputRefNode,
   type InputShape,
 } from './input-refs.js';

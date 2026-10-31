@@ -86,6 +86,11 @@ export interface OutputShape {
    * which tools it treats like special ones (ADR 0064).
    */
   readonly namesPersons: boolean;
+  /**
+   * Whether a leaf holds the ID of a person, the class `personId`, which
+   * the level `strict` turns into a pseudonym (ADR 0069).
+   */
+  readonly personIds: boolean;
 }
 
 /**
@@ -356,6 +361,7 @@ class OutputWalk {
   unclassified = 0;
   personal = false;
   namesPersons = false;
+  personIds = false;
 
   // Returns undefined for any form the registry does not accept.
   visit(schema: unknown, depth: number): ShapeNode | undefined {
@@ -561,6 +567,7 @@ class OutputWalk {
     }
     if (personalClasses.includes(dataClass)) this.personal = true;
     if (personNameClasses.includes(dataClass)) this.namesPersons = true;
+    if (dataClass === 'personId') this.personIds = true;
   }
 }
 
@@ -593,7 +600,7 @@ class OutputWalk {
  * ```ts
  * checkOutputSchema(z.object({ id: classify(z.number(), 'personId') }));
  * // { root: …, unclassified: 0, minimumSensitivity: 'personal',
- * //   namesPersons: true }
+ * //   namesPersons: true, personIds: true }
  * ```
  */
 export function checkOutputSchema(schema: unknown): OutputShape | undefined {
@@ -608,6 +615,7 @@ export function checkOutputSchema(schema: unknown): OutputShape | undefined {
     unclassified: walk.unclassified,
     minimumSensitivity: walk.personal ? 'personal' : 'none',
     namesPersons: walk.namesPersons,
+    personIds: walk.personIds,
   });
 }
 

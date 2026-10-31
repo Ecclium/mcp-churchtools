@@ -6,6 +6,7 @@ import { createObjectRefCollector, type ObjectDomain } from '../audit/index.js';
 import {
   checkInputRefs,
   collectInputRefs,
+  holdsPersons,
   type InputRefNode,
 } from './input-refs.js';
 
@@ -356,5 +357,41 @@ describe('collectInputRefs', () => {
     collectInputRefs(['x'], { kind: 'tuple', items: [null] }, add);
     expect(found).toEqual([]);
     expect(calls).toBe(0);
+  });
+});
+
+describe('holdsPersons', () => {
+  const person: InputRefNode = { kind: 'leaf', domain: 'person' };
+  const group: InputRefNode = { kind: 'leaf', domain: 'group' };
+
+  it('finds a person at any depth', () => {
+    const nodes: InputRefNode[] = [
+      person,
+      { kind: 'object', fields: { a: group, b: person } },
+      { kind: 'object', fields: {}, rest: person },
+      { kind: 'list', element: person },
+      { kind: 'record', value: person },
+      { kind: 'tuple', items: [null, person] },
+      { kind: 'tuple', items: [group], rest: person },
+      { kind: 'choice', options: [group, person] },
+    ];
+    for (const node of nodes) {
+      expect(holdsPersons(node), JSON.stringify(node)).toBe(true);
+    }
+  });
+
+  it('finds none where only other objects stand', () => {
+    const nodes: InputRefNode[] = [
+      group,
+      { kind: 'object', fields: { a: group } },
+      { kind: 'object', fields: {}, rest: group },
+      { kind: 'list', element: group },
+      { kind: 'record', value: group },
+      { kind: 'tuple', items: [null, group] },
+      { kind: 'choice', options: [group] },
+    ];
+    for (const node of nodes) {
+      expect(holdsPersons(node), JSON.stringify(node)).toBe(false);
+    }
   });
 });

@@ -1,14 +1,16 @@
 import type { DataClass } from '@ecclium/mcp-churchtools-plugin-api';
 import { describe, expect, it } from 'vitest';
 
-import type { ShapeNode } from '../registry/index.js';
+import type { InputRefNode, ShapeNode } from '../registry/index.js';
 import {
   collectOutputRefs,
+  isStrictLevel,
   mapLeaves,
   markUntrusted,
   redact,
   resultBytes,
   resultReserveBytes,
+  revealInput,
 } from './stages.js';
 
 // Nodes of a kept shape. The stages read only kinds, classes and children.
@@ -345,5 +347,154 @@ describe('collectOutputRefs', () => {
     });
     expect(found({ owner: null }, shape)).toEqual([]);
     expect(found(undefined, shape)).toEqual([]);
+  });
+});
+
+describe('revealInput', () => {
+  const person: InputRefNode = { kind: 'leaf', domain: 'person' };
+  const event: InputRefNode = { kind: 'leaf', domain: 'event' };
+  // A pseudonym here is any text of the form p<digits>; the real check
+  // lives in the module of the pseudonyms.
+  const reveal = (value: unknown): number | undefined =>
+    typeof value === 'string' && value.startsWith('p')
+      ? Number(value.slice(1))
+      : undefined;
+  const node: InputRefNode = {
+    kind: 'object',
+    fields: {
+      id: person,
+      eventId: event,
+      list: { kind: 'list', element: person },
+      map: { kind: 'record', value: person },
+      pair: { kind: 'tuple', items: [person, null], rest: person },
+      plain: { kind: 'tuple', items: [null] },
+    },
+    rest: person,
+  };
+
+  it('turns pseudonyms into IDs at every place of a person, on a copy', () => {
+    const input = {
+      id: 'p1',
+      eventId: 9,
+      list: ['p2', null],
+      map: { a: 'p3' },
+      pair: ['p4', 'x', 'p5'],
+      plain: ['p6'],
+      extra: 'p7',
+    };
+    const revealed = revealInput(input, node, reveal);
+    expect(revealed).toEqual({
+      ok: true,
+      value: {
+        id: 1,
+        eventId: 9,
+        list: [2, null],
+        map: { a: 3 },
+        pair: [4, 'x', 5],
+        plain: ['p6'],
+        extra: 7,
+      },
+    });
+    expect(input.id).toBe('p1');
+    const value = (revealed as { value: object }).value;
+    expect(Object.getPrototypeOf(value)).toBe(Object.prototype);
+  });
+
+  it('keeps a key named __proto__ as an own field', () => {
+    const input = JSON.parse('{"__proto__":"p8"}') as unknown;
+    const revealed = revealInput(
+      input,
+      { kind: 'object', fields: {}, rest: person },
+      reveal,
+    );
+    expect(revealed.ok).toBe(true);
+    const value = (revealed as { value: object }).value;
+    expect(Object.getOwnPropertyDescriptor(value, '__proto__')?.value).toBe(8);
+    expect(Object.getPrototypeOf(value)).toBe(Object.prototype);
+  });
+
+  it('refuses anything at a place of a person that is no pseudonym', () => {
+    for (const input of [
+      { id: 12 },
+      { id: 'x' },
+      { list: [3] },
+      { map: { a: true } },
+      { pair: ['p1', 'x', 4] },
+      { extra: {} },
+    ]) {
+      expect(revealInput(input, node, reveal), JSON.stringify(input)).toEqual({
+        ok: false,
+      });
+    }
+  });
+
+  it('passes values of another form by, which the schema then refuses', () => {
+    for (const input of [
+      { list: 'p1', map: ['p2'], pair: { a: 'p3' } },
+      'text',
+      [{ id: 'p1' }],
+      null,
+    ]) {
+      expect(revealInput(input, node, reveal).ok, JSON.stringify(input)).toBe(
+        true,
+      );
+    }
+  });
+
+  it('reads every option of a choice and each place once', () => {
+    const choice: InputRefNode = {
+      kind: 'choice',
+      options: [
+        { kind: 'object', fields: { id: person } },
+        { kind: 'object', fields: { id: person, other: person } },
+      ],
+    };
+    expect(revealInput({ id: 'p1', other: 'p2' }, choice, reveal)).toEqual({
+      ok: true,
+      value: { id: 1, other: 2 },
+    });
+    expect(revealInput({ id: 'p1', other: 2 }, choice, reveal)).toEqual({
+      ok: false,
+    });
+  });
+});
+
+describe('redact in the level strict', () => {
+  const shape = object({
+    id: { kind: 'leaf', dataClass: 'personId', types: ['number'], ...present },
+    owner: {
+      kind: 'leaf',
+      dataClass: 'personId',
+      types: ['number'],
+      optional: false,
+      nullable: true,
+    },
+  });
+  const hide = (id: number): string => `p${String(id)}`;
+
+  it('gives the pseudonym of every ID of a person and leaves a missing one', () => {
+    expect(redact({ id: 12, owner: null }, shape, 'strict', hide)).toEqual({
+      id: 'p12',
+      owner: null,
+    });
+    expect(redact({ id: 12, owner: 13 }, shape, 'standard', hide)).toEqual({
+      id: 12,
+      owner: 13,
+    });
+  });
+
+  it('throws for an ID without hide or one that is no number', () => {
+    expect(() => redact({ id: 12 }, shape, 'strict')).toThrow(TypeError);
+    expect(() => redact({ id: '12' }, shape, 'strict', hide)).toThrow(
+      TypeError,
+    );
+  });
+
+  it('counts strict and a level the core does not know as strict', () => {
+    expect(
+      (['off', 'standard', 'strict', 'later'] as const).map((level) =>
+        isStrictLevel(level as 'strict'),
+      ),
+    ).toEqual([false, false, true, true]);
   });
 });

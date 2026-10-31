@@ -197,7 +197,7 @@ const isOptionalUuid = (value: unknown): boolean =>
  * @throws {TypeError} With a fixed message that never holds a value, when
  *   an option is not valid: a tenant or an actor that the audit refuses or
  *   that is its placeholder, an instance that is no checked origin, an
- *   unknown mode, an unknown redaction or strict, a read-only flag that is
+ *   unknown mode, an unknown redaction, a read-only flag that is
  *   no boolean, features that are no plain list of short visible names, a
  *   clock that is not frozen, a signal that is no AbortSignal, or a run,
  *   tool or event that does not fit.
@@ -231,9 +231,6 @@ export function createTenantContext(
   if (!isMode(mode)) fail('The mode is unknown.');
   const redaction = ownData(options, 'redaction');
   if (!isRedactionLevel(redaction)) fail('The redaction level is unknown.');
-  if (redaction === 'strict') {
-    fail('The redaction level strict waits for the full redaction.');
-  }
   const readOnly = ownData(options, 'readOnly');
   if (typeof readOnly !== 'boolean') {
     fail('The read-only flag is not a boolean.');

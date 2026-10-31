@@ -346,6 +346,40 @@ export function checkInputRefs(schema: unknown): InputShape | undefined {
   });
 }
 
+/**
+ * Whether the kept shape of an input holds an ID of a person anywhere,
+ * which the level `strict` takes as a pseudonym (ADR 0069).
+ *
+ * @param node - Where the IDs of an input stand.
+ * @returns Whether a leaf names a person.
+ * @example
+ * ```ts
+ * holdsPersons(shape.refs); // true for an input with a personId
+ * ```
+ */
+export function holdsPersons(node: InputRefNode): boolean {
+  switch (node.kind) {
+    case 'leaf':
+      return node.domain === 'person';
+    case 'object':
+      return (
+        Object.values(node.fields).some(holdsPersons) ||
+        (node.rest !== undefined && holdsPersons(node.rest))
+      );
+    case 'list':
+      return holdsPersons(node.element);
+    case 'record':
+      return holdsPersons(node.value);
+    case 'tuple':
+      return (
+        node.items.some((item) => item !== null && holdsPersons(item)) ||
+        (node.rest !== undefined && holdsPersons(node.rest))
+      );
+    case 'choice':
+      return node.options.some(holdsPersons);
+  }
+}
+
 // An object whose own properties can be read without running its code.
 const isPlainTarget = (value: unknown): value is object =>
   typeof value === 'object' && value !== null && !isProxy(value);

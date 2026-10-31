@@ -182,6 +182,26 @@ describe('createToolCatalog', () => {
       fields: { personId: { kind: 'leaf', domain: 'person' } },
     });
     expect(catalog.get('ct_y')?.inputRefs).toBeUndefined();
+    // Both name a person: ct_x in its input, ct_y in its output (ADR 0069).
+    expect(catalog.get('ct_x')?.personIds).toBe(true);
+    expect(catalog.get('ct_y')?.personIds).toBe(true);
+  });
+
+  it('notes a tool that names no person in input or output', () => {
+    const catalog = catalogOf({
+      core: plugin(
+        'core',
+        adding(
+          tool('ct_x', {
+            input: z.strictObject({ page: classify(z.number(), 'none') }),
+            output: z.object({ text: classify(z.string(), 'untrusted') }),
+          }),
+        ),
+      ),
+      plugins: [],
+      readOnly: true,
+    });
+    expect(catalog.get('ct_x')?.personIds).toBe(false);
   });
 
   // The pipeline replaces addresses and amounts with a marker, so the

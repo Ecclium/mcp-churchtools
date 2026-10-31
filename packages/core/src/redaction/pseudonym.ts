@@ -277,7 +277,7 @@ export interface Pseudonyms {
    * @throws {TypeError} When the ID is no such number, or the keys are
    *   erased.
    */
-  hide(id: number): string;
+  readonly hide: (id: number) => string;
   /**
    * Gives the ID of a person back. Only a pseudonym made for the same
    * tenant and principal on the day of the call or the day before opens.
@@ -286,9 +286,9 @@ export interface Pseudonyms {
    * @returns The ID, or undefined for anything else, without a reason.
    * @throws {TypeError} When the keys are erased.
    */
-  reveal(pseudonym: unknown): number | undefined;
+  readonly reveal: (pseudonym: unknown) => number | undefined;
   /** Erases the keys of the call. Afterwards both methods throw. */
-  erase(): void;
+  readonly erase: () => void;
 }
 
 /**

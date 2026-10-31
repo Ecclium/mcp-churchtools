@@ -25,7 +25,11 @@ import {
   renderDescription,
   rightsPerOperation,
 } from './description.js';
-import { checkInputRefs, type InputRefNode } from './input-refs.js';
+import {
+  checkInputRefs,
+  holdsPersons,
+  type InputRefNode,
+} from './input-refs.js';
 import { checkMeta } from './meta.js';
 import { readFields } from './own.js';
 import { checkPrompt, type PromptEntry } from './prompt.js';
@@ -79,6 +83,12 @@ export interface CatalogEntry {
    * tool cannot forget it; `unattended` stays as the tool declares it.
    */
   readonly asSpecial: boolean;
+  /**
+   * Whether the input or the output holds the ID of a person, so that a
+   * call in the level `strict` needs the pseudonyms of its principal (ADR
+   * 0069). Derived from the schemas, never from the code of the tool.
+   */
+  readonly personIds: boolean;
   /**
    * Runs the tool. It calls the function the tool had when it was added,
    * without `this`, so the tool cannot swap it later.
@@ -260,6 +270,9 @@ const checkTool = (
     output: fields.output as ZodType,
     shape,
     asSpecial,
+    personIds:
+      shape.personIds ||
+      (inputShape.refs !== undefined && holdsPersons(inputShape.refs)),
     execute: (call: ToolCall<unknown>): Promise<unknown> =>
       Reflect.apply(run, undefined, [call]) as Promise<unknown>,
   });
