@@ -143,6 +143,43 @@ export function makeCanary(kind: CanaryKind): Canary {
 }
 
 /**
+ * Makes a canary from given random parts, in the same shapes as
+ * {@link makeCanary}, for property tests that draw the parts themselves and
+ * must make the same value again from the same seed (ADR 0070).
+ *
+ * @param kind - `email` from two parts, `name` from a first and a last
+ *   name, `phone` from twelve digits.
+ * @param cores - The random parts.
+ * @returns The canary. A piece of a core counts as a leak from the same
+ *   length as in {@link makeCanary}, or the whole core when it is shorter.
+ * @example
+ * ```ts
+ * const email = canaryFrom('email', ['k3x9a2b7q1', 'm8n4p0r6t5']);
+ * email.value; // 'k3x9a2b7q1.m8n4p0r6t5@example.org'
+ * ```
+ */
+export function canaryFrom(
+  kind: Exclude<CanaryKind, 'token'>,
+  cores: readonly string[],
+): Canary {
+  const [first = '', second = ''] = cores;
+  const shortest = Math.min(...cores.map((core) => core.length));
+  const value =
+    kind === 'email'
+      ? `${first}.${second}@example.org`
+      : kind === 'name'
+        ? `${first} ${second}`
+        : `+41 0${first.slice(0, 2)} ${first.slice(2, 5)} ${first.slice(5, 7)} ${first.slice(7, 9)} ${first.slice(9)}`;
+  const length = kind === 'email' ? 8 : 12;
+  return Object.freeze({
+    kind,
+    value,
+    cores: Object.freeze([...cores]),
+    minFragment: Math.min(length, shortest),
+  });
+}
+
+/**
  * Makes one canary of each kind.
  *
  * @returns Four new canaries.

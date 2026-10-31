@@ -9,6 +9,7 @@
 export {
   assertNoCanary,
   assertPlanted,
+  canaryFrom,
   findCanaries,
   makeCanaries,
   makeCanary,
@@ -99,3 +100,13 @@ export {
   type QuotaStoreCheck,
   quotaStoreChecks,
 } from './quota/index.js';
+export { ahvOf, groupedAhv, ibanOf, printedIban } from './synthetic-numbers.js';
+export {
+  compatibilityForms,
+  hiddenCharacters,
+  lookalikeOf,
+  lookalikes,
+  searchable,
+  type VariantChoice,
+  variantOf,
+} from './variants.js';
