@@ -10,7 +10,10 @@
  * The audit sink writes into the audit file that the first stage opened,
  * if there is one (ADR 0028). The start asks ChurchTools nothing:
  * `ct_whoami` checks the token, so the token leaves the process only for a
- * call. When the connection ends, the transport closes, the event
+ * call. With an audit file, the start deletes the files of the folder
+ * `audit` past their retention, and a timer starts the file of each new
+ * UTC day also in a run without calls (ADR 0028). When the connection
+ * ends, the transport closes, the event
  * `audit_file_closed` counts the lines the audit file lost, the file
  * closes with the anchor of its chain, `audit_chain_anchor`, if it has a
  * line, the event `stdio_closed` counts the lines stderr lost, and the
@@ -131,6 +134,8 @@ const sigtermEvent = 'process_sigterm';
 const sigintEvent = 'process_sigint';
 const auditFileClosedEvent = 'audit_file_closed';
 const anchorEvent = 'audit_chain_anchor';
+const filesDeletedEvent = 'audit_files_deleted';
+const filesKeptEvent = 'audit_files_not_deleted';
 const closedEvent = 'stdio_closed';
 
 /**
@@ -143,6 +148,20 @@ export const closeDeadlineMs = 5000;
 
 // The highest count a log line takes.
 const maxCount = 1_000_000;
+
+const dayMs = 86_400_000;
+
+/**
+ * Milliseconds from a time to one second after the next UTC midnight,
+ * when the timer of a long run starts the file of the new day.
+ *
+ * @param now - Milliseconds since the Unix epoch, from the clock.
+ * @returns The delay, or an hour when the time is no finite number.
+ */
+export const untilNextDay = (now: number): number =>
+  Number.isFinite(now)
+    ? dayMs - (((now % dayMs) + dayMs) % dayMs) + 1000
+    : 3_600_000;
 
 // The process itself. Only properties are used: loading node:process
 // would make fd 1 and fd 2 non-blocking (ADR 0054).
@@ -221,8 +240,10 @@ export function serve(options: ServeOptions): ExitCode | undefined {
   // log: the count of lost lines is the only trace of that loss, and the
   // signal explains the exit code (ADR 0054).
   const processLogger = createLogger({ writer, clock, minLevel: 'info' });
-  // The anchors of the chain of the audit file, at every level of the log
-  // as well, and only this logger may write their fields (ADR 0028).
+  // The anchors of the chain of the audit file and the counts of its
+  // sweeps, at every level of the log as well. Only this logger may write
+  // the fields of an anchor (ADR 0028).
+  let dayTimer: ReturnType<typeof setTimeout> | undefined;
   if (auditFile !== undefined) {
     const anchorLogger = createLogger({
       writer,
@@ -234,7 +255,37 @@ export function serve(options: ServeOptions): ExitCode | undefined {
       anchor: ({ file, seq, hash }) => {
         anchorLogger.info(anchorEvent, { file, seq, hash });
       },
+      swept: ({ deleted, kept, complete }) => {
+        if (deleted > 0) {
+          processLogger.info(filesDeletedEvent, {
+            count: Math.min(deleted, maxCount),
+          });
+        }
+        if (kept > 0 || !complete) {
+          processLogger.warn(
+            filesKeptEvent,
+            kept > 0 ? { count: Math.min(kept, maxCount) } : {},
+          );
+        }
+      },
     });
+    // At the start, and then on each new UTC day through the timer, also
+    // without a call. unref, so that the timer holds nothing.
+    auditFile.sweep();
+    const file = auditFile;
+    const nextDay = (): void => {
+      let now = Number.NaN;
+      try {
+        now = clock.now();
+      } catch {
+        // An hour, and then the clock again.
+      }
+      dayTimer = setTimeout(() => {
+        file.tick();
+        nextDay();
+      }, untilNextDay(now)).unref();
+    };
+    nextDay();
   }
 
   const crash =
@@ -333,6 +384,7 @@ export function serve(options: ServeOptions): ExitCode | undefined {
       }
       // After the transport: a call that still ends writes its line into
       // the file. stdio_closed stays the last line.
+      clearTimeout(dayTimer);
       if (auditFile !== undefined) {
         processLogger.info(auditFileClosedEvent, {
           count: Math.min(auditFile.counts().failed, maxCount),
@@ -347,6 +399,7 @@ export function serve(options: ServeOptions): ExitCode | undefined {
   } catch (error) {
     logger.error(startFailedEvent, { code: codeOf(error) });
     void transport?.close().catch(() => undefined);
+    clearTimeout(dayTimer);
     auditFile?.close();
     return exitCodes.internal;
   }

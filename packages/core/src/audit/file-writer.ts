@@ -13,6 +13,11 @@
  * writer never parses a line; it puts the two fields before the last brace
  * of the object it is given (ADR 0028).
  *
+ * The writer also deletes: its own file, when it gives the file up without
+ * a line, and at the start and on each new UTC day the files of the folder
+ * `audit` past their retention and the empty ones of earlier days. Only
+ * names of exactly its own form count, never a link (ADR 0028).
+ *
  * Only the composition root reaches it, through the subpath
  * `./composition` of core. Besides the rule for a line and the timestamp of
  * the logger it loads only `node:crypto`, `node:fs`, `node:path` and
@@ -31,6 +36,8 @@ import {
   lstatSync,
   mkdirSync,
   openSync,
+  readdirSync,
+  unlinkSync,
   writeSync,
 } from 'node:fs';
 import { isProxy } from 'node:util/types';
@@ -44,6 +51,7 @@ import {
   maxLineLength,
   toTimestamp,
 } from '../logger/index.js';
+import { dayOfAuditFile, dayOfTime, isPastRetention } from './retention.js';
 
 /**
  * Why the audit file could not be opened, frozen. A code never carries a
@@ -69,6 +77,10 @@ export interface AuditFileStats {
   readonly nlink: number;
   readonly dev: number;
   readonly ino: number;
+  /** The size in bytes. */
+  readonly size: number;
+  /** The time of the last change, in milliseconds since the epoch. */
+  readonly mtimeMs: number;
 }
 
 /**
@@ -89,6 +101,10 @@ export interface AuditFileSystem {
   readonly closeSync: (fd: number) => void;
   /** Flushes a file to the disk. */
   readonly fsyncSync: (fd: number) => void;
+  /** The names in a folder. */
+  readonly readdirSync: (path: string) => string[];
+  /** Removes a name; never follows a link. */
+  readonly unlinkSync: (path: string) => void;
   /** The ID of the user, or undefined on a platform without one. */
   readonly getuid: () => number | undefined;
   readonly constants: {
@@ -111,6 +127,11 @@ export interface AuditFileOptions {
   readonly clock: Clock;
   /** The ID of the process, part of the name of the file. */
   readonly pid: number;
+  /**
+   * How many months the files stay before the writer deletes them, a whole
+   * number from 1 to 120 (ADR 0028).
+   */
+  readonly retentionMonths: number;
   /** The file functions, only for tests. */
   readonly fs?: AuditFileSystem;
 }
@@ -155,6 +176,28 @@ export interface AuditFileListener {
    * lost one. A file without a line has no anchor.
    */
   readonly anchor: (anchor: AuditChainAnchor) => void;
+  /**
+   * Gets the counts of each sweep of the folder `audit`, at the start and
+   * on each new UTC day.
+   */
+  readonly swept: (sweep: AuditSweep) => void;
+}
+
+/** What one sweep of the folder `audit` did, without a name or a path. */
+export interface AuditSweep {
+  /** Files it deleted. */
+  readonly deleted: number;
+  /**
+   * Files past their retention, or empty ones of an earlier day, that it
+   * left: a link, a folder, a file of another owner, with rights for
+   * others or more than one link, or one whose deletion failed.
+   */
+  readonly kept: number;
+  /**
+   * Whether it saw the whole folder: false when the folder could not be
+   * read or was no longer the one opened.
+   */
+  readonly complete: boolean;
 }
 
 /** The open audit file. */
@@ -188,11 +231,21 @@ export interface AuditFileWriter extends LineWriter {
    * before goes nowhere. It never throws, and a listener that throws
    * changes nothing.
    *
-   * @param listener - Gets the anchors.
+   * @param listener - Gets the anchors and the sweeps.
    * @returns Whether it was attached: false for a second listener or one
-   *   without the function.
+   *   without both functions.
    */
   attach(listener: AuditFileListener): boolean;
+  /**
+   * Deletes the files of the folder `audit` past their retention and the
+   * empty files of earlier days, as at the start. It never throws.
+   */
+  sweep(): void;
+  /**
+   * Starts the file of a new UTC day when the clock shows one, also
+   * without a line, for a timer in a long run. It never throws.
+   */
+  tick(): void;
   /**
    * Returns the counts.
    *
@@ -272,6 +325,8 @@ const nodeFileSystem: AuditFileSystem = Object.freeze({
   writeSync,
   closeSync,
   fsyncSync,
+  readdirSync: (path: string) => readdirSync(path),
+  unlinkSync,
   getuid: () => process.getuid?.(),
   constants,
 });
@@ -374,16 +429,25 @@ const isPrivate = (stats: AuditFileStats, uid: number): boolean =>
  * ```
  */
 export function openAuditFile(options: AuditFileOptions): AuditFileResult {
-  const { stateDir, clock, pid, fs = nodeFileSystem } = options;
+  const {
+    stateDir,
+    clock,
+    pid,
+    retentionMonths,
+    fs = nodeFileSystem,
+  } = options;
   if (
     typeof stateDir !== 'string' ||
     !isNormalizedAbsolutePath(stateDir) ||
     typeof (clock as Partial<Clock> | null)?.now !== 'function' ||
     !Number.isSafeInteger(pid) ||
-    pid < 1
+    pid < 1 ||
+    !Number.isInteger(retentionMonths) ||
+    retentionMonths < 1 ||
+    retentionMonths > 120
   ) {
     throw new TypeError(
-      'The audit file needs a folder of state, a clock and a process ID.',
+      'The audit file needs a folder of state, a clock, a process ID and a retention.',
     );
   }
   const {
@@ -518,6 +582,8 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
   let file: Current | undefined = begin(opened);
   // The day of the last file opened, also after that file is given up.
   let date = opened.date;
+  // The folder audit as last checked, which a sweep must still find.
+  let folderOf = { dev: folder.dev, ino: folder.ino };
   let closed = false;
   let opensLeft = maxReopens;
   let written = 0;
@@ -529,7 +595,7 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
   let lastOk = true;
   // The functions of the listener, read once as own data properties.
   let onAnchor: ((anchor: AuditChainAnchor) => void) | undefined;
-  let attached = false;
+  let onSwept: ((sweep: AuditSweep) => void) | undefined;
   // The last UTC day a new file was tried for, so that a day that cannot
   // be opened is tried once, not with every line.
   let dayTried: string | undefined;
@@ -585,24 +651,56 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
     }
   };
 
+  // Removes an own file without a byte once it is closed, if its name
+  // still leads to it. Whatever fails, the file stays for the sweep of a
+  // later day.
+  const removeEmpty = (old: Current): void => {
+    const path = `${folderPath}/${old.name}`;
+    try {
+      const atPath = fs.lstatSync(path);
+      if (
+        atPath.isFile() &&
+        atPath.size === 0 &&
+        atPath.dev === old.dev &&
+        atPath.ino === old.ino
+      ) {
+        fs.unlinkSync(path);
+      }
+    } catch {
+      // Gone already, or left for the sweep.
+    }
+  };
+
   // Gives up a file and reports its anchor. A descriptor that may now
   // belong to someone else, because fstat failed or names another file,
-  // is never closed or flushed: that would act on their file. An own file
-  // with a piece at its end gets its repair first: without a later line, a
-  // piece that lacks only its line break would otherwise stay a valid line
-  // at the end of the file. Then it goes to the disk, at the anchor and not
-  // with each line: under macOS, where Node.js flushes with F_FULLFSYNC,
-  // that cost about 3 ms per line, and the rule of ADR 0028 allows it per
-  // line only below 1 ms. A failed flush changes nothing.
+  // is never closed, flushed or removed: that would act on their file. An
+  // own file with a piece at its end gets its repair first: without a
+  // later line, a piece that lacks only its line break would otherwise
+  // stay a valid line at the end of the file. Then it goes to the disk, at
+  // the anchor and not with each line: under macOS, where Node.js flushes
+  // with F_FULLFSYNC, that cost about 3 ms per line, and the rule of
+  // ADR 0028 allows it per line only below 1 ms. A failed flush changes
+  // nothing. A file without a byte goes instead: every start opens a file,
+  // also when no tool runs (ADR 0028).
   const retire = (old: Current, own: boolean): void => {
     if (own) {
       if (old.torn) send(old.fd, repairBytes);
+      let empty: boolean;
       try {
-        fs.fsyncSync(old.fd);
+        empty = fs.fstatSync(old.fd).size === 0;
       } catch {
-        // The lines stay written; only a crash of the system could lose them.
+        empty = false;
+      }
+      if (!empty) {
+        try {
+          fs.fsyncSync(old.fd);
+        } catch {
+          // The lines stay written; only a crash of the system could lose
+          // them.
+        }
       }
       closeQuietly(old.fd);
+      if (empty) removeEmpty(old);
     }
     anchor(old);
   };
@@ -633,6 +731,7 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
   const openNext = (stamp: Stamp): boolean => {
     const folder = openFolder();
     if (typeof folder === 'string') return false;
+    folderOf = { dev: folder.dev, ino: folder.ino };
     const next = openFile(stamp, folder);
     if (typeof next === 'string') return false;
     file = begin(next);
@@ -648,6 +747,111 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
     if (opensLeft === 0) return false;
     opensLeft -= 1;
     return openNext(stamp);
+  };
+
+  // The folder audit is still the one last checked, and no link.
+  const sameFolder = (): boolean => {
+    try {
+      const now = fs.lstatSync(folderPath);
+      return (
+        now.isDirectory() &&
+        now.dev === folderOf.dev &&
+        now.ino === folderOf.ino
+      );
+    } catch {
+      return false;
+    }
+  };
+
+  // Deletes the files past their retention and the empty files of earlier
+  // days in the folder audit, as the start and each new UTC day ask
+  // (ADR 0028). Only names of exactly the form of this writer count, with
+  // a day before today: a file of today or of a day still to come never
+  // goes. A file past its retention goes only when its last change is as
+  // old, so that every line stays the whole retention, also in a file
+  // written on after a failed change of day. An empty file goes once its
+  // day and its last change lie before today: the empty files of today
+  // mostly belong to running processes. Each one must be a regular file of
+  // the user without rights for others and with one link, as at the open,
+  // never the own file, and the folder must still be the one opened before
+  // it is read and before each file goes. unlink never follows a link.
+  const sweep = (): void => {
+    if (closed) return;
+    const today = stampOf(clock)?.date;
+    let deleted = 0;
+    let kept = 0;
+    let complete = today !== undefined && sameFolder();
+    let names: readonly string[] = [];
+    if (complete) {
+      try {
+        names = fs.readdirSync(folderPath);
+      } catch {
+        complete = false;
+      }
+    }
+    for (const name of names) {
+      const day = dayOfAuditFile(name);
+      if (today === undefined || day === undefined || day >= today) continue;
+      const path = `${folderPath}/${name}`;
+      let stats: AuditFileStats;
+      try {
+        stats = fs.lstatSync(path);
+      } catch (error) {
+        // Gone already counts as deleted, by whoever it was.
+        if (errorCode(error) !== 'ENOENT') kept += 1;
+        continue;
+      }
+      if (
+        name === file?.name ||
+        (stats.dev === file?.dev && stats.ino === file.ino)
+      ) {
+        continue;
+      }
+      const changed = dayOfTime(stats.mtimeMs);
+      if (changed === undefined) continue;
+      const due =
+        (isPastRetention(day, retentionMonths, today) &&
+          isPastRetention(changed, retentionMonths, today)) ||
+        (stats.isFile() && stats.size === 0 && changed < today);
+      if (!due) continue;
+      if (!stats.isFile() || !isPrivate(stats, uid) || stats.nlink !== 1) {
+        kept += 1;
+        continue;
+      }
+      if (!sameFolder()) {
+        complete = false;
+        break;
+      }
+      try {
+        fs.unlinkSync(path);
+        deleted += 1;
+      } catch (error) {
+        if (errorCode(error) !== 'ENOENT') kept += 1;
+      }
+    }
+    try {
+      onSwept?.(Object.freeze({ deleted, kept, complete }));
+    } catch {
+      // The counts are lost; the files are gone or stay either way.
+    }
+  };
+
+  // Starts the file of a new UTC day, never of an earlier one, and tries
+  // each day once. The old file goes with its anchor, and the sweep runs.
+  // Without an open file the day counts only while the bound for lost
+  // files is not used up: a file another process removed, such as an
+  // empty one of an earlier day, is then replaced as a change of day and
+  // not as a lost file (ADR 0028). Returns whether it tried.
+  const turnDay = (stamp: Stamp | undefined): boolean => {
+    if (stamp === undefined || stamp.date <= date || stamp.date === dayTried) {
+      return false;
+    }
+    if (file === undefined && opensLeft === 0) return false;
+    dayTried = stamp.date;
+    const old = file;
+    if (openNext(stamp) && old !== undefined) retire(old, true);
+    sweep();
+    return true;
   };
 
   // One try of the line in the given file, with the next link of its
@@ -700,20 +904,9 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
     // First, so that only the own file is given up below: verify gives up
     // a descriptor that is no longer the file opened.
     verify();
-    // A new UTC day starts a new file, never an earlier day, and is tried
-    // once per day. If the new file cannot be opened, the line goes into
-    // the old one.
-    const old = file;
-    if (
-      old !== undefined &&
-      stamp !== undefined &&
-      stamp.date > date &&
-      stamp.date !== dayTried
-    ) {
-      dayTried = stamp.date;
-      tried = true;
-      if (openNext(stamp)) retire(old, true);
-    }
+    // A new UTC day starts a new file. If it cannot be opened, the line
+    // goes into the old one.
+    if (turnDay(stamp)) tried = true;
     if (file === undefined) tryReopen();
     const target = file;
     if (target === undefined) return lose();
@@ -741,12 +934,21 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
     return true;
   };
 
+  // The gate asks before the line is written, so a new day and a deleted
+  // file are handled here as in write, with at most one new file.
   const ready = (): boolean => {
     if (closed) return false;
-    verify();
-    if (file !== undefined) return lastOk;
     const stamp = stampOf(clock);
-    return stamp !== undefined && reopen(stamp);
+    verify();
+    const tried = turnDay(stamp);
+    if (file !== undefined) return lastOk;
+    return !tried && stamp !== undefined && reopen(stamp);
+  };
+
+  const tick = (): void => {
+    if (closed) return;
+    verify();
+    turnDay(stampOf(clock));
   };
 
   const close = (): void => {
@@ -758,7 +960,7 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
 
   const attach = (given: AuditFileListener): boolean => {
     if (
-      attached ||
+      onAnchor !== undefined ||
       typeof given !== 'object' ||
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a caller without types
       given === null ||
@@ -770,9 +972,15 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
       given,
       'anchor',
     )?.value;
-    if (typeof anchorOf !== 'function') return false;
-    attached = true;
+    const sweptOf: unknown = Object.getOwnPropertyDescriptor(
+      given,
+      'swept',
+    )?.value;
+    if (typeof anchorOf !== 'function' || typeof sweptOf !== 'function') {
+      return false;
+    }
     onAnchor = anchorOf as (anchor: AuditChainAnchor) => void;
+    onSwept = sweptOf as (sweep: AuditSweep) => void;
     return true;
   };
 
@@ -782,6 +990,14 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
   return Object.freeze({
     __proto__: null,
     ok: true,
-    writer: Object.freeze({ write, ready, close, attach, counts }),
+    writer: Object.freeze({
+      write,
+      ready,
+      close,
+      attach,
+      sweep,
+      tick,
+      counts,
+    }),
   });
 }

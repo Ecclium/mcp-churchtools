@@ -212,7 +212,12 @@ export async function startStdio(
     // file that cannot be opened reports with them. Whoever sets the
     // folder wants the audit kept by the server, so the start stops then.
     if (stateDir !== undefined) {
-      const opened = open({ stateDir, clock: systemClock, pid: process.pid });
+      const opened = open({
+        stateDir,
+        clock: systemClock,
+        pid: process.pid,
+        retentionMonths: loaded.config.auditRetentionMonths,
+      });
       if (!opened.ok) {
         notices([...texts, auditFileText(opened.code)]);
         return exitCodes.invalidConfig;

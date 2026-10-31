@@ -20,6 +20,7 @@ import {
   type ServeOptions,
   type ServeReplacements,
   type StdioHost,
+  untilNextDay,
 } from './serve.js';
 
 // The second stage of the start over stdio in process: the real stderr
@@ -260,7 +261,12 @@ const anchorOfFake = {
 const fakeAuditFile = (failed = 0) => {
   const lines: string[] = [];
   const events: unknown[][] = [];
-  const state = { seen: (): unknown[] => [] };
+  const state = {
+    seen: (): unknown[] => [],
+    sweep: { deleted: 0, kept: 0, complete: true },
+  };
+  const sweeps: unknown[][] = [];
+  const ticks: number[] = [];
   const listeners: Parameters<
     NonNullable<ServeOptions['auditFile']>['attach']
   >[0][] = [];
@@ -280,6 +286,13 @@ const fakeAuditFile = (failed = 0) => {
       listeners.push(listener);
       return true;
     },
+    sweep: () => {
+      sweeps.push(state.seen().filter((event) => event !== undefined));
+      for (const listener of listeners) listener.swept(state.sweep);
+    },
+    tick: () => {
+      ticks.push(1);
+    },
     counts: () => ({
       written: lines.length,
       failed,
@@ -289,7 +302,7 @@ const fakeAuditFile = (failed = 0) => {
       closed: events.length > 0,
     }),
   };
-  return { file, lines, events, state };
+  return { file, lines, events, state, sweeps, ticks };
 };
 
 describe('the second stage with an audit file', () => {
@@ -362,12 +375,111 @@ describe('the second stage with an audit file', () => {
     expect(audit.events).toHaveLength(1);
   });
 
+  it('sweeps the folder at the start and logs what it deleted and kept', () => {
+    const audit = fakeAuditFile();
+    audit.state.sweep = { deleted: 3, kept: 1, complete: true };
+    const session = setup({ auditFile: audit.file });
+    expect(audit.sweeps).toHaveLength(1);
+    expect(
+      session
+        .lines()
+        .filter((line) => String(line['event']).startsWith('audit_files')),
+    ).toEqual([
+      expect.objectContaining({
+        level: 'info',
+        event: 'audit_files_deleted',
+        count: 3,
+      }),
+      expect.objectContaining({
+        level: 'warn',
+        event: 'audit_files_not_deleted',
+        count: 1,
+      }),
+    ]);
+  });
+
+  it('warns without a count for a sweep that could not see the folder, and says nothing after an empty one', () => {
+    const blind = fakeAuditFile();
+    blind.state.sweep = { deleted: 0, kept: 0, complete: false };
+    const warned = setup({ auditFile: blind.file });
+    expect(
+      warned
+        .lines()
+        .filter((line) => String(line['event']).startsWith('audit_files')),
+    ).toEqual([
+      {
+        ts: expect.any(String) as unknown,
+        level: 'warn',
+        event: 'audit_files_not_deleted',
+      },
+    ]);
+    const quiet = setup({ auditFile: fakeAuditFile().file });
+    expect(
+      quiet.events().filter((event) => String(event).startsWith('audit_files')),
+    ).toEqual([]);
+  });
+
+  it('starts the file of each new UTC day by a timer that holds nothing', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(Date.UTC(2026, 9, 23, 23, 59, 0));
+    const timers = vi.fn(globalThis.setTimeout);
+    vi.stubGlobal('setTimeout', timers);
+    const audit = fakeAuditFile();
+    setup({ auditFile: audit.file });
+    // One second after midnight.
+    expect(timers.mock.calls.at(-1)?.[1]).toBe(61_000);
+    const timer = timers.mock.results.at(-1);
+    if (timer?.type !== 'return') throw new Error('no timer armed');
+    expect(timer.value.hasRef()).toBe(false);
+    vi.advanceTimersByTime(60_999);
+    expect(audit.ticks).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(audit.ticks).toEqual([1]);
+    expect(timers.mock.calls.at(-1)?.[1]).toBe(86_400_000);
+    vi.advanceTimersByTime(86_400_000);
+    expect(audit.ticks).toEqual([1, 1]);
+  });
+
+  it('stops the timer of the day when the connection ends', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(Date.UTC(2026, 9, 23, 23, 59, 0));
+    const audit = fakeAuditFile();
+    const session = setup({ auditFile: audit.file });
+    session.input.end();
+    for (
+      let turn = 0;
+      turn < 1000 && session.exitCodes.length === 0;
+      turn += 1
+    ) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    expect(audit.events).toHaveLength(1);
+    vi.advanceTimersByTime(2 * 86_400_000);
+    expect(audit.ticks).toEqual([]);
+  });
+
   it('writes no audit_file_closed without a file', async () => {
     const session = setup();
     session.signals.get('SIGTERM')?.();
     await session.ended();
     expect(session.events()).toEqual(['process_sigterm', 'stdio_closed']);
   });
+});
+
+describe('untilNextDay', () => {
+  it('waits until one second after the next UTC midnight', () => {
+    expect(untilNextDay(Date.UTC(2026, 9, 23, 23, 59, 0))).toBe(61_000);
+    expect(untilNextDay(Date.UTC(2026, 9, 24))).toBe(86_401_000);
+    expect(untilNextDay(Date.UTC(2026, 9, 24, 0, 0, 1))).toBe(86_400_000);
+    expect(untilNextDay(-1)).toBe(1001);
+  });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY])(
+    'waits an hour for a time of %s',
+    (now) => {
+      expect(untilNextDay(now)).toBe(3_600_000);
+    },
+  );
 });
 
 describe('the second stage of the start over stdio', () => {

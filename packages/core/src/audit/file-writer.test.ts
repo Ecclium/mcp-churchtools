@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   chmodSync,
+  lutimesSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -8,6 +9,7 @@ import {
   rmSync,
   statSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -19,6 +21,7 @@ import { isEventName, maxLineLength } from '../logger/index.js';
 import {
   type AuditChainAnchor,
   auditFileCodes,
+  type AuditSweep,
   type AuditFileStats,
   type AuditFileSystem,
   type AuditFileWriter,
@@ -73,6 +76,7 @@ const chainOf = (name: string, text: string): number[] => {
 const stateDir = '/path/to/state';
 const folderPath = `${stateDir}/audit`;
 const pid = 4242;
+const retentionMonths = 12;
 const clock = { now: () => Date.UTC(2026, 9, 23, 5, 52, 30, 123) };
 const nameOf = (number: number): string =>
   `audit-2026-10-23-055230-${String(pid)}-${String(number)}.jsonl`;
@@ -105,6 +109,8 @@ const stats = (fields: Partial<AuditFileStats> & { kind: 'dir' | 'file' }) => {
     nlink: kind === 'dir' ? 2 : 1,
     dev: 1,
     ino: kind === 'dir' ? 100 : 200,
+    size: 0,
+    mtimeMs: clock.now(),
     ...rest,
   };
 };
@@ -116,6 +122,8 @@ interface Hooks {
   readonly lstat?: (path: string) => AuditFileStats | undefined;
   readonly close?: (fd: number) => void;
   readonly fsync?: (fd: number) => void;
+  readonly readdir?: (path: string) => string[] | undefined;
+  readonly unlink?: (path: string) => void;
   /**
    * How many of the bytes a call takes, or undefined for all of them. It
    * may throw like writeSync.
@@ -169,12 +177,23 @@ const fake = (hooks: Hooks = {}): Fake => {
       hooks.fstat?.(fd) ??
       (fd === folderFd
         ? stats({ kind: 'dir' })
-        : stats({ kind: 'file', ino: 200 + fd })),
-    lstatSync: (path) =>
-      hooks.lstat?.(path) ??
-      (path === folderPath
-        ? stats({ kind: 'dir' })
-        : stats({ kind: 'file', ino: 200 + (fdOfPath.get(path) ?? 0) })),
+        : stats({
+            kind: 'file',
+            ino: 200 + fd,
+            size: bytesOf.get(fd)?.length ?? 0,
+          })),
+    lstatSync: (path) => {
+      const given = hooks.lstat?.(path);
+      if (given !== undefined) return given;
+      if (path === folderPath) return stats({ kind: 'dir' });
+      const fd = fdOfPath.get(path);
+      if (fd === undefined) throw fsError('ENOENT');
+      return stats({
+        kind: 'file',
+        ino: 200 + fd,
+        size: bytesOf.get(fd)?.length ?? 0,
+      });
+    },
     writeSync: (...args: unknown[]) => {
       arities.push(args.length);
       const [fd, buffer, offset, length] = args as [
@@ -203,6 +222,18 @@ const fake = (hooks: Hooks = {}): Fake => {
       calls.push(`fsync ${String(fd)}`);
       hooks.fsync?.(fd);
     },
+    readdirSync: (path) => {
+      calls.push(`readdir ${path}`);
+      return (
+        hooks.readdir?.(path) ??
+        [...fdOfPath.keys()].map((name) => name.slice(folderPath.length + 1))
+      );
+    },
+    unlinkSync: (path) => {
+      calls.push(`unlink ${path}`);
+      hooks.unlink?.(path);
+      fdOfPath.delete(path);
+    },
     getuid: hooks.getuid ?? (() => 1000),
     constants: hooks.constants ?? fakeConstants,
   };
@@ -224,7 +255,13 @@ const opened = (
   time: { now: () => number } = clock,
 ): Fake & { writer: AuditFileWriter } => {
   const files = fake(hooks);
-  const result = openAuditFile({ stateDir, clock: time, pid, fs: files.fs });
+  const result = openAuditFile({
+    stateDir,
+    clock: time,
+    pid,
+    fs: files.fs,
+    retentionMonths,
+  });
   if (!result.ok) throw new Error(result.code);
   return { ...files, writer: result.writer };
 };
@@ -241,14 +278,20 @@ const script = (
 };
 
 const codeOf = (hooks: Hooks): string => {
-  const result = openAuditFile({ stateDir, clock, pid, fs: fake(hooks).fs });
+  const result = openAuditFile({
+    stateDir,
+    clock,
+    pid,
+    fs: fake(hooks).fs,
+    retentionMonths,
+  });
   return result.ok ? 'ok' : result.code;
 };
 
 describe('openAuditFile with file functions', () => {
   it('creates the folder, opens a new file and checks both', () => {
     const { fs, calls, closed } = fake();
-    const result = openAuditFile({ stateDir, clock, pid, fs });
+    const result = openAuditFile({ stateDir, clock, pid, fs, retentionMonths });
     expect(result.ok).toBe(true);
     expect(calls).toEqual([
       `mkdir ${folderPath} 700`,
@@ -274,7 +317,9 @@ describe('openAuditFile with file functions', () => {
       open: (path) => (path === '/audit' ? 10 : undefined),
       lstat: (path) => (path === '/audit' ? stats({ kind: 'dir' }) : undefined),
     });
-    expect(openAuditFile({ stateDir: '/', clock, pid, fs }).ok).toBe(true);
+    expect(
+      openAuditFile({ stateDir: '/', clock, pid, fs, retentionMonths }).ok,
+    ).toBe(true);
     expect(calls[0]).toBe('mkdir /audit 700');
   });
 
@@ -302,7 +347,9 @@ describe('openAuditFile with file functions', () => {
     'refuses the platform with %s before any call',
     (_name, hooks) => {
       const { fs, calls } = fake(hooks);
-      expect(openAuditFile({ stateDir, clock, pid, fs })).toEqual({
+      expect(
+        openAuditFile({ stateDir, clock, pid, fs, retentionMonths }),
+      ).toEqual({
         ok: false,
         code: 'audit_file_platform',
       });
@@ -348,7 +395,9 @@ describe('openAuditFile with file functions', () => {
     const { fs, closed, calls } = fake({
       fstat: (fd) => (fd === folderFd ? folder : undefined),
     });
-    expect(openAuditFile({ stateDir, clock, pid, fs })).toMatchObject({
+    expect(
+      openAuditFile({ stateDir, clock, pid, fs, retentionMonths }),
+    ).toMatchObject({
       code: 'audit_file_folder_unsafe',
     });
     expect(closed).toEqual([folderFd]);
@@ -367,7 +416,9 @@ describe('openAuditFile with file functions', () => {
     const { fs, closed } = fake({
       open: (path) => (path === folderPath ? 2 : undefined),
     });
-    expect(openAuditFile({ stateDir, clock, pid, fs })).toMatchObject({
+    expect(
+      openAuditFile({ stateDir, clock, pid, fs, retentionMonths }),
+    ).toMatchObject({
       code: 'audit_file_folder_unsafe',
     });
     expect(closed).toEqual([2]);
@@ -392,7 +443,9 @@ describe('openAuditFile with file functions', () => {
           return undefined;
         },
       });
-      expect(openAuditFile({ stateDir, clock, pid, fs }).ok).toBe(true);
+      expect(
+        openAuditFile({ stateDir, clock, pid, fs, retentionMonths }).ok,
+      ).toBe(true);
       expect(calls.filter((call) => call.includes('.jsonl'))).toEqual([
         `open ${folderPath}/${nameOf(1)} ${String(fileFlags)} 600`,
         `open ${folderPath}/${nameOf(2)} ${String(fileFlags)} 600`,
@@ -407,7 +460,9 @@ describe('openAuditFile with file functions', () => {
         return undefined;
       },
     });
-    expect(openAuditFile({ stateDir, clock, pid, fs })).toMatchObject({
+    expect(
+      openAuditFile({ stateDir, clock, pid, fs, retentionMonths }),
+    ).toMatchObject({
       code: 'audit_file_unavailable',
     });
     expect(calls.filter((call) => call.includes('.jsonl'))).toHaveLength(
@@ -509,7 +564,9 @@ describe('openAuditFile with file functions', () => {
     ],
   ])('refuses and closes a file with %s', (_name, hooks) => {
     const { fs, closed } = fake(hooks);
-    expect(openAuditFile({ stateDir, clock, pid, fs })).toMatchObject({
+    expect(
+      openAuditFile({ stateDir, clock, pid, fs, retentionMonths }),
+    ).toMatchObject({
       code: 'audit_file_unsafe',
     });
     // The folder after its check, then the refused file.
@@ -539,7 +596,9 @@ describe('openAuditFile with file functions', () => {
     ['gives a time out of range', () => 8.64e15 + 1],
   ])('refuses before any call when the clock %s', (_name, now) => {
     const { fs, calls } = fake();
-    expect(openAuditFile({ stateDir, clock: { now }, pid, fs })).toMatchObject({
+    expect(
+      openAuditFile({ stateDir, clock: { now }, pid, fs, retentionMonths }),
+    ).toMatchObject({
       code: 'audit_file_unavailable',
     });
     expect(calls).toEqual([]);
@@ -553,25 +612,30 @@ describe('openAuditFile with file functions', () => {
     ['a clock of null', { clock: null }],
     ['a process ID of 0', { pid: 0 }],
     ['a process ID that is no integer', { pid: 1.5 }],
+    ['a retention of 0 months', { retentionMonths: 0 }],
+    ['a retention of 121 months', { retentionMonths: 121 }],
+    ['a retention that is no integer', { retentionMonths: 1.5 }],
+    ['no retention', { retentionMonths: undefined }],
   ])('throws for %s', (_name, change) => {
     expect(() =>
       openAuditFile({
         stateDir,
         clock,
         pid,
+        retentionMonths,
         fs: fake().fs,
         ...change,
       } as Parameters<typeof openAuditFile>[0]),
     ).toThrow(
       new TypeError(
-        'The audit file needs a folder of state, a clock and a process ID.',
+        'The audit file needs a folder of state, a clock, a process ID and a retention.',
       ),
     );
   });
 
   it('closes the file once and stays closed', () => {
     const { fs, closed } = fake();
-    const result = openAuditFile({ stateDir, clock, pid, fs });
+    const result = openAuditFile({ stateDir, clock, pid, fs, retentionMonths });
     if (!result.ok) throw new Error('not opened');
     expect(result.writer.counts().closed).toBe(false);
     result.writer.close();
@@ -586,7 +650,7 @@ describe('openAuditFile with file functions', () => {
         if (fd === 11) throw fsError('EIO');
       },
     });
-    const result = openAuditFile({ stateDir, clock, pid, fs });
+    const result = openAuditFile({ stateDir, clock, pid, fs, retentionMonths });
     if (!result.ok) throw new Error('not opened');
     expect(() => {
       result.writer.close();
@@ -595,11 +659,18 @@ describe('openAuditFile with file functions', () => {
   });
 
   it('gives frozen results without a prototype', () => {
-    const opened = openAuditFile({ stateDir, clock, pid, fs: fake().fs });
+    const opened = openAuditFile({
+      stateDir,
+      clock,
+      pid,
+      fs: fake().fs,
+      retentionMonths,
+    });
     const refused = openAuditFile({
       stateDir,
       clock,
       pid,
+      retentionMonths,
       fs: fake({ getuid: () => undefined }).fs,
     });
     for (const result of [opened, refused]) {
@@ -1206,9 +1277,10 @@ describe('the flush of the writer', () => {
     const deleted = new Set<number>();
     const { writer, calls } = opened(
       {
+        // A deleted file that holds a line.
         fstat: (fd) =>
           deleted.has(fd)
-            ? stats({ kind: 'file', ino: 200 + fd, nlink: 0 })
+            ? stats({ kind: 'file', ino: 200 + fd, nlink: 0, size: 1 })
             : undefined,
       },
       { now: () => now },
@@ -1243,7 +1315,10 @@ describe('the flush of the writer', () => {
       },
     });
     const anchors: unknown[] = [];
-    writer.attach({ anchor: (given) => anchors.push(given) });
+    writer.attach({
+      anchor: (given) => anchors.push(given),
+      swept: () => undefined,
+    });
     writer.write('{"v":1}');
     writer.close();
     expect(closed).toEqual([folderFd, fileFd]);
@@ -1258,14 +1333,18 @@ describe('the anchors of the writer', () => {
   const anchored = (hooks: Hooks = {}, time: { now: () => number } = clock) => {
     const files = opened(hooks, time);
     const anchors: AuditChainAnchor[] = [];
+    const sweeps: AuditSweep[] = [];
     expect(
       files.writer.attach({
         anchor: (given) => {
           anchors.push(given);
         },
+        swept: (given) => {
+          sweeps.push(given);
+        },
       }),
     ).toBe(true);
-    return { ...files, anchors };
+    return { ...files, anchors, sweeps };
   };
 
   /** The anchor of the last whole line of a text of a file. */
@@ -1345,30 +1424,29 @@ describe('the anchors of the writer', () => {
     expect(anchors).toEqual([headOf(nameOf(1), content(fileFd))]);
   });
 
-  it('takes one listener, only with a function, and survives one that throws', () => {
+  it('takes one listener, only with both functions, and survives one that throws', () => {
     const { writer } = opened();
+    const quiet = { anchor: () => undefined, swept: () => undefined };
     expect(writer.attach(null as never)).toBe(false);
     expect(writer.attach({} as never)).toBe(false);
-    expect(writer.attach(new Proxy({ anchor: () => undefined }, {}))).toBe(
-      false,
-    );
+    expect(writer.attach({ anchor: () => undefined } as never)).toBe(false);
+    expect(writer.attach({ swept: () => undefined } as never)).toBe(false);
+    expect(writer.attach(new Proxy(quiet, {}))).toBe(false);
     expect(
       writer.attach(
-        Object.defineProperty({}, 'anchor', {
+        Object.defineProperty({ swept: () => undefined }, 'anchor', {
           get: () => () => undefined,
         }) as never,
       ),
     ).toBe(false);
-    expect(
-      writer.attach({
-        anchor: () => {
-          throw new Error('listener');
-        },
-      }),
-    ).toBe(true);
-    expect(writer.attach({ anchor: () => undefined })).toBe(false);
+    const fail = (): never => {
+      throw new Error('listener');
+    };
+    expect(writer.attach({ anchor: fail, swept: fail })).toBe(true);
+    expect(writer.attach(quiet)).toBe(false);
     writer.write('{"v":1}');
     expect(() => {
+      writer.sweep();
       writer.close();
     }).not.toThrow();
     expect(writer.counts().closed).toBe(true);
@@ -1384,7 +1462,7 @@ describe('openAuditFile on the disk', () => {
     return folder;
   };
   const open = (folder: string) =>
-    openAuditFile({ stateDir: folder, clock, pid });
+    openAuditFile({ stateDir: folder, clock, pid, retentionMonths });
 
   afterAll(() => {
     rmSync(base, { recursive: true, force: true });
@@ -1476,6 +1554,7 @@ describe('openAuditFile on the disk', () => {
       stateDir: folder,
       clock: { now: () => now },
       pid,
+      retentionMonths,
     });
     if (!result.ok) throw new Error(result.code);
     expect(result.writer.write('{"v":1}')).toBe(true);
@@ -1511,6 +1590,510 @@ describe('openAuditFile on the disk', () => {
     expect(open(join(base, 'missing'))).toMatchObject({
       code: 'audit_file_folder_unavailable',
     });
+  });
+});
+
+describe('the empty files of the writer', () => {
+  const day = 24 * 60 * 60 * 1000;
+  const unlinks = (calls: readonly string[]): string[] =>
+    calls.filter((call) => call.startsWith('unlink'));
+
+  it('removes its file without a byte when it closes, without a flush', () => {
+    const { writer, calls } = opened();
+    writer.close();
+    expect(unlinks(calls)).toEqual([`unlink ${folderPath}/${nameOf(1)}`]);
+    expect(calls.some((call) => call.startsWith('fsync'))).toBe(false);
+  });
+
+  it('keeps a file with a line or with a piece of one', () => {
+    const lines = opened();
+    lines.writer.write('{"v":1}');
+    lines.writer.close();
+    expect(unlinks(lines.calls)).toEqual([]);
+    const piece = opened({ write: script(4, 'ENOSPC') });
+    piece.writer.write('{"v":1}');
+    piece.writer.close();
+    expect(unlinks(piece.calls)).toEqual([]);
+  });
+
+  it('keeps an empty file whose name leads to another file by now', () => {
+    let armed = false;
+    const { writer, calls } = opened({
+      lstat: (path) =>
+        armed && path.endsWith(nameOf(1))
+          ? stats({ kind: 'file', ino: 999 })
+          : undefined,
+    });
+    armed = true;
+    writer.close();
+    expect(unlinks(calls)).toEqual([]);
+  });
+
+  it('flushes and keeps a file whose size it cannot see when it closes', () => {
+    let seen = 0;
+    const { writer, calls } = opened({
+      fstat: (fd) => {
+        if (fd !== fileFd) return undefined;
+        seen += 1;
+        // The check of the file at its open and in verify, then a failure.
+        if (seen > 2) throw fsError('EIO');
+        return undefined;
+      },
+    });
+    writer.close();
+    expect(calls.filter((call) => call.startsWith('fsync'))).toEqual([
+      `fsync ${String(fileFd)}`,
+    ]);
+    expect(calls.some((call) => call.startsWith('unlink'))).toBe(false);
+  });
+
+  it('closes for good when the removal fails', () => {
+    const { writer } = opened({
+      unlink: () => {
+        throw fsError('EPERM');
+      },
+    });
+    expect(() => {
+      writer.close();
+    }).not.toThrow();
+    expect(writer.counts().closed).toBe(true);
+  });
+
+  it('removes its empty file of an earlier day when a new day starts', () => {
+    let now = clock.now();
+    const { writer, calls } = opened({}, { now: () => now });
+    now += day;
+    expect(writer.write('{"v":1}')).toBe(true);
+    expect(unlinks(calls)).toEqual([`unlink ${folderPath}/${nameOf(1)}`]);
+  });
+});
+
+describe('a new UTC day without a line', () => {
+  const day = 24 * 60 * 60 * 1000;
+  const opens = (calls: readonly string[]): string[] =>
+    calls.filter((call) => call.startsWith('open') && call.includes('.jsonl'));
+
+  /** A writer on a clock that moves, whose files can be deleted. */
+  const moving = () => {
+    let now = clock.now();
+    const deleted = new Set<number>();
+    const files = opened(
+      {
+        fstat: (fd) =>
+          deleted.has(fd)
+            ? stats({ kind: 'file', ino: 200 + fd, nlink: 0 })
+            : undefined,
+      },
+      { now: () => now },
+    );
+    return {
+      ...files,
+      deleted,
+      nextDay: () => {
+        now += day;
+      },
+    };
+  };
+
+  it('starts the file of a new UTC day on tick, once, with a sweep', () => {
+    const { writer, calls, nextDay } = moving();
+    writer.tick();
+    expect(opens(calls)).toHaveLength(1);
+    nextDay();
+    writer.tick();
+    writer.tick();
+    expect(opens(calls)).toHaveLength(2);
+    expect(calls.filter((call) => call.startsWith('readdir'))).toHaveLength(1);
+    expect(writer.counts().reopened).toBe(1);
+    expect(writer.ready()).toBe(true);
+  });
+
+  it('does nothing on tick once closed', () => {
+    const { writer, calls, nextDay } = moving();
+    writer.close();
+    nextDay();
+    writer.tick();
+    writer.sweep();
+    expect(opens(calls)).toHaveLength(1);
+    expect(calls.some((call) => call.startsWith('readdir'))).toBe(false);
+  });
+
+  it('replaces a file of an earlier day that another process removed as a change of day, in write', () => {
+    const { writer, calls, deleted, nextDay } = moving();
+    deleted.add(fileFd);
+    nextDay();
+    expect(writer.write('{"v":1}')).toBe(true);
+    // The whole bound for lost files is still there.
+    for (let lost = 0; lost < maxReopens; lost += 1) {
+      deleted.add(fileFd + 1 + lost);
+      expect(writer.write('{"v":2}')).toBe(true);
+    }
+    expect(opens(calls)).toHaveLength(2 + maxReopens);
+    deleted.add(fileFd + 1 + maxReopens);
+    expect(writer.write('{"v":3}')).toBe(false);
+  });
+
+  it('does the same when the gate asks first', () => {
+    const { writer, calls, deleted, nextDay } = moving();
+    deleted.add(fileFd);
+    nextDay();
+    expect(writer.ready()).toBe(true);
+    expect(opens(calls)).toHaveLength(2);
+    for (let lost = 0; lost < maxReopens; lost += 1) {
+      deleted.add(fileFd + 1 + lost);
+      expect(writer.ready()).toBe(true);
+    }
+    deleted.add(fileFd + 1 + maxReopens);
+    expect(writer.ready()).toBe(false);
+  });
+
+  it('opens at most one file when the gate asks on a new day that cannot be opened', () => {
+    let now = clock.now();
+    const deleted = new Set<number>();
+    const { writer, calls } = opened(
+      {
+        open: (path) => {
+          if (path.includes('2026-10-24')) throw fsError('EACCES');
+          return undefined;
+        },
+        fstat: (fd) =>
+          deleted.has(fd)
+            ? stats({ kind: 'file', ino: 200 + fd, nlink: 0 })
+            : undefined,
+      },
+      { now: () => now },
+    );
+    deleted.add(fileFd);
+    now += day;
+    expect(writer.ready()).toBe(false);
+    // The first file and one try for the new day, no second try.
+    expect(opens(calls)).toHaveLength(2);
+  });
+
+  it('opens no file for a new day once the bound for lost files is used up', () => {
+    const { writer, calls, deleted, nextDay } = moving();
+    for (let lost = 0; lost <= maxReopens; lost += 1) {
+      deleted.add(fileFd + lost);
+      writer.write('{"v":1}');
+    }
+    expect(opens(calls)).toHaveLength(1 + maxReopens);
+    nextDay();
+    expect(writer.write('{"v":2}')).toBe(false);
+    writer.tick();
+    expect(writer.ready()).toBe(false);
+    expect(opens(calls)).toHaveLength(1 + maxReopens);
+  });
+});
+
+describe('the sweep of the writer with file functions', () => {
+  // The clock stands on 2026-10-23; with twelve months, a file of
+  // 2025-10-22 is past its retention, one of 2025-10-23 is not.
+  const at = (day: string): number => Date.parse(`${day}T12:00:00.000Z`);
+  const name = (day: string, number = 1): string =>
+    `audit-${day}-120000-77-${String(number)}.jsonl`;
+
+  /** A writer whose folder holds the given entries besides its own file. */
+  const folderWith = (
+    entries: Readonly<Record<string, AuditFileStats | Error>>,
+    hooks: Hooks = {},
+  ) => {
+    const sweeps: AuditSweep[] = [];
+    const files = opened({
+      readdir: () => [nameOf(1), ...Object.keys(entries)],
+      lstat: (path) => {
+        const entry = entries[path.slice(folderPath.length + 1)];
+        if (entry instanceof Error) throw entry;
+        return entry;
+      },
+      ...hooks,
+    });
+    files.writer.attach({
+      anchor: () => undefined,
+      swept: (given) => sweeps.push(given),
+    });
+    const unlinked = () =>
+      files.calls
+        .filter((call) => call.startsWith('unlink'))
+        .map((call) => call.slice(`unlink ${folderPath}/`.length));
+    return { ...files, sweeps, unlinked };
+  };
+
+  const old = (fields: Partial<AuditFileStats> = {}) =>
+    stats({
+      kind: 'file',
+      ino: 500,
+      size: 10,
+      mtimeMs: at('2025-10-22'),
+      ...fields,
+    });
+
+  it('deletes only what is past its retention or empty from an earlier day', () => {
+    const { writer, sweeps, unlinked } = folderWith({
+      [name('2025-10-22')]: old(),
+      [name('2025-10-23')]: old({ mtimeMs: at('2025-10-23') }),
+      [name('2025-10-22', 2)]: old({ mtimeMs: at('2026-01-01') }),
+      [name('2026-10-22')]: old({ size: 0, mtimeMs: at('2026-10-22') }),
+      [name('2026-10-22', 2)]: old({ size: 0, mtimeMs: at('2026-10-23') }),
+      [name('2026-10-23', 2)]: old({ size: 0, mtimeMs: at('2026-10-23') }),
+      [name('2027-01-01')]: old({ size: 0, mtimeMs: at('2025-01-01') }),
+      [name('2025-10-22', 3)]: old({ mtimeMs: Number.NaN }),
+      [`${name('2025-10-22')}.bak`]: old(),
+      'notes.txt': old(),
+    });
+    writer.sweep();
+    expect(unlinked()).toEqual([name('2025-10-22'), name('2026-10-22')]);
+    expect(sweeps).toEqual([{ deleted: 2, kept: 0, complete: true }]);
+    expect(Object.isFrozen(sweeps[0])).toBe(true);
+  });
+
+  it('keeps and counts what is due but no private regular file with one link', () => {
+    const { writer, sweeps, unlinked } = folderWith({
+      [name('2025-01-01', 1)]: old({ isFile: () => false }),
+      [name('2025-01-01', 2)]: old({ uid: 0 }),
+      [name('2025-01-01', 3)]: old({ mode: 0o100640 }),
+      [name('2025-01-01', 4)]: old({ nlink: 2 }),
+      [name('2025-01-01', 5)]: stats({
+        kind: 'dir',
+        mtimeMs: at('2025-01-01'),
+      }),
+    });
+    writer.sweep();
+    expect(unlinked()).toEqual([]);
+    expect(sweeps).toEqual([{ deleted: 0, kept: 5, complete: true }]);
+  });
+
+  it('never deletes its own file, also under another name', () => {
+    const { writer, unlinked } = folderWith({
+      // A second link to the open file, with an old name.
+      [name('2025-01-01')]: old({ ino: 200 + fileFd }),
+    });
+    writer.sweep();
+    expect(unlinked()).toEqual([]);
+  });
+
+  it('counts a file that is gone as deleted by someone else, and one it cannot see or delete as kept', () => {
+    const { writer, sweeps, unlinked } = folderWith(
+      {
+        [name('2025-01-01', 1)]: fsError('ENOENT'),
+        [name('2025-01-01', 2)]: fsError('EACCES'),
+        [name('2025-01-01', 3)]: old(),
+        [name('2025-01-01', 4)]: old(),
+      },
+      {
+        unlink: (path) => {
+          if (path.endsWith(name('2025-01-01', 3))) throw fsError('ENOENT');
+          if (path.endsWith(name('2025-01-01', 4))) throw fsError('EPERM');
+        },
+      },
+    );
+    writer.sweep();
+    expect(unlinked()).toEqual([name('2025-01-01', 3), name('2025-01-01', 4)]);
+    expect(sweeps).toEqual([{ deleted: 0, kept: 2, complete: true }]);
+  });
+
+  it('stops before a file when the folder is no longer the one opened', () => {
+    let checks = 0;
+    let armed = false;
+    const sweeps: AuditSweep[] = [];
+    const { writer, calls } = opened({
+      readdir: () => [name('2025-01-01', 1), name('2025-01-01', 2)],
+      lstat: (path) => {
+        if (!armed) return undefined;
+        if (path !== folderPath) return old();
+        checks += 1;
+        // Before reading and before the first file, then another folder.
+        return stats({ kind: 'dir', ino: checks <= 2 ? 100 : 101 });
+      },
+    });
+    writer.attach({
+      anchor: () => undefined,
+      swept: (given) => sweeps.push(given),
+    });
+    armed = true;
+    writer.sweep();
+    expect(calls.filter((call) => call.startsWith('unlink'))).toEqual([
+      `unlink ${folderPath}/${name('2025-01-01', 1)}`,
+    ]);
+    expect(sweeps).toEqual([{ deleted: 1, kept: 0, complete: false }]);
+  });
+
+  it.each<[string, Hooks]>([
+    [
+      'a folder that cannot be read',
+      {
+        readdir: () => {
+          throw fsError('EACCES');
+        },
+      },
+    ],
+    [
+      'a folder that is a link by now',
+      {
+        lstat: (path) =>
+          path === folderPath ? stats({ kind: 'file', ino: 100 }) : undefined,
+      },
+    ],
+  ])('reports an incomplete sweep for %s', (_name, hooks) => {
+    const sweeps: AuditSweep[] = [];
+    const { writer, calls } = opened(hooks);
+    writer.attach({
+      anchor: () => undefined,
+      swept: (given) => sweeps.push(given),
+    });
+    writer.sweep();
+    expect(sweeps).toEqual([{ deleted: 0, kept: 0, complete: false }]);
+    expect(calls.some((call) => call.startsWith('unlink'))).toBe(false);
+  });
+
+  it('reports an incomplete sweep when the folder is gone', () => {
+    let armed = false;
+    const sweeps: AuditSweep[] = [];
+    const { writer, calls } = opened({
+      lstat: (path) => {
+        if (armed && path === folderPath) throw fsError('ENOENT');
+        return undefined;
+      },
+    });
+    writer.attach({
+      anchor: () => undefined,
+      swept: (given) => sweeps.push(given),
+    });
+    armed = true;
+    writer.sweep();
+    expect(sweeps).toEqual([{ deleted: 0, kept: 0, complete: false }]);
+    expect(calls.some((call) => call.startsWith('readdir'))).toBe(false);
+  });
+
+  it('reports an incomplete sweep when the clock fails, without reading the folder', () => {
+    let fails = false;
+    const sweeps: AuditSweep[] = [];
+    const { writer, calls } = opened(
+      {},
+      {
+        now: () => {
+          if (fails) throw new Error('clock');
+          return clock.now();
+        },
+      },
+    );
+    writer.attach({
+      anchor: () => undefined,
+      swept: (given) => sweeps.push(given),
+    });
+    fails = true;
+    writer.sweep();
+    expect(sweeps).toEqual([{ deleted: 0, kept: 0, complete: false }]);
+    expect(calls.some((call) => call.startsWith('readdir'))).toBe(false);
+  });
+});
+
+describe('the sweep of the writer on the disk', () => {
+  const base = mkdtempSync(join(tmpdir(), 'ecclium-audit-sweep-'));
+  const at = (day: string): Date => new Date(`${day}T12:00:00.000Z`);
+  const name = (day: string, number = 1): string =>
+    `audit-${day}-120000-77-${String(number)}.jsonl`;
+
+  afterAll(() => {
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  // A file with content and a last change on a day.
+  const place = (path: string, day: string, content = '{"v":1}\n'): void => {
+    writeFileSync(path, content, { mode: 0o600 });
+    chmodSync(path, 0o600);
+    utimesSync(path, at(day), at(day));
+  };
+
+  it('deletes nothing outside the files of the folder audit that are due', () => {
+    const stateDir = join(base, 'decoys');
+    mkdirSync(stateDir, { mode: 0o700 });
+    const audit = join(stateDir, 'audit');
+    mkdirSync(audit, { mode: 0o700 });
+    const quota = join(stateDir, 'quota');
+    mkdirSync(quota, { mode: 0o700 });
+    const outside = join(base, 'outside');
+    mkdirSync(outside, { mode: 0o700 });
+
+    // Due and deleted: past the retention, and empty from yesterday.
+    place(join(audit, name('2025-10-01')), '2025-10-01');
+    place(join(audit, name('2026-10-22')), '2026-10-22', '');
+    // Not due: within the retention, empty of today, a day to come.
+    place(join(audit, name('2025-10-23')), '2025-10-23');
+    place(join(audit, name('2026-10-23', 2)), '2026-10-23', '');
+    place(join(audit, name('2027-01-01')), '2025-01-01');
+    // Due by name but no private regular file with one link.
+    place(join(outside, 'target'), '2025-01-01');
+    symlinkSync(join(outside, 'target'), join(audit, name('2025-01-01', 1)));
+    // The link itself is old as well, not only its target.
+    lutimesSync(
+      join(audit, name('2025-01-01', 1)),
+      at('2025-01-01'),
+      at('2025-01-01'),
+    );
+    mkdirSync(join(audit, name('2025-01-01', 2)), { mode: 0o700 });
+    utimesSync(
+      join(audit, name('2025-01-01', 2)),
+      at('2025-01-01'),
+      at('2025-01-01'),
+    );
+    place(join(audit, name('2025-01-01', 3)), '2025-01-01');
+    chmodSync(join(audit, name('2025-01-01', 3)), 0o644);
+    // Names that only look like audit files, and audit names elsewhere.
+    place(join(audit, `${name('2025-01-01', 4)}.bak`), '2025-01-01');
+    place(join(audit, 'notes.txt'), '2025-01-01');
+    place(join(stateDir, name('2025-01-01', 5)), '2025-01-01');
+    place(join(quota, name('2025-01-01', 6)), '2025-01-01');
+    place(join(outside, name('2025-01-01', 7)), '2025-01-01');
+
+    const result = openAuditFile({ stateDir, clock, pid, retentionMonths });
+    if (!result.ok) throw new Error(result.code);
+    const sweeps: AuditSweep[] = [];
+    result.writer.attach({
+      anchor: () => undefined,
+      swept: (given) => sweeps.push(given),
+    });
+    result.writer.sweep();
+    expect(sweeps).toEqual([{ deleted: 2, kept: 3, complete: true }]);
+    expect(readdirSync(audit).sort()).toEqual(
+      [
+        name('2025-10-23'),
+        name('2026-10-23', 2),
+        name('2027-01-01'),
+        name('2025-01-01', 1),
+        name('2025-01-01', 2),
+        name('2025-01-01', 3),
+        `${name('2025-01-01', 4)}.bak`,
+        'notes.txt',
+        nameOf(1),
+      ].sort(),
+    );
+    expect(readdirSync(stateDir).sort()).toEqual(
+      ['audit', 'quota', name('2025-01-01', 5)].sort(),
+    );
+    expect(readdirSync(quota)).toEqual([name('2025-01-01', 6)]);
+    expect(readdirSync(outside).sort()).toEqual(
+      [name('2025-01-01', 7), 'target'].sort(),
+    );
+    expect(readFileSync(join(outside, 'target'), 'utf8')).toBe('{"v":1}\n');
+    // Its own file is empty and goes when it closes.
+    result.writer.close();
+    expect(readdirSync(audit)).not.toContain(nameOf(1));
+  });
+
+  it('keeps a file of a shorter retention only until its last day', () => {
+    const stateDir = join(base, 'one-month');
+    mkdirSync(stateDir, { mode: 0o700 });
+    const audit = join(stateDir, 'audit');
+    mkdirSync(audit, { mode: 0o700 });
+    place(join(audit, name('2026-09-22')), '2026-09-22');
+    place(join(audit, name('2026-09-23')), '2026-09-23');
+    const result = openAuditFile({ stateDir, clock, pid, retentionMonths: 1 });
+    if (!result.ok) throw new Error(result.code);
+    result.writer.sweep();
+    expect(readdirSync(audit).sort()).toEqual(
+      [name('2026-09-23'), nameOf(1)].sort(),
+    );
+    result.writer.close();
   });
 });
 
