@@ -3,7 +3,9 @@
  * data and dates of birth, the cleaning of hidden characters, the data
  * envelope for free text, the mask of an answer of the escape hatch
  * (ADR 0067) and the check of free text in the level strict (ADR 0069).
- * Only the pipeline uses it; the entry point of core does not export it.
+ * The pipeline uses it; the registry and the mount read only which levels
+ * use pseudonyms and their form, from `pseudonym-form.ts`. The entry point
+ * of core does not export it.
  *
  * @packageDocumentation
  */

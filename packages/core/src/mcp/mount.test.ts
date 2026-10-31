@@ -377,6 +377,25 @@ describe.each(eras)('the list of tools in the $name era', (era) => {
 });
 
 describe('the list of tools', () => {
+  it('advertises IDs of persons as numbers in the level standard', async () => {
+    const { factory } = setup({}, [
+      testTool('ct_test_person', () => ({ text: 'ok' }), {
+        input: z.object({
+          personId: classify(z.number().int().positive(), 'personId'),
+        }),
+      }),
+    ]);
+    const connection = await modern.open(factory);
+    const reply = await modern.ask(connection, 'tools/list');
+    const tools = at(reply, 'result', 'tools') as readonly Json[];
+    const person = tools.find((tool) => tool['name'] === 'ct_test_person');
+    expect(at(person ?? {}, 'inputSchema', 'properties', 'personId')).toEqual({
+      type: 'integer',
+      exclusiveMinimum: 0,
+      maximum: Number.MAX_SAFE_INTEGER,
+    });
+  });
+
   // In the level strict an ID of a person is a pseudonym in input and
   // output, a string (ADR 0069).
   it('advertises IDs of persons as pseudonyms in the level strict', async () => {

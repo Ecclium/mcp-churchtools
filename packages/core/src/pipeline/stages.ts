@@ -215,7 +215,9 @@ const revealWalk = (
  * copy of plain objects. At a place of a person, only a pseudonym of the
  * call or a missing value passes; a raw number, a changed pseudonym or one
  * of another principal ends the walk, so the tool only ever sees IDs and a
- * raw ID never reaches it.
+ * raw ID never reaches it. In a choice every option counts: where one
+ * option expects a person, a value that another option would take, such
+ * as a number or a text, is refused as well, in `strict` only.
  *
  * @param input - The input as the client sent it, which passed
  *   {@link fitsInput}.
@@ -406,8 +408,9 @@ const maskOf = (
  * unmasked here.
  *
  * In `strict` every ID of a person becomes the pseudonym `hide` gives for
- * it. The audit has read the IDs before, so it records the IDs, not the
- * pseudonyms (ADR 0028, ADR 0069).
+ * it. The audit reads the IDs from the checked result, which this stage
+ * only copies, so it records the IDs, not the pseudonyms (ADR 0028,
+ * ADR 0069).
  *
  * @param value - The checked result.
  * @param root - The kept shape of the result.

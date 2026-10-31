@@ -45,8 +45,9 @@ export interface Actor {
 export type Mode = 'interactive' | 'unattended' | 'operator';
 
 /**
- * Level of redaction. `standard` is the default; `strict` is refused until
- * the full redaction exists.
+ * Level of redaction. `standard` is the default; `strict` also shortens
+ * last names, puts pseudonyms in place of the IDs of persons and checks
+ * free text (ADR 0069).
  */
 export type RedactionLevel = 'off' | 'standard' | 'strict';
 
