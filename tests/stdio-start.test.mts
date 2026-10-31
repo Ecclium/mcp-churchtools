@@ -1,4 +1,5 @@
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   chmodSync,
   closeSync,
@@ -11,6 +12,7 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -340,6 +342,12 @@ const expectNoticesThenJson = (
 /** The audit lines of the calls. */
 const auditOf = (stderr: string): Json[] =>
   jsonLines(stderr).filter((line) => line['type'] === 'tool_call');
+
+/** A line of the audit file without the chain, which its copy lacks. */
+const withoutChain = (line: Json): Json =>
+  Object.fromEntries(
+    Object.entries(line).filter(([key]) => key !== 'seq' && key !== 'prevHash'),
+  );
 
 /** The log lines of the transport, whose events start with http_. */
 const transportOf = (stderr: string): Json[] =>
@@ -846,23 +854,120 @@ describe('the audit file of the real start', { timeout }, () => {
     }
   };
 
-  it('writes each audit line into a file with 0600 in a folder with 0700, the same as the copy', async () => {
+  it('writes each audit line into a file with 0600 in a folder with 0700, the same as the copy but for the chain', async () => {
     const stateDir = stateDirWith(0o700);
     const { code, stderr } = await callUnknown(stateDir, 3);
     expect(code).toBe(0);
     const inFile = fileLines(stateDir);
     expect(inFile).toHaveLength(3);
-    expect(inFile).toEqual(auditOf(stderr));
+    // The copy has neither seq nor prevHash (ADR 0028).
+    expect(inFile.map(withoutChain)).toEqual(auditOf(stderr));
+    for (const copy of auditOf(stderr)) {
+      expect(Object.keys(copy)).not.toContain('seq');
+      expect(Object.keys(copy)).not.toContain('prevHash');
+    }
     expect(inFile[0]).toMatchObject({
       tool: 'ct_unknown',
       outcome: 'error',
       errorCode: 'not_found',
     });
     const events = eventsOf(stderr);
-    expect(events.slice(-2)).toEqual(['audit_file_closed', 'stdio_closed']);
+    expect(events.slice(-3)).toEqual([
+      'audit_file_closed',
+      'audit_chain_anchor',
+      'stdio_closed',
+    ]);
     expect(
       jsonLines(stderr).find((line) => line['event'] === 'audit_file_closed'),
     ).toMatchObject({ count: 0 });
+  });
+
+  it('chains the lines of the file and anchors its head on stderr', async () => {
+    const stateDir = stateDirWith(0o700);
+    const { code, stderr } = await callUnknown(stateDir, 4);
+    expect(code).toBe(0);
+    const audit = join(stateDir, 'audit');
+    const [name = ''] = readdirSync(audit);
+    const text = readFileSync(join(audit, name), 'utf8');
+    const raw = text.split('\n').slice(0, -1);
+    expect(raw).toHaveLength(4);
+    const sha256 = (value: string): string =>
+      createHash('sha256').update(value).digest('hex');
+    let hash = sha256(name);
+    raw.forEach((line, index) => {
+      expect(JSON.parse(line)).toMatchObject({
+        seq: index + 1,
+        prevHash: hash,
+      });
+      hash = sha256(line);
+    });
+    expect(
+      jsonLines(stderr).filter(
+        (line) => line['event'] === 'audit_chain_anchor',
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        level: 'info',
+        file: name,
+        seq: 4,
+        hash,
+      }),
+    ]);
+  });
+
+  it('leaves no file from a start without a call', async () => {
+    const stateDir = stateDirWith(0o700);
+    const { code, stderr } = await callUnknown(stateDir, 0);
+    expect(code).toBe(0);
+    expect(readdirSync(join(stateDir, 'audit'))).toEqual([]);
+    expect(eventsOf(stderr)).not.toContain('audit_chain_anchor');
+  });
+
+  it('deletes at the start a file past its retention and an empty one of an earlier day, and nothing else', async () => {
+    const stateDir = stateDirWith(0o700);
+    const audit = join(stateDir, 'audit');
+    mkdirSync(audit, { mode: 0o700 });
+    const dayMs = 24 * 60 * 60 * 1000;
+    const daysAgo = (days: number): Date => new Date(Date.now() - days * dayMs);
+    const nameOn = (when: Date, number: number): string =>
+      `audit-${when.toISOString().slice(0, 10)}-120000-77-${String(number)}.jsonl`;
+    const place = (name: string, when: Date, content: string): void => {
+      writeFileSync(join(audit, name), content, { mode: 0o600 });
+      chmodSync(join(audit, name), 0o600);
+      utimesSync(join(audit, name), when, when);
+    };
+    const expired = nameOn(daysAgo(800), 1);
+    const empty = nameOn(daysAgo(2), 2);
+    const kept = nameOn(daysAgo(30), 3);
+    place(expired, daysAgo(800), '{"v":1}\n');
+    place(empty, daysAgo(2), '');
+    place(kept, daysAgo(30), '{"v":1}\n');
+    place('notes.txt', daysAgo(800), 'x');
+    const { code, stderr } = await callUnknown(stateDir, 1);
+    expect(code).toBe(0);
+    const names = readdirSync(audit).sort();
+    expect(names).toHaveLength(3);
+    expect(names).toContain(kept);
+    expect(names).toContain('notes.txt');
+    expect(names).not.toContain(expired);
+    expect(names).not.toContain(empty);
+    expect(
+      jsonLines(stderr).find((line) => line['event'] === 'audit_files_deleted'),
+    ).toMatchObject({ level: 'info', count: 2 });
+    expect(stderr).not.toContain(expired);
+    expect(stderr).not.toContain(stateDir);
+  });
+
+  it('leaves the file of an earlier process with the same folder of state', async () => {
+    const stateDir = stateDirWith(0o700);
+    await callUnknown(stateDir, 1);
+    const [first = ''] = readdirSync(join(stateDir, 'audit'));
+    const { code, stderr } = await callUnknown(stateDir, 1);
+    expect(code).toBe(0);
+    const names = readdirSync(join(stateDir, 'audit'));
+    expect(names).toHaveLength(2);
+    expect(names).toContain(first);
+    expect(eventsOf(stderr)).not.toContain('audit_files_deleted');
   });
 
   it('keeps every audit line in the file while nobody reads stderr', async () => {
@@ -1123,10 +1228,10 @@ describe.skipIf(process.getuid?.() === 0)(
       it('records both calls in the audit file, without the term or a name', () => {
         const inFile = fileLines(stateDir);
         // The copy on stderr is the line of the file without the IDs of
-        // the persons and groups found, which only the file names
-        // (ADR 0028).
+        // the persons and groups found, which only the file names, and
+        // without the chain of the file (ADR 0028).
         expect(auditOf(finished.stderr)).toEqual(
-          inFile.map((line) => ({ ...line, objectRefs: [] })),
+          inFile.map((line) => ({ ...withoutChain(line), objectRefs: [] })),
         );
         const refs = inFile.map((line) => line['objectRefs'] as string[]);
         expect(refs[0]?.length).toBeGreaterThan(0);
