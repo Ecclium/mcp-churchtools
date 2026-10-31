@@ -101,7 +101,7 @@ describe('revealKeyMaterial', () => {
 
   it('is not given out by the entry of the keys', () => {
     expect(Object.keys(keys).sort()).toEqual(
-      ['KeyMaterial', 'keyMaterialLength'].sort(),
+      ['KeyMaterial', 'createFileKeyProvider', 'keyMaterialLength'].sort(),
     );
   });
 });
