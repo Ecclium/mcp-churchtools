@@ -953,13 +953,24 @@ describe('the audit file of the real start', { timeout }, () => {
     };
 
     const clean = await command(['audit', 'verify', '--log', log]);
+    // Each process has one file, or two if it ran over midnight in UTC, and
+    // every file with a line has its anchor.
     expect(clean.code).toBe(0);
-    expect(clean.stdout).toContain(
-      '  Dateien mit einem Anker aus dem Log: 2, davon passend 2, nach Ablauf der Frist gelöscht 0',
+    expect(clean.stdout).toContainEqual(
+      expect.stringMatching(
+        /^ {2}Dateien mit einem Anker aus dem Log: ([2-4]), davon passend \1, nach Ablauf der Frist gelöscht 0$/,
+      ),
     );
     const shown = await command(['audit', 'show']);
     expect(shown.code).toBe(0);
-    expect(shown.stdout).toContain('  ct_unknown: 5 Aufrufe, 5 mit Fehler');
+    const calls = shown.stdout
+      .map(
+        (line) =>
+          /^ {2}ct_unknown: (\d+) Aufrufe?, \1 mit Fehler$/.exec(line)?.[1],
+      )
+      .filter((count) => count !== undefined)
+      .reduce((sum, count) => sum + Number(count), 0);
+    expect(calls).toBe(5);
 
     // A changed byte in the second line of the first file breaks the link
     // to the third, which only the chain shows.
