@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { ShapeNode } from '../registry/index.js';
 import {
+  collectOutputRefs,
   mapLeaves,
   markUntrusted,
   redact,
@@ -227,5 +228,48 @@ describe('resultBytes', () => {
     ['nested values', { list: [1, null, true], inner: { text: '"x"' } }],
   ])('counts %s as a JSON writer sends them', (_, value) => {
     expect(resultBytes(value)).toBe(asSent(value) + reserve);
+  });
+});
+
+describe('collectOutputRefs', () => {
+  const found = (value: unknown, node: ShapeNode): string[] => {
+    const refs: string[] = [];
+    collectOutputRefs(value, node, (domain, id) => {
+      refs.push(`${domain}:${String(id)}`);
+    });
+    return refs;
+  };
+
+  it('gives the persons and groups of a result, in order, and nothing else', () => {
+    const shape = object({
+      owner: leaf('personId'),
+      note: leaf('untrusted'),
+      members: array(object({ id: leaf('personId'), group: leaf('groupId') })),
+      pair: tuple(leaf('groupId'), leaf('none')),
+    });
+    expect(
+      found(
+        {
+          owner: 1,
+          note: 'person:9',
+          members: [
+            { id: 2, group: 7 },
+            { id: 3, group: null },
+          ],
+          pair: [8, 4],
+          unknown: 5,
+        },
+        shape,
+      ),
+    ).toEqual(['person:1', 'person:2', 'group:7', 'person:3', 'group:8']);
+  });
+
+  it('skips missing and null values', () => {
+    const shape = object({
+      owner: leaf('personId'),
+      list: array(leaf('groupId')),
+    });
+    expect(found({ owner: null }, shape)).toEqual([]);
+    expect(found(undefined, shape)).toEqual([]);
   });
 });

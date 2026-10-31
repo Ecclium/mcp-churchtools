@@ -20,7 +20,10 @@ export type ObjectDomain = 'person' | 'group' | ObjectKind;
 export interface ObjectRefList {
   /** At most 100 entries, each once, in the order they were found. */
   readonly refs: readonly string[];
-  /** How many other entries were found beyond the first 100. */
+  /**
+   * How many other entries were found beyond the first 100, at most as
+   * many as the audit takes.
+   */
   readonly omitted: number;
 }
 
@@ -111,6 +114,9 @@ export function createObjectRefCollector(): ObjectRefCollector {
       else omitted += 1;
     },
     list: (): ObjectRefList =>
-      Object.freeze({ refs: Object.freeze([...refs]), omitted }),
+      Object.freeze({
+        refs: Object.freeze([...refs]),
+        omitted: Math.min(omitted, auditLimits.objectRefsOmitted),
+      }),
   });
 }

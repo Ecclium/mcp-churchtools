@@ -9,6 +9,7 @@ import type {
   RedactionLevel,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
+import type { ObjectDomain } from '../audit/index.js';
 import {
   cleanText,
   maskBirthdate,
@@ -145,6 +146,51 @@ export function mapLeaves(
       }
       return Object.freeze(copy);
     }
+  }
+}
+
+/**
+ * Hands the ID of every person and group a checked result names to `add`,
+ * along the shape the registry kept: the leaves of the classes `personId`
+ * and `groupId` (ADR 0028). It reads the result before `redact`, so that
+ * the audit records the IDs, whatever a level of redaction shows.
+ *
+ * @param value - A value that passed the output schema.
+ * @param node - The kept shape of that value.
+ * @param add - Takes the kind and the value of each ID, in order.
+ * @example
+ * ```ts
+ * collectOutputRefs({ id: 12 }, shape.root, refs.add); // adds person 12
+ * ```
+ */
+export function collectOutputRefs(
+  value: unknown,
+  node: ShapeNode,
+  add: (domain: ObjectDomain, value: unknown) => void,
+): void {
+  if (value === null || value === undefined) return;
+  switch (node.kind) {
+    case 'leaf':
+      if (node.dataClass === 'personId') add('person', value);
+      else if (node.dataClass === 'groupId') add('group', value);
+      return;
+    case 'array':
+      for (const item of value as readonly unknown[]) {
+        collectOutputRefs(item, node.element, add);
+      }
+      return;
+    case 'tuple':
+      node.items.forEach((item, index) => {
+        collectOutputRefs((value as readonly unknown[])[index], item, add);
+      });
+      return;
+    case 'object':
+      for (const [key, field] of Object.entries(
+        value as Readonly<Record<string, unknown>>,
+      )) {
+        const fieldNode = node.fields[key];
+        if (fieldNode !== undefined) collectOutputRefs(field, fieldNode, add);
+      }
   }
 }
 

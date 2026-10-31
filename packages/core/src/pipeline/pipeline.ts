@@ -13,7 +13,10 @@
  * 6. `validateOutput`, which drops every field the schema does not declare,
  * 7. `redact` and 8. `markUntrusted` with a boundary drawn for the call,
  * 9. the limit on the size of the result as the client receives it,
- * 10. `audit`, in `finally`, also when a stage fails.
+ * 10. `audit`, in `finally`, also when a stage fails, with the IDs the
+ *     call asks for and the IDs of the persons and groups its result
+ *     names, derived from the schemas of the tool and the checked request
+ *     of the escape hatch, never from its code (ADR 0028).
  *
  * Tenant and actor are copied once, before the first stage, through own
  * data properties only. The context and the audit use that copy, so no
@@ -41,7 +44,14 @@ import {
   type TenantContext,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
-import { type AuditSink, auditPlaceholders } from '../audit/index.js';
+import {
+  type AuditSink,
+  auditPlaceholders,
+  createObjectRefCollector,
+  type ObjectDomain,
+  type ObjectRefCollector,
+  type ObjectRefList,
+} from '../audit/index.js';
 import { createChurchToolsClient } from '../churchtools/index.js';
 import {
   describeError,
@@ -55,7 +65,11 @@ import {
   maskErrorDescription,
   type RandomBytes,
 } from '../redaction/index.js';
-import type { CatalogEntry, ToolCatalog } from '../registry/index.js';
+import {
+  type CatalogEntry,
+  collectInputRefs,
+  type ToolCatalog,
+} from '../registry/index.js';
 import {
   isoDateOf,
   quotaTimeoutMs,
@@ -64,6 +78,7 @@ import {
 import { createTenantContext } from '../tenant/context.js';
 import { createReadAccess, type ReadAccess } from './read-api.js';
 import {
+  collectOutputRefs,
   fitsInput,
   markUntrusted,
   maxResultBytes,
@@ -271,7 +286,39 @@ interface Run {
   ctx?: TenantContext;
   access?: ReadAccess;
   detach?: () => void;
+  /**
+   * The IDs of the call, made once its input fits the schema: those of the
+   * input first, then those a read of the escape hatch asks for.
+   */
+  refs?: ObjectRefCollector;
+  /** The result as the output schema parsed it, before `redact`. */
+  output?: Readonly<Record<string, unknown>>;
 }
+
+// A call without a tool to name or an input that fits its schema has no IDs.
+const noRefs: ObjectRefList = Object.freeze({
+  refs: Object.freeze([]),
+  omitted: 0,
+});
+
+// Adds IDs to a collector, as the walks of input and output hand them on.
+const adder =
+  (refs: ObjectRefCollector) =>
+  (domain: ObjectDomain, value: unknown): void => {
+    refs.add(domain, value);
+  };
+
+// The IDs of the input of a call, if it fits the schema of the tool.
+const inputRefsOf = (
+  entry: CatalogEntry,
+  input: unknown,
+): ObjectRefCollector => {
+  const refs = createObjectRefCollector();
+  if (entry.inputRefs !== undefined) {
+    collectInputRefs(input, entry.inputRefs, adder(refs));
+  }
+  return refs;
+};
 
 /**
  * Builds the pipeline of one ChurchTools instance. It builds the raw client
@@ -379,6 +426,8 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     if (!fitsInput(input)) return failed('validation');
     const parsedInput = entry.input.safeParse(input);
     if (!parsedInput.success) return failed('validation');
+    const refs = inputRefsOf(entry, parsedInput.data);
+    run.refs = refs;
 
     // The daily read budget, counted once the input is valid and before
     // ChurchTools is asked, so that a call that fails before costs nothing.
@@ -408,6 +457,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       entry.meta.sensitivity,
       entry.asSpecial,
       entry.meta.domain,
+      adder(refs),
     );
     run.access = access;
     const aborted = new Promise<never>((_resolve, reject) => {
@@ -447,6 +497,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       ctx.log.warn('tool_output_invalid');
       return failed('internal');
     }
+    run.output = parsedOutput.data as Readonly<Record<string, unknown>>;
 
     // 7. redact and 8. markUntrusted, along the shape kept at registration.
     // The boundary is drawn after redact, so it is checked against the
@@ -524,6 +575,32 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     }
   };
 
+  // The IDs of a call for its audit line (ADR 0028). A call that ended
+  // before its input was checked, such as one the gate refused, names the
+  // IDs of its input if the input fits the schema. Only a result that goes
+  // out, or is held back after the read, adds the IDs of the persons and
+  // groups it names.
+  const objectRefsOf = (
+    run: Run,
+    input: unknown,
+    ok: boolean,
+  ): ObjectRefList => {
+    const entry = run.entry;
+    if (entry === undefined) return noRefs;
+    let refs = run.refs;
+    if (refs === undefined) {
+      const parsed = fitsInput(input)
+        ? entry.input.safeParse(input)
+        : undefined;
+      if (parsed?.success !== true) return noRefs;
+      refs = inputRefsOf(entry, parsed.data);
+    }
+    if (ok && run.output !== undefined) {
+      collectOutputRefs(run.output, entry.shape.root, adder(refs));
+    }
+    return refs.list();
+  };
+
   // A clock that throws must not cost the audit of the call.
   const now = (): number => {
     try {
@@ -589,6 +666,17 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         durationMs = Number.isFinite(elapsed)
           ? Math.min(Math.max(elapsed, 0), maxDurationMs)
           : 0;
+        // Deriving the IDs never costs the line of the call, and a result
+        // whose IDs cannot be derived does not go out (ADR 0028).
+        let refs = noRefs;
+        try {
+          refs = objectRefsOf(run, input, outcome.ok);
+        } catch {
+          if (outcome.ok) {
+            outcome = internalOutcome;
+            auditOutcome = 'error';
+          }
+        }
         const errorCode = outcome.ok ? undefined : outcome.error.code;
         // Tenant and actor come from the frozen copy only, which runs no
         // code of the resolver's answer. Without one the audit takes its
@@ -607,7 +695,8 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
               tool: run.entry?.name ?? 'ct_unknown',
               outcome: auditOutcome,
               ...(errorCode === undefined ? {} : { errorCode }),
-              objectRefs: [],
+              objectRefs: refs.refs,
+              ...(refs.omitted > 0 ? { objectRefsOmitted: refs.omitted } : {}),
               durationMs,
             },
             run.eventId,

@@ -292,13 +292,20 @@ describe('the second stage with an audit file', () => {
     await session.reply(2);
     session.input.end();
     await session.ended();
-    // The line in the file is the copy on stderr.
+    // The copy on stderr is the line in the file without the ID of the
+    // person the result names, which stays in the file (ADR 0028).
     const copies = session
       .stderr()
       .split('\n')
       .filter((line) => line.startsWith('{"v":1,'));
-    expect(audit.lines).toEqual(copies);
     expect(audit.lines).toHaveLength(1);
+    expect(audit.lines[0]).toContain('"objectRefs":["person:');
+    expect(copies).toEqual(
+      audit.lines.map((line) =>
+        line.replace(/"objectRefs":\[[^\]]*\]/u, '"objectRefs":[]'),
+      ),
+    );
+    expect(session.stderr()).not.toContain('person:');
     const events = session.events().filter((event) => event !== undefined);
     expect(events.slice(-2)).toEqual(['audit_file_closed', 'stdio_closed']);
     expect(
