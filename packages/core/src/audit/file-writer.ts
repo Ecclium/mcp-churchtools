@@ -173,7 +173,8 @@ export interface AuditFileListener {
   /**
    * Gets the anchor of each file the writer gives up that has a whole
    * line: when it closes, on a new UTC day and before a new file for a
-   * lost one. A file without a line has no anchor.
+   * lost one. A file without a line has no anchor. Like `swept`, it runs
+   * while the writer is busy and must not call the writer.
    */
   readonly anchor: (anchor: AuditChainAnchor) => void;
   /**
@@ -297,15 +298,29 @@ const encoder = new TextEncoder();
 const sha256 = (text: string): string =>
   createHash('sha256').update(encoder.encode(text)).digest('hex');
 
-// A line the chain can go into: one object on one line, not empty, so that
-// the link before its last brace leaves valid JSON. The writer checks the
-// shape only and never parses the line.
-const isChainable = (line: unknown): line is string =>
-  isWritableLine(line) &&
-  line.length <= maxAuditLineLength &&
-  line.startsWith('{') &&
-  line.endsWith('}') &&
-  line.charAt(line.length - 2) !== '{';
+// A line the chain can go into: one compact object on one line, not empty,
+// so that the link before its last brace leaves valid JSON, as the sink
+// writes it. The writer checks the shape only and never parses the line.
+const isChainable = (line: unknown): line is string => {
+  if (
+    !isWritableLine(line) ||
+    line.length > maxAuditLineLength ||
+    !line.startsWith('{') ||
+    !line.endsWith('}')
+  ) {
+    return false;
+  }
+  const before = line.charAt(line.length - 2);
+  return before !== '{' && before !== ',' && before !== ' ';
+};
+
+/**
+ * How old an empty file of an earlier day must be before the sweep takes
+ * it, in milliseconds: an hour, so that the empty file a process opened
+ * just before midnight is not taken while that process starts the file of
+ * the new day (ADR 0028).
+ */
+export const emptyFileGraceMs = 3_600_000;
 
 // Closes a piece of a line that lost its end. A line break alone could
 // turn a piece that lacks only its break into a valid line; with the
@@ -680,16 +695,20 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
   // the anchor and not with each line: under macOS, where Node.js flushes
   // with F_FULLFSYNC, that cost about 3 ms per line, and the rule of
   // ADR 0028 allows it per line only below 1 ms. A failed flush changes
-  // nothing. A file without a byte goes instead: every start opens a file,
-  // also when no tool runs (ADR 0028).
+  // nothing. A file without a byte and without a line it wrote goes
+  // instead: every start opens a file, also when no tool runs (ADR 0028).
+  // A file that held lines stays even when someone emptied it, so that a
+  // check against its anchor can see the loss.
   const retire = (old: Current, own: boolean): void => {
     if (own) {
       if (old.torn) send(old.fd, repairBytes);
-      let empty: boolean;
-      try {
-        empty = fs.fstatSync(old.fd).size === 0;
-      } catch {
-        empty = false;
+      let empty = false;
+      if (old.seq === 0) {
+        try {
+          empty = fs.fstatSync(old.fd).size === 0;
+        } catch {
+          empty = false;
+        }
       }
       if (!empty) {
         try {
@@ -777,7 +796,13 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
   // it is read and before each file goes. unlink never follows a link.
   const sweep = (): void => {
     if (closed) return;
-    const today = stampOf(clock)?.date;
+    let now: number;
+    try {
+      now = clock.now();
+    } catch {
+      now = Number.NaN;
+    }
+    const today = dayOfTime(now);
     let deleted = 0;
     let kept = 0;
     let complete = today !== undefined && sameFolder();
@@ -808,11 +833,19 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
         continue;
       }
       const changed = dayOfTime(stats.mtimeMs);
-      if (changed === undefined) continue;
+      if (changed === undefined) {
+        // A last change it cannot read: past its retention by name, the
+        // file stays, and the sweep says so.
+        if (isPastRetention(day, retentionMonths, today)) kept += 1;
+        continue;
+      }
       const due =
         (isPastRetention(day, retentionMonths, today) &&
           isPastRetention(changed, retentionMonths, today)) ||
-        (stats.isFile() && stats.size === 0 && changed < today);
+        (stats.isFile() &&
+          stats.size === 0 &&
+          changed < today &&
+          stats.mtimeMs <= now - emptyFileGraceMs);
       if (!due) continue;
       if (!stats.isFile() || !isPrivate(stats, uid) || stats.nlink !== 1) {
         kept += 1;

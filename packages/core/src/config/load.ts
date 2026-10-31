@@ -804,7 +804,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       report('invalid_retention', retentionName);
     }
   }
-  if (retentionRead.state !== 'unset' && stateDirRead.state === 'unset') {
+  if (retention?.origin === 'environment' && stateDirRead.state === 'unset') {
     warnings.add('audit_retention_without_state_dir');
   } else if (
     retention !== undefined &&

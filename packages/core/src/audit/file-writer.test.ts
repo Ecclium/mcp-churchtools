@@ -720,6 +720,9 @@ describe('the writer of the audit file', () => {
     ['an empty object', '{}'],
     ['an object without its end', '{"v":1'],
     ['an object without its start', '"v":1}'],
+    ['an object with a blank before its end', '{"v":1 }'],
+    ['an object with a comma before its end', '{"v":1,}'],
+    ['an empty object with a blank', '{ }'],
   ])('refuses %s without a call', (_name, line) => {
     const { writer, calls } = opened();
     expect(writer.write(line as string)).toBe(false);
@@ -1256,11 +1259,15 @@ describe('the flush of the writer', () => {
   const syncs = (calls: readonly string[]): string[] =>
     calls.filter((call) => call.startsWith('fsync'));
 
-  it('flushes no line on its own, only the file when it closes, before closing it', () => {
+  it('flushes no line on its own, only the file when it closes, before closing it and before its anchor', () => {
     const order: string[] = [];
     const { writer, calls } = opened({
       fsync: (fd) => order.push(`fsync ${String(fd)}`),
       close: (fd) => order.push(`close ${String(fd)}`),
+    });
+    writer.attach({
+      anchor: () => order.push('anchor'),
+      swept: () => undefined,
     });
     for (let line = 0; line < 5; line += 1) writer.write('{"v":1}');
     expect(syncs(calls)).toEqual([]);
@@ -1269,6 +1276,7 @@ describe('the flush of the writer', () => {
       `close ${String(folderFd)}`,
       `fsync ${String(fileFd)}`,
       `close ${String(fileFd)}`,
+      'anchor',
     ]);
   });
 
@@ -1616,6 +1624,28 @@ describe('the empty files of the writer', () => {
     expect(unlinks(piece.calls)).toEqual([]);
   });
 
+  it('keeps a file that held lines and was emptied by someone else, with its anchor', () => {
+    let emptied = false;
+    const { writer, calls } = opened({
+      fstat: (fd) =>
+        emptied && fd === fileFd
+          ? stats({ kind: 'file', ino: 200 + fd, size: 0 })
+          : undefined,
+    });
+    const anchors: AuditChainAnchor[] = [];
+    writer.attach({
+      anchor: (given) => anchors.push(given),
+      swept: () => undefined,
+    });
+    writer.write('{"v":1}');
+    writer.write('{"v":2}');
+    emptied = true;
+    writer.close();
+    expect(unlinks(calls)).toEqual([]);
+    expect(calls).toContain(`fsync ${String(fileFd)}`);
+    expect(anchors.map((given) => given.seq)).toEqual([2]);
+  });
+
   it('keeps an empty file whose name leads to another file by now', () => {
     let armed = false;
     const { writer, calls } = opened({
@@ -1836,7 +1866,8 @@ describe('the sweep of the writer with file functions', () => {
       [name('2026-10-22', 2)]: old({ size: 0, mtimeMs: at('2026-10-23') }),
       [name('2026-10-23', 2)]: old({ size: 0, mtimeMs: at('2026-10-23') }),
       [name('2027-01-01')]: old({ size: 0, mtimeMs: at('2025-01-01') }),
-      [name('2025-10-22', 3)]: old({ mtimeMs: Number.NaN }),
+      // Within the retention by name, however old its last change.
+      [name('2026-05-01')]: old({ mtimeMs: at('2020-01-01') }),
       [`${name('2025-10-22')}.bak`]: old(),
       'notes.txt': old(),
     });
@@ -1844,6 +1875,50 @@ describe('the sweep of the writer with file functions', () => {
     expect(unlinked()).toEqual([name('2025-10-22'), name('2026-10-22')]);
     expect(sweeps).toEqual([{ deleted: 2, kept: 0, complete: true }]);
     expect(Object.isFrozen(sweeps[0])).toBe(true);
+  });
+
+  it('keeps and counts a file past its retention whose last change it cannot read', () => {
+    const { writer, sweeps, unlinked } = folderWith({
+      [name('2025-10-22', 3)]: old({ mtimeMs: Number.NaN }),
+      // Within the retention by name: no count.
+      [name('2026-05-01', 3)]: old({ mtimeMs: Number.NaN }),
+    });
+    writer.sweep();
+    expect(unlinked()).toEqual([]);
+    expect(sweeps).toEqual([{ deleted: 0, kept: 1, complete: true }]);
+  });
+
+  it('takes an empty file of yesterday only after an hour since its last change', () => {
+    const sweeps: AuditSweep[] = [];
+    const late = Date.parse('2026-10-22T23:30:00.000Z');
+    const earlier = Date.parse('2026-10-22T23:00:00.000Z');
+    const entries: Record<string, AuditFileStats> = {
+      [name('2026-10-22', 1)]: stats({ kind: 'file', ino: 501, mtimeMs: late }),
+      [name('2026-10-22', 2)]: stats({
+        kind: 'file',
+        ino: 502,
+        mtimeMs: earlier,
+      }),
+    };
+    let armed = false;
+    const { writer, calls } = opened(
+      {
+        readdir: () => Object.keys(entries),
+        lstat: (path) =>
+          armed ? entries[path.slice(folderPath.length + 1)] : undefined,
+      },
+      { now: () => Date.parse('2026-10-23T00:10:00.000Z') },
+    );
+    writer.attach({
+      anchor: () => undefined,
+      swept: (given) => sweeps.push(given),
+    });
+    armed = true;
+    writer.sweep();
+    expect(calls.filter((call) => call.startsWith('unlink'))).toEqual([
+      `unlink ${folderPath}/${name('2026-10-22', 2)}`,
+    ]);
+    expect(sweeps).toEqual([{ deleted: 1, kept: 0, complete: true }]);
   });
 
   it('keeps and counts what is due but no private regular file with one link', () => {

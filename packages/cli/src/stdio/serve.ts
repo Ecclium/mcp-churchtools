@@ -150,18 +150,21 @@ export const closeDeadlineMs = 5000;
 const maxCount = 1_000_000;
 
 const dayMs = 86_400_000;
+const hourMs = 3_600_000;
 
 /**
- * Milliseconds from a time to one second after the next UTC midnight,
- * when the timer of a long run starts the file of the new day.
+ * Milliseconds from a time to the next look of the timer of a long run at
+ * the day: one second after the next UTC midnight, but at most an hour.
+ * A timer of Node.js does not count the time a computer sleeps, so after
+ * a sleep the next look comes within the hour, not a day late.
  *
  * @param now - Milliseconds since the Unix epoch, from the clock.
  * @returns The delay, or an hour when the time is no finite number.
  */
 export const untilNextDay = (now: number): number =>
   Number.isFinite(now)
-    ? dayMs - (((now % dayMs) + dayMs) % dayMs) + 1000
-    : 3_600_000;
+    ? Math.min(dayMs - (((now % dayMs) + dayMs) % dayMs) + 1000, hourMs)
+    : hourMs;
 
 // The process itself. Only properties are used: loading node:process
 // would make fd 1 and fd 2 non-blocking (ADR 0054).
@@ -270,7 +273,9 @@ export function serve(options: ServeOptions): ExitCode | undefined {
       },
     });
     // At the start, and then on each new UTC day through the timer, also
-    // without a call. unref, so that the timer holds nothing.
+    // without a call. The timer looks at least every hour and starts the
+    // file of a new day when the clock shows one. unref, so that the timer
+    // holds nothing.
     auditFile.sweep();
     const file = auditFile;
     const nextDay = (): void => {
@@ -281,8 +286,11 @@ export function serve(options: ServeOptions): ExitCode | undefined {
         // An hour, and then the clock again.
       }
       dayTimer = setTimeout(() => {
-        file.tick();
-        nextDay();
+        try {
+          file.tick();
+        } finally {
+          nextDay();
+        }
       }, untilNextDay(now)).unref();
     };
     nextDay();

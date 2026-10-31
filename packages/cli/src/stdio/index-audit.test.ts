@@ -161,6 +161,22 @@ describe('the first stage and the audit file', () => {
     expect(readdirSync(join(folder, 'audit'))).toEqual(state.atLoad);
   });
 
+  it('hands the retention of the configuration to the writer', async () => {
+    const given: unknown[] = [];
+    const { code } = await start(
+      freshFolder(),
+      {
+        openAuditFile: (options) => {
+          given.push(options.retentionMonths);
+          return { ok: false, code: 'audit_file_unavailable' };
+        },
+      },
+      { ECCLIUM_AUDIT_RETENTION_MONTHS: '3' },
+    );
+    expect(code).toBe(exitCodes.invalidConfig);
+    expect(given).toEqual([3]);
+  });
+
   it('hands over no file without the folder', async () => {
     const { code } = await start(undefined);
     expect(code).toBeUndefined();

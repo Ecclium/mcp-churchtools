@@ -672,7 +672,7 @@ const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({
   // Art. 4 DSV asks of a log (ADR 0028). It is allowed all the same.
   audit_retention_short: message(
     `Die Audit-Dateien bleiben nach ${retention} weniger als zwölf Monate.`,
-    'Nach Ablauf der Frist löscht Ecclium sie. Verlangt Ihr Recht ein Protokoll der Zugriffe, ist das oft kürzer als gefordert, die Datenschutzverordnung der Schweiz etwa verlangt mindestens ein Jahr.',
+    'Nach Ablauf der Frist löscht Ecclium sie, auch ältere Dateien, die schon im Ordner liegen, und auch die anderer Einträge mit demselben Zustandsordner. Verlangt Ihr Recht ein Protokoll der Zugriffe, ist das oft kürzer als gefordert, die Datenschutzverordnung der Schweiz etwa verlangt mindestens ein Jahr.',
     `Prüfen Sie, wie lange Ihr Recht das Protokoll verlangt, und setzen Sie ${retention} danach oder entfernen Sie die Variable für zwölf Monate.`,
   ),
   audit_retention_without_state_dir: message(

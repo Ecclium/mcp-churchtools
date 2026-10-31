@@ -435,8 +435,29 @@ describe('the second stage with an audit file', () => {
     expect(audit.ticks).toEqual([]);
     vi.advanceTimersByTime(1);
     expect(audit.ticks).toEqual([1]);
-    expect(timers.mock.calls.at(-1)?.[1]).toBe(86_400_000);
-    vi.advanceTimersByTime(86_400_000);
+    // Then at least once an hour, so that a sleep delays it by an hour at
+    // most.
+    expect(timers.mock.calls.at(-1)?.[1]).toBe(3_600_000);
+    vi.advanceTimersByTime(3_600_000);
+    expect(audit.ticks).toEqual([1, 1]);
+  });
+
+  it('arms the timer again when tick throws', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(Date.UTC(2026, 9, 23, 23, 59, 0));
+    const audit = fakeAuditFile();
+    const failing = {
+      ...audit.file,
+      tick: () => {
+        audit.ticks.push(1);
+        throw new Error('tick');
+      },
+    };
+    setup({ auditFile: failing });
+    expect(() => vi.advanceTimersByTime(61_000)).toThrow('tick');
+    expect(audit.ticks).toEqual([1]);
+    // The next look comes all the same.
+    expect(() => vi.advanceTimersByTime(3_600_000)).toThrow('tick');
     expect(audit.ticks).toEqual([1, 1]);
   });
 
@@ -469,9 +490,13 @@ describe('the second stage with an audit file', () => {
 describe('untilNextDay', () => {
   it('waits until one second after the next UTC midnight', () => {
     expect(untilNextDay(Date.UTC(2026, 9, 23, 23, 59, 0))).toBe(61_000);
-    expect(untilNextDay(Date.UTC(2026, 9, 24))).toBe(86_401_000);
-    expect(untilNextDay(Date.UTC(2026, 9, 24, 0, 0, 1))).toBe(86_400_000);
+    expect(untilNextDay(Date.UTC(2026, 9, 23, 23, 0, 1))).toBe(3_600_000);
     expect(untilNextDay(-1)).toBe(1001);
+  });
+
+  it('waits at most an hour', () => {
+    expect(untilNextDay(Date.UTC(2026, 9, 24))).toBe(3_600_000);
+    expect(untilNextDay(Date.UTC(2026, 9, 24, 0, 0, 1))).toBe(3_600_000);
   });
 
   it.each([Number.NaN, Number.POSITIVE_INFINITY])(

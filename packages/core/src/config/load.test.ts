@@ -1524,6 +1524,19 @@ describe('loadConfig and the retention of the audit files', () => {
     expect(load(valid()).report.warnings).toEqual([]);
   });
 
+  it('warns about no folder of state only for a valid value over stdio', () => {
+    for (const value of ['', '0', '1234']) {
+      const result = retained(value, false);
+      expect(result.ok, value).toBe(false);
+      expect(result.report.warnings, value).toEqual([]);
+    }
+    const overHttp = load(
+      { ...valid(), ECCLIUM_AUDIT_RETENTION_MONTHS: '6' },
+      'http',
+    );
+    expect(overHttp.report.warnings).toEqual([]);
+  });
+
   it('refuses the variable over HTTP', () => {
     const result = load(
       { ...valid(), ECCLIUM_AUDIT_RETENTION_MONTHS: '12' },

@@ -958,16 +958,59 @@ describe('the audit file of the real start', { timeout }, () => {
     expect(stderr).not.toContain(stateDir);
   });
 
-  it('leaves the file of an earlier process with the same folder of state', async () => {
+  it('leaves the empty file of a process that still runs while a second one starts with the same folder', async () => {
     const stateDir = stateDirWith(0o700);
-    await callUnknown(stateDir, 1);
-    const [first = ''] = readdirSync(join(stateDir, 'audit'));
+    const first = launch({
+      origin: `https://${host}`,
+      env: { ECCLIUM_STATE_DIR: stateDir },
+    });
+    await modern.open(first);
+    const [running = ''] = readdirSync(join(stateDir, 'audit'));
     const { code, stderr } = await callUnknown(stateDir, 1);
     expect(code).toBe(0);
-    const names = readdirSync(join(stateDir, 'audit'));
-    expect(names).toHaveLength(2);
-    expect(names).toContain(first);
+    // The empty file of today belongs to a running process and stays.
+    expect(readdirSync(join(stateDir, 'audit'))).toContain(running);
     expect(eventsOf(stderr)).not.toContain('audit_files_deleted');
+    expect((await first.finish()).code).toBe(0);
+    // Without a line, the first process removes its file at its end.
+    expect(readdirSync(join(stateDir, 'audit'))).not.toContain(running);
+  });
+
+  it('deletes with a retention of one month what is older, and warns at the start', async () => {
+    const stateDir = stateDirWith(0o700);
+    const audit = join(stateDir, 'audit');
+    mkdirSync(audit, { mode: 0o700 });
+    const dayMs = 24 * 60 * 60 * 1000;
+    const daysAgo = (days: number): Date => new Date(Date.now() - days * dayMs);
+    const nameOn = (when: Date): string =>
+      `audit-${when.toISOString().slice(0, 10)}-120000-77-1.jsonl`;
+    const old = nameOn(daysAgo(40));
+    const recent = nameOn(daysAgo(20));
+    for (const [name, when] of [
+      [old, daysAgo(40)],
+      [recent, daysAgo(20)],
+    ] as const) {
+      writeFileSync(join(audit, name), '{"v":1}\n', { mode: 0o600 });
+      chmodSync(join(audit, name), 0o600);
+      utimesSync(join(audit, name), when, when);
+    }
+    const session = launch({
+      origin: `https://${host}`,
+      env: {
+        ECCLIUM_STATE_DIR: stateDir,
+        ECCLIUM_AUDIT_RETENTION_MONTHS: '1',
+      },
+    });
+    await modern.open(session);
+    const { code, stderr } = await session.finish();
+    expect(code).toBe(0);
+    const names = readdirSync(audit);
+    expect(names).toContain(recent);
+    expect(names).not.toContain(old);
+    expect(linesOf(stderr)).toContain(warningText('audit_retention_short'));
+    expect(
+      jsonLines(stderr).find((line) => line['event'] === 'audit_files_deleted'),
+    ).toMatchObject({ count: 1 });
   });
 
   it('keeps every audit line in the file while nobody reads stderr', async () => {
