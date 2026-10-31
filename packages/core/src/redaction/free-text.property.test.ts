@@ -104,17 +104,16 @@ const sentences = fc
   .map(({ value, chosen, before, after, opener, closer }) => ({
     value,
     text: `${before} ${opener}${variantOf(value.text, chosen)}${closer} ${after}`,
+    // The words, the bracket and the sign after the value stay; the value
+    // gives way to its marker as a whole.
+    expected: `${before} ${opener}${freeTextMarkers[value.kind]}${closer} ${after}`,
   }));
 
 describe('the check of free text', () => {
   it('puts its marker in place of every value, in any variant, and keeps nothing of it', () => {
     fc.assert(
-      fc.property(sentences, ({ value, text }) => {
-        const masked = maskFreeText(text);
-        expect(masked).toContain(freeTextMarkers[value.kind]);
-        for (const core of value.cores) {
-          expect(searchable(masked)).not.toContain(core.toLowerCase());
-        }
+      fc.property(sentences, ({ text, expected }) => {
+        expect(maskFreeText(text)).toBe(expected);
       }),
       run,
     );
@@ -129,6 +128,9 @@ describe('the check of free text', () => {
           const masked = maskFreeText(
             values.map((value) => `${filler} ${value.text}`).join(', '),
           );
+          // The words around them hold no digit, so no digit may stay,
+          // not even a part of a number written with spaces.
+          expect(masked.normalize('NFKC')).not.toMatch(/\p{Nd}/u);
           for (const value of values) {
             expect(masked).toContain(freeTextMarkers[value.kind]);
             for (const core of value.cores) {
@@ -193,6 +195,49 @@ describe('the limit of the check of free text', () => {
         const text = `Kontakt ${foreign} heute`;
         expect(maskFreeText(text)).toBe(text);
       }),
+      { seed, numRuns: 50 },
+    );
+  });
+
+  // The check reads numbers in the forms they are printed in: an IBAN in
+  // one run or in groups of four with one space, an AHV number in one run
+  // or with the same dot, space or hyphen between its groups, a phone
+  // number from +, ( or 0. A number in another form stays (ADR 0069),
+  // unless a part of it that starts with 0 reads as a phone number, which
+  // these digits avoid: no group starts with 0.
+  const noZeroLead = (groups: readonly number[]): RegExp =>
+    new RegExp(
+      `^${groups.map((size) => `[1-9][0-9]{${String(size - 1)}}`).join('')}$`,
+      'u',
+    );
+  it('does not recognise numbers in other printed forms', () => {
+    fc.assert(
+      fc.property(
+        fc
+          .tuple(
+            fc.constantFrom('CH', 'DE', 'AT'),
+            fc.stringMatching(noZeroLead([4, 4, 4, 4, 1])),
+          )
+          .map(([country, rest]) => ibanOf(country, rest))
+          .filter((value) => value.charAt(2) !== '0'),
+        fc.stringMatching(noZeroLead([4, 4, 1])),
+        fc.stringMatching(noZeroLead([2, 3, 2, 2])),
+        (iban, nine, local) => {
+          const printed = printedIban(iban);
+          const ahv = ahvOf(nine);
+          for (const text of [
+            printed.replaceAll(' ', '-'),
+            printed.replaceAll(' ', '  '),
+            `${ahv.slice(0, 3)}.${ahv.slice(3, 7)} ${ahv.slice(7, 11)}.${ahv.slice(11)}`,
+            `${ahv.slice(0, 3)}/${ahv.slice(3, 7)}/${ahv.slice(7, 11)}/${ahv.slice(11)}`,
+            `${local.slice(0, 2)} ${local.slice(2, 5)} ${local.slice(5, 7)} ${local.slice(7)}`,
+          ]) {
+            expect(maskFreeText(`Kontakt ${text} heute`)).toBe(
+              `Kontakt ${text} heute`,
+            );
+          }
+        },
+      ),
       { seed, numRuns: 50 },
     );
   });

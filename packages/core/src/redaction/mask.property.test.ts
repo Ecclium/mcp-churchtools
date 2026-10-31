@@ -59,14 +59,10 @@ const phones = fc
   .map((core) => canaryFrom('phone', [core]));
 const lastNames = fc.stringMatching(/^[A-Z][a-z]{10}[äöüé]$/);
 
-const asciiDigits = (text: string): number => {
-  let count = 0;
-  for (let index = 0; index < text.length; index += 1) {
-    const code = text.charCodeAt(index);
-    if (code >= 0x30 && code <= 0x39) count += 1;
-  }
-  return count;
-};
+// Digits of any script after NFKC, so that a look-alike number that went
+// out unmasked counts as well.
+const digitsOf = (text: string): number =>
+  (text.normalize('NFKC').match(/\p{Nd}/gu) ?? []).length;
 
 const run = { seed, numRuns: 300 };
 
@@ -114,7 +110,7 @@ describe('the mask of a phone number', () => {
         ),
         ([canary, text]) => {
           const masked = maskPhone(text);
-          expect(asciiDigits(masked)).toBeLessThanOrEqual(visiblePhoneDigits);
+          expect(digitsOf(masked)).toBeLessThanOrEqual(visiblePhoneDigits);
           expect(searchable(masked).replaceAll(' ', '')).not.toContain(
             canary.cores[0],
           );
@@ -167,19 +163,13 @@ describe('the mask of a date of birth', () => {
 describe('the shortened last name of strict', () => {
   it('gives one sign and a dot or the marker, in any variant', () => {
     fc.assert(
-      fc.property(
-        lastNames.chain((name) =>
-          fc.tuple(fc.constant(name), variantsOf(name)),
-        ),
-        ([name, text]) => {
-          const masked = maskLastName(text);
-          expect(searchable(masked)).not.toContain(name.toLowerCase());
-          if (masked === maskedValue) return;
-          const first = String.fromCodePoint(masked.codePointAt(0) ?? 0);
-          expect(masked).toBe(`${first}.`);
-          expect(searchable(first)).toBe(searchable(text).charAt(0));
-        },
-      ),
+      fc.property(lastNames.chain(variantsOf), (text) => {
+        const masked = maskLastName(text);
+        if (masked === maskedValue) return;
+        const first = String.fromCodePoint(masked.codePointAt(0) ?? 0);
+        expect(masked).toBe(`${first}.`);
+        expect(searchable(first)).toBe(searchable(text).charAt(0));
+      }),
       run,
     );
   });

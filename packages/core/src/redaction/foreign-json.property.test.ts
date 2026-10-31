@@ -182,6 +182,7 @@ describe('the mask by form of the escape hatch', () => {
           { [key.value as string]: 1 },
           'standard',
         );
+        expect(rendered.ok).toBe(true);
         if (!rendered.ok) return;
         for (const core of key.cores) {
           expect(squeezed(rendered.text)).not.toContain(core.toLowerCase());

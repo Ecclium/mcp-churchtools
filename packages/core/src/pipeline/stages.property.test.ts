@@ -1,14 +1,19 @@
 import { createHash } from 'node:crypto';
 
-import type {
-  DataClass,
-  RedactionLevel,
-  TenantContext,
+import {
+  classify,
+  type DataClass,
+  dataClasses,
+  type Plugin,
+  type RedactionLevel,
+  type TenantContext,
+  type ToolDefinition,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import {
   ahvOf,
   canaryFrom,
   coreToolCatalog,
+  examplePlugin,
   groupedAhv,
   ibanOf,
   printedIban,
@@ -17,6 +22,7 @@ import {
 } from '@ecclium/mcp-churchtools-testkit';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 import { createFileKeyProvider } from '../keys/file-provider.js';
 import { KeyMaterial } from '../keys/index.js';
@@ -24,7 +30,7 @@ import { freeTextMarkers } from '../redaction/free-text.js';
 import { maskedValue } from '../redaction/mask.js';
 import { openPseudonyms, type Pseudonyms } from '../redaction/pseudonym.js';
 import { pseudonymPattern } from '../redaction/pseudonym-form.js';
-import type { ShapeNode } from '../registry/index.js';
+import { createToolCatalog, type ShapeNode } from '../registry/index.js';
 import { markUntrusted, redact } from './stages.js';
 
 // The redaction over the shape of every tool of the core, in every level
@@ -308,7 +314,6 @@ const checkLeaf = (
         holds(output, info.cores);
         return;
       }
-      hides(output, info.cores);
       expect(
         output === maskedValue || /^.{1,2}\.$/u.test(output as string),
         String(output),
@@ -317,8 +322,21 @@ const checkLeaf = (
     case 'email':
     case 'phone':
     case 'birthdate':
-      if (masking) hides(output, info.cores);
-      else holds(output, info.cores);
+      if (masking) {
+        hides(output, info.cores);
+        // At most four digits of a number stay, of any script.
+        if (info.dataClass === 'phone') {
+          expect(
+            (
+              String(output)
+                .normalize('NFKC')
+                .match(/\p{Nd}/gu) ?? []
+            ).length,
+          ).toBeLessThanOrEqual(4);
+        }
+      } else {
+        holds(output, info.cores);
+      }
       return;
     case 'address':
     case 'amount':
@@ -333,6 +351,13 @@ const checkLeaf = (
       if (strict) {
         hides(output, info.cores);
         expect(text).toContain(freeTextMarkers[info.marker]);
+        // The words around the value hold no digit, so no digit of it may
+        // stay, not even a part of a number written with spaces. The note
+        // on removed characters counts them and stays.
+        const inner = text
+          .slice(`<<data-${boundary}>>`.length, -`<</data-${boundary}>>`.length)
+          .replace(/ \[ecclium: \d+ hidden characters removed\]$/u, '');
+        expect(inner.normalize('NFKC')).not.toMatch(/\p{Nd}/u);
       } else {
         holds(output, info.cores);
       }
@@ -395,7 +420,72 @@ const check = (
   }
 };
 
-const entries = coreToolCatalog().list();
+const coreEntries = coreToolCatalog().list();
+
+// No tool of the core gives a phone number, a date of birth, an address
+// or an amount yet, so a synthetic tool with a field of every class, also
+// in a list, completes the shapes the test walks.
+const everyClassTool = {
+  name: 'ct_test_every_class',
+  meta: {
+    capability: 'read',
+    domain: 'wiki',
+    requiredRights: [],
+    tier: 'free',
+    sensitivity: 'special',
+    unattended: 'never',
+    routineStable: false,
+  },
+  description: {
+    purpose: 'Serves a test.',
+    useWhen: 'A test needs it.',
+    avoidWhen: 'Anything else.',
+    limits: 'None.',
+  },
+  input: z.strictObject({}),
+  output: z.object({
+    people: z
+      .array(
+        z.object({
+          id: classify(z.number().int().nonnegative(), 'personId'),
+          firstName: classify(z.string(), 'name.first'),
+          lastName: classify(z.string(), 'name.last'),
+          email: classify(z.string(), 'email').nullable(),
+          phone: classify(z.string(), 'phone').optional(),
+          birthdate: classify(z.string(), 'birthdate').nullable(),
+          street: classify(z.string(), 'address'),
+          latitude: classify(z.number(), 'address').optional(),
+          donation: classify(z.number(), 'amount'),
+          groupId: classify(z.number().int().nonnegative(), 'groupId'),
+          note: classify(z.string(), 'untrusted'),
+        }),
+      )
+      .max(5),
+    title: classify(z.string(), 'untrusted'),
+    count: classify(z.number().int(), 'none'),
+  }),
+  execute: () => Promise.resolve({ people: [], title: '', count: 0 }),
+} as unknown as ToolDefinition;
+
+const everyClassPlugin: Plugin = {
+  name: 'test-plugin',
+  version: '1.0.0',
+  register(host): undefined {
+    host.addTool(everyClassTool);
+  },
+};
+
+const syntheticEntry = createToolCatalog({
+  core: examplePlugin,
+  plugins: [everyClassPlugin],
+  readOnly: true,
+  toolsets: new Set(['wiki'] as const),
+}).get('ct_test_every_class');
+if (syntheticEntry === undefined) {
+  throw new Error('the registry refused the synthetic tool');
+}
+
+const entries = [...coreEntries, syntheticEntry];
 
 const context = Object.freeze({
   tenantId: 'default',
@@ -413,8 +503,8 @@ const keys = createFileKeyProvider({
 });
 
 describe('the redaction over the shape of every tool', () => {
-  it('covers the 32 tools of the core and their personal classes', () => {
-    expect(entries.map((entry) => entry.name)).toHaveLength(32);
+  it('covers the 32 tools of the core and, with the synthetic tool, every class', () => {
+    expect(coreEntries.map((entry) => entry.name)).toHaveLength(32);
     const classes = new Set<DataClass | undefined>();
     const visit = (node: ShapeNode): void => {
       if (node.kind === 'leaf') classes.add(node.dataClass);
@@ -423,7 +513,7 @@ describe('the redaction over the shape of every tool', () => {
       else if (node.kind === 'array') visit(node.element);
       else node.items.forEach(visit);
     };
-    for (const entry of entries) visit(entry.shape.root);
+    for (const entry of coreEntries) visit(entry.shape.root);
     for (const dataClass of [
       'personId',
       'groupId',
@@ -434,6 +524,8 @@ describe('the redaction over the shape of every tool', () => {
     ] as const) {
       expect(classes.has(dataClass), dataClass).toBe(true);
     }
+    visit(syntheticEntry.shape.root);
+    expect([...classes].sort()).toEqual([...dataClasses].sort());
   });
 
   describe.each(levels)('in %s', (level) => {

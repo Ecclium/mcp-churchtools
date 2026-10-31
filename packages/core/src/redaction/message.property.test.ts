@@ -40,14 +40,10 @@ const phones = fc
   .stringMatching(/^[0-9]{12}$/)
   .map((core) => canaryFrom('phone', [core]));
 
-const digitsOf = (text: string): number => {
-  let count = 0;
-  for (let index = 0; index < text.length; index += 1) {
-    const code = text.charCodeAt(index);
-    if (code >= 0x30 && code <= 0x39) count += 1;
-  }
-  return count;
-};
+// Digits of any script after NFKC, so that a look-alike number that went
+// out unmasked counts as well.
+const digitsOf = (text: string): number =>
+  (text.normalize('NFKC').match(/\p{Nd}/gu) ?? []).length;
 
 describe('the mask of messages', () => {
   it('keeps nothing of an e-mail address but its first sign and domain, in any variant', () => {
@@ -84,9 +80,7 @@ describe('the mask of messages', () => {
           expect(searchable(masked).replaceAll(' ', '')).not.toContain(
             phone.cores[0],
           );
-          expect(digitsOf(masked.normalize('NFKC'))).toBeLessThanOrEqual(
-            visiblePhoneDigits,
-          );
+          expect(digitsOf(masked)).toBeLessThanOrEqual(visiblePhoneDigits);
         },
       ),
       run,
