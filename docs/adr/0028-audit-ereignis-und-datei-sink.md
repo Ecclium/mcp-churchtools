@@ -1,7 +1,7 @@
 # ADR 0028: Audit-Ereignis v1 und Datei-Sink im freien Kern
 
 - Status: Vorgeschlagen
-- Datum: 23.10.2026
+- Datum: 23.10.2026, ergänzt am 31.10.2026
 - Fällt vor: Phase 4
 
 ## Kontext
@@ -21,20 +21,49 @@ Die MCP-Spezifikation erlaubt dem Client, stderr aufzufangen, weiterzugeben oder
 
 Über stdio ist der Client ein lokaler Prozess derselben Person, die das Token hält. Das Audit ist dort eine Aufzeichnung für den Betreiber, keine Kontrolle gegen den Client.
 
-Art. 4 der Datenschutzverordnung der Schweiz verlangt bei automatisierter Bearbeitung besonders schützenswerter Personendaten in grossem Umfang ein Protokoll, wenn vorbeugende Massnahmen nicht genügen: mindestens über Speichern, Ändern, Lesen, Bekanntgeben und Löschen, mindestens ein Jahr lang, getrennt vom System und mit beschränktem Zugriff. Ob eine Gemeinde darunter fällt und welches Recht für sie gilt, ist nicht geklärt. Diese Angaben sind keine Rechtsberatung.
+Ecclium soll von Landeskirchen und Kirchgemeinden ebenso genutzt werden wie von Freikirchen. Für sie gilt verschiedenes Recht. Geprüft am 31.10.2026 an den öffentlichen Texten, ohne Rechtsberatung:
+
+- **Freikirche in der Schweiz,** meist ein Verein: das Datenschutzgesetz (DSG) mit der Datenschutzverordnung (DSV, SR 235.11). Art. 4 DSV in der Fassung vom 1. Dezember 2025 verlangt von Privaten, die besonders schützenswerte Personendaten in grossem Umfang automatisiert bearbeiten, ein Protokoll, wenn vorbeugende Massnahmen den Schutz der Daten nicht gewährleisten: zumindest über das Speichern, Verändern, Bekanntgeben, Löschen und Vernichten und über das Zugreifen auf die Daten. Es nennt die bearbeitende Person, Art, Datum und Uhrzeit der Bearbeitung und wird «während mindestens einem Jahr getrennt vom System, in welchem die Personendaten bearbeitet werden» aufbewahrt, zugänglich nur für die Stellen, die den Datenschutz prüfen oder die Sicherheit der Daten gewährleisten. Für besonders schützenswerte Personendaten gilt keine Übergangsfrist.
+- **Landeskirche oder Kirchgemeinde in der Schweiz:** das Datenschutzrecht ihres Kantons, teils ergänzt durch Regeln der Landeskirchen. Im Kanton Solothurn gilt das Informations- und Datenschutzgesetz (InfoDG, BGS 114.1, § 3) für die anerkannten Kirchen und ihre Kirchgemeinden. Im Kanton Zürich verweisen die Kirchenordnungen auf das Gesetz über die Information und den Datenschutz (IDG, LS 170.4), daneben gilt das Kirchliche Datenschutz-Reglement (LS 180.7). Was diese Rechte für ein Protokoll verlangen, ist nicht geprüft, ebenso wenig das Recht der übrigen Kantone.
+- **Freikirche in der EU** ohne eigenes kirchliches Datenschutzrecht: die DSGVO. Sie verlangt ein Protokoll nicht ausdrücklich und nennt keine Frist, wohl aber eine angemessene Sicherheit der Verarbeitung (Art. 32) und die Rechenschaft des Verantwortlichen (Art. 5 Abs. 2).
+- **Katholische Stellen in Deutschland:** das Gesetz über den Kirchlichen Datenschutz (KDG) mit seiner Durchführungsverordnung (KDG-DVO), geändert durch Beschluss der Vollversammlung des Verbands der Diözesen Deutschlands vom 24. November 2025 und seit dem 1. März 2026 in Kraft. § 6 Abs. 2 Bst. f KDG-DVO verlangt als Eingabekontrolle, dass sich nachträglich prüfen lässt, ob und von wem Daten in IT-Systemen verarbeitet worden sind, für mindestens sechs Monate. Verarbeiten umfasst nach § 4 KDG auch das Auslesen und das Abfragen. Die besonderen Kategorien, also auch die Religionszugehörigkeit, gehören zur Datenschutzklasse III (§ 13 KDG-DVO).
+- **Evangelische Stellen in Deutschland:** das Datenschutzgesetz der EKD (DSG-EKD) mit der IT-Sicherheitsverordnung (ITSVO-EKD) vom 29. Mai 2015. Weder die Verordnung noch ihre Begründung regeln ein Protokoll der Zugriffe oder eine Frist.
+
+Ob eine einzelne Gemeinde unter eine dieser Pflichten fällt, hängt von ihr ab, etwa vom Umfang ihrer Daten und von ihren übrigen Massnahmen. Das klärt Ecclium nicht.
+
+Bis Phase 4 trägt das Audit keine Kennungen von Objekten, `objectRefs` bleibt leer, und die Dateien haben weder Kette noch Frist. Jeder Start über stdio öffnet eine eigene Datei, auch wenn danach kein Tool läuft, und ein Client startet den Server schon, wenn er seinen Eintrag lädt. Am 23.10.2026 entstanden so in knapp 40 Minuten 37 Dateien, 36 davon leer. Am 28.10.2026 ergab ein Start von Claude Desktop in fünf Sekunden vier Dateien, nur eine davon mit Zeilen. Eine Metrikdatei, Läufe von Routinen und Container gibt es erst mit dem Runner und dem Betrieb über HTTP.
 
 `ECCLIUM_STATE_DIR` ist in ADR 0055 als Name für einen späteren Ordner mit Zustand reserviert. Das Lesebudget in Phase 2 braucht einen solchen Ordner für die Zähler.
 
 ## Optionen
+
+Für den Ort des Audits über stdio:
 
 1. **Wie bisher, nur Doku:** Ein Client, der stderr nicht leert, verliert Audit-Zeilen still, während Ergebnisse der Suchtools weiter hinausgehen. Keine Garantie.
 2. **stderr mit Sperre je Aufruf:** `record` meldet, ob die Zeile ganz an stderr ging, sonst hält die Pipeline das Ergebnis zurück. Die Garantie bleibt «angenommen», ein Client, der stderr verwirft, bekommt trotzdem Daten, und ein Client, der nie liest, nach vollem Puffer nur noch Ablehnungen.
 3. **fd 2 blockierend:** Kein Verlust, aber eine nicht dokumentierte Schnittstelle, und ein Client, der stderr nicht leert, hält den ganzen Server an, auch die Antworten auf stdout.
 4. **Eigene Audit-Datei mit Sperre:** Der Server hält das Audit selbst fest, unabhängig vom Client. Kosten: eine Variable, ein Ordner, Prüfungen der Rechte und später Aufbewahrung, Kette und Löschung.
 
+Für das Protokoll der Lesezugriffe:
+
+1. **Nur, wo ein Recht es verlangt:** Der Betreiber nennt sein Recht, und Ecclium protokolliert danach. Für kantonales Recht kennt Ecclium die Vorgaben nicht, und wer sein Recht falsch einschätzt, hat kein Protokoll.
+2. **Immer, mit Voreinstellungen nach den strengsten bekannten Vorgaben:** Jeder Lesezugriff mit Personendaten steht in der Datei, ein Jahr lang. Eine Gemeinde ohne Pflicht hat mehr Daten auf der Platte, als sie bräuchte.
+3. **Immer, mit einer Variable für das Recht,** die im Audit steht und eine Mindestfrist je Recht erzwingt: genauer, aber eine Variable mehr, und für kantonales Recht gibt es keine Frist, die Ecclium erzwingen könnte.
+
+Für die Kennungen im Audit:
+
+1. **Nur die Kennungen aus der Eingabe:** klein, aber wer über eine Suche oder eine Liste gelesen wurde, steht nicht im Protokoll.
+2. **Die Kennungen aus der Eingabe und die Kennungen von Personen und Gruppen im Ergebnis:** Auf eine Anfrage hin lässt sich zeigen, wer die Daten einer Person gelesen hat, auch über eine Suche.
+3. **Alle Kennungen im Ergebnis,** auch von Events, Terminen und Seiten: vollständig, aber viel mehr Daten im Protokoll, ohne dass eine Auskunft über eine Person sie braucht.
+
+Für die Kopie auf stderr, sobald die Datei Kennungen trägt:
+
+1. **Die Kopie geht weiter, ohne Kennungen:** Wer Logs sammelt, behält die Ereignisse und den Anker der Kette, die Kennungen bleiben in der Datei.
+2. **Die Kopie entfällt:** Wer Logs sammelt, sieht die Aufrufe dann nicht mehr, und ADR 0053 müsste in diesem Punkt abgelöst werden.
+
 ## Entscheid
 
-Gewählt ist die vierte Option. Sie entsteht in Phase 1 in einer ersten Form für den Betrieb über stdio, Phase 4 baut den Datei-Sink darauf aus.
+Gewählt ist für den Ort die vierte Option. Sie entsteht in Phase 1 in einer ersten Form für den Betrieb über stdio, Phase 4 baut den Datei-Sink darauf aus. Für das Protokoll der Lesezugriffe und für die Kennungen gilt jeweils die zweite Option, für die Kopie auf stderr die erste.
 
 ### Ordner und Datei
 
@@ -54,14 +83,41 @@ Gewählt ist die vierte Option. Sie entsteht in Phase 1 in einer ersten Form fü
 - **Zurückhalten:** Das Ergebnis eines Tools mit `sensitivity: special` gibt die Pipeline nur heraus, wenn `record` `true` gibt. Sonst antwortet sie mit `policy_denied` und einem festen Satz und schreibt die Logzeile `audit_withheld` mit derselben `eventId`. Das gilt auch, wenn vor `record` etwas im `finally` wirft. Die Audit-Zeile sagt dann `denied` mit `policy_denied`, nie zuerst `ok`: Muss die Senke etwas melden, schreibt sie die Zeile gleich so, und nimmt die Datei die Zeile nicht ganz auf, geht die Kopie auf stderr so hinaus. Für alle anderen Tools ändert sich nichts, auch für `ct_whoami` mit `personal`.
 - **Wache im `gate`:** Für ein Tool mit `sensitivity: special` fragt das `gate`, ob die Audit-Datei bereit ist: offen, noch mit Link und das letzte Schreiben gelungen. Ist sie geschlossen oder gelöscht, versucht der Schreiber einmal, eine neue zu öffnen. Nach einem gescheiterten Schreiben zeigt erst die nächste Zeile, etwa die Zeile des abgewiesenen Aufrufs, ob die Datei wieder Zeilen aufnimmt. Ist sie nicht bereit, endet der Aufruf mit `policy_denied` und einem anderen festen Satz, bevor die Eingabe geprüft und ChurchTools gefragt wird. So kostet eine kaputte Datei keinen Lesezugriff und kein Kontingent. Die Aufzählung der Prüfungen im `gate` in ADR 0024 nennt Beispiele. Reihenfolge und Menge der Stufen bleiben, diese Prüfung ist Teil des `gate`.
 - **Start:** Ist ein Tool mit `sensitivity: special` registriert und fehlt `ECCLIUM_STATE_DIR`, startet der Server über stdio nicht, mit einer eigenen Meldung und dem Code 78. Ist der Ordner gesetzt, öffnet die erste Stufe des Starts die Datei, auch wenn nur `ct_whoami` registriert ist, solange fd 2 noch blockiert und bevor SDK und undici laden. Scheitert das, folgt eine Meldung mit den übrigen Startmeldungen und der Code 78. Wer den Ordner setzt, will das Audit beim Server.
-- **Keine IDs bis Phase 4:** `objectRefs` bleibt leer. Nur so darf die Kopie nach stderr gehen, das viele Clients in eine Logdatei schreiben, die Ecclium weder schützt noch löscht.
+- **Keine IDs bis Phase 4:** `objectRefs` bleibt leer, bis die Kennungen nach «Objekt-IDs» unten gebaut sind. Bis dahin ist die Kopie nach stderr dieselbe Zeile wie in der Datei.
 - **Keine Löschung in Phase 1:** Die Dateien haben noch keine Frist und wachsen, eine je Start und Tag. Weil sie keine IDs tragen, ist eine Frist erst mit den IDs nötig.
 - **Keine neue Ausnahme nach ADR 0051:** Der Server hängt an die Datei nur an und liest sie nie. Sie trägt keine Inhalte und keinen Zustand zwischen zwei Anfragen. Der Schreiber hält nur Deskriptor, Datum und Zähler in einer Closure, die die Wurzel der Komposition baut und der Senke übergibt. `AuditSink` ist einer der Ports, die die Wurzel der Komposition zusammensetzt. Als Persistenz auf der Platte beschreibt `docs/privacy.md` die Datei ab Phase 1.
 - **Netzlaufwerke:** In Phase 1 rät die Doku zu einem lokalen Ordner, nicht auf einem Netzlaufwerk und nicht in einem synchronisierten Ordner. Eine Prüfung beim Start gibt es nicht, unter macOS lässt sich ein Netzlaufwerk nicht verlässlich erkennen.
 
+### Recht
+
+- **Protokoll als Entscheid des Produkts:** Ecclium protokolliert jeden Aufruf eines Tools mit den Kennungen nach «Objekt-IDs», auch reine Lesezugriffe, gleich ob ein Recht es für die Gemeinde verlangt. Daten aus ChurchTools lassen auf die Religionszugehörigkeit schliessen, die strengsten bekannten Vorgaben verlangen ein Protokoll auch über das Zugreifen, und eine Gemeinde soll auf die Anfrage einer Person zeigen können, wer deren Daten über Ecclium gelesen hat.
+- **Voreinstellungen nach den strengsten bekannten Vorgaben:** Das Audit hält Lesezugriffe fest und bewahrt sie in der Voreinstellung zwölf Monate auf. Das deckt das eine Jahr der DSV und die sechs Monate der KDG-DVO. Für kantonales Recht und für Reglemente der Landeskirchen kennt Ecclium keine Frist, ein Betreiber kann die Frist verlängern.
+- **Getrennt vom System:** Die Datei liegt beim Server. Die Ablage getrennt vom System, wie die DSV sie verlangt, leistet der freie Kern allein nicht. Der Betreiber muss die Dateien selbst an einen anderen Ort kopieren. Weitere Ziele für das Audit, etwa ein anderer Rechner, gehören nicht zum freien Kern.
+- **Kein Recht in der Konfiguration:** Eine Variable, mit der ein Betreiber sein Recht angibt, gibt es in Phase 4 nicht. Die Voreinstellungen gelten für alle, und [Datenschutz](../privacy.md) sagt je Recht, was Ecclium abdeckt und was der Betreiber selbst tun muss. Das Feld `dataProtectionRegime` des Ereignisses bleibt für den gehosteten Betrieb, in dem ein Betreiber Gemeinden mit verschiedenem Recht bedient.
+- **Kein Versprechen:** Ecclium verspricht keine Konformität mit einem Datenschutzrecht. Weder dieses ADR noch die Doku sind Rechtsberatung.
+
+### Objekt-IDs
+
+- **Welche:** Die Zeile eines Aufrufs nennt in `objectRefs` die Kennungen der Objekte, nach denen er fragt, und die Kennungen der Personen und Gruppen, die sein Ergebnis nennt, jede einmal, zuerst die aus der Eingabe, dann die aus dem Ergebnis, jeweils in ihrer Reihenfolge. Kennungen anderer Objekte im Ergebnis, etwa von Events oder Seiten, nennt sie nicht. Bei `ct_api_execute_read`, dessen Antwort kein Schema hat, nennt sie nur die Kennungen aus dem Pfad der Operation (ADR 0067).
+- **Woher:** Die Pipeline leitet sie aus den Schemas des Tools ab, nicht aus Angaben seines Codes, damit ein Tool sie nicht weglassen kann. Im Ergebnis zählen die Felder mit den Datenklassen `personId` und `groupId`. In der Eingabe tragen Felder mit Kennungen die Art ihres Objekts, Personen und Gruppen über dieselben Klassen. Die Art eines Pfadparameters der Escape Hatch hält die Einstufung der Operation fest.
+- **Form:** wie bisher `<Bereich>:<Kennung>`, die Kennung aus Ziffern oder eine UUID. Zu `person`, `group`, `wiki_category` und `wiki_page` kommen die Arten der Objekte, nach denen Tools fragen, etwa `event`, `calendar`, `appointment`, `resource` und `song`. Die Liste bleibt geschlossen, damit der Teil vor dem Doppelpunkt keinen Namen tragen kann. Welche Bereiche es gibt, steht unter «Umsetzung».
+- **Wie viele:** höchstens 100 je Zeile. Die Seiten der Tools sind so bemessen, dass 100 reichen. Nennt ein Aufruf trotzdem mehr, stehen die ersten 100 in der Zeile und dazu die Zahl der übrigen, damit erkennbar bleibt, dass Kennungen fehlen.
+- **Ohne Ergebnis:** Die Zeile eines abgelehnten oder gescheiterten Aufrufs nennt die Kennungen aus der Eingabe, wenn diese zum Schema passt, sonst keine.
+- **Wo:** nur in der Audit-Datei. Ohne `ECCLIUM_STATE_DIR` geht das Audit nur nach stderr und bleibt ohne Kennungen. Tools mit `sensitivity: special` und Tools, die Namen anderer Personen nennen, laufen über stdio ohnehin nur mit der Datei.
+
+### Kopie auf stderr
+
+- Die Kopie nach stderr geht weiter, auch wenn die Zeile in der Datei Kennungen trägt, aber ohne sie: Sie hat ein leeres `objectRefs` und keines der Felder, die nur in die Datei gehören, also weder die Zahl der übrigen Kennungen noch die Felder der Kette noch das Merkmal «gelesen, aber zurückgehalten». Viele Clients schreiben stderr in eine Logdatei, die Ecclium weder schützt noch löscht. Kennungen gehören dort nicht hin. Wer Logs sammelt, behält die Ereignisse und den Kettenanker.
+- Die Entscheide von ADR 0053 und ADR 0024, dass das Audit über stdio nach stderr geht, bleiben damit wahr. Massgeblich ist die Zeile in der Datei, die auf stderr bleibt eine Kopie.
+
+### Klasse `groupId`
+
+- Neu ist die Datenklasse `groupId` für Kennungen von Gruppen. ADR 0026 verlangt sie, sobald Kennungen ins Audit kommen, dieses ADR ergänzt es damit.
+- Jede Stufe lässt sie unverändert, `off`, `standard` und `strict`. Anders als `personId` bekommt sie in `strict` kein Pseudonym, weil sie keine Person bezeichnet. Sie dient dem Audit: Die Pipeline nimmt Felder dieser Klasse in die `objectRefs` auf.
+- Weitere Klassen für Kennungen entstehen nur, wenn ein Tool sie braucht.
+
 ### Folgt vor Phase 4
 
-- IDs von Objekten im Audit. Vorher legt dieses ADR oder eines, das es ablöst, fest, ob die Kopie auf stderr dann entfällt oder ohne IDs hinausgeht. Entfällt sie, löst das ADR ADR 0053 in diesem Punkt ab und führt die Umsetzung von ADR 0024 nach.
 - Eine Hash-Kette je Datei mit `seq` und `prevHash`, ein täglicher Kettenanker im Log und in der Metrikdatei, `ecclium audit verify` und `ecclium audit show`.
 - Eine Frist von zwölf Monaten mit Löschung, das JSON Schema `schemas/audit-event.v1.json` und ein Merkmal in der Datei für «gelesen, aber zurückgehalten». Mit IDs hängt die Gültigkeit einer Zeile vom Ergebnis ab, das Zurückhalten verrät dann etwas über das Ergebnis.
 - Ob `fsync` dazukommt.
@@ -82,7 +138,9 @@ Das ADR bleibt «Vorgeschlagen», bis diese Teile darin stehen und der Maintaine
 - **Leser** zählen nur Zeilen, die mit einem Zeilenumbruch enden, und überspringen Zeilen, die kein JSON sind oder mit `~` enden. Ein Stück ohne Abschluss kann am Ende einer Datei stehen, nach EFBIG mit derselben `eventId` wie die ganze Zeile in der nächsten Datei.
 - **Ausnahme ohne Fang:** Sie beendet den Prozess mit 70, und ein laufender Aufruf verliert seine Zeile (ADR 0054). Sein Ergebnis geht dann aber auch nicht hinaus.
 - **stderr des Hosts:** Erbt der Server stderr vom Host, macht er auch dessen stderr nicht blockierend, unter macOS gemessen. Das ändert die Datei nicht.
-- **Recht:** Die Datei liegt in Phase 1 vermutlich nicht getrennt vom System, und Ecclium verspricht keine Konformität mit einem Datenschutzrecht. So steht es in `docs/privacy.md` und in der Seite für Betreiber.
+- **Recht:** Die Datei liegt beim Server und damit nicht getrennt vom System. Wer Art. 4 DSV erfüllen muss, kopiert die Dateien selbst an einen getrennten Ort mit beschränktem Zugriff. Ecclium verspricht keine Konformität mit einem Datenschutzrecht. So steht es in [Datenschutz](../privacy.md).
+- **Kennungen auf der Platte:** Mit den Kennungen trägt die Datei Personendaten. Wer sie lesen kann, sieht, wessen Daten wann über Ecclium gelesen wurden, auch ohne Namen. Darum gehen die Kennungen nicht nach stderr, und darum hat die Datei eine Frist mit Löschung.
+- **Protokoll ohne Pflicht:** Eine Gemeinde, für die kein Recht ein Protokoll verlangt, hat trotzdem eines auf der Platte, ein Jahr lang. Sie kann die Frist kürzen und bekommt beim Start eine Warnung.
 
 ## Umsetzung
 
