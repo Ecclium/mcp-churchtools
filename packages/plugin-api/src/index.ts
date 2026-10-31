@@ -1,6 +1,6 @@
 /**
  * Contract between the core and its plugins: tenant context, tool contract,
- * prompt contract, audit event and the port for quotas.
+ * prompt contract, audit event and the ports for quotas and keys.
  *
  * Published separately, with its own semantic version, so that a plugin can
  * be built against this package alone. It imports no other workspace package
@@ -192,6 +192,12 @@ export {
   type PromptDefinition,
   type PromptTextArgument,
 } from './prompt.js';
+export {
+  dataKeyLength,
+  keyPurposes,
+  type KeyProvider,
+  type KeyPurpose,
+} from './keys.js';
 export {
   isIsoDate,
   quotaKeys,
