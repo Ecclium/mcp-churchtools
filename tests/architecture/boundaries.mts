@@ -47,6 +47,7 @@ export const placeKeys = [
   'apiTools',
   'operationCatalog',
   'aesGcmSiv',
+  'pseudonymUsers',
   'keys',
 ] as const;
 

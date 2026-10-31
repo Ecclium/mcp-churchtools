@@ -212,12 +212,17 @@
     },
     "aesGcmSiv": {
       "adr": "0069",
-      "description": "The pseudonyms of the level strict: the only module that imports @noble/ciphers for AES-256-GCM-SIV, so that no other code builds a cipher from a key for pseudonyms. One file of the redaction of core.",
+      "description": "The pseudonyms of the level strict: the only module that imports @noble/ciphers for AES-256-GCM-SIV, and only the place pseudonymUsers and tests import it, so that no other code builds a cipher from a key for pseudonyms. One file of the redaction of core.",
       "paths": ["packages/core/src/redaction/pseudonym.ts"]
+    },
+    "pseudonymUsers": {
+      "adr": "0069",
+      "description": "Code that may turn IDs of persons into pseudonyms and back: the pipeline, which does it for every call in the level strict.",
+      "paths": ["packages/core/src/pipeline/"]
     },
     "keys": {
       "adr": "0069",
-      "description": "The keys of core: the holder of the secret behind the pseudonyms and the provider that derives the keys of a day from it. Only its own modules import its modules other than its entry index.ts, because one of them turns the secret back into its bytes.",
+      "description": "The keys of core: the holder of the secret behind the pseudonyms and the provider that derives the keys of a day from it. Only its own modules import the holder other than through its entry index.ts, because it turns the secret back into its bytes, and only the composition root and tests import the provider, which gives the key of any day.",
       "paths": ["packages/core/src/keys/"]
     },
     "environment": {
