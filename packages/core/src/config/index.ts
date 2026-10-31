@@ -43,7 +43,9 @@ export {
 export {
   defaultStdioSubject,
   proxyVariableName,
+  recommendedRetentionMonths,
   requestsPerMinuteRange,
+  retentionMonthsRange,
   searchToolsVariableName,
   tlsVariableName,
   tokenVariableName,

@@ -237,6 +237,7 @@ describe('loadConfig with a good configuration', () => {
       redaction: 'standard',
       toolsets: [],
       stateDir: undefined,
+      auditRetentionMonths: 12,
       stdioSubject: 'local-stdio',
       logLevel: 'info',
     });
@@ -289,6 +290,12 @@ describe('loadConfig with a good configuration', () => {
       ],
       ['toolsets', 'ECCLIUM_TOOLSETS', 'default', { kind: 'list', values: [] }],
       ['stateDir', 'ECCLIUM_STATE_DIR', 'unset', { kind: 'none' }],
+      [
+        'auditRetentionMonths',
+        'ECCLIUM_AUDIT_RETENTION_MONTHS',
+        'default',
+        { kind: 'integer', value: 12 },
+      ],
       [
         'stdioSubject',
         'ECCLIUM_STDIO_SUBJECT',
@@ -1432,6 +1439,102 @@ describe('loadConfig and the settings of Node.js for TLS', () => {
   });
 });
 
+describe('loadConfig and the retention of the audit files', () => {
+  const retained = (value: string, stateDir = true): ConfigResult =>
+    load(
+      {
+        ...valid(),
+        ...(stateDir ? { ECCLIUM_STATE_DIR: stateDirPath } : {}),
+        ECCLIUM_AUDIT_RETENTION_MONTHS: value,
+      },
+      'stdio',
+      memoryFiles().fs,
+      undefined,
+      memoryFolder().fs,
+    );
+
+  it('keeps the files twelve months by default, without a warning', () => {
+    const result = withStateDir(stateDirPath);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.config.auditRetentionMonths).toBe(12);
+    expect(result.report.warnings).toEqual([]);
+    expect(setting(result, 'auditRetentionMonths')).toEqual({
+      key: 'auditRetentionMonths',
+      variable: 'ECCLIUM_AUDIT_RETENTION_MONTHS',
+      origin: 'default',
+      shown: { kind: 'integer', value: 12 },
+    });
+  });
+
+  it.each([
+    ['1', 1],
+    ['12', 12],
+    ['13', 13],
+    ['120', 120],
+  ])('takes %s months', (value, months) => {
+    const result = retained(value);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.config.auditRetentionMonths).toBe(months);
+    expect(setting(result, 'auditRetentionMonths')?.origin).toBe('environment');
+  });
+
+  it.each([
+    '0',
+    '121',
+    '012',
+    '1e2',
+    '+12',
+    '-1',
+    ' 12',
+    '12 ',
+    '1.5',
+    'zwölf',
+  ])('refuses %j without naming it', (value) => {
+    const result = retained(value);
+    expect(result.ok).toBe(false);
+    expect(problems(result)).toEqual(
+      value.length > 3
+        ? [['value_too_long', 'ECCLIUM_AUDIT_RETENTION_MONTHS']]
+        : [['invalid_retention', 'ECCLIUM_AUDIT_RETENTION_MONTHS']],
+    );
+    expect(setting(result, 'auditRetentionMonths')).toMatchObject({
+      origin: 'invalid',
+      shown: { kind: 'none' },
+    });
+    // A refused value is never in the report, not even as a string.
+    expect(JSON.stringify(result.report)).not.toContain(JSON.stringify(value));
+  });
+
+  it('warns below twelve months with the folder of state, and not from twelve', () => {
+    expect(retained('11').report.warnings).toEqual(['audit_retention_short']);
+    expect(retained('1').report.warnings).toEqual(['audit_retention_short']);
+    expect(retained('12').report.warnings).toEqual([]);
+  });
+
+  it('says that the variable does nothing without the folder of state', () => {
+    expect(retained('6', false).report.warnings).toEqual([
+      'audit_retention_without_state_dir',
+    ]);
+    expect(retained('12', false).report.warnings).toEqual([
+      'audit_retention_without_state_dir',
+    ]);
+    expect(retained('6', false).ok).toBe(true);
+    expect(load(valid()).report.warnings).toEqual([]);
+  });
+
+  it('refuses the variable over HTTP', () => {
+    const result = load(
+      { ...valid(), ECCLIUM_AUDIT_RETENTION_MONTHS: '12' },
+      'http',
+    );
+    expect(problems(result)).toEqual([
+      ['stdio_only', 'ECCLIUM_AUDIT_RETENTION_MONTHS'],
+    ]);
+  });
+});
+
 describe('loadConfig and its problems', () => {
   const withAddress = (value: string): ConfigResult =>
     load({ ...valid(), ECCLIUM_CHURCHTOOLS_URL: value });
@@ -1458,6 +1561,8 @@ describe('loadConfig and its problems', () => {
     invalid_choice: () => load({ ...valid(), ECCLIUM_READ_ONLY: 'yes' }),
     invalid_integer: () =>
       load({ ...valid(), ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE: '0' }),
+    invalid_retention: () =>
+      load({ ...valid(), ECCLIUM_AUDIT_RETENTION_MONTHS: '121' }),
     url_missing: () => load({ ECCLIUM_CHURCHTOOLS_TOKEN_FILE: tokenPath }),
     url_too_long: () => withAddress(`https://${'a'.repeat(300)}.example`),
     url_invalid: () => withAddress('demo.example'),
@@ -1615,6 +1720,20 @@ describe('loadConfig and its problems', () => {
       ),
     trust_store_extended: () =>
       load({ ...valid(), NODE_EXTRA_CA_CERTS: '/path/to/ca.pem' }),
+    audit_retention_short: () =>
+      load(
+        {
+          ...valid(),
+          ECCLIUM_STATE_DIR: stateDirPath,
+          ECCLIUM_AUDIT_RETENTION_MONTHS: '6',
+        },
+        'stdio',
+        memoryFiles().fs,
+        undefined,
+        memoryFolder().fs,
+      ),
+    audit_retention_without_state_dir: () =>
+      load({ ...valid(), ECCLIUM_AUDIT_RETENTION_MONTHS: '24' }),
   };
 
   it.each([...configProblemCodes])('can report the problem %s', (code) => {

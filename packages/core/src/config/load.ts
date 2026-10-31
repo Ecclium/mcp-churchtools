@@ -26,6 +26,7 @@ import {
   type PlainVariableName,
   proxyVariableName,
   readToolsetList,
+  recommendedRetentionMonths,
   reservedStdioSubjects,
   searchToolsVariableName,
   tlsKeylogOption,
@@ -68,6 +69,12 @@ export interface EccliumConfig {
    * folder `audit` (ADR 0028).
    */
   readonly stateDir: string | undefined;
+  /**
+   * How many months the audit files stay before the start or a new UTC day
+   * deletes them, 1 to 120 (ADR 0028). Without a folder of state there are
+   * no files, and the value does nothing.
+   */
+  readonly auditRetentionMonths: number;
   readonly stdioSubject: string;
   readonly logLevel: LogLevel;
 }
@@ -81,6 +88,7 @@ export type SettingKey =
   | 'redaction'
   | 'toolsets'
   | 'stateDir'
+  | 'auditRetentionMonths'
   | 'stdioSubject'
   | 'logLevel';
 
@@ -776,6 +784,43 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     report('toolsets_without_state_dir', stateDirName);
   }
 
+  // The retention of the audit files: digits only, checked sign by sign.
+  // Below a year every start warns, and without the folder of state there
+  // is nothing to delete, which every start says (ADR 0028).
+  const retentionName = 'ECCLIUM_AUDIT_RETENTION_MONTHS';
+  const retentionVariable = row(retentionName);
+  const retentionRead = read(retentionVariable);
+  let retention:
+    { readonly value: number; readonly origin: ValueOrigin } | undefined;
+  if (retentionRead.state === 'unset') {
+    retention = {
+      value: Number(retentionVariable.defaultValue),
+      origin: 'default',
+    };
+  } else if (retentionRead.state === 'set') {
+    if (fitsVariable(retentionName, retentionRead.value)) {
+      retention = { value: Number(retentionRead.value), origin: 'environment' };
+    } else {
+      report('invalid_retention', retentionName);
+    }
+  }
+  if (retentionRead.state !== 'unset' && stateDirRead.state === 'unset') {
+    warnings.add('audit_retention_without_state_dir');
+  } else if (
+    retention !== undefined &&
+    retention.value < recommendedRetentionMonths
+  ) {
+    warnings.add('audit_retention_short');
+  }
+  setting(
+    'auditRetentionMonths',
+    retentionName,
+    retention === undefined ? 'invalid' : retention.origin,
+    retention === undefined
+      ? shownNone
+      : record({ kind: 'integer', value: retention.value }),
+  );
+
   // A wider trust store stays allowed for an instance with a certificate
   // of its own authority, with a warning on every start (ADR 0056).
   if (trustStoreExtended) warnings.add('trust_store_extended');
@@ -833,6 +878,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     redaction === undefined ||
     toolsets === undefined ||
     !stateDirValid ||
+    retention === undefined ||
     subject === undefined ||
     logLevel === undefined
   ) {
@@ -850,6 +896,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       redaction: redaction.value as 'off' | 'standard',
       toolsets: toolsets.value,
       stateDir,
+      auditRetentionMonths: retention.value,
       stdioSubject: subject.value,
       logLevel: logLevel.value as LogLevel,
     }),

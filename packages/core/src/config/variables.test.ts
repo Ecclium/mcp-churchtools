@@ -109,6 +109,7 @@ describe('the table of variables', () => {
       ['ECCLIUM_REDACTION', 'standard', false, false],
       ['ECCLIUM_TOOLSETS', '', false, false],
       ['ECCLIUM_STATE_DIR', undefined, false, true],
+      ['ECCLIUM_AUDIT_RETENTION_MONTHS', '12', false, true],
       ['ECCLIUM_STDIO_SUBJECT', 'local-stdio', false, true],
       ['ECCLIUM_LOG_LEVEL', 'info', false, false],
     ]);
@@ -307,6 +308,7 @@ describe('fitsVariable', () => {
         ['ECCLIUM_REDACTION', 'none'],
         ['ECCLIUM_TOOLSETS', 'yes'],
         ['ECCLIUM_STATE_DIR', 'state'],
+        ['ECCLIUM_AUDIT_RETENTION_MONTHS', '0'],
         ['ECCLIUM_STDIO_SUBJECT', 'Max'],
         ['ECCLIUM_LOG_LEVEL', 'INFO'],
       ];

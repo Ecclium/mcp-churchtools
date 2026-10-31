@@ -10,6 +10,7 @@ import { variableDescriptions } from '@ecclium/mcp-churchtools';
 import {
   proxyVariableName,
   requestsPerMinuteRange,
+  retentionMonthsRange,
   searchToolsVariableName,
   unsupportedVariableNames,
   type Variable,
@@ -22,8 +23,8 @@ const code = (text: string): string => `\`${text}\``;
 const yesNo = (value: boolean): string => (value ? 'ja' : 'nein');
 
 // What a value of each kind looks like. The table keeps no range of a
-// number, so a second whole number would need its own text: the renderer
-// refuses it instead of guessing.
+// number, so each whole number needs its own range here: the renderer
+// refuses another one instead of guessing.
 const valuesOf = (variable: Variable): string => {
   switch (variable.kind) {
     case 'origin':
@@ -45,11 +46,16 @@ const valuesOf = (variable: Variable): string => {
       return `Liste aus ${words.join(', ')}, mit Komma getrennt, oder ${alone} für alle ausser ${code('api')}, oder ${code('all,api')}`;
     }
     case 'integer': {
-      if (variable.name !== 'ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE') {
+      const range =
+        variable.name === 'ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE'
+          ? requestsPerMinuteRange
+          : variable.name === 'ECCLIUM_AUDIT_RETENTION_MONTHS'
+            ? retentionMonthsRange
+            : undefined;
+      if (range === undefined) {
         throw new TypeError(`no range known for ${variable.name}`);
       }
-      const { min, max } = requestsPerMinuteRange;
-      return `ganze Zahl von ${String(min)} bis ${String(max)}`;
+      return `ganze Zahl von ${String(range.min)} bis ${String(range.max)}`;
     }
   }
 };
@@ -62,7 +68,8 @@ const valuesOf = (variable: Variable): string => {
  * @returns The Markdown of `docs/configuration.md`, ending with a line
  *   break.
  * @throws {TypeError} When a whole number other than the requests per
- *   minute appears, whose range the renderer does not know.
+ *   minute and the months of the retention appears, whose range the
+ *   renderer does not know.
  * @example
  * ```ts
  * renderConfigurationReference().startsWith('# Konfiguration\n'); // true

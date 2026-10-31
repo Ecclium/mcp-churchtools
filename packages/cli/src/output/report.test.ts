@@ -114,6 +114,7 @@ describe('renderConfigReport', () => {
         'Zustandsordner',
         'keine Audit-Datei (‹ECCLIUM_STATE_DIR› ist nicht gesetzt)',
       ),
+      row('Frist in Monaten', '12 (Voreinstellung)'),
       row('Subjekt über stdio', '‹local-stdio› (Voreinstellung)'),
       row('Stufe des Logs', '‹info› (Voreinstellung)'),
       hostNote,
