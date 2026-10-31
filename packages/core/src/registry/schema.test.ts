@@ -749,3 +749,63 @@ describe('checkInputSchema', () => {
     expect(checkInputSchema(wide)?.type).toBe('object');
   });
 });
+
+// In the level strict an ID of a person stands as its pseudonym (ADR 0069).
+describe('checkInputSchema with pseudonyms', () => {
+  const pseudonym = {
+    type: 'string',
+    minLength: 42,
+    maxLength: 42,
+    pattern: '^p1_[a-z2-7]{39}$',
+  };
+  const id = classify(
+    z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    'personId',
+  );
+
+  it('advertises every ID of a person as a pseudonym, and nothing else', () => {
+    const schema = z.strictObject({
+      personId: id,
+      maybe: id.optional(),
+      orNone: id.nullable(),
+      list: z.array(id).max(3),
+      copy: id.max(5),
+      page: classify(z.number().int(), 'none'),
+      groupId: classify(z.number().int(), 'groupId'),
+    });
+    expect(checkInputSchema(schema, { pseudonyms: true })).toEqual({
+      type: 'object',
+      properties: {
+        personId: pseudonym,
+        maybe: pseudonym,
+        orNone: { anyOf: [pseudonym, { type: 'null' }] },
+        list: { type: 'array', maxItems: 3, items: pseudonym },
+        copy: pseudonym,
+        page: {
+          type: 'integer',
+          minimum: Number.MIN_SAFE_INTEGER,
+          maximum: Number.MAX_SAFE_INTEGER,
+        },
+        groupId: {
+          type: 'integer',
+          minimum: Number.MIN_SAFE_INTEGER,
+          maximum: Number.MAX_SAFE_INTEGER,
+        },
+      },
+      required: ['personId', 'orNone', 'list', 'copy', 'page', 'groupId'],
+      additionalProperties: false,
+    });
+  });
+
+  it('keeps numbers without the option', () => {
+    expect(
+      checkInputSchema(z.strictObject({ personId: id }))?.properties,
+    ).toEqual({
+      personId: {
+        type: 'integer',
+        exclusiveMinimum: 0,
+        maximum: Number.MAX_SAFE_INTEGER,
+      },
+    });
+  });
+});

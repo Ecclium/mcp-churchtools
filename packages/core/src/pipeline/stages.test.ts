@@ -4,7 +4,6 @@ import { describe, expect, it } from 'vitest';
 import type { InputRefNode, ShapeNode } from '../registry/index.js';
 import {
   collectOutputRefs,
-  isStrictLevel,
   mapLeaves,
   markUntrusted,
   redact,
@@ -488,13 +487,5 @@ describe('redact in the level strict', () => {
     expect(() => redact({ id: '12' }, shape, 'strict', hide)).toThrow(
       TypeError,
     );
-  });
-
-  it('counts strict and a level the core does not know as strict', () => {
-    expect(
-      (['off', 'standard', 'strict', 'later'] as const).map((level) =>
-        isStrictLevel(level as 'strict'),
-      ),
-    ).toEqual([false, false, true, true]);
   });
 });

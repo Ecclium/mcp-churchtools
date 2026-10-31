@@ -27,6 +27,11 @@ import {
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { z } from 'zod';
 
+import {
+  pseudonymPattern,
+  pseudonymTextLength,
+} from '../redaction/pseudonym-form.js';
+
 /** The deepest nesting of objects, arrays and tuples in an output schema. */
 export const maxSchemaDepth = 16;
 
@@ -758,6 +763,33 @@ class InputRebuild {
   }
 }
 
+// In the level strict, a number of the class personId stands as its
+// pseudonym (ADR 0069). The converter calls this for every schema it
+// writes, copies of a leaf included; only the leaf itself is rewritten, so
+// that a wrapper such as nullable keeps its other option.
+const pseudonymKeywords = Object.freeze({
+  type: 'string',
+  minLength: pseudonymTextLength,
+  maxLength: pseudonymTextLength,
+  pattern: pseudonymPattern,
+});
+
+const asPseudonym = (context: {
+  readonly zodSchema: z.core.$ZodType;
+  readonly jsonSchema: Record<string, unknown>;
+}): void => {
+  if (
+    context.zodSchema._zod.def.type !== 'number' ||
+    dataClassOf(context.zodSchema) !== 'personId'
+  ) {
+    return;
+  }
+  for (const keyword of Object.keys(context.jsonSchema)) {
+    Reflect.deleteProperty(context.jsonSchema, keyword);
+  }
+  Object.assign(context.jsonSchema, pseudonymKeywords);
+};
+
 /**
  * Checks the input schema of a tool and derives the JSON Schema the mount
  * advertises for it. The schema must be a closed object of zod 4. Its
@@ -769,7 +801,13 @@ class InputRebuild {
  * of tools. The pipeline still validates every input with the schema of
  * the tool.
  *
+ * With `pseudonyms`, every leaf of the class `personId` is advertised as
+ * the pseudonym that stands for it in the level `strict`: a string of 42
+ * signs with its pattern, in place of a number (ADR 0069).
+ *
  * @param schema - The input schema as the plugin hands it over.
+ * @param options - What the schema is advertised for.
+ * @param options.pseudonyms - Whether IDs of persons stand as pseudonyms.
  * @returns The schema the mount advertises, frozen, without prototypes and
  *   without `$schema`, or `undefined` when the registry does not accept the
  *   input schema: when it is no closed object of zod 4, when zod cannot
@@ -786,6 +824,7 @@ class InputRebuild {
  */
 export function checkInputSchema(
   schema: unknown,
+  options: { readonly pseudonyms?: boolean } = {},
 ): ObjectJsonSchema | undefined {
   const internals = internalsOf(schema);
   if (internals?.type !== 'object' || !isClosedObject(internals)) {
@@ -802,6 +841,7 @@ export function checkInputSchema(
       target: 'draft-2020-12',
       io: 'input',
       unrepresentable: 'throw',
+      ...(options.pseudonyms === true ? { override: asPseudonym } : {}),
     });
   } catch {
     return undefined;

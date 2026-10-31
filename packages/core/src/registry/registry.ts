@@ -66,6 +66,13 @@ export interface CatalogEntry {
    */
   readonly inputSchema: ObjectJsonSchema;
   /**
+   * The input schema as the mount advertises it in the level `strict`,
+   * with every ID of a person as its pseudonym, a string (ADR 0069). The
+   * same object as {@link CatalogEntry.inputSchema} for a tool without an
+   * ID of a person in its input.
+   */
+  readonly strictInputSchema: ObjectJsonSchema;
+  /**
    * Where the IDs of the input stand, kept when the tool was added, or
    * `undefined` when the input has none (ADR 0028).
    */
@@ -228,6 +235,17 @@ const checkTool = (
   if (inputSchema === undefined || inputShape === undefined) {
     throw new RegistryRefusal('tool_input', where);
   }
+  // In the level strict an ID of a person in the input stands as its
+  // pseudonym, a string; derived here too, so that a schema the mount
+  // could not advertise stops the start (ADR 0069).
+  const personInput =
+    inputShape.refs !== undefined && holdsPersons(inputShape.refs);
+  const strictInputSchema = personInput
+    ? checkInputSchema(fields.input, { pseudonyms: true })
+    : inputSchema;
+  if (strictInputSchema === undefined) {
+    throw new RegistryRefusal('tool_input', where);
+  }
   // Every field of the input says what it holds, so that no ID leaves the
   // audit through a class nobody set (ADR 0028).
   if (inputShape.undeclared > 0) {
@@ -266,13 +284,12 @@ const checkTool = (
     description: renderDescription(description, rightsLine(meta)),
     input: fields.input as ZodType,
     inputSchema,
+    strictInputSchema,
     inputRefs: inputShape.refs,
     output: fields.output as ZodType,
     shape,
     asSpecial,
-    personIds:
-      shape.personIds ||
-      (inputShape.refs !== undefined && holdsPersons(inputShape.refs)),
+    personIds: shape.personIds || personInput,
     execute: (call: ToolCall<unknown>): Promise<unknown> =>
       Reflect.apply(run, undefined, [call]) as Promise<unknown>,
   });

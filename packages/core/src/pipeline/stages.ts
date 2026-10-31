@@ -12,6 +12,7 @@ import type {
 import { type ObjectDomain, objectRefOf } from '../audit/index.js';
 import {
   cleanText,
+  isStrictLevel,
   maskBirthdate,
   maskedValue,
   maskEmail,
@@ -362,20 +363,6 @@ export function outputIdsFit(value: unknown, node: ShapeNode): boolean {
   });
   return fits;
 }
-
-/**
- * Whether a level does what `strict` does beyond `standard`. A level the
- * core does not know yet counts, so that it fails closed (ADR 0069).
- *
- * @param level - The level of redaction of a call.
- * @returns Whether it is neither `off` nor `standard`.
- * @example
- * ```ts
- * isStrictLevel('strict'); // true
- * ```
- */
-export const isStrictLevel = (level: RedactionLevel): boolean =>
-  level !== 'off' && level !== 'standard';
 
 // The free text of the level strict: cleaned with its note first, then
 // checked, so that the check reads what the envelope will hold.

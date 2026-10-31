@@ -171,7 +171,7 @@ describe('the output schema the mount advertises', () => {
       (tool) => tool['name'] === 'ct_example_echo',
     )?.['outputSchema'];
     expect(advertised).toEqual(
-      JSON.parse(JSON.stringify(deriveOutputSchema(echo.shape))),
+      JSON.parse(JSON.stringify(deriveOutputSchema(echo.shape, 'standard'))),
     );
     const call = result(
       await send('tools/call', { name: 'ct_example_echo', arguments: input }),

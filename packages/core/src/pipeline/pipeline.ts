@@ -70,6 +70,7 @@ import type { HttpTransport } from '../http/index.js';
 import type { LineWriter, LogLevel } from '../logger/index.js';
 import {
   chooseBoundary,
+  isStrictLevel,
   maskErrorDescription,
   type RandomBytes,
 } from '../redaction/index.js';
@@ -89,7 +90,6 @@ import { createReadAccess, type ReadAccess } from './read-api.js';
 import {
   collectOutputRefs,
   fitsInput,
-  isStrictLevel,
   outputIdsFit,
   markUntrusted,
   maxResultBytes,

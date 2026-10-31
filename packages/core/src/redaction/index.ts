@@ -36,6 +36,11 @@ export {
 } from './mask.js';
 export { maskErrorDescription, maskMessage } from './message.js';
 export {
+  isStrictLevel,
+  pseudonymPattern,
+  pseudonymTextLength,
+} from './pseudonym-form.js';
+export {
   cleanText,
   type CleanedText,
   hiddenCharactersNote,
