@@ -38,6 +38,7 @@ export const configProblemCodes = Object.freeze([
   'subject_reserved',
   ...stateDirCodes,
   'toolsets_without_state_dir',
+  'state_dir_required',
 ] as const);
 
 /** Why the configuration cannot start the server. */

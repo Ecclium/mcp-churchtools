@@ -23,6 +23,7 @@ import {
 } from './codes.js';
 import {
   type ConfigResult,
+  loadAuditConfig,
   loadConfig,
   maxReportedProblems,
   type Transport,
@@ -1695,6 +1696,20 @@ describe('loadConfig and its problems', () => {
     redaction_off: () => load({ ...valid(), ECCLIUM_REDACTION: 'off' }),
     toolsets_without_state_dir: () =>
       load({ ...valid(), ECCLIUM_TOOLSETS: 'persons' }),
+    // Only the loader of the commands that read the audit files reports it.
+    state_dir_required: () => {
+      const loaded = loadAuditConfig({ environment: {} });
+      return {
+        ok: false,
+        report: {
+          transport: 'stdio',
+          settings: [],
+          problems: loaded.ok ? [] : loaded.problems,
+          omittedProblems: 0,
+          warnings: [],
+        },
+      };
+    },
     persons_toolset_enabled: () =>
       load(
         {
