@@ -7,14 +7,22 @@
  * cannot rule one out (ADR 0028). Nothing here names a path in what it returns,
  * and nothing throws once the file is open.
  *
+ * Each whole line of a file carries `seq` and `prevHash`, the chain of that
+ * file, which only this writer fills: the SHA-256 of the line before, as it
+ * stands in the file, or of the name of the file for the first line. The
+ * writer never parses a line; it puts the two fields before the last brace
+ * of the object it is given (ADR 0028).
+ *
  * Only the composition root reaches it, through the subpath
  * `./composition` of core. Besides the rule for a line and the timestamp of
- * the logger it loads only `node:fs`, `node:path` and `node:util/types`,
- * which leave fd 2 blocking, so that the first stage of the start can open
- * the file before the startup notices are written (ADR 0054).
+ * the logger it loads only `node:crypto`, `node:fs`, `node:path` and
+ * `node:util/types`, which leave fd 2 blocking, so that the first stage of
+ * the start can open the file before the startup notices are written
+ * (ADR 0054).
  *
  * @packageDocumentation
  */
+import { createHash } from 'node:crypto';
 import {
   closeSync,
   constants,
@@ -32,6 +40,7 @@ import { auditDirName, isNormalizedAbsolutePath } from '../config/state-dir.js';
 import {
   isWritableLine,
   type LineWriter,
+  maxLineLength,
   toTimestamp,
 } from '../logger/index.js';
 
@@ -122,9 +131,12 @@ export interface AuditFileCounts {
 /** The open audit file. */
 export interface AuditFileWriter extends LineWriter {
   /**
-   * Appends the line and a line break to the file. It never throws.
+   * Appends the line with the next link of the chain of the file and a
+   * line break. It never throws.
    *
-   * @param line - One line of printable ASCII, without a line break.
+   * @param line - One JSON object on one line of printable ASCII, without
+   *   `seq` and `prevHash` and at most {@link maxAuditLineLength}
+   *   characters long.
    * @returns Whether the whole line is in the file.
    */
   write(line: string): boolean;
@@ -177,7 +189,31 @@ export const maxWriteAttempts = 4;
  */
 export const maxReopens = 64;
 
+// The longest link of the chain: the largest safe integer as seq and a
+// SHA-256 in hex.
+const longestLink = `,"seq":${String(Number.MAX_SAFE_INTEGER)},"prevHash":"${'0'.repeat(64)}"`;
+
+/**
+ * The longest line the writer takes, so that the line with its link of the
+ * chain still fits the rule for a line of the logger.
+ */
+export const maxAuditLineLength = maxLineLength - longestLink.length;
+
 const encoder = new TextEncoder();
+
+// The SHA-256 of a text of printable ASCII, whose characters are its bytes.
+const sha256 = (text: string): string =>
+  createHash('sha256').update(encoder.encode(text)).digest('hex');
+
+// A line the chain can go into: one object on one line, not empty, so that
+// the link before its last brace leaves valid JSON. The writer checks the
+// shape only and never parses the line.
+const isChainable = (line: unknown): line is string =>
+  isWritableLine(line) &&
+  line.length <= maxAuditLineLength &&
+  line.startsWith('{') &&
+  line.endsWith('}') &&
+  line.charAt(line.length - 2) !== '{';
 
 // Closes a piece of a line that lost its end. A line break alone could
 // turn a piece that lacks only its break into a valid line; with the
@@ -247,8 +283,23 @@ const stampOf = (clock: Clock): Stamp | undefined => {
 interface Opened {
   readonly fd: number;
   readonly date: string;
+  /** The name of the file, without the folder. */
+  readonly name: string;
   readonly dev: number;
   readonly ino: number;
+}
+
+/** The open file of the writer with the head of its chain. */
+interface Current extends Opened {
+  /** The seq of the last whole line, 0 before the first one. */
+  seq: number;
+  /**
+   * The SHA-256 of the last whole line, or of the name of the file before
+   * the first one.
+   */
+  hash: string;
+  /** Whether the file ends in a piece of a line without its repair. */
+  torn: boolean;
 }
 
 interface Flags {
@@ -366,10 +417,12 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
     folder: AuditFileStats,
   ): Opened | AuditFileCode => {
     let fd: number | undefined;
+    let name = '';
     let path = '';
     for (let attempt = 0; attempt < maxNameAttempts; attempt += 1) {
       sequence += 1;
-      path = `${folderPath}/audit-${stamp.date}-${stamp.time}-${String(pid)}-${String(sequence)}.jsonl`;
+      name = `audit-${stamp.date}-${stamp.time}-${String(pid)}-${String(sequence)}.jsonl`;
+      path = `${folderPath}/${name}`;
       try {
         fd = fs.openSync(path, flags.file, auditFileMode);
         break;
@@ -393,7 +446,7 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
         folderNow.dev === folder.dev &&
         folderNow.ino === folder.ino
       ) {
-        opened = { fd, date: stamp.date, dev: file.dev, ino: file.ino };
+        opened = { fd, date: stamp.date, name, dev: file.dev, ino: file.ino };
       }
     } catch {
       opened = undefined;
@@ -416,10 +469,15 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
 
   // Every descriptor the writer keeps is 3 or more: the open refuses any
   // other.
-  let fd: number | undefined = opened.fd;
+  const begin = (next: Opened): Current => ({
+    ...next,
+    seq: 0,
+    hash: sha256(next.name),
+    torn: false,
+  });
+  let file: Current | undefined = begin(opened);
+  // The day of the last file opened, also after that file is given up.
   let date = opened.date;
-  let dev = opened.dev;
-  let ino = opened.ino;
   let closed = false;
   let opensLeft = maxReopens;
   let written = 0;
@@ -427,8 +485,6 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
   let partial = 0;
   let rejected = 0;
   let reopened = 0;
-  // Whether the file ends in a piece of a line without its repair.
-  let torn = false;
   // Whether the last line reached the file whole.
   let lastOk = true;
   // The last UTC day a new file was tried for, so that a day that cannot
@@ -441,52 +497,6 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
     } catch {
       // The descriptor is given up either way.
     }
-  };
-
-  // Gives up the file. A descriptor that may now belong to someone else,
-  // because fstat failed or names another file, is never closed: closing
-  // it would close their file.
-  const forget = (own: boolean): void => {
-    const current = fd;
-    fd = undefined;
-    if (!own || current === undefined) return;
-    closeOwn(current, torn);
-  };
-
-  // Forgets a file that was deleted or is no longer the one opened.
-  const verify = (): void => {
-    if (fd === undefined) return;
-    let stats: AuditFileStats;
-    try {
-      stats = fs.fstatSync(fd);
-    } catch {
-      forget(false);
-      return;
-    }
-    if (stats.dev !== dev || stats.ino !== ino) forget(false);
-    else if (stats.nlink === 0) forget(true);
-  };
-
-  // A new file with every check of the first one. The caller closes a file
-  // that is still open.
-  const openNext = (stamp: Stamp): boolean => {
-    const folder = openFolder();
-    if (typeof folder === 'string') return false;
-    const next = openFile(stamp, folder);
-    if (typeof next === 'string') return false;
-    ({ fd, date, dev, ino } = next);
-    torn = false;
-    lastOk = true;
-    reopened += 1;
-    return true;
-  };
-
-  // A new file for a deleted file or a lost descriptor, within the bound
-  // per process.
-  const reopen = (stamp: Stamp): boolean => {
-    if (opensLeft === 0) return false;
-    opensLeft -= 1;
-    return openNext(stamp);
   };
 
   interface Sent {
@@ -519,33 +529,85 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
     return { sent: offset };
   };
 
-  // One try of the line in the open file. Returns the code that stopped
-  // it, or true when the whole line is in the file.
-  const attempt = (target: number, line: string): true | Sent => {
-    const prefix = torn ? repair : '';
-    const bytes = encoder.encode(`${prefix}${line}\n`);
-    const result = send(target, bytes);
+  // Gives up a file. A descriptor that may now belong to someone else,
+  // because fstat failed or names another file, is never closed: closing
+  // it would close their file. An own file with a piece at its end gets
+  // its repair first: without a later line, a piece that lacks only its
+  // line break would otherwise stay a valid line at the end of the file.
+  const retire = (old: Current, own: boolean): void => {
+    if (!own) return;
+    if (old.torn) send(old.fd, repairBytes);
+    closeQuietly(old.fd);
+  };
+
+  // Gives up the open file.
+  const drop = (own: boolean): void => {
+    const old = file;
+    file = undefined;
+    if (old !== undefined) retire(old, own);
+  };
+
+  // Gives up a file that was deleted or is no longer the one opened.
+  const verify = (): void => {
+    if (file === undefined) return;
+    let stats: AuditFileStats;
+    try {
+      stats = fs.fstatSync(file.fd);
+    } catch {
+      drop(false);
+      return;
+    }
+    if (stats.dev !== file.dev || stats.ino !== file.ino) drop(false);
+    else if (stats.nlink === 0) drop(true);
+  };
+
+  // A new file with every check of the first one, and a new chain. The
+  // caller gives up a file that is still open.
+  const openNext = (stamp: Stamp): boolean => {
+    const folder = openFolder();
+    if (typeof folder === 'string') return false;
+    const next = openFile(stamp, folder);
+    if (typeof next === 'string') return false;
+    file = begin(next);
+    date = next.date;
+    lastOk = true;
+    reopened += 1;
+    return true;
+  };
+
+  // A new file for a deleted file or a lost descriptor, within the bound
+  // per process.
+  const reopen = (stamp: Stamp): boolean => {
+    if (opensLeft === 0) return false;
+    opensLeft -= 1;
+    return openNext(stamp);
+  };
+
+  // One try of the line in the given file, with the next link of its
+  // chain. Returns the code that stopped it, or true when the whole line
+  // is in the file. Only a whole line moves the head of the chain: a piece
+  // and its repair are no part of it.
+  const attempt = (target: Current, line: string): true | Sent => {
+    const seq = target.seq + 1;
+    const chained = `${line.slice(0, -1)},"seq":${String(seq)},"prevHash":"${target.hash}"}`;
+    const prefix = target.torn ? repair : '';
+    const bytes = encoder.encode(`${prefix}${chained}\n`);
+    const result = send(target.fd, bytes);
     if (result.sent === bytes.length) {
-      torn = false;
+      target.torn = false;
+      target.seq = seq;
+      target.hash = sha256(chained);
       return true;
     }
     if (result.sent > prefix.length) {
       // A piece of the line is in the file: close it at once.
       partial += 1;
-      torn = send(target, repairBytes).sent !== repairBytes.length;
+      target.torn = send(target.fd, repairBytes).sent !== repairBytes.length;
     } else if (result.sent === prefix.length) {
       // At most the repair went out, nothing of the line itself.
-      torn = false;
+      target.torn = false;
     }
     return result;
-  };
-
-  // Closes an own file. A piece at its end gets its repair first: without
-  // a later line, a piece that lacks only its line break would otherwise
-  // stay a valid line at the end of the file.
-  const closeOwn = (target: number, withPiece: boolean): void => {
-    if (withPiece) send(target, repairBytes);
-    closeQuietly(target);
   };
 
   const lose = (): false => {
@@ -555,7 +617,7 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
   };
 
   const write = (line: string): boolean => {
-    if (!isWritableLine(line)) {
+    if (!isChainable(line)) {
       rejected += 1;
       return false;
     }
@@ -568,26 +630,25 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
       tried = true;
       return reopen(stamp);
     };
-    // First, so that only the own file is closed below: verify forgets a
-    // descriptor that is no longer the file opened.
+    // First, so that only the own file is given up below: verify gives up
+    // a descriptor that is no longer the file opened.
     verify();
     // A new UTC day starts a new file, never an earlier day, and is tried
     // once per day. If the new file cannot be opened, the line goes into
     // the old one.
+    const old = file;
     if (
-      fd !== undefined &&
+      old !== undefined &&
       stamp !== undefined &&
       stamp.date > date &&
       stamp.date !== dayTried
     ) {
       dayTried = stamp.date;
       tried = true;
-      const old = fd;
-      const oldTorn = torn;
-      if (openNext(stamp)) closeOwn(old, oldTorn);
+      if (openNext(stamp)) retire(old, true);
     }
-    if (fd === undefined) tryReopen();
-    const target = fd;
+    if (file === undefined) tryReopen();
+    const target = file;
     if (target === undefined) return lose();
     let result = attempt(target, line);
     if (
@@ -597,17 +658,17 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
         result.code === 'EFBIG')
     ) {
       // The file is gone or full for good. A piece stays at its end, and
-      // the line goes into a new file. After EBADF the descriptor may
-      // already belong to someone else.
-      forget(result.code !== 'EBADF');
+      // the line goes into a new file with a new chain. After EBADF the
+      // descriptor may already belong to someone else.
+      drop(result.code !== 'EBADF');
       tryReopen();
-      const next = fd;
+      const next = file;
       if (next !== undefined) result = attempt(next, line);
     }
     if (result !== true) return lose();
     // A file deleted while the line was written lost the line with it.
     verify();
-    if (fd === undefined) return lose();
+    if (file === undefined) return lose();
     written += 1;
     lastOk = true;
     return true;
@@ -616,7 +677,7 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
   const ready = (): boolean => {
     if (closed) return false;
     verify();
-    if (fd !== undefined) return lastOk;
+    if (file !== undefined) return lastOk;
     const stamp = stampOf(clock);
     return stamp !== undefined && reopen(stamp);
   };
@@ -625,7 +686,7 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
     closed = true;
     // A descriptor that is no longer the file opened is never closed.
     verify();
-    forget(true);
+    drop(true);
   };
 
   const counts = (): AuditFileCounts =>

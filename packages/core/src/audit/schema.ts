@@ -138,7 +138,7 @@ export const auditFieldSchemas = Object.freeze({
   withheldAfterRead: z.literal(true),
   errorCode: z.enum(errorCodes),
   durationMs: z.int().min(0).max(86_400_000),
-  seq: z.int().min(0),
+  seq: z.int().min(1),
 });
 
 const fields = auditFieldSchemas;

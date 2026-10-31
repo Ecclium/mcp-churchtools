@@ -34,9 +34,10 @@ import {
 
 /**
  * What a producer hands to the sink. The sink alone sets `v`, `eventId`,
- * `ts` and the mark `withheldAfterRead`; `seq` and `prevHash` belong to a
- * sink that chains its events. The ID of a tool call comes as an argument
- * of its own, never as a field of the draft (ADR 0054).
+ * `ts` and the mark `withheldAfterRead`; `seq` and `prevHash` belong to the
+ * writer of the audit file, which chains its lines (ADR 0028). The ID of a
+ * tool call comes as an argument of its own, never as a field of the draft
+ * (ADR 0054).
  */
 export type AuditDraft = Omit<
   AuditEventV1,

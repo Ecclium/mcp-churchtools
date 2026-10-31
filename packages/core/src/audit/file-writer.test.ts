@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   chmodSync,
   mkdirSync,
@@ -14,17 +15,54 @@ import { join } from 'node:path';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { isEventName } from '../logger/index.js';
+import { isEventName, maxLineLength } from '../logger/index.js';
 import {
   auditFileCodes,
   type AuditFileStats,
   type AuditFileSystem,
   type AuditFileWriter,
+  maxAuditLineLength,
   maxNameAttempts,
   maxReopens,
   maxWriteAttempts,
   openAuditFile,
 } from './file-writer.js';
+
+const sha256 = (text: string): string =>
+  createHash('sha256').update(text).digest('hex');
+
+// Each link of the chain the writer puts before the last brace of a line.
+const linkPattern = /,"seq":[1-9][0-9]*,"prevHash":"[0-9a-f]{64}"\}/g;
+
+/**
+ * The text without the links of the chain, for tests of what the writer
+ * does with the bytes of a line.
+ */
+const unchained = (text: string): string => text.replaceAll(linkPattern, '}');
+
+/** The bytes of a line with its link and line break. */
+const bytesOf = (line: string, seq: number): number =>
+  line.length + `,"seq":${String(seq)},"prevHash":"${'0'.repeat(64)}"\n`.length;
+
+/**
+ * The links of the whole lines of a file, checked as `audit verify` will
+ * check them: seq counts from 1, and each prevHash is the SHA-256 of the
+ * line before, or of the name of the file for the first line. Pieces,
+ * which end in a tilde, are no part of the chain.
+ */
+const chainOf = (name: string, text: string): number[] => {
+  const seqs: number[] = [];
+  let hash = sha256(name);
+  for (const line of text.split('\n').slice(0, -1)) {
+    if (line.endsWith('~')) continue;
+    const parsed = JSON.parse(line) as { seq: number; prevHash: string };
+    expect(parsed.seq).toBe(seqs.length + 1);
+    expect(parsed.prevHash).toBe(hash);
+    seqs.push(parsed.seq);
+    hash = sha256(line);
+  }
+  return seqs;
+};
 
 // Real folders and files in a temporary folder cover what the disk can
 // show: modes, links, names in use. Injected file functions cover what a
@@ -574,12 +612,12 @@ describe('the writer of the audit file', () => {
     const { writer, content, arities, calls } = opened();
     expect(writer.write('{"v":1}')).toBe(true);
     expect(writer.write('{"v":2}')).toBe(true);
-    expect(content(fileFd)).toBe('{"v":1}\n{"v":2}\n');
+    expect(unchained(content(fileFd))).toBe('{"v":1}\n{"v":2}\n');
     // Exactly four arguments: a position would write over the file.
     expect(arities).toEqual([4, 4]);
     expect(calls.filter((call) => call.startsWith('write'))).toEqual([
-      `write ${String(fileFd)} 0 8`,
-      `write ${String(fileFd)} 0 8`,
+      `write ${String(fileFd)} 0 ${String(bytesOf('{"v":1}', 1))}`,
+      `write ${String(fileFd)} 0 ${String(bytesOf('{"v":2}', 2))}`,
     ]);
     expect(writer.counts()).toEqual({
       written: 2,
@@ -598,8 +636,13 @@ describe('the writer of the audit file', () => {
     ['a tab', 'a\tb'],
     ['an umlaut', '\u00fc'],
     ['a line separator', 'a\u2028b'],
-    ['a line too long', 'a'.repeat(65_537)],
+    ['a line too long', `{"a":"${'a'.repeat(maxAuditLineLength - 7)}"}`],
     ['no string', 1],
+    ['no object', 'a'],
+    ['an array', '[1]'],
+    ['an empty object', '{}'],
+    ['an object without its end', '{"v":1'],
+    ['an object without its start', '"v":1}'],
   ])('refuses %s without a call', (_name, line) => {
     const { writer, calls } = opened();
     expect(writer.write(line as string)).toBe(false);
@@ -607,18 +650,53 @@ describe('the writer of the audit file', () => {
     expect(calls.some((call) => call.startsWith('write'))).toBe(false);
   });
 
-  it('takes a line of 65536 characters', () => {
-    expect(opened().writer.write('a'.repeat(65_536))).toBe(true);
+  it('takes the longest line, which fits with its link the rule for a line', () => {
+    const { writer, content } = opened();
+    const line = `{"a":"${'a'.repeat(maxAuditLineLength - 8)}"}`;
+    expect(line).toHaveLength(maxAuditLineLength);
+    expect(writer.write(line)).toBe(true);
+    // The line with the longest link of all, seq 2**53 - 1, still fits.
+    expect(maxAuditLineLength + 101).toBe(maxLineLength);
+    expect(content(fileFd).length).toBe(bytesOf(line, 1));
   });
 
   it('continues a partial write at its offset', () => {
     const { writer, content, calls } = opened({ write: script(3) });
     expect(writer.write('{"v":1}')).toBe(true);
-    expect(content(fileFd)).toBe('{"v":1}\n');
+    expect(unchained(content(fileFd))).toBe('{"v":1}\n');
+    const length = bytesOf('{"v":1}', 1);
     expect(calls.filter((call) => call.startsWith('write'))).toEqual([
-      `write ${String(fileFd)} 0 8`,
-      `write ${String(fileFd)} 3 5`,
+      `write ${String(fileFd)} 0 ${String(length)}`,
+      `write ${String(fileFd)} 3 ${String(length - 3)}`,
     ]);
+  });
+
+  it('chains each line to the one before and the first to the name of the file', () => {
+    const { writer, content } = opened();
+    for (let line = 1; line <= 5; line += 1) {
+      expect(writer.write(`{"v":${String(line)}}`)).toBe(true);
+    }
+    const text = content(fileFd);
+    expect(chainOf(nameOf(1), text)).toEqual([1, 2, 3, 4, 5]);
+    // The link stands after every field the line had, before its brace.
+    expect(text.split('\n')[0]).toBe(
+      `{"v":1,"seq":1,"prevHash":"${sha256(nameOf(1))}"}`,
+    );
+  });
+
+  it('keeps the head of the chain after a lost line and a piece', () => {
+    // A piece of the first line with its repair, nothing of the second.
+    const { writer, content } = opened({
+      write: script(4, 'ENOSPC', undefined as never, 'EIO'),
+    });
+    expect(writer.write('{"v":1}')).toBe(false);
+    expect(writer.write('{"v":2}')).toBe(false);
+    expect(writer.write('{"v":3}')).toBe(true);
+    expect(writer.write('{"v":4}')).toBe(true);
+    const text = content(fileFd);
+    expect(unchained(text)).toBe('{"v"~\n{"v":3}\n{"v":4}\n');
+    // The piece and the lost line are no part of the chain.
+    expect(chainOf(nameOf(1), text)).toEqual([1, 2]);
   });
 
   it.each([0, -1, Number.NaN, 1.5, 9])(
@@ -628,7 +706,7 @@ describe('the writer of the audit file', () => {
         write: script(count, count, count),
       });
       expect(writer.write('{"v":1}')).toBe(true);
-      expect(content(fileFd)).toBe('{"v":1}\n');
+      expect(unchained(content(fileFd))).toBe('{"v":1}\n');
     },
   );
 
@@ -638,11 +716,11 @@ describe('the writer of the audit file', () => {
     expect(calls.filter((call) => call.startsWith('write'))).toHaveLength(
       maxWriteAttempts,
     );
-    expect(content(fileFd)).toBe('');
+    expect(unchained(content(fileFd))).toBe('');
     expect(writer.counts()).toMatchObject({ failed: 1, partial: 0 });
     // Nothing reached the file, so the next line needs no repair.
     expect(writer.write('{"v":2}')).toBe(true);
-    expect(content(fileFd)).toBe('{"v":2}\n');
+    expect(unchained(content(fileFd))).toBe('{"v":2}\n');
   });
 
   it.each(['ENOSPC', 'EDQUOT', 'EIO'])(
@@ -651,7 +729,7 @@ describe('the writer of the audit file', () => {
       const { writer, content } = opened({ write: script(code) });
       expect(writer.write('{"v":1}')).toBe(false);
       expect(writer.write('{"v":2}')).toBe(true);
-      expect(content(fileFd)).toBe('{"v":2}\n');
+      expect(unchained(content(fileFd))).toBe('{"v":2}\n');
       expect(writer.counts()).toMatchObject({ written: 1, failed: 1 });
     },
   );
@@ -668,17 +746,17 @@ describe('the writer of the audit file', () => {
   it('closes a piece of a line with a tilde at once', () => {
     const { writer, content } = opened({ write: script(4, 'ENOSPC') });
     expect(writer.write('{"v":1}')).toBe(false);
-    expect(content(fileFd)).toBe('{"v"~\n');
+    expect(unchained(content(fileFd))).toBe('{"v"~\n');
     expect(writer.counts()).toMatchObject({ failed: 1, partial: 1 });
     expect(writer.write('{"v":2}')).toBe(true);
-    expect(content(fileFd)).toBe('{"v"~\n{"v":2}\n');
+    expect(unchained(content(fileFd))).toBe('{"v"~\n{"v":2}\n');
   });
 
   it('never turns a piece that lacks only its break into a valid line', () => {
     const { writer, content } = opened({ write: script(-2, 'EIO') });
     expect(writer.write('{"v":1}')).toBe(false);
     const [piece] = content(fileFd).split('\n');
-    expect(piece).toBe('{"v":1}~');
+    expect(unchained(piece ?? '')).toBe('{"v":1}~');
     expect(() => JSON.parse(piece ?? '') as unknown).toThrow(SyntaxError);
   });
 
@@ -687,9 +765,9 @@ describe('the writer of the audit file', () => {
       write: script(4, 'ENOSPC', 'ENOSPC'),
     });
     expect(writer.write('{"v":1}')).toBe(false);
-    expect(content(fileFd)).toBe('{"v"');
+    expect(unchained(content(fileFd))).toBe('{"v"');
     expect(writer.write('{"v":2}')).toBe(true);
-    expect(content(fileFd)).toBe('{"v"~\n{"v":2}\n');
+    expect(unchained(content(fileFd))).toBe('{"v"~\n{"v":2}\n');
   });
 
   it('keeps a piece invalid when the repair stops after the tilde', () => {
@@ -697,9 +775,9 @@ describe('the writer of the audit file', () => {
       write: script(4, 'ENOSPC', 1, 'EIO'),
     });
     expect(writer.write('{"v":1}')).toBe(false);
-    expect(content(fileFd)).toBe('{"v"~');
+    expect(unchained(content(fileFd))).toBe('{"v"~');
     expect(writer.write('{"v":2}')).toBe(true);
-    expect(content(fileFd)).toBe('{"v"~~\n{"v":2}\n');
+    expect(unchained(content(fileFd))).toBe('{"v"~~\n{"v":2}\n');
   });
 
   it('repairs again after a line of which only the tilde went out', () => {
@@ -708,10 +786,10 @@ describe('the writer of the audit file', () => {
     });
     expect(writer.write('{"v":1}')).toBe(false);
     expect(writer.write('{"v":2}')).toBe(false);
-    expect(content(fileFd)).toBe('{"v"~');
+    expect(unchained(content(fileFd))).toBe('{"v"~');
     expect(writer.counts()).toMatchObject({ failed: 2, partial: 1 });
     expect(writer.write('{"v":3}')).toBe(true);
-    expect(content(fileFd)).toBe('{"v"~~\n{"v":3}\n');
+    expect(unchained(content(fileFd))).toBe('{"v"~~\n{"v":3}\n');
   });
 
   it('needs no repair after a line of which only the repair went out', () => {
@@ -720,10 +798,10 @@ describe('the writer of the audit file', () => {
     });
     expect(writer.write('{"v":1}')).toBe(false);
     expect(writer.write('{"v":2}')).toBe(false);
-    expect(content(fileFd)).toBe('{"v"~\n');
+    expect(unchained(content(fileFd))).toBe('{"v"~\n');
     expect(writer.counts()).toMatchObject({ failed: 2, partial: 1 });
     expect(writer.write('{"v":3}')).toBe(true);
-    expect(content(fileFd)).toBe('{"v"~\n{"v":3}\n');
+    expect(unchained(content(fileFd))).toBe('{"v"~\n{"v":3}\n');
   });
 
   it('counts a line after close as lost, without a call', () => {
@@ -762,7 +840,7 @@ describe('the writer of the audit file and a new file', () => {
       `open ${folderPath}/${nameOf(1)} ${String(fileFlags)} 600`,
       `open ${folderPath}/${nameOf(2)} ${String(fileFlags)} 600`,
     ]);
-    expect(content(fileFd + 1)).toBe('{"v":1}\n');
+    expect(unchained(content(fileFd + 1))).toBe('{"v":1}\n');
     expect(writer.counts()).toMatchObject({ written: 1, reopened: 1 });
   });
 
@@ -774,7 +852,7 @@ describe('the writer of the audit file and a new file', () => {
       },
     });
     expect(writer.write('{"v":1}')).toBe(false);
-    expect(content(fileFd)).toBe('{"v":1}\n');
+    expect(unchained(content(fileFd))).toBe('{"v":1}\n');
     expect(writer.counts()).toMatchObject({ written: 0, failed: 1 });
     expect(writer.ready()).toBe(true);
     expect(writer.counts().reopened).toBe(1);
@@ -801,7 +879,7 @@ describe('the writer of the audit file and a new file', () => {
     expect(writer.write('{"v":1}')).toBe(true);
     // Only the folder, twice: the old descriptor may be someone else's.
     expect(closed).toEqual([folderFd, folderFd]);
-    expect(content(fileFd + 1)).toBe('{"v":1}\n');
+    expect(unchained(content(fileFd + 1))).toBe('{"v":1}\n');
   });
 
   it('writes the line into a new file after EBADF, without closing the old one', () => {
@@ -813,7 +891,9 @@ describe('the writer of the audit file and a new file', () => {
     });
     expect(writer.write('{"v":1}')).toBe(true);
     expect(closed).toEqual([folderFd, folderFd]);
-    expect(content(fileFd + 1)).toBe('{"v":1}\n');
+    expect(unchained(content(fileFd + 1))).toBe('{"v":1}\n');
+    // The line goes into the new file with the first link of its chain.
+    expect(chainOf(nameOf(2), content(fileFd + 1))).toEqual([1]);
   });
 
   it.each(['ESTALE', 'EFBIG'])(
@@ -825,8 +905,8 @@ describe('the writer of the audit file and a new file', () => {
       });
       expect(writer.write('{"v":1}')).toBe(true);
       expect(closed).toEqual([folderFd, fileFd, folderFd]);
-      expect(content(fileFd)).toBe('{"v"');
-      expect(content(fileFd + 1)).toBe('{"v":1}\n');
+      expect(unchained(content(fileFd))).toBe('{"v"');
+      expect(unchained(content(fileFd + 1))).toBe('{"v":1}\n');
       expect(writer.counts()).toMatchObject({ written: 1, partial: 1 });
     },
   );
@@ -848,7 +928,7 @@ describe('the writer of the audit file and a new file', () => {
     expect(writer.write('{"v":2}')).toBe(true);
     // The names 2 and 3 were tried and refused, 4 is the next one.
     expect(opens(calls)).toHaveLength(4);
-    expect(content(fileFd + 1)).toBe('{"v":2}\n');
+    expect(unchained(content(fileFd + 1))).toBe('{"v":2}\n');
   });
 
   it('loses the line when the folder for the new file is gone', () => {
@@ -899,9 +979,9 @@ describe('the writer of the audit file and a new file', () => {
   it('repairs a piece that lacks only its break before it closes the file', () => {
     const { writer, content } = opened({ write: script(-2, 'EIO', 'EIO') });
     expect(writer.write('{"v":1}')).toBe(false);
-    expect(content(fileFd)).toBe('{"v":1}');
+    expect(unchained(content(fileFd))).toBe('{"v":1}');
     writer.close();
-    expect(content(fileFd)).toBe('{"v":1}~\n');
+    expect(unchained(content(fileFd))).toBe('{"v":1}~\n');
   });
 
   it('repairs a piece in the old file on a new UTC day', () => {
@@ -913,8 +993,8 @@ describe('the writer of the audit file and a new file', () => {
     expect(writer.write('{"v":1}')).toBe(false);
     now += day;
     expect(writer.write('{"v":2}')).toBe(true);
-    expect(content(fileFd)).toBe('{"v":1}~\n');
-    expect(content(fileFd + 1)).toBe('{"v":2}\n');
+    expect(unchained(content(fileFd))).toBe('{"v":1}~\n');
+    expect(unchained(content(fileFd + 1))).toBe('{"v":2}\n');
   });
 
   it('never closes a descriptor that names another file, on a new day or at close', () => {
@@ -957,11 +1037,11 @@ describe('the writer of the audit file and a new file', () => {
       expect(writer.write('{"v":1}')).toBe(true);
     }
     expect(opens(calls)).toHaveLength(2);
-    expect(content(fileFd)).toBe('{"v":1}\n'.repeat(maxReopens + 6));
+    expect(unchained(content(fileFd))).toBe('{"v":1}\n'.repeat(maxReopens + 6));
     refuse = false;
     deleted.add(fileFd);
     expect(writer.write('{"v":2}')).toBe(true);
-    expect(content(fileFd + 1)).toBe('{"v":2}\n');
+    expect(unchained(content(fileFd + 1))).toBe('{"v":2}\n');
   });
 
   it('starts a file for each new day without using the bound for lost files', () => {
@@ -985,8 +1065,16 @@ describe('the writer of the audit file and a new file', () => {
       `open ${folderPath}/audit-2026-10-24-055230-${String(pid)}-2.jsonl ${String(fileFlags)} 600`,
     );
     expect(closed).toEqual([folderFd, folderFd, fileFd]);
-    expect(content(fileFd)).toBe('{"v":1}\n');
-    expect(content(fileFd + 1)).toBe('{"v":2}\n');
+    expect(unchained(content(fileFd))).toBe('{"v":1}\n');
+    expect(unchained(content(fileFd + 1))).toBe('{"v":2}\n');
+    // Each day has a chain of its own, anchored to the name of its file.
+    expect(chainOf(nameOf(1), content(fileFd))).toEqual([1]);
+    expect(
+      chainOf(
+        `audit-2026-10-24-055230-${String(pid)}-2.jsonl`,
+        content(fileFd + 1),
+      ),
+    ).toEqual([1]);
   });
 
   it('never starts a file for an earlier day', () => {
@@ -1011,7 +1099,7 @@ describe('the writer of the audit file and a new file', () => {
     now += day;
     expect(writer.write('{"v":1}')).toBe(true);
     expect(closed).toEqual([folderFd, folderFd]);
-    expect(content(fileFd)).toBe('{"v":1}\n');
+    expect(unchained(content(fileFd))).toBe('{"v":1}\n');
   });
 
   it('writes without a change of day when the clock fails', () => {
@@ -1027,7 +1115,7 @@ describe('the writer of the audit file and a new file', () => {
     );
     fails = true;
     expect(writer.write('{"v":1}')).toBe(true);
-    expect(content(fileFd)).toBe('{"v":1}\n');
+    expect(unchained(content(fileFd))).toBe('{"v":1}\n');
   });
 
   it('opens no new file when the clock fails', () => {
@@ -1121,9 +1209,9 @@ describe('openAuditFile on the disk', () => {
     expect(result.writer.write('{"v":1}')).toBe(true);
     expect(result.writer.write('{"v":2}')).toBe(true);
     result.writer.close();
-    expect(readFileSync(join(folder, 'audit', nameOf(1)), 'utf8')).toBe(
-      '{"v":1}\n{"v":2}\n',
-    );
+    const text = readFileSync(join(folder, 'audit', nameOf(1)), 'utf8');
+    expect(unchained(text)).toBe('{"v":1}\n{"v":2}\n');
+    expect(chainOf(nameOf(1), text)).toEqual([1, 2]);
   });
 
   it('opens a second file in the same folder with the next free number', () => {
@@ -1163,9 +1251,10 @@ describe('openAuditFile on the disk', () => {
     expect(result.writer.write('{"v":2}')).toBe(true);
     result.writer.close();
     expect(readdirSync(join(folder, 'audit'))).toEqual([nameOf(2)]);
-    expect(readFileSync(join(folder, 'audit', nameOf(2)), 'utf8')).toBe(
-      '{"v":2}\n',
-    );
+    const text = readFileSync(join(folder, 'audit', nameOf(2)), 'utf8');
+    // The new file starts a chain of its own.
+    expect(unchained(text)).toBe('{"v":2}\n');
+    expect(chainOf(nameOf(2), text)).toEqual([1]);
   });
 
   it('writes into a new folder audit when the folder was deleted', () => {
