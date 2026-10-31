@@ -6,8 +6,8 @@
  * personal data of special categories goes out only once its line is in
  * that file (ADR 0028). The smoke test gives each process a folder of its
  * own and checks afterwards: one valid line per call of a tool, in order,
- * with tool and outcome, no object references, and nothing of the search
- * term, the answers or the token.
+ * with tool and outcome, at most 100 IDs of objects only in their fixed
+ * form, and nothing of the search term, the answers or the token.
  *
  * @packageDocumentation
  */
@@ -21,6 +21,16 @@ import { holdsAny, type JsonLine } from './course.mts';
 export const auditWords = ['audit', 'wie erwartet', 'abweichend'] as const;
 
 const fileName = /^audit-\d{4}-\d{2}-\d{2}-\d{6}-\d+-\d+\.jsonl$/;
+
+// An ID of an object as the audit file writes it: a kind of object and
+// digits or a GUID, never a name (ADR 0028).
+const objectRef =
+  /^[a-z][a-z_]{0,31}:(?:[0-9]{1,16}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+
+const isObjectRefs = (value: unknown): boolean =>
+  Array.isArray(value) &&
+  value.length <= 100 &&
+  value.every((ref) => typeof ref === 'string' && objectRef.test(ref));
 
 /**
  * Reads the lines of every audit file in a folder of state, files in the
@@ -80,7 +90,6 @@ export function auditFits(
     lines.every((line, index) => {
       const call = calls[index];
       if (call === undefined) return false;
-      const refs = line['objectRefs'];
       const outcomeFits =
         call.expect === 'ok'
           ? line['outcome'] === 'ok' && !('errorCode' in line)
@@ -98,8 +107,7 @@ export function auditFits(
         typeof line['durationMs'] === 'number' &&
         line['tool'] === call.tool &&
         outcomeFits &&
-        Array.isArray(refs) &&
-        refs.length === 0
+        isObjectRefs(line['objectRefs'])
       );
     }) && !holdsAny(lines, banned)
   );

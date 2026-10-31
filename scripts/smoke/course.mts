@@ -2316,6 +2316,14 @@ export async function runEra(
   if (secrets.query !== undefined) banned.push(secrets.query);
   if (secrets.songQuery !== undefined) banned.push(secrets.songQuery);
   if (holdsAny(lines, banned)) failures.add('protokoll');
+  // The copies of the audit lines on stderr name no ID of an object; only
+  // the audit file does (ADR 0028).
+  const copiesHoldIds = lines.some(
+    (line) =>
+      line['type'] === 'tool_call' &&
+      (!Array.isArray(line['objectRefs']) || line['objectRefs'].length > 0),
+  );
+  if (copiesHoldIds) failures.add('protokoll');
   if (
     session.stdout().includes(secrets.token) ||
     session.stderr().includes(secrets.token)
