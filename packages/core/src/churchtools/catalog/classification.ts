@@ -16,6 +16,7 @@ import {
   allowed,
   type Classification,
   excluded,
+  frozenObjectParameters,
   type ObjectParameters,
 } from './types.js';
 
@@ -30,7 +31,7 @@ import {
  * depends on `domainType`.
  */
 export const objectParameters: Readonly<Record<string, ObjectParameters>> =
-  Object.freeze({
+  frozenObjectParameters({
     'get-agendatemplates-agendaId': { agendaId: null },
     'get-bookings': {
       person_id: 'person',

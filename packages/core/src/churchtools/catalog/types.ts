@@ -103,6 +103,24 @@ export type ExclusionReason = (typeof exclusionReasons)[number];
  */
 export type ObjectParameters = Readonly<Record<string, ObjectDomain | null>>;
 
+/**
+ * Freezes the tables of IDs of every operation and the map that holds
+ * them, so that no code can change what the audit records while it runs.
+ *
+ * @param tables - The tables by hand, keyed by `operationId`.
+ * @returns The same map, frozen in every level.
+ * @example
+ * ```ts
+ * frozenObjectParameters({ 'get-persons': { 'ids[]': 'person' } });
+ * ```
+ */
+export function frozenObjectParameters(
+  tables: Record<string, ObjectParameters>,
+): Readonly<Record<string, ObjectParameters>> {
+  for (const table of Object.values(tables)) Object.freeze(table);
+  return Object.freeze(tables);
+}
+
 /** An operation the escape hatch may read, with its sensitivity. */
 export interface AllowedOperation {
   readonly allowed: true;

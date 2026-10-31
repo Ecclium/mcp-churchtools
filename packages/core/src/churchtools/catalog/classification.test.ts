@@ -131,8 +131,11 @@ describe('the classification of the core', () => {
   });
 
   it('names a kind of object or none for every parameter that looks like an ID', () => {
-    // Names such as personId, person_id, ids[], group_ids[] or identifier.
-    const idLike = /(?:^|_)ids?(?:\[\])?$|Ids?$|^identifier$/u;
+    // Names such as personId, person_id, ids[], group_ids[], identifier,
+    // pageIdentifier or wiki_guids[].
+    const idLike = (name: string): boolean =>
+      /(?:^|_)(?:ids?|identifiers?|guids?)(?:\[\])?$/u.test(name) ||
+      /(?:Ids?|Identifiers?|Guids?)(?:\[\])?$/u.test(name);
     const missing: string[] = [];
     for (const operation of generatedOperations) {
       if (entryOf(operation.operationId)?.allowed !== true) continue;
@@ -141,7 +144,7 @@ describe('the classification of the core', () => {
         : undefined;
       for (const parameter of operation.parameters) {
         if (parameter.in !== 'path' && parameter.in !== 'query') continue;
-        if (!idLike.test(parameter.name)) continue;
+        if (!idLike(parameter.name)) continue;
         if (table === undefined || !Object.hasOwn(table, parameter.name)) {
           missing.push(`${operation.operationId} ${parameter.name}`);
         }
@@ -158,6 +161,9 @@ describe('the classification of the core', () => {
       }
     }
     expect(Object.isFrozen(objectParameters)).toBe(true);
+    for (const table of Object.values(objectParameters)) {
+      expect(Object.isFrozen(table)).toBe(true);
+    }
   });
 
   it('records the persons and groups that lists of the escape hatch ask for', () => {
