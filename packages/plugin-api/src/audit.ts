@@ -73,10 +73,26 @@ export interface AuditEventV1 {
   readonly pluginHashes?: readonly string[];
   /** Data protection law that applies to the tenant, in hosted operation. */
   readonly dataProtectionRegime?: string;
-  /** IDs of the affected objects, never names or content. */
+  /**
+   * IDs of the objects a call asks for and of the persons and groups its
+   * result names, as `<domain>:<ID>`, never names or content. Only the
+   * audit file holds them; the copy on the stream of the logger has an
+   * empty list (ADR 0028).
+   */
   readonly objectRefs: readonly string[];
+  /**
+   * How many further IDs the call named beyond the 100 in `objectRefs`,
+   * only in the audit file.
+   */
+  readonly objectRefsOmitted?: number;
   /** Code of the error when the outcome is `error` or `denied`. */
   readonly errorCode?: ErrorCode;
+  /**
+   * Set only by the sink, only in the audit file: the server read the
+   * result but held it back, because its line could not be recorded as it
+   * was. The line then says `denied` with `policy_denied`.
+   */
+  readonly withheldAfterRead?: true;
   /** Duration of the action in milliseconds. */
   readonly durationMs: number;
   /** Position in a hash chain, set only by a sink that chains, never by the producer. */

@@ -291,9 +291,100 @@ describe('the field schemas', () => {
     for (const domain of objectDomains) {
       expect(passes(fields.objectRef, `${domain}:1`), domain).toBe(true);
     }
-    for (const domain of ['mustermann', 'persons', 'event', 'wiki', 'tenant']) {
+    for (const domain of [
+      'mustermann',
+      'persons',
+      'events',
+      'wiki',
+      'tenant',
+      'Person',
+    ]) {
       expect(passes(fields.objectRef, `${domain}:1`), domain).toBe(false);
     }
+  });
+
+  it('lists persons, groups and every kind of object of the plugin API', () => {
+    expect([...objectDomains]).toEqual([
+      'person',
+      'group',
+      'event',
+      'appointment',
+      'calendar',
+      'resource',
+      'booking',
+      'service',
+      'song',
+      'wiki_category',
+      'wiki_page',
+    ]);
+  });
+
+  it('anchors every alternative of an object reference at both ends', () => {
+    for (const value of [
+      'person:1',
+      'wiki_page:a1b2c3d4-0000-4000-8000-000000000001',
+      `song:${'9'.repeat(16)}`,
+    ]) {
+      expect(passes(fields.objectRef, value), value).toBe(true);
+    }
+    for (const value of [
+      'xperson:1',
+      'person:1x',
+      'person:1\n',
+      'event:1:2',
+      'person:max',
+      `song:${'9'.repeat(17)}`,
+      'wiki_page:A1B2C3D4-0000-4000-8000-000000000001',
+      'person:',
+      ':1',
+    ]) {
+      expect(passes(fields.objectRef, value), value).toBe(false);
+    }
+  });
+
+  it('takes a count of left out IDs only with 100 IDs', () => {
+    const hundred = Array.from(
+      { length: 100 },
+      (_, index) => `person:${String(index)}`,
+    );
+    expect(
+      passes(auditEventV1Schema, {
+        ...valid,
+        objectRefs: hundred,
+        objectRefsOmitted: 3,
+      }),
+    ).toBe(true);
+    expect(passes(auditEventV1Schema, { ...valid, objectRefsOmitted: 3 })).toBe(
+      false,
+    );
+    for (const value of [0, -1, 1.5, 1_000_001, '3']) {
+      expect(passes(fields.objectRefsOmitted, value), String(value)).toBe(
+        false,
+      );
+    }
+    expect(passes(fields.objectRefsOmitted, 1_000_000)).toBe(true);
+  });
+
+  it('takes the mark of a held back result only with denied and policy_denied', () => {
+    const withheld = {
+      ...valid,
+      outcome: 'denied',
+      errorCode: 'policy_denied',
+      withheldAfterRead: true,
+    };
+    expect(passes(auditEventV1Schema, withheld)).toBe(true);
+    expect(
+      passes(auditEventV1Schema, { ...withheld, errorCode: 'validation' }),
+    ).toBe(false);
+    expect(passes(auditEventV1Schema, { ...withheld, outcome: 'error' })).toBe(
+      false,
+    );
+    expect(
+      passes(auditEventV1Schema, { ...valid, withheldAfterRead: true }),
+    ).toBe(false);
+    expect(
+      passes(auditEventV1Schema, { ...withheld, withheldAfterRead: false }),
+    ).toBe(false);
   });
 
   it('refuses inherited names as enumeration values', () => {

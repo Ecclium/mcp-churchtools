@@ -2,7 +2,9 @@
  * The audit sink: one audit line per event, written through the line writer
  * of the logger onto the same stream (ADR 0054). With an audit file, each
  * line goes into the file first and then as a copy onto that stream, and
- * the file is where a line counts (ADR 0028).
+ * the file is where a line counts (ADR 0028). Only the file holds the IDs
+ * of objects and the other fields only for the file; the line on the
+ * stream has an empty `objectRefs`, with a file and without one.
  *
  * @packageDocumentation
  */
@@ -27,17 +29,18 @@ import {
   auditFieldSchemas as fields,
   auditLimits,
   auditPlaceholders as placeholders,
+  fileOnlyFields,
 } from './schema.js';
 
 /**
- * What a producer hands to the sink. The sink alone sets `v`, `eventId` and
- * `ts`; `seq` and `prevHash` belong to a sink that chains its events. The ID
- * of a tool call comes as an argument of its own, never as a field of the
- * draft (ADR 0054).
+ * What a producer hands to the sink. The sink alone sets `v`, `eventId`,
+ * `ts` and the mark `withheldAfterRead`; `seq` and `prevHash` belong to a
+ * sink that chains its events. The ID of a tool call comes as an argument
+ * of its own, never as a field of the draft (ADR 0054).
  */
 export type AuditDraft = Omit<
   AuditEventV1,
-  'v' | 'eventId' | 'ts' | 'seq' | 'prevHash'
+  'v' | 'eventId' | 'ts' | 'seq' | 'prevHash' | 'withheldAfterRead'
 >;
 
 /**
@@ -163,6 +166,7 @@ const producerKeys: readonly string[] = Object.freeze([
   'pluginHashes',
   'dataProtectionRegime',
   'objectRefs',
+  'objectRefsOmitted',
   'errorCode',
   'durationMs',
 ]);
@@ -174,6 +178,10 @@ const reservedKeys: readonly (readonly [string, string])[] = Object.freeze([
   Object.freeze(['ts', 'audit_reserved_ts'] as const),
   Object.freeze(['seq', 'audit_reserved_seq'] as const),
   Object.freeze(['prevHash', 'audit_reserved_prev_hash'] as const),
+  Object.freeze([
+    'withheldAfterRead',
+    'audit_reserved_withheld_after_read',
+  ] as const),
 ]);
 
 const knownKeys: readonly string[] = Object.freeze([
@@ -446,6 +454,19 @@ function fill(
     'audit_invalid_object_refs',
     true,
   );
+  // A count of left out IDs belongs only to a full list of IDs.
+  const omitted = own(draft, 'objectRefsOmitted');
+  if (omitted !== undefined) {
+    const refs = line['objectRefs'] as readonly Json[];
+    if (
+      refs.length === auditLimits.objectRefs &&
+      fits(fields.objectRefsOmitted, omitted)
+    ) {
+      line['objectRefsOmitted'] = omitted as number;
+    } else {
+      report('audit_invalid_object_refs_omitted');
+    }
+  }
 
   // An outcome of ok has no error code; error and denied need one.
   const errorCode = own(draft, 'errorCode');
@@ -534,15 +555,29 @@ export function createAuditSink(options: AuditSinkOptions): AuditSink {
   };
 
   // Turns a line with the outcome ok into one that says its result was held
-  // back, with the error code before the duration, where the schema puts
-  // it.
-  const withhold = (line: Line): void => {
+  // back, with the error code and, in a line of the file, the mark that the
+  // result was read, before the duration, where the schema puts them.
+  const withhold = (line: Line, read: boolean): void => {
     // Always there: a required field that fails gets its placeholder.
     const duration = line['durationMs'] as Json;
     Reflect.deleteProperty(line, 'durationMs');
     line['outcome'] = withheldOutcome;
     line['errorCode'] = withheldCode;
+    if (read) line['withheldAfterRead'] = true;
     line['durationMs'] = duration;
+  };
+
+  // The line for the stream of the logger: the same fields in the same
+  // order, but an empty objectRefs and none of the fields only for the
+  // file. Many clients write that stream into a log file Ecclium neither
+  // protects nor deletes (ADR 0028).
+  const copyOf = (line: Line): Line => {
+    const copy = bare();
+    for (const key of Object.keys(line)) {
+      if (fileOnlyFields.includes(key)) continue;
+      copy[key] = key === 'objectRefs' ? [] : (line[key] as Json);
+    }
+    return copy;
   };
 
   const knows = (name: string): boolean => {
@@ -622,21 +657,25 @@ export function createAuditSink(options: AuditSinkOptions): AuditSink {
       tenantValid = false;
     }
 
-    // A required line that the sink had to change never says ok.
+    // A required line that the sink had to change never says ok. The
+    // result of a required line was read, so the line in the file says so.
     const required = recordOptions?.required === true;
     if (required && reports.length > 0 && line['outcome'] === 'ok') {
-      withhold(line);
+      withhold(line, true);
     }
 
+    const copy = copyOf(line);
     let recorded: boolean;
     if (file === undefined) {
-      recorded = send(writer, toJson(line));
+      recorded = send(writer, toJson(copy));
     } else {
       recorded = send(file, toJson(line));
       // The copy tells the client what the file says, or that the result
       // is held back when the file did not take the line.
-      if (!recorded && required && line['outcome'] === 'ok') withhold(line);
-      send(writer, toJson(line));
+      if (!recorded && required && copy['outcome'] === 'ok') {
+        withhold(copy, false);
+      }
+      send(writer, toJson(copy));
     }
     if (!recorded) failures += 1;
 

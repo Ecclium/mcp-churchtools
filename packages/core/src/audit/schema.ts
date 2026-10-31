@@ -12,6 +12,7 @@ import {
   type AuditOutcome,
   type ConfirmationPath,
   errorCodes,
+  objectKinds,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { z } from 'zod';
 
@@ -51,17 +52,32 @@ export const confirmationPaths: readonly ConfirmationPath[] = Object.freeze([
 export const auditLimits = Object.freeze({
   objectRefs: 100,
   pluginHashes: 64,
+  /** The largest count of IDs left out of `objectRefs`. */
+  objectRefsOmitted: 1_000_000,
 });
 
 /**
- * The kinds of objects an entry of `objectRefs` may name, frozen. A closed
- * list, so that the part before the colon cannot carry a name.
+ * The fields a line of the audit file has and its copy on the stream of
+ * the logger has not, frozen. The copy has an empty `objectRefs` instead
+ * of the IDs (ADR 0028).
+ */
+export const fileOnlyFields: readonly string[] = Object.freeze([
+  'objectRefsOmitted',
+  'withheldAfterRead',
+  'seq',
+  'prevHash',
+]);
+
+/**
+ * The kinds of objects an entry of `objectRefs` may name, frozen: persons
+ * and groups, and the kinds of object the input of a tool can name. A
+ * closed list, so that the part before the colon cannot carry a name
+ * (ADR 0028).
  */
 export const objectDomains: readonly string[] = Object.freeze([
   'person',
   'group',
-  'wiki_category',
-  'wiki_page',
+  ...objectKinds,
 ]);
 
 // Regular expressions without flags, like those of the logger. An actor ID
@@ -90,7 +106,7 @@ const termPattern = /^[a-z][a-z0-9_]{0,31}$/;
 // A kind from objectDomains and the ID of an object, such as person:1, never
 // its name. A test keeps the alternatives in line with the list.
 const objectRefPattern =
-  /^(?:person|group|wiki_category|wiki_page):(?:[0-9]{1,16}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+  /^(?:person|group|event|appointment|calendar|resource|booking|service|song|wiki_category|wiki_page):(?:[0-9]{1,16}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 
 // The length is checked first and stops the check, so that a huge string
 // never reaches its pattern.
@@ -118,6 +134,8 @@ export const auditFieldSchemas = Object.freeze({
   endpointHost: text(253, hostPattern),
   term: text(32, termPattern),
   objectRef: text(50, objectRefPattern),
+  objectRefsOmitted: z.int().min(1).max(auditLimits.objectRefsOmitted),
+  withheldAfterRead: z.literal(true),
   errorCode: z.enum(errorCodes),
   durationMs: z.int().min(0).max(86_400_000),
   seq: z.int().min(0),
@@ -126,9 +144,13 @@ export const auditFieldSchemas = Object.freeze({
 const fields = auditFieldSchemas;
 
 /**
- * An audit event of version 1. Strict: an unknown key fails it. An event
- * with the outcome `ok` has no error code, and one with `error` or `denied`
- * has one.
+ * An audit event of version 1, a line of the audit file. Strict: an
+ * unknown key fails it. An event with the outcome `ok` has no error code,
+ * and one with `error` or `denied` has one. A count of left out IDs comes
+ * only with 100 IDs, and the mark of a result read but held back only with
+ * `denied` and `policy_denied`. The copy on the stream of the logger is the
+ * same line without the IDs and without the fields in
+ * {@link fileOnlyFields}.
  */
 export const auditEventV1Schema = z
   .strictObject({
@@ -167,7 +189,9 @@ export const auditEventV1Schema = z
       .array(fields.objectRef)
       .max(auditLimits.objectRefs)
       .readonly(),
+    objectRefsOmitted: fields.objectRefsOmitted.optional(),
     errorCode: fields.errorCode.optional(),
+    withheldAfterRead: fields.withheldAfterRead.optional(),
     durationMs: fields.durationMs,
     seq: fields.seq.optional(),
     prevHash: fields.hash.optional(),
@@ -178,6 +202,18 @@ export const auditEventV1Schema = z
     (event) =>
       (event.outcome === 'ok') ===
       (!Object.hasOwn(event, 'errorCode') || event.errorCode === undefined),
+  )
+  .refine(
+    (event) =>
+      !Object.hasOwn(event, 'objectRefsOmitted') ||
+      event.objectRefsOmitted === undefined ||
+      event.objectRefs.length === auditLimits.objectRefs,
+  )
+  .refine(
+    (event) =>
+      !Object.hasOwn(event, 'withheldAfterRead') ||
+      event.withheldAfterRead === undefined ||
+      (event.outcome === 'denied' && event.errorCode === 'policy_denied'),
   )
   .readonly();
 
