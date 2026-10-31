@@ -57,7 +57,7 @@ Die Tools, die in der Übersicht der [Referenz der Tools](tools.md) unter «Lese
 - Die 200 sind in dieser Version fest. Einstellbar wird das Budget mit der Richtlinie in Phase 5.
 - Die übrigen Tools zählen nicht, etwa die für das Wiki, Events, Termine und Buchungen. Für sie gilt nur die Obergrenze je Aufruf, obwohl auch ihr Freitext Personendaten enthalten kann, etwa eine Seite des Wikis mit Namen und Telefonnummern.
 
-Dieselben Tools geben ihr Ergebnis erst heraus, wenn ihre Zeile ganz in der Audit-Datei steht ([ADR 0028](adr/0028-audit-ereignis-und-datei-sink.md)). Ist eines davon eingeschaltet und `ECCLIUM_STATE_DIR` nicht gesetzt, startet der Server über stdio nicht. Eine Zeile der Audit-Datei nennt Zeit, Akteur, Tool, Ausgang und Dauer, aber in dieser Version keine Kennungen gelesener Personen oder Objekte. Sie zeigt also, wann welches Tool lief, nicht wessen Daten es las ([Datenschutz](privacy.md)).
+Dieselben Tools geben ihr Ergebnis erst heraus, wenn ihre Zeile ganz in der Audit-Datei steht ([ADR 0028](adr/0028-audit-ereignis-und-datei-sink.md)). Ist eines davon eingeschaltet und `ECCLIUM_STATE_DIR` nicht gesetzt, startet der Server über stdio nicht. Eine Zeile der Audit-Datei nennt Zeit, Akteur, Tool, Ausgang und Dauer und die Kennungen der Objekte, nach denen der Aufruf fragt, und der Personen und Gruppen, die sein Ergebnis nennt. Sie zeigt also, wann welches Tool lief und wessen Daten es las, ohne Namen. Damit trägt die Datei selbst Personendaten. Die Kopie auf stderr nennt keine Kennungen ([Datenschutz](privacy.md), [Audit-Ereignisse](audit-events.md)).
 
 ## Lesender Zugriff auf die API
 

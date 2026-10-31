@@ -12,6 +12,8 @@ import { createCorePlugin } from './index.js';
 
 // The IDs each tool of the core gives the audit (ADR 0028): its pages are
 // sized so that no call names more than the 100 IDs an audit line holds.
+// The escape hatch is the exception: its lists in the query can name more,
+// and the line then counts the others.
 
 const catalog = createToolCatalog({
   core: createCorePlugin({ docs: syntheticDocsIndex() }),
@@ -83,10 +85,11 @@ const mostIds = (schema: unknown, input: boolean): number => {
 const entries = catalog.list();
 
 describe('the IDs of the tools of the core', () => {
-  it('stay within the 100 of an audit line for every tool', () => {
+  it('stay within the 100 of an audit line for every tool but the escape hatch', () => {
     expect(entries.length).toBeGreaterThanOrEqual(32);
     const over: string[] = [];
     for (const entry of entries) {
+      if (entry.name === 'ct_api_execute_read') continue;
       const most = mostIds(entry.input, true) + mostIds(entry.output, false);
       if (most > 100) over.push(`${entry.name}: ${String(most)}`);
     }

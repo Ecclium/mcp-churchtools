@@ -22,10 +22,10 @@ export const auditWords = ['audit', 'wie erwartet', 'abweichend'] as const;
 
 const fileName = /^audit-\d{4}-\d{2}-\d{2}-\d{6}-\d+-\d+\.jsonl$/;
 
-// An ID of an object as the audit file writes it: a kind of object and
-// digits or a GUID, never a name (ADR 0028).
+// An ID of an object as the audit file writes it: one of the closed list
+// of kinds and digits or a GUID, never a name (ADR 0028).
 const objectRef =
-  /^[a-z][a-z_]{0,31}:(?:[0-9]{1,16}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
+  /^(?:person|group|event|appointment|calendar|resource|booking|service|song|wiki_category|wiki_page):(?:[0-9]{1,16}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/;
 
 const isObjectRefs = (value: unknown): boolean =>
   Array.isArray(value) &&

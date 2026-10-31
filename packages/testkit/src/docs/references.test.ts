@@ -184,7 +184,7 @@ describe('the catalog of the audit events', () => {
     );
   });
 
-  it('describes the line of the file with every field of the schema', () => {
+  it('describes the line of the file as a closed object with its fields only for the file', () => {
     const schema = JSON.parse(renderAuditEventSchema()) as {
       title: string;
       properties: Record<string, unknown>;
