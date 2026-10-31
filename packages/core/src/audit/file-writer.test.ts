@@ -115,6 +115,7 @@ interface Hooks {
   readonly fstat?: (fd: number) => AuditFileStats | undefined;
   readonly lstat?: (path: string) => AuditFileStats | undefined;
   readonly close?: (fd: number) => void;
+  readonly fsync?: (fd: number) => void;
   /**
    * How many of the bytes a call takes, or undefined for all of them. It
    * may throw like writeSync.
@@ -197,6 +198,10 @@ const fake = (hooks: Hooks = {}): Fake => {
     closeSync: (fd) => {
       closed.push(fd);
       hooks.close?.(fd);
+    },
+    fsyncSync: (fd) => {
+      calls.push(`fsync ${String(fd)}`);
+      hooks.fsync?.(fd);
     },
     getuid: hooks.getuid ?? (() => 1000),
     constants: hooks.constants ?? fakeConstants,
@@ -1172,6 +1177,77 @@ describe('the writer of the audit file and a new file', () => {
     expect(writer.write('{"v":1}')).toBe(false);
     expect(opens(calls)).toHaveLength(1);
     expect(writer.counts()).toMatchObject({ failed: 1, closed: true });
+  });
+});
+
+describe('the flush of the writer', () => {
+  const day = 24 * 60 * 60 * 1000;
+  const syncs = (calls: readonly string[]): string[] =>
+    calls.filter((call) => call.startsWith('fsync'));
+
+  it('flushes no line on its own, only the file when it closes, before closing it', () => {
+    const order: string[] = [];
+    const { writer, calls } = opened({
+      fsync: (fd) => order.push(`fsync ${String(fd)}`),
+      close: (fd) => order.push(`close ${String(fd)}`),
+    });
+    for (let line = 0; line < 5; line += 1) writer.write('{"v":1}');
+    expect(syncs(calls)).toEqual([]);
+    writer.close();
+    expect(order).toEqual([
+      `close ${String(folderFd)}`,
+      `fsync ${String(fileFd)}`,
+      `close ${String(fileFd)}`,
+    ]);
+  });
+
+  it('flushes the old file on a new UTC day and a deleted one before the new file', () => {
+    let now = clock.now();
+    const deleted = new Set<number>();
+    const { writer, calls } = opened(
+      {
+        fstat: (fd) =>
+          deleted.has(fd)
+            ? stats({ kind: 'file', ino: 200 + fd, nlink: 0 })
+            : undefined,
+      },
+      { now: () => now },
+    );
+    writer.write('{"v":1}');
+    now += day;
+    writer.write('{"v":2}');
+    expect(syncs(calls)).toEqual([`fsync ${String(fileFd)}`]);
+    deleted.add(fileFd + 1);
+    writer.write('{"v":3}');
+    expect(syncs(calls)).toEqual([
+      `fsync ${String(fileFd)}`,
+      `fsync ${String(fileFd + 1)}`,
+    ]);
+  });
+
+  it('never flushes a descriptor it gives up after EBADF', () => {
+    const { writer, calls } = opened({
+      write: (fd) => {
+        if (fd === fileFd) throw fsError('EBADF');
+        return undefined;
+      },
+    });
+    expect(writer.write('{"v":1}')).toBe(true);
+    expect(syncs(calls)).toEqual([]);
+  });
+
+  it('closes the file and reports its anchor when the flush fails', () => {
+    const { writer, closed } = opened({
+      fsync: () => {
+        throw fsError('EIO');
+      },
+    });
+    const anchors: unknown[] = [];
+    writer.attach({ anchor: (given) => anchors.push(given) });
+    writer.write('{"v":1}');
+    writer.close();
+    expect(closed).toEqual([folderFd, fileFd]);
+    expect(anchors).toHaveLength(1);
   });
 });
 

@@ -27,6 +27,7 @@ import {
   closeSync,
   constants,
   fstatSync,
+  fsyncSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -86,6 +87,8 @@ export interface AuditFileSystem {
     length: number,
   ) => number;
   readonly closeSync: (fd: number) => void;
+  /** Flushes a file to the disk. */
+  readonly fsyncSync: (fd: number) => void;
   /** The ID of the user, or undefined on a platform without one. */
   readonly getuid: () => number | undefined;
   readonly constants: {
@@ -268,6 +271,7 @@ const nodeFileSystem: AuditFileSystem = Object.freeze({
   lstatSync,
   writeSync,
   closeSync,
+  fsyncSync,
   getuid: () => process.getuid?.(),
   constants,
 });
@@ -583,13 +587,21 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
 
   // Gives up a file and reports its anchor. A descriptor that may now
   // belong to someone else, because fstat failed or names another file,
-  // is never closed: closing it would close their file. An own file with
-  // a piece at its end gets its repair first: without a later line, a
+  // is never closed or flushed: that would act on their file. An own file
+  // with a piece at its end gets its repair first: without a later line, a
   // piece that lacks only its line break would otherwise stay a valid line
-  // at the end of the file.
+  // at the end of the file. Then it goes to the disk, at the anchor and not
+  // with each line: under macOS, where Node.js flushes with F_FULLFSYNC,
+  // that cost about 3 ms per line, and the rule of ADR 0028 allows it per
+  // line only below 1 ms. A failed flush changes nothing.
   const retire = (old: Current, own: boolean): void => {
     if (own) {
       if (old.torn) send(old.fd, repairBytes);
+      try {
+        fs.fsyncSync(old.fd);
+      } catch {
+        // The lines stay written; only a crash of the system could lose them.
+      }
       closeQuietly(old.fd);
     }
     anchor(old);
