@@ -266,7 +266,7 @@ describe('the layer of the tool', () => {
     const fields = entry?.kind === 'object' ? entry.fields : {};
     expect(Object.keys(fields)).toEqual(['id', 'name']);
     expect(fields).toMatchObject({
-      id: { kind: 'leaf', dataClass: 'none' },
+      id: { kind: 'leaf', dataClass: 'groupId' },
       name: { kind: 'leaf', dataClass: 'untrusted' },
     });
   });

@@ -64,7 +64,7 @@ const input = z.strictObject({
 // in the search (ADR 0026). Role and status are numbers and words of
 // ChurchTools.
 const output = z.object({
-  groupId: classify(z.number().int().positive(), 'none'),
+  groupId: classify(z.number().int().positive(), 'groupId'),
   page: classify(z.number().int().min(1).max(maxGroupMembersPage), 'none'),
   members: z
     .array(

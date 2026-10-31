@@ -99,7 +99,7 @@ const output = z.object({
   groups: z
     .array(
       z.object({
-        id: classify(z.number().int().positive(), 'none').nullable(),
+        id: classify(z.number().int().positive(), 'groupId').nullable(),
         name: classify(z.string().max(maxNameLength), 'untrusted'),
       }),
     )

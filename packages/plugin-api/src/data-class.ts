@@ -12,6 +12,8 @@ import { z } from 'zod';
  *
  * - `none`: no personal data.
  * - `personId`: an ID of a person.
+ * - `groupId`: an ID of a group. No level of redaction changes it, since it
+ *   names no person; the audit records it (ADR 0028).
  * - `name.first`, `name.last`: first and last name.
  * - `email`, `phone`, `birthdate`, `address`: contact data and date of birth.
  * - `amount`: a sum of money.
@@ -23,6 +25,7 @@ import { z } from 'zod';
 export type DataClass =
   | 'none'
   | 'personId'
+  | 'groupId'
   | 'name.first'
   | 'name.last'
   | 'email'
@@ -36,6 +39,7 @@ export type DataClass =
 export const dataClasses: readonly DataClass[] = Object.freeze([
   'none',
   'personId',
+  'groupId',
   'name.first',
   'name.last',
   'email',

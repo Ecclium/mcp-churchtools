@@ -41,10 +41,12 @@ const input = z.strictObject({
 });
 
 // Name, meeting time and note are text people of the congregation write,
-// so they stand in the data envelope. A group is no person, so its ID and
-// the numbers and dates of its details carry no class of personal data.
+// so they stand in the data envelope. A group is no person: its ID has the
+// class groupId, which no level of redaction changes and the audit records
+// (ADR 0028), and the numbers and dates of its details carry no class of
+// personal data.
 const output = z.object({
-  id: classify(z.number().int().positive(), 'none'),
+  id: classify(z.number().int().positive(), 'groupId'),
   name: classify(z.string().max(maxNameLength), 'untrusted'),
   details: z
     .object({

@@ -49,7 +49,7 @@ const output = z.object({
   groups: z
     .array(
       z.object({
-        groupId: classify(z.number().int().positive(), 'none').nullable(),
+        groupId: classify(z.number().int().positive(), 'groupId').nullable(),
         groupName: classify(z.string().max(maxNameLength), 'untrusted'),
         groupTypeRoleId: classify(z.number().int().positive(), 'none'),
         groupMemberStatus: classify(

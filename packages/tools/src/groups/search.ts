@@ -57,7 +57,7 @@ const output = z.object({
   groups: z
     .array(
       z.object({
-        id: classify(z.number().int().positive(), 'none'),
+        id: classify(z.number().int().positive(), 'groupId'),
         name: classify(z.string().max(255), 'untrusted'),
       }),
     )
