@@ -307,6 +307,77 @@ const fakeClient = (operationAnswer: OperationAnswer = groupAnswer) => {
   return { client, seen, queries, wiki, ids };
 };
 
+describe('the IDs a read by ID asks for', () => {
+  it('reach the audit of the call before each request, the escape hatch aside', async () => {
+    const { client } = fakeClient();
+    const found: unknown[] = [];
+    const { read } = createReadAccess(
+      client,
+      ctx,
+      'special',
+      true,
+      'api',
+      (domain, value) => {
+        found.push(`${domain}:${String(value)}`);
+      },
+    );
+    await read.person(1);
+    await read.personGroups(2);
+    await read.group(3);
+    await read.groupMembers(4, 1);
+    await read.event(5);
+    await read.eventAgenda(6);
+    await read.eventAssignments(7, 1);
+    await read.appointments([8, 9], '2026-10-01', '2026-10-31');
+    await read.appointment(10, 11);
+    await read.bookings([12], '2026-10-01', '2026-10-31');
+    await read.wikiPages(13, 1);
+    await read.wikiPage(14, 'a1b2c3d4-0000-4000-8000-000000000001');
+    await read.song(15);
+    await read.searchWiki('Fest', 16);
+    await read.searchWiki('Fest');
+    await read.searchPersons('Max');
+    expect(found).toEqual([
+      'person:1',
+      'person:2',
+      'group:3',
+      'group:4',
+      'event:5',
+      'event:6',
+      'event:7',
+      'calendar:8',
+      'calendar:9',
+      'calendar:10',
+      'appointment:11',
+      'resource:12',
+      'wiki_category:13',
+      'wiki_category:14',
+      'wiki_page:a1b2c3d4-0000-4000-8000-000000000001',
+      'song:15',
+      'wiki_category:16',
+    ]);
+  });
+
+  it('note nothing for a read the access refuses', async () => {
+    const { client } = fakeClient();
+    const found: unknown[] = [];
+    const { read } = createReadAccess(
+      client,
+      ctx,
+      'personal',
+      false,
+      'wiki',
+      (domain, value) => {
+        found.push([domain, value]);
+      },
+    );
+    await expect(read.person(1)).rejects.toMatchObject({
+      code: 'policy_denied',
+    });
+    expect(found).toEqual([]);
+  });
+});
+
 describe('createReadAccess', () => {
   it('reads with the context of the call', async () => {
     const { client, seen, queries } = fakeClient();
