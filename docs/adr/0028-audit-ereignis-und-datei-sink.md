@@ -1,6 +1,6 @@
 # ADR 0028: Audit-Ereignis v1 und Datei-Sink im freien Kern
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 31.10.2026
 - Datum: 23.10.2026, ergänzt am 31.10.2026
 - Fällt vor: Phase 4
 
