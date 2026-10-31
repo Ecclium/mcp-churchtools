@@ -201,6 +201,31 @@ describe('checkInputRefs', () => {
     expect(checkInputRefs(z.strictObject({ id: leaf }))).toBeUndefined();
   });
 
+  // Its keys are never read for IDs (ADR 0028, ADR 0069).
+  it.each([
+    ['a person', classify(z.string(), 'personId')],
+    ['a group', classify(z.string(), 'groupId')],
+    ['an event', refersTo(z.string(), 'event')],
+  ])('refuses a record keyed by %s', (_what, key) => {
+    expect(
+      checkInputRefs(
+        z.strictObject({ byKey: z.record(key, none(z.string())) }),
+      ),
+    ).toBeUndefined();
+  });
+
+  it('refuses a record keyed by a class it cannot read', () => {
+    const key = z.string();
+    z.globalRegistry.add(key, {
+      [Symbol.for('ecclium.mcp-churchtools.data-class.v1')]: 'secret',
+    });
+    expect(
+      checkInputRefs(
+        z.strictObject({ byKey: z.record(key, none(z.string())) }),
+      ),
+    ).toBeUndefined();
+  });
+
   it('refuses a field that is no schema of zod 4', () => {
     const broken = z.strictObject({ a: none(z.string()) });
     Object.defineProperty(broken._zod.def.shape, 'a', { value: {} });

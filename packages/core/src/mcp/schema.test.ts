@@ -59,17 +59,20 @@ describe('deriveOutputSchema', () => {
       z.object({
         id: classify(z.number().int(), 'personId'),
         owner: classify(z.number().int(), 'personId').nullable(),
+        either: z.union([classify(z.number(), 'personId'), z.null()]),
         list: z.array(classify(z.number(), 'personId')).max(3),
       }),
     );
     expect(deriveOutputSchema(shape, 'strict').properties).toEqual({
       id: { type: 'string' },
       owner: { type: ['string', 'null'] },
+      either: { type: ['string', 'null'] },
       list: { type: 'array', items: { type: 'string' } },
     });
     expect(deriveOutputSchema(shape, 'standard').properties).toEqual({
       id: { type: 'number' },
       owner: { type: ['number', 'null'] },
+      either: { type: ['number', 'null'] },
       list: { type: 'array', items: { type: 'number' } },
     });
   });

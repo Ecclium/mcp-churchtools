@@ -587,7 +587,7 @@ describe('the level strict at a real process', { timeout }, () => {
     expect(lines.map((line) => line['objectRefs'])).toEqual([
       ['person:1'],
       ['person:1', 'group:815'],
-      [],
+      ['person:1'],
       [],
     ]);
     expect(JSON.stringify(lines)).not.toContain('p1_');

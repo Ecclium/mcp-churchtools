@@ -99,6 +99,20 @@ const domainOfClass = (
   return undefined;
 };
 
+// Whether a schema carries the class of an ID or a kind of object. A
+// class or kind it cannot read counts, so that the walk refuses it.
+const namesObject = (schema: unknown): boolean => {
+  try {
+    const dataClass = dataClassOf(schema as z.core.$ZodType);
+    return (
+      domainOfClass(dataClass) !== undefined ||
+      objectKindOf(schema as z.core.$ZodType) !== undefined
+    );
+  } catch {
+    return true;
+  }
+};
+
 const freeze = (node: InputRefNode): InputRefNode =>
   Object.freeze({ __proto__: null, ...node });
 
@@ -162,6 +176,10 @@ class InputWalk {
       case 'array':
         return this.wrap(this.visit(def.element, depth + 1, pipe), 'list');
       case 'record':
+        // The keys of a record are never read for IDs, so a key that names
+        // a person, a group or another object would pass the audit and the
+        // pseudonyms of strict unseen (ADR 0028, ADR 0069).
+        if (namesObject(def.keyType)) throw new Refused();
         return this.wrap(this.visit(def.valueType, depth + 1, pipe), 'record');
       case 'tuple':
         return this.tuple(def, depth, pipe);
@@ -316,7 +334,8 @@ class InputWalk {
  *   schema: a lazy schema, an ID inside a pipe, a kind next to a class
  *   other than `none`, an ID that is no number or text, an ID of a
  *   person that is no number, leaves of a union that name different kinds,
- *   a class or kind the registry cannot read, or more than the bounds of
+ *   a key of a record that names an object, a class or kind the registry
+ *   cannot read, or more than the bounds of
  *   nodes and depth of an output schema.
  * @throws {Error} Whatever else goes wrong while the schema is read, such
  *   as a getter of a definition that throws.

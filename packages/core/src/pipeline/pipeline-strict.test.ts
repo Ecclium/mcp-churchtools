@@ -22,6 +22,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { createAuditSink } from '../audit/index.js';
+import { fixedSentences } from '../errors/index.js';
 import { createFileKeyProvider } from '../keys/file-provider.js';
 import { KeyMaterial } from '../keys/index.js';
 import { freeTextMarkers } from '../redaction/index.js';
@@ -374,9 +375,25 @@ describe('the level strict in the pipeline', () => {
       });
     }
     expect(seen).toEqual([]);
-    for (const line of inFile().slice(2)) {
-      expect(line).toMatchObject({ errorCode: 'validation', objectRefs: [] });
-    }
+    // The raw ID a model tried is named, a pseudonym that did not open not.
+    expect(inFile().slice(2)).toMatchObject([
+      { errorCode: 'validation', objectRefs: ['person:12'] },
+      { errorCode: 'validation', objectRefs: [] },
+      { errorCode: 'validation', objectRefs: [] },
+      { errorCode: 'validation', objectRefs: [] },
+    ]);
+  });
+
+  it('refuses an input beyond the limits before it looks for pseudonyms', async () => {
+    const { call } = setup();
+    let deep: unknown = 'p1_';
+    for (let level = 0; level < 20; level += 1) deep = [deep];
+    const outcome = await call('ct_test_person', { personId: deep });
+    expect(!outcome.ok && outcome.error).toEqual({
+      code: 'validation',
+      message: fixedSentences.validation,
+    });
+    expect(seen).toEqual([]);
   });
 
   it('takes no pseudonym in standard, and gives numbers there', async () => {
@@ -486,12 +503,16 @@ describe('the level strict in the pipeline', () => {
   });
 
   it('gives no ID without its pseudonym, and goes on when erasing throws', async () => {
-    const { call, stderr } = setup();
+    const { call, inFile, stderr } = setup();
     watch.failHide = true;
     const outcome = await call('ct_test_people', {});
     expect(!outcome.ok && outcome.error.code).toBe('internal');
     expect(stderr()).toContain('"event":"tool_pseudonym_failed"');
-    expect(stderr()).not.toContain('person:12');
+    // A result that does not go out names no person of it in the audit.
+    expect(inFile()[0]).toMatchObject({
+      errorCode: 'internal',
+      objectRefs: [],
+    });
     watch.failHide = false;
     watch.failErase = true;
     const listed = await call('ct_test_people', {});

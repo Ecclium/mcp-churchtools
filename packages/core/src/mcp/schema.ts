@@ -42,7 +42,9 @@ const leafTypes = (
   node: ShapeNode & { kind: 'leaf' },
   pseudonyms: boolean,
 ): readonly string[] => {
-  if (pseudonyms && node.dataClass === 'personId') return ['string'];
+  if (pseudonyms && node.dataClass === 'personId') {
+    return node.types.includes('null') ? ['string', 'null'] : ['string'];
+  }
   return node.dataClass !== undefined &&
     markerClasses.includes(node.dataClass) &&
     !node.types.includes('string')

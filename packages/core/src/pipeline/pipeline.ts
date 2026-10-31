@@ -682,10 +682,10 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     if (entry === undefined) return noRefs;
     let refs = run.refs;
     if (refs === undefined) {
-      // In strict the IDs the pseudonyms of the input stand for; an input
-      // whose pseudonyms do not open names none (ADR 0069).
-      if (run.revealed?.ok === false) return noRefs;
-      const source = run.revealed === undefined ? input : run.revealed.value;
+      // In strict the IDs the pseudonyms of the input stand for. An input
+      // whose pseudonyms do not open is read as it came, so that a raw ID
+      // a model tried is named as well (ADR 0069).
+      const source = run.revealed?.ok === true ? run.revealed.value : input;
       const parsed = fitsInput(source)
         ? entry.input.safeParse(source)
         : undefined;
