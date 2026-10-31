@@ -923,6 +923,84 @@ describe('the audit file of the real start', { timeout }, () => {
     expect(eventsOf(stderr)).not.toContain('audit_chain_anchor');
   });
 
+  it('checks the files of two processes with ecclium audit verify and finds a changed line, a forged anchor and a cut file', async () => {
+    // Two processes with the same folder of state, as two starts of a
+    // client, and their stderr as one log, as a client keeps it.
+    const stateDir = stateDirWith(0o700);
+    const first = await callUnknown(stateDir, 3);
+    const second = await callUnknown(stateDir, 2);
+    expect([first.code, second.code]).toEqual([0, 0]);
+    const anchorOf = (stderr: string): Record<string, unknown> =>
+      jsonLines(stderr).find(
+        (line) => line['event'] === 'audit_chain_anchor',
+      ) ?? {};
+    const [one, two] = [anchorOf(first.stderr), anchorOf(second.stderr)];
+    const log = join(stateDir, 'client.log');
+    writeFileSync(log, `${first.stderr}${second.stderr}`);
+    const command = async (
+      args: readonly string[],
+    ): Promise<{ code: number | null; stdout: string[] }> => {
+      const finished = await launch({
+        origin: `https://${host}`,
+        args,
+        env: { ECCLIUM_STATE_DIR: stateDir },
+      }).finish();
+      expect(finished.stderr).toBe('');
+      return {
+        code: finished.code,
+        stdout: finished.stdout.trimEnd().split('\n'),
+      };
+    };
+
+    const clean = await command(['audit', 'verify', '--log', log]);
+    expect(clean.code).toBe(0);
+    expect(clean.stdout).toContain(
+      '  Dateien mit einem Anker aus dem Log: 2, davon passend 2, nach Ablauf der Frist gelöscht 0',
+    );
+    const shown = await command(['audit', 'show']);
+    expect(shown.code).toBe(0);
+    expect(shown.stdout).toContain('  ct_unknown: 5 Aufrufe, 5 mit Fehler');
+
+    // A changed byte in the second line of the first file breaks the link
+    // to the third, which only the chain shows.
+    const audit = join(stateDir, 'audit');
+    const firstName = String(one['file']);
+    const firstText = readFileSync(join(audit, firstName), 'latin1');
+    const [, middle = ''] = firstText.split('\n');
+    writeFileSync(
+      join(audit, firstName),
+      firstText.replace(middle, middle.replace('"v":1', '"v":2')),
+      'latin1',
+    );
+    // A forged anchor for the second file, which only the log shows.
+    const forged = join(stateDir, 'forged.log');
+    writeFileSync(
+      forged,
+      `${first.stderr}${second.stderr.replace(String(two['hash']), '0'.repeat(64))}`,
+    );
+    const changed = await command(['audit', 'verify', '--log', forged]);
+    expect(changed.code).toBe(65);
+    expect(changed.stdout).toContain(
+      `  - ${firstName}, Zeile 3: Die Kette bricht vor dieser Zeile. Davor wurde eine Zeile geändert, entfernt, eingefügt oder verschoben.`,
+    );
+    const secondName = String(two['file']);
+    expect(changed.stdout).toContain(
+      `  - ${secondName}: Die Zeile, die der Anker im Log nennt, ist nicht mehr dieselbe.`,
+    );
+    // The second file cut by its last line, which only the anchor shows.
+    const secondPath = join(audit, secondName);
+    const [kept = ''] = readFileSync(secondPath, 'latin1').split('\n');
+    writeFileSync(secondPath, `${kept}\n`, 'latin1');
+    const cut = await command(['audit', 'verify', '--log', log]);
+    expect(cut.code).toBe(65);
+    expect(cut.stdout).toContain(
+      `  - ${secondName}: Die Datei endet vor der Zeile, die der Anker im Log nennt. Sie wurde gekürzt.`,
+    );
+    for (const output of [clean, shown, changed, cut]) {
+      expect(output.stdout.join('\n')).not.toContain(stateDir);
+    }
+  });
+
   it('deletes at the start a file past its retention and an empty one of an earlier day, and nothing else', async () => {
     const stateDir = stateDirWith(0o700);
     const audit = join(stateDir, 'audit');
