@@ -45,7 +45,7 @@ export {
   variables,
 } from './config/index.js';
 export {
-  auditEventV1Schema,
+  auditEventJsonSchema,
   type AuditFileCode,
   auditFileCodes,
   fileOnlyFields,

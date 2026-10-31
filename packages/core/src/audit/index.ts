@@ -7,6 +7,7 @@
  */
 export {
   actorKinds,
+  auditEventJsonSchema,
   auditEventV1Schema,
   auditFieldSchemas,
   auditLimits,

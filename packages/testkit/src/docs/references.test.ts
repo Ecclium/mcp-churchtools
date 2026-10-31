@@ -1,5 +1,5 @@
 import {
-  auditEventV1Schema,
+  fileOnlyFields,
   objectDomains,
   variableNames,
 } from '@ecclium/mcp-churchtools-core';
@@ -192,7 +192,7 @@ describe('the catalog of the audit events', () => {
     };
     expect(schema.title).toBe('AuditEventV1');
     expect(Object.keys(schema.properties)).toEqual(
-      Object.keys(auditEventV1Schema.unwrap().shape),
+      expect.arrayContaining(['objectRefs', ...fileOnlyFields]),
     );
     expect(schema.additionalProperties).toBe(false);
   });

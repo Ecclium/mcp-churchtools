@@ -2,7 +2,7 @@
  * Renders `schemas/audit-event.v1.json`, the JSON Schema of a line of the
  * audit file, and `docs/audit-events.md`, the catalog of the audit events,
  * from the schema in the core (ADR 0028). The schema comes from
- * `z.toJSONSchema`, without a dependency of its own; the page is German
+ * `z.toJSONSchema` in the core, without a dependency of its own; the page is German
  * for operators and takes the meaning of each field from the table below.
  * Tests compare both with their files and fail for a field without a
  * meaning, so a changed event without new files turns CI red.
@@ -10,11 +10,10 @@
  * @packageDocumentation
  */
 import {
-  auditEventV1Schema,
+  auditEventJsonSchema,
   fileOnlyFields,
   objectDomains,
 } from '@ecclium/mcp-churchtools-core';
-import { z } from 'zod';
 
 /** The meaning of each type of event, for operators. */
 export const auditTypeMeanings: Readonly<Record<string, string>> =
@@ -104,11 +103,7 @@ interface JsonSchemaNode {
   readonly [keyword: string]: unknown;
 }
 
-const jsonSchema = (): JsonSchemaNode =>
-  z.toJSONSchema(auditEventV1Schema, {
-    target: 'draft-2020-12',
-    io: 'output',
-  }) as JsonSchemaNode;
+const jsonSchema = (): JsonSchemaNode => auditEventJsonSchema();
 
 /**
  * Renders the JSON Schema of a line of the audit file.

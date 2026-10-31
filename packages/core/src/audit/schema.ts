@@ -218,6 +218,25 @@ export const auditEventV1Schema = z
   .readonly();
 
 /**
+ * The JSON Schema of a line of the audit file, made with `z.toJSONSchema`
+ * from {@link auditEventV1Schema} on each call (ADR 0028). Only this plain
+ * object leaves the core, never the zod schema, which a caller could
+ * widen.
+ *
+ * @returns The schema in JSON Schema 2020-12, a new object each time.
+ * @example
+ * ```ts
+ * auditEventJsonSchema().type; // 'object'
+ * ```
+ */
+export function auditEventJsonSchema(): Record<string, unknown> {
+  return z.toJSONSchema(auditEventV1Schema, {
+    target: 'draft-2020-12',
+    io: 'output',
+  });
+}
+
+/**
  * Values the sink writes instead of an invalid required field. Each one
  * passes the schema. The factory of the tenant context refuses the tenant
  * `invalid`, the actor `invalid`, the zero UUID as run or event and the

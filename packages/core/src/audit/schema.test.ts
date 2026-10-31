@@ -9,6 +9,7 @@ import type { z } from 'zod';
 
 import {
   actorKinds,
+  auditEventJsonSchema,
   auditEventV1Schema,
   auditFieldSchemas as fields,
   auditLimits,
@@ -402,5 +403,21 @@ describe('the field schemas', () => {
     for (const value of [-1, 86_400_001, 1.5, Number.NaN, '12', null]) {
       expect(passes(fields.durationMs, value)).toBe(false);
     }
+  });
+});
+
+describe('auditEventJsonSchema', () => {
+  it('describes the line of the file as a closed object, new on each call', () => {
+    const schema = auditEventJsonSchema();
+    expect(schema).toMatchObject({
+      $schema: 'https://json-schema.org/draft/2020-12/schema',
+      type: 'object',
+      additionalProperties: false,
+    });
+    expect(Object.keys(schema['properties'] as object)).toContain(
+      'objectRefsOmitted',
+    );
+    expect(auditEventJsonSchema()).not.toBe(schema);
+    expect(schema).not.toHaveProperty('safeParse');
   });
 });
