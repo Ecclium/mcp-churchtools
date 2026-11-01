@@ -81,13 +81,13 @@ Gewählt sind YAML mit `yaml` 2.9.1, der Prüfcode über eine kanonische Form un
 - **Gültiger Code:** Der Abschnitt gilt als eigener. Ein zweiter Lauf derselben Periode ändert ihn oder lässt ihn stehen und verdoppelt ihn nie.
 - **Kein oder ungültiger Code:** Der Abschnitt gilt nicht als eigener. Ein ungültiger Code zählt als Änderung eines Menschen, nicht als Fälschung: Der Schreibwunsch geht mit dem Unterschied in die Freigabe-Warteschlange, und Ecclium ersetzt einen solchen Abschnitt nie. Ein gefälschter Abschnitt ohne gültigen Code unterdrückt den echten nicht, solange der Schlüssel geheim bleibt (T10).
 - **Verlorener Schlüssel:** Die Abschnitte gelten als «Herkunft unbekannt», und die betroffene Periode geht in die Freigabe-Warteschlange. `ecclium marker adopt` signiert mit dem Runner in Phase 6 nach einer Sichtprüfung neu.
-- Ob ein zweites Speichern den Text erneut ändert, prüfen Schreibproben an der Testinstanz ([ADR 0049](0049-testumgebung.md)). Die Tests der kanonischen Form nutzen die Änderungen, die die Probe `06-wiki-editor-roundtrip` gezeigt hat.
+- Ein zweites Speichern ohne Änderung schreibt den Text nicht erneut um und legt keine Version an, wie Schreibproben an der Testinstanz am 01.11.2026 zeigten ([ADR 0049](0049-testumgebung.md), F13). Die Tests der kanonischen Form nutzen die Änderungen, die die Probe `06-wiki-editor-roundtrip` beim ersten Speichern gezeigt hat.
 
 ### Kennzeichnung
 
 - Eine neue Seite und ein angehängter Abschnitt tragen die Zeile immer am Ende, mit dem festen Wortlaut aus `brand/README.md`. Bei einem interaktiven Schreibvorgang steht «interaktiv» an der Stelle von Routine und Lauf: «Automatisch erstellt am 01.11.2026 durch Ecclium, interaktiv, Prüfcode k1:ABCDEFGHIJKLM. Rückfragen an [Verantwortliche Person].» Das Datum ist der UTC-Tag des Schreibvorgangs, derselbe wie in der Eingabe des Prüfcodes.
 - «Rückfragen an» kommt aus einer Einstellung des Betreibers und geht durch die ContentPolicy. Sie ist Pflicht für das Schreiben im Wiki. Ohne sie legt Ecclium keine Seite an und hängt keinen Abschnitt an.
-- Eine Änderung an bestehendem Text, Termine und Buchungen bekommen keine Zeile im Text. Bei Seiten hält ChurchTools fest, wer zuletzt geändert hat, bei Terminen und Buchungen prüfen das die Schreibproben, und das Audit hält jeden Aufruf fest.
+- Eine Änderung an bestehendem Text, Termine und Buchungen bekommen keine Zeile im Text. Bei Seiten hält ChurchTools fest, wer zuletzt geändert hat, bei Terminen und Buchungen ebenso, wie die Schreibproben belegen (F44), und das Audit hält jeden Aufruf fest.
 - Derselbe Inhalt in kanonischer Form am selben Tag auf derselben Seite, interaktiv angehängt, gilt als Wiederholung und endet in `skipped`.
 
 ## Konsequenzen
@@ -98,6 +98,6 @@ Gewählt sind YAML mit `yaml` 2.9.1, der Prüfcode über eine kanonische Form un
 - Ein leerer interaktiver Teil lässt bestätigte Schreibvorgänge im Rahmen aller Rechte des Dienstkontos zu, ausser für Gruppen und Dienste. Das hält die Einrichtung einfach. Die Doku für Betreiber rät zu Einträgen und zu Schreibrechten des Kontos nur für die Ziele.
 - **Restrisiken:**
   - Ändert ein Mensch einen Abschnitt, auch nur ein Wort, gilt er danach nicht mehr als eigener, und jeder weitere Schreibwunsch für ihn geht in die Freigabe-Warteschlange.
-  - Ändert ein zweites Speichern im Web-Editor den Text auf eine Weise, die die kanonische Form nicht ausgleicht, gilt ein unveränderter Abschnitt als geändert. Das zeigen erst die Schreibproben.
+  - Ändert ein Speichern im Web-Editor den Text auf eine Weise, die die kanonische Form nicht ausgleicht, gilt ein unveränderter Abschnitt als geändert. Ein zweites Speichern ohne Änderung tat das in den Schreibproben nicht (F13), ein Speichern mit einer Änderung an anderer Stelle prüften sie nicht.
   - Der Code hat 64 Bit. Ein Versuch, ihn ohne Schlüssel zu erraten, gelingt mit einer Wahrscheinlichkeit von eins zu 2^64.
   - Wer den Schlüssel des Prüfcodes kennt, kann Abschnitte als eigene ausgeben. Er gehört zu den Geheimnissen, die nur der Betreiber verwahrt.
