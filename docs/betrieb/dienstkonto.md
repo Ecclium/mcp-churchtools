@@ -84,6 +84,8 @@ Prüfen Sie nach jeder Änderung mit `ct_whoami`, was das Token sieht. Das Rück
 
 Erneuern Sie das Token in ChurchTools, legen Sie das neue in die Token-Datei und starten Sie den Client neu, denn der Server liest die Datei beim Start. Ein erneuertes Token macht das alte ungültig: Auf einer Testinstanz wies ChurchTools das alte Token etwa zehn Sekunden nach dem Erneuern ab. Prüfen Sie danach mit `ct_whoami` oder dem Smoke-Test, dass das neue gilt.
 
+«Mein Profil» zeigt immer das Token der Person, die im Browser angemeldet ist. Wer dort als Administratorin oder Administrator angemeldet ist, kopiert das eigene Token und nicht das des Dienstkontos. Der Server arbeitet dann mit allen Rechten dieser Person, und das alte Token des Dienstkontos gilt weiter. Melden Sie sich deshalb in einem privaten Fenster als Dienstkonto an, und prüfen Sie nach dem Einsetzen mit `ct_whoami`, dass das Token das Dienstkonto nennt und nur dessen Rechte zeigt. So geschehen auf einer Testinstanz am 01.11.2026: `ct_whoami` zeigte statt eines Moduls mehr als zehn, und das Konto hatte eine E-Mail-Adresse.
+
 ## Nach einem Vorfall
 
 Liegt das Token oder die Token-Datei womöglich bei jemand anderem:
