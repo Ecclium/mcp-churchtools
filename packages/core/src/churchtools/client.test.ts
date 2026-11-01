@@ -864,8 +864,15 @@ describe('the client', () => {
       'searchWiki',
       'search',
       'operation',
+      'writes',
     ]);
     expect(Object.isFrozen(client)).toBe(true);
+    expect(Object.keys(client.writes)).toEqual([
+      'createWikiPage',
+      'updateWikiPage',
+      'wikiPageState',
+    ]);
+    expect(Object.isFrozen(client.writes)).toBe(true);
   });
 });
 

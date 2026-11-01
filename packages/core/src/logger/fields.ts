@@ -28,6 +28,22 @@ export const redactionLevels: readonly RedactionLevel[] = Object.freeze([
   'strict',
 ]);
 
+/**
+ * Every method the outbound path sends, frozen (ADR 0056, ADR 0072). The
+ * line of each request names its method, so that every write to
+ * ChurchTools shows in the log.
+ */
+export const httpMethods = Object.freeze([
+  'GET',
+  'POST',
+  'PUT',
+  'PATCH',
+  'DELETE',
+] as const);
+
+/** A method of the outbound path, in capitals as HTTP writes it. */
+export type HttpMethod = (typeof httpMethods)[number];
+
 // Regular expressions without flags: g or y would keep a lastIndex shared by
 // every caller, i would let capitals through, and i together with u would
 // let lookalikes such as U+017F through. The length is checked before a
@@ -163,6 +179,16 @@ export const isMode = (value: unknown): value is Mode =>
  */
 export const isRedactionLevel = (value: unknown): value is RedactionLevel =>
   (redactionLevels as readonly unknown[]).includes(value);
+
+/**
+ * Tells whether a value is one of the methods of the outbound path,
+ * compared exactly, so `get` or `Post` never fits.
+ *
+ * @param value - Any value.
+ * @returns Whether it fits.
+ */
+export const isHttpMethod = (value: unknown): value is HttpMethod =>
+  (httpMethods as readonly unknown[]).includes(value);
 
 /**
  * Tells whether a value is a real boolean, never a string such as `'false'`.

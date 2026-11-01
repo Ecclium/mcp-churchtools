@@ -50,6 +50,7 @@ describe('the catalog of the log lines', () => {
       code: 'internal',
       durationMs: 1,
       count: 1,
+      method: 'GET',
       status: 404,
       attempt: 1,
       file: 'audit-2026-10-23-055230-4242-1.jsonl',

@@ -6,7 +6,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { HttpResponse } from '../http/index.js';
-import { readAnswer } from './answer.js';
+import { readAnswer, statusFailure } from './answer.js';
 
 // The answers are built by hand, as the transport would give them. Hosts and
 // values are invented; canaries are made at run time.
@@ -204,5 +204,57 @@ describe('readAnswer', () => {
       assertNoCanary(read, canaries.all, `result of ${String(status)}`);
     }
     expect(decode).not.toHaveBeenCalled();
+  });
+});
+
+describe('readAnswer for a write that created an object', () => {
+  it('reads an answer 201 when told, and refuses 200 then', () => {
+    expect(
+      readAnswer(answer(201, '{"data":{"id":1}}'), {
+        maxElements: 100,
+        status: 201,
+      }),
+    ).toEqual({ ok: true, root: { data: { id: 1 } } });
+    expect(
+      readAnswer(answer(200, '{"data":{"id":1}}'), {
+        maxElements: 100,
+        status: 201,
+      }),
+    ).toEqual({ ok: false, code: 'upstream', reason: 'status' });
+  });
+
+  it('refuses 201 without being told, as before', () => {
+    expect(readAnswer(answer(201, '{}'), limits)).toEqual({
+      ok: false,
+      code: 'upstream',
+      reason: 'status',
+    });
+  });
+});
+
+describe('statusFailure', () => {
+  it.each([
+    [400, 'internal'],
+    [401, 'auth'],
+    [403, 'permission'],
+    [404, 'upstream'],
+    [409, 'upstream'],
+    [500, 'upstream'],
+    [201, 'upstream'],
+  ])('gives %i the code %s, frozen and without prototype', (status, code) => {
+    const failure = statusFailure(answer(status, 'never read'));
+    expect(failure).toEqual({ code });
+    expect(Object.isFrozen(failure)).toBe(true);
+    expect(Object.getPrototypeOf(failure)).toBeNull();
+  });
+
+  it('names the wait of a 429 only with a usable Retry-After', () => {
+    expect(statusFailure(answer(429, '', { 'retry-after': '120' }))).toEqual({
+      code: 'rate_limited',
+      waitSeconds: 120,
+    });
+    expect(statusFailure(answer(429, '', { 'retry-after': 'soon' }))).toEqual({
+      code: 'rate_limited',
+    });
   });
 });

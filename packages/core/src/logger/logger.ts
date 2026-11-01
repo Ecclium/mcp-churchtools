@@ -23,6 +23,7 @@ import {
   isBoolean,
   isErrorCode,
   isEventName,
+  isHttpMethod,
   isIntegerIn,
   isMode,
   isPromptName,
@@ -124,6 +125,9 @@ const fields: readonly Field[] = Object.freeze(
     { name: 'readOnly', bound: true, check: isBoolean },
     { name: 'durationMs', bound: false, check: isIntegerIn(0, 86_400_000) },
     { name: 'count', bound: false, check: isIntegerIn(0, 1_000_000) },
+    // The method of a request on the outbound path, so that every write to
+    // ChurchTools shows in the log (ADR 0072).
+    { name: 'method', bound: false, check: isHttpMethod },
     { name: 'status', bound: false, check: isIntegerIn(100, 599) },
     { name: 'attempt', bound: false, check: isIntegerIn(1, 10) },
     // The anchor of the chain of an audit file, only for the logger the
@@ -271,7 +275,7 @@ const timestamp = (clock: Clock): string => {
  * `event`, then the bound fields and the fields of the call in a fixed
  * order, then `dropped` if fields were dropped. A call may set only
  * `prompt`, with a name from `prompts`, `code`, `durationMs`, `count`,
- * `status` and `attempt`, and with `anchors` also `file`, `seq` and
+ * `method`, `status` and `attempt`, and with `anchors` also `file`, `seq` and
  * `hash`; everything else is dropped and counted. An event name that
  * breaks the pattern or is not in the catalog `logEvents` becomes
  * `invalid_event`. Fields are read as own data properties of a plain

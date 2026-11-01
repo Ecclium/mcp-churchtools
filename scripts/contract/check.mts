@@ -8,8 +8,10 @@
  * it and marks it as deprecated, whether it declares the query parameters
  * the client sends, and for each field the client reads, at any depth,
  * whether the document declares it, with its type class, required and
- * nullable. At the end it lists where the document departs from what the
- * client expects. Under `katalog` it compares the catalog of the escape
+ * nullable. For a write it compares the body the client sends with the
+ * body the document declares, and reads the answer of the status of
+ * success the contract names (ADR 0072). At the end it lists where the
+ * document departs from what the client expects. Under `katalog` it compares the catalog of the escape
  * hatch with the document as well (`catalog.mts`). Only fixed words and
  * the names of the client and of the catalog leave the script, through
  * the guard of the spike.
@@ -382,6 +384,7 @@ export const deviationKinds = [
   'anderer Typ',
   'nicht Pflicht',
   'nullable',
+  'Pflicht nicht gesendet',
 ] as const;
 
 /** One place where the document departs from what the client expects. */
@@ -439,12 +442,53 @@ export function fieldDeviations(
   return deviations;
 }
 
+/**
+ * Lists where the body the document declares for a write departs from the
+ * body the client sends (ADR 0072): a field the client sends that the
+ * document does not declare or declares with another type class, and a
+ * field the document requires at the top that the client does not send.
+ * Whether a field may be null or is required does not count for a field
+ * the client sends, because it always sends it and never as null. Each
+ * field is named with `koerper.` before its path.
+ *
+ * @param operation - The name of the operation in the contract.
+ * @param fields - The comparison of the fields of the body.
+ * @param required - The fields the document requires at the top.
+ * @returns The deviations, the fields in the order of the contract first.
+ */
+export function requestDeviations(
+  operation: string,
+  fields: readonly FieldComparison[],
+  required: ReadonlySet<string>,
+): Deviation[] {
+  const deviations = fieldDeviations(operation, fields)
+    .filter(
+      (deviation) =>
+        deviation.art === 'nicht deklariert' || deviation.art === 'anderer Typ',
+    )
+    .map((deviation) => ({
+      ...deviation,
+      feld: `koerper.${deviation.feld ?? ''}`,
+    }));
+  const sent = new Set(fields.map((field) => field.path));
+  for (const name of required)
+    if (!sent.has(name))
+      deviations.push({
+        operation,
+        feld: `koerper.${name}`,
+        art: 'Pflicht nicht gesendet',
+      });
+  return deviations;
+}
+
 // One entry of contract.json: an operation of the client, or a building
 // block without a path.
 interface Entry {
   readonly method?: unknown;
   readonly path?: unknown;
   readonly query?: unknown;
+  readonly status?: unknown;
+  readonly request?: unknown;
   readonly response?: unknown;
   readonly value?: unknown;
 }
@@ -456,6 +500,10 @@ interface Operation {
   readonly method: Method;
   readonly path: string;
   readonly query: readonly string[];
+  /** The status of the answer of success: 200 unless the entry names 201. */
+  readonly status: number;
+  /** Only writes: the JSON Schema of the body the client sends. */
+  readonly request: unknown;
   readonly response: unknown;
   /** Only the rights: the schema of one value of the map. */
   readonly value: unknown;
@@ -480,12 +528,22 @@ const operationsOf = (contract: unknown): Operation[] => {
       !query.every((item): item is string => typeof item === 'string')
     )
       throw broken;
+    // A read has no body and is read at 200; a write names the body it
+    // sends, so that no write drops out of the comparison (ADR 0072).
+    const status = entry.status ?? 200;
+    if (status !== 200 && status !== 201) throw broken;
+    if (method === 'get' && (entry.request !== undefined || status !== 200))
+      throw broken;
+    if (method !== 'get' && method !== 'delete' && entry.request === undefined)
+      throw broken;
     return [
       {
         name,
         method,
         path: entry.path,
         query,
+        status,
+        request: entry.request,
         response: entry.response,
         value: entry.value,
       },
@@ -495,6 +553,7 @@ const operationsOf = (contract: unknown): Operation[] => {
 
 const words = [
   'abgleich',
+  'koerper',
   'churchtools-client',
   'churchtoolsVersion',
   'unbekannt',
@@ -592,7 +651,7 @@ export function run(
       const body =
         documented === undefined
           ? undefined
-          : schemas.responseSchema(documented, 200);
+          : schemas.responseSchema(documented, operation.status);
       const entry: Record<string, Json> = {
         pfad: operation.path,
         dokumentiert: documented !== undefined,
@@ -617,6 +676,32 @@ export function run(
               feld: name,
               art: 'parameter nicht deklariert',
             });
+      }
+      // The body of a write: what the client sends against what the
+      // document declares for the request (ADR 0072).
+      if (operation.request !== undefined) {
+        const requestBody =
+          documented === undefined
+            ? undefined
+            : schemas.requestSchema(documented);
+        const fields = compareSchema(schemas, requestBody, operation.request);
+        guard.allowFixed(
+          ...fields.flatMap((field) => [field.path, `koerper.${field.path}`]),
+        );
+        entry['koerper'] = Object.fromEntries(
+          fields.map((field) => [field.path, { ...field.document }]),
+        );
+        if (documented !== undefined) {
+          // A name the document requires comes from the instance, so it
+          // passes only the checks for names the document gives.
+          const required = requiredOf(schemas, requestBody, {
+            left: maxSteps,
+          });
+          for (const name of required) guard.allowChecked(`koerper.${name}`);
+          deviations.push(
+            ...requestDeviations(operation.name, fields, required),
+          );
+        }
       }
       if (operation.response !== undefined) {
         const fields = compareSchema(schemas, body, operation.response);

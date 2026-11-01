@@ -48,6 +48,7 @@ const order = [
   'readOnly',
   'durationMs',
   'count',
+  'method',
   'status',
   'attempt',
   'file',
@@ -137,6 +138,7 @@ describe('a log line', () => {
       ...anchor,
       attempt: 1,
       status: 404,
+      method: 'PATCH',
       count: 3,
       durationMs: 12,
       code: 'not_found',
@@ -154,6 +156,7 @@ describe('a log line', () => {
       code: 'not_found',
       durationMs: 12,
       count: 3,
+      method: 'PATCH',
       status: 404,
       attempt: 1,
       ...anchor,
@@ -162,7 +165,7 @@ describe('a log line', () => {
     expect(lines[0]).not.toMatch(/[\n\r]/);
   });
 
-  it('is at most 763 characters long', () => {
+  it('is at most 781 characters long', () => {
     // The longest name of the catalog, not 64 characters: no other name
     // reaches a line (ADR 0054).
     const longest = Object.keys(logEvents).reduce((a, b) =>
@@ -190,12 +193,13 @@ describe('a log line', () => {
       code: 'confirmation_required',
       durationMs: 86_400_000,
       count: 1_000_000,
+      method: 'DELETE',
       status: 599,
       attempt: 10,
     };
     for (let key = 0; key < maxDropped; key += 1) fields[key] = 0;
     log.debug(longest, fields as never);
-    expect(lines[0]).toHaveLength(763);
+    expect(lines[0]).toHaveLength(781);
   });
 });
 
@@ -724,6 +728,35 @@ describe('the fields of a call', () => {
       null,
       null,
       null,
+    ]);
+  });
+
+  it('keep only one of the five methods of the outbound path, in capitals', () => {
+    const { log, parsed } = make();
+    for (const method of [
+      'GET',
+      'POST',
+      'PUT',
+      'PATCH',
+      'DELETE',
+      'get',
+      'Post',
+      'HEAD',
+      'OPTIONS',
+      'CONNECT',
+      'GET ',
+      'toString',
+      1,
+    ]) {
+      log.info('http_response', { method });
+    }
+    expect(parsed().map((line) => line['method'] ?? null)).toEqual([
+      'GET',
+      'POST',
+      'PUT',
+      'PATCH',
+      'DELETE',
+      ...Array.from({ length: 8 }, () => null),
     ]);
   });
 });

@@ -60,9 +60,20 @@ export const pagedMetaSchema = z.object({ pagination: paginationSchema });
 /** `meta` of a list without pages, which only counts (F6). */
 export const countedMetaSchema = z.object({ count });
 
-// Whether a string has no lone surrogate, without String#isWellFormed,
-// which the target of the compiler does not know.
-const wellFormed = (text: string): boolean => {
+/**
+ * Whether a string has no lone surrogate, without String#isWellFormed,
+ * which the target of the compiler does not know. The writes of the client
+ * check what they send with it as well (ADR 0072).
+ *
+ * @param text - Any string.
+ * @returns Whether every surrogate is part of a pair.
+ * @example
+ * ```ts
+ * wellFormed('\ud83d\ude00'); // true
+ * wellFormed('\ud83d'); // false
+ * ```
+ */
+export const wellFormed = (text: string): boolean => {
   for (let index = 0; index < text.length; index += 1) {
     const code = text.charCodeAt(index);
     if (code >= 0xd800 && code <= 0xdbff) {
@@ -705,6 +716,49 @@ export const wikiPageSchema = z.object({
     version: id,
     text: text(maxWikiTextLength).nullable(),
   }),
+});
+
+/**
+ * The answer 201 of `POST /api/wiki/categories/{id}/pages`: the page that
+ * was created, of which the client reads only GUID, title, version and
+ * format (F16). The text is the one the client sent and is not read again
+ * here; the read after the write compares it (ADR 0072).
+ */
+export const wikiPageCreatedSchema = z.object({
+  data: z.object({
+    guid: pageGuid,
+    title: text(maxWikiTitleLength),
+    isMarkdown: z.boolean(),
+    version: id,
+  }),
+});
+
+/**
+ * The most bytes of the text of a page that the client writes, in UTF-8.
+ * The ContentPolicy holds every text to its own limit first; this one
+ * bounds what the client sends even without it (ADR 0072).
+ */
+export const maxWikiWriteBytes = 64 * 1024;
+
+/**
+ * The body of `POST /api/wiki/categories/{id}/pages`, exactly as the client
+ * sends it: title, text and always `isMarkdown: true`, because a page made
+ * without it is no Markdown page (F16) and Ecclium writes no HTML. For the
+ * contract check; the client checks its values before it builds the body.
+ */
+export const wikiPageCreateBodySchema = z.object({
+  title: z.string().min(1).max(maxWikiTitleLength),
+  text: z.string().min(1),
+  isMarkdown: z.literal(true),
+});
+
+/**
+ * The body of `PATCH /api/wiki/categories/{id}/pages/{guid}`, exactly as
+ * the client sends it: only the text. A title in the body changes nothing
+ * («Titel einer Seite»), and the format of a page stays as it is.
+ */
+export const wikiPageUpdateBodySchema = z.object({
+  text: z.string().min(1),
 });
 
 /**

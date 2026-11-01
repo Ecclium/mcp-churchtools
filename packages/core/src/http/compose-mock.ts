@@ -25,6 +25,7 @@ export type {
   HttpRequestOptions,
   HttpResponse,
   HttpTransport,
+  HttpWriteOptions,
 } from './transport.js';
 
 /** What a mocked transport is built from. */
@@ -43,7 +44,7 @@ export interface MockedHttpTransportOptions {
 
 /** What the transport sent, as the MockAgent saw it. */
 export interface MockedCall {
-  /** Always GET. */
+  /** The method: GET, POST, PUT, PATCH or DELETE. */
   readonly method: string;
   /** The path without the query. */
   readonly path: string;
@@ -54,7 +55,16 @@ export interface MockedCall {
    * included, so that a test can check what was sent. Only tests reach it.
    */
   readonly headers: Readonly<Record<string, string>>;
+  /**
+   * The body of a write as text in UTF-8, so that a test can compare the
+   * JSON that was sent; undefined for a request without body.
+   */
+  readonly body: string | undefined;
 }
+
+// The transport sends a body only as a Uint8Array of JSON in UTF-8.
+const bodyText = (body: unknown): string | undefined =>
+  body instanceof Uint8Array ? new TextDecoder().decode(body) : undefined;
 
 /** What an interceptor matches, as undici takes it. */
 export type InterceptOptions = Parameters<MockPool['intercept']>[0];
@@ -143,6 +153,7 @@ export function createMockedHttpTransport(
             path: call.path,
             searchParams: frozenCopy(call.searchParams),
             headers: frozenCopy(call.headers),
+            body: bodyText(call.body),
           }),
         ),
       ),

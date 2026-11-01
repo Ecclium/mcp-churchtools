@@ -77,3 +77,30 @@ export function createChurchToolsDouble(
     clock: options.clock ?? stillClock,
   });
 }
+
+/**
+ * Fails when a double saw any request but GET. Every request that does not
+ * read counts as an error, so a test of a dry run shows that nothing was
+ * written (ADR 0072): a write that slips through fails the test, whatever
+ * it would have changed. The message names method and path of each, never
+ * a header, so it holds no token.
+ *
+ * @param double - The double, or anything that lists its calls.
+ * @throws {Error} When a request other than GET was sent.
+ * @example
+ * ```ts
+ * await runDryPlan(double.transport);
+ * assertOnlyReads(double);
+ * ```
+ */
+export function assertOnlyReads(
+  double: Pick<MockedHttpTransport, 'calls'>,
+): void {
+  const writes = double.calls().filter((call) => call.method !== 'GET');
+  if (writes.length === 0) return;
+  throw new Error(
+    `Expected only reads, but ${String(writes.length)} request(s) would write: ${writes
+      .map((call) => `${call.method} ${call.path}`)
+      .join(', ')}`,
+  );
+}

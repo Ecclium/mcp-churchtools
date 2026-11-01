@@ -74,6 +74,11 @@ export const logFieldMeanings: Readonly<
     meaning:
       "Eine Zahl, deren Bedeutung das Ereignis nennt, höchstens 1'000'000.",
   },
+  method: {
+    setBy: 'Aufruf',
+    meaning:
+      'Methode einer Anfrage an ChurchTools: `GET` liest, `POST`, `PUT`, `PATCH` und `DELETE` schreiben.',
+  },
   status: {
     setBy: 'Aufruf',
     meaning: 'Status einer Antwort von ChurchTools, 100 bis 599.',
@@ -217,6 +222,18 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Ecclium hat eine Kennung zum Lesen einer Person oder Gruppe abgewiesen, bevor es ChurchTools fragte.',
     churchtools_wiki_input_refused:
       'Ecclium hat eine Eingabe für das Wiki abgewiesen, bevor es ChurchTools fragte.',
+    churchtools_wiki_write_input_refused:
+      'Ecclium hat einen Titel, einen Text oder eine Kennung zum Schreiben im Wiki abgewiesen, bevor es ChurchTools fragte.',
+    churchtools_wiki_page_create_status:
+      'ChurchTools hat auf das Anlegen einer Seite im Wiki nicht mit 201 geantwortet. `status` nennt den Status, `code` den Fehler. Bei 400 steht in der Kategorie womöglich schon eine Seite mit diesem Titel. Ob ChurchTools trotzdem geschrieben hat, zeigt erst das Lesen danach.',
+    churchtools_wiki_page_create_refused:
+      'Ecclium hat die Antwort von ChurchTools auf das Anlegen einer Seite im Wiki nicht angenommen, etwa weil sie keine Kennung der Seite nannte. Die Seite kann trotzdem entstanden sein.',
+    churchtools_wiki_page_create_missing:
+      'ChurchTools kennt die Kategorie nicht, in der Ecclium eine Seite anlegen wollte (404). Der Aufruf endet mit `not_found`.',
+    churchtools_wiki_page_update_status:
+      'ChurchTools hat auf das Ändern einer Seite im Wiki nicht mit 200 geantwortet. `status` nennt den Status, `code` den Fehler. Ob ChurchTools trotzdem geschrieben hat, zeigt erst das Lesen danach.',
+    churchtools_wiki_page_update_missing:
+      'ChurchTools kennt die Seite oder ihre Kategorie nicht, die Ecclium ändern wollte (404). Der Aufruf endet mit `not_found`.',
     churchtools_event_input_refused:
       'Ecclium hat eine Eingabe für Events oder Dienste abgewiesen, bevor es ChurchTools fragte.',
     churchtools_calendar_input_refused:
@@ -236,7 +253,7 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
     churchtools_operation_too_large:
       'Die Antwort auf eine Operation war grösser als ihre Grenze.',
     http_response:
-      'ChurchTools hat geantwortet. `status` nennt den Status, `durationMs` die Dauer.',
+      'ChurchTools hat geantwortet. `method` nennt die Methode der Anfrage, `status` den Status, `durationMs` die Dauer.',
     audit_missing_error_code:
       'Eine Zeile mit `error` oder `denied` kam ohne Fehlercode. Die Zeile im Audit trägt einen Platzhalter.',
     audit_unknown_fields:
@@ -297,7 +314,7 @@ const familyMeaning = (name: string): string | undefined => {
   if (name.startsWith('http_')) {
     const category = name.slice('http_'.length);
     if (Object.hasOwn(httpFailures, category)) {
-      return `${httpFailures[category] ?? ''} \`code\` nennt den Fehler, \`durationMs\` die Dauer bis dahin.`;
+      return `${httpFailures[category] ?? ''} \`code\` nennt den Fehler, \`durationMs\` die Dauer bis dahin, \`method\` die Methode der Anfrage.`;
     }
   }
   if (name.startsWith('audit_invalid_')) {

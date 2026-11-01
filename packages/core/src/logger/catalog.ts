@@ -31,6 +31,7 @@ export type LogCallField =
   | 'code'
   | 'durationMs'
   | 'count'
+  | 'method'
   | 'status'
   | 'attempt'
   | 'file'
@@ -61,7 +62,8 @@ const family = <const Names extends readonly string[]>(
     readonly [Name in Names[number]]: LogEventEntry;
   };
 
-// An answer of ChurchTools with a status other than 200, per operation.
+// An answer of ChurchTools with a status other than that of success, 200
+// for a read and for changing a page, 201 for creating one, per operation.
 const statusEvents = Object.freeze([
   'churchtools_agenda_status',
   'churchtools_appointment_status',
@@ -88,12 +90,14 @@ const statusEvents = Object.freeze([
   'churchtools_songs_status',
   'churchtools_whoami_status',
   'churchtools_wiki_categories_status',
+  'churchtools_wiki_page_create_status',
   'churchtools_wiki_page_status',
+  'churchtools_wiki_page_update_status',
   'churchtools_wiki_pages_status',
   'churchtools_wiki_search_status',
 ] as const);
 
-// An answer with status 200 that the client does not take, per operation.
+// An answer of success that the client does not take, per operation.
 const refusedEvents = Object.freeze([
   'churchtools_agenda_refused',
   'churchtools_appointment_refused',
@@ -120,12 +124,13 @@ const refusedEvents = Object.freeze([
   'churchtools_songs_refused',
   'churchtools_whoami_refused',
   'churchtools_wiki_categories_refused',
+  'churchtools_wiki_page_create_refused',
   'churchtools_wiki_page_refused',
   'churchtools_wiki_pages_refused',
   'churchtools_wiki_search_refused',
 ] as const);
 
-// A 404 of an operation that reads one object by its ID.
+// A 404 of an operation that reads or writes one object by its ID.
 const missingEvents = Object.freeze([
   'churchtools_agenda_missing',
   'churchtools_appointment_missing',
@@ -137,7 +142,9 @@ const missingEvents = Object.freeze([
   'churchtools_person_groups_missing',
   'churchtools_person_missing',
   'churchtools_song_missing',
+  'churchtools_wiki_page_create_missing',
   'churchtools_wiki_page_missing',
+  'churchtools_wiki_page_update_missing',
 ] as const);
 
 // A search term that the client refuses before it asks ChurchTools.
@@ -244,6 +251,7 @@ export const logEvents = Object.freeze({
   churchtools_permissions_unknown: entry('warn'),
   churchtools_read_input_refused: entry('warn', 'code'),
   churchtools_wiki_input_refused: entry('warn', 'code'),
+  churchtools_wiki_write_input_refused: entry('warn', 'code'),
   churchtools_event_input_refused: entry('warn', 'code'),
   churchtools_calendar_input_refused: entry('warn', 'code'),
   churchtools_song_input_refused: entry('warn', 'code'),
@@ -258,9 +266,9 @@ export const logEvents = Object.freeze({
   churchtools_operation_refused: entry('warn', 'code'),
   churchtools_operation_input_refused: entry('warn', 'code'),
   churchtools_operation_too_large: entry('warn', 'code'),
-  // The outbound path (ADR 0056).
-  http_response: entry('info', 'durationMs', 'status'),
-  ...family(httpFailureEvents, entry('warn', 'code', 'durationMs')),
+  // The outbound path (ADR 0056), with the method of each request (ADR 0072).
+  http_response: entry('info', 'durationMs', 'method', 'status'),
+  ...family(httpFailureEvents, entry('warn', 'code', 'durationMs', 'method')),
   // The sink of the audit and the audit file (ADR 0028).
   ...family(auditSinkEvents, entry('error', 'code', 'count')),
   audit_chain_anchor: entry('info', 'file', 'seq', 'hash'),
@@ -279,13 +287,13 @@ export const logEvents = Object.freeze({
 /** The name of an event of the catalog. */
 export type LogEventName = keyof typeof logEvents;
 
-/** An answer of ChurchTools with a status other than 200. */
+/** An answer of ChurchTools with a status other than that of success. */
 export type ChurchToolsStatusEvent = (typeof statusEvents)[number];
 
-/** An answer of ChurchTools with status 200 that the client does not take. */
+/** An answer of success that the client does not take. */
 export type ChurchToolsRefusedEvent = (typeof refusedEvents)[number];
 
-/** A 404 of an operation that reads one object by its ID. */
+/** A 404 of an operation that reads or writes one object by its ID. */
 export type ChurchToolsMissingEvent = (typeof missingEvents)[number];
 
 /** A search term that the client refuses. */

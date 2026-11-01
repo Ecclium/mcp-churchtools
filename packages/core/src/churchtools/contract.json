@@ -680,6 +680,92 @@
       ]
     }
   },
+  "wikiPageCreate": {
+    "method": "post",
+    "path": "/api/wiki/categories/{categoryId}/pages",
+    "query": [],
+    "status": 201,
+    "request": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "isMarkdown": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "required": [
+        "title",
+        "text",
+        "isMarkdown"
+      ],
+      "additionalProperties": false
+    },
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "object",
+          "properties": {
+            "guid": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "isMarkdown": {
+              "type": "boolean"
+            },
+            "version": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "guid",
+            "title",
+            "isMarkdown",
+            "version"
+          ]
+        }
+      },
+      "required": [
+        "data"
+      ]
+    }
+  },
+  "wikiPageUpdate": {
+    "method": "patch",
+    "path": "/api/wiki/categories/{categoryId}/pages/{identifier}",
+    "query": [],
+    "status": 200,
+    "request": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
+    }
+  },
   "events": {
     "method": "get",
     "path": "/api/events",

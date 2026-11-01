@@ -2,7 +2,12 @@ import { makeCanary } from '@ecclium/mcp-churchtools-testkit';
 import { describe, expect, it } from 'vitest';
 
 import { Secret } from './secret.js';
-import { checkRequestTarget, type TargetCode, targetCodes } from './target.js';
+import {
+  checkRequestTarget,
+  checkWriteTarget,
+  type TargetCode,
+  targetCodes,
+} from './target.js';
 
 // Hosts lie under .example (RFC 2606), and the one host under church.tools
 // is the placeholder of the project, so the secret scan lets the file pass.
@@ -127,9 +132,14 @@ describe('checkRequestTarget', () => {
     expect(Object.isFrozen(result)).toBe(true);
   });
 
-  it('have a case for every code', () => {
+  it('have a case for every code but those of writes', () => {
     expect(new Set(refused.map(([code]) => code))).toEqual(
-      new Set(targetCodes),
+      new Set(
+        targetCodes.filter(
+          (code) =>
+            code !== 'target_write_query' && code !== 'target_write_path',
+        ),
+      ),
     );
   });
 
@@ -216,6 +226,98 @@ describe('checkRequestTarget', () => {
       Object.defineProperty(url, key, { value });
     }
     expect(check(url)).toEqual({ ok: false, code: 'target_origin' });
+  });
+});
+
+describe('checkWriteTarget', () => {
+  const page = '/api/wiki/categories/1/pages';
+  const guid = '00000000-0000-4000-8000-000000000001';
+
+  it.each([
+    ['GET', '/api/persons?page=1&limit=50'],
+    ['GET', '/api/persons/1'],
+    ['POST', page],
+    ['POST', '/api/calendars/2/appointments'],
+    ['POST', '/api/bookings'],
+    ['PUT', '/api/calendars/2/appointments/3'],
+    ['PUT', '/api/bookings/4'],
+    ['PATCH', `${page}/${guid}`],
+    ['PATCH', `${page}/${guid.toUpperCase()}`],
+    ['DELETE', '/api/calendars/2/appointments/3'],
+    ['DELETE', '/api/bookings/4'],
+    ['DELETE', '/api/bookings/9007199254740991'],
+    ['DELETE', '/api/calendars/1234567890123456/appointments/1'],
+  ] as const)('let %s reach %s', (method, path) => {
+    expect(checkWriteTarget(method, path)).toBeUndefined();
+  });
+
+  // A GET may carry a query; every write the same path with a query may not.
+  it.each(['POST', 'PUT', 'PATCH', 'DELETE'] as const)(
+    'refuse a query for %s',
+    (method) => {
+      expect(checkWriteTarget('GET', '/api/bookings/4?a=1')).toBeUndefined();
+      expect(checkWriteTarget(method, '/api/bookings/4?a=1')).toBe(
+        'target_write_query',
+      );
+      expect(checkWriteTarget(method, '/api/bookings/4?')).toBe(
+        'target_write_query',
+      );
+    },
+  );
+
+  // Each form belongs to its methods only: the path one method may reach
+  // is refused for every other write.
+  it.each([
+    ['POST', page, ['PUT', 'PATCH', 'DELETE']],
+    ['POST', '/api/bookings', ['PUT', 'PATCH', 'DELETE']],
+    ['PATCH', `${page}/${guid}`, ['POST', 'PUT', 'DELETE']],
+    ['PUT', '/api/bookings/4', ['POST', 'PATCH']],
+    ['DELETE', '/api/calendars/2/appointments/3', ['POST', 'PATCH']],
+  ] as const)('let %s reach %s and no other write', (method, path, others) => {
+    expect(checkWriteTarget(method, path)).toBeUndefined();
+    for (const other of others) {
+      expect(checkWriteTarget(other, path), other).toBe('target_write_path');
+    }
+  });
+
+  // A person, a group and anything near a form stay out of reach for every
+  // write, while a GET of the same path passes.
+  it.each([
+    '/api/persons/1',
+    '/api/groups/1',
+    '/api/groups/1/members/2',
+    '/api/permissions/person/1',
+    '/api/wiki/categories/1',
+    `${page}/${guid}/versions`,
+    `${page}/Dienstplan`,
+    `${page}/${guid}x`,
+    '/api/wiki/categories/0/pages',
+    '/api/calendars/1',
+    '/api/calendars/1/appointments/2/extra',
+    '/api/calendars/0/appointments/2',
+    '/api/calendars/1/appointments/02',
+    '/api/calendars/1/appointments/-2',
+    '/api/calendars/1/appointments/2.0',
+    '/api/calendars/1/appointments/%32',
+    '/api/calendars/x/appointments/2',
+    '/api/calendars/1/bookings/2',
+    '/api/bookings/',
+    '/api/bookings/4/',
+    '/api/bookings/0',
+    '/api/bookings/9007199254740992',
+    '/api/bookings/12345678901234567',
+    '/api/bookings/4/conflicts',
+    '/api/bookings/conflicts',
+    '/api/Bookings/4',
+    '/bookings/4',
+    '/x/api/bookings/4',
+    'api/bookings/4',
+    '//api/bookings/4',
+  ])('refuse every write on %s', (path) => {
+    expect(checkWriteTarget('GET', path)).toBeUndefined();
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE'] as const) {
+      expect(checkWriteTarget(method, path), method).toBe('target_write_path');
+    }
   });
 });
 

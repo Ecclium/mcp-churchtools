@@ -24,10 +24,13 @@ export {
 export {
   auditFileNamePattern,
   hostPattern,
+  type HttpMethod,
+  httpMethods,
   isAuditFileName,
   isBoolean,
   isErrorCode,
   isEventName,
+  isHttpMethod,
   isIntegerIn,
   isMode,
   isRedactionLevel,

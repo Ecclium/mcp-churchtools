@@ -3,6 +3,9 @@
  * against the OpenAPI document of an instance (ADR 0057). The mode `input`
  * describes what ChurchTools may send; the mode `output` would mark every
  * object as closed and declare the other fields of an answer forbidden.
+ * The body of a write is described in the mode `output`, as what the
+ * client sends and nothing besides, together with the status of the answer
+ * of success (ADR 0072).
  *
  * @packageDocumentation
  */
@@ -35,8 +38,11 @@ import {
   songSchema,
   whoamiSchema,
   wikiCategoryListSchema,
+  wikiPageCreateBodySchema,
+  wikiPageCreatedSchema,
   wikiPageListSchema,
   wikiPageSchema,
+  wikiPageUpdateBodySchema,
   wikiSearchSchema,
 } from './schemas.js';
 
@@ -52,6 +58,7 @@ import {
  */
 export function describeContract() {
   const schema = (value: z.ZodType) => z.toJSONSchema(value, { io: 'input' });
+  const body = (value: z.ZodType) => z.toJSONSchema(value, { io: 'output' });
   return {
     whoami: {
       method: 'get',
@@ -125,6 +132,23 @@ export function describeContract() {
       path: '/api/wiki/categories/{categoryId}/pages/{identifier}/versions/{version}',
       query: [],
       response: schema(wikiPageSchema),
+    },
+    // The writes (ADR 0072): the body the client sends, and for a new page
+    // the answer 201 it reads. The answer to a change is not read.
+    wikiPageCreate: {
+      method: 'post',
+      path: '/api/wiki/categories/{categoryId}/pages',
+      query: [],
+      status: 201,
+      request: body(wikiPageCreateBodySchema),
+      response: schema(wikiPageCreatedSchema),
+    },
+    wikiPageUpdate: {
+      method: 'patch',
+      path: '/api/wiki/categories/{categoryId}/pages/{identifier}',
+      query: [],
+      status: 200,
+      request: body(wikiPageUpdateBodySchema),
     },
     events: {
       method: 'get',

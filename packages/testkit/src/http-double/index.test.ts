@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { makeCanary } from '../canary.js';
 import {
+  assertOnlyReads,
   createChurchToolsDouble,
   doubleOrigin,
   doubleUserAgent,
@@ -108,5 +109,67 @@ describe('createChurchToolsDouble', () => {
       'close',
     ]);
     expect(Object.isFrozen(built)).toBe(true);
+  });
+});
+
+describe('assertOnlyReads', () => {
+  const at = (path: string): URL => new URL(`${doubleOrigin}${path}`);
+  const body = new TextEncoder().encode('{"text":"x"}');
+
+  it('passes when the double saw only GET, also none at all', async () => {
+    const built = double();
+    assertOnlyReads(built);
+    built.intercept({ path: '/api/whoami', method: 'GET' }).reply(200, '{}');
+    await built.transport.get(at('/api/whoami'), { maxResponseBytes: 1024 });
+    assertOnlyReads(built);
+  });
+
+  // The same double passes before the write and fails after it, so the
+  // write is what the check catches.
+  it.each([
+    ['post', 'POST', '/api/wiki/categories/1/pages'],
+    ['put', 'PUT', '/api/bookings/4'],
+    [
+      'patch',
+      'PATCH',
+      '/api/wiki/categories/1/pages/00000000-0000-4000-8000-000000000001',
+    ],
+    ['delete', 'DELETE', '/api/bookings/4'],
+  ] as const)(
+    'fails after %s and names method and path, never the token',
+    async (name, method, path) => {
+      const built = double();
+      built.intercept({ path: '/api/whoami', method: 'GET' }).reply(200, '{}');
+      built.intercept({ path, method }).reply(200, '{}');
+      await built.transport.get(at('/api/whoami'), { maxResponseBytes: 1024 });
+      assertOnlyReads(built);
+      const options =
+        name === 'delete'
+          ? { maxResponseBytes: 1024 }
+          : { body, maxResponseBytes: 1024 };
+      await built.transport[name](at(path), options as never);
+      let message = '';
+      try {
+        assertOnlyReads(built);
+      } catch (error) {
+        message = (error as Error).message;
+      }
+      expect(message).toBe(
+        `Expected only reads, but 1 request(s) would write: ${method} ${path}`,
+      );
+      expect(message).not.toContain(canary.value);
+    },
+  );
+
+  it('keeps the body of a write for the test', async () => {
+    const built = double();
+    built
+      .intercept({ path: '/api/wiki/categories/1/pages', method: 'POST' })
+      .reply(201, '{}');
+    await built.transport.post(at('/api/wiki/categories/1/pages'), {
+      body,
+      maxResponseBytes: 1024,
+    });
+    expect(built.calls().map((call) => call.body)).toEqual(['{"text":"x"}']);
   });
 });
