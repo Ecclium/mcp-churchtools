@@ -123,7 +123,7 @@ Gewählt ist die zweite Option.
 ### Rücknahme
 
 - Alle sechs Schreib-Tools des Kerns lassen sich zurücknehmen und tragen `reversible: snapshot`. Vor dem Ändern und Anhängen sichert der Kern den vorigen Stand des betroffenen Felds (ADR 0031, geplant).
-- **Neuanlagen:** Eine neue Seite löscht `ecclium undo` nie, weil Ecclium in Version 1 keine Seite löscht. Es ersetzt ihren Text durch einen festen Hinweis, dass Ecclium sie angelegt und zurückgenommen hat. Einen Termin oder eine Buchung, die Ecclium angelegt hat, löscht `undo`, wenn sie seither niemand geändert hat, also solange ihre `version` noch 0 ist (F42). Nur dafür bekommt der ausgehende Weg in Phase 5 `DELETE` (ADR 0072, geplant).
+- **Neuanlagen:** Eine neue Seite löscht `ecclium undo` nie, weil Ecclium in Version 1 keine Seite löscht. Es ersetzt ihren Text durch einen festen Hinweis, dass Ecclium sie angelegt und zurückgenommen hat. Einen Termin oder eine Buchung, die Ecclium angelegt hat, löscht `undo`, wenn sie seither niemand geändert hat, also solange ihre `version` noch 0 ist (F42). Nur dafür bekommt der ausgehende Weg in Phase 5 `DELETE`, und nur für Termine und Buchungen ([ADR 0072](0072-schreibende-anfragen.md)).
 - `ecclium undo` nimmt bis Phase 6 die Kennung des Ereignisses eines Schreibvorgangs aus dem Audit und läuft mit einem Nachweis des Betreibers durch den Write-Guard. Hat jemand das Ziel seither geändert, zeigt es den Unterschied und verlangt eine ausdrückliche Entscheidung.
 - Sind Snapshots abgeschaltet, lässt sich kein Schreibvorgang zurücknehmen, und das Echo lehnt jeden Plan ab.
 
