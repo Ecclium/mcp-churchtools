@@ -64,3 +64,18 @@ verifyDepsBeforeRun: install
 # option still switches it back on, and pnpm dlx and pnpm create do not
 # read this setting.
 ignorePnpmfile: true
+
+# Overrides give a dependency of a dependency another version than its range
+# allows. They are for security fixes that the dependency has not taken up
+# yet, each as `name` or `name@range` with one exact version on a line of
+# its own, with a comment directly above it that starts with the date and
+# gives the reason. Lines above that comment may explain more, such as when
+# the override goes away. scripts/check-pnpm-settings.mts rejects any other
+# form.
+overrides:
+  # Only minimatch 11 has the fix. ESLint, @eslint/config-array and
+  # typescript-estree ask for ^10 and only call minimatch() and
+  # Minimatch#match, which 11 keeps. Remove this once ESLint and
+  # typescript-eslint ask for minimatch 11.
+  # 01.11.2026: security fix for GHSA-g3hv-75wg-m249 (moderate) in minimatch
+  minimatch@10: 11.0.3
