@@ -349,6 +349,22 @@ const probes: readonly {
     code: "const { 'writes': all } = client;\nexport const take = all;",
     concerns: ['client-writes'],
   },
+  {
+    code: 'const { [`writes`]: all } = client;\nexport const take = all;',
+    concerns: ['client-writes'],
+  },
+  {
+    code: "export const writes: unknown = Reflect.get(client, 'writes');",
+    concerns: ['client-writes'],
+  },
+  {
+    code: "export const found = Object.getOwnPropertyDescriptor(client, 'writes');",
+    concerns: ['client-writes'],
+  },
+  {
+    code: 'export const writes: unknown = Reflect.get(client, `writes`);',
+    concerns: ['client-writes'],
+  },
 
   {
     code: "import { fromJsonSchema } from '@modelcontextprotocol/server';",

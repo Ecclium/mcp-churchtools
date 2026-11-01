@@ -424,14 +424,20 @@ function restrictions(
         ? [
             // Any access to a property named writes, not only a call:
             // the group of writes passed on writes just as well. The rule
-            // matches the name, so no other object in the packages may
-            // call a property so. A key built from a variable or by
-            // concatenation is not seen; the review checks that (ADR 0072).
+            // matches the name, so no other code in the packages may read
+            // a property of that name, and the name as the second argument
+            // of any call, such as Reflect.get. A key built from a variable
+            // or by concatenation, a spread of the client and Object.values
+            // or Object.entries are not seen; the review checks those
+            // (ADR 0072).
             "MemberExpression[property.name='writes']",
             "MemberExpression[property.value='writes']",
             "MemberExpression[property.type='TemplateLiteral'][property.quasis.0.value.cooked='writes']",
             "ObjectPattern > Property[key.name='writes']",
             "ObjectPattern > Property[key.value='writes']",
+            "ObjectPattern > Property[key.type='TemplateLiteral'][key.quasis.0.value.cooked='writes']",
+            "CallExpression[arguments.1.value='writes']",
+            "CallExpression[arguments.1.type='TemplateLiteral'][arguments.1.quasis.0.value.cooked='writes']",
           ].map((selector) => ({
             selector,
             message: message['client-writes'],

@@ -746,11 +746,27 @@ const cases: readonly Case[] = [
     },
   },
   {
-    rule: 'write-guard-seals-internal',
-    name: 'the composition root reads a sealed plan',
+    rule: 'write-guard-only-from-pipeline',
+    name: 'the composition root reaches past the stores into the write guard',
     files: {
       'packages/core/src/composition.ts':
-        "import { readPlan } from './write/sealed-plan.js';\nexport const read = readPlan;\n",
+        "export { checkKillSwitches } from './write/kill-switch.js';\n",
+    },
+  },
+  {
+    rule: 'write-guard-stores-from-composition-root',
+    name: 'the pipeline builds the store of plans itself',
+    files: {
+      'packages/core/src/pipeline/pipeline.ts':
+        "import { createMemoryPlanStore } from '../write/plan-store.js';\nexport const build = createMemoryPlanStore;\n",
+    },
+  },
+  {
+    rule: 'write-guard-stores-from-composition-root',
+    name: 'the mount builds the store of nonces',
+    files: {
+      'packages/core/src/mcp/forbidden.ts':
+        "import { createMemoryNonceStore } from '../write/nonce-store.js';\nexport const build = createMemoryNonceStore;\n",
     },
   },
   {

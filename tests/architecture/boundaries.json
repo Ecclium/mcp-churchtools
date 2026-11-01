@@ -252,13 +252,18 @@
         "packages/core/src/write/sealed-plan.ts"
       ]
     },
+    "writeGuardStores": {
+      "adr": "0029",
+      "description": "The stores of plans and nonces in memory: state that outlives a request, so outside the write guard only the composition root imports them, through the subpath ./composition of core, and hands them on. Each entry is one file of the write guard.",
+      "paths": [
+        "packages/core/src/write/nonce-store.ts",
+        "packages/core/src/write/plan-store.ts"
+      ]
+    },
     "writeGuardImporters": {
       "adr": "0029",
-      "description": "Code outside the write guard that may import it: the pipeline, which plans and commits every write of a tool, and the composition root through the subpath ./composition of core, which builds the stores of plans and nonces. Each entry is one file.",
-      "paths": [
-        "packages/core/src/composition.ts",
-        "packages/core/src/pipeline/pipeline.ts"
-      ]
+      "description": "Code outside the write guard that may import it, but for its stores: the pipeline, which plans and commits every write of a tool. Each entry is one file.",
+      "paths": ["packages/core/src/pipeline/pipeline.ts"]
     },
     "environment": {
       "adr": "0055",

@@ -53,6 +53,7 @@ export const placeKeys = [
   'keys',
   'writeGuard',
   'writeGuardSeals',
+  'writeGuardStores',
   'writeGuardImporters',
 ] as const;
 
