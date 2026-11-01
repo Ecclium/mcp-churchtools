@@ -280,9 +280,10 @@ export function statusWord(statusId: number | undefined): string {
 }
 
 /**
- * Tells whether an answer names an ID anywhere as the value of a key `id`.
- * The conflict check answers with occurrences of other bookings; the probe
- * only wants to know whether its own is among them.
+ * Tells whether an answer names an ID anywhere as the value of a key `id`
+ * or `bookingId`. The conflict check answers with one entry per
+ * overlapping occurrence, which names its booking as `bookingId`; the
+ * probe only wants to know whether its own is among them.
  *
  * @param value - A parsed answer.
  * @param id - The ID to look for.
@@ -301,7 +302,8 @@ export function namesId(value: unknown, id: number, depth = 8): boolean {
   }
   return Object.entries(value).some(
     ([key, entry]) =>
-      (key === 'id' && entry === id) || namesId(entry, id, depth - 1),
+      ((key === 'id' || key === 'bookingId') && entry === id) ||
+      namesId(entry, id, depth - 1),
   );
 }
 

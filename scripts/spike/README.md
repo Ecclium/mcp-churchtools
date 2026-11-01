@@ -361,7 +361,7 @@ Erst nach dem lesenden Teil, nur auf der Testinstanz. Die Schritte setzen die Va
    echo "Code $?"
    ```
 
-9. Führen Sie `11-calendar-write` aus und bestätigen Sie mit «ja». Die Probe löscht am Ende, was sie angelegt hat. Schauen Sie gleich danach im Postfach des Verwalters der Ressource nach, ob ChurchTools beim Anlegen, Ändern oder Löschen Mails geschickt hat, und notieren Sie nur, wozu.
+9. Führen Sie `11-calendar-write` erst nach `07` aus, wenn im Schreibbereich wieder nur die Seite «main» liegt: Der Wächter prüft den Schreibbereich auch für diese Probe. Bestätigen Sie mit «ja». Die Probe löscht am Ende, was sie angelegt hat. Schauen Sie gleich danach im Postfach des Verwalters der Ressource nach, ob ChurchTools beim Anlegen, Ändern oder Löschen Mails geschickt hat, und notieren Sie nur, wozu.
 
    ```bash
    env -i ECCLIUM_SPIKE_BASE_URL="$URL" ECCLIUM_SPIKE_ALLOW_WRITE=ERSTER_TEIL_DES_HOSTS ECCLIUM_SPIKE_WRITE_TOKEN_FILE="$D/token-schreiben" ECCLIUM_SPIKE_STATE_FILE="$D/state-schreiben.json" ECCLIUM_SPIKE_WRITE_CATEGORY_ID="$SCHREIBBEREICH" ECCLIUM_SPIKE_WRITE_CALENDAR_ID="$KALENDER" ECCLIUM_SPIKE_WRITE_RESOURCE_ID="$RESSOURCE" ECCLIUM_SPIKE_WRITE_STATE_FILE="$D/kalender-state.jsonl" "$NODE" "$R/scripts/spike/11-calendar-write.mts" > "$D/ausgabe/11-calendar-write.json"

@@ -473,7 +473,18 @@ export function writeInstance(
           object.fields['startDate'] === fields['startDate'] &&
           object.fields['statusId'] !== 3,
       );
-      return answer({ data: overlapping.map(entry) });
+      // An entry per overlapping occurrence, naming its booking as
+      // bookingId, as the instance does.
+      return answer({
+        data: overlapping.map((object) => ({
+          bookingId: object.id,
+          title: object.fields['title'],
+          statusId: object.fields['statusId'],
+          startDate: object.fields['startDate'],
+          endDate: object.fields['endDate'],
+          isAnonymized: false,
+        })),
+      });
     }
     if (key === undefined) {
       if (call.method === 'GET') {

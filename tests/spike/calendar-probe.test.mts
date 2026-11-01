@@ -385,8 +385,9 @@ describe('the helpers of 11-calendar-write', () => {
     ]);
   });
 
-  it('finds an ID only as the value of a key id, and not too deep', () => {
+  it('finds an ID only as the value of a key id or bookingId, and not too deep', () => {
     expect(namesId([{ booking: { base: { id: 5 } } }], 5)).toBe(true);
+    expect(namesId([{ bookingId: 5, statusId: 1 }], 5)).toBe(true);
     expect(namesId([{ booking: { base: { resourceId: 5 } } }], 5)).toBe(false);
     expect(namesId({ a: { b: { id: 5 } } }, 5, 1)).toBe(false);
   });
