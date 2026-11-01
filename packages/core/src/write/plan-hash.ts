@@ -9,10 +9,11 @@
  * write in a conflict. A confirmation and an approval of the queue name
  * the hash, so they hold for exactly this plan.
  *
- * The encoding is fixed and leaves no room for two inputs to meet: each
- * field is its length in bytes as a decimal number, a colon and its bytes
- * in UTF-8, in a fixed order after a tag of the version of the encoding.
- * No value can end one field and start the next, whatever it holds.
+ * The encoding is fixed and leaves no room for two inputs to meet: the
+ * first field is a tag of the version of the encoding, the others follow
+ * in a fixed order, and each field, the tag included, is its length in
+ * bytes as a decimal number, a colon and its bytes in UTF-8. No value can
+ * end one field and start the next, whatever it holds.
  *
  * @packageDocumentation
  */

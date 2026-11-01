@@ -14,9 +14,10 @@
  * from before the restart is valid (ADR 0053). Approvals of the queue are
  * not kept here, because they must outlive a restart.
  *
- * Only the composition root builds it, through the subpath `./composition`
- * of core; it keeps no state at module level. A plugin may bring another
- * store that passes the same checks of testkit.
+ * Only the composition root may build it, through the subpath
+ * `./composition` of core; it does so once a confirmation carries a
+ * nonce. The store keeps no state at module level. A plugin may bring
+ * another store that passes the same checks of testkit.
  *
  * @packageDocumentation
  */

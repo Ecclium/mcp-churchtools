@@ -11,10 +11,11 @@
  * the call that planned it and lives as long as the requestState of the
  * confirmation.
  *
- * Only the composition root builds it, through the subpath `./composition`
- * of core, and hands it to the pipeline; it keeps no state at module
- * level. A plugin may bring another store that passes the same checks of
- * testkit.
+ * Only the composition root may build it, through the subpath
+ * `./composition` of core, and hand it to the pipeline; it does so once
+ * the confirmation needs a second round. The store keeps no state at
+ * module level. A plugin may bring another store that passes the same
+ * checks of testkit.
  *
  * @packageDocumentation
  */

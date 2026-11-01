@@ -64,8 +64,8 @@ describe('the hash of a plan', () => {
   });
 
   it('counts the length of a field in bytes of UTF-8, not in code units', () => {
-    // «é» is one code unit and two bytes; the value is the hash over
-    // «2:é» as the second implementation computed it.
+    // «é» is one code unit and two bytes; the value is the hash over the
+    // tag, the count and «2:é», as the second implementation computed it.
     expect(contentHashOf(['é'])).toBe(
       '81c944e806d01a6c8308ddd157cfb3ceea490ec05915befe5b9a3981cd60b310',
     );
