@@ -7,8 +7,10 @@ import {
   configEnvironment,
   expectedSettings,
   undocumentedExceptions,
+  undocumentedOverrides,
   unknownWorkspaceKeys,
   unlistedExceptions,
+  unlistedOverrides,
 } from '../../scripts/check-pnpm-settings.mts';
 
 describe('compareSettings', () => {
@@ -79,8 +81,16 @@ describe('unknownWorkspaceKeys', () => {
       'minimumReleseAge: 4320',
       'allowBuilds:',
       '  fsevents: false',
+      'overrides:',
+      '  # 01.11.2026: security fix for a matcher',
+      '  matcher@10: 11.0.3',
+      'override:',
+      '  matcher@10: 11.0.3',
     ].join('\n');
-    expect(unknownWorkspaceKeys(yaml)).toEqual(['minimumReleseAge']);
+    expect(unknownWorkspaceKeys(yaml)).toEqual([
+      'minimumReleseAge',
+      'override',
+    ]);
   });
 
   it('finds nothing unknown and every protection in pnpm-workspace.yaml', () => {
@@ -197,6 +207,143 @@ describe('unlistedExceptions', () => {
       unlistedExceptions('minimumReleaseAgeExclude: [fix@1.2.4]', [
         'fix@1.2.4',
       ]),
+    ).toEqual([]);
+  });
+});
+
+describe('undocumentedOverrides', () => {
+  const workspace = (...overrides: string[]): string =>
+    [
+      'packages:',
+      '  - packages/*',
+      ...overrides,
+      'minimumReleaseAge: 4320',
+    ].join('\n');
+  const dated = '  # 01.11.2026: security fix for a matcher, not taken up yet';
+
+  it('accepts no overrides, an empty map and overrides with date and reason', () => {
+    expect(undocumentedOverrides(workspace())).toEqual([]);
+    expect(undocumentedOverrides(workspace('overrides: {}'))).toEqual([]);
+    expect(
+      undocumentedOverrides(
+        workspace(
+          'overrides:',
+          dated,
+          '  matcher@10: 11.0.3',
+          '  # 2026-11-01 same advisory, a scoped package without a range',
+          '  \'@scope/matcher\': "2.0.1" # the only version with the fix',
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  it.each([
+    ['without a comment', ['  matcher@10: 11.0.3']],
+    ['with a comment that has no date', ['  # fix', '  matcher@10: 11.0.3']],
+    ['with a date but no reason', ['  # 01.11.2026', '  matcher@10: 11.0.3']],
+    [
+      'with the comment separated by a blank line',
+      [dated, '', '  matcher@10: 11.0.3'],
+    ],
+  ])('reports an override %s', (_, lines) => {
+    expect(undocumentedOverrides(workspace('overrides:', ...lines))).toEqual([
+      expect.stringContaining(
+        '"matcher@10" in overrides: Direkt darüber fehlt',
+      ),
+    ]);
+  });
+
+  // Each of these values takes another version than the one named, or the
+  // code from somewhere other than the registry.
+  it.each([
+    '^11.0.3',
+    '11',
+    '>=11.0.1',
+    '-',
+    'link:../matcher',
+    'file:./matcher.tgz',
+    'npm:other@1.0.0',
+    'github:someone/matcher',
+    'git+https://example.org/matcher.git',
+    'https://example.org/matcher-11.0.3.tgz',
+    '$matcher',
+    '',
+  ])('reports an override that points to %j', (value) => {
+    expect(
+      undocumentedOverrides(
+        workspace('overrides:', dated, `  matcher@10: '${value}'`),
+      ),
+    ).toEqual([
+      `Override "matcher@10" zeigt auf ${JSON.stringify(value)}: Erlaubt ist nur eine genaue Version aus der Registry wie 1.2.3.`,
+    ]);
+  });
+
+  it('reports a selector with a chain of parents', () => {
+    expect(
+      undocumentedOverrides(
+        workspace('overrides:', dated, '  linter>matcher: 11.0.3'),
+      ),
+    ).toEqual([expect.stringContaining('keine Kette über andere Pakete')]);
+  });
+
+  it('rejects overrides in braces, which leave no room for a comment', () => {
+    expect(
+      undocumentedOverrides(workspace('overrides: { matcher@10: 11.0.3 }')),
+    ).toEqual([expect.stringContaining('geschweiften Klammern')]);
+  });
+
+  it('finds nothing in pnpm-workspace.yaml', () => {
+    const yaml = readFileSync(
+      new URL('../../pnpm-workspace.yaml', import.meta.url),
+      'utf8',
+    );
+    expect(undocumentedOverrides(yaml)).toEqual([]);
+  });
+});
+
+describe('unlistedOverrides', () => {
+  const written = [
+    'overrides:',
+    '  # 01.11.2026: security fix for a matcher, not taken up yet',
+    '  matcher@10: 11.0.3',
+  ].join('\n');
+
+  it('accepts what pnpm applies when every override is written as a line', () => {
+    expect(unlistedOverrides(written, { 'matcher@10': '11.0.3' })).toEqual([]);
+    expect(unlistedOverrides('overrides: {}', {})).toEqual([]);
+    expect(unlistedOverrides('packages:', undefined)).toEqual([]);
+  });
+
+  it('reports an override that pnpm applies but the text does not show', () => {
+    // YAML also allows a quoted key, which the reading of the text does not
+    // follow. pnpm still applies the override.
+    const quoted = ['"overrides":', '  matcher@10: 11.0.3'].join('\n');
+    expect(undocumentedOverrides(quoted)).toEqual([]);
+    expect(unlistedOverrides(quoted, { 'matcher@10': '11.0.3' })).toEqual([
+      expect.stringContaining('"matcher@10" auf "11.0.3" gilt für pnpm'),
+    ]);
+    expect(unlistedOverrides('packages:', { other: '3.0.1' })).toEqual([
+      expect.stringContaining('"other" auf "3.0.1"'),
+    ]);
+  });
+
+  it('reports an override that pnpm applies with another version', () => {
+    expect(unlistedOverrides(written, { 'matcher@10': '^11.0.3' })).toEqual([
+      expect.stringContaining('"matcher@10" auf "^11.0.3"'),
+    ]);
+  });
+
+  it('reports a value that is not a map', () => {
+    expect(unlistedOverrides(written, ['matcher@10'])).toEqual([
+      expect.stringContaining('erwartet ist eine Zuordnung'),
+    ]);
+  });
+
+  it('leaves overrides in braces to undocumentedOverrides', () => {
+    expect(
+      unlistedOverrides('overrides: { matcher@10: 11.0.3 }', {
+        'matcher@10': '11.0.3',
+      }),
     ).toEqual([]);
   });
 });
