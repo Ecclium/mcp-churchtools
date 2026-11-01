@@ -78,6 +78,11 @@ import {
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { type HttpTransport, parseChurchToolsOrigin } from '../http/index.js';
+import type {
+  ChurchToolsRefusedEvent,
+  ChurchToolsStatusEvent,
+  ChurchToolsTermEvent,
+} from '../logger/index.js';
 import { createRequestThrottle } from '../throttle/index.js';
 import {
   appendIds,
@@ -627,27 +632,29 @@ const groupIdOf = (identifier: string): number | null => {
 // In English for the model; printable ASCII, like every message (ADR 0054).
 const invalidTerm = `The search term needs 1 to ${String(maxSearchTermLength)} characters after removing spaces at both ends, and no control characters.`;
 
-/** The fixed events of one search. */
+/** The fixed events of one search, names of the catalog (ADR 0054). */
 interface SearchEvents {
   /** A term that is not a search term. */
-  readonly term: string;
+  readonly term: ChurchToolsTermEvent;
   /** An answer with a status other than 200. */
-  readonly status: string;
+  readonly status: ChurchToolsStatusEvent;
   /** An answer with status 200 that is not read. */
-  readonly refused: string;
+  readonly refused: ChurchToolsRefusedEvent;
 }
 
-const personEvents: SearchEvents = Object.freeze({
+// satisfies, not a type: each name keeps its own type, so that a check of
+// the log lines sees which event a call writes.
+const personEvents = Object.freeze({
   term: 'churchtools_persons_term_refused',
   status: 'churchtools_persons_status',
   refused: 'churchtools_persons_refused',
-});
+}) satisfies SearchEvents;
 
-const groupEvents: SearchEvents = Object.freeze({
+const groupEvents = Object.freeze({
   term: 'churchtools_groups_term_refused',
   status: 'churchtools_groups_status',
   refused: 'churchtools_groups_refused',
-});
+}) satisfies SearchEvents;
 
 // The hits of a search: at most maxSearchHits, and whether a further
 // visible entry came. Frozen, without prototype, built from the read

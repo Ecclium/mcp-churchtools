@@ -54,6 +54,16 @@ export {
   objectDomains,
 } from './audit/index.js';
 export {
+  isLogEvent,
+  type LogCallField,
+  type LogEventEntry,
+  logEvents,
+  type LogEventName,
+  logFieldNames,
+  type LogLevel,
+  logLevels,
+} from './logger/index.js';
+export {
   type QuotaFolderCode,
   quotaFolderCodes,
   specialReadBudget,

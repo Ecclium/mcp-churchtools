@@ -3,11 +3,24 @@
  * messages and start notices of the command line and the start of the
  * elicitation spike in testkit, it is the only code in the packages that
  * writes to stderr. It does not use `console` (ADR 0053).
- * Which fields a line may carry, and who may set them, is decided in
- * ADR 0054.
+ * Which events and fields a line may carry, and who may set them, is
+ * decided in ADR 0054; the catalog lists every event.
  *
  * @packageDocumentation
  */
+export {
+  type AuditSinkEvent,
+  type ChurchToolsMissingEvent,
+  type ChurchToolsRefusedEvent,
+  type ChurchToolsStatusEvent,
+  type ChurchToolsTermEvent,
+  type HttpFailureEvent,
+  isLogEvent,
+  type LogCallField,
+  type LogEventEntry,
+  logEvents,
+  type LogEventName,
+} from './catalog.js';
 export {
   auditFileNamePattern,
   hostPattern,
@@ -46,6 +59,7 @@ export {
   type BoundLogFields,
   createLogger,
   fallbackTimestamp,
+  logFieldNames,
   type LoggerOptions,
   type LogLevel,
   logLevels,

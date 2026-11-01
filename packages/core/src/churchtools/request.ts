@@ -12,6 +12,11 @@ import {
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import type { HttpTransport } from '../http/index.js';
+import type {
+  ChurchToolsMissingEvent,
+  ChurchToolsRefusedEvent,
+  ChurchToolsStatusEvent,
+} from '../logger/index.js';
 import type { RequestThrottle } from '../throttle/index.js';
 import { readAnswer } from './answer.js';
 
@@ -31,18 +36,22 @@ export interface OperationLimits {
   readonly maxElements: number;
 }
 
-/** The fixed events of one operation. */
+/**
+ * The fixed events of one operation, each a name of the catalog of the
+ * logger, so that the type check refuses a name without an entry
+ * (ADR 0054).
+ */
 export interface OperationEvents {
   /** An answer with a status other than 200. */
-  readonly status: string;
+  readonly status: ChurchToolsStatusEvent;
   /** An answer with status 200 that is not read. */
-  readonly refused: string;
+  readonly refused: ChurchToolsRefusedEvent;
   /**
    * An answer with status 404 of an operation that reads one object by its
    * ID: it then ends with `not_found`. Left out, a 404 is `upstream`,
    * because the path of every other operation is fixed and exists.
    */
-  readonly missing?: string;
+  readonly missing?: ChurchToolsMissingEvent;
 }
 
 /**
