@@ -83,6 +83,7 @@ export {
   type MockedCall,
   type MockedHttpTransport,
 } from './http-double/index.js';
+export { assertOnlyReads } from './http-double/index.js';
 export {
   exampleEchoTool,
   examplePlugin,
