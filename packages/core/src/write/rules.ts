@@ -41,7 +41,9 @@ export type TargetKind =
 
 /**
  * The target of a write: its kind and a key from the IDs of the intent,
- * such as `12` for a category or `12/<GUID>` for a page in it.
+ * such as `12` for a category or `12/<GUID>` for a page in it. A GUID
+ * stands in lower case in the key, so that one page has one key however
+ * the intent writes it; the request keeps the GUID as given.
  */
 export interface WriteTarget {
   readonly kind: TargetKind;
@@ -131,7 +133,11 @@ export function rulesOf(intent: WriteIntent): IntentRules {
     case 'wikiPageUpdate':
       return Object.freeze({
         ...core,
-        target: target('wiki_page', intent.categoryId, intent.guid),
+        target: target(
+          'wiki_page',
+          intent.categoryId,
+          intent.guid.toLowerCase(),
+        ),
         requiredRights: editWikiCategory,
         replayGuard: 'baseVersion',
         runs: true,
@@ -139,7 +145,11 @@ export function rulesOf(intent: WriteIntent): IntentRules {
     case 'wikiSectionAppend':
       return Object.freeze({
         ...core,
-        target: target('wiki_page', intent.categoryId, intent.guid),
+        target: target(
+          'wiki_page',
+          intent.categoryId,
+          intent.guid.toLowerCase(),
+        ),
         requiredRights: editWikiCategory,
         replayGuard: 'marker',
         runs: true,

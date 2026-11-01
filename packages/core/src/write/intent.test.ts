@@ -308,6 +308,41 @@ describe('reading an intent', () => {
     ).toBeUndefined();
   });
 
+  it('takes an object without prototype, as JSON or a literal would give it', () => {
+    const bare = Object.assign(Object.create(null) as object, {
+      kind: 'groupMemberAdd',
+      groupId: 7,
+      personId: 1,
+    });
+    expect(readIntent(bare)).toEqual({
+      kind: 'groupMemberAdd',
+      groupId: 7,
+      personId: 1,
+    });
+  });
+
+  it('refuses an instance of a class and an object over another prototype, also as the path', () => {
+    class Intent {
+      readonly kind = 'groupMemberAdd';
+      readonly groupId = 7;
+      readonly personId = 1;
+    }
+    expect(readIntent(new Intent())).toBeUndefined();
+    const derived = Object.assign(Object.create({ extra: 1 }) as object, {
+      kind: 'groupMemberAdd',
+      groupId: 7,
+      personId: 1,
+    });
+    expect(readIntent(derived)).toBeUndefined();
+    expect(
+      readIntent({
+        kind: 'apiOperation',
+        operationId: 'x',
+        path: Object.assign(Object.create({}) as object, { id: 7 }),
+      }),
+    ).toBeUndefined();
+  });
+
   it('reads own fields only, never inherited ones', () => {
     const inherited = Object.create({
       kind: 'groupMemberAdd',

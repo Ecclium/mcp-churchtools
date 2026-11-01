@@ -26,9 +26,9 @@ import {
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 /**
- * The longest text of an intent in UTF-16 code units. The client takes at
- * most 64 KiB of UTF-8 for a page, so a longer text could never be
- * written; the cap keeps a plan from holding more than that.
+ * The longest text of a field of an intent in UTF-16 code units. It only
+ * bounds what a plan can hold; the client checks the length in bytes that
+ * ChurchTools takes, at most 64 KiB of UTF-8 for the text of a page.
  */
 export const maxIntentTextLength = 65_536;
 
@@ -99,14 +99,18 @@ const fieldsOf: Readonly<
 const operationIdPattern = /^[A-Za-z0-9_-]{1,200}$/;
 const pathNamePattern = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 
-// An object whose own properties can be read without running its code.
-// isProxy runs no trap, also not for a revoked proxy, so it comes before
-// Array.isArray, which throws for a revoked one.
-const isPlainObject = (value: unknown): value is object =>
-  typeof value === 'object' &&
-  value !== null &&
-  !isProxy(value) &&
-  !Array.isArray(value);
+// A plain object whose own properties can be read without running its
+// code: made by a literal, JSON or Object.create(null), not an array, not
+// an instance of a class. isProxy runs no trap, also not for a revoked
+// proxy, so it comes first; for any other object getPrototypeOf runs no
+// code either.
+const isPlainObject = (value: unknown): value is object => {
+  if (typeof value !== 'object' || value === null || isProxy(value)) {
+    return false;
+  }
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+};
 
 // The own data properties of an object, or undefined when one is an
 // accessor or a symbol: such an object cannot be read without its code.

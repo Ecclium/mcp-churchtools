@@ -136,6 +136,19 @@ describe('the rules of an intent', () => {
     },
   );
 
+  it('keys a page by its GUID in lower case, so that one page has one target', () => {
+    const upper = {
+      ...intents.wikiPageUpdate,
+      guid: '00000000-0000-4000-8000-00000000ABCD',
+    };
+    expect(rulesOf(upper).target.key).toBe(
+      '12/00000000-0000-4000-8000-00000000abcd',
+    );
+    expect(
+      rulesOf({ ...intents.wikiSectionAppend, guid: upper.guid }).target,
+    ).toEqual(rulesOf(upper).target);
+  });
+
   it('covers every kind of intent', () => {
     expect(table.map(([kind]) => kind).sort()).toEqual(
       Object.keys(intents).sort(),
@@ -201,6 +214,14 @@ describe('the metadata of the tool', () => {
     },
   );
 
+  it('keeps a rule of never from the intent, also for a tool that is not special', () => {
+    const rules = withToolMeta(
+      { ...base, unattended: 'never' },
+      { sensitivity: 'personal', unattended: 'policy' },
+    );
+    expect(rules.unattended).toBe('never');
+  });
+
   it('cannot loosen the rules of the Pro module', () => {
     const rules = withToolMeta(rulesOf(intents.groupMemberAdd), {
       sensitivity: 'none',
@@ -231,6 +252,11 @@ describe('the echo', () => {
       unattended: 'never',
     });
     expect(echoAllowed(rules, 'core')).toBe(false);
+  });
+
+  it('is not allowed for a write of the Pro module, even from the core and not special', () => {
+    const update = rulesOf(intents.wikiPageUpdate);
+    expect(echoAllowed({ ...update, module: 'pro' }, 'core')).toBe(false);
   });
 
   it('needs a write that a snapshot undoes and that need not go to the queue', () => {
