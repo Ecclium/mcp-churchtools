@@ -113,3 +113,13 @@ export {
   type VariantChoice,
   variantOf,
 } from './variants.js';
+export {
+  createTestClock,
+  nonceStoreChecks,
+  type OpenNonceStore,
+  type OpenPlanStore,
+  planStoreChecks,
+  stubPlan,
+  type TestClock,
+  type WriteStoreCheck,
+} from './write-stores/index.js';
