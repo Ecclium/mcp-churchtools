@@ -137,7 +137,7 @@ describe('checkRequestTarget', () => {
       new Set(
         targetCodes.filter(
           (code) =>
-            code !== 'target_write_query' && code !== 'target_delete_path',
+            code !== 'target_write_query' && code !== 'target_write_path',
         ),
       ),
     );
@@ -230,14 +230,19 @@ describe('checkRequestTarget', () => {
 });
 
 describe('checkWriteTarget', () => {
+  const page = '/api/wiki/categories/1/pages';
+  const guid = '00000000-0000-4000-8000-000000000001';
+
   it.each([
     ['GET', '/api/persons?page=1&limit=50'],
-    ['POST', '/api/wiki/categories/1/pages'],
+    ['GET', '/api/persons/1'],
+    ['POST', page],
+    ['POST', '/api/calendars/2/appointments'],
+    ['POST', '/api/bookings'],
     ['PUT', '/api/calendars/2/appointments/3'],
-    [
-      'PATCH',
-      '/api/wiki/categories/1/pages/00000000-0000-4000-8000-000000000001',
-    ],
+    ['PUT', '/api/bookings/4'],
+    ['PATCH', `${page}/${guid}`],
+    ['PATCH', `${page}/${guid.toUpperCase()}`],
     ['DELETE', '/api/calendars/2/appointments/3'],
     ['DELETE', '/api/bookings/4'],
     ['DELETE', '/api/bookings/9007199254740991'],
@@ -260,15 +265,34 @@ describe('checkWriteTarget', () => {
     },
   );
 
-  // Each path is refused for DELETE and taken by PATCH, so the case is
-  // caught by the rule for DELETE, not by its shape.
+  // Each form belongs to its methods only: the path one method may reach
+  // is refused for every other write.
   it.each([
-    '/api/wiki/categories/1/pages/00000000-0000-4000-8000-000000000001',
+    ['POST', page, ['PUT', 'PATCH', 'DELETE']],
+    ['POST', '/api/bookings', ['PUT', 'PATCH', 'DELETE']],
+    ['PATCH', `${page}/${guid}`, ['POST', 'PUT', 'DELETE']],
+    ['PUT', '/api/bookings/4', ['POST', 'PATCH']],
+    ['DELETE', '/api/calendars/2/appointments/3', ['POST', 'PATCH']],
+  ] as const)('let %s reach %s and no other write', (method, path, others) => {
+    expect(checkWriteTarget(method, path)).toBeUndefined();
+    for (const other of others) {
+      expect(checkWriteTarget(other, path), other).toBe('target_write_path');
+    }
+  });
+
+  // A person, a group and anything near a form stay out of reach for every
+  // write, while a GET of the same path passes.
+  it.each([
     '/api/persons/1',
     '/api/groups/1',
     '/api/groups/1/members/2',
+    '/api/permissions/person/1',
+    '/api/wiki/categories/1',
+    `${page}/${guid}/versions`,
+    `${page}/Dienstplan`,
+    `${page}/${guid}x`,
+    '/api/wiki/categories/0/pages',
     '/api/calendars/1',
-    '/api/calendars/1/appointments',
     '/api/calendars/1/appointments/2/extra',
     '/api/calendars/0/appointments/2',
     '/api/calendars/1/appointments/02',
@@ -277,7 +301,6 @@ describe('checkWriteTarget', () => {
     '/api/calendars/1/appointments/%32',
     '/api/calendars/x/appointments/2',
     '/api/calendars/1/bookings/2',
-    '/api/bookings',
     '/api/bookings/',
     '/api/bookings/4/',
     '/api/bookings/0',
@@ -290,9 +313,11 @@ describe('checkWriteTarget', () => {
     '/x/api/bookings/4',
     'api/bookings/4',
     '//api/bookings/4',
-  ])('refuse DELETE on %s', (path) => {
-    expect(checkWriteTarget('PATCH', path)).toBeUndefined();
-    expect(checkWriteTarget('DELETE', path)).toBe('target_delete_path');
+  ])('refuse every write on %s', (path) => {
+    expect(checkWriteTarget('GET', path)).toBeUndefined();
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE'] as const) {
+      expect(checkWriteTarget(method, path), method).toBe('target_write_path');
+    }
   });
 });
 

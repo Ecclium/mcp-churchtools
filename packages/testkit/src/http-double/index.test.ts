@@ -129,7 +129,11 @@ describe('assertOnlyReads', () => {
   it.each([
     ['post', 'POST', '/api/wiki/categories/1/pages'],
     ['put', 'PUT', '/api/bookings/4'],
-    ['patch', 'PATCH', '/api/wiki/categories/1/pages/x'],
+    [
+      'patch',
+      'PATCH',
+      '/api/wiki/categories/1/pages/00000000-0000-4000-8000-000000000001',
+    ],
     ['delete', 'DELETE', '/api/bookings/4'],
   ] as const)(
     'fails after %s and names method and path, never the token',

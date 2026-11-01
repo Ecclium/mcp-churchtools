@@ -4,11 +4,14 @@
  * check is the second guard behind the fixed origin: it refuses what should
  * never reach ChurchTools, such as a token in the address or the parameters
  * that put a login token or a session into the query. A write is held to
- * more (ADR 0072): it has no query, and DELETE reaches only one appointment
- * or one booking.
+ * more (ADR 0072): it has no query, and it reaches only the few paths of
+ * the writes the core knows, so that not even a mistake in the client can
+ * write to a person or a group or delete a page of the wiki.
  *
  * @packageDocumentation
  */
+import { isWikiPageGuid } from '@ecclium/mcp-churchtools-plugin-api';
+
 import type { HttpMethod } from '../logger/index.js';
 import { revealSecret, type Secret } from './secret.js';
 
@@ -27,7 +30,7 @@ export const targetCodes = Object.freeze([
   'target_forbidden_parameter',
   'target_token',
   'target_write_query',
-  'target_delete_path',
+  'target_write_path',
 ] as const);
 
 /** The reason to refuse a target. */
@@ -179,8 +182,8 @@ export function checkRequestTarget(
 // Whether a segment of a path is the ID of an object as ChurchTools gives
 // it: a whole number from 1 in decimal digits without a leading zero, at
 // most a safe integer. Character by character, as the names of parameters.
-const isIdSegment = (segment: string | undefined): boolean => {
-  if (segment === undefined || segment.length < 1 || segment.length > 16) {
+const isIdSegment = (segment: string): boolean => {
+  if (segment.length < 1 || segment.length > 16) {
     return false;
   }
   for (let index = 0; index < segment.length; index += 1) {
@@ -192,30 +195,59 @@ const isIdSegment = (segment: string | undefined): boolean => {
   return Number(segment) <= Number.MAX_SAFE_INTEGER;
 };
 
-// The two forms of path DELETE may reach: one appointment of a calendar
-// and one booking. Ecclium takes back only appointments and bookings it
-// created and nobody changed since; it never deletes a page of the wiki, a
-// person or a group (ADR 0072).
-const isDeletablePath = (path: string): boolean => {
+// The paths each write may reach (ADR 0072), one form per write the core
+// knows: create and change a page of the wiki, create and change an
+// appointment of a calendar, request and change a booking, and take back
+// an appointment or a booking that Ecclium created. `{id}` stands for the
+// ID of an object, `{guid}` for the GUID of a page. Which object Ecclium
+// takes back, the write guard decides; here only the form counts. A new
+// write needs a new form here, with the ADR that carries it.
+const writeForms: Readonly<
+  Record<Exclude<HttpMethod, 'GET'>, readonly string[]>
+> = Object.freeze({
+  __proto__: null,
+  POST: Object.freeze([
+    '/api/wiki/categories/{id}/pages',
+    '/api/calendars/{id}/appointments',
+    '/api/bookings',
+  ]),
+  PUT: Object.freeze([
+    '/api/calendars/{id}/appointments/{id}',
+    '/api/bookings/{id}',
+  ]),
+  PATCH: Object.freeze(['/api/wiki/categories/{id}/pages/{guid}']),
+  DELETE: Object.freeze([
+    '/api/calendars/{id}/appointments/{id}',
+    '/api/bookings/{id}',
+  ]),
+});
+
+// Whether a path has a form: as many segments, each the same word, an ID
+// where the form has `{id}` and a GUID where it has `{guid}`.
+const fitsForm = (path: string, form: string): boolean => {
   const parts = path.split('/');
-  if (parts[0] !== '' || parts[1] !== 'api') return false;
-  if (parts.length === 6) {
-    return (
-      parts[2] === 'calendars' &&
-      isIdSegment(parts[3]) &&
-      parts[4] === 'appointments' &&
-      isIdSegment(parts[5])
-    );
-  }
-  return parts.length === 4 && parts[2] === 'bookings' && isIdSegment(parts[3]);
+  const wanted = form.split('/');
+  return (
+    parts.length === wanted.length &&
+    wanted.every((segment, index) => {
+      // Both lists have the same length, so every index holds a segment.
+      const part = parts[index] as string;
+      if (segment === '{id}') return isIdSegment(part);
+      if (segment === '{guid}') return isWikiPageGuid(part);
+      return part === segment;
+    })
+  );
 };
 
 /**
  * Checks what a write may reach, after {@link checkRequestTarget} has given
  * the path (ADR 0072). A write carries its values in its body, never in a
- * query, so no value of a write reaches the access log of the server. A
- * DELETE reaches only `/api/calendars/{id}/appointments/{id}` and
- * `/api/bookings/{id}`, each ID a whole number from 1. A GET passes.
+ * query, so no value of a write reaches the access log of the server. Each
+ * method reaches only its forms: POST `/api/wiki/categories/{id}/pages`,
+ * `/api/calendars/{id}/appointments` and `/api/bookings`, PUT and DELETE
+ * `/api/calendars/{id}/appointments/{id}` and `/api/bookings/{id}`, PATCH
+ * `/api/wiki/categories/{id}/pages/{guid}`, each ID a whole number from 1.
+ * A GET passes.
  *
  * @param method - The method of the request.
  * @param path - The path with the query, as `checkRequestTarget` gave it.
@@ -223,7 +255,7 @@ const isDeletablePath = (path: string): boolean => {
  * @example
  * ```ts
  * checkWriteTarget('DELETE', '/api/bookings/12'); // undefined
- * checkWriteTarget('DELETE', '/api/wiki/categories/1/pages/x'); // 'target_delete_path'
+ * checkWriteTarget('DELETE', '/api/wiki/categories/1/pages/x'); // 'target_write_path'
  * ```
  */
 export function checkWriteTarget(
@@ -232,8 +264,8 @@ export function checkWriteTarget(
 ): TargetCode | undefined {
   if (method === 'GET') return undefined;
   if (path.includes('?')) return 'target_write_query';
-  if (method === 'DELETE' && !isDeletablePath(path)) {
-    return 'target_delete_path';
+  if (!writeForms[method].some((form) => fitsForm(path, form))) {
+    return 'target_write_path';
   }
   return undefined;
 }

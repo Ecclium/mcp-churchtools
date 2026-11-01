@@ -4,8 +4,8 @@
  * write. It checks every target before a socket opens, sends the token only
  * in its Authorization header, passes on only three headers of an answer
  * and reduces every failure to a fixed category. A write carries a JSON
- * body of limited size and no query, DELETE reaches only appointments and
- * bookings, and no request is ever sent twice.
+ * body of limited size and no query, reaches only the paths of the writes
+ * the core knows, and no request is ever sent twice.
  *
  * Only `compose.ts` and `compose-mock.ts` use this module. Its build path
  * takes a dispatcher, a socket and limits, which the factories never take
@@ -93,7 +93,8 @@ export interface HttpTransport {
   /**
    * Sends a DELETE without body and query, only to one appointment of a
    * calendar or one booking, for taking back what Ecclium created
-   * (ADR 0072). Every other target is refused.
+   * (ADR 0072). Every other target is refused, as for each write every
+   * path but those of its forms.
    *
    * @throws {HttpTransportError} For every failure, with a fixed category.
    */
@@ -316,13 +317,26 @@ const ownValue = (options: unknown, key: string): unknown => {
 // The methods that carry a body. GET and DELETE never do (ADR 0072).
 const withBody: readonly HttpMethod[] = Object.freeze(['POST', 'PUT', 'PATCH']);
 
+// The prototype every typed array shares, whose byteLength getter reads
+// the internal slot of a view. Read through it, an own property of the
+// view cannot answer for the length.
+const typedArrayPrototype = Object.getPrototypeOf(
+  Uint8Array.prototype,
+) as object;
+
 // A copy of the body of a write, or undefined when it is not a real
 // Uint8Array of 1 byte to the limit. isUint8Array reads the internal slot,
-// so a proxy or an object that only claims the type never fits, and the
-// copy is made before the length counts, so a caller cannot change the body
-// between the check and the send.
+// so a proxy or an object that only claims the type never fits. A view
+// above the limit is refused before anything is copied; the length of the
+// copy counts in the end, so a caller cannot change the body between the
+// check and the send.
 const copyBody = (value: unknown, max: number): Uint8Array | undefined => {
-  if (!isUint8Array(value)) return undefined;
+  if (
+    !isUint8Array(value) ||
+    (Reflect.get(typedArrayPrototype, 'byteLength', value) as number) > max
+  ) {
+    return undefined;
+  }
   const body = new Uint8Array(value);
   return body.byteLength >= 1 && body.byteLength <= max ? body : undefined;
 };
@@ -347,10 +361,6 @@ export function createTransport(
 ): HttpTransport {
   const { origin, token, userAgent, logger, clock, limits } = settings;
 
-  // Calls beyond the connections of the pool wait here, not in undici: an
-  // abort takes a waiting call out at once, while undici keeps a request
-  // it has queued until a connection takes it. A call holds its place
-  // until it has read or dropped the whole answer.
   // Whether a body holds the token, as it is or escaped for JSON. A token
   // holds only visible ASCII (ADR 0054), so latin1 compares byte by byte.
   const carriesToken = (body: Uint8Array): boolean => {
@@ -361,6 +371,10 @@ export function createTransport(
     );
   };
 
+  // Calls beyond the connections of the pool wait here, not in undici: an
+  // abort takes a waiting call out at once, while undici keeps a request
+  // it has queued until a connection takes it. A call holds its place
+  // until it has read or dropped the whole answer.
   let busy = 0;
   const waiting: (() => void)[] = [];
   const enter = (stop: AbortSignal): Promise<void> =>
