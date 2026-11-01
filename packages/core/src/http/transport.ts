@@ -1,8 +1,11 @@
 /**
  * The HTTP transport of the outbound path (ADR 0056): one origin, one
- * secret, GET only. It checks every target before a socket opens, sends
- * the token only in its Authorization header, passes on only three headers
- * of an answer and reduces every failure to a fixed category.
+ * secret, GET to read and, since ADR 0072, POST, PUT, PATCH and DELETE to
+ * write. It checks every target before a socket opens, sends the token only
+ * in its Authorization header, passes on only three headers of an answer
+ * and reduces every failure to a fixed category. A write carries a JSON
+ * body of limited size and no query, DELETE reaches only appointments and
+ * bookings, and no request is ever sent twice.
  *
  * Only `compose.ts` and `compose-mock.ts` use this module. Its build path
  * takes a dispatcher, a socket and limits, which the factories never take
@@ -10,13 +13,15 @@
  *
  * @packageDocumentation
  */
+import { Buffer } from 'node:buffer';
 import type { Socket } from 'node:net';
 import type { Readable } from 'node:stream';
+import { isUint8Array } from 'node:util/types';
 
 import type { Clock, Logger } from '@ecclium/mcp-churchtools-plugin-api';
 import { Agent, buildConnector, type Dispatcher } from 'undici';
 
-import type { HttpFailureEvent } from '../logger/index.js';
+import type { HttpFailureEvent, HttpMethod } from '../logger/index.js';
 import {
   categoriseFailure,
   type FailureCategory,
@@ -24,7 +29,7 @@ import {
 } from './failure.js';
 import { keepKnownHeaders, type ResponseHeaders } from './response-headers.js';
 import { revealSecret, type Secret } from './secret.js';
-import { checkRequestTarget } from './target.js';
+import { checkRequestTarget, checkWriteTarget } from './target.js';
 
 /** The answer of the server, frozen. */
 export interface HttpResponse {
@@ -44,6 +49,16 @@ export interface HttpRequestOptions {
   readonly maxResponseBytes: number;
 }
 
+/** What a write with a body takes besides the address (ADR 0072). */
+export interface HttpWriteOptions extends HttpRequestOptions {
+  /**
+   * The body as JSON in UTF-8, from 1 byte to 1 MiB. The transport copies
+   * it when the call starts, so a later change by the caller sends nothing
+   * else, and sends it as `application/json`.
+   */
+  readonly body: Uint8Array;
+}
+
 /**
  * The outbound path to one origin. Built only by the composition root, so
  * no tool can build one with an origin of its own (ADR 0056).
@@ -55,6 +70,34 @@ export interface HttpTransport {
    * @throws {HttpTransportError} For every failure, with a fixed category.
    */
   get(url: URL, options: HttpRequestOptions): Promise<HttpResponse>;
+  /**
+   * Sends a POST with a JSON body and no query and reads the whole answer.
+   * After any failure but `refused`, ChurchTools may have written: read
+   * again before deciding (ADR 0072).
+   *
+   * @throws {HttpTransportError} For every failure, with a fixed category.
+   */
+  post(url: URL, options: HttpWriteOptions): Promise<HttpResponse>;
+  /**
+   * Sends a PUT with a JSON body and no query, as {@link HttpTransport.post}.
+   *
+   * @throws {HttpTransportError} For every failure, with a fixed category.
+   */
+  put(url: URL, options: HttpWriteOptions): Promise<HttpResponse>;
+  /**
+   * Sends a PATCH with a JSON body and no query, as {@link HttpTransport.post}.
+   *
+   * @throws {HttpTransportError} For every failure, with a fixed category.
+   */
+  patch(url: URL, options: HttpWriteOptions): Promise<HttpResponse>;
+  /**
+   * Sends a DELETE without body and query, only to one appointment of a
+   * calendar or one booking, for taking back what Ecclium created
+   * (ADR 0072). Every other target is refused.
+   *
+   * @throws {HttpTransportError} For every failure, with a fixed category.
+   */
+  delete(url: URL, options: HttpRequestOptions): Promise<HttpResponse>;
   /** Lets running calls finish, then closes every connection. */
   close(): Promise<void>;
   /** Closes every connection at once and aborts running calls. */
@@ -80,6 +123,8 @@ export interface TransportLimits {
   readonly connections: number;
   /** The most bytes of body of any answer. */
   readonly maxResponseBytes: number;
+  /** The most bytes of body of any write. */
+  readonly maxRequestBytes: number;
   /** The most bytes of the headers of an answer. */
   readonly maxHeaderBytes: number;
 }
@@ -87,7 +132,9 @@ export interface TransportLimits {
 /**
  * The limits of every transport the factories build (ADR 0056). Answers of
  * ChurchTools come within a second, a page of 100 entries stays far below
- * 8 MiB, and a tool passes on at most 64 KiB.
+ * 8 MiB, and a tool passes on at most 64 KiB. A write carries at most one
+ * text of 64 KiB, which JSON may escape to six times its size, so 1 MiB
+ * leaves room and still bounds what one call can send (ADR 0072).
  */
 export const transportLimits: TransportLimits = Object.freeze({
   connectMs: 10_000,
@@ -98,6 +145,7 @@ export const transportLimits: TransportLimits = Object.freeze({
   connections: 4,
   maxResponseBytes: 8 * 1024 * 1024,
   maxHeaderBytes: 16 * 1024,
+  maxRequestBytes: 1024 * 1024,
 });
 
 /**
@@ -105,7 +153,9 @@ export const transportLimits: TransportLimits = Object.freeze({
  * is off and the parser fixed to llhttp, so that what runs in production
  * is what the tests see and no variable of the environment switches the
  * parser (ADR 0056). One origin per agent: a request to any other fails in
- * undici as well.
+ * undici as well. One request per connection at a time: a connection that
+ * closes then fails the one request it carries, and undici sends again only
+ * requests it has not yet written, so no write goes out twice (ADR 0072).
  *
  * @param limits - The limits of the transport.
  * @returns The options, frozen.
@@ -120,6 +170,7 @@ export function agentOptions(limits: TransportLimits) {
     useMilo: false,
     maxOrigins: 1,
     connections: limits.connections,
+    pipelining: 1,
     headersTimeout: limits.headersMs,
     bodyTimeout: limits.bodyMs,
     keepAliveTimeout: limits.keepAliveMs,
@@ -262,6 +313,20 @@ const ownValue = (options: unknown, key: string): unknown => {
     : undefined;
 };
 
+// The methods that carry a body. GET and DELETE never do (ADR 0072).
+const withBody: readonly HttpMethod[] = Object.freeze(['POST', 'PUT', 'PATCH']);
+
+// A copy of the body of a write, or undefined when it is not a real
+// Uint8Array of 1 byte to the limit. isUint8Array reads the internal slot,
+// so a proxy or an object that only claims the type never fits, and the
+// copy is made before the length counts, so a caller cannot change the body
+// between the check and the send.
+const copyBody = (value: unknown, max: number): Uint8Array | undefined => {
+  if (!isUint8Array(value)) return undefined;
+  const body = new Uint8Array(value);
+  return body.byteLength >= 1 && body.byteLength <= max ? body : undefined;
+};
+
 /**
  * Builds a transport on a dispatcher. The dispatcher is the agent from
  * {@link createAgent} or, for tests, a MockAgent; either way every call goes
@@ -286,6 +351,16 @@ export function createTransport(
   // abort takes a waiting call out at once, while undici keeps a request
   // it has queued until a connection takes it. A call holds its place
   // until it has read or dropped the whole answer.
+  // Whether a body holds the token, as it is or escaped for JSON. A token
+  // holds only visible ASCII (ADR 0054), so latin1 compares byte by byte.
+  const carriesToken = (body: Uint8Array): boolean => {
+    const value = revealSecret(token);
+    const bytes = Buffer.from(body.buffer, body.byteOffset, body.byteLength);
+    return [value, JSON.stringify(value).slice(1, -1)].some((form) =>
+      bytes.includes(form, 0, 'latin1'),
+    );
+  };
+
   let busy = 0;
   const waiting: (() => void)[] = [];
   const enter = (stop: AbortSignal): Promise<void> =>
@@ -312,9 +387,14 @@ export function createTransport(
     else next();
   };
 
-  const get = async (
+  // Sends one request: the checks of target, limit, signal and body come
+  // first, then a place in the queue, then the request, then the whole
+  // answer. Every method goes this one way, so a write gets exactly the
+  // checks, limits and failures of a read (ADR 0072).
+  const send = async (
+    method: HttpMethod,
     url: URL,
-    options: HttpRequestOptions,
+    options: HttpRequestOptions | HttpWriteOptions,
   ): Promise<HttpResponse> => {
     const started = clock.now();
     const duration = (): number =>
@@ -324,17 +404,19 @@ export function createTransport(
       logger.warn(failureEvents[category], {
         code: error.code,
         durationMs: duration(),
-        method: 'GET',
+        method,
       });
       return error;
     };
 
     // Checks before anything is sent. A limit out of range, a signal that
-    // is no AbortSignal and a target the check refuses are mistakes in the
-    // code that calls, never a socket.
+    // is no AbortSignal, a target the checks refuse and a body that is
+    // missing, too large, given where none belongs or carries the token are
+    // mistakes in the code that calls, never a socket.
     let max: number;
     let signal: AbortSignal | undefined;
     let path: string;
+    let body: Uint8Array | undefined;
     try {
       const limit = ownValue(options, 'maxResponseBytes');
       const given = ownValue(options, 'signal');
@@ -343,8 +425,23 @@ export function createTransport(
         !Number.isSafeInteger(limit) ||
         (limit as number) < 1 ||
         (limit as number) > limits.maxResponseBytes ||
-        !target.ok
+        !target.ok ||
+        checkWriteTarget(method, target.path) !== undefined
       ) {
+        throw new TypeError('refused');
+      }
+      const raw = ownValue(options, 'body');
+      if (withBody.includes(method)) {
+        body = copyBody(raw, limits.maxRequestBytes);
+        // The token goes only into its header. A token in the body is a
+        // mistake, such as a value pasted into a field. The search covers
+        // the token as it is and as a string of JSON writes it, with a
+        // backslash before each quote and backslash; it guards against
+        // mistakes, not against code that sets out to encode it otherwise.
+        if (body === undefined || carriesToken(body)) {
+          throw new TypeError('refused');
+        }
+      } else if (raw !== undefined) {
         throw new TypeError('refused');
       }
       signal = given as AbortSignal | undefined;
@@ -387,16 +484,19 @@ export function createTransport(
       listen(signal, onAbort);
       await enter(controller.signal);
       entered = true;
+      const headers: Record<string, string> = {
+        authorization: `Login ${revealSecret(token)}`,
+        accept: 'application/json',
+        'accept-encoding': 'identity',
+        'user-agent': userAgent,
+      };
+      if (body !== undefined) headers['content-type'] = 'application/json';
       const pending = dispatcher.request({
         origin,
         path,
-        method: 'GET',
-        headers: {
-          authorization: `Login ${revealSecret(token)}`,
-          accept: 'application/json',
-          'accept-encoding': 'identity',
-          'user-agent': userAgent,
-        },
+        method,
+        headers,
+        ...(body === undefined ? {} : { body }),
         signal: controller.signal,
       });
       let answer: Dispatcher.ResponseData;
@@ -429,22 +529,22 @@ export function createTransport(
         if (total > max) refuse('too_large');
         chunks.push(chunk);
       }
-      const body = new Uint8Array(total);
+      const read = new Uint8Array(total);
       let offset = 0;
       for (const chunk of chunks) {
-        body.set(chunk, offset);
+        read.set(chunk, offset);
         offset += chunk.byteLength;
       }
       logger.info('http_response', {
         durationMs: duration(),
-        method: 'GET',
+        method,
         status,
       });
       return Object.freeze({
         __proto__: null,
         status,
         headers: kept.headers,
-        body,
+        body: read,
       });
     } catch (error) {
       throw fail(
@@ -463,7 +563,12 @@ export function createTransport(
   };
 
   return Object.freeze({
-    get,
+    get: (url: URL, options: HttpRequestOptions) => send('GET', url, options),
+    post: (url: URL, options: HttpWriteOptions) => send('POST', url, options),
+    put: (url: URL, options: HttpWriteOptions) => send('PUT', url, options),
+    patch: (url: URL, options: HttpWriteOptions) => send('PATCH', url, options),
+    delete: (url: URL, options: HttpRequestOptions) =>
+      send('DELETE', url, options),
     close: async (): Promise<void> => {
       await dispatcher.close();
     },

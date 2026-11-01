@@ -24,6 +24,7 @@ export type {
   HttpRequestOptions,
   HttpResponse,
   HttpTransport,
+  HttpWriteOptions,
 } from './transport.js';
 
 /** What the composition root gives a transport. */

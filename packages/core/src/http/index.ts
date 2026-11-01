@@ -27,4 +27,5 @@ export type {
   HttpRequestOptions,
   HttpResponse,
   HttpTransport,
+  HttpWriteOptions,
 } from './transport.js';

@@ -3,10 +3,13 @@
  * for it (ADR 0056). The transport sends to its one origin only, so this
  * check is the second guard behind the fixed origin: it refuses what should
  * never reach ChurchTools, such as a token in the address or the parameters
- * that put a login token or a session into the query.
+ * that put a login token or a session into the query. A write is held to
+ * more (ADR 0072): it has no query, and DELETE reaches only one appointment
+ * or one booking.
  *
  * @packageDocumentation
  */
+import type { HttpMethod } from '../logger/index.js';
 import { revealSecret, type Secret } from './secret.js';
 
 /**
@@ -23,6 +26,8 @@ export const targetCodes = Object.freeze([
   'target_parameter_name',
   'target_forbidden_parameter',
   'target_token',
+  'target_write_query',
+  'target_delete_path',
 ] as const);
 
 /** The reason to refuse a target. */
@@ -169,4 +174,66 @@ export function checkRequestTarget(
     ok: true,
     path: `${url.pathname}${url.search}`,
   });
+}
+
+// Whether a segment of a path is the ID of an object as ChurchTools gives
+// it: a whole number from 1 in decimal digits without a leading zero, at
+// most a safe integer. Character by character, as the names of parameters.
+const isIdSegment = (segment: string | undefined): boolean => {
+  if (segment === undefined || segment.length < 1 || segment.length > 16) {
+    return false;
+  }
+  for (let index = 0; index < segment.length; index += 1) {
+    const code = segment.charCodeAt(index);
+    if (code < 0x30 || code > 0x39 || (index === 0 && code === 0x30)) {
+      return false;
+    }
+  }
+  return Number(segment) <= Number.MAX_SAFE_INTEGER;
+};
+
+// The two forms of path DELETE may reach: one appointment of a calendar
+// and one booking. Ecclium takes back only appointments and bookings it
+// created and nobody changed since; it never deletes a page of the wiki, a
+// person or a group (ADR 0072).
+const isDeletablePath = (path: string): boolean => {
+  const parts = path.split('/');
+  if (parts[0] !== '' || parts[1] !== 'api') return false;
+  if (parts.length === 6) {
+    return (
+      parts[2] === 'calendars' &&
+      isIdSegment(parts[3]) &&
+      parts[4] === 'appointments' &&
+      isIdSegment(parts[5])
+    );
+  }
+  return parts.length === 4 && parts[2] === 'bookings' && isIdSegment(parts[3]);
+};
+
+/**
+ * Checks what a write may reach, after {@link checkRequestTarget} has given
+ * the path (ADR 0072). A write carries its values in its body, never in a
+ * query, so no value of a write reaches the access log of the server. A
+ * DELETE reaches only `/api/calendars/{id}/appointments/{id}` and
+ * `/api/bookings/{id}`, each ID a whole number from 1. A GET passes.
+ *
+ * @param method - The method of the request.
+ * @param path - The path with the query, as `checkRequestTarget` gave it.
+ * @returns The code of the broken rule, or undefined when the target fits.
+ * @example
+ * ```ts
+ * checkWriteTarget('DELETE', '/api/bookings/12'); // undefined
+ * checkWriteTarget('DELETE', '/api/wiki/categories/1/pages/x'); // 'target_delete_path'
+ * ```
+ */
+export function checkWriteTarget(
+  method: HttpMethod,
+  path: string,
+): TargetCode | undefined {
+  if (method === 'GET') return undefined;
+  if (path.includes('?')) return 'target_write_query';
+  if (method === 'DELETE' && !isDeletablePath(path)) {
+    return 'target_delete_path';
+  }
+  return undefined;
 }

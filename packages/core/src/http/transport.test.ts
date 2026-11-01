@@ -153,6 +153,17 @@ const settle = (): Promise<void> =>
 
 const url = (path: string): URL => new URL(`${origin}${path}`);
 
+// What a transport holds, in this order: five methods, close and destroy.
+const allMethods = [
+  'get',
+  'post',
+  'put',
+  'patch',
+  'delete',
+  'close',
+  'destroy',
+];
+
 const failure = async (call: Promise<unknown>): Promise<HttpTransportError> => {
   try {
     await call;
@@ -416,6 +427,255 @@ describe('an answer', () => {
   });
 });
 
+// A body of JSON in UTF-8, as the client builds it.
+const json = (value: unknown): Uint8Array =>
+  new TextEncoder().encode(JSON.stringify(value));
+
+// The body a MockAgent saw, as text. Its types name a string, but it keeps
+// the Uint8Array the transport sent.
+const sentText = (body: unknown): string =>
+  new TextDecoder().decode(body as Uint8Array);
+
+describe('a write', () => {
+  const page = '/api/wiki/categories/1/pages';
+
+  it.each(['post', 'put', 'patch'] as const)(
+    'sends %s with its body as application/json and the same headers as a read',
+    async (name) => {
+      const method = name.toUpperCase();
+      const { agent, pool, transport, lines } = mocked();
+      pool.intercept({ path: page, method }).reply(200, '{}');
+      const answer = await transport[name](url(page), {
+        body: json({ text: 'Ä' }),
+        maxResponseBytes: 1024,
+      });
+      expect(answer.status).toBe(200);
+      const call = agent.getCallHistory()?.lastCall();
+      expect(call?.method).toBe(method);
+      expect(call?.path).toBe(page);
+      expect(sentText(call?.body)).toBe('{"text":"Ä"}');
+      expect(call?.searchParams).toEqual({});
+      expect(call?.headers).toEqual({
+        authorization: `Login ${canary.value}`,
+        accept: 'application/json',
+        'accept-encoding': 'identity',
+        'user-agent': userAgent,
+        'content-type': 'application/json',
+      });
+      expect(lines).toEqual([
+        {
+          level: 'info',
+          event: 'http_response',
+          fields: { durationMs: 5, method, status: 200 },
+        },
+      ]);
+    },
+  );
+
+  it('sends DELETE without body and without content-type, and takes 204 without body', async () => {
+    const { agent, pool, transport, lines } = mocked();
+    pool
+      .intercept({ path: '/api/bookings/4', method: 'DELETE' })
+      .reply(204, '');
+    const answer = await transport.delete(url('/api/bookings/4'), {
+      maxResponseBytes: 1024,
+    });
+    expect(answer.status).toBe(204);
+    expect(answer.body).toHaveLength(0);
+    const call = agent.getCallHistory()?.lastCall();
+    expect(call?.method).toBe('DELETE');
+    expect(call?.body ?? null).toBeNull();
+    expect(Object.keys(call?.headers ?? {})).not.toContain('content-type');
+    expect(lines.at(-1)?.fields).toEqual({
+      durationMs: 5,
+      method: 'DELETE',
+      status: 204,
+    });
+  });
+
+  it('sends the body as it was when the call started', async () => {
+    const { agent, pool, transport } = mocked();
+    pool.intercept({ path: page, method: 'POST' }).reply(201, '{}');
+    const body = json({ text: 'before' });
+    const call = transport.post(url(page), { body, maxResponseBytes: 1024 });
+    body.set(new TextEncoder().encode('{"text":"after!"}'));
+    await call;
+    expect(sentText(agent.getCallHistory()?.lastCall()?.body)).toBe(
+      '{"text":"before"}',
+    );
+  });
+
+  it('accepts a body of one byte and of exactly the limit', async () => {
+    const { pool, transport } = mocked();
+    pool.intercept({ path: page, method: 'POST' }).reply(201, '{}').times(2);
+    for (const size of [1, 1024 * 1024]) {
+      const answer = await transport.post(url(page), {
+        body: new Uint8Array(size).fill(0x20),
+        maxResponseBytes: 1024,
+      });
+      expect(answer.status).toBe(201);
+    }
+  });
+
+  it.each([
+    ['no body', {}],
+    ['an empty body', { body: new Uint8Array(0) }],
+    ['a body one byte above 1 MiB', { body: new Uint8Array(1024 * 1024 + 1) }],
+    ['a body as text', { body: '{}' }],
+    ['a body as ArrayBuffer', { body: new ArrayBuffer(2) }],
+    ['a body as DataView', { body: new DataView(new ArrayBuffer(2)) }],
+    ['a body as Uint16Array', { body: new Uint16Array(2) }],
+    ['a body as array of numbers', { body: [0x7b, 0x7d] }],
+    ['a body in a proxy', { body: new Proxy(json({}), {}) }],
+    [
+      'a body behind a getter',
+      Object.defineProperty({}, 'body', { get: () => json({}) }),
+    ],
+  ])('refuses a POST with %s and sends nothing', async (_, extra) => {
+    const { agent, transport, lines } = mocked();
+    const error = await failure(
+      transport.post(url(page), {
+        maxResponseBytes: 1024,
+        ...extra,
+      } as never),
+    );
+    expect(error.category).toBe('refused');
+    expect(agent.getCallHistory()?.calls()).toEqual([]);
+    expect(lines).toEqual([
+      {
+        level: 'warn',
+        event: 'http_refused',
+        fields: { code: 'internal', durationMs: 5, method: 'POST' },
+      },
+    ]);
+  });
+
+  it('refuses a body for GET and DELETE and sends nothing', async () => {
+    const { agent, transport } = mocked();
+    for (const call of [
+      transport.get(url('/api/whoami'), {
+        body: json({}),
+        maxResponseBytes: 1024,
+      } as never),
+      transport.delete(url('/api/bookings/4'), {
+        body: json({}),
+        maxResponseBytes: 1024,
+      } as never),
+    ]) {
+      expect((await failure(call)).category).toBe('refused');
+    }
+    expect(agent.getCallHistory()?.calls()).toEqual([]);
+  });
+
+  // The same body passes once the transport sends another token, so the
+  // case is caught by the token, not by its shape.
+  it('refuses a body that carries the token, as it is or escaped for JSON, and takes both for another token', async () => {
+    const escaped = json({ text: `see ${canary.value} here` });
+    const raw = new TextEncoder().encode(`{"text":"${canary.value}"}`);
+    // The canary holds a quote and a backslash, so the two forms differ.
+    expect(JSON.stringify(canary.value).slice(1, -1)).not.toBe(canary.value);
+    const first = mocked();
+    for (const body of [escaped, raw]) {
+      const error = await failure(
+        first.transport.patch(url(`${page}/x`), {
+          body,
+          maxResponseBytes: 1024,
+        }),
+      );
+      expect(error.category).toBe('refused');
+    }
+    expect(first.agent.getCallHistory()?.calls()).toEqual([]);
+    const agent = new MockAgent({ enableCallHistory: true });
+    agent.disableNetConnect();
+    open.push(agent);
+    agent
+      .get(origin)
+      .intercept({ path: `${page}/x`, method: 'PATCH' })
+      .reply(200, '{}')
+      .times(2);
+    const other = createTransport(agent, {
+      origin,
+      token: new Secret(makeCanary('token').value),
+      userAgent,
+      logger: recordingLogger().logger,
+      clock: steppingClock(),
+      limits: transportLimits,
+    });
+    for (const body of [escaped, raw]) {
+      const answer = await other.patch(url(`${page}/x`), {
+        body,
+        maxResponseBytes: 1024,
+      });
+      expect(answer.status).toBe(200);
+    }
+  });
+
+  it.each(['post', 'put', 'patch', 'delete'] as const)(
+    'refuses %s with a query and sends nothing',
+    async (name) => {
+      const { agent, transport } = mocked();
+      const options =
+        name === 'delete'
+          ? { maxResponseBytes: 1024 }
+          : { body: json({}), maxResponseBytes: 1024 };
+      const error = await failure(
+        transport[name](url('/api/bookings/4?a=1'), options as never),
+      );
+      expect(error.category).toBe('refused');
+      expect(agent.getCallHistory()?.calls()).toEqual([]);
+    },
+  );
+
+  it('refuses DELETE on a page of the wiki, a person or a group and sends nothing', async () => {
+    const { agent, transport } = mocked();
+    for (const path of [
+      `${page}/00000000-0000-4000-8000-000000000001`,
+      '/api/persons/1',
+      '/api/groups/1',
+    ]) {
+      const error = await failure(
+        transport.delete(url(path), { maxResponseBytes: 1024 }),
+      );
+      expect(error.category).toBe('refused');
+    }
+    expect(agent.getCallHistory()?.calls()).toEqual([]);
+  });
+
+  it('checks the target of a write as that of a read', async () => {
+    const { agent, transport } = mocked();
+    for (const target of [
+      new URL(`https://other.example${page}`),
+      url(`${page}#part`),
+      url(`/api/${canary.value}`),
+    ]) {
+      const error = await failure(
+        transport.post(target, { body: json({}), maxResponseBytes: 1024 }),
+      );
+      expect(error.category).toBe('refused');
+    }
+    expect(agent.getCallHistory()?.calls()).toEqual([]);
+  });
+
+  it('passes on an error status of a write with its body, and names the method of a failure', async () => {
+    const { pool, transport, lines } = mocked();
+    pool.intercept({ path: page, method: 'POST' }).reply(400, '{"x":1}');
+    pool.intercept({ path: page, method: 'PUT' }).reply(302, '');
+    const answer = await transport.post(url(page), {
+      body: json({}),
+      maxResponseBytes: 1024,
+    });
+    expect(answer.status).toBe(400);
+    const error = await failure(
+      transport.put(url(page), { body: json({}), maxResponseBytes: 1024 }),
+    );
+    expect(error.category).toBe('redirect');
+    expect(lines.map((line) => line.fields?.['method'])).toEqual([
+      'POST',
+      'PUT',
+    ]);
+  });
+});
+
 describe('a failure', () => {
   const slowLimits: TransportLimits = { ...transportLimits, totalMs: 50 };
 
@@ -652,7 +912,7 @@ describe('the transport', () => {
     const { pool, transport } = mocked();
     pool.intercept({ path: '/api', method: 'GET' }).reply(200, 'x').delay(100);
     const call = transport.get(url('/api'), { maxResponseBytes: 64 });
-    expect(Reflect.ownKeys(transport)).toEqual(['get', 'close', 'destroy']);
+    expect(Reflect.ownKeys(transport)).toEqual(allMethods);
     expect(Object.isFrozen(transport)).toBe(true);
     assertNoCanary(
       inspect(transport, {
@@ -705,16 +965,18 @@ describe('the agent', () => {
       connections: 4,
       maxResponseBytes: 8 * 1024 * 1024,
       maxHeaderBytes: 16 * 1024,
+      maxRequestBytes: 1024 * 1024,
     });
     expect(Object.isFrozen(transportLimits)).toBe(true);
   });
 
-  it('turns off HTTP/2 and Milo and serves one origin', () => {
+  it('turns off HTTP/2 and Milo, serves one origin and sends one request per connection at a time', () => {
     expect({ ...agentOptions(transportLimits) }).toEqual({
       allowH2: false,
       useMilo: false,
       maxOrigins: 1,
       connections: 4,
+      pipelining: 1,
       headersTimeout: 15_000,
       bodyTimeout: 15_000,
       keepAliveTimeout: 10_000,
@@ -791,7 +1053,7 @@ describe('createHttpTransport', () => {
       clock,
     });
     open.push(transport);
-    expect(Reflect.ownKeys(transport)).toEqual(['get', 'close', 'destroy']);
+    expect(Reflect.ownKeys(transport)).toEqual(allMethods);
   });
 
   it.each([
