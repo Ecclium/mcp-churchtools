@@ -169,6 +169,46 @@ describe('a transport against a trusted certificate', () => {
     await transport.close();
   });
 
+  // A connection that closes while a write waits for its answer fails that
+  // write, and undici sends again only requests it has not yet written, so
+  // the server sees the write once. The category is connect, as for any
+  // socket that breaks before the headers: for a write it does not show
+  // that nothing arrived, only refused does (ADR 0072).
+  it('sends a write once when the server closes the connection before it answers', async () => {
+    const writes: string[] = [];
+    const { transport } = throughServer('a', (request, response) => {
+      if (request.method !== 'POST') {
+        response.end('ok');
+        return;
+      }
+      const chunks: Buffer[] = [];
+      request.on('data', (chunk: Buffer) => {
+        chunks.push(chunk);
+      });
+      request.on('end', () => {
+        writes.push(Buffer.concat(chunks).toString('utf8'));
+        response.socket?.destroy();
+      });
+    });
+    expect(
+      await categoryOf(
+        transport.post(target('/api/wiki/categories/1/pages'), {
+          body: new TextEncoder().encode('{"text":"once"}'),
+          maxResponseBytes: 64,
+        }),
+      ),
+    ).toBe('connect');
+    await new Promise((resolve) => {
+      setTimeout(resolve, 200);
+    });
+    const answer = await transport.get(target('/api'), {
+      maxResponseBytes: 64,
+    });
+    expect(answer.status).toBe(200);
+    expect(writes).toEqual(['{"text":"once"}']);
+    await transport.close();
+  });
+
   // The rule [arch:diagnostics] keeps the packages away from these channels,
   // because undici publishes the whole request there. This case shows that
   // it still does, so that a change in undici becomes visible.

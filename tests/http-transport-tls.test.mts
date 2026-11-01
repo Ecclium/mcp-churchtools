@@ -112,7 +112,7 @@ describe('the HTTP transport over TLS', () => {
   it.each([
     ['untrusted', 1],
     ['untrusted with the check switched off', 1],
-    ['trusted', 13],
+    ['trusted', 14],
   ] as const)('passes every case of the run %s', (name, count) => {
     const run = runs.get(name);
     expect(run, name).toBeDefined();
