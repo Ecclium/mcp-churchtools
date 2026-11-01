@@ -63,7 +63,8 @@ export interface ReadAccess {
 /**
  * Makes the read access of one call.
  *
- * @param client - The raw client of the instance.
+ * @param client - The raw client of the instance, without its writes:
+ *   reading for a tool never reaches them, also not by its type (ADR 0072).
  * @param ctx - The context of the call. Its signal aborts every request.
  * @param sensitivity - The sensitivity of the calling tool. Only `special`
  *   may search and read persons and groups and use the global search; any
@@ -87,7 +88,7 @@ export interface ReadAccess {
  * ```
  */
 export function createReadAccess(
-  client: ChurchToolsClient,
+  client: Omit<ChurchToolsClient, 'writes'>,
   ctx: TenantContext,
   sensitivity: Sensitivity,
   asSpecial = false,

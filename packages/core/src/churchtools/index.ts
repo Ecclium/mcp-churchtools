@@ -12,6 +12,11 @@ export {
   createChurchToolsClient,
 } from './client.js';
 export type {
+  ChurchToolsWrites,
+  CreatedWikiPage,
+  WikiPageState,
+} from './wiki-writes.js';
+export type {
   ObjectValue,
   OperationAnswer,
   OperationRequest,

@@ -222,6 +222,18 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Ecclium hat eine Kennung zum Lesen einer Person oder Gruppe abgewiesen, bevor es ChurchTools fragte.',
     churchtools_wiki_input_refused:
       'Ecclium hat eine Eingabe für das Wiki abgewiesen, bevor es ChurchTools fragte.',
+    churchtools_wiki_write_input_refused:
+      'Ecclium hat einen Titel, einen Text oder eine Kennung zum Schreiben im Wiki abgewiesen, bevor es ChurchTools fragte.',
+    churchtools_wiki_page_create_status:
+      'ChurchTools hat auf das Anlegen einer Seite im Wiki nicht mit 201 geantwortet. `status` nennt den Status, `code` den Fehler. Bei 400 steht in der Kategorie womöglich schon eine Seite mit diesem Titel. Ob ChurchTools trotzdem geschrieben hat, zeigt erst das Lesen danach.',
+    churchtools_wiki_page_create_refused:
+      'Ecclium hat die Antwort von ChurchTools auf das Anlegen einer Seite im Wiki nicht angenommen, etwa weil sie keine Kennung der Seite nannte. Die Seite kann trotzdem entstanden sein.',
+    churchtools_wiki_page_create_missing:
+      'ChurchTools kennt die Kategorie nicht, in der Ecclium eine Seite anlegen wollte (404). Der Aufruf endet mit `not_found`.',
+    churchtools_wiki_page_update_status:
+      'ChurchTools hat auf das Ändern einer Seite im Wiki nicht mit 200 geantwortet. `status` nennt den Status, `code` den Fehler. Ob ChurchTools trotzdem geschrieben hat, zeigt erst das Lesen danach.',
+    churchtools_wiki_page_update_missing:
+      'ChurchTools kennt die Seite oder ihre Kategorie nicht, die Ecclium ändern wollte (404). Der Aufruf endet mit `not_found`.',
     churchtools_event_input_refused:
       'Ecclium hat eine Eingabe für Events oder Dienste abgewiesen, bevor es ChurchTools fragte.',
     churchtools_calendar_input_refused:

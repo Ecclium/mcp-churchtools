@@ -1,5 +1,5 @@
 /**
- * The reading ChurchTools client (ADR 0057): `whoami`, `permissions`, the
+ * The ChurchTools client (ADR 0057): `whoami`, `permissions`, the
  * searches of persons and groups by name (ADR 0060), one person, the
  * groups of a person, one group and its members, the events of a span of
  * days, one event, its agenda and its assignments, and the services
@@ -8,7 +8,9 @@
  * one GET operation of the catalog of the escape hatch, each with exactly
  * one request through the transport of its origin, the services, the
  * resources and the assignments with two, a throttle per client, fixed
- * limits and own schemas, which only the escape hatch lacks.
+ * limits and own schemas, which only the escape hatch lacks. Since ADR 0072
+ * it also writes pages of the wiki, under `writes`, on the same path and
+ * under the same throttle; only the write guard is to call them.
  *
  * @packageDocumentation
  */
@@ -98,8 +100,9 @@ import {
   type OperationRequest,
   readOperation,
 } from './operation.js';
-import { fetchAnswer, type RequestPath } from './request.js';
+import { fetchAnswer, fetchRead, type RequestPath } from './request.js';
 import { toPermissions } from './rights.js';
+import { type ChurchToolsWrites, createWikiWrites } from './wiki-writes.js';
 import {
   agendaSchema,
   appointmentListSchema,
@@ -145,7 +148,7 @@ export interface ChurchToolsClientOptions {
   readonly clock: Clock;
 }
 
-/** The reading client of one ChurchTools instance. */
+/** The client of one ChurchTools instance. */
 export interface ChurchToolsClient {
   /**
    * Reads the account of the server, only if ChurchTools accepted the token.
@@ -451,6 +454,12 @@ export interface ChurchToolsClient {
     request: OperationRequest,
     observe?: (objectRefs: readonly ObjectValue[]) => void,
   ): Promise<OperationAnswer>;
+  /**
+   * The writes and the read a plan needs (ADR 0072), grouped so that one
+   * rule can keep every caller but the write guard away from them. They go
+   * the same way as the reads and share their throttle.
+   */
+  readonly writes: ChurchToolsWrites;
 }
 
 const whoamiLimits = Object.freeze({
@@ -1129,12 +1138,17 @@ export function createChurchToolsClient(
     });
   };
 
-  const wikiPage = async (
+  // Reads one page, in its newest version or in one version, and gives the
+  // date header with it for the read of a plan (ADR 0072).
+  const readWikiPage = async (
     ctx: TenantContext,
     categoryId: number,
     guid: string,
     version?: number,
-  ): Promise<WikiPage> => {
+  ): Promise<{
+    readonly page: WikiPage;
+    readonly date: string | undefined;
+  }> => {
     checkWikiInput(
       ctx,
       isWholeFromOne(categoryId) &&
@@ -1148,7 +1162,7 @@ export function createChurchToolsClient(
     const pathname =
       version === undefined ? page : `${page}/versions/${String(version)}`;
     const url = urlOfPath(origin, pathname);
-    const root = await fetchAnswer(ctx, path, url, wikiPageLimits, {
+    const { root, date } = await fetchRead(ctx, path, url, wikiPageLimits, {
       status: 'churchtools_wiki_page_status',
       refused: 'churchtools_wiki_page_refused',
       missing: 'churchtools_wiki_page_missing',
@@ -1164,13 +1178,25 @@ export function createChurchToolsClient(
     const data = parsed.data.data;
     return Object.freeze({
       __proto__: null,
-      guid,
-      title: data.title,
-      isMarkdown: data.isMarkdown,
-      version: data.version,
-      text: data.text ?? '',
+      page: Object.freeze({
+        __proto__: null,
+        guid,
+        title: data.title,
+        isMarkdown: data.isMarkdown,
+        version: data.version,
+        text: data.text ?? '',
+      }),
+      date,
     });
   };
+
+  const wikiPage = async (
+    ctx: TenantContext,
+    categoryId: number,
+    guid: string,
+    version?: number,
+  ): Promise<WikiPage> =>
+    (await readWikiPage(ctx, categoryId, guid, version)).page;
 
   // Refuses a span or an ID that may not fill a query or a path before the
   // throttle gives a place, so that an invalid value costs no request.
@@ -1954,5 +1980,10 @@ export function createChurchToolsClient(
       request: OperationRequest,
       observe?: (objectRefs: readonly ObjectValue[]) => void,
     ): Promise<OperationAnswer> => readOperation(ctx, path, request, observe),
+    writes: createWikiWrites({
+      path,
+      origin,
+      readPage: (ctx, categoryId, guid) => readWikiPage(ctx, categoryId, guid),
+    }),
   });
 }

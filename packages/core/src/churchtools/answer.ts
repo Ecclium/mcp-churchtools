@@ -2,7 +2,8 @@
  * Reads an answer of ChurchTools in a fixed order (ADR 0057): status, media
  * type, byte order mark, UTF-8, the shape check and `JSON.parse`. It knows no
  * schema, writes no log and never reads the body of an answer other than
- * 200, so that values ChurchTools echoes in an error never leave it.
+ * the status of success, 200 or, for a page that a write created, 201
+ * (ADR 0072), so that values ChurchTools echoes in an error never leave it.
  *
  * @packageDocumentation
  */
@@ -31,6 +32,12 @@ export type AnswerResult =
 export interface AnswerLimits {
   /** The most opening brackets and commas outside of strings. */
   readonly maxElements: number;
+  /**
+   * The status of the answer that is read, 200 unless given, 201 for the
+   * answer to a write that created an object. Every other status is an
+   * error, also another status of success.
+   */
+  readonly status?: 200 | 201;
 }
 
 /** The most levels of objects and arrays in an answer. */
@@ -45,7 +52,8 @@ const refused = (code: ErrorCode, reason: AnswerReason): AnswerResult =>
 
 // The status contract of HttpResponse is 200 to 299 and 400 to 599; the
 // transport refuses everything else (ADR 0056). 400 means the client sent
-// something it should have refused itself, so it is internal.
+// something it should have refused itself, so it is internal; a write that
+// knows another meaning of 400 gives its own code (ADR 0072).
 const statusCode = (status: number): ErrorCode => {
   if (status === 400) return 'internal';
   if (status === 401) return 'auth';
@@ -64,6 +72,37 @@ const isJson = (contentType: string | undefined): boolean => {
 const startsWithBom = (body: Uint8Array): boolean =>
   body.length >= 3 && body[0] === 0xef && body[1] === 0xbb && body[2] === 0xbf;
 
+/** Why an answer with another status than expected ends a call. */
+export interface StatusFailure {
+  /** The stable code of the error. */
+  readonly code: ErrorCode;
+  /** Whole seconds to wait, for a 429 with a usable `Retry-After`. */
+  readonly waitSeconds?: number;
+}
+
+/**
+ * Gives the code of an answer whose status is not the one of success, and
+ * for a 429 the wait from `Retry-After`. It reads only the status and that
+ * one header, never the body.
+ *
+ * @param response - The answer as the transport gave it.
+ * @returns The code, and the wait if there is one.
+ * @example
+ * ```ts
+ * statusFailure(answer).code; // 'permission' for a 403
+ * ```
+ */
+export function statusFailure(response: HttpResponse): StatusFailure {
+  const code = statusCode(response.status);
+  const wait =
+    code === 'rate_limited'
+      ? retryAfterSeconds(response.headers['retry-after'])
+      : undefined;
+  return wait === undefined
+    ? Object.freeze({ __proto__: null, code })
+    : Object.freeze({ __proto__: null, code, waitSeconds: wait });
+}
+
 /**
  * Reads an answer of ChurchTools within fixed limits.
  *
@@ -80,20 +119,16 @@ export function readAnswer(
   response: HttpResponse,
   limits: AnswerLimits,
 ): AnswerResult {
-  if (response.status !== 200) {
-    const code = statusCode(response.status);
-    const wait =
-      code === 'rate_limited'
-        ? retryAfterSeconds(response.headers['retry-after'])
-        : undefined;
-    return wait === undefined
-      ? refused(code, 'status')
+  if (response.status !== (limits.status ?? 200)) {
+    const failure = statusFailure(response);
+    return failure.waitSeconds === undefined
+      ? refused(failure.code, 'status')
       : Object.freeze({
           __proto__: null,
           ok: false,
-          code,
+          code: failure.code,
           reason: 'status',
-          waitSeconds: wait,
+          waitSeconds: failure.waitSeconds,
         });
   }
   if (!isJson(response.headers['content-type'])) {

@@ -159,14 +159,20 @@ Je Ereignis die Stufe und die Felder, die ein Aufruf höchstens setzt. Die Felde
 | `churchtools_wiki_categories_refused` | `warn` | `code` | Ecclium hat die Antwort von ChurchTools auf die Kategorien des Wikis nicht angenommen, etwa weil sie nicht zum Schema passte. |
 | `churchtools_wiki_categories_status` | `warn` | `code`, `status` | ChurchTools hat auf das Lesen über die Kategorien des Wikis nicht mit 200 geantwortet. `status` nennt den Status, `code` den Fehler des Aufrufs. |
 | `churchtools_wiki_input_refused` | `warn` | `code` | Ecclium hat eine Eingabe für das Wiki abgewiesen, bevor es ChurchTools fragte. |
+| `churchtools_wiki_page_create_missing` | `warn` | `code`, `status` | ChurchTools kennt die Kategorie nicht, in der Ecclium eine Seite anlegen wollte (404). Der Aufruf endet mit `not_found`. |
+| `churchtools_wiki_page_create_refused` | `warn` | `code` | Ecclium hat die Antwort von ChurchTools auf das Anlegen einer Seite im Wiki nicht angenommen, etwa weil sie keine Kennung der Seite nannte. Die Seite kann trotzdem entstanden sein. |
+| `churchtools_wiki_page_create_status` | `warn` | `code`, `status` | ChurchTools hat auf das Anlegen einer Seite im Wiki nicht mit 201 geantwortet. `status` nennt den Status, `code` den Fehler. Bei 400 steht in der Kategorie womöglich schon eine Seite mit diesem Titel. Ob ChurchTools trotzdem geschrieben hat, zeigt erst das Lesen danach. |
 | `churchtools_wiki_page_missing` | `warn` | `code`, `status` | ChurchTools kennt beim Lesen über eine Seite des Wikis die Kennung nicht (404). Der Aufruf endet mit `not_found`. |
 | `churchtools_wiki_page_refused` | `warn` | `code` | Ecclium hat die Antwort von ChurchTools auf eine Seite des Wikis nicht angenommen, etwa weil sie nicht zum Schema passte. |
 | `churchtools_wiki_page_status` | `warn` | `code`, `status` | ChurchTools hat auf das Lesen über eine Seite des Wikis nicht mit 200 geantwortet. `status` nennt den Status, `code` den Fehler des Aufrufs. |
+| `churchtools_wiki_page_update_missing` | `warn` | `code`, `status` | ChurchTools kennt die Seite oder ihre Kategorie nicht, die Ecclium ändern wollte (404). Der Aufruf endet mit `not_found`. |
+| `churchtools_wiki_page_update_status` | `warn` | `code`, `status` | ChurchTools hat auf das Ändern einer Seite im Wiki nicht mit 200 geantwortet. `status` nennt den Status, `code` den Fehler. Ob ChurchTools trotzdem geschrieben hat, zeigt erst das Lesen danach. |
 | `churchtools_wiki_pages_refused` | `warn` | `code` | Ecclium hat die Antwort von ChurchTools auf die Seiten einer Kategorie des Wikis nicht angenommen, etwa weil sie nicht zum Schema passte. |
 | `churchtools_wiki_pages_status` | `warn` | `code`, `status` | ChurchTools hat auf das Lesen über die Seiten einer Kategorie des Wikis nicht mit 200 geantwortet. `status` nennt den Status, `code` den Fehler des Aufrufs. |
 | `churchtools_wiki_search_foreign` | `warn` | `code` | Die Antwort auf die Suche im Wiki nannte Einträge, nach denen nicht gefragt war. Ecclium hat sie abgewiesen. |
 | `churchtools_wiki_search_refused` | `warn` | `code` | Ecclium hat die Antwort von ChurchTools auf die Suche im Wiki nicht angenommen, etwa weil sie nicht zum Schema passte. |
 | `churchtools_wiki_search_status` | `warn` | `code`, `status` | ChurchTools hat auf das Lesen über die Suche im Wiki nicht mit 200 geantwortet. `status` nennt den Status, `code` den Fehler des Aufrufs. |
+| `churchtools_wiki_write_input_refused` | `warn` | `code` | Ecclium hat einen Titel, einen Text oder eine Kennung zum Schreiben im Wiki abgewiesen, bevor es ChurchTools fragte. |
 
 ### Ausgehender Weg
 
