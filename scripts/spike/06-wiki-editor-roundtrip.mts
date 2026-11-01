@@ -10,8 +10,8 @@
  * each page for the web editor the page and the list of its versions.
  * Writes: nothing.
  * Answers: whether saving without an edit creates a version (F10), how the
- * editor changes a Markdown page (F13), and whether an HTML comment
- * survives the editor (F17). It names each change against the synthetic
+ * editor changes a Markdown page (F13), whether saving it a second time
+ * changes it again, and whether an HTML comment survives the editor (F17). It names each change against the synthetic
  * text by kind and line, such as «Listenzeichen» or «HTML-Kommentar
  * entfernt», and says whether the page still matched that text after 05:
  * if the API itself changed the text, its changes are in the list as
@@ -32,11 +32,12 @@ import {
 } from './lib/corpus.mts';
 import { SpikeError } from './lib/errors.mts';
 import { checkInstance, pageTitlePrefix } from './lib/gate.mts';
-import type { Json } from './lib/guard.mts';
+import type { Guard, Json } from './lib/guard.mts';
+import { pathFor, type Client } from './lib/http.mts';
 import { operations } from './lib/operations.mts';
-import { readPage } from './lib/pages.mts';
+import { dataOf, readPage } from './lib/pages.mts';
 import { main, type ProbeDefinition } from './lib/probe.mts';
-import { findOperation } from './lib/spec.mts';
+import { findOperation, isObject } from './lib/spec.mts';
 import { countClass, countClasses } from './lib/structure.mts';
 import { readWriteState } from './lib/write-state.mts';
 
@@ -53,6 +54,13 @@ const words = [
   'textGeaendert',
   'isMarkdownGelesen',
   'anzahlVersionen',
+  'versionenSeit05',
+  'zweitesSpeichern',
+  'textGleichVorgaenger',
+  'keine',
+  'eins',
+  'zwei',
+  'mehr',
   'htmlKommentarErhalten',
   'aenderungen',
   'weitereAenderungen',
@@ -71,6 +79,48 @@ const words = [
 
 const yesNo = (value: boolean): string => (value ? 'ja' : 'nein');
 
+/**
+ * Compares the newest version of a page with the one before it.
+ *
+ * @param client - The client that reads.
+ * @param guard - The guard of the probe.
+ * @param category - ID of the write area.
+ * @param guid - GUID of the page.
+ * @param version - The newest version.
+ * @param text - Its text.
+ * @returns Whether the text equals that of the version before, and if not,
+ *   the kinds of change by line of the version before.
+ */
+async function secondSave(
+  client: Client,
+  guard: Guard,
+  category: number,
+  guid: string,
+  version: number,
+  text: string,
+): Promise<Json> {
+  const response = await client.get({
+    path: pathFor(
+      operations.wikiPageVersion.template,
+      category,
+      guid,
+      version - 1,
+    ),
+  });
+  guard.allowFixed(response.status);
+  const data = dataOf(response);
+  const previous = isObject(data) ? data['text'] : undefined;
+  if (response.status !== 200 || typeof previous !== 'string') {
+    return { leseStatus: response.status };
+  }
+  return previous === text
+    ? { textGleichVorgaenger: 'ja' }
+    : {
+        textGleichVorgaenger: 'nein',
+        ...changeReport(guard, classifyChanges(previous, text)),
+      };
+}
+
 /** The probe, for tests and for {@link main}. */
 export const probe: ProbeDefinition = {
   name: '06-wiki-editor-roundtrip',
@@ -81,7 +131,11 @@ export const probe: ProbeDefinition = {
     if (state === undefined || write === undefined) {
       throw new Error('INTERN');
     }
-    for (const name of ['wikiPage', 'wikiPageVersions'] as const) {
+    for (const name of [
+      'wikiPage',
+      'wikiPageVersions',
+      'wikiPageVersion',
+    ] as const) {
       const { method, template } = operations[name];
       if (findOperation(state.specification, method, template) === undefined) {
         throw new SpikeError('KONFIGURATION', 'leseOperationFehlt');
@@ -130,6 +184,30 @@ export const probe: ProbeDefinition = {
         standNach05:
           baseline.textHash === textHash(corpusText) ? 'Korpus' : 'weicht ab',
       };
+      if (view.version !== undefined) {
+        const since = view.version - baseline.version;
+        report['versionenSeit05'] =
+          since <= 0
+            ? 'keine'
+            : since === 1
+              ? 'eins'
+              : since === 2
+                ? 'zwei'
+                : 'mehr';
+        // Two saves without an edit that each made a version: compare the
+        // newest version with the one before it, so a second save that
+        // changes the text again shows its own changes.
+        if (since >= 2 && typeof view.text === 'string') {
+          report['zweitesSpeichern'] = await secondSave(
+            client,
+            guard,
+            result.writeCategory,
+            page.guid,
+            view.version,
+            view.text,
+          );
+        }
+      }
       pages[name] =
         typeof view.text === 'string'
           ? {
