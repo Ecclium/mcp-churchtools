@@ -7,8 +7,9 @@
  * the expected ones and rejects every key in pnpm-workspace.yaml that it
  * does not know. An environment variable that overrides a value is caught
  * as well, because the effective values come from pnpm itself. Every
- * exception from the minimum release age needs a comment with its date and
- * reason directly above it.
+ * exception from the minimum release age and every override needs a comment
+ * with its date and reason directly above it, and an override may only name
+ * one package and one exact version.
  *
  * Usage: `node scripts/check-pnpm-settings.mts`
  *
@@ -46,9 +47,14 @@ export const unsetSettings: ReadonlySet<string> = new Set([
   'trustPolicyIgnoreAfter',
 ]);
 
-/** The keys pnpm-workspace.yaml may contain. */
+/**
+ * The keys pnpm-workspace.yaml may contain. `overrides` has no expected
+ * value and is checked entry by entry instead, see
+ * {@link undocumentedOverrides} and {@link unlistedOverrides}.
+ */
 export const knownWorkspaceKeys: ReadonlySet<string> = new Set([
   'packages',
+  'overrides',
   ...Object.keys(expectedSettings),
 ]);
 
@@ -251,6 +257,155 @@ export function unlistedExceptions(yaml: string, effective: unknown): string[] {
     );
 }
 
+// An override gives a dependency of a dependency another version than the
+// one its range allows, for a security fix that the dependency has not
+// taken up yet. The selector names one package, optionally with the range
+// it replaces, such as `name@10`, and never a chain of parents. The value
+// is one exact version from the registry: a range could move to a newer
+// release without anyone looking, `-` removes the dependency, and `link:`,
+// `file:`, `npm:`, `$` and Git or tarball URLs take the code from
+// somewhere else.
+const overrideSelector =
+  /^(?:@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*(?:@[\w.*^~<>=-]+)?$/;
+const overrideVersion = /^\d+\.\d+\.\d+(?:-[\w.-]+)?$/;
+
+/** An override as written in the block of pnpm-workspace.yaml. */
+interface WrittenOverride {
+  /** The selector without surrounding quotes. */
+  readonly selector: string;
+  /** The version without surrounding quotes. */
+  readonly value: string;
+  /** Whether the line directly above gives a date and a reason. */
+  readonly dated: boolean;
+}
+
+const unquote = (text: string): string => text.replace(/^(["'])(.*)\1$/, '$2');
+
+/**
+ * Reads overrides from the text of pnpm-workspace.yaml: the value after the
+ * key on the same line and the entries of the block below it.
+ *
+ * @param yaml - Content of pnpm-workspace.yaml.
+ * @returns The value on the line of the key and the entries below it, or
+ *   undefined if no line starts with the key.
+ */
+function readOverrides(
+  yaml: string,
+):
+  { readonly inline: string; readonly entries: WrittenOverride[] } | undefined {
+  const lines = yaml.split('\n');
+  const key = /^overrides\s*:/;
+  const start = lines.findIndex((line) => key.test(line));
+  if (start === -1) {
+    return undefined;
+  }
+  const inline = (lines[start] ?? '')
+    .replace(key, '')
+    .replace(/\s#.*$/, '')
+    .trim();
+  const entries: WrittenOverride[] = [];
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const line = lines[index] ?? '';
+    if (/^[^\s#]/.test(line)) {
+      break;
+    }
+    // A selector may be quoted, a scoped one has to be, because YAML
+    // reserves `@` at the start of a plain value.
+    const entry = /^\s+("[^"]*"|'[^']*'|[^\s#"':][^\s:#]*)\s*:(.*)$/.exec(line);
+    if (entry !== null) {
+      entries.push({
+        selector: unquote(entry[1] ?? ''),
+        value: unquote((entry[2] ?? '').replace(/\s#.*$/, '').trim()),
+        dated: datedReason.test(lines[index - 1] ?? ''),
+      });
+    }
+  }
+  return { inline, entries };
+}
+
+const emptyMap = /^(\{\s*\})?$/;
+
+/**
+ * Lists the overrides in pnpm-workspace.yaml that are not written as this
+ * project allows: each on a line of its own with a comment with date and
+ * reason directly above, for one package and one exact version.
+ *
+ * @param yaml - Content of pnpm-workspace.yaml.
+ * @returns One message per problem, empty if there are no overrides or all
+ *   are written as allowed.
+ */
+export function undocumentedOverrides(yaml: string): string[] {
+  const written = readOverrides(yaml);
+  if (written === undefined) {
+    return [];
+  }
+  if (!emptyMap.test(written.inline)) {
+    return [
+      'overrides: Jeder Override steht auf einer eigenen Zeile («  name@10: 1.2.3») mit einem Kommentar mit Datum und Grund darüber, nicht in geschweiften Klammern.',
+    ];
+  }
+  const problems: string[] = [];
+  for (const { selector, value, dated } of written.entries) {
+    const name = JSON.stringify(selector);
+    if (!dated) {
+      problems.push(
+        `Override ${name} in overrides: Direkt darüber fehlt ein Kommentar mit Datum und Grund, etwa «# 01.11.2026: Sicherheitskorrektur für …».`,
+      );
+    }
+    if (!overrideSelector.test(selector)) {
+      problems.push(
+        `Override ${name}: Erlaubt ist nur ein Paket, wahlweise mit dem Bereich, den es ersetzt, etwa name@10, keine Kette über andere Pakete.`,
+      );
+    }
+    if (!overrideVersion.test(value)) {
+      problems.push(
+        `Override ${name} zeigt auf ${JSON.stringify(value)}: Erlaubt ist nur eine genaue Version aus der Registry wie 1.2.3.`,
+      );
+    }
+  }
+  return problems;
+}
+
+/**
+ * Lists the overrides that pnpm applies but that pnpm-workspace.yaml does
+ * not show as a line of the block with the same version. YAML knows other
+ * ways to write the same map, and pnpm may take overrides from elsewhere;
+ * what pnpm applies is what counts.
+ *
+ * @param yaml - Content of pnpm-workspace.yaml.
+ * @param effective - The effective value of overrides, as printed by
+ *   `pnpm config list --json`, undefined if pnpm applies none.
+ * @returns One message per override that is not written as a line.
+ */
+export function unlistedOverrides(yaml: string, effective: unknown): string[] {
+  if (effective === undefined) {
+    return [];
+  }
+  if (
+    typeof effective !== 'object' ||
+    effective === null ||
+    Array.isArray(effective)
+  ) {
+    return [
+      `overrides gilt für pnpm als ${JSON.stringify(effective)}, erwartet ist eine Zuordnung von Paketen zu Versionen.`,
+    ];
+  }
+  const written = readOverrides(yaml);
+  if (written !== undefined && !emptyMap.test(written.inline)) {
+    // Already reported by undocumentedOverrides.
+    return [];
+  }
+  const listed = new Map(
+    written?.entries.map((entry) => [entry.selector, entry.value]),
+  );
+  return Object.entries(effective)
+    .filter(([selector, value]) => listed.get(selector) !== String(value))
+    .map(
+      ([selector, value]) =>
+        `Override ${JSON.stringify(selector)} auf ${JSON.stringify(value)} gilt für pnpm, steht in pnpm-workspace.yaml aber nicht so als eigene Zeile unter overrides mit einem Kommentar mit Datum und Grund darüber.`,
+    );
+}
+
 /**
  * Prepares the environment in which pnpm reports its settings.
  *
@@ -292,6 +447,8 @@ function main(): number {
     ),
     ...undocumentedExceptions(yaml),
     ...unlistedExceptions(yaml, actual['minimumReleaseAgeExclude']),
+    ...undocumentedOverrides(yaml),
+    ...unlistedOverrides(yaml, actual['overrides']),
     ...compareSettings(actual),
   ];
   for (const problem of problems) {
