@@ -296,7 +296,7 @@ describe('an answer', () => {
       {
         level: 'info',
         event: 'http_response',
-        fields: { status: 200, durationMs: 5 },
+        fields: { durationMs: 5, method: 'GET', status: 200 },
       },
     ]);
   });

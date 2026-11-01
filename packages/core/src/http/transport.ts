@@ -324,6 +324,7 @@ export function createTransport(
       logger.warn(failureEvents[category], {
         code: error.code,
         durationMs: duration(),
+        method: 'GET',
       });
       return error;
     };
@@ -434,7 +435,11 @@ export function createTransport(
         body.set(chunk, offset);
         offset += chunk.byteLength;
       }
-      logger.info('http_response', { status, durationMs: duration() });
+      logger.info('http_response', {
+        durationMs: duration(),
+        method: 'GET',
+        status,
+      });
       return Object.freeze({
         __proto__: null,
         status,

@@ -74,6 +74,11 @@ export const logFieldMeanings: Readonly<
     meaning:
       "Eine Zahl, deren Bedeutung das Ereignis nennt, höchstens 1'000'000.",
   },
+  method: {
+    setBy: 'Aufruf',
+    meaning:
+      'Methode einer Anfrage an ChurchTools: `GET` liest, `POST`, `PUT`, `PATCH` und `DELETE` schreiben.',
+  },
   status: {
     setBy: 'Aufruf',
     meaning: 'Status einer Antwort von ChurchTools, 100 bis 599.',
@@ -236,7 +241,7 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
     churchtools_operation_too_large:
       'Die Antwort auf eine Operation war grösser als ihre Grenze.',
     http_response:
-      'ChurchTools hat geantwortet. `status` nennt den Status, `durationMs` die Dauer.',
+      'ChurchTools hat geantwortet. `method` nennt die Methode der Anfrage, `status` den Status, `durationMs` die Dauer.',
     audit_missing_error_code:
       'Eine Zeile mit `error` oder `denied` kam ohne Fehlercode. Die Zeile im Audit trägt einen Platzhalter.',
     audit_unknown_fields:
@@ -297,7 +302,7 @@ const familyMeaning = (name: string): string | undefined => {
   if (name.startsWith('http_')) {
     const category = name.slice('http_'.length);
     if (Object.hasOwn(httpFailures, category)) {
-      return `${httpFailures[category] ?? ''} \`code\` nennt den Fehler, \`durationMs\` die Dauer bis dahin.`;
+      return `${httpFailures[category] ?? ''} \`code\` nennt den Fehler, \`durationMs\` die Dauer bis dahin, \`method\` die Methode der Anfrage.`;
     }
   }
   if (name.startsWith('audit_invalid_')) {

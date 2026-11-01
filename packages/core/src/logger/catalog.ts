@@ -31,6 +31,7 @@ export type LogCallField =
   | 'code'
   | 'durationMs'
   | 'count'
+  | 'method'
   | 'status'
   | 'attempt'
   | 'file'
@@ -258,9 +259,9 @@ export const logEvents = Object.freeze({
   churchtools_operation_refused: entry('warn', 'code'),
   churchtools_operation_input_refused: entry('warn', 'code'),
   churchtools_operation_too_large: entry('warn', 'code'),
-  // The outbound path (ADR 0056).
-  http_response: entry('info', 'durationMs', 'status'),
-  ...family(httpFailureEvents, entry('warn', 'code', 'durationMs')),
+  // The outbound path (ADR 0056), with the method of each request (ADR 0072).
+  http_response: entry('info', 'durationMs', 'method', 'status'),
+  ...family(httpFailureEvents, entry('warn', 'code', 'durationMs', 'method')),
   // The sink of the audit and the audit file (ADR 0028).
   ...family(auditSinkEvents, entry('error', 'code', 'count')),
   audit_chain_anchor: entry('info', 'file', 'seq', 'hash'),
