@@ -20,9 +20,12 @@
  *
  * The write probes get a second client, {@link createWriteClient}, from the
  * guard of the test environment once all its checks have passed (ADR 0049).
- * It sends only the three write operations of the spike, with a JSON body
- * and at most one of two fixed preconditions, and never repeats a request:
- * after a timeout nobody knows whether the instance wrote.
+ * It sends only the write operations of the spike, for wiki pages,
+ * appointments and bookings, with a JSON body and at most one of two fixed
+ * preconditions, and never repeats a request: after a timeout nobody knows
+ * whether the instance wrote. A probe that writes appointments and bookings
+ * also gets {@link createCalendarClient}, which reads them back only in the
+ * calendar and the resource of the probes.
  *
  * The seed of the test instance gets a third client,
  * {@link createSeedClient}, from its own guard (ADR 0061). It sends only
@@ -34,10 +37,12 @@
 import { SpikeError, type ErrorCode } from './errors.mts';
 import type { Guard, Json } from './guard.mts';
 import {
+  calendarOperations,
   operations,
   personalPrefixes,
   seedOperations,
   seedWriteOperations,
+  type OperationTemplate,
   type SeedWriteOperation,
 } from './operations.mts';
 import { isObject } from './spec.mts';
@@ -106,10 +111,33 @@ export const writeOperations = [
   'wikiPageCreate',
   'wikiPageUpdate',
   'wikiPageDelete',
+  'appointmentCreate',
+  'appointmentUpdate',
+  'appointmentDelete',
+  'bookingCreate',
+  'bookingUpdate',
+  'bookingDelete',
+  'bookingConflicts',
 ] as const;
 
 /** One of the write operations. */
 export type WriteOperation = (typeof writeOperations)[number];
+
+/**
+ * Finds method and path template of a write operation, from
+ * {@link operations} for the wiki and from {@link calendarOperations} for
+ * appointments and bookings.
+ *
+ * @param operation - One of the write operations.
+ * @returns Its method and template.
+ */
+export function writeTemplate(operation: WriteOperation): OperationTemplate {
+  return operation === 'wikiPageCreate' ||
+    operation === 'wikiPageUpdate' ||
+    operation === 'wikiPageDelete'
+    ? operations[operation]
+    : calendarOperations[operation];
+}
 
 /** A made-up entity tag the instance never sent, for the precondition test. */
 export const staleEntityTag = '"0"';
@@ -419,25 +447,85 @@ export function isPlainPath(pathname: string): boolean {
   );
 }
 
+/** The calendar and the resource of the write probes. */
+export interface CalendarArea {
+  readonly calendar: number;
+  readonly resource: number;
+}
+
 /** Which paths a client may reach. */
 type Reach =
   | { readonly kind: 'ohne Personendaten' }
   | { readonly kind: 'nur'; readonly paths: readonly string[] }
+  | { readonly kind: 'Kalenderprobe'; readonly area: CalendarArea }
   | { readonly kind: 'mit Personendaten' };
+
+/**
+ * Tells whether a request with personal data stays inside the calendar and
+ * the resource of the write probes: the appointments of that calendar, one
+ * appointment of it, the bookings of that resource and nothing else, and
+ * one booking. The lists take only their time window and, for bookings,
+ * the statuses; every other query parameter, another spelling of the
+ * resource included, is refused. A single booking can only be named by its
+ * ID, so the probe reads only the IDs it created or found in the list of
+ * its resource; that the booking belongs to the resource, the rights of
+ * the account make sure.
+ *
+ * @param pathname - The path, already checked by {@link isPlainPath}.
+ * @param query - The query parameters of the request.
+ * @param area - Calendar and resource of the probes.
+ * @returns Whether the client may send the request.
+ */
+export function insideCalendarArea(
+  pathname: string,
+  query: readonly (readonly [string, string])[],
+  area: CalendarArea,
+): boolean {
+  const appointments = `/api/calendars/${String(area.calendar)}/appointments`;
+  const only = (names: readonly string[]): boolean =>
+    query.every(([name]) => names.includes(name));
+  if (pathname === appointments) {
+    return only(['from', 'to']);
+  }
+  if (pathname === '/api/bookings') {
+    const resources = query.filter(([name]) => name === 'resource_ids[]');
+    return (
+      only(['resource_ids[]', 'status_ids[]', 'from', 'to']) &&
+      resources.length === 1 &&
+      resources[0]?.[1] === String(area.resource)
+    );
+  }
+  const [, parent, id] = /^(.*)\/([1-9]\d{0,9})$/.exec(pathname) ?? [];
+  return (
+    id !== undefined &&
+    (parent === appointments || parent === '/api/bookings') &&
+    query.length === 0
+  );
+}
 
 function readClient(options: ClientOptions, reach: Reach): Client {
   return {
     async get(request: ProbeRequest): Promise<ProbeResponse> {
       const url = new URL(request.path, options.origin);
+      // The query comes only from request.query, so that the checks below
+      // see all of it; a path that brings its own is refused.
       if (
         !request.path.startsWith('/') ||
         url.origin !== options.origin ||
+        url.search !== '' ||
+        url.hash !== '' ||
         !isPlainPath(url.pathname)
       ) {
         throw new SpikeError('INTERN');
       }
+      const personal = isPersonalPath(url.pathname);
       if (
-        (reach.kind !== 'mit Personendaten' && isPersonalPath(url.pathname)) ||
+        (reach.kind !== 'mit Personendaten' &&
+          reach.kind !== 'Kalenderprobe' &&
+          personal) ||
+        (reach.kind === 'Kalenderprobe' &&
+          personal &&
+          !insideCalendarArea(url.pathname, request.query ?? [], reach.area)) ||
         (reach.kind === 'nur' && !reach.paths.includes(url.pathname))
       ) {
         throw new SpikeError('INTERN');
@@ -457,7 +545,11 @@ function readClient(options: ClientOptions, reach: Reach): Client {
         url,
         headers,
         maxBytes: request.maxBytes ?? options.maxBytes ?? 5 * 1024 * 1024,
-        blockValues: request.blockValues !== false,
+        // Only the plain client may leave values off the block list, for
+        // the public OpenAPI document; a client that reaches personal data
+        // never does.
+        blockValues:
+          request.blockValues !== false || reach.kind !== 'ohne Personendaten',
       });
     },
   };
@@ -507,6 +599,37 @@ export function createPersonsClient(options: ClientOptions): Client {
   return readClient(options, { kind: 'mit Personendaten' });
 }
 
+/**
+ * Creates the client that reads the appointments of the probe calendar
+ * and the bookings of the probe resource, see {@link insideCalendarArea}.
+ * Every other path with personal data it refuses before any request. Only
+ * the guard of the test environment calls this, after its checks of
+ * calendar and resource have passed (ADR 0049).
+ *
+ * @param options - Origin, token, guard and limits.
+ * @param area - Calendar and resource of the probes.
+ * @returns A client limited to that calendar and that resource.
+ * @example
+ * ```ts
+ * const reader = createCalendarClient(options, { calendar: 7, resource: 9 });
+ * await reader.get({ path: pathFor('/api/bookings/{}', 12) });
+ * ```
+ */
+export function createCalendarClient(
+  options: ClientOptions,
+  area: CalendarArea,
+): Client {
+  return readClient(options, { kind: 'Kalenderprobe', area });
+}
+
+/** The HTTP method of each method name of the templates that writes. */
+const writeMethods = {
+  post: 'POST',
+  put: 'PUT',
+  patch: 'PATCH',
+  delete: 'DELETE',
+} as const;
+
 function preconditionHeader(
   precondition: Precondition | undefined,
 ): readonly [string, string] | undefined {
@@ -534,6 +657,8 @@ function preconditionHeader(
  * The path comes from the template of the operation. A page is addressed
  * only by its GUID: the write operations of ChurchTools accept nothing
  * else, while the read operation on the same path also accepts a title.
+ * Every other placeholder, a category, calendar, appointment or booking,
+ * takes only a positive whole number.
  *
  * @param options - Origin, token, guard and limits.
  * @returns A client that sends only the write operations of the spike.
@@ -553,17 +678,23 @@ export function createWriteClient(options: ClientOptions): WriteClient {
       if (!(writeOperations as readonly string[]).includes(request.operation)) {
         throw new SpikeError('INTERN');
       }
-      const { method, template } = operations[request.operation];
-      const [, page] = request.parameters;
-      if (
-        request.operation !== 'wikiPageCreate' &&
-        (typeof page !== 'string' || !guidPattern.test(page))
-      ) {
+      const { method, template } = writeTemplate(request.operation);
+      const wikiPage =
+        request.operation === 'wikiPageUpdate' ||
+        request.operation === 'wikiPageDelete';
+      const valid = request.parameters.every((value, index) =>
+        wikiPage && index === 1
+          ? typeof value === 'string' && guidPattern.test(value)
+          : typeof value === 'number' &&
+            Number.isSafeInteger(value) &&
+            value > 0,
+      );
+      if (!valid) {
         throw new SpikeError('INTERN');
       }
       const path = pathFor(template, ...request.parameters);
       const url = new URL(path, options.origin);
-      if (url.origin !== options.origin) {
+      if (url.origin !== options.origin || !isPlainPath(url.pathname)) {
         throw new SpikeError('INTERN');
       }
       const headers = baseHeaders();
@@ -577,9 +708,16 @@ export function createWriteClient(options: ClientOptions): WriteClient {
         headers.set('Content-Type', 'application/json');
         body = JSON.stringify(request.body);
       }
+      if (
+        method !== 'post' &&
+        method !== 'put' &&
+        method !== 'patch' &&
+        method !== 'delete'
+      ) {
+        throw new SpikeError('INTERN');
+      }
       return exchange(options, {
-        method:
-          method === 'post' ? 'POST' : method === 'patch' ? 'PATCH' : 'DELETE',
+        method: writeMethods[method],
         url,
         headers,
         ...(body === undefined ? {} : { body }),
@@ -610,13 +748,6 @@ export interface SeedClient {
    */
   send(request: SeedRequest): Promise<ProbeResponse>;
 }
-
-const seedMethods = {
-  post: 'POST',
-  put: 'PUT',
-  patch: 'PATCH',
-  delete: 'DELETE',
-} as const;
 
 /**
  * Creates the client that writes for the seed. Only the guard of the seed
@@ -690,7 +821,7 @@ export function createSeedClient(options: ClientOptions): SeedClient {
         body = JSON.stringify(request.body);
       }
       return exchange(options, {
-        method: seedMethods[method],
+        method: writeMethods[method],
         url,
         headers,
         ...(body === undefined ? {} : { body }),

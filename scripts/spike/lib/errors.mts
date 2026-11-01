@@ -101,9 +101,25 @@ export const hints = {
   weitereKategorien:
     'Abbruch: Das Konto sieht ausser dem Schreibbereich und der Kennkategorie weitere Kategorien. Schränken Sie seine Rechte ein, wie im README beschrieben.',
   zuWeitBerechtigt:
-    'Abbruch: Die Rechte des Kontos passen nicht. Erlaubt sind genau: das Wiki sehen, den Schreibbereich und die Kennkategorie sehen, den Schreibbereich bearbeiten. Richten Sie die Rechte so ein, wie im README beschrieben.',
+    'Abbruch: Die Rechte des Kontos passen nicht. Erlaubt sind genau: das Wiki sehen, den Schreibbereich und die Kennkategorie sehen, den Schreibbereich bearbeiten, und mit ECCLIUM_SPIKE_WRITE_CALENDAR_ID und ECCLIUM_SPIKE_WRITE_RESOURCE_ID zusätzlich diesen Kalender sehen und darin Termine bearbeiten, diese Ressource sehen und für sie Buchungsanfragen erstellen. Richten Sie die Rechte so ein, wie im README beschrieben.',
   fremdeSeiten:
     'Abbruch: Im Schreibbereich liegen Seiten, die nicht zu diesem Lauf gehören. Entfernen Sie sie zuerst, mit 07-wiki-cleanup und der Schreib-State-Datei des früheren Laufs oder von Hand. Es wurde nichts geändert.',
+  schreibKalenderFehlt:
+    'Abbruch: ECCLIUM_SPIKE_WRITE_CALENDAR_ID und ECCLIUM_SPIKE_WRITE_RESOURCE_ID gibt es nur zusammen, jede als positive ganze Zahl.',
+  kalenderprobeOhneBereich:
+    'Abbruch: 11-calendar-write braucht ECCLIUM_SPIKE_WRITE_CALENDAR_ID und ECCLIUM_SPIKE_WRITE_RESOURCE_ID. Es wurde nichts geschrieben.',
+  schreibKalenderNichtSichtbar:
+    'Abbruch: Das Konto sieht nicht genau einen Kalender, den aus ECCLIUM_SPIKE_WRITE_CALENDAR_ID. Es wurde nichts geschrieben.',
+  schreibRessourceNichtSichtbar:
+    'Abbruch: Das Konto sieht nicht genau eine Ressource, die aus ECCLIUM_SPIKE_WRITE_RESOURCE_ID. Es wurde nichts geschrieben.',
+  ressourceBrauchtTermin:
+    'Abbruch: Die Ressource aus ECCLIUM_SPIKE_WRITE_RESOURCE_ID lässt sich nur mit einem Termin buchen. Die Probe braucht eine Ressource ohne diese Pflicht. Es wurde nichts geschrieben.',
+  fremdeTermine:
+    'Abbruch: Im Kalender oder bei der Ressource der Proben liegen im Zeitfenster der Probe Termine oder Buchungen, die nicht zu diesem Lauf gehören. Entfernen Sie sie zuerst, mit 11-calendar-write und der Schreib-State-Datei des früheren Laufs oder von Hand. Es wurde nichts geändert.',
+  kalenderStateUngueltig:
+    'Abbruch: Die Schreib-State-Datei ist beschädigt, stammt nicht von 11-calendar-write oder gehört zu einer anderen Instanz, einem anderen Kalender oder einer anderen Ressource.',
+  kalenderSchreibenAbgebrochen:
+    'Abbruch nach einer schreibenden Anfrage. Es folgt keine weitere ausser dem Aufräumen. Prüfen Sie Kalender und Ressource und starten Sie 11-calendar-write mit derselben Schreib-State-Datei noch einmal: Dann löscht die Probe, was sie angelegt und noch nicht gelöscht hat.',
   keinTerminal:
     'Abbruch: Die Bestätigung braucht ein Terminal. Starten Sie die Probe direkt im Terminal, ohne umgeleitete Eingabe.',
   nichtBestaetigt: 'Abbruch: nicht bestätigt. Es wurde nichts geändert.',

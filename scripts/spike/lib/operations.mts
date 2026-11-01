@@ -272,3 +272,41 @@ export const seedWriteOperations = [
 
 /** One write operation of the seed. */
 export type SeedWriteOperation = (typeof seedWriteOperations)[number];
+
+/**
+ * The operations of 11-calendar-write beyond {@link operations}: the
+ * appointments of one calendar and the bookings of one resource. Like those
+ * of the seed, they stay out of `operations`, so 00-inventory reports the
+ * same as before. Where the seed already names an operation, this table
+ * takes the same entry.
+ *
+ * `bookingConflicts` changes nothing, but it is a POST, so only the write
+ * client sends it.
+ */
+export const calendarOperations = {
+  calendarAppointmentList: seedOperations.calendarAppointmentList,
+  calendarAppointment: operations.calendarAppointment,
+  booking: { method: 'get', template: '/api/bookings/{}', personal: true },
+  appointmentCreate: seedOperations.appointmentCreate,
+  appointmentUpdate: {
+    method: 'put',
+    template: '/api/calendars/{}/appointments/{}',
+    personal: true,
+  },
+  appointmentDelete: seedOperations.appointmentDelete,
+  bookingCreate: seedOperations.bookingCreate,
+  bookingUpdate: {
+    method: 'put',
+    template: '/api/bookings/{}',
+    personal: true,
+  },
+  bookingDelete: seedOperations.bookingDelete,
+  bookingConflicts: {
+    method: 'post',
+    template: '/api/bookings/conflicts',
+    personal: true,
+  },
+} as const satisfies Readonly<Record<string, OperationTemplate>>;
+
+/** The name of one operation of 11-calendar-write. */
+export type CalendarOperationName = keyof typeof calendarOperations;

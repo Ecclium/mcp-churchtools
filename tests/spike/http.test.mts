@@ -4,8 +4,10 @@ import { SpikeError } from '../../scripts/spike/lib/errors.mts';
 import { Guard } from '../../scripts/spike/lib/guard.mts';
 import {
   classifyNetworkError,
+  createCalendarClient,
   createClient,
   createWriteClient,
+  insideCalendarArea,
   pastDate,
   pathFor,
   staleEntityTag,
@@ -359,6 +361,14 @@ describe('createWriteClient', () => {
       { operation: 'wikiPageDelete', parameters: [7, `${guid}x`] },
       { operation: 'wikiPageDelete', parameters: [7] },
       { operation: 'wikiPageCreate', parameters: [0] },
+      { operation: 'appointmentUpdate', parameters: [7, guid] },
+      { operation: 'appointmentUpdate', parameters: [7, '8'] },
+      { operation: 'appointmentCreate', parameters: [7, 8] },
+      { operation: 'bookingDelete', parameters: [] },
+      { operation: 'bookingUpdate', parameters: [-1] },
+      { operation: 'bookingConflicts', parameters: [7] },
+      { operation: 'booking', parameters: [7] },
+      { operation: 'seriesSplit', parameters: [7] },
       {
         operation: 'wikiPageUpdate',
         parameters: [7, guid],
@@ -385,6 +395,47 @@ describe('createWriteClient', () => {
     expect(calls).toHaveLength(0);
     const precondition: Precondition = { ifMatch: staleEntityTag };
     expect(precondition.ifMatch).toBe('"0"');
+  });
+
+  it('sends appointments and bookings with their method and numeric IDs only', async () => {
+    const { fetch, calls } = recordingFetch(() => jsonResponse({ data: {} }));
+    const writer = createWriteClient({
+      origin,
+      token: 't',
+      guard: new Guard(),
+      fetch,
+    });
+    const body = { title: 'spike-schreibprobe' };
+    await writer.send({
+      operation: 'appointmentCreate',
+      parameters: [7],
+      body,
+    });
+    await writer.send({
+      operation: 'appointmentUpdate',
+      parameters: [7, 8],
+      body,
+      precondition: { ifUnmodifiedSince: pastDate },
+    });
+    await writer.send({ operation: 'appointmentDelete', parameters: [7, 8] });
+    await writer.send({ operation: 'bookingCreate', parameters: [], body });
+    await writer.send({ operation: 'bookingUpdate', parameters: [9], body });
+    await writer.send({ operation: 'bookingDelete', parameters: [9] });
+    await writer.send({ operation: 'bookingConflicts', parameters: [], body });
+    expect(
+      calls.map((call) => `${call.init.method ?? ''} ${call.url.pathname}`),
+    ).toEqual([
+      'POST /api/calendars/7/appointments',
+      'PUT /api/calendars/7/appointments/8',
+      'DELETE /api/calendars/7/appointments/8',
+      'POST /api/bookings',
+      'PUT /api/bookings/9',
+      'DELETE /api/bookings/9',
+      'POST /api/bookings/conflicts',
+    ]);
+    expect(new Headers(calls[1]?.init.headers).get('if-unmodified-since')).toBe(
+      pastDate,
+    );
   });
 
   it('does not follow a redirect and does not repeat a request that timed out', async () => {
@@ -447,5 +498,110 @@ describe('createWriteClient', () => {
       guard.allowChecked(value);
       expect(guard.check({ [value]: null })).toEqual(['/#0']);
     }
+  });
+});
+
+describe('createCalendarClient', () => {
+  const area = { calendar: 7, resource: 9 };
+
+  it.each<[string, readonly (readonly [string, string])[], boolean]>([
+    ['/api/calendars/7/appointments', [['from', '2026-12-01']], true],
+    ['/api/calendars/7/appointments/12', [], true],
+    [
+      '/api/bookings',
+      [
+        ['resource_ids[]', '9'],
+        ['status_ids[]', '1'],
+      ],
+      true,
+    ],
+    ['/api/bookings/12', [], true],
+    ['/api/calendars/8/appointments', [], false],
+    ['/api/calendars/7/appointments/0', [], false],
+    ['/api/calendars/7/appointments/12/ical', [], false],
+    ['/api/calendars/appointments', [], false],
+    ['/api/bookings', [], false],
+    ['/api/bookings', [['resource_ids[]', '8']], false],
+    [
+      '/api/bookings',
+      [
+        ['resource_ids[]', '9'],
+        ['resource_ids[]', '8'],
+      ],
+      false,
+    ],
+    ['/api/bookings/conflicts', [], false],
+    ['/api/persons/12', [], false],
+    [
+      '/api/bookings',
+      [
+        ['resource_ids[]', '9'],
+        ['resource_ids', '8'],
+      ],
+      false,
+    ],
+    [
+      '/api/bookings',
+      [
+        ['resource_ids[]', '9'],
+        ['resource_ids[1]', '8'],
+      ],
+      false,
+    ],
+    ['/api/calendars/7/appointments', [['calendar_ids[]', '8']], false],
+    ['/api/bookings/12', [['include[]', 'conflicts']], false],
+  ])('decides %s with %j: %s', (path, query, inside) => {
+    expect(insideCalendarArea(path, query, area)).toBe(inside);
+  });
+
+  it('refuses, before any request, every path with personal data outside the area', async () => {
+    const { fetch, calls } = recordingFetch(() => jsonResponse({ data: [] }));
+    const reader = createCalendarClient(
+      { origin, token: 't', guard: new Guard(), fetch },
+      area,
+    );
+    await reader.get({ path: '/api/calendars/7/appointments/12' });
+    await reader.get({ path: '/api/whoami' });
+    for (const path of [
+      '/api/events',
+      '/api/calendars/8/appointments/12',
+      '/API/bookings/12',
+      // A query in the path would pass by the check of the query.
+      '/api/bookings?resource_ids[]=8',
+      '/api/calendars/7/appointments?calendar_ids[]=8',
+      '/api/calendars/7/appointments#x',
+    ]) {
+      expect(
+        await codeOf(() =>
+          reader.get({ path, query: [['resource_ids[]', '9']] }),
+        ),
+        path,
+      ).toBe('INTERN');
+    }
+    expect(calls.map((call) => call.url.pathname)).toEqual([
+      '/api/calendars/7/appointments/12',
+      '/api/whoami',
+    ]);
+  });
+});
+
+describe('the block list of the clients with personal data', () => {
+  it('stays on even if a request asks to leave it off', async () => {
+    const { fetch } = recordingFetch(() =>
+      jsonResponse({ data: { appointment: { title: 'kanarie' } } }),
+    );
+    const guard = new Guard();
+    const reader = createCalendarClient(
+      { origin, token: 't', guard, fetch },
+      { calendar: 7, resource: 9 },
+    );
+    await reader.get({
+      path: '/api/calendars/7/appointments/12',
+      blockValues: false,
+    });
+    // A key the probe took from the instance passes only if no response
+    // value blocks it, like the public document in the test above.
+    guard.allowChecked('kanarie');
+    expect(guard.check({ kanarie: null })).toEqual(['/#0']);
   });
 });

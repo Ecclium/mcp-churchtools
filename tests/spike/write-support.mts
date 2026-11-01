@@ -7,7 +7,10 @@ import { join } from 'node:path';
 
 import { instanceId, type SpikeState } from '../../scripts/spike/lib/env.mts';
 import { identificationCategoryName } from '../../scripts/spike/lib/gate.mts';
-import type { FetchFunction } from '../../scripts/spike/lib/http.mts';
+import type {
+  CalendarArea,
+  FetchFunction,
+} from '../../scripts/spike/lib/http.mts';
 import { asOpenApi } from '../../scripts/spike/lib/spec.mts';
 import {
   forbiddenTexts,
@@ -36,8 +39,12 @@ export interface WriteSetting {
   readonly tokenFile: string;
   readonly stateFile: string;
   readonly writeStateFile: string;
+  /** Calendar and resource of the probes. */
+  readonly calendarArea: CalendarArea;
   /** Environment of a probe of the write account. */
   readonly env: Readonly<Record<string, string | undefined>>;
+  /** Environment of a probe of the write account with calendar and resource. */
+  readonly calendarEnv: Readonly<Record<string, string | undefined>>;
   /** Environment of 00-inventory with the token of the write account. */
   readonly inventoryEnv: Readonly<Record<string, string | undefined>>;
   readonly forbidden: readonly string[];
@@ -54,6 +61,18 @@ export function writeSetup(): WriteSetting {
   const identification = writeCategory + randomInt(1, 1000);
   const files = privateFiles(canaries.token);
   const writeStateFile = join(files.folder, 'schreib-state.jsonl');
+  const calendarArea = {
+    calendar: randomInt(50_001, 60_000),
+    resource: randomInt(60_001, 70_000),
+  };
+  const env = {
+    ECCLIUM_SPIKE_BASE_URL: writeOrigin,
+    ECCLIUM_SPIKE_ALLOW_WRITE: writeSwitch,
+    ECCLIUM_SPIKE_WRITE_TOKEN_FILE: files.tokenFile,
+    ECCLIUM_SPIKE_STATE_FILE: files.stateFile,
+    ECCLIUM_SPIKE_WRITE_CATEGORY_ID: String(writeCategory),
+    ECCLIUM_SPIKE_WRITE_STATE_FILE: writeStateFile,
+  };
   return {
     canaries,
     writeCategory,
@@ -62,13 +81,12 @@ export function writeSetup(): WriteSetting {
     tokenFile: files.tokenFile,
     stateFile: files.stateFile,
     writeStateFile,
-    env: {
-      ECCLIUM_SPIKE_BASE_URL: writeOrigin,
-      ECCLIUM_SPIKE_ALLOW_WRITE: writeSwitch,
-      ECCLIUM_SPIKE_WRITE_TOKEN_FILE: files.tokenFile,
-      ECCLIUM_SPIKE_STATE_FILE: files.stateFile,
-      ECCLIUM_SPIKE_WRITE_CATEGORY_ID: String(writeCategory),
-      ECCLIUM_SPIKE_WRITE_STATE_FILE: writeStateFile,
+    calendarArea,
+    env,
+    calendarEnv: {
+      ...env,
+      ECCLIUM_SPIKE_WRITE_CALENDAR_ID: String(calendarArea.calendar),
+      ECCLIUM_SPIKE_WRITE_RESOURCE_ID: String(calendarArea.resource),
     },
     inventoryEnv: {
       ECCLIUM_SPIKE_BASE_URL: writeOrigin,
@@ -80,6 +98,8 @@ export function writeSetup(): WriteSetting {
       files.folder,
       String(writeCategory),
       String(identification),
+      String(calendarArea.calendar),
+      String(calendarArea.resource),
       'demo-tenant.example',
       writeSwitch,
     ),
@@ -129,8 +149,44 @@ export interface WriteCall {
   readonly body: string | undefined;
 }
 
+/** An appointment or booking of the synthetic instance. */
+export interface SyntheticObject {
+  readonly id: number;
+  fields: Record<string, unknown>;
+  version: number;
+  modifiedDate: string;
+  readonly createdBy: number;
+  modifiedBy: number;
+}
+
+/** How the calendar and the resource of the synthetic instance behave. */
+export interface CalendarOptions {
+  /** Body of `GET /api/calendars`, instead of the probe calendar. */
+  readonly calendars?: unknown;
+  /** Body of `GET /api/resources`, instead of the probe resource. */
+  readonly resources?: unknown;
+  /** Titles of appointments in the probe calendar before the run. */
+  readonly appointments?: readonly string[];
+  /** Titles of bookings of the probe resource before the run. */
+  readonly bookings?: readonly string[];
+  /** The status a booking asked as approved gets. Default 1. */
+  readonly approvedBecomes?: number;
+  /** Whether a PUT keeps the fields it does not get. Default: cleared. */
+  readonly putKeepsMissing?: boolean;
+  /** Whether a PUT with a stale `version` in the body is refused with 409. */
+  readonly honourVersion?: boolean;
+  /** Status of every deletion of an appointment or booking. Default 204. */
+  readonly deleteStatus?: number;
+  /** Whether a create answers 201 without an ID. */
+  readonly createWithoutId?: boolean;
+  /** Whether a PUT with an unchanged body leaves the version. Default: raised, as the instance does (F42). */
+  readonly sameBodyKeepsVersion?: boolean;
+}
+
 /** How the synthetic instance behaves. */
 export interface WriteInstanceOptions {
+  /** With calendar and resource of the probes, and the rights for them. */
+  readonly calendar?: CalendarOptions;
   /** Body of `GET /api/wiki/categories`, instead of W and K. */
   readonly categories?: unknown;
   /** Status of `GET /api/wiki/categories`. */
@@ -178,6 +234,10 @@ export interface WriteInstance {
   readonly pages: Map<string, SyntheticPage>;
   /** The automatic page of the write area. */
   readonly autoPage: SyntheticPage;
+  /** Appointments of the probe calendar, by ID. */
+  readonly appointments: Map<number, SyntheticObject>;
+  /** Bookings of the probe resource, by ID. */
+  readonly bookings: Map<number, SyntheticObject>;
   /**
    * Saves a page as the web editor would: a new version with a changed text.
    *
@@ -298,6 +358,224 @@ export function writeInstance(
       : (pages.get(key) ??
         [...pages.values()].find((page) => page.title === key));
 
+  const appointments = new Map<number, SyntheticObject>();
+  const bookings = new Map<number, SyntheticObject>();
+  const deletedBookings = new Set<number>();
+  let nextId = randomInt(100_000, 200_000);
+  const self = canaries.number;
+  const other = canaries.number + 1;
+  const { calendar: calendarId, resource: resourceId } = setting.calendarArea;
+  const objectFields = [
+    'title',
+    'subtitle',
+    'description',
+    'startDate',
+    'endDate',
+    'statusId',
+    'showInCal',
+    'isInternal',
+    'resourceId',
+  ];
+  const addObject = (
+    store: Map<number, SyntheticObject>,
+    fields: Record<string, unknown>,
+    by: number,
+  ): SyntheticObject => {
+    // As the instance does (F42): a new object has version 0.
+    const object: SyntheticObject = {
+      id: nextId++,
+      fields,
+      version: 0,
+      modifiedDate: now(),
+      createdBy: by,
+      modifiedBy: by,
+    };
+    store.set(object.id, object);
+    return object;
+  };
+  for (const title of options.calendar?.appointments ?? []) {
+    addObject(appointments, { title, subtitle: canaries.groupName }, other);
+  }
+  for (const title of options.calendar?.bookings ?? []) {
+    addObject(bookings, { title, statusId: 2 }, other);
+  }
+  const baseOf = (object: SyntheticObject): Record<string, unknown> => ({
+    id: object.id,
+    subtitle: null,
+    description: null,
+    note: canaries.personName,
+    ...object.fields,
+    version: object.version,
+    meta: {
+      createdDate: new Date(0).toISOString(),
+      createdPerson: { id: object.createdBy, title: canaries.personName },
+      modifiedDate: object.modifiedDate,
+      modifiedPerson: { id: object.modifiedBy, title: canaries.personName },
+    },
+  });
+  const respondCalendar = (
+    call: WriteCall,
+    calendar: CalendarOptions,
+    fields: Record<string, unknown>,
+  ): Response | undefined => {
+    const path = call.url.pathname;
+    if (path === '/api/whoami') {
+      return answer({
+        data: {
+          id: self,
+          firstName: canaries.personName,
+          email: canaries.personEmail,
+        },
+      });
+    }
+    if (path === '/api/calendars') {
+      return answer(
+        calendar.calendars ?? {
+          data: [{ id: calendarId, name: canaries.groupName, isPublic: true }],
+          meta: { count: 1 },
+        },
+      );
+    }
+    if (path === '/api/resources') {
+      return answer(
+        calendar.resources ?? {
+          data: [
+            {
+              id: resourceId,
+              name: canaries.groupName,
+              needsAppointment: false,
+              adminIds: [other],
+            },
+          ],
+          meta: { count: 1 },
+        },
+      );
+    }
+    const appointmentMatch =
+      /^\/api\/calendars\/(\d+)\/appointments(?:\/(\d+))?$/.exec(path);
+    const bookingMatch = /^\/api\/bookings(?:\/(\d+|conflicts))?$/.exec(path);
+    if (appointmentMatch === null && bookingMatch === null) {
+      return undefined;
+    }
+    if (
+      appointmentMatch !== null &&
+      Number(appointmentMatch[1]) !== calendarId
+    ) {
+      return error(403);
+    }
+    const isAppointment = appointmentMatch !== null;
+    const store = isAppointment ? appointments : bookings;
+    const kind = isAppointment ? 'appointment' : 'booking';
+    const key = isAppointment ? appointmentMatch[2] : bookingMatch?.[1];
+    const entry = (object: SyntheticObject): Record<string, unknown> => ({
+      [kind]: { base: baseOf(object), calculated: {} },
+      base: baseOf(object),
+    });
+    if (key === 'conflicts') {
+      const overlapping = [...bookings.values()].filter(
+        (object) =>
+          object.fields['startDate'] === fields['startDate'] &&
+          object.fields['statusId'] !== 3,
+      );
+      // An entry per overlapping occurrence, naming its booking as
+      // bookingId, as the instance does.
+      return answer({
+        data: overlapping.map((object) => ({
+          bookingId: object.id,
+          title: object.fields['title'],
+          statusId: object.fields['statusId'],
+          startDate: object.fields['startDate'],
+          endDate: object.fields['endDate'],
+          isAnonymized: false,
+        })),
+      });
+    }
+    if (key === undefined) {
+      if (call.method === 'GET') {
+        if (
+          !isAppointment &&
+          call.url.searchParams.getAll('resource_ids[]').join() !==
+            String(resourceId)
+        ) {
+          return error(403);
+        }
+        const list = [...store.values()].map(entry);
+        return answer({ data: list, meta: { count: list.length } });
+      }
+      if (
+        typeof fields['title'] !== 'string' ||
+        typeof fields['startDate'] !== 'string' ||
+        (!isAppointment && fields['resourceId'] !== resourceId)
+      ) {
+        return error(400);
+      }
+      const given = Object.fromEntries(
+        Object.entries(fields).filter(([name]) => objectFields.includes(name)),
+      );
+      if (!isAppointment && fields['statusId'] === 2) {
+        given['statusId'] = calendar.approvedBecomes ?? 1;
+      }
+      const object = addObject(store, given, self);
+      const data = baseOf(object);
+      if (calendar.createWithoutId === true) {
+        delete data['id'];
+      }
+      return answer({ data }, 201);
+    }
+    const object = store.get(Number(key));
+    if (object === undefined) {
+      // The instance answers a read of a deleted booking with 500 (F47).
+      return error(
+        !isAppointment && deletedBookings.has(Number(key)) ? 500 : 404,
+      );
+    }
+    if (call.method === 'GET') {
+      return answer({ data: { [kind]: baseOf(object), calculatedDates: {} } });
+    }
+    if (call.method === 'DELETE') {
+      const status = calendar.deleteStatus ?? 204;
+      if (status === 204) {
+        store.delete(object.id);
+        if (!isAppointment) {
+          deletedBookings.add(object.id);
+        }
+        return answer(null, 204);
+      }
+      return error(status);
+    }
+    if (call.method === 'PUT') {
+      if (
+        calendar.honourVersion === true &&
+        typeof fields['version'] === 'number' &&
+        fields['version'] !== object.version
+      ) {
+        return error(409);
+      }
+      const next: Record<string, unknown> =
+        calendar.putKeepsMissing === true ? { ...object.fields } : {};
+      for (const name of objectFields) {
+        if (name in fields) {
+          next[name] =
+            name === 'statusId' && fields[name] === 2
+              ? (calendar.approvedBecomes ?? 1)
+              : fields[name];
+        }
+      }
+      // Every stored PUT raises the version, even with the same body (F42).
+      if (
+        calendar.sameBodyKeepsVersion !== true ||
+        JSON.stringify(next) !== JSON.stringify(object.fields)
+      ) {
+        object.fields = next;
+        object.version += 1;
+        object.modifiedDate = now();
+        object.modifiedBy = self;
+      }
+      return answer({ data: baseOf(object) });
+    }
+    return error(405);
+  };
+
   const respond = (call: WriteCall): Response => {
     const path = call.url.pathname;
     const body: unknown =
@@ -307,6 +585,12 @@ export function writeInstance(
     ) as Record<string, unknown>;
     if (path === '/system/runtime/swagger/openapi.json') {
       return answer(options.document ?? specification);
+    }
+    if (options.calendar !== undefined) {
+      const handled = respondCalendar(call, options.calendar, fields);
+      if (handled !== undefined) {
+        return handled;
+      }
     }
     if (path === '/api/info') {
       return answer({ version: '3.137.1', siteName: canaries.groupName });
@@ -344,6 +628,21 @@ export function writeInstance(
               'edit masterdata': false,
             },
             churchdb: { view: false, 'security level person': [] },
+            ...(options.calendar === undefined
+              ? {}
+              : {
+                  churchcal: {
+                    view: false,
+                    'view category': [setting.calendarArea.calendar],
+                    'edit category': [setting.calendarArea.calendar],
+                    'admin church category': false,
+                  },
+                  churchresource: {
+                    'view resource': [setting.calendarArea.resource],
+                    'create bookings': [setting.calendarArea.resource],
+                    'administer bookings': [],
+                  },
+                }),
           },
         },
         options.rightsStatus ?? 200,
@@ -474,6 +773,8 @@ export function writeInstance(
     calls,
     pages,
     autoPage,
+    appointments,
+    bookings,
     editorSave: (guid, change) => {
       const page = pages.get(guid);
       if (page === undefined) {

@@ -15,8 +15,10 @@ import { describe, expect, it } from 'vitest';
 import { instanceId } from '../../scripts/spike/lib/env.mts';
 import { SpikeError } from '../../scripts/spike/lib/errors.mts';
 import {
+  CalendarStateFile,
   WriteStateFile,
   checkNewWriteState,
+  readCalendarState,
   readWriteState,
 } from '../../scripts/spike/lib/write-state.mts';
 import { privateFiles } from './support.mts';
@@ -176,5 +178,96 @@ describe('the write state', () => {
     expect(
       hintOf(() => readWriteState(`${path}.missing`, writeOrigin, category)),
     ).toBe('schreibStateNichtGefunden');
+  });
+});
+
+describe('the write state of 11-calendar-write', () => {
+  const area = { calendar: 31, resource: 41 };
+  const day = '2026-12-01';
+
+  it('records appointments, bookings and deletions at once, and names what is left', () => {
+    const path = newPath();
+    const file = CalendarStateFile.create(path, writeOrigin, area, day);
+    file.created('termin', 5);
+    // Already on disk before the file is closed, as after a crash.
+    expect(readCalendarState(path, writeOrigin, area).appointments).toEqual([
+      5,
+    ]);
+    file.created('buchung', 7);
+    file.created('buchung', 8);
+    file.deleted('termin', 5);
+    file.deleted('buchung', 7);
+    file.close();
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    const state = readCalendarState(path, writeOrigin, area);
+    expect(state).toEqual({
+      run: file.run,
+      day,
+      appointments: [],
+      bookings: [8],
+    });
+    // A second run appends its deletions to the same file.
+    const again = CalendarStateFile.reopen(path, state.run);
+    again.deleted('buchung', 8);
+    again.close();
+    expect(readCalendarState(path, writeOrigin, area).bookings).toEqual([]);
+  });
+
+  it('refuses another instance, calendar or resource, and a damaged file', () => {
+    const path = newPath();
+    const file = CalendarStateFile.create(path, writeOrigin, area, day);
+    file.created('termin', 5);
+    file.close();
+    for (const [origin, other] of [
+      ['https://other-tenant.example', area],
+      [writeOrigin, { ...area, calendar: 32 }],
+      [writeOrigin, { ...area, resource: 42 }],
+    ] as const) {
+      expect(hintOf(() => readCalendarState(path, origin, other))).toBe(
+        'kalenderStateUngueltig',
+      );
+    }
+    const header = readFileSync(path, 'utf8').split('\n')[0] ?? '';
+    for (const lines of [
+      [header, '{"termin":5}', '{"termin":5}'],
+      [header, '{"geloescht":"termin","id":6}'],
+      [header, '{"geloescht":"termin","id":5,"x":1}'],
+      [header, '{"termin":0}'],
+      [header, '{"termin":5}', '{"geloescht":"termin","id":5}', '{"termin":5}'],
+      [header.replace(day, '2026-02-30')],
+      [header, '{"termin":5,"buchung":6}'],
+      [header, '{"seite":5}'],
+      [header, '{}'],
+      [header.replace(day, '01.12.2026')],
+      [readFileSync(path, 'utf8').trimEnd().replace('"run"', '"lauf"')],
+    ]) {
+      const damaged = newPath();
+      writeFileSync(damaged, `${lines.join('\n')}\n`, { mode: 0o600 });
+      expect(
+        hintOf(() => readCalendarState(damaged, writeOrigin, area)),
+        lines.join(' '),
+      ).toBe('kalenderStateUngueltig');
+    }
+  });
+
+  it('is created only once, and refuses an ID of another form', () => {
+    const path = newPath();
+    CalendarStateFile.create(path, writeOrigin, area, day).close();
+    expect(
+      hintOf(() => CalendarStateFile.create(path, writeOrigin, area, day)),
+    ).toBe('schreibStateVorhanden');
+    const file = CalendarStateFile.reopen(path, 'abcdef01');
+    expect(
+      hintOf(() => {
+        file.created('termin', 1.5);
+      }),
+    ).toBe('INTERN');
+    expect(
+      hintOf(() => {
+        file.deleted('buchung', Number.NaN);
+      }),
+    ).toBe('INTERN');
+    file.close();
+    expect(instanceId(writeOrigin)).toMatch(/^[0-9a-f]{64}$/);
   });
 });

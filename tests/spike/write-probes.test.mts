@@ -712,6 +712,7 @@ describe('06-wiki-editor-roundtrip', () => {
           textGeaendert: 'ja',
           isMarkdownGelesen: 'wahr',
           anzahlVersionen: '2–9',
+          versionenSeit05: 'eins',
           standNach05: 'Korpus',
           htmlKommentarErhalten: 'nein',
           aenderungen: [
@@ -724,6 +725,7 @@ describe('06-wiki-editor-roundtrip', () => {
           textGeaendert: 'nein',
           isMarkdownGelesen: 'wahr',
           anzahlVersionen: '2–9',
+          versionenSeit05: 'eins',
           standNach05: 'Korpus',
           htmlKommentarErhalten: 'ja',
           aenderungen: [],
@@ -733,6 +735,7 @@ describe('06-wiki-editor-roundtrip', () => {
           textGeaendert: 'ja',
           isMarkdownGelesen: 'falsch',
           anzahlVersionen: '2–9',
+          versionenSeit05: 'eins',
           standNach05: 'Korpus',
           htmlKommentarErhalten: 'ja',
           aenderungen: [
@@ -743,6 +746,69 @@ describe('06-wiki-editor-roundtrip', () => {
           ],
         },
       },
+    });
+  });
+
+  it('compares the two newest versions after a second save', async () => {
+    const { setting, instance, guids } = await written();
+    const [first, second] = guids;
+    instance.editorSave(first ?? '', (text) =>
+      text.replace('* Stern', '- Stern'),
+    );
+    // The second save changes another line, so a comparison with the
+    // synthetic text would also name the list marker.
+    instance.editorSave(first ?? '', (text) =>
+      text.replace(
+        'https://example.org/',
+        '[https://example.org/](https://example.org/)',
+      ),
+    );
+    instance.editorSave(second ?? '', (text) =>
+      text.replace('* Stern', '- Stern'),
+    );
+    instance.editorSave(second ?? '', (text) => `${text} `);
+    const run = await runOne(roundtrip, instance, setting.env);
+    expect(run.code, run.output.stderr()).toBe(exitCodes.ok);
+    expect(leaks(run.output, setting.forbidden)).toEqual([]);
+    expect(writes(instance)).toEqual([]);
+    const pages = (
+      run.result as { seiten: Record<string, Record<string, unknown>> }
+    ).seiten;
+    expect(pages['markdown1']).toMatchObject({
+      versionenSeit05: 'zwei',
+      zweitesSpeichern: {
+        textGleichVorgaenger: 'nein',
+        aenderungen: [
+          {
+            zeile: lineOf('Eine nackte Adresse'),
+            art: 'URL in Link umgewandelt',
+          },
+        ],
+      },
+    });
+    expect(pages['markdown2']).toMatchObject({
+      versionenSeit05: 'zwei',
+      zweitesSpeichern: { textGleichVorgaenger: 'nein' },
+    });
+    expect(pages['standardformat']).toMatchObject({ versionenSeit05: 'keine' });
+    expect(pages['standardformat']).not.toHaveProperty('zweitesSpeichern');
+  });
+
+  it('says so when the second save leaves the text as it was', async () => {
+    const { setting, instance, guids } = await written();
+    const [first] = guids;
+    instance.editorSave(first ?? '', (text) =>
+      text.replace('* Stern', '- Stern'),
+    );
+    instance.editorSave(first ?? '', (text) => text);
+    const run = await runOne(roundtrip, instance, setting.env);
+    expect(run.code, run.output.stderr()).toBe(exitCodes.ok);
+    const pages = (
+      run.result as { seiten: Record<string, Record<string, unknown>> }
+    ).seiten;
+    expect(pages['markdown1']).toMatchObject({
+      versionenSeit05: 'zwei',
+      zweitesSpeichern: { textGleichVorgaenger: 'ja' },
     });
   });
 

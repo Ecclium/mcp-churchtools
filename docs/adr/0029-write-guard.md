@@ -55,7 +55,7 @@ Gewählt ist die zweite Option.
 
 ### Schutz vor Wiederholung
 
-- Den `replayGuard` eines Vorhabens leitet der Kern ab, nicht die Metadaten des Tools: `baseVersion` für das Ändern einer Seite und eines Termins, beim Termin mit dem Feld, das die Schreibproben als Zeichen einer Änderung belegen, `marker` für das Anlegen einer Seite und das Anhängen eines Abschnitts (Kennzeichnung mit Prüfcode, ADR 0032), `nonce` für das Anlegen von Terminen und Buchungen und für die vier Vorhaben des Pro-Moduls. Für die Tools des Kerns hält ein Test fest, dass ihre Metadaten der Ableitung gleichen, damit die Referenz der Tools stimmt.
+- Den `replayGuard` eines Vorhabens leitet der Kern ab, nicht die Metadaten des Tools: `baseVersion` für das Ändern einer Seite und eines Termins, beim Termin mit dem Feld `version`, das die Schreibproben als Zeichen einer Änderung belegen (siehe «Fenster zwischen Lesen und Schreiben»), `marker` für das Anlegen einer Seite und das Anhängen eines Abschnitts (Kennzeichnung mit Prüfcode, ADR 0032), `nonce` für das Anlegen von Terminen und Buchungen und für die vier Vorhaben des Pro-Moduls. Für die Tools des Kerns hält ein Test fest, dass ihre Metadaten der Ableitung gleichen, damit die Referenz der Tools stimmt.
 - `baseVersion`: Nach dem Festschreiben ist die Basisversion verbraucht, eine Wiederholung endet in `conflict`, mit genau demselben Text schon beim Planen in `skipped`.
 - `marker`: Vor dem Anlegen sucht der Kern eine eigene Seite oder einen eigenen Abschnitt mit derselben Kennzeichnung. Findet er sie, endet der Vorgang in `skipped`.
 - `nonce`: Die Nonce steht im `requestState`, im Token des Echos oder im Eintrag der Warteschlange und gilt einmal.
@@ -80,7 +80,7 @@ Gewählt ist die zweite Option.
 - Unmittelbar vor dem Schreiben liest der Kern das Ziel neu und vergleicht Version und Hash des Texts mit der Basis des Plans. Weicht etwas ab, endet der Vorgang in `conflict`, ohne zu schreiben.
 - Danach liest er wieder: Die Version muss genau eins über der Basis liegen und der Text genau der gesendete sein (F10, F17). Sonst endet der Vorgang in `conflict`, obwohl geschrieben ist. Der Kern nimmt dann nicht selbst zurück, weil eine Rücknahme die Änderung eines Menschen überschreiben könnte. Der Snapshot macht den Vorgang rücknehmbar, das Audit macht ihn sichtbar.
 - Eine schreibende Anfrage wiederholt der Kern nie. Bleibt offen, ob sie geschrieben hat, etwa nach einem Fehler im Netz oder einer Antwort 5xx, 408 oder 429, liest er nach und entscheidet zwischen `verified`, `conflict` und `failed`. Lässt sich das nicht klären, endet der Vorgang in `failed`, mit dem Hinweis, das Ziel zu prüfen.
-- Woran sich die Änderung eines Termins erkennen lässt, klären Schreibproben an der Testinstanz ([ADR 0049](0049-testumgebung.md)). Bis dahin gibt es kein Tool, das einen Termin ändert.
+- Bei Terminen ist das Zeichen einer Änderung das Feld `version`. Die Schreibproben an der Testinstanz ([ADR 0049](0049-testumgebung.md)) zeigen: Ein neuer Termin hat Version 0, jedes gespeicherte `PUT` erhöht sie um genau eins, auch ohne geänderten Inhalt, und ChurchTools nimmt beim Ändern keine Bedingung an (F42, F43 in `docs/research/churchtools-api.md`). Der Kern vergleicht deshalb vor dem Schreiben `version` und die Felder, die das Tool schreibt, mit der Basis, und danach muss `version` genau eins über der Basis liegen. Weil `PUT` den ganzen Termin ersetzt und fehlende Felder leert (F41), sendet der Kern alle Felder des eben gelesenen Stands mit, nicht nur die geänderten. Für Buchungen gilt dasselbe.
 
 ### Audit beim Schreiben (ergänzt ADR 0028)
 
@@ -123,7 +123,7 @@ Gewählt ist die zweite Option.
 ### Rücknahme
 
 - Alle sechs Schreib-Tools des Kerns lassen sich zurücknehmen und tragen `reversible: snapshot`. Vor dem Ändern und Anhängen sichert der Kern den vorigen Stand des betroffenen Felds (ADR 0031, geplant).
-- **Neuanlagen:** Eine neue Seite löscht `ecclium undo` nie, weil Ecclium in Version 1 keine Seite löscht. Es ersetzt ihren Text durch einen festen Hinweis, dass Ecclium sie angelegt und zurückgenommen hat. Einen Termin oder eine Buchung, die Ecclium angelegt hat, löscht `undo`, wenn sie seither niemand geändert hat. Nur dafür bekommt der ausgehende Weg in Phase 5 `DELETE` (ADR 0072, geplant).
+- **Neuanlagen:** Eine neue Seite löscht `ecclium undo` nie, weil Ecclium in Version 1 keine Seite löscht. Es ersetzt ihren Text durch einen festen Hinweis, dass Ecclium sie angelegt und zurückgenommen hat. Einen Termin oder eine Buchung, die Ecclium angelegt hat, löscht `undo`, wenn sie seither niemand geändert hat, also solange ihre `version` noch 0 ist (F42). Nur dafür bekommt der ausgehende Weg in Phase 5 `DELETE` (ADR 0072, geplant).
 - `ecclium undo` nimmt bis Phase 6 die Kennung des Ereignisses eines Schreibvorgangs aus dem Audit und läuft mit einem Nachweis des Betreibers durch den Write-Guard. Hat jemand das Ziel seither geändert, zeigt es den Unterschied und verlangt eine ausdrückliche Entscheidung.
 - Sind Snapshots abgeschaltet, lässt sich kein Schreibvorgang zurücknehmen, und das Echo lehnt jeden Plan ab.
 
