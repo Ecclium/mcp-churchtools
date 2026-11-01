@@ -12,7 +12,12 @@ import ts from 'typescript';
 // they may hold. A name the checker knows only as a string is reported, so
 // that no line can be written without an entry. A method of a logger that
 // leaves its object, such as `const warn = log.warn`, is reported too,
-// because its calls could not be read.
+// because its calls could not be read. Not seen are calls through a type
+// that only looks like a Logger, a class that implements it, a cast away
+// from it or a cast of the name; lint refuses casts to any, review the
+// rest. The logger itself still refuses every name outside the catalog
+// when the line is written, but not a field or level its entry does not
+// name (ADR 0054).
 
 /** The four methods of a logger, which are also its levels. */
 const methods = new Set(['debug', 'info', 'warn', 'error']);
@@ -138,8 +143,18 @@ export function scanLogCalls(
     declaration.name.text === 'Logger' &&
     relative(root, declaration.getSourceFile().fileName) === loggerSource;
 
-  const isLoggerType = (type: ts.Type): boolean =>
-    (type.getSymbol()?.declarations ?? []).some(isLoggerDeclaration);
+  // Whether a type has the methods of the interface Logger, also through
+  // an interface that extends it, Readonly or a union with undefined.
+  const hasLoggerMethods = (type: ts.Type): boolean => {
+    const target = checker.getNonNullableType(type);
+    return [...methods].some((method) =>
+      (checker.getPropertyOfType(target, method)?.declarations ?? []).some(
+        (declaration) =>
+          ts.isMethodSignature(declaration) &&
+          isLoggerDeclaration(declaration.parent),
+      ),
+    );
+  };
 
   // Whether a name stands for a method of the interface Logger.
   const isLoggerMethod = (name: ts.Node): boolean => {
@@ -201,7 +216,7 @@ export function scanLogCalls(
         }
       } else if (
         ts.isElementAccessExpression(node) &&
-        isLoggerType(checker.getTypeAtLocation(node.expression))
+        hasLoggerMethods(checker.getTypeAtLocation(node.expression))
       ) {
         const call = node.parent;
         const levels = literalsOf(
@@ -224,7 +239,7 @@ export function scanLogCalls(
         }
       } else if (
         ts.isObjectBindingPattern(node) &&
-        isLoggerType(checker.getTypeAtLocation(node))
+        hasLoggerMethods(checker.getTypeAtLocation(node))
       ) {
         // const { warn } = log: the method leaves its object.
         escapes.push({ file, line: lineOf(node) });

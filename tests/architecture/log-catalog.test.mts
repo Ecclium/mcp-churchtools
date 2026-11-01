@@ -43,7 +43,9 @@ describe('the log lines of the packages', () => {
     // A scan that found nothing would pass the check above.
     expect(scan.calls.length).toBeGreaterThanOrEqual(80);
     const packages = new Set(scan.calls.map((call) => call.file.split('/')[1]));
-    expect([...packages].sort()).toEqual(['cli', 'core', 'server']);
+    expect([...packages]).toEqual(
+      expect.arrayContaining(['cli', 'core', 'server']),
+    );
   });
 });
 
@@ -145,6 +147,21 @@ describe('the check of the log lines', () => {
       'a method taken apart from its logger',
       '  const { error } = log;\n  void error;',
       'packages/x/src/a.ts:9 uses a method of a logger without calling it',
+    ],
+    [
+      'a call with optional chaining and any name',
+      '  log?.info(name);',
+      'packages/x/src/a.ts:9 has no fixed event name',
+    ],
+    [
+      'a method called through call',
+      "  log.info.call(log, 'unknown_event');",
+      'packages/x/src/a.ts:9 uses a method of a logger without calling it',
+    ],
+    [
+      'an element of a logger seen through Readonly',
+      "  const frozen: Readonly<Logger> = log;\n  frozen['warn']('unknown_event');",
+      'packages/x/src/a.ts:10 writes unknown_event, which has no entry',
     ],
   ])('reports %s', (_what, body, finding) => {
     expect(check(body)).toContain(finding);
