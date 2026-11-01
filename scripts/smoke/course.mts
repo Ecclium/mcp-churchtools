@@ -268,11 +268,11 @@ const isIdOrNull = (value: unknown): boolean => value === null || isId(value);
 const isPseudonym = (value: unknown): value is string =>
   typeof value === 'string' && /^p1_[a-z2-7]{39}$/.test(value);
 
-// A last name in strict: its first sign and a dot, or the mark of a name
-// of one sign (ADR 0069).
+// A last name in strict: its first sign and a dot, the mark of a name of
+// one sign, or nothing for an empty name (ADR 0069).
 const isShortName = (value: unknown): value is string =>
   typeof value === 'string' &&
-  (value === '[masked]' || /^[\s\S]\.$/u.test(value));
+  (value === '' || value === '[masked]' || /^[\s\S]\.$/u.test(value));
 
 const isCount = (value: unknown): boolean =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;

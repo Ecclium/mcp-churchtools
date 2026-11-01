@@ -1084,6 +1084,7 @@ describe('the smoke test with the level strict', { timeout }, () => {
       ['anfragen', 'rohe_kennung'],
     ],
     ['the key on stderr', 'key-stderr', ['schluessel']],
+    ['the key on stdout', 'key-stdout', ['schluessel']],
     ['a pseudonym in the log', 'pseudonym-log', ['protokoll']],
   ] as const)('fails for %s', async (_, scenario, codes) => {
     const result = await run({ scenario, env: { ...search, ...strict() } });
@@ -1154,10 +1155,31 @@ describe('the smoke test with the level strict', { timeout }, () => {
     });
     expect(invalid.code).toBe(smokeExitCodes.configuration);
     expect(invalid.stderr).toContain(hints.smokeSchluesselUngueltig);
-    for (const result of [readable, invalid]) {
+    const same = join(folder, 'key-gleich');
+    writeFileSync(same, `${pseudonymKey.slice(0, 2).repeat(32)}\n`, {
+      mode: 0o600,
+    });
+    chmodSync(same, 0o600);
+    const equal = await run({
+      env: { ECCLIUM_REDACTION: 'strict', ECCLIUM_PSEUDONYM_KEY_FILE: same },
+    });
+    expect(equal.code).toBe(smokeExitCodes.configuration);
+    expect(equal.stderr).toContain(hints.smokeSchluesselUngueltig);
+    for (const result of [readable, invalid, equal]) {
       expect(result.records).toEqual([]);
       expectClean(result);
     }
+  });
+
+  it('takes a key file with a line break of Windows at the end', async () => {
+    const crlf = join(folder, 'key-crlf');
+    writeFileSync(crlf, `${pseudonymKey}\r\n`, { mode: 0o600 });
+    chmodSync(crlf, 0o600);
+    const result = await run({
+      env: { ECCLIUM_REDACTION: 'strict', ECCLIUM_PSEUDONYM_KEY_FILE: crlf },
+    });
+    expect(result.code).toBe(smokeExitCodes.ok);
+    expectClean(result);
   });
 });
 

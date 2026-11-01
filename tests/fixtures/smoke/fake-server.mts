@@ -117,6 +117,11 @@ if (scenario === 'token-stderr') {
     readFileSync(env['ECCLIUM_CHURCHTOOLS_TOKEN_FILE'] ?? '', 'utf8'),
   );
 }
+if (scenario === 'key-stdout') {
+  process.stdout.write(
+    readFileSync(env['ECCLIUM_PSEUDONYM_KEY_FILE'] ?? '', 'utf8'),
+  );
+}
 if (scenario === 'key-stderr') {
   process.stderr.write(
     readFileSync(env['ECCLIUM_PSEUDONYM_KEY_FILE'] ?? '', 'utf8'),

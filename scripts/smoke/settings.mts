@@ -119,8 +119,10 @@ export function readRedaction(
     maxTokenBytes,
     'smokeSchluesselUnsicher',
     'smokeSchluesselNichtGefunden',
-  ).replace(/\n$/, '');
-  if (!keyPattern.test(key)) {
+  ).replace(/\r?\n$/, '');
+  // The server refuses a key whose 32 bytes are all the same as well; the
+  // smoke test says so before the start, as a matter of the file.
+  if (!keyPattern.test(key) || /^([0-9a-f]{2})\1{31}$/.test(key)) {
     throw new SpikeError('DATEI', 'smokeSchluesselUngueltig');
   }
   return { redaction: 'strict', pseudonymKey: { file, key } };
