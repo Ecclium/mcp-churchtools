@@ -12,7 +12,8 @@
  * here retries: after any failure that follows the transport, ChurchTools
  * may have written, and only the read afterwards tells.
  *
- * The client never deletes a page of the wiki, and it writes only Markdown.
+ * The client never deletes a page of the wiki. It creates only Markdown
+ * pages and changes only the text of a page, never its title or format.
  *
  * @packageDocumentation
  */
@@ -130,10 +131,10 @@ const wikiWriteLimits = Object.freeze({
   maxElements: 20_000,
 });
 
-const invalidWikiWriteInput = `A category ID is a whole number from 1 and a page is addressed by its GUID. A title has 1 to ${String(maxWikiTitleLength)} characters, no control characters and no spaces at either end. A text has 1 byte to ${String(maxWikiWriteBytes / 1024)} KiB in UTF-8 and no character U+0000.`;
+const invalidWikiWriteInput = `A category ID is a whole number from 1 and a page is addressed by its GUID. A title has 1 to ${String(maxWikiTitleLength)} characters, no control characters and no spaces at either end. A text has 1 byte to ${String(maxWikiWriteBytes / 1024)} KiB in UTF-8, more than spaces and no character U+0000.`;
 
 // ChurchTools refuses a second page with the title of one in the same
-// category with 400 (F8, «Titel einer Seite»). The client cannot read the
+// category with 400 (F12, «Titel einer Seite»). The client cannot read the
 // cause, because it never reads the body of an error, so the sentence says
 // what is likely.
 const duplicateTitle =
@@ -142,9 +143,10 @@ const duplicateTitle =
 const isWholeFromOne = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 1;
 
-// A title fits when ChurchTools stores it as sent: no control character of
-// C0, C1 or DEL, no space at either end that it might trim, and no lone
-// surrogate.
+// A title fits when ChurchTools stores it as sent, as far as the client can
+// tell: no control character of C0, C1 or DEL, no space at either end,
+// which ChurchTools trims, and no lone surrogate. The length counts UTF-16
+// code units, as the schema of a read does.
 const isTitle = (value: unknown): value is string => {
   if (typeof value !== 'string') return false;
   if (value.length < 1 || value.length > maxWikiTitleLength) return false;
@@ -156,14 +158,17 @@ const isTitle = (value: unknown): value is string => {
   return true;
 };
 
-// A text fits when it has 1 byte to the limit in UTF-8, no lone surrogate
-// and no U+0000, which a database may cut a text at. A string longer than
-// the limit in UTF-16 units is longer in bytes as well, so it is refused
-// before it is encoded.
+// A text fits when it has 1 byte to the limit in UTF-8, more than spaces,
+// no lone surrogate and no U+0000, which a database may cut a text at. A
+// text of spaces only would empty the page: the OpenAPI document says that
+// ChurchTools trims the text and clears the content when nothing is left.
+// A string longer than the limit in UTF-16 units is longer in bytes as
+// well, so it is refused before it is encoded.
 const isText = (value: unknown): value is string =>
   typeof value === 'string' &&
   value.length >= 1 &&
   value.length <= maxWikiWriteBytes &&
+  value.trim() !== '' &&
   wellFormed(value) &&
   !value.includes('\u0000') &&
   new TextEncoder().encode(value).byteLength <= maxWikiWriteBytes;

@@ -226,8 +226,8 @@ export interface WriteCall {
   /**
    * What a 400 means for this operation, when ChurchTools is known to send
    * it for a state of its own rather than for a mistake of the client, such
-   * as a title that a page of the category already has (F8). Without it, a
-   * 400 is internal as for a read.
+   * as a title that a page of the category already has (F12, «Titel einer
+   * Seite»). Without it, a 400 is internal as for a read.
    */
   readonly badRequest?: BadRequest;
 }

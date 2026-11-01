@@ -265,7 +265,8 @@ describe('creating a page', () => {
   );
 
   // A second page with the title of one in the same category gives 400
-  // (F8). Without the meaning of the operation, 400 is internal.
+  // (F12, «Titel einer Seite»). Without the meaning of the operation, 400
+  // is internal.
   it('ends with conflict and a sentence on the title for 400', async () => {
     const { double, writes, ctx, lines } = setup();
     double
@@ -342,6 +343,8 @@ describe('creating a page', () => {
     ['a text one byte above 64 KiB', 4, 'Dienstplan', 'a'.repeat(65_537)],
     ['a text above 64 KiB in UTF-8 only', 4, 'Dienstplan', 'ä'.repeat(32_769)],
     ['a text with U+0000', 4, 'Dienstplan', 'Text\u0000'],
+    ['a text of spaces only', 4, 'Dienstplan', '   '],
+    ['a text of line breaks and tabs only', 4, 'Dienstplan', '\n\t\n'],
     ['a text with a lone surrogate', 4, 'Dienstplan', 'Text\udc00'],
     ['a text that is no text', 4, 'Dienstplan', null],
   ])(
@@ -452,6 +455,7 @@ describe('changing a page', () => {
     ['a GUID with a path', 4, `${guid}/../x`, 'T'],
     ['category 0', 0, guid, 'T'],
     ['an empty text', 4, guid, ''],
+    ['a text of spaces only, which would empty the page', 4, guid, ' \n '],
     ['a text above 64 KiB', 4, guid, 'a'.repeat(65_537)],
   ])(
     'refuses %s with validation before it asks ChurchTools',
