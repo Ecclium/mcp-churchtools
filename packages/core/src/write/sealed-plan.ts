@@ -17,16 +17,30 @@
  * tool that reaches the class through `plan.constructor` can neither make
  * a plan nor read one. Only the place `writeGuard` imports this module.
  *
+ * This protects against values a tool hands back, not against code that
+ * runs in the same process: a plugin that loads this module by the URL of
+ * its file, or changes built-in objects, gets past it. Against that only
+ * the choice of plugins the operator admits helps.
+ *
  * @packageDocumentation
  */
 import type {
   Actor,
   PlannedWrite,
+  Sensitivity,
+  UnattendedRule,
   WriteIntent,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
+import { readIntent } from './intent.js';
 import { planHashOf } from './plan-hash.js';
-import { echoAllowed, type IntentRules, type ToolOrigin } from './rules.js';
+import {
+  echoAllowed,
+  type IntentRules,
+  rulesOf,
+  type ToolOrigin,
+  withToolMeta,
+} from './rules.js';
 
 /** What a plan is sealed from. */
 export interface PlanInput {
@@ -38,12 +52,16 @@ export interface PlanInput {
   readonly tool: string;
   /** Who brings the tool, as the catalog records it. */
   readonly origin: ToolOrigin;
-  /** The checked copy of the intent. */
+  /** The intent; sealing checks and copies it again. */
   readonly intent: WriteIntent;
-  /** The rules of the intent with the metadata of the tool applied. */
-  readonly rules: IntentRules;
-  /** The version the write is based on, or null for one without. */
-  readonly baseVersion: number | null;
+  /**
+   * Sensitivity and the rule for running unattended of the tool, which
+   * can only make the rules of the intent stricter.
+   */
+  readonly toolMeta: {
+    readonly sensitivity: Sensitivity;
+    readonly unattended: UnattendedRule;
+  };
   /** The hash of the new content. */
   readonly contentHash: string;
   /** When the plan was sealed, in milliseconds since the Unix epoch. */
@@ -51,7 +69,25 @@ export interface PlanInput {
 }
 
 /** A sealed plan as the place `writeGuard` reads it. */
-export interface PlanView extends PlanInput {
+export interface PlanView {
+  /** The tenant of the call that planned. */
+  readonly tenantId: string;
+  /** The actor of the call that planned, a frozen copy. */
+  readonly actor: Actor;
+  /** The name of the tool that planned. */
+  readonly tool: string;
+  /** Who brings the tool. */
+  readonly origin: ToolOrigin;
+  /** The checked, frozen copy of the intent. */
+  readonly intent: WriteIntent;
+  /** The rules of the intent with the metadata of the tool applied. */
+  readonly rules: IntentRules;
+  /** The version the write is based on, from the intent, or null. */
+  readonly baseVersion: number | null;
+  /** The hash of the new content. */
+  readonly contentHash: string;
+  /** When the plan was sealed. */
+  readonly sealedAt: number;
   /** The hash of the plan, computed when it was sealed. */
   readonly planHash: string;
   /** Whether the plan may be confirmed by echo, derived, never given. */
@@ -90,21 +126,30 @@ Object.freeze(SealedPlan.prototype);
 Object.freeze(SealedPlan);
 
 /**
- * Seals a plan. The hash and whether the echo is allowed are derived here
- * from the input, never taken from it.
+ * Seals a plan. The intent is checked and copied again, and its rules,
+ * its base version, the hash of the plan and whether the echo is allowed
+ * are derived here, never taken from the caller. An intent that this
+ * version of the core does not run is not sealed.
  *
- * @param input - Tenant, actor, tool, origin, intent, rules, base version,
- *   hash of the content and the time.
+ * @param input - Tenant, actor, tool, origin, intent, metadata of the
+ *   tool, hash of the content and the time.
  * @returns The plan as the opaque value a tool gets.
- * @throws {TypeError} When the hash cannot be computed from the input.
+ * @throws {TypeError} For an intent that does not fit its kind or that
+ *   the core does not run, and when the hash cannot be computed.
  * @example
  * ```ts
  * const plan = sealPlan({ tenantId, actor, tool, origin: 'core', intent,
- *   rules, baseVersion: 3, contentHash, sealedAt: clock.now() });
+ *   toolMeta: { sensitivity: 'personal', unattended: 'policy' },
+ *   contentHash, sealedAt: clock.now() });
  * readPlan(plan)?.planHash; // 64 hex digits
  * ```
  */
 export function sealPlan(input: PlanInput): PlannedWrite {
+  const intent = readIntent(input.intent);
+  if (intent === undefined) throw new TypeError('The intent does not fit.');
+  const rules = withToolMeta(rulesOf(intent), input.toolMeta);
+  if (!rules.runs) throw new TypeError('The core does not run this intent.');
+  const baseVersion = 'baseVersion' in intent ? intent.baseVersion : null;
   const actor = Object.freeze({
     kind: input.actor.kind,
     id: input.actor.id,
@@ -114,10 +159,10 @@ export function sealPlan(input: PlanInput): PlannedWrite {
     actorKind: actor.kind,
     actorId: actor.id,
     tool: input.tool,
-    intentKind: input.intent.kind,
-    targetKind: input.rules.target.kind,
-    targetKey: input.rules.target.key,
-    baseVersion: input.baseVersion,
+    intentKind: intent.kind,
+    targetKind: rules.target.kind,
+    targetKey: rules.target.key,
+    baseVersion,
     contentHash: input.contentHash,
   });
   const view: PlanView = Object.freeze({
@@ -125,13 +170,13 @@ export function sealPlan(input: PlanInput): PlannedWrite {
     actor,
     tool: input.tool,
     origin: input.origin,
-    intent: input.intent,
-    rules: input.rules,
-    baseVersion: input.baseVersion,
+    intent,
+    rules,
+    baseVersion,
     contentHash: input.contentHash,
     sealedAt: input.sealedAt,
     planHash,
-    echo: echoAllowed(input.rules, input.origin),
+    echo: echoAllowed(rules, input.origin),
   });
   return new SealedPlan(key, view) as unknown as PlannedWrite;
 }
