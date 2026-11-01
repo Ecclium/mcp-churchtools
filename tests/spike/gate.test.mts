@@ -20,6 +20,7 @@ import {
   identificationCategoryName,
   passGate,
   rightsWithin,
+  type CalendarGateOptions,
   type GateContext,
   type GateOptions,
   type Input,
@@ -40,6 +41,7 @@ import {
   writeInstance,
   writeOrigin,
   writeSetup,
+  type CalendarOptions,
   type WriteInstance,
   type WriteInstanceOptions,
   type WriteSetting,
@@ -866,6 +868,386 @@ describe('the write account in the common course', () => {
   });
 });
 
+describe('calendar and resource of the probes', () => {
+  const areaSettings = (setting: WriteSetting): WriteSettings => ({
+    ...settingsOf(setting),
+    calendarArea: setting.calendarArea,
+  });
+  const calendarOptions: CalendarGateOptions = {
+    ownAppointments: new Set(),
+    ownBookings: new Set(),
+    from: '2026-12-01',
+    to: '2026-12-01',
+  };
+  const calendarGate = (): GateOptions => ({
+    writes: ['appointmentCreate', 'bookingCreate', 'bookingConflicts'],
+    ownPages: new Set(),
+    calendar: calendarOptions,
+  });
+
+  async function areaHint(
+    options: WriteInstanceOptions,
+    gate?: (setting: WriteSetting) => GateOptions,
+  ): Promise<string> {
+    const setting = writeSetup();
+    const instance = writeInstance(setting, options);
+    return hintOf(() =>
+      checkInstance(
+        contextFor(setting, instance, options.document),
+        areaSettings(setting),
+        gate === undefined ? createOnly : gate(setting),
+      ),
+    );
+  }
+
+  it('reads both variables or neither', () => {
+    const { calendarEnv, env, calendarArea } = writeSetup();
+    expect(
+      checkWriteEnvironment(calendarEnv, writeOrigin).calendarArea,
+    ).toEqual(calendarArea);
+    expect(
+      checkWriteEnvironment(env, writeOrigin).calendarArea,
+    ).toBeUndefined();
+    for (const change of [
+      { ECCLIUM_SPIKE_WRITE_RESOURCE_ID: undefined },
+      { ECCLIUM_SPIKE_WRITE_CALENDAR_ID: undefined },
+      { ECCLIUM_SPIKE_WRITE_CALENDAR_ID: '0' },
+      { ECCLIUM_SPIKE_WRITE_RESOURCE_ID: '1e3' },
+    ]) {
+      let thrown: unknown;
+      try {
+        checkWriteEnvironment({ ...calendarEnv, ...change }, writeOrigin);
+      } catch (error) {
+        thrown = error;
+      }
+      expect((thrown as SpikeError).hint).toBe('schreibKalenderFehlt');
+    }
+  });
+
+  it('passes the narrow account with its calendar and resource, and reads both lists', async () => {
+    const setting = writeSetup();
+    const instance = writeInstance(setting, { calendar: {} });
+    await checkInstance(
+      contextFor(setting, instance),
+      areaSettings(setting),
+      createOnly,
+    );
+    expect(
+      instance.calls.map((call) => `${call.method} ${call.url.pathname}`),
+    ).toEqual([
+      'GET /api/wiki/categories',
+      'GET /api/permissions/global',
+      'GET /api/calendars',
+      'GET /api/resources',
+      `GET /api/wiki/categories/${String(setting.writeCategory)}/pages`,
+    ]);
+  });
+
+  it('refuses the rights of calendar and resource without the variables', async () => {
+    expect(await check({ calendar: {} }).then((result) => result.hint)).toBe(
+      'zuWeitBerechtigt',
+    );
+  });
+
+  it.each<[string, CalendarOptions, HintKey]>([
+    [
+      'a second calendar',
+      {
+        calendars: {
+          data: [{ id: 1 }, { id: 2 }],
+        },
+      },
+      'schreibKalenderNichtSichtbar',
+    ],
+    [
+      'no calendar',
+      { calendars: { data: [] } },
+      'schreibKalenderNichtSichtbar',
+    ],
+    [
+      'a resource that needs an appointment',
+      { resources: 'needsAppointment' },
+      'ressourceBrauchtTermin',
+    ],
+    [
+      'a resource without the field',
+      { resources: 'noField' },
+      'waechterAntwortUnerwartet',
+    ],
+    [
+      'another resource',
+      { resources: { data: [{ id: 1, needsAppointment: false }] } },
+      'schreibRessourceNichtSichtbar',
+    ],
+    [
+      'a calendar list of another form',
+      { calendars: { data: [{ id: 'x' }] } },
+      'waechterAntwortUnerwartet',
+    ],
+  ])('stops with %s', async (_, calendar, hint) => {
+    const setting = writeSetup();
+    const { calendar: calendarId, resource } = setting.calendarArea;
+    const resources =
+      calendar.resources === 'needsAppointment'
+        ? { data: [{ id: resource, needsAppointment: true }] }
+        : calendar.resources === 'noField'
+          ? { data: [{ id: resource }] }
+          : calendar.resources;
+    const calendars =
+      calendar.calendars ??
+      ({ data: [{ id: calendarId }] } as const satisfies object);
+    const instance = writeInstance(setting, {
+      calendar: {
+        ...calendar,
+        calendars:
+          (calendars as { data: { id: unknown }[] }).data.length === 2
+            ? { data: [{ id: calendarId }, { id: calendarId + 1 }] }
+            : calendars,
+        ...(resources === undefined ? {} : { resources }),
+      },
+    });
+    const found = await hintOf(() =>
+      checkInstance(
+        contextFor(setting, instance),
+        areaSettings(setting),
+        createOnly,
+      ),
+    );
+    expect(found).toBe(hint);
+    expect(writeMethods(instance)).toEqual([]);
+  });
+
+  it('asks for calendar and resource before a probe of appointments may run', async () => {
+    const setting = writeSetup();
+    const instance = writeInstance(setting, { calendar: {} });
+    expect(
+      await hintOf(() =>
+        checkInstance(
+          contextFor(setting, instance),
+          settingsOf(setting),
+          calendarGate(),
+        ),
+      ),
+    ).toBe('kalenderprobeOhneBereich');
+    expect(instance.calls).toEqual([]);
+  });
+
+  it('stops if the instance does not document a write of appointments', async () => {
+    const document = structuredClone(specification) as {
+      paths: Record<string, Record<string, unknown>>;
+    };
+    delete document.paths['/bookings/conflicts'];
+    expect(await areaHint({ calendar: {}, document }, calendarGate)).toBe(
+      'waechterOperationFehlt',
+    );
+  });
+
+  it('reaches appointments and bookings only after its checks, and only those of the probes', async () => {
+    const setting = writeSetup();
+    const instance = writeInstance(setting, { calendar: {} });
+    const access = createWriteAccess(
+      {
+        origin: writeOrigin,
+        token: setting.canaries.token,
+        guard: new Guard(),
+        fetch: instance.fetch,
+      },
+      terminal('ja'),
+    );
+    const pass = await passGate(
+      contextFor(setting, instance),
+      access,
+      areaSettings(setting),
+      { ...calendarGate(), summary: 'Probe' },
+    );
+    const reader = pass.reader;
+    expect(reader).toBeDefined();
+    const paths = instance.calls.map((call) => call.url.pathname);
+    expect(paths.slice(-2)).toEqual([
+      `/api/calendars/${String(setting.calendarArea.calendar)}/appointments`,
+      '/api/bookings',
+    ]);
+    expect(
+      instance.calls.at(-1)?.url.searchParams.getAll('status_ids[]'),
+    ).toEqual(['1', '2', '3']);
+    for (const path of [
+      '/api/persons/1',
+      `/api/calendars/${String(setting.calendarArea.calendar + 1)}/appointments`,
+      '/api/calendars/appointments',
+      '/api/events',
+    ]) {
+      expect(
+        await hintOf(() => reader?.get({ path }) ?? Promise.resolve()),
+      ).toBe('INTERN');
+    }
+    expect(
+      await hintOf(
+        () =>
+          reader?.get({
+            path: '/api/bookings',
+            query: [
+              ['resource_ids[]', String(setting.calendarArea.resource + 1)],
+            ],
+          }) ?? Promise.resolve(),
+      ),
+    ).toBe('INTERN');
+  });
+
+  it.each<[string, CalendarOptions]>([
+    ['a foreign appointment', { appointments: ['Synthetischer Termin'] }],
+    ['a foreign booking', { bookings: ['Synthetische Buchung'] }],
+    [
+      'an appointment of an earlier run',
+      { appointments: ['spike-schreibprobe-00000000-termin-a'] },
+    ],
+  ])('asks nothing and writes nothing beside %s', async (_, calendar) => {
+    const setting = writeSetup();
+    const instance = writeInstance(setting, { calendar });
+    const input = terminal('ja');
+    const access = createWriteAccess(
+      {
+        origin: writeOrigin,
+        token: setting.canaries.token,
+        guard: new Guard(),
+        fetch: instance.fetch,
+      },
+      input,
+    );
+    expect(
+      await hintOf(() =>
+        passGate(contextFor(setting, instance), access, areaSettings(setting), {
+          ...calendarGate(),
+          summary: 'Probe',
+        }),
+      ),
+    ).toBe('fremdeTermine');
+    expect(input.prompts).toEqual([]);
+    expect(writeMethods(instance)).toEqual([]);
+  });
+
+  it('passes the leftovers of the earlier run it cleans up, by ID or by title', async () => {
+    const setting = writeSetup();
+    const instance = writeInstance(setting, {
+      calendar: { appointments: ['spike-schreibprobe-00000000-termin-a'] },
+    });
+    const [leftover] = instance.appointments.keys();
+    for (const calendar of [
+      { ownAppointments: new Set([leftover ?? 0]) },
+      { ownTitles: 'spike-schreibprobe-00000000-' },
+    ]) {
+      const access = createWriteAccess(
+        {
+          origin: writeOrigin,
+          token: setting.canaries.token,
+          guard: new Guard(),
+          fetch: instance.fetch,
+        },
+        terminal('ja'),
+      );
+      const base = calendarGate();
+      expect(
+        await hintOf(() =>
+          passGate(
+            contextFor(setting, instance),
+            access,
+            areaSettings(setting),
+            {
+              ...base,
+              calendar: { ...calendarOptions, ...calendar },
+              summary: 'Probe',
+            },
+          ),
+        ),
+      ).toBe('passed');
+    }
+  });
+});
+
+describe('rightsWithin with calendar and resource', () => {
+  const W = 11;
+  const K = 22;
+  const area = { calendar: 33, resource: 44 };
+  type Rights = Record<string, Record<string, unknown>>;
+  const narrow = (): Rights => ({
+    churchwiki: {
+      view: true,
+      'view category': [K, W],
+      'edit category': [W],
+    },
+    churchcal: {
+      view: false,
+      'view category': [33],
+      'edit category': [33],
+      'admin church category': false,
+    },
+    churchresource: {
+      view: true,
+      'view resource': [44],
+      'create bookings': [44],
+      'administer bookings': [],
+    },
+  });
+  const set = (
+    data: Rights,
+    module: string,
+    change: Record<string, unknown>,
+  ): Rights => ({ ...data, [module]: { ...data[module], ...change } });
+
+  it('accepts exactly the rights of the write account with calendar and resource', () => {
+    expect(rightsWithin(narrow(), W, K, area)).toBe(true);
+  });
+
+  it('refuses the same rights without calendar and resource', () => {
+    expect(rightsWithin(narrow(), W, K)).toBe(false);
+  });
+
+  it.each<[string, (data: Rights) => unknown]>([
+    [
+      'administer bookings',
+      (data) => set(data, 'churchresource', { 'administer bookings': [44] }),
+    ],
+    [
+      'another calendar visible',
+      (data) => set(data, 'churchcal', { 'view category': [33, 34] }),
+    ],
+    [
+      'another calendar editable',
+      (data) => set(data, 'churchcal', { 'edit category': [34] }),
+    ],
+    [
+      'no right to edit appointments',
+      (data) => set(data, 'churchcal', { 'edit category': [] }),
+    ],
+    [
+      'bookings of another resource',
+      (data) => set(data, 'churchresource', { 'create bookings': [45] }),
+    ],
+    [
+      'all resources, as «alle» is stored',
+      (data) => set(data, 'churchresource', { 'view resource': [-1] }),
+    ],
+    [
+      'administer church calendars',
+      (data) => set(data, 'churchcal', { 'admin church category': true }),
+    ],
+    ['view as a list', (data) => set(data, 'churchcal', { view: [33] })],
+    [
+      'the resource rights missing',
+      (data) => ({ ...data, churchresource: { view: true } }),
+    ],
+    [
+      'a module named like a property of every object',
+      (data) => ({ ...data, constructor: { name: true } }),
+    ],
+    [
+      'a right named like a property of every object',
+      (data) => set(data, 'churchcal', { constructor: true }),
+    ],
+  ])('refuses %s', (_, change) => {
+    expect(rightsWithin(change(narrow()), W, K, area)).toBe(false);
+  });
+});
+
 describe('the write client', () => {
   it('is created only by the guard', () => {
     const users = readdirSync(spikeFolder, {
@@ -876,6 +1258,21 @@ describe('the write client', () => {
       .map((entry) => join(entry.parentPath, entry.name))
       .filter((file) =>
         readFileSync(file, 'utf8').includes('createWriteClient'),
+      )
+      .map((file) => file.slice(spikeFolder.length))
+      .sort();
+    expect(users).toEqual(['lib/gate.mts', 'lib/http.mts']);
+  });
+
+  it('and the client for appointments and bookings likewise', () => {
+    const users = readdirSync(spikeFolder, {
+      recursive: true,
+      withFileTypes: true,
+    })
+      .filter((entry) => entry.isFile() && entry.name.endsWith('.mts'))
+      .map((entry) => join(entry.parentPath, entry.name))
+      .filter((file) =>
+        readFileSync(file, 'utf8').includes('createCalendarClient'),
       )
       .map((file) => file.slice(spikeFolder.length))
       .sort();

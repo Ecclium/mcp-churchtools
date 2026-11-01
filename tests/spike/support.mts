@@ -486,7 +486,34 @@ export const specification = {
         },
       },
     },
+    '/calendars/{calendarId}/appointments': {
+      get: {
+        parameters: [
+          { name: 'from', in: 'query', schema: { type: 'string' } },
+          { name: 'to', in: 'query', schema: { type: 'string' } },
+        ],
+        responses: {
+          '200': json({ type: 'object' }),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+      post: {
+        responses: {
+          '201': json({ type: 'object' }),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+    },
     '/calendars/{calendarId}/appointments/{appointmentId}': {
+      put: {
+        responses: {
+          '200': json({ type: 'object' }),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+      delete: {
+        responses: { '204': { description: 'deleted' } },
+      },
       get: {
         parameters: [
           {
@@ -580,7 +607,38 @@ export const specification = {
     '/resources': {
       get: { responses: { '200': json(listOf('Resource')) } },
     },
+    '/bookings/conflicts': {
+      post: {
+        responses: {
+          '200': json({ type: 'object' }),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+    },
+    '/bookings/{bookingId}': {
+      get: {
+        responses: {
+          '200': json({ type: 'object' }),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+      put: {
+        responses: {
+          '200': json({ type: 'object' }),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
+      delete: {
+        responses: { '204': { description: 'deleted' } },
+      },
+    },
     '/bookings': {
+      post: {
+        responses: {
+          '201': json({ type: 'object' }),
+          '4XX': json({ $ref: '#/components/schemas/Error' }),
+        },
+      },
       get: {
         parameters: [
           {
