@@ -23,9 +23,9 @@
  * appointment or the booking.
  * Records: every appointment and booking the instance creates, and every
  * deletion it confirms, in the write state file, at once. After an error
- * that follows a write it sends nothing more but the deletions of what the
- * run created. Started with the write state file of an earlier run, it
- * only deletes what that run left behind.
+ * that follows a write it sends nothing more but the reads and deletions of
+ * its cleanup, for what the run created. Started with the write state file
+ * of an earlier run, it only deletes what that run left behind.
  * Answers, for the tools that write appointments and bookings: what `PUT`
  * does to fields it does not get, whether the API honours a stale
  * version, which field shows a change, who counts as author, what
@@ -143,7 +143,7 @@ const words = [
 ];
 
 const summary =
-  '11-calendar-write legt im Kalender der Proben einen Termin an, ändert ihn mehrmals und löscht ihn, und bei der Ressource der Proben zwei Buchungsanfragen, von denen es die erste mehrmals ändert, und löscht beide.';
+  '11-calendar-write legt im Kalender der Proben einen Termin an, ändert ihn mehrmals und löscht ihn, und bei der Ressource der Proben zwei Buchungsanfragen, von denen es die erste mehrmals ändert, und löscht beide. ChurchTools schickt dabei den Verwaltern der Ressource Mails zu den Anfragen.';
 
 const cleanupSummary =
   '11-calendar-write löscht die Termine und Buchungen, die ein früherer Lauf angelegt und nicht gelöscht hat.';
@@ -334,6 +334,8 @@ interface Run {
 }
 
 const yesNo = (value: boolean): string => (value ? 'ja' : 'nein');
+const known = (value: boolean | undefined): string =>
+  value === undefined ? 'unbekannt' : yesNo(value);
 const succeeded = (response: ProbeResponse): boolean =>
   response.status >= 200 && response.status < 300;
 
@@ -443,7 +445,7 @@ async function create(
   }
   if (succeeded(response)) {
     // The instance says it created something but names no ID. The run
-    // stops; a second run finds it by its title and deletes it.
+    // stops; its cleanup finds it by its title and deletes it.
     throw new SpikeError('ANTWORT_UNGUELTIG');
   }
   return { response, target: undefined };
@@ -485,8 +487,11 @@ function createReport(
 interface Change {
   readonly body: Readonly<Record<string, Json>>;
   readonly precondition?: Precondition;
-  /** Tells whether the change was taken, from the state read back. */
-  readonly taken?: (after: ObjectView) => boolean;
+  /**
+   * Tells whether the change was taken, from the state read back, or
+   * `undefined` if the field it looks at is missing.
+   */
+  readonly taken?: (after: ObjectView) => boolean | undefined;
 }
 
 async function update(
@@ -523,7 +528,7 @@ async function update(
   };
   if (change.taken !== undefined) {
     report['uebernommen'] =
-      after.status === 200 ? yesNo(change.taken(after)) : 'unbekannt';
+      after.status === 200 ? known(change.taken(after)) : 'unbekannt';
   }
   if (!succeeded(response)) {
     report['antwort'] = describe(run, response, operation);
@@ -597,8 +602,10 @@ async function appointmentCases(run: Run): Promise<Json> {
   };
   const titled =
     (suffix: string) =>
-    (after: ObjectView): boolean =>
-      after.title === `${title}-${suffix}`;
+    (after: ObjectView): boolean | undefined =>
+      after.title === undefined
+        ? undefined
+        : after.title === `${title}-${suffix}`;
 
   const vollstaendig = await step({ body: full('b'), taken: titled('b') });
   const gleicherKoerper = await step({ body: full('b'), taken: titled('b') });
@@ -753,9 +760,10 @@ async function bookingCases(run: Run): Promise<Json> {
           after.status === 200 ? statusWord(after.statusId) : 'unbekannt',
       };
     };
-    const moved = (after: ObjectView): boolean =>
-      after.startDate !== undefined &&
-      Date.parse(after.startDate) === Date.parse(run.times.at('05:30'));
+    const moved = (after: ObjectView): boolean | undefined =>
+      after.startDate === undefined
+        ? undefined
+        : Date.parse(after.startDate) === Date.parse(run.times.at('05:30'));
     const later = (
       suffix: string,
       statusId = 1,
@@ -769,8 +777,10 @@ async function bookingCases(run: Run): Promise<Json> {
       );
     const titled =
       (suffix: string) =>
-      (after: ObjectView): boolean =>
-        after.title === `${title}-${suffix}`;
+      (after: ObjectView): boolean | undefined =>
+        after.title === undefined
+          ? undefined
+          : after.title === `${title}-${suffix}`;
     const vollstaendig = await step({ body: later('b'), taken: moved });
     const gleicherKoerper = await step({ body: later('b'), taken: moved });
     const lean = await step({
@@ -1002,6 +1012,9 @@ export const probe: ProbeDefinition = {
     if (reader === undefined) {
       throw new SpikeError('INTERN');
     }
+    // Read before the state file exists: if this read fails, nothing is
+    // written and no file of a run without objects remains.
+    const self = await whoAmI(client, guard);
     const file =
       earlier === undefined
         ? CalendarStateFile.create(path, origin, area, times.day)
@@ -1016,7 +1029,7 @@ export const probe: ProbeDefinition = {
       area,
       file,
       wait,
-      self: await whoAmI(client, guard),
+      self,
       times,
       titles: `${pageTitlePrefix}-${file.run}-`,
       open: {
@@ -1024,13 +1037,19 @@ export const probe: ProbeDefinition = {
         buchung: new Set(earlier?.bookings ?? []),
       },
     };
+    // Only reads, after every write: if it fails, the report of the run
+    // still counts and says «unbekannt».
     const rights = async (): Promise<string> => {
-      const within = await rightsStillWithin(
-        client,
-        write.settings,
-        result.identification,
-      );
-      return within === undefined ? 'unbekannt' : yesNo(within);
+      try {
+        const within = await rightsStillWithin(
+          client,
+          write.settings,
+          result.identification,
+        );
+        return within === undefined ? 'unbekannt' : yesNo(within);
+      } catch {
+        return 'unbekannt';
+      }
     };
     try {
       if (earlier !== undefined) {

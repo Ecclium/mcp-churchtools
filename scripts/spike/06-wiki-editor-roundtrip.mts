@@ -7,11 +7,15 @@
  * It runs with the write account and passes the checks of the guard that
  * need no write (ADR 0049), but it writes nothing.
  * Reads: the write state file of the run, what the guard reads, and for
- * each page for the web editor the page and the list of its versions.
+ * each page for the web editor the page and the list of its versions, and
+ * the version before the newest if there are two or more since 05.
  * Writes: nothing.
  * Answers: whether saving without an edit creates a version (F10), how the
- * editor changes a Markdown page (F13), whether saving it a second time
- * changes it again, and whether an HTML comment survives the editor (F17). It names each change against the synthetic
+ * editor changes a Markdown page (F13), and whether an HTML comment
+ * survives the editor (F17). It counts the versions since 05: a second
+ * save that changes nothing creates none, as F10 leads to expect. Where
+ * there are two or more, it names the changes of the newest against the
+ * one before. It names each change against the synthetic
  * text by kind and line, such as «Listenzeichen» or «HTML-Kommentar
  * entfernt», and says whether the page still matched that text after 05:
  * if the API itself changed the text, its changes are in the list as

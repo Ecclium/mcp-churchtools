@@ -179,6 +179,8 @@ export interface CalendarOptions {
   readonly deleteStatus?: number;
   /** Whether a create answers 201 without an ID. */
   readonly createWithoutId?: boolean;
+  /** Whether a PUT with an unchanged body leaves the version. Default: raised, as the instance does (F42). */
+  readonly sameBodyKeepsVersion?: boolean;
 }
 
 /** How the synthetic instance behaves. */
@@ -358,6 +360,7 @@ export function writeInstance(
 
   const appointments = new Map<number, SyntheticObject>();
   const bookings = new Map<number, SyntheticObject>();
+  const deletedBookings = new Set<number>();
   let nextId = randomInt(100_000, 200_000);
   const self = canaries.number;
   const other = canaries.number + 1;
@@ -378,10 +381,11 @@ export function writeInstance(
     fields: Record<string, unknown>,
     by: number,
   ): SyntheticObject => {
+    // As the instance does (F42): a new object has version 0.
     const object: SyntheticObject = {
       id: nextId++,
       fields,
-      version: 1,
+      version: 0,
       modifiedDate: now(),
       createdBy: by,
       modifiedBy: by,
@@ -520,7 +524,10 @@ export function writeInstance(
     }
     const object = store.get(Number(key));
     if (object === undefined) {
-      return error(404);
+      // The instance answers a read of a deleted booking with 500 (F47).
+      return error(
+        !isAppointment && deletedBookings.has(Number(key)) ? 500 : 404,
+      );
     }
     if (call.method === 'GET') {
       return answer({ data: { [kind]: baseOf(object), calculatedDates: {} } });
@@ -529,6 +536,9 @@ export function writeInstance(
       const status = calendar.deleteStatus ?? 204;
       if (status === 204) {
         store.delete(object.id);
+        if (!isAppointment) {
+          deletedBookings.add(object.id);
+        }
         return answer(null, 204);
       }
       return error(status);
@@ -551,7 +561,11 @@ export function writeInstance(
               : fields[name];
         }
       }
-      if (JSON.stringify(next) !== JSON.stringify(object.fields)) {
+      // Every stored PUT raises the version, even with the same body (F42).
+      if (
+        calendar.sameBodyKeepsVersion !== true ||
+        JSON.stringify(next) !== JSON.stringify(object.fields)
+      ) {
         object.fields = next;
         object.version += 1;
         object.modifiedDate = now();

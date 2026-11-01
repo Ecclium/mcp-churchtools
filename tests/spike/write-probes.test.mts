@@ -755,8 +755,13 @@ describe('06-wiki-editor-roundtrip', () => {
     instance.editorSave(first ?? '', (text) =>
       text.replace('* Stern', '- Stern'),
     );
+    // The second save changes another line, so a comparison with the
+    // synthetic text would also name the list marker.
     instance.editorSave(first ?? '', (text) =>
-      text.replace('- Stern', '+ Stern'),
+      text.replace(
+        'https://example.org/',
+        '[https://example.org/](https://example.org/)',
+      ),
     );
     instance.editorSave(second ?? '', (text) =>
       text.replace('* Stern', '- Stern'),
@@ -773,7 +778,12 @@ describe('06-wiki-editor-roundtrip', () => {
       versionenSeit05: 'zwei',
       zweitesSpeichern: {
         textGleichVorgaenger: 'nein',
-        aenderungen: [{ zeile: lineOf('* Stern'), art: 'Listenzeichen' }],
+        aenderungen: [
+          {
+            zeile: lineOf('Eine nackte Adresse'),
+            art: 'URL in Link umgewandelt',
+          },
+        ],
       },
     });
     expect(pages['markdown2']).toMatchObject({

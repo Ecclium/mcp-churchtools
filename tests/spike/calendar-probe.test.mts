@@ -3,7 +3,7 @@
 // for the probe resource, only after «ja», record every object at once,
 // delete what it created even after an error, and print no value from the
 // instance.
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -147,7 +147,7 @@ describe('11-calendar-write', () => {
     expect(result['modus']).toBe('proben');
     expect(result['termin']).toMatchObject({
       angelegt: 'ja',
-      versionBeimAnlegen: '1',
+      versionBeimAnlegen: '0',
       angelegtVomSchreibkonto: 'ja',
       titelGleich: 'ja',
       vollstaendig: {
@@ -157,7 +157,7 @@ describe('11-calendar-write', () => {
         uebernommen: 'ja',
         geaendertVomSchreibkonto: 'ja',
       },
-      gleicherKoerper: { versionGestiegen: 'nein', uebernommen: 'ja' },
+      gleicherKoerper: { versionGestiegen: 'ja', uebernommen: 'ja' },
       ohneOptionaleFelder: {
         uebernommen: 'ja',
         untertitelGeleert: 'ja',
@@ -181,8 +181,8 @@ describe('11-calendar-write', () => {
         statusGenehmigt: { statusGelesen: 'angefragt' },
       },
       loeschen: {
-        ersteBuchung: { status: 204, danachLesen: 404 },
-        zweiteBuchung: { status: 204, danachLesen: 404 },
+        ersteBuchung: { status: 204, danachLesen: 500 },
+        zweiteBuchung: { status: 204, danachLesen: 500 },
       },
     });
     expect(result['aufraeumen']).toEqual({
@@ -199,11 +199,12 @@ describe('11-calendar-write', () => {
     expect(state.bookings).toEqual([]);
   });
 
-  it('reports an instance that keeps missing fields, honours a stale version and approves on request', async () => {
+  it('reports an instance that keeps missing fields, honours a stale version, keeps the version of an unchanged body and approves on request', async () => {
     const { setting, instance } = await prepared({
       putKeepsMissing: true,
       honourVersion: true,
       approvedBecomes: 2,
+      sameBodyKeepsVersion: true,
     });
     const run = await runCalendar(
       instance,
@@ -214,6 +215,7 @@ describe('11-calendar-write', () => {
     expect(leaks(run.output, setting.forbidden)).toEqual([]);
     expect(run.result).toMatchObject({
       termin: {
+        gleicherKoerper: { versionGestiegen: 'nein' },
         ohneOptionaleFelder: {
           untertitelGeleert: 'nein',
           beschreibungGeleert: 'nein',
@@ -224,7 +226,7 @@ describe('11-calendar-write', () => {
     });
   });
 
-  it('deletes what it created after an error that follows a write, and a second run finds nothing left', async () => {
+  it('deletes the appointment it created after an error that follows a write', async () => {
     // Calls 1 to 7 are the reads of the guard, 8 whoami, 9 the first
     // create, 10 its read-back, 11 the first change.
     const { setting, instance } = await prepared({}, { failOnCall: 11 });
@@ -243,6 +245,103 @@ describe('11-calendar-write', () => {
       setting.calendarArea,
     );
     expect(state.appointments).toEqual([]);
+  });
+
+  it('deletes the bookings it created after an error among the changes of a booking', async () => {
+    // Call 31 is the first change of the first booking: by then the
+    // appointment is deleted and both bookings exist.
+    const { setting, instance } = await prepared({}, { failOnCall: 31 });
+    const run = await runCalendar(
+      instance,
+      setting.calendarEnv,
+      confirming(instance),
+    );
+    expect(run.code).not.toBe(exitCodes.ok);
+    expect(run.output.stderr()).toContain(hints.kalenderSchreibenAbgebrochen);
+    expect(writes(instance)).toContain('POST /api/bookings');
+    expect(instance.calls.at(30)?.method).toBe('PUT');
+    expect(instance.bookings.size).toBe(0);
+    expect(
+      readCalendarState(
+        setting.writeStateFile,
+        writeOrigin,
+        setting.calendarArea,
+      ).bookings,
+    ).toEqual([]);
+  });
+
+  it('leaves no write state when the read of the account fails before the first write', async () => {
+    // Calls 1 to 7 are the reads of the guard, 8 is whoami.
+    const { setting, instance } = await prepared({}, { failOnCall: 8 });
+    const run = await runCalendar(
+      instance,
+      setting.calendarEnv,
+      confirming(instance),
+    );
+    expect(run.code).not.toBe(exitCodes.ok);
+    expect(instance.calls.at(7)?.url.pathname).toBe('/api/whoami');
+    expect(writes(instance)).toEqual([]);
+    expect(existsSync(setting.writeStateFile)).toBe(false);
+  });
+
+  it('keeps the report when the last read of the rights fails', async () => {
+    const { setting, instance } = await prepared();
+    const failing: WriteInstance = {
+      ...instance,
+      fetch: (url, init) =>
+        url.pathname === '/api/permissions/global' &&
+        instance.calls.some((call) => call.method === 'DELETE')
+          ? Promise.reject(
+              new TypeError('fetch failed', { cause: { code: 'ECONNRESET' } }),
+            )
+          : instance.fetch(url, init),
+    };
+    const run = await runCalendar(
+      failing,
+      setting.calendarEnv,
+      confirming(instance),
+    );
+    expect(run.code, run.output.stderr()).toBe(exitCodes.ok);
+    expect(run.result).toMatchObject({
+      modus: 'proben',
+      rechteUnveraendert: 'unbekannt',
+    });
+  });
+
+  it('says «unbekannt» when a read-back lacks the field a case looks at', async () => {
+    const { setting, instance } = await prepared();
+    let reads = 0;
+    const stripped: WriteInstance = {
+      ...instance,
+      fetch: async (url, init) => {
+        const response = await instance.fetch(url, init);
+        if (
+          (init.method ?? 'GET') === 'GET' &&
+          /\/appointments\/\d+$/.test(url.pathname) &&
+          (reads += 1) > 1
+        ) {
+          return new Response(JSON.stringify({ data: { appointment: {} } }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        return response;
+      },
+    };
+    const run = await runCalendar(
+      stripped,
+      setting.calendarEnv,
+      confirming(instance),
+    );
+    expect(run.code, run.output.stderr()).toBe(exitCodes.ok);
+    expect(run.result).toMatchObject({
+      termin: {
+        vollstaendig: {
+          uebernommen: 'unbekannt',
+          versionGestiegen: 'unbekannt',
+        },
+      },
+    });
   });
 
   it('deletes with the write state of an earlier run what that run left behind, by ID and by title', async () => {
@@ -339,10 +438,20 @@ describe('11-calendar-write', () => {
 });
 
 describe('the helpers of 11-calendar-write', () => {
-  it('writes thirty days ahead, never at midnight', () => {
-    const times = probeTimes(new Date('2026-11-01T23:30:00Z'));
-    expect(times.day).toBe('2026-12-01');
-    expect(times.at('03:00')).toBe('2026-12-01T03:00:00Z');
+  it('writes thirty days ahead in UTC, across month and year ends', () => {
+    for (const [now, day] of [
+      ['2026-11-01T23:30:00Z', '2026-12-01'],
+      ['2027-01-31T00:10:00Z', '2027-03-02'],
+      ['2026-12-15T12:00:00Z', '2027-01-14'],
+      ['2028-02-29T08:00:00Z', '2028-03-30'],
+    ] as const) {
+      expect(probeTimes(new Date(now)).day).toBe(day);
+    }
+    // The probe only asks for times between 03:00 and 09:00 UTC, never
+    // midnight in the time zones of the German-speaking countries.
+    expect(probeTimes(new Date('2026-11-01T00:00:00Z')).at('03:00')).toBe(
+      '2026-12-01T03:00:00Z',
+    );
   });
 
   it('reads only fields of the documented type', () => {
