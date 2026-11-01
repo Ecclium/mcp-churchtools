@@ -19,7 +19,10 @@
  * wiki and the first page it found, or else the first listed page, and the
  * global search once for each type, and with the second switch the two
  * tools of the escape hatch (`api.mts`). It checks that every listed tool
- * had a call, closes stdin and checks how the process ended.
+ * had a call, closes stdin and checks how the process ended. With the level
+ * strict it expects a pseudonym for every ID of a person and a shortened
+ * last name, and that a number in place of a pseudonym is refused before
+ * any request (ADR 0069).
  *
  * Every check yields a fixed word. Values from the answers never go into
  * the result: they go onto the block list of the guard and into the list
@@ -185,6 +188,7 @@ export const courseWords = [
   'ganztaegig',
   'nur Tag',
   'mit Zeit',
+  'ct_persons_get rohe Kennung',
   'code',
   'anderer',
   'warnung',
@@ -213,6 +217,8 @@ export const courseCodes = [
   'ende',
   'protokoll',
   'token',
+  'schluessel',
+  'rohe_kennung',
   'sicherheitsstufe',
   'keine_personen_gefunden',
   'keine_gruppen_gefunden',
@@ -257,6 +263,16 @@ const isName = (value: unknown): value is string =>
   typeof value === 'string' && value.length <= 255;
 
 const isIdOrNull = (value: unknown): boolean => value === null || isId(value);
+
+// A pseudonym of a person in strict: `p1_` and 39 signs of Base32.
+const isPseudonym = (value: unknown): value is string =>
+  typeof value === 'string' && /^p1_[a-z2-7]{39}$/.test(value);
+
+// A last name in strict: its first sign and a dot, or the mark of a name
+// of one sign (ADR 0069).
+const isShortName = (value: unknown): value is string =>
+  typeof value === 'string' &&
+  (value === '[masked]' || /^[\s\S]\.$/u.test(value));
 
 const isCount = (value: unknown): boolean =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
@@ -433,6 +449,11 @@ export interface Secrets {
   readonly query: string | undefined;
   /** The term for the songs: in no line of log or audit. */
   readonly songQuery: string | undefined;
+  /**
+   * The key for pseudonyms, only with the level strict: nowhere on stdout
+   * or stderr. With it the course checks the answers of strict.
+   */
+  readonly key: string | undefined;
 }
 
 /**
@@ -463,6 +484,18 @@ export async function runEra(
   const seeValue = (value: unknown): void => {
     guard.blockAll(value);
     if (typeof value === 'string' && value !== '') seen.push(value);
+  };
+
+  // With strict an ID of a person is a pseudonym and a last name its first
+  // sign. A pseudonym must not reach log or audit either: the audit names
+  // the ID itself (ADR 0069).
+  const strict = secrets.key !== undefined;
+  const isPersonId = (value: unknown): boolean =>
+    strict ? isPseudonym(value) : isId(value);
+  const isLastName = (value: unknown): boolean =>
+    strict ? isShortName(value) : isName(value);
+  const seePerson = (value: unknown): void => {
+    if (strict) seeValue(value);
   };
 
   const opened =
@@ -643,9 +676,9 @@ export async function runEra(
     const meFits =
       me !== undefined &&
       sameKeys(me, ['email', 'firstName', 'id', 'lastName', 'rights']) &&
-      isId(me['id']) &&
+      isPersonId(me['id']) &&
       isName(me['firstName']) &&
-      isName(me['lastName']) &&
+      isLastName(me['lastName']) &&
       // The masked forms of the pipeline: the first character or `*`,
       // three stars and the domain, or `[masked]` (ADR 0024).
       (email === null ||
@@ -658,6 +691,7 @@ export async function runEra(
       seeValue(me['firstName']);
       seeValue(me['lastName']);
       seeValue(email);
+      seePerson(me['id']);
       guard.blockAll(me);
     }
     if (!meFits) failures.add('whoami');
@@ -730,9 +764,9 @@ export async function runEra(
           (person: unknown) =>
             isRecord(person) &&
             sameKeys(person, ['firstName', 'id', 'lastName']) &&
-            isId(person['id']) &&
+            isPersonId(person['id']) &&
             isName(person['firstName']) &&
-            isName(person['lastName']),
+            isLastName(person['lastName']),
         ) &&
         typeof personsData['more'] === 'boolean' &&
         (personsData['notice'] === null ||
@@ -743,6 +777,7 @@ export async function runEra(
           if (isRecord(person)) {
             seeValue(person['firstName']);
             seeValue(person['lastName']);
+            seePerson(person['id']);
           }
         }
       }
@@ -763,6 +798,23 @@ export async function runEra(
         treffer: countClass(personCount),
         mehr: personsData?.['more'] === true ? 'ja' : 'nein',
       });
+
+      if (strict) {
+        // strict takes only pseudonyms for persons: a number is refused
+        // with validation before any request, so it adds none to the count
+        // of requests (ADR 0069).
+        const raw = await callTool(
+          'ct_persons_get',
+          { personId: 1 },
+          'validation',
+        );
+        const refused = raw?.isError === true;
+        if (!refused) failures.add('rohe_kennung');
+        results.push({
+          tool: 'ct_persons_get rohe Kennung',
+          ergebnis: refused ? 'abgewiesen' : 'nicht abgewiesen',
+        });
+      }
 
       // ct_groups_search with the term: ID and name, the name enveloped.
       readCalls += 1;
@@ -862,7 +914,7 @@ export async function runEra(
         return inner !== null;
       };
 
-      if (isId(personId)) {
+      if (isPersonId(personId)) {
         // ct_persons_get with the first person: ID, names, archived.
         readCalls += 1;
         const read = await callTool('ct_persons_get', { personId }, 'ok');
@@ -872,7 +924,7 @@ export async function runEra(
           sameKeys(data, ['firstName', 'id', 'isArchived', 'lastName']) &&
           data['id'] === personId &&
           isName(data['firstName']) &&
-          isName(data['lastName']) &&
+          isLastName(data['lastName']) &&
           typeof data['isArchived'] === 'boolean';
         if (data !== undefined) {
           seeValue(data['firstName']);
@@ -1017,9 +1069,9 @@ export async function runEra(
                 'lastName',
                 'personId',
               ]) &&
-              isId(entry['personId']) &&
+              isPersonId(entry['personId']) &&
               isName(entry['firstName']) &&
-              isName(entry['lastName']) &&
+              isLastName(entry['lastName']) &&
               isId(entry['groupTypeRoleId']) &&
               typeof entry['groupMemberStatus'] === 'string' &&
               memberStatus.test(entry['groupMemberStatus']),
@@ -1032,6 +1084,7 @@ export async function runEra(
             if (isRecord(entry)) {
               seeValue(entry['firstName']);
               seeValue(entry['lastName']);
+              seePerson(entry['personId']);
             }
           }
         }
@@ -1333,9 +1386,9 @@ export async function runEra(
                     'lastName',
                     'personId',
                   ]) &&
-                  isId(entry['person']['personId']) &&
+                  isPersonId(entry['person']['personId']) &&
                   isName(entry['person']['firstName']) &&
-                  isName(entry['person']['lastName']))),
+                  isLastName(entry['person']['lastName']))),
           ) &&
           namesEnveloped &&
           noticeFits(page) &&
@@ -2125,12 +2178,14 @@ export async function runEra(
                 // stays outside the envelope, so that the strict masking
                 // can shorten it (ADR 0026).
                 seeValue(entry['name']);
+                seePerson(entry['personId']);
                 return (
                   sameKeys(entry, ['name', 'personId']) &&
-                  isId(entry['personId']) &&
+                  isPersonId(entry['personId']) &&
                   typeof entry['name'] === 'string' &&
                   entry['name'].length <= 511 &&
-                  !entry['name'].startsWith('<<data-')
+                  !entry['name'].startsWith('<<data-') &&
+                  (!strict || isShortName(entry['name']))
                 );
               }
               if (type === 'wiki_page') {
@@ -2313,6 +2368,7 @@ export async function runEra(
   // The answers on stdout carry names, and the search term can be part of
   // one. Log and audit carry neither, and the token appears nowhere.
   const banned = [secrets.token, promptKeywords, promptAccess, ...seen];
+  if (secrets.key !== undefined) banned.push(secrets.key);
   if (secrets.query !== undefined) banned.push(secrets.query);
   if (secrets.songQuery !== undefined) banned.push(secrets.songQuery);
   if (holdsAny(lines, banned)) failures.add('protokoll');
@@ -2329,6 +2385,13 @@ export async function runEra(
     session.stderr().includes(secrets.token)
   ) {
     failures.add('token');
+  }
+  if (
+    secrets.key !== undefined &&
+    (session.stdout().includes(secrets.key) ||
+      session.stderr().includes(secrets.key))
+  ) {
+    failures.add('schluessel');
   }
 
   return {

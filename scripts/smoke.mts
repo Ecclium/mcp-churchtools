@@ -9,8 +9,10 @@
  * identification category of the test instance, it also calls the other
  * read tools, the searches with the term from `ECCLIUM_SMOKE_QUERY`, those
  * of songs with the one from `ECCLIUM_SMOKE_SONG_QUERY` when it is set, and
- * with `ECCLIUM_SMOKE_ALLOW_API` as well the escape hatch. Usage:
- * «Smoke-Test» in docs/betrieb/stdio.md.
+ * with `ECCLIUM_SMOKE_ALLOW_API` as well the escape hatch. With
+ * `ECCLIUM_REDACTION=strict` and `ECCLIUM_PSEUDONYM_KEY_FILE` the server
+ * runs in the level strict, and the checks expect pseudonyms and shortened
+ * last names (ADR 0069). Usage: «Smoke-Test» in docs/betrieb/stdio.md.
  *
  * @packageDocumentation
  */

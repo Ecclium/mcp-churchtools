@@ -219,6 +219,22 @@ export const hints = {
     'Abbruch: Die Token-Datei muss eine reguläre Datei des aufrufenden Benutzers sein, ohne Rechte für andere, höchstens 4 KiB gross und ausserhalb eines Git-Arbeitsbaums.',
   smokeTokenUngueltig:
     'Abbruch: Die Token-Datei muss genau eine Zeile aus druckbaren ASCII-Zeichen ohne Leerzeichen enthalten.',
+  smokeMaskierungUngueltig:
+    'Abbruch: ECCLIUM_REDACTION muss leer, standard oder strict sein. Mit off läuft der Smoke-Test nicht, weil er die Masken prüft.',
+  smokeSchluesselFehlt:
+    'Abbruch: Mit ECCLIUM_REDACTION=strict braucht der Smoke-Test die Schlüsseldatei in ECCLIUM_PSEUDONYM_KEY_FILE.',
+  smokeSchluesselOhneStrict:
+    'Abbruch: ECCLIUM_PSEUDONYM_KEY_FILE ist gesetzt, ECCLIUM_REDACTION aber nicht strict. Setzen Sie beide oder keine.',
+  smokeSchluesselRelativ:
+    'Abbruch: ECCLIUM_PSEUDONYM_KEY_FILE muss ein absoluter Pfad sein, ohne ~ und ohne Variable.',
+  smokeSchluesselNichtGefunden:
+    'Abbruch: Die Schlüsseldatei wurde nicht gefunden. Prüfen Sie den Pfad in ECCLIUM_PSEUDONYM_KEY_FILE.',
+  smokeSchluesselUnsicher:
+    'Abbruch: Die Schlüsseldatei muss eine reguläre Datei des aufrufenden Benutzers sein, ohne Rechte für andere, höchstens 4 KiB gross und ausserhalb eines Git-Arbeitsbaums.',
+  smokeSchluesselUngueltig:
+    'Abbruch: Die Schlüsseldatei muss genau 64 Zeichen aus 0 bis 9 und a bis f enthalten, wie openssl rand -hex 32 sie schreibt.',
+  smokeApiMitStrict:
+    'Abbruch: ECCLIUM_SMOKE_ALLOW_API geht nicht zusammen mit ECCLIUM_REDACTION=strict, denn mit strict bietet der Server das Toolset api nicht an. Die Escape Hatch wurde nicht aufgerufen.',
   smokeSuchbegriffOhneSchalter:
     'Abbruch: ECCLIUM_SMOKE_QUERY ist gesetzt, ECCLIUM_SMOKE_ALLOW_SEARCH fehlt. Die Suchtools ruft der Smoke-Test nur mit dem Schalter auf.',
   smokeSuchbegriffFehlt:
