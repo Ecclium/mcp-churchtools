@@ -448,8 +448,12 @@ export class CalendarStateFile {
    *
    * @param kind - Appointment or booking.
    * @param id - Its ID.
+   * @throws {SpikeError} If the ID is no positive whole number.
    */
   deleted(kind: CalendarObject, id: number): void {
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      throw new SpikeError('INTERN');
+    }
     appendRecord(this.#descriptor, { geloescht: kind, id });
   }
 
@@ -465,6 +469,19 @@ function calendarInvalid(): SpikeError {
 
 const isPositiveId = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+
+/**
+ * Tells whether a text is a real day of the calendar, `YYYY-MM-DD`.
+ *
+ * @param text - The text.
+ * @returns Whether it names a day that exists.
+ */
+function isDay(text: string): boolean {
+  return (
+    /^\d{4}-\d{2}-\d{2}$/.test(text) &&
+    new Date(`${text}T00:00:00Z`).toISOString().startsWith(text)
+  );
+}
 
 /**
  * Reads the write state of a run of 11-calendar-write.
@@ -490,11 +507,16 @@ export function readCalendarState(
     typeof header['run'] !== 'string' ||
     !/^[0-9a-f]{8}$/.test(header['run']) ||
     typeof header['day'] !== 'string' ||
-    !/^\d{4}-\d{2}-\d{2}$/.test(header['day'])
+    !isDay(header['day'])
   ) {
     throw calendarInvalid();
   }
   const open: Record<CalendarObject, Set<number>> = {
+    termin: new Set(),
+    buchung: new Set(),
+  };
+  // An ID the instance confirmed as deleted never comes back.
+  const gone: Record<CalendarObject, Set<number>> = {
     termin: new Set(),
     buchung: new Set(),
   };
@@ -512,6 +534,7 @@ export function readCalendarState(
       ) {
         throw calendarInvalid();
       }
+      gone[deleted].add(id);
       continue;
     }
     const [[kind, id] = []] = Object.entries(record);
@@ -519,7 +542,8 @@ export function readCalendarState(
       Object.keys(record).length !== 1 ||
       (kind !== 'termin' && kind !== 'buchung') ||
       !isPositiveId(id) ||
-      open[kind].has(id)
+      open[kind].has(id) ||
+      gone[kind].has(id)
     ) {
       throw calendarInvalid();
     }

@@ -233,6 +233,8 @@ describe('the write state of 11-calendar-write', () => {
       [header, '{"geloescht":"termin","id":6}'],
       [header, '{"geloescht":"termin","id":5,"x":1}'],
       [header, '{"termin":0}'],
+      [header, '{"termin":5}', '{"geloescht":"termin","id":5}', '{"termin":5}'],
+      [header.replace(day, '2026-02-30')],
       [header, '{"termin":5,"buchung":6}'],
       [header, '{"seite":5}'],
       [header, '{}'],
@@ -258,6 +260,11 @@ describe('the write state of 11-calendar-write', () => {
     expect(
       hintOf(() => {
         file.created('termin', 1.5);
+      }),
+    ).toBe('INTERN');
+    expect(
+      hintOf(() => {
+        file.deleted('buchung', Number.NaN);
       }),
     ).toBe('INTERN');
     file.close();

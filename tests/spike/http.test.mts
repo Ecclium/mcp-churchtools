@@ -532,6 +532,24 @@ describe('createCalendarClient', () => {
     ],
     ['/api/bookings/conflicts', [], false],
     ['/api/persons/12', [], false],
+    [
+      '/api/bookings',
+      [
+        ['resource_ids[]', '9'],
+        ['resource_ids', '8'],
+      ],
+      false,
+    ],
+    [
+      '/api/bookings',
+      [
+        ['resource_ids[]', '9'],
+        ['resource_ids[1]', '8'],
+      ],
+      false,
+    ],
+    ['/api/calendars/7/appointments', [['calendar_ids[]', '8']], false],
+    ['/api/bookings/12', [['include[]', 'conflicts']], false],
   ])('decides %s with %j: %s', (path, query, inside) => {
     expect(insideCalendarArea(path, query, area)).toBe(inside);
   });
@@ -548,12 +566,42 @@ describe('createCalendarClient', () => {
       '/api/events',
       '/api/calendars/8/appointments/12',
       '/API/bookings/12',
+      // A query in the path would pass by the check of the query.
+      '/api/bookings?resource_ids[]=8',
+      '/api/calendars/7/appointments?calendar_ids[]=8',
+      '/api/calendars/7/appointments#x',
     ]) {
-      expect(await codeOf(() => reader.get({ path }))).toBe('INTERN');
+      expect(
+        await codeOf(() =>
+          reader.get({ path, query: [['resource_ids[]', '9']] }),
+        ),
+        path,
+      ).toBe('INTERN');
     }
     expect(calls.map((call) => call.url.pathname)).toEqual([
       '/api/calendars/7/appointments/12',
       '/api/whoami',
     ]);
+  });
+});
+
+describe('the block list of the clients with personal data', () => {
+  it('stays on even if a request asks to leave it off', async () => {
+    const { fetch } = recordingFetch(() =>
+      jsonResponse({ data: { appointment: { title: 'kanarie' } } }),
+    );
+    const guard = new Guard();
+    const reader = createCalendarClient(
+      { origin, token: 't', guard, fetch },
+      { calendar: 7, resource: 9 },
+    );
+    await reader.get({
+      path: '/api/calendars/7/appointments/12',
+      blockValues: false,
+    });
+    // A key the probe took from the instance passes only if no response
+    // value blocks it, like the public document in the test above.
+    guard.allowChecked('kanarie');
+    expect(guard.check({ kanarie: null })).toEqual(['/#0']);
   });
 });

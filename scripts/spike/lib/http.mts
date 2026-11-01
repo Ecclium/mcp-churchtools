@@ -464,8 +464,12 @@ type Reach =
  * Tells whether a request with personal data stays inside the calendar and
  * the resource of the write probes: the appointments of that calendar, one
  * appointment of it, the bookings of that resource and nothing else, and
- * one booking. A single booking can only be named by its ID, so the probe
- * reads only the IDs it created or found in the list of its resource.
+ * one booking. The lists take only their time window and, for bookings,
+ * the statuses; every other query parameter, another spelling of the
+ * resource included, is refused. A single booking can only be named by its
+ * ID, so the probe reads only the IDs it created or found in the list of
+ * its resource; that the booking belongs to the resource, the rights of
+ * the account make sure.
  *
  * @param pathname - The path, already checked by {@link isPlainPath}.
  * @param query - The query parameters of the request.
@@ -478,18 +482,24 @@ export function insideCalendarArea(
   area: CalendarArea,
 ): boolean {
   const appointments = `/api/calendars/${String(area.calendar)}/appointments`;
+  const only = (names: readonly string[]): boolean =>
+    query.every(([name]) => names.includes(name));
   if (pathname === appointments) {
-    return true;
+    return only(['from', 'to']);
   }
   if (pathname === '/api/bookings') {
     const resources = query.filter(([name]) => name === 'resource_ids[]');
     return (
-      resources.length === 1 && resources[0]?.[1] === String(area.resource)
+      only(['resource_ids[]', 'status_ids[]', 'from', 'to']) &&
+      resources.length === 1 &&
+      resources[0]?.[1] === String(area.resource)
     );
   }
   const [, parent, id] = /^(.*)\/([1-9]\d{0,9})$/.exec(pathname) ?? [];
   return (
-    id !== undefined && (parent === appointments || parent === '/api/bookings')
+    id !== undefined &&
+    (parent === appointments || parent === '/api/bookings') &&
+    query.length === 0
   );
 }
 
@@ -497,9 +507,13 @@ function readClient(options: ClientOptions, reach: Reach): Client {
   return {
     async get(request: ProbeRequest): Promise<ProbeResponse> {
       const url = new URL(request.path, options.origin);
+      // The query comes only from request.query, so that the checks below
+      // see all of it; a path that brings its own is refused.
       if (
         !request.path.startsWith('/') ||
         url.origin !== options.origin ||
+        url.search !== '' ||
+        url.hash !== '' ||
         !isPlainPath(url.pathname)
       ) {
         throw new SpikeError('INTERN');
@@ -531,7 +545,11 @@ function readClient(options: ClientOptions, reach: Reach): Client {
         url,
         headers,
         maxBytes: request.maxBytes ?? options.maxBytes ?? 5 * 1024 * 1024,
-        blockValues: request.blockValues !== false,
+        // Only the plain client may leave values off the block list, for
+        // the public OpenAPI document; a client that reaches personal data
+        // never does.
+        blockValues:
+          request.blockValues !== false || reach.kind !== 'ohne Personendaten',
       });
     },
   };
