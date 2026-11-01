@@ -203,7 +203,7 @@ Unverändert blieben die Überschriften, der Absatz, die nummerierte Liste, die 
 [Max Mustermann](https://example.church.tools/?q=churchdb\&ctmd_layout=mention#PersonView/searchEntry:%23person-id-1/)
 ```
 
-Das Schreibkonto erhielt danach keine Benachrichtigung. Einstellungen für Benachrichtigungen zeigte sein Profil nicht. Ob eine Person benachrichtigt wird, die solche Einstellungen hat, bleibt offen. Ob Ecclium überhaupt Erwähnungen schreibt, wird vor Phase 5 entschieden.
+Das Schreibkonto erhielt danach keine Benachrichtigung. Einstellungen für Benachrichtigungen zeigte sein Profil nicht. Ob eine Person benachrichtigt wird, die solche Einstellungen hat, bleibt offen. Seit dem 01.11.2026 ist entschieden, dass Ecclium in Version 1 keine Erwähnungen schreibt (`docs/STATUS.md`, Plan für Phase 5).
 
 ### Personen und Gruppen
 
