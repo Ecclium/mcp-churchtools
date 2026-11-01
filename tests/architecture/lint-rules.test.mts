@@ -326,6 +326,31 @@ const probes: readonly {
   },
 
   {
+    code: 'export const create = client.writes.createWikiPage;',
+    concerns: ['client-writes'],
+  },
+  {
+    code: 'await client.writes?.updateWikiPage(ctx, 1, guid, text);',
+    concerns: ['client-writes'],
+  },
+  {
+    code: "export const writes = client['writes'];",
+    concerns: ['client-writes'],
+  },
+  {
+    code: 'export const writes = client[`writes`];',
+    concerns: ['client-writes'],
+  },
+  {
+    code: 'const { writes } = client;\nexport const all = writes;',
+    concerns: ['client-writes'],
+  },
+  {
+    code: "const { 'writes': all } = client;\nexport const take = all;",
+    concerns: ['client-writes'],
+  },
+
+  {
     code: "import { fromJsonSchema } from '@modelcontextprotocol/server';",
     concerns: ['mcp-json-schema', 'mcp-sdk'],
   },
@@ -494,6 +519,8 @@ const probes: readonly {
 
 /** Code that no restriction may touch. */
 const allowed: readonly string[] = [
+  'export const count = (writes: readonly string[]): number => writes.length;',
+  'export const group = { writes: [] };',
   'process.exitCode = 1;',
   "process.on('exit', () => undefined);",
   'const platform = process.platform;',
@@ -587,6 +614,22 @@ const locations: readonly {
   { path: 'packages/server/src/probe.ts', allowed: ['mcp-sdk'] },
   { path: 'packages/server/src/stdio/probe.ts', allowed: ['mcp-sdk'] },
   { path: 'packages/core/src/http/probe.ts', allowed: ['network'] },
+  { path: 'packages/core/src/write/probe.ts', allowed: ['client-writes'] },
+  {
+    path: 'packages/core/src/write/probe.test.ts',
+    allowed: [
+      'client-writes',
+      'mcp-json-schema',
+      'module-state',
+      'util-module',
+    ],
+  },
+  { path: 'packages/core/src/writex/probe.ts', allowed: [] },
+  {
+    path: 'packages/core/src/churchtools/probe.ts',
+    allowed: ['client-writes'],
+  },
+  { path: 'packages/core/src/churchtoolsx/probe.ts', allowed: [] },
   { path: 'packages/core/src/httpx/probe.ts', allowed: [] },
   {
     path: 'packages/testkit/src/mcp-spike/server.ts',

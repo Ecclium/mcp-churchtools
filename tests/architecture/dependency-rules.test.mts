@@ -722,6 +722,38 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'write-guard-only-from-pipeline',
+    name: 'the mount reaches the write guard',
+    files: {
+      'packages/core/src/mcp/forbidden.ts':
+        "import { checkKillSwitches } from '../write/kill-switch.js';\nexport const check = checkKillSwitches;\n",
+    },
+  },
+  {
+    rule: 'write-guard-only-from-pipeline',
+    name: 'the read access of the pipeline reaches the write guard',
+    files: {
+      'packages/core/src/pipeline/forbidden.ts':
+        "import { rulesOf } from '../write/rules.js';\nexport const rules = rulesOf;\n",
+    },
+  },
+  {
+    rule: 'write-guard-seals-internal',
+    name: 'the pipeline issues a proof itself',
+    files: {
+      'packages/core/src/pipeline/pipeline.ts':
+        "import { issueProof } from '../write/proof.js';\nexport const issue = issueProof;\n",
+    },
+  },
+  {
+    rule: 'write-guard-seals-internal',
+    name: 'the composition root reads a sealed plan',
+    files: {
+      'packages/core/src/composition.ts':
+        "import { readPlan } from './write/sealed-plan.js';\nexport const read = readPlan;\n",
+    },
+  },
+  {
     rule: 'mocked-transport-only-in-testkit',
     name: 'tools builds the transport on a MockAgent',
     files: {
@@ -1004,6 +1036,27 @@ const cases: readonly Case[] = [
 
 // Imports the rules must let pass.
 const allowedCases: readonly Omit<Case, 'rule'>[] = [
+  {
+    name: 'the composition root builds the store of plans',
+    files: {
+      'packages/core/src/composition.ts':
+        "export { createMemoryPlanStore } from './write/plan-store.js';\n",
+    },
+  },
+  {
+    name: 'a module of the write guard reads a sealed plan',
+    files: {
+      'packages/core/src/write/allowed.ts':
+        "import { readPlan } from './sealed-plan.js';\nexport const read = readPlan;\n",
+    },
+  },
+  {
+    name: 'a test of the pipeline issues a proof',
+    files: {
+      'packages/core/src/pipeline/allowed.test.ts':
+        "import { issueProof } from '../write/proof.js';\nexport const issue = issueProof;\n",
+    },
+  },
   {
     name: 'the pipeline opens the pseudonyms',
     files: {

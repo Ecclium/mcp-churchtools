@@ -51,6 +51,9 @@ export const placeKeys = [
   'redactedMark',
   'redactedUsers',
   'keys',
+  'writeGuard',
+  'writeGuardSeals',
+  'writeGuardImporters',
 ] as const;
 
 /** Key of a place in the code that a rule refers to. */

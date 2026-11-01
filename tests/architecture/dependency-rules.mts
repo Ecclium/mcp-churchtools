@@ -307,6 +307,22 @@ export function dependencyRules(
       to: { path: at('redactedMark') },
     },
     {
+      name: 'write-guard-only-from-pipeline',
+      severity: 'error',
+      comment: `${adr('writeGuardImporters')}: only the pipeline, which plans and commits every write of a tool, and the composition root, which builds the stores of plans and nonces through the subpath ./composition of core, import the write guard, so that no other code commits a write. Tests are exempt.`,
+      from: {
+        pathNot: [...at('writeGuard'), ...at('writeGuardImporters'), testFile],
+      },
+      to: { path: at('writeGuard') },
+    },
+    {
+      name: 'write-guard-seals-internal',
+      severity: 'error',
+      comment: `${adr('writeGuardSeals')}: only modules of the write guard import the sealed plan and the proof, so that no other code makes, reads or uses one, the pipeline included. Tests are exempt.`,
+      from: { pathNot: [...at('writeGuard'), testFile] },
+      to: { path: at('writeGuardSeals') },
+    },
+    {
       name: 'transport-only-from-composition-root',
       severity: 'error',
       comment: `${adr('transportBuilders')}: only the composition root builds an HTTP transport, through the subpath ./http of core, so that no tool builds one with an origin of its own. Tests in the packages are not exempt.`,

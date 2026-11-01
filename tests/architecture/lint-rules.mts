@@ -9,8 +9,8 @@ import { moduleStateRule } from './module-state-rule.mts';
 // console, reading the environment, loading modules past the import
 // checks, loading modules that make fd 1 or fd 2 non-blocking, starting
 // processes, importing the MCP SDK, registering with it, compiling JSON
-// schemas with it, opening network connections and keeping state at
-// module level.
+// schemas with it, opening network connections, keeping state at module
+// level and using the writes of the ChurchTools client.
 //
 // Every restriction carries an id such as [arch:stdout] and its ADR in the
 // message, so the tests can prove each one on its own. Several restrictions
@@ -38,6 +38,7 @@ export const concernIds = [
   'mcp-register',
   'mcp-json-schema',
   'module-state',
+  'client-writes',
 ] as const;
 
 type Concern = (typeof concernIds)[number];
@@ -90,6 +91,8 @@ const liftable: readonly (readonly [Concern, PlaceKey])[] = [
   ['mcp-register', 'mcpRegistration'],
   ['environment', 'environment'],
   ['util-module', 'utilModule'],
+  ['client-writes', 'writeGuard'],
+  ['client-writes', 'rawClient'],
 ];
 
 /** The places of boundaries.json that lift a restriction. */
@@ -122,6 +125,7 @@ function messages(boundaries: Boundaries): Record<Concern, string> {
       '[arch:mcp-json-schema] Only tests use fromJsonSchema, elicitInput or the JSON Schema validators of the MCP SDK from ./validators or ./_shims. They compile schemas with the bundled Ajv, which resolves URIs with the bundled fast-uri and its known advisories (ADR 0059).',
     'module-state': `[arch:module-state] Code in the packages keeps no mutable state at module level. State that outlives a request is created in the composition root, as a named port or a named exception (${adr('moduleState')}).`,
     network: `[arch:network] Only the outbound path in core opens network connections, after it checks the host allow-list (${adr('egress')}).`,
+    'client-writes': `[arch:client-writes] Only the write guard in core and the ChurchTools client itself use the writes of the client, so that nothing writes to ChurchTools past planning, confirmation and audit (${adr('writeGuard')}).`,
     diagnostics:
       '[arch:diagnostics] No code in the packages imports node:diagnostics_channel. undici publishes the headers of every request there, the token among them, and the answers as well, so a subscriber would read them past the Secret (ADR 0056).',
   };
@@ -415,6 +419,23 @@ function restrictions(
             `ObjectPattern > Property[key.name=/^(${registration})$/]`,
             `ObjectPattern > Property[key.value=/^(${registration})$/]`,
           ].map((selector) => ({ selector, message: message['mcp-register'] }))
+        : []),
+      ...(forbid('client-writes')
+        ? [
+            // Any access to a property named writes, not only a call:
+            // the group of writes passed on writes just as well. The rule
+            // matches the name, so no other object in the packages may
+            // call a property so. A key built from a variable or by
+            // concatenation is not seen; the review checks that (ADR 0072).
+            "MemberExpression[property.name='writes']",
+            "MemberExpression[property.value='writes']",
+            "MemberExpression[property.type='TemplateLiteral'][property.quasis.0.value.cooked='writes']",
+            "ObjectPattern > Property[key.name='writes']",
+            "ObjectPattern > Property[key.value='writes']",
+          ].map((selector) => ({
+            selector,
+            message: message['client-writes'],
+          }))
         : []),
       ...(forbid('mcp-json-schema')
         ? [
