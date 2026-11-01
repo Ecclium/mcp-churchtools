@@ -263,7 +263,10 @@ export interface PlanStore {
    * @param plan - The sealed plan, which the store keeps as it is.
    * @param ttlMs - How long the plan may be taken, in milliseconds.
    * @returns `stored`, or `full` when the store holds as many plans as it
-   *   may; the plan is then not kept.
+   *   may; the plan is then not kept, and no older plan is dropped for it.
+   * @throws {TypeError} For a time that is no whole number from 1 or longer
+   *   than a plan may live, and when the store cannot tell the time. A
+   *   caller treats a rejection as a plan that was not kept.
    */
   put(
     ctx: TenantContext,
@@ -278,6 +281,8 @@ export interface PlanStore {
    * @param planHash - The hash of the plan.
    * @returns The plan, or undefined when there is none for this tenant
    *   and actor, it expired or it was taken before.
+   * @throws {TypeError} When the store cannot tell the time. A caller
+   *   treats a rejection as no plan.
    */
   take(ctx: TenantContext, planHash: string): Promise<PlannedWrite | undefined>;
 }
@@ -295,7 +300,10 @@ export interface NonceStore {
    * @param nonce - The nonce.
    * @param ttlMs - How long the store must remember it, in milliseconds.
    * @returns `fresh` the first time, `replayed` every later time and when
-   *   the store cannot remember it.
+   *   the store is full; a full store forgets no nonce before its time.
+   * @throws {TypeError} For an empty nonce, a time that is no whole number
+   *   from 1 or longer than a token lives, and when the store cannot tell
+   *   the time. A caller treats a rejection as a nonce that was used.
    */
   consume(
     ctx: TenantContext,

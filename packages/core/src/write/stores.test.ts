@@ -33,7 +33,7 @@ const brokenClock: Clock = Object.freeze({ now: (): number => Number.NaN });
 
 describe('the store of plans in memory', () => {
   it.each(planStoreChecks)('$name', async ({ run }) => {
-    await run((clock) => createMemoryPlanStore(clock));
+    await run((clock, capacity) => createMemoryPlanStore(clock, capacity));
   });
 
   it('keeps plans for 600 seconds and at most 100 of them (ADR 0029)', () => {
@@ -53,6 +53,8 @@ describe('the store of plans in memory', () => {
     expect(await store.take(ctx, hashOf(3))).toBeUndefined();
     // The same hash again takes the place of its plan and counts once.
     const again = stubPlan('again');
+    expect(await store.put(ctx, hashOf(2), again, 1_000)).toBe('stored');
+    expect(await store.take(ctx, hashOf(2))).toBe(again);
     expect(await store.put(ctx, hashOf(2), again, 1_000)).toBe('stored');
     clock.advance(1_000);
     expect(await store.put(ctx, hashOf(3), stubPlan('x'), 1_000)).toBe(
@@ -121,7 +123,7 @@ describe('the store of plans in memory', () => {
 
 describe('the store of nonces in memory', () => {
   it.each(nonceStoreChecks)('$name', async ({ run }) => {
-    await run((clock) => createMemoryNonceStore(clock));
+    await run((clock, capacity) => createMemoryNonceStore(clock, capacity));
   });
 
   it('remembers nonces for 660 seconds and at most 10,000 of them (ADR 0029)', () => {
