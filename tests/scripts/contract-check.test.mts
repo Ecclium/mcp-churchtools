@@ -1138,28 +1138,79 @@ describe('the contract check of the body of a write', () => {
     ]);
   });
 
+  // The base entry passes as it is, so each row fails for its change.
+  const writeEntry = {
+    method: 'post',
+    path: '/api/wiki/categories/{categoryId}/pages',
+    query: [],
+    status: 201,
+    request: { type: 'object' },
+  };
+  const runWith = (change: Record<string, unknown>) => {
+    const output = capture();
+    const code = run(
+      withState(),
+      JSON.stringify({ x: { ...writeEntry, ...change } }),
+      output.io,
+      catalog,
+    );
+    return { code, stdout: output.stdout() };
+  };
+
+  it('takes the base entry of a write as it is', () => {
+    expect(runWith({}).code).toBe(0);
+    expect(runWith({ method: 'patch', status: 200 }).code).toBe(0);
+  });
+
   it.each([
     ['a status other than 200 and 201', { status: 204 }],
     ['a status as text', { status: '201' }],
-    ['a body for a GET', { method: 'get', request: { type: 'object' } }],
+    ['a body for a GET', { method: 'get', status: 200 }],
+    [
+      'a GET read at another status than 200',
+      { method: 'get', request: undefined },
+    ],
+    ['a POST without its body', { request: undefined }],
+    ['a PATCH without its body', { method: 'patch', request: undefined }],
   ])('refuses a contract with %s', (_, change) => {
+    const { code, stdout } = runWith(change);
+    expect(code).not.toBe(0);
+    expect(stdout).toBe('');
+  });
+
+  // The test instance of these tests is example.church.tools. A name only
+  // the document gives passes only the checks for such names.
+  it('withholds the output when a required field of the body only the document gives holds the host', () => {
     const output = capture();
-    expect(
-      run(
-        withState(),
-        JSON.stringify({
-          x: {
-            method: 'post',
-            path: '/api/wiki/categories/{categoryId}/pages',
-            query: [],
-            request: { type: 'object' },
-            ...change,
-          },
-        }),
-        output.io,
-        catalog,
-      ),
-    ).not.toBe(0);
-    expect(output.stdout()).toBe('');
+    const document = documentWith((_, schemas) => {
+      schemas['PageCreate'] = {
+        type: 'object',
+        required: ['example'],
+        properties: { example: { type: 'string' } },
+      };
+    });
+    expect(run(withState(document), contract, output.io, catalog)).not.toBe(0);
+    expect(output.stdout()).toContain('"zurueckgehalten": true');
+    expect(output.stdout()).not.toContain('koerper.example');
+  });
+
+  it('finds no field of a body the document gives in another format than JSON', () => {
+    const result = check(
+      documentWith((paths) => {
+        const patch = paths[
+          '/wiki/categories/{categoryId}/pages/{identifier}'
+        ]?.['patch'] as Record<string, unknown>;
+        patch['requestBody'] = {
+          content: { 'text/plain': { schema: { type: 'string' } } },
+        };
+      }),
+    );
+    expect(ofBody(result, 'wikiPageUpdate')).toEqual([
+      {
+        operation: 'wikiPageUpdate',
+        feld: 'koerper.text',
+        art: 'nicht deklariert',
+      },
+    ]);
   });
 });

@@ -528,9 +528,14 @@ const operationsOf = (contract: unknown): Operation[] => {
       !query.every((item): item is string => typeof item === 'string')
     )
       throw broken;
+    // A read has no body and is read at 200; a write names the body it
+    // sends, so that no write drops out of the comparison (ADR 0072).
     const status = entry.status ?? 200;
     if (status !== 200 && status !== 201) throw broken;
-    if (entry.request !== undefined && method === 'get') throw broken;
+    if (method === 'get' && (entry.request !== undefined || status !== 200))
+      throw broken;
+    if (method !== 'get' && method !== 'delete' && entry.request === undefined)
+      throw broken;
     return [
       {
         name,
