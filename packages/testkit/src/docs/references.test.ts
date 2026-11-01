@@ -1,5 +1,7 @@
 import {
   fileOnlyFields,
+  logEvents,
+  logFieldNames,
   objectDomains,
   variableNames,
 } from '@ecclium/mcp-churchtools-core';
@@ -14,6 +16,13 @@ import {
   renderAuditEventsReference,
 } from './audit-events.js';
 import { renderConfigurationReference } from './configuration.js';
+import {
+  logEventMeaning,
+  logEventMeanings,
+  logEventSections,
+  logFieldMeanings,
+  renderLogEventsReference,
+} from './log-events.js';
 import { renderPromptsReference } from './prompts.js';
 import { renderToolsReference } from './tools.js';
 
@@ -48,6 +57,52 @@ describe('the generated references', () => {
   it('matches docs/prompts.md', async () => {
     await expect(renderPromptsReference()).toMatchFileSnapshot(
       '../../../../docs/prompts.md',
+    );
+  });
+
+  it('matches docs/log-events.md', async () => {
+    await expect(renderLogEventsReference()).toMatchFileSnapshot(
+      '../../../../docs/log-events.md',
+    );
+  });
+});
+
+describe('the page of the log lines', () => {
+  const page = renderLogEventsReference();
+
+  it('renders the same page every time', () => {
+    expect(renderLogEventsReference()).toBe(page);
+  });
+
+  it('gives every field of a line a meaning, and no meaning to anything else', () => {
+    expect(Object.keys(logFieldMeanings).sort()).toEqual(
+      [...logFieldNames].sort(),
+    );
+  });
+
+  it('gives every event a meaning, its own or that of its family', () => {
+    for (const name of Object.keys(logEvents)) {
+      expect(logEventMeaning(name), name).toBeTypeOf('string');
+    }
+    for (const name of Object.keys(logEventMeanings)) {
+      expect(Object.keys(logEvents), name).toContain(name);
+    }
+  });
+
+  it('lists every event once, in one section', () => {
+    const listed = logEventSections().flatMap((section) => section.events);
+    expect([...listed].sort()).toEqual(Object.keys(logEvents).sort());
+    for (const name of Object.keys(logEvents)) {
+      expect(page.split(`\n| \`${name}\` |`), name).toHaveLength(2);
+    }
+  });
+
+  it('names the level and the fields of an event', () => {
+    expect(page).toContain(
+      '| `tool_call` | `info` | `code`, `durationMs` | Ein Aufruf eines Tools ist zu Ende,',
+    );
+    expect(page).toContain(
+      '| `audit_chain_anchor` | `info` | `file`, `seq`, `hash` |',
     );
   });
 });
