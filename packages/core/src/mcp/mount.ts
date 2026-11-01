@@ -216,21 +216,24 @@ export function createMcpMount(options: McpMountOptions): McpMount {
   }
   Object.freeze(tools);
 
-  // A failing logger never breaks the protocol.
-  const report = (event: string): void => {
+  // A failing logger never breaks the protocol. Each event has a fixed name
+  // and each call its own level, so that the check of the log lines sees
+  // which line is written where (ADR 0054).
+  const report = (
+    event:
+      | typeof validatorEvent
+      | typeof instanceErrorEvent
+      | typeof callFailedEvent,
+  ): void => {
     try {
       logger.error(event);
     } catch {
       // Nothing else is left to tell.
     }
   };
-  const note = (
-    level: 'info' | 'warn',
-    event: string,
-    fields?: { readonly prompt: string; readonly code?: 'validation' },
-  ): void => {
+  const note = (write: () => void): void => {
     try {
-      logger[level](event, fields);
+      write();
     } catch {
       // The answer to the client does not depend on the log.
     }
@@ -318,7 +321,9 @@ export function createMcpMount(options: McpMountOptions): McpMount {
     const { name } = request.params;
     const entry = catalog.prompt(name);
     if (entry === undefined) {
-      note('warn', promptUnknownEvent);
+      note(() => {
+        logger.warn(promptUnknownEvent);
+      });
       throw new ProtocolError(
         ProtocolErrorCode.InvalidParams,
         unknownPromptSentence,
@@ -326,9 +331,11 @@ export function createMcpMount(options: McpMountOptions): McpMount {
     }
     const filling = entry.fill(request.params.arguments);
     if (!filling.ok) {
-      note('warn', promptRefusedEvent, {
-        prompt: entry.name,
-        code: 'validation',
+      note(() => {
+        logger.warn(promptRefusedEvent, {
+          prompt: entry.name,
+          code: 'validation',
+        });
       });
       throw new ProtocolError(
         ProtocolErrorCode.InvalidParams,
@@ -337,7 +344,9 @@ export function createMcpMount(options: McpMountOptions): McpMount {
           : argumentRefusedSentence(filling.argument),
       );
     }
-    note('info', promptServedEvent, { prompt: entry.name });
+    note(() => {
+      logger.info(promptServedEvent, { prompt: entry.name });
+    });
     return {
       description: entry.description,
       messages: [

@@ -16,6 +16,7 @@ import type { Readable } from 'node:stream';
 import type { Clock, Logger } from '@ecclium/mcp-churchtools-plugin-api';
 import { Agent, buildConnector, type Dispatcher } from 'undici';
 
+import type { HttpFailureEvent } from '../logger/index.js';
 import {
   categoriseFailure,
   type FailureCategory,
@@ -224,6 +225,26 @@ const unlisten = (signal: AbortSignal | undefined, listener: () => void) => {
 
 const ignore = (): undefined => undefined;
 
+// The event of each category, from the catalog of the logger (ADR 0054).
+// Written out, not built from the category, so that every name can be
+// found and a new category fails the type check here until it has one.
+// The categories come from a closed list, so no lookup reaches the
+// prototype.
+const failureEvents: Readonly<Record<FailureCategory, HttpFailureEvent>> =
+  Object.freeze({
+    refused: 'http_refused',
+    connect: 'http_connect',
+    tls: 'http_tls',
+    timeout: 'http_timeout',
+    aborted: 'http_aborted',
+    interrupted: 'http_interrupted',
+    too_large: 'http_too_large',
+    redirect: 'http_redirect',
+    encoding: 'http_encoding',
+    status: 'http_status',
+    failed: 'http_failed',
+  });
+
 // Destroys a body the transport does not read. Destroying a body that has
 // already arrived in full makes undici emit an error on it a tick later,
 // which would end the process without a listener.
@@ -300,7 +321,7 @@ export function createTransport(
       Math.max(0, Math.round(clock.now() - started));
     const fail = (category: FailureCategory): HttpTransportError => {
       const error = new HttpTransportError(category);
-      logger.warn(`http_${category}`, {
+      logger.warn(failureEvents[category], {
         code: error.code,
         durationMs: duration(),
       });

@@ -19,6 +19,7 @@ import type {
 import type { z } from 'zod';
 
 import {
+  type AuditSinkEvent,
   createLogger,
   isUuid,
   type LineWriter,
@@ -139,7 +140,7 @@ type Json =
 type Line = Record<string, Json>;
 
 interface Report {
-  readonly event: string;
+  readonly event: AuditSinkEvent;
   readonly count?: number;
 }
 
@@ -173,17 +174,18 @@ const producerKeys: readonly string[] = Object.freeze([
 ]);
 
 // Keys the sink sets itself, with the event that reports them.
-const reservedKeys: readonly (readonly [string, string])[] = Object.freeze([
-  Object.freeze(['v', 'audit_reserved_v'] as const),
-  Object.freeze(['eventId', 'audit_reserved_event_id'] as const),
-  Object.freeze(['ts', 'audit_reserved_ts'] as const),
-  Object.freeze(['seq', 'audit_reserved_seq'] as const),
-  Object.freeze(['prevHash', 'audit_reserved_prev_hash'] as const),
+const reservedKeys: readonly (readonly [string, AuditSinkEvent])[] =
   Object.freeze([
-    'withheldAfterRead',
-    'audit_reserved_withheld_after_read',
-  ] as const),
-]);
+    Object.freeze(['v', 'audit_reserved_v'] as const),
+    Object.freeze(['eventId', 'audit_reserved_event_id'] as const),
+    Object.freeze(['ts', 'audit_reserved_ts'] as const),
+    Object.freeze(['seq', 'audit_reserved_seq'] as const),
+    Object.freeze(['prevHash', 'audit_reserved_prev_hash'] as const),
+    Object.freeze([
+      'withheldAfterRead',
+      'audit_reserved_withheld_after_read',
+    ] as const),
+  ]);
 
 const knownKeys: readonly string[] = Object.freeze([
   ...producerKeys,
@@ -313,7 +315,7 @@ const fillPlaceholders = (line: Line): void => {
 function fill(
   draft: object,
   line: Line,
-  report: (event: string, count?: number) => void,
+  report: (event: AuditSinkEvent, count?: number) => void,
   knows: (name: string) => boolean,
 ): boolean {
   let unknown = 0;
@@ -324,7 +326,7 @@ function fill(
   const scalar = (
     key: string,
     schema: z.ZodType,
-    event: string,
+    event: AuditSinkEvent,
     placeholder?: Json,
   ): boolean => {
     const value = own(draft, key);
@@ -342,7 +344,7 @@ function fill(
     key: string,
     limit: number,
     schema: z.ZodType,
-    event: string,
+    event: AuditSinkEvent,
     required: boolean,
   ): void => {
     const value = own(draft, key);
@@ -598,7 +600,7 @@ export function createAuditSink(options: AuditSinkOptions): AuditSink {
     recordOptions?: RecordOptions,
   ): boolean => {
     const reports: Report[] = [];
-    const report = (event: string, count?: number): void => {
+    const report = (event: AuditSinkEvent, count?: number): void => {
       reports.push(count === undefined ? { event } : { event, count });
     };
     // The ID of a tool call comes from the pipeline, which bound it to the

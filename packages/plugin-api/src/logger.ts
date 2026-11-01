@@ -19,34 +19,37 @@ export type LogFields = Readonly<Record<string, LogValue>>;
  *
  * Tools log events, never data: no tokens, no response bodies, no personal
  * data. The core enforces that with its allow-list; the fields of a tool are
- * not trusted to follow it.
+ * not trusted to follow it. The name of an event, too, must be one of the
+ * catalog of the core (ADR 0054): any other name, also one of a plugin,
+ * becomes `invalid_event`, with its level and its allowed fields. A way for
+ * a plugin to add events of its own is not there yet.
  */
 export interface Logger {
   /**
    * Logs a detail for debugging.
    *
-   * @param event - Short name of the event, such as `cache_skipped`.
+   * @param event - Name of an event of the catalog, such as `tool_call`.
    * @param fields - Optional fields, filtered by the allow-list of the core.
    */
   debug(event: string, fields?: LogFields): void;
   /**
    * Logs a normal event.
    *
-   * @param event - Short name of the event.
+   * @param event - Name of an event of the catalog.
    * @param fields - Optional fields, filtered by the allow-list of the core.
    */
   info(event: string, fields?: LogFields): void;
   /**
    * Logs something an operator should look at.
    *
-   * @param event - Short name of the event.
+   * @param event - Name of an event of the catalog.
    * @param fields - Optional fields, filtered by the allow-list of the core.
    */
   warn(event: string, fields?: LogFields): void;
   /**
    * Logs a failure.
    *
-   * @param event - Short name of the event.
+   * @param event - Name of an event of the catalog.
    * @param fields - Optional fields, filtered by the allow-list of the core.
    */
   error(event: string, fields?: LogFields): void;

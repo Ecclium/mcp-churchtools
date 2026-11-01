@@ -5,7 +5,7 @@
 ## Zuerst die Grenzen
 
 - Ecclium verspricht keine Konformität mit einem Datenschutzrecht. Welches Recht für Ihre Gemeinde gilt und was es verlangt, klären Sie. Was wir dazu gefunden haben, steht unter «Welches Recht gilt». Diese Seite ist keine Rechtsberatung.
-- Daten aus ChurchTools lassen auf die Religionszugehörigkeit einer Person schliessen, nach DSGVO und DSG eine besondere Kategorie von Personendaten. Das KDG zählt die blosse Zugehörigkeit zu einer Kirche nicht dazu, religiöse Überzeugungen schon. Die Maskierung von Ecclium begrenzt den Schaden, sie anonymisiert nicht.
+- Daten aus ChurchTools lassen auf die Religionszugehörigkeit einer Person schliessen, nach DSGVO und DSG eine besondere Kategorie von Personendaten. Das KDG zählt die blosse Zugehörigkeit zu einer Kirche nicht dazu, religiöse Überzeugungen schon. Die Maskierung von Ecclium begrenzt den Schaden, sie anonymisiert nicht. Auch die Pseudonyme der Stufe `strict` sind eine Pseudonymisierung, keine Anonymisierung, siehe «Pseudonyme».
 - Was Ecclium auf der Platte ablegt, liegt auf demselben Rechner wie der Server, unter Ihrem Benutzer. Wer unter diesem Benutzer Programme ausführt oder den Rechner verwaltet, kann es lesen, ändern oder löschen. Backups und synchronisierte Ordner kopieren es.
 
 ## Welches Recht gilt
@@ -39,9 +39,19 @@ Nachgelesen am 31.10.2026:
 - Katholisch: KDG und KDG-DVO, jeweils geändert durch Beschluss der Vollversammlung des Verbands der Diözesen Deutschlands vom 24. November 2025 und veröffentlicht in den Amtsblättern der Bistümer, im KDG § 4, in der KDG-DVO § 6 und § 13.
 - Evangelisch: ITSVO-EKD vom 29. Mai 2015 mit ihrer nichtamtlichen Begründung, im Fachinformationssystem Kirchenrecht der EKD.
 
+## Pseudonyme
+
+Mit `ECCLIUM_REDACTION=strict` ersetzt Ecclium die Kennungen von Personen in jedem Ergebnis durch Pseudonyme, bevor der KI-Assistent sie sieht ([ADR 0069](adr/0069-stufe-strict.md)). Was die Stufe sonst tut, steht unter [Sicherheit](security.md#stufe-strict).
+
+- **Pseudonymisierung, keine Anonymisierung:** Ein Pseudonym ist die Kennung der Person, verschlüsselt mit einem Schlüssel, den Ecclium aus der Schlüsseldatei, der Instanz von ChurchTools, dem Subjekt aus `ECCLIUM_STDIO_SUBJECT` und dem UTC-Tag ableitet. Wer den Schlüssel hat, kann jedes Pseudonym in die Kennung zurückübersetzen, auch für andere Tage, weil sich Instanz, Subjekt und Tag erraten lassen. Der Schlüssel ist damit die «zusätzliche Information» nach Art. 4 Nr. 5 DSGVO, und die Daten, die der KI-Assistent sieht, bleiben Personendaten. Ein Pseudonym verbirgt die Kennung vor dem KI-Assistenten und vor allem, wohin er sie weitergibt, nicht vor Ihnen.
+- **Wer zurückübersetzen kann:** wer die Schlüsseldatei lesen kann, also Ihr Benutzer, wer den Rechner verwaltet und wer an eine Sicherung kommt, die sie enthält. Während der Server läuft, steht der Schlüssel auch in seinem Arbeitsspeicher.
+- **Gültigkeit:** Dasselbe Pseudonym zeigt dieselbe Person nur für dasselbe Subjekt am selben UTC-Tag. Ecclium nimmt es am Tag seiner Ausgabe und am folgenden an, danach nicht mehr.
+- **Nichts auf der Platte:** Ecclium legt kein Pseudonym und keine Tabelle ab. Die Audit-Datei nennt die echten Kennungen, nicht die Pseudonyme, damit Sie Auskunft geben können, wer wessen Daten gelesen hat.
+- **Wechsel und Verlust:** Wie Sie den Schlüssel wechseln, steht unter [Betrieb über stdio](betrieb/stdio.md#stufe-strict-und-schlüsseldatei). Geht er verloren, nimmt Ecclium die Pseudonyme des laufenden und des letzten Tages nicht mehr an, und keines lässt sich mehr zurückübersetzen. Sonst hängt nichts an ihnen.
+
 ## Was Ecclium nicht ablegt
 
-Ecclium hat keine Datenbank und keinen Zwischenspeicher für Antworten von ChurchTools. Personendaten, Inhalte des Wikis und andere Antworten hält der Server nur im Arbeitsspeicher, solange ein Aufruf läuft. Log und Audit tragen keine solchen Inhalte und kein Token.
+Ecclium hat keine Datenbank und keinen Zwischenspeicher für Antworten von ChurchTools. Personendaten, Inhalte des Wikis und andere Antworten hält der Server nur im Arbeitsspeicher, solange ein Aufruf läuft. Log und Audit tragen keine solchen Inhalte und kein Token. Welche Ereignisse und Felder eine Logzeile haben kann, zeigen die [Logzeilen](log-events.md) ganz, ein anderes Ereignis schreibt der Logger nicht.
 
 ## Was Ecclium ablegt
 
@@ -70,3 +80,7 @@ Nur wenn `ECCLIUM_STATE_DIR` gesetzt ist, zählt Ecclium im Ordner `quota` darin
 ### Token-Datei
 
 Die Datei mit dem Login-Token legen Sie selbst an. Ecclium liest sie und schreibt sie nie. Wie Sie sie schützen, steht unter [Betrieb über stdio](betrieb/stdio.md).
+
+### Schlüsseldatei für Pseudonyme
+
+Nur für `ECCLIUM_REDACTION=strict` legen Sie eine Datei mit dem Schlüssel für die Pseudonyme an, die `ECCLIUM_PSEUDONYM_KEY_FILE` nennt, und für einen Wechsel eine zweite mit dem bisherigen. Ecclium liest sie und schreibt sie nie. Sie enthält keine Personendaten, öffnet aber jedes Pseudonym, siehe «Pseudonyme». Schützen Sie sie wie die Token-Datei, legen Sie sie nicht in einen synchronisierten Ordner und sichern Sie sie getrennt, damit die Pseudonyme nach einer Wiederherstellung gleich bleiben. Wie Sie sie anlegen, steht unter [Betrieb über stdio](betrieb/stdio.md#stufe-strict-und-schlüsseldatei).

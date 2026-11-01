@@ -585,12 +585,12 @@ describe('the logger of the context', () => {
       tool: 'ct_whoami',
       eventId,
     });
-    context.log.info('cache_skipped', { count: 2 });
+    context.log.info('audit_file_closed', { count: 2 });
     expect(lines.parsed()).toEqual([
       {
         ts: '2025-10-09T08:53:20.000Z',
         level: 'info',
-        event: 'cache_skipped',
+        event: 'audit_file_closed',
         tenantId: 'default',
         runId,
         eventId,
@@ -613,7 +613,7 @@ describe('the logger of the context', () => {
       },
       redaction: 'off',
     });
-    context.log.info('call_done', {
+    context.log.info('tool_call', {
       tenantId: 'default',
       mode: 'operator',
       redaction: 'standard',
@@ -635,9 +635,11 @@ describe('the logger of the context', () => {
       ...valid(lines),
       logging: { writer: lines.writer, minLevel: 'warn' },
     });
-    context.log.info('skipped');
-    context.log.warn('kept');
-    expect(lines.parsed().map((line) => line['event'])).toEqual(['kept']);
+    context.log.info('http_response');
+    context.log.warn('http_refused');
+    expect(lines.parsed().map((line) => line['event'])).toEqual([
+      'http_refused',
+    ]);
   });
 
   it('is refused with the placeholder tenant before any line', () => {
@@ -673,9 +675,9 @@ describe('two contexts', () => {
       redaction: 'off',
       readOnly: false,
     });
-    first.log.info('one');
-    second.log.info('two');
-    first.log.info('three');
+    first.log.info('process_sigterm');
+    second.log.info('process_sigint');
+    first.log.info('stdio_closed');
     expect(
       lines.parsed().map(({ event, tenantId, redaction, readOnly }) => ({
         event,
@@ -685,19 +687,19 @@ describe('two contexts', () => {
       })),
     ).toEqual([
       {
-        event: 'one',
+        event: 'process_sigterm',
         tenantId: 'default',
         redaction: 'standard',
         readOnly: true,
       },
       {
-        event: 'two',
+        event: 'process_sigint',
         tenantId: 'demo-tenant',
         redaction: 'off',
         readOnly: false,
       },
       {
-        event: 'three',
+        event: 'stdio_closed',
         tenantId: 'default',
         redaction: 'standard',
         readOnly: true,

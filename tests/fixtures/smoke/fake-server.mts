@@ -5,8 +5,10 @@
 // audit file in the form of the real server. FAKE_SCENARIO breaks one thing at a time,
 // so that each check of the smoke test can be seen to fail. FAKE_RECORD
 // names a folder that receives, per process, the environment it got and
-// the tools it was asked to call. The real server stands in the other
-// tests of the smoke test.
+// the tools it was asked to call. With ECCLIUM_REDACTION=strict it answers
+// as the level strict does: pseudonyms for IDs of persons, shortened last
+// names and a refusal of a number in place of a pseudonym. The real server
+// stands in the other tests of the smoke test.
 import { randomUUID } from 'node:crypto';
 import {
   appendFileSync,
@@ -30,6 +32,17 @@ const docsToolset = toolsets.includes('docs');
 const apiToolset = toolsets.includes('api');
 const pageGuid = '00000000-0000-4000-8000-000000000001';
 const calls: string[] = [];
+const strict = env['ECCLIUM_REDACTION'] === 'strict';
+// A pseudonym of the right form for an ID. The smoke test checks only the
+// form; the real server stands in for the cipher.
+const personRef = (id: number): number | string =>
+  strict && scenario !== 'strict-raw-id'
+    ? `p1_${String(id)
+        .replace(/\d/g, (digit) => 'abcdefghij'.charAt(Number(digit)))
+        .padStart(39, 'a')}`
+    : id;
+const lastNameOf = (name: string): string =>
+  strict && scenario !== 'strict-long-name' ? `${name.charAt(0)}.` : name;
 
 const record = (): void => {
   const target = env['FAKE_RECORD'];
@@ -102,6 +115,16 @@ if (scenario === 'foreign-stdout') process.stdout.write('hallo\n');
 if (scenario === 'token-stderr') {
   process.stderr.write(
     readFileSync(env['ECCLIUM_CHURCHTOOLS_TOKEN_FILE'] ?? '', 'utf8'),
+  );
+}
+if (scenario === 'key-stdout') {
+  process.stdout.write(
+    readFileSync(env['ECCLIUM_PSEUDONYM_KEY_FILE'] ?? '', 'utf8'),
+  );
+}
+if (scenario === 'key-stderr') {
+  process.stderr.write(
+    readFileSync(env['ECCLIUM_PSEUDONYM_KEY_FILE'] ?? '', 'utf8'),
   );
 }
 
@@ -433,10 +456,10 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
           ? [{ right: 'security level group', ids: [1], idCount: 1 }]
           : [{ right: 'view' }];
     return result({
-      id: 4711,
+      id: personRef(4711),
       firstName:
         scenario === 'lone-surrogate' ? `${canary}\uD800` : `${canary}Konto`,
-      lastName: `${canary}Dienst`,
+      lastName: lastNameOf(`${canary}Dienst`),
       email: emails[scenario] ?? null,
       rights: {
         status: 'known',
@@ -477,12 +500,29 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
     return executeRead(args, wrap);
   }
   if (name === 'ct_persons_get') {
+    // strict refuses a number before any request (ADR 0069).
+    if (
+      strict &&
+      typeof args['personId'] === 'number' &&
+      scenario !== 'strict-raw-accepted'
+    ) {
+      audit(name, 'validation');
+      return {
+        content: [
+          {
+            type: 'text',
+            text: 'IDs of persons on this server are pseudonyms.',
+          },
+        ],
+        isError: true,
+      };
+    }
     event('http_response', { status: 200 });
     audit(name);
     return result({
       id: args['personId'],
       firstName: `${canary}Erika`,
-      lastName: `${canary}Muster`,
+      lastName: lastNameOf(`${canary}Muster`),
       isArchived: false,
       ...(scenario === 'person-extra' ? { email: 'x@example.org' } : {}),
     });
@@ -540,9 +580,9 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
       page: 1,
       members: [
         {
-          personId: 811,
+          personId: personRef(811),
           firstName: `${canary}Erika`,
-          lastName: `${canary}Muster`,
+          lastName: lastNameOf(`${canary}Muster`),
           groupTypeRoleId: 8,
           groupMemberStatus: scenario === 'member-status' ? 'Aktiv' : 'active',
         },
@@ -667,9 +707,9 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
           isAccepted: true,
           agreed: true,
           person: {
-            personId: 811,
+            personId: personRef(811),
             firstName: `${canary}Erika`,
-            lastName: `${canary}Muster`,
+            lastName: lastNameOf(`${canary}Muster`),
             ...(scenario === 'assignment-extra'
               ? { email: 'x@example.org' }
               : {}),
@@ -998,11 +1038,11 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
       person: {
         persons: [
           {
-            personId: 811,
+            personId: personRef(811),
             name:
               scenario === 'search-person-enveloped'
                 ? wrap(`${canary}Muster`)
-                : `${canary}Muster`,
+                : lastNameOf(`${canary}Muster`),
           },
         ],
       },
@@ -1051,12 +1091,15 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
       return result({ persons: [], more: false, notice: 'No person matched.' });
     }
     if (scenario === 'leak-log') event('debug', { value: `${canary}Erika` });
+    if (scenario === 'pseudonym-log') {
+      event('debug', { value: personRef(811) });
+    }
     return result({
       persons: [
         {
-          id: 811,
+          id: personRef(811),
           firstName: `${canary}Erika`,
-          lastName: `${canary}Muster`,
+          lastName: lastNameOf(`${canary}Muster`),
           ...(scenario === 'extra-field' ? { email: 'x@example.org' } : {}),
         },
       ],

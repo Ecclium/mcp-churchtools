@@ -10,7 +10,9 @@
  * The smoke test reads the token itself, but sends it only with the switch,
  * for the reads of its guard (ADR 0049). Without the switch it reads the
  * token only to make sure that it appears nowhere in what the server
- * writes.
+ * writes. The level of redaction and the key file for pseudonyms come
+ * under the names of the server as well; the key it reads only for the
+ * same search (ADR 0069).
  *
  * @packageDocumentation
  */
@@ -28,6 +30,8 @@ import { checkSwitch, placeholderHost } from '../spike/lib/gate.mts';
 export const smokeVariables = [
   'ECCLIUM_CHURCHTOOLS_URL',
   'ECCLIUM_CHURCHTOOLS_TOKEN_FILE',
+  'ECCLIUM_REDACTION',
+  'ECCLIUM_PSEUDONYM_KEY_FILE',
   'ECCLIUM_SMOKE_ALLOW_SEARCH',
   'ECCLIUM_SMOKE_ALLOW_API',
   'ECCLIUM_SMOKE_QUERY',
@@ -59,11 +63,70 @@ export interface SmokeSettings {
   readonly tokenFile: string;
   /** The token, for the guard and for the search for leaks. */
   readonly token: string;
+  /**
+   * The level of redaction of the server, `standard` unless the
+   * environment names `strict`.
+   */
+  readonly redaction: 'standard' | 'strict';
+  /**
+   * The key file and the key for pseudonyms, only with `strict`. The key
+   * is only for the search for leaks; the server reads its own copy.
+   */
+  readonly pseudonymKey:
+    { readonly file: string; readonly key: string } | undefined;
   /** Present only with the switch for the search tools. */
   readonly search: SearchSettings | undefined;
 }
 
 const maxTokenBytes = 4096;
+
+/** The form of a key for pseudonyms, as `openssl rand -hex 32` writes it. */
+const keyPattern = /^[0-9a-f]{64}$/;
+
+/**
+ * Reads the level of redaction and, with `strict`, the key file.
+ *
+ * Only `standard` and `strict` pass: with `off` the checks of the masks
+ * would fail, and a key file without `strict` would do nothing in the
+ * server, so the run would not test what its caller meant.
+ *
+ * @param env - Environment of the process.
+ * @returns The level and, with `strict`, the key file and its key.
+ * @throws {SpikeError} If the level is another one, the key file is missing with strict or set without it, relative, unsafe or not a key.
+ */
+export function readRedaction(
+  env: Environment,
+): Pick<SmokeSettings, 'redaction' | 'pseudonymKey'> {
+  const level = env['ECCLIUM_REDACTION'] ?? '';
+  const file = env['ECCLIUM_PSEUDONYM_KEY_FILE'] ?? '';
+  if (level !== '' && level !== 'standard' && level !== 'strict') {
+    throw new SpikeError('KONFIGURATION', 'smokeMaskierungUngueltig');
+  }
+  if (level !== 'strict') {
+    if (file !== '') {
+      throw new SpikeError('KONFIGURATION', 'smokeSchluesselOhneStrict');
+    }
+    return { redaction: 'standard', pseudonymKey: undefined };
+  }
+  if (file === '') {
+    throw new SpikeError('KONFIGURATION', 'smokeSchluesselFehlt');
+  }
+  if (!isAbsolute(file)) {
+    throw new SpikeError('KONFIGURATION', 'smokeSchluesselRelativ');
+  }
+  const key = readPrivateFile(
+    file,
+    maxTokenBytes,
+    'smokeSchluesselUnsicher',
+    'smokeSchluesselNichtGefunden',
+  ).replace(/\r?\n$/, '');
+  // The server refuses a key whose 32 bytes are all the same as well; the
+  // smoke test says so before the start, as a matter of the file.
+  if (!keyPattern.test(key) || /^([0-9a-f]{2})\1{31}$/.test(key)) {
+    throw new SpikeError('DATEI', 'smokeSchluesselUngueltig');
+  }
+  return { redaction: 'strict', pseudonymKey: { file, key } };
+}
 
 /** The longest search term the search tools take (ADR 0060). */
 export const maxQueryLength = 100;
@@ -122,7 +185,7 @@ export function isSearchTerm(text: string): boolean {
  *
  * @param env - Environment of the process.
  * @returns The settings.
- * @throws {SpikeError} If Node.js would load foreign code or trust foreign certificates, the address or the token file is missing or unsafe, the token is in a variable, the search term comes without the switch or the other way round, or the switch does not fit the host.
+ * @throws {SpikeError} If Node.js would load foreign code or trust foreign certificates, the address or the token file is missing or unsafe, the token is in a variable, the level of redaction or the key file does not fit, the search term comes without the switch or the other way round, the switch does not fit the host, or the escape hatch comes with strict.
  */
 export function readSmokeSettings(env: Environment): SmokeSettings {
   try {
@@ -165,6 +228,7 @@ export function readSmokeSettings(env: Environment): SmokeSettings {
   if (!/^[\x21-\x7e]+$/.test(token)) {
     throw new SpikeError('DATEI', 'smokeTokenUngueltig');
   }
+  const masking = readRedaction(env);
 
   const switchValue = env['ECCLIUM_SMOKE_ALLOW_SEARCH'] ?? '';
   const apiValue = env['ECCLIUM_SMOKE_ALLOW_API'] ?? '';
@@ -183,7 +247,7 @@ export function readSmokeSettings(env: Environment): SmokeSettings {
     if (apiValue !== '') {
       throw new SpikeError('KONFIGURATION', 'smokeApiOhneSuchschalter');
     }
-    return { origin, tokenFile, token, search: undefined };
+    return { origin, tokenFile, token, ...masking, search: undefined };
   }
   // As with the probes, the switch must name the first label of the host,
   // typed by hand, so that a mistyped address stops the run (ADR 0049).
@@ -209,11 +273,17 @@ export function readSmokeSettings(env: Environment): SmokeSettings {
       missing: 'smokeApiSchalterFalsch',
       wrong: 'smokeApiSchalterFalsch',
     });
+    // With strict and the toolset api the server does not start (ADR
+    // 0069); its tests show that, the smoke test says so before the start.
+    if (masking.redaction === 'strict') {
+      throw new SpikeError('KONFIGURATION', 'smokeApiMitStrict');
+    }
   }
   return {
     origin,
     tokenFile,
     token,
+    ...masking,
     search: {
       api: apiValue !== '',
       query,

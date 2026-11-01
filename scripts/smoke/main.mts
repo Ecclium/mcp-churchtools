@@ -7,7 +7,8 @@
  * shell says, a folder of state of its own in the temporary folder, and
  * the toolsets: `docs` without its switch,
  * `persons,events,calendars,wiki,songs,docs` with it and `api` as well
- * with the second switch. Without the switch it reads from ChurchTools
+ * with the second switch, and with `ECCLIUM_REDACTION=strict` the level
+ * and the key file for pseudonyms (ADR 0069). Without the switch it reads from ChurchTools
  * only through `ct_whoami`, so on a productive instance nothing but the
  * account of the server is read; the docs tools read only the docs index
  * of the build. With the switch it first reads
@@ -161,12 +162,19 @@ const topWords = [
   'nein',
   'unbekannt',
   'audit',
+  'maskierung',
+  'standard',
+  'strict',
 ] as const;
 
 const blockLocal = (guard: Guard, settings: SmokeSettings): void => {
   for (const value of hostValues(settings.origin)) guard.block(value);
   guard.block(settings.token);
   guard.block(settings.tokenFile);
+  if (settings.pseudonymKey !== undefined) {
+    guard.block(settings.pseudonymKey.key);
+    guard.block(settings.pseudonymKey.file);
+  }
   if (settings.search !== undefined) guard.block(settings.search.query);
   if (settings.search?.songQuery !== undefined) {
     guard.block(settings.search.songQuery);
@@ -270,6 +278,7 @@ export async function runSmoke(deps: SmokeDependencies): Promise<number> {
       smoketest: 'ecclium',
       suchtools: settings.search === undefined ? 'nein' : 'ja',
       api: settings.search?.api === true ? 'ja' : 'nein',
+      maskierung: settings.redaction,
     };
     if (settings.search !== undefined) {
       const version = await passGuard(settings, guard, deps.fetch);
@@ -308,6 +317,12 @@ export async function runSmoke(deps: SmokeDependencies): Promise<number> {
           // Named one by one rather than with all, so that a later toolset
           // in all does not join the run unseen.
           ECCLIUM_TOOLSETS: toolsetsOf(search),
+          ...(settings.pseudonymKey === undefined
+            ? {}
+            : {
+                ECCLIUM_REDACTION: 'strict',
+                ECCLIUM_PSEUDONYM_KEY_FILE: settings.pseudonymKey.file,
+              }),
           ...deps.server.env,
         };
         const session = startServer(
@@ -324,6 +339,7 @@ export async function runSmoke(deps: SmokeDependencies): Promise<number> {
             token: settings.token,
             query: settings.search?.query,
             songQuery: settings.search?.songQuery,
+            key: settings.pseudonymKey?.key,
           });
         } finally {
           // After a failure of the course itself the server still runs,
@@ -331,6 +347,9 @@ export async function runSmoke(deps: SmokeDependencies): Promise<number> {
           session.dispose();
         }
         const banned = [settings.token, ...outcome.seen];
+        if (settings.pseudonymKey !== undefined) {
+          banned.push(settings.pseudonymKey.key);
+        }
         if (settings.search !== undefined) banned.push(settings.search.query);
         if (settings.search?.songQuery !== undefined) {
           banned.push(settings.search.songQuery);

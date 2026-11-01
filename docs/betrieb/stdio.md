@@ -89,7 +89,7 @@ Im Checkout liegt absichtlich keine Datei `.mcp.json`. Claude Code böte den Ser
 
 - Ohne Toolset ein einziges Tool, `ct_whoami`, ohne Argumente und nur lesend. Seine Beschreibung ist englisch, wie alle Texte für das Modell. Was die Tools für Personen und Gruppen zeigen, steht unter «Personen und Gruppen», was die des Wikis zeigen, unter «Wiki».
 - Ein Aufruf sendet nacheinander zwei Anfragen an ChurchTools: `GET /api/whoami` für das Konto und `GET /api/permissions/global` für seine Rechte. Andere Adressen als die aus `ECCLIUM_CHURCHTOOLS_URL` fragt der Server nicht an.
-- Das Ergebnis nennt die Personen-ID, Vor- und Nachname und die E-Mail-Adresse des Dienstkontos. Die E-Mail-Adresse ist maskiert: das erste Zeichen, drei Sterne und die Domain, etwa `m***@example.org`. Vor- und Nachname maskiert diese Version nicht. Darf das Dienstkonto keine Personen sehen, liefert ChurchTools seine E-Mail-Adresse nicht mit, und dort steht `null`.
+- Das Ergebnis nennt die Personen-ID, Vor- und Nachname und die E-Mail-Adresse des Dienstkontos. Die E-Mail-Adresse ist maskiert: das erste Zeichen, drei Sterne und die Domain, etwa `m***@example.org`. Vor- und Nachname maskiert die Voreinstellung `standard` nicht, `strict` kürzt den Nachnamen und ersetzt die Personen-ID durch ein Pseudonym, siehe «Stufe `strict` und Schlüsseldatei». Darf das Dienstkonto keine Personen sehen, liefert ChurchTools seine E-Mail-Adresse nicht mit, und dort steht `null`.
 - Dazu kommen die gesetzten Rechte je Modul, nach Namen sortiert. Rechte, die das Konto nicht hat, fehlen. Ein Recht mit einer Liste von IDs, etwa für einzelne Wiki-Kategorien, zeigt die 10 kleinsten IDs und ihre Gesamtzahl. Hat das Konto mehr als 150 gesetzte Rechte, gibt das Tool statt der Liste einen Fehler mit dem Rat, dem Dienstkonto nur die Rechte seiner Tools zu geben. Kennt Ecclium die Form der Antwort zu den Rechten nicht, stehen sie als unbekannt da.
 - Lehnt ChurchTools das Token ab oder ist ChurchTools nicht erreichbar, erhält der KI-Assistent nur einen festen englischen Satz. Den Code, `auth` oder `network`, nennt die Zeile des Audits auf stderr. Keine Fehlermeldung nennt einen Wert aus der Konfiguration oder aus ChurchTools.
 
@@ -98,7 +98,7 @@ Im Checkout liegt absichtlich keine Datei `.mcp.json`. Claude Code böte den Ser
 stdout gehört dem Protokoll MCP. Alles andere schreibt Ecclium nach stderr, in dieser Reihenfolge:
 
 1. Beim Start Hinweise als deutscher Text, je Hinweis eine Zeile, etwa die Warnung, wenn das Token in der Variable steht. Ist die Konfiguration ungültig oder lässt sich die Audit-Datei nicht öffnen, endet der Server nach den Hinweisen mit 78.
-2. Danach schreibt Ecclium nur noch Zeilen in JSON, je Zeile ein Ereignis. Logzeilen tragen das Feld `event`, etwa `http_response` für jede Anfrage an ChurchTools, ab der Stufe aus `ECCLIUM_LOG_LEVEL`. Jeder Aufruf eines Tools ergibt eine Zeile des Audits mit `type` gleich `tool_call`, dem Mandanten `default`, dem Subjekt `stdio:local-stdio` aus `ECCLIUM_STDIO_SUBJECT`, dem Modus `interactive`, dem Namen des Tools, dem Ausgang und bei einem Fehler dessen Code. Die Logzeilen eines Aufrufs, darunter `tool_call`, tragen die `eventId` seiner Zeile im Audit, die Zeilen des Transports wie `http_response` tragen keine.
+2. Danach schreibt Ecclium nur noch Zeilen in JSON, je Zeile ein Ereignis. Logzeilen tragen das Feld `event`, etwa `http_response` für jede Anfrage an ChurchTools, ab der Stufe aus `ECCLIUM_LOG_LEVEL`. Alle Ereignisse mit ihren Feldern stehen unter [Logzeilen](../log-events.md). Jeder Aufruf eines Tools ergibt eine Zeile des Audits mit `type` gleich `tool_call`, dem Mandanten `default`, dem Subjekt `stdio:local-stdio` aus `ECCLIUM_STDIO_SUBJECT`, dem Modus `interactive`, dem Namen des Tools, dem Ausgang und bei einem Fehler dessen Code. Die Logzeilen eines Aufrufs, darunter `tool_call`, tragen die `eventId` seiner Zeile im Audit, die Zeilen des Transports wie `http_response` tragen keine.
 3. Beim Ende mit Audit-Datei die Zeile `audit_file_closed`, die im Feld `count` nennt, wie viele Zeilen des Audits nicht ganz in die Datei kamen, dann die Zeile `stdio_closed`, die im Feld `count` nennt, wie viele Zeilen auf stderr verloren gingen. Kam vor dem Ende ein Signal, steht davor `process_sigterm` oder `process_sigint`. Kommt es erst danach, folgt seine Zeile. Diese Zeilen schreibt Ecclium bei jeder Stufe aus `ECCLIUM_LOG_LEVEL`.
 
 Node.js selbst kann weitere Zeilen schreiben, etwa eine Warnung, wenn es die Datei aus `NODE_EXTRA_CA_CERTS` nicht laden kann. Überspringen Sie Zeilen, die kein JSON sind.
@@ -235,6 +235,57 @@ Welche Tools der Server neben `ct_whoami` anbietet, legen Sie mit `ECCLIUM_TOOLS
 
 `all` schaltet alle ein ausser `api`, auch die Toolsets späterer Versionen. `api` nennen Sie ausdrücklich, allein, in einer Liste oder als `all,api` für alle ([ADR 0067](../adr/0067-generischer-lesezugriff.md)). Ist die Variable leer oder nicht gesetzt, bietet der Server nur `ct_whoami` an. Beim Start nennt Ecclium auf stderr die Toolsets, die eingeschaltet sind, und jedes, das in dieser Version noch keine Tools mitbringt. Ein unbekannter Name, ein doppelter oder `all` neben einem anderen Namen als `api` bricht den Start ab. Die frühere Variable `ECCLIUM_SEARCH_TOOLS` bricht den Start ebenfalls ab, mit dem Hinweis auf `ECCLIUM_TOOLSETS=persons`.
 
+## Stufe `strict` und Schlüsseldatei
+
+Mit `ECCLIUM_REDACTION=strict` kürzt Ecclium Nachnamen auf den ersten Buchstaben, ersetzt die Kennungen von Personen durch Pseudonyme und prüft Freitext auf E-Mail-Adressen, Telefonnummern, IBAN und AHV-Nummern. Was die Stufe leistet und wo sie endet, steht unter [Sicherheit](../security.md#stufe-strict). Sie braucht einen Schlüssel für die Pseudonyme und geht nicht zusammen mit dem Toolset `api`.
+
+### Schlüsseldatei anlegen
+
+Legen Sie die Datei wie die Token-Datei ausserhalb des Checkouts an, in einem Ordner, den nur Ihr Benutzer lesen kann, und nicht in einem Ordner, den ein Dienst in die Cloud synchronisiert:
+
+```sh
+(umask 077 && openssl rand -hex 32 > /pfad/zur/schluessel-datei)
+```
+
+Der Befehl schreibt 64 zufällige Zeichen aus `0` bis `9` und `a` bis `f` und einen Zeilenumbruch in eine Datei mit den Rechten 600. Ecclium prüft sie wie die Token-Datei, siehe «Token-Datei», und verlangt genau diese Form, mit oder ohne Zeilenumbruch am Ende. Ein Schlüssel, dessen 32 Bytes alle gleich sind, etwa lauter Nullen, gilt nicht. Sie müssen den Schlüssel nie ansehen oder eingeben.
+
+Sichern Sie die Datei getrennt von den Audit-Dateien, etwa verschlüsselt an einem Ort ausserhalb des Rechners. Mit einem neuen Schlüssel bekommt jede Person ein anderes Pseudonym, mehr hängt nicht daran. Wer die Datei hat, kann jedes Pseudonym in die Kennung zurückübersetzen ([Datenschutz](../privacy.md#pseudonyme)).
+
+### Einschalten
+
+Setzen Sie im Abschnitt `env` des Eintrags `ecclium` neben der Adresse und der Token-Datei:
+
+```json
+"ECCLIUM_REDACTION": "strict",
+"ECCLIUM_PSEUDONYM_KEY_FILE": "/pfad/zur/schluessel-datei"
+```
+
+Prüfen Sie die Konfiguration davor:
+
+```sh
+env -i ECCLIUM_CHURCHTOOLS_URL=https://example.church.tools ECCLIUM_CHURCHTOOLS_TOKEN_FILE=/pfad/zur/token-datei ECCLIUM_REDACTION=strict ECCLIUM_PSEUDONYM_KEY_FILE=/pfad/zur/schluessel-datei /pfad/zu/node /pfad/zum/checkout/packages/cli/dist/bin.js config check
+```
+
+Die Prüfung liest die Schlüsseldatei und zeigt die Zeile «Pseudonym-Schlüssel», nie den Pfad, auch nicht mit `--show-values`, und nie den Schlüssel. Ohne Schlüsseldatei, mit einer, die Ecclium nicht annimmt, und zusammen mit dem Toolset `api`, auch über `all,api`, endet sie mit 78, und der Server startet so nicht. Unter Windows gibt es `strict` über stdio nicht, weil Ecclium die Datei dort nicht sicher lesen kann.
+
+Was der KI-Assistent in `strict` sieht:
+
+- `ct_whoami` nennt das Dienstkonto mit einem Pseudonym statt der Kennung, `p1_` und 39 Zeichen, und mit gekürztem Nachnamen.
+- Die Tools für Personen, Gruppen und Dienste nennen jede Person mit Pseudonym und gekürztem Nachnamen. Bei `ct_search` steht der ganze Name in einem Feld, dort bleibt nur sein erster Buchstabe. Die Tools, die eine Person über ihre Kennung lesen, nehmen nur ein Pseudonym aus einem Ergebnis desselben oder des vorigen UTC-Tages an. Eine Zahl weist Ecclium ab, ohne ChurchTools zu fragen.
+- In Seiten des Wikis, Notizen, Beschreibungen und Titeln steht an Stelle einer gefundenen E-Mail-Adresse, Telefonnummer, IBAN oder AHV-Nummer eine Marke.
+
+Die Audit-Datei nennt weiter die echten Kennungen. Die Pseudonyme gelten je Subjekt aus `ECCLIUM_STDIO_SUBJECT`. Clients mit demselben Subjekt sehen dieselben, geben Sie jedem Client ein eigenes, wenn Sie das trennen wollen.
+
+### Schlüssel wechseln
+
+Ecclium übersetzt ein Pseudonym am Tag seiner Ausgabe und am folgenden UTC-Tag zurück. Damit Pseudonyme, die der KI-Assistent schon kennt, beim Wechsel gültig bleiben:
+
+1. Legen Sie eine neue Datei an wie oben.
+2. Setzen Sie `ECCLIUM_PSEUDONYM_KEY_FILE` auf die neue und `ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE` auf die bisherige Datei und starten Sie den Client neu. Solange die zweite Variable gesetzt ist, warnt jeder Start auf stderr.
+3. Ist der UTC-Tag nach dem Wechsel vorbei, entfernen Sie `ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE`, starten neu und löschen die bisherige Datei samt ihren Sicherungen.
+
+Solange die zweite Variable gesetzt ist, nimmt Ecclium auch ein Pseudonym an, das jemand mit dem bisherigen Schlüssel neu bildet. Ist der bisherige Schlüssel abhandengekommen, setzen Sie die zweite Variable deshalb nicht. Die Pseudonyme des laufenden und des vorigen Tages gelten dann nicht mehr, und der KI-Assistent findet die Personen über die Suche neu.
+
 ## Wiki
 
 `ct_wiki_categories_list` nennt die Kategorien des Wikis, die das Dienstkonto sehen darf, `ct_wiki_pages_list` die Seiten einer Kategorie mit Titel und Version, aber ohne Text, beide 25 je Aufruf mit weiteren Seiten. `ct_wiki_page_get` liest eine Seite und gibt einen langen Text in Teilen von höchstens 16'000 Bytes, geschnitten an einem Zeilenumbruch, wo eine Zeile hineinpasst, sonst zwischen zwei Zeichen. Den Text maskiert Ecclium nicht, auch keine E-Mail-Adressen oder Telefonnummern darin ([ADR 0026](../adr/0026-klassifizierte-ausgabeschemas.md)). `ct_wiki_search` sucht Seiten nach einem Begriff, in allen Kategorien, die das Konto sehen darf, oder in einer, und gibt die ersten 20 Treffer in der Folge von ChurchTools mit GUID, Kategorie, Titel und einem Ausschnitt des Texts. Weitere Seiten gibt es nicht. Gibt es mehr Treffer, sagt das Ergebnis, Sie sollen genauer oder in einer Kategorie suchen. Nennt ChurchTools eine Seite in einer anderen Form als mit ihrer GUID, steht dort `null`. Namen, Titel, Ausschnitte und Text stehen im Datenumschlag, Personen aus den Metadaten der Antworten von ChurchTools gibt keines der vier Tools weiter. Sie brauchen keinen Zustandsordner. Schalten Sie sie mit `ECCLIUM_TOOLSETS=wiki` ein, die Rechte des Dienstkontos stehen unter [Dienstkonto](dienstkonto.md#rechte).
@@ -318,7 +369,7 @@ Was die Suchtools tun und was nicht:
 
 - `ct_persons_search` sendet `GET /api/persons`, `ct_groups_search` `GET /api/groups`, je mit genau dem Suchbegriff, der ersten Seite und 51 Einträgen. Kommt ein 51. Eintrag, sagt das Ergebnis, dass es mehr Treffer gibt. Zahlen wie die Gesamtzahl der Treffer gibt Ecclium nicht weiter, weil offen ist, ob ChurchTools darin Einträge mitzählt, die das Konto nicht sehen darf.
 - Ein Begriff trifft den Anfang oder einen Teil eines Namens, auch kleingeschrieben, bei Personen auch einen ganzen Vor- oder Nachnamen und Vor- und Nachname in dieser Reihenfolge, aber nicht in der umgekehrten und nie die E-Mail-Adresse. Ob ein ganzer Name einer Gruppe trifft, ist nicht geprüft. Er hat 1 bis 100 Zeichen ohne Leerzeichen am Rand und ohne Steuerzeichen. Eine Suche ohne Begriff, die alle Personen zeigte, lehnt Ecclium ab.
-- Namen von Personen gibt diese Version unmaskiert und ohne Datenumschlag weiter, wie bei `ct_whoami`. Namen von Gruppen stehen im Datenumschlag, weil Personen der Gemeinde sie frei wählen.
+- Namen von Personen gibt die Voreinstellung `standard` unmaskiert und ohne Datenumschlag weiter, wie bei `ct_whoami`. `strict` kürzt den Nachnamen und ersetzt die Kennung durch ein Pseudonym. Namen von Gruppen stehen im Datenumschlag, weil Personen der Gemeinde sie frei wählen.
 - Ein leeres Ergebnis kann auch heissen, dass dem Konto das Recht fehlt: ChurchTools antwortet dann mit einer leeren Liste, nicht mit einem Fehler. Das Ergebnis sagt das und nennt das Recht.
 - Personen ausserhalb der Bereiche des Kontos und Gruppen ausserhalb seiner Gruppentypen findet die Suche nicht, ohne Fehler. Gruppen mit der Sichtbarkeit «intern» findet sie dagegen auch ohne Recht auf Gruppen. Ob versteckte Gruppen ausgelassen werden, ist nicht geprüft.
 - Passt der Name des Dienstkontos zum Begriff, kann sein eigener Datensatz unter den Treffern sein.
@@ -332,7 +383,7 @@ Was die Suchtools tun und was nicht:
 
 - Kontaktdaten, Geburtstag und Adresse gibt keines der vier Tools weiter.
 - Namen von Gruppen, Treffzeit und Notiz stehen im Datenumschlag, Namen von Personen nicht, wie bei der Suche.
-- Die Tools senden `GET /api/persons/{personId}`, `GET /api/persons/{personId}/groups` ohne Parameter, `GET /api/groups/{groupId}` und `GET /api/groups/{groupId}/members` mit `page` und 50 Einträgen, nie `personFields[]` oder `include`. Sie nehmen nur Kennungen als ganze Zahlen an, keine GUID.
+- Die Tools senden `GET /api/persons/{personId}`, `GET /api/persons/{personId}/groups` ohne Parameter, `GET /api/groups/{groupId}` und `GET /api/groups/{groupId}/members` mit `page` und 50 Einträgen, nie `personFields[]` oder `include`. Sie nehmen nur Kennungen als ganze Zahlen an, keine GUID, in `strict` für Personen nur Pseudonyme.
 - Die Gruppen einer Person zeigen, was ChurchTools ohne seine Schalter für vergangene, inaktive, angefragte und zu löschende Mitgliedschaften zeigt.
 - Fehlt dem Dienstkonto die niedrigste Stufe von «Gruppeninfos sehen - bis zum gewählten Sicherheitslevel», gibt ChurchTools die Angaben einer Gruppe nicht mit. `ct_groups_get` gibt dann nur Kennung und Name weiter und nennt das Recht. Gründung und Ende nimmt Ecclium nur als Tag ohne Zeit an, weil keine Probe ihr Format gezeigt hat. Kommt eine andere Form, endet der Aufruf mit einem Fehler.
 - Mitglieder ausserhalb der Bereiche des Kontos lässt ChurchTools ohne Eintrag weg. Weil die Seiten von ChurchTools sie womöglich mitzählen, kann eine spätere Seite leer sein, und das Ergebnis sagt das.
@@ -368,17 +419,19 @@ Die Tools für Personen und Gruppen, für Events und Dienste, für Kalender und 
 
 Die beiden Tools des lesenden Zugriffs auf die API ruft der Smoke-Test nur mit einem zweiten Schalter auf, `ECCLIUM_SMOKE_ALLOW_API`, wieder mit dem ersten Teil des Hosts von Hand getippt, und nur zusammen mit `ECCLIUM_SMOKE_ALLOW_SEARCH`, also nur hinter dem Wächter der Testinstanz. Ohne den ersten Schalter bricht er mit 78 ab. Er sucht mit `ct_api_search_actions` nach «wiki categories», liest mit `ct_api_execute_read` die Kategorien des Wikis und die Rechte des Kontos und prüft, dass jede Antwort als JSON im Datenumschlag steht. Danach muss der Server drei Aufrufe abweisen, ohne ChurchTools zu fragen: das CSRF-Token, das Ecclium nie liest, eine `operationId`, die es nicht gibt, und einen Wert des Pfads, der aus seiner Vorlage hinaus will. Unter `warnung` steht, ob der Server beim Start vor `api` gewarnt hat.
 
+Mit `ECCLIUM_REDACTION=strict` und `ECCLIUM_PSEUDONYM_KEY_FILE`, unter denselben Namen wie beim Server, prüft der Smoke-Test die Stufe `strict` (siehe «Stufe `strict` und Schlüsseldatei»). Er gibt beide an den Server weiter und liest die Schlüsseldatei wie die Token-Datei nur, um den Schlüssel in allem zu suchen, was der Server schreibt, mit dem Fehler `schluessel` auf stdout und stderr und `audit` in der Audit-Datei. Er verlangt dann bei `ct_whoami` und in jedem Ergebnis, das eine Person nennt, ein Pseudonym statt der Kennung und einen gekürzten Nachnamen, ruft die Tools, die über die Kennung lesen, mit dem Pseudonym aus der Suche auf und prüft, dass ein Pseudonym weder im Log noch in der Audit-Datei steht. Mit dem Schalter der Suchtools ruft er `ct_persons_get` zusätzlich mit einer Zahl auf. Der Server muss sie abweisen, sonst scheitert der Lauf mit `rohe_kennung`, und zwar ohne ChurchTools zu fragen, sonst mit `anfragen`. `ECCLIUM_REDACTION=off`, eine Schlüsseldatei ohne `strict` und `strict` zusammen mit `ECCLIUM_SMOKE_ALLOW_API` weist er mit 78 ab, weil der Server mit `strict` kein `api` anbietet. Unter `maskierung` steht die Stufe des Laufs.
+
 Die Ausgabe ist JSON. `ergebnis` sagt `bestanden` oder `gescheitert`, `fehler` nennt die gescheiterten Prüfungen und `befunde` Hinweise, die den Lauf nicht scheitern lassen, etwa `sicherheitsstufe`, wenn das Konto eine Sicherheitsstufe für Personen hat. Eine Stufe für Gruppen meldet er nicht, weil `ct_groups_get` die niedrigste braucht und die Rechte von ChurchTools die Stufen nur als Kennungen nennen. Der Smoke-Test endet mit einem dieser Codes:
 
-| Code | Bedeutung                                                                                                                                                                                                                                                                           |
-| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | Alle Prüfungen sind bestanden.                                                                                                                                                                                                                                                      |
-| 1    | Mindestens eine Prüfung ist gescheitert, siehe `fehler`.                                                                                                                                                                                                                            |
-| 64   | Nach dem Befehl stand ein Argument.                                                                                                                                                                                                                                                 |
-| 69   | Die Instanz war für das Lesen der Wiki-Kategorien nicht erreichbar, etwa wegen Netz, TLS, Zeitlimit, einer Weiterleitung oder einer zu grossen Antwort.                                                                                                                             |
-| 70   | Ein interner Fehler, oder die Ausgabe ist zurückgehalten, weil sie womöglich Daten aus ChurchTools enthielte.                                                                                                                                                                       |
-| 77   | Die Kennkategorie fehlt, ist doppelt, bearbeitbar oder löschbar, die Antwort zu den Wiki-Kategorien hat eine andere Form, oder einer der Schalter passt nicht zum Host.                                                                                                             |
-| 78   | Eine Variable fehlt oder ist ungültig, der Schalter der Escape Hatch steht ohne den der Suchtools, die Token-Datei ist unsicher, ChurchTools weist das Token ab, der temporäre Ordner ist nicht beschreibbar, der Server ist nicht gebaut, oder der Smoke-Test läuft unter Windows. |
+| Code | Bedeutung                                                                                                                                                                                                                                                                                                                     |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | Alle Prüfungen sind bestanden.                                                                                                                                                                                                                                                                                                |
+| 1    | Mindestens eine Prüfung ist gescheitert, siehe `fehler`.                                                                                                                                                                                                                                                                      |
+| 64   | Nach dem Befehl stand ein Argument.                                                                                                                                                                                                                                                                                           |
+| 69   | Die Instanz war für das Lesen der Wiki-Kategorien nicht erreichbar, etwa wegen Netz, TLS, Zeitlimit, einer Weiterleitung oder einer zu grossen Antwort.                                                                                                                                                                       |
+| 70   | Ein interner Fehler, oder die Ausgabe ist zurückgehalten, weil sie womöglich Daten aus ChurchTools enthielte.                                                                                                                                                                                                                 |
+| 77   | Die Kennkategorie fehlt, ist doppelt, bearbeitbar oder löschbar, die Antwort zu den Wiki-Kategorien hat eine andere Form, oder einer der Schalter passt nicht zum Host.                                                                                                                                                       |
+| 78   | Eine Variable fehlt oder ist ungültig, der Schalter der Escape Hatch steht ohne den der Suchtools oder mit `strict`, die Token-Datei oder die Schlüsseldatei ist unsicher, ChurchTools weist das Token ab, der temporäre Ordner ist nicht beschreibbar, der Server ist nicht gebaut, oder der Smoke-Test läuft unter Windows. |
 
 Unter Windows läuft der Smoke-Test nicht, weil es dort über stdio keine Audit-Datei gibt.
 

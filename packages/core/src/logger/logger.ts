@@ -33,18 +33,10 @@ import {
   isUuid,
   toTimestamp,
 } from './fields.js';
+import { isLogEvent, type LogLevel, logLevels } from './catalog.js';
 import type { LineWriter } from './line-writer.js';
 
-/** The levels, from the least to the most severe. */
-export const logLevels = Object.freeze([
-  'debug',
-  'info',
-  'warn',
-  'error',
-] as const);
-
-/** A level of a log line. */
-export type LogLevel = (typeof logLevels)[number];
+export { type LogLevel, logLevels } from './catalog.js';
 
 /**
  * Fields that only the core binds to a logger, for every line it writes. A
@@ -95,7 +87,10 @@ export interface LoggerOptions {
   readonly anchors?: boolean;
 }
 
-/** The event of a line whose event name broke the pattern. */
+/**
+ * The event of a line whose event name broke the pattern or is not in the
+ * catalog of the core.
+ */
 export const replacedEventName = 'invalid_event';
 
 /** The time of a line when the clock failed. */
@@ -145,6 +140,18 @@ const fields: readonly Field[] = Object.freeze(
 
 // The fields only a logger with anchors may write.
 const anchorFields: readonly string[] = Object.freeze(['file', 'seq', 'hash']);
+
+/**
+ * Every field a line may carry, in the order of the line, for the page of
+ * the log lines.
+ */
+export const logFieldNames: readonly string[] = Object.freeze([
+  'ts',
+  'level',
+  'event',
+  ...fields.map((field) => field.name),
+  'dropped',
+]);
 
 const emptyRecord = (): Record<string, LogValue> =>
   Object.create(null) as Record<string, LogValue>;
@@ -265,7 +272,8 @@ const timestamp = (clock: Clock): string => {
  * order, then `dropped` if fields were dropped. A call may set only
  * `prompt`, with a name from `prompts`, `code`, `durationMs`, `count`,
  * `status` and `attempt`, and with `anchors` also `file`, `seq` and
- * `hash`; everything else is dropped and counted. An event name that breaks the pattern becomes
+ * `hash`; everything else is dropped and counted. An event name that
+ * breaks the pattern or is not in the catalog `logEvents` becomes
  * `invalid_event`. Fields are read as own data properties of a plain
  * object, so no getter, proxy trap or coercion of the caller runs.
  *
@@ -279,7 +287,7 @@ const timestamp = (clock: Clock): string => {
  * @example
  * ```ts
  * const log = createLogger({ writer, clock: systemClock, minLevel: 'info' });
- * log.info('cache_skipped', { count: 3 });
+ * log.info('audit_file_closed', { count: 3 });
  * ```
  */
 export function createLogger(options: LoggerOptions): Logger {
@@ -305,7 +313,10 @@ export function createLogger(options: LoggerOptions): Logger {
       const line = emptyRecord();
       line['ts'] = timestamp(clock);
       line['level'] = level;
-      line['event'] = isEventName(event) ? event : replacedEventName;
+      // Only a name of the catalog: an event made from data, by the core or
+      // by a plugin, would carry that data into the log (ADR 0054).
+      line['event'] =
+        isEventName(event) && isLogEvent(event) ? event : replacedEventName;
       const { values, dropped } = admit(input, prompts, anchors);
       for (const field of fields) {
         const value = (field.bound ? boundValues : values)[field.name];

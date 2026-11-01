@@ -40,6 +40,8 @@ const token = `t${randomBytes(20).toString('hex')}`;
 const canary = `c${randomBytes(6).toString('hex')}`;
 const query = `Suchprobe${randomBytes(3).toString('hex')}`;
 const songQuery = `Liedprobe${randomBytes(3).toString('hex')}`;
+// Made for each run, never written in the source.
+const pseudonymKey = randomBytes(32).toString('hex');
 const pageGuid = '00000000-0000-4000-8000-000000000001';
 
 // The calls after the bookings: the songs, the first song, the categories
@@ -82,12 +84,16 @@ const timeout = 120_000;
 
 let folder = '';
 let tokenFile = '';
+let keyFile = '';
 
 beforeAll(() => {
   folder = mkdtempSync(join(tmpdir(), 'ecclium-smoke-test-'));
   tokenFile = join(folder, 'token');
   writeFileSync(tokenFile, `${token}\n`, { mode: 0o600 });
   chmodSync(tokenFile, 0o600);
+  keyFile = join(folder, 'pseudonym-key');
+  writeFileSync(keyFile, `${pseudonymKey}\n`, { mode: 0o600 });
+  chmodSync(keyFile, 0o600);
 });
 
 afterAll(() => {
@@ -221,6 +227,8 @@ const expectClean = (result: Run): void => {
     songQuery,
     host,
     tokenFile,
+    pseudonymKey,
+    keyFile,
     folder,
   ]) {
     expect(output).not.toContain(value);
@@ -999,6 +1007,182 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
   });
 });
 
+// The level strict: the smoke test hands the level and the key file to the
+// server and checks pseudonyms, shortened last names and the refusal of a
+// number in place of a pseudonym (ADR 0069).
+describe('the smoke test with the level strict', { timeout }, () => {
+  const strict = () => ({
+    ECCLIUM_REDACTION: 'strict',
+    ECCLIUM_PSEUDONYM_KEY_FILE: keyFile,
+  });
+  const failures = (result: Run): unknown => report(result)['fehler'];
+
+  it('hands level and key file to the server only with strict', async () => {
+    const plain = await run();
+    expect(plain.code).toBe(smokeExitCodes.ok);
+    expect(report(plain)).toMatchObject({ maskierung: 'standard' });
+    for (const record of plain.records) {
+      expect(record.variables).not.toHaveProperty('ECCLIUM_REDACTION');
+      expect(record.variables).not.toHaveProperty('ECCLIUM_PSEUDONYM_KEY_FILE');
+    }
+    const result = await run({ env: strict() });
+    expect(result.code).toBe(smokeExitCodes.ok);
+    expect(report(result)).toMatchObject({
+      maskierung: 'strict',
+      fehler: [],
+      ergebnis: 'bestanden',
+    });
+    expect(result.records).toHaveLength(2);
+    for (const record of result.records) {
+      expect(record.variables['ECCLIUM_REDACTION']).toBe('strict');
+      expect(record.variables['ECCLIUM_PSEUDONYM_KEY_FILE']).toBe(keyFile);
+      expect(record.calls).toEqual(['ct_whoami', ...docsCalls]);
+    }
+    expectClean(result);
+  });
+
+  it('passes with the switch, reads by pseudonym and sees a number refused', async () => {
+    const result = await run({ env: { ...search, ...strict() } });
+    expect(result.code).toBe(smokeExitCodes.ok);
+    expect(report(result)).toMatchObject({
+      maskierung: 'strict',
+      fehler: [],
+      ergebnis: 'bestanden',
+    });
+    for (const record of result.records) {
+      // The probe with a number, then the read with the pseudonym.
+      expect(
+        record.calls.filter((call) => call === 'ct_persons_get'),
+      ).toHaveLength(2);
+    }
+    const eras = report(result)['aeren'] as {
+      aufrufe: { tool: string; ergebnis: string }[];
+    }[];
+    for (const era of eras) {
+      expect(era.aufrufe).toContainEqual({
+        tool: 'ct_persons_get rohe Kennung',
+        ergebnis: 'abgewiesen',
+      });
+    }
+    expectClean(result);
+  });
+
+  it.each([
+    [
+      'numbers in place of pseudonyms',
+      'strict-raw-id',
+      ['whoami', 'personensuche'],
+    ],
+    [
+      'last names that are not shortened',
+      'strict-long-name',
+      ['whoami', 'personensuche'],
+    ],
+    [
+      'a number that is not refused',
+      'strict-raw-accepted',
+      ['anfragen', 'rohe_kennung'],
+    ],
+    ['the key on stderr', 'key-stderr', ['schluessel']],
+    ['the key on stdout', 'key-stdout', ['schluessel']],
+    ['a pseudonym in the log', 'pseudonym-log', ['protokoll']],
+  ] as const)('fails for %s', async (_, scenario, codes) => {
+    const result = await run({ scenario, env: { ...search, ...strict() } });
+    expect(result.code).toBe(smokeExitCodes.failed);
+    expect(failures(result)).toEqual(expect.arrayContaining([...codes]));
+    expectClean(result);
+  });
+
+  it.each([
+    ['the level off', { ECCLIUM_REDACTION: 'off' }, 'smokeMaskierungUngueltig'],
+    [
+      'strict without a key file',
+      { ECCLIUM_REDACTION: 'strict' },
+      'smokeSchluesselFehlt',
+    ],
+    [
+      'a key file without strict',
+      { ECCLIUM_PSEUDONYM_KEY_FILE: '/pfad/zur/schluessel-datei' },
+      'smokeSchluesselOhneStrict',
+    ],
+    [
+      'a relative key file',
+      { ECCLIUM_REDACTION: 'strict', ECCLIUM_PSEUDONYM_KEY_FILE: 'key' },
+      'smokeSchluesselRelativ',
+    ],
+    [
+      'a key file that is not there',
+      {
+        ECCLIUM_REDACTION: 'strict',
+        ECCLIUM_PSEUDONYM_KEY_FILE: '/pfad/zur/schluessel-datei',
+      },
+      'smokeSchluesselNichtGefunden',
+    ],
+  ] as const)(
+    'ends with 78 for %s, before any request',
+    async (_, env, hint) => {
+      const result = await run({ env });
+      expect(result.code).toBe(smokeExitCodes.configuration);
+      expect(result.stderr).toContain(hints[hint]);
+      expect(result.fetched).toEqual([]);
+      expect(result.records).toEqual([]);
+      expectClean(result);
+    },
+  );
+
+  it('ends with 78 for strict together with the escape hatch, before any request', async () => {
+    const result = await run({ env: { ...withApi, ...strict() } });
+    expect(result.code).toBe(smokeExitCodes.configuration);
+    expect(result.stderr).toContain(hints.smokeApiMitStrict);
+    expect(result.fetched).toEqual([]);
+    expect(result.records).toEqual([]);
+  });
+
+  it('ends with 78 for a key file others may read or that holds no key', async () => {
+    const open = join(folder, 'key-offen');
+    writeFileSync(open, `${pseudonymKey}\n`, { mode: 0o644 });
+    chmodSync(open, 0o644);
+    const readable = await run({
+      env: { ECCLIUM_REDACTION: 'strict', ECCLIUM_PSEUDONYM_KEY_FILE: open },
+    });
+    expect(readable.code).toBe(smokeExitCodes.configuration);
+    expect(readable.stderr).toContain(hints.smokeSchluesselUnsicher);
+    const short = join(folder, 'key-kurz');
+    writeFileSync(short, `${pseudonymKey.slice(2)}\n`, { mode: 0o600 });
+    chmodSync(short, 0o600);
+    const invalid = await run({
+      env: { ECCLIUM_REDACTION: 'strict', ECCLIUM_PSEUDONYM_KEY_FILE: short },
+    });
+    expect(invalid.code).toBe(smokeExitCodes.configuration);
+    expect(invalid.stderr).toContain(hints.smokeSchluesselUngueltig);
+    const same = join(folder, 'key-gleich');
+    writeFileSync(same, `${pseudonymKey.slice(0, 2).repeat(32)}\n`, {
+      mode: 0o600,
+    });
+    chmodSync(same, 0o600);
+    const equal = await run({
+      env: { ECCLIUM_REDACTION: 'strict', ECCLIUM_PSEUDONYM_KEY_FILE: same },
+    });
+    expect(equal.code).toBe(smokeExitCodes.configuration);
+    expect(equal.stderr).toContain(hints.smokeSchluesselUngueltig);
+    for (const result of [readable, invalid, equal]) {
+      expect(result.records).toEqual([]);
+      expectClean(result);
+    }
+  });
+
+  it('takes a key file with a line break of Windows at the end', async () => {
+    const crlf = join(folder, 'key-crlf');
+    writeFileSync(crlf, `${pseudonymKey}\r\n`, { mode: 0o600 });
+    chmodSync(crlf, 0o600);
+    const result = await run({
+      env: { ECCLIUM_REDACTION: 'strict', ECCLIUM_PSEUDONYM_KEY_FILE: crlf },
+    });
+    expect(result.code).toBe(smokeExitCodes.ok);
+    expectClean(result);
+  });
+});
+
 // The real `ecclium stdio` from source, as in tests/stdio-start.test.mts:
 // the resolution hook, the network guard in NODE_OPTIONS, a preload that
 // sends demo.example to a server of this test on 127.0.0.1, and its
@@ -1603,6 +1787,31 @@ describe.skipIf(process.getuid?.() === 0)(
           path,
         ).toHaveLength(4);
       }
+      expect(stateDirsLeft()).toEqual([]);
+      expectClean(result);
+    });
+
+    it('passes with the switch in strict, with pseudonyms of the real server', async () => {
+      requests.length = 0;
+      const result = await run({
+        origin,
+        server,
+        env: {
+          ...search,
+          ECCLIUM_REDACTION: 'strict',
+          ECCLIUM_PSEUDONYM_KEY_FILE: keyFile,
+        },
+      });
+      expect(result.stderr).toBe('');
+      expect(result.code).toBe(smokeExitCodes.ok);
+      expect(report(result)).toMatchObject({
+        maskierung: 'strict',
+        befunde: [],
+        fehler: [],
+        ergebnis: 'bestanden',
+      });
+      // As without strict: the number in place of a pseudonym sends nothing.
+      expect(requests).toHaveLength(64);
       expect(stateDirsLeft()).toEqual([]);
       expectClean(result);
     });

@@ -19,7 +19,7 @@ Das empfehlen wir:
 - Betreiben Sie Ecclium nicht im selben Client neben Servern oder Tools, die frei ins Netz schreiben oder Nachrichten senden können. Geht es nicht anders, trennen Sie die Arbeit mit Ecclium in eine eigene Sitzung oder ein eigenes Profil des Clients.
 - Schalten Sie mit `ECCLIUM_TOOLSETS` nur die Bereiche ein, die Sie brauchen. Ohne Angabe bietet der Server nur `ct_whoami` an ([Konfiguration](configuration.md)). Das Toolset `api` gehört nicht zu `all` und kommt nur, wenn Sie es ausdrücklich nennen. Schalten Sie es in einem Client mit Tools, die ins Netz schreiben, nicht ein.
 - Stellen Sie Tools mit Netzzugriff im Client nicht auf «immer erlauben». Bestätigen Sie jeden Aufruf einzeln, dann ist der Dialog des Clients die Stelle, an der ein Abfluss auffällt.
-- Wählen Sie `ECCLIUM_REDACTION=strict`, wenn Ecclium neben solchen Tools laufen muss. Die Stufe kürzt zusätzlich Nachnamen, ersetzt Kennungen von Personen durch Pseudonyme und durchsucht Freitext nach E-Mail-Adressen, Telefonnummern, IBAN und AHV-Nummern. Sie braucht eine Schlüsseldatei in `ECCLIUM_PSEUDONYM_KEY_FILE` und geht nicht zusammen mit dem Toolset `api` ([Konfiguration](configuration.md), [ADR 0069](adr/0069-stufe-strict.md)).
+- Wählen Sie `ECCLIUM_REDACTION=strict`, wenn Ecclium neben solchen Tools laufen muss. Die Stufe kürzt zusätzlich Nachnamen, ersetzt Kennungen von Personen durch Pseudonyme und durchsucht Freitext nach E-Mail-Adressen, Telefonnummern, IBAN und AHV-Nummern. Sie braucht eine Schlüsseldatei in `ECCLIUM_PSEUDONYM_KEY_FILE` und geht nicht zusammen mit dem Toolset `api`, siehe unten «Stufe `strict`».
 
 ## Was die Maskierung leistet und was nicht
 
@@ -41,7 +41,37 @@ Jedes Ergebnis eines Tools geht durch dieselbe Pipeline, bevor es den Client err
 
 Dazu kommen Tests, die viele Werte erzeugen, mit der Bibliothek fast-check ([ADR 0070](adr/0070-property-tests-mit-fast-check.md)). Sie setzen Testwerte in jedes klassifizierte Feld jedes Tools und eines eigens gebauten Tools mit jeder Klasse, in jeder Stufe, auch in Vollbreite, in anderen Formen derselben Zeichen und mit unsichtbaren Zeichen dazwischen, und prüfen jedes Feld gegen die Tabelle in ADR 0026. Golden-Tests vergleichen das ganze Ergebnis eines Datensatzes mit jeder Klasse je Stufe mit der erwarteten Ausgabe. Die Tests der Maskierung und des Audits decken jede Zeile und jede Verzweigung ihres Codes ab.
 
-Die Prüfung von Freitext in `strict` erkennt Werte nur an ihrer Form, und die Tests halten ihre Grenzen fest ([ADR 0069](adr/0069-stufe-strict.md)). Sie erkennt eine IBAN in einem Stück oder in Gruppen zu vier mit je einem Leerzeichen, eine AHV-Nummer in einem Stück oder mit demselben Punkt, Leerzeichen oder Bindestrich zwischen den Gruppen und eine Telefonnummer, die mit `+`, `(` oder `0` beginnt. Eine IBAN mit Bindestrichen, eine AHV-Nummer mit gemischten Trennern oder eine Telefonnummer ohne Vorwahl geht in einer Seite des Wikis unmaskiert hinaus, ausser ein Teil davon, der mit `0` beginnt, sieht wie eine Telefonnummer aus. Ebenso wenig erkennt sie Buchstaben anderer Schriften, die nur wie lateinische aussehen, etwa ein kyrillisches «а», und Ziffern anderer Schriften, etwa eine Telefonnummer in arabisch-indischen Ziffern. Namen in Freitext erkennt sie gar nicht. Felder mit einer Datenklasse maskiert die Pipeline dagegen unabhängig von ihren Zeichen.
+Wo die Prüfung von Freitext in `strict` endet, steht unten unter «Stufe `strict`».
+
+## Stufe `strict`
+
+Mit `ECCLIUM_REDACTION=strict` gibt Ecclium dem KI-Assistenten weniger als in der Voreinstellung `standard` ([ADR 0069](adr/0069-stufe-strict.md)). Wählen Sie die Stufe, wenn Ecclium neben Tools laufen muss, die ins Netz schreiben oder Nachrichten senden, oder wenn der KI-Assistent für seine Arbeit nicht wissen muss, wer genau gemeint ist. Wie Sie sie einschalten, steht unter [Betrieb über stdio](betrieb/stdio.md#stufe-strict-und-schlüsseldatei).
+
+Was `strict` zusätzlich zu `standard` tut:
+
+- **Nachnamen** kürzt die Stufe auf den ersten Buchstaben mit Punkt, aus «Muster» wird «M.». Ein Name aus einem einzigen Zeichen, wie viele Namen in chinesischer oder koreanischer Schrift, wird ganz zur Marke. Vornamen bleiben stehen. Bei `ct_search` steht der ganze Name in einem Feld, dort bleibt nur sein erster Buchstabe.
+- **Kennungen von Personen** ersetzt sie in jedem Ergebnis durch ein Pseudonym, `p1_` und 39 Kleinbuchstaben und Ziffern, auch die Kennung des Dienstkontos in `ct_whoami`. Die Tools, die eine Person über ihre Kennung lesen, nehmen dann nur ein Pseudonym an. Eine Zahl oder ein verändertes Pseudonym weist Ecclium ab, ohne ChurchTools zu fragen. So kann der KI-Assistent keine Kennung erraten oder durchzählen.
+- **Freitext,** also Seiten des Wikis, Notizen, Beschreibungen und Titel, durchsucht sie nach E-Mail-Adressen, Telefonnummern, IBAN und AHV-Nummern und ersetzt jeden Treffer durch eine sichtbare Marke.
+
+Was gleich bleibt wie in `standard`:
+
+- Die Masken für E-Mail-Adressen, Telefonnummern, Geburtsdaten, Adressen und Beträge in Feldern mit ihrer Datenklasse.
+- Kennungen von Gruppen, Events, Terminen, Seiten und anderen Objekten. Sie bleiben in jeder Stufe, wie [ADR 0026](adr/0026-klassifizierte-ausgabeschemas.md) es festhält.
+- Die Audit-Datei nennt weiter die echten Kennungen der Personen, nie ein Pseudonym, damit Sie auf eine Anfrage hin zeigen können, wer wessen Daten gelesen hat ([Datenschutz](privacy.md)). Log und Kopie des Audits auf stderr nennen keine Kennung.
+
+Die Pseudonyme:
+
+- Sie gelten je Instanz von ChurchTools, Subjekt aus `ECCLIUM_STDIO_SUBJECT` und UTC-Tag. Dieselbe Person hat für dasselbe Subjekt am selben Tag dasselbe Pseudonym, für ein anderes Subjekt oder am nächsten Tag ein anderes. Clients mit demselben Subjekt, etwa Claude Desktop und Claude Code mit `local-stdio` auf einem Rechner, sehen also dieselben Pseudonyme. Wer das trennen will, gibt jedem Client ein eigenes Subjekt.
+- Ecclium nimmt ein Pseudonym am Tag seiner Ausgabe und am folgenden UTC-Tag an, damit ein Gespräch über Mitternacht UTC weiterläuft. Ein älteres weist es ab. Über Tage hinweg kann der KI-Assistent eine Person an ihrem Pseudonym nicht wiedererkennen.
+- Sie entstehen aus einem Schlüssel, den Sie anlegen. Wer ihn hat, kann jedes Pseudonym in die Kennung zurückübersetzen. Pseudonyme sind deshalb eine Pseudonymisierung, keine Anonymisierung ([Datenschutz](privacy.md#pseudonyme)). Behandeln Sie die Schlüsseldatei wie die Token-Datei.
+- Ecclium legt kein Pseudonym auf der Platte ab und braucht keine Tabelle. Geht der Schlüssel verloren, nimmt Ecclium die Pseudonyme des laufenden und des letzten Tages nicht mehr an, und keines lässt sich mehr zurückübersetzen. Sonst hängt nichts an ihnen, das Audit nennt die Kennungen.
+
+Was `strict` nicht tut:
+
+- **Nicht mit `api`.** Die Antwort von `ct_api_execute_read` hat kein bekanntes Schema, die Stufe könnte Namen und Kennungen darin nicht finden. `strict` zusammen mit dem Toolset `api` bricht den Start deshalb ab.
+- **Namen in Freitext** erkennt die Prüfung nicht, ebenso wenig Kennungen von Personen in Freitext, etwa in einem Link auf ein Profil. Namen von Gruppen und Vornamen bleiben stehen. Aus Vorname, Initiale, Gruppen und Diensten kann ein KI-Assistent eine Person oft trotzdem erschliessen. Die Stufe macht das schwerer, nicht unmöglich.
+- **Formen ausserhalb der Prüfung.** Die Prüfung von Freitext erkennt Werte nur an ihrer Form, und die Tests halten ihre Grenzen fest. Sie erkennt eine IBAN in einem Stück oder in Gruppen zu vier mit je einem Leerzeichen, eine AHV-Nummer in einem Stück oder mit demselben Punkt, Leerzeichen oder Bindestrich zwischen den Gruppen und eine Telefonnummer, die mit `+`, `(` oder `0` beginnt. Eine IBAN mit Bindestrichen, eine AHV-Nummer mit gemischten Trennern oder eine Telefonnummer ohne Vorwahl geht in einer Seite des Wikis unmaskiert hinaus, ausser ein Teil davon, der mit `0` beginnt, sieht wie eine Telefonnummer aus. Ebenso wenig erkennt sie Buchstaben anderer Schriften, die nur wie lateinische aussehen, etwa ein kyrillisches «а», und Ziffern anderer Schriften, etwa eine Telefonnummer in arabisch-indischen Ziffern. Felder mit einer Datenklasse maskiert die Pipeline dagegen unabhängig von ihren Zeichen.
+- **Schutz vor dem Betreiber.** Wer den Rechner verwaltet, kann die Schlüsseldatei lesen. Solange der Server läuft, steht der Schlüssel auch im Speicher des Prozesses, als Text, den JavaScript nicht löschen kann.
 
 ## Datenumschlag
 
@@ -70,6 +100,10 @@ Die Tools, die in der Übersicht der [Referenz der Tools](tools.md) unter «Lese
 - Die übrigen Tools zählen nicht, etwa die für das Wiki, Events, Termine und Buchungen. Für sie gilt nur die Obergrenze je Aufruf, obwohl auch ihr Freitext Personendaten enthalten kann, etwa eine Seite des Wikis mit Namen und Telefonnummern.
 
 Dieselben Tools geben ihr Ergebnis erst heraus, wenn ihre Zeile ganz in der Audit-Datei steht ([ADR 0028](adr/0028-audit-ereignis-und-datei-sink.md)). Ist eines davon eingeschaltet und `ECCLIUM_STATE_DIR` nicht gesetzt, startet der Server über stdio nicht. Eine Zeile der Audit-Datei nennt Zeit, Akteur, Tool, Ausgang und Dauer und die Kennungen der Objekte, nach denen der Aufruf fragt, und der Personen und Gruppen, die sein Ergebnis nennt. Sie zeigt also, wann welches Tool lief und wessen Daten es las, ohne Namen. Damit trägt die Datei selbst Personendaten. Die Kopie auf stderr nennt keine Kennungen ([Datenschutz](privacy.md), [Audit-Ereignisse](audit-events.md)).
+
+## Log
+
+Ecclium schreibt Logzeilen nach stderr, aber nur Ereignisse und Felder aus einem festen Katalog, den [Logzeilen](log-events.md) ganz zeigen ([ADR 0054](adr/0054-secret-fehler-logger-audit.md)). Keine Zeile trägt Text aus ChurchTools, Namen oder Kennungen von Personen, Pfade oder ein Token, und jeder Wert hat eine feste Form. Ein Ereignis, das nicht im Katalog steht, auch eines aus einem Plugin, schreibt der Logger als `invalid_event`, damit kein Name aus Daten in eine Zeile kommt. Ein Test liest jeden Aufruf eines Loggers im Code und scheitert an einer Zeile ohne Eintrag. Wohin der Client stderr schreibt, bestimmt er. Diese Dateien schützt und löscht Ecclium nicht.
 
 ## Lesender Zugriff auf die API
 
@@ -103,7 +137,6 @@ Die Tools des Toolsets `docs` und `ct_api_search_actions` schlagen in einem Inde
 
 ## Was später kommt
 
-- Phase 4: eine ausführliche Beschreibung der Stufe `strict`. Die Stufe selbst gibt es schon, mit gekürzten Nachnamen, Pseudonymen und der Suche nach Mustern in Freitext, und zusammen mit dem Toolset `api` bricht sie den Start ab, weil `ct_api_execute_read` Antworten ohne bekanntes Schema weitergibt ([ADR 0067](adr/0067-generischer-lesezugriff.md), [ADR 0069](adr/0069-stufe-strict.md)). Hash-Kette, Anker und Frist der Audit-Dateien gibt es schon, und `ecclium audit verify` prüft Kette und Anker, siehe [Datenschutz](privacy.md) und [Betrieb über stdio](betrieb/stdio.md#audit-prüfen-und-auswerten).
 - Phase 5: Tools, die schreiben, mit Bestätigung über eine Rückfrage im Client, eine Freigabe durch den Betreiber oder ein Echo, und was jeder dieser Wege beweist und was nicht. Dazu das Lesebudget in der Richtlinie.
 - Phase 6: der Runner für Routinen, dessen Modell keine Werkzeuge hat, eine Positivliste für ausgehende Verbindungen und Schalter als Dateien, die das Schreiben ohne Neustart abstellen.
 - Phase 8: eine Anleitung, wie Sie Pakete und Images vor der Installation prüfen.

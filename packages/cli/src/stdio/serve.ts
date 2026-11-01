@@ -300,7 +300,7 @@ export function serve(options: ServeOptions): ExitCode | undefined {
   }
 
   const crash =
-    (event: string) =>
+    (event: typeof uncaughtEvent | typeof rejectionEvent) =>
     (value: unknown): void => {
       try {
         logger.error(event, { code: codeOf(value) });
@@ -378,16 +378,18 @@ export function serve(options: ServeOptions): ExitCode | undefined {
     });
 
     let signalCode: ExitCode | undefined;
-    const onSignal = (event: string, code: ExitCode) => (): void => {
-      if (signalCode !== undefined) {
-        host.exit(code);
-        return;
-      }
-      signalCode = code;
-      processLogger.info(event);
-      // Closing ends the connection, and the end below ends the process.
-      void server.close();
-    };
+    const onSignal =
+      (event: typeof sigtermEvent | typeof sigintEvent, code: ExitCode) =>
+      (): void => {
+        if (signalCode !== undefined) {
+          host.exit(code);
+          return;
+        }
+        signalCode = code;
+        processLogger.info(event);
+        // Closing ends the connection, and the end below ends the process.
+        void server.close();
+      };
     host.onSignal('SIGTERM', onSignal(sigtermEvent, exitCodes.terminated));
     host.onSignal('SIGINT', onSignal(sigintEvent, exitCodes.interrupted));
 

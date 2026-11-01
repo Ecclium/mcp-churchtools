@@ -16,6 +16,7 @@ import {
   createStderrWriter,
   fallbackTimestamp,
   type LineWriter,
+  logEvents,
   type LoggerOptions,
   maxDropped,
   replacedEventName,
@@ -132,7 +133,7 @@ describe('a log line', () => {
       prompts: new Set(['dienstplan_wochenende']),
       anchors: true,
     });
-    log.info('cache_skipped', {
+    log.info('audit_file_closed', {
       ...anchor,
       attempt: 1,
       status: 404,
@@ -147,7 +148,7 @@ describe('a log line', () => {
     expect(line).toEqual({
       ts: '2025-10-09T08:53:20.123Z',
       level: 'info',
-      event: 'cache_skipped',
+      event: 'audit_file_closed',
       ...fullBound,
       prompt: 'dienstplan_wochenende',
       code: 'not_found',
@@ -161,7 +162,13 @@ describe('a log line', () => {
     expect(lines[0]).not.toMatch(/[\n\r]/);
   });
 
-  it('is at most 789 characters long', () => {
+  it('is at most 763 characters long', () => {
+    // The longest name of the catalog, not 64 characters: no other name
+    // reaches a line (ADR 0054).
+    const longest = Object.keys(logEvents).reduce((a, b) =>
+      b.length > a.length ? b : a,
+    );
+    expect(longest).toHaveLength(38);
     const { log, lines } = make({
       bound: {
         tenantId: `a${'b'.repeat(62)}` as TenantId,
@@ -187,8 +194,8 @@ describe('a log line', () => {
       attempt: 10,
     };
     for (let key = 0; key < maxDropped; key += 1) fields[key] = 0;
-    log.debug('a'.repeat(64), fields as never);
-    expect(lines[0]).toHaveLength(789);
+    log.debug(longest, fields as never);
+    expect(lines[0]).toHaveLength(763);
   });
 });
 
@@ -207,13 +214,17 @@ describe('the fields of an anchor', () => {
   it('keeps them with anchors, in their form only', () => {
     const { log, parsed } = make({ anchors: true });
     log.info('audit_chain_anchor', anchor);
-    log.info('a', { file: 'audit/audit-2026-10-23-055230-4242-1.jsonl' });
-    log.info('a', { file: 'audit-2026-10-23-055230-0-1.jsonl' });
-    log.info('a', { file: 'notes.jsonl' });
-    log.info('a', { seq: 0 });
-    log.info('a', { seq: 1.5 });
-    log.info('a', { hash: 'A'.repeat(64) });
-    log.info('a', { hash: 'a'.repeat(63) });
+    log.info('audit_file_closed', {
+      file: 'audit/audit-2026-10-23-055230-4242-1.jsonl',
+    });
+    log.info('audit_file_closed', {
+      file: 'audit-2026-10-23-055230-0-1.jsonl',
+    });
+    log.info('audit_file_closed', { file: 'notes.jsonl' });
+    log.info('audit_file_closed', { seq: 0 });
+    log.info('audit_file_closed', { seq: 1.5 });
+    log.info('audit_file_closed', { hash: 'A'.repeat(64) });
+    log.info('audit_file_closed', { hash: 'a'.repeat(63) });
     expect(
       parsed().map((line) => [
         line['file'],
@@ -251,8 +262,8 @@ describe('the field prompt', () => {
       prompts: new Set(['dienstplan_wochenende']),
     });
     log.info('prompt_served', { prompt: 'dienstplan_wochenende' });
-    log.info('tool_note', { prompt: 'anna_meier_1980_03_01' });
-    log.info('tool_note', { prompt: 'Böse\nZeile' });
+    log.info('prompt_served', { prompt: 'anna_meier_1980_03_01' });
+    log.info('prompt_served', { prompt: 'Böse\nZeile' });
     expect(parsed().map((line) => [line['prompt'], line['dropped']])).toEqual([
       ['dienstplan_wochenende', undefined],
       [undefined, 1],
@@ -265,8 +276,8 @@ describe('the field prompt', () => {
     const { log, parsed } = make({ prompts: names });
     names.delete('dienstplan_wochenende');
     names.add('anna_meier');
-    log.info('a', { prompt: 'dienstplan_wochenende' });
-    log.info('a', { prompt: 'anna_meier' });
+    log.info('audit_file_closed', { prompt: 'dienstplan_wochenende' });
+    log.info('audit_file_closed', { prompt: 'anna_meier' });
     expect(parsed().map((line) => line['prompt'])).toEqual([
       'dienstplan_wochenende',
       undefined,
@@ -287,8 +298,8 @@ describe('the time of a line', () => {
     const time = clockAt(1_760_000_000_123.9);
     const { writer, lines } = listWriter();
     const log = createLogger({ writer, clock: time.clock, minLevel: 'info' });
-    log.info('a');
-    log.debug('b');
+    log.info('audit_file_closed');
+    log.debug('process_sigint');
     expect(only(lines)['ts']).toBe('2025-10-09T08:53:20.123Z');
     expect(time.calls()).toBe(1);
   });
@@ -300,7 +311,7 @@ describe('the time of a line', () => {
   ])('accepts %s', (_what, now, expected) => {
     const { writer, lines } = listWriter();
     createLogger({ writer, clock: clockAt(now).clock, minLevel: 'info' }).info(
-      'a',
+      'audit_file_closed',
     );
     expect(only(lines)['ts']).toBe(expected);
   });
@@ -318,7 +329,7 @@ describe('the time of a line', () => {
   ])('falls back for %s', (_what, now) => {
     const { writer, lines } = listWriter();
     const clock = { now: () => now as number };
-    createLogger({ writer, clock, minLevel: 'info' }).info('a');
+    createLogger({ writer, clock, minLevel: 'info' }).info('audit_file_closed');
     expect(only(lines)['ts']).toBe(fallbackTimestamp);
   });
 
@@ -338,8 +349,8 @@ describe('the time of a line', () => {
       },
       minLevel: 'info',
     });
-    log.info('a');
-    log.info('b');
+    log.info('audit_file_closed');
+    log.info('process_sigint');
     const times = lines.map((line) => (JSON.parse(line) as { ts: string }).ts);
     expect(times).toEqual([fallbackTimestamp, '2025-10-09T08:53:20.123Z']);
     for (const time of times) expect(time).toMatch(isoTimestamp);
@@ -356,10 +367,10 @@ describe('levels', () => {
     'from %s write %i of four lines, each at its level',
     (minLevel, count) => {
       const { log, parsed } = make({ minLevel });
-      log.debug('a');
-      log.info('a');
-      log.warn('a');
-      log.error('a');
+      log.debug('audit_file_closed');
+      log.info('audit_file_closed');
+      log.warn('audit_file_closed');
+      log.error('audit_file_closed');
       expect(parsed().map((line) => line['level'])).toEqual(
         ['debug', 'info', 'warn', 'error'].slice(4 - count),
       );
@@ -450,11 +461,11 @@ describe('createLogger', () => {
     const { log, parsed } = make({
       bound: { tenantId: 'demo-tenant' as TenantId, tool: undefined },
     });
-    log.info('a');
+    log.info('audit_file_closed');
     expect(parsed()[0]).toEqual({
       ts: '2025-10-09T08:53:20.123Z',
       level: 'info',
-      event: 'a',
+      event: 'audit_file_closed',
       tenantId: 'demo-tenant',
     });
   });
@@ -463,7 +474,7 @@ describe('createLogger', () => {
     const bound = { tenantId: 'demo-tenant' as TenantId };
     const { log, parsed } = make({ bound });
     (bound as { tenantId: string }).tenantId = 'other-tenant';
-    log.info('a');
+    log.info('audit_file_closed');
     expect(parsed()[0]?.['tenantId']).toBe('demo-tenant');
   });
 
@@ -480,20 +491,49 @@ describe('createLogger', () => {
     }
     // eslint-disable-next-line @typescript-eslint/unbound-method -- the point is to call it detached
     const info: (event: string) => unknown = log.info;
-    expect(info('a')).toBeUndefined();
+    expect(info('audit_file_closed')).toBeUndefined();
     expect(lines).toHaveLength(1);
   });
 });
 
 describe('event names', () => {
-  it.each(['a', 'cache_skipped', `a${'b'.repeat(63)}`])(
-    'writes %s as it is',
+  it.each(['audit_file_closed', 'audit_invalid_provider_hosting_country'])(
+    'writes %s of the catalog as it is',
     (event) => {
       const { log, lines } = make();
       log.info(event);
       expect(only(lines)['event']).toBe(event);
     },
   );
+
+  // A name of the right form outside the catalog could carry data, made
+  // from a value by the core or by a plugin (ADR 0054).
+  it.each([
+    'a',
+    'cache_skipped',
+    `a${'b'.repeat(63)}`,
+    'a7f3k9q2w8e4r6t1y5u0',
+    'person_max_mustermann',
+    'constructor',
+    'hasownproperty',
+    'tostring',
+  ])('replaces %s, which the catalog does not have', (event) => {
+    const { log, lines } = make();
+    log.warn(event, { count: 1 });
+    expect(only(lines)).toMatchObject({
+      level: 'warn',
+      event: replacedEventName,
+      count: 1,
+    });
+    expect(lines[0]).not.toContain(`"${event}"`);
+  });
+
+  it('writes every name of the catalog', () => {
+    const { log, parsed } = make();
+    const names = Object.keys(logEvents);
+    for (const name of names) log.info(name);
+    expect(parsed().map((line) => line['event'])).toEqual(names);
+  });
 
   it.each([
     '',
@@ -529,7 +569,7 @@ describe('event names', () => {
     for (const event of [
       { toString: spy, toJSON: spy },
       Object.assign(Object.create(null) as object, { toString: spy }),
-      ['cache_skipped'],
+      ['audit_file_closed'],
       42,
       null,
       Symbol('a'),
@@ -550,18 +590,12 @@ describe('event names', () => {
     expect(performance.now() - started).toBeLessThan(200);
     assertNoCanary(lines, [canary], 'line');
   });
-
-  it('lets a name in lower case through, so names must be constants (a known limit)', () => {
-    const { log, lines } = make();
-    log.info('a7f3k9q2w8e4r6t1y5u0');
-    expect(only(lines)['event']).toBe('a7f3k9q2w8e4r6t1y5u0');
-  });
 });
 
 describe('the fields of a call', () => {
   it('drop every name that is not allowed, also v and type', () => {
     const { log, lines } = make();
-    log.info('a', {
+    log.info('audit_file_closed', {
       message: 'm',
       name: 'n',
       path: '/tmp/x',
@@ -580,7 +614,7 @@ describe('the fields of a call', () => {
     expect(only(lines)).toEqual({
       ts: '2025-10-09T08:53:20.123Z',
       level: 'info',
-      event: 'a',
+      event: 'audit_file_closed',
       count: 1,
       dropped: 13,
     });
@@ -588,7 +622,7 @@ describe('the fields of a call', () => {
 
   it('cannot replace ts, level, event or dropped', () => {
     const { log, lines } = make();
-    log.info('real', {
+    log.info('tool_call', {
       ts: '2000-01-01T00:00:00.000Z',
       level: 'error',
       event: 'fake',
@@ -597,7 +631,7 @@ describe('the fields of a call', () => {
     expect(only(lines)).toEqual({
       ts: '2025-10-09T08:53:20.123Z',
       level: 'info',
-      event: 'real',
+      event: 'tool_call',
       dropped: 4,
     });
     for (const key of ['"ts"', '"level"', '"event"', '"dropped"']) {
@@ -617,18 +651,18 @@ describe('the fields of a call', () => {
       count: 1,
     };
     const bound = make({ bound: fullBound });
-    bound.log.info('a', call);
+    bound.log.info('audit_file_closed', call);
     expect(only(bound.lines)).toMatchObject({
       ...fullBound,
       count: 1,
       dropped: 7,
     });
     const unbound = make();
-    unbound.log.info('a', call);
+    unbound.log.info('audit_file_closed', call);
     expect(only(unbound.lines)).toEqual({
       ts: '2025-10-09T08:53:20.123Z',
       level: 'info',
-      event: 'a',
+      event: 'audit_file_closed',
       count: 1,
       dropped: 7,
     });
@@ -657,7 +691,7 @@ describe('the fields of a call', () => {
         null,
         2n,
       ]) {
-        log.info('a', { [name]: value } as never);
+        log.info('audit_file_closed', { [name]: value } as never);
       }
       expect(parsed().map((line) => line[name] ?? line['dropped'])).toEqual([
         good[0],
@@ -669,7 +703,7 @@ describe('the fields of a call', () => {
 
   it('write -0 as 0 and keep zeros', () => {
     const { log, lines } = make();
-    log.info('a', { durationMs: -0, count: 0 });
+    log.info('audit_file_closed', { durationMs: -0, count: 0 });
     expect(lines[0]).toContain('"durationMs":0,"count":0');
   });
 
@@ -682,7 +716,7 @@ describe('the fields of a call', () => {
       'toString',
       'teapot',
     ]) {
-      log.info('a', { code });
+      log.info('audit_file_closed', { code });
     }
     expect(parsed().map((line) => line['code'] ?? null)).toEqual([
       'internal',
@@ -700,9 +734,9 @@ describe('the object of fields', () => {
     const bare = Object.assign(Object.create(null) as object, { count: 1 });
     const frozen = Object.freeze({ count: 1, note: 'x' });
     const { log, parsed } = make();
-    log.info('a', plain);
-    log.info('a', bare);
-    log.info('a', frozen);
+    log.info('audit_file_closed', plain);
+    log.info('audit_file_closed', bare);
+    log.info('audit_file_closed', frozen);
     expect(parsed().map((line) => [line['count'], line['dropped']])).toEqual([
       [1, 1],
       [1, undefined],
@@ -730,7 +764,7 @@ describe('the object of fields', () => {
     ],
   ])('is refused whole when it is %s', (_what, value) => {
     const { log, lines } = make();
-    log.info('a', value as never);
+    log.info('audit_file_closed', value as never);
     const line = only(lines);
     expect(line).not.toHaveProperty('count');
     expect(line['dropped']).toBe(1);
@@ -746,7 +780,7 @@ describe('the object of fields', () => {
     ['a symbol', Symbol('a'), 1],
   ])('given as %s gives dropped %j', (_what, value, dropped) => {
     const { log, lines } = make();
-    log.info('a', value as never);
+    log.info('audit_file_closed', value as never);
     expect(only(lines)['dropped']).toBe(dropped);
   });
 
@@ -754,7 +788,7 @@ describe('the object of fields', () => {
     const canary = makeCanaries().token;
     let calls = 0;
     const { log, lines } = make();
-    log.info('a', {
+    log.info('audit_file_closed', {
       get count() {
         calls += 1;
         return canary.value;
@@ -792,7 +826,7 @@ describe('the object of fields', () => {
       revoked.proxy,
       runInNewContext('new Proxy({ count: 1 }, {})') as unknown,
     ]) {
-      log.info('a', value as never);
+      log.info('audit_file_closed', value as never);
     }
     expect(traps).toBe(0);
     expect(parsed().map((line) => [line['count'], line['dropped']])).toEqual(
@@ -807,7 +841,7 @@ describe('the object of fields', () => {
       { value: 200, enumerable: false },
     );
     const { log, lines } = make();
-    log.info('a', fields);
+    log.info('audit_file_closed', fields);
     const line = only(lines);
     expect(line).toMatchObject({ count: 2, dropped: 2 });
     expect(line).not.toHaveProperty('status');
@@ -816,7 +850,7 @@ describe('the object of fields', () => {
   it('takes an own key __proto__ as a key like any other', () => {
     const fields = JSON.parse('{"__proto__":{"count":5},"count":1}') as object;
     const { log, lines } = make();
-    log.info('a', fields as never);
+    log.info('audit_file_closed', fields as never);
     expect(only(lines)).toMatchObject({ count: 1, dropped: 1 });
     expect(lines[0]).not.toContain('__proto__');
     expect(({} as { count?: number }).count).toBeUndefined();
@@ -824,7 +858,7 @@ describe('the object of fields', () => {
 
   it('copes with keys that shadow methods of Object.prototype', () => {
     const { log, lines } = make();
-    log.info('a', {
+    log.info('audit_file_closed', {
       hasOwnProperty: 1,
       toString: 2,
       valueOf: 3,
@@ -848,15 +882,15 @@ describe('the object of fields', () => {
       writable: true,
     });
     try {
-      log.info('polluted', {});
-      log.info('polluted', { status: 200 });
+      log.info('tool_call', {});
+      log.info('tool_call', { status: 200 });
     } finally {
       delete prototype['count'];
       delete prototype['toJSON'];
     }
     expect(lines).toEqual([
-      '{"ts":"2025-10-09T08:53:20.123Z","level":"info","event":"polluted"}',
-      '{"ts":"2025-10-09T08:53:20.123Z","level":"info","event":"polluted","status":200}',
+      '{"ts":"2025-10-09T08:53:20.123Z","level":"info","event":"tool_call"}',
+      '{"ts":"2025-10-09T08:53:20.123Z","level":"info","event":"tool_call","status":200}',
     ]);
   });
 
@@ -864,20 +898,20 @@ describe('the object of fields', () => {
     const fields: Record<string, number> = { count: 1 };
     for (let key = 0; key <= maxDropped; key += 1) fields[key] = 0;
     const { log, lines } = make();
-    log.info('a', fields);
+    log.info('audit_file_closed', fields);
     expect(only(lines)).toMatchObject({ count: 1, dropped: maxDropped });
   });
 
   it('copes with a module namespace', () => {
     const { log, lines } = make();
-    log.info('a', fieldsModule as never);
+    log.info('audit_file_closed', fieldsModule as never);
     expect(only(lines)).not.toHaveProperty('count');
   });
 
   it('keeps out what a tool passes by mistake, such as its context', () => {
     const canaries = makeCanaries();
     const { log, lines } = make({ bound: fullBound });
-    log.info('a', {
+    log.info('audit_file_closed', {
       tenantId: 'demo-tenant',
       baseUrl: 'https://example.church.tools',
       user: { id: 'person-id-1', email: canaries.email.value },
@@ -910,7 +944,7 @@ describe('a logger under stress', () => {
         clock: clockAt().clock,
         minLevel: 'info',
       });
-      log.info('a', { count: 1 });
+      log.info('audit_file_closed', { count: 1 });
     }
   });
 
@@ -919,8 +953,8 @@ describe('a logger under stress', () => {
     const decoder = new TextDecoder();
     const writer = createStderrWriter({
       writeSync: (_fd, buffer, offset, length) => {
-        b.info('nested_b');
-        a.error('nested_a');
+        b.info('process_sigint');
+        a.error('process_sigterm');
         lines.push(decoder.decode(buffer.subarray(offset, offset + length)));
         return length;
       },
@@ -935,9 +969,9 @@ describe('a logger under stress', () => {
       clock: clockAt().clock,
       minLevel: 'info',
     });
-    a.info('outer');
+    a.info('stdio_closed');
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toContain('"event":"outer"');
+    expect(lines[0]).toContain('"event":"stdio_closed"');
     expect(writer.stats()).toMatchObject({ written: 1, reentrant: 1 });
   });
 
@@ -952,18 +986,23 @@ describe('a logger under stress', () => {
       writer,
       clock: {
         now: () => {
-          log.info('from_clock');
-          other.info('from_other');
+          log.info('prompt_unknown');
+          other.info('prompt_served');
           return 1_760_000_000_123;
         },
       },
       minLevel: 'info',
     });
-    log.info('outer');
-    log.info('outer');
+    log.info('stdio_closed');
+    log.info('stdio_closed');
     expect(
       lines.map((line) => (JSON.parse(line) as { event: string }).event),
-    ).toEqual(['from_other', 'outer', 'from_other', 'outer']);
+    ).toEqual([
+      'prompt_served',
+      'stdio_closed',
+      'prompt_served',
+      'stdio_closed',
+    ]);
   });
 
   it('calls clock and writer as methods', () => {
@@ -985,7 +1024,7 @@ describe('a logger under stress', () => {
     }
     const writer = new Writer();
     createLogger({ writer, clock: new FixedClock(), minLevel: 'info' }).info(
-      'a',
+      'audit_file_closed',
     );
     expect(only(writer.lines())['ts']).toBe('2025-10-09T08:53:20.123Z');
   });
@@ -1003,7 +1042,7 @@ describe('a logger under stress', () => {
       list[Math.floor(next() * list.length)] as T;
     const keys = [...order, 'message', 'v', 'type', '__proto__', 'constructor'];
     const values: readonly unknown[] = [
-      'cache_skipped',
+      'audit_file_closed',
       'demo-tenant',
       'ct_group_search',
       runId,

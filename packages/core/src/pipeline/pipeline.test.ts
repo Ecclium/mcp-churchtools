@@ -301,8 +301,10 @@ describe('the ID of the event', () => {
     expect(id).toMatch(uuid);
     expect(id).not.toBe(auditPlaceholders.eventId);
     const logs = parse(logLines);
+    // An event of a tool outside the catalog of the core keeps its line,
+    // under a fixed name (ADR 0054).
     expect(logs.map((line) => line['event'])).toEqual([
-      'test_step',
+      'invalid_event',
       'tool_output_invalid',
       'tool_call',
     ]);
