@@ -49,7 +49,7 @@ Mit `ECCLIUM_REDACTION=strict` gibt Ecclium dem KI-Assistenten weniger als in de
 
 Was `strict` zusätzlich zu `standard` tut:
 
-- **Nachnamen** kürzt die Stufe auf den ersten Buchstaben mit Punkt, aus «Muster» wird «M.». Ein Name aus einem einzigen Zeichen, wie viele Namen in chinesischer oder koreanischer Schrift, wird ganz zur Marke. Vornamen bleiben stehen.
+- **Nachnamen** kürzt die Stufe auf den ersten Buchstaben mit Punkt, aus «Muster» wird «M.». Ein Name aus einem einzigen Zeichen, wie viele Namen in chinesischer oder koreanischer Schrift, wird ganz zur Marke. Vornamen bleiben stehen. Bei `ct_search` steht der ganze Name in einem Feld, dort bleibt nur sein erster Buchstabe.
 - **Kennungen von Personen** ersetzt sie in jedem Ergebnis durch ein Pseudonym, `p1_` und 39 Kleinbuchstaben und Ziffern, auch die Kennung des Dienstkontos in `ct_whoami`. Die Tools, die eine Person über ihre Kennung lesen, nehmen dann nur ein Pseudonym an. Eine Zahl oder ein verändertes Pseudonym weist Ecclium ab, ohne ChurchTools zu fragen. So kann der KI-Assistent keine Kennung erraten oder durchzählen.
 - **Freitext,** also Seiten des Wikis, Notizen, Beschreibungen und Titel, durchsucht sie nach E-Mail-Adressen, Telefonnummern, IBAN und AHV-Nummern und ersetzt jeden Treffer durch eine sichtbare Marke.
 
@@ -64,12 +64,12 @@ Die Pseudonyme:
 - Sie gelten je Instanz von ChurchTools, Subjekt aus `ECCLIUM_STDIO_SUBJECT` und UTC-Tag. Dieselbe Person hat für dasselbe Subjekt am selben Tag dasselbe Pseudonym, für ein anderes Subjekt oder am nächsten Tag ein anderes. Clients mit demselben Subjekt, etwa Claude Desktop und Claude Code mit `local-stdio` auf einem Rechner, sehen also dieselben Pseudonyme. Wer das trennen will, gibt jedem Client ein eigenes Subjekt.
 - Ecclium nimmt ein Pseudonym am Tag seiner Ausgabe und am folgenden UTC-Tag an, damit ein Gespräch über Mitternacht UTC weiterläuft. Ein älteres weist es ab. Über Tage hinweg kann der KI-Assistent eine Person an ihrem Pseudonym nicht wiedererkennen.
 - Sie entstehen aus einem Schlüssel, den Sie anlegen. Wer ihn hat, kann jedes Pseudonym in die Kennung zurückübersetzen. Pseudonyme sind deshalb eine Pseudonymisierung, keine Anonymisierung ([Datenschutz](privacy.md#pseudonyme)). Behandeln Sie die Schlüsseldatei wie die Token-Datei.
-- Ecclium legt kein Pseudonym auf der Platte ab und braucht keine Tabelle. Geht der Schlüssel verloren, lassen sich nur die Pseudonyme des laufenden und des letzten Tages nicht mehr zurückübersetzen.
+- Ecclium legt kein Pseudonym auf der Platte ab und braucht keine Tabelle. Geht der Schlüssel verloren, nimmt Ecclium die Pseudonyme des laufenden und des letzten Tages nicht mehr an, und keines lässt sich mehr zurückübersetzen. Sonst hängt nichts an ihnen, das Audit nennt die Kennungen.
 
 Was `strict` nicht tut:
 
 - **Nicht mit `api`.** Die Antwort von `ct_api_execute_read` hat kein bekanntes Schema, die Stufe könnte Namen und Kennungen darin nicht finden. `strict` zusammen mit dem Toolset `api` bricht den Start deshalb ab.
-- **Namen in Freitext** erkennt die Prüfung nicht, ebenso wenig Namen von Gruppen und die Vornamen. Aus Vorname, Initiale, Gruppen und Diensten kann ein KI-Assistent eine Person oft trotzdem erschliessen. Die Stufe macht das schwerer, nicht unmöglich.
+- **Namen in Freitext** erkennt die Prüfung nicht, ebenso wenig Kennungen von Personen in Freitext, etwa in einem Link auf ein Profil. Namen von Gruppen und Vornamen bleiben stehen. Aus Vorname, Initiale, Gruppen und Diensten kann ein KI-Assistent eine Person oft trotzdem erschliessen. Die Stufe macht das schwerer, nicht unmöglich.
 - **Formen ausserhalb der Prüfung.** Die Prüfung von Freitext erkennt Werte nur an ihrer Form, und die Tests halten ihre Grenzen fest. Sie erkennt eine IBAN in einem Stück oder in Gruppen zu vier mit je einem Leerzeichen, eine AHV-Nummer in einem Stück oder mit demselben Punkt, Leerzeichen oder Bindestrich zwischen den Gruppen und eine Telefonnummer, die mit `+`, `(` oder `0` beginnt. Eine IBAN mit Bindestrichen, eine AHV-Nummer mit gemischten Trennern oder eine Telefonnummer ohne Vorwahl geht in einer Seite des Wikis unmaskiert hinaus, ausser ein Teil davon, der mit `0` beginnt, sieht wie eine Telefonnummer aus. Ebenso wenig erkennt sie Buchstaben anderer Schriften, die nur wie lateinische aussehen, etwa ein kyrillisches «а», und Ziffern anderer Schriften, etwa eine Telefonnummer in arabisch-indischen Ziffern. Felder mit einer Datenklasse maskiert die Pipeline dagegen unabhängig von ihren Zeichen.
 - **Schutz vor dem Betreiber.** Wer den Rechner verwaltet, kann die Schlüsseldatei lesen. Solange der Server läuft, steht der Schlüssel auch im Speicher des Prozesses, als Text, den JavaScript nicht löschen kann.
 
