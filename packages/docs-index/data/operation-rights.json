@@ -1556,6 +1556,51 @@
     {
       "operationId": "get-wiki-search",
       "open": "Keine Probe hat der Suche im Wiki ein Recht entzogen, und das OpenAPI-Dokument nennt kein Recht beim Namen, nur Kategorien, die das Konto sehen darf."
+    },
+    {
+      "operationId": "patch-wiki-categories-id-pages-identifier",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchwiki",
+              "name": "edit category"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Rechte zum Schreiben im Wiki",
+              "version": "3.138",
+              "shows": "sufficient"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "post-wiki-categories-id-pages",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchwiki",
+              "name": "edit category"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Rechte zum Schreiben im Wiki",
+              "version": "3.138",
+              "shows": "sufficient"
+            },
+            {
+              "kind": "openapi"
+            }
+          ]
+        }
+      ]
     }
   ]
 }
