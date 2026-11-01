@@ -3,13 +3,14 @@
 - Status: Vorgeschlagen
 - Datum: 01.11.2026
 - Fällt vor: Phase 5
+- Ergänzt: [ADR 0063](0063-quotastore-als-datei.md)
 
 ## Kontext
 
 Ein Schreibvorgang braucht eine Bestätigung ([ADR 0029](0029-write-guard.md)). Was eine Bestätigung durchläuft, dürfte ohne weitere Grenze alles, was das Dienstkonto in ChurchTools darf. Ein gestohlenes Token, ein kompromittierter Client oder ein Tool, das im Client auf «immer erlauben» steht, hätte damit die vollen Rechte des Kontos. Ein unbeaufsichtigter Lauf einer Routine ab Phase 6 hat niemanden, der bestätigt. Dazu kommen:
 
 - **Lesebudget:** Tools mit `sensitivity: special` und Tools, die Namen anderer Personen nennen, teilen ein Budget von 200 Aufrufen je Akteur und UTC-Tag. Einstellbar soll es mit der Richtlinie werden ([ADR 0063](0063-quotastore-als-datei.md), [ADR 0064](0064-leserechte-und-felder-der-lese-tools.md)).
-- **Gruppen und Dienste:** Die Vorhaben «Mitglied einer Gruppe hinzufügen oder entfernen» und «Dienstanfrage an eine Person» betreffen Personen und laufen nie unbeaufsichtigt ([ADR 0071](0071-grenze-zwischen-kern-und-pro.md)).
+- **Gruppen und Dienste:** Die Vorhaben, also die Arten von Schreibvorgängen, «Mitglied einer Gruppe hinzufügen oder entfernen» und «Dienstanfrage an eine Person» betreffen Personen und laufen nie unbeaufsichtigt ([ADR 0071](0071-grenze-zwischen-kern-und-pro.md)).
 - **Kennzeichnung (T10):** Jede Seite und jeder Abschnitt, den Ecclium hinzufügt, trägt am Ende eine Zeile mit festem Wortlaut (`brand/README.md`, Kapitel 9). Sie ist zugleich das Zeichen, an dem Ecclium einen eigenen Abschnitt wiedererkennt, damit ein zweiter Lauf derselben Periode nichts verdoppelt. Ohne einen Prüfcode könnte jede Person mit Schreibrecht im Wiki einen Abschnitt mit dieser Zeile anlegen und so einen echten Bericht unterdrücken oder überschreiben lassen ([Threat Model](../threat-model.md), T10).
 - **Web-Editor:** Er schrieb über die API angelegte Markdown-Seiten beim ersten Speichern neu, auch ohne Änderung: andere Zeichen vor Listenpunkten, zusätzliche Leerzeilen, neu ausgerichtete Tabellen, eine anders geschriebene Zeile mit zwei Leerzeichen am Ende und nackte URLs als Link. Gleich blieben Überschriften, Absatz, Fett, kursiv, Code und der HTML-Kommentar. Ob ein zweites Speichern den Text erneut ändert, ist nicht geprüft (F13 in [`docs/research/churchtools-api.md`](../research/churchtools-api.md)). Ein Prüfcode über den rohen Text gälte danach nicht mehr.
 - **Format:** Die Datei pflegt der Betreiber von Hand und soll sie kommentieren können. `yaml` 2.9.1 ist am 01.11.2026 in der Registry von npm geprüft: Lizenz ISC, keine Abhängigkeiten, ohne Herkunftsnachweis, wie schon 2.8.0, 2.8.1 und 2.9.0, die neueste Version seit dem 11.09.2026. Eine neue Version ohne Herkunftsnachweis im Lockfile meldet der Job `lockfile-provenance` rot, und Renovate übernimmt sie nicht selbst.
@@ -54,8 +55,9 @@ Gewählt sind YAML mit `yaml` 2.9.1, der Prüfcode über eine kanonische Form un
 ### Interaktiver Teil
 
 - Ein Eintrag nennt Tools, eine Zielart, eine Kennung mit erwartetem Namen und `maxPerDay`, eine Pflichtangabe von 1 bis 1000 Vorgängen je Prinzipal und UTC-Tag. Zielarten sind Kategorie und Seite des Wikis, Kalender, Ressource und nur hier Gruppe und Dienst. Ein Dienst ist ein Paar aus der Kennung des Events und der des Dienstes, beide mit erwartetem Namen.
-- Die Zähler liegen im `QuotaStore` je Prinzipal und Tag unter einem Schlüssel aus Tool, Zielart und Kennung. Sie überstehen einen Neustart und gelten für alle Prozesse mit demselben Zustandsordner.
-- Ein Wunsch ausserhalb aller Einträge oder über `maxPerDay` geht in die Freigabe-Warteschlange, nicht in die Ablehnung, damit die Person handlungsfähig bleibt.
+- Die Zähler liegen im `QuotaStore` je Prinzipal und Tag unter einem Schlüssel aus Tool, Zielart und Kennung. Sie überstehen einen Neustart und gelten für alle Prozesse mit demselben Zustandsordner. Das ergänzt ADR 0063 um diese Schlüssel neben `special_reads`, in derselben Datei je Mandant und Tag und mit ihren Grenzen. Lässt sich ein Vorgang nicht zählen, geht er in die Freigabe-Warteschlange.
+- Sobald der interaktive Teil einen Eintrag hat, ist er abschliessend: Jedes Ziel ohne Eintrag geht in die Freigabe-Warteschlange.
+- Ein Schreibwunsch ausserhalb aller Einträge oder über `maxPerDay` geht in die Freigabe-Warteschlange, nicht in die Ablehnung, damit die Person handlungsfähig bleibt.
 - Ein leerer oder fehlender interaktiver Teil heisst: erlaubt ist, was das Dienstkonto darf. Ausgenommen sind Gruppenmitgliedschaften und Dienstanfragen, die ohne Eintrag in die Freigabe-Warteschlange gehen. Operationen nach `operationId` gehen immer in die Freigabe-Warteschlange, weil `policy.v1` für sie keine Zielart kennt.
 - Grenzen je Token kommen mit dem Betrieb über HTTP in Phase 7.
 
@@ -66,7 +68,7 @@ Gewählt sind YAML mit `yaml` 2.9.1, der Prüfcode über eine kanonische Form un
 ### Kennung mit erwartetem Namen
 
 - Jedes Ziel ist eine Kennung mit dem Namen, den der Betreiber erwartet. Routinen nennen ihre Ziele über Namen und bleiben so zwischen Gemeinden übertragbar, die Richtlinie bindet sie an Kennungen.
-- Der Kern vergleicht den Namen nach der Normalform NFC genau. Weicht er ab, weil jemand das Ziel umbenannt oder eine Kennung neu vergeben hat, ist das Schreiben auf dieses Ziel gesperrt, und der Wunsch geht mit dem Grund in die Freigabe-Warteschlange. Das Lesen trifft das nicht.
+- Der Kern vergleicht den Namen nach der Normalform NFC genau. Weicht er ab, weil jemand das Ziel umbenannt oder eine Kennung neu vergeben hat, ist das Schreiben auf dieses Ziel gesperrt, und der Schreibwunsch geht mit dem Grund in die Freigabe-Warteschlange. Das Lesen trifft das nicht.
 - `ecclium policy init --interactive` schlägt Einträge aus den Zielen vor, die das Audit gesehen hat, auf stdout zur Prüfung durch den Betreiber. `ecclium policy init` für Routinen folgt in Phase 6.
 - Ab Phase 6 sperren eine solche Abweichung und zu weite Rechte des Dienstkontos im unbeaufsichtigten Lauf das Schreiben, nicht den Lauf, mit einer befristeten Ausnahme `accept-rights-drift` und einem Vermerk im Audit.
 
@@ -77,7 +79,7 @@ Gewählt sind YAML mit `yaml` 2.9.1, der Prüfcode über eine kanonische Form un
 - **Eingabe:** Mandant, die Kennung der Routine oder «interaktiv», die Periode des Laufs oder der Tag und der SHA-256 der kanonischen Form des Abschnitts ohne die Zeile der Kennzeichnung, in einer festen Kodierung mit Längen.
 - **Kanonische Form:** Der Abschnitt wird mit dem Lexer der ContentPolicy gelesen und mit ihrem Serialisierer für die erlaubte Teilmenge von Markdown neu geschrieben (ADR 0030, geplant). So zählen Zeichen vor Listenpunkten, Leerzeilen, die Ausrichtung von Tabellen und die Schreibweise eines Zeilenumbruchs nicht mehr (F13). Text, Überschriften, Hervorhebung und der Aufbau von Listen und Tabellen zählen. Ein Element ausserhalb der Teilmenge, etwa ein Link, den eine Person einfügt oder den der Editor aus einer nackten URL macht, ändert die kanonische Form. Ecclium selbst schreibt weder nackte URLs noch Links nach aussen.
 - **Gültiger Code:** Der Abschnitt gilt als eigener. Ein zweiter Lauf derselben Periode ändert ihn oder lässt ihn stehen und verdoppelt ihn nie.
-- **Kein oder ungültiger Code:** Der Abschnitt gilt nicht als eigener. Ein ungültiger Code zählt als Änderung eines Menschen, nicht als Fälschung: Der Wunsch geht mit dem Unterschied in die Freigabe-Warteschlange, und Ecclium ersetzt einen solchen Abschnitt nie. Ein gefälschter Abschnitt ohne gültigen Code unterdrückt den echten nicht (T10).
+- **Kein oder ungültiger Code:** Der Abschnitt gilt nicht als eigener. Ein ungültiger Code zählt als Änderung eines Menschen, nicht als Fälschung: Der Schreibwunsch geht mit dem Unterschied in die Freigabe-Warteschlange, und Ecclium ersetzt einen solchen Abschnitt nie. Ein gefälschter Abschnitt ohne gültigen Code unterdrückt den echten nicht, solange der Schlüssel geheim bleibt (T10).
 - **Verlorener Schlüssel:** Die Abschnitte gelten als «Herkunft unbekannt», und die betroffene Periode geht in die Freigabe-Warteschlange. `ecclium marker adopt` signiert mit dem Runner in Phase 6 nach einer Sichtprüfung neu.
 - Ob ein zweites Speichern den Text erneut ändert, prüfen Schreibproben an der Testinstanz ([ADR 0049](0049-testumgebung.md)). Die Tests der kanonischen Form nutzen die Änderungen, die die Probe `06-wiki-editor-roundtrip` gezeigt hat.
 
@@ -95,7 +97,7 @@ Gewählt sind YAML mit `yaml` 2.9.1, der Prüfcode über eine kanonische Form un
 - Der Prüfcode hängt am Serialisierer der ContentPolicy. Ändert sich dieser so, dass die kanonische Form eines Abschnitts anders ausfällt, bekommt der Code ein neues Präfix wie `k2:`, und `k1:` bleibt mit der alten Form prüfbar.
 - Ein leerer interaktiver Teil lässt bestätigte Schreibvorgänge im Rahmen aller Rechte des Dienstkontos zu, ausser für Gruppen und Dienste. Das hält die Einrichtung einfach. Die Doku für Betreiber rät zu Einträgen und zu Schreibrechten des Kontos nur für die Ziele.
 - **Restrisiken:**
-  - Ändert ein Mensch einen Abschnitt, auch nur ein Wort, gilt er danach nicht mehr als eigener, und jeder weitere Wunsch für ihn geht in die Freigabe-Warteschlange.
+  - Ändert ein Mensch einen Abschnitt, auch nur ein Wort, gilt er danach nicht mehr als eigener, und jeder weitere Schreibwunsch für ihn geht in die Freigabe-Warteschlange.
   - Ändert ein zweites Speichern im Web-Editor den Text auf eine Weise, die die kanonische Form nicht ausgleicht, gilt ein unveränderter Abschnitt als geändert. Das zeigen erst die Schreibproben.
   - Der Code hat 64 Bit. Ein Versuch, ihn ohne Schlüssel zu erraten, gelingt mit einer Wahrscheinlichkeit von eins zu 2^64.
   - Wer den Schlüssel des Prüfcodes kennt, kann Abschnitte als eigene ausgeben. Er gehört zu den Geheimnissen, die nur der Betreiber verwahrt.
