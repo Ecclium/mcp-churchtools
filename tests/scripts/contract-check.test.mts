@@ -74,6 +74,7 @@ interface Result {
       veraltet: boolean;
       parameter: Record<string, boolean>;
       felder?: Record<string, Field>;
+      koerper?: Record<string, Field>;
       werteAlsMap?: boolean;
     }
   >;
@@ -267,8 +268,8 @@ describe('the contract check', () => {
     )
       .filter(([, entry]) => typeof entry.path === 'string')
       .map(([name]) => name);
-    // 28 entries on 27 operations: event and eventAssignments share one.
-    expect(operations).toHaveLength(28);
+    // 30 entries on 29 operations: event and eventAssignments share one.
+    expect(operations).toHaveLength(30);
     expect(Object.keys(result.operationen)).toEqual(operations);
     expect(result.churchtoolsVersion).toBe('3.137');
     expect(result.operationen['whoami']).toMatchObject({
@@ -1012,5 +1013,153 @@ describe('the part katalog of the contract check', () => {
     expect(run(withState(), contract, output.io, text)).not.toBe(0);
     expect(output.stdout()).toBe('');
     expect(output.stderr()).toContain(hints.katalogDateiUngueltig);
+  });
+});
+
+describe('the contract check of the body of a write', () => {
+  // The synthetic document as a plain object that a test may change.
+  type Writable = Record<string, Record<string, Record<string, unknown>>>;
+  const documentWith = (
+    change: (paths: Writable, schemas: Record<string, unknown>) => void,
+  ): unknown => {
+    const document = structuredClone(specification) as unknown as {
+      paths: Writable;
+      components: { schemas: Record<string, unknown> };
+    };
+    change(document.paths, document.components.schemas);
+    return document;
+  };
+  const ofBody = (result: Result, operation: string) =>
+    result.abweichungen.filter(
+      (deviation) =>
+        deviation.operation === operation &&
+        (deviation.feld ?? '').startsWith('koerper.'),
+    );
+  const declared = (typ: string): Field => ({
+    deklariert: true,
+    typ,
+    pflicht: false,
+    nullable: false,
+  });
+
+  it('compares the body the client sends with the body the document declares', () => {
+    const result = check();
+    expect(result.operationen['wikiPageCreate']?.koerper).toEqual({
+      title: declared('string'),
+      text: declared('string'),
+      isMarkdown: declared('boolean'),
+    });
+    expect(result.operationen['wikiPageUpdate']?.koerper).toEqual({
+      text: declared('string'),
+    });
+    expect(ofBody(result, 'wikiPageCreate')).toEqual([]);
+    expect(ofBody(result, 'wikiPageUpdate')).toEqual([]);
+  });
+
+  it('reads the answer of the status the contract names, 201 for a new page, and none for a change', () => {
+    const result = check();
+    expect(result.operationen['wikiPageCreate']?.felder).toMatchObject({
+      'data.guid': { deklariert: true, typ: 'string' },
+      'data.version': { deklariert: true, typ: 'integer' },
+    });
+    expect(result.operationen['wikiPageUpdate']?.felder).toBeUndefined();
+    // Without the answer 201, the document gives only its error for it.
+    const without = check(
+      documentWith((paths) => {
+        const post = paths['/wiki/categories/{categoryId}/pages']?.['post'] as {
+          responses: Record<string, unknown>;
+        };
+        delete post.responses['201'];
+      }),
+    );
+    expect(without.abweichungen).toContainEqual({
+      operation: 'wikiPageCreate',
+      feld: 'data',
+      art: 'nicht deklariert',
+    });
+  });
+
+  it('names a field of another type, a field the document lacks and a required field the client does not send', () => {
+    const result = check(
+      documentWith((_, schemas) => {
+        schemas['PageCreate'] = {
+          type: 'object',
+          required: ['title', 'wikiCategoryId'],
+          properties: {
+            title: { type: 'integer' },
+            text: { type: 'string' },
+            wikiCategoryId: { type: 'integer' },
+          },
+        };
+      }),
+    );
+    expect(ofBody(result, 'wikiPageCreate')).toEqual([
+      {
+        operation: 'wikiPageCreate',
+        feld: 'koerper.title',
+        art: 'anderer Typ',
+      },
+      {
+        operation: 'wikiPageCreate',
+        feld: 'koerper.isMarkdown',
+        art: 'nicht deklariert',
+      },
+      {
+        operation: 'wikiPageCreate',
+        feld: 'koerper.wikiCategoryId',
+        art: 'Pflicht nicht gesendet',
+      },
+    ]);
+    expect(result.operationen['wikiPageCreate']?.koerper?.['title']).toEqual({
+      deklariert: true,
+      typ: 'integer',
+      pflicht: true,
+      nullable: false,
+    });
+  });
+
+  // The same fields pass with the request body of the document, so the
+  // check reads that body and not the answer.
+  it('finds no field of a write whose request body the document leaves out', () => {
+    const result = check(
+      documentWith((paths) => {
+        const patch = paths[
+          '/wiki/categories/{categoryId}/pages/{identifier}'
+        ]?.['patch'] as Record<string, unknown>;
+        delete patch['requestBody'];
+      }),
+    );
+    expect(ofBody(result, 'wikiPageUpdate')).toEqual([
+      {
+        operation: 'wikiPageUpdate',
+        feld: 'koerper.text',
+        art: 'nicht deklariert',
+      },
+    ]);
+  });
+
+  it.each([
+    ['a status other than 200 and 201', { status: 204 }],
+    ['a status as text', { status: '201' }],
+    ['a body for a GET', { method: 'get', request: { type: 'object' } }],
+  ])('refuses a contract with %s', (_, change) => {
+    const output = capture();
+    expect(
+      run(
+        withState(),
+        JSON.stringify({
+          x: {
+            method: 'post',
+            path: '/api/wiki/categories/{categoryId}/pages',
+            query: [],
+            request: { type: 'object' },
+            ...change,
+          },
+        }),
+        output.io,
+        catalog,
+      ),
+    ).not.toBe(0);
+    expect(output.stdout()).toBe('');
   });
 });

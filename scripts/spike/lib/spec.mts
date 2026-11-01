@@ -339,6 +339,26 @@ export class Schemas {
   }
 
   /**
+   * Finds the schema of the body of a request: the JSON content of
+   * `requestBody` in OpenAPI 3, through a reference as well. Swagger 2 is
+   * not read; its body is a parameter, and no instance seen used it.
+   *
+   * @param operation - The operation object.
+   * @returns The schema of the request body, or `undefined`.
+   */
+  requestSchema(operation: JsonObject): unknown {
+    const body = this.resolve(operation['requestBody']);
+    const content = body?.['content'];
+    if (!isObject(content)) {
+      return undefined;
+    }
+    const json = Object.entries(content).find(([type]) =>
+      type.includes('json'),
+    );
+    return isObject(json?.[1]) ? json[1]['schema'] : undefined;
+  }
+
+  /**
    * Lists the names of the query parameters an operation declares.
    *
    * @param operation - The operation object.
