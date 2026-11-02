@@ -194,6 +194,10 @@ const keys: KeyProvider = Object.freeze({
     Promise.resolve([
       Uint8Array.from(createHash('sha256').update('no-bypass').digest()),
     ]),
+  // Day keys serve snapshots of writes, which no tool here reaches.
+  wrap: () => Promise.reject(new Error('no day keys')),
+  unwrap: () => Promise.reject(new Error('no day keys')),
+  destroyBefore: () => Promise.reject(new Error('no day keys')),
 });
 
 const clock = Object.freeze({

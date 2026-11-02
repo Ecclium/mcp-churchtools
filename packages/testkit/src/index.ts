@@ -96,6 +96,14 @@ export {
   type SpecialPluginOptions,
 } from './plugins/special/index.js';
 export {
+  createMemoryDayKeys,
+  type DayKeyCheck,
+  dayKeyChecks,
+  type DayKeyMemory,
+  type DayKeyProvider,
+  type OpenDayKeys,
+} from './day-keys/index.js';
+export {
   createMemoryQuotaStore,
   type OpenQuotaStore,
   quotaContext,

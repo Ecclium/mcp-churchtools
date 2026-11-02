@@ -316,7 +316,7 @@ export interface Pseudonyms {
  * ```
  */
 export async function openPseudonyms(
-  keys: KeyProvider,
+  keys: Pick<KeyProvider, 'dataKeys'>,
   ctx: TenantContext,
 ): Promise<Pseudonyms> {
   const time = timeOf(ctx);

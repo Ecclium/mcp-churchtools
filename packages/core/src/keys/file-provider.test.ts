@@ -5,6 +5,7 @@ import type {
   IsoDate,
   KeyPurpose,
   TenantContext,
+  WrappedKey,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { describe, expect, it } from 'vitest';
 
@@ -251,7 +252,22 @@ describe('createFileKeyProvider', () => {
       { current: secret('a'), previous: secret('a') },
       'The previous key is the current one.',
     ],
-    ['no keys', undefined, 'The current key is no key.'],
+    [
+      'a previous key without a current one',
+      { previous: secret('b') },
+      'A previous key needs a current one.',
+    ],
+    ['no keys', undefined, 'A provider of keys needs a secret or day keys.'],
+    [
+      'an empty set of keys',
+      {},
+      'A provider of keys needs a secret or day keys.',
+    ],
+    [
+      'day keys without their methods',
+      { dayKeys: { wrap: () => undefined } },
+      'The day keys are no day keys.',
+    ],
   ])('refuses %s', (_name, keys, message) => {
     expect(() =>
       createFileKeyProvider(keys as unknown as { current: KeyMaterial }),
@@ -261,7 +277,63 @@ describe('createFileKeyProvider', () => {
   it('is frozen and holds no secret in a property', () => {
     const provider = createFileKeyProvider({ current: secret('a') });
     expect(Object.isFrozen(provider)).toBe(true);
-    expect(Object.keys(provider)).toEqual(['dataKeys']);
+    expect(Object.keys(provider)).toEqual([
+      'dataKeys',
+      'wrap',
+      'unwrap',
+      'destroyBefore',
+    ]);
     expect(JSON.stringify(provider)).toBe('{}');
+  });
+});
+
+describe('createFileKeyProvider with day keys', () => {
+  const wrapped = Object.freeze({
+    purpose: 'snapshot',
+    day,
+    sealed: 'x',
+  }) as unknown as WrappedKey;
+  const key = new Uint8Array(32);
+
+  it('hands every call for a day key to the day keys as they were at the start', async () => {
+    const calls: unknown[][] = [];
+    const dayKeys = {
+      wrap: (...args: unknown[]) => {
+        calls.push(['wrap', ...args]);
+        return Promise.resolve(wrapped);
+      },
+      unwrap: (...args: unknown[]) => {
+        calls.push(['unwrap', ...args]);
+        return Promise.resolve(key);
+      },
+      destroyBefore: (...args: unknown[]) => {
+        calls.push(['destroyBefore', ...args]);
+        return Promise.resolve(2);
+      },
+    };
+    const provider = createFileKeyProvider({ dayKeys });
+    dayKeys.wrap = () => Promise.reject(new Error('changed later'));
+    expect(await provider.wrap(ctx, 'snapshot', day, key)).toBe(wrapped);
+    expect(await provider.unwrap(ctx, 'snapshot', wrapped)).toBe(key);
+    expect(await provider.destroyBefore('snapshot', day)).toBe(2);
+    expect(calls).toEqual([
+      ['wrap', ctx, 'snapshot', day, key],
+      ['unwrap', ctx, 'snapshot', wrapped],
+      ['destroyBefore', 'snapshot', day],
+    ]);
+    await expect(provider.dataKeys(ctx, 'pseudonym', day)).rejects.toThrow(
+      'This provider has no secret for pseudonyms.',
+    );
+  });
+
+  it('rejects every call for a day key without day keys', async () => {
+    const provider = createFileKeyProvider({ current: secret('a') });
+    for (const call of [
+      provider.wrap(ctx, 'snapshot', day, key),
+      provider.unwrap(ctx, 'snapshot', wrapped),
+      provider.destroyBefore('snapshot', day),
+    ]) {
+      await expect(call).rejects.toThrow('This provider has no day keys.');
+    }
   });
 });

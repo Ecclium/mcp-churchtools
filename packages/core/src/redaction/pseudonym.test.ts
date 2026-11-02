@@ -293,7 +293,7 @@ describe('openPseudonyms', () => {
 
   it('copies the keys at once, erases what the provider gave, and refuses to work once erased', async () => {
     const given: Uint8Array[] = [];
-    const watched: KeyProvider = {
+    const watched: Pick<KeyProvider, 'dataKeys'> = {
       dataKeys: async (ctx, purpose, day) => {
         const keys = await changed.dataKeys(ctx, purpose, day);
         given.push(...keys);
@@ -318,7 +318,7 @@ describe('openPseudonyms', () => {
 
   it('refuses a provider that hands out the same arrays twice, once they are erased', async () => {
     let cache: readonly Uint8Array[] | undefined;
-    const caching: KeyProvider = {
+    const caching: Pick<KeyProvider, 'dataKeys'> = {
       dataKeys: async (ctx, purpose, day) => {
         cache ??= await provider('a').dataKeys(ctx, purpose, day);
         return cache;
@@ -334,7 +334,7 @@ describe('openPseudonyms', () => {
   it('erases the keys of the day when the provider refuses the day before', async () => {
     const given: Uint8Array[] = [];
     let calls = 0;
-    const failing: KeyProvider = {
+    const failing: Pick<KeyProvider, 'dataKeys'> = {
       dataKeys: async (ctx, purpose, day) => {
         calls += 1;
         if (calls === 2) throw new TypeError('The day is invalid.');

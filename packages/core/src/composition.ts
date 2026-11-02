@@ -6,7 +6,8 @@
  * the clock of the system, the description of an error for the handlers
  * of the process, a logger bound to the tenant `default` for the
  * transport over stdio, and the provider of the keys for the pseudonyms
- * of the level `strict` (ADR 0069).
+ * of the level `strict` (ADR 0069) and of the day keys for snapshots and
+ * the queue (ADR 0031).
  *
  * Only the composition root may import this subpath, which a rule of
  * dependency-cruiser holds. Through the entry point of core the writer
@@ -25,7 +26,14 @@ export {
 export { createAuditSink } from './audit/index.js';
 export { systemClock } from './clock.js';
 export { describeError } from './errors/index.js';
+export {
+  createFileDayKeys,
+  type DayKeys,
+  type FileDayKeysOptions,
+  prepareDayKeyFolder,
+} from './keys/day-keys.js';
 export { createFileKeyProvider, type FileKeys } from './keys/file-provider.js';
+export { PrivateFileError } from './files/index.js';
 export {
   createLogger,
   createStderrWriter,
