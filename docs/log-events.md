@@ -56,6 +56,12 @@ Je Ereignis die Stufe und die Felder, die ein Aufruf höchstens setzt. Die Felde
 
 | Ereignis | Stufe | Felder | Bedeutung |
 | --- | --- | --- | --- |
+| `policy_count_unavailable` | `warn` | keine | Ecclium konnte einen Schreibvorgang nicht gegen die Grenze der Richtlinie zählen, etwa ohne Ordner für den Zustand. Der Aufruf endet mit `policy_denied`, ohne zu schreiben. |
+| `policy_limit_reached` | `warn` | keine | Die Grenze der Schreibvorgänge dieses Tools auf dieses Ziel für den UTC-Tag ist erreicht. Der Aufruf endet mit `policy_denied`, ohne zu schreiben. |
+| `policy_name_changed` | `warn` | keine | Das Ziel in ChurchTools trägt nicht mehr den Namen, den die Richtlinie erwartet, oder sein Name ist nicht zu lesen. Der Aufruf endet mit `policy_denied`, ohne zu schreiben und ohne zu zählen. |
+| `policy_no_entry` | `warn` | keine | Die Richtlinie hat Einträge, aber keiner deckt dieses Tool und dieses Ziel. Der Aufruf endet mit `policy_denied`, ohne zu schreiben. |
+| `policy_not_interactive` | `warn` | keine | Ein Schreibvorgang kam ausserhalb des interaktiven Modus. Bis der Runner den unbeaufsichtigten Teil der Richtlinie nutzt, schreibt Ecclium dort nichts. Der Aufruf endet mit `policy_denied`. |
+| `policy_queue_only` | `warn` | keine | Die Richtlinie schickt diese Art von Schreibvorgang immer in die Warteschlange der Freigaben, etwa einen in eine Gruppe oder einen Dienst. Bis es die Warteschlange gibt, endet der Aufruf mit `policy_denied`. |
 | `write_audit_failed` | `error` | keine | Die Zeile eines Aufrufs, der womöglich geschrieben hat, erreichte die Audit-Datei nicht. Bis zum Neustart des Servers plant und schreibt der Write-Guard nichts mehr. |
 | `write_committed` | `info` | keine | Ein Schreibvorgang ist geschrieben und gelesen: die Version stieg wie geplant, und der Text ist der gesendete. |
 | `write_conflict` | `warn` | `code` | Das Ziel eines Schreibvorgangs hat sich seit dem Plan geändert oder liest sich nach dem Schreiben nicht wie geplant. `code` ist `conflict`. |

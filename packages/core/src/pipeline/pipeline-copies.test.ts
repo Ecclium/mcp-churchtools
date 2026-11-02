@@ -17,6 +17,7 @@ import { z } from 'zod';
 
 import { createAuditSink } from '../audit/index.js';
 import { createToolCatalog } from '../registry/index.js';
+import { defaultPolicy } from '../policy/check.js';
 import { createToolPipeline } from './pipeline.js';
 
 // The real context is frozen, so a test against it proves nothing about
@@ -102,6 +103,7 @@ describe('the pipeline before execute', () => {
     });
     const clock = Object.freeze({ now: Object.freeze(() => 0) });
     const pipeline = createToolPipeline({
+      policy: defaultPolicy,
       catalog,
       audit: createAuditSink({ writer, clock, isKnownTool: catalog.has }),
       transport: double.transport,

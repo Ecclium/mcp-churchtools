@@ -28,6 +28,7 @@ import { KeyMaterial } from '../keys/index.js';
 import { freeTextMarkers } from '../redaction/index.js';
 import { pseudonymLength, pseudonymPrefix } from '../redaction/pseudonym.js';
 import { createToolCatalog } from '../registry/index.js';
+import { defaultPolicy } from '../policy/check.js';
 import { createToolPipeline, type ToolRequest } from './pipeline.js';
 
 // The level strict in the pipeline (ADR 0069): pseudonyms in place of the
@@ -277,6 +278,7 @@ const setup = (options: { readonly keys?: KeyProvider | 'none' } = {}) => {
   const provider =
     options.keys === 'none' ? undefined : (options.keys ?? keys('seed-a'));
   const pipeline = createToolPipeline({
+    policy: defaultPolicy,
     quota: createMemoryQuotaStore(),
     catalog,
     audit,

@@ -1,6 +1,7 @@
 import {
   createToolCatalog,
   createToolPipeline,
+  defaultPolicy,
   loadConfig,
   type ToolPipelineOptions,
   type ToolRequest,
@@ -90,6 +91,7 @@ const setup = () => {
     failures: () => 0,
   });
   const pipeline = createToolPipeline({
+    policy: defaultPolicy,
     // Tools with sensitivity special count against the read budget.
     quota: createMemoryQuotaStore(),
     catalog: createToolCatalog({

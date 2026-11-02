@@ -25,6 +25,7 @@ import {
 } from '../identity/index.js';
 import { createLogger } from '../logger/index.js';
 import { createToolPipeline } from '../pipeline/index.js';
+import { defaultPolicy } from '../policy/check.js';
 import { type CatalogEntry, createToolCatalog } from '../registry/index.js';
 import { createMcpMount } from './mount.js';
 import { deriveOutputSchema } from './schema.js';
@@ -69,6 +70,7 @@ const mount = (): {
     toolsets: new Set(['wiki'] as const),
   });
   const pipeline = createToolPipeline({
+    policy: defaultPolicy,
     catalog,
     audit: createAuditSink({
       writer: silent,

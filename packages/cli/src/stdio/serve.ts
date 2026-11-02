@@ -348,11 +348,13 @@ export function serve(options: ServeOptions): ExitCode | undefined {
       requestsPerMinute: config.churchtoolsRequestsPerMinute,
       clock,
       logging: { writer, minLevel },
-      // The checked policy, for the read budget (ADR 0032).
+      // The checked policy, for the read budget and the limits of writes
+      // (ADR 0032).
       policy: config.policy,
-      // The counters of the read budget, in the folder the first stage
-      // prepared. Without the folder of state there is no store, and no
-      // tool with sensitivity special runs (ADR 0063).
+      // The counters of the read budget and of the writes, in the folder
+      // the first stage prepared. Without the folder of state there is no
+      // store: no tool with sensitivity special runs (ADR 0063), and no
+      // write that an entry of the policy limits.
       ...(config.stateDir === undefined
         ? {}
         : {

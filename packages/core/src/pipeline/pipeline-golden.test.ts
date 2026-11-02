@@ -30,6 +30,7 @@ import { createFileKeyProvider } from '../keys/file-provider.js';
 import { KeyMaterial } from '../keys/index.js';
 import { openPseudonyms } from '../redaction/pseudonym.js';
 import { createToolCatalog } from '../registry/index.js';
+import { defaultPolicy } from '../policy/check.js';
 import { createToolPipeline, type ToolRequest } from './pipeline.js';
 
 // Golden tests of the redaction in each level (ADR 0026, ADR 0069): one
@@ -220,6 +221,7 @@ const call = async (name: string, level: RedactionLevel) => {
   const silent = Object.freeze({ write: (): boolean => true });
   const clock = Object.freeze({ now: Object.freeze(() => noon) });
   const pipeline = createToolPipeline({
+    policy: defaultPolicy,
     quota: createMemoryQuotaStore(),
     catalog,
     audit: createAuditSink({

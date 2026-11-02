@@ -87,7 +87,6 @@ import {
   collectInputRefs,
   type ToolCatalog,
 } from '../registry/index.js';
-import { defaultPolicy } from '../policy/check.js';
 import type { Policy } from '../policy/schema.js';
 import { isoDateOf, quotaTimeoutMs } from '../quota/budget.js';
 import { openPseudonyms, type Pseudonyms } from '../redaction/pseudonym.js';
@@ -187,8 +186,10 @@ export interface ToolPipelineOptions {
    */
   readonly random?: RandomBytes;
   /**
-   * The store of the daily read budget (ADR 0063). Without it, a tool with
-   * sensitivity special, or one the catalog treats as such, does not run.
+   * The store of the daily read budget (ADR 0063) and of the counters of
+   * writes (ADR 0032). Without it, a tool with sensitivity special, or one
+   * the catalog treats as such, does not run, and neither does a write
+   * that an entry of the policy limits.
    */
   readonly quota?: QuotaStore;
   /**
@@ -204,11 +205,12 @@ export interface ToolPipelineOptions {
    */
   readonly killSwitchDir?: string;
   /**
-   * The checked policy from the configuration (ADR 0032), for now for the
-   * daily read budget. Without it the default policy applies, with a
-   * budget of 200.
+   * The checked policy from the configuration (ADR 0032): the daily read
+   * budget and the limits of writes. Required, so that no composition root
+   * can leave the policy of the operator out by accident; one without a
+   * file passes the default policy.
    */
-  readonly policy?: Policy;
+  readonly policy: Policy;
 }
 
 // The longest duration the audit accepts.
@@ -478,8 +480,8 @@ const inputRefsOf = (
  *   origin and rate.
  * @example
  * ```ts
- * const pipeline = createToolPipeline({ catalog, audit, transport, origin,
- *   requestsPerMinute: 300, clock, logging: { writer, minLevel: 'info' } });
+ * const pipeline = createToolPipeline({ policy, catalog, audit, transport,
+ *   origin, requestsPerMinute: 300, clock, logging: { writer, minLevel: 'info' } });
  * const outcome = await pipeline.call('ct_whoami', {}, request);
  * ```
  */
@@ -488,8 +490,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
   const random = options.random ?? randomBytes;
   // The read budget of the policy, fixed for the life of the pipeline, as
   // the policy is read once at the start (ADR 0032).
-  const readBudget = (options.policy ?? defaultPolicy).interactive
-    .readBudgetPerDay;
+  const readBudget = options.policy.interactive.readBudgetPerDay;
   const exhausted = budgetExhausted(readBudget);
   const client = createChurchToolsClient({
     transport: options.transport,
@@ -504,6 +505,8 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     client,
     clock,
     killSwitchDir: options.killSwitchDir,
+    policy: options.policy,
+    quota: options.quota,
   });
 
   const stages = async (

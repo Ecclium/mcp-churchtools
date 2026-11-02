@@ -1,6 +1,7 @@
 import {
   createToolCatalog,
   createToolPipeline,
+  defaultPolicy,
   loadConfig,
   type ToolCatalog,
   type ToolPipelineOptions,
@@ -108,6 +109,7 @@ const setup = (docs: DocsIndex = syntheticDocsIndex()) => {
     failures: () => 0,
   });
   const pipeline = createToolPipeline({
+    policy: defaultPolicy,
     quota: createMemoryQuotaStore(new Map()),
     catalog: catalogOf(docs),
     audit,

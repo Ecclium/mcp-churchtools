@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import {
   createToolCatalog,
   createToolPipeline,
+  defaultPolicy,
   loadConfig,
   type ToolOutcome,
   type ToolPipelineOptions,
@@ -234,6 +235,7 @@ const setup = (level: RedactionLevel) => {
     failures: () => 0,
   });
   const pipeline = createToolPipeline({
+    policy: defaultPolicy,
     quota: createMemoryQuotaStore(),
     catalog,
     audit,

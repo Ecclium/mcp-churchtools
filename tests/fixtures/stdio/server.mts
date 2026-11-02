@@ -41,6 +41,7 @@ import {
   createStdioTenantResolver,
   createToolCatalog,
   createToolPipeline,
+  defaultPolicy,
   loadConfig,
 } from '../../../packages/core/src/index.ts';
 import {
@@ -149,6 +150,7 @@ const catalog = createToolCatalog({
   toolsets: new Set(['persons', 'wiki'] as const),
 });
 const pipeline = createToolPipeline({
+  policy: defaultPolicy,
   catalog,
   audit: createAuditSink({
     writer,

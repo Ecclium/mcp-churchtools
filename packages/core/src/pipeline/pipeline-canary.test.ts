@@ -19,6 +19,7 @@ import { z } from 'zod';
 
 import { createAuditSink } from '../audit/index.js';
 import { createToolCatalog } from '../registry/index.js';
+import { defaultPolicy } from '../policy/check.js';
 import { createToolPipeline, type ToolRequest } from './pipeline.js';
 
 // Canaries in the token, in the input and in answers of ChurchTools must
@@ -116,6 +117,7 @@ const setup = () => {
   });
   const clock = Object.freeze({ now: Object.freeze(() => 0) });
   const pipeline = createToolPipeline({
+    policy: defaultPolicy,
     catalog,
     // ct_example_profile names a person, so its result needs its line in an
     // audit file and counts against the read budget (ADR 0064). A file in

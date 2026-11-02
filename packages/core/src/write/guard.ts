@@ -20,8 +20,10 @@
  * the core reads again and decides between `verified`, `conflict` and
  * `failed`, and its sentence never invites to try again blindly.
  *
- * The policy of ADR 0032 and the content policy of ADR 0030 check the plan
- * here once they are built, between the rights and the seal.
+ * The policy of ADR 0032 checks the plan after the read of the target and
+ * again on the commit right before the send, where it adds the write to
+ * its counter of the day (`policy-gate.ts`). The content policy of ADR 0030
+ * checks the plan here once it is built, between the rights and the seal.
  *
  * @packageDocumentation
  */
@@ -33,6 +35,7 @@ import {
   isEccliumError,
   type Permissions,
   type PlanOutcome,
+  type QuotaStore,
   type RightRef,
   type Sensitivity,
   type TenantContext,
@@ -43,9 +46,11 @@ import {
 
 import type { ChurchToolsWrites } from '../churchtools/wiki-writes.js';
 import { HttpTransportError } from '../http/index.js';
+import type { Policy } from '../policy/schema.js';
 import { readIntent } from './intent.js';
 import { checkKillSwitches } from './kill-switch.js';
 import { contentHashOf } from './plan-hash.js';
+import { createPolicyGate, type WriteFacts } from './policy-gate.js';
 import { useProof } from './proof.js';
 import {
   type IntentRules,
@@ -112,6 +117,13 @@ export interface WriteGuardOptions {
    * names none: then writing stays off.
    */
   readonly killSwitchDir: string | undefined;
+  /** The checked policy of the server (ADR 0032). */
+  readonly policy: Policy;
+  /**
+   * The store of the counters of the day, or undefined without a folder of
+   * state: then a write that an entry of the policy limits does not run.
+   */
+  readonly quota: QuotaStore | undefined;
 }
 
 /** Who plans: the call of a tool. */
@@ -256,17 +268,29 @@ type PageIntent = Extract<WriteIntent, { guid: string }>;
  * block after a failed line of the audit, which lives as long as the
  * pipeline and is no state at module level.
  *
- * @param options - Client, clock and folder of the kill switches.
+ * @param options - Client, clock, folder of the kill switches, policy and
+ *   store of quotas.
  * @returns The write guard, frozen.
  * @example
  * ```ts
- * const guard = createWriteGuard({ client, clock, killSwitchDir });
+ * const guard = createWriteGuard({ client, clock, killSwitchDir, policy, quota });
  * const outcome = await guard.plan({ ctx, tool, origin, meta }, intent);
  * ```
  */
 export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
   const { client, clock, killSwitchDir } = options;
   let blocked = false;
+  const policy = createPolicyGate({
+    policy: options.policy,
+    quota: options.quota,
+    clock,
+    categoryName: (ctx, categoryId) =>
+      client.writes.wikiCategoryName(ctx, categoryId),
+  });
+  // What the policy needs of a write beyond its rules: the title of a page
+  // it changes, as read right before.
+  const factsOf = (derived: Derived): WriteFacts =>
+    derived.kind === 'change' ? { pageTitle: derived.before.title } : {};
 
   // Writing off for this tenant, read-only, or blocked after a failed line
   // of the audit: checked before every plan and right before every commit.
@@ -388,8 +412,9 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     const wiki = intent as WikiIntent;
     await checkRights(ctx, wiki, rules);
     const derived = await derive(ctx, wiki);
-    // The policy of ADR 0032 and the content policy of ADR 0030 check the
-    // plan here once they are built.
+    // The policy, with the counter of the day only read (ADR 0032). The
+    // content policy of ADR 0030 checks the plan here once it is built.
+    await policy.check(ctx, request.tool, rules, factsOf(derived), 'plan');
     if (derived.kind === 'change' && derived.text === derived.before.text) {
       return Object.freeze({
         outcome: Object.freeze({ kind: 'skipped', reason: 'unchanged' }),
@@ -528,6 +553,20 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
         target,
         path,
       );
+    }
+    // The policy once more, right before the send: the names may have
+    // changed since the plan, and the write takes its place in the counter
+    // of the day. A refusal here has used up the proof (ADR 0032).
+    try {
+      await policy.check(
+        ctx,
+        view.tool,
+        view.rules,
+        factsOf(derived),
+        'commit',
+      );
+    } catch (error) {
+      return denied(asError(error), target, path);
     }
     return derived.kind === 'create'
       ? create(

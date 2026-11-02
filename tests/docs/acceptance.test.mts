@@ -12,6 +12,7 @@ import { readFileSync } from 'node:fs';
 import {
   createToolCatalog,
   createToolPipeline,
+  defaultPolicy,
   loadConfig,
   type ToolRequest,
 } from '@ecclium/mcp-churchtools-core';
@@ -80,6 +81,7 @@ beforeAll(() => {
   // The real facts take seconds to build and open, as the build does.
   docs = openDocsIndex(buildDocsIndex(readData()));
   const pipeline = createToolPipeline({
+    policy: defaultPolicy,
     quota: createMemoryQuotaStore(new Map()),
     catalog: createToolCatalog({
       core: createCorePlugin({ docs }),

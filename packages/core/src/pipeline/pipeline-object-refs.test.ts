@@ -25,6 +25,7 @@ import {
   createToolCatalog,
   type ToolCatalog,
 } from '../registry/index.js';
+import { defaultPolicy } from '../policy/check.js';
 import { createToolPipeline, type ToolRequest } from './pipeline.js';
 
 // The IDs of a call in its audit line (ADR 0028): those the input asks for,
@@ -245,6 +246,7 @@ const setup = (
     isKnownTool: catalog.has,
   });
   const pipeline = createToolPipeline({
+    policy: defaultPolicy,
     quota: createMemoryQuotaStore(),
     catalog,
     audit,

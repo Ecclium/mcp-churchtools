@@ -5,15 +5,24 @@ import { join } from 'node:path';
 import {
   EccliumError,
   isEccliumError,
+  type Mode,
   type Permissions,
   type PlannedWrite,
+  type QuotaStore,
   type TenantContext,
   type WikiPage,
+  writeQuotaKey,
 } from '@ecclium/mcp-churchtools-plugin-api';
-import { createTestClock } from '@ecclium/mcp-churchtools-testkit';
+import {
+  createMemoryQuotaStore,
+  createTestClock,
+} from '@ecclium/mcp-churchtools-testkit';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { HttpTransportError } from '../http/index.js';
+import { checkPolicy, defaultPolicy } from '../policy/check.js';
+import type { Policy } from '../policy/schema.js';
+import { isoDateOf } from '../quota/budget.js';
 import {
   appendSection,
   createWriteGuard,
@@ -22,6 +31,7 @@ import {
   type WriteClient,
   writeSentences,
 } from './guard.js';
+import { policySentences } from './policy-gate.js';
 import { issueProof } from './proof.js';
 import { readPlan } from './sealed-plan.js';
 
@@ -36,7 +46,12 @@ interface Logged {
 
 const contextOf = (
   logged: Logged[],
-  change: Partial<{ tenantId: string; readOnly: boolean; id: string }> = {},
+  change: Partial<{
+    tenantId: string;
+    readOnly: boolean;
+    id: string;
+    mode: Mode;
+  }> = {},
 ): TenantContext => {
   const log =
     (level: string) => (event: string, fields?: { code?: unknown }) => {
@@ -50,6 +65,7 @@ const contextOf = (
     tenantId: change.tenantId ?? 'demo-tenant',
     actor: { kind: 'service', id: change.id ?? 'stdio:local-stdio' },
     readOnly: change.readOnly ?? false,
+    mode: change.mode ?? 'interactive',
     log: {
       debug: log('debug'),
       info: log('info'),
@@ -183,12 +199,22 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-const setup = (fake = fakeOf(), killSwitchDir: string | null = dir) => {
+const setup = (
+  fake = fakeOf(),
+  killSwitchDir: string | null = dir,
+  limits: { policy?: Policy; quota?: QuotaStore | null } = {},
+) => {
   const clock = createTestClock(now);
+  const quota =
+    limits.quota === null
+      ? undefined
+      : (limits.quota ?? createMemoryQuotaStore());
   const guard = createWriteGuard({
     client: clientOf(fake),
     clock,
     killSwitchDir: killSwitchDir ?? undefined,
+    policy: limits.policy ?? defaultPolicy,
+    quota,
   });
   const ctx = contextOf(logged);
   const request: PlanRequest = {
@@ -197,7 +223,7 @@ const setup = (fake = fakeOf(), killSwitchDir: string | null = dir) => {
     origin: 'core',
     meta,
   };
-  return { fake, clock, guard, ctx, request };
+  return { fake, clock, guard, ctx, request, quota };
 };
 
 const refusalOf = async (promise: Promise<unknown>): Promise<EccliumError> => {
@@ -380,6 +406,8 @@ describe('planning', () => {
       },
       clock: createTestClock(now),
       killSwitchDir: dir,
+      policy: defaultPolicy,
+      quota: undefined,
     });
     expect((await refusalOf(failing.plan(request, update))).code).toBe(
       'internal',
@@ -718,5 +746,118 @@ describe('committing', () => {
   it('is frozen', () => {
     expect(Object.isFrozen(setup().guard)).toBe(true);
     expect(Object.isFrozen(writeSentences)).toBe(true);
+  });
+});
+
+describe('the policy (ADR 0032)', () => {
+  const tool = 'ct_example_note_write';
+  const policyOf = (target: unknown): Policy => {
+    const result = checkPolicy({
+      schema: 'policy.v1',
+      interactive: { targets: [{ target, tools: [tool], maxPerDay: 1 }] },
+    });
+    if (!result.ok) throw new Error(result.code);
+    return result.policy;
+  };
+  const categoryPolicy = policyOf({
+    kind: 'wiki_category',
+    id: 12,
+    name: 'Berichte',
+  });
+  const pagePolicy = policyOf({
+    kind: 'wiki_page',
+    categoryId: 12,
+    guid: guid.toLowerCase(),
+    name: 'Dienstplan',
+  });
+  const pageKey = writeQuotaKey(tool, `wiki_page:12/${guid.toLowerCase()}`);
+  const today = () => {
+    const day = isoDateOf(now);
+    if (day === undefined) throw new Error('expected a day');
+    return day;
+  };
+
+  it('plans a new page only in a category with the name it expects', async () => {
+    const fake = fakeOf();
+    fake.categoryName = 'Berichte';
+    const { guard, request } = setup(fake, dir, { policy: categoryPolicy });
+    expect((await guard.plan(request, create)).outcome.kind).toBe('planned');
+    fake.categoryName = 'Protokolle';
+    expect(await refusalOf(guard.plan(request, create))).toMatchObject({
+      code: 'policy_denied',
+      message: policySentences.nameChanged,
+    });
+    expect(logged.map(({ event }) => event)).toEqual(['policy_name_changed']);
+  });
+
+  it('refuses a plan outside the policy before it seals anything', async () => {
+    const { guard, request } = setup(fakeOf(), dir, {
+      policy: policyOf({ kind: 'wiki_category', id: 13, name: 'Andere' }),
+    });
+    expect(await refusalOf(guard.plan(request, update))).toMatchObject({
+      code: 'policy_denied',
+      message: policySentences.outside,
+    });
+  });
+
+  it('counts a write when it commits, not when it plans', async () => {
+    const { fake, guard, ctx, request, quota } = setup(fakeOf(), dir, {
+      policy: pagePolicy,
+    });
+    const plan = planOf(await guard.plan(request, update));
+    expect(await quota?.read(ctx, pageKey, today())).toBe(0);
+    const proof = issueProof(plan, 'elicitation', now);
+    expect((await guard.commit(ctx, plan, proof)).ok).toBe(true);
+    expect(await quota?.read(ctx, pageKey, today())).toBe(1);
+    expect(fake.sent).toEqual(['# Neu\n']);
+  });
+
+  it('writes nothing once the limit is reached after the plan, and uses the proof up', async () => {
+    const { fake, guard, ctx, request, quota } = setup(fakeOf(), dir, {
+      policy: pagePolicy,
+    });
+    const plan = planOf(await guard.plan(request, update));
+    // Another write of the same tool took the place of the day meanwhile.
+    await quota?.increment(ctx, pageKey, today());
+    const proof = issueProof(plan, 'elicitation', now);
+    const result = await guard.commit(ctx, plan, proof);
+    expect(result).toMatchObject({
+      ok: false,
+      state: 'denied',
+      sent: false,
+      path: 'elicitation',
+    });
+    expect(!result.ok && result.error.message).toBe(
+      policySentences.limitReached,
+    );
+    const again = await guard.commit(ctx, plan, proof);
+    expect(!again.ok && again.error.code).toBe('confirmation_required');
+    expect(fake.sent).toEqual([]);
+  });
+
+  it('writes nothing when the page was renamed after the plan, without counting it', async () => {
+    const { fake, guard, ctx, request, quota } = setup(fakeOf(), dir, {
+      policy: pagePolicy,
+    });
+    const plan = planOf(await guard.plan(request, update));
+    fake.page = { ...fake.page, title: 'Alter Plan' };
+    const proof = issueProof(plan, 'elicitation', now);
+    const result = await guard.commit(ctx, plan, proof);
+    expect(!result.ok && result.error.message).toBe(
+      policySentences.nameChanged,
+    );
+    expect(await quota?.read(ctx, pageKey, today())).toBe(0);
+    expect(fake.sent).toEqual([]);
+  });
+
+  it('cannot count a limited write without a store of quotas', async () => {
+    const { guard, request } = setup(fakeOf(), dir, {
+      policy: pagePolicy,
+      quota: null,
+    });
+    expect(await refusalOf(guard.plan(request, update))).toMatchObject({
+      code: 'policy_denied',
+      message: policySentences.countUnavailable,
+    });
   });
 });

@@ -31,6 +31,7 @@ import { createAuditSink } from '../audit/index.js';
 import { createStdioIdentity } from '../identity/index.js';
 import { createLogger, type LineWriter } from '../logger/index.js';
 import { createToolPipeline } from '../pipeline/index.js';
+import { defaultPolicy } from '../policy/check.js';
 import { createToolCatalog } from '../registry/index.js';
 import { createMcpMount } from './mount.js';
 
@@ -191,6 +192,7 @@ const setup = async (requestsPerMinute: number) => {
     });
     open.push(double);
     const pipeline = createToolPipeline({
+      policy: defaultPolicy,
       catalog,
       audit,
       quota,
