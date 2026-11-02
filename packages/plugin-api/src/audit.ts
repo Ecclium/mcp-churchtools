@@ -19,6 +19,23 @@ export type AuditOutcome = 'ok' | 'error' | 'denied';
 /** How a write was confirmed: by the client, by echo, by policy or by the operator. */
 export type ConfirmationPath = 'elicitation' | 'echo' | 'policy' | 'operator';
 
+/**
+ * The state of a write at the end of a call (ADR 0029): planned and
+ * waiting for a confirmation, queued for the operator, written and read
+ * back, not needed, refused, ended in a conflict, failed, or taken back
+ * after a failure in a run. The outcome of the line follows from it:
+ * `ok` for the first four, `denied` for `denied`, `error` for the rest.
+ */
+export type WriteState =
+  | 'planned'
+  | 'queued'
+  | 'verified'
+  | 'skipped'
+  | 'denied'
+  | 'conflict'
+  | 'failed'
+  | 'rolledBack';
+
 /** The language model a run of the runner used, as its configuration names it. */
 export interface ProviderInfo {
   /** Vendor of the model. */
@@ -65,6 +82,8 @@ export interface AuditEventV1 {
   readonly outcome: AuditOutcome;
   /** How a write was confirmed, for writes only. */
   readonly confirmation?: ConfirmationPath;
+  /** The state of a write at the end of the call, for writes only. */
+  readonly writeState?: WriteState;
   /** Hash of the policy in force, for runs of the runner. */
   readonly policyHash?: string;
   /** The language model of a run, if it used one. */

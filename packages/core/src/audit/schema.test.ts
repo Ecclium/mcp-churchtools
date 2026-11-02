@@ -17,6 +17,8 @@ import {
   auditPlaceholders,
   confirmationPaths,
   objectDomains,
+  writeStateOutcomes,
+  writeStates,
 } from './index.js';
 
 // Lists every value once. A value missing here fails the type check, a
@@ -135,6 +137,28 @@ describe('auditEventV1Schema', () => {
     ).toBe(true);
   });
 
+  it('ties the state of a write to the outcome (ADR 0029)', () => {
+    for (const [writeState, outcome] of Object.entries(writeStateOutcomes)) {
+      const event = {
+        ...valid,
+        outcome,
+        writeState,
+        ...(outcome === 'ok' ? {} : { errorCode: 'conflict' }),
+      };
+      expect(passes(auditEventV1Schema, event)).toBe(true);
+      const other = outcome === 'ok' ? 'denied' : 'ok';
+      expect(
+        passes(auditEventV1Schema, {
+          ...event,
+          outcome: other,
+          ...(other === 'ok'
+            ? { errorCode: undefined }
+            : { errorCode: 'conflict' }),
+        }),
+      ).toBe(false);
+    }
+  });
+
   it('bounds its lists', () => {
     const refs = (count: number) =>
       Array.from({ length: count }, (_, index) => `person:${String(index)}`);
@@ -195,9 +219,25 @@ describe('the lists of values', () => {
     expect([...confirmationPaths].sort()).toEqual(
       Object.keys(everyConfirmation).sort(),
     );
-    for (const list of [actorKinds, auditOutcomes, confirmationPaths]) {
+    expect(writeStates).toEqual([
+      'planned',
+      'queued',
+      'verified',
+      'skipped',
+      'denied',
+      'conflict',
+      'failed',
+      'rolledBack',
+    ]);
+    for (const list of [
+      actorKinds,
+      auditOutcomes,
+      confirmationPaths,
+      writeStates,
+    ]) {
       expect(Object.isFrozen(list)).toBe(true);
     }
+    expect(Object.isFrozen(writeStateOutcomes)).toBe(true);
   });
 });
 

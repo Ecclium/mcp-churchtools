@@ -138,6 +138,7 @@ describe('a valid event', () => {
       routineId: 'weekly-report',
       outcome: 'error',
       confirmation: 'policy',
+      writeState: 'failed',
       policyHash: 'a'.repeat(64),
       provider: {
         vendor: 'example-ai',
@@ -163,6 +164,7 @@ describe('a valid event', () => {
       'tool',
       'outcome',
       'confirmation',
+      'writeState',
       'policyHash',
       'provider',
       'pluginHashes',
@@ -690,11 +692,73 @@ describe('the provider', () => {
   });
 });
 
+describe('the state of a write', () => {
+  it.each([
+    ['planned', 'ok', undefined],
+    ['queued', 'ok', undefined],
+    ['verified', 'ok', undefined],
+    ['skipped', 'ok', undefined],
+    ['denied', 'denied', 'confirmation_required'],
+    ['conflict', 'error', 'conflict'],
+    ['failed', 'error', 'network'],
+    ['rolledBack', 'error', 'upstream'],
+  ] as const)(
+    'keeps %s with the outcome %s',
+    (writeState, outcome, errorCode) => {
+      const { sink, audit, logs } = make();
+      sink.record({
+        ...base,
+        outcome,
+        writeState,
+        ...(errorCode === undefined ? {} : { errorCode }),
+      });
+      expect(event(audit())).toMatchObject({ outcome, writeState });
+      expect(logs()).toEqual([]);
+    },
+  );
+
+  it.each([
+    ['verified', 'error', 'conflict'],
+    ['conflict', 'ok', undefined],
+    ['denied', 'error', 'internal'],
+  ] as const)(
+    'leaves out %s with the outcome %s and reports it',
+    (writeState, outcome, errorCode) => {
+      const { sink, audit, logs } = make();
+      sink.record({
+        ...base,
+        outcome,
+        writeState,
+        ...(errorCode === undefined ? {} : { errorCode }),
+      });
+      expect(event(audit())).not.toHaveProperty('writeState');
+      expect(logs().map((line) => line.event)).toEqual([
+        'audit_invalid_write_state',
+      ]);
+    },
+  );
+
+  it('says denied for a write whose required line was held back', () => {
+    const { sink, audit } = make();
+    sink.record(
+      { ...base, writeState: 'verified', confirmation: 'shout' as 'echo' },
+      undefined,
+      { required: true },
+    );
+    expect(event(audit())).toMatchObject({
+      outcome: 'denied',
+      errorCode: 'policy_denied',
+      writeState: 'denied',
+    });
+  });
+});
+
 describe('other optional fields', () => {
   it.each([
     ['runId', 'not-a-uuid', 'audit_invalid_run_id'],
     ['routineId', 'Weekly Report', 'audit_invalid_routine_id'],
     ['confirmation', 'shout', 'audit_invalid_confirmation'],
+    ['writeState', 'written', 'audit_invalid_write_state'],
     ['policyHash', 'abc', 'audit_invalid_policy_hash'],
     [
       'dataProtectionRegime',

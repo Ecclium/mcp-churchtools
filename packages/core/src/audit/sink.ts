@@ -15,6 +15,7 @@ import type {
   AuditEventV1,
   Clock,
   TenantId,
+  WriteState,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import type { z } from 'zod';
 
@@ -31,6 +32,7 @@ import {
   auditLimits,
   auditPlaceholders as placeholders,
   fileOnlyFields,
+  writeStateOutcomes,
 } from './schema.js';
 
 /**
@@ -163,6 +165,7 @@ const producerKeys: readonly string[] = Object.freeze([
   'tool',
   'outcome',
   'confirmation',
+  'writeState',
   'policyHash',
   'provider',
   'pluginHashes',
@@ -411,6 +414,21 @@ function fill(
     placeholders.outcome,
   );
   scalar('confirmation', fields.confirmation, 'audit_invalid_confirmation');
+
+  // The state of a write goes only with its outcome (ADR 0029); one that
+  // does not fit is left out and reported.
+  const writeState = own(draft, 'writeState');
+  if (writeState !== undefined) {
+    if (
+      fits(fields.writeState, writeState) &&
+      writeStateOutcomes[writeState as WriteState] === line['outcome']
+    ) {
+      line['writeState'] = writeState as string;
+    } else {
+      report('audit_invalid_write_state');
+    }
+  }
+
   scalar('policyHash', fields.hash, 'audit_invalid_policy_hash');
 
   const provider = own(draft, 'provider');
@@ -566,6 +584,8 @@ export function createAuditSink(options: AuditSinkOptions): AuditSink {
     Reflect.deleteProperty(line, 'durationMs');
     line['outcome'] = withheldOutcome;
     line['errorCode'] = withheldCode;
+    // A write held back counts as refused, like its outcome (ADR 0029).
+    if (line['writeState'] !== undefined) line['writeState'] = 'denied';
     if (read) line['withheldAfterRead'] = true;
     line['durationMs'] = duration;
   };

@@ -187,6 +187,14 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Das Lesebudget des Akteurs für diesen UTC-Tag ist aufgebraucht. Der Aufruf endet mit `policy_denied`, ohne ChurchTools zu fragen.',
     read_budget_unavailable:
       'Ecclium konnte das Lesebudget nicht zählen. Der Aufruf endet mit `policy_denied`, ohne ChurchTools zu fragen.',
+    write_refused:
+      'Der Write-Guard plant oder schreibt nicht: Schreiben ist gesperrt oder nicht zu prüfen, die Art des Schreibvorgangs läuft nicht, die Rechte des Kontos sind nicht zu lesen, oder die Uhr weicht mehr als fünf Minuten von ChurchTools ab. `code` nennt den Fehler.',
+    write_conflict:
+      'Das Ziel eines Schreibvorgangs hat sich seit dem Plan geändert oder liest sich nach dem Schreiben nicht wie geplant. `code` ist `conflict`.',
+    write_outcome_unknown:
+      'Nach einem Fehler beim Schreiben ist offen, ob die Änderung ChurchTools erreicht hat, und das Lesen danach konnte es nicht klären. Das Ziel ist von Hand zu prüfen.',
+    write_committed:
+      'Ein Schreibvorgang ist geschrieben und gelesen: die Version stieg wie geplant, und der Text ist der gesendete.',
     read_search_refused:
       'Ein Tool, das nicht als besonders schützenswert eingestuft ist, wollte Personen oder Gruppen lesen. Ecclium weist das ab.',
     read_names_refused:
@@ -355,6 +363,10 @@ const sections: readonly {
       name === 'audit_withheld' ||
       name.startsWith('pseudonym_') ||
       name.startsWith('read_budget_'),
+  },
+  {
+    title: 'Write-Guard',
+    fits: (name: string) => name.startsWith('write_'),
   },
   {
     title: 'Lesender Zugriff über den Kern',

@@ -240,4 +240,5 @@ export type {
   AuditType,
   ConfirmationPath,
   ProviderInfo,
+  WriteState,
 } from './audit.js';
