@@ -324,6 +324,16 @@ describe('checkPolicy', () => {
       'interactive.targets[1].target.name',
     ],
     [
+      'a page with two names in two categories',
+      [
+        entry(page, ['ct_wiki_page_update']),
+        entry({ ...page, categoryId: 13, name: 'Archiv' }, [
+          'ct_wiki_page_update',
+        ]),
+      ],
+      'interactive.targets[1].target.name',
+    ],
+    [
       'an event with two names',
       [
         entry(service, ['ct_services_request']),

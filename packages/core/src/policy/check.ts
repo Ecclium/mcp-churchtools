@@ -102,19 +102,15 @@ const ownData = (value: unknown, key: string): unknown => {
 const nfc = (text: string): string => text.normalize('NFC');
 
 // The named things of a target, each with the key that identifies it and
-// the field of its name: an event and its service are named apart.
+// the field of its name: an event and its service are named apart. A page
+// is named by its GUID alone, which names one page whatever category an
+// entry gives it.
 const namesOf = (
   target: InteractiveTarget,
 ): readonly (readonly [key: string, name: string, field: string])[] => {
   switch (target.kind) {
     case 'wiki_page':
-      return [
-        [
-          `wiki_page:${String(target.categoryId)}/${target.guid.toLowerCase()}`,
-          target.name,
-          'name',
-        ],
-      ];
+      return [[`wiki_page:${target.guid.toLowerCase()}`, target.name, 'name']];
     case 'service':
       return [
         [`event:${String(target.event.id)}`, target.event.name, 'event.name'],

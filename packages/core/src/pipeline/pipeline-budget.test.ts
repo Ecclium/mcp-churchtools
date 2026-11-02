@@ -219,6 +219,29 @@ describe('the daily read budget of the policy', () => {
     ).toHaveLength(1);
   });
 
+  it('refuses with the sentence of a budget of 0 without asking a store, also one that is missing', async () => {
+    const { call, logs } = setup({ policy: withBudget(0), quota: null });
+    expect(await call('ct_test_names')).toEqual({
+      ok: false,
+      error: {
+        code: 'policy_denied',
+        message:
+          'The daily budget of calls of tools with special personal data is 0 on this server, so they do not run. Ask the operator.',
+      },
+    });
+    expect(
+      logs().filter((line) => line['event'] === 'read_budget_exhausted'),
+    ).toHaveLength(1);
+    const counted = createMemoryQuotaStore();
+    const { call: callCounted } = setup({
+      policy: withBudget(0),
+      quota: counted,
+    });
+    expect((await callCounted('ct_test_special')).ok).toBe(false);
+    expect(await counted.read(ctx, 'special_reads', day)).toBe(0);
+    expect(runs).toEqual([]);
+  });
+
   it('runs no special tool with a budget of 0, and every other tool', async () => {
     const { call } = setup({ policy: withBudget(0) });
     expect(await call('ct_test_special')).toEqual({

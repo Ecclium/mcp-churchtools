@@ -935,6 +935,9 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
   const countRead = async (
     ctx: TenantContext,
   ): Promise<'ok' | 'exhausted' | 'unavailable'> => {
+    // A budget of 0 refuses every call without the store, so that a store
+    // that fails cannot give its sentence instead (ADR 0032).
+    if (readBudget === 0) return 'exhausted';
     const store = options.quota;
     const day = isoDateOf(now());
     if (store === undefined || day === undefined) return 'unavailable';

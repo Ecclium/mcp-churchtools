@@ -100,15 +100,27 @@ describe('readPolicyYaml', () => {
     ['a boolean as key', 'true: b\n', 1],
     ['an empty key', 'a: 1\n: b\n', 2],
     ['a list as key', 'a: 1\n? [x]\n: c\n', 2],
-    ['the version 1.1', '%YAML 1.1\n---\na: yes\n', 1],
-    ['the version 1.2 named', '%YAML 1.2\n---\na: 1\n', 1],
-    ['a handle of its own', '%TAG !e! tag:example.org,2026:\n---\na: 1\n', 1],
-    ['another meaning of !!', '%TAG !! tag:example.org,2026:\n---\na: 1\n', 1],
   ])('refuses %s as not supported, with its line', (_name, text, line) => {
     expect(readPolicyYaml(text)).toEqual({
       ok: false,
       code: 'policy_yaml_unsupported',
       line,
+    });
+  });
+
+  // The document keeps no position of a directive, so the code alone.
+  it.each([
+    ['the version 1.1', '%YAML 1.1\n---\na: yes\n'],
+    [
+      'the version 1.2 named, after comments',
+      '# c\n# c\n%YAML 1.2\n---\na: 1\n',
+    ],
+    ['a handle of its own', '%TAG !e! tag:example.org,2026:\n---\na: 1\n'],
+    ['another meaning of !!', '%TAG !! tag:example.org,2026:\n---\na: 1\n'],
+  ])('refuses %s as not supported, without a line', (_name, text) => {
+    expect(readPolicyYaml(text)).toEqual({
+      ok: false,
+      code: 'policy_yaml_unsupported',
     });
   });
 

@@ -106,7 +106,8 @@ export function readPolicyYaml(text: string): PolicyYamlResult {
     if (problem !== undefined) {
       return refuse('policy_yaml_syntax', lineOf(problem.pos[0]));
     }
-    // A directive could change the version of YAML or what a tag means.
+    // A directive could change the version of YAML or what a tag means. The
+    // document keeps no position of its directives, so there is no line.
     const { yaml: version, tags } = doc.directives;
     if (
       version.explicit === true ||
@@ -114,10 +115,12 @@ export function readPolicyYaml(text: string): PolicyYamlResult {
         (handle) => handle !== '!!' || tags[handle] !== defaultTagPrefix,
       )
     ) {
-      return refuse('policy_yaml_unsupported', 1);
+      return refuse('policy_yaml_unsupported');
     }
     let unsupported: number | undefined;
-    // Every node of a document parsed from a text has its range.
+    // Every node of a document parsed from a text has its range. For an
+    // anchor or a tag on a map or a list, that is the line where its first
+    // entry starts, which may be one after the mark.
     const mark = (node: unknown): typeof visit.BREAK => {
       unsupported = lineOf((node as ParsedNode).range[0]);
       return visit.BREAK;
