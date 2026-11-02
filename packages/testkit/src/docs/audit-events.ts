@@ -46,6 +46,8 @@ export const auditFieldMeanings: Readonly<Record<string, string>> =
     outcome:
       'Ausgang des Aufrufs: `ok`, `error` bei einem Fehler oder `denied` bei einer Ablehnung.',
     confirmation: 'Wie ein Schreibvorgang bestätigt wurde.',
+    contentViolations:
+      'Warum die ContentPolicy den Text eines Schreibvorgangs abgelehnt hat, als feste Namen wie `webAddress` oder `contact`, nie mit dem Text ([ADR 0030](adr/0030-contentpolicy.md)). Nur in einer Zeile mit `denied`.',
     writeState:
       'Der Zustand eines Schreibvorgangs am Ende des Aufrufs: `planned`, `queued`, `verified` oder `skipped` bei `ok`, `denied` bei `denied`, `conflict`, `failed` oder `rolledBack` bei `error`. Wer Schreibvorgänge zählt, liest dieses Feld.',
     policyHash:

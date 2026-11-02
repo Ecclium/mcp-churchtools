@@ -238,11 +238,13 @@ export {
   type WriteToolCall,
   type WriteToolSpec,
 } from './write.js';
-export type {
-  AuditEventV1,
-  AuditOutcome,
-  AuditType,
-  ConfirmationPath,
-  ProviderInfo,
-  WriteState,
+export {
+  type AuditEventV1,
+  type AuditOutcome,
+  type AuditType,
+  type ConfirmationPath,
+  type ContentViolationKind,
+  contentViolationKinds,
+  type ProviderInfo,
+  type WriteState,
 } from './audit.js';

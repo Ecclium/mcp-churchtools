@@ -10,28 +10,14 @@
  *
  * @packageDocumentation
  */
+import {
+  type ContentViolationKind,
+  contentViolationKinds,
+} from '@ecclium/mcp-churchtools-plugin-api';
 
-/**
- * Every reason the content policy knows, in a fixed order. The names stand
- * in the log and, from the write guard on, in the audit.
- */
-export const contentViolationKinds = Object.freeze([
-  'tooLong',
-  'unparsable',
-  'html',
-  'image',
-  'link',
-  'mention',
-  'reference',
-  'webAddress',
-  'contact',
-  'masked',
-  'unsupported',
-  'tooDeep',
-] as const);
-
-/** One reason why the content policy refuses a text. */
-export type ContentViolationKind = (typeof contentViolationKinds)[number];
+// The reasons are part of the audit, so their list lives in the plugin
+// API, where readers of the audit find it.
+export { contentViolationKinds, type ContentViolationKind };
 
 /**
  * The sentence for each reason, in English like every text for the model.

@@ -87,10 +87,34 @@ describe('auditEventV1Schema', () => {
       pluginHashes: ['b'.repeat(64)],
       dataProtectionRegime: 'ch_dsg',
       errorCode: 'policy_denied',
+      contentViolations: ['html', 'link'],
       seq: 1,
       prevHash: 'c'.repeat(64),
     };
     expect(passes(auditEventV1Schema, full)).toBe(true);
+  });
+
+  it('takes the reasons of a refused text only on a refusal, never empty', () => {
+    const refused = {
+      ...valid,
+      outcome: 'denied',
+      errorCode: 'validation',
+    } as const;
+    expect(
+      passes(auditEventV1Schema, {
+        ...refused,
+        contentViolations: ['contact'],
+      }),
+    ).toBe(true);
+    expect(
+      passes(auditEventV1Schema, { ...valid, contentViolations: ['contact'] }),
+    ).toBe(false);
+    expect(
+      passes(auditEventV1Schema, { ...refused, contentViolations: [] }),
+    ).toBe(false);
+    expect(
+      passes(auditEventV1Schema, { ...refused, contentViolations: ['shout'] }),
+    ).toBe(false);
   });
 
   it('counts seq from 1, as the chain of a file does', () => {

@@ -12,6 +12,7 @@ import {
   type AuditOutcome,
   type ConfirmationPath,
   type WriteState,
+  contentViolationKinds,
   errorCodes,
   objectKinds,
 } from '@ecclium/mcp-churchtools-plugin-api';
@@ -162,6 +163,7 @@ export const auditFieldSchemas = Object.freeze({
   objectRefsOmitted: z.int().min(1).max(auditLimits.objectRefsOmitted),
   withheldAfterRead: z.literal(true),
   errorCode: z.enum(errorCodes),
+  contentViolation: z.enum(contentViolationKinds),
   durationMs: z.int().min(0).max(86_400_000),
   seq: z.int().min(1),
 });
@@ -217,6 +219,12 @@ export const auditEventV1Schema = z
       .readonly(),
     objectRefsOmitted: fields.objectRefsOmitted.optional(),
     errorCode: fields.errorCode.optional(),
+    contentViolations: z
+      .array(fields.contentViolation)
+      .min(1)
+      .max(contentViolationKinds.length)
+      .readonly()
+      .optional(),
     withheldAfterRead: fields.withheldAfterRead.optional(),
     durationMs: fields.durationMs,
     seq: fields.seq.optional(),
@@ -241,6 +249,13 @@ export const auditEventV1Schema = z
       !Object.hasOwn(event, 'writeState') ||
       event.writeState === undefined ||
       writeStateOutcomes[event.writeState] === event.outcome,
+  )
+  // The reasons of a refused text go only with a refusal (ADR 0030).
+  .refine(
+    (event) =>
+      !Object.hasOwn(event, 'contentViolations') ||
+      event.contentViolations === undefined ||
+      event.outcome === 'denied',
   )
   .refine(
     (event) =>

@@ -36,6 +36,41 @@ export type WriteState =
   | 'failed'
   | 'rolledBack';
 
+/** One reason why the content policy of the core refuses a text (ADR 0030). */
+export type ContentViolationKind =
+  | 'tooLong'
+  | 'unparsable'
+  | 'html'
+  | 'image'
+  | 'link'
+  | 'mention'
+  | 'reference'
+  | 'webAddress'
+  | 'contact'
+  | 'masked'
+  | 'unsupported'
+  | 'tooDeep';
+
+/**
+ * Every {@link ContentViolationKind}, in a fixed order. Readers of the
+ * audit see these names, never the text.
+ */
+export const contentViolationKinds: readonly ContentViolationKind[] =
+  Object.freeze([
+    'tooLong',
+    'unparsable',
+    'html',
+    'image',
+    'link',
+    'mention',
+    'reference',
+    'webAddress',
+    'contact',
+    'masked',
+    'unsupported',
+    'tooDeep',
+  ]);
+
 /** The language model a run of the runner used, as its configuration names it. */
 export interface ProviderInfo {
   /** Vendor of the model. */
@@ -109,6 +144,12 @@ export interface AuditEventV1 {
   readonly objectRefsOmitted?: number;
   /** Code of the error when the outcome is `error` or `denied`. */
   readonly errorCode?: ErrorCode;
+  /**
+   * Why the content policy refused the text of a write, in the order of
+   * {@link contentViolationKinds}, only on a line with the outcome
+   * `denied` (ADR 0030).
+   */
+  readonly contentViolations?: readonly ContentViolationKind[];
   /**
    * Set only by the sink, only in the audit file: the server read the
    * result but held it back, because its line could not be recorded as it

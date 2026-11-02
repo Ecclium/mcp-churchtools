@@ -176,6 +176,7 @@ const auditSinkEvents = Object.freeze([
   'audit_invalid_actor_id',
   'audit_invalid_actor_kind',
   'audit_invalid_confirmation',
+  'audit_invalid_content_violations',
   'audit_invalid_data_protection_regime',
   'audit_invalid_duration_ms',
   'audit_invalid_error_code',

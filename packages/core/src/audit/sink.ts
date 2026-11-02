@@ -11,11 +11,12 @@
 import { randomUUID } from 'node:crypto';
 import { isProxy } from 'node:util/types';
 
-import type {
-  AuditEventV1,
-  Clock,
-  TenantId,
-  WriteState,
+import {
+  type AuditEventV1,
+  type Clock,
+  contentViolationKinds,
+  type TenantId,
+  type WriteState,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import type { z } from 'zod';
 
@@ -185,6 +186,7 @@ const producerKeys: readonly string[] = Object.freeze([
   'objectRefs',
   'objectRefsOmitted',
   'errorCode',
+  'contentViolations',
   'durationMs',
 ]);
 
@@ -513,6 +515,27 @@ function fill(
   } else {
     report('audit_invalid_error_code');
     line['errorCode'] = placeholders.errorCode;
+  }
+
+  // The reasons why the content policy refused a text, only on a refusal
+  // and never empty (ADR 0030).
+  const reasons = own(draft, 'contentViolations');
+  if (reasons !== undefined) {
+    if (
+      line['outcome'] === 'denied' &&
+      Array.isArray(reasons) &&
+      reasons.length > 0
+    ) {
+      list(
+        'contentViolations',
+        contentViolationKinds.length,
+        fields.contentViolation,
+        'audit_invalid_content_violations',
+        false,
+      );
+    } else {
+      report('audit_invalid_content_violations');
+    }
   }
 
   scalar(
