@@ -161,6 +161,19 @@ describe('a proposal', () => {
     );
   });
 
+  it('writes a category with hidden characters in its name only as a comment', () => {
+    const text = renderPolicyProposal({
+      categories: [
+        { ...category(9, 'Berichte [ecclium]'), hiddenCharacters: true },
+      ],
+      readBudgetPerDay: 200,
+    });
+    expect(text).toContain(
+      '# Kategorie 9: Ihr Name enthält unsichtbare Zeichen',
+    );
+    expect(load(text).interactive.targets).toEqual([]);
+  });
+
   it('leaves out a tool the policy would refuse, and a category without a tool', () => {
     const text = renderPolicyProposal({
       categories: [

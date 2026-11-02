@@ -28,6 +28,12 @@ export interface ProposedCategory {
    * the account does not name it.
    */
   readonly name: string | undefined;
+  /**
+   * Whether ChurchTools gave the name with hidden characters, which the
+   * redaction removed: then the name above is not the one ChurchTools
+   * compares, and the category stands only as a comment.
+   */
+  readonly hiddenCharacters?: boolean;
   /** The write tools seen on it. */
   readonly tools: readonly string[];
   /**
@@ -161,11 +167,21 @@ export function renderPolicyProposal(input: ProposalInput): string {
       .sort()
       .slice(0, policyLimits.tools);
     const { name } = category;
-    if (name === undefined || !nameFits(name)) {
+    if (name === undefined) {
       skipped.push(
-        name === undefined
-          ? `    # Kategorie ${id}: ChurchTools nennt dem Konto keinen Namen, darum kein Eintrag.`
-          : `    # Kategorie ${id}: Ihr Name passt nicht in die Richtlinie, darum kein Eintrag.`,
+        `    # Kategorie ${id}: ChurchTools nennt dem Konto keinen Namen, darum kein Eintrag.`,
+      );
+      continue;
+    }
+    if (category.hiddenCharacters === true) {
+      skipped.push(
+        `    # Kategorie ${id}: Ihr Name enthält unsichtbare Zeichen, darum kein Eintrag. Tragen Sie ihn von Hand ein.`,
+      );
+      continue;
+    }
+    if (!nameFits(name)) {
+      skipped.push(
+        `    # Kategorie ${id}: Ihr Name passt nicht in die Richtlinie, darum kein Eintrag.`,
       );
       continue;
     }
