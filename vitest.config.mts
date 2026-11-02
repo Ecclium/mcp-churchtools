@@ -90,6 +90,12 @@ export default defineConfig({
           functions: 100,
           lines: 100,
         },
+        'packages/core/src/content/**': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
       },
     },
   },
