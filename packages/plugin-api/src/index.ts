@@ -1,6 +1,7 @@
 /**
  * Contract between the core and its plugins: tenant context, tool contract,
- * prompt contract, audit event and the ports for quotas and keys.
+ * prompt contract, audit event, the contract of a write and the ports for
+ * quotas, keys, plans and nonces.
  *
  * Published separately, with its own semantic version, so that a plugin can
  * be built against this package alone. It imports no other workspace package
@@ -205,6 +206,27 @@ export {
   type QuotaKey,
   type QuotaStore,
 } from './quota.js';
+export {
+  writeIntentKinds,
+  type ApiOperationIntent,
+  type AppointmentCreateIntent,
+  type AppointmentUpdateIntent,
+  type BookingCreateIntent,
+  type GroupMemberAddIntent,
+  type GroupMemberRemoveIntent,
+  type NonceStore,
+  type PlanOutcome,
+  type PlannedWrite,
+  type PlanStore,
+  type ServiceRequestIntent,
+  type SkipReason,
+  type WikiPageCreateIntent,
+  type WikiPageUpdateIntent,
+  type WikiSectionAppendIntent,
+  type WriteIntent,
+  type WriteIntentKind,
+  type WritePort,
+} from './write.js';
 export type {
   AuditEventV1,
   AuditOutcome,

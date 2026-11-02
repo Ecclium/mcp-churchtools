@@ -239,6 +239,32 @@
       "description": "The keys of core: the holder of the secret behind the pseudonyms and the provider that derives the keys of a day from it. Only its own modules import the holder other than through its entry index.ts, because it turns the secret back into its bytes, and only the composition root and tests import the provider, which gives the key of any day.",
       "paths": ["packages/core/src/keys/"]
     },
+    "writeGuard": {
+      "adr": "0029",
+      "description": "The write guard of core: the only code that plans and commits a write, seals plans, issues proofs and uses the writes of the ChurchTools client, after it checks rights, kill switches, clock and the target.",
+      "paths": ["packages/core/src/write/"]
+    },
+    "writeGuardSeals": {
+      "adr": "0029",
+      "description": "The sealed plan and the proof: only modules of the write guard and tests import them, so that no other code makes, reads or uses one, the pipeline included. Each entry is one file of the write guard.",
+      "paths": [
+        "packages/core/src/write/proof.ts",
+        "packages/core/src/write/sealed-plan.ts"
+      ]
+    },
+    "writeGuardStores": {
+      "adr": "0029",
+      "description": "The stores of plans and nonces in memory: state that outlives a request, so outside the write guard only the composition root imports them, through the subpath ./composition of core, and hands them on. Each entry is one file of the write guard.",
+      "paths": [
+        "packages/core/src/write/nonce-store.ts",
+        "packages/core/src/write/plan-store.ts"
+      ]
+    },
+    "writeGuardImporters": {
+      "adr": "0029",
+      "description": "Code outside the write guard that may import it, but for its stores: the pipeline, which plans and commits every write of a tool. Each entry is one file.",
+      "paths": ["packages/core/src/pipeline/pipeline.ts"]
+    },
     "environment": {
       "adr": "0055",
       "description": "Code that may read the environment and the arguments of the process: only the entry of the command line, which hands them to the core as parameters. Other code could otherwise read the token from them past the Secret.",

@@ -36,16 +36,20 @@ import { pathPattern } from './dependency-rules.mts';
 // because every module of core may import it. The subpath ./stdio of the
 // server, which the composition root imports, exports only what its own
 // folder declares: no type of core either, so that it cannot pass on the
-// options or the factory of the mount under another name (ADR 0053).
+// options or the factory of the mount under another name (ADR 0053). No
+// entry point passes on the sealed plan or the proof of the write guard,
+// so that no tool or plugin can make, read or use one, and the stores of
+// plans and nonces leave core only through ./composition (ADR 0029).
 
 const boundaries = loadBoundaries();
-const { rawClient, mcpMount } = boundaries.places;
+const { rawClient, mcpMount, writeGuardSeals } = boundaries.places;
 const toPattern = (path: string): RegExp => new RegExp(pathPattern(path));
 
 /** Where no export of an entry point may come from. */
 const hidden: readonly RegExp[] = [
   ...rawClient.paths.map(toPattern),
   ...mcpMount.paths.map(toPattern),
+  ...writeGuardSeals.paths.map(toPattern),
   /(^|\/)node_modules\/@modelcontextprotocol\//,
 ];
 
@@ -56,6 +60,8 @@ const composeModule = 'packages/core/src/http/compose.ts';
 const mockModule = 'packages/core/src/http/compose-mock.ts';
 const redactedModule = 'packages/core/src/redaction/redacted.ts';
 const egressEntry = 'packages/core/src/http/index.ts';
+const planStoreModule = 'packages/core/src/write/plan-store.ts';
+const nonceStoreModule = 'packages/core/src/write/nonce-store.ts';
 const compositionEntry = 'packages/core/src/composition.ts';
 const auditReaderModule = 'packages/core/src/audit/reader.ts';
 const auditCommandsEntry = 'packages/core/src/audit-commands.ts';
@@ -108,6 +114,18 @@ const hiddenSymbols: readonly {
     file: toPattern(redactedModule),
     names: ['sealRedacted'],
     allowedIn: [redactedModule],
+  },
+  {
+    // The stores of plans and nonces are state that outlives a request;
+    // only the composition root builds them (ADR 0029, ADR 0051).
+    file: toPattern(planStoreModule),
+    names: ['createMemoryPlanStore'],
+    allowedIn: [compositionEntry],
+  },
+  {
+    file: toPattern(nonceStoreModule),
+    names: ['createMemoryNonceStore'],
+    allowedIn: [compositionEntry],
   },
 ];
 
@@ -251,6 +269,14 @@ function writeTree(files: Readonly<Record<string, string>>): string {
       '',
     ].join('\n'),
     [redactedModule]: 'export const sealRedacted = (): unknown => undefined;\n',
+    'packages/core/src/write/sealed-plan.ts':
+      'export const sealPlan = (): unknown => undefined;\n',
+    'packages/core/src/write/proof.ts':
+      'export const issueProof = (): unknown => undefined;\n',
+    [planStoreModule]:
+      'export const createMemoryPlanStore = (): unknown => undefined;\n',
+    [nonceStoreModule]:
+      'export const createMemoryNonceStore = (): unknown => undefined;\n',
     'node_modules/@modelcontextprotocol/server/package.json':
       '{ "name": "@modelcontextprotocol/server", "type": "module", "exports": { ".": { "types": "./index.d.ts" }, "./stdio": { "types": "./stdio.d.ts" } } }\n',
     'node_modules/@modelcontextprotocol/server/index.d.ts':
@@ -427,6 +453,36 @@ const leaks: readonly {
     files: {
       'packages/testkit/src/index.ts':
         "export { sealRedacted } from '../../core/src/redaction/redacted.js';\n",
+    },
+  },
+  {
+    name: 'the sealed plan through the entry point of core',
+    entry: coreEntry,
+    files: {
+      [coreEntry]: "export { sealPlan } from './write/sealed-plan.js';\n",
+    },
+  },
+  {
+    name: 'the proof through the subpath of the composition root',
+    entry: compositionEntry,
+    files: {
+      [compositionEntry]: "export { issueProof } from './write/proof.js';\n",
+    },
+  },
+  {
+    name: 'the store of plans through the entry point of core',
+    entry: coreEntry,
+    files: {
+      [coreEntry]:
+        "export { createMemoryPlanStore } from './write/plan-store.js';\n",
+    },
+  },
+  {
+    name: 'the store of nonces through the entry point of testkit',
+    entry: 'packages/testkit/src/index.ts',
+    files: {
+      'packages/testkit/src/index.ts':
+        "export { createMemoryNonceStore } from '../../core/src/write/nonce-store.js';\n",
     },
   },
   {

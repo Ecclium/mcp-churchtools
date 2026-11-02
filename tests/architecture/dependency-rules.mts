@@ -307,6 +307,31 @@ export function dependencyRules(
       to: { path: at('redactedMark') },
     },
     {
+      name: 'write-guard-only-from-pipeline',
+      severity: 'error',
+      comment: `${adr('writeGuardImporters')}: only the pipeline, which plans and commits every write of a tool, imports the write guard, so that no other code commits a write. Its stores have a rule of their own. Tests are exempt.`,
+      from: {
+        pathNot: [...at('writeGuard'), ...at('writeGuardImporters'), testFile],
+      },
+      to: { path: at('writeGuard'), pathNot: at('writeGuardStores') },
+    },
+    {
+      name: 'write-guard-stores-from-composition-root',
+      severity: 'error',
+      comment: `${adr('writeGuardStores')}: only the composition root builds the stores of plans and nonces, through the subpath ./composition of core, because they are state that outlives a request and is handed over, never imported (ADR 0051). Tests are exempt.`,
+      from: {
+        pathNot: [...at('writeGuard'), pathPattern(compositionEntry), testFile],
+      },
+      to: { path: at('writeGuardStores') },
+    },
+    {
+      name: 'write-guard-seals-internal',
+      severity: 'error',
+      comment: `${adr('writeGuardSeals')}: only modules of the write guard import the sealed plan and the proof, so that no other code makes, reads or uses one, the pipeline included. Tests are exempt.`,
+      from: { pathNot: [...at('writeGuard'), testFile] },
+      to: { path: at('writeGuardSeals') },
+    },
+    {
       name: 'transport-only-from-composition-root',
       severity: 'error',
       comment: `${adr('transportBuilders')}: only the composition root builds an HTTP transport, through the subpath ./http of core, so that no tool builds one with an origin of its own. Tests in the packages are not exempt.`,
