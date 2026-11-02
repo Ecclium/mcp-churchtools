@@ -19,6 +19,11 @@ export const exitCodes = Object.freeze({
   dataError: 65,
   /** The input is missing, such as the folder `audit` or a log. */
   noInput: 66,
+  /**
+   * A service the command needs did not answer as needed: for
+   * `policy init`, ChurchTools gave no names of the categories.
+   */
+  unavailable: 69,
   /** An internal error, with a fixed text and no details. */
   internal: 70,
   /** A file could not be read whole. */

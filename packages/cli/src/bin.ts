@@ -47,5 +47,9 @@ if (environment === undefined) {
   if (code !== undefined) process.exitCode = code;
 } else {
   const { run } = await import('./main.js');
-  process.exitCode = run(process.argv.slice(2), environment, process.execArgv);
+  process.exitCode = await run(
+    process.argv.slice(2),
+    environment,
+    process.execArgv,
+  );
 }

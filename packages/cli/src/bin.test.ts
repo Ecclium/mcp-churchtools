@@ -73,7 +73,7 @@ describe('the executable of the command line', () => {
     );
     expect(body.match(/\brun\(/g)).toHaveLength(1);
     expect(flat(body)).toContain(
-      'process.exitCode = run(process.argv.slice(2), environment, process.execArgv);',
+      'process.exitCode = await run(process.argv.slice(2), environment, process.execArgv);',
     );
     expect(body.match(/\bprocess\.execArgv\b/g)).toHaveLength(2);
     expect(body).not.toMatch(/import\.meta|\bprocess\.exit\(/);
