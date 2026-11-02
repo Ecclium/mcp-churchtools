@@ -24,38 +24,32 @@
  *
  * @packageDocumentation
  */
-import { hostname } from 'node:os';
 import type { Readable, Writable } from 'node:stream';
 
 import {
   createStdioIdentity,
   createStdioTenantResolver,
-  createToolPipeline,
   type EccliumConfig,
   type ToolCatalog,
 } from '@ecclium/mcp-churchtools-core';
 import {
   type AuditFileWriter,
-  createAuditSink,
-  createDefaultTenantLogger,
-  createFileKeyProvider,
-  createFileQuotaStore,
   createLogger,
   createStderrWriter,
   describeError,
   systemClock,
 } from '@ecclium/mcp-churchtools-core/composition';
-import {
-  createHttpTransport,
-  type HttpTransport,
-  type HttpTransportOptions,
+import type {
+  HttpTransport,
+  HttpTransportOptions,
 } from '@ecclium/mcp-churchtools-core/http';
 import type { ErrorCode } from '@ecclium/mcp-churchtools-plugin-api';
 import { startStdioServer } from '@ecclium/mcp-churchtools-server/stdio';
 
+import { composeToolPipeline } from '../compose/pipeline.js';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
 import type { WriteSyncFn } from '../send.js';
-import { userAgent, version } from '../version.js';
+import { version } from '../version.js';
 
 /** What the start needs of the process. Tests replace it. */
 export interface StdioHost {
@@ -313,64 +307,18 @@ export function serve(options: ServeOptions): ExitCode | undefined {
 
   let transport: HttpTransport | undefined;
   try {
-    transport = (options.createTransport ?? createHttpTransport)({
-      origin: config.churchtoolsOrigin,
-      token: config.churchtoolsToken,
-      userAgent,
-      // Bound to the tenant default, so that the lines of the transport
-      // name the same tenant as the lines and the audit of a call.
-      logger: createDefaultTenantLogger({ writer, clock, minLevel }),
-      clock,
-    });
-    // The keys for the pseudonyms of the level strict, from the key files
-    // the loader read (ADR 0069). The loader refuses strict without a key,
-    // and the start does as well, so that no call runs without one.
-    if (config.redaction === 'strict' && config.pseudonymKey === undefined) {
-      throw new TypeError('The level strict has no key.');
-    }
-    const keys =
-      config.redaction === 'strict' && config.pseudonymKey !== undefined
-        ? createFileKeyProvider({
-            current: config.pseudonymKey,
-            previous: config.pseudonymKeyPrevious,
-          })
-        : undefined;
-    const pipeline = createToolPipeline({
+    // Transport, keys, audit sink, counters and pipeline, built as for
+    // every command that talks to ChurchTools (ADR 0056).
+    const composed = composeToolPipeline({
+      config,
       catalog,
-      audit: createAuditSink({
-        writer,
-        clock,
-        isKnownTool: catalog.has,
-        ...(auditFile === undefined ? {} : { file: auditFile }),
-      }),
-      transport,
-      origin: config.churchtoolsOrigin,
-      requestsPerMinute: config.churchtoolsRequestsPerMinute,
+      writer,
       clock,
-      logging: { writer, minLevel },
-      // The checked policy, for the read budget and the limits of writes
-      // (ADR 0032).
-      policy: config.policy,
-      // The counters of the read budget and of the writes, in the folder
-      // the first stage prepared. Without the folder of state there is no
-      // store: no tool with sensitivity special runs (ADR 0063), and no
-      // write that an entry of the policy limits.
-      ...(config.stateDir === undefined
-        ? {}
-        : {
-            quota: createFileQuotaStore({
-              stateDir: config.stateDir,
-              clock,
-              pid: process.pid,
-              host: hostname(),
-            }),
-            // The kill switches of writing over stdio: the folder stop of
-            // the folder of state. The start does not make it; without it,
-            // writing stays off (ADR 0029).
-            killSwitchDir: `${config.stateDir}/stop`,
-          }),
-      ...(keys === undefined ? {} : { keys }),
+      auditFile,
+      createTransport: options.createTransport,
     });
+    transport = composed.transport;
+    const { pipeline } = composed;
     const server = startStdioServer({
       catalog,
       pipeline,

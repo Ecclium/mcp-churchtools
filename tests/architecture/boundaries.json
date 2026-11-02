@@ -73,8 +73,8 @@
     },
     "transportBuilders": {
       "adr": "0056",
-      "description": "The composition root: the only code outside the outbound path that imports the factory of the HTTP transport, the subpath ./http of core, and the only code at all that imports the stderr writer, the logger and the audit sink through the subpath ./composition of core. Each entry is a folder of the command line.",
-      "paths": ["packages/cli/src/stdio/"]
+      "description": "The composition root: the only code outside the outbound path that imports the factory of the HTTP transport, the subpath ./http of core, and the only code at all that imports the stderr writer, the logger and the audit sink through the subpath ./composition of core. Each entry is a folder of the command line: the start over stdio, the build of the pipeline it shares with the commands that talk to ChurchTools, and those commands.",
+      "paths": ["packages/cli/src/stdio/", "packages/cli/src/compose/"]
     },
     "auditCommands": {
       "adr": "0028",
@@ -138,8 +138,12 @@
     },
     "stdioReachable": {
       "adr": "0053",
-      "description": "Modules of the command line that the start over stdio may import: the start notices and the catalog of their texts. Nothing reachable from here may be a stdout place, already before the start imports them.",
-      "paths": ["packages/cli/src/messages/", "packages/cli/src/notices/"]
+      "description": "Modules of the command line that the start over stdio may import: the start notices and the catalog of their texts, and the build of the pipeline. Nothing reachable from here may be a stdout place, already before the start imports them.",
+      "paths": [
+        "packages/cli/src/messages/",
+        "packages/cli/src/notices/",
+        "packages/cli/src/compose/"
+      ]
     },
     "stdout": {
       "adr": "0053",
