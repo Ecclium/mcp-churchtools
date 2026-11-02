@@ -17,7 +17,13 @@ export {
   type RandomBytes,
   wrapInEnvelope,
 } from './envelope.js';
-export { freeTextMarkers, maskFreeText } from './free-text.js';
+export {
+  findPersonalData,
+  freeTextMarkers,
+  maskFreeText,
+  type PersonalDataFind,
+  type PersonalDataKind,
+} from './free-text.js';
 export {
   type FieldMask,
   fieldMask,

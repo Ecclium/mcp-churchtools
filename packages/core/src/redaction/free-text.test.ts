@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ahvCheckDigitFits,
+  findPersonalData,
   freeTextMarkers,
   ibanCheckSumFits,
   maskFreeText,
@@ -232,6 +233,49 @@ describe('maskFreeText', () => {
       `max.mustermann@example.org ${swiss} ${person} 000 000 12 34`,
     );
     expect(maskFreeText(marked)).toBe(marked);
+  });
+});
+
+describe('findPersonalData', () => {
+  it('names each find with its kind and its place in the text', () => {
+    const text = `Max: max.mustermann@example.org, +41 00 000 12 34, ${printed(swiss)}, ${dotted(person)}`;
+    const finds = findPersonalData(text);
+    expect(finds.map(({ kind }) => kind)).toEqual([
+      'email',
+      'phone',
+      'iban',
+      'ahv',
+    ]);
+    expect(finds.map(({ start, end }) => text.slice(start, end))).toEqual([
+      'max.mustermann@example.org',
+      '+41 00 000 12 34',
+      printed(swiss),
+      dotted(person),
+    ]);
+  });
+
+  it('gives the places of numbers after an address in the text itself', () => {
+    const text = `(max@example.org) ${swiss} und a@example.org 000 000 12 34`;
+    expect(
+      findPersonalData(text).map(({ start, end }) => text.slice(start, end)),
+    ).toEqual(['max@example.org', swiss, 'a@example.org', '000 000 12 34']);
+  });
+
+  it('never lets a number reach into an address', () => {
+    // The digits 67 belong to the word of the address, so the number ends
+    // before it, as in the mask.
+    const text = '000 123 45 67max@example.org';
+    const finds = findPersonalData(text);
+    expect(finds.map(({ kind, start, end }) => [kind, start, end])).toEqual([
+      ['phone', 0, 10],
+      ['email', 11, 28],
+    ]);
+    expect(maskFreeText(text)).toBe(`${phone} ${email}`);
+  });
+
+  it('finds nothing in a text without personal data', () => {
+    expect(findPersonalData('Treffpunkt@19.30 am 01.10.2026')).toEqual([]);
+    expect(findPersonalData('')).toEqual([]);
   });
 });
 
