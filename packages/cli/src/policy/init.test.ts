@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   chmodSync,
   mkdirSync,
@@ -251,20 +252,21 @@ describe('ecclium policy init', () => {
     expect(result.stdout).toEqual([
       '# Vorschlag von «ecclium policy init --interactive» für den interaktiven Teil der Richtlinie.',
       '# Grundlage: die Audit-Dateien vom 2026-10-30 bis 2026-10-30 (UTC).',
-      '# Ein Eintrag je Kategorie des Wikis, auf die ein Schreib-Tool zugegriffen hat, auch wenn es abgelehnt wurde.',
-      '# maxPerDay ist das Doppelte des höchsten Tageswerts eines Tools, mindestens 5.',
+      '# Ein Eintrag je Kategorie des Wikis, die das Audit in einer Zeile eines Schreib-Tools nennt, auch bei abgelehnten Versuchen.',
+      '# maxPerDay ist das Doppelte des höchsten Tageswerts eines Tools, mindestens 5, ohne abgelehnte und übersprungene Aufrufe.',
       '# Prüfen Sie jeden Eintrag, bevor Sie die Datei mit ECCLIUM_POLICY_FILE einsetzen.',
       'schema: policy.v1',
       'interactive:',
-      '  readBudgetPerDay: 200',
       '  targets:',
       '    - target: { kind: wiki_category, id: 12, name: "Berichte" }',
       `      tools: [${create}, ${update}]`,
       '      maxPerDay: 5',
+      '    # Nur abgelehnte oder übersprungene Versuche im Audit: Prüfen Sie, ob Ecclium hier schreiben soll.',
       '    - target: { kind: wiki_category, id: 20, name: "Gemeindebüro «Süd»" }',
       `      tools: [${create}]`,
       '      maxPerDay: 5',
       '    # Kategorie 99: ChurchTools nennt dem Konto keinen Namen, darum kein Eintrag.',
+      '  readBudgetPerDay: 200',
     ]);
     // Its own call stands in a new audit file, in the mode operator, and
     // the anchor of that file in the log.
@@ -303,12 +305,67 @@ describe('ecclium policy init', () => {
     );
   });
 
-  it('writes a category whose name had hidden characters only as a comment', async () => {
+  it('writes a category whose name had hidden characters only as a comment, and keeps the file from loading', async () => {
     auditFiles({ [fileName(1)]: [write()] });
-    const result = await run({ answer: names([[12, 'Ber​ichte']]) });
+    const result = await run({ answer: names([[12, 'Ber\u200Bichte']]) });
     expect(result.code).toBe(0);
     expect(result.stdout).toContain(
-      '    # Kategorie 12: Ihr Name enthält unsichtbare Zeichen, darum kein Eintrag. Tragen Sie ihn von Hand ein.',
+      '    # Kategorie 12: Ihr Name kam verändert an, ohne unsichtbare Zeichen oder mit einem maskierten Teil, darum kein Eintrag. Tragen Sie ihn von Hand ein.',
+    );
+    expect(result.stdout.join('\n')).not.toContain('id: 12,');
+    expect(result.stdout).toContain('    - ERSETZEN');
+  });
+
+  it('writes a category whose name the level strict masked only as a comment', async () => {
+    const keys = mkdtempSync(join(tmpdir(), 'ecclium-policy-key-'));
+    try {
+      const keyFile = join(keys, 'pseudonym-key');
+      writeFileSync(
+        keyFile,
+        `${createHash('sha256').update('policy init').digest('hex')}\n`,
+        { mode: 0o600 },
+      );
+      chmodSync(keyFile, 0o600);
+      auditFiles({
+        [fileName(1)]: [write(), write({ objectRefs: ['wiki_category:20'] })],
+      });
+      const result = await run({
+        environment: {
+          ECCLIUM_CHURCHTOOLS_URL: doubleOrigin,
+          ECCLIUM_CHURCHTOOLS_TOKEN: canary.token.value,
+          ECCLIUM_STATE_DIR: dir,
+          ECCLIUM_TOOLSETS: 'wiki',
+          ECCLIUM_REDACTION: 'strict',
+          ECCLIUM_PSEUDONYM_KEY_FILE: keyFile,
+        },
+        answer: names([
+          [12, 'Kontakt max.mustermann@example.org'],
+          [20, 'Berichte'],
+        ]),
+      });
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain(
+        '    # Kategorie 12: Ihr Name kam verändert an, ohne unsichtbare Zeichen oder mit einem maskierten Teil, darum kein Eintrag. Tragen Sie ihn von Hand ein.',
+      );
+      expect(result.stdout).toContain(
+        '    - target: { kind: wiki_category, id: 20, name: "Berichte" }',
+      );
+    } finally {
+      rmSync(keys, { recursive: true, force: true });
+    }
+  });
+
+  it('asks for no further page once every category has its name', async () => {
+    const many = Array.from(
+      { length: 30 },
+      (_, index) => [index + 1, `Kategorie ${String(index + 1)}`] as const,
+    );
+    auditFiles({ [fileName(1)]: [write({ objectRefs: ['wiki_category:3'] })] });
+    // One answer only: a second page would find no answer and end with 69.
+    const result = await run({ answer: names(many) });
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain(
+      '    - target: { kind: wiki_category, id: 3, name: "Kategorie 3" }',
     );
   });
 

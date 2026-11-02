@@ -6,11 +6,13 @@
  * categories, never an ID of a person.
  *
  * A line counts when it is a call of a write tool in the interactive mode
- * whose `objectRefs` name a category; a write to a page names its
- * category as well. Every such line makes its category a target, also a
- * refused one, since a target without an entry is what the operator wants
- * to see. For the daily limit only the calls that planned or sent a write
- * count, not the refused and the skipped ones.
+ * whose `objectRefs` name a category; a write to a page that the guard
+ * planned names its category as well. Every such line makes its category
+ * a target, also a refused one, since a target without an entry is what
+ * the operator wants to see. For the daily limit the refused and the
+ * skipped calls do not count; every other one does, also one that failed,
+ * since the audit does not tell whether it failed before or after it
+ * planned.
  *
  * @packageDocumentation
  */
@@ -26,8 +28,8 @@ export interface WriteTargetCategory {
   /** The write tools seen on it, sorted. */
   readonly tools: readonly string[];
   /**
-   * The most calls of one of these tools on it on one UTC day that planned
-   * or sent a write; 0 when all were refused or skipped.
+   * The most calls of one of these tools on it on one UTC day, without the
+   * refused and the skipped ones; 0 when the audit shows only those.
    */
   readonly highestPerDay: number;
 }
@@ -46,9 +48,8 @@ export interface WriteTargets {
   readonly moved: boolean;
 }
 
-// The states of a call that planned or sent a write. A refused and a
-// skipped call wrote nothing and say nothing about how often a tool
-// writes.
+// The states of a call that count for the limit. A refused and a skipped
+// call wrote nothing and say nothing about how often a tool writes.
 const countingStates: readonly WriteState[] = Object.freeze([
   'planned',
   'queued',

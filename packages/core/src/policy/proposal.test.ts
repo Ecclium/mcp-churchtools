@@ -14,6 +14,12 @@ import { readPolicyYaml } from './yaml.js';
 const create = 'ct_wiki_page_create';
 const update = 'ct_wiki_page_update';
 
+/** Whether the real reader and checker take a text. */
+const loads = (text: string): boolean => {
+  const read = readPolicyYaml(text);
+  return read.ok && checkPolicy(read.value).ok;
+};
+
 /** Reads a proposal with the real reader and checker of the policy. */
 const load = (text: string): Policy => {
   const read = readPolicyYaml(text);
@@ -161,17 +167,57 @@ describe('a proposal', () => {
     );
   });
 
-  it('writes a category with hidden characters in its name only as a comment', () => {
+  it('writes a category whose name the redaction changed only as a comment', () => {
     const text = renderPolicyProposal({
       categories: [
-        { ...category(9, 'Berichte [ecclium]'), hiddenCharacters: true },
+        { ...category(9, 'Kontakt [email masked]'), nameChanged: true },
+        category(12, 'Berichte'),
       ],
       readBudgetPerDay: 200,
     });
-    expect(text).toContain(
-      '# Kategorie 9: Ihr Name enthält unsichtbare Zeichen',
+    expect(text).toContain('# Kategorie 9: Ihr Name kam verändert an');
+    expect(load(text).interactive.targets.map((entry) => entry.target)).toEqual(
+      [{ kind: 'wiki_category', id: 12, name: 'Berichte' }],
     );
-    expect(load(text).interactive.targets).toEqual([]);
+  });
+
+  it('keeps a file from loading when every category the audit names fell out', () => {
+    const text = renderPolicyProposal({
+      categories: [category(9, undefined), category(10, 'Bericht\tA')],
+      readBudgetPerDay: 200,
+    });
+    expect(text).toContain('# Keine Kategorie liess sich vorschlagen');
+    expect(text).toContain('# Kategorie 9:');
+    expect(text).toContain('# Kategorie 10:');
+    expect(loads(text)).toBe(false);
+  });
+
+  it('marks a target that the audit shows only refused', () => {
+    const text = renderPolicyProposal({
+      categories: [category(12, 'Berichte', [create], 0)],
+      readBudgetPerDay: 200,
+    });
+    const lines = text.split('\n');
+    const entry = lines.indexOf(
+      '    - target: { kind: wiki_category, id: 12, name: "Berichte" }',
+    );
+    expect(lines[entry - 1]).toBe(
+      '    # Nur abgelehnte oder übersprungene Versuche im Audit: Prüfen Sie, ob Ecclium hier schreiben soll.',
+    );
+    expect(load(text).interactive.targets).toHaveLength(1);
+  });
+
+  it('puts the targets before the read budget, so that a cut text does not load', () => {
+    const text = renderPolicyProposal({
+      categories: [category(12, 'Berichte')],
+      readBudgetPerDay: 150,
+    });
+    const lines = text.split('\n');
+    expect(lines.indexOf('  targets:')).toBeLessThan(
+      lines.indexOf('  readBudgetPerDay: 150'),
+    );
+    const cut = `${lines.slice(0, lines.indexOf('  targets:') + 1).join('\n')}\n`;
+    expect(loads(cut)).toBe(false);
   });
 
   it('leaves out a tool the policy would refuse, and a category without a tool', () => {
@@ -225,8 +271,12 @@ describe('a proposal', () => {
           for (const line of text.split('\n')) {
             if (!shown(line)) return false;
           }
+          // A name that falls out leaves no category, and the file then
+          // does not load until someone enters the targets.
+          if (text.includes('    - ERSETZEN')) {
+            return !loads(text) && text.includes('# Kategorie 5:');
+          }
           const targets = load(text).interactive.targets;
-          if (targets.length === 0) return text.includes('# Kategorie 5:');
           return (
             JSON.stringify(targets[0]?.target) ===
             JSON.stringify({

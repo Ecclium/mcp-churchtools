@@ -47,6 +47,7 @@ export {
   variables,
   yamlDebugVariableNames,
 } from './config/index.js';
+export { freeTextMarkers } from './redaction/index.js';
 export {
   defaultPolicy,
   type InteractiveEntry,

@@ -27,6 +27,7 @@ import {
   createStdioIdentity,
   createStdioTenantResolver,
   type EccliumConfig,
+  freeTextMarkers,
   loadConfig,
   type ProposedCategory,
   renderPolicyProposal,
@@ -89,6 +90,9 @@ export interface PolicyInitOptions {
     ((options: HttpTransportOptions) => HttpTransport) | undefined;
 }
 
+// The highest count a log line takes.
+const maxCount = 1_000_000;
+
 /** The tool that names the categories of the wiki. */
 const namesTool = 'ct_wiki_categories_list';
 
@@ -101,11 +105,18 @@ const maxPages = 40;
 // text it removed hidden characters from.
 const envelope = /^<<data-([0-9a-f]{16})>>([\s\S]*)<<\/data-\1>>$/;
 const hiddenNote = / \[ecclium: \d+ hidden characters removed\]$/;
+const maskMarkers: readonly string[] = Object.freeze(
+  Object.values(freeTextMarkers),
+);
 
 /** A name as the command line takes it from a result. */
 interface Name {
   readonly text: string;
-  readonly hidden: boolean;
+  /**
+   * Whether the redaction changed it: hidden characters removed, or in
+   * the level strict a part masked (ADR 0069).
+   */
+  readonly changed: boolean;
 }
 
 const nameOf = (value: unknown): Name | undefined => {
@@ -113,9 +124,12 @@ const nameOf = (value: unknown): Name | undefined => {
   const match = envelope.exec(value);
   const text = match?.[2];
   if (text === undefined) return undefined;
-  return hiddenNote.test(text)
-    ? { text: text.replace(hiddenNote, ''), hidden: true }
-    : { text, hidden: false };
+  return {
+    text,
+    changed:
+      hiddenNote.test(text) ||
+      maskMarkers.some((marker) => text.includes(marker)),
+  };
 };
 
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
@@ -156,12 +170,15 @@ type Names =
  *
  * @param config - The checked configuration, with a folder of state.
  * @param stateDir - The folder of state.
+ * @param wanted - The IDs of the categories of the audit; no further page
+ *   once each has its name.
  * @param options - The output and the replacements for tests.
  * @returns The names by ID, or the exit code after a text on stderr.
  */
 const fetchNames = async (
   config: EccliumConfig,
   stateDir: string,
+  wanted: ReadonlySet<number>,
   options: PolicyInitOptions,
 ): Promise<Names> => {
   const { output } = options;
@@ -177,6 +194,7 @@ const fetchNames = async (
     return { ok: false, code: exitCodes.invalidConfig };
   }
   const auditFile = opened.writer;
+  let closing = (): void => undefined;
   try {
     const prepared = prepareQuotaFolder(stateDir);
     if (!prepared.ok) {
@@ -187,7 +205,14 @@ const fetchNames = async (
       options.writeSync === undefined ? {} : { writeSync: options.writeSync },
     );
     // The anchor of the chain of the audit file goes to the log when the
-    // file closes, as with the server (ADR 0028).
+    // file closes, and before it the count of lines the file lost, as with
+    // the server (ADR 0028).
+    const processLogger = createLogger({ writer, clock, minLevel: 'info' });
+    closing = () => {
+      processLogger.info('audit_file_closed', {
+        count: Math.min(auditFile.counts().failed, maxCount),
+      });
+    };
     const anchorLogger = createLogger({
       writer,
       clock,
@@ -244,13 +269,15 @@ const fetchNames = async (
         for (const category of read.categories) {
           names.set(category.id, category.name);
         }
-        if (!read.more) break;
+        // No further page once every category of the audit has its name.
+        if (!read.more || [...wanted].every((id) => names.has(id))) break;
       }
       return { ok: true, names };
     } finally {
       await transport.close().catch(() => undefined);
     }
   } finally {
+    closing();
     auditFile.close();
   }
 };
@@ -311,7 +338,12 @@ export async function initPolicy(
       output.stderr(policyInitTexts.wiki_off);
       return exitCodes.invalidConfig;
     }
-    const fetched = await fetchNames(config, stateDir, options);
+    const fetched = await fetchNames(
+      config,
+      stateDir,
+      new Set(targets.categories.map((category) => category.id)),
+      options,
+    );
     if (!fetched.ok) return fetched.code;
     names = fetched.names;
   }
@@ -320,7 +352,7 @@ export async function initPolicy(
     return {
       ...category,
       name: name?.text,
-      ...(name?.hidden === true ? { hiddenCharacters: true } : {}),
+      ...(name?.changed === true ? { nameChanged: true } : {}),
     };
   });
   const text = renderPolicyProposal({

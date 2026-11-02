@@ -37,6 +37,7 @@ import {
   usageProblemTexts,
 } from './output/index.js';
 import type { PolicyInitOptions } from './policy/init.js';
+import { policyInitTexts } from './policy/texts.js';
 import type { WriteSyncFn } from './send.js';
 
 /** Replacements for tests. */
@@ -243,6 +244,12 @@ export function run(
           output,
         });
       case 'init': {
+        // Checked before the import, so that a wrong call loads nothing.
+        if (!call.interactive) {
+          output.stderr(policyInitTexts.interactive_missing);
+          output.stderr(usageLine);
+          return exitCodes.usage;
+        }
         // Loaded only for this command: it builds the transport, whose
         // undici the other commands never need.
         const out = output;

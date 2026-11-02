@@ -1330,4 +1330,5 @@ Diese Grundsatzfragen sind entschieden.
   - Bau: Transport, Schlüssel, Audit-Senke, Zähler und Pipeline teilen sich stdio und der Befehl in `packages/cli/src/compose/` (ADR 0056). `compose/` und `policy/` sind neue Teile der Orte `transportBuilders`, `stdioReachable` und `auditCommands`.
   - Kern: `collectWriteTargets` nur hinter dem Unterpfad `./audit` und `renderPolicyProposal` ohne die Bibliothek `yaml`. Namen stehen escaped in doppelten Anführungszeichen, und Tests lesen jeden Vorschlag mit dem echten Leser und Prüfer zurück, auch für zufällige Namen.
   - Exit-Code 69 neu, wenn ChurchTools keine Namen gibt. Ein Test am echten Prozess fragt einen Server des Tests über TLS.
+  - Nie offener als das Audit: Fällt jede Kategorie heraus, die das Audit nennt, steht statt einer leeren Liste ein Platzhalter, den der Lader abweist, und die Ziele stehen vor dem Lesebudget. Ein Ziel nur aus abgelehnten Versuchen trägt einen Kommentar, ein in `strict` maskierter Name steht nur als Kommentar.
   - Doku: Abschnitt «Vorschlag aus dem Audit» in `docs/policy.md`, `docs/privacy.md`, ADR 0028, 0032 und 0056.

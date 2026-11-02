@@ -1853,6 +1853,7 @@ describe('ecclium policy init at the real process', { timeout }, () => {
       }).finish();
       expect(finished.code).toBe(0);
       expect(finished.stdout).toContain('schema: policy.v1\n');
+      expect(finished.stderr).not.toContain('schema: policy.v1');
       expect(finished.stdout).toContain(
         '    - target: { kind: wiki_category, id: 12, name: "Berichte" }\n',
       );

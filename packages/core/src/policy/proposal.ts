@@ -29,16 +29,17 @@ export interface ProposedCategory {
    */
   readonly name: string | undefined;
   /**
-   * Whether ChurchTools gave the name with hidden characters, which the
-   * redaction removed: then the name above is not the one ChurchTools
-   * compares, and the category stands only as a comment.
+   * Whether the redaction changed the name before the command line saw
+   * it, by removing hidden characters or masking a part: then the name
+   * above is not the one ChurchTools compares, and the category stands
+   * only as a comment.
    */
-  readonly hiddenCharacters?: boolean;
+  readonly nameChanged?: boolean;
   /** The write tools seen on it. */
   readonly tools: readonly string[];
   /**
-   * The most calls of one of these tools on it on one UTC day, counting
-   * only calls that planned or sent a write; 0 when all were refused.
+   * The most calls of one of these tools on it on one UTC day, without
+   * the refused and the skipped ones; 0 when the audit shows only those.
    */
   readonly highestPerDay: number;
 }
@@ -149,16 +150,16 @@ export function renderPolicyProposal(input: ProposalInput): string {
     lines.push('# Grundlage: Das Audit enthält keine Zeile.');
   }
   lines.push(
-    '# Ein Eintrag je Kategorie des Wikis, auf die ein Schreib-Tool zugegriffen hat, auch wenn es abgelehnt wurde.',
-    `# maxPerDay ist das Doppelte des höchsten Tageswerts eines Tools, mindestens ${String(minProposedPerDay)}.`,
+    '# Ein Eintrag je Kategorie des Wikis, die das Audit in einer Zeile eines Schreib-Tools nennt, auch bei abgelehnten Versuchen.',
+    `# maxPerDay ist das Doppelte des höchsten Tageswerts eines Tools, mindestens ${String(minProposedPerDay)}, ohne abgelehnte und übersprungene Aufrufe.`,
     '# Prüfen Sie jeden Eintrag, bevor Sie die Datei mit ECCLIUM_POLICY_FILE einsetzen.',
     'schema: policy.v1',
     'interactive:',
-    `  readBudgetPerDay: ${String(input.readBudgetPerDay)}`,
   );
   const entries: string[] = [];
   const skipped: string[] = [];
   const sorted = [...input.categories].sort((a, b) => a.id - b.id);
+  let count = 0;
   let more = 0;
   for (const category of sorted) {
     const id = String(category.id);
@@ -173,9 +174,9 @@ export function renderPolicyProposal(input: ProposalInput): string {
       );
       continue;
     }
-    if (category.hiddenCharacters === true) {
+    if (category.nameChanged === true) {
       skipped.push(
-        `    # Kategorie ${id}: Ihr Name enthält unsichtbare Zeichen, darum kein Eintrag. Tragen Sie ihn von Hand ein.`,
+        `    # Kategorie ${id}: Ihr Name kam verändert an, ohne unsichtbare Zeichen oder mit einem maskierten Teil, darum kein Eintrag. Tragen Sie ihn von Hand ein.`,
       );
       continue;
     }
@@ -186,9 +187,17 @@ export function renderPolicyProposal(input: ProposalInput): string {
       continue;
     }
     if (tools.length === 0) continue;
-    if (entries.length / 3 >= policyLimits.entries) {
+    if (count >= policyLimits.entries) {
       more += 1;
       continue;
+    }
+    count += 1;
+    // A target that the audit shows only refused came from a wish, maybe
+    // of the model, not from a write; the operator decides on it.
+    if (category.highestPerDay === 0) {
+      entries.push(
+        '    # Nur abgelehnte oder übersprungene Versuche im Audit: Prüfen Sie, ob Ecclium hier schreiben soll.',
+      );
     }
     entries.push(
       `    - target: { kind: wiki_category, id: ${id}, name: ${quoted(name)} }`,
@@ -196,13 +205,24 @@ export function renderPolicyProposal(input: ProposalInput): string {
       `      maxPerDay: ${String(proposedMaxPerDay(category.highestPerDay))}`,
     );
   }
-  if (entries.length === 0) {
+  // The targets come before the read budget, so that a text cut off after
+  // `targets:` is no file the loader takes. An empty list would allow every
+  // confirmed write: it stands only when the audit names no category, and
+  // when every category it names fell out, a placeholder keeps the file
+  // from loading until the operator enters the targets.
+  if (count > 0) {
+    lines.push('  targets:', ...entries);
+  } else if (sorted.length === 0) {
     lines.push(
       '  # Keine Einträge: Erlaubt ist dann jeder bestätigte Schreibvorgang, den das Dienstkonto darf, ausser bei Gruppen und Diensten.',
       '  targets: []',
     );
   } else {
-    lines.push('  targets:', ...entries);
+    lines.push(
+      '  # Keine Kategorie liess sich vorschlagen, siehe die Kommentare unten. Eine leere Liste erlaubte jeden bestätigten Schreibvorgang, darum nimmt Ecclium diese Datei erst an, wenn Sie die Ziele von Hand eintragen.',
+      '  targets:',
+      '    - ERSETZEN',
+    );
   }
   lines.push(...skipped);
   if (more > 0) {
@@ -210,5 +230,6 @@ export function renderPolicyProposal(input: ProposalInput): string {
       `    # Weitere ${String(more)} Kategorien passen nicht mehr in die ${String(policyLimits.entries)} Einträge eines Teils.`,
     );
   }
+  lines.push(`  readBudgetPerDay: ${String(input.readBudgetPerDay)}`);
   return `${lines.join('\n')}\n`;
 }
