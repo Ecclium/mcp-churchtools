@@ -39,6 +39,7 @@ import {
   type Clock,
   type IsoDate,
   isIsoDate,
+  isQuotaKey,
   type QuotaKey,
   quotaKeys,
   type QuotaStore,
@@ -68,6 +69,14 @@ export const maxQuotaFileBytes = 65_536;
 
 /** The most actors one file of quotas holds. */
 export const maxQuotaActors = 1000;
+
+/**
+ * The most counters of writes of the policy one actor has per day in a
+ * file (ADR 0032), beside the read budget. A key only comes from an entry
+ * of the policy that matched, so an actor rarely has more than a few; the
+ * bound keeps one actor from filling the file that every actor shares.
+ */
+export const maxWriteKeysPerActor = 64;
 
 // How long to wait between two attempts at the lock.
 const lockRetryMs = 25;
@@ -312,7 +321,14 @@ interface HeldLock extends Identity {
 }
 
 /** The counters of one tenant and day: per actor, per key. */
-type Counts = Record<string, Partial<Record<QuotaKey, number>>>;
+type Counts = Record<string, Record<string, number>>;
+
+// The counters of writes of the policy among the keys of one actor.
+// The counters of writes of an actor: every key but the fixed ones.
+const writeKeysOf = (entry: Readonly<Record<string, number>>): number =>
+  Object.keys(entry).filter(
+    (key) => !(quotaKeys as readonly string[]).includes(key),
+  ).length;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });
@@ -363,16 +379,13 @@ const parseCounts = (
     if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
       return undefined;
     }
-    const kept: Partial<Record<QuotaKey, number>> = Object.create(
-      null,
-    ) as Partial<Record<QuotaKey, number>>;
+    const kept = Object.create(null) as Record<string, number>;
     for (const key of Object.keys(entry)) {
       const value = ownData(entry, key);
-      if (!(quotaKeys as readonly string[]).includes(key) || !isCount(value)) {
-        return undefined;
-      }
-      kept[key as QuotaKey] = value;
+      if (!isQuotaKey(key) || !isCount(value)) return undefined;
+      kept[key] = value;
     }
+    if (writeKeysOf(kept) > maxWriteKeysPerActor) return undefined;
     result[actor] = kept;
   }
   return result;
@@ -445,9 +458,7 @@ export function createFileQuotaStore(
     if (!(actorKinds as readonly unknown[]).includes(kind) || !isActorId(id)) {
       throw new TypeError('The actor is invalid.');
     }
-    if (!(quotaKeys as readonly unknown[]).includes(key)) {
-      throw new TypeError('The key is unknown.');
-    }
+    if (!isQuotaKey(key)) throw new TypeError('The key is unknown.');
     if (!isIsoDate(day)) throw new TypeError('The day is invalid.');
     return { tenantId, actor: `${String(kind)}:${id}` };
   };
@@ -822,13 +833,15 @@ export function createFileQuotaStore(
     try {
       const counts = readCounts(path, tenantId, day, flags, checked);
       const entry =
-        counts[actor] ??
-        (Object.create(null) as Partial<Record<QuotaKey, number>>);
+        counts[actor] ?? (Object.create(null) as Record<string, number>);
       const value = (entry[key] ?? 0) + 1;
       if (!Number.isSafeInteger(value)) throw unavailable();
       entry[key] = value;
       counts[actor] = entry;
       if (Object.keys(counts).length > maxQuotaActors) throw unavailable();
+      // A new counter of writes beyond the bound is not written; the
+      // policy treats that as a write it could not count (ADR 0032).
+      if (writeKeysOf(entry) > maxWriteKeysPerActor) throw unavailable();
       writeCounts(path, tenantId, day, counts, flags, checked);
       return value;
     } finally {

@@ -31,7 +31,7 @@ Jede Zeile ist ein JSON-Objekt auf einer Zeile. Mit `ECCLIUM_STATE_DIR` geht sie
 | `outcome` | `ok`, `error`, `denied` | ja | ja | Ausgang des Aufrufs: `ok`, `error` bei einem Fehler oder `denied` bei einer Ablehnung. |
 | `confirmation` | `elicitation`, `echo`, `policy`, `operator` | nein | ja | Wie ein Schreibvorgang bestätigt wurde. |
 | `writeState` | `planned`, `queued`, `verified`, `skipped`, `denied`, `conflict`, `failed`, `rolledBack` | nein | ja | Der Zustand eines Schreibvorgangs am Ende des Aufrufs: `planned`, `queued`, `verified` oder `skipped` bei `ok`, `denied` bei `denied`, `conflict`, `failed` oder `rolledBack` bei `error`. Wer Schreibvorgänge zählt, liest dieses Feld. |
-| `policyHash` | Text nach festem Muster, höchstens 64 Zeichen | nein | ja | SHA-256 der Richtlinie eines Laufs. |
+| `policyHash` | Text nach festem Muster, höchstens 64 Zeichen | nein | ja | SHA-256 der Richtlinie, die einen Aufruf eines schreibenden Tools beurteilt hat, wie `ecclium config check` ihn zeigt. Jede Zeile eines schreibenden Tools nennt ihn, auch eine abgelehnte. Später nennt ihn auch jede Zeile eines Laufs des Runners. |
 | `provider` | Objekt | nein | ja | Das Sprachmodell eines Laufs, wie die Konfiguration es nennt. |
 | `provider.vendor` | Text nach festem Muster, höchstens 32 Zeichen | nein | ja | Anbieter des Modells. |
 | `provider.model` | Text nach festem Muster, höchstens 64 Zeichen | nein | ja | Name des Modells beim Anbieter. |

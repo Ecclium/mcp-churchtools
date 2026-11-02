@@ -9,13 +9,78 @@
 import type { TenantContext } from './context.js';
 
 /**
- * What a counter counts. Today there is one: the calls of tools with
- * sensitivity special, which share one budget per actor and day.
+ * The key of a counter of the policy (ADR 0032): how often one tool wrote
+ * to one target of the policy, as `write:<tool>:<kind>:<ID>`, such as
+ * `write:ct_wiki_page_create:wiki_category:12`. Only
+ * {@link writeQuotaKey} makes one; the brand keeps any other string from
+ * passing as one by accident.
  */
-export type QuotaKey = 'special_reads';
+export type WriteQuotaKey = string & { readonly __ecclium: 'WriteQuotaKey' };
 
-/** Every {@link QuotaKey}, frozen, for checks at run time. */
+/**
+ * What a counter counts: the calls of the tools in the read budget, which
+ * share one budget per actor and day, or the writes of one tool to one
+ * target of the policy.
+ */
+export type QuotaKey = 'special_reads' | WriteQuotaKey;
+
+/** The keys with a fixed name, frozen. */
 export const quotaKeys: readonly QuotaKey[] = Object.freeze(['special_reads']);
+
+// A tool, a kind of target of the policy and its ID: a whole number, and
+// for a page the category and the GUID in lower case, for a service the
+// event and the service. Anchored, without flags, so no lastIndex is shared.
+const writeQuotaKeyPattern =
+  /^write:ct_[a-z0-9_]{1,60}:(?:(?:wiki_category|calendar|resource|group):[1-9]\d{0,9}|wiki_page:[1-9]\d{0,9}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|service:[1-9]\d{0,9}\/[1-9]\d{0,9})$/;
+
+/** The longest key of a counter of the policy. */
+export const maxWriteQuotaKeyLength = 128;
+
+/**
+ * Tells whether a value is the key of a counter: `special_reads` or a key
+ * of a counter of the policy. A store checks every key itself before it
+ * counts under it.
+ *
+ * @param value - Any value.
+ * @returns Whether it is such a key.
+ * @example
+ * ```ts
+ * isQuotaKey('special_reads'); // true
+ * isQuotaKey('write:ct_wiki_page_create:wiki_category:12'); // true
+ * isQuotaKey('write:../x'); // false
+ * ```
+ */
+export function isQuotaKey(value: unknown): value is QuotaKey {
+  return (
+    typeof value === 'string' &&
+    ((quotaKeys as readonly string[]).includes(value) ||
+      (value.length <= maxWriteQuotaKeyLength &&
+        writeQuotaKeyPattern.test(value)))
+  );
+}
+
+/**
+ * Builds the key of a counter of the policy from a tool and the key of a
+ * target, such as `wiki_category:12`, `wiki_page:12/<GUID>` or
+ * `service:5/7`.
+ *
+ * @param tool - The name of the tool.
+ * @param target - The key of the target, with a GUID in lower case.
+ * @returns The key.
+ * @throws {TypeError} When the result is no key of a counter.
+ * @example
+ * ```ts
+ * writeQuotaKey('ct_wiki_page_create', 'wiki_category:12');
+ * // 'write:ct_wiki_page_create:wiki_category:12'
+ * ```
+ */
+export function writeQuotaKey(tool: string, target: string): WriteQuotaKey {
+  const key = `write:${tool}:${target}`;
+  if (!isQuotaKey(key)) {
+    throw new TypeError('The key of the counter is invalid.');
+  }
+  return key as WriteQuotaKey;
+}
 
 /**
  * A day in UTC as `YYYY-MM-DD`, such as `2026-10-24`. The brand keeps a

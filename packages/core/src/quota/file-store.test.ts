@@ -25,10 +25,11 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type {
-  Clock,
-  IsoDate,
-  QuotaKey,
+import {
+  type Clock,
+  type IsoDate,
+  type QuotaKey,
+  writeQuotaKey,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import {
   quotaContext,
@@ -41,6 +42,7 @@ import {
   type FileQuotaStoreOptions,
   maxQuotaActors,
   maxQuotaFileBytes,
+  maxWriteKeysPerActor,
   orphanLockMs,
   prepareQuotaFolder,
   type QuotaFileSystem,
@@ -453,6 +455,44 @@ describe('the file of quotas', () => {
         day,
       ),
     ).resolves.toBe(2);
+  });
+
+  // The counters of the policy (ADR 0032): at most 64 per actor and day.
+  it('holds at most 64 counters of writes per actor and refuses a file with more', async () => {
+    const state = freshState();
+    const store = open(state);
+    const writeKey = (index: number) =>
+      writeQuotaKey(
+        'ct_wiki_page_create',
+        `wiki_category:${String(index + 1)}`,
+      );
+    for (let index = 0; index < maxWriteKeysPerActor; index += 1) {
+      await expect(store.increment(ctx, writeKey(index), day)).resolves.toBe(1);
+    }
+    await expect(store.increment(ctx, key, day)).resolves.toBe(1);
+    await expect(
+      store.increment(ctx, writeKey(maxWriteKeysPerActor), day),
+    ).rejects.toThrow(failure);
+    // An existing counter still counts, and the file holds what it did.
+    await expect(store.increment(ctx, writeKey(0), day)).resolves.toBe(2);
+    await expect(open(state).read(ctx, writeKey(63), day)).resolves.toBe(1);
+    const counts = Object.fromEntries(
+      Array.from({ length: maxWriteKeysPerActor + 1 }, (_, index) => [
+        writeKey(index),
+        1,
+      ]),
+    );
+    writeFileSync(
+      fileOf(state),
+      JSON.stringify({
+        v: 1,
+        tenant: 'demo-tenant',
+        day,
+        counts: { 'service:stdio:local-stdio': counts },
+      }),
+      { mode: 0o600 },
+    );
+    await expect(open(state).read(ctx, key, day)).rejects.toThrow(failure);
   });
 
   it('refuses to go on when the folder is swapped after its check', async () => {

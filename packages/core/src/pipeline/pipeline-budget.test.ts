@@ -174,7 +174,7 @@ const setup = (
     clock,
     logging: { writer, minLevel: 'debug' },
     ...(quota === undefined ? {} : { quota }),
-    ...(options.policy === undefined ? {} : { policy: options.policy }),
+    policy: options.policy ?? defaultPolicy,
   });
   const parse = (line: string) => JSON.parse(line) as Record<string, unknown>;
   return {
@@ -256,7 +256,7 @@ describe('the daily read budget of the policy', () => {
     expect(runs).toEqual(['ct_test_personal']);
   });
 
-  it('keeps the default of 200 without a policy and with the default policy', async () => {
+  it('keeps the default of 200 of the default policy', async () => {
     const { call, quota } = setup({ policy: defaultPolicy });
     for (let index = 0; index < specialReadBudget; index += 1) {
       await quota?.increment(ctx, 'special_reads', day);

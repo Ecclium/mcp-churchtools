@@ -1,6 +1,7 @@
 import {
   createToolCatalog,
   createToolPipeline,
+  defaultPolicy,
   loadConfig,
   type ToolCatalog,
   type ToolPipelineOptions,
@@ -144,6 +145,7 @@ const setup = (
     failures: () => 0,
   });
   const pipeline = createToolPipeline({
+    policy: defaultPolicy,
     quota: createMemoryQuotaStore(quota),
     catalog,
     audit,

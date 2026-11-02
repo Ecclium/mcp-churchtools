@@ -1,6 +1,7 @@
 import {
   createToolCatalog,
   createToolPipeline,
+  defaultPolicy,
   loadConfig,
   type ToolPipelineOptions,
   type ToolRequest,
@@ -88,6 +89,7 @@ const setup = () => {
   });
   const clock = Object.freeze({ now: Object.freeze(() => 0) });
   const pipeline = createToolPipeline({
+    policy: defaultPolicy,
     catalog: createToolCatalog({
       core: createCorePlugin(),
       plugins: [],

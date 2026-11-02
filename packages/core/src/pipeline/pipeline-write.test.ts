@@ -26,9 +26,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { createAuditSink } from '../audit/index.js';
+import { checkPolicy, defaultPolicy } from '../policy/check.js';
+import { policyHashOf } from '../policy/hash.js';
+import type { Policy } from '../policy/schema.js';
 import { createToolCatalog } from '../registry/index.js';
 import { confirmationSentence } from '../write/confirm.js';
 import { writeSentences } from '../write/guard.js';
+import { policySentences } from '../write/policy-gate.js';
 import { issueProof } from '../write/proof.js';
 import { createToolPipeline, type ToolRequest } from './pipeline.js';
 
@@ -157,6 +161,7 @@ const setup = (
   options: {
     readonly tools?: readonly ToolDefinition[];
     readonly killSwitchDir?: string | null;
+    readonly policy?: Policy;
   } = {},
 ) => {
   const double = createChurchToolsDouble({ token });
@@ -186,6 +191,7 @@ const setup = (
     isKnownTool: catalog.has,
   });
   const pipeline = createToolPipeline({
+    policy: options.policy ?? defaultPolicy,
     catalog,
     audit,
     quota: createMemoryQuotaStore(),
@@ -274,6 +280,7 @@ describe('a write tool in the pipeline', () => {
       outcome: 'ok',
       confirmation: 'elicitation',
       writeState: 'verified',
+      policyHash: policyHashOf(defaultPolicy),
     });
     expect(file.anchors).toBe(1);
     expect(logs()).toContain('write_committed');
@@ -479,6 +486,48 @@ describe('a write tool in the pipeline', () => {
       message: writeSentences.notRun,
     });
     expect(events()[0]).toMatchObject({ writeState: 'denied' });
+  });
+
+  it('refuses a write outside the policy before it asks for a confirmation', async () => {
+    const checked = checkPolicy({
+      schema: 'policy.v1',
+      interactive: {
+        targets: [
+          {
+            target: { kind: 'wiki_category', id: 13, name: 'Andere' },
+            tools: ['ct_example_note_write'],
+            maxPerDay: 1,
+          },
+        ],
+      },
+    });
+    if (!checked.ok) throw new Error(checked.code);
+    const { double, pipeline, events, logs, planReads } = setup({
+      policy: checked.policy,
+    });
+    let asked = 0;
+    confirming.issue = (plan) => {
+      asked += 1;
+      return issueProof(plan, 'elicitation', now);
+    };
+    planReads();
+    const outcome = await pipeline.call(
+      'ct_example_note_write',
+      note,
+      request(),
+    );
+    expect(!outcome.ok && outcome.error).toEqual({
+      code: 'policy_denied',
+      message: policySentences.outside,
+    });
+    expect(events()[0]).toMatchObject({
+      outcome: 'denied',
+      writeState: 'denied',
+      policyHash: policyHashOf(checked.policy),
+    });
+    expect(logs()).toContain('policy_no_entry');
+    expect(asked).toBe(0);
+    expect(double.calls().filter(({ method }) => method !== 'GET')).toEqual([]);
   });
 
   it('ends a refused plan with its error, also when the tool catches it', async () => {

@@ -197,6 +197,18 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Die Zeile eines Aufrufs, der womöglich geschrieben hat, erreichte die Audit-Datei nicht. Bis zum Neustart des Servers plant und schreibt der Write-Guard nichts mehr.',
     write_committed:
       'Ein Schreibvorgang ist geschrieben und gelesen: die Version stieg wie geplant, und der Text ist der gesendete.',
+    policy_not_interactive:
+      'Ein Schreibvorgang kam ausserhalb des interaktiven Modus. Bis der Runner den unbeaufsichtigten Teil der Richtlinie nutzt, schreibt Ecclium dort nichts. Der Aufruf endet mit `policy_denied`.',
+    policy_queue_only:
+      'Die Richtlinie schickt diese Art von Schreibvorgang immer in die Warteschlange der Freigaben, etwa einen in eine Gruppe oder einen Dienst. Bis es die Warteschlange gibt, endet der Aufruf mit `policy_denied`.',
+    policy_no_entry:
+      'Die Richtlinie hat Einträge, aber keiner deckt dieses Tool und dieses Ziel. Der Aufruf endet mit `policy_denied`, ohne zu schreiben.',
+    policy_name_changed:
+      'Das Ziel in ChurchTools trägt nicht mehr den Namen, den die Richtlinie erwartet, oder sein Name ist nicht zu lesen. Der Aufruf endet mit `policy_denied`, ohne zu schreiben und ohne zu zählen.',
+    policy_limit_reached:
+      'Die Grenze der Schreibvorgänge dieses Tools auf dieses Ziel für den UTC-Tag ist erreicht. Der Aufruf endet mit `policy_denied`, ohne zu schreiben.',
+    policy_count_unavailable:
+      'Ecclium konnte einen Schreibvorgang nicht gegen die Grenze der Richtlinie zählen, etwa ohne Ordner für den Zustand. Der Aufruf endet mit `policy_denied`, ohne zu schreiben.',
     read_search_refused:
       'Ein Tool, das nicht als besonders schützenswert eingestuft ist, wollte Personen oder Gruppen lesen. Ecclium weist das ab.',
     read_names_refused:
@@ -368,7 +380,8 @@ const sections: readonly {
   },
   {
     title: 'Write-Guard',
-    fits: (name: string) => name.startsWith('write_'),
+    fits: (name: string) =>
+      name.startsWith('write_') || name.startsWith('policy_'),
   },
   {
     title: 'Lesender Zugriff über den Kern',

@@ -81,4 +81,5 @@ Gewählt ist die dritte Option.
 - **Probelauf:** `assertOnlyReads` in `packages/testkit/src/http-double/`.
 - **Regel für `writes`:** Seit dem 01.11.2026 lässt `[arch:client-writes]` einen Zugriff auf `writes` nur im Write-Guard und im Ordner des Clients zu ([ADR 0029](0029-write-guard.md), Umsetzung).
 - **Lesen vor einer neuen Seite:** Seit dem 02.11.2026 gibt `writes.wikiCategoryState` die Zeit von ChurchTools aus der ersten Seite der Liste der Seiten einer Kategorie, mit derselben Anfrage wie das Lesen dieser Liste ([ADR 0029](0029-write-guard.md), Umsetzung).
+- **Name einer Kategorie:** Seit dem 02.11.2026 liest `writes.wikiCategoryName` für die Richtlinie den Namen einer Kategorie mit derselben Anfrage `GET /api/wiki/categories` wie `ct_wiki_categories_list`, mit dem lesenden Teil des Clients ([ADR 0032](0032-richtlinie-und-pruefcode.md), Umsetzung Teil 2). Eine Kategorie, die die Liste nicht nennt, hat keinen Namen.
 - **Offen:** Die Operationen für Termine und Buchungen kommen mit ihren Tools, die Aufrufe von `delete` mit der Rücknahme.

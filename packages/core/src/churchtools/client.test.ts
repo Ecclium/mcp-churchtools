@@ -872,6 +872,7 @@ describe('the client', () => {
       'updateWikiPage',
       'wikiPageState',
       'wikiCategoryState',
+      'wikiCategoryName',
     ]);
     expect(Object.isFrozen(client.writes)).toBe(true);
   });

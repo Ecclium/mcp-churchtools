@@ -257,7 +257,7 @@ export function policyTargetFieldPaths(): readonly string[] {
  * It changes with the versions that use more of it.
  */
 export const policyState =
-  'Der Server liest die Richtlinie beim Start und nimmt das Lesebudget aus ihr. Ziele und Obergrenzen der Schreibvorgänge prüft er beim Laden auf Form und Widersprüche, anwenden wird er sie mit dem Write-Guard, bevor Schreib-Tools erscheinen. Wo diese Seite sagt, ein Wunsch gehe an den Betreiber, lehnt der Server ihn ab, bis die Freigabe-Warteschlange kommt. Den unbeaufsichtigten Teil benutzt erst der Runner einer späteren Version.';
+  'Der Server liest die Richtlinie beim Start und nimmt das Lesebudget aus ihr. Ziele, Namen und Obergrenzen der Schreibvorgänge wendet der Write-Guard an, beim Planen und noch einmal unmittelbar vor dem Senden. Wo diese Seite sagt, ein Wunsch gehe an den Betreiber, lehnt der Server ihn mit `policy_denied` ab, bis die Freigabe-Warteschlange kommt. Den unbeaufsichtigten Teil benutzt erst der Runner einer späteren Version, bis dahin schreibt Ecclium nur in einer Unterhaltung.';
 
 const example = [
   '# Richtlinie der Gemeinde, geprüft beim Start von Ecclium.',
@@ -389,12 +389,12 @@ export function renderPolicyReference(): string {
     '- **Name:** Ecclium vergleicht den erwarteten Namen in der Normalform NFC genau mit dem Namen in ChurchTools. Weicht er ab, weil jemand das Ziel umbenannt oder eine Kennung neu vergeben hat, schreibt Ecclium nicht auf dieses Ziel, und der Wunsch geht an den Betreiber. Das Lesen trifft das nicht.',
     '- **Abschliessend:** Hat `interactive.targets` einen Eintrag, darf ein bestätigter Schreibvorgang nur noch auf die genannten Ziele mit den genannten Tools. Jeder andere Wunsch und jeder über `maxPerDay` geht an den Betreiber, statt abgelehnt zu werden, damit die Person handlungsfähig bleibt.',
     '- **Gruppen und Dienste:** Mitgliedschaften in Gruppen und Anfragen für Dienste betreffen Personen. Ohne Eintrag gehen sie an den Betreiber, und Routinen schreiben sie nie. Operationen der schreibenden Escape Hatch gehen immer an den Betreiber, weil die Richtlinie für sie keine Art von Ziel kennt.',
-    '- **Zähler:** Die Zähler je Tag liegen im Zustandsordner, überstehen einen Neustart und gelten für alle Prozesse mit demselben Ordner.',
+    '- **Zähler:** Die Zähler je Tag liegen im Zustandsordner, überstehen einen Neustart und gelten für alle Prozesse mit demselben Ordner. Beim Planen liest Ecclium den Zähler und lehnt ab, wenn er schon bei `maxPerDay` steht, damit niemand einen Vorgang bestätigt, der nicht mehr geht. Gezählt wird beim Festschreiben unmittelbar vor dem Senden. Ein gezählter Vorgang, der danach scheitert, bleibt gezählt, ein abgelehnter Name zählt nicht. Ohne Zustandsordner lässt sich nicht zählen, dann geht jeder Wunsch auf ein Ziel mit Eintrag an den Betreiber.',
     '- **Widersprüche:** Dasselbe Ziel mit zwei Namen, dasselbe Tool zweimal für ein Ziel im selben Teil, `maxPerRun` über `maxPerDay` oder zwei Stufen von `modelRedaction` für eine Routine verhindern den Start.',
     '',
     '## Hash',
     '',
-    'Ecclium bildet den SHA-256 über die geprüfte Richtlinie in einer festen Form: Voreinstellungen eingesetzt, Namen in NFC, GUIDs in Kleinbuchstaben und die Schlüssel sortiert. Kommentare und die Schreibweise eines Werts ändern ihn nicht, die Reihenfolge der Einträge schon. Ohne Datei gilt der Hash der Voreinstellung. `ecclium config check` zeigt ihn, und sobald der Write-Guard die Richtlinie anwendet, nennt ihn jedes Audit-Ereignis eines Schreibvorgangs als `policyHash`.',
+    'Ecclium bildet den SHA-256 über die geprüfte Richtlinie in einer festen Form: Voreinstellungen eingesetzt, Namen in NFC, GUIDs in Kleinbuchstaben und die Schlüssel sortiert. Kommentare und die Schreibweise eines Werts ändern ihn nicht, die Reihenfolge der Einträge schon. Ohne Datei gilt der Hash der Voreinstellung. `ecclium config check` zeigt ihn, und die Zeile jedes Aufrufs eines schreibenden Tools im Audit nennt ihn als `policyHash`, auch die eines abgelehnten. So lässt sich später sagen, unter welcher Richtlinie ein Schreibvorgang lief.',
   ];
   return `${lines.join('\n')}\n`;
 }

@@ -233,6 +233,13 @@ export const logEvents = Object.freeze({
   write_outcome_unknown: entry('warn', 'code'),
   write_committed: entry('info'),
   write_audit_failed: entry('error'),
+  // The policy in the write guard (ADR 0032).
+  policy_not_interactive: entry('warn'),
+  policy_queue_only: entry('warn'),
+  policy_no_entry: entry('warn'),
+  policy_name_changed: entry('warn'),
+  policy_limit_reached: entry('warn'),
+  policy_count_unavailable: entry('warn'),
   // The escape hatch (ADR 0067).
   read_search_refused: entry('warn', 'code'),
   read_names_refused: entry('warn', 'code'),

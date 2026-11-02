@@ -29,6 +29,7 @@ import {
   createToolCatalog,
   type ToolCatalog,
 } from '../registry/index.js';
+import { defaultPolicy } from '../policy/check.js';
 import { createToolPipeline, type ToolRequest } from './pipeline.js';
 import { maxInputDepth, maxInputElements } from './stages.js';
 
@@ -171,6 +172,7 @@ const setup = (
     isKnownTool: catalog.has,
   });
   const pipeline = createToolPipeline({
+    policy: defaultPolicy,
     catalog,
     audit,
     quota: createMemoryQuotaStore(),
@@ -1174,6 +1176,7 @@ describe('the outermost catch', () => {
     });
     let reads = 0;
     const pipeline = createToolPipeline({
+      policy: defaultPolicy,
       catalog,
       audit: {
         record: () => {

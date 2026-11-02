@@ -1998,6 +1998,7 @@ export function createChurchToolsClient(
       readCategory: async (ctx, categoryId) => ({
         date: (await readWikiPageList(ctx, categoryId, 1)).date,
       }),
+      readCategories: (ctx) => wikiCategories(ctx),
     }),
   });
 }

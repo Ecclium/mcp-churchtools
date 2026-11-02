@@ -23,6 +23,7 @@ import {
   type RecordOptions,
 } from '../audit/index.js';
 import { createToolCatalog } from '../registry/index.js';
+import { defaultPolicy } from '../policy/check.js';
 import { createToolPipeline, type ToolRequest } from './pipeline.js';
 
 // A tool with sensitivity special gives its result only when its line is
@@ -184,6 +185,7 @@ const setup = (
       isKnownTool: catalog.has,
     });
   const pipeline = createToolPipeline({
+    policy: defaultPolicy,
     // Tools with sensitivity special count against the read budget.
     quota: createMemoryQuotaStore(),
     catalog,

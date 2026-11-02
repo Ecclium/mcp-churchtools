@@ -12,11 +12,12 @@ import {
   type ActorKind,
   type IsoDate,
   isIsoDate,
+  isQuotaKey,
   type QuotaKey,
-  quotaKeys,
   type QuotaStore,
   type TenantContext,
   type TenantId,
+  writeQuotaKey,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 /**
@@ -62,7 +63,7 @@ export function createMemoryQuotaStore(
   memory: QuotaMemory = new Map(),
 ): QuotaStore {
   const keyOf = (ctx: TenantContext, key: QuotaKey, day: IsoDate): string => {
-    if (!quotaKeys.includes(key)) throw new TypeError('The key is unknown.');
+    if (!isQuotaKey(key)) throw new TypeError('The key is unknown.');
     if (!isIsoDate(day)) throw new TypeError('The day is invalid.');
     return JSON.stringify([
       ctx.tenantId,
@@ -186,4 +187,41 @@ export const quotaStoreChecks: readonly QuotaStoreCheck[] = Object.freeze([
       assert.equal(await store.read(one, key, day), 0);
     },
   ),
+  // The counters of the policy (ADR 0032): one per tool and target, apart
+  // from the read budget and from each other, under the same rules.
+  check(
+    'keeps the counters of writes apart from the read budget and from each other',
+    async (open) => {
+      const store = open();
+      const create = writeQuotaKey('ct_wiki_page_create', 'wiki_category:12');
+      const update = writeQuotaKey(
+        'ct_wiki_page_update',
+        'wiki_page:12/00000000-0000-4000-8000-000000000001',
+      );
+      const other = writeQuotaKey('ct_wiki_page_create', 'wiki_category:13');
+      assert.deepEqual(
+        [
+          await store.increment(one, create, day),
+          await store.increment(one, create, day),
+          await store.increment(one, update, day),
+        ],
+        [1, 2, 1],
+      );
+      assert.equal(await store.read(one, key, day), 0);
+      assert.equal(await store.read(one, other, day), 0);
+      assert.equal(await open().read(one, create, day), 2);
+      assert.equal(await store.read(one, create, nextDay), 0);
+    },
+  ),
+  check('refuses a key of a write of another form', async (open) => {
+    const store = open();
+    for (const bad of [
+      'write:ct_wiki_page_create:wiki_category:../x',
+      'write:ct_wiki_page_create:operation:1',
+      'write:',
+    ]) {
+      await assert.rejects(store.increment(one, bad as QuotaKey, day));
+      await assert.rejects(store.read(one, bad as QuotaKey, day));
+    }
+  }),
 ]);

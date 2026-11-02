@@ -1,6 +1,7 @@
 import {
   createToolCatalog,
   createToolPipeline,
+  defaultPolicy,
   loadConfig,
   type ToolPipelineOptions,
   type ToolRequest,
@@ -102,6 +103,7 @@ const setup = () => {
     failures: () => 0,
   });
   const pipeline = createToolPipeline({
+    policy: defaultPolicy,
     quota: createMemoryQuotaStore(),
     catalog: createToolCatalog({
       core: createCorePlugin(),

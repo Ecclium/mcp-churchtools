@@ -48,6 +48,7 @@ import {
   type ToolOutcome,
   type ToolPipeline,
 } from '../pipeline/index.js';
+import { defaultPolicy } from '../policy/check.js';
 import { maxResultBytes, resultBytes } from '../pipeline/stages.js';
 import { sealRedacted } from '../redaction/redacted.js';
 import { createToolCatalog } from '../registry/index.js';
@@ -199,6 +200,7 @@ const setup = (
     isKnownTool: catalog.has,
   });
   const pipeline = createToolPipeline({
+    policy: defaultPolicy,
     catalog,
     audit,
     transport: double.transport,
