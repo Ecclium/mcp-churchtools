@@ -248,6 +248,13 @@ export interface AuditFileWriter extends LineWriter {
    */
   tick(): void;
   /**
+   * Flushes the open file to the disk and reports the head of its chain to
+   * the listener, as an anchor on the log after a write (ADR 0029). A file
+   * without a line, a closed writer and a file that is no longer the one
+   * opened give none. It never throws.
+   */
+  anchor(): void;
+  /**
    * Returns the counts.
    *
    * @returns A frozen snapshot.
@@ -984,6 +991,21 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
     turnDay(stampOf(clock));
   };
 
+  // The anchor after a write: the open file, flushed like a file given up,
+  // so that the anchor names lines that are on the disk (ADR 0028).
+  const anchorNow = (): void => {
+    if (closed) return;
+    verify();
+    const open = file;
+    if (open === undefined || open.seq === 0) return;
+    try {
+      fs.fsyncSync(open.fd);
+    } catch {
+      // The lines stay written; only a crash of the system could lose them.
+    }
+    anchor(open);
+  };
+
   const close = (): void => {
     closed = true;
     // A descriptor that is no longer the file opened is never closed.
@@ -1030,6 +1052,7 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
       attach,
       sweep,
       tick,
+      anchor: anchorNow,
       counts,
     }),
   });

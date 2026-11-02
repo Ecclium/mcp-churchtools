@@ -1380,6 +1380,53 @@ describe('the anchors of the writer', () => {
     expect(anchors).toHaveLength(1);
   });
 
+  it('reports the head of the open file after a write, flushed, and keeps writing to it', () => {
+    const order: string[] = [];
+    const { writer, anchors, content, calls } = anchored({
+      fsync: (fd) => order.push(`fsync ${String(fd)}`),
+    });
+    // Nothing to anchor before the first line.
+    writer.anchor();
+    expect(anchors).toEqual([]);
+    writer.write('{"v":1}');
+    writer.anchor();
+    expect(order).toEqual([`fsync ${String(fileFd)}`]);
+    expect(anchors).toEqual([headOf(nameOf(1), content(fileFd))]);
+    writer.write('{"v":2}');
+    writer.anchor();
+    expect(anchors[1]?.seq).toBe(2);
+    expect(calls.filter((call) => call.startsWith('close'))).not.toContain(
+      `close ${String(fileFd)}`,
+    );
+    writer.close();
+    expect(anchors).toHaveLength(3);
+    // A closed writer gives no anchor.
+    writer.anchor();
+    expect(anchors).toHaveLength(3);
+  });
+
+  it('gives the anchor after a write also when the flush fails, and for a file no longer the one opened only the anchor of giving it up', () => {
+    const deleted = new Set<number>();
+    const { writer, anchors } = anchored({
+      fsync: () => {
+        throw new Error('EIO');
+      },
+      fstat: (fd) =>
+        deleted.has(fd)
+          ? stats({ kind: 'file', ino: 900 + fd, nlink: 1, size: 1 })
+          : undefined,
+    });
+    writer.write('{"v":1}');
+    writer.anchor();
+    expect(anchors).toHaveLength(1);
+    // A descriptor that names another file is given up with its anchor;
+    // no second anchor follows, because no file is open.
+    deleted.add(fileFd);
+    writer.anchor();
+    expect(anchors).toHaveLength(2);
+    expect(anchors[1]).toEqual(anchors[0]);
+  });
+
   it('reports no anchor for a file without a whole line', () => {
     const { writer, anchors } = anchored({ write: script(4, 'ENOSPC') });
     expect(writer.write('{"v":1}')).toBe(false);

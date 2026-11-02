@@ -58,6 +58,11 @@ export interface AuditFileTarget extends LineWriter {
    * @returns Whether the file is ready.
    */
   ready(): boolean;
+  /**
+   * Reports the head of the chain of the file as an anchor on the log,
+   * after a write. A target without it gives no anchor.
+   */
+  anchor?(): void;
 }
 
 /** Options of `record` of {@link AuditSink}. */
@@ -130,6 +135,13 @@ export interface AuditSink {
    * @returns The count.
    */
   failures(): number;
+  /**
+   * Puts the head of the chain of the audit file as an anchor on the log,
+   * after a call that wrote to ChurchTools (ADR 0029). Without a file, or
+   * when the file cannot, it does nothing. It never throws. A sink for
+   * tests may leave it out.
+   */
+  anchor?(): void;
 }
 
 type Json =
@@ -733,10 +745,19 @@ export function createAuditSink(options: AuditSinkOptions): AuditSink {
     }
   };
 
+  const anchor = (): void => {
+    try {
+      file?.anchor?.();
+    } catch {
+      // The anchor is lost; the line of the call is in the file.
+    }
+  };
+
   return Object.freeze({
     record,
     hasFile: file !== undefined,
     ready,
     failures: () => failures,
+    anchor,
   });
 }

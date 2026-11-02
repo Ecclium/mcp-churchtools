@@ -692,6 +692,36 @@ describe('the provider', () => {
   });
 });
 
+describe('the anchor after a write', () => {
+  it('asks the audit file for its anchor, and does nothing without one', () => {
+    let asked = 0;
+    const file = {
+      write: () => true,
+      ready: () => true,
+      anchor: () => {
+        asked += 1;
+      },
+    };
+    make({ file }).sink.anchor?.();
+    expect(asked).toBe(1);
+    expect(() => make().sink.anchor?.()).not.toThrow();
+    expect(() =>
+      make({ file: { write: () => true, ready: () => true } }).sink.anchor?.(),
+    ).not.toThrow();
+  });
+
+  it('never throws when the file does', () => {
+    const file = {
+      write: () => true,
+      ready: () => true,
+      anchor: () => {
+        throw new Error('EIO');
+      },
+    };
+    expect(() => make({ file }).sink.anchor?.()).not.toThrow();
+  });
+});
+
 describe('the state of a write', () => {
   it.each([
     ['planned', 'ok', undefined],
