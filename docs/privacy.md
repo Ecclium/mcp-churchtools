@@ -55,6 +55,10 @@ Ecclium hat keine Datenbank und keinen Zwischenspeicher für Antworten von Churc
 
 ## Was Ecclium ablegt
 
+### Richtlinie
+
+Die Datei der [Richtlinie](policy.md) legt der Betreiber selbst an. Sie kann in `interactive.contacts` Kontaktangaben der Gemeinde enthalten, etwa die E-Mail-Adresse eines Sekretariats, damit ein Text von Ecclium sie nennen darf. Nennen Sie dort nur Angaben, die ohnehin für alle Leser des Wikis gedacht sind. Ecclium liest die Datei beim Start und schreibt sie nie, das Audit nennt nur ihren Hash.
+
 ### Audit-Datei
 
 Nur wenn `ECCLIUM_STATE_DIR` gesetzt ist, schreibt Ecclium eine Audit-Datei in den Ordner `audit` darin, eine Datei je Start und UTC-Tag. Wie Sie den Ordner anlegen, steht unter [Betrieb über stdio](betrieb/stdio.md).
