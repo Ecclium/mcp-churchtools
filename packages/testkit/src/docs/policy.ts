@@ -30,6 +30,8 @@ export const policyFieldMeanings: Readonly<Record<string, string>> =
       'Die Schreib-Tools, die auf das Ziel schreiben dürfen, mit ihrem Namen wie `ct_wiki_page_create`.',
     'interactive.targets[].maxPerDay':
       'Wie oft je Prinzipal und UTC-Tag jedes dieser Tools auf das Ziel schreiben darf.',
+    'interactive.contacts':
+      'Die Kontaktangaben der Gemeinde, die ein Text stehen haben darf, den Ecclium schreibt: E-Mail-Adressen, Telefonnummern, IBAN und AHV-Nummern, je ein Wert. Jede andere solche Angabe lehnt die ContentPolicy ab. Ohne Eintrag steht keine. Eine E-Mail-Adresse gilt ohne Gross und Klein, eine Nummer nur mit ihren Ziffern und einem führenden `+`, so dass `000 000 12 34` und `000-000-12-34` gleich sind, `+41 00 000 12 34` aber nicht.',
     unattended:
       'Der Teil für Routinen, die ohne Person laufen. Ecclium prüft ihn beim Start, benutzt wird er erst mit dem Runner einer späteren Version.',
     'unattended[].routine': 'Kennung der Routine, etwa `dienstplan-report`.',
@@ -257,7 +259,7 @@ export function policyTargetFieldPaths(): readonly string[] {
  * It changes with the versions that use more of it.
  */
 export const policyState =
-  'Der Server liest die Richtlinie beim Start und nimmt das Lesebudget aus ihr. Ziele, Namen und Obergrenzen der Schreibvorgänge wendet der Write-Guard an, beim Planen und noch einmal unmittelbar vor dem Senden. Wo diese Seite sagt, ein Wunsch gehe an den Betreiber, lehnt der Server ihn mit `policy_denied` ab, bis die Freigabe-Warteschlange kommt. Den unbeaufsichtigten Teil benutzt erst der Runner einer späteren Version, bis dahin schreibt Ecclium nur in einer Unterhaltung.';
+  'Der Server liest die Richtlinie beim Start und nimmt das Lesebudget aus ihr. Ziele, Namen und Obergrenzen der Schreibvorgänge wendet der Write-Guard an, beim Planen und noch einmal unmittelbar vor dem Senden. Die Kontaktangaben nimmt die ContentPolicy, wenn sie einen Text prüft. Wo diese Seite sagt, ein Wunsch gehe an den Betreiber, lehnt der Server ihn mit `policy_denied` ab, bis die Freigabe-Warteschlange kommt. Den unbeaufsichtigten Teil benutzt erst der Runner einer späteren Version, bis dahin schreibt Ecclium nur in einer Unterhaltung.';
 
 const example = [
   '# Richtlinie der Gemeinde, geprüft beim Start von Ecclium.',
@@ -281,6 +283,9 @@ const example = [
   '        service: { id: 7, name: Technik }',
   '      tools: [ct_services_request]',
   '      maxPerDay: 5',
+  '  contacts:',
+  '    - sekretariat@example.org',
+  '    - +41 00 000 12 34',
   'unattended:',
   '  - routine: dienstplan-report',
   '    credential: bericht',

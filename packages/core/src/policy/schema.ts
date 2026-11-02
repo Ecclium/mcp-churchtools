@@ -46,6 +46,10 @@ export const policyLimits = Object.freeze({
   id: 2_147_483_647,
   /** The longest name of a target. */
   name: maxWikiTitleLength,
+  /** The most contact values of the interactive part. */
+  contacts: 100,
+  /** The longest contact value, as long as the longest e-mail address. */
+  contactLength: 254,
 } as const);
 
 /** The levels of redaction a routine may ask for its call of the model. */
@@ -145,6 +149,10 @@ export const policyFileSchema = z.strictObject({
         .max(policyLimits.readBudgetPerDay)
         .optional(),
       targets: z.array(interactiveEntry).max(policyLimits.entries).optional(),
+      contacts: z
+        .array(z.string().min(1).max(policyLimits.contactLength))
+        .max(policyLimits.contacts)
+        .optional(),
     })
     .optional(),
   unattended: z.array(unattendedEntry).max(policyLimits.entries).optional(),
@@ -191,6 +199,13 @@ export interface Policy {
     readonly readBudgetPerDay: number;
     /** Empty: what the account may, except for groups and services. */
     readonly targets: readonly InteractiveEntry[];
+    /**
+     * The e-mail addresses, phone numbers, IBAN and AHV numbers of the
+     * church that a text Ecclium writes may hold, in the normal form of
+     * the content policy (ADR 0030). Only when the file lists some, so
+     * that the hash of a policy without them stays the same.
+     */
+    readonly contacts?: readonly string[];
   };
   readonly unattended: readonly UnattendedEntry[];
 }

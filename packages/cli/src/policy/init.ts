@@ -358,6 +358,9 @@ export async function initPolicy(
   const text = renderPolicyProposal({
     categories,
     readBudgetPerDay: config.policy.interactive.readBudgetPerDay,
+    ...(config.policy.interactive.contacts === undefined
+      ? {}
+      : { contacts: config.policy.interactive.contacts }),
     ...(targets.days === undefined ? {} : { days: targets.days }),
   });
   for (const line of text.split('\n')) {

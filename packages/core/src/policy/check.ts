@@ -17,6 +17,7 @@
  *
  * @packageDocumentation
  */
+import { contactKeyOf, normalizeContent } from '../content/index.js';
 import {
   type InteractiveEntry,
   type InteractiveTarget,
@@ -267,6 +268,21 @@ export function checkPolicy(value: unknown): PolicyCheckResult {
     );
   }
 
+  // Every contact value is exactly one e-mail address, phone number, IBAN
+  // or AHV number in the normal form of the content policy, each once by
+  // the key it is compared by (ADR 0030).
+  const contacts: string[] = [];
+  const keys = new Set<string>();
+  for (const [index, entry] of (file.interactive?.contacts ?? []).entries()) {
+    const at = `interactive.contacts[${String(index)}]`;
+    const normal = normalizeContent(entry);
+    const key = normal.ok ? contactKeyOf(normal.text) : undefined;
+    if (!normal.ok || key === undefined) return refuse('policy_invalid', at);
+    if (keys.has(key)) return refuse('policy_contradiction', at);
+    keys.add(key);
+    contacts.push(normal.text);
+  }
+
   const levels = new Map<string, string>();
   const unattended: UnattendedEntry[] = [];
   for (const [index, entry] of (file.unattended ?? []).entries()) {
@@ -311,6 +327,7 @@ export function checkPolicy(value: unknown): PolicyCheckResult {
         file.interactive?.readBudgetPerDay ??
         policyLimits.defaultReadBudgetPerDay,
       targets: Object.freeze(interactive),
+      ...(contacts.length > 0 ? { contacts: Object.freeze(contacts) } : {}),
     }),
     unattended: Object.freeze(unattended),
   });

@@ -255,6 +255,76 @@ describe('checkPolicy', () => {
     });
   });
 
+  it('keeps contact values in the normal form of the content policy, only when there are some', () => {
+    const policy = policyOf({
+      schema: 'policy.v1',
+      interactive: {
+        contacts: ['sekretariat@example.org', '\uff10\uff10\uff10 000 12 34'],
+      },
+    });
+    expect(policy.interactive.contacts).toEqual([
+      'sekretariat@example.org',
+      '000 000 12 34',
+    ]);
+    expect(Object.isFrozen(policy.interactive.contacts)).toBe(true);
+    expect(
+      'contacts' in
+        policyOf({ schema: 'policy.v1', interactive: {} }).interactive,
+    ).toBe(false);
+    expect(
+      'contacts' in
+        policyOf({ schema: 'policy.v1', interactive: { contacts: [] } })
+          .interactive,
+    ).toBe(false);
+  });
+
+  it('refuses a contact value that is no single value, and one twice', () => {
+    for (const contact of [
+      'Pfarramt',
+      'Tel. 000 000 12 34',
+      'a@example.org b@example.org',
+      'a\ud800@example.org',
+    ]) {
+      expect(
+        checkPolicy({
+          schema: 'policy.v1',
+          interactive: { contacts: ['sekretariat@example.org', contact] },
+        }),
+      ).toEqual({
+        ok: false,
+        code: 'policy_invalid',
+        field: 'interactive.contacts[1]',
+      });
+    }
+    expect(
+      checkPolicy({
+        schema: 'policy.v1',
+        interactive: { contacts: ['000 000 12 34', '000-000-12-34'] },
+      }),
+    ).toEqual({
+      ok: false,
+      code: 'policy_contradiction',
+      field: 'interactive.contacts[1]',
+    });
+    expect(
+      checkPolicy({
+        schema: 'policy.v1',
+        interactive: { contacts: ['a'.repeat(255)] },
+      }),
+    ).toMatchObject({ ok: false, code: 'policy_invalid' });
+    expect(
+      checkPolicy({
+        schema: 'policy.v1',
+        interactive: {
+          contacts: Array.from(
+            { length: 101 },
+            (_, index) => `a${String(index)}@example.org`,
+          ),
+        },
+      }),
+    ).toMatchObject({ ok: false, code: 'policy_invalid' });
+  });
+
   it('refuses more than 200 entries and 20 tools', () => {
     expect(
       checkPolicy({

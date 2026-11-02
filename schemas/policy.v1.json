@@ -242,6 +242,15 @@
             ],
             "additionalProperties": false
           }
+        },
+        "contacts": {
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 254
+          }
         }
       },
       "additionalProperties": false
