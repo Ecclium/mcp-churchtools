@@ -209,6 +209,30 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Die Grenze der Schreibvorgänge dieses Tools auf dieses Ziel für den UTC-Tag ist erreicht. Der Aufruf endet mit `policy_denied`, ohne zu schreiben.',
     policy_count_unavailable:
       'Ecclium konnte einen Schreibvorgang nicht gegen die Grenze der Richtlinie zählen, etwa ohne Ordner für den Zustand. Der Aufruf endet mit `policy_denied`, ohne zu schreiben.',
+    content_too_long:
+      'Ein Text eines Schreibvorgangs ist länger als 64 KiB oder hat mehr als 2000 Sternchen, Unterstriche, Tilden und Ausrufezeichen. Der Aufruf endet ohne Schreiben, der Grund steht in `contentViolations` des Audits.',
+    content_unparsable:
+      'Die ContentPolicy konnte einen Text nicht als Markdown lesen oder las seine geschriebene Form anders. Der Aufruf endet ohne Schreiben.',
+    content_html:
+      'Ein Text enthält HTML, einen Kommentar oder einen Verweis auf ein Zeichen wie `&amp;`. Der Aufruf endet ohne Schreiben.',
+    content_image:
+      'Ein Text enthält ein Bild. Der Aufruf endet ohne Schreiben.',
+    content_link:
+      'Ein Text enthält einen Link. Der Aufruf endet ohne Schreiben.',
+    content_mention:
+      'Ein Text erwähnt eine Person mit einem Link. Der Aufruf endet ohne Schreiben.',
+    content_reference:
+      'Ein Text enthält eine Referenz oder Fussnote in Markdown. Der Aufruf endet ohne Schreiben.',
+    content_web_address:
+      'Ein Text enthält etwas, das eine Darstellung als Webadresse verlinken könnte. Der Aufruf endet ohne Schreiben.',
+    content_contact:
+      'Ein Text enthält eine E-Mail-Adresse, Telefonnummer, IBAN oder AHV-Nummer, die nicht in `interactive.contacts` der Richtlinie steht. Der Aufruf endet ohne Schreiben.',
+    content_masked:
+      'Ein Text enthält eine Maske der Schwärzung, ein Pseudonym oder die Grenze eines Datenumschlags. Der Aufruf endet ohne Schreiben.',
+    content_unsupported:
+      'Ein Text nutzt Markdown ausserhalb der erlaubten Teilmenge, oder ein Titel enthält Zeichen von Markdown oder mehr als eine Zeile. Der Aufruf endet ohne Schreiben.',
+    content_too_deep:
+      'Ein Text verschachtelt Listen oder Hervorhebung tiefer als erlaubt. Der Aufruf endet ohne Schreiben.',
     read_search_refused:
       'Ein Tool, das nicht als besonders schützenswert eingestuft ist, wollte Personen oder Gruppen lesen. Ecclium weist das ab.',
     read_names_refused:
@@ -381,7 +405,9 @@ const sections: readonly {
   {
     title: 'Write-Guard',
     fits: (name: string) =>
-      name.startsWith('write_') || name.startsWith('policy_'),
+      name.startsWith('write_') ||
+      name.startsWith('policy_') ||
+      name.startsWith('content_'),
   },
   {
     title: 'Lesender Zugriff über den Kern',

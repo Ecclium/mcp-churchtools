@@ -26,6 +26,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { createAuditSink } from '../audit/index.js';
+import { contentSentences } from '../content/index.js';
 import { checkPolicy, defaultPolicy } from '../policy/check.js';
 import { policyHashOf } from '../policy/hash.js';
 import type { Policy } from '../policy/schema.js';
@@ -553,6 +554,43 @@ describe('a write tool in the pipeline', () => {
       outcome: 'error',
       writeState: 'conflict',
     });
+  });
+
+  it('ends a text the content policy refuses as denied, with its reasons in the audit', async () => {
+    for (const catches of [false, true]) {
+      const plan = (write: WritePort) =>
+        write.plan({
+          kind: 'wikiPageCreate',
+          categoryId: 12,
+          title: 'Bericht',
+          text: 'Mehr unter example.org',
+        });
+      const tool = customTool('ct_test_content', async (write) => {
+        if (!catches) return plan(write);
+        try {
+          return await plan(write);
+        } catch {
+          return { kind: 'skipped', reason: 'unchanged' };
+        }
+      });
+      const { pipeline, events, logs } = setup({ tools: [tool] });
+      const outcome = await pipeline.call(
+        'ct_test_content',
+        { text: 'x' },
+        request(),
+      );
+      expect(!outcome.ok && outcome.error).toEqual({
+        code: 'validation',
+        message: contentSentences.webAddress,
+      });
+      expect(events()[0]).toMatchObject({
+        outcome: 'denied',
+        errorCode: 'validation',
+        writeState: 'denied',
+        contentViolations: ['webAddress'],
+      });
+      expect(logs()).toContain('content_web_address');
+    }
   });
 
   it('ends a plan refused as invalid as failed', async () => {

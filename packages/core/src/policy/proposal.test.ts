@@ -259,6 +259,23 @@ describe('a proposal', () => {
     expect(load(text).interactive.targets).toHaveLength(200);
   });
 
+  it('keeps the contact values of the policy in force', () => {
+    const contacts = ['sekretariat@example.org', '+41 00 000 12 34'];
+    const text = renderPolicyProposal({
+      categories: [category(12, 'Berichte')],
+      readBudgetPerDay: 200,
+      contacts,
+    });
+    expect(load(text).interactive.contacts).toEqual(contacts);
+    expect(
+      renderPolicyProposal({
+        categories: [category(12, 'Berichte')],
+        readBudgetPerDay: 200,
+        contacts: [],
+      }),
+    ).not.toContain('contacts');
+  });
+
   it('reads back every name it takes, and comments out every other', () => {
     fc.assert(
       fc.property(

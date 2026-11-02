@@ -135,6 +135,18 @@ Die Tools des Toolsets `docs` und `ct_api_search_actions` schlagen in einem Inde
 - **Falsche Fakten.** Welche Operation welches Recht verlangt, ordnet das Projekt von Hand zu, jede Paarung mit Beleg. Fehlt eine Zuordnung, heisst das nicht, dass kein Recht nötig ist. Eine falsche Zuordnung könnte zu einem zu weiten Recht raten. Prüfen Sie deshalb jedes Recht, bevor Sie es vergeben, und vergeben Sie es nur für die Objekte, die gelesen werden sollen.
 - **Widerruf.** Die Erlaubnis für die Texte der Academy hat der Hersteller mündlich gegeben. Nimmt er sie zurück, erscheint die nächste Version ohne diese Texte. Eine Version, die Sie schon installiert haben, behält sie, bis Sie sie ersetzen.
 
+## Was Ecclium ins Wiki schreibt
+
+Jeder Text, den ein Schreib-Tool ins Wiki schreiben will, geht durch die ContentPolicy, bevor der Server ChurchTools fragt ([ADR 0030](adr/0030-contentpolicy.md)). Hängt ein Tool einen Abschnitt an, prüft sie nur den neuen Abschnitt, der Text der Seite bleibt, wie er ist. Geschrieben wird nur eine Teilmenge von Markdown: Überschriften, Absätze, Listen, Tabellen, fett und kursiv, in einer festen Form, die der Server selbst schreibt.
+
+- **Abgelehnt** werden HTML, Bilder, Links jeder Art, Erwähnungen von Personen, Referenzen und Fussnoten, Code, Zitate und Trennlinien. Bilder und Links sind Wege, Daten aus dem Wiki wegzuschicken, und eine Erwähnung benachrichtigt womöglich eine Person.
+- **Webadressen ohne Link** werden ebenfalls abgelehnt, weil die Ansicht von ChurchTools eine nackte Adresse als Link zeigt. Die Prüfung ist bewusst streng: Auch `St.Gallen` oder `bericht.pdf` gelten als Adresse, ein Leerzeichen nach dem Punkt hilft.
+- **Kontaktangaben** wie E-Mail-Adressen, Telefonnummern, IBAN und AHV-Nummern stehen nur in einem Text, wenn sie in `interactive.contacts` der [Richtlinie](policy.md) stehen. So trägt ein Modell keine Adresse aus einer Seite mit kleinem Leserkreis in eine mit grossem.
+- **Masken** der Schwärzung, Pseudonyme und die Grenzen des Datenumschlags werden abgelehnt, damit ein Modell eine maskierte Antwort nicht als Text zurück ins Wiki schreibt.
+- **Normalform:** Zeichen voller Breite, Ligaturen und ähnliche schreibt der Server in ihrer einfachen Form, unsichtbare Zeichen entfernt er. Eine Ellipse wird so zu drei Punkten.
+- **Grenzen:** Ein Feld hat höchstens 64 KiB und höchstens 2000 Sternchen, Unterstriche, Tilden und Ausrufezeichen, damit auch ein bösartiger Text schnell geprüft ist.
+- **Was bleibt:** Welche Bibliothek ChurchTools zum Darstellen nutzt, ist nicht bekannt. Eine nackte IP-Adresse oder eine Kontaktangabe in einer Form, die die Prüfung nicht kennt, kann durchgehen. Ein Text, den ein Mensch danach im Web-Editor speichert, kann der Editor umschreiben.
+
 ## Was später kommt
 
 - Phase 5: Tools, die schreiben, mit Bestätigung über eine Rückfrage im Client, eine Freigabe durch den Betreiber oder ein Echo, und was jeder dieser Wege beweist und was nicht. Dazu das Lesebudget in der Richtlinie.

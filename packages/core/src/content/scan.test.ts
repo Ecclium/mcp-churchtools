@@ -5,6 +5,7 @@ import {
   checkReadableText,
   contactKey,
   contactKeyOf,
+  contactKeysOf,
   hasMask,
   hasWebAddress,
 } from './scan.js';
@@ -149,6 +150,14 @@ describe('contactKey and contactKeyOf', () => {
     expect(contactKeyOf('Tel. 000 000 12 34')).toBeUndefined();
     expect(contactKeyOf('a@example.org b@example.org')).toBeUndefined();
     expect(contactKeyOf('')).toBeUndefined();
+  });
+});
+
+describe('contactKeysOf', () => {
+  it('gives the key of every value and leaves out what is no single value', () => {
+    expect(
+      contactKeysOf(['Info@example.org', 'Pfarramt', '000-000-12-34']),
+    ).toEqual(new Set(['info@example.org', '0000001234']));
   });
 });
 

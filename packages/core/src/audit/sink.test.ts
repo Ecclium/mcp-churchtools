@@ -783,6 +783,42 @@ describe('the state of a write', () => {
   });
 });
 
+describe('the reasons of a refused text', () => {
+  it('keeps the reasons on a refusal', () => {
+    const { sink, audit, logs } = make();
+    sink.record({
+      ...base,
+      outcome: 'denied',
+      errorCode: 'validation',
+      writeState: 'denied',
+      contentViolations: ['webAddress', 'contact'],
+    });
+    expect(event(audit())).toMatchObject({
+      contentViolations: ['webAddress', 'contact'],
+    });
+    expect(logs()).toEqual([]);
+  });
+
+  it.each([
+    ['on an outcome other than denied', 'ok', ['link']],
+    ['as an empty list', 'denied', []],
+    ['as no list', 'denied', 'link'],
+    ['with an unknown reason', 'denied', ['shout']],
+  ] as const)('leaves them out %s and reports it', (_, outcome, reasons) => {
+    const { sink, audit, logs } = make();
+    sink.record({
+      ...base,
+      outcome,
+      ...(outcome === 'ok' ? {} : { errorCode: 'validation' as const }),
+      contentViolations: reasons as unknown as readonly ['link'],
+    });
+    expect(event(audit())).not.toHaveProperty('contentViolations');
+    expect(logs().map((line) => line.event)).toEqual([
+      'audit_invalid_content_violations',
+    ]);
+  });
+});
+
 describe('other optional fields', () => {
   it.each([
     ['runId', 'not-a-uuid', 'audit_invalid_run_id'],

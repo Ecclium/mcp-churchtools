@@ -12,8 +12,13 @@ export {
   type ContentCheckOptions,
   type ContentCheckResult,
 } from './check.js';
-export { maxContentBytes, maxDelimiterSigns } from './normalize.js';
-export { contactKeyOf } from './scan.js';
+export {
+  maxContentBytes,
+  maxDelimiterSigns,
+  normalizeContent,
+  type NormalizedContent,
+} from './normalize.js';
+export { contactKeyOf, contactKeysOf } from './scan.js';
 export {
   contentSentences,
   contentViolationKinds,

@@ -1,6 +1,12 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
 
-import { type AuditEventV1, type ErrorCode, errorCodes } from './index.js';
+import {
+  type AuditEventV1,
+  type ContentViolationKind,
+  contentViolationKinds,
+  type ErrorCode,
+  errorCodes,
+} from './index.js';
 
 // Lists every code once. A code missing here fails the type check, a code
 // missing from errorCodes fails the comparison below.
@@ -56,6 +62,7 @@ describe('AuditEventV1', () => {
       | 'objectRefs'
       | 'objectRefsOmitted'
       | 'errorCode'
+      | 'contentViolations'
       | 'withheldAfterRead'
       | 'durationMs'
       | 'seq'
@@ -81,5 +88,28 @@ describe('AuditEventV1', () => {
       event.objectRefs[0] = 'person-id-1';
     };
     expect(change).toBeTypeOf('function');
+  });
+});
+
+describe('contentViolationKinds', () => {
+  it('names every reason of the content policy once, frozen', () => {
+    const every: Record<ContentViolationKind, true> = {
+      tooLong: true,
+      unparsable: true,
+      html: true,
+      image: true,
+      link: true,
+      mention: true,
+      reference: true,
+      webAddress: true,
+      contact: true,
+      masked: true,
+      unsupported: true,
+      tooDeep: true,
+    };
+    expect([...contentViolationKinds].sort()).toEqual(
+      Object.keys(every).sort(),
+    );
+    expect(Object.isFrozen(contentViolationKinds)).toBe(true);
   });
 });

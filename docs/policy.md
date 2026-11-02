@@ -4,7 +4,7 @@
 
 Die Richtlinie legt fest, auf welche Ziele Schreibvorgänge von Ecclium gehen dürfen, wie oft je Tag, und wie viel ein Akteur je Tag lesen darf ([ADR 0032](adr/0032-richtlinie-und-pruefcode.md)). Eine Bestätigung allein genügt nicht: Ohne Grenze dürfte ein gestohlenes Token, ein kompromittierter Client oder ein Tool, das im Client auf «immer erlauben» steht, alles, was das Dienstkonto in ChurchTools darf.
 
-Stand: Der Server liest die Richtlinie beim Start und nimmt das Lesebudget aus ihr. Ziele, Namen und Obergrenzen der Schreibvorgänge wendet der Write-Guard an, beim Planen und noch einmal unmittelbar vor dem Senden. Wo diese Seite sagt, ein Wunsch gehe an den Betreiber, lehnt der Server ihn mit `policy_denied` ab, bis die Freigabe-Warteschlange kommt. Den unbeaufsichtigten Teil benutzt erst der Runner einer späteren Version, bis dahin schreibt Ecclium nur in einer Unterhaltung.
+Stand: Der Server liest die Richtlinie beim Start und nimmt das Lesebudget aus ihr. Ziele, Namen und Obergrenzen der Schreibvorgänge wendet der Write-Guard an, beim Planen und noch einmal unmittelbar vor dem Senden. Die Kontaktangaben nimmt die ContentPolicy, wenn sie einen Text prüft. Wo diese Seite sagt, ein Wunsch gehe an den Betreiber, lehnt der Server ihn mit `policy_denied` ab, bis die Freigabe-Warteschlange kommt. Den unbeaufsichtigten Teil benutzt erst der Runner einer späteren Version, bis dahin schreibt Ecclium nur in einer Unterhaltung.
 
 ## Datei
 
@@ -45,6 +45,9 @@ interactive:
         service: { id: 7, name: Technik }
       tools: [ct_services_request]
       maxPerDay: 5
+  contacts:
+    - sekretariat@example.org
+    - +41 00 000 12 34
 unattended:
   - routine: dienstplan-report
     credential: bericht
@@ -70,6 +73,7 @@ unattended:
 | `interactive.targets[].target` | Ziel | ja | Das Ziel, siehe «Ziele». |
 | `interactive.targets[].tools` | Liste mit 1 bis 20 Einträgen | ja | Die Schreib-Tools, die auf das Ziel schreiben dürfen, mit ihrem Namen wie `ct_wiki_page_create`. |
 | `interactive.targets[].maxPerDay` | ganze Zahl von 1 bis 1'000 | ja | Wie oft je Prinzipal und UTC-Tag jedes dieser Tools auf das Ziel schreiben darf. |
+| `interactive.contacts` | Liste mit höchstens 100 Einträgen | nein | Die Kontaktangaben der Gemeinde, die ein Text stehen haben darf, den Ecclium schreibt: E-Mail-Adressen, Telefonnummern, IBAN und AHV-Nummern, je ein Wert. Jede andere solche Angabe lehnt die ContentPolicy ab. Ohne Eintrag steht keine. Eine E-Mail-Adresse gilt ohne Gross und Klein, eine Nummer nur mit ihren Ziffern, Buchstaben und einem führenden `+`, so dass `000 000 12 34` und `000-000-12-34` gleich sind, `+41 00 000 12 34` aber nicht. Einen Wert nur aus Ziffern setzen Sie in Anführungszeichen, sonst liest YAML ihn als Zahl. |
 | `unattended` | Liste mit höchstens 200 Einträgen | nein | Der Teil für Routinen, die ohne Person laufen. Ecclium prüft ihn beim Start, benutzt wird er erst mit dem Runner einer späteren Version. |
 | `unattended[].routine` | Text nach festem Muster, höchstens 63 Zeichen | ja | Kennung der Routine, etwa `dienstplan-report`. |
 | `unattended[].credential` | Text nach festem Muster, höchstens 63 Zeichen | ja | Name der Zugangsdaten, mit denen der Runner für diese Routine schreibt, damit er das engste passende Dienstkonto nimmt. |
