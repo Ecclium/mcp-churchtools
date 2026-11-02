@@ -1,17 +1,21 @@
 /**
  * The daily read budget of the tools with sensitivity special (ADR 0063):
- * one budget for all of them, per actor and UTC day, fixed in this
- * version. The pipeline counts against it in the store of quotas.
+ * one budget for all of them, per actor and UTC day. The policy sets it,
+ * from 0 to 1000 (ADR 0032). The pipeline counts against it in the store
+ * of quotas.
  *
  * @packageDocumentation
  */
 import { type IsoDate, isIsoDate } from '@ecclium/mcp-churchtools-plugin-api';
 
+import { policyLimits } from '../policy/schema.js';
+
 /**
  * How many calls of tools with sensitivity special one actor may make per
- * UTC day. A call above it ends with `policy_denied` until the day ends.
+ * UTC day without a policy that says otherwise. A call above the budget
+ * ends with `policy_denied` until the day ends.
  */
-export const specialReadBudget = 200;
+export const specialReadBudget = policyLimits.defaultReadBudgetPerDay;
 
 /**
  * How long the pipeline waits for the store of quotas before the call

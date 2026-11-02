@@ -74,6 +74,7 @@ export function checkConfig(
   const lines = renderConfigReport(result.report, {
     valid: result.ok,
     showValues: options.showValues,
+    policy: result.ok ? result.config.policy : undefined,
   });
   for (const line of lines) options.output.stdout(line);
   return result.ok ? exitCodes.ok : exitCodes.invalidConfig;

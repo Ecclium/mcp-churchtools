@@ -56,4 +56,5 @@ export {
   variableNames,
   variablePrefix,
   variables,
+  yamlDebugVariableNames,
 } from './variables.js';

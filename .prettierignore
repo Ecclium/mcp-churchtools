@@ -32,6 +32,11 @@ schemas/audit-event.v1.json
 # the core, compared byte by byte (pnpm docs:generate, ADR 0054).
 docs/log-events.md
 
+# Written by a test as file snapshots from the schema of the policy in the
+# core, compared byte by byte (pnpm docs:generate, ADR 0032).
+docs/policy.md
+schemas/policy.v1.json
+
 # Written by pnpm docs:refresh with one operation per line, which a test
 # compares byte by byte with the facts (ADR 0067).
 packages/core/src/churchtools/catalog/generated.ts

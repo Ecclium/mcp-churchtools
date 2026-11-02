@@ -45,7 +45,27 @@ export {
   variableNames,
   variablePrefix,
   variables,
+  yamlDebugVariableNames,
 } from './config/index.js';
+export {
+  defaultPolicy,
+  type InteractiveEntry,
+  type InteractiveTarget,
+  maxPolicyFileBytes,
+  type ModelRedaction,
+  modelRedactionLevels,
+  type Policy,
+  type PolicyCode,
+  policyCodes,
+  type PolicyFileSystem,
+  policyHashOf,
+  policyJsonSchema,
+  policyLimits,
+  type PolicyTargetKind,
+  targetKeyOf,
+  type UnattendedEntry,
+  type UnattendedTarget,
+} from './policy/index.js';
 export {
   auditEventJsonSchema,
   type AuditFileCode,

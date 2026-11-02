@@ -25,6 +25,7 @@ const commentedOnly: readonly string[] = [
   tokenVariableName,
   'ECCLIUM_PSEUDONYM_KEY_FILE',
   'ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE',
+  'ECCLIUM_POLICY_FILE',
 ];
 
 const text = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');

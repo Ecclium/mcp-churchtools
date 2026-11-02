@@ -18,6 +18,9 @@ import type { RedactionLevel } from '@ecclium/mcp-churchtools-plugin-api';
 import { parseChurchToolsOrigin, Secret } from '../http/index.js';
 import type { KeyMaterial } from '../keys/index.js';
 import type { LogLevel } from '../logger/index.js';
+import { defaultPolicy } from '../policy/check.js';
+import { type PolicyFileSystem, readPolicyFile } from '../policy/file.js';
+import type { Policy } from '../policy/schema.js';
 import type { ToolsetName } from '../registry/toolsets.js';
 import type { ConfigProblemCode, ConfigWarningCode } from './codes.js';
 import { readPseudonymKeyFile } from './pseudonym-key-file.js';
@@ -45,6 +48,7 @@ import {
   variableNames,
   variablePrefix,
   variables,
+  yamlDebugVariableNames,
 } from './variables.js';
 
 /** How the server is reached. Over http, the rules for stdio refuse. */
@@ -94,6 +98,12 @@ export interface EccliumConfig {
    * no files, and the value does nothing.
    */
   readonly auditRetentionMonths: number;
+  /**
+   * The checked policy from `ECCLIUM_POLICY_FILE`, or the default policy
+   * when the variable is not set (ADR 0032). Read at the start, also when
+   * the server only reads, because the read budget comes from it.
+   */
+  readonly policy: Policy;
   readonly stdioSubject: string;
   readonly logLevel: LogLevel;
 }
@@ -110,6 +120,7 @@ export type SettingKey =
   | 'toolsets'
   | 'stateDir'
   | 'auditRetentionMonths'
+  | 'policy'
   | 'stdioSubject'
   | 'logLevel';
 
@@ -151,12 +162,21 @@ export interface ConfigProblem {
   readonly code: ConfigProblemCode;
   /**
    * The variable: a known name, the right name for one in the wrong case,
-   * the variable of TLS, `NODE_OPTIONS` for an option of TLS in it, or an
-   * unknown name in capitals, digits and underscores of at most 64
-   * characters after the prefix. Absent for any other name and for an
-   * option Node.js was started with.
+   * the variable of TLS, `NODE_DEBUG`, `LOG_TOKENS` or `LOG_STREAM`,
+   * `NODE_OPTIONS` for an option of TLS in it, or an unknown name in
+   * capitals, digits and underscores of at most 64 characters after the
+   * prefix. Absent for any other name and for an option Node.js was started
+   * with.
    */
   readonly variable?: string;
+  /**
+   * For a problem of the file of the policy: the path of the field, such as
+   * `interactive.targets[2].maxPerDay`, made of names of the schema and
+   * positions only, never of a value or an unknown name (ADR 0032).
+   */
+  readonly field?: string;
+  /** For a problem of the YAML of the file of the policy: its line, from 1. */
+  readonly line?: number;
 }
 
 /**
@@ -198,8 +218,8 @@ export interface ConfigSources {
    */
   readonly execArgv?: readonly string[];
   /**
-   * The file functions for the token file and the key files for
-   * pseudonyms, only for tests.
+   * The file functions for the token file, the key files for pseudonyms
+   * and the file of the policy, only for tests.
    */
   readonly tokenFiles?: TokenFileSystem;
   /** The file functions for the folder of state, only for tests. */
@@ -257,6 +277,7 @@ const switchesOnDebugOutput = (value: string): boolean =>
 const nodeVariableNames: readonly string[] = Object.freeze([
   tlsVariableName,
   debugVariableName,
+  ...yamlDebugVariableNames,
   nodeOptionsVariableName,
   ...trustStoreVariableNames,
 ]);
@@ -348,13 +369,14 @@ interface Ranked {
 }
 
 // The order of the problems: the variables in table order, then the
-// variables of TLS and of debug output, then the options that log TLS,
-// then the names of a proxy, of later phases and of the replaced switch
-// for the search tools, then unknown names by code unit, then those too
-// odd to name.
+// variables of TLS and of debug output, also of the library for YAML, then
+// the options that log TLS, then the names of a proxy, of later phases and
+// of the replaced switch for the search tools, then unknown names by code
+// unit, then those too odd to name.
 const tlsRank = variableNames.length;
 const debugRank = tlsRank + 1;
-const keylogRank = debugRank + 1;
+const yamlDebugRank = debugRank + 1;
+const keylogRank = yamlDebugRank + 1;
 const traceRank = keylogRank + 1;
 const proxyRank = traceRank + 1;
 const unsupportedRank = proxyRank + 1;
@@ -495,11 +517,17 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     code: ConfigProblemCode,
     rank: number,
     variable?: string,
+    where: { readonly field?: string; readonly line?: number } = {},
   ): void => {
     ranked.push({
       rank,
       name: variable ?? '',
-      problem: record(variable === undefined ? { code } : { code, variable }),
+      problem: record({
+        code,
+        ...(variable === undefined ? {} : { variable }),
+        ...(where.field === undefined ? {} : { field: where.field }),
+        ...(where.line === undefined ? {} : { line: where.line }),
+      }),
     });
   };
   const report = (code: ConfigProblemCode, name: VariableName): void => {
@@ -510,6 +538,9 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   // listed above are read at all; the values of others are never touched.
   const given = new Map<VariableName, string>();
   const inNodeOptions = new Set<string>();
+  // The variables of debug output of the library for YAML that are set,
+  // each in capitals, for the file of the policy below.
+  const yamlDebug = new Set<string>();
   let trustStoreExtended = false;
   for (const key of Object.keys(environment)) {
     const prefixed =
@@ -527,6 +558,11 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       if (switchesOnDebugOutput(value)) {
         add('debug_output_enabled', debugRank, debugVariableName);
       }
+      continue;
+    }
+    // The library reads them as true for any value but an empty one.
+    if ((yamlDebugVariableNames as readonly string[]).includes(node ?? '')) {
+      if (isSet(value)) yamlDebug.add(node as string);
       continue;
     }
     if (node === nodeOptionsVariableName) {
@@ -951,6 +987,48 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       : record({ kind: 'integer', value: retention.value }),
   );
 
+  // The policy (ADR 0032). It is read also when the server only reads,
+  // because the read budget comes from it, and without the variable the
+  // default policy applies. The file gets checks like the token file, and
+  // a problem names the field or the line, never a value. While the
+  // library for YAML would write the file to stdout, it is not read.
+  const policyName = 'ECCLIUM_POLICY_FILE';
+  const policyRead = read(row(policyName));
+  let policy: Policy | undefined;
+  if (policyRead.state === 'unset') {
+    policy = defaultPolicy;
+    setting('policy', policyName, 'default', shownNone);
+  } else if (policyRead.state === 'invalid') {
+    setting('policy', policyName, 'invalid', shownNone);
+  } else if (yamlDebug.size > 0) {
+    for (const name of yamlDebugVariableNames) {
+      if (yamlDebug.has(name)) {
+        add('yaml_debug_output_enabled', yamlDebugRank, name);
+      }
+    }
+    setting('policy', policyName, 'invalid', shownNone);
+  } else {
+    const fromFile = readPolicyFile(
+      policyRead.value,
+      tokenFiles as PolicyFileSystem | undefined,
+    );
+    if (fromFile.ok) {
+      policy = fromFile.policy;
+      setting(
+        'policy',
+        policyName,
+        'file',
+        record({ kind: 'path', value: policyRead.value }),
+      );
+    } else {
+      add(fromFile.code, variableNames.indexOf(policyName), policyName, {
+        ...(fromFile.field === undefined ? {} : { field: fromFile.field }),
+        ...(fromFile.line === undefined ? {} : { line: fromFile.line }),
+      });
+      setting('policy', policyName, 'invalid', shownNone);
+    }
+  }
+
   // A wider trust store stays allowed for an instance with a certificate
   // of its own authority, with a warning on every start (ADR 0056).
   if (trustStoreExtended) warnings.add('trust_store_extended');
@@ -1011,6 +1089,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     toolsets === undefined ||
     !stateDirValid ||
     retention === undefined ||
+    policy === undefined ||
     subject === undefined ||
     logLevel === undefined
   ) {
@@ -1031,6 +1110,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       toolsets: toolsets.value,
       stateDir,
       auditRetentionMonths: retention.value,
+      policy,
       stdioSubject: subject.value,
       logLevel: logLevel.value as LogLevel,
     }),

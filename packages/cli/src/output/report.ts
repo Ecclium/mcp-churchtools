@@ -12,6 +12,9 @@
 import {
   type ConfigReport,
   defaultStdioSubject,
+  type Policy,
+  policyHashOf,
+  policyLimits,
   type SettingKey,
   type SettingReport,
   type Transport,
@@ -29,6 +32,12 @@ export interface ReportOptions {
    * state.
    */
   readonly showValues: boolean;
+  /**
+   * The checked policy of a valid configuration, for its summary: the
+   * number of entries, the read budget, the hash and the findings that a
+   * later `ecclium doctor` will report (ADR 0032). Never a target.
+   */
+  readonly policy?: Policy | undefined;
 }
 
 const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
@@ -42,6 +51,7 @@ const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
   toolsets: 'Toolsets',
   stateDir: 'Zustandsordner',
   auditRetentionMonths: 'Frist in Monaten',
+  policy: 'Richtlinie',
   stdioSubject: 'Subjekt über stdio',
   logLevel: 'Stufe des Logs',
 });
@@ -61,7 +71,7 @@ const quote = (text: string): string => `‹${text}›`;
 
 const inconsistent = 'The report of the configuration is inconsistent.';
 
-type Hidden = 'host' | 'subject' | 'path';
+type Hidden = 'host' | 'subject' | 'path' | 'policy';
 
 interface Value {
   readonly text: string;
@@ -82,6 +92,11 @@ const isPrintable = (text: string): boolean => {
 const valueOf = (setting: SettingReport, showValues: boolean): Value => {
   if (setting.origin === 'missing') return { text: 'fehlt' };
   if (setting.origin === 'invalid') return { text: 'ungültig' };
+  // Without a file the default policy applies, which has no value to show
+  // (ADR 0032).
+  if (setting.key === 'policy' && setting.origin === 'default') {
+    return { text: 'keine Datei' };
+  }
   // Only the folder of state and the key files may stay unset without a
   // default.
   if (setting.origin === 'unset') {
@@ -125,7 +140,12 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
     }
     case 'path':
       // The path can hold the name of a user, so it is masked by default.
-      if (!showValues) return { text: masked, hides: 'path' };
+      if (!showValues) {
+        return {
+          text: masked,
+          hides: setting.key === 'policy' ? 'policy' : 'path',
+        };
+      }
       return isPrintable(shown.value)
         ? { text: quote(shown.value) }
         : { text: 'gesetzt' };
@@ -159,6 +179,7 @@ const hiddenNames: Readonly<Record<Hidden, readonly [string, string]>> =
     host: ['der Host', 'ihn'],
     subject: ['das Subjekt', 'es'],
     path: ['der Zustandsordner', 'ihn'],
+    policy: ['der Pfad der Richtlinie', 'ihn'],
   });
 
 const maskedNote = (hidden: readonly Hidden[]): string => {
@@ -175,6 +196,47 @@ const maskedNote = (hidden: readonly Hidden[]): string => {
         ? 'beide'
         : 'alle';
   return `${what}, damit Sie die Ausgabe ohne Bearbeitung weitergeben können. Mit ‹--show-values› zeigt der Befehl ${which}.`;
+};
+
+const entries = (count: number): string =>
+  count === 0
+    ? 'keine Einträge'
+    : count === 1
+      ? '1 Eintrag'
+      : `${formatNumber(count)} Einträge`;
+
+// The summary of the policy: its hash, as every audit line of a write
+// names it, the size of both parts and the read budget, then what a later
+// `ecclium doctor` reports as findings (ADR 0032). No target, so that the
+// output fits into a public issue as well.
+const policyLines = (policy: Policy): readonly string[] => {
+  const budget = policy.interactive.readBudgetPerDay;
+  const row = (label: string, value: string): string =>
+    `  ${label.padEnd(valueColumn)}${value}`;
+  const lines = [
+    `Richtlinie im Format ‹policy.v1›, Hash ${policyHashOf(policy)}:`,
+    row('Interaktiv', entries(policy.interactive.targets.length)),
+    row(
+      'Für Routinen',
+      `${entries(policy.unattended.length)}, sie gelten erst mit dem Runner`,
+    ),
+    row('Lesebudget', `${formatNumber(budget)} Aufrufe je Akteur und UTC-Tag`),
+  ];
+  if (policy.interactive.targets.length === 0) {
+    lines.push(
+      '  Befund: Der interaktive Teil hat keine Einträge. Bestätigte Schreibvorgänge dürfen dann auf jedes Ziel, das das Dienstkonto schreiben darf, ausser bei Gruppen und Diensten. Empfohlen sind Einträge für die Ziele, auf die Ecclium schreiben soll.',
+    );
+  }
+  if (budget === 0) {
+    lines.push(
+      '  Befund: Das Lesebudget ist 0. Tools mit besonders schützenswerten Daten und Tools, die Personen nennen, laufen dann nicht.',
+    );
+  } else if (budget > policyLimits.defaultReadBudgetPerDay) {
+    lines.push(
+      `  Befund: Das Lesebudget liegt über der Voreinstellung von ${formatNumber(policyLimits.defaultReadBudgetPerDay)} Aufrufen. Der KI-Assistent kann dann mehr Personendaten lesen, bevor die Grenze greift.`,
+    );
+  }
+  return lines;
 };
 
 const validText =
@@ -227,12 +289,13 @@ export function renderConfigReport(
     // In the order of the note, whatever the order of the settings.
     lines.push(
       maskedNote(
-        (['host', 'subject', 'path'] as const).filter((entry) =>
+        (['host', 'subject', 'path', 'policy'] as const).filter((entry) =>
           hidden.has(entry),
         ),
       ),
     );
   }
+  if (options.policy !== undefined) lines.push(...policyLines(options.policy));
 
   const total = report.problems.length + report.omittedProblems;
   if (total > 0) {

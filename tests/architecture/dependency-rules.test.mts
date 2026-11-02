@@ -660,6 +660,30 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'yaml-only-in-policy-reader',
+    name: 'a module of the policy next to the reader parses YAML',
+    files: {
+      'packages/core/src/policy/forbidden.ts':
+        "import { parse } from 'yaml';\nexport const read = parse;\n",
+    },
+  },
+  {
+    rule: 'yaml-only-in-policy-reader',
+    name: 'a test of core parses YAML past the reader',
+    files: {
+      'packages/core/src/config/forbidden.test.ts':
+        "import { parseDocument } from 'yaml';\nexport const read = parseDocument;\n",
+    },
+  },
+  {
+    rule: 'yaml-only-in-policy-reader',
+    name: 'the loader of the configuration imports a type of the library',
+    files: {
+      'packages/core/src/config/forbidden.ts':
+        "import type { Document } from 'yaml';\nexport type Policy = Document;\n",
+    },
+  },
+  {
     rule: 'keys-internals',
     name: 'the configuration reads the bytes of a key',
     files: {
@@ -1293,7 +1317,12 @@ describe('the copy of the workspace', () => {
   });
 });
 
-describe('dependency-cruiser rules', () => {
+// Each case copies the sources of every package and cruises the copy, which
+// grows with the code. On the slowest runner of CI, a case took longer than
+// the default of five seconds, so the cruises get a bound of their own.
+const cruiseTimeout = 30_000;
+
+describe('dependency-cruiser rules', { timeout: cruiseTimeout }, () => {
   it('pass the packages as they are', async () => {
     const result = await cruiseFolder(workspaceRoot);
     expect(result.summary.violations).toEqual([]);

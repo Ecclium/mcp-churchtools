@@ -384,6 +384,9 @@ describe('Renovate', () => {
     'eslint',
     '@eslint/js',
     'prettier',
+    // A dependency at run time, never merged automatically anyway, held
+    // here as well because it has no provenance (ADR 0032).
+    'yaml',
   ];
   // An exact name matches only itself. Renovate reads a name with *, ?,
   // braces, a leading ! or slashes around it as a pattern.

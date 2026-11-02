@@ -121,6 +121,7 @@
         'eslint',
         '@eslint/js',
         'prettier',
+        'yaml',
       ],
       automerge: false,
     },

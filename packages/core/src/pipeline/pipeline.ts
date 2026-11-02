@@ -87,11 +87,9 @@ import {
   collectInputRefs,
   type ToolCatalog,
 } from '../registry/index.js';
-import {
-  isoDateOf,
-  quotaTimeoutMs,
-  specialReadBudget,
-} from '../quota/budget.js';
+import { defaultPolicy } from '../policy/check.js';
+import type { Policy } from '../policy/schema.js';
+import { isoDateOf, quotaTimeoutMs } from '../quota/budget.js';
 import { openPseudonyms, type Pseudonyms } from '../redaction/pseudonym.js';
 import { type Redacted, sealRedacted } from '../redaction/redacted.js';
 import { createTenantContext } from '../tenant/context.js';
@@ -205,6 +203,12 @@ export interface ToolPipelineOptions {
    * can be checked.
    */
   readonly killSwitchDir?: string;
+  /**
+   * The checked policy from the configuration (ADR 0032), for now for the
+   * daily read budget. Without it the default policy applies, with a
+   * budget of 200.
+   */
+  readonly policy?: Policy;
 }
 
 // The longest duration the audit accepts.
@@ -240,9 +244,12 @@ const withheldOutcome: ToolOutcome = Object.freeze({
   }),
 });
 
-// A call above the daily read budget, and one the store could not count
-// (ADR 0063).
-const budgetExhausted = `The daily budget of ${String(specialReadBudget)} calls of tools with special personal data is used up. It resets at 00:00 UTC.`;
+// A call above the daily read budget of the policy, and one the store could
+// not count (ADR 0032, ADR 0063). A budget of 0 lets no such tool run.
+const budgetExhausted = (budget: number): string =>
+  budget === 0
+    ? 'The daily budget of calls of tools with special personal data is 0 on this server, so they do not run. Ask the operator.'
+    : `The daily budget of ${String(budget)} calls of tools with special personal data is used up. It resets at 00:00 UTC.`;
 const budgetUnavailable =
   'The server cannot count this call against the daily read budget now, so the tool did not run. Ask the operator to check the folder of state.';
 
@@ -479,6 +486,11 @@ const inputRefsOf = (
 export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
   const { catalog, audit, clock, logging, origin } = options;
   const random = options.random ?? randomBytes;
+  // The read budget of the policy, fixed for the life of the pipeline, as
+  // the policy is read once at the start (ADR 0032).
+  const readBudget = (options.policy ?? defaultPolicy).interactive
+    .readBudgetPerDay;
+  const exhausted = budgetExhausted(readBudget);
   const client = createChurchToolsClient({
     transport: options.transport,
     origin,
@@ -630,7 +642,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         );
         return failed(
           'policy_denied',
-          counted === 'exhausted' ? budgetExhausted : budgetUnavailable,
+          counted === 'exhausted' ? exhausted : budgetUnavailable,
         );
       }
       // An abort while the store counted would pass unseen below.
@@ -923,6 +935,9 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
   const countRead = async (
     ctx: TenantContext,
   ): Promise<'ok' | 'exhausted' | 'unavailable'> => {
+    // A budget of 0 refuses every call without the store, so that a store
+    // that fails cannot give its sentence instead (ADR 0032).
+    if (readBudget === 0) return 'exhausted';
     const store = options.quota;
     const day = isoDateOf(now());
     if (store === undefined || day === undefined) return 'unavailable';
@@ -946,7 +961,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       ) {
         return 'unavailable';
       }
-      return counted > specialReadBudget ? 'exhausted' : 'ok';
+      return counted > readBudget ? 'exhausted' : 'ok';
     } catch {
       return 'unavailable';
     } finally {

@@ -1483,6 +1483,44 @@ describe.skipIf(process.getuid?.() === 0)(
       });
     });
 
+    // The read budget comes from the file of the policy (ADR 0032).
+    describe('with a read budget of 0 in the policy', () => {
+      let answer: Json;
+      let finished: Finished;
+
+      beforeAll(async () => {
+        const stateDir = freshStateDir();
+        const policyFile = join(freshStateDir(), 'policy.yaml');
+        writeFileSync(
+          policyFile,
+          'schema: policy.v1\ninteractive:\n  readBudgetPerDay: 0\n',
+        );
+        chmodSync(policyFile, 0o644);
+        const server = await serveTls(searches(stateDir, false));
+        const launched = overTls(server.origin);
+        const session = launch({
+          ...launched,
+          env: {
+            ...launched.env,
+            ECCLIUM_TOOLSETS: 'persons',
+            ECCLIUM_STATE_DIR: stateDir,
+            ECCLIUM_POLICY_FILE: policyFile,
+          },
+        });
+        await modern.open(session);
+        answer = await search(session, modern, 2, 'ct_persons_search');
+        finished = await session.finish();
+      }, timeout);
+
+      it('refuses every tool of the budget with the sentence of a budget of 0', () => {
+        expect(at(answer, 'result', 'isError')).toBe(true);
+        expect(at(answer, 'result', 'content', 0, 'text')).toBe(
+          'The daily budget of calls of tools with special personal data is 0 on this server, so they do not run. Ask the operator.',
+        );
+        expect(protocolViolations(finished.stdout)).toEqual([]);
+      });
+    });
+
     describe('when the line cannot reach the audit file', () => {
       let stateDir = '';
       let persons: Json;

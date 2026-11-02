@@ -20,6 +20,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { createAuditSink } from '../audit/index.js';
+import { defaultPolicy } from '../policy/check.js';
+import type { Policy } from '../policy/schema.js';
 import { quotaTimeoutMs, specialReadBudget } from '../quota/index.js';
 import { createToolCatalog } from '../registry/index.js';
 import { createToolPipeline, type ToolRequest } from './pipeline.js';
@@ -129,6 +131,7 @@ const setup = (
   options: {
     readonly quota?: QuotaStore | null;
     readonly ready?: () => boolean;
+    readonly policy?: Policy;
   } = {},
 ) => {
   const double = createChurchToolsDouble({ token });
@@ -171,6 +174,7 @@ const setup = (
     clock,
     logging: { writer, minLevel: 'debug' },
     ...(quota === undefined ? {} : { quota }),
+    ...(options.policy === undefined ? {} : { policy: options.policy }),
   });
   const parse = (line: string) => JSON.parse(line) as Record<string, unknown>;
   return {
@@ -189,6 +193,81 @@ const setup = (
 const exhausted = `The daily budget of ${String(specialReadBudget)} calls of tools with special personal data is used up. It resets at 00:00 UTC.`;
 const unavailable =
   'The server cannot count this call against the daily read budget now, so the tool did not run. Ask the operator to check the folder of state.';
+
+describe('the daily read budget of the policy', () => {
+  const withBudget = (readBudgetPerDay: number): Policy => ({
+    ...defaultPolicy,
+    interactive: { ...defaultPolicy.interactive, readBudgetPerDay },
+  });
+
+  it('takes the budget from the policy (ADR 0032)', async () => {
+    const { call, logs } = setup({ policy: withBudget(3) });
+    for (let index = 0; index < 3; index += 1) {
+      expect((await call('ct_test_special')).ok, String(index)).toBe(true);
+    }
+    expect(await call('ct_test_names')).toEqual({
+      ok: false,
+      error: {
+        code: 'policy_denied',
+        message:
+          'The daily budget of 3 calls of tools with special personal data is used up. It resets at 00:00 UTC.',
+      },
+    });
+    expect(runs).toHaveLength(3);
+    expect(
+      logs().filter((line) => line['event'] === 'read_budget_exhausted'),
+    ).toHaveLength(1);
+  });
+
+  it('refuses with the sentence of a budget of 0 without asking a store, also one that is missing', async () => {
+    const { call, logs } = setup({ policy: withBudget(0), quota: null });
+    expect(await call('ct_test_names')).toEqual({
+      ok: false,
+      error: {
+        code: 'policy_denied',
+        message:
+          'The daily budget of calls of tools with special personal data is 0 on this server, so they do not run. Ask the operator.',
+      },
+    });
+    expect(
+      logs().filter((line) => line['event'] === 'read_budget_exhausted'),
+    ).toHaveLength(1);
+    const counted = createMemoryQuotaStore();
+    const { call: callCounted } = setup({
+      policy: withBudget(0),
+      quota: counted,
+    });
+    expect((await callCounted('ct_test_special')).ok).toBe(false);
+    expect(await counted.read(ctx, 'special_reads', day)).toBe(0);
+    expect(runs).toEqual([]);
+  });
+
+  it('runs no special tool with a budget of 0, and every other tool', async () => {
+    const { call } = setup({ policy: withBudget(0) });
+    expect(await call('ct_test_special')).toEqual({
+      ok: false,
+      error: {
+        code: 'policy_denied',
+        message:
+          'The daily budget of calls of tools with special personal data is 0 on this server, so they do not run. Ask the operator.',
+      },
+    });
+    expect((await call('ct_test_personal')).ok).toBe(true);
+    expect(runs).toEqual(['ct_test_personal']);
+  });
+
+  it('keeps the default of 200 without a policy and with the default policy', async () => {
+    const { call, quota } = setup({ policy: defaultPolicy });
+    for (let index = 0; index < specialReadBudget; index += 1) {
+      await quota?.increment(ctx, 'special_reads', day);
+    }
+    expect(specialReadBudget).toBe(200);
+    expect(await call('ct_test_special')).toEqual({
+      ok: false,
+      error: { code: 'policy_denied', message: exhausted },
+    });
+  });
+});
 
 describe('the daily read budget', () => {
   it(`lets ${String(specialReadBudget)} calls of all special tools through and refuses the next until the day ends`, async () => {

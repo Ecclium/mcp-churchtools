@@ -1,0 +1,121 @@
+# Richtlinie
+
+<!-- Erzeugt aus dem Schema im Kern. Ändern Sie den Code und rufen Sie pnpm docs:generate auf, nicht diese Datei. -->
+
+Die Richtlinie legt fest, auf welche Ziele Schreibvorgänge von Ecclium gehen dürfen, wie oft je Tag, und wie viel ein Akteur je Tag lesen darf ([ADR 0032](adr/0032-richtlinie-und-pruefcode.md)). Eine Bestätigung allein genügt nicht: Ohne Grenze dürfte ein gestohlenes Token, ein kompromittierter Client oder ein Tool, das im Client auf «immer erlauben» steht, alles, was das Dienstkonto in ChurchTools darf.
+
+Stand: Der Server liest die Richtlinie beim Start und nimmt das Lesebudget aus ihr. Ziele und Obergrenzen der Schreibvorgänge prüft er beim Laden auf Form und Widersprüche, anwenden wird er sie mit dem Write-Guard, bevor Schreib-Tools erscheinen. Wo diese Seite sagt, ein Wunsch gehe an den Betreiber, lehnt der Server ihn ab, bis die Freigabe-Warteschlange kommt. Den unbeaufsichtigten Teil benutzt erst der Runner einer späteren Version.
+
+## Datei
+
+- `ECCLIUM_POLICY_FILE` nennt den absoluten Pfad der Datei ([Konfiguration](configuration.md)). Die Datei ist kein Geheimnis und darf lesbar sein. Sie muss dem Benutzer gehören, unter dem Ecclium läuft, und Gruppe und andere Benutzer dürfen sie nicht ändern, etwa mit den Rechten 644. Ecclium folgt keinem Link.
+- Das Format ist YAML 1.2 oder JSON in UTF-8 ohne BOM, höchstens 262'144 Bytes. Kommentare mit `#` sind erlaubt. Anker und Verweise, Tags, Direktiven wie `%YAML`, ein zweites Dokument, doppelte Schlüssel und Schlüssel, die kein Text sind, nimmt Ecclium nicht an.
+- Ecclium liest die Datei beim Start, auch wenn der Server nur liest, weil das Lesebudget daraus kommt. Eine Änderung wirkt nach einem Neustart. `ecclium config check` prüft die Datei vorher und zeigt den Hash, die Zahl der Einträge und das Lesebudget.
+- Ist etwas falsch, startet Ecclium nicht und endet mit dem Code 78. Die Meldung nennt den Pfad des Felds, etwa `interactive.targets[2].maxPerDay`, oder die Zeile, nie einen Wert.
+- Sind `LOG_TOKENS` oder `LOG_STREAM` gesetzt, liest Ecclium die Datei nicht und startet nicht, weil die Bibliothek für YAML sie sonst nach stdout schriebe.
+- Editoren prüfen und vervollständigen die Datei mit dem Schema [`schemas/policy.v1.json`](../schemas/policy.v1.json).
+
+## Ohne Datei
+
+Ohne `ECCLIUM_POLICY_FILE` gilt die Voreinstellung: keine Einträge und ein Lesebudget von 200 Aufrufen je Akteur und UTC-Tag. Bestätigte Schreibvorgänge dürfen dann auf jedes Ziel, das das Dienstkonto schreiben darf, ausser bei Gruppen und Diensten: Ohne Eintrag gehen sie wie jede Operation der schreibenden Escape Hatch an den Betreiber zur Freigabe. Das hält die Einrichtung einfach. Empfohlen sind Einträge für die Ziele, auf die Ecclium schreiben soll, und Schreibrechte des Dienstkontos nur für diese Ziele.
+
+## Beispiel
+
+Die Kennungen und Namen sind Platzhalter.
+
+```yaml
+# Richtlinie der Gemeinde, geprüft beim Start von Ecclium.
+schema: policy.v1
+interactive:
+  readBudgetPerDay: 200
+  targets:
+    - target: { kind: wiki_category, id: 12, name: Berichte }
+      tools: [ct_wiki_page_create, ct_wiki_page_append_section]
+      maxPerDay: 10
+    - target:
+        kind: wiki_page
+        categoryId: 12
+        guid: 00000000-0000-4000-8000-000000000001
+        name: Dienstplan-Auswertung
+      tools: [ct_wiki_page_update]
+      maxPerDay: 4
+    - target:
+        kind: service
+        event: { id: 5, name: Gottesdienst }
+        service: { id: 7, name: Technik }
+      tools: [ct_services_request]
+      maxPerDay: 5
+unattended:
+  - routine: dienstplan-report
+    credential: bericht
+    modelRedaction: strict
+    target:
+      kind: wiki_page
+      categoryId: 12
+      guid: 00000000-0000-4000-8000-000000000001
+      name: Dienstplan-Auswertung
+    tools: [ct_wiki_page_append_section]
+    maxPerRun: 2
+    maxPerDay: 4
+```
+
+## Felder
+
+| Feld | Form | Pflicht | Bedeutung |
+| --- | --- | --- | --- |
+| `schema` | `policy.v1` | ja | Format der Datei, immer `policy.v1`. Ohne diese Angabe oder mit einer anderen startet Ecclium nicht. |
+| `interactive` | Objekt | nein | Der Teil für Schreibvorgänge, die eine Person über ihren KI-Assistenten bestätigt, und das Lesebudget. |
+| `interactive.readBudgetPerDay` | ganze Zahl von 0 bis 1'000 | nein | Wie oft ein Akteur je UTC-Tag Tools mit besonders schützenswerten Daten und Tools, die Namen anderer Personen nennen, zusammen aufrufen darf. Ohne Angabe 200, 0 sperrt diese Tools für alle. |
+| `interactive.targets` | Liste mit höchstens 200 Einträgen | nein | Die Ziele, auf die bestätigte Schreibvorgänge gehen dürfen. Ohne Eintrag ist erlaubt, was das Dienstkonto darf, ausser bei Gruppen und Diensten. Mit einem Eintrag ist die Liste abschliessend. |
+| `interactive.targets[].target` | Ziel | ja | Das Ziel, siehe «Ziele». |
+| `interactive.targets[].tools` | Liste mit 1 bis 20 Einträgen | ja | Die Schreib-Tools, die auf das Ziel schreiben dürfen, mit ihrem Namen wie `ct_wiki_page_create`. |
+| `interactive.targets[].maxPerDay` | ganze Zahl von 1 bis 1'000 | ja | Wie oft je Prinzipal und UTC-Tag jedes dieser Tools auf das Ziel schreiben darf. |
+| `unattended` | Liste mit höchstens 200 Einträgen | nein | Der Teil für Routinen, die ohne Person laufen. Ecclium prüft ihn beim Start, benutzt wird er erst mit dem Runner einer späteren Version. |
+| `unattended[].routine` | Text nach festem Muster, höchstens 63 Zeichen | ja | Kennung der Routine, etwa `dienstplan-report`. |
+| `unattended[].credential` | Text nach festem Muster, höchstens 63 Zeichen | ja | Name der Zugangsdaten, mit denen der Runner für diese Routine schreibt, damit er das engste passende Dienstkonto nimmt. |
+| `unattended[].modelRedaction` | `strict` oder `standard` | nein | Stufe der Maskierung für den Aufruf des Sprachmodells der Routine: `strict`, die Voreinstellung, oder `standard`. Für dieselbe Routine überall gleich. |
+| `unattended[].target` | Ziel | ja | Das Ziel, siehe «Ziele». Gruppen und Dienste gibt es hier nicht. |
+| `unattended[].tools` | Liste mit 1 bis 20 Einträgen | ja | Die Schreib-Tools, mit denen die Routine auf das Ziel schreiben darf. |
+| `unattended[].maxPerRun` | ganze Zahl von 1 bis 100 | ja | Wie oft jedes dieser Tools je Lauf auf das Ziel schreiben darf, höchstens so oft wie je Tag. |
+| `unattended[].maxPerDay` | ganze Zahl von 1 bis 1'000 | ja | Wie oft jedes dieser Tools je UTC-Tag auf das Ziel schreiben darf. Läufe von Hand zählen mit. |
+
+Jeder Teil hat höchstens 200 Einträge, jeder Eintrag 1 bis 20 Tools.
+
+## Ziele
+
+Ein Ziel ist immer eine Kennung mit dem Namen, den Sie erwarten, nie der ganze Mandant.
+
+| Art | Was | Teil | Was ein Eintrag erlaubt |
+| --- | --- | --- | --- |
+| `wiki_category` | Kategorie des Wikis | beide | Neue Seiten in der Kategorie und Änderungen an jeder ihrer Seiten. |
+| `wiki_page` | Seite des Wikis | beide | Nur diese Seite. Ein Eintrag für die Seite geht dem ihrer Kategorie vor. |
+| `calendar` | Kalender | beide | Neue Termine im Kalender und Änderungen an seinen Terminen. |
+| `resource` | Ressource | beide | Buchungen der Ressource. |
+| `group` | Gruppe | nur `interactive` | Mitglieder der Gruppe hinzufügen oder entfernen. |
+| `service` | Dienst eines Events | nur `interactive` | Anfragen für diesen Dienst in diesem Event. |
+
+| Feld des Ziels | Form | Bedeutung |
+| --- | --- | --- |
+| `kind` | eine Art aus der Tabelle oben | Art des Ziels, siehe die Tabelle. |
+| `id` | ganze Zahl von 1 bis 2'147'483'647 | Kennung des Ziels in ChurchTools. |
+| `name` | Text von 1 bis 255 Zeichen ohne Steuerzeichen | Der Name, den Sie erwarten: Titel der Seite oder Name des Ziels in ChurchTools. |
+| `categoryId` | ganze Zahl von 1 bis 2'147'483'647 | Kennung der Kategorie, in der die Seite liegt. |
+| `guid` | Text nach festem Muster, höchstens 36 Zeichen | GUID der Seite, wie `ct_wiki_pages_list` sie zeigt. |
+| `event` | Objekt | Das Event, zu dem der Dienst gehört. |
+| `event.id` | ganze Zahl von 1 bis 2'147'483'647 | Kennung des Events. |
+| `event.name` | Text von 1 bis 255 Zeichen ohne Steuerzeichen | Der Name des Events, den Sie erwarten. |
+| `service` | Objekt | Der Dienst im Event. |
+| `service.id` | ganze Zahl von 1 bis 2'147'483'647 | Kennung des Dienstes. |
+| `service.name` | Text von 1 bis 255 Zeichen ohne Steuerzeichen | Der Name des Dienstes, den Sie erwarten. |
+
+## Regeln
+
+- **Name:** Ecclium vergleicht den erwarteten Namen in der Normalform NFC genau mit dem Namen in ChurchTools. Weicht er ab, weil jemand das Ziel umbenannt oder eine Kennung neu vergeben hat, schreibt Ecclium nicht auf dieses Ziel, und der Wunsch geht an den Betreiber. Das Lesen trifft das nicht.
+- **Abschliessend:** Hat `interactive.targets` einen Eintrag, darf ein bestätigter Schreibvorgang nur noch auf die genannten Ziele mit den genannten Tools. Jeder andere Wunsch und jeder über `maxPerDay` geht an den Betreiber, statt abgelehnt zu werden, damit die Person handlungsfähig bleibt.
+- **Gruppen und Dienste:** Mitgliedschaften in Gruppen und Anfragen für Dienste betreffen Personen. Ohne Eintrag gehen sie an den Betreiber, und Routinen schreiben sie nie. Operationen der schreibenden Escape Hatch gehen immer an den Betreiber, weil die Richtlinie für sie keine Art von Ziel kennt.
+- **Zähler:** Die Zähler je Tag liegen im Zustandsordner, überstehen einen Neustart und gelten für alle Prozesse mit demselben Ordner.
+- **Widersprüche:** Dasselbe Ziel mit zwei Namen, dasselbe Tool zweimal für ein Ziel im selben Teil, `maxPerRun` über `maxPerDay` oder zwei Stufen von `modelRedaction` für eine Routine verhindern den Start.
+
+## Hash
+
+Ecclium bildet den SHA-256 über die geprüfte Richtlinie in einer festen Form: Voreinstellungen eingesetzt, Namen in NFC, GUIDs in Kleinbuchstaben und die Schlüssel sortiert. Kommentare und die Schreibweise eines Werts ändern ihn nicht, die Reihenfolge der Einträge schon. Ohne Datei gilt der Hash der Voreinstellung. `ecclium config check` zeigt ihn, und sobald der Write-Guard die Richtlinie anwendet, nennt ihn jedes Audit-Ereignis eines Schreibvorgangs als `policyHash`.
