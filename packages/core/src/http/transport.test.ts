@@ -1,7 +1,9 @@
 import { getEventListeners } from 'node:events';
 import type { Socket } from 'node:net';
-import { duplexPair, Readable } from 'node:stream';
+import { type Duplex, duplexPair, Readable } from 'node:stream';
 import { inspect } from 'node:util';
+import { setFlagsFromString } from 'node:v8';
+import { runInNewContext } from 'node:vm';
 
 import type { Logger, LogFields } from '@ecclium/mcp-churchtools-plugin-api';
 import { isEccliumError } from '@ecclium/mcp-churchtools-plugin-api';
@@ -66,6 +68,12 @@ const steppingClock = () => {
     },
   });
 };
+
+// The garbage collector, for the test of the connect limit under load.
+// Node.js gives it to code only with this flag, which a context made after
+// it reads.
+setFlagsFromString('--expose-gc');
+const collectGarbage = runInNewContext('gc') as () => void;
 
 const open: { close(): Promise<void> }[] = [];
 afterEach(async () => {
@@ -1046,6 +1054,17 @@ describe('the agent', () => {
 
   // The other end of a pair of streams stands in for the server. The
   // connector puts the transport's end under TLS for the origin.
+  //
+  // Both ends stay in this list until the test is over. undici holds the
+  // socket for its connect limit only through a WeakRef, and a pair in
+  // memory, unlike a real socket, has nothing else that holds it: collected
+  // during the handshake, it would take the limit with it, and the test
+  // would wait until it times out. A real socket stays held by the system
+  // while it connects, so the transport itself is not affected.
+  const pairs: Duplex[] = [];
+  afterEach(() => {
+    for (const end of pairs.splice(0)) end.destroy();
+  });
   const throughPair = (
     serve: (server: NodeJS.ReadWriteStream) => void,
     limits: TransportLimits,
@@ -1053,6 +1072,7 @@ describe('the agent', () => {
     const { logger, lines } = recordingLogger();
     const agent = createAgent(limits, () => {
       const [client, server] = duplexPair();
+      pairs.push(client, server);
       serve(server);
       return client as unknown as Socket;
     });
@@ -1086,9 +1106,16 @@ describe('the agent', () => {
       ...transportLimits,
       connectMs: 200,
     });
-    const error = await failure(
+    const pending = failure(
       transport.get(url('/api'), { maxResponseBytes: 64 }),
     );
+    // Under load the garbage collector runs at any moment, so it runs here
+    // on purpose while the handshake waits: the limit must still fire.
+    for (const delay of [20, 60, 120]) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      collectGarbage();
+    }
+    const error = await pending;
     expect(error.category).toBe('connect');
     assertNoCanary(
       inspect(error, { depth: null, showHidden: true }),
