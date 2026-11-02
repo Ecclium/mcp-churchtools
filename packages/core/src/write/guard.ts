@@ -129,6 +129,14 @@ export interface PlanRequest {
   };
 }
 
+/** What planning gives the pipeline: the outcome for the tool and the target. */
+export interface PlanResult {
+  /** What the tool gets back from `plan`. */
+  readonly outcome: PlanOutcome;
+  /** What the write would change, for the result and the audit. */
+  readonly target: WriteTarget;
+}
+
 /** How a commit ended. */
 export type CommitResult =
   | {
@@ -161,10 +169,11 @@ export interface WriteGuard {
    *
    * @param request - The call that plans.
    * @param intent - The intent as the tool handed it over.
-   * @returns The sealed plan, or why nothing needs to be written.
+   * @returns The sealed plan, or why nothing needs to be written, with the
+   *   target derived from the checked copy of the intent.
    * @throws {EccliumError} With a fixed sentence when the plan is refused.
    */
-  plan(request: PlanRequest, intent: unknown): Promise<PlanOutcome>;
+  plan(request: PlanRequest, intent: unknown): Promise<PlanResult>;
   /**
    * Commits a sealed plan with a proof.
    *
@@ -348,10 +357,23 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     };
   };
 
+  // Rejects only with an EccliumError: any other error of a read becomes
+  // internal, so that the pipeline passes on a fixed sentence.
   const plan = async (
     request: PlanRequest,
     value: unknown,
-  ): Promise<PlanOutcome> => {
+  ): Promise<PlanResult> => {
+    try {
+      return await planOnce(request, value);
+    } catch (error) {
+      throw asError(error);
+    }
+  };
+
+  const planOnce = async (
+    request: PlanRequest,
+    value: unknown,
+  ): Promise<PlanResult> => {
     const { ctx } = request;
     const stop = stopped(ctx);
     if (stop !== undefined) throw stop;
@@ -369,7 +391,10 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     // The policy of ADR 0032 and the content policy of ADR 0030 check the
     // plan here once they are built.
     if (derived.kind === 'change' && derived.text === derived.before.text) {
-      return Object.freeze({ kind: 'skipped', reason: 'unchanged' });
+      return Object.freeze({
+        outcome: Object.freeze({ kind: 'skipped', reason: 'unchanged' }),
+        target: rules.target,
+      });
     }
     const sealed = sealPlan({
       tenantId: ctx.tenantId,
@@ -381,7 +406,10 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       contentHash: derived.contentHash,
       sealedAt: clock.now(),
     });
-    return Object.freeze({ kind: 'planned', plan: sealed });
+    return Object.freeze({
+      outcome: Object.freeze({ kind: 'planned', plan: sealed }),
+      target: rules.target,
+    });
   };
 
   const denied = (

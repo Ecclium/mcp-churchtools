@@ -88,6 +88,7 @@ export {
   exampleEchoTool,
   examplePlugin,
   exampleProfileTool,
+  exampleMemberTool,
   exampleWriteTool,
 } from './plugins/example/index.js';
 export {

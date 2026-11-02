@@ -56,6 +56,7 @@ Je Ereignis die Stufe und die Felder, die ein Aufruf höchstens setzt. Die Felde
 
 | Ereignis | Stufe | Felder | Bedeutung |
 | --- | --- | --- | --- |
+| `write_audit_failed` | `error` | keine | Die Zeile eines Aufrufs, der womöglich geschrieben hat, erreichte die Audit-Datei nicht. Bis zum Neustart des Servers plant und schreibt der Write-Guard nichts mehr. |
 | `write_committed` | `info` | keine | Ein Schreibvorgang ist geschrieben und gelesen: die Version stieg wie geplant, und der Text ist der gesendete. |
 | `write_conflict` | `warn` | `code` | Das Ziel eines Schreibvorgangs hat sich seit dem Plan geändert oder liest sich nach dem Schreiben nicht wie geplant. `code` ist `conflict`. |
 | `write_outcome_unknown` | `warn` | `code` | Nach einem Fehler beim Schreiben ist offen, ob die Änderung ChurchTools erreicht hat, und das Lesen danach konnte es nicht klären. Das Ziel ist von Hand zu prüfen. |

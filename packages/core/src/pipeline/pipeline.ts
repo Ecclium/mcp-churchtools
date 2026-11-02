@@ -43,15 +43,21 @@ import { isProxy } from 'node:util/types';
 import {
   type AuditOutcome,
   type Clock,
+  type ConfirmationPath,
   EccliumError,
   type ErrorCode,
   type FeatureKey,
   type KeyProvider,
   type Mode,
+  type PlanOutcome,
   type QuotaStore,
   type RedactionLevel,
   type TenantAssignment,
   type TenantContext,
+  type ToolCall,
+  type WritePort,
+  type WriteState,
+  type WriteToolCall,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import {
@@ -89,6 +95,13 @@ import {
 import { openPseudonyms, type Pseudonyms } from '../redaction/pseudonym.js';
 import { type Redacted, sealRedacted } from '../redaction/redacted.js';
 import { createTenantContext } from '../tenant/context.js';
+import {
+  confirmationSentence,
+  confirmWrite,
+  createWriteGuard,
+  type WriteGuard,
+  type WriteTarget,
+} from '../write/index.js';
 import { createReadAccess, type ReadAccess } from './read-api.js';
 import {
   collectOutputRefs,
@@ -186,6 +199,12 @@ export interface ToolPipelineOptions {
    * `strict` of a tool with an ID of a person ends with `internal`.
    */
   readonly keys?: KeyProvider;
+  /**
+   * The folder of the kill switches of writing, from the configuration
+   * (ADR 0029). Without it, every write tool is refused, because no switch
+   * can be checked.
+   */
+  readonly killSwitchDir?: string;
 }
 
 // The longest duration the audit accepts.
@@ -331,7 +350,72 @@ interface Run {
   pseudonyms?: Pseudonyms;
   /** The input with the IDs its pseudonyms stand for, or the refusal. */
   revealed?: RevealedInput;
+  /** What a call of a write tool leaves for its audit line (ADR 0029). */
+  write?: WriteRecord;
 }
+
+/** The state of a write at the end of its call, for the audit. */
+interface WriteRecord {
+  readonly writeState: WriteState;
+  readonly confirmation?: ConfirmationPath;
+  /** Whether a write may have reached ChurchTools. */
+  readonly sent: boolean;
+}
+
+/** What a write tool used during its call, kept by the pipeline. */
+interface WriteAccess {
+  /** The port the tool gets in its call. */
+  readonly port: WritePort;
+  /** Ends the port: a later plan is refused. */
+  readonly revoke: () => void;
+  /** The outcome of the one plan of the call, if the tool planned. */
+  readonly outcome: () => PlanOutcome | undefined;
+  /** The target of that plan. */
+  readonly target: () => WriteTarget | undefined;
+  /** The refusal of the plan, if the guard refused it. */
+  readonly refusal: () => EccliumError | undefined;
+}
+
+// Codes of a write that count as refused in the audit, not as an error
+// (ADR 0029): the policy, a missing licence, a missing confirmation and a
+// missing right.
+const writeDenials: readonly ErrorCode[] = Object.freeze([
+  'policy_denied',
+  'license_required',
+  'confirmation_required',
+  'permission',
+]);
+
+// The state of a write that ended with an error, by its code.
+const writeStateOf = (code: ErrorCode): WriteState =>
+  writeDenials.includes(code)
+    ? 'denied'
+    : code === 'conflict'
+      ? 'conflict'
+      : 'failed';
+
+// The result of a write as the model gets it: state, target and version,
+// built by the core (ADR 0029).
+const writeResult = (
+  state: 'verified' | 'skipped',
+  target: WriteTarget,
+  version?: number,
+): Readonly<Record<string, unknown>> =>
+  Object.freeze({
+    state,
+    target: Object.freeze({ kind: target.kind, key: target.key }),
+    ...(version === undefined ? {} : { version }),
+  });
+
+// The IDs of a target for the audit: a category, and a page by its GUID.
+const addTarget = (refs: ObjectRefCollector, target: WriteTarget): void => {
+  const [first, second] = target.key.split('/');
+  if (target.kind === 'wiki_category') refs.add('wiki_category', first);
+  if (target.kind === 'wiki_page') {
+    refs.add('wiki_category', first);
+    refs.add('wiki_page', second);
+  }
+};
 
 // A call without a tool to name or without an input that fits its schema
 // has no IDs.
@@ -387,6 +471,14 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     origin,
     requestsPerMinute: options.requestsPerMinute,
     clock,
+  });
+  // The write guard of this pipeline, the only code that writes, built
+  // here like the client, so that the composition root never sees either
+  // (ADR 0029).
+  const guard: WriteGuard = createWriteGuard({
+    client,
+    clock,
+    killSwitchDir: options.killSwitchDir,
   });
 
   const stages = async (
@@ -471,9 +563,11 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       }
     }
 
-    // 3. gate. Every write is refused until the core can confirm one.
+    // 3. gate: the rule for running unattended, the licence and, for a tool
+    // treated as special and for every write tool, the audit file (ADR
+    // 0028, ADR 0029).
     const { meta } = entry;
-    if (meta.capability === 'write') return failed('policy_denied');
+    const writes = meta.capability === 'write';
     if (meta.unattended === 'never' && mode !== 'interactive') {
       return failed('policy_denied');
     }
@@ -483,7 +577,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     // Before the input is checked and ChurchTools is asked, so that a
     // broken audit file costs no read and no quota (ADR 0028). A tool that
     // names persons counts here like a special one (ADR 0064).
-    if (entry.asSpecial && !auditReady()) {
+    if ((entry.asSpecial || writes) && !auditReady()) {
       return failed('policy_denied', auditNotReady);
     }
 
@@ -549,9 +643,22 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         { once: true },
       );
     });
-    const executed = Promise.resolve().then(() =>
-      entry.execute({ ctx, input: parsedInput.data, read: access.read }),
-    );
+    // Only a write tool gets a write port, valid for this call (ADR 0029).
+    const writing = writes ? writeAccess(entry, ctx) : undefined;
+    const readCall: ToolCall<unknown> = {
+      ctx,
+      input: parsedInput.data,
+      read: access.read,
+    };
+    let call = readCall;
+    if (writing !== undefined) {
+      const writeCall: WriteToolCall<unknown> = {
+        ...readCall,
+        write: writing.port,
+      };
+      call = writeCall;
+    }
+    const executed = Promise.resolve().then(() => entry.execute(call));
     // Whichever loses must not end as an unhandled rejection.
     aborted.catch(() => undefined);
     executed.catch(() => undefined);
@@ -559,6 +666,10 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     try {
       result = await Promise.race([executed, aborted]);
     } catch (error) {
+      // A refused plan ends the call with its own error, whatever the
+      // tool made of it.
+      const refusal = writing?.refusal();
+      if (refusal !== undefined) return writeFailure(run, refusal, false);
       return {
         outcome: Object.freeze({
           __proto__: null,
@@ -569,6 +680,24 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       };
     } finally {
       access.revoke();
+      writing?.revoke();
+    }
+
+    // The way of a write after its plan: confirm, commit, and build the
+    // result in the fixed form, never from what the tool returned.
+    if (writing !== undefined) {
+      const refusal = writing.refusal();
+      if (refusal !== undefined) return writeFailure(run, refusal, false);
+      const written = await completeWrite(
+        run,
+        ctx,
+        writing,
+        result,
+        () => isAborted(controller.signal),
+        refs,
+      );
+      if (!written.ok) return written.failure;
+      result = written.result;
     }
 
     // 6. validateOutput.
@@ -630,6 +759,144 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         data: sealRedacted(data),
       }),
       audit: 'ok',
+    };
+  };
+
+  // The write port of one call: one plan, and none after the call ended.
+  const writeAccess = (
+    entry: CatalogEntry,
+    ctx: TenantContext,
+  ): WriteAccess => {
+    let open = true;
+    let planned = false;
+    let outcome: PlanOutcome | undefined;
+    let target: WriteTarget | undefined;
+    let refusal: EccliumError | undefined;
+    const port: WritePort = Object.freeze({
+      plan: async (intent: unknown): Promise<PlanOutcome> => {
+        if (!open || planned) throw new EccliumError('internal');
+        planned = true;
+        try {
+          const result = await guard.plan(
+            {
+              ctx,
+              tool: entry.name,
+              origin: entry.origin,
+              meta: {
+                sensitivity: entry.meta.sensitivity,
+                unattended: entry.meta.unattended,
+              },
+            },
+            intent,
+          );
+          outcome = result.outcome;
+          target = result.target;
+          return result.outcome;
+        } catch (error) {
+          // The guard rejects only with an EccliumError (write/guard.ts).
+          refusal = error as EccliumError;
+          throw refusal;
+        }
+      },
+    });
+    return Object.freeze({
+      port,
+      revoke: (): void => {
+        open = false;
+      },
+      outcome: () => outcome,
+      target: () => target,
+      refusal: () => refusal,
+    });
+  };
+
+  // A write that ended with an error: its state and outcome for the audit.
+  const writeFailure = (
+    run: Run,
+    error: EccliumError,
+    sent: boolean,
+    confirmation?: ConfirmationPath,
+  ): { readonly outcome: ToolOutcome; readonly audit: AuditOutcome } => {
+    const writeState = writeStateOf(error.code);
+    run.write = Object.freeze({
+      writeState,
+      sent,
+      ...(confirmation === undefined ? {} : { confirmation }),
+    });
+    return {
+      outcome: Object.freeze({
+        __proto__: null,
+        ok: false,
+        error: describeError(error),
+      }),
+      audit: writeDenials.includes(error.code) ? 'denied' : 'error',
+    };
+  };
+
+  // Confirms and commits the plan the tool returned. The tool must return
+  // exactly the outcome its plan gave; anything else is a fault of the tool.
+  const completeWrite = async (
+    run: Run,
+    ctx: TenantContext,
+    writing: WriteAccess,
+    returned: unknown,
+    aborted: () => boolean,
+    refs: ObjectRefCollector,
+  ): Promise<
+    | { readonly ok: true; readonly result: Readonly<Record<string, unknown>> }
+    | {
+        readonly ok: false;
+        readonly failure: {
+          readonly outcome: ToolOutcome;
+          readonly audit: AuditOutcome;
+        };
+      }
+  > => {
+    const outcome = writing.outcome();
+    const target = writing.target();
+    if (outcome === undefined || target === undefined || returned !== outcome) {
+      ctx.log.warn('tool_output_invalid');
+      return { ok: false, failure: failed('internal') };
+    }
+    addTarget(refs, target);
+    if (outcome.kind === 'skipped') {
+      run.write = Object.freeze({ writeState: 'skipped', sent: false });
+      return { ok: true, result: writeResult('skipped', target) };
+    }
+    const confirmation = await confirmWrite(ctx, outcome.plan);
+    if (confirmation.kind === 'required') {
+      return {
+        ok: false,
+        failure: writeFailure(
+          run,
+          new EccliumError('confirmation_required', confirmationSentence),
+          false,
+        ),
+      };
+    }
+    if (aborted()) return { ok: false, failure: failed('network') };
+    const committed = await guard.commit(ctx, outcome.plan, confirmation.proof);
+    if (!committed.ok) {
+      return {
+        ok: false,
+        failure: writeFailure(
+          run,
+          committed.error,
+          committed.sent,
+          committed.path,
+        ),
+      };
+    }
+    // A new page names itself only now.
+    addTarget(refs, committed.target);
+    run.write = Object.freeze({
+      writeState: 'verified',
+      confirmation: committed.path,
+      sent: true,
+    });
+    return {
+      ok: true,
+      result: writeResult('verified', committed.target, committed.version),
     };
   };
 
@@ -771,8 +1038,11 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       auditOutcome = 'error';
     } finally {
       // Whether the result needs its line in the audit file, read before
-      // anything here can throw (ADR 0028, ADR 0064).
-      const special = run.entry?.asSpecial === true;
+      // anything here can throw (ADR 0028, ADR 0064). The result of a write
+      // goes out also without its line: it holds no data of ChurchTools,
+      // and held back it would make the model write again (ADR 0029).
+      const special =
+        run.entry?.asSpecial === true && run.entry.meta.capability !== 'write';
       let recorded = false;
       let durationMs = 0;
       try {
@@ -812,6 +1082,12 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
               mode: mode as Mode,
               tool: run.entry?.name ?? 'ct_unknown',
               outcome: auditOutcome,
+              ...(run.write?.confirmation === undefined
+                ? {}
+                : { confirmation: run.write.confirmation }),
+              ...(run.write === undefined
+                ? {}
+                : { writeState: run.write.writeState }),
               ...(errorCode === undefined ? {} : { errorCode }),
               objectRefs: refs.refs,
               ...(refs.omitted > 0 ? { objectRefsOmitted: refs.omitted } : {}),
@@ -823,6 +1099,24 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       } catch {
         // The audit never decides the outcome of a reading call, except
         // for the result of a tool treated as special below.
+      }
+      // After a call that may have written: an anchor of the chain on the
+      // log, and when its line did not reach the audit file, no further
+      // write until the process ends (ADR 0029).
+      if (run.write?.sent === true) {
+        if (!recorded) {
+          guard.block();
+          try {
+            run.ctx?.log.error('write_audit_failed');
+          } catch {
+            // The block holds without its log line.
+          }
+        }
+        try {
+          audit.anchor?.();
+        } catch {
+          // The anchor is lost; the line is in the file or reported.
+        }
       }
       // The keys of the call go once its line is written, also after a
       // failure (ADR 0069).

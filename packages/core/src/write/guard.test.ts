@@ -7,7 +7,6 @@ import {
   isEccliumError,
   type Permissions,
   type PlannedWrite,
-  type PlanOutcome,
   type TenantContext,
   type WikiPage,
 } from '@ecclium/mcp-churchtools-plugin-api';
@@ -19,6 +18,7 @@ import {
   appendSection,
   createWriteGuard,
   type PlanRequest,
+  type PlanResult,
   type WriteClient,
   writeSentences,
 } from './guard.js';
@@ -204,7 +204,7 @@ const refusalOf = async (promise: Promise<unknown>): Promise<EccliumError> => {
   throw new Error('expected a refusal');
 };
 
-const planOf = (outcome: PlanOutcome): PlannedWrite => {
+const planOf = ({ outcome }: PlanResult): PlannedWrite => {
   if (outcome.kind !== 'planned') throw new Error('expected a plan');
   return outcome.plan;
 };
@@ -233,15 +233,15 @@ describe('planning', () => {
 
   it('seals a new page and a section, which reads the page for its text', async () => {
     const { guard, request } = setup();
-    expect((await guard.plan(request, create)).kind).toBe('planned');
-    expect((await guard.plan(request, append)).kind).toBe('planned');
+    expect((await guard.plan(request, create)).outcome.kind).toBe('planned');
+    expect((await guard.plan(request, append)).outcome.kind).toBe('planned');
   });
 
   it('skips a change that leaves the page as it is', async () => {
     const { guard, request } = setup();
     expect(await guard.plan(request, { ...update, text: '# Plan\n' })).toEqual({
-      kind: 'skipped',
-      reason: 'unchanged',
+      outcome: { kind: 'skipped', reason: 'unchanged' },
+      target: { kind: 'wiki_page', key: `12/${guid.toLowerCase()}` },
     });
   });
 
@@ -363,7 +363,22 @@ describe('planning', () => {
       kind: 'known',
       granted: { churchwiki: { 'edit category': true } },
     };
-    expect((await guard.plan(request, update)).kind).toBe('planned');
+    expect((await guard.plan(request, update)).outcome.kind).toBe('planned');
+  });
+
+  it('turns any other error of a read into internal', async () => {
+    const { request } = setup();
+    const failing = createWriteGuard({
+      client: {
+        ...clientOf(fakeOf()),
+        permissions: () => Promise.reject(new Error('socket')),
+      },
+      clock: createTestClock(now),
+      killSwitchDir: dir,
+    });
+    expect((await refusalOf(failing.plan(request, update))).code).toBe(
+      'internal',
+    );
   });
 
   it('does not write when it cannot read the rights', async () => {

@@ -232,6 +232,7 @@ export const logEvents = Object.freeze({
   write_conflict: entry('warn', 'code'),
   write_outcome_unknown: entry('warn', 'code'),
   write_committed: entry('info'),
+  write_audit_failed: entry('error'),
   // The escape hatch (ADR 0067).
   read_search_refused: entry('warn', 'code'),
   read_names_refused: entry('warn', 'code'),
