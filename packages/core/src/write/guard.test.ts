@@ -78,6 +78,7 @@ interface Fake {
   createdText?: string;
   readFails?: Error;
   readFailsAfterWrite?: Error;
+  onRead?: () => void;
 }
 
 const fakeOf = (): Fake => ({
@@ -101,6 +102,7 @@ const clientOf = (fake: Fake): WriteClient => ({
   writes: {
     wikiCategoryState: () => Promise.resolve({ serverTime: fake.time }),
     wikiPageState: (_ctx, _category, target) => {
+      fake.onRead?.();
       if (fake.readFails !== undefined) return Promise.reject(fake.readFails);
       if (fake.readFailsAfterWrite !== undefined && fake.sent.length > 0) {
         return Promise.reject(fake.readFailsAfterWrite);
@@ -567,15 +569,36 @@ describe('committing', () => {
     expect((await guard.commit(ctx, plan, proof)).ok).toBe(true);
   });
 
-  it('reads after a failure and finds nothing written', async () => {
+  it('reads after a lost answer, finds nothing yet and leaves the outcome open', async () => {
     const { fake, guard, ctx, plan, proof } = await planned(update);
     fake.updateFails = new HttpTransportError('interrupted');
     fake.updateWrites = false;
     expect(await guard.commit(ctx, plan, proof)).toMatchObject({
       state: 'failed',
-      sent: false,
-      error: { code: 'network', message: writeSentences.notSent },
+      sent: true,
+      error: { code: 'network', message: writeSentences.unknown },
     });
+  });
+
+  it('knows that nothing changed when ChurchTools refused the write', async () => {
+    const { fake, guard, ctx, plan, proof } = await planned(update);
+    fake.updateFails = new EccliumError('permission');
+    fake.updateWrites = false;
+    expect(await guard.commit(ctx, plan, proof)).toMatchObject({
+      state: 'failed',
+      sent: false,
+      error: { code: 'permission', message: writeSentences.notSent },
+    });
+  });
+
+  it('writes nothing when writing was switched off during the read before', async () => {
+    const { fake, guard, ctx, plan, proof } = await planned(update);
+    fake.onRead = () => {
+      writeFileSync(join(dir, 'writes-off'), '');
+    };
+    const result = await guard.commit(ctx, plan, proof);
+    expect(!result.ok && result.error.message).toBe(writeSentences.switchedOff);
+    expect(fake.sent).toEqual([]);
   });
 
   it('leaves the outcome unknown when the read after a failure fails too', async () => {

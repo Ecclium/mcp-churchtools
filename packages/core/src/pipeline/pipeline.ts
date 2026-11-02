@@ -394,6 +394,19 @@ const writeStateOf = (code: ErrorCode): WriteState =>
       ? 'conflict'
       : 'failed';
 
+// The state of a write for the audit line of its call: the one the write
+// left, or for a write tool that ended before its write, refused or failed
+// as its outcome says, so that whoever counts writes sees every call.
+const writeStateOfCall = (
+  run: Run,
+  outcome: AuditOutcome,
+  ok: boolean,
+): WriteState | undefined => {
+  if (run.write !== undefined) return run.write.writeState;
+  if (ok || run.entry?.meta.capability !== 'write') return undefined;
+  return outcome === 'denied' ? 'denied' : 'failed';
+};
+
 // The result of a write as the model gets it: state, target and version,
 // built by the core (ADR 0029).
 const writeResult = (
@@ -816,8 +829,11 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     error: EccliumError,
     sent: boolean,
     confirmation?: ConfirmationPath,
+    state?: 'conflict' | 'failed' | 'denied',
   ): { readonly outcome: ToolOutcome; readonly audit: AuditOutcome } => {
-    const writeState = writeStateOf(error.code);
+    // The state the guard gives counts over the code: a write that may
+    // have landed is never denied.
+    const writeState = state ?? writeStateOf(error.code);
     run.write = Object.freeze({
       writeState,
       sent,
@@ -829,7 +845,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         ok: false,
         error: describeError(error),
       }),
-      audit: writeDenials.includes(error.code) ? 'denied' : 'error',
+      audit: writeState === 'denied' ? 'denied' : 'error',
     };
   };
 
@@ -884,6 +900,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
           committed.error,
           committed.sent,
           committed.path,
+          committed.state,
         ),
       };
     }
@@ -1066,6 +1083,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
           }
         }
         const errorCode = outcome.ok ? undefined : outcome.error.code;
+        const writeState = writeStateOfCall(run, auditOutcome, outcome.ok);
         // Tenant and actor come from the frozen copy only, which runs no
         // code of the resolver's answer. Without one the audit takes its
         // placeholders, which no context accepts as real values, so a call
@@ -1085,9 +1103,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
               ...(run.write?.confirmation === undefined
                 ? {}
                 : { confirmation: run.write.confirmation }),
-              ...(run.write === undefined
-                ? {}
-                : { writeState: run.write.writeState }),
+              ...(writeState === undefined ? {} : { writeState }),
               ...(errorCode === undefined ? {} : { errorCode }),
               objectRefs: refs.refs,
               ...(refs.omitted > 0 ? { objectRefsOmitted: refs.omitted } : {}),

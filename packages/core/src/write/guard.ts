@@ -518,6 +518,9 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
         target,
       );
     }
+    // Writing may have been switched off during the read.
+    const stopNow = stopped(ctx);
+    if (stopNow !== undefined) return denied(stopNow, target, path);
     if (!serverTimeFits(now, derived.serverTime)) {
       ctx.log.warn('write_refused', { code: 'policy_denied' });
       return denied(
@@ -675,12 +678,19 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     if (after.version === base + 1 && after.text === text) {
       return verified(ctx, path, target, after.version);
     }
+    // Only a refusal of ChurchTools shows that the write did not land; after
+    // any other failure it may still land later (ADR 0072).
     if (failure !== undefined && after.version === base) {
+      const refused =
+        isEccliumError(failure) && definite.includes(failure.code);
       return ended(
         ctx,
         'failed',
-        refuse(asError(failure).code, writeSentences.notSent),
-        false,
+        refuse(
+          asError(failure).code,
+          refused ? writeSentences.notSent : writeSentences.unknown,
+        ),
+        !refused,
         target,
         path,
       );

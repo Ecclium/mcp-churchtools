@@ -548,7 +548,7 @@ describe('a write tool in the pipeline', () => {
     );
     expect(!second.ok && second.error.code).toBe('internal');
     expect(logs()).toContain('tool_output_invalid');
-    expect(events()[0]).not.toHaveProperty('writeState');
+    expect(events()[0]).toMatchObject({ writeState: 'failed' });
   });
 
   it('gives a tool one plan per call, and none after the call', async () => {
@@ -581,7 +581,7 @@ describe('a write tool in the pipeline', () => {
       request(),
     );
     expect(!outcome.ok && outcome.error.code).toBe('upstream');
-    expect(events()[0]).not.toHaveProperty('writeState');
+    expect(events()[0]).toMatchObject({ writeState: 'failed' });
   });
 
   it('commits nothing once the client cancelled the call', async () => {
