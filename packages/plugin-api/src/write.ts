@@ -14,7 +14,18 @@
  *
  * @packageDocumentation
  */
+import { type ZodType, z } from 'zod';
+
 import type { TenantContext } from './context.js';
+import { classify } from './data-class.js';
+import type {
+  ObjectSchema,
+  ToolCall,
+  ToolDefinition,
+  ToolDescription,
+  ToolName,
+  WriteToolMeta,
+} from './tool.js';
 
 /** Creates a Markdown page in a category of the wiki. */
 export interface WikiPageCreateIntent {
@@ -310,4 +321,129 @@ export interface NonceStore {
     nonce: string,
     ttlMs: number,
   ): Promise<'fresh' | 'replayed'>;
+}
+
+/**
+ * What a write changes, as the policy, the audit and the result of a write
+ * name it: a category or a page of the wiki, a calendar, an appointment, a
+ * resource, a group, a service of an event, or an operation of the escape
+ * hatch.
+ */
+export type WriteTargetKind =
+  | 'wiki_category'
+  | 'wiki_page'
+  | 'calendar'
+  | 'appointment'
+  | 'resource'
+  | 'group'
+  | 'service'
+  | 'operation';
+
+/** Every {@link WriteTargetKind}, frozen, for checks at run time. */
+export const writeTargetKinds: readonly WriteTargetKind[] = Object.freeze([
+  'wiki_category',
+  'wiki_page',
+  'calendar',
+  'appointment',
+  'resource',
+  'group',
+  'service',
+  'operation',
+]);
+
+/**
+ * The result of a write tool as the model gets it. The core builds it
+ * from the plan and the outcome of the commit; the tool never shapes it.
+ * A write that ended otherwise comes back as an error with a fixed
+ * sentence.
+ */
+export interface WriteResult {
+  /**
+   * `verified` when the core wrote and read the change back, `skipped`
+   * when the target already held what the intent would write.
+   */
+  readonly state: 'verified' | 'skipped';
+  /** What the write changed. */
+  readonly target: {
+    readonly kind: WriteTargetKind;
+    /** The IDs of the target, such as `12/<GUID>` for a page. */
+    readonly key: string;
+  };
+  /** The version of the target after the write, when it has one. */
+  readonly version?: number;
+}
+
+/**
+ * The schema of {@link WriteResult}, the output of every write tool. The
+ * registry of the core uses its own copy, whatever a tool declares.
+ */
+export const writeResultSchema: ZodType<WriteResult, WriteResult> = z.object({
+  state: classify(z.enum(['verified', 'skipped']), 'none'),
+  target: z.object({
+    kind: classify(z.enum(writeTargetKinds), 'none'),
+    key: classify(z.string().min(1).max(200), 'none'),
+  }),
+  version: classify(z.int().min(0), 'none').optional(),
+});
+
+/** What a write tool receives for one call: a read tool's call and `write`. */
+export interface WriteToolCall<Input> extends ToolCall<Input> {
+  /** The way to plan a write, valid only during this call. */
+  readonly write: WritePort;
+}
+
+/** A write tool as its author writes it, for {@link defineWriteTool}. */
+export interface WriteToolSpec<InputSchema extends ObjectSchema> {
+  /** Name of the tool. */
+  readonly name: ToolName;
+  /** Metadata of the tool, with `capability: 'write'`. */
+  readonly meta: WriteToolMeta;
+  /** Description for the model. */
+  readonly description: ToolDescription;
+  /** Schema of the input. */
+  readonly input: InputSchema;
+  /**
+   * Plans one write: hands an intent to `write.plan` and returns what it
+   * gave back. It never writes and never shapes the result.
+   */
+  readonly execute: (
+    call: WriteToolCall<z.output<InputSchema>>,
+  ) => Promise<PlanOutcome>;
+}
+
+/**
+ * Makes a write tool. Its output is always {@link writeResultSchema}: the
+ * core builds the result after the commit, from the plan the tool
+ * returned.
+ *
+ * @param tool - The tool.
+ * @returns The tool as the core keeps it.
+ * @example
+ * ```ts
+ * const append = defineWriteTool({
+ *   name: 'ct_example_note_append',
+ *   meta: { capability: 'write', domain: 'wiki', requiredRights: [],
+ *     tier: 'free', sensitivity: 'personal', unattended: 'policy',
+ *     routineStable: false, reversible: 'snapshot', replayGuard: 'marker' },
+ *   description: { purpose: '…', useWhen: '…', avoidWhen: '…', limits: '…' },
+ *   input: z.object({ section: classify(z.string().max(2000), 'untrusted') }),
+ *   execute: ({ input, write }) => write.plan({ kind: 'wikiSectionAppend',
+ *     categoryId: 12, guid, section: input.section, baseVersion: 3 }),
+ * });
+ * ```
+ */
+export function defineWriteTool<InputSchema extends ObjectSchema>(
+  tool: WriteToolSpec<InputSchema>,
+): ToolDefinition<z.output<InputSchema>, PlanOutcome> {
+  // The core calls execute with a WriteToolCall for a write tool; the
+  // definition the core keeps takes any call, so the tool is widened.
+  const kept = {
+    name: tool.name,
+    meta: tool.meta,
+    description: tool.description,
+    input: tool.input,
+    output: writeResultSchema,
+    execute: tool.execute,
+  };
+  return kept as unknown as ToolDefinition<z.output<InputSchema>, PlanOutcome>;
 }
