@@ -84,7 +84,10 @@ export interface AuditEventV1 {
   readonly confirmation?: ConfirmationPath;
   /** The state of a write at the end of the call, for writes only. */
   readonly writeState?: WriteState;
-  /** Hash of the policy in force, for runs of the runner. */
+  /**
+   * Hash of the policy in force, for every call of a write tool and later
+   * for runs of the runner.
+   */
   readonly policyHash?: string;
   /** The language model of a run, if it used one. */
   readonly provider?: ProviderInfo;

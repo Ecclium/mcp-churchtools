@@ -27,6 +27,7 @@ import { z } from 'zod';
 
 import { createAuditSink } from '../audit/index.js';
 import { checkPolicy, defaultPolicy } from '../policy/check.js';
+import { policyHashOf } from '../policy/hash.js';
 import type { Policy } from '../policy/schema.js';
 import { createToolCatalog } from '../registry/index.js';
 import { confirmationSentence } from '../write/confirm.js';
@@ -279,6 +280,7 @@ describe('a write tool in the pipeline', () => {
       outcome: 'ok',
       confirmation: 'elicitation',
       writeState: 'verified',
+      policyHash: policyHashOf(defaultPolicy),
     });
     expect(file.anchors).toBe(1);
     expect(logs()).toContain('write_committed');
@@ -517,6 +519,7 @@ describe('a write tool in the pipeline', () => {
     expect(events()[0]).toMatchObject({
       outcome: 'denied',
       writeState: 'denied',
+      policyHash: policyHashOf(checked.policy),
     });
     expect(logs()).toContain('policy_no_entry');
     expect(double.calls().filter(({ method }) => method !== 'GET')).toEqual([]);

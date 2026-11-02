@@ -87,6 +87,7 @@ import {
   collectInputRefs,
   type ToolCatalog,
 } from '../registry/index.js';
+import { policyHashOf } from '../policy/hash.js';
 import type { Policy } from '../policy/schema.js';
 import { isoDateOf, quotaTimeoutMs } from '../quota/budget.js';
 import { openPseudonyms, type Pseudonyms } from '../redaction/pseudonym.js';
@@ -492,6 +493,9 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
   // the policy is read once at the start (ADR 0032).
   const readBudget = options.policy.interactive.readBudgetPerDay;
   const exhausted = budgetExhausted(readBudget);
+  // The hash of the policy, once: the audit line of every call of a write
+  // tool names the policy that judged it (ADR 0032).
+  const policyHash = policyHashOf(options.policy);
   const client = createChurchToolsClient({
     transport: options.transport,
     origin,
@@ -1122,6 +1126,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
                 ? {}
                 : { confirmation: run.write.confirmation }),
               ...(writeState === undefined ? {} : { writeState }),
+              ...(run.entry?.meta.capability === 'write' ? { policyHash } : {}),
               ...(errorCode === undefined ? {} : { errorCode }),
               objectRefs: refs.refs,
               ...(refs.omitted > 0 ? { objectRefsOmitted: refs.omitted } : {}),

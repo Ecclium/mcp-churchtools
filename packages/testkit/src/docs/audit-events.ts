@@ -48,7 +48,8 @@ export const auditFieldMeanings: Readonly<Record<string, string>> =
     confirmation: 'Wie ein Schreibvorgang bestätigt wurde.',
     writeState:
       'Der Zustand eines Schreibvorgangs am Ende des Aufrufs: `planned`, `queued`, `verified` oder `skipped` bei `ok`, `denied` bei `denied`, `conflict`, `failed` oder `rolledBack` bei `error`. Wer Schreibvorgänge zählt, liest dieses Feld.',
-    policyHash: 'SHA-256 der Richtlinie eines Laufs.',
+    policyHash:
+      'SHA-256 der Richtlinie, die einen Aufruf eines schreibenden Tools beurteilt hat, wie `ecclium config check` ihn zeigt. Jede Zeile eines schreibenden Tools nennt ihn, auch eine abgelehnte. Später nennt ihn auch jede Zeile eines Laufs des Runners.',
     provider: 'Das Sprachmodell eines Laufs, wie die Konfiguration es nennt.',
     'provider.vendor': 'Anbieter des Modells.',
     'provider.model': 'Name des Modells beim Anbieter.',

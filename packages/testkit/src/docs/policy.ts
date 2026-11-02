@@ -394,7 +394,7 @@ export function renderPolicyReference(): string {
     '',
     '## Hash',
     '',
-    'Ecclium bildet den SHA-256 über die geprüfte Richtlinie in einer festen Form: Voreinstellungen eingesetzt, Namen in NFC, GUIDs in Kleinbuchstaben und die Schlüssel sortiert. Kommentare und die Schreibweise eines Werts ändern ihn nicht, die Reihenfolge der Einträge schon. Ohne Datei gilt der Hash der Voreinstellung. `ecclium config check` zeigt ihn, und sobald der Write-Guard die Richtlinie anwendet, nennt ihn jedes Audit-Ereignis eines Schreibvorgangs als `policyHash`.',
+    'Ecclium bildet den SHA-256 über die geprüfte Richtlinie in einer festen Form: Voreinstellungen eingesetzt, Namen in NFC, GUIDs in Kleinbuchstaben und die Schlüssel sortiert. Kommentare und die Schreibweise eines Werts ändern ihn nicht, die Reihenfolge der Einträge schon. Ohne Datei gilt der Hash der Voreinstellung. `ecclium config check` zeigt ihn, und die Zeile jedes Aufrufs eines schreibenden Tools im Audit nennt ihn als `policyHash`, auch die eines abgelehnten. So lässt sich später sagen, unter welcher Richtlinie ein Schreibvorgang lief.',
   ];
   return `${lines.join('\n')}\n`;
 }
