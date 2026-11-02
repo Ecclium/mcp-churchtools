@@ -122,6 +122,7 @@
         '@eslint/js',
         'prettier',
         'yaml',
+        'markdown-it',
       ],
       automerge: false,
     },

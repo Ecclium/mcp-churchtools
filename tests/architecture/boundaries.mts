@@ -49,6 +49,7 @@ export const placeKeys = [
   'aesGcmSiv',
   'policyYaml',
   'contentLexer',
+  'contentDifferential',
   'pseudonymUsers',
   'redactedMark',
   'redactedUsers',

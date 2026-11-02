@@ -684,6 +684,22 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'markdown-it-only-in-differential-test',
+    name: 'a test of the write guard reads Markdown with the second parser',
+    files: {
+      'packages/core/src/write/forbidden.test.ts':
+        "import MarkdownIt from 'markdown-it';\nexport const parser = new MarkdownIt();\n",
+    },
+  },
+  {
+    rule: 'markdown-it-only-in-differential-test',
+    name: 'another test of the content policy uses the second parser',
+    files: {
+      'packages/core/src/content/forbidden.test.ts':
+        "import MarkdownIt from 'markdown-it';\nexport const parser = new MarkdownIt();\n",
+    },
+  },
+  {
     rule: 'marked-only-in-content-lexer',
     name: 'the serializer of the content policy renders with the library',
     files: {

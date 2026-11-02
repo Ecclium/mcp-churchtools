@@ -400,6 +400,13 @@ export function dependencyRules(
       to: { path: '(^|/)node_modules/marked/' },
     },
     {
+      name: 'markdown-it-only-in-differential-test',
+      severity: 'error',
+      comment: `${adr('contentDifferential')}: only the differential test of the content policy imports markdown-it. It is a second parser for that test, a tool of development without provenance, and never reads or writes a text of the product.`,
+      from: { path: '^packages/', pathNot: at('contentDifferential') },
+      to: { path: '(^|/)node_modules/markdown-it/' },
+    },
+    {
       name: 'mcp-mount-only-in-server',
       severity: 'error',
       comment: `${adr('mcpMount')}: only the server uses the mount, the one registration with the MCP SDK.`,

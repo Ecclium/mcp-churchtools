@@ -34,6 +34,9 @@ export const developmentLicences: ReadonlySet<string> = new Set([
   'CC-BY-4.0',
   'CC0-1.0',
   'MPL-2.0',
+  // argparse, which markdown-it brings for its command line; markdown-it
+  // is only the second parser of a test (ADR 0030).
+  'PSF-2.0',
 ]);
 
 /** One dependency as listed by `pnpm licenses list --json`. */
