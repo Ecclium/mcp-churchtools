@@ -89,7 +89,7 @@ Ohne Umschlag bleiben vier Arten von Text. Namen von Personen stehen ausserhalb,
 
 ## Lesebudget und Audit-Datei
 
-Die Tools, die in der Übersicht der [Referenz der Tools](tools.md) unter «Lesebudget» ein «ja» tragen, haben zusammen ein Budget von 200 Aufrufen je Akteur und UTC-Tag. Das sind die Tools mit besonders schützenswerten Personendaten und jedes andere, das Namen oder Kennungen anderer Personen ausgibt, etwa die Einteilungen in Dienste ([ADR 0063](adr/0063-quotastore-als-datei.md), [ADR 0064](adr/0064-leserechte-und-felder-der-lese-tools.md)).
+Die Tools, die in der Übersicht der [Referenz der Tools](tools.md) unter «Lesebudget» ein «ja» tragen, haben zusammen ein Budget von voreingestellt 200 Aufrufen je Akteur und UTC-Tag, das die [Richtlinie](policy.md) von 0 bis 1000 einstellt. Das sind die Tools mit besonders schützenswerten Personendaten und jedes andere, das Namen oder Kennungen anderer Personen ausgibt, etwa die Einteilungen in Dienste ([ADR 0063](adr/0063-quotastore-als-datei.md), [ADR 0064](adr/0064-leserechte-und-felder-der-lese-tools.md)).
 
 - Jeder Aufruf mit gültiger Eingabe zählt, bevor Ecclium ChurchTools fragt, auch jede weitere Seite einer Liste. Ein Aufruf, dessen Eingabe der Server abweist, zählt nicht.
 - Über dem Budget endet jeder Aufruf dieser Tools bis zum nächsten UTC-Tag mit `policy_denied`. Kann Ecclium nicht zählen, endet er ebenso.

@@ -23,6 +23,15 @@ import {
   logFieldMeanings,
   renderLogEventsReference,
 } from './log-events.js';
+import {
+  policyFieldMeanings,
+  policyFieldPaths,
+  policyTargetFieldMeanings,
+  policyTargetFieldPaths,
+  policyTargetKinds,
+  renderPolicyReference,
+  renderPolicySchema,
+} from './policy.js';
 import { renderPromptsReference } from './prompts.js';
 import { renderToolsReference } from './tools.js';
 
@@ -63,6 +72,59 @@ describe('the generated references', () => {
   it('matches docs/log-events.md', async () => {
     await expect(renderLogEventsReference()).toMatchFileSnapshot(
       '../../../../docs/log-events.md',
+    );
+  });
+
+  it('matches schemas/policy.v1.json', async () => {
+    await expect(renderPolicySchema()).toMatchFileSnapshot(
+      '../../../../schemas/policy.v1.json',
+    );
+  });
+
+  it('matches docs/policy.md', async () => {
+    await expect(renderPolicyReference()).toMatchFileSnapshot(
+      '../../../../docs/policy.md',
+    );
+  });
+});
+
+describe('the page of the policy', () => {
+  it('gives every field of the file a meaning, and no meaning to anything else', () => {
+    expect(Object.keys(policyFieldMeanings).sort()).toEqual(
+      [...policyFieldPaths()].sort(),
+    );
+    expect(Object.keys(policyTargetFieldMeanings).sort()).toEqual(
+      [...policyTargetFieldPaths()].sort(),
+    );
+  });
+
+  it('names every kind of target of the schema once', () => {
+    const schema = JSON.parse(renderPolicySchema()) as {
+      title: string;
+      additionalProperties: boolean;
+    };
+    expect(schema.title).toBe('PolicyV1');
+    expect(schema.additionalProperties).toBe(false);
+    expect(policyTargetKinds.map((entry) => entry.kind)).toEqual([
+      'wiki_category',
+      'wiki_page',
+      'calendar',
+      'resource',
+      'group',
+      'service',
+    ]);
+  });
+
+  it('shows the form, the duty and the parts of fields and targets', () => {
+    const page = renderPolicyReference();
+    expect(page).toContain(
+      "| `interactive.readBudgetPerDay` | ganze Zahl von 0 bis 1'000 | nein |",
+    );
+    expect(page).toContain(
+      '| `unattended[].maxPerRun` | ganze Zahl von 1 bis 100 | ja |',
+    );
+    expect(page).toContain(
+      '| `group` | Gruppe | nur `interactive` | Mitglieder der Gruppe hinzufügen oder entfernen. |',
     );
   });
 });
