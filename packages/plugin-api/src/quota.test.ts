@@ -1,11 +1,76 @@
 import { describe, expect, it } from 'vitest';
 
-import { isIsoDate, quotaKeys } from './index.js';
+import {
+  isIsoDate,
+  isQuotaKey,
+  maxWriteQuotaKeyLength,
+  quotaKeys,
+  writeQuotaKey,
+} from './index.js';
+
+const guid = '00000000-0000-4000-8000-000000000001';
 
 describe('the port for quotas', () => {
-  it('counts one key today, frozen', () => {
+  it('has one key with a fixed name, frozen', () => {
     expect(quotaKeys).toEqual(['special_reads']);
     expect(Object.isFrozen(quotaKeys)).toBe(true);
+  });
+
+  it.each([
+    ['ct_wiki_page_create', 'wiki_category:12'],
+    ['ct_wiki_page_update', `wiki_page:12/${guid}`],
+    ['ct_appointments_create', 'calendar:3'],
+    ['ct_bookings_create', 'resource:4'],
+    ['ct_groups_add_member', 'group:2147483647'],
+    ['ct_services_request', 'service:5/7'],
+  ])('builds the key of a counter of %s on %s', (tool, target) => {
+    const key = writeQuotaKey(tool, target);
+    expect(key).toBe(`write:${tool}:${target}`);
+    expect(isQuotaKey(key)).toBe(true);
+  });
+
+  it('takes the longest key the form allows', () => {
+    const key = writeQuotaKey(
+      `ct_${'a'.repeat(60)}`,
+      `wiki_page:2147483647/${guid}`,
+    );
+    expect(key.length).toBeLessThanOrEqual(maxWriteQuotaKeyLength);
+  });
+
+  it.each([
+    ['a tool of another form', 'wiki_create', 'wiki_category:12'],
+    ['a kind outside the policy', 'ct_api_execute_write', 'operation:x'],
+    ['an ID of 0', 'ct_wiki_page_create', 'wiki_category:0'],
+    ['an ID with a sign', 'ct_wiki_page_create', 'wiki_category:-1'],
+    [
+      'a GUID in capitals',
+      'ct_wiki_page_update',
+      'wiki_page:12/0000000A-0000-4000-8000-00000000000B',
+    ],
+    ['a page without its category', 'ct_wiki_page_update', `wiki_page:${guid}`],
+    ['a path', 'ct_wiki_page_create', 'wiki_category:12/../x'],
+    ['a line break', 'ct_wiki_page_create', 'wiki_category:12\n'],
+  ])('refuses %s', (_name, tool, target) => {
+    expect(() => writeQuotaKey(tool, target)).toThrow(TypeError);
+  });
+
+  it.each(['special_reads', `write:ct_x:wiki_page:1/${guid}`])(
+    'takes %s as a key',
+    (value) => {
+      expect(isQuotaKey(value)).toBe(true);
+    },
+  );
+
+  it.each([
+    'special_read',
+    'write:',
+    `write:ct_${'a'.repeat(200)}:group:1`,
+    'toString',
+    12,
+    null,
+    undefined,
+  ])('refuses %j as a key', (value) => {
+    expect(isQuotaKey(value)).toBe(false);
   });
 
   it.each(['2026-10-24', '1970-01-01', '2028-02-29', '9999-12-31'])(

@@ -201,10 +201,14 @@ export {
 } from './keys.js';
 export {
   isIsoDate,
+  isQuotaKey,
+  maxWriteQuotaKeyLength,
   quotaKeys,
   type IsoDate,
   type QuotaKey,
   type QuotaStore,
+  writeQuotaKey,
+  type WriteQuotaKey,
 } from './quota.js';
 export {
   defineWriteTool,
