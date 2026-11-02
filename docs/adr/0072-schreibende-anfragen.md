@@ -80,4 +80,5 @@ Gewählt ist die dritte Option.
 - **Rechte:** Die Zuordnung von Operationen zu Rechten nennt für beide Schreibvorgänge `churchwiki: edit category`, belegt mit dem Befund «Rechte zum Schreiben im Wiki» in `docs/research/churchtools-api.md` und für das Anlegen auch mit dem OpenAPI-Dokument ([ADR 0066](0066-doku-index.md), Umsetzung).
 - **Probelauf:** `assertOnlyReads` in `packages/testkit/src/http-double/`.
 - **Regel für `writes`:** Seit dem 01.11.2026 lässt `[arch:client-writes]` einen Zugriff auf `writes` nur im Write-Guard und im Ordner des Clients zu ([ADR 0029](0029-write-guard.md), Umsetzung).
+- **Lesen vor einer neuen Seite:** Seit dem 02.11.2026 gibt `writes.wikiCategoryState` die Zeit von ChurchTools aus der ersten Seite der Liste der Seiten einer Kategorie, mit derselben Anfrage wie das Lesen dieser Liste ([ADR 0029](0029-write-guard.md), Umsetzung).
 - **Offen:** Die Operationen für Termine und Buchungen kommen mit ihren Tools, die Aufrufe von `delete` mit der Rücknahme.
