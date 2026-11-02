@@ -1323,3 +1323,4 @@ Diese Grundsatzfragen sind entschieden.
   - Pipeline und Audit: Die Option `policy` ist Pflicht, und jede Zeile eines Schreib-Tools im Audit trägt `policyHash`, auch eine abgelehnte.
   - Doku: `docs/policy.md`, `docs/log-events.md`, `docs/audit-events.md` und `docs/privacy.md` nachgeführt, ADR 0063 nennt die neuen Schlüssel. Für `packages/core/src/write/` und `packages/core/src/policy/` bleibt die Abdeckung bei 100 Prozent.
   - Anders als im Plan: `ecclium policy init --interactive` kommt in einem eigenen Pull Request, weil er als erster Befehl ausser dem Start mit ChurchTools spricht und eine eigene Wurzel der Komposition braucht.
+- 02.11.2026, der zweite Teil der Richtlinie ist als `341d89a` auf `main` (#180). Der Squash-Commit bringt genau den Baum des Branches. `compat` scheiterte im ersten Lauf an der Zeitgrenze des Tests «gives connect when the handshake does not finish within its limit», der unter «Offen» steht, und der Job wurde neu gestartet.
