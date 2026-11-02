@@ -552,3 +552,62 @@ describe('a write between two reads', () => {
     }).toThrow(`1 request(s) would write: PATCH ${pagePath}`);
   });
 });
+
+describe('the state of a category before a new page', () => {
+  const categoryList = (path: string) =>
+    path.split('?')[0] === '/api/wiki/pages';
+  const emptyList = JSON.stringify({
+    data: [],
+    meta: {
+      count: 0,
+      pagination: { total: 0, limit: 25, current: 1, lastPage: 1 },
+    },
+  });
+
+  it('gives the time of ChurchTools from the date header of the first page of the list', async () => {
+    const { double, writes, ctx } = setup();
+    double
+      .intercept({ path: categoryList, method: 'GET' })
+      .reply(200, emptyList, {
+        headers: {
+          'content-type': 'application/json',
+          date: 'Sun, 01 Nov 2026 20:00:00 GMT',
+        },
+      });
+    const state = await writes.wikiCategoryState(ctx(), 4);
+    expect(state).toEqual({ serverTime: Date.UTC(2026, 10, 1, 20, 0, 0) });
+    expect(Object.isFrozen(state)).toBe(true);
+    expect(Object.getPrototypeOf(state)).toBeNull();
+    expect(double.calls()[0]?.searchParams).toEqual({
+      'wiki_category_ids[]': '4',
+      page: '1',
+      limit: '25',
+    });
+    assertOnlyReads(double);
+  });
+
+  it('gives no time without a date header', async () => {
+    const { double, writes, ctx } = setup();
+    double
+      .intercept({ path: categoryList, method: 'GET' })
+      .reply(200, emptyList, json);
+    expect((await writes.wikiCategoryState(ctx(), 4)).serverTime).toBeNull();
+  });
+
+  it('fails as the read of the pages of a category does', async () => {
+    const { double, writes, ctx, lines } = setup();
+    double
+      .intercept({ path: categoryList, method: 'GET' })
+      .reply(200, JSON.stringify({ data: 'x' }), json);
+    expect((await errorOf(writes.wikiCategoryState(ctx(), 4))).code).toBe(
+      'upstream',
+    );
+    expect((await errorOf(writes.wikiCategoryState(ctx(), 0))).code).toBe(
+      'validation',
+    );
+    expect(lines.map((line) => line.event)).toEqual([
+      'churchtools_wiki_pages_refused',
+      'churchtools_wiki_input_refused',
+    ]);
+  });
+});

@@ -1,7 +1,7 @@
 /**
  * The writes of the ChurchTools client for the wiki (ADR 0072): create a
- * page in Markdown, change the text of a page, and read a page together
- * with the time of ChurchTools.
+ * page in Markdown, change the text of a page, and read a page or the
+ * pages of a category together with the time of ChurchTools.
  *
  * Where they stand in the way of a write: a tool only plans; the write
  * guard of the core seals the plan, gets it confirmed and commits it
@@ -58,6 +58,25 @@ export interface WikiPageState {
   readonly serverTime: number | null;
 }
 
+/** What the read before creating a page gives: the time of ChurchTools. */
+export interface WikiCategoryState {
+  /**
+   * The time of ChurchTools from the `date` header of the answer, in
+   * milliseconds since the Unix epoch, or null when the header is missing
+   * or has another form. The write guard does not create without it.
+   */
+  readonly serverTime: number | null;
+}
+
+/**
+ * How the client reads the first page of the list of pages of a category
+ * for the writes: only its `date`, after it checked the answer.
+ */
+export type ReadWikiCategory = (
+  ctx: TenantContext,
+  categoryId: number,
+) => Promise<{ readonly date: string | undefined }>;
+
 /** How the client reads a page for the writes: the page and its `date`. */
 export type ReadWikiPage = (
   ctx: TenantContext,
@@ -112,6 +131,17 @@ export interface ChurchToolsWrites {
     categoryId: number,
     guid: string,
   ): Promise<WikiPageState>;
+  /**
+   * Reads the first page of the list of pages of a category with the time
+   * of ChurchTools, for the read right before creating a page, which has
+   * no page of its own to read yet.
+   *
+   * @throws {EccliumError} As the read of the pages of a category.
+   */
+  wikiCategoryState(
+    ctx: TenantContext,
+    categoryId: number,
+  ): Promise<WikiCategoryState>;
 }
 
 /** What the writes are built from. */
@@ -122,6 +152,8 @@ export interface WikiWritesOptions {
   readonly origin: string;
   /** The read of a page that the client uses itself. */
   readonly readPage: ReadWikiPage;
+  /** The read of the pages of a category that the client uses itself. */
+  readonly readCategory: ReadWikiCategory;
 }
 
 // The answer of a write carries the page with its text; it stays within
@@ -184,14 +216,14 @@ const jsonBody = (value: Readonly<Record<string, unknown>>): Uint8Array =>
  * @returns The writes, frozen.
  * @example
  * ```ts
- * const writes = createWikiWrites({ path, origin, readPage });
+ * const writes = createWikiWrites({ path, origin, readPage, readCategory });
  * const created = await writes.createWikiPage(ctx, 4, 'Dienstplan', '# Dienstplan');
  * ```
  */
 export function createWikiWrites(
   options: WikiWritesOptions,
 ): ChurchToolsWrites {
-  const { path, origin, readPage } = options;
+  const { path, origin, readPage, readCategory } = options;
 
   // Refuses what may not be sent before the tenant is checked and the
   // throttle gives a place, so that an invalid value costs no request.
@@ -293,5 +325,18 @@ export function createWikiWrites(
     });
   };
 
-  return Object.freeze({ createWikiPage, updateWikiPage, wikiPageState });
+  const wikiCategoryState = async (
+    ctx: TenantContext,
+    categoryId: number,
+  ): Promise<WikiCategoryState> => {
+    const { date } = await readCategory(ctx, categoryId);
+    return Object.freeze({ __proto__: null, serverTime: serverTimeOf(date) });
+  };
+
+  return Object.freeze({
+    createWikiPage,
+    updateWikiPage,
+    wikiPageState,
+    wikiCategoryState,
+  });
 }
