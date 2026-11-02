@@ -22,6 +22,7 @@ import {
   isWikiPageGuid,
   maxWikiTitleLength,
   type TenantContext,
+  type WikiCategory,
   type WikiPage,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
@@ -142,6 +143,19 @@ export interface ChurchToolsWrites {
     ctx: TenantContext,
     categoryId: number,
   ): Promise<WikiCategoryState>;
+  /**
+   * Reads the name of a category from `GET /api/wiki/categories`, for the
+   * policy, which compares it with the name the operator expects
+   * (ADR 0032).
+   *
+   * @returns The name, or undefined when the list holds no category with
+   *   this ID, such as one the account cannot see.
+   * @throws {EccliumError} As the read of the categories.
+   */
+  wikiCategoryName(
+    ctx: TenantContext,
+    categoryId: number,
+  ): Promise<string | undefined>;
 }
 
 /** What the writes are built from. */
@@ -154,6 +168,10 @@ export interface WikiWritesOptions {
   readonly readPage: ReadWikiPage;
   /** The read of the pages of a category that the client uses itself. */
   readonly readCategory: ReadWikiCategory;
+  /** The read of the list of categories that the client uses itself. */
+  readonly readCategories: (
+    ctx: TenantContext,
+  ) => Promise<readonly WikiCategory[]>;
 }
 
 // The answer of a write carries the page with its text; it stays within
@@ -223,7 +241,7 @@ const jsonBody = (value: Readonly<Record<string, unknown>>): Uint8Array =>
 export function createWikiWrites(
   options: WikiWritesOptions,
 ): ChurchToolsWrites {
-  const { path, origin, readPage, readCategory } = options;
+  const { path, origin, readPage, readCategory, readCategories } = options;
 
   // Refuses what may not be sent before the tenant is checked and the
   // throttle gives a place, so that an invalid value costs no request.
@@ -333,10 +351,22 @@ export function createWikiWrites(
     return Object.freeze({ __proto__: null, serverTime: serverTimeOf(date) });
   };
 
+  // The name of one category from the list of all; the list is short and
+  // has no read of one category by its ID (ADR 0072).
+  const wikiCategoryName = async (
+    ctx: TenantContext,
+    categoryId: number,
+  ): Promise<string | undefined> => {
+    checkInput(ctx, isWholeFromOne(categoryId));
+    const categories = await readCategories(ctx);
+    return categories.find((category) => category.id === categoryId)?.name;
+  };
+
   return Object.freeze({
     createWikiPage,
     updateWikiPage,
     wikiPageState,
     wikiCategoryState,
+    wikiCategoryName,
   });
 }

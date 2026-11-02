@@ -79,6 +79,8 @@ interface Fake {
   readFails?: Error;
   readFailsAfterWrite?: Error;
   onRead?: () => void;
+  /** The name of the category, for the policy; undefined when unknown. */
+  categoryName?: string;
 }
 
 const fakeOf = (): Fake => ({
@@ -101,6 +103,7 @@ const clientOf = (fake: Fake): WriteClient => ({
   permissions: () => Promise.resolve(fake.permissions),
   writes: {
     wikiCategoryState: () => Promise.resolve({ serverTime: fake.time }),
+    wikiCategoryName: () => Promise.resolve(fake.categoryName),
     wikiPageState: (_ctx, _category, target) => {
       fake.onRead?.();
       if (fake.readFails !== undefined) return Promise.reject(fake.readFails);

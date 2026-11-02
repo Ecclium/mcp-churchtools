@@ -611,3 +611,50 @@ describe('the state of a category before a new page', () => {
     ]);
   });
 });
+
+// The name of a category for the policy, which compares it with the name
+// the operator expects (ADR 0032).
+describe('the name of a category for the policy', () => {
+  const categories = '/api/wiki/categories';
+  const answer = {
+    data: [
+      { id: 4, name: 'Berichte', permissions: { write: true } },
+      { id: 5, name: 'Archiv', sortKey: 2 },
+    ],
+  };
+
+  it('reads it from the list of categories, with GET only', async () => {
+    const { double, writes, ctx } = setup();
+    double
+      .intercept({ path: categories, method: 'GET' })
+      .reply(200, answer, json);
+    await expect(writes.wikiCategoryName(ctx(), 4)).resolves.toBe('Berichte');
+    assertOnlyReads(double);
+  });
+
+  it('gives no name for a category the list does not hold', async () => {
+    const { double, writes, ctx } = setup();
+    double
+      .intercept({ path: categories, method: 'GET' })
+      .reply(200, answer, json);
+    await expect(writes.wikiCategoryName(ctx(), 6)).resolves.toBeUndefined();
+  });
+
+  it('refuses an ID that is no whole number from 1 before any request, and fails as the read of the list', async () => {
+    const { double, writes, ctx, lines } = setup();
+    expect((await errorOf(writes.wikiCategoryName(ctx(), 0))).code).toBe(
+      'validation',
+    );
+    expect(double.calls()).toEqual([]);
+    double
+      .intercept({ path: categories, method: 'GET' })
+      .reply(200, JSON.stringify({ data: 'x' }), json);
+    expect((await errorOf(writes.wikiCategoryName(ctx(), 4))).code).toBe(
+      'upstream',
+    );
+    expect(lines.map((line) => line.event)).toEqual([
+      'churchtools_wiki_write_input_refused',
+      'churchtools_wiki_categories_refused',
+    ]);
+  });
+});
