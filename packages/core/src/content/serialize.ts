@@ -31,11 +31,14 @@ const escapeText = (text: string): string => {
 const isDigit = (code: number): boolean => code >= 0x30 && code <= 0x39;
 
 // A line of a paragraph that starts like a list item, the line under a
-// heading or a rule gets a backslash before that sign: -, + and = always,
-// a number before the . or ) right after it.
+// heading, a rule or the row of alignment of a table gets a backslash
+// before that sign: -, +, = and : always, a number before the . or )
+// right after it.
 const escapeLineStart = (line: string): string => {
   const first = line.charCodeAt(0);
-  if (first === 0x2d || first === 0x2b || first === 0x3d) return `\\${line}`;
+  if (first === 0x2d || first === 0x2b || first === 0x3d || first === 0x3a) {
+    return `\\${line}`;
+  }
   let end = 0;
   while (isDigit(line.charCodeAt(end))) end += 1;
   const after = line.charCodeAt(end);

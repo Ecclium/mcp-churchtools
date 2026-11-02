@@ -46,10 +46,22 @@ describe('hasWebAddress', () => {
     }
   });
 
-  it('takes no sign of punctuation, symbol or emoji for a letter of a domain', () => {
-    for (const before of ['«', '×', '÷', '→', '、', '﹐', '😀']) {
+  it('ends the name of a host only at a space or ASCII punctuation', () => {
+    for (const before of ['(', ',', '"', ')', '!', '_', '/']) {
       expect(hasWebAddress(`${before}.de`)).toBe(false);
     }
+    // linkify-it takes symbols and every other script into a host.
+    for (const before of ['a+', '$', '«', '→', '😀']) {
+      expect(hasWebAddress(`${before}.de`)).toBe(true);
+    }
+    expect(hasWebAddress('x.рф')).toBe(true);
+  });
+
+  it('finds an @ before a host with a dot, which a renderer links', () => {
+    expect(hasWebAddress('a@a.a')).toBe(true);
+    expect(hasWebAddress('Treffpunkt@19.30')).toBe(false);
+    expect(hasWebAddress('x@y und @a.a')).toBe(false);
+    expect(hasWebAddress('a@ b')).toBe(false);
   });
 });
 

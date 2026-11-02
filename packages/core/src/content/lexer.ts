@@ -123,6 +123,30 @@ const tidyLineBreaks = (text: string): string => {
   return tidy;
 };
 
+// Adds a node to a run of inline nodes. Text right after text becomes one
+// text, and bold right after bold one bold part, also inside: a reader sees
+// the same, and written as one it leaves no run of four asterisks, which
+// parsers of Markdown read in different ways.
+const appendInline = (nodes: Inline[], node: Inline): void => {
+  const last = nodes.at(-1);
+  if (last?.kind === 'text' && node.kind === 'text') {
+    nodes[nodes.length - 1] = { kind: 'text', text: last.text + node.text };
+    return;
+  }
+  if (
+    last !== undefined &&
+    last.kind !== 'text' &&
+    node.kind !== 'text' &&
+    last.kind === node.kind
+  ) {
+    const children = [...last.children];
+    for (const child of node.children) appendInline(children, child);
+    nodes[nodes.length - 1] = { kind: node.kind, children };
+    return;
+  }
+  nodes.push(node);
+};
+
 // A mention, as the editor of ChurchTools writes one: a link to the view of
 // a person (F21).
 const isMention = (href: string): boolean =>
@@ -149,12 +173,7 @@ export function readMarkdown(text: string): ReadMarkdown {
   const inlines = (tokens: readonly Token[], depth: number): Inline[] => {
     const nodes: Inline[] = [];
     const pushText = (value: string): void => {
-      const last = nodes.at(-1);
-      if (last?.kind === 'text') {
-        nodes[nodes.length - 1] = { kind: 'text', text: last.text + value };
-      } else {
-        nodes.push({ kind: 'text', text: value });
-      }
+      appendInline(nodes, { kind: 'text', text: value });
     };
     for (const token of tokens) {
       switch (token.type) {
@@ -162,8 +181,7 @@ export function readMarkdown(text: string): ReadMarkdown {
           const node = token as Tokens.Text;
           if (node.tokens !== undefined) {
             for (const inner of inlines(node.tokens, depth)) {
-              if (inner.kind === 'text') pushText(inner.text);
-              else nodes.push(inner);
+              appendInline(nodes, inner);
             }
           } else if (hasCharacterReference(node.raw)) {
             found.add('html');
@@ -181,14 +199,21 @@ export function readMarkdown(text: string): ReadMarkdown {
             found.add('tooDeep');
             break;
           }
-          const children = inlines(
+          const kind = token.type === 'strong' ? 'strong' : 'emphasis';
+          // Bold inside bold is bold: its parts join the outer one, so no
+          // run of four asterisks is written.
+          const children: Inline[] = [];
+          for (const child of inlines(
             (token as Tokens.Strong | Tokens.Em).tokens,
             depth + 1,
-          );
-          nodes.push({
-            kind: token.type === 'strong' ? 'strong' : 'emphasis',
-            children,
-          });
+          )) {
+            if (child.kind === kind) {
+              for (const part of child.children) appendInline(children, part);
+            } else {
+              appendInline(children, child);
+            }
+          }
+          appendInline(nodes, { kind, children });
           break;
         }
         case 'link': {

@@ -66,6 +66,24 @@ describe('readMarkdown', () => {
     ]);
   });
 
+  it('joins bold after bold and bold inside bold into one part', () => {
+    expect(blocksOf('**a**__b__ und *c*_d_')).toEqual([
+      paragraph({ kind: 'strong', children: [text('ab')] }, text(' und '), {
+        kind: 'emphasis',
+        children: [text('cd')],
+      }),
+    ]);
+    expect(blocksOf('**__a__ b**')).toEqual([
+      paragraph({ kind: 'strong', children: [text('a b')] }),
+    ]);
+    expect(blocksOf('**__a__ *b***')).toEqual([
+      paragraph({
+        kind: 'strong',
+        children: [text('a '), { kind: 'emphasis', children: [text('b')] }],
+      }),
+    ]);
+  });
+
   it('drops spaces around line breaks and at the edges of a paragraph', () => {
     expect(blocksOf('  Eins \n   zwei\t\n\tdrei  ')).toEqual([
       paragraph(text('Eins\nzwei\ndrei')),

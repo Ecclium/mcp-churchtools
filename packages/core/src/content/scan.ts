@@ -27,28 +27,56 @@ const isAsciiLetter = (code: number): boolean =>
 
 const isAsciiDigit = (code: number): boolean => code >= 0x30 && code <= 0x39;
 
-// A sign of a word for the check of web addresses: an ASCII letter or
-// digit, a hyphen, or a character beyond Latin-1 that is no sign of
-// punctuation, space, symbol or emoji, so that a domain in another script
-// counts as well. The ranges are a rough map, wide on purpose: a sign that
-// counts too often only makes the check refuse more.
-const isWordSign = (code: number): boolean => {
-  if (isAsciiLetter(code) || isAsciiDigit(code) || code === 0x2d) return true;
-  if (code < 0xc0 || code === 0xd7 || code === 0xf7) return false;
-  if (code >= 0x2000 && code <= 0x2bff) return false;
-  if (code >= 0x3000 && code <= 0x303f) return false;
-  if (code >= 0xd800 && code <= 0xdfff) return false;
-  return !(code >= 0xfe10 && code <= 0xffef);
+// ASCII signs that end the name of a host: spaces and punctuation, but no
+// hyphen. Every other sign may stand in one, also a symbol such as + or $
+// and every sign beyond ASCII: linkify-it, which many renderers use, takes
+// them into the name of a host. Wide on purpose: a sign that counts too
+// often only makes the check refuse more.
+const hostEnds = ' \t\n!"#%&\'()*,./:;<>?@[\\]_{}';
+
+const isHostSign = (code: number): boolean =>
+  code < 0x80
+    ? !hostEnds.includes(String.fromCharCode(code))
+    : code !== 0x85 && code !== 0x1680 && code !== 0x2028 && code !== 0x2029;
+
+// A sign of the last part of a host name: a letter of ASCII or any sign
+// beyond ASCII that may stand in a host, as in .ch or .рф.
+const isTopLevelSign = (code: number): boolean =>
+  isAsciiLetter(code) || (code >= 0x80 && isHostSign(code));
+
+// The number of signs of a last part of a host name from the index on.
+const topLevelLength = (text: string, start: number): number => {
+  let end = start;
+  while (end < text.length && isTopLevelSign(text.charCodeAt(end))) end += 1;
+  return end - start;
+};
+
+// Whether an @ at the index stands between a name and a host with a dot
+// and a letter after it, as in a@a.a, which renderers link as an e-mail
+// address even where the check of contact data does not count it.
+const isMailAt = (text: string, at: number): boolean => {
+  if (at === 0 || !isHostSign(text.charCodeAt(at - 1))) return false;
+  let index = at + 1;
+  while (index < text.length) {
+    const code = text.charCodeAt(index);
+    if (code === 0x2e) {
+      if (topLevelLength(text, index + 1) > 0) return true;
+    } else if (!isHostSign(code)) {
+      return false;
+    }
+    index += 1;
+  }
+  return false;
 };
 
 /**
  * Whether a text holds something a renderer could show as a link: `://`
- * anywhere, `www.` at the start of a word, or a dot after a sign of a word
- * followed by at least two ASCII letters and the end of the word, as in
- * `gemeinde.ch` (ADR 0030, F20). Which library ChurchTools shows Markdown
- * with is not known, and some link a domain without a scheme, so this
- * refuses more than the usual ones would: `bericht.pdf` and `St.Gallen`
- * too, not `z.B.`, `d.h.` or `Mt.5`.
+ * anywhere, `www.` at the start of a word, a dot after a sign of a host
+ * followed by at least two letters at the end of the word, as in
+ * `gemeinde.ch`, or an @ before a host with a dot (ADR 0030, F20). Which
+ * library ChurchTools shows Markdown with is not known, and some link a
+ * domain without a scheme, so this refuses more than the usual ones would:
+ * `bericht.pdf` and `St.Gallen` too, not `z.B.`, `d.h.` or `Mt.5`.
  *
  * @param text - The plain text a reader sees.
  * @returns Whether it holds such a sequence.
@@ -62,23 +90,22 @@ export function hasWebAddress(text: string): boolean {
   const lower = text.toLowerCase();
   if (lower.includes('://')) return true;
   for (let index = 0; index < text.length; index += 1) {
-    if (text.charCodeAt(index) !== 0x2e) continue;
+    const code = text.charCodeAt(index);
+    if (code === 0x40 && isMailAt(text, index)) return true;
+    if (code !== 0x2e) continue;
     if (
       index >= 3 &&
       lower.startsWith('www', index - 3) &&
-      (index === 3 || !isWordSign(text.charCodeAt(index - 4)))
+      (index === 3 || !isHostSign(text.charCodeAt(index - 4)))
     ) {
       return true;
     }
-    if (index === 0 || !isWordSign(text.charCodeAt(index - 1))) continue;
-    let end = index + 1;
-    while (end < text.length && isAsciiLetter(text.charCodeAt(end))) end += 1;
-    if (
-      end - index - 1 >= 2 &&
-      (end === text.length || !isWordSign(text.charCodeAt(end)))
-    ) {
-      return true;
-    }
+    if (index === 0 || !isHostSign(text.charCodeAt(index - 1))) continue;
+    const length = topLevelLength(text, index + 1);
+    const after = text.charCodeAt(index + 1 + length);
+    // A digit or hyphen after the letters makes it another word, as in
+    // bericht.pdf-Datei.
+    if (length >= 2 && !isAsciiDigit(after) && after !== 0x2d) return true;
   }
   return false;
 }

@@ -51,10 +51,12 @@ describe('serializeBlocks', () => {
     ]);
   });
 
-  it('escapes a line that starts like a list item, an underline or a number', () => {
-    const lines = '- a\n+ b\n= c\n2026. d\n3) e\n12 f\nx';
+  it('escapes a line that starts like a list item, an underline, a row of a table or a number', () => {
+    const lines = '- a\n+ b\n= c\n:-- g\n2026. d\n3) e\n12 f\nx';
     const written = serializeBlocks([paragraph(text(lines))]);
-    expect(written).toBe('\\- a\n\\+ b\n\\= c\n2026\\. d\n3\\) e\n12 f\nx\n');
+    expect(written).toBe(
+      '\\- a\n\\+ b\n\\= c\n\\:-- g\n2026\\. d\n3\\) e\n12 f\nx\n',
+    );
     expect(roundTrip([paragraph(text(lines))])).toEqual([
       paragraph(text(lines)),
     ]);

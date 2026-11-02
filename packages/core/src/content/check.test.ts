@@ -162,6 +162,13 @@ describe('checkMarkdown', () => {
     ).toEqual(['tooLong']);
   });
 
+  it('refuses a text whose written form the lexer reads differently', () => {
+    // Italic with _ after a sign of punctuation, written with *, comes back
+    // as plain asterisks around bold: refused rather than changed.
+    expect(reasons('`_: **A** a_')).toEqual(['unparsable']);
+    expect(written('`_: a_')).toBe('\\`*: a*\n');
+  });
+
   it('refuses a text it cannot read', () => {
     expect(reasons(`a${String.fromCharCode(0xdc00)}`)).toEqual(['unparsable']);
   });

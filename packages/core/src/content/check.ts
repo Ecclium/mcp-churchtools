@@ -10,9 +10,10 @@
  * every reason found, and nothing is written.
  *
  * The steps: the limit of 64 KiB and the normal form (normalize.ts), the
- * lexer of `marked` and the allowed part of Markdown (lexer.ts), the
- * checks of what a reader sees (scan.ts), and the own serializer
- * (serialize.ts), which never writes raw text of a token.
+ * lexer of `marked` and the allowed part of Markdown (lexer.ts), the own
+ * serializer (serialize.ts), which never writes raw text of a token, a
+ * second reading of what it wrote, and the checks of what a reader sees
+ * (scan.ts).
  *
  * @packageDocumentation
  */
@@ -97,15 +98,24 @@ export function checkMarkdown(
   if (hasTooManyEmphasisSigns(normal.text)) return refused(['tooLong']);
   const read = readMarkdown(normal.text);
   if (!read.ok) return refused(read.violations);
-  const found = readableTexts(read.blocks).flatMap((text) =>
-    checkReadableText(text, options.contacts),
-  );
-  if (found.length > 0) return refused(found);
   const text = serializeBlocks(read.blocks);
   // Escaping adds signs, so a text near the limit can pass it only before.
-  return bytesOf(text) > maxContentBytes
-    ? refused(['tooLong'])
-    : { ok: true, text };
+  if (bytesOf(text) > maxContentBytes) return refused(['tooLong']);
+  // The written form is read once more. The lexer does not always read
+  // emphasis the same way after a mark of punctuation, so a text whose
+  // written form it reads differently is refused: what passes is always a
+  // form that comes back unchanged.
+  const again = readMarkdown(text);
+  if (!again.ok || serializeBlocks(again.blocks) !== text) {
+    return refused(['unparsable']);
+  }
+  // What a reader sees, in the text as it came and as it is written, so
+  // that emphasis read one way or the other hides nothing.
+  const found = [
+    ...readableTexts(read.blocks),
+    ...readableTexts(again.blocks),
+  ].flatMap((value) => checkReadableText(value, options.contacts));
+  return found.length > 0 ? refused(found) : { ok: true, text };
 }
 
 const isHtmlStart = (code: number): boolean =>
