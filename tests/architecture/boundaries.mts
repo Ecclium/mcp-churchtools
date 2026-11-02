@@ -48,6 +48,7 @@ export const placeKeys = [
   'operationCatalog',
   'aesGcmSiv',
   'policyYaml',
+  'contentLexer',
   'pseudonymUsers',
   'redactedMark',
   'redactedUsers',
