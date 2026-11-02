@@ -307,6 +307,7 @@ const fakeAuditFile = (failed = 0) => {
       return true;
     },
     ready: () => true,
+    anchor: () => undefined,
     close: () => {
       events.push(state.seen().filter((event) => event !== undefined));
       if (lines.length > 0) {

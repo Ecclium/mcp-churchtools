@@ -93,6 +93,19 @@
         "operator"
       ]
     },
+    "writeState": {
+      "type": "string",
+      "enum": [
+        "planned",
+        "queued",
+        "verified",
+        "skipped",
+        "denied",
+        "conflict",
+        "failed",
+        "rolledBack"
+      ]
+    },
     "policyHash": {
       "type": "string",
       "maxLength": 64,

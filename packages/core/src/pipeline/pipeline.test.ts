@@ -340,20 +340,37 @@ describe('the ID of the event', () => {
 });
 
 describe('the gate', () => {
-  it('refuses every write, also when the server does not only read', async () => {
+  it('knows no write tool when the server only reads, and passes one to the write guard otherwise', async () => {
+    const only = setup([], true);
+    const absent = await only.pipeline.call(
+      'ct_example_note_write',
+      {
+        categoryId: 12,
+        guid: '00000000-0000-4000-8000-000000000001',
+        baseVersion: 3,
+        note: 'x',
+      },
+      request({ readOnly: true }),
+    );
+    expect(!absent.ok && absent.error.code).toBe('not_found');
+    // Without a folder of kill switches the write guard refuses every write
+    // (ADR 0029); pipeline-write.test.ts follows a write further.
     const { pipeline, events } = setup([], false);
     const outcome = await pipeline.call(
       'ct_example_note_write',
-      { note: 'x' },
+      {
+        categoryId: 12,
+        guid: '00000000-0000-4000-8000-000000000001',
+        baseVersion: 3,
+        note: 'x',
+      },
       request({ readOnly: false }),
     );
-    expect(outcome).toEqual({
-      ok: false,
-      error: { code: 'policy_denied', message: fixedSentences.policy_denied },
-    });
+    expect(!outcome.ok && outcome.error.code).toBe('policy_denied');
     expect(events()[0]).toMatchObject({
       outcome: 'denied',
       errorCode: 'policy_denied',
+      writeState: 'denied',
       tool: 'ct_example_note_write',
     });
   });

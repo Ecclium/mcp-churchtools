@@ -16,6 +16,8 @@ export {
   confirmationPaths,
   fileOnlyFields,
   objectDomains,
+  writeStateOutcomes,
+  writeStates,
 } from './schema.js';
 export {
   createObjectRefCollector,

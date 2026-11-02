@@ -3,6 +3,7 @@ import {
   type Plugin,
   type PluginHost,
   type ToolDefinition,
+  writeResultSchema,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { examplePlugin } from '@ecclium/mcp-churchtools-testkit';
 import { describe, expect, it } from 'vitest';
@@ -158,6 +159,26 @@ describe('createToolCatalog', () => {
     expect(
       catalog.get('ct_example_echo')?.inputSchema.additionalProperties,
     ).toBe(false);
+  });
+
+  it('gives a write tool the fixed result of the core, whatever it declares', () => {
+    const catalog = catalogOf({
+      core: emptyCore,
+      plugins: [examplePlugin],
+      readOnly: false,
+      toolsets: new Set(['wiki'] as const),
+    });
+    const entry = catalog.get('ct_example_note_write');
+    // The example declares an output of its own; the catalog keeps the
+    // result the core builds after a commit (ADR 0029).
+    expect(entry?.output).toBe(writeResultSchema);
+    expect(Object.keys(entry?.shape.root.fields ?? {})).toEqual([
+      'state',
+      'target',
+      'version',
+    ]);
+    // A read tool keeps its own output.
+    expect(catalog.get('ct_example_echo')?.output).not.toBe(writeResultSchema);
   });
 
   it('keeps where the IDs of the input stand', () => {

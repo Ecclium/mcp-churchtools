@@ -360,6 +360,10 @@ export function serve(options: ServeOptions): ExitCode | undefined {
               pid: process.pid,
               host: hostname(),
             }),
+            // The kill switches of writing over stdio: the folder stop of
+            // the folder of state. The start does not make it; without it,
+            // writing stays off (ADR 0029).
+            killSwitchDir: `${config.stateDir}/stop`,
           }),
       ...(keys === undefined ? {} : { keys }),
     });

@@ -1098,11 +1098,13 @@ export function createChurchToolsClient(
     );
   };
 
-  const wikiPages = async (
+  // Reads one page of the list of pages of a category and gives the date
+  // header with it, for the read before creating a page (ADR 0072).
+  const readWikiPageList = async (
     ctx: TenantContext,
     categoryId: number,
     page: number,
-  ): Promise<WikiPageList> => {
+  ) => {
     checkWikiInput(
       ctx,
       isWholeFromOne(categoryId) &&
@@ -1112,7 +1114,7 @@ export function createChurchToolsClient(
     const url = new URL('/api/wiki/pages', origin);
     appendIds(url.searchParams, 'wiki_category_ids[]', [categoryId]);
     appendPage(url.searchParams, page, wikiPageListLimit);
-    const root = await fetchAnswer(ctx, path, url, wikiListLimits, {
+    const { root, date } = await fetchRead(ctx, path, url, wikiListLimits, {
       status: 'churchtools_wiki_pages_status',
       refused: 'churchtools_wiki_pages_refused',
     });
@@ -1121,10 +1123,19 @@ export function createChurchToolsClient(
       ctx.log.warn('churchtools_wiki_pages_refused', { code: 'upstream' });
       throw new EccliumError('upstream');
     }
+    return { list: parsed.data, date };
+  };
+
+  const wikiPages = async (
+    ctx: TenantContext,
+    categoryId: number,
+    page: number,
+  ): Promise<WikiPageList> => {
+    const { list } = await readWikiPageList(ctx, categoryId, page);
     return Object.freeze({
       __proto__: null,
       pages: Object.freeze(
-        parsed.data.data.map((entry) =>
+        list.data.map((entry) =>
           Object.freeze({
             __proto__: null,
             guid: entry.guid,
@@ -1134,7 +1145,7 @@ export function createChurchToolsClient(
           }),
         ),
       ),
-      more: page < parsed.data.meta.pagination.lastPage,
+      more: page < list.meta.pagination.lastPage,
     });
   };
 
@@ -1984,6 +1995,9 @@ export function createChurchToolsClient(
       path,
       origin,
       readPage: (ctx, categoryId, guid) => readWikiPage(ctx, categoryId, guid),
+      readCategory: async (ctx, categoryId) => ({
+        date: (await readWikiPageList(ctx, categoryId, 1)).date,
+      }),
     }),
   });
 }

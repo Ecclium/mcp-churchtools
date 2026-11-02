@@ -46,6 +46,8 @@ export const auditFieldMeanings: Readonly<Record<string, string>> =
     outcome:
       'Ausgang des Aufrufs: `ok`, `error` bei einem Fehler oder `denied` bei einer Ablehnung.',
     confirmation: 'Wie ein Schreibvorgang bestätigt wurde.',
+    writeState:
+      'Der Zustand eines Schreibvorgangs am Ende des Aufrufs: `planned`, `queued`, `verified` oder `skipped` bei `ok`, `denied` bei `denied`, `conflict`, `failed` oder `rolledBack` bei `error`. Wer Schreibvorgänge zählt, liest dieses Feld.',
     policyHash: 'SHA-256 der Richtlinie eines Laufs.',
     provider: 'Das Sprachmodell eines Laufs, wie die Konfiguration es nennt.',
     'provider.vendor': 'Anbieter des Modells.',

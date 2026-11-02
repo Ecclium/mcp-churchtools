@@ -15,6 +15,7 @@ import type {
   AuditEventV1,
   Clock,
   TenantId,
+  WriteState,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import type { z } from 'zod';
 
@@ -31,6 +32,7 @@ import {
   auditLimits,
   auditPlaceholders as placeholders,
   fileOnlyFields,
+  writeStateOutcomes,
 } from './schema.js';
 
 /**
@@ -56,6 +58,11 @@ export interface AuditFileTarget extends LineWriter {
    * @returns Whether the file is ready.
    */
   ready(): boolean;
+  /**
+   * Reports the head of the chain of the file as an anchor on the log,
+   * after a write. A target without it gives no anchor.
+   */
+  anchor?(): void;
 }
 
 /** Options of `record` of {@link AuditSink}. */
@@ -128,6 +135,13 @@ export interface AuditSink {
    * @returns The count.
    */
   failures(): number;
+  /**
+   * Puts the head of the chain of the audit file as an anchor on the log,
+   * after a call that wrote to ChurchTools (ADR 0029). Without a file, or
+   * when the file cannot, it does nothing. It never throws. A sink for
+   * tests may leave it out.
+   */
+  anchor?(): void;
 }
 
 type Json =
@@ -163,6 +177,7 @@ const producerKeys: readonly string[] = Object.freeze([
   'tool',
   'outcome',
   'confirmation',
+  'writeState',
   'policyHash',
   'provider',
   'pluginHashes',
@@ -411,6 +426,21 @@ function fill(
     placeholders.outcome,
   );
   scalar('confirmation', fields.confirmation, 'audit_invalid_confirmation');
+
+  // The state of a write goes only with its outcome (ADR 0029); one that
+  // does not fit is left out and reported.
+  const writeState = own(draft, 'writeState');
+  if (writeState !== undefined) {
+    if (
+      fits(fields.writeState, writeState) &&
+      writeStateOutcomes[writeState as WriteState] === line['outcome']
+    ) {
+      line['writeState'] = writeState as string;
+    } else {
+      report('audit_invalid_write_state');
+    }
+  }
+
   scalar('policyHash', fields.hash, 'audit_invalid_policy_hash');
 
   const provider = own(draft, 'provider');
@@ -566,6 +596,8 @@ export function createAuditSink(options: AuditSinkOptions): AuditSink {
     Reflect.deleteProperty(line, 'durationMs');
     line['outcome'] = withheldOutcome;
     line['errorCode'] = withheldCode;
+    // A write held back counts as refused, like its outcome (ADR 0029).
+    if (line['writeState'] !== undefined) line['writeState'] = 'denied';
     if (read) line['withheldAfterRead'] = true;
     line['durationMs'] = duration;
   };
@@ -713,10 +745,19 @@ export function createAuditSink(options: AuditSinkOptions): AuditSink {
     }
   };
 
+  const anchor = (): void => {
+    try {
+      file?.anchor?.();
+    } catch {
+      // The anchor is lost; the line of the call is in the file.
+    }
+  };
+
   return Object.freeze({
     record,
     hasFile: file !== undefined,
     ready,
     failures: () => failures,
+    anchor,
   });
 }

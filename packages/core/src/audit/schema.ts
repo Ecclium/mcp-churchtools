@@ -11,6 +11,7 @@ import {
   type ActorKind,
   type AuditOutcome,
   type ConfirmationPath,
+  type WriteState,
   errorCodes,
   objectKinds,
 } from '@ecclium/mcp-churchtools-plugin-api';
@@ -48,6 +49,29 @@ export const confirmationPaths: readonly ConfirmationPath[] = Object.freeze([
   'policy',
   'operator',
 ]);
+
+/**
+ * The outcome each {@link WriteState} goes with (ADR 0029), frozen: a
+ * write that is planned, queued, written or not needed ended well, one
+ * that was refused was denied, and every other one is an error.
+ */
+export const writeStateOutcomes: Readonly<Record<WriteState, AuditOutcome>> =
+  Object.freeze({
+    __proto__: null,
+    planned: 'ok',
+    queued: 'ok',
+    verified: 'ok',
+    skipped: 'ok',
+    denied: 'denied',
+    conflict: 'error',
+    failed: 'error',
+    rolledBack: 'error',
+  });
+
+/** Every {@link WriteState}, frozen. */
+export const writeStates: readonly WriteState[] = Object.freeze(
+  Object.keys(writeStateOutcomes) as WriteState[],
+);
 
 /** The most entries a list in an audit event may have. */
 export const auditLimits = Object.freeze({
@@ -127,6 +151,7 @@ export const auditFieldSchemas = Object.freeze({
   tool: text(63, toolNamePattern),
   outcome: z.enum(auditOutcomes),
   confirmation: z.enum(confirmationPaths),
+  writeState: z.enum(writeStates),
   hash: text(64, sha256Pattern),
   vendor: text(32, vendorPattern),
   model: text(64, modelPattern),
@@ -168,6 +193,7 @@ export const auditEventV1Schema = z
     tool: fields.tool.optional(),
     outcome: fields.outcome,
     confirmation: fields.confirmation.optional(),
+    writeState: fields.writeState.optional(),
     policyHash: fields.hash.optional(),
     provider: z
       .strictObject({
@@ -208,6 +234,13 @@ export const auditEventV1Schema = z
       !Object.hasOwn(event, 'objectRefsOmitted') ||
       event.objectRefsOmitted === undefined ||
       event.objectRefs.length === auditLimits.objectRefs,
+  )
+  // The state of a write goes with its outcome (ADR 0029).
+  .refine(
+    (event) =>
+      !Object.hasOwn(event, 'writeState') ||
+      event.writeState === undefined ||
+      writeStateOutcomes[event.writeState] === event.outcome,
   )
   .refine(
     (event) =>

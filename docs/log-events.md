@@ -52,6 +52,16 @@ Je Ereignis die Stufe und die Felder, die ein Aufruf höchstens setzt. Die Felde
 | `tool_pseudonym_failed` | `warn` | keine | In `strict` liess sich eine Kennung einer Person im Ergebnis nicht durch ihr Pseudonym ersetzen. Das Ergebnis geht nicht hinaus. |
 | `tool_result_too_large` | `warn` | keine | Das Ergebnis eines Tools war grösser als 64 KiB, so wie der Client es erhielte. Ecclium kürzt nie, der Aufruf endet mit einem Fehler. |
 
+### Write-Guard
+
+| Ereignis | Stufe | Felder | Bedeutung |
+| --- | --- | --- | --- |
+| `write_audit_failed` | `error` | keine | Die Zeile eines Aufrufs, der womöglich geschrieben hat, erreichte die Audit-Datei nicht. Bis zum Neustart des Servers plant und schreibt der Write-Guard nichts mehr. |
+| `write_committed` | `info` | keine | Ein Schreibvorgang ist geschrieben und gelesen: die Version stieg wie geplant, und der Text ist der gesendete. |
+| `write_conflict` | `warn` | `code` | Das Ziel eines Schreibvorgangs hat sich seit dem Plan geändert oder liest sich nach dem Schreiben nicht wie geplant. `code` ist `conflict`. |
+| `write_outcome_unknown` | `warn` | `code` | Nach einem Fehler beim Schreiben ist offen, ob die Änderung ChurchTools erreicht hat, und das Lesen danach konnte es nicht klären. Das Ziel ist von Hand zu prüfen. |
+| `write_refused` | `warn` | `code` | Der Write-Guard plant oder schreibt nicht: Schreiben ist gesperrt oder nicht zu prüfen, die Art des Schreibvorgangs läuft nicht, die Rechte des Kontos sind nicht zu lesen, oder die Uhr weicht mehr als fünf Minuten von ChurchTools ab. `code` nennt den Fehler. |
+
 ### Lesender Zugriff über den Kern
 
 | Ereignis | Stufe | Felder | Bedeutung |
@@ -225,6 +235,7 @@ Je Ereignis die Stufe und die Felder, die ein Aufruf höchstens setzt. Die Felde
 | `audit_invalid_tool` | `error` | `code`, `count` | Ein Erzeuger gab für das Feld `tool` einer Zeile des Audits einen Wert, den die Senke nicht annimmt. Die Zeile trägt einen Platzhalter oder lässt das Feld weg, bei einer Liste nennt `count` ihre Länge. |
 | `audit_invalid_ts` | `error` | `code`, `count` | Ein Erzeuger gab für das Feld `ts` einer Zeile des Audits einen Wert, den die Senke nicht annimmt. Die Zeile trägt einen Platzhalter oder lässt das Feld weg, bei einer Liste nennt `count` ihre Länge. |
 | `audit_invalid_type` | `error` | `code`, `count` | Ein Erzeuger gab für das Feld `type` einer Zeile des Audits einen Wert, den die Senke nicht annimmt. Die Zeile trägt einen Platzhalter oder lässt das Feld weg, bei einer Liste nennt `count` ihre Länge. |
+| `audit_invalid_write_state` | `error` | `code`, `count` | Ein Erzeuger gab für das Feld `write_state` einer Zeile des Audits einen Wert, den die Senke nicht annimmt. Die Zeile trägt einen Platzhalter oder lässt das Feld weg, bei einer Liste nennt `count` ihre Länge. |
 | `audit_missing_error_code` | `error` | `code`, `count` | Eine Zeile mit `error` oder `denied` kam ohne Fehlercode. Die Zeile im Audit trägt einen Platzhalter. |
 | `audit_reserved_event_id` | `error` | `code`, `count` | Ein Erzeuger setzte das Feld `event_id` einer Zeile des Audits, das nur die Senke oder der Schreiber der Datei setzt. Es fällt weg. |
 | `audit_reserved_prev_hash` | `error` | `code`, `count` | Ein Erzeuger setzte das Feld `prev_hash` einer Zeile des Audits, das nur die Senke oder der Schreiber der Datei setzt. Es fällt weg. |

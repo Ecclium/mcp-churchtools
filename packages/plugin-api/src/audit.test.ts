@@ -48,6 +48,7 @@ describe('AuditEventV1', () => {
       | 'tool'
       | 'outcome'
       | 'confirmation'
+      | 'writeState'
       | 'policyHash'
       | 'provider'
       | 'pluginHashes'

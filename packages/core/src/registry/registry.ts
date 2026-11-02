@@ -6,14 +6,15 @@
  *
  * @packageDocumentation
  */
-import type {
-  Plugin,
-  PluginHost,
-  RightRef,
-  Sensitivity,
-  ToolCall,
-  ToolMeta,
-  ToolName,
+import {
+  type Plugin,
+  type PluginHost,
+  type RightRef,
+  type Sensitivity,
+  type ToolCall,
+  type ToolMeta,
+  type ToolName,
+  writeResultSchema,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import type { ZodType } from 'zod';
 
@@ -251,7 +252,13 @@ const checkTool = (
   if (inputShape.undeclared > 0) {
     throw new RegistryRefusal('tool_input_unclassified', where);
   }
-  const shape = checkOutputSchema(fields.output);
+  // The result of a write is built by the core from the plan and the
+  // commit, so a write tool always has the fixed result of the core,
+  // whatever it declares: no tool shapes what the model reads after a
+  // write (ADR 0029). Its own schema is not checked, the core's is.
+  const output: unknown =
+    meta.capability === 'write' ? writeResultSchema : fields.output;
+  const shape = checkOutputSchema(output);
   if (shape === undefined) throw new RegistryRefusal('tool_output', where);
   if (rank[meta.sensitivity] < rank[shape.minimumSensitivity]) {
     throw new RegistryRefusal('tool_sensitivity', where);
@@ -286,7 +293,7 @@ const checkTool = (
     inputSchema,
     strictInputSchema,
     inputRefs: inputShape.refs,
-    output: fields.output as ZodType,
+    output: output as ZodType,
     shape,
     asSpecial,
     personIds: shape.personIds || personInput,

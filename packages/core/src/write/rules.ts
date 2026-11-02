@@ -26,18 +26,11 @@ import type {
   Sensitivity,
   UnattendedRule,
   WriteIntent,
+  WriteTargetKind,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 /** What a write changes, as the policy and the audit name it. */
-export type TargetKind =
-  | 'wiki_category'
-  | 'wiki_page'
-  | 'calendar'
-  | 'appointment'
-  | 'resource'
-  | 'group'
-  | 'service'
-  | 'operation';
+export type TargetKind = WriteTargetKind;
 
 /**
  * The target of a write: its kind and a key from the IDs of the intent,

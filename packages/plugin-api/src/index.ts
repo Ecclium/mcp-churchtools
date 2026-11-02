@@ -207,7 +207,10 @@ export {
   type QuotaStore,
 } from './quota.js';
 export {
+  defineWriteTool,
   writeIntentKinds,
+  writeResultSchema,
+  writeTargetKinds,
   type ApiOperationIntent,
   type AppointmentCreateIntent,
   type AppointmentUpdateIntent,
@@ -226,6 +229,10 @@ export {
   type WriteIntent,
   type WriteIntentKind,
   type WritePort,
+  type WriteResult,
+  type WriteTargetKind,
+  type WriteToolCall,
+  type WriteToolSpec,
 } from './write.js';
 export type {
   AuditEventV1,
@@ -233,4 +240,5 @@ export type {
   AuditType,
   ConfirmationPath,
   ProviderInfo,
+  WriteState,
 } from './audit.js';
