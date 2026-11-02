@@ -70,8 +70,8 @@ const steppingClock = () => {
 };
 
 // The garbage collector, for the test of the connect limit under load.
-// Node.js gives it to code only with this flag, which a context made after
-// it reads.
+// Node.js hands it to code only with this flag, and only a context created
+// after the flag is set gets it.
 setFlagsFromString('--expose-gc');
 const collectGarbage = runInNewContext('gc') as () => void;
 
@@ -1052,19 +1052,19 @@ describe('the agent', () => {
     });
   });
 
-  // The other end of a pair of streams stands in for the server. The
-  // connector puts the transport's end under TLS for the origin.
-  //
-  // Both ends stay in this list until the test is over. undici holds the
-  // socket for its connect limit only through a WeakRef, and a pair in
-  // memory, unlike a real socket, has nothing else that holds it: collected
-  // during the handshake, it would take the limit with it, and the test
-  // would wait until it times out. A real socket stays held by the system
-  // while it connects, so the transport itself is not affected.
+  // Both ends of every pair stay in this list until the test is over.
+  // undici holds the socket for its connect limit only through a WeakRef,
+  // and a pair in memory, unlike a real socket, has nothing else that holds
+  // it: collected during the handshake, it would take the limit with it,
+  // and the test would wait until it times out. A real socket stays held by
+  // the system while it connects, so the transport itself is not affected.
   const pairs: Duplex[] = [];
   afterEach(() => {
     for (const end of pairs.splice(0)) end.destroy();
   });
+
+  // The other end of a pair of streams stands in for the server. The
+  // connector puts the transport's end under TLS for the origin.
   const throughPair = (
     serve: (server: NodeJS.ReadWriteStream) => void,
     limits: TransportLimits,
