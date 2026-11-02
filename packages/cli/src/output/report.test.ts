@@ -1,8 +1,11 @@
 import {
   type ConfigReport,
   type ConfigResult,
+  defaultPolicy,
   loadConfig,
   maxReportedProblems,
+  type Policy,
+  policyHashOf,
   type SettingReport,
   type StateDirFileSystem,
   type TokenFileSystem,
@@ -123,6 +126,7 @@ describe('renderConfigReport', () => {
         'keine Audit-Datei (‹ECCLIUM_STATE_DIR› ist nicht gesetzt)',
       ),
       row('Frist in Monaten', '12 (Voreinstellung)'),
+      row('Richtlinie', 'keine Datei (Voreinstellung)'),
       row('Subjekt über stdio', '‹local-stdio› (Voreinstellung)'),
       row('Stufe des Logs', '‹info› (Voreinstellung)'),
       hostNote,
@@ -516,6 +520,115 @@ describe('renderConfigReport', () => {
       renderConfigReport(report, { valid: true, showValues: false }),
     ).toThrow(
       new TypeError('The report of the configuration is inconsistent.'),
+    );
+  });
+});
+
+describe('renderConfigReport and the policy', () => {
+  const report = load(minimal()).report;
+  const summary = (policy: Policy): readonly string[] =>
+    renderConfigReport(report, { valid: true, showValues: false, policy });
+  const entry = {
+    target: { kind: 'wiki_category', id: 12, name: 'Berichte' },
+    tools: ['ct_wiki_page_create'],
+    maxPerDay: 4,
+  } as const;
+  const routine = {
+    routine: 'dienstplan-report',
+    credential: 'bericht',
+    modelRedaction: 'strict',
+    target: entry.target,
+    tools: ['ct_wiki_page_append_section'],
+    maxPerRun: 2,
+    maxPerDay: 4,
+  } as const;
+  const withBudget = (
+    readBudgetPerDay: number,
+    targets: Policy['interactive']['targets'] = [entry],
+  ): Policy => ({
+    ...defaultPolicy,
+    interactive: { readBudgetPerDay, targets },
+  });
+
+  it('summarises the default policy with its hash and the finding of an empty interactive part', () => {
+    const lines = summary(defaultPolicy);
+    const start = lines.indexOf(
+      `Richtlinie im Format ‹policy.v1›, Hash ${policyHashOf(defaultPolicy)}:`,
+    );
+    expect(start).toBe(lines.indexOf(hostNote) + 1);
+    expect(lines.slice(start + 1)).toEqual([
+      row('Interaktiv', 'keine Einträge'),
+      row('Für Routinen', 'keine Einträge, sie gelten erst mit dem Runner'),
+      row('Lesebudget', '200 Aufrufe je Akteur und UTC-Tag'),
+      '  Befund: Der interaktive Teil hat keine Einträge. Bestätigte Schreibvorgänge dürfen dann auf jedes Ziel, das das Dienstkonto schreiben darf, ausser bei Gruppen und Diensten. Empfohlen sind Einträge für die Ziele, auf die Ecclium schreiben soll.',
+      valid,
+    ]);
+  });
+
+  it('counts the entries of both parts and names no target', () => {
+    const lines = summary({
+      ...withBudget(150),
+      unattended: [routine, { ...routine, routine: 'wiki-hygiene' }],
+    });
+    expect(lines).toContain(row('Interaktiv', '1 Eintrag'));
+    expect(lines).toContain(
+      row('Für Routinen', '2 Einträge, sie gelten erst mit dem Runner'),
+    );
+    expect(lines).toContain(
+      row('Lesebudget', '150 Aufrufe je Akteur und UTC-Tag'),
+    );
+    expect(lines.filter((line) => line.includes('Befund'))).toEqual([]);
+    expect(lines.join('\n')).not.toMatch(/Berichte|dienstplan|wiki-hygiene/u);
+    expect(summary(withBudget(200, [entry, entry, entry]))).toContain(
+      row('Interaktiv', '3 Einträge'),
+    );
+  });
+
+  it('reports a read budget of 0 and one above the default as findings', () => {
+    expect(summary(withBudget(0))).toContain(
+      '  Befund: Das Lesebudget ist 0. Tools mit besonders schützenswerten Daten und Tools, die Personen nennen, laufen dann nicht.',
+    );
+    expect(summary(withBudget(1000))).toContain(
+      '  Befund: Das Lesebudget liegt über der Voreinstellung von 200 Aufrufen. Der KI-Assistent kann dann mehr Personendaten lesen, bevor die Grenze greift.',
+    );
+    expect(summary(withBudget(1000))).toContain(
+      row('Lesebudget', "1'000 Aufrufe je Akteur und UTC-Tag"),
+    );
+  });
+
+  it('masks the path of the file of the policy unless asked to show it', () => {
+    const withFile: ConfigReport = {
+      ...report,
+      settings: report.settings.map((setting) =>
+        setting.key === 'policy'
+          ? {
+              ...setting,
+              origin: 'file',
+              shown: { kind: 'path', value: '/path/to/policy.yaml' },
+            }
+          : setting,
+      ),
+    };
+    const masked = renderConfigReport(withFile, {
+      valid: true,
+      showValues: false,
+    });
+    expect(masked).toContain(
+      row(
+        'Richtlinie',
+        '[verborgen] (aus der Datei in ‹ECCLIUM_POLICY_FILE›, Eigentümer und Dateirechte geprüft)',
+      ),
+    );
+    expect(masked).toContain(
+      'Verborgen sind der Host und der Pfad der Richtlinie, damit Sie die Ausgabe ohne Bearbeitung weitergeben können. Mit ‹--show-values› zeigt der Befehl beide.',
+    );
+    expect(
+      renderConfigReport(withFile, { valid: true, showValues: true }),
+    ).toContain(
+      row(
+        'Richtlinie',
+        '‹/path/to/policy.yaml› (aus der Datei in ‹ECCLIUM_POLICY_FILE›, Eigentümer und Dateirechte geprüft)',
+      ),
     );
   });
 });

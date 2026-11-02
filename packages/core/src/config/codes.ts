@@ -7,6 +7,7 @@
  * @packageDocumentation
  */
 import { originCodes } from '../http/index.js';
+import { policyCodes } from '../policy/file.js';
 import { pseudonymKeyFileCodes } from './pseudonym-key-file.js';
 import { stateDirCodes } from './state-dir.js';
 import { tokenFileCodes } from './token-file.js';
@@ -20,6 +21,7 @@ export const configProblemCodes = Object.freeze([
   'search_tools_replaced',
   'tls_check_disabled',
   'debug_output_enabled',
+  'yaml_debug_output_enabled',
   'tls_keylog_enabled',
   'tls_trace_enabled',
   'empty_value',
@@ -44,6 +46,7 @@ export const configProblemCodes = Object.freeze([
   'toolsets_without_state_dir',
   'redaction_strict_with_api',
   'state_dir_required',
+  ...policyCodes,
 ] as const);
 
 /** Why the configuration cannot start the server. */

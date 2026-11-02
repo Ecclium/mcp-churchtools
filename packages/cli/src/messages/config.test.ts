@@ -551,6 +551,69 @@ describe('the catalog of messages', () => {
   });
 });
 
+describe('the place of a problem of the policy', () => {
+  const policy = (
+    code: ConfigProblemCode,
+    where: Record<string, unknown>,
+  ): string =>
+    problemText({
+      code,
+      variable: 'ECCLIUM_POLICY_FILE',
+      ...where,
+    });
+
+  it('names the field of the schema or the line of the YAML', () => {
+    expect(
+      policy('policy_invalid', { field: 'interactive.targets[2].maxPerDay' }),
+    ).toContain(
+      'Ein Feld der Richtlinie in ‹ECCLIUM_POLICY_FILE› ist nicht gültig im Feld ‹interactive.targets[2].maxPerDay›.',
+    );
+    expect(
+      policy('policy_contradiction', {
+        field: 'unattended[0].target.event.name',
+      }),
+    ).toContain('widerspricht sich im Feld ‹unattended[0].target.event.name›.');
+    expect(policy('policy_yaml_syntax', { line: 1234 })).toContain(
+      "ist kein gültiges YAML in Zeile 1'234.",
+    );
+    expect(policy('policy_yaml_unsupported', { line: 1 })).toContain(
+      'das Ecclium nicht annimmt in Zeile 1.',
+    );
+  });
+
+  it('names no place when the problem has none', () => {
+    expect(policy('policy_invalid', {})).toContain(
+      'Ein Feld der Richtlinie in ‹ECCLIUM_POLICY_FILE› ist nicht gültig.',
+    );
+  });
+
+  it.each([
+    ['a field with a value', { field: 'interactive.Berichte im Archiv' }],
+    ['a field with signs of YAML', { field: 'a: &x' }],
+    ['a field that starts with a position', { field: '[0].name' }],
+    ['a field that is too long', { field: `a${'.b'.repeat(100)}` }],
+    ['a field that is no text', { field: 12 }],
+    ['the line 0', { line: 0 }],
+    ['a line that is no whole number', { line: 1.5 }],
+    ['a line beyond the bound', { line: 1_000_001 }],
+    ['a line as text', { line: '3' }],
+  ])('shows nothing of %s', (_name, where) => {
+    const text = policy('policy_invalid', where);
+    expect(text).toContain(
+      'Ein Feld der Richtlinie in ‹ECCLIUM_POLICY_FILE› ist nicht gültig.',
+    );
+    expect(text).not.toMatch(/Berichte|&x|im Feld|in Zeile/u);
+  });
+
+  it('names LOG_TOKENS and LOG_STREAM as the variables of the library for YAML', () => {
+    for (const name of ['LOG_TOKENS', 'LOG_STREAM']) {
+      expect(
+        problemText({ code: 'yaml_debug_output_enabled', variable: name }),
+      ).toContain(`Die Variable ‹${name}› ist gesetzt`);
+    }
+  });
+});
+
 describe('formatNumber', () => {
   it.each([
     [0, '0'],

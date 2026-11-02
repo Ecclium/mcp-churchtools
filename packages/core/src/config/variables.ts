@@ -35,6 +35,7 @@ export const variableNames = Object.freeze([
   'ECCLIUM_TOOLSETS',
   'ECCLIUM_STATE_DIR',
   'ECCLIUM_AUDIT_RETENTION_MONTHS',
+  'ECCLIUM_POLICY_FILE',
   'ECCLIUM_STDIO_SUBJECT',
   'ECCLIUM_LOG_LEVEL',
 ] as const);
@@ -98,6 +99,17 @@ export const tlsVariableName = 'NODE_TLS_REJECT_UNAUTHORIZED';
  * with every release, so the loader refuses any section.
  */
 export const debugVariableName = 'NODE_DEBUG';
+
+/**
+ * Variables without the prefix that the loader reads while a file of the
+ * policy is set, frozen. Set with any value, they make the library for
+ * YAML write every token of the file to stdout, which would break the
+ * protocol over stdio (ADR 0032).
+ */
+export const yamlDebugVariableNames = Object.freeze([
+  'LOG_TOKENS',
+  'LOG_STREAM',
+] as const);
 
 /**
  * The variable with options for Node.js, as on its command line. The
@@ -424,6 +436,15 @@ export const variables: readonly Variable[] = Object.freeze([
     stdioOnly: true,
   }),
   row({
+    name: 'ECCLIUM_POLICY_FILE',
+    kind: 'path',
+    maxLength: 4096,
+    choices: [],
+    defaultValue: undefined,
+    secret: false,
+    stdioOnly: false,
+  }),
+  row({
     name: 'ECCLIUM_STDIO_SUBJECT',
     kind: 'subject',
     maxLength: 32,
@@ -492,6 +513,11 @@ export const variableSchemas: Readonly<
     .string()
     .max(3)
     .refine((value) => isRetentionMonths(value)),
+  ECCLIUM_POLICY_FILE: z
+    .string()
+    .min(1)
+    .max(4096)
+    .refine((value) => isAbsolute(value)),
   ECCLIUM_STDIO_SUBJECT: z.string().max(32).regex(stdioSubjectPattern),
   ECCLIUM_LOG_LEVEL: choiceOf('ECCLIUM_LOG_LEVEL'),
 });
@@ -519,6 +545,7 @@ export const environmentSchema = z.strictObject({
   ECCLIUM_STATE_DIR: variableSchemas.ECCLIUM_STATE_DIR.optional(),
   ECCLIUM_AUDIT_RETENTION_MONTHS:
     variableSchemas.ECCLIUM_AUDIT_RETENTION_MONTHS.optional(),
+  ECCLIUM_POLICY_FILE: variableSchemas.ECCLIUM_POLICY_FILE.optional(),
   ECCLIUM_STDIO_SUBJECT: variableSchemas.ECCLIUM_STDIO_SUBJECT.optional(),
   ECCLIUM_LOG_LEVEL: variableSchemas.ECCLIUM_LOG_LEVEL.optional(),
 });

@@ -41,7 +41,14 @@ export interface Message {
 // underscores, or one of the variables of Node.js it reports by name.
 // Anything else is never put into a text.
 const namePattern =
-  /^ECCLIUM_[A-Z0-9_]{1,64}$|^NODE_TLS_REJECT_UNAUTHORIZED$|^NODE_DEBUG$|^NODE_OPTIONS$/;
+  /^ECCLIUM_[A-Z0-9_]{1,64}$|^NODE_TLS_REJECT_UNAUTHORIZED$|^NODE_DEBUG$|^NODE_OPTIONS$|^LOG_TOKENS$|^LOG_STREAM$/;
+
+// The path of a field of the policy as the loader builds it, from names of
+// letters and positions in lists, and a line of its YAML. Anything else is
+// never put into a text.
+const fieldPattern = /^[A-Za-z]{1,32}(?:\.[A-Za-z]{1,32}|\[\d{1,6}\])*$/;
+const maxFieldLength = 200;
+const maxLine = 1_000_000;
 
 const quote = (name: string): string => `‹${name}›`;
 
@@ -121,6 +128,12 @@ const toolsetList = `${toolsetNames.slice(0, -1).map(quote).join(', ')} und ${qu
 const auditDir = quote('audit');
 const quotaDir = quote('quota');
 const example = 'https://example.church.tools';
+const policyFile = quote('ECCLIUM_POLICY_FILE');
+// What applies without a file of the policy (ADR 0032).
+const policyDefault =
+  'Dann gilt die Voreinstellung: Erlaubt ist, was das Dienstkonto darf, ausser bei Gruppen und Diensten, und das Lesebudget ist 200 Aufrufe je Tag.';
+const policyReason =
+  'Die Richtlinie legt fest, wohin Ecclium schreiben darf und wie viel es je Tag lesen darf.';
 
 // Where an option of TLS was found: in NODE_OPTIONS, which the loader then
 // names, or else among the options Node.js was started with.
@@ -143,11 +156,13 @@ const optionFound = (
 
 // One function per code. It gets the quoted name of the variable and the
 // name itself, or undefined for both when the problem names none or a name
-// that breaks the pattern.
+// that breaks the pattern, and for a problem of the file of the policy
+// where it lies, such as « im Feld ‹interactive.readBudgetPerDay›» or
+// « in Zeile 3», else an empty text.
 const problems: Readonly<
   Record<
     ConfigProblemCode,
-    (name: string | undefined, raw: string | undefined) => Message
+    (name: string | undefined, raw: string | undefined, at: string) => Message
   >
 > = Object.freeze({
   unknown_variable: (name) =>
@@ -200,6 +215,14 @@ const problems: Readonly<
     message(
       `Die Variable ${name} schaltet die Diagnose von Node.js ein.`,
       'Damit schriebe Node.js am Protokoll vorbei nach stderr, je nach Sektion Adresse, Pfad und Suchbegriffe jeder Anfrage an ChurchTools oder Teile der Antworten.',
+      'Entfernen Sie die Variable aus der Konfiguration des KI-Assistenten.',
+    ),
+  // The library for YAML reads both as true for any value but an empty one
+  // (ADR 0032).
+  yaml_debug_output_enabled: (name = quote('LOG_TOKENS')) =>
+    message(
+      `Die Variable ${name} ist gesetzt, und ${policyFile} nennt eine Datei der Richtlinie.`,
+      'Damit schriebe die Bibliothek für YAML jeden Teil der Datei am Protokoll vorbei nach stdout, und der KI-Assistent verlöre die Verbindung zu Ecclium.',
       'Entfernen Sie die Variable aus der Konfiguration des KI-Assistenten.',
     ),
   tls_keylog_enabled: (_name, raw) =>
@@ -737,6 +760,110 @@ const problems: Readonly<
       `Die Befehle ‹ecclium audit verify› und ‹ecclium audit show› lesen die Audit-Dateien im Ordner aus ${name}, ohne ihn gibt es keine.`,
       `Setzen Sie ${name} in der Shell auf denselben Ordner wie in der Konfiguration des KI-Assistenten. Adresse und Token braucht es dafür nicht.`,
     ),
+  // The file of the policy (ADR 0032). Its checks follow those of the token
+  // file, but others may read it: it is no secret.
+  policy_file_relative: (name = policyFile) =>
+    message(
+      `Der Pfad zur Datei der Richtlinie in ${name} ist nicht absolut.`,
+      'Der KI-Assistent startet Ecclium aus einem unbekannten Ordner, und eine Tilde wird nicht ersetzt.',
+      'Geben Sie den vollständigen Pfad an, der mit / beginnt.',
+    ),
+  policy_file_platform: (name = policyFile) =>
+    message(
+      `Die Datei der Richtlinie in ${name} lässt sich auf diesem System nicht sicher lesen.`,
+      'Es fehlt die Prüfung des Eigentümers oder das Öffnen ohne Links, etwa unter Windows.',
+      `Entfernen Sie ${name}. ${policyDefault}`,
+    ),
+  policy_file_missing: (name = policyFile) =>
+    message(
+      `Die Datei der Richtlinie in ${name} gibt es nicht.`,
+      `${policyReason} Ohne die Datei, die Sie nennen, startet Ecclium nicht, statt still ohne Ihre Grenzen zu laufen.`,
+      `Prüfen Sie den Pfad in ${name} oder entfernen Sie die Variable. ${policyDefault}`,
+    ),
+  policy_file_symlink: (name = policyFile) =>
+    message(
+      `Der Pfad zur Datei der Richtlinie in ${name} endet in einem symbolischen Link.`,
+      'Ein Link könnte auf eine fremde Datei zeigen, deshalb folgt Ecclium ihm nicht.',
+      'Geben Sie den Pfad der Datei selbst an.',
+    ),
+  policy_file_unreadable: (name = policyFile) =>
+    message(
+      `Die Datei der Richtlinie in ${name} lässt sich nicht lesen.`,
+      'Dem Benutzer, unter dem Ecclium läuft, fehlt das Recht dazu.',
+      'Prüfen Sie Eigentümer und Rechte der Datei. Empfohlen sind die Rechte 644 oder 600.',
+    ),
+  policy_file_not_regular: (name = policyFile) =>
+    message(
+      `Der Pfad in ${name} zeigt nicht auf eine gewöhnliche Datei.`,
+      'Ein Ordner, ein Gerät oder eine Pipe enthält keine Richtlinie, und aus einer Pipe zu lesen könnte den Start aufhalten.',
+      'Geben Sie den Pfad einer gewöhnlichen Datei an.',
+    ),
+  policy_file_owner: (name = policyFile) =>
+    message(
+      `Die Datei der Richtlinie in ${name} gehört einem anderen Benutzer.`,
+      `${policyReason} Wem die Datei gehört, der kann diese Grenzen ändern.`,
+      'Legen Sie die Datei als der Benutzer an, unter dem Ecclium läuft.',
+    ),
+  policy_file_mode: (name = policyFile) =>
+    message(
+      `Die Datei der Richtlinie in ${name} dürfen auch die Gruppe oder andere Benutzer ändern.`,
+      `${policyReason} Lesen dürfen andere Benutzer sie, ändern nicht.`,
+      'Setzen Sie die Rechte der Datei mit «chmod 644» auf 644 oder mit «chmod 600» auf 600.',
+    ),
+  policy_file_too_large: (name = policyFile) =>
+    message(
+      `Die Datei der Richtlinie in ${name} ist zu gross.`,
+      `Sie hat mehr als ${formatNumber(262_144)} Bytes, also mehr als 256 KiB.`,
+      'Prüfen Sie, ob der Pfad auf die richtige Datei zeigt.',
+    ),
+  policy_file_bom: (name = policyFile) =>
+    message(
+      `Die Datei der Richtlinie in ${name} beginnt mit einer Byte-Order-Markierung.`,
+      'Manche Editoren setzen sie beim Speichern. Ecclium entfernt sie nicht von sich aus.',
+      'Speichern Sie die Datei als UTF-8 ohne BOM.',
+    ),
+  policy_file_encoding: (name = policyFile) =>
+    message(
+      `Die Datei der Richtlinie in ${name} ist nicht in UTF-8 geschrieben.`,
+      'Ecclium liest die Richtlinie nur als UTF-8, damit jeder Name genau so ankommt, wie er in ChurchTools steht.',
+      'Speichern Sie die Datei als UTF-8 ohne BOM.',
+    ),
+  policy_file_unsafe: (name = policyFile) =>
+    message(
+      `Die Datei der Richtlinie in ${name} liess sich nicht sicher öffnen.`,
+      'Das Dateisystem meldete einen Fehler. Seine Meldung zeigt Ecclium nicht, weil sie den Pfad enthält.',
+      'Prüfen Sie den Pfad und die Ordner darüber.',
+    ),
+  policy_yaml_syntax: (name = policyFile, _raw, at) =>
+    message(
+      `Die Datei der Richtlinie in ${name} ist kein gültiges YAML${at}.`,
+      'Ecclium liest genau ein Dokument in YAML 1.2. Jeder Schlüssel darf in einer Zuordnung nur einmal stehen, und jede Warnung des Lesers gilt als Fehler.',
+      'Prüfen Sie die Datei an dieser Stelle, etwa auf Einrückung, Klammern, doppelte Schlüssel und ein zweites ‹---›.',
+    ),
+  policy_yaml_unsupported: (name = policyFile, _raw, at) =>
+    message(
+      `Die Datei der Richtlinie in ${name} verwendet etwas aus YAML, das Ecclium nicht annimmt${at}.`,
+      'Anker und Verweise, Tags, Direktiven wie ‹%YAML› und Schlüssel, die kein Text sind, könnten einen Eintrag anders aussehen lassen, als er gilt.',
+      'Schreiben Sie jeden Wert aus. Beginnt ein Text mit einem Und-Zeichen, einem Stern, einem Ausrufezeichen oder einem Prozentzeichen, setzen Sie ihn in Anführungszeichen.',
+    ),
+  policy_version_unknown: (name = policyFile) =>
+    message(
+      `Die Datei der Richtlinie in ${name} nennt kein Format, das diese Version kennt.`,
+      'Die Datei muss ‹schema: policy.v1› enthalten. Ohne diese Angabe bedeuten die übrigen Felder womöglich etwas anderes.',
+      'Setzen Sie die Zeile ‹schema: policy.v1› an den Anfang der Datei.',
+    ),
+  policy_invalid: (name = policyFile, _raw, at) =>
+    message(
+      `Ein Feld der Richtlinie in ${name} ist nicht gültig${at}.`,
+      'Ecclium prüft die Richtlinie streng: Ein unbekanntes Feld, ein falscher Typ oder ein Wert ausserhalb seines Bereichs verhindert den Start. Den Wert selbst zeigt Ecclium nicht.',
+      'Prüfen Sie das Feld anhand der Beschreibung der Richtlinie in der Dokumentation.',
+    ),
+  policy_contradiction: (name = policyFile, _raw, at) =>
+    message(
+      `Die Richtlinie in ${name} widerspricht sich${at}.`,
+      'Dort steht ein Ziel mit einem zweiten Namen, ein Tool zum zweiten Mal für dasselbe Ziel, eine Obergrenze je Lauf über der je Tag oder eine zweite Stufe der Maskierung für dieselbe Routine. Dann bliebe offen, welcher Eintrag gilt.',
+      'Fassen Sie die beiden Einträge zusammen oder korrigieren Sie das Feld.',
+    ),
 });
 
 const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({
@@ -834,9 +961,24 @@ export function problemMessage(problem: ConfigProblem): Message {
     typeof variable === 'string' && namePattern.test(variable)
       ? variable
       : undefined;
+  // Where in the file of the policy: the field, else the line, each only
+  // in the form the loader builds.
+  const path = field(given, 'field');
+  const line = field(given, 'line');
+  const at =
+    typeof path === 'string' &&
+    path.length <= maxFieldLength &&
+    fieldPattern.test(path)
+      ? ` im Feld ${quote(path)}`
+      : Number.isSafeInteger(line) &&
+          (line as number) >= 1 &&
+          (line as number) <= maxLine
+        ? ` in Zeile ${formatNumber(line as number)}`
+        : '';
   return problems[code as ConfigProblemCode](
     raw === undefined ? undefined : quote(raw),
     raw,
+    at,
   );
 }
 

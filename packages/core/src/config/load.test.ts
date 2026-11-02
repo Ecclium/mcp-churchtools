@@ -17,6 +17,7 @@ import { z } from 'zod';
 import { Secret } from '../http/index.js';
 import { KeyMaterial } from '../keys/index.js';
 import { isEventName } from '../logger/index.js';
+import { defaultPolicy } from '../policy/check.js';
 import {
   type ConfigProblemCode,
   configProblemCodes,
@@ -185,6 +186,42 @@ const withKeys = (
 const keyFile = (seed: string, ending = '\n'): TokenFileSystem =>
   memoryFiles(`${keyHex(seed)}${ending}`).fs;
 
+const policyPath = '/path/to/policy.yaml';
+
+/** A good configuration with a file of the policy (ADR 0032). */
+const withPolicy = (
+  policy: TokenFileSystem | string,
+  extra: Environment = {},
+  transport: Transport = 'stdio',
+): ConfigResult =>
+  load(
+    { ...valid(), ECCLIUM_POLICY_FILE: policyPath, ...extra },
+    transport,
+    pathFiles({
+      [tokenPath]: memoryFiles().fs,
+      [policyPath]:
+        typeof policy === 'string' ? memoryFiles(policy).fs : policy,
+    }),
+  );
+
+const policyYaml = [
+  'schema: policy.v1',
+  'interactive:',
+  '  readBudgetPerDay: 150',
+  '  targets:',
+  '    - target: { kind: wiki_category, id: 12, name: Berichte }',
+  '      tools: [ct_wiki_page_create]',
+  '      maxPerDay: 4',
+  '',
+].join('\n');
+
+const failingPolicy = (code: string): TokenFileSystem =>
+  memoryFiles(policyYaml, {
+    open: () => {
+      throw fsError(code);
+    },
+  }).fs;
+
 const stateDirPath = '/path/to/state';
 
 /** What lstat finds at a path: a folder with these fields, or an error. */
@@ -310,6 +347,7 @@ describe('loadConfig with a good configuration', () => {
       toolsets: [],
       stateDir: undefined,
       auditRetentionMonths: 12,
+      policy: defaultPolicy,
       stdioSubject: 'local-stdio',
       logLevel: 'info',
     });
@@ -375,6 +413,7 @@ describe('loadConfig with a good configuration', () => {
         'default',
         { kind: 'integer', value: 12 },
       ],
+      ['policy', 'ECCLIUM_POLICY_FILE', 'default', { kind: 'none' }],
       [
         'stdioSubject',
         'ECCLIUM_STDIO_SUBJECT',
@@ -1672,6 +1711,84 @@ describe('loadConfig and the retention of the audit files', () => {
   });
 });
 
+describe('loadConfig and the policy', () => {
+  it('takes the default policy without the variable', () => {
+    const result = load(valid());
+    expect(result.ok && result.config.policy).toBe(defaultPolicy);
+    expect(setting(result, 'policy')).toEqual({
+      key: 'policy',
+      variable: 'ECCLIUM_POLICY_FILE',
+      origin: 'default',
+      shown: { kind: 'none' },
+    });
+  });
+
+  it('reads the policy from its file, over stdio and over HTTP', () => {
+    for (const transport of ['stdio', 'http'] as const) {
+      const result = withPolicy(policyYaml, {}, transport);
+      expect(result.ok, transport).toBe(true);
+      expect(
+        result.ok && result.config.policy.interactive.readBudgetPerDay,
+      ).toBe(150);
+      expect(setting(result, 'policy')).toEqual({
+        key: 'policy',
+        variable: 'ECCLIUM_POLICY_FILE',
+        origin: 'file',
+        shown: { kind: 'path', value: policyPath },
+      });
+    }
+  });
+
+  it('names the field or the line of a problem in the file, never a value', () => {
+    const field = withPolicy(
+      'schema: policy.v1\ninteractive: { readBudgetPerDay: 1001 }\n',
+    );
+    expect(field.report.problems).toEqual([
+      {
+        code: 'policy_invalid',
+        variable: 'ECCLIUM_POLICY_FILE',
+        field: 'interactive.readBudgetPerDay',
+      },
+    ]);
+    expect(setting(field, 'policy')).toMatchObject({
+      origin: 'invalid',
+      shown: { kind: 'none' },
+    });
+    const line = withPolicy('schema: policy.v1\nunknownKey: [1\n');
+    expect(line.report.problems).toEqual([
+      { code: 'policy_yaml_syntax', variable: 'ECCLIUM_POLICY_FILE', line: 3 },
+    ]);
+    expect(JSON.stringify(line.report)).not.toContain('unknownKey');
+  });
+
+  it('refuses an empty value', () => {
+    const result = load({ ...valid(), ECCLIUM_POLICY_FILE: '' });
+    expect(problems(result)).toEqual([['empty_value', 'ECCLIUM_POLICY_FILE']]);
+    expect(setting(result, 'policy')).toMatchObject({ origin: 'invalid' });
+  });
+
+  // The library for YAML writes every token it reads to stdout while one
+  // of them is set, which would break the protocol over stdio (ADR 0032).
+  it('does not read the file while LOG_TOKENS or LOG_STREAM is set, in any spelling', () => {
+    const file = memoryFiles(policyYaml);
+    const result = withPolicy(file.fs, { log_tokens: '1', LOG_STREAM: 'x' });
+    // One rank, so by name.
+    expect(problems(result)).toEqual([
+      ['yaml_debug_output_enabled', 'LOG_STREAM'],
+      ['yaml_debug_output_enabled', 'LOG_TOKENS'],
+    ]);
+    expect(file.opened).toEqual([]);
+    expect(setting(result, 'policy')).toMatchObject({ origin: 'invalid' });
+  });
+
+  it('lets LOG_TOKENS and LOG_STREAM be without a file of the policy, or empty', () => {
+    expect(load({ ...valid(), LOG_TOKENS: '1', LOG_STREAM: '1' }).ok).toBe(
+      true,
+    );
+    expect(withPolicy(policyYaml, { LOG_TOKENS: '' }).ok).toBe(true);
+  });
+});
+
 describe('loadConfig and its problems', () => {
   const withAddress = (value: string): ConfigResult =>
     load({ ...valid(), ECCLIUM_CHURCHTOOLS_URL: value });
@@ -1953,6 +2070,54 @@ describe('loadConfig and its problems', () => {
       ),
     audit_retention_without_state_dir: () =>
       load({ ...valid(), ECCLIUM_AUDIT_RETENTION_MONTHS: '24' }),
+    yaml_debug_output_enabled: () =>
+      withPolicy(policyYaml, { LOG_TOKENS: '1' }),
+    policy_file_relative: () =>
+      load({ ...valid(), ECCLIUM_POLICY_FILE: 'policy.yaml' }),
+    // The token comes from the environment, so that only the file of the
+    // policy meets the checks of the platform.
+    policy_file_platform: () =>
+      load(
+        {
+          ECCLIUM_CHURCHTOOLS_URL: address,
+          [tokenVariableName]: token(),
+          ECCLIUM_POLICY_FILE: policyPath,
+        },
+        'stdio',
+        memoryFiles(policyYaml, { getuid: () => undefined }).fs,
+      ),
+    policy_file_missing: () =>
+      load(
+        { ...valid(), ECCLIUM_POLICY_FILE: policyPath },
+        'stdio',
+        pathFiles({ [tokenPath]: memoryFiles().fs }),
+      ),
+    policy_file_symlink: () => withPolicy(failingPolicy('ELOOP')),
+    policy_file_unreadable: () => withPolicy(failingPolicy('EACCES')),
+    policy_file_not_regular: () =>
+      withPolicy(memoryFiles(policyYaml, { stats: { isFile: false } }).fs),
+    policy_file_owner: () =>
+      withPolicy(memoryFiles(policyYaml, { stats: { uid: 0 } }).fs),
+    policy_file_mode: () =>
+      withPolicy(memoryFiles(policyYaml, { stats: { mode: 0o100620 } }).fs),
+    policy_file_too_large: () =>
+      withPolicy(memoryFiles(policyYaml, { stats: { size: 262_145 } }).fs),
+    // Bytes in latin1: the mark of UTF-8, and a byte that starts a sign of
+    // two bytes followed by one that cannot end it.
+    policy_file_bom: () => withPolicy(`ï»¿${policyYaml}`),
+    policy_file_encoding: () => withPolicy(`${policyYaml}# Ã(\n`),
+    policy_file_unsafe: () => withPolicy(failingPolicy('EIO')),
+    policy_yaml_syntax: () => withPolicy(`${policyYaml}schema: policy.v1\n`),
+    policy_yaml_unsupported: () => withPolicy('schema: &v policy.v1\n'),
+    policy_version_unknown: () => withPolicy('schema: policy.v2\n'),
+    policy_invalid: () =>
+      withPolicy(
+        'schema: policy.v1\ninteractive: { readBudgetPerDay: 1001 }\n',
+      ),
+    policy_contradiction: () =>
+      withPolicy(
+        `${policyYaml}    - target: { kind: wiki_category, id: 12, name: Archiv }\n      tools: [ct_wiki_page_update]\n      maxPerDay: 4\n`,
+      ),
   };
 
   it.each([...configProblemCodes])('can report the problem %s', (code) => {
