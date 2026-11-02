@@ -132,6 +132,25 @@ function copyWorkspace(files: Readonly<Record<string, string>>): string {
   return root;
 }
 
+/**
+ * Cruises a copy with the given files and removes the copy as soon as the
+ * cruise is done, so that at most one copy lies on disk. Kept until the end,
+ * the copies of all cases came to about 150 folders with some 70'000 files,
+ * and removing them in the one hook after all tests took longer than its
+ * limit of ten seconds on a loaded runner of CI. A copy that fails halfway
+ * stays in the list of temporary folders for that hook.
+ */
+async function cruiseCopy(
+  files: Readonly<Record<string, string>>,
+): Promise<ICruiseResult> {
+  const root = copyWorkspace(files);
+  try {
+    return await cruiseFolder(root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 async function cruiseFolder(baseDir: string): Promise<ICruiseResult> {
   const { output } = await cruise(
     ['packages'],
@@ -1369,18 +1388,26 @@ describe('dependency-cruiser rules', { timeout: cruiseTimeout }, () => {
   });
 
   it('pass an unchanged copy of the packages', async () => {
-    const result = await cruiseFolder(copyWorkspace({}));
+    const result = await cruiseCopy({});
     expect(result.summary.violations).toEqual([]);
   });
 
   it.each(cases)('$rule: refuses that $name', async ({ rule, files }) => {
-    const result = await cruiseFolder(copyWorkspace(files));
+    const result = await cruiseCopy(files);
     expect(firedRules(result)).toEqual([rule]);
   });
 
   it.each(allowedCases)('allow that $name', async ({ files }) => {
-    const result = await cruiseFolder(copyWorkspace(files));
+    const result = await cruiseCopy(files);
     expect(result.summary.violations).toEqual([]);
+  });
+
+  it('leave no copy of an earlier case on disk', () => {
+    const copies = temporaryFolders.filter((folder) =>
+      folder.split(sep).at(-1)?.startsWith('ecclium-arch-'),
+    );
+    expect(copies.length).toBeGreaterThan(cases.length);
+    expect(copies.filter((folder) => existsSync(folder))).toEqual([]);
   });
 
   it('have a failing example for every rule', () => {
