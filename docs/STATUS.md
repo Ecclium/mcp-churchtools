@@ -1332,3 +1332,4 @@ Diese Grundsatzfragen sind entschieden.
   - Exit-Code 69 neu, wenn ChurchTools keine Namen gibt. Ein Test am echten Prozess fragt einen Server des Tests über TLS.
   - Nie offener als das Audit: Fällt jede Kategorie heraus, die das Audit nennt, steht statt einer leeren Liste ein Platzhalter, den der Lader abweist, und die Ziele stehen vor dem Lesebudget. Ein Ziel nur aus abgelehnten Versuchen trägt einen Kommentar, ein in `strict` maskierter Name steht nur als Kommentar.
   - Doku: Abschnitt «Vorschlag aus dem Audit» in `docs/policy.md`, `docs/privacy.md`, ADR 0028, 0032 und 0056.
+- 02.11.2026, der Vorschlag der Richtlinie aus dem Audit ist als `0a17335` auf `main` (#181). Der Squash-Commit bringt genau den Baum des Branches.
