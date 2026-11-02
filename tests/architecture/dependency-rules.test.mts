@@ -660,6 +660,30 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'yaml-only-in-policy-reader',
+    name: 'a module of the policy next to the reader parses YAML',
+    files: {
+      'packages/core/src/policy/forbidden.ts':
+        "import { parse } from 'yaml';\nexport const read = parse;\n",
+    },
+  },
+  {
+    rule: 'yaml-only-in-policy-reader',
+    name: 'a test of core parses YAML past the reader',
+    files: {
+      'packages/core/src/config/forbidden.test.ts':
+        "import { parseDocument } from 'yaml';\nexport const read = parseDocument;\n",
+    },
+  },
+  {
+    rule: 'yaml-only-in-policy-reader',
+    name: 'the loader of the configuration imports a type of the library',
+    files: {
+      'packages/core/src/config/forbidden.ts':
+        "import type { Document } from 'yaml';\nexport type Policy = Document;\n",
+    },
+  },
+  {
     rule: 'keys-internals',
     name: 'the configuration reads the bytes of a key',
     files: {
