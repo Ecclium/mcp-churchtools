@@ -34,7 +34,8 @@ const isHidden = (codePoint: number, next: number | undefined): boolean => {
   if (codePoint >= 0x2066 && codePoint <= 0x2069) return true;
   // Characters of zero width, invisible operators and the byte order mark.
   if (codePoint >= 0x200b && codePoint <= 0x200d) return true;
-  if (codePoint >= 0x2060 && codePoint <= 0x2064) return true;
+  // Invisible operators and the deprecated controls of shaping and digits.
+  if (codePoint >= 0x2060 && codePoint <= 0x206f) return true;
   if (codePoint === 0xfeff) return true;
   // Other characters that show nothing: the soft hyphen, the grapheme
   // joiner, the Mongolian vowel separator, the Hangul fillers and the
@@ -51,6 +52,15 @@ const isHidden = (codePoint: number, next: number | undefined): boolean => {
     return true;
   }
   if (codePoint >= 0xfff9 && codePoint <= 0xfffb) return true;
+  // More characters that Unicode marks as ignorable by default and that no
+  // text in use needs: the inherent vowels of Khmer, the selectors of
+  // Mongolian, unassigned specials, the format controls of shorthand and
+  // of musical notation. They can split a number for the eye of a check.
+  if (codePoint === 0x17b4 || codePoint === 0x17b5) return true;
+  if (codePoint >= 0x180b && codePoint <= 0x180f) return true;
+  if (codePoint >= 0xfff0 && codePoint <= 0xfff8) return true;
+  if (codePoint >= 0x1bca0 && codePoint <= 0x1bca3) return true;
+  if (codePoint >= 0x1d173 && codePoint <= 0x1d17a) return true;
   // The supplement of variation selectors serves no text in use and can
   // hide a whole message in one visible character. The variation
   // selectors U+FE00 to U+FE0F stay, because emoji and CJK script need

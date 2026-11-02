@@ -136,6 +136,33 @@ describe('maskFreeText', () => {
     }
   });
 
+  it('masks a phone number in short groups with dots, hyphens or slashes', () => {
+    // Joined here, so that no line of the source looks like an address of
+    // the internet to the scan for secrets.
+    const groups = ['00', '41', '23', '45', '67'];
+    for (const text of [
+      `Tel. ${groups.join('.')}`,
+      `Tel. ${groups.join('-')}`,
+      `Tel. ${groups.join('/')}`,
+      `Tel. ${Array.from('0001234567').join('.')}`,
+    ]) {
+      expect(maskFreeText(text), text).toBe(`Tel. ${phone}`);
+    }
+    // Four short groups and a year stay a date, a time or a range.
+    expect(maskFreeText('Probe 09.30-10.30 Uhr')).toBe('Probe 09.30-10.30 Uhr');
+    expect(maskFreeText('am 01.10.2026 19.30')).toBe('am 01.10.2026 19.30');
+  });
+
+  it('reads a long run of digits and signs in linear time', () => {
+    const run = '0.'.repeat(32_000);
+    const started = performance.now();
+    maskFreeText(run);
+    // Without the bound on the run this took over 20 seconds.
+    expect(performance.now() - started).toBeLessThan(2_000);
+    // A run longer than the bound is still masked, in parts.
+    expect(maskFreeText(`Tel. ${'000 '.repeat(30)}12`)).not.toContain('000');
+  });
+
   it('masks an IBAN stored or printed, in either case', () => {
     expect(maskFreeText(`IBAN ${swiss}, Kollekte`)).toBe(
       `IBAN ${iban}, Kollekte`,

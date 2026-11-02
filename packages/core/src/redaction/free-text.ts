@@ -273,10 +273,13 @@ const isDateMark = (code: number): boolean =>
 // rather than a phone number: groups of one or two digits and at most one
 // group of four, the year, with at least one dot, hyphen or slash between
 // them, as in 01.-03.10.2026, 05.03. 19.30 or 09.30-10.30. A phone number
-// has a group of three or more digits, or is written with spaces only.
+// has a group of three or more digits, or is written with spaces only, or
+// has five or more short groups and no year, as in 00-41-23-45-67: a date
+// with a time or a range of times has four at most.
 const isDateOrTime = (run: string): boolean => {
   let group = 0;
   let years = 0;
+  let short = 0;
   let marked = false;
   for (let index = 0; index <= run.length; index += 1) {
     const code = index < run.length ? run.charCodeAt(index) : 0x20;
@@ -286,11 +289,18 @@ const isDateOrTime = (run: string): boolean => {
     }
     if (group === 4) years += 1;
     else if (group > 2) return false;
+    else if (group > 0) short += 1;
     group = 0;
     if (isDateMark(code)) marked = true;
   }
-  return marked && years <= 1;
+  return marked && years <= 1 && (years === 1 || short <= 4);
 };
+
+// The longest run a phone number is looked for in. A real number is far
+// shorter. Without the bound a long run of digits and signs that reads as
+// a date would be read again from every 0 in it to its end, and the time
+// would grow with the square of its length: 64 KiB of 0. took 22 seconds.
+const maxPhoneRun = 64;
 
 // IBAN, AHV numbers and phone numbers in a text whose addresses are
 // already masked. An IBAN starts where no letter or digit stands before
@@ -337,7 +347,12 @@ const findNumbers = (text: string): PersonalDataFind[] => {
       !bracketed &&
       (code === 0x2b || code === 0x28 || code === 0x30)
     ) {
-      const end = phoneEndAt(text, index, freeTextSeparatorRun);
+      const found = phoneEndAt(
+        text.slice(index, index + maxPhoneRun),
+        0,
+        freeTextSeparatorRun,
+      );
+      const end = found === -1 ? -1 : index + found;
       if (
         end !== -1 &&
         !(code === 0x30 && isDateOrTime(text.slice(index, end)))
@@ -386,12 +401,16 @@ export function findPersonalData(value: string): readonly PersonalDataFind[] {
   }
   masked += value.slice(from);
   // A number never touches a marker: it ends on a digit and has none
-  // inside, so every index of a find lies before or after each marker.
+  // inside, so every index of a find lies before or after each marker. The
+  // finds come in order, so the shift only grows.
+  let passed = 0;
+  let shift = 0;
   const original = (index: number): number => {
-    let shift = 0;
-    for (const { at, address } of markers) {
+    while (passed < markers.length) {
+      const { at, address } = markers[passed] as (typeof markers)[number];
       if (at >= index) break;
       shift += address.end - address.start - freeTextMarkers.email.length;
+      passed += 1;
     }
     return index + shift;
   };
