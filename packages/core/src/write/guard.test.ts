@@ -19,6 +19,7 @@ import {
 } from '@ecclium/mcp-churchtools-testkit';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { contentSentences } from '../content/index.js';
 import { HttpTransportError } from '../http/index.js';
 import { checkPolicy, defaultPolicy } from '../policy/check.js';
 import type { Policy } from '../policy/schema.js';
@@ -31,6 +32,7 @@ import {
   type WriteClient,
   writeSentences,
 } from './guard.js';
+import { ContentRefusal } from './content-gate.js';
 import { policySentences } from './policy-gate.js';
 import { issueProof } from './proof.js';
 import { readPlan } from './sealed-plan.js';
@@ -434,6 +436,82 @@ describe('planning', () => {
     await guard.plan(request, create);
     await guard.plan(request, append);
     expect(fake.sent).toEqual([]);
+  });
+});
+
+describe('the content policy in planning', () => {
+  it('refuses a text before any read and names every reason', async () => {
+    const parts = setup();
+    let reads = 0;
+    const counting = {
+      ...parts.fake,
+    };
+    const guard = createWriteGuard({
+      client: {
+        ...clientOf(counting),
+        permissions: () => {
+          reads += 1;
+          return Promise.resolve(counting.permissions);
+        },
+      },
+      clock: parts.clock,
+      killSwitchDir: dir,
+      policy: defaultPolicy,
+      quota: parts.quota,
+    });
+    const refused = await guard
+      .plan(parts.request, {
+        ...create,
+        title: 'Bericht [Klick](javascript:x)',
+        text: 'Mehr unter example.org ![x](https://example.org/p.png)',
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    expect(refused).toBeInstanceOf(ContentRefusal);
+    const refusal = refused as ContentRefusal;
+    expect(refusal.violations).toEqual(['image', 'unsupported']);
+    expect(refusal.error.code).toBe('validation');
+    expect(refusal.error.message).toBe(
+      `${contentSentences.image} ${contentSentences.unsupported}`,
+    );
+    expect(reads).toBe(0);
+    expect(logged.map((line) => line.event)).toEqual([
+      'content_image',
+      'content_unsupported',
+    ]);
+  });
+
+  it('seals and writes the texts in their written form', async () => {
+    const parts = setup();
+    const plan = planOf(
+      await parts.guard.plan(parts.request, {
+        ...append,
+        section: '## Nachtrag\n\n* Probe',
+      }),
+    );
+    const proof = issueProof(plan, 'elicitation', now);
+    expect((await parts.guard.commit(parts.ctx, plan, proof)).ok).toBe(true);
+    expect(parts.fake.sent).toEqual(['# Plan\n\n## Nachtrag\n\n- Probe\n']);
+  });
+
+  it('lets the contact values of the policy stand', async () => {
+    const policy = checkPolicy({
+      schema: 'policy.v1',
+      interactive: { contacts: ['sekretariat@example.org'] },
+    });
+    if (!policy.ok) throw new Error(policy.code);
+    const parts = setup(fakeOf(), dir, { policy: policy.policy });
+    const section = 'Fragen an sekretariat@example.org';
+    expect(
+      (await parts.guard.plan(parts.request, { ...append, section })).outcome
+        .kind,
+    ).toBe('planned');
+    const other = setup();
+    await expect(
+      other.guard.plan(other.request, { ...append, section }),
+    ).rejects.toBeInstanceOf(ContentRefusal);
   });
 });
 

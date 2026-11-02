@@ -23,7 +23,9 @@
  * The policy of ADR 0032 checks the plan after the read of the target and
  * again on the commit right before the send, where it adds the write to
  * its counter of the day (`policy-gate.ts`). The content policy of ADR 0030
- * checks the plan here once it is built, between the rights and the seal.
+ * checks every text of the intent first, before the rights and before any
+ * read, and the plan is sealed with the texts in their written form
+ * (`content-gate.ts`).
  *
  * @packageDocumentation
  */
@@ -45,9 +47,11 @@ import {
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import type { ChurchToolsWrites } from '../churchtools/wiki-writes.js';
+import { contactKeysOf } from '../content/index.js';
 import { HttpTransportError } from '../http/index.js';
 import type { Policy } from '../policy/schema.js';
 import { readIntent } from './intent.js';
+import { checkIntentContent, ContentRefusal } from './content-gate.js';
 import { checkKillSwitches } from './kill-switch.js';
 import { contentHashOf } from './plan-hash.js';
 import { createPolicyGate, type WriteFacts } from './policy-gate.js';
@@ -184,6 +188,8 @@ export interface WriteGuard {
    * @returns The sealed plan, or why nothing needs to be written, with the
    *   target derived from the checked copy of the intent.
    * @throws {EccliumError} With a fixed sentence when the plan is refused.
+   * @throws {ContentRefusal} When the content policy refuses a text, with
+   *   the error for the tool and the reasons for the audit.
    */
   plan(request: PlanRequest, intent: unknown): Promise<PlanResult>;
   /**
@@ -279,6 +285,9 @@ type PageIntent = Extract<WriteIntent, { guid: string }>;
  */
 export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
   const { client, clock, killSwitchDir } = options;
+  // The contact values a text may hold, from the interactive part of the
+  // policy (ADR 0030).
+  const contacts = contactKeysOf(options.policy.interactive.contacts ?? []);
   let blocked = false;
   const policy = createPolicyGate({
     policy: options.policy,
@@ -381,8 +390,9 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     };
   };
 
-  // Rejects only with an EccliumError: any other error of a read becomes
-  // internal, so that the pipeline passes on a fixed sentence.
+  // Rejects only with an EccliumError or a refusal of the content policy:
+  // any other error of a read becomes internal, so that the pipeline
+  // passes on a fixed sentence.
   const plan = async (
     request: PlanRequest,
     value: unknown,
@@ -390,7 +400,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     try {
       return await planOnce(request, value);
     } catch (error) {
-      throw asError(error);
+      throw error instanceof ContentRefusal ? error : asError(error);
     }
   };
 
@@ -408,8 +418,10 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       ctx.log.warn('write_refused', { code: 'policy_denied' });
       throw refuse('policy_denied', writeSentences.notRun);
     }
-    // Only the writes of the wiki run in this version (rules.ts).
-    const wiki = intent as WikiIntent;
+    // Only the writes of the wiki run in this version (rules.ts). Their
+    // texts go through the content policy before anything else, and from
+    // here on the intent holds them in their written form (ADR 0030).
+    const wiki = checkIntentContent(ctx, intent as WikiIntent, contacts);
     await checkRights(ctx, wiki, rules);
     const derived = await derive(ctx, wiki);
     // The policy, with the counter of the day only read (ADR 0032). The
@@ -426,7 +438,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       actor: ctx.actor,
       tool: request.tool,
       origin: request.origin,
-      intent,
+      intent: wiki,
       toolMeta: request.meta,
       contentHash: derived.contentHash,
       sealedAt: clock.now(),

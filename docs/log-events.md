@@ -56,6 +56,18 @@ Je Ereignis die Stufe und die Felder, die ein Aufruf höchstens setzt. Die Felde
 
 | Ereignis | Stufe | Felder | Bedeutung |
 | --- | --- | --- | --- |
+| `content_contact` | `warn` | keine | Ein Text enthält eine E-Mail-Adresse, Telefonnummer, IBAN oder AHV-Nummer, die nicht in `interactive.contacts` der Richtlinie steht. Der Aufruf endet ohne Schreiben. |
+| `content_html` | `warn` | keine | Ein Text enthält HTML, einen Kommentar oder einen Verweis auf ein Zeichen wie `&amp;`. Der Aufruf endet ohne Schreiben. |
+| `content_image` | `warn` | keine | Ein Text enthält ein Bild. Der Aufruf endet ohne Schreiben. |
+| `content_link` | `warn` | keine | Ein Text enthält einen Link. Der Aufruf endet ohne Schreiben. |
+| `content_masked` | `warn` | keine | Ein Text enthält eine Maske der Schwärzung, ein Pseudonym oder die Grenze eines Datenumschlags. Der Aufruf endet ohne Schreiben. |
+| `content_mention` | `warn` | keine | Ein Text erwähnt eine Person mit einem Link. Der Aufruf endet ohne Schreiben. |
+| `content_reference` | `warn` | keine | Ein Text enthält eine Referenz oder Fussnote in Markdown. Der Aufruf endet ohne Schreiben. |
+| `content_too_deep` | `warn` | keine | Ein Text verschachtelt Listen oder Hervorhebung tiefer als erlaubt. Der Aufruf endet ohne Schreiben. |
+| `content_too_long` | `warn` | keine | Ein Text eines Schreibvorgangs ist länger als 64 KiB oder hat mehr als 2000 Sternchen, Unterstriche, Tilden und Ausrufezeichen. Der Aufruf endet ohne Schreiben, der Grund steht in `contentViolations` des Audits. |
+| `content_unparsable` | `warn` | keine | Die ContentPolicy konnte einen Text nicht als Markdown lesen oder las seine geschriebene Form anders. Der Aufruf endet ohne Schreiben. |
+| `content_unsupported` | `warn` | keine | Ein Text nutzt Markdown ausserhalb der erlaubten Teilmenge, oder ein Titel enthält Zeichen von Markdown oder mehr als eine Zeile. Der Aufruf endet ohne Schreiben. |
+| `content_web_address` | `warn` | keine | Ein Text enthält etwas, das eine Darstellung als Webadresse verlinken könnte. Der Aufruf endet ohne Schreiben. |
 | `policy_count_unavailable` | `warn` | keine | Ecclium konnte einen Schreibvorgang nicht gegen die Grenze der Richtlinie zählen, etwa ohne Ordner für den Zustand. Der Aufruf endet mit `policy_denied`, ohne zu schreiben. |
 | `policy_limit_reached` | `warn` | keine | Die Grenze der Schreibvorgänge dieses Tools auf dieses Ziel für den UTC-Tag ist erreicht. Der Aufruf endet mit `policy_denied`, ohne zu schreiben. |
 | `policy_name_changed` | `warn` | keine | Das Ziel in ChurchTools trägt nicht mehr den Namen, den die Richtlinie erwartet, oder sein Name ist nicht zu lesen. Der Aufruf endet mit `policy_denied`, ohne zu schreiben und ohne zu zählen. |

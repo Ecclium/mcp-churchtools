@@ -12,6 +12,7 @@ export {
   confirmationSentence,
   confirmWrite,
 } from './confirm.js';
+export { ContentRefusal } from './content-gate.js';
 export {
   type CommitResult,
   createWriteGuard,

@@ -18,7 +18,7 @@ export {
   normalizeContent,
   type NormalizedContent,
 } from './normalize.js';
-export { contactKeyOf } from './scan.js';
+export { contactKeyOf, contactKeysOf } from './scan.js';
 export {
   contentSentences,
   contentViolationKinds,

@@ -44,6 +44,7 @@ import {
   type AuditOutcome,
   type Clock,
   type ConfirmationPath,
+  type ContentViolationKind,
   EccliumError,
   type ErrorCode,
   type FeatureKey,
@@ -96,6 +97,7 @@ import { createTenantContext } from '../tenant/context.js';
 import {
   confirmationSentence,
   confirmWrite,
+  ContentRefusal,
   createWriteGuard,
   type WriteGuard,
   type WriteTarget,
@@ -370,6 +372,8 @@ interface WriteRecord {
   readonly confirmation?: ConfirmationPath;
   /** Whether a write may have reached ChurchTools. */
   readonly sent: boolean;
+  /** Why the content policy refused a text of the write (ADR 0030). */
+  readonly contentViolations?: readonly ContentViolationKind[];
 }
 
 /** What a write tool used during its call, kept by the pipeline. */
@@ -384,6 +388,8 @@ interface WriteAccess {
   readonly target: () => WriteTarget | undefined;
   /** The refusal of the plan, if the guard refused it. */
   readonly refusal: () => EccliumError | undefined;
+  /** Why the content policy refused a text, if it did. */
+  readonly contentViolations: () => readonly ContentViolationKind[] | undefined;
 }
 
 // Codes of a write that count as refused in the audit, not as an error
@@ -700,8 +706,10 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     } catch (error) {
       // A refused plan ends the call with its own error, whatever the
       // tool made of it.
-      const refusal = writing?.refusal();
-      if (refusal !== undefined) return writeFailure(run, refusal, false);
+      if (writing !== undefined) {
+        const refusal = writing.refusal();
+        if (refusal !== undefined) return refused(run, writing, refusal);
+      }
       return {
         outcome: Object.freeze({
           __proto__: null,
@@ -719,7 +727,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     // result in the fixed form, never from what the tool returned.
     if (writing !== undefined) {
       const refusal = writing.refusal();
-      if (refusal !== undefined) return writeFailure(run, refusal, false);
+      if (refusal !== undefined) return refused(run, writing, refusal);
       const written = await completeWrite(
         run,
         ctx,
@@ -804,6 +812,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     let outcome: PlanOutcome | undefined;
     let target: WriteTarget | undefined;
     let refusal: EccliumError | undefined;
+    let contentViolations: readonly ContentViolationKind[] | undefined;
     const port: WritePort = Object.freeze({
       plan: async (intent: unknown): Promise<PlanOutcome> => {
         if (!open || planned) throw new EccliumError('internal');
@@ -825,8 +834,15 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
           target = result.target;
           return result.outcome;
         } catch (error) {
-          // The guard rejects only with an EccliumError (write/guard.ts).
-          refusal = error as EccliumError;
+          // The guard rejects only with an EccliumError or a refusal of
+          // the content policy, whose reasons stay here for the audit and
+          // never reach the tool (write/guard.ts).
+          if (error instanceof ContentRefusal) {
+            contentViolations = error.violations;
+            refusal = error.error;
+          } else {
+            refusal = error as EccliumError;
+          }
           throw refusal;
         }
       },
@@ -839,7 +855,22 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       outcome: () => outcome,
       target: () => target,
       refusal: () => refusal,
+      contentViolations: () => contentViolations,
     });
+  };
+
+  // A refused plan: a text the content policy refused is a refusal in the
+  // audit, with its reasons, though its code says the model can change the
+  // text (ADR 0030).
+  const refused = (
+    run: Run,
+    writing: WriteAccess,
+    refusal: EccliumError,
+  ): { readonly outcome: ToolOutcome; readonly audit: AuditOutcome } => {
+    const violations = writing.contentViolations();
+    return violations === undefined
+      ? writeFailure(run, refusal, false)
+      : writeFailure(run, refusal, false, undefined, 'denied', violations);
   };
 
   // A write that ended with an error: its state and outcome for the audit.
@@ -849,6 +880,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     sent: boolean,
     confirmation?: ConfirmationPath,
     state?: 'conflict' | 'failed' | 'denied',
+    contentViolations?: readonly ContentViolationKind[],
   ): { readonly outcome: ToolOutcome; readonly audit: AuditOutcome } => {
     // The state the guard gives counts over the code: a write that may
     // have landed is never denied.
@@ -857,6 +889,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       writeState,
       sent,
       ...(confirmation === undefined ? {} : { confirmation }),
+      ...(contentViolations === undefined ? {} : { contentViolations }),
     });
     return {
       outcome: Object.freeze({
@@ -1128,6 +1161,9 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
               ...(writeState === undefined ? {} : { writeState }),
               ...(run.entry?.meta.capability === 'write' ? { policyHash } : {}),
               ...(errorCode === undefined ? {} : { errorCode }),
+              ...(run.write?.contentViolations === undefined
+                ? {}
+                : { contentViolations: run.write.contentViolations }),
               objectRefs: refs.refs,
               ...(refs.omitted > 0 ? { objectRefsOmitted: refs.omitted } : {}),
               durationMs,

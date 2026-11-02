@@ -332,6 +332,27 @@ const readableView = (text: string): string => {
 };
 
 /**
+ * The keys of the contact values of a list, such as the checked policy
+ * holds them. A value that is not exactly one contact value has no key and
+ * is left out; the check of the policy refuses such a value before.
+ *
+ * @param values - The values in the normal form of the content policy.
+ * @returns The keys to compare with.
+ * @example
+ * ```ts
+ * contactKeysOf(['Info@example.org']); // Set { 'info@example.org' }
+ * ```
+ */
+export function contactKeysOf(values: readonly string[]): ReadonlySet<string> {
+  const keys = new Set<string>();
+  for (const value of values) {
+    const key = contactKeyOf(value);
+    if (key !== undefined) keys.add(key);
+  }
+  return keys;
+}
+
+/**
  * Checks the plain text a reader sees of one heading, paragraph or cell.
  *
  * @param value - The plain text, line breaks as spaces.
