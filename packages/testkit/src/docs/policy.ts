@@ -31,7 +31,7 @@ export const policyFieldMeanings: Readonly<Record<string, string>> =
     'interactive.targets[].maxPerDay':
       'Wie oft je Prinzipal und UTC-Tag jedes dieser Tools auf das Ziel schreiben darf.',
     'interactive.contacts':
-      'Die Kontaktangaben der Gemeinde, die ein Text stehen haben darf, den Ecclium schreibt: E-Mail-Adressen, Telefonnummern, IBAN und AHV-Nummern, je ein Wert. Jede andere solche Angabe lehnt die ContentPolicy ab. Ohne Eintrag steht keine. Eine E-Mail-Adresse gilt ohne Gross und Klein, eine Nummer nur mit ihren Ziffern und einem führenden `+`, so dass `000 000 12 34` und `000-000-12-34` gleich sind, `+41 00 000 12 34` aber nicht.',
+      'Die Kontaktangaben der Gemeinde, die ein Text stehen haben darf, den Ecclium schreibt: E-Mail-Adressen, Telefonnummern, IBAN und AHV-Nummern, je ein Wert. Jede andere solche Angabe lehnt die ContentPolicy ab. Ohne Eintrag steht keine. Eine E-Mail-Adresse gilt ohne Gross und Klein, eine Nummer nur mit ihren Ziffern, Buchstaben und einem führenden `+`, so dass `000 000 12 34` und `000-000-12-34` gleich sind, `+41 00 000 12 34` aber nicht. Einen Wert nur aus Ziffern setzen Sie in Anführungszeichen, sonst liest YAML ihn als Zahl.',
     unattended:
       'Der Teil für Routinen, die ohne Person laufen. Ecclium prüft ihn beim Start, benutzt wird er erst mit dem Runner einer späteren Version.',
     'unattended[].routine': 'Kennung der Routine, etwa `dienstplan-report`.',

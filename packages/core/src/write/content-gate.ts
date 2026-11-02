@@ -20,6 +20,7 @@ import {
   type WriteIntent,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
+import { maxMessageLength } from '../errors/index.js';
 import {
   checkMarkdown,
   checkPlainText,
@@ -59,10 +60,20 @@ export class ContentRefusal extends Error {
     super();
     this.name = 'ContentRefusal';
     this.violations = violations;
-    this.error = new EccliumError(
-      'validation',
-      violations.map((kind) => contentSentences[kind]).join(' '),
-    );
+    // A message longer than the limit reaches the model only as a general
+    // sentence, so the sentences go in their order as long as they fit:
+    // the model fixes the first reasons and learns the rest on its next
+    // try. The audit names all of them.
+    let message = '';
+    for (const kind of violations) {
+      const next =
+        message === ''
+          ? contentSentences[kind]
+          : `${message} ${contentSentences[kind]}`;
+      if (next.length > maxMessageLength) break;
+      message = next;
+    }
+    this.error = new EccliumError('validation', message);
     Object.freeze(this);
   }
 }

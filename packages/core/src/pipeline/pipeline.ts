@@ -394,7 +394,8 @@ interface WriteAccess {
 
 // Codes of a write that count as refused in the audit, not as an error
 // (ADR 0029): the policy, a missing licence, a missing confirmation and a
-// missing right.
+// missing right. A text the content policy refuses counts as refused by
+// its state, though its code is validation (ADR 0030).
 const writeDenials: readonly ErrorCode[] = Object.freeze([
   'policy_denied',
   'license_required',

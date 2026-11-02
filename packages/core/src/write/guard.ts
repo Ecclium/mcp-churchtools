@@ -424,8 +424,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     const wiki = checkIntentContent(ctx, intent as WikiIntent, contacts);
     await checkRights(ctx, wiki, rules);
     const derived = await derive(ctx, wiki);
-    // The policy, with the counter of the day only read (ADR 0032). The
-    // content policy of ADR 0030 checks the plan here once it is built.
+    // The policy, with the counter of the day only read (ADR 0032).
     await policy.check(ctx, request.tool, rules, factsOf(derived), 'plan');
     if (derived.kind === 'change' && derived.text === derived.before.text) {
       return Object.freeze({

@@ -137,7 +137,7 @@ Die Tools des Toolsets `docs` und `ct_api_search_actions` schlagen in einem Inde
 
 ## Was Ecclium ins Wiki schreibt
 
-Jeder Text, den ein Schreib-Tool ins Wiki schreiben will, geht durch die ContentPolicy, bevor der Server ChurchTools fragt ([ADR 0030](adr/0030-contentpolicy.md)). Geschrieben wird nur eine Teilmenge von Markdown: Überschriften, Absätze, Listen, Tabellen, fett und kursiv, in einer festen Form, die der Server selbst schreibt.
+Jeder Text, den ein Schreib-Tool ins Wiki schreiben will, geht durch die ContentPolicy, bevor der Server ChurchTools fragt ([ADR 0030](adr/0030-contentpolicy.md)). Hängt ein Tool einen Abschnitt an, prüft sie nur den neuen Abschnitt, der Text der Seite bleibt, wie er ist. Geschrieben wird nur eine Teilmenge von Markdown: Überschriften, Absätze, Listen, Tabellen, fett und kursiv, in einer festen Form, die der Server selbst schreibt.
 
 - **Abgelehnt** werden HTML, Bilder, Links jeder Art, Erwähnungen von Personen, Referenzen und Fussnoten, Code, Zitate und Trennlinien. Bilder und Links sind Wege, Daten aus dem Wiki wegzuschicken, und eine Erwähnung benachrichtigt womöglich eine Person.
 - **Webadressen ohne Link** werden ebenfalls abgelehnt, weil die Ansicht von ChurchTools eine nackte Adresse als Link zeigt. Die Prüfung ist bewusst streng: Auch `St.Gallen` oder `bericht.pdf` gelten als Adresse, ein Leerzeichen nach dem Punkt hilft.

@@ -521,11 +521,9 @@ function fill(
   // and never empty (ADR 0030).
   const reasons = own(draft, 'contentViolations');
   if (reasons !== undefined) {
-    if (
-      line['outcome'] === 'denied' &&
-      Array.isArray(reasons) &&
-      reasons.length > 0
-    ) {
+    if (line['outcome'] === 'denied') {
+      // The copy of the list runs no code of the caller, so its length is
+      // read only from the copy.
       list(
         'contentViolations',
         contentViolationKinds.length,
@@ -533,6 +531,11 @@ function fill(
         'audit_invalid_content_violations',
         false,
       );
+      const copy = line['contentViolations'];
+      if (Array.isArray(copy) && copy.length === 0) {
+        delete line['contentViolations'];
+        report('audit_invalid_content_violations');
+      }
     } else {
       report('audit_invalid_content_violations');
     }
