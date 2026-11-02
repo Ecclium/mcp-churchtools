@@ -73,13 +73,17 @@
     },
     "transportBuilders": {
       "adr": "0056",
-      "description": "The composition root: the only code outside the outbound path that imports the factory of the HTTP transport, the subpath ./http of core, and the only code at all that imports the stderr writer, the logger and the audit sink through the subpath ./composition of core. Each entry is a folder of the command line.",
-      "paths": ["packages/cli/src/stdio/"]
+      "description": "The composition root: the only code outside the outbound path that imports the factory of the HTTP transport, the subpath ./http of core, and the only code at all that imports the stderr writer, the logger and the audit sink through the subpath ./composition of core. Each entry is a folder of the command line: the start over stdio, the build of the pipeline it shares with the commands that talk to ChurchTools, and those commands, today ecclium policy init.",
+      "paths": [
+        "packages/cli/src/stdio/",
+        "packages/cli/src/compose/",
+        "packages/cli/src/policy/"
+      ]
     },
     "auditCommands": {
       "adr": "0028",
-      "description": "The commands that read the audit files: the only code that imports the subpath ./audit of core with the reader of the folder audit, the check of the chains and the summary, because the audit files name the IDs of the persons whose data was read. Each entry is a folder of the command line.",
-      "paths": ["packages/cli/src/commands/"]
+      "description": "The commands that read the audit files: the only code that imports the subpath ./audit of core with the reader of the folder audit, the check of the chains, the summary and the targets of writes, because the audit files name the IDs of the persons whose data was read. Each entry is a folder of the command line: the audit commands and ecclium policy init.",
+      "paths": ["packages/cli/src/commands/", "packages/cli/src/policy/"]
     },
     "httpDouble": {
       "adr": "0056",
@@ -138,8 +142,12 @@
     },
     "stdioReachable": {
       "adr": "0053",
-      "description": "Modules of the command line that the start over stdio may import: the start notices and the catalog of their texts. Nothing reachable from here may be a stdout place, already before the start imports them.",
-      "paths": ["packages/cli/src/messages/", "packages/cli/src/notices/"]
+      "description": "Modules of the command line that the start over stdio may import: the start notices and the catalog of their texts, and the build of the pipeline. Nothing reachable from here may be a stdout place, already before the start imports them.",
+      "paths": [
+        "packages/cli/src/messages/",
+        "packages/cli/src/notices/",
+        "packages/cli/src/compose/"
+      ]
     },
     "stdout": {
       "adr": "0053",

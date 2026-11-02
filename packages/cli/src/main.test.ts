@@ -63,6 +63,8 @@ const capture = (
     load: options.load,
     writeSync,
   });
+  // Every command but policy init answers at once.
+  if (typeof code !== 'number') throw new Error('expected an exit code');
   const text = (fd: number): string =>
     decoder.decode(new Uint8Array(taken.get(fd) ?? []));
   return { code, stdout: text(1), stderr: text(2), calls };
@@ -92,6 +94,7 @@ describe('the exit codes', () => {
       usage: 64,
       dataError: 65,
       noInput: 66,
+      unavailable: 69,
       internal: 70,
       ioError: 74,
       invalidConfig: 78,
@@ -572,4 +575,44 @@ describe('the command line', () => {
       expect(result.calls).toEqual([{ stream: 1, count: 4 }]);
     },
   );
+});
+
+describe('ecclium policy init in the command line', () => {
+  // The command talks to ChurchTools, so run gives a promise for it; its
+  // own tests stand in policy/init.test.ts.
+  const runInit = async (args: readonly string[], options: RunOptions = {}) => {
+    const taken: number[] = [];
+    const writeSync: WriteSyncFn = (_fd, buffer, offset, length) => {
+      taken.push(...buffer.subarray(offset, offset + length));
+      return length;
+    };
+    const code = await run(args, {}, [], { ...options, writeSync });
+    return { code, stderr: decoder.decode(new Uint8Array(taken)) };
+  };
+
+  it('hands the call to the command, which needs --interactive', async () => {
+    const result = await runInit(['policy', 'init']);
+    expect(result.code).toBe(exitCodes.usage);
+    expect(result.stderr).toContain(
+      '‹ecclium policy init› braucht ‹--interactive›.',
+    );
+  });
+
+  it('turns a failure of the command into the internal error', async () => {
+    const result = await runInit(['policy', 'init', '--interactive'], {
+      policyInit: {
+        load: () => {
+          throw new Error(plain());
+        },
+      },
+    });
+    expect(result.code).toBe(exitCodes.internal);
+    expect(result.stderr).toBe(`${internalErrorText}\n`);
+  });
+
+  it('takes --interactive only for policy init', () => {
+    const result = capture(['config', 'check', '--interactive'], {});
+    expect(result.code).toBe(exitCodes.usage);
+    expect(result.stderr).toBe(`${usageProblemTexts.option}\n${usageLine}\n`);
+  });
 });

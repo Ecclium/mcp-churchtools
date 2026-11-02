@@ -15,6 +15,13 @@ export {
 } from './file.js';
 export { policyHashOf } from './hash.js';
 export {
+  minProposedPerDay,
+  type ProposalInput,
+  type ProposedCategory,
+  proposedMaxPerDay,
+  renderPolicyProposal,
+} from './proposal.js';
+export {
   type InteractiveEntry,
   type InteractiveTarget,
   type ModelRedaction,

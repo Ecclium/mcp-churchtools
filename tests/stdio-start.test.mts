@@ -1793,3 +1793,80 @@ describe('the key files for pseudonyms', { timeout }, () => {
     );
   });
 });
+
+// ecclium policy init talks to ChurchTools like the server, through the
+// same build of the pipeline, but as a command that ends (ADR 0032).
+describe('ecclium policy init at the real process', { timeout }, () => {
+  it('names a category from the audit with its name from ChurchTools, on stdout only, without the token', async () => {
+    const stateDir = mkdtempSync(join(tmpdir(), 'ecclium-policy-init-'));
+    chmodSync(stateDir, 0o700);
+    try {
+      const audit = join(stateDir, 'audit');
+      mkdirSync(audit, { mode: 0o700 });
+      chmodSync(audit, 0o700);
+      const file = join(audit, 'audit-2026-10-30-120000-4242-1.jsonl');
+      writeFileSync(
+        file,
+        `${JSON.stringify({
+          v: 1,
+          eventId: '00000000-0000-4000-8000-000000000001',
+          ts: '2026-10-30T08:00:00.000Z',
+          type: 'tool_call',
+          tenantId: 'default',
+          actor: { kind: 'service', id: 'stdio:local-stdio' },
+          mode: 'interactive',
+          tool: 'ct_wiki_page_create',
+          outcome: 'ok',
+          writeState: 'planned',
+          objectRefs: ['wiki_category:12'],
+          durationMs: 4,
+        })}\n`,
+        { mode: 0o600 },
+      );
+      chmodSync(file, 0o600);
+      const server = await serveTls((request, response) => {
+        if (request.url === '/api/wiki/categories') {
+          json(response, {
+            data: [
+              {
+                id: 12,
+                name: 'Berichte',
+                permissions: { canEdit: false, canDelete: false },
+              },
+            ],
+            meta: { count: 1 },
+            permissions: { editMasterData: false },
+          });
+        } else {
+          churchTools(request, response);
+        }
+      });
+      const launched = overTls(server.origin);
+      const finished = await launch({
+        ...launched,
+        args: ['policy', 'init', '--interactive'],
+        env: {
+          ...launched.env,
+          ECCLIUM_TOOLSETS: 'wiki',
+          ECCLIUM_STATE_DIR: stateDir,
+        },
+      }).finish();
+      expect(finished.code).toBe(0);
+      expect(finished.stdout).toContain('schema: policy.v1\n');
+      expect(finished.stderr).not.toContain('schema: policy.v1');
+      expect(finished.stdout).toContain(
+        '    - target: { kind: wiki_category, id: 12, name: "Berichte" }\n',
+      );
+      expect(server.requests.map((seen) => seen.path)).toContain(
+        '/api/wiki/categories',
+      );
+      assertNoCanary(
+        `${finished.stdout}${finished.stderr}`,
+        [canary.token],
+        'policy init',
+      );
+    } finally {
+      rmSync(stateDir, { recursive: true, force: true });
+    }
+  });
+});

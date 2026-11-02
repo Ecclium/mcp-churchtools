@@ -36,6 +36,8 @@ import {
   type UsageProblem,
   usageProblemTexts,
 } from './output/index.js';
+import type { PolicyInitOptions } from './policy/init.js';
+import { policyInitTexts } from './policy/texts.js';
 import type { WriteSyncFn } from './send.js';
 
 /** Replacements for tests. */
@@ -46,6 +48,11 @@ export interface RunOptions {
   readonly tokenFiles?: TokenFileSystem;
   /** Replaces the loader. */
   readonly load?: (sources: ConfigSources) => ConfigResult;
+  /** Replacements for `policy init`, such as the test double of ChurchTools. */
+  readonly policyInit?: Pick<
+    PolicyInitOptions,
+    'load' | 'writeSync' | 'createTransport'
+  >;
 }
 
 /** A command: its words and the options it takes besides the help. */
@@ -59,6 +66,7 @@ const commands: readonly Command[] = Object.freeze(
     { words: ['config', 'check'], options: ['show-values'] },
     { words: ['audit', 'verify'], options: ['log'] },
     { words: ['audit', 'show'], options: ['object', 'since', 'until'] },
+    { words: ['policy', 'init'], options: ['interactive'] },
   ].map((entry) =>
     Object.freeze({
       words: Object.freeze(entry.words),
@@ -75,6 +83,7 @@ const options = Object.freeze({
   object: Object.freeze({ type: 'string' }),
   since: Object.freeze({ type: 'string' }),
   until: Object.freeze({ type: 'string' }),
+  interactive: Object.freeze({ type: 'boolean' }),
 } as const);
 
 // The only option that may stand more than once.
@@ -90,7 +99,8 @@ type Call =
       readonly object: string | undefined;
       readonly since: string | undefined;
       readonly until: string | undefined;
-    };
+    }
+  | { readonly kind: 'init'; readonly interactive: boolean };
 
 // The kind of a refused call, from the code of the error of parseArgs
 // alone: its message repeats the argument, which can hold a token.
@@ -165,6 +175,8 @@ const readCall = (args: readonly string[]): Call => {
         since: values.since,
         until: values.until,
       };
+    case 'policy init':
+      return { kind: 'init', interactive: values.interactive === true };
     default:
       return { kind: 'check', showValues: values['show-values'] === true };
   }
@@ -182,10 +194,11 @@ const readCall = (args: readonly string[]): Call => {
  * @param execArgv - The options Node.js was started with, which the check
  *   of the configuration reads for the options of TLS.
  * @param runOptions - Replacements for tests.
- * @returns The exit code.
+ * @returns The exit code, or for `policy init`, which talks to
+ *   ChurchTools, a promise of it.
  * @example
  * ```ts
- * process.exitCode = run(process.argv.slice(2), environment, process.execArgv);
+ * process.exitCode = await run(process.argv.slice(2), environment, process.execArgv);
  * ```
  */
 export function run(
@@ -193,7 +206,7 @@ export function run(
   environment: Record<string, string | undefined>,
   execArgv: readonly string[],
   runOptions: RunOptions = {},
-): ExitCode {
+): ExitCode | Promise<ExitCode> {
   let output: Output | undefined;
   try {
     output = createOutput(
@@ -230,6 +243,32 @@ export function run(
           until: call.until,
           output,
         });
+      case 'init': {
+        // Checked before the import, so that a wrong call loads nothing.
+        if (!call.interactive) {
+          output.stderr(policyInitTexts.interactive_missing);
+          output.stderr(usageLine);
+          return exitCodes.usage;
+        }
+        // Loaded only for this command: it builds the transport, whose
+        // undici the other commands never need.
+        const out = output;
+        return import('./policy/init.js')
+          .then(({ initPolicy }) =>
+            initPolicy({
+              environment: taken,
+              execArgv,
+              interactive: call.interactive,
+              output: out,
+              ...runOptions.policyInit,
+            }),
+          )
+          .catch(() => {
+            // As below: the thrown value is never looked at.
+            out.stderr(internalErrorText);
+            return exitCodes.internal;
+          });
+      }
     }
   } catch {
     // The thrown value is never looked at: its message or its properties

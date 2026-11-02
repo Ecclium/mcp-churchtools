@@ -47,11 +47,13 @@ export {
   variables,
   yamlDebugVariableNames,
 } from './config/index.js';
+export { freeTextMarkers } from './redaction/index.js';
 export {
   defaultPolicy,
   type InteractiveEntry,
   type InteractiveTarget,
   maxPolicyFileBytes,
+  minProposedPerDay,
   type ModelRedaction,
   modelRedactionLevels,
   type Policy,
@@ -62,6 +64,10 @@ export {
   policyJsonSchema,
   policyLimits,
   type PolicyTargetKind,
+  type ProposalInput,
+  type ProposedCategory,
+  proposedMaxPerDay,
+  renderPolicyProposal,
   targetKeyOf,
   type UnattendedEntry,
   type UnattendedTarget,

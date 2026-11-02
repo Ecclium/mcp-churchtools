@@ -1,0 +1,235 @@
+/**
+ * A proposal for the interactive part of the policy (ADR 0032), as
+ * `ecclium policy init --interactive` writes it to stdout for the operator
+ * to check: one entry per category of the wiki that a write tool reached,
+ * with its name from ChurchTools, the tools seen on it and a daily limit
+ * from what the audit shows.
+ *
+ * The text is YAML that the loader of the policy reads as it is, written
+ * here without the library for YAML, which only the reader of the policy
+ * imports. A name stands in double quotes, and every character outside
+ * printable ASCII, the German umlauts and the quotes «» and ‹› is an
+ * escape of YAML, so that the command line passes the text to a terminal
+ * and the loader reads back the name as ChurchTools gave it. A name the
+ * policy would refuse, and a category without a name, stand only as a
+ * comment.
+ *
+ * @packageDocumentation
+ */
+import { toolNamePattern } from '../logger/index.js';
+import { policyLimits } from './schema.js';
+
+/** A category of the wiki that a write tool reached, as the audit shows. */
+export interface ProposedCategory {
+  /** The ID of the category. */
+  readonly id: number;
+  /**
+   * Its name in ChurchTools, or undefined when the list of categories of
+   * the account does not name it.
+   */
+  readonly name: string | undefined;
+  /**
+   * Whether the redaction changed the name before the command line saw
+   * it, by removing hidden characters or masking a part: then the name
+   * above is not the one ChurchTools compares, and the category stands
+   * only as a comment.
+   */
+  readonly nameChanged?: boolean;
+  /** The write tools seen on it. */
+  readonly tools: readonly string[];
+  /**
+   * The most calls of one of these tools on it on one UTC day, without
+   * the refused and the skipped ones; 0 when the audit shows only those.
+   */
+  readonly highestPerDay: number;
+}
+
+/** What a proposal is made of. */
+export interface ProposalInput {
+  /** The categories, in any order. */
+  readonly categories: readonly ProposedCategory[];
+  /** The read budget of the policy in force, kept in the proposal. */
+  readonly readBudgetPerDay: number;
+  /** The first and the last UTC day of the audit read, if it had a line. */
+  readonly days?: { readonly first: string; readonly last: string };
+}
+
+/** The lowest daily limit a proposal gives. */
+export const minProposedPerDay = 5;
+
+/**
+ * The daily limit a proposal gives an entry: twice the highest day, at
+ * least {@link minProposedPerDay} and at most the limit of the policy.
+ *
+ * @param highestPerDay - The most calls of one tool on one UTC day.
+ * @returns The limit for `maxPerDay`.
+ * @example
+ * ```ts
+ * proposedMaxPerDay(4); // 8
+ * ```
+ */
+export function proposedMaxPerDay(highestPerDay: number): number {
+  const twice = Number.isSafeInteger(highestPerDay) ? highestPerDay * 2 : 0;
+  return Math.min(policyLimits.maxPerDay, Math.max(minProposedPerDay, twice));
+}
+
+// The characters beyond printable ASCII that the command line shows: the
+// umlauts and the quotes «» and ‹›, as in its writers.
+const shownLetters: readonly number[] = Object.freeze([
+  0xab, 0xbb, 0xc4, 0xd6, 0xdc, 0xe4, 0xf6, 0xfc, 0x2039, 0x203a,
+]);
+
+const hex = (code: number, width: number): string =>
+  code.toString(16).toUpperCase().padStart(width, '0');
+
+/**
+ * Writes a name as a double-quoted scalar of YAML that holds only
+ * characters the command line shows.
+ *
+ * @param name - A name the policy accepts.
+ * @returns The scalar, quotes included.
+ */
+const quoted = (name: string): string => {
+  let text = '"';
+  for (const character of name) {
+    // A character of the iteration has a code point at 0.
+    const code = Number(character.codePointAt(0));
+    if (character === '"' || character === '\\') {
+      text += `\\${character}`;
+    } else if ((code >= 0x20 && code <= 0x7e) || shownLetters.includes(code)) {
+      text += character;
+    } else if (code <= 0xffff) {
+      text += `\\u${hex(code, 4)}`;
+    } else {
+      text += `\\U${hex(code, 8)}`;
+    }
+  }
+  return `${text}"`;
+};
+
+// A name the policy takes: 1 to 255 characters, no control character, and
+// well formed, so that no half of a pair of surrogates reaches an escape.
+const namePattern = /^\P{Cc}+$/u;
+const nameFits = (name: string): boolean =>
+  name.length >= 1 &&
+  name.length <= policyLimits.name &&
+  name.isWellFormed() &&
+  namePattern.test(name);
+
+const dayPattern = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Writes the proposal. The categories are sorted by ID, the tools of each
+ * by name, each once; a tool whose name the policy would refuse is left
+ * out. At most 200 entries, the most a part of the policy holds.
+ *
+ * @param input - The categories, the read budget and the days read.
+ * @returns The text, lines ending in a line break.
+ * @example
+ * ```ts
+ * renderPolicyProposal({
+ *   categories: [{ id: 12, name: 'Berichte', tools: ['ct_wiki_page_create'], highestPerDay: 4 }],
+ *   readBudgetPerDay: 200,
+ * });
+ * ```
+ */
+export function renderPolicyProposal(input: ProposalInput): string {
+  const lines = [
+    '# Vorschlag von «ecclium policy init --interactive» für den interaktiven Teil der Richtlinie.',
+  ];
+  const { days } = input;
+  if (
+    days !== undefined &&
+    dayPattern.test(days.first) &&
+    dayPattern.test(days.last)
+  ) {
+    lines.push(
+      `# Grundlage: die Audit-Dateien vom ${days.first} bis ${days.last} (UTC).`,
+    );
+  } else {
+    lines.push('# Grundlage: Das Audit enthält keine Zeile.');
+  }
+  lines.push(
+    '# Ein Eintrag je Kategorie des Wikis, die das Audit in einer Zeile eines Schreib-Tools nennt, auch bei abgelehnten Versuchen.',
+    `# maxPerDay ist das Doppelte des höchsten Tageswerts eines Tools, mindestens ${String(minProposedPerDay)}, ohne abgelehnte und übersprungene Aufrufe.`,
+    '# Prüfen Sie jeden Eintrag, bevor Sie die Datei mit ECCLIUM_POLICY_FILE einsetzen.',
+    'schema: policy.v1',
+    'interactive:',
+  );
+  const entries: string[] = [];
+  const skipped: string[] = [];
+  const sorted = [...input.categories].sort((a, b) => a.id - b.id);
+  let count = 0;
+  let more = 0;
+  for (const category of sorted) {
+    const id = String(category.id);
+    const tools = [...new Set(category.tools)]
+      .filter((tool) => tool.length <= 63 && toolNamePattern.test(tool))
+      .sort()
+      .slice(0, policyLimits.tools);
+    const { name } = category;
+    if (name === undefined) {
+      skipped.push(
+        `    # Kategorie ${id}: ChurchTools nennt dem Konto keinen Namen, darum kein Eintrag.`,
+      );
+      continue;
+    }
+    if (category.nameChanged === true) {
+      skipped.push(
+        `    # Kategorie ${id}: Ihr Name kam verändert an, ohne unsichtbare Zeichen oder mit einem maskierten Teil, darum kein Eintrag. Tragen Sie ihn von Hand ein.`,
+      );
+      continue;
+    }
+    if (!nameFits(name)) {
+      skipped.push(
+        `    # Kategorie ${id}: Ihr Name passt nicht in die Richtlinie, darum kein Eintrag.`,
+      );
+      continue;
+    }
+    if (tools.length === 0) continue;
+    if (count >= policyLimits.entries) {
+      more += 1;
+      continue;
+    }
+    count += 1;
+    // A target that the audit shows only refused came from a wish, maybe
+    // of the model, not from a write; the operator decides on it.
+    if (category.highestPerDay === 0) {
+      entries.push(
+        '    # Nur abgelehnte oder übersprungene Versuche im Audit: Prüfen Sie, ob Ecclium hier schreiben soll.',
+      );
+    }
+    entries.push(
+      `    - target: { kind: wiki_category, id: ${id}, name: ${quoted(name)} }`,
+      `      tools: [${tools.join(', ')}]`,
+      `      maxPerDay: ${String(proposedMaxPerDay(category.highestPerDay))}`,
+    );
+  }
+  // The targets come before the read budget, so that a text cut off after
+  // `targets:` is no file the loader takes. An empty list would allow every
+  // confirmed write: it stands only when the audit names no category, and
+  // when every category it names fell out, a placeholder keeps the file
+  // from loading until the operator enters the targets.
+  if (count > 0) {
+    lines.push('  targets:', ...entries);
+  } else if (sorted.length === 0) {
+    lines.push(
+      '  # Keine Einträge: Erlaubt ist dann jeder bestätigte Schreibvorgang, den das Dienstkonto darf, ausser bei Gruppen und Diensten.',
+      '  targets: []',
+    );
+  } else {
+    lines.push(
+      '  # Keine Kategorie liess sich vorschlagen, siehe die Kommentare unten. Eine leere Liste erlaubte jeden bestätigten Schreibvorgang, darum nimmt Ecclium diese Datei erst an, wenn Sie die Ziele von Hand eintragen.',
+      '  targets:',
+      '    - ERSETZEN',
+    );
+  }
+  lines.push(...skipped);
+  if (more > 0) {
+    lines.push(
+      `    # Weitere ${String(more)} Kategorien passen nicht mehr in die ${String(policyLimits.entries)} Einträge eines Teils.`,
+    );
+  }
+  lines.push(`  readBudgetPerDay: ${String(input.readBudgetPerDay)}`);
+  return `${lines.join('\n')}\n`;
+}
