@@ -19,11 +19,11 @@
  */
 import { readMarkdown } from './lexer.js';
 import {
-  hasTooManyEmphasisSigns,
+  hasTooManyDelimiters,
   maxContentBytes,
   normalizeContent,
 } from './normalize.js';
-import { checkReadableText } from './scan.js';
+import { checkReadableText, hasCharacterReference } from './scan.js';
 import { serializeBlocks } from './serialize.js';
 import type { Block, Inline } from './tree.js';
 import { type ContentViolationKind, orderViolations } from './violations.js';
@@ -95,7 +95,7 @@ export function checkMarkdown(
 ): ContentCheckResult {
   const normal = normalizeContent(markdown);
   if (!normal.ok) return refused([normal.violation]);
-  if (hasTooManyEmphasisSigns(normal.text)) return refused(['tooLong']);
+  if (hasTooManyDelimiters(normal.text)) return refused(['tooLong']);
   const read = readMarkdown(normal.text);
   if (!read.ok) return refused(read.violations);
   const text = serializeBlocks(read.blocks);
@@ -105,8 +105,17 @@ export function checkMarkdown(
   // emphasis the same way after a mark of punctuation, so a text whose
   // written form it reads differently is refused: what passes is always a
   // form that comes back unchanged.
+  // Joining parts of bold or of text can bring two signs together that
+  // NFKC composes, such as = and a long stroke: then the written text is
+  // not its own normal form and would change on the next check.
   const again = readMarkdown(text);
-  if (!again.ok || serializeBlocks(again.blocks) !== text) {
+  const stable = normalizeContent(text);
+  if (
+    !again.ok ||
+    serializeBlocks(again.blocks) !== text ||
+    !stable.ok ||
+    stable.text !== text
+  ) {
     return refused(['unparsable']);
   }
   // What a reader sees, in the text as it came and as it is written, so
@@ -136,10 +145,22 @@ const hasTag = (text: string): boolean => {
   return false;
 };
 
+// Signs that start a link, code or an escape in Markdown, and the
+// separators of lines and paragraphs of Unicode. A title is written
+// without escaping, so should anything ever show it as Markdown, none of
+// them may be there.
+const plainEnds = '[]`\\\n\u2028\u2029';
+
+const hasMarkdownSign = (text: string): boolean => {
+  for (const sign of text) if (plainEnds.includes(sign)) return true;
+  return false;
+};
+
 /**
  * Checks a text without Markdown, such as the title of a page: the same
- * limit, normal form and checks of what a reader sees, one line, and no
- * `<` before a letter, `/`, `!` or `?`. It is written as it is, without
+ * limit, normal form and checks of what a reader sees, one line, no `<`
+ * before a letter, `/`, `!` or `?`, no character reference and none of
+ * `[`, `]`, a backtick or a backslash. It is written as it is, without
  * escaping.
  *
  * @param text - The text as the tool handed it over.
@@ -158,8 +179,10 @@ export function checkPlainText(
   const normal = normalizeContent(text);
   if (!normal.ok) return refused([normal.violation]);
   const found: ContentViolationKind[] = [];
-  if (hasTag(normal.text)) found.push('html');
-  if (normal.text.includes('\n')) found.push('unsupported');
+  if (hasTag(normal.text) || hasCharacterReference(normal.text)) {
+    found.push('html');
+  }
+  if (hasMarkdownSign(normal.text)) found.push('unsupported');
   found.push(...checkReadableText(normal.text, options.contacts));
   return found.length > 0 ? refused(found) : { ok: true, text: normal.text };
 }

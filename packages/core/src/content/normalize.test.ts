@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  hasTooManyEmphasisSigns,
+  hasTooManyDelimiters,
   maxContentBytes,
-  maxEmphasisSigns,
+  maxDelimiterSigns,
   normalizeContent,
 } from './normalize.js';
 
@@ -28,6 +28,13 @@ describe('normalizeContent', () => {
     expect(
       normalizeContent(`Ver${u(0x200b)}steckt${u(0x202e)}\r\nZeile\rzwei\n`),
     ).toEqual({ ok: true, text: 'Versteckt\nZeilezwei\n' });
+  });
+
+  it('composes a sign after a hidden character in one pass', () => {
+    expect(normalizeContent(`<${u(0x200b)}${u(0x0338)}`)).toEqual({
+      ok: true,
+      text: u(0x226e),
+    });
   });
 
   it('takes exactly 64 KiB and refuses one byte more', () => {
@@ -61,15 +68,18 @@ describe('normalizeContent', () => {
   });
 });
 
-describe('hasTooManyEmphasisSigns', () => {
-  it(`counts asterisks and underscores together up to ${String(maxEmphasisSigns)}`, () => {
-    const half = maxEmphasisSigns / 2;
+describe('hasTooManyDelimiters', () => {
+  it(`counts asterisks and underscores together up to ${String(maxDelimiterSigns)}`, () => {
+    const half = maxDelimiterSigns / 2;
+    expect(hasTooManyDelimiters(`${'*'.repeat(half)}${'_'.repeat(half)}`)).toBe(
+      false,
+    );
     expect(
-      hasTooManyEmphasisSigns(`${'*'.repeat(half)}${'_'.repeat(half)}`),
-    ).toBe(false);
-    expect(
-      hasTooManyEmphasisSigns(`${'*'.repeat(half)}${'_'.repeat(half + 1)}`),
+      hasTooManyDelimiters(`${'*'.repeat(half)}${'_'.repeat(half + 1)}`),
     ).toBe(true);
-    expect(hasTooManyEmphasisSigns('Ein Satz ohne Zeichen')).toBe(false);
+    expect(hasTooManyDelimiters('Ein Satz ohne Zeichen')).toBe(false);
+    expect(hasTooManyDelimiters('~'.repeat(maxDelimiterSigns + 1))).toBe(true);
+    expect(hasTooManyDelimiters('!'.repeat(maxDelimiterSigns + 1))).toBe(true);
+    expect(hasTooManyDelimiters('#'.repeat(maxDelimiterSigns + 1))).toBe(false);
   });
 });

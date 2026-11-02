@@ -12,7 +12,7 @@ export {
   type ContentCheckOptions,
   type ContentCheckResult,
 } from './check.js';
-export { maxContentBytes, maxEmphasisSigns } from './normalize.js';
+export { maxContentBytes, maxDelimiterSigns } from './normalize.js';
 export { contactKeyOf } from './scan.js';
 export {
   contentSentences,

@@ -138,7 +138,7 @@ describe('the differential test with markdown-it', () => {
       ['<b>x</b>', 'html_inline'],
       ['<div>x</div>', 'html_block'],
       ['[x](https://example.org)', 'link_open'],
-      ['Mehr unter gemeinde.ch', 'link_open'],
+      ['Mehr unter example.org', 'link_open'],
       ['![x](https://example.org/b.png)', 'image'],
       ['`x`', 'code_inline'],
     ] as const) {

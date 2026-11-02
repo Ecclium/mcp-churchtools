@@ -40,7 +40,7 @@ export type ContentViolationKind = (typeof contentViolationKinds)[number];
 export const contentSentences: Readonly<Record<ContentViolationKind, string>> =
   Object.freeze({
     tooLong:
-      'The text is longer than 64 KiB or holds more than 2000 asterisks and underscores together, the most this server writes in one field.',
+      'The text is longer than 64 KiB, or holds more than 2000 of the signs *, _, ~ and ! together, the most this server writes in one field.',
     unparsable:
       'The server cannot read the text as Markdown. Write it more simply.',
     html: 'The text holds HTML, which this server does not write. Use Markdown only.',

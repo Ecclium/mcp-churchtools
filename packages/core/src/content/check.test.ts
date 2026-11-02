@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { checkMarkdown, checkPlainText } from './check.js';
-import { maxContentBytes, maxEmphasisSigns } from './normalize.js';
+import { maxContentBytes, maxDelimiterSigns } from './normalize.js';
 import { contactKeyOf } from './scan.js';
 
 const u = (codePoint: number): string => String.fromCodePoint(codePoint);
@@ -152,8 +152,8 @@ describe('checkMarkdown', () => {
 
   it('refuses a text over the limit before it reads it', () => {
     expect(reasons('a'.repeat(maxContentBytes + 1))).toEqual(['tooLong']);
-    expect(reasons(`${'*a'.repeat(maxEmphasisSigns)}*`)).toEqual(['tooLong']);
-    expect(reasons(`*a`.repeat(maxEmphasisSigns))).not.toContain('tooLong');
+    expect(reasons(`${'*a'.repeat(maxDelimiterSigns)}*`)).toEqual(['tooLong']);
+    expect(reasons(`*a`.repeat(maxDelimiterSigns))).not.toContain('tooLong');
   });
 
   it('refuses a text that escaping makes longer than the limit', () => {
@@ -169,13 +169,39 @@ describe('checkMarkdown', () => {
     expect(written('`_: a_')).toBe('\\`*: a*\n');
   });
 
+  it('refuses a text whose written form NFKC would change', () => {
+    // The two parts of bold join, and = with a long stroke composes to a
+    // sign of its own on the next check.
+    expect(reasons(`**a=**__${u(0x0338)}b__`)).toEqual(['unparsable']);
+  });
+
+  it('reads every sign of ASCII repeated to the limit in bounded time', () => {
+    const signs = Array.from('!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~');
+    for (const sign of signs) {
+      for (const unit of [
+        `a${sign}`,
+        `${sign}a `,
+        `${sign}${sign}a `,
+        `0${sign}`,
+      ]) {
+        const text = unit.repeat(Math.floor(60_000 / unit.length));
+        const started = performance.now();
+        checkMarkdown(text, options);
+        // marked 18.1.2 took over 20 seconds for some of them without the
+        // limit on the signs of emphasis, and the search for phone numbers
+        // as long for a run such as 0.0.0. without its bound.
+        expect(performance.now() - started, unit).toBeLessThan(5_000);
+      }
+    }
+  }, 300_000);
+
   it('refuses a text it cannot read', () => {
     expect(reasons(`a${String.fromCharCode(0xdc00)}`)).toEqual(['unparsable']);
   });
 
   it('names every reason of every block, in the fixed order', () => {
     expect(
-      reasons('# gemeinde.ch\n\n- [masked]\n\n| 000 000 12 34 |\n| - |'),
+      reasons('# gemeinde.example\n\n- [masked]\n\n| 000 000 12 34 |\n| - |'),
     ).toEqual(['webAddress', 'contact', 'masked']);
   });
 });
@@ -204,8 +230,30 @@ describe('checkPlainText', () => {
       violations: ['unsupported'],
     });
     expect(
-      checkPlainText('<b> gemeinde.ch max.mustermann@example.org', options),
+      checkPlainText(
+        '<b> gemeinde.example max.mustermann@example.org',
+        options,
+      ),
     ).toEqual({ ok: false, violations: ['html', 'webAddress', 'contact'] });
+  });
+
+  it('refuses signs of Markdown, references and other line separators in a title', () => {
+    for (const title of [
+      '[Klick](javascript:alert(1))',
+      'Plan `x`',
+      'Plan \\ B',
+      `Plan${u(0x2028)}B`,
+      `Plan${u(0x2029)}B`,
+    ]) {
+      expect(checkPlainText(title, options), title).toEqual({
+        ok: false,
+        violations: ['unsupported'],
+      });
+    }
+    expect(checkPlainText('&lt;img&gt;', options)).toEqual({
+      ok: false,
+      violations: ['html'],
+    });
   });
 
   it('refuses a title over the limit', () => {

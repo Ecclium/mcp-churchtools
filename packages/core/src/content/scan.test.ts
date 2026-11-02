@@ -21,12 +21,12 @@ describe('hasWebAddress', () => {
     expect(hasWebAddress('HTTPS://EXAMPLE')).toBe(true);
     expect(hasWebAddress('www.1')).toBe(true);
     expect(hasWebAddress('(WWW.1')).toBe(true);
-    expect(hasWebAddress('Mehr unter gemeinde.ch.')).toBe(true);
-    expect(hasWebAddress('gemeinde.ch/seite')).toBe(true);
+    expect(hasWebAddress('Mehr unter gemeinde.example.')).toBe(true);
+    expect(hasWebAddress('gemeinde.example/seite')).toBe(true);
     expect(hasWebAddress('Siehe bericht.pdf')).toBe(true);
     expect(hasWebAddress('St.Gallen')).toBe(true);
-    expect(hasWebAddress('münster.de')).toBe(true);
-    expect(hasWebAddress('教会.ch')).toBe(true);
+    expect(hasWebAddress('münster.example')).toBe(true);
+    expect(hasWebAddress('教会.example')).toBe(true);
   });
 
   it('leaves abbreviations, dates, numbers and verses', () => {
@@ -59,9 +59,37 @@ describe('hasWebAddress', () => {
 
   it('finds an @ before a host with a dot, which a renderer links', () => {
     expect(hasWebAddress('a@a.a')).toBe(true);
-    expect(hasWebAddress('Treffpunkt@19.30')).toBe(false);
+    // linkify-it links it as an e-mail address, the check of contact data
+    // does not count it as one.
+    expect(hasWebAddress('Treffpunkt@19.30')).toBe(true);
+    expect(hasWebAddress('Treffpunkt @ 19.30')).toBe(false);
     expect(hasWebAddress('x@y und @a.a')).toBe(false);
     expect(hasWebAddress('a@ b')).toBe(false);
+  });
+});
+
+describe('hasWebAddress, ways without a dot after a word', () => {
+  it('finds a top level in punycode or after a sign beyond ASCII', () => {
+    expect(hasWebAddress('Siehe beispiel.xn--p1ai/pfad')).toBe(true);
+    expect(hasWebAddress('BEISPIEL.XN--P1AI')).toBe(true);
+    expect(hasWebAddress('beispiel.example\u20142026')).toBe(true);
+    expect(hasWebAddress('beispiel.org\u00bb2')).toBe(true);
+    expect(hasWebAddress('x.\u2028\u2028 und a@b.\u2029 und a@b.')).toBe(false);
+    expect(hasWebAddress('a@b.\u00fc')).toBe(true);
+  });
+
+  it('finds // before a host, mailto: and xmpp:', () => {
+    expect(hasWebAddress('Siehe //localhost')).toBe(true);
+    expect(hasWebAddress('//a.b/pfad')).toBe(true);
+    expect(hasWebAddress('MailTo:max@localhost')).toBe(true);
+    expect(hasWebAddress('xmpp:max')).toBe(true);
+    expect(hasWebAddress('und // oder')).toBe(false);
+    expect(hasWebAddress('Termin: 19 Uhr')).toBe(false);
+  });
+
+  it('reads www. at its place after a letter whose lower case is longer', () => {
+    expect(hasWebAddress('\u0130 www.123')).toBe(true);
+    expect(hasWebAddress('\u0130 wwx.123')).toBe(false);
   });
 });
 
@@ -85,6 +113,20 @@ describe('hasMask', () => {
     expect(hasMask('1 - / . **')).toBe(false);
     expect(hasMask(`${pseudonym.slice(0, -1)}!`)).toBe(false);
     expect(hasMask(`p1_${'A'.repeat(39)}`)).toBe(false);
+  });
+});
+
+describe('checkReadableText on signs that hide a number', () => {
+  it('reads past selectors of variants and blank signs', () => {
+    expect(checkReadableText('Tel. 0\ufe0f00 000\ufe0f12 34', none)).toEqual([
+      'contact',
+    ]);
+    expect(checkReadableText('Tel. 000\u2800000 12 34', none)).toEqual([
+      'contact',
+    ]);
+    expect(checkReadableText('Tel.\u2028000 000 12 34', none)).toEqual([
+      'contact',
+    ]);
   });
 });
 
@@ -112,7 +154,7 @@ describe('contactKey and contactKeyOf', () => {
 
 describe('checkReadableText', () => {
   it('names a web address, a mask and contact data the policy does not list', () => {
-    expect(checkReadableText('Mehr unter gemeinde.ch', none)).toEqual([
+    expect(checkReadableText('Mehr unter gemeinde.example', none)).toEqual([
       'webAddress',
     ]);
     expect(checkReadableText(`Max ${maskedValue}`, none)).toEqual(['masked']);
@@ -136,7 +178,10 @@ describe('checkReadableText', () => {
       ['contact'],
     );
     expect(
-      checkReadableText('sekretariat@example.org und gemeinde.ch', contacts),
+      checkReadableText(
+        'sekretariat@example.org und gemeinde.example',
+        contacts,
+      ),
     ).toEqual(['webAddress']);
   });
 });

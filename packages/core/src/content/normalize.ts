@@ -23,39 +23,45 @@ import { removeHiddenCharacters } from '../redaction/index.js';
 
 /**
  * The most bytes of UTF-8 in one field, before and after the normal form:
- * 64 KiB, the most ChurchTools takes for the text of a page of the wiki.
+ * 64 KiB, the same limit the client of the core sets for the text of a
+ * page of the wiki (ADR 0072).
  */
 export const maxContentBytes = 65_536;
 
 /**
- * The most asterisks and underscores in one text of Markdown, escaped or
- * not. The lexer of `marked` 18.1.2 looks for the end of each unmatched
- * mark of emphasis through the rest of the text, so its time grows with
- * the square of their number: 2000 took about a quarter of a second on a
- * laptop in November 2026, 20'000 in a text below 64 KiB over 20 seconds.
- * A wiki page needs far fewer, and the limit stays when a later version
- * of the library fixes this, in case it comes back.
+ * The most asterisks, underscores, tildes and exclamation marks together
+ * in one text of Markdown, escaped or not. For each such sign without a
+ * partner the lexer of `marked` 18.1.2 searches the rest of the text, so
+ * its time grows with the square of their number. Measured on a laptop in
+ * November 2026, texts below 64 KiB took 20 seconds and more with
+ * underscores, 15 with tildes and over 2 with exclamation marks; with 2000
+ * such signs at most about a quarter of a second. Every other sign of
+ * ASCII, repeated to the limit of the length, took less than a tenth. A
+ * wiki page needs far fewer, and the limit stays when a later version of
+ * the library fixes this, in case it comes back.
  */
-export const maxEmphasisSigns = 2000;
+export const maxDelimiterSigns = 2000;
 
 /**
- * Whether a text holds more asterisks and underscores than
- * {@link maxEmphasisSigns}.
+ * Whether a text holds more asterisks, underscores, tildes and exclamation
+ * marks together than {@link maxDelimiterSigns}.
  *
  * @param text - The text in its normal form.
  * @returns Whether the lexer should not read it.
  * @example
  * ```ts
- * hasTooManyEmphasisSigns('**fett**'); // false
+ * hasTooManyDelimiters('**fett**!'); // false
  * ```
  */
-export function hasTooManyEmphasisSigns(text: string): boolean {
+export function hasTooManyDelimiters(text: string): boolean {
   let count = 0;
   for (let index = 0; index < text.length; index += 1) {
     const code = text.charCodeAt(index);
-    if (code === 0x2a || code === 0x5f) count += 1;
+    if (code === 0x2a || code === 0x5f || code === 0x7e || code === 0x21) {
+      count += 1;
+    }
   }
-  return count > maxEmphasisSigns;
+  return count > maxDelimiterSigns;
 }
 
 /** What {@link normalizeContent} gives: the text in its normal form, or why not. */
@@ -87,10 +93,18 @@ export function normalizeContent(text: string): NormalizedContent {
   if (bytesOf(text) > maxContentBytes) {
     return { ok: false, violation: 'tooLong' };
   }
-  const value = removeHiddenCharacters(text.normalize('NFKC')).text.replaceAll(
-    '\r\n',
-    '\n',
-  );
+  // Hidden characters go before NFKC as well as after: a character that
+  // composes with the sign before it, such as a long stroke after <, would
+  // otherwise compose only on a second pass, and the written text would
+  // not be its own normal form.
+  let value = text;
+  let previous: string;
+  do {
+    previous = value;
+    value = removeHiddenCharacters(
+      removeHiddenCharacters(value).text.normalize('NFKC'),
+    ).text.replaceAll('\r\n', '\n');
+  } while (value !== previous);
   if (bytesOf(value) > maxContentBytes) {
     return { ok: false, violation: 'tooLong' };
   }

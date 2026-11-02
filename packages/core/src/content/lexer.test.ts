@@ -193,6 +193,16 @@ describe('readMarkdown', () => {
     ]);
   });
 
+  it('refuses a table with a row wider than its header, whose cells the lexer would drop', () => {
+    expect(
+      reasonsOf('| a |\n|---|\n| b | ![x](https://example.org/p.png?d=1) |'),
+    ).toEqual(['unsupported']);
+    expect(reasonsOf('a | b\n--|--\nc | d | e')).toEqual(['unsupported']);
+    expect(readMarkdown('| a | b |\n|---|---|\n| c \\| d | e |').ok).toBe(true);
+    expect(readMarkdown('| a | b |\n|---|---|\n| c |').ok).toBe(true);
+    expect(readMarkdown('| a |\n|---|\n| b \\\\|').ok).toBe(true);
+  });
+
   it('refuses HTML, also a comment, in a block, inline and in a list', () => {
     expect(reasonsOf('<div>x</div>')).toEqual(['html']);
     expect(reasonsOf('<!-- Hinweis -->')).toEqual(['html']);

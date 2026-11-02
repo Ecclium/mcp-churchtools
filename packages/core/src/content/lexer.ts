@@ -28,6 +28,7 @@ import type {
   Paragraph,
   Table,
 } from './tree.js';
+import { hasCharacterReference } from './scan.js';
 import { maxInlineDepth, maxListDepth } from './tree.js';
 import type { ContentViolationKind } from './violations.js';
 
@@ -57,51 +58,6 @@ const freshOptions = () => ({
 
 // The highest number a list of CommonMark can carry: nine digits.
 const maxListNumber = 999_999_999;
-
-const isDigit = (code: number): boolean => code >= 0x30 && code <= 0x39;
-
-const isAsciiLetter = (code: number): boolean =>
-  (code >= 0x41 && code <= 0x5a) || (code >= 0x61 && code <= 0x7a);
-
-const isHexDigit = (code: number): boolean =>
-  isDigit(code) ||
-  (code >= 0x41 && code <= 0x46) ||
-  (code >= 0x61 && code <= 0x66);
-
-// Whether a raw text holds a character reference such as &amp; or &#60;.
-// The lexer decodes the numeric ones in its text and keeps the named ones,
-// both for HTML, so a text with either does not say what a reader sees.
-// HTML is not written, so a reference counts as HTML. The raw text is only
-// read here, never written.
-const hasCharacterReference = (raw: string): boolean => {
-  let at = raw.indexOf('&');
-  while (at !== -1) {
-    let end = at + 1;
-    if (raw.charCodeAt(end) === 0x23) {
-      end += 1;
-      const hex = raw.charCodeAt(end) === 0x78 || raw.charCodeAt(end) === 0x58;
-      if (hex) end += 1;
-      const digitsStart = end;
-      while (
-        end < raw.length &&
-        (hex ? isHexDigit(raw.charCodeAt(end)) : isDigit(raw.charCodeAt(end)))
-      ) {
-        end += 1;
-      }
-      if (end > digitsStart && raw.charCodeAt(end) === 0x3b) return true;
-    } else if (isAsciiLetter(raw.charCodeAt(end))) {
-      while (
-        end < raw.length &&
-        (isAsciiLetter(raw.charCodeAt(end)) || isDigit(raw.charCodeAt(end)))
-      ) {
-        end += 1;
-      }
-      if (raw.charCodeAt(end) === 0x3b) return true;
-    }
-    at = raw.indexOf('&', at + 1);
-  }
-  return false;
-};
 
 const isBlank = (code: number): boolean => code === 0x20 || code === 0x09;
 
@@ -146,6 +102,35 @@ const appendInline = (nodes: Inline[], node: Inline): void => {
   }
   nodes.push(node);
 };
+
+// The cells of one line of a table: one more than its bars that no
+// backslash escapes, without a bar at either end.
+const cellsOf = (line: string): number => {
+  const row = line.trim();
+  let bars = 0;
+  let trailing = 0;
+  let backslashes = 0;
+  for (let index = 0; index < row.length; index += 1) {
+    const code = row.charCodeAt(index);
+    if (code === 0x7c && backslashes % 2 === 0) {
+      bars += 1;
+      trailing = index === row.length - 1 ? 1 : 0;
+    }
+    backslashes = code === 0x5c ? backslashes + 1 : 0;
+  }
+  const leading = row.startsWith('|') ? 1 : 0;
+  return bars + 1 - leading - trailing;
+};
+
+// Whether a row of a table has more cells than its header. The lexer fits
+// every row to the width of the header and drops the cells beyond it, so
+// their text would never be checked although a reader of the raw text
+// sees it. The raw text is only read here, never written.
+const hasWideRow = (raw: string, width: number): boolean =>
+  raw
+    .split('\n')
+    .slice(2)
+    .some((line) => line.trim() !== '' && cellsOf(line) > width);
 
 // A mention, as the editor of ChurchTools writes one: a link to the view of
 // a person (F21).
@@ -312,12 +297,15 @@ export function readMarkdown(text: string): ReadMarkdown {
   const cell = (tokens: readonly Token[]): Cell =>
     flat(trimmed(inlines(tokens, 0)));
 
-  const table = (token: Tokens.Table): Table => ({
-    kind: 'table',
-    align: token.align,
-    header: token.header.map((entry) => cell(entry.tokens)),
-    rows: token.rows.map((row) => row.map((entry) => cell(entry.tokens))),
-  });
+  const table = (token: Tokens.Table): Table => {
+    if (hasWideRow(token.raw, token.header.length)) found.add('unsupported');
+    return {
+      kind: 'table',
+      align: token.align,
+      header: token.header.map((entry) => cell(entry.tokens)),
+      rows: token.rows.map((row) => row.map((entry) => cell(entry.tokens))),
+    };
+  };
 
   // A block of the top level, or a block inside a list item that is not
   // allowed there: its reason is recorded and it has no node.

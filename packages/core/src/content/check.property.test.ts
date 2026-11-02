@@ -179,7 +179,15 @@ const fullWidth = (value: string): string =>
     })
     .join('');
 
-const hidden = ['​', '‍', '⁠', '﻿', '­', '\u{e0041}'];
+const hidden = [
+  '\u200b',
+  '\u200d',
+  '\u2060',
+  '\ufeff',
+  '\u00ad',
+  '\ufe0f',
+  '\u{e0041}',
+];
 
 const disguise = fc
   .tuple(fc.nat(2), fc.nat(), fc.constantFrom(...hidden))
