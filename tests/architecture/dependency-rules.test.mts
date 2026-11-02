@@ -1317,7 +1317,12 @@ describe('the copy of the workspace', () => {
   });
 });
 
-describe('dependency-cruiser rules', () => {
+// Each case copies the sources of every package and cruises the copy, which
+// grows with the code. On the slowest runner of CI, a case took longer than
+// the default of five seconds, so the cruises get a bound of their own.
+const cruiseTimeout = 30_000;
+
+describe('dependency-cruiser rules', { timeout: cruiseTimeout }, () => {
   it('pass the packages as they are', async () => {
     const result = await cruiseFolder(workspaceRoot);
     expect(result.summary.violations).toEqual([]);
