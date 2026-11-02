@@ -387,6 +387,9 @@ describe('Renovate', () => {
     // A dependency at run time, never merged automatically anyway, held
     // here as well because it has no provenance (ADR 0032).
     'yaml',
+    // The second parser of the differential test of the content policy,
+    // without provenance (ADR 0030).
+    'markdown-it',
   ];
   // An exact name matches only itself. Renovate reads a name with *, ?,
   // braces, a leading ! or slashes around it as a pattern.

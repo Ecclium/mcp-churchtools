@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ahvCheckDigitFits,
+  findPersonalData,
   freeTextMarkers,
   ibanCheckSumFits,
   maskFreeText,
@@ -135,6 +136,33 @@ describe('maskFreeText', () => {
     }
   });
 
+  it('masks a phone number in short groups with dots, hyphens or slashes', () => {
+    // Joined here, so that no line of the source looks like an address of
+    // the internet to the scan for secrets.
+    const groups = ['00', '41', '23', '45', '67'];
+    for (const text of [
+      `Tel. ${groups.join('.')}`,
+      `Tel. ${groups.join('-')}`,
+      `Tel. ${groups.join('/')}`,
+      `Tel. ${Array.from('0001234567').join('.')}`,
+    ]) {
+      expect(maskFreeText(text), text).toBe(`Tel. ${phone}`);
+    }
+    // Four short groups and a year stay a date, a time or a range.
+    expect(maskFreeText('Probe 09.30-10.30 Uhr')).toBe('Probe 09.30-10.30 Uhr');
+    expect(maskFreeText('am 01.10.2026 19.30')).toBe('am 01.10.2026 19.30');
+  });
+
+  it('reads a long run of digits and signs in linear time', () => {
+    const run = '0.'.repeat(32_000);
+    const started = performance.now();
+    maskFreeText(run);
+    // Without the bound on the run this took over 20 seconds.
+    expect(performance.now() - started).toBeLessThan(2_000);
+    // A run longer than the bound is still masked, in parts.
+    expect(maskFreeText(`Tel. ${'000 '.repeat(30)}12`)).not.toContain('000');
+  });
+
   it('masks an IBAN stored or printed, in either case', () => {
     expect(maskFreeText(`IBAN ${swiss}, Kollekte`)).toBe(
       `IBAN ${iban}, Kollekte`,
@@ -232,6 +260,49 @@ describe('maskFreeText', () => {
       `max.mustermann@example.org ${swiss} ${person} 000 000 12 34`,
     );
     expect(maskFreeText(marked)).toBe(marked);
+  });
+});
+
+describe('findPersonalData', () => {
+  it('names each find with its kind and its place in the text', () => {
+    const text = `Max: max.mustermann@example.org, +41 00 000 12 34, ${printed(swiss)}, ${dotted(person)}`;
+    const finds = findPersonalData(text);
+    expect(finds.map(({ kind }) => kind)).toEqual([
+      'email',
+      'phone',
+      'iban',
+      'ahv',
+    ]);
+    expect(finds.map(({ start, end }) => text.slice(start, end))).toEqual([
+      'max.mustermann@example.org',
+      '+41 00 000 12 34',
+      printed(swiss),
+      dotted(person),
+    ]);
+  });
+
+  it('gives the places of numbers after an address in the text itself', () => {
+    const text = `(max@example.org) ${swiss} und a@example.org 000 000 12 34`;
+    expect(
+      findPersonalData(text).map(({ start, end }) => text.slice(start, end)),
+    ).toEqual(['max@example.org', swiss, 'a@example.org', '000 000 12 34']);
+  });
+
+  it('never lets a number reach into an address', () => {
+    // The digits 67 belong to the word of the address, so the number ends
+    // before it, as in the mask.
+    const text = '000 123 45 67max@example.org';
+    const finds = findPersonalData(text);
+    expect(finds.map(({ kind, start, end }) => [kind, start, end])).toEqual([
+      ['phone', 0, 10],
+      ['email', 11, 28],
+    ]);
+    expect(maskFreeText(text)).toBe(`${phone} ${email}`);
+  });
+
+  it('finds nothing in a text without personal data', () => {
+    expect(findPersonalData('Treffpunkt@19.30 am 01.10.2026')).toEqual([]);
+    expect(findPersonalData('')).toEqual([]);
   });
 });
 

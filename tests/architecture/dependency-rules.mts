@@ -393,6 +393,20 @@ export function dependencyRules(
       to: { path: '(^|/)node_modules/yaml/' },
     },
     {
+      name: 'marked-only-in-content-lexer',
+      severity: 'error',
+      comment: `${adr('contentLexer')}: only the lexer of the content policy imports marked, so that every Markdown Ecclium writes is read with complete options of its own, turned into the tree of the allowed part and written by its own serializer, never with the renderer or the raw text of the library. Tests in the packages are not exempt. Imports for types only count as well.`,
+      from: { path: '^packages/', pathNot: at('contentLexer') },
+      to: { path: '(^|/)node_modules/marked/' },
+    },
+    {
+      name: 'markdown-it-only-in-differential-test',
+      severity: 'error',
+      comment: `${adr('contentDifferential')}: only the differential test of the content policy imports markdown-it. It is a second parser for that test, a tool of development without provenance, and never reads or writes a text of the product.`,
+      from: { path: '^packages/', pathNot: at('contentDifferential') },
+      to: { path: '(^|/)node_modules/markdown-it/' },
+    },
+    {
       name: 'mcp-mount-only-in-server',
       severity: 'error',
       comment: `${adr('mcpMount')}: only the server uses the mount, the one registration with the MCP SDK.`,

@@ -229,6 +229,16 @@
       "description": "The reader of YAML for the file of the policy: the only module that imports yaml, with the schema core of YAML 1.2, one document and no anchors, aliases, tags or directives, so that no other code reads YAML past these limits. One file of the policy of core.",
       "paths": ["packages/core/src/policy/yaml.ts"]
     },
+    "contentLexer": {
+      "adr": "0030",
+      "description": "The lexer of Markdown for the content policy: the only module that imports marked, with complete options for every text and no change to the state of the library, and that turns tokens into the tree of the allowed part, so that no other code reads Markdown past these limits and no raw text of a token reaches what Ecclium writes. One file of the content policy of core.",
+      "paths": ["packages/core/src/content/lexer.ts"]
+    },
+    "contentDifferential": {
+      "adr": "0030",
+      "description": "The differential test of the content policy: the only module that imports markdown-it, a second parser of Markdown that reads what the content policy writes and must find only the allowed part. A tool of development, never part of the product.",
+      "paths": ["packages/core/src/content/differential.test.ts"]
+    },
     "pseudonymUsers": {
       "adr": "0069",
       "description": "Code that may turn IDs of persons into pseudonyms and back: the pipeline, which does it for every call in the level strict.",

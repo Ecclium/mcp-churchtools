@@ -29,7 +29,13 @@ describe('isAllowed', () => {
   });
 
   it('allows the weaker licences only for development', () => {
-    for (const licence of ['MPL-2.0', 'CC0-1.0', 'CC-BY-3.0', 'CC-BY-4.0']) {
+    for (const licence of [
+      'MPL-2.0',
+      'CC0-1.0',
+      'CC-BY-3.0',
+      'CC-BY-4.0',
+      'PSF-2.0',
+    ]) {
       expect(isAllowed(licence, runtimeLicences)).toBe(false);
       expect(isAllowed(licence, developmentLicences)).toBe(true);
     }

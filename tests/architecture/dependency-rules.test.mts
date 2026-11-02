@@ -684,6 +684,46 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'markdown-it-only-in-differential-test',
+    name: 'a test of the write guard reads Markdown with the second parser',
+    files: {
+      'packages/core/src/write/forbidden.test.ts':
+        "import MarkdownIt from 'markdown-it';\nexport const parser = new MarkdownIt();\n",
+    },
+  },
+  {
+    rule: 'markdown-it-only-in-differential-test',
+    name: 'another test of the content policy uses the second parser',
+    files: {
+      'packages/core/src/content/forbidden.test.ts':
+        "import MarkdownIt from 'markdown-it';\nexport const parser = new MarkdownIt();\n",
+    },
+  },
+  {
+    rule: 'marked-only-in-content-lexer',
+    name: 'the serializer of the content policy renders with the library',
+    files: {
+      'packages/core/src/content/forbidden.ts':
+        "import { marked } from 'marked';\nexport const render = marked;\n",
+    },
+  },
+  {
+    rule: 'marked-only-in-content-lexer',
+    name: 'a test of the write guard lexes Markdown past the content policy',
+    files: {
+      'packages/core/src/write/forbidden.test.ts':
+        "import { Lexer } from 'marked';\nexport const lex = Lexer.lex;\n",
+    },
+  },
+  {
+    rule: 'marked-only-in-content-lexer',
+    name: 'the write guard imports a type of the library',
+    files: {
+      'packages/core/src/write/forbidden.ts':
+        "import type { Token } from 'marked';\nexport type Part = Token;\n",
+    },
+  },
+  {
     rule: 'keys-internals',
     name: 'the configuration reads the bytes of a key',
     files: {

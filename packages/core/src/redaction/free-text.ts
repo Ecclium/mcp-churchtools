@@ -74,34 +74,51 @@ const isAddress = (text: string): boolean => {
   return last.length >= 2 && !isDigit(last.charCodeAt(0));
 };
 
-// A word with an address becomes the marker, without what encloses it.
-const maskAddressWord = (word: string): string => {
-  let start = 0;
-  let end = word.length;
-  while (start < end && openers.includes(word.charAt(start))) start += 1;
-  while (end > start && closers.includes(word.charAt(end - 1))) end -= 1;
-  const core = word.slice(start, end);
-  return isAddress(core)
-    ? word.slice(0, start) + freeTextMarkers.email + word.slice(end)
-    : word;
+/** What a find in free text is. */
+export type PersonalDataKind = keyof typeof freeTextMarkers;
+
+/** One find in a normalised text: what it is and where it stands. */
+export interface PersonalDataFind {
+  /** What the find is. */
+  readonly kind: PersonalDataKind;
+  /** The index of its first character. */
+  readonly start: number;
+  /** The index after its last character. */
+  readonly end: number;
+}
+
+// The address in a word, without what encloses it, or undefined.
+const addressIn = (
+  text: string,
+  wordStart: number,
+  wordEnd: number,
+): PersonalDataFind | undefined => {
+  let start = wordStart;
+  let end = wordEnd;
+  while (start < end && openers.includes(text.charAt(start))) start += 1;
+  while (end > start && closers.includes(text.charAt(end - 1))) end -= 1;
+  return isAddress(text.slice(start, end))
+    ? { kind: 'email', start, end }
+    : undefined;
 };
 
-const maskAddresses = (text: string): string => {
-  let masked = '';
+const findAddresses = (text: string): PersonalDataFind[] => {
+  const finds: PersonalDataFind[] = [];
   let index = 0;
   while (index < text.length) {
     if (isSpace(text.charCodeAt(index))) {
-      masked += text.charAt(index);
       index += 1;
       continue;
     }
     let end = index;
     while (end < text.length && !isSpace(text.charCodeAt(end))) end += 1;
-    const word = text.slice(index, end);
-    masked += word.includes('@') ? maskAddressWord(word) : word;
+    const find = text.slice(index, end).includes('@')
+      ? addressIn(text, index, end)
+      : undefined;
+    if (find !== undefined) finds.push(find);
     index = end;
   }
-  return masked;
+  return finds;
 };
 
 // The value of a letter or digit in the check sum of an IBAN: a digit is
@@ -256,10 +273,13 @@ const isDateMark = (code: number): boolean =>
 // rather than a phone number: groups of one or two digits and at most one
 // group of four, the year, with at least one dot, hyphen or slash between
 // them, as in 01.-03.10.2026, 05.03. 19.30 or 09.30-10.30. A phone number
-// has a group of three or more digits, or is written with spaces only.
+// has a group of three or more digits, or is written with spaces only, or
+// has five or more short groups and no year, as in 00-41-23-45-67: a date
+// with a time or a range of times has four at most.
 const isDateOrTime = (run: string): boolean => {
   let group = 0;
   let years = 0;
+  let short = 0;
   let marked = false;
   for (let index = 0; index <= run.length; index += 1) {
     const code = index < run.length ? run.charCodeAt(index) : 0x20;
@@ -269,20 +289,27 @@ const isDateOrTime = (run: string): boolean => {
     }
     if (group === 4) years += 1;
     else if (group > 2) return false;
+    else if (group > 0) short += 1;
     group = 0;
     if (isDateMark(code)) marked = true;
   }
-  return marked && years <= 1;
+  return marked && years <= 1 && (years === 1 || short <= 4);
 };
+
+// The longest run a phone number is looked for in. A real number is far
+// shorter. Without the bound a long run of digits and signs that reads as
+// a date would be read again from every 0 in it to its end, and the time
+// would grow with the square of its length: 64 KiB of 0. took 22 seconds.
+const maxPhoneRun = 64;
 
 // IBAN, AHV numbers and phone numbers in a text whose addresses are
 // already masked. An IBAN starts where no letter or digit stands before
-// it, a number where no digit does. A date is copied as it is, so that
-// 01.10.2026 never reads as a phone number, as in the mask of the escape
-// hatch, also in brackets, and a range of days or a time that starts with
-// 0 stays as well.
-const maskNumbers = (text: string): string => {
-  let masked = '';
+// it, a number where no digit does. A date is passed over as it is, so
+// that 01.10.2026 never reads as a phone number, as in the mask of the
+// escape hatch, also in brackets, and a range of days or a time that
+// starts with 0 stays as well.
+const findNumbers = (text: string): PersonalDataFind[] => {
+  const finds: PersonalDataFind[] = [];
   let index = 0;
   while (index < text.length) {
     const code = text.charCodeAt(index);
@@ -290,7 +317,7 @@ const maskNumbers = (text: string): string => {
     if (isLetter(code) && !isAlnum(before)) {
       const end = ibanEndAt(text, index);
       if (end !== -1) {
-        masked += freeTextMarkers.iban;
+        finds.push({ kind: 'iban', start: index, end });
         index = end;
         continue;
       }
@@ -299,13 +326,12 @@ const maskNumbers = (text: string): string => {
     if (runStart && isDigit(code)) {
       const end = ahvEndAt(text, index);
       if (end !== -1) {
-        masked += freeTextMarkers.ahv;
+        finds.push({ kind: 'ahv', start: index, end });
         index = end;
         continue;
       }
       const date = dateAt(text, index);
       if (date !== undefined) {
-        masked += text.slice(index, date.end);
         index = date.end;
         continue;
       }
@@ -321,21 +347,80 @@ const maskNumbers = (text: string): string => {
       !bracketed &&
       (code === 0x2b || code === 0x28 || code === 0x30)
     ) {
-      const end = phoneEndAt(text, index, freeTextSeparatorRun);
+      const found = phoneEndAt(
+        text.slice(index, index + maxPhoneRun),
+        0,
+        freeTextSeparatorRun,
+      );
+      const end = found === -1 ? -1 : index + found;
       if (
         end !== -1 &&
         !(code === 0x30 && isDateOrTime(text.slice(index, end)))
       ) {
-        masked += freeTextMarkers.phone;
+        finds.push({ kind: 'phone', start: index, end });
         index = end;
         continue;
       }
     }
-    masked += text.charAt(index);
     index += 1;
   }
-  return masked;
+  return finds;
 };
+
+/**
+ * Finds every e-mail address, IBAN, AHV number and phone number in a text
+ * that is already normalised with NFKC and free of hidden characters, as
+ * the check of `strict` reads it (ADR 0069). The content policy uses the
+ * same finds to keep contact data out of texts that Ecclium writes (ADR
+ * 0030), so that both see exactly the same.
+ *
+ * Numbers are looked for in the text with a marker in place of each
+ * address, as the mask has always read it: a digit of an address never
+ * starts or continues a number, and no number reaches into an address.
+ *
+ * @param value - The normalised text.
+ * @returns The finds, ordered by where they start, without overlaps.
+ * @example
+ * ```ts
+ * findPersonalData('Kontakt: max.mustermann@example.org');
+ * // [{ kind: 'email', start: 9, end: 35 }]
+ * ```
+ */
+export function findPersonalData(value: string): readonly PersonalDataFind[] {
+  const addresses = findAddresses(value);
+  let masked = '';
+  let from = 0;
+  // Where each marker stands in the masked text, and the address it covers.
+  const markers: { readonly at: number; readonly address: PersonalDataFind }[] =
+    [];
+  for (const address of addresses) {
+    masked += value.slice(from, address.start);
+    markers.push({ at: masked.length, address });
+    masked += freeTextMarkers.email;
+    from = address.end;
+  }
+  masked += value.slice(from);
+  // A number never touches a marker: it ends on a digit and has none
+  // inside, so every index of a find lies before or after each marker. The
+  // finds come in order, so the shift only grows.
+  let passed = 0;
+  let shift = 0;
+  const original = (index: number): number => {
+    while (passed < markers.length) {
+      const { at, address } = markers[passed] as (typeof markers)[number];
+      if (at >= index) break;
+      shift += address.end - address.start - freeTextMarkers.email.length;
+      passed += 1;
+    }
+    return index + shift;
+  };
+  const numbers = findNumbers(masked).map((find): PersonalDataFind => ({
+    kind: find.kind,
+    start: original(find.start),
+    end: original(find.end),
+  }));
+  return [...addresses, ...numbers].sort((a, b) => a.start - b.start);
+}
 
 /**
  * Checks a free text of the level `strict` and puts a marker in place of
@@ -356,6 +441,13 @@ const maskNumbers = (text: string): string => {
  */
 export function maskFreeText(text: string): string {
   const value = removeHiddenCharacters(text.normalize('NFKC')).text;
-  const masked = maskNumbers(maskAddresses(value));
-  return masked === value ? text : masked;
+  const finds = findPersonalData(value);
+  if (finds.length === 0) return text;
+  let masked = '';
+  let from = 0;
+  for (const find of finds) {
+    masked += value.slice(from, find.start) + freeTextMarkers[find.kind];
+    from = find.end;
+  }
+  return masked + value.slice(from);
 }
