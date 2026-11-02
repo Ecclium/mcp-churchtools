@@ -226,6 +226,11 @@ export const logEvents = Object.freeze({
   pseudonym_keys_unavailable: entry('warn'),
   read_budget_exhausted: entry('warn'),
   read_budget_unavailable: entry('warn'),
+  // The write guard (ADR 0029).
+  write_refused: entry('warn', 'code'),
+  write_conflict: entry('warn', 'code'),
+  write_outcome_unknown: entry('warn', 'code'),
+  write_committed: entry('info'),
   // The escape hatch (ADR 0067).
   read_search_refused: entry('warn', 'code'),
   read_names_refused: entry('warn', 'code'),

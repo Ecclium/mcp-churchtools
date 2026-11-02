@@ -96,7 +96,8 @@
       "description": "Core modules outside the client folder that may import the raw client. Each entry is one file, added when the module exists.",
       "paths": [
         "packages/core/src/pipeline/pipeline.ts",
-        "packages/core/src/pipeline/read-api.ts"
+        "packages/core/src/pipeline/read-api.ts",
+        "packages/core/src/write/guard.ts"
       ]
     },
     "mcpMount": {
