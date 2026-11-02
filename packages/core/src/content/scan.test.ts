@@ -73,7 +73,7 @@ describe('hasWebAddress, ways without a dot after a word', () => {
     expect(hasWebAddress('Siehe beispiel.xn--p1ai/pfad')).toBe(true);
     expect(hasWebAddress('BEISPIEL.XN--P1AI')).toBe(true);
     expect(hasWebAddress('beispiel.example\u20142026')).toBe(true);
-    expect(hasWebAddress('beispiel.org\u00bb2')).toBe(true);
+    expect(hasWebAddress('beispiel.example\u00bb2')).toBe(true);
     expect(hasWebAddress('x.\u2028\u2028 und a@b.\u2029 und a@b.')).toBe(false);
     expect(hasWebAddress('a@b.\u00fc')).toBe(true);
   });

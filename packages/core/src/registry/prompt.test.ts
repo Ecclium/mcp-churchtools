@@ -497,7 +497,7 @@ describe('fill', () => {
   it.each([
     ['a format character outside the cleaning', String.fromCodePoint(0x0600)],
     ['a character of private use', String.fromCodePoint(0xe000)],
-    ['an unassigned code point', String.fromCodePoint(0xfff0)],
+    ['an unassigned code point', String.fromCodePoint(0x0378)],
     ['a lone surrogate', String.fromCharCode(0xd800)],
     ['a separator of lines', String.fromCodePoint(0x2028)],
     ['a separator of paragraphs', String.fromCodePoint(0x2029)],
