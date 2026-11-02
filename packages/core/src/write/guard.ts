@@ -556,7 +556,9 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     }
     // The policy once more, right before the send: the names may have
     // changed since the plan, and the write takes its place in the counter
-    // of the day. A refusal here has used up the proof (ADR 0032).
+    // of the day. A refusal here has used up the proof (ADR 0032). A read
+    // of a name that fails is no refusal of the policy: the write failed
+    // before it was sent.
     try {
       await policy.check(
         ctx,
@@ -566,8 +568,16 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
         'commit',
       );
     } catch (error) {
-      return denied(asError(error), target, path);
+      const failure = asError(error);
+      return failure.code === 'policy_denied'
+        ? denied(failure, target, path)
+        : ended(ctx, 'failed', failure, false, target, path);
     }
+    // The policy may have read ChurchTools and waited for its counter, so
+    // the switches once more: a write counted and then stopped stays
+    // counted, as one that fails after its count (ADR 0029, ADR 0032).
+    const stopLate = stopped(ctx);
+    if (stopLate !== undefined) return denied(stopLate, target, path);
     return derived.kind === 'create'
       ? create(
           ctx,

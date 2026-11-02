@@ -505,7 +505,11 @@ describe('a write tool in the pipeline', () => {
     const { double, pipeline, events, logs, planReads } = setup({
       policy: checked.policy,
     });
-    confirming.issue = (plan) => issueProof(plan, 'elicitation', now);
+    let asked = 0;
+    confirming.issue = (plan) => {
+      asked += 1;
+      return issueProof(plan, 'elicitation', now);
+    };
     planReads();
     const outcome = await pipeline.call(
       'ct_example_note_write',
@@ -522,6 +526,7 @@ describe('a write tool in the pipeline', () => {
       policyHash: policyHashOf(checked.policy),
     });
     expect(logs()).toContain('policy_no_entry');
+    expect(asked).toBe(0);
     expect(double.calls().filter(({ method }) => method !== 'GET')).toEqual([]);
   });
 

@@ -41,6 +41,7 @@ import {
   isIsoDate,
   isQuotaKey,
   type QuotaKey,
+  quotaKeys,
   type QuotaStore,
   type TenantContext,
 } from '@ecclium/mcp-churchtools-plugin-api';
@@ -323,8 +324,11 @@ interface HeldLock extends Identity {
 type Counts = Record<string, Record<string, number>>;
 
 // The counters of writes of the policy among the keys of one actor.
+// The counters of writes of an actor: every key but the fixed ones.
 const writeKeysOf = (entry: Readonly<Record<string, number>>): number =>
-  Object.keys(entry).filter((key) => key !== 'special_reads').length;
+  Object.keys(entry).filter(
+    (key) => !(quotaKeys as readonly string[]).includes(key),
+  ).length;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });

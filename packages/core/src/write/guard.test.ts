@@ -97,6 +97,8 @@ interface Fake {
   onRead?: () => void;
   /** The name of the category, for the policy; undefined when unknown. */
   categoryName?: string;
+  /** What the read of the name of the category fails with instead. */
+  categoryNameFails?: Error;
 }
 
 const fakeOf = (): Fake => ({
@@ -119,7 +121,10 @@ const clientOf = (fake: Fake): WriteClient => ({
   permissions: () => Promise.resolve(fake.permissions),
   writes: {
     wikiCategoryState: () => Promise.resolve({ serverTime: fake.time }),
-    wikiCategoryName: () => Promise.resolve(fake.categoryName),
+    wikiCategoryName: () =>
+      fake.categoryNameFails === undefined
+        ? Promise.resolve(fake.categoryName)
+        : Promise.reject(fake.categoryNameFails),
     wikiPageState: (_ctx, _category, target) => {
       fake.onRead?.();
       if (fake.readFails !== undefined) return Promise.reject(fake.readFails);
@@ -847,6 +852,49 @@ describe('the policy (ADR 0032)', () => {
       policySentences.nameChanged,
     );
     expect(await quota?.read(ctx, pageKey, today())).toBe(0);
+    expect(fake.sent).toEqual([]);
+  });
+
+  it('ends a commit whose read of a name fails as failed, not as refused', async () => {
+    const fake = fakeOf();
+    fake.categoryName = 'Berichte';
+    const { guard, ctx, request } = setup(fake, dir, {
+      policy: categoryPolicy,
+    });
+    const plan = planOf(await guard.plan(request, create));
+    fake.categoryNameFails = new EccliumError('network');
+    const result = await guard.commit(
+      ctx,
+      plan,
+      issueProof(plan, 'elicitation', now),
+    );
+    expect(result).toMatchObject({ ok: false, state: 'failed', sent: false });
+    expect(!result.ok && result.error.code).toBe('network');
+    expect(fake.sent).toEqual([]);
+  });
+
+  it('looks at the switches again after the count, and keeps the count', async () => {
+    const store = createMemoryQuotaStore();
+    // The switch goes off while the write takes its place in the counter.
+    const quota: QuotaStore = {
+      read: (ctx, key, day) => store.read(ctx, key, day),
+      increment: (ctx, key, day) => {
+        writeFileSync(join(dir, 'writes-off'), '');
+        return store.increment(ctx, key, day);
+      },
+    };
+    const { fake, guard, ctx, request } = setup(fakeOf(), dir, {
+      policy: pagePolicy,
+      quota,
+    });
+    const plan = planOf(await guard.plan(request, update));
+    const result = await guard.commit(
+      ctx,
+      plan,
+      issueProof(plan, 'elicitation', now),
+    );
+    expect(!result.ok && result.error.message).toBe(writeSentences.switchedOff);
+    expect(await store.read(ctx, pageKey, today())).toBe(1);
     expect(fake.sent).toEqual([]);
   });
 
