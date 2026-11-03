@@ -64,7 +64,7 @@ Legt fest, welche Bereiche von Tools der Server anbietet: eine mit Komma getrenn
 
 ## `ECCLIUM_STATE_DIR`
 
-Absoluter Pfad eines Ordners für den Zustand des Servers, heute für die Audit-Datei im Unterordner `audit`. Den Ordner selbst legt Ecclium nicht an, den Unterordner darin schon. Der Ordner muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 700. Nur im Betrieb über stdio.
+Absoluter Pfad eines Ordners für den Zustand des Servers: für die Audit-Datei im Unterordner `audit`, die Zähler im Unterordner `quota` und, wenn Ecclium schreibt, die Snapshots im Unterordner `snapshots` und die Freigabe-Warteschlange im Unterordner `queue`. Den Ordner selbst legt Ecclium nicht an, den Unterordner darin schon. Der Ordner muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 700. Nur im Betrieb über stdio.
 
 ## `ECCLIUM_KEYS_DIR`
 
@@ -76,7 +76,7 @@ Legt fest, ob Ecclium vor jedem Schreibvorgang den bisherigen Stand als Snapshot
 
 ## `ECCLIUM_WRITE_CONFIRMATION`
 
-Legt fest, wie Ecclium einen Schreibvorgang bestätigen lässt, bevor es schreibt. Mit `echo-allowed`, der Voreinstellung über stdio, stellt Ecclium eine Rückfrage im Client, wenn der Client sie kann, sonst gilt die Bestätigung mit `ct_write_confirm`, wenn sich der Schreibvorgang zurücknehmen lässt, sonst kommt er in die Freigabe-Warteschlange. Mit `elicitation-or-queue`, der Voreinstellung über HTTP, gilt nie die Bestätigung mit `ct_write_confirm`, nur die Rückfrage oder die Freigabe-Warteschlange. Mit `queue` wartet jeder Schreibvorgang auf die Freigabe des Betreibers mit `ecclium queue approve`. Steht die Variable über HTTP auf `echo-allowed`, warnt jeder Start. Ein Eintrag der Freigabe-Warteschlange liegt verschlüsselt im Unterordner `queue` des Ordners aus `ECCLIUM_STATE_DIR`, `ecclium queue list` zeigt, was wartet, und `ecclium queue reject` weist einen Eintrag ab. Freigeben lässt sich ein Eintrag in dieser Version noch nicht, und Schreib-Tools des Kerns gibt es noch nicht.
+Legt fest, wie Ecclium einen Schreibvorgang bestätigen lässt, bevor es schreibt. Mit `echo-allowed`, der Voreinstellung über stdio, stellt Ecclium eine Rückfrage im Client, wenn der Client sie kann, sonst gilt die Bestätigung mit `ct_write_confirm`, wenn sich der Schreibvorgang zurücknehmen lässt, sonst kommt er in die Freigabe-Warteschlange. Mit `elicitation-or-queue`, der Voreinstellung über HTTP, gilt nie die Bestätigung mit `ct_write_confirm`, nur die Rückfrage oder die Freigabe-Warteschlange. Mit `queue` wartet jeder Schreibvorgang auf die Freigabe des Betreibers. Steht die Variable über HTTP auf `echo-allowed`, warnt jeder Start. Ein Eintrag der Freigabe-Warteschlange liegt verschlüsselt im Unterordner `queue` des Ordners aus `ECCLIUM_STATE_DIR`, `ecclium queue list` zeigt, was wartet, und `ecclium queue reject` weist einen Eintrag ab. Freigeben lässt sich ein Eintrag in dieser Version noch nicht, und Schreib-Tools des Kerns gibt es noch nicht.
 
 ## `ECCLIUM_AUDIT_RETENTION_MONTHS`
 

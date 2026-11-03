@@ -226,15 +226,15 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
     policy_not_interactive:
       'Ein Schreibvorgang kam ausserhalb des interaktiven Modus. Bis der Runner den unbeaufsichtigten Teil der Richtlinie nutzt, schreibt Ecclium dort nichts. Der Aufruf endet mit `policy_denied`.',
     policy_queue_only:
-      'Die Richtlinie schickt diese Art von Schreibvorgang immer in die Warteschlange der Freigaben, etwa einen in eine Gruppe oder einen Dienst. Bis es die Warteschlange gibt, endet der Aufruf mit `policy_denied`.',
+      'Die Richtlinie schickt diese Art von Schreibvorgang immer in die Warteschlange der Freigaben, etwa einen in eine Gruppe oder einen Dienst. Beim Planen kommt der Schreibvorgang in die Freigabe-Warteschlange, ohne Warteschlange endet er mit `confirmation_required`. Bei der Prüfung unmittelbar vor dem Senden endet er mit `policy_denied`. In keinem Fall schreibt Ecclium.',
     policy_no_entry:
-      'Die Richtlinie hat Einträge, aber keiner deckt dieses Tool und dieses Ziel. Der Aufruf endet mit `policy_denied`, ohne zu schreiben.',
+      'Die Richtlinie hat Einträge, aber keiner deckt dieses Tool und dieses Ziel. Beim Planen kommt der Schreibvorgang in die Freigabe-Warteschlange, ohne Warteschlange endet er mit `confirmation_required`. Bei der Prüfung unmittelbar vor dem Senden endet er mit `policy_denied`. In keinem Fall schreibt Ecclium.',
     policy_name_changed:
-      'Das Ziel in ChurchTools trägt nicht mehr den Namen, den die Richtlinie erwartet, oder sein Name ist nicht zu lesen. Der Aufruf endet mit `policy_denied`, ohne zu schreiben und ohne zu zählen.',
+      'Das Ziel in ChurchTools trägt nicht mehr den Namen, den die Richtlinie erwartet, oder sein Name ist nicht zu lesen. Gezählt wird nichts. Beim Planen kommt der Schreibvorgang in die Freigabe-Warteschlange, ohne Warteschlange endet er mit `confirmation_required`. Bei der Prüfung unmittelbar vor dem Senden endet er mit `policy_denied`. In keinem Fall schreibt Ecclium.',
     policy_limit_reached:
-      'Die Grenze der Schreibvorgänge dieses Tools auf dieses Ziel für den UTC-Tag ist erreicht. Der Aufruf endet mit `policy_denied`, ohne zu schreiben.',
+      'Die Grenze der Schreibvorgänge dieses Tools auf dieses Ziel für den UTC-Tag ist erreicht. Beim Planen kommt der Schreibvorgang in die Freigabe-Warteschlange, ohne Warteschlange endet er mit `confirmation_required`. Bei der Prüfung unmittelbar vor dem Senden endet er mit `policy_denied`. In keinem Fall schreibt Ecclium.',
     policy_count_unavailable:
-      'Ecclium konnte einen Schreibvorgang nicht gegen die Grenze der Richtlinie zählen, etwa ohne Ordner für den Zustand. Der Aufruf endet mit `policy_denied`, ohne zu schreiben.',
+      'Ecclium konnte einen Schreibvorgang nicht gegen die Grenze der Richtlinie zählen, etwa ohne Ordner für den Zustand. Beim Planen kommt der Schreibvorgang in die Freigabe-Warteschlange, ohne Warteschlange endet er mit `confirmation_required`. Bei der Prüfung unmittelbar vor dem Senden endet er mit `policy_denied`. In keinem Fall schreibt Ecclium.',
     content_too_long:
       'Ein Text eines Schreibvorgangs ist länger als 64 KiB oder hat mehr als 2000 Sternchen, Unterstriche, Tilden und Ausrufezeichen. Der Aufruf endet ohne Schreiben, der Grund steht in `contentViolations` des Audits.',
     content_unparsable:
