@@ -136,3 +136,8 @@ Vorschlag aus dem Audit, seit dem 02.11.2026:
 - **Nie offener als das Audit:** Eine leere Liste erlaubte jeden bestätigten Schreibvorgang. Sie steht nur, wenn das Audit keine Kategorie nennt. Fällt jede genannte Kategorie heraus, steht ein Platzhalter darin, den der Lader abweist, bis der Betreiber die Ziele einträgt. Die Ziele stehen vor dem Lesebudget, damit eine abgeschnittene Ausgabe keine Datei ergibt, die der Lader annimmt.
 - **Exit-Codes:** nach sysexits, mit 69 neu, wenn ChurchTools keine Namen gibt. Ohne `--interactive` lädt die Kommandozeile den Befehl gar nicht.
 - **Offen:** Ziele für Kalender und Ressourcen schlägt der Befehl vor, sobald ihre Schreib-Tools kommen und das Audit sie nennt.
+
+Freigabe-Warteschlange, seit dem 03.11.2026 ([ADR 0031](0031-persistenz-und-tagesschluessel.md), Umsetzung Teil 4):
+
+- **Beim Planen kein `policy_denied` mehr:** Schickt die Richtlinie einen Schreibwunsch in die Warteschlange, weil der Eintrag fehlt, ein Name abweicht, die Obergrenze erreicht ist, der Zähler sich nicht lesen lässt oder nur der Betreiber ihn bestätigen darf, gibt `policy-gate.ts` den Grund zurück, statt abzulehnen. Der Write-Guard versiegelt den Plan trotzdem, und die Pipeline reiht ihn mit dem Grund ein, ohne zu fragen. Die Logzeile je Grund bleibt. Ausserhalb von `interactive` lehnt die Richtlinie weiter mit `policy_denied` ab.
+- **Beim Festschreiben wie bisher:** Ergibt die zweite Prüfung unmittelbar vor dem Senden einen Grund für die Warteschlange, endet der Vorgang mit `policy_denied` und dem festen Satz des Grundes. Wie eine Freigabe des Betreibers die Gründe der Richtlinie ersetzt, legt der nächste Teil mit `ecclium queue approve` fest.
