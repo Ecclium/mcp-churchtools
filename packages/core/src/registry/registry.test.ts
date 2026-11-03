@@ -233,6 +233,7 @@ describe('createToolCatalog', () => {
       'target',
       'version',
       'undoId',
+      'queueId',
       'confirm',
     ]);
     // A read tool keeps its own output.

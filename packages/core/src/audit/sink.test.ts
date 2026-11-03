@@ -979,6 +979,159 @@ describe('an undo (ADR 0031)', () => {
   });
 });
 
+describe('a decision about an entry of the queue (ADR 0031)', () => {
+  const queueId = 'a1b2c3d4-0000-4000-8000-0000000000bb';
+  // The draft before it names the entry and what was decided.
+  const unnamed: AuditDraft = {
+    type: 'approval',
+    tenantId: 'demo-tenant',
+    actor: { kind: 'operator', id: 'stdio:local-stdio' },
+    mode: 'operator',
+    outcome: 'ok',
+    objectRefs: ['wiki_category:12'],
+    durationMs: 9,
+  };
+  const rejection: AuditDraft = {
+    ...unnamed,
+    queueId,
+    decision: 'rejected',
+  };
+  const rejectionLine = `{"v":1,"eventId":"${firstId}","ts":"2026-10-13T08:00:00.000Z","type":"approval","queueId":"${queueId}","decision":"rejected","tenantId":"demo-tenant","actor":{"kind":"operator","id":"stdio:local-stdio"},"mode":"operator","outcome":"ok","objectRefs":["wiki_category:12"],"durationMs":9}`;
+
+  it('is written without a tool, with the entry and the decision after its type', () => {
+    const { sink, file, lines, logs, toolChecks } = makeWithFile();
+    expect(sink.record(rejection)).toBe(true);
+    expect(file()).toEqual([rejectionLine]);
+    expect(lines[0]).toBe(
+      rejectionLine.replace(
+        '"objectRefs":["wiki_category:12"]',
+        '"objectRefs":[]',
+      ),
+    );
+    expect(
+      auditEventV1Schema.safeParse(JSON.parse(rejectionLine)).success,
+    ).toBe(true);
+    expect(logs()).toEqual([]);
+    expect(toolChecks).toEqual([]);
+  });
+
+  it('keeps an approval with the state and the way of its write', () => {
+    const { sink, audit, logs } = make();
+    sink.record({
+      ...rejection,
+      decision: 'approved',
+      confirmation: 'operator',
+      writeState: 'verified',
+    });
+    expect(event(audit())).toMatchObject({
+      type: 'approval',
+      decision: 'approved',
+      confirmation: 'operator',
+      writeState: 'verified',
+    });
+    expect(logs()).toEqual([]);
+  });
+
+  it('gives a decision without its entry the zero UUID and without its decision a rejection', () => {
+    const { sink, audit, logs } = make();
+    expect(sink.record(unnamed)).toBe(false);
+    expect(event(audit())).toMatchObject({
+      type: 'approval',
+      queueId: nilId,
+      decision: 'rejected',
+    });
+    expect(events(logs())).toEqual([
+      'audit_missing_queue_id',
+      'audit_missing_decision',
+    ]);
+  });
+
+  it.each([
+    ['of another form', 'entry-of-yesterday', 'approved-later'],
+    ['in capitals', queueId.toUpperCase(), 'Rejected'],
+    ['as a number', 42, 1],
+  ])(
+    'replaces an entry and a decision %s by the zero UUID and a rejection',
+    (_, badId, badDecision) => {
+      const { sink, audit, logs } = make();
+      sink.record({
+        ...rejection,
+        queueId: badId,
+        decision: badDecision,
+      } as unknown as AuditDraft);
+      const line = event(audit());
+      expect(line).toMatchObject({
+        type: 'approval',
+        queueId: nilId,
+        decision: 'rejected',
+      });
+      expect(auditEventV1Schema.safeParse(line).success).toBe(true);
+      expect(events(logs())).toEqual([
+        'audit_invalid_queue_id',
+        'audit_invalid_decision',
+      ]);
+      expect(audit()[0]).not.toContain('yesterday');
+    },
+  );
+
+  it('leaves the state and the way of a write out of a rejection and reports them', () => {
+    const { sink, file, logs } = makeWithFile();
+    sink.record({
+      ...rejection,
+      confirmation: 'operator',
+      writeState: 'verified',
+    });
+    expect(file()).toEqual([rejectionLine]);
+    expect(events(logs())).toEqual([
+      'audit_invalid_confirmation',
+      'audit_invalid_write_state',
+    ]);
+  });
+
+  it('leaves queueId and decision out of a tool call and reports them', () => {
+    const { sink, audit, logs } = make();
+    sink.record({ ...base, queueId, decision: 'approved' });
+    expect(audit()).toEqual([baseLine]);
+    expect(events(logs())).toEqual([
+      'audit_invalid_queue_id',
+      'audit_invalid_decision',
+    ]);
+  });
+
+  it('runs no getter on queueId or decision and counts them as invalid', () => {
+    const { sink, audit, logs } = make();
+    const draft = { ...rejection };
+    let reads = 0;
+    for (const key of ['queueId', 'decision']) {
+      Object.defineProperty(draft, key, {
+        enumerable: true,
+        get: () => {
+          reads += 1;
+          return key === 'queueId' ? queueId : 'rejected';
+        },
+      });
+    }
+    sink.record(draft);
+    expect(reads).toBe(0);
+    expect(event(audit())).toMatchObject({
+      queueId: nilId,
+      decision: 'rejected',
+    });
+    expect(events(logs())).toEqual([
+      'audit_invalid_queue_id',
+      'audit_invalid_decision',
+    ]);
+  });
+
+  it('leaves out a tool, without asking the registry', () => {
+    const { sink, file, logs, toolChecks } = makeWithFile();
+    sink.record({ ...rejection, tool: 'ct_group_search' });
+    expect(file()).toEqual([rejectionLine]);
+    expect(events(logs())).toEqual(['audit_invalid_tool']);
+    expect(toolChecks).toEqual([]);
+  });
+});
+
 describe('other optional fields', () => {
   it.each([
     ['runId', 'not-a-uuid', 'audit_invalid_run_id'],

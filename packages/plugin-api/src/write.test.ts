@@ -45,7 +45,7 @@ describe('the contract of a write', () => {
 });
 
 describe('the result of a write tool', () => {
-  it('takes a verified or skipped write with its target and version', () => {
+  it('takes a verified, skipped, planned or queued write with its target and fields', () => {
     for (const value of [
       {
         state: 'verified',
@@ -58,14 +58,24 @@ describe('the result of a write tool', () => {
         target: { kind: 'wiki_page', key: '12/x' },
         confirm: { token: 't.m', summary: 'Neue Seite', diff: ['+x'] },
       },
+      {
+        state: 'queued',
+        target: { kind: 'wiki_page', key: '12/x' },
+        queueId: '00000000-0000-4000-8000-000000000001',
+      },
     ]) {
       expect(writeResultSchema.safeParse(value).success).toBe(true);
     }
   });
 
-  it('refuses another state, an unknown target and a version below 0', () => {
+  it('refuses another state, an unknown target, a version below 0 and a queue ID that is no UUID', () => {
     for (const value of [
-      { state: 'queued', target: { kind: 'wiki_page', key: '12/x' } },
+      { state: 'rolledBack', target: { kind: 'wiki_page', key: '12/x' } },
+      {
+        state: 'queued',
+        target: { kind: 'wiki_page', key: '12/x' },
+        queueId: '00000000-0000-4000-8000-00000000000A',
+      },
       {
         state: 'planned',
         target: { kind: 'wiki_page', key: '12/x' },

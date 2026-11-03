@@ -361,9 +361,11 @@ export interface WriteResult {
   /**
    * `verified` when the core wrote and read the change back, `skipped`
    * when the target already held what the intent would write, `planned`
-   * when the write waits for its confirmation by echo, with `confirm`.
+   * when the write waits for its confirmation by echo, with `confirm`,
+   * and `queued` when it waits for the operator in the queue of
+   * approvals, with `queueId`.
    */
-  readonly state: 'verified' | 'skipped' | 'planned';
+  readonly state: 'verified' | 'skipped' | 'planned' | 'queued';
   /** What the write changed. */
   readonly target: {
     readonly kind: WriteTargetKind;
@@ -377,6 +379,12 @@ export interface WriteResult {
    * a snapshot of what it changed (ADR 0031).
    */
   readonly undoId?: string;
+  /**
+   * The ID of the entry in the queue of approvals, for a write that waits
+   * there (ADR 0031): the operator approves or rejects it with
+   * `ecclium queue`.
+   */
+  readonly queueId?: string;
   /**
    * For a write that waits for its confirmation by echo (ADR 0029): the
    * token and the summary to send back with `ct_write_confirm`, the diff
@@ -396,13 +404,19 @@ export interface WriteResult {
  * registry of the core uses its own copy, whatever a tool declares.
  */
 export const writeResultSchema: ZodType<WriteResult, WriteResult> = z.object({
-  state: classify(z.enum(['verified', 'skipped', 'planned']), 'none'),
+  state: classify(z.enum(['verified', 'skipped', 'planned', 'queued']), 'none'),
   target: z.object({
     kind: classify(z.enum(writeTargetKinds), 'none'),
     key: classify(z.string().min(1).max(200), 'none'),
   }),
   version: classify(z.int().min(0), 'none').optional(),
   undoId: classify(
+    z
+      .string()
+      .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
+    'none',
+  ).optional(),
+  queueId: classify(
     z
       .string()
       .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),

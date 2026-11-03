@@ -903,6 +903,174 @@ describe('the second stage with snapshots', () => {
   });
 });
 
+// The queue of approvals (ADR 0031): the start and the timer of the day
+// remove its entries past their retention of 14 days through its keeper,
+// which destroys the day keys queue of the same days; without the folder
+// of state the day keys alone go. Real folders with an entry and a day
+// key for each of a few days.
+describe('the second stage with the queue of approvals', () => {
+  const idOf = (index: number): string =>
+    `11111111-2222-4333-8444-${String(index).padStart(12, '0')}`;
+  const privateFolder = (path: string): string => {
+    mkdirSync(path, { mode: 0o700 });
+    chmodSync(path, 0o700);
+    return path;
+  };
+  const privateFile = (path: string, text: string): void => {
+    writeFileSync(path, text, { mode: 0o600 });
+    chmodSync(path, 0o600);
+  };
+  /** A folder of state and one of keys with an entry and a key per day. */
+  const foldersWith = (days: readonly string[], entries = true) => {
+    const stateDir = mkdtempSync(join(keyFolder, 'state-'));
+    chmodSync(stateDir, 0o700);
+    const keysDir = mkdtempSync(join(keyFolder, 'keys-'));
+    chmodSync(keysDir, 0o700);
+    const records = privateFolder(join(stateDir, 'queue'));
+    const keys = privateFolder(join(keysDir, 'queue'));
+    days.forEach((day, index) => {
+      if (entries) {
+        privateFile(
+          join(
+            privateFolder(join(records, day)),
+            `default.${idOf(index)}.entry`,
+          ),
+          'sealed',
+        );
+      }
+      privateFile(
+        join(keys, `default.${day}.key`),
+        createHash('sha256').update(day).digest('hex'),
+      );
+    });
+    return { stateDir, keysDir, records, keys };
+  };
+  const queueLines = (session: ReturnType<typeof setup>) =>
+    session
+      .lines()
+      .filter((line) => String(line['event']).startsWith('queue_'));
+  const settle = async (): Promise<void> => {
+    for (let turn = 0; turn < 10; turn += 1) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  };
+
+  it('removes the entries with their day keys before the 14 days at the start and once on each new UTC day, also while it only reads', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(Date.UTC(2026, 9, 23, 23, 59, 0));
+    const folders = foldersWith(['2026-10-08', '2026-10-09', '2026-10-23']);
+    const session = setup({
+      config: {
+        ...config,
+        stateDir: folders.stateDir,
+        keysDir: folders.keysDir,
+      },
+    });
+    expect(session.code).toBeUndefined();
+    await settle();
+    // The entry of 9 October stays through 23 October, its 14th day.
+    expect(readdirSync(folders.records)).toEqual(['2026-10-09', '2026-10-23']);
+    expect(readdirSync(folders.keys)).toEqual([
+      'default.2026-10-09.key',
+      'default.2026-10-23.key',
+    ]);
+    expect(queueLines(session)).toEqual([
+      {
+        ts: expect.any(String) as unknown,
+        level: 'info',
+        event: 'queue_entries_deleted',
+        count: 1,
+      },
+      {
+        ts: expect.any(String) as unknown,
+        level: 'info',
+        event: 'queue_day_keys_destroyed',
+        count: 1,
+      },
+    ]);
+    vi.advanceTimersByTime(61_000);
+    await settle();
+    expect(readdirSync(folders.records)).toEqual(['2026-10-23']);
+    expect(readdirSync(folders.keys)).toEqual(['default.2026-10-23.key']);
+    expect(queueLines(session)).toHaveLength(4);
+    expect(session.stderr()).not.toContain(folders.stateDir);
+    expect(session.stderr()).not.toContain(folders.keysDir);
+  });
+
+  it('destroys the day keys alone without the folder of state', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(Date.UTC(2026, 9, 23, 12, 0, 0));
+    const folders = foldersWith(['2026-10-01'], false);
+    const session = setup({ config: { ...config, keysDir: folders.keysDir } });
+    await settle();
+    expect(readdirSync(folders.keys)).toEqual([]);
+    expect(queueLines(session)).toEqual([
+      {
+        ts: expect.any(String) as unknown,
+        level: 'info',
+        event: 'queue_day_keys_destroyed',
+        count: 1,
+      },
+    ]);
+  });
+
+  it('warns without a path when the entries cannot be removed, destroys the day keys all the same and tries again within the hour', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(Date.UTC(2026, 9, 23, 12, 0, 0));
+    const folders = foldersWith(['2026-10-01']);
+    chmodSync(folders.records, 0o755);
+    const session = setup({
+      config: {
+        ...config,
+        stateDir: folders.stateDir,
+        keysDir: folders.keysDir,
+      },
+    });
+    await settle();
+    expect(queueLines(session)).toEqual([
+      {
+        ts: expect.any(String) as unknown,
+        level: 'info',
+        event: 'queue_day_keys_destroyed',
+        count: 1,
+      },
+      {
+        ts: expect.any(String) as unknown,
+        level: 'warn',
+        event: 'queue_not_purged',
+      },
+    ]);
+    expect(session.stderr()).not.toContain(folders.stateDir);
+    chmodSync(folders.records, 0o700);
+    vi.advanceTimersByTime(3_600_000);
+    await settle();
+    expect(readdirSync(folders.records)).toEqual([]);
+    expect(queueLines(session).at(-1)).toMatchObject({
+      level: 'info',
+      event: 'queue_entries_deleted',
+      count: 1,
+    });
+  });
+
+  it('warns and removes nothing when the clock gives no day', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    // 14 days before this time lie in the year 10000, which has no day of
+    // the short form of ISO 8601.
+    vi.setSystemTime(Date.UTC(10_000, 2, 1));
+    const folders = foldersWith(['2026-10-01'], false);
+    const session = setup({ config: { ...config, keysDir: folders.keysDir } });
+    await settle();
+    expect(queueLines(session)).toEqual([
+      {
+        ts: expect.any(String) as unknown,
+        level: 'warn',
+        event: 'queue_not_purged',
+      },
+    ]);
+    expect(readdirSync(folders.keys)).toEqual(['default.2026-10-01.key']);
+  });
+});
+
 describe('firstKeptSnapshotDay', () => {
   it('gives the day 30 days before the day of the time', () => {
     expect(snapshotRetentionDays).toBe(30);

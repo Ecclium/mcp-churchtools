@@ -4,15 +4,17 @@
  * @packageDocumentation
  */
 
+import type { QueueDecisionKind } from './approval-queue.js';
 import type { Actor, Mode } from './context.js';
 import type { ErrorCode } from './errors.js';
 
 /**
- * What an audit event records: a call of a tool, or the run of
- * `ecclium undo` that takes back a write of Ecclium from its snapshot
+ * What an audit event records: a call of a tool, the run of
+ * `ecclium undo` that takes back a write of Ecclium from its snapshot, or
+ * a decision of the operator about an entry of the queue of approvals
  * (ADR 0031). Grows with the phases that add actions.
  */
-export type AuditType = 'tool_call' | 'undo';
+export type AuditType = 'tool_call' | 'undo' | 'approval';
 
 /**
  * How an action ended: done, failed with an error code, or refused before it
@@ -111,6 +113,19 @@ export interface AuditEventV1 {
    * one, so that each undo names the write it reverts.
    */
   readonly undoes?: string;
+  /**
+   * The ID of the entry of the queue of approvals that the operator
+   * decided about, which is the `eventId` of the line of the call that
+   * queued it (ADR 0031). Always on a line of the type `approval` and
+   * never on another one.
+   */
+  readonly queueId?: string;
+  /**
+   * What the operator decided about the entry, on every line of the type
+   * `approval` and never on another one. A line with `rejected` wrote
+   * nothing and has neither `writeState` nor `confirmation`.
+   */
+  readonly decision?: QueueDecisionKind;
   /** The tenant. */
   readonly tenantId: string;
   /** Who acted. */
@@ -123,8 +138,8 @@ export interface AuditEventV1 {
   readonly routineId?: string;
   /**
    * Name of the tool, if the event concerns one. Never on a line of the
-   * type `undo`: an undo calls no tool, and the tool of the write it takes
-   * back may no longer be registered.
+   * type `undo` or `approval`: neither calls a tool, and the tool of the
+   * write may no longer be registered.
    */
   readonly tool?: string;
   /** How the action ended. */

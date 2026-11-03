@@ -580,6 +580,7 @@ const verifyReport = (
 
 const summary = (changes: Partial<AuditSummary> = {}): AuditSummary => ({
   echoConfirmed: 0,
+  queued: 3,
   files: 1_234,
   read: 1_230,
   unread: 4,
@@ -617,6 +618,28 @@ const summary = (changes: Partial<AuditSummary> = {}): AuditSummary => ({
       denied: 0,
       withheld: 0,
     },
+    {
+      day: '2026-10-30',
+      type: 'approval',
+      decision: 'approved',
+      tool: undefined,
+      calls: 2,
+      ok: 2,
+      error: 0,
+      denied: 0,
+      withheld: 0,
+    },
+    {
+      day: '2026-10-30',
+      type: 'approval',
+      decision: 'rejected',
+      tool: undefined,
+      calls: 1,
+      ok: 1,
+      error: 0,
+      denied: 0,
+      withheld: 0,
+    },
   ],
   hits: [
     {
@@ -630,6 +653,24 @@ const summary = (changes: Partial<AuditSummary> = {}): AuditSummary => ({
     {
       ts: '2026-10-30T09:00:00.000Z',
       type: 'undo',
+      tool: undefined,
+      actorId: 'stdio:local-stdio',
+      outcome: 'ok',
+      withheld: false,
+    },
+    {
+      ts: '2026-10-30T09:10:00.000Z',
+      type: 'approval',
+      decision: 'approved',
+      tool: undefined,
+      actorId: 'stdio:local-stdio',
+      outcome: 'ok',
+      withheld: false,
+    },
+    {
+      ts: '2026-10-30T09:20:00.000Z',
+      type: 'approval',
+      decision: 'rejected',
       tool: undefined,
       actorId: 'stdio:local-stdio',
       outcome: 'ok',

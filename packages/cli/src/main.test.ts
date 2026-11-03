@@ -271,6 +271,12 @@ describe('the command line', () => {
     [['undo', 'x', '--overwrite=1'], 'value'],
     [['undo', 'x', '--log', 'y'], 'option'],
     [['config', 'check', '--overwrite'], 'option'],
+    [['queue'], 'command'],
+    [['queue', 'list', 'x'], 'command'],
+    [['queue', 'show'], 'command'],
+    [['queue', 'reject', 'a', 'b'], 'command'],
+    [['queue', 'approve', 'x'], 'command'],
+    [['queue', 'reject', 'x', '--overwrite'], 'option'],
   ])('refuses %j as %s with a fixed text on stderr', (args, problem) => {
     const result = capture(args, validEnvironment());
     expect(result.code).toBe(exitCodes.usage);
@@ -289,6 +295,8 @@ describe('the command line', () => {
     [['audit', 'show', '--object', 'person:1', '--help']],
     [['undo', '--help']],
     [['undo', 'x', '-h']],
+    [['queue', '--help']],
+    [['queue', 'show', 'x', '-h']],
   ])('writes the help for %j to stdout', (args) => {
     const result = capture(args, {});
     expect(result.code).toBe(exitCodes.ok);
@@ -661,4 +669,50 @@ describe('ecclium undo in the command line', () => {
     expect(result.code).toBe(exitCodes.internal);
     expect(result.stderr).toBe(`${internalErrorText}\n`);
   });
+});
+
+describe('ecclium queue in the command line', () => {
+  // The command builds the pipeline, so run gives a promise for it; its
+  // own tests stand in queue/queue.test.ts.
+  const runQueue = async (
+    args: readonly string[],
+    options: RunOptions = {},
+  ) => {
+    const taken: number[] = [];
+    const writeSync: WriteSyncFn = (_fd, buffer, offset, length) => {
+      taken.push(...buffer.subarray(offset, offset + length));
+      return length;
+    };
+    const code = await run(args, {}, [], { ...options, writeSync });
+    return { code, stderr: decoder.decode(new Uint8Array(taken)) };
+  };
+
+  it.each(['show', 'reject'])(
+    'hands the ID of %s to the command, which checks it and never names it',
+    async (action) => {
+      const id = `not-an-id-${plain()}`;
+      const result = await runQueue(['queue', action, id]);
+      expect(result.code).toBe(exitCodes.usage);
+      expect(result.stderr).toContain('Die Kennung ist keine Kennung');
+      expect(result.stderr).not.toContain(id);
+    },
+  );
+
+  it.each([
+    [['queue', 'list']],
+    [['queue', 'show', '11111111-2222-4333-8444-555555555555']],
+  ])(
+    'turns a failure of the command %j into the internal error',
+    async (args) => {
+      const result = await runQueue(args, {
+        queue: {
+          load: () => {
+            throw new Error(plain());
+          },
+        },
+      });
+      expect(result.code).toBe(exitCodes.internal);
+      expect(result.stderr).toBe(`${internalErrorText}\n`);
+    },
+  );
 });

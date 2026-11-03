@@ -48,12 +48,14 @@ import {
   EccliumError,
   type ErrorCode,
   type FeatureKey,
+  type IsoDate,
   type KeyProvider,
   type Mode,
   type NonceStore,
   type PlannedWrite,
   type PlanOutcome,
   type PlanStore,
+  type QueueDecisionKind,
   type QuotaStore,
   type RedactionLevel,
   type TenantAssignment,
@@ -81,7 +83,12 @@ import {
 } from '../errors/index.js';
 import type { HttpTransport } from '../http/index.js';
 import { diffLines, type LineDiff } from '../diff/index.js';
-import { isUuid, type LineWriter, type LogLevel } from '../logger/index.js';
+import {
+  isUuid,
+  type LineWriter,
+  type LogLevel,
+  toTimestamp,
+} from '../logger/index.js';
 import {
   chooseBoundary,
   isStrictLevel,
@@ -94,19 +101,28 @@ import {
   echoToolName,
   type ToolCatalog,
 } from '../registry/index.js';
+import type { PolicyQueueReason } from '../policy/engine.js';
 import { policyHashOf } from '../policy/hash.js';
 import type { Policy } from '../policy/schema.js';
 import { isoDateOf, quotaTimeoutMs } from '../quota/budget.js';
+import type {
+  QueueEntryContent,
+  QueueKeeper,
+  QueueListing,
+  QueueReason,
+} from '../queue/index.js';
 import { openPseudonyms, type Pseudonyms } from '../redaction/pseudonym.js';
 import { type Redacted, sealRedacted } from '../redaction/redacted.js';
 import { createTenantContext } from '../tenant/context.js';
 import {
   type ConfirmationAnswer,
   type ConfirmationQuestion,
+  confirmationRouteOf,
   confirmationSentence,
+  confirmationSentences,
   type ConfirmationText,
-  confirmationWayOf,
   createConfirmations,
+  queueEntryOf,
   questionSentence,
   writeSentences,
   ContentRefusal,
@@ -243,6 +259,72 @@ export type UndoOutcome =
  */
 export type UndoReason = keyof typeof writeSentences | 'auditNotReady';
 
+/**
+ * What `ecclium queue list` finds (ADR 0031): every entry of the tenant,
+ * the oldest first, those that wait with what they hold. Their texts come
+ * from ChurchTools and the model; they go to the operator only.
+ */
+export type QueueListOutcome =
+  | { readonly kind: 'listed'; readonly entries: readonly QueueListing[] }
+  /** The server keeps no queue. */
+  | { readonly kind: 'off' }
+  /** Refused or failed, with the code. */
+  | { readonly kind: 'failed'; readonly code: ErrorCode };
+
+/**
+ * What `ecclium queue show` finds for one ID (ADR 0031). Its texts go to
+ * the operator only.
+ */
+export type QueueShowOutcome =
+  | {
+      readonly kind: 'found';
+      readonly day: IsoDate;
+      readonly content: QueueEntryContent;
+    }
+  /** No entry: none under this ID, past its retention, or no queue. */
+  | { readonly kind: 'missing' | 'expired' | 'off' }
+  /** The operator decided about this entry already, and when. */
+  | {
+      readonly kind: 'decided';
+      readonly decision: QueueDecisionKind;
+      readonly decidedAt: string;
+    }
+  /** Refused or failed, with the code. */
+  | { readonly kind: 'failed'; readonly code: ErrorCode };
+
+/** What `ecclium queue` asks the pipeline to decide (ADR 0031). */
+export interface QueueCall {
+  /** The ID of the entry, a UUID. */
+  readonly queueId: unknown;
+}
+
+/**
+ * How a rejection of the operator ended, for the command line (ADR 0031).
+ * A summary holds text of ChurchTools; it goes to the operator only, never
+ * into a log or the audit.
+ */
+export type RejectOutcome =
+  /** Rejected: the entry is destroyed, its decision kept. */
+  | {
+      readonly kind: 'rejected';
+      readonly summary: string;
+      readonly target: WriteTarget;
+      readonly unrecorded?: true;
+    }
+  /**
+   * No entry: none under this ID, past its retention, or the server keeps
+   * no queue.
+   */
+  | { readonly kind: 'missing' | 'expired' | 'off' }
+  /** The operator decided about this entry already. */
+  | { readonly kind: 'decided'; readonly decision: QueueDecisionKind }
+  /** Refused or failed, with the code and, for the audit file, why. */
+  | {
+      readonly kind: 'failed';
+      readonly code: ErrorCode;
+      readonly reason?: 'auditNotReady';
+    };
+
 /** The pipeline of one ChurchTools instance. */
 export interface ToolPipeline {
   /**
@@ -268,6 +350,36 @@ export interface ToolPipeline {
    * @returns How the undo ended. It never rejects.
    */
   undo(undo: UndoCall, request: ToolRequest): Promise<UndoOutcome>;
+  /**
+   * Rejects an entry of the queue of approvals, for the operator only: a
+   * request in another mode is refused (ADR 0031). It keeps the decision,
+   * destroys the entry and writes one audit line of the type `approval`
+   * that names the entry. It writes nothing to ChurchTools.
+   *
+   * @param call - The ID of the entry.
+   * @param request - Tenant, actor and mode of the operator.
+   * @returns How the rejection ended. It never rejects.
+   */
+  reject(call: QueueCall, request: ToolRequest): Promise<RejectOutcome>;
+  /**
+   * Lists the entries of the queue of approvals of the tenant, for the
+   * operator only (ADR 0031). Reading writes no audit line: it changes
+   * nothing, and what it shows was queued by a call with a line of its own.
+   *
+   * @param request - Tenant, actor and mode of the operator.
+   * @returns The entries, or why there are none. It never rejects.
+   */
+  listQueue(request: ToolRequest): Promise<QueueListOutcome>;
+  /**
+   * Opens one entry of the queue of approvals, for the operator only
+   * (ADR 0031), without an audit line, like {@link ToolPipeline.listQueue}.
+   *
+   * @param call - The ID of the entry.
+   * @param request - Tenant, actor and mode of the operator.
+   * @returns What the entry holds, or why there is nothing. It never
+   *   rejects.
+   */
+  showQueue(call: QueueCall, request: ToolRequest): Promise<QueueShowOutcome>;
 }
 
 /** What the composition root builds the pipeline from. */
@@ -337,6 +449,12 @@ export interface ToolPipelineOptions {
    */
   readonly plans?: PlanStore;
   readonly nonces?: NonceStore;
+  /**
+   * The queue of approvals (ADR 0031), built by the composition root.
+   * Without it, a write that would go there ends with
+   * `confirmation_required`, and `ecclium queue` finds nothing.
+   */
+  readonly queue?: QueueKeeper;
 }
 
 // The longest duration the audit accepts.
@@ -511,6 +629,8 @@ interface WriteAccess {
   readonly target: () => WriteTarget | undefined;
   /** What a person sees to confirm that plan. */
   readonly text: () => ConfirmationText | undefined;
+  /** Why the policy sends that plan to the queue, if it does. */
+  readonly queue: () => PolicyQueueReason | undefined;
   /** The refusal of the plan, if the guard refused it. */
   readonly refusal: () => EccliumError | undefined;
   /** Why the content policy refused a text, if it did. */
@@ -581,6 +701,23 @@ const plannedResult = (
       ...(text.title === undefined ? {} : { title: text.title }),
     }),
   });
+
+// The result of a write that waits in the queue of approvals: its entry is
+// named by the ID of the audit line of the call (ADR 0031).
+const queuedResult = (
+  target: WriteTarget,
+  queueId: string,
+): Readonly<Record<string, unknown>> =>
+  Object.freeze({
+    state: 'queued',
+    target: Object.freeze({ kind: target.kind, key: target.key }),
+    queueId,
+  });
+
+// The most entries of the queue that wait for the operator per tenant; a
+// write beyond them is refused, so that the queue cannot fill the disk
+// (ADR 0031).
+const maxWaiting = 100;
 
 // The IDs of a target for the audit: a category, and a page by its GUID.
 const addTarget = (refs: ObjectRefCollector, target: WriteTarget): void => {
@@ -1029,6 +1166,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     let outcome: PlanOutcome | undefined;
     let target: WriteTarget | undefined;
     let text: ConfirmationText | undefined;
+    let queue: PolicyQueueReason | undefined;
     let refusal: EccliumError | undefined;
     let contentViolations: readonly ContentViolationKind[] | undefined;
     const port: WritePort = Object.freeze({
@@ -1053,6 +1191,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
           outcome = result.outcome;
           target = result.target;
           text = result.text;
+          queue = result.queue;
           return result.outcome;
         } catch (error) {
           // The guard rejects only with an EccliumError or a refusal of
@@ -1076,6 +1215,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       outcome: () => outcome,
       target: () => target,
       text: () => text,
+      queue: () => queue,
       refusal: () => refusal,
       contentViolations: () => contentViolations,
     });
@@ -1135,10 +1275,10 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       };
 
   // Confirms the plan the tool returned, in the order of ADR 0029: a
-  // question to the client, then the echo, then the queue. The tool must
-  // return exactly the outcome its plan gave; anything else is a fault of
-  // the tool. The echo and the queue are not built yet, so a plan that
-  // needs them ends with confirmation_required.
+  // question to the client, then the echo, then the queue. A plan the
+  // policy sends to the queue goes there, whatever the client can. The
+  // tool must return exactly the outcome its plan gave; anything else is a
+  // fault of the tool.
   const completeWrite = async (
     run: Run,
     ctx: TenantContext,
@@ -1168,11 +1308,18 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     // see what to confirm.
     const text = writing.text();
     if (text === undefined) return { ok: false, failure: failed('internal') };
-    const way = confirmationWayOf(
-      { setting, elicitation: call.elicitation, fits: text.fits },
-      outcome.plan,
-    );
-    if (way === 'echo' && confirmations !== undefined) {
+    const policyReason = writing.queue();
+    const route =
+      policyReason === undefined
+        ? confirmationRouteOf(
+            { setting, elicitation: call.elicitation, fits: text.fits },
+            outcome.plan,
+          )
+        : ({ way: 'queue', reason: policyReason } as const);
+    if (route.way === 'queue') {
+      return enqueue(run, ctx, outcome.plan, text, route.reason, target);
+    }
+    if (route.way === 'echo' && confirmations !== undefined) {
       // The model reads the summary masked at the level of the call and
       // sends it back so; the token names the summary as it reads it.
       const shown = Object.freeze({
@@ -1186,7 +1333,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       run.write = Object.freeze({ writeState: 'planned', sent: false });
       return { ok: true, result: plannedResult(target, echo.token, shown) };
     }
-    if (way !== 'question' || confirmations === undefined) {
+    if (route.way !== 'question' || confirmations === undefined) {
       return {
         ok: false,
         failure: writeFailure(
@@ -1202,6 +1349,75 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     }
     run.write = Object.freeze({ writeState: 'planned', sent: false });
     return { ok: 'input', question: asked.question };
+  };
+
+  // Keeps a plan as a sealed entry of the queue of approvals, under the ID
+  // of the audit line of the call, so that the line of the request and the
+  // line of the decision name the same entry (ADR 0031). A tenant with as
+  // many waiting entries as it may have gets no further one.
+  const enqueue = async (
+    run: Run,
+    ctx: TenantContext,
+    plan: PlannedWrite,
+    text: ConfirmationText,
+    reason: QueueReason,
+    target: WriteTarget,
+  ): Promise<WriteEnd> => {
+    const queue = options.queue;
+    if (queue === undefined) {
+      return {
+        ok: false,
+        failure: writeFailure(
+          run,
+          new EccliumError('confirmation_required', confirmationSentence),
+          false,
+        ),
+      };
+    }
+    // An internal error reaches the model with its fixed sentence; the log
+    // line tells the operator.
+    const failedToQueue = (): WriteEnd => {
+      ctx.log.warn('write_queue_failed', { code: 'internal' });
+      return {
+        ok: false,
+        failure: writeFailure(run, new EccliumError('internal'), false),
+      };
+    };
+    const queuedAt = now();
+    const day = isoDateOf(queuedAt);
+    // The pipeline draws an ID for every call before its first stage.
+    const id = run.eventId as string;
+    if (day === undefined) return failedToQueue();
+    let waiting: number | undefined;
+    try {
+      waiting = await queue.waiting(ctx);
+    } catch {
+      waiting = undefined;
+    }
+    if (waiting === undefined) return failedToQueue();
+    if (waiting >= maxWaiting) {
+      ctx.log.warn('write_queue_full', { code: 'policy_denied' });
+      return {
+        ok: false,
+        failure: writeFailure(
+          run,
+          new EccliumError('policy_denied', confirmationSentences.queueFull),
+          false,
+        ),
+      };
+    }
+    try {
+      await queue.enqueue(ctx, {
+        id,
+        day,
+        content: queueEntryOf(plan, text, reason, queuedAt),
+      });
+    } catch {
+      return failedToQueue();
+    }
+    ctx.log.info('write_queued');
+    run.write = Object.freeze({ writeState: 'queued', sent: false });
+    return { ok: true, result: queuedResult(target, id) };
   };
 
   // The second round of a question: the answer decides, the plan of the
@@ -1793,8 +2009,301 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       : end.outcome;
   };
 
-  return Object.freeze({ __proto__: null, call, undo });
+  // The context of a call of the operator on the queue: only the command
+  // line of the operator reaches the queue, never a client of the model,
+  // whatever mode its mount passes (ADR 0024, ADR 0031).
+  const operatorContext = (
+    request: ToolRequest,
+    assignment: TenantAssignment | undefined,
+    eventId: string,
+  ): TenantContext | ErrorCode => {
+    if (request.mode !== 'operator') return 'policy_denied';
+    if (isAborted(request.signal)) return 'network';
+    if (assignment === undefined) return 'auth';
+    return createTenantContext({
+      assignment,
+      instance: origin,
+      mode: request.mode,
+      redaction: request.redaction,
+      readOnly: request.readOnly,
+      features: [...request.features],
+      clock,
+      signal: request.signal,
+      logging,
+      eventId,
+    });
+  };
+
+  const listQueue = async (request: ToolRequest): Promise<QueueListOutcome> => {
+    try {
+      const ctx = operatorContext(
+        request,
+        copyAssignment(request.assignment),
+        randomUUID(),
+      );
+      if (typeof ctx === 'string')
+        return Object.freeze({ kind: 'failed', code: ctx });
+      const queue = options.queue;
+      if (queue === undefined) return Object.freeze({ kind: 'off' });
+      return Object.freeze({
+        kind: 'listed',
+        entries: await queue.list(ctx),
+      });
+    } catch {
+      return Object.freeze({ kind: 'failed', code: 'internal' });
+    }
+  };
+
+  const showQueue = async (
+    call: QueueCall,
+    request: ToolRequest,
+  ): Promise<QueueShowOutcome> => {
+    try {
+      // The ID is checked before anything else reads it.
+      if (typeof call.queueId !== 'string' || !isUuid(call.queueId)) {
+        return Object.freeze({ kind: 'failed', code: 'validation' });
+      }
+      const ctx = operatorContext(
+        request,
+        copyAssignment(request.assignment),
+        randomUUID(),
+      );
+      if (typeof ctx === 'string')
+        return Object.freeze({ kind: 'failed', code: ctx });
+      const queue = options.queue;
+      if (queue === undefined) return Object.freeze({ kind: 'off' });
+      const loaded = await queue.load(ctx, call.queueId);
+      switch (loaded.kind) {
+        case 'missing':
+          return Object.freeze({ kind: 'missing' });
+        case 'expired':
+          return Object.freeze({ kind: 'expired' });
+        case 'decided':
+          return Object.freeze({
+            kind: 'decided',
+            decision: loaded.decision.decision,
+            decidedAt: loaded.decision.decidedAt,
+          });
+        case 'found':
+          return Object.freeze({
+            kind: 'found',
+            day: loaded.day,
+            content: loaded.content,
+          });
+      }
+    } catch {
+      return Object.freeze({ kind: 'failed', code: 'internal' });
+    }
+  };
+
+  // One rejection of the operator (ADR 0031): from the ID of an entry of
+  // the queue to its decision, which destroys the entry, and an audit line
+  // of its own of the type approval that names the entry and its target.
+  // Nothing goes to ChurchTools. What the entry holds leaves only as its
+  // summary for the operator.
+  const rejectStages = async (
+    queueId: string,
+    request: ToolRequest,
+    assignment: TenantAssignment | undefined,
+    eventId: string,
+    refs: ObjectRefCollector,
+  ): Promise<DecisionEnd> => {
+    const ctx = operatorContext(request, assignment, eventId);
+    if (typeof ctx === 'string') return decisionFailed(ctx);
+    const ended = (end: DecisionEnd): DecisionEnd => ({ ...end, ctx });
+    // A decision is recorded like a write: not while the audit file cannot
+    // take its line (ADR 0028).
+    if (!auditReady()) {
+      return ended(decisionFailed('policy_denied', 'auditNotReady'));
+    }
+    const queue = options.queue;
+    if (queue === undefined) {
+      return ended(decisionEnd({ kind: 'off' }, 'denied', 'policy_denied'));
+    }
+    let loaded: Awaited<ReturnType<QueueKeeper['load']>>;
+    try {
+      loaded = await queue.load(ctx, queueId);
+    } catch {
+      return ended(decisionFailed('internal'));
+    }
+    switch (loaded.kind) {
+      case 'missing':
+      case 'expired':
+        return ended(decisionEnd({ kind: loaded.kind }, 'error', 'not_found'));
+      case 'decided':
+        return ended(
+          decisionEnd(
+            { kind: 'decided', decision: loaded.decision.decision },
+            'error',
+            'conflict',
+          ),
+        );
+      case 'found':
+        break;
+    }
+    const { content, day } = loaded;
+    const { target } = content;
+    addTarget(refs, target);
+    const decidedAt = toTimestamp(now());
+    if (decidedAt === undefined) {
+      ctx.log.warn('write_queue_failed', { code: 'internal' });
+      return ended(decisionFailed('internal'));
+    }
+    try {
+      await queue.decide(ctx, {
+        id: queueId,
+        day,
+        decision: 'rejected',
+        decidedAt,
+      });
+    } catch {
+      // The store refused or failed: another process may have decided in
+      // between, or this decision was kept and only the destruction of the
+      // entry failed. What the queue holds now tells which (ADR 0031).
+      const now = await queue.load(ctx, queueId).catch(() => undefined);
+      if (now?.kind !== 'decided') {
+        ctx.log.warn('write_queue_failed', { code: 'internal' });
+        return ended(decisionFailed('internal'));
+      }
+      const mine =
+        now.decision.decision === 'rejected' &&
+        now.decision.decidedAt === decidedAt;
+      if (!mine) {
+        return ended(
+          decisionEnd(
+            { kind: 'decided', decision: now.decision.decision },
+            'error',
+            'conflict',
+          ),
+        );
+      }
+    }
+    return ended(
+      decisionEnd(
+        {
+          kind: 'rejected',
+          summary: content.summary,
+          target: Object.freeze({ kind: target.kind, key: target.key }),
+        },
+        'ok',
+      ),
+    );
+  };
+
+  const reject = async (
+    call: QueueCall,
+    request: ToolRequest,
+  ): Promise<RejectOutcome> => {
+    const eventId = randomUUID();
+    const start = now();
+    const refs = createObjectRefCollector();
+    let assignment: TenantAssignment | undefined;
+    let mode: Mode | undefined;
+    // The ID of the entry is named only in the form of an ID, checked
+    // before anything else reads it.
+    const queueId =
+      typeof call.queueId === 'string' && isUuid(call.queueId)
+        ? call.queueId
+        : undefined;
+    let end: DecisionEnd = decisionFailed('internal');
+    let recorded = false;
+    try {
+      assignment = copyAssignment(request.assignment);
+      mode = request.mode;
+      end =
+        queueId === undefined
+          ? decisionFailed('validation')
+          : await rejectStages(queueId, request, assignment, eventId, refs);
+    } catch {
+      end = decisionFailed('internal');
+    } finally {
+      const durationMs = durationSince(start);
+      try {
+        recorded =
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-boolean-literal-compare -- only true counts, also from a sink without types
+          audit.record(
+            {
+              type: 'approval',
+              tenantId: assignment?.tenantId ?? auditPlaceholders.tenantId,
+              actor: assignment?.actor ?? auditPlaceholders.actor,
+              mode: mode as Mode,
+              outcome: end.audit,
+              queueId: queueId ?? auditPlaceholders.queueId,
+              decision: 'rejected',
+              ...(end.errorCode === undefined
+                ? {}
+                : { errorCode: end.errorCode }),
+              // At most a category and a page, never over the limit.
+              objectRefs: refs.list().refs,
+              durationMs,
+            },
+            eventId,
+            { required: false },
+          ) === true;
+      } catch {
+        // A line that does not reach the file is said below.
+      }
+      try {
+        end.ctx?.log.info('queue_reject_call', {
+          durationMs,
+          ...(end.errorCode === undefined ? {} : { code: end.errorCode }),
+        });
+      } catch {
+        // The log never decides the outcome.
+      }
+    }
+    // A rejection whose line is not in the audit file says so, for the
+    // operator to check the audit (ADR 0028).
+    return end.outcome.kind === 'rejected' && !recorded
+      ? Object.freeze({ ...end.outcome, unrecorded: true })
+      : end.outcome;
+  };
+
+  return Object.freeze({
+    __proto__: null,
+    call,
+    undo,
+    reject,
+    listQueue,
+    showQueue,
+  });
 }
+
+/** How a decision of the operator ended, with what its audit line needs. */
+interface DecisionEnd {
+  readonly outcome: RejectOutcome;
+  readonly audit: AuditOutcome;
+  readonly errorCode?: ErrorCode;
+  /** The context of the decision, once there is one, for its log lines. */
+  readonly ctx?: TenantContext;
+}
+
+// A decision that ended, frozen.
+const decisionEnd = (
+  outcome: RejectOutcome,
+  audit: AuditOutcome,
+  errorCode?: ErrorCode,
+): DecisionEnd =>
+  Object.freeze({
+    outcome: Object.freeze(outcome),
+    audit,
+    ...(errorCode === undefined ? {} : { errorCode }),
+  });
+
+// A decision refused or failed before the entry was decided.
+const decisionFailed = (
+  code: ErrorCode,
+  reason?: 'auditNotReady',
+): DecisionEnd =>
+  decisionEnd(
+    {
+      kind: 'failed',
+      code,
+      ...(reason === undefined ? {} : { reason }),
+    },
+    code === 'policy_denied' ? 'denied' : 'error',
+    code,
+  );
 
 /** How an undo ended, with what its audit line needs. */
 interface UndoEnd {

@@ -171,6 +171,8 @@ const accessor: unique symbol = Symbol('accessor');
 const producerKeys: readonly string[] = Object.freeze([
   'type',
   'undoes',
+  'queueId',
+  'decision',
   'tenantId',
   'actor',
   'mode',
@@ -399,6 +401,39 @@ function fill(
     report('audit_invalid_undoes');
   }
 
+  // A decision about an entry of the queue always names the entry and
+  // what was decided, and only such a line does (ADR 0031). Without a
+  // valid ID the line names no entry with the zero UUID; without a valid
+  // decision it says rejected, which claims no write.
+  const approval = line['type'] === 'approval';
+  const queueId = own(draft, 'queueId');
+  const decision = own(draft, 'decision');
+  if (approval) {
+    if (queueId === undefined) {
+      report('audit_missing_queue_id');
+      line['queueId'] = placeholders.queueId;
+    } else if (fits(fields.queueId, queueId)) {
+      line['queueId'] = queueId as string;
+    } else {
+      report('audit_invalid_queue_id');
+      line['queueId'] = placeholders.queueId;
+    }
+    if (decision === undefined) {
+      report('audit_missing_decision');
+      line['decision'] = placeholders.decision;
+    } else if (fits(fields.decision, decision)) {
+      line['decision'] = decision as string;
+    } else {
+      report('audit_invalid_decision');
+      line['decision'] = placeholders.decision;
+    }
+  } else {
+    if (queueId !== undefined) report('audit_invalid_queue_id');
+    if (decision !== undefined) report('audit_invalid_decision');
+  }
+  // A rejection wrote nothing (ADR 0031).
+  const rejected = approval && line['decision'] === 'rejected';
+
   const tenantValid = scalar(
     'tenantId',
     fields.tenantId,
@@ -431,11 +466,11 @@ function fill(
 
   const tool = own(draft, 'tool');
   if (tool !== undefined) {
-    // An undo calls no tool (ADR 0031): a tool on its line is left out,
-    // without a placeholder and without asking the registry. ct_unknown is
-    // what the pipeline writes for a tool that does not exist; it is valid
-    // and not asked about.
-    if (undo) {
+    // An undo and a decision call no tool (ADR 0031): a tool on their line
+    // is left out, without a placeholder and without asking the registry.
+    // ct_unknown is what the pipeline writes for a tool that does not
+    // exist; it is valid and not asked about.
+    if (undo || approval) {
       report('audit_invalid_tool');
     } else if (
       tool === placeholders.tool ||
@@ -454,13 +489,18 @@ function fill(
     'audit_invalid_outcome',
     placeholders.outcome,
   );
-  scalar('confirmation', fields.confirmation, 'audit_invalid_confirmation');
+  if (rejected && own(draft, 'confirmation') !== undefined) {
+    report('audit_invalid_confirmation');
+  } else {
+    scalar('confirmation', fields.confirmation, 'audit_invalid_confirmation');
+  }
 
-  // The state of a write goes only with its outcome (ADR 0029); one that
-  // does not fit is left out and reported.
+  // The state of a write goes only with its outcome (ADR 0029), and never
+  // with a rejection; one that does not fit is left out and reported.
   const writeState = own(draft, 'writeState');
   if (writeState !== undefined) {
     if (
+      !rejected &&
       fits(fields.writeState, writeState) &&
       writeStateOutcomes[writeState as WriteState] === line['outcome']
     ) {

@@ -8,7 +8,9 @@
  * with the audit file, the store of the counters and the folder of the
  * kill switches in the folder of state (ADR 0028, ADR 0029, ADR 0063),
  * the policy (ADR 0032), and how writes are confirmed, with the stores of
- * plans and nonces of the questions before a write (ADR 0029). The start over stdio reaches this module, so
+ * plans and nonces of the questions before a write (ADR 0029) and the
+ * queue of approvals over the day keys and the folder of state (ADR 0031).
+ * The start over stdio reaches this module, so
  * it writes nothing to stdout and loads no module that does (ADR 0053).
  *
  * @packageDocumentation
@@ -25,14 +27,17 @@ import {
   type AuditFileWriter,
   createAuditSink,
   createDefaultTenantLogger,
+  createFileApprovalQueue,
   createFileDayKeys,
   createFileKeyProvider,
   createFileQuotaStore,
   createFileSnapshotStore,
   createMemoryNonceStore,
   createMemoryPlanStore,
+  createQueueKeeper,
   createSnapshotKeeper,
   type DayKeys,
+  type QueueKeeper,
   type SnapshotKeeper,
   type StderrLineWriter,
 } from '@ecclium/mcp-churchtools-core/composition';
@@ -90,6 +95,14 @@ export interface ComposedPipeline {
    * them only when its writes keep snapshots, see `keepsSnapshots`.
    */
   readonly snapshots: SnapshotKeeper | undefined;
+  /**
+   * The queue of approvals over the folder of keys and the folder of
+   * state, or undefined without one of them (ADR 0031). The pipeline gets
+   * it whenever it exists: a server that only reads queues nothing, but
+   * `ecclium queue` can still decide about entries of an earlier run, and
+   * the start removes those past their retention.
+   */
+  readonly queue: QueueKeeper | undefined;
 }
 
 /**
@@ -170,6 +183,22 @@ export function composeToolPipeline(options: ComposeOptions): ComposedPipeline {
           })
         : undefined;
     const writeSnapshots = keepsSnapshots(config) ? snapshots : undefined;
+    // The queue of approvals: its entries in the folder queue of the
+    // folder of state, their keys wrapped by the day keys queue of the same
+    // provider (ADR 0031). Over both folders, like the snapshots.
+    const queue =
+      dayKeys !== undefined &&
+      keys !== undefined &&
+      config.stateDir !== undefined
+        ? createQueueKeeper({
+            keys,
+            store: createFileApprovalQueue({
+              stateDir: config.stateDir,
+              pid: process.pid,
+            }),
+            clock,
+          })
+        : undefined;
     const pipeline = createToolPipeline({
       catalog,
       audit: createAuditSink({
@@ -216,8 +245,9 @@ export function composeToolPipeline(options: ComposeOptions): ComposedPipeline {
             plans: createMemoryPlanStore(clock),
             nonces: createMemoryNonceStore(clock),
           }),
+      ...(queue === undefined ? {} : { queue }),
     });
-    return Object.freeze({ pipeline, transport, dayKeys, snapshots });
+    return Object.freeze({ pipeline, transport, dayKeys, snapshots, queue });
   } catch (error) {
     // The caller never got the transport, so it closes here.
     void transport.close().catch(() => undefined);

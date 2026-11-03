@@ -178,6 +178,7 @@ const auditSinkEvents = Object.freeze([
   'audit_invalid_confirmation',
   'audit_invalid_content_violations',
   'audit_invalid_data_protection_regime',
+  'audit_invalid_decision',
   'audit_invalid_duration_ms',
   'audit_invalid_error_code',
   'audit_invalid_event_id',
@@ -193,6 +194,7 @@ const auditSinkEvents = Object.freeze([
   'audit_invalid_provider_model',
   'audit_invalid_provider_transfer_basis',
   'audit_invalid_provider_vendor',
+  'audit_invalid_queue_id',
   'audit_invalid_routine_id',
   'audit_invalid_run_id',
   'audit_invalid_tenant_id',
@@ -201,7 +203,9 @@ const auditSinkEvents = Object.freeze([
   'audit_invalid_type',
   'audit_invalid_undoes',
   'audit_invalid_write_state',
+  'audit_missing_decision',
   'audit_missing_error_code',
+  'audit_missing_queue_id',
   'audit_missing_undoes',
   'audit_reserved_event_id',
   'audit_reserved_prev_hash',
@@ -249,6 +253,12 @@ export const logEvents = Object.freeze({
   write_echo_refused: entry('warn', 'code'),
   // An undo of the operator, at its end (ADR 0031).
   undo_call: entry('info', 'code', 'durationMs'),
+  // The queue of approvals (ADR 0031): a write queued, a queue that is
+  // full or failed, and a rejection of the operator at its end.
+  write_queued: entry('info'),
+  write_queue_full: entry('warn', 'code'),
+  write_queue_failed: entry('warn', 'code'),
+  queue_reject_call: entry('info', 'code', 'durationMs'),
   // The policy in the write guard (ADR 0032).
   policy_not_interactive: entry('warn'),
   policy_queue_only: entry('warn'),
@@ -327,6 +337,11 @@ export const logEvents = Object.freeze({
   // one of records (ADR 0031).
   snapshots_deleted: entry('info', 'count'),
   snapshots_not_deleted: entry('warn'),
+  // The entries of the queue of approvals past their retention of 14 days
+  // and their day keys queue, in the same way (ADR 0031).
+  queue_entries_deleted: entry('info', 'count'),
+  queue_day_keys_destroyed: entry('info', 'count'),
+  queue_not_purged: entry('warn'),
   // The process of `ecclium stdio` (ADR 0053).
   stdio_start_failed: entry('error', 'code'),
   stdio_closed: entry('info', 'count'),

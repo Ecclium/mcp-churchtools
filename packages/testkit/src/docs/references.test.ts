@@ -299,7 +299,11 @@ describe('the catalog of the audit events', () => {
       properties: { type: { enum: string[] } };
     };
     expect(Object.keys(auditTypeMeanings)).toEqual(schema.properties.type.enum);
-    expect(schema.properties.type.enum).toEqual(['tool_call', 'undo']);
+    expect(schema.properties.type.enum).toEqual([
+      'tool_call',
+      'undo',
+      'approval',
+    ]);
     expect(Object.keys(objectDomainLabels).sort()).toEqual(
       [...objectDomains].sort(),
     );

@@ -209,6 +209,14 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Die Person hat eine Rückfrage abgelehnt, abgebrochen oder nicht mit «Ja» angenommen. Ecclium schreibt nichts, der Aufruf endet mit `confirmation_required`.',
     undo_call:
       'Eine Rücknahme mit `ecclium undo` ist zu Ende, mit oder ohne Fehler. `code` nennt den Fehler, `durationMs` die Dauer. Zu jeder Rücknahme gehört eine Zeile vom Typ `undo` im Audit. Text der Seite steht nie darin.',
+    write_queued:
+      'Ein Schreibvorgang wartet als verschlüsselter Eintrag in der Freigabe-Warteschlange auf den Betreiber, unter der Kennung der Zeile seines Aufrufs im Audit. Geschrieben ist nichts.',
+    write_queue_full:
+      'Für diesen Mandanten warten schon 100 Einträge in der Freigabe-Warteschlange. Der Schreibvorgang wird weder geschrieben noch eingereiht, `code` ist `policy_denied`.',
+    write_queue_failed:
+      'Ecclium konnte einen Eintrag der Freigabe-Warteschlange nicht festhalten, zählen oder entscheiden. Geschrieben ist nichts, `code` ist `internal`.',
+    queue_reject_call:
+      'Eine Abweisung mit `ecclium queue reject` ist zu Ende, mit oder ohne Fehler. `code` nennt den Fehler, `durationMs` die Dauer. Zu jeder gehört eine Zeile vom Typ `approval` im Audit. Inhalt des Eintrags steht nie darin.',
     write_committed:
       'Ein Schreibvorgang ist geschrieben und gelesen: die Version stieg wie geplant, und der Text ist der gesendete.',
     snapshot_failed:
@@ -218,15 +226,15 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
     policy_not_interactive:
       'Ein Schreibvorgang kam ausserhalb des interaktiven Modus. Bis der Runner den unbeaufsichtigten Teil der Richtlinie nutzt, schreibt Ecclium dort nichts. Der Aufruf endet mit `policy_denied`.',
     policy_queue_only:
-      'Die Richtlinie schickt diese Art von Schreibvorgang immer in die Warteschlange der Freigaben, etwa einen in eine Gruppe oder einen Dienst. Bis es die Warteschlange gibt, endet der Aufruf mit `policy_denied`.',
+      'Die Richtlinie schickt diese Art von Schreibvorgang immer in die Warteschlange der Freigaben, etwa einen in eine Gruppe oder einen Dienst. Beim Planen kommt der Schreibvorgang in die Freigabe-Warteschlange, ohne Warteschlange endet er mit `confirmation_required`. Bei der Prüfung unmittelbar vor dem Senden endet er mit `policy_denied`. In keinem Fall schreibt Ecclium.',
     policy_no_entry:
-      'Die Richtlinie hat Einträge, aber keiner deckt dieses Tool und dieses Ziel. Der Aufruf endet mit `policy_denied`, ohne zu schreiben.',
+      'Die Richtlinie hat Einträge, aber keiner deckt dieses Tool und dieses Ziel. Beim Planen kommt der Schreibvorgang in die Freigabe-Warteschlange, ohne Warteschlange endet er mit `confirmation_required`. Bei der Prüfung unmittelbar vor dem Senden endet er mit `policy_denied`. In keinem Fall schreibt Ecclium.',
     policy_name_changed:
-      'Das Ziel in ChurchTools trägt nicht mehr den Namen, den die Richtlinie erwartet, oder sein Name ist nicht zu lesen. Der Aufruf endet mit `policy_denied`, ohne zu schreiben und ohne zu zählen.',
+      'Das Ziel in ChurchTools trägt nicht mehr den Namen, den die Richtlinie erwartet, oder sein Name ist nicht zu lesen. Gezählt wird nichts. Beim Planen kommt der Schreibvorgang in die Freigabe-Warteschlange, ohne Warteschlange endet er mit `confirmation_required`. Bei der Prüfung unmittelbar vor dem Senden endet er mit `policy_denied`. In keinem Fall schreibt Ecclium.',
     policy_limit_reached:
-      'Die Grenze der Schreibvorgänge dieses Tools auf dieses Ziel für den UTC-Tag ist erreicht. Der Aufruf endet mit `policy_denied`, ohne zu schreiben.',
+      'Die Grenze der Schreibvorgänge dieses Tools auf dieses Ziel für den UTC-Tag ist erreicht. Beim Planen kommt der Schreibvorgang in die Freigabe-Warteschlange, ohne Warteschlange endet er mit `confirmation_required`. Bei der Prüfung unmittelbar vor dem Senden endet er mit `policy_denied`. In keinem Fall schreibt Ecclium.',
     policy_count_unavailable:
-      'Ecclium konnte einen Schreibvorgang nicht gegen die Grenze der Richtlinie zählen, etwa ohne Ordner für den Zustand. Der Aufruf endet mit `policy_denied`, ohne zu schreiben.',
+      'Ecclium konnte einen Schreibvorgang nicht gegen die Grenze der Richtlinie zählen, etwa ohne Ordner für den Zustand. Beim Planen kommt der Schreibvorgang in die Freigabe-Warteschlange, ohne Warteschlange endet er mit `confirmation_required`. Bei der Prüfung unmittelbar vor dem Senden endet er mit `policy_denied`. In keinem Fall schreibt Ecclium.',
     content_too_long:
       'Ein Text eines Schreibvorgangs ist länger als 64 KiB oder hat mehr als 2000 Sternchen, Unterstriche, Tilden und Ausrufezeichen. Der Aufruf endet ohne Schreiben, der Grund steht in `contentViolations` des Audits.',
     content_unparsable:
@@ -322,6 +330,10 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Eine Zeile mit `error` oder `denied` kam ohne Fehlercode. Die Zeile im Audit trägt einen Platzhalter.',
     audit_missing_undoes:
       'Eine Zeile vom Typ `undo` kam ohne die Kennung des Schreibvorgangs, den sie zurücknimmt. Die Zeile im Audit trägt in `undoes` die Null-UUID als Platzhalter, die keinen Schreibvorgang nennt.',
+    audit_missing_queue_id:
+      'Eine Zeile vom Typ `approval` kam ohne die Kennung des Eintrags der Freigabe-Warteschlange. Die Zeile im Audit trägt in `queueId` die Null-UUID als Platzhalter, die keinen Eintrag nennt.',
+    audit_missing_decision:
+      'Eine Zeile vom Typ `approval` kam ohne den Entscheid. Die Zeile im Audit trägt in `decision` den Platzhalter `rejected`, der keinen Schreibvorgang behauptet.',
     audit_unknown_fields:
       'Eine Zeile kam mit Feldern, die das Schema nicht kennt. `count` nennt ihre Zahl, die Felder fallen weg.',
     audit_schema_mismatch:
@@ -344,6 +356,12 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Ecclium hat Snapshots nach ihrer Frist von 30 Tagen gelöscht, beim Start oder beim Wechsel des UTC-Tages, auch wenn es nur liest. Diese Schreibvorgänge lassen sich nicht mehr zurücknehmen. `count` nennt die Zahl der gelöschten Teile, einer oder zwei je Schreibvorgang. Die Tagesschlüssel ihrer Tage meldet `day_keys_destroyed`.',
     snapshots_not_deleted:
       'Ecclium konnte nicht jeden Snapshot nach seiner Frist löschen oder nicht jeden Tagesschlüssel seines Tages vernichten, etwa weil der Ordner `snapshots` im Ordner aus `ECCLIUM_STATE_DIR` oder der Ordner `snapshot` im Ordner aus `ECCLIUM_KEYS_DIR` nicht mehr privat ist, oder weil die Uhr keinen Tag ergab. Ecclium versucht es spätestens nach einer Stunde erneut.',
+    queue_entries_deleted:
+      'Ecclium hat Einträge und Entscheide der Freigabe-Warteschlange nach ihrer Frist von 14 Tagen gelöscht, beim Start oder beim Wechsel des UTC-Tages, auch wenn es nur liest. Diese Schreibvorgänge lassen sich nicht mehr freigeben. `count` nennt die Zahl der gelöschten Dateien. Die Tagesschlüssel ihrer Tage meldet `queue_day_keys_destroyed`.',
+    queue_day_keys_destroyed:
+      'Ecclium hat Tagesschlüssel der Freigabe-Warteschlange nach ihrer Frist von 14 Tagen vernichtet, beim Start oder beim Wechsel des UTC-Tages. Einträge dieser Tage lassen sich nicht mehr öffnen, in keiner Kopie. `count` nennt die Zahl der Schlüssel.',
+    queue_not_purged:
+      'Ecclium konnte nicht jeden Eintrag der Freigabe-Warteschlange nach seiner Frist löschen oder nicht jeden Tagesschlüssel seines Tages vernichten, etwa weil der Ordner `queue` im Ordner aus `ECCLIUM_STATE_DIR` oder im Ordner aus `ECCLIUM_KEYS_DIR` nicht mehr privat ist, oder weil die Uhr keinen Tag ergab. Ecclium versucht es spätestens nach einer Stunde erneut.',
     stdio_start_failed:
       'Der Start über stdio ist gescheitert. `code` nennt den Grund, die Meldung für Betreiber steht davor.',
     stdio_closed:
@@ -435,6 +453,7 @@ const sections: readonly {
     fits: (name: string) =>
       name.startsWith('write_') ||
       name.startsWith('undo_') ||
+      name.startsWith('queue_reject_') ||
       name.startsWith('snapshot_') ||
       name.startsWith('policy_') ||
       name.startsWith('content_'),
@@ -461,9 +480,11 @@ const sections: readonly {
     fits: (name: string) => name.startsWith('audit_'),
   },
   {
-    title: 'Snapshots und Tagesschlüssel',
+    title: 'Snapshots, Freigabe-Warteschlange und Tagesschlüssel',
     fits: (name: string) =>
-      name.startsWith('snapshots_') || name.startsWith('day_keys_'),
+      name.startsWith('snapshots_') ||
+      name.startsWith('queue_') ||
+      name.startsWith('day_keys_'),
   },
   {
     title: 'Prozess über stdio',

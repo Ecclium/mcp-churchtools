@@ -6,18 +6,22 @@
  *
  * - **Planning:** after the guard read the target and before it seals the
  *   plan. It reads the names the policy expects and the counter of the
- *   day without changing it, so that a write at its limit is refused
- *   before anybody confirms it.
+ *   day without changing it, so that a write at its limit goes to the
+ *   queue of approvals before anybody confirms it in vain. A write the
+ *   policy sends there is sealed all the same, and the gate gives the
+ *   reason, which the pipeline keeps with the entry (ADR 0031).
  * - **Committing:** after the proof, the kill switches and the clock,
  *   right before the send. It reads the names again, since the target may
  *   have been renamed in between, and adds the write to the counter of the
  *   day. Only a write that fits under the limit with it goes on. A write
- *   counted here that fails afterwards stays counted.
+ *   counted here that fails afterwards stays counted. A write the policy
+ *   would send to the queue only now ends with `policy_denied` and a fixed
+ *   sentence: the person confirmed a write within the policy, and their
+ *   yes is no approval of the operator.
  *
- * Until the queue of approvals exists, a write the policy sends there ends
- * with `policy_denied` and a fixed sentence, and one log line names the
- * reason. Outside the interactive mode, every write is refused until the
- * runner uses the unattended part of the policy.
+ * Each reason for the queue has one log line. Outside the interactive
+ * mode, every write is refused until the runner uses the unattended part
+ * of the policy.
  *
  * @packageDocumentation
  */
@@ -108,9 +112,11 @@ export interface PolicyGate {
    * @param rules - The rules the core derived for the write.
    * @param facts - What the guard read of the target.
    * @param phase - Whether the guard plans or commits.
-   * @returns Nothing when the write may go on.
+   * @returns Nothing when the write may go on, and when planning the
+   *   reason why it goes to the queue of approvals.
    * @throws {EccliumError} `policy_denied` with a fixed sentence when the
-   *   policy stops the write, and any error of a read of a name.
+   *   policy refuses the write, or when committing sends it to the queue,
+   *   and any error of a read of a name.
    */
   check(
     ctx: TenantContext,
@@ -118,7 +124,7 @@ export interface PolicyGate {
     rules: IntentRules,
     facts: WriteFacts,
     phase: 'plan' | 'commit',
-  ): Promise<void>;
+  ): Promise<PolicyQueueReason | undefined>;
 }
 
 /**
@@ -191,20 +197,23 @@ export function createPolicyGate(options: PolicyGateOptions): PolicyGate {
     rules: IntentRules,
     facts: WriteFacts,
     phase: 'plan' | 'commit',
-  ): Promise<void> => {
+  ): Promise<PolicyQueueReason | undefined> => {
     const match = matchPolicy(policy, {
       mode: ctx.mode,
       tool,
       target: rules.target,
       alwaysQueue: rules.alwaysQueue,
     });
-    if (match.kind === 'allow') return;
+    if (match.kind === 'allow') return undefined;
     if (match.kind === 'deny') {
       ctx.log.warn('policy_not_interactive');
       throw new EccliumError('policy_denied', policySentences.notInteractive);
     }
-    const refuse = (reason: PolicyQueueReason): never => {
+    // When planning, the write goes to the queue with its reason; when
+    // committing, the reason ends it (ADR 0031).
+    const refuse = (reason: PolicyQueueReason): PolicyQueueReason => {
       ctx.log.warn(eventOf[reason]);
+      if (phase === 'plan') return reason;
       throw new EccliumError('policy_denied', sentenceOf[reason]);
     };
     if (match.kind === 'queue') return refuse(match.reason);
@@ -221,7 +230,7 @@ export function createPolicyGate(options: PolicyGateOptions): PolicyGate {
         counted: phase === 'commit',
       });
     }
-    if (verdict.kind === 'allow') return;
+    if (verdict.kind === 'allow') return undefined;
     // A verdict on an entry is allow or queue; deny ended above.
     return refuse((verdict as { readonly reason: PolicyQueueReason }).reason);
   };

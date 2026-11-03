@@ -132,7 +132,17 @@ export {
   renderDiff,
 } from './diff/index.js';
 export {
+  type QueueEntryContent,
+  type QueueListing,
+  type QueueReason,
+  queueReasons,
+} from './queue/index.js';
+export {
   createToolPipeline,
+  type QueueCall,
+  type QueueListOutcome,
+  type QueueShowOutcome,
+  type RejectOutcome,
   type ToolOutcome,
   type ToolPipeline,
   type ToolPipelineOptions,

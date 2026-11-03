@@ -623,6 +623,8 @@ describe('the catalog of messages', () => {
         'dayKeyFolderText',
         'emptyToolsetMessage',
         'emptyToolsetText',
+        'queueFolderMessage',
+        'queueFolderText',
         'quotaFolderMessage',
         'quotaFolderText',
         'refusalMessage',

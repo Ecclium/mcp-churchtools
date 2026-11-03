@@ -260,12 +260,30 @@ const outcomeWords = Object.freeze({
 
 const toolName = (tool: string | undefined): string => tool ?? 'ohne Tool';
 
-// An undo of `ecclium undo` calls no tool and is named as what it is, in a
-// row of its own (ADR 0031).
-const rowName = (row: AuditDayToolCounts): string =>
-  row.type === 'undo' ? 'Rücknahmen mit ‹ecclium undo›' : toolName(row.tool);
-const hitName = (hit: AuditObjectHit): string =>
-  hit.type === 'undo' ? 'Rücknahme' : toolName(hit.tool);
+// An undo of `ecclium undo` and a decision about the queue call no tool
+// and are named as what they are, in rows of their own (ADR 0031).
+const rowName = (row: AuditDayToolCounts): string => {
+  switch (row.type) {
+    case 'undo':
+      return 'Rücknahmen mit ‹ecclium undo›';
+    case 'approval':
+      return row.decision === 'approved'
+        ? 'Freigaben mit ‹ecclium queue approve›'
+        : 'Abweisungen mit ‹ecclium queue reject›';
+    case 'tool_call':
+      return toolName(row.tool);
+  }
+};
+const hitName = (hit: AuditObjectHit): string => {
+  switch (hit.type) {
+    case 'undo':
+      return 'Rücknahme';
+    case 'approval':
+      return hit.decision === 'approved' ? 'Freigabe' : 'Abweisung';
+    case 'tool_call':
+      return toolName(hit.tool);
+  }
+};
 
 const footer = (summary: AuditSummary): string[] => {
   const lines = [
@@ -276,6 +294,13 @@ const footer = (summary: AuditSummary): string[] => {
   if (summary.echoConfirmed > 0) {
     lines.push(
       `Per Echo bestätigt: ${count(summary.echoConfirmed, 'Schreibvorgang', 'Schreibvorgänge')}.`,
+    );
+  }
+  // What waits for the operator is named, so that nobody overlooks it
+  // (ADR 0031).
+  if (summary.queued > 0) {
+    lines.push(
+      `In die Freigabe-Warteschlange gestellt: ${count(summary.queued, 'Schreibvorgang', 'Schreibvorgänge')}. Was noch wartet, zeigt ‹ecclium queue list›.`,
     );
   }
   if (summary.skipped > 0) {
@@ -301,8 +326,8 @@ const footer = (summary: AuditSummary): string[] => {
 
 /**
  * The lines of `ecclium audit show` without `--object`: per UTC day and
- * tool the calls by outcome, and the undos of the day in a row of their
- * own after them.
+ * tool the calls by outcome, and the undos and the decisions about the
+ * queue of the day in rows of their own after them.
  *
  * @param summary - The summary of the audit files.
  * @param range - The range of days asked for.

@@ -187,22 +187,27 @@ describe('the policy in the write guard', () => {
       'policy_no_entry',
     ],
   ])(
-    'refuses %s with the sentence for writes outside the policy',
+    'sends %s to the queue when planning, and refuses it with the sentence for writes outside the policy when committing',
     async (_name, rules, policy, event) => {
       const { gate, ctx, events } = setup({ policy });
-      const error = await refusalOf(gate.check(ctx, create, rules, {}, 'plan'));
+      expect(await gate.check(ctx, create, rules, {}, 'plan')).toBe(
+        event.slice('policy_'.length),
+      );
+      const error = await refusalOf(
+        gate.check(ctx, create, rules, {}, 'commit'),
+      );
       expect(error).toMatchObject({
         code: 'policy_denied',
         message: policySentences.outside,
       });
-      expect(events).toEqual([`warn:${event}`]);
+      expect(events).toEqual([`warn:${event}`, `warn:${event}`]);
     },
   );
 
   it('reads the counter when planning and raises it when committing', async () => {
     const { gate, ctx, quota, names } = setup();
     const rules = rulesOf('wiki_category', '12');
-    await gate.check(ctx, create, rules, {}, 'plan');
+    expect(await gate.check(ctx, create, rules, {}, 'plan')).toBeUndefined();
     expect(await counterOf(quota, ctx)).toBe(0);
     await gate.check(ctx, create, rules, {}, 'commit');
     await gate.check(ctx, create, rules, {}, 'commit');
@@ -210,18 +215,19 @@ describe('the policy in the write guard', () => {
     expect(names).toEqual([12, 12, 12]);
   });
 
-  it('refuses a plan and a commit once the limit of the day is reached', async () => {
+  it('sends a plan to the queue and refuses a commit once the limit of the day is reached', async () => {
     const { gate, ctx, quota, events } = setup();
     const rules = rulesOf('wiki_category', '12');
     await gate.check(ctx, create, rules, {}, 'commit');
     await gate.check(ctx, create, rules, {}, 'commit');
-    for (const phase of ['plan', 'commit'] as const) {
-      const error = await refusalOf(gate.check(ctx, create, rules, {}, phase));
-      expect(error).toMatchObject({
-        code: 'policy_denied',
-        message: policySentences.limitReached,
-      });
-    }
+    expect(await gate.check(ctx, create, rules, {}, 'plan')).toBe(
+      'limit_reached',
+    );
+    const error = await refusalOf(gate.check(ctx, create, rules, {}, 'commit'));
+    expect(error).toMatchObject({
+      code: 'policy_denied',
+      message: policySentences.limitReached,
+    });
     // A refused commit has taken its place all the same.
     expect(await counterOf(quota, ctx)).toBe(3);
     expect(events).toEqual([
@@ -250,29 +256,30 @@ describe('the policy in the write guard', () => {
   it('takes the name of a page from the facts of the write', async () => {
     const { gate, ctx, names } = setup();
     const rules = rulesOf('wiki_page', `12/${guid}`);
-    await gate.check(ctx, update, rules, { pageTitle: 'Dienstplan' }, 'plan');
-    const renamed = await refusalOf(
-      gate.check(ctx, update, rules, { pageTitle: 'Alter Plan' }, 'plan'),
+    expect(
+      await gate.check(ctx, update, rules, { pageTitle: 'Dienstplan' }, 'plan'),
+    ).toBeUndefined();
+    expect(
+      await gate.check(ctx, update, rules, { pageTitle: 'Alter Plan' }, 'plan'),
+    ).toBe('name_changed');
+    expect(await gate.check(ctx, update, rules, {}, 'plan')).toBe(
+      'name_changed',
     );
-    expect(renamed.message).toBe(policySentences.nameChanged);
-    const unread = await refusalOf(gate.check(ctx, update, rules, {}, 'plan'));
-    expect(unread.message).toBe(policySentences.nameChanged);
     // The entry of the page replaces the one of its category.
     expect(names).toEqual([]);
   });
 
   it('knows no name of a target outside the wiki yet', async () => {
     const { gate, ctx } = setup();
-    const error = await refusalOf(
-      gate.check(
+    expect(
+      await gate.check(
         ctx,
         'ct_appointments_create',
         rulesOf('calendar', '3'),
         {},
         'plan',
       ),
-    );
-    expect(error.message).toBe(policySentences.nameChanged);
+    ).toBe('name_changed');
   });
 
   it('passes on an error of the read of a name', async () => {
@@ -310,22 +317,30 @@ describe('the policy in the write guard', () => {
       undefined,
     ],
     ['a clock without a day', undefined, Number.NaN],
-  ])('cannot count with %s and refuses', async (_name, quota, time) => {
-    for (const phase of ['plan', 'commit'] as const) {
+  ])(
+    'cannot count with %s, so it queues a plan and refuses a commit',
+    async (_name, quota, time) => {
       const { gate, ctx, events } = setup({
         ...(quota === undefined ? {} : { quota }),
         ...(time === undefined ? {} : { time }),
       });
+      const rules = rulesOf('wiki_category', '12');
+      expect(await gate.check(ctx, create, rules, {}, 'plan')).toBe(
+        'count_unavailable',
+      );
       const error = await refusalOf(
-        gate.check(ctx, create, rulesOf('wiki_category', '12'), {}, phase),
+        gate.check(ctx, create, rules, {}, 'commit'),
       );
       expect(error).toMatchObject({
         code: 'policy_denied',
         message: policySentences.countUnavailable,
       });
-      expect(events).toEqual(['warn:policy_count_unavailable']);
-    }
-  });
+      expect(events).toEqual([
+        'warn:policy_count_unavailable',
+        'warn:policy_count_unavailable',
+      ]);
+    },
+  );
 
   it('does not wait longer than the time of a quota for its count', async () => {
     vi.useFakeTimers();

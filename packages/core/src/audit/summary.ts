@@ -1,8 +1,10 @@
 /**
  * Sums up the audit files for `ecclium audit show` (ADR 0028): per UTC day
  * and tool the calls by outcome and the results held back after they were
- * read, the undos of `ecclium undo` in a row of their own (ADR 0031), and,
- * when asked for an ID of an object, the lines that name it.
+ * read, the undos of `ecclium undo` in a row of their own, the decisions of
+ * the operator about the queue of approvals in a row per decision
+ * (ADR 0031), and, when asked for an ID of an object, the lines that name
+ * it.
  *
  * Only whole lines that fit the schema of an audit event count, the others
  * are counted as skipped. The day comes from the time of the line, not
@@ -15,20 +17,26 @@
 import type {
   AuditOutcome,
   AuditType,
+  QueueDecisionKind,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import type { AuditFolder } from './reader.js';
 import { auditEventV1Schema, auditFieldSchemas, auditTypes } from './schema.js';
 
 /**
- * Calls of one tool on one UTC day, or the undos of that day, which have no
- * tool (ADR 0031).
+ * Calls of one tool on one UTC day, or the undos or the decisions of one
+ * kind about the queue of that day, which have no tool (ADR 0031).
  */
 export interface AuditDayToolCounts {
   /** The UTC day, such as `2026-10-31`. */
   readonly day: string;
-  /** The type of the lines: `tool_call`, or `undo` for the undos. */
+  /**
+   * The type of the lines: `tool_call`, `undo` for the undos, or
+   * `approval` for the decisions about the queue.
+   */
   readonly type: AuditType;
+  /** For the decisions about the queue, which kind they are. */
+  readonly decision?: QueueDecisionKind;
   /**
    * The name of the tool, or undefined for a line without one, such as
    * every undo.
@@ -50,8 +58,10 @@ export interface AuditDayToolCounts {
 export interface AuditObjectHit {
   /** The time of the line, in UTC. */
   readonly ts: string;
-  /** The type of the line: `tool_call`, or `undo` for an undo. */
+  /** The type of the line: `tool_call`, `undo` or `approval`. */
   readonly type: AuditType;
+  /** For a decision about the queue, which kind it is. */
+  readonly decision?: QueueDecisionKind;
   /** The name of the tool, or undefined for a line without one. */
   readonly tool: string | undefined;
   /** The ID of the actor, such as `stdio:local-stdio`. */
@@ -85,8 +95,14 @@ export interface AuditSummary {
    */
   readonly echoConfirmed: number;
   /**
+   * The calls of write tools that queued a write for the operator, in the
+   * range of days (ADR 0031).
+   */
+  readonly queued: number;
+  /**
    * The calls per day and tool, sorted by day, then tool, with the undos
-   * of a day after its calls.
+   * and then the decisions about the queue of a day after its calls,
+   * approvals before rejections.
    */
   readonly rows: readonly AuditDayToolCounts[];
   /** The first {@link maxShownHits} lines that name the ID, by time. */
@@ -148,6 +164,7 @@ export function isUtcDay(value: unknown): value is string {
 interface Counts {
   day: string;
   type: AuditType;
+  decision?: QueueDecisionKind;
   tool: string | undefined;
   calls: number;
   ok: number;
@@ -165,8 +182,15 @@ const compareText = (left: string, right: string): number =>
 const compareType = (left: AuditType, right: AuditType): number =>
   auditTypes.indexOf(left) - auditTypes.indexOf(right);
 
-// Lines without a tool after the tools. A day has one row per type and
-// tool, so two rows of a day and type never both lack one.
+// Approvals before rejections; lines without a decision have the same.
+const compareDecision = (
+  left: QueueDecisionKind | undefined,
+  right: QueueDecisionKind | undefined,
+): number => compareText(left ?? '', right ?? '');
+
+// Lines without a tool after the tools. A day has one row per type,
+// decision and tool, so two rows of a day, type and decision never both
+// lack one.
 const compareTool = (
   left: string | undefined,
   right: string | undefined,
@@ -217,6 +241,7 @@ export function summarizeAuditFiles(
   let lines = 0;
   let skipped = 0;
   let echoConfirmed = 0;
+  let queued = 0;
   let read = 0;
   let unread = 0;
   let moved = false;
@@ -241,16 +266,21 @@ export function summarizeAuditFiles(
       if (event.confirmation === 'echo' && event.writeState === 'verified') {
         echoConfirmed += 1;
       }
+      if (event.type === 'tool_call' && event.writeState === 'queued') {
+        queued += 1;
+      }
       const withheld = event.withheldAfterRead === true;
-      // A type and a tool name hold no space, so the key is unique per
-      // day, type and tool. An undo has no tool and gets a row of its own
-      // (ADR 0031).
-      const key = `${day} ${event.type} ${event.tool ?? ''}`;
+      const { decision } = event;
+      // A type, a decision and a tool name hold no space, so the key is
+      // unique per day, type, decision and tool. An undo and a decision
+      // have no tool and get rows of their own (ADR 0031).
+      const key = `${day} ${event.type} ${decision ?? ''} ${event.tool ?? ''}`;
       let row = counts.get(key);
       if (row === undefined) {
         row = {
           day,
           type: event.type,
+          ...(decision === undefined ? {} : { decision }),
           tool: event.tool,
           calls: 0,
           ok: 0,
@@ -271,6 +301,7 @@ export function summarizeAuditFiles(
             Object.freeze({
               ts: event.ts,
               type: event.type,
+              ...(decision === undefined ? {} : { decision }),
               tool: event.tool,
               actorId: event.actor.id,
               outcome: event.outcome,
@@ -296,6 +327,7 @@ export function summarizeAuditFiles(
       (left, right) =>
         compareText(left.day, right.day) ||
         compareType(left.type, right.type) ||
+        compareDecision(left.decision, right.decision) ||
         compareTool(left.tool, right.tool),
     );
   // A stable sort keeps lines of the same time in the order of the files.
@@ -311,6 +343,7 @@ export function summarizeAuditFiles(
     lines,
     skipped,
     echoConfirmed,
+    queued,
     rows: Object.freeze(rows),
     hits: Object.freeze(shown),
     hitsOmitted: hitCount - shown.length,

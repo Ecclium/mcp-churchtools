@@ -34,6 +34,7 @@ const everyActorKind: Readonly<Record<ActorKind, true>> = {
 const everyType: Readonly<Record<AuditType, true>> = {
   tool_call: true,
   undo: true,
+  approval: true,
 };
 const everyOutcome: Readonly<Record<AuditOutcome, true>> = {
   ok: true,
@@ -75,6 +76,18 @@ const unnamedUndo: AuditEventV1 = {
 const undo: AuditEventV1 = {
   ...unnamedUndo,
   undoes: 'a1b2c3d4-0000-4000-8000-000000000002',
+};
+
+// A rejection of ecclium queue reject: it names the entry and what was
+// decided, calls no tool and wrote nothing (ADR 0031).
+const rejection: AuditEventV1 = {
+  ...valid,
+  type: 'approval',
+  actor: { kind: 'operator', id: 'stdio:local-stdio' },
+  mode: 'operator',
+  queueId: 'a1b2c3d4-0000-4000-8000-000000000003',
+  decision: 'rejected',
+  objectRefs: ['wiki_category:12'],
 };
 
 const passes = (schema: z.ZodType, value: unknown): boolean =>
@@ -181,6 +194,62 @@ describe('auditEventV1Schema', () => {
       expect(passes(auditEventV1Schema, { ...undo, tool }), tool).toBe(false);
     }
     expect(passes(auditEventV1Schema, { ...undo, tool: undefined })).toBe(true);
+  });
+
+  it('takes a decision about an entry of the queue that names it and what was decided, without a tool (ADR 0031)', () => {
+    expect(passes(auditEventV1Schema, rejection)).toBe(true);
+    expect(
+      passes(auditEventV1Schema, {
+        ...rejection,
+        outcome: 'error',
+        errorCode: 'not_found',
+      }),
+    ).toBe(true);
+    // An approval that wrote names its state and its way.
+    expect(
+      passes(auditEventV1Schema, {
+        ...rejection,
+        decision: 'approved',
+        confirmation: 'operator',
+        writeState: 'verified',
+      }),
+    ).toBe(true);
+  });
+
+  it('ties queueId and decision to the type approval, both ways (ADR 0031)', () => {
+    for (const missing of [
+      { ...rejection, queueId: undefined },
+      { ...rejection, decision: undefined },
+      { ...valid, queueId: rejection.queueId },
+      { ...valid, decision: 'rejected' },
+      { ...undo, queueId: rejection.queueId, decision: 'rejected' },
+    ]) {
+      expect(passes(auditEventV1Schema, missing)).toBe(false);
+    }
+    for (const queueId of ['not-a-uuid', rejection.queueId?.toUpperCase(), 1]) {
+      expect(
+        passes(auditEventV1Schema, { ...rejection, queueId }),
+        String(queueId),
+      ).toBe(false);
+    }
+    for (const decision of ['maybe', 'Rejected', 1, null]) {
+      expect(
+        passes(auditEventV1Schema, { ...rejection, decision }),
+        String(decision),
+      ).toBe(false);
+    }
+  });
+
+  it('refuses a tool on a decision and a state or way of a write on a rejection (ADR 0031)', () => {
+    expect(
+      passes(auditEventV1Schema, { ...rejection, tool: 'ct_wiki_page_update' }),
+    ).toBe(false);
+    expect(
+      passes(auditEventV1Schema, { ...rejection, writeState: 'verified' }),
+    ).toBe(false);
+    expect(
+      passes(auditEventV1Schema, { ...rejection, confirmation: 'operator' }),
+    ).toBe(false);
   });
 
   it('refuses another type', () => {
@@ -572,8 +641,10 @@ describe('auditEventJsonSchema', () => {
       'objectRefsOmitted',
     );
     expect(schema['properties']).toMatchObject({
-      type: { enum: ['tool_call', 'undo'] },
+      type: { enum: ['tool_call', 'undo', 'approval'] },
       undoes: { type: 'string', maxLength: 36 },
+      queueId: { type: 'string', maxLength: 36 },
+      decision: { enum: ['approved', 'rejected'] },
     });
     expect(auditEventJsonSchema()).not.toBe(schema);
     expect(schema).not.toHaveProperty('safeParse');

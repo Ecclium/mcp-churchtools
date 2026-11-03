@@ -8,7 +8,8 @@
  * transport over stdio, and the provider of the keys for the pseudonyms
  * of the level `strict` (ADR 0069) and of the day keys for snapshots and
  * the queue, the store of the sealed records of snapshots and the keeper
- * that joins both into the snapshots of writes (ADR 0031), and the stores
+ * that joins both into the snapshots of writes, the same for the queue of
+ * approvals (ADR 0031), and the stores
  * of plans and nonces of the questions before a write, in memory (ADR
  * 0029).
  *
@@ -47,6 +48,15 @@ export {
   type FileQuotaStoreOptions,
   prepareQuotaFolder,
 } from './quota/index.js';
+export {
+  createFileApprovalQueue,
+  createQueueKeeper,
+  type FileApprovalQueueOptions,
+  firstKeptQueueDay,
+  prepareQueueFolder,
+  type QueueKeeper,
+  type QueuePurge,
+} from './queue/index.js';
 export {
   createFileSnapshotStore,
   createSnapshotKeeper,

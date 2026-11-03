@@ -11,6 +11,7 @@ import {
   type ConfirmationAnswer,
   confirmationSentence,
   confirmationSentences,
+  confirmationRouteOf,
   confirmationWayOf,
   createConfirmations,
 } from './confirm.js';
@@ -166,6 +167,45 @@ describe('the way of a confirmation', () => {
         ),
       ).toBe('queue');
     }
+  });
+
+  it('names why a plan goes to the queue: the setting, a diff too long, or no question and no echo', () => {
+    expect(
+      confirmationRouteOf(
+        { setting: 'queue', elicitation: true, fits: false },
+        echoPlan,
+      ),
+    ).toEqual({ way: 'queue', reason: 'setting' });
+    expect(
+      confirmationRouteOf(
+        { setting: 'echo-allowed', elicitation: true, fits: false },
+        echoPlan,
+      ),
+    ).toEqual({ way: 'queue', reason: 'too_long' });
+    expect(
+      confirmationRouteOf(
+        { setting: 'echo-allowed', elicitation: false, fits: true },
+        plainPlan,
+      ),
+    ).toEqual({ way: 'queue', reason: 'no_question' });
+    expect(
+      confirmationRouteOf(
+        { setting: 'elicitation-or-queue', elicitation: false, fits: true },
+        echoPlan,
+      ),
+    ).toEqual({ way: 'queue', reason: 'no_question' });
+    expect(
+      confirmationRouteOf(
+        { setting: 'echo-allowed', elicitation: true, fits: true },
+        echoPlan,
+      ),
+    ).toEqual({ way: 'question' });
+    expect(
+      confirmationRouteOf(
+        { setting: 'echo-allowed', elicitation: false, fits: true },
+        echoPlan,
+      ),
+    ).toEqual({ way: 'echo' });
   });
 
   it('refuses a value that is no sealed plan', () => {

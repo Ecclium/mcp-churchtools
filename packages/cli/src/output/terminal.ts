@@ -24,10 +24,11 @@ import { maxOutputLength } from './write.js';
 // lines puts its own prefix first, such as that of a diff.
 const continued = '\\ ... ';
 
-// A character the writers let through stays; a backslash doubles; any
-// other character, a pair of surrogates as one, becomes its code point.
-const visible = (character: string): string => {
-  if (character === '\\') return '\\\\';
+// A character the writers let through stays; a backslash doubles, unless
+// the core doubled it already; any other character, a pair of surrogates
+// as one, becomes its code point.
+const visible = (character: string, doubled: boolean): string => {
+  if (character === '\\') return doubled ? '\\' : '\\\\';
   const code = character.charCodeAt(0);
   if (character.length === 1 && isShown(code)) return character;
   const point = character.codePointAt(0) ?? code;
@@ -43,15 +44,25 @@ const visible = (character: string): string => {
  * @param prefix - A prefix the command line writes itself, such as `+ `,
  *   kept as it is.
  * @param text - The foreign text of one line.
+ * @param shownByCore - Whether the core already made the text visible, as
+ *   for the summary and the diff of an entry of the queue: its backslashes
+ *   are doubled already and stay as they are.
  * @returns One or more lines, each with at least one character.
  * @example
  * ```ts
  * terminalLines('+ ', 'Rot: \u001b[31m'); // ['+ Rot: \\u{1b}[31m']
  * ```
  */
-export function terminalLines(prefix: string, text: string): string[] {
+export function terminalLines(
+  prefix: string,
+  text: string,
+  shownByCore = false,
+): string[] {
   // Whole visible forms only, so that no part ends in half an escape.
-  const parts = [prefix, ...Array.from(text, visible)];
+  const parts = [
+    prefix,
+    ...Array.from(text, (character) => visible(character, shownByCore)),
+  ];
   const lines: string[] = [];
   let line = '';
   for (const part of parts) {

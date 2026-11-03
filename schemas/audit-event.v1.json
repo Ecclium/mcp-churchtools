@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "AuditEventV1",
-  "description": "One line of the audit file of Ecclium, version 1. The copy on stderr is the same line with an empty objectRefs and without objectRefsOmitted, withheldAfterRead, seq, prevHash. Not expressed here: an outcome of ok has no errorCode and error and denied have one, undoes comes with the type undo and only with it, a line of the type undo has no tool, objectRefsOmitted comes only with 100 objectRefs, and withheldAfterRead only with denied and policy_denied.",
+  "description": "One line of the audit file of Ecclium, version 1. The copy on stderr is the same line with an empty objectRefs and without objectRefsOmitted, withheldAfterRead, seq, prevHash. Not expressed here: an outcome of ok has no errorCode and error and denied have one, undoes comes with the type undo and only with it, queueId and decision come with the type approval and only with it, a line of the type undo or approval has no tool, a line with the decision rejected has no writeState and no confirmation, objectRefsOmitted comes only with 100 objectRefs, and withheldAfterRead only with denied and policy_denied.",
   "readOnly": true,
   "type": "object",
   "properties": {
@@ -23,13 +23,26 @@
       "type": "string",
       "enum": [
         "tool_call",
-        "undo"
+        "undo",
+        "approval"
       ]
     },
     "undoes": {
       "type": "string",
       "maxLength": 36,
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "queueId": {
+      "type": "string",
+      "maxLength": 36,
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "approved",
+        "rejected"
+      ]
     },
     "tenantId": {
       "type": "string",

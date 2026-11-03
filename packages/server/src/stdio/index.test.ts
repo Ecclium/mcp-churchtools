@@ -89,8 +89,12 @@ const setup = (overrides: Partial<StdioServerOptions> = {}) => {
   const events: Logged[] = [];
   const calls: { readonly name: string; readonly input: unknown }[] = [];
   const pipeline: ToolPipeline = {
-    // The server never takes a write back over stdio (ADR 0031).
+    // The server never takes a write back nor decides about the queue
+    // over stdio (ADR 0031).
     undo: () => Promise.resolve({ kind: 'off' }),
+    reject: () => Promise.resolve({ kind: 'off' }),
+    listQueue: () => Promise.resolve({ kind: 'off' }),
+    showQueue: () => Promise.resolve({ kind: 'off' }),
     call: (name, value) => {
       calls.push({ name, input: value });
       return Promise.resolve(done);

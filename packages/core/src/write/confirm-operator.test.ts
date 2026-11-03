@@ -5,7 +5,11 @@ import type {
 import { createTestClock } from '@ecclium/mcp-churchtools-testkit';
 import { describe, expect, it, vi } from 'vitest';
 
-import { confirmationWayOf, createConfirmations } from './confirm.js';
+import {
+  confirmationRouteOf,
+  confirmationWayOf,
+  createConfirmations,
+} from './confirm.js';
 import { confirmationTextOf } from './confirmation-text.js';
 import { createMemoryNonceStore } from './nonce-store.js';
 import { createMemoryPlanStore } from './plan-store.js';
@@ -38,11 +42,18 @@ const ctx = {
 } as unknown as TenantContext;
 
 describe('a plan that only the operator may confirm', () => {
-  it('goes to the queue whatever the client can', () => {
-    for (const setting of ['echo-allowed', 'elicitation-or-queue'] as const) {
+  it('goes to the queue whatever the client can, as one only the operator may confirm', () => {
+    for (const setting of [
+      'echo-allowed',
+      'elicitation-or-queue',
+      'queue',
+    ] as const) {
       expect(
         confirmationWayOf({ setting, elicitation: true, fits: true }, plan),
       ).toBe('queue');
+      expect(
+        confirmationRouteOf({ setting, elicitation: true, fits: false }, plan),
+      ).toEqual({ way: 'queue', reason: 'queue_only' });
     }
   });
 
