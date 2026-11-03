@@ -7,7 +7,7 @@
  * of state (ADR 0031), the audit sink
  * with the audit file, the store of the counters and the folder of the
  * kill switches in the folder of state (ADR 0028, ADR 0029, ADR 0063),
- * the policy (ADR 0032), and how writes are confirmed with the stores of
+ * the policy (ADR 0032), and how writes are confirmed, with the stores of
  * plans and nonces of the questions before a write (ADR 0029). The start over stdio reaches this module, so
  * it writes nothing to stdout and loads no module that does (ADR 0053).
  *
