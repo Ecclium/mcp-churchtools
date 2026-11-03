@@ -145,6 +145,33 @@ describe('collectWriteTargets', () => {
     expect(targets.days).toEqual({ first: '2026-10-30', last: '2026-10-30' });
   });
 
+  it('leaves out an undo, which is no write of the model, but reads its day (ADR 0031)', () => {
+    const undo = (fields: Record<string, unknown>): string =>
+      write('verified', {
+        type: 'undo',
+        undoes: '00000000-0000-4000-8000-0000000000aa',
+        tool: undefined,
+        confirmation: 'operator',
+        objectRefs: ['wiki_category:14', `wiki_page:${guid}`],
+        ...fields,
+      });
+    const targets = collectWriteTargets(
+      folderOf({
+        [nameOf(1)]: [
+          write('verified'),
+          undo({ ts: '2026-10-31T09:00:00.000Z', mode: 'operator' }),
+          // Not a line ecclium undo writes: one in the interactive mode,
+          // which its type keeps out of the proposal all the same.
+          undo({ mode: 'interactive' }),
+        ],
+      }),
+    );
+    expect(targets.categories).toEqual([
+      { id: 12, tools: [create], highestPerDay: 1 },
+    ]);
+    expect(targets.days).toEqual({ first: '2026-10-30', last: '2026-10-31' });
+  });
+
   it('counts files it could not read, and notices a folder that moved', () => {
     const targets = collectWriteTargets(
       folderOf({

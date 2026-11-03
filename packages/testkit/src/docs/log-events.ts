@@ -306,6 +306,8 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'ChurchTools hat geantwortet. `method` nennt die Methode der Anfrage, `status` den Status, `durationMs` die Dauer.',
     audit_missing_error_code:
       'Eine Zeile mit `error` oder `denied` kam ohne Fehlercode. Die Zeile im Audit trägt einen Platzhalter.',
+    audit_missing_undoes:
+      'Eine Zeile vom Typ `undo` kam ohne die Kennung des Schreibvorgangs, den sie zurücknimmt. Die Zeile im Audit trägt in `undoes` die Null-UUID als Platzhalter, die keinen Schreibvorgang nennt.',
     audit_unknown_fields:
       'Eine Zeile kam mit Feldern, die das Schema nicht kennt. `count` nennt ihre Zahl, die Felder fallen weg.',
     audit_schema_mismatch:

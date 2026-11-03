@@ -170,6 +170,7 @@ const accessor: unique symbol = Symbol('accessor');
 
 const producerKeys: readonly string[] = Object.freeze([
   'type',
+  'undoes',
   'tenantId',
   'actor',
   'mode',
@@ -376,6 +377,28 @@ function fill(
   };
 
   scalar('type', fields.type, 'audit_invalid_type', placeholders.type);
+
+  // An undo always names the write it takes back, and only an undo does
+  // (ADR 0031). Without a valid ID the line stays an undo with the zero
+  // UUID, which names no write. The zero UUID is also what the pipeline
+  // writes for an ID that was none; like ct_unknown for a tool, it is
+  // valid.
+  const undo = line['type'] === 'undo';
+  const undoes = own(draft, 'undoes');
+  if (undo) {
+    if (undoes === undefined) {
+      report('audit_missing_undoes');
+      line['undoes'] = placeholders.undoes;
+    } else if (fits(fields.undoes, undoes)) {
+      line['undoes'] = undoes as string;
+    } else {
+      report('audit_invalid_undoes');
+      line['undoes'] = placeholders.undoes;
+    }
+  } else if (undoes !== undefined) {
+    report('audit_invalid_undoes');
+  }
+
   const tenantValid = scalar(
     'tenantId',
     fields.tenantId,
@@ -408,9 +431,13 @@ function fill(
 
   const tool = own(draft, 'tool');
   if (tool !== undefined) {
-    // ct_unknown is what the pipeline writes for a tool that does not
-    // exist; it is valid and not asked about.
-    if (
+    // An undo calls no tool (ADR 0031): a tool on its line is left out,
+    // without a placeholder and without asking the registry. ct_unknown is
+    // what the pipeline writes for a tool that does not exist; it is valid
+    // and not asked about.
+    if (undo) {
+      report('audit_invalid_tool');
+    } else if (
       tool === placeholders.tool ||
       (fits(fields.tool, tool) && knows(tool as string))
     ) {

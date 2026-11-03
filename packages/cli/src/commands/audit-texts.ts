@@ -12,8 +12,10 @@ import {
 } from '@ecclium/mcp-churchtools-core';
 import {
   type AuditAnchorSet,
+  type AuditDayToolCounts,
   type AuditFindingKind,
   type AuditFolderCode,
+  type AuditObjectHit,
   type AuditSummary,
   type AuditVerifyReport,
   maxAnchors,
@@ -258,6 +260,13 @@ const outcomeWords = Object.freeze({
 
 const toolName = (tool: string | undefined): string => tool ?? 'ohne Tool';
 
+// An undo of `ecclium undo` calls no tool and is named as what it is, in a
+// row of its own (ADR 0031).
+const rowName = (row: AuditDayToolCounts): string =>
+  row.type === 'undo' ? 'Rücknahmen mit ‹ecclium undo›' : toolName(row.tool);
+const hitName = (hit: AuditObjectHit): string =>
+  hit.type === 'undo' ? 'Rücknahme' : toolName(hit.tool);
+
 const footer = (summary: AuditSummary): string[] => {
   const lines = [
     `Gelesen: ${formatNumber(summary.read)} von ${count(summary.files, 'Datei', 'Dateien')}, ${count(summary.lines, 'Zeile', 'Zeilen')} im Zeitraum.`,
@@ -285,7 +294,8 @@ const footer = (summary: AuditSummary): string[] => {
 
 /**
  * The lines of `ecclium audit show` without `--object`: per UTC day and
- * tool the calls by outcome.
+ * tool the calls by outcome, and the undos of the day in a row of their
+ * own after them.
  *
  * @param summary - The summary of the audit files.
  * @param range - The range of days asked for.
@@ -318,7 +328,7 @@ export function renderSummary(
         ? `, davon ${formatNumber(row.withheld)} nach dem Lesen zurückgehalten`
         : '';
     lines.push(
-      `  ${toolName(row.tool)}: ${count(row.calls, 'Aufruf', 'Aufrufe')}, ${parts.join(', ')}${withheld}`,
+      `  ${rowName(row)}: ${count(row.calls, 'Aufruf', 'Aufrufe')}, ${parts.join(', ')}${withheld}`,
     );
   }
   if (summary.rows.length === 0) {
@@ -334,7 +344,7 @@ export function renderSummary(
 
 /**
  * The lines of `ecclium audit show --object`: each call that names the ID,
- * with time, tool, subject and outcome.
+ * with time, tool, subject and outcome, and each undo that names it.
  *
  * @param summary - The summary of the audit files with the hits.
  * @param object - The ID asked for, in the form of the audit.
@@ -356,7 +366,7 @@ export function renderObjectHits(
   for (const hit of summary.hits) {
     const withheld = hit.withheld ? ', nach dem Lesen zurückgehalten' : '';
     lines.push(
-      `  ${dateOf(hit.ts.slice(0, 10))} ${hit.ts.slice(11, 19)}  ${toolName(hit.tool)}  Subjekt ${hit.actorId}  ${outcomeWords[hit.outcome]}${withheld}`,
+      `  ${dateOf(hit.ts.slice(0, 10))} ${hit.ts.slice(11, 19)}  ${hitName(hit)}  Subjekt ${hit.actorId}  ${outcomeWords[hit.outcome]}${withheld}`,
     );
   }
   const total = summary.hits.length + summary.hitsOmitted;

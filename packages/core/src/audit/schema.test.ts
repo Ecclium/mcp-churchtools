@@ -2,6 +2,7 @@ import type {
   ActorKind,
   AuditEventV1,
   AuditOutcome,
+  AuditType,
   ConfirmationPath,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { describe, expect, expectTypeOf, it } from 'vitest';
@@ -15,6 +16,7 @@ import {
   auditLimits,
   auditOutcomes,
   auditPlaceholders,
+  auditTypes,
   confirmationPaths,
   objectDomains,
   writeStateOutcomes,
@@ -28,6 +30,10 @@ const everyActorKind: Readonly<Record<ActorKind, true>> = {
   user: true,
   runner: true,
   operator: true,
+};
+const everyType: Readonly<Record<AuditType, true>> = {
+  tool_call: true,
+  undo: true,
 };
 const everyOutcome: Readonly<Record<AuditOutcome, true>> = {
   ok: true,
@@ -52,6 +58,23 @@ const valid: AuditEventV1 = {
   outcome: 'ok',
   objectRefs: ['person:1'],
   durationMs: 12,
+};
+
+// An undo of ecclium undo: it names the write it takes back and calls no
+// tool (ADR 0031). The type of an event does not hold that rule, the
+// schema does.
+const unnamedUndo: AuditEventV1 = {
+  ...valid,
+  type: 'undo',
+  actor: { kind: 'operator', id: 'stdio:local-stdio' },
+  mode: 'operator',
+  confirmation: 'operator',
+  writeState: 'verified',
+  objectRefs: ['wiki_category:12', 'wiki_page:34'],
+};
+const undo: AuditEventV1 = {
+  ...unnamedUndo,
+  undoes: 'a1b2c3d4-0000-4000-8000-000000000002',
 };
 
 const passes = (schema: z.ZodType, value: unknown): boolean =>
@@ -115,6 +138,55 @@ describe('auditEventV1Schema', () => {
     expect(
       passes(auditEventV1Schema, { ...refused, contentViolations: ['shout'] }),
     ).toBe(false);
+  });
+
+  it('takes an undo that names the write it takes back, without a tool (ADR 0031)', () => {
+    expect(passes(auditEventV1Schema, undo)).toBe(true);
+    expect(
+      passes(auditEventV1Schema, {
+        ...undo,
+        outcome: 'error',
+        errorCode: 'conflict',
+        writeState: 'conflict',
+        seq: 2,
+        prevHash: 'c'.repeat(64),
+      }),
+    ).toBe(true);
+    // A tool call keeps its rule: the tool may be missing.
+    expect(valid).not.toHaveProperty('tool');
+    expect(passes(auditEventV1Schema, valid)).toBe(true);
+  });
+
+  it('ties undoes to the type undo, both ways (ADR 0031)', () => {
+    expect(passes(auditEventV1Schema, unnamedUndo)).toBe(false);
+    expect(passes(auditEventV1Schema, { ...undo, undoes: undefined })).toBe(
+      false,
+    );
+    expect(passes(auditEventV1Schema, { ...valid, undoes: undo.undoes })).toBe(
+      false,
+    );
+    expect(passes(auditEventV1Schema, { ...valid, undoes: undefined })).toBe(
+      true,
+    );
+    for (const undoes of ['not-a-uuid', undo.undoes?.toUpperCase(), 1, null]) {
+      expect(
+        passes(auditEventV1Schema, { ...undo, undoes }),
+        String(undoes),
+      ).toBe(false);
+    }
+  });
+
+  it('refuses a tool on an undo (ADR 0031)', () => {
+    for (const tool of ['ct_wiki_page_update', auditPlaceholders.tool]) {
+      expect(passes(auditEventV1Schema, { ...undo, tool }), tool).toBe(false);
+    }
+    expect(passes(auditEventV1Schema, { ...undo, tool: undefined })).toBe(true);
+  });
+
+  it('refuses another type', () => {
+    for (const type of ['other', 'Undo', 'toString', undefined]) {
+      expect(passes(auditEventV1Schema, { ...valid, type }), type).toBe(false);
+    }
   });
 
   it('counts seq from 1, as the chain of a file does', () => {
@@ -231,6 +303,16 @@ describe('auditEventV1Schema', () => {
       durationMs: placeholders.durationMs,
     };
     expect(passes(auditEventV1Schema, event)).toBe(true);
+    // The zero UUID an undo gets for a missing or invalid write.
+    expect(
+      passes(auditEventV1Schema, {
+        ...event,
+        tool: undefined,
+        type: 'undo',
+        undoes: placeholders.undoes,
+      }),
+    ).toBe(true);
+    expect(placeholders.undoes).toBe(placeholders.eventId);
     expect(Object.isFrozen(placeholders)).toBe(true);
     expect(Object.isFrozen(placeholders.actor)).toBe(true);
   });
@@ -239,6 +321,7 @@ describe('auditEventV1Schema', () => {
 describe('the lists of values', () => {
   it('hold every value once and are frozen', () => {
     expect([...actorKinds].sort()).toEqual(Object.keys(everyActorKind).sort());
+    expect(auditTypes).toEqual(Object.keys(everyType));
     expect([...auditOutcomes].sort()).toEqual(Object.keys(everyOutcome).sort());
     expect([...confirmationPaths].sort()).toEqual(
       Object.keys(everyConfirmation).sort(),
@@ -255,6 +338,7 @@ describe('the lists of values', () => {
     ]);
     for (const list of [
       actorKinds,
+      auditTypes,
       auditOutcomes,
       confirmationPaths,
       writeStates,
@@ -487,6 +571,10 @@ describe('auditEventJsonSchema', () => {
     expect(Object.keys(schema['properties'] as object)).toContain(
       'objectRefsOmitted',
     );
+    expect(schema['properties']).toMatchObject({
+      type: { enum: ['tool_call', 'undo'] },
+      undoes: { type: 'string', maxLength: 36 },
+    });
     expect(auditEventJsonSchema()).not.toBe(schema);
     expect(schema).not.toHaveProperty('safeParse');
   });

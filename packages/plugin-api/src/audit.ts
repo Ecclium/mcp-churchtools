@@ -7,8 +7,12 @@
 import type { Actor, Mode } from './context.js';
 import type { ErrorCode } from './errors.js';
 
-/** What an audit event records. Grows with the phases that add actions. */
-export type AuditType = 'tool_call';
+/**
+ * What an audit event records: a call of a tool, or the run of
+ * `ecclium undo` that takes back a write of Ecclium from its snapshot
+ * (ADR 0031). Grows with the phases that add actions.
+ */
+export type AuditType = 'tool_call' | 'undo';
 
 /**
  * How an action ended: done, failed with an error code, or refused before it
@@ -101,6 +105,12 @@ export interface AuditEventV1 {
   readonly ts: string;
   /** What the event records. */
   readonly type: AuditType;
+  /**
+   * The `eventId` of the line of the write that an undo takes back
+   * (ADR 0031). Always on a line of the type `undo` and never on another
+   * one, so that each undo names the write it reverts.
+   */
+  readonly undoes?: string;
   /** The tenant. */
   readonly tenantId: string;
   /** Who acted. */
@@ -111,7 +121,11 @@ export interface AuditEventV1 {
   readonly runId?: string;
   /** The routine of the run, if any. */
   readonly routineId?: string;
-  /** Name of the tool, if the event concerns one. */
+  /**
+   * Name of the tool, if the event concerns one. Never on a line of the
+   * type `undo`: an undo calls no tool, and the tool of the write it takes
+   * back may no longer be registered.
+   */
   readonly tool?: string;
   /** How the action ended. */
   readonly outcome: AuditOutcome;

@@ -13,6 +13,7 @@ export {
   auditLimits,
   auditOutcomes,
   auditPlaceholders,
+  auditTypes,
   confirmationPaths,
   fileOnlyFields,
   objectDomains,

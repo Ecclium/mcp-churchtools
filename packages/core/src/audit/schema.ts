@@ -10,6 +10,7 @@
 import {
   type ActorKind,
   type AuditOutcome,
+  type AuditType,
   type ConfirmationPath,
   type WriteState,
   contentViolationKinds,
@@ -34,6 +35,15 @@ export const actorKinds: readonly ActorKind[] = Object.freeze([
   'user',
   'runner',
   'operator',
+]);
+
+/**
+ * Every {@link AuditType}, frozen: a call of a tool, and the run of
+ * `ecclium undo` that takes back a write from its snapshot (ADR 0031).
+ */
+export const auditTypes: readonly AuditType[] = Object.freeze([
+  'tool_call',
+  'undo',
 ]);
 
 /** Every {@link AuditOutcome}, frozen. */
@@ -142,7 +152,8 @@ const text = (maxLength: number, pattern: RegExp) =>
 export const auditFieldSchemas = Object.freeze({
   eventId: text(36, uuidPattern),
   ts: text(24, timestampPattern),
-  type: z.literal('tool_call'),
+  type: z.enum(auditTypes),
+  undoes: text(36, uuidPattern),
   tenantId: text(63, tenantIdPattern),
   actorKind: z.enum(actorKinds),
   actorId: text(97, actorIdPattern),
@@ -173,11 +184,12 @@ const fields = auditFieldSchemas;
 /**
  * An audit event of version 1, a line of the audit file. Strict: an
  * unknown key fails it. An event with the outcome `ok` has no error code,
- * and one with `error` or `denied` has one. A count of left out IDs comes
- * only with 100 IDs, and the mark of a result read but held back only with
- * `denied` and `policy_denied`. The copy on the stream of the logger is the
- * same line without the IDs and without the fields in
- * {@link fileOnlyFields}.
+ * and one with `error` or `denied` has one. A line of the type `undo`
+ * names the write it takes back in `undoes` and has no tool; no other line
+ * has `undoes` (ADR 0031). A count of left out IDs comes only with 100
+ * IDs, and the mark of a result read but held back only with `denied` and
+ * `policy_denied`. The copy on the stream of the logger is the same line
+ * without the IDs and without the fields in {@link fileOnlyFields}.
  */
 export const auditEventV1Schema = z
   .strictObject({
@@ -185,6 +197,7 @@ export const auditEventV1Schema = z
     eventId: fields.eventId,
     ts: fields.ts,
     type: fields.type,
+    undoes: fields.undoes.optional(),
     tenantId: fields.tenantId,
     actor: z
       .strictObject({ kind: fields.actorKind, id: fields.actorId })
@@ -236,6 +249,21 @@ export const auditEventV1Schema = z
     (event) =>
       (event.outcome === 'ok') ===
       (!Object.hasOwn(event, 'errorCode') || event.errorCode === undefined),
+  )
+  // An undo always names the write it takes back, and only an undo does
+  // (ADR 0031).
+  .refine(
+    (event) =>
+      (event.type === 'undo') ===
+      (Object.hasOwn(event, 'undoes') && event.undoes !== undefined),
+  )
+  // An undo calls no tool, and the tool of the write it takes back may no
+  // longer be registered (ADR 0031).
+  .refine(
+    (event) =>
+      event.type !== 'undo' ||
+      !Object.hasOwn(event, 'tool') ||
+      event.tool === undefined,
   )
   .refine(
     (event) =>
@@ -289,12 +317,14 @@ export function auditEventJsonSchema(): Record<string, unknown> {
  * passes the schema. The factory of the tenant context refuses the tenant
  * `invalid`, the actor `invalid`, the zero UUID as run or event and the
  * tool `ct_unknown`, and the registry will refuse that tool as well, so
- * that a placeholder is never taken for a real value.
+ * that a placeholder is never taken for a real value. The zero UUID in
+ * `undoes` of an undo therefore names no write.
  */
 export const auditPlaceholders = Object.freeze({
   eventId: '00000000-0000-0000-0000-000000000000',
   ts: '1970-01-01T00:00:00.000Z',
   type: 'tool_call',
+  undoes: '00000000-0000-0000-0000-000000000000',
   tenantId: 'invalid',
   actor: Object.freeze({ kind: 'service', id: 'invalid' }),
   mode: 'unattended',

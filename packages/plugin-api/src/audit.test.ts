@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import {
   type AuditEventV1,
+  type AuditType,
   type ContentViolationKind,
   contentViolationKinds,
   type ErrorCode,
@@ -46,6 +47,7 @@ describe('AuditEventV1', () => {
       | 'eventId'
       | 'ts'
       | 'type'
+      | 'undoes'
       | 'tenantId'
       | 'actor'
       | 'mode'
@@ -68,6 +70,11 @@ describe('AuditEventV1', () => {
       | 'seq'
       | 'prevHash'
     >();
+  });
+
+  it('records a call of a tool or an undo (ADR 0031)', () => {
+    expectTypeOf<AuditType>().toEqualTypeOf<'tool_call' | 'undo'>();
+    expectTypeOf<AuditEventV1['undoes']>().toEqualTypeOf<string | undefined>();
   });
 
   it('accepts only a known error code and version 1', () => {

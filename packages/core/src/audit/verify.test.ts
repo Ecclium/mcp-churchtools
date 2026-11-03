@@ -24,6 +24,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { createLogger, maxLineLength } from '../logger/index.js';
 import { type AuditFileSystem, openAuditFile } from './file-writer.js';
 import { type AuditFolder, type AuditLine, openAuditFolder } from './reader.js';
+import { createAuditSink } from './sink.js';
+import { summarizeAuditFiles } from './summary.js';
 import {
   type AuditAnchor,
   type AuditAnchorSet,
@@ -681,6 +683,98 @@ describe('verifyAuditFiles with the writer and the reader', () => {
     expect(report.findings).toEqual([
       { kind: 'chain_link', file: first, line: 3 },
       { kind: 'anchor_mismatch', file: second },
+    ]);
+  });
+
+  it('finds nothing in a file with a write and its undo, as the sink records them (ADR 0031)', () => {
+    const folder = join(base, 'undo');
+    mkdirSync(folder, { mode: 0o700 });
+    chmodSync(folder, 0o700);
+    const log: string[] = [];
+    const logger = createLogger({
+      writer: { write: (line) => log.push(line) > 0 },
+      clock,
+      minLevel: 'info',
+      anchors: true,
+    });
+    const opened = openAuditFile({
+      stateDir: folder,
+      clock,
+      pid: 401,
+      retentionMonths: 12,
+    });
+    if (!opened.ok) throw new Error(opened.code);
+    opened.writer.attach({
+      anchor: ({ file, seq, hash }) => {
+        logger.info('audit_chain_anchor', { file, seq, hash });
+      },
+      swept: () => undefined,
+    });
+    const writeId = 'a1b2c3d4-0000-4000-8000-000000000001';
+    const sink = createAuditSink({
+      writer: { write: () => true },
+      file: opened.writer,
+      clock,
+      isKnownTool: (name) => name === 'ct_wiki_page_update',
+    });
+    const shared = {
+      tenantId: 'demo-tenant',
+      outcome: 'ok',
+      writeState: 'verified',
+      objectRefs: ['wiki_category:12', 'wiki_page:34'],
+      durationMs: 30,
+    } as const;
+    expect(
+      sink.record(
+        {
+          ...shared,
+          type: 'tool_call',
+          actor: { kind: 'user', id: 'stdio:local-stdio' },
+          mode: 'interactive',
+          tool: 'ct_wiki_page_update',
+          confirmation: 'elicitation',
+        },
+        writeId,
+      ),
+    ).toBe(true);
+    expect(
+      sink.record(
+        {
+          ...shared,
+          type: 'undo',
+          undoes: writeId,
+          actor: { kind: 'operator', id: 'stdio:local-stdio' },
+          mode: 'operator',
+          confirmation: 'operator',
+        },
+        'a1b2c3d4-0000-4000-8000-000000000002',
+      ),
+    ).toBe(true);
+    sink.anchor?.();
+    opened.writer.close();
+    const collector = createAnchorCollector();
+    for (const line of log) collector.add(line);
+    const folderRead = openAuditFolder({ stateDir: folder });
+    if (!folderRead.ok) throw new Error(folderRead.code);
+
+    const report = verifyAuditFiles({
+      folder: folderRead.folder,
+      anchors: collector.result(),
+      retentionMonths: 12,
+      clock,
+    });
+
+    expect(report).toMatchObject({
+      checked: 1,
+      lines: 2,
+      anchorsMatched: 1,
+      findings: [],
+    });
+    const summary = summarizeAuditFiles({ folder: folderRead.folder });
+    expect(summary.skipped).toBe(0);
+    expect(summary.rows.map((row) => [row.type, row.tool, row.ok])).toEqual([
+      ['tool_call', 'ct_wiki_page_update', 1],
+      ['undo', undefined, 1],
     ]);
   });
 

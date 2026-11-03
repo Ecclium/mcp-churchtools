@@ -34,6 +34,23 @@ const event = (fields: Record<string, unknown>): string => {
   });
 };
 
+/**
+ * A line of an undo of `ecclium undo`, which names the write it takes back
+ * and has no tool (ADR 0031).
+ */
+const undo = (fields: Record<string, unknown> = {}): string =>
+  event({
+    type: 'undo',
+    undoes: '00000000-0000-4000-8000-0000000000aa',
+    actor: { kind: 'operator', id: 'stdio:local-stdio' },
+    mode: 'operator',
+    tool: undefined,
+    confirmation: 'operator',
+    writeState: 'verified',
+    objectRefs: ['wiki_category:12', 'wiki_page:34'],
+    ...fields,
+  });
+
 const line = (text: string, number: number): AuditLine => ({
   number,
   hash: sha256(text),
@@ -81,6 +98,7 @@ describe('summarizeAuditFiles', () => {
     expect(summary.rows).toEqual([
       {
         day: '2026-10-29',
+        type: 'tool_call',
         tool: 'ct_persons_get',
         calls: 1,
         ok: 1,
@@ -90,6 +108,7 @@ describe('summarizeAuditFiles', () => {
       },
       {
         day: '2026-10-30',
+        type: 'tool_call',
         tool: 'ct_groups_get',
         calls: 1,
         ok: 1,
@@ -99,6 +118,7 @@ describe('summarizeAuditFiles', () => {
       },
       {
         day: '2026-10-30',
+        type: 'tool_call',
         tool: 'ct_persons_get',
         calls: 4,
         ok: 1,
@@ -108,6 +128,7 @@ describe('summarizeAuditFiles', () => {
       },
       {
         day: '2026-10-30',
+        type: 'tool_call',
         tool: undefined,
         calls: 1,
         ok: 1,
@@ -117,6 +138,7 @@ describe('summarizeAuditFiles', () => {
       },
       {
         day: '2026-10-31',
+        type: 'tool_call',
         tool: 'ct_whoami',
         calls: 1,
         ok: 1,
@@ -154,6 +176,86 @@ describe('summarizeAuditFiles', () => {
       'ct_whoami',
       undefined,
     ]);
+  });
+
+  it('counts the undos of a day in a row of their own, after its calls (ADR 0031)', () => {
+    const summary = summarizeAuditFiles({
+      folder: folderOf({
+        [nameOf(1)]: [
+          undo(),
+          event({ tool: undefined }),
+          undo({
+            outcome: 'error',
+            errorCode: 'conflict',
+            writeState: 'conflict',
+          }),
+          event({ tool: 'ct_whoami' }),
+          undo({ ts: '2026-10-29T08:00:00.000Z' }),
+        ],
+      }),
+    });
+
+    expect(
+      summary.rows.map(({ day, type, tool, calls, ok, error }) => ({
+        day,
+        type,
+        tool,
+        calls,
+        ok,
+        error,
+      })),
+    ).toEqual([
+      {
+        day: '2026-10-29',
+        type: 'undo',
+        tool: undefined,
+        calls: 1,
+        ok: 1,
+        error: 0,
+      },
+      {
+        day: '2026-10-30',
+        type: 'tool_call',
+        tool: 'ct_whoami',
+        calls: 1,
+        ok: 1,
+        error: 0,
+      },
+      {
+        day: '2026-10-30',
+        type: 'tool_call',
+        tool: undefined,
+        calls: 1,
+        ok: 1,
+        error: 0,
+      },
+      {
+        day: '2026-10-30',
+        type: 'undo',
+        tool: undefined,
+        calls: 2,
+        ok: 1,
+        error: 1,
+      },
+    ]);
+    expect(summary.lines).toBe(5);
+    expect(summary.skipped).toBe(0);
+  });
+
+  it('skips an undo that names no write or names a tool', () => {
+    const summary = summarizeAuditFiles({
+      folder: folderOf({
+        [nameOf(1)]: [
+          undo({ undoes: undefined }),
+          undo({ tool: 'ct_wiki_page_update' }),
+          event({ undoes: '00000000-0000-4000-8000-0000000000aa' }),
+          undo(),
+        ],
+      }),
+    });
+
+    expect(summary.skipped).toBe(3);
+    expect(summary.lines).toBe(1);
   });
 
   it('counts only the days from since to until', () => {
@@ -224,6 +326,7 @@ describe('summarizeAuditFiles', () => {
     expect(summary.hits).toEqual([
       {
         ts: '2026-10-30T07:00:00.000Z',
+        type: 'tool_call',
         tool: undefined,
         actorId: 'stdio:team-a',
         outcome: 'ok',
@@ -231,6 +334,7 @@ describe('summarizeAuditFiles', () => {
       },
       {
         ts: '2026-10-30T09:00:00.000Z',
+        type: 'tool_call',
         tool: 'ct_persons_get',
         actorId: 'stdio:local-stdio',
         outcome: 'denied',
@@ -238,6 +342,40 @@ describe('summarizeAuditFiles', () => {
       },
     ]);
     expect(Object.isFrozen(summary.hits[0])).toBe(true);
+  });
+
+  it('finds an undo that names the ID, with its type and without a tool', () => {
+    const summary = summarizeAuditFiles({
+      object: 'wiki_page:34',
+      folder: folderOf({
+        [nameOf(1)]: [
+          event({
+            tool: 'ct_wiki_page_update',
+            objectRefs: ['wiki_category:12', 'wiki_page:34'],
+          }),
+          undo({ ts: '2026-10-30T09:00:00.000Z' }),
+        ],
+      }),
+    });
+
+    expect(summary.hits).toEqual([
+      {
+        ts: '2026-10-30T08:00:00.000Z',
+        type: 'tool_call',
+        tool: 'ct_wiki_page_update',
+        actorId: 'stdio:local-stdio',
+        outcome: 'ok',
+        withheld: false,
+      },
+      {
+        ts: '2026-10-30T09:00:00.000Z',
+        type: 'undo',
+        tool: undefined,
+        actorId: 'stdio:local-stdio',
+        outcome: 'ok',
+        withheld: false,
+      },
+    ]);
   });
 
   it('counts the lines that left IDs out and do not name the ID', () => {
