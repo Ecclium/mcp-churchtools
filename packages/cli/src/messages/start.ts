@@ -3,7 +3,8 @@
  * `ecclium stdio`, an internal error before the server runs, the refusal
  * of a plugin or a tool by the registry (ADR 0024), an audit file that is
  * missing or cannot be opened (ADR 0028), a folder for the read budget
- * that cannot be used (ADR 0063), and the toolsets of the start
+ * that cannot be used (ADR 0063), a folder for the day keys of the
+ * snapshots that cannot be used (ADR 0031), and the toolsets of the start
  * (ADR 0062). The start notices write them to stderr before the line
  * writer exists. No text repeats an argument, because an argument can
  * hold a token, and the text of a refusal depends on its reason alone,
@@ -14,6 +15,7 @@
 import {
   type AuditFileCode,
   isToolsetName,
+  type PrivateFileCode,
   type QuotaFolderCode,
   type RefusalReason,
   type ToolsetName,
@@ -106,6 +108,31 @@ const quotaFolders: Readonly<Record<QuotaFolderCode, Message>> = Object.freeze({
     configCheck,
   ),
 });
+
+const keysDir = '‹ECCLIUM_KEYS_DIR›';
+
+// One text per reason the folder snapshot in the folder of keys cannot be
+// used. Each says that the start stops: whoever names the folder means the
+// day keys to be kept and destroyed there (ADR 0031).
+const dayKeyFolders: Readonly<Record<PrivateFileCode, Message>> = Object.freeze(
+  {
+    platform: message(
+      'Der Ordner für die Tagesschlüssel der Snapshots lässt sich auf diesem System nicht sicher anlegen, und der Start bricht ab.',
+      'Es fehlt die Prüfung des Eigentümers oder das Öffnen ohne Links, etwa unter Windows.',
+      `Entfernen Sie ${keysDir} auf diesem System und lassen Sie ‹ECCLIUM_READ_ONLY› auf ‹true›.`,
+    ),
+    unavailable: message(
+      `Ecclium konnte den Ordner ‹snapshot› im Ordner aus ${keysDir} nicht anlegen oder öffnen, und der Start bricht ab.`,
+      `Darin liegen die Tagesschlüssel, mit denen Ecclium die Snapshots der Schreibvorgänge verschlüsselt und nach ihrer Frist vernichtet. ${noPath}`,
+      `Prüfen Sie, ob der Ordner aus ${keysDir} besteht und Ihr Benutzer darin schreiben darf.`,
+    ),
+    unsafe: message(
+      `Der Ordner ‹snapshot› im Ordner aus ${keysDir} ist kein privater Ordner Ihres Benutzers, und der Start bricht ab.`,
+      'Er ist ein Link, kein Ordner, gehört einem anderen Benutzer oder ist für andere zugänglich. Dann könnten andere die Tagesschlüssel lesen und die Snapshots öffnen.',
+      configCheck,
+    ),
+  },
+);
 
 // Every refusal stops the start for the same reason, and none comes from
 // the configuration: in this version the only plugin is the one of the
@@ -291,6 +318,42 @@ export function quotaFolderMessage(code: QuotaFolderCode): Message {
  */
 export function quotaFolderText(code: QuotaFolderCode): MessageText {
   return joined(quotaFolderMessage(code));
+}
+
+/**
+ * The message for a folder `snapshot` in the folder of keys that cannot be
+ * used (ADR 0031). It names no path.
+ *
+ * @param code - Why the folder cannot be used.
+ * @returns The message in its three parts, frozen.
+ * @throws {TypeError} When the code is none of the catalog.
+ * @example
+ * ```ts
+ * dayKeyFolderMessage('unsafe').action;
+ * ```
+ */
+export function dayKeyFolderMessage(code: PrivateFileCode): Message {
+  const given: unknown = code;
+  if (typeof given !== 'string' || !Object.hasOwn(dayKeyFolders, given)) {
+    throw new TypeError('The day key folder code is unknown.');
+  }
+  return dayKeyFolders[code];
+}
+
+/**
+ * The text for a folder `snapshot` in the folder of keys that cannot be
+ * used, in one line.
+ *
+ * @param code - Why the folder cannot be used.
+ * @returns The text of the catalog.
+ * @throws {TypeError} When the code is none of the catalog.
+ * @example
+ * ```ts
+ * writeNotices([dayKeyFolderText('unavailable')]);
+ * ```
+ */
+export function dayKeyFolderText(code: PrivateFileCode): MessageText {
+  return joined(dayKeyFolderMessage(code));
 }
 
 /**

@@ -20,6 +20,8 @@ import { isProxy } from 'node:util/types';
 
 import {
   loadConfig,
+  type PrivateFileCode,
+  privateFileCodes,
   type RefusalReason,
   refusalReasons,
   RegistryRefusal,
@@ -30,7 +32,9 @@ import {
 import {
   type AuditFileWriter,
   openAuditFile,
+  prepareDayKeyFolder,
   prepareQuotaFolder,
+  PrivateFileError,
   systemClock,
 } from '@ecclium/mcp-churchtools-core/composition';
 import { DocsIndexError } from '@ecclium/mcp-churchtools-docs-index';
@@ -39,6 +43,7 @@ import { takeEnvironment } from '../environment.js';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
 import {
   auditFileText,
+  dayKeyFolderText,
   emptyToolsetText,
   type MessageText,
   problemText,
@@ -64,6 +69,8 @@ export interface StdioStartOptions extends ServeReplacements {
   readonly openAuditFile?: typeof openAuditFile;
   /** Replaces the check of the folder of the read budget. */
   readonly prepareQuotaFolder?: typeof prepareQuotaFolder;
+  /** Replaces the check of the folder of the day keys of snapshots. */
+  readonly prepareDayKeyFolder?: typeof prepareDayKeyFolder;
   /** Replaces the reader of the docs index. */
   readonly readDocs?: StdioCatalogOptions['readDocs'];
 }
@@ -96,6 +103,22 @@ const refusalOf = (error: unknown): RefusalReason | undefined => {
   return refusalReasons.find((known) => known === reason);
 };
 
+// Why the folder of the day keys could not be prepared, read as an own
+// data property of a refusal of core. Any other value gives undefined, and
+// the start then reports an internal error.
+const privateFileCodeOf = (error: unknown): PrivateFileCode | undefined => {
+  if (
+    typeof error !== 'object' ||
+    error === null ||
+    isProxy(error) ||
+    !(error instanceof PrivateFileError)
+  ) {
+    return undefined;
+  }
+  const code: unknown = Object.getOwnPropertyDescriptor(error, 'code')?.value;
+  return privateFileCodes.find((known) => known === code);
+};
+
 /**
  * Starts the server over stdio. It removes the token from the environment
  * first, in every spelling of its name, so that child processes and other
@@ -108,8 +131,10 @@ const refusalOf = (error: unknown): RefusalReason | undefined => {
  * the folder of the read budget before the notices; a tool with
  * sensitivity special without the folder, a file that cannot be opened or
  * a folder that cannot be used ends the start with a notice and 78
- * (ADR 0028, ADR 0063). Until the stderr writer exists, everything is
- * caught: an internal error gives one fixed notice and 70, never a stack
+ * (ADR 0028, ADR 0063). With `ECCLIUM_KEYS_DIR` it prepares the folder of
+ * the day keys of snapshots in the same way (ADR 0031). Until the stderr
+ * writer exists, everything is caught: an internal error gives one fixed
+ * notice and 70, never a stack
  * or a message, and closes an audit file that is already open.
  *
  * @param args - The arguments after `ecclium stdio`.
@@ -118,8 +143,9 @@ const refusalOf = (error: unknown): RefusalReason | undefined => {
  * @param execArgv - The options Node.js was started with, which the loader
  *   reads for the options of TLS.
  * @param startOptions - Replacements for tests.
- * @returns 64 for an argument, 78 for an invalid configuration or an
- *   audit file that is missing or cannot be opened, 70 for a refusal of
+ * @returns 64 for an argument, 78 for an invalid configuration, an audit
+ *   file that is missing or cannot be opened or a folder that cannot be
+ *   used, 70 for a refusal of
  *   the registry or an internal error, or undefined once the
  *   server runs: the process then gets its exit code when the connection
  *   ends.
@@ -139,6 +165,7 @@ export async function startStdio(
     writeSync,
     openAuditFile: open = openAuditFile,
     prepareQuotaFolder: prepare = prepareQuotaFolder,
+    prepareDayKeyFolder: prepareKeys = prepareDayKeyFolder,
     readDocs,
     ...replacements
   } = startOptions;
@@ -230,6 +257,24 @@ export async function startStdio(
       if (!prepared.ok) {
         notices([...texts, quotaFolderText(prepared.code)]);
         auditFile.close();
+        return exitCodes.invalidConfig;
+      }
+    }
+    // The folder of the day keys of the snapshots, made and checked while
+    // fd 2 still blocks, so that one that cannot be used reports with the
+    // notices, and before the second stage destroys keys in it. Also while
+    // the server only reads: keys of an earlier run that wrote still go
+    // once their retention is over. The folder of the queue comes with its
+    // first key (ADR 0031).
+    const { keysDir } = loaded.config;
+    if (keysDir !== undefined) {
+      try {
+        prepareKeys(keysDir, 'snapshot');
+      } catch (error) {
+        const code = privateFileCodeOf(error);
+        if (code === undefined) throw error;
+        notices([...texts, dayKeyFolderText(code)]);
+        auditFile?.close();
         return exitCodes.invalidConfig;
       }
     }

@@ -14,8 +14,10 @@
  * `ct_whoami` checks the token, so the token leaves the process only for a
  * call. With an audit file, the start deletes the files of the folder
  * `audit` past their retention, and a timer starts the file of each new
- * UTC day also in a run without calls (ADR 0028). When the connection
- * ends, the transport closes, the event
+ * UTC day also in a run without calls (ADR 0028). With a folder of keys,
+ * the start and the same timer on each new UTC day destroy the day keys
+ * of the snapshots past their retention of 30 days (ADR 0031). When the
+ * connection ends, the transport closes, the event
  * `audit_file_closed` counts the lines the audit file lost, the file
  * closes with the anchor of its chain, `audit_chain_anchor`, if it has a
  * line, the event `stdio_closed` counts the lines stderr lost, and the
@@ -43,7 +45,11 @@ import type {
   HttpTransport,
   HttpTransportOptions,
 } from '@ecclium/mcp-churchtools-core/http';
-import type { ErrorCode } from '@ecclium/mcp-churchtools-plugin-api';
+import {
+  type ErrorCode,
+  type IsoDate,
+  isIsoDate,
+} from '@ecclium/mcp-churchtools-plugin-api';
 import { startStdioServer } from '@ecclium/mcp-churchtools-server/stdio';
 
 import { composeToolPipeline } from '../compose/pipeline.js';
@@ -133,6 +139,8 @@ const auditFileClosedEvent = 'audit_file_closed';
 const anchorEvent = 'audit_chain_anchor';
 const filesDeletedEvent = 'audit_files_deleted';
 const filesKeptEvent = 'audit_files_not_deleted';
+const dayKeysDestroyedEvent = 'day_keys_destroyed';
+const dayKeysKeptEvent = 'day_keys_not_destroyed';
 const closedEvent = 'stdio_closed';
 
 /**
@@ -162,6 +170,37 @@ export const untilNextDay = (now: number): number =>
   Number.isFinite(now)
     ? Math.min(dayMs - (((now % dayMs) + dayMs) % dayMs) + 1000, hourMs)
     : hourMs;
+
+/**
+ * How many days after its own a snapshot stays readable: the day key of
+ * the snapshots of a day is destroyed once 30 more days are over, so a
+ * snapshot of a day D opens through D+30 and in no copy from D+31 on
+ * (ADR 0031).
+ */
+export const snapshotRetentionDays = 30;
+
+/**
+ * The first UTC day whose day keys of snapshots stay at a time: the day of
+ * the time less {@link snapshotRetentionDays}. Every day key of an earlier
+ * day is past its retention.
+ *
+ * @param now - Milliseconds since the Unix epoch, from the clock.
+ * @returns The day, or undefined when the time gives no day from 1970 to
+ *   9999.
+ * @example
+ * ```ts
+ * firstKeptSnapshotDay(Date.UTC(2026, 10, 3, 12)); // '2026-10-04'
+ * ```
+ */
+export const firstKeptSnapshotDay = (now: number): IsoDate | undefined => {
+  if (!Number.isFinite(now)) return undefined;
+  // A day in UTC has no change of the clock, so 30 times its length back
+  // is the same time of the day 30 days before.
+  const cut = new Date(now - snapshotRetentionDays * dayMs);
+  if (Number.isNaN(cut.getTime())) return undefined;
+  const day = cut.toISOString().slice(0, 10);
+  return isIsoDate(day) ? day : undefined;
+};
 
 // The process itself. Only properties are used: loading node:process
 // would make fd 1 and fd 2 non-blocking (ADR 0054).
@@ -244,6 +283,33 @@ export function serve(options: ServeOptions): ExitCode | undefined {
   // sweeps, at every level of the log as well. Only this logger may write
   // the fields of an anchor (ADR 0028).
   let dayTimer: ReturnType<typeof setTimeout> | undefined;
+  // The destruction of the day keys past their retention, once the
+  // pipeline has its day keys (ADR 0031).
+  let sweepDayKeys: (() => void) | undefined;
+  // After the start, on each new UTC day through the timer, also without a
+  // call. The timer looks at least every hour: it starts the audit file of
+  // a new day when the clock shows one and destroys the day keys past
+  // their retention, each even when the other throws. unref, so that the
+  // timer holds nothing.
+  const armDayTimer = (): void => {
+    let now = Number.NaN;
+    try {
+      now = clock.now();
+    } catch {
+      // An hour, and then the clock again.
+    }
+    dayTimer = setTimeout(() => {
+      try {
+        auditFile?.tick();
+      } finally {
+        try {
+          sweepDayKeys?.();
+        } finally {
+          armDayTimer();
+        }
+      }
+    }, untilNextDay(now)).unref();
+  };
   if (auditFile !== undefined) {
     const anchorLogger = createLogger({
       writer,
@@ -269,28 +335,8 @@ export function serve(options: ServeOptions): ExitCode | undefined {
         }
       },
     });
-    // At the start, and then on each new UTC day through the timer, also
-    // without a call. The timer looks at least every hour and starts the
-    // file of a new day when the clock shows one. unref, so that the timer
-    // holds nothing.
+    // At the start, and then on each new UTC day through the timer.
     auditFile.sweep();
-    const file = auditFile;
-    const nextDay = (): void => {
-      let now = Number.NaN;
-      try {
-        now = clock.now();
-      } catch {
-        // An hour, and then the clock again.
-      }
-      dayTimer = setTimeout(() => {
-        try {
-          file.tick();
-        } finally {
-          nextDay();
-        }
-      }, untilNextDay(now)).unref();
-    };
-    nextDay();
   }
 
   const crash =
@@ -332,6 +378,55 @@ export function serve(options: ServeOptions): ExitCode | undefined {
       ...(options.input === undefined ? {} : { input: options.input }),
       ...(options.output === undefined ? {} : { output: options.output }),
     });
+
+    // The day keys of the snapshots past their retention go at the start
+    // and then once on each new UTC day (ADR 0031). A day whose keys could
+    // not all be destroyed is tried again at the next look of the timer,
+    // within the hour. The lines name a count only, never a path or the
+    // message of an error.
+    const { dayKeys } = composed;
+    if (dayKeys !== undefined) {
+      let sweptFor: IsoDate | undefined;
+      let sweeping = false;
+      sweepDayKeys = (): void => {
+        let now = Number.NaN;
+        try {
+          now = clock.now();
+        } catch {
+          // No day without the clock, which the line below says.
+        }
+        const cut = firstKeptSnapshotDay(now);
+        if (cut === undefined) {
+          processLogger.warn(dayKeysKeptEvent);
+          return;
+        }
+        if (sweeping || cut === sweptFor) return;
+        sweeping = true;
+        // A promise that rejected is caught here: unhandled, it would end
+        // the process through the handler above.
+        void Promise.resolve()
+          .then(() => dayKeys.destroyBefore('snapshot', cut))
+          .then(
+            (count) => {
+              sweptFor = cut;
+              if (Number.isSafeInteger(count) && count > 0) {
+                processLogger.info(dayKeysDestroyedEvent, {
+                  count: Math.min(count, maxCount),
+                });
+              }
+            },
+            () => {
+              processLogger.warn(dayKeysKeptEvent);
+            },
+          )
+          .catch(() => undefined)
+          .finally(() => {
+            sweeping = false;
+          });
+      };
+      sweepDayKeys();
+    }
+    if (auditFile !== undefined || dayKeys !== undefined) armDayTimer();
 
     let signalCode: ExitCode | undefined;
     const onSignal =

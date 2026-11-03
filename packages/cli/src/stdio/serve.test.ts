@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import {
   chmodSync,
+  mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -25,9 +27,11 @@ import type { WriteSyncFn } from '../send.js';
 import { createStdioCatalog } from './catalog.js';
 import {
   closeDeadlineMs,
+  firstKeptSnapshotDay,
   serve,
   type ServeOptions,
   type ServeReplacements,
+  snapshotRetentionDays,
   type StdioHost,
   untilNextDay,
 } from './serve.js';
@@ -516,6 +520,179 @@ describe('the second stage with an audit file', () => {
     session.signals.get('SIGTERM')?.();
     await session.ended();
     expect(session.events()).toEqual(['process_sigterm', 'stdio_closed']);
+  });
+});
+
+// The day keys of the snapshots past their retention (ADR 0031): the start
+// and the timer of the day destroy them in the folder of keys that the
+// first stage prepared, here a real folder with day keys of a few days.
+describe('the second stage with a folder of keys', () => {
+  /** A folder of keys with a folder snapshot that holds keys of these days. */
+  const keysWith = (days: readonly string[]): string => {
+    const folder = mkdtempSync(join(keyFolder, 'keys-'));
+    chmodSync(folder, 0o700);
+    const snapshot = join(folder, 'snapshot');
+    mkdirSync(snapshot, { mode: 0o700 });
+    chmodSync(snapshot, 0o700);
+    for (const day of days) {
+      const file = join(snapshot, `default.${day}.key`);
+      writeFileSync(file, createHash('sha256').update(day).digest('hex'), {
+        mode: 0o600,
+      });
+      chmodSync(file, 0o600);
+    }
+    return folder;
+  };
+  const left = (folder: string): string[] =>
+    readdirSync(join(folder, 'snapshot'));
+  const dayKeyLines = (session: ReturnType<typeof setup>) =>
+    session
+      .lines()
+      .filter((line) => String(line['event']).startsWith('day_keys_'));
+  // The destruction answers through a promise; setImmediate is not faked.
+  const settle = async (): Promise<void> => {
+    for (let turn = 0; turn < 5; turn += 1) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  };
+
+  it('destroys the keys before the 30 days at the start and once on each new UTC day', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(Date.UTC(2026, 9, 23, 23, 59, 0));
+    const folder = keysWith(['2026-09-22', '2026-09-23', '2026-10-23']);
+    const session = setup({ config: { ...config, keysDir: folder } });
+    expect(session.code).toBeUndefined();
+    await settle();
+    // The key of 23 September stays through 23 October, its 30th day.
+    expect(left(folder)).toEqual([
+      'default.2026-09-23.key',
+      'default.2026-10-23.key',
+    ]);
+    expect(dayKeyLines(session)).toEqual([
+      {
+        ts: expect.any(String) as unknown,
+        level: 'info',
+        event: 'day_keys_destroyed',
+        count: 1,
+      },
+    ]);
+    vi.advanceTimersByTime(61_000);
+    await settle();
+    expect(left(folder)).toEqual(['default.2026-10-23.key']);
+    expect(dayKeyLines(session)).toHaveLength(2);
+    // The next look on the same day destroys nothing more and says nothing.
+    vi.advanceTimersByTime(3_600_000);
+    await settle();
+    expect(dayKeyLines(session)).toHaveLength(2);
+    assertNoCanary(session.stderr(), allCanaries, 'stderr');
+    expect(session.stderr()).not.toContain(folder);
+  });
+
+  it('says nothing when no key is past its retention', async () => {
+    const session = setup({
+      config: { ...config, keysDir: keysWith([]) },
+    });
+    await settle();
+    expect(dayKeyLines(session)).toEqual([]);
+    session.input.end();
+    await session.ended();
+  });
+
+  it('warns without a path when the keys cannot be destroyed, and tries again within the hour', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(Date.UTC(2026, 9, 23, 12, 0, 0));
+    const folder = keysWith(['2026-09-01']);
+    // A folder that others may read is no folder of day keys.
+    chmodSync(join(folder, 'snapshot'), 0o755);
+    const session = setup({ config: { ...config, keysDir: folder } });
+    await settle();
+    expect(dayKeyLines(session)).toEqual([
+      {
+        ts: expect.any(String) as unknown,
+        level: 'warn',
+        event: 'day_keys_not_destroyed',
+      },
+    ]);
+    expect(session.stderr()).not.toContain(folder);
+    chmodSync(join(folder, 'snapshot'), 0o700);
+    vi.advanceTimersByTime(3_600_000);
+    await settle();
+    expect(left(folder)).toEqual([]);
+    expect(dayKeyLines(session).at(-1)).toMatchObject({
+      level: 'info',
+      event: 'day_keys_destroyed',
+      count: 1,
+    });
+  });
+
+  it('arms one timer for the audit file and the keys, which ticks the file and destroys the keys', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(Date.UTC(2026, 9, 23, 23, 59, 0));
+    const timers = vi.fn(globalThis.setTimeout);
+    vi.stubGlobal('setTimeout', timers);
+    const folder = keysWith(['2026-09-23']);
+    const audit = fakeAuditFile();
+    const failing = {
+      ...audit.file,
+      tick: () => {
+        audit.ticks.push(1);
+        throw new Error('tick');
+      },
+    };
+    setup({ config: { ...config, keysDir: folder }, auditFile: failing });
+    expect(
+      timers.mock.calls.filter(([, delay]) => delay === 61_000),
+    ).toHaveLength(1);
+    await settle();
+    expect(left(folder)).toEqual(['default.2026-09-23.key']);
+    // A tick that throws keeps neither the keys nor the next look.
+    expect(() => vi.advanceTimersByTime(61_000)).toThrow('tick');
+    await settle();
+    expect(audit.ticks).toEqual([1]);
+    expect(left(folder)).toEqual([]);
+    expect(timers.mock.calls.at(-1)?.[1]).toBe(3_600_000);
+  });
+
+  it('stops the timer of the day keys when the connection ends', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(Date.UTC(2026, 9, 23, 23, 59, 0));
+    const folder = keysWith(['2026-09-23']);
+    const session = setup({ config: { ...config, keysDir: folder } });
+    session.input.end();
+    for (
+      let turn = 0;
+      turn < 1000 && session.exitCodes.length === 0;
+      turn += 1
+    ) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    vi.advanceTimersByTime(2 * 86_400_000);
+    await settle();
+    expect(left(folder)).toEqual(['default.2026-09-23.key']);
+  });
+});
+
+describe('firstKeptSnapshotDay', () => {
+  it('gives the day 30 days before the day of the time', () => {
+    expect(snapshotRetentionDays).toBe(30);
+    expect(firstKeptSnapshotDay(Date.UTC(2026, 10, 3, 12))).toBe('2026-10-04');
+    expect(firstKeptSnapshotDay(Date.UTC(2026, 9, 23, 0, 0, 0))).toBe(
+      '2026-09-23',
+    );
+    expect(firstKeptSnapshotDay(Date.UTC(2026, 9, 23, 23, 59, 59, 999))).toBe(
+      '2026-09-23',
+    );
+    expect(firstKeptSnapshotDay(Date.UTC(2027, 2, 1))).toBe('2027-01-30');
+  });
+
+  it.each([
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Date.UTC(1970, 0, 15),
+    Date.UTC(10_000, 1, 15),
+    9e15,
+  ])('gives no day for a time of %s', (now) => {
+    expect(firstKeptSnapshotDay(now)).toBeUndefined();
   });
 });
 

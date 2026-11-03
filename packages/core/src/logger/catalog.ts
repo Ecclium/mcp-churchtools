@@ -303,6 +303,10 @@ export const logEvents = Object.freeze({
   audit_file_closed: entry('info', 'count'),
   audit_files_deleted: entry('info', 'count'),
   audit_files_not_deleted: entry('warn', 'count'),
+  // The day keys past their retention, at the start over stdio and on each
+  // new UTC day (ADR 0031).
+  day_keys_destroyed: entry('info', 'count'),
+  day_keys_not_destroyed: entry('warn'),
   // The process of `ecclium stdio` (ADR 0053).
   stdio_start_failed: entry('error', 'code'),
   stdio_closed: entry('info', 'count'),

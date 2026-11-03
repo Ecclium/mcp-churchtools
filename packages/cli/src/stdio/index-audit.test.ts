@@ -3,12 +3,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { tokenVariableName } from '@ecclium/mcp-churchtools-core';
+import { PrivateFileError } from '@ecclium/mcp-churchtools-core/composition';
 import { doubleOrigin, makeCanary } from '@ecclium/mcp-churchtools-testkit';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 
 import { exitCodes } from '../exit-codes.js';
 import {
   auditFileText,
+  dayKeyFolderText,
   emptyToolsetText,
   quotaFolderText,
   startText,
@@ -289,6 +291,101 @@ describe('the first stage and the audit file', () => {
     expect(code).toBe(exitCodes.internal);
     expect(stderr).toContain(startText('internal'));
     expect(closed).toEqual(['closed']);
+  });
+});
+
+// The folder of the day keys of the snapshots (ADR 0031): the first stage
+// makes and checks it while fd 2 still blocks, also while the server only
+// reads, so that the second stage can destroy the keys in it.
+describe('the first stage and the folder of the day keys', () => {
+  /** An audit file in memory that counts how often it was closed. */
+  const closingFile = (closed: string[]) => ({
+    ok: true as const,
+    writer: {
+      write: () => true,
+      ready: () => true,
+      attach: () => true,
+      sweep: () => undefined,
+      tick: () => undefined,
+      anchor: () => undefined,
+      close: () => {
+        closed.push('closed');
+      },
+      counts: () => ({
+        written: 0,
+        failed: 0,
+        partial: 0,
+        rejected: 0,
+        reopened: 0,
+        closed: false,
+      }),
+    },
+  });
+
+  it('prepares the folder snapshot with 0700 before the second stage loads, also while the server only reads', async () => {
+    const keys = freshFolder();
+    const { code } = await start(undefined, {}, { ECCLIUM_KEYS_DIR: keys });
+    expect(code).toBeUndefined();
+    expect(statSync(join(keys, 'snapshot')).mode & 0o777).toBe(0o700);
+    expect(readdirSync(keys)).toEqual(['snapshot']);
+    expect(state.served[0]?.config.keysDir).toBe(keys);
+  });
+
+  it('prepares nothing without the folder', async () => {
+    const prepared: unknown[] = [];
+    const { code } = await start(undefined, {
+      prepareDayKeyFolder: (...args) => {
+        prepared.push(args);
+      },
+    });
+    expect(code).toBeUndefined();
+    expect(prepared).toEqual([]);
+  });
+
+  it.each(['platform', 'unavailable', 'unsafe'] as const)(
+    'ends with its notice after the others and 78, and closes the audit file, for %s',
+    async (reason) => {
+      const closed: string[] = [];
+      const keys = freshFolder();
+      const given: unknown[] = [];
+      const { code, stderr } = await start(
+        freshFolder(),
+        {
+          openAuditFile: () => closingFile(closed),
+          prepareDayKeyFolder: (...args) => {
+            given.push(args);
+            throw new PrivateFileError(reason);
+          },
+        },
+        { ECCLIUM_KEYS_DIR: keys },
+      );
+      expect(code).toBe(exitCodes.invalidConfig);
+      expect(given).toEqual([[keys, 'snapshot']]);
+      const lines = stderr.split('\n').filter((line) => line !== '');
+      expect(lines.at(-1)).toBe(dayKeyFolderText(reason));
+      expect(lines.length).toBeGreaterThan(1);
+      expect(stderr).not.toContain(keys);
+      expect(closed).toEqual(['closed']);
+      expect(state.served).toEqual([]);
+    },
+  );
+
+  it('ends with the notice of an internal error and 70 for anything else it throws', async () => {
+    const closed: string[] = [];
+    const { code, stderr } = await start(
+      freshFolder(),
+      {
+        openAuditFile: () => closingFile(closed),
+        prepareDayKeyFolder: () => {
+          throw Object.assign(new Error('unsafe'), { code: 'unsafe' });
+        },
+      },
+      { ECCLIUM_KEYS_DIR: freshFolder() },
+    );
+    expect(code).toBe(exitCodes.internal);
+    expect(stderr).toContain(startText('internal'));
+    expect(closed).toEqual(['closed']);
+    expect(state.served).toEqual([]);
   });
 });
 

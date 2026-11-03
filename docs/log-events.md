@@ -266,6 +266,13 @@ Je Ereignis die Stufe und die Felder, die ein Aufruf höchstens setzt. Die Felde
 | `audit_unknown_fields` | `error` | `code`, `count` | Eine Zeile kam mit Feldern, die das Schema nicht kennt. `count` nennt ihre Zahl, die Felder fallen weg. |
 | `audit_unreadable` | `error` | `code`, `count` | Ecclium konnte die Angaben einer Zeile nicht lesen. Die Zeile trägt nur Platzhalter. |
 
+### Tagesschlüssel
+
+| Ereignis | Stufe | Felder | Bedeutung |
+| --- | --- | --- | --- |
+| `day_keys_destroyed` | `info` | `count` | Ecclium hat Tagesschlüssel der Snapshots nach ihrer Frist von 30 Tagen vernichtet, beim Start oder beim Wechsel des UTC-Tages. Snapshots dieser Tage lassen sich nicht mehr öffnen, in keiner Kopie. `count` nennt die Zahl der Schlüssel. |
+| `day_keys_not_destroyed` | `warn` | keine | Ecclium konnte Tagesschlüssel der Snapshots nach ihrer Frist nicht vernichten, etwa weil der Ordner aus `ECCLIUM_KEYS_DIR` nicht mehr privat ist. Ecclium versucht es spätestens nach einer Stunde erneut. |
+
 ### Prozess über stdio
 
 | Ereignis | Stufe | Felder | Bedeutung |
