@@ -80,6 +80,9 @@ export const listEmpty = 'Es wartet kein Eintrag auf Ihre Freigabe.';
 export const listFooter =
   'Was ein Eintrag schreiben würde, zeigt ‹ecclium queue show <Kennung>›, abweisen lässt er sich mit ‹ecclium queue reject <Kennung>›. Freigeben lässt sich ein Eintrag in dieser Version noch nicht. Nach 14 Tagen verfällt jeder Eintrag.';
 
+/** How an entry reads in a list whose decision was counted but not kept. */
+export const usedWords = 'entschieden, den Ausgang zeigt das Audit';
+
 /** The line before the diff of an entry. */
 export const diffHeading =
   'Der Schreibvorgang würde so ändern, mit ‹-› für Zeilen davor und ‹+› für Zeilen danach, wie Ecclium das Ziel beim Einreihen las:';
@@ -106,6 +109,29 @@ export const rejectedUnrecorded = ending(
   'Der Eintrag ist abgewiesen und sein Inhalt vernichtet, aber die Zeile kam nicht in die Audit-Datei. Prüfen Sie die Audit-Datei mit ‹ecclium audit verify›.',
   exitCodes.ioError,
 );
+
+/**
+ * The ending of a call about an entry whose decision was counted but not
+ * kept, as after a stop between the two (ADR 0029).
+ *
+ * @param shown - Whether the command only shows the entry.
+ * @returns The ending: 0 for `show`, 65 for a decision.
+ * @example
+ * ```ts
+ * usedEnding(false).code; // 65
+ * ```
+ */
+export function usedEnding(shown: boolean): QueueEnding {
+  return shown
+    ? ending(
+        'Über diesen Eintrag ist schon entschieden, den Ausgang zeigt ‹ecclium audit show›. Sein Inhalt lässt sich nicht mehr zeigen und verfällt mit dem Eintrag nach 14 Tagen.',
+        exitCodes.ok,
+      )
+    : ending(
+        'Über diesen Eintrag ist schon entschieden, den Ausgang zeigt ‹ecclium audit show›. Ecclium hat nichts geändert.',
+        exitCodes.dataError,
+      );
+}
 
 /** The endings of a call that found no entry. */
 export const queueMissing = Object.freeze({

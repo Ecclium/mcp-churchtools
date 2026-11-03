@@ -190,7 +190,7 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
     write_refused:
       'Der Write-Guard plant oder schreibt nicht: Schreiben ist gesperrt oder nicht zu prüfen, die Art des Schreibvorgangs läuft nicht, die Rechte des Kontos sind nicht zu lesen, oder die Uhr weicht mehr als fünf Minuten von ChurchTools ab. `code` nennt den Fehler.',
     write_conflict:
-      'Das Ziel eines Schreibvorgangs hat sich seit dem Plan geändert oder liest sich nach dem Schreiben nicht wie geplant. `code` ist `conflict`.',
+      'Das Ziel eines Schreibvorgangs hat sich seit dem Plan oder seit dem Einreihen in die Freigabe-Warteschlange geändert oder liest sich nach dem Schreiben nicht wie geplant. `code` ist `conflict`.',
     write_outcome_unknown:
       'Nach einem Fehler beim Schreiben ist offen, ob die Änderung ChurchTools erreicht hat, und das Lesen danach konnte es nicht klären. Das Ziel ist von Hand zu prüfen.',
     write_audit_failed:
@@ -214,9 +214,11 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
     write_queue_full:
       'Für diesen Mandanten warten schon 100 Einträge in der Freigabe-Warteschlange. Der Schreibvorgang wird weder geschrieben noch eingereiht, `code` ist `policy_denied`.',
     write_queue_failed:
-      'Ecclium konnte einen Eintrag der Freigabe-Warteschlange nicht festhalten, zählen oder entscheiden. Geschrieben ist nichts, `code` ist `internal`.',
+      'Ecclium konnte einen Eintrag der Freigabe-Warteschlange nicht festhalten, zählen oder entscheiden, oder einen Entscheid nicht im Zähler der Entscheide zählen. Geschrieben ist nichts, `code` ist `internal`.',
     queue_reject_call:
       'Eine Abweisung mit `ecclium queue reject` ist zu Ende, mit oder ohne Fehler. `code` nennt den Fehler, `durationMs` die Dauer. Zu jeder gehört eine Zeile vom Typ `approval` im Audit. Inhalt des Eintrags steht nie darin.',
+    queue_approve_call:
+      'Eine Freigabe mit `ecclium queue approve` ist zu Ende, mit oder ohne Fehler. `code` nennt den Fehler, `durationMs` die Dauer. Zu jeder gehört eine Zeile vom Typ `approval` im Audit, nach dem Entscheid mit dem Zustand des Schreibvorgangs. Inhalt des Eintrags und Text des Ziels stehen nie darin.',
     write_committed:
       'Ein Schreibvorgang ist geschrieben und gelesen: die Version stieg wie geplant, und der Text ist der gesendete.',
     snapshot_failed:
@@ -234,7 +236,7 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
     policy_limit_reached:
       'Die Grenze der Schreibvorgänge dieses Tools auf dieses Ziel für den UTC-Tag ist erreicht. Beim Planen kommt der Schreibvorgang in die Freigabe-Warteschlange, ohne Warteschlange endet er mit `confirmation_required`. Bei der Prüfung unmittelbar vor dem Senden endet er mit `policy_denied`. In keinem Fall schreibt Ecclium.',
     policy_count_unavailable:
-      'Ecclium konnte einen Schreibvorgang nicht gegen die Grenze der Richtlinie zählen, etwa ohne Ordner für den Zustand. Beim Planen kommt der Schreibvorgang in die Freigabe-Warteschlange, ohne Warteschlange endet er mit `confirmation_required`. Bei der Prüfung unmittelbar vor dem Senden endet er mit `policy_denied`. In keinem Fall schreibt Ecclium.',
+      'Ecclium konnte einen Schreibvorgang nicht gegen die Grenze der Richtlinie zählen, etwa ohne Ordner für den Zustand. Beim Planen kommt der Schreibvorgang in die Freigabe-Warteschlange, ohne Warteschlange endet er mit `confirmation_required`. Bei der Prüfung unmittelbar vor dem Senden endet er mit `policy_denied`, und Ecclium schreibt nicht. Nur nach einer Freigabe mit `ecclium queue approve` schreibt Ecclium trotzdem, weil die Freigabe auch die Grenze ersetzt, und der Schreibvorgang fehlt dann im Zähler des Tages.',
     content_too_long:
       'Ein Text eines Schreibvorgangs ist länger als 64 KiB oder hat mehr als 2000 Sternchen, Unterstriche, Tilden und Ausrufezeichen. Der Aufruf endet ohne Schreiben, der Grund steht in `contentViolations` des Audits.',
     content_unparsable:

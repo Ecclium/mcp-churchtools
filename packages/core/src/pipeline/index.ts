@@ -5,6 +5,8 @@
  * @packageDocumentation
  */
 export {
+  type ApproveOutcome,
+  type ApproveReason,
   type ConfirmationAnswer,
   type ConfirmationQuestion,
   createToolPipeline,

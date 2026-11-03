@@ -50,6 +50,7 @@ import {
   createStderrWriter,
   openAuditFile,
   prepareQueueFolder,
+  prepareQuotaFolder,
   systemClock,
 } from '@ecclium/mcp-churchtools-core/composition';
 import type {
@@ -65,6 +66,7 @@ import {
   type Message,
   problemText,
   queueFolderMessage,
+  quotaFolderMessage,
 } from '../messages/index.js';
 import { type Output, terminalLines, usageLine } from '../output/index.js';
 import type { WriteSyncFn } from '../send.js';
@@ -86,6 +88,8 @@ import {
   rejectedUnrecorded,
   showFooter,
   timeOf,
+  usedEnding,
+  usedWords,
 } from './texts.js';
 
 /** What the command is asked to do. */
@@ -211,6 +215,9 @@ const writeEntry = (output: Output, entry: QueueListing): boolean => {
     case 'expired':
       output.stdout(`${entry.id}  ${dayOf(entry.day)}  verfallen`);
       return true;
+    case 'used':
+      output.stdout(`${entry.id}  ${dayOf(entry.day)}  ${usedWords}`);
+      return true;
     case 'damaged':
       output.stdout(
         `${entry.id}  ${dayOf(entry.day)}  lässt sich nicht öffnen und verfällt nach 14 Tagen`,
@@ -231,6 +238,8 @@ const reportShow = (output: Output, outcome: QueueShowOutcome): ExitCode => {
     case 'expired':
     case 'off':
       return finish(output, queueMissing[outcome.kind]);
+    case 'used':
+      return finish(output, usedEnding(true));
     case 'decided':
       return finish(
         output,
@@ -268,6 +277,8 @@ const reportReject = (output: Output, outcome: RejectOutcome): ExitCode => {
     case 'expired':
     case 'off':
       return finish(output, queueMissing[outcome.kind]);
+    case 'used':
+      return finish(output, usedEnding(false));
     case 'decided':
       return finish(output, decidedEnding(outcome.decision, undefined, false));
     case 'failed':
@@ -333,6 +344,15 @@ export async function runQueue(options: QueueOptions): Promise<ExitCode> {
     if (code === undefined) throw error;
     output.stderr(queueText(queueFolderMessage(code)));
     return exitCodes.invalidConfig;
+  }
+  if (action === 'reject') {
+    // A rejection counts in the store of quotas first (ADR 0029), so its
+    // folder as the start prepares it.
+    const prepared = prepareQuotaFolder(stateDir);
+    if (!prepared.ok) {
+      output.stderr(queueText(quotaFolderMessage(prepared.code)));
+      return exitCodes.invalidConfig;
+    }
   }
   const clock = systemClock;
   // Only a decision writes a line into the audit file; reading writes none.

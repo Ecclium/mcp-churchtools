@@ -22,7 +22,7 @@ export const auditTypeMeanings: Readonly<Record<string, string>> =
       'Ein Aufruf eines Tools, auch eines unbekannten, eines abgelehnten und eines gescheiterten. Jeder Aufruf ergibt genau eine Zeile, geschrieben auch dann, wenn eine Stufe der Pipeline scheitert.',
     undo: 'Ein Lauf von `ecclium undo`, der einen Schreibvorgang von Ecclium aus seinem verschlüsselten Snapshot zurücknimmt ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)). Jeder Lauf, der den Snapshot sucht, ergibt genau eine Zeile, mit `undoes` und ohne `tool`. Ein Lauf, der vorher am Aufruf oder an der Konfiguration scheitert, ergibt keine. `ecclium audit show` zählt diese Zeilen als Rücknahmen in einer eigenen Zeile, `ecclium policy init` leitet aus ihnen weder Ziele noch Grenzen ab.',
     approval:
-      'Ein Entscheid des Betreibers über einen Eintrag der Freigabe-Warteschlange mit `ecclium queue` ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)). Jeder Lauf, der einen Eintrag sucht, ergibt genau eine Zeile, mit `queueId` und `decision` und ohne `tool`. Eine Abweisung schreibt nichts in ChurchTools und hat weder `writeState` noch `confirmation`. Den Wunsch selbst hält die Zeile des Aufrufs vom Typ `tool_call` mit `writeState: queued` fest, deren `eventId` die `queueId` ist. `ecclium audit show` zählt Freigaben und Abweisungen je in einer eigenen Zeile, `ecclium policy init` leitet aus ihnen weder Ziele noch Grenzen ab.',
+      'Ein Entscheid des Betreibers über einen Eintrag der Freigabe-Warteschlange mit `ecclium queue` ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)). Jeder Lauf, der einen Eintrag sucht, ergibt genau eine Zeile, mit `queueId` und `decision` und ohne `tool`. Eine Abweisung schreibt nichts in ChurchTools und hat weder `writeState` noch `confirmation`. Eine Freigabe schreibt sofort ([ADR 0029](adr/0029-write-guard.md)): Ist sie entschieden, nennt ihre Zeile den Zustand des Schreibvorgangs in `writeState`, `confirmation: operator`, sobald der Nachweis verbraucht ist, `policyHash` und das Ziel. Ihre `eventId` ist die Kennung, mit der `ecclium undo` den Schreibvorgang zurücknimmt. Den Wunsch selbst hält die Zeile des Aufrufs vom Typ `tool_call` mit `writeState: queued` fest, deren `eventId` die `queueId` ist. `ecclium audit show` zählt Freigaben und Abweisungen je in einer eigenen Zeile, `ecclium policy init` leitet aus ihnen weder Ziele noch Grenzen ab.',
   });
 
 /**
@@ -60,7 +60,7 @@ export const auditFieldMeanings: Readonly<Record<string, string>> =
     writeState:
       'Der Zustand eines Schreibvorgangs am Ende des Aufrufs: `planned`, `queued`, `verified` oder `skipped` bei `ok`, `denied` bei `denied`, `conflict`, `failed` oder `rolledBack` bei `error`. Wer Schreibvorgänge zählt, liest dieses Feld.',
     policyHash:
-      'SHA-256 der Richtlinie, die einen Aufruf eines schreibenden Tools beurteilt hat, wie `ecclium config check` ihn zeigt. Jede Zeile eines schreibenden Tools nennt ihn, auch eine abgelehnte. Später nennt ihn auch jede Zeile eines Laufs des Runners.',
+      'SHA-256 der Richtlinie, die einen Aufruf eines schreibenden Tools beurteilt hat, wie `ecclium config check` ihn zeigt. Jede Zeile eines schreibenden Tools nennt ihn, auch eine abgelehnte, ebenso jede Zeile einer entschiedenen Freigabe. Später nennt ihn auch jede Zeile eines Laufs des Runners.',
     provider: 'Das Sprachmodell eines Laufs, wie die Konfiguration es nennt.',
     'provider.vendor': 'Anbieter des Modells.',
     'provider.model': 'Name des Modells beim Anbieter.',

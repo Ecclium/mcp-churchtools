@@ -93,6 +93,7 @@ const setup = (overrides: Partial<StdioServerOptions> = {}) => {
     // over stdio (ADR 0031).
     undo: () => Promise.resolve({ kind: 'off' }),
     reject: () => Promise.resolve({ kind: 'off' }),
+    approve: () => Promise.resolve({ kind: 'off' }),
     listQueue: () => Promise.resolve({ kind: 'off' }),
     showQueue: () => Promise.resolve({ kind: 'off' }),
     call: (name, value) => {

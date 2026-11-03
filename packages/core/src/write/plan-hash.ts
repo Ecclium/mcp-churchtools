@@ -9,6 +9,10 @@
  * write in a conflict. A confirmation and an approval of the queue name
  * the hash, so they hold for exactly this plan.
  *
+ * The key of the counter of a decision about an entry of the queue hashes
+ * the ID of the entry and the hash of its plan the same way, so that an
+ * approval counts for exactly this entry and this plan (ADR 0029).
+ *
  * The encoding is fixed and leaves no room for two inputs to meet: the
  * first field is a tag of the version of the encoding, the others follow
  * in a fixed order, and each field, the tag included, is its length in
@@ -19,7 +23,11 @@
  */
 import { createHash } from 'node:crypto';
 
-import type { ActorKind } from '@ecclium/mcp-churchtools-plugin-api';
+import {
+  type ActorKind,
+  type ApprovalQuotaKey,
+  approvalQuotaKey,
+} from '@ecclium/mcp-churchtools-plugin-api';
 
 import type { TargetKind } from './rules.js';
 
@@ -27,6 +35,7 @@ import type { TargetKind } from './rules.js';
 // so that no hash of one version equals one of another.
 const planTag = 'ecclium.plan.v1';
 const contentTag = 'ecclium.content.v1';
+const approvalTag = 'ecclium.approval.v1';
 
 const encoder = new TextEncoder();
 
@@ -118,4 +127,34 @@ export function planHashOf(input: PlanHashInput): string {
     baseVersion === null ? '' : String(baseVersion),
     input.contentHash,
   ]);
+}
+
+// The ID of an entry as the pipeline draws it, and a hash of a plan.
+const entryIdPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const planHashPattern = /^[0-9a-f]{64}$/;
+
+/**
+ * The key under which the core counts a decision about an entry of the
+ * queue of approvals in the store of quotas (ADR 0029): a hash of the ID
+ * of the entry and the hash of its plan. An approval and a rejection count
+ * under the same key, and only the one that counts 1 decides.
+ *
+ * @param queueId - The ID of the entry, a UUID in lower case.
+ * @param planHash - The hash of the plan of the entry.
+ * @returns The key.
+ * @throws {TypeError} For an ID or a hash of another form.
+ * @example
+ * ```ts
+ * approvalKeyOf(queueId, content.planHash); // 'approval:…'
+ * ```
+ */
+export function approvalKeyOf(
+  queueId: string,
+  planHash: string,
+): ApprovalQuotaKey {
+  if (!entryIdPattern.test(queueId) || !planHashPattern.test(planHash)) {
+    throw new TypeError('The key of a decision needs an ID and a hash.');
+  }
+  return approvalQuotaKey(hashOf(approvalTag, [queueId, planHash]));
 }

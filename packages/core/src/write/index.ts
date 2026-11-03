@@ -32,6 +32,9 @@ export {
 export type { ConfirmationState } from './request-state.js';
 export { ContentRefusal } from './content-gate.js';
 export {
+  type ApprovedEntry,
+  type ApproveRequest,
+  type ApproveResult,
   type CommitResult,
   createWriteGuard,
   type PlanRequest,
@@ -44,5 +47,6 @@ export {
   type WriteSnapshots,
   writeSentences,
 } from './guard.js';
+export { approvalKeyOf } from './plan-hash.js';
 export { queueEntryOf } from './queue-entry.js';
 export type { WriteTarget } from './rules.js';

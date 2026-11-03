@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { contentHashOf, type PlanHashInput, planHashOf } from './plan-hash.js';
+import {
+  approvalKeyOf,
+  contentHashOf,
+  type PlanHashInput,
+  planHashOf,
+} from './plan-hash.js';
 
 const content = contentHashOf(['Plan', '# Plan']);
 const input: PlanHashInput = {
@@ -83,5 +88,38 @@ describe('the hash of a plan', () => {
     expect(() => planHashOf({ ...input, actorId: 'a\uDC00' })).toThrow(
       TypeError,
     );
+  });
+});
+
+describe('the key of a decision about an entry of the queue (ADR 0029)', () => {
+  const queueId = '11111111-2222-4333-8444-555555555555';
+  const planHash = planHashOf(input);
+
+  // Pinned like the hash of a plan, checked against a second
+  // implementation of the encoding: a decision counted under one key must
+  // be found under the same key after an update.
+  it('keeps its encoding', () => {
+    expect(approvalKeyOf(queueId, planHash)).toBe(
+      'approval:9c5dbe3a5c31a6177266838f59ded58ac8e20fe79fb2a6e434f6d9accca9d18c',
+    );
+  });
+
+  it('changes with the entry and with the plan', () => {
+    const key = approvalKeyOf(queueId, planHash);
+    expect(
+      approvalKeyOf('11111111-2222-4333-8444-555555555556', planHash),
+    ).not.toBe(key);
+    expect(
+      approvalKeyOf(queueId, planHashOf({ ...input, targetKey: '13' })),
+    ).not.toBe(key);
+  });
+
+  it.each([
+    ['an ID in capitals', 'AAAAAAAA-2222-4333-8444-555555555555', planHash],
+    ['an ID of another form', 'entry-1', planHash],
+    ['a hash too short', queueId, planHash.slice(1)],
+    ['a hash in capitals', queueId, planHash.toUpperCase()],
+  ])('refuses %s', (_name, id, hash) => {
+    expect(() => approvalKeyOf(id, hash)).toThrow(TypeError);
   });
 });

@@ -259,6 +259,7 @@ export const logEvents = Object.freeze({
   write_queue_full: entry('warn', 'code'),
   write_queue_failed: entry('warn', 'code'),
   queue_reject_call: entry('info', 'code', 'durationMs'),
+  queue_approve_call: entry('info', 'code', 'durationMs'),
   // The policy in the write guard (ADR 0032).
   policy_not_interactive: entry('warn'),
   policy_queue_only: entry('warn'),
