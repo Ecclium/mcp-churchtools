@@ -288,7 +288,7 @@ Solange die zweite Variable gesetzt ist, nimmt Ecclium auch ein Pseudonym an, da
 
 ## Ordner der Tagesschlüssel
 
-Sobald Ecclium schreibt, mit `ECCLIUM_READ_ONLY=false`, braucht es neben dem Zustandsordner einen zweiten Ordner, den `ECCLIUM_KEYS_DIR` nennt. Darin legt Ecclium je Tag einen zufälligen Schlüssel an, der den Schlüssel jedes Snapshots verschlüsselt, also des Stands vor einem Schreibvorgang, mit dem sich dieser zurücknehmen lässt, sobald es `ecclium undo` gibt. Nach 30 Tagen vernichtet es den Schlüssel eines Tages, und was er verschlüsselt hat, lässt sich nicht mehr lesen, auch nicht aus einer Sicherung ([Datenschutz](../privacy.md#tagesschlüssel), [ADR 0031](../adr/0031-persistenz-und-tagesschluessel.md)). Das wirkt nur, wenn der Ordner in keiner Sicherung liegt. Die gesicherten Stände selbst, die Snapshots, liegen verschlüsselt im Ordner `snapshots` des Zustandsordners ([Datenschutz](../privacy.md#snapshots)). Schreib-Tools des Kerns kommen mit einer späteren Version, bis dahin entsteht kein Snapshot.
+Sobald Ecclium schreibt, mit `ECCLIUM_READ_ONLY=false`, braucht es neben dem Zustandsordner einen zweiten Ordner, den `ECCLIUM_KEYS_DIR` nennt. Darin legt Ecclium je Tag einen zufälligen Schlüssel an, der den Schlüssel jedes Snapshots verschlüsselt, also des Stands vor einem Schreibvorgang, mit dem sich dieser mit `ecclium undo` zurücknehmen lässt, siehe [Rücknahme](#rücknahme). Nach 30 Tagen vernichtet es den Schlüssel eines Tages, und was er verschlüsselt hat, lässt sich nicht mehr lesen, auch nicht aus einer Sicherung ([Datenschutz](../privacy.md#tagesschlüssel), [ADR 0031](../adr/0031-persistenz-und-tagesschluessel.md)). Das wirkt nur, wenn der Ordner in keiner Sicherung liegt. Die gesicherten Stände selbst, die Snapshots, liegen verschlüsselt im Ordner `snapshots` des Zustandsordners ([Datenschutz](../privacy.md#snapshots)). Schreib-Tools des Kerns kommen mit einer späteren Version, bis dahin entsteht kein Snapshot.
 
 Legen Sie den Ordner wie den Zustandsordner auf einer lokalen Platte an, als Ihr Benutzer, ausserhalb des Checkouts und neben dem Zustandsordner, nicht darin und nicht darüber. Ist er derselbe, liegt er im Zustandsordner oder enthält er ihn, startet Ecclium nicht. Der Befehl legt den Ordner mit den Rechten 700 an:
 
@@ -311,6 +311,25 @@ Erfasst ein anderes Backup den Ordner, nehmen Sie ihn dort ebenso heraus, und ne
 Ecclium legt darin die Ordner der Zwecke selbst an, etwa `snapshot`, mit den Rechten 700, und die Schlüssel mit 600. `ecclium config check` prüft den Ordner wie den Zustandsordner, mit höchstens 896 Bytes in UTF-8 statt 960, weil die Namen der Schlüssel darin länger sind, und zeigt seinen Pfad nur mit `--show-values`. Vernichtet wird nur, solange Ecclium mit der Variable läuft, auch nur lesend: Lassen Sie sie gesetzt, nachdem Sie das Schreiben abgeschaltet haben, bis 31 Tage um sind, oder löschen Sie den Ordner selbst. Ob lokale Snapshots von Time Machine den Ordner trotz Ausschluss enthalten, ist nicht geprüft. Wer den Rechner verwaltet, kann ihn ebenso lesen wie den Zustandsordner.
 
 Wollen Sie keine Snapshots, setzen Sie `ECCLIUM_SNAPSHOTS` auf `off`. Dann hält Ecclium nichts fest, kein Schreibvorgang lässt sich zurücknehmen, und jeder Start mit `ECCLIUM_READ_ONLY=false` warnt. Den Schlüsselordner braucht Ecclium zum Schreiben trotzdem. Snapshots, die schon liegen, löscht es weiter nach ihrer Frist.
+
+## Rücknahme
+
+Ein Schreibvorgang des Kerns lässt sich zurücknehmen, solange sein Snapshot da ist, 30 Tage lang ([ADR 0031](../adr/0031-persistenz-und-tagesschluessel.md)). Seine Kennung nennt das Ergebnis des Schreib-Tools als `undoId`, und dieselbe steht in seiner Zeile im Audit als `eventId`. Rufen Sie den Befehl mit derselben Konfiguration auf wie den Server, mit `ECCLIUM_READ_ONLY=false`, Zustandsordner und Schlüsselordner:
+
+```sh
+ecclium undo 11111111-2222-4333-8444-555555555555
+```
+
+- **Was er schreibt:** Bei einer geänderten oder ergänzten Seite den Text von vor dem Schreibvorgang, unverändert. Eine neue Seite löscht er nicht, ihr Text wird «Diese Seite hat Ecclium am <Datum> angelegt und am <Datum> zurückgenommen.», und ihr Titel bleibt.
+- **Was er zeigt:** immer den Unterschied Zeile für Zeile, mit `-` für Zeilen der Seite jetzt und `+` für Zeilen danach. Der Text einer Seite ist fremder Text: Steuerzeichen, Escape-Folgen, Zeichen für die Richtung des Texts, unsichtbare Zeichen und jedes Zeichen ausser ASCII, Umlauten und «» ‹› zeigt er als `\u{…}`, einen Backslash als `\\`, damit eine Seite Ihr Terminal nicht steuern kann.
+- **Von Hand geändert:** Hat jemand die Seite seit dem Schreibvorgang geändert, schreibt er nichts, zeigt, was die Rücknahme ändern würde, und endet mit 65. Mit `--overwrite` schreibt er trotzdem.
+- **Selbst zurücknehmbar:** Jede Rücknahme hält den Stand davor in einem eigenen Snapshot fest und steht im Audit als Zeile vom Typ `undo`, deren Feld `undoes` den zurückgenommenen Schreibvorgang nennt. Ihre eigene Kennung nennt der Befehl am Ende, damit Sie auch sie zurücknehmen können.
+- **Was gilt:** Kill-Switches, die Rechte des Dienstkontos, die Uhr und das Lesen der Seite vor und nach dem Schreiben gelten wie für jeden Schreibvorgang. Die Richtlinie gilt nicht, und eine Rücknahme zählt nicht gegen ihre Obergrenzen, weil Sie sie selbst auslösen, nicht das Modell.
+- **Exit-Codes:** 0 zurückgenommen oder nichts zu tun, 64 falscher Aufruf, 65 von Hand geändert, 66 kein Snapshot, 69 ChurchTools nicht erreicht oder Ausgang unklar, 70 interner Fehler, 74 Audit-Datei oder Snapshot der Rücknahme nicht geschrieben, 77 Schreiben aus, Recht fehlt oder Uhr falsch, 78 Konfiguration.
+
+Wie jedes Schreiben verlangt der Befehl den Ordner `stop` für die Kill-Switches im Zustandsordner, den Ecclium nicht selbst anlegt: Ohne ihn bleibt das Schreiben gesperrt, und der Befehl endet mit 77. Legen Sie ihn einmal an, mit `(umask 077 && mkdir /pfad/zum/zustandsordner/stop)`, und schalten Sie das Schreiben mit einer leeren Datei `writes-off` darin aus. War eine Seite vor dem Schreibvorgang leer, nimmt der Befehl ihn nicht zurück, weil Ecclium keine leere Seite schreibt.
+
+Die Kennung prüft der Befehl, bevor er eine Datei liest, und nennt sie in keiner Meldung. Bis der Kern eigene Schreib-Tools hat, entsteht ein Snapshot nur mit dem Schreib-Tool eines Plugins. Termine und Buchungen nimmt er zurück, sobald es Schreib-Tools für sie gibt.
 
 ## Wiki
 

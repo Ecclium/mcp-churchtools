@@ -101,7 +101,7 @@ Nur wenn Ecclium schreibt (`ECCLIUM_READ_ONLY=false`), braucht es einen eigenen 
 
 ### Snapshots
 
-Mit `ECCLIUM_READ_ONLY=false` und `ECCLIUM_SNAPSHOTS=on`, der Voreinstellung, hält Ecclium vor jedem Schreibvorgang fest, was er ändert, damit er sich zurücknehmen lässt ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)). Den Befehl dafür, `ecclium undo`, bringt eine spätere Version.
+Mit `ECCLIUM_READ_ONLY=false` und `ECCLIUM_SNAPSHOTS=on`, der Voreinstellung, hält Ecclium vor jedem Schreibvorgang fest, was er ändert, damit er sich mit `ecclium undo` zurücknehmen lässt ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md), [Rücknahme](betrieb/stdio.md#rücknahme)). Auch eine Rücknahme hält den Stand davor so fest.
 
 - **Inhalt:** nur das geänderte Feld, kein ganzer Datensatz: bei einer geänderten oder ergänzten Seite des Wikis Kategorie, GUID, ihr Text und ihre Version davor und die nächste Version mit einem Hash des neuen Texts, bei einer neuen Seite Kategorie, Titel und ein Hash ihres Texts und danach ihre GUID und Version, dazu das Tool. Der Text einer Seite kann Personendaten enthalten, wie die Seite selbst.
 - **Wo:** im Ordner `snapshots` des Zustandsordners, ein Ordner je UTC-Tag mit den Rechten 700, eine Datei je Teil mit 600, benannt nach Mandant und der Kennung des Ereignisses im Audit.
