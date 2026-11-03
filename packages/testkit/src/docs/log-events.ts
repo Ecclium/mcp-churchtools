@@ -195,6 +195,8 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Nach einem Fehler beim Schreiben ist offen, ob die Änderung ChurchTools erreicht hat, und das Lesen danach konnte es nicht klären. Das Ziel ist von Hand zu prüfen.',
     write_audit_failed:
       'Die Zeile eines Aufrufs, der womöglich geschrieben hat, erreichte die Audit-Datei nicht. Bis zum Neustart des Servers plant und schreibt der Write-Guard nichts mehr.',
+    undo_call:
+      'Eine Rücknahme mit `ecclium undo` ist zu Ende, mit oder ohne Fehler. `code` nennt den Fehler, `durationMs` die Dauer. Zu jeder Rücknahme gehört eine Zeile vom Typ `undo` im Audit. Text der Seite steht nie darin.',
     write_committed:
       'Ein Schreibvorgang ist geschrieben und gelesen: die Version stieg wie geplant, und der Text ist der gesendete.',
     snapshot_failed:
@@ -420,6 +422,7 @@ const sections: readonly {
     title: 'Write-Guard',
     fits: (name: string) =>
       name.startsWith('write_') ||
+      name.startsWith('undo_') ||
       name.startsWith('snapshot_') ||
       name.startsWith('policy_') ||
       name.startsWith('content_'),

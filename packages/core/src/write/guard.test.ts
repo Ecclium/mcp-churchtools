@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import {
   EccliumError,
   isEccliumError,
+  type IsoDate,
   type Mode,
   type Permissions,
   type PlannedWrite,
@@ -39,6 +40,7 @@ import { issueProof } from './proof.js';
 import { readPlan } from './sealed-plan.js';
 import type { SnapshotToSeal } from '../snapshots/seal.js';
 import { contentHashOf } from './plan-hash.js';
+import type { SnapshotToUndo } from './undo.js';
 
 const guid = '00000000-0000-4000-8000-0000000000AB';
 const now = Date.UTC(2026, 11, 1, 8, 0, 0);
@@ -1010,6 +1012,7 @@ describe('the snapshot of a write (ADR 0031)', () => {
           ? Promise.reject(new Error('no room'))
           : Promise.resolve();
       },
+      load: () => Promise.resolve({ kind: 'missing' }),
     };
     return { saved, snapshots };
   };
@@ -1211,5 +1214,231 @@ describe('the snapshot of a write (ADR 0031)', () => {
     const { plan: kept } = await commitWith(update, snapshots);
     expect(readPlan(kept)?.rules.reversible).toBe('snapshot');
     expect(readPlan(kept)?.echo).toBe(true);
+  });
+});
+
+describe('the undo of a write (ADR 0031)', () => {
+  const undoId = '22222222-3333-4444-8555-666666666666';
+  // Records every part the undo keeps of the state it writes over.
+  const recording = () => {
+    const saved: SnapshotToSeal[] = [];
+    const snapshots: WriteSnapshots = {
+      save: (_ctx, snapshot) => {
+        saved.push(snapshot);
+        return Promise.resolve();
+      },
+      load: () => Promise.resolve({ kind: 'missing' }),
+    };
+    return { saved, snapshots };
+  };
+  const day = '2026-11-30' as IsoDate;
+  // The write took the page from version 2 to the text it has now, 3.
+  const changed: SnapshotToUndo = {
+    before: {
+      kind: 'wikiPageText',
+      tool: 'ct_example_note_write',
+      categoryId: 12,
+      guid,
+      before: { version: 2, text: '# Alt\n' },
+      after: { version: 3, textHash: contentHashOf(['# Plan\n']) },
+    },
+    day,
+  };
+  const created: SnapshotToUndo = {
+    before: {
+      kind: 'wikiPageCreate',
+      tool: 'ct_example_note_write',
+      categoryId: 12,
+      title: 'Dienstplan',
+      textHash: contentHashOf(['# Plan\n']),
+    },
+    after: { kind: 'wikiPageCreated', guid, version: 3 },
+    day,
+  };
+
+  const undoWith = (
+    snapshot: SnapshotToUndo,
+    options: {
+      fake?: Fake;
+      overwrite?: boolean;
+      killSwitchDir?: string | null;
+      policy?: Policy;
+      readOnly?: boolean;
+    } = {},
+  ) => {
+    const fake = options.fake ?? fakeOf();
+    const { saved, snapshots } = recording();
+    const switches =
+      options.killSwitchDir === undefined ? dir : options.killSwitchDir;
+    const { guard } = setup(fake, switches, {
+      snapshots,
+      ...(options.policy === undefined ? {} : { policy: options.policy }),
+    });
+    const ctx = contextOf(logged, {
+      mode: 'operator',
+      readOnly: options.readOnly ?? false,
+    });
+    return {
+      fake,
+      saved,
+      result: guard.undo({
+        ctx,
+        eventId: undoId,
+        snapshot,
+        overwrite: options.overwrite ?? false,
+      }),
+    };
+  };
+
+  it('writes the text from before back, with a snapshot of its own', async () => {
+    const { fake, saved, result } = undoWith(changed);
+    const ended = await result;
+    expect(ended).toMatchObject({
+      kind: 'committed',
+      result: { ok: true, path: 'operator', version: 4, undoId },
+      change: { from: '# Plan\n', to: '# Alt\n' },
+    });
+    expect(fake.sent).toEqual(['# Alt\n']);
+    // The undo can be taken back from the state it wrote over.
+    expect(saved).toEqual([
+      {
+        eventId: undoId,
+        part: 'before',
+        day: isoDateOf(now),
+        content: {
+          kind: 'wikiPageText',
+          tool: 'ct_example_note_write',
+          categoryId: 12,
+          guid,
+          before: { version: 3, text: '# Plan\n' },
+          after: { version: 4, textHash: contentHashOf(['# Alt\n']) },
+        },
+      },
+    ]);
+  });
+
+  it('writes nothing over a page someone changed since, unless asked to', async () => {
+    const fake = fakeOf();
+    fake.page = { ...fake.page, version: 5, text: '# Von Hand\n' };
+    const first = undoWith(changed, { fake });
+    expect(await first.result).toMatchObject({
+      kind: 'changed',
+      target: { kind: 'wiki_page', key: `12/${guid.toLowerCase()}` },
+      change: { from: '# Von Hand\n', to: '# Alt\n' },
+    });
+    expect(fake.sent).toEqual([]);
+    const second = undoWith(changed, { fake, overwrite: true });
+    expect(await second.result).toMatchObject({
+      kind: 'committed',
+      result: { ok: true, version: 6 },
+    });
+    expect(fake.sent).toEqual(['# Alt\n']);
+  });
+
+  it('does nothing when the page holds the text from before already', async () => {
+    const fake = fakeOf();
+    fake.page = { ...fake.page, version: 4, text: '# Alt\n' };
+    const { result } = undoWith(changed, { fake });
+    expect(await result).toMatchObject({ kind: 'unchanged' });
+    expect(fake.sent).toEqual([]);
+  });
+
+  it('withdraws a new page with the fixed sentence and keeps the page', async () => {
+    const { fake, result } = undoWith(created);
+    const ended = await result;
+    expect(ended).toMatchObject({ kind: 'committed', result: { ok: true } });
+    expect(fake.sent).toEqual([
+      'Diese Seite hat Ecclium am 30.11.2026 angelegt und am 01.12.2026 zurückgenommen.\n',
+    ]);
+    // A second undo finds the sentence and writes nothing.
+    const again = undoWith(created, { fake });
+    expect(await again.result).toMatchObject({ kind: 'unchanged' });
+  });
+
+  it('names only the category of a new page whose GUID was never kept', async () => {
+    const { before } = created;
+    const { result } = undoWith({ before, day });
+    expect(await result).toEqual({
+      kind: 'incomplete',
+      target: { kind: 'wiki_category', key: '12' },
+    });
+  });
+
+  it('is not held back by the policy, which judges the writes of the model', async () => {
+    const outside = checkPolicy({
+      schema: 'policy.v1',
+      interactive: {
+        targets: [
+          {
+            target: { kind: 'wiki_category', id: 13, name: 'Andere' },
+            tools: ['ct_example_note_write'],
+            maxPerDay: 1,
+          },
+        ],
+      },
+    });
+    if (!outside.ok) throw new Error(outside.code);
+    const { fake, result } = undoWith(changed, { policy: outside.policy });
+    expect(await result).toMatchObject({
+      kind: 'committed',
+      result: { ok: true },
+    });
+    expect(fake.sent).toEqual(['# Alt\n']);
+  });
+
+  it.each([
+    [
+      'while the server only reads',
+      { readOnly: true },
+      writeSentences.readOnly,
+    ],
+    [
+      'without the folder of the kill switches',
+      { killSwitchDir: null },
+      writeSentences.switchUnknown,
+    ],
+  ] as const)('is refused %s', async (_, options, message) => {
+    const { fake, result } = undoWith(changed, options);
+    expect(await result).toMatchObject({
+      kind: 'refused',
+      error: { code: 'policy_denied', message },
+    });
+    expect(fake.sent).toEqual([]);
+  });
+
+  it('is refused without the right, on a page of another kind, and when the read fails', async () => {
+    const lacking = fakeOf();
+    lacking.permissions = { kind: 'known', granted: {} };
+    expect(await undoWith(changed, { fake: lacking }).result).toMatchObject({
+      kind: 'refused',
+      error: { code: 'permission' },
+    });
+    const html = fakeOf();
+    html.page = { ...html.page, isMarkdown: false };
+    expect(await undoWith(changed, { fake: html }).result).toMatchObject({
+      kind: 'refused',
+      error: { message: writeSentences.notMarkdown },
+    });
+    const failing = fakeOf();
+    failing.readFails = new EccliumError('network');
+    expect(await undoWith(changed, { fake: failing }).result).toMatchObject({
+      kind: 'refused',
+      error: { code: 'network' },
+    });
+  });
+
+  it('is refused by the clock right before the send', async () => {
+    const late = fakeOf();
+    late.time = now + 10 * 60_000;
+    const { fake, result } = undoWith(changed, { fake: late });
+    expect(await result).toMatchObject({
+      kind: 'committed',
+      result: {
+        ok: false,
+        state: 'denied',
+        error: { message: writeSentences.clock },
+      },
+    });
+    expect(fake.sent).toEqual([]);
   });
 });

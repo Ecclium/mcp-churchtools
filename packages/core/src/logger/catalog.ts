@@ -240,6 +240,8 @@ export const logEvents = Object.freeze({
   snapshot_failed: entry('warn', 'code'),
   snapshot_incomplete: entry('warn', 'code'),
   write_audit_failed: entry('error'),
+  // An undo of the operator, at its end (ADR 0031).
+  undo_call: entry('info', 'code', 'durationMs'),
   // The policy in the write guard (ADR 0032).
   policy_not_interactive: entry('warn'),
   policy_queue_only: entry('warn'),

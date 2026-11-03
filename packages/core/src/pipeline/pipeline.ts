@@ -76,7 +76,8 @@ import {
   fixedSentences,
 } from '../errors/index.js';
 import type { HttpTransport } from '../http/index.js';
-import type { LineWriter, LogLevel } from '../logger/index.js';
+import { diffLines, type LineDiff } from '../diff/index.js';
+import { isUuid, type LineWriter, type LogLevel } from '../logger/index.js';
 import {
   chooseBoundary,
   isStrictLevel,
@@ -97,6 +98,7 @@ import { createTenantContext } from '../tenant/context.js';
 import {
   confirmationSentence,
   confirmWrite,
+  writeSentences,
   ContentRefusal,
   createWriteGuard,
   type WriteGuard,
@@ -148,6 +150,57 @@ export type ToolOutcome =
   | { readonly ok: true; readonly data: Redacted }
   | { readonly ok: false; readonly error: ErrorDescription };
 
+/** What `ecclium undo` asks the pipeline to take back (ADR 0031). */
+export interface UndoCall {
+  /** The ID of the audit line of the write, a UUID. */
+  readonly eventId: unknown;
+  /** Whether to write also over a page someone changed since the write. */
+  readonly overwrite: boolean;
+}
+
+/**
+ * How an undo ended, for the command line (ADR 0031). A diff holds texts
+ * of the page; it goes to the operator only, never into a log or the
+ * audit.
+ */
+export type UndoOutcome =
+  /** Taken back: the version of the page after it, and the ID of the undo. */
+  | {
+      readonly kind: 'done';
+      readonly version: number;
+      readonly undoId?: string;
+      readonly diff: LineDiff;
+    }
+  /** The page holds what the undo would write already. */
+  | { readonly kind: 'unchanged' }
+  /** Someone changed the page since the write; nothing was written. */
+  | { readonly kind: 'changed'; readonly diff: LineDiff }
+  /**
+   * No snapshot: none under this ID, or removed after its retention;
+   * still there but its day key is gone; or the server keeps none.
+   */
+  | { readonly kind: 'missing' | 'expired' | 'off' }
+  /** A new page whose GUID was never kept: look in its category by hand. */
+  | { readonly kind: 'incomplete'; readonly categoryId: number }
+  /**
+   * Refused or failed, with whether it may have reached ChurchTools and,
+   * where the core knows it, the reason, for a text of the command line.
+   */
+  | {
+      readonly kind: 'failed';
+      readonly code: ErrorCode;
+      readonly reason?: UndoReason;
+      readonly state: WriteState;
+      readonly sent: boolean;
+      readonly diff?: LineDiff;
+    };
+
+/**
+ * Why an undo was refused or failed: a fixed sentence of the write guard
+ * by its name, or the audit file that cannot take the line.
+ */
+export type UndoReason = keyof typeof writeSentences | 'auditNotReady';
+
 /** The pipeline of one ChurchTools instance. */
 export interface ToolPipeline {
   /**
@@ -163,6 +216,16 @@ export interface ToolPipeline {
     input: unknown,
     request: ToolRequest,
   ): Promise<ToolOutcome>;
+  /**
+   * Takes back a write of the core from its snapshot, for the operator
+   * only: a request in another mode is refused (ADR 0031). It writes one
+   * audit line of the type `undo` that names the write.
+   *
+   * @param undo - The ID of the write and whether to write over a change.
+   * @param request - Tenant, actor and mode of the operator.
+   * @returns How the undo ended. It never rejects.
+   */
+  undo(undo: UndoCall, request: ToolRequest): Promise<UndoOutcome>;
 }
 
 /** What the composition root builds the pipeline from. */
@@ -1242,5 +1305,285 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     return outcome;
   };
 
-  return Object.freeze({ __proto__: null, call });
+  // One undo of the operator (ADR 0031): from the ID of the audit line of a
+  // write to the snapshot, through the write guard, to an audit line of
+  // its own of the type undo that names the write. What the guard read of
+  // the page leaves only as the diff for the operator.
+  const undoStages = async (
+    undo: UndoCall,
+    request: ToolRequest,
+    assignment: TenantAssignment | undefined,
+    eventId: string,
+    refs: ObjectRefCollector,
+  ): Promise<UndoEnd> => {
+    // Only the command line of the operator takes a write back, never a
+    // client of the model, whatever mode its mount passes (ADR 0024).
+    if (request.mode !== 'operator') return undoRefused('policy_denied');
+    if (isAborted(request.signal)) return undoRefused('network');
+    if (assignment === undefined) return undoRefused('auth');
+    const ctx = createTenantContext({
+      assignment,
+      instance: origin,
+      mode: request.mode,
+      redaction: request.redaction,
+      readOnly: request.readOnly,
+      features: [...request.features],
+      clock,
+      signal: request.signal,
+      logging,
+      eventId,
+    });
+    const end = await undoWith(ctx, undo, eventId, refs);
+    return { ...end, ctx };
+  };
+
+  const undoWith = async (
+    ctx: TenantContext,
+    undo: UndoCall,
+    eventId: string,
+    refs: ObjectRefCollector,
+  ): Promise<UndoEnd> => {
+    // As for every write, nothing runs while the audit file cannot take
+    // its line (ADR 0028, ADR 0029).
+    if (!auditReady()) return undoRefused('policy_denied', 'auditNotReady');
+    const snapshots = options.snapshots;
+    if (snapshots === undefined) {
+      return undoEnd({ kind: 'off' }, 'denied', 'policy_denied');
+    }
+    const loaded = await snapshots.load(ctx, undo.eventId as string);
+    if (loaded.kind !== 'found') {
+      return undoEnd({ kind: loaded.kind }, 'failed', 'not_found');
+    }
+    const result = await guard.undo({
+      ctx,
+      eventId,
+      snapshot: {
+        before: loaded.before,
+        ...(loaded.after === undefined ? {} : { after: loaded.after }),
+        day: loaded.day,
+      },
+      overwrite: undo.overwrite,
+    });
+    switch (result.kind) {
+      case 'unchanged':
+        addTarget(refs, result.target);
+        return undoEnd({ kind: 'unchanged' }, 'skipped');
+      case 'changed':
+        addTarget(refs, result.target);
+        return undoEnd(
+          {
+            kind: 'changed',
+            diff: diffLines(result.change.from, result.change.to),
+          },
+          'conflict',
+          'conflict',
+        );
+      case 'incomplete':
+        addTarget(refs, result.target);
+        return undoEnd(
+          { kind: 'incomplete', categoryId: Number(result.target.key) },
+          'failed',
+          'not_found',
+        );
+      case 'refused':
+        return undoRefused(result.error.code, reasonOf(result.error));
+      case 'committed':
+        break;
+    }
+    const committed = result.result;
+    const diff = diffLines(result.change.from, result.change.to);
+    if (committed.target !== undefined) addTarget(refs, committed.target);
+    if (committed.ok) {
+      return undoEnd(
+        {
+          kind: 'done',
+          version: committed.version,
+          ...(committed.undoId === undefined
+            ? {}
+            : { undoId: committed.undoId }),
+          diff,
+        },
+        'verified',
+        undefined,
+        committed.path,
+        true,
+      );
+    }
+    const reason = reasonOf(committed.error);
+    return undoEnd(
+      {
+        kind: 'failed',
+        code: committed.error.code,
+        ...(reason === undefined ? {} : { reason }),
+        state: committed.state,
+        sent: committed.sent,
+        diff,
+      },
+      committed.state,
+      committed.error.code,
+      committed.path,
+      committed.sent,
+    );
+  };
+
+  const undo = async (
+    undoCall: UndoCall,
+    request: ToolRequest,
+  ): Promise<UndoOutcome> => {
+    // The ID of the undo itself: its audit line and its own snapshot, so
+    // that an undo can be taken back as well.
+    const eventId = randomUUID();
+    const start = now();
+    const refs = createObjectRefCollector();
+    let assignment: TenantAssignment | undefined;
+    let mode: Mode | undefined;
+    // The ID of the write is named only in the form of an ID, checked
+    // before anything else reads it.
+    const undoes =
+      typeof undoCall.eventId === 'string' && isUuid(undoCall.eventId)
+        ? undoCall.eventId
+        : undefined;
+    let end: UndoEnd = undoRefused('internal');
+    try {
+      assignment = copyAssignment(request.assignment);
+      mode = request.mode;
+      end =
+        undoes === undefined
+          ? undoRefused('validation')
+          : await undoStages(
+              { eventId: undoes, overwrite: undoCall.overwrite },
+              request,
+              assignment,
+              eventId,
+              refs,
+            );
+    } catch {
+      end = undoRefused('internal');
+    } finally {
+      let recorded = false;
+      const elapsed = Math.round(now() - start);
+      const durationMs = Number.isFinite(elapsed)
+        ? Math.min(Math.max(elapsed, 0), maxDurationMs)
+        : 0;
+      try {
+        const listed = refs.list();
+        recorded =
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-boolean-literal-compare -- only true counts, also from a sink without types
+          audit.record(
+            {
+              type: 'undo',
+              tenantId: assignment?.tenantId ?? auditPlaceholders.tenantId,
+              actor: assignment?.actor ?? auditPlaceholders.actor,
+              mode: mode as Mode,
+              outcome: end.audit,
+              undoes: undoes ?? auditPlaceholders.eventId,
+              ...(end.confirmation === undefined
+                ? {}
+                : { confirmation: end.confirmation }),
+              writeState: end.writeState,
+              ...(end.errorCode === undefined
+                ? {}
+                : { errorCode: end.errorCode }),
+              objectRefs: listed.refs,
+              ...(listed.omitted > 0
+                ? { objectRefsOmitted: listed.omitted }
+                : {}),
+              durationMs,
+            },
+            eventId,
+            { required: false },
+          ) === true;
+      } catch {
+        // A line that does not reach the file is handled below.
+      }
+      // An undo that may have written and whose line is not in the audit
+      // file stops every later write, as for a write of a tool (ADR 0029).
+      if (end.sent) {
+        if (!recorded) {
+          guard.block();
+          try {
+            end.ctx?.log.error('write_audit_failed');
+          } catch {
+            // The block holds without its log line.
+          }
+        }
+        try {
+          audit.anchor?.();
+        } catch {
+          // The anchor is lost; the line is in the file or reported.
+        }
+      }
+      try {
+        end.ctx?.log.info('undo_call', {
+          durationMs,
+          ...(end.errorCode === undefined ? {} : { code: end.errorCode }),
+        });
+      } catch {
+        // The log never decides the outcome.
+      }
+    }
+    return end.outcome;
+  };
+
+  return Object.freeze({ __proto__: null, call, undo });
 }
+
+/** How an undo ended, with what its audit line needs. */
+interface UndoEnd {
+  readonly outcome: UndoOutcome;
+  readonly audit: AuditOutcome;
+  readonly writeState: WriteState;
+  readonly errorCode?: ErrorCode;
+  readonly confirmation?: ConfirmationPath;
+  /** Whether the undo may have reached ChurchTools. */
+  readonly sent: boolean;
+  /** The context of the undo, once there is one, for its log lines. */
+  readonly ctx?: TenantContext;
+}
+
+// An undo that ended, frozen, with the outcome of its audit line derived
+// from its state as for a write.
+const undoEnd = (
+  outcome: UndoOutcome,
+  writeState: WriteState,
+  errorCode?: ErrorCode,
+  confirmation?: ConfirmationPath,
+  sent = false,
+): UndoEnd =>
+  Object.freeze({
+    outcome: Object.freeze(outcome),
+    audit:
+      writeState === 'verified' || writeState === 'skipped'
+        ? 'ok'
+        : writeState === 'denied'
+          ? 'denied'
+          : 'error',
+    writeState,
+    ...(errorCode === undefined ? {} : { errorCode }),
+    ...(confirmation === undefined ? {} : { confirmation }),
+    sent,
+  });
+
+// An undo refused or failed before any plan: nothing was sent.
+const undoRefused = (code: ErrorCode, reason?: UndoReason): UndoEnd => {
+  const state = writeStateOf(code);
+  return undoEnd(
+    {
+      kind: 'failed',
+      code,
+      ...(reason === undefined ? {} : { reason }),
+      state,
+      sent: false,
+    },
+    state,
+    code,
+  );
+};
+
+// The name of the fixed sentence of the write guard an error carries, if
+// it carries one: the command line has a German text for each.
+const sentenceNames = Object.keys(
+  writeSentences,
+) as (keyof typeof writeSentences)[];
+const reasonOf = (error: EccliumError): UndoReason | undefined =>
+  sentenceNames.find((name) => writeSentences[name] === error.message);

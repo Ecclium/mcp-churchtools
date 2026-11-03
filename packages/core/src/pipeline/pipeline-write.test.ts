@@ -299,6 +299,7 @@ describe('a write tool in the pipeline', () => {
           saved.push({ eventId: snapshot.eventId, part: snapshot.part });
           return Promise.resolve();
         },
+        load: () => Promise.resolve({ kind: 'missing' }),
       },
     });
     confirming.issue = (plan) => issueProof(plan, 'elicitation', now);
@@ -426,7 +427,10 @@ describe('a write tool in the pipeline', () => {
   it('reports a conflict after a write, with its anchor', async () => {
     // The echo confirms only a write that a snapshot can take back.
     const { double, pipeline, events, file, planReads } = setup({
-      snapshots: { save: () => Promise.resolve() },
+      snapshots: {
+        save: () => Promise.resolve(),
+        load: () => Promise.resolve({ kind: 'missing' }),
+      },
     });
     confirming.issue = (plan) => issueProof(plan, 'echo', now);
     planReads();

@@ -56,6 +56,9 @@ import { deriveAnnotations } from './annotations.js';
 import { createMcpMount, type McpMountOptions } from './mount.js';
 import { deriveOutputSchema } from './schema.js';
 
+// The mount never takes a write back; the stand-ins answer undo as off.
+const noUndo = () => Promise.resolve({ kind: 'off' } as const);
+
 // Drives the mount in process through the serving entry of the SDK, in
 // both eras, with the test playing the client in raw JSON-RPC. Every
 // message the client receives goes through JSON first, as on the wire.
@@ -728,6 +731,7 @@ describe('the resolver of the tenant', () => {
   it('leaves no listener on the signal of the request once it has answered', async () => {
     const listeners: number[] = [];
     const pipeline: ToolPipeline = {
+      undo: noUndo,
       call: (_name, _input, request) => {
         listeners.push(getEventListeners(request.signal, 'abort').length);
         return Promise.resolve({
@@ -747,7 +751,7 @@ describe('the factory', () => {
   it('builds a new instance each time, without a side effect', () => {
     const resolve = vi.fn();
     const run = vi.fn();
-    const pipeline: ToolPipeline = { call: run };
+    const pipeline: ToolPipeline = { call: run, undo: noUndo };
     const { factory, audit, logs } = setup({
       resolver: { resolve } as unknown as TenantResolver,
       pipeline,
@@ -838,7 +842,10 @@ describe('errors', () => {
   it('answers with the fixed sentence and writes a fixed event when the pipeline rejects', async () => {
     const canary = makeCanary('name').value;
     const { factory, logs } = setup({
-      pipeline: { call: () => Promise.reject(new Error(canary)) },
+      pipeline: {
+        call: () => Promise.reject(new Error(canary)),
+        undo: noUndo,
+      },
     });
     const connection = await modern.open(factory);
     const reply = await call(modern, connection, 'ct_test_context', {});
@@ -857,6 +864,7 @@ describe('errors', () => {
     const canary = makeCanary('email');
     const { factory, logs } = setup({
       pipeline: {
+        undo: noUndo,
         // A stand-in that hands over raw data, as a result that went past
         // the pipeline would be (ADR 0026).
         call: () =>

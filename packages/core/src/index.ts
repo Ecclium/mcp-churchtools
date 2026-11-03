@@ -126,9 +126,18 @@ export {
   untrustedWarning,
 } from './registry/index.js';
 export {
+  crLfMarker,
+  type LineDiff,
+  noLineEndMarker,
+  renderDiff,
+} from './diff/index.js';
+export {
   createToolPipeline,
   type ToolOutcome,
   type ToolPipeline,
   type ToolPipelineOptions,
   type ToolRequest,
+  type UndoCall,
+  type UndoOutcome,
+  type UndoReason,
 } from './pipeline/index.js';
