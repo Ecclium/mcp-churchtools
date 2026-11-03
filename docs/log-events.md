@@ -271,7 +271,7 @@ Je Ereignis die Stufe und die Felder, die ein Aufruf höchstens setzt. Die Felde
 | Ereignis | Stufe | Felder | Bedeutung |
 | --- | --- | --- | --- |
 | `day_keys_destroyed` | `info` | `count` | Ecclium hat Tagesschlüssel der Snapshots nach ihrer Frist von 30 Tagen vernichtet, beim Start oder beim Wechsel des UTC-Tages. Snapshots dieser Tage lassen sich nicht mehr öffnen, in keiner Kopie. `count` nennt die Zahl der Schlüssel. |
-| `day_keys_not_destroyed` | `warn` | keine | Ecclium konnte Tagesschlüssel der Snapshots nach ihrer Frist nicht vernichten, etwa weil der Ordner aus `ECCLIUM_KEYS_DIR` nicht mehr privat ist. Ecclium versucht es spätestens nach einer Stunde erneut. |
+| `day_keys_not_destroyed` | `warn` | keine | Ecclium konnte nicht jeden Tagesschlüssel der Snapshots nach seiner Frist vernichten, etwa weil der Ordner `snapshot` im Ordner aus `ECCLIUM_KEYS_DIR` nicht mehr privat ist oder darin ein Ordner unter dem Namen eines Schlüssels steht. Die übrigen hat es vernichtet. Ecclium versucht es spätestens nach einer Stunde erneut. |
 
 ### Prozess über stdio
 

@@ -123,7 +123,7 @@ const dayKeyFolders: Readonly<Record<PrivateFileCode, Message>> = Object.freeze(
     ),
     unavailable: message(
       `Ecclium konnte den Ordner ‹snapshot› im Ordner aus ${keysDir} nicht anlegen oder öffnen, und der Start bricht ab.`,
-      `Darin liegen die Tagesschlüssel, mit denen Ecclium die Snapshots der Schreibvorgänge verschlüsselt und nach ihrer Frist vernichtet. ${noPath}`,
+      `Darin legt Ecclium die Tagesschlüssel für die Snapshots der Schreibvorgänge ab und vernichtet sie nach ihrer Frist. ${noPath}`,
       `Prüfen Sie, ob der Ordner aus ${keysDir} besteht und Ihr Benutzer darin schreiben darf.`,
     ),
     unsafe: message(

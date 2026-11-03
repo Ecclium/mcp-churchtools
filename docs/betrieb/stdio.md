@@ -288,13 +288,15 @@ Solange die zweite Variable gesetzt ist, nimmt Ecclium auch ein Pseudonym an, da
 
 ## Ordner der Tagesschlüssel
 
-Sobald Ecclium schreibt, mit `ECCLIUM_READ_ONLY=false`, braucht es neben dem Zustandsordner einen zweiten Ordner, den `ECCLIUM_KEYS_DIR` nennt. Darin legt Ecclium je Tag einen zufälligen Schlüssel an, mit dem es den Stand vor jedem Schreibvorgang verschlüsselt sichert, damit `ecclium undo` ihn zurücknehmen kann. Nach 30 Tagen vernichtet es den Schlüssel eines Tages, und was er verschlüsselt hat, lässt sich nicht mehr lesen, auch nicht aus einer Sicherung ([Datenschutz](../privacy.md#tagesschlüssel), [ADR 0031](../adr/0031-persistenz-und-tagesschluessel.md)). Das wirkt nur, wenn der Ordner in keiner Sicherung liegt.
+Sobald Ecclium schreibt, mit `ECCLIUM_READ_ONLY=false`, braucht es neben dem Zustandsordner einen zweiten Ordner, den `ECCLIUM_KEYS_DIR` nennt. Darin wird Ecclium je Tag einen zufälligen Schlüssel anlegen, mit dem es den Stand vor jedem Schreibvorgang verschlüsselt sichert, damit `ecclium undo` ihn zurücknehmen kann. Nach 30 Tagen vernichtet es den Schlüssel eines Tages, und was er verschlüsselt hat, lässt sich nicht mehr lesen, auch nicht aus einer Sicherung ([Datenschutz](../privacy.md#tagesschlüssel), [ADR 0031](../adr/0031-persistenz-und-tagesschluessel.md)). Das wirkt nur, wenn der Ordner in keiner Sicherung liegt. In dieser Version legt der Start nur den Ordner `snapshot` an und vernichtet alte Schlüssel, Snapshots kommen mit einer späteren Version.
 
-Legen Sie den Ordner wie den Zustandsordner auf einer lokalen Platte an, als Ihr Benutzer, ausserhalb des Checkouts und ausserhalb des Zustandsordners. Liegt er im Zustandsordner oder ist er derselbe, startet Ecclium nicht. Unter macOS nehmen Sie ihn danach aus Time Machine:
+Legen Sie den Ordner wie den Zustandsordner auf einer lokalen Platte an, als Ihr Benutzer, ausserhalb des Checkouts und neben dem Zustandsordner, nicht darin und nicht darüber. Ist er derselbe, liegt er im Zustandsordner oder enthält er ihn, startet Ecclium nicht. Der Befehl legt den Ordner mit den Rechten 700 an:
 
 ```sh
 (umask 077 && mkdir -p /pfad/zum/schluesselordner)
 ```
+
+Unter macOS nehmen Sie ihn danach aus Time Machine:
 
 ```sh
 tmutil addexclusion /pfad/zum/schluesselordner
@@ -306,7 +308,7 @@ Erfasst ein anderes Backup den Ordner, nehmen Sie ihn dort ebenso heraus, und ne
 "ECCLIUM_KEYS_DIR": "/pfad/zum/schluesselordner"
 ```
 
-Ecclium legt darin die Ordner der Zwecke selbst an, etwa `snapshot`, mit den Rechten 700, und die Schlüssel mit 600. `ecclium config check` prüft den Ordner wie den Zustandsordner und zeigt seinen Pfad nur mit `--show-values`. Ob lokale Snapshots von Time Machine den Ordner trotz Ausschluss enthalten, ist nicht geprüft. Wer den Rechner verwaltet, kann ihn ebenso lesen wie den Zustandsordner.
+Ecclium legt darin die Ordner der Zwecke selbst an, etwa `snapshot`, mit den Rechten 700, und die Schlüssel mit 600. `ecclium config check` prüft den Ordner wie den Zustandsordner, mit höchstens 896 Bytes in UTF-8 statt 960, weil die Namen der Schlüssel darin länger sind, und zeigt seinen Pfad nur mit `--show-values`. Vernichtet wird nur, solange Ecclium mit der Variable läuft, auch nur lesend: Lassen Sie sie gesetzt, nachdem Sie das Schreiben abgeschaltet haben, bis 31 Tage um sind, oder löschen Sie den Ordner selbst. Ob lokale Snapshots von Time Machine den Ordner trotz Ausschluss enthalten, ist nicht geprüft. Wer den Rechner verwaltet, kann ihn ebenso lesen wie den Zustandsordner.
 
 ## Wiki
 
