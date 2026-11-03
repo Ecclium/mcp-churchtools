@@ -27,6 +27,7 @@ import type { Policy } from '../policy/schema.js';
 import { isoDateOf } from '../quota/budget.js';
 import {
   appendSection,
+  type ApprovedEntry,
   createWriteGuard,
   type PlanRequest,
   type PlanResult,
@@ -1456,5 +1457,390 @@ describe('the undo of a write (ADR 0031)', () => {
       },
     });
     expect(fake.sent).toEqual([]);
+  });
+});
+
+describe('an approval of the operator (ADR 0029)', () => {
+  const approvalId = '33333333-4444-4555-8666-777777777777';
+  const tool = 'ct_example_note_write';
+  const pageKey = writeQuotaKey(tool, `wiki_page:12/${guid.toLowerCase()}`);
+  const today = (): IsoDate => {
+    const day = isoDateOf(now);
+    if (day === undefined) throw new Error('expected a day');
+    return day;
+  };
+  const policyOf = (target: unknown, name = 'Dienstplan'): Policy => {
+    const result = checkPolicy({
+      schema: 'policy.v1',
+      interactive: {
+        targets: [
+          {
+            target: { ...(target as object), name },
+            tools: [tool],
+            maxPerDay: 1,
+          },
+        ],
+      },
+    });
+    if (!result.ok) throw new Error(result.code);
+    return result.policy;
+  };
+  const pagePolicy = policyOf({
+    kind: 'wiki_page',
+    categoryId: 12,
+    guid: guid.toLowerCase(),
+  });
+
+  // The entry of the queue as the pipeline makes it from a sealed plan:
+  // what the plan was sealed with, and its hash.
+  const entryOf = async (
+    intent: unknown,
+    options: { fake?: Fake; policy?: Policy } = {},
+  ): Promise<ApprovedEntry> => {
+    const { guard, request } = setup(options.fake ?? fakeOf(), dir, {
+      ...(options.policy === undefined ? {} : { policy: options.policy }),
+    });
+    const view = readPlan(planOf(await guard.plan(request, intent)));
+    if (view === undefined) throw new Error('expected a plan');
+    return {
+      tool: view.tool,
+      origin: view.origin,
+      toolMeta: {
+        sensitivity: view.rules.sensitivity,
+        unattended: view.rules.unattended,
+        reversible: view.rules.reversible,
+      },
+      intent: view.intent,
+      planHash: view.planHash,
+    };
+  };
+
+  const approveWith = (
+    entry: ApprovedEntry,
+    options: {
+      fake?: Fake;
+      killSwitchDir?: string | null;
+      policy?: Policy;
+      quota?: QuotaStore | null;
+      readOnly?: boolean;
+      decide?: () => Promise<boolean>;
+    } = {},
+  ) => {
+    const fake = options.fake ?? fakeOf();
+    const saved: SnapshotToSeal[] = [];
+    const snapshots: WriteSnapshots = {
+      save: (_ctx, snapshot) => {
+        saved.push(snapshot);
+        return Promise.resolve();
+      },
+      load: () => Promise.resolve({ kind: 'missing' }),
+    };
+    const switches =
+      options.killSwitchDir === undefined ? dir : options.killSwitchDir;
+    const { guard, quota } = setup(fake, switches, {
+      snapshots,
+      ...(options.policy === undefined ? {} : { policy: options.policy }),
+      ...(options.quota === undefined ? {} : { quota: options.quota }),
+    });
+    const decisions: number[] = [];
+    // The command of the operator, for the actor who asked for the write.
+    const ctx = contextOf(logged, {
+      mode: 'operator',
+      readOnly: options.readOnly ?? false,
+    });
+    return {
+      fake,
+      saved,
+      quota,
+      decisions,
+      ctx,
+      result: guard.approve({
+        ctx,
+        eventId: approvalId,
+        entry,
+        decide:
+          options.decide ??
+          (() => {
+            // What was sent when the decision was asked for.
+            decisions.push(fake.sent.length);
+            return Promise.resolve(true);
+          }),
+      }),
+    };
+  };
+
+  it('writes the entry from the state now, with a proof of the operator and a snapshot of its own', async () => {
+    const entry = await entryOf(update);
+    const { fake, saved, decisions, result } = approveWith(entry);
+    expect(await result).toEqual({
+      kind: 'committed',
+      target: { kind: 'wiki_page', key: `12/${guid.toLowerCase()}` },
+      result: {
+        ok: true,
+        state: 'verified',
+        path: 'operator',
+        target: { kind: 'wiki_page', key: `12/${guid.toLowerCase()}` },
+        version: 4,
+        undoId: approvalId,
+      },
+      change: { from: '# Plan\n', to: '# Neu\n' },
+    });
+    // Decided once, before anything was sent.
+    expect(decisions).toEqual([0]);
+    expect(fake.sent).toEqual(['# Neu\n']);
+    expect(saved).toMatchObject([{ eventId: approvalId, part: 'before' }]);
+  });
+
+  it('appends to the text the page has now and creates a new page', async () => {
+    const appended = approveWith(await entryOf(append));
+    expect(await appended.result).toMatchObject({
+      kind: 'committed',
+      result: { ok: true },
+      change: { from: '# Plan\n', to: '# Plan\n\n## Nachtrag\n' },
+    });
+    const created = approveWith(await entryOf(create));
+    expect(await created.result).toMatchObject({
+      kind: 'committed',
+      target: { kind: 'wiki_category', key: '12' },
+      result: { ok: true, target: { kind: 'wiki_page' }, version: 1 },
+      change: { from: '', to: '# Bericht\n' },
+    });
+    expect(created.fake.sent).toEqual(['# Bericht\n']);
+  });
+
+  it('writes and decides nothing when the page changed since the write was queued', async () => {
+    const entry = await entryOf(append);
+    const later = fakeOf();
+    later.page = { ...later.page, version: 4, text: '# Plan, von Hand\n' };
+    const moved = approveWith(entry, { fake: later });
+    expect(await moved.result).toEqual({
+      kind: 'refused',
+      error: expect.objectContaining({
+        code: 'conflict',
+        message: writeSentences.changedSinceQueued,
+      }) as unknown,
+    });
+    expect(moved.decisions).toEqual([]);
+    expect(moved.fake.sent).toEqual([]);
+  });
+
+  it('writes and decides nothing for a plan of another hash', async () => {
+    const entry = await entryOf(append);
+    // The same version with another text, as no ChurchTools should hold.
+    const other = fakeOf();
+    other.page = { ...other.page, text: '# Anders\n' };
+    const changed = approveWith(entry, { fake: other });
+    expect(await changed.result).toMatchObject({
+      kind: 'refused',
+      error: { code: 'conflict', message: writeSentences.changedSinceQueued },
+    });
+    expect(changed.decisions).toEqual([]);
+    expect(logged.map(({ event }) => event)).toContain('write_conflict');
+    // And an entry that names another hash than its plan has.
+    const forged = approveWith({ ...entry, planHash: 'f'.repeat(64) });
+    expect(await forged.result).toMatchObject({
+      kind: 'refused',
+      error: { code: 'conflict' },
+    });
+    expect(forged.fake.sent).toEqual([]);
+  });
+
+  it('writes nothing when the decision is not kept or fails', async () => {
+    const entry = await entryOf(update);
+    const refused = approveWith(entry, {
+      decide: () => Promise.resolve(false),
+    });
+    expect(await refused.result).toEqual({
+      kind: 'undecided',
+      target: { kind: 'wiki_page', key: `12/${guid.toLowerCase()}` },
+    });
+    expect(refused.fake.sent).toEqual([]);
+    const failing = approveWith(entry, {
+      decide: () => Promise.reject(new Error('the store failed')),
+    });
+    expect(await failing.result).toMatchObject({ kind: 'undecided' });
+    expect(failing.fake.sent).toEqual([]);
+  });
+
+  it('commits on the way of every write: a change after the decision ends without a write', async () => {
+    const entry = await entryOf(update);
+    const fake = fakeOf();
+    let reads = 0;
+    fake.onRead = () => {
+      reads += 1;
+      // Someone saves the page between the decision and the send.
+      if (reads === 2) fake.page = { ...fake.page, version: 4 };
+    };
+    const { decisions, result } = approveWith(entry, { fake });
+    expect(await result).toMatchObject({
+      kind: 'committed',
+      result: {
+        ok: false,
+        error: { code: 'conflict', message: writeSentences.changedSincePlan },
+      },
+    });
+    expect(decisions).toEqual([0]);
+    expect(fake.sent).toEqual([]);
+  });
+
+  it.each([
+    [
+      'while the server only reads',
+      { readOnly: true },
+      writeSentences.readOnly,
+    ],
+    [
+      'without the folder of the kill switches',
+      { killSwitchDir: null },
+      writeSentences.switchUnknown,
+    ],
+  ] as const)(
+    'is refused %s, before any decision',
+    async (_, options, message) => {
+      const entry = await entryOf(update);
+      const { fake, decisions, result } = approveWith(entry, options);
+      expect(await result).toMatchObject({
+        kind: 'refused',
+        error: { code: 'policy_denied', message },
+      });
+      expect(decisions).toEqual([]);
+      expect(fake.sent).toEqual([]);
+    },
+  );
+
+  it('is refused for an intent that is none, or one this version does not run', async () => {
+    const entry = await entryOf(update);
+    const broken = approveWith({
+      ...entry,
+      intent: { kind: 'wikiPageUpdate' },
+    });
+    expect(await broken.result).toMatchObject({
+      kind: 'refused',
+      error: { code: 'validation', message: writeSentences.intent },
+    });
+    const later = approveWith({
+      ...entry,
+      intent: {
+        kind: 'appointmentCreate',
+        calendarId: 4,
+        title: 'Probe',
+        startDate: '2026-11-08T09:00:00Z',
+        endDate: '2026-11-08T10:00:00Z',
+        description: 'Synthetisch',
+      },
+    });
+    expect(await later.result).toMatchObject({
+      kind: 'refused',
+      error: { code: 'policy_denied', message: writeSentences.notRun },
+    });
+    expect([...broken.decisions, ...later.decisions]).toEqual([]);
+  });
+
+  it('is refused without the right, for a page of another kind, when the read fails and by the clock', async () => {
+    const entry = await entryOf(update);
+    const lacking = fakeOf();
+    lacking.permissions = { kind: 'known', granted: {} };
+    const html = fakeOf();
+    html.page = { ...html.page, isMarkdown: false };
+    const failing = fakeOf();
+    failing.readFails = new EccliumError('network');
+    const late = fakeOf();
+    late.time = now + 10 * 60_000;
+    const ends = await Promise.all(
+      [lacking, html, failing, late].map(
+        (fake) => approveWith(entry, { fake }).result,
+      ),
+    );
+    expect(ends).toMatchObject([
+      { kind: 'refused', error: { code: 'permission' } },
+      { kind: 'refused', error: { message: writeSentences.notMarkdown } },
+      { kind: 'refused', error: { code: 'network' } },
+      { kind: 'refused', error: { message: writeSentences.clock } },
+    ]);
+    for (const fake of [lacking, html, failing, late]) {
+      expect(fake.sent).toEqual([]);
+    }
+  });
+
+  it('checks the texts against the content policy again', async () => {
+    const entry = await entryOf(create);
+    const { decisions, result } = approveWith({
+      ...entry,
+      intent: {
+        ...create,
+        text: 'Mehr unter ![x](https://example.org/p.png)',
+      },
+    });
+    expect(await result).toMatchObject({
+      kind: 'refused',
+      error: { code: 'validation' },
+      contentViolations: ['image'],
+    });
+    expect(decisions).toEqual([]);
+  });
+
+  it('stands in for an entry the policy lacks', async () => {
+    const outside = policyOf({ kind: 'wiki_category', id: 13 }, 'Andere');
+    const entry = await entryOf(update, { policy: outside });
+    const { fake, result } = approveWith(entry, { policy: outside });
+    expect(await result).toMatchObject({
+      kind: 'committed',
+      result: { ok: true },
+    });
+    expect(fake.sent).toEqual(['# Neu\n']);
+  });
+
+  it('writes past the limit of the day and counts the write all the same', async () => {
+    const store = createMemoryQuotaStore();
+    const wish = contextOf([]);
+    // The place of the day was taken before the write was queued.
+    await store.increment(wish, pageKey, today());
+    const entry = await entryOf(update, { policy: pagePolicy });
+    const { fake, result } = approveWith(entry, {
+      policy: pagePolicy,
+      quota: store,
+    });
+    expect(await result).toMatchObject({
+      kind: 'committed',
+      result: { ok: true },
+    });
+    expect(fake.sent).toEqual(['# Neu\n']);
+    // Counted for the actor who asked for the write.
+    expect(await store.read(wish, pageKey, today())).toBe(2);
+  });
+
+  it('stands in for a name that changed, and counts the write', async () => {
+    const renamed = policyOf(
+      { kind: 'wiki_page', categoryId: 12, guid: guid.toLowerCase() },
+      'Alter Plan',
+    );
+    const store = createMemoryQuotaStore();
+    const entry = await entryOf(update, { policy: renamed });
+    const { fake, result } = approveWith(entry, {
+      policy: renamed,
+      quota: store,
+    });
+    expect(await result).toMatchObject({
+      kind: 'committed',
+      result: { ok: true },
+    });
+    expect(fake.sent).toEqual(['# Neu\n']);
+    expect(await store.read(contextOf([]), pageKey, today())).toBe(1);
+  });
+
+  it('writes when the write cannot be counted, and says so', async () => {
+    const entry = await entryOf(update);
+    const { fake, result } = approveWith(entry, {
+      policy: pagePolicy,
+      quota: null,
+    });
+    expect(await result).toMatchObject({
+      kind: 'committed',
+      result: { ok: true },
+    });
+    expect(fake.sent).toEqual(['# Neu\n']);
+    expect(logged.map(({ event }) => event)).toContain(
+      'policy_count_unavailable',
+    );
   });
 });
