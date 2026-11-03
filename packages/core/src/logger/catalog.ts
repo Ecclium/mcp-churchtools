@@ -337,6 +337,11 @@ export const logEvents = Object.freeze({
   // one of records (ADR 0031).
   snapshots_deleted: entry('info', 'count'),
   snapshots_not_deleted: entry('warn'),
+  // The entries of the queue of approvals past their retention of 14 days
+  // and their day keys queue, in the same way (ADR 0031).
+  queue_entries_deleted: entry('info', 'count'),
+  queue_day_keys_destroyed: entry('info', 'count'),
+  queue_not_purged: entry('warn'),
   // The process of `ecclium stdio` (ADR 0053).
   stdio_start_failed: entry('error', 'code'),
   stdio_closed: entry('info', 'count'),

@@ -18,6 +18,7 @@ import {
 } from '@ecclium/mcp-churchtools-core';
 import {
   createStderrWriter,
+  prepareQueueFolder,
   prepareSnapshotFolder,
   systemClock,
 } from '@ecclium/mcp-churchtools-core/composition';
@@ -37,6 +38,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { createStdioCatalog } from '../stdio/catalog.js';
 import { userAgent } from '../version.js';
 import { composeToolPipeline } from './pipeline.js';
+import { keepsQueue } from './queue.js';
 import { keepsSnapshots } from './snapshots.js';
 
 // The build of the pipeline alone; the start over stdio and its tests use
@@ -365,6 +367,86 @@ describe('the build of the pipeline', () => {
       expect(Object.hasOwn(built.options[0] as object, 'snapshots')).toBe(
         false,
       );
+    });
+  });
+
+  // The queue of approvals over the day keys queue and the folder of state
+  // (ADR 0031): the pipeline gets it whenever both folders are set, so that
+  // the operator can decide about entries of an earlier run.
+  describe('and the queue of approvals', () => {
+    const folders = () => {
+      const state = mkdtempSync(join(base, 'state-'));
+      chmodSync(state, 0o700);
+      const keys = mkdtempSync(join(base, 'keys-'));
+      chmodSync(keys, 0o700);
+      return { state, keys };
+    };
+    const id = '11111111-2222-4333-8444-555555555555';
+    const day = new Date().toISOString().slice(0, 10) as IsoDate;
+    const ctx = {
+      tenantId: 'default',
+      instance: 'https://example.church.tools',
+    } as never;
+
+    it.each([
+      ['while the server writes', 'false', true],
+      ['while it only reads', 'true', false],
+    ])(
+      'gives the pipeline the queue over both folders %s',
+      async (_, readOnly, keeps) => {
+        const { state, keys } = folders();
+        const config = configOf({
+          ECCLIUM_READ_ONLY: readOnly,
+          ECCLIUM_STATE_DIR: state,
+          ECCLIUM_KEYS_DIR: keys,
+        });
+        expect(keepsQueue(config)).toBe(keeps);
+        const composed = setup(config).build();
+        const { queue } = composed;
+        if (queue === undefined) throw new Error('no queue');
+        expect((built.options[0] as ToolPipelineOptions).queue).toBe(queue);
+        prepareQueueFolder(state);
+        await queue.enqueue(ctx, {
+          id,
+          day,
+          content: {
+            tool: 'ct_wiki_page_create',
+            origin: 'core',
+            toolMeta: { sensitivity: 'personal', unattended: 'policy' },
+            actor: { kind: 'user', id: 'stdio:local-stdio' },
+            intent: {
+              kind: 'wikiPageCreate',
+              categoryId: 12,
+              title: 'Bericht',
+              text: 'x',
+            },
+            planHash: 'a'.repeat(64),
+            target: { kind: 'wiki_category', key: '12' },
+            summary: 'Neue Seite',
+            diff: ['+x'],
+            reason: 'setting',
+            queuedAt: Date.now(),
+          },
+        });
+        expect(readdirSync(join(state, 'queue', day))).toEqual([
+          `default.${id}.entry`,
+        ]);
+        expect(readdirSync(join(keys, 'queue'))).toEqual([
+          `default.${day}.key`,
+        ]);
+        expect((await queue.load(ctx, id)).kind).toBe('found');
+      },
+    );
+
+    it('gives the pipeline none without the folder of state', () => {
+      const composed = setup(
+        configOf({
+          ECCLIUM_READ_ONLY: 'false',
+          ECCLIUM_KEYS_DIR: folders().keys,
+        }),
+      ).build();
+      expect(composed.queue).toBeUndefined();
+      expect(Object.hasOwn(built.options[0] as object, 'queue')).toBe(false);
     });
   });
 

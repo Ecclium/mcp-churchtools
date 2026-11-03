@@ -285,12 +285,15 @@ Je Ereignis die Stufe und die Felder, die ein Aufruf höchstens setzt. Die Felde
 | `audit_unknown_fields` | `error` | `code`, `count` | Eine Zeile kam mit Feldern, die das Schema nicht kennt. `count` nennt ihre Zahl, die Felder fallen weg. |
 | `audit_unreadable` | `error` | `code`, `count` | Ecclium konnte die Angaben einer Zeile nicht lesen. Die Zeile trägt nur Platzhalter. |
 
-### Snapshots und Tagesschlüssel
+### Snapshots, Freigabe-Warteschlange und Tagesschlüssel
 
 | Ereignis | Stufe | Felder | Bedeutung |
 | --- | --- | --- | --- |
 | `day_keys_destroyed` | `info` | `count` | Ecclium hat Tagesschlüssel der Snapshots nach ihrer Frist von 30 Tagen vernichtet, beim Start oder beim Wechsel des UTC-Tages. Snapshots dieser Tage lassen sich nicht mehr öffnen, in keiner Kopie. `count` nennt die Zahl der Schlüssel. Mit einem Ordner aus `ECCLIUM_STATE_DIR` löscht Ecclium dabei auch die Snapshots dieser Tage, was `snapshots_deleted` meldet. |
 | `day_keys_not_destroyed` | `warn` | keine | Ecclium konnte nicht jeden Tagesschlüssel der Snapshots nach seiner Frist vernichten, etwa weil der Ordner `snapshot` im Ordner aus `ECCLIUM_KEYS_DIR` nicht mehr privat ist oder darin ein Ordner unter dem Namen eines Schlüssels steht. Die übrigen hat es vernichtet. Ecclium versucht es spätestens nach einer Stunde erneut. Mit einem Ordner aus `ECCLIUM_STATE_DIR` steht dafür `snapshots_not_deleted`. |
+| `queue_day_keys_destroyed` | `info` | `count` | Ecclium hat Tagesschlüssel der Freigabe-Warteschlange nach ihrer Frist von 14 Tagen vernichtet, beim Start oder beim Wechsel des UTC-Tages. Einträge dieser Tage lassen sich nicht mehr öffnen, in keiner Kopie. `count` nennt die Zahl der Schlüssel. |
+| `queue_entries_deleted` | `info` | `count` | Ecclium hat Einträge und Entscheide der Freigabe-Warteschlange nach ihrer Frist von 14 Tagen gelöscht, beim Start oder beim Wechsel des UTC-Tages, auch wenn es nur liest. Diese Schreibvorgänge lassen sich nicht mehr freigeben. `count` nennt die Zahl der gelöschten Dateien. Die Tagesschlüssel ihrer Tage meldet `queue_day_keys_destroyed`. |
+| `queue_not_purged` | `warn` | keine | Ecclium konnte nicht jeden Eintrag der Freigabe-Warteschlange nach seiner Frist löschen oder nicht jeden Tagesschlüssel seines Tages vernichten, etwa weil der Ordner `queue` im Ordner aus `ECCLIUM_STATE_DIR` oder im Ordner aus `ECCLIUM_KEYS_DIR` nicht mehr privat ist, oder weil die Uhr keinen Tag ergab. Ecclium versucht es spätestens nach einer Stunde erneut. |
 | `snapshots_deleted` | `info` | `count` | Ecclium hat Snapshots nach ihrer Frist von 30 Tagen gelöscht, beim Start oder beim Wechsel des UTC-Tages, auch wenn es nur liest. Diese Schreibvorgänge lassen sich nicht mehr zurücknehmen. `count` nennt die Zahl der gelöschten Teile, einer oder zwei je Schreibvorgang. Die Tagesschlüssel ihrer Tage meldet `day_keys_destroyed`. |
 | `snapshots_not_deleted` | `warn` | keine | Ecclium konnte nicht jeden Snapshot nach seiner Frist löschen oder nicht jeden Tagesschlüssel seines Tages vernichten, etwa weil der Ordner `snapshots` im Ordner aus `ECCLIUM_STATE_DIR` oder der Ordner `snapshot` im Ordner aus `ECCLIUM_KEYS_DIR` nicht mehr privat ist, oder weil die Uhr keinen Tag ergab. Ecclium versucht es spätestens nach einer Stunde erneut. |
 

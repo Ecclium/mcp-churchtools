@@ -22,6 +22,8 @@ import {
   emptyToolsetMessage,
   emptyToolsetText,
   type Message,
+  queueFolderMessage,
+  queueFolderText,
   quotaFolderMessage,
   quotaFolderText,
   refusalMessage,
@@ -69,6 +71,10 @@ const everyMessage: [string, Message][] = [
     `the folder of the snapshots ${code}`,
     snapshotFolderMessage(code),
   ]),
+  ...privateFileCodes.map((code): [string, Message] => [
+    `the folder of the queue ${code}`,
+    queueFolderMessage(code),
+  ]),
   ['one toolset', toolsetsMessage(['wiki'])],
   ['every toolset', toolsetsMessage(toolsetNames)],
   ...toolsetNames.map((name): [string, Message] => [
@@ -98,6 +104,10 @@ const everyText: [string, string][] = [
   ...privateFileCodes.map((code): [string, string] => [
     `the folder of the snapshots ${code}`,
     snapshotFolderText(code),
+  ]),
+  ...privateFileCodes.map((code): [string, string] => [
+    `the folder of the queue ${code}`,
+    queueFolderText(code),
   ]),
   ['every toolset', toolsetsText(toolsetNames)],
   ...toolsetNames.map((name): [string, string] => [
@@ -326,6 +336,23 @@ describe('the texts of the start over stdio', () => {
     );
   });
 
+  it('gives every reason of the folder of the queue a text of its own, without a path', () => {
+    const whats = privateFileCodes.map((code) => queueFolderMessage(code).what);
+    expect(new Set(whats).size).toBe(privateFileCodes.length);
+    for (const code of privateFileCodes) {
+      expect(queueFolderText(code)).toBe(textOf(queueFolderMessage(code)));
+      expect(queueFolderText(code)).toContain('bricht ab');
+      expect(queueFolderText(code)).not.toMatch(/\/[a-z]/);
+      expect(queueFolderText(code)).not.toBe(snapshotFolderText(code));
+    }
+    expect(queueFolderText('unavailable')).toContain(
+      '‹queue› im Ordner aus ‹ECCLIUM_STATE_DIR›',
+    );
+    expect(() => queueFolderText('toString' as PrivateFileCode)).toThrow(
+      new TypeError('The queue folder code is unknown.'),
+    );
+  });
+
   // The start notices take only texts of the catalog. A function that made
   // one from any three strings would open them to free text.
   it('exports no function that makes a text from free text', async () => {
@@ -336,6 +363,8 @@ describe('the texts of the start over stdio', () => {
       'dayKeyFolderText',
       'emptyToolsetMessage',
       'emptyToolsetText',
+      'queueFolderMessage',
+      'queueFolderText',
       'quotaFolderMessage',
       'quotaFolderText',
       'refusalMessage',

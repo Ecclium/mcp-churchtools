@@ -356,6 +356,12 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Ecclium hat Snapshots nach ihrer Frist von 30 Tagen gelöscht, beim Start oder beim Wechsel des UTC-Tages, auch wenn es nur liest. Diese Schreibvorgänge lassen sich nicht mehr zurücknehmen. `count` nennt die Zahl der gelöschten Teile, einer oder zwei je Schreibvorgang. Die Tagesschlüssel ihrer Tage meldet `day_keys_destroyed`.',
     snapshots_not_deleted:
       'Ecclium konnte nicht jeden Snapshot nach seiner Frist löschen oder nicht jeden Tagesschlüssel seines Tages vernichten, etwa weil der Ordner `snapshots` im Ordner aus `ECCLIUM_STATE_DIR` oder der Ordner `snapshot` im Ordner aus `ECCLIUM_KEYS_DIR` nicht mehr privat ist, oder weil die Uhr keinen Tag ergab. Ecclium versucht es spätestens nach einer Stunde erneut.',
+    queue_entries_deleted:
+      'Ecclium hat Einträge und Entscheide der Freigabe-Warteschlange nach ihrer Frist von 14 Tagen gelöscht, beim Start oder beim Wechsel des UTC-Tages, auch wenn es nur liest. Diese Schreibvorgänge lassen sich nicht mehr freigeben. `count` nennt die Zahl der gelöschten Dateien. Die Tagesschlüssel ihrer Tage meldet `queue_day_keys_destroyed`.',
+    queue_day_keys_destroyed:
+      'Ecclium hat Tagesschlüssel der Freigabe-Warteschlange nach ihrer Frist von 14 Tagen vernichtet, beim Start oder beim Wechsel des UTC-Tages. Einträge dieser Tage lassen sich nicht mehr öffnen, in keiner Kopie. `count` nennt die Zahl der Schlüssel.',
+    queue_not_purged:
+      'Ecclium konnte nicht jeden Eintrag der Freigabe-Warteschlange nach seiner Frist löschen oder nicht jeden Tagesschlüssel seines Tages vernichten, etwa weil der Ordner `queue` im Ordner aus `ECCLIUM_STATE_DIR` oder im Ordner aus `ECCLIUM_KEYS_DIR` nicht mehr privat ist, oder weil die Uhr keinen Tag ergab. Ecclium versucht es spätestens nach einer Stunde erneut.',
     stdio_start_failed:
       'Der Start über stdio ist gescheitert. `code` nennt den Grund, die Meldung für Betreiber steht davor.',
     stdio_closed:
@@ -474,9 +480,11 @@ const sections: readonly {
     fits: (name: string) => name.startsWith('audit_'),
   },
   {
-    title: 'Snapshots und Tagesschlüssel',
+    title: 'Snapshots, Freigabe-Warteschlange und Tagesschlüssel',
     fits: (name: string) =>
-      name.startsWith('snapshots_') || name.startsWith('day_keys_'),
+      name.startsWith('snapshots_') ||
+      name.startsWith('queue_') ||
+      name.startsWith('day_keys_'),
   },
   {
     title: 'Prozess über stdio',

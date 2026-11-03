@@ -159,6 +159,28 @@ const snapshotFolders: Readonly<Record<PrivateFileCode, Message>> =
     ),
   });
 
+// One text per reason the folder queue in the folder of state cannot be
+// used. Each says that the start stops: a write that needs the approval of
+// the operator waits there, so a server that writes needs the folder
+// (ADR 0031).
+const queueFolders: Readonly<Record<PrivateFileCode, Message>> = Object.freeze({
+  platform: message(
+    'Der Ordner für die Freigabe-Warteschlange lässt sich auf diesem System nicht sicher anlegen, und der Start bricht ab.',
+    'Es fehlt die Prüfung des Eigentümers oder das Öffnen ohne Links, etwa unter Windows.',
+    'Lassen Sie ‹ECCLIUM_READ_ONLY› auf diesem System auf ‹true›.',
+  ),
+  unavailable: message(
+    `Ecclium konnte den Ordner ‹queue› im Ordner aus ${stateDir} nicht anlegen oder öffnen, und der Start bricht ab.`,
+    `Darin wartet ein Schreibvorgang verschlüsselt auf Ihre Freigabe, wenn ihn niemand im Client bestätigen kann. ${noPath}`,
+    `Prüfen Sie, ob der Ordner aus ${stateDir} besteht und Ihr Benutzer darin schreiben darf.`,
+  ),
+  unsafe: message(
+    `Der Ordner ‹queue› im Ordner aus ${stateDir} ist kein privater Ordner Ihres Benutzers, und der Start bricht ab.`,
+    'Er ist ein Link, kein Ordner, gehört einem anderen Benutzer oder ist für andere zugänglich. Dann könnten andere Einträge löschen oder sehen, wann Ecclium eine Freigabe braucht.',
+    'Setzen Sie seine Rechte mit «chmod 700» auf 700. Ist er ein Link, kein Ordner oder gehört er einem anderen Benutzer, entfernen Sie ihn, und Ecclium legt ihn selbst an. Was darin wartete, lässt sich dann nicht mehr freigeben.',
+  ),
+});
+
 // Every refusal stops the start for the same reason, and none comes from
 // the configuration: in this version the only plugin is the one of the
 // core.
@@ -418,6 +440,42 @@ export function snapshotFolderMessage(code: PrivateFileCode): Message {
  */
 export function snapshotFolderText(code: PrivateFileCode): MessageText {
   return joined(snapshotFolderMessage(code));
+}
+
+/**
+ * The message for a folder `queue` in the folder of state that cannot be
+ * used (ADR 0031). It names no path.
+ *
+ * @param code - Why the folder cannot be used.
+ * @returns The message in its three parts, frozen.
+ * @throws {TypeError} When the code is none of the catalog.
+ * @example
+ * ```ts
+ * queueFolderMessage('unsafe').action;
+ * ```
+ */
+export function queueFolderMessage(code: PrivateFileCode): Message {
+  const given: unknown = code;
+  if (typeof given !== 'string' || !Object.hasOwn(queueFolders, given)) {
+    throw new TypeError('The queue folder code is unknown.');
+  }
+  return queueFolders[code];
+}
+
+/**
+ * The text for a folder `queue` in the folder of state that cannot be
+ * used, in one line.
+ *
+ * @param code - Why the folder cannot be used.
+ * @returns The text of the catalog.
+ * @throws {TypeError} When the code is none of the catalog.
+ * @example
+ * ```ts
+ * writeNotices([queueFolderText('unavailable')]);
+ * ```
+ */
+export function queueFolderText(code: PrivateFileCode): MessageText {
+  return joined(queueFolderMessage(code));
 }
 
 /**

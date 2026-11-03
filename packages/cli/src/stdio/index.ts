@@ -31,6 +31,7 @@ import {
   type AuditFileWriter,
   openAuditFile,
   prepareDayKeyFolder,
+  prepareQueueFolder,
   prepareQuotaFolder,
   prepareSnapshotFolder,
   systemClock,
@@ -38,6 +39,7 @@ import {
 import { DocsIndexError } from '@ecclium/mcp-churchtools-docs-index';
 
 import { privateFileCodeOf } from '../compose/private-file-code.js';
+import { keepsQueue } from '../compose/queue.js';
 import { keepsSnapshots } from '../compose/snapshots.js';
 import { takeEnvironment } from '../environment.js';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
@@ -47,6 +49,7 @@ import {
   emptyToolsetText,
   type MessageText,
   problemText,
+  queueFolderText,
   quotaFolderText,
   refusalText,
   snapshotFolderText,
@@ -74,6 +77,8 @@ export interface StdioStartOptions extends ServeReplacements {
   readonly prepareDayKeyFolder?: typeof prepareDayKeyFolder;
   /** Replaces the check of the folder of the snapshots of writes. */
   readonly prepareSnapshotFolder?: typeof prepareSnapshotFolder;
+  /** Replaces the check of the folder of the queue of approvals. */
+  readonly prepareQueueFolder?: typeof prepareQueueFolder;
   /** Replaces the reader of the docs index. */
   readonly readDocs?: StdioCatalogOptions['readDocs'];
 }
@@ -119,9 +124,9 @@ const refusalOf = (error: unknown): RefusalReason | undefined => {
  * sensitivity special without the folder, a file that cannot be opened or
  * a folder that cannot be used ends the start with a notice and 78
  * (ADR 0028, ADR 0063). With `ECCLIUM_KEYS_DIR` it prepares the folder of
- * the day keys of snapshots in the same way, and, when the writes keep
- * snapshots, the folder of the snapshots in the folder of state
- * (ADR 0031). Until the stderr writer exists, everything is caught: an
+ * the day keys of snapshots in the same way, when the writes keep
+ * snapshots, the folder of the snapshots in the folder of state, and, for
+ * a server that writes, the folder of the queue of approvals (ADR 0031). Until the stderr writer exists, everything is caught: an
  * internal error gives one fixed notice and 70, never a stack or a
  * message, and closes an audit file that is already open.
  *
@@ -155,6 +160,7 @@ export async function startStdio(
     prepareQuotaFolder: prepare = prepareQuotaFolder,
     prepareDayKeyFolder: prepareKeys = prepareDayKeyFolder,
     prepareSnapshotFolder: prepareSnapshots = prepareSnapshotFolder,
+    prepareQueueFolder: prepareQueue = prepareQueueFolder,
     readDocs,
     ...replacements
   } = startOptions;
@@ -279,6 +285,21 @@ export async function startStdio(
         const code = privateFileCodeOf(error);
         if (code === undefined) throw error;
         notices([...texts, snapshotFolderText(code)]);
+        auditFile?.close();
+        return exitCodes.invalidConfig;
+      }
+    }
+    // The folder of the queue of approvals in the folder of state, for a
+    // server that writes: a write that no person can confirm in the client
+    // waits there for the operator, so a folder that cannot be used stops
+    // the start. Its day keys come with their first entry (ADR 0031).
+    if (keepsQueue(loaded.config)) {
+      try {
+        prepareQueue(loaded.config.stateDir);
+      } catch (error) {
+        const code = privateFileCodeOf(error);
+        if (code === undefined) throw error;
+        notices([...texts, queueFolderText(code)]);
         auditFile?.close();
         return exitCodes.invalidConfig;
       }

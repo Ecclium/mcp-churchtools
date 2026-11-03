@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tokenVariableName } from '@ecclium/mcp-churchtools-core';
 import {
   prepareDayKeyFolder,
+  prepareQueueFolder,
   prepareSnapshotFolder,
   PrivateFileError,
 } from '@ecclium/mcp-churchtools-core/composition';
@@ -17,6 +18,7 @@ import {
   dayKeyFolderText,
   emptyToolsetText,
   quotaFolderText,
+  queueFolderText,
   snapshotFolderText,
   startText,
   toolsetsText,
@@ -510,6 +512,110 @@ describe('the first stage and the folder of the snapshots', () => {
     expect(stderr).toContain(startText('internal'));
     expect(closed).toEqual(['closed']);
     expect(state.served).toEqual([]);
+  });
+});
+
+// The folder of the queue of approvals in the folder of state (ADR 0031):
+// the first stage makes and checks it for a server that writes, also with
+// snapshots off, so that a write that waits for the operator finds it.
+describe('the first stage and the folder of the queue', () => {
+  const writing = (keys: string, extra: Record<string, string> = {}) => ({
+    ECCLIUM_READ_ONLY: 'false',
+    ECCLIUM_KEYS_DIR: keys,
+    ...extra,
+  });
+
+  it('prepares the folder queue with 0700 after the snapshots when the server writes, also with snapshots off', async () => {
+    for (const snapshots of ['on', 'off']) {
+      const stateDir = freshFolder();
+      const order: string[] = [];
+      const { code, stderr } = await start(
+        stateDir,
+        {
+          prepareSnapshotFolder: (...args) => {
+            order.push('snapshots');
+            prepareSnapshotFolder(...args);
+          },
+          prepareQueueFolder: (...args) => {
+            order.push('queue');
+            prepareQueueFolder(...args);
+          },
+        },
+        writing(freshFolder(), { ECCLIUM_SNAPSHOTS: snapshots }),
+      );
+      expect(code).toBeUndefined();
+      expect(order).toEqual(
+        snapshots === 'on' ? ['snapshots', 'queue'] : ['queue'],
+      );
+      expect(statSync(join(stateDir, 'queue')).mode & 0o777).toBe(0o700);
+      expect(readdirSync(join(stateDir, 'queue'))).toEqual([]);
+      expect(stderr).not.toContain(stateDir);
+    }
+  });
+
+  it('prepares none while the server only reads, and none without the folder of state', async () => {
+    const stateDir = freshFolder();
+    const prepared: unknown[] = [];
+    const prepare = {
+      prepareQueueFolder: (...args: unknown[]) => {
+        prepared.push(args);
+      },
+    };
+    expect(
+      (
+        await start(
+          stateDir,
+          prepare,
+          writing(freshFolder(), { ECCLIUM_READ_ONLY: 'true' }),
+        )
+      ).code,
+    ).toBeUndefined();
+    expect((await start(undefined, prepare, writing(freshFolder()))).code).toBe(
+      undefined,
+    );
+    expect(prepared).toEqual([]);
+    expect(readdirSync(stateDir)).not.toContain('queue');
+  });
+
+  it.each(['platform', 'unavailable', 'unsafe'] as const)(
+    'ends with its notice after the others and 78, and closes the audit file, for %s',
+    async (reason) => {
+      const closed: string[] = [];
+      const stateDir = freshFolder();
+      const { code, stderr } = await start(
+        stateDir,
+        {
+          openAuditFile: () => closingFile(closed),
+          prepareQueueFolder: () => {
+            throw new PrivateFileError(reason);
+          },
+        },
+        writing(freshFolder()),
+      );
+      expect(code).toBe(exitCodes.invalidConfig);
+      const lines = stderr.split('\n').filter((line) => line !== '');
+      expect(lines.at(-1)).toBe(queueFolderText(reason));
+      expect(lines.length).toBeGreaterThan(1);
+      expect(closed).toEqual(['closed']);
+      expect(state.served).toEqual([]);
+    },
+  );
+
+  it('ends with the notice of an internal error and 70 for anything else it throws', async () => {
+    const closed: string[] = [];
+    const { code, stderr } = await start(
+      freshFolder(),
+      {
+        openAuditFile: () => closingFile(closed),
+        prepareQueueFolder: () => {
+          throw new Error('unsafe');
+        },
+      },
+      writing(freshFolder()),
+    );
+    expect(code).toBe(exitCodes.internal);
+    expect(stderr).toContain(startText('internal'));
+    expect(closed).toEqual(['closed']);
   });
 });
 
