@@ -12,6 +12,7 @@ export {
   type OutputOptions,
 } from './write.js';
 export { renderConfigReport, type ReportOptions } from './report.js';
+export { terminalLines } from './terminal.js';
 export {
   helpLines,
   internalErrorText,

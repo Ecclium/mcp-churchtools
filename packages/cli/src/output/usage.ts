@@ -8,7 +8,7 @@
 
 /** The short form of the call. */
 export const usageLine =
-  'Aufruf: ecclium stdio | ecclium config check [Optionen] | ecclium audit verify [Optionen] | ecclium audit show [Optionen] | ecclium policy init --interactive';
+  'Aufruf: ecclium stdio | ecclium config check [Optionen] | ecclium audit verify [Optionen] | ecclium audit show [Optionen] | ecclium policy init --interactive | ecclium undo <Kennung> [--overwrite]';
 
 /** The help, for `--help` and `-h`. */
 export const helpLines: readonly string[] = Object.freeze([
@@ -24,6 +24,8 @@ export const helpLines: readonly string[] = Object.freeze([
   '    --until <Tag>       bis und mit diesem Tag in UTC',
   '  policy init           schlägt die Richtlinie aus den Audit-Dateien vor und fragt ChurchTools nach den Namen',
   '    --interactive       den interaktiven Teil, als YAML auf stdout',
+  '  undo <Kennung>        nimmt einen Schreibvorgang aus seinem Snapshot zurück, die Kennung steht im Audit',
+  '    --overwrite         schreibt auch, wenn jemand die Seite seither geändert hat',
   '  -h, --help            zeigt diese Hilfe',
 ]);
 
@@ -34,13 +36,13 @@ export type UsageProblem = 'command' | 'option' | 'repeated' | 'value';
 export const usageProblemTexts: Readonly<Record<UsageProblem, string>> =
   Object.freeze({
     command:
-      'Der Befehl ist unvollständig oder unbekannt. Diese Version von Ecclium kennt nur ‹ecclium stdio›, ‹ecclium config check›, ‹ecclium audit verify›, ‹ecclium audit show› und ‹ecclium policy init›. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
+      'Der Befehl ist unvollständig oder unbekannt. Diese Version von Ecclium kennt nur ‹ecclium stdio›, ‹ecclium config check›, ‹ecclium audit verify›, ‹ecclium audit show›, ‹ecclium policy init› und ‹ecclium undo›. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
     option:
       'Eine Option ist unbekannt oder gehört zu einem anderen Befehl. Ecclium nennt sie nicht, weil darin ein Token stehen könnte. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
     repeated:
       'Eine Option steht mehr als einmal im Aufruf. Ausser ‹--log› gilt jede Option nur einmal, damit kein Aufruf zweideutig ist. Nennen Sie jede andere Option höchstens einmal.',
     value:
-      'Eine Option hat einen Wert, den sie nicht annimmt, oder ihr fehlt einer. ‹--show-values›, ‹--interactive› und ‹--help› nehmen keinen Wert an, ‹--log›, ‹--object›, ‹--since› und ‹--until› brauchen einen. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
+      'Eine Option hat einen Wert, den sie nicht annimmt, oder ihr fehlt einer. ‹--show-values›, ‹--interactive›, ‹--overwrite› und ‹--help› nehmen keinen Wert an, ‹--log›, ‹--object›, ‹--since› und ‹--until› brauchen einen. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
   });
 
 /** The one text for an internal error. */

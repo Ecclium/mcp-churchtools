@@ -20,8 +20,6 @@ import { isProxy } from 'node:util/types';
 
 import {
   loadConfig,
-  type PrivateFileCode,
-  privateFileCodes,
   type RefusalReason,
   refusalReasons,
   RegistryRefusal,
@@ -35,11 +33,11 @@ import {
   prepareDayKeyFolder,
   prepareQuotaFolder,
   prepareSnapshotFolder,
-  PrivateFileError,
   systemClock,
 } from '@ecclium/mcp-churchtools-core/composition';
 import { DocsIndexError } from '@ecclium/mcp-churchtools-docs-index';
 
+import { privateFileCodeOf } from '../compose/private-file-code.js';
 import { keepsSnapshots } from '../compose/snapshots.js';
 import { takeEnvironment } from '../environment.js';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
@@ -106,22 +104,6 @@ const refusalOf = (error: unknown): RefusalReason | undefined => {
     'reason',
   )?.value;
   return refusalReasons.find((known) => known === reason);
-};
-
-// Why a private folder of the start could not be prepared, read as an own
-// data property of a refusal of core. Any other value gives undefined, and
-// the start then reports an internal error.
-const privateFileCodeOf = (error: unknown): PrivateFileCode | undefined => {
-  if (
-    typeof error !== 'object' ||
-    error === null ||
-    isProxy(error) ||
-    !(error instanceof PrivateFileError)
-  ) {
-    return undefined;
-  }
-  const code: unknown = Object.getOwnPropertyDescriptor(error, 'code')?.value;
-  return privateFileCodes.find((known) => known === code);
 };
 
 /**

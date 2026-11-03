@@ -3,7 +3,8 @@
  * `ecclium stdio`, which the executable hands to the start over stdio. It
  * takes over the environment, reads the arguments and runs the command:
  * `ecclium config check`, and `ecclium audit verify` and
- * `ecclium audit show`, which read the audit files (ADR 0028). Wrong calls get
+ * `ecclium audit show`, which read the audit files (ADR 0028),
+ * `ecclium policy init` (ADR 0032) and `ecclium undo` (ADR 0031). Wrong calls get
  * fixed German texts on stderr, never an argument, and every exit code
  * comes from `exit-codes.ts`.
  *
@@ -39,6 +40,7 @@ import {
 import type { PolicyInitOptions } from './policy/init.js';
 import { policyInitTexts } from './policy/texts.js';
 import type { WriteSyncFn } from './send.js';
+import type { UndoOptions } from './undo/undo.js';
 
 /** Replacements for tests. */
 export interface RunOptions {
@@ -53,12 +55,18 @@ export interface RunOptions {
     PolicyInitOptions,
     'load' | 'writeSync' | 'createTransport'
   >;
+  /** Replacements for `undo`, such as the test double of ChurchTools. */
+  readonly undo?: Pick<UndoOptions, 'load' | 'writeSync' | 'createTransport'>;
 }
 
-/** A command: its words and the options it takes besides the help. */
+/**
+ * A command: its words, the options it takes besides the help, and
+ * whether one argument follows its words, such as the ID of `undo`.
+ */
 interface Command {
   readonly words: readonly string[];
   readonly options: readonly string[];
+  readonly argument: boolean;
 }
 
 const commands: readonly Command[] = Object.freeze(
@@ -67,10 +75,12 @@ const commands: readonly Command[] = Object.freeze(
     { words: ['audit', 'verify'], options: ['log'] },
     { words: ['audit', 'show'], options: ['object', 'since', 'until'] },
     { words: ['policy', 'init'], options: ['interactive'] },
+    { words: ['undo'], options: ['overwrite'], argument: true },
   ].map((entry) =>
     Object.freeze({
       words: Object.freeze(entry.words),
       options: Object.freeze(entry.options),
+      argument: entry.argument === true,
     }),
   ),
 );
@@ -84,6 +94,7 @@ const options = Object.freeze({
   since: Object.freeze({ type: 'string' }),
   until: Object.freeze({ type: 'string' }),
   interactive: Object.freeze({ type: 'boolean' }),
+  overwrite: Object.freeze({ type: 'boolean' }),
 } as const);
 
 // The only option that may stand more than once.
@@ -100,7 +111,12 @@ type Call =
       readonly since: string | undefined;
       readonly until: string | undefined;
     }
-  | { readonly kind: 'init'; readonly interactive: boolean };
+  | { readonly kind: 'init'; readonly interactive: boolean }
+  | {
+      readonly kind: 'undo';
+      readonly eventId: string;
+      readonly overwrite: boolean;
+    };
 
 // The kind of a refused call, from the code of the error of parseArgs
 // alone: its message repeats the argument, which can hold a token.
@@ -147,16 +163,22 @@ const readCall = (args: readonly string[]): Call => {
     seen.add(token.name);
   }
   const { positionals, values } = parsed;
+  // The argument of a command is never compared with its words.
   const leads = (entry: Command): boolean =>
-    positionals.length <= entry.words.length &&
-    positionals.every((word, index) => word === entry.words[index]);
+    positionals.length <= entry.words.length + (entry.argument ? 1 : 0) &&
+    entry.words.every(
+      (word, index) =>
+        index >= positionals.length || word === positionals[index],
+    );
   if (values.help === true) {
     return commands.some(leads)
       ? { kind: 'help' }
       : { kind: 'wrong', problem: 'command' };
   }
   const chosen = commands.find(
-    (entry) => leads(entry) && positionals.length === entry.words.length,
+    (entry) =>
+      leads(entry) &&
+      positionals.length === entry.words.length + (entry.argument ? 1 : 0),
   );
   if (chosen === undefined) return { kind: 'wrong', problem: 'command' };
   // An option of another command is refused like an unknown one.
@@ -177,6 +199,12 @@ const readCall = (args: readonly string[]): Call => {
       };
     case 'policy init':
       return { kind: 'init', interactive: values.interactive === true };
+    case 'undo':
+      return {
+        kind: 'undo',
+        eventId: positionals[1] ?? '',
+        overwrite: values.overwrite === true,
+      };
     default:
       return { kind: 'check', showValues: values['show-values'] === true };
   }
@@ -265,6 +293,26 @@ export function run(
           )
           .catch(() => {
             // As below: the thrown value is never looked at.
+            out.stderr(internalErrorText);
+            return exitCodes.internal;
+          });
+      }
+      case 'undo': {
+        // Loaded only for this command, like `policy init`: it builds the
+        // transport, and it writes.
+        const out = output;
+        return import('./undo/undo.js')
+          .then(({ undoWrite }) =>
+            undoWrite({
+              environment: taken,
+              execArgv,
+              eventId: call.eventId,
+              overwrite: call.overwrite,
+              output: out,
+              ...runOptions.undo,
+            }),
+          )
+          .catch(() => {
             out.stderr(internalErrorText);
             return exitCodes.internal;
           });

@@ -14,7 +14,8 @@ export const exitCodes = Object.freeze({
   usage: 64,
   /**
    * The data is wrong: for `audit verify`, a chain or an anchor of the
-   * audit files does not agree (ADR 0028).
+   * audit files does not agree (ADR 0028); for `ecclium undo`, someone
+   * changed the page since the write (ADR 0031).
    */
   dataError: 65,
   /** The input is missing, such as the folder `audit` or a log. */
@@ -28,6 +29,12 @@ export const exitCodes = Object.freeze({
   internal: 70,
   /** A file could not be read whole. */
   ioError: 74,
+  /**
+   * The command may not do what it was asked: for `ecclium undo`, writing
+   * is off, read-only or switched off, the account lacks a right, or the
+   * clock differs from ChurchTools (ADR 0031).
+   */
+  noPermission: 77,
   /** The configuration is invalid. */
   invalidConfig: 78,
   /**

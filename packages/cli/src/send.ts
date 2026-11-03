@@ -43,7 +43,19 @@ const letters: readonly number[] = Object.freeze([
   0xab, 0xbb, 0xc4, 0xd6, 0xdc, 0xe4, 0xf6, 0xfc, 0x2039, 0x203a,
 ]);
 
-const isShown = (code: number): boolean =>
+/**
+ * Tells whether a character may reach a terminal as it is: printable
+ * ASCII, a German umlaut or one of the quotes «» and ‹›.
+ *
+ * @param code - The UTF-16 code unit of the character.
+ * @returns Whether the writers let it through.
+ * @example
+ * ```ts
+ * isShown('ä'.charCodeAt(0)); // true
+ * isShown(0x1b); // false
+ * ```
+ */
+export const isShown = (code: number): boolean =>
   (code >= 0x20 && code <= 0x7e) || letters.includes(code);
 
 /**
