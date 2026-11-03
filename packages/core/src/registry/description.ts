@@ -21,12 +21,14 @@ export const maxSectionLength = 1000;
 /**
  * The most UTF-16 code units of all rendered descriptions together. The
  * client hands the list of tools to the model in every session, so a long
- * list costs context in every conversation. 25'000 leave room for about 32
- * tools of about 750 characters each. The fixed lines of each description
- * take about 160 of them, {@link untrustedWarning} 103, which is why both
- * stay short.
+ * list costs context in every conversation. 32'000 leave room for the 32
+ * tools that read and the tools that write. A server that only reads stays
+ * under 25'000 in every choice of toolsets, which a test of the catalog
+ * over stdio holds, so that only who turns writing on pays for it (decided
+ * on 01.11.2026). The fixed lines of each description take about 160
+ * characters, {@link untrustedWarning} 103, which is why both stay short.
  */
-export const descriptionBudget = 25_000;
+export const descriptionBudget = 32_000;
 
 /**
  * The sentences every description ends with: every text in a result is

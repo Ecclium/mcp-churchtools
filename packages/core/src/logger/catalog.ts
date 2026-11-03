@@ -246,6 +246,7 @@ export const logEvents = Object.freeze({
   write_answer_replayed: entry('warn', 'code'),
   write_plan_gone: entry('warn', 'code'),
   write_not_confirmed: entry('info', 'code'),
+  write_echo_refused: entry('warn', 'code'),
   // An undo of the operator, at its end (ADR 0031).
   undo_call: entry('info', 'code', 'durationMs'),
   // The policy in the write guard (ADR 0032).

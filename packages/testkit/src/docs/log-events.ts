@@ -203,6 +203,8 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Eine Antwort auf eine Rückfrage kam ein zweites Mal. Ecclium schreibt nichts, der Aufruf endet mit `confirmation_required`.',
     write_plan_gone:
       'Der Plan zu einer Antwort auf eine Rückfrage liegt nicht mehr vor, etwa weil er kurz vor der Antwort ablief. Ecclium schreibt nichts, der Aufruf endet mit `confirmation_required`. Eine Antwort nach zehn Minuten oder nach einem Neustart weist schon das SDK ab, nur mit `mcp_server_error` und ohne Zeile im Audit.',
+    write_echo_refused:
+      'Eine Bestätigung mit `ct_write_confirm` gilt nicht: Das Token ist ungültig, abgelaufen oder für einen anderen Akteur, die Zusammenfassung ist nicht die von Ecclium, oder der Plan lässt das Echo nicht zu. Ecclium schreibt nichts, der Aufruf endet mit `confirmation_required`.',
     write_not_confirmed:
       'Die Person hat eine Rückfrage abgelehnt, abgebrochen oder nicht mit «Ja» angenommen. Ecclium schreibt nichts, der Aufruf endet mit `confirmation_required`.',
     undo_call:

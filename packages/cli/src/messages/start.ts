@@ -198,6 +198,9 @@ const refusals: Readonly<Record<RefusalReason, Message>> = Object.freeze({
   tool_domain_reserved: refusal(
     'Ein Tool eines Plugins liegt im Bereich ‹base›, der dem Kern vorbehalten ist.',
   ),
+  tool_name_reserved: refusal(
+    'Ein Tool eines Plugins trägt einen Namen, der dem Kern vorbehalten ist.',
+  ),
   tool_description: refusal(
     'In der Beschreibung eines Tools fehlt ein Abschnitt, oder ein Abschnitt ist ungültig.',
   ),

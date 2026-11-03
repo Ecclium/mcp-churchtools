@@ -56,7 +56,8 @@ export interface StdioCatalogOptions {
  * ```
  */
 export function createStdioCatalog(
-  config: Pick<EccliumConfig, 'readOnly' | 'toolsets'>,
+  config: Pick<EccliumConfig, 'readOnly' | 'toolsets'> &
+    Partial<Pick<EccliumConfig, 'writeConfirmation'>>,
   options: StdioCatalogOptions = {},
 ): ToolCatalog {
   const { readDocs = () => readDocsIndex() } = options;
@@ -68,5 +69,7 @@ export function createStdioCatalog(
     plugins: [],
     readOnly: config.readOnly,
     toolsets: new Set(config.toolsets),
+    // The tool of the echo, only where the operator allows it (ADR 0029).
+    echo: config.writeConfirmation === 'echo-allowed',
   });
 }

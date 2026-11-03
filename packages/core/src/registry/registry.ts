@@ -41,6 +41,7 @@ import {
   type ObjectJsonSchema,
   type OutputShape,
 } from './schema.js';
+import { echoTool, echoToolName } from './echo-tool.js';
 import { isToolsetName, toolsetOf, type ToolsetName } from './toolsets.js';
 
 /** A checked tool as the pipeline runs it. */
@@ -148,6 +149,13 @@ export interface CatalogOptions {
    * forgets it. Every tool is checked before, also one that stays out.
    */
   readonly toolsets?: ReadonlySet<ToolsetName>;
+  /**
+   * Whether the operator allows the echo, `ECCLIUM_WRITE_CONFIRMATION` set
+   * to `echo-allowed` (ADR 0029). With it, a catalog that writes and holds
+   * a write tool of the core offers `ct_write_confirm` as well. Without the
+   * option there is no echo, the safe side.
+   */
+  readonly echo?: boolean;
 }
 
 // A copy of the toolsets of its own, so that a later change of the set
@@ -224,6 +232,11 @@ const checkTool = (
     throw new RegistryRefusal('tool_name', { plugin });
   }
   const where = { plugin, tool: name };
+  // The tool of the echo confirms writes; only the core may offer it, with
+  // or without the echo (ADR 0029).
+  if (origin === 'plugin' && name === echoToolName) {
+    throw new RegistryRefusal('tool_name_reserved', where);
+  }
   const meta = checkMeta(fields.meta);
   if (meta === undefined) throw new RegistryRefusal('tool_meta', where);
   const description = checkDescription(fields.description);
@@ -483,6 +496,15 @@ export function createToolCatalog(options: CatalogOptions): ToolCatalog {
       (!options.readOnly || tool.meta.capability === 'read') &&
       offered(tool, toolsets),
   );
+  // Only a write tool of the core can plan a write the echo may confirm.
+  if (
+    options.echo === true &&
+    kept.some(
+      (tool) => tool.origin === 'core' && tool.meta.capability === 'write',
+    )
+  ) {
+    kept.push(checkTool(echoTool, reservedPluginName, 'core'));
+  }
   let length = 0;
   for (const tool of kept) length += tool.description.length;
   if (length > descriptionBudget) {

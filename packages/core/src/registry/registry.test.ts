@@ -105,6 +105,62 @@ const refuses = (
   return refusal;
 };
 
+describe('the tool of the echo (ADR 0029)', () => {
+  const writingCore = plugin('test-core', adding(writeTool('ct_w0')));
+
+  it('comes with the echo, a server that writes and a write tool of the core', () => {
+    const catalog = catalogOf({
+      core: writingCore,
+      plugins: [],
+      readOnly: false,
+      echo: true,
+    });
+    const entry = catalog.get('ct_write_confirm');
+    expect(entry?.origin).toBe('core');
+    expect(entry?.meta).toMatchObject({
+      capability: 'write',
+      domain: 'base',
+      unattended: 'never',
+      replayGuard: 'nonce',
+    });
+    expect(entry?.description).toContain('Confirms one planned write by echo');
+  });
+
+  it.each([
+    ['without the echo', { core: writingCore, readOnly: false }],
+    [
+      'for a server that only reads',
+      { core: writingCore, readOnly: true, echo: true },
+    ],
+    [
+      'without a write tool of the core',
+      {
+        core: emptyCore,
+        plugins: [plugin('p', adding(writeTool('ct_w1')))],
+        readOnly: false,
+        echo: true,
+      },
+    ],
+  ])('stays out %s', (_name, options) => {
+    const catalog = catalogOf({ plugins: [], ...options });
+    expect(catalog.has('ct_write_confirm')).toBe(false);
+  });
+
+  it('is a name no plugin may take, with the echo or without', () => {
+    for (const echo of [true, false]) {
+      const refusal = refusalOf(() =>
+        catalogOf({
+          core: writingCore,
+          plugins: [plugin('p', adding(writeTool('ct_write_confirm')))],
+          readOnly: false,
+          echo,
+        }),
+      );
+      expect(refusal.reason).toBe('tool_name_reserved');
+    }
+  });
+});
+
 describe('createToolCatalog', () => {
   it('lists the tools of all plugins sorted by name, frozen', () => {
     const catalog = catalogOf({
@@ -177,6 +233,7 @@ describe('createToolCatalog', () => {
       'target',
       'version',
       'undoId',
+      'confirm',
     ]);
     // A read tool keeps its own output.
     expect(catalog.get('ct_example_echo')?.output).not.toBe(writeResultSchema);

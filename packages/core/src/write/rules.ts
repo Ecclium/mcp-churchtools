@@ -202,12 +202,16 @@ const sensitivityRank: Readonly<Record<Sensitivity, number>> = Object.freeze({
 /**
  * Applies the metadata of the tool that plans: of sensitivity and of the
  * rule for running unattended the stricter one counts, and special always
- * means never unattended. Nothing else of the metadata counts.
+ * means never unattended. A tool that says its write cannot be taken back
+ * makes it so, which takes the echo away; one cannot make a write
+ * reversible that the intent does not (ADR 0029). Nothing else of the
+ * metadata counts.
  *
  * @param rules - The rules derived from the intent.
  * @param meta - Sensitivity and unattended rule of the tool.
  * @param meta.sensitivity - The sensitivity the tool declares.
  * @param meta.unattended - The rule for running unattended it declares.
+ * @param meta.reversible - Whether it declares its write can be taken back.
  * @returns The rules with the stricter values, frozen.
  * @example
  * ```ts
@@ -220,6 +224,7 @@ export function withToolMeta(
   meta: {
     readonly sensitivity: Sensitivity;
     readonly unattended: UnattendedRule;
+    readonly reversible?: Reversible;
   },
 ): IntentRules {
   const sensitivity =
@@ -232,7 +237,9 @@ export function withToolMeta(
     meta.unattended === 'never'
       ? 'never'
       : 'policy';
-  return Object.freeze({ ...rules, sensitivity, unattended });
+  const reversible: Reversible =
+    meta.reversible === 'no' ? 'no' : rules.reversible;
+  return Object.freeze({ ...rules, sensitivity, unattended, reversible });
 }
 
 /**
