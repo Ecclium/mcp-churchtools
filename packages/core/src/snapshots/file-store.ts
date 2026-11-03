@@ -269,6 +269,11 @@ export function createFileSnapshotStore(
       if (name >= cut) continue;
       const dayFolder = dayFolderOf(name);
       try {
+        // A name no private file may have, such as `.DS_Store` that a file
+        // manager leaves, is refused by its form and stays, as a name of
+        // another form does in the folder of the day keys. Its folder stays
+        // with it, without failing the purge.
+        let foreign = false;
         for (const entry of listPrivateFolder(dayFolder, fs)) {
           try {
             if (
@@ -282,11 +287,12 @@ export function createFileSnapshotStore(
             ) {
               removed += 1;
             }
-          } catch {
-            stayed = true;
+          } catch (error) {
+            if (error instanceof TypeError) foreign = true;
+            else stayed = true;
           }
         }
-        removePrivateFolder(dayFolder, fs);
+        if (!foreign) removePrivateFolder(dayFolder, fs);
       } catch {
         stayed = true;
       }

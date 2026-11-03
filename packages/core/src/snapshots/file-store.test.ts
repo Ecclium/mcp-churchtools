@@ -262,6 +262,20 @@ describe('the store of snapshots in files', () => {
     expect(await store.get(ctx, eventId)).toEqual([record('before', day)]);
   });
 
+  // A file manager leaves such names in a folder it showed; they must not
+  // make every later purge fail (ADR 0031).
+  it('leaves a name no private file may have, with its folder, and still purges the rest', async () => {
+    const stateDir = freshDir();
+    const store = createFileSnapshotStore({ stateDir, pid });
+    const folder = join(stateDir, snapshotFolderName);
+    const old = '2026-09-02' as IsoDate;
+    await store.put(ctx, record('before', old));
+    writeFileSync(join(folder, old, '.DS_Store'), 'x', { mode: 0o600 });
+    expect(await store.purgeBefore(day)).toBe(1);
+    expect(readdirSync(join(folder, old))).toEqual(['.DS_Store']);
+    expect(await store.purgeBefore(day)).toBe(0);
+  });
+
   it('rejects with a code of its own when the system refuses a folder of a day', async () => {
     const refusing: PrivateFileSystem = Object.freeze({
       ...nodePrivateFileSystem,
