@@ -30,11 +30,12 @@ import {
   type SnapshotPart,
   snapshotParts,
   type TenantContext,
+  wikiPageGuidPattern,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { z } from 'zod';
 
 import { infoOf } from '../keys/index.js';
-import { isTenantId, isUuid } from '../logger/index.js';
+import { isTenantId, isUuid, toolNamePattern } from '../logger/index.js';
 
 /** What a snapshot keeps of a page whose text a write changes. */
 export interface PageTextSnapshot {
@@ -76,8 +77,10 @@ export type SnapshotContent = SnapshotState | PageCreatedSnapshot;
 const hash = z.string().regex(/^[0-9a-f]{64}$/);
 const version = z.int().min(0).max(Number.MAX_SAFE_INTEGER);
 const id = z.int().min(1).max(Number.MAX_SAFE_INTEGER);
-const guid = z.string().regex(/^[0-9A-Fa-f-]{36}$/);
-const tool = z.string().regex(/^[a-z][a-z0-9_]{0,62}$/);
+// The GUID as ChurchTools gave it, in either case: `ecclium undo` compares
+// it without case, as the target of the audit does in lower case.
+const guid = z.string().regex(wikiPageGuidPattern);
+const tool = z.string().regex(toolNamePattern);
 
 // The forms a part may take, checked again when it is opened: a record
 // that opens but does not fit is refused, whoever made it.

@@ -196,6 +196,8 @@ describe('sealSnapshot and openSnapshot', () => {
       { eventId, part: 'before', day, content: created },
       { ...before(), part: 'middle' as 'before' },
       before({ ...state, tool: 'Not A Tool' }),
+      before({ ...state, tool: 'wiki_page_update' }),
+      before({ ...state, guid: '-'.repeat(36) }),
       before({ ...state, categoryId: 0 }),
       before({ ...state, extra: 1 } as unknown as SnapshotContent),
     ];
