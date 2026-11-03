@@ -52,6 +52,7 @@ const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
   stateDir: 'Zustandsordner',
   keysDir: 'Schlüsselordner',
   snapshots: 'Snapshots',
+  writeConfirmation: 'Bestätigung',
   auditRetentionMonths: 'Frist in Monaten',
   policy: 'Richtlinie',
   stdioSubject: 'Subjekt über stdio',

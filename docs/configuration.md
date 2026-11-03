@@ -20,6 +20,7 @@ Ecclium liest seine Konfiguration aus Variablen der Umgebung. Jede trägt das Pr
 | `ECCLIUM_STATE_DIR` | absoluter Pfad | keine | nein | ja |
 | `ECCLIUM_KEYS_DIR` | absoluter Pfad | keine | nein | ja |
 | `ECCLIUM_SNAPSHOTS` | `on`, `off` | `on` | nein | nein |
+| `ECCLIUM_WRITE_CONFIRMATION` | `echo-allowed`, `elicitation-or-queue`, `queue` | `echo-allowed` | nein | nein |
 | `ECCLIUM_AUDIT_RETENTION_MONTHS` | ganze Zahl von 1 bis 120 | `12` | nein | ja |
 | `ECCLIUM_POLICY_FILE` | absoluter Pfad | keine | nein | nein |
 | `ECCLIUM_STDIO_SUBJECT` | Bezeichnung mit höchstens 32 Zeichen | `local-stdio` | nein | ja |
@@ -73,6 +74,10 @@ Absoluter Pfad eines eigenen Ordners für die Tagesschlüssel, mit denen Ecclium
 
 Legt fest, ob Ecclium vor jedem Schreibvorgang den bisherigen Stand als Snapshot festhält, mit dem sich der Schreibvorgang zurücknehmen lässt. Ein Snapshot liegt verschlüsselt im Unterordner `snapshots` des Ordners aus `ECCLIUM_STATE_DIR`, den der Start eines Servers anlegt, der schreibt, und sein Schlüssel ist mit einem Tagesschlüssel aus `ECCLIUM_KEYS_DIR` verschlüsselt. Die Frist ist fest 30 Tage: Ein Snapshot bleibt an seinem Tag und an den 30 Tagen danach lesbar, danach löscht Ecclium beim Start oder beim Wechsel des UTC-Tages den Snapshot und vernichtet seinen Tagesschlüssel, solange `ECCLIUM_STATE_DIR` und `ECCLIUM_KEYS_DIR` gesetzt sind, auch wenn es nur liest oder die Snapshots ausgeschaltet sind. Snapshots entstehen mit den Schreib-Tools, die es in dieser Version noch nicht gibt. Mit `off` hält Ecclium keinen Snapshot fest, kein Schreibvorgang lässt sich zurücknehmen, und jeder Start mit `ECCLIUM_READ_ONLY=false` warnt.
 
+## `ECCLIUM_WRITE_CONFIRMATION`
+
+Legt fest, wie Ecclium einen Schreibvorgang bestätigen lässt, bevor es schreibt. Mit `echo-allowed`, der Voreinstellung über stdio, stellt Ecclium eine Rückfrage im Client, wenn der Client sie kann, sonst gilt die Bestätigung mit `ct_write_confirm`, wenn sich der Schreibvorgang zurücknehmen lässt, sonst kommt er in die Freigabe-Warteschlange. Mit `elicitation-or-queue`, der Voreinstellung über HTTP, gilt nie die Bestätigung mit `ct_write_confirm`, nur die Rückfrage oder die Freigabe-Warteschlange. Mit `queue` wartet jeder Schreibvorgang auf die Freigabe des Betreibers mit `ecclium queue approve`. Steht die Variable über HTTP auf `echo-allowed`, warnt jeder Start. Die Schreib-Tools und die Freigabe-Warteschlange gibt es in dieser Version noch nicht.
+
 ## `ECCLIUM_AUDIT_RETENTION_MONTHS`
 
 Wie viele Monate die Audit-Dateien bleiben, von 1 bis 120. Danach löscht Ecclium sie beim Start oder beim Wechsel des UTC-Tages, nur im Ordner `audit` und nur Dateien mit dem Namen einer Audit-Datei. Eine Datei bleibt mindestens bis zum Ende des Tages, der so viele Kalendermonate nach ihrem Tag liegt. Unter zwölf Monaten warnt jeder Start, weil das Protokoll dann kürzer bleibt als ein Jahr. Ohne `ECCLIUM_STATE_DIR` gibt es keine Audit-Datei, und die Variable bewirkt nichts. Kopien, etwa in Backups, löscht Ecclium nicht. Nur im Betrieb über stdio.
@@ -93,7 +98,6 @@ Legt fest, ab welcher Stufe der Server Zeilen des Logs auf stderr schreibt.
 
 Diese Namen gehören zu späteren Versionen. Ist einer gesetzt, bricht der Start mit einem Hinweis ab, statt die Variable still zu übergehen.
 
-- `ECCLIUM_WRITE_CONFIRMATION`
 - `ECCLIUM_EGRESS`
 - `ECCLIUM_EGRESS_ALLOW_LAN`
 - `ECCLIUM_ALLOWED_HOSTS`

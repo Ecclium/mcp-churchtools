@@ -110,6 +110,7 @@ const stateDir = quote('ECCLIUM_STATE_DIR');
 const keysDir = quote('ECCLIUM_KEYS_DIR');
 const readOnly = quote('ECCLIUM_READ_ONLY');
 const snapshotsVariable = quote('ECCLIUM_SNAPSHOTS');
+const confirmationVariable = quote('ECCLIUM_WRITE_CONFIRMATION');
 const keyFile = quote('ECCLIUM_PSEUDONYM_KEY_FILE');
 const previousKeyFile = quote('ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE');
 const keyCommand = '‹openssl rand -hex 32›';
@@ -1066,6 +1067,14 @@ const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({
     `Die Snapshots der Schreibvorgänge sind mit ${snapshotsVariable} ausgeschaltet.`,
     'Ecclium hält vor einem Schreibvorgang den bisherigen Stand nicht fest, und kein Schreibvorgang lässt sich zurücknehmen. Auch das Echo, die Bestätigung im Freigabedialog des KI-Assistenten, gilt dann für keinen Schreibvorgang.',
     `Setzen Sie ${snapshotsVariable} auf ‹on› oder entfernen Sie die Variable, wenn das nicht gewollt ist.`,
+  ),
+  // On every start over HTTP with the echo set on purpose: there it holds
+  // only then, and it shows the will of a person without proving it
+  // (ADR 0029).
+  echo_over_http: message(
+    `${confirmationVariable} steht über HTTP auf ‹echo-allowed›.`,
+    'Über HTTP bestätigt das Echo, die Bestätigung mit ‹ct_write_confirm› im Freigabedialog des KI-Assistenten, einen Schreibvorgang nur, weil Sie es so eingestellt haben. Das Echo macht den Willen eines Menschen sichtbar, beweist ihn aber nicht.',
+    `Setzen Sie ${confirmationVariable} auf ‹elicitation-or-queue›, die Voreinstellung über HTTP, oder entfernen Sie die Variable.`,
   ),
   // One text for every setting: the report of the loader names none of
   // them, and never the path of a certificate.

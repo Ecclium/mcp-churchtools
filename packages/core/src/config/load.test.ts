@@ -40,6 +40,7 @@ import {
   variableNames,
   variables,
   variableSchemas,
+  writeConfirmations,
 } from './variables.js';
 
 // The loader gets the environment as a record and the token file through
@@ -376,6 +377,7 @@ describe('loadConfig with a good configuration', () => {
       stateDir: undefined,
       keysDir: undefined,
       snapshots: true,
+      writeConfirmation: 'echo-allowed',
       auditRetentionMonths: 12,
       policy: defaultPolicy,
       stdioSubject: 'local-stdio',
@@ -444,6 +446,12 @@ describe('loadConfig with a good configuration', () => {
         'ECCLIUM_SNAPSHOTS',
         'default',
         { kind: 'choice', value: 'on' },
+      ],
+      [
+        'writeConfirmation',
+        'ECCLIUM_WRITE_CONFIRMATION',
+        'default',
+        { kind: 'choice', value: 'echo-allowed' },
       ],
       [
         'auditRetentionMonths',
@@ -986,6 +994,136 @@ describe('loadConfig and the snapshots', () => {
   );
 });
 
+// How a write gets confirmed (ADR 0029): echo-allowed over stdio,
+// elicitation-or-queue over HTTP, and the echo over HTTP only when the
+// operator sets it, with a warning on every start.
+describe('loadConfig and the confirmation of writes', () => {
+  const confirming = (
+    value: string,
+    transport: Transport = 'stdio',
+  ): ConfigResult =>
+    load({ ...valid(), ECCLIUM_WRITE_CONFIRMATION: value }, transport);
+
+  it('takes echo-allowed by default over stdio, without a warning', () => {
+    const result = load(valid());
+    expect(result.ok && result.config.writeConfirmation).toBe('echo-allowed');
+    expect(setting(result, 'writeConfirmation')).toEqual({
+      key: 'writeConfirmation',
+      variable: 'ECCLIUM_WRITE_CONFIRMATION',
+      origin: 'default',
+      shown: { kind: 'choice', value: 'echo-allowed' },
+    });
+    expect(result.report.warnings).toEqual([]);
+  });
+
+  // The table has one default, the one over stdio, so the loader puts in
+  // the one over HTTP itself, still as the default.
+  it('takes elicitation-or-queue by default over http, without a warning', () => {
+    const result = load(valid(), 'http');
+    expect(result.ok && result.config.writeConfirmation).toBe(
+      'elicitation-or-queue',
+    );
+    expect(setting(result, 'writeConfirmation')).toEqual({
+      key: 'writeConfirmation',
+      variable: 'ECCLIUM_WRITE_CONFIRMATION',
+      origin: 'default',
+      shown: { kind: 'choice', value: 'elicitation-or-queue' },
+    });
+    expect(result.report.warnings).toEqual([]);
+  });
+
+  it.each(writeConfirmations)(
+    'takes %s as given over stdio, without a warning',
+    (value) => {
+      const result = confirming(value);
+      expect(result.ok && result.config.writeConfirmation).toBe(value);
+      expect(setting(result, 'writeConfirmation')).toMatchObject({
+        origin: 'environment',
+        shown: { kind: 'choice', value },
+      });
+      expect(result.report.warnings).toEqual([]);
+    },
+  );
+
+  // Also while the server only reads: over HTTP no server writes in this
+  // version, and the operator learns of the choice before one does.
+  it('takes echo-allowed over http only with a warning', () => {
+    const result = confirming('echo-allowed', 'http');
+    expect(result.ok && result.config.writeConfirmation).toBe('echo-allowed');
+    expect(setting(result, 'writeConfirmation')).toMatchObject({
+      origin: 'environment',
+      shown: { kind: 'choice', value: 'echo-allowed' },
+    });
+    expect(result.report.warnings).toEqual(['echo_over_http']);
+  });
+
+  it.each(['elicitation-or-queue', 'queue'])(
+    'takes %s over http as given, without a warning',
+    (value) => {
+      const result = confirming(value, 'http');
+      expect(result.ok && result.config.writeConfirmation).toBe(value);
+      expect(setting(result, 'writeConfirmation')?.origin).toBe('environment');
+      expect(result.report.warnings).toEqual([]);
+    },
+  );
+
+  it('warns over http also next to a problem of another variable', () => {
+    const result = load(
+      {
+        ...valid(),
+        ECCLIUM_READ_ONLY: 'false',
+        ECCLIUM_WRITE_CONFIRMATION: 'echo-allowed',
+      },
+      'http',
+    );
+    expect(problems(result)).toEqual([
+      ['keys_dir_required', 'ECCLIUM_KEYS_DIR'],
+    ]);
+    expect(result.report.warnings).toEqual(['echo_over_http']);
+  });
+
+  // A refused value gets no default, over either transport.
+  it.each([
+    '',
+    'QUEUE',
+    'Queue',
+    'Echo-allowed',
+    'echo_allowed',
+    'echo',
+    'elicitation',
+    ' queue',
+    'queue ',
+  ])('refuses the value %j without repeating it', (value) => {
+    for (const transport of ['stdio', 'http'] as const) {
+      const result = confirming(value, transport);
+      expect(result.ok, transport).toBe(false);
+      expect(problems(result), transport).toEqual([
+        [
+          value === '' ? 'empty_value' : 'invalid_choice',
+          'ECCLIUM_WRITE_CONFIRMATION',
+        ],
+      ]);
+      expect(setting(result, 'writeConfirmation'), transport).toMatchObject({
+        origin: 'invalid',
+        shown: { kind: 'none' },
+      });
+      expect(result.report.warnings, transport).toEqual([]);
+      if (value.trim() !== '') {
+        expect(JSON.stringify(result.report)).not.toContain(`"${value}"`);
+      }
+    }
+  });
+
+  it.each(['elicitation-or-queues', 'echo-allowed-or-queue'])(
+    'refuses %j as too long, before any choice',
+    (value) => {
+      expect(problems(confirming(value))).toEqual([
+        ['value_too_long', 'ECCLIUM_WRITE_CONFIRMATION'],
+      ]);
+    },
+  );
+});
+
 describe('loadConfig and its sources', () => {
   it('never reads process.env', () => {
     vi.stubEnv('ECCLIUM_READ_ONLY', 'false');
@@ -1265,7 +1403,6 @@ describe('loadConfig and the names of variables', () => {
 
   it('refuses each name of a later phase as not yet supported', () => {
     expect(unsupportedVariableNames).toEqual([
-      'ECCLIUM_WRITE_CONFIRMATION',
       'ECCLIUM_EGRESS',
       'ECCLIUM_EGRESS_ALLOW_LAN',
       'ECCLIUM_ALLOWED_HOSTS',
@@ -2439,6 +2576,8 @@ describe('loadConfig and its problems', () => {
         ECCLIUM_READ_ONLY: 'false',
         ECCLIUM_SNAPSHOTS: 'off',
       }),
+    echo_over_http: () =>
+      load({ ...valid(), ECCLIUM_WRITE_CONFIRMATION: 'echo-allowed' }, 'http'),
     redaction_off: () => load({ ...valid(), ECCLIUM_REDACTION: 'off' }),
     toolsets_without_state_dir: () =>
       load({ ...valid(), ECCLIUM_TOOLSETS: 'persons' }),
@@ -2725,7 +2864,7 @@ describe('loadConfig and its problems', () => {
     const environment: Environment = {
       ECCLIUM_CHURCHTOOLS_URL: 'http://demo.example',
       ECCLIUM_CHURCHTOOLS_TOKEN_FILE: tokenPath,
-      ECCLIUM_WRITE_CONFIRMATION: 'x',
+      ECCLIUM_EGRESS: 'x',
       ECCLIUM_SEARCH_TOOLS: 'x',
       NODE_TLS_REJECT_UNAUTHORIZED: '0',
       NODE_DEBUG: 'undici',
@@ -2747,7 +2886,7 @@ describe('loadConfig and its problems', () => {
       ['tls_keylog_enabled'],
       ['tls_trace_enabled', 'NODE_OPTIONS'],
       ['proxy_unsupported', 'ECCLIUM_EGRESS_PROXY'],
-      ['unsupported_variable', 'ECCLIUM_WRITE_CONFIRMATION'],
+      ['unsupported_variable', 'ECCLIUM_EGRESS'],
       ['search_tools_replaced', 'ECCLIUM_SEARCH_TOOLS'],
       ['unknown_variable', 'ECCLIUM_UNKNOWN_0'],
     ]);
