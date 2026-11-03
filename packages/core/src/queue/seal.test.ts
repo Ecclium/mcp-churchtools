@@ -154,9 +154,15 @@ describe('sealQueueEntry and openQueueEntry', () => {
   it('refuse an entry that was changed or does not have the form of one', async () => {
     const keys = createMemoryDayKeys();
     const sealed = await sealQueueEntry(keys, ctx, toSeal());
-    const last = sealed.sealed.at(-1) === 'A' ? 'B' : 'A';
+    // A sign inside the data, all of whose bits count: the last sign of
+    // base64url may carry only bits of padding.
+    const at = 100;
+    const other = sealed.sealed[at] === 'A' ? 'B' : 'A';
     const forms: unknown[] = [
-      { ...sealed, sealed: `${sealed.sealed.slice(0, -1)}${last}` },
+      {
+        ...sealed,
+        sealed: `${sealed.sealed.slice(0, at)}${other}${sealed.sealed.slice(at + 1)}`,
+      },
       { ...sealed, sealed: `${sealed.sealed}.x` },
       { ...sealed, sealed: sealed.sealed.replace('.', '') },
       { ...sealed, sealed: `${sealed.sealed.slice(0, 81)}AAAA` },
