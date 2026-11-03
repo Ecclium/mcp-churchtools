@@ -7,7 +7,7 @@
  * of the process, a logger bound to the tenant `default` for the
  * transport over stdio, and the provider of the keys for the pseudonyms
  * of the level `strict` (ADR 0069) and of the day keys for snapshots and
- * the queue (ADR 0031).
+ * the queue, and the store of the sealed records of snapshots (ADR 0031).
  *
  * Only the composition root may import this subpath, which a rule of
  * dependency-cruiser holds. Through the entry point of core the writer
@@ -44,4 +44,9 @@ export {
   type FileQuotaStoreOptions,
   prepareQuotaFolder,
 } from './quota/index.js';
+export {
+  createFileSnapshotStore,
+  type FileSnapshotStoreOptions,
+  prepareSnapshotFolder,
+} from './snapshots/index.js';
 export { createDefaultTenantLogger } from './tenant/default-logger.js';

@@ -144,7 +144,7 @@ describe('sealSnapshot and openSnapshot', () => {
     const keys = createMemoryDayKeys();
     const sealed = await sealSnapshot(keys, ctx, before());
     const { createCipheriv } = await import('node:crypto');
-    const { infoOf } = await import('../keys/info.js');
+    const { infoOf } = await import('../keys/index.js');
     const key = new Uint8Array(32);
     const wrapped = await keys.wrap(ctx, 'snapshot', day, key);
     const sealWith = (plain: string): string => {

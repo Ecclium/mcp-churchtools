@@ -33,7 +33,7 @@ import {
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { z } from 'zod';
 
-import { infoOf } from '../keys/info.js';
+import { infoOf } from '../keys/index.js';
 import { isTenantId, isUuid } from '../logger/index.js';
 
 /** What a snapshot keeps of a page whose text a write changes. */

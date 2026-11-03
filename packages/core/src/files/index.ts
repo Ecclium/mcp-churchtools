@@ -17,6 +17,7 @@ export {
   type PrivateFileSystem,
   privateFolderMode,
   readPrivateFile,
+  removePrivateFolder,
   type WriteOnceOptions,
   writePrivateFileOnce,
 } from './private-files.js';

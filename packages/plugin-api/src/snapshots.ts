@@ -53,8 +53,9 @@ export interface SealedSnapshot {
 export interface SnapshotStore {
   /**
    * Keeps a record. Each part of the snapshot of a write is kept once: a
-   * second record of the same tenant, event and part rejects, and the
-   * first stays as it was.
+   * second record of the same tenant, event, part and day rejects, and the
+   * first stays as it was. The ID of an event is new for every call, so a
+   * store need not look at other days.
    *
    * @param ctx - The context of the call, for the tenant.
    * @param snapshot - The record.
