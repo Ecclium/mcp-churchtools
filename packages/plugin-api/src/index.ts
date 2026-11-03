@@ -219,6 +219,10 @@ export {
   type WrappedKey,
 } from './keys.js';
 export {
+  approvalCountDays,
+  approvalQuotaKey,
+  type ApprovalQuotaKey,
+  isApprovalQuotaKey,
   isIsoDate,
   isQuotaKey,
   maxWriteQuotaKeyLength,

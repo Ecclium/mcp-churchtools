@@ -9,6 +9,7 @@ export {
   createFileQuotaStore,
   type FileQuotaStoreOptions,
   lockWaitMs,
+  maxApprovalKeys,
   maxQuotaActors,
   maxWriteKeysPerActor,
   maxQuotaFileBytes,

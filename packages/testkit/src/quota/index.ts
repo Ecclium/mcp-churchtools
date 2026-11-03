@@ -10,6 +10,8 @@ import assert from 'node:assert/strict';
 
 import {
   type ActorKind,
+  approvalQuotaKey,
+  isApprovalQuotaKey,
   type IsoDate,
   isIsoDate,
   isQuotaKey,
@@ -49,7 +51,8 @@ export type QuotaMemory = Map<string, number>;
 
 /**
  * A store in memory, only for tests. Two stores over the same memory stand
- * for one store before and after a restart.
+ * for one store before and after a restart. A counter of a decision about
+ * an entry of the queue belongs to the tenant alone, as the port asks.
  *
  * @param memory - The counters, new by default.
  * @returns The store, frozen.
@@ -65,13 +68,9 @@ export function createMemoryQuotaStore(
   const keyOf = (ctx: TenantContext, key: QuotaKey, day: IsoDate): string => {
     if (!isQuotaKey(key)) throw new TypeError('The key is unknown.');
     if (!isIsoDate(day)) throw new TypeError('The day is invalid.');
-    return JSON.stringify([
-      ctx.tenantId,
-      ctx.actor.kind,
-      ctx.actor.id,
-      key,
-      day,
-    ]);
+    return isApprovalQuotaKey(key)
+      ? JSON.stringify([ctx.tenantId, key, day])
+      : JSON.stringify([ctx.tenantId, ctx.actor.kind, ctx.actor.id, key, day]);
   };
   return Object.freeze({
     increment: (ctx: TenantContext, key: QuotaKey, day: IsoDate) =>
@@ -109,6 +108,8 @@ const day = '2026-10-24' as IsoDate;
 const nextDay = '2026-10-25' as IsoDate;
 const key: QuotaKey = 'special_reads';
 const one = quotaContext('demo-tenant', 'service', 'stdio:local-stdio');
+// The counter of a decision about an entry of the queue (ADR 0029).
+const decision = approvalQuotaKey('5e'.repeat(32));
 
 const check = (
   name: string,
@@ -213,6 +214,93 @@ export const quotaStoreChecks: readonly QuotaStoreCheck[] = Object.freeze([
       assert.equal(await store.read(one, create, nextDay), 0);
     },
   ),
+  // The counters of decisions about entries of the queue (ADR 0029): one
+  // per tenant, whoever counts, so that a second identity cannot decide
+  // again about an entry that was decided.
+  check(
+    'counts a decision for the tenant, whichever actor counts',
+    async (open) => {
+      const store = open();
+      const operator = quotaContext('demo-tenant', 'user', 'stdio:operator');
+      const other = quotaContext(
+        'other-tenant',
+        'service',
+        'stdio:local-stdio',
+      );
+      assert.deepEqual(
+        [
+          await store.increment(one, decision, day),
+          await store.increment(operator, decision, day),
+          await store.increment(other, decision, day),
+        ],
+        [1, 2, 1],
+      );
+      assert.equal(await store.read(operator, decision, day), 2);
+      assert.equal(await open().read(one, decision, day), 2);
+      assert.equal(await store.read(one, decision, nextDay), 0);
+    },
+  ),
+  check(
+    'keeps a decision apart from the read budget and the writes',
+    async (open) => {
+      const store = open();
+      const create = writeQuotaKey('ct_wiki_page_create', 'wiki_category:12');
+      await store.increment(one, decision, day);
+      assert.equal(await store.read(one, key, day), 0);
+      assert.equal(await store.read(one, create, day), 0);
+      await store.increment(one, key, day);
+      await store.increment(one, create, day);
+      assert.equal(await store.read(one, decision, day), 1);
+      assert.equal(
+        await store.read(one, approvalQuotaKey('5f'.repeat(32)), day),
+        0,
+      );
+    },
+  ),
+  // A store may drop the counters of a day once a later day counts; the
+  // counter of a decision it must keep, while its entry waits.
+  check('keeps a decision while later days count', async (open) => {
+    await open().increment(one, decision, day);
+    for (const later of ['2026-10-25', '2026-11-07', '2026-11-08']) {
+      const store = open();
+      await store.increment(one, key, later as IsoDate);
+      await store.increment(
+        one,
+        approvalQuotaKey('60'.repeat(32)),
+        later as IsoDate,
+      );
+    }
+    assert.equal(await open().read(one, decision, day), 1);
+    assert.equal(await open().increment(one, decision, day), 2);
+  }),
+  check(
+    'gives 1 to one decision only when two stores count at the same time',
+    async (open) => {
+      const first = open();
+      const second = open();
+      const counts = await Promise.all(
+        Array.from({ length: 10 }, (_, index) =>
+          (index % 2 === 0 ? first : second).increment(one, decision, day),
+        ),
+      );
+      assert.deepEqual(
+        [...counts].sort((a, b) => a - b),
+        Array.from({ length: 10 }, (_, index) => index + 1),
+      );
+    },
+  ),
+  check('refuses a key of a decision of another form', async (open) => {
+    const store = open();
+    for (const bad of [
+      'approval:',
+      `approval:${'A'.repeat(64)}`,
+      `approval:${'a'.repeat(63)}`,
+      `approval:../${'a'.repeat(61)}`,
+    ]) {
+      await assert.rejects(store.increment(one, bad as QuotaKey, day));
+      await assert.rejects(store.read(one, bad as QuotaKey, day));
+    }
+  }),
   check('refuses a key of a write of another form', async (open) => {
     const store = open();
     for (const bad of [
