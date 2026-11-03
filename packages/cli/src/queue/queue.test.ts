@@ -207,11 +207,23 @@ describe('ecclium queue list', () => {
     expect(all(result)).not.toContain(stateDir);
   });
 
-  it('says so when nothing waits, also without a folder of the queue', async () => {
+  it('says so when nothing waits, and prepares the folder of the queue as the start does', async () => {
     const result = await run('list');
     expect(result.code).toBe(exitCodes.ok);
     expect(result.stdout).toEqual([listHeading, listEmpty]);
-    expect(readdirSync(stateDir)).not.toContain('queue');
+    expect(readdirSync(join(stateDir, 'queue'))).toEqual([]);
+  });
+
+  it('ends with 78 and the text of the folder when the folder of the queue is not private', async () => {
+    mkdirSync(join(stateDir, 'queue'), { mode: 0o700 });
+    chmodSync(join(stateDir, 'queue'), 0o755);
+    for (const action of ['list', 'show', 'reject'] as const) {
+      const result = await run(action, { queueId: id });
+      expect(result.code).toBe(exitCodes.invalidConfig);
+      expect(result.stderr[0]).toContain('‹queue›');
+      expect(result.stderr[0]).toContain('und der Befehl bricht ab.');
+      expect(all(result)).not.toContain(stateDir);
+    }
   });
 
   it('lists a rejected entry with its decision, and an expired one', async () => {
@@ -254,6 +266,48 @@ describe('ecclium queue list', () => {
 });
 
 describe('ecclium queue show', () => {
+  it('shows the text the core made visible once, and the marks of the diff in German', async () => {
+    prepareQueueFolder(stateDir);
+    const keeper = createQueueKeeper({
+      keys: createFileKeyProvider({
+        dayKeys: createFileDayKeys({ keysDir, pid: process.pid }),
+      }),
+      store: createFileApprovalQueue({ stateDir, pid: process.pid }),
+      clock: systemClock,
+    });
+    await keeper.enqueue(
+      {
+        tenantId: 'default',
+        instance: doubleOrigin,
+      } as unknown as TenantContext,
+      {
+        id,
+        day: today(),
+        content: {
+          ...content(Date.now()),
+          summary: 'Die Seite «C:\\\\Pfad» ändern.',
+          diff: [
+            '@@ -1,1 +1,1 @@',
+            '-a\\\\b',
+            '\\ No newline at end of file',
+            '+a\\u{200b}b é',
+            '\\ Line ends with CR LF',
+          ],
+        },
+      },
+    );
+    const result = await run('show', { queueId: id });
+    expect(result.stdout).toEqual(
+      expect.arrayContaining([
+        'Die Seite «C:\\\\Pfad» ändern.',
+        '-a\\\\b',
+        '\\ ohne Zeilenumbruch am Ende',
+        '+a\\u{200b}b \\u{e9}',
+        '\\ Zeile endet mit CR LF',
+      ]),
+    );
+  });
+
   it('shows the whole entry, every text safe for the terminal', async () => {
     await keep();
     const result = await run('show', { queueId: id });

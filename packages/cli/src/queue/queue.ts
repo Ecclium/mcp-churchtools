@@ -18,12 +18,13 @@
  * is touched and named in no text.
  *
  * Its exit code follows sysexits, as `texts.ts` maps each case: 0 when the
- * command did its work; 64 for a wrong call; 65 for an entry that was
- * decided already; 66 without an entry, past its retention or without a
- * queue; 70 for an internal error; 74 when the audit file cannot take the
- * line or the line of a rejection did not reach it; 77 for a refused call;
- * and 78 for an invalid configuration or a folder that is missing or
- * cannot be used.
+ * command did its work, `show` of a decided entry included; 64 for a wrong
+ * call; 65 for a rejection of an entry that was decided already; 66
+ * without an entry under the ID or past its retention; 70 for an internal
+ * error; 74 when the audit file cannot take the line or the line of a
+ * rejection did not reach it; 77 for a call the core refused; and 78 for
+ * an invalid configuration, a folder that is missing or cannot be used, or
+ * an audit file that cannot be opened.
  *
  * @packageDocumentation
  */
@@ -31,6 +32,8 @@ import {
   type ConfigResult,
   type ConfigSources,
   createStdioIdentity,
+  crLfMarker,
+  noLineEndMarker,
   createStdioTenantResolver,
   loadConfig,
   type QueueEntryContent,
@@ -46,6 +49,7 @@ import {
   createLogger,
   createStderrWriter,
   openAuditFile,
+  prepareQueueFolder,
   systemClock,
 } from '@ecclium/mcp-churchtools-core/composition';
 import type {
@@ -54,11 +58,13 @@ import type {
 } from '@ecclium/mcp-churchtools-core/http';
 
 import { composeToolPipeline } from '../compose/pipeline.js';
+import { privateFileCodeOf } from '../compose/private-file-code.js';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
 import {
   auditFileMessage,
   type Message,
   problemText,
+  queueFolderMessage,
 } from '../messages/index.js';
 import { type Output, terminalLines, usageLine } from '../output/index.js';
 import type { WriteSyncFn } from '../send.js';
@@ -114,7 +120,7 @@ const maxCount = 1_000_000;
 
 // A text of the start about a file it could not use, said of the queue.
 const queueText = (message: Message): string =>
-  `${message.what.replace(', und der Start bricht ab.', ', und Ecclium entscheidet nichts.')} ${message.why} ${message.action}`;
+  `${message.what.replace(', und der Start bricht ab.', ', und der Befehl bricht ab.')} ${message.why} ${message.action}`;
 
 // Ends the command with a text on stderr, or on stdout for one that says
 // the work is done.
@@ -124,15 +130,28 @@ const finish = (output: Output, ended: QueueEnding): ExitCode => {
   return ended.code;
 };
 
-// Writes foreign text line by line, made safe for the terminal. Gives
-// false when stdout took not all.
+// The two marks of the diff of the core in German: they stand on lines of
+// their own after the line they mark, as for `ecclium undo`.
+const marks: Readonly<Record<string, string>> = Object.freeze({
+  [noLineEndMarker]: '\\ ohne Zeilenumbruch am Ende',
+  [crLfMarker]: '\\ Zeile endet mit CR LF',
+});
+
+// Writes text of an entry line by line, made safe for the terminal. The
+// core made it visible already when it queued the write, so its doubled
+// backslashes stay as they are. Gives false when stdout took not all.
 const writeForeign = (
   output: Output,
   prefix: string,
   text: string,
 ): boolean => {
   for (const line of text.split('\n')) {
-    for (const shown of terminalLines(prefix, line)) {
+    const mark = Object.hasOwn(marks, line) ? marks[line] : undefined;
+    if (mark !== undefined) {
+      if (!output.stdout(mark)) return false;
+      continue;
+    }
+    for (const shown of terminalLines(prefix, line, true)) {
       if (!output.stdout(shown)) return false;
     }
   }
@@ -144,8 +163,8 @@ const timeOfMs = (ms: number): string => timeOf(new Date(ms).toISOString());
 const dayOf = (day: string): string =>
   `${day.slice(8, 10)}.${day.slice(5, 7)}.${day.slice(0, 4)}`;
 
-// What a write changes, in words; the key holds IDs only, made safe all
-// the same.
+// What a write changes, in words; the key holds IDs, made safe when the
+// line is written.
 const targetOf = (target: QueueEntryContent['target']): string => {
   const [first = '', second = ''] = target.key.split('/');
   switch (target.kind) {
@@ -223,11 +242,13 @@ const reportShow = (output: Output, outcome: QueueShowOutcome): ExitCode => {
       break;
   }
   const { content } = outcome;
-  output.stdout(
+  let whole = writeForeign(
+    output,
+    '',
     `Eingereiht am ${timeOfMs(content.queuedAt)} UTC von ‹${content.tool}›, für ${targetOf(content.target)}.`,
   );
   output.stdout(`Grund: ${reasonTexts[content.reason]}`);
-  let whole = writeForeign(output, '', content.summary);
+  whole = writeForeign(output, '', content.summary) && whole;
   if (content.title !== undefined) {
     whole =
       writeForeign(output, 'Titel der neuen Seite: ', content.title) && whole;
@@ -302,6 +323,16 @@ export async function runQueue(options: QueueOptions): Promise<ExitCode> {
   }
   if (config.keysDir === undefined) {
     return finish(output, queueProblems.keys_dir_missing);
+  }
+  // The folder of the queue, as the start prepares it, so that one that
+  // cannot be used ends with its own text and 78, not as an internal error.
+  try {
+    prepareQueueFolder(stateDir);
+  } catch (error) {
+    const code = privateFileCodeOf(error);
+    if (code === undefined) throw error;
+    output.stderr(queueText(queueFolderMessage(code)));
+    return exitCodes.invalidConfig;
   }
   const clock = systemClock;
   // Only a decision writes a line into the audit file; reading writes none.
