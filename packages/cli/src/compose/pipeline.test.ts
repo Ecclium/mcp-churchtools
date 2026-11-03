@@ -186,10 +186,17 @@ describe('the build of the pipeline', () => {
     });
     const composed = setup(config).build();
     const { keys } = built.options[0] as ToolPipelineOptions;
-    const ctx = { tenantId: 'default' } as never;
+    const ctx = {
+      tenantId: 'default',
+      instance: 'https://example.church.tools',
+      actor: { kind: 'user', id: 'stdio:local-stdio' },
+    } as never;
     const day = '2026-11-02' as IsoDate;
     const wrapped = await keys?.wrap(ctx, 'snapshot', day, new Uint8Array(32));
     expect(wrapped?.day).toBe(day);
+    // The same provider derives the keys of the pseudonyms.
+    const derived = await keys?.dataKeys(ctx, 'pseudonym', day);
+    expect(derived?.map((key) => key.length)).toEqual([32]);
     expect(
       await composed.dayKeys?.destroyBefore(
         'snapshot',

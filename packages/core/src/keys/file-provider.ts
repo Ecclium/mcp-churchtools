@@ -61,12 +61,6 @@ export interface FileKeys {
 // never meet.
 const label = 'ecclium/key/v1';
 
-// The instance is a part of the info of its own because over stdio every
-// tenant is `default`: two servers for two instances with the same key
-// file and subject would otherwise share keys, and a pseudonym of one would
-// open in the other as another person. Every part goes in after its length
-// (info.ts), so that no two different lists of parts give the same info.
-
 // An own data property of a plain object, never through a getter or a
 // proxy, which could give another value on every read.
 const ownData = (target: unknown, key: string): unknown => {
@@ -195,6 +189,11 @@ export function createFileKeyProvider(keys: FileKeys): KeyProvider {
     if (secrets.length === 0) {
       throw new TypeError('This provider has no secret for pseudonyms.');
     }
+    // The instance is a part of the info of its own because over stdio
+    // every tenant is `default`: two servers for two instances with the
+    // same key file and subject would otherwise share keys, and a pseudonym
+    // of one would open in the other as another person. Every part goes in
+    // after its length (info.ts), so that no two lists of parts meet.
     const info = infoOf([
       label,
       purpose,

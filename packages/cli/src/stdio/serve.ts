@@ -279,9 +279,6 @@ export function serve(options: ServeOptions): ExitCode | undefined {
   // log: the count of lost lines is the only trace of that loss, and the
   // signal explains the exit code (ADR 0054).
   const processLogger = createLogger({ writer, clock, minLevel: 'info' });
-  // The anchors of the chain of the audit file and the counts of its
-  // sweeps, at every level of the log as well. Only this logger may write
-  // the fields of an anchor (ADR 0028).
   let dayTimer: ReturnType<typeof setTimeout> | undefined;
   // The destruction of the day keys past their retention, once the
   // pipeline has its day keys (ADR 0031).
@@ -311,6 +308,9 @@ export function serve(options: ServeOptions): ExitCode | undefined {
     }, untilNextDay(now)).unref();
   };
   if (auditFile !== undefined) {
+    // The anchors of the chain of the audit file and the counts of its
+    // sweeps, at every level of the log as well. Only this logger may write
+    // the fields of an anchor (ADR 0028).
     const anchorLogger = createLogger({
       writer,
       clock,

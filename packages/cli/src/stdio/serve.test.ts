@@ -625,6 +625,24 @@ describe('the second stage with a folder of keys', () => {
     });
   });
 
+  it('warns and destroys nothing when the clock gives no day', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    // 30 days before this time lie in the year 10000, which has no day of
+    // the short form of ISO 8601.
+    vi.setSystemTime(Date.UTC(10_000, 2, 1));
+    const folder = keysWith(['2026-09-01']);
+    const session = setup({ config: { ...config, keysDir: folder } });
+    await settle();
+    expect(dayKeyLines(session)).toEqual([
+      {
+        ts: expect.any(String) as unknown,
+        level: 'warn',
+        event: 'day_keys_not_destroyed',
+      },
+    ]);
+    expect(left(folder)).toEqual(['default.2026-09-01.key']);
+  });
+
   it('arms one timer for the audit file and the keys, which ticks the file and destroys the keys', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     vi.setSystemTime(Date.UTC(2026, 9, 23, 23, 59, 0));
