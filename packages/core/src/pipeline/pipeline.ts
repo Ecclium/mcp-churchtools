@@ -2145,8 +2145,11 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     const { target } = content;
     addTarget(refs, target);
     const decidedAt = toTimestamp(now());
+    if (decidedAt === undefined) {
+      ctx.log.warn('write_queue_failed', { code: 'internal' });
+      return ended(decisionFailed('internal'));
+    }
     try {
-      if (decidedAt === undefined) throw new TypeError('No time.');
       await queue.decide(ctx, {
         id: queueId,
         day,
@@ -2154,8 +2157,26 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         decidedAt,
       });
     } catch {
-      ctx.log.warn('write_queue_failed', { code: 'internal' });
-      return ended(decisionFailed('internal'));
+      // The store refused or failed: another process may have decided in
+      // between, or this decision was kept and only the destruction of the
+      // entry failed. What the queue holds now tells which (ADR 0031).
+      const now = await queue.load(ctx, queueId).catch(() => undefined);
+      if (now?.kind !== 'decided') {
+        ctx.log.warn('write_queue_failed', { code: 'internal' });
+        return ended(decisionFailed('internal'));
+      }
+      const mine =
+        now.decision.decision === 'rejected' &&
+        now.decision.decidedAt === decidedAt;
+      if (!mine) {
+        return ended(
+          decisionEnd(
+            { kind: 'decided', decision: now.decision.decision },
+            'error',
+            'conflict',
+          ),
+        );
+      }
     }
     return ended(
       decisionEnd(

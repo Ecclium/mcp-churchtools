@@ -142,9 +142,12 @@ const contentSchema = z.strictObject({
     kind: z.enum(writeTargetKinds),
     key: z.string().min(1).max(200),
   }),
+  // Title and diff are bounded by the length of the sealed entry alone: a
+  // diff too long for a question is what the queue is for, and its lines
+  // come from the page and grow when they are made visible.
   summary: z.string().min(1).max(2000),
-  title: z.string().max(12_000).optional(),
-  diff: z.array(z.string().max(65_536)).max(100_000),
+  title: z.string().optional(),
+  diff: z.array(z.string()),
   reason: z.enum(queueReasons),
   queuedAt: z.int().min(0).max(Number.MAX_SAFE_INTEGER),
 });

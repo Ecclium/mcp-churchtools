@@ -52,6 +52,20 @@ describe('the checks of queues of approvals', () => {
     );
   });
 
+  it('fail for a queue that gives its entries newest first', async () => {
+    const memory = memoryOf();
+    const open = (): ApprovalQueue => {
+      const queue = createMemoryApprovalQueue(memory);
+      return {
+        ...queue,
+        list: async (ctx) => [...(await queue.list(ctx))].reverse(),
+      };
+    };
+    expect(await failures(open)).toContain(
+      'gives back the entries it keeps, the oldest day first and by ID within a day',
+    );
+  });
+
   it('fail for a queue that never removes an item', async () => {
     const memory = memoryOf();
     const open = (): ApprovalQueue => ({

@@ -383,7 +383,7 @@ describe('a write that waits in the queue (ADR 0031)', () => {
 
   it('writes nothing and queues nothing once 100 entries wait', async () => {
     const store = createMemoryApprovalQueue();
-    for (let index = 0; index < 100; index += 1) {
+    for (let index = 0; index < 99; index += 1) {
       await store.put(ctxOf, {
         id: `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`,
         day,
@@ -391,6 +391,11 @@ describe('a write that waits in the queue (ADR 0031)', () => {
       });
     }
     const { double, pipeline, events, logs, planReads } = setup({ store });
+    planReads();
+    // The 100th still waits.
+    expect(
+      (await pipeline.call('ct_example_note_write', note, request())).ok,
+    ).toBe(true);
     planReads();
     const outcome = await pipeline.call(
       'ct_example_note_write',
@@ -401,7 +406,7 @@ describe('a write that waits in the queue (ADR 0031)', () => {
       code: 'policy_denied',
       message: confirmationSentences.queueFull,
     });
-    expect(events()[0]).toMatchObject({
+    expect(events()[1]).toMatchObject({
       outcome: 'denied',
       writeState: 'denied',
       errorCode: 'policy_denied',
@@ -673,6 +678,76 @@ describe('a rejection of the operator (ADR 0031)', () => {
     });
   });
 
+  it('says decided when another process decided in between, and rejected when only the destruction of its entry failed', async () => {
+    const memory = createMemoryApprovalQueue();
+    const first = setup({ store: memory });
+    const id = await queueNote(first);
+    // Another process approves between the load and the decision.
+    const raced: ApprovalQueue = {
+      ...memory,
+      decide: async (ctx, decision) => {
+        await memory.decide(ctx, {
+          ...decision,
+          decision: 'approved',
+          decidedAt: '2026-11-03T07:59:00.000Z',
+        });
+        throw new Error('The entry is decided already.');
+      },
+    };
+    const racing = setup({
+      queue: createQueueKeeper({ keys: first.keys, store: raced, clock }),
+    });
+    expect(await racing.pipeline.reject({ queueId: id }, operator())).toEqual({
+      kind: 'decided',
+      decision: 'approved',
+    });
+    expect(racing.events()[0]).toMatchObject({
+      outcome: 'error',
+      errorCode: 'conflict',
+    });
+    expect(racing.logs()).not.toContain('write_queue_failed');
+    // The decision is kept, then the destruction of the entry fails.
+    const second = await queueNote(first);
+    const kept: ApprovalQueue = {
+      ...memory,
+      decide: async (ctx, decision) => {
+        await memory.decide(ctx, decision);
+        throw new Error('unlink failed');
+      },
+    };
+    const keeping = setup({
+      queue: createQueueKeeper({ keys: first.keys, store: kept, clock }),
+    });
+    expect(
+      await keeping.pipeline.reject({ queueId: second }, operator()),
+    ).toMatchObject({ kind: 'rejected' });
+    expect(keeping.events()[0]).toMatchObject({ outcome: 'ok' });
+  });
+
+  it('fails as internal when the queue cannot be read again after a failed decision', async () => {
+    const memory = createMemoryApprovalQueue();
+    const first = setup({ store: memory });
+    const id = await queueNote(first);
+    let reads = 0;
+    const broken: ApprovalQueue = {
+      ...memory,
+      get: (ctx, entryId) => {
+        reads += 1;
+        return reads > 1
+          ? Promise.reject(new Error('disk'))
+          : memory.get(ctx, entryId);
+      },
+      decide: () => Promise.reject(new Error('disk')),
+    };
+    const { pipeline } = setup({
+      queue: createQueueKeeper({ keys: first.keys, store: broken, clock }),
+    });
+    expect(await pipeline.reject({ queueId: id }, operator())).toEqual({
+      kind: 'failed',
+      code: 'internal',
+    });
+  });
+
   it('fails as internal without a time for the decision', async () => {
     const memory = createMemoryApprovalQueue();
     const setupped = setup({ store: memory });
@@ -735,6 +810,7 @@ describe('the queue as the operator reads it (ADR 0031)', () => {
   it('shows one entry, one that is decided, and none for another ID or past its retention', async () => {
     const setupped = setup();
     const id = await queueNote(setupped);
+    const lines = setupped.events().length;
     expect(
       await setupped.pipeline.showQueue({ queueId: id }, operator()),
     ).toMatchObject({
@@ -748,6 +824,7 @@ describe('the queue as the operator reads it (ADR 0031)', () => {
         operator(),
       ),
     ).toEqual({ kind: 'missing' });
+    expect(setupped.events()).toHaveLength(lines);
     await setupped.pipeline.reject({ queueId: id }, operator());
     expect(
       await setupped.pipeline.showQueue({ queueId: id }, operator()),

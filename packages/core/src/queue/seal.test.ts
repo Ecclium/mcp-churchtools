@@ -267,6 +267,22 @@ describe('sealQueueEntry and openQueueEntry', () => {
     ).rejects.toThrow(TypeError);
   });
 
+  it('take a diff line and a title of any length while the entry fits', async () => {
+    const keys = createMemoryDayKeys();
+    const long = {
+      ...content,
+      title: 'T'.repeat(70_000),
+      diff: [`+${'\\#'.repeat(40_000)}`],
+    };
+    expect(
+      await openQueueEntry(
+        keys,
+        ctx,
+        await sealQueueEntry(keys, ctx, toSeal(long)),
+      ),
+    ).toEqual(long);
+  });
+
   it('refuse an entry larger than a store keeps', async () => {
     const keys = createMemoryDayKeys();
     const large = toSeal({

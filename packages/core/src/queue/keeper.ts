@@ -24,6 +24,7 @@
 import {
   type ApprovalQueue,
   type Clock,
+  type QueueItem,
   isIsoDate,
   type IsoDate,
   type KeyProvider,
@@ -175,6 +176,12 @@ export interface QueueKeeper {
 
 const missing: LoadedQueueEntry = Object.freeze({ kind: 'missing' });
 
+// Whether a store gives the sealed entry under the ID and day it was asked
+// about: the sealing binds the entry to the ID and day it names itself, so
+// a store of a plugin must not label it otherwise (ADR 0029).
+const named = (item: QueueItem, id: string): boolean =>
+  item.id === id && item.entry?.id === id && item.entry.day === item.day;
+
 /**
  * Joins a provider of keys, a store and a clock into the queue of
  * approvals.
@@ -240,11 +247,12 @@ export function createQueueKeeper(ports: {
         // A store gives an item with an entry or a decision.
         const entry = item.entry as NonNullable<typeof item.entry>;
         let content: QueueEntryContent | undefined;
-        let damaged = false;
+        let damaged = !named(item, id);
         try {
-          content = valid(day, from)
-            ? await openQueueEntry(keys, ctx, entry)
-            : undefined;
+          content =
+            valid(day, from) && !damaged
+              ? await openQueueEntry(keys, ctx, entry)
+              : undefined;
         } catch {
           damaged = true;
         }
@@ -261,11 +269,18 @@ export function createQueueKeeper(ports: {
       const item = await store.get(ctx, id);
       if (item === undefined) return missing;
       if (item.decision !== undefined) {
+        // An entry next to its decision is what a stop between the two
+        // left; deciding again destroys it, and the store refuses the
+        // second decision as expected (ADR 0031).
+        if (item.entry !== undefined) {
+          await store.decide(ctx, item.decision).catch(() => undefined);
+        }
         return Object.freeze({ kind: 'decided', decision: item.decision });
       }
       const { day } = item;
       const expired = Object.freeze({ kind: 'expired', day } as const);
       if (!valid(day, cut())) return expired;
+      if (!named(item, id)) throw new Error('The entry does not open.');
       // A store gives an item with an entry or a decision.
       const content = await openQueueEntry(
         keys,

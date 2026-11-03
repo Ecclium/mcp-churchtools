@@ -210,6 +210,67 @@ describe('createQueueKeeper', () => {
     });
   });
 
+  it('destroys an entry left next to its decision when it finds both', async () => {
+    const store = createMemoryApprovalQueue();
+    const { keeper } = setup(store);
+    await keeper.enqueue(ctx, { id, day, content });
+    const decision = {
+      id,
+      day,
+      decision: 'rejected',
+      decidedAt: '2026-11-03T18:00:00.000Z',
+    } as const;
+    const item = await store.get(ctx, id);
+    if (item === undefined) throw new Error('no entry');
+    // A store that stopped after keeping the decision gives both.
+    const stopped: ApprovalQueue = {
+      ...store,
+      get: async (c, i) =>
+        (await store.get(c, i)) === undefined
+          ? undefined
+          : { ...item, decision },
+    };
+    const decided: string[] = [];
+    const watching: ApprovalQueue = {
+      ...stopped,
+      decide: (c, d) => {
+        decided.push(d.decision);
+        return store.decide(c, d);
+      },
+    };
+    const healing = setup(watching).keeper;
+    expect(await healing.load(ctx, id)).toEqual({ kind: 'decided', decision });
+    expect(decided).toEqual(['rejected']);
+    expect((await store.get(ctx, id))?.entry).toBeUndefined();
+    // A second look finds the decision alone and decides nothing more.
+    const failing = setup({
+      ...stopped,
+      decide: () => Promise.reject(new Error('decided')),
+    }).keeper;
+    expect(await failing.load(ctx, id)).toEqual({ kind: 'decided', decision });
+  });
+
+  it('counts an entry a store gives under another ID or day as damaged', async () => {
+    const store = createMemoryApprovalQueue();
+    const { keeper } = setup(store);
+    await keeper.enqueue(ctx, { id, day, content });
+    const sealed = (await store.get(ctx, id))?.entry;
+    if (sealed === undefined) throw new Error('no entry');
+    for (const item of [
+      { id: second, day, entry: sealed },
+      { id, day: '2026-11-04' as IsoDate, entry: sealed },
+    ]) {
+      const relabelled: ApprovalQueue = {
+        ...store,
+        get: () => Promise.resolve(item),
+        list: () => Promise.resolve([item]),
+      };
+      const other = setup(relabelled).keeper;
+      await expect(other.load(ctx, item.id)).rejects.toThrow('does not open');
+      expect((await other.list(ctx))[0]?.state).toBe('damaged');
+    }
+  });
+
   it('is frozen', () => {
     expect(Object.isFrozen(setup().keeper)).toBe(true);
   });
