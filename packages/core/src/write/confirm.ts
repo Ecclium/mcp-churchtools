@@ -17,9 +17,12 @@
  *    with the setting `queue`.
  *
  * A decline, a cancel, an answer that does not fit and a question nobody
- * answers write nothing and queue nothing. The echo and the queue come
- * with their own changes; until then a plan that needs them ends with
- * `confirmation_required`.
+ * answers write nothing and queue nothing. For the echo, the result of the
+ * write tool carries a token and the summary, and `ct_write_confirm`
+ * brings both back: the core checks the token, uses up its nonce, takes
+ * the plan and issues a proof of the echo only when the summary is the one
+ * it made and the plan still allows the echo. The queue comes with its own
+ * change; until then a plan that needs it ends with `confirmation_required`.
  *
  * Every refusal here carries a fixed sentence and the code
  * `confirmation_required` or `policy_denied`, which the audit counts as
@@ -45,6 +48,7 @@ import {
   confirmationMessage,
   isConfirmed,
 } from './confirmation-text.js';
+import { echoTokenTtlMs, mintEchoToken, readEchoToken } from './echo-token.js';
 import { nonceTtlMs } from './nonce-store.js';
 import { planTtlMs } from './plan-store.js';
 import { issueProof, type WriteProof } from './proof.js';
@@ -80,6 +84,12 @@ export const confirmationSentences = Object.freeze({
   gone: 'The plan of this write is no longer kept, so nothing was written. Plan the write again.',
   tooMany:
     'Too many writes wait for a confirmation on this server. Answer them or wait ten minutes.',
+  echoToken:
+    'The token is not valid or has expired, so nothing was written. Plan the write again.',
+  echoSummary:
+    'The summary does not match the planned write, so nothing was written. Plan the write again and send its summary exactly as the write tool returns it.',
+  echoRefused:
+    'This write cannot be confirmed with ct_write_confirm, so nothing was written. It needs a question to the person in the client or the approval of the operator.',
 } as const);
 
 /** The way a plan gets confirmed (ADR 0029). */
@@ -97,11 +107,11 @@ export interface WayFacts {
 
 /**
  * Picks the way that confirms a plan, in the order of ADR 0029: a question
- * when the client can and the diff fits, else the echo where the setting
- * and the plan allow it, else the queue. A diff too long for a dialog goes
- * to the queue and not to the echo, because the echo shows the person only
- * the summary. A plan that only the operator may confirm, and every plan
- * with the setting `queue`, goes to the queue.
+ * when the client can, else the echo where the setting and the plan allow
+ * it, else the queue. A diff too long for a dialog goes to the queue and
+ * not to the echo, because the echo shows the person only the summary. A
+ * plan that only the operator may confirm, and every plan with the setting
+ * `queue`, goes to the queue.
  *
  * @param facts - Setting, capability of the client and fit of the diff.
  * @param plan - The sealed plan.
@@ -120,7 +130,10 @@ export function confirmationWayOf(
   const view = readPlan(plan);
   if (view === undefined) throw new TypeError('No sealed plan.');
   if (facts.setting === 'queue' || view.rules.alwaysQueue) return 'queue';
-  if (facts.elicitation) return facts.fits ? 'question' : 'queue';
+  // A diff too long for a dialog goes to the queue on every way: the echo
+  // hands the diff to the model, and the result of a call is bounded too.
+  if (!facts.fits) return 'queue';
+  if (facts.elicitation) return 'question';
   return facts.setting === 'echo-allowed' && view.echo ? 'echo' : 'queue';
 }
 
@@ -151,6 +164,11 @@ export interface ConfirmationAnswer {
 /** How asking ended. */
 export type AskResult =
   | { readonly kind: 'question'; readonly question: ConfirmationQuestion }
+  | { readonly kind: 'refused'; readonly error: EccliumError };
+
+/** How a token of the echo was made. */
+export type EchoResult =
+  | { readonly kind: 'token'; readonly token: string }
   | { readonly kind: 'refused'; readonly error: EccliumError };
 
 /** How an answer ended. */
@@ -198,6 +216,35 @@ export interface Confirmations {
     input: unknown,
     answer: ConfirmationAnswer,
   ): Promise<AnswerResult>;
+  /**
+   * Keeps a plan for its confirmation by echo and makes its token.
+   *
+   * @param ctx - The context of the call that planned.
+   * @param plan - The sealed plan, one that allows the echo.
+   * @param text - The text of the confirmation of the plan.
+   * @returns The token, or why there is none.
+   */
+  echo(
+    ctx: TenantContext,
+    plan: PlannedWrite,
+    text: ConfirmationText,
+  ): Promise<EchoResult>;
+  /**
+   * Takes a token and a summary that `ct_write_confirm` brought back:
+   * checks the token and its time, uses up its nonce, takes the plan and
+   * issues a proof of the echo only for the summary the core made and a
+   * plan that still allows the echo.
+   *
+   * @param ctx - The context of the call of `ct_write_confirm`.
+   * @param token - The token as the call sent it.
+   * @param summary - The summary as the call sent it.
+   * @returns The plan with its proof, or why there is none.
+   */
+  confirmEcho(
+    ctx: TenantContext,
+    token: unknown,
+    summary: unknown,
+  ): Promise<AnswerResult>;
 }
 
 /** What the questions of a pipeline are built from. */
@@ -222,6 +269,17 @@ const notThisCall = refused(
   'confirmation_required',
   confirmationSentences.notThisCall,
 );
+
+// A summary as the model may send it back: with the markers of the data
+// envelope around it, as the result carried it, or without them.
+const unwrapped = (summary: string): string => {
+  const open = summary.indexOf('>>');
+  if (!summary.startsWith('<<data-') || open < 0) return summary;
+  const close = `<</${summary.slice(2, open)}>>`;
+  return summary.endsWith(close) && summary.length >= open + 2 + close.length
+    ? summary.slice(open + 2, summary.length - close.length)
+    : summary;
+};
 
 const hexOf = (bytes: Uint8Array): string =>
   Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -248,6 +306,10 @@ export function createConfirmations(
   // The key of the hashes in the states of this pipeline: random, never
   // stored and never sent, so that the client cannot test guesses.
   const key = random(32);
+  // The key of the tokens of the echo, apart from the one of the hashes.
+  const tokenKey = random(32);
+  const summaryDigest = (summary: string): string =>
+    argumentsDigestOf(key, { echoSummary: summary });
 
   const ask = async (
     ctx: TenantContext,
@@ -356,5 +418,81 @@ export function createConfirmations(
     }
   };
 
-  return Object.freeze({ ask, answer });
+  const echo = async (
+    ctx: TenantContext,
+    plan: PlannedWrite,
+    text: ConfirmationText,
+  ): Promise<EchoResult> => {
+    const view = readPlan(plan);
+    if (view === undefined) throw new TypeError('No sealed plan.');
+    const nonce = hexOf(random(16));
+    const kept = await plans.put(ctx, view.planHash, plan, planTtlMs);
+    if (kept === 'full') {
+      ctx.log.warn('write_plans_full', { code: 'policy_denied' });
+      return refused('policy_denied', confirmationSentences.tooMany);
+    }
+    const token = mintEchoToken(tokenKey, {
+      v: 1,
+      planHash: view.planHash,
+      nonce,
+      principal: principalDigestOf(key, ctx.tenantId, ctx.actor),
+      summary: summaryDigest(text.summary),
+      issuedAt: clock.now(),
+    });
+    return Object.freeze({ kind: 'token', token });
+  };
+
+  const confirmEcho = async (
+    ctx: TenantContext,
+    token: unknown,
+    summary: unknown,
+  ): Promise<AnswerResult> => {
+    const claims = readEchoToken(tokenKey, token);
+    const age =
+      claims === undefined ? Number.NaN : clock.now() - claims.issuedAt;
+    // A clock that went back or failed gives no age, and no token counts.
+    if (
+      claims === undefined ||
+      !(age >= 0 && age < echoTokenTtlMs) ||
+      claims.principal !== principalDigestOf(key, ctx.tenantId, ctx.actor)
+    ) {
+      ctx.log.warn('write_echo_refused', { code: 'confirmation_required' });
+      return refused('confirmation_required', confirmationSentences.echoToken);
+    }
+    // The nonce first, so that a token counts once, also when its summary
+    // was wrong; the plan next, so that no later token finds it.
+    if (!(await consumed(ctx, claims.nonce))) {
+      ctx.log.warn('write_answer_replayed', { code: 'confirmation_required' });
+      return refused('confirmation_required', confirmationSentences.used);
+    }
+    const plan = await taken(ctx, claims.planHash);
+    const view = readPlan(plan);
+    if (plan === undefined || view?.planHash !== claims.planHash) {
+      ctx.log.warn('write_plan_gone', { code: 'confirmation_required' });
+      return refused('confirmation_required', confirmationSentences.gone);
+    }
+    if (
+      typeof summary !== 'string' ||
+      summaryDigest(unwrapped(summary)) !== claims.summary
+    ) {
+      ctx.log.warn('write_echo_refused', { code: 'confirmation_required' });
+      return refused(
+        'confirmation_required',
+        confirmationSentences.echoSummary,
+      );
+    }
+    // The plan decides again whether the echo may confirm it: a tool of the
+    // core, a write that can be taken back, nothing special (ADR 0029).
+    if (!view.echo) {
+      ctx.log.warn('write_echo_refused', { code: 'confirmation_required' });
+      return refused(
+        'confirmation_required',
+        confirmationSentences.echoRefused,
+      );
+    }
+    const proof = issueProof(plan, 'echo', clock.now());
+    return Object.freeze({ kind: 'confirmed', plan, proof });
+  };
+
+  return Object.freeze({ ask, answer, echo, confirmEcho });
 }

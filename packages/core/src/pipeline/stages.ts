@@ -395,6 +395,24 @@ const maskOf = (
 };
 
 /**
+ * Masks one free text as `redact` masks a field of the class `untrusted` at
+ * a level, so that the core can know a text as the model will read it,
+ * such as the summary of the echo (ADR 0029).
+ *
+ * @param text - The text.
+ * @param level - The level of redaction of the call.
+ * @returns The text as the result carries it, before its envelope.
+ * @example
+ * ```ts
+ * maskFreeTextAt('Plan', 'standard'); // 'Plan'
+ * ```
+ */
+export function maskFreeTextAt(text: string, level: RedactionLevel): string {
+  const mask = maskOf('untrusted', level);
+  return mask === undefined ? text : mask(text);
+}
+
+/**
  * The stage `redact`. It masks e-mail addresses, phone numbers and dates of
  * birth by their data class and replaces addresses and amounts with
  * {@link maskedValue}, unless the level is `off`; any other level masks, so

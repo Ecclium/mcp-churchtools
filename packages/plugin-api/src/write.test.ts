@@ -53,6 +53,11 @@ describe('the result of a write tool', () => {
         version: 4,
       },
       { state: 'skipped', target: { kind: 'wiki_category', key: '12' } },
+      {
+        state: 'planned',
+        target: { kind: 'wiki_page', key: '12/x' },
+        confirm: { token: 't.m', summary: 'Neue Seite', diff: ['+x'] },
+      },
     ]) {
       expect(writeResultSchema.safeParse(value).success).toBe(true);
     }
@@ -60,7 +65,12 @@ describe('the result of a write tool', () => {
 
   it('refuses another state, an unknown target and a version below 0', () => {
     for (const value of [
-      { state: 'planned', target: { kind: 'wiki_page', key: '12/x' } },
+      { state: 'queued', target: { kind: 'wiki_page', key: '12/x' } },
+      {
+        state: 'planned',
+        target: { kind: 'wiki_page', key: '12/x' },
+        confirm: { token: '', summary: 'x', diff: [] },
+      },
       { state: 'verified', target: { kind: 'person', key: '1' } },
       { state: 'verified', target: { kind: 'wiki_page', key: '' } },
       {

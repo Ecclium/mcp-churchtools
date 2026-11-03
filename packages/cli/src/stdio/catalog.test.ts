@@ -2,6 +2,8 @@ import { DocsIndexError } from '@ecclium/mcp-churchtools-docs-index';
 import { syntheticDocsIndex } from '@ecclium/mcp-churchtools-testkit';
 import { describe, expect, it } from 'vitest';
 
+import type { ToolsetName } from '@ecclium/mcp-churchtools-core';
+
 import { createStdioCatalog } from './catalog.js';
 
 describe('the catalog over stdio', () => {
@@ -196,4 +198,51 @@ describe('the catalog over stdio', () => {
       ).toThrow(DocsIndexError);
     },
   );
+});
+
+describe('the budget of the descriptions', () => {
+  const lists: readonly (readonly ToolsetName[])[] = [
+    [],
+    ['persons'],
+    ['events'],
+    ['calendars'],
+    ['wiki'],
+    ['songs'],
+    ['docs'],
+    ['api'],
+    // all, as the configuration expands it, then all,api.
+    ['persons', 'events', 'calendars', 'wiki', 'songs', 'docs'],
+    ['persons', 'events', 'calendars', 'wiki', 'songs', 'docs', 'api'],
+  ];
+
+  // The budget is 32'000 for a server that writes; one that only reads
+  // stays under 25'000 in every choice of toolsets, so that only who turns
+  // writing on pays for the longer list (decided on 01.11.2026).
+  it.each(lists.map((toolsets) => [toolsets]))(
+    'stays under 25000 for a server that only reads: %j',
+    (toolsets) => {
+      const catalog = createStdioCatalog(
+        { readOnly: true, toolsets },
+        { readDocs: () => syntheticDocsIndex() },
+      );
+      const length = catalog
+        .list()
+        .reduce((sum, entry) => sum + entry.description.length, 0);
+      expect(length).toBeLessThanOrEqual(25_000);
+    },
+  );
+
+  // The core brings no tool that writes yet, so the echo has nothing to
+  // confirm and stays out of the catalog (ADR 0029).
+  it('offers no ct_write_confirm while the core has no write tool', () => {
+    const catalog = createStdioCatalog(
+      {
+        readOnly: false,
+        toolsets: ['persons', 'events', 'calendars', 'wiki', 'songs', 'docs'],
+        writeConfirmation: 'echo-allowed',
+      },
+      { readDocs: () => syntheticDocsIndex() },
+    );
+    expect(catalog.has('ct_write_confirm')).toBe(false);
+  });
 });

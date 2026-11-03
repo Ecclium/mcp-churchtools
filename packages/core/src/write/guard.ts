@@ -53,6 +53,7 @@ import {
   type Permissions,
   type PlanOutcome,
   type QuotaStore,
+  type Reversible,
   type RightRef,
   type Sensitivity,
   type TenantContext,
@@ -245,6 +246,8 @@ export interface PlanRequest {
   readonly meta: {
     readonly sensitivity: Sensitivity;
     readonly unattended: UnattendedRule;
+    /** Whether the tool declares its write can be taken back. */
+    readonly reversible?: Reversible;
   };
 }
 
@@ -689,6 +692,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
         toolMeta: {
           sensitivity: view.rules.sensitivity,
           unattended: view.rules.unattended,
+          reversible: view.rules.reversible,
         },
         contentHash: derived.contentHash,
         sealedAt: clock.now(),

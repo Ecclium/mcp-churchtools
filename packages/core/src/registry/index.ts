@@ -48,3 +48,4 @@ export {
   type ShapeNode,
   type ShapePresence,
 } from './schema.js';
+export { echoToolName } from './echo-tool.js';

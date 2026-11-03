@@ -130,6 +130,9 @@ export function collectWriteTargets(folder: AuditFolder): WriteTargets {
           category = { tools: new Set(), perDay: new Map() };
           categories.set(id, category);
         }
+        // A confirmation by echo plans nothing; its write belongs to the
+        // tool that planned it, which a policy names (ADR 0029).
+        if (tool === 'ct_write_confirm') continue;
         category.tools.add(tool);
         if (counts) {
           const key = `${day} ${tool}`;

@@ -77,6 +77,33 @@ const folderOf = (
 });
 
 describe('summarizeAuditFiles', () => {
+  it('counts the writes confirmed by echo on their own (ADR 0029)', () => {
+    const write = (fields: Record<string, unknown>) =>
+      event({
+        tool: 'ct_write_confirm',
+        writeState: 'verified',
+        confirmation: 'echo',
+        policyHash: 'a'.repeat(64),
+        ...fields,
+      });
+    const summary = summarizeAuditFiles({
+      folder: folderOf({
+        [nameOf(1)]: [
+          write({}),
+          write({}),
+          write({ confirmation: 'elicitation' }),
+          write({
+            writeState: 'conflict',
+            outcome: 'error',
+            errorCode: 'conflict',
+          }),
+        ],
+      }),
+    });
+    expect(summary.echoConfirmed).toBe(2);
+    expect(summary.lines).toBe(4);
+  });
+
   it('counts the calls per UTC day and tool, by outcome', () => {
     const summary = summarizeAuditFiles({
       folder: folderOf({
@@ -154,6 +181,7 @@ describe('summarizeAuditFiles', () => {
       moved: false,
       lines: 8,
       skipped: 0,
+      echoConfirmed: 0,
       hits: [],
       hitsOmitted: 0,
       partial: 0,

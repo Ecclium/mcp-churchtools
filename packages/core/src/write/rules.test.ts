@@ -222,6 +222,23 @@ describe('the metadata of the tool', () => {
     expect(rules.unattended).toBe('never');
   });
 
+  it('lets a tool make its write one that cannot be taken back, never the other way (ADR 0029)', () => {
+    const meta = { sensitivity: 'personal', unattended: 'policy' } as const;
+    expect(withToolMeta(base, { ...meta, reversible: 'no' }).reversible).toBe(
+      'no',
+    );
+    expect(
+      withToolMeta(base, { ...meta, reversible: 'snapshot' }).reversible,
+    ).toBe(base.reversible);
+    expect(
+      withToolMeta(
+        { ...base, reversible: 'no' },
+        { ...meta, reversible: 'snapshot' },
+      ).reversible,
+    ).toBe('no');
+    expect(withToolMeta(base, meta).reversible).toBe(base.reversible);
+  });
+
   it('cannot loosen the rules of the Pro module', () => {
     const rules = withToolMeta(rulesOf(intents.groupMemberAdd), {
       sensitivity: 'none',

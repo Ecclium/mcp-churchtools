@@ -91,6 +91,7 @@ import {
 import {
   type CatalogEntry,
   collectInputRefs,
+  echoToolName,
   type ToolCatalog,
 } from '../registry/index.js';
 import { policyHashOf } from '../policy/hash.js';
@@ -118,6 +119,7 @@ import { createReadAccess, type ReadAccess } from './read-api.js';
 import {
   collectOutputRefs,
   fitsInput,
+  maskFreeTextAt,
   outputIdsFit,
   markUntrusted,
   maxResultBytes,
@@ -562,6 +564,24 @@ const writeResult = (
     ...(undoId === undefined ? {} : { undoId }),
   });
 
+// The result of a write that waits for its confirmation by echo: the token
+// and the text the person confirms, built by the core (ADR 0029).
+const plannedResult = (
+  target: WriteTarget,
+  token: string,
+  text: ConfirmationText,
+): Readonly<Record<string, unknown>> =>
+  Object.freeze({
+    state: 'planned',
+    target: Object.freeze({ kind: target.kind, key: target.key }),
+    confirm: Object.freeze({
+      token,
+      summary: text.summary,
+      diff: text.diff,
+      ...(text.title === undefined ? {} : { title: text.title }),
+    }),
+  });
+
 // The IDs of a target for the audit: a category, and a page by its GUID.
 const addTarget = (refs: ObjectRefCollector, target: WriteTarget): void => {
   const [first, second] = target.key.split('/');
@@ -852,6 +872,21 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     if (!fits) return failed('validation');
     run.refs = refs;
 
+    // The tool of the echo runs no code of its own: the core checks token
+    // and summary and commits the plan they name (ADR 0029). Only the core
+    // offers a tool of this name.
+    if (entry.origin === 'core' && entry.name === echoToolName) {
+      const confirmed = await echoed(
+        run,
+        ctx,
+        parsedInput.data,
+        () => isAborted(controller.signal),
+        refs,
+      );
+      if (!confirmed.ok) return confirmed.failure;
+      return finish(run, entry, ctx, redaction, confirmed.result);
+    }
+
     // The second round of a question runs no tool: it commits the plan its
     // first round kept, or nothing (ADR 0029). Only a write tool asks.
     if (answer !== undefined) {
@@ -961,7 +996,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         ctx,
         writing,
         result,
-        { input: parsedInput.data, elicitation },
+        { input: parsedInput.data, elicitation, redaction },
         refs,
       );
       if (written.ok === 'input') {
@@ -1009,6 +1044,8 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
               meta: {
                 sensitivity: entry.meta.sensitivity,
                 unattended: entry.meta.unattended,
+                // Only a write tool gets a port, and every one declares it.
+                reversible: entry.meta.reversible,
               },
             },
             intent,
@@ -1107,7 +1144,11 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     ctx: TenantContext,
     writing: WriteAccess,
     returned: unknown,
-    call: { readonly input: unknown; readonly elicitation: boolean },
+    call: {
+      readonly input: unknown;
+      readonly elicitation: boolean;
+      readonly redaction: RedactionLevel;
+    },
     refs: ObjectRefCollector,
   ): Promise<
     WriteEnd | { readonly ok: 'input'; readonly question: ConfirmationQuestion }
@@ -1131,6 +1172,20 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       { setting, elicitation: call.elicitation, fits: text.fits },
       outcome.plan,
     );
+    if (way === 'echo' && confirmations !== undefined) {
+      // The model reads the summary masked at the level of the call and
+      // sends it back so; the token names the summary as it reads it.
+      const shown = Object.freeze({
+        ...text,
+        summary: maskFreeTextAt(text.summary, call.redaction),
+      });
+      const echo = await confirmations.echo(ctx, outcome.plan, shown);
+      if (echo.kind === 'refused') {
+        return { ok: false, failure: writeFailure(run, echo.error, false) };
+      }
+      run.write = Object.freeze({ writeState: 'planned', sent: false });
+      return { ok: true, result: plannedResult(target, echo.token, shown) };
+    }
     if (way !== 'question' || confirmations === undefined) {
       return {
         ok: false,
@@ -1174,6 +1229,33 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     const confirmed = await confirmations.answer(ctx, tool, input, answer);
     if (confirmed.kind === 'refused') {
       return { ok: false, failure: writeFailure(run, confirmed.error, false) };
+    }
+    if (aborted()) return { ok: false, failure: failed('network') };
+    return commitWrite(run, ctx, confirmed.plan, confirmed.proof, refs);
+  };
+
+  // The call of the tool of the echo: token and summary decide, the plan
+  // they name is committed with the proof of the echo (ADR 0029).
+  const echoed = async (
+    run: Run,
+    ctx: TenantContext,
+    input: unknown,
+    aborted: () => boolean,
+    refs: ObjectRefCollector,
+  ): Promise<WriteEnd> => {
+    const { token, summary } = input as {
+      readonly token: unknown;
+      readonly summary: unknown;
+    };
+    const confirmed =
+      confirmations === undefined
+        ? undefined
+        : await confirmations.confirmEcho(ctx, token, summary);
+    if (confirmed?.kind !== 'confirmed') {
+      const error =
+        confirmed?.error ??
+        new EccliumError('confirmation_required', confirmationSentence);
+      return { ok: false, failure: writeFailure(run, error, false) };
     }
     if (aborted()) return { ok: false, failure: failed('network') };
     return commitWrite(run, ctx, confirmed.plan, confirmed.proof, refs);

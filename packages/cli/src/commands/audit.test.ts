@@ -579,6 +579,7 @@ const verifyReport = (
 });
 
 const summary = (changes: Partial<AuditSummary> = {}): AuditSummary => ({
+  echoConfirmed: 0,
   files: 1_234,
   read: 1_230,
   unread: 4,

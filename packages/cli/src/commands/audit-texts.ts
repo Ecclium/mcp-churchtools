@@ -271,6 +271,13 @@ const footer = (summary: AuditSummary): string[] => {
   const lines = [
     `Gelesen: ${formatNumber(summary.read)} von ${count(summary.files, 'Datei', 'Dateien')}, ${count(summary.lines, 'Zeile', 'Zeilen')} im Zeitraum.`,
   ];
+  // The echo is the weakest way of confirmation, so its writes get a line
+  // of their own whenever there are any (ADR 0029).
+  if (summary.echoConfirmed > 0) {
+    lines.push(
+      `Per Echo bestätigt: ${count(summary.echoConfirmed, 'Schreibvorgang', 'Schreibvorgänge')}.`,
+    );
+  }
   if (summary.skipped > 0) {
     lines.push(
       `${count(summary.skipped, 'Zeile passt', 'Zeilen passen')} nicht zum Schema der Ereignisse und ${summary.skipped === 1 ? 'fehlt' : 'fehlen'} in der Auswertung.`,

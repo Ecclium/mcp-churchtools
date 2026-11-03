@@ -27,6 +27,7 @@
 import type {
   Actor,
   PlannedWrite,
+  Reversible,
   Sensitivity,
   UnattendedRule,
   WriteIntent,
@@ -61,6 +62,7 @@ export interface PlanInput {
   readonly toolMeta: {
     readonly sensitivity: Sensitivity;
     readonly unattended: UnattendedRule;
+    readonly reversible?: Reversible;
   };
   /** The hash of the new content. */
   readonly contentHash: string;

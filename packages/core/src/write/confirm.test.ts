@@ -135,12 +135,14 @@ describe('the way of a confirmation', () => {
   });
 
   it('sends a diff too long for a question to the queue, not to the echo', () => {
-    expect(
-      confirmationWayOf(
-        { setting: 'echo-allowed', elicitation: true, fits: false },
-        echoPlan,
-      ),
-    ).toBe('queue');
+    for (const elicitation of [true, false]) {
+      expect(
+        confirmationWayOf(
+          { setting: 'echo-allowed', elicitation, fits: false },
+          echoPlan,
+        ),
+      ).toBe('queue');
+    }
   });
 
   it('takes the echo without elicitation only where setting and plan allow it', () => {
@@ -191,9 +193,9 @@ describe('a question before a write', () => {
       v: 1,
       tool: 'ct_example_note_write',
       planHash: readPlan(plan)?.planHash,
-      // The first random bytes are the key of the hashes, the next the
-      // nonce.
-      nonce: '02'.repeat(16),
+      // The first random bytes are the key of the hashes, the next the key
+      // of the tokens of the echo, the third the nonce.
+      nonce: '03'.repeat(16),
       principal: principalDigestOf(
         new Uint8Array(32).fill(1),
         'demo-tenant',
@@ -536,5 +538,206 @@ describe('the answer to a question', () => {
     expect(confirmationSentence).toBe(
       'The write needs a confirmation, which this server cannot ask for yet, so nothing was written.',
     );
+  });
+});
+
+describe('the echo', () => {
+  const tokenOf = async (
+    confirmations: ReturnType<typeof createConfirmations>,
+    ctx: TenantContext,
+    plan: PlannedWrite = sealed(),
+  ): Promise<string> => {
+    const made = await confirmations.echo(ctx, plan, text);
+    if (made.kind !== 'token') throw new Error('no token');
+    return made.token;
+  };
+
+  it('confirms the plan of its token with a proof of the echo, once', async () => {
+    const logged: Logged[] = [];
+    const ctx = contextOf(logged);
+    const { clock, confirmations } = setup();
+    const plan = sealed();
+    const token = await tokenOf(confirmations, ctx, plan);
+    expect(token).not.toContain('Plan');
+    const confirmed = await confirmations.confirmEcho(ctx, token, text.summary);
+    if (confirmed.kind !== 'confirmed') throw new Error('not confirmed');
+    expect(confirmed.plan).toBe(plan);
+    const view = readPlan(plan);
+    if (view === undefined) throw new Error('no plan');
+    expect(useProof(confirmed.proof, view, clock.now())).toBe('echo');
+    expect(
+      await confirmations.confirmEcho(ctx, token, text.summary),
+    ).toMatchObject({
+      kind: 'refused',
+      error: { message: confirmationSentences.used },
+    });
+    expect(logged.map((line) => line.event)).toEqual(['write_answer_replayed']);
+  });
+
+  it('refuses another summary, and the token is used up then', async () => {
+    const logged: Logged[] = [];
+    const ctx = contextOf(logged);
+    const { confirmations } = setup();
+    const token = await tokenOf(confirmations, ctx);
+    for (const summary of [`${text.summary} `, 'Anders', 1]) {
+      const other = await tokenOf(
+        confirmations,
+        ctx,
+        sealed({ contentHash: contentHashOf([String(summary)]) }),
+      );
+      expect(
+        await confirmations.confirmEcho(ctx, other, summary),
+      ).toMatchObject({
+        kind: 'refused',
+        error: {
+          code: 'confirmation_required',
+          message: confirmationSentences.echoSummary,
+        },
+      });
+    }
+    expect(await confirmations.confirmEcho(ctx, token, 'Anders')).toMatchObject(
+      { error: { message: confirmationSentences.echoSummary } },
+    );
+    expect(
+      await confirmations.confirmEcho(ctx, token, text.summary),
+    ).toMatchObject({ error: { message: confirmationSentences.used } });
+    expect(logged.at(0)).toEqual({
+      level: 'warn',
+      event: 'write_echo_refused',
+      code: 'confirmation_required',
+    });
+  });
+
+  it('refuses a token of another pipeline, of another actor, after 600 seconds and from before its time', async () => {
+    const ctx = contextOf([]);
+    const first = setup();
+    const token = await tokenOf(first.confirmations, ctx);
+    // Another pipeline draws other keys.
+    const secondClock = createTestClock(start);
+    const second = createConfirmations({
+      plans: createMemoryPlanStore(secondClock),
+      nonces: createMemoryNonceStore(secondClock),
+      clock: secondClock,
+      random: (size) => new Uint8Array(size).fill(9),
+    });
+    const refusedWith = { error: { message: confirmationSentences.echoToken } };
+    expect(await second.confirmEcho(ctx, token, text.summary)).toMatchObject(
+      refusedWith,
+    );
+    expect(
+      await first.confirmations.confirmEcho(
+        contextOf([], 'stdio:other'),
+        token,
+        text.summary,
+      ),
+    ).toMatchObject(refusedWith);
+    first.clock.advance(600_000);
+    expect(
+      await first.confirmations.confirmEcho(ctx, token, text.summary),
+    ).toMatchObject(refusedWith);
+    // A clock that goes back makes no token count.
+    let now = start + 1_000;
+    const turning = { now: () => now };
+    const late = createConfirmations({
+      plans: createMemoryPlanStore(turning),
+      nonces: createMemoryNonceStore(turning),
+      clock: turning,
+      random: counting(),
+    });
+    const fresh = await tokenOf(late, ctx);
+    now -= 2_000;
+    expect(await late.confirmEcho(ctx, fresh, text.summary)).toMatchObject(
+      refusedWith,
+    );
+    expect(
+      await first.confirmations.confirmEcho(ctx, 'no.token', text.summary),
+    ).toMatchObject(refusedWith);
+  });
+
+  it('confirms no plan that does not allow the echo, even with a token for it', async () => {
+    const ctx = contextOf([]);
+    const { confirmations } = setup();
+    for (const plan of [
+      sealed({ snapshots: false }),
+      sealed({ origin: 'plugin' }),
+      sealed({ toolMeta: { sensitivity: 'special', unattended: 'never' } }),
+    ]) {
+      const token = await tokenOf(confirmations, ctx, plan);
+      expect(
+        await confirmations.confirmEcho(ctx, token, text.summary),
+      ).toMatchObject({
+        kind: 'refused',
+        error: { message: confirmationSentences.echoRefused },
+      });
+    }
+  });
+
+  it('gives no token while too many plans wait, and none for a value that is no plan', async () => {
+    const clock = createTestClock(start);
+    const { confirmations } = setup({ plans: createMemoryPlanStore(clock, 1) });
+    const ctx = contextOf([]);
+    await tokenOf(confirmations, ctx);
+    expect(
+      await confirmations.echo(
+        ctx,
+        sealed({ contentHash: contentHashOf(['two']) }),
+        text,
+      ),
+    ).toMatchObject({ kind: 'refused', error: { code: 'policy_denied' } });
+    await expect(
+      confirmations.echo(ctx, {} as PlannedWrite, text),
+    ).rejects.toThrow(TypeError);
+  });
+
+  it('finds no plan when the store gives another value', async () => {
+    const clock = createTestClock(start);
+    const memory = createMemoryPlanStore(clock);
+    const confirmations = createConfirmations({
+      plans: {
+        put: (...args: Parameters<PlanStore['put']>) => memory.put(...args),
+        take: () => Promise.resolve(undefined),
+      },
+      nonces: createMemoryNonceStore(clock),
+      clock,
+      random: counting(),
+    });
+    const ctx = contextOf([]);
+    const made = await confirmations.echo(ctx, sealed(), text);
+    if (made.kind !== 'token') throw new Error('no token');
+    expect(
+      await confirmations.confirmEcho(ctx, made.token, text.summary),
+    ).toMatchObject({ error: { message: confirmationSentences.gone } });
+  });
+
+  it('takes the summary with the markers of the data envelope around it, and only whole ones', async () => {
+    const ctx = contextOf([]);
+    const { confirmations } = setup();
+    const boundary = 'a1b2c3d4e5f60718';
+    const wrapped = `<<data-${boundary}>>${text.summary}<</data-${boundary}>>`;
+    expect(
+      (
+        await confirmations.confirmEcho(
+          ctx,
+          await tokenOf(confirmations, ctx),
+          wrapped,
+        )
+      ).kind,
+    ).toBe('confirmed');
+    for (const summary of [
+      `<<data-${boundary}>>${text.summary}`,
+      `<<data-${boundary}${text.summary}`,
+      `<<data-x>><</data-x>`,
+    ]) {
+      const token = await tokenOf(
+        confirmations,
+        ctx,
+        sealed({ contentHash: contentHashOf([summary]) }),
+      );
+      expect(
+        await confirmations.confirmEcho(ctx, token, summary),
+      ).toMatchObject({
+        error: { message: confirmationSentences.echoSummary },
+      });
+    }
   });
 });

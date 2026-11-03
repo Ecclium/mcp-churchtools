@@ -229,15 +229,37 @@ const setup = (
     readonly confirmation?: WriteConfirmation;
     /** False for a pipeline without the stores of questions. */
     readonly stores?: false;
+    /** Whether the catalog offers the tool of the echo. */
+    readonly echo?: boolean;
+    /** Write tools the core brings besides those of the example. */
+    readonly coreTools?: readonly ToolDefinition[];
+    /** Plugins before the one with `tools`. */
+    readonly firstPlugins?: readonly Plugin[];
   } = {},
 ) => {
   const double = createChurchToolsDouble({ token });
   open.push(double);
+  const coreTools = options.coreTools ?? [];
   const catalog = createToolCatalog({
-    core: examplePlugin,
-    plugins: [pluginOf(...(options.tools ?? []))],
+    core:
+      coreTools.length === 0
+        ? examplePlugin
+        : {
+            name: examplePlugin.name,
+            version: examplePlugin.version,
+            register(host: PluginHost): undefined {
+              examplePlugin.register(host);
+              for (const tool of coreTools) host.addTool(tool);
+              return undefined;
+            },
+          },
+    plugins: [
+      ...(options.firstPlugins ?? []),
+      pluginOf(...(options.tools ?? [])),
+    ],
     readOnly: false,
     toolsets: new Set(['wiki', 'persons'] as const),
+    ...(options.echo === undefined ? {} : { echo: options.echo }),
   });
   const auditLines: string[] = [];
   const logLines: string[] = [];
@@ -1129,5 +1151,360 @@ describe('a question before a write', () => {
       writeState: 'denied',
       objectRefs: ['wiki_category:12', `wiki_page:${guid}`],
     });
+  });
+});
+
+describe('the echo', () => {
+  const snapshots: WriteSnapshots = {
+    save: () => Promise.resolve(),
+    load: () => Promise.resolve({ kind: 'missing' }),
+  };
+  // The text inside the data envelope, as the model reads it.
+  const inner = (value: unknown): string => {
+    const match = /^<<data-[0-9a-f]+>>([\s\S]*)<<\/data-[0-9a-f]+>>$/.exec(
+      String(value),
+    );
+    return match?.[1] ?? '';
+  };
+  const confirmOf = (outcome: ToolOutcome) => {
+    if (!outcome.ok) throw new Error(outcome.error.message);
+    const data = outcome.data as unknown as {
+      state: string;
+      confirm: { token: string; summary: string };
+    };
+    return {
+      state: data.state,
+      token: data.confirm.token,
+      summary: inner(data.confirm.summary),
+    };
+  };
+  const commitReads = (double: ReturnType<typeof setup>['double']) => {
+    double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, page(3, '# Plan\n'), json);
+    double
+      .intercept({ path: pagePath, method: 'PATCH' })
+      .reply(200, '{}', json);
+    double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, page(4, '# Plan\n\nHallo\n'), json);
+  };
+
+  it('gives a client without questions a token and the summary, and writes after ct_write_confirm', async () => {
+    const { double, pipeline, events, planReads } = setup({
+      snapshots,
+      echo: true,
+    });
+    planReads();
+    const planned = confirmOf(
+      await pipeline.call('ct_example_note_write', note, request()),
+    );
+    expect(planned.state).toBe('planned');
+    expect(planned.summary).toBe(
+      'An die Seite «Dienstplan» in der Kategorie 12 einen Abschnitt mit 2 Zeilen anhängen.',
+    );
+    assertOnlyReads(double);
+    commitReads(double);
+    const confirmed = await pipeline.call(
+      'ct_write_confirm',
+      { token: planned.token, summary: planned.summary },
+      request(),
+    );
+    expect(confirmed.ok && confirmed.data).toMatchObject({
+      state: 'verified',
+      version: 4,
+    });
+    expect(events()[0]).toMatchObject({
+      tool: 'ct_example_note_write',
+      writeState: 'planned',
+    });
+    expect(events()[1]).toMatchObject({
+      tool: 'ct_write_confirm',
+      outcome: 'ok',
+      writeState: 'verified',
+      confirmation: 'echo',
+      objectRefs: ['wiki_category:12', `wiki_page:${guid}`],
+    });
+  });
+
+  it('refuses a summary that is not the one of the core, and writes nothing', async () => {
+    const { double, pipeline, events, planReads } = setup({
+      snapshots,
+      echo: true,
+    });
+    planReads();
+    const planned = confirmOf(
+      await pipeline.call('ct_example_note_write', note, request()),
+    );
+    const outcome = await pipeline.call(
+      'ct_write_confirm',
+      { token: planned.token, summary: 'Etwas anderes' },
+      request(),
+    );
+    expect(outcome).toEqual({
+      ok: false,
+      error: {
+        code: 'confirmation_required',
+        message: confirmationSentences.echoSummary,
+      },
+    });
+    expect(events()[1]).toMatchObject({ writeState: 'denied' });
+    assertOnlyReads(double);
+  });
+
+  // Each condition of ADR 0029 on its own, with its counter-check: a
+  // write of the core that can be taken back and is not special gets a
+  // token; one that is special, one that cannot be taken back and one of a
+  // plugin, also the first plugin, get none.
+  it.each([
+    ['a write tool of the core with sensitivity special', 'core-special'],
+    ['a write tool of the core that cannot be taken back', 'core-no'],
+    ['a write tool of a plugin', 'plugin'],
+    ['a write tool of the first of the plugins', 'first-plugin'],
+  ] as const)('gives no token to %s', async (_name, kind) => {
+    const special = customTool('ct_test_special', (write) =>
+      write.plan(update),
+    );
+    const base = customTool('ct_test_echo', (write) => write.plan(update));
+    const tool = (
+      kind === 'core-special'
+        ? {
+            ...special,
+            meta: {
+              ...special.meta,
+              sensitivity: 'special',
+              unattended: 'never',
+            },
+          }
+        : kind === 'core-no'
+          ? { ...base, meta: { ...base.meta, reversible: 'no' } }
+          : base
+    ) as ToolDefinition;
+    const { double, pipeline, planReads } = setup({
+      snapshots,
+      echo: true,
+      ...(kind === 'plugin' ? { tools: [tool] } : {}),
+      ...(kind === 'first-plugin'
+        ? { firstPlugins: [{ ...pluginOf(tool), name: 'first-plugin' }] }
+        : {}),
+      ...(kind.startsWith('core') ? { coreTools: [tool] } : {}),
+    });
+    planReads();
+    const outcome = await pipeline.call(tool.name, { text: 'x' }, request());
+    expect(outcome).toEqual({
+      ok: false,
+      error: { code: 'confirmation_required', message: confirmationSentence },
+    });
+    assertOnlyReads(double);
+  });
+
+  it('gives a token to a write tool of the core that can be taken back and is not special', async () => {
+    const tool = customTool('ct_test_echo', (write) => write.plan(update));
+    const { pipeline, planReads } = setup({
+      snapshots,
+      echo: true,
+      coreTools: [tool],
+    });
+    planReads();
+    expect(
+      confirmOf(await pipeline.call(tool.name, { text: 'x' }, request())).state,
+    ).toBe('planned');
+  });
+
+  it.each([
+    ['without snapshots', {}],
+    [
+      'with the setting elicitation-or-queue',
+      { snapshots, confirmation: 'elicitation-or-queue' as const },
+    ],
+  ])('gives no token %s', async (_name, options) => {
+    const { pipeline, planReads } = setup({ echo: true, ...options });
+    planReads();
+    const outcome = await pipeline.call(
+      'ct_example_note_write',
+      note,
+      request(),
+    );
+    expect(!outcome.ok && outcome.error.code).toBe('confirmation_required');
+  });
+
+  it('commits nothing once the client cancelled the call of ct_write_confirm', async () => {
+    const controller = new AbortController();
+    const memory = createMemoryNonceStore(clock);
+    const nonces: NonceStore = Object.freeze({
+      consume: (...args: Parameters<NonceStore['consume']>) => {
+        controller.abort();
+        return memory.consume(...args);
+      },
+    });
+    const { double, pipeline, planReads } = setup({
+      snapshots,
+      echo: true,
+      nonces,
+    });
+    planReads();
+    const planned = confirmOf(
+      await pipeline.call('ct_example_note_write', note, request()),
+    );
+    const outcome = await pipeline.call(
+      'ct_write_confirm',
+      { token: planned.token, summary: planned.summary },
+      request({ signal: controller.signal }),
+    );
+    expect(!outcome.ok && outcome.error.code).toBe('network');
+    assertOnlyReads(double);
+  });
+
+  it('confirms nothing in a pipeline without the stores of questions', async () => {
+    const { pipeline } = setup({ echo: true, stores: false });
+    const outcome = await pipeline.call(
+      'ct_write_confirm',
+      { token: 'a.b', summary: 'x' },
+      request(),
+    );
+    expect(outcome).toEqual({
+      ok: false,
+      error: { code: 'confirmation_required', message: confirmationSentence },
+    });
+  });
+
+  it('lets no request reach a proof of the policy by its mode', async () => {
+    const { double, pipeline, planReads } = setup({ snapshots, echo: true });
+    planReads();
+    const outcome = await pipeline.call(
+      'ct_example_note_write',
+      note,
+      request({ mode: 'unattended' }),
+    );
+    expect(!outcome.ok && outcome.error).toEqual({
+      code: 'policy_denied',
+      message: policySentences.notInteractive,
+    });
+    const echo = await pipeline.call(
+      'ct_write_confirm',
+      { token: 'a.b', summary: 'x' },
+      request({ mode: 'unattended' }),
+    );
+    expect(!echo.ok && echo.error.code).toBe('policy_denied');
+    assertOnlyReads(double);
+  });
+
+  it('names the whole title of a new page in the confirmation of the echo', async () => {
+    const tool = customTool('ct_test_create_echo', (write) =>
+      write.plan({
+        kind: 'wikiPageCreate',
+        categoryId: 12,
+        title: 'Bericht',
+        text: '# Bericht\n',
+      }),
+    );
+    const { double, pipeline } = setup({
+      snapshots,
+      echo: true,
+      coreTools: [tool],
+    });
+    double
+      .intercept({ path: '/api/permissions/global', method: 'GET' })
+      .reply(200, rights, json);
+    double
+      .intercept({
+        path: (path: string) => path.split('?')[0] === '/api/wiki/pages',
+        method: 'GET',
+      })
+      .reply(
+        200,
+        JSON.stringify({
+          data: [],
+          meta: {
+            count: 0,
+            pagination: { total: 0, limit: 25, current: 1, lastPage: 1 },
+          },
+        }),
+        json,
+      );
+    const outcome = await pipeline.call(tool.name, { text: 'x' }, request());
+    if (!outcome.ok) throw new Error(outcome.error.message);
+    const data = outcome.data as unknown as { confirm: { title: string } };
+    expect(inner(data.confirm.title)).toBe('Bericht');
+  });
+
+  it('gives no token while too many plans wait', async () => {
+    const { pipeline, planReads } = setup({
+      snapshots,
+      echo: true,
+      plans: createMemoryPlanStore(clock, 1),
+    });
+    planReads();
+    await pipeline.call('ct_example_note_write', note, request());
+    planReads();
+    const outcome = await pipeline.call(
+      'ct_example_note_write',
+      { ...note, note: 'Noch einmal' },
+      request(),
+    );
+    expect(outcome).toEqual({
+      ok: false,
+      error: { code: 'policy_denied', message: confirmationSentences.tooMany },
+    });
+  });
+
+  it('gives no token for a diff too long for a dialog', async () => {
+    const long = Array.from({ length: 121 }, (_, i) => `Zeile ${String(i)}`)
+      .join('\n')
+      .concat('\n');
+    const tool = customTool('ct_test_long_echo', (write) =>
+      write.plan({ ...update, text: long }),
+    );
+    const { double, pipeline, planReads } = setup({
+      snapshots,
+      echo: true,
+      coreTools: [tool],
+    });
+    planReads();
+    const outcome = await pipeline.call(tool.name, { text: 'x' }, request());
+    expect(outcome).toEqual({
+      ok: false,
+      error: { code: 'confirmation_required', message: confirmationSentence },
+    });
+    assertOnlyReads(double);
+  });
+
+  it('names the summary in the token as the model reads it, masked in strict', async () => {
+    const { double, pipeline } = setup({ snapshots, echo: true });
+    double
+      .intercept({ path: '/api/permissions/global', method: 'GET' })
+      .reply(200, rights, json);
+    const titled = (version: number, text: string) =>
+      JSON.stringify({
+        data: {
+          title: 'Kontakt max.mustermann@example.org',
+          isMarkdown: true,
+          version,
+          text,
+        },
+      });
+    double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, titled(3, '# Plan\n'), json);
+    const strict = { redaction: 'strict' as const };
+    const planned = confirmOf(
+      await pipeline.call('ct_example_note_write', note, request(strict)),
+    );
+    expect(planned.summary).not.toContain('max.mustermann@example.org');
+    double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, titled(3, '# Plan\n'), json);
+    double
+      .intercept({ path: pagePath, method: 'PATCH' })
+      .reply(200, '{}', json);
+    double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, titled(4, '# Plan\n\nHallo\n'), json);
+    const confirmed = await pipeline.call(
+      'ct_write_confirm',
+      { token: planned.token, summary: planned.summary },
+      request(strict),
+    );
+    expect(confirmed.ok && confirmed.data).toMatchObject({ state: 'verified' });
   });
 });
