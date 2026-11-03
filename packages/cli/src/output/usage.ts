@@ -8,7 +8,7 @@
 
 /** The short form of the call. */
 export const usageLine =
-  'Aufruf: ecclium stdio | ecclium config check [Optionen] | ecclium audit verify [Optionen] | ecclium audit show [Optionen] | ecclium policy init --interactive | ecclium undo <Kennung> [--overwrite] | ecclium queue list | ecclium queue show <Kennung> | ecclium queue reject <Kennung>';
+  'Aufruf: ecclium stdio | ecclium config check [Optionen] | ecclium audit verify [Optionen] | ecclium audit show [Optionen] | ecclium policy init --interactive | ecclium undo <Kennung> [--overwrite] | ecclium queue list | ecclium queue show <Kennung> | ecclium queue approve <Kennung> | ecclium queue reject <Kennung>';
 
 /** The help, for `--help` and `-h`. */
 export const helpLines: readonly string[] = Object.freeze([
@@ -28,6 +28,7 @@ export const helpLines: readonly string[] = Object.freeze([
   '    --overwrite         schreibt auch, wenn jemand die Seite seither geändert hat',
   '  queue list            zeigt, was in der Freigabe-Warteschlange auf Ihre Freigabe wartet',
   '  queue show <Kennung>  zeigt den ganzen Unterschied eines Eintrags',
+  '  queue approve <Kennung> gibt einen Eintrag frei und schreibt ihn sofort, auf dem Stand des Ziels von jetzt',
   '  queue reject <Kennung> weist einen Eintrag ab und vernichtet seinen Inhalt',
   '  -h, --help            zeigt diese Hilfe',
 ]);
