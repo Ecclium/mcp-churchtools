@@ -767,6 +767,14 @@ const cases: readonly Case[] = [
     },
   },
   {
+    rule: 'key-provider-only-from-composition-root',
+    name: 'the pipeline builds the day keys',
+    files: {
+      'packages/core/src/pipeline/forbidden.ts':
+        "import { createFileDayKeys } from '../keys/day-keys.js';\nexport const build = createFileDayKeys;\n",
+    },
+  },
+  {
     rule: 'pseudonyms-only-in-pipeline',
     name: 'the audit seals a pseudonym',
     files: {
