@@ -1407,3 +1407,4 @@ Diese Grundsatzfragen sind entschieden.
   - Regel: Ein Schreib-Tool, das `reversible: no` angibt, macht seinen Plan nicht rücknehmbar, und das Echo gilt dafür nicht.
   - Audit: `ecclium audit show` zählt Bestätigungen per Echo in einer eigenen Zeile.
   - Doku: ADR 0029 und 0055 (Umsetzung), `docs/betrieb/stdio.md`, `.env.example`, erzeugte Doku.
+- 03.11.2026, das Echo mit `ct_write_confirm` ist als `7e12fa9` auf `main` (#191). Der Squash-Commit bringt genau den Baum des Branches.
