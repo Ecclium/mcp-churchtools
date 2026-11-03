@@ -34,7 +34,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { exitCodes } from '../exit-codes.js';
-import { type Output, usageLine } from '../output/index.js';
+import { type Output, terminalLines, usageLine } from '../output/index.js';
 import { type QueueAction, runQueue } from './queue.js';
 import {
   decidedEnding,
@@ -316,7 +316,13 @@ describe('ecclium queue show', () => {
       'von ‹ct_wiki_page_update›, für die Seite',
     );
     expect(result.stdout).toContain(diffHeading);
-    expect(result.stdout).toContain(`+# Neu ${canary.name.value}`);
+    // The name of the canary may hold a letter the terminal shows as its
+    // code point, such as é.
+    expect(result.stdout).toEqual(
+      expect.arrayContaining(
+        terminalLines('', `+# Neu ${canary.name.value}`, true),
+      ),
+    );
     expect(all(result)).not.toContain('\u001b');
     expect(result.requests).toBe(0);
   });
