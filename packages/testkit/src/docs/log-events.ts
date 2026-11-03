@@ -197,6 +197,10 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Die Zeile eines Aufrufs, der womöglich geschrieben hat, erreichte die Audit-Datei nicht. Bis zum Neustart des Servers plant und schreibt der Write-Guard nichts mehr.',
     write_committed:
       'Ein Schreibvorgang ist geschrieben und gelesen: die Version stieg wie geplant, und der Text ist der gesendete.',
+    snapshot_failed:
+      'Ecclium konnte vor dem Senden den bisherigen Stand nicht als Snapshot festhalten. Der Schreibvorgang geht nicht an ChurchTools und endet mit `failed`. `code` ist `internal`.',
+    snapshot_incomplete:
+      'Nach dem Anlegen einer Seite konnte Ecclium ihre Kennung und Version nicht im Snapshot ergänzen. Die Seite bleibt angelegt, ihr Snapshot aber unvollständig. `code` ist `internal`.',
     policy_not_interactive:
       'Ein Schreibvorgang kam ausserhalb des interaktiven Modus. Bis der Runner den unbeaufsichtigten Teil der Richtlinie nutzt, schreibt Ecclium dort nichts. Der Aufruf endet mit `policy_denied`.',
     policy_queue_only:
@@ -317,9 +321,13 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
     audit_files_not_deleted:
       'Ecclium konnte Audit-Dateien nach ihrer Frist nicht löschen oder den Ordner nicht ganz lesen. `count` nennt die Zahl der Dateien, die liegen blieben.',
     day_keys_destroyed:
-      'Ecclium hat Tagesschlüssel der Snapshots nach ihrer Frist von 30 Tagen vernichtet, beim Start oder beim Wechsel des UTC-Tages. Snapshots dieser Tage lassen sich nicht mehr öffnen, in keiner Kopie. `count` nennt die Zahl der Schlüssel.',
+      'Ecclium hat Tagesschlüssel der Snapshots nach ihrer Frist von 30 Tagen vernichtet, beim Start oder beim Wechsel des UTC-Tages. Snapshots dieser Tage lassen sich nicht mehr öffnen, in keiner Kopie. `count` nennt die Zahl der Schlüssel. Mit einem Ordner aus `ECCLIUM_STATE_DIR` löscht Ecclium dabei auch die Snapshots dieser Tage, was `snapshots_deleted` meldet.',
     day_keys_not_destroyed:
-      'Ecclium konnte nicht jeden Tagesschlüssel der Snapshots nach seiner Frist vernichten, etwa weil der Ordner `snapshot` im Ordner aus `ECCLIUM_KEYS_DIR` nicht mehr privat ist oder darin ein Ordner unter dem Namen eines Schlüssels steht. Die übrigen hat es vernichtet. Ecclium versucht es spätestens nach einer Stunde erneut.',
+      'Ecclium konnte nicht jeden Tagesschlüssel der Snapshots nach seiner Frist vernichten, etwa weil der Ordner `snapshot` im Ordner aus `ECCLIUM_KEYS_DIR` nicht mehr privat ist oder darin ein Ordner unter dem Namen eines Schlüssels steht. Die übrigen hat es vernichtet. Ecclium versucht es spätestens nach einer Stunde erneut. Mit einem Ordner aus `ECCLIUM_STATE_DIR` steht dafür `snapshots_not_deleted`.',
+    snapshots_deleted:
+      'Ecclium hat Snapshots nach ihrer Frist von 30 Tagen gelöscht, beim Start oder beim Wechsel des UTC-Tages, auch wenn es nur liest. Diese Schreibvorgänge lassen sich nicht mehr zurücknehmen. `count` nennt die Zahl der gelöschten Teile, einer oder zwei je Schreibvorgang. Die Tagesschlüssel ihrer Tage meldet `day_keys_destroyed`.',
+    snapshots_not_deleted:
+      'Ecclium konnte nicht jeden Snapshot nach seiner Frist löschen oder nicht jeden Tagesschlüssel seines Tages vernichten, etwa weil der Ordner `snapshots` im Ordner aus `ECCLIUM_STATE_DIR` oder der Ordner `snapshot` im Ordner aus `ECCLIUM_KEYS_DIR` nicht mehr privat ist, oder weil die Uhr keinen Tag ergab. Ecclium versucht es spätestens nach einer Stunde erneut.',
     stdio_start_failed:
       'Der Start über stdio ist gescheitert. `code` nennt den Grund, die Meldung für Betreiber steht davor.',
     stdio_closed:
@@ -410,6 +418,7 @@ const sections: readonly {
     title: 'Write-Guard',
     fits: (name: string) =>
       name.startsWith('write_') ||
+      name.startsWith('snapshot_') ||
       name.startsWith('policy_') ||
       name.startsWith('content_'),
   },
@@ -435,8 +444,9 @@ const sections: readonly {
     fits: (name: string) => name.startsWith('audit_'),
   },
   {
-    title: 'Tagesschlüssel',
-    fits: (name: string) => name.startsWith('day_keys_'),
+    title: 'Snapshots und Tagesschlüssel',
+    fits: (name: string) =>
+      name.startsWith('snapshots_') || name.startsWith('day_keys_'),
   },
   {
     title: 'Prozess über stdio',

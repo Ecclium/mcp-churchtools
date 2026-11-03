@@ -381,6 +381,34 @@ describe('the catalog of messages', () => {
     expect(message.action).toContain('‹ECCLIUM_READ_ONLY› auf ‹true›');
   });
 
+  // Without snapshots no write can be taken back, which every start that
+  // writes says (ADR 0031).
+  it('warns that no write can be taken back while snapshots are off', () => {
+    const message = warningMessage('snapshots_off');
+    expect(message.what).toBe(
+      'Die Snapshots der Schreibvorgänge sind mit ‹ECCLIUM_SNAPSHOTS› ausgeschaltet.',
+    );
+    expect(message.why).toContain(
+      'kein Schreibvorgang lässt sich zurücknehmen',
+    );
+    expect(message.why).toContain('Echo');
+    expect(message.action).toContain('‹ECCLIUM_SNAPSHOTS› auf ‹on›');
+    expect(warningText('snapshots_off')).toBe(textOf(message));
+  });
+
+  it('lists both values of the switch of the snapshots', () => {
+    const message = problemMessage({
+      code: 'invalid_choice',
+      variable: 'ECCLIUM_SNAPSHOTS',
+    });
+    expect(message.what).toBe(
+      'Der Wert von ‹ECCLIUM_SNAPSHOTS› ist nicht erlaubt.',
+    );
+    expect(message.why).toBe(
+      'Erlaubt sind genau ‹on› oder ‹off›, in dieser Schreibweise.',
+    );
+  });
+
   it('names the folder of state for a folder of keys in it', () => {
     const message = problemMessage({
       code: 'keys_dir_in_state_dir',
@@ -571,6 +599,8 @@ describe('the catalog of messages', () => {
         'quotaFolderText',
         'refusalMessage',
         'refusalText',
+        'snapshotFolderMessage',
+        'snapshotFolderText',
         'startMessage',
         'startText',
         'toolsetsMessage',

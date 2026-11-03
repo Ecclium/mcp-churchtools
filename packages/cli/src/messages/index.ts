@@ -25,6 +25,8 @@ export {
   quotaFolderText,
   refusalMessage,
   refusalText,
+  snapshotFolderMessage,
+  snapshotFolderText,
   type StartNoticeCode,
   startMessage,
   startText,

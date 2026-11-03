@@ -109,6 +109,7 @@ const tokenVariable = quote('ECCLIUM_CHURCHTOOLS_TOKEN');
 const stateDir = quote('ECCLIUM_STATE_DIR');
 const keysDir = quote('ECCLIUM_KEYS_DIR');
 const readOnly = quote('ECCLIUM_READ_ONLY');
+const snapshotsVariable = quote('ECCLIUM_SNAPSHOTS');
 const keyFile = quote('ECCLIUM_PSEUDONYM_KEY_FILE');
 const previousKeyFile = quote('ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE');
 const keyCommand = '‹openssl rand -hex 32›';
@@ -1058,6 +1059,13 @@ const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({
     `Das Toolset ${apiToolset} ist eingeschaltet.`,
     'Der KI-Assistent kann damit jede lesende Operation der API aufrufen, die Ecclium freigibt, und sieht die ganze Antwort, soweit das Dienstkonto sie sehen darf. E-Mail-Adressen, Telefonnummern und Geburtsdaten sind maskiert, Adressen, Notizen und andere Angaben nicht. Jeder Aufruf steht in der Audit-Datei und zählt gegen das Lesebudget.',
     `Entfernen Sie ${apiToolset} aus ${toolsets}, wenn er das nicht soll.`,
+  ),
+  // On every start that writes, because without snapshots no write can be
+  // taken back and the echo confirms none (ADR 0029, ADR 0031).
+  snapshots_off: message(
+    `Die Snapshots der Schreibvorgänge sind mit ${snapshotsVariable} ausgeschaltet.`,
+    'Ecclium hält vor einem Schreibvorgang den bisherigen Stand nicht fest, und kein Schreibvorgang lässt sich zurücknehmen. Auch das Echo, die Bestätigung im Freigabedialog des KI-Assistenten, gilt dann für keinen Schreibvorgang.',
+    `Setzen Sie ${snapshotsVariable} auf ‹on› oder entfernen Sie die Variable, wenn das nicht gewollt ist.`,
   ),
   // One text for every setting: the report of the loader names none of
   // them, and never the path of a certificate.

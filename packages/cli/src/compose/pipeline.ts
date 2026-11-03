@@ -2,8 +2,9 @@
  * The pipeline of the tools as the composition root builds it (ADR 0056),
  * shared by the start over stdio and `ecclium policy init`, so that both
  * reach ChurchTools in the same way: the transport to the instance, the
- * keys for pseudonyms in the level `strict` (ADR 0069) and the day keys in
- * the folder of keys (ADR 0031), the audit sink
+ * keys for pseudonyms in the level `strict` (ADR 0069), the day keys in
+ * the folder of keys and the snapshots of writes over them and the folder
+ * of state (ADR 0031), the audit sink
  * with the audit file, the store of the counters and the folder of the
  * kill switches in the folder of state (ADR 0028, ADR 0029, ADR 0063),
  * and the policy (ADR 0032). The start over stdio reaches this module, so
@@ -26,7 +27,10 @@ import {
   createFileDayKeys,
   createFileKeyProvider,
   createFileQuotaStore,
+  createFileSnapshotStore,
+  createSnapshotKeeper,
   type DayKeys,
+  type SnapshotKeeper,
   type StderrLineWriter,
 } from '@ecclium/mcp-churchtools-core/composition';
 import {
@@ -37,6 +41,7 @@ import {
 import type { Clock } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { userAgent } from '../version.js';
+import { keepsSnapshots } from './snapshots.js';
 
 /** What the pipeline is built from. */
 export interface ComposeOptions {
@@ -58,7 +63,10 @@ export interface ComposeOptions {
     ((options: HttpTransportOptions) => HttpTransport) | undefined;
 }
 
-/** The pipeline, the transport it sends through and its day keys. */
+/**
+ * The pipeline, the transport it sends through, its day keys and its
+ * snapshots.
+ */
 export interface ComposedPipeline {
   /** The pipeline of the tools. */
   readonly pipeline: ToolPipeline;
@@ -66,10 +74,19 @@ export interface ComposedPipeline {
   readonly transport: HttpTransport;
   /**
    * The day keys the pipeline got, over the folder of keys, or undefined
-   * without one (ADR 0031). The start over stdio destroys those past their
-   * retention through them.
+   * without one (ADR 0031). Without a folder of state the start over
+   * stdio destroys those past their retention through them; with one it
+   * goes through the snapshots, which destroy them as well.
    */
   readonly dayKeys: DayKeys | undefined;
+  /**
+   * The snapshots of writes over the folder of keys and the folder of
+   * state, or undefined without one of them (ADR 0031). The start over
+   * stdio removes those past their retention through them, records and
+   * day keys alike, also while the server only reads. The pipeline got
+   * them only when its writes keep snapshots, see `keepsSnapshots`.
+   */
+  readonly snapshots: SnapshotKeeper | undefined;
 }
 
 /**
@@ -79,7 +96,7 @@ export interface ComposedPipeline {
  *
  * @param options - Configuration, catalog, writer, clock, audit file and
  *   a replacement for tests.
- * @returns The pipeline, its transport and its day keys.
+ * @returns The pipeline, its transport, its day keys and its snapshots.
  * @throws {TypeError} When the level `strict` has no key, or when a factory
  *   of core refuses its options.
  * @example
@@ -130,6 +147,26 @@ export function composeToolPipeline(options: ComposeOptions): ComposedPipeline {
             ...(dayKeys === undefined ? {} : { dayKeys }),
           })
         : undefined;
+    // The snapshots of writes: their records in the folder snapshots of
+    // the folder of state, their keys wrapped by the day keys of the same
+    // provider (ADR 0031). They exist with both folders, so that the start
+    // removes records past their retention also in a run that only reads
+    // or keeps none. The pipeline gets them only when its writes keep
+    // snapshots, in a folder the first stage prepared; without them every
+    // write is sealed as not reversible.
+    const snapshots =
+      dayKeys !== undefined &&
+      keys !== undefined &&
+      config.stateDir !== undefined
+        ? createSnapshotKeeper({
+            keys,
+            store: createFileSnapshotStore({
+              stateDir: config.stateDir,
+              pid: process.pid,
+            }),
+          })
+        : undefined;
+    const writeSnapshots = keepsSnapshots(config) ? snapshots : undefined;
     const pipeline = createToolPipeline({
       catalog,
       audit: createAuditSink({
@@ -165,8 +202,9 @@ export function composeToolPipeline(options: ComposeOptions): ComposedPipeline {
             killSwitchDir: `${config.stateDir}/stop`,
           }),
       ...(keys === undefined ? {} : { keys }),
+      ...(writeSnapshots === undefined ? {} : { snapshots: writeSnapshots }),
     });
-    return Object.freeze({ pipeline, transport, dayKeys });
+    return Object.freeze({ pipeline, transport, dayKeys, snapshots });
   } catch (error) {
     // The caller never got the transport, so it closes here.
     void transport.close().catch(() => undefined);

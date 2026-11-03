@@ -15,7 +15,7 @@ const full = { statements: 100, branches: 100, functions: 100, lines: 100 };
 describe('the thresholds of coverage', () => {
   const coverage = config.test?.coverage;
 
-  it('ask all of redaction, the outbound path, audit, pipeline, the operation catalog, the keys, the private files, the write guard, the policy and the content policy and 80 percent of core', () => {
+  it('ask all of redaction, the outbound path, audit, pipeline, the operation catalog, the keys, the private files, the snapshots, the write guard, the policy and the content policy and 80 percent of core', () => {
     expect(coverage).toMatchObject({ provider: 'v8' });
     expect(
       coverage !== undefined && 'thresholds' in coverage
@@ -35,6 +35,7 @@ describe('the thresholds of coverage', () => {
       'packages/core/src/churchtools/catalog/**': full,
       'packages/core/src/keys/**': full,
       'packages/core/src/files/**': full,
+      'packages/core/src/snapshots/**': full,
       'packages/core/src/write/**': full,
       'packages/core/src/policy/**': full,
       'packages/core/src/content/**': full,

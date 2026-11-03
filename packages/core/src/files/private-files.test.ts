@@ -25,6 +25,7 @@ import {
   type PrivateFileStats,
   type PrivateFileSystem,
   readPrivateFile,
+  removePrivateFolder,
   writePrivateFileOnce,
 } from './index.js';
 
@@ -694,5 +695,81 @@ describe('destroyPrivateFile', () => {
         }),
       ),
     ).toBe(true);
+  });
+});
+
+describe('removePrivateFolder', () => {
+  it('removes an empty folder, and counts a folder that is not there as removed', () => {
+    const folder = fresh();
+    removePrivateFolder(folder);
+    expect(() => statSync(folder)).toThrow();
+    removePrivateFolder(folder);
+    // Another process removed it between the look and the removal.
+    const raced = fresh();
+    removePrivateFolder(
+      raced,
+      withFs({
+        rmdirSync: (path) => {
+          nodePrivateFileSystem.rmdirSync(path);
+          throw systemError('ENOENT');
+        },
+      }),
+    );
+    expect(() => statSync(raced)).toThrow();
+  });
+
+  it('refuses a link, a file and a folder that is not empty, and keeps them', () => {
+    const target = fresh();
+    const link = join(base, 'remove-link');
+    symlinkSync(target, link);
+    expect(
+      code(() => {
+        removePrivateFolder(link);
+      }),
+    ).toBe('unsafe');
+    expect(statSync(target).isDirectory()).toBe(true);
+    const full = fresh();
+    const file = join(full, 'file');
+    writeFileSync(file, 'x', { mode: 0o600 });
+    expect(
+      code(() => {
+        removePrivateFolder(file);
+      }),
+    ).toBe('unsafe');
+    expect(
+      code(() => {
+        removePrivateFolder(full);
+      }),
+    ).toBe('unavailable');
+    expect(readFileSync(file, 'utf8')).toBe('x');
+  });
+
+  it('turns every refusal of the system into a code', () => {
+    const folder = fresh();
+    expect(
+      code(() => {
+        removePrivateFolder(
+          folder,
+          withFs({
+            lstatSync: () => {
+              throw systemError('EACCES');
+            },
+          }),
+        );
+      }),
+    ).toBe('unavailable');
+    expect(
+      code(() => {
+        removePrivateFolder(
+          folder,
+          withFs({
+            rmdirSync: () => {
+              throw systemError('EBUSY');
+            },
+          }),
+        );
+      }),
+    ).toBe('unavailable');
+    expect(statSync(folder).isDirectory()).toBe(true);
   });
 });

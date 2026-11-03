@@ -690,6 +690,219 @@ describe('the second stage with a folder of keys', () => {
   });
 });
 
+// The snapshots of writes (ADR 0031): with them, the start and the timer
+// of the day remove the records past their retention from the folder of
+// state through their keeper, which destroys the day keys of the same days,
+// and the lines count records. Real folders with a record and a day key
+// for each of a few days.
+describe('the second stage with snapshots', () => {
+  const eventOf = (index: number): string =>
+    `11111111-2222-4333-8444-${String(index).padStart(12, '0')}`;
+  const privateFolder = (path: string): string => {
+    mkdirSync(path, { mode: 0o700 });
+    chmodSync(path, 0o700);
+    return path;
+  };
+  const privateFile = (path: string, text: string): void => {
+    writeFileSync(path, text, { mode: 0o600 });
+    chmodSync(path, 0o600);
+  };
+  /** A folder of state and one of keys with a record and a key per day. */
+  const foldersWith = (days: readonly string[]) => {
+    const stateDir = mkdtempSync(join(keyFolder, 'state-'));
+    chmodSync(stateDir, 0o700);
+    const keysDir = mkdtempSync(join(keyFolder, 'keys-'));
+    chmodSync(keysDir, 0o700);
+    const records = privateFolder(join(stateDir, 'snapshots'));
+    const keys = privateFolder(join(keysDir, 'snapshot'));
+    days.forEach((day, index) => {
+      privateFile(
+        join(
+          privateFolder(join(records, day)),
+          `default.${eventOf(index)}.before.snapshot`,
+        ),
+        'sealed',
+      );
+      privateFile(
+        join(keys, `default.${day}.key`),
+        createHash('sha256').update(day).digest('hex'),
+      );
+    });
+    return { stateDir, keysDir, records, keys };
+  };
+  type Folders = ReturnType<typeof foldersWith>;
+  /** The configuration of a server that writes with snapshots. */
+  const writing = (folders: Folders): EccliumConfig => ({
+    ...config,
+    readOnly: false,
+    snapshots: true,
+    stateDir: folders.stateDir,
+    keysDir: folders.keysDir,
+  });
+  const retentionLines = (session: ReturnType<typeof setup>) =>
+    session
+      .lines()
+      .filter((line) => /^(?:snapshots|day_keys)_/.test(String(line['event'])));
+  // Records first, then keys, each through a promise; setImmediate is not
+  // faked.
+  const settle = async (): Promise<void> => {
+    for (let turn = 0; turn < 10; turn += 1) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  };
+
+  it('removes the records with their day keys before the 30 days at the start and once on each new UTC day', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(Date.UTC(2026, 9, 23, 23, 59, 0));
+    const folders = foldersWith(['2026-09-22', '2026-09-23', '2026-10-23']);
+    const session = setup({ config: writing(folders) });
+    expect(session.code).toBeUndefined();
+    await settle();
+    // The snapshot of 23 September stays through 23 October, its 30th day.
+    expect(readdirSync(folders.records)).toEqual(['2026-09-23', '2026-10-23']);
+    expect(readdirSync(folders.keys)).toEqual([
+      'default.2026-09-23.key',
+      'default.2026-10-23.key',
+    ]);
+    // One line counts the records, one the day keys.
+    expect(retentionLines(session)).toEqual([
+      {
+        ts: expect.any(String) as unknown,
+        level: 'info',
+        event: 'snapshots_deleted',
+        count: 1,
+      },
+      {
+        ts: expect.any(String) as unknown,
+        level: 'info',
+        event: 'day_keys_destroyed',
+        count: 1,
+      },
+    ]);
+    vi.advanceTimersByTime(61_000);
+    await settle();
+    expect(readdirSync(folders.records)).toEqual(['2026-10-23']);
+    expect(readdirSync(folders.keys)).toEqual(['default.2026-10-23.key']);
+    expect(retentionLines(session)).toHaveLength(4);
+    // The next look on the same day removes nothing more and says nothing.
+    vi.advanceTimersByTime(3_600_000);
+    await settle();
+    expect(retentionLines(session)).toHaveLength(4);
+    assertNoCanary(session.stderr(), allCanaries, 'stderr');
+    expect(session.stderr()).not.toContain(folders.stateDir);
+    expect(session.stderr()).not.toContain(folders.keysDir);
+  });
+
+  it('warns without a path when the records cannot be removed, destroys the day keys all the same and tries again within the hour', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(Date.UTC(2026, 9, 23, 12, 0, 0));
+    const folders = foldersWith(['2026-09-01']);
+    // A folder that others may read is no folder of snapshots.
+    chmodSync(folders.records, 0o755);
+    const session = setup({ config: writing(folders) });
+    await settle();
+    expect(retentionLines(session)).toEqual([
+      {
+        ts: expect.any(String) as unknown,
+        level: 'info',
+        event: 'day_keys_destroyed',
+        count: 1,
+      },
+      {
+        ts: expect.any(String) as unknown,
+        level: 'warn',
+        event: 'snapshots_not_deleted',
+      },
+    ]);
+    // Without its day key the record that stayed opens no more.
+    expect(readdirSync(folders.keys)).toEqual([]);
+    expect(readdirSync(folders.records)).toEqual(['2026-09-01']);
+    expect(session.stderr()).not.toContain(folders.stateDir);
+    chmodSync(folders.records, 0o700);
+    vi.advanceTimersByTime(3_600_000);
+    await settle();
+    expect(readdirSync(folders.records)).toEqual([]);
+    expect(retentionLines(session).at(-1)).toMatchObject({
+      level: 'info',
+      event: 'snapshots_deleted',
+      count: 1,
+    });
+  });
+
+  it('warns and removes nothing when the clock gives no day', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    // 30 days before this time lie in the year 10000, which has no day of
+    // the short form of ISO 8601.
+    vi.setSystemTime(Date.UTC(10_000, 2, 1));
+    const folders = foldersWith(['2026-09-01']);
+    const session = setup({ config: writing(folders) });
+    await settle();
+    expect(retentionLines(session)).toEqual([
+      {
+        ts: expect.any(String) as unknown,
+        level: 'warn',
+        event: 'snapshots_not_deleted',
+      },
+    ]);
+    expect(readdirSync(folders.records)).toEqual(['2026-09-01']);
+    expect(readdirSync(folders.keys)).toEqual(['default.2026-09-01.key']);
+  });
+
+  // Without snapshots in the pipeline, as while the server only reads or
+  // keeps none, those of an earlier run that wrote go all the same.
+  it.each([
+    ['while the server only reads', { readOnly: true }],
+    ['while the snapshots are off', { snapshots: false }],
+  ])('removes the records with their day keys %s', async (_, change) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(Date.UTC(2026, 9, 23, 12, 0, 0));
+    const folders = foldersWith(['2026-09-01']);
+    const session = setup({
+      config: { ...writing(folders), ...change },
+    });
+    await settle();
+    expect(retentionLines(session)).toEqual([
+      {
+        ts: expect.any(String) as unknown,
+        level: 'info',
+        event: 'snapshots_deleted',
+        count: 1,
+      },
+      {
+        ts: expect.any(String) as unknown,
+        level: 'info',
+        event: 'day_keys_destroyed',
+        count: 1,
+      },
+    ]);
+    expect(readdirSync(folders.keys)).toEqual([]);
+    expect(readdirSync(folders.records)).toEqual([]);
+  });
+
+  // A day key whose record never came, as after a store that failed, or
+  // a run that only reads and has no folder snapshots: the key goes, and
+  // its line says so.
+  it('says so when it destroys a day key without a record', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(Date.UTC(2026, 9, 23, 12, 0, 0));
+    const folders = foldersWith(['2026-09-01']);
+    rmSync(folders.records, { recursive: true });
+    const session = setup({
+      config: { ...writing(folders), readOnly: true },
+    });
+    await settle();
+    expect(retentionLines(session)).toEqual([
+      {
+        ts: expect.any(String) as unknown,
+        level: 'info',
+        event: 'day_keys_destroyed',
+        count: 1,
+      },
+    ]);
+    expect(readdirSync(folders.keys)).toEqual([]);
+  });
+});
+
 describe('firstKeptSnapshotDay', () => {
   it('gives the day 30 days before the day of the time', () => {
     expect(snapshotRetentionDays).toBe(30);

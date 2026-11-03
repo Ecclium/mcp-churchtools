@@ -20,6 +20,11 @@
  * the core reads again and decides between `verified`, `conflict` and
  * `failed`, and its sentence never invites to try again blindly.
  *
+ * Right before the one send, the guard saves a snapshot of what the write
+ * changes, sealed with a day key (ADR 0031), and a write whose snapshot
+ * cannot be saved is not sent. Without snapshots, every plan is sealed as
+ * not reversible, so that the echo allows none.
+ *
  * The policy of ADR 0032 checks the plan after the read of the target and
  * again on the commit right before the send, where it adds the write to
  * its counter of the day (`policy-gate.ts`). The content policy of ADR 0030
@@ -32,6 +37,7 @@
 import {
   type Clock,
   type ConfirmationPath,
+  type IsoDate,
   EccliumError,
   type ErrorCode,
   isEccliumError,
@@ -54,6 +60,8 @@ import { readIntent } from './intent.js';
 import { checkIntentContent, ContentRefusal } from './content-gate.js';
 import { checkKillSwitches } from './kill-switch.js';
 import { contentHashOf } from './plan-hash.js';
+import { isoDateOf } from '../quota/budget.js';
+import type { SnapshotToSeal } from '../snapshots/seal.js';
 import { createPolicyGate, type WriteFacts } from './policy-gate.js';
 import { useProof } from './proof.js';
 import {
@@ -100,6 +108,8 @@ export const writeSentences = Object.freeze({
   notAsPlanned:
     'The write reached ChurchTools, but the target does not read back as planned. Check it before you change it again.',
   notConfirmed: 'The write was not confirmed, so nothing was written.',
+  noSnapshot:
+    'The server could not save the state before the write, so nothing was written. Ask the operator.',
 } as const);
 
 /** What the client gives the write guard: the rights and the writes. */
@@ -128,6 +138,29 @@ export interface WriteGuardOptions {
    * state: then a write that an entry of the policy limits does not run.
    */
   readonly quota: QuotaStore | undefined;
+  /**
+   * The snapshots of writes, or undefined when they are off: then no write
+   * can be taken back (ADR 0031).
+   */
+  readonly snapshots?: WriteSnapshots | undefined;
+}
+
+/**
+ * How the write guard keeps snapshots (ADR 0031): it seals a part of the
+ * snapshot of a write and keeps it, or rejects.
+ */
+export interface WriteSnapshots {
+  /**
+   * Seals and keeps a part of the snapshot of a write.
+   *
+   * @param ctx - The context of the write.
+   * @param snapshot - Event, part, day and content.
+   * @returns Nothing once the part is kept.
+   */
+  readonly save: (
+    ctx: TenantContext,
+    snapshot: SnapshotToSeal,
+  ) => Promise<void>;
 }
 
 /** Who plans: the call of a tool. */
@@ -164,6 +197,8 @@ export type CommitResult =
       readonly target: WriteTarget;
       /** The version of the target after the write. */
       readonly version: number;
+      /** The ID to take the write back with, when a snapshot was saved. */
+      readonly undoId?: string;
     }
   | {
       readonly ok: false;
@@ -198,12 +233,16 @@ export interface WriteGuard {
    * @param ctx - The context of the call that commits.
    * @param plan - The plan the tool returned.
    * @param proof - The proof of the confirmation.
+   * @param eventId - The ID of the audit event of the call, under which the
+   *   snapshot of the write is kept; without it no write runs while
+   *   snapshots are on.
    * @returns How the commit ended; it never rejects.
    */
   commit(
     ctx: TenantContext,
     plan: unknown,
     proof: unknown,
+    eventId?: string,
   ): Promise<CommitResult>;
   /**
    * Stops every later plan until the process ends, after a write whose
@@ -263,6 +302,12 @@ type Derived =
       readonly text: string;
     };
 
+/** Where the snapshot of a write was kept: its event and its day. */
+interface Undo {
+  readonly eventId: string;
+  readonly day: IsoDate;
+}
+
 /** The writes this version of the core runs: those of the wiki. */
 type WikiIntent = Extract<WriteIntent, { categoryId: number }>;
 
@@ -284,7 +329,9 @@ type PageIntent = Extract<WriteIntent, { guid: string }>;
  * ```
  */
 export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
-  const { client, clock, killSwitchDir } = options;
+  const { client, clock, killSwitchDir, snapshots } = options;
+  // Whether a plan can be taken back from a snapshot (ADR 0031).
+  const reversible = snapshots !== undefined;
   // The contact values a text may hold, from the interactive part of the
   // policy (ADR 0030).
   const contacts = contactKeysOf(options.policy.interactive.contacts ?? []);
@@ -441,6 +488,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       toolMeta: request.meta,
       contentHash: derived.contentHash,
       sealedAt: clock.now(),
+      snapshots: reversible,
     });
     return Object.freeze({
       outcome: Object.freeze({ kind: 'planned', plan: sealed }),
@@ -484,6 +532,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     ctx: TenantContext,
     value: unknown,
     proof: unknown,
+    eventId?: string,
   ): Promise<CommitResult> => {
     const view = readPlan(value);
     if (
@@ -497,13 +546,14 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     const target = view.rules.target;
     const stop = stopped(ctx);
     if (stop !== undefined) return denied(stop, target);
-    return commitPlan(ctx, view, proof);
+    return commitPlan(ctx, view, proof, eventId);
   };
 
   const commitPlan = async (
     ctx: TenantContext,
     view: PlanView,
     proof: unknown,
+    eventId: string | undefined,
   ): Promise<CommitResult> => {
     // A plan is sealed only for an intent the core runs (sealed-plan.ts).
     const intent = view.intent as WikiIntent;
@@ -535,6 +585,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
         },
         contentHash: derived.contentHash,
         sealedAt: clock.now(),
+        snapshots: reversible,
       }),
     ) as PlanView;
     const now = clock.now();
@@ -589,13 +640,93 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     // counted, as one that fails after its count (ADR 0029, ADR 0032).
     const stopLate = stopped(ctx);
     if (stopLate !== undefined) return denied(stopLate, target, path);
+    // The state before the write, kept before the one send: a snapshot
+    // that cannot be kept stops the write, so that every write the core
+    // sends with snapshots on can be taken back (ADR 0031).
+    let undo: Undo | undefined;
+    if (snapshots !== undefined) {
+      const day = isoDateOf(now);
+      const content: SnapshotToSeal['content'] =
+        derived.kind === 'create'
+          ? {
+              kind: 'wikiPageCreate',
+              tool: view.tool,
+              categoryId: intent.categoryId,
+              title: (intent as Extract<WikiIntent, { kind: 'wikiPageCreate' }>)
+                .title,
+              textHash: contentHashOf([
+                (intent as Extract<WikiIntent, { kind: 'wikiPageCreate' }>)
+                  .text,
+              ]),
+            }
+          : {
+              kind: 'wikiPageText',
+              tool: view.tool,
+              categoryId: intent.categoryId,
+              guid: (intent as PageIntent).guid,
+              before: {
+                version: derived.before.version,
+                text: derived.before.text,
+              },
+              after: {
+                version: derived.before.version + 1,
+                textHash: contentHashOf([derived.text]),
+              },
+            };
+      try {
+        if (eventId === undefined || day === undefined) {
+          throw new TypeError('No event or no day.');
+        }
+        await snapshots.save(ctx, { eventId, part: 'before', day, content });
+        undo = { eventId, day };
+      } catch {
+        ctx.log.warn('snapshot_failed', { code: 'internal' });
+        return ended(
+          ctx,
+          'failed',
+          refuse('internal', writeSentences.noSnapshot),
+          false,
+          target,
+          path,
+        );
+      }
+    }
     return derived.kind === 'create'
       ? create(
           ctx,
           intent as Extract<WikiIntent, { kind: 'wikiPageCreate' }>,
           path,
+          undo,
         )
-      : change(ctx, intent as PageIntent, derived, target, path);
+      : change(ctx, intent as PageIntent, derived, target, path, undo);
+  };
+
+  // Once ChurchTools names a new page, the second part of its snapshot:
+  // its GUID and version, without which `ecclium undo` cannot find it. It
+  // is kept before the checks of the answer and the read back, so that a
+  // page that exists but does not read back as planned can be found too.
+  // A part that cannot be kept leaves the write as it is, and the log says
+  // so.
+  const completeCreate = async (
+    ctx: TenantContext,
+    undo: Undo | undefined,
+    created: { readonly guid: string; readonly version: number },
+  ): Promise<void> => {
+    if (snapshots === undefined || undo === undefined) return;
+    try {
+      await snapshots.save(ctx, {
+        eventId: undo.eventId,
+        part: 'after',
+        day: undo.day,
+        content: {
+          kind: 'wikiPageCreated',
+          guid: created.guid,
+          version: created.version,
+        },
+      });
+    } catch {
+      ctx.log.warn('snapshot_incomplete', { code: 'internal' });
+    }
   };
 
   // Creates a page. Without its GUID the core cannot read it back after a
@@ -604,6 +735,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     ctx: TenantContext,
     intent: Extract<WriteIntent, { kind: 'wikiPageCreate' }>,
     path: ConfirmationPath,
+    undo: Undo | undefined,
   ): Promise<CommitResult> => {
     const category: WriteTarget = Object.freeze({
       kind: 'wiki_category',
@@ -645,6 +777,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       kind: 'wiki_page',
       key: `${String(intent.categoryId)}/${created.guid.toLowerCase()}`,
     });
+    await completeCreate(ctx, undo, created);
     if (
       created.version !== 1 ||
       created.title !== intent.title ||
@@ -666,7 +799,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
         created.guid,
       );
       if (after.page.version === 1 && after.page.text === intent.text) {
-        return verified(ctx, path, page, 1);
+        return verified(ctx, path, page, 1, undo);
       }
     } catch (error) {
       return ended(
@@ -696,6 +829,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     derived: Extract<Derived, { kind: 'change' }>,
     target: WriteTarget,
     path: ConfirmationPath,
+    undo: Undo | undefined,
   ): Promise<CommitResult> => {
     const base = derived.before.version;
     const { text } = derived;
@@ -736,7 +870,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       );
     }
     if (after.version === base + 1 && after.text === text) {
-      return verified(ctx, path, target, after.version);
+      return verified(ctx, path, target, after.version, undo);
     }
     // Only a refusal of ChurchTools shows that the write did not land; after
     // any other failure it may still land later (ADR 0072).
@@ -770,6 +904,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     path: ConfirmationPath,
     target: WriteTarget,
     version: number,
+    undo: Undo | undefined,
   ): CommitResult => {
     ctx.log.info('write_committed');
     return Object.freeze({
@@ -778,6 +913,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       path,
       target,
       version,
+      ...(undo === undefined ? {} : { undoId: undo.eventId }),
     });
   };
 

@@ -20,6 +20,7 @@ export {
   type WriteClient,
   type WriteGuard,
   type WriteGuardOptions,
+  type WriteSnapshots,
   writeSentences,
 } from './guard.js';
 export type { WriteTarget } from './rules.js';

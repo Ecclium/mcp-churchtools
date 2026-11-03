@@ -106,6 +106,12 @@ export interface EccliumConfig {
    */
   readonly keysDir: string | undefined;
   /**
+   * Whether a write keeps a snapshot of what it changes, true unless
+   * `ECCLIUM_SNAPSHOTS` is `off` (ADR 0031). Without them every write is
+   * sealed as not reversible, and a start that writes warns.
+   */
+  readonly snapshots: boolean;
+  /**
    * How many months the audit files stay before the start or a new UTC day
    * deletes them, 1 to 120 (ADR 0028). Without a folder of state there are
    * no files, and the value does nothing.
@@ -133,6 +139,7 @@ export type SettingKey =
   | 'toolsets'
   | 'stateDir'
   | 'keysDir'
+  | 'snapshots'
   | 'auditRetentionMonths'
   | 'policy'
   | 'stdioSubject'
@@ -1035,6 +1042,15 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     }
   }
 
+  // The snapshots of writes (ADR 0031), on by default. Turned off, no
+  // write can be taken back, which every start that writes says. A server
+  // that only reads keeps none either way, so it says nothing.
+  const snapshots = choose('ECCLIUM_SNAPSHOTS');
+  show('snapshots', 'ECCLIUM_SNAPSHOTS', snapshots, 'choice');
+  if (snapshots?.value === 'off' && readOnly?.value === 'false') {
+    warnings.add('snapshots_off');
+  }
+
   // The retention of the audit files: digits only, checked sign by sign.
   // Below a year every start warns, and without the folder of state there
   // is nothing to delete, which every start says (ADR 0028).
@@ -1174,6 +1190,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     toolsets === undefined ||
     !stateDirValid ||
     !keysDirValid ||
+    snapshots === undefined ||
     retention === undefined ||
     policy === undefined ||
     subject === undefined ||
@@ -1196,6 +1213,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       toolsets: toolsets.value,
       stateDir,
       keysDir,
+      snapshots: snapshots.value === 'on',
       auditRetentionMonths: retention.value,
       policy,
       stdioSubject: subject.value,

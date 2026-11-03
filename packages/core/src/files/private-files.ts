@@ -33,6 +33,7 @@ import {
   openSync,
   readdirSync,
   readSync,
+  rmdirSync,
   unlinkSync,
   writeSync,
 } from 'node:fs';
@@ -82,6 +83,8 @@ export interface PrivateFileSystem {
   readonly closeSync: (fd: number) => void;
   readonly linkSync: (existing: string, path: string) => void;
   readonly unlinkSync: (path: string) => void;
+  /** Removes an empty folder; it follows no link at the end of the path. */
+  readonly rmdirSync: (path: string) => void;
   readonly readdirSync: (path: string) => string[];
   /** The ID of the user, or undefined on a platform without one. */
   readonly getuid: () => number | undefined;
@@ -104,6 +107,10 @@ export const nodePrivateFileSystem: PrivateFileSystem = Object.freeze({
   closeSync,
   linkSync,
   unlinkSync,
+  // Without options: rmdir(2) itself, which removes only an empty folder.
+  rmdirSync: (path: string) => {
+    rmdirSync(path);
+  },
   readdirSync: (path: string) => readdirSync(path),
   getuid: () => process.getuid?.(),
   constants,
@@ -577,4 +584,42 @@ export function destroyPrivateFile(
     if (errorCode(error) !== 'ENOENT') fail('unavailable');
   }
   return true;
+}
+
+/**
+ * Removes an empty private folder, such as the folder of a day of
+ * snapshots after its records were destroyed (ADR 0031). It follows no
+ * link: an entry that is a link or no folder stays and makes it throw, and
+ * `rmdir` removes only a folder that is empty, so nothing in it is ever
+ * lost here. A folder that is not there counts as removed, since another
+ * process may have removed it first.
+ *
+ * @param folder - The folder to remove, inside a private folder.
+ * @param fs - The file functions, only for tests.
+ * @returns Nothing; the folder is gone.
+ * @throws {PrivateFileError} With `unsafe` for a link or an entry that is
+ *   no folder, with `unavailable` for a folder that is not empty or that
+ *   the system does not remove.
+ * @example
+ * ```ts
+ * removePrivateFolder('/srv/ecclium/snapshots/2026-10-01');
+ * ```
+ */
+export function removePrivateFolder(
+  folder: string,
+  fs: PrivateFileSystem = nodePrivateFileSystem,
+): void {
+  let stats: PrivateFileStats;
+  try {
+    stats = fs.lstatSync(folder);
+  } catch (error) {
+    if (errorCode(error) === 'ENOENT') return;
+    return fail('unavailable');
+  }
+  if (stats.isSymbolicLink() || !stats.isDirectory()) fail('unsafe');
+  try {
+    fs.rmdirSync(folder);
+  } catch (error) {
+    if (errorCode(error) !== 'ENOENT') fail('unavailable');
+  }
 }

@@ -30,12 +30,15 @@ import {
   type PlanRequest,
   type PlanResult,
   type WriteClient,
+  type WriteSnapshots,
   writeSentences,
 } from './guard.js';
 import { ContentRefusal } from './content-gate.js';
 import { policySentences } from './policy-gate.js';
 import { issueProof } from './proof.js';
 import { readPlan } from './sealed-plan.js';
+import type { SnapshotToSeal } from '../snapshots/seal.js';
+import { contentHashOf } from './plan-hash.js';
 
 const guid = '00000000-0000-4000-8000-0000000000AB';
 const now = Date.UTC(2026, 11, 1, 8, 0, 0);
@@ -209,7 +212,11 @@ afterEach(() => {
 const setup = (
   fake = fakeOf(),
   killSwitchDir: string | null = dir,
-  limits: { policy?: Policy; quota?: QuotaStore | null } = {},
+  limits: {
+    policy?: Policy;
+    quota?: QuotaStore | null;
+    snapshots?: WriteSnapshots;
+  } = {},
 ) => {
   const clock = createTestClock(now);
   const quota =
@@ -222,6 +229,7 @@ const setup = (
     killSwitchDir: killSwitchDir ?? undefined,
     policy: limits.policy ?? defaultPolicy,
     quota,
+    snapshots: limits.snapshots,
   });
   const ctx = contextOf(logged);
   const request: PlanRequest = {
@@ -985,5 +993,223 @@ describe('the policy (ADR 0032)', () => {
       code: 'policy_denied',
       message: policySentences.countUnavailable,
     });
+  });
+});
+
+describe('the snapshot of a write (ADR 0031)', () => {
+  const eventId = '11111111-2222-4333-8444-555555555555';
+  const day = '2026-12-01';
+
+  // Records every part it is asked to keep, and fails the parts named.
+  const recording = (fails: readonly ('before' | 'after')[] = []) => {
+    const saved: SnapshotToSeal[] = [];
+    const snapshots: WriteSnapshots = {
+      save: (_ctx, snapshot) => {
+        saved.push(snapshot);
+        return fails.includes(snapshot.part)
+          ? Promise.reject(new Error('no room'))
+          : Promise.resolve();
+      },
+    };
+    return { saved, snapshots };
+  };
+
+  const commitWith = async (
+    intent: unknown,
+    snapshots: WriteSnapshots | undefined,
+    event: string | undefined = eventId,
+  ) => {
+    const { guard, ctx, request, fake } = setup(fakeOf(), dir, { snapshots });
+    const plan = planOf(await guard.plan(request, intent));
+    const committed = await guard.commit(
+      ctx,
+      plan,
+      issueProof(plan, 'elicitation', now),
+      event,
+    );
+    return { committed, fake, plan };
+  };
+
+  it('keeps the text before a change, with its version and the hash of the new text, before the send', async () => {
+    const { saved, snapshots } = recording();
+    const { committed, fake } = await commitWith(update, snapshots);
+    expect(committed).toMatchObject({ ok: true, undoId: eventId });
+    expect(saved).toEqual([
+      {
+        eventId,
+        part: 'before',
+        day,
+        content: {
+          kind: 'wikiPageText',
+          tool: 'ct_example_note_write',
+          categoryId: 12,
+          guid,
+          before: { version: 3, text: '# Plan\n' },
+          after: { version: 4, textHash: contentHashOf(['# Neu\n']) },
+        },
+      },
+    ]);
+    expect(fake.sent).toEqual(['# Neu\n']);
+  });
+
+  it('keeps a new page before the send and its GUID after the read back', async () => {
+    const { saved, snapshots } = recording();
+    const { committed } = await commitWith(create, snapshots);
+    expect(committed).toMatchObject({ ok: true, undoId: eventId });
+    expect(saved).toEqual([
+      {
+        eventId,
+        part: 'before',
+        day,
+        content: {
+          kind: 'wikiPageCreate',
+          tool: 'ct_example_note_write',
+          categoryId: 12,
+          title: 'Bericht',
+          textHash: contentHashOf(['# Bericht\n']),
+        },
+      },
+      {
+        eventId,
+        part: 'after',
+        day,
+        content: {
+          kind: 'wikiPageCreated',
+          guid: '00000000-0000-4000-8000-0000000000CD',
+          version: 1,
+        },
+      },
+    ]);
+  });
+
+  it('sends nothing when the state before cannot be kept', async () => {
+    const { snapshots } = recording(['before']);
+    const { committed, fake } = await commitWith(append, snapshots);
+    expect(committed).toMatchObject({
+      ok: false,
+      state: 'failed',
+      sent: false,
+      error: { code: 'internal', message: writeSentences.noSnapshot },
+    });
+    expect(fake.sent).toEqual([]);
+    expect(logged).toContainEqual({
+      level: 'warn',
+      event: 'snapshot_failed',
+      code: 'internal',
+    });
+  });
+
+  it('sends nothing without the ID of the event or without a day', async () => {
+    const { saved, snapshots } = recording();
+    const first = setup(fakeOf(), dir, { snapshots });
+    const plan = planOf(await first.guard.plan(first.request, update));
+    const withoutEvent = await first.guard.commit(
+      first.ctx,
+      plan,
+      issueProof(plan, 'elicitation', now),
+    );
+    expect(withoutEvent).toMatchObject({
+      ok: false,
+      state: 'failed',
+      sent: false,
+    });
+    expect(first.fake.sent).toEqual([]);
+    expect(saved).toEqual([]);
+    // A time past the year 9999, which ChurchTools would share, has no day.
+    const future = Date.UTC(10_000, 0, 1);
+    const fake = { ...fakeOf(), time: future };
+    const late = setup(fake, dir, { snapshots });
+    late.clock.advance(future - now);
+    const later = planOf(await late.guard.plan(late.request, update));
+    const withoutDay = await late.guard.commit(
+      late.ctx,
+      later,
+      issueProof(later, 'elicitation', future),
+      eventId,
+    );
+    expect(withoutDay).toMatchObject({
+      ok: false,
+      state: 'failed',
+      sent: false,
+    });
+    expect(fake.sent).toEqual([]);
+  });
+
+  // A page that ChurchTools created but that does not read back as planned
+  // exists all the same, so `ecclium undo` must be able to find it.
+  it.each([
+    [
+      'answers with another version',
+      (fake: Fake) => {
+        fake.created = {
+          guid: '00000000-0000-4000-8000-0000000000CD',
+          title: 'Bericht',
+          version: 2,
+          isMarkdown: true,
+        };
+      },
+      'conflict',
+      2,
+    ],
+    [
+      'cannot be read back',
+      (fake: Fake) => {
+        fake.readFailsAfterWrite = new EccliumError('network');
+      },
+      'failed',
+      1,
+    ],
+    [
+      'reads back with another text',
+      (fake: Fake) => {
+        fake.createdText = '# Anders\n';
+      },
+      'conflict',
+      1,
+    ],
+  ] as const)(
+    'keeps the GUID of a new page that %s',
+    async (_, change, state, version) => {
+      const { saved, snapshots } = recording();
+      const fake = fakeOf();
+      change(fake);
+      const { guard, ctx, request } = setup(fake, dir, { snapshots });
+      const plan = planOf(await guard.plan(request, create));
+      const committed = await guard.commit(
+        ctx,
+        plan,
+        issueProof(plan, 'elicitation', now),
+        eventId,
+      );
+      expect(committed).toMatchObject({ ok: false, state, sent: true });
+      expect(saved.map((part) => part.part)).toEqual(['before', 'after']);
+      expect(saved[1]?.content).toEqual({
+        kind: 'wikiPageCreated',
+        guid: '00000000-0000-4000-8000-0000000000CD',
+        version,
+      });
+    },
+  );
+
+  it('keeps a new page written when its GUID cannot be kept, and says so', async () => {
+    const { snapshots } = recording(['after']);
+    const { committed } = await commitWith(create, snapshots);
+    expect(committed).toMatchObject({ ok: true, undoId: eventId });
+    expect(logged).toContainEqual({
+      level: 'warn',
+      event: 'snapshot_incomplete',
+      code: 'internal',
+    });
+  });
+
+  it('seals every plan as not reversible without snapshots and gives no ID to undo', async () => {
+    const { committed, plan } = await commitWith(update, undefined);
+    expect(readPlan(plan)?.rules.reversible).toBe('no');
+    expect(readPlan(plan)?.echo).toBe(false);
+    expect(committed.ok && 'undoId' in committed).toBe(false);
+    const { snapshots } = recording();
+    const { plan: kept } = await commitWith(update, snapshots);
+    expect(readPlan(kept)?.rules.reversible).toBe('snapshot');
+    expect(readPlan(kept)?.echo).toBe(true);
   });
 });

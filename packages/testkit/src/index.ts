@@ -112,6 +112,13 @@ export {
   quotaStoreChecks,
 } from './quota/index.js';
 export { redactedOutcome } from './redacted/index.js';
+export {
+  createMemorySnapshotStore,
+  type OpenSnapshotStore,
+  type SnapshotMemory,
+  type SnapshotStoreCheck,
+  snapshotStoreChecks,
+} from './snapshots/index.js';
 export { ahvOf, groupedAhv, ibanOf, printedIban } from './synthetic-numbers.js';
 export {
   compatibilityForms,

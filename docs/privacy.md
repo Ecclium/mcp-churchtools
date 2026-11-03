@@ -51,7 +51,7 @@ Mit `ECCLIUM_REDACTION=strict` ersetzt Ecclium die Kennungen von Personen in jed
 
 ## Was Ecclium nicht ablegt
 
-Ecclium hat keine Datenbank und keinen Zwischenspeicher für Antworten von ChurchTools. Personendaten, Inhalte des Wikis und andere Antworten hält der Server nur im Arbeitsspeicher, solange ein Aufruf läuft. Log und Audit tragen keine solchen Inhalte und kein Token. Welche Ereignisse und Felder eine Logzeile haben kann, zeigen die [Logzeilen](log-events.md) ganz, ein anderes Ereignis schreibt der Logger nicht.
+Ecclium hat keine Datenbank und keinen Zwischenspeicher für Antworten von ChurchTools. Personendaten, Inhalte des Wikis und andere Antworten hält der Server nur im Arbeitsspeicher, solange ein Aufruf läuft. Die Ausnahme ist der Stand vor einem Schreibvorgang, den er verschlüsselt als Snapshot ablegt, siehe [Snapshots](#snapshots). Log und Audit tragen keine solchen Inhalte und kein Token. Welche Ereignisse und Felder eine Logzeile haben kann, zeigen die [Logzeilen](log-events.md) ganz, ein anderes Ereignis schreibt der Logger nicht.
 
 ## Was Ecclium ablegt
 
@@ -92,9 +92,19 @@ Nur für `ECCLIUM_REDACTION=strict` legen Sie eine Datei mit dem Schlüssel für
 
 ### Tagesschlüssel
 
-Nur wenn Ecclium schreibt (`ECCLIUM_READ_ONLY=false`), braucht es einen eigenen Ordner für Tagesschlüssel, den `ECCLIUM_KEYS_DIR` nennt. Mit ihnen wird Ecclium die Snapshots verschlüsseln, also den Stand vor einem Schreibvorgang, den `ecclium undo` zurücknehmen kann, und später die Einträge der Freigabe-Warteschlange ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)). In dieser Version legt Ecclium noch keinen Tagesschlüssel an: Der Start legt nur den Ordner `snapshot` an und vernichtet Schlüssel, deren Frist vorbei ist.
+Nur wenn Ecclium schreibt (`ECCLIUM_READ_ONLY=false`), braucht es einen eigenen Ordner für Tagesschlüssel, den `ECCLIUM_KEYS_DIR` nennt. Mit ihnen verschlüsselt Ecclium die Snapshots, also den Stand vor einem Schreibvorgang, mit dem sich dieser zurücknehmen lässt, und später die Einträge der Freigabe-Warteschlange ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)). Einen Tagesschlüssel legt Ecclium mit dem ersten Snapshot eines Tages an. Schreib-Tools des Kerns kommen mit einer späteren Version, bis dahin entsteht keiner.
 
 - **Inhalt:** je Mandant, Zweck und UTC-Tag eine Datei mit einem zufälligen Schlüssel als 64 Zeichen Hex, etwa `snapshot/default.2026-11-03.key`. Keine Personendaten und keine Inhalte aus ChurchTools.
 - **Wer sie lesen kann:** Der Ordner und seine Unterordner haben die Rechte 700, die Dateien 600. Der Ordner darf nicht der Zustandsordner sein, nicht darin liegen und ihn nicht enthalten, sonst startet Ecclium nicht.
 - **Frist:** Der Tagesschlüssel der Snapshots eines Tages bleibt diesen Tag und die 30 Tage danach. Am 31. Tag danach vernichtet ihn Ecclium beim Start oder Wechsel des UTC-Tages: Nullen über die Datei, wo sie sich schreiben lässt, dann wird sie entfernt, auch wenn sie andere Rechte bekommen hat. Danach lässt sich kein Snapshot seines Tages mehr lesen, auch nicht in einer Sicherung des Zustandsordners. Vernichtet wird nur, solange Ecclium mit `ECCLIUM_KEYS_DIR` läuft, auch nur lesend. Lassen Sie die Variable gesetzt, nachdem Sie das Schreiben abgeschaltet haben, bis 31 Tage um sind, oder löschen Sie den Ordner selbst. Das ist der Sinn des eigenen Ordners: Nehmen Sie ihn aus jeder Sicherung, siehe [Betrieb über stdio](betrieb/stdio.md#ordner-der-tagesschlüssel).
 - **Grenzen:** Auf SSDs und Dateisystemen wie APFS überschreiben Nullen nicht sicher jede Kopie der Bytes. Lokale Snapshots von Time Machine und Snapshots einer virtuellen Maschine bei einem Hoster können den Ordner enthalten. Wer Zustandsordner und Ordner der Tagesschlüssel zusammen kopiert, kann die Snapshots bis zum Ende ihrer Frist lesen.
+
+### Snapshots
+
+Mit `ECCLIUM_READ_ONLY=false` und `ECCLIUM_SNAPSHOTS=on`, der Voreinstellung, hält Ecclium vor jedem Schreibvorgang fest, was er ändert, damit er sich zurücknehmen lässt ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)). Den Befehl dafür, `ecclium undo`, bringt eine spätere Version.
+
+- **Inhalt:** nur das geänderte Feld, kein ganzer Datensatz: bei einer geänderten oder ergänzten Seite des Wikis Kategorie, GUID, ihr Text und ihre Version davor und die nächste Version mit einem Hash des neuen Texts, bei einer neuen Seite Kategorie, Titel und ein Hash ihres Texts und danach ihre GUID und Version, dazu das Tool. Der Text einer Seite kann Personendaten enthalten, wie die Seite selbst.
+- **Wo:** im Ordner `snapshots` des Zustandsordners, ein Ordner je UTC-Tag mit den Rechten 700, eine Datei je Teil mit 600, benannt nach Mandant und der Kennung des Ereignisses im Audit.
+- **Schutz:** Jeder Teil ist mit einem eigenen Schlüssel verschlüsselt, den der Tagesschlüssel des Tages aus `ECCLIUM_KEYS_DIR` verschlüsselt. Im Zustandsordner liegt kein Schlüssel.
+- **Frist:** Ein Snapshot bleibt seinen Tag und die 30 Tage danach. Danach löscht Ecclium die Dateien beim Start und beim Wechsel des UTC-Tages und vernichtet den Tagesschlüssel, ab dann lässt sich auch eine Kopie in einer Sicherung nicht mehr lesen. Gelöscht wird nur, solange Ecclium mit `ECCLIUM_STATE_DIR` und `ECCLIUM_KEYS_DIR` läuft, auch nur lesend oder mit `ECCLIUM_SNAPSHOTS=off`. Ohne den Zustandsordner vernichtet es nur die Tagesschlüssel.
+- **Abschalten:** Mit `ECCLIUM_SNAPSHOTS=off` hält Ecclium nichts fest. Dann lässt sich kein Schreibvorgang zurücknehmen, das Echo lehnt jeden ab, und jeder Start mit Schreiben warnt.

@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import {
   chmodSync,
+  existsSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   rmSync,
@@ -16,6 +18,7 @@ import {
 } from '@ecclium/mcp-churchtools-core';
 import {
   createStderrWriter,
+  prepareSnapshotFolder,
   systemClock,
 } from '@ecclium/mcp-churchtools-core/composition';
 import type {
@@ -34,6 +37,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { createStdioCatalog } from '../stdio/catalog.js';
 import { userAgent } from '../version.js';
 import { composeToolPipeline } from './pipeline.js';
+import { keepsSnapshots } from './snapshots.js';
 
 // The build of the pipeline alone; the start over stdio and its tests use
 // it with the server around it. The factory of the pipeline is wrapped, so
@@ -140,6 +144,7 @@ describe('the build of the pipeline', () => {
   it('gives the pipeline no keys while the level is not strict and no folder of keys is set', () => {
     const composed = setup().build();
     expect(composed.dayKeys).toBeUndefined();
+    expect(composed.snapshots).toBeUndefined();
     expect(built.options).toHaveLength(1);
     expect(Object.hasOwn(built.options[0] as object, 'keys')).toBe(false);
   });
@@ -214,6 +219,131 @@ describe('the build of the pipeline', () => {
     await expect(
       withoutDayKeys?.destroyBefore('snapshot', '2026-11-04' as IsoDate),
     ).rejects.toBeInstanceOf(TypeError);
+  });
+
+  // Every write keeps a snapshot of what it changes, sealed with a day key
+  // of the same provider and kept in the folder of state (ADR 0031).
+  describe('and the snapshots of writes', () => {
+    /** A folder of state and a folder of keys next to it, both 0700. */
+    const folders = () => {
+      const state = mkdtempSync(join(base, 'state-'));
+      chmodSync(state, 0o700);
+      const keys = mkdtempSync(join(base, 'keys-'));
+      chmodSync(keys, 0o700);
+      return { state, keys };
+    };
+    const eventId = '11111111-2222-4333-8444-555555555555';
+    const day = '2026-11-03' as IsoDate;
+    const ctx = {
+      tenantId: 'default',
+      instance: 'https://example.church.tools',
+    } as never;
+
+    it('gives the pipeline the snapshots over both folders while the server writes', async () => {
+      const { state, keys } = folders();
+      const config = configOf({
+        ECCLIUM_READ_ONLY: 'false',
+        ECCLIUM_STATE_DIR: state,
+        ECCLIUM_KEYS_DIR: keys,
+      });
+      expect(keepsSnapshots(config)).toBe(true);
+      const composed = setup(config).build();
+      const { snapshots } = composed;
+      if (snapshots === undefined) throw new Error('no snapshots');
+      expect((built.options[0] as ToolPipelineOptions).snapshots).toBe(
+        snapshots,
+      );
+      prepareSnapshotFolder(state);
+      await snapshots.save(ctx, {
+        eventId,
+        part: 'before',
+        day,
+        content: {
+          kind: 'wikiPageCreate',
+          tool: 'ct_wiki_page_create',
+          categoryId: 12,
+          title: 'Bericht',
+          textHash: 'a'.repeat(64),
+        },
+      });
+      expect(readdirSync(join(state, 'snapshots', day))).toEqual([
+        `default.${eventId}.before.snapshot`,
+      ]);
+      // The same day keys as those the start destroys through.
+      expect(readdirSync(join(keys, 'snapshot'))).toEqual([
+        'default.2026-11-03.key',
+      ]);
+      expect((await snapshots.load(ctx, eventId)).kind).toBe('found');
+      // Records and day keys go together once past their retention.
+      expect(await snapshots.purgeBefore('2026-11-04' as IsoDate)).toEqual({
+        records: 1,
+        dayKeys: 1,
+        complete: true,
+      });
+      expect(readdirSync(join(state, 'snapshots'))).toEqual([]);
+      expect(readdirSync(join(keys, 'snapshot'))).toEqual([]);
+    });
+
+    it.each([
+      ['while the server only reads', { ECCLIUM_READ_ONLY: 'true' }],
+      [
+        'when they are off',
+        { ECCLIUM_READ_ONLY: 'false', ECCLIUM_SNAPSHOTS: 'off' },
+      ],
+    ])('gives the pipeline none %s', async (_, extra) => {
+      const { state, keys } = folders();
+      const config = configOf({
+        ECCLIUM_STATE_DIR: state,
+        ECCLIUM_KEYS_DIR: keys,
+        ...extra,
+      });
+      expect(keepsSnapshots(config)).toBe(false);
+      const composed = setup(config).build();
+      expect(Object.hasOwn(built.options[0] as object, 'snapshots')).toBe(
+        false,
+      );
+      // The snapshots and the day keys stay for the start, so that it
+      // still removes those of an earlier run that wrote.
+      expect(composed.dayKeys).toBeDefined();
+      const { snapshots } = composed;
+      if (snapshots === undefined) throw new Error('no snapshots');
+      expect(existsSync(join(state, 'snapshots'))).toBe(false);
+      expect(await snapshots.purgeBefore('2026-11-04' as IsoDate)).toEqual({
+        records: 0,
+        dayKeys: 0,
+        complete: true,
+      });
+      // Records of an earlier run go, also without a day key.
+      prepareSnapshotFolder(state);
+      mkdirSync(join(state, 'snapshots', day), { mode: 0o700 });
+      writeFileSync(
+        join(state, 'snapshots', day, `default.${eventId}.before.snapshot`),
+        'a',
+        { mode: 0o600 },
+      );
+      expect(await snapshots.purgeBefore('2026-11-04' as IsoDate)).toEqual({
+        records: 1,
+        dayKeys: 0,
+        complete: true,
+      });
+      expect(readdirSync(join(state, 'snapshots'))).toEqual([]);
+    });
+
+    // Without the folder of state there are no kill switches either, so
+    // nothing writes at all (ADR 0029).
+    it('gives the pipeline none without the folder of state', () => {
+      const config = configOf({
+        ECCLIUM_READ_ONLY: 'false',
+        ECCLIUM_KEYS_DIR: folders().keys,
+      });
+      expect(keepsSnapshots(config)).toBe(false);
+      const composed = setup(config).build();
+      expect(composed.snapshots).toBeUndefined();
+      expect(composed.dayKeys).toBeDefined();
+      expect(Object.hasOwn(built.options[0] as object, 'snapshots')).toBe(
+        false,
+      );
+    });
   });
 
   it('closes the transport again when the level strict has no key', () => {

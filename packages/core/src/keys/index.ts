@@ -8,4 +8,5 @@
  *
  * @packageDocumentation
  */
+export { infoOf } from './info.js';
 export { KeyMaterial, keyMaterialLength } from './key-material.js';

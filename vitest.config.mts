@@ -33,8 +33,10 @@ export default defineConfig({
       // back the result of a tool without its audit line (ADR 0028), and
       // of the operation catalog, which decides what the escape hatch may
       // read (ADR 0067), of the keys, which hold the secret behind the
-      // pseudonyms (ADR 0069), and of the write guard, the only code that
-      // seals plans, issues proofs and writes to ChurchTools (ADR 0029).
+      // pseudonyms (ADR 0069), of the snapshots, which keep the state
+      // before a write (ADR 0031), and of the write guard, the only code
+      // that seals plans, issues proofs and writes to ChurchTools
+      // (ADR 0029).
       thresholds: {
         'packages/core/src/**': {
           statements: 80,
@@ -79,6 +81,12 @@ export default defineConfig({
           lines: 100,
         },
         'packages/core/src/files/**': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        'packages/core/src/snapshots/**': {
           statements: 100,
           branches: 100,
           functions: 100,

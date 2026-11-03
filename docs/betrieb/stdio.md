@@ -288,7 +288,7 @@ Solange die zweite Variable gesetzt ist, nimmt Ecclium auch ein Pseudonym an, da
 
 ## Ordner der Tagesschlüssel
 
-Sobald Ecclium schreibt, mit `ECCLIUM_READ_ONLY=false`, braucht es neben dem Zustandsordner einen zweiten Ordner, den `ECCLIUM_KEYS_DIR` nennt. Darin wird Ecclium je Tag einen zufälligen Schlüssel anlegen, mit dem es den Stand vor jedem Schreibvorgang verschlüsselt sichert, damit `ecclium undo` ihn zurücknehmen kann. Nach 30 Tagen vernichtet es den Schlüssel eines Tages, und was er verschlüsselt hat, lässt sich nicht mehr lesen, auch nicht aus einer Sicherung ([Datenschutz](../privacy.md#tagesschlüssel), [ADR 0031](../adr/0031-persistenz-und-tagesschluessel.md)). Das wirkt nur, wenn der Ordner in keiner Sicherung liegt. In dieser Version legt der Start nur den Ordner `snapshot` an und vernichtet alte Schlüssel, Snapshots kommen mit einer späteren Version.
+Sobald Ecclium schreibt, mit `ECCLIUM_READ_ONLY=false`, braucht es neben dem Zustandsordner einen zweiten Ordner, den `ECCLIUM_KEYS_DIR` nennt. Darin legt Ecclium je Tag einen zufälligen Schlüssel an, der den Schlüssel jedes Snapshots verschlüsselt, also des Stands vor einem Schreibvorgang, mit dem sich dieser zurücknehmen lässt, sobald es `ecclium undo` gibt. Nach 30 Tagen vernichtet es den Schlüssel eines Tages, und was er verschlüsselt hat, lässt sich nicht mehr lesen, auch nicht aus einer Sicherung ([Datenschutz](../privacy.md#tagesschlüssel), [ADR 0031](../adr/0031-persistenz-und-tagesschluessel.md)). Das wirkt nur, wenn der Ordner in keiner Sicherung liegt. Die gesicherten Stände selbst, die Snapshots, liegen verschlüsselt im Ordner `snapshots` des Zustandsordners ([Datenschutz](../privacy.md#snapshots)). Schreib-Tools des Kerns kommen mit einer späteren Version, bis dahin entsteht kein Snapshot.
 
 Legen Sie den Ordner wie den Zustandsordner auf einer lokalen Platte an, als Ihr Benutzer, ausserhalb des Checkouts und neben dem Zustandsordner, nicht darin und nicht darüber. Ist er derselbe, liegt er im Zustandsordner oder enthält er ihn, startet Ecclium nicht. Der Befehl legt den Ordner mit den Rechten 700 an:
 
@@ -309,6 +309,8 @@ Erfasst ein anderes Backup den Ordner, nehmen Sie ihn dort ebenso heraus, und ne
 ```
 
 Ecclium legt darin die Ordner der Zwecke selbst an, etwa `snapshot`, mit den Rechten 700, und die Schlüssel mit 600. `ecclium config check` prüft den Ordner wie den Zustandsordner, mit höchstens 896 Bytes in UTF-8 statt 960, weil die Namen der Schlüssel darin länger sind, und zeigt seinen Pfad nur mit `--show-values`. Vernichtet wird nur, solange Ecclium mit der Variable läuft, auch nur lesend: Lassen Sie sie gesetzt, nachdem Sie das Schreiben abgeschaltet haben, bis 31 Tage um sind, oder löschen Sie den Ordner selbst. Ob lokale Snapshots von Time Machine den Ordner trotz Ausschluss enthalten, ist nicht geprüft. Wer den Rechner verwaltet, kann ihn ebenso lesen wie den Zustandsordner.
+
+Wollen Sie keine Snapshots, setzen Sie `ECCLIUM_SNAPSHOTS` auf `off`. Dann hält Ecclium nichts fest, kein Schreibvorgang lässt sich zurücknehmen, und jeder Start mit `ECCLIUM_READ_ONLY=false` warnt. Den Schlüsselordner braucht Ecclium zum Schreiben trotzdem. Snapshots, die schon liegen, löscht es weiter nach ihrer Frist.
 
 ## Wiki
 

@@ -32,7 +32,7 @@ import { policyHashOf } from '../policy/hash.js';
 import type { Policy } from '../policy/schema.js';
 import { createToolCatalog } from '../registry/index.js';
 import { confirmationSentence } from '../write/confirm.js';
-import { writeSentences } from '../write/guard.js';
+import { type WriteSnapshots, writeSentences } from '../write/guard.js';
 import { policySentences } from '../write/policy-gate.js';
 import { issueProof } from '../write/proof.js';
 import { createToolPipeline, type ToolRequest } from './pipeline.js';
@@ -163,6 +163,7 @@ const setup = (
     readonly tools?: readonly ToolDefinition[];
     readonly killSwitchDir?: string | null;
     readonly policy?: Policy;
+    readonly snapshots?: WriteSnapshots;
   } = {},
 ) => {
   const double = createChurchToolsDouble({ token });
@@ -212,6 +213,9 @@ const setup = (
     ...(options.killSwitchDir === null
       ? {}
       : { killSwitchDir: options.killSwitchDir ?? dir }),
+    ...(options.snapshots === undefined
+      ? {}
+      : { snapshots: options.snapshots }),
   });
   const events = () =>
     auditLines.map((line) => JSON.parse(line) as Record<string, unknown>);
@@ -285,6 +289,41 @@ describe('a write tool in the pipeline', () => {
     });
     expect(file.anchors).toBe(1);
     expect(logs()).toContain('write_committed');
+  });
+
+  it('keeps a snapshot under the ID of the audit event and gives that ID to undo the write', async () => {
+    const saved: { eventId: string; part: string }[] = [];
+    const { double, pipeline, events, planReads } = setup({
+      snapshots: {
+        save: (_ctx, snapshot) => {
+          saved.push({ eventId: snapshot.eventId, part: snapshot.part });
+          return Promise.resolve();
+        },
+      },
+    });
+    confirming.issue = (plan) => issueProof(plan, 'elicitation', now);
+    planReads();
+    double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, page(3, '# Plan\n'), json);
+    double
+      .intercept({ path: pagePath, method: 'PATCH' })
+      .reply(200, '{}', json);
+    double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, page(4, '# Plan\n\nHallo\n'), json);
+    const outcome = await pipeline.call(
+      'ct_example_note_write',
+      note,
+      request(),
+    );
+    const eventId = events()[0]?.['eventId'];
+    expect(saved).toEqual([{ eventId, part: 'before' }]);
+    expect(outcome.ok && outcome.data).toMatchObject({
+      state: 'verified',
+      version: 4,
+      undoId: eventId,
+    });
   });
 
   it('creates a page and names the new page in the audit', async () => {
@@ -385,7 +424,10 @@ describe('a write tool in the pipeline', () => {
   });
 
   it('reports a conflict after a write, with its anchor', async () => {
-    const { double, pipeline, events, file, planReads } = setup();
+    // The echo confirms only a write that a snapshot can take back.
+    const { double, pipeline, events, file, planReads } = setup({
+      snapshots: { save: () => Promise.resolve() },
+    });
     confirming.issue = (plan) => issueProof(plan, 'echo', now);
     planReads();
     double

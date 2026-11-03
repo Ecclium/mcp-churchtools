@@ -14,6 +14,7 @@ import {
 import { makeCanary } from '@ecclium/mcp-churchtools-testkit';
 import { describe, expect, it } from 'vitest';
 
+import { warningText } from '../messages/index.js';
 import { renderConfigReport } from './index.js';
 
 type Environment = Record<string, string>;
@@ -129,6 +130,7 @@ describe('renderConfigReport', () => {
         'Schlüsselordner',
         'keine Tagesschlüssel (‹ECCLIUM_KEYS_DIR› ist nicht gesetzt)',
       ),
+      row('Snapshots', '‹on› (Voreinstellung)'),
       row('Frist in Monaten', '12 (Voreinstellung)'),
       row('Richtlinie', 'keine Datei (Voreinstellung)'),
       row('Subjekt über stdio', '‹local-stdio› (Voreinstellung)'),
@@ -311,6 +313,25 @@ describe('renderConfigReport', () => {
     expect(lines).toContain(
       row('Stufe des Logs', '‹debug› (aus ‹ECCLIUM_LOG_LEVEL›)'),
     );
+  });
+
+  // Turned off, no write can be taken back, which the notices of the start
+  // say (ADR 0031).
+  it('shows snapshots that are off, with the warning of the start', () => {
+    const lines = render({
+      ...minimal(),
+      ECCLIUM_READ_ONLY: 'false',
+      ECCLIUM_KEYS_DIR: '/path/to/keys',
+      ECCLIUM_SNAPSHOTS: 'off',
+    });
+    expect(lines).toContain(
+      row('Snapshots', '‹off› (aus ‹ECCLIUM_SNAPSHOTS›)'),
+    );
+    expect(lines.slice(-3)).toEqual([
+      'Beim Start meldet Ecclium:',
+      `  - ${warningText('snapshots_off')}`,
+      valid,
+    ]);
   });
 
   it('reports the token from the environment with its warning', () => {

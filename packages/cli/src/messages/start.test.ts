@@ -26,6 +26,8 @@ import {
   quotaFolderText,
   refusalMessage,
   refusalText,
+  snapshotFolderMessage,
+  snapshotFolderText,
   type StartNoticeCode,
   startMessage,
   startText,
@@ -63,6 +65,10 @@ const everyMessage: [string, Message][] = [
     `the folder of the day keys ${code}`,
     dayKeyFolderMessage(code),
   ]),
+  ...privateFileCodes.map((code): [string, Message] => [
+    `the folder of the snapshots ${code}`,
+    snapshotFolderMessage(code),
+  ]),
   ['one toolset', toolsetsMessage(['wiki'])],
   ['every toolset', toolsetsMessage(toolsetNames)],
   ...toolsetNames.map((name): [string, Message] => [
@@ -88,6 +94,10 @@ const everyText: [string, string][] = [
   ...privateFileCodes.map((code): [string, string] => [
     `the folder of the day keys ${code}`,
     dayKeyFolderText(code),
+  ]),
+  ...privateFileCodes.map((code): [string, string] => [
+    `the folder of the snapshots ${code}`,
+    snapshotFolderText(code),
   ]),
   ['every toolset', toolsetsText(toolsetNames)],
   ...toolsetNames.map((name): [string, string] => [
@@ -189,6 +199,31 @@ describe('the texts of the start over stdio', () => {
     expect(dayKeyFolderText('unavailable')).toContain('‹ECCLIUM_KEYS_DIR›');
     expect(() => dayKeyFolderText('toString' as PrivateFileCode)).toThrow(
       new TypeError('The day key folder code is unknown.'),
+    );
+  });
+
+  // The loader does not look at the folder of the snapshots, so no text
+  // sends the operator to ecclium config check (ADR 0031).
+  it('gives every reason of the folder of the snapshots a text of its own, without a path', () => {
+    const whats = privateFileCodes.map(
+      (code) => snapshotFolderMessage(code).what,
+    );
+    expect(new Set(whats).size).toBe(privateFileCodes.length);
+    for (const code of privateFileCodes) {
+      expect(snapshotFolderText(code)).toBe(
+        textOf(snapshotFolderMessage(code)),
+      );
+      expect(snapshotFolderText(code)).toContain('bricht ab');
+      expect(snapshotFolderText(code)).not.toMatch(/\/[a-z]/);
+      expect(snapshotFolderText(code)).not.toContain('config check');
+      expect(snapshotFolderText(code)).not.toBe(dayKeyFolderText(code));
+    }
+    expect(snapshotFolderText('unavailable')).toContain(
+      '‹snapshots› im Ordner aus ‹ECCLIUM_STATE_DIR›',
+    );
+    expect(snapshotFolderText('unsafe')).toContain('chmod 700');
+    expect(() => snapshotFolderText('toString' as PrivateFileCode)).toThrow(
+      new TypeError('The snapshot folder code is unknown.'),
     );
   });
 
@@ -305,6 +340,8 @@ describe('the texts of the start over stdio', () => {
       'quotaFolderText',
       'refusalMessage',
       'refusalText',
+      'snapshotFolderMessage',
+      'snapshotFolderText',
       'startMessage',
       'startText',
       'toolsetsMessage',
