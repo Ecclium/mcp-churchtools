@@ -413,7 +413,7 @@ export const writeResultSchema: ZodType<WriteResult, WriteResult> = z.object({
       token: classify(z.string().min(1).max(1024), 'none'),
       summary: classify(z.string().min(1).max(2000), 'untrusted'),
       diff: z.array(classify(z.string().max(65_536), 'untrusted')).max(10_000),
-      title: classify(z.string().max(4000), 'untrusted').optional(),
+      title: classify(z.string().max(12_000), 'untrusted').optional(),
     })
     .optional(),
 });

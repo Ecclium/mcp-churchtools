@@ -1447,4 +1447,64 @@ describe('the echo', () => {
       error: { code: 'policy_denied', message: confirmationSentences.tooMany },
     });
   });
+
+  it('gives no token for a diff too long for a dialog', async () => {
+    const long = Array.from({ length: 121 }, (_, i) => `Zeile ${String(i)}`)
+      .join('\n')
+      .concat('\n');
+    const tool = customTool('ct_test_long_echo', (write) =>
+      write.plan({ ...update, text: long }),
+    );
+    const { double, pipeline, planReads } = setup({
+      snapshots,
+      echo: true,
+      coreTools: [tool],
+    });
+    planReads();
+    const outcome = await pipeline.call(tool.name, { text: 'x' }, request());
+    expect(outcome).toEqual({
+      ok: false,
+      error: { code: 'confirmation_required', message: confirmationSentence },
+    });
+    assertOnlyReads(double);
+  });
+
+  it('names the summary in the token as the model reads it, masked in strict', async () => {
+    const { double, pipeline } = setup({ snapshots, echo: true });
+    double
+      .intercept({ path: '/api/permissions/global', method: 'GET' })
+      .reply(200, rights, json);
+    const titled = (version: number, text: string) =>
+      JSON.stringify({
+        data: {
+          title: 'Kontakt max.mustermann@example.org',
+          isMarkdown: true,
+          version,
+          text,
+        },
+      });
+    double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, titled(3, '# Plan\n'), json);
+    const strict = { redaction: 'strict' as const };
+    const planned = confirmOf(
+      await pipeline.call('ct_example_note_write', note, request(strict)),
+    );
+    expect(planned.summary).not.toContain('max.mustermann@example.org');
+    double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, titled(3, '# Plan\n'), json);
+    double
+      .intercept({ path: pagePath, method: 'PATCH' })
+      .reply(200, '{}', json);
+    double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, titled(4, '# Plan\n\nHallo\n'), json);
+    const confirmed = await pipeline.call(
+      'ct_write_confirm',
+      { token: planned.token, summary: planned.summary },
+      request(strict),
+    );
+    expect(confirmed.ok && confirmed.data).toMatchObject({ state: 'verified' });
+  });
 });

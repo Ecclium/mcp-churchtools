@@ -87,7 +87,7 @@ export const confirmationSentences = Object.freeze({
   echoToken:
     'The token is not valid or has expired, so nothing was written. Plan the write again.',
   echoSummary:
-    'The summary does not match the planned write, so nothing was written. Send the summary exactly as the write tool returned it.',
+    'The summary does not match the planned write, so nothing was written. Plan the write again and send its summary exactly as the write tool returns it.',
   echoRefused:
     'This write cannot be confirmed with ct_write_confirm, so nothing was written. It needs a question to the person in the client or the approval of the operator.',
 } as const);
@@ -269,6 +269,17 @@ const notThisCall = refused(
   'confirmation_required',
   confirmationSentences.notThisCall,
 );
+
+// A summary as the model may send it back: with the markers of the data
+// envelope around it, as the result carried it, or without them.
+const unwrapped = (summary: string): string => {
+  const open = summary.indexOf('>>');
+  if (!summary.startsWith('<<data-') || open < 0) return summary;
+  const close = `<</${summary.slice(2, open)}>>`;
+  return summary.endsWith(close) && summary.length >= open + 2 + close.length
+    ? summary.slice(open + 2, summary.length - close.length)
+    : summary;
+};
 
 const hexOf = (bytes: Uint8Array): string =>
   Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -462,7 +473,7 @@ export function createConfirmations(
     }
     if (
       typeof summary !== 'string' ||
-      summaryDigest(summary) !== claims.summary
+      summaryDigest(unwrapped(summary)) !== claims.summary
     ) {
       ctx.log.warn('write_echo_refused', { code: 'confirmation_required' });
       return refused(

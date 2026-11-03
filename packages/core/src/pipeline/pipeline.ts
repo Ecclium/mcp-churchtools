@@ -119,6 +119,7 @@ import { createReadAccess, type ReadAccess } from './read-api.js';
 import {
   collectOutputRefs,
   fitsInput,
+  maskFreeTextAt,
   outputIdsFit,
   markUntrusted,
   maxResultBytes,
@@ -995,7 +996,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         ctx,
         writing,
         result,
-        { input: parsedInput.data, elicitation },
+        { input: parsedInput.data, elicitation, redaction },
         refs,
       );
       if (written.ok === 'input') {
@@ -1143,7 +1144,11 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     ctx: TenantContext,
     writing: WriteAccess,
     returned: unknown,
-    call: { readonly input: unknown; readonly elicitation: boolean },
+    call: {
+      readonly input: unknown;
+      readonly elicitation: boolean;
+      readonly redaction: RedactionLevel;
+    },
     refs: ObjectRefCollector,
   ): Promise<
     WriteEnd | { readonly ok: 'input'; readonly question: ConfirmationQuestion }
@@ -1168,12 +1173,18 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       outcome.plan,
     );
     if (way === 'echo' && confirmations !== undefined) {
-      const echo = await confirmations.echo(ctx, outcome.plan, text);
+      // The model reads the summary masked at the level of the call and
+      // sends it back so; the token names the summary as it reads it.
+      const shown = Object.freeze({
+        ...text,
+        summary: maskFreeTextAt(text.summary, call.redaction),
+      });
+      const echo = await confirmations.echo(ctx, outcome.plan, shown);
       if (echo.kind === 'refused') {
         return { ok: false, failure: writeFailure(run, echo.error, false) };
       }
       run.write = Object.freeze({ writeState: 'planned', sent: false });
-      return { ok: true, result: plannedResult(target, echo.token, text) };
+      return { ok: true, result: plannedResult(target, echo.token, shown) };
     }
     if (way !== 'question' || confirmations === undefined) {
       return {

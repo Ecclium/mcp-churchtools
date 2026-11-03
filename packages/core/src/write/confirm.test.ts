@@ -135,12 +135,14 @@ describe('the way of a confirmation', () => {
   });
 
   it('sends a diff too long for a question to the queue, not to the echo', () => {
-    expect(
-      confirmationWayOf(
-        { setting: 'echo-allowed', elicitation: true, fits: false },
-        echoPlan,
-      ),
-    ).toBe('queue');
+    for (const elicitation of [true, false]) {
+      expect(
+        confirmationWayOf(
+          { setting: 'echo-allowed', elicitation, fits: false },
+          echoPlan,
+        ),
+      ).toBe('queue');
+    }
   });
 
   it('takes the echo without elicitation only where setting and plan allow it', () => {
@@ -705,5 +707,37 @@ describe('the echo', () => {
     expect(
       await confirmations.confirmEcho(ctx, made.token, text.summary),
     ).toMatchObject({ error: { message: confirmationSentences.gone } });
+  });
+
+  it('takes the summary with the markers of the data envelope around it, and only whole ones', async () => {
+    const ctx = contextOf([]);
+    const { confirmations } = setup();
+    const boundary = 'a1b2c3d4e5f60718';
+    const wrapped = `<<data-${boundary}>>${text.summary}<</data-${boundary}>>`;
+    expect(
+      (
+        await confirmations.confirmEcho(
+          ctx,
+          await tokenOf(confirmations, ctx),
+          wrapped,
+        )
+      ).kind,
+    ).toBe('confirmed');
+    for (const summary of [
+      `<<data-${boundary}>>${text.summary}`,
+      `<<data-${boundary}${text.summary}`,
+      `<<data-x>><</data-x>`,
+    ]) {
+      const token = await tokenOf(
+        confirmations,
+        ctx,
+        sealed({ contentHash: contentHashOf([summary]) }),
+      );
+      expect(
+        await confirmations.confirmEcho(ctx, token, summary),
+      ).toMatchObject({
+        error: { message: confirmationSentences.echoSummary },
+      });
+    }
   });
 });
