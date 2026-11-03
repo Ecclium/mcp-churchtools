@@ -10,3 +10,8 @@ export {
   prepareSnapshotFolder,
   snapshotFolderName,
 } from './file-store.js';
+export {
+  createSnapshotKeeper,
+  type LoadedSnapshot,
+  type SnapshotKeeper,
+} from './keeper.js';
