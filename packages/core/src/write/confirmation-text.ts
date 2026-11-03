@@ -13,7 +13,11 @@
  * also one that turns the direction of the text, cannot be seen or could
  * control a terminal. Before it goes into the text, every such character
  * becomes a visible `\u{…}` and a backslash is doubled, so that the person
- * sees each change and the page cannot fake that form.
+ * sees each change and the page cannot fake that form. A combining mark at
+ * the start of a line is shown the same way, since it would join the sign
+ * of the diff before it, and so are the quotes of a title, since they
+ * would close the quote it stands in. The title of a new page is written
+ * in full, so the question shows it in full on a line of its own.
  *
  * A diff longer than a person can read in a dialog gets no question: the
  * plan goes to the queue of the operator, where it is shown whole (decided
@@ -25,7 +29,13 @@
 import type { WriteIntentKind } from '@ecclium/mcp-churchtools-plugin-api';
 import { z } from 'zod';
 
-import { diffLines, type LineDiff, renderDiff } from '../diff/index.js';
+import {
+  crLfMarker,
+  diffLines,
+  type LineDiff,
+  noLineEndMarker,
+  renderDiff,
+} from '../diff/index.js';
 
 /**
  * The most a question shows: the changed lines of the diff, removed and
@@ -61,6 +71,11 @@ export interface ConfirmationPreview {
 export interface ConfirmationText {
   /** One sentence in German that says what the write does. */
   readonly summary: string;
+  /**
+   * The whole title of a new page, made visible: it is written as it is,
+   * so the person sees all of it, not only the cut one of the summary.
+   */
+  readonly title?: string;
   /** The diff as lines to read, every character visible. */
   readonly diff: readonly string[];
   /** Whether the diff is short enough for a question. */
@@ -115,7 +130,7 @@ const isHidden = (point: number): boolean =>
  * @returns The text with every hidden character visible.
  * @example
  * ```ts
- * visibleText('a‮b\\c'); // 'a\\u{202e}b\\\\c'
+ * visibleText('a\u202eb\\c'); // 'a\\u{202e}b\\\\c'
  * ```
  */
 export function visibleText(text: string): string {
@@ -131,6 +146,20 @@ export function visibleText(text: string): string {
   return shown;
 }
 
+// The quotes the fixed sentences put around a title, as code points.
+const quotes: readonly number[] = Object.freeze([0xab, 0xbb, 0x2039, 0x203a]);
+
+// A title as the text shows it: made visible, with its quotes as code points
+// too, so that it cannot close the quote it stands in.
+const titleText = (title: string): string => {
+  let shown = '';
+  for (const character of visibleText(title)) {
+    const point = Number(character.codePointAt(0));
+    shown += quotes.includes(point) ? `\\u{${point.toString(16)}}` : character;
+  }
+  return shown;
+};
+
 // A title as a summary names it: at most 80 code points of the original,
 // then made visible, so that a cut never splits a visible form.
 const titleOf = (title: string): string => {
@@ -139,7 +168,39 @@ const titleOf = (title: string): string => {
     points.length > maxSummaryTitleLength
       ? `${points.slice(0, maxSummaryTitleLength - 1).join('')}…`
       : title;
-  return visibleText(cut);
+  return titleText(cut);
+};
+
+// The combining marks, which join the character before them.
+const combiningRanges: readonly (readonly [number, number])[] = Object.freeze([
+  [0x0300, 0x036f],
+  [0x1ab0, 0x1aff],
+  [0x1dc0, 0x1dff],
+  [0x20d0, 0x20ff],
+  [0xfe20, 0xfe2f],
+]);
+
+const isCombining = (point: number): boolean =>
+  combiningRanges.some(([from, to]) => point >= from && point <= to);
+
+// A line of the diff as the text shows it. The header of a hunk and the two
+// marks of a line ending come from the core and stay as they are. Every
+// other line is its sign and a line of the page, which is made visible, a
+// combining mark at its start too, so that it cannot join the sign.
+const shownLine = (line: string): string => {
+  if (
+    line.startsWith('@@ ') ||
+    line === noLineEndMarker ||
+    line === crLfMarker
+  ) {
+    return line;
+  }
+  const content = visibleText(line.slice(1));
+  const first = Number(content.codePointAt(0));
+  // Every combining mark lies in the basic plane, one code unit long.
+  return isCombining(first)
+    ? `${line.slice(0, 1)}\\u{${first.toString(16)}}${content.slice(1)}`
+    : `${line.slice(0, 1)}${content}`;
 };
 
 const lines = (count: number): string =>
@@ -196,10 +257,17 @@ export function confirmationTextOf(
       summary = `An die Seite «${title}» in der Kategorie ${category} einen Abschnitt mit ${lines(added)} anhängen.`;
       break;
   }
-  const shown = Object.freeze(renderDiff(diff).map(visibleText));
-  const characters = shown.reduce((sum, line) => sum + line.length + 1, 0);
+  const shown = Object.freeze(renderDiff(diff).map(shownLine));
+  // The whole title of a new page goes into the question, so it counts.
+  const whole =
+    preview.kind === 'wikiPageCreate' ? titleText(preview.title) : undefined;
+  const characters = shown.reduce(
+    (sum, line) => sum + line.length + 1,
+    whole?.length ?? 0,
+  );
   return Object.freeze({
     summary,
+    ...(whole === undefined ? {} : { title: whole }),
     diff: shown,
     fits:
       added + removed <= confirmationLimits.changedLines &&
@@ -227,6 +295,9 @@ export function confirmationMessage(text: ConfirmationText): string {
     '',
     text.summary,
     '',
+    ...(text.title === undefined
+      ? []
+      : [`Titel der neuen Seite: «${text.title}»`, '']),
     ...text.diff,
     '',
     'Wählen Sie «Ja», damit Ecclium genau diese Änderung schreibt. Ohne Bestätigung schreibt Ecclium nichts.',

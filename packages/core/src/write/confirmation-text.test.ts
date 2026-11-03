@@ -139,6 +139,95 @@ describe('the text of a confirmation', () => {
     );
   });
 
+  it('shows the whole title of a new page, since it is written whole, and counts it', () => {
+    const long = `${'T'.repeat(200)}‮${'e'.repeat(54)}`;
+    const text = confirmationTextOf(
+      preview({
+        kind: 'wikiPageCreate',
+        title: long,
+        before: '',
+        after: 'x\n',
+      }),
+    );
+    expect(text.summary).toContain(
+      `«${'T'.repeat(maxSummaryTitleLength - 1)}…»`,
+    );
+    expect(text.title).toBe(`${'T'.repeat(200)}\\u{202e}${'e'.repeat(54)}`);
+    expect(confirmationMessage(text).split('\n')).toContain(
+      `Titel der neuen Seite: «${text.title ?? ''}»`,
+    );
+    // A change keeps its title in the summary only.
+    expect(confirmationTextOf(preview({})).title).toBeUndefined();
+    // The title counts against the limit of characters: the header of 16
+    // and the line of 11'972 leave room for 12 more.
+    const wide = 'x'.repeat(11_970);
+    expect(
+      confirmationTextOf(
+        preview({
+          kind: 'wikiPageCreate',
+          title: 'kurz',
+          before: '',
+          after: `${wide}\n`,
+        }),
+      ).fits,
+    ).toBe(true);
+    expect(
+      confirmationTextOf(
+        preview({
+          kind: 'wikiPageCreate',
+          title: 't'.repeat(20),
+          before: '',
+          after: `${wide}\n`,
+        }),
+      ).fits,
+    ).toBe(false);
+  });
+
+  it('shows the quotes of a title as code points, so that it cannot close the quote of the sentence', () => {
+    const text = confirmationTextOf(
+      preview({
+        kind: 'wikiPageCreate',
+        title: 'Plan» in der Kategorie 5 mit 1 Zeile anlegen. «Plan ‹›',
+        before: '',
+        after: 'x\n',
+      }),
+    );
+    expect(text.summary).toBe(
+      'Neue Seite «Plan\\u{bb} in der Kategorie 5 mit 1 Zeile anlegen. \\u{ab}Plan \\u{2039}\\u{203a}» in der Kategorie 12 mit 1 Zeile anlegen.',
+    );
+    expect(text.title).toContain('\\u{bb}');
+  });
+
+  it('keeps the marks of the diff, and shows a combining mark at the start of a line', () => {
+    const text = confirmationTextOf(
+      preview({
+        kind: 'wikiPageUpdate',
+        before: '̶alt\n',
+        after: 'neu\\',
+      }),
+    );
+    expect(text.diff).toEqual([
+      '@@ -1,1 +1,1 @@',
+      '-\\u{336}alt',
+      '+neu\\\\',
+      '\\ No newline at end of file',
+    ]);
+    // A combining mark later in a line joins the text before it, which is
+    // the page's own.
+    expect(
+      confirmationTextOf(
+        preview({ kind: 'wikiPageUpdate', before: '', after: 'a̶\n' }),
+      ).diff,
+    ).toEqual(['@@ -0,0 +1,1 @@', '+a̶']);
+  });
+
+  it('keeps an empty line of the page as its sign alone', () => {
+    const text = confirmationTextOf(
+      preview({ kind: 'wikiPageUpdate', before: '', after: '\n' }),
+    );
+    expect(text.diff).toEqual(['@@ -0,0 +1,1 @@', '+']);
+  });
+
   it('fits up to 120 changed lines and 12000 characters, and no more', () => {
     expect(confirmationLimits).toEqual({
       changedLines: 120,
