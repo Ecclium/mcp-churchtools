@@ -3,9 +3,9 @@
  * setting with its origin, the problems and the notices of the start, and
  * never a secret: the token only as «verborgen» with its source, never the
  * path of the token file and never a refused value. The host, a subject
- * other than the default and the folder of state are masked unless the
- * operator asks for them, so that the output fits into a public issue as
- * it is.
+ * other than the default and the folders of state and of keys are masked
+ * unless the operator asks for them, so that the output fits into a public
+ * issue as it is.
  *
  * @packageDocumentation
  */
@@ -28,8 +28,8 @@ export interface ReportOptions {
   /** Whether the loader found the configuration valid. */
   readonly valid: boolean;
   /**
-   * Shows the host, a subject other than the default and the folder of
-   * state.
+   * Shows the host, a subject other than the default and the folders of
+   * state and of keys.
    */
   readonly showValues: boolean;
   /**
@@ -50,6 +50,7 @@ const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
   pseudonymKeyPrevious: 'Früherer Schlüssel',
   toolsets: 'Toolsets',
   stateDir: 'Zustandsordner',
+  keysDir: 'Schlüsselordner',
   auditRetentionMonths: 'Frist in Monaten',
   policy: 'Richtlinie',
   stdioSubject: 'Subjekt über stdio',
@@ -71,7 +72,7 @@ const quote = (text: string): string => `‹${text}›`;
 
 const inconsistent = 'The report of the configuration is inconsistent.';
 
-type Hidden = 'host' | 'subject' | 'path' | 'policy';
+type Hidden = 'host' | 'subject' | 'path' | 'keys' | 'policy';
 
 interface Value {
   readonly text: string;
@@ -97,12 +98,14 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
   if (setting.key === 'policy' && setting.origin === 'default') {
     return { text: 'keine Datei' };
   }
-  // Only the folder of state and the key files may stay unset without a
-  // default.
+  // Only the folders of state and of keys and the key files may stay unset
+  // without a default.
   if (setting.origin === 'unset') {
     switch (setting.key) {
       case 'stateDir':
         return { text: 'keine Audit-Datei' };
+      case 'keysDir':
+        return { text: 'keine Tagesschlüssel' };
       case 'pseudonymKey':
         return { text: 'kein Schlüssel' };
       case 'pseudonymKeyPrevious':
@@ -143,7 +146,12 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
       if (!showValues) {
         return {
           text: masked,
-          hides: setting.key === 'policy' ? 'policy' : 'path',
+          hides:
+            setting.key === 'policy'
+              ? 'policy'
+              : setting.key === 'keysDir'
+                ? 'keys'
+                : 'path',
         };
       }
       return isPrintable(shown.value)
@@ -179,6 +187,7 @@ const hiddenNames: Readonly<Record<Hidden, readonly [string, string]>> =
     host: ['der Host', 'ihn'],
     subject: ['das Subjekt', 'es'],
     path: ['der Zustandsordner', 'ihn'],
+    keys: ['der Schlüsselordner', 'ihn'],
     policy: ['der Pfad der Richtlinie', 'ihn'],
   });
 
@@ -289,8 +298,8 @@ export function renderConfigReport(
     // In the order of the note, whatever the order of the settings.
     lines.push(
       maskedNote(
-        (['host', 'subject', 'path', 'policy'] as const).filter((entry) =>
-          hidden.has(entry),
+        (['host', 'subject', 'path', 'keys', 'policy'] as const).filter(
+          (entry) => hidden.has(entry),
         ),
       ),
     );

@@ -16,6 +16,8 @@ export {
   type ConfigWarningCode,
   defaultStdioSubject,
   type EccliumConfig,
+  type KeysDirCode,
+  keysDirCodes,
   loadConfig,
   maxReportedProblems,
   proxyVariableName,
@@ -48,6 +50,7 @@ export {
   yamlDebugVariableNames,
 } from './config/index.js';
 export { freeTextMarkers } from './redaction/index.js';
+export { type PrivateFileCode, privateFileCodes } from './files/index.js';
 export {
   defaultPolicy,
   type InteractiveEntry,

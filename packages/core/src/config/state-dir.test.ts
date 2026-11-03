@@ -9,13 +9,18 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { dayKeyPurposes } from '@ecclium/mcp-churchtools-plugin-api';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { isEventName } from '../logger/index.js';
 import {
   auditDirName,
+  checkKeysDir,
   checkStateDir,
   isNormalizedAbsolutePath,
+  type KeysDirCode,
+  keysDirCodes,
+  maxKeysDirLength,
   maxStateDirLength,
   quotaDirName,
   type StateDirCode,
@@ -44,6 +49,8 @@ interface FakeOptions {
   readonly folder?: Entry;
   readonly audit?: Entry;
   readonly quota?: Entry;
+  readonly snapshot?: Entry;
+  readonly queue?: Entry;
   readonly getuid?: () => number | undefined;
   readonly constants?: StateDirFileSystem['constants'];
 }
@@ -62,11 +69,16 @@ const fake = (options: FakeOptions = {}): Fake => {
   const fs: StateDirFileSystem = {
     lstatSync: (target) => {
       looked.push(target);
+      const missing = { error: fsError('ENOENT') };
       const entry = target.endsWith(`/${auditDirName}`)
-        ? (options.audit ?? { error: fsError('ENOENT') })
+        ? (options.audit ?? missing)
         : target.endsWith(`/${quotaDirName}`)
-          ? (options.quota ?? { error: fsError('ENOENT') })
-          : (options.folder ?? {});
+          ? (options.quota ?? missing)
+          : target.endsWith('/snapshot')
+            ? (options.snapshot ?? missing)
+            : target.endsWith('/queue')
+              ? (options.queue ?? missing)
+              : (options.folder ?? {});
       if ('error' in entry) throw entry.error;
       return {
         isDirectory: () => {
@@ -91,6 +103,13 @@ const fake = (options: FakeOptions = {}): Fake => {
 const codeOf = (options: FakeOptions, value = path): string =>
   ((result) => (result.ok ? 'ok' : result.code))(
     checkStateDir(value, fake(options).fs),
+  );
+
+const keysPath = '/path/to/keys';
+
+const keysCodeOf = (options: FakeOptions, value = keysPath): string =>
+  ((result) => (result.ok ? 'ok' : result.code))(
+    checkKeysDir(value, fake(options).fs),
   );
 
 describe('isNormalizedAbsolutePath', () => {
@@ -390,6 +409,193 @@ describe('stateDirCodes', () => {
         quota_dir_owner: () => codeOf({ quota: { uid: 7 } }),
         quota_dir_mode: () => codeOf({ quota: { mode: 0o40707 } }),
         quota_dir_unsafe: () => codeOf({ quota: { error: fsError('EIO') } }),
+      };
+      expect(cases[code]()).toBe(code);
+    },
+  );
+});
+
+// The folder of keys gets the checks of the folder of state with codes of
+// its own (ADR 0031), and looks at the folders of the purposes of the day
+// keys instead of audit and quota.
+describe('checkKeysDir with file functions', () => {
+  it('passes a folder of the user with 0700 and looks at the folder of each purpose', () => {
+    const { fs, looked } = fake();
+    expect(checkKeysDir(keysPath, fs)).toEqual({ ok: true });
+    expect(looked).toEqual([
+      keysPath,
+      ...dayKeyPurposes.map((purpose) => `${keysPath}/${purpose}`),
+    ]);
+  });
+
+  it('passes folders of the purposes that pass the same checks', () => {
+    expect(keysCodeOf({ snapshot: {}, queue: { mode: 0o40700 } })).toBe('ok');
+  });
+
+  it('refuses the platform before the form of the path, without looking', () => {
+    const { fs, looked } = fake({ constants: { O_NOFOLLOW: 1 } });
+    expect(checkKeysDir('keys', fs)).toEqual({
+      ok: false,
+      code: 'keys_dir_platform',
+    });
+    expect(looked).toEqual([]);
+  });
+
+  it.each([
+    ['keys', 'keys_dir_relative'],
+    [`${keysPath}/`, 'keys_dir_not_normalized'],
+    ['/path//to/keys', 'keys_dir_not_normalized'],
+    [`/${'\u00e4'.repeat(448)}`, 'keys_dir_too_long'],
+  ])('refuses %j with %s without looking at the disk', (value, code) => {
+    const { fs, looked } = fake();
+    expect(checkKeysDir(value, fs)).toMatchObject({ code });
+    expect(looked).toEqual([]);
+  });
+
+  // An umlaut takes two bytes in UTF-8: 447 of them and the slash are 895
+  // bytes, 448 are 897.
+  it('counts the length of the path in bytes', () => {
+    expect(keysCodeOf({}, `/${'\u00e4'.repeat(447)}`)).toBe('ok');
+    expect(keysCodeOf({}, `/${'a'.repeat(maxKeysDirLength - 1)}`)).toBe('ok');
+    expect(keysCodeOf({}, `/${'a'.repeat(maxKeysDirLength)}`)).toBe(
+      'keys_dir_too_long',
+    );
+  });
+
+  it('gives frozen results without a prototype and names no path', () => {
+    const refused = checkKeysDir(
+      keysPath,
+      fake({ folder: { error: fsError('EACCES') } }).fs,
+    );
+    for (const result of [checkKeysDir(keysPath, fake().fs), refused]) {
+      expect(Object.isFrozen(result)).toBe(true);
+      expect(Object.getPrototypeOf(result)).toBeNull();
+    }
+    expect(JSON.stringify(refused)).not.toContain('path');
+  });
+
+  it('throws for a path that is no string', () => {
+    expect(() => checkKeysDir(1 as unknown as string, fake().fs)).toThrow(
+      new TypeError('The path of the folder of keys must be a string.'),
+    );
+  });
+
+  it('looks at the folders of the root folder without a double slash', () => {
+    const { fs, looked } = fake({ folder: { uid: 0 }, getuid: () => 0 });
+    expect(checkKeysDir('/', fs)).toEqual({ ok: true });
+    expect(looked).toEqual(['/', '/snapshot', '/queue']);
+  });
+
+  it('reports the folder of the snapshots before the one of the queue', () => {
+    expect(keysCodeOf({ snapshot: { mode: 0o40750 }, queue: { uid: 0 } })).toBe(
+      'snapshot_keys_dir_mode',
+    );
+  });
+});
+
+describe('checkKeysDir on the disk', () => {
+  const base = mkdtempSync(join(tmpdir(), 'ecclium-keys-dir-'));
+  const fresh = (name: string, mode = 0o700): string => {
+    const folder = join(base, name);
+    mkdirSync(folder);
+    chmodSync(folder, mode);
+    return folder;
+  };
+
+  afterAll(() => {
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  it('passes a folder with 0700 and a folder snapshot with 0700', () => {
+    const folder = fresh('good');
+    mkdirSync(join(folder, 'snapshot'), { mode: 0o700 });
+    chmodSync(join(folder, 'snapshot'), 0o700);
+    expect(checkKeysDir(folder)).toEqual({ ok: true });
+  });
+
+  it('refuses a missing folder, an open one and a link', () => {
+    expect(checkKeysDir(join(base, 'missing'))).toMatchObject({
+      code: 'keys_dir_missing',
+    });
+    expect(checkKeysDir(fresh('open', 0o755))).toMatchObject({
+      code: 'keys_dir_mode',
+    });
+    const link = join(base, 'link');
+    symlinkSync(fresh('target'), link);
+    expect(checkKeysDir(link)).toMatchObject({ code: 'keys_dir_symlink' });
+  });
+
+  it('refuses a folder queue that is a link and a file named snapshot', () => {
+    const linked = fresh('queue-link');
+    symlinkSync(fresh('queue-target'), join(linked, 'queue'));
+    expect(checkKeysDir(linked)).toMatchObject({
+      code: 'queue_keys_dir_symlink',
+    });
+    const file = fresh('snapshot-file');
+    writeFileSync(join(file, 'snapshot'), '', { mode: 0o600 });
+    expect(checkKeysDir(file)).toMatchObject({
+      code: 'snapshot_keys_dir_not_directory',
+    });
+  });
+});
+
+describe('keysDirCodes', () => {
+  it('is frozen, has each code once and shares none with the folder of state', () => {
+    expect(Object.isFrozen(keysDirCodes)).toBe(true);
+    expect(new Set(keysDirCodes).size).toBe(keysDirCodes.length);
+    for (const code of keysDirCodes) {
+      expect(stateDirCodes as readonly string[]).not.toContain(code);
+    }
+  });
+
+  it('fit the name of a log event behind a prefix', () => {
+    for (const code of keysDirCodes) {
+      expect(isEventName(`config_${code}`), code).toBe(true);
+    }
+  });
+
+  // .<tenant>.<YYYY-MM-DD>.key.<pid>.<16 hex>.tmp, the temporary name of a
+  // day key that is being written, with the longest tenant and pid.
+  it('keep the path of the longest day key below PATH_MAX of macOS', () => {
+    const name = `.${'a'.repeat(63)}.2026-11-03.key.${'9'.repeat(10)}.${'f'.repeat(16)}.tmp`;
+    const longest = `/${'a'.repeat(maxKeysDirLength - 1)}/snapshot/${name}`;
+    expect(longest.length).toBeLessThan(1024);
+    expect(
+      `/${'a'.repeat(maxStateDirLength - 1)}/snapshot/${name}`.length,
+    ).toBeGreaterThan(1024);
+  });
+
+  it.each([...keysDirCodes])(
+    'are each given by a case of the check: %s',
+    (code) => {
+      const cases: Record<KeysDirCode, () => string> = {
+        keys_dir_platform: () => keysCodeOf({ getuid: () => undefined }),
+        keys_dir_relative: () => keysCodeOf({}, 'keys'),
+        keys_dir_not_normalized: () => keysCodeOf({}, `${keysPath}/.`),
+        keys_dir_too_long: () => keysCodeOf({}, `/${'a'.repeat(900)}`),
+        keys_dir_missing: () =>
+          keysCodeOf({ folder: { error: fsError('ENOENT') } }),
+        keys_dir_symlink: () => keysCodeOf({ folder: { symlink: true } }),
+        keys_dir_not_directory: () =>
+          keysCodeOf({ folder: { directory: false } }),
+        keys_dir_owner: () => keysCodeOf({ folder: { uid: 7 } }),
+        keys_dir_mode: () => keysCodeOf({ folder: { mode: 0o40770 } }),
+        keys_dir_unsafe: () => keysCodeOf({ folder: { throws: true } }),
+        snapshot_keys_dir_symlink: () =>
+          keysCodeOf({ snapshot: { symlink: true } }),
+        snapshot_keys_dir_not_directory: () =>
+          keysCodeOf({ snapshot: { directory: false } }),
+        snapshot_keys_dir_owner: () => keysCodeOf({ snapshot: { uid: 7 } }),
+        snapshot_keys_dir_mode: () =>
+          keysCodeOf({ snapshot: { mode: 0o40707 } }),
+        snapshot_keys_dir_unsafe: () =>
+          keysCodeOf({ snapshot: { error: fsError('EIO') } }),
+        queue_keys_dir_symlink: () => keysCodeOf({ queue: { symlink: true } }),
+        queue_keys_dir_not_directory: () =>
+          keysCodeOf({ queue: { directory: false } }),
+        queue_keys_dir_owner: () => keysCodeOf({ queue: { uid: 7 } }),
+        queue_keys_dir_mode: () => keysCodeOf({ queue: { mode: 0o40707 } }),
+        queue_keys_dir_unsafe: () => keysCodeOf({ queue: { throws: true } }),
       };
       expect(cases[code]()).toBe(code);
     },

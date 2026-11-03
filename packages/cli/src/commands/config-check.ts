@@ -26,14 +26,17 @@ export interface ConfigCheckOptions {
    */
   readonly execArgv: readonly string[];
   /**
-   * Shows the host, a subject other than the default and the folder of
-   * state.
+   * Shows the host, a subject other than the default and the folders of
+   * state and of keys.
    */
   readonly showValues: boolean;
   readonly output: Output;
   /** Replaces the file functions for the token file, for tests. */
   readonly tokenFiles?: TokenFileSystem | undefined;
-  /** Replaces the file functions for the folder of state, for tests. */
+  /**
+   * Replaces the file functions for the folders of state and of keys, for
+   * tests.
+   */
   readonly stateDirFiles?: StateDirFileSystem | undefined;
   /** Replaces the loader, for tests. */
   readonly load?: ((sources: ConfigSources) => ConfigResult) | undefined;

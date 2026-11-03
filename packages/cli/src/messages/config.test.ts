@@ -36,6 +36,7 @@ const variableOf = (code: ConfigProblemCode): string => {
   if (code.startsWith('token_file_') || code === 'token_missing') {
     return 'ECCLIUM_CHURCHTOOLS_TOKEN_FILE';
   }
+  if (code.includes('keys_dir')) return 'ECCLIUM_KEYS_DIR';
   switch (code) {
     case 'token_conflict':
     case 'token_invalid':
@@ -363,6 +364,67 @@ describe('the catalog of messages', () => {
     expect(message.action).toContain('Rechten 700');
   });
 
+  // The folder of the day keys (ADR 0031): needed to write, never in the
+  // folder of state, and over stdio only.
+  it('asks for the folder of the day keys when the server writes, or for reading only', () => {
+    const message = problemMessage({
+      code: 'keys_dir_required',
+      variable: 'ECCLIUM_KEYS_DIR',
+    });
+    expect(message.what).toBe(
+      '‹ECCLIUM_READ_ONLY› ist ‹false›, aber ‹ECCLIUM_KEYS_DIR› ist nicht gesetzt.',
+    );
+    expect(message.why).toContain('Snapshot');
+    expect(message.why).toContain('30 Tagen');
+    expect(message.action).toContain('Rechten 700');
+    expect(message.action).toContain('ausserhalb jeder Sicherung');
+    expect(message.action).toContain('‹ECCLIUM_READ_ONLY› auf ‹true›');
+  });
+
+  it('names the folder of state for a folder of keys in it', () => {
+    const message = problemMessage({
+      code: 'keys_dir_in_state_dir',
+      variable: 'ECCLIUM_KEYS_DIR',
+    });
+    expect(message.what).toContain('‹ECCLIUM_STATE_DIR›');
+    expect(message.why).toContain('Sicherung');
+    expect(message.action).toContain('ausserhalb des Zustandsordners');
+  });
+
+  it('names the folder of each purpose in the folder of keys', () => {
+    for (const [purpose, folder] of [
+      ['snapshot', '‹snapshot›'],
+      ['queue', '‹queue›'],
+    ] as const) {
+      for (const check of [
+        'symlink',
+        'not_directory',
+        'owner',
+        'mode',
+        'unsafe',
+      ] as const) {
+        const text = problemText({
+          code: `${purpose}_keys_dir_${check}`,
+          variable: 'ECCLIUM_KEYS_DIR',
+        });
+        expect(text).toContain(folder);
+        expect(text).toContain('‹ECCLIUM_KEYS_DIR›');
+      }
+    }
+  });
+
+  it('says that the folder of keys is only for stdio, and that HTTP does not write', () => {
+    const message = problemMessage({
+      code: 'stdio_only',
+      variable: 'ECCLIUM_KEYS_DIR',
+    });
+    expect(message.what).toBe(
+      '‹ECCLIUM_KEYS_DIR› gilt vorerst nur im Betrieb über stdio.',
+    );
+    expect(message.why).toContain('schreibt Ecclium in dieser Version nicht');
+    expect(textOf(message)).not.toContain('Audit-Datei');
+  });
+
   it('points from the replaced switch to the toolset persons', () => {
     const message = problemMessage({
       code: 'search_tools_replaced',
@@ -490,6 +552,8 @@ describe('the catalog of messages', () => {
         ...exported,
         'auditFileMessage',
         'auditFileText',
+        'dayKeyFolderMessage',
+        'dayKeyFolderText',
         'emptyToolsetMessage',
         'emptyToolsetText',
         'quotaFolderMessage',

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { originCodes } from '../http/index.js';
 import { isEventName } from '../logger/index.js';
 import { configProblemCodes, configWarningCodes } from './codes.js';
+import { keysDirCodes, stateDirCodes } from './state-dir.js';
 import { tokenFileCodes } from './token-file.js';
 
 describe('the codes of the configuration', () => {
@@ -20,8 +21,13 @@ describe('the codes of the configuration', () => {
     }
   });
 
-  it('hold every code of the address and of the token file', () => {
-    for (const code of [...originCodes, ...tokenFileCodes]) {
+  it('hold every code of the address, the token file and both folders', () => {
+    for (const code of [
+      ...originCodes,
+      ...tokenFileCodes,
+      ...stateDirCodes,
+      ...keysDirCodes,
+    ]) {
       expect(configProblemCodes, code).toContain(code);
     }
   });

@@ -223,6 +223,7 @@ const failingPolicy = (code: string): TokenFileSystem =>
   }).fs;
 
 const stateDirPath = '/path/to/state';
+const keysDirPath = '/path/to/keys';
 
 /** What lstat finds at a path: a folder with these fields, or an error. */
 type Entry =
@@ -240,24 +241,36 @@ interface MemoryFolder {
 }
 
 /**
- * File functions over the folder of state in memory: by default a folder
- * of the user with 0700 and no folder audit yet.
+ * File functions over the folders of state and of keys in memory: by
+ * default folders of the user with 0700 and no folder audit, quota,
+ * snapshot or queue yet. The folder of keys is found by its path, so that
+ * a test can refuse it alone.
  */
 const memoryFolder = (
   options: {
     readonly folder?: Entry;
     readonly audit?: Entry;
     readonly quota?: Entry;
+    readonly keys?: Entry;
+    readonly snapshot?: Entry;
+    readonly queue?: Entry;
     readonly getuid?: () => number | undefined;
   } = {},
 ): MemoryFolder => {
   const looked: string[] = [];
+  const missing: Entry = { error: 'ENOENT' };
   const entryOf = (path: string): Entry =>
-    path.endsWith('/audit')
-      ? (options.audit ?? { error: 'ENOENT' })
-      : path.endsWith('/quota')
-        ? (options.quota ?? { error: 'ENOENT' })
-        : (options.folder ?? {});
+    path === keysDirPath
+      ? (options.keys ?? {})
+      : path.endsWith('/audit')
+        ? (options.audit ?? missing)
+        : path.endsWith('/quota')
+          ? (options.quota ?? missing)
+          : path.endsWith('/snapshot')
+            ? (options.snapshot ?? missing)
+            : path.endsWith('/queue')
+              ? (options.queue ?? missing)
+              : (options.folder ?? {});
   const fs: StateDirFileSystem = {
     lstatSync: (path) => {
       looked.push(path);
@@ -309,6 +322,21 @@ const withStateDir = (
     folders,
   );
 
+/** A good configuration with a folder of keys (ADR 0031). */
+const withKeysDir = (
+  value: string,
+  folders: StateDirFileSystem = memoryFolder().fs,
+  transport: Transport = 'stdio',
+  extra: Environment = {},
+): ConfigResult =>
+  load(
+    { ...valid(), ECCLIUM_KEYS_DIR: value, ...extra },
+    transport,
+    memoryFiles().fs,
+    undefined,
+    folders,
+  );
+
 /** The options of the start alone, with a good configuration. */
 const started = (execArgv: readonly string[]): ConfigResult =>
   load(valid(), 'stdio', memoryFiles().fs, execArgv);
@@ -346,12 +374,14 @@ describe('loadConfig with a good configuration', () => {
       redaction: 'standard',
       toolsets: [],
       stateDir: undefined,
+      keysDir: undefined,
       auditRetentionMonths: 12,
       policy: defaultPolicy,
       stdioSubject: 'local-stdio',
       logLevel: 'info',
     });
     expect(Object.hasOwn(result.config, 'stateDir')).toBe(true);
+    expect(Object.hasOwn(result.config, 'keysDir')).toBe(true);
     expect(result.config.churchtoolsToken).toBeInstanceOf(Secret);
     expect(result.report.problems).toEqual([]);
     expect(result.report.omittedProblems).toBe(0);
@@ -407,6 +437,7 @@ describe('loadConfig with a good configuration', () => {
       ],
       ['toolsets', 'ECCLIUM_TOOLSETS', 'default', { kind: 'list', values: [] }],
       ['stateDir', 'ECCLIUM_STATE_DIR', 'unset', { kind: 'none' }],
+      ['keysDir', 'ECCLIUM_KEYS_DIR', 'unset', { kind: 'none' }],
       [
         'auditRetentionMonths',
         'ECCLIUM_AUDIT_RETENTION_MONTHS',
@@ -437,6 +468,7 @@ describe('loadConfig with a good configuration', () => {
       ECCLIUM_REDACTION: 'off',
       ECCLIUM_TOOLSETS: 'wiki,persons',
       ECCLIUM_STATE_DIR: stateDirPath,
+      ECCLIUM_KEYS_DIR: keysDirPath,
       ECCLIUM_STDIO_SUBJECT: 'local-operator-2',
       ECCLIUM_LOG_LEVEL: 'debug',
     });
@@ -448,6 +480,7 @@ describe('loadConfig with a good configuration', () => {
       redaction: 'off',
       toolsets: ['persons', 'wiki'],
       stateDir: stateDirPath,
+      keysDir: keysDirPath,
       stdioSubject: 'local-operator-2',
       logLevel: 'debug',
     });
@@ -607,6 +640,233 @@ describe('loadConfig and the folder of state', () => {
       mkdirSync(folder, { mode: 0o700 });
       expect(loadFromDisk(folder).ok).toBe(true);
       expect(existsSync(join(folder, 'audit'))).toBe(false);
+    });
+  });
+});
+
+// The folder of the day keys (ADR 0031): needed as soon as the server
+// writes, checked like the folder of state, and never the folder of state
+// or a folder in it.
+describe('loadConfig and the folder of keys', () => {
+  it('leaves the folder unset while the server only reads, without looking at the disk', () => {
+    const folder = memoryFolder();
+    const result = load(
+      valid(),
+      'stdio',
+      memoryFiles().fs,
+      undefined,
+      folder.fs,
+    );
+    expect(result.ok && result.config.keysDir).toBeUndefined();
+    expect(setting(result, 'keysDir')).toMatchObject({
+      variable: 'ECCLIUM_KEYS_DIR',
+      origin: 'unset',
+      shown: { kind: 'none' },
+    });
+    expect(folder.looked).toEqual([]);
+  });
+
+  it('takes a checked folder, also while the server only reads, and looks at the folder of each purpose', () => {
+    const folder = memoryFolder({ snapshot: {} });
+    const result = withKeysDir(keysDirPath, folder.fs);
+    expect(result.ok && result.config.keysDir).toBe(keysDirPath);
+    expect(result.ok && result.config.readOnly).toBe(true);
+    expect(setting(result, 'keysDir')).toMatchObject({
+      origin: 'environment',
+      shown: { kind: 'path', value: keysDirPath },
+    });
+    expect(folder.looked).toEqual([
+      keysDirPath,
+      `${keysDirPath}/snapshot`,
+      `${keysDirPath}/queue`,
+    ]);
+  });
+
+  it('asks for the folder when the server writes, as missing', () => {
+    const result = load({ ...valid(), ECCLIUM_READ_ONLY: 'false' });
+    expect(result.ok).toBe(false);
+    expect(problems(result)).toEqual([
+      ['keys_dir_required', 'ECCLIUM_KEYS_DIR'],
+    ]);
+    expect(setting(result, 'keysDir')).toMatchObject({
+      origin: 'missing',
+      shown: { kind: 'none' },
+    });
+    const written = withKeysDir(keysDirPath, memoryFolder().fs, 'stdio', {
+      ECCLIUM_READ_ONLY: 'false',
+    });
+    expect(written.ok && written.config).toMatchObject({
+      readOnly: false,
+      keysDir: keysDirPath,
+    });
+  });
+
+  it('does not ask for it when the switch for reading is invalid', () => {
+    expect(problems(load({ ...valid(), ECCLIUM_READ_ONLY: 'no' }))).toEqual([
+      ['invalid_choice', 'ECCLIUM_READ_ONLY'],
+    ]);
+  });
+
+  // Over HTTP the variable is refused, so a server over HTTP cannot write
+  // in this version.
+  it('refuses the folder over http without looking at the disk, and still asks for it when the server writes', () => {
+    const folder = memoryFolder();
+    expect(problems(withKeysDir(keysDirPath, folder.fs, 'http'))).toEqual([
+      ['stdio_only', 'ECCLIUM_KEYS_DIR'],
+    ]);
+    expect(folder.looked).toEqual([]);
+    expect(
+      problems(load({ ...valid(), ECCLIUM_READ_ONLY: 'false' }, 'http')),
+    ).toEqual([['keys_dir_required', 'ECCLIUM_KEYS_DIR']]);
+  });
+
+  it('refuses the folder and keeps its path out of the report', () => {
+    const result = withKeysDir(
+      keysDirPath,
+      memoryFolder({ keys: { mode: 0o40755 } }).fs,
+    );
+    expect(problems(result)).toEqual([['keys_dir_mode', 'ECCLIUM_KEYS_DIR']]);
+    expect(setting(result, 'keysDir')).toMatchObject({
+      origin: 'invalid',
+      shown: { kind: 'none' },
+    });
+    expect(JSON.stringify(result.report)).not.toContain(keysDirPath);
+  });
+
+  it.each([
+    ['an empty value', '', [['empty_value', 'ECCLIUM_KEYS_DIR']]],
+    [
+      'a value of 897 characters',
+      `/${'a'.repeat(896)}`,
+      [['value_too_long', 'ECCLIUM_KEYS_DIR']],
+    ],
+  ])('refuses %s without looking at the disk', (_name, value, expected) => {
+    const folder = memoryFolder();
+    const result = withKeysDir(value, folder.fs);
+    expect(problems(result)).toEqual(expected);
+    expect(setting(result, 'keysDir')?.origin).toBe('invalid');
+    expect(folder.looked).toEqual([]);
+  });
+
+  it('takes a path of 896 characters', () => {
+    expect(withKeysDir(`/${'a'.repeat(895)}`).ok).toBe(true);
+  });
+
+  // A backup of the folder of state would hold the keys that open its
+  // snapshots, also those that were destroyed.
+  it.each([
+    ['the folder of state itself', stateDirPath, stateDirPath],
+    ['a folder in it', `${stateDirPath}/keys`, stateDirPath],
+    ['a folder deep in it', `${stateDirPath}/a/b/keys`, stateDirPath],
+    ['any folder when the folder of state is the root', keysDirPath, '/'],
+  ])('refuses %s without looking at the disk', (_name, keys, state) => {
+    const folder = memoryFolder();
+    const result = load(
+      { ...valid(), ECCLIUM_STATE_DIR: state, ECCLIUM_KEYS_DIR: keys },
+      'stdio',
+      memoryFiles().fs,
+      undefined,
+      folder.fs,
+    );
+    expect(problems(result)).toEqual([
+      ['keys_dir_in_state_dir', 'ECCLIUM_KEYS_DIR'],
+    ]);
+    // The folder of state is looked at as such, the folder of keys not.
+    expect(folder.looked).not.toContain(`${keys}/snapshot`);
+    expect(setting(result, 'keysDir')).toMatchObject({
+      origin: 'invalid',
+      shown: { kind: 'none' },
+    });
+  });
+
+  it.each([
+    ['a folder next to it', `${stateDirPath}-keys`],
+    ['a folder above it', '/path/to'],
+    ['a folder elsewhere', keysDirPath],
+  ])('takes %s', (_name, keys) => {
+    const result = load(
+      { ...valid(), ECCLIUM_STATE_DIR: stateDirPath, ECCLIUM_KEYS_DIR: keys },
+      'stdio',
+      memoryFiles().fs,
+      undefined,
+      memoryFolder().fs,
+    );
+    expect(result.ok && result.config.keysDir).toBe(keys);
+  });
+
+  // A folder of state that is refused still counts, as it names where the
+  // operator keeps the state; one that is not even a path in its one form
+  // leaves the check of the folder of keys to the disk.
+  it('compares with a folder of state that is refused, and not with one of another form', () => {
+    expect(
+      codes(
+        load(
+          {
+            ...valid(),
+            ECCLIUM_STATE_DIR: stateDirPath,
+            ECCLIUM_KEYS_DIR: `${stateDirPath}/keys`,
+          },
+          'stdio',
+          memoryFiles().fs,
+          undefined,
+          memoryFolder({ folder: { mode: 0o40755 } }).fs,
+        ),
+      ),
+    ).toEqual(['state_dir_mode', 'keys_dir_in_state_dir']);
+    expect(
+      codes(
+        load({
+          ...valid(),
+          ECCLIUM_STATE_DIR: `${stateDirPath}/`,
+          ECCLIUM_KEYS_DIR: `${stateDirPath}/keys`,
+        }),
+      ),
+    ).toEqual(['state_dir_not_normalized']);
+  });
+
+  it('reports the folder after the folder of state and before the retention', () => {
+    const result = load({
+      ...valid(),
+      ECCLIUM_AUDIT_RETENTION_MONTHS: '0',
+      ECCLIUM_KEYS_DIR: 'keys',
+      ECCLIUM_STATE_DIR: 'state',
+    });
+    expect(problems(result)).toEqual([
+      ['state_dir_relative', 'ECCLIUM_STATE_DIR'],
+      ['keys_dir_relative', 'ECCLIUM_KEYS_DIR'],
+      ['invalid_retention', 'ECCLIUM_AUDIT_RETENTION_MONTHS'],
+    ]);
+  });
+
+  describe('on the disk', () => {
+    const base = mkdtempSync(join(tmpdir(), 'ecclium-load-keys-'));
+
+    afterAll(() => {
+      rmSync(base, { recursive: true, force: true });
+    });
+
+    const loadFromDisk = (value: string): ConfigResult =>
+      loadConfig({
+        environment: {
+          ...valid(),
+          ECCLIUM_READ_ONLY: 'false',
+          ECCLIUM_KEYS_DIR: value,
+        },
+        transport: 'stdio',
+        tokenFiles: memoryFiles().fs,
+      });
+
+    it('checks the real folder when no file functions are given', () => {
+      expect(problems(loadFromDisk(join(base, 'missing')))).toEqual([
+        ['keys_dir_missing', 'ECCLIUM_KEYS_DIR'],
+      ]);
+    });
+
+    it('creates nothing, not even the folder snapshot', () => {
+      const folder = join(base, 'keys');
+      mkdirSync(folder, { mode: 0o700 });
+      expect(loadFromDisk(folder).ok).toBe(true);
+      expect(existsSync(join(folder, 'snapshot'))).toBe(false);
     });
   });
 });
@@ -1999,6 +2259,60 @@ describe('loadConfig and its problems', () => {
       withStateDir(stateDirPath, memoryFolder({ quota: { mode: 0o40701 } }).fs),
     quota_dir_unsafe: () =>
       withStateDir(stateDirPath, memoryFolder({ quota: { error: 'EIO' } }).fs),
+    keys_dir_relative: () => withKeysDir('path/to/keys'),
+    keys_dir_too_long: () => withKeysDir(`/${'\u00e4'.repeat(450)}`),
+    keys_dir_not_normalized: () => withKeysDir(`${keysDirPath}/`),
+    keys_dir_platform: () =>
+      withKeysDir(keysDirPath, memoryFolder({ getuid: () => undefined }).fs),
+    keys_dir_missing: () =>
+      withKeysDir(keysDirPath, memoryFolder({ keys: { error: 'ENOENT' } }).fs),
+    keys_dir_symlink: () =>
+      withKeysDir(keysDirPath, memoryFolder({ keys: { symlink: true } }).fs),
+    keys_dir_not_directory: () =>
+      withKeysDir(keysDirPath, memoryFolder({ keys: { directory: false } }).fs),
+    keys_dir_owner: () =>
+      withKeysDir(keysDirPath, memoryFolder({ keys: { uid: 0 } }).fs),
+    keys_dir_mode: () =>
+      withKeysDir(keysDirPath, memoryFolder({ keys: { mode: 0o40750 } }).fs),
+    keys_dir_unsafe: () =>
+      withKeysDir(keysDirPath, memoryFolder({ keys: { error: 'EACCES' } }).fs),
+    snapshot_keys_dir_symlink: () =>
+      withKeysDir(
+        keysDirPath,
+        memoryFolder({ snapshot: { symlink: true } }).fs,
+      ),
+    snapshot_keys_dir_not_directory: () =>
+      withKeysDir(
+        keysDirPath,
+        memoryFolder({ snapshot: { directory: false } }).fs,
+      ),
+    snapshot_keys_dir_owner: () =>
+      withKeysDir(keysDirPath, memoryFolder({ snapshot: { uid: 0 } }).fs),
+    snapshot_keys_dir_mode: () =>
+      withKeysDir(
+        keysDirPath,
+        memoryFolder({ snapshot: { mode: 0o40701 } }).fs,
+      ),
+    snapshot_keys_dir_unsafe: () =>
+      withKeysDir(keysDirPath, memoryFolder({ snapshot: { error: 'EIO' } }).fs),
+    queue_keys_dir_symlink: () =>
+      withKeysDir(keysDirPath, memoryFolder({ queue: { symlink: true } }).fs),
+    queue_keys_dir_not_directory: () =>
+      withKeysDir(
+        keysDirPath,
+        memoryFolder({ queue: { directory: false } }).fs,
+      ),
+    queue_keys_dir_owner: () =>
+      withKeysDir(keysDirPath, memoryFolder({ queue: { uid: 0 } }).fs),
+    queue_keys_dir_mode: () =>
+      withKeysDir(keysDirPath, memoryFolder({ queue: { mode: 0o40701 } }).fs),
+    queue_keys_dir_unsafe: () =>
+      withKeysDir(keysDirPath, memoryFolder({ queue: { error: 'EIO' } }).fs),
+    keys_dir_required: () => load({ ...valid(), ECCLIUM_READ_ONLY: 'false' }),
+    keys_dir_in_state_dir: () =>
+      withKeysDir(`${stateDirPath}/keys`, memoryFolder().fs, 'stdio', {
+        ECCLIUM_STATE_DIR: stateDirPath,
+      }),
     token_from_environment: () =>
       load({ ECCLIUM_CHURCHTOOLS_URL: address, [tokenVariableName]: token() }),
     redaction_off: () => load({ ...valid(), ECCLIUM_REDACTION: 'off' }),
@@ -2464,6 +2778,7 @@ describe('loadConfig and what it gives out', () => {
     const environment: Environment = {
       ...valid(),
       ECCLIUM_READ_ONLY: 'false',
+      ECCLIUM_KEYS_DIR: keysDirPath,
     };
     const first = load(environment);
     environment.ECCLIUM_READ_ONLY = 'true';

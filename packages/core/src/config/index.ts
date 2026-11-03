@@ -29,6 +29,8 @@ export {
   type ValueOrigin,
 } from './load.js';
 export {
+  type KeysDirCode,
+  keysDirCodes,
   type StateDirCode,
   stateDirCodes,
   type StateDirFileSystem,

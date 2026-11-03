@@ -125,6 +125,10 @@ describe('renderConfigReport', () => {
         'Zustandsordner',
         'keine Audit-Datei (‹ECCLIUM_STATE_DIR› ist nicht gesetzt)',
       ),
+      row(
+        'Schlüsselordner',
+        'keine Tagesschlüssel (‹ECCLIUM_KEYS_DIR› ist nicht gesetzt)',
+      ),
       row('Frist in Monaten', '12 (Voreinstellung)'),
       row('Richtlinie', 'keine Datei (Voreinstellung)'),
       row('Subjekt über stdio', '‹local-stdio› (Voreinstellung)'),
@@ -150,6 +154,51 @@ describe('renderConfigReport', () => {
     expect(render(environment, true)).toContain(
       row('Zustandsordner', '‹/path/to/state› (aus ‹ECCLIUM_STATE_DIR›)'),
     );
+  });
+
+  // The folder of the day keys can hold the name of a user as well
+  // (ADR 0031).
+  it('masks the folder of keys unless asked to show it, and names it in the note', () => {
+    const environment = {
+      ...minimal(),
+      ECCLIUM_STATE_DIR: '/path/to/state',
+      ECCLIUM_KEYS_DIR: '/path/to/keys',
+    };
+    const masked = render(environment);
+    expect(masked).toContain(
+      row('Schlüsselordner', '[verborgen] (aus ‹ECCLIUM_KEYS_DIR›)'),
+    );
+    expect(masked).toContain(
+      'Verborgen sind der Host, der Zustandsordner und der Schlüsselordner, damit Sie die Ausgabe ohne Bearbeitung weitergeben können. Mit ‹--show-values› zeigt der Befehl alle.',
+    );
+    expect(masked.join('\n')).not.toContain('/path/to/keys');
+    expect(render(environment, true)).toContain(
+      row('Schlüsselordner', '‹/path/to/keys› (aus ‹ECCLIUM_KEYS_DIR›)'),
+    );
+  });
+
+  it('names the folder of keys alone when only it is masked', () => {
+    const result = load({ ...minimal(), ECCLIUM_KEYS_DIR: '/path/to/keys' });
+    const report: ConfigReport = {
+      ...result.report,
+      settings: result.report.settings.filter(
+        (setting) => setting.key !== 'churchtoolsOrigin',
+      ),
+    };
+    expect(
+      renderConfigReport(report, { valid: true, showValues: false }),
+    ).toContain(
+      'Verborgen ist der Schlüsselordner, damit Sie die Ausgabe ohne Bearbeitung weitergeben können. Mit ‹--show-values› zeigt der Befehl ihn.',
+    );
+  });
+
+  it('shows the folder of keys as missing when the server writes without it', () => {
+    const lines = render({ ...minimal(), ECCLIUM_READ_ONLY: 'false' });
+    expect(lines).toContain(
+      row('Schlüsselordner', 'fehlt (‹ECCLIUM_KEYS_DIR› ist nicht gesetzt)'),
+    );
+    expect(lines).toContain('Die Konfiguration hat 1 Problem:');
+    expect(lines.at(-1)).toBe(invalid);
   });
 
   it('names host, subject and folder of state when all three are masked', () => {
@@ -250,9 +299,11 @@ describe('renderConfigReport', () => {
     const lines = render({
       ...minimal(),
       ECCLIUM_READ_ONLY: 'false',
+      ECCLIUM_KEYS_DIR: '/path/to/keys',
       ECCLIUM_TOOLSETS: 'songs,wiki',
       ECCLIUM_LOG_LEVEL: 'debug',
     });
+    expect(lines.at(-1)).toBe(valid);
     expect(lines).toContain(row('Nur lesen', 'nein (aus ‹ECCLIUM_READ_ONLY›)'));
     expect(lines).toContain(
       row('Toolsets', '‹wiki›, ‹songs› (aus ‹ECCLIUM_TOOLSETS›)'),
