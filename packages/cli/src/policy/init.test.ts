@@ -60,7 +60,7 @@ afterEach(async () => {
 /** A line of a call of a write tool, with the fields an event needs. */
 const write = (
   fields: Record<string, unknown> = {},
-  state: 'planned' | 'denied' = 'planned',
+  state: 'verified' | 'denied' = 'verified',
 ): string => {
   events += 1;
   return JSON.stringify({
@@ -72,10 +72,10 @@ const write = (
     actor: { kind: 'service', id: 'stdio:local-stdio' },
     mode: 'interactive',
     tool: create,
-    outcome: state === 'planned' ? 'ok' : 'denied',
+    outcome: state === 'verified' ? 'ok' : 'denied',
     writeState: state,
     objectRefs: ['wiki_category:12'],
-    ...(state === 'planned' ? {} : { errorCode: 'policy_denied' }),
+    ...(state === 'verified' ? {} : { errorCode: 'policy_denied' }),
     durationMs: 4,
     ...fields,
   });

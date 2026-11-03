@@ -12,9 +12,11 @@
  * back (ADR 0031); like every valid line, it still widens the days read.
  * Every counted line makes its category a target, also a refused one,
  * since a target without an entry is what the operator wants to see. For
- * the daily limit the refused and the skipped calls do not count; every
- * other one does, also one that failed, since the audit does not tell
- * whether it failed before or after it planned.
+ * the daily limit the refused and the skipped calls do not count, and
+ * neither does a call that ended with a question to the person: its
+ * answer is a call of its own, whose line carries the state of the write
+ * (ADR 0029). Every other one counts, also one that failed, since the
+ * audit does not tell whether it failed before or after it planned.
  *
  * @packageDocumentation
  */
@@ -51,9 +53,9 @@ export interface WriteTargets {
 }
 
 // The states of a call that count for the limit. A refused and a skipped
-// call wrote nothing and say nothing about how often a tool writes.
+// call wrote nothing and say nothing about how often a tool writes; a
+// planned one asked the person, whose answer is counted on its own line.
 const countingStates: readonly WriteState[] = Object.freeze([
-  'planned',
   'queued',
   'verified',
   'conflict',
