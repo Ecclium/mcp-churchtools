@@ -113,6 +113,13 @@ export {
 } from './quota/index.js';
 export { redactedOutcome } from './redacted/index.js';
 export {
+  type ApprovalQueueCheck,
+  approvalQueueChecks,
+  type ApprovalQueueMemory,
+  createMemoryApprovalQueue,
+  type OpenApprovalQueue,
+} from './approval-queue/index.js';
+export {
   createMemorySnapshotStore,
   type OpenSnapshotStore,
   type SnapshotMemory,
