@@ -205,6 +205,20 @@ describe('collectWriteTargets', () => {
     ]);
   });
 
+  it('names no ct_write_confirm, whose write belongs to the tool that planned it', () => {
+    const targets = collectWriteTargets(
+      folderOf({
+        [nameOf(1)]: [
+          write('planned'),
+          write('verified', { tool: 'ct_write_confirm', confirmation: 'echo' }),
+        ],
+      }),
+    );
+    expect(targets.categories).toEqual([
+      { id: 12, tools: [create], highestPerDay: 0 },
+    ]);
+  });
+
   it('has no days without a valid line', () => {
     const targets = collectWriteTargets(folderOf({}));
     expect(targets).toEqual({
