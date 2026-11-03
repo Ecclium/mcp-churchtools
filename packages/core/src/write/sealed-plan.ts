@@ -66,6 +66,12 @@ export interface PlanInput {
   readonly contentHash: string;
   /** When the plan was sealed, in milliseconds since the Unix epoch. */
   readonly sealedAt: number;
+  /**
+   * Whether the core keeps snapshots of writes (ADR 0031). Without them no
+   * write can be taken back, so the plan is sealed as not reversible and
+   * the echo allows none.
+   */
+  readonly snapshots: boolean;
 }
 
 /** A sealed plan as the place `writeGuard` reads it. */
@@ -140,14 +146,19 @@ Object.freeze(SealedPlan);
  * ```ts
  * const plan = sealPlan({ tenantId, actor, tool, origin: 'core', intent,
  *   toolMeta: { sensitivity: 'personal', unattended: 'policy' },
- *   contentHash, sealedAt: clock.now() });
+ *   contentHash, sealedAt: clock.now(), snapshots: true });
  * readPlan(plan)?.planHash; // 64 hex digits
  * ```
  */
 export function sealPlan(input: PlanInput): PlannedWrite {
   const intent = readIntent(input.intent);
   if (intent === undefined) throw new TypeError('The intent does not fit.');
-  const rules = withToolMeta(rulesOf(intent), input.toolMeta);
+  const metaRules = withToolMeta(rulesOf(intent), input.toolMeta);
+  // Undone from a snapshot only while there are snapshots (ADR 0031).
+  const rules =
+    metaRules.reversible === 'snapshot' && !input.snapshots
+      ? Object.freeze({ ...metaRules, reversible: 'no' as const })
+      : metaRules;
   if (!rules.runs) throw new TypeError('The core does not run this intent.');
   const baseVersion = 'baseVersion' in intent ? intent.baseVersion : null;
   const actor = Object.freeze({

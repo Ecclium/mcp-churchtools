@@ -38,6 +38,7 @@ const inputOf = (
   toolMeta: personal,
   contentHash: contentHashOf(['# Plan']),
   sealedAt: 1_000,
+  snapshots: true,
   ...change,
 });
 
@@ -132,6 +133,14 @@ describe('a sealed plan', () => {
       }),
     );
     expect(view.echo).toBe(false);
+  });
+
+  it('seals a write as not reversible without snapshots, and then allows no echo', () => {
+    const view = viewOf(sealed({ snapshots: false }));
+    expect(view.rules).toEqual({ ...rulesOf(update), reversible: 'no' });
+    expect(view.echo).toBe(false);
+    // The hash names the change, not how it can be taken back.
+    expect(view.planHash).toBe(viewOf(sealed()).planHash);
   });
 
   it('allows the echo for no tool of a plugin', () => {

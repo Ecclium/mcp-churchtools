@@ -233,6 +233,10 @@ export const logEvents = Object.freeze({
   write_conflict: entry('warn', 'code'),
   write_outcome_unknown: entry('warn', 'code'),
   write_committed: entry('info'),
+  // The snapshot of a write could not be kept: before the send the write
+  // stops, after the read back of a new page it stays (ADR 0031).
+  snapshot_failed: entry('warn', 'code'),
+  snapshot_incomplete: entry('warn', 'code'),
   write_audit_failed: entry('error'),
   // The policy in the write guard (ADR 0032).
   policy_not_interactive: entry('warn'),

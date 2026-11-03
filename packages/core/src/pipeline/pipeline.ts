@@ -100,6 +100,7 @@ import {
   ContentRefusal,
   createWriteGuard,
   type WriteGuard,
+  type WriteSnapshots,
   type WriteTarget,
 } from '../write/index.js';
 import { createReadAccess, type ReadAccess } from './read-api.js';
@@ -195,6 +196,11 @@ export interface ToolPipelineOptions {
    * that an entry of the policy limits.
    */
   readonly quota?: QuotaStore;
+  /**
+   * The snapshots of writes (ADR 0031), or undefined when they are off:
+   * then every write is sealed as not reversible and the echo allows none.
+   */
+  readonly snapshots?: WriteSnapshots;
   /**
    * The provider of the keys for pseudonyms, built by the composition root
    * from the key files (ADR 0069). Without it, a call in the level
@@ -430,11 +436,13 @@ const writeResult = (
   state: 'verified' | 'skipped',
   target: WriteTarget,
   version?: number,
+  undoId?: string,
 ): Readonly<Record<string, unknown>> =>
   Object.freeze({
     state,
     target: Object.freeze({ kind: target.kind, key: target.key }),
     ...(version === undefined ? {} : { version }),
+    ...(undoId === undefined ? {} : { undoId }),
   });
 
 // The IDs of a target for the audit: a category, and a page by its GUID.
@@ -518,6 +526,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     killSwitchDir: options.killSwitchDir,
     policy: options.policy,
     quota: options.quota,
+    snapshots: options.snapshots,
   });
 
   const stages = async (
@@ -944,7 +953,14 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       };
     }
     if (aborted()) return { ok: false, failure: failed('network') };
-    const committed = await guard.commit(ctx, outcome.plan, confirmation.proof);
+    // The ID of the audit event names the snapshot of the write, so that
+    // `ecclium undo` finds it from the line of the audit (ADR 0031).
+    const committed = await guard.commit(
+      ctx,
+      outcome.plan,
+      confirmation.proof,
+      run.eventId,
+    );
     if (!committed.ok) {
       return {
         ok: false,
@@ -966,7 +982,12 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     });
     return {
       ok: true,
-      result: writeResult('verified', committed.target, committed.version),
+      result: writeResult(
+        'verified',
+        committed.target,
+        committed.version,
+        committed.undoId,
+      ),
     };
   };
 
