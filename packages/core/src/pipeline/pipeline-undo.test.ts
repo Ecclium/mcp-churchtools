@@ -26,6 +26,7 @@ import { defaultPolicy } from '../policy/check.js';
 import { createToolCatalog } from '../registry/index.js';
 import { createSnapshotKeeper } from '../snapshots/keeper.js';
 import { contentHashOf } from '../write/plan-hash.js';
+import type { WriteSnapshots } from '../write/guard.js';
 import { createToolPipeline, type ToolRequest } from './pipeline.js';
 
 // The entry undo of the pipeline (ADR 0031): a snapshot kept by a write,
@@ -99,7 +100,9 @@ afterEach(async () => {
   await Promise.all(open.splice(0).map((item) => item.close()));
 });
 
-const setup = (options: { readonly snapshots?: false } = {}) => {
+const setup = (
+  options: { readonly snapshots?: false | WriteSnapshots } = {},
+) => {
   const double = createChurchToolsDouble({ token });
   open.push(double);
   const catalog = createToolCatalog({
@@ -149,7 +152,9 @@ const setup = (options: { readonly snapshots?: false } = {}) => {
       minLevel: 'debug',
     },
     killSwitchDir: dir,
-    ...(options.snapshots === false ? {} : { snapshots: keeper }),
+    ...(options.snapshots === false
+      ? {}
+      : { snapshots: options.snapshots ?? keeper }),
   });
   // The snapshot a write of the page from version 3 to 4 kept.
   const keep = () =>
@@ -380,10 +385,10 @@ describe('the undo of the pipeline (ADR 0031)', () => {
       .intercept({ path: pagePath, method: 'GET' })
       .reply(200, page(5, before), json);
     file.ok = false;
+    // The undo wrote, but the audit does not show it, which it says.
     expect(
-      (await pipeline.undo({ eventId: written, overwrite: false }, request()))
-        .kind,
-    ).toBe('done');
+      await pipeline.undo({ eventId: written, overwrite: false }, request()),
+    ).toMatchObject({ kind: 'done', unrecorded: true });
     file.ok = true;
     expect(
       await pipeline.undo({ eventId: written, overwrite: false }, request()),
@@ -501,5 +506,47 @@ describe('the undo of the pipeline (ADR 0031)', () => {
       tenantId: auditPlaceholders.tenantId,
       undoes: written,
     });
+  });
+
+  it('keeps the code of a write ChurchTools refused, and logs an undo whose snapshot does not open', async () => {
+    const refused = setup();
+    await refused.keep();
+    refused.reads();
+    refused.double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, page(4, after), json);
+    refused.double
+      .intercept({ path: pagePath, method: 'PATCH' })
+      .reply(403, '{}', json);
+    refused.double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, page(4, after), json);
+    expect(
+      await refused.pipeline.undo(
+        { eventId: written, overwrite: false },
+        request(),
+      ),
+    ).toMatchObject({
+      kind: 'failed',
+      code: 'permission',
+      reason: 'notSent',
+      sent: false,
+    });
+    // A store whose record does not open.
+    const broken = setup({
+      snapshots: {
+        save: () => Promise.resolve(),
+        load: () => Promise.reject(new Error('damaged')),
+      },
+    });
+    expect(
+      await broken.pipeline.undo(
+        { eventId: written, overwrite: false },
+        request(),
+      ),
+    ).toMatchObject({ kind: 'failed', code: 'internal' });
+    expect(broken.logLines.some((entry) => entry.includes('"undo_call"'))).toBe(
+      true,
+    );
   });
 });

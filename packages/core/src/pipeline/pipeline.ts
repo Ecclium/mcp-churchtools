@@ -167,12 +167,14 @@ export type UndoOutcome =
   /**
    * Taken back: the version of the page after it, and the ID to take the
    * undo back with, since an undo always keeps a snapshot of its own.
+   * `unrecorded` when its line did not reach the audit file.
    */
   | {
       readonly kind: 'done';
       readonly version: number;
       readonly undoId: string | undefined;
       readonly diff: LineDiff;
+      readonly unrecorded?: true;
     }
   /** The page holds what the undo would write already. */
   | { readonly kind: 'unchanged' }
@@ -196,6 +198,7 @@ export type UndoOutcome =
       readonly state: WriteState;
       readonly sent: boolean;
       readonly diff?: LineDiff;
+      readonly unrecorded?: true;
     };
 
 /**
@@ -1359,7 +1362,14 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     if (snapshots === undefined) {
       return undoEnd({ kind: 'off' }, 'denied', 'policy_denied');
     }
-    const loaded = await snapshots.load(ctx, undo.eventId as string);
+    // A record that does not open, or a store that fails, ends the undo
+    // with its log line, as an internal error.
+    let loaded: Awaited<ReturnType<WriteSnapshots['load']>>;
+    try {
+      loaded = await snapshots.load(ctx, undo.eventId as string);
+    } catch {
+      return undoRefused('internal');
+    }
     if (loaded.kind !== 'found') {
       return undoEnd({ kind: loaded.kind }, 'failed', 'not_found');
     }
@@ -1451,6 +1461,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         ? undoCall.eventId
         : undefined;
     let end: UndoEnd = undoRefused('internal');
+    let recorded = false;
     try {
       assignment = copyAssignment(request.assignment);
       mode = request.mode;
@@ -1467,7 +1478,6 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     } catch {
       end = undoRefused('internal');
     } finally {
-      let recorded = false;
       const durationMs = durationSince(start);
       try {
         recorded =
@@ -1523,7 +1533,11 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         // The log never decides the outcome.
       }
     }
-    return end.outcome;
+    // An undo that may have written without its line in the audit file
+    // says so, for the operator to check the audit (ADR 0028, ADR 0029).
+    return end.sent && !recorded
+      ? Object.freeze({ ...end.outcome, unrecorded: true })
+      : end.outcome;
   };
 
   return Object.freeze({ __proto__: null, call, undo });
