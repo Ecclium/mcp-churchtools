@@ -13,15 +13,19 @@
  * The client can read the state, so it holds no secret, no content and no
  * personal data: the version of its form, the tool, the hash of the plan,
  * a nonce and two hashes, one of tenant and actor and one of the input of
- * the call. The codec of the SDK binds the state to the method only, as it
- * sees nothing else over stdio; the hashes bind it to the principal and to
- * the input, and the key of the `PlanStore` binds the plan to the
- * principal a second time. This module knows nothing of the SDK, which
- * only the mount imports.
+ * the call. Both hashes are HMACs with a key of the pipeline that never
+ * leaves the process, so that the client cannot test guesses against
+ * them: in the level `strict` the input holds the IDs of persons that its
+ * pseudonyms stand for, and a plain hash of a small number could be found
+ * by trying them all. The codec of the SDK binds the state to the method
+ * only, as it sees nothing else over stdio; the hashes bind it to the
+ * principal and to the input, and the key of the `PlanStore` binds the
+ * plan to the principal a second time. This module knows nothing of the
+ * SDK, which only the mount imports.
  *
  * @packageDocumentation
  */
-import { createHash } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 
 import type { Actor } from '@ecclium/mcp-churchtools-plugin-api';
 import { z } from 'zod';
@@ -80,11 +84,19 @@ export function readConfirmationState(
 
 const encoder = new TextEncoder();
 
-// SHA-256 over a tag and fields, each field its length in bytes, a colon
-// and its bytes in UTF-8, like the hash of a plan: no value can end one
-// field and start the next.
-const digestOf = (tag: string, fields: readonly string[]): string => {
-  const hash = createHash('sha256');
+// The tags of the two hashes, so that no hash of one stands for the other.
+const principalTag = 'ecclium.principal.v1';
+const argumentsTag = 'ecclium.arguments.v1';
+
+// HMAC-SHA256 over a tag and fields, each field its length in bytes, a
+// colon and its bytes in UTF-8, like the hash of a plan: no value can end
+// one field and start the next.
+const digestOf = (
+  key: Uint8Array,
+  tag: string,
+  fields: readonly string[],
+): string => {
+  const hash = createHmac('sha256', key);
   for (const field of [tag, ...fields]) {
     const bytes = encoder.encode(field);
     hash.update(`${String(bytes.byteLength)}:`);
@@ -97,16 +109,21 @@ const digestOf = (tag: string, fields: readonly string[]): string => {
  * The hash of tenant and actor, so that a state made for one principal
  * counts for no other.
  *
+ * @param key - The key of the pipeline, at least 32 random bytes.
  * @param tenantId - The tenant of the call.
  * @param actor - The actor of the call.
- * @returns SHA-256 in lowercase hex.
+ * @returns HMAC-SHA256 in lowercase hex.
  * @example
  * ```ts
- * principalDigestOf('default', { kind: 'service', id: 'stdio:local-stdio' });
+ * principalDigestOf(key, 'default', { kind: 'service', id: 'stdio:local-stdio' });
  * ```
  */
-export function principalDigestOf(tenantId: string, actor: Actor): string {
-  return digestOf('ecclium.principal.v1', [tenantId, actor.kind, actor.id]);
+export function principalDigestOf(
+  key: Uint8Array,
+  tenantId: string,
+  actor: Actor,
+): string {
+  return digestOf(key, principalTag, [tenantId, actor.kind, actor.id]);
 }
 
 // JSON with the keys of every object sorted and without fields that hold
@@ -132,13 +149,14 @@ const canonical = (value: unknown): string => {
  * does not depend on the order of keys. The second round of a question
  * must bring the input of the first.
  *
+ * @param key - The key of the pipeline, at least 32 random bytes.
  * @param input - The input as the schema of the tool parsed it.
- * @returns SHA-256 in lowercase hex.
+ * @returns HMAC-SHA256 in lowercase hex.
  * @example
  * ```ts
- * argumentsDigestOf({ b: 1, a: 2 }) === argumentsDigestOf({ a: 2, b: 1 }); // true
+ * argumentsDigestOf(key, { b: 1, a: 2 }) === argumentsDigestOf(key, { a: 2, b: 1 }); // true
  * ```
  */
-export function argumentsDigestOf(input: unknown): string {
-  return digestOf('ecclium.arguments.v1', [canonical(input)]);
+export function argumentsDigestOf(key: Uint8Array, input: unknown): string {
+  return digestOf(key, argumentsTag, [canonical(input)]);
 }

@@ -77,7 +77,7 @@ export const confirmationSentences = Object.freeze({
   notThisCall:
     'The answer does not belong to this call, so nothing was written. Plan the write again.',
   used: 'This confirmation was used already, so nothing was written. Plan the write again.',
-  gone: 'The plan of this write is no longer kept, for example after ten minutes or a restart of the server, so nothing was written. Plan the write again.',
+  gone: 'The plan of this write is no longer kept, so nothing was written. Plan the write again.',
   tooMany:
     'Too many writes wait for a confirmation on this server. Answer them or wait ten minutes.',
 } as const);
@@ -227,9 +227,10 @@ const hexOf = (bytes: Uint8Array): string =>
   Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 
 /**
- * Makes the questions of one pipeline over its stores. They hold no state
- * of their own: the plans wait in the `PlanStore` and the used nonces sit
- * in the `NonceStore`, both bound to tenant and actor.
+ * Makes the questions of one pipeline over its stores. They keep no state
+ * of their own beyond a random key for the hashes of their states: the
+ * plans wait in the `PlanStore` and the used nonces sit in the
+ * `NonceStore`, both bound to tenant and actor.
  *
  * @param options - Stores, clock and source of random bytes.
  * @returns The questions, frozen.
@@ -244,6 +245,9 @@ export function createConfirmations(
   options: ConfirmationsOptions,
 ): Confirmations {
   const { plans, nonces, clock, random } = options;
+  // The key of the hashes in the states of this pipeline: random, never
+  // stored and never sent, so that the client cannot test guesses.
+  const key = random(32);
 
   const ask = async (
     ctx: TenantContext,
@@ -265,8 +269,8 @@ export function createConfirmations(
       tool: view.tool,
       planHash: view.planHash,
       nonce,
-      principal: principalDigestOf(ctx.tenantId, ctx.actor),
-      arguments: argumentsDigestOf(input),
+      principal: principalDigestOf(key, ctx.tenantId, ctx.actor),
+      arguments: argumentsDigestOf(key, input),
     });
     return Object.freeze({
       kind: 'question',
@@ -311,8 +315,8 @@ export function createConfirmations(
     if (
       state === undefined ||
       state.tool !== tool ||
-      state.principal !== principalDigestOf(ctx.tenantId, ctx.actor) ||
-      state.arguments !== argumentsDigestOf(input)
+      state.principal !== principalDigestOf(key, ctx.tenantId, ctx.actor) ||
+      state.arguments !== argumentsDigestOf(key, input)
     ) {
       ctx.log.warn('write_answer_refused', { code: 'confirmation_required' });
       return notThisCall;
@@ -324,8 +328,11 @@ export function createConfirmations(
       ctx.log.warn('write_answer_replayed', { code: 'confirmation_required' });
       return refused('confirmation_required', confirmationSentences.used);
     }
+    // A store that gives another value than the plan asked about, as a
+    // replaced store could, gives none; the hash binds tool and input as
+    // well (ADR 0029).
     const plan = await taken(ctx, state.planHash);
-    if (plan === undefined) {
+    if (plan === undefined || readPlan(plan)?.planHash !== state.planHash) {
       ctx.log.warn('write_plan_gone', { code: 'confirmation_required' });
       return refused('confirmation_required', confirmationSentences.gone);
     }

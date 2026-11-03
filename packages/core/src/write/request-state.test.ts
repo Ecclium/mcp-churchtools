@@ -8,6 +8,8 @@ import {
 } from './request-state.js';
 
 const hex = (digit: string, length: number): string => digit.repeat(length);
+const key = new Uint8Array(32).fill(3);
+const otherKey = new Uint8Array(32).fill(4);
 
 const valid = {
   v: 1,
@@ -55,44 +57,50 @@ describe('the hash of the principal', () => {
   const actor = { kind: 'service', id: 'stdio:local-stdio' } as const;
 
   it('is SHA-256 in hex and the same for the same principal', () => {
-    const digest = principalDigestOf('default', actor);
+    const digest = principalDigestOf(key, 'default', actor);
     expect(digest).toMatch(/^[0-9a-f]{64}$/);
-    expect(principalDigestOf('default', { ...actor })).toBe(digest);
+    expect(principalDigestOf(key, 'default', { ...actor })).toBe(digest);
   });
 
   it('differs for another tenant, kind or ID of the actor', () => {
-    const digest = principalDigestOf('default', actor);
-    expect(principalDigestOf('demo-tenant', actor)).not.toBe(digest);
-    expect(principalDigestOf('default', { ...actor, kind: 'user' })).not.toBe(
-      digest,
-    );
-    expect(principalDigestOf('default', { ...actor, id: 'other' })).not.toBe(
-      digest,
+    const digest = principalDigestOf(key, 'default', actor);
+    expect(principalDigestOf(key, 'demo-tenant', actor)).not.toBe(digest);
+    expect(
+      principalDigestOf(key, 'default', { ...actor, kind: 'user' }),
+    ).not.toBe(digest);
+    expect(
+      principalDigestOf(key, 'default', { ...actor, id: 'other' }),
+    ).not.toBe(digest);
+  });
+
+  it('is keyed, so that the client cannot test a guess against it', () => {
+    expect(principalDigestOf(otherKey, 'default', actor)).not.toBe(
+      principalDigestOf(key, 'default', actor),
     );
   });
 
   it('lets no value end one field and start the next', () => {
-    expect(principalDigestOf('ab', { kind: 'service', id: 'c' })).not.toBe(
-      principalDigestOf('a', { kind: 'bservice' as 'service', id: 'c' }),
+    expect(principalDigestOf(key, 'ab', { kind: 'service', id: 'c' })).not.toBe(
+      principalDigestOf(key, 'a', { kind: 'bservice' as 'service', id: 'c' }),
     );
   });
 });
 
 describe('the hash of the input', () => {
   it('does not depend on the order of keys', () => {
-    expect(argumentsDigestOf({ b: 1, a: { d: [1, 2], c: 'x' } })).toBe(
-      argumentsDigestOf({ a: { c: 'x', d: [1, 2] }, b: 1 }),
+    expect(argumentsDigestOf(key, { b: 1, a: { d: [1, 2], c: 'x' } })).toBe(
+      argumentsDigestOf(key, { a: { c: 'x', d: [1, 2] }, b: 1 }),
     );
   });
 
   it('leaves out a field that holds undefined', () => {
-    expect(argumentsDigestOf({ a: 1, b: undefined })).toBe(
-      argumentsDigestOf({ a: 1 }),
+    expect(argumentsDigestOf(key, { a: 1, b: undefined })).toBe(
+      argumentsDigestOf(key, { a: 1 }),
     );
   });
 
   it('differs for another value, another order of a list and another type', () => {
-    const digest = argumentsDigestOf({ a: [1, 2], b: 'x', c: true });
+    const digest = argumentsDigestOf(key, { a: [1, 2], b: 'x', c: true });
     for (const other of [
       { a: [2, 1], b: 'x', c: true },
       { a: [1, 2], b: 'y', c: true },
@@ -100,12 +108,20 @@ describe('the hash of the input', () => {
       { a: ['1', '2'], b: 'x', c: true },
       { a: [1, 2], b: 'x', c: true, d: null },
     ]) {
-      expect(argumentsDigestOf(other)).not.toBe(digest);
+      expect(argumentsDigestOf(key, other)).not.toBe(digest);
     }
   });
 
+  it('is keyed, so that a small ID in the input cannot be found by trying', () => {
+    expect(argumentsDigestOf(otherKey, { personId: 7 })).not.toBe(
+      argumentsDigestOf(key, { personId: 7 }),
+    );
+  });
+
   it('takes a lone value and nothing as well', () => {
-    expect(argumentsDigestOf(undefined)).toBe(argumentsDigestOf(null));
-    expect(argumentsDigestOf('x')).toMatch(/^[0-9a-f]{64}$/);
+    expect(argumentsDigestOf(key, undefined)).toBe(
+      argumentsDigestOf(key, null),
+    );
+    expect(argumentsDigestOf(key, 'x')).toMatch(/^[0-9a-f]{64}$/);
   });
 });

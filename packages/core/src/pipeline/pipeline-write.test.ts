@@ -1028,7 +1028,7 @@ describe('a question before a write', () => {
     ).toHaveLength(1);
   });
 
-  it('finds no plan in a second instance with stores of its own', async () => {
+  it('refuses in a second instance, whose key and stores are its own', async () => {
     const first = setup();
     first.planReads();
     const question = await ask(first.pipeline);
@@ -1042,7 +1042,8 @@ describe('a question before a write', () => {
       ok: false,
       error: {
         code: 'confirmation_required',
-        message: confirmationSentences.gone,
+        // The hashes of the state are keyed per pipeline.
+        message: confirmationSentences.notThisCall,
       },
     });
     expect(second.double.calls()).toEqual([]);

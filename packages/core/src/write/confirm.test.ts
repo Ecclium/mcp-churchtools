@@ -191,9 +191,15 @@ describe('a question before a write', () => {
       v: 1,
       tool: 'ct_example_note_write',
       planHash: readPlan(plan)?.planHash,
-      nonce: '01'.repeat(16),
-      principal: principalDigestOf('demo-tenant', ctx.actor),
-      arguments: argumentsDigestOf(input),
+      // The first random bytes are the key of the hashes, the next the
+      // nonce.
+      nonce: '02'.repeat(16),
+      principal: principalDigestOf(
+        new Uint8Array(32).fill(1),
+        'demo-tenant',
+        ctx.actor,
+      ),
+      arguments: argumentsDigestOf(new Uint8Array(32).fill(1), input),
     });
     expect(readConfirmationState(question.state)).toEqual(question.state);
     expect(Object.isFrozen(question)).toBe(true);
@@ -493,6 +499,37 @@ describe('the answer to a question', () => {
       kind: 'refused',
       error: { message: confirmationSentences.gone },
     });
+  });
+
+  it('takes no plan from a store that gives another value than the one asked about', async () => {
+    const clock = createTestClock(start);
+    const memory = createMemoryPlanStore(clock);
+    const ctx = contextOf([]);
+    const other = sealed({ contentHash: contentHashOf(['other']) });
+    for (const given of [other, { __ecclium: 'PlannedWrite' }]) {
+      const confirmations = createConfirmations({
+        plans: {
+          put: (...args: Parameters<PlanStore['put']>) => memory.put(...args),
+          take: () => Promise.resolve(given as PlannedWrite),
+        },
+        nonces: createMemoryNonceStore(clock),
+        clock,
+        random: counting(),
+      });
+      const asked = await confirmations.ask(ctx, sealed(), input, text);
+      if (asked.kind !== 'question') throw new Error('no question');
+      expect(
+        await confirmations.answer(
+          ctx,
+          'ct_example_note_write',
+          input,
+          yes(asked.question.state),
+        ),
+      ).toMatchObject({
+        kind: 'refused',
+        error: { message: confirmationSentences.gone },
+      });
+    }
   });
 
   it('keeps the sentence of a way that is not built yet', () => {
