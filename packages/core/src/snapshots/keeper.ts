@@ -39,6 +39,8 @@ export type LoadedSnapshot =
       readonly kind: 'found';
       readonly before: SnapshotState;
       readonly after?: PageCreatedSnapshot;
+      /** The UTC day of the part before, the day of the write. */
+      readonly day: IsoDate;
     };
 
 /** The snapshots of writes over a provider of keys and a store. */
@@ -127,6 +129,7 @@ export function createSnapshotKeeper(ports: {
         // openSnapshot gives a part before only as a state (seal.ts).
         before: before as SnapshotState,
         ...(after?.kind === 'wikiPageCreated' ? { after } : {}),
+        day: first.day,
       });
     },
     // Records first, then the keys, also when the records could not all

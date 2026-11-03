@@ -10,4 +10,7 @@ export {
   type ToolPipeline,
   type ToolPipelineOptions,
   type ToolRequest,
+  type UndoCall,
+  type UndoOutcome,
+  type UndoReason,
 } from './pipeline.js';

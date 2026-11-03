@@ -433,6 +433,65 @@ describe('ecclium audit show', () => {
     expect(result.stdout.join('\n')).not.toContain('group:7');
   });
 
+  it('counts the undos of a day in a row of their own, in a chain verify finds whole (ADR 0031)', () => {
+    const refs = ['wiki_category:12', 'wiki_page:34'];
+    const write = event({
+      tool: 'ct_wiki_page_update',
+      confirmation: 'elicitation',
+      writeState: 'verified',
+      objectRefs: refs,
+    });
+    const undo = (fields: Record<string, unknown>): string =>
+      event({
+        type: 'undo',
+        undoes: (JSON.parse(write) as { eventId: string }).eventId,
+        actor: { kind: 'operator', id: 'stdio:local-stdio' },
+        mode: 'operator',
+        tool: undefined,
+        confirmation: 'operator',
+        writeState: 'verified',
+        objectRefs: refs,
+        ...fields,
+      });
+    const undoName = fileName(2);
+    const undoLines = chained(undoName, [
+      write,
+      undo({ ts: '2026-10-30T09:00:00.000Z' }),
+      undo({
+        ts: '2026-10-30T09:05:00.000Z',
+        outcome: 'error',
+        errorCode: 'conflict',
+        writeState: 'conflict',
+      }),
+    ]);
+    const { stateDir } = makeState({ [undoName]: undoLines });
+
+    expect(show(stateDir).stdout).toEqual([
+      'Aufrufe je Tag und Tool, Tage in UTC',
+      '30.10.2026',
+      '  ct_wiki_page_update: 1 Aufruf, 1 ausgeführt',
+      '  Rücknahmen mit ‹ecclium undo›: 2 Aufrufe, 1 ausgeführt, 1 mit Fehler',
+      'Gelesen: 1 von 1 Datei, 3 Zeilen im Zeitraum.',
+      'Die Auswertung prüft die Ketten nicht. Das tut ‹ecclium audit verify›.',
+    ]);
+    expect(
+      show(stateDir, { object: 'wiki_page:34' }).stdout.slice(0, 5),
+    ).toEqual([
+      'Aufrufe, die ‹wiki_page:34› nennen, Zeiten in UTC',
+      '  30.10.2026 08:00:00  ct_wiki_page_update  Subjekt stdio:local-stdio  ausgeführt',
+      '  30.10.2026 09:00:00  Rücknahme  Subjekt stdio:local-stdio  ausgeführt',
+      '  30.10.2026 09:05:00  Rücknahme  Subjekt stdio:local-stdio  mit Fehler',
+      '3 Zeilen nennen ‹wiki_page:34›.',
+    ]);
+    const result = verify(stateDir, [
+      putLog([anchorLine(undoName, undoLines)]),
+    ]);
+    expect(result.code).toBe(exitCodes.ok);
+    expect(result.stdout.at(-1)).toBe(
+      'Ergebnis: Die Ketten der Audit-Dateien sind ganz und passen zu den Ankern aus dem Log.',
+    );
+  });
+
   it('refuses a value of the wrong form without repeating it', () => {
     const { stateDir } = makeState({ [name]: lines });
     const cases: [
@@ -529,6 +588,7 @@ const summary = (changes: Partial<AuditSummary> = {}): AuditSummary => ({
   rows: [
     {
       day: '2026-10-30',
+      type: 'tool_call',
       tool: 'ct_persons_search',
       calls: 1_500,
       ok: 1_000,
@@ -538,6 +598,7 @@ const summary = (changes: Partial<AuditSummary> = {}): AuditSummary => ({
     },
     {
       day: '2026-10-30',
+      type: 'tool_call',
       tool: undefined,
       calls: 1,
       ok: 0,
@@ -545,13 +606,32 @@ const summary = (changes: Partial<AuditSummary> = {}): AuditSummary => ({
       denied: 1,
       withheld: 0,
     },
+    {
+      day: '2026-10-30',
+      type: 'undo',
+      tool: undefined,
+      calls: 1_001,
+      ok: 1_000,
+      error: 1,
+      denied: 0,
+      withheld: 0,
+    },
   ],
   hits: [
     {
       ts: '2026-10-30T08:00:00.000Z',
+      type: 'tool_call',
       tool: undefined,
       actorId: 'stdio:team-a',
       outcome: 'error',
+      withheld: false,
+    },
+    {
+      ts: '2026-10-30T09:00:00.000Z',
+      type: 'undo',
+      tool: undefined,
+      actorId: 'stdio:local-stdio',
+      outcome: 'ok',
       withheld: false,
     },
   ],

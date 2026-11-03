@@ -25,6 +25,15 @@
  * cannot be saved is not sent. Without snapshots, every plan is sealed as
  * not reversible, so that the echo allows none.
  *
+ * **undo** takes a write back from its snapshot, for `ecclium undo` of the
+ * operator (ADR 0031, `undo.ts`). It plans the update itself, as a write of
+ * the core that no tool can plan, confirms it with a proof of the operator
+ * and commits it on the same way as every write, with the kill switches,
+ * the rights as advice, the read right before, the clock, a snapshot of
+ * its own and the read after. The policy and the content policy do not
+ * apply: the operator asked for it, and the text it writes back was on the
+ * page before Ecclium wrote.
+ *
  * The policy of ADR 0032 checks the plan after the read of the target and
  * again on the commit right before the send, where it adds the write to
  * its counter of the day (`policy-gate.ts`). The content policy of ADR 0030
@@ -61,9 +70,10 @@ import { checkIntentContent, ContentRefusal } from './content-gate.js';
 import { checkKillSwitches } from './kill-switch.js';
 import { contentHashOf } from './plan-hash.js';
 import { isoDateOf } from '../quota/budget.js';
+import type { LoadedSnapshot } from '../snapshots/keeper.js';
 import type { SnapshotToSeal } from '../snapshots/seal.js';
 import { createPolicyGate, type WriteFacts } from './policy-gate.js';
-import { useProof } from './proof.js';
+import { issueProof, useProof } from './proof.js';
 import {
   type IntentRules,
   rulesOf,
@@ -73,6 +83,7 @@ import {
 } from './rules.js';
 import { type PlanView, readPlan, sealPlan } from './sealed-plan.js';
 import { serverTimeFits } from './server-clock.js';
+import { isAsLeft, type SnapshotToUndo, undoTargetOf } from './undo.js';
 
 /**
  * The sentences the model reads when a write does not happen as planned.
@@ -146,8 +157,9 @@ export interface WriteGuardOptions {
 }
 
 /**
- * How the write guard keeps snapshots (ADR 0031): it seals a part of the
- * snapshot of a write and keeps it, or rejects.
+ * How the core keeps snapshots (ADR 0031): the write guard seals a part of
+ * the snapshot of a write and keeps it, or rejects, and the undo of the
+ * pipeline loads one.
  */
 export interface WriteSnapshots {
   /**
@@ -161,7 +173,61 @@ export interface WriteSnapshots {
     ctx: TenantContext,
     snapshot: SnapshotToSeal,
   ) => Promise<void>;
+  /**
+   * Finds and opens the snapshot of a write of the tenant of the context.
+   *
+   * @param ctx - The context, for tenant and instance.
+   * @param eventId - The ID of the audit event of the write.
+   * @returns The parts, or why there are none.
+   */
+  readonly load: (
+    ctx: TenantContext,
+    eventId: string,
+  ) => Promise<LoadedSnapshot>;
 }
+
+/** What the operator asks the write guard to take back (ADR 0031). */
+export interface UndoRequest {
+  /** The context of the undo, in the mode of the operator. */
+  readonly ctx: TenantContext;
+  /**
+   * The ID of the audit event of the undo, under which its own snapshot is
+   * kept, so that an undo can be taken back as well.
+   */
+  readonly eventId: string;
+  /** The snapshot of the write to take back, as it was found. */
+  readonly snapshot: SnapshotToUndo;
+  /** Whether to write also over a page someone changed since the write. */
+  readonly overwrite: boolean;
+}
+
+/** The text of the page now and the text the undo writes, for a diff. */
+export interface UndoChange {
+  readonly from: string;
+  readonly to: string;
+}
+
+/** How an undo ended. */
+export type UndoResult =
+  /** The page holds what the undo would write already. */
+  | { readonly kind: 'unchanged'; readonly target: WriteTarget }
+  /** Someone changed the page since the write; nothing was written. */
+  | {
+      readonly kind: 'changed';
+      readonly target: WriteTarget;
+      readonly change: UndoChange;
+    }
+  /** A new page whose GUID was never kept: only its category is known. */
+  | { readonly kind: 'incomplete'; readonly target: WriteTarget }
+  /** Refused or failed before a plan: nothing was written. */
+  | { readonly kind: 'refused'; readonly error: EccliumError }
+  /** Planned and committed, with how the commit ended. */
+  | {
+      readonly kind: 'committed';
+      readonly target: WriteTarget;
+      readonly result: CommitResult;
+      readonly change: UndoChange;
+    };
 
 /** Who plans: the call of a tool. */
 export interface PlanRequest {
@@ -244,6 +310,14 @@ export interface WriteGuard {
     proof: unknown,
     eventId?: string,
   ): Promise<CommitResult>;
+  /**
+   * Takes back a write from its snapshot, for the operator (ADR 0031).
+   *
+   * @param request - Context, ID of the undo, snapshot and whether to
+   *   write over a changed page.
+   * @returns How the undo ended; it never rejects.
+   */
+  undo(request: UndoRequest): Promise<UndoResult>;
   /**
    * Stops every later plan until the process ends, after a write whose
    * line could not be recorded in the audit file (ADR 0029).
@@ -546,14 +620,17 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     const target = view.rules.target;
     const stop = stopped(ctx);
     if (stop !== undefined) return denied(stop, target);
-    return commitPlan(ctx, view, proof, eventId);
+    return commitPlan(ctx, view, proof, eventId, false);
   };
 
+  // An undo of the operator skips the policy, which judges what the model
+  // asks for, and adds nothing to its counters (ADR 0031).
   const commitPlan = async (
     ctx: TenantContext,
     view: PlanView,
     proof: unknown,
     eventId: string | undefined,
+    operator: boolean,
   ): Promise<CommitResult> => {
     // A plan is sealed only for an intent the core runs (sealed-plan.ts).
     const intent = view.intent as WikiIntent;
@@ -622,13 +699,15 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     // of a name that fails is no refusal of the policy: the write failed
     // before it was sent.
     try {
-      await policy.check(
-        ctx,
-        view.tool,
-        view.rules,
-        factsOf(derived),
-        'commit',
-      );
+      if (!operator) {
+        await policy.check(
+          ctx,
+          view.tool,
+          view.rules,
+          factsOf(derived),
+          'commit',
+        );
+      }
     } catch (error) {
       const failure = asError(error);
       return failure.code === 'policy_denied'
@@ -917,14 +996,114 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     });
   };
 
+  // Takes a write back: the page of the snapshot read now, the text from
+  // before written back or a new page withdrawn, as an update the core
+  // plans and confirms itself for the operator (ADR 0031). Rejects nothing:
+  // a refusal or a failed read before the plan is a result of its own.
+  const undo = async (request: UndoRequest): Promise<UndoResult> => {
+    try {
+      return await undoOnce(request);
+    } catch (error) {
+      return Object.freeze({ kind: 'refused', error: asError(error) });
+    }
+  };
+
+  const undoOnce = async (request: UndoRequest): Promise<UndoResult> => {
+    const { ctx, eventId, snapshot, overwrite } = request;
+    const stop = stopped(ctx);
+    if (stop !== undefined) throw stop;
+    const found = undoTargetOf(snapshot);
+    if (!found.ok) {
+      return Object.freeze({
+        kind: 'incomplete',
+        target: Object.freeze({
+          kind: 'wiki_category',
+          key: String(found.categoryId),
+        }),
+      });
+    }
+    const undoing = found.target;
+    const today = isoDateOf(clock.now());
+    if (today === undefined)
+      throw refuse('policy_denied', writeSentences.clock);
+    // The rights as advice for the update the undo writes, as for every
+    // write of a page; the text is not known before the read.
+    const asked: PageIntent = Object.freeze({
+      kind: 'wikiPageUpdate',
+      categoryId: undoing.categoryId,
+      guid: undoing.guid,
+      text: '-',
+      baseVersion: 0,
+    });
+    const rules = withToolMeta(rulesOf(asked), undoMeta);
+    await checkRights(ctx, asked, rules);
+    const { target } = rules;
+    const { page } = await client.writes.wikiPageState(
+      ctx,
+      undoing.categoryId,
+      undoing.guid,
+    );
+    if (!page.isMarkdown) {
+      throw refuse('policy_denied', writeSentences.notMarkdown);
+    }
+    const text = undoing.textOn(today);
+    if (undoing.done(page.text)) {
+      return Object.freeze({ kind: 'unchanged', target });
+    }
+    const change: UndoChange = Object.freeze({ from: page.text, to: text });
+    if (!overwrite && !isAsLeft(undoing, page)) {
+      return Object.freeze({ kind: 'changed', target, change });
+    }
+    // The plan of the update, sealed on the version read now, so that the
+    // commit writes nothing when the page changes in between.
+    const intent: PageIntent = Object.freeze({
+      kind: 'wikiPageUpdate',
+      categoryId: undoing.categoryId,
+      guid: undoing.guid,
+      text,
+      baseVersion: page.version,
+    });
+    const sealed = sealPlan({
+      tenantId: ctx.tenantId,
+      actor: ctx.actor,
+      tool: undoing.tool,
+      origin: 'core',
+      intent,
+      toolMeta: undoMeta,
+      contentHash: contentHashOf([text]),
+      sealedAt: clock.now(),
+      snapshots: reversible,
+    });
+    // The operator asked for this undo on the command line, so the core
+    // confirms it itself, on the way of the operator, and for this plan
+    // only (proof.ts).
+    const proof = issueProof(sealed, 'operator', clock.now());
+    const result = await commitPlan(
+      ctx,
+      readPlan(sealed) as PlanView,
+      proof,
+      eventId,
+      true,
+    );
+    return Object.freeze({ kind: 'committed', target, result, change });
+  };
+
   return Object.freeze({
     plan,
     commit,
+    undo,
     block: (): void => {
       blocked = true;
     },
   });
 }
+
+// What the plan of an undo says of itself: the text of a page may hold
+// personal data, and an undo never runs unattended.
+const undoMeta = Object.freeze({
+  sensitivity: 'personal',
+  unattended: 'never',
+} as const);
 
 // Codes with which ChurchTools answered and refused a new page: it was not
 // created (ADR 0072).

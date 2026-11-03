@@ -10,8 +10,10 @@
  *
  * A proof comes from three sources only: a checked confirmation by the
  * client or by echo, the policy of an unattended run, and an approval of
- * the operator. Each source gets its own function with its way; until
- * they exist, only tests issue a proof, through a relative import. Like
+ * the operator. Each source gets its own function with its way. Today the
+ * write guard issues one for an undo of the operator, which the operator
+ * asked for on the command line (ADR 0031); for the other ways, only tests
+ * issue a proof, through a relative import. Like
  * the sealed plan, the proof is a class with private fields behind a key
  * that only this module holds, so that no tool and no plugin can make
  * one, and the package exports no way to make one for tests. Only the

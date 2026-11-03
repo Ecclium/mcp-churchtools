@@ -295,7 +295,11 @@ describe('the catalog of the audit events', () => {
   });
 
   it('gives every type and every kind of object a meaning', () => {
-    expect(Object.keys(auditTypeMeanings)).toEqual(['tool_call']);
+    const schema = JSON.parse(renderAuditEventSchema()) as {
+      properties: { type: { enum: string[] } };
+    };
+    expect(Object.keys(auditTypeMeanings)).toEqual(schema.properties.type.enum);
+    expect(schema.properties.type.enum).toEqual(['tool_call', 'undo']);
     expect(Object.keys(objectDomainLabels).sort()).toEqual(
       [...objectDomains].sort(),
     );

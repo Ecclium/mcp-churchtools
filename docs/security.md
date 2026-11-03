@@ -147,6 +147,16 @@ Jeder Text, den ein Schreib-Tool ins Wiki schreiben will, geht durch die Content
 - **Grenzen:** Ein Feld hat höchstens 64 KiB und höchstens 2000 Sternchen, Unterstriche, Tilden und Ausrufezeichen, damit auch ein bösartiger Text schnell geprüft ist.
 - **Was bleibt:** Welche Bibliothek ChurchTools zum Darstellen nutzt, ist nicht bekannt. Eine nackte IP-Adresse oder eine Kontaktangabe in einer Form, die die Prüfung nicht kennt, kann durchgehen. Ein Text, den ein Mensch danach im Web-Editor speichert, kann der Editor umschreiben.
 
+## Rücknahme
+
+Ein Schreibvorgang des Kerns lässt sich 30 Tage lang mit `ecclium undo` zurücknehmen, solange Snapshots eingeschaltet sind ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md), [Betrieb über stdio](betrieb/stdio.md#rücknahme)).
+
+- **Wer:** nur der Betreiber auf der Kommandozeile, im Modus `operator`. Kein Tool und kein Modell kann eine Rücknahme auslösen, und die Richtlinie gilt für sie nicht. Kill-Switches, `ECCLIUM_READ_ONLY`, die Rechte des Dienstkontos und die Uhr gelten wie für jedes Schreiben.
+- **Was:** nur, was ein Snapshot belegt, und nur das eine Feld, das der Schreibvorgang geändert hat: den Text einer Seite des Wikis. Eine neue Seite wird nicht gelöscht, nur ihr Text ersetzt.
+- **Fremde Änderungen:** Hat jemand die Seite seither geändert, schreibt der Befehl ohne `--overwrite` nichts. Mit `--overwrite` geht diese Änderung verloren, bleibt aber im Snapshot der Rücknahme und lässt sich mit einer zweiten Rücknahme wiederherstellen.
+- **Fremder Text im Terminal:** Den Text der Seite zeigt der Befehl nur in einer Form aus ASCII, Umlauten und «» ‹›, jedes andere Zeichen als `\u{…}`. In Log und Audit steht nie Text einer Seite.
+- **Grenzen:** Was eine Seite vor dem Schreibvorgang enthielt, schreibt die Rücknahme ungeprüft zurück, auch einen Link oder eine Kontaktangabe, die die ContentPolicy einem Modell nicht erlaubte: Es ist der Stand vor Ecclium. Nach 30 Tagen oder mit `ECCLIUM_SNAPSHOTS=off` gibt es nichts zurückzunehmen.
+
 ## Was später kommt
 
 - Phase 5: Tools, die schreiben, mit Bestätigung über eine Rückfrage im Client, eine Freigabe durch den Betreiber oder ein Echo, und was jeder dieser Wege beweist und was nicht. Dazu das Lesebudget in der Richtlinie.

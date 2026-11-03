@@ -20,8 +20,6 @@ import { isProxy } from 'node:util/types';
 
 import {
   loadConfig,
-  type PrivateFileCode,
-  privateFileCodes,
   type RefusalReason,
   refusalReasons,
   RegistryRefusal,
@@ -35,11 +33,11 @@ import {
   prepareDayKeyFolder,
   prepareQuotaFolder,
   prepareSnapshotFolder,
-  PrivateFileError,
   systemClock,
 } from '@ecclium/mcp-churchtools-core/composition';
 import { DocsIndexError } from '@ecclium/mcp-churchtools-docs-index';
 
+import { privateFileCodeOf } from '../compose/private-file-code.js';
 import { keepsSnapshots } from '../compose/snapshots.js';
 import { takeEnvironment } from '../environment.js';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
@@ -108,22 +106,6 @@ const refusalOf = (error: unknown): RefusalReason | undefined => {
   return refusalReasons.find((known) => known === reason);
 };
 
-// Why a private folder of the start could not be prepared, read as an own
-// data property of a refusal of core. Any other value gives undefined, and
-// the start then reports an internal error.
-const privateFileCodeOf = (error: unknown): PrivateFileCode | undefined => {
-  if (
-    typeof error !== 'object' ||
-    error === null ||
-    isProxy(error) ||
-    !(error instanceof PrivateFileError)
-  ) {
-    return undefined;
-  }
-  const code: unknown = Object.getOwnPropertyDescriptor(error, 'code')?.value;
-  return privateFileCodes.find((known) => known === code);
-};
-
 /**
  * Starts the server over stdio. It removes the token from the environment
  * first, in every spelling of its name, so that child processes and other
@@ -139,10 +121,9 @@ const privateFileCodeOf = (error: unknown): PrivateFileCode | undefined => {
  * (ADR 0028, ADR 0063). With `ECCLIUM_KEYS_DIR` it prepares the folder of
  * the day keys of snapshots in the same way, and, when the writes keep
  * snapshots, the folder of the snapshots in the folder of state
- * (ADR 0031). Until the stderr
- * writer exists, everything is caught: an internal error gives one fixed
- * notice and 70, never a stack
- * or a message, and closes an audit file that is already open.
+ * (ADR 0031). Until the stderr writer exists, everything is caught: an
+ * internal error gives one fixed notice and 70, never a stack or a
+ * message, and closes an audit file that is already open.
  *
  * @param args - The arguments after `ecclium stdio`.
  * @param environment - The environment of the process, which loses the

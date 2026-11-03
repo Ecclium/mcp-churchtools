@@ -20,6 +20,7 @@ export const auditTypeMeanings: Readonly<Record<string, string>> =
   Object.freeze({
     tool_call:
       'Ein Aufruf eines Tools, auch eines unbekannten, eines abgelehnten und eines gescheiterten. Jeder Aufruf ergibt genau eine Zeile, geschrieben auch dann, wenn eine Stufe der Pipeline scheitert.',
+    undo: 'Ein Lauf von `ecclium undo`, der einen Schreibvorgang von Ecclium aus seinem verschlüsselten Snapshot zurücknimmt ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)). Jeder Lauf, der den Snapshot sucht, ergibt genau eine Zeile, mit `undoes` und ohne `tool`. Ein Lauf, der vorher am Aufruf oder an der Konfiguration scheitert, ergibt keine. `ecclium audit show` zählt diese Zeilen als Rücknahmen in einer eigenen Zeile, `ecclium policy init` leitet aus ihnen weder Ziele noch Grenzen ab.',
   });
 
 /**
@@ -34,6 +35,8 @@ export const auditFieldMeanings: Readonly<Record<string, string>> =
       'Kennung des Ereignisses, gleich der `eventId` in den Logzeilen desselben Aufrufs.',
     ts: 'Zeit des Ereignisses in UTC, auf die Millisekunde.',
     type: 'Art des Ereignisses, siehe «Typen».',
+    undoes:
+      'Kennung (`eventId`) der Zeile des Schreibvorgangs, den ein Lauf von `ecclium undo` zurücknimmt ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)). In jeder Zeile vom Typ `undo` und in keiner anderen. Die Null-UUID steht für eine Kennung, die fehlte oder nicht passte, und nennt keinen Schreibvorgang.',
     tenantId: 'Kennung des Mandanten.',
     actor: 'Wer gehandelt hat.',
     'actor.kind': 'Art des Akteurs: Dienst, Benutzer, Runner oder Betreiber.',
@@ -42,7 +45,7 @@ export const auditFieldMeanings: Readonly<Record<string, string>> =
     mode: 'Wie der Aufruf lief: interaktiv, unbeaufsichtigt oder durch den Betreiber.',
     runId: 'Kennung des Laufs einer Routine.',
     routineId: 'Kennung der Routine eines Laufs.',
-    tool: 'Name des Tools, `ct_unknown` für ein Tool, das es nicht gibt.',
+    tool: 'Name des Tools, `ct_unknown` für ein Tool, das es nicht gibt. Nie in einer Zeile vom Typ `undo`, denn eine Rücknahme ruft kein Tool auf.',
     outcome:
       'Ausgang des Aufrufs: `ok`, `error` bei einem Fehler oder `denied` bei einer Ablehnung.',
     confirmation: 'Wie ein Schreibvorgang bestätigt wurde.',
@@ -125,7 +128,7 @@ export function renderAuditEventSchema(): string {
     {
       $schema,
       title: 'AuditEventV1',
-      description: `One line of the audit file of Ecclium, version 1. The copy on stderr is the same line with an empty objectRefs and without ${fileOnlyFields.join(', ')}. Not expressed here: an outcome of ok has no errorCode and error and denied have one, objectRefsOmitted comes only with 100 objectRefs, and withheldAfterRead only with denied and policy_denied.`,
+      description: `One line of the audit file of Ecclium, version 1. The copy on stderr is the same line with an empty objectRefs and without ${fileOnlyFields.join(', ')}. Not expressed here: an outcome of ok has no errorCode and error and denied have one, undoes comes with the type undo and only with it, a line of the type undo has no tool, objectRefsOmitted comes only with 100 objectRefs, and withheldAfterRead only with denied and policy_denied.`,
       ...rest,
     },
     null,
@@ -228,7 +231,7 @@ const meaningOf = (table: Readonly<Record<string, string>>, key: string) => {
 export function renderAuditEventsReference(): string {
   const schema = jsonSchema();
   const types = schema.properties?.['type'];
-  const typeNames = [types?.const].filter(
+  const typeNames = (types?.enum ?? [types?.const]).filter(
     (value): value is string => typeof value === 'string',
   );
   const lines = [

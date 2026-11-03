@@ -17,9 +17,8 @@
  * UTC day also in a run without calls (ADR 0028). With a folder of keys,
  * the start and the same timer on each new UTC day destroy the day keys
  * of the snapshots past their retention of 30 days, and, with a folder of
- * state, remove their records of those days as well (ADR 0031).
- * When the
- * connection ends, the transport closes, the event
+ * state, remove their records of those days as well (ADR 0031). When
+ * the connection ends, the transport closes, the event
  * `audit_file_closed` counts the lines the audit file lost, the file
  * closes with the anchor of its chain, `audit_chain_anchor`, if it has a
  * line, the event `stdio_closed` counts the lines stderr lost, and the

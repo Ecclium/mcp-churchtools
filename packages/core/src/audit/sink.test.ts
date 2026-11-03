@@ -819,6 +819,166 @@ describe('the reasons of a refused text', () => {
   });
 });
 
+describe('an undo (ADR 0031)', () => {
+  const undoneId = 'a1b2c3d4-0000-4000-8000-0000000000aa';
+  // The draft before it names the write it takes back.
+  const unnamed: AuditDraft = {
+    type: 'undo',
+    tenantId: 'demo-tenant',
+    actor: { kind: 'operator', id: 'stdio:local-stdio' },
+    mode: 'operator',
+    outcome: 'ok',
+    confirmation: 'operator',
+    writeState: 'verified',
+    objectRefs: ['wiki_category:12', 'wiki_page:34'],
+    durationMs: 40,
+  };
+  const undo: AuditDraft = { ...unnamed, undoes: undoneId };
+  const undoLine = `{"v":1,"eventId":"${firstId}","ts":"2026-10-13T08:00:00.000Z","type":"undo","undoes":"${undoneId}","tenantId":"demo-tenant","actor":{"kind":"operator","id":"stdio:local-stdio"},"mode":"operator","outcome":"ok","confirmation":"operator","writeState":"verified","objectRefs":["wiki_category:12","wiki_page:34"],"durationMs":40}`;
+
+  it('is written without a tool, with the write it takes back after its type', () => {
+    const { sink, file, lines, logs, toolChecks } = makeWithFile();
+    expect(sink.record(undo)).toBe(true);
+    expect(file()).toEqual([undoLine]);
+    expect(lines[0]).toBe(
+      undoLine.replace(
+        '"objectRefs":["wiki_category:12","wiki_page:34"]',
+        '"objectRefs":[]',
+      ),
+    );
+    expect(auditEventV1Schema.safeParse(JSON.parse(undoLine)).success).toBe(
+      true,
+    );
+    expect(logs()).toEqual([]);
+    expect(toolChecks).toEqual([]);
+  });
+
+  it('keeps an undo that failed, with its error code', () => {
+    const { sink, audit, logs } = make();
+    sink.record({
+      ...undo,
+      outcome: 'error',
+      writeState: 'conflict',
+      errorCode: 'conflict',
+    });
+    expect(event(audit())).toMatchObject({
+      type: 'undo',
+      undoes: undoneId,
+      outcome: 'error',
+      writeState: 'conflict',
+      errorCode: 'conflict',
+    });
+    expect(logs()).toEqual([]);
+  });
+
+  it('gives an undo without the write it takes back the zero UUID', () => {
+    const { sink, audit, logs } = make();
+    expect(sink.record(unnamed)).toBe(false);
+    expect(event(audit())).toMatchObject({ type: 'undo', undoes: nilId });
+    expect(events(logs())).toEqual(['audit_missing_undoes']);
+    expect(logs()[0]).toMatchObject({
+      level: 'error',
+      code: 'validation',
+      eventId: firstId,
+      tenantId: 'demo-tenant',
+    });
+  });
+
+  it.each([
+    ['of another form', 'undo-of-yesterday'],
+    ['in capitals', undoneId.toUpperCase()],
+    ['as a number', 42],
+    ['as an object', { id: undoneId }],
+  ])('replaces the write it takes back %s by the zero UUID', (_, undoes) => {
+    const { sink, audit, logs } = make();
+    sink.record({ ...undo, undoes } as unknown as AuditDraft);
+    const line = event(audit());
+    expect(line).toMatchObject({ type: 'undo', undoes: nilId });
+    expect(auditEventV1Schema.safeParse(line).success).toBe(true);
+    expect(events(logs())).toEqual(['audit_invalid_undoes']);
+    expect(audit()[0]).not.toContain('yesterday');
+  });
+
+  it('takes the zero UUID the pipeline writes for an ID that was none', () => {
+    const { sink, audit, logs } = make();
+    expect(
+      sink.record({
+        ...undo,
+        undoes: nilId,
+        outcome: 'error',
+        writeState: 'failed',
+        errorCode: 'validation',
+      }),
+    ).toBe(true);
+    expect(event(audit())).toMatchObject({ type: 'undo', undoes: nilId });
+    expect(logs()).toEqual([]);
+  });
+
+  it('runs no getter on undoes and counts it as invalid', () => {
+    const { sink, audit, logs } = make();
+    const draft = { ...undo };
+    let reads = 0;
+    Object.defineProperty(draft, 'undoes', {
+      enumerable: true,
+      get: () => {
+        reads += 1;
+        return undoneId;
+      },
+    });
+    sink.record(draft);
+    expect(reads).toBe(0);
+    expect(event(audit())['undoes']).toBe(nilId);
+    expect(events(logs())).toEqual(['audit_invalid_undoes']);
+  });
+
+  it('leaves undoes out of a tool call and reports it', () => {
+    const { sink, audit, logs } = make();
+    sink.record({ ...base, undoes: undoneId });
+    expect(audit()).toEqual([baseLine]);
+    expect(events(logs())).toEqual(['audit_invalid_undoes']);
+  });
+
+  it('leaves undoes out of a line whose type is invalid', () => {
+    const { sink, audit, logs } = make();
+    sink.record({
+      ...base,
+      type: 'Undo',
+      undoes: undoneId,
+    } as unknown as AuditDraft);
+    expect(event(audit())).toMatchObject({ type: 'tool_call' });
+    expect(event(audit())).not.toHaveProperty('undoes');
+    expect(events(logs())).toEqual([
+      'audit_invalid_type',
+      'audit_invalid_undoes',
+    ]);
+  });
+
+  it.each([
+    ['a registered tool', 'ct_group_search'],
+    ['the placeholder of a tool', 'ct_unknown'],
+    ['a tool of another form', 'Wiki Page Update'],
+  ])('leaves out %s, without asking the registry', (_, tool) => {
+    const { sink, file, logs, toolChecks } = makeWithFile();
+    sink.record({ ...undo, tool });
+    expect(file()).toEqual([undoLine]);
+    expect(events(logs())).toEqual(['audit_invalid_tool']);
+    expect(toolChecks).toEqual([]);
+  });
+
+  it('says denied when its required line had to be changed', () => {
+    const { sink, file } = makeWithFile();
+    sink.record(unnamed, undefined, { required: true });
+    expect(JSON.parse(file()[0] ?? '')).toMatchObject({
+      type: 'undo',
+      undoes: nilId,
+      outcome: 'denied',
+      errorCode: 'policy_denied',
+      writeState: 'denied',
+      withheldAfterRead: true,
+    });
+  });
+});
+
 describe('other optional fields', () => {
   it.each([
     ['runId', 'not-a-uuid', 'audit_invalid_run_id'],

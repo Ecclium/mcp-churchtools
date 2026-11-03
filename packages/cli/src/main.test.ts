@@ -97,6 +97,7 @@ describe('the exit codes', () => {
       unavailable: 69,
       internal: 70,
       ioError: 74,
+      noPermission: 77,
       invalidConfig: 78,
       interrupted: 130,
       terminated: 143,
@@ -264,6 +265,12 @@ describe('the command line', () => {
     [['audit', 'show', '--object'], 'value'],
     [['audit', 'show', '--since', '--until'], 'value'],
     [['audit', 'show', '--object', 'a', '--object', 'b'], 'repeated'],
+    [['undo'], 'command'],
+    [['undo', 'a', 'b'], 'command'],
+    [['undo', '--overwrite'], 'command'],
+    [['undo', 'x', '--overwrite=1'], 'value'],
+    [['undo', 'x', '--log', 'y'], 'option'],
+    [['config', 'check', '--overwrite'], 'option'],
   ])('refuses %j as %s with a fixed text on stderr', (args, problem) => {
     const result = capture(args, validEnvironment());
     expect(result.code).toBe(exitCodes.usage);
@@ -280,6 +287,8 @@ describe('the command line', () => {
     [['audit', '--help']],
     [['audit', 'verify', '-h']],
     [['audit', 'show', '--object', 'person:1', '--help']],
+    [['undo', '--help']],
+    [['undo', 'x', '-h']],
   ])('writes the help for %j to stdout', (args) => {
     const result = capture(args, {});
     expect(result.code).toBe(exitCodes.ok);
@@ -614,5 +623,42 @@ describe('ecclium policy init in the command line', () => {
     const result = capture(['config', 'check', '--interactive'], {});
     expect(result.code).toBe(exitCodes.usage);
     expect(result.stderr).toBe(`${usageProblemTexts.option}\n${usageLine}\n`);
+  });
+});
+
+describe('ecclium undo in the command line', () => {
+  // The command talks to ChurchTools, so run gives a promise for it; its
+  // own tests stand in undo/undo.test.ts.
+  const runUndo = async (args: readonly string[], options: RunOptions = {}) => {
+    const taken: number[] = [];
+    const writeSync: WriteSyncFn = (_fd, buffer, offset, length) => {
+      taken.push(...buffer.subarray(offset, offset + length));
+      return length;
+    };
+    const code = await run(args, {}, [], { ...options, writeSync });
+    return { code, stderr: decoder.decode(new Uint8Array(taken)) };
+  };
+
+  it('hands the ID to the command, which checks it and never names it', async () => {
+    const id = `not-an-id-${plain()}`;
+    const result = await runUndo(['undo', id, '--overwrite']);
+    expect(result.code).toBe(exitCodes.usage);
+    expect(result.stderr).toContain('Die Kennung ist keine Kennung');
+    expect(result.stderr).not.toContain(id);
+  });
+
+  it('turns a failure of the command into the internal error', async () => {
+    const result = await runUndo(
+      ['undo', '11111111-2222-4333-8444-555555555555'],
+      {
+        undo: {
+          load: () => {
+            throw new Error(plain());
+          },
+        },
+      },
+    );
+    expect(result.code).toBe(exitCodes.internal);
+    expect(result.stderr).toBe(`${internalErrorText}\n`);
   });
 });

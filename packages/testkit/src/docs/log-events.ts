@@ -195,6 +195,8 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Nach einem Fehler beim Schreiben ist offen, ob die Änderung ChurchTools erreicht hat, und das Lesen danach konnte es nicht klären. Das Ziel ist von Hand zu prüfen.',
     write_audit_failed:
       'Die Zeile eines Aufrufs, der womöglich geschrieben hat, erreichte die Audit-Datei nicht. Bis zum Neustart des Servers plant und schreibt der Write-Guard nichts mehr.',
+    undo_call:
+      'Eine Rücknahme mit `ecclium undo` ist zu Ende, mit oder ohne Fehler. `code` nennt den Fehler, `durationMs` die Dauer. Zu jeder Rücknahme gehört eine Zeile vom Typ `undo` im Audit. Text der Seite steht nie darin.',
     write_committed:
       'Ein Schreibvorgang ist geschrieben und gelesen: die Version stieg wie geplant, und der Text ist der gesendete.',
     snapshot_failed:
@@ -306,6 +308,8 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'ChurchTools hat geantwortet. `method` nennt die Methode der Anfrage, `status` den Status, `durationMs` die Dauer.',
     audit_missing_error_code:
       'Eine Zeile mit `error` oder `denied` kam ohne Fehlercode. Die Zeile im Audit trägt einen Platzhalter.',
+    audit_missing_undoes:
+      'Eine Zeile vom Typ `undo` kam ohne die Kennung des Schreibvorgangs, den sie zurücknimmt. Die Zeile im Audit trägt in `undoes` die Null-UUID als Platzhalter, die keinen Schreibvorgang nennt.',
     audit_unknown_fields:
       'Eine Zeile kam mit Feldern, die das Schema nicht kennt. `count` nennt ihre Zahl, die Felder fallen weg.',
     audit_schema_mismatch:
@@ -418,6 +422,7 @@ const sections: readonly {
     title: 'Write-Guard',
     fits: (name: string) =>
       name.startsWith('write_') ||
+      name.startsWith('undo_') ||
       name.startsWith('snapshot_') ||
       name.startsWith('policy_') ||
       name.startsWith('content_'),

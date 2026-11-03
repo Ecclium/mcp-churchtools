@@ -44,12 +44,14 @@ describe('createSnapshotKeeper', () => {
     expect(await keeper.load(ctx, eventId)).toEqual({
       kind: 'found',
       before: state,
+      day,
     });
     const created = { kind: 'wikiPageCreated', guid, version: 1 } as const;
     await keeper.save(ctx, { eventId, part: 'after', day, content: created });
     expect(await keeper.load(ctx, eventId)).toEqual({
       kind: 'found',
       before: state,
+      day,
       after: created,
     });
   });
@@ -120,6 +122,7 @@ describe('createSnapshotKeeper', () => {
     expect(await keeper.load(ctx, eventId)).toEqual({
       kind: 'found',
       before: state,
+      day: later,
     });
   });
 

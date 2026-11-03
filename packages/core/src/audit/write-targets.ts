@@ -7,12 +7,14 @@
  *
  * A line counts when it is a call of a write tool in the interactive mode
  * whose `objectRefs` name a category; a write to a page that the guard
- * planned names its category as well. Every such line makes its category
- * a target, also a refused one, since a target without an entry is what
- * the operator wants to see. For the daily limit the refused and the
- * skipped calls do not count; every other one does, also one that failed,
- * since the audit does not tell whether it failed before or after it
- * planned.
+ * planned names its category as well. An undo of `ecclium undo` never
+ * counts, since it is no write of the model but the operator taking one
+ * back (ADR 0031); like every valid line, it still widens the days read.
+ * Every counted line makes its category a target, also a refused one,
+ * since a target without an entry is what the operator wants to see. For
+ * the daily limit the refused and the skipped calls do not count; every
+ * other one does, also one that failed, since the audit does not tell
+ * whether it failed before or after it planned.
  *
  * @packageDocumentation
  */
@@ -109,6 +111,7 @@ export function collectWriteTargets(folder: AuditFolder): WriteTargets {
       if (last === undefined || day > last) last = day;
       const { tool, writeState } = event;
       if (
+        event.type !== 'tool_call' ||
         event.mode !== 'interactive' ||
         tool === undefined ||
         writeState === undefined

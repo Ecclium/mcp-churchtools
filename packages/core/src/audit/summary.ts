@@ -1,7 +1,8 @@
 /**
  * Sums up the audit files for `ecclium audit show` (ADR 0028): per UTC day
  * and tool the calls by outcome and the results held back after they were
- * read, and, when asked for an ID of an object, the lines that name it.
+ * read, the undos of `ecclium undo` in a row of their own (ADR 0031), and,
+ * when asked for an ID of an object, the lines that name it.
  *
  * Only whole lines that fit the schema of an audit event count, the others
  * are counted as skipped. The day comes from the time of the line, not
@@ -11,16 +12,27 @@
  *
  * @packageDocumentation
  */
-import type { AuditOutcome } from '@ecclium/mcp-churchtools-plugin-api';
+import type {
+  AuditOutcome,
+  AuditType,
+} from '@ecclium/mcp-churchtools-plugin-api';
 
 import type { AuditFolder } from './reader.js';
-import { auditEventV1Schema, auditFieldSchemas } from './schema.js';
+import { auditEventV1Schema, auditFieldSchemas, auditTypes } from './schema.js';
 
-/** Calls of one tool on one UTC day. */
+/**
+ * Calls of one tool on one UTC day, or the undos of that day, which have no
+ * tool (ADR 0031).
+ */
 export interface AuditDayToolCounts {
   /** The UTC day, such as `2026-10-31`. */
   readonly day: string;
-  /** The name of the tool, or undefined for a line without one. */
+  /** The type of the lines: `tool_call`, or `undo` for the undos. */
+  readonly type: AuditType;
+  /**
+   * The name of the tool, or undefined for a line without one, such as
+   * every undo.
+   */
   readonly tool: string | undefined;
   /** All calls. */
   readonly calls: number;
@@ -38,6 +50,8 @@ export interface AuditDayToolCounts {
 export interface AuditObjectHit {
   /** The time of the line, in UTC. */
   readonly ts: string;
+  /** The type of the line: `tool_call`, or `undo` for an undo. */
+  readonly type: AuditType;
   /** The name of the tool, or undefined for a line without one. */
   readonly tool: string | undefined;
   /** The ID of the actor, such as `stdio:local-stdio`. */
@@ -64,7 +78,10 @@ export interface AuditSummary {
   readonly lines: number;
   /** The whole lines that do not fit the schema, in any range. */
   readonly skipped: number;
-  /** The calls per day and tool, sorted by day, then tool. */
+  /**
+   * The calls per day and tool, sorted by day, then tool, with the undos
+   * of a day after its calls.
+   */
   readonly rows: readonly AuditDayToolCounts[];
   /** The first {@link maxShownHits} lines that name the ID, by time. */
   readonly hits: readonly AuditObjectHit[];
@@ -124,6 +141,7 @@ export function isUtcDay(value: unknown): value is string {
 /** The counts of one day and tool while they grow. */
 interface Counts {
   day: string;
+  type: AuditType;
   tool: string | undefined;
   calls: number;
   ok: number;
@@ -137,8 +155,12 @@ interface Counts {
 const compareText = (left: string, right: string): number =>
   left < right ? -1 : left > right ? 1 : 0;
 
-// Lines without a tool after the tools. A day has one row per tool, so
-// two rows of a day never both lack one.
+// The undos of a day after its calls, as auditTypes orders them.
+const compareType = (left: AuditType, right: AuditType): number =>
+  auditTypes.indexOf(left) - auditTypes.indexOf(right);
+
+// Lines without a tool after the tools. A day has one row per type and
+// tool, so two rows of a day and type never both lack one.
 const compareTool = (
   left: string | undefined,
   right: string | undefined,
@@ -210,12 +232,15 @@ export function summarizeAuditFiles(
       }
       lines += 1;
       const withheld = event.withheldAfterRead === true;
-      // A tool name holds no space, so the key is unique per day and tool.
-      const key = `${day} ${event.tool ?? ''}`;
+      // A type and a tool name hold no space, so the key is unique per
+      // day, type and tool. An undo has no tool and gets a row of its own
+      // (ADR 0031).
+      const key = `${day} ${event.type} ${event.tool ?? ''}`;
       let row = counts.get(key);
       if (row === undefined) {
         row = {
           day,
+          type: event.type,
           tool: event.tool,
           calls: 0,
           ok: 0,
@@ -235,6 +260,7 @@ export function summarizeAuditFiles(
           hits.push(
             Object.freeze({
               ts: event.ts,
+              type: event.type,
               tool: event.tool,
               actorId: event.actor.id,
               outcome: event.outcome,
@@ -258,7 +284,9 @@ export function summarizeAuditFiles(
     .map((row): AuditDayToolCounts => Object.freeze(row))
     .sort(
       (left, right) =>
-        compareText(left.day, right.day) || compareTool(left.tool, right.tool),
+        compareText(left.day, right.day) ||
+        compareType(left.type, right.type) ||
+        compareTool(left.tool, right.tool),
     );
   // A stable sort keeps lines of the same time in the order of the files.
   const shown = hits

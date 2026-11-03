@@ -199,8 +199,10 @@ const auditSinkEvents = Object.freeze([
   'audit_invalid_tool',
   'audit_invalid_ts',
   'audit_invalid_type',
+  'audit_invalid_undoes',
   'audit_invalid_write_state',
   'audit_missing_error_code',
+  'audit_missing_undoes',
   'audit_reserved_event_id',
   'audit_reserved_prev_hash',
   'audit_reserved_seq',
@@ -238,6 +240,8 @@ export const logEvents = Object.freeze({
   snapshot_failed: entry('warn', 'code'),
   snapshot_incomplete: entry('warn', 'code'),
   write_audit_failed: entry('error'),
+  // An undo of the operator, at its end (ADR 0031).
+  undo_call: entry('info', 'code', 'durationMs'),
   // The policy in the write guard (ADR 0032).
   policy_not_interactive: entry('warn'),
   policy_queue_only: entry('warn'),
