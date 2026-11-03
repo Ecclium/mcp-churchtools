@@ -632,7 +632,7 @@ describe('a write tool in the pipeline', () => {
     expect(events()[0]).toMatchObject({ writeState: 'denied' });
   });
 
-  it('refuses a write outside the policy before it asks for a confirmation', async () => {
+  it('asks for no confirmation of a write outside the policy, and without a queue writes nothing', async () => {
     const checked = checkPolicy({
       schema: 'policy.v1',
       interactive: {
@@ -655,9 +655,10 @@ describe('a write tool in the pipeline', () => {
       note,
       request({ elicitation: true }),
     );
+    expect(!outcome.ok && outcome.question).toBeUndefined();
     expect(!outcome.ok && outcome.error).toEqual({
-      code: 'policy_denied',
-      message: policySentences.outside,
+      code: 'confirmation_required',
+      message: confirmationSentence,
     });
     expect(events()[0]).toMatchObject({
       outcome: 'denied',

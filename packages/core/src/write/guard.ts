@@ -36,7 +36,9 @@
  *
  * The policy of ADR 0032 checks the plan after the read of the target and
  * again on the commit right before the send, where it adds the write to
- * its counter of the day (`policy-gate.ts`). The content policy of ADR 0030
+ * its counter of the day (`policy-gate.ts`). A plan the policy sends to
+ * the queue of approvals is sealed all the same, and its result names the
+ * reason, so that the pipeline queues it instead of asking (ADR 0031). The content policy of ADR 0030
  * checks every text of the intent first, before the rights and before any
  * read, and the plan is sealed with the texts in their written form
  * (`content-gate.ts`).
@@ -65,6 +67,7 @@ import {
 import type { ChurchToolsWrites } from '../churchtools/wiki-writes.js';
 import { contactKeysOf } from '../content/index.js';
 import { HttpTransportError } from '../http/index.js';
+import type { PolicyQueueReason } from '../policy/engine.js';
 import type { Policy } from '../policy/schema.js';
 import { readIntent } from './intent.js';
 import { checkIntentContent, ContentRefusal } from './content-gate.js';
@@ -262,6 +265,11 @@ export interface PlanResult {
    * made from what the guard read and would write, never from the tool.
    */
   readonly text?: ConfirmationText;
+  /**
+   * For a sealed plan the policy sends to the queue of approvals, why
+   * (ADR 0031, ADR 0032).
+   */
+  readonly queue?: PolicyQueueReason;
 }
 
 /** How a commit ended. */
@@ -577,8 +585,15 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     const wiki = checkIntentContent(ctx, intent as WikiIntent, contacts);
     await checkRights(ctx, wiki, rules);
     const derived = await derive(ctx, wiki);
-    // The policy, with the counter of the day only read (ADR 0032).
-    await policy.check(ctx, request.tool, rules, factsOf(derived), 'plan');
+    // The policy, with the counter of the day only read (ADR 0032). A plan
+    // it sends to the queue is sealed all the same (ADR 0031).
+    const queue = await policy.check(
+      ctx,
+      request.tool,
+      rules,
+      factsOf(derived),
+      'plan',
+    );
     if (derived.kind === 'change' && derived.text === derived.before.text) {
       return Object.freeze({
         outcome: Object.freeze({ kind: 'skipped', reason: 'unchanged' }),
@@ -600,6 +615,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       outcome: Object.freeze({ kind: 'planned', plan: sealed }),
       target: rules.target,
       text: textOf(wiki, derived),
+      ...(queue === undefined ? {} : { queue }),
     });
   };
 

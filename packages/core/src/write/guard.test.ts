@@ -870,27 +870,33 @@ describe('the policy (ADR 0032)', () => {
     return day;
   };
 
-  it('plans a new page only in a category with the name it expects', async () => {
+  it('plans a new page in a category with another name for the queue, with the reason', async () => {
     const fake = fakeOf();
     fake.categoryName = 'Berichte';
     const { guard, request } = setup(fake, dir, { policy: categoryPolicy });
-    expect((await guard.plan(request, create)).outcome.kind).toBe('planned');
+    const fits = await guard.plan(request, create);
+    expect(fits.outcome.kind).toBe('planned');
+    expect(fits.queue).toBeUndefined();
     fake.categoryName = 'Protokolle';
-    expect(await refusalOf(guard.plan(request, create))).toMatchObject({
-      code: 'policy_denied',
-      message: policySentences.nameChanged,
-    });
+    const renamed = await guard.plan(request, create);
+    expect(renamed.outcome.kind).toBe('planned');
+    expect(renamed.queue).toBe('name_changed');
     expect(logged.map(({ event }) => event)).toEqual(['policy_name_changed']);
   });
 
-  it('refuses a plan outside the policy before it seals anything', async () => {
-    const { guard, request } = setup(fakeOf(), dir, {
+  it('seals a plan outside the policy for the queue, with the reason, and a skipped one stays skipped', async () => {
+    const { fake, guard, request } = setup(fakeOf(), dir, {
       policy: policyOf({ kind: 'wiki_category', id: 13, name: 'Andere' }),
     });
-    expect(await refusalOf(guard.plan(request, update))).toMatchObject({
-      code: 'policy_denied',
-      message: policySentences.outside,
-    });
+    const planned = await guard.plan(request, update);
+    expect(planned.outcome.kind).toBe('planned');
+    expect(planned.queue).toBe('no_entry');
+    expect(planned.text?.summary).toContain('ändern');
+    fake.page = { ...fake.page, text: '# Neu\n' };
+    const skipped = await guard.plan(request, update);
+    expect(skipped.outcome).toEqual({ kind: 'skipped', reason: 'unchanged' });
+    expect(skipped.queue).toBeUndefined();
+    expect(fake.sent).toEqual([]);
   });
 
   it('counts a write when it commits, not when it plans', async () => {
@@ -986,15 +992,14 @@ describe('the policy (ADR 0032)', () => {
     expect(fake.sent).toEqual([]);
   });
 
-  it('cannot count a limited write without a store of quotas', async () => {
+  it('cannot count a limited write without a store of quotas, so it plans it for the queue', async () => {
     const { guard, request } = setup(fakeOf(), dir, {
       policy: pagePolicy,
       quota: null,
     });
-    expect(await refusalOf(guard.plan(request, update))).toMatchObject({
-      code: 'policy_denied',
-      message: policySentences.countUnavailable,
-    });
+    const planned = await guard.plan(request, update);
+    expect(planned.outcome.kind).toBe('planned');
+    expect(planned.queue).toBe('count_unavailable');
   });
 });
 

@@ -8,6 +8,8 @@ export {
   type ConfirmationAnswer,
   type ConfirmationQuestion,
   createToolPipeline,
+  type QueueCall,
+  type RejectOutcome,
   type ToolOutcome,
   type ToolPipeline,
   type ToolPipelineOptions,

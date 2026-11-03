@@ -1,8 +1,9 @@
 /**
  * The entry of the write guard for the pipeline (ADR 0029): planning,
  * committing and taking back (ADR 0031), the ways of the confirmation with
- * their text and the state of a question, and what the pipeline derives
- * from an intent for the result and the audit. The sealed plan and the
+ * their text and the state of a question, the entry of the queue of
+ * approvals made from a plan, and what the pipeline derives from an intent
+ * for the result and the audit. The sealed plan and the
  * proof stay inside the write guard; the stores of plans and nonces reach
  * the composition root through the subpath `./composition`.
  *
@@ -13,6 +14,8 @@ export {
   type AskResult,
   type ConfirmationAnswer,
   type ConfirmationQuestion,
+  type ConfirmationRoute,
+  confirmationRouteOf,
   confirmationSentence,
   confirmationSentences,
   type Confirmations,
@@ -41,4 +44,5 @@ export {
   type WriteSnapshots,
   writeSentences,
 } from './guard.js';
+export { queueEntryOf } from './queue-entry.js';
 export type { WriteTarget } from './rules.js';

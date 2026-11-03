@@ -253,6 +253,12 @@ export const logEvents = Object.freeze({
   write_echo_refused: entry('warn', 'code'),
   // An undo of the operator, at its end (ADR 0031).
   undo_call: entry('info', 'code', 'durationMs'),
+  // The queue of approvals (ADR 0031): a write queued, a queue that is
+  // full or failed, and a rejection of the operator at its end.
+  write_queued: entry('info'),
+  write_queue_full: entry('warn', 'code'),
+  write_queue_failed: entry('warn', 'code'),
+  queue_reject_call: entry('info', 'code', 'durationMs'),
   // The policy in the write guard (ADR 0032).
   policy_not_interactive: entry('warn'),
   policy_queue_only: entry('warn'),

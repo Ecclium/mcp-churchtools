@@ -21,8 +21,10 @@
  * write tool carries a token and the summary, and `ct_write_confirm`
  * brings both back: the core checks the token, uses up its nonce, takes
  * the plan and issues a proof of the echo only when the summary is the one
- * it made and the plan still allows the echo. The queue comes with its own
- * change; until then a plan that needs it ends with `confirmation_required`.
+ * it made and the plan still allows the echo. For the queue the pipeline
+ * keeps the plan as a sealed entry with the reason this module names, and
+ * only an approval of the operator on the command line writes it
+ * (ADR 0031).
  *
  * Every refusal here carries a fixed sentence and the code
  * `confirmation_required` or `policy_denied`, which the audit counts as
@@ -59,6 +61,7 @@ import {
   principalDigestOf,
   readConfirmationState,
 } from './request-state.js';
+import type { QueueReason } from '../queue/seal.js';
 import { readPlan } from './sealed-plan.js';
 
 /** The sentence of a write that needs a way of confirmation that is not built yet. */
@@ -90,10 +93,17 @@ export const confirmationSentences = Object.freeze({
     'The summary does not match the planned write, so nothing was written. Plan the write again and send its summary exactly as the write tool returns it.',
   echoRefused:
     'This write cannot be confirmed with ct_write_confirm, so nothing was written. It needs a question to the person in the client or the approval of the operator.',
+  queueFull:
+    'Too many writes wait for the approval of the operator on this server, so this one was neither written nor queued. Ask the operator to decide on them.',
 } as const);
 
 /** The way a plan gets confirmed (ADR 0029). */
 export type ConfirmationWay = 'question' | 'echo' | 'queue';
+
+/** The way a plan gets confirmed, and for the queue why (ADR 0031). */
+export type ConfirmationRoute =
+  | { readonly way: 'question' | 'echo' }
+  | { readonly way: 'queue'; readonly reason: QueueReason };
 
 /** What decides the way of a plan besides the plan itself. */
 export interface WayFacts {
@@ -127,14 +137,48 @@ export function confirmationWayOf(
   facts: WayFacts,
   plan: PlannedWrite,
 ): ConfirmationWay {
+  return confirmationRouteOf(facts, plan).way;
+}
+
+const route = Object.freeze({
+  question: Object.freeze({ way: 'question' } as const),
+  echo: Object.freeze({ way: 'echo' } as const),
+});
+const queueFor = (reason: QueueReason): ConfirmationRoute =>
+  Object.freeze({ way: 'queue', reason });
+
+/**
+ * Picks the way that confirms a plan as {@link confirmationWayOf} does,
+ * and for the queue names the reason the entry keeps: `queue_only` for a
+ * plan only the operator may confirm, `setting` for the setting `queue`,
+ * `too_long` for a diff too long for a question, and `no_question` for a
+ * client that cannot be asked while the echo does not confirm the plan.
+ *
+ * @param facts - Setting, capability of the client and fit of the diff.
+ * @param plan - The sealed plan.
+ * @returns The way, with the reason for the queue.
+ * @throws {TypeError} For a value that is no sealed plan.
+ * @example
+ * ```ts
+ * confirmationRouteOf({ setting: 'queue', elicitation: true, fits: true },
+ *   plan); // { way: 'queue', reason: 'setting' }
+ * ```
+ */
+export function confirmationRouteOf(
+  facts: WayFacts,
+  plan: PlannedWrite,
+): ConfirmationRoute {
   const view = readPlan(plan);
   if (view === undefined) throw new TypeError('No sealed plan.');
-  if (facts.setting === 'queue' || view.rules.alwaysQueue) return 'queue';
+  if (view.rules.alwaysQueue) return queueFor('queue_only');
+  if (facts.setting === 'queue') return queueFor('setting');
   // A diff too long for a dialog goes to the queue on every way: the echo
   // hands the diff to the model, and the result of a call is bounded too.
-  if (!facts.fits) return 'queue';
-  if (facts.elicitation) return 'question';
-  return facts.setting === 'echo-allowed' && view.echo ? 'echo' : 'queue';
+  if (!facts.fits) return queueFor('too_long');
+  if (facts.elicitation) return route.question;
+  return facts.setting === 'echo-allowed' && view.echo
+    ? route.echo
+    : queueFor('no_question');
 }
 
 /** A question to the client, as the mount turns it into `input_required`. */

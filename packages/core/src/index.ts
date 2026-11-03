@@ -133,6 +133,8 @@ export {
 } from './diff/index.js';
 export {
   createToolPipeline,
+  type QueueCall,
+  type RejectOutcome,
   type ToolOutcome,
   type ToolPipeline,
   type ToolPipelineOptions,

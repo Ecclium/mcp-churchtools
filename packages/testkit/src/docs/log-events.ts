@@ -209,6 +209,14 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Die Person hat eine Rückfrage abgelehnt, abgebrochen oder nicht mit «Ja» angenommen. Ecclium schreibt nichts, der Aufruf endet mit `confirmation_required`.',
     undo_call:
       'Eine Rücknahme mit `ecclium undo` ist zu Ende, mit oder ohne Fehler. `code` nennt den Fehler, `durationMs` die Dauer. Zu jeder Rücknahme gehört eine Zeile vom Typ `undo` im Audit. Text der Seite steht nie darin.',
+    write_queued:
+      'Ein Schreibvorgang wartet als verschlüsselter Eintrag in der Freigabe-Warteschlange auf den Betreiber, unter der Kennung der Zeile seines Aufrufs im Audit. Geschrieben ist nichts.',
+    write_queue_full:
+      'Für diesen Mandanten warten schon 100 Einträge in der Freigabe-Warteschlange. Der Schreibvorgang wird weder geschrieben noch eingereiht, `code` ist `policy_denied`.',
+    write_queue_failed:
+      'Ecclium konnte einen Eintrag der Freigabe-Warteschlange nicht festhalten, zählen oder entscheiden. Geschrieben ist nichts, `code` ist `internal`.',
+    queue_reject_call:
+      'Eine Abweisung mit `ecclium queue reject` ist zu Ende, mit oder ohne Fehler. `code` nennt den Fehler, `durationMs` die Dauer. Zu jeder gehört eine Zeile vom Typ `approval` im Audit. Inhalt des Eintrags steht nie darin.',
     write_committed:
       'Ein Schreibvorgang ist geschrieben und gelesen: die Version stieg wie geplant, und der Text ist der gesendete.',
     snapshot_failed:
@@ -439,6 +447,7 @@ const sections: readonly {
     fits: (name: string) =>
       name.startsWith('write_') ||
       name.startsWith('undo_') ||
+      name.startsWith('queue_reject_') ||
       name.startsWith('snapshot_') ||
       name.startsWith('policy_') ||
       name.startsWith('content_'),
