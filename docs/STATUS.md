@@ -1418,3 +1418,4 @@ Diese Grundsatzfragen sind entschieden.
   - Audit: Typ `approval` mit `queueId` und `decision`, Schema, Senke, Katalog und `ecclium audit show` mit Freigaben, Abweisungen und eingereihten Schreibvorgängen ([ADR 0028](adr/0028-audit-ereignis-und-datei-sink.md), Umsetzung).
   - Kommandozeile: `ecclium queue list`, `show` und `reject` mit deutschen Texten, sicher für das Terminal, Codes nach sysexits. Der Start legt den Ordner `queue` für einen Server an, der schreibt.
   - Doku: ADR 0028, 0029, 0031 und 0032 (Umsetzung), `docs/privacy.md` («Freigabe-Warteschlange»), `docs/betrieb/stdio.md` («Freigabe-Warteschlange»), `.env.example`, erzeugte Doku.
+- 03.11.2026, die Freigabe-Warteschlange ist als `6898b0c` auf `main` (#192). Der Squash-Commit bringt genau den Baum des Branches.
