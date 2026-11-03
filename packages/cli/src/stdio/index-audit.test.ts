@@ -3,7 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { tokenVariableName } from '@ecclium/mcp-churchtools-core';
-import { PrivateFileError } from '@ecclium/mcp-churchtools-core/composition';
+import {
+  prepareDayKeyFolder,
+  prepareSnapshotFolder,
+  PrivateFileError,
+} from '@ecclium/mcp-churchtools-core/composition';
 import { doubleOrigin, makeCanary } from '@ecclium/mcp-churchtools-testkit';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -13,6 +17,7 @@ import {
   dayKeyFolderText,
   emptyToolsetText,
   quotaFolderText,
+  snapshotFolderText,
   startText,
   toolsetsText,
   warningText,
@@ -294,34 +299,34 @@ describe('the first stage and the audit file', () => {
   });
 });
 
+/** An audit file in memory that counts how often it was closed. */
+const closingFile = (closed: string[]) => ({
+  ok: true as const,
+  writer: {
+    write: () => true,
+    ready: () => true,
+    attach: () => true,
+    sweep: () => undefined,
+    tick: () => undefined,
+    anchor: () => undefined,
+    close: () => {
+      closed.push('closed');
+    },
+    counts: () => ({
+      written: 0,
+      failed: 0,
+      partial: 0,
+      rejected: 0,
+      reopened: 0,
+      closed: false,
+    }),
+  },
+});
+
 // The folder of the day keys of the snapshots (ADR 0031): the first stage
 // makes and checks it while fd 2 still blocks, also while the server only
 // reads, so that the second stage can destroy the keys in it.
 describe('the first stage and the folder of the day keys', () => {
-  /** An audit file in memory that counts how often it was closed. */
-  const closingFile = (closed: string[]) => ({
-    ok: true as const,
-    writer: {
-      write: () => true,
-      ready: () => true,
-      attach: () => true,
-      sweep: () => undefined,
-      tick: () => undefined,
-      anchor: () => undefined,
-      close: () => {
-        closed.push('closed');
-      },
-      counts: () => ({
-        written: 0,
-        failed: 0,
-        partial: 0,
-        rejected: 0,
-        reopened: 0,
-        closed: false,
-      }),
-    },
-  });
-
   it('prepares the folder snapshot with 0700 before the second stage loads, also while the server only reads', async () => {
     const keys = freshFolder();
     const { code } = await start(undefined, {}, { ECCLIUM_KEYS_DIR: keys });
@@ -381,6 +386,125 @@ describe('the first stage and the folder of the day keys', () => {
         },
       },
       { ECCLIUM_KEYS_DIR: freshFolder() },
+    );
+    expect(code).toBe(exitCodes.internal);
+    expect(stderr).toContain(startText('internal'));
+    expect(closed).toEqual(['closed']);
+    expect(state.served).toEqual([]);
+  });
+});
+
+// The folder of the snapshots of writes in the folder of state (ADR 0031):
+// the first stage makes and checks it next to the folder of their day keys,
+// only when the writes keep snapshots, under the rule the build of the
+// pipeline follows.
+describe('the first stage and the folder of the snapshots', () => {
+  const writing = (keys: string, extra: Record<string, string> = {}) => ({
+    ECCLIUM_READ_ONLY: 'false',
+    ECCLIUM_KEYS_DIR: keys,
+    ...extra,
+  });
+
+  it('prepares the folder snapshots with 0700 before the second stage loads when the server writes', async () => {
+    const stateDir = freshFolder();
+    const keys = freshFolder();
+    const order: string[] = [];
+    const { code, stderr } = await start(
+      stateDir,
+      {
+        prepareDayKeyFolder: (...args) => {
+          order.push('keys');
+          prepareDayKeyFolder(...args);
+        },
+        prepareSnapshotFolder: (...args) => {
+          order.push('snapshots');
+          prepareSnapshotFolder(...args);
+        },
+      },
+      writing(keys),
+    );
+    expect(code).toBeUndefined();
+    expect(order).toEqual(['keys', 'snapshots']);
+    expect(statSync(join(stateDir, 'snapshots')).mode & 0o777).toBe(0o700);
+    expect(readdirSync(join(stateDir, 'snapshots'))).toEqual([]);
+    expect(state.served[0]?.config.snapshots).toBe(true);
+    expect(stderr).not.toContain(stateDir);
+  });
+
+  it.each([
+    ['while the server only reads', { ECCLIUM_READ_ONLY: 'true' }],
+    ['when they are off', { ECCLIUM_SNAPSHOTS: 'off' }],
+  ])('prepares none %s', async (_, extra) => {
+    const stateDir = freshFolder();
+    const prepared: unknown[] = [];
+    const { code } = await start(
+      stateDir,
+      {
+        prepareSnapshotFolder: (...args) => {
+          prepared.push(args);
+        },
+      },
+      writing(freshFolder(), extra),
+    );
+    expect(code).toBeUndefined();
+    expect(prepared).toEqual([]);
+    expect(readdirSync(stateDir)).not.toContain('snapshots');
+  });
+
+  it('prepares none without the folder of state', async () => {
+    const prepared: unknown[] = [];
+    const { code } = await start(
+      undefined,
+      {
+        prepareSnapshotFolder: (...args) => {
+          prepared.push(args);
+        },
+      },
+      writing(freshFolder()),
+    );
+    expect(code).toBeUndefined();
+    expect(prepared).toEqual([]);
+  });
+
+  it.each(['platform', 'unavailable', 'unsafe'] as const)(
+    'ends with its notice after the others and 78, and closes the audit file, for %s',
+    async (reason) => {
+      const closed: string[] = [];
+      const stateDir = freshFolder();
+      const given: unknown[] = [];
+      const { code, stderr } = await start(
+        stateDir,
+        {
+          openAuditFile: () => closingFile(closed),
+          prepareSnapshotFolder: (...args) => {
+            given.push(args);
+            throw new PrivateFileError(reason);
+          },
+        },
+        writing(freshFolder(), { ECCLIUM_SNAPSHOTS: 'on' }),
+      );
+      expect(code).toBe(exitCodes.invalidConfig);
+      expect(given).toEqual([[stateDir]]);
+      const lines = stderr.split('\n').filter((line) => line !== '');
+      expect(lines.at(-1)).toBe(snapshotFolderText(reason));
+      expect(lines.length).toBeGreaterThan(1);
+      expect(stderr).not.toContain(stateDir);
+      expect(closed).toEqual(['closed']);
+      expect(state.served).toEqual([]);
+    },
+  );
+
+  it('ends with the notice of an internal error and 70 for anything else it throws', async () => {
+    const closed: string[] = [];
+    const { code, stderr } = await start(
+      freshFolder(),
+      {
+        openAuditFile: () => closingFile(closed),
+        prepareSnapshotFolder: () => {
+          throw Object.assign(new Error('unsafe'), { code: 'unsafe' });
+        },
+      },
+      writing(freshFolder()),
     );
     expect(code).toBe(exitCodes.internal);
     expect(stderr).toContain(startText('internal'));

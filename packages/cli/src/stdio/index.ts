@@ -34,11 +34,13 @@ import {
   openAuditFile,
   prepareDayKeyFolder,
   prepareQuotaFolder,
+  prepareSnapshotFolder,
   PrivateFileError,
   systemClock,
 } from '@ecclium/mcp-churchtools-core/composition';
 import { DocsIndexError } from '@ecclium/mcp-churchtools-docs-index';
 
+import { keepsSnapshots } from '../compose/snapshots.js';
 import { takeEnvironment } from '../environment.js';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
 import {
@@ -49,6 +51,7 @@ import {
   problemText,
   quotaFolderText,
   refusalText,
+  snapshotFolderText,
   startText,
   toolsetsText,
   warningText,
@@ -71,6 +74,8 @@ export interface StdioStartOptions extends ServeReplacements {
   readonly prepareQuotaFolder?: typeof prepareQuotaFolder;
   /** Replaces the check of the folder of the day keys of snapshots. */
   readonly prepareDayKeyFolder?: typeof prepareDayKeyFolder;
+  /** Replaces the check of the folder of the snapshots of writes. */
+  readonly prepareSnapshotFolder?: typeof prepareSnapshotFolder;
   /** Replaces the reader of the docs index. */
   readonly readDocs?: StdioCatalogOptions['readDocs'];
 }
@@ -103,7 +108,7 @@ const refusalOf = (error: unknown): RefusalReason | undefined => {
   return refusalReasons.find((known) => known === reason);
 };
 
-// Why the folder of the day keys could not be prepared, read as an own
+// Why a private folder of the start could not be prepared, read as an own
 // data property of a refusal of core. Any other value gives undefined, and
 // the start then reports an internal error.
 const privateFileCodeOf = (error: unknown): PrivateFileCode | undefined => {
@@ -132,7 +137,9 @@ const privateFileCodeOf = (error: unknown): PrivateFileCode | undefined => {
  * sensitivity special without the folder, a file that cannot be opened or
  * a folder that cannot be used ends the start with a notice and 78
  * (ADR 0028, ADR 0063). With `ECCLIUM_KEYS_DIR` it prepares the folder of
- * the day keys of snapshots in the same way (ADR 0031). Until the stderr
+ * the day keys of snapshots in the same way, and, when the writes keep
+ * snapshots, the folder of the snapshots in the folder of state
+ * (ADR 0031). Until the stderr
  * writer exists, everything is caught: an internal error gives one fixed
  * notice and 70, never a stack
  * or a message, and closes an audit file that is already open.
@@ -166,6 +173,7 @@ export async function startStdio(
     openAuditFile: open = openAuditFile,
     prepareQuotaFolder: prepare = prepareQuotaFolder,
     prepareDayKeyFolder: prepareKeys = prepareDayKeyFolder,
+    prepareSnapshotFolder: prepareSnapshots = prepareSnapshotFolder,
     readDocs,
     ...replacements
   } = startOptions;
@@ -274,6 +282,22 @@ export async function startStdio(
         const code = privateFileCodeOf(error);
         if (code === undefined) throw error;
         notices([...texts, dayKeyFolderText(code)]);
+        auditFile?.close();
+        return exitCodes.invalidConfig;
+      }
+    }
+    // The folder of the snapshots of writes in the folder of state, next to
+    // the folder of their day keys and under the same rule as the build of
+    // the pipeline, so that it exists only where the writes keep snapshots.
+    // A write whose snapshot cannot be kept is never sent, so a folder
+    // that cannot be used stops the start (ADR 0031).
+    if (keepsSnapshots(loaded.config)) {
+      try {
+        prepareSnapshots(loaded.config.stateDir);
+      } catch (error) {
+        const code = privateFileCodeOf(error);
+        if (code === undefined) throw error;
+        notices([...texts, snapshotFolderText(code)]);
         auditFile?.close();
         return exitCodes.invalidConfig;
       }

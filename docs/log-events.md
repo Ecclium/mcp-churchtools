@@ -74,6 +74,8 @@ Je Ereignis die Stufe und die Felder, die ein Aufruf höchstens setzt. Die Felde
 | `policy_no_entry` | `warn` | keine | Die Richtlinie hat Einträge, aber keiner deckt dieses Tool und dieses Ziel. Der Aufruf endet mit `policy_denied`, ohne zu schreiben. |
 | `policy_not_interactive` | `warn` | keine | Ein Schreibvorgang kam ausserhalb des interaktiven Modus. Bis der Runner den unbeaufsichtigten Teil der Richtlinie nutzt, schreibt Ecclium dort nichts. Der Aufruf endet mit `policy_denied`. |
 | `policy_queue_only` | `warn` | keine | Die Richtlinie schickt diese Art von Schreibvorgang immer in die Warteschlange der Freigaben, etwa einen in eine Gruppe oder einen Dienst. Bis es die Warteschlange gibt, endet der Aufruf mit `policy_denied`. |
+| `snapshot_failed` | `warn` | `code` | Ecclium konnte vor dem Senden den bisherigen Stand nicht als Snapshot festhalten. Der Schreibvorgang geht nicht an ChurchTools und endet mit `failed`. `code` nennt den Fehler. |
+| `snapshot_incomplete` | `warn` | `code` | Nach dem Anlegen einer Seite konnte Ecclium ihre Kennung und Version nicht im Snapshot ergänzen. Die Seite bleibt angelegt, ihr Snapshot aber unvollständig. `code` nennt den Fehler. |
 | `write_audit_failed` | `error` | keine | Die Zeile eines Aufrufs, der womöglich geschrieben hat, erreichte die Audit-Datei nicht. Bis zum Neustart des Servers plant und schreibt der Write-Guard nichts mehr. |
 | `write_committed` | `info` | keine | Ein Schreibvorgang ist geschrieben und gelesen: die Version stieg wie geplant, und der Text ist der gesendete. |
 | `write_conflict` | `warn` | `code` | Das Ziel eines Schreibvorgangs hat sich seit dem Plan geändert oder liest sich nach dem Schreiben nicht wie geplant. `code` ist `conflict`. |
@@ -266,12 +268,14 @@ Je Ereignis die Stufe und die Felder, die ein Aufruf höchstens setzt. Die Felde
 | `audit_unknown_fields` | `error` | `code`, `count` | Eine Zeile kam mit Feldern, die das Schema nicht kennt. `count` nennt ihre Zahl, die Felder fallen weg. |
 | `audit_unreadable` | `error` | `code`, `count` | Ecclium konnte die Angaben einer Zeile nicht lesen. Die Zeile trägt nur Platzhalter. |
 
-### Tagesschlüssel
+### Snapshots und Tagesschlüssel
 
 | Ereignis | Stufe | Felder | Bedeutung |
 | --- | --- | --- | --- |
-| `day_keys_destroyed` | `info` | `count` | Ecclium hat Tagesschlüssel der Snapshots nach ihrer Frist von 30 Tagen vernichtet, beim Start oder beim Wechsel des UTC-Tages. Snapshots dieser Tage lassen sich nicht mehr öffnen, in keiner Kopie. `count` nennt die Zahl der Schlüssel. |
-| `day_keys_not_destroyed` | `warn` | keine | Ecclium konnte nicht jeden Tagesschlüssel der Snapshots nach seiner Frist vernichten, etwa weil der Ordner `snapshot` im Ordner aus `ECCLIUM_KEYS_DIR` nicht mehr privat ist oder darin ein Ordner unter dem Namen eines Schlüssels steht. Die übrigen hat es vernichtet. Ecclium versucht es spätestens nach einer Stunde erneut. |
+| `day_keys_destroyed` | `info` | `count` | Ecclium hat Tagesschlüssel der Snapshots nach ihrer Frist von 30 Tagen vernichtet, beim Start oder beim Wechsel des UTC-Tages. Snapshots dieser Tage lassen sich nicht mehr öffnen, in keiner Kopie. `count` nennt die Zahl der Schlüssel. Mit einem Ordner aus `ECCLIUM_STATE_DIR` steht dafür `snapshots_deleted`. |
+| `day_keys_not_destroyed` | `warn` | keine | Ecclium konnte nicht jeden Tagesschlüssel der Snapshots nach seiner Frist vernichten, etwa weil der Ordner `snapshot` im Ordner aus `ECCLIUM_KEYS_DIR` nicht mehr privat ist oder darin ein Ordner unter dem Namen eines Schlüssels steht. Die übrigen hat es vernichtet. Ecclium versucht es spätestens nach einer Stunde erneut. Mit einem Ordner aus `ECCLIUM_STATE_DIR` steht dafür `snapshots_not_deleted`. |
+| `snapshots_deleted` | `info` | `count` | Ecclium hat Snapshots nach ihrer Frist von 30 Tagen gelöscht und die Tagesschlüssel ihrer Tage vernichtet, beim Start oder beim Wechsel des UTC-Tages. Diese Schreibvorgänge lassen sich nicht mehr zurücknehmen, und eine Kopie ihrer Snapshots lässt sich nicht mehr öffnen. `count` nennt die Zahl der gelöschten Dateien, eine oder zwei je Schreibvorgang. |
+| `snapshots_not_deleted` | `warn` | keine | Ecclium konnte nicht jeden Snapshot nach seiner Frist löschen oder nicht jeden Tagesschlüssel seines Tages vernichten, etwa weil der Ordner `snapshots` im Ordner aus `ECCLIUM_STATE_DIR` oder der Ordner `snapshot` im Ordner aus `ECCLIUM_KEYS_DIR` nicht mehr privat ist, oder weil die Uhr keinen Tag ergab. Ecclium versucht es spätestens nach einer Stunde erneut. |
 
 ### Prozess über stdio
 

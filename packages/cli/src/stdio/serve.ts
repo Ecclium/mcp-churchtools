@@ -16,7 +16,9 @@
  * `audit` past their retention, and a timer starts the file of each new
  * UTC day also in a run without calls (ADR 0028). With a folder of keys,
  * the start and the same timer on each new UTC day destroy the day keys
- * of the snapshots past their retention of 30 days (ADR 0031). When the
+ * of the snapshots past their retention of 30 days, and, with a folder of
+ * state, remove their records of those days as well (ADR 0031).
+ * When the
  * connection ends, the transport closes, the event
  * `audit_file_closed` counts the lines the audit file lost, the file
  * closes with the anchor of its chain, `audit_chain_anchor`, if it has a
@@ -141,6 +143,8 @@ const filesDeletedEvent = 'audit_files_deleted';
 const filesKeptEvent = 'audit_files_not_deleted';
 const dayKeysDestroyedEvent = 'day_keys_destroyed';
 const dayKeysKeptEvent = 'day_keys_not_destroyed';
+const snapshotsDeletedEvent = 'snapshots_deleted';
+const snapshotsKeptEvent = 'snapshots_not_deleted';
 const closedEvent = 'stdio_closed';
 
 /**
@@ -280,8 +284,9 @@ export function serve(options: ServeOptions): ExitCode | undefined {
   // signal explains the exit code (ADR 0054).
   const processLogger = createLogger({ writer, clock, minLevel: 'info' });
   let dayTimer: ReturnType<typeof setTimeout> | undefined;
-  // The destruction of the day keys past their retention, once the
-  // pipeline has its day keys (ADR 0031).
+  // The destruction of the day keys past their retention, with the
+  // records of the snapshots when there are any, once the pipeline has its
+  // day keys (ADR 0031).
   let sweepDayKeys: (() => void) | undefined;
   // After the start, on each new UTC day through the timer, also without a
   // call. The timer looks at least every hour: it starts the audit file of
@@ -380,12 +385,45 @@ export function serve(options: ServeOptions): ExitCode | undefined {
     });
 
     // The day keys of the snapshots past their retention go at the start
-    // and then once on each new UTC day (ADR 0031). A day whose keys could
-    // not all be destroyed is tried again at the next look of the timer,
+    // and then once on each new UTC day (ADR 0031). With the folder of
+    // state, the keeper of the snapshots removes the records of those days
+    // and destroys the day keys of the same days, also while the server
+    // only reads or keeps no snapshots, so the lines count records;
+    // without that folder the day keys alone go, so that keys of an
+    // earlier run that wrote still go in time. A day whose records or keys
+    // could not all go is tried again at the next look of the timer,
     // within the hour. The lines name a count only, never a path or the
     // message of an error.
-    const { dayKeys } = composed;
-    if (dayKeys !== undefined) {
+    const { dayKeys, snapshots } = composed;
+    const retention:
+      | {
+          readonly purge: (cut: IsoDate) => Promise<number>;
+          readonly gone: (count: number) => void;
+          readonly kept: () => void;
+        }
+      | undefined =
+      snapshots !== undefined
+        ? {
+            purge: (cut) => snapshots.purgeBefore(cut),
+            gone: (count) => {
+              processLogger.info(snapshotsDeletedEvent, { count });
+            },
+            kept: () => {
+              processLogger.warn(snapshotsKeptEvent);
+            },
+          }
+        : dayKeys !== undefined
+          ? {
+              purge: (cut) => dayKeys.destroyBefore('snapshot', cut),
+              gone: (count) => {
+                processLogger.info(dayKeysDestroyedEvent, { count });
+              },
+              kept: () => {
+                processLogger.warn(dayKeysKeptEvent);
+              },
+            }
+          : undefined;
+    if (retention !== undefined) {
       let sweptFor: IsoDate | undefined;
       let sweeping = false;
       sweepDayKeys = (): void => {
@@ -397,7 +435,7 @@ export function serve(options: ServeOptions): ExitCode | undefined {
         }
         const cut = firstKeptSnapshotDay(now);
         if (cut === undefined) {
-          processLogger.warn(dayKeysKeptEvent);
+          retention.kept();
           return;
         }
         if (sweeping || cut === sweptFor) return;
@@ -405,18 +443,16 @@ export function serve(options: ServeOptions): ExitCode | undefined {
         // A promise that rejected is caught here: unhandled, it would end
         // the process through the handler above.
         void Promise.resolve()
-          .then(() => dayKeys.destroyBefore('snapshot', cut))
+          .then(() => retention.purge(cut))
           .then(
             (count) => {
               sweptFor = cut;
               if (Number.isSafeInteger(count) && count > 0) {
-                processLogger.info(dayKeysDestroyedEvent, {
-                  count: Math.min(count, maxCount),
-                });
+                retention.gone(Math.min(count, maxCount));
               }
             },
             () => {
-              processLogger.warn(dayKeysKeptEvent);
+              retention.kept();
             },
           )
           .catch(() => undefined)
@@ -426,7 +462,7 @@ export function serve(options: ServeOptions): ExitCode | undefined {
       };
       sweepDayKeys();
     }
-    if (auditFile !== undefined || dayKeys !== undefined) armDayTimer();
+    if (auditFile !== undefined || retention !== undefined) armDayTimer();
 
     let signalCode: ExitCode | undefined;
     const onSignal =

@@ -311,6 +311,11 @@ export const logEvents = Object.freeze({
   // new UTC day (ADR 0031).
   day_keys_destroyed: entry('info', 'count'),
   day_keys_not_destroyed: entry('warn'),
+  // The same with a folder of state: the records of the snapshots past
+  // their retention go with the day keys of their days, and the count is
+  // one of records (ADR 0031).
+  snapshots_deleted: entry('info', 'count'),
+  snapshots_not_deleted: entry('warn'),
   // The process of `ecclium stdio` (ADR 0053).
   stdio_start_failed: entry('error', 'code'),
   stdio_closed: entry('info', 'count'),

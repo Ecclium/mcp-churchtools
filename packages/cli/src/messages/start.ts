@@ -4,7 +4,8 @@
  * of a plugin or a tool by the registry (ADR 0024), an audit file that is
  * missing or cannot be opened (ADR 0028), a folder for the read budget
  * that cannot be used (ADR 0063), a folder for the day keys of the
- * snapshots that cannot be used (ADR 0031), and the toolsets of the start
+ * snapshots or for the snapshots themselves that cannot be used
+ * (ADR 0031), and the toolsets of the start
  * (ADR 0062). The start notices write them to stderr before the line
  * writer exists. No text repeats an argument, because an argument can
  * hold a token, and the text of a refusal depends on its reason alone,
@@ -133,6 +134,30 @@ const dayKeyFolders: Readonly<Record<PrivateFileCode, Message>> = Object.freeze(
     ),
   },
 );
+
+// One text per reason the folder snapshots in the folder of state cannot
+// be used. Each says that the start stops: a write whose snapshot cannot
+// be kept is never sent, so a server that writes needs the folder
+// (ADR 0031). The loader does not look at this folder, so the texts name
+// what to do themselves.
+const snapshotFolders: Readonly<Record<PrivateFileCode, Message>> =
+  Object.freeze({
+    platform: message(
+      'Der Ordner für die Snapshots der Schreibvorgänge lässt sich auf diesem System nicht sicher anlegen, und der Start bricht ab.',
+      'Es fehlt die Prüfung des Eigentümers oder das Öffnen ohne Links, etwa unter Windows.',
+      'Lassen Sie ‹ECCLIUM_READ_ONLY› auf diesem System auf ‹true›.',
+    ),
+    unavailable: message(
+      `Ecclium konnte den Ordner ‹snapshots› im Ordner aus ${stateDir} nicht anlegen oder öffnen, und der Start bricht ab.`,
+      `Darin hält Ecclium vor jedem Schreibvorgang den bisherigen Stand verschlüsselt fest, damit sich der Schreibvorgang zurücknehmen lässt. ${noPath}`,
+      `Prüfen Sie, ob der Ordner aus ${stateDir} besteht und Ihr Benutzer darin schreiben darf.`,
+    ),
+    unsafe: message(
+      `Der Ordner ‹snapshots› im Ordner aus ${stateDir} ist kein privater Ordner Ihres Benutzers, und der Start bricht ab.`,
+      'Er ist ein Link, kein Ordner, gehört einem anderen Benutzer oder ist für andere zugänglich. Dann könnten andere Snapshots löschen oder sehen, wann Ecclium geschrieben hat.',
+      'Setzen Sie seine Rechte mit «chmod 700» auf 700. Ist er ein Link, kein Ordner oder gehört er einem anderen Benutzer, entfernen Sie ihn, und Ecclium legt ihn selbst an. Was davor geschrieben wurde, lässt sich dann nicht mehr zurücknehmen.',
+    ),
+  });
 
 // Every refusal stops the start for the same reason, and none comes from
 // the configuration: in this version the only plugin is the one of the
@@ -354,6 +379,42 @@ export function dayKeyFolderMessage(code: PrivateFileCode): Message {
  */
 export function dayKeyFolderText(code: PrivateFileCode): MessageText {
   return joined(dayKeyFolderMessage(code));
+}
+
+/**
+ * The message for a folder `snapshots` in the folder of state that cannot
+ * be used (ADR 0031). It names no path.
+ *
+ * @param code - Why the folder cannot be used.
+ * @returns The message in its three parts, frozen.
+ * @throws {TypeError} When the code is none of the catalog.
+ * @example
+ * ```ts
+ * snapshotFolderMessage('unsafe').action;
+ * ```
+ */
+export function snapshotFolderMessage(code: PrivateFileCode): Message {
+  const given: unknown = code;
+  if (typeof given !== 'string' || !Object.hasOwn(snapshotFolders, given)) {
+    throw new TypeError('The snapshot folder code is unknown.');
+  }
+  return snapshotFolders[code];
+}
+
+/**
+ * The text for a folder `snapshots` in the folder of state that cannot be
+ * used, in one line.
+ *
+ * @param code - Why the folder cannot be used.
+ * @returns The text of the catalog.
+ * @throws {TypeError} When the code is none of the catalog.
+ * @example
+ * ```ts
+ * writeNotices([snapshotFolderText('unavailable')]);
+ * ```
+ */
+export function snapshotFolderText(code: PrivateFileCode): MessageText {
+  return joined(snapshotFolderMessage(code));
 }
 
 /**
