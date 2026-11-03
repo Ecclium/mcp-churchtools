@@ -21,6 +21,8 @@ export const auditTypeMeanings: Readonly<Record<string, string>> =
     tool_call:
       'Ein Aufruf eines Tools, auch eines unbekannten, eines abgelehnten und eines gescheiterten. Jeder Aufruf ergibt genau eine Zeile, geschrieben auch dann, wenn eine Stufe der Pipeline scheitert.',
     undo: 'Ein Lauf von `ecclium undo`, der einen Schreibvorgang von Ecclium aus seinem verschlüsselten Snapshot zurücknimmt ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)). Jeder Lauf, der den Snapshot sucht, ergibt genau eine Zeile, mit `undoes` und ohne `tool`. Ein Lauf, der vorher am Aufruf oder an der Konfiguration scheitert, ergibt keine. `ecclium audit show` zählt diese Zeilen als Rücknahmen in einer eigenen Zeile, `ecclium policy init` leitet aus ihnen weder Ziele noch Grenzen ab.',
+    approval:
+      'Ein Entscheid des Betreibers über einen Eintrag der Freigabe-Warteschlange mit `ecclium queue` ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)). Jeder Lauf, der einen Eintrag sucht, ergibt genau eine Zeile, mit `queueId` und `decision` und ohne `tool`. Eine Abweisung schreibt nichts in ChurchTools und hat weder `writeState` noch `confirmation`. Den Wunsch selbst hält die Zeile des Aufrufs vom Typ `tool_call` mit `writeState: queued` fest, deren `eventId` die `queueId` ist. `ecclium audit show` zählt Freigaben und Abweisungen je in einer eigenen Zeile, `ecclium policy init` leitet aus ihnen weder Ziele noch Grenzen ab.',
   });
 
 /**
@@ -37,6 +39,10 @@ export const auditFieldMeanings: Readonly<Record<string, string>> =
     type: 'Art des Ereignisses, siehe «Typen».',
     undoes:
       'Kennung (`eventId`) der Zeile des Schreibvorgangs, den ein Lauf von `ecclium undo` zurücknimmt ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)). In jeder Zeile vom Typ `undo` und in keiner anderen. Die Null-UUID steht für eine Kennung, die fehlte oder nicht passte, und nennt keinen Schreibvorgang.',
+    queueId:
+      'Kennung des Eintrags der Freigabe-Warteschlange, über den der Betreiber entschieden hat, gleich der `eventId` der Zeile des Aufrufs, der den Schreibvorgang eingereiht hat ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)). In jeder Zeile vom Typ `approval` und in keiner anderen. Die Null-UUID steht für eine Kennung, die fehlte oder nicht passte, und nennt keinen Eintrag.',
+    decision:
+      'Was der Betreiber über den Eintrag entschieden hat: `approved` für eine Freigabe, `rejected` für eine Abweisung. In jeder Zeile vom Typ `approval` und in keiner anderen.',
     tenantId: 'Kennung des Mandanten.',
     actor: 'Wer gehandelt hat.',
     'actor.kind': 'Art des Akteurs: Dienst, Benutzer, Runner oder Betreiber.',
@@ -45,7 +51,7 @@ export const auditFieldMeanings: Readonly<Record<string, string>> =
     mode: 'Wie der Aufruf lief: interaktiv, unbeaufsichtigt oder durch den Betreiber.',
     runId: 'Kennung des Laufs einer Routine.',
     routineId: 'Kennung der Routine eines Laufs.',
-    tool: 'Name des Tools, `ct_unknown` für ein Tool, das es nicht gibt. Nie in einer Zeile vom Typ `undo`, denn eine Rücknahme ruft kein Tool auf.',
+    tool: 'Name des Tools, `ct_unknown` für ein Tool, das es nicht gibt. Nie in einer Zeile vom Typ `undo` oder `approval`, denn eine Rücknahme und ein Entscheid über die Freigabe-Warteschlange rufen kein Tool auf.',
     outcome:
       'Ausgang des Aufrufs: `ok`, `error` bei einem Fehler oder `denied` bei einer Ablehnung.',
     confirmation: 'Wie ein Schreibvorgang bestätigt wurde.',
@@ -128,7 +134,7 @@ export function renderAuditEventSchema(): string {
     {
       $schema,
       title: 'AuditEventV1',
-      description: `One line of the audit file of Ecclium, version 1. The copy on stderr is the same line with an empty objectRefs and without ${fileOnlyFields.join(', ')}. Not expressed here: an outcome of ok has no errorCode and error and denied have one, undoes comes with the type undo and only with it, a line of the type undo has no tool, objectRefsOmitted comes only with 100 objectRefs, and withheldAfterRead only with denied and policy_denied.`,
+      description: `One line of the audit file of Ecclium, version 1. The copy on stderr is the same line with an empty objectRefs and without ${fileOnlyFields.join(', ')}. Not expressed here: an outcome of ok has no errorCode and error and denied have one, undoes comes with the type undo and only with it, queueId and decision come with the type approval and only with it, a line of the type undo or approval has no tool, a line with the decision rejected has no writeState and no confirmation, objectRefsOmitted comes only with 100 objectRefs, and withheldAfterRead only with denied and policy_denied.`,
       ...rest,
     },
     null,

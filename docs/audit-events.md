@@ -12,6 +12,7 @@ Jede Zeile ist ein JSON-Objekt auf einer Zeile. Mit `ECCLIUM_STATE_DIR` geht sie
 | --- | --- |
 | `tool_call` | Ein Aufruf eines Tools, auch eines unbekannten, eines abgelehnten und eines gescheiterten. Jeder Aufruf ergibt genau eine Zeile, geschrieben auch dann, wenn eine Stufe der Pipeline scheitert. |
 | `undo` | Ein Lauf von `ecclium undo`, der einen Schreibvorgang von Ecclium aus seinem verschlüsselten Snapshot zurücknimmt ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)). Jeder Lauf, der den Snapshot sucht, ergibt genau eine Zeile, mit `undoes` und ohne `tool`. Ein Lauf, der vorher am Aufruf oder an der Konfiguration scheitert, ergibt keine. `ecclium audit show` zählt diese Zeilen als Rücknahmen in einer eigenen Zeile, `ecclium policy init` leitet aus ihnen weder Ziele noch Grenzen ab. |
+| `approval` | Ein Entscheid des Betreibers über einen Eintrag der Freigabe-Warteschlange mit `ecclium queue` ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)). Jeder Lauf, der einen Eintrag sucht, ergibt genau eine Zeile, mit `queueId` und `decision` und ohne `tool`. Eine Abweisung schreibt nichts in ChurchTools und hat weder `writeState` noch `confirmation`. Den Wunsch selbst hält die Zeile des Aufrufs vom Typ `tool_call` mit `writeState: queued` fest, deren `eventId` die `queueId` ist. `ecclium audit show` zählt Freigaben und Abweisungen je in einer eigenen Zeile, `ecclium policy init` leitet aus ihnen weder Ziele noch Grenzen ab. |
 
 ## Felder
 
@@ -20,8 +21,10 @@ Jede Zeile ist ein JSON-Objekt auf einer Zeile. Mit `ECCLIUM_STATE_DIR` geht sie
 | `v` | `1` | ja | ja | Version des Formats, immer 1. |
 | `eventId` | Text nach festem Muster, höchstens 36 Zeichen | ja | ja | Kennung des Ereignisses, gleich der `eventId` in den Logzeilen desselben Aufrufs. |
 | `ts` | Text nach festem Muster, höchstens 24 Zeichen | ja | ja | Zeit des Ereignisses in UTC, auf die Millisekunde. |
-| `type` | `tool_call`, `undo` | ja | ja | Art des Ereignisses, siehe «Typen». |
+| `type` | `tool_call`, `undo`, `approval` | ja | ja | Art des Ereignisses, siehe «Typen». |
 | `undoes` | Text nach festem Muster, höchstens 36 Zeichen | nein | ja | Kennung (`eventId`) der Zeile des Schreibvorgangs, den ein Lauf von `ecclium undo` zurücknimmt ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)). In jeder Zeile vom Typ `undo` und in keiner anderen. Die Null-UUID steht für eine Kennung, die fehlte oder nicht passte, und nennt keinen Schreibvorgang. |
+| `queueId` | Text nach festem Muster, höchstens 36 Zeichen | nein | ja | Kennung des Eintrags der Freigabe-Warteschlange, über den der Betreiber entschieden hat, gleich der `eventId` der Zeile des Aufrufs, der den Schreibvorgang eingereiht hat ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)). In jeder Zeile vom Typ `approval` und in keiner anderen. Die Null-UUID steht für eine Kennung, die fehlte oder nicht passte, und nennt keinen Eintrag. |
+| `decision` | `approved`, `rejected` | nein | ja | Was der Betreiber über den Eintrag entschieden hat: `approved` für eine Freigabe, `rejected` für eine Abweisung. In jeder Zeile vom Typ `approval` und in keiner anderen. |
 | `tenantId` | Text nach festem Muster, höchstens 63 Zeichen | ja | ja | Kennung des Mandanten. |
 | `actor` | Objekt | ja | ja | Wer gehandelt hat. |
 | `actor.kind` | `service`, `user`, `runner`, `operator` | ja | ja | Art des Akteurs: Dienst, Benutzer, Runner oder Betreiber. |
@@ -29,7 +32,7 @@ Jede Zeile ist ein JSON-Objekt auf einer Zeile. Mit `ECCLIUM_STATE_DIR` geht sie
 | `mode` | `interactive`, `unattended`, `operator` | ja | ja | Wie der Aufruf lief: interaktiv, unbeaufsichtigt oder durch den Betreiber. |
 | `runId` | Text nach festem Muster, höchstens 36 Zeichen | nein | ja | Kennung des Laufs einer Routine. |
 | `routineId` | Text nach festem Muster, höchstens 63 Zeichen | nein | ja | Kennung der Routine eines Laufs. |
-| `tool` | Text nach festem Muster, höchstens 63 Zeichen | nein | ja | Name des Tools, `ct_unknown` für ein Tool, das es nicht gibt. Nie in einer Zeile vom Typ `undo`, denn eine Rücknahme ruft kein Tool auf. |
+| `tool` | Text nach festem Muster, höchstens 63 Zeichen | nein | ja | Name des Tools, `ct_unknown` für ein Tool, das es nicht gibt. Nie in einer Zeile vom Typ `undo` oder `approval`, denn eine Rücknahme und ein Entscheid über die Freigabe-Warteschlange rufen kein Tool auf. |
 | `outcome` | `ok`, `error`, `denied` | ja | ja | Ausgang des Aufrufs: `ok`, `error` bei einem Fehler oder `denied` bei einer Ablehnung. |
 | `confirmation` | `elicitation`, `echo`, `policy`, `operator` | nein | ja | Wie ein Schreibvorgang bestätigt wurde. |
 | `writeState` | `planned`, `queued`, `verified`, `skipped`, `denied`, `conflict`, `failed`, `rolledBack` | nein | ja | Der Zustand eines Schreibvorgangs am Ende des Aufrufs: `planned`, `queued`, `verified` oder `skipped` bei `ok`, `denied` bei `denied`, `conflict`, `failed` oder `rolledBack` bei `error`. Wer Schreibvorgänge zählt, liest dieses Feld. |

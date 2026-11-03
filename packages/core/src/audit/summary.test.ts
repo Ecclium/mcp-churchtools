@@ -51,6 +51,28 @@ const undo = (fields: Record<string, unknown> = {}): string =>
     ...fields,
   });
 
+/**
+ * A line of a decision of `ecclium queue`, which names the entry and has no
+ * tool (ADR 0031).
+ */
+const decision = (
+  kind: 'approved' | 'rejected',
+  fields: Record<string, unknown> = {},
+): string =>
+  event({
+    type: 'approval',
+    queueId: '00000000-0000-4000-8000-0000000000bb',
+    decision: kind,
+    actor: { kind: 'operator', id: 'stdio:local-stdio' },
+    mode: 'operator',
+    tool: undefined,
+    ...(kind === 'approved'
+      ? { confirmation: 'operator', writeState: 'verified' }
+      : {}),
+    objectRefs: ['wiki_category:12'],
+    ...fields,
+  });
+
 const line = (text: string, number: number): AuditLine => ({
   number,
   hash: sha256(text),
@@ -268,6 +290,87 @@ describe('summarizeAuditFiles', () => {
     ]);
     expect(summary.lines).toBe(5);
     expect(summary.skipped).toBe(0);
+  });
+
+  it('counts the decisions about the queue of a day in a row per kind, after the undos, and the queued writes (ADR 0031)', () => {
+    const summary = summarizeAuditFiles({
+      folder: folderOf({
+        [nameOf(1)]: [
+          decision('rejected'),
+          undo(),
+          decision('approved'),
+          decision('rejected', {
+            outcome: 'error',
+            errorCode: 'not_found',
+          }),
+          event({ tool: 'ct_example_note_write', writeState: 'queued' }),
+          event({ tool: 'ct_example_note_write', writeState: 'verified' }),
+        ],
+      }),
+    });
+
+    expect(
+      summary.rows.map(({ type, decision: kind, tool, calls, ok, error }) => ({
+        type,
+        decision: kind,
+        tool,
+        calls,
+        ok,
+        error,
+      })),
+    ).toEqual([
+      {
+        type: 'tool_call',
+        decision: undefined,
+        tool: 'ct_example_note_write',
+        calls: 2,
+        ok: 2,
+        error: 0,
+      },
+      {
+        type: 'undo',
+        decision: undefined,
+        tool: undefined,
+        calls: 1,
+        ok: 1,
+        error: 0,
+      },
+      {
+        type: 'approval',
+        decision: 'approved',
+        tool: undefined,
+        calls: 1,
+        ok: 1,
+        error: 0,
+      },
+      {
+        type: 'approval',
+        decision: 'rejected',
+        tool: undefined,
+        calls: 2,
+        ok: 1,
+        error: 1,
+      },
+    ]);
+    expect(summary.queued).toBe(1);
+  });
+
+  it('finds a decision that names the ID, with its kind', () => {
+    const summary = summarizeAuditFiles({
+      folder: folderOf({ [nameOf(1)]: [decision('rejected')] }),
+      object: 'wiki_category:12',
+    });
+    expect(summary.hits).toEqual([
+      {
+        ts: '2026-10-30T08:00:00.000Z',
+        type: 'approval',
+        decision: 'rejected',
+        tool: undefined,
+        actorId: 'stdio:local-stdio',
+        outcome: 'ok',
+        withheld: false,
+      },
+    ]);
   });
 
   it('skips an undo that names no write or names a tool', () => {

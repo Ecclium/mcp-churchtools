@@ -14,6 +14,7 @@ import {
   type ConfirmationPath,
   type WriteState,
   contentViolationKinds,
+  queueDecisionKinds,
   errorCodes,
   objectKinds,
 } from '@ecclium/mcp-churchtools-plugin-api';
@@ -38,12 +39,14 @@ export const actorKinds: readonly ActorKind[] = Object.freeze([
 ]);
 
 /**
- * Every {@link AuditType}, frozen: a call of a tool, and the run of
- * `ecclium undo` that takes back a write from its snapshot (ADR 0031).
+ * Every {@link AuditType}, frozen: a call of a tool, the run of
+ * `ecclium undo` that takes back a write from its snapshot, and a decision
+ * of the operator about an entry of the queue of approvals (ADR 0031).
  */
 export const auditTypes: readonly AuditType[] = Object.freeze([
   'tool_call',
   'undo',
+  'approval',
 ]);
 
 /** Every {@link AuditOutcome}, frozen. */
@@ -154,6 +157,8 @@ export const auditFieldSchemas = Object.freeze({
   ts: text(24, timestampPattern),
   type: z.enum(auditTypes),
   undoes: text(36, uuidPattern),
+  queueId: text(36, uuidPattern),
+  decision: z.enum(queueDecisionKinds),
   tenantId: text(63, tenantIdPattern),
   actorKind: z.enum(actorKinds),
   actorId: text(97, actorIdPattern),
@@ -186,7 +191,11 @@ const fields = auditFieldSchemas;
  * unknown key fails it. An event with the outcome `ok` has no error code,
  * and one with `error` or `denied` has one. A line of the type `undo`
  * names the write it takes back in `undoes` and has no tool; no other line
- * has `undoes` (ADR 0031). A count of left out IDs comes only with 100
+ * has `undoes` (ADR 0031). A line of the type `approval` names the entry
+ * of the queue in `queueId` and what was decided in `decision`, has no
+ * tool, and a rejection has neither the state of a write nor a way of a
+ * confirmation; no other line has `queueId` or `decision` (ADR 0031). A
+ * count of left out IDs comes only with 100
  * IDs, and the mark of a result read but held back only with `denied` and
  * `policy_denied`. The copy on the stream of the logger is the same line
  * without the IDs and without the fields in {@link fileOnlyFields}.
@@ -198,6 +207,8 @@ export const auditEventV1Schema = z
     ts: fields.ts,
     type: fields.type,
     undoes: fields.undoes.optional(),
+    queueId: fields.queueId.optional(),
+    decision: fields.decision.optional(),
     tenantId: fields.tenantId,
     actor: z
       .strictObject({ kind: fields.actorKind, id: fields.actorId })
@@ -257,13 +268,32 @@ export const auditEventV1Schema = z
       (event.type === 'undo') ===
       (Object.hasOwn(event, 'undoes') && event.undoes !== undefined),
   )
-  // An undo calls no tool, and the tool of the write it takes back may no
+  // A decision about an entry of the queue always names the entry and what
+  // was decided, and only such a line does (ADR 0031).
+  .refine(
+    (event) =>
+      (event.type === 'approval') ===
+        (Object.hasOwn(event, 'queueId') && event.queueId !== undefined) &&
+      (event.type === 'approval') ===
+        (Object.hasOwn(event, 'decision') && event.decision !== undefined),
+  )
+  // An undo and a decision call no tool, and the tool of the write may no
   // longer be registered (ADR 0031).
   .refine(
     (event) =>
-      event.type !== 'undo' ||
+      (event.type !== 'undo' && event.type !== 'approval') ||
       !Object.hasOwn(event, 'tool') ||
       event.tool === undefined,
+  )
+  // A rejection wrote nothing: it has no state of a write and no way of a
+  // confirmation (ADR 0031).
+  .refine(
+    (event) =>
+      event.decision !== 'rejected' ||
+      ((!Object.hasOwn(event, 'writeState') ||
+        event.writeState === undefined) &&
+        (!Object.hasOwn(event, 'confirmation') ||
+          event.confirmation === undefined)),
   )
   .refine(
     (event) =>
@@ -325,6 +355,8 @@ export const auditPlaceholders = Object.freeze({
   ts: '1970-01-01T00:00:00.000Z',
   type: 'tool_call',
   undoes: '00000000-0000-0000-0000-000000000000',
+  queueId: '00000000-0000-0000-0000-000000000000',
+  decision: 'rejected',
   tenantId: 'invalid',
   actor: Object.freeze({ kind: 'service', id: 'invalid' }),
   mode: 'unattended',

@@ -48,6 +48,8 @@ describe('AuditEventV1', () => {
       | 'ts'
       | 'type'
       | 'undoes'
+      | 'queueId'
+      | 'decision'
       | 'tenantId'
       | 'actor'
       | 'mode'
@@ -72,9 +74,15 @@ describe('AuditEventV1', () => {
     >();
   });
 
-  it('records a call of a tool or an undo (ADR 0031)', () => {
-    expectTypeOf<AuditType>().toEqualTypeOf<'tool_call' | 'undo'>();
+  it('records a call of a tool, an undo or a decision about the queue (ADR 0031)', () => {
+    expectTypeOf<AuditType>().toEqualTypeOf<
+      'tool_call' | 'undo' | 'approval'
+    >();
     expectTypeOf<AuditEventV1['undoes']>().toEqualTypeOf<string | undefined>();
+    expectTypeOf<AuditEventV1['queueId']>().toEqualTypeOf<string | undefined>();
+    expectTypeOf<AuditEventV1['decision']>().toEqualTypeOf<
+      'approved' | 'rejected' | undefined
+    >();
   });
 
   it('accepts only a known error code and version 1', () => {
