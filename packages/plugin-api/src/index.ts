@@ -195,9 +195,12 @@ export {
 } from './prompt.js';
 export {
   dataKeyLength,
+  type DayKeyPurpose,
+  dayKeyPurposes,
   keyPurposes,
   type KeyProvider,
   type KeyPurpose,
+  type WrappedKey,
 } from './keys.js';
 export {
   isIsoDate,

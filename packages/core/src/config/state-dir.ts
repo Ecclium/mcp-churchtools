@@ -1,8 +1,10 @@
 /**
  * Checks the folder of state that `ECCLIUM_STATE_DIR` names (ADR 0028,
- * ADR 0055). The loader only looks: it creates nothing and opens nothing,
- * so that `ecclium config check` changes nothing on disk. The start creates
- * the folder `audit` and opens the audit file, and checks both again.
+ * ADR 0055), and the folder of the day keys that `ECCLIUM_KEYS_DIR` names
+ * (ADR 0031), with the same rules and codes of their own. The loader only
+ * looks: it creates nothing and opens nothing, so that `ecclium config
+ * check` changes nothing on disk. The start creates the folders `audit`
+ * and `snapshot` and opens the audit file, and checks them again.
  *
  * Its only runtime imports are built-in modules, so a test can run it from
  * source in a child process.
@@ -42,6 +44,36 @@ export const stateDirCodes = Object.freeze([
 
 /** The reason to refuse a folder of state. */
 export type StateDirCode = (typeof stateDirCodes)[number];
+
+/**
+ * The reasons to refuse a folder of keys, frozen (ADR 0031). A code never
+ * carries the path.
+ */
+export const keysDirCodes = Object.freeze([
+  'keys_dir_platform',
+  'keys_dir_relative',
+  'keys_dir_not_normalized',
+  'keys_dir_too_long',
+  'keys_dir_missing',
+  'keys_dir_symlink',
+  'keys_dir_not_directory',
+  'keys_dir_owner',
+  'keys_dir_mode',
+  'keys_dir_unsafe',
+  'snapshot_keys_dir_symlink',
+  'snapshot_keys_dir_not_directory',
+  'snapshot_keys_dir_owner',
+  'snapshot_keys_dir_mode',
+  'snapshot_keys_dir_unsafe',
+  'queue_keys_dir_symlink',
+  'queue_keys_dir_not_directory',
+  'queue_keys_dir_owner',
+  'queue_keys_dir_mode',
+  'queue_keys_dir_unsafe',
+] as const);
+
+/** The reason to refuse a folder of keys. */
+export type KeysDirCode = (typeof keysDirCodes)[number];
 
 /** The name of the folder for the audit files inside the folder of state. */
 export const auditDirName = 'audit';
@@ -83,12 +115,27 @@ export interface StateDirFileSystem {
 export type StateDirResult =
   { readonly ok: true } | { readonly ok: false; readonly code: StateDirCode };
 
+/** Whether the folder of keys passed, or the reason it did not. */
+export type KeysDirResult =
+  { readonly ok: true } | { readonly ok: false; readonly code: KeysDirCode };
+
 /**
  * The longest path of the folder, in characters and in bytes of UTF-8:
  * with `/audit/` and the name of an audit file it stays below PATH_MAX of
  * macOS, 1024 bytes.
  */
 export const maxStateDirLength = 960;
+
+/**
+ * The longest path of the folder of keys, in characters and in bytes of
+ * UTF-8 (ADR 0031). The longest name in it is the temporary name of a day
+ * key that is being written: `/snapshot/`, a dot, a tenant of 63
+ * characters, the day, `.key`, a process ID of 10 digits and 16 hex
+ * digits, 121 bytes in all. With them the path stays below PATH_MAX of
+ * macOS, 1024 bytes, which the bound of the folder of state would not
+ * leave room for.
+ */
+export const maxKeysDirLength = 896;
 
 const encoder = new TextEncoder();
 
@@ -98,10 +145,10 @@ const nodeFileSystem: StateDirFileSystem = Object.freeze({
   constants,
 });
 
-const passed: StateDirResult = Object.freeze({ __proto__: null, ok: true });
+const passed = Object.freeze({ __proto__: null, ok: true as const });
 
-const refuse = (code: StateDirCode): StateDirResult =>
-  Object.freeze({ __proto__: null, ok: false, code });
+const refuse = <Code extends string>(code: Code) =>
+  Object.freeze({ __proto__: null, ok: false as const, code });
 
 /**
  * Tells whether a value is an absolute path in its one written form: no
@@ -135,46 +182,185 @@ const errorCode = (error: unknown): unknown => {
   return Object.getOwnPropertyDescriptor(error, 'code')?.value;
 };
 
-interface Checks {
-  readonly symlink: StateDirCode;
-  readonly notDirectory: StateDirCode;
-  readonly owner: StateDirCode;
-  readonly mode: StateDirCode;
+interface Checks<Code extends string> {
+  readonly symlink: Code;
+  readonly notDirectory: Code;
+  readonly owner: Code;
+  readonly mode: Code;
 }
 
-const stateDirChecks: Checks = Object.freeze({
-  symlink: 'state_dir_symlink',
-  notDirectory: 'state_dir_not_directory',
-  owner: 'state_dir_owner',
-  mode: 'state_dir_mode',
+// A folder inside the folder that is checked, with its own codes.
+interface Inside<Code extends string> {
+  readonly name: string;
+  readonly checks: Checks<Code>;
+  readonly unsafe: Code;
+}
+
+// What a kind of folder is refused with: the folder of state or the folder
+// of keys. Both get the same checks, so that neither is weaker.
+interface Kind<Code extends string> {
+  readonly notString: string;
+  readonly platform: Code;
+  readonly relative: Code;
+  readonly notNormalized: Code;
+  readonly tooLong: Code;
+  readonly maxLength: number;
+  readonly missing: Code;
+  readonly unsafe: Code;
+  readonly checks: Checks<Code>;
+  readonly inside: readonly Inside<Code>[];
+}
+
+const stateDirKind: Kind<StateDirCode> = Object.freeze({
+  notString: 'The path of the folder of state must be a string.',
+  platform: 'state_dir_platform',
+  relative: 'state_dir_relative',
+  notNormalized: 'state_dir_not_normalized',
+  tooLong: 'state_dir_too_long',
+  maxLength: maxStateDirLength,
+  missing: 'state_dir_missing',
+  unsafe: 'state_dir_unsafe',
+  checks: Object.freeze({
+    symlink: 'state_dir_symlink',
+    notDirectory: 'state_dir_not_directory',
+    owner: 'state_dir_owner',
+    mode: 'state_dir_mode',
+  }),
+  inside: Object.freeze([
+    Object.freeze({
+      name: auditDirName,
+      checks: Object.freeze({
+        symlink: 'audit_dir_symlink',
+        notDirectory: 'audit_dir_not_directory',
+        owner: 'audit_dir_owner',
+        mode: 'audit_dir_mode',
+      }),
+      unsafe: 'audit_dir_unsafe',
+    }),
+    Object.freeze({
+      name: quotaDirName,
+      checks: Object.freeze({
+        symlink: 'quota_dir_symlink',
+        notDirectory: 'quota_dir_not_directory',
+        owner: 'quota_dir_owner',
+        mode: 'quota_dir_mode',
+      }),
+      unsafe: 'quota_dir_unsafe',
+    }),
+  ] as const),
 });
 
-const auditDirChecks: Checks = Object.freeze({
-  symlink: 'audit_dir_symlink',
-  notDirectory: 'audit_dir_not_directory',
-  owner: 'audit_dir_owner',
-  mode: 'audit_dir_mode',
-});
-
-const quotaDirChecks: Checks = Object.freeze({
-  symlink: 'quota_dir_symlink',
-  notDirectory: 'quota_dir_not_directory',
-  owner: 'quota_dir_owner',
-  mode: 'quota_dir_mode',
+const keysDirKind: Kind<KeysDirCode> = Object.freeze({
+  notString: 'The path of the folder of keys must be a string.',
+  platform: 'keys_dir_platform',
+  relative: 'keys_dir_relative',
+  notNormalized: 'keys_dir_not_normalized',
+  tooLong: 'keys_dir_too_long',
+  maxLength: maxKeysDirLength,
+  missing: 'keys_dir_missing',
+  unsafe: 'keys_dir_unsafe',
+  checks: Object.freeze({
+    symlink: 'keys_dir_symlink',
+    notDirectory: 'keys_dir_not_directory',
+    owner: 'keys_dir_owner',
+    mode: 'keys_dir_mode',
+  }),
+  inside: Object.freeze([
+    Object.freeze({
+      name: 'snapshot',
+      checks: Object.freeze({
+        symlink: 'snapshot_keys_dir_symlink',
+        notDirectory: 'snapshot_keys_dir_not_directory',
+        owner: 'snapshot_keys_dir_owner',
+        mode: 'snapshot_keys_dir_mode',
+      }),
+      unsafe: 'snapshot_keys_dir_unsafe',
+    }),
+    Object.freeze({
+      name: 'queue',
+      checks: Object.freeze({
+        symlink: 'queue_keys_dir_symlink',
+        notDirectory: 'queue_keys_dir_not_directory',
+        owner: 'queue_keys_dir_owner',
+        mode: 'queue_keys_dir_mode',
+      }),
+      unsafe: 'queue_keys_dir_unsafe',
+    }),
+  ] as const),
 });
 
 // A folder of the user without rights for the group or others, never
 // reached through a link at its last part.
-const checkFolder = (
+const checkFolder = <Code extends string>(
   stats: StateDirStats,
   uid: number,
-  checks: Checks,
-): StateDirCode | undefined => {
+  checks: Checks<Code>,
+): Code | undefined => {
   if (stats.isSymbolicLink()) return checks.symlink;
   if (!stats.isDirectory()) return checks.notDirectory;
   if (stats.uid !== uid) return checks.owner;
   if ((stats.mode & 0o077) !== 0) return checks.mode;
   return undefined;
+};
+
+// The checks of both kinds of folder, with the codes of the kind.
+const checkDir = <Code extends string>(
+  path: string,
+  fs: StateDirFileSystem,
+  kind: Kind<Code>,
+): { readonly ok: true } | { readonly ok: false; readonly code: Code } => {
+  if (typeof path !== 'string') throw new TypeError(kind.notString);
+  // Without these flags or the ID of the user, the start could not open
+  // the files in the folder safely. First, so that Windows gets this code
+  // and not one about the form of a path it writes differently.
+  const { O_NOFOLLOW, O_DIRECTORY, O_NOCTTY } = fs.constants;
+  const uid = fs.getuid();
+  if (
+    O_NOFOLLOW === undefined ||
+    O_DIRECTORY === undefined ||
+    O_NOCTTY === undefined ||
+    uid === undefined
+  ) {
+    return refuse(kind.platform);
+  }
+  if (!isAbsolute(path)) return refuse(kind.relative);
+  if (!isNormalizedAbsolutePath(path)) return refuse(kind.notNormalized);
+  // The loader bounds the characters; a character outside ASCII takes more
+  // than one byte in a path.
+  if (encoder.encode(path).length > kind.maxLength) {
+    return refuse(kind.tooLong);
+  }
+
+  let folder: StateDirStats;
+  try {
+    folder = fs.lstatSync(path);
+  } catch (error) {
+    return refuse(errorCode(error) === 'ENOENT' ? kind.missing : kind.unsafe);
+  }
+  try {
+    const code = checkFolder(folder, uid, kind.checks);
+    if (code !== undefined) return refuse(code);
+  } catch {
+    return refuse(kind.unsafe);
+  }
+
+  // A folder inside, if it is there: the same checks, with its own codes.
+  for (const { name, checks, unsafe } of kind.inside) {
+    let inside: StateDirStats;
+    try {
+      inside = fs.lstatSync(`${path === '/' ? '' : path}/${name}`);
+    } catch (error) {
+      if (errorCode(error) === 'ENOENT') continue;
+      return refuse(unsafe);
+    }
+    try {
+      const code = checkFolder(inside, uid, checks);
+      if (code !== undefined) return refuse(code);
+    } catch {
+      return refuse(unsafe);
+    }
+  }
+  return passed;
 };
 
 /**
@@ -205,67 +391,35 @@ export function checkStateDir(
   path: string,
   fs: StateDirFileSystem = nodeFileSystem,
 ): StateDirResult {
-  if (typeof path !== 'string') {
-    throw new TypeError('The path of the folder of state must be a string.');
-  }
-  // Without these flags or the ID of the user, the start could not open
-  // the audit file safely. First, so that Windows gets this code and not
-  // one about the form of a path it writes differently.
-  const { O_NOFOLLOW, O_DIRECTORY, O_NOCTTY } = fs.constants;
-  const uid = fs.getuid();
-  if (
-    O_NOFOLLOW === undefined ||
-    O_DIRECTORY === undefined ||
-    O_NOCTTY === undefined ||
-    uid === undefined
-  ) {
-    return refuse('state_dir_platform');
-  }
-  if (!isAbsolute(path)) return refuse('state_dir_relative');
-  if (!isNormalizedAbsolutePath(path)) {
-    return refuse('state_dir_not_normalized');
-  }
-  // The loader bounds the characters; a character outside ASCII takes more
-  // than one byte in a path.
-  if (encoder.encode(path).length > maxStateDirLength) {
-    return refuse('state_dir_too_long');
-  }
+  return checkDir(path, fs, stateDirKind);
+}
 
-  let folder: StateDirStats;
-  try {
-    folder = fs.lstatSync(path);
-  } catch (error) {
-    return refuse(
-      errorCode(error) === 'ENOENT' ? 'state_dir_missing' : 'state_dir_unsafe',
-    );
-  }
-  try {
-    const code = checkFolder(folder, uid, stateDirChecks);
-    if (code !== undefined) return refuse(code);
-  } catch {
-    return refuse('state_dir_unsafe');
-  }
-
-  // A folder inside, if it is there: the same checks, with its own codes.
-  const checkInside = (
-    name: string,
-    checks: Checks,
-    unsafe: StateDirCode,
-  ): StateDirCode | undefined => {
-    let inside: StateDirStats;
-    try {
-      inside = fs.lstatSync(`${path === '/' ? '' : path}/${name}`);
-    } catch (error) {
-      return errorCode(error) === 'ENOENT' ? undefined : unsafe;
-    }
-    try {
-      return checkFolder(inside, uid, checks);
-    } catch {
-      return unsafe;
-    }
-  };
-  const code =
-    checkInside(auditDirName, auditDirChecks, 'audit_dir_unsafe') ??
-    checkInside(quotaDirName, quotaDirChecks, 'quota_dir_unsafe');
-  return code === undefined ? passed : refuse(code);
+/**
+ * Checks the folder of keys and, if they exist, its folders `snapshot` and
+ * `queue` (ADR 0031), with the same rules as the folder of state and codes
+ * of their own: absolute and normalised, a folder of the user, not a link,
+ * without rights for the group or others, and at most
+ * {@link maxKeysDirLength} bytes in UTF-8. A missing folder of a purpose is
+ * fine, the start or the first day key creates it. Whether the folder lies
+ * in the folder of state is a rule of the loader, which knows both.
+ *
+ * Folders above the folder of keys are trusted: `lstat` follows links
+ * there.
+ *
+ * @param path - The value of `ECCLIUM_KEYS_DIR`.
+ * @param fs - The file functions, only for tests.
+ * @returns Whether the folder passed, or the code of the first check that
+ *   failed.
+ * @throws {TypeError} When the path is not a string.
+ * @example
+ * ```ts
+ * const checked = checkKeysDir('/srv/ecclium-keys');
+ * if (!checked.ok) report(checked.code);
+ * ```
+ */
+export function checkKeysDir(
+  path: string,
+  fs: StateDirFileSystem = nodeFileSystem,
+): KeysDirResult {
+  return checkDir(path, fs, keysDirKind);
 }

@@ -95,6 +95,13 @@ afterEach(async () => {
 });
 
 // A test key from a seed, never written out as hex.
+// Day keys serve snapshots of writes, which the level strict never asks.
+const noDayKeys = {
+  wrap: () => Promise.reject(new Error('no day keys')),
+  unwrap: () => Promise.reject(new Error('no day keys')),
+  destroyBefore: () => Promise.reject(new Error('no day keys')),
+} satisfies Omit<KeyProvider, 'dataKeys'>;
+
 const keys = (seed: string): KeyProvider =>
   createFileKeyProvider({
     current: new KeyMaterial(createHash('sha256').update(seed).digest('hex')),
@@ -480,7 +487,7 @@ describe('the level strict in the pipeline', () => {
 
   it('asks no key for a tool without an ID of a person, but checks its free text', async () => {
     const dataKeys = vi.fn<KeyProvider['dataKeys']>();
-    const { call } = setup({ keys: { dataKeys } });
+    const { call } = setup({ keys: { dataKeys, ...noDayKeys } });
     const outcome = await call('ct_test_plain', { page: 1 });
     expect(outcome.ok && outcome.data.text).toContain(freeTextMarkers.phone);
     expect(dataKeys).not.toHaveBeenCalled();
@@ -490,6 +497,7 @@ describe('the level strict in the pipeline', () => {
   it('ends a call with internal without a provider or when it fails', async () => {
     const failing: KeyProvider = {
       dataKeys: () => Promise.reject(new Error('no key')),
+      ...noDayKeys,
     };
     for (const provider of ['none', failing] as const) {
       const { call, inFile, stderr } = setup({ keys: provider });

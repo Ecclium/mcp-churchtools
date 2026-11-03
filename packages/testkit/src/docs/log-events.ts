@@ -316,6 +316,10 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Ecclium hat Audit-Dateien nach ihrer Frist oder leere Dateien gelöscht. `count` nennt ihre Zahl.',
     audit_files_not_deleted:
       'Ecclium konnte Audit-Dateien nach ihrer Frist nicht löschen oder den Ordner nicht ganz lesen. `count` nennt die Zahl der Dateien, die liegen blieben.',
+    day_keys_destroyed:
+      'Ecclium hat Tagesschlüssel der Snapshots nach ihrer Frist von 30 Tagen vernichtet, beim Start oder beim Wechsel des UTC-Tages. Snapshots dieser Tage lassen sich nicht mehr öffnen, in keiner Kopie. `count` nennt die Zahl der Schlüssel.',
+    day_keys_not_destroyed:
+      'Ecclium konnte nicht jeden Tagesschlüssel der Snapshots nach seiner Frist vernichten, etwa weil der Ordner `snapshot` im Ordner aus `ECCLIUM_KEYS_DIR` nicht mehr privat ist oder darin ein Ordner unter dem Namen eines Schlüssels steht. Die übrigen hat es vernichtet. Ecclium versucht es spätestens nach einer Stunde erneut.',
     stdio_start_failed:
       'Der Start über stdio ist gescheitert. `code` nennt den Grund, die Meldung für Betreiber steht davor.',
     stdio_closed:
@@ -429,6 +433,10 @@ const sections: readonly {
   {
     title: 'Audit',
     fits: (name: string) => name.startsWith('audit_'),
+  },
+  {
+    title: 'Tagesschlüssel',
+    fits: (name: string) => name.startsWith('day_keys_'),
   },
   {
     title: 'Prozess über stdio',

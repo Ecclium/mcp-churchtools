@@ -19,12 +19,15 @@ import { environmentSchema } from '../packages/core/src/config/variables.ts';
 // variables in core: every name once, in table order, with its default.
 // The key files for pseudonyms stand only in comments, like the token: a
 // placeholder path there would stop every start that copies the file, and
-// the keys do something only with the level strict (ADR 0069).
+// the keys do something only with the level strict (ADR 0069). So does the
+// folder of the day keys, which only a server that writes needs
+// (ADR 0031).
 
 const commentedOnly: readonly string[] = [
   tokenVariableName,
   'ECCLIUM_PSEUDONYM_KEY_FILE',
   'ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE',
+  'ECCLIUM_KEYS_DIR',
   'ECCLIUM_POLICY_FILE',
 ];
 

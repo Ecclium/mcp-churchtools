@@ -1,6 +1,8 @@
 import {
   type AuditFileCode,
   auditFileCodes,
+  type PrivateFileCode,
+  privateFileCodes,
   quotaFolderCodes,
   type QuotaFolderCode,
   type RefusalReason,
@@ -15,6 +17,8 @@ import { isTextLine } from '../send.js';
 import {
   auditFileMessage,
   auditFileText,
+  dayKeyFolderMessage,
+  dayKeyFolderText,
   emptyToolsetMessage,
   emptyToolsetText,
   type Message,
@@ -55,6 +59,10 @@ const everyMessage: [string, Message][] = [
     `the folder quota ${code}`,
     quotaFolderMessage(code),
   ]),
+  ...privateFileCodes.map((code): [string, Message] => [
+    `the folder of the day keys ${code}`,
+    dayKeyFolderMessage(code),
+  ]),
   ['one toolset', toolsetsMessage(['wiki'])],
   ['every toolset', toolsetsMessage(toolsetNames)],
   ...toolsetNames.map((name): [string, Message] => [
@@ -76,6 +84,10 @@ const everyText: [string, string][] = [
   ...quotaFolderCodes.map((code): [string, string] => [
     `the folder quota ${code}`,
     quotaFolderText(code),
+  ]),
+  ...privateFileCodes.map((code): [string, string] => [
+    `the folder of the day keys ${code}`,
+    dayKeyFolderText(code),
   ]),
   ['every toolset', toolsetsText(toolsetNames)],
   ...toolsetNames.map((name): [string, string] => [
@@ -161,6 +173,22 @@ describe('the texts of the start over stdio', () => {
     }
     expect(() => quotaFolderText('toString' as QuotaFolderCode)).toThrow(
       new TypeError('The quota folder code is unknown.'),
+    );
+  });
+
+  it('gives every reason of the folder of the day keys a text of its own, without a path', () => {
+    const whats = privateFileCodes.map(
+      (code) => dayKeyFolderMessage(code).what,
+    );
+    expect(new Set(whats).size).toBe(privateFileCodes.length);
+    for (const code of privateFileCodes) {
+      expect(dayKeyFolderText(code)).toBe(textOf(dayKeyFolderMessage(code)));
+      expect(dayKeyFolderText(code)).toContain('bricht ab');
+      expect(dayKeyFolderText(code)).not.toMatch(/\/[a-z]/);
+    }
+    expect(dayKeyFolderText('unavailable')).toContain('‹ECCLIUM_KEYS_DIR›');
+    expect(() => dayKeyFolderText('toString' as PrivateFileCode)).toThrow(
+      new TypeError('The day key folder code is unknown.'),
     );
   });
 
@@ -269,6 +297,8 @@ describe('the texts of the start over stdio', () => {
     expect(Object.keys(await import('./start.js')).sort()).toEqual([
       'auditFileMessage',
       'auditFileText',
+      'dayKeyFolderMessage',
+      'dayKeyFolderText',
       'emptyToolsetMessage',
       'emptyToolsetText',
       'quotaFolderMessage',

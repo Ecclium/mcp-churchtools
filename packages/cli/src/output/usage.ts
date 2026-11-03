@@ -15,7 +15,7 @@ export const helpLines: readonly string[] = Object.freeze([
   usageLine,
   '  stdio                 startet den Server für einen KI-Assistenten über stdio',
   '  config check          prüft die Konfiguration aus der Umgebung, ohne ChurchTools anzufragen',
-  '    --show-values       zeigt bei der Prüfung auch den Host, ein abweichendes Subjekt und den Zustandsordner',
+  '    --show-values       zeigt bei der Prüfung auch den Host, ein abweichendes Subjekt, den Zustands- und den Schlüsselordner',
   '  audit verify          prüft die Audit-Dateien gegen ihre Ketten, braucht nur ‹ECCLIUM_STATE_DIR›',
   '    --log <Datei>       prüft auch gegen die Anker aus diesem Log, ‹-› liest stdin, mehrmals möglich',
   '  audit show            zählt die Aufrufe in den Audit-Dateien je Tag und Tool',

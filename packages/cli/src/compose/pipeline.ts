@@ -2,7 +2,8 @@
  * The pipeline of the tools as the composition root builds it (ADR 0056),
  * shared by the start over stdio and `ecclium policy init`, so that both
  * reach ChurchTools in the same way: the transport to the instance, the
- * keys for pseudonyms in the level `strict` (ADR 0069), the audit sink
+ * keys for pseudonyms in the level `strict` (ADR 0069) and the day keys in
+ * the folder of keys (ADR 0031), the audit sink
  * with the audit file, the store of the counters and the folder of the
  * kill switches in the folder of state (ADR 0028, ADR 0029, ADR 0063),
  * and the policy (ADR 0032). The start over stdio reaches this module, so
@@ -22,8 +23,10 @@ import {
   type AuditFileWriter,
   createAuditSink,
   createDefaultTenantLogger,
+  createFileDayKeys,
   createFileKeyProvider,
   createFileQuotaStore,
+  type DayKeys,
   type StderrLineWriter,
 } from '@ecclium/mcp-churchtools-core/composition';
 import {
@@ -55,12 +58,18 @@ export interface ComposeOptions {
     ((options: HttpTransportOptions) => HttpTransport) | undefined;
 }
 
-/** The pipeline and the transport it sends through. */
+/** The pipeline, the transport it sends through and its day keys. */
 export interface ComposedPipeline {
   /** The pipeline of the tools. */
   readonly pipeline: ToolPipeline;
   /** The transport, which the caller closes when it is done. */
   readonly transport: HttpTransport;
+  /**
+   * The day keys the pipeline got, over the folder of keys, or undefined
+   * without one (ADR 0031). The start over stdio destroys those past their
+   * retention through them.
+   */
+  readonly dayKeys: DayKeys | undefined;
 }
 
 /**
@@ -70,7 +79,7 @@ export interface ComposedPipeline {
  *
  * @param options - Configuration, catalog, writer, clock, audit file and
  *   a replacement for tests.
- * @returns The pipeline and its transport.
+ * @returns The pipeline, its transport and its day keys.
  * @throws {TypeError} When the level `strict` has no key, or when a factory
  *   of core refuses its options.
  * @example
@@ -99,11 +108,26 @@ export function composeToolPipeline(options: ComposeOptions): ComposedPipeline {
     if (config.redaction === 'strict' && config.pseudonymKey === undefined) {
       throw new TypeError('The level strict has no key.');
     }
+    const strict =
+      config.redaction === 'strict' && config.pseudonymKey !== undefined;
+    // The day keys in the folder of keys, for the snapshots of writes and
+    // the queue (ADR 0031). They hold the folder only, no key, and touch
+    // the disk only when a key is wrapped, opened or destroyed. One
+    // provider carries them and, in strict, the secrets of the pseudonyms.
+    const dayKeys =
+      config.keysDir === undefined
+        ? undefined
+        : createFileDayKeys({ keysDir: config.keysDir, pid: process.pid });
     const keys =
-      config.redaction === 'strict' && config.pseudonymKey !== undefined
+      strict || dayKeys !== undefined
         ? createFileKeyProvider({
-            current: config.pseudonymKey,
-            previous: config.pseudonymKeyPrevious,
+            ...(strict
+              ? {
+                  current: config.pseudonymKey,
+                  previous: config.pseudonymKeyPrevious,
+                }
+              : {}),
+            ...(dayKeys === undefined ? {} : { dayKeys }),
           })
         : undefined;
     const pipeline = createToolPipeline({
@@ -142,7 +166,7 @@ export function composeToolPipeline(options: ComposeOptions): ComposedPipeline {
           }),
       ...(keys === undefined ? {} : { keys }),
     });
-    return Object.freeze({ pipeline, transport });
+    return Object.freeze({ pipeline, transport, dayKeys });
   } catch (error) {
     // The caller never got the transport, so it closes here.
     void transport.close().catch(() => undefined);

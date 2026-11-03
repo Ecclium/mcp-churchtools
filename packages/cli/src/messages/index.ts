@@ -17,6 +17,8 @@ export {
 export {
   auditFileMessage,
   auditFileText,
+  dayKeyFolderMessage,
+  dayKeyFolderText,
   emptyToolsetMessage,
   emptyToolsetText,
   quotaFolderMessage,

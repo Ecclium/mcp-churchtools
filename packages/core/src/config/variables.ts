@@ -17,7 +17,11 @@ import {
   toolsetNames,
   toolsetsOfAll,
 } from '../registry/toolsets.js';
-import { isNormalizedAbsolutePath, maxStateDirLength } from './state-dir.js';
+import {
+  isNormalizedAbsolutePath,
+  maxKeysDirLength,
+  maxStateDirLength,
+} from './state-dir.js';
 
 /** The prefix of every variable. The loader recognises it in any case. */
 export const variablePrefix = 'ECCLIUM_';
@@ -34,6 +38,7 @@ export const variableNames = Object.freeze([
   'ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE',
   'ECCLIUM_TOOLSETS',
   'ECCLIUM_STATE_DIR',
+  'ECCLIUM_KEYS_DIR',
   'ECCLIUM_AUDIT_RETENTION_MONTHS',
   'ECCLIUM_POLICY_FILE',
   'ECCLIUM_STDIO_SUBJECT',
@@ -332,8 +337,9 @@ const row = (variable: Variable): Variable =>
  * address has its own, lower one, which a longer address reaches first.
  * The bound of the token file and of the key files is PATH_MAX on Linux, the one of the folder
  * of state lower, so that the path of an audit file in it stays below
- * PATH_MAX of macOS (ADR 0028), and the one of the token the longest value
- * a `Secret` takes.
+ * PATH_MAX of macOS (ADR 0028), the one of the folder of keys lower still,
+ * for the longer names of the day keys in it (ADR 0031), and the one of
+ * the token the longest value a `Secret` takes.
  */
 export const variables: readonly Variable[] = Object.freeze([
   row({
@@ -426,6 +432,18 @@ export const variables: readonly Variable[] = Object.freeze([
     secret: false,
     stdioOnly: true,
   }),
+  // The folder of the day keys (ADR 0031): needed as soon as the server
+  // writes, and over stdio only, like the folder of state it must not lie
+  // in.
+  row({
+    name: 'ECCLIUM_KEYS_DIR',
+    kind: 'path',
+    maxLength: maxKeysDirLength,
+    choices: [],
+    defaultValue: undefined,
+    secret: false,
+    stdioOnly: true,
+  }),
   row({
     name: 'ECCLIUM_AUDIT_RETENTION_MONTHS',
     kind: 'integer',
@@ -509,6 +527,11 @@ export const variableSchemas: Readonly<
     .min(1)
     .max(maxStateDirLength)
     .refine((value) => isNormalizedAbsolutePath(value)),
+  ECCLIUM_KEYS_DIR: z
+    .string()
+    .min(1)
+    .max(maxKeysDirLength)
+    .refine((value) => isNormalizedAbsolutePath(value)),
   ECCLIUM_AUDIT_RETENTION_MONTHS: z
     .string()
     .max(3)
@@ -543,6 +566,7 @@ export const environmentSchema = z.strictObject({
     variableSchemas.ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE.optional(),
   ECCLIUM_TOOLSETS: variableSchemas.ECCLIUM_TOOLSETS.optional(),
   ECCLIUM_STATE_DIR: variableSchemas.ECCLIUM_STATE_DIR.optional(),
+  ECCLIUM_KEYS_DIR: variableSchemas.ECCLIUM_KEYS_DIR.optional(),
   ECCLIUM_AUDIT_RETENTION_MONTHS:
     variableSchemas.ECCLIUM_AUDIT_RETENTION_MONTHS.optional(),
   ECCLIUM_POLICY_FILE: variableSchemas.ECCLIUM_POLICY_FILE.optional(),

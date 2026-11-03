@@ -9,7 +9,7 @@
 import { originCodes } from '../http/index.js';
 import { policyCodes } from '../policy/file.js';
 import { pseudonymKeyFileCodes } from './pseudonym-key-file.js';
-import { stateDirCodes } from './state-dir.js';
+import { keysDirCodes, stateDirCodes } from './state-dir.js';
 import { tokenFileCodes } from './token-file.js';
 
 /** Why the configuration cannot start the server, frozen. */
@@ -44,6 +44,10 @@ export const configProblemCodes = Object.freeze([
   'subject_reserved',
   ...stateDirCodes,
   'toolsets_without_state_dir',
+  ...keysDirCodes,
+  'keys_dir_required',
+  'keys_dir_in_state_dir',
+  'state_dir_in_keys_dir',
   'redaction_strict_with_api',
   'state_dir_required',
   ...policyCodes,

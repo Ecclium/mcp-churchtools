@@ -1,8 +1,10 @@
 /**
  * Loads the configuration from the environment, the token file and the
- * key files for pseudonyms (ADR 0055, ADR 0069). The core never reads `process.env` itself: the command line
- * passes the environment in. The loader reports every problem at once, by
- * code and variable, and never a value it was given.
+ * key files for pseudonyms (ADR 0055, ADR 0069), and checks the folders of
+ * state and of the day keys (ADR 0028, ADR 0031). The core never reads
+ * `process.env` itself: the command line passes the environment in. The
+ * loader reports every problem at once, by code and variable, and never a
+ * value it was given.
  *
  * @packageDocumentation
  */
@@ -24,7 +26,12 @@ import type { Policy } from '../policy/schema.js';
 import type { ToolsetName } from '../registry/toolsets.js';
 import type { ConfigProblemCode, ConfigWarningCode } from './codes.js';
 import { readPseudonymKeyFile } from './pseudonym-key-file.js';
-import { checkStateDir, type StateDirFileSystem } from './state-dir.js';
+import {
+  checkKeysDir,
+  checkStateDir,
+  isNormalizedAbsolutePath,
+  type StateDirFileSystem,
+} from './state-dir.js';
 import { readTokenFile, type TokenFileSystem } from './token-file.js';
 import {
   debugVariableName,
@@ -93,6 +100,12 @@ export interface EccliumConfig {
    */
   readonly stateDir: string | undefined;
   /**
+   * The checked folder of the day keys, or undefined when the variable is
+   * not set (ADR 0031). It is set whenever the server writes, and never
+   * the folder of state or a folder in it.
+   */
+  readonly keysDir: string | undefined;
+  /**
    * How many months the audit files stay before the start or a new UTC day
    * deletes them, 1 to 120 (ADR 0028). Without a folder of state there are
    * no files, and the value does nothing.
@@ -119,6 +132,7 @@ export type SettingKey =
   | 'pseudonymKeyPrevious'
   | 'toolsets'
   | 'stateDir'
+  | 'keysDir'
   | 'auditRetentionMonths'
   | 'policy'
   | 'stdioSubject'
@@ -130,7 +144,7 @@ export type ValueOrigin = 'environment' | 'file' | 'default';
 /**
  * What the report may show of a value: an entry of the table, or a value
  * that passed its check, such as the subject, the host of the address or
- * the folder of state. Never a refused value, and never anything of the
+ * the folders of state and of keys. Never a refused value, and never anything of the
  * token, not even the path of its file.
  */
 export type ShownValue =
@@ -182,8 +196,8 @@ export interface ConfigProblem {
 /**
  * What the loader found, deeply frozen. It never holds the token, the path
  * of the token file or a value it refused. It does hold the checked host,
- * port, folder of state and subject, which the command line masks unless
- * asked to show them.
+ * port, folders of state and of keys and subject, which the command line
+ * masks unless asked to show them.
  */
 export interface ConfigReport {
   readonly transport: Transport;
@@ -222,7 +236,10 @@ export interface ConfigSources {
    * and the file of the policy, only for tests.
    */
   readonly tokenFiles?: TokenFileSystem;
-  /** The file functions for the folder of state, only for tests. */
+  /**
+   * The file functions for the folders of state and of keys, only for
+   * tests.
+   */
   readonly stateDirFiles?: StateDirFileSystem;
 }
 
@@ -464,6 +481,11 @@ const invalid: Read = Object.freeze({ state: 'invalid' });
 const shownNone: ShownValue = record({ kind: 'none' });
 const shownHidden: ShownValue = record({ kind: 'hidden' });
 
+// Whether a normalised absolute path is a folder or lies in it, by its
+// parts: /srv/state-keys does not lie in /srv/state.
+const liesWithin = (path: string, folder: string): boolean =>
+  path === folder || path.startsWith(folder === '/' ? '/' : `${folder}/`);
+
 /**
  * Loads the configuration. Each variable is read from an own data property
  * of the environment, never inherited and never through a getter. A
@@ -476,7 +498,7 @@ const shownHidden: ShownValue = record({ kind: 'hidden' });
  *
  * @param sources - The environment, the transport, the options Node.js
  *   was started with and, for tests, the file functions for the token
- *   file and the folder of state.
+ *   file and the folders of state and of keys.
  * @returns The configuration with its report when nothing is wrong, else
  *   the report alone.
  * @throws {TypeError} When the sources or the environment are no plain
@@ -950,6 +972,69 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     report('toolsets_without_state_dir', stateDirName);
   }
 
+  // The folder of the day keys (ADR 0031). Every write keeps a snapshot of
+  // what it changes, encrypted with a day key from this folder, so the
+  // server writes only with it. Reading needs none, but a folder that is
+  // set is checked all the same: the start then destroys the day keys past
+  // their retention. Like the folder of state it is only looked at here.
+  // It must not be the folder of state or lie in it, because a backup of
+  // that folder would then hold the keys that open its snapshots, also
+  // those that were destroyed. Nor may the folder of state lie in it:
+  // then the folder of a purpose could be the folder of state itself, and
+  // keeping the folder of keys out of a backup would keep the audit out as
+  // well. Compared as text: both paths passed as absolute and normalised,
+  // and the folders above them are trusted.
+  const keysDirName = 'ECCLIUM_KEYS_DIR';
+  const keysDirRead = read(row(keysDirName));
+  let keysDir: string | undefined;
+  let keysDirValid = true;
+  if (keysDirRead.state === 'unset') {
+    // Over HTTP as well: there the variable is refused, so a server over
+    // HTTP does not write in this version.
+    if (readOnly?.value === 'false') {
+      report('keys_dir_required', keysDirName);
+      keysDirValid = false;
+      setting('keysDir', keysDirName, 'missing', shownNone);
+    } else {
+      setting('keysDir', keysDirName, 'unset', shownNone);
+    }
+  } else if (keysDirRead.state === 'invalid') {
+    keysDirValid = false;
+    setting('keysDir', keysDirName, 'invalid', shownNone);
+  } else {
+    const value = keysDirRead.value;
+    const stateDirValue =
+      stateDirRead.state === 'set' ? stateDirRead.value : undefined;
+    const checked =
+      isNormalizedAbsolutePath(value) &&
+      stateDirValue !== undefined &&
+      isNormalizedAbsolutePath(stateDirValue) &&
+      liesWithin(value, stateDirValue)
+        ? ({ ok: false, code: 'keys_dir_in_state_dir' } as const)
+        : isNormalizedAbsolutePath(value) &&
+            stateDirValue !== undefined &&
+            isNormalizedAbsolutePath(stateDirValue) &&
+            liesWithin(stateDirValue, value)
+          ? ({ ok: false, code: 'state_dir_in_keys_dir' } as const)
+          : checkKeysDir(
+              value,
+              stateDirFiles as StateDirFileSystem | undefined,
+            );
+    if (checked.ok) {
+      keysDir = value;
+      setting(
+        'keysDir',
+        keysDirName,
+        'environment',
+        record({ kind: 'path', value: keysDir }),
+      );
+    } else {
+      report(checked.code, keysDirName);
+      keysDirValid = false;
+      setting('keysDir', keysDirName, 'invalid', shownNone);
+    }
+  }
+
   // The retention of the audit files: digits only, checked sign by sign.
   // Below a year every start warns, and without the folder of state there
   // is nothing to delete, which every start says (ADR 0028).
@@ -1088,6 +1173,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     !previousValid ||
     toolsets === undefined ||
     !stateDirValid ||
+    !keysDirValid ||
     retention === undefined ||
     policy === undefined ||
     subject === undefined ||
@@ -1109,6 +1195,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       pseudonymKeyPrevious: previous.key,
       toolsets: toolsets.value,
       stateDir,
+      keysDir,
       auditRetentionMonths: retention.value,
       policy,
       stdioSubject: subject.value,

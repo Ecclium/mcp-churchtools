@@ -107,6 +107,8 @@ const urlLength =
 const tokenFile = quote('ECCLIUM_CHURCHTOOLS_TOKEN_FILE');
 const tokenVariable = quote('ECCLIUM_CHURCHTOOLS_TOKEN');
 const stateDir = quote('ECCLIUM_STATE_DIR');
+const keysDir = quote('ECCLIUM_KEYS_DIR');
+const readOnly = quote('ECCLIUM_READ_ONLY');
 const keyFile = quote('ECCLIUM_PSEUDONYM_KEY_FILE');
 const previousKeyFile = quote('ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE');
 const keyCommand = '‹openssl rand -hex 32›';
@@ -127,6 +129,49 @@ const insteadOfAll = `Steht dort ${quote('all')}, nennen Sie stattdessen die üb
 const toolsetList = `${toolsetNames.slice(0, -1).map(quote).join(', ')} und ${quote(toolsetNames.at(-1) ?? '')}`;
 const auditDir = quote('audit');
 const quotaDir = quote('quota');
+const noPath =
+  'Das Dateisystem meldete einen Fehler. Seine Meldung zeigt Ecclium nicht, weil sie den Pfad enthält.';
+
+// The texts for a folder of a purpose in the folder of keys (ADR 0031):
+// the day keys of the snapshots or of the queue, which a reader could use
+// to open what they encrypted.
+const dayKeyFolder = (folder: string, holds: string) =>
+  Object.freeze({
+    symlink: (name = keysDir) =>
+      message(
+        `Der Ordner ${folder} im Ordner aus ${name} ist ein symbolischer Link.`,
+        'Ein Link könnte auf einen fremden Ordner zeigen, deshalb folgt Ecclium ihm nicht.',
+        `Entfernen Sie den Link. Ecclium legt den Ordner ${folder} selbst an.`,
+      ),
+    notDirectory: (name = keysDir) =>
+      message(
+        `Im Ordner aus ${name} ist ${folder} kein Ordner.`,
+        `Ecclium legt im Ordner ${folder} die Tagesschlüssel ${holds} ab.`,
+        `Verschieben Sie, was unter dem Namen ${folder} steht. Ecclium legt den Ordner selbst an.`,
+      ),
+    // A key another user could have read or placed is no key to trust, so
+    // the folder goes, with what its keys encrypted.
+    owner: (name = keysDir) =>
+      message(
+        `Der Ordner ${folder} im Ordner aus ${name} gehört einem anderen Benutzer.`,
+        'Wem der Ordner gehört, der kann die Tagesschlüssel darin lesen, austauschen oder löschen.',
+        `Entfernen Sie den Ordner ${folder}. Was seine Schlüssel verschlüsselten, lässt sich dann nicht mehr öffnen. Ecclium legt ihn als der Benutzer an, unter dem es läuft.`,
+      ),
+    mode: (name = keysDir) =>
+      message(
+        `Der Ordner ${folder} im Ordner aus ${name} ist auch für die Gruppe oder für andere Benutzer zugänglich.`,
+        'Dann könnten andere Benutzer die Tagesschlüssel lesen.',
+        `Setzen Sie die Rechte von ${folder} mit «chmod 700» auf 700.`,
+      ),
+    unsafe: (name = keysDir) =>
+      message(
+        `Der Ordner ${folder} im Ordner aus ${name} liess sich nicht sicher prüfen.`,
+        noPath,
+        `Prüfen Sie Eigentümer und Rechte des Ordners aus ${name}.`,
+      ),
+  });
+const snapshotKeys = dayKeyFolder(quote('snapshot'), 'der Snapshots');
+const queueKeys = dayKeyFolder(quote('queue'), 'der Freigabe-Warteschlange');
 const example = 'https://example.church.tools';
 const policyFile = quote('ECCLIUM_POLICY_FILE');
 // What applies without a file of the policy (ADR 0032).
@@ -595,6 +640,14 @@ const problems: Readonly<
           'Für den Betrieb über HTTP folgt die Audit-Datei mit einer späteren Version.',
           'Entfernen Sie die Variable für den Betrieb über HTTP.',
         );
+      // Without the folder of the day keys nothing writes, so a server
+      // over HTTP only reads in this version (ADR 0031).
+      case 'ECCLIUM_KEYS_DIR':
+        return message(
+          `${quote(raw)} gilt vorerst nur im Betrieb über stdio.`,
+          'Über HTTP schreibt Ecclium in dieser Version nicht, die Tagesschlüssel dafür folgen mit einer späteren Version.',
+          `Entfernen Sie die Variable für den Betrieb über HTTP und lassen Sie ${readOnly} auf ‹true›.`,
+        );
       default:
         return message(
           `${name ?? 'Diese Einstellung'} ist nur im Betrieb über stdio erlaubt.`,
@@ -734,6 +787,103 @@ const problems: Readonly<
       `Der Ordner ${quotaDir} im Ordner aus ${name} liess sich nicht sicher prüfen.`,
       'Das Dateisystem meldete einen Fehler. Seine Meldung zeigt Ecclium nicht, weil sie den Pfad enthält.',
       `Prüfen Sie Eigentümer und Rechte des Ordners aus ${name}.`,
+    ),
+  // The folder of the day keys (ADR 0031). Its checks follow those of the
+  // folder of state, but what lies in it opens the snapshots of writes.
+  keys_dir_relative: (name = keysDir) =>
+    message(
+      `Der Pfad in ${name} ist nicht absolut.`,
+      'Der KI-Assistent startet Ecclium aus einem unbekannten Ordner, und eine Tilde wird nicht ersetzt.',
+      'Geben Sie den vollständigen Pfad an, der mit / beginnt.',
+    ),
+  keys_dir_not_normalized: (name = keysDir) =>
+    message(
+      `Der Pfad in ${name} ist nicht in seiner eindeutigen Form geschrieben.`,
+      'Ecclium normalisiert nichts, damit es genau den Ordner prüft, den Sie angeben. Mit einem Schrägstrich am Ende folgte die Prüfung sogar einem Link.',
+      'Schreiben Sie den Pfad ohne Schrägstrich am Ende, ohne doppelte Schrägstriche und ohne ‹.› oder ‹..›.',
+    ),
+  keys_dir_too_long: (name = keysDir) =>
+    message(
+      `Der Pfad in ${name} ist zu lang.`,
+      `In UTF-8 hat er mehr als 896 Bytes, und der Pfad eines Tagesschlüssels darin überschritte die Grenze von 1'024 Bytes für Pfade unter macOS. Zeichen ausserhalb von ASCII wie Umlaute zählen mehrfach.`,
+      'Wählen Sie einen kürzeren Pfad.',
+    ),
+  keys_dir_platform: (name = keysDir) =>
+    message(
+      `Der Ordner in ${name} lässt sich auf diesem System nicht sicher prüfen.`,
+      'Es fehlt die Prüfung des Eigentümers oder das Öffnen ohne Links, etwa unter Windows. Dort schreibt Ecclium im Betrieb über stdio nicht.',
+      `Entfernen Sie die Variable auf diesem System und lassen Sie ${readOnly} auf ‹true›.`,
+    ),
+  keys_dir_missing: (name = keysDir) =>
+    message(
+      `Den Ordner in ${name} gibt es nicht.`,
+      'Ecclium legt ihn nicht selbst an, damit er nur mit den Rechten entsteht, die Sie wählen.',
+      'Legen Sie den Ordner mit den Rechten 700 an, etwa mit «mkdir -m 700» und dem Pfad, ausserhalb des Zustandsordners und ausserhalb jeder Sicherung, oder prüfen Sie den Pfad.',
+    ),
+  keys_dir_symlink: (name = keysDir) =>
+    message(
+      `Der Pfad in ${name} endet in einem symbolischen Link.`,
+      'Ein Link könnte auf einen fremden Ordner zeigen, deshalb folgt Ecclium ihm nicht.',
+      'Geben Sie den Pfad des Ordners selbst an.',
+    ),
+  keys_dir_not_directory: (name = keysDir) =>
+    message(
+      `Der Pfad in ${name} zeigt nicht auf einen Ordner.`,
+      'Ecclium legt darin die Ordner ‹snapshot› und ‹queue› mit den Tagesschlüsseln an.',
+      'Geben Sie den Pfad eines Ordners an.',
+    ),
+  keys_dir_owner: (name = keysDir) =>
+    message(
+      `Der Ordner in ${name} gehört einem anderen Benutzer.`,
+      'Wem der Ordner gehört, der kann die Tagesschlüssel darin lesen und damit die Snapshots früherer Schreibvorgänge öffnen.',
+      'Legen Sie den Ordner als der Benutzer an, unter dem Ecclium läuft.',
+    ),
+  keys_dir_mode: (name = keysDir) =>
+    message(
+      `Der Ordner in ${name} ist auch für die Gruppe oder für andere Benutzer zugänglich.`,
+      'Dann könnten andere Benutzer die Tagesschlüssel lesen oder Dateien darin anlegen.',
+      'Setzen Sie die Rechte des Ordners mit «chmod 700» auf 700.',
+    ),
+  keys_dir_unsafe: (name = keysDir) =>
+    message(
+      `Der Ordner in ${name} liess sich nicht sicher prüfen.`,
+      noPath,
+      'Prüfen Sie den Pfad und die Rechte der Ordner darüber.',
+    ),
+  snapshot_keys_dir_symlink: snapshotKeys.symlink,
+  snapshot_keys_dir_not_directory: snapshotKeys.notDirectory,
+  snapshot_keys_dir_owner: snapshotKeys.owner,
+  snapshot_keys_dir_mode: snapshotKeys.mode,
+  snapshot_keys_dir_unsafe: snapshotKeys.unsafe,
+  queue_keys_dir_symlink: queueKeys.symlink,
+  queue_keys_dir_not_directory: queueKeys.notDirectory,
+  queue_keys_dir_owner: queueKeys.owner,
+  queue_keys_dir_mode: queueKeys.mode,
+  queue_keys_dir_unsafe: queueKeys.unsafe,
+  // Every write keeps a snapshot of what it changes, encrypted with a day
+  // key from the folder, so nothing writes without it (ADR 0031).
+  keys_dir_required: (name = keysDir) =>
+    message(
+      `${readOnly} ist ‹false›, aber ${name} ist nicht gesetzt.`,
+      'Vor jedem Schreiben in ChurchTools wird Ecclium den bisherigen Stand in einem Snapshot festhalten, verschlüsselt mit einem Tagesschlüssel aus diesem Ordner, und den Schlüssel nach 30 Tagen vernichten. Deshalb verlangt Schreiben den Ordner schon jetzt. Den Ordner gibt es vorerst nur im Betrieb über stdio.',
+      `Legen Sie einen eigenen Ordner Ihres Benutzers mit den Rechten 700 an, ausserhalb des Zustandsordners und ausserhalb jeder Sicherung, und nennen Sie ihn in ${name}. Oder setzen Sie ${readOnly} auf ‹true›.`,
+    ),
+  // A backup of the folder of state would hold the keys that open its
+  // snapshots, also those that were destroyed (ADR 0031).
+  keys_dir_in_state_dir: (name = keysDir) =>
+    message(
+      `Der Ordner in ${name} ist der Zustandsordner aus ${stateDir} oder liegt darin.`,
+      'Eine Sicherung des Zustandsordners enthielte dann mit den Snapshots auch die Tagesschlüssel, die sie öffnen, und vernichtete Schlüssel blieben darin erhalten.',
+      `Legen Sie den Ordner ausserhalb des Zustandsordners an, etwa daneben, nennen Sie ihn in ${name} und nehmen Sie ihn aus jeder Sicherung aus.`,
+    ),
+  // The folder of a purpose could then be the folder of state itself, and
+  // keeping the folder of keys out of a backup would keep the audit out as
+  // well (ADR 0031).
+  state_dir_in_keys_dir: (name = keysDir) =>
+    message(
+      `Der Zustandsordner aus ${stateDir} liegt im Ordner aus ${name}.`,
+      'Die Tagesschlüssel landeten dann womöglich im Zustandsordner und mit ihm in einer Sicherung, und wer den Ordner der Schlüssel aus der Sicherung nimmt, nähme die Audit-Dateien mit heraus.',
+      `Legen Sie die beiden Ordner nebeneinander an, keinen im anderen, und nennen Sie sie in ${stateDir} und ${name}.`,
     ),
   // Reported for the folder, which is what is missing; the toolsets
   // themselves are valid. persons and events need the folder, because
