@@ -198,9 +198,9 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
     write_committed:
       'Ein Schreibvorgang ist geschrieben und gelesen: die Version stieg wie geplant, und der Text ist der gesendete.',
     snapshot_failed:
-      'Ecclium konnte vor dem Senden den bisherigen Stand nicht als Snapshot festhalten. Der Schreibvorgang geht nicht an ChurchTools und endet mit `failed`. `code` nennt den Fehler.',
+      'Ecclium konnte vor dem Senden den bisherigen Stand nicht als Snapshot festhalten. Der Schreibvorgang geht nicht an ChurchTools und endet mit `failed`. `code` ist `internal`.',
     snapshot_incomplete:
-      'Nach dem Anlegen einer Seite konnte Ecclium ihre Kennung und Version nicht im Snapshot ergänzen. Die Seite bleibt angelegt, ihr Snapshot aber unvollständig. `code` nennt den Fehler.',
+      'Nach dem Anlegen einer Seite konnte Ecclium ihre Kennung und Version nicht im Snapshot ergänzen. Die Seite bleibt angelegt, ihr Snapshot aber unvollständig. `code` ist `internal`.',
     policy_not_interactive:
       'Ein Schreibvorgang kam ausserhalb des interaktiven Modus. Bis der Runner den unbeaufsichtigten Teil der Richtlinie nutzt, schreibt Ecclium dort nichts. Der Aufruf endet mit `policy_denied`.',
     policy_queue_only:
