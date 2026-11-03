@@ -27,12 +27,16 @@ export const exitCodes = Object.freeze({
   unavailable: 69,
   /** An internal error, with a fixed text and no details. */
   internal: 70,
-  /** A file could not be read whole. */
+  /**
+   * A file could not be read or written whole: for `ecclium undo`, the
+   * line in the audit file or the snapshot of the undo (ADR 0031).
+   */
   ioError: 74,
   /**
    * The command may not do what it was asked: for `ecclium undo`, writing
-   * is off, read-only or switched off, the account lacks a right, or the
-   * clock differs from ChurchTools (ADR 0031).
+   * is off, switched off or blocked, the account lacks a right, its token
+   * is refused, the page is no Markdown page, or the clock differs from
+   * ChurchTools (ADR 0031).
    */
   noPermission: 77,
   /** The configuration is invalid. */

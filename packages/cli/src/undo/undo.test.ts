@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -35,6 +41,7 @@ import {
   undoChanged,
   undoMissing,
   undoProblems,
+  undoUnchanged,
   wouldChangeLine,
 } from './texts.js';
 import { undoWrite } from './undo.js';
@@ -293,5 +300,45 @@ describe('ecclium undo', () => {
     const result = await run({ environment: {} });
     expect(result.code).toBe(78);
     expect(result.stderr.length).toBeGreaterThan(0);
+  });
+
+  it('says nothing is left to do, and writes over a page changed since only with --overwrite', async () => {
+    await keep();
+    const unchanged = await run({ answer: answer([[5, before]]) });
+    expect(unchanged.code).toBe(0);
+    expect(unchanged.stdout).toEqual([undoUnchanged.text]);
+    const overwritten = await run({
+      overwrite: true,
+      answer: answer(
+        [
+          [5, '# Von Hand\n'],
+          [5, '# Von Hand\n'],
+          [6, before],
+        ],
+        true,
+      ),
+    });
+    expect(overwritten.code).toBe(0);
+    expect(overwritten.stdout[0]).toBe(changedLine);
+  });
+
+  it('ends with 77 while writing is switched off or cannot be checked', async () => {
+    await keep();
+    writeFileSync(join(stateDir, 'stop', 'writes-off'), '');
+    const off = await run({ answer: answer([[4, after]]) });
+    expect(off.code).toBe(77);
+    expect(off.stderr[0]).toMatch(/Kill-Switch/);
+    rmSync(join(stateDir, 'stop'), { recursive: true });
+    const unknown = await run({ answer: answer([[4, after]]) });
+    expect(unknown.code).toBe(77);
+    expect(unknown.stderr[0]).toMatch(/‹stop›/);
+  });
+
+  it('ends with 66 once the day key is gone', async () => {
+    await keep();
+    rmSync(join(keysDir, 'snapshot', `default.${today()}.key`));
+    const result = await run();
+    expect(result.code).toBe(66);
+    expect(result.stderr).toEqual([undoMissing.expired.text]);
   });
 });

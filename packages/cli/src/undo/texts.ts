@@ -51,11 +51,11 @@ export const undoProblems: Readonly<Record<UndoProblem, UndoEnding>> =
 /** The endings of an undo that found no write to take back. */
 export const undoMissing = Object.freeze({
   missing: ending(
-    'Unter dieser Kennung findet Ecclium keinen Snapshot: Der Schreibvorgang hat keinen festgehalten, er liegt mehr als 30 Tage zurück, oder die Kennung gehört zu keinem Schreibvorgang dieses Mandanten.',
+    'Unter dieser Kennung findet Ecclium keinen Snapshot: Der Schreibvorgang hat keinen festgehalten, er liegt mehr als 30 Tage zurück, die Kennung gehört zu keinem Schreibvorgang dieses Mandanten, oder ‹ECCLIUM_STATE_DIR› ist ein anderer Ordner als beim Server. Prüfen Sie die Kennung und den Zustandsordner.',
     exitCodes.noInput,
   ),
   expired: ending(
-    'Der Snapshot dieses Schreibvorgangs lässt sich nicht mehr öffnen, weil sein Tagesschlüssel nach 30 Tagen vernichtet ist. Zurücknehmen lässt er sich nur noch von Hand.',
+    'Der Snapshot dieses Schreibvorgangs lässt sich nicht öffnen, weil sein Tagesschlüssel fehlt: Nach 30 Tagen ist er vernichtet, oder ‹ECCLIUM_KEYS_DIR› ist ein anderer Ordner als beim Server. Prüfen Sie den Schlüsselordner, sonst lässt sich der Schreibvorgang nur noch von Hand zurücknehmen.',
     exitCodes.noInput,
   ),
   off: snapshotsOff,
@@ -120,7 +120,7 @@ export function doneLines(version: number, undoId?: string): string[] {
  */
 export function incompleteEnding(categoryId: number): UndoEnding {
   return ending(
-    `Der Schreibvorgang hat eine Seite angelegt, deren Kennung Ecclium danach nicht mehr festhalten konnte. Prüfen Sie die Kategorie ${String(categoryId)} des Wikis von Hand.`,
+    `Der Schreibvorgang sollte eine Seite anlegen, aber ihre Kennung hat Ecclium nicht festgehalten: Entweder kam die Seite nie an, oder Ecclium konnte die Kennung danach nicht mehr sichern. Prüfen Sie die Kategorie ${String(categoryId)} des Wikis von Hand.`,
     exitCodes.noInput,
   );
 }
@@ -145,6 +145,15 @@ const notAsPlanned = ending(
   'Die Rücknahme hat ChurchTools erreicht, aber die Seite liest sich danach nicht wie geplant. Prüfen Sie die Seite in ChurchTools.',
   exitCodes.unavailable,
 );
+
+// Codes with which ChurchTools answers and refuses a write.
+const refusals: readonly ErrorCode[] = Object.freeze([
+  'auth',
+  'permission',
+  'not_found',
+  'conflict',
+  'validation',
+]);
 
 /** One ending per reason the core names. */
 const reasons: Readonly<Record<UndoReason, UndoEnding>> = Object.freeze({
@@ -220,12 +229,20 @@ export function failedEnding(failure: {
   readonly sent: boolean;
 }): UndoEnding {
   const { code, reason, sent } = failure;
-  if (reason !== undefined) return reasons[reason];
+  // A write ChurchTools answered and refused carries the sentence that it
+  // did not reach the page, but its code says why: a right, a page that is
+  // gone, a change in between.
+  if (
+    reason !== undefined &&
+    !(reason === 'notSent' && refusals.includes(code))
+  ) {
+    return reasons[reason];
+  }
   if (sent) return code === 'conflict' ? notAsPlanned : outcomeUnknown;
   switch (code) {
     case 'auth':
       return ending(
-        'ChurchTools hat das Token des Dienstkontos abgewiesen, Ecclium hat nichts geschrieben. Prüfen Sie es mit ‹ecclium config check› und erneuern Sie es bei Bedarf.',
+        'ChurchTools hat das Token des Dienstkontos abgewiesen, Ecclium hat nichts geschrieben. Erneuern Sie das Token, wie es die Anleitung zum Dienstkonto beschreibt.',
         exitCodes.noPermission,
       );
     case 'permission':
@@ -237,6 +254,11 @@ export function failedEnding(failure: {
       );
     case 'conflict':
       return changedMeanwhile;
+    case 'validation':
+      return ending(
+        'ChurchTools hat den Text der Rücknahme abgewiesen, Ecclium hat nichts geschrieben. Prüfen Sie die Seite in ChurchTools und nehmen Sie den Schreibvorgang bei Bedarf von Hand zurück.',
+        exitCodes.dataError,
+      );
     case 'network':
     case 'upstream':
     case 'rate_limited':
@@ -253,3 +275,12 @@ export function failedEnding(failure: {
       return internal;
   }
 }
+
+/**
+ * The ending of an undo that may have written while its line did not reach
+ * the audit file: the page changed, but the audit does not show it.
+ */
+export const undoUnrecorded = ending(
+  'Die Zeile dieser Rücknahme kam nicht in die Audit-Datei, obwohl Ecclium die Seite womöglich geändert hat. Prüfen Sie die Audit-Datei mit ‹ecclium audit verify› und die Seite in ChurchTools.',
+  exitCodes.ioError,
+);

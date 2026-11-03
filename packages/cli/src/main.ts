@@ -2,11 +2,11 @@
  * The command line `ecclium` (ADR 0055), for every call but
  * `ecclium stdio`, which the executable hands to the start over stdio. It
  * takes over the environment, reads the arguments and runs the command:
- * `ecclium config check`, and `ecclium audit verify` and
- * `ecclium audit show`, which read the audit files (ADR 0028),
- * `ecclium policy init` (ADR 0032) and `ecclium undo` (ADR 0031). Wrong calls get
- * fixed German texts on stderr, never an argument, and every exit code
- * comes from `exit-codes.ts`.
+ * `ecclium config check`, `ecclium audit verify` and `ecclium audit show`,
+ * which read the audit files (ADR 0028), `ecclium policy init`
+ * (ADR 0032) and `ecclium undo` (ADR 0031). Wrong calls get fixed German
+ * texts on stderr, never an argument, and every exit code comes from
+ * `exit-codes.ts`.
  *
  * @packageDocumentation
  */
@@ -222,8 +222,8 @@ const readCall = (args: readonly string[]): Call => {
  * @param execArgv - The options Node.js was started with, which the check
  *   of the configuration reads for the options of TLS.
  * @param runOptions - Replacements for tests.
- * @returns The exit code, or for `policy init`, which talks to
- *   ChurchTools, a promise of it.
+ * @returns The exit code, or for `policy init` and `undo`, which talk
+ *   to ChurchTools, a promise of it.
  * @example
  * ```ts
  * process.exitCode = await run(process.argv.slice(2), environment, process.execArgv);

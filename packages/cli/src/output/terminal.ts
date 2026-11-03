@@ -11,15 +11,18 @@
  * visible form of plain ASCII before the line goes out: `\u{1b}` for an
  * escape, `\\` for a backslash, so that the form cannot be faked by the
  * text itself. It cuts a long line into parts the writers take, each part
- * marked as the continuation of the one before.
+ * after the first starting with `\ ... `, which the text cannot fake.
  *
  * @packageDocumentation
  */
 import { isShown } from '../send.js';
 import { maxOutputLength } from './write.js';
 
-// The mark at the start of a part that continues the line before it.
-const continued = '  ... ';
+// The mark at the start of a part that continues the line before it. It
+// starts with a backslash, which no shown line of foreign text does: a
+// backslash of the text itself is always doubled, and a caller that shows
+// lines puts its own prefix first, such as that of a diff.
+const continued = '\\ ... ';
 
 // A character the writers let through stays; a backslash doubles; any
 // other character, a pair of surrogates as one, becomes its code point.

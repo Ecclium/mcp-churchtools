@@ -3,8 +3,8 @@
  * unified diff: a header `@@ -a,b +c,d @@` per hunk, then each line with
  * a space, `-` or `+` before it and without its line ending. Where it
  * stands in the way of a write: `ecclium undo` prints these lines for the
- * operator before it writes a text back, and confirmations and approvals
- * will show them too.
+ * operator after it wrote a text back, or instead of writing when the page
+ * changed since, and confirmations and approvals will show them too.
  *
  * Two lines that differ only in their ending look the same once the
  * ending is off, so the renderer says what the ending was: after a line

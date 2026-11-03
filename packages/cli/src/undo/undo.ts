@@ -12,19 +12,25 @@
  * write stands in the audit file as a line of the type `undo`, keeps a
  * snapshot of its own, and can be taken back as well.
  *
- * It always shows what it changes, as a diff made safe for the terminal:
- * the text of a page is foreign text. A page someone changed since the
- * write it writes only with `--overwrite`; without it, it shows the diff
- * and ends with 65. The ID is checked as a UUID before any file is
- * touched and named in no text.
+ * It shows what it changes, as a diff made safe for the terminal, the
+ * text of a page being foreign text: after it wrote, instead of writing
+ * when someone changed the page since the write, and when the outcome is
+ * unknown after the send. A changed page it writes only with
+ * `--overwrite`; without it, it ends with 65. The ID is checked as a UUID
+ * before any file is touched and named in no text.
  *
- * Its exit code follows sysexits: 0 when the write is taken back or
- * nothing is left to do, 64 for a wrong call, 65 when the page changed,
- * 66 without a snapshot, 69 when ChurchTools was not reached or the outcome
- * is unknown, 70 for an internal error, 74 when the audit file or the
- * snapshot of the undo could not be written, 77 when writing is off, a
- * right is missing or the clock differs, and 78 for an invalid
- * configuration.
+ * Its exit code follows sysexits, as `texts.ts` maps each case: 0 when
+ * the write is taken back or nothing is left to do; 64 for a wrong call;
+ * 65 when the page changed, changes in between, was empty before or
+ * ChurchTools refuses its text; 66 without a snapshot, with snapshots off,
+ * for a new page without its GUID or a page that is gone; 69 when
+ * ChurchTools was not reached or the outcome is unknown; 70 for an
+ * internal error; 74 when the audit file cannot take the line, the
+ * snapshot of the undo could not be kept, or the line of an undo that may
+ * have written did not reach the audit file; 77 when writing is off,
+ * switched off or blocked, a right is missing, the token is refused, the
+ * page is no Markdown page or the clock differs; and 78 for an invalid
+ * configuration or a folder that cannot be used.
  *
  * @packageDocumentation
  */
@@ -59,11 +65,12 @@ import { composeToolPipeline } from '../compose/pipeline.js';
 import { privateFileCodeOf } from '../compose/private-file-code.js';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
 import {
-  auditFileText,
-  dayKeyFolderText,
+  auditFileMessage,
+  dayKeyFolderMessage,
+  type Message,
   problemText,
-  quotaFolderText,
-  snapshotFolderText,
+  quotaFolderMessage,
+  snapshotFolderMessage,
 } from '../messages/index.js';
 import { type Output, terminalLines, usageLine } from '../output/index.js';
 import type { WriteSyncFn } from '../send.js';
@@ -79,6 +86,7 @@ import {
   undoMissing,
   undoProblems,
   undoUnchanged,
+  undoUnrecorded,
   wouldChangeLine,
 } from './texts.js';
 
@@ -140,6 +148,12 @@ const writeDiff = (
   return true;
 };
 
+// A text of the start about a file or folder it could not use, said of
+// the undo: it stops before it writes, as the start stops before it
+// serves.
+const undoText = (message: Message): string =>
+  `${message.what.replace(', und der Start bricht ab.', ', und Ecclium nimmt nichts zurück.')} ${message.why} ${message.action}`;
+
 // Ends the command with a text on stderr, or on stdout for one that says
 // the work is done.
 const finish = (output: Output, ended: UndoEnding): ExitCode => {
@@ -148,8 +162,29 @@ const finish = (output: Output, ended: UndoEnding): ExitCode => {
   return ended.code;
 };
 
-// What the command writes for the outcome of the pipeline.
-const report = (output: Output, outcome: UndoOutcome): ExitCode => {
+/**
+ * Writes what the command says for the outcome of the pipeline: the diff
+ * and the result on stdout, a problem on stderr. An undo that may have
+ * written without its line in the audit file ends with 74 after its own
+ * text, whatever it was.
+ *
+ * @param output - The output of the command.
+ * @param outcome - The outcome of the undo of the pipeline.
+ * @returns The exit code.
+ * @example
+ * ```ts
+ * return reportUndo(output, await pipeline.undo(call, request));
+ * ```
+ */
+export function reportUndo(output: Output, outcome: UndoOutcome): ExitCode {
+  const code = reportOf(output, outcome);
+  if ('unrecorded' in outcome && outcome.unrecorded === true) {
+    return finish(output, undoUnrecorded);
+  }
+  return code;
+}
+
+const reportOf = (output: Output, outcome: UndoOutcome): ExitCode => {
   switch (outcome.kind) {
     case 'done': {
       const shown = writeDiff(output, changedLine, outcome.diff);
@@ -234,7 +269,7 @@ export async function undoWrite(options: UndoOptions): Promise<ExitCode> {
     retentionMonths: config.auditRetentionMonths,
   });
   if (!opened.ok) {
-    output.stderr(auditFileText(opened.code));
+    output.stderr(undoText(auditFileMessage(opened.code)));
     return exitCodes.invalidConfig;
   }
   const auditFile = opened.writer;
@@ -245,7 +280,7 @@ export async function undoWrite(options: UndoOptions): Promise<ExitCode> {
     // included (ADR 0031, ADR 0063).
     const prepared = prepareQuotaFolder(stateDir);
     if (!prepared.ok) {
-      output.stderr(quotaFolderText(prepared.code));
+      output.stderr(undoText(quotaFolderMessage(prepared.code)));
       return exitCodes.invalidConfig;
     }
     try {
@@ -254,7 +289,7 @@ export async function undoWrite(options: UndoOptions): Promise<ExitCode> {
     } catch (error) {
       const code = privateFileCodeOf(error);
       if (code === undefined) throw error;
-      output.stderr(dayKeyFolderText(code));
+      output.stderr(undoText(dayKeyFolderMessage(code)));
       return exitCodes.invalidConfig;
     }
     try {
@@ -262,7 +297,7 @@ export async function undoWrite(options: UndoOptions): Promise<ExitCode> {
     } catch (error) {
       const code = privateFileCodeOf(error);
       if (code === undefined) throw error;
-      output.stderr(snapshotFolderText(code));
+      output.stderr(undoText(snapshotFolderMessage(code)));
       return exitCodes.invalidConfig;
     }
     const writer = createStderrWriter(
@@ -315,7 +350,7 @@ export async function undoWrite(options: UndoOptions): Promise<ExitCode> {
         { eventId: options.eventId, overwrite: options.overwrite },
         request,
       );
-      return report(output, outcome);
+      return reportUndo(output, outcome);
     } finally {
       await transport.close().catch(() => undefined);
     }

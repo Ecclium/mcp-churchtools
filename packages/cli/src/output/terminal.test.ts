@@ -37,10 +37,18 @@ describe('terminalLines', () => {
     const lines = terminalLines('+ ', text);
     expect(lines).toHaveLength(2);
     expect(lines[0]).toBe(`+ ${'a'.repeat(maxOutputLength - 3)}`);
-    expect(lines[1]).toBe(`  ... \\u{1b}${'b'.repeat(20)}`);
+    expect(lines[1]).toBe(`\\ ... \\u{1b}${'b'.repeat(20)}`);
     for (const line of lines) {
       expect(isTextLine(line, maxOutputLength)).toBe(true);
     }
+  });
+
+  // A line of the text can start with what looks like the mark; shown,
+  // its backslash is doubled, so it never reads as a continuation.
+  it('keeps the mark of a continuation out of reach of the text', () => {
+    expect(terminalLines(' ', '\\ ... und alle Kontakte')).toEqual([
+      ' \\\\ ... und alle Kontakte',
+    ]);
   });
 
   it('gives a line with one character for an empty text', () => {

@@ -121,10 +121,9 @@ const refusalOf = (error: unknown): RefusalReason | undefined => {
  * (ADR 0028, ADR 0063). With `ECCLIUM_KEYS_DIR` it prepares the folder of
  * the day keys of snapshots in the same way, and, when the writes keep
  * snapshots, the folder of the snapshots in the folder of state
- * (ADR 0031). Until the stderr
- * writer exists, everything is caught: an internal error gives one fixed
- * notice and 70, never a stack
- * or a message, and closes an audit file that is already open.
+ * (ADR 0031). Until the stderr writer exists, everything is caught: an
+ * internal error gives one fixed notice and 70, never a stack or a
+ * message, and closes an audit file that is already open.
  *
  * @param args - The arguments after `ecclium stdio`.
  * @param environment - The environment of the process, which loses the
