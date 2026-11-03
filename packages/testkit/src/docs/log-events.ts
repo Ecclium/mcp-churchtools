@@ -196,13 +196,13 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
     write_audit_failed:
       'Die Zeile eines Aufrufs, der womöglich geschrieben hat, erreichte die Audit-Datei nicht. Bis zum Neustart des Servers plant und schreibt der Write-Guard nichts mehr.',
     write_plans_full:
-      'Mehr als 100 Schreibvorgänge warten in diesem Prozess auf eine Bestätigung. Ein neuer Plan endet mit `policy_denied`, bis ältere beantwortet oder nach zehn Minuten verfallen sind.',
+      '100 Schreibvorgänge warten in diesem Prozess schon auf eine Bestätigung. Ein neuer Plan endet mit `policy_denied`, bis ältere beantwortet oder nach zehn Minuten verfallen sind.',
     write_answer_refused:
       'Die Antwort auf eine Rückfrage gehört nicht zu diesem Aufruf: anderes Tool, andere Eingabe, anderer Akteur oder ein Zustand in fremder Form. Ecclium schreibt nichts, der Aufruf endet mit `confirmation_required`.',
     write_answer_replayed:
       'Eine Antwort auf eine Rückfrage kam ein zweites Mal. Ecclium schreibt nichts, der Aufruf endet mit `confirmation_required`.',
     write_plan_gone:
-      'Der Plan zu einer Antwort auf eine Rückfrage liegt nicht mehr vor, etwa nach zehn Minuten oder einem Neustart. Ecclium schreibt nichts, der Aufruf endet mit `confirmation_required`.',
+      'Der Plan zu einer Antwort auf eine Rückfrage liegt nicht mehr vor, etwa weil er kurz vor der Antwort ablief. Ecclium schreibt nichts, der Aufruf endet mit `confirmation_required`. Eine Antwort nach zehn Minuten oder nach einem Neustart weist schon das SDK ab, nur mit `mcp_server_error` und ohne Zeile im Audit.',
     write_not_confirmed:
       'Die Person hat eine Rückfrage abgelehnt, abgebrochen oder nicht mit «Ja» angenommen. Ecclium schreibt nichts, der Aufruf endet mit `confirmation_required`.',
     undo_call:

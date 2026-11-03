@@ -1470,7 +1470,10 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       const withheld = outcome.ok && special && !recorded;
       if (withheld) outcome = withheldOutcome;
       try {
-        const errorCode = outcome.ok ? undefined : outcome.error.code;
+        const errorCode =
+          outcome.ok || outcome.question !== undefined
+            ? undefined
+            : outcome.error.code;
         if (withheld) {
           run.ctx?.log.warn('audit_withheld', { code: 'policy_denied' });
         }

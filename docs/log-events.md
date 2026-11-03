@@ -84,8 +84,8 @@ Je Ereignis die Stufe und die Felder, die ein Aufruf höchstens setzt. Die Felde
 | `write_conflict` | `warn` | `code` | Das Ziel eines Schreibvorgangs hat sich seit dem Plan geändert oder liest sich nach dem Schreiben nicht wie geplant. `code` ist `conflict`. |
 | `write_not_confirmed` | `info` | `code` | Die Person hat eine Rückfrage abgelehnt, abgebrochen oder nicht mit «Ja» angenommen. Ecclium schreibt nichts, der Aufruf endet mit `confirmation_required`. |
 | `write_outcome_unknown` | `warn` | `code` | Nach einem Fehler beim Schreiben ist offen, ob die Änderung ChurchTools erreicht hat, und das Lesen danach konnte es nicht klären. Das Ziel ist von Hand zu prüfen. |
-| `write_plan_gone` | `warn` | `code` | Der Plan zu einer Antwort auf eine Rückfrage liegt nicht mehr vor, etwa nach zehn Minuten oder einem Neustart. Ecclium schreibt nichts, der Aufruf endet mit `confirmation_required`. |
-| `write_plans_full` | `warn` | `code` | Mehr als 100 Schreibvorgänge warten in diesem Prozess auf eine Bestätigung. Ein neuer Plan endet mit `policy_denied`, bis ältere beantwortet oder nach zehn Minuten verfallen sind. |
+| `write_plan_gone` | `warn` | `code` | Der Plan zu einer Antwort auf eine Rückfrage liegt nicht mehr vor, etwa weil er kurz vor der Antwort ablief. Ecclium schreibt nichts, der Aufruf endet mit `confirmation_required`. Eine Antwort nach zehn Minuten oder nach einem Neustart weist schon das SDK ab, nur mit `mcp_server_error` und ohne Zeile im Audit. |
+| `write_plans_full` | `warn` | `code` | 100 Schreibvorgänge warten in diesem Prozess schon auf eine Bestätigung. Ein neuer Plan endet mit `policy_denied`, bis ältere beantwortet oder nach zehn Minuten verfallen sind. |
 | `write_refused` | `warn` | `code` | Der Write-Guard plant oder schreibt nicht: Schreiben ist gesperrt oder nicht zu prüfen, die Art des Schreibvorgangs läuft nicht, die Rechte des Kontos sind nicht zu lesen, oder die Uhr weicht mehr als fünf Minuten von ChurchTools ab. `code` nennt den Fehler. |
 
 ### Lesender Zugriff über den Kern
