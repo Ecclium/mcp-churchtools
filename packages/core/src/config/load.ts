@@ -979,8 +979,11 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   // their retention. Like the folder of state it is only looked at here.
   // It must not be the folder of state or lie in it, because a backup of
   // that folder would then hold the keys that open its snapshots, also
-  // those that were destroyed. Compared as text: both paths passed as
-  // absolute and normalised, and the folders above them are trusted.
+  // those that were destroyed. Nor may the folder of state lie in it:
+  // then the folder of a purpose could be the folder of state itself, and
+  // keeping the folder of keys out of a backup would keep the audit out as
+  // well. Compared as text: both paths passed as absolute and normalised,
+  // and the folders above them are trusted.
   const keysDirName = 'ECCLIUM_KEYS_DIR';
   const keysDirRead = read(row(keysDirName));
   let keysDir: string | undefined;
@@ -1008,7 +1011,15 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       isNormalizedAbsolutePath(stateDirValue) &&
       liesWithin(value, stateDirValue)
         ? ({ ok: false, code: 'keys_dir_in_state_dir' } as const)
-        : checkKeysDir(value, stateDirFiles as StateDirFileSystem | undefined);
+        : isNormalizedAbsolutePath(value) &&
+            stateDirValue !== undefined &&
+            isNormalizedAbsolutePath(stateDirValue) &&
+            liesWithin(stateDirValue, value)
+          ? ({ ok: false, code: 'state_dir_in_keys_dir' } as const)
+          : checkKeysDir(
+              value,
+              stateDirFiles as StateDirFileSystem | undefined,
+            );
     if (checked.ok) {
       keysDir = value;
       setting(

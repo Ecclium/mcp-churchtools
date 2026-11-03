@@ -865,7 +865,7 @@ const problems: Readonly<
   keys_dir_required: (name = keysDir) =>
     message(
       `${readOnly} ist ‹false›, aber ${name} ist nicht gesetzt.`,
-      'Bevor Ecclium in ChurchTools schreibt, hält es den bisherigen Stand in einem Snapshot fest, verschlüsselt mit einem Tagesschlüssel aus diesem Ordner. Nach 30 Tagen vernichtet es den Schlüssel, und der Snapshot lässt sich in keiner Kopie mehr lesen. Den Ordner gibt es vorerst nur im Betrieb über stdio.',
+      'Vor jedem Schreiben in ChurchTools wird Ecclium den bisherigen Stand in einem Snapshot festhalten, verschlüsselt mit einem Tagesschlüssel aus diesem Ordner, und den Schlüssel nach 30 Tagen vernichten. Deshalb verlangt Schreiben den Ordner schon jetzt. Den Ordner gibt es vorerst nur im Betrieb über stdio.',
       `Legen Sie einen eigenen Ordner Ihres Benutzers mit den Rechten 700 an, ausserhalb des Zustandsordners und ausserhalb jeder Sicherung, und nennen Sie ihn in ${name}. Oder setzen Sie ${readOnly} auf ‹true›.`,
     ),
   // A backup of the folder of state would hold the keys that open its
@@ -875,6 +875,15 @@ const problems: Readonly<
       `Der Ordner in ${name} ist der Zustandsordner aus ${stateDir} oder liegt darin.`,
       'Eine Sicherung des Zustandsordners enthielte dann mit den Snapshots auch die Tagesschlüssel, die sie öffnen, und vernichtete Schlüssel blieben darin erhalten.',
       `Legen Sie den Ordner ausserhalb des Zustandsordners an, etwa daneben, nennen Sie ihn in ${name} und nehmen Sie ihn aus jeder Sicherung aus.`,
+    ),
+  // The folder of a purpose could then be the folder of state itself, and
+  // keeping the folder of keys out of a backup would keep the audit out as
+  // well (ADR 0031).
+  state_dir_in_keys_dir: (name = keysDir) =>
+    message(
+      `Der Zustandsordner aus ${stateDir} liegt im Ordner aus ${name}.`,
+      'Die Tagesschlüssel landeten dann womöglich im Zustandsordner und mit ihm in einer Sicherung, und wer den Ordner der Schlüssel aus der Sicherung nimmt, nähme die Audit-Dateien mit heraus.',
+      `Legen Sie die beiden Ordner nebeneinander an, keinen im anderen, und nennen Sie sie in ${stateDir} und ${name}.`,
     ),
   // Reported for the folder, which is what is missing; the toolsets
   // themselves are valid. persons and events need the folder, because

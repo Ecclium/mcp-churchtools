@@ -47,6 +47,7 @@ export const configProblemCodes = Object.freeze([
   ...keysDirCodes,
   'keys_dir_required',
   'keys_dir_in_state_dir',
+  'state_dir_in_keys_dir',
   'redaction_strict_with_api',
   'state_dir_required',
   ...policyCodes,

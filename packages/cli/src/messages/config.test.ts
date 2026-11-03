@@ -391,6 +391,17 @@ describe('the catalog of messages', () => {
     expect(message.action).toContain('ausserhalb des Zustandsordners');
   });
 
+  it('names both folders for a folder of state in the folder of keys', () => {
+    const message = problemMessage({
+      code: 'state_dir_in_keys_dir',
+      variable: 'ECCLIUM_KEYS_DIR',
+    });
+    expect(message.what).toContain('‹ECCLIUM_STATE_DIR›');
+    expect(message.what).toContain('‹ECCLIUM_KEYS_DIR›');
+    expect(message.why).toContain('Audit-Dateien');
+    expect(message.action).toContain('nebeneinander');
+  });
+
   it('names the folder of each purpose in the folder of keys', () => {
     for (const [purpose, folder] of [
       ['snapshot', '‹snapshot›'],

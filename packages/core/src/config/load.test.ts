@@ -779,9 +779,27 @@ describe('loadConfig and the folder of keys', () => {
     });
   });
 
+  // Then the folder of a purpose could be the folder of state itself, and
+  // keeping the folder of keys out of a backup would keep the audit out.
+  it('refuses a folder of keys above the folder of state', () => {
+    const result = load(
+      {
+        ...valid(),
+        ECCLIUM_STATE_DIR: stateDirPath,
+        ECCLIUM_KEYS_DIR: '/path/to',
+      },
+      'stdio',
+      memoryFiles().fs,
+      undefined,
+      memoryFolder().fs,
+    );
+    expect(problems(result)).toEqual([
+      ['state_dir_in_keys_dir', 'ECCLIUM_KEYS_DIR'],
+    ]);
+  });
+
   it.each([
     ['a folder next to it', `${stateDirPath}-keys`],
-    ['a folder above it', '/path/to'],
     ['a folder elsewhere', keysDirPath],
   ])('takes %s', (_name, keys) => {
     const result = load(
@@ -2311,6 +2329,10 @@ describe('loadConfig and its problems', () => {
     keys_dir_required: () => load({ ...valid(), ECCLIUM_READ_ONLY: 'false' }),
     keys_dir_in_state_dir: () =>
       withKeysDir(`${stateDirPath}/keys`, memoryFolder().fs, 'stdio', {
+        ECCLIUM_STATE_DIR: stateDirPath,
+      }),
+    state_dir_in_keys_dir: () =>
+      withKeysDir('/path/to', memoryFolder().fs, 'stdio', {
         ECCLIUM_STATE_DIR: stateDirPath,
       }),
     token_from_environment: () =>
