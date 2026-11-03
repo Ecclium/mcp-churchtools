@@ -194,6 +194,13 @@ export {
   type PromptTextArgument,
 } from './prompt.js';
 export {
+  maxSealedSnapshotLength,
+  type SealedSnapshot,
+  type SnapshotPart,
+  snapshotParts,
+  type SnapshotStore,
+} from './snapshots.js';
+export {
   dataKeyLength,
   type DayKeyPurpose,
   dayKeyPurposes,

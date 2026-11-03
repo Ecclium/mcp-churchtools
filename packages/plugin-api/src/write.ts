@@ -371,6 +371,11 @@ export interface WriteResult {
   };
   /** The version of the target after the write, when it has one. */
   readonly version?: number;
+  /**
+   * The ID to take the write back with `ecclium undo`, when the core kept
+   * a snapshot of what it changed (ADR 0031).
+   */
+  readonly undoId?: string;
 }
 
 /**
@@ -384,6 +389,12 @@ export const writeResultSchema: ZodType<WriteResult, WriteResult> = z.object({
     key: classify(z.string().min(1).max(200), 'none'),
   }),
   version: classify(z.int().min(0), 'none').optional(),
+  undoId: classify(
+    z
+      .string()
+      .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
+    'none',
+  ).optional(),
 });
 
 /** What a write tool receives for one call: a read tool's call and `write`. */
