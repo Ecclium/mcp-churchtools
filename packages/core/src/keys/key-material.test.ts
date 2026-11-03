@@ -99,9 +99,11 @@ describe('revealKeyMaterial', () => {
     expect(() => revealKeyMaterial(value as KeyMaterial)).toThrow(TypeError);
   });
 
+  // infoOf only joins the labels of additional data, which the snapshots
+  // share with the day keys (ADR 0031); it holds no key.
   it('is not given out by the entry of the keys', () => {
     expect(Object.keys(keys).sort()).toEqual(
-      ['KeyMaterial', 'keyMaterialLength'].sort(),
+      ['KeyMaterial', 'infoOf', 'keyMaterialLength'].sort(),
     );
   });
 });

@@ -176,6 +176,7 @@ describe('createToolCatalog', () => {
       'state',
       'target',
       'version',
+      'undoId',
     ]);
     // A read tool keeps its own output.
     expect(catalog.get('ct_example_echo')?.output).not.toBe(writeResultSchema);
