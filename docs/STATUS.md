@@ -1373,3 +1373,4 @@ Diese Grundsatzfragen sind entschieden.
   - Write-Guard: Snapshot unmittelbar vor dem Senden, ohne ihn kein Senden, `undoId` im Ergebnis. Ohne Snapshots ist kein Plan rücknehmbar, und das Echo gilt für keinen.
   - Konfiguration und Start: `ECCLIUM_SNAPSHOTS` mit `on` und `off`, mit `off` und Schreiben warnt jeder Start. Der Start legt den Ordner `snapshots` nur an, wenn der Server mit Snapshots schreibt, und löscht mit beiden Ordnern auch in einem Lauf, der nur liest.
   - Doku: ADR 0031 und ADR 0029 (Umsetzung), ADR 0055, `docs/privacy.md` («Snapshots»), `docs/betrieb/stdio.md` («Ordner der Tagesschlüssel»), `.env.example`, erzeugte Doku.
+- 03.11.2026, die Snapshots sind als `f663229` auf `main` (#187). Der Squash-Commit bringt genau den Baum des Branches.
