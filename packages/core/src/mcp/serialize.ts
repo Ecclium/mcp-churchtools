@@ -59,7 +59,8 @@ const failureText = (outcome: Extract<ToolOutcome, { ok: false }>): string => {
  * It never throws for an outcome of the pipeline, whose data are a frozen
  * tree of plain values of JSON.
  *
- * @param outcome - The outcome of `ToolPipeline.call`.
+ * @param outcome - The outcome of `ToolPipeline.call`. The mount turns a
+ *   question into `input_required` itself; here it counts as its error.
  * @returns The result for the client, frozen, with the data shared, not
  *   copied.
  * @throws {TypeError} For the data of a success without the mark of a

@@ -74,6 +74,12 @@ export interface StdioServerOptions {
    * to 32 printable ASCII characters without spaces.
    */
   readonly version: string;
+  /**
+   * The key that signs the `requestState` of a question before a write,
+   * 32 random bytes new for every process (ADR 0029, ADR 0053). Without it
+   * no write asks the client.
+   */
+  readonly requestStateKey?: Uint8Array;
   /** Where messages come from; stdin of the process if left out. */
   readonly input?: Readable;
   /** Where messages go; stdout of the process if left out. */
@@ -167,6 +173,9 @@ export function startStdioServer(options: StdioServerOptions): StdioServer {
     readOnly: options.readOnly,
     logger,
     version: options.version,
+    ...(options.requestStateKey === undefined
+      ? {}
+      : { requestStateKey: options.requestStateKey }),
   });
   let ended = (): void => undefined;
   const closed = new Promise<void>((resolve) => {

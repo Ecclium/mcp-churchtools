@@ -50,7 +50,10 @@ import {
   type FeatureKey,
   type KeyProvider,
   type Mode,
+  type NonceStore,
+  type PlannedWrite,
   type PlanOutcome,
+  type PlanStore,
   type QuotaStore,
   type RedactionLevel,
   type TenantAssignment,
@@ -70,6 +73,7 @@ import {
   type ObjectRefList,
 } from '../audit/index.js';
 import { createChurchToolsClient } from '../churchtools/index.js';
+import type { WriteConfirmation } from '../config/index.js';
 import {
   describeError,
   type ErrorDescription,
@@ -96,8 +100,13 @@ import { openPseudonyms, type Pseudonyms } from '../redaction/pseudonym.js';
 import { type Redacted, sealRedacted } from '../redaction/redacted.js';
 import { createTenantContext } from '../tenant/context.js';
 import {
+  type ConfirmationAnswer,
+  type ConfirmationQuestion,
   confirmationSentence,
-  confirmWrite,
+  type ConfirmationText,
+  confirmationWayOf,
+  createConfirmations,
+  questionSentence,
   writeSentences,
   ContentRefusal,
   createWriteGuard,
@@ -117,6 +126,10 @@ import {
   type RevealedInput,
   revealInput,
 } from './stages.js';
+
+// The question to the client and its answer travel between the pipeline
+// and the mount; the mount reaches the write guard only through here.
+export type { ConfirmationAnswer, ConfirmationQuestion };
 
 /** What the mount knows about one call, besides name and input. */
 export interface ToolRequest {
@@ -139,6 +152,17 @@ export interface ToolRequest {
   readonly features: readonly FeatureKey[];
   /** The signal of the request, aborted when the client cancels it. */
   readonly signal: AbortSignal;
+  /**
+   * Whether the client declared elicitation in form mode, as the mount read
+   * it, so that a write can ask the person (ADR 0029). Unset counts as no.
+   */
+  readonly elicitation?: boolean;
+  /**
+   * The answer of the second round of a call, with the `requestState` the
+   * mount verified. A call with an answer runs no tool: it commits the plan
+   * its first round kept, or nothing (ADR 0029).
+   */
+  readonly answer?: ConfirmationAnswer;
 }
 
 /**
@@ -148,7 +172,17 @@ export interface ToolRequest {
  */
 export type ToolOutcome =
   | { readonly ok: true; readonly data: Redacted }
-  | { readonly ok: false; readonly error: ErrorDescription };
+  | {
+      readonly ok: false;
+      readonly error: ErrorDescription;
+      /**
+       * A write that waits for the person (ADR 0029): the mount asks the
+       * client this question and signs its state instead of sending the
+       * error. Whoever does not know questions sees a write that was not
+       * confirmed. The call is audited as planned, without an error.
+       */
+      readonly question?: ConfirmationQuestion;
+    };
 
 /** What `ecclium undo` asks the pipeline to take back (ADR 0031). */
 export interface UndoCall {
@@ -289,6 +323,18 @@ export interface ToolPipelineOptions {
    * file passes the default policy.
    */
   readonly policy: Policy;
+  /**
+   * How a write is confirmed, from `ECCLIUM_WRITE_CONFIRMATION` (ADR 0029);
+   * `echo-allowed`, the setting over stdio, unless given.
+   */
+  readonly confirmation?: WriteConfirmation;
+  /**
+   * The stores of the plans and nonces of questions (ADR 0029), built by
+   * the composition root. Without both, no write asks the person, and a
+   * write that would ask ends with `confirmation_required`.
+   */
+  readonly plans?: PlanStore;
+  readonly nonces?: NonceStore;
 }
 
 // The longest duration the audit accepts.
@@ -461,6 +507,8 @@ interface WriteAccess {
   readonly outcome: () => PlanOutcome | undefined;
   /** The target of that plan. */
   readonly target: () => WriteTarget | undefined;
+  /** What a person sees to confirm that plan. */
+  readonly text: () => ConfirmationText | undefined;
   /** The refusal of the plan, if the guard refused it. */
   readonly refusal: () => EccliumError | undefined;
   /** Why the content policy refused a text, if it did. */
@@ -597,6 +645,86 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     quota: options.quota,
     snapshots: options.snapshots,
   });
+  // How writes are confirmed, and the questions to the client over the
+  // stores the composition root built (ADR 0029). Without the stores no
+  // write asks.
+  const setting = options.confirmation ?? 'echo-allowed';
+  const { plans, nonces } = options;
+  const confirmations =
+    plans !== undefined && nonces !== undefined
+      ? createConfirmations({ plans, nonces, clock, random })
+      : undefined;
+
+  // 6. to 9. for a result: validate, redact, mark and measure it. A write
+  // tool comes here with the result the core built, never with its own.
+  const finish = (
+    run: Run,
+    entry: CatalogEntry,
+    ctx: TenantContext,
+    redaction: RedactionLevel,
+    result: unknown,
+  ): { readonly outcome: ToolOutcome; readonly audit: AuditOutcome } => {
+    // 6. validateOutput.
+    const parsedOutput = entry.output.safeParse(result);
+    if (!parsedOutput.success) {
+      ctx.log.warn('tool_output_invalid');
+      return failed('internal');
+    }
+    // A result with an ID the audit could not name does not go out
+    // (ADR 0028).
+    if (!outputIdsFit(parsedOutput.data, entry.shape.root)) {
+      ctx.log.warn('tool_output_invalid');
+      return failed('internal');
+    }
+    run.output = parsedOutput.data as Readonly<Record<string, unknown>>;
+
+    // 7. redact and 8. markUntrusted, along the shape kept at registration.
+    // The boundary is drawn after redact, so it is checked against the
+    // cleaned text that the envelope will hold.
+    const root = entry.shape.root;
+    let redacted: unknown;
+    try {
+      redacted = redact(
+        parsedOutput.data,
+        root,
+        redaction,
+        run.pseudonyms?.hide,
+      );
+    } catch {
+      // In strict an ID of a person without its pseudonym never goes out
+      // (ADR 0069).
+      ctx.log.warn('tool_pseudonym_failed');
+      return failed('internal');
+    }
+    let boundary: string;
+    try {
+      boundary = chooseBoundary(JSON.stringify(redacted), random);
+    } catch {
+      ctx.log.warn('tool_boundary_failed');
+      return failed('internal');
+    }
+    const data = markUntrusted(redacted, root, boundary) as Readonly<
+      Record<string, unknown>
+    >;
+
+    // 9. The size of the result as the client receives it: both copies
+    // the mount sends and the reserve for the rest of the message (ADR
+    // 0024).
+    if (resultBytes(data) > maxResultBytes) {
+      ctx.log.warn('tool_result_too_large');
+      return failed('upstream', tooLarge);
+    }
+    // The mark of a redacted result, the only kind the mount sends (ADR
+    // 0026).
+    return {
+      outcome: Object.freeze({
+        __proto__: null,
+        ok: true,
+        data: sealRedacted(data),
+      }),
+      audit: 'ok',
+    };
+  };
 
   const stages = async (
     run: Run,
@@ -622,6 +750,10 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     const readOnly = request.readOnly;
     const features = [...request.features];
     const requestSignal = request.signal;
+    // What the mount knows of the confirmation: whether the client can be
+    // asked, and the answer of a second round (ADR 0029).
+    const elicitation = request.elicitation === true;
+    const answer = request.answer;
     // A request the client has already cancelled ends as network, like
     // every aborted call, also without a tenant: the mount stops waiting
     // for the resolver on an abort and passes no tenant (ADR 0024).
@@ -720,6 +852,23 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     if (!fits) return failed('validation');
     run.refs = refs;
 
+    // The second round of a question runs no tool: it commits the plan its
+    // first round kept, or nothing (ADR 0029). Only a write tool asks.
+    if (answer !== undefined) {
+      if (!writes) return failed('validation');
+      const written = await answered(
+        run,
+        ctx,
+        entry.name,
+        parsedInput.data,
+        answer,
+        () => isAborted(controller.signal),
+        refs,
+      );
+      if (!written.ok) return written.failure;
+      return finish(run, entry, ctx, redaction, written.result);
+    }
+
     // The daily read budget, counted once the input is valid and before
     // ChurchTools is asked, so that a call that fails before costs nothing.
     // A call above the budget counts as well, which changes nothing (ADR
@@ -812,73 +961,27 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         ctx,
         writing,
         result,
-        () => isAborted(controller.signal),
+        { input: parsedInput.data, elicitation },
         refs,
       );
+      if (written.ok === 'input') {
+        return {
+          outcome: Object.freeze({
+            __proto__: null,
+            ok: false,
+            error: describeError(
+              new EccliumError('confirmation_required', questionSentence),
+            ),
+            question: written.question,
+          }),
+          audit: 'ok',
+        };
+      }
       if (!written.ok) return written.failure;
       result = written.result;
     }
 
-    // 6. validateOutput.
-    const parsedOutput = entry.output.safeParse(result);
-    if (!parsedOutput.success) {
-      ctx.log.warn('tool_output_invalid');
-      return failed('internal');
-    }
-    // A result with an ID the audit could not name does not go out
-    // (ADR 0028).
-    if (!outputIdsFit(parsedOutput.data, entry.shape.root)) {
-      ctx.log.warn('tool_output_invalid');
-      return failed('internal');
-    }
-    run.output = parsedOutput.data as Readonly<Record<string, unknown>>;
-
-    // 7. redact and 8. markUntrusted, along the shape kept at registration.
-    // The boundary is drawn after redact, so it is checked against the
-    // cleaned text that the envelope will hold.
-    const root = entry.shape.root;
-    let redacted: unknown;
-    try {
-      redacted = redact(
-        parsedOutput.data,
-        root,
-        redaction,
-        run.pseudonyms?.hide,
-      );
-    } catch {
-      // In strict an ID of a person without its pseudonym never goes out
-      // (ADR 0069).
-      ctx.log.warn('tool_pseudonym_failed');
-      return failed('internal');
-    }
-    let boundary: string;
-    try {
-      boundary = chooseBoundary(JSON.stringify(redacted), random);
-    } catch {
-      ctx.log.warn('tool_boundary_failed');
-      return failed('internal');
-    }
-    const data = markUntrusted(redacted, root, boundary) as Readonly<
-      Record<string, unknown>
-    >;
-
-    // 9. The size of the result as the client receives it: both copies
-    // the mount sends and the reserve for the rest of the message (ADR
-    // 0024).
-    if (resultBytes(data) > maxResultBytes) {
-      ctx.log.warn('tool_result_too_large');
-      return failed('upstream', tooLarge);
-    }
-    // The mark of a redacted result, the only kind the mount sends (ADR
-    // 0026).
-    return {
-      outcome: Object.freeze({
-        __proto__: null,
-        ok: true,
-        data: sealRedacted(data),
-      }),
-      audit: 'ok',
-    };
+    return finish(run, entry, ctx, redaction, result);
   };
 
   // The write port of one call: one plan, and none after the call ended.
@@ -890,6 +993,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     let planned = false;
     let outcome: PlanOutcome | undefined;
     let target: WriteTarget | undefined;
+    let text: ConfirmationText | undefined;
     let refusal: EccliumError | undefined;
     let contentViolations: readonly ContentViolationKind[] | undefined;
     const port: WritePort = Object.freeze({
@@ -911,6 +1015,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
           );
           outcome = result.outcome;
           target = result.target;
+          text = result.text;
           return result.outcome;
         } catch (error) {
           // The guard rejects only with an EccliumError or a refusal of
@@ -933,6 +1038,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       },
       outcome: () => outcome,
       target: () => target,
+      text: () => text,
       refusal: () => refusal,
       contentViolations: () => contentViolations,
     });
@@ -980,16 +1086,8 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     };
   };
 
-  // Confirms and commits the plan the tool returned. The tool must return
-  // exactly the outcome its plan gave; anything else is a fault of the tool.
-  const completeWrite = async (
-    run: Run,
-    ctx: TenantContext,
-    writing: WriteAccess,
-    returned: unknown,
-    aborted: () => boolean,
-    refs: ObjectRefCollector,
-  ): Promise<
+  // What a write ends with: the result the core built, or the failure.
+  type WriteEnd =
     | { readonly ok: true; readonly result: Readonly<Record<string, unknown>> }
     | {
         readonly ok: false;
@@ -997,7 +1095,22 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
           readonly outcome: ToolOutcome;
           readonly audit: AuditOutcome;
         };
-      }
+      };
+
+  // Confirms the plan the tool returned, in the order of ADR 0029: a
+  // question to the client, then the echo, then the queue. The tool must
+  // return exactly the outcome its plan gave; anything else is a fault of
+  // the tool. The echo and the queue are not built yet, so a plan that
+  // needs them ends with confirmation_required.
+  const completeWrite = async (
+    run: Run,
+    ctx: TenantContext,
+    writing: WriteAccess,
+    returned: unknown,
+    call: { readonly input: unknown; readonly elicitation: boolean },
+    refs: ObjectRefCollector,
+  ): Promise<
+    WriteEnd | { readonly ok: 'input'; readonly question: ConfirmationQuestion }
   > => {
     const outcome = writing.outcome();
     const target = writing.target();
@@ -1010,8 +1123,15 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       run.write = Object.freeze({ writeState: 'skipped', sent: false });
       return { ok: true, result: writeResult('skipped', target) };
     }
-    const confirmation = await confirmWrite(ctx, outcome.plan);
-    if (confirmation.kind === 'required') {
+    // The guard gives every sealed plan its text; without one nobody could
+    // see what to confirm.
+    const text = writing.text();
+    if (text === undefined) return { ok: false, failure: failed('internal') };
+    const way = confirmationWayOf(
+      { setting, elicitation: call.elicitation, fits: text.fits },
+      outcome.plan,
+    );
+    if (way !== 'question' || confirmations === undefined) {
       return {
         ok: false,
         failure: writeFailure(
@@ -1021,16 +1141,57 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         ),
       };
     }
+    const asked = await confirmations.ask(ctx, outcome.plan, call.input, text);
+    if (asked.kind === 'refused') {
+      return { ok: false, failure: writeFailure(run, asked.error, false) };
+    }
+    run.write = Object.freeze({ writeState: 'planned', sent: false });
+    return { ok: 'input', question: asked.question };
+  };
+
+  // The second round of a question: the answer decides, the plan of the
+  // first round is committed with the proof of a yes, and nothing else
+  // runs, the tool included (ADR 0029).
+  const answered = async (
+    run: Run,
+    ctx: TenantContext,
+    tool: string,
+    input: unknown,
+    answer: ConfirmationAnswer,
+    aborted: () => boolean,
+    refs: ObjectRefCollector,
+  ): Promise<WriteEnd> => {
+    if (confirmations === undefined) {
+      return {
+        ok: false,
+        failure: writeFailure(
+          run,
+          new EccliumError('confirmation_required', confirmationSentence),
+          false,
+        ),
+      };
+    }
+    const confirmed = await confirmations.answer(ctx, tool, input, answer);
+    if (confirmed.kind === 'refused') {
+      return { ok: false, failure: writeFailure(run, confirmed.error, false) };
+    }
     if (aborted()) return { ok: false, failure: failed('network') };
+    return commitWrite(run, ctx, confirmed.plan, confirmed.proof, refs);
+  };
+
+  // Commits a confirmed plan and builds the result in the fixed form.
+  const commitWrite = async (
+    run: Run,
+    ctx: TenantContext,
+    plan: PlannedWrite,
+    proof: unknown,
+    refs: ObjectRefCollector,
+  ): Promise<WriteEnd> => {
     // The ID of the audit event names the snapshot of the write, so that
     // `ecclium undo` finds it from the line of the audit (ADR 0031).
-    const committed = await guard.commit(
-      ctx,
-      outcome.plan,
-      confirmation.proof,
-      run.eventId,
-    );
+    const committed = await guard.commit(ctx, plan, proof, run.eventId);
     if (!committed.ok) {
+      if (committed.target !== undefined) addTarget(refs, committed.target);
       return {
         ok: false,
         failure: writeFailure(
@@ -1195,6 +1356,9 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         request,
       ));
       // A call that fails before the level is copied is masked as standard.
+      // A question carries a fixed sentence, which no level changes; were it
+      // ever changed, the question would go and the client get the error,
+      // which writes nothing.
       if (!outcome.ok) {
         const error = maskErrorDescription(
           outcome.error,
@@ -1234,7 +1398,11 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
             auditOutcome = 'error';
           }
         }
-        const errorCode = outcome.ok ? undefined : outcome.error.code;
+        // A question is no error: the write waits as planned (ADR 0029).
+        const errorCode =
+          outcome.ok || outcome.question !== undefined
+            ? undefined
+            : outcome.error.code;
         const writeState = writeStateOfCall(run, auditOutcome, outcome.ok);
         // Tenant and actor come from the frozen copy only, which runs no
         // code of the resolver's answer. Without one the audit takes its

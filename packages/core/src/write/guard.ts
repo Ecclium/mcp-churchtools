@@ -67,6 +67,10 @@ import { HttpTransportError } from '../http/index.js';
 import type { Policy } from '../policy/schema.js';
 import { readIntent } from './intent.js';
 import { checkIntentContent, ContentRefusal } from './content-gate.js';
+import {
+  type ConfirmationText,
+  confirmationTextOf,
+} from './confirmation-text.js';
 import { checkKillSwitches } from './kill-switch.js';
 import { contentHashOf } from './plan-hash.js';
 import { isoDateOf } from '../quota/budget.js';
@@ -250,6 +254,11 @@ export interface PlanResult {
   readonly outcome: PlanOutcome;
   /** What the write would change, for the result and the audit. */
   readonly target: WriteTarget;
+  /**
+   * For a sealed plan, what a person sees to confirm it: summary and diff,
+   * made from what the guard read and would write, never from the tool.
+   */
+  readonly text?: ConfirmationText;
 }
 
 /** How a commit ended. */
@@ -365,6 +374,9 @@ type Derived =
       readonly contentHash: string;
       /** The time of ChurchTools of the read, null without one. */
       readonly serverTime: number | null;
+      /** The title and the text of the new page. */
+      readonly title: string;
+      readonly text: string;
     }
   | {
       readonly kind: 'change';
@@ -387,6 +399,21 @@ type WikiIntent = Extract<WriteIntent, { categoryId: number }>;
 
 /** The writes that change a page that exists. */
 type PageIntent = Extract<WriteIntent, { guid: string }>;
+
+// What a person sees to confirm a write of the wiki: the page as read
+// and the text it would get, or for a new page its title and text.
+const textOf = (intent: WikiIntent, derived: Derived): ConfirmationText =>
+  confirmationTextOf({
+    kind: intent.kind,
+    categoryId: intent.categoryId,
+    ...(derived.kind === 'change'
+      ? {
+          title: derived.before.title,
+          before: derived.before.text,
+          after: derived.text,
+        }
+      : { title: derived.title, before: '', after: derived.text }),
+  });
 
 /**
  * Makes the write guard of one pipeline. It holds one piece of state, the
@@ -482,6 +509,8 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
         kind: 'create',
         contentHash: contentHashOf([intent.title, intent.text]),
         serverTime,
+        title: intent.title,
+        text: intent.text,
       };
     }
     const added =
@@ -567,6 +596,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     return Object.freeze({
       outcome: Object.freeze({ kind: 'planned', plan: sealed }),
       target: rules.target,
+      text: textOf(wiki, derived),
     });
   };
 
