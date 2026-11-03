@@ -112,6 +112,7 @@ describe('the table of variables', () => {
       ['ECCLIUM_TOOLSETS', '', false, false],
       ['ECCLIUM_STATE_DIR', undefined, false, true],
       ['ECCLIUM_KEYS_DIR', undefined, false, true],
+      ['ECCLIUM_SNAPSHOTS', 'on', false, false],
       ['ECCLIUM_AUDIT_RETENTION_MONTHS', '12', false, true],
       ['ECCLIUM_POLICY_FILE', undefined, false, false],
       ['ECCLIUM_STDIO_SUBJECT', 'local-stdio', false, true],
@@ -153,6 +154,7 @@ describe('the table of variables', () => {
       new Set(redactionLevels),
     );
     expect(row('ECCLIUM_LOG_LEVEL').choices).toEqual([...logLevels]);
+    expect(row('ECCLIUM_SNAPSHOTS').choices).toEqual(['on', 'off']);
     for (const variable of variables) {
       expect(variable.choices.length > 0, variable.name).toBe(
         variable.kind === 'boolean' ||
@@ -227,6 +229,8 @@ describe('fitsVariable', () => {
     ['ECCLIUM_STATE_DIR', `/${'a'.repeat(959)}`],
     ['ECCLIUM_KEYS_DIR', '/path/to/keys'],
     ['ECCLIUM_KEYS_DIR', `/${'a'.repeat(895)}`],
+    ['ECCLIUM_SNAPSHOTS', 'on'],
+    ['ECCLIUM_SNAPSHOTS', 'off'],
     ['ECCLIUM_STDIO_SUBJECT', 'a'],
     ['ECCLIUM_STDIO_SUBJECT', 'a'.repeat(32)],
     ['ECCLIUM_STDIO_SUBJECT', 'local-operator-2'],
@@ -286,6 +290,10 @@ describe('fitsVariable', () => {
     ['ECCLIUM_KEYS_DIR', '/path/to/keys/'],
     ['ECCLIUM_KEYS_DIR', '/path/../keys'],
     ['ECCLIUM_KEYS_DIR', `/${'a'.repeat(896)}`],
+    ['ECCLIUM_SNAPSHOTS', ''],
+    ['ECCLIUM_SNAPSHOTS', 'ON'],
+    ['ECCLIUM_SNAPSHOTS', 'true'],
+    ['ECCLIUM_SNAPSHOTS', 'no'],
     ['ECCLIUM_STDIO_SUBJECT', ''],
     ['ECCLIUM_STDIO_SUBJECT', 'a'.repeat(33)],
     ['ECCLIUM_STDIO_SUBJECT', 'Local'],
@@ -327,6 +335,7 @@ describe('fitsVariable', () => {
         ['ECCLIUM_TOOLSETS', 'yes'],
         ['ECCLIUM_STATE_DIR', 'state'],
         ['ECCLIUM_KEYS_DIR', 'keys'],
+        ['ECCLIUM_SNAPSHOTS', 'OFF'],
         ['ECCLIUM_AUDIT_RETENTION_MONTHS', '0'],
         ['ECCLIUM_POLICY_FILE', 'policy.yaml'],
         ['ECCLIUM_STDIO_SUBJECT', 'Max'],

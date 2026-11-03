@@ -64,6 +64,7 @@ export const configWarningCodes = Object.freeze([
   'persons_toolset_enabled',
   'events_toolset_enabled',
   'api_toolset_enabled',
+  'snapshots_off',
   'trust_store_extended',
   'audit_retention_short',
   'audit_retention_without_state_dir',

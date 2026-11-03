@@ -39,6 +39,7 @@ export const variableNames = Object.freeze([
   'ECCLIUM_TOOLSETS',
   'ECCLIUM_STATE_DIR',
   'ECCLIUM_KEYS_DIR',
+  'ECCLIUM_SNAPSHOTS',
   'ECCLIUM_AUDIT_RETENTION_MONTHS',
   'ECCLIUM_POLICY_FILE',
   'ECCLIUM_STDIO_SUBJECT',
@@ -444,6 +445,18 @@ export const variables: readonly Variable[] = Object.freeze([
     secret: false,
     stdioOnly: true,
   }),
+  // The snapshots of writes (ADR 0031): on unless the operator turns them
+  // off, which leaves no write that can be taken back. Their retention is
+  // fixed, so there is no variable for it.
+  row({
+    name: 'ECCLIUM_SNAPSHOTS',
+    kind: 'choice',
+    maxLength: 3,
+    choices: ['on', 'off'],
+    defaultValue: 'on',
+    secret: false,
+    stdioOnly: false,
+  }),
   row({
     name: 'ECCLIUM_AUDIT_RETENTION_MONTHS',
     kind: 'integer',
@@ -532,6 +545,7 @@ export const variableSchemas: Readonly<
     .min(1)
     .max(maxKeysDirLength)
     .refine((value) => isNormalizedAbsolutePath(value)),
+  ECCLIUM_SNAPSHOTS: choiceOf('ECCLIUM_SNAPSHOTS'),
   ECCLIUM_AUDIT_RETENTION_MONTHS: z
     .string()
     .max(3)
@@ -567,6 +581,7 @@ export const environmentSchema = z.strictObject({
   ECCLIUM_TOOLSETS: variableSchemas.ECCLIUM_TOOLSETS.optional(),
   ECCLIUM_STATE_DIR: variableSchemas.ECCLIUM_STATE_DIR.optional(),
   ECCLIUM_KEYS_DIR: variableSchemas.ECCLIUM_KEYS_DIR.optional(),
+  ECCLIUM_SNAPSHOTS: variableSchemas.ECCLIUM_SNAPSHOTS.optional(),
   ECCLIUM_AUDIT_RETENTION_MONTHS:
     variableSchemas.ECCLIUM_AUDIT_RETENTION_MONTHS.optional(),
   ECCLIUM_POLICY_FILE: variableSchemas.ECCLIUM_POLICY_FILE.optional(),

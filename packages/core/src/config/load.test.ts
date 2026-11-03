@@ -375,6 +375,7 @@ describe('loadConfig with a good configuration', () => {
       toolsets: [],
       stateDir: undefined,
       keysDir: undefined,
+      snapshots: true,
       auditRetentionMonths: 12,
       policy: defaultPolicy,
       stdioSubject: 'local-stdio',
@@ -438,6 +439,12 @@ describe('loadConfig with a good configuration', () => {
       ['toolsets', 'ECCLIUM_TOOLSETS', 'default', { kind: 'list', values: [] }],
       ['stateDir', 'ECCLIUM_STATE_DIR', 'unset', { kind: 'none' }],
       ['keysDir', 'ECCLIUM_KEYS_DIR', 'unset', { kind: 'none' }],
+      [
+        'snapshots',
+        'ECCLIUM_SNAPSHOTS',
+        'default',
+        { kind: 'choice', value: 'on' },
+      ],
       [
         'auditRetentionMonths',
         'ECCLIUM_AUDIT_RETENTION_MONTHS',
@@ -887,6 +894,96 @@ describe('loadConfig and the folder of keys', () => {
       expect(existsSync(join(folder, 'snapshot'))).toBe(false);
     });
   });
+});
+
+// The snapshots of writes (ADR 0031): on by default, and off only with a
+// warning on every start that writes.
+describe('loadConfig and the snapshots', () => {
+  const writing = (extra: Environment = {}): ConfigResult =>
+    withKeysDir(keysDirPath, memoryFolder().fs, 'stdio', {
+      ECCLIUM_READ_ONLY: 'false',
+      ...extra,
+    });
+
+  it('keeps snapshots by default, also while the server writes, without a warning', () => {
+    const result = writing();
+    expect(result.ok && result.config.snapshots).toBe(true);
+    expect(setting(result, 'snapshots')).toEqual({
+      key: 'snapshots',
+      variable: 'ECCLIUM_SNAPSHOTS',
+      origin: 'default',
+      shown: { kind: 'choice', value: 'on' },
+    });
+    expect(result.report.warnings).toEqual([]);
+    const given = writing({ ECCLIUM_SNAPSHOTS: 'on' });
+    expect(given.ok && given.config.snapshots).toBe(true);
+    expect(setting(given, 'snapshots')?.origin).toBe('environment');
+    expect(given.report.warnings).toEqual([]);
+  });
+
+  it('turns them off with a warning when the server writes', () => {
+    const result = writing({ ECCLIUM_SNAPSHOTS: 'off' });
+    expect(result.ok && result.config.snapshots).toBe(false);
+    expect(setting(result, 'snapshots')).toMatchObject({
+      origin: 'environment',
+      shown: { kind: 'choice', value: 'off' },
+    });
+    expect(result.report.warnings).toEqual(['snapshots_off']);
+  });
+
+  // A server that only reads keeps no snapshot either way.
+  it('says nothing of snapshots that are off while the server only reads', () => {
+    const result = load({ ...valid(), ECCLIUM_SNAPSHOTS: 'off' });
+    expect(result.ok && result.config.snapshots).toBe(false);
+    expect(result.report.warnings).toEqual([]);
+  });
+
+  // Unlike the folder of keys, the switch holds over HTTP as well.
+  it('takes the switch over http as well', () => {
+    const result = load({ ...valid(), ECCLIUM_SNAPSHOTS: 'off' }, 'http');
+    expect(result.ok && result.config.snapshots).toBe(false);
+    expect(result.report.problems).toEqual([]);
+  });
+
+  it('warns also when the folder of keys is missing, next to that problem', () => {
+    const result = load({
+      ...valid(),
+      ECCLIUM_READ_ONLY: 'false',
+      ECCLIUM_SNAPSHOTS: 'off',
+    });
+    expect(problems(result)).toEqual([
+      ['keys_dir_required', 'ECCLIUM_KEYS_DIR'],
+    ]);
+    expect(result.report.warnings).toEqual(['snapshots_off']);
+  });
+
+  it.each(['', 'ON', 'Off', 'no', 'of', ' on'])(
+    'refuses the value %j without repeating it',
+    (value) => {
+      const result = writing({ ECCLIUM_SNAPSHOTS: value });
+      expect(result.ok).toBe(false);
+      expect(problems(result)).toEqual([
+        [value === '' ? 'empty_value' : 'invalid_choice', 'ECCLIUM_SNAPSHOTS'],
+      ]);
+      expect(setting(result, 'snapshots')).toMatchObject({
+        origin: 'invalid',
+        shown: { kind: 'none' },
+      });
+      expect(result.report.warnings).toEqual([]);
+      if (value.trim() !== '') {
+        expect(JSON.stringify(result.report)).not.toContain(`"${value}"`);
+      }
+    },
+  );
+
+  it.each(['none', 'true', 'false'])(
+    'refuses %j as too long, before any choice',
+    (value) => {
+      expect(problems(writing({ ECCLIUM_SNAPSHOTS: value }))).toEqual([
+        ['value_too_long', 'ECCLIUM_SNAPSHOTS'],
+      ]);
+    },
+  );
 });
 
 describe('loadConfig and its sources', () => {
@@ -2337,6 +2434,11 @@ describe('loadConfig and its problems', () => {
       }),
     token_from_environment: () =>
       load({ ECCLIUM_CHURCHTOOLS_URL: address, [tokenVariableName]: token() }),
+    snapshots_off: () =>
+      withKeysDir(keysDirPath, memoryFolder().fs, 'stdio', {
+        ECCLIUM_READ_ONLY: 'false',
+        ECCLIUM_SNAPSHOTS: 'off',
+      }),
     redaction_off: () => load({ ...valid(), ECCLIUM_REDACTION: 'off' }),
     toolsets_without_state_dir: () =>
       load({ ...valid(), ECCLIUM_TOOLSETS: 'persons' }),

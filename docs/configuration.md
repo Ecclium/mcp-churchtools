@@ -19,6 +19,7 @@ Ecclium liest seine Konfiguration aus Variablen der Umgebung. Jede trägt das Pr
 | `ECCLIUM_TOOLSETS` | Liste aus `persons`, `events`, `calendars`, `wiki`, `songs`, `docs`, `api`, mit Komma getrennt, oder `all` für alle ausser `api`, oder `all,api` | leer | nein | nein |
 | `ECCLIUM_STATE_DIR` | absoluter Pfad | keine | nein | ja |
 | `ECCLIUM_KEYS_DIR` | absoluter Pfad | keine | nein | ja |
+| `ECCLIUM_SNAPSHOTS` | `on`, `off` | `on` | nein | nein |
 | `ECCLIUM_AUDIT_RETENTION_MONTHS` | ganze Zahl von 1 bis 120 | `12` | nein | ja |
 | `ECCLIUM_POLICY_FILE` | absoluter Pfad | keine | nein | nein |
 | `ECCLIUM_STDIO_SUBJECT` | Bezeichnung mit höchstens 32 Zeichen | `local-stdio` | nein | ja |
@@ -66,7 +67,11 @@ Absoluter Pfad eines Ordners für den Zustand des Servers, heute für die Audit-
 
 ## `ECCLIUM_KEYS_DIR`
 
-Absoluter Pfad eines eigenen Ordners für die Tagesschlüssel, mit denen Ecclium künftig die Snapshots von Schreibvorgängen und die Einträge der Freigabe-Warteschlange verschlüsselt, in den Unterordnern `snapshot` und `queue`. Den Ordner selbst legt Ecclium nicht an, beim Start aber den Unterordner `snapshot`. Der Ordner muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 700. Er darf nicht der Ordner aus `ECCLIUM_STATE_DIR` sein, nicht darin liegen und ihn nicht enthalten und gehört in keine Sicherung. Beim Start und beim Wechsel des UTC-Tages vernichtet Ecclium die Tagesschlüssel der Snapshots, die älter sind als 30 Tage: Ein Snapshot bleibt an seinem Tag und an den 30 Tagen danach lesbar, danach in keiner Kopie mehr. Pflicht mit `ECCLIUM_READ_ONLY=false`. Nur im Betrieb über stdio.
+Absoluter Pfad eines eigenen Ordners für die Tagesschlüssel, mit denen Ecclium die Snapshots von Schreibvorgängen und künftig die Einträge der Freigabe-Warteschlange verschlüsselt, in den Unterordnern `snapshot` und `queue`. Den Ordner selbst legt Ecclium nicht an, beim Start aber den Unterordner `snapshot`. Der Ordner muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 700. Er darf nicht der Ordner aus `ECCLIUM_STATE_DIR` sein, nicht darin liegen und ihn nicht enthalten und gehört in keine Sicherung. Beim Start und beim Wechsel des UTC-Tages vernichtet Ecclium die Tagesschlüssel der Snapshots, die älter sind als 30 Tage: Ein Snapshot bleibt an seinem Tag und an den 30 Tagen danach lesbar, danach in keiner Kopie mehr. Pflicht mit `ECCLIUM_READ_ONLY=false`. Nur im Betrieb über stdio.
+
+## `ECCLIUM_SNAPSHOTS`
+
+Legt fest, ob Ecclium vor jedem Schreibvorgang den bisherigen Stand als Snapshot festhält, mit dem sich der Schreibvorgang zurücknehmen lässt. Ein Snapshot liegt verschlüsselt im Unterordner `snapshots` des Ordners aus `ECCLIUM_STATE_DIR`, den der Start eines Servers anlegt, der schreibt, und sein Schlüssel ist mit einem Tagesschlüssel aus `ECCLIUM_KEYS_DIR` verschlüsselt. Die Frist ist fest 30 Tage: Ein Snapshot bleibt an seinem Tag und an den 30 Tagen danach lesbar, danach löscht Ecclium beim Start oder beim Wechsel des UTC-Tages den Snapshot und vernichtet seinen Tagesschlüssel, auch wenn es nur liest oder die Snapshots ausgeschaltet sind. Snapshots entstehen mit den Schreib-Tools, die es in dieser Version noch nicht gibt. Mit `off` hält Ecclium keinen Snapshot fest, kein Schreibvorgang lässt sich zurücknehmen, und jeder Start mit `ECCLIUM_READ_ONLY=false` warnt.
 
 ## `ECCLIUM_AUDIT_RETENTION_MONTHS`
 
