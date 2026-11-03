@@ -1397,3 +1397,4 @@ Diese Grundsatzfragen sind entschieden.
   - Mount: `input_required` mit einer Frage im Formular, `requestState` signiert mit dem Codec des SDK und einem Schlüssel von 32 zufälligen Bytes je Prozess, Capabilities der Ära 2025 über `getClientCapabilities()` ([ADR 0053](adr/0053-mcp-sdk-und-instanzmodell.md), Umsetzung).
   - Wurzel der Komposition: `PlanStore`, `NonceStore` und der Schlüssel des `requestState` für einen Server, der schreibt.
   - Doku: ADR 0029, 0053 und 0055 (Umsetzung), `docs/configuration.md` und `docs/log-events.md` neu erzeugt, `.env.example`.
+- 03.11.2026, die Rückfrage im Client ist als `ce02eff` auf `main` (#190). Der Squash-Commit bringt genau den Baum des Branches.
