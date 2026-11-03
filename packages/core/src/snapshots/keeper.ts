@@ -25,7 +25,13 @@ import {
   type SnapshotToSeal,
 } from './seal.js';
 
-/** What {@link SnapshotKeeper.load} finds for the ID of a write. */
+/**
+ * What {@link SnapshotKeeper.load} finds for the ID of a write: `missing`
+ * when no part `before` is kept, because the write kept none or its
+ * records went after their retention; `expired` when the record is still
+ * there but its day key is gone, so that it opens no more; `found` with
+ * the parts that open.
+ */
 export type LoadedSnapshot =
   | { readonly kind: 'missing' }
   | { readonly kind: 'expired' }
@@ -50,17 +56,31 @@ export interface SnapshotKeeper {
    *
    * @param ctx - The context, for tenant and instance.
    * @param eventId - The ID of the audit event of the write.
-   * @returns The parts, or why there are none: never kept, or past its
-   *   retention.
+   * @returns The parts, or why there are none, see {@link LoadedSnapshot}.
    */
   load(ctx: TenantContext, eventId: string): Promise<LoadedSnapshot>;
   /**
    * Removes the records and destroys the day keys of the days before one.
+   * It never rejects: what could not go is in the result.
    *
    * @param day - The first UTC day that stays.
-   * @returns How many records went.
+   * @returns How many records and day keys went, and whether all did.
    */
-  purgeBefore(day: IsoDate): Promise<number>;
+  purgeBefore(day: IsoDate): Promise<SnapshotPurge>;
+}
+
+/** What {@link SnapshotKeeper.purgeBefore} removed. */
+export interface SnapshotPurge {
+  /** How many records went, as far as the store could count them. */
+  readonly records: number;
+  /** How many day keys of snapshots went, as far as they were counted. */
+  readonly dayKeys: number;
+  /**
+   * Whether the store and the provider of keys both removed everything
+   * before the day. When not, the start tries again later, and a count
+   * of the half that failed is 0, because a refusal carries none.
+   */
+  readonly complete: boolean;
 }
 
 const missing: LoadedSnapshot = Object.freeze({ kind: 'missing' });
@@ -109,16 +129,24 @@ export function createSnapshotKeeper(ports: {
         ...(after?.kind === 'wikiPageCreated' ? { after } : {}),
       });
     },
-    // Records first, then the keys: a record whose file stays is still
-    // unreadable once its day key is gone.
-    purgeBefore: async (day: IsoDate): Promise<number> => {
-      let removed: number | undefined;
-      try {
-        removed = await store.purgeBefore(day);
-      } finally {
-        await keys.destroyBefore('snapshot', day);
-      }
-      return removed;
+    // Records first, then the keys, also when the records could not all
+    // go: a record whose file stays is still unreadable once its day key
+    // is gone. Both counts are kept, so that a day key without a record
+    // is reported too.
+    purgeBefore: async (day: IsoDate): Promise<SnapshotPurge> => {
+      const records = await store.purgeBefore(day).then(
+        (count) => count,
+        () => undefined,
+      );
+      const dayKeys = await keys.destroyBefore('snapshot', day).then(
+        (count) => count,
+        () => undefined,
+      );
+      return Object.freeze({
+        records: records ?? 0,
+        dayKeys: dayKeys ?? 0,
+        complete: records !== undefined && dayKeys !== undefined,
+      });
     },
   });
 }

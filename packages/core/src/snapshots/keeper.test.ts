@@ -57,7 +57,11 @@ describe('createSnapshotKeeper', () => {
   it('says expired once the day key is gone, and removes records and keys', async () => {
     const { keeper, store } = setup();
     await keeper.save(ctx, { eventId, part: 'before', day, content: state });
-    expect(await keeper.purgeBefore('2026-11-04' as IsoDate)).toBe(1);
+    expect(await keeper.purgeBefore('2026-11-04' as IsoDate)).toEqual({
+      records: 1,
+      dayKeys: 1,
+      complete: true,
+    });
     expect(await store.get(ctx, eventId)).toEqual([]);
     expect(await keeper.load(ctx, eventId)).toEqual({ kind: 'missing' });
     // A record whose day key went but which stayed in the store.
@@ -121,21 +125,33 @@ describe('createSnapshotKeeper', () => {
 
   it('destroys the day keys also when the store cannot purge, and then reports it', async () => {
     const { keys, store } = setup();
-    let destroyed = 0;
     const failing: SnapshotStore = {
       ...store,
       purgeBefore: () => Promise.reject(new Error('stays')),
     };
     const counting = {
       ...keys,
-      destroyBefore: () => {
-        destroyed += 1;
-        return Promise.resolve(0);
-      },
+      destroyBefore: () => Promise.resolve(2),
     };
-    await expect(
-      createSnapshotKeeper({ keys: counting, store: failing }).purgeBefore(day),
-    ).rejects.toThrow('stays');
-    expect(destroyed).toBe(1);
+    expect(
+      await createSnapshotKeeper({
+        keys: counting,
+        store: failing,
+      }).purgeBefore(day),
+    ).toEqual({ records: 0, dayKeys: 2, complete: false });
+  });
+
+  it('keeps the count of the records when the day keys cannot all go', async () => {
+    const { keys, store, keeper } = setup();
+    await keeper.save(ctx, { eventId, part: 'before', day, content: state });
+    const failing = {
+      ...keys,
+      destroyBefore: () => Promise.reject(new Error('stays')),
+    };
+    expect(
+      await createSnapshotKeeper({ keys: failing, store }).purgeBefore(
+        '2026-11-04' as IsoDate,
+      ),
+    ).toEqual({ records: 1, dayKeys: 0, complete: false });
   });
 });

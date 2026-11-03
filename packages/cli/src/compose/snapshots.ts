@@ -1,7 +1,9 @@
 /**
- * Whether the composition root keeps snapshots of writes (ADR 0031). The
- * first stage of the start over stdio prepares their folder by it, and
- * the build of the pipeline builds them by it, so that both stages agree.
+ * Whether the writes keep snapshots (ADR 0031). The first stage of the
+ * start over stdio prepares their folder by it, and the build of the
+ * pipeline hands the pipeline the snapshots by it, so that both stages
+ * agree. The build makes the snapshots with both folders also when this
+ * says no, so that the start can remove old ones.
  * It loads nothing but types, so that the first stage can import it
  * before the server, its SDK and undici (ADR 0054).
  *
@@ -23,7 +25,8 @@ export type SnapshotConfig = EccliumConfig & {
  * its kill switches lie there (ADR 0029).
  *
  * @param config - The checked configuration.
- * @returns Whether the composition builds the snapshots.
+ * @returns Whether the pipeline gets the snapshots and the first stage
+ *   prepares their folder.
  * @example
  * ```ts
  * if (keepsSnapshots(config)) prepareSnapshotFolder(config.stateDir);

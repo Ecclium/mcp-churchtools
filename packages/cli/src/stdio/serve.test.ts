@@ -764,7 +764,7 @@ describe('the second stage with snapshots', () => {
       'default.2026-09-23.key',
       'default.2026-10-23.key',
     ]);
-    // One line, which counts the records; none of the day keys alone.
+    // One line counts the records, one the day keys.
     expect(retentionLines(session)).toEqual([
       {
         ts: expect.any(String) as unknown,
@@ -772,16 +772,22 @@ describe('the second stage with snapshots', () => {
         event: 'snapshots_deleted',
         count: 1,
       },
+      {
+        ts: expect.any(String) as unknown,
+        level: 'info',
+        event: 'day_keys_destroyed',
+        count: 1,
+      },
     ]);
     vi.advanceTimersByTime(61_000);
     await settle();
     expect(readdirSync(folders.records)).toEqual(['2026-10-23']);
     expect(readdirSync(folders.keys)).toEqual(['default.2026-10-23.key']);
-    expect(retentionLines(session)).toHaveLength(2);
+    expect(retentionLines(session)).toHaveLength(4);
     // The next look on the same day removes nothing more and says nothing.
     vi.advanceTimersByTime(3_600_000);
     await settle();
-    expect(retentionLines(session)).toHaveLength(2);
+    expect(retentionLines(session)).toHaveLength(4);
     assertNoCanary(session.stderr(), allCanaries, 'stderr');
     expect(session.stderr()).not.toContain(folders.stateDir);
     expect(session.stderr()).not.toContain(folders.keysDir);
@@ -796,6 +802,12 @@ describe('the second stage with snapshots', () => {
     const session = setup({ config: writing(folders) });
     await settle();
     expect(retentionLines(session)).toEqual([
+      {
+        ts: expect.any(String) as unknown,
+        level: 'info',
+        event: 'day_keys_destroyed',
+        count: 1,
+      },
       {
         ts: expect.any(String) as unknown,
         level: 'warn',
@@ -856,9 +868,38 @@ describe('the second stage with snapshots', () => {
         event: 'snapshots_deleted',
         count: 1,
       },
+      {
+        ts: expect.any(String) as unknown,
+        level: 'info',
+        event: 'day_keys_destroyed',
+        count: 1,
+      },
     ]);
     expect(readdirSync(folders.keys)).toEqual([]);
     expect(readdirSync(folders.records)).toEqual([]);
+  });
+
+  // A day key whose record never came, as after a store that failed, or
+  // a run that only reads and has no folder snapshots: the key goes, and
+  // its line says so.
+  it('says so when it destroys a day key without a record', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    vi.setSystemTime(Date.UTC(2026, 9, 23, 12, 0, 0));
+    const folders = foldersWith(['2026-09-01']);
+    rmSync(folders.records, { recursive: true });
+    const session = setup({
+      config: { ...writing(folders), readOnly: true },
+    });
+    await settle();
+    expect(retentionLines(session)).toEqual([
+      {
+        ts: expect.any(String) as unknown,
+        level: 'info',
+        event: 'day_keys_destroyed',
+        count: 1,
+      },
+    ]);
+    expect(readdirSync(folders.keys)).toEqual([]);
   });
 });
 

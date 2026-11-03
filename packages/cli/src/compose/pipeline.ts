@@ -74,8 +74,9 @@ export interface ComposedPipeline {
   readonly transport: HttpTransport;
   /**
    * The day keys the pipeline got, over the folder of keys, or undefined
-   * without one (ADR 0031). The start over stdio destroys those past their
-   * retention through them.
+   * without one (ADR 0031). Without a folder of state the start over
+   * stdio destroys those past their retention through them; with one it
+   * goes through the snapshots, which destroy them as well.
    */
   readonly dayKeys: DayKeys | undefined;
   /**

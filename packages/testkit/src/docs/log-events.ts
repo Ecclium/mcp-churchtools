@@ -321,11 +321,11 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
     audit_files_not_deleted:
       'Ecclium konnte Audit-Dateien nach ihrer Frist nicht löschen oder den Ordner nicht ganz lesen. `count` nennt die Zahl der Dateien, die liegen blieben.',
     day_keys_destroyed:
-      'Ecclium hat Tagesschlüssel der Snapshots nach ihrer Frist von 30 Tagen vernichtet, beim Start oder beim Wechsel des UTC-Tages. Snapshots dieser Tage lassen sich nicht mehr öffnen, in keiner Kopie. `count` nennt die Zahl der Schlüssel. Mit einem Ordner aus `ECCLIUM_STATE_DIR` steht dafür `snapshots_deleted`.',
+      'Ecclium hat Tagesschlüssel der Snapshots nach ihrer Frist von 30 Tagen vernichtet, beim Start oder beim Wechsel des UTC-Tages. Snapshots dieser Tage lassen sich nicht mehr öffnen, in keiner Kopie. `count` nennt die Zahl der Schlüssel. Mit einem Ordner aus `ECCLIUM_STATE_DIR` löscht Ecclium dabei auch die Snapshots dieser Tage, was `snapshots_deleted` meldet.',
     day_keys_not_destroyed:
       'Ecclium konnte nicht jeden Tagesschlüssel der Snapshots nach seiner Frist vernichten, etwa weil der Ordner `snapshot` im Ordner aus `ECCLIUM_KEYS_DIR` nicht mehr privat ist oder darin ein Ordner unter dem Namen eines Schlüssels steht. Die übrigen hat es vernichtet. Ecclium versucht es spätestens nach einer Stunde erneut. Mit einem Ordner aus `ECCLIUM_STATE_DIR` steht dafür `snapshots_not_deleted`.',
     snapshots_deleted:
-      'Ecclium hat Snapshots nach ihrer Frist von 30 Tagen gelöscht und die Tagesschlüssel ihrer Tage vernichtet, beim Start oder beim Wechsel des UTC-Tages. Diese Schreibvorgänge lassen sich nicht mehr zurücknehmen, und eine Kopie ihrer Snapshots lässt sich nicht mehr öffnen. `count` nennt die Zahl der gelöschten Dateien, eine oder zwei je Schreibvorgang.',
+      'Ecclium hat Snapshots nach ihrer Frist von 30 Tagen gelöscht, beim Start oder beim Wechsel des UTC-Tages, auch wenn es nur liest. Diese Schreibvorgänge lassen sich nicht mehr zurücknehmen. `count` nennt die Zahl der gelöschten Teile, einer oder zwei je Schreibvorgang. Die Tagesschlüssel ihrer Tage meldet `day_keys_destroyed`.',
     snapshots_not_deleted:
       'Ecclium konnte nicht jeden Snapshot nach seiner Frist löschen oder nicht jeden Tagesschlüssel seines Tages vernichten, etwa weil der Ordner `snapshots` im Ordner aus `ECCLIUM_STATE_DIR` oder der Ordner `snapshot` im Ordner aus `ECCLIUM_KEYS_DIR` nicht mehr privat ist, oder weil die Uhr keinen Tag ergab. Ecclium versucht es spätestens nach einer Stunde erneut.',
     stdio_start_failed:

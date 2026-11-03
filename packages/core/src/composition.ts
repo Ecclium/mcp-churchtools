@@ -51,5 +51,6 @@ export {
   type FileSnapshotStoreOptions,
   prepareSnapshotFolder,
   type SnapshotKeeper,
+  type SnapshotPurge,
 } from './snapshots/index.js';
 export { createDefaultTenantLogger } from './tenant/default-logger.js';

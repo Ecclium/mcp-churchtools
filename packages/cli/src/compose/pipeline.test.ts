@@ -275,7 +275,11 @@ describe('the build of the pipeline', () => {
       ]);
       expect((await snapshots.load(ctx, eventId)).kind).toBe('found');
       // Records and day keys go together once past their retention.
-      expect(await snapshots.purgeBefore('2026-11-04' as IsoDate)).toBe(1);
+      expect(await snapshots.purgeBefore('2026-11-04' as IsoDate)).toEqual({
+        records: 1,
+        dayKeys: 1,
+        complete: true,
+      });
       expect(readdirSync(join(state, 'snapshots'))).toEqual([]);
       expect(readdirSync(join(keys, 'snapshot'))).toEqual([]);
     });
@@ -304,7 +308,11 @@ describe('the build of the pipeline', () => {
       const { snapshots } = composed;
       if (snapshots === undefined) throw new Error('no snapshots');
       expect(existsSync(join(state, 'snapshots'))).toBe(false);
-      expect(await snapshots.purgeBefore('2026-11-04' as IsoDate)).toBe(0);
+      expect(await snapshots.purgeBefore('2026-11-04' as IsoDate)).toEqual({
+        records: 0,
+        dayKeys: 0,
+        complete: true,
+      });
       // Records of an earlier run go, also without a day key.
       prepareSnapshotFolder(state);
       mkdirSync(join(state, 'snapshots', day), { mode: 0o700 });
@@ -313,7 +321,11 @@ describe('the build of the pipeline', () => {
         'a',
         { mode: 0o600 },
       );
-      expect(await snapshots.purgeBefore('2026-11-04' as IsoDate)).toBe(1);
+      expect(await snapshots.purgeBefore('2026-11-04' as IsoDate)).toEqual({
+        records: 1,
+        dayKeys: 0,
+        complete: true,
+      });
       expect(readdirSync(join(state, 'snapshots'))).toEqual([]);
     });
 

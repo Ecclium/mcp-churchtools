@@ -41,6 +41,7 @@ import {
   createLogger,
   createStderrWriter,
   describeError,
+  type SnapshotPurge,
   systemClock,
 } from '@ecclium/mcp-churchtools-core/composition';
 import type {
@@ -388,42 +389,31 @@ export function serve(options: ServeOptions): ExitCode | undefined {
     // and then once on each new UTC day (ADR 0031). With the folder of
     // state, the keeper of the snapshots removes the records of those days
     // and destroys the day keys of the same days, also while the server
-    // only reads or keeps no snapshots, so the lines count records;
-    // without that folder the day keys alone go, so that keys of an
-    // earlier run that wrote still go in time. A day whose records or keys
-    // could not all go is tried again at the next look of the timer,
-    // within the hour. The lines name a count only, never a path or the
-    // message of an error.
+    // only reads or keeps no snapshots; without that folder the day keys
+    // alone go, so that keys of an earlier run that wrote still go in
+    // time. One line counts the records, another the day keys, and a day
+    // whose records or keys could not all go is tried again at the next
+    // look of the timer, within the hour. The lines name a count only,
+    // never a path or the message of an error.
     const { dayKeys, snapshots } = composed;
-    const retention:
-      | {
-          readonly purge: (cut: IsoDate) => Promise<number>;
-          readonly gone: (count: number) => void;
-          readonly kept: () => void;
-        }
-      | undefined =
+    const purge: ((cut: IsoDate) => Promise<SnapshotPurge>) | undefined =
       snapshots !== undefined
-        ? {
-            purge: (cut) => snapshots.purgeBefore(cut),
-            gone: (count) => {
-              processLogger.info(snapshotsDeletedEvent, { count });
-            },
-            kept: () => {
-              processLogger.warn(snapshotsKeptEvent);
-            },
-          }
+        ? (cut) => snapshots.purgeBefore(cut)
         : dayKeys !== undefined
-          ? {
-              purge: (cut) => dayKeys.destroyBefore('snapshot', cut),
-              gone: (count) => {
-                processLogger.info(dayKeysDestroyedEvent, { count });
-              },
-              kept: () => {
-                processLogger.warn(dayKeysKeptEvent);
-              },
-            }
+          ? (cut) =>
+              dayKeys.destroyBefore('snapshot', cut).then(
+                (count) => ({ records: 0, dayKeys: count, complete: true }),
+                () => ({ records: 0, dayKeys: 0, complete: false }),
+              )
           : undefined;
-    if (retention !== undefined) {
+    const keptEvent =
+      snapshots === undefined ? dayKeysKeptEvent : snapshotsKeptEvent;
+    // Only a count the logger takes, and never more than it takes.
+    const countOf = (count: number): number | undefined =>
+      Number.isSafeInteger(count) && count > 0
+        ? Math.min(count, maxCount)
+        : undefined;
+    if (purge !== undefined) {
       let sweptFor: IsoDate | undefined;
       let sweeping = false;
       sweepDayKeys = (): void => {
@@ -435,7 +425,7 @@ export function serve(options: ServeOptions): ExitCode | undefined {
         }
         const cut = firstKeptSnapshotDay(now);
         if (cut === undefined) {
-          retention.kept();
+          processLogger.warn(keptEvent);
           return;
         }
         if (sweeping || cut === sweptFor) return;
@@ -443,16 +433,25 @@ export function serve(options: ServeOptions): ExitCode | undefined {
         // A promise that rejected is caught here: unhandled, it would end
         // the process through the handler above.
         void Promise.resolve()
-          .then(() => retention.purge(cut))
+          .then(() => purge(cut))
           .then(
-            (count) => {
-              sweptFor = cut;
-              if (Number.isSafeInteger(count) && count > 0) {
-                retention.gone(Math.min(count, maxCount));
+            (result) => {
+              const records = countOf(result.records);
+              if (records !== undefined) {
+                processLogger.info(snapshotsDeletedEvent, { count: records });
+              }
+              const keys = countOf(result.dayKeys);
+              if (keys !== undefined) {
+                processLogger.info(dayKeysDestroyedEvent, { count: keys });
+              }
+              if (result.complete) {
+                sweptFor = cut;
+              } else {
+                processLogger.warn(keptEvent);
               }
             },
             () => {
-              retention.kept();
+              processLogger.warn(keptEvent);
             },
           )
           .catch(() => undefined)
@@ -462,7 +461,7 @@ export function serve(options: ServeOptions): ExitCode | undefined {
       };
       sweepDayKeys();
     }
-    if (auditFile !== undefined || retention !== undefined) armDayTimer();
+    if (auditFile !== undefined || purge !== undefined) armDayTimer();
 
     let signalCode: ExitCode | undefined;
     const onSignal =
