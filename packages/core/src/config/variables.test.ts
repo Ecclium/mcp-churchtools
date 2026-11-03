@@ -6,6 +6,7 @@ import { logLevels, redactionLevels } from '../logger/index.js';
 import { toolsetNames } from '../registry/toolsets.js';
 import {
   allToolsets,
+  defaultHttpWriteConfirmation,
   defaultStdioSubject,
   environmentSchema,
   fitsVariable,
@@ -29,6 +30,7 @@ import {
   variablePrefix,
   variables,
   variableSchemas,
+  writeConfirmations,
 } from './variables.js';
 
 const row = (name: string): Variable => {
@@ -113,6 +115,7 @@ describe('the table of variables', () => {
       ['ECCLIUM_STATE_DIR', undefined, false, true],
       ['ECCLIUM_KEYS_DIR', undefined, false, true],
       ['ECCLIUM_SNAPSHOTS', 'on', false, false],
+      ['ECCLIUM_WRITE_CONFIRMATION', 'echo-allowed', false, false],
       ['ECCLIUM_AUDIT_RETENTION_MONTHS', '12', false, true],
       ['ECCLIUM_POLICY_FILE', undefined, false, false],
       ['ECCLIUM_STDIO_SUBJECT', 'local-stdio', false, true],
@@ -155,6 +158,9 @@ describe('the table of variables', () => {
     );
     expect(row('ECCLIUM_LOG_LEVEL').choices).toEqual([...logLevels]);
     expect(row('ECCLIUM_SNAPSHOTS').choices).toEqual(['on', 'off']);
+    expect(row('ECCLIUM_WRITE_CONFIRMATION').choices).toEqual([
+      ...writeConfirmations,
+    ]);
     for (const variable of variables) {
       expect(variable.choices.length > 0, variable.name).toBe(
         variable.kind === 'boolean' ||
@@ -211,6 +217,30 @@ describe('the subject over stdio', () => {
   });
 });
 
+// The ways of ADR 0029, in its order. The table holds the default over
+// stdio, the loader the one over HTTP, which never takes the echo.
+describe('the confirmation of writes', () => {
+  it('lists the three ways, frozen, and bounds them at the longest', () => {
+    expect(writeConfirmations).toEqual([
+      'echo-allowed',
+      'elicitation-or-queue',
+      'queue',
+    ]);
+    expect(Object.isFrozen(writeConfirmations)).toBe(true);
+    expect(row('ECCLIUM_WRITE_CONFIRMATION').maxLength).toBe(
+      Math.max(...writeConfirmations.map((value) => value.length)),
+    );
+  });
+
+  it('defaults to echo-allowed in the table and to elicitation-or-queue over http', () => {
+    expect(row('ECCLIUM_WRITE_CONFIRMATION').defaultValue).toBe('echo-allowed');
+    expect(defaultHttpWriteConfirmation).toBe('elicitation-or-queue');
+    expect(
+      fitsVariable('ECCLIUM_WRITE_CONFIRMATION', defaultHttpWriteConfirmation),
+    ).toBe(true);
+  });
+});
+
 describe('fitsVariable', () => {
   it.each([
     ['ECCLIUM_CHURCHTOOLS_URL', 'https://example.church.tools'],
@@ -231,6 +261,9 @@ describe('fitsVariable', () => {
     ['ECCLIUM_KEYS_DIR', `/${'a'.repeat(895)}`],
     ['ECCLIUM_SNAPSHOTS', 'on'],
     ['ECCLIUM_SNAPSHOTS', 'off'],
+    ['ECCLIUM_WRITE_CONFIRMATION', 'echo-allowed'],
+    ['ECCLIUM_WRITE_CONFIRMATION', 'elicitation-or-queue'],
+    ['ECCLIUM_WRITE_CONFIRMATION', 'queue'],
     ['ECCLIUM_STDIO_SUBJECT', 'a'],
     ['ECCLIUM_STDIO_SUBJECT', 'a'.repeat(32)],
     ['ECCLIUM_STDIO_SUBJECT', 'local-operator-2'],
@@ -294,6 +327,12 @@ describe('fitsVariable', () => {
     ['ECCLIUM_SNAPSHOTS', 'ON'],
     ['ECCLIUM_SNAPSHOTS', 'true'],
     ['ECCLIUM_SNAPSHOTS', 'no'],
+    ['ECCLIUM_WRITE_CONFIRMATION', ''],
+    ['ECCLIUM_WRITE_CONFIRMATION', 'QUEUE'],
+    ['ECCLIUM_WRITE_CONFIRMATION', 'Echo-allowed'],
+    ['ECCLIUM_WRITE_CONFIRMATION', 'echo_allowed'],
+    ['ECCLIUM_WRITE_CONFIRMATION', 'elicitation'],
+    ['ECCLIUM_WRITE_CONFIRMATION', 'queue '],
     ['ECCLIUM_STDIO_SUBJECT', ''],
     ['ECCLIUM_STDIO_SUBJECT', 'a'.repeat(33)],
     ['ECCLIUM_STDIO_SUBJECT', 'Local'],
@@ -336,6 +375,7 @@ describe('fitsVariable', () => {
         ['ECCLIUM_STATE_DIR', 'state'],
         ['ECCLIUM_KEYS_DIR', 'keys'],
         ['ECCLIUM_SNAPSHOTS', 'OFF'],
+        ['ECCLIUM_WRITE_CONFIRMATION', 'Queue'],
         ['ECCLIUM_AUDIT_RETENTION_MONTHS', '0'],
         ['ECCLIUM_POLICY_FILE', 'policy.yaml'],
         ['ECCLIUM_STDIO_SUBJECT', 'Max'],

@@ -35,6 +35,7 @@ import {
 import { readTokenFile, type TokenFileSystem } from './token-file.js';
 import {
   debugVariableName,
+  defaultHttpWriteConfirmation,
   fitsVariable,
   nodeOptionsVariableName,
   type PlainVariableName,
@@ -55,6 +56,7 @@ import {
   variableNames,
   variablePrefix,
   variables,
+  type WriteConfirmation,
   yamlDebugVariableNames,
 } from './variables.js';
 
@@ -112,6 +114,15 @@ export interface EccliumConfig {
    */
   readonly snapshots: boolean;
   /**
+   * How a write gets confirmed (ADR 0029). With `echo-allowed` the core
+   * asks the client when it declares elicitation, else takes the echo
+   * where the plan allows it, else puts the write into the queue of the
+   * operator; with `elicitation-or-queue` it never takes the echo; with
+   * `queue` every write goes into the queue. Without the variable,
+   * `echo-allowed` over stdio and `elicitation-or-queue` over HTTP.
+   */
+  readonly writeConfirmation: WriteConfirmation;
+  /**
    * How many months the audit files stay before the start or a new UTC day
    * deletes them, 1 to 120 (ADR 0028). Without a folder of state there are
    * no files, and the value does nothing.
@@ -140,6 +151,7 @@ export type SettingKey =
   | 'stateDir'
   | 'keysDir'
   | 'snapshots'
+  | 'writeConfirmation'
   | 'auditRetentionMonths'
   | 'policy'
   | 'stdioSubject'
@@ -1051,6 +1063,26 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     warnings.add('snapshots_off');
   }
 
+  // How a write gets confirmed (ADR 0029). The table holds the default
+  // over stdio; over HTTP the echo holds only when the operator sets it,
+  // so there the default is elicitation-or-queue, and echo-allowed set on
+  // purpose warns on every start. The warning does not wait for a start
+  // that writes: over HTTP no server writes in this version, and the
+  // operator should learn of the choice before one does.
+  const confirmationName = 'ECCLIUM_WRITE_CONFIRMATION';
+  let confirmation = choose(confirmationName);
+  if (confirmation?.origin === 'default' && transport === 'http') {
+    confirmation = { value: defaultHttpWriteConfirmation, origin: 'default' };
+  }
+  show('writeConfirmation', confirmationName, confirmation, 'choice');
+  if (
+    confirmation?.origin === 'environment' &&
+    confirmation.value === 'echo-allowed' &&
+    transport === 'http'
+  ) {
+    warnings.add('echo_over_http');
+  }
+
   // The retention of the audit files: digits only, checked sign by sign.
   // Below a year every start warns, and without the folder of state there
   // is nothing to delete, which every start says (ADR 0028).
@@ -1191,6 +1223,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     !stateDirValid ||
     !keysDirValid ||
     snapshots === undefined ||
+    confirmation === undefined ||
     retention === undefined ||
     policy === undefined ||
     subject === undefined ||
@@ -1214,6 +1247,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       stateDir,
       keysDir,
       snapshots: snapshots.value === 'on',
+      writeConfirmation: confirmation.value as WriteConfirmation,
       auditRetentionMonths: retention.value,
       policy,
       stdioSubject: subject.value,

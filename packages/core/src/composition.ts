@@ -8,7 +8,9 @@
  * transport over stdio, and the provider of the keys for the pseudonyms
  * of the level `strict` (ADR 0069) and of the day keys for snapshots and
  * the queue, the store of the sealed records of snapshots and the keeper
- * that joins both into the snapshots of writes (ADR 0031).
+ * that joins both into the snapshots of writes (ADR 0031), and the stores
+ * of plans and nonces of the questions before a write, in memory (ADR
+ * 0029).
  *
  * Only the composition root may import this subpath, which a rule of
  * dependency-cruiser holds. Through the entry point of core the writer
@@ -54,3 +56,5 @@ export {
   type SnapshotPurge,
 } from './snapshots/index.js';
 export { createDefaultTenantLogger } from './tenant/default-logger.js';
+export { createMemoryNonceStore } from './write/nonce-store.js';
+export { createMemoryPlanStore } from './write/plan-store.js';

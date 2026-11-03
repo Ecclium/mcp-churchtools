@@ -5,6 +5,8 @@
  * @packageDocumentation
  */
 export {
+  type ConfirmationAnswer,
+  type ConfirmationQuestion,
   createToolPipeline,
   type ToolOutcome,
   type ToolPipeline,

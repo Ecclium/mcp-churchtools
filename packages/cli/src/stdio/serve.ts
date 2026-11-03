@@ -27,6 +27,7 @@
  *
  * @packageDocumentation
  */
+import { randomBytes } from 'node:crypto';
 import type { Readable, Writable } from 'node:stream';
 
 import {
@@ -380,6 +381,10 @@ export function serve(options: ServeOptions): ExitCode | undefined {
       readOnly: config.readOnly,
       logger,
       version,
+      // The key of the questions before a write: random for this process
+      // and never stored, so that no requestState of an earlier start
+      // counts (ADR 0029, ADR 0053). A server that only reads asks nothing.
+      ...(config.readOnly ? {} : { requestStateKey: randomBytes(32) }),
       ...(options.input === undefined ? {} : { input: options.input }),
       ...(options.output === undefined ? {} : { output: options.output }),
     });

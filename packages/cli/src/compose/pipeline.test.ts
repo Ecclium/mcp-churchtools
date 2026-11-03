@@ -149,6 +149,28 @@ describe('the build of the pipeline', () => {
     expect(Object.hasOwn(built.options[0] as object, 'keys')).toBe(false);
   });
 
+  // A server that writes asks the person before a write (ADR 0029): its
+  // pipeline gets the setting and the stores of the questions, in memory;
+  // one that only reads gets the setting alone and asks nobody.
+  it('gives the stores of questions only to a pipeline that writes', () => {
+    setup().build();
+    const reading = built.options[0] as ToolPipelineOptions;
+    expect(reading.confirmation).toBe('echo-allowed');
+    expect(Object.hasOwn(reading, 'plans')).toBe(false);
+    expect(Object.hasOwn(reading, 'nonces')).toBe(false);
+    setup(
+      configOf({
+        ECCLIUM_READ_ONLY: 'false',
+        ECCLIUM_KEYS_DIR: keysDir,
+        ECCLIUM_WRITE_CONFIRMATION: 'queue',
+      }),
+    ).build();
+    const writing = built.options[1] as ToolPipelineOptions;
+    expect(writing.confirmation).toBe('queue');
+    expect(typeof writing.plans?.put).toBe('function');
+    expect(typeof writing.nonces?.consume).toBe('function');
+  });
+
   // Every write keeps a snapshot whose key a day key encrypts (ADR 0031),
   // so the provider the pipeline gets wraps with the day keys in the
   // folder, the same the start destroys through.

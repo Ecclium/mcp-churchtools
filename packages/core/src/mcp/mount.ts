@@ -14,6 +14,13 @@
  * (ADR 0065). Every instance gets a JSON Schema validator that always
  * throws, so the bundled Ajv never compiles a schema for it (ADR 0059).
  *
+ * Before a write, the pipeline may ask the person (ADR 0029). Only the
+ * mount knows MCP, so it turns the question of the pipeline into
+ * `input_required`, signs its state with the codec of the SDK and reads the
+ * answer of the second round, in both eras: the 2026 era answers through
+ * the client, the 2025 era through the shim of the SDK. It asks only a
+ * client that declared elicitation in form mode.
+ *
  * @packageDocumentation
  */
 import type {
@@ -28,8 +35,13 @@ import type {
 import {
   type CallToolRequest,
   type CallToolResult,
+  CLIENT_CAPABILITIES_META_KEY,
+  createRequestStateCodec,
   type GetPromptRequest,
   type GetPromptResult,
+  inputRequired,
+  type InputRequiredResult,
+  inputResponse,
   type jsonSchemaValidator,
   type ListPromptsResult,
   type ListToolsResult,
@@ -38,13 +50,14 @@ import {
   type Prompt,
   ProtocolError,
   ProtocolErrorCode,
+  type RequestStateCodec,
   type ServerContext,
   type Tool,
 } from '@modelcontextprotocol/server';
 
 import { fixedSentences } from '../errors/index.js';
 import { isStrictLevel } from '../redaction/pseudonym-form.js';
-import type { ToolPipeline } from '../pipeline/index.js';
+import type { ConfirmationAnswer, ToolPipeline } from '../pipeline/index.js';
 import type { ObjectJsonSchema, ToolCatalog } from '../registry/index.js';
 import { deriveAnnotations } from './annotations.js';
 import { deriveOutputSchema } from './schema.js';
@@ -73,6 +86,13 @@ export interface McpMountOptions {
    * to 32 printable ASCII characters without spaces.
    */
   readonly version: string;
+  /**
+   * The key that signs the `requestState` of a question before a write, at
+   * least 32 random bytes, new for every process and never stored (ADR
+   * 0029, ADR 0053). Without it no write asks the client, and a
+   * `requestState` a client sends counts for nothing.
+   */
+  readonly requestStateKey?: Uint8Array;
 }
 
 /** The mount, built once at the start. */
@@ -129,6 +149,42 @@ const argumentsRefusedSentence =
 const argumentRefusedSentence = (name: string): string =>
   `The argument ${name} is missing or does not fit. Its description in the list of prompts says what it takes.`;
 
+// The key of the one question of a write in `inputRequests` and
+// `inputResponses`.
+const questionKey = 'bestaetigung';
+
+// How long a requestState and the question it belongs to live: as long as
+// the plan waits in the PlanStore (ADR 0029).
+const questionSeconds = 600;
+
+const isObject = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+// Whether capabilities declare elicitation in form mode. An empty object
+// means form mode (specification 2026-07-28, client/elicitation).
+const formElicitation = (capabilities: unknown): boolean => {
+  const elicitation = isObject(capabilities)
+    ? capabilities['elicitation']
+    : undefined;
+  return (
+    isObject(elicitation) &&
+    (Object.keys(elicitation).length === 0 || isObject(elicitation['form']))
+  );
+};
+
+// The answer of the second round, as the pipeline takes it. A response of
+// another kind or none at all counts as missing.
+const answerOf = (state: unknown, ctx: ServerContext): ConfirmationAnswer => {
+  const view = inputResponse(ctx.mcpReq.inputResponses, questionKey);
+  return view.kind === 'elicit'
+    ? Object.freeze({
+        state,
+        action: view.action,
+        ...(view.content === undefined ? {} : { content: view.content }),
+      })
+    : Object.freeze({ state, action: 'missing' });
+};
+
 const isVersion = (value: unknown): value is string => {
   if (typeof value !== 'string' || value.length < 1 || value.length > 32) {
     return false;
@@ -175,11 +231,24 @@ const isVersion = (value: unknown): value is string => {
  * `prompt_unknown`) or arguments that do not fit (event `prompt_refused`
  * with the code `validation`) end as invalid params with a fixed sentence.
  *
+ * A write may ask the person before it is committed (ADR 0029). The
+ * pipeline learns whether the client declared elicitation in form mode: in
+ * the 2026 era from the capabilities in the `_meta` of the request, in the
+ * 2025 era from those of `initialize`. When the pipeline answers with a
+ * question, the mount signs its state with the codec of the SDK, valid 600
+ * seconds and bound to the method, and returns `input_required` with one
+ * question. The SDK checks the signature of a `requestState` a client
+ * sends before the handler runs, and refuses a forged, foreign or expired
+ * one as invalid params. The handler then passes the verified state and
+ * the answer to the pipeline, which runs no tool in that round.
+ *
  * @param options - Catalog, pipeline, identity, resolver, the settings of
- *   every call, the logger and the version.
+ *   every call, the logger, the version and the key of the `requestState`.
  * @returns The mount, frozen.
  * @throws {TypeError} When the version breaks its form; the message never
  *   holds the value.
+ * @throws {RangeError} When the key of the `requestState` is shorter than
+ *   32 bytes.
  * @example
  * ```ts
  * const mount = createMcpMount({ catalog, pipeline, identity, resolver,
@@ -195,6 +264,18 @@ export function createMcpMount(options: McpMountOptions): McpMount {
     throw new TypeError('The version of the server is invalid.');
   }
   const serverInfo = Object.freeze({ name: serverName, version });
+  // The codec of the requestState of a question (ADR 0053): HMAC with the
+  // key of the process, bound to the method, since over stdio the context
+  // of a request names nothing else. Tenant, principal and input are bound
+  // inside the state, which the pipeline checks.
+  const codec: RequestStateCodec | undefined =
+    options.requestStateKey === undefined
+      ? undefined
+      : createRequestStateCodec({
+          key: options.requestStateKey,
+          ttlSeconds: questionSeconds,
+          bind: (ctx) => ctx.mcpReq.method,
+        });
 
   const tools: Tool[] = [];
   const outputSchemas = new Map<string, ObjectJsonSchema>();
@@ -355,17 +436,44 @@ export function createMcpMount(options: McpMountOptions): McpMount {
     };
   };
 
+  // Whether the client of this request declared elicitation in form mode:
+  // in the 2026 era every request carries its capabilities, in the 2025
+  // era they come once with initialize (ADR 0053).
+  const asksClient = (
+    instance: McpServer,
+    era: 'legacy' | 'modern',
+    ctx: ServerContext,
+  ): boolean => {
+    if (era === 'modern') {
+      const envelope = ctx.mcpReq.envelope as
+        Readonly<Record<string, unknown>> | undefined;
+      return formElicitation(envelope?.[CLIENT_CAPABILITIES_META_KEY]);
+    }
+    // The SDK marks the accessor as deprecated because the 2026 era sends
+    // the capabilities with every request; for a connection of the 2025
+    // era it is the way the SDK offers. Without it the shim would answer a
+    // client without elicitation with an error instead of letting the
+    // write go its other ways (ADR 0053).
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- see above
+    return formElicitation(instance.server.getClientCapabilities());
+  };
+
   const callTool = async (
     instance: McpServer,
+    era: 'legacy' | 'modern',
     request: CallToolRequest,
     ctx: ServerContext,
-  ): Promise<CallToolResult> => {
+  ): Promise<CallToolResult | InputRequiredResult> => {
     try {
       const { name } = request.params;
       // A call without arguments counts as one with none, as in the tools
       // the SDK registers itself; the pipeline checks it like any input.
       const input = request.params.arguments ?? {};
       const { signal } = ctx.mcpReq;
+      // The state of a second round, as the codec verified it. Without a
+      // codec nothing verified a requestState, and it counts for nothing.
+      const state = codec === undefined ? undefined : ctx.mcpReq.requestState();
+      const answer = state === undefined ? undefined : answerOf(state, ctx);
       const assignment = await resolveAssignment(signal);
       const outcome = await pipeline.call(
         name,
@@ -377,8 +485,26 @@ export function createMcpMount(options: McpMountOptions): McpMount {
           readOnly,
           features: noFeatures,
           signal,
+          elicitation:
+            codec !== undefined &&
+            answer === undefined &&
+            asksClient(instance, era, ctx),
+          ...(answer === undefined ? {} : { answer }),
         }),
       );
+      if (!outcome.ok && outcome.question !== undefined) {
+        if (codec === undefined) return internalResult;
+        const { question } = outcome;
+        return inputRequired({
+          inputRequests: {
+            [questionKey]: inputRequired.elicit({
+              message: question.message,
+              requestedSchema: question.form,
+            }),
+          },
+          requestState: await codec.mint(question.state, ctx),
+        });
+      }
       return instance.server.projectCallToolResult(
         serializeOutcome(outcome),
         outputSchemas.get(name),
@@ -392,12 +518,27 @@ export function createMcpMount(options: McpMountOptions): McpMount {
     }
   };
 
-  const factory: McpServerFactory = () => {
+  const factory: McpServerFactory = (context) => {
+    const { era } = context;
     // No capabilities here: with them, the SDK installs handlers of its
     // own, which check input and output before any code of the mount runs
-    // (ADR 0053).
+    // (ADR 0053). The codec checks a requestState before the handler, and
+    // the shim of the 2025 era asks once per call, for up to ten minutes.
     const instance = new McpServer(serverInfo, {
       jsonSchemaValidator: refusingValidator,
+      ...(codec === undefined
+        ? {}
+        : {
+            requestState: {
+              verify: (state: string, ctx: ServerContext) =>
+                codec.verify(state, ctx),
+            },
+          }),
+      inputRequired: {
+        maxRounds: 1,
+        roundTimeoutMs: questionSeconds * 1000,
+        legacyShim: true,
+      },
     });
     // Before the handlers, because registering one checks the capability,
     // and before the connection, after which the SDK refuses it. The lists
@@ -408,7 +549,7 @@ export function createMcpMount(options: McpMountOptions): McpMount {
     });
     instance.server.setRequestHandler('tools/list', listTools);
     instance.server.setRequestHandler('tools/call', (request, ctx) =>
-      callTool(instance, request, ctx),
+      callTool(instance, era, request, ctx),
     );
     instance.server.setRequestHandler('prompts/list', listPrompts);
     instance.server.setRequestHandler('prompts/get', getPrompt);

@@ -40,6 +40,7 @@ export const variableNames = Object.freeze([
   'ECCLIUM_STATE_DIR',
   'ECCLIUM_KEYS_DIR',
   'ECCLIUM_SNAPSHOTS',
+  'ECCLIUM_WRITE_CONFIRMATION',
   'ECCLIUM_AUDIT_RETENTION_MONTHS',
   'ECCLIUM_POLICY_FILE',
   'ECCLIUM_STDIO_SUBJECT',
@@ -70,7 +71,6 @@ export const plainVariableNames: readonly PlainVariableName[] = Object.freeze(
  * start with a message that this version does not support it yet.
  */
 export const unsupportedVariableNames = Object.freeze([
-  'ECCLIUM_WRITE_CONFIRMATION',
   'ECCLIUM_EGRESS',
   'ECCLIUM_EGRESS_ALLOW_LAN',
   'ECCLIUM_ALLOWED_HOSTS',
@@ -173,6 +173,30 @@ export const defaultStdioSubject = 'local-stdio';
  * placeholder of the audit for a missing actor (ADR 0054).
  */
 export const reservedStdioSubjects = Object.freeze(['invalid'] as const);
+
+/**
+ * The ways a write gets confirmed, frozen, as `ECCLIUM_WRITE_CONFIRMATION`
+ * names them (ADR 0029): `echo-allowed` asks the client when it declares
+ * elicitation, else takes the echo where the plan allows it, else the
+ * queue; `elicitation-or-queue` never takes the echo; `queue` sends every
+ * write to the queue of the operator.
+ */
+export const writeConfirmations = Object.freeze([
+  'echo-allowed',
+  'elicitation-or-queue',
+  'queue',
+] as const);
+
+/** How a write gets confirmed (ADR 0029). */
+export type WriteConfirmation = (typeof writeConfirmations)[number];
+
+/**
+ * The way of confirmation over HTTP when the variable is not set. The
+ * table holds the default over stdio, `echo-allowed`: over HTTP the echo
+ * holds only when the operator sets it (ADR 0029).
+ */
+export const defaultHttpWriteConfirmation: WriteConfirmation =
+  'elicitation-or-queue';
 
 /** How the loader reads the value of a variable. */
 export type VariableKind =
@@ -457,6 +481,18 @@ export const variables: readonly Variable[] = Object.freeze([
     secret: false,
     stdioOnly: false,
   }),
+  // How a write gets confirmed (ADR 0029). The row holds the default over
+  // stdio; over HTTP the loader takes elicitation-or-queue when the
+  // variable is not set, so that the echo holds there only on purpose.
+  row({
+    name: 'ECCLIUM_WRITE_CONFIRMATION',
+    kind: 'choice',
+    maxLength: 20,
+    choices: writeConfirmations,
+    defaultValue: 'echo-allowed',
+    secret: false,
+    stdioOnly: false,
+  }),
   row({
     name: 'ECCLIUM_AUDIT_RETENTION_MONTHS',
     kind: 'integer',
@@ -546,6 +582,7 @@ export const variableSchemas: Readonly<
     .max(maxKeysDirLength)
     .refine((value) => isNormalizedAbsolutePath(value)),
   ECCLIUM_SNAPSHOTS: choiceOf('ECCLIUM_SNAPSHOTS'),
+  ECCLIUM_WRITE_CONFIRMATION: choiceOf('ECCLIUM_WRITE_CONFIRMATION'),
   ECCLIUM_AUDIT_RETENTION_MONTHS: z
     .string()
     .max(3)
@@ -582,6 +619,8 @@ export const environmentSchema = z.strictObject({
   ECCLIUM_STATE_DIR: variableSchemas.ECCLIUM_STATE_DIR.optional(),
   ECCLIUM_KEYS_DIR: variableSchemas.ECCLIUM_KEYS_DIR.optional(),
   ECCLIUM_SNAPSHOTS: variableSchemas.ECCLIUM_SNAPSHOTS.optional(),
+  ECCLIUM_WRITE_CONFIRMATION:
+    variableSchemas.ECCLIUM_WRITE_CONFIRMATION.optional(),
   ECCLIUM_AUDIT_RETENTION_MONTHS:
     variableSchemas.ECCLIUM_AUDIT_RETENTION_MONTHS.optional(),
   ECCLIUM_POLICY_FILE: variableSchemas.ECCLIUM_POLICY_FILE.optional(),

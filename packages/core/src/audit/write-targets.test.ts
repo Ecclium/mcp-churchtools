@@ -92,7 +92,7 @@ describe('collectWriteTargets', () => {
     expect(targets).toEqual({
       categories: [
         { id: 12, tools: [create, update], highestPerDay: 3 },
-        { id: 20, tools: [update], highestPerDay: 1 },
+        { id: 20, tools: [update], highestPerDay: 0 },
       ],
       days: { first: '2026-10-30', last: '2026-10-31' },
       read: 2,
@@ -179,12 +179,29 @@ describe('collectWriteTargets', () => {
         [nameOf(2)]: 'unsafe',
         [nameOf(3)]: 'gone',
         [nameOf(4)]: 'moved',
-        [nameOf(5)]: [write('planned', { objectRefs: ['wiki_category:9'] })],
+        [nameOf(5)]: [write('verified', { objectRefs: ['wiki_category:9'] })],
       }),
     );
     expect(targets).toMatchObject({ read: 1, unread: 2, moved: true });
     expect(targets.categories).toEqual([
       { id: 9, tools: [create], highestPerDay: 1 },
+    ]);
+  });
+
+  it('counts a confirmed write once, not its question as well (ADR 0029)', () => {
+    const targets = collectWriteTargets(
+      folderOf({
+        [nameOf(1)]: [
+          write('planned'),
+          write('verified'),
+          write('planned', { objectRefs: ['wiki_category:13'] }),
+          write('denied', { objectRefs: ['wiki_category:13'] }),
+        ],
+      }),
+    );
+    expect(targets.categories).toEqual([
+      { id: 12, tools: [create], highestPerDay: 1 },
+      { id: 13, tools: [create], highestPerDay: 0 },
     ]);
   });
 

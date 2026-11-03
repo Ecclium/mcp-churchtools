@@ -58,5 +58,7 @@ export {
   variableNames,
   variablePrefix,
   variables,
+  type WriteConfirmation,
+  writeConfirmations,
   yamlDebugVariableNames,
 } from './variables.js';

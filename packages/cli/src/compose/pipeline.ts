@@ -7,7 +7,8 @@
  * of state (ADR 0031), the audit sink
  * with the audit file, the store of the counters and the folder of the
  * kill switches in the folder of state (ADR 0028, ADR 0029, ADR 0063),
- * and the policy (ADR 0032). The start over stdio reaches this module, so
+ * the policy (ADR 0032), and how writes are confirmed, with the stores of
+ * plans and nonces of the questions before a write (ADR 0029). The start over stdio reaches this module, so
  * it writes nothing to stdout and loads no module that does (ADR 0053).
  *
  * @packageDocumentation
@@ -28,6 +29,8 @@ import {
   createFileKeyProvider,
   createFileQuotaStore,
   createFileSnapshotStore,
+  createMemoryNonceStore,
+  createMemoryPlanStore,
   createSnapshotKeeper,
   type DayKeys,
   type SnapshotKeeper,
@@ -203,6 +206,16 @@ export function composeToolPipeline(options: ComposeOptions): ComposedPipeline {
           }),
       ...(keys === undefined ? {} : { keys }),
       ...(writeSnapshots === undefined ? {} : { snapshots: writeSnapshots }),
+      // How a write is confirmed, and, for a server that writes, the plans
+      // that wait for an answer and the nonces of the answers, in memory,
+      // so that a restart forgets them (ADR 0029).
+      confirmation: config.writeConfirmation,
+      ...(config.readOnly
+        ? {}
+        : {
+            plans: createMemoryPlanStore(clock),
+            nonces: createMemoryNonceStore(clock),
+          }),
     });
     return Object.freeze({ pipeline, transport, dayKeys, snapshots });
   } catch (error) {

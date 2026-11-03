@@ -131,6 +131,7 @@ describe('renderConfigReport', () => {
         'keine Tagesschlüssel (‹ECCLIUM_KEYS_DIR› ist nicht gesetzt)',
       ),
       row('Snapshots', '‹on› (Voreinstellung)'),
+      row('Bestätigung', '‹echo-allowed› (Voreinstellung)'),
       row('Frist in Monaten', '12 (Voreinstellung)'),
       row('Richtlinie', 'keine Datei (Voreinstellung)'),
       row('Subjekt über stdio', '‹local-stdio› (Voreinstellung)'),
@@ -330,6 +331,43 @@ describe('renderConfigReport', () => {
     expect(lines.slice(-3)).toEqual([
       'Beim Start meldet Ecclium:',
       `  - ${warningText('snapshots_off')}`,
+      valid,
+    ]);
+  });
+
+  // Over HTTP the default never takes the echo, and the echo set on
+  // purpose comes with the warning of the start (ADR 0029).
+  it('shows the confirmation over http, with the warning for the echo', () => {
+    const overHttp = (environment: Environment) => {
+      const result = loadConfig({
+        environment,
+        transport: 'http',
+        tokenFiles: goodFile().files,
+      });
+      return renderConfigReport(result.report, {
+        valid: result.ok,
+        showValues: false,
+      });
+    };
+    const byDefault = overHttp(minimal());
+    expect(byDefault[0]).toBe(
+      'Prüfung der Konfiguration für den Betrieb über HTTP',
+    );
+    expect(byDefault).toContain(
+      row('Bestätigung', '‹elicitation-or-queue› (Voreinstellung)'),
+    );
+    expect(byDefault).not.toContain('Beim Start meldet Ecclium:');
+    expect(byDefault.at(-1)).toBe(valid);
+    const echo = overHttp({
+      ...minimal(),
+      ECCLIUM_WRITE_CONFIRMATION: 'echo-allowed',
+    });
+    expect(echo).toContain(
+      row('Bestätigung', '‹echo-allowed› (aus ‹ECCLIUM_WRITE_CONFIRMATION›)'),
+    );
+    expect(echo.slice(-3)).toEqual([
+      'Beim Start meldet Ecclium:',
+      `  - ${warningText('echo_over_http')}`,
       valid,
     ]);
   });

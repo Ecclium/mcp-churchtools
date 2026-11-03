@@ -409,6 +409,34 @@ describe('the catalog of messages', () => {
     );
   });
 
+  // Over HTTP the echo holds only when the operator sets it, which every
+  // start says (ADR 0029).
+  it('warns that the echo confirms over http only because it is set', () => {
+    const message = warningMessage('echo_over_http');
+    expect(message.what).toBe(
+      '‹ECCLIUM_WRITE_CONFIRMATION› steht über HTTP auf ‹echo-allowed›.',
+    );
+    expect(message.why).toContain('‹ct_write_confirm›');
+    expect(message.why).toContain('weil Sie es so eingestellt haben');
+    expect(message.action).toContain(
+      '‹ECCLIUM_WRITE_CONFIRMATION› auf ‹elicitation-or-queue›',
+    );
+    expect(warningText('echo_over_http')).toBe(textOf(message));
+  });
+
+  it('lists the three ways to confirm a write', () => {
+    const message = problemMessage({
+      code: 'invalid_choice',
+      variable: 'ECCLIUM_WRITE_CONFIRMATION',
+    });
+    expect(message.what).toBe(
+      'Der Wert von ‹ECCLIUM_WRITE_CONFIRMATION› ist nicht erlaubt.',
+    );
+    expect(message.why).toBe(
+      'Erlaubt sind genau ‹echo-allowed›, ‹elicitation-or-queue› oder ‹queue›, in dieser Schreibweise.',
+    );
+  });
+
   it('names the folder of state for a folder of keys in it', () => {
     const message = problemMessage({
       code: 'keys_dir_in_state_dir',

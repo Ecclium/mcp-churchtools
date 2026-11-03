@@ -7,7 +7,8 @@ import {
   classify,
   defineWriteTool,
   EccliumError,
-  type PlannedWrite,
+  type NonceStore,
+  type PlanStore,
   type Plugin,
   type PluginHost,
   type TenantAssignment,
@@ -26,32 +27,61 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { createAuditSink } from '../audit/index.js';
+import type { WriteConfirmation } from '../config/index.js';
 import { contentSentences } from '../content/index.js';
 import { checkPolicy, defaultPolicy } from '../policy/check.js';
 import { policyHashOf } from '../policy/hash.js';
 import type { Policy } from '../policy/schema.js';
 import { createToolCatalog } from '../registry/index.js';
-import { confirmationSentence } from '../write/confirm.js';
+import {
+  confirmationSentence,
+  confirmationSentences,
+} from '../write/confirm.js';
 import { type WriteSnapshots, writeSentences } from '../write/guard.js';
+import { createMemoryNonceStore } from '../write/nonce-store.js';
+import { createMemoryPlanStore } from '../write/plan-store.js';
 import { policySentences } from '../write/policy-gate.js';
-import { issueProof } from '../write/proof.js';
-import { createToolPipeline, type ToolRequest } from './pipeline.js';
+import {
+  createToolPipeline,
+  type ToolOutcome,
+  type ToolPipeline,
+  type ToolRequest,
+} from './pipeline.js';
 
-// The step of the confirmation gives no proof until the ways of
-// confirmation exist (ADR 0029). These tests replace it, call by call, to
-// reach the commit with a proof they issue; without a replacement the real
-// step runs.
-const confirming = vi.hoisted(() => ({
-  issue: undefined as ((plan: PlannedWrite) => unknown) | undefined,
+// Two answers of the write guard that its contract allows but no real
+// plan gives: a sealed plan without its text, and a refused commit that
+// names no target. Off unless a test turns them on.
+const gaps = vi.hoisted(() => ({
+  dropText: false,
+  commitWithoutTarget: false,
 }));
-vi.mock('../write/confirm.js', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../write/confirm.js')>();
+vi.mock('../write/guard.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../write/guard.js')>();
   return {
     ...original,
-    confirmWrite: (ctx: never, plan: PlannedWrite) =>
-      confirming.issue === undefined
-        ? original.confirmWrite(ctx, plan)
-        : Promise.resolve({ kind: 'proof', proof: confirming.issue(plan) }),
+    createWriteGuard: (
+      options: Parameters<typeof original.createWriteGuard>[0],
+    ) => {
+      const guard = original.createWriteGuard(options);
+      return Object.freeze({
+        ...guard,
+        plan: async (...args: Parameters<typeof guard.plan>) => {
+          const result = await guard.plan(...args);
+          return gaps.dropText
+            ? { outcome: result.outcome, target: result.target }
+            : result;
+        },
+        commit: (...args: Parameters<typeof guard.commit>) =>
+          gaps.commitWithoutTarget
+            ? Promise.resolve({
+                ok: false,
+                state: 'denied',
+                error: new EccliumError('internal'),
+                sent: false,
+              } as const)
+            : guard.commit(...args),
+      });
+    },
   };
 });
 
@@ -150,8 +180,38 @@ const open: { close(): Promise<void> }[] = [];
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'ecclium-pipeline-write-'));
-  confirming.issue = undefined;
+  gaps.dropText = false;
+  gaps.commitWithoutTarget = false;
 });
+
+// A write confirmed by the person: the first round asks a client that
+// declared elicitation, the second brings a yes (ADR 0029). The first
+// round leaves the audit line `planned`, the second the line of the write.
+const confirmed = async (
+  pipeline: ToolPipeline,
+  name: string,
+  input: unknown,
+  change: Partial<ToolRequest> = {},
+): Promise<ToolOutcome> => {
+  const asked = await pipeline.call(
+    name,
+    input,
+    request({ elicitation: true, ...change }),
+  );
+  if (asked.ok || asked.question === undefined) return asked;
+  return pipeline.call(
+    name,
+    input,
+    request({
+      answer: {
+        state: asked.question.state,
+        action: 'accept',
+        content: { bestaetigen: true },
+      },
+      ...change,
+    }),
+  );
+};
 
 afterEach(async () => {
   rmSync(dir, { recursive: true, force: true });
@@ -164,6 +224,11 @@ const setup = (
     readonly killSwitchDir?: string | null;
     readonly policy?: Policy;
     readonly snapshots?: WriteSnapshots;
+    readonly nonces?: NonceStore;
+    readonly plans?: PlanStore;
+    readonly confirmation?: WriteConfirmation;
+    /** False for a pipeline without the stores of questions. */
+    readonly stores?: false;
   } = {},
 ) => {
   const double = createChurchToolsDouble({ token });
@@ -216,6 +281,15 @@ const setup = (
     ...(options.snapshots === undefined
       ? {}
       : { snapshots: options.snapshots }),
+    ...(options.stores === false
+      ? {}
+      : {
+          plans: options.plans ?? createMemoryPlanStore(clock),
+          nonces: options.nonces ?? createMemoryNonceStore(clock),
+        }),
+    ...(options.confirmation === undefined
+      ? {}
+      : { confirmation: options.confirmation }),
   });
   const events = () =>
     auditLines.map((line) => JSON.parse(line) as Record<string, unknown>);
@@ -258,9 +332,8 @@ describe('a write tool in the pipeline', () => {
     expect(file.anchors).toBe(0);
   });
 
-  it('commits with a proof, reads the change back and gives the fixed result', async () => {
+  it('commits after a yes, reads the change back and gives the fixed result', async () => {
     const { double, pipeline, events, file, logs, planReads } = setup();
-    confirming.issue = (plan) => issueProof(plan, 'elicitation', now);
     planReads();
     double
       .intercept({ path: pagePath, method: 'GET' })
@@ -271,21 +344,19 @@ describe('a write tool in the pipeline', () => {
     double
       .intercept({ path: pagePath, method: 'GET' })
       .reply(200, page(4, '# Plan\n\nHallo\n'), json);
-    const outcome = await pipeline.call(
-      'ct_example_note_write',
-      note,
-      request(),
-    );
+    const outcome = await confirmed(pipeline, 'ct_example_note_write', note);
     expect(outcome.ok && outcome.data).toMatchObject({
       state: 'verified',
       target: { kind: 'wiki_page', key: `12/${guid}` },
       version: 4,
     });
-    expect(events()[0]).toMatchObject({
+    expect(events()[0]).toMatchObject({ outcome: 'ok', writeState: 'planned' });
+    expect(events()[1]).toMatchObject({
       outcome: 'ok',
       confirmation: 'elicitation',
       writeState: 'verified',
       policyHash: policyHashOf(defaultPolicy),
+      objectRefs: ['wiki_category:12', `wiki_page:${guid}`],
     });
     expect(file.anchors).toBe(1);
     expect(logs()).toContain('write_committed');
@@ -302,7 +373,6 @@ describe('a write tool in the pipeline', () => {
         load: () => Promise.resolve({ kind: 'missing' }),
       },
     });
-    confirming.issue = (plan) => issueProof(plan, 'elicitation', now);
     planReads();
     double
       .intercept({ path: pagePath, method: 'GET' })
@@ -313,12 +383,9 @@ describe('a write tool in the pipeline', () => {
     double
       .intercept({ path: pagePath, method: 'GET' })
       .reply(200, page(4, '# Plan\n\nHallo\n'), json);
-    const outcome = await pipeline.call(
-      'ct_example_note_write',
-      note,
-      request(),
-    );
-    const eventId = events()[0]?.['eventId'];
+    const outcome = await confirmed(pipeline, 'ct_example_note_write', note);
+    // The snapshot names the line of the round that wrote.
+    const eventId = events()[1]?.['eventId'];
     expect(saved).toEqual([{ eventId, part: 'before' }]);
     expect(outcome.ok && outcome.data).toMatchObject({
       state: 'verified',
@@ -337,7 +404,6 @@ describe('a write tool in the pipeline', () => {
       }),
     );
     const { double, pipeline, events } = setup({ tools: [tool] });
-    confirming.issue = (plan) => issueProof(plan, 'elicitation', now);
     const created = '00000000-0000-4000-8000-0000000000cd';
     const list = JSON.stringify({
       data: [],
@@ -390,17 +456,17 @@ describe('a write tool in the pipeline', () => {
         }),
         json,
       );
-    const outcome = await pipeline.call(
-      'ct_test_create',
-      { text: 'x' },
-      request(),
-    );
+    const outcome = await confirmed(pipeline, 'ct_test_create', { text: 'x' });
     expect(outcome.ok && outcome.data).toMatchObject({
       state: 'verified',
       target: { kind: 'wiki_page', key: `12/${created}` },
       version: 1,
     });
     expect(events()[0]).toMatchObject({
+      writeState: 'planned',
+      objectRefs: ['wiki_category:12'],
+    });
+    expect(events()[1]).toMatchObject({
       writeState: 'verified',
       objectRefs: ['wiki_category:12', `wiki_page:${created}`],
     });
@@ -425,14 +491,12 @@ describe('a write tool in the pipeline', () => {
   });
 
   it('reports a conflict after a write, with its anchor', async () => {
-    // The echo confirms only a write that a snapshot can take back.
     const { double, pipeline, events, file, planReads } = setup({
       snapshots: {
         save: () => Promise.resolve(),
         load: () => Promise.resolve({ kind: 'missing' }),
       },
     });
-    confirming.issue = (plan) => issueProof(plan, 'echo', now);
     planReads();
     double
       .intercept({ path: pagePath, method: 'GET' })
@@ -443,27 +507,23 @@ describe('a write tool in the pipeline', () => {
     double
       .intercept({ path: pagePath, method: 'GET' })
       .reply(200, page(5, '# Anders\n'), json);
-    const outcome = await pipeline.call(
-      'ct_example_note_write',
-      note,
-      request(),
-    );
+    const outcome = await confirmed(pipeline, 'ct_example_note_write', note);
     expect(!outcome.ok && outcome.error).toEqual({
       code: 'conflict',
       message: writeSentences.notAsPlanned,
     });
-    expect(events()[0]).toMatchObject({
+    expect(events()[1]).toMatchObject({
       outcome: 'error',
       errorCode: 'conflict',
-      confirmation: 'echo',
+      confirmation: 'elicitation',
       writeState: 'conflict',
+      objectRefs: ['wiki_category:12', `wiki_page:${guid}`],
     });
     expect(file.anchors).toBe(1);
   });
 
   it('gives the result of a write whose line failed, and then writes no more', async () => {
     const { double, pipeline, file, logs, planReads } = setup();
-    confirming.issue = (plan) => issueProof(plan, 'elicitation', now);
     planReads();
     double
       .intercept({ path: pagePath, method: 'GET' })
@@ -474,11 +534,26 @@ describe('a write tool in the pipeline', () => {
     double
       .intercept({ path: pagePath, method: 'GET' })
       .reply(200, page(4, '# Plan\n\nHallo\n'), json);
+    // The line of the second round, which writes, fails.
+    const asked = await pipeline.call(
+      'ct_example_note_write',
+      note,
+      request({ elicitation: true }),
+    );
+    if (asked.ok || asked.question === undefined) {
+      throw new Error('no question');
+    }
     file.ok = false;
     const written = await pipeline.call(
       'ct_example_note_write',
       note,
-      request(),
+      request({
+        answer: {
+          state: asked.question.state,
+          action: 'accept',
+          content: { bestaetigen: true },
+        },
+      }),
     );
     expect(written.ok).toBe(true);
     expect(logs()).toContain('write_audit_failed');
@@ -552,16 +627,11 @@ describe('a write tool in the pipeline', () => {
     const { double, pipeline, events, logs, planReads } = setup({
       policy: checked.policy,
     });
-    let asked = 0;
-    confirming.issue = (plan) => {
-      asked += 1;
-      return issueProof(plan, 'elicitation', now);
-    };
     planReads();
     const outcome = await pipeline.call(
       'ct_example_note_write',
       note,
-      request(),
+      request({ elicitation: true }),
     );
     expect(!outcome.ok && outcome.error).toEqual({
       code: 'policy_denied',
@@ -573,7 +643,6 @@ describe('a write tool in the pipeline', () => {
       policyHash: policyHashOf(checked.policy),
     });
     expect(logs()).toContain('policy_no_entry');
-    expect(asked).toBe(0);
     expect(double.calls().filter(({ method }) => method !== 'GET')).toEqual([]);
   });
 
@@ -717,20 +786,348 @@ describe('a write tool in the pipeline', () => {
     expect(events()[0]).toMatchObject({ writeState: 'failed' });
   });
 
-  it('commits nothing once the client cancelled the call', async () => {
-    const { double, pipeline, planReads } = setup();
+  it('commits nothing once the client cancelled the second round', async () => {
     const controller = new AbortController();
-    confirming.issue = (plan) => {
+    const memory = createMemoryNonceStore(clock);
+    // The client cancels while the answer is checked.
+    const nonces: NonceStore = Object.freeze({
+      consume: (...args: Parameters<NonceStore['consume']>) => {
+        controller.abort();
+        return memory.consume(...args);
+      },
+    });
+    const { double, pipeline, planReads } = setup({ nonces });
+    planReads();
+    const outcome = await confirmed(pipeline, 'ct_example_note_write', note, {
+      signal: controller.signal,
+    });
+    expect(!outcome.ok && outcome.error.code).toBe('network');
+    assertOnlyReads(double);
+  });
+
+  it('asks nothing once the client cancelled the first round', async () => {
+    const controller = new AbortController();
+    const tool = customTool('ct_test_cancels', async (write) => {
+      const outcome = await write.plan(update);
       controller.abort();
-      return issueProof(plan, 'elicitation', now);
-    };
+      return outcome;
+    });
+    const { double, pipeline, planReads } = setup({ tools: [tool] });
+    planReads();
+    const outcome = await pipeline.call(
+      'ct_test_cancels',
+      { text: 'x' },
+      request({ elicitation: true, signal: controller.signal }),
+    );
+    expect(!outcome.ok && outcome.error.code).toBe('network');
+    assertOnlyReads(double);
+  });
+});
+
+describe('a question before a write', () => {
+  // The answer of a client to a question, with the content it sends.
+  const answerOf = (
+    state: unknown,
+    action: 'accept' | 'decline' | 'cancel' = 'accept',
+    content: unknown = { bestaetigen: true },
+  ): Partial<ToolRequest> => ({
+    answer: { state, action, ...(action === 'accept' ? { content } : {}) },
+  });
+
+  const ask = async (pipeline: ToolPipeline, input: unknown = note) => {
+    const asked = await pipeline.call(
+      'ct_example_note_write',
+      input,
+      request({ elicitation: true }),
+    );
+    if (asked.ok || asked.question === undefined) {
+      throw new Error('no question');
+    }
+    return asked.question;
+  };
+
+  // The reads and the one write of a commit of the note.
+  const commitReads = (double: ReturnType<typeof setup>['double']) => {
+    double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, page(3, '# Plan\n'), json);
+    double
+      .intercept({ path: pagePath, method: 'PATCH' })
+      .reply(200, '{}', json);
+    double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, page(4, '# Plan\n\nHallo\n'), json);
+  };
+
+  it('asks a client that declared elicitation, with summary and diff, and writes nothing yet', async () => {
+    const { double, pipeline, events, file, planReads } = setup();
+    planReads();
+    const question = await ask(pipeline);
+    expect(question.message).toContain(
+      'An die Seite «Dienstplan» in der Kategorie 12 einen Abschnitt mit 2 Zeilen anhängen.',
+    );
+    expect(question.message).toContain('+Hallo');
+    expect(question.form.required).toEqual(['bestaetigen']);
+    expect(question.state).toMatchObject({
+      v: 1,
+      tool: 'ct_example_note_write',
+    });
+    assertOnlyReads(double);
+    expect(events()).toHaveLength(1);
+    expect(events()[0]).toMatchObject({
+      outcome: 'ok',
+      writeState: 'planned',
+      objectRefs: ['wiki_category:12', `wiki_page:${guid}`],
+    });
+    expect(events()[0]).not.toHaveProperty('errorCode');
+    expect(events()[0]).not.toHaveProperty('confirmation');
+    expect(file.anchors).toBe(0);
+  });
+
+  it.each([
+    ['with the setting queue', { confirmation: 'queue' as const }],
+    ['without the stores of questions', { stores: false as const }],
+  ])('asks nothing %s, and writes nothing', async (_name, options) => {
+    const { double, pipeline, events, planReads } = setup(options);
     planReads();
     const outcome = await pipeline.call(
       'ct_example_note_write',
       note,
-      request({ signal: controller.signal }),
+      request({ elicitation: true }),
     );
-    expect(!outcome.ok && outcome.error.code).toBe('network');
+    expect(outcome).toEqual({
+      ok: false,
+      error: { code: 'confirmation_required', message: confirmationSentence },
+    });
     assertOnlyReads(double);
+    expect(events()[0]).toMatchObject({ writeState: 'denied' });
+  });
+
+  it('asks nothing about a diff too long for a dialog', async () => {
+    const long = Array.from(
+      { length: 121 },
+      (_, index) => `Zeile ${String(index)}`,
+    )
+      .join('\n')
+      .concat('\n');
+    const tool = customTool('ct_test_long', (write) =>
+      write.plan({ ...update, text: long }),
+    );
+    const { double, pipeline, planReads } = setup({ tools: [tool] });
+    planReads();
+    const outcome = await pipeline.call(
+      'ct_test_long',
+      { text: 'x' },
+      request({ elicitation: true }),
+    );
+    expect(!outcome.ok && outcome.error.code).toBe('confirmation_required');
+    assertOnlyReads(double);
+  });
+
+  it.each([
+    ['a decline', answerOf(undefined, 'decline')],
+    ['a cancel', answerOf(undefined, 'cancel')],
+    ['a no', answerOf(undefined, 'accept', { bestaetigen: false })],
+  ])('writes nothing after %s, and refuses the call', async (_name, given) => {
+    const { double, pipeline, events, file, planReads } = setup();
+    planReads();
+    const question = await ask(pipeline);
+    const answer = { ...given.answer, state: question.state } as NonNullable<
+      ToolRequest['answer']
+    >;
+    const outcome = await pipeline.call(
+      'ct_example_note_write',
+      note,
+      request({ answer }),
+    );
+    expect(outcome).toEqual({
+      ok: false,
+      error: {
+        code: 'confirmation_required',
+        message: confirmationSentences.notConfirmed,
+      },
+    });
+    assertOnlyReads(double);
+    expect(events()[1]).toMatchObject({
+      outcome: 'denied',
+      errorCode: 'confirmation_required',
+      writeState: 'denied',
+      objectRefs: ['wiki_category:12', `wiki_page:${guid}`],
+    });
+    expect(file.anchors).toBe(0);
+  });
+
+  it('runs no tool in the second round', async () => {
+    let runs = 0;
+    const tool = customTool('ct_test_counts', (write) => {
+      runs += 1;
+      return write.plan(update);
+    });
+    const { double, pipeline, planReads } = setup({ tools: [tool] });
+    planReads();
+    const outcome = await confirmed(pipeline, 'ct_test_counts', { text: 'x' });
+    // The commit reads the page right before writing and fails here
+    // without a reply; what counts is that the tool ran once.
+    expect(outcome.ok).toBe(false);
+    expect(runs).toBe(1);
+    expect(double.calls().filter(({ method }) => method !== 'GET')).toEqual([]);
+  });
+
+  it('refuses an answer for another input, and the right one still writes', async () => {
+    const { double, pipeline, planReads } = setup();
+    planReads();
+    const question = await ask(pipeline);
+    const other = await pipeline.call(
+      'ct_example_note_write',
+      { ...note, note: 'Anders' },
+      request(answerOf(question.state)),
+    );
+    expect(other).toEqual({
+      ok: false,
+      error: {
+        code: 'confirmation_required',
+        message: confirmationSentences.notThisCall,
+      },
+    });
+    commitReads(double);
+    const right = await pipeline.call(
+      'ct_example_note_write',
+      note,
+      request(answerOf(question.state)),
+    );
+    expect(right.ok && right.data).toMatchObject({
+      state: 'verified',
+    });
+  });
+
+  it('writes once for an answer that comes twice', async () => {
+    const { double, pipeline, planReads } = setup();
+    planReads();
+    const question = await ask(pipeline);
+    commitReads(double);
+    const first = await pipeline.call(
+      'ct_example_note_write',
+      note,
+      request(answerOf(question.state)),
+    );
+    expect(first.ok).toBe(true);
+    const again = await pipeline.call(
+      'ct_example_note_write',
+      note,
+      request(answerOf(question.state)),
+    );
+    expect(again).toEqual({
+      ok: false,
+      error: {
+        code: 'confirmation_required',
+        message: confirmationSentences.used,
+      },
+    });
+    expect(
+      double.calls().filter(({ method }) => method === 'PATCH'),
+    ).toHaveLength(1);
+  });
+
+  it('refuses in a second instance, whose key and stores are its own', async () => {
+    const first = setup();
+    first.planReads();
+    const question = await ask(first.pipeline);
+    const second = setup();
+    const outcome = await second.pipeline.call(
+      'ct_example_note_write',
+      note,
+      request(answerOf(question.state)),
+    );
+    expect(outcome).toEqual({
+      ok: false,
+      error: {
+        code: 'confirmation_required',
+        // The hashes of the state are keyed per pipeline.
+        message: confirmationSentences.notThisCall,
+      },
+    });
+    expect(second.double.calls()).toEqual([]);
+  });
+
+  it('refuses an answer to a tool that only reads, without running it', async () => {
+    const { double, pipeline, events } = setup();
+    const outcome = await pipeline.call(
+      'ct_example_echo',
+      { notes: ['a'] },
+      request(answerOf({ v: 1 })),
+    );
+    expect(!outcome.ok && outcome.error.code).toBe('validation');
+    expect(double.calls()).toEqual([]);
+    expect(events()[0]).not.toHaveProperty('writeState');
+  });
+
+  it('refuses an answer in a pipeline without the stores of questions', async () => {
+    const { double, pipeline } = setup({ stores: false });
+    const outcome = await pipeline.call(
+      'ct_example_note_write',
+      note,
+      request(answerOf({ v: 1 })),
+    );
+    expect(outcome).toEqual({
+      ok: false,
+      error: { code: 'confirmation_required', message: confirmationSentence },
+    });
+    expect(double.calls()).toEqual([]);
+  });
+
+  it('refuses a question while too many plans wait', async () => {
+    const { double, pipeline, events, planReads } = setup({
+      plans: createMemoryPlanStore(clock, 1),
+    });
+    planReads();
+    await ask(pipeline);
+    planReads();
+    const outcome = await pipeline.call(
+      'ct_example_note_write',
+      { ...note, note: 'Noch einmal' },
+      request({ elicitation: true }),
+    );
+    expect(outcome).toEqual({
+      ok: false,
+      error: {
+        code: 'policy_denied',
+        message: confirmationSentences.tooMany,
+      },
+    });
+    expect(events()[1]).toMatchObject({
+      outcome: 'denied',
+      writeState: 'denied',
+    });
+    assertOnlyReads(double);
+  });
+
+  it('takes a sealed plan without its text as a fault of the core', async () => {
+    gaps.dropText = true;
+    const { double, pipeline, planReads } = setup();
+    planReads();
+    const outcome = await pipeline.call(
+      'ct_example_note_write',
+      note,
+      request({ elicitation: true }),
+    );
+    expect(!outcome.ok && outcome.error.code).toBe('internal');
+    assertOnlyReads(double);
+  });
+
+  it('names the target of the input when a refused commit names none', async () => {
+    const { pipeline, events, planReads } = setup();
+    planReads();
+    const question = await ask(pipeline);
+    gaps.commitWithoutTarget = true;
+    const outcome = await pipeline.call(
+      'ct_example_note_write',
+      note,
+      request(answerOf(question.state)),
+    );
+    expect(!outcome.ok && outcome.error.code).toBe('internal');
+    expect(events()[1]).toMatchObject({
+      writeState: 'denied',
+      objectRefs: ['wiki_category:12', `wiki_page:${guid}`],
+    });
   });
 });
