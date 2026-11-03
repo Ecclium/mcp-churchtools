@@ -166,6 +166,30 @@ const setup = (options: { readonly snapshots?: false } = {}) => {
         after: { version: 4, textHash: contentHashOf([after]) },
       },
     });
+  // The snapshot of a write that created the page, with or without its
+  // GUID.
+  const keepCreate = async (withGuid: boolean) => {
+    await keeper.save(ctxOf, {
+      eventId: written,
+      part: 'before',
+      day,
+      content: {
+        kind: 'wikiPageCreate',
+        tool: 'ct_example_note_write',
+        categoryId: 12,
+        title: 'Dienstplan',
+        textHash: contentHashOf([after]),
+      },
+    });
+    if (withGuid) {
+      await keeper.save(ctxOf, {
+        eventId: written,
+        part: 'after',
+        day,
+        content: { kind: 'wikiPageCreated', guid, version: 1 },
+      });
+    }
+  };
   // The reads of an undo: the rights, then the page.
   const reads = (version = 4, text = after) => {
     double
@@ -182,6 +206,7 @@ const setup = (options: { readonly snapshots?: false } = {}) => {
     pipeline,
     keeper,
     keep,
+    keepCreate,
     reads,
     events,
     auditLines,
@@ -364,5 +389,117 @@ describe('the undo of the pipeline (ADR 0031)', () => {
       await pipeline.undo({ eventId: written, overwrite: false }, request()),
     ).toMatchObject({ kind: 'failed', reason: 'blocked' });
     expect(file.anchors).toBe(1);
+  });
+
+  it('withdraws a new page, and names only its category without its GUID', async () => {
+    const created = setup();
+    await created.keepCreate(true);
+    created.reads(1, after);
+    created.double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, page(1, after), json);
+    created.double
+      .intercept({ path: pagePath, method: 'PATCH' })
+      .reply(200, '{}', json);
+    const note =
+      'Diese Seite hat Ecclium am 03.11.2026 angelegt und am 03.11.2026 zurückgenommen.\n';
+    created.double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, page(2, note), json);
+    expect(
+      await created.pipeline.undo(
+        { eventId: written, overwrite: false },
+        request(),
+      ),
+    ).toMatchObject({ kind: 'done', version: 2 });
+    const incomplete = setup();
+    await incomplete.keepCreate(false);
+    expect(
+      await incomplete.pipeline.undo(
+        { eventId: written, overwrite: false },
+        request(),
+      ),
+    ).toEqual({ kind: 'incomplete', categoryId: 12 });
+    expect(incomplete.events()).toMatchObject([
+      {
+        type: 'undo',
+        writeState: 'failed',
+        errorCode: 'not_found',
+        objectRefs: ['wiki_category:12'],
+      },
+    ]);
+  });
+
+  it('names the reason of a commit that the write guard refused, and none for an error of ChurchTools', async () => {
+    const late = setup();
+    await late.keep();
+    late.reads();
+    // ChurchTools answers with a time ten minutes off.
+    late.double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, page(4, after), {
+        headers: {
+          'content-type': 'application/json',
+          date: new Date(now + 600_000).toUTCString(),
+        },
+      });
+    expect(
+      await late.pipeline.undo(
+        { eventId: written, overwrite: false },
+        request(),
+      ),
+    ).toMatchObject({
+      kind: 'failed',
+      code: 'policy_denied',
+      reason: 'clock',
+      state: 'denied',
+      sent: false,
+    });
+    const gone = setup();
+    await gone.keep();
+    gone.reads();
+    gone.double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(404, '{}', json);
+    const outcome = await gone.pipeline.undo(
+      { eventId: written, overwrite: false },
+      request(),
+    );
+    expect(outcome).toMatchObject({ kind: 'failed', sent: false });
+    expect(outcome).not.toHaveProperty('reason');
+  });
+
+  it('takes nothing back for a request cancelled before, without a tenant, or with one that does not fit', async () => {
+    const { pipeline, keep, events } = setup();
+    await keep();
+    const controller = new AbortController();
+    controller.abort();
+    expect(
+      await pipeline.undo(
+        { eventId: written, overwrite: false },
+        request({ signal: controller.signal }),
+      ),
+    ).toMatchObject({ kind: 'failed', code: 'network' });
+    expect(
+      await pipeline.undo(
+        { eventId: written, overwrite: false },
+        request({ assignment: undefined }),
+      ),
+    ).toMatchObject({ kind: 'failed', code: 'auth' });
+    expect(
+      await pipeline.undo(
+        { eventId: written, overwrite: false },
+        request({
+          assignment: {
+            tenantId: 'Not A Tenant',
+            actor: { kind: 'user', id: 'stdio:local-stdio' },
+          } as unknown as TenantAssignment,
+        }),
+      ),
+    ).toMatchObject({ kind: 'failed', code: 'internal' });
+    expect(events()[1]).toMatchObject({
+      tenantId: auditPlaceholders.tenantId,
+      undoes: written,
+    });
   });
 });

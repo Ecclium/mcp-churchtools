@@ -224,6 +224,7 @@ export type UndoResult =
   /** Planned and committed, with how the commit ended. */
   | {
       readonly kind: 'committed';
+      readonly target: WriteTarget;
       readonly result: CommitResult;
       readonly change: UndoChange;
     };
@@ -1084,7 +1085,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       eventId,
       true,
     );
-    return Object.freeze({ kind: 'committed', result, change });
+    return Object.freeze({ kind: 'committed', target, result, change });
   };
 
   return Object.freeze({

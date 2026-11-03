@@ -1264,16 +1264,19 @@ describe('the undo of a write (ADR 0031)', () => {
       killSwitchDir?: string | null;
       policy?: Policy;
       readOnly?: boolean;
+      future?: boolean;
     } = {},
   ) => {
     const fake = options.fake ?? fakeOf();
     const { saved, snapshots } = recording();
     const switches =
       options.killSwitchDir === undefined ? dir : options.killSwitchDir;
-    const { guard } = setup(fake, switches, {
+    const { guard, clock } = setup(fake, switches, {
       snapshots,
       ...(options.policy === undefined ? {} : { policy: options.policy }),
     });
+    // A time past the year 9999, which has no day.
+    if (options.future === true) clock.advance(Date.UTC(10_000, 0, 1) - now);
     const ctx = contextOf(logged, {
       mode: 'operator',
       readOnly: options.readOnly ?? false,
@@ -1424,6 +1427,14 @@ describe('the undo of a write (ADR 0031)', () => {
     expect(await undoWith(changed, { fake: failing }).result).toMatchObject({
       kind: 'refused',
       error: { code: 'network' },
+    });
+  });
+
+  it('is refused when the clock gives no day', async () => {
+    const { result } = undoWith(changed, { future: true });
+    expect(await result).toMatchObject({
+      kind: 'refused',
+      error: { code: 'policy_denied', message: writeSentences.clock },
     });
   });
 

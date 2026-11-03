@@ -164,11 +164,14 @@ export interface UndoCall {
  * audit.
  */
 export type UndoOutcome =
-  /** Taken back: the version of the page after it, and the ID of the undo. */
+  /**
+   * Taken back: the version of the page after it, and the ID to take the
+   * undo back with, since an undo always keeps a snapshot of its own.
+   */
   | {
       readonly kind: 'done';
       readonly version: number;
-      readonly undoId?: string;
+      readonly undoId: string | undefined;
       readonly diff: LineDiff;
     }
   /** The page holds what the undo would write already. */
@@ -1150,6 +1153,15 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     }
   };
 
+  // The duration of a call or an undo for its audit line, 0 without a
+  // clock that answers, at most the longest the audit accepts.
+  const durationSince = (start: number): number => {
+    const elapsed = Math.round(now() - start);
+    return Number.isFinite(elapsed)
+      ? Math.min(Math.max(elapsed, 0), maxDurationMs)
+      : 0;
+  };
+
   const call = async (
     name: string,
     input: unknown,
@@ -1205,10 +1217,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       try {
         run.access?.revoke();
         run.detach?.();
-        const elapsed = Math.round(now() - start);
-        durationMs = Number.isFinite(elapsed)
-          ? Math.min(Math.max(elapsed, 0), maxDurationMs)
-          : 0;
+        durationMs = durationSince(start);
         // Deriving the IDs never costs the line of the call, and a result
         // whose IDs cannot be derived does not go out (ADR 0028).
         let refs = noRefs;
@@ -1392,15 +1401,13 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     }
     const committed = result.result;
     const diff = diffLines(result.change.from, result.change.to);
-    if (committed.target !== undefined) addTarget(refs, committed.target);
+    addTarget(refs, result.target);
     if (committed.ok) {
       return undoEnd(
         {
           kind: 'done',
           version: committed.version,
-          ...(committed.undoId === undefined
-            ? {}
-            : { undoId: committed.undoId }),
+          undoId: committed.undoId,
           diff,
         },
         'verified',
@@ -1461,12 +1468,8 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       end = undoRefused('internal');
     } finally {
       let recorded = false;
-      const elapsed = Math.round(now() - start);
-      const durationMs = Number.isFinite(elapsed)
-        ? Math.min(Math.max(elapsed, 0), maxDurationMs)
-        : 0;
+      const durationMs = durationSince(start);
       try {
-        const listed = refs.list();
         recorded =
           // eslint-disable-next-line @typescript-eslint/no-unnecessary-boolean-literal-compare -- only true counts, also from a sink without types
           audit.record(
@@ -1484,10 +1487,8 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
               ...(end.errorCode === undefined
                 ? {}
                 : { errorCode: end.errorCode }),
-              objectRefs: listed.refs,
-              ...(listed.omitted > 0
-                ? { objectRefsOmitted: listed.omitted }
-                : {}),
+              // At most a category and a page, never over the limit.
+              objectRefs: refs.list().refs,
               durationMs,
             },
             eventId,
