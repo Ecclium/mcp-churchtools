@@ -360,9 +360,10 @@ export const writeTargetKinds: readonly WriteTargetKind[] = Object.freeze([
 export interface WriteResult {
   /**
    * `verified` when the core wrote and read the change back, `skipped`
-   * when the target already held what the intent would write.
+   * when the target already held what the intent would write, `planned`
+   * when the write waits for its confirmation by echo, with `confirm`.
    */
-  readonly state: 'verified' | 'skipped';
+  readonly state: 'verified' | 'skipped' | 'planned';
   /** What the write changed. */
   readonly target: {
     readonly kind: WriteTargetKind;
@@ -376,6 +377,18 @@ export interface WriteResult {
    * a snapshot of what it changed (ADR 0031).
    */
   readonly undoId?: string;
+  /**
+   * For a write that waits for its confirmation by echo (ADR 0029): the
+   * token and the summary to send back with `ct_write_confirm`, the diff
+   * and, for a new page, its whole title. Summary, diff and title are text
+   * of the core with text of ChurchTools in it.
+   */
+  readonly confirm?: {
+    readonly token: string;
+    readonly summary: string;
+    readonly diff: readonly string[];
+    readonly title?: string;
+  };
 }
 
 /**
@@ -383,7 +396,7 @@ export interface WriteResult {
  * registry of the core uses its own copy, whatever a tool declares.
  */
 export const writeResultSchema: ZodType<WriteResult, WriteResult> = z.object({
-  state: classify(z.enum(['verified', 'skipped']), 'none'),
+  state: classify(z.enum(['verified', 'skipped', 'planned']), 'none'),
   target: z.object({
     kind: classify(z.enum(writeTargetKinds), 'none'),
     key: classify(z.string().min(1).max(200), 'none'),
@@ -395,6 +408,14 @@ export const writeResultSchema: ZodType<WriteResult, WriteResult> = z.object({
       .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
     'none',
   ).optional(),
+  confirm: z
+    .object({
+      token: classify(z.string().min(1).max(1024), 'none'),
+      summary: classify(z.string().min(1).max(2000), 'untrusted'),
+      diff: z.array(classify(z.string().max(65_536), 'untrusted')).max(10_000),
+      title: classify(z.string().max(4000), 'untrusted').optional(),
+    })
+    .optional(),
 });
 
 /** What a write tool receives for one call: a read tool's call and `write`. */
