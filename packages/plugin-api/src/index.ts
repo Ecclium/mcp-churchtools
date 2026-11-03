@@ -194,6 +194,15 @@ export {
   type PromptTextArgument,
 } from './prompt.js';
 export {
+  type ApprovalQueue,
+  maxSealedQueueEntryLength,
+  type QueueDecision,
+  type QueueDecisionKind,
+  queueDecisionKinds,
+  type QueueItem,
+  type SealedQueueEntry,
+} from './approval-queue.js';
+export {
   maxSealedSnapshotLength,
   type SealedSnapshot,
   type SnapshotPart,
