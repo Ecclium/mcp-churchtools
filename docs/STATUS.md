@@ -1364,3 +1364,4 @@ Diese Grundsatzfragen sind entschieden.
   - Konfiguration: `ECCLIUM_KEYS_DIR` nur über stdio, geprüft wie der Zustandsordner, Pflicht mit `ECCLIUM_READ_ONLY=false`, nicht der Zustandsordner, nicht darin und ihn nicht enthaltend. `ecclium config check` zeigt den «Schlüsselordner», die Kommandozeile erklärt jedes Problem auf Deutsch.
   - Start: Der Start über stdio legt den Ordner `snapshot` an und vernichtet beim Start und mit dem Zeitgeber des Tages die Tagesschlüssel, deren Frist von 30 Tagen vorbei ist, mit den Logzeilen `day_keys_destroyed` und `day_keys_not_destroyed`.
   - Doku: ADR 0031, ADR 0055 (Tabelle der Variablen), `docs/privacy.md` («Tagesschlüssel»), `docs/betrieb/stdio.md` («Ordner der Tagesschlüssel», mit `tmutil addexclusion`), `docs/configuration.md` und `docs/log-events.md` neu erzeugt.
+- 03.11.2026, die Tagesschlüssel sind als `13843eb` auf `main` (#186). Der Squash-Commit bringt genau den Baum des Branches.
