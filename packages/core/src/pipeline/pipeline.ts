@@ -48,6 +48,7 @@ import {
   EccliumError,
   type ErrorCode,
   type FeatureKey,
+  type IsoDate,
   type KeyProvider,
   type Mode,
   type NonceStore,
@@ -104,7 +105,12 @@ import type { PolicyQueueReason } from '../policy/engine.js';
 import { policyHashOf } from '../policy/hash.js';
 import type { Policy } from '../policy/schema.js';
 import { isoDateOf, quotaTimeoutMs } from '../quota/budget.js';
-import type { QueueKeeper, QueueReason } from '../queue/index.js';
+import type {
+  QueueEntryContent,
+  QueueKeeper,
+  QueueListing,
+  QueueReason,
+} from '../queue/index.js';
 import { openPseudonyms, type Pseudonyms } from '../redaction/pseudonym.js';
 import { type Redacted, sealRedacted } from '../redaction/redacted.js';
 import { createTenantContext } from '../tenant/context.js';
@@ -253,6 +259,39 @@ export type UndoOutcome =
  */
 export type UndoReason = keyof typeof writeSentences | 'auditNotReady';
 
+/**
+ * What `ecclium queue list` finds (ADR 0031): every entry of the tenant,
+ * the oldest first, those that wait with what they hold. Their texts come
+ * from ChurchTools and the model; they go to the operator only.
+ */
+export type QueueListOutcome =
+  | { readonly kind: 'listed'; readonly entries: readonly QueueListing[] }
+  /** The server keeps no queue. */
+  | { readonly kind: 'off' }
+  /** Refused or failed, with the code. */
+  | { readonly kind: 'failed'; readonly code: ErrorCode };
+
+/**
+ * What `ecclium queue show` finds for one ID (ADR 0031). Its texts go to
+ * the operator only.
+ */
+export type QueueShowOutcome =
+  | {
+      readonly kind: 'found';
+      readonly day: IsoDate;
+      readonly content: QueueEntryContent;
+    }
+  /** No entry: none under this ID, past its retention, or no queue. */
+  | { readonly kind: 'missing' | 'expired' | 'off' }
+  /** The operator decided about this entry already, and when. */
+  | {
+      readonly kind: 'decided';
+      readonly decision: QueueDecisionKind;
+      readonly decidedAt: string;
+    }
+  /** Refused or failed, with the code. */
+  | { readonly kind: 'failed'; readonly code: ErrorCode };
+
 /** What `ecclium queue` asks the pipeline to decide (ADR 0031). */
 export interface QueueCall {
   /** The ID of the entry, a UUID. */
@@ -322,6 +361,25 @@ export interface ToolPipeline {
    * @returns How the rejection ended. It never rejects.
    */
   reject(call: QueueCall, request: ToolRequest): Promise<RejectOutcome>;
+  /**
+   * Lists the entries of the queue of approvals of the tenant, for the
+   * operator only (ADR 0031). Reading writes no audit line: it changes
+   * nothing, and what it shows was queued by a call with a line of its own.
+   *
+   * @param request - Tenant, actor and mode of the operator.
+   * @returns The entries, or why there are none. It never rejects.
+   */
+  listQueue(request: ToolRequest): Promise<QueueListOutcome>;
+  /**
+   * Opens one entry of the queue of approvals, for the operator only
+   * (ADR 0031), without an audit line, like {@link ToolPipeline.listQueue}.
+   *
+   * @param call - The ID of the entry.
+   * @param request - Tenant, actor and mode of the operator.
+   * @returns What the entry holds, or why there is nothing. It never
+   *   rejects.
+   */
+  showQueue(call: QueueCall, request: ToolRequest): Promise<QueueShowOutcome>;
 }
 
 /** What the composition root builds the pipeline from. */
@@ -1951,6 +2009,93 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       : end.outcome;
   };
 
+  // The context of a call of the operator on the queue: only the command
+  // line of the operator reaches the queue, never a client of the model,
+  // whatever mode its mount passes (ADR 0024, ADR 0031).
+  const operatorContext = (
+    request: ToolRequest,
+    assignment: TenantAssignment | undefined,
+    eventId: string,
+  ): TenantContext | ErrorCode => {
+    if (request.mode !== 'operator') return 'policy_denied';
+    if (isAborted(request.signal)) return 'network';
+    if (assignment === undefined) return 'auth';
+    return createTenantContext({
+      assignment,
+      instance: origin,
+      mode: request.mode,
+      redaction: request.redaction,
+      readOnly: request.readOnly,
+      features: [...request.features],
+      clock,
+      signal: request.signal,
+      logging,
+      eventId,
+    });
+  };
+
+  const listQueue = async (request: ToolRequest): Promise<QueueListOutcome> => {
+    try {
+      const ctx = operatorContext(
+        request,
+        copyAssignment(request.assignment),
+        randomUUID(),
+      );
+      if (typeof ctx === 'string')
+        return Object.freeze({ kind: 'failed', code: ctx });
+      const queue = options.queue;
+      if (queue === undefined) return Object.freeze({ kind: 'off' });
+      return Object.freeze({
+        kind: 'listed',
+        entries: await queue.list(ctx),
+      });
+    } catch {
+      return Object.freeze({ kind: 'failed', code: 'internal' });
+    }
+  };
+
+  const showQueue = async (
+    call: QueueCall,
+    request: ToolRequest,
+  ): Promise<QueueShowOutcome> => {
+    try {
+      // The ID is checked before anything else reads it.
+      if (typeof call.queueId !== 'string' || !isUuid(call.queueId)) {
+        return Object.freeze({ kind: 'failed', code: 'validation' });
+      }
+      const ctx = operatorContext(
+        request,
+        copyAssignment(request.assignment),
+        randomUUID(),
+      );
+      if (typeof ctx === 'string')
+        return Object.freeze({ kind: 'failed', code: ctx });
+      const queue = options.queue;
+      if (queue === undefined) return Object.freeze({ kind: 'off' });
+      const loaded = await queue.load(ctx, call.queueId);
+      switch (loaded.kind) {
+        case 'missing':
+          return Object.freeze({ kind: 'missing' });
+        case 'expired':
+          return Object.freeze({ kind: 'expired' });
+        case 'decided':
+          return Object.freeze({
+            kind: 'decided',
+            decision: loaded.decision.decision,
+            decidedAt: loaded.decision.decidedAt,
+          });
+        case 'found':
+          return Object.freeze({
+            kind: 'found',
+            day: loaded.day,
+            content: loaded.content,
+          });
+      }
+    } catch {
+      return Object.freeze({ kind: 'failed', code: 'internal' });
+    }
+  };
+
   // One rejection of the operator (ADR 0031): from the ID of an entry of
   // the queue to its decision, which destroys the entry, and an audit line
   // of its own of the type approval that names the entry and its target.
@@ -1963,23 +2108,8 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     eventId: string,
     refs: ObjectRefCollector,
   ): Promise<DecisionEnd> => {
-    // Only the command line of the operator decides, never a client of the
-    // model, whatever mode its mount passes (ADR 0024).
-    if (request.mode !== 'operator') return decisionFailed('policy_denied');
-    if (isAborted(request.signal)) return decisionFailed('network');
-    if (assignment === undefined) return decisionFailed('auth');
-    const ctx = createTenantContext({
-      assignment,
-      instance: origin,
-      mode: request.mode,
-      redaction: request.redaction,
-      readOnly: request.readOnly,
-      features: [...request.features],
-      clock,
-      signal: request.signal,
-      logging,
-      eventId,
-    });
+    const ctx = operatorContext(request, assignment, eventId);
+    if (typeof ctx === 'string') return decisionFailed(ctx);
     const ended = (end: DecisionEnd): DecisionEnd => ({ ...end, ctx });
     // A decision is recorded like a write: not while the audit file cannot
     // take its line (ADR 0028).
@@ -2108,7 +2238,14 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       : end.outcome;
   };
 
-  return Object.freeze({ __proto__: null, call, undo, reject });
+  return Object.freeze({
+    __proto__: null,
+    call,
+    undo,
+    reject,
+    listQueue,
+    showQueue,
+  });
 }
 
 /** How a decision of the operator ended, with what its audit line needs. */

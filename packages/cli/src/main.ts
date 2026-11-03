@@ -4,7 +4,8 @@
  * takes over the environment, reads the arguments and runs the command:
  * `ecclium config check`, `ecclium audit verify` and `ecclium audit show`,
  * which read the audit files (ADR 0028), `ecclium policy init`
- * (ADR 0032) and `ecclium undo` (ADR 0031). Wrong calls get fixed German
+ * (ADR 0032), `ecclium undo` and `ecclium queue list`, `show` and
+ * `reject` (ADR 0031). Wrong calls get fixed German
  * texts on stderr, never an argument, and every exit code comes from
  * `exit-codes.ts`.
  *
@@ -40,6 +41,7 @@ import {
 import type { PolicyInitOptions } from './policy/init.js';
 import { policyInitTexts } from './policy/texts.js';
 import type { WriteSyncFn } from './send.js';
+import type { QueueOptions } from './queue/queue.js';
 import type { UndoOptions } from './undo/undo.js';
 
 /** Replacements for tests. */
@@ -57,6 +59,8 @@ export interface RunOptions {
   >;
   /** Replacements for `undo`, such as the test double of ChurchTools. */
   readonly undo?: Pick<UndoOptions, 'load' | 'writeSync' | 'createTransport'>;
+  /** Replacements for `queue`, such as the test double of ChurchTools. */
+  readonly queue?: Pick<QueueOptions, 'load' | 'writeSync' | 'createTransport'>;
 }
 
 /**
@@ -76,6 +80,9 @@ const commands: readonly Command[] = Object.freeze(
     { words: ['audit', 'show'], options: ['object', 'since', 'until'] },
     { words: ['policy', 'init'], options: ['interactive'] },
     { words: ['undo'], options: ['overwrite'], argument: true },
+    { words: ['queue', 'list'], options: [] },
+    { words: ['queue', 'show'], options: [], argument: true },
+    { words: ['queue', 'reject'], options: [], argument: true },
   ].map((entry) =>
     Object.freeze({
       words: Object.freeze(entry.words),
@@ -116,6 +123,11 @@ type Call =
       readonly kind: 'undo';
       readonly eventId: string;
       readonly overwrite: boolean;
+    }
+  | {
+      readonly kind: 'queue';
+      readonly action: 'list' | 'show' | 'reject';
+      readonly queueId: string | undefined;
     };
 
 // The kind of a refused call, from the code of the error of parseArgs
@@ -205,6 +217,12 @@ const readCall = (args: readonly string[]): Call => {
         eventId: positionals[1] ?? '',
         overwrite: values.overwrite === true,
       };
+    case 'queue list':
+      return { kind: 'queue', action: 'list', queueId: undefined };
+    case 'queue show':
+      return { kind: 'queue', action: 'show', queueId: positionals[2] };
+    case 'queue reject':
+      return { kind: 'queue', action: 'reject', queueId: positionals[2] };
     default:
       return { kind: 'check', showValues: values['show-values'] === true };
   }
@@ -222,8 +240,8 @@ const readCall = (args: readonly string[]): Call => {
  * @param execArgv - The options Node.js was started with, which the check
  *   of the configuration reads for the options of TLS.
  * @param runOptions - Replacements for tests.
- * @returns The exit code, or for `policy init` and `undo`, which talk
- *   to ChurchTools, a promise of it.
+ * @returns The exit code, or for `policy init`, `undo` and `queue`, which
+ *   build the pipeline, a promise of it.
  * @example
  * ```ts
  * process.exitCode = await run(process.argv.slice(2), environment, process.execArgv);
@@ -310,6 +328,26 @@ export function run(
               overwrite: call.overwrite,
               output: out,
               ...runOptions.undo,
+            }),
+          )
+          .catch(() => {
+            out.stderr(internalErrorText);
+            return exitCodes.internal;
+          });
+      }
+      case 'queue': {
+        // Loaded only for this command, like `undo`: it builds the
+        // pipeline over the folders of the server.
+        const out = output;
+        return import('./queue/queue.js')
+          .then(({ runQueue }) =>
+            runQueue({
+              environment: taken,
+              execArgv,
+              action: call.action,
+              ...(call.queueId === undefined ? {} : { queueId: call.queueId }),
+              output: out,
+              ...runOptions.queue,
             }),
           )
           .catch(() => {

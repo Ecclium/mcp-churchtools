@@ -712,3 +712,111 @@ describe('a rejection of the operator (ADR 0031)', () => {
     expect(events()[0]).toMatchObject({ type: 'approval', outcome: 'error' });
   });
 });
+
+describe('the queue as the operator reads it (ADR 0031)', () => {
+  it('lists the entries of the tenant, waiting and decided, and writes no audit line', async () => {
+    const setupped = setup();
+    const first = await queueNote(setupped);
+    const second = await queueNote(setupped);
+    await setupped.pipeline.reject({ queueId: second }, operator());
+    const lines = setupped.events().length;
+    const listed = await setupped.pipeline.listQueue(operator());
+    expect(listed.kind).toBe('listed');
+    const entries = listed.kind === 'listed' ? listed.entries : [];
+    expect(entries.map(({ id, state }) => ({ id, state }))).toEqual(
+      expect.arrayContaining([
+        { id: first, state: 'open' },
+        { id: second, state: 'rejected' },
+      ]),
+    );
+    expect(setupped.events()).toHaveLength(lines);
+  });
+
+  it('shows one entry, one that is decided, and none for another ID or past its retention', async () => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    expect(
+      await setupped.pipeline.showQueue({ queueId: id }, operator()),
+    ).toMatchObject({
+      kind: 'found',
+      day,
+      content: { reason: 'no_question', tool: 'ct_example_note_write' },
+    });
+    expect(
+      await setupped.pipeline.showQueue(
+        { queueId: '00000000-0000-4000-8000-0000000000ff' },
+        operator(),
+      ),
+    ).toEqual({ kind: 'missing' });
+    await setupped.pipeline.reject({ queueId: id }, operator());
+    expect(
+      await setupped.pipeline.showQueue({ queueId: id }, operator()),
+    ).toEqual({
+      kind: 'decided',
+      decision: 'rejected',
+      decidedAt: new Date(now).toISOString(),
+    });
+    const later = await queueNote(setupped);
+    await setupped.keys.destroyBefore('queue', '2026-11-04' as IsoDate);
+    expect(
+      await setupped.pipeline.showQueue({ queueId: later }, operator()),
+    ).toEqual({ kind: 'expired' });
+  });
+
+  it.each([
+    ['in another mode', request(), 'policy_denied'],
+    ['cancelled before', operator({ signal: AbortSignal.abort() }), 'network'],
+    ['without a tenant', operator({ assignment: undefined }), 'auth'],
+  ])('refuses to list or show %s', async (_name, given, code) => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    expect(await setupped.pipeline.listQueue(given)).toEqual({
+      kind: 'failed',
+      code,
+    });
+    expect(await setupped.pipeline.showQueue({ queueId: id }, given)).toEqual({
+      kind: 'failed',
+      code,
+    });
+  });
+
+  it('refuses to show an ID that is no UUID', async () => {
+    const { pipeline } = setup();
+    for (const queueId of ['../x', 42, undefined]) {
+      expect(await pipeline.showQueue({ queueId }, operator())).toEqual({
+        kind: 'failed',
+        code: 'validation',
+      });
+    }
+  });
+
+  it('finds nothing without a queue', async () => {
+    const { pipeline } = setup({ queue: false });
+    expect(await pipeline.listQueue(operator())).toEqual({ kind: 'off' });
+    expect(
+      await pipeline.showQueue(
+        { queueId: '00000000-0000-4000-8000-0000000000ff' },
+        operator(),
+      ),
+    ).toEqual({ kind: 'off' });
+  });
+
+  it('fails as internal when the queue cannot be read', async () => {
+    const broken: ApprovalQueue = {
+      ...createMemoryApprovalQueue(),
+      list: () => Promise.reject(new Error('disk')),
+      get: () => Promise.reject(new Error('disk')),
+    };
+    const { pipeline } = setup({ store: broken });
+    expect(await pipeline.listQueue(operator())).toEqual({
+      kind: 'failed',
+      code: 'internal',
+    });
+    expect(
+      await pipeline.showQueue(
+        { queueId: '00000000-0000-4000-8000-0000000000ff' },
+        operator(),
+      ),
+    ).toEqual({ kind: 'failed', code: 'internal' });
+  });
+});

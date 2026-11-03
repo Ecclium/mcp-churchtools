@@ -58,8 +58,13 @@ import { deriveOutputSchema } from './schema.js';
 
 // The mount never takes a write back; the stand-ins answer undo as off.
 const noUndo = () => Promise.resolve({ kind: 'off' } as const);
-// The mount never decides about the queue (ADR 0031).
+// The mount never decides about the queue nor reads it (ADR 0031).
 const noReject = () => Promise.resolve({ kind: 'off' } as const);
+const noQueue = {
+  reject: noReject,
+  listQueue: noReject,
+  showQueue: noReject,
+};
 
 // Drives the mount in process through the serving entry of the SDK, in
 // both eras, with the test playing the client in raw JSON-RPC. Every
@@ -734,7 +739,7 @@ describe('the resolver of the tenant', () => {
     const listeners: number[] = [];
     const pipeline: ToolPipeline = {
       undo: noUndo,
-      reject: noReject,
+      ...noQueue,
       call: (_name, _input, request) => {
         listeners.push(getEventListeners(request.signal, 'abort').length);
         return Promise.resolve({
@@ -757,7 +762,7 @@ describe('the factory', () => {
     const pipeline: ToolPipeline = {
       call: run,
       undo: noUndo,
-      reject: noReject,
+      ...noQueue,
     };
     const { factory, audit, logs } = setup({
       resolver: { resolve } as unknown as TenantResolver,
@@ -852,7 +857,7 @@ describe('errors', () => {
       pipeline: {
         call: () => Promise.reject(new Error(canary)),
         undo: noUndo,
-        reject: noReject,
+        ...noQueue,
       },
     });
     const connection = await modern.open(factory);
@@ -873,7 +878,7 @@ describe('errors', () => {
     const { factory, logs } = setup({
       pipeline: {
         undo: noUndo,
-        reject: noReject,
+        ...noQueue,
         // A stand-in that hands over raw data, as a result that went past
         // the pipeline would be (ADR 0026).
         call: () =>

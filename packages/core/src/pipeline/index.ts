@@ -9,6 +9,8 @@ export {
   type ConfirmationQuestion,
   createToolPipeline,
   type QueueCall,
+  type QueueListOutcome,
+  type QueueShowOutcome,
   type RejectOutcome,
   type ToolOutcome,
   type ToolPipeline,
