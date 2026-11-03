@@ -114,9 +114,10 @@ export interface KeyProvider {
    *   key was wrapped for.
    * @param wrapped - The encrypted key.
    * @returns The key, a fresh copy that the caller erases after use, or
-   *   undefined when the day key no longer exists: its retention is over,
-   *   and what it encrypted can no longer be read. A key that does not
-   *   open, because it was changed or wrapped for another tenant, rejects.
+   *   undefined when there is no day key of this tenant, purpose and day,
+   *   as after its retention: what it encrypted can no longer be read. A
+   *   key that does not open with an existing day key, because it was
+   *   changed or wrapped for another tenant, rejects.
    */
   unwrap(
     ctx: TenantContext,
@@ -131,7 +132,8 @@ export interface KeyProvider {
    *
    * @param purpose - What the day keys are for.
    * @param day - The first UTC day whose keys stay.
-   * @returns How many day keys were destroyed.
+   * @returns How many day keys were destroyed. When one of them stays, the
+   *   promise rejects, after every other was destroyed.
    */
   destroyBefore(purpose: DayKeyPurpose, day: IsoDate): Promise<number>;
 }

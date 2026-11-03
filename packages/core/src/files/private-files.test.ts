@@ -537,85 +537,154 @@ describe('listPrivateFolder', () => {
 });
 
 describe('destroyPrivateFile', () => {
+  const temporaryName = '.a.key.1.0000000000000000.tmp';
+
   it('writes zeros over the file, removes its name and leaves a second name with zeros', () => {
     const folder = fresh();
     writePrivateFileOnce(folder, 'a.key', bytes('secret'), { pid });
-    linkSync(
-      join(folder, 'a.key'),
-      join(folder, '.a.key.1.0000000000000000.tmp'),
-    );
+    linkSync(join(folder, 'a.key'), join(folder, temporaryName));
     expect(destroyPrivateFile(folder, 'a.key', 64)).toBe(true);
-    expect(readdirSync(folder)).toEqual(['.a.key.1.0000000000000000.tmp']);
-    expect(readFileSync(join(folder, '.a.key.1.0000000000000000.tmp'))).toEqual(
-      Buffer.alloc(6),
-    );
-    expect(
-      destroyPrivateFile(folder, '.a.key.1.0000000000000000.tmp', 64),
-    ).toBe(true);
+    expect(readdirSync(folder)).toEqual([temporaryName]);
+    expect(readFileSync(join(folder, temporaryName))).toEqual(Buffer.alloc(6));
+    expect(destroyPrivateFile(folder, temporaryName, 64)).toBe(true);
     expect(readdirSync(folder)).toEqual([]);
     expect(destroyPrivateFile(folder, 'a.key', 64)).toBe(false);
   });
 
-  it('refuses a name that is no plain name, also after its dot', () => {
+  it('refuses a name that is neither a plain nor a temporary name', () => {
     const folder = fresh();
-    for (const name of ['..', './x', '.', 'a/b']) {
-      expect(() => destroyPrivateFile(folder, name, 64)).toThrow(TypeError);
+    for (const name of [
+      '..',
+      './x',
+      '.',
+      'a/b',
+      '.a.key',
+      '.a.key.1.000.tmp',
+      `.${'x'.repeat(129)}.1.0000000000000000.tmp`,
+      5,
+    ]) {
+      expect(() => destroyPrivateFile(folder, name as string, 64)).toThrow(
+        TypeError,
+      );
     }
   });
 
-  it('refuses a file that is not private or too large, and a link', () => {
+  it('removes a file with rights for others after zeros, a file without the right to write and a larger one without zeros', () => {
     const folder = fresh();
     writeFileSync(join(folder, 'open'), 'x', { mode: 0o644 });
     chmodSync(join(folder, 'open'), 0o644);
-    expect(code(() => destroyPrivateFile(folder, 'open', 64))).toBe('unsafe');
+    linkSync(join(folder, 'open'), join(folder, 'open2'));
+    expect(destroyPrivateFile(folder, 'open', 64)).toBe(true);
+    expect(readFileSync(join(folder, 'open2'))).toEqual(Buffer.alloc(1));
+    writeFileSync(join(folder, 'locked'), 'y', { mode: 0o400 });
+    chmodSync(join(folder, 'locked'), 0o400);
+    expect(destroyPrivateFile(folder, 'locked', 64)).toBe(true);
     writeFileSync(join(folder, 'big'), 'xx', { mode: 0o600 });
-    expect(code(() => destroyPrivateFile(folder, 'big', 1))).toBe('unsafe');
-    symlinkSync(join(folder, 'big'), join(folder, 'link'));
-    expect(code(() => destroyPrivateFile(folder, 'link', 64))).toBe('unsafe');
-    expect(readFileSync(join(folder, 'big'), 'utf8')).toBe('xx');
+    linkSync(join(folder, 'big'), join(folder, 'big2'));
+    expect(destroyPrivateFile(folder, 'big', 1)).toBe(true);
+    expect(readFileSync(join(folder, 'big2'), 'utf8')).toBe('xx');
+    expect(readdirSync(folder).sort()).toEqual(['big2', 'open2']);
   });
 
-  it('turns every refusal of the system into a code', () => {
+  it('removes a link without touching its target, and refuses a folder and an entry of another user', () => {
     const folder = fresh();
-    const failing = (changes: Partial<PrivateFileSystem>): string => {
+    writeFileSync(join(folder, 'target'), 'keep', { mode: 0o600 });
+    symlinkSync(join(folder, 'target'), join(folder, 'link'));
+    expect(destroyPrivateFile(folder, 'link', 64)).toBe(true);
+    expect(readFileSync(join(folder, 'target'), 'utf8')).toBe('keep');
+    mkdirSync(join(folder, 'dir'), { mode: 0o700 });
+    expect(code(() => destroyPrivateFile(folder, 'dir', 64))).toBe('unsafe');
+    expect(
+      code(() =>
+        destroyPrivateFile(
+          folder,
+          'target',
+          64,
+          withFs({
+            lstatSync: (path) => {
+              const stats = nodePrivateFileSystem.lstatSync(path);
+              return path.endsWith('/target')
+                ? changed(stats, { uid: (process.getuid?.() ?? 0) + 1 })
+                : stats;
+            },
+          }),
+        ),
+      ),
+    ).toBe('unsafe');
+    expect(readFileSync(join(folder, 'target'), 'utf8')).toBe('keep');
+  });
+
+  it('removes the name when zeros cannot be written, and reports a name that cannot be removed', () => {
+    const folder = fresh();
+    const removed = (changes: Partial<PrivateFileSystem>): boolean => {
       writePrivateFileOnce(folder, 'a', bytes('x'), { pid });
-      return code(() => destroyPrivateFile(folder, 'a', 64, withFs(changes)));
+      return destroyPrivateFile(folder, 'a', 64, withFs(changes));
     };
     expect(
-      failing({
-        openSync: () => {
-          throw systemError('EACCES');
+      removed({
+        openSync: (path, flags, mode) => {
+          if (path.endsWith('/a')) throw systemError('EACCES');
+          return nodePrivateFileSystem.openSync(path, flags, mode);
         },
       }),
-    ).toBe('unavailable');
+    ).toBe(true);
     expect(
-      failing({
+      removed({
         fstatSync: () => {
           throw systemError('EIO');
         },
       }),
-    ).toBe('unavailable');
-    expect(failing({ writeSync: () => 0 })).toBe('unavailable');
+    ).toBe(true);
     expect(
-      failing({
+      removed({
+        fstatSync: (fd) =>
+          changed(nodePrivateFileSystem.fstatSync(fd), { file: false }),
+      }),
+    ).toBe(true);
+    expect(removed({ writeSync: () => 0 })).toBe(true);
+    expect(
+      removed({
         fsyncSync: () => {
           throw systemError('EIO');
         },
       }),
+    ).toBe(true);
+    expect(readdirSync(folder)).toEqual([]);
+    writePrivateFileOnce(folder, 'a', bytes('x'), { pid });
+    expect(
+      code(() =>
+        destroyPrivateFile(
+          folder,
+          'a',
+          64,
+          withFs({
+            unlinkSync: () => {
+              throw systemError('EPERM');
+            },
+          }),
+        ),
+      ),
     ).toBe('unavailable');
     expect(
-      failing({
-        unlinkSync: () => {
-          throw systemError('EPERM');
-        },
-      }),
+      code(() =>
+        destroyPrivateFile(
+          folder,
+          'a',
+          64,
+          withFs({
+            lstatSync: (path) => {
+              if (path.endsWith('/a')) throw systemError('EIO');
+              return nodePrivateFileSystem.lstatSync(path);
+            },
+          }),
+        ),
+      ),
     ).toBe('unavailable');
     // A name another process removed in between is gone all the same.
-    writePrivateFileOnce(folder, 'b', bytes('y'), { pid });
     expect(
       destroyPrivateFile(
         folder,
-        'b',
+        'a',
         64,
         withFs({
           unlinkSync: (path) => {

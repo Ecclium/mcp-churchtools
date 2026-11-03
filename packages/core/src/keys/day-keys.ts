@@ -22,7 +22,12 @@
  *
  * @packageDocumentation
  */
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import {
+  createCipheriv,
+  createDecipheriv,
+  randomBytes,
+  randomFillSync,
+} from 'node:crypto';
 import { isProxy } from 'node:util/types';
 
 import {
@@ -41,6 +46,7 @@ import {
   listPrivateFolder,
   nodePrivateFileSystem,
   preparePrivateFolder,
+  PrivateFileError,
   type PrivateFileSystem,
   readPrivateFile,
   writePrivateFileOnce,
@@ -235,16 +241,18 @@ export function createFileDayKeys(options: FileDayKeysOptions): DayKeys {
     };
     const existing = read();
     if (existing !== undefined || !create) return existing;
-    const fresh = new Uint8Array(randomBytes(dataKeyLength));
+    // Filled in place, so that no other copy of the new key exists.
+    const fresh = randomFillSync(new Uint8Array(dataKeyLength));
     const hex = toHex(fresh);
+    let written = false;
     try {
-      const outcome = writePrivateFileOnce(folder, name, hex, { pid, fs });
-      if (outcome === 'written') return fresh;
+      written =
+        writePrivateFileOnce(folder, name, hex, { pid, fs }) === 'written';
     } finally {
       hex.fill(0);
+      if (!written) fresh.fill(0);
     }
-    fresh.fill(0);
-    return read();
+    return written ? fresh : read();
   };
 
   const wrap = (
@@ -259,11 +267,12 @@ export function createFileDayKeys(options: FileDayKeysOptions): DayKeys {
     if (!(key instanceof Uint8Array) || key.length !== dataKeyLength) {
       throw new TypeError('The key to wrap must have 32 bytes.');
     }
-    const plain = Uint8Array.from(key);
     const kek = dayKey(checkedPurpose, tenant, checkedDay, true);
     // Missing only when another process destroyed it between its write
     // and the read here.
     if (kek === undefined) throw new Error('A day key is missing.');
+    // The copy only now, so that a refusal above leaves none behind.
+    const plain = Uint8Array.from(key);
     try {
       const nonce = randomBytes(nonceLength);
       const cipher = createCipheriv('aes-256-gcm', kek, nonce, {
@@ -334,10 +343,15 @@ export function createFileDayKeys(options: FileDayKeysOptions): DayKeys {
     }
   };
 
+  // Destroys every day key before the cut, and the temporary names writers
+  // left behind. An entry that stays does not stop the others: the loop
+  // goes on and only afterwards reports that one stayed, so that a single
+  // bad entry never keeps every later key alive (ADR 0031).
   const destroyBefore = (purpose: DayKeyPurpose, day: IsoDate): number => {
     const folder = folderOf(checkPurpose(purpose));
     const cut = checkDay(day);
     let destroyed = 0;
+    let stayed = false;
     for (const name of listPrivateFolder(folder, fs)) {
       const key = keyName.exec(name);
       const temporary = key === null ? temporaryName.exec(name) : null;
@@ -345,10 +359,18 @@ export function createFileDayKeys(options: FileDayKeysOptions): DayKeys {
       // A name of another form is not a day key and stays. The second
       // group is the day in both forms.
       if (found === null || String(found[2]) >= cut) continue;
-      if (destroyPrivateFile(folder, name, keyFileBytes, fs) && key !== null) {
-        destroyed += 1;
+      try {
+        if (
+          destroyPrivateFile(folder, name, keyFileBytes, fs) &&
+          key !== null
+        ) {
+          destroyed += 1;
+        }
+      } catch {
+        stayed = true;
       }
     }
+    if (stayed) throw new PrivateFileError('unsafe');
     return destroyed;
   };
 

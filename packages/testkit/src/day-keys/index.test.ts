@@ -65,8 +65,11 @@ describe('the checks of day keys', () => {
           }),
       };
     };
-    expect(await failures(open)).toContain(
-      'never opens a key for the other purpose',
+    expect(await failures(open)).toEqual(
+      expect.arrayContaining([
+        'never opens a key for the other purpose',
+        'never opens a key under another day',
+      ]),
     );
   });
 

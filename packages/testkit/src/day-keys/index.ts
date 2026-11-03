@@ -201,6 +201,14 @@ export const dayKeyChecks: readonly DayKeyCheck[] = Object.freeze([
     await keys.wrap(other, 'snapshot', day, sample(5));
     await assert.rejects(keys.unwrap(other, 'snapshot', wrapped));
   }),
+  check(
+    'gives nothing for a tenant without a day key of that day',
+    async (open) => {
+      const keys = open();
+      const wrapped = await keys.wrap(one, 'snapshot', day, sample(19));
+      assert.equal(await keys.unwrap(other, 'snapshot', wrapped), undefined);
+    },
+  ),
   check('never opens a key for the other purpose', async (open) => {
     const keys = open();
     const wrapped = await keys.wrap(one, 'snapshot', day, sample(6));

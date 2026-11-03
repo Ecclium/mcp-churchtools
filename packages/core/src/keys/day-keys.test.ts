@@ -1,4 +1,5 @@
 import {
+  chmodSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -204,6 +205,58 @@ describe('the day keys in files', () => {
       'notes.txt',
     ]);
     expect(await keys.destroyBefore('queue', day)).toBe(0);
+  });
+
+  it('destroys every other old day key when one entry stays, and then reports it', async () => {
+    const keysDir = freshDir();
+    const keys = createFileDayKeys({ keysDir, pid });
+    const old = '2026-10-01' as IsoDate;
+    const other = quotaContext('zeta', 'service', 'stdio:local-stdio');
+    await keys.wrap(ctx, 'snapshot', old, key);
+    await keys.wrap(other, 'snapshot', old, key);
+    const folder = join(keysDir, 'snapshot');
+    // Sorted first: a folder in the name of a key, which cannot be
+    // destroyed, and a key that became readable for others.
+    mkdirSync(join(folder, 'aaa.2026-09-01.key'), { mode: 0o700 });
+    chmodSync(join(folder, 'demo-tenant.2026-10-01.key'), 0o644);
+    await expect(
+      keys.destroyBefore('snapshot', '2026-11-01' as IsoDate),
+    ).rejects.toBeInstanceOf(PrivateFileError);
+    expect(readdirSync(folder)).toEqual(['aaa.2026-09-01.key']);
+  });
+
+  it('erases a new day key it could not write and passes the refusal on', async () => {
+    const keysDir = freshDir();
+    const filled: Uint8Array[] = [];
+    const refusing: PrivateFileSystem = Object.freeze({
+      ...nodePrivateFileSystem,
+      writeSync: (
+        fd: number,
+        buffer: Uint8Array,
+        offset: number,
+        length: number,
+        position: number,
+      ) => {
+        filled.push(buffer);
+        return (
+          nodePrivateFileSystem.writeSync(
+            fd,
+            buffer,
+            offset,
+            length,
+            position,
+          ) * 0
+        );
+      },
+    });
+    const keys = createFileDayKeys({ keysDir, pid, fs: refusing });
+    await expect(keys.wrap(ctx, 'snapshot', day, key)).rejects.toBeInstanceOf(
+      PrivateFileError,
+    );
+    expect(filled.every((buffer) => buffer.every((byte) => byte === 0))).toBe(
+      true,
+    );
+    expect(readdirSync(join(keysDir, 'snapshot'))).toEqual([]);
   });
 
   it('rejects with a code of its own when the folder of keys cannot be used', async () => {

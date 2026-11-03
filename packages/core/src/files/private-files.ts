@@ -433,6 +433,7 @@ export function readPrivateFile(
       fail('unsafe');
     }
     // One byte more than the size, so that a file that grew is noticed.
+    // What was read is erased before a refusal, since a file may hold a key.
     const buffer = new Uint8Array(stats.size + 1);
     let offset = 0;
     while (offset < buffer.length) {
@@ -440,12 +441,16 @@ export function readPrivateFile(
       try {
         read = fs.readSync(fd, buffer, offset, buffer.length - offset, offset);
       } catch {
+        buffer.fill(0);
         return fail('unavailable');
       }
       if (read === 0) break;
       offset += read;
     }
-    if (offset !== stats.size) fail('unavailable');
+    if (offset !== stats.size) {
+      buffer.fill(0);
+      fail('unavailable');
+    }
     return buffer.subarray(0, stats.size);
   } finally {
     close(fs, fd);
@@ -483,18 +488,63 @@ export function listPrivateFolder(
   }
 }
 
+// The temporary name writePrivateFileOnce gives a file: a dot, the plain
+// name, the ID of the process, 16 hex digits and `.tmp`.
+const temporaryPattern =
+  /^\.[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.\d{1,10}\.[0-9a-f]{16}\.tmp$/;
+
+// Writes zeros over a regular file of the user and flushes them, as far as
+// it opens for writing and is no larger than the bound. A file that does
+// not, or that changed between the look at its name and the open, keeps
+// its bytes: its name goes all the same.
+const zeroFile = (
+  fs: PrivateFileSystem,
+  target: string,
+  maxBytes: number,
+  flags: Flags,
+): void => {
+  let fd: number;
+  try {
+    fd = fs.openSync(target, flags.write);
+  } catch {
+    return;
+  }
+  try {
+    const stats = fs.fstatSync(fd);
+    if (!stats.isFile() || stats.uid !== flags.uid || stats.size > maxBytes) {
+      return;
+    }
+    writeAll(fs, fd, new Uint8Array(stats.size));
+    fs.fsyncSync(fd);
+  } catch {
+    // The name goes below; zeros are only the second line of defence.
+  } finally {
+    close(fs, fd);
+  }
+};
+
 /**
- * Destroys a private file: writes zeros over all of it, flushes them and
- * removes its name. A second name of the same file keeps only zeros.
+ * Destroys an entry of a private folder, so that nothing of it can be read
+ * there any more. A regular file of the user first gets zeros over all of
+ * it, flushed, where it opens for writing and is no larger than the bound,
+ * so that a second name of the same file keeps only zeros, and then loses
+ * its name, also when it could not be zeroed: rights for others or a mode
+ * without writing make no exception, since such a file needs destroying
+ * most. A link, a FIFO or a socket holds no bytes and only loses its name.
+ * A folder and an entry of another user stay and make it throw, so that a
+ * caller can go on with its other entries and report the one that stayed.
  *
  * @param folder - A private folder.
- * @param name - The name of the file in the folder, also a temporary one
- *   that {@link writePrivateFileOnce} left behind.
- * @param maxBytes - The largest file destroyed; a larger one is refused.
+ * @param name - The name of the entry, a plain one or a temporary one that
+ *   {@link writePrivateFileOnce} left behind.
+ * @param maxBytes - The largest file zeroed; a larger one only loses its
+ *   name.
  * @param fs - The file functions, only for tests.
- * @returns Whether a file was destroyed; false when there was none.
- * @throws {PrivateFileError} When the folder or the file is not private,
- *   too large, or the system refuses.
+ * @returns Whether an entry was there and is gone.
+ * @throws {PrivateFileError} When the folder is not private, the entry is a
+ *   folder or belongs to another user, or its name cannot be removed.
+ * @throws {TypeError} For a name that is neither a plain nor a temporary
+ *   name of a file.
  * @example
  * ```ts
  * destroyPrivateFile(folder, 'default.2026-10-01.key', 64);
@@ -506,43 +556,21 @@ export function destroyPrivateFile(
   maxBytes: number,
   fs: PrivateFileSystem = nodePrivateFileSystem,
 ): boolean {
-  // A temporary name is a dot before a plain name; checking the plain
-  // name keeps every other path out.
-  pathOf(folder, name.startsWith('.') ? name.slice(1) : name);
-  const target = `${prefixOf(folder)}/${name}`;
+  const temporary = typeof name === 'string' && temporaryPattern.test(name);
+  const target = temporary
+    ? `${prefixOf(folder)}/${name}`
+    : pathOf(folder, name);
   const flags = flagsOf(fs);
   checkFolder(fs, folder, flags.uid);
-  let fd: number;
+  let entry: PrivateFileStats;
   try {
-    fd = fs.openSync(target, flags.write);
+    entry = fs.lstatSync(target);
   } catch (error) {
-    const code = errorCode(error);
-    if (code === 'ENOENT') return false;
-    return fail(code === 'ELOOP' ? 'unsafe' : 'unavailable');
+    if (errorCode(error) === 'ENOENT') return false;
+    return fail('unavailable');
   }
-  try {
-    let stats: PrivateFileStats;
-    try {
-      stats = fs.fstatSync(fd);
-    } catch {
-      return fail('unavailable');
-    }
-    if (
-      !stats.isFile() ||
-      !isPrivate(stats, flags.uid) ||
-      stats.size > maxBytes
-    ) {
-      fail('unsafe');
-    }
-    try {
-      writeAll(fs, fd, new Uint8Array(stats.size));
-      fs.fsyncSync(fd);
-    } catch {
-      return fail('unavailable');
-    }
-  } finally {
-    close(fs, fd);
-  }
+  if (entry.uid !== flags.uid || entry.isDirectory()) fail('unsafe');
+  if (entry.isFile()) zeroFile(fs, target, maxBytes, flags);
   try {
     fs.unlinkSync(target);
   } catch (error) {
