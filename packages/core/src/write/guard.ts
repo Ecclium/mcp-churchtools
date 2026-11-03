@@ -701,13 +701,16 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       : change(ctx, intent as PageIntent, derived, target, path, undo);
   };
 
-  // After a new page is read back, the second part of its snapshot: its
-  // GUID and version, without which `ecclium undo` cannot find it. A part
-  // that cannot be kept leaves the write as it is, and the log says so.
+  // Once ChurchTools names a new page, the second part of its snapshot:
+  // its GUID and version, without which `ecclium undo` cannot find it. It
+  // is kept before the checks of the answer and the read back, so that a
+  // page that exists but does not read back as planned can be found too.
+  // A part that cannot be kept leaves the write as it is, and the log says
+  // so.
   const completeCreate = async (
     ctx: TenantContext,
     undo: Undo | undefined,
-    guid: string,
+    created: { readonly guid: string; readonly version: number },
   ): Promise<void> => {
     if (snapshots === undefined || undo === undefined) return;
     try {
@@ -715,7 +718,11 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
         eventId: undo.eventId,
         part: 'after',
         day: undo.day,
-        content: { kind: 'wikiPageCreated', guid, version: 1 },
+        content: {
+          kind: 'wikiPageCreated',
+          guid: created.guid,
+          version: created.version,
+        },
       });
     } catch {
       ctx.log.warn('snapshot_incomplete', { code: 'internal' });
@@ -770,6 +777,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       kind: 'wiki_page',
       key: `${String(intent.categoryId)}/${created.guid.toLowerCase()}`,
     });
+    await completeCreate(ctx, undo, created);
     if (
       created.version !== 1 ||
       created.title !== intent.title ||
@@ -791,7 +799,6 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
         created.guid,
       );
       if (after.page.version === 1 && after.page.text === intent.text) {
-        await completeCreate(ctx, undo, created.guid);
         return verified(ctx, path, page, 1, undo);
       }
     } catch (error) {

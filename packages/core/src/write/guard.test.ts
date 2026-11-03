@@ -1135,6 +1135,62 @@ describe('the snapshot of a write (ADR 0031)', () => {
     expect(fake.sent).toEqual([]);
   });
 
+  // A page that ChurchTools created but that does not read back as planned
+  // exists all the same, so `ecclium undo` must be able to find it.
+  it.each([
+    [
+      'answers with another version',
+      (fake: Fake) => {
+        fake.created = {
+          guid: '00000000-0000-4000-8000-0000000000CD',
+          title: 'Bericht',
+          version: 2,
+          isMarkdown: true,
+        };
+      },
+      'conflict',
+      2,
+    ],
+    [
+      'cannot be read back',
+      (fake: Fake) => {
+        fake.readFailsAfterWrite = new EccliumError('network');
+      },
+      'failed',
+      1,
+    ],
+    [
+      'reads back with another text',
+      (fake: Fake) => {
+        fake.createdText = '# Anders\n';
+      },
+      'conflict',
+      1,
+    ],
+  ] as const)(
+    'keeps the GUID of a new page that %s',
+    async (_, change, state, version) => {
+      const { saved, snapshots } = recording();
+      const fake = fakeOf();
+      change(fake);
+      const { guard, ctx, request } = setup(fake, dir, { snapshots });
+      const plan = planOf(await guard.plan(request, create));
+      const committed = await guard.commit(
+        ctx,
+        plan,
+        issueProof(plan, 'elicitation', now),
+        eventId,
+      );
+      expect(committed).toMatchObject({ ok: false, state, sent: true });
+      expect(saved.map((part) => part.part)).toEqual(['before', 'after']);
+      expect(saved[1]?.content).toEqual({
+        kind: 'wikiPageCreated',
+        guid: '00000000-0000-4000-8000-0000000000CD',
+        version,
+      });
+    },
+  );
+
   it('keeps a new page written when its GUID cannot be kept, and says so', async () => {
     const { snapshots } = recording(['after']);
     const { committed } = await commitWith(create, snapshots);
