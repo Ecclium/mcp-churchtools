@@ -79,6 +79,12 @@ export interface AuditSummary {
   /** The whole lines that do not fit the schema, in any range. */
   readonly skipped: number;
   /**
+   * The writes confirmed by echo, in the range of days: a weaker way than a
+   * question or the operator, which an operator should see on its own
+   * (ADR 0029).
+   */
+  readonly echoConfirmed: number;
+  /**
    * The calls per day and tool, sorted by day, then tool, with the undos
    * of a day after its calls.
    */
@@ -210,6 +216,7 @@ export function summarizeAuditFiles(
   let partial = 0;
   let lines = 0;
   let skipped = 0;
+  let echoConfirmed = 0;
   let read = 0;
   let unread = 0;
   let moved = false;
@@ -231,6 +238,9 @@ export function summarizeAuditFiles(
         return;
       }
       lines += 1;
+      if (event.confirmation === 'echo' && event.writeState === 'verified') {
+        echoConfirmed += 1;
+      }
       const withheld = event.withheldAfterRead === true;
       // A type and a tool name hold no space, so the key is unique per
       // day, type and tool. An undo has no tool and gets a row of its own
@@ -300,6 +310,7 @@ export function summarizeAuditFiles(
     moved,
     lines,
     skipped,
+    echoConfirmed,
     rows: Object.freeze(rows),
     hits: Object.freeze(shown),
     hitsOmitted: hitCount - shown.length,
