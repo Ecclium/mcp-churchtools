@@ -89,3 +89,12 @@ Die Datei mit dem Login-Token legen Sie selbst an. Ecclium liest sie und schreib
 ### Schlüsseldatei für Pseudonyme
 
 Nur für `ECCLIUM_REDACTION=strict` legen Sie eine Datei mit dem Schlüssel für die Pseudonyme an, die `ECCLIUM_PSEUDONYM_KEY_FILE` nennt, und für einen Wechsel eine zweite mit dem bisherigen. Ecclium liest sie und schreibt sie nie. Sie enthält keine Personendaten, öffnet aber jedes Pseudonym, siehe «Pseudonyme». Schützen Sie sie wie die Token-Datei, legen Sie sie nicht in einen synchronisierten Ordner und sichern Sie sie getrennt, damit die Pseudonyme nach einer Wiederherstellung gleich bleiben. Wie Sie sie anlegen, steht unter [Betrieb über stdio](betrieb/stdio.md#stufe-strict-und-schlüsseldatei).
+
+### Tagesschlüssel
+
+Nur wenn Ecclium schreibt (`ECCLIUM_READ_ONLY=false`), braucht es einen eigenen Ordner für Tagesschlüssel, den `ECCLIUM_KEYS_DIR` nennt. Mit ihnen verschlüsselt Ecclium die Snapshots, also den Stand vor einem Schreibvorgang, mit dem `ecclium undo` ihn zurücknimmt, und später die Einträge der Freigabe-Warteschlange ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)).
+
+- **Inhalt:** je Mandant, Zweck und UTC-Tag eine Datei mit einem zufälligen Schlüssel als 64 Zeichen Hex, etwa `snapshot/default.2026-11-03.key`. Keine Personendaten und keine Inhalte aus ChurchTools.
+- **Wer sie lesen kann:** Der Ordner und seine Unterordner haben die Rechte 700, die Dateien 600. Der Ordner darf nicht der Zustandsordner sein und nicht darin liegen, sonst startet Ecclium nicht.
+- **Frist:** Ein Schlüssel bleibt seinen Tag und 30 Tage danach, an Tag 31 vernichtet ihn Ecclium beim Start oder Wechsel des UTC-Tages: Nullen über die Datei, dann wird sie entfernt. Mit ihm lässt sich kein Snapshot seines Tages mehr lesen, auch nicht in einer Sicherung des Zustandsordners. Das ist der Sinn des eigenen Ordners: Nehmen Sie ihn aus jeder Sicherung, siehe [Betrieb über stdio](betrieb/stdio.md#ordner-der-tagesschlüssel).
+- **Grenzen:** Auf SSDs und Dateisystemen wie APFS überschreiben Nullen nicht sicher jede Kopie der Bytes. Lokale Snapshots von Time Machine und Snapshots einer virtuellen Maschine bei einem Hoster können den Ordner enthalten. Wer Zustandsordner und Ordner der Tagesschlüssel zusammen kopiert, kann die Snapshots bis zum Ende ihrer Frist lesen.
