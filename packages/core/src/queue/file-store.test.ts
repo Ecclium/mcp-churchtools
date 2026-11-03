@@ -1,5 +1,8 @@
 import {
+  closeSync,
+  fstatSync,
   linkSync,
+  openSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -100,10 +103,13 @@ describe('the queue of approvals in files', () => {
     expect(readdirSync(folder)).toEqual([day]);
     expect(statSync(join(folder, day)).mode & 0o777).toBe(0o700);
     expect(readdirSync(join(folder, day))).toEqual([`demo-tenant.${id}.entry`]);
-    expect(statSync(fileOf(stateDir, day)).mode & 0o777).toBe(0o600);
-    expect(readFileSync(fileOf(stateDir, day), 'utf8')).toBe(
-      'v1.sealed-entry_A',
-    );
+    const fd = openSync(fileOf(stateDir, day), 'r');
+    try {
+      expect(fstatSync(fd).mode & 0o777).toBe(0o600);
+      expect(readFileSync(fd, 'utf8')).toBe('v1.sealed-entry_A');
+    } finally {
+      closeSync(fd);
+    }
   });
 
   it('keeps a decision as a small file with 0600 and destroys the entry, also its second name', async () => {
@@ -116,9 +122,17 @@ describe('the queue of approvals in files', () => {
     expect(readdirSync(join(stateDir, queueFolderName, day))).toEqual([
       `demo-tenant.${id}.decision`,
     ]);
-    const file = fileOf(stateDir, day, 'decision');
-    expect(statSync(file).mode & 0o777).toBe(0o600);
-    expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual({
+    // One descriptor for the check of the mode and the read, so that both
+    // look at the same file.
+    const fd = openSync(fileOf(stateDir, day, 'decision'), 'r');
+    let text: string;
+    try {
+      expect(fstatSync(fd).mode & 0o777).toBe(0o600);
+      text = readFileSync(fd, 'utf8');
+    } finally {
+      closeSync(fd);
+    }
+    expect(JSON.parse(text)).toEqual({
       v: 1,
       decision: 'rejected',
       decidedAt: '2026-11-03T18:00:00.000Z',
