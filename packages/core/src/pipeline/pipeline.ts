@@ -789,7 +789,12 @@ const queuedResult = (
 const maxWaiting = 100;
 
 // The IDs of a target for the audit: a category, and a page by its GUID.
-const addTarget = (refs: ObjectRefCollector, target: WriteTarget): void => {
+// A write that ended before it had a target adds none.
+const addTarget = (
+  refs: ObjectRefCollector,
+  target: WriteTarget | undefined,
+): void => {
+  if (target === undefined) return;
   const [first, second] = target.key.split('/');
   if (target.kind === 'wiki_category') refs.add('wiki_category', first);
   if (target.kind === 'wiki_page') {
@@ -1558,7 +1563,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     // `ecclium undo` finds it from the line of the audit (ADR 0031).
     const committed = await guard.commit(ctx, plan, proof, run.eventId);
     if (!committed.ok) {
-      if (committed.target !== undefined) addTarget(refs, committed.target);
+      addTarget(refs, committed.target);
       return {
         ok: false,
         failure: writeFailure(
@@ -2575,7 +2580,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     const committed = result.result;
     const diff = diffLines(result.change.from, result.change.to);
     // A new page names itself only once it is written.
-    addTarget(refs, committed.target ?? result.target);
+    addTarget(refs, committed.target);
     const written = {
       writeState: committed.state,
       ...(committed.path === undefined ? {} : { confirmation: committed.path }),

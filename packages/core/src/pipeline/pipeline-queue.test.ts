@@ -28,7 +28,7 @@ import {
   examplePlugin,
   makeCanary,
 } from '@ecclium/mcp-churchtools-testkit';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { auditPlaceholders, createAuditSink } from '../audit/index.js';
@@ -37,6 +37,7 @@ import { createFileKeyProvider } from '../keys/file-provider.js';
 import { checkPolicy, defaultPolicy } from '../policy/check.js';
 import type { Policy } from '../policy/schema.js';
 import { createQueueKeeper, type QueueKeeper } from '../queue/index.js';
+import { quotaTimeoutMs } from '../quota/index.js';
 import { createToolCatalog } from '../registry/index.js';
 import {
   confirmationSentence,
@@ -1465,5 +1466,75 @@ describe('an approval of the operator (ADR 0029)', () => {
         operator(),
       ),
     ).toEqual({ kind: 'failed', code: 'internal', used: false, sent: false });
+  });
+
+  it('fails as internal when the request cannot be read', async () => {
+    const { pipeline, events } = setup();
+    const broken = {
+      ...operator(),
+      get mode(): never {
+        throw new Error('no mode');
+      },
+    } as unknown as ToolRequest;
+    expect(
+      await pipeline.approve(
+        { queueId: '00000000-0000-4000-8000-0000000000ff' },
+        broken,
+      ),
+    ).toEqual({ kind: 'failed', code: 'internal', used: false, sent: false });
+    expect(events()[0]).toMatchObject({ type: 'approval', outcome: 'error' });
+  });
+
+  it('decides nothing when the store of quotas does not answer in time', async () => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    const hanging = setup({
+      queue: setupped.keeper,
+      quota: {
+        increment: () => new Promise<number>(() => undefined),
+        read: () => Promise.resolve(0),
+      },
+    });
+    replanReads(hanging);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const outcome = hanging.pipeline.approve({ queueId: id }, operator());
+      await vi.advanceTimersByTimeAsync(quotaTimeoutMs);
+      expect(await outcome).toEqual({
+        kind: 'failed',
+        code: 'internal',
+        used: false,
+        sent: false,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect((await setupped.keeper.load(ctxOf, id)).kind).toBe('found');
+  });
+
+  it('names no reason for an error of ChurchTools, before and after the decision', async () => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    // The rights cannot be read: refused before the decision.
+    setupped.double
+      .intercept({ path: '/api/permissions/global', method: 'GET' })
+      .reply(500, '{}', json);
+    const before = await setupped.pipeline.approve({ queueId: id }, operator());
+    expect(before).toMatchObject({ kind: 'failed', used: false, sent: false });
+    expect(before).not.toHaveProperty('reason');
+    expect((await setupped.keeper.load(ctxOf, id)).kind).toBe('found');
+    // The read right before the write fails: the approval is used up.
+    replanReads(setupped);
+    setupped.double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(500, '{}', json);
+    const after = await setupped.pipeline.approve({ queueId: id }, operator());
+    expect(after).toMatchObject({ kind: 'failed', used: true, sent: false });
+    expect(after).not.toHaveProperty('reason');
+    expect(setupped.events()[2]).toMatchObject({
+      type: 'approval',
+      writeState: 'denied',
+    });
+    assertOnlyReads(setupped.double);
   });
 });
