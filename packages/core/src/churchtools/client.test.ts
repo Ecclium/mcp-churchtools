@@ -873,6 +873,17 @@ describe('the client', () => {
       'wikiPageState',
       'wikiCategoryState',
       'wikiCategoryName',
+      'appointmentState',
+      'calendarDayState',
+      'createAppointment',
+      'updateAppointment',
+      'deleteAppointment',
+      'bookingState',
+      'resourceDayState',
+      'createBooking',
+      'deleteBooking',
+      'calendarFacts',
+      'resourceName',
     ]);
     expect(Object.isFrozen(client.writes)).toBe(true);
   });

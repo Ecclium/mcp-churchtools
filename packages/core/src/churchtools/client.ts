@@ -9,8 +9,9 @@
  * one request through the transport of its origin, the services, the
  * resources and the assignments with two, a throttle per client, fixed
  * limits and own schemas, which only the escape hatch lacks. Since ADR 0072
- * it also writes pages of the wiki, under `writes`, on the same path and
- * under the same throttle; only the write guard is to call them.
+ * it also writes pages of the wiki, single appointments and requests of
+ * bookings, under `writes`, on the same path and under the same throttle;
+ * only the write guard is to call them.
  *
  * @packageDocumentation
  */
@@ -102,7 +103,9 @@ import {
 } from './operation.js';
 import { fetchAnswer, fetchRead, type RequestPath } from './request.js';
 import { toPermissions } from './rights.js';
-import { type ChurchToolsWrites, createWikiWrites } from './wiki-writes.js';
+import { createCalendarWrites } from './calendar-writes.js';
+import { createWikiWrites } from './wiki-writes.js';
+import type { ChurchToolsWrites } from './writes.js';
 import {
   agendaSchema,
   appointmentListSchema,
@@ -1516,18 +1519,20 @@ export function createChurchToolsClient(
     );
   };
 
-  const appointments = async (
+  // The appointments of a span with the `date` of the answer, which the
+  // writes keep for a plan (ADR 0072).
+  const readAppointments = async (
     ctx: TenantContext,
     calendarIds: readonly number[],
     from: string,
     to: string,
-  ): Promise<AppointmentList> => {
+  ): Promise<{ list: AppointmentList; date: string | undefined }> => {
     checkCalendarInput(ctx, isListIds(calendarIds) && isEventWindow(from, to));
     // Exactly calendar_ids[], from and to go out (ADR 0064).
     const url = new URL('/api/calendars/appointments', origin);
     appendIds(url.searchParams, 'calendar_ids[]', calendarIds);
     appendSpan(url.searchParams, from, to);
-    const root = await fetchAnswer(ctx, path, url, spanListLimits, {
+    const { root, date } = await fetchRead(ctx, path, url, spanListLimits, {
       status: 'churchtools_appointments_status',
       refused: 'churchtools_appointments_refused',
     });
@@ -1563,12 +1568,23 @@ export function createChurchToolsClient(
         }),
       )
       .sort(byStartAndId);
-    return Object.freeze({
-      __proto__: null,
-      appointments: Object.freeze(entries.slice(0, maxAppointments)),
-      more: entries.length > maxAppointments,
-    });
+    return {
+      list: Object.freeze({
+        __proto__: null,
+        appointments: Object.freeze(entries.slice(0, maxAppointments)),
+        more: entries.length > maxAppointments,
+      }),
+      date,
+    };
   };
+
+  const appointments = async (
+    ctx: TenantContext,
+    calendarIds: readonly number[],
+    from: string,
+    to: string,
+  ): Promise<AppointmentList> =>
+    (await readAppointments(ctx, calendarIds, from, to)).list;
 
   const appointment = async (
     ctx: TenantContext,
@@ -1691,18 +1707,20 @@ export function createChurchToolsClient(
     });
   };
 
-  const bookings = async (
+  // The bookings of a span with the `date` of the answer, as for
+  // appointments.
+  const readBookings = async (
     ctx: TenantContext,
     resourceIds: readonly number[],
     from: string,
     to: string,
-  ): Promise<BookingList> => {
+  ): Promise<{ list: BookingList; date: string | undefined }> => {
     checkCalendarInput(ctx, isListIds(resourceIds) && isEventWindow(from, to));
     // Exactly resource_ids[], from and to go out (ADR 0064).
     const url = new URL('/api/bookings', origin);
     appendIds(url.searchParams, 'resource_ids[]', resourceIds);
     appendSpan(url.searchParams, from, to);
-    const root = await fetchAnswer(ctx, path, url, spanListLimits, {
+    const { root, date } = await fetchRead(ctx, path, url, spanListLimits, {
       status: 'churchtools_bookings_status',
       refused: 'churchtools_bookings_refused',
     });
@@ -1741,12 +1759,23 @@ export function createChurchToolsClient(
         }),
       )
       .sort(byStartAndId);
-    return Object.freeze({
-      __proto__: null,
-      bookings: Object.freeze(entries.slice(0, maxBookings)),
-      more: entries.length > maxBookings,
-    });
+    return {
+      list: Object.freeze({
+        __proto__: null,
+        bookings: Object.freeze(entries.slice(0, maxBookings)),
+        more: entries.length > maxBookings,
+      }),
+      date,
+    };
   };
+
+  const bookings = async (
+    ctx: TenantContext,
+    resourceIds: readonly number[],
+    from: string,
+    to: string,
+  ): Promise<BookingList> =>
+    (await readBookings(ctx, resourceIds, from, to)).list;
 
   // Refuses a term, page, ID, category or type that may not fill a query or
   // a path before the throttle gives a place, so that an invalid value
@@ -1998,14 +2027,25 @@ export function createChurchToolsClient(
       request: OperationRequest,
       observe?: (objectRefs: readonly ObjectValue[]) => void,
     ): Promise<OperationAnswer> => readOperation(ctx, path, request, observe),
-    writes: createWikiWrites({
-      path,
-      origin,
-      readPage: (ctx, categoryId, guid) => readWikiPage(ctx, categoryId, guid),
-      readCategory: async (ctx, categoryId) => ({
-        date: (await readWikiPageList(ctx, categoryId, 1)).date,
+    writes: Object.freeze({
+      ...createWikiWrites({
+        path,
+        origin,
+        readPage: (ctx, categoryId, guid) =>
+          readWikiPage(ctx, categoryId, guid),
+        readCategory: async (ctx, categoryId) => ({
+          date: (await readWikiPageList(ctx, categoryId, 1)).date,
+        }),
+        readCategories: (ctx) => wikiCategories(ctx),
       }),
-      readCategories: (ctx) => wikiCategories(ctx),
+      ...createCalendarWrites({
+        path,
+        origin,
+        readAppointments,
+        readBookings,
+        readCalendars: calendars,
+        readResources: resources,
+      }),
     }),
   });
 }

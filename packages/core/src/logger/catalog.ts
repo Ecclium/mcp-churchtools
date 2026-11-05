@@ -63,11 +63,18 @@ const family = <const Names extends readonly string[]>(
   };
 
 // An answer of ChurchTools with a status other than that of success, 200
-// for a read and for changing a page, 201 for creating one, per operation.
+// for a read and for a change, 201 for creating and 204 for deleting, per
+// operation.
 const statusEvents = Object.freeze([
   'churchtools_agenda_status',
+  'churchtools_appointment_create_status',
+  'churchtools_appointment_delete_status',
   'churchtools_appointment_status',
+  'churchtools_appointment_update_status',
   'churchtools_appointments_status',
+  'churchtools_booking_create_status',
+  'churchtools_booking_delete_status',
+  'churchtools_booking_status',
   'churchtools_bookings_status',
   'churchtools_calendars_status',
   'churchtools_event_assignments_status',
@@ -100,8 +107,11 @@ const statusEvents = Object.freeze([
 // An answer of success that the client does not take, per operation.
 const refusedEvents = Object.freeze([
   'churchtools_agenda_refused',
+  'churchtools_appointment_create_refused',
   'churchtools_appointment_refused',
   'churchtools_appointments_refused',
+  'churchtools_booking_create_refused',
+  'churchtools_booking_refused',
   'churchtools_bookings_refused',
   'churchtools_calendars_refused',
   'churchtools_event_assignments_refused',
@@ -133,7 +143,13 @@ const refusedEvents = Object.freeze([
 // A 404 of an operation that reads or writes one object by its ID.
 const missingEvents = Object.freeze([
   'churchtools_agenda_missing',
+  'churchtools_appointment_create_missing',
+  'churchtools_appointment_delete_missing',
   'churchtools_appointment_missing',
+  'churchtools_appointment_update_missing',
+  'churchtools_booking_create_missing',
+  'churchtools_booking_delete_missing',
+  'churchtools_booking_missing',
   'churchtools_event_assignments_missing',
   'churchtools_event_missing',
   'churchtools_group_members_missing',
@@ -313,12 +329,14 @@ export const logEvents = Object.freeze({
   churchtools_wiki_write_input_refused: entry('warn', 'code'),
   churchtools_event_input_refused: entry('warn', 'code'),
   churchtools_calendar_input_refused: entry('warn', 'code'),
+  churchtools_calendar_write_refused: entry('warn', 'code'),
   churchtools_song_input_refused: entry('warn', 'code'),
   churchtools_search_input_refused: entry('warn', 'code'),
   churchtools_search_term_refused: entry('warn', 'code'),
   churchtools_appointments_foreign: entry('warn', 'code'),
   churchtools_appointment_foreign: entry('warn', 'code'),
   churchtools_bookings_foreign: entry('warn', 'code'),
+  churchtools_booking_foreign: entry('warn', 'code'),
   churchtools_wiki_search_foreign: entry('warn', 'code'),
   churchtools_search_foreign: entry('warn', 'code'),
   churchtools_operation_unknown: entry('warn', 'code'),
