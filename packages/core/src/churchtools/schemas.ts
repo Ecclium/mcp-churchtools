@@ -704,10 +704,19 @@ export const wikiPageListSchema = z.object({
 });
 
 /**
+ * The category a page names in an answer, of which the client reads only
+ * the ID. ChurchTools has a category 0 for its own pages, so 0 is read as
+ * well; the client compares the ID with the category of its request.
+ */
+const pageCategory = z.object({ id: z.number().int().nonnegative() });
+
+/**
  * The answer of `GET /api/wiki/categories/{id}/pages/{guid}` and of one
  * version of a page, which has the same form (F19). `text` may be null for
  * a page without text; the client reads it as empty. The GUID comes from
- * the request, so the answer need not repeat it.
+ * the request, so the answer need not repeat it. `wikiCategory` names the
+ * category the page is in, which the client checks against the category
+ * of the request (F49, ADR 0072).
  */
 export const wikiPageSchema = z.object({
   data: z.object({
@@ -715,14 +724,16 @@ export const wikiPageSchema = z.object({
     isMarkdown: z.boolean(),
     version: id,
     text: text(maxWikiTextLength).nullable(),
+    wikiCategory: pageCategory,
   }),
 });
 
 /**
  * The answer 201 of `POST /api/wiki/categories/{id}/pages`: the page that
  * was created, of which the client reads only GUID, title, version and
- * format (F16). The text is the one the client sent and is not read again
- * here; the read after the write compares it (ADR 0072).
+ * format (F16), and the category, which the client checks as for a read.
+ * The text is the one the client sent and is not read again here; the read
+ * after the write compares it (ADR 0072).
  */
 export const wikiPageCreatedSchema = z.object({
   data: z.object({
@@ -730,6 +741,7 @@ export const wikiPageCreatedSchema = z.object({
     title: text(maxWikiTitleLength),
     isMarkdown: z.boolean(),
     version: id,
+    wikiCategory: pageCategory,
   }),
 });
 

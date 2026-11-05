@@ -1187,6 +1187,13 @@ export function createChurchToolsClient(
       throw new EccliumError('upstream');
     }
     const data = parsed.data.data;
+    // A page of another category is no page of this one, whatever path
+    // ChurchTools answered on: a write to it would leave the category the
+    // policy allows (F49, ADR 0072). The read ends as for an unknown GUID.
+    if (data.wikiCategory.id !== categoryId) {
+      ctx.log.warn('churchtools_wiki_page_refused', { code: 'not_found' });
+      throw new EccliumError('not_found');
+    }
     return Object.freeze({
       __proto__: null,
       page: Object.freeze({

@@ -565,6 +565,7 @@ const cases: Readonly<Record<string, Case>> = {
             version: 3,
             isMarkdown: true,
             text: `# Seite A\n\n${contactText}`,
+            wikiCategory: { id: 4 },
             meta: { modifiedPerson: { title: modifier.value } },
           },
         },

@@ -617,13 +617,27 @@
                   "type": "null"
                 }
               ]
+            },
+            "wikiCategory": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "id"
+              ]
             }
           },
           "required": [
             "title",
             "isMarkdown",
             "version",
-            "text"
+            "text",
+            "wikiCategory"
           ]
         }
       },
@@ -665,13 +679,27 @@
                   "type": "null"
                 }
               ]
+            },
+            "wikiCategory": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "id"
+              ]
             }
           },
           "required": [
             "title",
             "isMarkdown",
             "version",
-            "text"
+            "text",
+            "wikiCategory"
           ]
         }
       },
@@ -731,13 +759,27 @@
               "type": "integer",
               "exclusiveMinimum": 0,
               "maximum": 9007199254740991
+            },
+            "wikiCategory": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "id"
+              ]
             }
           },
           "required": [
             "guid",
             "title",
             "isMarkdown",
-            "version"
+            "version",
+            "wikiCategory"
           ]
         }
       },

@@ -114,7 +114,13 @@ const rights = JSON.stringify({
 });
 const page = (version: number, text: string): string =>
   JSON.stringify({
-    data: { title: 'Dienstplan', isMarkdown: true, version, text },
+    data: {
+      title: 'Dienstplan',
+      isMarkdown: true,
+      version,
+      text,
+      wikiCategory: { id: 12 },
+    },
   });
 
 // Text of the write that must never reach a log line or the audit.

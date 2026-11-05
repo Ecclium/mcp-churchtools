@@ -144,7 +144,13 @@ const hashOf = (text: string): string => {
 
 const reply = (version: number, text: string): string =>
   JSON.stringify({
-    data: { title: 'Dienstplan', isMarkdown: true, version, text },
+    data: {
+      title: 'Dienstplan',
+      isMarkdown: true,
+      version,
+      text,
+      wikiCategory: { id: 12 },
+    },
   });
 
 /** ChurchTools for an undo: the rights, the page now, and what it writes. */

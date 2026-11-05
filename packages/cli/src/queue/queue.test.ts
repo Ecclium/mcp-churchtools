@@ -528,7 +528,13 @@ describe('ecclium queue approve', () => {
   const pagePath = `/api/wiki/categories/12/pages/${guid}`;
   const reply = (version: number, text: string): string =>
     JSON.stringify({
-      data: { title: 'Dienstplan', isMarkdown: true, version, text },
+      data: {
+        title: 'Dienstplan',
+        isMarkdown: true,
+        version,
+        text,
+        wikiCategory: { id: 12 },
+      },
     });
   // ChurchTools for an approval: the rights, the pages it reads, and the
   // write when it writes.
