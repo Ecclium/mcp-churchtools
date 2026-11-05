@@ -1427,3 +1427,4 @@ Diese Grundsatzfragen sind entschieden.
   - Pipeline: Eingang `approve` nur im Modus `operator`, Zeile vom Typ `approval` mit `decision: approved`, nach dem Entscheid mit `writeState`, `confirmation` und `policyHash`. `reject` zählt jetzt ebenfalls zuerst. Ein gezählter Entscheid ohne Vermerk gilt als entschieden.
   - Kommandozeile: `ecclium queue approve` mit deutschen Texten und Codes wie `ecclium undo`, `reject` legt den Ordner `quota` an.
   - Doku: ADR 0029, 0031, 0032 und 0063 (Umsetzung), `docs/privacy.md`, `docs/betrieb/stdio.md`, `.env.example`, erzeugte Doku.
+- 05.11.2026, das Freigeben mit `ecclium queue approve` ist als `9a2e15a` auf `main` (#193). Der Squash-Commit bringt genau den Baum des Branches.
