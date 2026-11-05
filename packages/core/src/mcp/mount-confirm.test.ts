@@ -118,7 +118,13 @@ const rights = JSON.stringify({
 });
 const page = (version: number, text: string): string =>
   JSON.stringify({
-    data: { title: 'Dienstplan', isMarkdown: true, version, text },
+    data: {
+      title: 'Dienstplan',
+      isMarkdown: true,
+      version,
+      text,
+      wikiCategory: { id: 12 },
+    },
   });
 const note = { categoryId: 12, guid, baseVersion: 3, note: 'Hallo' };
 const key = new Uint8Array(32).fill(7);

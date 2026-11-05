@@ -161,7 +161,7 @@ const pageList = (count: number, current = 1, lastPage = 1) =>
     },
   });
 
-const pageAnswer = (text: string | null, version = 3) =>
+const pageAnswer = (text: string | null, version = 3, category = 4) =>
   JSON.stringify({
     data: {
       guid,
@@ -169,6 +169,7 @@ const pageAnswer = (text: string | null, version = 3) =>
       version,
       isMarkdown: true,
       text,
+      wikiCategory: { id: category },
       meta: { modifiedPerson: { title: 'Person A' } },
     },
   });
@@ -495,6 +496,18 @@ describe('ct_wiki_page_get', () => {
     },
   );
 
+  it('treats a page that names another category as no page of this one', async () => {
+    const { double, call } = setup();
+    double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, pageAnswer('# Titel', 3, 5), json);
+    const outcome = await call('ct_wiki_page_get', { categoryId: 4, guid });
+    expect(!outcome.ok && outcome.error).toEqual({
+      code: 'not_found',
+      message: pageNotFound,
+    });
+  });
+
   it.each([
     ['a title instead of a GUID', { categoryId: 4, guid: 'Startseite' }],
     ['a path in the GUID', { categoryId: 4, guid: `${guid}/versions` }],
@@ -520,6 +533,7 @@ describe('ct_wiki_page_get', () => {
           version: 1,
           isMarkdown: true,
           text: `Text von ${canary.name.value}`,
+          wikiCategory: { id: 4 },
         },
       }),
       json,

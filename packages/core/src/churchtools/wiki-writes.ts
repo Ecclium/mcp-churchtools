@@ -288,7 +288,9 @@ export function createWikiWrites(
     // GUID in its form leaves it unaddressed, so it is an error; a title or
     // format other than sent is given back for the write guard to judge.
     const parsed = wikiPageCreatedSchema.safeParse(root);
-    if (!parsed.success) {
+    // A page in another category than the one of the request is no answer
+    // the client knows (F49).
+    if (!parsed.success || parsed.data.data.wikiCategory.id !== categoryId) {
       ctx.log.warn('churchtools_wiki_page_create_refused', {
         code: 'upstream',
       });

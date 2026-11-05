@@ -1597,6 +1597,7 @@ describe.skipIf(process.getuid?.() === 0)(
             isMarkdown: true,
             version: 2,
             text: `${canary}Text`,
+            wikiCategory: { id: 12 },
           },
         });
       } else if (url.pathname === '/api/search') {

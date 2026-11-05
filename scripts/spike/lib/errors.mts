@@ -75,7 +75,7 @@ export const hints = {
     'Abbruch: ECCLIUM_SPIKE_WRITE_CATEGORY_ID fehlt oder ist keine positive ganze Zahl.',
   schreibStateFehlt: 'Abbruch: ECCLIUM_SPIKE_WRITE_STATE_FILE fehlt.',
   schreibStateVorhanden:
-    'Abbruch: Die Schreib-State-Datei existiert schon. 05-wiki-write legt sie bei jedem Lauf neu an. Wählen Sie einen neuen Pfad und behalten Sie die alte Datei für 07-wiki-cleanup.',
+    'Abbruch: Die Schreib-State-Datei existiert schon. 05-wiki-write und 12-wiki-category legen sie bei jedem Lauf neu an. Wählen Sie einen neuen Pfad und behalten Sie die alte Datei für 07-wiki-cleanup.',
   schreibStateUnsicher:
     'Abbruch: Die Schreib-State-Datei muss eine reguläre Datei des aufrufenden Benutzers sein, ohne Rechte für andere und ausserhalb eines Git-Arbeitsbaums.',
   schreibStateNichtGefunden:

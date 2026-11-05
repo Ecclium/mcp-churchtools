@@ -133,7 +133,13 @@ const createdAnswer = (data: Readonly<Record<string, unknown>> = {}) => ({
 });
 
 const pageAnswer = (version: number, text: string) => ({
-  data: { title: 'Dienstplan', isMarkdown: true, version, text },
+  data: {
+    title: 'Dienstplan',
+    isMarkdown: true,
+    version,
+    text,
+    wikiCategory: { id: 4 },
+  },
 });
 
 const canaries = [name, email];
@@ -198,6 +204,11 @@ describe('creating a page', () => {
     ['no GUID', createdAnswer({ guid: undefined })],
     ['a GUID of another form', createdAnswer({ guid: 'Dienstplan' })],
     ['version 0', createdAnswer({ version: 0 })],
+    [
+      'another category',
+      createdAnswer({ wikiCategory: { id: 5, name: 'Andere' } }),
+    ],
+    ['no category', createdAnswer({ wikiCategory: undefined })],
     ['no data', {}],
   ])('ends with upstream for an answer 201 with %s', async (_, answer) => {
     const { double, writes, ctx, lines } = setup();
@@ -511,6 +522,28 @@ describe('the state of a page for a plan', () => {
         headers: { 'content-type': 'application/json', ...headers },
       });
     expect((await writes.wikiPageState(ctx(), 4, guid)).serverTime).toBeNull();
+  });
+
+  // F49: a page that names another category than the one of the request
+  // is no page of it, so that no write can reach it through this category.
+  it('ends with not_found for a page that names another category, and logs no text', async () => {
+    const { double, writes, ctx, lines } = setup();
+    double.intercept({ path: pagePath, method: 'GET' }).reply(
+      200,
+      JSON.stringify({
+        data: { ...pageAnswer(3, 'Text').data, wikiCategory: { id: 5 } },
+      }),
+      json,
+    );
+    expect((await errorOf(writes.wikiPageState(ctx(), 4, guid))).code).toBe(
+      'not_found',
+    );
+    expect(lines).toEqual([
+      {
+        event: 'churchtools_wiki_page_refused',
+        fields: { code: 'not_found' },
+      },
+    ]);
   });
 
   it('fails as the read of a page does', async () => {

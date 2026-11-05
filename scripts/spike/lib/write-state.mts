@@ -1,12 +1,14 @@
 /**
- * The write state: which pages one run of 05-wiki-write created.
+ * The write state: which pages one run of 05-wiki-write or of
+ * 12-wiki-category created.
  *
  * 05-wiki-write creates the file before its first write and adds every page
  * the moment the instance confirms it, with a sync to disk before the next
  * request. A run that stops halfway therefore still names every page it
  * created, and 07-wiki-cleanup can remove exactly those. 06 reads the state
  * of each page after 05 from here, to tell changes of the web editor from
- * changes of the probe.
+ * changes of the probe. 12-wiki-category keeps its one page in a file of
+ * the same form, for 07 as well.
  *
  * The file is JSON Lines: a header with format, instance, write area and a
  * random tag of the run, then one line per page and one per recorded state
@@ -47,15 +49,18 @@ const maxWriteStateBytes = 1024 * 1024;
 
 /**
  * What a page of the run is for: the three pages for the web editor, by
- * the name the output uses, or the cases of 05.
+ * the name the output uses, the cases of 05, or the page of 12 that is
+ * addressed under the path of another category.
  */
-export type PageRole = 'markdown1' | 'markdown2' | 'standardformat' | 'faelle';
+export type PageRole =
+  'markdown1' | 'markdown2' | 'standardformat' | 'faelle' | 'kategorie';
 
 const roles: readonly string[] = [
   'markdown1',
   'markdown2',
   'standardformat',
   'faelle',
+  'kategorie',
 ] satisfies PageRole[];
 
 /** The state of a page after 05-wiki-write, for the comparison in 06. */
