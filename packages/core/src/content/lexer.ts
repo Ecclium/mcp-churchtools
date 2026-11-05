@@ -137,24 +137,14 @@ const hasWideRow = (raw: string, width: number): boolean =>
 const isMention = (href: string): boolean =>
   href.includes('ctmd_layout=mention') || href.includes('PersonView');
 
-/**
- * Reads a text in its normal form as Markdown.
- *
- * @param text - The text after {@link normalizeContent}.
- * @returns The tree of the allowed part, or every reason found to refuse
- *   the text; `unparsable` alone when the lexer fails, for example on
- *   lists so deep that its stack runs out.
- * @example
- * ```ts
- * readMarkdown('# Plan\n\n- Probe');
- * // { ok: true, blocks: [{ kind: 'heading', level: 1, ... }, { kind: 'list', ... }] }
- * readMarkdown('![x](https://example.org/x.png)');
- * // { ok: false, violations: Set { 'image' } }
- * ```
- */
-export function readMarkdown(text: string): ReadMarkdown {
-  const found = new Set<ContentViolationKind>();
-
+// Reads one token of the top level into a node of the tree, recording
+// every reason to refuse it in `found` and in `markup` whether it holds
+// HTML, as a block or inside a text.
+const readToken = (
+  token: Token,
+  found: Set<ContentViolationKind>,
+  markup: { value: boolean },
+): Block | undefined => {
   const inlines = (tokens: readonly Token[], depth: number): Inline[] => {
     const nodes: Inline[] = [];
     const pushText = (value: string): void => {
@@ -216,6 +206,7 @@ export function readMarkdown(text: string): ReadMarkdown {
           break;
         case 'html':
           found.add('html');
+          markup.value = true;
           break;
         default:
           // codespan, br, del, checkbox and anything a later version of the
@@ -330,6 +321,7 @@ export function readMarkdown(text: string): ReadMarkdown {
         return table(token as Tokens.Table);
       case 'html':
         found.add('html');
+        markup.value = true;
         return undefined;
       case 'def':
         found.add('reference');
@@ -342,17 +334,94 @@ export function readMarkdown(text: string): ReadMarkdown {
     }
   }
 
+  return block(token, 0);
+};
+
+/** One block of the top level of a text, as the lexer read it. */
+export interface TopLevelPart {
+  /** A blank line, a paragraph, a block of HTML or another block. */
+  readonly type: 'space' | 'paragraph' | 'html' | 'other';
+  /**
+   * The text of the part as it stands in the source, to find its lines
+   * and to read a line of the marking (ADR 0032). It is only read, never
+   * written: what Ecclium writes comes from the tree alone.
+   */
+  readonly source: string;
+  /** Its node of the tree, or undefined for a blank line and a part with a reason. */
+  readonly node: Block | undefined;
+  /** Every reason to refuse it. */
+  readonly violations: ReadonlySet<ContentViolationKind>;
+  /** Whether it is HTML or holds some, which a browser could use to hide what follows. */
+  readonly markup: boolean;
+}
+
+const typeOf = (token: Token): TopLevelPart['type'] =>
+  token.type === 'space' || token.type === 'paragraph' || token.type === 'html'
+    ? token.type
+    : 'other';
+
+/**
+ * Reads a text as Markdown into its blocks of the top level, each with
+ * its node or its reasons. The check code of the marking takes the
+ * sections of a page from them (ADR 0032).
+ *
+ * @param text - A text with line breaks as `\n`.
+ * @returns The parts in the order of the text, or undefined when the
+ *   lexer fails.
+ * @example
+ * ```ts
+ * readTopLevel('# Plan\n\nText').map((part) => part.type); // ['other', 'space', 'paragraph']
+ * ```
+ */
+export function readTopLevel(
+  text: string,
+): readonly TopLevelPart[] | undefined {
   let tokens: Token[];
   try {
     tokens = new Lexer(freshOptions()).lex(text);
   } catch {
+    return undefined;
+  }
+  return tokens.map((token) => {
+    const found = new Set<ContentViolationKind>();
+    const markup = { value: false };
+    const node =
+      token.type === 'space' ? undefined : readToken(token, found, markup);
+    return {
+      type: typeOf(token),
+      source: token.raw,
+      node: found.size > 0 ? undefined : node,
+      violations: found,
+      markup: markup.value,
+    };
+  });
+}
+
+/**
+ * Reads a text in its normal form as Markdown.
+ *
+ * @param text - The text after {@link normalizeContent}.
+ * @returns The tree of the allowed part, or every reason found to refuse
+ *   the text; `unparsable` alone when the lexer fails, for example on
+ *   lists so deep that its stack runs out.
+ * @example
+ * ```ts
+ * readMarkdown('# Plan\n\n- Probe');
+ * // { ok: true, blocks: [{ kind: 'heading', level: 1, ... }, { kind: 'list', ... }] }
+ * readMarkdown('![x](https://example.org/x.png)');
+ * // { ok: false, violations: Set { 'image' } }
+ * ```
+ */
+export function readMarkdown(text: string): ReadMarkdown {
+  const parts = readTopLevel(text);
+  if (parts === undefined) {
     return { ok: false, violations: new Set(['unparsable']) };
   }
+  const found = new Set<ContentViolationKind>();
   const blocks: Block[] = [];
-  for (const token of tokens) {
-    if (token.type === 'space') continue;
-    const node = block(token, 0);
-    if (node !== undefined) blocks.push(node);
+  for (const part of parts) {
+    for (const violation of part.violations) found.add(violation);
+    if (part.node !== undefined) blocks.push(part.node);
   }
   return found.size > 0
     ? { ok: false, violations: found }

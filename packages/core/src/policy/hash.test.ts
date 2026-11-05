@@ -110,4 +110,24 @@ describe('policyHashOf', () => {
     expect(policyHashOf(policyOf(199, entries))).not.toBe(base);
     expect(policyHashOf(policyOf(200, [...entries].reverse()))).not.toBe(base);
   });
+
+  // The line of the marking names whom to ask, so the audit tells which
+  // text a write named (ADR 0032).
+  it('changes with whom to ask', () => {
+    const withInquiries = (inquiriesTo: string): Policy =>
+      fromYaml(
+        [
+          'schema: policy.v1',
+          'interactive:',
+          `  inquiriesTo: ${inquiriesTo}`,
+          '',
+        ].join('\n'),
+      );
+    expect(policyHashOf(withInquiries('Sekretariat'))).not.toBe(
+      policyHashOf(withInquiries('Pfarramt')),
+    );
+    expect(policyHashOf(withInquiries('Sekretariat'))).not.toBe(
+      policyHashOf(fromYaml('schema: policy.v1\n')),
+    );
+  });
 });

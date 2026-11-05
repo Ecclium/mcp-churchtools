@@ -118,6 +118,7 @@ describe('the table of variables', () => {
       ['ECCLIUM_WRITE_CONFIRMATION', 'echo-allowed', false, false],
       ['ECCLIUM_AUDIT_RETENTION_MONTHS', '12', false, true],
       ['ECCLIUM_POLICY_FILE', undefined, false, false],
+      ['ECCLIUM_MARKER_KEY_FILE', undefined, false, false],
       ['ECCLIUM_STDIO_SUBJECT', 'local-stdio', false, true],
       ['ECCLIUM_LOG_LEVEL', 'info', false, false],
     ]);
@@ -378,6 +379,7 @@ describe('fitsVariable', () => {
         ['ECCLIUM_WRITE_CONFIRMATION', 'Queue'],
         ['ECCLIUM_AUDIT_RETENTION_MONTHS', '0'],
         ['ECCLIUM_POLICY_FILE', 'policy.yaml'],
+        ['ECCLIUM_MARKER_KEY_FILE', 'marker-key'],
         ['ECCLIUM_STDIO_SUBJECT', 'Max'],
         ['ECCLIUM_LOG_LEVEL', 'INFO'],
       ];

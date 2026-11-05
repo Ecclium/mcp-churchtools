@@ -93,14 +93,44 @@ export function checkMarkdown(
   markdown: string,
   options: ContentCheckOptions,
 ): ContentCheckResult {
+  const written = writtenForm(markdown);
+  if (!written.ok) return refused(written.violations);
+  // What a reader sees, in the text as it came and as it is written, so
+  // that emphasis read one way or the other hides nothing.
+  const found = written.read.flatMap((blocks) =>
+    readableTexts(blocks).flatMap((value) =>
+      checkReadableText(value, options.contacts),
+    ),
+  );
+  return found.length > 0 ? refused(found) : { ok: true, text: written.text };
+}
+
+// The form a text in Markdown is written in, with the trees of the text as
+// it came and as it is written, or why it has none.
+const writtenForm = (
+  markdown: string,
+):
+  | {
+      readonly ok: true;
+      readonly text: string;
+      readonly read: readonly (readonly Block[])[];
+    }
+  | {
+      readonly ok: false;
+      readonly violations: Iterable<ContentViolationKind>;
+    } => {
   const normal = normalizeContent(markdown);
-  if (!normal.ok) return refused([normal.violation]);
-  if (hasTooManyDelimiters(normal.text)) return refused(['tooLong']);
+  if (!normal.ok) return { ok: false, violations: [normal.violation] };
+  if (hasTooManyDelimiters(normal.text)) {
+    return { ok: false, violations: ['tooLong'] };
+  }
   const read = readMarkdown(normal.text);
-  if (!read.ok) return refused(read.violations);
+  if (!read.ok) return { ok: false, violations: read.violations };
   const text = serializeBlocks(read.blocks);
   // Escaping adds signs, so a text near the limit can pass it only before.
-  if (bytesOf(text) > maxContentBytes) return refused(['tooLong']);
+  if (bytesOf(text) > maxContentBytes) {
+    return { ok: false, violations: ['tooLong'] };
+  }
   // The written form is read once more. The lexer does not always read
   // emphasis the same way after a mark of punctuation, so a text whose
   // written form it reads differently is refused: what passes is always a
@@ -116,16 +146,10 @@ export function checkMarkdown(
     !stable.ok ||
     stable.text !== text
   ) {
-    return refused(['unparsable']);
+    return { ok: false, violations: ['unparsable'] };
   }
-  // What a reader sees, in the text as it came and as it is written, so
-  // that emphasis read one way or the other hides nothing.
-  const found = [
-    ...readableTexts(read.blocks),
-    ...readableTexts(again.blocks),
-  ].flatMap((value) => checkReadableText(value, options.contacts));
-  return found.length > 0 ? refused(found) : { ok: true, text };
-}
+  return { ok: true, text, read: [read.blocks, again.blocks] };
+};
 
 const isHtmlStart = (code: number): boolean =>
   (code >= 0x41 && code <= 0x5a) ||

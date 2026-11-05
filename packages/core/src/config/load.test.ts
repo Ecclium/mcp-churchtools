@@ -187,6 +187,39 @@ const withKeys = (
 const keyFile = (seed: string, ending = '\n'): TokenFileSystem =>
   memoryFiles(`${keyHex(seed)}${ending}`).fs;
 
+const markerKeyPath = '/path/to/marker-key';
+
+/**
+ * A good configuration with the key file of the check codes (ADR 0032),
+ * and with a key file of the pseudonyms when one is given.
+ */
+const withMarkerKey = (
+  key: TokenFileSystem,
+  pseudonym?: {
+    readonly current?: TokenFileSystem;
+    readonly previous?: TokenFileSystem;
+  },
+  transport: Transport = 'stdio',
+): ConfigResult => {
+  const files: Record<string, TokenFileSystem> = {
+    [tokenPath]: memoryFiles().fs,
+    [markerKeyPath]: key,
+  };
+  const environment: Environment = {
+    ...valid(),
+    ECCLIUM_MARKER_KEY_FILE: markerKeyPath,
+  };
+  if (pseudonym?.current !== undefined) {
+    files[keyPath] = pseudonym.current;
+    environment['ECCLIUM_PSEUDONYM_KEY_FILE'] = keyPath;
+  }
+  if (pseudonym?.previous !== undefined) {
+    files[previousKeyPath] = pseudonym.previous;
+    environment['ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE'] = previousKeyPath;
+  }
+  return load(environment, transport, pathFiles(files));
+};
+
 const policyPath = '/path/to/policy.yaml';
 
 /** A good configuration with a file of the policy (ADR 0032). */
@@ -460,6 +493,7 @@ describe('loadConfig with a good configuration', () => {
         { kind: 'integer', value: 12 },
       ],
       ['policy', 'ECCLIUM_POLICY_FILE', 'default', { kind: 'none' }],
+      ['markerKey', 'ECCLIUM_MARKER_KEY_FILE', 'unset', { kind: 'none' }],
       [
         'stdioSubject',
         'ECCLIUM_STDIO_SUBJECT',
@@ -2695,6 +2729,67 @@ describe('loadConfig and its problems', () => {
       withPolicy(
         `${policyYaml}    - target: { kind: wiki_category, id: 12, name: Archiv }\n      tools: [ct_wiki_page_update]\n      maxPerDay: 4\n`,
       ),
+    marker_key_file_relative: () =>
+      load({ ...valid(), ECCLIUM_MARKER_KEY_FILE: 'marker-key' }),
+    // The token comes from the environment, so that only the key file meets
+    // the checks of the platform.
+    marker_key_file_platform: () =>
+      load(
+        {
+          ECCLIUM_CHURCHTOOLS_URL: address,
+          [tokenVariableName]: token(),
+          ECCLIUM_MARKER_KEY_FILE: markerKeyPath,
+        },
+        'stdio',
+        memoryFiles(undefined, { getuid: () => undefined }).fs,
+      ),
+    marker_key_file_missing: () =>
+      load(
+        { ...valid(), ECCLIUM_MARKER_KEY_FILE: markerKeyPath },
+        'stdio',
+        pathFiles({ [tokenPath]: memoryFiles().fs }),
+      ),
+    marker_key_file_symlink: () =>
+      withMarkerKey(
+        memoryFiles(undefined, {
+          open: () => {
+            throw fsError('ELOOP');
+          },
+        }).fs,
+      ),
+    marker_key_file_unreadable: () =>
+      withMarkerKey(
+        memoryFiles(undefined, {
+          open: () => {
+            throw fsError('EACCES');
+          },
+        }).fs,
+      ),
+    marker_key_file_not_regular: () =>
+      withMarkerKey(memoryFiles(keyHex('m'), { stats: { isFile: false } }).fs),
+    marker_key_file_owner: () =>
+      withMarkerKey(memoryFiles(keyHex('m'), { stats: { uid: 0 } }).fs),
+    marker_key_file_mode: () =>
+      withMarkerKey(memoryFiles(keyHex('m'), { stats: { mode: 0o100640 } }).fs),
+    marker_key_file_too_large: () =>
+      withMarkerKey(memoryFiles('a'.repeat(5000)).fs),
+    marker_key_file_empty: () => withMarkerKey(memoryFiles('\n').fs),
+    marker_key_file_bom: () =>
+      withMarkerKey(memoryFiles(`\xef\xbb\xbf${keyHex('m')}\n`).fs),
+    marker_key_file_characters: () =>
+      withMarkerKey(memoryFiles(`${keyHex('m')}\n\n`).fs),
+    marker_key_file_unsafe: () =>
+      withMarkerKey(
+        memoryFiles(undefined, {
+          open: () => {
+            throw fsError('ENOTDIR');
+          },
+        }).fs,
+      ),
+    marker_key_invalid: () =>
+      withMarkerKey(memoryFiles(keyHex('m').toUpperCase()).fs),
+    marker_key_same: () =>
+      withMarkerKey(keyFile('a'), { current: keyFile('a') }),
   };
 
   it.each([...configProblemCodes])('can report the problem %s', (code) => {
@@ -3183,6 +3278,94 @@ describe('loadConfig and the key files for pseudonyms', () => {
     }
     expect(result.ok && JSON.stringify(result.config)).toContain(
       '"pseudonymKey":"[REDACTED]"',
+    );
+  });
+});
+
+describe('loadConfig and the key file of the check codes', () => {
+  it('needs none', () => {
+    const result = load(valid());
+    expect(result.ok && result.config.markerKey).toBeUndefined();
+    expect(setting(result, 'markerKey')).toMatchObject({
+      origin: 'unset',
+      shown: { kind: 'none' },
+    });
+  });
+
+  it('reads a key with LF, with CR LF and without a line ending', () => {
+    for (const ending of ['\n', '\r\n', '']) {
+      const result = withMarkerKey(keyFile('m', ending));
+      expect(result.ok, JSON.stringify(ending)).toBe(true);
+      if (!result.ok) continue;
+      expect(
+        result.config.markerKey?.sameAs(new KeyMaterial(keyHex('m'))),
+      ).toBe(true);
+      expect(setting(result, 'markerKey')).toMatchObject({
+        origin: 'file',
+        shown: { kind: 'hidden' },
+      });
+      expect(result.report.warnings).toEqual([]);
+    }
+  });
+
+  it.each([
+    ['63 digits', keyHex('m').slice(1)],
+    ['65 digits', `${keyHex('m')}0`],
+    ['capitals', keyHex('m').toUpperCase()],
+    ['only zeros', '0'.repeat(64)],
+  ])('refuses a key of %s', (_name, content) => {
+    const result = withMarkerKey(memoryFiles(`${content}\n`).fs);
+    expect(problems(result)).toEqual([
+      ['marker_key_invalid', 'ECCLIUM_MARKER_KEY_FILE'],
+    ]);
+    expect(setting(result, 'markerKey')).toMatchObject({
+      origin: 'invalid',
+      shown: { kind: 'none' },
+    });
+  });
+
+  // The two secrets live apart: the key of the pseudonyms changes now and
+  // then, the one of the check codes never (ADR 0032).
+  it('refuses the key of the pseudonyms, also the previous one', () => {
+    for (const result of [
+      withMarkerKey(keyFile('a'), { current: keyFile('a') }),
+      withMarkerKey(keyFile('a'), {
+        current: keyFile('b'),
+        previous: keyFile('a'),
+      }),
+    ]) {
+      expect(problems(result)).toEqual([
+        ['marker_key_same', 'ECCLIUM_MARKER_KEY_FILE'],
+      ]);
+      expect(setting(result, 'markerKey')).toMatchObject({
+        origin: 'invalid',
+        shown: { kind: 'none' },
+      });
+    }
+    expect(withMarkerKey(keyFile('m'), { current: keyFile('a') }).ok).toBe(
+      true,
+    );
+  });
+
+  it('takes the key file over HTTP as well', () => {
+    expect(withMarkerKey(keyFile('m'), undefined, 'http').ok).toBe(true);
+  });
+
+  it('holds neither the path nor the key in the report or the printed configuration', () => {
+    const result = withMarkerKey(keyFile('m'));
+    expect(result.ok).toBe(true);
+    const printed = [
+      JSON.stringify(result.report),
+      inspect(result.report, { depth: Infinity }),
+      result.ok ? JSON.stringify(result.config) : '',
+      result.ok ? inspect(result.config, { depth: Infinity }) : '',
+    ];
+    for (const text of printed) {
+      expect(text).not.toContain(markerKeyPath);
+      expect(text).not.toContain(keyHex('m'));
+    }
+    expect(result.ok && JSON.stringify(result.config)).toContain(
+      '"markerKey":"[REDACTED]"',
     );
   });
 });

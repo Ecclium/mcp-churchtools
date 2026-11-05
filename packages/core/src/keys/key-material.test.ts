@@ -103,7 +103,14 @@ describe('revealKeyMaterial', () => {
   // share with the day keys (ADR 0031); it holds no key.
   it('is not given out by the entry of the keys', () => {
     expect(Object.keys(keys).sort()).toEqual(
-      ['KeyMaterial', 'infoOf', 'keyMaterialLength'].sort(),
+      [
+        'KeyMaterial',
+        'checkCodeBytes',
+        'checkCodeLabel',
+        'checkCodeMac',
+        'infoOf',
+        'keyMaterialLength',
+      ].sort(),
     );
   });
 });

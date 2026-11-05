@@ -1,6 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
+import { canonicalMarkdown } from './canonical.js';
 import { checkMarkdown } from './check.js';
 import { readMarkdown } from './lexer.js';
 import { serializeBlocks } from './serialize.js';
@@ -226,6 +227,36 @@ describe('checkMarkdown on planted values', () => {
           if (!result.ok) expect(result.violations).toContain(reason);
         },
       ),
+      run,
+    );
+  });
+});
+
+// The canonical form of the check code of the marking (ADR 0032).
+describe('canonicalMarkdown on generated documents', () => {
+  it('gives every text that passes one form, which stays the same', () => {
+    fc.assert(
+      fc.property(document, (value) => {
+        const checked = checkMarkdown(value, options);
+        fc.pre(checked.ok);
+        const form = canonicalMarkdown(checked.text);
+        expect(form).toBeDefined();
+        expect(canonicalMarkdown(value)).toBe(form);
+        expect(canonicalMarkdown(form ?? '')).toBe(form);
+      }),
+      run,
+    );
+  });
+
+  it('changes when a word is added', () => {
+    fc.assert(
+      fc.property(document, word, (value, extra) => {
+        const checked = checkMarkdown(value, options);
+        fc.pre(checked.ok);
+        expect(canonicalMarkdown(`${checked.text}\n${extra}`)).not.toBe(
+          canonicalMarkdown(checked.text),
+        );
+      }),
       run,
     );
   });

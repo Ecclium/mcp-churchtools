@@ -50,6 +50,8 @@ export const policyLimits = Object.freeze({
   contacts: 100,
   /** The longest contact value, as long as the longest e-mail address. */
   contactLength: 254,
+  /** The longest text of whom to ask in the line of the marking. */
+  inquiriesToLength: 200,
 } as const);
 
 /** The levels of redaction a routine may ask for its call of the model. */
@@ -153,6 +155,12 @@ export const policyFileSchema = z.strictObject({
         .array(z.string().min(1).max(policyLimits.contactLength))
         .max(policyLimits.contacts)
         .optional(),
+      inquiriesTo: z
+        .string()
+        .min(1)
+        .max(policyLimits.inquiriesToLength)
+        .regex(namePattern)
+        .optional(),
     })
     .optional(),
   unattended: z.array(unattendedEntry).max(policyLimits.entries).optional(),
@@ -206,6 +214,14 @@ export interface Policy {
      * that the hash of a policy without them stays the same.
      */
     readonly contacts?: readonly string[];
+    /**
+     * Whom to ask, for the line of the marking at the end of every page and
+     * section Ecclium adds to the wiki (ADR 0032), in the normal form of
+     * the content policy. Only when the file names it, so that the hash of
+     * a policy without it stays the same. Without it, Ecclium adds no page
+     * and no section.
+     */
+    readonly inquiriesTo?: string;
   };
   readonly unattended: readonly UnattendedEntry[];
 }

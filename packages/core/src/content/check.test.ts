@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { canonicalMarkdown } from './canonical.js';
 import { checkMarkdown, checkPlainText } from './check.js';
 import { maxContentBytes, maxDelimiterSigns } from './normalize.js';
 import { contactKeyOf } from './scan.js';
@@ -203,6 +204,60 @@ describe('checkMarkdown', () => {
     expect(
       reasons('# gemeinde.example\n\n- [masked]\n\n| 000 000 12 34 |\n| - |'),
     ).toEqual(['webAddress', 'contact', 'masked']);
+  });
+});
+
+describe('canonicalMarkdown', () => {
+  // The form the check code of the marking is taken over (ADR 0032): what
+  // the web editor changes when it saves a page does not count (F13).
+  it('gives one form for other bullets, more blank lines, a table aligned anew and broken lines', () => {
+    const form = canonicalMarkdown(
+      '## Plan\n\nAm **Sonntag** um\n18 Uhr.\n\n- eins\n- zwei\n\n| a | b |\n| --- | :-: |\n| 1 | 2 |',
+    );
+    expect(form).toBe(
+      '## Plan\n\nAm **Sonntag** um 18 Uhr.\n\n- eins\n- zwei\n\n| a | b |\n| --- | :-: |\n| 1 | 2 |\n',
+    );
+    for (const variant of [
+      '## Plan\n\n\nAm **Sonntag** um 18 Uhr.\n\n\n* eins\n* zwei\n\n\n|a|b|\n|---|:---:|\n|1|2|',
+      '## Plan\n\nAm **Sonntag**  um\n18  Uhr.\n\n+ eins\n+ zwei\n\n|   a   |   b   |\n| ----- | :---: |\n|   1   |   2   |\n',
+    ]) {
+      expect(canonicalMarkdown(variant), variant).toBe(form);
+    }
+  });
+
+  it('keeps apart text, emphasis, levels of headings and the build of lists', () => {
+    const forms = [
+      'Am Sonntag.',
+      'Am Montag.',
+      'Am **Sonntag**.',
+      'Am *Sonntag*.',
+      '# Am Sonntag.',
+      '## Am Sonntag.',
+      '- Am Sonntag.',
+      '1. Am Sonntag.',
+      '- Am\n- Sonntag.',
+      '- Am\n\n- Sonntag.',
+    ].map(canonicalMarkdown);
+    expect(new Set(forms).size).toBe(forms.length);
+  });
+
+  it('gives a form also for contact data, which only the checks of a reader refuse', () => {
+    expect(canonicalMarkdown('Mail an max.mustermann@example.org.')).toBe(
+      'Mail an max.mustermann@example.org.\n',
+    );
+  });
+
+  it.each([
+    ['a link', '[mehr](https://example.org/)'],
+    [
+      'a bare address the editor wrote as a link',
+      'Mehr: [https://example.org/](https://example.org/)',
+    ],
+    ['raw HTML', '<b>fett</b>'],
+    ['a hard line break', 'eins  \nzwei'],
+    ['a text over the limit', 'a'.repeat(maxContentBytes + 1)],
+  ])('gives no form for %s', (_name, markdown) => {
+    expect(canonicalMarkdown(markdown)).toBeUndefined();
   });
 });
 

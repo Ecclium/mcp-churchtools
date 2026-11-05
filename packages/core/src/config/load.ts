@@ -25,6 +25,7 @@ import { type PolicyFileSystem, readPolicyFile } from '../policy/file.js';
 import type { Policy } from '../policy/schema.js';
 import type { ToolsetName } from '../registry/toolsets.js';
 import type { ConfigProblemCode, ConfigWarningCode } from './codes.js';
+import { readMarkerKeyFile } from './marker-key-file.js';
 import { readPseudonymKeyFile } from './pseudonym-key-file.js';
 import {
   checkKeysDir,
@@ -134,6 +135,12 @@ export interface EccliumConfig {
    * the server only reads, because the read budget comes from it.
    */
   readonly policy: Policy;
+  /**
+   * The secret behind the check codes of the marking, or undefined when the
+   * variable is not set (ADR 0032). It is backed up, never destroyed, and
+   * never the key of the pseudonyms.
+   */
+  readonly markerKey: KeyMaterial | undefined;
   readonly stdioSubject: string;
   readonly logLevel: LogLevel;
 }
@@ -154,6 +161,7 @@ export type SettingKey =
   | 'writeConfirmation'
   | 'auditRetentionMonths'
   | 'policy'
+  | 'markerKey'
   | 'stdioSubject'
   | 'logLevel';
 
@@ -1162,6 +1170,40 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     }
   }
 
+  // The secret behind the check codes of the marking (ADR 0032). It may
+  // stay unset; the file gets the checks of the token file, and no report
+  // holds its path. The key of the pseudonyms in its place would tie two
+  // secrets with other lives together, so the same bytes stop the start.
+  const markerKeyName = 'ECCLIUM_MARKER_KEY_FILE';
+  const markerKeyRead = read(row(markerKeyName));
+  let markerKey: KeyMaterial | undefined;
+  let markerKeyValid = markerKeyRead.state !== 'invalid';
+  if (markerKeyRead.state === 'set') {
+    const fromFile = readMarkerKeyFile(
+      markerKeyRead.value,
+      tokenFiles as TokenFileSystem | undefined,
+    );
+    if (!fromFile.ok) {
+      report(fromFile.code, markerKeyName);
+      markerKeyValid = false;
+    } else if (
+      [current.key, previous.key].some(
+        (other) => other !== undefined && fromFile.value.sameAs(other),
+      )
+    ) {
+      report('marker_key_same', markerKeyName);
+      markerKeyValid = false;
+    } else {
+      markerKey = fromFile.value;
+    }
+  }
+  setting(
+    'markerKey',
+    markerKeyName,
+    markerKey !== undefined ? 'file' : markerKeyValid ? 'unset' : 'invalid',
+    markerKey !== undefined ? shownHidden : shownNone,
+  );
+
   // A wider trust store stays allowed for an instance with a certificate
   // of its own authority, with a warning on every start (ADR 0056).
   if (trustStoreExtended) warnings.add('trust_store_extended');
@@ -1226,6 +1268,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     confirmation === undefined ||
     retention === undefined ||
     policy === undefined ||
+    !markerKeyValid ||
     subject === undefined ||
     logLevel === undefined
   ) {
@@ -1250,6 +1293,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       writeConfirmation: confirmation.value as WriteConfirmation,
       auditRetentionMonths: retention.value,
       policy,
+      markerKey,
       stdioSubject: subject.value,
       logLevel: logLevel.value as LogLevel,
     }),

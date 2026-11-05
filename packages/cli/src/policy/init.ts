@@ -361,6 +361,9 @@ export async function initPolicy(
     ...(config.policy.interactive.contacts === undefined
       ? {}
       : { contacts: config.policy.interactive.contacts }),
+    ...(config.policy.interactive.inquiriesTo === undefined
+      ? {}
+      : { inquiriesTo: config.policy.interactive.inquiriesTo }),
     ...(targets.days === undefined ? {} : { days: targets.days }),
   });
   for (const line of text.split('\n')) {

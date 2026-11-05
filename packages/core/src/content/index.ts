@@ -7,6 +7,12 @@
  * @packageDocumentation
  */
 export {
+  canonicalFormOf,
+  canonicalMarkdown,
+  type CanonicalPart,
+  canonicalPartsOf,
+} from './canonical.js';
+export {
   checkMarkdown,
   checkPlainText,
   type ContentCheckOptions,
@@ -19,6 +25,8 @@ export {
   type NormalizedContent,
 } from './normalize.js';
 export { contactKeyOf, contactKeysOf } from './scan.js';
+export { serializeBlocks } from './serialize.js';
+export type { Block, Inline } from './tree.js';
 export {
   contentSentences,
   contentViolationKinds,

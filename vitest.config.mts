@@ -37,7 +37,8 @@ export default defineConfig({
       // before a write, and of the line diff, which shows the operator what
       // taking a write back changes (ADR 0031), and of the write guard, the
       // only code that seals plans, issues proofs and writes to ChurchTools
-      // (ADR 0029).
+      // (ADR 0029), and of the marking, by which the core tells its own
+      // sections in the wiki from those of a person (ADR 0032).
       thresholds: {
         'packages/core/src/**': {
           statements: 80,
@@ -118,6 +119,12 @@ export default defineConfig({
           lines: 100,
         },
         'packages/core/src/content/**': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        'packages/core/src/marker/**': {
           statements: 100,
           branches: 100,
           functions: 100,

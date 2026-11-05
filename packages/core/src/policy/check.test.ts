@@ -325,6 +325,52 @@ describe('checkPolicy', () => {
     ).toMatchObject({ ok: false, code: 'policy_invalid' });
   });
 
+  // The line of the marking names whom to ask (ADR 0032).
+  it('keeps whom to ask in the normal form of the content policy, only when it is set', () => {
+    const wide = String.fromCodePoint(0xff33);
+    const policy = policyOf({
+      schema: 'policy.v1',
+      interactive: {
+        contacts: ['sekretariat@example.org'],
+        inquiriesTo: `  ${wide}ekretariat, sekretariat@example.org `,
+      },
+    });
+    expect(policy.interactive.inquiriesTo).toBe(
+      'Sekretariat, sekretariat@example.org',
+    );
+    expect(
+      'inquiriesTo' in
+        policyOf({ schema: 'policy.v1', interactive: {} }).interactive,
+    ).toBe(false);
+  });
+
+  it.each([
+    [
+      'contact data the policy does not list',
+      'Sekretariat, max.mustermann@example.org',
+    ],
+    ['a web address', 'Sekretariat, www.example.org'],
+    ['a tag', 'Sekretariat <b>Pfarramt</b>'],
+    ['a sign that starts a link', 'Sekretariat [Pfarramt]'],
+    ['a second line', 'Sekretariat\nPfarramt'],
+    ['a tab', 'Sekretariat\tPfarramt'],
+    ['a character reference', 'Kirche &amp; Gemeinde'],
+    ['only spaces', '   '],
+    ['an empty text', ''],
+    ['more than 200 signs', 'a'.repeat(201)],
+  ])('refuses whom to ask with %s', (_name, inquiriesTo) => {
+    expect(
+      checkPolicy({
+        schema: 'policy.v1',
+        interactive: { contacts: ['sekretariat@example.org'], inquiriesTo },
+      }),
+    ).toEqual({
+      ok: false,
+      code: 'policy_invalid',
+      field: 'interactive.inquiriesTo',
+    });
+  });
+
   it('refuses more than 200 entries and 20 tools', () => {
     expect(
       checkPolicy({

@@ -134,6 +134,10 @@ describe('renderConfigReport', () => {
       row('Bestätigung', '‹echo-allowed› (Voreinstellung)'),
       row('Frist in Monaten', '12 (Voreinstellung)'),
       row('Richtlinie', 'keine Datei (Voreinstellung)'),
+      row(
+        'Prüfcode-Schlüssel',
+        'kein Schlüssel (‹ECCLIUM_MARKER_KEY_FILE› ist nicht gesetzt)',
+      ),
       row('Subjekt über stdio', '‹local-stdio› (Voreinstellung)'),
       row('Stufe des Logs', '‹info› (Voreinstellung)'),
       hostNote,

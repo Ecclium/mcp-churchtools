@@ -276,6 +276,24 @@ describe('a proposal', () => {
     ).not.toContain('contacts');
   });
 
+  it('keeps whom to ask of the policy in force', () => {
+    const text = renderPolicyProposal({
+      categories: [category(12, 'Berichte')],
+      readBudgetPerDay: 200,
+      contacts: ['sekretariat@example.org'],
+      inquiriesTo: 'Sekretariat «Pfarramt», sekretariat@example.org',
+    });
+    expect(load(text).interactive.inquiriesTo).toBe(
+      'Sekretariat «Pfarramt», sekretariat@example.org',
+    );
+    expect(
+      renderPolicyProposal({
+        categories: [category(12, 'Berichte')],
+        readBudgetPerDay: 200,
+      }),
+    ).not.toContain('inquiriesTo');
+  });
+
   it('reads back every name it takes, and comments out every other', () => {
     fc.assert(
       fc.property(
