@@ -43,6 +43,7 @@ export const variableNames = Object.freeze([
   'ECCLIUM_WRITE_CONFIRMATION',
   'ECCLIUM_AUDIT_RETENTION_MONTHS',
   'ECCLIUM_POLICY_FILE',
+  'ECCLIUM_MARKER_KEY_FILE',
   'ECCLIUM_STDIO_SUBJECT',
   'ECCLIUM_LOG_LEVEL',
 ] as const);
@@ -512,6 +513,15 @@ export const variables: readonly Variable[] = Object.freeze([
     stdioOnly: false,
   }),
   row({
+    name: 'ECCLIUM_MARKER_KEY_FILE',
+    kind: 'path',
+    maxLength: 4096,
+    choices: [],
+    defaultValue: undefined,
+    secret: false,
+    stdioOnly: false,
+  }),
+  row({
     name: 'ECCLIUM_STDIO_SUBJECT',
     kind: 'subject',
     maxLength: 32,
@@ -592,6 +602,11 @@ export const variableSchemas: Readonly<
     .min(1)
     .max(4096)
     .refine((value) => isAbsolute(value)),
+  ECCLIUM_MARKER_KEY_FILE: z
+    .string()
+    .min(1)
+    .max(4096)
+    .refine((value) => isAbsolute(value)),
   ECCLIUM_STDIO_SUBJECT: z.string().max(32).regex(stdioSubjectPattern),
   ECCLIUM_LOG_LEVEL: choiceOf('ECCLIUM_LOG_LEVEL'),
 });
@@ -624,6 +639,7 @@ export const environmentSchema = z.strictObject({
   ECCLIUM_AUDIT_RETENTION_MONTHS:
     variableSchemas.ECCLIUM_AUDIT_RETENTION_MONTHS.optional(),
   ECCLIUM_POLICY_FILE: variableSchemas.ECCLIUM_POLICY_FILE.optional(),
+  ECCLIUM_MARKER_KEY_FILE: variableSchemas.ECCLIUM_MARKER_KEY_FILE.optional(),
   ECCLIUM_STDIO_SUBJECT: variableSchemas.ECCLIUM_STDIO_SUBJECT.optional(),
   ECCLIUM_LOG_LEVEL: variableSchemas.ECCLIUM_LOG_LEVEL.optional(),
 });

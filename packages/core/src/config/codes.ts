@@ -8,6 +8,7 @@
  */
 import { originCodes } from '../http/index.js';
 import { policyCodes } from '../policy/file.js';
+import { markerKeyFileCodes } from './marker-key-file.js';
 import { pseudonymKeyFileCodes } from './pseudonym-key-file.js';
 import { keysDirCodes, stateDirCodes } from './state-dir.js';
 import { tokenFileCodes } from './token-file.js';
@@ -51,6 +52,8 @@ export const configProblemCodes = Object.freeze([
   'redaction_strict_with_api',
   'state_dir_required',
   ...policyCodes,
+  ...markerKeyFileCodes,
+  'marker_key_same',
 ] as const);
 
 /** Why the configuration cannot start the server. */

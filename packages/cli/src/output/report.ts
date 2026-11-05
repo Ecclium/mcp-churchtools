@@ -55,6 +55,7 @@ const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
   writeConfirmation: 'Bestätigung',
   auditRetentionMonths: 'Frist in Monaten',
   policy: 'Richtlinie',
+  markerKey: 'Prüfcode-Schlüssel',
   stdioSubject: 'Subjekt über stdio',
   logLevel: 'Stufe des Logs',
 });
@@ -112,6 +113,8 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
         return { text: 'kein Schlüssel' };
       case 'pseudonymKeyPrevious':
         return { text: 'kein Wechsel' };
+      case 'markerKey':
+        return { text: 'kein Schlüssel' };
       default:
         throw new TypeError(inconsistent);
     }
