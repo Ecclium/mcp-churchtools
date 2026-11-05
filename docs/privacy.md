@@ -101,7 +101,7 @@ Jede Seite und jeder Abschnitt, die Ecclium dem Wiki hinzufügt, endet mit einer
 
 ### Tagesschlüssel
 
-Nur wenn Ecclium schreibt (`ECCLIUM_READ_ONLY=false`), braucht es einen eigenen Ordner für Tagesschlüssel, den `ECCLIUM_KEYS_DIR` nennt. Mit ihnen verschlüsselt Ecclium die Snapshots, also den Stand vor einem Schreibvorgang, mit dem sich dieser zurücknehmen lässt, und die Einträge der Freigabe-Warteschlange ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)). Einen Tagesschlüssel legt Ecclium mit dem ersten Snapshot oder Eintrag eines Tages an. Schreib-Tools des Kerns kommen mit einer späteren Version, bis dahin entsteht keiner.
+Nur wenn Ecclium schreibt (`ECCLIUM_READ_ONLY=false`), braucht es einen eigenen Ordner für Tagesschlüssel, den `ECCLIUM_KEYS_DIR` nennt. Mit ihnen verschlüsselt Ecclium die Snapshots, also den Stand vor einem Schreibvorgang, mit dem sich dieser zurücknehmen lässt, und die Einträge der Freigabe-Warteschlange ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)). Einen Tagesschlüssel legt Ecclium mit dem ersten Snapshot oder Eintrag eines Tages an. Snapshots entstehen mit den Schreib-Tools des Wikis.
 
 - **Inhalt:** je Mandant, Zweck und UTC-Tag eine Datei mit einem zufälligen Schlüssel als 64 Zeichen Hex, etwa `snapshot/default.2026-11-03.key` oder `queue/default.2026-11-03.key`. Keine Personendaten und keine Inhalte aus ChurchTools.
 - **Wer sie lesen kann:** Der Ordner und seine Unterordner haben die Rechte 700, die Dateien 600. Der Ordner darf nicht der Zustandsordner sein, nicht darin liegen und ihn nicht enthalten, sonst startet Ecclium nicht.
