@@ -1646,6 +1646,455 @@
       ]
     }
   },
+  "appointmentState": {
+    "method": "get",
+    "path": "/api/calendars/{calendarId}/appointments/{appointmentId}",
+    "query": [
+      "include[]"
+    ],
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "object",
+          "properties": {
+            "appointment": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "version": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "calendar": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ]
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                "subtitle": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 255
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 7000
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "startDate": {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z)?$"
+                },
+                "endDate": {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z)?$"
+                },
+                "allDay": {
+                  "type": "boolean"
+                },
+                "isInternal": {
+                  "type": "boolean"
+                },
+                "repeatId": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "additionals": {
+                  "maxItems": 1000,
+                  "type": "array",
+                  "items": {}
+                },
+                "exceptions": {
+                  "maxItems": 1000,
+                  "type": "array",
+                  "items": {}
+                },
+                "address": {
+                  "anyOf": [
+                    {},
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "link": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 1000
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "image": {
+                  "anyOf": [
+                    {},
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "signup": {
+                  "anyOf": [
+                    {},
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "onBehalfOfPid": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "version",
+                "calendar",
+                "title",
+                "startDate",
+                "endDate",
+                "allDay",
+                "isInternal",
+                "repeatId"
+              ]
+            },
+            "additionalInfos": {},
+            "calculatedDates": {
+              "anyOf": [
+                {
+                  "maxItems": 500,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                }
+              ]
+            }
+          },
+          "required": [
+            "appointment",
+            "calculatedDates"
+          ]
+        }
+      },
+      "required": [
+        "data"
+      ]
+    }
+  },
+  "appointmentCreate": {
+    "method": "post",
+    "path": "/api/calendars/{calendarId}/appointments",
+    "query": [],
+    "status": 201,
+    "request": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 7000
+        },
+        "startDate": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"
+        },
+        "endDate": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"
+        },
+        "isInternal": {
+          "type": "boolean",
+          "const": false
+        },
+        "repeatId": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 0
+        }
+      },
+      "required": [
+        "title",
+        "startDate",
+        "endDate",
+        "isInternal",
+        "repeatId"
+      ],
+      "additionalProperties": false
+    },
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "calendar": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "id"
+              ]
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "subtitle": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 7000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "startDate": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z)?$"
+            },
+            "endDate": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z)?$"
+            },
+            "allDay": {
+              "type": "boolean"
+            },
+            "isInternal": {
+              "type": "boolean"
+            },
+            "repeatId": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "additionals": {
+              "maxItems": 1000,
+              "type": "array",
+              "items": {}
+            },
+            "exceptions": {
+              "maxItems": 1000,
+              "type": "array",
+              "items": {}
+            },
+            "address": {
+              "anyOf": [
+                {},
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "link": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 1000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "image": {
+              "anyOf": [
+                {},
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "signup": {
+              "anyOf": [
+                {},
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "onBehalfOfPid": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "version",
+            "calendar",
+            "title",
+            "startDate",
+            "endDate",
+            "allDay",
+            "isInternal",
+            "repeatId"
+          ]
+        }
+      },
+      "required": [
+        "data"
+      ]
+    }
+  },
+  "appointmentUpdate": {
+    "method": "put",
+    "path": "/api/calendars/{calendarId}/appointments/{appointmentId}",
+    "query": [],
+    "status": 200,
+    "request": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "subtitle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 7000
+        },
+        "startDate": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"
+        },
+        "endDate": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"
+        },
+        "isInternal": {
+          "type": "boolean"
+        },
+        "repeatId": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 0
+        }
+      },
+      "required": [
+        "title",
+        "startDate",
+        "endDate",
+        "isInternal",
+        "repeatId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "appointmentDelete": {
+    "method": "delete",
+    "path": "/api/calendars/{calendarId}/appointments/{appointmentId}",
+    "query": [],
+    "status": 204
+  },
   "resources": {
     "method": "get",
     "path": "/api/resources",
@@ -1821,6 +2270,246 @@
         "data"
       ]
     }
+  },
+  "bookingState": {
+    "method": "get",
+    "path": "/api/bookings/{bookingId}",
+    "query": [],
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "object",
+          "properties": {
+            "booking": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "version": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "resourceId": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 255
+                },
+                "description": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 7000
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "startDate": {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z)?$"
+                },
+                "endDate": {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z)?$"
+                },
+                "statusId": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "repeatId": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "appointmentId": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "version",
+                "resourceId",
+                "title",
+                "startDate",
+                "endDate",
+                "statusId",
+                "repeatId"
+              ]
+            }
+          },
+          "required": [
+            "booking"
+          ]
+        }
+      },
+      "required": [
+        "data"
+      ]
+    }
+  },
+  "bookingCreate": {
+    "method": "post",
+    "path": "/api/bookings",
+    "query": [],
+    "status": 201,
+    "request": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "resourceId": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 7000
+        },
+        "startDate": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"
+        },
+        "endDate": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z$"
+        },
+        "statusId": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1
+        },
+        "showInCal": {
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "required": [
+        "resourceId",
+        "title",
+        "startDate",
+        "endDate",
+        "statusId",
+        "showInCal"
+      ],
+      "additionalProperties": false
+    },
+    "response": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "data": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "resourceId": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 255
+            },
+            "description": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 7000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "startDate": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z)?$"
+            },
+            "endDate": {
+              "type": "string",
+              "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])(?:T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]Z)?$"
+            },
+            "statusId": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "repeatId": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "appointmentId": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "version",
+            "resourceId",
+            "title",
+            "startDate",
+            "endDate",
+            "statusId",
+            "repeatId"
+          ]
+        }
+      },
+      "required": [
+        "data"
+      ]
+    }
+  },
+  "bookingDelete": {
+    "method": "delete",
+    "path": "/api/bookings/{bookingId}",
+    "query": [],
+    "status": 204
   },
   "songs": {
     "method": "get",

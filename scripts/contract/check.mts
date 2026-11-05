@@ -500,7 +500,10 @@ interface Operation {
   readonly method: Method;
   readonly path: string;
   readonly query: readonly string[];
-  /** The status of the answer of success: 200 unless the entry names 201. */
+  /**
+   * The status of the answer of success: 200 unless the entry names 201,
+   * and 204 for a DELETE.
+   */
   readonly status: number;
   /** Only writes: the JSON Schema of the body the client sends. */
   readonly request: unknown;
@@ -529,9 +532,12 @@ const operationsOf = (contract: unknown): Operation[] => {
     )
       throw broken;
     // A read has no body and is read at 200; a write names the body it
-    // sends, so that no write drops out of the comparison (ADR 0072).
+    // sends, so that no write drops out of the comparison, and a DELETE
+    // has no body and ends with 204, whose answer has none (ADR 0072).
     const status = entry.status ?? 200;
-    if (status !== 200 && status !== 201) throw broken;
+    if (method === 'delete') {
+      if (status !== 204 || entry.request !== undefined) throw broken;
+    } else if (status !== 200 && status !== 201) throw broken;
     if (method === 'get' && (entry.request !== undefined || status !== 200))
       throw broken;
     if (method !== 'get' && method !== 'delete' && entry.request === undefined)
