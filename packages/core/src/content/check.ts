@@ -25,7 +25,7 @@ import {
 } from './normalize.js';
 import { checkReadableText, hasCharacterReference } from './scan.js';
 import { serializeBlocks } from './serialize.js';
-import type { Block, Inline } from './tree.js';
+import type { Block, Inline, List } from './tree.js';
 import { type ContentViolationKind, orderViolations } from './violations.js';
 
 /** What the content policy needs besides the text. */
@@ -93,14 +93,44 @@ export function checkMarkdown(
   markdown: string,
   options: ContentCheckOptions,
 ): ContentCheckResult {
+  const written = writtenForm(markdown);
+  if (!written.ok) return refused(written.violations);
+  // What a reader sees, in the text as it came and as it is written, so
+  // that emphasis read one way or the other hides nothing.
+  const found = written.read.flatMap((blocks) =>
+    readableTexts(blocks).flatMap((value) =>
+      checkReadableText(value, options.contacts),
+    ),
+  );
+  return found.length > 0 ? refused(found) : { ok: true, text: written.text };
+}
+
+// The form a text in Markdown is written in, with the trees of the text as
+// it came and as it is written, or why it has none.
+const writtenForm = (
+  markdown: string,
+):
+  | {
+      readonly ok: true;
+      readonly text: string;
+      readonly read: readonly (readonly Block[])[];
+    }
+  | {
+      readonly ok: false;
+      readonly violations: Iterable<ContentViolationKind>;
+    } => {
   const normal = normalizeContent(markdown);
-  if (!normal.ok) return refused([normal.violation]);
-  if (hasTooManyDelimiters(normal.text)) return refused(['tooLong']);
+  if (!normal.ok) return { ok: false, violations: [normal.violation] };
+  if (hasTooManyDelimiters(normal.text)) {
+    return { ok: false, violations: ['tooLong'] };
+  }
   const read = readMarkdown(normal.text);
-  if (!read.ok) return refused(read.violations);
+  if (!read.ok) return { ok: false, violations: read.violations };
   const text = serializeBlocks(read.blocks);
   // Escaping adds signs, so a text near the limit can pass it only before.
-  if (bytesOf(text) > maxContentBytes) return refused(['tooLong']);
+  if (bytesOf(text) > maxContentBytes) {
+    return { ok: false, violations: ['tooLong'] };
+  }
   // The written form is read once more. The lexer does not always read
   // emphasis the same way after a mark of punctuation, so a text whose
   // written form it reads differently is refused: what passes is always a
@@ -116,15 +146,76 @@ export function checkMarkdown(
     !stable.ok ||
     stable.text !== text
   ) {
-    return refused(['unparsable']);
+    return { ok: false, violations: ['unparsable'] };
   }
-  // What a reader sees, in the text as it came and as it is written, so
-  // that emphasis read one way or the other hides nothing.
-  const found = [
-    ...readableTexts(read.blocks),
-    ...readableTexts(again.blocks),
-  ].flatMap((value) => checkReadableText(value, options.contacts));
-  return found.length > 0 ? refused(found) : { ok: true, text };
+  return { ok: true, text, read: [read.blocks, again.blocks] };
+};
+
+// A run of text with every run of spaces and line breaks as one space, as
+// a reader sees it, inside bold and italic as well.
+const spaced = (nodes: readonly Inline[]): Inline[] =>
+  nodes.map((node) =>
+    node.kind === 'text'
+      ? { kind: 'text', text: node.text.split(/\s+/u).join(' ') }
+      : { kind: node.kind, children: spaced(node.children) },
+  );
+
+const spacedList = (list: List): List => ({
+  ...list,
+  items: list.items.map((item) =>
+    item.map((inner) =>
+      inner.kind === 'list'
+        ? spacedList(inner)
+        : { ...inner, children: spaced(inner.children) },
+    ),
+  ),
+});
+
+const spacedBlocks = (blocks: readonly Block[]): Block[] =>
+  blocks.map((block): Block => {
+    switch (block.kind) {
+      case 'heading':
+      case 'paragraph':
+        return { ...block, children: spaced(block.children) };
+      case 'list':
+        return spacedList(block);
+      case 'table':
+        return {
+          ...block,
+          header: block.header.map(spaced),
+          rows: block.rows.map((cells) => cells.map(spaced)),
+        };
+    }
+  });
+
+/**
+ * Gives the canonical form of a text in Markdown, over which the check
+ * code of the marking is taken (ADR 0032): the text read with the lexer of
+ * the content policy and written with its serializer, with every run of
+ * spaces and line breaks in a text as one space. So the signs before the
+ * items of a list, blank lines, the alignment of a table and how lines of
+ * a paragraph are broken do not count, as the web editor of ChurchTools
+ * changes such things when it saves a page. Text, headings, emphasis and
+ * the build of lists and tables count.
+ *
+ * Only the form is checked, not what a reader sees: a section a person
+ * changed may hold an e-mail address the policy does not list, and still
+ * has a canonical form. Anything outside the allowed part, such as a link
+ * the editor made from a bare address or a hard line break, gives none.
+ *
+ * @param markdown - A text, such as a section of a page as read.
+ * @returns The canonical form, or undefined when the text has none.
+ * @example
+ * ```ts
+ * canonicalMarkdown('# Plan\n\n* Probe\n* Pause'); // '# Plan\n\n- Probe\n- Pause\n'
+ * canonicalMarkdown('Eine\nZeile'); // 'Eine Zeile\n'
+ * canonicalMarkdown('Mehr: https://example.org'); // undefined
+ * ```
+ */
+export function canonicalMarkdown(markdown: string): string | undefined {
+  const written = writtenForm(markdown);
+  const again = written.ok ? written.read[1] : undefined;
+  return again === undefined ? undefined : serializeBlocks(spacedBlocks(again));
 }
 
 const isHtmlStart = (code: number): boolean =>
