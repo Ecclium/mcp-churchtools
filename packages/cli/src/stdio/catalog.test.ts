@@ -250,6 +250,10 @@ describe('the budget of the descriptions', () => {
       ]) {
         expect(catalog.has(name), name).toBe(true);
       }
+      // The version of the wiki prompt that creates the page (ADR 0065).
+      expect(catalog.prompt('wiki_seite_entwerfen')?.tools).toContain(
+        'ct_wiki_page_create',
+      );
       const length = catalog
         .list()
         .reduce((sum, entry) => sum + entry.description.length, 0);
@@ -269,5 +273,8 @@ describe('the budget of the descriptions', () => {
     expect(
       catalog.list().filter((entry) => entry.meta.capability === 'write'),
     ).toEqual([]);
+    expect(catalog.prompt('wiki_seite_entwerfen')?.tools).not.toContain(
+      'ct_wiki_page_create',
+    );
   });
 });

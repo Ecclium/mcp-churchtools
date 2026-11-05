@@ -65,7 +65,12 @@ export function createStdioCatalog(
     ? readDocs()
     : undefined;
   return createToolCatalog({
-    core: createCorePlugin(docs === undefined ? {} : { docs }),
+    core: createCorePlugin({
+      ...(docs === undefined ? {} : { docs }),
+      // The prompt of the wiki that creates the page, only for a server
+      // that writes (ADR 0065).
+      writing: !config.readOnly,
+    }),
     plugins: [],
     readOnly: config.readOnly,
     toolsets: new Set(config.toolsets),
