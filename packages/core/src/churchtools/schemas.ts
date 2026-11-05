@@ -809,6 +809,11 @@ export const storedAppointmentSchema = z.object({
   image: z.unknown().nullable().optional(),
   signup: z.unknown().nullable().optional(),
   onBehalfOfPid: z.number().int().nullable().optional(),
+  // Only the ID of the account that created the appointment (F44): the
+  // write guard moves only appointments its own account created.
+  meta: z
+    .object({ createdPerson: z.object({ id }).nullable().optional() })
+    .optional(),
 });
 
 /**

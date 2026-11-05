@@ -91,6 +91,12 @@ export interface StoredAppointment {
   /** Whether only signed-in persons see the appointment. */
   readonly isInternal: boolean;
   /**
+   * The ID of the person who created the appointment (F44), or null when
+   * the answer names none. The write guard compares it with the account
+   * of the server.
+   */
+  readonly createdBy: number | null;
+  /**
    * What the appointment holds that a change by the client would lose, in
    * the order of {@link AppointmentPart}; empty for a single appointment
    * like the one of the probe. Linked events, bookings and invitations are
@@ -565,6 +571,7 @@ const toAppointment = (
     endDate: data.endDate,
     allDay: data.allDay,
     isInternal: data.isInternal,
+    createdBy: data.meta?.createdPerson?.id ?? null,
     parts: partsOf(data, linked),
   });
 
