@@ -125,8 +125,8 @@ const countsOf = (counter: number) =>
 describe('the file of quotas', () => {
   it.each(quotaStoreChecks)('$name', async ({ run }) => {
     const state = freshState();
-    const at = clockFrom(Date.UTC(2026, 9, 24, 12));
-    await run(() => open(state, { clock: at }));
+    // The real clock, as a plugin author would run the checks.
+    await run(() => open(state));
   });
 
   it('writes counters only, in a file of the user with 0600, and leaves no lock', async () => {
@@ -352,8 +352,9 @@ describe('the file of quotas', () => {
     for (const name of names) {
       writeFileSync(fileOf(state, name), '{}', { mode: 0o600 });
     }
-    // The clock on 24.10.2026: an entry of 09.10. can still be decided,
-    // since 15 days lie between, one of 08.10. no longer.
+    // The clock on 24.10.2026: an entry of 09.10. expired today, but its
+    // file of decisions stays one more day as a margin; the one of 08.10.
+    // goes.
     const at = clockFrom(Date.UTC(2026, 9, 24, 12));
     await open(state, { clock: at }).increment(ctx, decision, day);
     expect(readdirSync(join(state, 'quota')).sort()).toEqual(

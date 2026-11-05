@@ -111,6 +111,14 @@ const one = quotaContext('demo-tenant', 'service', 'stdio:local-stdio');
 // The counter of a decision about an entry of the queue (ADR 0029).
 const decision = approvalQuotaKey('5e'.repeat(32));
 
+// The days of the checks of decisions, from today in UTC on, as each check
+// runs: a store keeps such a counter by its own clock, so a fixed day
+// would pass for a store with a real clock only until it is 15 days old.
+const daysFromToday = (offset: number): IsoDate =>
+  new Date(Date.now() + offset * 86_400_000)
+    .toISOString()
+    .slice(0, 10) as IsoDate;
+
 const check = (
   name: string,
   run: (open: OpenQuotaStore) => Promise<void>,
@@ -220,6 +228,8 @@ export const quotaStoreChecks: readonly QuotaStoreCheck[] = Object.freeze([
   check(
     'counts a decision for the tenant, whichever actor counts',
     async (open) => {
+      const day = daysFromToday(0);
+      const nextDay = daysFromToday(1);
       const store = open();
       const operator = quotaContext('demo-tenant', 'user', 'stdio:operator');
       const other = quotaContext(
@@ -243,6 +253,7 @@ export const quotaStoreChecks: readonly QuotaStoreCheck[] = Object.freeze([
   check(
     'keeps a decision apart from the read budget and the writes',
     async (open) => {
+      const day = daysFromToday(0);
       const store = open();
       const create = writeQuotaKey('ct_wiki_page_create', 'wiki_category:12');
       await store.increment(one, decision, day);
@@ -260,15 +271,13 @@ export const quotaStoreChecks: readonly QuotaStoreCheck[] = Object.freeze([
   // A store may drop the counters of a day once a later day counts; the
   // counter of a decision it must keep, while its entry waits.
   check('keeps a decision while later days count', async (open) => {
+    const day = daysFromToday(0);
     await open().increment(one, decision, day);
-    for (const later of ['2026-10-25', '2026-11-07', '2026-11-08']) {
+    // The next day, and the last two days an entry of today matters.
+    for (const later of [1, 14, 15].map(daysFromToday)) {
       const store = open();
-      await store.increment(one, key, later as IsoDate);
-      await store.increment(
-        one,
-        approvalQuotaKey('60'.repeat(32)),
-        later as IsoDate,
-      );
+      await store.increment(one, key, later);
+      await store.increment(one, approvalQuotaKey('60'.repeat(32)), later);
     }
     assert.equal(await open().read(one, decision, day), 1);
     assert.equal(await open().increment(one, decision, day), 2);
@@ -276,6 +285,7 @@ export const quotaStoreChecks: readonly QuotaStoreCheck[] = Object.freeze([
   check(
     'gives 1 to one decision only when two stores count at the same time',
     async (open) => {
+      const day = daysFromToday(0);
       const first = open();
       const second = open();
       const counts = await Promise.all(
