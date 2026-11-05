@@ -163,6 +163,37 @@ describe('the catalog of messages', () => {
     }
   });
 
+  // A new key of the check codes makes every marking written so far
+  // invalid (ADR 0032), so the texts send the operator to the backup first.
+  it('asks for the backup of the key of the check codes before a new one', () => {
+    for (const code of [
+      'marker_key_invalid',
+      'marker_key_file_empty',
+    ] as const) {
+      const text = problemText({ code, variable: 'ECCLIUM_MARKER_KEY_FILE' });
+      expect(text).toContain('‹ECCLIUM_MARKER_KEY_FILE›');
+      expect(text).toContain('aus der Sicherung wieder her');
+      expect(text).toContain('jeden bisherigen Prüfcode ungültig');
+    }
+    const same = problemText({
+      code: 'marker_key_same',
+      variable: 'ECCLIUM_MARKER_KEY_FILE',
+    });
+    expect(same).toContain('wechseln Sie den Schlüssel der Pseudonyme');
+    expect(
+      problemText({
+        code: 'marker_key_file_mode',
+        variable: 'ECCLIUM_MARKER_KEY_FILE',
+      }),
+    ).toContain('als eigene von Ecclium ausgeben');
+    expect(
+      problemText({
+        code: 'pseudonym_key_file_mode',
+        variable: 'ECCLIUM_PSEUDONYM_KEY_FILE',
+      }),
+    ).toContain('jedes Pseudonym in die Kennung einer Person');
+  });
+
   it('names the variable it was given, in ‹›', () => {
     expect(
       problemText({ code: 'empty_value', variable: 'ECCLIUM_READ_ONLY' }),

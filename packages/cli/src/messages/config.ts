@@ -114,6 +114,8 @@ const confirmationVariable = quote('ECCLIUM_WRITE_CONFIRMATION');
 const keyFile = quote('ECCLIUM_PSEUDONYM_KEY_FILE');
 const previousKeyFile = quote('ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE');
 const markerKeyVariable = quote('ECCLIUM_MARKER_KEY_FILE');
+const markerKeyContent =
+  'Hat Ecclium mit dem Schlüssel schon Seiten oder Abschnitte gekennzeichnet, stellen Sie die Datei aus der Sicherung wieder her, denn ein neuer Schlüssel macht jeden bisherigen Prüfcode ungültig. Sonst erzeugen Sie einen Schlüssel mit ‹openssl rand -hex 32› und schreiben ihn in die Datei.';
 const keyCommand = '‹openssl rand -hex 32›';
 // What belongs into a key file: a new key, or in the file of the previous
 // key the one that was in use so far.
@@ -215,6 +217,11 @@ const keyFileTexts = (
     readonly platform: string;
     /** What a reader of the key could do. */
     readonly mode: string;
+    /**
+     * What belongs into a file that is empty or holds no key, after the
+     * name of the variable as the loader reported it.
+     */
+    readonly content: (raw: string | undefined) => string;
   },
 ) =>
   Object.freeze({
@@ -276,7 +283,7 @@ const keyFileTexts = (
       message(
         `Die Schlüsseldatei in ${name} ist leer.`,
         'Sie enthält keinen Schlüssel, höchstens einen Zeilenumbruch.',
-        keyContent(raw),
+        purpose.content(raw),
       ),
     bom: (name = fallback) =>
       message(
@@ -300,13 +307,14 @@ const keyFileTexts = (
       message(
         `Die Schlüsseldatei in ${name} enthält keinen gültigen Schlüssel.`,
         'Ein Schlüssel hat genau 64 Zeichen aus 0 bis 9 und a bis f in Kleinbuchstaben, und nicht alle seine Bytes sind gleich.',
-        keyContent(raw),
+        purpose.content(raw),
       ),
   });
 const pseudonymKeyFile = keyFileTexts(keyFile, {
   missing: 'Ohne die Datei hat Ecclium keinen Schlüssel für Pseudonyme.',
   platform: 'Pseudonyme gibt es auf diesem System nicht.',
   mode: 'Wer den Schlüssel liest, kann jedes Pseudonym in die Kennung einer Person zurückübersetzen.',
+  content: keyContent,
 });
 const markerKeyFile = keyFileTexts(markerKeyVariable, {
   missing:
@@ -314,6 +322,9 @@ const markerKeyFile = keyFileTexts(markerKeyVariable, {
   platform:
     'Neue Seiten und Abschnitte im Wiki legt Ecclium auf diesem System nicht an.',
   mode: 'Wer den Schlüssel liest, kann Abschnitte im Wiki als eigene von Ecclium ausgeben.',
+  // A new key makes every check code written so far invalid, so the one
+  // in use comes back from its backup (ADR 0032).
+  content: () => markerKeyContent,
 });
 
 // One function per code. It gets the quoted name of the variable and the
@@ -1082,7 +1093,7 @@ const problems: Readonly<
     message(
       `In ${name} steht derselbe Schlüssel wie für die Pseudonyme.`,
       'Den Schlüssel der Pseudonyme wechseln Sie von Zeit zu Zeit, den des Prüfcodes nie, sonst gilt keine Kennzeichnung im Wiki mehr als eigene.',
-      `Erzeugen Sie für ${name} einen eigenen Schlüssel, etwa mit ${keyCommand}, und sichern Sie die Datei.`,
+      `Hat Ecclium mit dem Schlüssel in ${name} schon Abschnitte gekennzeichnet, behalten Sie ihn und wechseln Sie den Schlüssel der Pseudonyme. Sonst erzeugen Sie für ${name} einen eigenen Schlüssel, etwa mit ${keyCommand}, und sichern Sie die Datei.`,
     ),
 });
 
