@@ -399,6 +399,18 @@ describe('planning', () => {
       writeSentences.blank,
     ],
     [
+      'a title with a space at its end',
+      { ...create, title: 'Plan ' },
+      'validation',
+      writeSentences.title,
+    ],
+    [
+      'a title that NFKC makes longer than 255 characters',
+      { ...create, title: `${'T'.repeat(254)}${String.fromCodePoint(0x2026)}` },
+      'validation',
+      writeSentences.title,
+    ],
+    [
       'a text of spaces',
       { ...update, text: ' ' },
       'validation',

@@ -176,6 +176,12 @@ const reasons: Readonly<Record<UndoReason, UndoEnding>> = Object.freeze({
     'Vor dem Schreibvorgang war die Seite leer, und eine leere Seite schreibt Ecclium nicht. Leeren Sie die Seite bei Bedarf von Hand.',
     exitCodes.dataError,
   ),
+  // An undo writes back the text of a page and never a title; the reason
+  // only completes the table.
+  title: ending(
+    'Der Titel passt nicht zu einer Seite des Wikis, Ecclium hat nichts geschrieben.',
+    exitCodes.dataError,
+  ),
   rightsUnknown: ending(
     'Ecclium kann die Rechte des Dienstkontos nicht lesen und schreibt darum nicht. Prüfen Sie das Dienstkonto in ChurchTools.',
     exitCodes.noPermission,

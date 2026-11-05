@@ -90,7 +90,10 @@ import {
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { maxWikiWriteBytes } from '../churchtools/schemas.js';
-import type { ChurchToolsWrites } from '../churchtools/wiki-writes.js';
+import {
+  type ChurchToolsWrites,
+  isWikiTitle,
+} from '../churchtools/wiki-writes.js';
 import { canonicalOfWritten, contactKeysOf } from '../content/index.js';
 import { HttpTransportError } from '../http/index.js';
 import type { KeyMaterial } from '../keys/index.js';
@@ -146,6 +149,8 @@ export const writeSentences = Object.freeze({
   intent:
     'The write does not fit its kind: check the IDs, the version and the texts.',
   blank: 'The text has to hold more than spaces.',
+  title:
+    'A title has 1 to 255 characters, no control characters and no spaces at either end.',
   rightsUnknown:
     'The server cannot read the rights of its account, so it does not write. Ask the operator.',
   missingRight:
@@ -767,6 +772,11 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     if (intent.kind === 'wikiPageCreate') {
       if (isBlank(intent.text)) {
         throw refuse('validation', writeSentences.blank);
+      }
+      // The title as the content policy wrote it, which the client would
+      // refuse only at the commit, after the confirmation was used up.
+      if (!isWikiTitle(intent.title)) {
+        throw refuse('validation', writeSentences.title);
       }
       const { text } = marked(ctx, intent.text, day);
       fits(text);

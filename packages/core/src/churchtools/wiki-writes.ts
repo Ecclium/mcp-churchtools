@@ -193,11 +193,23 @@ const duplicateTitle =
 const isWholeFromOne = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 1;
 
-// A title fits when ChurchTools stores it as sent, as far as the client can
-// tell: no control character of C0, C1 or DEL, no space at either end,
-// which ChurchTools trims, and no lone surrogate. The length counts UTF-16
-// code units, as the schema of a read does.
-const isTitle = (value: unknown): value is string => {
+/**
+ * Whether a title fits a page of the wiki: ChurchTools stores it as sent,
+ * as far as the client can tell. No control character of C0, C1 or DEL, no
+ * space at either end, which ChurchTools trims, and no lone surrogate. The
+ * length counts UTF-16 code units, as the schema of a read does. The write
+ * guard checks a title with it when it plans, so that a title the client
+ * would refuse ends before anything is confirmed (ADR 0029).
+ *
+ * @param value - The title.
+ * @returns Whether the client sends it.
+ * @example
+ * ```ts
+ * isWikiTitle('Dienstplan'); // true
+ * isWikiTitle('Dienstplan '); // false
+ * ```
+ */
+export const isWikiTitle = (value: unknown): value is string => {
   if (typeof value !== 'string') return false;
   if (value.length < 1 || value.length > maxWikiTitleLength) return false;
   if (value.trim() !== value || !wellFormed(value)) return false;
@@ -261,7 +273,7 @@ export function createWikiWrites(
   ): Promise<CreatedWikiPage> => {
     checkInput(
       ctx,
-      isWholeFromOne(categoryId) && isTitle(title) && isText(text),
+      isWholeFromOne(categoryId) && isWikiTitle(title) && isText(text),
     );
     const url = urlOfPath(
       origin,
