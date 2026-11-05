@@ -25,7 +25,8 @@
  * command did its work, `show` of a decided entry included; 64 for a wrong
  * call; 65 for a decision about an entry that was decided already, a
  * target that changed, or a text that is refused; 66 without an entry
- * under the ID or past its retention; 69 when ChurchTools was not reached
+ * under the ID or past its retention, or for an approval whose target is
+ * gone in ChurchTools; 69 when ChurchTools was not reached
  * or the outcome of a write is unknown; 70 for an internal error; 74 when
  * the audit file cannot take the line, the state before a write could not
  * be kept, or the line of a decision did not reach it; 77 for a call the
@@ -336,15 +337,30 @@ const reportReject = (output: Output, outcome: RejectOutcome): ExitCode => {
   }
 };
 
-const reportApprove = (output: Output, outcome: ApproveOutcome): ExitCode => {
+/**
+ * Writes what `approve` says for the outcome of the pipeline: the summary,
+ * the diff and the result on stdout, a problem on stderr. An approval that
+ * kept its decision or may have written without its line in the audit
+ * file ends with 74 after its own text, whatever it was.
+ *
+ * @param output - The output of the command.
+ * @param outcome - The outcome of the approval of the pipeline.
+ * @returns The exit code.
+ * @example
+ * ```ts
+ * return reportApprove(output, await pipeline.approve(call, request));
+ * ```
+ */
+export function reportApprove(
+  output: Output,
+  outcome: ApproveOutcome,
+): ExitCode {
   const code = approveReportOf(output, outcome);
-  // An approval that may have written without its line in the audit file
-  // ends with 74 after its own text, whatever it was.
   if ('unrecorded' in outcome && outcome.unrecorded === true) {
     return finish(output, approvedUnrecorded);
   }
   return code;
-};
+}
 
 const approveReportOf = (output: Output, outcome: ApproveOutcome): ExitCode => {
   switch (outcome.kind) {

@@ -659,6 +659,7 @@ describe('a rejection of the operator (ADR 0031)', () => {
         get: (ctx, id) =>
           Promise.resolve({ id, day, entry: { id, day, sealed: 'not.it' } }),
       }),
+      {},
     ],
     [
       'a queue that cannot keep the decision',
@@ -666,8 +667,10 @@ describe('a rejection of the operator (ADR 0031)', () => {
         ...store,
         decide: () => Promise.reject(new Error('disk')),
       }),
+      // Counted, so that the entry can no longer be decided.
+      { used: true },
     ],
-  ])('fails as internal with %s', async (_name, broken) => {
+  ] as const)('fails as internal with %s', async (_name, broken, counted) => {
     const memory = createMemoryApprovalQueue();
     const setupped = setup({ store: memory });
     const id = await queueNote(setupped);
@@ -682,12 +685,37 @@ describe('a rejection of the operator (ADR 0031)', () => {
     expect(await pipeline.reject({ queueId: id }, operator())).toEqual({
       kind: 'failed',
       code: 'internal',
+      ...counted,
     });
     expect(events()[0]).toMatchObject({
       type: 'approval',
       outcome: 'error',
       errorCode: 'internal',
     });
+  });
+
+  it('says that the count is unknown when the store of quotas does not answer in time', async () => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    const hanging = setup({
+      queue: setupped.keeper,
+      quota: {
+        increment: () => new Promise<number>(() => undefined),
+        read: () => Promise.resolve(0),
+      },
+    });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const outcome = hanging.pipeline.reject({ queueId: id }, operator());
+      await vi.advanceTimersByTimeAsync(quotaTimeoutMs);
+      expect(await outcome).toEqual({
+        kind: 'failed',
+        code: 'internal',
+        reason: 'countUnknown',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('says decided when another process decided in between, and rejected when only the destruction of its entry failed', async () => {
@@ -757,6 +785,7 @@ describe('a rejection of the operator (ADR 0031)', () => {
     expect(await pipeline.reject({ queueId: id }, operator())).toEqual({
       kind: 'failed',
       code: 'internal',
+      used: true,
     });
   });
 
@@ -1503,6 +1532,7 @@ describe('an approval of the operator (ADR 0029)', () => {
       expect(await outcome).toEqual({
         kind: 'failed',
         code: 'internal',
+        reason: 'countUnknown',
         used: false,
         sent: false,
       });
@@ -1510,6 +1540,45 @@ describe('an approval of the operator (ADR 0029)', () => {
       vi.useRealTimers();
     }
     expect((await setupped.keeper.load(ctxOf, id)).kind).toBe('found');
+  });
+
+  it('ends a used entry before it reads ChurchTools, also while writing is off', async () => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    const loaded = await setupped.keeper.load(ctxOf, id);
+    if (loaded.kind !== 'found') throw new Error('not found');
+    await setupped.quota?.increment(
+      ctxOf,
+      approvalKeyOf(id, loaded.content.planHash),
+      day,
+    );
+    writeFileSync(join(dir, 'writes-off'), '');
+    const calls = setupped.double.calls().length;
+    expect(
+      await setupped.pipeline.approve({ queueId: id }, operator()),
+    ).toEqual({ kind: 'used' });
+    expect(setupped.double.calls().length).toBe(calls);
+  });
+
+  it('says so when an approval kept its decision but its line did not reach the audit file, without writing', async () => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    replanReads(setupped);
+    // The read right before the write fails after the decision.
+    setupped.double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(500, '{}', json);
+    setupped.file.ok = false;
+    expect(
+      await setupped.pipeline.approve({ queueId: id }, operator()),
+    ).toMatchObject({
+      kind: 'failed',
+      used: true,
+      sent: false,
+      unrecorded: true,
+    });
+    // Nothing may have been written, so writing goes on.
+    expect(setupped.logs()).not.toContain('write_audit_failed');
   });
 
   it('names no reason for an error of ChurchTools, before and after the decision', async () => {

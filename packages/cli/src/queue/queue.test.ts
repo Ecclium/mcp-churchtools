@@ -40,7 +40,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { exitCodes } from '../exit-codes.js';
 import { type Output, terminalLines, usageLine } from '../output/index.js';
-import { type QueueAction, runQueue } from './queue.js';
+import { type QueueAction, reportApprove, runQueue } from './queue.js';
 import {
   approvedDiffHeading,
   approvedUnrecorded,
@@ -692,8 +692,52 @@ describe('ecclium queue approve', () => {
     },
   );
 
-  it('says so when the audit line of an approval did not reach the file', () => {
-    expect(approvedUnrecorded.code).toBe(exitCodes.ioError);
+  it('ends with 74 after its own text when the line of an approval did not reach the audit file', () => {
+    const lines: { readonly to: string; readonly text: string }[] = [];
+    const output: Output = {
+      stdout: (text) => {
+        lines.push({ to: 'stdout', text });
+        return true;
+      },
+      stderr: (text) => {
+        lines.push({ to: 'stderr', text });
+        return true;
+      },
+    };
+    const diff = { hunks: [], replaced: false };
+    const written = reportApprove(output, {
+      kind: 'approved',
+      summary: 'Die Seite ändern.',
+      target: { kind: 'wiki_page', key: `12/${guid}` },
+      version: 4,
+      undoId: id,
+      diff,
+      unrecorded: true,
+    });
+    expect(written).toBe(exitCodes.ioError);
+    expect(lines[0]).toEqual({
+      to: 'stdout',
+      text: 'Freigegeben: Die Seite ändern.',
+    });
+    expect(lines.at(-1)).toEqual({
+      to: 'stderr',
+      text: approvedUnrecorded.text,
+    });
+    lines.length = 0;
+    const failed = reportApprove(output, {
+      kind: 'failed',
+      code: 'network',
+      used: true,
+      sent: true,
+      diff,
+      unrecorded: true,
+    });
+    expect(failed).toBe(exitCodes.ioError);
+    expect(lines.map(({ text }) => text)).toEqual([
+      'Die Freigabe sollte so schreiben, mit ‹-› für Zeilen davor und ‹+› für Zeilen danach:',
+      approveFailedEnding({ code: 'network', used: true, sent: true }).text,
+      approvedUnrecorded.text,
+    ]);
   });
 
   it('lists the commands of an entry in the footers', () => {
@@ -747,6 +791,25 @@ describe('the endings of an approval', () => {
     );
     const used = approveFailedEnding({ ...failure, used: true, sent: false });
     expect(used.text).toContain('Die Freigabe ist verbraucht');
+  });
+
+  it('say that a count which did not answer in time leaves the entry unknown', () => {
+    const unknown = approveFailedEnding({
+      code: 'internal',
+      reason: 'countUnknown',
+      used: false,
+      sent: false,
+    });
+    expect(unknown.code).toBe(exitCodes.internal);
+    expect(unknown.text).toContain('‹ecclium queue list›');
+    expect(unknown.text).not.toContain('wartet weiter');
+    expect(failedEnding({ code: 'internal', reason: 'countUnknown' })).toEqual(
+      unknown,
+    );
+    // A rejection counted but not kept says that the entry is decided.
+    const counted = failedEnding({ code: 'internal', used: true });
+    expect(counted.code).toBe(exitCodes.internal);
+    expect(counted.text).toContain('nicht mehr entscheiden');
   });
 
   it('say what a refusal of ChurchTools means, and what a write that may have landed means', () => {

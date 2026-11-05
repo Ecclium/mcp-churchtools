@@ -86,7 +86,8 @@ export const listFooter =
   'Was ein Eintrag schreiben würde, zeigt ‹ecclium queue show <Kennung>›. Freigeben lässt er sich mit ‹ecclium queue approve <Kennung>›, abweisen mit ‹ecclium queue reject <Kennung>›. Nach 14 Tagen verfällt jeder Eintrag.';
 
 /** How an entry reads in a list whose decision was counted but not kept. */
-export const usedWords = 'entschieden, den Ausgang zeigt das Audit';
+export const usedWords =
+  'schon entschieden, ohne Vermerk, lässt sich nicht mehr entscheiden';
 
 /** The line before the diff of an entry. */
 export const diffHeading =
@@ -127,13 +128,17 @@ export const rejectedUnrecorded = ending(
  * ```
  */
 export function usedEnding(shown: boolean): QueueEnding {
+  // A command that stopped between the count and the record wrote no line
+  // into the audit, so the audit may not tell the outcome.
+  const counted =
+    'Über diesen Eintrag hat Ecclium schon einen Entscheid gezählt, aber keinen Vermerk festgehalten, etwa weil ein Befehl dazwischen endete. Entscheiden lässt er sich nicht mehr. Hat der Befehl seine Zeile noch geschrieben, zeigt ‹ecclium audit show› den Ausgang.';
   return shown
     ? ending(
-        'Über diesen Eintrag ist schon entschieden, den Ausgang zeigt ‹ecclium audit show›. Sein Inhalt lässt sich nicht mehr zeigen und verfällt mit dem Eintrag nach 14 Tagen.',
+        `${counted} Sein Inhalt lässt sich nicht mehr zeigen und verfällt mit dem Eintrag nach 14 Tagen.`,
         exitCodes.ok,
       )
     : ending(
-        'Über diesen Eintrag ist schon entschieden, den Ausgang zeigt ‹ecclium audit show›. Ecclium hat nichts geändert.',
+        `${counted} Dieser Befehl hat nichts geändert.`,
         exitCodes.dataError,
       );
 }
@@ -174,9 +179,14 @@ export function approvedLines(version: number, undoId?: string): string[] {
  * reach the audit file.
  */
 export const approvedUnrecorded = ending(
-  'Die Zeile dieser Freigabe kam nicht in die Audit-Datei, obwohl Ecclium womöglich geschrieben hat. Prüfen Sie die Audit-Datei mit ‹ecclium audit verify› und das Ziel in ChurchTools.',
+  'Die Zeile dieser Freigabe kam nicht in die Audit-Datei, obwohl Ecclium über den Eintrag entschieden und womöglich geschrieben hat. Prüfen Sie die Audit-Datei mit ‹ecclium audit verify› und das Ziel in ChurchTools.',
   exitCodes.ioError,
 );
+
+// A store of quotas that did not answer in time may still count the
+// decision, so neither waiting nor used up can be said.
+const countUnknownText =
+  'Der Zähler der Entscheide hat nicht rechtzeitig geantwortet, darum hat Ecclium nicht entschieden und nichts geschrieben. Ob der Zähler den Entscheid trotzdem noch gezählt hat, ist unbekannt: Ob sich der Eintrag noch entscheiden lässt, zeigt ‹ecclium queue list›. Prüfen Sie den Ordner ‹quota› im Zustandsordner.';
 
 // What an approval that did not write says of its entry: it still waits,
 // or its approval is used up.
@@ -273,6 +283,10 @@ const approveReasons: Readonly<
     text: 'Die ContentPolicy weist einen Text des Eintrags jetzt ab, etwa weil sich die Kontakte in der Richtlinie geändert haben. Ecclium hat nichts geschrieben.',
     code: exitCodes.dataError,
   },
+  countUnknown: {
+    text: countUnknownText,
+    code: exitCodes.internal,
+  },
 });
 
 // Codes with which ChurchTools answers and refuses a write.
@@ -360,9 +374,14 @@ export function approveFailedEnding(failure: {
           ? approveReasons.notAsPlanned
           : approveReasons.unknown
         : approveCodeTexts(code);
-  // The sentence of a target that changed since the write was queued says
-  // itself what is left to do.
-  const after = reason === 'changedSinceQueued' ? '' : used ? usedUp : waits;
+  // The sentence of a target that changed since the write was queued, and
+  // that of a count that is unknown, say themselves what is left to do.
+  const after =
+    reason === 'changedSinceQueued' || reason === 'countUnknown'
+      ? ''
+      : used
+        ? usedUp
+        : waits;
   return ending(`${found.text}${after}`, found.code);
 }
 
@@ -413,11 +432,12 @@ export function decidedEnding(
 
 /**
  * The ending of a call that was refused or failed, by the stable code of
- * the error and, for the audit file, the reason.
+ * the error, the reason, and whether the decision was counted.
  *
- * @param failure - Code and reason.
+ * @param failure - Code, reason and whether the decision was counted.
  * @param failure.code - The stable code of the error, never its message.
  * @param failure.reason - Why, where the core knows it.
+ * @param failure.used - Whether the decision was counted but not kept.
  * @returns The ending.
  * @example
  * ```ts
@@ -426,8 +446,19 @@ export function decidedEnding(
  */
 export function failedEnding(failure: {
   readonly code: ErrorCode;
-  readonly reason?: 'auditNotReady' | undefined;
+  readonly reason?: 'auditNotReady' | 'countUnknown' | undefined;
+  readonly used?: true | undefined;
 }): QueueEnding {
+  if (failure.reason === 'countUnknown') {
+    return ending(countUnknownText, exitCodes.internal);
+  }
+  // Counted but not kept: the entry can no longer be decided (ADR 0029).
+  if (failure.used === true) {
+    return ending(
+      'Der Befehl ist mit einem internen Fehler abgebrochen, nachdem Ecclium den Entscheid gezählt hatte. Der Eintrag lässt sich darum nicht mehr entscheiden und verfällt nach 14 Tagen. Prüfen Sie den Ordner ‹queue› im Zustandsordner.',
+      exitCodes.internal,
+    );
+  }
   if (failure.reason === 'auditNotReady') {
     return ending(
       'Die Audit-Datei kann die Zeile des Entscheids nicht aufnehmen, darum entscheidet Ecclium nicht. Prüfen Sie die Audit-Datei mit ‹ecclium audit verify›.',
