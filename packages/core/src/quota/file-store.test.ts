@@ -26,6 +26,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  approvalQuotaKey,
   type Clock,
   type IsoDate,
   type QuotaKey,
@@ -40,6 +41,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import {
   createFileQuotaStore,
   type FileQuotaStoreOptions,
+  maxApprovalKeys,
   maxQuotaActors,
   maxQuotaFileBytes,
   maxWriteKeysPerActor,
@@ -69,6 +71,13 @@ const freshState = (): string => {
 };
 
 const clock: Clock = Object.freeze({ now: () => Date.now() });
+// A clock that runs from a fixed time on, so that the deadline of a lock
+// passes as it would, and the files of decisions are judged by a day the
+// test chose rather than by today.
+const clockFrom = (start: number): Clock => {
+  const began = Date.now();
+  return Object.freeze({ now: () => start + (Date.now() - began) });
+};
 const day = '2026-10-24' as IsoDate;
 const key: QuotaKey = 'special_reads';
 const ctx = quotaContext('demo-tenant', 'service', 'stdio:local-stdio');
@@ -116,6 +125,7 @@ const countsOf = (counter: number) =>
 describe('the file of quotas', () => {
   it.each(quotaStoreChecks)('$name', async ({ run }) => {
     const state = freshState();
+    // The real clock, as a plugin author would run the checks.
     await run(() => open(state));
   });
 
@@ -184,6 +194,235 @@ describe('the file of quotas', () => {
         'other-tenant-2026-10-23.json',
       ].sort(),
     );
+  });
+
+  // The counters of decisions about entries of the queue (ADR 0029).
+  const decision = approvalQuotaKey('5e'.repeat(32));
+  const approvalsOf = (approvals: Record<string, unknown>) =>
+    JSON.stringify({ v: 1, tenant: 'demo-tenant', day, approvals });
+
+  it('keeps the counters of decisions in a file of their own, without an actor', async () => {
+    const state = freshState();
+    const at = clockFrom(Date.UTC(2026, 9, 24, 12));
+    await open(state, { clock: at }).increment(ctx, decision, day);
+    await open(state, { clock: at }).increment(
+      quotaContext('demo-tenant', 'user', 'stdio:operator'),
+      decision,
+      day,
+    );
+    const fd = openSync(
+      fileOf(state, `demo-tenant-${day}.approvals.json`),
+      'r',
+    );
+    try {
+      expect(fstatSync(fd).mode & 0o777).toBe(0o600);
+      expect(JSON.parse(readFileSync(fd, 'utf8'))).toEqual({
+        v: 1,
+        tenant: 'demo-tenant',
+        day,
+        approvals: { [decision]: 2 },
+      });
+    } finally {
+      closeSync(fd);
+    }
+    expect(readdirSync(join(state, 'quota'))).toEqual([
+      `demo-tenant-${day}.approvals.json`,
+    ]);
+  });
+
+  it('counts on from a file of decisions it wrote before', async () => {
+    const state = freshState();
+    writeFileSync(
+      fileOf(state, `demo-tenant-${day}.approvals.json`),
+      approvalsOf({ [decision]: 1 }),
+      { mode: 0o600 },
+    );
+    const at = clockFrom(Date.UTC(2026, 9, 24, 12));
+    await expect(
+      open(state, { clock: at }).read(ctx, decision, day),
+    ).resolves.toBe(1);
+    await expect(
+      open(state, { clock: at }).increment(ctx, decision, day),
+    ).resolves.toBe(2);
+  });
+
+  it('refuses a counter of a decision in the file of the other counters', async () => {
+    const state = freshState();
+    writeFileSync(
+      fileOf(state),
+      JSON.stringify({
+        v: 1,
+        tenant: 'demo-tenant',
+        day,
+        counts: { 'service:stdio:local-stdio': { [decision]: 1 } },
+      }),
+      { mode: 0o600 },
+    );
+    await expect(open(state).read(ctx, key, day)).rejects.toThrow(failure);
+    await expect(open(state).increment(ctx, key, day)).rejects.toThrow(failure);
+  });
+
+  it.each([
+    ['another key', { special_reads: 1 }],
+    ['a count that is no count', { [approvalQuotaKey('5e'.repeat(32))]: -1 }],
+  ])('refuses a file of decisions with %s', async (_name, approvals) => {
+    const state = freshState();
+    writeFileSync(
+      fileOf(state, `demo-tenant-${day}.approvals.json`),
+      approvalsOf(approvals),
+      { mode: 0o600 },
+    );
+    await expect(open(state).read(ctx, decision, day)).rejects.toThrow(failure);
+    await expect(open(state).increment(ctx, decision, day)).rejects.toThrow(
+      failure,
+    );
+  });
+
+  it.each([
+    ['of another tenant', { v: 1, tenant: 'other-tenant', day, approvals: {} }],
+    [
+      'of another day',
+      { v: 1, tenant: 'demo-tenant', day: '2026-10-25', approvals: {} },
+    ],
+    ['of another version', { v: 2, tenant: 'demo-tenant', day, approvals: {} }],
+    ['without counters', { v: 1, tenant: 'demo-tenant', day }],
+    [
+      'with a list of counters',
+      { v: 1, tenant: 'demo-tenant', day, approvals: [] },
+    ],
+  ])('refuses a file of decisions %s', async (_name, record) => {
+    const state = freshState();
+    writeFileSync(
+      fileOf(state, `demo-tenant-${day}.approvals.json`),
+      JSON.stringify(record),
+      { mode: 0o600 },
+    );
+    await expect(open(state).read(ctx, decision, day)).rejects.toThrow(failure);
+  });
+
+  it('refuses a file of decisions that is no JSON', async () => {
+    const state = freshState();
+    writeFileSync(fileOf(state, `demo-tenant-${day}.approvals.json`), '{', {
+      mode: 0o600,
+    });
+    await expect(open(state).read(ctx, decision, day)).rejects.toThrow(failure);
+  });
+
+  it('holds at most 512 counters of decisions per day and refuses a file with more', async () => {
+    const state = freshState();
+    const keyOf = (index: number) =>
+      approvalQuotaKey(index.toString(16).padStart(64, '0'));
+    const full = Object.fromEntries(
+      Array.from({ length: maxApprovalKeys }, (_, index) => [keyOf(index), 1]),
+    );
+    writeFileSync(
+      fileOf(state, `demo-tenant-${day}.approvals.json`),
+      approvalsOf(full),
+      { mode: 0o600 },
+    );
+    await expect(open(state).increment(ctx, keyOf(0), day)).resolves.toBe(2);
+    await expect(
+      open(state).increment(ctx, keyOf(maxApprovalKeys), day),
+    ).rejects.toThrow(failure);
+    writeFileSync(
+      fileOf(state, `demo-tenant-${day}.approvals.json`),
+      approvalsOf({ ...full, [keyOf(maxApprovalKeys)]: 1 }),
+      { mode: 0o600 },
+    );
+    await expect(open(state).read(ctx, keyOf(0), day)).rejects.toThrow(failure);
+  });
+
+  it('keeps the files of decisions 15 days after their day by its clock, and removes those before', async () => {
+    const state = freshState();
+    const names = [
+      'demo-tenant-2026-10-08.approvals.json',
+      'demo-tenant-2026-10-08.approvals.json.lock',
+      'demo-tenant-2026-10-08.approvals.json.lock.4242.0123456789abcdef.stale',
+      '.demo-tenant-2026-10-08.approvals.4242.0123456789abcdef.tmp',
+      'demo-tenant-2026-10-09.approvals.json',
+      'demo-tenant-2026-10-09.approvals.json.lock',
+      '.demo-tenant-2026-10-09.approvals.4242.0123456789abcdef.tmp',
+      'demo-tenant-2026-10-08.approvals.4242.0123456789abcdef.tmp',
+      '.demo-tenant-2026-10-08.approvals.json',
+      'demo-tenant-2026-10-08.approvals.json.bak',
+      'demo-tenant-2026-10-08.approvals.json.lock.x.stale',
+      'other-tenant-2026-10-08.approvals.json',
+      'demo-tenant-x-2026-10-08.approvals.json',
+    ];
+    for (const name of names) {
+      writeFileSync(fileOf(state, name), '{}', { mode: 0o600 });
+    }
+    // The clock on 24.10.2026: an entry of 09.10. expired today, but its
+    // file of decisions stays one more day as a margin; the one of 08.10.
+    // goes.
+    const at = clockFrom(Date.UTC(2026, 9, 24, 12));
+    await open(state, { clock: at }).increment(ctx, decision, day);
+    expect(readdirSync(join(state, 'quota')).sort()).toEqual(
+      [
+        `demo-tenant-${day}.approvals.json`,
+        'demo-tenant-2026-10-09.approvals.json',
+        'demo-tenant-2026-10-09.approvals.json.lock',
+        '.demo-tenant-2026-10-09.approvals.4242.0123456789abcdef.tmp',
+        'demo-tenant-2026-10-08.approvals.4242.0123456789abcdef.tmp',
+        '.demo-tenant-2026-10-08.approvals.json',
+        'demo-tenant-2026-10-08.approvals.json.bak',
+        'demo-tenant-2026-10-08.approvals.json.lock.x.stale',
+        'other-tenant-2026-10-08.approvals.json',
+        'demo-tenant-x-2026-10-08.approvals.json',
+      ].sort(),
+    );
+  });
+
+  // Whether the old file of decisions is there, from a listing of the
+  // folder rather than a look at its path, so that no test checks a path
+  // and then writes it.
+  const oldName = 'demo-tenant-2026-10-08.approvals.json';
+  const hasOld = (state: string): boolean =>
+    readdirSync(join(state, 'quota')).includes(oldName);
+
+  it('removes old files of decisions also when only the other counters count, once per day of its clock', async () => {
+    const state = freshState();
+    const old = fileOf(state, oldName);
+    let now = Date.UTC(2026, 9, 24, 12);
+    const store = open(state, { clock: { now: () => now } });
+    writeFileSync(old, '{}', { mode: 0o600 });
+    await store.increment(ctx, key, day);
+    expect(hasOld(state)).toBe(false);
+    // The same day of the clock: the folder is not listed again.
+    writeFileSync(old, '{}', { mode: 0o600 });
+    await store.increment(ctx, key, day);
+    expect(hasOld(state)).toBe(true);
+    now += 86_400_000;
+    await store.increment(ctx, key, day);
+    expect(hasOld(state)).toBe(false);
+  });
+
+  it.each([
+    [
+      'throws',
+      () => {
+        throw new Error('clock');
+      },
+    ],
+    ['gives no time', () => Number.NaN],
+  ])('removes no file of decisions when its clock %s', async (_name, now) => {
+    const state = freshState();
+    writeFileSync(fileOf(state, oldName), '{}', { mode: 0o600 });
+    const fs: QuotaFileSystem = { ...nodeFs };
+    // The lock waits by the clock too, so the clock fails only for the
+    // look at the files of decisions, after the count.
+    let calls = 0;
+    const store = open(state, {
+      fs,
+      clock: {
+        now: () => {
+          calls += 1;
+          return calls > 2 ? now() : Date.now();
+        },
+      },
+    });
+    await store.increment(ctx, key, day);
+    expect(hasOld(state)).toBe(true);
   });
 
   it('writes the process, the host and the time into the lock, and a safe host only', async () => {

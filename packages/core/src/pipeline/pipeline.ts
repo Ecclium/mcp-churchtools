@@ -73,6 +73,7 @@ import {
   type ObjectDomain,
   type ObjectRefCollector,
   type ObjectRefList,
+  writeStateOutcomes,
 } from '../audit/index.js';
 import { createChurchToolsClient } from '../churchtools/index.js';
 import type { WriteConfirmation } from '../config/index.js';
@@ -115,6 +116,7 @@ import { openPseudonyms, type Pseudonyms } from '../redaction/pseudonym.js';
 import { type Redacted, sealRedacted } from '../redaction/redacted.js';
 import { createTenantContext } from '../tenant/context.js';
 import {
+  approvalKeyOf,
   type ConfirmationAnswer,
   type ConfirmationQuestion,
   confirmationRouteOf,
@@ -281,8 +283,12 @@ export type QueueShowOutcome =
       readonly day: IsoDate;
       readonly content: QueueEntryContent;
     }
-  /** No entry: none under this ID, past its retention, or no queue. */
-  | { readonly kind: 'missing' | 'expired' | 'off' }
+  /**
+   * No entry: none under this ID, past its retention, or no queue. Used:
+   * a decision about it was counted, but none was kept, so that only the
+   * audit tells its outcome (ADR 0029).
+   */
+  | { readonly kind: 'missing' | 'expired' | 'off' | 'used' }
   /** The operator decided about this entry already, and when. */
   | {
       readonly kind: 'decided';
@@ -313,16 +319,75 @@ export type RejectOutcome =
     }
   /**
    * No entry: none under this ID, past its retention, or the server keeps
-   * no queue.
+   * no queue. Used: a decision about it was counted already, whose outcome
+   * only the audit tells.
    */
-  | { readonly kind: 'missing' | 'expired' | 'off' }
+  | { readonly kind: 'missing' | 'expired' | 'off' | 'used' }
   /** The operator decided about this entry already. */
   | { readonly kind: 'decided'; readonly decision: QueueDecisionKind }
-  /** Refused or failed, with the code and, for the audit file, why. */
+  /**
+   * Refused or failed, with the code and why: the audit file that cannot
+   * take the line, or a store of quotas that did not answer in time, so
+   * that it is unknown whether the decision was counted. `used` when the
+   * decision was counted but could not be kept: then the entry can no
+   * longer be decided.
+   */
   | {
       readonly kind: 'failed';
       readonly code: ErrorCode;
-      readonly reason?: 'auditNotReady';
+      readonly reason?: 'auditNotReady' | 'countUnknown';
+      readonly used?: true;
+    };
+
+/**
+ * Why an approval was refused or failed: a fixed sentence of the write
+ * guard by its name, the audit file that cannot take the line, the
+ * content policy, which refused a text of the entry, or a store of quotas
+ * that did not answer in time, so that it is unknown whether the decision
+ * was counted.
+ */
+export type ApproveReason =
+  keyof typeof writeSentences | 'auditNotReady' | 'content' | 'countUnknown';
+
+/**
+ * How an approval of the operator ended, for the command line (ADR 0029).
+ * Summary and diff hold text of ChurchTools and of the model; they go to
+ * the operator only, never into a log or the audit.
+ */
+export type ApproveOutcome =
+  /**
+   * Written: the summary of the entry, what changed, the version after it,
+   * the ID to take it back with, and the diff of the state it wrote over.
+   * `unrecorded` when its line did not reach the audit file.
+   */
+  | {
+      readonly kind: 'approved';
+      readonly summary: string;
+      readonly target: WriteTarget;
+      readonly version: number;
+      readonly undoId: string | undefined;
+      readonly diff: LineDiff;
+      readonly unrecorded?: true;
+    }
+  /** No entry, or a decision counted before without its outcome. */
+  | { readonly kind: 'missing' | 'expired' | 'off' | 'used' }
+  /** The operator decided about this entry already. */
+  | { readonly kind: 'decided'; readonly decision: QueueDecisionKind }
+  /**
+   * Refused or failed, with the code, the reason where the core knows it,
+   * whether the approval is used up, and once it was, the state of the
+   * write, whether it may have reached ChurchTools and its diff. An
+   * approval that is not used up leaves the entry waiting.
+   */
+  | {
+      readonly kind: 'failed';
+      readonly code: ErrorCode;
+      readonly reason?: ApproveReason;
+      readonly used: boolean;
+      readonly state?: WriteState;
+      readonly sent: boolean;
+      readonly diff?: LineDiff;
+      readonly unrecorded?: true;
     };
 
 /** The pipeline of one ChurchTools instance. */
@@ -361,6 +426,19 @@ export interface ToolPipeline {
    * @returns How the rejection ended. It never rejects.
    */
   reject(call: QueueCall, request: ToolRequest): Promise<RejectOutcome>;
+  /**
+   * Approves an entry of the queue of approvals, for the operator only: a
+   * request in another mode is refused (ADR 0029). It plans the write of
+   * the entry again with the actor who asked for it, counts and keeps the
+   * decision, which destroys the entry, writes to ChurchTools with a proof
+   * of the operator and writes one audit line of the type `approval` that
+   * names the entry, the target and the state of the write.
+   *
+   * @param call - The ID of the entry.
+   * @param request - Tenant, actor and mode of the operator.
+   * @returns How the approval ended. It never rejects.
+   */
+  approve(call: QueueCall, request: ToolRequest): Promise<ApproveOutcome>;
   /**
    * Lists the entries of the queue of approvals of the tenant, for the
    * operator only (ADR 0031). Reading writes no audit line: it changes
@@ -720,7 +798,12 @@ const queuedResult = (
 const maxWaiting = 100;
 
 // The IDs of a target for the audit: a category, and a page by its GUID.
-const addTarget = (refs: ObjectRefCollector, target: WriteTarget): void => {
+// A write that ended before it had a target adds none.
+const addTarget = (
+  refs: ObjectRefCollector,
+  target: WriteTarget | undefined,
+): void => {
+  if (target === undefined) return;
   const [first, second] = target.key.split('/');
   if (target.kind === 'wiki_category') refs.add('wiki_category', first);
   if (target.kind === 'wiki_page') {
@@ -1489,7 +1572,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     // `ecclium undo` finds it from the line of the audit (ADR 0031).
     const committed = await guard.commit(ctx, plan, proof, run.eventId);
     if (!committed.ok) {
-      if (committed.target !== undefined) addTarget(refs, committed.target);
+      addTarget(refs, committed.target);
       return {
         ok: false,
         failure: writeFailure(
@@ -2045,10 +2128,18 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         return Object.freeze({ kind: 'failed', code: ctx });
       const queue = options.queue;
       if (queue === undefined) return Object.freeze({ kind: 'off' });
-      return Object.freeze({
-        kind: 'listed',
-        entries: await queue.list(ctx),
-      });
+      // An entry that waits but whose decision was counted is used: its
+      // outcome stands in the audit, and it can no longer be decided.
+      const entries: QueueListing[] = [];
+      for (const entry of await queue.list(ctx)) {
+        entries.push(
+          entry.state === 'open' &&
+            (await decisionCounted(ctx, entry.id, entry.content, entry.day))
+            ? Object.freeze({ state: 'used', id: entry.id, day: entry.day })
+            : entry,
+        );
+      }
+      return Object.freeze({ kind: 'listed', entries: Object.freeze(entries) });
     } catch {
       return Object.freeze({ kind: 'failed', code: 'internal' });
     }
@@ -2085,14 +2176,121 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
             decidedAt: loaded.decision.decidedAt,
           });
         case 'found':
-          return Object.freeze({
-            kind: 'found',
-            day: loaded.day,
-            content: loaded.content,
-          });
+          return (await decisionCounted(
+            ctx,
+            call.queueId,
+            loaded.content,
+            loaded.day,
+          ))
+            ? Object.freeze({ kind: 'used' })
+            : Object.freeze({
+                kind: 'found',
+                day: loaded.day,
+                content: loaded.content,
+              });
       }
     } catch {
       return Object.freeze({ kind: 'failed', code: 'internal' });
+    }
+  };
+
+  // A call of the store of quotas within its time: what it gave, `late`
+  // when it took too long and may still land, or `failed` when it threw.
+  const inQuotaTime = async <T>(
+    run: () => Promise<T>,
+  ): Promise<{ readonly value: T } | 'late' | 'failed'> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const counting = Promise.resolve()
+      .then(run)
+      .then((value) => Object.freeze({ value }));
+    // Whichever loses must not end as an unhandled rejection.
+    counting.catch(() => undefined);
+    const late = new Promise<'late'>((resolve) => {
+      timer = setTimeout(() => {
+        resolve('late');
+      }, quotaTimeoutMs);
+    });
+    try {
+      return await Promise.race([counting, late]);
+    } catch {
+      return 'failed';
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  // Whether a decision about an entry was counted already (ADR 0029). A
+  // store that is missing or fails counts as none: this only shows, and a
+  // decision counts again before it is kept.
+  const decisionCounted = async (
+    ctx: TenantContext,
+    queueId: string,
+    content: QueueEntryContent,
+    day: IsoDate,
+  ): Promise<boolean> => {
+    const store = options.quota;
+    if (store === undefined) return false;
+    const read = await inQuotaTime(() =>
+      store.read(ctx, approvalKeyOf(queueId, content.planHash), day),
+    );
+    const counted: unknown = typeof read === 'object' ? read.value : undefined;
+    return typeof counted === 'number' && counted > 0;
+  };
+
+  // Decides about an entry for the operator (ADR 0029, ADR 0031): first it
+  // counts the decision for the tenant, under the hash of the ID and the
+  // plan, on the day of the entry, and only the call that counts 1 keeps
+  // its decision, which destroys the entry. An approval and a rejection
+  // count under the same key, so that only one decision ever counts, in
+  // any process and whatever the store of the queue offers again. A store
+  // of quotas that is missing, fails or takes too long decides nothing; one
+  // that takes too long may still count, so that its count is unknown.
+  const decideEntry = async (
+    ctx: TenantContext,
+    queue: QueueKeeper,
+    queueId: string,
+    content: QueueEntryContent,
+    day: IsoDate,
+    decision: QueueDecisionKind,
+  ): Promise<Decided> => {
+    const unavailable = (counted: Counted): Decided => {
+      ctx.log.warn('write_queue_failed', { code: 'internal' });
+      return Object.freeze({ kind: 'failed', counted });
+    };
+    // The time of the decision before the count, so that a clock that
+    // fails uses up no decision.
+    const decidedAt = toTimestamp(now());
+    const store = options.quota;
+    if (decidedAt === undefined || store === undefined) {
+      return unavailable('no');
+    }
+    const increment = await inQuotaTime(() =>
+      store.increment(ctx, approvalKeyOf(queueId, content.planHash), day),
+    );
+    if (increment === 'late') return unavailable('unknown');
+    const counted: unknown =
+      typeof increment === 'object' ? increment.value : undefined;
+    if (
+      typeof counted !== 'number' ||
+      !Number.isSafeInteger(counted) ||
+      counted < 1
+    ) {
+      return unavailable('no');
+    }
+    if (counted > 1) return Object.freeze({ kind: 'used' });
+    try {
+      await queue.decide(ctx, { id: queueId, day, decision, decidedAt });
+      return Object.freeze({ kind: 'kept' });
+    } catch {
+      // The store refused or failed: this decision was kept and only the
+      // destruction of the entry failed, or a store of a plugin holds
+      // another one. What the queue holds now tells which (ADR 0031).
+      const again = await queue.load(ctx, queueId).catch(() => undefined);
+      if (again?.kind !== 'decided') return unavailable('yes');
+      return again.decision.decision === decision &&
+        again.decision.decidedAt === decidedAt
+        ? Object.freeze({ kind: 'kept' })
+        : Object.freeze({ kind: 'decided', decision: again.decision.decision });
     }
   };
 
@@ -2144,39 +2342,29 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     const { content, day } = loaded;
     const { target } = content;
     addTarget(refs, target);
-    const decidedAt = toTimestamp(now());
-    if (decidedAt === undefined) {
-      ctx.log.warn('write_queue_failed', { code: 'internal' });
-      return ended(decisionFailed('internal'));
-    }
-    try {
-      await queue.decide(ctx, {
-        id: queueId,
-        day,
-        decision: 'rejected',
-        decidedAt,
-      });
-    } catch {
-      // The store refused or failed: another process may have decided in
-      // between, or this decision was kept and only the destruction of the
-      // entry failed. What the queue holds now tells which (ADR 0031).
-      const now = await queue.load(ctx, queueId).catch(() => undefined);
-      if (now?.kind !== 'decided') {
-        ctx.log.warn('write_queue_failed', { code: 'internal' });
-        return ended(decisionFailed('internal'));
-      }
-      const mine =
-        now.decision.decision === 'rejected' &&
-        now.decision.decidedAt === decidedAt;
-      if (!mine) {
+    const decided = await decideEntry(
+      ctx,
+      queue,
+      queueId,
+      content,
+      day,
+      'rejected',
+    );
+    switch (decided.kind) {
+      case 'failed':
+        return ended(decisionUncounted(decided.counted));
+      case 'used':
+        return ended(decisionEnd({ kind: 'used' }, 'error', 'conflict'));
+      case 'decided':
         return ended(
           decisionEnd(
-            { kind: 'decided', decision: now.decision.decision },
+            { kind: 'decided', decision: decided.decision },
             'error',
             'conflict',
           ),
         );
-      }
+      case 'kept':
+        break;
     }
     return ended(
       decisionEnd(
@@ -2259,15 +2447,384 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       : end.outcome;
   };
 
+  // One approval of the operator (ADR 0029): from the ID of an entry of the
+  // queue through the write guard, which plans the write again with the
+  // actor who asked for it and lets the pipeline count and keep the
+  // decision before it writes, to an audit line of its own of the type
+  // approval that names the entry, the target and the state of the write.
+  // What the entry and the page hold leaves only as the summary and the
+  // diff for the operator.
+  const approveStages = async (
+    queueId: string,
+    request: ToolRequest,
+    assignment: TenantAssignment | undefined,
+    eventId: string,
+    refs: ObjectRefCollector,
+  ): Promise<ApproveEnd> => {
+    const ctx = operatorContext(request, assignment, eventId);
+    if (typeof ctx === 'string') return approveFailed(ctx);
+    const ended = (end: ApproveEnd): ApproveEnd => ({ ...end, ctx });
+    // As for every write, nothing runs while the audit file cannot take
+    // its line (ADR 0028, ADR 0029).
+    if (!auditReady()) {
+      return ended(approveFailed('policy_denied', 'auditNotReady'));
+    }
+    const queue = options.queue;
+    if (queue === undefined) {
+      return ended(approveEnd({ kind: 'off' }, 'denied', 'policy_denied'));
+    }
+    let loaded: Awaited<ReturnType<QueueKeeper['load']>>;
+    try {
+      loaded = await queue.load(ctx, queueId);
+    } catch {
+      return ended(approveFailed('internal'));
+    }
+    switch (loaded.kind) {
+      case 'missing':
+      case 'expired':
+        return ended(approveEnd({ kind: loaded.kind }, 'error', 'not_found'));
+      case 'decided':
+        return ended(
+          approveEnd(
+            { kind: 'decided', decision: loaded.decision.decision },
+            'error',
+            'conflict',
+          ),
+        );
+      case 'found':
+        break;
+    }
+    const { content, day } = loaded;
+    addTarget(refs, content.target);
+    // A decision counted before without its record ends here, before any
+    // read of ChurchTools: the entry can no longer be decided (ADR 0029).
+    if (await decisionCounted(ctx, queueId, content, day)) {
+      return ended(approveEnd({ kind: 'used' }, 'error', 'conflict'));
+    }
+    // The write of the entry is the write of the actor who asked for it,
+    // in the tenant of the operator: its plan names that actor, and its
+    // limits are the ones of that actor (ADR 0029).
+    const wish = createTenantContext({
+      assignment: Object.freeze({
+        tenantId: ctx.tenantId,
+        actor: content.actor,
+      }),
+      instance: origin,
+      mode: request.mode,
+      redaction: request.redaction,
+      readOnly: request.readOnly,
+      features: [...request.features],
+      clock,
+      signal: request.signal,
+      logging,
+      eventId,
+    });
+    let decided: Decided | undefined;
+    const result = await guard.approve({
+      ctx: wish,
+      eventId,
+      entry: {
+        tool: content.tool,
+        origin: content.origin,
+        toolMeta: content.toolMeta,
+        intent: content.intent,
+        planHash: content.planHash,
+      },
+      decide: async () => {
+        decided = await decideEntry(
+          ctx,
+          queue,
+          queueId,
+          content,
+          day,
+          'approved',
+        );
+        return decided.kind === 'kept';
+      },
+    });
+    switch (result.kind) {
+      case 'refused': {
+        const { error, contentViolations } = result;
+        const reason =
+          contentViolations === undefined ? reasonOf(error) : 'content';
+        return ended(
+          approveEnd(
+            {
+              kind: 'failed',
+              code: error.code,
+              ...(reason === undefined ? {} : { reason }),
+              used: false,
+              sent: false,
+            },
+            // A text the content policy refuses counts as refused, though
+            // its code is validation (ADR 0030).
+            contentViolations !== undefined || writeDenials.includes(error.code)
+              ? 'denied'
+              : 'error',
+            error.code,
+            contentViolations,
+          ),
+        );
+      }
+      case 'undecided': {
+        // The guard asked for the decision, so it is known.
+        const why = decided as Decided;
+        switch (why.kind) {
+          case 'used':
+            return ended(approveEnd({ kind: 'used' }, 'error', 'conflict'));
+          case 'decided':
+            return ended(
+              approveEnd(
+                { kind: 'decided', decision: why.decision },
+                'error',
+                'conflict',
+              ),
+            );
+          default:
+            return ended(
+              approveEnd(
+                {
+                  kind: 'failed',
+                  code: 'internal',
+                  ...(why.kind === 'failed' && why.counted === 'unknown'
+                    ? { reason: 'countUnknown' as const }
+                    : {}),
+                  used: why.kind === 'failed' && why.counted === 'yes',
+                  sent: false,
+                },
+                'error',
+                'internal',
+              ),
+            );
+        }
+      }
+      case 'committed':
+        break;
+    }
+    const committed = result.result;
+    const diff = diffLines(result.change.from, result.change.to);
+    // A new page names itself only once it is written.
+    addTarget(refs, committed.target);
+    // The decision is kept from here on, whatever the write does.
+    const written = {
+      writeState: committed.state,
+      ...(committed.path === undefined ? {} : { confirmation: committed.path }),
+      sent: committed.ok || committed.sent,
+      kept: true,
+    };
+    if (committed.ok) {
+      return ended({
+        ...approveEnd(
+          {
+            kind: 'approved',
+            summary: content.summary,
+            target: Object.freeze({
+              kind: committed.target.kind,
+              key: committed.target.key,
+            }),
+            version: committed.version,
+            undoId: committed.undoId,
+            diff,
+          },
+          'ok',
+        ),
+        ...written,
+      });
+    }
+    const reason = reasonOf(committed.error);
+    return ended({
+      ...approveEnd(
+        {
+          kind: 'failed',
+          code: committed.error.code,
+          ...(reason === undefined ? {} : { reason }),
+          used: true,
+          state: committed.state,
+          sent: committed.sent,
+          diff,
+        },
+        writeStateOutcomes[committed.state],
+        committed.error.code,
+      ),
+      ...written,
+    });
+  };
+
+  const approve = async (
+    call: QueueCall,
+    request: ToolRequest,
+  ): Promise<ApproveOutcome> => {
+    // The ID of the approval: its audit line and the snapshot of its
+    // write, so that the write can be taken back.
+    const eventId = randomUUID();
+    const start = now();
+    const refs = createObjectRefCollector();
+    let assignment: TenantAssignment | undefined;
+    let mode: Mode | undefined;
+    // The ID of the entry is named only in the form of an ID, checked
+    // before anything else reads it.
+    const queueId =
+      typeof call.queueId === 'string' && isUuid(call.queueId)
+        ? call.queueId
+        : undefined;
+    let end: ApproveEnd = approveFailed('internal');
+    let recorded = false;
+    try {
+      assignment = copyAssignment(request.assignment);
+      mode = request.mode;
+      end =
+        queueId === undefined
+          ? approveFailed('validation')
+          : await approveStages(queueId, request, assignment, eventId, refs);
+    } catch {
+      end = approveFailed('internal');
+    } finally {
+      const durationMs = durationSince(start);
+      try {
+        recorded =
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-boolean-literal-compare -- only true counts, also from a sink without types
+          audit.record(
+            {
+              type: 'approval',
+              tenantId: assignment?.tenantId ?? auditPlaceholders.tenantId,
+              actor: assignment?.actor ?? auditPlaceholders.actor,
+              mode: mode as Mode,
+              outcome: end.audit,
+              queueId: queueId ?? auditPlaceholders.queueId,
+              decision: 'approved',
+              // Once decided, the line names the policy that judged the
+              // write, as the line of every write does (ADR 0032).
+              ...(end.writeState === undefined
+                ? {}
+                : { writeState: end.writeState, policyHash }),
+              ...(end.confirmation === undefined
+                ? {}
+                : { confirmation: end.confirmation }),
+              ...(end.errorCode === undefined
+                ? {}
+                : { errorCode: end.errorCode }),
+              ...(end.contentViolations === undefined
+                ? {}
+                : { contentViolations: end.contentViolations }),
+              // At most a category and a page, never over the limit.
+              objectRefs: refs.list().refs,
+              durationMs,
+            },
+            eventId,
+            { required: false },
+          ) === true;
+      } catch {
+        // A line that does not reach the file is handled below.
+      }
+      // An approval that may have written and whose line is not in the
+      // audit file stops every later write, as for a write of a tool (ADR
+      // 0029).
+      if (end.sent) {
+        if (!recorded) {
+          guard.block();
+          try {
+            end.ctx?.log.error('write_audit_failed');
+          } catch {
+            // The block holds without its log line.
+          }
+        }
+        try {
+          audit.anchor?.();
+        } catch {
+          // The anchor is lost; the line is in the file or reported.
+        }
+      }
+      try {
+        end.ctx?.log.info('queue_approve_call', {
+          durationMs,
+          ...(end.errorCode === undefined ? {} : { code: end.errorCode }),
+        });
+      } catch {
+        // The log never decides the outcome.
+      }
+    }
+    // An approval that kept its decision or may have written, without its
+    // line in the audit file, says so, for the operator to check the audit
+    // (ADR 0028, ADR 0029).
+    return (end.sent || end.kept) && !recorded
+      ? Object.freeze({ ...end.outcome, unrecorded: true })
+      : end.outcome;
+  };
+
   return Object.freeze({
     __proto__: null,
     call,
     undo,
     reject,
+    approve,
     listQueue,
     showQueue,
   });
 }
+
+/**
+ * How the count and the keeping of a decision ended (ADR 0029): kept; used,
+ * when it was counted before; decided, when a store of a plugin holds
+ * another decision; or failed, with whether it was counted.
+ */
+type Decided =
+  | { readonly kind: 'kept' }
+  | { readonly kind: 'used' }
+  | { readonly kind: 'decided'; readonly decision: QueueDecisionKind }
+  | { readonly kind: 'failed'; readonly counted: Counted };
+
+/**
+ * Whether a decision that failed was counted: not, yes, or unknown, when
+ * the store of quotas did not answer in time and may still count it.
+ */
+type Counted = 'no' | 'yes' | 'unknown';
+
+/** How an approval ended, with what its audit line needs. */
+interface ApproveEnd {
+  readonly outcome: ApproveOutcome;
+  readonly audit: AuditOutcome;
+  readonly errorCode?: ErrorCode;
+  readonly contentViolations?: readonly ContentViolationKind[];
+  /** The state of the write, once the approval was decided. */
+  readonly writeState?: WriteState;
+  readonly confirmation?: ConfirmationPath;
+  /** Whether the write may have reached ChurchTools. */
+  readonly sent: boolean;
+  /** Whether the decision was kept, which destroyed the entry. */
+  readonly kept: boolean;
+  /** The context of the approval, once there is one, for its log lines. */
+  readonly ctx?: TenantContext;
+}
+
+// An approval that ended, frozen.
+const approveEnd = (
+  outcome: ApproveOutcome,
+  audit: AuditOutcome,
+  errorCode?: ErrorCode,
+  contentViolations?: readonly ContentViolationKind[],
+): ApproveEnd =>
+  Object.freeze({
+    outcome: Object.freeze(outcome),
+    audit,
+    ...(errorCode === undefined ? {} : { errorCode }),
+    ...(contentViolations === undefined ? {} : { contentViolations }),
+    sent: false,
+    kept: false,
+  });
+
+// An approval refused or failed before the entry was opened.
+const approveFailed = (code: ErrorCode, reason?: 'auditNotReady'): ApproveEnd =>
+  approveEnd(
+    {
+      kind: 'failed',
+      code,
+      ...(reason === undefined ? {} : { reason }),
+      used: false,
+      sent: false,
+    },
+    code === 'policy_denied' ? 'denied' : 'error',
+    code,
+  );
 
 /** How a decision of the operator ended, with what its audit line needs. */
 interface DecisionEnd {
@@ -2289,6 +2846,21 @@ const decisionEnd = (
     audit,
     ...(errorCode === undefined ? {} : { errorCode }),
   });
+
+// A rejection whose count failed after the entry was found: counted but
+// not kept, when the entry can no longer be decided, or with a count that
+// is unknown.
+const decisionUncounted = (counted: Counted): DecisionEnd =>
+  decisionEnd(
+    {
+      kind: 'failed',
+      code: 'internal',
+      ...(counted === 'unknown' ? { reason: 'countUnknown' as const } : {}),
+      ...(counted === 'yes' ? { used: true as const } : {}),
+    },
+    'error',
+    'internal',
+  );
 
 // A decision refused or failed before the entry was decided.
 const decisionFailed = (

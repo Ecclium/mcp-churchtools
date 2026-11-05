@@ -62,6 +62,7 @@ const noUndo = () => Promise.resolve({ kind: 'off' } as const);
 const noReject = () => Promise.resolve({ kind: 'off' } as const);
 const noQueue = {
   reject: noReject,
+  approve: noReject,
   listQueue: noReject,
   showQueue: noReject,
 };

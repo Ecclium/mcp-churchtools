@@ -1,30 +1,38 @@
 /**
- * `ecclium queue list`, `ecclium queue show <Kennung>` and
- * `ecclium queue reject <Kennung>` (ADR 0031): the queue of approvals for
- * the operator.
+ * `ecclium queue list`, `ecclium queue show <Kennung>`,
+ * `ecclium queue approve <Kennung>` and `ecclium queue reject <Kennung>`
+ * (ADR 0029, ADR 0031): the queue of approvals for the operator.
  *
  * Where it stands in the way of a write: a write that no person could
  * confirm in the client, or that the policy sent there, waits as a sealed
  * entry under the ID of the audit line of its call, which the result of
- * the write tool names as `queueId`. These commands read the queue through
- * the same pipeline as the server, in the mode `operator` with the
+ * the write tool names as `queueId`. These commands reach the queue
+ * through the same pipeline as the server, in the mode `operator` with the
  * identity of the start over stdio: `list` shows every entry with its
- * summary and why it waits, `show` the whole diff of one, and `reject`
- * keeps the decision, destroys the entry and writes a line of the type
- * `approval` into the audit file. None of them asks ChurchTools.
+ * summary and why it waits, `show` the whole diff of one, `reject` keeps
+ * the decision, destroys the entry and writes a line of the type
+ * `approval` into the audit file, and `approve` does the same and writes
+ * at once: the core plans the write of the entry again from the state of
+ * the target now, and writes it only when that plan is the one that was
+ * queued. Only `approve` asks ChurchTools. Both decisions count in the
+ * store of quotas first, so that no entry is decided twice.
  *
- * What an entry holds is text of ChurchTools and of the model, shown made
- * safe for the terminal. The ID given is checked as a UUID before any file
- * is touched and named in no text.
+ * What an entry and a page hold is text of ChurchTools and of the model,
+ * shown made safe for the terminal. The ID given is checked as a UUID
+ * before any file is touched and named in no text.
  *
  * Its exit code follows sysexits, as `texts.ts` maps each case: 0 when the
  * command did its work, `show` of a decided entry included; 64 for a wrong
- * call; 65 for a rejection of an entry that was decided already; 66
- * without an entry under the ID or past its retention; 70 for an internal
- * error; 74 when the audit file cannot take the line or the line of a
- * rejection did not reach it; 77 for a call the core refused; and 78 for
- * an invalid configuration, a folder that is missing or cannot be used, or
- * an audit file that cannot be opened.
+ * call; 65 for a decision about an entry that was decided already, a
+ * target that changed, or a text that is refused; 66 without an entry
+ * under the ID or past its retention, or for an approval whose target is
+ * gone in ChurchTools; 69 when ChurchTools was not reached
+ * or the outcome of a write is unknown; 70 for an internal error; 74 when
+ * the audit file cannot take the line, the state before a write could not
+ * be kept, or the line of a decision did not reach it; 77 for a call the
+ * core refused, a server that only reads included; and 78 for an invalid
+ * configuration, a folder that is missing or cannot be used, or an audit
+ * file that cannot be opened.
  *
  * @packageDocumentation
  */
@@ -35,7 +43,10 @@ import {
   crLfMarker,
   noLineEndMarker,
   createStdioTenantResolver,
+  type LineDiff,
   loadConfig,
+  type ApproveOutcome,
+  renderDiff,
   type QueueEntryContent,
   type QueueListing,
   type QueueListOutcome,
@@ -49,7 +60,10 @@ import {
   createLogger,
   createStderrWriter,
   openAuditFile,
+  prepareDayKeyFolder,
   prepareQueueFolder,
+  prepareQuotaFolder,
+  prepareSnapshotFolder,
   systemClock,
 } from '@ecclium/mcp-churchtools-core/composition';
 import type {
@@ -59,17 +73,25 @@ import type {
 
 import { composeToolPipeline } from '../compose/pipeline.js';
 import { privateFileCodeOf } from '../compose/private-file-code.js';
+import { keepsSnapshots } from '../compose/snapshots.js';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
 import {
   auditFileMessage,
+  dayKeyFolderMessage,
   type Message,
   problemText,
   queueFolderMessage,
+  quotaFolderMessage,
+  snapshotFolderMessage,
 } from '../messages/index.js';
 import { type Output, terminalLines, usageLine } from '../output/index.js';
 import type { WriteSyncFn } from '../send.js';
 import { createStdioCatalog } from '../stdio/catalog.js';
 import {
+  approvedDiffHeading,
+  approvedLines,
+  approvedUnrecorded,
+  approveFailedEnding,
   decidedEnding,
   decisionWords,
   diffHeading,
@@ -86,10 +108,13 @@ import {
   rejectedUnrecorded,
   showFooter,
   timeOf,
+  usedEnding,
+  usedWords,
+  wouldWriteHeading,
 } from './texts.js';
 
 /** What the command is asked to do. */
-export type QueueAction = 'list' | 'show' | 'reject';
+export type QueueAction = 'list' | 'show' | 'approve' | 'reject';
 
 /** Options of {@link runQueue}. */
 export interface QueueOptions {
@@ -99,7 +124,7 @@ export interface QueueOptions {
   readonly execArgv: readonly string[];
   /** What to do. */
   readonly action: QueueAction;
-  /** The ID of the entry as given, for `show` and `reject`. */
+  /** The ID of the entry as given, for `show`, `approve` and `reject`. */
   readonly queueId?: string;
   readonly output: Output;
   /** Replaces the loader, for tests. */
@@ -152,6 +177,28 @@ const writeForeign = (
       continue;
     }
     for (const shown of terminalLines(prefix, line, true)) {
+      if (!output.stdout(shown)) return false;
+    }
+  }
+  return true;
+};
+
+// Writes the lines of a diff the core made of the target now, each made
+// safe for the terminal: unlike the diff of an entry, its text was not
+// made visible before. Gives false when stdout took not all.
+const writeDiff = (
+  output: Output,
+  heading: string,
+  diff: LineDiff,
+): boolean => {
+  if (!output.stdout(heading)) return false;
+  for (const line of renderDiff(diff)) {
+    const mark = Object.hasOwn(marks, line) ? marks[line] : undefined;
+    if (mark !== undefined) {
+      if (!output.stdout(mark)) return false;
+      continue;
+    }
+    for (const shown of terminalLines('', line)) {
       if (!output.stdout(shown)) return false;
     }
   }
@@ -211,6 +258,9 @@ const writeEntry = (output: Output, entry: QueueListing): boolean => {
     case 'expired':
       output.stdout(`${entry.id}  ${dayOf(entry.day)}  verfallen`);
       return true;
+    case 'used':
+      output.stdout(`${entry.id}  ${dayOf(entry.day)}  ${usedWords}`);
+      return true;
     case 'damaged':
       output.stdout(
         `${entry.id}  ${dayOf(entry.day)}  lässt sich nicht öffnen und verfällt nach 14 Tagen`,
@@ -231,6 +281,8 @@ const reportShow = (output: Output, outcome: QueueShowOutcome): ExitCode => {
     case 'expired':
     case 'off':
       return finish(output, queueMissing[outcome.kind]);
+    case 'used':
+      return finish(output, usedEnding(true));
     case 'decided':
       return finish(
         output,
@@ -268,6 +320,8 @@ const reportReject = (output: Output, outcome: RejectOutcome): ExitCode => {
     case 'expired':
     case 'off':
       return finish(output, queueMissing[outcome.kind]);
+    case 'used':
+      return finish(output, usedEnding(false));
     case 'decided':
       return finish(output, decidedEnding(outcome.decision, undefined, false));
     case 'failed':
@@ -280,6 +334,62 @@ const reportReject = (output: Output, outcome: RejectOutcome): ExitCode => {
         output,
         outcome.unrecorded === true ? rejectedUnrecorded : rejectedEnding,
       );
+  }
+};
+
+/**
+ * Writes what `approve` says for the outcome of the pipeline: the summary,
+ * the diff and the result on stdout, a problem on stderr. An approval that
+ * kept its decision or may have written without its line in the audit
+ * file ends with 74 after its own text, whatever it was.
+ *
+ * @param output - The output of the command.
+ * @param outcome - The outcome of the approval of the pipeline.
+ * @returns The exit code.
+ * @example
+ * ```ts
+ * return reportApprove(output, await pipeline.approve(call, request));
+ * ```
+ */
+export function reportApprove(
+  output: Output,
+  outcome: ApproveOutcome,
+): ExitCode {
+  const code = approveReportOf(output, outcome);
+  if ('unrecorded' in outcome && outcome.unrecorded === true) {
+    return finish(output, approvedUnrecorded);
+  }
+  return code;
+}
+
+const approveReportOf = (output: Output, outcome: ApproveOutcome): ExitCode => {
+  switch (outcome.kind) {
+    case 'missing':
+    case 'expired':
+    case 'off':
+      return finish(output, queueMissing[outcome.kind]);
+    case 'used':
+      return finish(output, usedEnding(false));
+    case 'decided':
+      return finish(output, decidedEnding(outcome.decision, undefined, false));
+    case 'failed':
+      // The diff of a write that may have reached ChurchTools shows what
+      // it was to write; one refused before shows nothing.
+      if (outcome.sent && outcome.diff !== undefined) {
+        if (!writeDiff(output, wouldWriteHeading, outcome.diff)) {
+          output.stderr(outputCutText);
+        }
+      }
+      return finish(output, approveFailedEnding(outcome));
+    case 'approved': {
+      let whole = writeForeign(output, 'Freigegeben: ', outcome.summary);
+      whole = writeDiff(output, approvedDiffHeading, outcome.diff) && whole;
+      for (const line of approvedLines(outcome.version, outcome.undoId)) {
+        output.stdout(line);
+      }
+      if (!whole) output.stderr(outputCutText);
+      return exitCodes.ok;
+    }
   }
 };
 
@@ -317,11 +427,15 @@ export async function runQueue(options: QueueOptions): Promise<ExitCode> {
     return exitCodes.invalidConfig;
   }
   const { config } = loaded;
-  const { stateDir } = config;
+  // An approval writes: a server that only reads approves nothing.
+  if (action === 'approve' && config.readOnly) {
+    return finish(output, queueProblems.read_only);
+  }
+  const { stateDir, keysDir } = config;
   if (stateDir === undefined) {
     return finish(output, queueProblems.state_dir_missing);
   }
-  if (config.keysDir === undefined) {
+  if (keysDir === undefined) {
     return finish(output, queueProblems.keys_dir_missing);
   }
   // The folder of the queue, as the start prepares it, so that one that
@@ -334,10 +448,40 @@ export async function runQueue(options: QueueOptions): Promise<ExitCode> {
     output.stderr(queueText(queueFolderMessage(code)));
     return exitCodes.invalidConfig;
   }
+  const deciding = action === 'approve' || action === 'reject';
+  if (deciding) {
+    // A decision counts in the store of quotas first (ADR 0029), so its
+    // folder as the start prepares it.
+    const prepared = prepareQuotaFolder(stateDir);
+    if (!prepared.ok) {
+      output.stderr(queueText(quotaFolderMessage(prepared.code)));
+      return exitCodes.invalidConfig;
+    }
+  }
+  if (action === 'approve' && keepsSnapshots(config)) {
+    // An approval writes and keeps a snapshot, as an undo does: the folders
+    // of its day keys and its records (ADR 0031).
+    try {
+      prepareDayKeyFolder(keysDir, 'snapshot');
+    } catch (error) {
+      const code = privateFileCodeOf(error);
+      if (code === undefined) throw error;
+      output.stderr(queueText(dayKeyFolderMessage(code)));
+      return exitCodes.invalidConfig;
+    }
+    try {
+      prepareSnapshotFolder(stateDir);
+    } catch (error) {
+      const code = privateFileCodeOf(error);
+      if (code === undefined) throw error;
+      output.stderr(queueText(snapshotFolderMessage(code)));
+      return exitCodes.invalidConfig;
+    }
+  }
   const clock = systemClock;
   // Only a decision writes a line into the audit file; reading writes none.
   let auditFile: AuditFileWriter | undefined;
-  if (action === 'reject') {
+  if (deciding) {
     const opened = openAuditFile({
       stateDir,
       clock,
@@ -425,5 +569,7 @@ const act = async (
       return reportShow(output, await pipeline.showQueue(call, request));
     case 'reject':
       return reportReject(output, await pipeline.reject(call, request));
+    case 'approve':
+      return reportApprove(output, await pipeline.approve(call, request));
   }
 };

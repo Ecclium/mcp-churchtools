@@ -87,7 +87,11 @@ export type LoadedQueueEntry =
 
 /**
  * One entry as `ecclium queue list` shows it: waiting, with what it holds;
- * expired; damaged, because it does not open; or decided, with when.
+ * expired; damaged, because it does not open; decided, with when; or used,
+ * when the core counted a decision about it but no decision was kept, as
+ * after a stop between the two, so that its outcome stands only in the
+ * audit (ADR 0029). The keeper itself gives no entry as used: only the
+ * pipeline knows the counters of decisions.
  */
 export type QueueListing =
   | {
@@ -97,7 +101,7 @@ export type QueueListing =
       readonly content: QueueEntryContent;
     }
   | {
-      readonly state: 'expired' | 'damaged';
+      readonly state: 'expired' | 'damaged' | 'used';
       readonly id: string;
       readonly day: IsoDate;
     }

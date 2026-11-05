@@ -18,6 +18,13 @@
  *   would send to the queue only now ends with `policy_denied` and a fixed
  *   sentence: the person confirmed a write within the policy, and their
  *   yes is no approval of the operator.
+ * - **Approving:** when the operator approves an entry of the queue with
+ *   `ecclium queue approve`, right before the send. The approval stands in
+ *   for every reason the policy sends a write to the queue for, so no
+ *   name is read and no limit stops the write, but a write to a target of
+ *   an entry still counts against its limit of the day (ADR 0029). The
+ *   wish is judged in its own mode, which is interactive: only a call in
+ *   that mode reaches the queue in this version.
  *
  * Each reason for the queue has one log line. Outside the interactive
  * mode, every write is refused until the runner uses the unattended part
@@ -111,7 +118,8 @@ export interface PolicyGate {
    * @param tool - The name of the tool that planned the write.
    * @param rules - The rules the core derived for the write.
    * @param facts - What the guard read of the target.
-   * @param phase - Whether the guard plans or commits.
+   * @param phase - Whether the guard plans, commits, or commits an
+   *   approval of the operator.
    * @returns Nothing when the write may go on, and when planning the
    *   reason why it goes to the queue of approvals.
    * @throws {EccliumError} `policy_denied` with a fixed sentence when the
@@ -123,7 +131,7 @@ export interface PolicyGate {
     tool: string,
     rules: IntentRules,
     facts: WriteFacts,
-    phase: 'plan' | 'commit',
+    phase: 'plan' | 'commit' | 'approve',
   ): Promise<PolicyQueueReason | undefined>;
 }
 
@@ -196,10 +204,11 @@ export function createPolicyGate(options: PolicyGateOptions): PolicyGate {
     tool: string,
     rules: IntentRules,
     facts: WriteFacts,
-    phase: 'plan' | 'commit',
+    phase: 'plan' | 'commit' | 'approve',
   ): Promise<PolicyQueueReason | undefined> => {
     const match = matchPolicy(policy, {
-      mode: ctx.mode,
+      // An approval judges the wish, not the command of the operator.
+      mode: phase === 'approve' ? 'interactive' : ctx.mode,
       tool,
       target: rules.target,
       alwaysQueue: rules.alwaysQueue,
@@ -208,6 +217,18 @@ export function createPolicyGate(options: PolicyGateOptions): PolicyGate {
     if (match.kind === 'deny') {
       ctx.log.warn('policy_not_interactive');
       throw new EccliumError('policy_denied', policySentences.notInteractive);
+    }
+    // The approval of the operator stands in for the queue; a write to a
+    // target of an entry takes its place in the counter all the same, and
+    // a count that fails is said, not held against the write (ADR 0029).
+    if (phase === 'approve') {
+      if (
+        match.kind === 'entry' &&
+        (await countOf(ctx, match.counter, 'commit')) === undefined
+      ) {
+        ctx.log.warn(eventOf.count_unavailable);
+      }
+      return undefined;
     }
     // When planning, the write goes to the queue with its reason; when
     // committing, the reason ends it (ADR 0031).

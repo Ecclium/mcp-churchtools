@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -9,8 +9,10 @@ import {
   type Clock,
   defineWriteTool,
   type IsoDate,
+  type KeyProvider,
   type Plugin,
   type PluginHost,
+  type QuotaStore,
   type TenantAssignment,
   type TenantContext,
   type ToolDefinition,
@@ -26,7 +28,7 @@ import {
   examplePlugin,
   makeCanary,
 } from '@ecclium/mcp-churchtools-testkit';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
 import { auditPlaceholders, createAuditSink } from '../audit/index.js';
@@ -35,12 +37,14 @@ import { createFileKeyProvider } from '../keys/file-provider.js';
 import { checkPolicy, defaultPolicy } from '../policy/check.js';
 import type { Policy } from '../policy/schema.js';
 import { createQueueKeeper, type QueueKeeper } from '../queue/index.js';
+import { quotaTimeoutMs } from '../quota/index.js';
 import { createToolCatalog } from '../registry/index.js';
 import {
   confirmationSentence,
   confirmationSentences,
 } from '../write/confirm.js';
 import { createMemoryNonceStore } from '../write/nonce-store.js';
+import { approvalKeyOf } from '../write/plan-hash.js';
 import { createMemoryPlanStore } from '../write/plan-store.js';
 import { createToolPipeline, type ToolRequest } from './pipeline.js';
 
@@ -165,6 +169,8 @@ const setup = (
   options: {
     readonly queue?: false | QueueKeeper;
     readonly store?: ApprovalQueue;
+    readonly keys?: KeyProvider;
+    readonly quota?: QuotaStore | null;
     readonly confirmation?: WriteConfirmation;
     readonly policy?: Policy;
     readonly clock?: Clock;
@@ -194,15 +200,20 @@ const setup = (
     clock,
     isKnownTool: catalog.has,
   });
-  const keys = createFileKeyProvider({ dayKeys: createMemoryDayKeys() });
+  const keys =
+    options.keys ?? createFileKeyProvider({ dayKeys: createMemoryDayKeys() });
   const store = options.store ?? createMemoryApprovalQueue();
+  const quota =
+    options.quota === null
+      ? undefined
+      : (options.quota ?? createMemoryQuotaStore());
   const keeper = createQueueKeeper({ keys, store, clock });
   const pipelineClock = options.clock ?? clock;
   const pipeline = createToolPipeline({
     policy: options.policy ?? defaultPolicy,
     catalog,
     audit,
-    quota: createMemoryQuotaStore(),
+    ...(quota === undefined ? {} : { quota }),
     transport: double.transport,
     origin: doubleOrigin,
     requestsPerMinute: 300,
@@ -243,6 +254,7 @@ const setup = (
     keeper,
     keys,
     store,
+    quota,
     events,
     logs,
     file,
@@ -647,6 +659,7 @@ describe('a rejection of the operator (ADR 0031)', () => {
         get: (ctx, id) =>
           Promise.resolve({ id, day, entry: { id, day, sealed: 'not.it' } }),
       }),
+      {},
     ],
     [
       'a queue that cannot keep the decision',
@@ -654,8 +667,10 @@ describe('a rejection of the operator (ADR 0031)', () => {
         ...store,
         decide: () => Promise.reject(new Error('disk')),
       }),
+      // Counted, so that the entry can no longer be decided.
+      { used: true },
     ],
-  ])('fails as internal with %s', async (_name, broken) => {
+  ] as const)('fails as internal with %s', async (_name, broken, counted) => {
     const memory = createMemoryApprovalQueue();
     const setupped = setup({ store: memory });
     const id = await queueNote(setupped);
@@ -670,12 +685,37 @@ describe('a rejection of the operator (ADR 0031)', () => {
     expect(await pipeline.reject({ queueId: id }, operator())).toEqual({
       kind: 'failed',
       code: 'internal',
+      ...counted,
     });
     expect(events()[0]).toMatchObject({
       type: 'approval',
       outcome: 'error',
       errorCode: 'internal',
     });
+  });
+
+  it('says that the count is unknown when the store of quotas does not answer in time', async () => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    const hanging = setup({
+      queue: setupped.keeper,
+      quota: {
+        increment: () => new Promise<number>(() => undefined),
+        read: () => Promise.resolve(0),
+      },
+    });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const outcome = hanging.pipeline.reject({ queueId: id }, operator());
+      await vi.advanceTimersByTimeAsync(quotaTimeoutMs);
+      expect(await outcome).toEqual({
+        kind: 'failed',
+        code: 'internal',
+        reason: 'countUnknown',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('says decided when another process decided in between, and rejected when only the destruction of its entry failed', async () => {
@@ -745,6 +785,7 @@ describe('a rejection of the operator (ADR 0031)', () => {
     expect(await pipeline.reject({ queueId: id }, operator())).toEqual({
       kind: 'failed',
       code: 'internal',
+      used: true,
     });
   });
 
@@ -895,5 +936,674 @@ describe('the queue as the operator reads it (ADR 0031)', () => {
         operator(),
       ),
     ).toEqual({ kind: 'failed', code: 'internal' });
+  });
+});
+
+describe('an approval of the operator (ADR 0029)', () => {
+  // The page after the note of the example is appended.
+  const written = `# Plan\n\n${canary.value}\n`;
+  // The reads of the plan again: the rights, then the page as it is now.
+  const replanReads = (
+    setupped: ReturnType<typeof setup>,
+    version = 3,
+    text = '# Plan\n',
+  ) => {
+    setupped.double
+      .intercept({ path: '/api/permissions/global', method: 'GET' })
+      .reply(200, rights, json);
+    setupped.double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, page(version, text), json);
+  };
+  // The commit: the read right before, the write, and the read after.
+  const commitCalls = (setupped: ReturnType<typeof setup>) => {
+    setupped.double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, page(3, '# Plan\n'), json);
+    setupped.double
+      .intercept({ path: pagePath, method: 'PATCH' })
+      .reply(200, '{}', json);
+    setupped.double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, page(4, written), json);
+  };
+  const writes = (setupped: ReturnType<typeof setup>) =>
+    setupped.double.calls().filter((call) => call.method !== 'GET').length;
+  const target = { kind: 'wiki_page', key: `12/${guid}` };
+
+  it('plans the entry again, decides and writes it, with one audit line of the type approval', async () => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    replanReads(setupped);
+    commitCalls(setupped);
+    const outcome = await setupped.pipeline.approve(
+      { queueId: id },
+      operator(),
+    );
+    expect(outcome).toMatchObject({
+      kind: 'approved',
+      target,
+      version: 4,
+      undoId: undefined,
+    });
+    if (outcome.kind !== 'approved') throw new Error('not approved');
+    expect(outcome.summary).toContain('Dienstplan');
+    expect(outcome.diff.hunks).toHaveLength(1);
+    expect(outcome).not.toHaveProperty('unrecorded');
+    expect(writes(setupped)).toBe(1);
+    expect(await setupped.keeper.load(ctxOf, id)).toMatchObject({
+      kind: 'decided',
+      decision: { decision: 'approved' },
+    });
+    expect((await setupped.store.get(ctxOf, id))?.entry).toBeUndefined();
+    const line = setupped.events()[1];
+    expect(line).toMatchObject({
+      type: 'approval',
+      queueId: id,
+      decision: 'approved',
+      mode: 'operator',
+      outcome: 'ok',
+      writeState: 'verified',
+      confirmation: 'operator',
+      objectRefs: ['wiki_category:12', `wiki_page:${guid}`],
+    });
+    expect(line?.['policyHash']).toMatch(/^[0-9a-f]{64}$/);
+    expect(line).not.toHaveProperty('tool');
+    expect(setupped.logs()).toContain('queue_approve_call');
+    assertNoCanary(
+      [...setupped.auditLines, ...setupped.logLines].join('\n'),
+      [canary],
+      'audit and log',
+    );
+  });
+
+  it('decides once: a second approval and a rejection after it find the entry decided', async () => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    replanReads(setupped);
+    commitCalls(setupped);
+    await setupped.pipeline.approve({ queueId: id }, operator());
+    expect(
+      await setupped.pipeline.approve({ queueId: id }, operator()),
+    ).toEqual({ kind: 'decided', decision: 'approved' });
+    expect(await setupped.pipeline.reject({ queueId: id }, operator())).toEqual(
+      { kind: 'decided', decision: 'approved' },
+    );
+    expect(writes(setupped)).toBe(1);
+    expect(setupped.events()[2]).toMatchObject({
+      type: 'approval',
+      decision: 'approved',
+      outcome: 'error',
+      errorCode: 'conflict',
+    });
+    expect(setupped.events()[2]).not.toHaveProperty('writeState');
+  });
+
+  it('approves nothing after a rejection', async () => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    await setupped.pipeline.reject({ queueId: id }, operator());
+    expect(
+      await setupped.pipeline.approve({ queueId: id }, operator()),
+    ).toEqual({ kind: 'decided', decision: 'rejected' });
+    assertOnlyReads(setupped.double);
+  });
+
+  it('writes and decides nothing when the page changed since the write was queued, and the entry waits', async () => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    replanReads(setupped, 4, '# Von Hand\n');
+    expect(
+      await setupped.pipeline.approve({ queueId: id }, operator()),
+    ).toEqual({
+      kind: 'failed',
+      code: 'conflict',
+      reason: 'changedSinceQueued',
+      used: false,
+      sent: false,
+    });
+    expect(await setupped.keeper.load(ctxOf, id)).toMatchObject({
+      kind: 'found',
+    });
+    expect(setupped.events()[1]).toMatchObject({
+      type: 'approval',
+      outcome: 'error',
+      errorCode: 'conflict',
+    });
+    expect(setupped.events()[1]).not.toHaveProperty('writeState');
+    assertOnlyReads(setupped.double);
+  });
+
+  it('writes once when two processes approve the same entry at the same time', async () => {
+    const store = createMemoryApprovalQueue();
+    const first = setup({ store });
+    const id = await queueNote(first);
+    // A second process over the same queue, day keys and counters.
+    const second = setup({ store, keys: first.keys, quota: first.quota });
+    for (const each of [first, second]) {
+      replanReads(each);
+      commitCalls(each);
+    }
+    const outcomes = await Promise.all([
+      first.pipeline.approve({ queueId: id }, operator()),
+      second.pipeline.approve({ queueId: id }, operator()),
+    ]);
+    expect(outcomes.map(({ kind }) => kind).sort()).toEqual([
+      'approved',
+      'used',
+    ]);
+    expect(writes(first) + writes(second)).toBe(1);
+  });
+
+  it('shows an entry whose decision was counted but not kept as used, and decides it no more', async () => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    const loaded = await setupped.keeper.load(ctxOf, id);
+    if (loaded.kind !== 'found') throw new Error('not found');
+    // A process stopped between the count and the decision.
+    await setupped.quota?.increment(
+      ctxOf,
+      approvalKeyOf(id, loaded.content.planHash),
+      day,
+    );
+    const listed = await setupped.pipeline.listQueue(operator());
+    expect(listed).toEqual({
+      kind: 'listed',
+      entries: [{ state: 'used', id, day }],
+    });
+    expect(
+      await setupped.pipeline.showQueue({ queueId: id }, operator()),
+    ).toEqual({ kind: 'used' });
+    replanReads(setupped);
+    expect(
+      await setupped.pipeline.approve({ queueId: id }, operator()),
+    ).toEqual({ kind: 'used' });
+    expect(await setupped.pipeline.reject({ queueId: id }, operator())).toEqual(
+      { kind: 'used' },
+    );
+    expect(setupped.events()[2]).toMatchObject({
+      type: 'approval',
+      decision: 'rejected',
+      outcome: 'error',
+      errorCode: 'conflict',
+    });
+    assertOnlyReads(setupped.double);
+  });
+
+  it('lists and shows an entry as it is when the counters cannot be read', async () => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    const blind = setup({
+      queue: setupped.keeper,
+      quota: {
+        increment: () => Promise.reject(new Error('disk')),
+        read: () => Promise.reject(new Error('disk')),
+      },
+    });
+    const listed = await blind.pipeline.listQueue(operator());
+    expect(listed.kind === 'listed' && listed.entries[0]?.state).toBe('open');
+    expect(
+      (await blind.pipeline.showQueue({ queueId: id }, operator())).kind,
+    ).toBe('found');
+    const none = setup({ queue: setupped.keeper, quota: null });
+    expect(
+      (await none.pipeline.showQueue({ queueId: id }, operator())).kind,
+    ).toBe('found');
+  });
+
+  it('writes no entry twice that a replaced queue offers again after its approval', async () => {
+    const memory = createMemoryApprovalQueue();
+    // A queue of a plugin that keeps no decision and destroys nothing.
+    const forgetful: ApprovalQueue = {
+      ...memory,
+      decide: () => Promise.resolve(),
+    };
+    const setupped = setup({ store: forgetful });
+    const id = await queueNote(setupped);
+    replanReads(setupped);
+    commitCalls(setupped);
+    expect(
+      (await setupped.pipeline.approve({ queueId: id }, operator())).kind,
+    ).toBe('approved');
+    // The page reads as before, as if nothing had been written.
+    replanReads(setupped);
+    commitCalls(setupped);
+    expect(
+      await setupped.pipeline.approve({ queueId: id }, operator()),
+    ).toEqual({ kind: 'used' });
+    expect(writes(setupped)).toBe(1);
+  });
+
+  it('finds an entry whose day key is gone expired, and none under another ID', async () => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    expect(
+      await setupped.pipeline.approve(
+        { queueId: '00000000-0000-4000-8000-0000000000ff' },
+        operator(),
+      ),
+    ).toEqual({ kind: 'missing' });
+    await setupped.keys.destroyBefore('queue', '2026-11-04' as IsoDate);
+    expect(
+      await setupped.pipeline.approve({ queueId: id }, operator()),
+    ).toEqual({ kind: 'expired' });
+    expect(setupped.events()[2]).toMatchObject({
+      outcome: 'error',
+      errorCode: 'not_found',
+    });
+    assertOnlyReads(setupped.double);
+  });
+
+  it('writes a wish the policy sent to the queue for want of an entry', async () => {
+    const checked = checkPolicy({
+      schema: 'policy.v1',
+      interactive: {
+        targets: [
+          {
+            target: { kind: 'wiki_category', id: 13, name: 'Andere' },
+            tools: ['ct_example_note_write'],
+            maxPerDay: 1,
+          },
+        ],
+      },
+    });
+    if (!checked.ok) throw new Error(checked.code);
+    const setupped = setup({ policy: checked.policy });
+    const id = await queueNote(setupped, { elicitation: true });
+    replanReads(setupped);
+    commitCalls(setupped);
+    expect(
+      await setupped.pipeline.approve({ queueId: id }, operator()),
+    ).toMatchObject({ kind: 'approved', version: 4 });
+    expect(writes(setupped)).toBe(1);
+  });
+
+  it('writes a wish of a client that can be asked, with the setting queue', async () => {
+    const setupped = setup({ confirmation: 'queue' });
+    const id = await queueNote(setupped, { elicitation: true });
+    replanReads(setupped);
+    commitCalls(setupped);
+    expect(
+      await setupped.pipeline.approve({ queueId: id }, operator()),
+    ).toMatchObject({ kind: 'approved' });
+  });
+
+  it('checks the text against the content policy of now', async () => {
+    const checked = checkPolicy({
+      schema: 'policy.v1',
+      interactive: { contacts: ['sekretariat@example.org'] },
+    });
+    if (!checked.ok) throw new Error(checked.code);
+    const store = createMemoryApprovalQueue();
+    const before = setup({ store, policy: checked.policy });
+    before.planReads();
+    const queued = await before.pipeline.call(
+      'ct_example_note_write',
+      { ...note, note: 'Fragen an sekretariat@example.org' },
+      request(),
+    );
+    if (!queued.ok) throw new Error(queued.error.message);
+    const { queueId } = queued.data as unknown as { queueId: string };
+    // The contact is no longer in the policy.
+    const now = setup({ store, keys: before.keys });
+    replanReads(now);
+    expect(await now.pipeline.approve({ queueId }, operator())).toEqual({
+      kind: 'failed',
+      code: 'validation',
+      reason: 'content',
+      used: false,
+      sent: false,
+    });
+    expect(now.events()[0]).toMatchObject({
+      type: 'approval',
+      outcome: 'denied',
+      errorCode: 'validation',
+      contentViolations: ['contact'],
+    });
+    expect((await now.keeper.load(ctxOf, queueId)).kind).toBe('found');
+  });
+
+  it('refuses while writing is switched off, and approves once it is on again', async () => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    writeFileSync(join(dir, 'writes-off'), '');
+    expect(
+      await setupped.pipeline.approve({ queueId: id }, operator()),
+    ).toEqual({
+      kind: 'failed',
+      code: 'policy_denied',
+      reason: 'switchedOff',
+      used: false,
+      sent: false,
+    });
+    expect(setupped.events()[1]).toMatchObject({
+      outcome: 'denied',
+      errorCode: 'policy_denied',
+    });
+    rmSync(join(dir, 'writes-off'));
+    replanReads(setupped);
+    commitCalls(setupped);
+    expect(
+      (await setupped.pipeline.approve({ queueId: id }, operator())).kind,
+    ).toBe('approved');
+  });
+
+  it('ends a write that fails after the decision with its state, the approval used up', async () => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    replanReads(setupped);
+    // Someone saves the page between the decision and the send.
+    setupped.double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, page(4, '# Von Hand\n'), json);
+    const outcome = await setupped.pipeline.approve(
+      { queueId: id },
+      operator(),
+    );
+    expect(outcome).toMatchObject({
+      kind: 'failed',
+      code: 'conflict',
+      reason: 'changedSincePlan',
+      used: true,
+      state: 'denied',
+      sent: false,
+    });
+    expect(setupped.events()[1]).toMatchObject({
+      type: 'approval',
+      outcome: 'denied',
+      writeState: 'denied',
+      errorCode: 'conflict',
+    });
+    expect(await setupped.keeper.load(ctxOf, id)).toMatchObject({
+      kind: 'decided',
+    });
+    assertOnlyReads(setupped.double);
+  });
+
+  it('says so when its line did not reach the audit file, and writes no more', async () => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    replanReads(setupped);
+    commitCalls(setupped);
+    setupped.file.ok = false;
+    expect(
+      await setupped.pipeline.approve({ queueId: id }, operator()),
+    ).toMatchObject({ kind: 'approved', unrecorded: true });
+    expect(setupped.logs()).toContain('write_audit_failed');
+    setupped.file.ok = true;
+    setupped.planReads();
+    const later = await setupped.pipeline.call(
+      'ct_example_note_write',
+      note,
+      request(),
+    );
+    expect(!later.ok && later.error.message).toBe(
+      'Writing is off until the server restarts, because a write could not be recorded in the audit file. Ask the operator.',
+    );
+  });
+
+  it.each([
+    ['in another mode', request(), 'policy_denied'],
+    ['cancelled before', operator({ signal: AbortSignal.abort() }), 'network'],
+    ['without a tenant', operator({ assignment: undefined }), 'auth'],
+  ])(
+    'refuses an approval %s and decides nothing',
+    async (_name, given, code) => {
+      const setupped = setup();
+      const id = await queueNote(setupped);
+      expect(await setupped.pipeline.approve({ queueId: id }, given)).toEqual({
+        kind: 'failed',
+        code,
+        used: false,
+        sent: false,
+      });
+      expect((await setupped.keeper.load(ctxOf, id)).kind).toBe('found');
+    },
+  );
+
+  it('refuses an ID that is no UUID, and names none in the audit', async () => {
+    const { pipeline, events } = setup();
+    for (const queueId of ['../x', 42, undefined]) {
+      expect(await pipeline.approve({ queueId }, operator())).toEqual({
+        kind: 'failed',
+        code: 'validation',
+        used: false,
+        sent: false,
+      });
+    }
+    expect(events()[0]).toMatchObject({
+      type: 'approval',
+      queueId: auditPlaceholders.queueId,
+      decision: 'approved',
+      outcome: 'error',
+      errorCode: 'validation',
+    });
+  });
+
+  it('decides nothing while the audit file cannot take the line, and finds nothing without a queue', async () => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    setupped.file.ready = false;
+    expect(
+      await setupped.pipeline.approve({ queueId: id }, operator()),
+    ).toEqual({
+      kind: 'failed',
+      code: 'policy_denied',
+      reason: 'auditNotReady',
+      used: false,
+      sent: false,
+    });
+    const { pipeline } = setup({ queue: false });
+    expect(
+      await pipeline.approve(
+        { queueId: '00000000-0000-4000-8000-0000000000ff' },
+        operator(),
+      ),
+    ).toEqual({ kind: 'off' });
+  });
+
+  it.each([
+    ['without a store of quotas', null, false],
+    [
+      'when the store of quotas fails',
+      {
+        increment: () => Promise.reject(new Error('disk')),
+        read: () => Promise.resolve(0),
+      },
+      false,
+    ],
+    [
+      'when the store of quotas gives no count',
+      {
+        increment: () => Promise.resolve(0),
+        read: () => Promise.resolve(0),
+      },
+      false,
+    ],
+  ] as const)(
+    'decides and writes nothing %s, and the entry waits',
+    async (_name, quota, used) => {
+      const setupped = setup();
+      const id = await queueNote(setupped);
+      const blind = setup({
+        queue: setupped.keeper,
+        quota: quota as QuotaStore | null,
+      });
+      replanReads(blind);
+      expect(await blind.pipeline.approve({ queueId: id }, operator())).toEqual(
+        { kind: 'failed', code: 'internal', used, sent: false },
+      );
+      expect(blind.logs()).toContain('write_queue_failed');
+      expect((await setupped.keeper.load(ctxOf, id)).kind).toBe('found');
+      assertOnlyReads(blind.double);
+    },
+  );
+
+  it('writes nothing when the decision cannot be kept, and the approval is used up', async () => {
+    const memory = createMemoryApprovalQueue();
+    const first = setup({ store: memory });
+    const id = await queueNote(first);
+    const broken: ApprovalQueue = {
+      ...memory,
+      decide: () => Promise.reject(new Error('disk')),
+    };
+    const failing = setup({
+      queue: createQueueKeeper({ keys: first.keys, store: broken, clock }),
+    });
+    replanReads(failing);
+    expect(await failing.pipeline.approve({ queueId: id }, operator())).toEqual(
+      { kind: 'failed', code: 'internal', used: true, sent: false },
+    );
+    assertOnlyReads(failing.double);
+  });
+
+  it('says decided when a queue of a plugin holds another decision', async () => {
+    const memory = createMemoryApprovalQueue();
+    const first = setup({ store: memory });
+    const id = await queueNote(first);
+    const raced: ApprovalQueue = {
+      ...memory,
+      decide: async (ctx, decision) => {
+        await memory.decide(ctx, {
+          ...decision,
+          decision: 'rejected',
+          decidedAt: '2026-11-03T07:59:00.000Z',
+        });
+        throw new Error('The entry is decided already.');
+      },
+    };
+    const racing = setup({
+      queue: createQueueKeeper({ keys: first.keys, store: raced, clock }),
+    });
+    replanReads(racing);
+    expect(await racing.pipeline.approve({ queueId: id }, operator())).toEqual({
+      kind: 'decided',
+      decision: 'rejected',
+    });
+    assertOnlyReads(racing.double);
+  });
+
+  it('fails as internal when the queue cannot be read', async () => {
+    const broken: ApprovalQueue = {
+      ...createMemoryApprovalQueue(),
+      get: () => Promise.reject(new Error('disk')),
+    };
+    const { pipeline } = setup({ store: broken });
+    expect(
+      await pipeline.approve(
+        { queueId: '00000000-0000-4000-8000-0000000000ff' },
+        operator(),
+      ),
+    ).toEqual({ kind: 'failed', code: 'internal', used: false, sent: false });
+  });
+
+  it('fails as internal when the request cannot be read', async () => {
+    const { pipeline, events } = setup();
+    const broken = {
+      ...operator(),
+      get mode(): never {
+        throw new Error('no mode');
+      },
+    } as unknown as ToolRequest;
+    expect(
+      await pipeline.approve(
+        { queueId: '00000000-0000-4000-8000-0000000000ff' },
+        broken,
+      ),
+    ).toEqual({ kind: 'failed', code: 'internal', used: false, sent: false });
+    expect(events()[0]).toMatchObject({ type: 'approval', outcome: 'error' });
+  });
+
+  it('decides nothing when the store of quotas does not answer in time', async () => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    const hanging = setup({
+      queue: setupped.keeper,
+      quota: {
+        increment: () => new Promise<number>(() => undefined),
+        read: () => Promise.resolve(0),
+      },
+    });
+    replanReads(hanging);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const outcome = hanging.pipeline.approve({ queueId: id }, operator());
+      await vi.advanceTimersByTimeAsync(quotaTimeoutMs);
+      expect(await outcome).toEqual({
+        kind: 'failed',
+        code: 'internal',
+        reason: 'countUnknown',
+        used: false,
+        sent: false,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect((await setupped.keeper.load(ctxOf, id)).kind).toBe('found');
+  });
+
+  it('ends a used entry before it reads ChurchTools, also while writing is off', async () => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    const loaded = await setupped.keeper.load(ctxOf, id);
+    if (loaded.kind !== 'found') throw new Error('not found');
+    await setupped.quota?.increment(
+      ctxOf,
+      approvalKeyOf(id, loaded.content.planHash),
+      day,
+    );
+    writeFileSync(join(dir, 'writes-off'), '');
+    const calls = setupped.double.calls().length;
+    expect(
+      await setupped.pipeline.approve({ queueId: id }, operator()),
+    ).toEqual({ kind: 'used' });
+    expect(setupped.double.calls().length).toBe(calls);
+  });
+
+  it('says so when an approval kept its decision but its line did not reach the audit file, without writing', async () => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    replanReads(setupped);
+    // The read right before the write fails after the decision.
+    setupped.double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(500, '{}', json);
+    setupped.file.ok = false;
+    expect(
+      await setupped.pipeline.approve({ queueId: id }, operator()),
+    ).toMatchObject({
+      kind: 'failed',
+      used: true,
+      sent: false,
+      unrecorded: true,
+    });
+    // Nothing may have been written, so writing goes on.
+    expect(setupped.logs()).not.toContain('write_audit_failed');
+  });
+
+  it('names no reason for an error of ChurchTools, before and after the decision', async () => {
+    const setupped = setup();
+    const id = await queueNote(setupped);
+    // The rights cannot be read: refused before the decision.
+    setupped.double
+      .intercept({ path: '/api/permissions/global', method: 'GET' })
+      .reply(500, '{}', json);
+    const before = await setupped.pipeline.approve({ queueId: id }, operator());
+    expect(before).toMatchObject({ kind: 'failed', used: false, sent: false });
+    expect(before).not.toHaveProperty('reason');
+    expect((await setupped.keeper.load(ctxOf, id)).kind).toBe('found');
+    // The read right before the write fails: the approval is used up.
+    replanReads(setupped);
+    setupped.double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(500, '{}', json);
+    const after = await setupped.pipeline.approve({ queueId: id }, operator());
+    expect(after).toMatchObject({ kind: 'failed', used: true, sent: false });
+    expect(after).not.toHaveProperty('reason');
+    expect(setupped.events()[2]).toMatchObject({
+      type: 'approval',
+      writeState: 'denied',
+    });
+    assertOnlyReads(setupped.double);
   });
 });

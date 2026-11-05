@@ -1,3 +1,9 @@
+import type {
+  IsoDate,
+  QuotaKey,
+  QuotaStore,
+  TenantContext,
+} from '@ecclium/mcp-churchtools-plugin-api';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -31,6 +37,67 @@ describe('the checks of a store of quotas', () => {
       ),
     );
     expect(failures).toContain(true);
+  });
+
+  // Counters of decisions the way the other counters are kept: per actor,
+  // and dropped once a later day counts, as a store of one file per day
+  // without a file of decisions would.
+  const perActor = (): QuotaStore => {
+    const memory = new Map<string, number>();
+    let latest = '';
+    const keyOf = (ctx: TenantContext, key: QuotaKey, day: IsoDate): string =>
+      JSON.stringify([ctx.tenantId, ctx.actor.kind, ctx.actor.id, key, day]);
+    return {
+      increment: (ctx, key, day) => {
+        if (day > latest) {
+          latest = day;
+          for (const entry of [...memory.keys()]) {
+            if (!entry.endsWith(`"${day}"]`)) memory.delete(entry);
+          }
+        }
+        const value = (memory.get(keyOf(ctx, key, day)) ?? 0) + 1;
+        memory.set(keyOf(ctx, key, day), value);
+        return Promise.resolve(value);
+      },
+      read: (ctx, key, day) =>
+        Promise.resolve(memory.get(keyOf(ctx, key, day)) ?? 0),
+    };
+  };
+
+  it.each([
+    'counts a decision for the tenant, whichever actor counts',
+    'keeps a decision while later days count',
+  ])(
+    'fail for a store that keeps decisions like the other counters: %s',
+    async (name) => {
+      const check = quotaStoreChecks.find((item) => item.name === name);
+      const store = perActor();
+      await expect(check?.run(() => store)).rejects.toThrow();
+      const memory: QuotaMemory = new Map();
+      await expect(
+        check?.run(() => createMemoryQuotaStore(memory)),
+      ).resolves.toBeUndefined();
+    },
+  );
+
+  it('fail for a store that gives two decisions the count 1', async () => {
+    const check = quotaStoreChecks.find(({ name }) =>
+      name.includes('two stores count at the same time'),
+    );
+    // Each store keeps its own count, as two processes without a shared
+    // file would.
+    await expect(check?.run(() => createMemoryQuotaStore())).rejects.toThrow();
+  });
+
+  it('fail for a store that takes any key of a decision', async () => {
+    const check = quotaStoreChecks.find(({ name }) =>
+      name.includes('decision of another form'),
+    );
+    const lax = {
+      increment: () => Promise.resolve(1),
+      read: () => Promise.resolve(0),
+    };
+    await expect(check?.run(() => lax)).rejects.toThrow();
   });
 
   it('fail for a store that takes any day', async () => {

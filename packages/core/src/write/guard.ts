@@ -34,6 +34,19 @@
  * apply: the operator asked for it, and the text it writes back was on the
  * page before Ecclium wrote.
  *
+ * **approve** writes what waits in the queue of approvals, for `ecclium
+ * queue approve` of the operator (ADR 0029, ADR 0031). It plans the write
+ * of the entry again, with the actor who asked for it, from the state of
+ * the target now, and goes on only when the hash is the one of the entry:
+ * a target that changed since gives another hash, and nothing is written
+ * or decided. Then the pipeline counts and keeps the decision, and only
+ * after that does the guard issue a proof of the operator and commit on
+ * the way of every write. The approval stands in for what the policy sent
+ * to the queue for, an entry missing, a name that changed or the limit of
+ * the day, and the write still counts against that limit. Everything else
+ * applies again: the kill switches, `ECCLIUM_READ_ONLY`, the rights as
+ * advice, the content policy, the version of the target and the clock.
+ *
  * The policy of ADR 0032 checks the plan after the read of the target and
  * again on the commit right before the send, where it adds the write to
  * its counter of the day (`policy-gate.ts`). A plan the policy sends to
@@ -48,6 +61,7 @@
 import {
   type Clock,
   type ConfirmationPath,
+  type ContentViolationKind,
   type IsoDate,
   EccliumError,
   type ErrorCode,
@@ -127,6 +141,8 @@ export const writeSentences = Object.freeze({
   notAsPlanned:
     'The write reached ChurchTools, but the target does not read back as planned. Check it before you change it again.',
   notConfirmed: 'The write was not confirmed, so nothing was written.',
+  changedSinceQueued:
+    'The target changed after the write was queued, so nothing was written. Plan the write anew on its current version.',
   noSnapshot:
     'The server could not save the state before the write, so nothing was written. Ask the operator.',
 } as const);
@@ -209,7 +225,10 @@ export interface UndoRequest {
   readonly overwrite: boolean;
 }
 
-/** The text of the page now and the text the undo writes, for a diff. */
+/**
+ * The text of the page now and the text a write of the operator writes,
+ * an undo or an approval, for a diff. A new page has no text now.
+ */
 export interface UndoChange {
   readonly from: string;
   readonly to: string;
@@ -230,6 +249,72 @@ export type UndoResult =
   /** Refused or failed before a plan: nothing was written. */
   | { readonly kind: 'refused'; readonly error: EccliumError }
   /** Planned and committed, with how the commit ended. */
+  | {
+      readonly kind: 'committed';
+      readonly target: WriteTarget;
+      readonly result: CommitResult;
+      readonly change: UndoChange;
+    };
+
+/**
+ * What an approval of the operator writes (ADR 0029): what the entry of the
+ * queue holds of its plan, as the queue opened it. The guard checks all of
+ * it again, the intent as an intent.
+ */
+export interface ApprovedEntry {
+  /** The tool that planned the write. */
+  readonly tool: string;
+  /** Who brings the tool, as the catalog recorded it. */
+  readonly origin: ToolOrigin;
+  /** The metadata the plan was sealed with. */
+  readonly toolMeta: {
+    readonly sensitivity: Sensitivity;
+    readonly unattended: UnattendedRule;
+    readonly reversible?: Reversible;
+  };
+  /** The intent as the guard checked it when the write was queued. */
+  readonly intent: unknown;
+  /** The hash of the plan, which the plan derived now must have. */
+  readonly planHash: string;
+}
+
+/** What the operator asks the write guard to write from the queue. */
+export interface ApproveRequest {
+  /**
+   * The context of the approval: the tenant of the operator, the actor who
+   * asked for the write, whose plan it was and whose limits it counts on.
+   */
+  readonly ctx: TenantContext;
+  /**
+   * The ID of the audit event of the approval, under which the snapshot of
+   * the write is kept, so that it can be taken back.
+   */
+  readonly eventId: string;
+  /** The entry of the queue. */
+  readonly entry: ApprovedEntry;
+  /**
+   * Counts and keeps the decision, once the plan fits the entry and right
+   * before the proof. Only `true` lets the write go on; anything else, a
+   * rejection included, ends it without a write.
+   */
+  readonly decide: () => Promise<boolean>;
+}
+
+/** How an approval ended. */
+export type ApproveResult =
+  /**
+   * Refused or failed before the decision: nothing was decided or
+   * written, and the entry still waits. A text the content policy refuses
+   * names its reasons.
+   */
+  | {
+      readonly kind: 'refused';
+      readonly error: EccliumError;
+      readonly contentViolations?: readonly ContentViolationKind[];
+    }
+  /** The decision was not kept, so nothing was written. */
+  | { readonly kind: 'undecided'; readonly target: WriteTarget }
+  /** Decided and committed, with how the commit ended. */
   | {
       readonly kind: 'committed';
       readonly target: WriteTarget;
@@ -338,6 +423,13 @@ export interface WriteGuard {
    * @returns How the undo ended; it never rejects.
    */
   undo(request: UndoRequest): Promise<UndoResult>;
+  /**
+   * Writes an entry of the queue of approvals, for the operator (ADR 0029).
+   *
+   * @param request - Context, ID of the approval, entry and the decision.
+   * @returns How the approval ended; it never rejects.
+   */
+  approve(request: ApproveRequest): Promise<ApproveResult>;
   /**
    * Stops every later plan until the process ends, after a write whose
    * line could not be recorded in the audit file (ADR 0029).
@@ -669,17 +761,18 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     const target = view.rules.target;
     const stop = stopped(ctx);
     if (stop !== undefined) return denied(stop, target);
-    return commitPlan(ctx, view, proof, eventId, false);
+    return commitPlan(ctx, view, proof, eventId, 'tool');
   };
 
   // An undo of the operator skips the policy, which judges what the model
-  // asks for, and adds nothing to its counters (ADR 0031).
+  // asks for, and adds nothing to its counters (ADR 0031). An approval runs
+  // it in a phase of its own, which only counts (ADR 0029).
   const commitPlan = async (
     ctx: TenantContext,
     view: PlanView,
     proof: unknown,
     eventId: string | undefined,
-    operator: boolean,
+    by: 'tool' | 'undo' | 'approve',
   ): Promise<CommitResult> => {
     // A plan is sealed only for an intent the core runs (sealed-plan.ts).
     const intent = view.intent as WikiIntent;
@@ -749,13 +842,13 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     // of a name that fails is no refusal of the policy: the write failed
     // before it was sent.
     try {
-      if (!operator) {
+      if (by !== 'undo') {
         await policy.check(
           ctx,
           view.tool,
           view.rules,
           factsOf(derived),
-          'commit',
+          by === 'approve' ? 'approve' : 'commit',
         );
       }
     } catch (error) {
@@ -1133,8 +1226,101 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       readPlan(sealed) as PlanView,
       proof,
       eventId,
-      true,
+      'undo',
     );
+    return Object.freeze({ kind: 'committed', target, result, change });
+  };
+
+  // Writes an entry of the queue for the operator: planned again from the
+  // state now, decided only when the hash is the one of the entry, and
+  // committed with a proof of the operator (ADR 0029). Rejects nothing: a
+  // refusal before the decision is a result of its own.
+  const approve = async (request: ApproveRequest): Promise<ApproveResult> => {
+    try {
+      return await approveOnce(request);
+    } catch (error) {
+      return Object.freeze(
+        error instanceof ContentRefusal
+          ? {
+              kind: 'refused',
+              error: error.error,
+              contentViolations: error.violations,
+            }
+          : { kind: 'refused', error: asError(error) },
+      );
+    }
+  };
+
+  const approveOnce = async (
+    request: ApproveRequest,
+  ): Promise<ApproveResult> => {
+    const { ctx, eventId, entry } = request;
+    const stop = stopped(ctx);
+    if (stop !== undefined) throw stop;
+    // The intent as an intent again, and the rules from it and from the
+    // metadata the plan was sealed with, as when the tool planned.
+    const read = readIntent(entry.intent);
+    if (read === undefined) throw refuse('validation', writeSentences.intent);
+    const rules = withToolMeta(rulesOf(read), entry.toolMeta);
+    if (!rules.runs) {
+      ctx.log.warn('write_refused', { code: 'policy_denied' });
+      throw refuse('policy_denied', writeSentences.notRun);
+    }
+    // The content policy again, since the contact values of the policy
+    // may have changed in the meantime (ADR 0030).
+    const intent = checkIntentContent(ctx, read as WikiIntent, contacts);
+    await checkRights(ctx, intent, rules);
+    let derived: Derived;
+    try {
+      derived = await derive(ctx, intent);
+    } catch (error) {
+      // A page of another version than the one queued is a change since.
+      throw isEccliumError(error) && error.code === 'conflict'
+        ? refuse('conflict', writeSentences.changedSinceQueued)
+        : error;
+    }
+    // The clock before the decision as well, so that a server with a
+    // wrong clock decides nothing it cannot write.
+    if (!serverTimeFits(clock.now(), derived.serverTime)) {
+      ctx.log.warn('write_refused', { code: 'policy_denied' });
+      throw refuse('policy_denied', writeSentences.clock);
+    }
+    const sealed = sealPlan({
+      tenantId: ctx.tenantId,
+      actor: ctx.actor,
+      tool: entry.tool,
+      origin: entry.origin,
+      intent,
+      toolMeta: entry.toolMeta,
+      contentHash: derived.contentHash,
+      sealedAt: clock.now(),
+      snapshots: reversible,
+    });
+    const view = readPlan(sealed) as PlanView;
+    if (view.planHash !== entry.planHash) {
+      ctx.log.warn('write_conflict', { code: 'conflict' });
+      throw refuse('conflict', writeSentences.changedSinceQueued);
+    }
+    const { target } = rules;
+    const change: UndoChange = Object.freeze(
+      derived.kind === 'change'
+        ? { from: derived.before.text, to: derived.text }
+        : { from: '', to: derived.text },
+    );
+    // Only a decision that was counted and kept lets the write go on; a
+    // second approval, a rejection in between and a store that fails end
+    // here (ADR 0029).
+    let decided: boolean;
+    try {
+      decided = await request.decide();
+    } catch {
+      decided = false;
+    }
+    if (!decided) return Object.freeze({ kind: 'undecided', target });
+    // The operator approved this plan on the command line, so the core
+    // confirms it itself, on the way of the operator (proof.ts).
+    const proof = issueProof(sealed, 'operator', clock.now());
+    const result = await commitPlan(ctx, view, proof, eventId, 'approve');
     return Object.freeze({ kind: 'committed', target, result, change });
   };
 
@@ -1142,6 +1328,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     plan,
     commit,
     undo,
+    approve,
     block: (): void => {
       blocked = true;
     },

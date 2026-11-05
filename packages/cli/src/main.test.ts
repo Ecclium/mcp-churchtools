@@ -275,7 +275,10 @@ describe('the command line', () => {
     [['queue', 'list', 'x'], 'command'],
     [['queue', 'show'], 'command'],
     [['queue', 'reject', 'a', 'b'], 'command'],
-    [['queue', 'approve', 'x'], 'command'],
+    [['queue', 'approve'], 'command'],
+    [['queue', 'approve', 'a', 'b'], 'command'],
+    [['queue', 'approve', 'x', '--overwrite'], 'option'],
+    [['queue', 'accept', 'x'], 'command'],
     [['queue', 'reject', 'x', '--overwrite'], 'option'],
   ])('refuses %j as %s with a fixed text on stderr', (args, problem) => {
     const result = capture(args, validEnvironment());
@@ -687,7 +690,7 @@ describe('ecclium queue in the command line', () => {
     return { code, stderr: decoder.decode(new Uint8Array(taken)) };
   };
 
-  it.each(['show', 'reject'])(
+  it.each(['show', 'approve', 'reject'])(
     'hands the ID of %s to the command, which checks it and never names it',
     async (action) => {
       const id = `not-an-id-${plain()}`;
@@ -701,6 +704,7 @@ describe('ecclium queue in the command line', () => {
   it.each([
     [['queue', 'list']],
     [['queue', 'show', '11111111-2222-4333-8444-555555555555']],
+    [['queue', 'approve', '11111111-2222-4333-8444-555555555555']],
   ])(
     'turns a failure of the command %j into the internal error',
     async (args) => {

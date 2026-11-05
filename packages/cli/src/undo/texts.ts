@@ -198,6 +198,8 @@ const reasons: Readonly<Record<UndoReason, UndoEnding>> = Object.freeze({
   unknown: outcomeUnknown,
   notAsPlanned,
   notConfirmed: internal,
+  // Only an approval meets this sentence; an undo plans on what it reads.
+  changedSinceQueued: changedMeanwhile,
   noSnapshot: ending(
     'Ecclium konnte den Stand vor der Rücknahme nicht festhalten und hat darum nichts geschrieben. Prüfen Sie den Ordner ‹snapshots› im Zustandsordner und den Schlüsselordner.',
     exitCodes.ioError,

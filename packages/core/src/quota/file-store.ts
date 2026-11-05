@@ -3,6 +3,13 @@
  * UTC day in the folder `quota` of the folder of state, the folder with
  * 0700, the file with 0600. It holds counters only, one per actor and key.
  *
+ * The counters of decisions about entries of the queue of approvals (ADR
+ * 0029) lie apart, in a file of their own per tenant and day of the entry,
+ * `<tenant>-<day>.approvals.json`, without an actor and with nothing but
+ * hashes and counts. The files of the other counters go on the first count
+ * of a new day; those of decisions stay through the day 15 after their
+ * own, the 14 days an entry waits and one more, and go after that.
+ *
  * Two processes share the file. Every change runs under a lock file made
  * with O_EXCL, which holds the ID of the process, the host and the time,
  * and goes through a temporary file, `fsync` and a rename, so that a
@@ -36,8 +43,10 @@ import {
 import { isProxy } from 'node:util/types';
 
 import {
+  approvalCountDays,
   type Clock,
   type IsoDate,
+  isApprovalQuotaKey,
   isIsoDate,
   isQuotaKey,
   type QuotaKey,
@@ -77,6 +86,15 @@ export const maxQuotaActors = 1000;
  * bound keeps one actor from filling the file that every actor shares.
  */
 export const maxWriteKeysPerActor = 64;
+
+/**
+ * The most counters of decisions one file of a tenant holds for one day of
+ * the queue. At most 100 entries wait at a time, and each decision counts
+ * once, so a day rarely has more than a few hundred.
+ */
+export const maxApprovalKeys = 512;
+
+const dayMs = 86_400_000;
 
 // How long to wait between two attempts at the lock.
 const lockRetryMs = 25;
@@ -382,7 +400,10 @@ const parseCounts = (
     const kept = Object.create(null) as Record<string, number>;
     for (const key of Object.keys(entry)) {
       const value = ownData(entry, key);
-      if (!isQuotaKey(key) || !isCount(value)) return undefined;
+      // A counter of a decision belongs in the file of decisions only.
+      if (!isQuotaKey(key) || isApprovalQuotaKey(key) || !isCount(value)) {
+        return undefined;
+      }
       kept[key] = value;
     }
     if (writeKeysOf(kept) > maxWriteKeysPerActor) return undefined;
@@ -391,13 +412,60 @@ const parseCounts = (
   return result;
 };
 
+// The counters of decisions of a file, or undefined when the file is not
+// one the store wrote for this tenant and day.
+const parseApprovals = (
+  text: string,
+  tenantId: string,
+  day: IsoDate,
+): Record<string, number> | undefined => {
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  if (
+    ownData(data, 'v') !== 1 ||
+    ownData(data, 'tenant') !== tenantId ||
+    ownData(data, 'day') !== day
+  ) {
+    return undefined;
+  }
+  const approvals = ownData(data, 'approvals');
+  if (
+    typeof approvals !== 'object' ||
+    approvals === null ||
+    Array.isArray(approvals)
+  ) {
+    return undefined;
+  }
+  const keys = Object.keys(approvals);
+  if (keys.length > maxApprovalKeys) return undefined;
+  const kept = Object.create(null) as Record<string, number>;
+  for (const key of keys) {
+    const value = ownData(approvals, key);
+    if (!isApprovalQuotaKey(key) || !isCount(value)) return undefined;
+    kept[key] = value;
+  }
+  return kept;
+};
+
+// What follows the day in the name of a file of decisions and of what a
+// process leaves of it: the file, its lock, a lock moved aside, and a
+// temporary file.
+const approvalsSuffix = '.approvals.json';
+const approvalsLeftOver =
+  /^\.approvals\.(?:json(?:\.lock(?:\.\d{1,10}\.[0-9a-f]{16}\.stale)?)?|\d{1,10}\.[0-9a-f]{16}\.tmp)$/;
+
 /**
  * Builds the store of quotas over the folder `quota` of the folder of
  * state, which {@link prepareQuotaFolder} made. Each file belongs to one
  * tenant and UTC day; the store takes tenant and actor from the context
  * and checks them, the key and the day before it builds a name. Files of
  * the same tenant for earlier days it removes when it first counts on a
- * new day.
+ * new day, and files of decisions once they are older than
+ * `approvalCountDays` by its clock.
  *
  * @param options - Folder of state, clock, process, host and, for tests,
  *   the file functions and the wait.
@@ -438,8 +506,10 @@ export function createFileQuotaStore(
       }));
   const folder = folderOf(stateDir);
   // The days already cleaned up, per tenant, so that the folder is listed
-  // once a day and not on every call.
+  // once a day and not on every call; the files of decisions by the day of
+  // the clock.
   const cleaned = new Map<string, string>();
+  const cleanedApprovals = new Map<string, string>();
   // The changes of this process, one after the other.
   let queue: Promise<unknown> = Promise.resolve();
 
@@ -544,21 +614,17 @@ export function createFileQuotaStore(
     return buffer.subarray(0, size);
   };
 
-  // The counters in the file, or none when there is no file yet.
-  const readCounts = (
+  // The text of a file, or undefined when there is no file yet.
+  const readText = (
     path: string,
-    tenantId: string,
-    day: IsoDate,
     flags: { readonly read: number; readonly uid: number },
     checked: Identity,
-  ): Counts => {
+  ): string | undefined => {
     let fd: number;
     try {
       fd = fs.openSync(path, flags.read);
     } catch (error) {
-      if (errorCode(error) === 'ENOENT') {
-        return Object.create(null) as Counts;
-      }
+      if (errorCode(error) === 'ENOENT') return undefined;
       throw unavailable();
     }
     try {
@@ -572,15 +638,11 @@ export function createFileQuotaStore(
         throw unavailable();
       }
       samePlace(stats, path, checked);
-      let text: string;
       try {
-        text = decoder.decode(readAll(fd, stats.size));
+        return decoder.decode(readAll(fd, stats.size));
       } catch {
         throw unavailable();
       }
-      const counts = parseCounts(text, tenantId, day);
-      if (counts === undefined) throw unavailable();
-      return counts;
     } finally {
       try {
         fs.closeSync(fd);
@@ -588,6 +650,37 @@ export function createFileQuotaStore(
         // The file was only read.
       }
     }
+  };
+
+  // The counters in the file, or none when there is no file yet.
+  const readCounts = (
+    path: string,
+    tenantId: string,
+    day: IsoDate,
+    flags: { readonly read: number; readonly uid: number },
+    checked: Identity,
+  ): Counts => {
+    const text = readText(path, flags, checked);
+    if (text === undefined) return Object.create(null) as Counts;
+    const counts = parseCounts(text, tenantId, day);
+    if (counts === undefined) throw unavailable();
+    return counts;
+  };
+
+  // The counters of decisions in their file, or none without a file yet.
+  const readApprovals = (
+    path: string,
+    tenantId: string,
+    day: IsoDate,
+    flags: { readonly read: number; readonly uid: number },
+    checked: Identity,
+  ): Record<string, number> => {
+    const text = readText(path, flags, checked);
+    if (text === undefined)
+      return Object.create(null) as Record<string, number>;
+    const approvals = parseApprovals(text, tenantId, day);
+    if (approvals === undefined) throw unavailable();
+    return approvals;
   };
 
   const writeAll = (fd: number, bytes: Uint8Array): void => {
@@ -600,20 +693,23 @@ export function createFileQuotaStore(
   };
 
   // A new file under a name no other process uses, written whole and
-  // flushed before the rename makes it the file.
-  const writeCounts = (
+  // flushed before the rename makes it the file. `part` is what the name
+  // of the file holds between the day and the end: nothing for the
+  // counters, `.approvals` for the decisions.
+  const writeRecord = (
     path: string,
     tenantId: string,
     day: IsoDate,
-    counts: Counts,
+    part: '' | '.approvals',
+    record: Readonly<Record<string, unknown>>,
     flags: { readonly create: number },
     checked: Identity,
   ): void => {
     const bytes = encoder.encode(
-      `${JSON.stringify({ v: 1, tenant: tenantId, day, counts })}\n`,
+      `${JSON.stringify({ v: 1, tenant: tenantId, day, ...record })}\n`,
     );
     if (bytes.length > maxQuotaFileBytes) throw unavailable();
-    const temporary = `${folder}/.${tenantId}-${day}.${String(pid)}.${randomBytes(8).toString('hex')}.tmp`;
+    const temporary = `${folder}/.${tenantId}-${day}${part}.${String(pid)}.${randomBytes(8).toString('hex')}.tmp`;
     let fd: number;
     try {
       fd = fs.openSync(temporary, flags.create, quotaFileMode);
@@ -820,12 +916,91 @@ export function createFileQuotaStore(
     }
   };
 
+  // Removes the files of decisions of the tenant older than
+  // approvalCountDays by the clock, once per day of the clock: the file,
+  // its lock, a lock moved aside and a temporary file. A clock that gives
+  // no day removes nothing.
+  const cleanUpApprovals = (tenantId: string, checked: Identity): void => {
+    let today: string;
+    let kept: string;
+    try {
+      // A time that is no date throws here as well.
+      const now = clock.now();
+      today = new Date(now).toISOString().slice(0, 10);
+      kept = new Date(now - approvalCountDays * dayMs)
+        .toISOString()
+        .slice(0, 10);
+    } catch {
+      return;
+    }
+    if (cleanedApprovals.get(tenantId) === today) return;
+    cleanedApprovals.set(tenantId, today);
+    let names: string[];
+    try {
+      sameFolder(checked);
+      names = fs.readdirSync(folder);
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      const temporary = name.startsWith(`.${tenantId}-`);
+      if (!temporary && !name.startsWith(`${tenantId}-`)) continue;
+      const rest = name.slice(tenantId.length + (temporary ? 2 : 1));
+      const earlier = rest.slice(0, 10);
+      const suffix = rest.slice(10);
+      // A temporary file starts with a point, every other one does not.
+      const leftOver =
+        approvalsLeftOver.test(suffix) && temporary === suffix.endsWith('.tmp');
+      if (isIsoDate(earlier) && earlier < kept && leftOver) {
+        try {
+          fs.unlinkSync(`${folder}/${name}`);
+        } catch {
+          // Tried again on the next day.
+        }
+      }
+    }
+  };
+
+  // Counts a decision about an entry of the queue: for the tenant, without
+  // an actor, in the file of decisions of the day of the entry (ADR 0029).
+  const incrementApproval = async (
+    tenantId: string,
+    key: QuotaKey,
+    day: IsoDate,
+  ): Promise<number> => {
+    const flags = flagsOrFail();
+    const checked = checkFolder(flags.uid);
+    const path = `${folder}/${tenantId}-${day}${approvalsSuffix}`;
+    const mine = await lock(`${path}.lock`, flags, checked);
+    try {
+      const approvals = readApprovals(path, tenantId, day, flags, checked);
+      const value = (approvals[key] ?? 0) + 1;
+      if (!Number.isSafeInteger(value)) throw unavailable();
+      approvals[key] = value;
+      if (Object.keys(approvals).length > maxApprovalKeys) throw unavailable();
+      writeRecord(
+        path,
+        tenantId,
+        day,
+        '.approvals',
+        { approvals },
+        flags,
+        checked,
+      );
+      return value;
+    } finally {
+      unlock(`${path}.lock`, mine, flags);
+      cleanUpApprovals(tenantId, checked);
+    }
+  };
+
   const increment = async (
     ctx: TenantContext,
     key: QuotaKey,
     day: IsoDate,
   ): Promise<number> => {
     const { tenantId, actor } = subjectOf(ctx, key, day);
+    if (isApprovalQuotaKey(key)) return incrementApproval(tenantId, key, day);
     const flags = flagsOrFail();
     const checked = checkFolder(flags.uid);
     const path = `${folder}/${tenantId}-${day}.json`;
@@ -842,11 +1017,12 @@ export function createFileQuotaStore(
       // A new counter of writes beyond the bound is not written; the
       // policy treats that as a write it could not count (ADR 0032).
       if (writeKeysOf(entry) > maxWriteKeysPerActor) throw unavailable();
-      writeCounts(path, tenantId, day, counts, flags, checked);
+      writeRecord(path, tenantId, day, '', { counts }, flags, checked);
       return value;
     } finally {
       unlock(`${path}.lock`, mine, flags);
       cleanUp(tenantId, day, checked);
+      cleanUpApprovals(tenantId, checked);
     }
   };
 
@@ -859,6 +1035,16 @@ export function createFileQuotaStore(
     const flags = flagsOrFail();
     const checked = checkFolder(flags.uid);
     // A rename replaces the file whole, so a read needs no lock.
+    if (isApprovalQuotaKey(key)) {
+      const approvals = readApprovals(
+        `${folder}/${tenantId}-${day}${approvalsSuffix}`,
+        tenantId,
+        day,
+        flags,
+        checked,
+      );
+      return Promise.resolve(approvals[key] ?? 0);
+    }
     const counts = readCounts(
       `${folder}/${tenantId}-${day}.json`,
       tenantId,

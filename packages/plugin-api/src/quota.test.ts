@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  approvalCountDays,
+  approvalQuotaKey,
+  isApprovalQuotaKey,
   isIsoDate,
   isQuotaKey,
   maxWriteQuotaKeyLength,
@@ -53,6 +56,36 @@ describe('the port for quotas', () => {
   ])('refuses %s', (_name, tool, target) => {
     expect(() => writeQuotaKey(tool, target)).toThrow(TypeError);
   });
+
+  it('builds the key of the counter of a decision about an entry', () => {
+    const hash = 'a1'.repeat(32);
+    const key = approvalQuotaKey(hash);
+    expect(key).toBe(`approval:${hash}`);
+    expect(isApprovalQuotaKey(key)).toBe(true);
+    expect(isQuotaKey(key)).toBe(true);
+    // Kept through the 14 days of the queue and one more.
+    expect(approvalCountDays).toBe(15);
+  });
+
+  it.each([
+    ['a hash too short', 'a'.repeat(63)],
+    ['a hash too long', 'a'.repeat(65)],
+    ['a hash in capitals', 'A'.repeat(64)],
+    ['a path', `../${'a'.repeat(61)}`],
+    ['a line break', `${'a'.repeat(64)}\n`],
+    ['nothing', ''],
+  ])('refuses the key of a decision with %s', (_name, hash) => {
+    expect(() => approvalQuotaKey(hash)).toThrow(TypeError);
+    expect(isApprovalQuotaKey(`approval:${hash}`)).toBe(false);
+    expect(isQuotaKey(`approval:${hash}`)).toBe(false);
+  });
+
+  it.each(['special_reads', 'write:ct_x:wiki_category:1', 12, null])(
+    'does not take %j as the key of a decision',
+    (value) => {
+      expect(isApprovalQuotaKey(value)).toBe(false);
+    },
+  );
 
   it.each(['special_reads', `write:ct_x:wiki_page:1/${guid}`])(
     'takes %s as a key',

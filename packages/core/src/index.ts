@@ -138,6 +138,8 @@ export {
   queueReasons,
 } from './queue/index.js';
 export {
+  type ApproveOutcome,
+  type ApproveReason,
   createToolPipeline,
   type QueueCall,
   type QueueListOutcome,

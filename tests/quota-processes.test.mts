@@ -12,7 +12,10 @@ import { fileURLToPath } from 'node:url';
 
 import { afterAll, describe, expect, it } from 'vitest';
 
-import type { IsoDate } from '../packages/plugin-api/src/index.ts';
+import {
+  approvalQuotaKey,
+  type IsoDate,
+} from '../packages/plugin-api/src/index.ts';
 import {
   createFileQuotaStore,
   prepareQuotaFolder,
@@ -40,6 +43,7 @@ const count = (
   times: number,
   startAt: number,
   pauseMs: number,
+  key?: { readonly key: string; readonly day: string },
 ) =>
   new Promise<number[]>((resolve, reject) => {
     const child = spawn(
@@ -52,6 +56,7 @@ const count = (
         String(times),
         String(startAt),
         String(pauseMs),
+        ...(key === undefined ? [] : [key.key, key.day]),
       ],
       { stdio: ['ignore', 'pipe', 'pipe'] },
     );
@@ -105,6 +110,44 @@ describe('two processes that count against one file of quotas', () => {
         ),
       ).toMatchObject({
         counts: { 'user:stdio:local-stdio': { special_reads: 2 * times } },
+      });
+    },
+    timeout,
+  );
+});
+
+describe('two processes that count one decision about an entry of the queue', () => {
+  it(
+    'give the count 1 to one of them only, in the file of decisions',
+    async () => {
+      const stateDir = mkdtempSync(join(base, 'approvals-'));
+      chmodSync(stateDir, 0o700);
+      expect(prepareQuotaFolder(stateDir)).toEqual({ ok: true });
+      // Today, so that the store keeps the file by its clock (ADR 0029).
+      const day = new Date().toISOString().slice(0, 10);
+      const key = approvalQuotaKey('5e'.repeat(32));
+      const times = 20;
+      const startAt = Date.now() + 2000;
+      const [first, second] = await Promise.all([
+        count(stateDir, times, startAt, 10, { key, day }),
+        count(stateDir, times, startAt, 10, { key, day }),
+      ]);
+      const all = [...first, ...second].sort((a, b) => a - b);
+      expect(all).toEqual(
+        Array.from({ length: 2 * times }, (_, index) => index + 1),
+      );
+      expect(all.filter((value) => value === 1)).toHaveLength(1);
+      const quota = join(stateDir, 'quota');
+      expect(readdirSync(quota)).toEqual([`default-${day}.approvals.json`]);
+      expect(
+        JSON.parse(
+          readFileSync(join(quota, `default-${day}.approvals.json`), 'utf8'),
+        ),
+      ).toEqual({
+        v: 1,
+        tenant: 'default',
+        day,
+        approvals: { [key]: 2 * times },
       });
     },
     timeout,

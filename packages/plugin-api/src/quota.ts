@@ -1,8 +1,9 @@
 /**
  * The port for quotas (ADR 0063): counters that outlive a request, such as
- * the daily read budget of the tools with sensitivity special. The free
- * core keeps them in a file; a plugin may bring another store, which must
- * pass the same checks as the store of the core.
+ * the daily read budget of the tools with sensitivity special, the writes
+ * of the policy and the decisions about entries of the queue of approvals.
+ * The free core keeps them in a file; a plugin may bring another store,
+ * which must pass the same checks as the store of the core.
  *
  * @packageDocumentation
  */
@@ -18,11 +19,24 @@ import type { TenantContext } from './context.js';
 export type WriteQuotaKey = string & { readonly __ecclium: 'WriteQuotaKey' };
 
 /**
- * What a counter counts: the calls of the tools in the read budget, which
- * share one budget per actor and day, or the writes of one tool to one
- * target of the policy.
+ * The key of the counter of a decision about an entry of the queue of
+ * approvals (ADR 0029): `approval:` and a SHA-256 in lowercase hex, which
+ * the core makes from the ID of the entry and the hash of its plan. An
+ * approval and a rejection count under the same key, and only the call
+ * that counts 1 decides, so that no entry is decided twice, also after a
+ * restart and with a queue of a plugin that offers an entry again. Only
+ * {@link approvalQuotaKey} makes one.
  */
-export type QuotaKey = 'special_reads' | WriteQuotaKey;
+export type ApprovalQuotaKey = string & {
+  readonly __ecclium: 'ApprovalQuotaKey';
+};
+
+/**
+ * What a counter counts: the calls of the tools in the read budget, which
+ * share one budget per actor and day, the writes of one tool to one
+ * target of the policy, or the decisions about one entry of the queue.
+ */
+export type QuotaKey = 'special_reads' | WriteQuotaKey | ApprovalQuotaKey;
 
 /** The keys with a fixed name, frozen. */
 export const quotaKeys: readonly QuotaKey[] = Object.freeze(['special_reads']);
@@ -36,10 +50,59 @@ const writeQuotaKeyPattern =
 /** The longest key of a counter of the policy. */
 export const maxWriteQuotaKeyLength = 128;
 
+// The hash of the entry and its plan, in lowercase hex. Anchored, without
+// flags.
+const approvalQuotaKeyPattern = /^approval:[0-9a-f]{64}$/;
+
 /**
- * Tells whether a value is the key of a counter: `special_reads` or a key
- * of a counter of the policy. A store checks every key itself before it
- * counts under it.
+ * How many days after its own day a store keeps the counter of a decision
+ * at least: the 14 days an entry of the queue waits and one more, so that
+ * a decision is never forgotten while its entry can still be approved.
+ * Other counters may go once their day is over.
+ */
+export const approvalCountDays = 15;
+
+/**
+ * Tells whether a value is the key of the counter of a decision about an
+ * entry of the queue. A store counts under such a key for the tenant
+ * alone and keeps it {@link approvalCountDays} days.
+ *
+ * @param value - Any value.
+ * @returns Whether it is such a key.
+ * @example
+ * ```ts
+ * isApprovalQuotaKey(`approval:${'a'.repeat(64)}`); // true
+ * isApprovalQuotaKey('special_reads'); // false
+ * ```
+ */
+export function isApprovalQuotaKey(value: unknown): value is ApprovalQuotaKey {
+  return typeof value === 'string' && approvalQuotaKeyPattern.test(value);
+}
+
+/**
+ * Builds the key of the counter of a decision from the hash the core made
+ * of the ID of the entry and the hash of its plan.
+ *
+ * @param hash - SHA-256 in lowercase hex.
+ * @returns The key.
+ * @throws {TypeError} When the hash has another form.
+ * @example
+ * ```ts
+ * approvalQuotaKey('a'.repeat(64)); // 'approval:aaaa…'
+ * ```
+ */
+export function approvalQuotaKey(hash: string): ApprovalQuotaKey {
+  const key = `approval:${hash}`;
+  if (!isApprovalQuotaKey(key)) {
+    throw new TypeError('The key of the counter is invalid.');
+  }
+  return key;
+}
+
+/**
+ * Tells whether a value is the key of a counter: `special_reads`, a key of
+ * a counter of the policy or a key of the counter of a decision. A store
+ * checks every key itself before it counts under it.
  *
  * @param value - Any value.
  * @returns Whether it is such a key.
@@ -55,7 +118,8 @@ export function isQuotaKey(value: unknown): value is QuotaKey {
     typeof value === 'string' &&
     ((quotaKeys as readonly string[]).includes(value) ||
       (value.length <= maxWriteQuotaKeyLength &&
-        writeQuotaKeyPattern.test(value)))
+        writeQuotaKeyPattern.test(value)) ||
+      isApprovalQuotaKey(value))
   );
 }
 
@@ -121,9 +185,12 @@ export function isIsoDate(value: unknown): value is IsoDate {
 /**
  * Counters only, never content (ADR 0051, ADR 0063). Each counter belongs
  * to the tenant and the actor of the context, a key and a day; a store
- * takes them from the context and from nothing a tool hands over. A
- * counter survives a restart and is shared by every process that uses the
- * same store.
+ * takes them from the context and from nothing a tool hands over. The
+ * counter of a decision about an entry of the queue belongs to the tenant
+ * alone, whoever counts it, so that a second identity cannot decide again
+ * about the same entry, and it stays at least {@link approvalCountDays}
+ * days after its day (ADR 0029). A counter survives a restart and is
+ * shared by every process that uses the same store.
  */
 export interface QuotaStore {
   /**

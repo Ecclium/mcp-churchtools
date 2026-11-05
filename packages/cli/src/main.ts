@@ -4,8 +4,8 @@
  * takes over the environment, reads the arguments and runs the command:
  * `ecclium config check`, `ecclium audit verify` and `ecclium audit show`,
  * which read the audit files (ADR 0028), `ecclium policy init`
- * (ADR 0032), `ecclium undo` and `ecclium queue list`, `show` and
- * `reject` (ADR 0031). Wrong calls get fixed German
+ * (ADR 0032), `ecclium undo` and `ecclium queue list`, `show`, `approve`
+ * and `reject` (ADR 0029, ADR 0031). Wrong calls get fixed German
  * texts on stderr, never an argument, and every exit code comes from
  * `exit-codes.ts`.
  *
@@ -82,6 +82,7 @@ const commands: readonly Command[] = Object.freeze(
     { words: ['undo'], options: ['overwrite'], argument: true },
     { words: ['queue', 'list'], options: [] },
     { words: ['queue', 'show'], options: [], argument: true },
+    { words: ['queue', 'approve'], options: [], argument: true },
     { words: ['queue', 'reject'], options: [], argument: true },
   ].map((entry) =>
     Object.freeze({
@@ -126,7 +127,7 @@ type Call =
     }
   | {
       readonly kind: 'queue';
-      readonly action: 'list' | 'show' | 'reject';
+      readonly action: 'list' | 'show' | 'approve' | 'reject';
       readonly queueId: string | undefined;
     };
 
@@ -221,6 +222,8 @@ const readCall = (args: readonly string[]): Call => {
       return { kind: 'queue', action: 'list', queueId: undefined };
     case 'queue show':
       return { kind: 'queue', action: 'show', queueId: positionals[2] };
+    case 'queue approve':
+      return { kind: 'queue', action: 'approve', queueId: positionals[2] };
     case 'queue reject':
       return { kind: 'queue', action: 'reject', queueId: positionals[2] };
     default:
