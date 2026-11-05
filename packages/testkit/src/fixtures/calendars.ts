@@ -251,8 +251,8 @@ export interface AppointmentDetailsFixture extends Omit<
 /**
  * Builds an answer of `GET /api/calendars/{calendarId}/appointments/{appointmentId}`:
  * the fields of `base` directly in `appointment`, ID, title, subtitle,
- * whole days, calendar ID, name of the place, description and link from
- * the appointment given, `calculatedDates` with the dates given under
+ * whole days, calendar ID, name of the place, description, link and
+ * version from the appointment given, `calculatedDates` with the dates given under
  * their keys, every other field a canary, also the start and end of the
  * appointment itself, `iCalUid` of each date and `additionalInfos`.
  *
@@ -270,7 +270,7 @@ export function appointmentAnswer(
   const made = new Map<string, Canary>();
   const kept = keptAppointment(
     appointment,
-    drop(keptAppointmentShape, 'description', 'link'),
+    drop(keptAppointmentShape, 'description', 'link', 'version'),
     'appointment',
     made,
   );
@@ -289,6 +289,7 @@ export function appointmentAnswer(
         ...kept,
         description: appointment.description,
         link: appointment.link,
+        version: appointment.version,
       },
       additionalInfos: plant([text], 'additionalInfos', made),
       calculatedDates,

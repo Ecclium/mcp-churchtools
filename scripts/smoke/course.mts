@@ -1618,7 +1618,8 @@ export async function runEra(
 
         if (appointment !== undefined) {
           // ct_appointments_get with the first appointment: the fields of
-          // the list without start and end, description, link and dates.
+          // the list without start and end, description, link, version and
+          // dates.
           readCalls += 1;
           const appointmentId = appointment['id'];
           const read = await callTool(
@@ -1650,9 +1651,13 @@ export async function runEra(
               'moreDates',
               'subtitle',
               'title',
+              'version',
             ]) &&
             data['id'] === appointmentId &&
             data['calendarId'] === calendarId &&
+            typeof data['version'] === 'number' &&
+            Number.isSafeInteger(data['version']) &&
+            data['version'] >= 0 &&
             typeof data['allDay'] === 'boolean' &&
             typeof data['moreDates'] === 'boolean' &&
             Array.isArray(dates) &&

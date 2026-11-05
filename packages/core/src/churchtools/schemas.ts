@@ -488,7 +488,7 @@ export const appointmentListSchema = z.object({
 
 /**
  * The answer of `GET /api/calendars/{calendarId}/appointments/{appointmentId}`:
- * the fields of a list with description and link from `appointment`, and
+ * the fields of a list with description, link and version from `appointment`, and
  * the start and end of each date in `calculatedDates` (ADR 0064, F37). The
  * probe saw an object whose keys have no known form, so only its values
  * are read; an empty list, which ChurchTools may send for no dates, counts
@@ -500,6 +500,8 @@ export const appointmentSchema = z.object({
       ...appointmentFields,
       description: text(maxAppointmentDescriptionLength).nullable().optional(),
       link: text(maxAppointmentLinkLength).nullable().optional(),
+      // The base a change names (F42).
+      version: count,
     }),
     calculatedDates: z.union([
       z.array(span).max(maxAppointmentDates),
@@ -771,6 +773,165 @@ export const wikiPageCreateBodySchema = z.object({
  */
 export const wikiPageUpdateBodySchema = z.object({
   text: z.string().min(1),
+});
+
+/**
+ * The most additional dates or exceptions of an appointment or a booking
+ * the client reads. It only counts them: a single appointment or booking
+ * has none.
+ */
+const maxSeriesDates = 1000;
+
+/**
+ * An appointment as ChurchTools stores it, in `data.appointment` of a read
+ * and in `data` of the answer 201 to creating one (F42): the fields the
+ * write guard compares and sends again, and its version. Of what the client
+ * never sends back (F41), the series, an address, an image, a group for
+ * sign-ups and the person on whose behalf it was entered, only whether
+ * there is one counts, so their values are not read as text (ADR 0072).
+ */
+export const storedAppointmentSchema = z.object({
+  id,
+  version: count,
+  calendar: z.object({ id }),
+  title: text(maxNameLength),
+  subtitle: text(maxNameLength).nullable().optional(),
+  description: text(maxAppointmentDescriptionLength).nullable().optional(),
+  startDate: dayOrDateTime,
+  endDate: dayOrDateTime,
+  allDay: z.boolean(),
+  isInternal: z.boolean(),
+  repeatId: count,
+  additionals: z.array(z.unknown()).max(maxSeriesDates).optional(),
+  exceptions: z.array(z.unknown()).max(maxSeriesDates).optional(),
+  address: z.unknown().nullable().optional(),
+  link: text(maxAppointmentLinkLength).nullable().optional(),
+  image: z.unknown().nullable().optional(),
+  signup: z.unknown().nullable().optional(),
+  onBehalfOfPid: z.number().int().nullable().optional(),
+});
+
+/**
+ * The answer of `GET /api/calendars/{calendarId}/appointments/{appointmentId}`
+ * with `include[]` for events, bookings and invitations, read for a plan:
+ * the stored appointment, each date as a map of unknown values and
+ * `additionalInfos` as an unknown value, since the form of what an
+ * `include[]` adds is not shown by a probe. The client looks for lists and
+ * objects that hold a value in them, and in the keys of `data` and of the
+ * appointment that this schema drops (ADR 0072).
+ */
+export const appointmentStateSchema = z.object({
+  data: z.object({
+    appointment: storedAppointmentSchema,
+    additionalInfos: z.unknown().optional(),
+    calculatedDates: z.union([
+      z.array(z.record(z.string(), z.unknown())).max(maxAppointmentDates),
+      z
+        .record(z.string(), z.record(z.string(), z.unknown()))
+        .refine((dates) => Object.keys(dates).length <= maxAppointmentDates),
+    ]),
+  }),
+});
+
+/** The answer 201 of `POST /api/calendars/{calendarId}/appointments` (F42). */
+export const appointmentCreatedSchema = z.object({
+  data: storedAppointmentSchema,
+});
+
+/**
+ * A booking as ChurchTools stores it, in `data.booking` of a read and in
+ * `data` of the answer 201 to requesting one (F42): the fields the write
+ * guard compares, its state and its version, and whether it is part of a
+ * series or of an appointment, which a booking of Ecclium never is.
+ */
+export const storedBookingSchema = z.object({
+  id,
+  version: count,
+  resourceId: id,
+  title: text(maxNameLength),
+  description: text(maxAppointmentDescriptionLength).nullable().optional(),
+  startDate: dayOrDateTime,
+  endDate: dayOrDateTime,
+  statusId: count,
+  repeatId: count,
+  appointmentId: z.number().int().nullable().optional(),
+});
+
+/** The answer of `GET /api/bookings/{bookingId}`, read for a plan (F42). */
+export const bookingStateSchema = z.object({
+  data: z.object({ booking: storedBookingSchema }),
+});
+
+/** The answer 201 of `POST /api/bookings` (F42, F45). */
+export const bookingCreatedSchema = z.object({ data: storedBookingSchema });
+
+// A start or an end the client sends: a time in UTC, never a day alone,
+// because whole days are not shown by a probe (ADR 0072).
+const sentDateTime = z.string().regex(dateTimePattern);
+
+// One whole number the client always sends, as an integer of the range of
+// that number, so that the contract check compares it with the integer
+// the document declares; a literal would be described as any number.
+const always = (value: number) => z.int().min(value).max(value);
+
+/**
+ * The body of `POST /api/calendars/{calendarId}/appointments`, exactly as
+ * the client sends it: a single appointment like the one of the probe
+ * (F41, F42), never a series, an event, an invitation or a booking, and
+ * never only for signed-in persons, and without a subtitle. A missing
+ * description is left out, as the probe left it out of a `PUT` (F41). For
+ * the contract check.
+ */
+export const appointmentCreateBodySchema = z.object({
+  title: z.string().min(1).max(maxNameLength),
+  description: z
+    .string()
+    .min(1)
+    .max(maxAppointmentDescriptionLength)
+    .optional(),
+  startDate: sentDateTime,
+  endDate: sentDateTime,
+  isInternal: z.literal(false),
+  repeatId: always(0),
+});
+
+/**
+ * The body of `PUT /api/calendars/{calendarId}/appointments/{appointmentId}`,
+ * exactly as the client sends it. ChurchTools replaces the whole
+ * appointment and empties every field left out (F41), so the body carries
+ * every field the probe sent, subtitle and `isInternal` as read before.
+ */
+export const appointmentUpdateBodySchema = z.object({
+  title: z.string().min(1).max(maxNameLength),
+  subtitle: z.string().min(1).max(maxNameLength).optional(),
+  description: z
+    .string()
+    .min(1)
+    .max(maxAppointmentDescriptionLength)
+    .optional(),
+  startDate: sentDateTime,
+  endDate: sentDateTime,
+  isInternal: z.boolean(),
+  repeatId: always(0),
+});
+
+/**
+ * The body of `POST /api/bookings`, exactly as the client sends it: always
+ * a request (`statusId` 1), which the managers of the resource approve in
+ * ChurchTools (F45), not shown in the calendar, and without a series.
+ */
+export const bookingCreateBodySchema = z.object({
+  resourceId: id,
+  title: z.string().min(1).max(maxNameLength),
+  description: z
+    .string()
+    .min(1)
+    .max(maxAppointmentDescriptionLength)
+    .optional(),
+  startDate: sentDateTime,
+  endDate: sentDateTime,
+  statusId: always(1),
+  showInCal: z.literal(false),
 });
 
 /**

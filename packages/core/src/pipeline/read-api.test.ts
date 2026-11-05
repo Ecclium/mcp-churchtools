@@ -120,6 +120,7 @@ const appointment: AppointmentDetails = {
   id: 5,
   calendarId: 8,
   title: 'Termin A',
+  version: 0,
   subtitle: null,
   allDay: false,
   locationName: null,

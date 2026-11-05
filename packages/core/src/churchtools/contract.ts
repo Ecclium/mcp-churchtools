@@ -13,9 +13,16 @@ import { z } from 'zod';
 
 import {
   agendaSchema,
+  appointmentCreateBodySchema,
+  appointmentCreatedSchema,
   appointmentListSchema,
   appointmentSchema,
+  appointmentStateSchema,
+  appointmentUpdateBodySchema,
+  bookingCreateBodySchema,
+  bookingCreatedSchema,
   bookingListSchema,
+  bookingStateSchema,
   calendarListSchema,
   countedMetaSchema,
   eventAssignmentsSchema,
@@ -206,6 +213,36 @@ export function describeContract() {
       query: [],
       response: schema(appointmentSchema),
     },
+    // The writes of appointments and bookings (ADR 0072): the read for a
+    // plan, the body the client sends, the answer 201 it reads, and the
+    // deletes, which have neither body nor answer.
+    appointmentState: {
+      method: 'get',
+      path: '/api/calendars/{calendarId}/appointments/{appointmentId}',
+      query: ['include[]'],
+      response: schema(appointmentStateSchema),
+    },
+    appointmentCreate: {
+      method: 'post',
+      path: '/api/calendars/{calendarId}/appointments',
+      query: [],
+      status: 201,
+      request: body(appointmentCreateBodySchema),
+      response: schema(appointmentCreatedSchema),
+    },
+    appointmentUpdate: {
+      method: 'put',
+      path: '/api/calendars/{calendarId}/appointments/{appointmentId}',
+      query: [],
+      status: 200,
+      request: body(appointmentUpdateBodySchema),
+    },
+    appointmentDelete: {
+      method: 'delete',
+      path: '/api/calendars/{calendarId}/appointments/{appointmentId}',
+      query: [],
+      status: 204,
+    },
     resources: {
       method: 'get',
       path: '/api/resources',
@@ -223,6 +260,26 @@ export function describeContract() {
       path: '/api/bookings',
       query: ['resource_ids[]', 'from', 'to'],
       response: schema(bookingListSchema),
+    },
+    bookingState: {
+      method: 'get',
+      path: '/api/bookings/{bookingId}',
+      query: [],
+      response: schema(bookingStateSchema),
+    },
+    bookingCreate: {
+      method: 'post',
+      path: '/api/bookings',
+      query: [],
+      status: 201,
+      request: body(bookingCreateBodySchema),
+      response: schema(bookingCreatedSchema),
+    },
+    bookingDelete: {
+      method: 'delete',
+      path: '/api/bookings/{bookingId}',
+      query: [],
+      status: 204,
     },
     songs: {
       method: 'get',

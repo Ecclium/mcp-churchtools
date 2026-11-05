@@ -90,10 +90,7 @@ import {
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { maxWikiWriteBytes } from '../churchtools/schemas.js';
-import {
-  type ChurchToolsWrites,
-  isWikiTitle,
-} from '../churchtools/wiki-writes.js';
+import { isWikiTitle, type WikiWrites } from '../churchtools/wiki-writes.js';
 import { canonicalOfWritten, contactKeysOf } from '../content/index.js';
 import { HttpTransportError } from '../http/index.js';
 import type { KeyMaterial } from '../keys/index.js';
@@ -188,7 +185,7 @@ export interface WriteClient {
   /** The rights of the account, for the advice before planning. */
   readonly permissions: (ctx: TenantContext) => Promise<Permissions>;
   /** The writes of the client and the reads a plan needs (ADR 0072). */
-  readonly writes: ChurchToolsWrites;
+  readonly writes: WikiWrites;
 }
 
 /** What the write guard is built from. */
@@ -1177,7 +1174,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       kind: 'wiki_category',
       key: String(intent.categoryId),
     });
-    let created: Awaited<ReturnType<ChurchToolsWrites['createWikiPage']>>;
+    let created: Awaited<ReturnType<WikiWrites['createWikiPage']>>;
     try {
       created = await client.writes.createWikiPage(
         ctx,

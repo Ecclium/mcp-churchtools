@@ -12,10 +12,24 @@ export {
   createChurchToolsClient,
 } from './client.js';
 export type {
-  ChurchToolsWrites,
+  AppointmentChange,
+  AppointmentPart,
+  AppointmentState,
+  BookingState,
+  CalendarDayState,
+  CalendarFacts,
+  CalendarWrites,
+  DatedFields,
+  ResourceDayState,
+  StoredAppointment,
+  StoredBooking,
+} from './calendar-writes.js';
+export type {
   CreatedWikiPage,
   WikiPageState,
+  WikiWrites,
 } from './wiki-writes.js';
+export type { ChurchToolsWrites } from './writes.js';
 export type {
   ObjectValue,
   OperationAnswer,

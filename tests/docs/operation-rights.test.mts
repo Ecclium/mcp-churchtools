@@ -245,9 +245,12 @@ describe('the mapping of operations to rights', () => {
         ? []
         : [{ name, method: entry.method, path: plainPath(entry.path) }],
     );
-    // Event and assignments read the same operation. Two entries are
-    // writes, creating and changing a page of the wiki (ADR 0072).
-    expect(reads).toHaveLength(30);
+    // Event and assignments read the same operation, as do appointment and
+    // the state of an appointment for a plan. Seven entries are writes:
+    // creating and changing a page of the wiki, creating, changing and
+    // deleting an appointment, and requesting and deleting a booking
+    // (ADR 0072).
+    expect(reads).toHaveLength(37);
     const found = reads.map((read) => {
       const operations = facts.operations.entries.filter(
         (operation) =>
@@ -263,7 +266,7 @@ describe('the mapping of operations to rights', () => {
       found.filter(({ operationIds }) => operationIds.length !== 1),
     ).toEqual([]);
     const ids = new Set(found.flatMap(({ operationIds }) => operationIds));
-    expect(ids.size).toBe(29);
+    expect(ids.size).toBe(35);
     expect([...ids].filter((id) => !mapped.has(id))).toEqual([]);
   });
 

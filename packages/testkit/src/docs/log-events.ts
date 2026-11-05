@@ -115,6 +115,7 @@ const readObjects: Readonly<Record<string, string>> = Object.freeze({
   agenda: 'den Ablauf eines Events',
   appointment: 'einen Termin',
   appointments: 'die Termine von Kalendern',
+  booking: 'eine Buchung',
   bookings: 'die Buchungen einer Ressource',
   calendars: 'die Kalender',
   event_assignments: 'die Einteilungen eines Events',
@@ -318,6 +319,32 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Ecclium hat eine Eingabe für Events oder Dienste abgewiesen, bevor es ChurchTools fragte.',
     churchtools_calendar_input_refused:
       'Ecclium hat eine Eingabe für Kalender, Termine oder Ressourcen abgewiesen, bevor es ChurchTools fragte.',
+    churchtools_calendar_write_refused:
+      'Ecclium hat eine Eingabe zum Schreiben eines Termins oder einer Buchung oder zum Lesen für einen solchen Plan abgewiesen, etwa einen Titel, eine Zeit oder eine Kennung, bevor es ChurchTools fragte.',
+    churchtools_appointment_create_status:
+      'ChurchTools hat auf das Anlegen eines Termins nicht mit 201 geantwortet. `status` nennt den Status, `code` den Fehler. Ob ChurchTools trotzdem geschrieben hat, zeigt erst das Lesen danach.',
+    churchtools_appointment_create_refused:
+      'Ecclium hat die Antwort von ChurchTools auf das Anlegen eines Termins nicht angenommen, etwa weil sie keine Kennung oder einen anderen Kalender nannte. Der Termin kann trotzdem entstanden sein.',
+    churchtools_appointment_create_missing:
+      'ChurchTools kennt den Kalender nicht, in dem Ecclium einen Termin anlegen wollte (404). Der Aufruf endet mit `not_found`.',
+    churchtools_appointment_update_status:
+      'ChurchTools hat auf das Ändern eines Termins nicht mit 200 geantwortet. `status` nennt den Status, `code` den Fehler. Ob ChurchTools trotzdem geschrieben hat, zeigt erst das Lesen danach.',
+    churchtools_appointment_update_missing:
+      'ChurchTools kennt den Termin oder seinen Kalender nicht, den Ecclium ändern wollte (404). Der Aufruf endet mit `not_found`.',
+    churchtools_appointment_delete_status:
+      'ChurchTools hat auf das Löschen eines Termins, den Ecclium angelegt hatte, nicht mit 204 geantwortet. `status` nennt den Status, `code` den Fehler. Ob ChurchTools trotzdem gelöscht hat, zeigt erst das Lesen danach.',
+    churchtools_appointment_delete_missing:
+      'ChurchTools kennt den Termin nicht mehr, den Ecclium zurücknehmen wollte (404). Der Aufruf endet mit `not_found`.',
+    churchtools_booking_create_status:
+      'ChurchTools hat auf das Anfragen einer Buchung nicht mit 201 geantwortet. `status` nennt den Status, `code` den Fehler. Bei 422 bucht ChurchTools die Ressource nur zusammen mit einem Termin. Ob ChurchTools trotzdem geschrieben hat, zeigt erst das Lesen danach.',
+    churchtools_booking_create_refused:
+      'Ecclium hat die Antwort von ChurchTools auf das Anfragen einer Buchung nicht angenommen, etwa weil sie keine Kennung oder eine andere Ressource nannte. Die Buchung kann trotzdem entstanden sein.',
+    churchtools_booking_create_missing:
+      'ChurchTools kennt die Ressource nicht, für die Ecclium eine Buchung anfragen wollte (404). Der Aufruf endet mit `not_found`.',
+    churchtools_booking_delete_status:
+      'ChurchTools hat auf das Löschen einer Buchung, die Ecclium angefragt hatte, nicht mit 204 geantwortet. `status` nennt den Status, `code` den Fehler. Ob ChurchTools trotzdem gelöscht hat, zeigt erst die Liste der Buchungen ihres Tages.',
+    churchtools_booking_delete_missing:
+      'ChurchTools kennt die Buchung nicht mehr, die Ecclium zurücknehmen wollte (404). Der Aufruf endet mit `not_found`.',
     churchtools_song_input_refused:
       'Ecclium hat eine Eingabe für Songs abgewiesen, bevor es ChurchTools fragte.',
     churchtools_search_input_refused:

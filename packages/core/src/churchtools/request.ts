@@ -112,15 +112,24 @@ const failStatus = (
   ctx: TenantContext,
   response: HttpResponse,
   events: Pick<OperationEvents, 'status' | 'missing'>,
-  badRequest?: BadRequest,
+  known?: Pick<WriteCall, 'badRequest' | 'unprocessable'>,
 ): never => {
   if (response.status === 404 && events.missing !== undefined) {
     ctx.log.warn(events.missing, { status: 404, code: 'not_found' });
     throw new EccliumError('not_found');
   }
-  if (response.status === 400 && badRequest !== undefined) {
-    ctx.log.warn(events.status, { status: 400, code: badRequest.code });
-    throw new EccliumError(badRequest.code, badRequest.message);
+  const cause =
+    response.status === 400
+      ? known?.badRequest
+      : response.status === 422
+        ? known?.unprocessable
+        : undefined;
+  if (cause !== undefined) {
+    ctx.log.warn(events.status, {
+      status: response.status,
+      code: cause.code,
+    });
+    throw new EccliumError(cause.code, cause.message);
   }
   const failure = statusFailure(response);
   ctx.log.warn(events.status, {
@@ -208,8 +217,8 @@ export async function fetchAnswer(
 
 /** One write of the client and what it expects back (ADR 0072). */
 export interface WriteCall {
-  /** POST creates an object, PATCH changes one. */
-  readonly method: 'POST' | 'PATCH';
+  /** POST creates an object, PATCH changes a field of one, PUT replaces one. */
+  readonly method: 'POST' | 'PUT' | 'PATCH';
   /** The target, built by the operation, without a query. */
   readonly url: URL;
   /** The body, JSON in UTF-8. */
@@ -230,6 +239,12 @@ export interface WriteCall {
    * Seite»). Without it, a 400 is internal as for a read.
    */
   readonly badRequest?: BadRequest;
+  /**
+   * What a 422 means for this operation, when the OpenAPI document names
+   * its cause, such as a resource that ChurchTools books only with an
+   * appointment. Without it, a 422 is upstream as for a read.
+   */
+  readonly unprocessable?: BadRequest;
 }
 
 /**
@@ -269,9 +284,11 @@ export async function sendWrite(
   const response =
     call.method === 'POST'
       ? await path.transport.post(call.url, options)
-      : await path.transport.patch(call.url, options);
+      : call.method === 'PUT'
+        ? await path.transport.put(call.url, options)
+        : await path.transport.patch(call.url, options);
   if (response.status !== call.success) {
-    return failStatus(ctx, response, events, call.badRequest);
+    return failStatus(ctx, response, events, call);
   }
   if (call.refused === undefined) return undefined;
   const read = readAnswer(response, {
@@ -281,4 +298,38 @@ export async function sendWrite(
   if (read.ok) return read.root;
   ctx.log.warn(call.refused, { code: read.code });
   throw new EccliumError(read.code);
+}
+
+/**
+ * Sends a DELETE, which the transport lets reach only one appointment or
+ * one booking (ADR 0072), and expects 204 without reading a body. Only the
+ * write guard calls it, to take back what Ecclium created (ADR 0029). As
+ * for every write, ChurchTools may have deleted whenever this throws after
+ * the transport was called, so the caller reads again before deciding.
+ *
+ * @param ctx - The context of the call.
+ * @param path - Origin, transport and throttle of the client.
+ * @param url - The target, built by the operation, without a query.
+ * @param events - The events of an answer with another status.
+ * @returns Nothing once ChurchTools answered 204.
+ * @throws {EccliumError} For another tenant, a full throttle and every
+ *   other status; errors of the transport as they are.
+ * @example
+ * ```ts
+ * await sendDelete(ctx, path, url, events);
+ * ```
+ */
+export async function sendDelete(
+  ctx: TenantContext,
+  path: RequestPath,
+  url: URL,
+  events: Pick<OperationEvents, 'status' | 'missing'>,
+): Promise<void> {
+  enter(ctx, path);
+  const response = await path.transport.delete(url, {
+    signal: ctx.signal,
+    // An answer 204 has no body; the limit only bounds an error.
+    maxResponseBytes: 64 * 1024,
+  });
+  if (response.status !== 204) failStatus(ctx, response, events);
 }

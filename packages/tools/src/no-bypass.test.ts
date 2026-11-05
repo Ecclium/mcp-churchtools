@@ -722,6 +722,7 @@ const cases: Readonly<Record<string, Case>> = {
           id: 5,
           calendarId: 8,
           title: 'Termin 5',
+          version: 1,
           subtitle: 'Untertitel',
           allDay: false,
           locationName: 'Saal',

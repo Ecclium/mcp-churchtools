@@ -268,8 +268,9 @@ describe('the contract check', () => {
     )
       .filter(([, entry]) => typeof entry.path === 'string')
       .map(([name]) => name);
-    // 30 entries on 29 operations: event and eventAssignments share one.
-    expect(operations).toHaveLength(30);
+    // 37 entries on 35 operations: event and eventAssignments share one, as
+    // do appointment and appointmentState.
+    expect(operations).toHaveLength(37);
     expect(Object.keys(result.operationen)).toEqual(operations);
     expect(result.churchtoolsVersion).toBe('3.137');
     expect(result.operationen['whoami']).toMatchObject({
@@ -1160,10 +1161,24 @@ describe('the contract check of the body of a write', () => {
   it('takes the base entry of a write as it is', () => {
     expect(runWith({}).code).toBe(0);
     expect(runWith({ method: 'patch', status: 200 }).code).toBe(0);
+    expect(
+      runWith({
+        method: 'delete',
+        path: '/api/bookings/{bookingId}',
+        status: 204,
+        request: undefined,
+      }).code,
+    ).toBe(0);
   });
 
   it.each([
     ['a status other than 200 and 201', { status: 204 }],
+    ['a DELETE with a body', { method: 'delete', status: 204 }],
+    [
+      'a DELETE at another status than 204',
+      { method: 'delete', status: 200, request: undefined },
+    ],
+    ['a PUT without its body', { method: 'put', request: undefined }],
     ['a status as text', { status: '201' }],
     ['a body for a GET', { method: 'get', status: 200 }],
     [

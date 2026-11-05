@@ -836,6 +836,7 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
         scenario === 'appointment-bare-link'
           ? `${canary}Verweis`
           : wrap(`${canary}Verweis`),
+      version: 0,
       dates: [
         { startDate: '2026-10-25T18:00:00Z', endDate: '2026-10-25T19:00:00Z' },
       ],

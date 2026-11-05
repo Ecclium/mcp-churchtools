@@ -444,6 +444,123 @@
   ],
   "operations": [
     {
+      "operationId": "delete-bookings",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchresource",
+              "name": "create bookings"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Rechte zum Schreiben von Terminen und Buchungen",
+              "version": "3.138",
+              "shows": "sufficient"
+            }
+          ]
+        },
+        {
+          "rights": [
+            {
+              "module": "churchresource",
+              "name": "view resource"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Rechte zum Schreiben von Terminen und Buchungen",
+              "version": "3.138",
+              "shows": "sufficient"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchresource",
+            "name": "administer bookings"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Rechte zum Schreiben von Terminen und Buchungen",
+              "version": "3.138"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchresource",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Rechte zum Schreiben von Terminen und Buchungen",
+              "version": "3.138"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "delete-calendars-calendarId-appointments-appointmentId",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchcal",
+              "name": "edit category"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Rechte zum Schreiben von Terminen und Buchungen",
+              "version": "3.138",
+              "shows": "sufficient"
+            }
+          ]
+        },
+        {
+          "rights": [
+            {
+              "module": "churchcal",
+              "name": "view category"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Rechte zum Schreiben von Terminen und Buchungen",
+              "version": "3.138",
+              "shows": "sufficient"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchcal",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Rechte zum Schreiben von Terminen und Buchungen",
+              "version": "3.138"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "operationId": "get-bookings",
       "needs": [
         {
@@ -475,6 +592,42 @@
               "kind": "finding",
               "id": "F36",
               "version": "3.137"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "get-bookings-id",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchresource",
+              "name": "view resource"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Rechte zum Schreiben von Terminen und Buchungen",
+              "version": "3.138",
+              "shows": "sufficient"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchresource",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Rechte zum Schreiben von Terminen und Buchungen",
+              "version": "3.138"
             }
           ]
         }
@@ -2020,6 +2173,123 @@
       ]
     },
     {
+      "operationId": "post-bookings",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchresource",
+              "name": "create bookings"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Rechte zum Schreiben von Terminen und Buchungen",
+              "version": "3.138",
+              "shows": "sufficient"
+            }
+          ]
+        },
+        {
+          "rights": [
+            {
+              "module": "churchresource",
+              "name": "view resource"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Rechte zum Schreiben von Terminen und Buchungen",
+              "version": "3.138",
+              "shows": "sufficient"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchresource",
+            "name": "administer bookings"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Rechte zum Schreiben von Terminen und Buchungen",
+              "version": "3.138"
+            }
+          ]
+        },
+        {
+          "right": {
+            "module": "churchresource",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Rechte zum Schreiben von Terminen und Buchungen",
+              "version": "3.138"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "post-calendars-calendarId-appointments",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchcal",
+              "name": "edit category"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Rechte zum Schreiben von Terminen und Buchungen",
+              "version": "3.138",
+              "shows": "sufficient"
+            }
+          ]
+        },
+        {
+          "rights": [
+            {
+              "module": "churchcal",
+              "name": "view category"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Rechte zum Schreiben von Terminen und Buchungen",
+              "version": "3.138",
+              "shows": "sufficient"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchcal",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Rechte zum Schreiben von Terminen und Buchungen",
+              "version": "3.138"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "operationId": "post-wiki-categories-id-pages",
       "needs": [
         {
@@ -2038,6 +2308,58 @@
             },
             {
               "kind": "openapi"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operationId": "put-calendars-calendarId-appointments-appointmentId",
+      "needs": [
+        {
+          "rights": [
+            {
+              "module": "churchcal",
+              "name": "edit category"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Rechte zum Schreiben von Terminen und Buchungen",
+              "version": "3.138",
+              "shows": "sufficient"
+            }
+          ]
+        },
+        {
+          "rights": [
+            {
+              "module": "churchcal",
+              "name": "view category"
+            }
+          ],
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Rechte zum Schreiben von Terminen und Buchungen",
+              "version": "3.138",
+              "shows": "sufficient"
+            }
+          ]
+        }
+      ],
+      "notNeeded": [
+        {
+          "right": {
+            "module": "churchcal",
+            "name": "view"
+          },
+          "evidence": [
+            {
+              "kind": "finding",
+              "id": "Rechte zum Schreiben von Terminen und Buchungen",
+              "version": "3.138"
             }
           ]
         }

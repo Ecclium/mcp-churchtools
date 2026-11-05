@@ -191,6 +191,7 @@ const details = (
 ): AppointmentDetailsFixture => ({
   id: 5,
   calendarId: 8,
+  version: 2,
   title: 'Termin 5',
   subtitle: 'Untertitel',
   allDay: false,
@@ -356,6 +357,7 @@ describe('the three layers together', () => {
       locationName: enveloped('Saal'),
       description: enveloped('Beschreibung des Termins'),
       link: enveloped('https://example.org/termin'),
+      version: 2,
       dates: [
         { startDate: '2026-10-25T18:00:00Z', endDate: '2026-10-25T19:00:00Z' },
       ],

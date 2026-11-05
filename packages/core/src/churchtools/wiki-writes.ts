@@ -86,11 +86,12 @@ export type ReadWikiPage = (
 ) => Promise<{ readonly page: WikiPage; readonly date: string | undefined }>;
 
 /**
- * The writes of the client and the read a plan needs (ADR 0072). Only the
- * write guard of the core is to call them; tools reach ChurchTools through
- * the pipeline and never see the client (ADR 0024).
+ * The writes of the client for the wiki and the reads a plan needs
+ * (ADR 0072). Only the write guard of the core is to call them; tools
+ * reach ChurchTools through the pipeline and never see the client
+ * (ADR 0024).
  */
-export interface ChurchToolsWrites {
+export interface WikiWrites {
   /**
    * Creates a Markdown page with `POST /api/wiki/categories/{id}/pages`,
    * sending exactly `title`, `text` and `isMarkdown: true`.
@@ -250,9 +251,7 @@ const jsonBody = (value: Readonly<Record<string, unknown>>): Uint8Array =>
  * const created = await writes.createWikiPage(ctx, 4, 'Dienstplan', '# Dienstplan');
  * ```
  */
-export function createWikiWrites(
-  options: WikiWritesOptions,
-): ChurchToolsWrites {
+export function createWikiWrites(options: WikiWritesOptions): WikiWrites {
   const { path, origin, readPage, readCategory, readCategories } = options;
 
   // Refuses what may not be sent before the tenant is checked and the
