@@ -3433,6 +3433,23 @@ describe('loadConfig and a server that writes to the wiki', () => {
     );
   });
 
+  it('names only the problem of a policy file that is refused', () => {
+    expect(codes(writingToWiki({}, 'wiki')).includes('inquiries_missing')).toBe(
+      false,
+    );
+    const refused = load(
+      {
+        ...valid(),
+        ECCLIUM_READ_ONLY: 'false',
+        ECCLIUM_TOOLSETS: 'wiki',
+        ECCLIUM_KEYS_DIR: keysDirPath,
+        ECCLIUM_POLICY_FILE: 'policy.yaml',
+      },
+      'stdio',
+    );
+    expect(codes(refused)).not.toContain('inquiries_missing');
+  });
+
   it('needs neither for a server that only reads or writes no wiki', () => {
     expect(load(valid()).ok).toBe(true);
     expect(load({ ...valid(), ECCLIUM_TOOLSETS: 'wiki' }).ok).toBe(true);

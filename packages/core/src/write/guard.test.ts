@@ -131,7 +131,10 @@ const fakeOf = (): Fake => ({
 const clientOf = (fake: Fake): WriteClient => ({
   permissions: () => Promise.resolve(fake.permissions),
   writes: {
-    wikiCategoryState: () => Promise.resolve({ serverTime: fake.time }),
+    wikiCategoryState: () => {
+      fake.onRead?.();
+      return Promise.resolve({ serverTime: fake.time });
+    },
     wikiCategoryName: () =>
       fake.categoryNameFails === undefined
         ? Promise.resolve(fake.categoryName)
@@ -1390,6 +1393,21 @@ describe('the undo of a write (ADR 0031)', () => {
     expect(fake.sent).toEqual([]);
   });
 
+  // An undo writes back what the page held, also a line of the marking a
+  // change dropped since; that is no line a tool brings (ADR 0032).
+  it('takes back a change that dropped a line of the marking', async () => {
+    const old = `# Alt\n\n${marked('## Nachtrag\n')}`;
+    const { fake, result } = undoWith({
+      ...changed,
+      before: { ...changed.before, before: { version: 2, text: old } },
+    } as SnapshotToUndo);
+    expect(await result).toMatchObject({
+      kind: 'committed',
+      result: { ok: true },
+    });
+    expect(fake.sent).toEqual([old]);
+  });
+
   it('withdraws a new page with the fixed sentence and keeps the page', async () => {
     const { fake, result } = undoWith(created);
     const ended = await result;
@@ -2027,6 +2045,66 @@ describe('the marking', () => {
     }
   });
 
+  it('adds no section to a page that ends in an open block of code or comment', async () => {
+    for (const text of ['# Plan\n\n```\nalt\n', '# Plan\n\n<!--\nalt\n']) {
+      const fake = fakeOf();
+      fake.page = { ...fake.page, text };
+      const parts = setup(fake);
+      expect(
+        await refusalOf(parts.guard.plan(parts.request, append)),
+        text,
+      ).toMatchObject({ code: 'validation', message: writeSentences.pageOpen });
+    }
+  });
+
+  it('skips a repeat also on a page too full for a second one', async () => {
+    const fake = fakeOf();
+    fake.page = {
+      ...fake.page,
+      text: `${'a'.repeat(65_400)}\n\n${marked('## Nachtrag\n')}`,
+    };
+    const { result } = await plannedWith(append, fake);
+    expect(result.outcome).toEqual({
+      kind: 'skipped',
+      reason: 'already_written',
+    });
+  });
+
+  it('checks the marking before the rights', async () => {
+    const fake = fakeOf();
+    fake.permissions = { kind: 'unknown' };
+    const parts = setup(fake, dir, { unmarked: 'key' });
+    expect(
+      await refusalOf(parts.guard.plan(parts.request, create)),
+    ).toMatchObject({ message: writeSentences.noMarking });
+  });
+
+  it('keeps the reason of the policy for a changed section', async () => {
+    const fake = fakeOf();
+    fake.page = {
+      ...fake.page,
+      text: `# Plan\n\n${marked('## Nachtrag\n').replace('Nachtrag', 'Nachtrag von Hand')}`,
+    };
+    const policy = checkPolicy({
+      schema: 'policy.v1',
+      interactive: {
+        targets: [
+          {
+            target: { kind: 'wiki_category', id: 13, name: 'Andere' },
+            tools: ['ct_example_note_write'],
+            maxPerDay: 4,
+          },
+        ],
+      },
+    });
+    if (!policy.ok) throw new Error(policy.code);
+    const { result } = await plannedWith(append, fake, {
+      policy: policy.policy,
+    });
+    expect(result.queue).toBe('no_entry');
+    expect(logged.map(({ event }) => event)).toContain('marking_changed');
+  });
+
   // The day is that of the plan, so that the commit after midnight and an
   // approval days later write what was confirmed.
   it('keeps the day of the plan through a commit after midnight', async () => {
@@ -2075,6 +2153,34 @@ describe('a line of the marking in a text of a tool', () => {
       }
     }
     expect(logged.map(({ event }) => event)).toContain('content_marking');
+  });
+
+  it('refuses one written another way, also as the title of a new page', async () => {
+    for (const intent of [
+      { ...create, text: line.replace('durch Ecclium', 'durch  Ecclium') },
+      { ...append, section: line.replace('Ecclium', '**Ecclium**') },
+      { ...create, title: line.slice(0, 150) },
+    ]) {
+      const parts = setup();
+      const refused = await parts.guard.plan(parts.request, intent).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect((refused as ContentRefusal).violations).toEqual(['marking']);
+    }
+    const fake = fakeOf();
+    fake.page = { ...fake.page, text: `# Plan\n\n${own}` };
+    const parts = setup(fake);
+    const refused = await parts.guard
+      .plan(parts.request, {
+        ...update,
+        text: `# Plan\n\n${own}\n${line.replace('durch Ecclium', 'durch  Ecclium')}\n`,
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    expect((refused as ContentRefusal).violations).toEqual(['marking']);
   });
 
   it('lets a change keep or drop the lines the page has, but add or change none', async () => {

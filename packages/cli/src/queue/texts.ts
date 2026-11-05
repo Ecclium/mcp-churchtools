@@ -290,6 +290,10 @@ const approveReasons: Readonly<
     text: 'Mit der Zeile der Kennzeichnung wäre der Text der Seite länger, als ChurchTools annimmt. Ecclium hat nichts geschrieben.',
     code: exitCodes.dataError,
   },
+  pageOpen: {
+    text: 'Die Seite endet in einem offenen Block, etwa einem Codeblock oder Kommentar, der den Abschnitt mit seiner Kennzeichnung aufnähme. Ecclium hat nichts geschrieben. Schliessen Sie den Block in ChurchTools.',
+    code: exitCodes.dataError,
+  },
   auditNotReady: {
     text: 'Die Audit-Datei kann die Zeile der Freigabe nicht aufnehmen, darum schreibt Ecclium nicht. Prüfen Sie die Audit-Datei mit ‹ecclium audit verify›.',
     code: exitCodes.ioError,

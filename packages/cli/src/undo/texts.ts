@@ -219,6 +219,10 @@ const reasons: Readonly<Record<UndoReason, UndoEnding>> = Object.freeze({
     'Der Text der Seite wäre länger, als ChurchTools annimmt. Ecclium hat nichts geschrieben.',
     exitCodes.dataError,
   ),
+  pageOpen: ending(
+    'Die Seite endet in einem offenen Block, der einen Abschnitt aufnähme. Ecclium hat nichts geschrieben.',
+    exitCodes.dataError,
+  ),
   auditNotReady: ending(
     'Die Audit-Datei kann die Zeile der Rücknahme nicht aufnehmen, darum schreibt Ecclium nicht. Prüfen Sie die Audit-Datei mit ‹ecclium audit verify›.',
     exitCodes.ioError,

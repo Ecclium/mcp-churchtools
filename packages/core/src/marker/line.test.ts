@@ -11,7 +11,7 @@ import type { MarkingOrigin } from './code.js';
 import {
   type Marking,
   markingLineOf,
-  markingLinesOf,
+  markingTextsOf,
   readMarkingLine,
 } from './line.js';
 
@@ -213,30 +213,35 @@ describe('readMarkingLine', () => {
   });
 });
 
-describe('markingLinesOf', () => {
-  it('finds a line of the marking also after the signs of a list, a quote, a cell or a heading', () => {
+describe('markingTextsOf', () => {
+  it('finds what a reader takes for a marking, however it is written', () => {
+    const line = markingLineOf(interactive, 'Sekretariat');
+    for (const text of [
+      line,
+      `- ${line}`,
+      `1. ${line}`,
+      `> ${line}`,
+      `| ${line} |`,
+      `## ${line}`,
+      `Siehe ${line}`,
+      line.replace('durch Ecclium', 'durch  Ecclium'),
+      line.replace('durch Ecclium', 'durch\tEcclium'),
+      line.replace('Ecclium', '**Ecclium**'),
+      line.replace('Automatisch erstellt', '*Automatisch erstellt*'),
+      line.replace('am 05.11.2026', 'am\n05.11.2026'),
+      line.replace('Ecclium', '\\_Ecclium'),
+    ]) {
+      expect(markingTextsOf(`Text.\n\n${text}\n\nMehr.`), text).toHaveLength(1);
+    }
+    expect(
+      markingTextsOf('Nur Text.\n\nAutomatisch erstellt von Hand.'),
+    ).toEqual([]);
+  });
+
+  it('gives the same form for the same line written another way', () => {
     const line = markingLineOf(interactive, 'Sekretariat');
     expect(
-      markingLinesOf(
-        [
-          'Text.',
-          line,
-          `- ${line}`,
-          `1. ${line}`,
-          `> ${line}`,
-          `| ${line} |`,
-          `## ${line}`,
-          `Siehe ${line}`,
-        ].join('\n'),
-      ),
-    ).toEqual([
-      interactive,
-      interactive,
-      interactive,
-      interactive,
-      interactive,
-      interactive,
-    ]);
-    expect(markingLinesOf('Nur Text.\n')).toEqual([]);
+      markingTextsOf(line.replace('durch Ecclium', 'durch  **Ecclium**')),
+    ).toEqual(markingTextsOf(line));
   });
 });

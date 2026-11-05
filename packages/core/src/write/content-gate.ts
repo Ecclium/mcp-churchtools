@@ -21,7 +21,7 @@ import {
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { maxMessageLength } from '../errors/index.js';
-import { markingLinesOf } from '../marker/index.js';
+import { markingTextsOf } from '../marker/index.js';
 import {
   checkMarkdown,
   checkPlainText,
@@ -131,7 +131,7 @@ export function checkIntentContent(
   // it has read the page.
   const added = (result: ContentCheckResult): string => {
     const written = text(result);
-    if (markingLinesOf(written).length > 0) {
+    if (markingTextsOf(written).length > 0) {
       results.push({ ok: false, violations: ['marking'] });
     }
     return written;
@@ -141,7 +141,7 @@ export function checkIntentContent(
     case 'wikiPageCreate':
       checked = {
         ...intent,
-        title: text(checkPlainText(intent.title, options)),
+        title: added(checkPlainText(intent.title, options)),
         text: added(checkMarkdown(intent.text, options)),
       };
       break;

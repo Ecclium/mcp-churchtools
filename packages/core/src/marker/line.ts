@@ -112,28 +112,44 @@ export function readMarkingLine(line: string): Marking | undefined {
   return Object.freeze({ date, origin, code });
 }
 
-// Signs that may stand before a line in Markdown: list markers, numbers,
-// quotes, cells and headings, escapes and spaces.
-const leadingSigns = /^[\s\-*+>|#\d.)\\]*/u;
+// Signs that may stand before a line in Markdown: list markers, the number
+// of an item, quotes, cells and headings, escapes and spaces.
+const leadingSigns = /^(?:[\s\-*+>|#\\]|\d+[.)](?=\s))*/u;
+
+// The words a reader takes for the start of a marking, wherever they stand.
+const markingWords =
+  /Automatisch erstellt am \d{2}\.\d{2}\.\d{4} durch Ecclium/u;
 
 /**
- * Finds every line of a text that reads as a line of the marking, also
- * after the signs of a list, a quote, a cell or a heading, for the check
- * that a text a tool hands over brings no such line of its own
- * (ADR 0032).
+ * Finds every paragraph of a text that a reader could take for a line of
+ * the marking, for the check that a text a tool hands over brings none of
+ * its own (ADR 0032). It reads the text as a reader sees it: the lines of
+ * a paragraph joined, the signs of a list, a quote, a cell or a heading
+ * before a line, emphasis and escapes gone, every run of spaces as one,
+ * so that two spaces or a bold word hide nothing.
  *
- * @param text - A text in Markdown.
- * @returns What each such line says, in the order of the text.
+ * @param text - A text in Markdown, such as the title or text of a page.
+ * @returns Each such paragraph in that form, in the order of the text.
  * @example
  * ```ts
- * markingLinesOf('- Automatisch erstellt am 05.11.2026 durch Ecclium, interaktiv, Prüfcode k1:ABCDEFGHIJKLM. Rückfragen an X.').length; // 1
+ * markingTextsOf('- Automatisch erstellt am 05.11.2026 durch  **Ecclium**, interaktiv').length; // 1
  * ```
  */
-export function markingLinesOf(text: string): readonly Marking[] {
+export function markingTextsOf(text: string): readonly string[] {
   return Object.freeze(
-    text.split('\n').flatMap((line) => {
-      const marking = readMarkingLine(line.replace(leadingSigns, ''));
-      return marking === undefined ? [] : [marking];
-    }),
+    text
+      .split(/\n[ \t]*\n/u)
+      .map((paragraph) =>
+        paragraph
+          .split('\n')
+          .map((line) => line.replace(leadingSigns, ''))
+          .join(' ')
+          .replace(/[*_\\]/gu, '')
+          .split(/\s+/u)
+          .join(' ')
+          .trim()
+          .normalize('NFC'),
+      )
+      .filter((paragraph) => markingWords.test(paragraph)),
   );
 }

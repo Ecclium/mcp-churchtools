@@ -96,10 +96,11 @@ import { HttpTransportError } from '../http/index.js';
 import type { KeyMaterial } from '../keys/index.js';
 import {
   checkCodeOf,
+  findMarkings,
   judgeSections,
   type Marking,
   markingLineOf,
-  markingLinesOf,
+  markingTextsOf,
   sameCheckCode,
   type SectionJudgement,
 } from '../marker/index.js';
@@ -173,6 +174,8 @@ export const writeSentences = Object.freeze({
     'The clock of the server gives no day for the marking, so it does not write. Ask the operator.',
   tooLong:
     'With the line that marks it, the text of the page would be longer than ChurchTools takes. Shorten it.',
+  pageOpen:
+    'The page ends in a block that would take in the section and its marking, such as an open block of code or an open comment. Ask a person to close it in ChurchTools.',
 } as const);
 
 /** What the client gives the write guard: the rights and the writes. */
@@ -650,13 +653,13 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
   // line of the marking (ADR 0032), and how to judge a page for a section
   // of it: the same text on the same day in the same tenant has the same
   // check code. Without the key or whom to ask, nothing is added.
-  const marked = (
+  const markingOf = (
     ctx: TenantContext,
-    written: string,
     day: IsoDate | undefined,
   ): {
-    readonly text: string;
-    readonly judge: (page: string) => SectionJudgement['kind'];
+    readonly key: KeyMaterial;
+    readonly inquiriesTo: string;
+    readonly day: IsoDate;
   } => {
     const inquiriesTo = options.policy.interactive.inquiriesTo;
     if (markerKey === undefined || inquiriesTo === undefined) {
@@ -668,26 +671,57 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       ctx.log.warn('write_refused', { code: 'policy_denied' });
       throw refuse('policy_denied', writeSentences.noDay);
     }
+    return { key: markerKey, inquiriesTo, day };
+  };
+
+  // What a new page or a section needs for its marking, checked before the
+  // rights and before any read.
+  const checkMarking = (
+    ctx: TenantContext,
+    intent: WikiIntent,
+    day: IsoDate | undefined,
+  ): void => {
+    if (intent.kind !== 'wikiPageUpdate') markingOf(ctx, day);
+  };
+
+  const marked = (
+    ctx: TenantContext,
+    written: string,
+    given: IsoDate | undefined,
+  ): {
+    readonly text: string;
+    readonly judge: (page: string) => SectionJudgement['kind'];
+    readonly isLast: (page: string) => boolean;
+  } => {
+    const { key, inquiriesTo, day } = markingOf(ctx, given);
     const origin = Object.freeze({ kind: 'interactive' as const, day });
     const code = checkCodeOf(
-      markerKey,
+      key,
       ctx.tenantId,
       origin,
       canonicalOfWritten(written),
     );
     const line = markingLineOf({ date: day, origin, code }, inquiriesTo);
+    const matches = (marking: Marking): boolean =>
+      marking.origin.kind === 'interactive' &&
+      marking.date === day &&
+      sameCheckCode(marking.code, code);
     return {
       text: `${written}\n${line}\n`,
       judge: (page) =>
-        judgeSections({
-          key: markerKey,
-          tenantId: ctx.tenantId,
-          text: page,
-          matches: (marking) =>
-            marking.origin.kind === 'interactive' &&
-            marking.date === day &&
-            sameCheckCode(marking.code, code),
-        }).kind,
+        judgeSections({ key, tenantId: ctx.tenantId, text: page, matches })
+          .kind,
+      // The line comes back as the last marking of the page, a paragraph of
+      // the top level on its last line: else the page ends in a block that
+      // swallows the section, such as an open block of code or comment.
+      isLast: (page) => {
+        const last = findMarkings(page).at(-1);
+        return (
+          last !== undefined &&
+          matches(last.marking) &&
+          last.line === page.trimEnd().split('\n').length - 1
+        );
+      },
     };
   };
 
@@ -699,15 +733,11 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     before: string,
     after: string,
   ): void => {
-    const keyOf = (marking: Marking): string =>
-      JSON.stringify([marking.date, marking.origin, marking.code]);
     const left = new Map<string, number>();
-    for (const marking of markingLinesOf(before)) {
-      const key = keyOf(marking);
+    for (const key of markingTextsOf(before)) {
       left.set(key, (left.get(key) ?? 0) + 1);
     }
-    for (const marking of markingLinesOf(after)) {
-      const key = keyOf(marking);
+    for (const key of markingTextsOf(after)) {
       const count = left.get(key) ?? 0;
       if (count === 0) {
         ctx.log.warn('content_marking');
@@ -732,6 +762,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     ctx: TenantContext,
     intent: WikiIntent,
     day: IsoDate | undefined,
+    restoring = false,
   ): Promise<Derived> => {
     if (intent.kind === 'wikiPageCreate') {
       if (isBlank(intent.text)) {
@@ -769,17 +800,27 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     if (page.version !== intent.baseVersion) {
       throw refuse('conflict', writeSentences.changedBefore);
     }
-    if (section === undefined) keepsMarkings(ctx, page.text, added);
+    // An undo writes back what the page held before, which is no text of a
+    // tool and may hold lines a change dropped since (ADR 0031).
+    if (section === undefined && !restoring) {
+      keepsMarkings(ctx, page.text, added);
+    }
     const text =
       section === undefined ? added : appendSection(page.text, section.text);
-    fits(text);
+    const marking = section?.judge(page.text);
+    // A repeat is skipped whatever its size; a page that would swallow the
+    // new section cannot be marked.
+    if (marking !== 'own') fits(text);
+    if (section !== undefined && marking !== 'own' && !section.isLast(text)) {
+      throw refuse('validation', writeSentences.pageOpen);
+    }
     return {
       kind: 'change',
       contentHash: contentHashOf([text]),
       serverTime,
       before: page,
       text,
-      ...(section === undefined ? {} : { marking: section.judge(page.text) }),
+      ...(marking === undefined ? {} : { marking }),
     };
   };
 
@@ -818,6 +859,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     // texts go through the content policy before anything else, and from
     // here on the intent holds them in their written form (ADR 0030).
     const wiki = checkIntentContent(ctx, intent as WikiIntent, contacts);
+    checkMarking(ctx, wiki, day);
     await checkRights(ctx, wiki, rules);
     const derived = await derive(ctx, wiki, day);
     // The policy, with the counter of the day only read (ADR 0032). A plan
@@ -846,10 +888,12 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     }
     // A section with the marking of this one that a person changed: the
     // operator decides whether it is a repeat, Ecclium never does.
+    // A reason of the policy stays the one the operator reads; the log
+    // names the changed section either way.
     let queue: PlanQueueReason | undefined = policyQueue;
     if (derived.kind === 'change' && derived.marking === 'changed') {
       ctx.log.warn('marking_changed', {});
-      queue = 'marker_changed';
+      queue = policyQueue ?? 'marker_changed';
     }
     const sealed = sealPlan({
       tenantId: ctx.tenantId,
@@ -941,7 +985,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     // state of the target, with the time of ChurchTools.
     let derived: Derived;
     try {
-      derived = await derive(ctx, intent, view.day);
+      derived = await derive(ctx, intent, view.day, by === 'undo');
     } catch (error) {
       useProof(proof, view, clock.now());
       return denied(
@@ -1429,6 +1473,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     // The content policy again, since the contact values of the policy
     // may have changed in the meantime (ADR 0030).
     const intent = checkIntentContent(ctx, read as WikiIntent, contacts);
+    checkMarking(ctx, intent, entry.plannedOn);
     await checkRights(ctx, intent, rules);
     let derived: Derived;
     try {

@@ -1101,13 +1101,13 @@ const problems: Readonly<
     message(
       `Ecclium soll im Wiki schreiben, aber ${name} ist nicht gesetzt.`,
       'Jede Seite und jeder Abschnitt, die Ecclium hinzufügt, endet mit einer Kennzeichnung, deren Prüfcode aus diesem Schlüssel entsteht.',
-      `Legen Sie eine Datei mit einem Schlüssel an, etwa mit ${keyCommand}, geben Sie ihr die Rechte 600, nennen Sie sie in ${name} und sichern Sie sie. Oder setzen Sie ${readOnly} auf ‹true› oder nehmen Sie ‹wiki› aus ${toolsets}.`,
+      `Legen Sie eine Datei mit einem Schlüssel an, etwa mit ${keyCommand}, geben Sie ihr die Rechte 600, nennen Sie sie in ${name} und sichern Sie sie. Oder setzen Sie ${readOnly} auf ‹true› oder nehmen Sie ‹wiki› aus ${toolsets}. ${insteadOfAll}`,
     ),
   inquiries_missing: (name = policyFile) =>
     message(
       `Ecclium soll im Wiki schreiben, aber die Richtlinie aus ${name} nennt nicht, wen man bei Fragen erreicht.`,
       'Die Kennzeichnung jeder Seite und jedes Abschnitts, die Ecclium hinzufügt, endet mit «Rückfragen an» und diesem Text.',
-      `Tragen Sie in der Richtlinie unter ‹interactive.inquiriesTo› eine Stelle ein, etwa ‹Sekretariat›, und nennen Sie die Datei in ${name}. Oder setzen Sie ${readOnly} auf ‹true› oder nehmen Sie ‹wiki› aus ${toolsets}.`,
+      `Tragen Sie in der Richtlinie unter ‹interactive.inquiriesTo› eine Stelle ein, etwa ‹Sekretariat›, und nennen Sie die Datei in ${name}. Oder setzen Sie ${readOnly} auf ‹true› oder nehmen Sie ‹wiki› aus ${toolsets}. ${insteadOfAll}`,
     ),
 });
 

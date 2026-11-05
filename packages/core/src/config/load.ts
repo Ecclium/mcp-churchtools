@@ -1207,7 +1207,11 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     report('marker_key_missing', markerKeyName);
     markerKeyValid = false;
   }
-  if (writesToWiki && policy?.interactive.inquiriesTo === undefined) {
+  if (
+    writesToWiki &&
+    policy !== undefined &&
+    policy.interactive.inquiriesTo === undefined
+  ) {
     report('inquiries_missing', policyName);
   }
   setting(

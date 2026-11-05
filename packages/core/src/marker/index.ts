@@ -16,7 +16,7 @@ export {
 export {
   type Marking,
   markingLineOf,
-  markingLinesOf,
+  markingTextsOf,
   readMarkingLine,
 } from './line.js';
 export {
