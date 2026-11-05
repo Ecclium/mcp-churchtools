@@ -12,9 +12,7 @@ import {
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { describe, expect, it } from 'vitest';
 
-import { pageNotFound } from './page.js';
 import {
-  categoryNotFound,
   maxWriteTextLength,
   wikiPageCreateTool,
   wikiPageUpdateTool,
@@ -72,7 +70,6 @@ const cases = [
       title: 'Dienstplan',
       text: '# Dienstplan',
     },
-    missing: categoryNotFound,
   },
   {
     tool: wikiPageUpdateTool,
@@ -84,7 +81,6 @@ const cases = [
       text: '# Neu',
       baseVersion: 3,
     },
-    missing: pageNotFound,
   },
   {
     tool: wikiSectionAppendTool,
@@ -96,11 +92,10 @@ const cases = [
       section: '## Bericht',
       baseVersion: 3,
     },
-    missing: pageNotFound,
   },
 ] as const;
 
-describe.each(cases)('$tool.name', ({ tool, input, intent, missing }) => {
+describe.each(cases)('$tool.name', ({ tool, input, intent }) => {
   it('hands exactly its intent to the write port and gives back its plan', async () => {
     const { port, intents } = portOf(() => Promise.resolve(planned));
     await expect(run(tool, input, port)).resolves.toBe(planned);
@@ -113,22 +108,15 @@ describe.each(cases)('$tool.name', ({ tool, input, intent, missing }) => {
     await expect(run(tool, input, port)).resolves.toBe(skipped);
   });
 
-  it('names what is missing when a read of the plan found nothing', async () => {
-    const { port } = portOf(() =>
-      Promise.reject(new EccliumError('not_found')),
-    );
-    await expect(run(tool, input, port)).rejects.toMatchObject({
-      code: 'not_found',
-      message: missing,
-    });
-  });
-
   it.each([
     new EccliumError('conflict', 'changed'),
     new EccliumError('permission', 'right', {
       missingRights: [{ module: 'churchwiki', right: 'edit category' }],
     }),
     new EccliumError('policy_denied', 'off'),
+    // A page or category the read of the plan did not find: the core gives
+    // its fixed sentence, whatever a tool made of the error.
+    new EccliumError('not_found'),
     new TypeError('not an error of the core'),
   ])('passes on every other refusal as the core made it: %s', async (error) => {
     const { port } = portOf(() => Promise.reject(error));

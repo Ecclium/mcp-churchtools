@@ -228,6 +228,7 @@ describe('wiki_seite_entwerfen for a server that writes', () => {
   it('relies on the tool that creates a page as well', () => {
     expect(entry?.tools).toEqual([
       'ct_wiki_categories_list',
+      'ct_wiki_pages_list',
       'ct_wiki_search',
       'ct_wiki_page_get',
       'ct_wiki_page_create',
@@ -261,6 +262,9 @@ describe('wiki_seite_entwerfen for a server that writes', () => {
       'Die Zeile, die die Seite als von Ecclium erstellt kennzeichnet, setzt Ecclium selbst.',
       'keine Links, Webadressen, Bilder, kein HTML, keinen Code und keine Zitate',
       'Gibt es schon eine, keine zweite anlegen',
+      'einen Titel vorschlagen, den es dort noch nicht gibt',
+      'Kontaktangaben nur, wenn der Betreiber sie freigegeben hat',
+      'Lehnt Ecclium den Text ab, den Grund nennen',
     ]) {
       expect(text, part).toContain(part);
     }

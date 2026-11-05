@@ -51,7 +51,7 @@ const reversibleLabels = Object.freeze({
 const replayGuardLabels = Object.freeze({
   baseVersion: 'Basisversion: eine Version wird nur einmal geändert',
   marker:
-    'Kennzeichnung: Der Kern erkennt seinen eigenen Text an der Zeile mit dem Prüfcode',
+    'Kennzeichnung: Einen Abschnitt gleichen Inhalts am selben Tag überspringt der Kern, eine zweite Seite gleichen Titels weist ChurchTools ab',
   nonce: 'Nonce: jede Bestätigung gilt einmal',
 });
 
@@ -147,6 +147,11 @@ const offeredLabel = (entry: CatalogEntry): string => {
       : [`${code(toolset)} in ${code('ECCLIUM_TOOLSETS')}`]),
     ...(entry.asSpecial ? [code('ECCLIUM_STATE_DIR')] : []),
     ...(capability === 'write' ? [code('ECCLIUM_READ_ONLY=false')] : []),
+    // The echo, only where the operator allows it; over stdio that is the
+    // default (ADR 0029).
+    ...(entry.name === 'ct_write_confirm'
+      ? [code('ECCLIUM_WRITE_CONFIRMATION=echo-allowed')]
+      : []),
   ];
   return needs.length === 0 ? 'immer' : needs.join(', mit ');
 };
@@ -207,6 +212,7 @@ export function renderToolsReference(): string {
     plugins: [],
     readOnly: false,
     toolsets: new Set(toolsetNames),
+    echo: true,
   }).list();
   const lines = [
     '# Tools',

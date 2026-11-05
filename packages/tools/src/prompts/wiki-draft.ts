@@ -70,26 +70,28 @@ const createText = `Seite für das Wiki in ChurchTools aus diesen Stichworten:
 Vorgehen:
 1. Die Kategorien des Wikis lesen, bei weiteren Seiten auch diese.
 2. Im Wiki nach zwei oder drei Begriffen aus den Stichworten suchen, um Seiten zum selben Thema zu finden, und eine passende Seite bei Bedarf lesen.
-3. Den Entwurf in Markdown schreiben: ein Satz zum Zweck der Seite, dann Abschnitte mit Überschriften. Nur Überschriften, Absätze, Listen, Tabellen und Hervorhebung verwenden, keine Links, Webadressen, Bilder, kein HTML, keinen Code und keine Zitate. Nur verwenden, was in den Stichworten steht. Wo etwas fehlt, «[offen: …]» schreiben, statt etwas zu ergänzen.
-4. Einen Titel und eine Kategorie aus der Liste vorschlagen und die Wahl in einem Satz begründen. Passt keine, das sagen und keine Seite anlegen.
+3. Den Entwurf in Markdown schreiben: ein Satz zum Zweck der Seite, dann Abschnitte mit Überschriften. Nur Überschriften, Absätze, Listen, Tabellen und Hervorhebung verwenden, keine Links, Webadressen, Bilder, kein HTML, keinen Code und keine Zitate. E-Mail-Adressen, Telefonnummern und andere Kontaktangaben nur, wenn der Betreiber sie freigegeben hat. Nur verwenden, was in den Stichworten steht. Wo etwas fehlt, «[offen: …]» schreiben, statt etwas zu ergänzen.
+4. Eine Kategorie aus der Liste vorschlagen und die Wahl in einem Satz begründen. Passt keine, das sagen und keine Seite anlegen. Die Seiten dieser Kategorie lesen und einen Titel vorschlagen, den es dort noch nicht gibt.
 5. Gefundene Seiten zum selben Thema mit Titel und Kategorie nennen. Gibt es schon eine, keine zweite anlegen, sondern vorschlagen, dort einen Abschnitt anzuhängen.
-6. Entwurf, Titel und Kategorie zeigen und fragen, ob die Seite so angelegt werden soll. Erst nach einem klaren Ja anlegen, mit genau diesem Text. Vor dem Schreiben fragt Ecclium noch einmal nach oder gibt den Vorgang dem Betreiber zur Freigabe. Die Zeile, die die Seite als von Ecclium erstellt kennzeichnet, setzt Ecclium selbst.
+6. Entwurf, Titel und Kategorie zeigen und fragen, ob die Seite so angelegt werden soll. Erst nach einem klaren Ja anlegen, mit genau diesem Text. Vor dem Schreiben fragt Ecclium noch einmal nach oder gibt den Vorgang dem Betreiber zur Freigabe. Die Zeile, die die Seite als von Ecclium erstellt kennzeichnet, setzt Ecclium selbst. Lehnt Ecclium den Text ab, den Grund nennen, den angepassten Entwurf zeigen und erneut fragen.
 
 Ohne dieses Ja nichts in ChurchTools ändern.`;
 
 /**
  * The prompt «Wiki-Seite aus Stichworten» for a server that writes. It
  * takes the same keywords and relies, besides the three tools of the
- * draft, on `ct_wiki_page_create`, so the catalog offers it only while the
- * server writes.
+ * draft, on `ct_wiki_pages_list`, to find a title not yet taken, and on
+ * `ct_wiki_page_create`, so the catalog offers it only while the server
+ * writes.
  */
 export const wikiCreatePrompt: PromptDefinition = Object.freeze({
   name: 'wiki_seite_entwerfen',
   title: 'Wiki-Seite aus Stichworten',
   description:
-    'Macht aus Ihren Stichworten den Entwurf einer Wiki-Seite in Markdown, schlägt Titel und Kategorie vor und legt die Seite an, wenn Sie zustimmen. Vor dem Schreiben fragt Ecclium noch einmal nach.',
+    'Macht aus Ihren Stichworten den Entwurf einer Wiki-Seite in Markdown, schlägt Titel und Kategorie vor und legt die Seite an, wenn Sie zustimmen. Vor dem Schreiben fragt Ecclium noch einmal nach oder gibt den Vorgang dem Betreiber zur Freigabe.',
   tools: Object.freeze([
     'ct_wiki_categories_list',
+    'ct_wiki_pages_list',
     'ct_wiki_search',
     'ct_wiki_page_get',
     'ct_wiki_page_create',

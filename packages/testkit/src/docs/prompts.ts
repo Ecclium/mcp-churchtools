@@ -173,8 +173,15 @@ export function renderPromptsReference(): string {
         : prompt.arguments.map((argument) => code(argument.name)).join(', ');
     return `| ${label} | ${prompt.title} | ${names} | ${offeredLabel(prompt, from)} |`;
   };
+  // A prompt with a version for writing is offered as it stands here only
+  // while the server only reads.
+  const replaced = new Set(writingVersions.map((prompt) => prompt.name));
+  const readingLabel = (prompt: PromptEntry): string =>
+    replaced.has(prompt.name)
+      ? `${code(prompt.name)}, solange der Server nur liest`
+      : code(prompt.name);
   for (const prompt of prompts) {
-    lines.push(row(prompt, catalog, code(prompt.name)));
+    lines.push(row(prompt, catalog, readingLabel(prompt)));
   }
   for (const prompt of writingVersions) {
     lines.push(row(prompt, writing, writingHeading(prompt)));
@@ -190,7 +197,7 @@ export function renderPromptsReference(): string {
     );
   }
   for (const prompt of prompts) {
-    lines.push('', ...promptSection(prompt, catalog));
+    lines.push('', ...promptSection(prompt, catalog, readingLabel(prompt)));
   }
   for (const prompt of writingVersions) {
     lines.push('', ...promptSection(prompt, writing, writingHeading(prompt)));

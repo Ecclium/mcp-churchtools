@@ -36,7 +36,6 @@ export { wikiPageGetTool } from './wiki/page.js';
 export { wikiPagesListTool } from './wiki/pages.js';
 export { wikiSearchTool } from './wiki/search.js';
 export {
-  categoryNotFound,
   maxWriteTextLength,
   wikiPageCreateTool,
   wikiPageUpdateTool,

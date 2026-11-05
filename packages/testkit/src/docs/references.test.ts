@@ -181,7 +181,7 @@ describe('renderPromptsReference', () => {
       '| `dienstplan_wochenende` | Dienstplan-Überblick für ein Wochenende | `samstag` | `events` in `ECCLIUM_TOOLSETS`, mit `ECCLIUM_STATE_DIR` |',
     );
     expect(page).toContain(
-      '| `wiki_seite_entwerfen` | Wiki-Seite aus Stichworten | `stichworte` | `wiki` in `ECCLIUM_TOOLSETS` |',
+      '| `wiki_seite_entwerfen`, solange der Server nur liest | Wiki-Seite aus Stichworten | `stichworte` | `wiki` in `ECCLIUM_TOOLSETS` |',
     );
     // ct_whoami is always there, so only the toolset of the docs tools.
     expect(page).toContain(
@@ -215,6 +215,9 @@ describe('renderPromptsReference', () => {
       '\n## `wiki_seite_entwerfen`, wenn der Server schreibt\n',
     );
     expect(page).toContain('Erst nach einem klaren Ja anlegen');
+    expect(page).toContain(
+      '\n## `wiki_seite_entwerfen`, solange der Server nur liest\n',
+    );
   });
 });
 
@@ -301,6 +304,10 @@ describe('renderToolsReference', () => {
     }
     expect(section('ct_wiki_page_get')).not.toContain('Rücknahme');
     expect(page).not.toContain('Alle Tools dieser Seite lesen nur.');
+    // The echo, which a server that writes over stdio offers by default.
+    expect(page).toContain(
+      '`ECCLIUM_READ_ONLY=false`, mit `ECCLIUM_WRITE_CONFIRMATION=echo-allowed` |',
+    );
   });
 
   it('keeps each description as the model reads it, in a block of text', () => {
