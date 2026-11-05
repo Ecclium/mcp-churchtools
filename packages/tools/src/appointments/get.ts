@@ -58,6 +58,8 @@ const output = z.object({
     z.string().max(maxAppointmentLinkLength),
     'untrusted',
   ).nullable(),
+  // The base a change of the appointment names (F42).
+  version: classify(z.number().int().nonnegative(), 'none'),
   dates: z
     .array(
       z.object({
@@ -96,6 +98,7 @@ const execute = async ({
     locationName: appointment.locationName,
     description: appointment.description,
     link: appointment.link,
+    version: appointment.version,
     // The core sorts the dates by start; the earliest come first.
     dates: appointment.dates
       .slice(0, datesPerCall)
@@ -130,7 +133,7 @@ export const appointmentsGetTool = defineTool({
   },
   description: {
     purpose:
-      'Reads one appointment of ChurchTools by the IDs of its calendar and of itself: title, subtitle, whether it lasts whole days, the name of its place, its description, its link and its dates.',
+      'Reads one appointment of ChurchTools by the IDs of its calendar and of itself: title, subtitle, whether it lasts whole days, the name of its place, its description, its link, its version and its dates.',
     useWhen:
       'You have the IDs of an appointment and its calendar and need its description or link, or the dates of a series.',
     avoidWhen:

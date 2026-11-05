@@ -513,6 +513,7 @@ describe('one appointment', () => {
     id: 5,
     calendarId: 8,
     title: 'Termin',
+    version: 3,
     subtitle: 'Untertitel',
     allDay: false,
     locationName: 'Saal',
@@ -550,6 +551,7 @@ describe('one appointment', () => {
       locationName: 'Saal',
       description: 'Beschreibung des Termins',
       link: 'https://example.org/termin',
+      version: 3,
       dates: [
         { startDate: '2026-10-25T18:00:00Z', endDate: '2026-10-25T19:00:00Z' },
         { startDate: '2026-11-01T18:00:00Z', endDate: '2026-11-01T19:00:00Z' },

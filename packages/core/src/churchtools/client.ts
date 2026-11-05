@@ -1648,6 +1648,7 @@ export function createChurchToolsClient(
       ...appointmentFieldsOf(data.appointment),
       description: data.appointment.description ?? null,
       link: data.appointment.link ?? null,
+      version: data.appointment.version,
       dates: Object.freeze(dates),
     });
   };

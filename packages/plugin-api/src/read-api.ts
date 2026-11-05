@@ -814,6 +814,12 @@ export interface AppointmentDetails extends Omit<
    */
   readonly link: string | null;
   /**
+   * The version, 0 for a new appointment and one more for each save
+   * ChurchTools takes, even one that changes nothing (F42). A change names
+   * it as the version it is based on.
+   */
+  readonly version: number;
+  /**
    * The dates ChurchTools gives with the appointment, at most
    * {@link maxAppointmentDates}, sorted by their start, then by their end.
    * Whether ChurchTools gives every date of a series is not shown.

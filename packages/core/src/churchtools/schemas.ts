@@ -488,7 +488,7 @@ export const appointmentListSchema = z.object({
 
 /**
  * The answer of `GET /api/calendars/{calendarId}/appointments/{appointmentId}`:
- * the fields of a list with description and link from `appointment`, and
+ * the fields of a list with description, link and version from `appointment`, and
  * the start and end of each date in `calculatedDates` (ADR 0064, F37). The
  * probe saw an object whose keys have no known form, so only its values
  * are read; an empty list, which ChurchTools may send for no dates, counts
@@ -500,6 +500,8 @@ export const appointmentSchema = z.object({
       ...appointmentFields,
       description: text(maxAppointmentDescriptionLength).nullable().optional(),
       link: text(maxAppointmentLinkLength).nullable().optional(),
+      // The base a change names (F42).
+      version: count,
     }),
     calculatedDates: z.union([
       z.array(span).max(maxAppointmentDates),

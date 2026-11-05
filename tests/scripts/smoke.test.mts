@@ -1464,6 +1464,7 @@ describe.skipIf(process.getuid?.() === 0)(
               description: `${canary}Beschreibung`,
               link: null,
               onBehalfOfPid: 11,
+              version: 2,
             },
             additionalInfos: [],
             calculatedDates: {
