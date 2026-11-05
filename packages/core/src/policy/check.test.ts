@@ -353,6 +353,8 @@ describe('checkPolicy', () => {
     ['a tag', 'Sekretariat <b>Pfarramt</b>'],
     ['a sign that starts a link', 'Sekretariat [Pfarramt]'],
     ['a second line', 'Sekretariat\nPfarramt'],
+    ['a tab', 'Sekretariat\tPfarramt'],
+    ['a character reference', 'Kirche &amp; Gemeinde'],
     ['only spaces', '   '],
     ['an empty text', ''],
     ['more than 200 signs', 'a'.repeat(201)],

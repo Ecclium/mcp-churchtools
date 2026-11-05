@@ -159,6 +159,7 @@ export const policyFileSchema = z.strictObject({
         .string()
         .min(1)
         .max(policyLimits.inquiriesToLength)
+        .regex(namePattern)
         .optional(),
     })
     .optional(),
