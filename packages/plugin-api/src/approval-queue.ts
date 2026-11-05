@@ -7,8 +7,8 @@
  * plan in the client, or the policy sends it there, the core seals what
  * the plan would write and hands it to this store, under the ID of the
  * audit line of the call that queued it. `ecclium queue list` and `show`
- * read it back, `reject` and later `approve` keep the decision and destroy
- * the entry, so that its content is gone once the operator decided.
+ * read it back, `reject` and `approve` keep the decision and destroy the
+ * entry, so that its content is gone once the operator decided.
  *
  * A store sees only sealed entries. The core encrypts every entry with a
  * key of its own that the day key `queue` of its day wraps
