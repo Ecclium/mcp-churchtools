@@ -111,3 +111,29 @@ export function readMarkingLine(line: string): Marking | undefined {
       : Object.freeze({ kind: 'routine', routine, run });
   return Object.freeze({ date, origin, code });
 }
+
+// Signs that may stand before a line in Markdown: list markers, numbers,
+// quotes, cells and headings, escapes and spaces.
+const leadingSigns = /^[\s\-*+>|#\d.)\\]*/u;
+
+/**
+ * Finds every line of a text that reads as a line of the marking, also
+ * after the signs of a list, a quote, a cell or a heading, for the check
+ * that a text a tool hands over brings no such line of its own
+ * (ADR 0032).
+ *
+ * @param text - A text in Markdown.
+ * @returns What each such line says, in the order of the text.
+ * @example
+ * ```ts
+ * markingLinesOf('- Automatisch erstellt am 05.11.2026 durch Ecclium, interaktiv, Prüfcode k1:ABCDEFGHIJKLM. Rückfragen an X.').length; // 1
+ * ```
+ */
+export function markingLinesOf(text: string): readonly Marking[] {
+  return Object.freeze(
+    text.split('\n').flatMap((line) => {
+      const marking = readMarkingLine(line.replace(leadingSigns, ''));
+      return marking === undefined ? [] : [marking];
+    }),
+  );
+}

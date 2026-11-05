@@ -97,7 +97,9 @@ import type { KeyMaterial } from '../keys/index.js';
 import {
   checkCodeOf,
   judgeSections,
+  type Marking,
   markingLineOf,
+  markingLinesOf,
   sameCheckCode,
   type SectionJudgement,
 } from '../marker/index.js';
@@ -689,6 +691,32 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     };
   };
 
+  // A change of a page may keep the lines of the marking the page has, and
+  // drop some, but add none and change none: a line a person did not see
+  // Ecclium write would pass for one of Ecclium (ADR 0032).
+  const keepsMarkings = (
+    ctx: TenantContext,
+    before: string,
+    after: string,
+  ): void => {
+    const keyOf = (marking: Marking): string =>
+      JSON.stringify([marking.date, marking.origin, marking.code]);
+    const left = new Map<string, number>();
+    for (const marking of markingLinesOf(before)) {
+      const key = keyOf(marking);
+      left.set(key, (left.get(key) ?? 0) + 1);
+    }
+    for (const marking of markingLinesOf(after)) {
+      const key = keyOf(marking);
+      const count = left.get(key) ?? 0;
+      if (count === 0) {
+        ctx.log.warn('content_marking');
+        throw new ContentRefusal(['marking']);
+      }
+      left.set(key, count - 1);
+    }
+  };
+
   // ChurchTools takes at most 64 KiB of text for a page; the line of the
   // marking and the text of the page around a section can pass it, which
   // is refused here, before anything is confirmed.
@@ -741,6 +769,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     if (page.version !== intent.baseVersion) {
       throw refuse('conflict', writeSentences.changedBefore);
     }
+    if (section === undefined) keepsMarkings(ctx, page.text, added);
     const text =
       section === undefined ? added : appendSection(page.text, section.text);
     fits(text);

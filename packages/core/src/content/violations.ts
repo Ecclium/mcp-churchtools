@@ -46,6 +46,8 @@ export const contentSentences: Readonly<Record<ContentViolationKind, string>> =
       'The text uses Markdown this server does not write. Use headings, paragraphs, lists, tables, bold and italic only.',
     tooDeep:
       'The text nests lists, bold or italic more deeply than this server writes. Use at most five levels of lists.',
+    marking:
+      'The text holds a line that reads as the marking of Ecclium, other than those the page already has. The server adds that line itself; leave it out.',
   });
 
 /**

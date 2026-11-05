@@ -121,6 +121,7 @@ describe('contentViolationKinds', () => {
       masked: true,
       unsupported: true,
       tooDeep: true,
+      marking: true,
     };
     expect([...contentViolationKinds].sort()).toEqual(
       Object.keys(every).sort(),

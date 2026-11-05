@@ -60,6 +60,7 @@ Je Ereignis die Stufe und die Felder, die ein Aufruf höchstens setzt. Die Felde
 | `content_html` | `warn` | keine | Ein Text enthält HTML, einen Kommentar oder einen Verweis auf ein Zeichen wie `&amp;`. Der Aufruf endet ohne Schreiben. |
 | `content_image` | `warn` | keine | Ein Text enthält ein Bild. Der Aufruf endet ohne Schreiben. |
 | `content_link` | `warn` | keine | Ein Text enthält einen Link. Der Aufruf endet ohne Schreiben. |
+| `content_marking` | `warn` | keine | Ein Text enthält eine Zeile, die sich als Kennzeichnung von Ecclium liest: bei einer neuen Seite oder einem Abschnitt jede, bei einer Änderung einer Seite eine, die die Seite nicht schon hat. Diese Zeile setzt nur der Kern. Der Aufruf endet ohne Schreiben. |
 | `content_masked` | `warn` | keine | Ein Text enthält eine Maske der Schwärzung, ein Pseudonym oder die Grenze eines Datenumschlags. Der Aufruf endet ohne Schreiben. |
 | `content_mention` | `warn` | keine | Ein Text erwähnt eine Person mit einem Link. Der Aufruf endet ohne Schreiben. |
 | `content_reference` | `warn` | keine | Ein Text enthält eine Referenz oder Fussnote in Markdown. Der Aufruf endet ohne Schreiben. |

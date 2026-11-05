@@ -2043,3 +2043,67 @@ describe('the marking', () => {
     expect(fake.sent[0]).toContain('Automatisch erstellt am 30.11.2026');
   });
 });
+
+// A line of the marking comes from the core alone (ADR 0032).
+describe('a line of the marking in a text of a tool', () => {
+  const own = marked('## Nachtrag\n');
+  const line =
+    own.split('\n').find((entry) => entry.startsWith('Automatisch')) ?? '';
+
+  it('refuses a new page or a section that brings one, also in a list or a heading, before any read', async () => {
+    for (const text of [
+      `Text.\n\n${line}`,
+      `- ${line}`,
+      `## ${line}`,
+      line.replace('interaktiv', 'Routine dienstplan-report, Lauf 2026-W49'),
+    ]) {
+      for (const intent of [
+        { ...create, text },
+        { ...append, section: text },
+      ]) {
+        const fake = fakeOf();
+        fake.onRead = () => {
+          throw new Error('read');
+        };
+        const parts = setup(fake);
+        const refused = await parts.guard.plan(parts.request, intent).then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+        expect(refused, text).toBeInstanceOf(ContentRefusal);
+        expect((refused as ContentRefusal).violations).toEqual(['marking']);
+      }
+    }
+    expect(logged.map(({ event }) => event)).toContain('content_marking');
+  });
+
+  it('lets a change keep or drop the lines the page has, but add or change none', async () => {
+    const page = `# Plan\n\n${own}`;
+    const planWith = async (text: string) => {
+      const fake = fakeOf();
+      fake.page = { ...fake.page, text: page };
+      const parts = setup(fake);
+      return parts.guard.plan(parts.request, { ...update, text });
+    };
+    for (const text of [
+      '# Plan\n\nOhne den Abschnitt.\n',
+      `# Plan, neu\n\n${own}`,
+    ]) {
+      expect((await planWith(text)).outcome.kind, text).toBe('planned');
+    }
+    const other = marked('## Anderes\n');
+    for (const text of [
+      `${page}\n${other}`,
+      `${page}\n${own}`,
+      page.replace(/k1:[A-Z2-7]{13}/u, 'k1:ABCDEFGHIJKLM'),
+      page.replace('01.12.2026', '02.12.2026'),
+    ]) {
+      const refused = await planWith(text).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(refused, text).toBeInstanceOf(ContentRefusal);
+      expect((refused as ContentRefusal).violations).toEqual(['marking']);
+    }
+  });
+});

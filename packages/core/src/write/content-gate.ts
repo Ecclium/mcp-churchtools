@@ -21,6 +21,7 @@ import {
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { maxMessageLength } from '../errors/index.js';
+import { markingLinesOf } from '../marker/index.js';
 import {
   checkMarkdown,
   checkPlainText,
@@ -93,6 +94,7 @@ const eventOf = Object.freeze({
   masked: 'content_masked',
   unsupported: 'content_unsupported',
   tooDeep: 'content_too_deep',
+  marking: 'content_marking',
 } as const);
 
 /**
@@ -123,13 +125,24 @@ export function checkIntentContent(
     results.push(result);
     return result.ok ? result.text : '';
   };
+  // What Ecclium adds as a whole gets its line of the marking from the
+  // core alone, so a text that brings one is refused (ADR 0032). A change
+  // of a page may keep the lines the page has, which the guard checks once
+  // it has read the page.
+  const added = (result: ContentCheckResult): string => {
+    const written = text(result);
+    if (markingLinesOf(written).length > 0) {
+      results.push({ ok: false, violations: ['marking'] });
+    }
+    return written;
+  };
   let checked: WikiIntent;
   switch (intent.kind) {
     case 'wikiPageCreate':
       checked = {
         ...intent,
         title: text(checkPlainText(intent.title, options)),
-        text: text(checkMarkdown(intent.text, options)),
+        text: added(checkMarkdown(intent.text, options)),
       };
       break;
     case 'wikiPageUpdate':
@@ -138,7 +151,7 @@ export function checkIntentContent(
     case 'wikiSectionAppend':
       checked = {
         ...intent,
-        section: text(checkMarkdown(intent.section, options)),
+        section: added(checkMarkdown(intent.section, options)),
       };
       break;
   }

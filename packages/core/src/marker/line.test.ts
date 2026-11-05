@@ -8,7 +8,12 @@ import {
   checkPlainText,
 } from '../content/index.js';
 import type { MarkingOrigin } from './code.js';
-import { type Marking, markingLineOf, readMarkingLine } from './line.js';
+import {
+  type Marking,
+  markingLineOf,
+  markingLinesOf,
+  readMarkingLine,
+} from './line.js';
 
 const dayOf = (value: string): IsoDate => {
   if (!isIsoDate(value)) throw new TypeError('No day.');
@@ -205,5 +210,33 @@ describe('readMarkingLine', () => {
       ),
       { seed: 32_010, numRuns: 400 },
     );
+  });
+});
+
+describe('markingLinesOf', () => {
+  it('finds a line of the marking also after the signs of a list, a quote, a cell or a heading', () => {
+    const line = markingLineOf(interactive, 'Sekretariat');
+    expect(
+      markingLinesOf(
+        [
+          'Text.',
+          line,
+          `- ${line}`,
+          `1. ${line}`,
+          `> ${line}`,
+          `| ${line} |`,
+          `## ${line}`,
+          `Siehe ${line}`,
+        ].join('\n'),
+      ),
+    ).toEqual([
+      interactive,
+      interactive,
+      interactive,
+      interactive,
+      interactive,
+      interactive,
+    ]);
+    expect(markingLinesOf('Nur Text.\n')).toEqual([]);
   });
 });

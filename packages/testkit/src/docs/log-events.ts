@@ -265,6 +265,8 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Ein Text nutzt Markdown ausserhalb der erlaubten Teilmenge, oder ein Titel enthält Zeichen von Markdown oder mehr als eine Zeile. Der Aufruf endet ohne Schreiben.',
     content_too_deep:
       'Ein Text verschachtelt Listen oder Hervorhebung tiefer als erlaubt. Der Aufruf endet ohne Schreiben.',
+    content_marking:
+      'Ein Text enthält eine Zeile, die sich als Kennzeichnung von Ecclium liest: bei einer neuen Seite oder einem Abschnitt jede, bei einer Änderung einer Seite eine, die die Seite nicht schon hat. Diese Zeile setzt nur der Kern. Der Aufruf endet ohne Schreiben.',
     read_search_refused:
       'Ein Tool, das nicht als besonders schützenswert eingestuft ist, wollte Personen oder Gruppen lesen. Ecclium weist das ab.',
     read_names_refused:

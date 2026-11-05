@@ -284,6 +284,7 @@ export const logEvents = Object.freeze({
   content_masked: entry('warn'),
   content_unsupported: entry('warn'),
   content_too_deep: entry('warn'),
+  content_marking: entry('warn'),
   // The escape hatch (ADR 0067).
   read_search_refused: entry('warn', 'code'),
   read_names_refused: entry('warn', 'code'),

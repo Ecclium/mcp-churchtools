@@ -221,7 +221,7 @@
     "contentViolations": {
       "readOnly": true,
       "minItems": 1,
-      "maxItems": 12,
+      "maxItems": 13,
       "type": "array",
       "items": {
         "type": "string",
@@ -237,7 +237,8 @@
           "contact",
           "masked",
           "unsupported",
-          "tooDeep"
+          "tooDeep",
+          "marking"
         ]
       }
     },
