@@ -1454,3 +1454,4 @@ Diese Grundsatzfragen sind entschieden.
   - Client: liest die Kategorie in jeder Antwort mit einer Seite, beim Lesen und in der Antwort auf eine neue Seite. Eine Seite einer anderen Kategorie gilt beim Lesen als nicht vorhanden, die Antwort auf eine neue Seite als unbekannt. `contract.json` beschreibt das Feld.
   - Probe `12-wiki-category`: legt eine Seite im Schreibbereich an, liest sie unter dem Pfad der Kennkategorie und eine Seite der Kennkategorie unter dem Pfad des Schreibbereichs und ändert die eigene Seite unter dem Pfad der Kennkategorie. Gelaufen am 05.11.2026 an 3.138, aufgeräumt mit `07-wiki-cleanup`.
   - Befunde F49 und F50 in `docs/research/churchtools-api.md`.
+- 05.11.2026, die Prüfung der Kategorie einer Seite und die Probe 12 sind als `d4f7cc7` auf `main` (#196). Der Squash-Commit bringt genau den Baum des Branches.
