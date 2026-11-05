@@ -237,6 +237,10 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Die Grenze der Schreibvorgänge dieses Tools auf dieses Ziel für den UTC-Tag ist erreicht. Beim Planen kommt der Schreibvorgang in die Freigabe-Warteschlange, ohne Warteschlange endet er mit `confirmation_required`. Bei der Prüfung unmittelbar vor dem Senden endet er mit `policy_denied`. In keinem Fall schreibt Ecclium.',
     policy_count_unavailable:
       'Ecclium konnte einen Schreibvorgang nicht gegen die Grenze der Richtlinie zählen, etwa ohne Ordner für den Zustand. Beim Planen kommt der Schreibvorgang in die Freigabe-Warteschlange, ohne Warteschlange endet er mit `confirmation_required`. Bei der Prüfung unmittelbar vor dem Senden endet er mit `policy_denied`, und Ecclium schreibt nicht. Nur nach einer Freigabe mit `ecclium queue approve` schreibt Ecclium trotzdem, weil die Freigabe auch die Grenze ersetzt, und der Schreibvorgang fehlt dann im Zähler des Tages.',
+    marking_repeated:
+      'Auf der Seite steht derselbe Abschnitt schon als eigener von Ecclium, mit der Kennzeichnung desselben Tages. Ecclium hängt ihn nicht ein zweites Mal an, der Aufruf endet mit `skipped`.',
+    marking_changed:
+      'Auf der Seite steht ein Abschnitt mit der Kennzeichnung des Abschnitts, den Ecclium anhängen soll, aber jemand hat ihn seither geändert. Ob es eine Wiederholung ist, entscheidet der Betreiber: Der Schreibvorgang kommt in die Freigabe-Warteschlange, ohne Warteschlange endet er mit `confirmation_required`.',
     content_too_long:
       'Ein Text eines Schreibvorgangs ist länger als 64 KiB oder hat mehr als 2000 Sternchen, Unterstriche, Tilden und Ausrufezeichen. Der Aufruf endet ohne Schreiben, der Grund steht in `contentViolations` des Audits.',
     content_unparsable:
@@ -261,6 +265,8 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Ein Text nutzt Markdown ausserhalb der erlaubten Teilmenge, oder ein Titel enthält Zeichen von Markdown oder mehr als eine Zeile. Der Aufruf endet ohne Schreiben.',
     content_too_deep:
       'Ein Text verschachtelt Listen oder Hervorhebung tiefer als erlaubt. Der Aufruf endet ohne Schreiben.',
+    content_marking:
+      'Ein Text enthält eine Zeile, die sich als Kennzeichnung von Ecclium liest: bei einer neuen Seite oder einem Abschnitt jede, bei einer Änderung einer Seite eine, die die Seite nicht schon hat. Diese Zeile setzt nur der Kern. Der Aufruf endet ohne Schreiben.',
     read_search_refused:
       'Ein Tool, das nicht als besonders schützenswert eingestuft ist, wollte Personen oder Gruppen lesen. Ecclium weist das ab.',
     read_names_refused:
@@ -458,7 +464,8 @@ const sections: readonly {
       name.startsWith('queue_reject_') ||
       name.startsWith('snapshot_') ||
       name.startsWith('policy_') ||
-      name.startsWith('content_'),
+      name.startsWith('content_') ||
+      name.startsWith('marking_'),
   },
   {
     title: 'Lesender Zugriff über den Kern',

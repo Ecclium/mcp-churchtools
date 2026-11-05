@@ -91,6 +91,14 @@ Die Datei mit dem Login-Token legen Sie selbst an. Ecclium liest sie und schreib
 
 Nur für `ECCLIUM_REDACTION=strict` legen Sie eine Datei mit dem Schlüssel für die Pseudonyme an, die `ECCLIUM_PSEUDONYM_KEY_FILE` nennt, und für einen Wechsel eine zweite mit dem bisherigen. Ecclium liest sie und schreibt sie nie. Sie enthält keine Personendaten, öffnet aber jedes Pseudonym, siehe «Pseudonyme». Schützen Sie sie wie die Token-Datei, legen Sie sie nicht in einen synchronisierten Ordner und sichern Sie sie getrennt, damit die Pseudonyme nach einer Wiederherstellung gleich bleiben. Wie Sie sie anlegen, steht unter [Betrieb über stdio](betrieb/stdio.md#stufe-strict-und-schlüsseldatei).
 
+### Schlüsseldatei für den Prüfcode
+
+Schreibt Ecclium mit dem Toolset `wiki`, legen Sie eine Datei mit dem Schlüssel für den Prüfcode der Kennzeichnung an, die `ECCLIUM_MARKER_KEY_FILE` nennt. Ecclium liest sie und schreibt sie nie. Sie enthält keine Personendaten. Wer sie hat, kann aber Abschnitte im Wiki als eigene von Ecclium ausgeben. Schützen Sie sie wie die Token-Datei und sichern Sie sie, denn ein neuer Schlüssel macht jede bisherige Kennzeichnung ungültig. Anders als die Tagesschlüssel vernichtet Ecclium diesen Schlüssel nie. Wie Sie sie anlegen, steht unter [Betrieb über stdio](betrieb/stdio.md#kennzeichnung-im-wiki).
+
+### Kennzeichnung im Wiki
+
+Jede Seite und jeder Abschnitt, die Ecclium dem Wiki hinzufügt, endet mit einer Zeile wie «Automatisch erstellt am 05.11.2026 durch Ecclium, interaktiv, Prüfcode k1:ABCDEFGHIJKLM. Rückfragen an Sekretariat.» Sie steht im Wiki, wo jede Person sie liest, die die Seite sehen darf, und bleibt, bis jemand sie entfernt. Sie nennt den Tag, an dem der Schreibvorgang geplant wurde, den Prüfcode und den Text, den Sie in der Richtlinie unter `interactive.inquiriesTo` festlegen, sonst nichts, auch nicht die Person, die den Schreibvorgang wollte. Nennen Sie dort eine Stelle statt einer Person, wenn Sie keinen Namen im Wiki wollen. Eine E-Mail-Adresse oder Telefonnummer darin muss auch unter `interactive.contacts` stehen.
+
 ### Tagesschlüssel
 
 Nur wenn Ecclium schreibt (`ECCLIUM_READ_ONLY=false`), braucht es einen eigenen Ordner für Tagesschlüssel, den `ECCLIUM_KEYS_DIR` nennt. Mit ihnen verschlüsselt Ecclium die Snapshots, also den Stand vor einem Schreibvorgang, mit dem sich dieser zurücknehmen lässt, und die Einträge der Freigabe-Warteschlange ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)). Einen Tagesschlüssel legt Ecclium mit dem ersten Snapshot oder Eintrag eines Tages an. Schreib-Tools des Kerns kommen mit einer späteren Version, bis dahin entsteht keiner.

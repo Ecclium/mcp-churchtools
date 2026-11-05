@@ -9,6 +9,7 @@
 export {
   canonicalFormOf,
   canonicalMarkdown,
+  canonicalOfWritten,
   type CanonicalPart,
   canonicalPartsOf,
 } from './canonical.js';

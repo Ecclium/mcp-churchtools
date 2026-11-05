@@ -63,5 +63,6 @@ export function queueEntryOf(
     diff: text.diff,
     reason,
     queuedAt,
+    ...(view.day === undefined ? {} : { plannedOn: view.day }),
   });
 }

@@ -37,6 +37,7 @@ export {
   type ApproveResult,
   type CommitResult,
   createWriteGuard,
+  type PlanQueueReason,
   type PlanRequest,
   type UndoChange,
   type UndoRequest,

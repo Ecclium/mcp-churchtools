@@ -102,7 +102,6 @@ import {
   echoToolName,
   type ToolCatalog,
 } from '../registry/index.js';
-import type { PolicyQueueReason } from '../policy/engine.js';
 import { policyHashOf } from '../policy/hash.js';
 import type { Policy } from '../policy/schema.js';
 import { isoDateOf, quotaTimeoutMs } from '../quota/budget.js';
@@ -129,10 +128,12 @@ import {
   writeSentences,
   ContentRefusal,
   createWriteGuard,
+  type PlanQueueReason,
   type WriteGuard,
   type WriteSnapshots,
   type WriteTarget,
 } from '../write/index.js';
+import type { KeyMaterial } from '../keys/index.js';
 import { createReadAccess, type ReadAccess } from './read-api.js';
 import {
   collectOutputRefs,
@@ -497,6 +498,12 @@ export interface ToolPipelineOptions {
    */
   readonly snapshots?: WriteSnapshots;
   /**
+   * The key of the check codes of the marking (ADR 0032), from the
+   * configuration. Without it, no write adds a page or a section to the
+   * wiki.
+   */
+  readonly markerKey?: KeyMaterial;
+  /**
    * The provider of the keys for pseudonyms, built by the composition root
    * from the key files (ADR 0069). Without it, a call in the level
    * `strict` of a tool with an ID of a person ends with `internal`.
@@ -707,8 +714,8 @@ interface WriteAccess {
   readonly target: () => WriteTarget | undefined;
   /** What a person sees to confirm that plan. */
   readonly text: () => ConfirmationText | undefined;
-  /** Why the policy sends that plan to the queue, if it does. */
-  readonly queue: () => PolicyQueueReason | undefined;
+  /** Why that plan goes to the queue, if it does. */
+  readonly queue: () => PlanQueueReason | undefined;
   /** The refusal of the plan, if the guard refused it. */
   readonly refusal: () => EccliumError | undefined;
   /** Why the content policy refused a text, if it did. */
@@ -884,6 +891,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     policy: options.policy,
     quota: options.quota,
     snapshots: options.snapshots,
+    markerKey: options.markerKey,
   });
   // How writes are confirmed, and the questions to the client over the
   // stores the composition root built (ADR 0029). Without the stores no
@@ -1249,7 +1257,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     let outcome: PlanOutcome | undefined;
     let target: WriteTarget | undefined;
     let text: ConfirmationText | undefined;
-    let queue: PolicyQueueReason | undefined;
+    let queue: PlanQueueReason | undefined;
     let refusal: EccliumError | undefined;
     let contentViolations: readonly ContentViolationKind[] | undefined;
     const port: WritePort = Object.freeze({
@@ -2529,6 +2537,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         toolMeta: content.toolMeta,
         intent: content.intent,
         planHash: content.planHash,
+        plannedOn: content.plannedOn ?? day,
       },
       decide: async () => {
         decided = await decideEntry(

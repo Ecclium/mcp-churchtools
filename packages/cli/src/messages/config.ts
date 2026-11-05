@@ -1095,6 +1095,20 @@ const problems: Readonly<
       'Den Schlüssel der Pseudonyme wechseln Sie von Zeit zu Zeit, den des Prüfcodes nie, sonst gilt keine Kennzeichnung im Wiki mehr als eigene.',
       `Hat Ecclium mit dem Schlüssel in ${name} schon Abschnitte gekennzeichnet, behalten Sie ihn und wechseln Sie den Schlüssel der Pseudonyme. Sonst erzeugen Sie für ${name} einen eigenen Schlüssel, etwa mit ${keyCommand}, und sichern Sie die Datei.`,
     ),
+  // What a server that writes adds to the wiki carries a line with a check
+  // code and whom to ask (ADR 0032).
+  marker_key_missing: (name = markerKeyVariable) =>
+    message(
+      `Ecclium soll im Wiki schreiben, aber ${name} ist nicht gesetzt.`,
+      'Jede Seite und jeder Abschnitt, die Ecclium hinzufügt, endet mit einer Kennzeichnung, deren Prüfcode aus diesem Schlüssel entsteht.',
+      `Legen Sie eine Datei mit einem Schlüssel an, etwa mit ${keyCommand}, geben Sie ihr die Rechte 600, nennen Sie sie in ${name} und sichern Sie sie. Oder setzen Sie ${readOnly} auf ‹true› oder nehmen Sie ‹wiki› aus ${toolsets}. ${insteadOfAll}`,
+    ),
+  inquiries_missing: (name = policyFile) =>
+    message(
+      `Ecclium soll im Wiki schreiben, aber die Richtlinie aus ${name} nennt nicht, wen man bei Fragen erreicht.`,
+      'Die Kennzeichnung jeder Seite und jedes Abschnitts, die Ecclium hinzufügt, endet mit «Rückfragen an» und diesem Text.',
+      `Tragen Sie in der Richtlinie unter ‹interactive.inquiriesTo› eine Stelle ein, etwa ‹Sekretariat›, und nennen Sie die Datei in ${name}. Oder setzen Sie ${readOnly} auf ‹true› oder nehmen Sie ‹wiki› aus ${toolsets}. ${insteadOfAll}`,
+    ),
 });
 
 const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({

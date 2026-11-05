@@ -235,6 +235,11 @@ export function composeToolPipeline(options: ComposeOptions): ComposedPipeline {
           }),
       ...(keys === undefined ? {} : { keys }),
       ...(writeSnapshots === undefined ? {} : { snapshots: writeSnapshots }),
+      // The key of the check codes, for the marking of what a write adds
+      // to the wiki (ADR 0032).
+      ...(config.markerKey === undefined
+        ? {}
+        : { markerKey: config.markerKey }),
       // How a write is confirmed, and, for a server that writes, the plans
       // that wait for an answer and the nonces of the answers, in memory,
       // so that a restart forgets them (ADR 0029).

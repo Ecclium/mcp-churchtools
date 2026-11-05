@@ -55,7 +55,8 @@ export type ContentViolationKind =
   | 'contact'
   | 'masked'
   | 'unsupported'
-  | 'tooDeep';
+  | 'tooDeep'
+  | 'marking';
 
 /**
  * Every {@link ContentViolationKind}, in a fixed order. Readers of the
@@ -75,6 +76,7 @@ export const contentViolationKinds: readonly ContentViolationKind[] =
     'masked',
     'unsupported',
     'tooDeep',
+    'marking',
   ]);
 
 /** The language model a run of the runner used, as its configuration names it. */

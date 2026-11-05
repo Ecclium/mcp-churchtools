@@ -26,6 +26,7 @@
  */
 import type {
   Actor,
+  IsoDate,
   PlannedWrite,
   Reversible,
   Sensitivity,
@@ -69,6 +70,12 @@ export interface PlanInput {
   /** When the plan was sealed, in milliseconds since the Unix epoch. */
   readonly sealedAt: number;
   /**
+   * For a new page or a section, the UTC day its line of the marking names
+   * (ADR 0032): the day it was first planned, kept through the commit and
+   * an approval from the queue, so that every plan of it has the same text.
+   */
+  readonly day?: IsoDate;
+  /**
    * Whether the core keeps snapshots of writes (ADR 0031). Without them no
    * write can be taken back, so the plan is sealed as not reversible and
    * the echo allows none.
@@ -96,6 +103,8 @@ export interface PlanView {
   readonly contentHash: string;
   /** When the plan was sealed. */
   readonly sealedAt: number;
+  /** The UTC day of the marking, for a new page or a section. */
+  readonly day?: IsoDate;
   /** The hash of the plan, computed when it was sealed. */
   readonly planHash: string;
   /** Whether the plan may be confirmed by echo, derived, never given. */
@@ -188,6 +197,7 @@ export function sealPlan(input: PlanInput): PlannedWrite {
     baseVersion,
     contentHash: input.contentHash,
     sealedAt: input.sealedAt,
+    ...(input.day === undefined ? {} : { day: input.day }),
     planHash,
     echo: echoAllowed(rules, input.origin),
   });

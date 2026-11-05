@@ -267,6 +267,10 @@ export const logEvents = Object.freeze({
   policy_name_changed: entry('warn'),
   policy_limit_reached: entry('warn'),
   policy_count_unavailable: entry('warn'),
+  // The marking in the write guard (ADR 0032): a section that already
+  // stands on the page as Ecclium's own, and one a person changed.
+  marking_repeated: entry('info'),
+  marking_changed: entry('warn'),
   // The content policy in the write guard (ADR 0030), one line per reason.
   content_too_long: entry('warn'),
   content_unparsable: entry('warn'),
@@ -280,6 +284,7 @@ export const logEvents = Object.freeze({
   content_masked: entry('warn'),
   content_unsupported: entry('warn'),
   content_too_deep: entry('warn'),
+  content_marking: entry('warn'),
   // The escape hatch (ADR 0067).
   read_search_refused: entry('warn', 'code'),
   read_names_refused: entry('warn', 'code'),

@@ -59,6 +59,9 @@ const after = '# Plan\nNeu \u001b[31m\n';
 
 let stateDir: string;
 let keysDir: string;
+// The key of the check codes and a policy that names whom to ask, which a
+// server that writes to the wiki needs to start (ADR 0032).
+let configDir: string;
 const open: MockedHttpTransport[] = [];
 
 const privateDir = (prefix: string): string => {
@@ -70,6 +73,17 @@ const privateDir = (prefix: string): string => {
 beforeEach(() => {
   stateDir = privateDir('ecclium-undo-state-');
   keysDir = privateDir('ecclium-undo-keys-');
+  configDir = privateDir('ecclium-undo-config-');
+  writeFileSync(
+    join(configDir, 'marker-key'),
+    `${'0123456789abcdef'.repeat(4)}\n`,
+    { mode: 0o600 },
+  );
+  writeFileSync(
+    join(configDir, 'policy.yaml'),
+    'schema: policy.v1\ninteractive: { inquiriesTo: Sekretariat }\n',
+    { mode: 0o600 },
+  );
   // The folder of the kill switches, which the operator makes; without
   // it writing stays off.
   mkdirSync(join(stateDir, 'stop'), { mode: 0o700 });
@@ -78,6 +92,7 @@ beforeEach(() => {
 afterEach(async () => {
   rmSync(stateDir, { recursive: true, force: true });
   rmSync(keysDir, { recursive: true, force: true });
+  rmSync(configDir, { recursive: true, force: true });
   await Promise.all(
     open.splice(0).map((double) => double.close().catch(() => undefined)),
   );
@@ -208,6 +223,8 @@ const run = async (
       ECCLIUM_KEYS_DIR: keysDir,
       ECCLIUM_READ_ONLY: 'false',
       ECCLIUM_TOOLSETS: 'wiki',
+      ECCLIUM_MARKER_KEY_FILE: join(configDir, 'marker-key'),
+      ECCLIUM_POLICY_FILE: join(configDir, 'policy.yaml'),
     },
     execArgv: [],
     eventId: options.eventId ?? written,

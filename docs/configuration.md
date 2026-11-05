@@ -45,7 +45,7 @@ Legt fest, wie viele Anfragen der Server im Mittel höchstens pro Minute an Chur
 
 ## `ECCLIUM_READ_ONLY`
 
-Legt fest, ob der Server nur liest. Mit `true` registriert er keine Schreib-Tools. In dieser Version gibt es noch keine Schreib-Tools. Mit `false` verlangt der Start `ECCLIUM_KEYS_DIR`.
+Legt fest, ob der Server nur liest. Mit `true` registriert er keine Schreib-Tools. In dieser Version gibt es noch keine Schreib-Tools. Mit `false` verlangt der Start `ECCLIUM_KEYS_DIR`, mit dem Toolset `wiki` dazu `ECCLIUM_MARKER_KEY_FILE` und `interactive.inquiriesTo` in der Richtlinie.
 
 ## `ECCLIUM_REDACTION`
 
@@ -89,7 +89,7 @@ Absoluter Pfad der Datei mit der Richtlinie im Format `policy.v1`, in YAML oder 
 
 ## `ECCLIUM_MARKER_KEY_FILE`
 
-Absoluter Pfad einer Datei mit dem Schlüssel für den Prüfcode der Kennzeichnung: genau 64 Zeichen aus `0` bis `9` und `a` bis `f`, höchstens mit einem Zeilenumbruch am Ende, so wie `openssl rand -hex 32` ihn schreibt. Die Datei muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 600. Jede Seite und jeder Abschnitt, die Ecclium im Wiki hinzufügt, endet mit einer Zeile mit einem Prüfcode aus diesem Schlüssel, an dem Ecclium seine eigenen Abschnitte wiedererkennt. Wer den Schlüssel hat, kann Abschnitte als eigene von Ecclium ausgeben. Sichern Sie die Datei: Ein neuer Schlüssel macht jeden bisherigen Prüfcode ungültig. Es muss ein anderer Schlüssel sein als der für die Pseudonyme. In dieser Version legt Ecclium noch keine Seiten und Abschnitte an, und der Schlüssel bewirkt nichts.
+Absoluter Pfad einer Datei mit dem Schlüssel für den Prüfcode der Kennzeichnung: genau 64 Zeichen aus `0` bis `9` und `a` bis `f`, höchstens mit einem Zeilenumbruch am Ende, so wie `openssl rand -hex 32` ihn schreibt. Die Datei muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 600. Jede Seite und jeder Abschnitt, die Ecclium im Wiki hinzufügt, endet mit einer Zeile mit einem Prüfcode aus diesem Schlüssel, an dem Ecclium seine eigenen Abschnitte wiedererkennt. Wer den Schlüssel hat, kann Abschnitte als eigene von Ecclium ausgeben. Sichern Sie die Datei: Ein neuer Schlüssel macht jeden bisherigen Prüfcode ungültig. Es muss ein anderer Schlüssel sein als der für die Pseudonyme. Mit `ECCLIUM_READ_ONLY=false` und dem Toolset `wiki` ist die Variable Pflicht, ebenso `interactive.inquiriesTo` in der Richtlinie. Schreib-Tools für das Wiki gibt es in dieser Version noch nicht.
 
 ## `ECCLIUM_STDIO_SUBJECT`
 

@@ -158,6 +158,26 @@ export function canonicalFormOf(blocks: readonly Block[]): string {
 }
 
 /**
+ * Gives the canonical form of a text the content policy wrote, which
+ * always has one, for the check code of what Ecclium adds (ADR 0032).
+ *
+ * @param written - The text in the form the content policy writes.
+ * @returns The canonical form.
+ * @throws {TypeError} For a text without one, which the content policy
+ *   never writes.
+ * @example
+ * ```ts
+ * canonicalOfWritten('## Nachtrag\n\nText\n'); // '## Nachtrag\n\nText\n'
+ * ```
+ */
+export function canonicalOfWritten(written: string): string {
+  const form = canonicalMarkdown(written);
+  if (form === undefined)
+    throw new TypeError('The text has no canonical form.');
+  return form;
+}
+
+/**
  * Gives the canonical form of a text, such as a section Ecclium writes.
  *
  * @param markdown - The text.

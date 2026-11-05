@@ -38,11 +38,15 @@ import { checkPolicy, defaultPolicy } from '../policy/check.js';
 import type { Policy } from '../policy/schema.js';
 import { createQueueKeeper, type QueueKeeper } from '../queue/index.js';
 import { quotaTimeoutMs } from '../quota/index.js';
+import { canonicalOfWritten } from '../content/index.js';
+import { KeyMaterial } from '../keys/index.js';
+import { checkCodeOf, markingLineOf } from '../marker/index.js';
 import { createToolCatalog } from '../registry/index.js';
 import {
   confirmationSentence,
   confirmationSentences,
 } from '../write/confirm.js';
+import { writeSentences } from '../write/guard.js';
 import { createMemoryNonceStore } from '../write/nonce-store.js';
 import { approvalKeyOf } from '../write/plan-hash.js';
 import { createMemoryPlanStore } from '../write/plan-store.js';
@@ -53,6 +57,34 @@ import { createToolPipeline, type ToolRequest } from './pipeline.js';
 // entry under the ID of the audit line of its call, and the operator
 // rejects it through the entry reject. ChurchTools is the double; the
 // entries are sealed with day keys in memory.
+
+// The key of the check codes and whom to ask, which a write that adds a
+// page or a section to the wiki needs (ADR 0032).
+const markerKey = new KeyMaterial('0123456789abcdef'.repeat(4));
+const marking = (policy: Policy): Policy =>
+  policy.interactive.inquiriesTo === undefined
+    ? Object.freeze({
+        ...policy,
+        interactive: Object.freeze({
+          ...policy.interactive,
+          inquiriesTo: 'Sekretariat',
+        }),
+      })
+    : policy;
+
+// A section as the write guard adds it: the written text and its line of
+// the marking, interactive, of the day of the test (ADR 0032).
+const marked = (written: string): string => {
+  const day = '2026-11-03' as IsoDate;
+  const origin = { kind: 'interactive', day } as const;
+  const code = checkCodeOf(
+    markerKey,
+    'default',
+    origin,
+    canonicalOfWritten(written),
+  );
+  return `${written}\n${markingLineOf({ date: day, origin, code }, 'Sekretariat')}\n`;
+};
 
 const loaded = loadConfig({
   environment: {
@@ -210,7 +242,8 @@ const setup = (
   const keeper = createQueueKeeper({ keys, store, clock });
   const pipelineClock = options.clock ?? clock;
   const pipeline = createToolPipeline({
-    policy: options.policy ?? defaultPolicy,
+    policy: marking(options.policy ?? defaultPolicy),
+    markerKey,
     catalog,
     audit,
     ...(quota === undefined ? {} : { quota }),
@@ -476,6 +509,8 @@ describe('a write that waits in the queue (ADR 0031)', () => {
     expect(!outcome.ok && outcome.error.code).toBe('internal');
   });
 
+  // The section of the note needs the day for its marking (ADR 0032), so
+  // the write guard ends such a call before anything goes to the queue.
   it('writes nothing without a day from the clock', async () => {
     const { pipeline, planReads, logs } = setup({
       clock: clockAt(() => Number.NaN),
@@ -484,6 +519,25 @@ describe('a write that waits in the queue (ADR 0031)', () => {
     const outcome = await pipeline.call(
       'ct_example_note_write',
       note,
+      request(),
+    );
+    expect(!outcome.ok && outcome.error).toEqual({
+      code: 'policy_denied',
+      message: writeSentences.noDay,
+    });
+    expect(logs()).not.toContain('write_queued');
+  });
+
+  // A change of a page has no marking, so it reaches the queue, which has
+  // no day for the entry either.
+  it('queues nothing without a day from the clock', async () => {
+    const { pipeline, planReads, logs } = setup({
+      clock: clockAt(() => Number.NaN),
+    });
+    planReads();
+    const outcome = await pipeline.call(
+      'ct_test_long',
+      { text: 'x' },
       request(),
     );
     expect(!outcome.ok && outcome.error.code).toBe('internal');
@@ -941,7 +995,7 @@ describe('the queue as the operator reads it (ADR 0031)', () => {
 
 describe('an approval of the operator (ADR 0029)', () => {
   // The page after the note of the example is appended.
-  const written = `# Plan\n\n${canary.value}\n`;
+  const written = `# Plan\n\n${marked(`${canary.value}\n`)}`;
   // The reads of the plan again: the rights, then the page as it is now.
   const replanReads = (
     setupped: ReturnType<typeof setup>,

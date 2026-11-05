@@ -1197,10 +1197,33 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       markerKey = fromFile.value;
     }
   }
+  // A server that writes to the wiki marks every page and section it adds,
+  // with this key and whom to ask from the policy, so it does not start
+  // without either (ADR 0032). A file that is set but refused has its own
+  // problem.
+  const writesToWiki =
+    readOnly?.value === 'false' && toolsets?.value.includes('wiki') === true;
+  if (writesToWiki && markerKeyRead.state === 'unset') {
+    report('marker_key_missing', markerKeyName);
+    markerKeyValid = false;
+  }
+  if (
+    writesToWiki &&
+    policy !== undefined &&
+    policy.interactive.inquiriesTo === undefined
+  ) {
+    report('inquiries_missing', policyName);
+  }
   setting(
     'markerKey',
     markerKeyName,
-    markerKey !== undefined ? 'file' : markerKeyValid ? 'unset' : 'invalid',
+    markerKey !== undefined
+      ? 'file'
+      : markerKeyValid
+        ? 'unset'
+        : markerKeyRead.state === 'unset'
+          ? 'missing'
+          : 'invalid',
     markerKey !== undefined ? shownHidden : shownNone,
   );
 

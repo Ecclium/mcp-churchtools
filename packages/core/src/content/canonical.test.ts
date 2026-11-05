@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   canonicalFormOf,
   canonicalMarkdown,
+  canonicalOfWritten,
   canonicalPartsOf,
 } from './canonical.js';
 import { maxContentBytes, maxDelimiterSigns } from './normalize.js';
@@ -139,5 +140,16 @@ describe('canonicalMarkdown', () => {
     expect(canonicalMarkdown('Text.\n\n> Zitat')).toBeUndefined();
     expect(canonicalMarkdown('a\rb')).toBeUndefined();
     expect(canonicalMarkdown('')).toBe('');
+  });
+});
+
+describe('canonicalOfWritten', () => {
+  it('gives the form of a text the content policy wrote, and refuses one it never writes', () => {
+    expect(canonicalOfWritten('## Nachtrag\n\nEine\nZeile\n')).toBe(
+      '## Nachtrag\n\nEine Zeile\n',
+    );
+    expect(() => canonicalOfWritten('[mehr](https://example.org/)')).toThrow(
+      TypeError,
+    );
   });
 });

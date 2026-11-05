@@ -8,7 +8,12 @@ import {
   checkPlainText,
 } from '../content/index.js';
 import type { MarkingOrigin } from './code.js';
-import { type Marking, markingLineOf, readMarkingLine } from './line.js';
+import {
+  type Marking,
+  markingLineOf,
+  markingTextsOf,
+  readMarkingLine,
+} from './line.js';
 
 const dayOf = (value: string): IsoDate => {
   if (!isIsoDate(value)) throw new TypeError('No day.');
@@ -205,5 +210,38 @@ describe('readMarkingLine', () => {
       ),
       { seed: 32_010, numRuns: 400 },
     );
+  });
+});
+
+describe('markingTextsOf', () => {
+  it('finds what a reader takes for a marking, however it is written', () => {
+    const line = markingLineOf(interactive, 'Sekretariat');
+    for (const text of [
+      line,
+      `- ${line}`,
+      `1. ${line}`,
+      `> ${line}`,
+      `| ${line} |`,
+      `## ${line}`,
+      `Siehe ${line}`,
+      line.replace('durch Ecclium', 'durch  Ecclium'),
+      line.replace('durch Ecclium', 'durch\tEcclium'),
+      line.replace('Ecclium', '**Ecclium**'),
+      line.replace('Automatisch erstellt', '*Automatisch erstellt*'),
+      line.replace('am 05.11.2026', 'am\n05.11.2026'),
+      line.replace('Ecclium', '\\_Ecclium'),
+    ]) {
+      expect(markingTextsOf(`Text.\n\n${text}\n\nMehr.`), text).toHaveLength(1);
+    }
+    expect(
+      markingTextsOf('Nur Text.\n\nAutomatisch erstellt von Hand.'),
+    ).toEqual([]);
+  });
+
+  it('gives the same form for the same line written another way', () => {
+    const line = markingLineOf(interactive, 'Sekretariat');
+    expect(
+      markingTextsOf(line.replace('durch Ecclium', 'durch  **Ecclium**')),
+    ).toEqual(markingTextsOf(line));
   });
 });

@@ -354,6 +354,30 @@ env -i ECCLIUM_CHURCHTOOLS_URL=https://example.church.tools ECCLIUM_CHURCHTOOLS_
 
 Den Ordner `queue` im Zustandsordner legt der Start eines Servers an, der schreibt. Wie jedes Schreiben verlangt `approve` den Ordner `stop` für die Kill-Switches und `ECCLIUM_READ_ONLY=false`. Die Kennung prüft der Befehl, bevor er eine Datei liest, und nennt sie in keiner Meldung. Nur `approve` fragt ChurchTools an. Bis Schreib-Tools mit einer späteren Version kommen, reiht Ecclium ausserhalb der Tests nichts ein.
 
+## Kennzeichnung im Wiki
+
+Jede Seite und jeder Abschnitt, die Ecclium dem Wiki hinzufügt, endet mit einer Zeile mit festem Wortlaut, etwa «Automatisch erstellt am 05.11.2026 durch Ecclium, interaktiv, Prüfcode k1:ABCDEFGHIJKLM. Rückfragen an Sekretariat.» Am Prüfcode erkennt Ecclium seine eigenen Abschnitte, damit es denselben Abschnitt am selben Tag nicht zweimal anhängt. Ein Abschnitt, dessen Code nicht mehr zu seinem Inhalt passt, gilt als von Hand geändert, und Ecclium ersetzt ihn nie ([ADR 0032](../adr/0032-richtlinie-und-pruefcode.md)). Eine Änderung an bestehendem Text bekommt keine Zeile. Schreib-Tools für das Wiki gibt es in dieser Version noch nicht.
+
+Mit `ECCLIUM_READ_ONLY=false` und dem Toolset `wiki` startet Ecclium nur mit zwei Angaben. Die erste ist der Schlüssel des Prüfcodes, eine Datei wie die Schlüsseldatei der Pseudonyme, aber mit einem eigenen Schlüssel:
+
+```sh
+(umask 077 && openssl rand -hex 32 > /pfad/zur/pruefcode-schluessel)
+```
+
+Nennen Sie die Datei in `ECCLIUM_MARKER_KEY_FILE` und sichern Sie sie. Ein neuer Schlüssel macht jede bisherige Kennzeichnung ungültig, dann hält Ecclium jeden seiner Abschnitte für von Hand geändert. Steht in der Datei derselbe Schlüssel wie für die Pseudonyme, startet Ecclium nicht.
+
+Die zweite ist der Text nach «Rückfragen an», in der Richtlinie, die `ECCLIUM_POLICY_FILE` nennt ([Richtlinie](../policy.md)):
+
+```yaml
+schema: policy.v1
+interactive:
+  inquiriesTo: 'Sekretariat, sekretariat@example.org'
+  contacts:
+    - sekretariat@example.org
+```
+
+Der Text ist eine Zeile Klartext von höchstens 200 Zeichen, ohne Links und ohne Adressen von Websites. Eine E-Mail-Adresse oder Telefonnummer darin muss auch unter `contacts` stehen. Nennen Sie eine Stelle statt einer Person, wenn Sie keinen Namen im Wiki wollen ([Datenschutz](../privacy.md#kennzeichnung-im-wiki)).
+
 ## Wiki
 
 `ct_wiki_categories_list` nennt die Kategorien des Wikis, die das Dienstkonto sehen darf, `ct_wiki_pages_list` die Seiten einer Kategorie mit Titel und Version, aber ohne Text, beide 25 je Aufruf mit weiteren Seiten. `ct_wiki_page_get` liest eine Seite und gibt einen langen Text in Teilen von höchstens 16'000 Bytes, geschnitten an einem Zeilenumbruch, wo eine Zeile hineinpasst, sonst zwischen zwei Zeichen. Den Text maskiert Ecclium nicht, auch keine E-Mail-Adressen oder Telefonnummern darin ([ADR 0026](../adr/0026-klassifizierte-ausgabeschemas.md)). `ct_wiki_search` sucht Seiten nach einem Begriff, in allen Kategorien, die das Konto sehen darf, oder in einer, und gibt die ersten 20 Treffer in der Folge von ChurchTools mit GUID, Kategorie, Titel und einem Ausschnitt des Texts. Weitere Seiten gibt es nicht. Gibt es mehr Treffer, sagt das Ergebnis, Sie sollen genauer oder in einer Kategorie suchen. Nennt ChurchTools eine Seite in einer anderen Form als mit ihrer GUID, steht dort `null`. Namen, Titel, Ausschnitte und Text stehen im Datenumschlag, Personen aus den Metadaten der Antworten von ChurchTools gibt keines der vier Tools weiter. Sie brauchen keinen Zustandsordner. Schalten Sie sie mit `ECCLIUM_TOOLSETS=wiki` ein, die Rechte des Dienstkontos stehen unter [Dienstkonto](dienstkonto.md#rechte).

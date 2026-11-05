@@ -73,6 +73,9 @@ const other = '11111111-2222-4333-8444-555555555556';
 
 let stateDir: string;
 let keysDir: string;
+// The key of the check codes and a policy that names whom to ask, which a
+// server that writes to the wiki needs to start (ADR 0032).
+let configDir: string;
 const open: MockedHttpTransport[] = [];
 
 const privateDir = (prefix: string): string => {
@@ -84,11 +87,23 @@ const privateDir = (prefix: string): string => {
 beforeEach(() => {
   stateDir = privateDir('ecclium-queue-state-');
   keysDir = privateDir('ecclium-queue-keys-');
+  configDir = privateDir('ecclium-queue-config-');
+  writeFileSync(
+    join(configDir, 'marker-key'),
+    `${'0123456789abcdef'.repeat(4)}\n`,
+    { mode: 0o600 },
+  );
+  writeFileSync(
+    join(configDir, 'policy.yaml'),
+    'schema: policy.v1\ninteractive: { inquiriesTo: Sekretariat }\n',
+    { mode: 0o600 },
+  );
 });
 
 afterEach(async () => {
   rmSync(stateDir, { recursive: true, force: true });
   rmSync(keysDir, { recursive: true, force: true });
+  rmSync(configDir, { recursive: true, force: true });
   await Promise.all(
     open.splice(0).map((double) => double.close().catch(() => undefined)),
   );
@@ -237,6 +252,8 @@ const run = async (
       ECCLIUM_KEYS_DIR: keysDir,
       ECCLIUM_READ_ONLY: 'false',
       ECCLIUM_TOOLSETS: 'wiki',
+      ECCLIUM_MARKER_KEY_FILE: join(configDir, 'marker-key'),
+      ECCLIUM_POLICY_FILE: join(configDir, 'policy.yaml'),
     },
     execArgv: [],
     action,

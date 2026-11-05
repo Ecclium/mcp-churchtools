@@ -13,7 +13,12 @@ export {
   type MarkingOrigin,
   sameCheckCode,
 } from './code.js';
-export { type Marking, markingLineOf, readMarkingLine } from './line.js';
+export {
+  type Marking,
+  markingLineOf,
+  markingTextsOf,
+  readMarkingLine,
+} from './line.js';
 export {
   type FoundMarking,
   findMarkings,

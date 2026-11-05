@@ -204,6 +204,25 @@ const reasons: Readonly<Record<UndoReason, UndoEnding>> = Object.freeze({
     'Ecclium konnte den Stand vor der Rücknahme nicht festhalten und hat darum nichts geschrieben. Prüfen Sie den Ordner ‹snapshots› im Zustandsordner und den Schlüsselordner.',
     exitCodes.ioError,
   ),
+  // A taking back changes the text of a page and adds nothing, so these
+  // endings of a write that adds a page or a section do not come here;
+  // the table names every sentence of the write guard all the same.
+  noMarking: ending(
+    'Ecclium kann nicht kennzeichnen, was es dem Wiki hinzufügt, und hat nichts geschrieben. Setzen Sie ‹ECCLIUM_MARKER_KEY_FILE› und in der Richtlinie ‹interactive.inquiriesTo›.',
+    exitCodes.invalidConfig,
+  ),
+  noDay: ending(
+    'Die Uhr dieses Rechners nennt keinen Tag für die Kennzeichnung, darum schreibt Ecclium nicht. Stellen Sie die Uhr des Rechners.',
+    exitCodes.noPermission,
+  ),
+  tooLong: ending(
+    'Der Text der Seite wäre länger, als ChurchTools annimmt. Ecclium hat nichts geschrieben.',
+    exitCodes.dataError,
+  ),
+  pageOpen: ending(
+    'Die Seite endet in einem offenen Block, der einen Abschnitt aufnähme. Ecclium hat nichts geschrieben.',
+    exitCodes.dataError,
+  ),
   auditNotReady: ending(
     'Die Audit-Datei kann die Zeile der Rücknahme nicht aufnehmen, darum schreibt Ecclium nicht. Prüfen Sie die Audit-Datei mit ‹ecclium audit verify›.',
     exitCodes.ioError,

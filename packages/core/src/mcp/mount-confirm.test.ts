@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { loadConfig } from '@ecclium/mcp-churchtools-core';
+import type { IsoDate } from '@ecclium/mcp-churchtools-plugin-api';
 import {
   createChurchToolsDouble,
   createMemoryQuotaStore,
@@ -33,6 +34,10 @@ import {
 import { createLogger } from '../logger/index.js';
 import { createToolPipeline } from '../pipeline/index.js';
 import { defaultPolicy } from '../policy/check.js';
+import type { Policy } from '../policy/schema.js';
+import { canonicalOfWritten } from '../content/index.js';
+import { KeyMaterial } from '../keys/index.js';
+import { checkCodeOf, markingLineOf } from '../marker/index.js';
 import { createToolCatalog } from '../registry/index.js';
 import {
   confirmationSentence,
@@ -50,6 +55,34 @@ import { createMcpMount } from './mount.js';
 // shim of the SDK.
 
 type Json = Readonly<Record<string, unknown>>;
+
+// The key of the check codes and whom to ask, which a write that adds a
+// page or a section to the wiki needs (ADR 0032).
+const markerKey = new KeyMaterial('0123456789abcdef'.repeat(4));
+const marking = (policy: Policy): Policy =>
+  policy.interactive.inquiriesTo === undefined
+    ? Object.freeze({
+        ...policy,
+        interactive: Object.freeze({
+          ...policy.interactive,
+          inquiriesTo: 'Sekretariat',
+        }),
+      })
+    : policy;
+
+// A section as the write guard adds it: the written text and its line of
+// the marking, interactive, of the day of the test (ADR 0032).
+const marked = (written: string): string => {
+  const day = '2026-11-03' as IsoDate;
+  const origin = { kind: 'interactive', day } as const;
+  const code = checkCodeOf(
+    markerKey,
+    'default',
+    origin,
+    canonicalOfWritten(written),
+  );
+  return `${written}\n${markingLineOf({ date: day, origin, code }, 'Sekretariat')}\n`;
+};
 
 const at = (value: unknown, ...path: readonly (string | number)[]): unknown =>
   path.reduce<unknown>(
@@ -123,7 +156,8 @@ const setup = (
     return true;
   };
   const pipeline = createToolPipeline({
-    policy: defaultPolicy,
+    policy: marking(defaultPolicy),
+    markerKey,
     catalog,
     audit: createAuditSink({
       writer: { write: () => true },
@@ -185,7 +219,7 @@ const setup = (
       .reply(200, '{}', json);
     double
       .intercept({ path: pagePath, method: 'GET' })
-      .reply(200, page(4, '# Plan\n\nHallo\n'), json);
+      .reply(200, page(4, `# Plan\n\n${marked('Hallo\n')}`), json);
   };
   const sent = () =>
     double.calls().filter(({ method }) => method !== 'GET').length;
@@ -273,7 +307,7 @@ describe('a question before a write in the 2026 era', () => {
     expect(at(question, 'method')).toBe('elicitation/create');
     expect(at(question, 'params', 'mode')).toBe('form');
     expect(at(question, 'params', 'message')).toContain(
-      'An die Seite «Dienstplan» in der Kategorie 12 einen Abschnitt mit 2 Zeilen anhängen.',
+      'An die Seite «Dienstplan» in der Kategorie 12 einen Abschnitt mit 4 Zeilen anhängen.',
     );
     expect(at(question, 'params', 'requestedSchema', 'required')).toEqual([
       'bestaetigen',
