@@ -18,7 +18,7 @@ export {
   type FoundMarking,
   findMarkings,
   judgeSections,
-  maxMarkings,
+  maxJudgedMarkings,
   maxSectionStarts,
   type SectionJudgement,
 } from './sections.js';

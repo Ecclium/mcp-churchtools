@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { canonicalMarkdown, checkMarkdown, checkPlainText } from './check.js';
+import { canonicalMarkdown } from './canonical.js';
+import { checkMarkdown, checkPlainText } from './check.js';
 import { maxContentBytes, maxDelimiterSigns } from './normalize.js';
 import { contactKeyOf } from './scan.js';
 

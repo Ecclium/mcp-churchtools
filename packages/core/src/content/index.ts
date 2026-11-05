@@ -7,7 +7,12 @@
  * @packageDocumentation
  */
 export {
+  canonicalFormOf,
   canonicalMarkdown,
+  type CanonicalPart,
+  canonicalPartsOf,
+} from './canonical.js';
+export {
   checkMarkdown,
   checkPlainText,
   type ContentCheckOptions,

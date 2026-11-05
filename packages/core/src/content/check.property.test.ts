@@ -1,7 +1,8 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
-import { canonicalMarkdown, checkMarkdown } from './check.js';
+import { canonicalMarkdown } from './canonical.js';
+import { checkMarkdown } from './check.js';
 import { readMarkdown } from './lexer.js';
 import { serializeBlocks } from './serialize.js';
 import type { Inline } from './tree.js';

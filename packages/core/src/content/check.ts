@@ -25,7 +25,7 @@ import {
 } from './normalize.js';
 import { checkReadableText, hasCharacterReference } from './scan.js';
 import { serializeBlocks } from './serialize.js';
-import type { Block, Inline, List } from './tree.js';
+import type { Block, Inline } from './tree.js';
 import { type ContentViolationKind, orderViolations } from './violations.js';
 
 /** What the content policy needs besides the text. */
@@ -150,73 +150,6 @@ const writtenForm = (
   }
   return { ok: true, text, read: [read.blocks, again.blocks] };
 };
-
-// A run of text with every run of spaces and line breaks as one space, as
-// a reader sees it, inside bold and italic as well.
-const spaced = (nodes: readonly Inline[]): Inline[] =>
-  nodes.map((node) =>
-    node.kind === 'text'
-      ? { kind: 'text', text: node.text.split(/\s+/u).join(' ') }
-      : { kind: node.kind, children: spaced(node.children) },
-  );
-
-const spacedList = (list: List): List => ({
-  ...list,
-  items: list.items.map((item) =>
-    item.map((inner) =>
-      inner.kind === 'list'
-        ? spacedList(inner)
-        : { ...inner, children: spaced(inner.children) },
-    ),
-  ),
-});
-
-const spacedBlocks = (blocks: readonly Block[]): Block[] =>
-  blocks.map((block): Block => {
-    switch (block.kind) {
-      case 'heading':
-      case 'paragraph':
-        return { ...block, children: spaced(block.children) };
-      case 'list':
-        return spacedList(block);
-      case 'table':
-        return {
-          ...block,
-          header: block.header.map(spaced),
-          rows: block.rows.map((cells) => cells.map(spaced)),
-        };
-    }
-  });
-
-/**
- * Gives the canonical form of a text in Markdown, over which the check
- * code of the marking is taken (ADR 0032): the text read with the lexer of
- * the content policy and written with its serializer, with every run of
- * spaces and line breaks in a text as one space. So the signs before the
- * items of a list, blank lines, the alignment of a table and how lines of
- * a paragraph are broken do not count, as the web editor of ChurchTools
- * changes such things when it saves a page. Text, headings, emphasis and
- * the build of lists and tables count.
- *
- * Only the form is checked, not what a reader sees: a section a person
- * changed may hold an e-mail address the policy does not list, and still
- * has a canonical form. Anything outside the allowed part, such as a link
- * the editor made from a bare address or a hard line break, gives none.
- *
- * @param markdown - A text, such as a section of a page as read.
- * @returns The canonical form, or undefined when the text has none.
- * @example
- * ```ts
- * canonicalMarkdown('# Plan\n\n* Probe\n* Pause'); // '# Plan\n\n- Probe\n- Pause\n'
- * canonicalMarkdown('Eine\nZeile'); // 'Eine Zeile\n'
- * canonicalMarkdown('Mehr: https://example.org'); // undefined
- * ```
- */
-export function canonicalMarkdown(markdown: string): string | undefined {
-  const written = writtenForm(markdown);
-  const again = written.ok ? written.read[1] : undefined;
-  return again === undefined ? undefined : serializeBlocks(spacedBlocks(again));
-}
 
 const isHtmlStart = (code: number): boolean =>
   (code >= 0x41 && code <= 0x5a) ||
