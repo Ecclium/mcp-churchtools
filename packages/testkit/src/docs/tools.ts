@@ -40,6 +40,21 @@ const unattendedLabels = Object.freeze({
   policy: 'nach Richtlinie',
 });
 
+// How a write can be taken back and what keeps it from taking effect
+// twice, for the tools that write (ADR 0029, ADR 0031).
+const reversibleLabels = Object.freeze({
+  yes: 'ja',
+  no: 'nein',
+  snapshot: 'über den Snapshot, mit `ecclium undo`',
+});
+
+const replayGuardLabels = Object.freeze({
+  baseVersion: 'Basisversion: eine Version wird nur einmal geändert',
+  marker:
+    'Kennzeichnung: Der Kern erkennt seinen eigenen Text an der Zeile mit dem Prüfcode',
+  nonce: 'Nonce: jede Bestätigung gilt einmal',
+});
+
 // A fence longer than any run of backticks in the text, so that no
 // description can end its block early.
 const fenceFor = (text: string): string => {
@@ -148,6 +163,12 @@ const toolSection = (entry: CatalogEntry): string[] => {
     `- Lesebudget: ${yesNo(entry.asSpecial)}`,
     `- Angeboten: ${offeredLabel(entry)}`,
     `- Rechte in ChurchTools: ${rightsOf(entry)}`,
+    ...(meta.capability === 'write'
+      ? [
+          `- Rücknahme: ${reversibleLabels[meta.reversible]}`,
+          `- Schutz vor Wiederholung: ${replayGuardLabels[meta.replayGuard]}`,
+        ]
+      : []),
     '',
     '### Beschreibung',
     '',
@@ -209,6 +230,11 @@ export function renderToolsReference(): string {
   // the page instead of leaving a false sentence on it.
   if (entries.every((entry) => entry.meta.capability === 'read')) {
     legend.push('', 'Alle Tools dieser Seite lesen nur.');
+  } else {
+    legend.push(
+      '',
+      'Die Tools, die schreiben, bietet der Server nur mit `ECCLIUM_READ_ONLY=false` an. Sie planen nur: Den Schreibvorgang führt der Kern nach einer Bestätigung aus, und ihr Ergebnis baut er selbst ([ADR 0029](adr/0029-write-guard.md)). «Rücknahme» und «Schutz vor Wiederholung» stehen bei jedem von ihnen.',
+    );
   }
   for (const entry of entries) {
     const { meta } = entry;

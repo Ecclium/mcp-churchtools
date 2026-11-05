@@ -38,6 +38,11 @@ import { wikiCategoriesListTool } from './wiki/categories.js';
 import { wikiPageGetTool } from './wiki/page.js';
 import { wikiPagesListTool } from './wiki/pages.js';
 import { wikiSearchTool } from './wiki/search.js';
+import {
+  wikiPageCreateTool,
+  wikiPageUpdateTool,
+  wikiSectionAppendTool,
+} from './wiki/write.js';
 
 /** What the composition root hands to the plugin of the core. */
 export interface CorePluginOptions {
@@ -92,6 +97,11 @@ export function createCorePlugin(options: CorePluginOptions = {}): Plugin {
       host.addTool(wikiPagesListTool);
       host.addTool(wikiPageGetTool);
       host.addTool(wikiSearchTool);
+      // The tools that write; the catalog leaves them out while the server
+      // only reads (ADR 0055).
+      host.addTool(wikiPageCreateTool);
+      host.addTool(wikiPageUpdateTool);
+      host.addTool(wikiSectionAppendTool);
       host.addTool(eventsListTool);
       host.addTool(eventsGetTool);
       host.addTool(eventsGetAgendaTool);

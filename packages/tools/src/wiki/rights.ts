@@ -31,6 +31,17 @@ export const wikiCategoryRight: RightRef = Object.freeze({
   right: 'view category',
 });
 
+/**
+ * The right to change the pages of a category, which the tools that write
+ * need for the category they write in. On the test instance it also lets
+ * an account delete the pages of the category, which no tool does
+ * (threat model, «Löschen im Wiki»).
+ */
+export const wikiEditRight: RightRef = Object.freeze({
+  module: 'churchwiki',
+  right: 'edit category',
+});
+
 /** The message of a refused list of categories. */
 export const wikiRefused = `ChurchTools refused the wiki. The service account needs the right "${wikiViewRight.right}" in ${wikiViewRight.module}; ct_whoami shows the rights of the account.`;
 

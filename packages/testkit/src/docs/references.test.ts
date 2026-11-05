@@ -267,6 +267,31 @@ describe('renderToolsReference', () => {
     expect(freeText).not.toContain('ct_persons_search');
   });
 
+  it('names the way back and the guard against a second write of each tool that writes', () => {
+    const section = (name: string): string => {
+      const start = page.indexOf(`\n## \`${name}\`\n`);
+      return page.slice(start, page.indexOf('### Beschreibung', start));
+    };
+    expect(section('ct_wiki_page_create')).toContain(
+      '- Schutz vor Wiederholung: Kennzeichnung',
+    );
+    expect(section('ct_wiki_page_update')).toContain(
+      '- Schutz vor Wiederholung: Basisversion',
+    );
+    for (const name of [
+      'ct_wiki_page_append_section',
+      'ct_wiki_page_create',
+      'ct_wiki_page_update',
+    ]) {
+      expect(section(name)).toContain(
+        '- Rücknahme: über den Snapshot, mit `ecclium undo`',
+      );
+      expect(section(name)).toContain('mit `ECCLIUM_READ_ONLY=false`');
+    }
+    expect(section('ct_wiki_page_get')).not.toContain('Rücknahme');
+    expect(page).not.toContain('Alle Tools dieser Seite lesen nur.');
+  });
+
   it('keeps each description as the model reads it, in a block of text', () => {
     expect(page).toContain('ChurchTools rights: "view alldata" in churchdb.');
   });
