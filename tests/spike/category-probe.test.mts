@@ -24,7 +24,7 @@ import {
   type ProbeDefinition,
 } from '../../scripts/spike/lib/probe.mts';
 import { readWriteState } from '../../scripts/spike/lib/write-state.mts';
-import { capture, leaks, type Capture } from './support.mts';
+import { capture, leaks, specification, type Capture } from './support.mts';
 import {
   makeGuid,
   writeInstance,
@@ -58,7 +58,13 @@ function crossing(
   instance: WriteInstance,
   setting: WriteSetting,
   mode: Mode,
-  options: { readonly kennPages?: boolean; readonly failPatch?: boolean } = {},
+  options: {
+    readonly kennPages?: boolean;
+    readonly listStatus?: number;
+    readonly failPatch?: boolean;
+    /** The change under the foreign path moves the page there. */
+    readonly moves?: boolean;
+  } = {},
 ): { instance: WriteInstance; sent: Sent[] } {
   const sent: Sent[] = [];
   const area = setting.writeCategory;
@@ -80,6 +86,7 @@ function crossing(
   const listPath = `/api/wiki/categories/${String(identification)}/pages`;
   const foreignPrefix = `${listPath}/`;
   const kennUnderArea = `/api/wiki/categories/${String(area)}/pages/${kennGuid}`;
+  let moved: string | undefined;
   return {
     sent,
     instance: {
@@ -94,6 +101,12 @@ function crossing(
             headers: new Headers(init.headers),
             body: undefined,
           });
+          if (options.listStatus !== undefined) {
+            return json(
+              { message: setting.canaries.personName },
+              options.listStatus,
+            );
+          }
           return json({
             data: options.kennPages === false ? [] : [kennData(identification)],
             meta: { count: options.kennPages === false ? 0 : 1 },
@@ -106,7 +119,24 @@ function crossing(
                 data: kennData(mode === 'real' ? identification : area),
               });
         }
+        if (moved !== undefined) {
+          const own = `/api/wiki/categories/${String(area)}/pages/${moved}`;
+          if (url.pathname.startsWith(own)) {
+            return json({ message: setting.canaries.personName }, 404);
+          }
+          if (url.pathname === `${foreignPrefix}${moved}`) {
+            return json({
+              data: { ...kennData(identification), guid: moved },
+            });
+          }
+        }
         if (url.pathname.startsWith(foreignPrefix)) {
+          if (method === 'PATCH' && options.moves === true) {
+            moved = url.pathname.slice(foreignPrefix.length);
+            return json({
+              data: { ...kennData(identification), guid: moved },
+            });
+          }
           if (method === 'PATCH' && options.failPatch === true) {
             throw new TypeError('fetch failed', {
               cause: { code: 'ECONNRESET' },
@@ -218,6 +248,7 @@ describe('12-wiki-category', () => {
           versionGestiegen: 'nein',
           textGeaendert: 'nein',
         },
+        seiteNachAenderung: 'Schreibbereich',
       },
     ],
     [
@@ -231,6 +262,7 @@ describe('12-wiki-category', () => {
           versionGestiegen: 'ja',
           textGeaendert: 'ja',
         },
+        seiteNachAenderung: 'Schreibbereich',
       },
     ],
     [
@@ -244,6 +276,7 @@ describe('12-wiki-category', () => {
           versionGestiegen: 'ja',
           textGeaendert: 'ja',
         },
+        seiteNachAenderung: 'Schreibbereich',
       },
     ],
   ])(
@@ -339,6 +372,15 @@ describe('12-wiki-category', () => {
       'POST /api/wiki/W/pages',
       'PATCH /api/wiki/K/pages/{guid}',
     ]);
+    // Nothing follows the failed change, and the page was recorded.
+    expect(sent.at(-1)?.method).toBe('PATCH');
+    expect(
+      readWriteState(
+        ready.setting.writeStateFile,
+        writeOrigin,
+        ready.setting.writeCategory,
+      ).pages.map((page) => page.role),
+    ).toEqual(['kategorie']);
 
     ready.instance.calls.length = 0;
     const cleaned = await runOne(
@@ -348,9 +390,76 @@ describe('12-wiki-category', () => {
       terminal(sent),
     );
     expect(cleaned.code, cleaned.output.stderr()).toBe(exitCodes.ok);
+    expect(cleaned.result).toMatchObject({
+      seiten: [
+        { ergebnis: 'gelöscht', status: 204, danachNichtGefunden: 'ja' },
+      ],
+    });
     expect(
       [...ready.instance.pages.values()].map((page) => page.title),
     ).toEqual(['main']);
+  });
+
+  it('says where the page went when the change moved it to the identification category', async () => {
+    const ready = await prepared();
+    const { instance, sent } = crossing(ready.instance, ready.setting, 'real', {
+      moves: true,
+    });
+    const run = await runOne(
+      categoryProbe,
+      instance,
+      ready.setting.env,
+      terminal(sent),
+    );
+    expect(run.code, run.output.stderr()).toBe(exitCodes.ok);
+    expect(leaks(run.output, ready.setting.forbidden)).toEqual([]);
+    expect(run.result).toMatchObject({
+      aendernUnterKennkategorie: {
+        status: 200,
+        kategorie: 'Pfad',
+        versionGestiegen: 'unbekannt',
+        textGeaendert: 'unbekannt',
+      },
+      seiteNachAenderung: 'Kennkategorie',
+    });
+  });
+
+  it('names the status of a refused list of the identification category', async () => {
+    const ready = await prepared();
+    const { instance, sent } = crossing(ready.instance, ready.setting, 'real', {
+      listStatus: 403,
+    });
+    const run = await runOne(
+      categoryProbe,
+      instance,
+      ready.setting.env,
+      terminal(sent),
+    );
+    expect(run.code, run.output.stderr()).toBe(exitCodes.ok);
+    expect(run.result).toMatchObject({
+      kennseiteUnterSchreibbereich: { liste: { status: 403 } },
+    });
+  });
+
+  it('stops before the guard when the instance does not document the versions of a page', async () => {
+    const setting = writeSetup();
+    const paths = Object.fromEntries(
+      Object.entries(specification.paths).filter(
+        ([path]) => !path.endsWith('/versions'),
+      ),
+    );
+    const base = writeInstance(setting, {
+      document: { ...specification, paths },
+    });
+    const inventoried = await runOne(inventory, base, setting.inventoryEnv);
+    expect(inventoried.code, inventoried.output.stderr()).toBe(exitCodes.ok);
+    const { instance, sent } = crossing(base, setting, 'real');
+    const input = terminal(sent);
+    const run = await runOne(categoryProbe, instance, setting.env, input);
+    expect(run.code).not.toBe(exitCodes.ok);
+    expect(run.output.stderr()).toContain(hints.leseOperationFehlt);
+    expect(input.before).toEqual([]);
+    expect(writesOf(sent, setting)).toEqual([]);
   });
 });
 

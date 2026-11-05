@@ -12,13 +12,17 @@
  * Reads: what the guard reads, the list of the pages of the identification
  * category, the own page of the run under the path of the identification
  * category, the first page of the identification category under the path
- * of the write area, and the own page before and after the change.
+ * of the write area, and the own page with its list of versions before
+ * and after the change.
  * Writes: one page in the write area with `POST`, recorded at once in the
  * write state file, and one change of exactly that page with `PATCH` under
  * the path of the identification category, where the account may not edit.
  * The other direction, a change of a page of the identification category
  * under the path of the write area, is not sent: it could change the page
  * the guard relies on.
+ * If the own page cannot be read in the write area after the change, it
+ * is read once more under the path of the identification category, to say
+ * where it went.
  * Answers: for each read under a foreign path the status and, for 200,
  * whether the answer names the category of the path, the one of the page
  * or another; for the change its status, and whether the version of the
@@ -56,6 +60,10 @@ const words = [
   'versionGestiegen',
   'textGeaendert',
   'keine Seite in der Kennkategorie',
+  'liste',
+  'seiteNachAenderung',
+  'Schreibbereich',
+  'Kennkategorie',
   'ja',
   'nein',
   'unbekannt',
@@ -131,7 +139,11 @@ export const probe: ProbeDefinition = {
     if (state === undefined || write === undefined) {
       throw new Error('INTERN');
     }
-    for (const name of ['wikiPage', 'wikiCategoryPages'] as const) {
+    for (const name of [
+      'wikiPage',
+      'wikiPageVersions',
+      'wikiCategoryPages',
+    ] as const) {
       const { method, template } = operations[name];
       if (findOperation(state.specification, method, template) === undefined) {
         throw new SpikeError('KONFIGURATION', 'leseOperationFehlt');
@@ -196,7 +208,11 @@ export const probe: ProbeDefinition = {
         path: pathFor(operations.wikiPage.template, identification, guid),
       });
       guard.allowFixed(ownRead.status);
-      let foreignRead: Json = 'keine Seite in der Kennkategorie';
+      // A list that was refused says nothing about the pages in it.
+      let foreignRead: Json =
+        listed.status === 200
+          ? 'keine Seite in der Kennkategorie'
+          : { liste: { status: listed.status } };
       if (foreignPage !== undefined) {
         const read = await client.get({
           path: pathFor(operations.wikiPage.template, area, foreignPage),
@@ -215,6 +231,22 @@ export const probe: ProbeDefinition = {
       guard.allowFixed(changed.status);
       const after = await readPage(client, area, guid);
       guard.allowFixed(before.status, after.status);
+      // Where the page is after the change. An instance that moved it to
+      // the identification category would leave it where 07 does not look
+      // and the account cannot delete it, so the output says so.
+      let located: Json = 'Schreibbereich';
+      if (after.status !== 200) {
+        const elsewhere = await client.get({
+          path: pathFor(operations.wikiPage.template, identification, guid),
+        });
+        guard.allowFixed(elsewhere.status);
+        located =
+          elsewhere.status === 200
+            ? 'Kennkategorie'
+            : elsewhere.status === 404
+              ? 'fehlt'
+              : 'unbekannt';
+      }
       const readable =
         before.status === 200 &&
         after.status === 200 &&
@@ -236,6 +268,7 @@ export const probe: ProbeDefinition = {
             ? yesNo(after.text !== before.text)
             : 'unbekannt',
         },
+        seiteNachAenderung: located,
       };
     } catch (error) {
       // Only after the create was sent is the state of the write area open.
