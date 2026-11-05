@@ -64,7 +64,8 @@ export type QueueReason =
   | 'count_unavailable'
   | 'setting'
   | 'no_question'
-  | 'too_long';
+  | 'too_long'
+  | 'marker_changed';
 
 /** Every {@link QueueReason}, frozen, the policy first. */
 export const queueReasons: readonly QueueReason[] = Object.freeze([
@@ -76,6 +77,7 @@ export const queueReasons: readonly QueueReason[] = Object.freeze([
   'setting',
   'no_question',
   'too_long',
+  'marker_changed',
 ]);
 
 /** What an entry of the queue holds, as the write guard made it. */
@@ -108,6 +110,12 @@ export interface QueueEntryContent {
   readonly reason: QueueReason;
   /** When it was queued, in milliseconds since the Unix epoch. */
   readonly queuedAt: number;
+  /**
+   * The UTC day the write was planned, which the line of the marking of a
+   * new page or a section names (ADR 0032). An entry of an earlier
+   * version has none.
+   */
+  readonly plannedOn?: IsoDate;
 }
 
 const hash = z.string().regex(/^[0-9a-f]{64}$/);
@@ -150,6 +158,7 @@ const contentSchema = z.strictObject({
   diff: z.array(z.string()),
   reason: z.enum(queueReasons),
   queuedAt: z.int().min(0).max(Number.MAX_SAFE_INTEGER),
+  plannedOn: z.string().refine(isIsoDate).optional(),
 });
 const recordSchema = z.strictObject({
   v: z.literal(1),

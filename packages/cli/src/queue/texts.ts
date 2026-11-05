@@ -68,6 +68,8 @@ export const reasonTexts: Readonly<Record<QueueReason, string>> = Object.freeze(
     no_question:
       'Der Client kann nicht nachfragen, und das Echo bestätigt diesen Schreibvorgang nicht.',
     too_long: 'Der Unterschied ist für eine Rückfrage im Client zu lang.',
+    marker_changed:
+      'Auf der Seite steht ein Abschnitt mit derselben Kennzeichnung, den jemand geändert hat. Ob es eine Wiederholung ist, entscheiden Sie.',
   },
 );
 
@@ -274,6 +276,19 @@ const approveReasons: Readonly<
   noSnapshot: {
     text: 'Ecclium konnte den Stand vor dem Schreibvorgang nicht festhalten und hat darum nichts geschrieben. Prüfen Sie den Ordner ‹snapshots› im Zustandsordner und den Schlüsselordner.',
     code: exitCodes.ioError,
+  },
+  // The marking of a new page or a section (ADR 0032).
+  noMarking: {
+    text: 'Ecclium kann nicht kennzeichnen, was es dem Wiki hinzufügt, und hat nichts geschrieben. Setzen Sie ‹ECCLIUM_MARKER_KEY_FILE› und in der Richtlinie ‹interactive.inquiriesTo›.',
+    code: exitCodes.invalidConfig,
+  },
+  noDay: {
+    text: 'Die Uhr dieses Rechners nennt keinen Tag für die Kennzeichnung, darum schreibt Ecclium nicht. Stellen Sie die Uhr des Rechners.',
+    code: exitCodes.noPermission,
+  },
+  tooLong: {
+    text: 'Mit der Zeile der Kennzeichnung wäre der Text der Seite länger, als ChurchTools annimmt. Ecclium hat nichts geschrieben.',
+    code: exitCodes.dataError,
   },
   auditNotReady: {
     text: 'Die Audit-Datei kann die Zeile der Freigabe nicht aufnehmen, darum schreibt Ecclium nicht. Prüfen Sie die Audit-Datei mit ‹ecclium audit verify›.',

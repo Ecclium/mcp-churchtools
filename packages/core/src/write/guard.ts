@@ -56,6 +56,17 @@
  * read, and the plan is sealed with the texts in their written form
  * (`content-gate.ts`).
  *
+ * A new page and a section to add end with a line of the marking, whose
+ * check code comes from the key of the check codes over the tenant, the
+ * UTC day of the plan and the canonical form of the text (ADR 0032). The
+ * day is kept in the sealed plan and in the entry of the queue, so that
+ * the commit after midnight and an approval days later write the text that
+ * was confirmed. Without the key or whom to ask, nothing is added. Before a
+ * section is added, the page is judged for one with the same marking: the
+ * same section as Ecclium's own ends the plan as `skipped`, one a person
+ * changed sends the plan to the queue. A change of the text of a page gets
+ * no line.
+ *
  * @packageDocumentation
  */
 import {
@@ -78,9 +89,18 @@ import {
   type WriteIntent,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
+import { maxWikiWriteBytes } from '../churchtools/schemas.js';
 import type { ChurchToolsWrites } from '../churchtools/wiki-writes.js';
-import { contactKeysOf } from '../content/index.js';
+import { canonicalOfWritten, contactKeysOf } from '../content/index.js';
 import { HttpTransportError } from '../http/index.js';
+import type { KeyMaterial } from '../keys/index.js';
+import {
+  checkCodeOf,
+  judgeSections,
+  markingLineOf,
+  sameCheckCode,
+  type SectionJudgement,
+} from '../marker/index.js';
 import type { PolicyQueueReason } from '../policy/engine.js';
 import type { Policy } from '../policy/schema.js';
 import { readIntent } from './intent.js';
@@ -145,6 +165,12 @@ export const writeSentences = Object.freeze({
     'The target changed after the write was queued, so nothing was written. Plan the write anew on its current version.',
   noSnapshot:
     'The server could not save the state before the write, so nothing was written. Ask the operator.',
+  noMarking:
+    'This server cannot mark what it adds to the wiki, so it adds no page and no section. Ask the operator.',
+  noDay:
+    'The clock of the server gives no day for the marking, so it does not write. Ask the operator.',
+  tooLong:
+    'With the line that marks it, the text of the page would be longer than ChurchTools takes. Shorten it.',
 } as const);
 
 /** What the client gives the write guard: the rights and the writes. */
@@ -178,6 +204,11 @@ export interface WriteGuardOptions {
    * can be taken back (ADR 0031).
    */
   readonly snapshots?: WriteSnapshots | undefined;
+  /**
+   * The key of the check codes of the marking (ADR 0032), or undefined
+   * without one: then the guard adds no page and no section to the wiki.
+   */
+  readonly markerKey?: KeyMaterial | undefined;
 }
 
 /**
@@ -276,6 +307,11 @@ export interface ApprovedEntry {
   readonly intent: unknown;
   /** The hash of the plan, which the plan derived now must have. */
   readonly planHash: string;
+  /**
+   * The UTC day the write was planned, which its line of the marking
+   * names (ADR 0032); for an entry of an earlier version, its own day.
+   */
+  readonly plannedOn: IsoDate;
 }
 
 /** What the operator asks the write guard to write from the queue. */
@@ -322,6 +358,13 @@ export type ApproveResult =
       readonly change: UndoChange;
     };
 
+/**
+ * Why a sealed plan goes to the queue of approvals instead of a question:
+ * a reason of the policy (ADR 0032), or an own section on the page with the
+ * marking of this write that a person changed since (`marker_changed`).
+ */
+export type PlanQueueReason = PolicyQueueReason | 'marker_changed';
+
 /** Who plans: the call of a tool. */
 export interface PlanRequest {
   /** The context of the call. */
@@ -351,10 +394,10 @@ export interface PlanResult {
    */
   readonly text?: ConfirmationText;
   /**
-   * For a sealed plan the policy sends to the queue of approvals, why
-   * (ADR 0031, ADR 0032).
+   * For a sealed plan that goes to the queue of approvals, why (ADR 0031,
+   * ADR 0032).
    */
-  readonly queue?: PolicyQueueReason;
+  readonly queue?: PlanQueueReason;
 }
 
 /** How a commit ended. */
@@ -489,6 +532,12 @@ type Derived =
       readonly before: WikiPage;
       /** The new text of the page. */
       readonly text: string;
+      /**
+       * For a section to add, what the page holds with its marking
+       * (ADR 0032): none, the same section as Ecclium's own, or one a
+       * person changed.
+       */
+      readonly marking?: SectionJudgement['kind'];
     };
 
 /** Where the snapshot of a write was kept: its event and its day. */
@@ -533,7 +582,7 @@ const textOf = (intent: WikiIntent, derived: Derived): ConfirmationText =>
  * ```
  */
 export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
-  const { client, clock, killSwitchDir, snapshots } = options;
+  const { client, clock, killSwitchDir, snapshots, markerKey } = options;
   // Whether a plan can be taken back from a snapshot (ADR 0031).
   const reversible = snapshots !== undefined;
   // The contact values a text may hold, from the interactive part of the
@@ -595,30 +644,92 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     }
   };
 
-  // Reads what a plan of a write of the wiki rests on.
+  // A text Ecclium adds as a whole, a new page or a section, ended with its
+  // line of the marking (ADR 0032), and how to judge a page for a section
+  // of it: the same text on the same day in the same tenant has the same
+  // check code. Without the key or whom to ask, nothing is added.
+  const marked = (
+    ctx: TenantContext,
+    written: string,
+    day: IsoDate | undefined,
+  ): {
+    readonly text: string;
+    readonly judge: (page: string) => SectionJudgement['kind'];
+  } => {
+    const inquiriesTo = options.policy.interactive.inquiriesTo;
+    if (markerKey === undefined || inquiriesTo === undefined) {
+      ctx.log.warn('write_refused', { code: 'policy_denied' });
+      throw refuse('policy_denied', writeSentences.noMarking);
+    }
+    // Like a clock that differs from ChurchTools: no day, no write.
+    if (day === undefined) {
+      ctx.log.warn('write_refused', { code: 'policy_denied' });
+      throw refuse('policy_denied', writeSentences.noDay);
+    }
+    const origin = Object.freeze({ kind: 'interactive' as const, day });
+    const code = checkCodeOf(
+      markerKey,
+      ctx.tenantId,
+      origin,
+      canonicalOfWritten(written),
+    );
+    const line = markingLineOf({ date: day, origin, code }, inquiriesTo);
+    return {
+      text: `${written}\n${line}\n`,
+      judge: (page) =>
+        judgeSections({
+          key: markerKey,
+          tenantId: ctx.tenantId,
+          text: page,
+          matches: (marking) =>
+            marking.origin.kind === 'interactive' &&
+            marking.date === day &&
+            sameCheckCode(marking.code, code),
+        }).kind,
+    };
+  };
+
+  // ChurchTools takes at most 64 KiB of text for a page; the line of the
+  // marking and the text of the page around a section can pass it, which
+  // is refused here, before anything is confirmed.
+  const fits = (text: string): void => {
+    if (new TextEncoder().encode(text).byteLength > maxWikiWriteBytes) {
+      throw refuse('validation', writeSentences.tooLong);
+    }
+  };
+
+  // Reads what a plan of a write of the wiki rests on. The day is that of
+  // the marking of a new page or a section.
   const derive = async (
     ctx: TenantContext,
     intent: WikiIntent,
+    day: IsoDate | undefined,
   ): Promise<Derived> => {
     if (intent.kind === 'wikiPageCreate') {
       if (isBlank(intent.text)) {
         throw refuse('validation', writeSentences.blank);
       }
+      const { text } = marked(ctx, intent.text, day);
+      fits(text);
       const { serverTime } = await client.writes.wikiCategoryState(
         ctx,
         intent.categoryId,
       );
       return {
         kind: 'create',
-        contentHash: contentHashOf([intent.title, intent.text]),
+        contentHash: contentHashOf([intent.title, text]),
         serverTime,
         title: intent.title,
-        text: intent.text,
+        text,
       };
     }
     const added =
       intent.kind === 'wikiPageUpdate' ? intent.text : intent.section;
     if (isBlank(added)) throw refuse('validation', writeSentences.blank);
+    const section =
+      intent.kind === 'wikiSectionAppend'
+        ? marked(ctx, intent.section, day)
+        : undefined;
     const { page, serverTime } = await client.writes.wikiPageState(
       ctx,
       intent.categoryId,
@@ -631,15 +742,15 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       throw refuse('conflict', writeSentences.changedBefore);
     }
     const text =
-      intent.kind === 'wikiPageUpdate'
-        ? intent.text
-        : appendSection(page.text, intent.section);
+      section === undefined ? added : appendSection(page.text, section.text);
+    fits(text);
     return {
       kind: 'change',
       contentHash: contentHashOf([text]),
       serverTime,
       before: page,
       text,
+      ...(section === undefined ? {} : { marking: section.judge(page.text) }),
     };
   };
 
@@ -662,6 +773,9 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     value: unknown,
   ): Promise<PlanResult> => {
     const { ctx } = request;
+    // The day of the marking of a new page or a section: the day of this
+    // plan, kept in the sealed plan for the commit and the queue.
+    const day = isoDateOf(clock.now());
     const stop = stopped(ctx);
     if (stop !== undefined) throw stop;
     const intent = readIntent(value);
@@ -676,21 +790,37 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     // here on the intent holds them in their written form (ADR 0030).
     const wiki = checkIntentContent(ctx, intent as WikiIntent, contacts);
     await checkRights(ctx, wiki, rules);
-    const derived = await derive(ctx, wiki);
+    const derived = await derive(ctx, wiki, day);
     // The policy, with the counter of the day only read (ADR 0032). A plan
     // it sends to the queue is sealed all the same (ADR 0031).
-    const queue = await policy.check(
+    const policyQueue = await policy.check(
       ctx,
       request.tool,
       rules,
       factsOf(derived),
       'plan',
     );
+    // The same section, marked on the same day, already stands on the page
+    // as Ecclium's own: a repeat, which adds nothing (ADR 0032).
+    if (derived.kind === 'change' && derived.marking === 'own') {
+      ctx.log.info('marking_repeated', {});
+      return Object.freeze({
+        outcome: Object.freeze({ kind: 'skipped', reason: 'already_written' }),
+        target: rules.target,
+      });
+    }
     if (derived.kind === 'change' && derived.text === derived.before.text) {
       return Object.freeze({
         outcome: Object.freeze({ kind: 'skipped', reason: 'unchanged' }),
         target: rules.target,
       });
+    }
+    // A section with the marking of this one that a person changed: the
+    // operator decides whether it is a repeat, Ecclium never does.
+    let queue: PlanQueueReason | undefined = policyQueue;
+    if (derived.kind === 'change' && derived.marking === 'changed') {
+      ctx.log.warn('marking_changed', {});
+      queue = 'marker_changed';
     }
     const sealed = sealPlan({
       tenantId: ctx.tenantId,
@@ -701,6 +831,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       toolMeta: request.meta,
       contentHash: derived.contentHash,
       sealedAt: clock.now(),
+      ...(day === undefined ? {} : { day }),
       snapshots: reversible,
     });
     return Object.freeze({
@@ -781,7 +912,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     // state of the target, with the time of ChurchTools.
     let derived: Derived;
     try {
-      derived = await derive(ctx, intent);
+      derived = await derive(ctx, intent, view.day);
     } catch (error) {
       useProof(proof, view, clock.now());
       return denied(
@@ -805,6 +936,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
         },
         contentHash: derived.contentHash,
         sealedAt: clock.now(),
+        ...(view.day === undefined ? {} : { day: view.day }),
         snapshots: reversible,
       }),
     ) as PlanView;
@@ -874,12 +1006,8 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
               kind: 'wikiPageCreate',
               tool: view.tool,
               categoryId: intent.categoryId,
-              title: (intent as Extract<WikiIntent, { kind: 'wikiPageCreate' }>)
-                .title,
-              textHash: contentHashOf([
-                (intent as Extract<WikiIntent, { kind: 'wikiPageCreate' }>)
-                  .text,
-              ]),
+              title: derived.title,
+              textHash: contentHashOf([derived.text]),
             }
           : {
               kind: 'wikiPageText',
@@ -917,6 +1045,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       ? create(
           ctx,
           intent as Extract<WikiIntent, { kind: 'wikiPageCreate' }>,
+          derived.text,
           path,
           undo,
         )
@@ -951,11 +1080,13 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     }
   };
 
-  // Creates a page. Without its GUID the core cannot read it back after a
-  // failure, so an answer it did not get leaves the outcome unknown.
+  // Creates a page with its text and its line of the marking. Without its
+  // GUID the core cannot read it back after a failure, so an answer it did
+  // not get leaves the outcome unknown.
   const create = async (
     ctx: TenantContext,
     intent: Extract<WriteIntent, { kind: 'wikiPageCreate' }>,
+    text: string,
     path: ConfirmationPath,
     undo: Undo | undefined,
   ): Promise<CommitResult> => {
@@ -969,7 +1100,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
         ctx,
         intent.categoryId,
         intent.title,
-        intent.text,
+        text,
       );
     } catch (error) {
       if (notSent(error)) {
@@ -1020,7 +1151,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
         intent.categoryId,
         created.guid,
       );
-      if (after.page.version === 1 && after.page.text === intent.text) {
+      if (after.page.version === 1 && after.page.text === text) {
         return verified(ctx, path, page, 1, undo);
       }
     } catch (error) {
@@ -1272,7 +1403,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     await checkRights(ctx, intent, rules);
     let derived: Derived;
     try {
-      derived = await derive(ctx, intent);
+      derived = await derive(ctx, intent, entry.plannedOn);
     } catch (error) {
       // A page of another version than the one queued is a change since.
       throw isEccliumError(error) && error.code === 'conflict'
@@ -1294,6 +1425,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       toolMeta: entry.toolMeta,
       contentHash: derived.contentHash,
       sealedAt: clock.now(),
+      day: entry.plannedOn,
       snapshots: reversible,
     });
     const view = readPlan(sealed) as PlanView;

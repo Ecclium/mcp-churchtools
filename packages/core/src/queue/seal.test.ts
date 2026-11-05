@@ -62,7 +62,7 @@ const toSeal = (value: QueueEntryContent = content): QueueEntryToSeal => ({
 });
 
 describe('the reasons of the queue', () => {
-  it('name the five of the policy first and three of the way, frozen', () => {
+  it('name the five of the policy first, three of the way and the marking, frozen', () => {
     expect(queueReasons).toEqual([
       'queue_only',
       'no_entry',
@@ -72,6 +72,7 @@ describe('the reasons of the queue', () => {
       'setting',
       'no_question',
       'too_long',
+      'marker_changed',
     ]);
     expect(Object.isFrozen(queueReasons)).toBe(true);
   });
@@ -93,7 +94,8 @@ describe('sealQueueEntry and openQueueEntry', () => {
       toolMeta: { sensitivity: 'none', unattended: 'never' },
       title: 'T',
       origin: 'plugin',
-      reason: 'too_long',
+      reason: 'marker_changed',
+      plannedOn: day,
     };
     expect(
       await openQueueEntry(

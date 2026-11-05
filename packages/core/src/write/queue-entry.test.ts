@@ -1,4 +1,7 @@
-import type { PlannedWrite } from '@ecclium/mcp-churchtools-plugin-api';
+import type {
+  IsoDate,
+  PlannedWrite,
+} from '@ecclium/mcp-churchtools-plugin-api';
 import { describe, expect, it } from 'vitest';
 
 import { confirmationTextOf } from './confirmation-text.js';
@@ -64,6 +67,28 @@ describe('queueEntryOf', () => {
     expect(Object.isFrozen(entry)).toBe(true);
     expect(Object.isFrozen(entry.toolMeta)).toBe(true);
     expect(Object.isFrozen(entry.target)).toBe(true);
+  });
+
+  // The line of the marking names the day of the plan, so an approval
+  // plans again on it (ADR 0032).
+  it('keeps the day of the plan, when the plan has one', () => {
+    const marked = sealPlan({
+      tenantId: 'demo-tenant',
+      actor: { kind: 'service', id: 'stdio:local-stdio' },
+      tool: 'ct_example_note_write',
+      origin: 'core',
+      intent,
+      toolMeta: { sensitivity: 'personal', unattended: 'policy' },
+      contentHash: contentHashOf(['# Plan\n\n## Nachtrag\n']),
+      sealedAt: at,
+      day: '2026-11-05' as IsoDate,
+      snapshots: true,
+    });
+    expect(queueEntryOf(marked, text, 'marker_changed', at)).toMatchObject({
+      reason: 'marker_changed',
+      plannedOn: '2026-11-05',
+    });
+    expect('plannedOn' in queueEntryOf(plan, text, 'no_entry', at)).toBe(false);
   });
 
   it('keeps the whole title of a new page', () => {

@@ -7,6 +7,7 @@ import {
   classify,
   defineWriteTool,
   EccliumError,
+  type IsoDate,
   type NonceStore,
   type PlanStore,
   type Plugin,
@@ -28,10 +29,12 @@ import { z } from 'zod';
 
 import { createAuditSink } from '../audit/index.js';
 import type { WriteConfirmation } from '../config/index.js';
-import { contentSentences } from '../content/index.js';
+import { canonicalOfWritten, contentSentences } from '../content/index.js';
 import { checkPolicy, defaultPolicy } from '../policy/check.js';
 import { policyHashOf } from '../policy/hash.js';
 import type { Policy } from '../policy/schema.js';
+import { KeyMaterial } from '../keys/index.js';
+import { checkCodeOf, markingLineOf } from '../marker/index.js';
 import { createToolCatalog } from '../registry/index.js';
 import {
   confirmationSentence,
@@ -51,6 +54,35 @@ import {
 // Two answers of the write guard that its contract allows but no real
 // plan gives: a sealed plan without its text, and a refused commit that
 // names no target. Off unless a test turns them on.
+
+// The key of the check codes and whom to ask, which a write that adds a
+// page or a section to the wiki needs (ADR 0032).
+const markerKey = new KeyMaterial('0123456789abcdef'.repeat(4));
+const marking = (policy: Policy): Policy =>
+  policy.interactive.inquiriesTo === undefined
+    ? Object.freeze({
+        ...policy,
+        interactive: Object.freeze({
+          ...policy.interactive,
+          inquiriesTo: 'Sekretariat',
+        }),
+      })
+    : policy;
+
+// A section as the write guard adds it: the written text and its line of
+// the marking, interactive, of the day of the test (ADR 0032).
+const marked = (written: string): string => {
+  const day = '2026-11-02' as IsoDate;
+  const origin = { kind: 'interactive', day } as const;
+  const code = checkCodeOf(
+    markerKey,
+    'default',
+    origin,
+    canonicalOfWritten(written),
+  );
+  return `${written}\n${markingLineOf({ date: day, origin, code }, 'Sekretariat')}\n`;
+};
+
 const gaps = vi.hoisted(() => ({
   dropText: false,
   commitWithoutTarget: false,
@@ -280,7 +312,8 @@ const setup = (
     isKnownTool: catalog.has,
   });
   const pipeline = createToolPipeline({
-    policy: options.policy ?? defaultPolicy,
+    policy: marking(options.policy ?? defaultPolicy),
+    markerKey,
     catalog,
     audit,
     quota: createMemoryQuotaStore(),
@@ -365,7 +398,7 @@ describe('a write tool in the pipeline', () => {
       .reply(200, '{}', json);
     double
       .intercept({ path: pagePath, method: 'GET' })
-      .reply(200, page(4, '# Plan\n\nHallo\n'), json);
+      .reply(200, page(4, `# Plan\n\n${marked('Hallo\n')}`), json);
     const outcome = await confirmed(pipeline, 'ct_example_note_write', note);
     expect(outcome.ok && outcome.data).toMatchObject({
       state: 'verified',
@@ -377,7 +410,7 @@ describe('a write tool in the pipeline', () => {
       outcome: 'ok',
       confirmation: 'elicitation',
       writeState: 'verified',
-      policyHash: policyHashOf(defaultPolicy),
+      policyHash: policyHashOf(marking(defaultPolicy)),
       objectRefs: ['wiki_category:12', `wiki_page:${guid}`],
     });
     expect(file.anchors).toBe(1);
@@ -404,7 +437,7 @@ describe('a write tool in the pipeline', () => {
       .reply(200, '{}', json);
     double
       .intercept({ path: pagePath, method: 'GET' })
-      .reply(200, page(4, '# Plan\n\nHallo\n'), json);
+      .reply(200, page(4, `# Plan\n\n${marked('Hallo\n')}`), json);
     const outcome = await confirmed(pipeline, 'ct_example_note_write', note);
     // The snapshot names the line of the round that wrote.
     const eventId = events()[1]?.['eventId'];
@@ -473,7 +506,7 @@ describe('a write tool in the pipeline', () => {
             title: 'Bericht',
             isMarkdown: true,
             version: 1,
-            text: '# Bericht\n',
+            text: marked('# Bericht\n'),
           },
         }),
         json,
@@ -555,7 +588,7 @@ describe('a write tool in the pipeline', () => {
       .reply(200, '{}', json);
     double
       .intercept({ path: pagePath, method: 'GET' })
-      .reply(200, page(4, '# Plan\n\nHallo\n'), json);
+      .reply(200, page(4, `# Plan\n\n${marked('Hallo\n')}`), json);
     // The line of the second round, which writes, fails.
     const asked = await pipeline.call(
       'ct_example_note_write',
@@ -663,7 +696,7 @@ describe('a write tool in the pipeline', () => {
     expect(events()[0]).toMatchObject({
       outcome: 'denied',
       writeState: 'denied',
-      policyHash: policyHashOf(checked.policy),
+      policyHash: policyHashOf(marking(checked.policy)),
     });
     expect(logs()).toContain('policy_no_entry');
     expect(double.calls().filter(({ method }) => method !== 'GET')).toEqual([]);
@@ -879,7 +912,7 @@ describe('a question before a write', () => {
       .reply(200, '{}', json);
     double
       .intercept({ path: pagePath, method: 'GET' })
-      .reply(200, page(4, '# Plan\n\nHallo\n'), json);
+      .reply(200, page(4, `# Plan\n\n${marked('Hallo\n')}`), json);
   };
 
   it('asks a client that declared elicitation, with summary and diff, and writes nothing yet', async () => {
@@ -887,7 +920,7 @@ describe('a question before a write', () => {
     planReads();
     const question = await ask(pipeline);
     expect(question.message).toContain(
-      'An die Seite «Dienstplan» in der Kategorie 12 einen Abschnitt mit 2 Zeilen anhängen.',
+      'An die Seite «Dienstplan» in der Kategorie 12 einen Abschnitt mit 4 Zeilen anhängen.',
     );
     expect(question.message).toContain('+Hallo');
     expect(question.form.required).toEqual(['bestaetigen']);
@@ -1188,7 +1221,7 @@ describe('the echo', () => {
       .reply(200, '{}', json);
     double
       .intercept({ path: pagePath, method: 'GET' })
-      .reply(200, page(4, '# Plan\n\nHallo\n'), json);
+      .reply(200, page(4, `# Plan\n\n${marked('Hallo\n')}`), json);
   };
 
   it('gives a client without questions a token and the summary, and writes after ct_write_confirm', async () => {
@@ -1202,7 +1235,7 @@ describe('the echo', () => {
     );
     expect(planned.state).toBe('planned');
     expect(planned.summary).toBe(
-      'An die Seite «Dienstplan» in der Kategorie 12 einen Abschnitt mit 2 Zeilen anhängen.',
+      'An die Seite «Dienstplan» in der Kategorie 12 einen Abschnitt mit 4 Zeilen anhängen.',
     );
     assertOnlyReads(double);
     commitReads(double);
@@ -1500,7 +1533,7 @@ describe('the echo', () => {
       .reply(200, '{}', json);
     double
       .intercept({ path: pagePath, method: 'GET' })
-      .reply(200, titled(4, '# Plan\n\nHallo\n'), json);
+      .reply(200, titled(4, `# Plan\n\n${marked('Hallo\n')}`), json);
     const confirmed = await pipeline.call(
       'ct_write_confirm',
       { token: planned.token, summary: planned.summary },

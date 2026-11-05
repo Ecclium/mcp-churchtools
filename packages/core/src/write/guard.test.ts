@@ -17,11 +17,14 @@ import {
 import {
   createMemoryQuotaStore,
   createTestClock,
+  type TestClock,
 } from '@ecclium/mcp-churchtools-testkit';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { contentSentences } from '../content/index.js';
+import { canonicalOfWritten, contentSentences } from '../content/index.js';
 import { HttpTransportError } from '../http/index.js';
+import { KeyMaterial } from '../keys/index.js';
+import { checkCodeOf, markingLineOf } from '../marker/index.js';
 import { checkPolicy, defaultPolicy } from '../policy/check.js';
 import type { Policy } from '../policy/schema.js';
 import { isoDateOf } from '../quota/budget.js';
@@ -212,6 +215,34 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
+// The key of the check codes and whom to ask, which every write that adds
+// a page or a section needs (ADR 0032). Tests of the marking itself leave
+// them out on purpose.
+const markerKey = new KeyMaterial('0123456789abcdef'.repeat(4));
+const inquiriesTo = 'Sekretariat';
+const withInquiries = (policy: Policy): Policy =>
+  policy.interactive.inquiriesTo === undefined
+    ? Object.freeze({
+        ...policy,
+        interactive: Object.freeze({ ...policy.interactive, inquiriesTo }),
+      })
+    : policy;
+
+// A text as the guard adds it: the written text and its line of the
+// marking, an interactive one of the day of the plan in the tenant of the
+// context.
+const day = isoDateOf(now) as IsoDate;
+const marked = (written: string, tenantId = 'demo-tenant'): string => {
+  const origin = { kind: 'interactive', day } as const;
+  const code = checkCodeOf(
+    markerKey,
+    tenantId,
+    origin,
+    canonicalOfWritten(written),
+  );
+  return `${written}\n${markingLineOf({ date: day, origin, code }, inquiriesTo)}\n`;
+};
+
 const setup = (
   fake = fakeOf(),
   killSwitchDir: string | null = dir,
@@ -219,20 +250,25 @@ const setup = (
     policy?: Policy;
     quota?: QuotaStore | null;
     snapshots?: WriteSnapshots;
+    /** Without the key and whom to ask, for the tests of the marking. */
+    unmarked?: 'key' | 'inquiries';
+    clock?: TestClock;
   } = {},
 ) => {
-  const clock = createTestClock(now);
+  const clock = limits.clock ?? createTestClock(now);
   const quota =
     limits.quota === null
       ? undefined
       : (limits.quota ?? createMemoryQuotaStore());
+  const policy = limits.policy ?? defaultPolicy;
   const guard = createWriteGuard({
     client: clientOf(fake),
     clock,
     killSwitchDir: killSwitchDir ?? undefined,
-    policy: limits.policy ?? defaultPolicy,
+    policy: limits.unmarked === 'inquiries' ? policy : withInquiries(policy),
     quota,
     snapshots: limits.snapshots,
+    ...(limits.unmarked === 'key' ? {} : { markerKey }),
   });
   const ctx = contextOf(logged);
   const request: PlanRequest = {
@@ -504,7 +540,9 @@ describe('the content policy in planning', () => {
     );
     const proof = issueProof(plan, 'elicitation', now);
     expect((await parts.guard.commit(parts.ctx, plan, proof)).ok).toBe(true);
-    expect(parts.fake.sent).toEqual(['# Plan\n\n## Nachtrag\n\n- Probe\n']);
+    expect(parts.fake.sent).toEqual([
+      `# Plan\n\n${marked('## Nachtrag\n\n- Probe\n')}`,
+    ]);
   });
 
   it('lets the contact values of the policy stand', async () => {
@@ -550,7 +588,7 @@ describe('committing', () => {
   it('appends a section to the text the page has', async () => {
     const { fake, guard, ctx, plan, proof } = await planned(append);
     expect((await guard.commit(ctx, plan, proof)).ok).toBe(true);
-    expect(fake.sent).toEqual(['# Plan\n\n## Nachtrag\n']);
+    expect(fake.sent).toEqual([`# Plan\n\n${marked('## Nachtrag\n')}`]);
   });
 
   it('creates a page and names it as the target', async () => {
@@ -1075,7 +1113,7 @@ describe('the snapshot of a write (ADR 0031)', () => {
           tool: 'ct_example_note_write',
           categoryId: 12,
           title: 'Bericht',
-          textHash: contentHashOf(['# Bericht\n']),
+          textHash: contentHashOf([marked('# Bericht\n')]),
         },
       },
       {
@@ -1503,6 +1541,7 @@ describe('an approval of the operator (ADR 0029)', () => {
     const view = readPlan(planOf(await guard.plan(request, intent)));
     if (view === undefined) throw new Error('expected a plan');
     return {
+      plannedOn: view.day ?? day,
       tool: view.tool,
       origin: view.origin,
       toolMeta: {
@@ -1596,16 +1635,35 @@ describe('an approval of the operator (ADR 0029)', () => {
     expect(await appended.result).toMatchObject({
       kind: 'committed',
       result: { ok: true },
-      change: { from: '# Plan\n', to: '# Plan\n\n## Nachtrag\n' },
+      change: { from: '# Plan\n', to: `# Plan\n\n${marked('## Nachtrag\n')}` },
     });
     const created = approveWith(await entryOf(create));
     expect(await created.result).toMatchObject({
       kind: 'committed',
       target: { kind: 'wiki_category', key: '12' },
       result: { ok: true, target: { kind: 'wiki_page' }, version: 1 },
-      change: { from: '', to: '# Bericht\n' },
+      change: { from: '', to: marked('# Bericht\n') },
     });
-    expect(created.fake.sent).toEqual(['# Bericht\n']);
+    expect(created.fake.sent).toEqual([marked('# Bericht\n')]);
+  });
+
+  // The line names the day the write was planned, not the day of the
+  // approval, so that the plan of now has the hash of the entry (ADR 0032).
+  it('writes the line with the day the write was planned, and nothing for another day', async () => {
+    const entry = await entryOf(create);
+    expect(entry.plannedOn).toBe(day);
+    const approved = approveWith(entry);
+    await approved.result;
+    expect(approved.fake.sent).toEqual([marked('# Bericht\n')]);
+    const later = approveWith({
+      ...entry,
+      plannedOn: '2026-12-04' as IsoDate,
+    });
+    expect(await later.result).toMatchObject({
+      kind: 'refused',
+      error: { code: 'conflict', message: writeSentences.changedSinceQueued },
+    });
+    expect(later.fake.sent).toEqual([]);
   });
 
   it('writes and decides nothing when the page changed since the write was queued', async () => {
@@ -1842,5 +1900,146 @@ describe('an approval of the operator (ADR 0029)', () => {
     expect(logged.map(({ event }) => event)).toContain(
       'policy_count_unavailable',
     );
+  });
+});
+
+// The marking of what the guard adds to the wiki (ADR 0032).
+describe('the marking', () => {
+  const plannedWith = async (
+    intent: unknown,
+    fake = fakeOf(),
+    limits: Parameters<typeof setup>[2] = {},
+  ) => {
+    const parts = setup(fake, dir, limits);
+    return { ...parts, result: await parts.guard.plan(parts.request, intent) };
+  };
+
+  it('ends a new page and a section with the line of the marking', async () => {
+    for (const [intent, sent] of [
+      [create, marked('# Bericht\n')],
+      [append, `# Plan\n\n${marked('## Nachtrag\n')}`],
+    ] as const) {
+      const { guard, ctx, result, fake } = await plannedWith(intent);
+      const plan = planOf(result);
+      expect(readPlan(plan)?.day).toBe(day);
+      expect(result.text?.diff.join('\n')).toContain('Prüfcode k1:');
+      const proof = issueProof(plan, 'elicitation', now);
+      expect((await guard.commit(ctx, plan, proof)).ok).toBe(true);
+      expect(fake.sent).toEqual([sent]);
+    }
+    expect(marked('# Bericht\n')).toMatch(
+      /^# Bericht\n\nAutomatisch erstellt am 01\.12\.2026 durch Ecclium, interaktiv, Prüfcode k1:[A-Z2-7]{13}\. Rückfragen an Sekretariat\.\n$/u,
+    );
+  });
+
+  it('gives a change of a page no line, also without the key', async () => {
+    const { guard, ctx, result, fake } = await plannedWith(update, fakeOf(), {
+      unmarked: 'key',
+    });
+    const plan = planOf(result);
+    await guard.commit(ctx, plan, issueProof(plan, 'elicitation', now));
+    expect(fake.sent).toEqual(['# Neu\n']);
+  });
+
+  it.each([
+    ['without the key', 'key'],
+    ['without whom to ask', 'inquiries'],
+  ] as const)(
+    'adds no page and no section %s, before any read',
+    async (_name, unmarked) => {
+      for (const intent of [create, append]) {
+        const fake = fakeOf();
+        fake.onRead = () => {
+          throw new Error('read');
+        };
+        const parts = setup(fake, dir, { unmarked });
+        const refusal = await refusalOf(
+          parts.guard.plan(parts.request, intent),
+        );
+        expect(refusal.code).toBe('policy_denied');
+        expect(refusal.message).toBe(writeSentences.noMarking);
+      }
+    },
+  );
+
+  it('writes nothing when the clock gives no day', async () => {
+    const parts = setup(fakeOf(), dir, {
+      clock: { now: () => Number.NaN, advance: () => undefined },
+    });
+    const refusal = await refusalOf(parts.guard.plan(parts.request, create));
+    expect(refusal.code).toBe('policy_denied');
+    expect(refusal.message).toBe(writeSentences.noDay);
+  });
+
+  it('refuses a text that the line makes longer than ChurchTools takes, before it is confirmed', async () => {
+    const long = { ...create, text: `${'a'.repeat(65_500)}\n` };
+    const created = await refusalOf(setup().guard.plan(setup().request, long));
+    expect(created).toMatchObject({
+      code: 'validation',
+      message: writeSentences.tooLong,
+    });
+    const full = fakeOf();
+    full.page = { ...full.page, text: `${'a'.repeat(65_500)}\n` };
+    const parts = setup(full);
+    expect(
+      await refusalOf(parts.guard.plan(parts.request, append)),
+    ).toMatchObject({ code: 'validation', message: writeSentences.tooLong });
+  });
+
+  it('adds a section that stands on the page as its own of the day no second time', async () => {
+    const fake = fakeOf();
+    fake.page = { ...fake.page, text: `# Plan\n\n${marked('## Nachtrag\n')}` };
+    const { result } = await plannedWith(append, fake);
+    expect(result.outcome).toEqual({
+      kind: 'skipped',
+      reason: 'already_written',
+    });
+    expect(logged.map(({ event }) => event)).toContain('marking_repeated');
+  });
+
+  it('sends a section whose marking a person changed to the queue', async () => {
+    const fake = fakeOf();
+    fake.page = {
+      ...fake.page,
+      text: `# Plan\n\n${marked('## Nachtrag\n').replace('Nachtrag', 'Nachtrag von Hand')}`,
+    };
+    const { result } = await plannedWith(append, fake);
+    expect(result.outcome.kind).toBe('planned');
+    expect(result.queue).toBe('marker_changed');
+    expect(logged.map(({ event }) => event)).toContain('marking_changed');
+  });
+
+  it('adds a section beside one of another day, another tenant or a routine', async () => {
+    const own = marked('## Nachtrag\n');
+    const line =
+      own.split('\n').find((entry) => entry.startsWith('Automatisch')) ?? '';
+    const code = /k1:[A-Z2-7]{13}/u.exec(line)?.[0] ?? '';
+    for (const text of [
+      `# Plan\n\n${own.replace('01.12.2026', '30.11.2026')}`,
+      `# Plan\n\n${marked('## Nachtrag\n', 'other-tenant')}`,
+      `# Plan\n\n## Nachtrag\n\nAutomatisch erstellt am 01.12.2026 durch Ecclium, Routine dienstplan-report, Lauf 2026-W49, Prüfcode ${code}. Rückfragen an Sekretariat.\n`,
+    ]) {
+      const fake = fakeOf();
+      fake.page = { ...fake.page, text };
+      const { result } = await plannedWith(append, fake);
+      expect(result.outcome.kind, text).toBe('planned');
+      expect(result.queue, text).toBeUndefined();
+    }
+  });
+
+  // The day is that of the plan, so that the commit after midnight and an
+  // approval days later write what was confirmed.
+  it('keeps the day of the plan through a commit after midnight', async () => {
+    const late = Date.UTC(2026, 10, 30, 23, 59, 58);
+    const clock = createTestClock(late);
+    const fake = fakeOf();
+    fake.time = late;
+    const parts = setup(fake, dir, { clock });
+    const plan = planOf(await parts.guard.plan(parts.request, create));
+    clock.advance(4_000);
+    expect(isoDateOf(clock.now())).toBe('2026-12-01');
+    const proof = issueProof(plan, 'elicitation', clock.now());
+    expect((await parts.guard.commit(parts.ctx, plan, proof)).ok).toBe(true);
+    expect(fake.sent[0]).toContain('Automatisch erstellt am 30.11.2026');
   });
 });
