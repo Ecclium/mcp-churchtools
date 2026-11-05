@@ -950,6 +950,42 @@ describe('the cases', () => {
   });
 });
 
+// The tools that write stay out of the catalog above, which only reads.
+// They hand back no data of their own: the core builds their result from
+// the sealed plan with one schema for every write tool, whatever a tool
+// declares, and the tests of the pipeline of the core run that result
+// through the redaction (ADR 0029).
+describe('the tools that write', () => {
+  const writing = createToolCatalog({
+    core: createCorePlugin({ docs: syntheticDocsIndex(facts()) }),
+    plugins: [],
+    readOnly: false,
+    toolsets: new Set(toolsetNames),
+  });
+  const writers = writing
+    .list()
+    .filter((entry) => entry.meta.capability === 'write');
+
+  it('are the three of the wiki, and the catalog that reads has every other tool', () => {
+    expect(writers.map((entry) => entry.name)).toEqual([
+      'ct_wiki_page_append_section',
+      'ct_wiki_page_create',
+      'ct_wiki_page_update',
+    ]);
+    expect(
+      writing
+        .list()
+        .filter((entry) => entry.meta.capability === 'read')
+        .map((entry) => entry.name),
+    ).toEqual(catalog.list().map((entry) => entry.name));
+  });
+
+  it('all give the one result the core builds', () => {
+    const shapes = new Set(writers.map((entry) => JSON.stringify(entry.shape)));
+    expect(shapes.size).toBe(1);
+  });
+});
+
 describe.each(levels)('every tool at the level %s', (level) => {
   it.each(toolsAt(level))('%s lets no raw value out', async (name) => {
     const testCase = caseOf(name);

@@ -8,7 +8,7 @@
 - Die Maskierung begrenzt den Schaden, sie anonymisiert nicht. Daten aus ChurchTools lassen auf die Religionszugehörigkeit einer Person schliessen.
 - ChurchTools setzt die Rechte durch. Ecclium liest mit den Rechten seines Dienstkontos und nur mit ihnen. Je enger Sie das Konto halten, desto weniger kann Ecclium herausgeben ([Dienstkonto](betrieb/dienstkonto.md)).
 - Die Tools der Bereiche geben nur feste Felder weiter. Mit dem Toolset `api` gibt Ecclium dagegen ganze Antworten von ChurchTools weiter, mit allem, was die Rechte des Kontos öffnen (unten, «Lesender Zugriff auf die API»).
-- In dieser Version liest Ecclium nur. Tools, die in ChurchTools schreiben, gibt es noch nicht.
+- Mit der Voreinstellung `ECCLIUM_READ_ONLY=true` liest Ecclium nur. Mit `false` und dem Toolset `wiki` bietet der Server `ct_wiki_page_create`, `ct_wiki_page_update` und `ct_wiki_page_append_section` an. Jedes schreibt erst nach einer Bestätigung: einer Rückfrage im Client, dem Echo oder einer Freigabe aus der Warteschlange (ADR 0029).
 
 ## Andere Tools im selben Client
 

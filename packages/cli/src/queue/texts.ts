@@ -229,6 +229,10 @@ const approveReasons: Readonly<
     text: 'Der Text des Eintrags besteht nur aus Leerzeichen, Ecclium hat nichts geschrieben.',
     code: exitCodes.dataError,
   },
+  title: {
+    text: 'Der Titel des Eintrags passt nicht zu einer Seite des Wikis: 1 bis 255 Zeichen, ohne Steuerzeichen und ohne Leerzeichen am Anfang oder Ende. Ecclium hat nichts geschrieben.',
+    code: exitCodes.dataError,
+  },
   rightsUnknown: {
     text: 'Ecclium kann die Rechte des Dienstkontos nicht lesen und schreibt darum nicht. Prüfen Sie das Dienstkonto in ChurchTools.',
     code: exitCodes.noPermission,

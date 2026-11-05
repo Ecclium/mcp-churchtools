@@ -1077,6 +1077,48 @@ describe('an approval of the operator (ADR 0029)', () => {
     );
   });
 
+  // The marking carries the day of the plan (ADR 0032): an entry queued on
+  // one day and approved on the next is written with the day it was
+  // planned, and the plan is found again under its hash.
+  it('writes an entry approved on a later day with the marking of the day it was planned', async () => {
+    let current = now;
+    const setupped = setup({ clock: clockAt(() => current) });
+    const id = await queueNote(setupped);
+    current = now + 26 * 60 * 60 * 1000;
+    const later = {
+      headers: {
+        'content-type': 'application/json',
+        date: new Date(current).toUTCString(),
+      },
+    };
+    const { double } = setupped;
+    double
+      .intercept({ path: '/api/permissions/global', method: 'GET' })
+      .reply(200, rights, later);
+    double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, page(3, '# Plan\n'), later);
+    double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, page(3, '# Plan\n'), later);
+    double
+      .intercept({ path: pagePath, method: 'PATCH' })
+      .reply(200, '{}', later);
+    double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, page(4, written), later);
+    const outcome = await setupped.pipeline.approve(
+      { queueId: id },
+      operator(),
+    );
+    expect(outcome).toMatchObject({ kind: 'approved', target, version: 4 });
+    const patch = double.calls().find((call) => call.method === 'PATCH');
+    const sent = JSON.parse(String(patch?.body)) as { text: string };
+    expect(sent.text).toBe(written);
+    expect(sent.text).toContain(' am 03.11.2026 ');
+    expect(sent.text).not.toContain('04.11.2026');
+  });
+
   it('decides once: a second approval and a rejection after it find the entry decided', async () => {
     const setupped = setup();
     const id = await queueNote(setupped);

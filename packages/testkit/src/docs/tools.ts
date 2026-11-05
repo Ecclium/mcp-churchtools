@@ -40,6 +40,21 @@ const unattendedLabels = Object.freeze({
   policy: 'nach Richtlinie',
 });
 
+// How a write can be taken back and what keeps it from taking effect
+// twice, for the tools that write (ADR 0029, ADR 0031).
+const reversibleLabels = Object.freeze({
+  yes: 'ja',
+  no: 'nein',
+  snapshot: 'über den Snapshot, mit `ecclium undo`',
+});
+
+const replayGuardLabels = Object.freeze({
+  baseVersion: 'Basisversion: eine Version wird nur einmal geändert',
+  marker:
+    'Kennzeichnung: Einen Abschnitt gleichen Inhalts am selben Tag überspringt der Kern, eine zweite Seite gleichen Titels weist ChurchTools ab',
+  nonce: 'Nonce: jede Bestätigung gilt einmal',
+});
+
 // A fence longer than any run of backticks in the text, so that no
 // description can end its block early.
 const fenceFor = (text: string): string => {
@@ -132,6 +147,11 @@ const offeredLabel = (entry: CatalogEntry): string => {
       : [`${code(toolset)} in ${code('ECCLIUM_TOOLSETS')}`]),
     ...(entry.asSpecial ? [code('ECCLIUM_STATE_DIR')] : []),
     ...(capability === 'write' ? [code('ECCLIUM_READ_ONLY=false')] : []),
+    // The echo, only where the operator allows it; over stdio that is the
+    // default (ADR 0029).
+    ...(entry.name === 'ct_write_confirm'
+      ? [code('ECCLIUM_WRITE_CONFIRMATION=echo-allowed')]
+      : []),
   ];
   return needs.length === 0 ? 'immer' : needs.join(', mit ');
 };
@@ -148,6 +168,12 @@ const toolSection = (entry: CatalogEntry): string[] => {
     `- Lesebudget: ${yesNo(entry.asSpecial)}`,
     `- Angeboten: ${offeredLabel(entry)}`,
     `- Rechte in ChurchTools: ${rightsOf(entry)}`,
+    ...(meta.capability === 'write'
+      ? [
+          `- Rücknahme: ${reversibleLabels[meta.reversible]}`,
+          `- Schutz vor Wiederholung: ${replayGuardLabels[meta.replayGuard]}`,
+        ]
+      : []),
     '',
     '### Beschreibung',
     '',
@@ -186,6 +212,7 @@ export function renderToolsReference(): string {
     plugins: [],
     readOnly: false,
     toolsets: new Set(toolsetNames),
+    echo: true,
   }).list();
   const lines = [
     '# Tools',
@@ -209,6 +236,11 @@ export function renderToolsReference(): string {
   // the page instead of leaving a false sentence on it.
   if (entries.every((entry) => entry.meta.capability === 'read')) {
     legend.push('', 'Alle Tools dieser Seite lesen nur.');
+  } else {
+    legend.push(
+      '',
+      'Die Tools, die schreiben, bietet der Server nur mit `ECCLIUM_READ_ONLY=false` an. Sie planen nur: Den Schreibvorgang führt der Kern nach einer Bestätigung aus, und ihr Ergebnis baut er selbst ([ADR 0029](adr/0029-write-guard.md)). «Rücknahme» und «Schutz vor Wiederholung» stehen bei jedem von ihnen.',
+    );
   }
   for (const entry of entries) {
     const { meta } = entry;

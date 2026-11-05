@@ -96,6 +96,7 @@ export const toolRights = [
   { module: 'churchservice', right: 'view events' },
   { module: 'churchservice', right: 'view servicegroup' },
   { module: 'churchservice', right: 'view songcategory' },
+  { module: 'churchwiki', right: 'edit category' },
   { module: 'churchwiki', right: 'view' },
   { module: 'churchwiki', right: 'view category' },
 ] as const;

@@ -74,14 +74,21 @@ const offeredLabel = (prompt: PromptEntry, catalog: ToolCatalog): string => {
     ...(entries.some((tool) => tool.asSpecial)
       ? [code('ECCLIUM_STATE_DIR')]
       : []),
+    ...(entries.some((tool) => tool.meta.capability === 'write')
+      ? [code('ECCLIUM_READ_ONLY=false')]
+      : []),
   ];
   return needs.length === 0 ? 'immer' : needs.join(', mit ');
 };
 
-const promptSection = (prompt: PromptEntry, catalog: ToolCatalog): string[] => {
+const promptSection = (
+  prompt: PromptEntry,
+  catalog: ToolCatalog,
+  heading = code(prompt.name),
+): string[] => {
   const text = `${prompt.template}\n\n${promptDataSentence}`;
   const lines = [
-    `## ${code(prompt.name)}`,
+    `## ${heading}`,
     '',
     `- Titel: «${prompt.title}»`,
     `- Angeboten: ${offeredLabel(prompt, catalog)}`,
@@ -124,6 +131,21 @@ export function renderPromptsReference(): string {
     toolsets: new Set(toolsetNames),
   });
   const prompts = catalog.prompts();
+  // A server that writes may offer another version of a prompt under the
+  // same name; the page shows each such version after the others.
+  const writing = createToolCatalog({
+    core: createCorePlugin({ docs: syntheticDocsIndex(), writing: true }),
+    plugins: [],
+    readOnly: false,
+    toolsets: new Set(toolsetNames),
+  });
+  const writingVersions = writing
+    .prompts()
+    .filter(
+      (prompt) => catalog.prompt(prompt.name)?.template !== prompt.template,
+    );
+  const writingHeading = (prompt: PromptEntry): string =>
+    `${code(prompt.name)}, wenn der Server schreibt`;
   const lines = [
     '# Prompts',
     '',
@@ -140,21 +162,45 @@ export function renderPromptsReference(): string {
     '| Prompt | Titel | Argumente | Angeboten |',
     '| --- | --- | --- | --- |',
   ];
-  for (const prompt of prompts) {
+  const row = (
+    prompt: PromptEntry,
+    from: ToolCatalog,
+    label: string,
+  ): string => {
     const names =
       prompt.arguments.length === 0
         ? 'keine'
         : prompt.arguments.map((argument) => code(argument.name)).join(', ');
-    lines.push(
-      `| ${code(prompt.name)} | ${prompt.title} | ${names} | ${offeredLabel(prompt, catalog)} |`,
-    );
+    return `| ${label} | ${prompt.title} | ${names} | ${offeredLabel(prompt, from)} |`;
+  };
+  // A prompt with a version for writing is offered as it stands here only
+  // while the server only reads.
+  const replaced = new Set(writingVersions.map((prompt) => prompt.name));
+  const readingLabel = (prompt: PromptEntry): string =>
+    replaced.has(prompt.name)
+      ? `${code(prompt.name)}, solange der Server nur liest`
+      : code(prompt.name);
+  for (const prompt of prompts) {
+    lines.push(row(prompt, catalog, readingLabel(prompt)));
+  }
+  for (const prompt of writingVersions) {
+    lines.push(row(prompt, writing, writingHeading(prompt)));
   }
   lines.push(
     '',
     'Alle Argumente sind Pflicht. Unsichtbare Zeichen in einem Text entfernt der Server, bevor er ihn einsetzt.',
   );
+  if (writingVersions.length > 0) {
+    lines.push(
+      '',
+      'Schreibt der Server, bietet er unter demselben Namen eine Fassung an, die das Ergebnis nach Ihrer Zustimmung in ChurchTools anlegt. Auch dann fragt Ecclium vor dem Schreiben noch einmal nach oder gibt den Vorgang dem Betreiber zur Freigabe ([ADR 0029](adr/0029-write-guard.md)).',
+    );
+  }
   for (const prompt of prompts) {
-    lines.push('', ...promptSection(prompt, catalog));
+    lines.push('', ...promptSection(prompt, catalog, readingLabel(prompt)));
+  }
+  for (const prompt of writingVersions) {
+    lines.push('', ...promptSection(prompt, writing, writingHeading(prompt)));
   }
   return `${lines.join('\n')}\n`;
 }

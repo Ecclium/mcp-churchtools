@@ -27,7 +27,7 @@ import { personsGetGroupsTool } from './persons/groups.js';
 import { personsSearchTool } from './persons/search.js';
 import { rightsDiagnosisPrompt } from './prompts/rights-diagnosis.js';
 import { rotaWeekendPrompt } from './prompts/rota-weekend.js';
-import { wikiDraftPrompt } from './prompts/wiki-draft.js';
+import { wikiCreatePrompt, wikiDraftPrompt } from './prompts/wiki-draft.js';
 import { resourcesListTool } from './resources/list.js';
 import { searchTool } from './search/global.js';
 import { servicesGetAssignmentsTool } from './services/assignments.js';
@@ -38,6 +38,11 @@ import { wikiCategoriesListTool } from './wiki/categories.js';
 import { wikiPageGetTool } from './wiki/page.js';
 import { wikiPagesListTool } from './wiki/pages.js';
 import { wikiSearchTool } from './wiki/search.js';
+import {
+  wikiPageCreateTool,
+  wikiPageUpdateTool,
+  wikiSectionAppendTool,
+} from './wiki/write.js';
 
 /** What the composition root hands to the plugin of the core. */
 export interface CorePluginOptions {
@@ -49,6 +54,13 @@ export interface CorePluginOptions {
    * diagnosis, which relies on the docs tools.
    */
   readonly docs?: DocsIndex;
+  /**
+   * Whether the server writes (`ECCLIUM_READ_ONLY=false`). The plugin then
+   * adds the version of the prompt «Wiki-Seite aus Stichworten» that
+   * creates the page once the person agrees, and otherwise the one that
+   * only drafts; both have the same name (ADR 0065).
+   */
+  readonly writing?: boolean;
 }
 
 /**
@@ -62,7 +74,8 @@ export interface CorePluginOptions {
  * a productive tenant offers only `ct_whoami` and no prompt, because each
  * prompt needs its tools (ADR 0065).
  *
- * @param options - The docs index, if the toolset `docs` is on.
+ * @param options - The docs index, if the toolset `docs` is on, and
+ *   whether the server writes.
  * @returns The plugin, frozen.
  * @example
  * ```ts
@@ -75,7 +88,7 @@ export interface CorePluginOptions {
  * ```
  */
 export function createCorePlugin(options: CorePluginOptions = {}): Plugin {
-  const { docs } = options;
+  const { docs, writing = false } = options;
   return Object.freeze({
     name: '@ecclium/mcp-churchtools',
     version: '0.0.0',
@@ -92,6 +105,11 @@ export function createCorePlugin(options: CorePluginOptions = {}): Plugin {
       host.addTool(wikiPagesListTool);
       host.addTool(wikiPageGetTool);
       host.addTool(wikiSearchTool);
+      // The tools that write; the catalog leaves them out while the server
+      // only reads (ADR 0055).
+      host.addTool(wikiPageCreateTool);
+      host.addTool(wikiPageUpdateTool);
+      host.addTool(wikiSectionAppendTool);
       host.addTool(eventsListTool);
       host.addTool(eventsGetTool);
       host.addTool(eventsGetAgendaTool);
@@ -109,7 +127,7 @@ export function createCorePlugin(options: CorePluginOptions = {}): Plugin {
         addApiTools(host, docs);
       }
       host.addPrompt(rotaWeekendPrompt);
-      host.addPrompt(wikiDraftPrompt);
+      host.addPrompt(writing ? wikiCreatePrompt : wikiDraftPrompt);
       // Its tools exist only with the docs index; without them the
       // registry would refuse the prompt and stop the start (ADR 0065).
       if (docs !== undefined) host.addPrompt(rightsDiagnosisPrompt);

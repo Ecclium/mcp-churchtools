@@ -232,17 +232,49 @@ describe('the budget of the descriptions', () => {
     },
   );
 
-  // The core brings no tool that writes yet, so the echo has nothing to
-  // confirm and stays out of the catalog (ADR 0029).
-  it('offers no ct_write_confirm while the core has no write tool', () => {
+  // A server that writes offers the three tools of the wiki and, where the
+  // operator allows the echo, ct_write_confirm, and stays within 32'000 in
+  // the longest choices of toolsets (ADR 0029).
+  it.each(lists.slice(-2).map((toolsets) => [toolsets]))(
+    'stays under 32000 for a server that writes, with the echo: %j',
+    (toolsets) => {
+      const catalog = createStdioCatalog(
+        { readOnly: false, toolsets, writeConfirmation: 'echo-allowed' },
+        { readDocs: () => syntheticDocsIndex() },
+      );
+      for (const name of [
+        'ct_wiki_page_append_section',
+        'ct_wiki_page_create',
+        'ct_wiki_page_update',
+        'ct_write_confirm',
+      ]) {
+        expect(catalog.has(name), name).toBe(true);
+      }
+      // The version of the wiki prompt that creates the page (ADR 0065).
+      expect(catalog.prompt('wiki_seite_entwerfen')?.tools).toContain(
+        'ct_wiki_page_create',
+      );
+      const length = catalog
+        .list()
+        .reduce((sum, entry) => sum + entry.description.length, 0);
+      expect(length).toBeLessThanOrEqual(32_000);
+    },
+  );
+
+  it('offers no tool that writes and no ct_write_confirm to a server that only reads', () => {
     const catalog = createStdioCatalog(
       {
-        readOnly: false,
-        toolsets: ['persons', 'events', 'calendars', 'wiki', 'songs', 'docs'],
+        readOnly: true,
+        toolsets: ['wiki'],
         writeConfirmation: 'echo-allowed',
       },
       { readDocs: () => syntheticDocsIndex() },
     );
-    expect(catalog.has('ct_write_confirm')).toBe(false);
+    expect(
+      catalog.list().filter((entry) => entry.meta.capability === 'write'),
+    ).toEqual([]);
+    expect(catalog.prompt('wiki_seite_entwerfen')?.tools).not.toContain(
+      'ct_wiki_page_create',
+    );
   });
 });

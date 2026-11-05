@@ -15,6 +15,7 @@ import {
   createCorePlugin,
   rightsDiagnosisPrompt,
   rotaWeekendPrompt,
+  wikiCreatePrompt,
   wikiDraftPrompt,
 } from './index.js';
 
@@ -38,6 +39,7 @@ const catalogWith = (toolsets: readonly ToolsetName[]): ToolCatalog =>
 const prompts: readonly (readonly [string, PromptDefinition])[] = [
   ['dienstplan_wochenende', rotaWeekendPrompt],
   ['wiki_seite_entwerfen', wikiDraftPrompt],
+  ['wiki_seite_entwerfen', wikiCreatePrompt],
   ['rechte_diagnose', rightsDiagnosisPrompt],
 ];
 
@@ -208,6 +210,70 @@ describe('wiki_seite_entwerfen', () => {
       ok: false,
       argument: 'stichworte',
     });
+  });
+});
+
+// For a server that writes, the plugin of the core adds the version that
+// creates the page under the same name (ADR 0065).
+describe('wiki_seite_entwerfen for a server that writes', () => {
+  const writing = (readOnly: boolean): ToolCatalog =>
+    createToolCatalog({
+      core: createCorePlugin({ writing: true }),
+      plugins: [],
+      readOnly,
+      toolsets: new Set(['wiki']),
+    });
+  const entry = writing(false).prompt('wiki_seite_entwerfen');
+
+  it('relies on the tool that creates a page as well', () => {
+    expect(entry?.tools).toEqual([
+      'ct_wiki_categories_list',
+      'ct_wiki_pages_list',
+      'ct_wiki_search',
+      'ct_wiki_page_get',
+      'ct_wiki_page_create',
+    ]);
+    expect(entry?.title).toBe(wikiDraftPrompt.title);
+  });
+
+  it('is not offered while the catalog leaves out the tools that write', () => {
+    expect(writing(true).prompts()).toEqual([]);
+  });
+
+  it('leaves the draft in place for a plugin built without writes', () => {
+    const drafting = createToolCatalog({
+      core: createCorePlugin(),
+      plugins: [],
+      readOnly: false,
+      toolsets: new Set(['wiki']),
+    }).prompt('wiki_seite_entwerfen');
+    expect(drafting?.template).toBe(wikiDraftPrompt.text);
+  });
+
+  it('creates the page only after a clear yes and leaves the marking to Ecclium', () => {
+    const filled = entry?.fill({ stichworte: 'Kaffee nach dem Gottesdienst' });
+    const text = filled?.ok === true ? filled.text : '';
+    expect(text).toContain(
+      'aus diesen Stichworten:\n\nKaffee nach dem Gottesdienst\n\nVorgehen:\n',
+    );
+    for (const part of [
+      'Erst nach einem klaren Ja anlegen, mit genau diesem Text.',
+      'Vor dem Schreiben fragt Ecclium noch einmal nach oder gibt den Vorgang dem Betreiber zur Freigabe.',
+      'Die Zeile, die die Seite als von Ecclium erstellt kennzeichnet, setzt Ecclium selbst.',
+      'keine Links, Webadressen, Bilder, kein HTML, keinen Code und keine Zitate',
+      'Gibt es schon eine, keine zweite anlegen',
+      'einen Titel vorschlagen, den es dort noch nicht gibt',
+      'Kontaktangaben nur, wenn der Betreiber sie freigegeben hat',
+      'Lehnt Ecclium den Text ab, den Grund nennen',
+    ]) {
+      expect(text, part).toContain(part);
+    }
+    expect(text).not.toContain('Ecclium legt die Seite nicht an.');
+    expect(text.endsWith(`\n\n${promptDataSentence}`)).toBe(true);
+  });
+
+  it('takes the same keywords as the draft', () => {
+    expect(wikiCreatePrompt.arguments).toBe(wikiDraftPrompt.arguments);
   });
 });
 
