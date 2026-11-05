@@ -373,21 +373,28 @@ describe('the file of quotas', () => {
     );
   });
 
+  // Whether the old file of decisions is there, from a listing of the
+  // folder rather than a look at its path, so that no test checks a path
+  // and then writes it.
+  const oldName = 'demo-tenant-2026-10-08.approvals.json';
+  const hasOld = (state: string): boolean =>
+    readdirSync(join(state, 'quota')).includes(oldName);
+
   it('removes old files of decisions also when only the other counters count, once per day of its clock', async () => {
     const state = freshState();
-    const old = fileOf(state, 'demo-tenant-2026-10-08.approvals.json');
+    const old = fileOf(state, oldName);
     let now = Date.UTC(2026, 9, 24, 12);
     const store = open(state, { clock: { now: () => now } });
     writeFileSync(old, '{}', { mode: 0o600 });
     await store.increment(ctx, key, day);
-    expect(existsSync(old)).toBe(false);
+    expect(hasOld(state)).toBe(false);
     // The same day of the clock: the folder is not listed again.
     writeFileSync(old, '{}', { mode: 0o600 });
     await store.increment(ctx, key, day);
-    expect(existsSync(old)).toBe(true);
+    expect(hasOld(state)).toBe(true);
     now += 86_400_000;
     await store.increment(ctx, key, day);
-    expect(existsSync(old)).toBe(false);
+    expect(hasOld(state)).toBe(false);
   });
 
   it.each([
@@ -400,8 +407,7 @@ describe('the file of quotas', () => {
     ['gives no time', () => Number.NaN],
   ])('removes no file of decisions when its clock %s', async (_name, now) => {
     const state = freshState();
-    const old = fileOf(state, 'demo-tenant-2026-10-08.approvals.json');
-    writeFileSync(old, '{}', { mode: 0o600 });
+    writeFileSync(fileOf(state, oldName), '{}', { mode: 0o600 });
     const fs: QuotaFileSystem = { ...nodeFs };
     // The lock waits by the clock too, so the clock fails only for the
     // look at the files of decisions, after the count.
@@ -416,7 +422,7 @@ describe('the file of quotas', () => {
       },
     });
     await store.increment(ctx, key, day);
-    expect(existsSync(old)).toBe(true);
+    expect(hasOld(state)).toBe(true);
   });
 
   it('writes the process, the host and the time into the lock, and a safe host only', async () => {
