@@ -54,6 +54,9 @@ describe('canonicalPartsOf', () => {
     expect(hides('<details>')).toEqual([true]);
     expect(hides('<!-- a --> <div hidden>')).toEqual([true]);
     expect(hides('<!-- a --> -->')).toEqual([true]);
+    // An opening that closes itself, and a close before the opening ends.
+    expect(hides('<!-->')).toEqual([true]);
+    expect(hides('<!--->')).toEqual([true]);
     expect(hides('Text <span hidden>x</span>.')).toEqual([true]);
     expect(hides('Kirche &amp; Gemeinde.')).toEqual([false]);
   });

@@ -47,14 +47,12 @@ export interface CanonicalPart {
   readonly hides: boolean;
 }
 
-// A block of HTML that is one comment and nothing else.
+// A block of HTML that is one comment and nothing else: it opens the
+// comment, and the first close after the opening ends the text.
 const isComment = (source: string): boolean => {
   const text = source.trim();
-  return (
-    text.startsWith('<!--') &&
-    text.endsWith('-->') &&
-    text.indexOf('-->') === text.length - 3
-  );
+  const close = text.indexOf('-->', '<!--'.length);
+  return text.startsWith('<!--') && close !== -1 && close + 3 === text.length;
 };
 
 /**
