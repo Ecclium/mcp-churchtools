@@ -17,7 +17,12 @@
  *
  * @packageDocumentation
  */
-import { contactKeyOf, normalizeContent } from '../content/index.js';
+import {
+  checkPlainText,
+  contactKeyOf,
+  contactKeysOf,
+  normalizeContent,
+} from '../content/index.js';
 import {
   type InteractiveEntry,
   type InteractiveTarget,
@@ -283,6 +288,20 @@ export function checkPolicy(value: unknown): PolicyCheckResult {
     contacts.push(normal.text);
   }
 
+  // Whom to ask stands in the line of the marking of every page and
+  // section Ecclium adds, so it passes the content policy as plain text,
+  // and contact data in it only when the policy lists them (ADR 0032).
+  let inquiriesTo: string | undefined;
+  if (file.interactive?.inquiriesTo !== undefined) {
+    const checked = checkPlainText(file.interactive.inquiriesTo, {
+      contacts: contactKeysOf(contacts),
+    });
+    if (!checked.ok || checked.text.trim() === '') {
+      return refuse('policy_invalid', 'interactive.inquiriesTo');
+    }
+    inquiriesTo = checked.text.trim();
+  }
+
   const levels = new Map<string, string>();
   const unattended: UnattendedEntry[] = [];
   for (const [index, entry] of (file.unattended ?? []).entries()) {
@@ -328,6 +347,7 @@ export function checkPolicy(value: unknown): PolicyCheckResult {
         policyLimits.defaultReadBudgetPerDay,
       targets: Object.freeze(interactive),
       ...(contacts.length > 0 ? { contacts: Object.freeze(contacts) } : {}),
+      ...(inquiriesTo === undefined ? {} : { inquiriesTo }),
     }),
     unattended: Object.freeze(unattended),
   });

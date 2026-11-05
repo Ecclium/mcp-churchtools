@@ -52,6 +52,8 @@ export interface ProposalInput {
   readonly readBudgetPerDay: number;
   /** The contact values of the policy in force, kept in the proposal. */
   readonly contacts?: readonly string[];
+  /** Whom to ask, of the policy in force, kept in the proposal. */
+  readonly inquiriesTo?: string;
   /** The first and the last UTC day of the audit read, if it had a line. */
   readonly days?: { readonly first: string; readonly last: string };
 }
@@ -239,6 +241,9 @@ export function renderPolicyProposal(input: ProposalInput): string {
     lines.push('  contacts:');
     for (const contact of input.contacts)
       lines.push(`    - ${quoted(contact)}`);
+  }
+  if (input.inquiriesTo !== undefined) {
+    lines.push(`  inquiriesTo: ${quoted(input.inquiriesTo)}`);
   }
   return `${lines.join('\n')}\n`;
 }
