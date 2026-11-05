@@ -1437,3 +1437,4 @@ Diese Grundsatzfragen sind entschieden.
   - Kennzeichnung: `packages/core/src/marker/` mit Code `k1:` in Base32, Zeile im Wortlaut des Markenpakets, Lesen der Zeile und Erkennen eigener Abschnitte nur als Blöcke, die ein Leser sieht, im Zweifel als geändert, in `coverage-security-core` zu 100 Prozent.
   - Richtlinie: `interactive.inquiriesTo` für «Rückfragen an», `docs/policy.md` und `schemas/policy.v1.json` neu erzeugt.
   - Doku: ADR 0032 und 0055 (Umsetzung), `docs/configuration.md`, `.env.example`.
+- 05.11.2026, der Prüfcode der Kennzeichnung ist als `4c53449` auf `main` (#194). Der Squash-Commit bringt genau den Baum des Branches.
