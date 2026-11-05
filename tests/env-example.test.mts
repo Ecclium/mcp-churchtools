@@ -21,13 +21,15 @@ import { environmentSchema } from '../packages/core/src/config/variables.ts';
 // placeholder path there would stop every start that copies the file, and
 // the keys do something only with the level strict (ADR 0069). So does the
 // folder of the day keys, which only a server that writes needs
-// (ADR 0031).
+// (ADR 0031), and the key file of the check codes, which only a server
+// that adds pages and sections to the wiki needs (ADR 0032).
 
 const commentedOnly: readonly string[] = [
   tokenVariableName,
   'ECCLIUM_PSEUDONYM_KEY_FILE',
   'ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE',
   'ECCLIUM_KEYS_DIR',
+  'ECCLIUM_MARKER_KEY_FILE',
   'ECCLIUM_POLICY_FILE',
 ];
 
