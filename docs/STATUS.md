@@ -1444,3 +1444,4 @@ Diese Grundsatzfragen sind entschieden.
   - Konfiguration: `marker_key_missing` und `inquiries_missing` für einen Server, der mit dem Toolset `wiki` schreibt ([ADR 0055](adr/0055-konfiguration-identitaet.md), Umsetzung).
   - Kommandozeile: Texte für den neuen Grund in `ecclium queue list` und `show` und die neuen Enden von `approve` und `undo`.
   - Doku: ADR 0030, 0032 und 0055 (Umsetzung), `docs/privacy.md` («Schlüsseldatei für den Prüfcode», «Kennzeichnung im Wiki»), `docs/betrieb/stdio.md` («Kennzeichnung im Wiki»), `.env.example`, erzeugte Doku.
+- 05.11.2026, die Kennzeichnung im Write-Guard ist als `c653c12` auf `main` (#195). Der Squash-Commit bringt genau den Baum des Branches.
