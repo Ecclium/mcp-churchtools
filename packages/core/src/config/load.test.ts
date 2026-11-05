@@ -190,6 +190,37 @@ const keyFile = (seed: string, ending = '\n'): TokenFileSystem =>
 const markerKeyPath = '/path/to/marker-key';
 
 /**
+ * A good configuration of a server that writes to the wiki (ADR 0032),
+ * with the key of the check codes and a policy that names whom to ask,
+ * unless one of them is left out.
+ */
+const writingToWiki = (
+  leave: { readonly key?: boolean; readonly inquiries?: boolean } = {},
+  toolsets = 'wiki',
+): ConfigResult => {
+  const files: Record<string, TokenFileSystem> = {
+    [tokenPath]: memoryFiles().fs,
+    [policyPath]: memoryFiles(
+      leave.inquiries === true
+        ? 'schema: policy.v1\n'
+        : 'schema: policy.v1\ninteractive: { inquiriesTo: Sekretariat }\n',
+    ).fs,
+  };
+  const environment: Environment = {
+    ...valid(),
+    ECCLIUM_READ_ONLY: 'false',
+    ECCLIUM_TOOLSETS: toolsets,
+    ECCLIUM_KEYS_DIR: keysDirPath,
+    ECCLIUM_POLICY_FILE: policyPath,
+  };
+  if (leave.key !== true) {
+    files[markerKeyPath] = keyFile('m');
+    environment['ECCLIUM_MARKER_KEY_FILE'] = markerKeyPath;
+  }
+  return load(environment, 'stdio', pathFiles(files));
+};
+
+/**
  * A good configuration with the key file of the check codes (ADR 0032),
  * and with a key file of the pseudonyms when one is given.
  */
@@ -515,7 +546,7 @@ describe('loadConfig with a good configuration', () => {
       ECCLIUM_CHURCHTOOLS_URL: 'https://demo.example:8443/',
       ECCLIUM_READ_ONLY: 'false',
       ECCLIUM_REDACTION: 'off',
-      ECCLIUM_TOOLSETS: 'wiki,persons',
+      ECCLIUM_TOOLSETS: 'calendars,persons',
       ECCLIUM_STATE_DIR: stateDirPath,
       ECCLIUM_KEYS_DIR: keysDirPath,
       ECCLIUM_STDIO_SUBJECT: 'local-operator-2',
@@ -527,7 +558,7 @@ describe('loadConfig with a good configuration', () => {
       churchtoolsOrigin: 'https://demo.example:8443',
       readOnly: false,
       redaction: 'off',
-      toolsets: ['persons', 'wiki'],
+      toolsets: ['persons', 'calendars'],
       stateDir: stateDirPath,
       keysDir: keysDirPath,
       stdioSubject: 'local-operator-2',
@@ -545,7 +576,7 @@ describe('loadConfig with a good configuration', () => {
     expect(Object.isFrozen(result.config.toolsets)).toBe(true);
     expect(setting(result, 'toolsets')?.shown).toEqual({
       kind: 'list',
-      values: ['persons', 'wiki'],
+      values: ['persons', 'calendars'],
     });
   });
 
@@ -2790,6 +2821,8 @@ describe('loadConfig and its problems', () => {
       withMarkerKey(memoryFiles(keyHex('m').toUpperCase()).fs),
     marker_key_same: () =>
       withMarkerKey(keyFile('a'), { current: keyFile('a') }),
+    marker_key_missing: () => writingToWiki({ key: true }),
+    inquiries_missing: () => writingToWiki({ inquiries: true }),
   };
 
   it.each([...configProblemCodes])('can report the problem %s', (code) => {
@@ -3367,5 +3400,44 @@ describe('loadConfig and the key file of the check codes', () => {
     expect(result.ok && JSON.stringify(result.config)).toContain(
       '"markerKey":"[REDACTED]"',
     );
+  });
+});
+
+// A server that writes to the wiki marks what it adds (ADR 0032).
+describe('loadConfig and a server that writes to the wiki', () => {
+  it('starts with the key of the check codes and whom to ask', () => {
+    for (const toolsets of ['wiki', 'calendars,wiki']) {
+      const result = writingToWiki({}, toolsets);
+      expect(problems(result), toolsets).toEqual([]);
+      expect(result.ok).toBe(true);
+    }
+  });
+
+  it('stops without the key or without whom to ask, and names both', () => {
+    expect(problems(writingToWiki({ key: true }))).toEqual([
+      ['marker_key_missing', 'ECCLIUM_MARKER_KEY_FILE'],
+    ]);
+    expect(setting(writingToWiki({ key: true }), 'markerKey')).toMatchObject({
+      origin: 'missing',
+    });
+    expect(problems(writingToWiki({ inquiries: true }))).toEqual([
+      ['inquiries_missing', 'ECCLIUM_POLICY_FILE'],
+    ]);
+    expect(problems(writingToWiki({ key: true, inquiries: true }))).toEqual([
+      ['inquiries_missing', 'ECCLIUM_POLICY_FILE'],
+      ['marker_key_missing', 'ECCLIUM_MARKER_KEY_FILE'],
+    ]);
+    // all holds the toolset wiki.
+    expect(codes(writingToWiki({ key: true }, 'all'))).toContain(
+      'marker_key_missing',
+    );
+  });
+
+  it('needs neither for a server that only reads or writes no wiki', () => {
+    expect(load(valid()).ok).toBe(true);
+    expect(load({ ...valid(), ECCLIUM_TOOLSETS: 'wiki' }).ok).toBe(true);
+    expect(
+      problems(writingToWiki({ key: true, inquiries: true }, 'calendars')),
+    ).toEqual([]);
   });
 });

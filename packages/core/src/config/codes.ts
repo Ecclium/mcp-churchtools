@@ -54,6 +54,8 @@ export const configProblemCodes = Object.freeze([
   ...policyCodes,
   ...markerKeyFileCodes,
   'marker_key_same',
+  'marker_key_missing',
+  'inquiries_missing',
 ] as const);
 
 /** Why the configuration cannot start the server. */

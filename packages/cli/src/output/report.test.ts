@@ -307,13 +307,13 @@ describe('renderConfigReport', () => {
       ...minimal(),
       ECCLIUM_READ_ONLY: 'false',
       ECCLIUM_KEYS_DIR: '/path/to/keys',
-      ECCLIUM_TOOLSETS: 'songs,wiki',
+      ECCLIUM_TOOLSETS: 'songs,calendars',
       ECCLIUM_LOG_LEVEL: 'debug',
     });
     expect(lines.at(-1)).toBe(valid);
     expect(lines).toContain(row('Nur lesen', 'nein (aus ‹ECCLIUM_READ_ONLY›)'));
     expect(lines).toContain(
-      row('Toolsets', '‹wiki›, ‹songs› (aus ‹ECCLIUM_TOOLSETS›)'),
+      row('Toolsets', '‹calendars›, ‹songs› (aus ‹ECCLIUM_TOOLSETS›)'),
     );
     expect(lines).toContain(
       row('Stufe des Logs', '‹debug› (aus ‹ECCLIUM_LOG_LEVEL›)'),
