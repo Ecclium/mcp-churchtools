@@ -1252,25 +1252,17 @@ describe('the operator', () => {
     expect(parts.fake.sent).toEqual([]);
   });
 
-  it('takes back no appointment yet', async () => {
-    const parts = setup();
-    const result = await parts.guard.undo({
-      ctx: parts.ctx,
-      eventId: '00000000-0000-4000-8000-000000000003',
-      snapshot: {
-        before: {
-          kind: 'appointmentCreate',
-          tool: 'ct_x',
-          placeId: 8,
-          fieldsHash: 'a'.repeat(64),
-        },
-        day: '2026-11-06' as IsoDate,
-      },
-      overwrite: false,
-    });
-    expect(result).toMatchObject({
-      kind: 'refused',
-      error: { code: 'policy_denied', message: writeSentences.notRun },
+  // Only the list of its days shows whether a booking is gone (F47), so its
+  // undo needs its time; the undo has tests of its own.
+  it('keeps the time of a new booking in its snapshot', async () => {
+    const { snapshots, saved } = keeper();
+    const parts = setup(fakeOf(), snapshots);
+    expect(await commitOf(parts, booking)).toMatchObject({ ok: true });
+    expect(saved[0]?.content).toMatchObject({
+      kind: 'bookingCreate',
+      placeId: 13,
+      startDate: start,
+      endDate: end,
     });
   });
 });

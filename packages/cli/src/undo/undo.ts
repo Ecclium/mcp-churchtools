@@ -6,30 +6,35 @@
  * encrypted snapshot of what it changes right before its send, under the
  * ID of its audit line, which the result of the write tool names as
  * `undoId`. This command loads that snapshot through the same pipeline as
- * the server and lets the write guard write the state from before back,
- * or for a new page a fixed sentence that it was taken back. It runs in
- * the mode `operator` with the identity of the start over stdio, so its
- * write stands in the audit file as a line of the type `undo`, keeps a
- * snapshot of its own, and can be taken back as well.
+ * the server and lets the write guard write the state from before back:
+ * the text of a page, for a new page a fixed sentence that it was taken
+ * back, the fields of an appointment, and for a new appointment or booking
+ * request a delete. It runs in the mode `operator` with the identity of
+ * the start over stdio, so its write stands in the audit file as a line of
+ * the type `undo`. A write back keeps a snapshot of its own and can be
+ * taken back as well; a delete cannot.
  *
  * It shows what it changes, as a diff made safe for the terminal, the
- * text of a page being foreign text: after it wrote, instead of writing
- * when someone changed the page since the write, and when the outcome is
- * unknown after the send. A changed page it writes only with
- * `--overwrite`; without it, it ends with 65. The ID is checked as a UUID
- * before any file is touched and named in no text.
+ * texts of ChurchTools being foreign text: after it wrote, instead of
+ * writing when someone changed the target since the write, and when the
+ * outcome is unknown after the send. A changed page or appointment it
+ * writes only with `--overwrite`; without it, it ends with 65. A new
+ * appointment or booking that someone changed it never deletes. The ID is
+ * checked as a UUID before any file is touched and named in no text.
  *
  * Its exit code follows sysexits, as `texts.ts` maps each case: 0 when
  * the write is taken back or nothing is left to do; 64 for a wrong call;
- * 65 when the page changed, changes in between, was empty before or
- * ChurchTools refuses its text; 66 without a snapshot, with snapshots off,
- * for a new page without its GUID or a page that is gone; 69 when
- * ChurchTools was not reached or the outcome is unknown; 70 for an
- * internal error; 74 when the audit file cannot take the line, the
- * snapshot of the undo could not be kept, or the line of an undo that may
- * have written did not reach the audit file; 77 when writing is off,
+ * 65 when the target changed, changes in between, was empty before or
+ * ChurchTools refuses the undo; 66 without a snapshot, with snapshots off,
+ * for a new page, appointment or booking without its ID or a target that
+ * is gone; 69 when ChurchTools was not reached or the outcome is unknown;
+ * 70 for an internal error; 74 when the audit file cannot take the line,
+ * the snapshot of the undo could not be kept, or the line of an undo that
+ * may have written did not reach the audit file; 77 when writing is off,
  * switched off or blocked, a right is missing, the token is refused, the
- * page is no Markdown page or the clock differs; and 78 for an invalid
+ * page is no Markdown page, the appointment has parts Ecclium does not
+ * change, lasts whole days or would move while the account of the server
+ * did not create it, or the clock differs; and 78 for an invalid
  * configuration or a folder that cannot be used.
  *
  * @packageDocumentation
@@ -76,18 +81,19 @@ import { type Output, terminalLines, usageLine } from '../output/index.js';
 import type { WriteSyncFn } from '../send.js';
 import { createStdioCatalog } from '../stdio/catalog.js';
 import {
-  changedLine,
+  changedLineOf,
+  deletedLines,
   doneLines,
   failedEnding,
   incompleteEnding,
   outputCutText,
   type UndoEnding,
-  undoChanged,
+  undoChangedOf,
   undoMissing,
   undoProblems,
-  undoUnchanged,
-  undoUnrecorded,
-  wouldChangeLine,
+  undoUnchangedOf,
+  undoUnrecordedOf,
+  wouldChangeLineOf,
 } from './texts.js';
 
 /** Options of {@link undoWrite}. */
@@ -179,7 +185,7 @@ const finish = (output: Output, ended: UndoEnding): ExitCode => {
 export function reportUndo(output: Output, outcome: UndoOutcome): ExitCode {
   const code = reportOf(output, outcome);
   if ('unrecorded' in outcome && outcome.unrecorded === true) {
-    return finish(output, undoUnrecorded);
+    return finish(output, undoUnrecordedOf(outcome.subject ?? 'page'));
   }
   return code;
 }
@@ -187,31 +193,42 @@ export function reportUndo(output: Output, outcome: UndoOutcome): ExitCode {
 const reportOf = (output: Output, outcome: UndoOutcome): ExitCode => {
   switch (outcome.kind) {
     case 'done': {
-      const shown = writeDiff(output, changedLine, outcome.diff);
-      for (const line of doneLines(outcome.version, outcome.undoId)) {
+      const { subject } = outcome;
+      const shown = writeDiff(output, changedLineOf(subject), outcome.diff);
+      for (const line of doneLines(subject, outcome.version, outcome.undoId)) {
         output.stdout(line);
       }
       if (!shown) output.stderr(outputCutText);
       return exitCodes.ok;
     }
+    case 'deleted': {
+      const { subject } = outcome;
+      const shown = writeDiff(output, changedLineOf(subject), outcome.diff);
+      for (const line of deletedLines(subject)) output.stdout(line);
+      if (!shown) output.stderr(outputCutText);
+      return exitCodes.ok;
+    }
     case 'unchanged':
-      return finish(output, undoUnchanged);
+      return finish(output, undoUnchangedOf(outcome.subject));
     case 'changed':
-      if (!writeDiff(output, wouldChangeLine, outcome.diff)) {
+      if (
+        !writeDiff(output, wouldChangeLineOf(outcome.subject), outcome.diff)
+      ) {
         output.stderr(outputCutText);
       }
-      return finish(output, undoChanged);
+      return finish(output, undoChangedOf(outcome.subject));
     case 'missing':
     case 'expired':
     case 'off':
       return finish(output, undoMissing[outcome.kind]);
     case 'incomplete':
-      return finish(output, incompleteEnding(outcome.categoryId));
+      return finish(output, incompleteEnding(outcome.subject, outcome.placeId));
     case 'failed':
       // A diff of an undo that may have reached ChurchTools shows what it
       // was to write; one that was refused before shows nothing.
       if (outcome.sent && outcome.diff !== undefined) {
-        if (!writeDiff(output, wouldChangeLine, outcome.diff)) {
+        const heading = wouldChangeLineOf(outcome.subject ?? 'page');
+        if (!writeDiff(output, heading, outcome.diff)) {
           output.stderr(outputCutText);
         }
       }

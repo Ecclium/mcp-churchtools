@@ -30,6 +30,11 @@
  *   title and time is done already; the person who confirms learns how
  *   many other bookings the resource has at that time and that
  *   ChurchTools mails title and description to its managers (F48).
+ * - **An undo** of the operator (ADR 0031) reads the target right before
+ *   its one send as well: a change goes back to the fields from before
+ *   under the rules of every change, and a new appointment or booking is
+ *   deleted only as the write left it. No plan is sealed for it, since no
+ *   intent deletes and none empties a description.
  *
  * @packageDocumentation
  */
@@ -45,6 +50,8 @@ import {
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import {
+  type AppointmentState,
+  type BookingState,
   type CalendarWrites,
   type DatedFields,
   fitsDatedFields,
@@ -60,6 +67,7 @@ import {
 } from './confirmation-text.js';
 import { contentHashOf } from './plan-hash.js';
 import type { WriteTarget } from './rules.js';
+import type { CalendarUndoTarget } from './undo.js';
 
 /** The writes of calendars and resources. */
 export type CalendarIntent = Extract<
@@ -114,6 +122,8 @@ export const calendarSentences = Object.freeze({
     'This server moves only appointments its own account created. Change the time of this one in ChurchTools.',
   dayListFull:
     'The calendar or the resource has too many entries on the days around this time to rule out that the write is done already. Write it in ChurchTools.',
+  bookingGone:
+    'The booking cannot be read, and the list of its days no longer names it: someone deleted or moved it. Check it in ChurchTools.',
 } as const);
 
 /** How the one send of a write of an appointment or a booking ended. */
@@ -227,7 +237,7 @@ const shiftDay = (day: IsoDate, days: number): IsoDate =>
 // the lists do not take is refused, for a change as well, so that every
 // write this server makes is one it could have checked for a repeat.
 const daysAround = (
-  fields: DatedFields,
+  fields: Pick<DatedFields, 'startDate' | 'endDate'>,
 ): { readonly from: IsoDate; readonly to: IsoDate } => {
   const from = shiftDay(dayOf(fields.startDate), -1);
   const to = shiftDay(dayOf(fields.endDate), 1);
@@ -497,17 +507,9 @@ const planAppointmentUpdate = async (
     }
   }
   const facts = await writes.calendarFacts(ctx, calendarId);
-  const contentHash = contentHashOf([
-    fields.title,
-    fields.description ?? '',
-    fields.startDate,
-    fields.endDate,
-    fields.subtitle ?? '',
-    String(fields.isInternal),
-  ]);
+  const contentHash = changeHashOf(fields);
   const before = linesOf(now, timeZone);
   const after = linesOf(fields, timeZone);
-  const target = targetOf('appointment', calendarId, appointmentId);
   const base = now.version;
   return Object.freeze({
     contentHash,
@@ -546,40 +548,64 @@ const planAppointmentUpdate = async (
       }),
       after: Object.freeze({ version: base + 1, fieldsHash: contentHash }),
     }),
-    send: async (): Promise<SendOutcome> => {
-      let failure: unknown;
-      try {
-        await writes.updateAppointment(ctx, calendarId, appointmentId, fields);
-      } catch (error) {
-        const failed = failureOf(error, target);
-        if (failed.kind === 'notSent') return failed;
-        failure = error;
-      }
-      let after: StoredAppointment;
-      try {
-        after = (await writes.appointmentState(ctx, calendarId, appointmentId))
-          .appointment;
-      } catch (error) {
-        return { kind: 'unknown', code: codeOf(failure ?? error), target };
-      }
-      // Each stored PUT raises the version by exactly one (F42), and the
-      // fields the plan keeps are kept as well.
-      if (
-        after.version === base + 1 &&
-        !after.allDay &&
-        sameFields(after, fields) &&
-        after.subtitle === fields.subtitle &&
-        after.isInternal === fields.isInternal
-      ) {
-        return { kind: 'verified', target, version: after.version };
-      }
-      // Only a refusal of ChurchTools shows that the write did not land.
-      if (failure !== undefined && after.version === base) {
-        return failureOf(failure, target);
-      }
-      return { kind: 'notAsPlanned', target };
-    },
+    send: () => sendChange(writes, ctx, intent, base, fields),
   });
+};
+
+// The hash of the fields a change of an appointment writes, which the
+// snapshot keeps as what the change left.
+const changeHashOf = (fields: AppointmentFields): string =>
+  contentHashOf([
+    fields.title,
+    fields.description ?? '',
+    fields.startDate,
+    fields.endDate,
+    fields.subtitle ?? '',
+    String(fields.isInternal),
+  ]);
+
+// Replaces the fields of an appointment once and reads it back: the
+// version rose by exactly one, and the fields are those sent.
+const sendChange = async (
+  writes: CalendarWrites,
+  ctx: TenantContext,
+  ids: { readonly calendarId: number; readonly appointmentId: number },
+  base: number,
+  fields: AppointmentFields,
+): Promise<SendOutcome> => {
+  const { calendarId, appointmentId } = ids;
+  const target = targetOf('appointment', calendarId, appointmentId);
+  let failure: unknown;
+  try {
+    await writes.updateAppointment(ctx, calendarId, appointmentId, fields);
+  } catch (error) {
+    const failed = failureOf(error, target);
+    if (failed.kind === 'notSent') return failed;
+    failure = error;
+  }
+  let after: StoredAppointment;
+  try {
+    after = (await writes.appointmentState(ctx, calendarId, appointmentId))
+      .appointment;
+  } catch (error) {
+    return { kind: 'unknown', code: codeOf(failure ?? error), target };
+  }
+  // Each stored PUT raises the version by exactly one (F42), and the
+  // fields the plan keeps are kept as well.
+  if (
+    after.version === base + 1 &&
+    !after.allDay &&
+    sameFields(after, fields) &&
+    after.subtitle === fields.subtitle &&
+    after.isInternal === fields.isInternal
+  ) {
+    return { kind: 'verified', target, version: after.version };
+  }
+  // Only a refusal of ChurchTools shows that the write did not land.
+  if (failure !== undefined && after.version === base) {
+    return failureOf(failure, target);
+  }
+  return { kind: 'notAsPlanned', target };
 };
 
 // Whether a booking takes the resource at a time that overlaps the span.
@@ -661,6 +687,8 @@ const planBookingCreate = async (
       tool,
       placeId: intent.resourceId,
       fieldsHash: contentHash,
+      startDate: fields.startDate,
+      endDate: fields.endDate,
     }),
     send: async (
       saveCreated: (created: DatedCreatedSnapshot) => Promise<void>,
@@ -677,6 +705,7 @@ const planBookingCreate = async (
           kind: 'bookingCreated',
           id: created.id,
           version: created.version,
+          statusId: created.statusId,
         }),
       );
       // A request or one the resource approved by itself; a rejected
@@ -732,5 +761,300 @@ export function planCalendar(
       return planAppointmentUpdate(options, ctx, intent, tool);
     case 'bookingCreate':
       return planBookingCreate(options, ctx, intent, tool);
+  }
+}
+
+/** How the one send of an undo of an appointment or a booking ended. */
+export type UndoSendOutcome =
+  | SendOutcome
+  /** Deleted, and a read after shows it gone. */
+  | { readonly kind: 'deleted'; readonly target: WriteTarget };
+
+/** What taking back a write of an appointment or a booking rests on. */
+export type CalendarUndoPlan =
+  /** The target holds what the undo would leave, or is gone already. */
+  | { readonly kind: 'unchanged' }
+  /**
+   * Someone changed the target since the write: the fields now and what
+   * the undo would leave, as lines, for the operator.
+   */
+  | {
+      readonly kind: 'changed';
+      readonly change: { readonly from: string; readonly to: string };
+    }
+  /** Ready to send, with what the undo changes. */
+  | {
+      readonly kind: 'ready';
+      readonly change: { readonly from: string; readonly to: string };
+      /** The time of ChurchTools of the read, null without one. */
+      readonly serverTime: number | null;
+      /**
+       * What the snapshot of the undo keeps, so that it can be taken back
+       * as well; none for a delete, which cannot (ADR 0031).
+       */
+      readonly before?: SnapshotState;
+      /**
+       * Sends the undo once and reads it back.
+       *
+       * @returns How it ended; it never rejects.
+       */
+      readonly send: () => Promise<UndoSendOutcome>;
+    };
+
+// A change goes back to the fields from before: title, description, start
+// and end, not the other fields, which the change left as they were.
+const planRestore = async (
+  options: CalendarPlanOptions,
+  ctx: TenantContext,
+  target: Extract<CalendarUndoTarget, { kind: 'restore' }>,
+  overwrite: boolean,
+): Promise<CalendarUndoPlan> => {
+  const { writes, timeZone } = options;
+  const { calendarId, appointmentId, before, left } = target;
+  const { appointment: now, serverTime } = await writes.appointmentState(
+    ctx,
+    calendarId,
+    appointmentId,
+  );
+  const fields: AppointmentFields = Object.freeze({
+    title: before.title,
+    description: before.description,
+    startDate: before.startDate,
+    endDate: before.endDate,
+    subtitle: now.subtitle,
+    isInternal: now.isInternal,
+  });
+  if (sameFields(now, fields)) return { kind: 'unchanged' };
+  const change = Object.freeze({
+    from: linesOf(now, timeZone),
+    to: linesOf(fields, timeZone),
+  });
+  // A later change is shown first; the operator decides with `--overwrite`.
+  const asLeft =
+    now.version === left.version && changeHashOf(now) === left.fieldsHash;
+  if (!asLeft && !overwrite) return { kind: 'changed', change };
+  // Then the rules of every change: the fields are the state before
+  // Ecclium, so only what the client sends counts, not the limits of a
+  // text of a tool.
+  if (now.parts.length > 0) {
+    throw refuse('policy_denied', calendarSentences.appointmentParts);
+  }
+  if (now.allDay) throw refuse('policy_denied', calendarSentences.wholeDays);
+  if (!fitsDatedFields(fields)) {
+    throw refuse('validation', calendarSentences.datedFields);
+  }
+  if (fields.startDate !== now.startDate || fields.endDate !== now.endDate) {
+    const account = await options.whoami(ctx);
+    if (now.createdBy === null || now.createdBy !== account.id) {
+      throw refuse('policy_denied', calendarSentences.notOwnTime);
+    }
+  }
+  return Object.freeze({
+    kind: 'ready',
+    change,
+    serverTime,
+    before: Object.freeze({
+      kind: 'appointmentFields',
+      tool: target.tool,
+      calendarId,
+      appointmentId,
+      before: Object.freeze({
+        version: now.version,
+        title: now.title,
+        subtitle: now.subtitle,
+        description: now.description,
+        startDate: now.startDate,
+        endDate: now.endDate,
+        isInternal: now.isInternal,
+      }),
+      after: Object.freeze({
+        version: now.version + 1,
+        fieldsHash: changeHashOf(fields),
+      }),
+    }),
+    send: () => sendChange(writes, ctx, target, now.version, fields),
+  });
+};
+
+// A new appointment is deleted only while it is as the write left it and
+// nothing is linked to it; a read that answers 404 shows it gone (F47).
+const planAppointmentDelete = async (
+  options: CalendarPlanOptions,
+  ctx: TenantContext,
+  target: Extract<CalendarUndoTarget, { kind: 'deleteAppointment' }>,
+): Promise<CalendarUndoPlan> => {
+  const { writes, timeZone } = options;
+  const { calendarId, appointmentId, left } = target;
+  const gone = (error: unknown): boolean =>
+    isEccliumError(error) && error.code === 'not_found';
+  let read: AppointmentState;
+  try {
+    read = await writes.appointmentState(ctx, calendarId, appointmentId);
+  } catch (error) {
+    if (gone(error)) return { kind: 'unchanged' };
+    throw error;
+  }
+  const { appointment: now, serverTime } = read;
+  const change = Object.freeze({ from: linesOf(now, timeZone), to: '' });
+  if (now.version !== left.version || hashOf(now) !== left.fieldsHash) {
+    return { kind: 'changed', change };
+  }
+  // Deleting an appointment deletes what hangs on it as well.
+  if (now.parts.length > 0) {
+    throw refuse('policy_denied', calendarSentences.appointmentParts);
+  }
+  const deleted = targetOf('appointment', calendarId, appointmentId);
+  return Object.freeze({
+    kind: 'ready',
+    change,
+    serverTime,
+    send: async (): Promise<UndoSendOutcome> => {
+      let failure: unknown;
+      try {
+        await writes.deleteAppointment(ctx, calendarId, appointmentId);
+      } catch (error) {
+        const failed = failureOf(error, deleted);
+        if (failed.kind === 'notSent') return failed;
+        failure = error;
+      }
+      try {
+        await writes.appointmentState(ctx, calendarId, appointmentId);
+      } catch (error) {
+        if (gone(error)) return { kind: 'deleted', target: deleted };
+        return {
+          kind: 'unknown',
+          code: codeOf(failure ?? error),
+          target: deleted,
+        };
+      }
+      // Still there: only a refusal of ChurchTools shows why.
+      return failure === undefined
+        ? { kind: 'notAsPlanned', target: deleted }
+        : failureOf(failure, deleted);
+    },
+  });
+};
+
+// A new booking is deleted only while it is as the write left it. A read of
+// a deleted booking answers 500, so only the list of its days shows that it
+// is gone (F47); a list that ends before its last entry shows nothing.
+const planBookingDelete = async (
+  options: CalendarPlanOptions,
+  ctx: TenantContext,
+  target: Extract<CalendarUndoTarget, { kind: 'deleteBooking' }>,
+): Promise<CalendarUndoPlan> => {
+  const { writes, timeZone } = options;
+  const { resourceId, bookingId, left } = target;
+  const listed = async (
+    span: Pick<DatedFields, 'startDate' | 'endDate'>,
+  ): Promise<boolean | undefined> => {
+    const { from, to } = daysAround(span);
+    const { bookings } = await writes.resourceDayState(
+      ctx,
+      resourceId,
+      from,
+      to,
+    );
+    if (bookings.bookings.some((entry) => entry.id === bookingId)) return true;
+    return bookings.more ? undefined : false;
+  };
+  let read: BookingState;
+  try {
+    read = await writes.bookingState(ctx, resourceId, bookingId);
+  } catch (error) {
+    // A deleted booking reads as 500, as other failures do (F47). Only a
+    // 404 with a list that leaves the booking out shows it gone; any other
+    // failure with such a list cannot tell a deleted booking from one moved
+    // to another resource, so the operator looks.
+    const unread =
+      isEccliumError(error) &&
+      (error.code === 'upstream' || error.code === 'not_found');
+    if (!unread || (await listed(target)) !== false) throw error;
+    if (error.code === 'not_found') return { kind: 'unchanged' };
+    throw refuse('not_found', calendarSentences.bookingGone);
+  }
+  const { booking, serverTime } = read;
+  const change = Object.freeze({ from: linesOf(booking, timeZone), to: '' });
+  // An approval need not raise the version, so the status counts as well,
+  // and a booking linked to an appointment since is not deleted either.
+  if (
+    booking.version !== left.version ||
+    booking.statusId !== left.statusId ||
+    booking.linked ||
+    hashOf(booking) !== left.fieldsHash
+  ) {
+    return { kind: 'changed', change };
+  }
+  const deleted = targetOf('booking', resourceId, bookingId);
+  return Object.freeze({
+    kind: 'ready',
+    change,
+    serverTime,
+    send: async (): Promise<UndoSendOutcome> => {
+      let failure: unknown;
+      try {
+        await writes.deleteBooking(ctx, bookingId);
+      } catch (error) {
+        const failed = failureOf(error, deleted);
+        if (failed.kind === 'notSent') return failed;
+        failure = error;
+      }
+      let there: boolean | undefined;
+      try {
+        there = await listed(booking);
+      } catch (error) {
+        return {
+          kind: 'unknown',
+          code: codeOf(failure ?? error),
+          target: deleted,
+        };
+      }
+      if (there === false) return { kind: 'deleted', target: deleted };
+      if (there === undefined) {
+        return { kind: 'unknown', code: codeOf(failure), target: deleted };
+      }
+      return failure === undefined
+        ? { kind: 'notAsPlanned', target: deleted }
+        : failureOf(failure, deleted);
+    },
+  });
+};
+
+/**
+ * Reads what taking back a write of an appointment or a booking rests on:
+ * whether anything is left to do, whether someone changed the target since
+ * the write, and the one send. A new appointment or booking is deleted only
+ * as the write left it, `overwrite` or not; a changed appointment gets its
+ * fields back over a later change only with `overwrite`, and only where a
+ * tool could change it (ADR 0031).
+ *
+ * @param options - The writes of the client, the read of the account and
+ *   the zone of the texts.
+ * @param ctx - The context of the undo.
+ * @param target - What the snapshot names to take back.
+ * @param overwrite - Whether to write over a later change of an
+ *   appointment.
+ * @returns What the undo rests on, frozen.
+ * @throws {EccliumError} With a fixed sentence when the undo is refused,
+ *   and the codes of a failed read.
+ * @example
+ * ```ts
+ * const plan = await planCalendarUndo(options, ctx, target, false);
+ * if (plan.kind === 'ready') await plan.send();
+ * ```
+ */
+export function planCalendarUndo(
+  options: CalendarPlanOptions,
+  ctx: TenantContext,
+  target: CalendarUndoTarget,
+  overwrite: boolean,
+): Promise<CalendarUndoPlan> {
+  switch (target.kind) {
+    case 'restore':
+      return planRestore(options, ctx, target, overwrite);
+    case 'deleteAppointment':
+      return planAppointmentDelete(options, ctx, target);
+    case 'deleteBooking':
+      return planBookingDelete(options, ctx, target);
   }
 }

@@ -107,7 +107,10 @@ afterEach(async () => {
 });
 
 const setup = (
-  options: { readonly snapshots?: false | WriteSnapshots } = {},
+  options: {
+    readonly snapshots?: false | WriteSnapshots;
+    readonly timeZone?: string;
+  } = {},
 ) => {
   const double = createChurchToolsDouble({ token });
   open.push(double);
@@ -158,6 +161,7 @@ const setup = (
       minLevel: 'debug',
     },
     killSwitchDir: dir,
+    ...(options.timeZone === undefined ? {} : { timeZone: options.timeZone }),
     ...(options.snapshots === false
       ? {}
       : { snapshots: options.snapshots ?? keeper }),
@@ -306,7 +310,7 @@ describe('the undo of the pipeline (ADR 0031)', () => {
     reads(5, before);
     expect(
       await pipeline.undo({ eventId: written, overwrite: false }, request()),
-    ).toEqual({ kind: 'unchanged' });
+    ).toEqual({ kind: 'unchanged', subject: 'page' });
     expect(events()).toMatchObject([
       { type: 'undo', outcome: 'ok', writeState: 'skipped' },
     ]);
@@ -430,7 +434,7 @@ describe('the undo of the pipeline (ADR 0031)', () => {
         { eventId: written, overwrite: false },
         request(),
       ),
-    ).toEqual({ kind: 'incomplete', categoryId: 12 });
+    ).toEqual({ kind: 'incomplete', subject: 'page', placeId: 12 });
     expect(incomplete.events()).toMatchObject([
       {
         type: 'undo',
@@ -554,5 +558,209 @@ describe('the undo of the pipeline (ADR 0031)', () => {
     expect(broken.logLines.some((entry) => entry.includes('"undo_call"'))).toBe(
       true,
     );
+  });
+
+  // A new appointment of calendar 8, as its write left it, read with what
+  // is linked to it (ADR 0072).
+  const calendarPath = '/api/calendars/8/appointments/21';
+  const atAppointment = (path: string): boolean =>
+    path.split('?')[0] === calendarPath;
+  const appointmentAnswer = JSON.stringify({
+    data: {
+      appointment: {
+        id: 21,
+        version: 0,
+        calendar: { id: 8 },
+        title: 'Probe',
+        subtitle: null,
+        description: null,
+        startDate: '2026-11-08T09:00:00Z',
+        endDate: '2026-11-08T10:00:00Z',
+        allDay: false,
+        isInternal: false,
+        repeatId: 0,
+        additionals: [],
+        exceptions: [],
+        address: null,
+        link: null,
+        image: null,
+        signup: null,
+        onBehalfOfPid: null,
+        meta: { createdPerson: { id: 41 } },
+      },
+      additionalInfos: [],
+      calculatedDates: {
+        '2026-11-08': {
+          startDate: '2026-11-08T09:00:00Z',
+          endDate: '2026-11-08T10:00:00Z',
+        },
+      },
+    },
+  });
+  const keepAppointment = async (
+    keeper: ReturnType<typeof setup>['keeper'],
+  ) => {
+    await keeper.save(ctxOf, {
+      eventId: written,
+      part: 'before',
+      day,
+      content: {
+        kind: 'appointmentCreate',
+        tool: 'ct_example_note_write',
+        placeId: 8,
+        fieldsHash: contentHashOf([
+          'Probe',
+          '',
+          '2026-11-08T09:00:00Z',
+          '2026-11-08T10:00:00Z',
+        ]),
+      },
+    });
+    await keeper.save(ctxOf, {
+      eventId: written,
+      part: 'after',
+      day,
+      content: { kind: 'appointmentCreated', id: 21, version: 0 },
+    });
+  };
+  const calendarRights = JSON.stringify({
+    data: { churchcal: { 'edit category': [8], 'view category': [8] } },
+  });
+
+  it('deletes a new appointment as its write left it, and names what it took back', async () => {
+    // The zone of the operator reaches the write guard, whose lines show
+    // the times in it.
+    const { double, pipeline, keeper, events } = setup({
+      timeZone: 'Europe/Zurich',
+    });
+    await keepAppointment(keeper);
+    double
+      .intercept({ path: '/api/permissions/global', method: 'GET' })
+      .reply(200, calendarRights, json);
+    double
+      .intercept({ path: atAppointment, method: 'GET' })
+      .reply(200, appointmentAnswer, json);
+    double.intercept({ path: calendarPath, method: 'DELETE' }).reply(204, '');
+    double
+      .intercept({ path: atAppointment, method: 'GET' })
+      .reply(404, JSON.stringify({ message: 'gone' }), json);
+    const outcome = await pipeline.undo(
+      { eventId: written, overwrite: false },
+      request(),
+    );
+    expect(outcome).toMatchObject({
+      kind: 'deleted',
+      subject: 'newAppointment',
+    });
+    expect(JSON.stringify(outcome)).toContain(
+      'Beginn: Sonntag, 08.11.2026, 10:00 (Europe/Zurich)',
+    );
+    expect(events()).toMatchObject([
+      {
+        type: 'undo',
+        outcome: 'ok',
+        writeState: 'verified',
+        confirmation: 'operator',
+        undoes: written,
+        objectRefs: ['calendar:8', 'appointment:21'],
+      },
+    ]);
+  });
+
+  it('names a changed appointment when ChurchTools refuses its write back', async () => {
+    const { double, pipeline, keeper } = setup();
+    await keeper.save(ctxOf, {
+      eventId: written,
+      part: 'before',
+      day,
+      content: {
+        kind: 'appointmentFields',
+        tool: 'ct_example_note_write',
+        calendarId: 8,
+        appointmentId: 21,
+        before: {
+          version: 0,
+          title: 'Alt',
+          subtitle: null,
+          description: null,
+          startDate: '2026-11-08T09:00:00Z',
+          endDate: '2026-11-08T10:00:00Z',
+          isInternal: false,
+        },
+        after: {
+          version: 0,
+          fieldsHash: contentHashOf([
+            'Probe',
+            '',
+            '2026-11-08T09:00:00Z',
+            '2026-11-08T10:00:00Z',
+            '',
+            'false',
+          ]),
+        },
+      },
+    });
+    double
+      .intercept({ path: '/api/permissions/global', method: 'GET' })
+      .reply(200, calendarRights, json);
+    double
+      .intercept({ path: atAppointment, method: 'GET' })
+      .reply(200, appointmentAnswer, json);
+    double
+      .intercept({ path: calendarPath, method: 'PUT' })
+      .reply(403, JSON.stringify({ message: 'no' }), json);
+    double
+      .intercept({ path: atAppointment, method: 'GET' })
+      .reply(200, appointmentAnswer, json);
+    expect(
+      await pipeline.undo({ eventId: written, overwrite: false }, request()),
+    ).toMatchObject({
+      kind: 'failed',
+      subject: 'appointment',
+      code: 'permission',
+      sent: false,
+    });
+  });
+
+  it('names what it takes back also when it is refused or incomplete', async () => {
+    const refused = setup();
+    await keepAppointment(refused.keeper);
+    refused.double
+      .intercept({ path: '/api/permissions/global', method: 'GET' })
+      .reply(200, rights, json);
+    expect(
+      await refused.pipeline.undo(
+        { eventId: written, overwrite: false },
+        request(),
+      ),
+    ).toMatchObject({
+      kind: 'failed',
+      subject: 'newAppointment',
+      code: 'permission',
+      reason: 'calendarRight',
+    });
+    const incomplete = setup();
+    await incomplete.keeper.save(ctxOf, {
+      eventId: written,
+      part: 'before',
+      day,
+      content: {
+        kind: 'bookingCreate',
+        tool: 'ct_example_note_write',
+        placeId: 13,
+        fieldsHash: contentHashOf(['Probe']),
+        startDate: '2026-11-08T09:00:00Z',
+        endDate: '2026-11-08T10:00:00Z',
+      },
+    });
+    expect(
+      await incomplete.pipeline.undo(
+        { eventId: written, overwrite: false },
+        request(),
+      ),
+    ).toEqual({ kind: 'incomplete', subject: 'newBooking', placeId: 13 });
+    expect(incomplete.events()).toMatchObject([
+      { type: 'undo', writeState: 'failed', objectRefs: ['resource:13'] },
+    ]);
   });
 });

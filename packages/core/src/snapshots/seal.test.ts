@@ -94,13 +94,27 @@ describe('sealSnapshot and openSnapshot', () => {
         tool: 'ct_bookings_create',
         placeId: 13,
         fieldsHash: contentHashOf(['b']),
+        startDate: '2026-11-08T09:00:00Z',
+        endDate: '2026-11-08T10:00:00Z',
+      },
+    ],
+    [
+      'a new appointment',
+      {
+        kind: 'appointmentCreate',
+        tool: 'ct_appointments_create',
+        placeId: 8,
+        fieldsHash: contentHashOf(['c']),
       },
     ],
     [
       'a new appointment named',
       { kind: 'appointmentCreated', id: 31, version: 0 },
     ],
-    ['a new booking named', { kind: 'bookingCreated', id: 51, version: 1 }],
+    [
+      'a new booking named',
+      { kind: 'bookingCreated', id: 51, version: 1, statusId: 1 },
+    ],
   ])('open what they sealed of %s', async (_, content) => {
     const keys = createMemoryDayKeys();
     const part = content.kind.endsWith('Created') ? 'after' : 'before';

@@ -21,4 +21,5 @@ export {
   type UndoCall,
   type UndoOutcome,
   type UndoReason,
+  type UndoSubject,
 } from './pipeline.js';
