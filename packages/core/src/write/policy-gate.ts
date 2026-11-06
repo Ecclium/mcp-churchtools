@@ -107,6 +107,16 @@ export interface PolicyGateOptions {
     ctx: TenantContext,
     categoryId: number,
   ) => Promise<string | undefined>;
+  /** Reads the name of a calendar. */
+  readonly calendarName: (
+    ctx: TenantContext,
+    calendarId: number,
+  ) => Promise<string | undefined>;
+  /** Reads the name of a resource. */
+  readonly resourceName: (
+    ctx: TenantContext,
+    resourceId: number,
+  ) => Promise<string | undefined>;
 }
 
 /** The policy in the write guard. */
@@ -149,9 +159,9 @@ export interface PolicyGate {
 export function createPolicyGate(options: PolicyGateOptions): PolicyGate {
   const { policy, quota, clock } = options;
 
-  // The name of a target as ChurchTools has it now. Only the writes of the
-  // wiki run in this version; the names of other targets come with their
-  // tools, and until then no name means no write.
+  // The name of a target as ChurchTools has it now. Groups and services
+  // come with the writes of the Pro module, and until then no name means no
+  // write.
   const nameOf = (
     ctx: TenantContext,
     expected: ExpectedName,
@@ -162,6 +172,10 @@ export function createPolicyGate(options: PolicyGateOptions): PolicyGate {
         return options.categoryName(ctx, expected.of.id);
       case 'wiki_page':
         return Promise.resolve(facts.pageTitle);
+      case 'calendar':
+        return options.calendarName(ctx, expected.of.id);
+      case 'resource':
+        return options.resourceName(ctx, expected.of.id);
       default:
         return Promise.resolve(undefined);
     }

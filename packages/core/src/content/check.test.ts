@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { canonicalMarkdown } from './canonical.js';
-import { checkMarkdown, checkPlainText } from './check.js';
+import { checkMarkdown, checkPlainLines, checkPlainText } from './check.js';
 import { maxContentBytes, maxDelimiterSigns } from './normalize.js';
 import { contactKeyOf } from './scan.js';
 
@@ -313,6 +313,50 @@ describe('checkPlainText', () => {
 
   it('refuses a title over the limit', () => {
     expect(checkPlainText('a'.repeat(maxContentBytes + 1), options)).toEqual({
+      ok: false,
+      violations: ['tooLong'],
+    });
+  });
+});
+
+describe('checkPlainLines', () => {
+  it('gives a text with lines in its normal form', () => {
+    expect(
+      checkPlainLines(`Probe ${u(0xff30)}\nmit Chor\n\nim Saal`, options),
+    ).toEqual({ ok: true, text: 'Probe P\nmit Chor\n\nim Saal' });
+  });
+
+  it('refuses what a text of one line refuses, in any of its lines', () => {
+    for (const text of [
+      'Probe\n[Klick](javascript:alert(1))',
+      'Probe\nmit `Code`',
+      'Probe\\ B',
+      `Probe${u(0x2028)}B`,
+      `Probe${u(0x2029)}B`,
+    ]) {
+      expect(checkPlainLines(text, options), text).toEqual({
+        ok: false,
+        violations: ['unsupported'],
+      });
+    }
+    expect(checkPlainLines('Probe\n<b>fett</b>', options)).toEqual({
+      ok: false,
+      violations: ['html'],
+    });
+    expect(checkPlainLines('Probe\n&lt;img&gt;', options)).toEqual({
+      ok: false,
+      violations: ['html'],
+    });
+    expect(
+      checkPlainLines(
+        'Probe\ngemeinde.example\nmax.mustermann@example.org',
+        options,
+      ),
+    ).toEqual({ ok: false, violations: ['webAddress', 'contact'] });
+  });
+
+  it('refuses a text over the limit', () => {
+    expect(checkPlainLines('a\n'.repeat(maxContentBytes), options)).toEqual({
       ok: false,
       violations: ['tooLong'],
     });

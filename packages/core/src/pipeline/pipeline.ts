@@ -128,6 +128,7 @@ import {
   writeSentences,
   ContentRefusal,
   createWriteGuard,
+  objectRefsOfTarget,
   type PlanQueueReason,
   type WriteGuard,
   type WriteSnapshots,
@@ -804,19 +805,14 @@ const queuedResult = (
 // (ADR 0031).
 const maxWaiting = 100;
 
-// The IDs of a target for the audit: a category, and a page by its GUID.
-// A write that ended before it had a target adds none.
+// The IDs of a target for the audit (rules.ts). A write that ended before
+// it had a target adds none.
 const addTarget = (
   refs: ObjectRefCollector,
   target: WriteTarget | undefined,
 ): void => {
   if (target === undefined) return;
-  const [first, second] = target.key.split('/');
-  if (target.kind === 'wiki_category') refs.add('wiki_category', first);
-  if (target.kind === 'wiki_page') {
-    refs.add('wiki_category', first);
-    refs.add('wiki_page', second);
-  }
+  for (const [kind, id] of objectRefsOfTarget(target)) refs.add(kind, id);
 };
 
 // A call without a tool to name or without an input that fits its schema

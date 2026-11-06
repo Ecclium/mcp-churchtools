@@ -18,9 +18,10 @@ import type {
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import {
+  isOutcome,
   openSnapshot,
-  type PageCreatedSnapshot,
   sealSnapshot,
+  type SnapshotOutcome,
   type SnapshotState,
   type SnapshotToSeal,
 } from './seal.js';
@@ -38,7 +39,7 @@ export type LoadedSnapshot =
   | {
       readonly kind: 'found';
       readonly before: SnapshotState;
-      readonly after?: PageCreatedSnapshot;
+      readonly after?: SnapshotOutcome;
       /** The UTC day of the part before, the day of the write. */
       readonly day: IsoDate;
     };
@@ -128,7 +129,7 @@ export function createSnapshotKeeper(ports: {
         kind: 'found',
         // openSnapshot gives a part before only as a state (seal.ts).
         before: before as SnapshotState,
-        ...(after?.kind === 'wikiPageCreated' ? { after } : {}),
+        ...(after === undefined || !isOutcome(after) ? {} : { after }),
         day: first.day,
       });
     },

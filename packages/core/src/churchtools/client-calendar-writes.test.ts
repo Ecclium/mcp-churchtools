@@ -162,6 +162,7 @@ const storedAppointment = (data: Readonly<Record<string, unknown>> = {}) => ({
   onBehalfOfPid: null,
   meta: {
     createdPerson: {
+      id: 41,
       title: name.value,
       domainAttributes: { email: email.value },
     },
@@ -182,6 +183,7 @@ const plainParts = {
   endDate: end,
   allDay: false,
   isInternal: false,
+  createdBy: 41,
   parts: [],
 };
 
@@ -802,6 +804,22 @@ describe('the state of an appointment for a plan', () => {
     expect(double.calls().at(-1)?.body).toBe(
       `{"title":"Gottesdienst","startDate":"${start}","endDate":"${end}","isInternal":false,"repeatId":0}`,
     );
+  });
+
+  // F44: the creator is the account that wrote; without it, the write
+  // guard moves no appointment.
+  it.each([
+    ['no meta', { meta: undefined }],
+    ['no creator', { meta: { createdDate: start } }],
+    ['a creator of null', { meta: { createdPerson: null } }],
+  ])('gives no creator for %s', async (_, data) => {
+    const { double, writes, ctx } = setup();
+    double
+      .intercept({ path: at(appointmentPath), method: 'GET' })
+      .reply(200, JSON.stringify(stateAnswer(data)), json);
+    expect(
+      (await writes.appointmentState(ctx(), 8, 21)).appointment.createdBy,
+    ).toBeNull();
   });
 
   it('takes the dates as a list as well', async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  datedConfirmationTextOf,
   confirmationField,
   confirmationForm,
   confirmationLimits,
@@ -270,6 +271,95 @@ describe('the text of a confirmation', () => {
       }),
     );
     expect(text.fits).toBe(false);
+  });
+});
+
+// The confirmation of an appointment or a booking (ADR 0072): names of
+// ChurchTools made visible, the public calendar and the mail of a booking
+// request named (F48).
+describe('the text of a confirmation of an appointment or a booking', () => {
+  const span = 'Sonntag, 08.11.2026, 09:00 bis 10:00 (UTC)';
+
+  it('names a new appointment, its calendar and that the calendar is public', () => {
+    const text = datedConfirmationTextOf({
+      kind: 'appointmentCreate',
+      place: { id: 8, name: 'Gottesdienste' },
+      title: 'Probe',
+      span,
+      before: '',
+      after: 'Titel: Probe\nBeginn: a\nEnde: b\n',
+      changed: [],
+      isPublic: true,
+    });
+    expect(text.summary).toBe(
+      `Einen Termin «Probe» im Kalender «Gottesdienste» anlegen: ${span}. Der Kalender ist öffentlich: Den Termin sieht auch, wer nicht angemeldet ist.`,
+    );
+    expect(text.diff).toEqual([
+      '@@ -0,0 +1,3 @@',
+      '+Titel: Probe',
+      '+Beginn: a',
+      '+Ende: b',
+    ]);
+    expect(text.fits).toBe(true);
+    expect(Object.isFrozen(text)).toBe(true);
+  });
+
+  it('names the fields a change changes, in German', () => {
+    const text = (changed: readonly string[]) =>
+      datedConfirmationTextOf({
+        kind: 'appointmentUpdate',
+        place: { id: 8 },
+        title: 'Gottesdienst',
+        span,
+        before: 'Titel: A\n',
+        after: 'Titel: B\n',
+        changed,
+        isPublic: false,
+      }).summary;
+    expect(text(['Titel'])).toBe(
+      `Beim Termin «Gottesdienst» im Kalender 8 Titel ändern, danach ${span}.`,
+    );
+    expect(text(['Titel', 'Beginn', 'Ende'])).toContain(
+      'Titel, Beginn und Ende ändern',
+    );
+  });
+
+  it('says that a booking request goes to the managers by mail and counts other bookings', () => {
+    const text = (overlapping?: number) =>
+      datedConfirmationTextOf({
+        kind: 'bookingCreate',
+        place: { id: 13 },
+        title: 'Probe',
+        span,
+        before: '',
+        after: 'Titel: Probe\n',
+        changed: [],
+        ...(overlapping === undefined ? {} : { overlapping }),
+      }).summary;
+    expect(text()).toBe(
+      `Eine Buchung der Ressource 13 anfragen: «Probe», ${span}. ChurchTools schickt Titel und Beschreibung per Mail an die Verwalter der Ressource.`,
+    );
+    expect(text(1)).toContain(
+      'Zur selben Zeit hat die Ressource eine weitere Buchung.',
+    );
+    expect(text(3)).toContain(
+      'Zur selben Zeit hat die Ressource 3 weitere Buchungen.',
+    );
+  });
+
+  it('makes names and fields of ChurchTools visible', () => {
+    const text = datedConfirmationTextOf({
+      kind: 'appointmentCreate',
+      place: { id: 8, name: 'Kalender»\u202e' },
+      title: 'Pro\u200bbe',
+      span,
+      before: '',
+      after: 'Titel: Pro\u200bbe\n',
+      changed: [],
+    });
+    expect(text.summary).toContain('«Pro\\u{200b}be»');
+    expect(text.summary).toContain('«Kalender\\u{bb}\\u{202e}»');
+    expect(text.diff).toContain('+Titel: Pro\\u{200b}be');
   });
 });
 

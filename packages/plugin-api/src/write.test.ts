@@ -94,7 +94,7 @@ describe('the result of a write tool', () => {
   });
 
   it('lists every kind of target once, frozen', () => {
-    expect(new Set(writeTargetKinds).size).toBe(8);
+    expect(new Set(writeTargetKinds).size).toBe(9);
     expect(Object.isFrozen(writeTargetKinds)).toBe(true);
   });
 });

@@ -298,6 +298,43 @@ const approveReasons: Readonly<
     text: 'Die Seite endet in einem offenen Block, etwa einem Codeblock oder Kommentar, der den Abschnitt mit seiner Kennzeichnung aufnähme. Ecclium hat nichts geschrieben. Schliessen Sie den Block in ChurchTools.',
     code: exitCodes.dataError,
   },
+  // The writes of appointments and bookings (ADR 0072).
+  calendarRight: {
+    text: 'Das Dienstkonto darf Termine in diesem Kalender nicht ändern, Ecclium hat nichts geschrieben. Die nötigen Rechte nennt die Anleitung zum Dienstkonto.',
+    code: exitCodes.noPermission,
+  },
+  resourceRight: {
+    text: 'Das Dienstkonto darf für diese Ressource keine Buchungen anfragen, Ecclium hat nichts geschrieben. Die nötigen Rechte nennt die Anleitung zum Dienstkonto.',
+    code: exitCodes.noPermission,
+  },
+  datedFields: {
+    text: 'Titel, Beschreibung oder Zeiten des Eintrags passen nicht zu einem Termin oder einer Buchung, Ecclium hat nichts geschrieben.',
+    code: exitCodes.dataError,
+  },
+  datedSpan: {
+    text: 'Der Termin oder die Buchung des Eintrags dauert länger, als Ecclium schreibt. Ecclium hat nichts geschrieben.',
+    code: exitCodes.dataError,
+  },
+  appointmentChanged: {
+    text: 'Der Termin hat sich seit dem Einreihen geändert, darum hat Ecclium nichts geschrieben.',
+    code: exitCodes.dataError,
+  },
+  appointmentParts: {
+    text: 'Der Termin hat Teile, die Ecclium nicht ändert, etwa eine Serie, eine Adresse oder ein verknüpftes Event. Ecclium hat nichts geschrieben. Ändern Sie den Termin in ChurchTools.',
+    code: exitCodes.noPermission,
+  },
+  wholeDays: {
+    text: 'Der Termin dauert ganze Tage, und solche schreibt Ecclium nicht. Ecclium hat nichts geschrieben.',
+    code: exitCodes.noPermission,
+  },
+  notOwnTime: {
+    text: 'Ecclium verschiebt nur Termine, die sein Dienstkonto angelegt hat, und hat nichts geschrieben. Verschieben Sie den Termin in ChurchTools.',
+    code: exitCodes.noPermission,
+  },
+  dayListFull: {
+    text: 'Der Kalender oder die Ressource hat an diesen Tagen zu viele Einträge, als dass Ecclium einen gleichen ausschliessen könnte. Ecclium hat nichts geschrieben. Legen Sie den Eintrag in ChurchTools an.',
+    code: exitCodes.noPermission,
+  },
   auditNotReady: {
     text: 'Die Audit-Datei kann die Zeile der Freigabe nicht aufnehmen, darum schreibt Ecclium nicht. Prüfen Sie die Audit-Datei mit ‹ecclium audit verify›.',
     code: exitCodes.ioError,
@@ -331,8 +368,13 @@ const approveCodeTexts = (
         text: 'ChurchTools hat das Token des Dienstkontos abgewiesen, Ecclium hat nichts geschrieben. Erneuern Sie das Token, wie es die Anleitung zum Dienstkonto beschreibt.',
         code: exitCodes.noPermission,
       };
+    // ChurchTools refused a write the rights seemed to allow, of any
+    // target, a page as well as an appointment or a booking.
     case 'permission':
-      return approveReasons.missingRight;
+      return {
+        text: 'ChurchTools lässt das Dienstkonto dieses Ziel nicht ändern, Ecclium hat nichts geschrieben. Die nötigen Rechte nennt die Anleitung zum Dienstkonto.',
+        code: exitCodes.noPermission,
+      };
     case 'not_found':
       return {
         text: 'Das Ziel gibt es in ChurchTools nicht mehr, oder das Dienstkonto sieht es nicht. Ecclium hat nichts geschrieben.',

@@ -154,14 +154,8 @@ describe('a sealed plan', () => {
       { kind: 'groupMemberAdd', groupId: 7, personId: 1 },
     ],
     [
-      'an appointment, which the core does not run yet',
-      {
-        kind: 'appointmentCreate',
-        calendarId: 4,
-        title: 'Probe',
-        startDate: 'a',
-        endDate: 'b',
-      },
+      'a service request, which the core does not run yet',
+      { kind: 'serviceRequest', eventId: 9, serviceId: 3, personId: 1 },
     ],
   ])('is not sealed from %s', (_name, intent) => {
     expect(() => sealPlan(inputOf(intent))).toThrow(TypeError);

@@ -1786,6 +1786,31 @@
                       "type": "null"
                     }
                   ]
+                },
+                "meta": {
+                  "type": "object",
+                  "properties": {
+                    "createdPerson": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "id"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
                 }
               },
               "required": [
@@ -2018,6 +2043,31 @@
                   "type": "null"
                 }
               ]
+            },
+            "meta": {
+              "type": "object",
+              "properties": {
+                "createdPerson": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer",
+                          "exclusiveMinimum": 0,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "id"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              }
             }
           },
           "required": [

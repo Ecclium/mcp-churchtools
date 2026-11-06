@@ -20,7 +20,7 @@ const reasons: readonly [UndoReason, number][] = [
   ['readOnly', 77],
   ['switchedOff', 77],
   ['switchUnknown', 77],
-  ['notRun', 70],
+  ['notRun', 77],
   ['intent', 70],
   ['blank', 65],
   ['rightsUnknown', 77],

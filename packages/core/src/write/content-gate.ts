@@ -24,14 +24,26 @@ import { maxMessageLength } from '../errors/index.js';
 import { markingTextsOf } from '../marker/index.js';
 import {
   checkMarkdown,
+  checkPlainLines,
   checkPlainText,
   type ContentCheckResult,
   contentSentences,
   orderViolations,
 } from '../content/index.js';
 
-/** The writes of the wiki, the only ones this version runs. */
-type WikiIntent = Extract<WriteIntent, { categoryId: number }>;
+/** The writes of the core whose texts the content policy checks. */
+export type CheckedIntent = Extract<
+  WriteIntent,
+  {
+    kind:
+      | 'wikiPageCreate'
+      | 'wikiPageUpdate'
+      | 'wikiSectionAppend'
+      | 'appointmentCreate'
+      | 'appointmentUpdate'
+      | 'bookingCreate';
+  }
+>;
 
 /**
  * A text refused by the content policy: the error the tool gets, and the
@@ -98,10 +110,12 @@ const eventOf = Object.freeze({
 } as const);
 
 /**
- * Checks the texts of a write of the wiki and gives the intent with their
+ * Checks the texts of a write of the core and gives the intent with their
  * written form: the title of a new page as plain text, its text, the new
- * text of a page and a section to add as Markdown. The text of the page a
- * section is added to is not checked: it stays as it is.
+ * text of a page and a section to add as Markdown, the title of an
+ * appointment or a booking as plain text and its description as plain
+ * text with lines. The text of the page a section is added to is not
+ * checked: it stays as it is.
  *
  * @param ctx - The context of the call, for the log.
  * @param intent - The checked copy of the intent.
@@ -114,11 +128,11 @@ const eventOf = Object.freeze({
  * // { ..., section: '- Probe\n' }
  * ```
  */
-export function checkIntentContent(
+export function checkIntentContent<Intent extends CheckedIntent>(
   ctx: TenantContext,
-  intent: WikiIntent,
+  intent: Intent,
   contacts: ReadonlySet<string>,
-): WikiIntent {
+): Intent {
   const options = { contacts };
   const results: ContentCheckResult[] = [];
   const text = (result: ContentCheckResult): string => {
@@ -136,22 +150,39 @@ export function checkIntentContent(
     }
     return written;
   };
-  let checked: WikiIntent;
-  switch (intent.kind) {
+  let checked: CheckedIntent;
+  // Each case only replaces the texts, so the kind stays that of Intent.
+  const given: CheckedIntent = intent;
+  switch (given.kind) {
     case 'wikiPageCreate':
       checked = {
-        ...intent,
-        title: added(checkPlainText(intent.title, options)),
-        text: added(checkMarkdown(intent.text, options)),
+        ...given,
+        title: added(checkPlainText(given.title, options)),
+        text: added(checkMarkdown(given.text, options)),
       };
       break;
     case 'wikiPageUpdate':
-      checked = { ...intent, text: text(checkMarkdown(intent.text, options)) };
+      checked = { ...given, text: text(checkMarkdown(given.text, options)) };
       break;
     case 'wikiSectionAppend':
       checked = {
-        ...intent,
-        section: added(checkMarkdown(intent.section, options)),
+        ...given,
+        section: added(checkMarkdown(given.section, options)),
+      };
+      break;
+    // A title and a description of an appointment or a booking are plain
+    // text, the description with lines. They get no line of the marking
+    // (ADR 0032), and ChurchTools mails those of a booking request to the
+    // managers of the resource (F48).
+    case 'appointmentCreate':
+    case 'appointmentUpdate':
+    case 'bookingCreate':
+      checked = {
+        ...given,
+        title: text(checkPlainText(given.title, options)),
+        ...(given.description === undefined
+          ? {}
+          : { description: text(checkPlainLines(given.description, options)) }),
       };
       break;
   }
@@ -162,5 +193,5 @@ export function checkIntentContent(
     for (const kind of violations) ctx.log.warn(eventOf[kind]);
     throw new ContentRefusal(violations);
   }
-  return Object.freeze(checked);
+  return Object.freeze(checked) as Intent;
 }

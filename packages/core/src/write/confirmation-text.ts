@@ -275,6 +275,113 @@ export function confirmationTextOf(
   });
 }
 
+/**
+ * What the write guard knows of a write of an appointment or a booking when
+ * it seals its plan (ADR 0072). Names and texts come from ChurchTools or
+ * the tool and are made visible.
+ */
+export interface DatedPreview {
+  readonly kind: 'appointmentCreate' | 'appointmentUpdate' | 'bookingCreate';
+  /** The calendar or the resource: its name as read, or its ID. */
+  readonly place: { readonly id: number; readonly name?: string };
+  /** The title: as read for a change, as planned for a new one. */
+  readonly title: string;
+  /** The span after the write, as {@link spanTextOf} gives it. */
+  readonly span: string;
+  /** The fields now as lines, empty for a new appointment or booking. */
+  readonly before: string;
+  /** The fields after the write as lines. */
+  readonly after: string;
+  /**
+   * The German names of the fields a change changes; empty for a new
+   * appointment or booking.
+   */
+  readonly changed: readonly string[];
+  /**
+   * Whether anyone, also not signed in, sees the appointment: a public
+   * calendar and an appointment that is not internal.
+   */
+  readonly isPublic?: boolean;
+  /** For a booking, how many other bookings the resource has at the time. */
+  readonly overlapping?: number;
+}
+
+// The German list of a few names: «a», «a und b», «a, b und c».
+const listOf = (names: readonly string[]): string =>
+  names.length <= 1
+    ? (names[0] ?? '')
+    : `${names.slice(0, -1).join(', ')} und ${String(names.at(-1))}`;
+
+const placeOf = (
+  kind: DatedPreview['kind'],
+  place: DatedPreview['place'],
+): string => {
+  const where = kind === 'bookingCreate' ? 'der Ressource' : 'im Kalender';
+  return place.name === undefined
+    ? `${where} ${String(place.id)}`
+    : `${where} «${titleOf(place.name)}»`;
+};
+
+/**
+ * Makes the text of a confirmation of an appointment or a booking: a
+ * summary in German with title, place and span, whether the calendar is
+ * public, and for a booking request that ChurchTools mails its title and
+ * description to the managers of the resource (F48), and the diff of the
+ * fields as lines with every character visible.
+ *
+ * @param preview - What the write guard read and would write.
+ * @returns The text, frozen.
+ * @example
+ * ```ts
+ * const text = datedConfirmationTextOf({ kind: 'bookingCreate',
+ *   place: { id: 13, name: 'Saal' }, title: 'Probe',
+ *   span: 'Sonntag, 08.11.2026, 09:00 bis 10:00 (UTC)', before: '',
+ *   after: 'Titel: Probe\n', changed: [], overlapping: 0 });
+ * text.summary.startsWith('Eine Buchung der Ressource «Saal» anfragen'); // true
+ * ```
+ */
+export function datedConfirmationTextOf(
+  preview: DatedPreview,
+): ConfirmationText {
+  const diff = diffLines(preview.before, preview.after);
+  const { added, removed } = countsOf(diff);
+  const title = titleOf(preview.title);
+  const place = placeOf(preview.kind, preview.place);
+  const visible =
+    preview.isPublic === true
+      ? ' Der Kalender ist öffentlich: Den Termin sieht auch, wer nicht angemeldet ist.'
+      : '';
+  let summary: string;
+  switch (preview.kind) {
+    case 'appointmentCreate':
+      summary = `Einen Termin «${title}» ${place} anlegen: ${preview.span}.${visible}`;
+      break;
+    case 'appointmentUpdate':
+      summary = `Beim Termin «${title}» ${place} ${listOf(preview.changed)} ändern, danach ${preview.span}.${visible}`;
+      break;
+    case 'bookingCreate': {
+      const others = preview.overlapping ?? 0;
+      const busy =
+        others === 0
+          ? ''
+          : others === 1
+            ? ' Zur selben Zeit hat die Ressource eine weitere Buchung.'
+            : ` Zur selben Zeit hat die Ressource ${String(others)} weitere Buchungen.`;
+      summary = `Eine Buchung ${place} anfragen: «${title}», ${preview.span}. ChurchTools schickt Titel und Beschreibung per Mail an die Verwalter der Ressource.${busy}`;
+      break;
+    }
+  }
+  const shown = Object.freeze(renderDiff(diff).map(shownLine));
+  const characters = shown.reduce((sum, line) => sum + line.length + 1, 0);
+  return Object.freeze({
+    summary,
+    diff: shown,
+    fits:
+      added + removed <= confirmationLimits.changedLines &&
+      characters <= confirmationLimits.characters,
+  });
+}
+
 /** The name of the one field of the form of a question. */
 export const confirmationField = 'bestaetigen';
 

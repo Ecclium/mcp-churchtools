@@ -331,7 +331,7 @@ Setzen Sie dazu jede weitere Variable, mit der der Server läuft, etwa `ECCLIUM_
 
 Wie jedes Schreiben verlangt der Befehl den Ordner `stop` für die Kill-Switches im Zustandsordner, den Ecclium nicht selbst anlegt: Ohne ihn bleibt das Schreiben gesperrt, und der Befehl endet mit 77. Legen Sie ihn einmal an, mit `(umask 077 && mkdir /pfad/zum/zustandsordner/stop)`, und schalten Sie das Schreiben mit einer leeren Datei `writes-off` darin aus. War eine Seite vor dem Schreibvorgang leer, nimmt der Befehl ihn nicht zurück, weil Ecclium keine leere Seite schreibt.
 
-Die Kennung prüft der Befehl, bevor er eine Datei liest, und nennt sie in keiner Meldung. Zurücknehmen lassen sich Schreibvorgänge der Schreib-Tools des Wikis. Gibt es zu einer Kennung keinen Snapshot, endet der Befehl mit 66. Termine und Buchungen nimmt er zurück, sobald es Schreib-Tools für sie gibt.
+Die Kennung prüft der Befehl, bevor er eine Datei liest, und nennt sie in keiner Meldung. Zurücknehmen lassen sich Schreibvorgänge der Schreib-Tools des Wikis. Gibt es zu einer Kennung keinen Snapshot, endet der Befehl mit 66. Termine und Buchungen nimmt diese Version noch nicht zurück: Der Befehl endet dann mit 77 und schreibt nichts.
 
 ## Freigabe-Warteschlange
 

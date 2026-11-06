@@ -31,17 +31,54 @@
 import type { IsoDate } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { checkMarkdown } from '../content/index.js';
-import type { PageCreatedSnapshot, SnapshotState } from '../snapshots/seal.js';
+import type {
+  PageCreatedSnapshot,
+  SnapshotOutcome,
+  SnapshotState,
+  WikiSnapshotState,
+} from '../snapshots/seal.js';
 import { contentHashOf } from './plan-hash.js';
 
 /** The snapshot of a write as the undo takes it, from the keeper. */
 export interface SnapshotToUndo {
   /** The part before: what the write was to change. */
   readonly before: SnapshotState;
-  /** The part after of a new page: its GUID and version. */
-  readonly after?: PageCreatedSnapshot;
+  /** The part after of a new object: its ID and version. */
+  readonly after?: SnapshotOutcome;
   /** The UTC day of the part before, the day of the write. */
   readonly day: IsoDate;
+}
+
+/** The snapshot of a write of the wiki, which this module takes back. */
+export interface WikiSnapshotToUndo {
+  readonly before: WikiSnapshotState;
+  /** The part after of a new page: its GUID and version. */
+  readonly after?: PageCreatedSnapshot;
+  readonly day: IsoDate;
+}
+
+/**
+ * Gives the snapshot of a write of the wiki, or undefined for another
+ * kind, such as an appointment, which the undo does not take back yet.
+ *
+ * @param snapshot - The snapshot as the keeper found it.
+ * @returns The snapshot of the wiki, or undefined.
+ * @example
+ * ```ts
+ * const wiki = wikiSnapshotOf(snapshot);
+ * if (wiki === undefined) return refused;
+ * ```
+ */
+export function wikiSnapshotOf(
+  snapshot: SnapshotToUndo,
+): WikiSnapshotToUndo | undefined {
+  const { before, after, day } = snapshot;
+  if (before.kind !== 'wikiPageText' && before.kind !== 'wikiPageCreate') {
+    return undefined;
+  }
+  return after === undefined || after.kind !== 'wikiPageCreated'
+    ? { before, day }
+    : { before, after, day };
 }
 
 /** What taking back one write means for its page. */
@@ -130,7 +167,7 @@ const isWithdrawalNote = (text: string, created: IsoDate): boolean =>
  * if (found.ok) found.target.textOn('2026-11-03');
  * ```
  */
-export function undoTargetOf(snapshot: SnapshotToUndo): UndoTargetResult {
+export function undoTargetOf(snapshot: WikiSnapshotToUndo): UndoTargetResult {
   const { before, after, day } = snapshot;
   if (before.kind === 'wikiPageText') {
     const text = before.before.text;

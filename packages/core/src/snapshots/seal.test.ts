@@ -66,6 +66,55 @@ describe('sealSnapshot and openSnapshot', () => {
     expect(await openSnapshot(keys, ctx, after)).toEqual(created);
   });
 
+  // The parts of appointments and bookings (ADR 0072).
+  it.each<[string, SnapshotContent]>([
+    [
+      'the fields of an appointment',
+      {
+        kind: 'appointmentFields',
+        tool: 'ct_appointments_update',
+        calendarId: 8,
+        appointmentId: 21,
+        before: {
+          version: 2,
+          title: 'Gottesdienst',
+          subtitle: null,
+          description: 'Mit Taufe',
+          startDate: '2026-11-08T09:00:00Z',
+          endDate: '2026-11-08T10:00:00Z',
+          isInternal: false,
+        },
+        after: { version: 3, fieldsHash: contentHashOf(['a']) },
+      },
+    ],
+    [
+      'a new booking',
+      {
+        kind: 'bookingCreate',
+        tool: 'ct_bookings_create',
+        placeId: 13,
+        fieldsHash: contentHashOf(['b']),
+      },
+    ],
+    [
+      'a new appointment named',
+      { kind: 'appointmentCreated', id: 31, version: 0 },
+    ],
+    ['a new booking named', { kind: 'bookingCreated', id: 51, version: 1 }],
+  ])('open what they sealed of %s', async (_, content) => {
+    const keys = createMemoryDayKeys();
+    const part = content.kind.endsWith('Created') ? 'after' : 'before';
+    const sealed = await sealSnapshot(keys, ctx, { ...before(content), part });
+    expect(await openSnapshot(keys, ctx, sealed)).toEqual(content);
+    // An outcome is only a part after, a state only a part before.
+    await expect(
+      sealSnapshot(keys, ctx, {
+        ...before(content),
+        part: part === 'after' ? 'before' : 'after',
+      }),
+    ).rejects.toThrow(TypeError);
+  });
+
   it('seal the same content twice into two different records', async () => {
     const keys = createMemoryDayKeys();
     const first = await sealSnapshot(keys, ctx, before());
