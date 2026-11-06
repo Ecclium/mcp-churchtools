@@ -15,6 +15,7 @@ export {
 } from './canonical.js';
 export {
   checkMarkdown,
+  checkPlainLines,
   checkPlainText,
   type ContentCheckOptions,
   type ContentCheckResult,

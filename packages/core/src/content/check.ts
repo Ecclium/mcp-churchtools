@@ -210,3 +210,43 @@ export function checkPlainText(
   found.push(...checkReadableText(normal.text, options.contacts));
   return found.length > 0 ? refused(found) : { ok: true, text: normal.text };
 }
+
+// The signs of a plain text with lines: those of one line but the line
+// break. The normal form has already made every line end with one.
+const lineSigns = '[]`\\\u2028\u2029';
+
+/**
+ * Checks a text without Markdown that may have lines, such as the
+ * description of an appointment or a booking (ADR 0030): as
+ * {@link checkPlainText}, but a line break is allowed. ChurchTools shows
+ * such a text as it is, and a booking request mails it to the managers of
+ * the resource (F48), so it has no Markdown, no link and no address.
+ *
+ * @param text - The text as the tool handed it over.
+ * @param options - The contact values the policy lists.
+ * @returns The text in its normal form, or the reasons to refuse it.
+ * @example
+ * ```ts
+ * checkPlainLines('Probe\nmit Chor', { contacts: new Set() }); // { ok: true, text: 'Probe\nmit Chor' }
+ * checkPlainLines('Probe\n`B`', { contacts: new Set() }); // { ok: false, violations: ['unsupported'] }
+ * ```
+ */
+export function checkPlainLines(
+  text: string,
+  options: ContentCheckOptions,
+): ContentCheckResult {
+  const normal = normalizeContent(text);
+  if (!normal.ok) return refused([normal.violation]);
+  const found: ContentViolationKind[] = [];
+  if (hasTag(normal.text) || hasCharacterReference(normal.text)) {
+    found.push('html');
+  }
+  for (const sign of normal.text) {
+    if (lineSigns.includes(sign)) {
+      found.push('unsupported');
+      break;
+    }
+  }
+  found.push(...checkReadableText(normal.text, options.contacts));
+  return found.length > 0 ? refused(found) : { ok: true, text: normal.text };
+}
