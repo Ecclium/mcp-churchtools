@@ -56,6 +56,25 @@ describe('createSnapshotKeeper', () => {
     });
   });
 
+  it('loads the part after of a new appointment or booking', async () => {
+    const { keeper } = setup();
+    const booking = {
+      kind: 'bookingCreate',
+      tool: 'ct_bookings_create',
+      placeId: 13,
+      fieldsHash: 'a'.repeat(64),
+    } as const;
+    const named = { kind: 'bookingCreated', id: 51, version: 0 } as const;
+    await keeper.save(ctx, { eventId, part: 'before', day, content: booking });
+    await keeper.save(ctx, { eventId, part: 'after', day, content: named });
+    expect(await keeper.load(ctx, eventId)).toEqual({
+      kind: 'found',
+      before: booking,
+      day,
+      after: named,
+    });
+  });
+
   it('says expired once the day key is gone, and removes records and keys', async () => {
     const { keeper, store } = setup();
     await keeper.save(ctx, { eventId, part: 'before', day, content: state });

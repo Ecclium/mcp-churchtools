@@ -128,7 +128,12 @@ import {
 } from './rules.js';
 import { type PlanView, readPlan, sealPlan } from './sealed-plan.js';
 import { serverTimeFits } from './server-clock.js';
-import { isAsLeft, type SnapshotToUndo, undoTargetOf } from './undo.js';
+import {
+  isAsLeft,
+  type SnapshotToUndo,
+  undoTargetOf,
+  wikiSnapshotOf,
+} from './undo.js';
 
 /**
  * The sentences the model reads when a write does not happen as planned.
@@ -1366,7 +1371,11 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     const { ctx, eventId, snapshot, overwrite } = request;
     const stop = stopped(ctx);
     if (stop !== undefined) throw stop;
-    const found = undoTargetOf(snapshot);
+    // Appointments and bookings are not taken back yet (ADR 0031).
+    const wiki = wikiSnapshotOf(snapshot);
+    if (wiki === undefined)
+      throw refuse('policy_denied', writeSentences.notRun);
+    const found = undoTargetOf(wiki);
     if (!found.ok) {
       return Object.freeze({
         kind: 'incomplete',

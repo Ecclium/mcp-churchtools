@@ -61,8 +61,46 @@ export interface PageCreateSnapshot {
   readonly textHash: string;
 }
 
+/** The fields of an appointment a change writes (ADR 0072). */
+export interface AppointmentFieldsState {
+  readonly title: string;
+  readonly subtitle: string | null;
+  readonly description: string | null;
+  readonly startDate: string;
+  readonly endDate: string;
+  readonly isInternal: boolean;
+}
+
+/** What a snapshot keeps of an appointment whose fields a write changes. */
+export interface AppointmentFieldsSnapshot {
+  readonly kind: 'appointmentFields';
+  readonly tool: string;
+  readonly calendarId: number;
+  readonly appointmentId: number;
+  /** The appointment before the write: its version and its fields. */
+  readonly before: AppointmentFieldsState & { readonly version: number };
+  /** What the write leaves: the next version and the hash of the fields. */
+  readonly after: { readonly version: number; readonly fieldsHash: string };
+}
+
+/**
+ * What a snapshot keeps of an appointment or a booking a write creates,
+ * before it is sent: where, and the hash of the fields it gets.
+ */
+export interface DatedCreateSnapshot {
+  readonly kind: 'appointmentCreate' | 'bookingCreate';
+  readonly tool: string;
+  /** The calendar of an appointment or the resource of a booking. */
+  readonly placeId: number;
+  readonly fieldsHash: string;
+}
+
+/** The part `before` of a snapshot of the wiki. */
+export type WikiSnapshotState = PageTextSnapshot | PageCreateSnapshot;
+
 /** The part `before` of a snapshot. */
-export type SnapshotState = PageTextSnapshot | PageCreateSnapshot;
+export type SnapshotState =
+  WikiSnapshotState | AppointmentFieldsSnapshot | DatedCreateSnapshot;
 
 /** The part `after` of the snapshot of a new page, once it is read back. */
 export interface PageCreatedSnapshot {
@@ -71,8 +109,21 @@ export interface PageCreatedSnapshot {
   readonly version: number;
 }
 
+/**
+ * The part `after` of the snapshot of a new appointment or booking, once
+ * ChurchTools named it: its ID and the version it was created with.
+ */
+export interface DatedCreatedSnapshot {
+  readonly kind: 'appointmentCreated' | 'bookingCreated';
+  readonly id: number;
+  readonly version: number;
+}
+
+/** The part `after` of a snapshot. */
+export type SnapshotOutcome = PageCreatedSnapshot | DatedCreatedSnapshot;
+
 /** What a part of a snapshot holds. */
-export type SnapshotContent = SnapshotState | PageCreatedSnapshot;
+export type SnapshotContent = SnapshotState | SnapshotOutcome;
 
 const hash = z.string().regex(/^[0-9a-f]{64}$/);
 const version = z.int().min(0).max(Number.MAX_SAFE_INTEGER);
@@ -100,12 +151,59 @@ const stateSchema = z.discriminatedUnion('kind', [
     title: z.string(),
     textHash: hash,
   }),
+  z.strictObject({
+    kind: z.literal('appointmentFields'),
+    tool,
+    calendarId: id,
+    appointmentId: id,
+    before: z.strictObject({
+      version,
+      title: z.string(),
+      subtitle: z.string().nullable(),
+      description: z.string().nullable(),
+      startDate: z.string(),
+      endDate: z.string(),
+      isInternal: z.boolean(),
+    }),
+    after: z.strictObject({ version, fieldsHash: hash }),
+  }),
+  z.strictObject({
+    kind: z.enum(['appointmentCreate', 'bookingCreate']),
+    tool,
+    placeId: id,
+    fieldsHash: hash,
+  }),
 ]);
-const outcomeSchema = z.strictObject({
-  kind: z.literal('wikiPageCreated'),
-  guid,
-  version,
-});
+const outcomeSchema = z.union([
+  z.strictObject({
+    kind: z.literal('wikiPageCreated'),
+    guid,
+    version,
+  }),
+  z.strictObject({
+    kind: z.enum(['appointmentCreated', 'bookingCreated']),
+    id,
+    version,
+  }),
+]);
+/**
+ * Whether a content is an outcome, the only form of a part `after`: what
+ * ChurchTools named of a new page, appointment or booking.
+ *
+ * @param content - A part of a snapshot.
+ * @returns Whether it is an outcome.
+ * @example
+ * ```ts
+ * isOutcome({ kind: 'bookingCreated', id: 51, version: 0 }); // true
+ * ```
+ */
+export const isOutcome = (
+  content: SnapshotContent,
+): content is SnapshotOutcome =>
+  content.kind === 'wikiPageCreated' ||
+  content.kind === 'appointmentCreated' ||
+  content.kind === 'bookingCreated';
+
 const recordSchema = z.strictObject({
   v: z.literal(1),
   content: z.union([stateSchema, outcomeSchema]),
@@ -192,8 +290,7 @@ export async function sealSnapshot(
   }
   const record = recordSchema.safeParse({ v: 1, content });
   const fitsPart =
-    record.success &&
-    (part === 'after') === (record.data.content.kind === 'wikiPageCreated');
+    record.success && (part === 'after') === isOutcome(record.data.content);
   // The part is checked as a value too, for callers compiled apart.
   if (
     !record.success ||
@@ -317,7 +414,7 @@ export async function openSnapshot(
   const record = recordSchema.safeParse(parsed);
   if (
     !record.success ||
-    (part === 'after') !== (record.data.content.kind === 'wikiPageCreated')
+    (part === 'after') !== isOutcome(record.data.content)
   ) {
     throw new Error('The snapshot does not open.');
   }
