@@ -326,8 +326,8 @@ export interface NonceStore {
 /**
  * What a write changes, as the policy, the audit and the result of a write
  * name it: a category or a page of the wiki, a calendar, an appointment, a
- * resource, a group, a service of an event, or an operation of the escape
- * hatch.
+ * resource, a booking, a group, a service of an event, or an operation of
+ * the escape hatch.
  */
 export type WriteTargetKind =
   | 'wiki_category'
@@ -335,6 +335,7 @@ export type WriteTargetKind =
   | 'calendar'
   | 'appointment'
   | 'resource'
+  | 'booking'
   | 'group'
   | 'service'
   | 'operation';
@@ -346,6 +347,7 @@ export const writeTargetKinds: readonly WriteTargetKind[] = Object.freeze([
   'calendar',
   'appointment',
   'resource',
+  'booking',
   'group',
   'service',
   'operation',
