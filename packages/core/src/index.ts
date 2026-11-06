@@ -69,6 +69,7 @@ export {
   type PolicyTargetKind,
   type ProposalInput,
   type ProposedCategory,
+  type ProposedTarget,
   proposedMaxPerDay,
   renderPolicyProposal,
   targetKeyOf,

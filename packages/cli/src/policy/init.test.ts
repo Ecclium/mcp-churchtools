@@ -16,10 +16,13 @@ import type {
   HttpTransportOptions,
 } from '@ecclium/mcp-churchtools-core/http';
 import {
+  calendarsAnswer,
   createChurchToolsDouble,
   doubleOrigin,
   makeCanaries,
   type MockedHttpTransport,
+  resourcesAnswer,
+  resourceTypesAnswer,
 } from '@ecclium/mcp-churchtools-testkit';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
@@ -396,7 +399,159 @@ describe('ecclium policy init', () => {
     expect(result.code).toBe(69);
     expect(result.stdout).toEqual([]);
     expect(result.stderr).toHaveLength(1);
-    expect(result.stderr[0]).toBe(namesFailedText('upstream'));
+    expect(result.stderr[0]).toBe(namesFailedText('upstream', 'categories'));
+  });
+
+  // The lists of calendars and resources, each read whole by its tool.
+  const calendarNames =
+    (calendars: readonly (readonly [number, string])[]) =>
+    (double: MockedHttpTransport): void => {
+      double.intercept({ path: '/api/calendars', method: 'GET' }).reply(
+        200,
+        calendarsAnswer(
+          calendars.map(([id, name]) => ({
+            id,
+            name,
+            isPublic: true,
+            isPrivate: false,
+          })),
+        ).body,
+        json,
+      );
+    };
+  const resourceNames =
+    (resources: readonly (readonly [number, string])[]) =>
+    (double: MockedHttpTransport): void => {
+      double
+        .intercept({ path: '/api/resources', method: 'GET' })
+        .reply(
+          200,
+          resourcesAnswer(
+            resources.map(([id, name]) => ({ id, name, resourceTypeId: 5 })),
+          ).body,
+          json,
+        );
+      double
+        .intercept({ path: '/api/resourcetypes', method: 'GET' })
+        .reply(200, resourceTypesAnswer([{ id: 5, name: 'Räume' }]).body, json);
+    };
+  const calendarsOnly = {
+    ECCLIUM_CHURCHTOOLS_URL: doubleOrigin,
+    ECCLIUM_CHURCHTOOLS_TOKEN: canary.token.value,
+    ECCLIUM_STATE_DIR: '',
+    ECCLIUM_TOOLSETS: 'calendars',
+  };
+  const appointment = (objectRefs: readonly string[]) =>
+    write({ tool: 'ct_appointments_create', objectRefs });
+  const booking = (objectRefs: readonly string[]) =>
+    write({ tool: 'ct_bookings_create', objectRefs });
+
+  it('proposes calendars and resources with their names from ChurchTools', async () => {
+    auditFiles({
+      [fileName(1)]: [
+        appointment(['calendar:8', 'appointment:21']),
+        appointment(['calendar:8', 'appointment:22']),
+        booking(['resource:13', 'booking:51']),
+        booking(['resource:14']),
+      ],
+    });
+    const result = await run({
+      environment: { ...calendarsOnly, ECCLIUM_STATE_DIR: dir },
+      answer: (double) => {
+        calendarNames([
+          [8, 'Gottesdienste'],
+          [9, 'Jugend'],
+        ])(double);
+        resourceNames([[13, 'Saal «Süd»']])(double);
+      },
+    });
+    expect(result.code).toBe(0);
+    expect(result.stderr).toEqual([]);
+    expect(result.stdout).toEqual([
+      '# Vorschlag von «ecclium policy init --interactive» für den interaktiven Teil der Richtlinie.',
+      '# Grundlage: die Audit-Dateien vom 2026-10-30 bis 2026-10-30 (UTC).',
+      '# Ein Eintrag je Kategorie des Wikis, je Kalender und je Ressource, die das Audit in einer Zeile eines Schreib-Tools nennt, auch bei abgelehnten Versuchen.',
+      '# maxPerDay ist das Doppelte des höchsten Tageswerts eines Tools, mindestens 5, ohne abgelehnte und übersprungene Aufrufe.',
+      '# Prüfen Sie jeden Eintrag, bevor Sie die Datei mit ECCLIUM_POLICY_FILE einsetzen.',
+      'schema: policy.v1',
+      'interactive:',
+      '  targets:',
+      '    - target: { kind: calendar, id: 8, name: "Gottesdienste" }',
+      '      tools: [ct_appointments_create]',
+      '      maxPerDay: 5',
+      '    - target: { kind: resource, id: 13, name: "Saal «Süd»" }',
+      '      tools: [ct_bookings_create]',
+      '      maxPerDay: 5',
+      '    # Ressource 14: ChurchTools nennt dem Konto keinen Namen, darum kein Eintrag.',
+      '  readBudgetPerDay: 200',
+    ]);
+    // Its calls stand in a new audit file, in the mode operator.
+    const own = readdirSync(join(dir, 'audit')).filter(
+      (name) => name !== fileName(1),
+    );
+    const lines = readFileSync(join(dir, 'audit', own[0] ?? ''), 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(lines).toMatchObject([
+      { tool: 'ct_calendars_list', mode: 'operator', outcome: 'ok' },
+      { tool: 'ct_resources_list', mode: 'operator', outcome: 'ok' },
+    ]);
+    expect(result.logs.join('')).not.toContain(canary.token.value);
+  });
+
+  it('asks for categories, calendars and resources in one run', async () => {
+    auditFiles({
+      [fileName(1)]: [write(), appointment(['calendar:8'])],
+    });
+    const result = await run({
+      environment: {
+        ...calendarsOnly,
+        ECCLIUM_STATE_DIR: dir,
+        ECCLIUM_TOOLSETS: 'wiki,calendars',
+      },
+      answer: (double) => {
+        names([[12, 'Berichte']])(double);
+        calendarNames([[8, 'Gottesdienste']])(double);
+      },
+    });
+    expect(result.code).toBe(0);
+    expect(result.transports).toBe(1);
+    expect(result.stdout).toContain(
+      '    - target: { kind: wiki_category, id: 12, name: "Berichte" }',
+    );
+    expect(result.stdout).toContain(
+      '    - target: { kind: calendar, id: 8, name: "Gottesdienste" }',
+    );
+  });
+
+  it('needs the toolset calendars for the names of calendars and resources', async () => {
+    for (const line of [
+      appointment(['calendar:8']),
+      booking(['resource:13']),
+    ]) {
+      rmSync(join(dir, 'audit'), { recursive: true, force: true });
+      auditFiles({ [fileName(1)]: [line] });
+      const result = await run();
+      expect(result.code).toBe(78);
+      expect(result.stderr).toEqual([policyInitTexts.calendars_off]);
+      expect(result.transports).toBe(0);
+    }
+  });
+
+  it('ends with 69 and writes nothing when ChurchTools gives no names of the calendars', async () => {
+    auditFiles({ [fileName(1)]: [appointment(['calendar:8'])] });
+    const result = await run({
+      environment: { ...calendarsOnly, ECCLIUM_STATE_DIR: dir },
+      answer: (double) => {
+        double
+          .intercept({ path: '/api/calendars', method: 'GET' })
+          .reply(500, '{}', json);
+      },
+    });
+    expect(result.code).toBe(69);
+    expect(result.stdout).toEqual([]);
+    expect(result.stderr).toEqual([namesFailedText('upstream', 'calendars')]);
   });
 
   it('ends with 74 when the proposal does not reach stdout', async () => {

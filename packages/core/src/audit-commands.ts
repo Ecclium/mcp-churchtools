@@ -48,6 +48,7 @@ export { objectRefFromText } from './audit/object-ref.js';
 export {
   collectWriteTargets,
   type WriteTargetCategory,
+  type WriteTargetObject,
   type WriteTargets,
 } from './audit/write-targets.js';
 export {

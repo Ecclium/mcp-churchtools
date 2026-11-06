@@ -259,6 +259,99 @@ describe('a proposal', () => {
     expect(load(text).interactive.targets).toHaveLength(200);
   });
 
+  it('names calendars and resources after the categories, each kind sorted', () => {
+    const appointments = 'ct_appointments_create';
+    const bookings = 'ct_bookings_create';
+    const text = renderPolicyProposal({
+      categories: [category(12, 'Berichte')],
+      calendars: [
+        category(9, 'Jugend', [appointments], 3),
+        category(8, 'Gottesdienste', [appointments, 'ct_appointments_update']),
+      ],
+      resources: [category(13, 'Saal «Süd»', [bookings], 0)],
+      readBudgetPerDay: 200,
+    });
+    expect(text).toContain(
+      '# Ein Eintrag je Kategorie des Wikis, je Kalender und je Ressource, die das Audit in einer Zeile eines Schreib-Tools nennt, auch bei abgelehnten Versuchen.',
+    );
+    expect(text).toContain(
+      '    - target: { kind: calendar, id: 8, name: "Gottesdienste" }',
+    );
+    expect(load(text).interactive.targets).toEqual([
+      {
+        target: { kind: 'wiki_category', id: 12, name: 'Berichte' },
+        tools: [create],
+        maxPerDay: 5,
+      },
+      {
+        target: { kind: 'calendar', id: 8, name: 'Gottesdienste' },
+        tools: [appointments, 'ct_appointments_update'],
+        maxPerDay: 5,
+      },
+      {
+        target: { kind: 'calendar', id: 9, name: 'Jugend' },
+        tools: [appointments],
+        maxPerDay: 6,
+      },
+      {
+        target: { kind: 'resource', id: 13, name: 'Saal «Süd»' },
+        tools: [bookings],
+        maxPerDay: 5,
+      },
+    ]);
+  });
+
+  it('comments out a calendar or a resource without a fitting name, in its own words', () => {
+    const text = renderPolicyProposal({
+      categories: [],
+      calendars: [
+        category(8, undefined),
+        { ...category(9, 'Jug\u200Bend'), nameChanged: true },
+        category(10, 'Kalender\tA'),
+      ],
+      resources: [category(13, undefined), category(14, 'Saal\tB')],
+      readBudgetPerDay: 200,
+    });
+    expect(text).toContain('# Kein Ziel liess sich vorschlagen');
+    for (const line of [
+      '    # Kalender 8: ChurchTools nennt dem Konto keinen Namen, darum kein Eintrag.',
+      '    # Kalender 9: Sein Name kam verändert an, ohne unsichtbare Zeichen oder mit einem maskierten Teil, darum kein Eintrag. Tragen Sie ihn von Hand ein.',
+      '    # Kalender 10: Sein Name passt nicht in die Richtlinie, darum kein Eintrag.',
+      '    # Ressource 13: ChurchTools nennt dem Konto keinen Namen, darum kein Eintrag.',
+      '    # Ressource 14: Ihr Name passt nicht in die Richtlinie, darum kein Eintrag.',
+    ]) {
+      expect(text.split('\n')).toContain(line);
+    }
+    expect(loads(text)).toBe(false);
+  });
+
+  it('counts calendars and resources in the 200 entries of a part', () => {
+    const calendars = Array.from({ length: 150 }, (_, index) =>
+      category(index + 1, `Kalender ${String(index + 1)}`),
+    );
+    const resources = Array.from({ length: 52 }, (_, index) =>
+      category(index + 1, `Ressource ${String(index + 1)}`),
+    );
+    const text = renderPolicyProposal({
+      categories: [],
+      calendars,
+      resources,
+      readBudgetPerDay: 200,
+    });
+    expect(text).toContain('# Weitere 2 Ziele passen nicht mehr');
+    expect(load(text).interactive.targets).toHaveLength(200);
+  });
+
+  it('keeps the words of the wiki for categories alone, also with empty lists', () => {
+    const input = {
+      categories: [category(12, 'Berichte')],
+      readBudgetPerDay: 200,
+    };
+    expect(
+      renderPolicyProposal({ ...input, calendars: [], resources: [] }),
+    ).toBe(renderPolicyProposal(input));
+  });
+
   it('keeps the contact values of the policy in force', () => {
     const contacts = ['sekretariat@example.org', '+41 00 000 12 34'];
     const text = renderPolicyProposal({
