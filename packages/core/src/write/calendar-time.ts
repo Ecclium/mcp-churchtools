@@ -110,3 +110,23 @@ export function spanTextOf(
       : `${end.weekday}, ${end.day}, ${end.clock}`;
   return `${start.weekday}, ${start.day}, ${start.clock} bis ${until} (${shown})`;
 }
+
+/**
+ * Whether a time falls on midnight in a zone. ChurchTools stores an
+ * appointment whose start and end both fall on midnight in the zone of the
+ * installation as one of whole days, so the write guard refuses such times
+ * in the zone the operator names; the minutes are the whole check, since
+ * every time it writes is on the full minute.
+ *
+ * @param date - A time in UTC.
+ * @param zone - An IANA name the operator chose.
+ * @returns Whether the clock of the zone shows 00:00.
+ * @example
+ * ```ts
+ * isMidnightIn('2026-11-07T23:00:00Z', 'Europe/Zurich'); // true
+ * isMidnightIn('2026-11-08T00:00:00Z', 'Europe/Zurich'); // false
+ * ```
+ */
+export function isMidnightIn(date: string, zone: string): boolean {
+  return localTimeOf(Date.parse(date), zone).clock === '00:00';
+}

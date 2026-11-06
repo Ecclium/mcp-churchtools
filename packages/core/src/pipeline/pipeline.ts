@@ -505,6 +505,12 @@ export interface ToolPipelineOptions {
    */
   readonly markerKey?: KeyMaterial;
   /**
+   * The zone in which the texts of a confirmation show the times of
+   * appointments and bookings, from `ECCLIUM_TIME_ZONE`, or undefined for
+   * UTC. The tools take UTC either way.
+   */
+  readonly timeZone?: string | undefined;
+  /**
    * The provider of the keys for pseudonyms, built by the composition root
    * from the key files (ADR 0069). Without it, a call in the level
    * `strict` of a tool with an ID of a person ends with `internal`.
@@ -888,6 +894,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     quota: options.quota,
     snapshots: options.snapshots,
     markerKey: options.markerKey,
+    timeZone: options.timeZone,
   });
   // How writes are confirmed, and the questions to the client over the
   // stores the composition root built (ADR 0029). Without the stores no

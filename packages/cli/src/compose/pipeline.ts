@@ -240,6 +240,9 @@ export function composeToolPipeline(options: ComposeOptions): ComposedPipeline {
       ...(config.markerKey === undefined
         ? {}
         : { markerKey: config.markerKey }),
+      // The zone of the times in the texts of a confirmation, the queue
+      // and an undo; UTC without it.
+      timeZone: config.timeZone,
       // How a write is confirmed, and, for a server that writes, the plans
       // that wait for an answer and the nonces of the answers, in memory,
       // so that a restart forgets them (ADR 0029).

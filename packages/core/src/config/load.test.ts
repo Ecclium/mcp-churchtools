@@ -517,6 +517,7 @@ describe('loadConfig with a good configuration', () => {
         'default',
         { kind: 'choice', value: 'echo-allowed' },
       ],
+      ['timeZone', 'ECCLIUM_TIME_ZONE', 'unset', { kind: 'none' }],
       [
         'auditRetentionMonths',
         'ECCLIUM_AUDIT_RETENTION_MONTHS',
@@ -1057,6 +1058,61 @@ describe('loadConfig and the snapshots', () => {
       ]);
     },
   );
+});
+
+// The zone of the texts of times: unset means UTC, a name is kept as
+// given, and anything else stops the start without its value.
+describe('loadConfig and the zone of the texts', () => {
+  it('leaves the zone unset without the variable', () => {
+    const result = load(valid());
+    expect(result.ok && result.config.timeZone).toBeUndefined();
+    expect(result.ok && Object.hasOwn(result.config, 'timeZone')).toBe(true);
+    expect(setting(result, 'timeZone')).toMatchObject({
+      origin: 'unset',
+      shown: { kind: 'none' },
+    });
+  });
+
+  it.each(['Europe/Zurich', 'UTC', 'Asia/Kolkata'])(
+    'keeps %s as given, over stdio and HTTP',
+    (zone) => {
+      for (const transport of ['stdio', 'http'] as const) {
+        const result = load({ ...valid(), ECCLIUM_TIME_ZONE: zone }, transport);
+        expect(result.ok && result.config.timeZone, transport).toBe(zone);
+        expect(setting(result, 'timeZone')).toEqual({
+          key: 'timeZone',
+          variable: 'ECCLIUM_TIME_ZONE',
+          origin: 'environment',
+          shown: { kind: 'choice', value: zone },
+        });
+      }
+    },
+  );
+
+  it.each(['Mars/Base', '+01:00', 'europe/zurich', 'CET', 'Etc/GMT+1'])(
+    'refuses %s without showing it',
+    (zone) => {
+      const result = load({ ...valid(), ECCLIUM_TIME_ZONE: zone });
+      expect(result.ok).toBe(false);
+      expect(problems(result)).toEqual([
+        ['time_zone_invalid', 'ECCLIUM_TIME_ZONE'],
+      ]);
+      expect(setting(result, 'timeZone')).toMatchObject({
+        origin: 'invalid',
+        shown: { kind: 'none' },
+      });
+      expect(JSON.stringify(result.report)).not.toContain(zone);
+    },
+  );
+
+  it.each([
+    ['', 'empty_value'],
+    [`Europe/${'A'.repeat(60)}`, 'value_too_long'],
+  ])('reports %j with %s', (zone, code) => {
+    const result = load({ ...valid(), ECCLIUM_TIME_ZONE: zone });
+    expect(problems(result)).toEqual([[code, 'ECCLIUM_TIME_ZONE']]);
+    expect(setting(result, 'timeZone')?.origin).toBe('invalid');
+  });
 });
 
 // How a write gets confirmed (ADR 0029): echo-allowed over stdio,
@@ -2394,6 +2450,8 @@ describe('loadConfig and its problems', () => {
       load({ ...valid(), ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE: '0' }),
     invalid_retention: () =>
       load({ ...valid(), ECCLIUM_AUDIT_RETENTION_MONTHS: '121' }),
+    time_zone_invalid: () =>
+      load({ ...valid(), ECCLIUM_TIME_ZONE: 'Mars/Base' }),
     url_missing: () => load({ ECCLIUM_CHURCHTOOLS_TOKEN_FILE: tokenPath }),
     url_too_long: () => withAddress(`https://${'a'.repeat(300)}.example`),
     url_invalid: () => withAddress('demo.example'),

@@ -324,7 +324,7 @@ const approveReasons: Readonly<
     code: exitCodes.noPermission,
   },
   wholeDays: {
-    text: 'Der Termin dauert ganze Tage, und solche schreibt Ecclium nicht. Ecclium hat nichts geschrieben.',
+    text: 'Der Termin oder die Buchung dauert ganze Tage oder beginnt und endet um Mitternacht in ‹ECCLIUM_TIME_ZONE›, und solche schreibt Ecclium nicht. Ecclium hat nichts geschrieben.',
     code: exitCodes.noPermission,
   },
   notOwnTime: {

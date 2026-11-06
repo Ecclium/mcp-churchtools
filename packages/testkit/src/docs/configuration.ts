@@ -35,6 +35,8 @@ const valuesOf = (variable: Variable): string => {
       return 'Login-Token';
     case 'subject':
       return `Bezeichnung mit höchstens ${String(variable.maxLength)} Zeichen`;
+    case 'zone':
+      return `${code('UTC')} oder Name einer Zeitzone wie ${code('Europe/Zurich')}`;
     case 'boolean':
     case 'choice':
       return variable.choices.map(code).join(', ');

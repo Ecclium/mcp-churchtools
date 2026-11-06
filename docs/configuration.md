@@ -21,6 +21,7 @@ Ecclium liest seine Konfiguration aus Variablen der Umgebung. Jede trägt das Pr
 | `ECCLIUM_KEYS_DIR` | absoluter Pfad | keine | nein | ja |
 | `ECCLIUM_SNAPSHOTS` | `on`, `off` | `on` | nein | nein |
 | `ECCLIUM_WRITE_CONFIRMATION` | `echo-allowed`, `elicitation-or-queue`, `queue` | `echo-allowed` | nein | nein |
+| `ECCLIUM_TIME_ZONE` | `UTC` oder Name einer Zeitzone wie `Europe/Zurich` | keine | nein | nein |
 | `ECCLIUM_AUDIT_RETENTION_MONTHS` | ganze Zahl von 1 bis 120 | `12` | nein | ja |
 | `ECCLIUM_POLICY_FILE` | absoluter Pfad | keine | nein | nein |
 | `ECCLIUM_MARKER_KEY_FILE` | absoluter Pfad | keine | nein | nein |
@@ -78,6 +79,10 @@ Legt fest, ob Ecclium vor jedem Schreibvorgang den bisherigen Stand als Snapshot
 ## `ECCLIUM_WRITE_CONFIRMATION`
 
 Legt fest, wie Ecclium einen Schreibvorgang bestätigen lässt, bevor es schreibt. Mit `echo-allowed`, der Voreinstellung über stdio, stellt Ecclium eine Rückfrage im Client, wenn der Client sie kann, sonst gilt die Bestätigung mit `ct_write_confirm`, wenn sich der Schreibvorgang zurücknehmen lässt, sonst kommt er in die Freigabe-Warteschlange. Mit `elicitation-or-queue`, der Voreinstellung über HTTP, gilt nie die Bestätigung mit `ct_write_confirm`, nur die Rückfrage oder die Freigabe-Warteschlange. Mit `queue` wartet jeder Schreibvorgang auf die Freigabe des Betreibers. Steht die Variable über HTTP auf `echo-allowed`, warnt jeder Start. Ein Eintrag der Freigabe-Warteschlange liegt verschlüsselt im Unterordner `queue` des Ordners aus `ECCLIUM_STATE_DIR`, `ecclium queue list` zeigt, was wartet, `ecclium queue approve` gibt einen Eintrag frei und schreibt ihn sofort, und `ecclium queue reject` weist ihn ab. Die Schreib-Tools des Kerns sind die des Wikis.
+
+## `ECCLIUM_TIME_ZONE`
+
+Die Zeitzone, in der die Rückfrage vor einem Schreibvorgang, `ecclium queue show` und `ecclium undo` Beginn und Ende von Terminen und Buchungen zeigen, mit dem Namen der Zone, etwa `Europe/Zurich`. Erlaubt ist `UTC` oder der Name einer Zeitzone aus Gebiet und Ort, keine Angabe wie `+01:00` und keine Abkürzung wie `CET`. Ohne die Variable zeigen die Texte die Zeiten in UTC. Die Tools nehmen Zeiten immer in UTC, auch mit der Variable. Mit ihr lehnt Ecclium einen Termin und eine Buchung ab, deren Beginn und Ende beide auf Mitternacht dieser Zone fallen, weil ChurchTools sie als ganztägig speichern würde. Tragen Sie deshalb die Zeitzone der ChurchTools-Installation ein.
 
 ## `ECCLIUM_AUDIT_RETENTION_MONTHS`
 

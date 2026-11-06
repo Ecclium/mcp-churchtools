@@ -53,7 +53,7 @@ import {
 } from '../churchtools/calendar-writes.js';
 import { HttpTransportError } from '../http/index.js';
 import type { DatedCreatedSnapshot, SnapshotState } from '../snapshots/seal.js';
-import { spanTextOf, timeTextOf } from './calendar-time.js';
+import { isMidnightIn, spanTextOf, timeTextOf } from './calendar-time.js';
 import {
   type ConfirmationText,
   datedConfirmationTextOf,
@@ -109,7 +109,7 @@ export const calendarSentences = Object.freeze({
   appointmentParts:
     'This appointment has parts this server does not change, such as a series, an address, a link, an image, a group for sign-ups or a linked event, booking or invitation. Change it in ChurchTools.',
   wholeDays:
-    'This server writes no appointment of whole days. Change it in ChurchTools.',
+    'This server writes no appointment or booking of whole days, nor one that starts and ends at midnight. Write it in ChurchTools.',
   notOwnTime:
     'This server moves only appointments its own account created. Change the time of this one in ChurchTools.',
   dayListFull:
@@ -259,6 +259,23 @@ const checked = (
   return fields;
 };
 
+// Start and end both on midnight in the zone the operator names would make
+// ChurchTools store whole days, which no probe has shown; such times are
+// refused before anything is read. The zone of the installation is not
+// known, so without a zone the read back is the only check.
+const timed = (
+  fields: Pick<DatedFields, 'startDate' | 'endDate'>,
+  zone: string | undefined,
+): void => {
+  if (
+    zone !== undefined &&
+    isMidnightIn(fields.startDate, zone) &&
+    isMidnightIn(fields.endDate, zone)
+  ) {
+    throw refuse('policy_denied', calendarSentences.wholeDays);
+  }
+};
+
 // A day list that ends before its last entry cannot show that a write is
 // done already.
 const complete = (more: boolean): void => {
@@ -340,6 +357,7 @@ const planAppointmentCreate = async (
     },
     intent.description,
   );
+  timed(fields, timeZone);
   const { from, to } = daysAround(fields);
   const { appointments, serverTime } = await writes.calendarDayState(
     ctx,
@@ -446,6 +464,7 @@ const planAppointmentUpdate = async (
       intent.description,
     ),
   );
+  timed(intent, timeZone);
   const { calendarId, appointmentId } = intent;
   const { appointment: now, serverTime } = await writes.appointmentState(
     ctx,
@@ -597,6 +616,7 @@ const planBookingCreate = async (
     },
     intent.description,
   );
+  timed(fields, timeZone);
   const { from, to } = daysAround(fields);
   const { bookings, serverTime } = await writes.resourceDayState(
     ctx,
