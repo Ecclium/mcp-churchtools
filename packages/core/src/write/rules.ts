@@ -14,12 +14,14 @@
  * The four writes of the Pro module have their rules here as well: always
  * special, never unattended, never by echo, guarded by a nonce, and an
  * operation of the escape hatch always goes to the queue. The core does
- * not run them yet, nor appointments and bookings; their plans are
- * refused until the tools that need them exist.
+ * not run them yet; their plans are refused until the tools that need
+ * them exist. A booking request runs, but never by echo, because
+ * ChurchTools mails it to the managers of the resource at once (F48).
  *
  * @packageDocumentation
  */
 import type {
+  ObjectKind,
   ReplayGuard,
   Reversible,
   RightRef,
@@ -68,12 +70,29 @@ export interface IntentRules {
   readonly module: 'core' | 'pro';
   /** Whether it always goes to the queue of approvals. */
   readonly alwaysQueue: boolean;
+  /**
+   * Whether ChurchTools tells people outside the client of it at once,
+   * such as the managers of a resource by mail (F48), or may do so. Taking
+   * the write back does not take that back, so it is never confirmed by
+   * echo (ADR 0029).
+   */
+  readonly notifies: boolean;
   /** Whether this version of the core runs it. */
   readonly runs: boolean;
 }
 
 const editWikiCategory: readonly RightRef[] = Object.freeze([
   Object.freeze({ module: 'churchwiki', right: 'edit category' }),
+]);
+// The rights the write account had for appointments and bookings (F45,
+// the finding on the rights for writing appointments and bookings).
+const editCalendar: readonly RightRef[] = Object.freeze([
+  Object.freeze({ module: 'churchcal', right: 'edit category' }),
+  Object.freeze({ module: 'churchcal', right: 'view category' }),
+]);
+const createBookings: readonly RightRef[] = Object.freeze([
+  Object.freeze({ module: 'churchresource', right: 'create bookings' }),
+  Object.freeze({ module: 'churchresource', right: 'view resource' }),
 ]);
 const noRights: readonly RightRef[] = Object.freeze([]);
 
@@ -86,6 +105,7 @@ const core = {
   reversible: 'snapshot',
   module: 'core',
   alwaysQueue: false,
+  notifies: false,
 } as const;
 
 // The rules of the writes of the Pro module (ADR 0071).
@@ -96,6 +116,7 @@ const pro = {
   reversible: 'no',
   replayGuard: 'nonce',
   module: 'pro',
+  notifies: false,
   runs: false,
 } as const;
 
@@ -151,25 +172,30 @@ export function rulesOf(intent: WriteIntent): IntentRules {
       return Object.freeze({
         ...core,
         target: target('calendar', intent.calendarId),
-        requiredRights: noRights,
+        requiredRights: editCalendar,
         replayGuard: 'nonce',
-        runs: false,
+        runs: true,
       });
     case 'appointmentUpdate':
       return Object.freeze({
         ...core,
         target: target('appointment', intent.calendarId, intent.appointmentId),
-        requiredRights: noRights,
+        requiredRights: editCalendar,
         replayGuard: 'baseVersion',
-        runs: false,
+        // ChurchTools can mail the person who created an appointment of a
+        // change; whether it does without being asked is not probed
+        // (ADR 0029).
+        notifies: true,
+        runs: true,
       });
     case 'bookingCreate':
       return Object.freeze({
         ...core,
         target: target('resource', intent.resourceId),
-        requiredRights: noRights,
+        requiredRights: createBookings,
         replayGuard: 'nonce',
-        runs: false,
+        notifies: true,
+        runs: true,
       });
     case 'groupMemberAdd':
     case 'groupMemberRemove':
@@ -190,6 +216,49 @@ export function rulesOf(intent: WriteIntent): IntentRules {
         target: target('operation', intent.operationId),
         alwaysQueue: true,
       });
+  }
+}
+
+/**
+ * The IDs a target names for the audit (ADR 0028): a category, and a page
+ * of it by its GUID; a calendar, and an appointment in it; a resource, and
+ * a booking of it. Groups, services and operations come with the writes of
+ * the Pro module and name none yet.
+ *
+ * @param target - The target of a write.
+ * @returns The kinds and IDs, in the order of the key.
+ * @example
+ * ```ts
+ * objectRefsOfTarget({ kind: 'booking', key: '13/51' });
+ * // [['resource', '13'], ['booking', '51']]
+ * ```
+ */
+export function objectRefsOfTarget(
+  target: WriteTarget,
+): readonly (readonly [ObjectKind, string])[] {
+  const [first = '', second = ''] = target.key.split('/');
+  switch (target.kind) {
+    case 'wiki_category':
+    case 'calendar':
+    case 'resource':
+      return [[target.kind, first]];
+    case 'wiki_page':
+      return [
+        ['wiki_category', first],
+        ['wiki_page', second],
+      ];
+    case 'appointment':
+      return [
+        ['calendar', first],
+        ['appointment', second],
+      ];
+    case 'booking':
+      return [
+        ['resource', first],
+        ['booking', second],
+      ];
+    default:
+      return [];
   }
 }
 
@@ -245,8 +314,8 @@ export function withToolMeta(
 /**
  * Tells whether a plan may be confirmed by echo: only for a tool of the
  * core, only for a write of the core that is undone from a snapshot, is
- * not special and does not have to go to the queue (ADR 0029). A tool
- * cannot switch it on.
+ * not special, does not have to go to the queue and tells no one outside
+ * the client of it (ADR 0029). A tool cannot switch it on.
  *
  * @param rules - The rules after {@link withToolMeta}.
  * @param origin - Who brings the tool, as the catalog records it.
@@ -262,6 +331,7 @@ export function echoAllowed(rules: IntentRules, origin: ToolOrigin): boolean {
     rules.module === 'core' &&
     rules.reversible === 'snapshot' &&
     rules.sensitivity !== 'special' &&
-    !rules.alwaysQueue
+    !rules.alwaysQueue &&
+    !rules.notifies
   );
 }

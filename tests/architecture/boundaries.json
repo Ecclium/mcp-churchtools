@@ -103,6 +103,7 @@
       "paths": [
         "packages/core/src/pipeline/pipeline.ts",
         "packages/core/src/pipeline/read-api.ts",
+        "packages/core/src/write/calendar-plan.ts",
         "packages/core/src/write/guard.ts"
       ]
     },

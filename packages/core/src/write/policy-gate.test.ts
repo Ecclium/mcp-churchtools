@@ -88,6 +88,7 @@ const setup = (
     policy?: Policy;
     quota?: QuotaStore | null;
     categoryName?: () => Promise<string | undefined>;
+    calendarName?: () => Promise<string | undefined>;
     time?: number;
   } = {},
 ) => {
@@ -105,6 +106,13 @@ const setup = (
       names.push(categoryId);
       return (options.categoryName ?? (() => Promise.resolve('Berichte')))();
     },
+    calendarName: (_ctx, calendarId) => {
+      names.push(calendarId);
+      return (
+        options.calendarName ?? (() => Promise.resolve('Gottesdienste'))
+      )();
+    },
+    resourceName: () => Promise.resolve('Saal'),
   });
   const ctx = contextOf(events);
   return { gate, ctx, events, names, quota };
@@ -269,13 +277,46 @@ describe('the policy in the write guard', () => {
     expect(names).toEqual([]);
   });
 
-  it('knows no name of a target outside the wiki yet', async () => {
-    const { gate, ctx } = setup();
+  // The name of a calendar comes from the client; a group has none yet,
+  // since its writes come with the Pro module.
+  it('reads the name of a calendar, and knows none of a group yet', async () => {
+    const same = setup();
     expect(
-      await gate.check(
-        ctx,
+      await same.gate.check(
+        same.ctx,
         'ct_appointments_create',
         rulesOf('calendar', '3'),
+        {},
+        'plan',
+      ),
+    ).toBeUndefined();
+    expect(same.names).toEqual([3]);
+    const renamed = setup({
+      calendarName: () => Promise.resolve('Andacht'),
+    });
+    expect(
+      await renamed.gate.check(
+        renamed.ctx,
+        'ct_appointments_create',
+        rulesOf('calendar', '3'),
+        {},
+        'plan',
+      ),
+    ).toBe('name_changed');
+    const group = setup({
+      policy: policyOf([
+        {
+          target: { kind: 'group', id: 7, name: 'Chor' },
+          tools: ['ct_groups_add_member'],
+          maxPerDay: 1,
+        },
+      ]),
+    });
+    expect(
+      await group.gate.check(
+        group.ctx,
+        'ct_groups_add_member',
+        rulesOf('group', '7'),
         {},
         'plan',
       ),

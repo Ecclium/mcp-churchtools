@@ -436,6 +436,24 @@ const isDated = (fields: DatedFields): boolean =>
   isSpan(fields.startDate, fields.endDate);
 
 /**
+ * Whether the client sends these fields of an appointment or a booking:
+ * a title of one line, a description or none, and existing times in UTC
+ * with the end after the start. The write guard checks them when it
+ * plans, so that what the client would refuse ends before anything is
+ * confirmed (ADR 0029).
+ *
+ * @param fields - Title, description, start and end.
+ * @returns Whether the client sends them.
+ * @example
+ * ```ts
+ * fitsDatedFields({ title: 'Probe', description: null,
+ *   startDate: '2026-11-08T09:00:00Z', endDate: '2026-11-08T10:00:00Z' }); // true
+ * ```
+ */
+export const fitsDatedFields = (fields: DatedFields): boolean =>
+  isDated(fields);
+
+/**
  * Whether a value of ChurchTools holds anything: text that is not blank, a
  * number, `true`, or a list or object that holds such a value at any depth.
  * Read without recursion, so that the depth of an answer cannot exhaust the

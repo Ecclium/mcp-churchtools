@@ -7,7 +7,12 @@ import type {
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { describe, expect, it } from 'vitest';
 
-import { echoAllowed, rulesOf, withToolMeta } from './rules.js';
+import {
+  echoAllowed,
+  objectRefsOfTarget,
+  rulesOf,
+  withToolMeta,
+} from './rules.js';
 
 const guid = '00000000-0000-4000-8000-000000000001';
 
@@ -88,7 +93,7 @@ const table = [
     false,
     true,
   ],
-  ['appointmentCreate', 'calendar', '4', 'nonce', 'core', false, false],
+  ['appointmentCreate', 'calendar', '4', 'nonce', 'core', false, true],
   [
     'appointmentUpdate',
     'appointment',
@@ -96,9 +101,9 @@ const table = [
     'baseVersion',
     'core',
     false,
-    false,
+    true,
   ],
-  ['bookingCreate', 'resource', '2', 'nonce', 'core', false, false],
+  ['bookingCreate', 'resource', '2', 'nonce', 'core', false, true],
   ['groupMemberAdd', 'group', '7', 'nonce', 'pro', false, false],
   ['groupMemberRemove', 'group', '7', 'nonce', 'pro', false, false],
   ['serviceRequest', 'service', '9/3', 'nonce', 'pro', false, false],
@@ -190,6 +195,77 @@ describe('the rules of an intent', () => {
     expect(rulesOf(intents.wikiPageUpdate).requiredRights).toEqual(update);
     expect(rulesOf(intents.wikiSectionAppend).requiredRights).toEqual(update);
   });
+
+  // The writes of appointments and bookings need the rights the mapping
+  // names for their operations, each as one requirement (F45).
+  it('names for appointments and bookings the rights of the rights mapping', () => {
+    const mapping = JSON.parse(
+      readFileSync(
+        new URL(
+          '../../../../scripts/docs/rights-mapping.json',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    ) as {
+      readonly operations: readonly {
+        readonly operationId: string;
+        readonly needs: readonly {
+          readonly rights: readonly {
+            readonly module: string;
+            readonly name: string;
+          }[];
+        }[];
+      }[];
+    };
+    const rightsOf = (operationId: string) =>
+      mapping.operations
+        .find((operation) => operation.operationId === operationId)
+        ?.needs.flatMap((need) =>
+          need.rights.map(({ module, name }) => ({ module, right: name })),
+        );
+    expect(rulesOf(intents.appointmentCreate).requiredRights).toEqual(
+      rightsOf('post-calendars-calendarId-appointments'),
+    );
+    expect(rulesOf(intents.appointmentUpdate).requiredRights).toEqual(
+      rightsOf('put-calendars-calendarId-appointments-appointmentId'),
+    );
+    expect(rulesOf(intents.bookingCreate).requiredRights).toEqual(
+      rightsOf('post-bookings'),
+    );
+  });
+});
+
+describe('the IDs of a target for the audit', () => {
+  it.each([
+    [{ kind: 'wiki_category', key: '12' }, [['wiki_category', '12']]],
+    [
+      { kind: 'wiki_page', key: `12/${guid}` },
+      [
+        ['wiki_category', '12'],
+        ['wiki_page', guid],
+      ],
+    ],
+    [{ kind: 'calendar', key: '8' }, [['calendar', '8']]],
+    [
+      { kind: 'appointment', key: '8/21' },
+      [
+        ['calendar', '8'],
+        ['appointment', '21'],
+      ],
+    ],
+    [{ kind: 'resource', key: '13' }, [['resource', '13']]],
+    [
+      { kind: 'booking', key: '13/51' },
+      [
+        ['resource', '13'],
+        ['booking', '51'],
+      ],
+    ],
+    [{ kind: 'group', key: '7' }, []],
+  ] as const)('names %j', (target, refs) => {
+    expect(objectRefsOfTarget(target)).toEqual(refs);
+  });
 });
 
 describe('the metadata of the tool', () => {
@@ -274,6 +350,18 @@ describe('the echo', () => {
   it('is not allowed for a write of the Pro module, even from the core and not special', () => {
     const update = rulesOf(intents.wikiPageUpdate);
     expect(echoAllowed({ ...update, module: 'pro' }, 'core')).toBe(false);
+  });
+
+  // F48: a booking request reaches the managers of the resource by mail
+  // at once, which no undo takes back.
+  it('is never allowed for a booking request or a change of an appointment, and allowed for a new appointment', () => {
+    expect(echoAllowed(rulesOf(intents.bookingCreate), 'core')).toBe(false);
+    expect(rulesOf(intents.bookingCreate).notifies).toBe(true);
+    expect(echoAllowed(rulesOf(intents.appointmentUpdate), 'core')).toBe(false);
+    expect(rulesOf(intents.appointmentUpdate).notifies).toBe(true);
+    expect(echoAllowed(rulesOf(intents.appointmentCreate), 'core')).toBe(true);
+    const update = rulesOf(intents.wikiPageUpdate);
+    expect(echoAllowed({ ...update, notifies: true }, 'core')).toBe(false);
   });
 
   it('needs a write that a snapshot undoes and that need not go to the queue', () => {

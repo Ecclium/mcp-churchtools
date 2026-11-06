@@ -50,4 +50,4 @@ export {
 } from './guard.js';
 export { approvalKeyOf } from './plan-hash.js';
 export { queueEntryOf } from './queue-entry.js';
-export type { WriteTarget } from './rules.js';
+export { objectRefsOfTarget, type WriteTarget } from './rules.js';

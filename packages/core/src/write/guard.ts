@@ -82,6 +82,7 @@ import {
   type QuotaStore,
   type Reversible,
   type RightRef,
+  type SkipReason,
   type Sensitivity,
   type TenantContext,
   type UnattendedRule,
@@ -90,7 +91,8 @@ import {
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { maxWikiWriteBytes } from '../churchtools/schemas.js';
-import { isWikiTitle, type WikiWrites } from '../churchtools/wiki-writes.js';
+import { isWikiTitle } from '../churchtools/wiki-writes.js';
+import type { ChurchToolsWrites } from '../churchtools/writes.js';
 import { canonicalOfWritten, contactKeysOf } from '../content/index.js';
 import { HttpTransportError } from '../http/index.js';
 import type { KeyMaterial } from '../keys/index.js';
@@ -106,6 +108,13 @@ import {
 } from '../marker/index.js';
 import type { PolicyQueueReason } from '../policy/engine.js';
 import type { Policy } from '../policy/schema.js';
+import {
+  type CalendarIntent,
+  calendarSentences,
+  isCalendarIntent,
+  planCalendar,
+  type SendOutcome,
+} from './calendar-plan.js';
 import { readIntent } from './intent.js';
 import { checkIntentContent, ContentRefusal } from './content-gate.js';
 import {
@@ -116,7 +125,11 @@ import { checkKillSwitches } from './kill-switch.js';
 import { contentHashOf } from './plan-hash.js';
 import { isoDateOf } from '../quota/budget.js';
 import type { LoadedSnapshot } from '../snapshots/keeper.js';
-import type { SnapshotToSeal } from '../snapshots/seal.js';
+import type {
+  DatedCreatedSnapshot,
+  SnapshotState,
+  SnapshotToSeal,
+} from '../snapshots/seal.js';
 import { createPolicyGate, type WriteFacts } from './policy-gate.js';
 import { issueProof, useProof } from './proof.js';
 import {
@@ -183,14 +196,20 @@ export const writeSentences = Object.freeze({
     'With the line that marks it, the text of the page would be longer than ChurchTools takes. Shorten it.',
   pageOpen:
     'The page ends in a block that would take in the section and its marking, such as an open block of code or an open comment. Ask a person to close it in ChurchTools.',
+  ...calendarSentences,
 } as const);
 
 /** What the client gives the write guard: the rights and the writes. */
 export interface WriteClient {
   /** The rights of the account, for the advice before planning. */
   readonly permissions: (ctx: TenantContext) => Promise<Permissions>;
+  /**
+   * The account of the server, whose ID tells whether it created an
+   * appointment (F44).
+   */
+  readonly whoami: (ctx: TenantContext) => Promise<{ readonly id: number }>;
   /** The writes of the client and the reads a plan needs (ADR 0072). */
-  readonly writes: WikiWrites;
+  readonly writes: ChurchToolsWrites;
 }
 
 /** What the write guard is built from. */
@@ -221,6 +240,11 @@ export interface WriteGuardOptions {
    * without one: then the guard adds no page and no section to the wiki.
    */
   readonly markerKey?: KeyMaterial | undefined;
+  /**
+   * The zone in which the texts of a confirmation show the times of
+   * appointments and bookings, an IANA name, or undefined for UTC.
+   */
+  readonly timeZone?: string | undefined;
 }
 
 /**
@@ -558,7 +582,25 @@ interface Undo {
   readonly day: IsoDate;
 }
 
-/** The writes this version of the core runs: those of the wiki. */
+/** What a commit rests on, read right before the send. */
+interface Prepared {
+  readonly contentHash: string;
+  /** The time of ChurchTools of the read, null without one. */
+  readonly serverTime: number | null;
+  /** What the policy needs of the target beyond the rules. */
+  readonly facts: WriteFacts;
+  /** Why nothing is left to write, if so. */
+  readonly skip?: SkipReason;
+  /** What the snapshot keeps before the send. */
+  readonly before: SnapshotState;
+  /** Sends the write once and reads it back. */
+  readonly send: (
+    path: ConfirmationPath,
+    undo: Undo | undefined,
+  ) => Promise<CommitResult>;
+}
+
+/** The writes of the wiki, which plan from a page. */
 type WikiIntent = Extract<WriteIntent, { categoryId: number }>;
 
 /** The writes that change a page that exists. */
@@ -607,6 +649,16 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     clock,
     categoryName: (ctx, categoryId) =>
       client.writes.wikiCategoryName(ctx, categoryId),
+    calendarName: async (ctx, calendarId) =>
+      (await client.writes.calendarFacts(ctx, calendarId))?.name,
+    resourceName: (ctx, resourceId) =>
+      client.writes.resourceName(ctx, resourceId),
+  });
+  // What the plans of appointments and bookings are made from.
+  const calendars = Object.freeze({
+    writes: client.writes,
+    whoami: (ctx: TenantContext) => client.whoami(ctx),
+    timeZone: options.timeZone,
   });
   // What the policy needs of a write beyond its rules: the title of a page
   // it changes, as read right before.
@@ -636,7 +688,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
   // missing one early. A structure the client does not know stops writing.
   const checkRights = async (
     ctx: TenantContext,
-    intent: WikiIntent,
+    intent: WikiIntent | CalendarIntent,
     rules: IntentRules,
   ): Promise<void> => {
     const permissions = await client.permissions(ctx);
@@ -644,15 +696,24 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       ctx.log.warn('write_refused', { code: 'policy_denied' });
       throw refuse('policy_denied', writeSentences.rightsUnknown);
     }
+    // Each right is granted for the category, calendar or resource the
+    // write reaches, or for all of them.
+    const { scope, sentence } =
+      intent.kind === 'bookingCreate'
+        ? { scope: intent.resourceId, sentence: writeSentences.resourceRight }
+        : intent.kind === 'appointmentCreate' ||
+            intent.kind === 'appointmentUpdate'
+          ? { scope: intent.calendarId, sentence: writeSentences.calendarRight }
+          : { scope: intent.categoryId, sentence: writeSentences.missingRight };
     const missing = rules.requiredRights.filter(({ module, right }) => {
       const value = permissions.granted[module]?.[right];
       return !(
         value === true ||
-        (Array.isArray(value) && value.includes(intent.categoryId))
+        (Array.isArray(value) && value.includes(scope))
       );
     });
     if (missing.length > 0) {
-      throw refuse('permission', writeSentences.missingRight, missing);
+      throw refuse('permission', sentence, missing);
     }
   };
 
@@ -867,9 +928,13 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       ctx.log.warn('write_refused', { code: 'policy_denied' });
       throw refuse('policy_denied', writeSentences.notRun);
     }
-    // Only the writes of the wiki run in this version (rules.ts). Their
-    // texts go through the content policy before anything else, and from
-    // here on the intent holds them in their written form (ADR 0030).
+    // A write runs only when the core runs its kind (rules.ts): one of the
+    // wiki or one of calendars and resources. Its texts go through the
+    // content policy before anything else, and from here on the intent
+    // holds them in their written form (ADR 0030).
+    if (isCalendarIntent(intent)) {
+      return planCalendarOnce(request, intent, rules, day);
+    }
     const wiki = checkIntentContent(ctx, intent as WikiIntent, contacts);
     checkMarking(ctx, wiki, day);
     await checkRights(ctx, wiki, rules);
@@ -923,6 +988,46 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       outcome: Object.freeze({ kind: 'planned', plan: sealed }),
       target: rules.target,
       text: textOf(wiki, derived),
+      ...(queue === undefined ? {} : { queue }),
+    });
+  };
+
+  // Plans a write of an appointment or a booking: texts, rights, the read
+  // of the target, the policy, and a plan sealed on what was read. It adds
+  // no marking (ADR 0032).
+  const planCalendarOnce = async (
+    request: PlanRequest,
+    value: CalendarIntent,
+    rules: IntentRules,
+    day: IsoDate | undefined,
+  ): Promise<PlanResult> => {
+    const { ctx } = request;
+    const intent = checkIntentContent(ctx, value, contacts);
+    await checkRights(ctx, intent, rules);
+    const plan = await planCalendar(calendars, ctx, intent, request.tool);
+    const queue = await policy.check(ctx, request.tool, rules, {}, 'plan');
+    if (plan.skip !== undefined) {
+      return Object.freeze({
+        outcome: Object.freeze({ kind: 'skipped', reason: plan.skip }),
+        target: rules.target,
+      });
+    }
+    const sealed = sealPlan({
+      tenantId: ctx.tenantId,
+      actor: ctx.actor,
+      tool: request.tool,
+      origin: request.origin,
+      intent,
+      toolMeta: request.meta,
+      contentHash: plan.contentHash,
+      sealedAt: clock.now(),
+      ...(day === undefined ? {} : { day }),
+      snapshots: reversible,
+    });
+    return Object.freeze({
+      outcome: Object.freeze({ kind: 'planned', plan: sealed }),
+      target: rules.target,
+      text: plan.text,
       ...(queue === undefined ? {} : { queue }),
     });
   };
@@ -991,19 +1096,29 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     by: 'tool' | 'undo' | 'approve',
   ): Promise<CommitResult> => {
     // A plan is sealed only for an intent the core runs (sealed-plan.ts).
-    const intent = view.intent as WikiIntent;
+    const { intent } = view;
     const target = view.rules.target;
     // The read right before the write: the plan derived again from the
     // state of the target, with the time of ChurchTools.
-    let derived: Derived;
+    let derived: Prepared;
     try {
-      derived = await derive(ctx, intent, view.day, by === 'undo');
+      derived = await prepare(ctx, view, by);
     } catch (error) {
       useProof(proof, view, clock.now());
       return denied(
         isEccliumError(error) && error.code === 'conflict'
           ? refuse('conflict', writeSentences.changedSincePlan)
           : asError(error),
+        target,
+      );
+    }
+    // What the write would add stands there since the plan, written by
+    // someone else: nothing is left to write.
+    if (derived.skip !== undefined) {
+      useProof(proof, view, clock.now());
+      ctx.log.warn('write_conflict', { code: 'conflict' });
+      return denied(
+        refuse('conflict', writeSentences.changedSincePlan),
         target,
       );
     }
@@ -1064,7 +1179,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
           ctx,
           view.tool,
           view.rules,
-          factsOf(derived),
+          derived.facts,
           by === 'approve' ? 'approve' : 'commit',
         );
       }
@@ -1085,29 +1200,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     let undo: Undo | undefined;
     if (snapshots !== undefined) {
       const day = isoDateOf(now);
-      const content: SnapshotToSeal['content'] =
-        derived.kind === 'create'
-          ? {
-              kind: 'wikiPageCreate',
-              tool: view.tool,
-              categoryId: intent.categoryId,
-              title: derived.title,
-              textHash: contentHashOf([derived.text]),
-            }
-          : {
-              kind: 'wikiPageText',
-              tool: view.tool,
-              categoryId: intent.categoryId,
-              guid: (intent as PageIntent).guid,
-              before: {
-                version: derived.before.version,
-                text: derived.before.text,
-              },
-              after: {
-                version: derived.before.version + 1,
-                textHash: contentHashOf([derived.text]),
-              },
-            };
+      const content = derived.before;
       try {
         if (eventId === undefined || day === undefined) {
           throw new TypeError('No event or no day.');
@@ -1126,15 +1219,147 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
         );
       }
     }
-    return derived.kind === 'create'
-      ? create(
+    return derived.send(path, undo);
+  };
+
+  // What a commit rests on, read right before the send: the hash, the time
+  // of ChurchTools, the facts the policy names, what the snapshot keeps and
+  // the one send. A write of the wiki derives it from its page, one of an
+  // appointment or a booking from the plan of `calendar-plan.ts`.
+  const prepare = async (
+    ctx: TenantContext,
+    view: PlanView,
+    by: 'tool' | 'undo' | 'approve',
+  ): Promise<Prepared> => {
+    const { intent } = view;
+    if (isCalendarIntent(intent)) {
+      const plan = await planCalendar(calendars, ctx, intent, view.tool);
+      return {
+        contentHash: plan.contentHash,
+        serverTime: plan.serverTime,
+        facts: {},
+        ...(plan.skip === undefined ? {} : { skip: plan.skip }),
+        before: plan.before,
+        send: async (path, undo) =>
+          commitOf(
+            ctx,
+            await plan.send((created) => completeCreated(ctx, undo, created)),
+            path,
+            undo,
+          ),
+      };
+    }
+    const wiki = intent as WikiIntent;
+    const derived = await derive(ctx, wiki, view.day, by === 'undo');
+    return {
+      contentHash: derived.contentHash,
+      serverTime: derived.serverTime,
+      facts: factsOf(derived),
+      before:
+        derived.kind === 'create'
+          ? {
+              kind: 'wikiPageCreate',
+              tool: view.tool,
+              categoryId: wiki.categoryId,
+              title: derived.title,
+              textHash: contentHashOf([derived.text]),
+            }
+          : {
+              kind: 'wikiPageText',
+              tool: view.tool,
+              categoryId: wiki.categoryId,
+              guid: (wiki as PageIntent).guid,
+              before: {
+                version: derived.before.version,
+                text: derived.before.text,
+              },
+              after: {
+                version: derived.before.version + 1,
+                textHash: contentHashOf([derived.text]),
+              },
+            },
+      send: (path, undo) =>
+        derived.kind === 'create'
+          ? create(
+              ctx,
+              wiki as Extract<WikiIntent, { kind: 'wikiPageCreate' }>,
+              derived.text,
+              path,
+              undo,
+            )
+          : change(
+              ctx,
+              wiki as PageIntent,
+              derived,
+              view.rules.target,
+              path,
+              undo,
+            ),
+    };
+  };
+
+  // The commit of a send of an appointment or a booking, as for a page.
+  const commitOf = (
+    ctx: TenantContext,
+    outcome: SendOutcome,
+    path: ConfirmationPath,
+    undo: Undo | undefined,
+  ): CommitResult => {
+    const { target } = outcome;
+    switch (outcome.kind) {
+      case 'verified':
+        return verified(ctx, path, target, outcome.version, undo);
+      case 'notSent':
+        return ended(
           ctx,
-          intent as Extract<WikiIntent, { kind: 'wikiPageCreate' }>,
-          derived.text,
+          'failed',
+          refuse(outcome.code, writeSentences.notSent),
+          false,
+          target,
           path,
-          undo,
-        )
-      : change(ctx, intent as PageIntent, derived, target, path, undo);
+        );
+      case 'refused':
+        return ended(ctx, 'failed', outcome.error, false, target, path);
+      case 'unknown':
+        return ended(
+          ctx,
+          'failed',
+          refuse(outcome.code, writeSentences.unknown),
+          true,
+          target,
+          path,
+        );
+      case 'notAsPlanned':
+        return ended(
+          ctx,
+          'conflict',
+          refuse('conflict', writeSentences.notAsPlanned),
+          true,
+          target,
+          path,
+        );
+    }
+  };
+
+  // Once ChurchTools names a new appointment or booking, the second part
+  // of its snapshot, as for a new page; a part that cannot be kept leaves
+  // the write as it is, and the log says so.
+  const completeCreated = async (
+    ctx: TenantContext,
+    undo: Undo | undefined,
+    created: DatedCreatedSnapshot,
+  ): Promise<void> => {
+    if (snapshots === undefined || undo === undefined) return;
+    try {
+      await snapshots.save(ctx, {
+        eventId: undo.eventId,
+        part: 'after',
+        day: undo.day,
+        content: created,
+      });
+    } catch {
+      ctx.log.warn('snapshot_incomplete', { code: 'internal' });
+    }
   };
 
   // Once ChurchTools names a new page, the second part of its snapshot:
@@ -1179,7 +1404,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       kind: 'wiki_category',
       key: String(intent.categoryId),
     });
-    let created: Awaited<ReturnType<WikiWrites['createWikiPage']>>;
+    let created: Awaited<ReturnType<ChurchToolsWrites['createWikiPage']>>;
     try {
       created = await client.writes.createWikiPage(
         ctx,
@@ -1488,14 +1713,22 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     }
     // The content policy again, since the contact values of the policy
     // may have changed in the meantime (ADR 0030).
-    const intent = checkIntentContent(ctx, read as WikiIntent, contacts);
-    checkMarking(ctx, intent, entry.plannedOn);
+    const intent = checkIntentContent(
+      ctx,
+      read as WikiIntent | CalendarIntent,
+      contacts,
+    );
+    if (!isCalendarIntent(intent)) checkMarking(ctx, intent, entry.plannedOn);
     await checkRights(ctx, intent, rules);
-    let derived: Derived;
+    let derived: {
+      readonly contentHash: string;
+      readonly serverTime: number | null;
+      readonly change: UndoChange;
+    };
     try {
-      derived = await derive(ctx, intent, entry.plannedOn);
+      derived = await approvedBasis(ctx, intent, entry);
     } catch (error) {
-      // A page of another version than the one queued is a change since.
+      // A target of another version than the one queued is a change since.
       throw isEccliumError(error) && error.code === 'conflict'
         ? refuse('conflict', writeSentences.changedSinceQueued)
         : error;
@@ -1524,11 +1757,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       throw refuse('conflict', writeSentences.changedSinceQueued);
     }
     const { target } = rules;
-    const change: UndoChange = Object.freeze(
-      derived.kind === 'change'
-        ? { from: derived.before.text, to: derived.text }
-        : { from: '', to: derived.text },
-    );
+    const { change } = derived;
     // Only a decision that was counted and kept lets the write go on; a
     // second approval, a rejection in between and a store that fails end
     // here (ADR 0029).
@@ -1544,6 +1773,37 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     const proof = issueProof(sealed, 'operator', clock.now());
     const result = await commitPlan(ctx, view, proof, eventId, 'approve');
     return Object.freeze({ kind: 'committed', target, result, change });
+  };
+
+  // What an approval rests on, read now: hash, time and the change the
+  // operator sees. An appointment or a booking that stands there already
+  // is a change since the entry was queued.
+  const approvedBasis = async (
+    ctx: TenantContext,
+    intent: WikiIntent | CalendarIntent,
+    entry: ApprovedEntry,
+  ): Promise<{
+    readonly contentHash: string;
+    readonly serverTime: number | null;
+    readonly change: UndoChange;
+  }> => {
+    if (isCalendarIntent(intent)) {
+      const plan = await planCalendar(calendars, ctx, intent, entry.tool);
+      if (plan.skip !== undefined) {
+        throw refuse('conflict', writeSentences.changedSinceQueued);
+      }
+      return plan;
+    }
+    const derived = await derive(ctx, intent, entry.plannedOn);
+    return {
+      contentHash: derived.contentHash,
+      serverTime: derived.serverTime,
+      change: Object.freeze(
+        derived.kind === 'change'
+          ? { from: derived.before.text, to: derived.text }
+          : { from: '', to: derived.text },
+      ),
+    };
   };
 
   return Object.freeze({

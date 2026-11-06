@@ -170,7 +170,12 @@ const reasons: Readonly<Record<UndoReason, UndoEnding>> = Object.freeze({
     'Ecclium kann nicht prüfen, ob das Schreiben ausgeschaltet ist, und schreibt darum nicht. Prüfen Sie den Ordner ‹stop› im Zustandsordner.',
     exitCodes.noPermission,
   ),
-  notRun: internal,
+  // A write this version takes back from no snapshot, such as one of an
+  // appointment or a booking (ADR 0029).
+  notRun: ending(
+    'Diesen Schreibvorgang nimmt diese Version von Ecclium nicht zurück, Ecclium hat nichts geschrieben. Nehmen Sie ihn bei Bedarf in ChurchTools von Hand zurück.',
+    exitCodes.noPermission,
+  ),
   intent: internal,
   blank: ending(
     'Vor dem Schreibvorgang war die Seite leer, und eine leere Seite schreibt Ecclium nicht. Leeren Sie die Seite bei Bedarf von Hand.',
@@ -232,6 +237,41 @@ const reasons: Readonly<Record<UndoReason, UndoEnding>> = Object.freeze({
   auditNotReady: ending(
     'Die Audit-Datei kann die Zeile der Rücknahme nicht aufnehmen, darum schreibt Ecclium nicht. Prüfen Sie die Audit-Datei mit ‹ecclium audit verify›.',
     exitCodes.ioError,
+  ),
+  // This version takes back no appointment or booking; the table names
+  // every sentence of the write guard all the same (ADR 0072).
+  calendarRight: ending(
+    'Das Dienstkonto darf Termine in diesem Kalender nicht ändern, Ecclium hat nichts geschrieben.',
+    exitCodes.noPermission,
+  ),
+  resourceRight: ending(
+    'Das Dienstkonto darf für diese Ressource keine Buchungen anfragen, Ecclium hat nichts geschrieben.',
+    exitCodes.noPermission,
+  ),
+  datedFields: ending(
+    'Titel, Beschreibung oder Zeiten passen nicht zu einem Termin oder einer Buchung, Ecclium hat nichts geschrieben.',
+    exitCodes.dataError,
+  ),
+  datedSpan: ending(
+    'Der Termin oder die Buchung dauert länger, als Ecclium schreibt. Ecclium hat nichts geschrieben.',
+    exitCodes.dataError,
+  ),
+  appointmentChanged: changedMeanwhile,
+  appointmentParts: ending(
+    'Der Termin hat Teile, die Ecclium nicht ändert, etwa eine Serie, eine Adresse oder ein verknüpftes Event. Ecclium hat nichts geschrieben.',
+    exitCodes.noPermission,
+  ),
+  wholeDays: ending(
+    'Der Termin dauert ganze Tage, und solche schreibt Ecclium nicht. Ecclium hat nichts geschrieben.',
+    exitCodes.noPermission,
+  ),
+  notOwnTime: ending(
+    'Ecclium verschiebt nur Termine, die sein Dienstkonto angelegt hat, und hat nichts geschrieben.',
+    exitCodes.noPermission,
+  ),
+  dayListFull: ending(
+    'Der Kalender oder die Ressource hat an diesen Tagen zu viele Einträge, als dass Ecclium einen gleichen ausschliessen könnte. Ecclium hat nichts geschrieben.',
+    exitCodes.noPermission,
   ),
 });
 

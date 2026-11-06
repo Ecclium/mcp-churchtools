@@ -69,8 +69,8 @@ export interface WikiSectionAppendIntent {
 
 /**
  * Creates a single appointment in a calendar, without an event and without
- * a series. The core does not run it yet; it comes with the tools for
- * appointments.
+ * a series. An appointment of the same title and times in the calendar
+ * counts as written already.
  */
 export interface AppointmentCreateIntent {
   readonly kind: 'appointmentCreate';
@@ -78,9 +78,9 @@ export interface AppointmentCreateIntent {
   readonly calendarId: number;
   /** The title of the appointment. */
   readonly title: string;
-  /** The start, as a date or a date and time. */
+  /** The start, a time in UTC such as `2026-11-08T09:00:00Z`. */
   readonly startDate: string;
-  /** The end, as a date or a date and time. */
+  /** The end, a time in UTC after the start. */
   readonly endDate: string;
   /** A description, if any. */
   readonly description?: string;
@@ -89,7 +89,8 @@ export interface AppointmentCreateIntent {
 /**
  * Changes a single appointment. ChurchTools replaces an appointment as a
  * whole (F41), so the core sends every field it read and the ones given
- * here. Not run yet, like {@link AppointmentCreateIntent}.
+ * here. It moves the start and the end only of an appointment the account
+ * of the server created, since linked events and bookings follow a new time.
  */
 export interface AppointmentUpdateIntent {
   readonly kind: 'appointmentUpdate';
@@ -101,18 +102,18 @@ export interface AppointmentUpdateIntent {
   readonly baseVersion: number;
   /** The new title. */
   readonly title: string;
-  /** The new start. */
+  /** The new start, a time in UTC. */
   readonly startDate: string;
-  /** The new end. */
+  /** The new end, a time in UTC. */
   readonly endDate: string;
-  /** The new description, if any. */
+  /** The new description; without one the current stays. */
   readonly description?: string;
 }
 
 /**
  * Requests a booking of a resource. A booking is only ever requested; the
- * managers of the resource approve it in ChurchTools (F45). Not run yet,
- * like {@link AppointmentCreateIntent}.
+ * managers of the resource approve it in ChurchTools (F45), who get its
+ * title and description by mail (F48), so it is never confirmed by echo.
  */
 export interface BookingCreateIntent {
   readonly kind: 'bookingCreate';
@@ -120,9 +121,9 @@ export interface BookingCreateIntent {
   readonly resourceId: number;
   /** The title of the booking. */
   readonly title: string;
-  /** The start, as a date and time. */
+  /** The start, a time in UTC. */
   readonly startDate: string;
-  /** The end, as a date and time. */
+  /** The end, a time in UTC after the start. */
   readonly endDate: string;
   /** A description, if any. It reaches the managers by mail (F48). */
   readonly description?: string;

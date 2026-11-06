@@ -128,6 +128,22 @@ const fakeOf = (): Fake => ({
   sent: [],
 });
 
+const unused = (): Promise<never> =>
+  Promise.reject(new Error('not used by the wiki'));
+const calendarUnused = {
+  appointmentState: unused,
+  calendarDayState: unused,
+  createAppointment: unused,
+  updateAppointment: unused,
+  deleteAppointment: unused,
+  bookingState: unused,
+  resourceDayState: unused,
+  createBooking: unused,
+  deleteBooking: unused,
+  calendarFacts: unused,
+  resourceName: unused,
+};
+
 const clientOf = (fake: Fake): WriteClient => ({
   permissions: () => Promise.resolve(fake.permissions),
   writes: {
@@ -181,7 +197,11 @@ const clientOf = (fake: Fake): WriteClient => ({
       };
       return Promise.resolve(fake.created);
     },
+    // The writes of appointments and bookings have tests of their own in
+    // guard-calendar.test.ts; a test of the wiki never reaches them.
+    ...calendarUnused,
   },
+  whoami: () => Promise.reject(new Error('not used by the wiki')),
 });
 
 const meta = { sensitivity: 'personal', unattended: 'policy' } as const;
@@ -381,14 +401,8 @@ describe('planning', () => {
       writeSentences.notRun,
     ],
     [
-      'an appointment',
-      {
-        kind: 'appointmentCreate',
-        calendarId: 4,
-        title: 'P',
-        startDate: 'a',
-        endDate: 'b',
-      },
+      'a service request',
+      { kind: 'serviceRequest', eventId: 9, serviceId: 3, personId: 1 },
       'policy_denied',
       writeSentences.notRun,
     ],
@@ -1808,14 +1822,7 @@ describe('an approval of the operator (ADR 0029)', () => {
     });
     const later = approveWith({
       ...entry,
-      intent: {
-        kind: 'appointmentCreate',
-        calendarId: 4,
-        title: 'Probe',
-        startDate: '2026-11-08T09:00:00Z',
-        endDate: '2026-11-08T10:00:00Z',
-        description: 'Synthetisch',
-      },
+      intent: { kind: 'serviceRequest', eventId: 9, serviceId: 3, personId: 1 },
     });
     expect(await later.result).toMatchObject({
       kind: 'refused',
