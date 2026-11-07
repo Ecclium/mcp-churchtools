@@ -203,6 +203,10 @@ const shownLine = (line: string): string => {
     : `${line.slice(0, 1)}${content}`;
 };
 
+// A text that ends with a line break, for the diff a person reads.
+const lineEnded = (text: string): string =>
+  text === '' || text.endsWith('\n') ? text : `${text}\n`;
+
 const lines = (count: number): string =>
   count === 1 ? '1 Zeile' : `${String(count)} Zeilen`;
 
@@ -241,7 +245,11 @@ const countsOf = (
 export function confirmationTextOf(
   preview: ConfirmationPreview,
 ): ConfirmationText {
-  const diff = diffLines(preview.before, preview.after);
+  // ChurchTools stores a text without a line break at its end (F51), so
+  // the last line of a page has none before a section is appended and has
+  // one after. A person reads lines: with a line break added to both texts
+  // the question shows only the new lines, not the last one as changed.
+  const diff = diffLines(lineEnded(preview.before), lineEnded(preview.after));
   const { added, removed } = countsOf(diff);
   const title = titleOf(preview.title);
   const category = String(preview.categoryId);

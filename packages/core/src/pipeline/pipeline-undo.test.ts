@@ -72,8 +72,9 @@ const page = (version: number, text: string): string =>
 
 // Texts of the page that must never reach a log line or the audit.
 const canaries = [makeCanary('name'), makeCanary('email')] as const;
-const before = `# Plan ${canaries[0].value}\n`;
-const after = `# Neu ${canaries[1].value}\n`;
+// As ChurchTools stores them, without a line break at the end (F51).
+const before = `# Plan ${canaries[0].value}`;
+const after = `# Neu ${canaries[1].value}`;
 
 const assignment = {
   tenantId: 'default',
@@ -417,7 +418,7 @@ describe('the undo of the pipeline (ADR 0031)', () => {
       .intercept({ path: pagePath, method: 'PATCH' })
       .reply(200, '{}', json);
     const note =
-      'Diese Seite hat Ecclium am 03.11.2026 angelegt und am 03.11.2026 zurückgenommen.\n';
+      'Diese Seite hat Ecclium am 03.11.2026 angelegt und am 03.11.2026 zurückgenommen.';
     created.double
       .intercept({ path: pagePath, method: 'GET' })
       .reply(200, page(2, note), json);

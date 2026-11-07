@@ -93,7 +93,7 @@ import {
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { maxWikiWriteBytes } from '../churchtools/schemas.js';
-import { isWikiTitle } from '../churchtools/wiki-writes.js';
+import { isWikiTitle, storedWikiText } from '../churchtools/wiki-writes.js';
 import type { ChurchToolsWrites } from '../churchtools/writes.js';
 import { canonicalOfWritten, contactKeysOf } from '../content/index.js';
 import { HttpTransportError } from '../http/index.js';
@@ -548,22 +548,23 @@ const refuse = (
   );
 
 /**
- * Builds the new text of a page from its text and a section: the text
- * without spaces at its end, an empty line, the section without spaces at
- * its end and one line break. ChurchTools stores the text exactly (F17),
- * so the read after the write compares byte by byte.
+ * Builds the new text of a page from its text and a section: the text, an
+ * empty line and the section, each in the form ChurchTools stores, without
+ * the white space it removes at both ends (F51). ChurchTools keeps
+ * everything else as sent (F17), so the read after the write compares
+ * byte by byte.
  *
  * @param text - The text of the page.
  * @param section - The section to add.
  * @returns The new text.
  * @example
  * ```ts
- * appendSection('# Plan\n', '## Nachtrag'); // '# Plan\n\n## Nachtrag\n'
+ * appendSection('# Plan\n', '## Nachtrag\n'); // '# Plan\n\n## Nachtrag'
  * ```
  */
 export function appendSection(text: string, section: string): string {
-  const head = text.trimEnd();
-  const tail = `${section.trimEnd()}\n`;
+  const head = storedWikiText(text);
+  const tail = storedWikiText(section);
   return head === '' ? tail : `${head}\n\n${tail}`;
 }
 
@@ -795,7 +796,10 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       marking.date === day &&
       sameCheckCode(marking.code, code);
     return {
-      text: `${written}\n${line}\n`,
+      // The text, an empty line and the line of the marking, in the form
+      // ChurchTools stores: the written text ends with a line break, the
+      // whole text without one (F51).
+      text: storedWikiText(`${written}\n${line}`),
       judge: (page) =>
         judgeSections({ key, tenantId: ctx.tenantId, text: page, matches })
           .kind,
@@ -898,8 +902,12 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     if (section === undefined && !restoring) {
       keepsMarkings(ctx, page.text, added);
     }
+    // A text without the white space ChurchTools removes at its ends, so
+    // that the read after the write finds what was sent (F51).
     const text =
-      section === undefined ? added : appendSection(page.text, section.text);
+      section === undefined
+        ? storedWikiText(added)
+        : appendSection(page.text, section.text);
     const marking = section?.judge(page.text);
     // A repeat is skipped whatever its size; a page that would swallow the
     // new section cannot be marked.

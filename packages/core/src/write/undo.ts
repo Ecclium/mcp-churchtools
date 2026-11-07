@@ -276,31 +276,33 @@ const germanDate = (day: IsoDate): string =>
  *
  * @param created - The UTC day of the write that created the page.
  * @param today - The UTC day of the undo.
- * @returns The text of the page, ending with a line break.
+ * @returns The text of the page, in the form ChurchTools stores: without a
+ *   line break at its end (F51).
  * @throws {TypeError} When the content policy would change or refuse the
  *   sentence, which no day can cause.
  * @example
  * ```ts
  * withdrawalNoteOf('2026-11-02', '2026-11-03');
- * // 'Diese Seite hat Ecclium am 02.11.2026 angelegt und am 03.11.2026 zurückgenommen.\n'
+ * // 'Diese Seite hat Ecclium am 02.11.2026 angelegt und am 03.11.2026 zurückgenommen.'
  * ```
  */
 export function withdrawalNoteOf(created: IsoDate, today: IsoDate): string {
-  const note = `Diese Seite hat Ecclium am ${germanDate(created)} angelegt und am ${germanDate(today)} zurückgenommen.\n`;
-  // The sentence must come back from the content policy as it is, so that
-  // a second undo on any later day can tell it is there already.
+  const note = `Diese Seite hat Ecclium am ${germanDate(created)} angelegt und am ${germanDate(today)} zurückgenommen.`;
+  // The sentence must come back from the content policy as it is, with
+  // the one line break the policy ends every text with, so that a second
+  // undo on any later day can tell it is there already.
   const checked = checkMarkdown(note, { contacts: new Set() });
-  if (!checked.ok || checked.text !== note) {
+  if (!checked.ok || checked.text !== `${note}\n`) {
     throw new TypeError('The fixed sentence does not pass the content policy.');
   }
   return note;
 }
 
 // Whether a text is the fixed sentence for a page created on a day, taken
-// back on any day.
+// back on any day, as ChurchTools stores it.
 const isWithdrawalNote = (text: string, created: IsoDate): boolean =>
   new RegExp(
-    `^Diese Seite hat Ecclium am ${germanDate(created).replaceAll('.', '\\.')} angelegt und am \\d{2}\\.\\d{2}\\.\\d{4} zurückgenommen\\.\\n$`,
+    `^Diese Seite hat Ecclium am ${germanDate(created).replaceAll('.', '\\.')} angelegt und am \\d{2}\\.\\d{2}\\.\\d{4} zurückgenommen\\.$`,
     'u',
   ).test(text);
 

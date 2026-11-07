@@ -67,7 +67,7 @@ describe('the target of an undo (ADR 0031)', () => {
       left: { version: 1, textHash: contentHashOf(['# Bericht\n']) },
     });
     expect(target.textOn(today)).toBe(
-      'Diese Seite hat Ecclium am 02.11.2026 angelegt und am 03.11.2026 zurückgenommen.\n',
+      'Diese Seite hat Ecclium am 02.11.2026 angelegt und am 03.11.2026 zurückgenommen.',
     );
     // Taken back on any later day, it is done.
     expect(target.done(withdrawalNoteOf(day, '2026-12-01' as IsoDate))).toBe(
@@ -78,6 +78,8 @@ describe('the target of an undo (ADR 0031)', () => {
       false,
     );
     expect(target.done('# Bericht\n')).toBe(false);
+    // The sentence as an earlier text with a line break is no longer it.
+    expect(target.done(`${target.textOn(today)}\n`)).toBe(false);
   });
 
   it('gives only the category of a new page whose GUID was never kept', () => {
@@ -100,7 +102,8 @@ describe('the target of an undo (ADR 0031)', () => {
       ['2026-02-28', '2026-03-30'],
     ] as const) {
       const note = withdrawalNoteOf(from as IsoDate, to as IsoDate);
-      expect(note.endsWith(' zurückgenommen.\n')).toBe(true);
+      // In the form ChurchTools stores, without a line break (F51).
+      expect(note.endsWith(' zurückgenommen.')).toBe(true);
     }
     // A day that is none, which the content policy would write otherwise.
     expect(() => withdrawalNoteOf('2026-11-0*' as IsoDate, today)).toThrow(

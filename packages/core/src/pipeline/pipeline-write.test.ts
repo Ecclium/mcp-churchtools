@@ -80,7 +80,7 @@ const marked = (written: string): string => {
     origin,
     canonicalOfWritten(written),
   );
-  return `${written}\n${markingLineOf({ date: day, origin, code }, 'Sekretariat')}\n`;
+  return `${written}\n${markingLineOf({ date: day, origin, code }, 'Sekretariat')}`;
 };
 
 const gaps = vi.hoisted(() => ({
@@ -357,7 +357,7 @@ const setup = (
   const logs = () =>
     logLines.map((line) => (JSON.parse(line) as { event: string }).event);
   // The reads of a plan of the example: the rights, then the page.
-  const planReads = (version = 3, text = '# Plan\n') => {
+  const planReads = (version = 3, text = '# Plan') => {
     double
       .intercept({ path: '/api/permissions/global', method: 'GET' })
       .reply(200, rights, json);
@@ -398,7 +398,7 @@ describe('a write tool in the pipeline', () => {
     planReads();
     double
       .intercept({ path: pagePath, method: 'GET' })
-      .reply(200, page(3, '# Plan\n'), json);
+      .reply(200, page(3, '# Plan'), json);
     double
       .intercept({ path: pagePath, method: 'PATCH' })
       .reply(200, '{}', json);
@@ -437,7 +437,7 @@ describe('a write tool in the pipeline', () => {
     planReads();
     double
       .intercept({ path: pagePath, method: 'GET' })
-      .reply(200, page(3, '# Plan\n'), json);
+      .reply(200, page(3, '# Plan'), json);
     double
       .intercept({ path: pagePath, method: 'PATCH' })
       .reply(200, '{}', json);
@@ -563,13 +563,13 @@ describe('a write tool in the pipeline', () => {
     planReads();
     double
       .intercept({ path: pagePath, method: 'GET' })
-      .reply(200, page(3, '# Plan\n'), json);
+      .reply(200, page(3, '# Plan'), json);
     double
       .intercept({ path: pagePath, method: 'PATCH' })
       .reply(200, '{}', json);
     double
       .intercept({ path: pagePath, method: 'GET' })
-      .reply(200, page(5, '# Anders\n'), json);
+      .reply(200, page(5, '# Anders'), json);
     const outcome = await confirmed(pipeline, 'ct_example_note_write', note);
     expect(!outcome.ok && outcome.error).toEqual({
       code: 'conflict',
@@ -590,7 +590,7 @@ describe('a write tool in the pipeline', () => {
     planReads();
     double
       .intercept({ path: pagePath, method: 'GET' })
-      .reply(200, page(3, '# Plan\n'), json);
+      .reply(200, page(3, '# Plan'), json);
     double
       .intercept({ path: pagePath, method: 'PATCH' })
       .reply(200, '{}', json);
@@ -914,7 +914,7 @@ describe('a question before a write', () => {
   const commitReads = (double: ReturnType<typeof setup>['double']) => {
     double
       .intercept({ path: pagePath, method: 'GET' })
-      .reply(200, page(3, '# Plan\n'), json);
+      .reply(200, page(3, '# Plan'), json);
     double
       .intercept({ path: pagePath, method: 'PATCH' })
       .reply(200, '{}', json);
@@ -1223,7 +1223,7 @@ describe('the echo', () => {
   const commitReads = (double: ReturnType<typeof setup>['double']) => {
     double
       .intercept({ path: pagePath, method: 'GET' })
-      .reply(200, page(3, '# Plan\n'), json);
+      .reply(200, page(3, '# Plan'), json);
     double
       .intercept({ path: pagePath, method: 'PATCH' })
       .reply(200, '{}', json);

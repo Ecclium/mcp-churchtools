@@ -54,8 +54,9 @@ const canary = makeCanaries();
 const guid = '00000000-0000-4000-8000-0000000000ab';
 const pagePath = `/api/wiki/categories/12/pages/${guid}`;
 const written = '11111111-2222-4333-8444-555555555555';
-const before = '# Plan\nAlt\n';
-const after = '# Plan\nNeu \u001b[31m\n';
+// As ChurchTools stores them, without a line break at the end (F51).
+const before = '# Plan\nAlt';
+const after = '# Plan\nNeu \u001b[31m';
 
 let stateDir: string;
 let keysDir: string;
@@ -268,7 +269,7 @@ describe('ecclium undo', () => {
 
   it('writes nothing over a page changed since and ends with 65', async () => {
     await keep();
-    const result = await run({ answer: answer([[5, '# Von Hand\n']]) });
+    const result = await run({ answer: answer([[5, '# Von Hand']]) });
     expect(result.code).toBe(65);
     expect(result.stdout[0]).toBe(wouldChangeLineOf('page'));
     expect(result.stderr).toEqual([undoChangedOf('page').text]);
@@ -334,8 +335,8 @@ describe('ecclium undo', () => {
       overwrite: true,
       answer: answer(
         [
-          [5, '# Von Hand\n'],
-          [5, '# Von Hand\n'],
+          [5, '# Von Hand'],
+          [5, '# Von Hand'],
           [6, before],
         ],
         true,
