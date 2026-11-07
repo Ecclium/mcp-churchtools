@@ -66,7 +66,7 @@ Legt fest, welche Bereiche von Tools der Server anbietet: eine mit Komma getrenn
 
 ## `ECCLIUM_STATE_DIR`
 
-Absoluter Pfad eines Ordners für den Zustand des Servers: für die Audit-Datei im Unterordner `audit`, die Zähler im Unterordner `quota` und, wenn Ecclium schreibt, die Snapshots im Unterordner `snapshots` und die Freigabe-Warteschlange im Unterordner `queue`. Den Ordner selbst legt Ecclium nicht an, den Unterordner darin schon. Der Ordner muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 700. Nur im Betrieb über stdio.
+Absoluter Pfad eines Ordners für den Zustand des Servers: für die Audit-Datei im Unterordner `audit`, die Zähler im Unterordner `quota` und, wenn Ecclium schreibt, die Snapshots im Unterordner `snapshots` und die Freigabe-Warteschlange im Unterordner `queue`. Den Ordner selbst legt Ecclium nicht an, diese Unterordner darin schon. Im Unterordner `stop` liegen die Kill-Switches: Eine Datei `writes-off` darin hält jedes Schreiben ohne Neustart an. Diesen Unterordner legt Ecclium nicht an, und ohne ihn schreibt es nicht. Der Ordner muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 700. Nur im Betrieb über stdio.
 
 ## `ECCLIUM_KEYS_DIR`
 
@@ -82,7 +82,7 @@ Legt fest, wie Ecclium einen Schreibvorgang bestätigen lässt, bevor es schreib
 
 ## `ECCLIUM_TIME_ZONE`
 
-Die Zeitzone, in der die Rückfrage vor einem Schreibvorgang, `ecclium queue show` und `ecclium undo` Beginn und Ende von Terminen und Buchungen zeigen, mit dem Namen der Zone, etwa `Europe/Zurich`. Erlaubt ist `UTC` oder der Name einer Zeitzone aus Gebiet und Ort, keine Angabe wie `+01:00` und keine Abkürzung wie `CET`. Ohne die Variable zeigen die Texte die Zeiten in UTC. Die Tools nehmen Zeiten immer in UTC, auch mit der Variable. Mit ihr lehnt Ecclium einen Termin und eine Buchung ab, deren Beginn und Ende beide auf Mitternacht dieser Zone fallen, weil ChurchTools sie als ganztägig speichern würde. Tragen Sie deshalb die Zeitzone der ChurchTools-Installation ein.
+Die Zeitzone, in der die Rückfrage vor einem Schreibvorgang, `ecclium queue show` und `ecclium undo` Beginn und Ende von Terminen und Buchungen zeigen, mit dem Namen der Zone, etwa `Europe/Zurich`. Erlaubt ist `UTC` oder der Name einer Zeitzone aus Gebiet und Ort, keine Angabe wie `+01:00` und keine Abkürzung wie `CET`. Ohne die Variable zeigen die Texte die Zeiten in UTC. Die Tools nehmen Zeiten immer in UTC, auch mit der Variable. Mit ihr lehnt Ecclium einen Termin und eine Buchung ab, deren Beginn und Ende beide auf Mitternacht dieser Zone fallen, weil ChurchTools sie womöglich als ganztägig speichert, was keine Probe geprüft hat. Tragen Sie deshalb die Zeitzone der ChurchTools-Installation ein.
 
 ## `ECCLIUM_AUDIT_RETENTION_MONTHS`
 
@@ -94,7 +94,7 @@ Absoluter Pfad der Datei mit der Richtlinie im Format `policy.v1`, in YAML oder 
 
 ## `ECCLIUM_MARKER_KEY_FILE`
 
-Absoluter Pfad einer Datei mit dem Schlüssel für den Prüfcode der Kennzeichnung: genau 64 Zeichen aus `0` bis `9` und `a` bis `f`, höchstens mit einem Zeilenumbruch am Ende, so wie `openssl rand -hex 32` ihn schreibt. Die Datei muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 600. Jede Seite und jeder Abschnitt, die Ecclium im Wiki hinzufügt, endet mit einer Zeile mit einem Prüfcode aus diesem Schlüssel, an dem Ecclium seine eigenen Abschnitte wiedererkennt. Wer den Schlüssel hat, kann Abschnitte als eigene von Ecclium ausgeben. Sichern Sie die Datei: Ein neuer Schlüssel macht jeden bisherigen Prüfcode ungültig. Es muss ein anderer Schlüssel sein als der für die Pseudonyme. Mit `ECCLIUM_READ_ONLY=false` und dem Toolset `wiki` ist die Variable Pflicht, ebenso `interactive.inquiriesTo` in der Richtlinie. Schreib-Tools für das Wiki gibt es in dieser Version noch nicht.
+Absoluter Pfad einer Datei mit dem Schlüssel für den Prüfcode der Kennzeichnung: genau 64 Zeichen aus `0` bis `9` und `a` bis `f`, höchstens mit einem Zeilenumbruch am Ende, so wie `openssl rand -hex 32` ihn schreibt. Die Datei muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 600. Jede Seite und jeder Abschnitt, die Ecclium im Wiki hinzufügt, endet mit einer Zeile mit einem Prüfcode aus diesem Schlüssel, an dem Ecclium seine eigenen Abschnitte wiedererkennt. Wer den Schlüssel hat, kann Abschnitte als eigene von Ecclium ausgeben. Sichern Sie die Datei: Ein neuer Schlüssel macht jeden bisherigen Prüfcode ungültig. Es muss ein anderer Schlüssel sein als der für die Pseudonyme. Mit `ECCLIUM_READ_ONLY=false` und dem Toolset `wiki` ist die Variable Pflicht, ebenso `interactive.inquiriesTo` in der Richtlinie.
 
 ## `ECCLIUM_STDIO_SUBJECT`
 

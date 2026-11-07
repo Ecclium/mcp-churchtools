@@ -209,7 +209,7 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
     write_not_confirmed:
       'Die Person hat eine Rückfrage abgelehnt, abgebrochen oder nicht mit «Ja» angenommen. Ecclium schreibt nichts, der Aufruf endet mit `confirmation_required`.',
     undo_call:
-      'Eine Rücknahme mit `ecclium undo` ist zu Ende, mit oder ohne Fehler. `code` nennt den Fehler, `durationMs` die Dauer. Zu jeder Rücknahme gehört eine Zeile vom Typ `undo` im Audit. Text der Seite steht nie darin.',
+      'Eine Rücknahme mit `ecclium undo` ist zu Ende, mit oder ohne Fehler. `code` nennt den Fehler, `durationMs` die Dauer. Zu jeder Rücknahme gehört eine Zeile vom Typ `undo` im Audit. Text einer Seite und Felder eines Termins oder einer Buchung stehen nie darin.',
     write_queued:
       'Ein Schreibvorgang wartet als verschlüsselter Eintrag in der Freigabe-Warteschlange auf den Betreiber, unter der Kennung der Zeile seines Aufrufs im Audit. Geschrieben ist nichts.',
     write_queue_full:
@@ -221,11 +221,11 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
     queue_approve_call:
       'Eine Freigabe mit `ecclium queue approve` ist zu Ende, mit oder ohne Fehler. `code` nennt den Fehler, `durationMs` die Dauer. Zu jeder gehört eine Zeile vom Typ `approval` im Audit, nach dem Entscheid mit dem Zustand des Schreibvorgangs. Inhalt des Eintrags und Text des Ziels stehen nie darin.',
     write_committed:
-      'Ein Schreibvorgang ist geschrieben und gelesen: die Version stieg wie geplant, und der Text ist der gesendete.',
+      'Ein Schreibvorgang ist geschrieben und gelesen: Die Version ist die geplante, und Text oder Felder sind die gesendeten. Löscht eine Rücknahme einen Termin oder eine Buchung, ist das Gelöschte weg.',
     snapshot_failed:
       'Ecclium konnte vor dem Senden den bisherigen Stand nicht als Snapshot festhalten. Der Schreibvorgang geht nicht an ChurchTools und endet mit `failed`. `code` ist `internal`.',
     snapshot_incomplete:
-      'Nach dem Anlegen einer Seite konnte Ecclium ihre Kennung und Version nicht im Snapshot ergänzen. Die Seite bleibt angelegt, ihr Snapshot aber unvollständig. `code` ist `internal`.',
+      'Nach dem Anlegen einer Seite, eines Termins oder einer Buchung konnte Ecclium Kennung und Version nicht im Snapshot ergänzen. Das Angelegte bleibt, sein Snapshot aber unvollständig, und `ecclium undo` kann es nicht zurücknehmen. `code` ist `internal`.',
     policy_not_interactive:
       'Ein Schreibvorgang kam ausserhalb des interaktiven Modus. Bis der Runner den unbeaufsichtigten Teil der Richtlinie nutzt, schreibt Ecclium dort nichts. Der Aufruf endet mit `policy_denied`.',
     policy_queue_only:
@@ -376,7 +376,7 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
     audit_unreadable:
       'Ecclium konnte die Angaben einer Zeile nicht lesen. Die Zeile trägt nur Platzhalter.',
     audit_chain_anchor:
-      'Der Anker einer Audit-Datei: `file` nennt die Datei, `seq` und `hash` den Kopf ihrer Kette, beim Schliessen, beim Wechsel des Tages und beim Neuöffnen. `ecclium audit verify` prüft eine Datei gegen ihn.',
+      'Der Anker einer Audit-Datei: `file` nennt die Datei, `seq` und `hash` den Kopf ihrer Kette, beim Schliessen, beim Wechsel des Tages, beim Neuöffnen und nach jedem Aufruf, der geschrieben haben kann, auch nach `ecclium undo` und `ecclium queue approve`. `ecclium audit verify` prüft eine Datei gegen ihn.',
     audit_file_closed:
       'Die Audit-Datei ist geschlossen. `count` nennt die Zeilen, die nicht ganz in die Datei kamen.',
     audit_files_deleted:
