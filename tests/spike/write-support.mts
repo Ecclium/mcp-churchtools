@@ -181,6 +181,15 @@ export interface CalendarOptions {
   readonly createWithoutId?: boolean;
   /** Whether a PUT with an unchanged body leaves the version. Default: raised, as the instance does (F42). */
   readonly sameBodyKeepsVersion?: boolean;
+  /**
+   * A key the OpenAPI document does not describe, which every answer about
+   * an appointment then carries: an object of texts, two addresses of the
+   * appointment and its title. With `droppedByPut` a PUT removes it.
+   */
+  readonly undocumentedField?: {
+    readonly name: string;
+    readonly droppedByPut?: boolean;
+  };
 }
 
 /** How the synthetic instance behaves. */
@@ -361,6 +370,8 @@ export function writeInstance(
   const appointments = new Map<number, SyntheticObject>();
   const bookings = new Map<number, SyntheticObject>();
   const deletedBookings = new Set<number>();
+  // Appointments whose undocumented key a PUT removed.
+  const dropped = new Set<number>();
   let nextId = randomInt(100_000, 200_000);
   const self = canaries.number;
   const other = canaries.number + 1;
@@ -466,10 +477,26 @@ export function writeInstance(
     const isAppointment = appointmentMatch !== null;
     const store = isAppointment ? appointments : bookings;
     const kind = isAppointment ? 'appointment' : 'booking';
+    // An appointment carries the key the document does not describe.
+    const shapeOf = (object: SyntheticObject): Record<string, unknown> => {
+      const field = calendar.undocumentedField;
+      if (!isAppointment || field === undefined || dropped.has(object.id)) {
+        return baseOf(object);
+      }
+      const address = `${writeOrigin}/api/calendars/${String(calendarId)}/appointments/${String(object.id)}`;
+      return {
+        ...baseOf(object),
+        [field.name]: {
+          self: address,
+          ical: `${address}/ical`,
+          title: object.fields['title'],
+        },
+      };
+    };
     const key = isAppointment ? appointmentMatch[2] : bookingMatch?.[1];
     const entry = (object: SyntheticObject): Record<string, unknown> => ({
-      [kind]: { base: baseOf(object), calculated: {} },
-      base: baseOf(object),
+      [kind]: { base: shapeOf(object), calculated: {} },
+      base: shapeOf(object),
     });
     if (key === 'conflicts') {
       const overlapping = [...bookings.values()].filter(
@@ -516,7 +543,7 @@ export function writeInstance(
         given['statusId'] = calendar.approvedBecomes ?? 1;
       }
       const object = addObject(store, given, self);
-      const data = baseOf(object);
+      const data = shapeOf(object);
       if (calendar.createWithoutId === true) {
         delete data['id'];
       }
@@ -530,7 +557,7 @@ export function writeInstance(
       );
     }
     if (call.method === 'GET') {
-      return answer({ data: { [kind]: baseOf(object), calculatedDates: {} } });
+      return answer({ data: { [kind]: shapeOf(object), calculatedDates: {} } });
     }
     if (call.method === 'DELETE') {
       const status = calendar.deleteStatus ?? 204;
@@ -571,7 +598,10 @@ export function writeInstance(
         object.modifiedDate = now();
         object.modifiedBy = self;
       }
-      return answer({ data: baseOf(object) });
+      if (calendar.undocumentedField?.droppedByPut === true) {
+        dropped.add(object.id);
+      }
+      return answer({ data: shapeOf(object) });
     }
     return error(405);
   };

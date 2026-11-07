@@ -90,6 +90,22 @@ export class Guard {
   }
 
   /**
+   * Tells whether a key taken from the instance would pass the block list
+   * now, as a key allowed with {@link Guard.allowChecked}: no value of the
+   * block list stands in it as a whole word, and no number of the block
+   * list. A probe that names keys outside the specification asks this
+   * after its last request and shows a key that fails under a fixed word
+   * instead, so that one blocked name does not withhold the whole output.
+   * The check of the whole output still runs afterwards.
+   *
+   * @param key - Key taken from the instance.
+   * @returns Whether the block list lets it through.
+   */
+  passesBlockList(key: string): boolean {
+    return !this.#isBlocked(key, false);
+  }
+
+  /**
    * Allows a key that the specification declares at its position.
    *
    * Like {@link Guard.allowChecked}, except for one case: a value from a

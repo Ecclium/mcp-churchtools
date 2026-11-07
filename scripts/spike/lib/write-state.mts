@@ -7,8 +7,8 @@
  * request. A run that stops halfway therefore still names every page it
  * created, and 07-wiki-cleanup can remove exactly those. 06 reads the state
  * of each page after 05 from here, to tell changes of the web editor from
- * changes of the probe. 12-wiki-category keeps its one page in a file of
- * the same form, for 07 as well.
+ * changes of the probe. 12-wiki-category and 13-write-readback keep their
+ * one page in a file of the same form, for 07 as well.
  *
  * The file is JSON Lines: a header with format, instance, write area and a
  * random tag of the run, then one line per page and one per recorded state
@@ -18,9 +18,9 @@
  *
  * 11-calendar-write keeps a file of its own format in the same way: a
  * header with format, instance, calendar, resource, the tag and the day of
- * the run,
- * then one line per appointment or booking it created and one per deletion
- * the instance confirmed.
+ * the run, then one line per appointment or booking it created and one per
+ * deletion the instance confirmed. 13-write-readback keeps its appointment
+ * in such a file, so that 11 can remove it after an abort.
  *
  * @packageDocumentation
  */
@@ -50,8 +50,9 @@ const maxWriteStateBytes = 1024 * 1024;
 /**
  * What a page of the run is for: the three pages for the web editor, by
  * the name the output uses, the cases of 05, the page of 12 that is
- * addressed under the path of another category, or the page the server of
- * Ecclium created in the smoke test for writing, which 07 removes.
+ * addressed under the path of another category, the page the server of
+ * Ecclium created in the smoke test for writing, which 07 removes, or the
+ * page of 13 for the form in which ChurchTools stores a text.
  */
 export type PageRole =
   | 'markdown1'
@@ -59,7 +60,8 @@ export type PageRole =
   | 'standardformat'
   | 'faelle'
   | 'kategorie'
-  | 'smoke';
+  | 'smoke'
+  | 'form';
 
 const roles: readonly string[] = [
   'markdown1',
@@ -68,6 +70,7 @@ const roles: readonly string[] = [
   'faelle',
   'kategorie',
   'smoke',
+  'form',
 ] satisfies PageRole[];
 
 /** The state of a page after 05-wiki-write, for the comparison in 06. */
