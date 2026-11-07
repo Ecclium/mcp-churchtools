@@ -159,6 +159,7 @@ const words = [
   'Wahrheitswert',
   'null',
   'verweis',
+  'alteFeldnamen',
   'felder',
   'form',
   'leer',
@@ -604,10 +605,45 @@ export function unknownKeys(data: JsonObject): readonly UnknownKey[] {
 }
 
 /**
+ * Whether a key and its value are the legacy field mappings the server of
+ * Ecclium does not count as linked (F52): `@deprecated` with an object in
+ * which every key names a field the document describes for the same object
+ * and every value is a text. The same rule as the server.
+ *
+ * @param key - The key the server does not know.
+ * @param value - Its value.
+ * @param known - The keys the document describes at that place.
+ * @returns Whether the server lets it pass.
+ */
+export function isLegacyMappings(
+  key: string,
+  value: unknown,
+  known: readonly string[],
+): boolean {
+  return (
+    key === '@deprecated' &&
+    isObject(value) &&
+    Object.entries(value).every(
+      ([old, inner]) => known.includes(old) && typeof inner === 'string',
+    )
+  );
+}
+
+// The keys the server knows at a place of an unknown key, for the legacy
+// field mappings; a date has none of its own beside its start and end.
+const knownAt = (place: UnknownKey['place']): readonly string[] =>
+  place === places.data
+    ? knownStateKeys
+    : place === places.appointment
+      ? knownAppointmentKeys
+      : [];
+
+/**
  * Applies the rules by which the server of Ecclium counts an appointment
  * as linked, so that it neither changes nor deletes it: a value in the
  * additional infos, a link in a date beside its start and end, and a link
- * under a key it does not know beside or in the appointment. Also names
+ * under a key it does not know beside or in the appointment, but for the
+ * legacy field mappings there. Also names
  * the other parts it would not change: a series, an address, a link, an
  * image, a sign-up and an appointment on behalf of a person.
  *
@@ -618,7 +654,12 @@ export function serverRules(data: JsonObject): Record<string, Json> {
   const appointment = isObject(data['appointment']) ? data['appointment'] : {};
   const unknown = unknownKeys(data);
   const linkIn = (place: UnknownKey['place']): boolean =>
-    unknown.some((entry) => entry.place === place && isLink(entry.value));
+    unknown.some(
+      (entry) =>
+        entry.place === place &&
+        isLink(entry.value) &&
+        !isLegacyMappings(entry.key, entry.value, knownAt(place)),
+    );
   const yes = (value: boolean): string => (value ? 'ja' : 'nein');
   const listed = (key: string): number => {
     const value = appointment[key];
@@ -1078,6 +1119,10 @@ function appointmentReport(run: Run, record: AppointmentRecord): Json {
       name: nameOf(entry.key),
       typ: typeOf(entry.value),
       verweis: yesNo(isLink(entry.value)),
+      alteFeldnamen: yesNo(
+        entry.place !== places.date &&
+          isLegacyMappings(entry.key, entry.value, knownAt(entry.place)),
+      ),
       felder: fieldsOf(entry.value, appointment),
     }));
   };

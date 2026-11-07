@@ -219,6 +219,7 @@ describe('13-write-readback', () => {
               name: 'urls',
               typ: 'Objekt',
               verweis: 'ja',
+              alteFeldnamen: 'nein',
               felder: [
                 {
                   name: 'self',
@@ -549,6 +550,23 @@ describe('the rules of the server for a read of an appointment', () => {
       unbekanntImTermin: 'ja',
       verknuepft: 'ja',
     });
+    // The legacy field mappings of the server pass (F52), but not under
+    // another key, nor with a key that names no field of the appointment.
+    const mappings = { caption: 'Titel', note: 'Notiz' };
+    expect(
+      serverRules({
+        appointment: { ...appointment, '@deprecated': mappings },
+      }),
+    ).toMatchObject({ unbekanntImTermin: 'nein', verknuepft: 'nein' });
+    for (const inside of [
+      { legacy: mappings },
+      { '@deprecated': { ...mappings, eventUrl: 'x' } },
+      { '@deprecated': { caption: { id: 1 } } },
+    ]) {
+      expect(
+        serverRules({ appointment: { ...appointment, ...inside } }),
+      ).toMatchObject({ unbekanntImTermin: 'ja', verknuepft: 'ja' });
+    }
     // Empty values link nothing; plain text beside the date is no link.
     expect(
       serverRules({
