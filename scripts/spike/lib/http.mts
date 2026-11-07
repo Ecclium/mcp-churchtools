@@ -461,6 +461,18 @@ type Reach =
   | { readonly kind: 'mit Personendaten' };
 
 /**
+ * The enrichments of a read of one appointment that the server of Ecclium
+ * asks for before it changes or deletes one: the linked event, the
+ * bookings and the invitations. A probe that wants to see what the server
+ * sees reads with exactly these.
+ */
+export const appointmentIncludes: readonly string[] = Object.freeze([
+  'event',
+  'bookings',
+  'meetingRequests',
+]);
+
+/**
  * Tells whether a request with personal data stays inside the calendar and
  * the resource of the write probes: the appointments of that calendar, one
  * appointment of it, the bookings of that resource and nothing else, and
@@ -469,7 +481,9 @@ type Reach =
  * resource included, is refused. A single booking can only be named by its
  * ID, so the probe reads only the IDs it created or found in the list of
  * its resource; that the booking belongs to the resource, the rights of
- * the account make sure.
+ * the account make sure. One appointment may also be read with
+ * `include[]`, each of {@link appointmentIncludes} at most once, as the
+ * server of Ecclium reads it before a change; nothing else.
  *
  * @param pathname - The path, already checked by {@link isPlainPath}.
  * @param query - The query parameters of the request.
@@ -496,10 +510,20 @@ export function insideCalendarArea(
     );
   }
   const [, parent, id] = /^(.*)\/([1-9]\d{0,9})$/.exec(pathname) ?? [];
+  if (id === undefined) {
+    return false;
+  }
+  if (parent === '/api/bookings') {
+    return query.length === 0;
+  }
+  const values = query.map(([, value]) => value);
   return (
-    id !== undefined &&
-    (parent === appointments || parent === '/api/bookings') &&
-    query.length === 0
+    parent === appointments &&
+    query.every(
+      ([name, value]) =>
+        name === 'include[]' && appointmentIncludes.includes(value),
+    ) &&
+    new Set(values).size === values.length
   );
 }
 
