@@ -1,6 +1,6 @@
 # Dienstkonto in ChurchTools
 
-**In Entwicklung.** Es gibt noch keine veröffentlichte Version. Diese Seite beschreibt das Konto, mit dem Ecclium ChurchTools liest: wie Sie es anlegen, welche Rechte es braucht, wie Sie sein Login-Token ablegen, prüfen und erneuern und was nach einem Vorfall zu tun ist. Wie Sie den Server bauen und in einen Client einbinden, steht unter [Betrieb über stdio](stdio.md).
+**In Entwicklung.** Es gibt noch keine veröffentlichte Version. Diese Seite beschreibt das Dienstkonto, mit dem Ecclium ChurchTools liest, und das, mit dem es schreibt, wenn Sie das Schreiben einschalten: wie Sie ein solches Konto anlegen, welche Rechte es braucht, wie Sie sein Login-Token ablegen, prüfen und erneuern und was nach einem Vorfall zu tun ist. Wie Sie den Server bauen und in einen Client einbinden, steht unter [Betrieb über stdio](stdio.md).
 
 ## Warum ein eigenes Konto
 
@@ -68,6 +68,19 @@ Die Tools des Wikis zeigen nur Kategorien, für die das Konto `view category` ha
 
 Öffnen Sie die Rechte nach dem Speichern noch einmal. Auf einer Testinstanz waren nach dem Speichern einmal alle Wiki-Kategorien angehakt statt einer. Hat das Konto mehr Rechte als nötig, weist Ecclium es nicht ab. Welche es hat, zeigt `ct_whoami`, und der Smoke-Test meldet eine Sicherheitsstufe für Personen als Befund.
 
+## Ein eigenes Konto zum Schreiben
+
+Schalten Sie das Schreiben ein, empfehlen wir ein zweites Dienstkonto nur dafür, mit einem eigenen Eintrag im Client, etwa `ecclium-schreiben` ([Schreiben einschalten](stdio.md#schreiben-einschalten)). Das Konto des Eintrags `ecclium`, der liest, behält dann kein Recht zum Schreiben.
+
+- **Warum:** ChurchTools setzt die Rechte durch. Ein Konto ohne Recht zum Schreiben schreibt nicht, auch wenn ein Fehler, ein Text im Wiki, der das Modell zu etwas verleitet, oder ein Tool, das im Client auf «immer erlauben» steht, es versuchte. Mit zwei Konten bleibt jedes klein: Das lesende hat die Leserechte der Toolsets, die Sie zum Lesen einschalten, das schreibende nur Rechte für die Ziele. Den Eintrag zum Schreiben können Sie in einem einzigen Client oder nur bei Bedarf einschalten, das Audit trennt seine Aufrufe am Subjekt, und ChurchTools nennt das Schreibkonto als Autor jeder Änderung.
+- **Was es nicht trennt:** Laufen beide Einträge im selben Client, sieht dasselbe Modell beide. Was es über den einen liest, kann es dem anderen als Text geben. Davor schützen die Bestätigung, die Richtlinie und die ContentPolicy, nicht die zwei Konten ([Sicherheit](../security.md#bestätigung-vor-dem-schreiben)).
+- **Anlegen:** wie oben unter «Konto anlegen», mit einer eigenen sachlichen Bezeichnung wie «Ecclium Schreibkonto», einem Personenstatus ohne Berechtigungen, in keiner Gruppe, mit Zwei-Faktor-Anmeldung und einer eigenen Token-Datei. Nehmen Sie nie dasselbe Token für beide Einträge.
+- **Rechte:** nur die Zeilen der Schreib-Tools aus der Tabelle oben, und nur für die Ziele: im Wiki «"Wiki" sehen» (`churchwiki: view`) und `churchwiki: view category` und `edit category` für die Kategorien, in die Ecclium schreiben soll, für Termine `churchcal: view category` und `edit category` für die Kalender, für Buchungen `churchresource: view resource` und `create bookings` für die Ressourcen. Die Lese-Tools der Toolsets `wiki` und `calendars` im Eintrag zum Schreiben lesen dann nur diese Ziele, und das genügt, weil ein Schreib-Tool die Version liest, die es ändert. Kein Recht auf Personen, kein `churchresource: administer bookings` und kein Recht zur Verwaltung.
+- **Ziele mit wenig Folgen:** `edit category` erlaubte auf einer Testinstanz auch, die Seiten der Kategorie zu löschen. Ecclium löscht nie eine Seite, ein gestohlenes Token könnte es aber. Geben Sie das Recht deshalb für Kategorien, in denen ein Fehler wenig kostet, etwa eine eigene Kategorie für Berichte, und für einen eigenen Kalender, wo das geht.
+- **Richtlinie dazu:** Nennen Sie dieselben Ziele unter `interactive.targets` der [Richtlinie](../policy.md). Die Rechte begrenzen, was das Konto in ChurchTools darf, die Richtlinie, wohin Ecclium schreiben will und wie oft am Tag.
+- **Nur ein Konto:** Es geht auch mit einem Eintrag und einem Konto, das lesen und für die Ziele schreiben darf. Dann trägt jeder Aufruf, auch einer, der nur liest, die Schreibrechte des Kontos mit.
+- **Später:** Für eine spätere Version ist der Befehl `ecclium doctor` vorgesehen. Er soll Schreibrechte eines Kontos melden, dessen Server nur liest, eine Richtlinie ohne Einträge unter `interactive.targets` und Leserechte, die kein eingeschaltetes Tool braucht.
+
 ## Login-Token
 
 Das Login-Token holen Sie als das Konto selbst: Melden Sie sich als Dienstkonto an, wählen Sie über das Profilbild oben rechts «Mein Profil» und dort im Abschnitt «Login-Token» den Knopf «Login-Token anzeigen». Danach erscheint dort auch der Knopf «Login-Token erneuern». Die Beschriftungen auf dieser Seite stammen aus ChurchTools 3.137, gesehen am 23.10.2026, und können sich mit späteren Versionen ändern.
@@ -77,7 +90,7 @@ Legen Sie das Token in eine Datei, die nur Ihr Benutzer lesen kann, wie unter [T
 ## Prüfen
 
 1. `ecclium config check` prüft Adresse, Token-Datei und Einstellungen, ohne ChurchTools zu fragen, siehe [Konfiguration prüfen](stdio.md#konfiguration-prüfen).
-2. Ob ChurchTools das Token annimmt und welche Rechte das Konto hat, zeigt ein Aufruf von `ct_whoami` im Client oder der [Smoke-Test](stdio.md#smoke-test). Vergleichen Sie die Rechte mit der Tabelle oben.
+2. Ob ChurchTools das Token annimmt und welche Rechte das Konto hat, zeigt ein Aufruf von `ct_whoami` im Client oder der [Smoke-Test](stdio.md#smoke-test). Vergleichen Sie die Rechte mit der Tabelle oben. Mit zwei Einträgen rufen Sie `ct_whoami` in jedem auf: Der lesende darf kein Recht zum Schreiben zeigen, der schreibende nur die Rechte für seine Ziele.
 
 ## Rechte ändern oder entziehen
 
@@ -100,7 +113,9 @@ Liegt das Token oder die Token-Datei womöglich bei jemand anderem:
 
 ## Ausser Betrieb nehmen
 
-Entfernen Sie den Eintrag `ecclium` aus dem Client, erneuern Sie das Token in ChurchTools, damit das alte nicht mehr gilt, entziehen Sie dem Konto alle Rechte und löschen Sie die Token-Datei. Ob das Sperren der Person ein Login-Token beendet, ist nicht geprüft.
+Entfernen Sie den Eintrag `ecclium` aus dem Client, erneuern Sie das Token in ChurchTools, damit das alte nicht mehr gilt, entziehen Sie dem Konto alle Rechte und löschen Sie die Token-Datei.
+
+Hat ein Eintrag geschrieben, etwa `ecclium-schreiben`, setzen Sie dort zuerst `ECCLIUM_READ_ONLY` auf `true` und lassen `ECCLIUM_STATE_DIR` und `ECCLIUM_KEYS_DIR` stehen, bis 31 Tage um sind, damit Ecclium Snapshots und Einträge der Freigabe-Warteschlange nach ihrer Frist löscht und ihre Tagesschlüssel vernichtet ([Schreiben sofort anhalten](stdio.md#schreiben-sofort-anhalten)). Oder Sie löschen den Ordner der Tagesschlüssel selbst, dann lässt sich keiner davon mehr lesen, auch nicht aus einer Sicherung. Erst danach entfernen Sie den Eintrag, erneuern das Token des Schreibkontos, entziehen ihm alle Rechte und löschen seine Token-Datei. Ob das Sperren der Person ein Login-Token beendet, ist nicht geprüft.
 
 ## Grenzen
 
