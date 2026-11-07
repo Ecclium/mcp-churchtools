@@ -7,15 +7,22 @@
 // churchtools-api.md): a new appointment and booking have version 0, every
 // PUT raises it by one, also unchanged (F42), and replaces the whole
 // appointment (F41); a page starts at version 1 and gets a new version only
-// for a new text (F10, F16); a deleted appointment reads 404, a deleted
-// booking 500 and is gone from the list (F47); a booking is a request with
-// status 1 (F45), and the account created what it wrote (F44).
+// for a new text (F10, F16), and keeps a text without the white space
+// `trim` of PHP removes at both ends (F51); a deleted appointment reads
+// 404, a deleted booking 500 and is gone from the list (F47); a booking is
+// a request with status 1 (F45), and the account created what it wrote
+// (F44).
 //
 // Everything is made up at run time: the names carry a canary of the test,
 // the IDs are random. No real answer is copied (tests/fixtures/README.md).
 // The module only answers requests; serve.mts puts it behind TLS and a
 // plain port on 127.0.0.1 in a process of its own.
 import { randomUUID } from 'node:crypto';
+
+// ChurchTools stores the text of a page without the white space `trim` of
+// PHP removes at both ends (F51), written here apart from the core.
+const asStored = (text: string): string =>
+  text.replace(/^[ \t\n\r\v]+/u, '').replace(/[ \t\n\r\v]+$/u, '');
 
 /** What the stand-in holds and how it misbehaves, from the test. */
 export interface StandInConfig {
@@ -411,14 +418,15 @@ export function createChurchTools(config: StandInConfig): {
       if ([...pages.values()].some((page) => page.title === title)) {
         return error(400);
       }
-      return ok({ data: pageData(addPage(title, text)) }, 201);
+      return ok({ data: pageData(addPage(title, asStored(text))) }, 201);
     }
     // A GUID in another case finds the same page, as a GUID is no text.
     const page = pages.get(guid.toUpperCase());
     if (page === undefined) return error(404);
     if (method === 'PATCH' && versions === undefined) {
-      const text = fields['text'];
-      if (typeof text !== 'string') return error(400);
+      const sent = fields['text'];
+      if (typeof sent !== 'string') return error(400);
+      const text = asStored(sent);
       // Only a new text makes a new version (F10).
       if (text !== latest(page).text) {
         page.versions.push({
