@@ -537,12 +537,12 @@ const appointmentKeys: readonly string[] = Object.freeze([
 // what replaced an old field (OpenAPI document of 3.138, «Legacy field
 // mappings emitted by the serializer»). The answer to creating an
 // appointment and every read of one carry such an object with the four
-// old fields `additions`, `caption`, `note` and `information`, very likely
-// under this key, although the document does not declare it there, and a
-// change with the fields of the core keeps it unchanged (F52; the probe
-// withheld the name). They are no linked part, as long as each key
-// names a field the document describes for the same object and each value
-// is a text. Anything else under that key still counts.
+// old fields `additions`, `caption`, `note` and `information` under this
+// key, although the document does not declare it there, and a change with
+// the fields of the core keeps it unchanged (F52). They are no linked
+// part, as long as each key names a field the document describes for the
+// same object and each value is a text. Anything else under that key
+// still counts.
 const isLegacyMappings = (
   key: string,
   value: unknown,
