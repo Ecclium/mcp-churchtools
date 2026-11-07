@@ -12,9 +12,11 @@
  * the number and the link, a renamed file the first link.
  *
  * An anchor names a file, the `seq` of its last whole line and the hash of
- * that line, as the server logs it when it gives the file up. A file must
- * end with that line. A file without an anchor is never a finding: a
- * crash, a client that drops stderr or a log nobody kept leave none.
+ * that line, as the server logs it after every write and when it gives the
+ * file up. A file may have many anchors with rising `seq`: the line of
+ * each must have its hash, and the file must end with the line of the
+ * last one. A file without an anchor is never a finding: a crash, a client
+ * that drops stderr or a log nobody kept leave none.
  *
  * What this module returns names files, never a path, and never the
  * content of a line.
@@ -41,9 +43,18 @@ export interface AuditAnchor {
 
 /** The anchors read from logs. */
 export interface AuditAnchorSet {
-  /** One anchor per file, for files with exactly one anchor. */
+  /**
+   * The last anchor of each file, the one with the highest `seq`: the file
+   * must end with its line.
+   */
   readonly anchors: ReadonlyMap<string, AuditAnchor>;
-  /** The names of files with two different anchors, sorted. */
+  /**
+   * The earlier anchors of each file with more than one, by rising `seq`.
+   * The server logs one after every write (ADR 0028); the line with each
+   * `seq` must have its hash.
+   */
+  readonly earlier?: ReadonlyMap<string, readonly AuditAnchor[]>;
+  /** The names of files with two different anchors for one `seq`, sorted. */
   readonly conflicts: readonly string[];
   /** Anchors left out beyond {@link maxAnchors} files. */
   readonly dropped: number;
@@ -78,10 +89,11 @@ export interface AuditAnchorCollector {
  * - `chain_name`: the first link is not the hash of the name of the file.
  * - `chain_link`: a `prevHash` is not the hash of the line before.
  * - `chain_seq`: a `seq` does not follow the one before.
- * - `anchor_mismatch`: the line the anchor names differs from the anchor.
- * - `anchor_truncated`: the file ends before the line the anchor names.
- * - `anchor_extended`: whole lines follow the line the anchor names.
- * - `anchor_conflict`: the logs hold two different anchors for the file.
+ * - `anchor_mismatch`: a line an anchor names differs from the anchor.
+ * - `anchor_truncated`: the file ends before a line an anchor names.
+ * - `anchor_extended`: whole lines follow the line the last anchor names.
+ * - `anchor_conflict`: the logs hold two different anchors for one line of
+ *   the file.
  * - `file_missing`: an anchor names a file that is not there and whose
  *   retention has not passed.
  * - `file_unsafe`: an entry with the name of an audit file that fails a
@@ -139,9 +151,12 @@ export interface AuditVerifyReport {
   readonly others: number;
   /** The files that went before they were read, such as by a sweep. */
   readonly vanished: number;
-  /** The files with exactly one anchor. */
+  /** The files with an anchor and no conflict between their anchors. */
   readonly anchors: number;
-  /** The anchors whose file ends with the line they name. */
+  /**
+   * The files that end with the line their last anchor names and whose
+   * lines fit each earlier anchor.
+   */
   readonly anchorsMatched: number;
   /** The anchors whose file is gone after its retention, no finding. */
   readonly anchorsExpired: number;
@@ -179,6 +194,12 @@ export const maxFindings = 100;
  * process and day over the longest retention.
  */
 export const maxAnchors = 100_000;
+
+/**
+ * The most different anchors a collector keeps in all, since the server
+ * logs one after every write: ten per file of {@link maxAnchors}.
+ */
+export const maxAnchorEntries = 1_000_000;
 
 /**
  * The longest line of a log that may hold an anchor. Longer lines are
@@ -256,11 +277,19 @@ export function anchorOfLogLine(line: string): AuditAnchor | undefined {
 }
 
 /**
- * Makes a collector for the anchors of one or more logs. The same anchor
- * twice, as in two copies of a log, counts once. Two different anchors for
- * one file are a conflict, and that file gets none. Beyond
- * {@link maxAnchors} files it counts the anchors it leaves out.
+ * Makes a collector for the anchors of one or more logs. A file may have
+ * many anchors with different `seq`, one after every write of the server
+ * (ADR 0028). The same anchor twice, as in two copies of a log, counts
+ * once. Two different anchors for one `seq` of a file are a conflict, and
+ * that file gets none. Beyond {@link maxAnchors} files or
+ * {@link maxAnchorEntries} anchors in all it counts the anchors it leaves
+ * out, and a file that lost one of its anchors so keeps none, since its
+ * last kept anchor would not be its last.
  *
+ * @param limits - The most files and the most anchors in all it keeps;
+ *   smaller only in tests.
+ * @param limits.files - The most files, {@link maxAnchors} by default.
+ * @param limits.entries - The most anchors, {@link maxAnchorEntries} by default.
  * @returns The collector.
  * @example
  * ```ts
@@ -269,29 +298,60 @@ export function anchorOfLogLine(line: string): AuditAnchor | undefined {
  * const anchors = collector.result();
  * ```
  */
-export function createAnchorCollector(): AuditAnchorCollector {
-  const anchors = new Map<string, AuditAnchor>();
+export function createAnchorCollector(
+  limits: { readonly files: number; readonly entries: number } = {
+    files: maxAnchors,
+    entries: maxAnchorEntries,
+  },
+): AuditAnchorCollector {
+  // The hash of each anchored seq, per file.
+  const anchors = new Map<string, Map<number, string>>();
   const conflicts = new Set<string>();
+  // Files that lost an anchor to the limits: their last kept anchor need
+  // not be their last one, so they keep none.
+  const incomplete = new Set<string>();
+  let entries = 0;
   let dropped = 0;
   return Object.freeze({
     add(line: string): boolean {
       const anchor = anchorOfLogLine(line);
       if (anchor === undefined) return false;
       const known = anchors.get(anchor.file);
-      if (known === undefined) {
-        if (anchors.size < maxAnchors) anchors.set(anchor.file, anchor);
-        else dropped += 1;
-      } else if (known.seq !== anchor.seq || known.hash !== anchor.hash) {
-        conflicts.add(anchor.file);
+      const hash = known?.get(anchor.seq);
+      if (hash !== undefined) {
+        if (hash !== anchor.hash) conflicts.add(anchor.file);
+      } else if (
+        entries >= limits.entries ||
+        (known === undefined && anchors.size >= limits.files)
+      ) {
+        dropped += 1;
+        if (known !== undefined) incomplete.add(anchor.file);
+      } else {
+        entries += 1;
+        if (known === undefined) {
+          anchors.set(anchor.file, new Map([[anchor.seq, anchor.hash]]));
+        } else {
+          known.set(anchor.seq, anchor.hash);
+        }
       }
       return true;
     },
     result(): AuditAnchorSet {
-      const shown = new Map(
-        [...anchors].filter(([file]) => !conflicts.has(file)),
-      );
+      const last = new Map<string, AuditAnchor>();
+      const earlier = new Map<string, readonly AuditAnchor[]>();
+      for (const [file, hashes] of anchors) {
+        if (conflicts.has(file) || incomplete.has(file)) continue;
+        const ordered = [...hashes]
+          .sort(([one], [other]) => one - other)
+          .map(([seq, hash]) => Object.freeze({ file, seq, hash }));
+        // A file has at least one anchor, so this takes exactly the last
+        // and leaves the earlier ones.
+        for (const final of ordered.splice(-1)) last.set(file, final);
+        if (ordered.length > 0) earlier.set(file, Object.freeze(ordered));
+      }
       return Object.freeze({
-        anchors: shown,
+        anchors: last,
+        earlier,
         conflicts: Object.freeze([...conflicts].sort()),
         dropped,
       });
@@ -311,8 +371,8 @@ interface FileState {
   whole: number;
   /** The highest valid seq so far. */
   maxSeq: number | undefined;
-  /** The hash of the first whole line with the seq of the anchor. */
-  atAnchor: string | undefined;
+  /** The hash of the first whole line with each anchored seq. */
+  readonly atSeq: Map<number, string>;
   /** The hash of the last whole line. */
   lastHash: string | undefined;
 }
@@ -321,7 +381,7 @@ interface FileState {
 const checkLine = (
   state: FileState,
   line: AuditLine,
-  anchor: AuditAnchor | undefined,
+  anchored: ReadonlySet<number>,
 ): AuditFindingKind | undefined => {
   if (line.tooLong) {
     state.expected += 1;
@@ -348,8 +408,8 @@ const checkLine = (
     state.expected += 1;
     return 'line_form';
   }
-  if (anchor?.seq === seq && state.atAnchor === undefined) {
-    state.atAnchor = line.hash;
+  if (anchored.has(seq) && !state.atSeq.has(seq)) {
+    state.atSeq.set(seq, line.hash);
   }
   state.maxSeq = Math.max(state.maxSeq ?? 0, seq);
   const expected = state.expected;
@@ -360,18 +420,34 @@ const checkLine = (
   return seq === expected ? undefined : 'chain_seq';
 };
 
-// The finding of a file read whole against its anchor, if any.
-const compareAnchor = (
+// The finding of the line one anchor names, if any.
+const compareLine = (
   state: FileState,
   anchor: AuditAnchor,
 ): AuditFindingKind | undefined => {
-  if (state.atAnchor === undefined) {
+  const hash = state.atSeq.get(anchor.seq);
+  if (hash === undefined) {
     return state.whole === 0 ||
       (state.maxSeq !== undefined && state.maxSeq < anchor.seq)
       ? 'anchor_truncated'
       : 'anchor_mismatch';
   }
-  if (state.atAnchor !== anchor.hash) return 'anchor_mismatch';
+  return hash === anchor.hash ? undefined : 'anchor_mismatch';
+};
+
+// The finding of a file read whole against its anchors, if any: each
+// earlier one in order, then the last, with which the file must end.
+const compareAnchors = (
+  state: FileState,
+  anchor: AuditAnchor,
+  earlier: readonly AuditAnchor[],
+): AuditFindingKind | undefined => {
+  for (const before of earlier) {
+    const kind = compareLine(state, before);
+    if (kind !== undefined) return kind;
+  }
+  const kind = compareLine(state, anchor);
+  if (kind !== undefined) return kind;
   return state.lastHash === anchor.hash ? undefined : 'anchor_extended';
 };
 
@@ -404,6 +480,8 @@ export function verifyAuditFiles(
     throw new TypeError('The check needs a retention and a clock.');
   }
   const anchorOf = anchors?.anchors ?? new Map<string, AuditAnchor>();
+  const earlierOf =
+    anchors?.earlier ?? new Map<string, readonly AuditAnchor[]>();
   const findings: AuditFinding[] = [];
   let findingsOmitted = 0;
   let unreadable = 0;
@@ -453,13 +531,19 @@ export function verifyAuditFiles(
 
   for (const name of folder.names) {
     const anchor = anchorOf.get(name);
+    const earlier = earlierOf.get(name) ?? [];
+    const anchored = new Set<number>(
+      anchor === undefined
+        ? []
+        : [...earlier.map((entry) => entry.seq), anchor.seq],
+    );
     const state: FileState = {
       mode: 'unknown',
       expected: 1,
       previous: sha256(name),
       whole: 0,
       maxSeq: undefined,
-      atAnchor: undefined,
+      atSeq: new Map(),
       lastHash: undefined,
     };
     let fileLines = 0;
@@ -471,7 +555,7 @@ export function verifyAuditFiles(
       }
       state.whole += 1;
       fileLines += 1;
-      const kind = checkLine(state, line, anchor);
+      const kind = checkLine(state, line, anchored);
       if (kind !== undefined) add(kind, name, line.number);
       state.previous = line.hash;
       state.lastHash = line.hash;
@@ -500,7 +584,7 @@ export function verifyAuditFiles(
     pieces += filePieces;
     if (state.mode === 'unchained') unchained += 1;
     if (anchor !== undefined) {
-      const kind = compareAnchor(state, anchor);
+      const kind = compareAnchors(state, anchor, earlier);
       if (kind === undefined) anchorsMatched += 1;
       else add(kind, name);
     }

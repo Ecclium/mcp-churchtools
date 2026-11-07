@@ -31,6 +31,7 @@ export {
   auditFindingKinds,
   type AuditVerifyReport,
   createAnchorCollector,
+  maxAnchorEntries,
   maxAnchors,
   maxFindings,
   maxLogLineLength,
