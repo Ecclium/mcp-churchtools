@@ -532,6 +532,30 @@ const appointmentKeys: readonly string[] = Object.freeze([
   'version',
 ]);
 
+// Whether a key and its value are the legacy field mappings ChurchTools
+// adds to many objects: `@deprecated` with an object of texts, each naming
+// what replaced an old field (OpenAPI document of 3.138, «Legacy field
+// mappings emitted by the serializer»). The answer to creating an
+// appointment and every read of one carry such an object with the four
+// old fields `additions`, `caption`, `note` and `information`, very likely
+// under this key, although the document does not declare it there, and a
+// change with the fields of the core keeps it unchanged (F52; the probe
+// withheld the name). They are no linked part, as long as each key
+// names a field the document describes for the same object and each value
+// is a text. Anything else under that key still counts.
+const isLegacyMappings = (
+  key: string,
+  value: unknown,
+  known: readonly string[],
+): boolean =>
+  key === '@deprecated' &&
+  typeof value === 'object' &&
+  value !== null &&
+  !Array.isArray(value) &&
+  Object.entries(value).every(
+    ([old, inner]) => known.includes(old) && typeof inner === 'string',
+  );
+
 // Whether an object of an answer has a key the document does not describe
 // whose value is a link: the document does not say where invitations go
 // for one appointment, and on the reads of one date they stand beside the
@@ -541,7 +565,10 @@ const hasUnknownLink = (value: unknown, known: readonly string[]): boolean =>
   value !== null &&
   !Array.isArray(value) &&
   Object.entries(value).some(
-    ([key, inner]) => !known.includes(key) && isLink(inner),
+    ([key, inner]) =>
+      !known.includes(key) &&
+      !isLegacyMappings(key, inner, known) &&
+      isLink(inner),
   );
 
 // Text without a value counts as none, so that a description or subtitle
