@@ -384,6 +384,30 @@ Wiederholen: Endet `05` oder `12` nach der Bestätigung mit einem anderen Code a
 
 Eine Probe bricht vor der ersten Anfrage ab, wenn `NODE_OPTIONS`, `NODE_DEBUG`, `NODE_PATH` oder `NODE_EXTRA_CA_CERTS` gesetzt ist oder `NODE_TLS_REJECT_UNAUTHORIZED=0` gilt. Diese Variablen könnten fremden Code laden oder ein fremdes Zertifikat gelten lassen, über das jemand das Token mitlesen könnte. Mit `env -i` sind sie nicht gesetzt.
 
+## Smoke-Test für das Schreiben
+
+`scripts/smoke-write.mts` läuft hinter demselben Wächter und mit denselben Variablen wie die schreibenden Proben, schreibt aber nie selbst: Er startet den gebauten Server von Ecclium mit Schreibrechten und dessen Befehle `ecclium undo` und `ecclium queue approve`, und nur diese schreiben, über Pipeline und Write-Guard. Was er prüft, beschreibt der Abschnitt «Smoke-Test für das Schreiben» in [`docs/betrieb/stdio.md`](../../docs/betrieb/stdio.md). Weil er den gebauten Server braucht, läuft er aus dem Checkout nach `pnpm build`, nicht aus dem Archiv unter `$R`. `CHECKOUT` ist der Pfad dieses Checkouts.
+
+1. Im Schreibbereich liegt nur die Seite «main», im Kalender und bei der Ressource der Proben liegt in 14 Tagen nichts. Führen Sie den Smoke-Test mit zwei neuen State-Dateien aus und bestätigen Sie mit «ja». Leiten Sie die Eingabe nicht um.
+
+   ```bash
+   env -i ECCLIUM_SPIKE_BASE_URL="$URL" ECCLIUM_SPIKE_ALLOW_WRITE=ERSTER_TEIL_DES_HOSTS ECCLIUM_SPIKE_WRITE_TOKEN_FILE="$D/token-schreiben" ECCLIUM_SPIKE_STATE_FILE="$D/state-schreiben.json" ECCLIUM_SPIKE_WRITE_CATEGORY_ID="$SCHREIBBEREICH" ECCLIUM_SPIKE_WRITE_CALENDAR_ID="$KALENDER" ECCLIUM_SPIKE_WRITE_RESOURCE_ID="$RESSOURCE" ECCLIUM_SPIKE_WRITE_STATE_FILE="$D/smoke-seite.jsonl" ECCLIUM_SPIKE_WRITE_CALENDAR_STATE_FILE="$D/smoke-kalender.jsonl" "$NODE" "$CHECKOUT/scripts/smoke-write.mts" > "$D/ausgabe/smoke-write.json"
+   echo "Code $?"
+   ```
+
+   Die Buchungsanfrage schickt den Verwaltern der Ressource eine Mail. Notieren Sie, welche Mails kamen.
+
+2. Sehen Sie die Ausgabe durch. Danach entfernen Sie die Seite mit `07-wiki-cleanup` und der State-Datei der Seite und den geänderten Termin mit `11-calendar-write` und der State-Datei der Termine, jeweils mit «ja». `11` räumt mit einer State-Datei, die es schon gibt, nur auf.
+
+   ```bash
+   env -i ECCLIUM_SPIKE_BASE_URL="$URL" ECCLIUM_SPIKE_ALLOW_WRITE=ERSTER_TEIL_DES_HOSTS ECCLIUM_SPIKE_WRITE_TOKEN_FILE="$D/token-schreiben" ECCLIUM_SPIKE_STATE_FILE="$D/state-schreiben.json" ECCLIUM_SPIKE_WRITE_CATEGORY_ID="$SCHREIBBEREICH" ECCLIUM_SPIKE_WRITE_CALENDAR_ID="$KALENDER" ECCLIUM_SPIKE_WRITE_RESOURCE_ID="$RESSOURCE" ECCLIUM_SPIKE_WRITE_STATE_FILE="$D/smoke-seite.jsonl" "$NODE" "$R/scripts/spike/07-wiki-cleanup.mts" > "$D/ausgabe/smoke-07-wiki-cleanup.json"
+   echo "Code $?"
+   env -i ECCLIUM_SPIKE_BASE_URL="$URL" ECCLIUM_SPIKE_ALLOW_WRITE=ERSTER_TEIL_DES_HOSTS ECCLIUM_SPIKE_WRITE_TOKEN_FILE="$D/token-schreiben" ECCLIUM_SPIKE_STATE_FILE="$D/state-schreiben.json" ECCLIUM_SPIKE_WRITE_CATEGORY_ID="$SCHREIBBEREICH" ECCLIUM_SPIKE_WRITE_CALENDAR_ID="$KALENDER" ECCLIUM_SPIKE_WRITE_RESOURCE_ID="$RESSOURCE" ECCLIUM_SPIKE_WRITE_STATE_FILE="$D/smoke-kalender.jsonl" "$NODE" "$R/scripts/spike/11-calendar-write.mts" > "$D/ausgabe/smoke-11-calendar-write.json"
+   echo "Code $?"
+   ```
+
+Bricht der Smoke-Test nach dem «ja» ab, räumen Sie genauso auf. Beide Proben finden auch, was der Smoke-Test angelegt hat, bevor er die Kennung kannte, über den Titel mit der Kennung des Laufs.
+
 ## Ausführung der Probe für Personen und Gruppen
 
 Nur auf der Testinstanz, nach den Voraussetzungen oben. Die Schritte setzen die Variablen `D`, `URL`, `SHA`, `R` und `NODE` aus den Schritten 1 bis 3 des lesenden Teils voraus. In jeder Stufe ändern Sie die Rechte des Dienstkontos des Servers in der Oberfläche und führen `08` aus. Halten Sie zu jedem Recht seine Bezeichnung in der Oberfläche fest und den Abschnitt der Oberfläche, unter dem es steht.
