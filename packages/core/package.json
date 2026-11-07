@@ -43,7 +43,7 @@
   },
   "dependencies": {
     "@ecclium/mcp-churchtools-plugin-api": "workspace:*",
-    "@modelcontextprotocol/server": "2.3.1",
+    "@modelcontextprotocol/server": "2.4.0",
     "@noble/ciphers": "2.4.0",
     "marked": "18.1.2",
     "undici": "8.12.2",
