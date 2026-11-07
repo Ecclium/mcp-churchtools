@@ -333,8 +333,9 @@ describe('renderConfigReport', () => {
     expect(lines).toContain(
       row('Snapshots', '‹off› (aus ‹ECCLIUM_SNAPSHOTS›)'),
     );
-    expect(lines.slice(-3)).toEqual([
+    expect(lines.slice(-4)).toEqual([
       'Beim Start meldet Ecclium:',
+      `  - ${warningText('writes_enabled')}`,
       `  - ${warningText('snapshots_off')}`,
       valid,
     ]);

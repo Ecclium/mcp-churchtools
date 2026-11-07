@@ -70,6 +70,7 @@ export const configWarningCodes = Object.freeze([
   'persons_toolset_enabled',
   'events_toolset_enabled',
   'api_toolset_enabled',
+  'writes_enabled',
   'snapshots_off',
   'echo_over_http',
   'trust_store_extended',

@@ -571,6 +571,7 @@ describe('loadConfig with a good configuration', () => {
       port: '8443',
     });
     expect(result.report.warnings).toEqual([
+      'writes_enabled',
       'redaction_off',
       'persons_toolset_enabled',
     ]);
@@ -979,7 +980,7 @@ describe('loadConfig and the snapshots', () => {
       ...extra,
     });
 
-  it('keeps snapshots by default, also while the server writes, without a warning', () => {
+  it('keeps snapshots by default, also while the server writes, without a warning of their own', () => {
     const result = writing();
     expect(result.ok && result.config.snapshots).toBe(true);
     expect(setting(result, 'snapshots')).toEqual({
@@ -988,11 +989,11 @@ describe('loadConfig and the snapshots', () => {
       origin: 'default',
       shown: { kind: 'choice', value: 'on' },
     });
-    expect(result.report.warnings).toEqual([]);
+    expect(result.report.warnings).toEqual(['writes_enabled']);
     const given = writing({ ECCLIUM_SNAPSHOTS: 'on' });
     expect(given.ok && given.config.snapshots).toBe(true);
     expect(setting(given, 'snapshots')?.origin).toBe('environment');
-    expect(given.report.warnings).toEqual([]);
+    expect(given.report.warnings).toEqual(['writes_enabled']);
   });
 
   it('turns them off with a warning when the server writes', () => {
@@ -1002,7 +1003,7 @@ describe('loadConfig and the snapshots', () => {
       origin: 'environment',
       shown: { kind: 'choice', value: 'off' },
     });
-    expect(result.report.warnings).toEqual(['snapshots_off']);
+    expect(result.report.warnings).toEqual(['writes_enabled', 'snapshots_off']);
   });
 
   // A server that only reads keeps no snapshot either way.
@@ -1028,7 +1029,7 @@ describe('loadConfig and the snapshots', () => {
     expect(problems(result)).toEqual([
       ['keys_dir_required', 'ECCLIUM_KEYS_DIR'],
     ]);
-    expect(result.report.warnings).toEqual(['snapshots_off']);
+    expect(result.report.warnings).toEqual(['writes_enabled', 'snapshots_off']);
   });
 
   it.each(['', 'ON', 'Off', 'no', 'of', ' on'])(
@@ -1043,7 +1044,7 @@ describe('loadConfig and the snapshots', () => {
         origin: 'invalid',
         shown: { kind: 'none' },
       });
-      expect(result.report.warnings).toEqual([]);
+      expect(result.report.warnings).toEqual(['writes_enabled']);
       if (value.trim() !== '') {
         expect(JSON.stringify(result.report)).not.toContain(`"${value}"`);
       }
@@ -1200,7 +1201,10 @@ describe('loadConfig and the confirmation of writes', () => {
     expect(problems(result)).toEqual([
       ['keys_dir_required', 'ECCLIUM_KEYS_DIR'],
     ]);
-    expect(result.report.warnings).toEqual(['echo_over_http']);
+    expect(result.report.warnings).toEqual([
+      'writes_enabled',
+      'echo_over_http',
+    ]);
   });
 
   // A refused value gets no default, over either transport.
@@ -2694,6 +2698,10 @@ describe('loadConfig and its problems', () => {
       }),
     token_from_environment: () =>
       load({ ECCLIUM_CHURCHTOOLS_URL: address, [tokenVariableName]: token() }),
+    writes_enabled: () =>
+      withKeysDir(keysDirPath, memoryFolder().fs, 'stdio', {
+        ECCLIUM_READ_ONLY: 'false',
+      }),
     snapshots_off: () =>
       withKeysDir(keysDirPath, memoryFolder().fs, 'stdio', {
         ECCLIUM_READ_ONLY: 'false',
@@ -2888,10 +2896,14 @@ describe('loadConfig and its problems', () => {
     expect(isEventName(`config_${code}`)).toBe(true);
   });
 
+  // Snapshots matter only to a server that writes, so their warning comes
+  // with the one that says writing is on (ADR 0029, ADR 0031).
   it.each([...configWarningCodes])('can report the warning %s', (code) => {
     const result = cases[code]();
     expect(result.ok).toBe(true);
-    expect(result.report.warnings).toEqual([code]);
+    expect(result.report.warnings).toEqual(
+      code === 'snapshots_off' ? ['writes_enabled', code] : [code],
+    );
   });
 
   // The tools of persons and events name persons and need the folder of

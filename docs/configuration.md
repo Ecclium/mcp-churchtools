@@ -46,7 +46,7 @@ Legt fest, wie viele Anfragen der Server im Mittel höchstens pro Minute an Chur
 
 ## `ECCLIUM_READ_ONLY`
 
-Legt fest, ob der Server nur liest. Mit `true` registriert er keine Schreib-Tools. Mit `false` und dem Toolset `wiki` bietet er die Schreib-Tools des Wikis an, `ct_wiki_page_create`, `ct_wiki_page_update` und `ct_wiki_page_append_section`, mit dem Toolset `calendars` die für Termine und Buchungen, `ct_appointments_create`, `ct_appointments_update` und `ct_bookings_create`. Alle schreiben erst nach einer Bestätigung. Mit `false` verlangt der Start `ECCLIUM_KEYS_DIR`, mit dem Toolset `wiki` dazu `ECCLIUM_MARKER_KEY_FILE` und `interactive.inquiriesTo` in der Richtlinie.
+Legt fest, ob der Server nur liest. Mit `true` registriert er keine Schreib-Tools. Mit `false` und dem Toolset `wiki` bietet er die Schreib-Tools des Wikis an, `ct_wiki_page_create`, `ct_wiki_page_update` und `ct_wiki_page_append_section`, mit dem Toolset `calendars` die für Termine und Buchungen, `ct_appointments_create`, `ct_appointments_update` und `ct_bookings_create`. Alle schreiben erst nach einer Bestätigung. Mit `false` warnt jeder Start, dass Ecclium schreiben darf, und der Start verlangt `ECCLIUM_KEYS_DIR`, mit dem Toolset `wiki` dazu `ECCLIUM_MARKER_KEY_FILE` und `interactive.inquiriesTo` in der Richtlinie.
 
 ## `ECCLIUM_REDACTION`
 

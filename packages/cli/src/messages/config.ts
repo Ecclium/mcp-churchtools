@@ -1161,6 +1161,14 @@ const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({
     'Der KI-Assistent kann damit jede lesende Operation der API aufrufen, die Ecclium freigibt, und sieht die ganze Antwort, soweit das Dienstkonto sie sehen darf. E-Mail-Adressen, Telefonnummern und Geburtsdaten sind maskiert, Adressen, Notizen und andere Angaben nicht. Jeder Aufruf steht in der Audit-Datei und zählt gegen das Lesebudget.',
     `Entfernen Sie ${apiToolset} aus ${toolsets}, wenn er das nicht soll.`,
   ),
+  // On every start that may write, because the switch lets the tools of
+  // two toolsets and two commands write in ChurchTools (ADR 0029). The
+  // action names the kill switch, which stops writing without a restart.
+  writes_enabled: message(
+    `${readOnly} steht auf ‹false›, Ecclium darf in ChurchTools schreiben.`,
+    `Mit den Toolsets ${quote('wiki')} und ${quote('calendars')} bietet der Server Tools an, die Seiten im Wiki anlegen und ändern, Termine anlegen und ändern und Buchungen anfragen, und ‹ecclium undo› und ‹ecclium queue approve› schreiben ebenfalls. Ein Tool schreibt erst nach einer Bestätigung, und jeder Schreibvorgang steht in der Audit-Datei.`,
+    `Eine leere Datei ‹writes-off› im Ordner ‹stop› des Zustandsordners hält jedes Schreiben ohne Neustart an. Soll Ecclium nur lesen, setzen Sie ${readOnly} auf ‹true› oder entfernen Sie die Variable.`,
+  ),
   // On every start that writes, because without snapshots no write can be
   // taken back and the echo confirms none (ADR 0029, ADR 0031).
   snapshots_off: message(
