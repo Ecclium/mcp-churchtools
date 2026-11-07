@@ -9,8 +9,14 @@
  */
 export { appointmentsGetTool } from './appointments/get.js';
 export { appointmentsListTool } from './appointments/list.js';
+export {
+  appointmentsCreateTool,
+  appointmentsUpdateTool,
+  maxCalendarDescriptionLength,
+} from './appointments/write.js';
 export { whoamiTool } from './base/whoami.js';
 export { bookingsListTool } from './bookings/list.js';
+export { bookingsCreateTool } from './bookings/write.js';
 export { calendarsListTool } from './calendars/list.js';
 export { type CorePluginOptions, createCorePlugin } from './core-plugin.js';
 export { eventsGetAgendaTool } from './events/agenda.js';

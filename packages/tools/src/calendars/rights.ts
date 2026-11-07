@@ -21,6 +21,16 @@ export const calendarRight: RightRef = Object.freeze({
   right: 'view category',
 });
 
+/**
+ * The right that lets the account create, change and delete appointments
+ * in the calendars it names (`docs/research/churchtools-api.md`, F45). The
+ * tools that write appointments need it besides {@link calendarRight}.
+ */
+export const calendarEditRight: RightRef = Object.freeze({
+  module: 'churchcal',
+  right: 'edit category',
+});
+
 /** The message of a refused list of appointments. */
 export const appointmentsRefused = `ChurchTools refused the appointments. The service account needs the right "${calendarRight.right}" in ${calendarRight.module} for each calendar named; ct_calendars_list lists the calendars the account may see.`;
 
