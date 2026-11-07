@@ -18,5 +18,17 @@ export const resourceRight: RightRef = Object.freeze({
   right: 'view resource',
 });
 
+/**
+ * The right that lets the account request bookings of the resources it
+ * names, «Eigene Buchungsanfragen erstellen»
+ * (`docs/research/churchtools-api.md`, F45). It requests only: a booking
+ * stays requested until the managers of the resource approve it. The tool
+ * that requests bookings needs it besides {@link resourceRight}.
+ */
+export const bookingRequestRight: RightRef = Object.freeze({
+  module: 'churchresource',
+  right: 'create bookings',
+});
+
 /** The message of a refused list of bookings. */
 export const bookingsRefused = `ChurchTools refused the bookings. The service account needs the right "${resourceRight.right}" in ${resourceRight.module} for each resource named; ct_resources_list lists the resources the account may see.`;

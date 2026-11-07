@@ -87,10 +87,12 @@ export const countedMethods = [
  * of the tools in `docs/tools.md`.
  */
 export const toolRights = [
+  { module: 'churchcal', right: 'edit category' },
   { module: 'churchcal', right: 'view category' },
   { module: 'churchdb', right: 'view alldata' },
   { module: 'churchgroup', right: 'security level group' },
   { module: 'churchgroup', right: 'view groups of grouptype' },
+  { module: 'churchresource', right: 'create bookings' },
   { module: 'churchresource', right: 'view resource' },
   { module: 'churchservice', right: 'view agenda' },
   { module: 'churchservice', right: 'view events' },

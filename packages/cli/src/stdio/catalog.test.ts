@@ -103,6 +103,34 @@ describe('the catalog over stdio', () => {
     }
   });
 
+  // A server that writes adds the tools that write appointments and request
+  // bookings to the toolset calendars, without the wiki and so without the
+  // key of the marking, which only the wiki needs (ADR 0032). None names a
+  // person.
+  it('adds the three tools that write appointments and bookings for the toolset calendars on a server that writes', () => {
+    const catalog = createStdioCatalog({
+      readOnly: false,
+      toolsets: ['calendars'],
+      writeConfirmation: 'echo-allowed',
+    });
+    expect(
+      catalog
+        .list()
+        .filter((entry) => entry.meta.capability === 'write')
+        .map((entry) => entry.name),
+    ).toEqual([
+      'ct_appointments_create',
+      'ct_appointments_update',
+      'ct_bookings_create',
+      // The echo, which confirms only a new appointment of these three.
+      'ct_write_confirm',
+    ]);
+    for (const entry of catalog.list()) {
+      expect(entry.origin).toBe('core');
+      expect(entry.asSpecial).toBe(false);
+    }
+  });
+
   // Songs name no person of ChurchTools, so neither tool is treated like
   // a special one and the toolset needs no folder of state (ADR 0064).
   it('adds the two tools of songs for the toolset songs, none treated as special', () => {
@@ -232,9 +260,10 @@ describe('the budget of the descriptions', () => {
     },
   );
 
-  // A server that writes offers the three tools of the wiki and, where the
-  // operator allows the echo, ct_write_confirm, and stays within 32'000 in
-  // the longest choices of toolsets (ADR 0029).
+  // A server that writes offers the three tools of the wiki, the three of
+  // appointments and bookings and, where the operator allows the echo,
+  // ct_write_confirm, and stays within 32'000 in the longest choices of
+  // toolsets (ADR 0029).
   it.each(lists.slice(-2).map((toolsets) => [toolsets]))(
     'stays under 32000 for a server that writes, with the echo: %j',
     (toolsets) => {
@@ -243,6 +272,9 @@ describe('the budget of the descriptions', () => {
         { readDocs: () => syntheticDocsIndex() },
       );
       for (const name of [
+        'ct_appointments_create',
+        'ct_appointments_update',
+        'ct_bookings_create',
         'ct_wiki_page_append_section',
         'ct_wiki_page_create',
         'ct_wiki_page_update',

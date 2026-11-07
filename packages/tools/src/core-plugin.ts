@@ -12,8 +12,13 @@ import type { Plugin, PluginHost } from '@ecclium/mcp-churchtools-plugin-api';
 import { addApiTools } from './api/index.js';
 import { appointmentsGetTool } from './appointments/get.js';
 import { appointmentsListTool } from './appointments/list.js';
+import {
+  appointmentsCreateTool,
+  appointmentsUpdateTool,
+} from './appointments/write.js';
 import { whoamiTool } from './base/whoami.js';
 import { bookingsListTool } from './bookings/list.js';
+import { bookingsCreateTool } from './bookings/write.js';
 import { calendarsListTool } from './calendars/list.js';
 import { addDocsTools, type DocsIndex } from './docs/index.js';
 import { eventsGetAgendaTool } from './events/agenda.js';
@@ -120,6 +125,11 @@ export function createCorePlugin(options: CorePluginOptions = {}): Plugin {
       host.addTool(appointmentsGetTool);
       host.addTool(resourcesListTool);
       host.addTool(bookingsListTool);
+      // The tools that write appointments and request bookings; the catalog
+      // leaves them out while the server only reads (ADR 0055).
+      host.addTool(appointmentsCreateTool);
+      host.addTool(appointmentsUpdateTool);
+      host.addTool(bookingsCreateTool);
       host.addTool(songsSearchTool);
       host.addTool(songsGetTool);
       if (docs !== undefined) {

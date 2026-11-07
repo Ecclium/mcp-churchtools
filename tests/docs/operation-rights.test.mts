@@ -279,7 +279,7 @@ describe('the mapping of operations to rights', () => {
       addPrompt: () => undefined,
     } as unknown as PluginHost;
     createCorePlugin().register(host);
-    expect(tools).toHaveLength(27);
+    expect(tools).toHaveLength(30);
     const known = new Set(
       facts.rights.entries.map(({ module, name }) => `${module}: ${name}`),
     );
@@ -292,7 +292,7 @@ describe('the mapping of operations to rights', () => {
         ),
       ),
     ].sort();
-    expect(named).toHaveLength(12);
+    expect(named).toHaveLength(14);
     expect(named.filter((right) => !known.has(right))).toEqual([]);
   });
 

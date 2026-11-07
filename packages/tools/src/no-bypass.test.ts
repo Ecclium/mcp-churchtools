@@ -967,8 +967,11 @@ describe('the tools that write', () => {
     .list()
     .filter((entry) => entry.meta.capability === 'write');
 
-  it('are the three of the wiki, and the catalog that reads has every other tool', () => {
+  it('are the three of the wiki and the three of appointments and bookings, and the catalog that reads has every other tool', () => {
     expect(writers.map((entry) => entry.name)).toEqual([
+      'ct_appointments_create',
+      'ct_appointments_update',
+      'ct_bookings_create',
       'ct_wiki_page_append_section',
       'ct_wiki_page_create',
       'ct_wiki_page_update',
