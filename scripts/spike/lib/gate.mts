@@ -839,6 +839,78 @@ export async function passGate(
   settings: WriteSettings,
   options: GateOptions & { readonly summary: string },
 ): Promise<GatePass> {
+  const { result, reader, clientOptions } = await checkAndConfirm(
+    context,
+    access,
+    settings,
+    options,
+    'Vergleichen Sie die SHA-256 oben mit dem Pull Request.',
+  );
+  return {
+    result,
+    writer: createWriteClient(clientOptions),
+    ...(reader === undefined ? {} : { reader }),
+  };
+}
+
+/** What the smoke test for writing gets once the guard lets it go on. */
+export interface SmokeGatePass {
+  readonly result: GateResult;
+  /**
+   * The client that reads the appointments and bookings of the probe
+   * calendar and the probe resource, and nothing else.
+   */
+  readonly reader: Client;
+}
+
+/**
+ * Runs every check of {@link passGate} and asks for the same confirmation,
+ * but hands out no client that writes. In the smoke test for writing only
+ * the server of Ecclium writes, through its pipeline and its write guard
+ * (ADR 0029, ADR 0049); the smoke test itself never sends a write.
+ *
+ * @param context - The client that reads and the state of 00-inventory.
+ * @param access - The handle from the course of the smoke test.
+ * @param settings - What the environment named; calendar and resource are required.
+ * @param options - The write operations the server will send, own pages, own IDs and time window, and the summary shown before the question.
+ * @returns The result of the checks and the client that reads calendar and resource.
+ * @throws {SpikeError} If stdin is no terminal, a check fails, calendar and resource are missing, or the answer is not exactly «ja».
+ */
+export async function passSmokeGate(
+  context: GateContext,
+  access: WriteAccess,
+  settings: WriteSettings,
+  options: GateOptions & {
+    readonly summary: string;
+    readonly calendar: CalendarGateOptions;
+  },
+): Promise<SmokeGatePass> {
+  const { result, reader } = await checkAndConfirm(
+    context,
+    access,
+    settings,
+    options,
+    'Danach schreibt nur der Server von Ecclium, über seine Pipeline.',
+  );
+  if (reader === undefined) {
+    throw new SpikeError('KONFIGURATION', 'kalenderprobeOhneBereich');
+  }
+  return { result, reader };
+}
+
+// The checks of both gates and the question; only the caller decides what
+// it hands out after the «ja».
+async function checkAndConfirm(
+  context: GateContext,
+  access: WriteAccess,
+  settings: WriteSettings,
+  options: GateOptions & { readonly summary: string },
+  sentence: string,
+): Promise<{
+  readonly result: GateResult;
+  readonly reader: Client | undefined;
+  readonly clientOptions: ClientOptions;
+}> {
   const secret = secrets.get(access);
   if (secret === undefined) {
     throw new SpikeError('INTERN');
@@ -856,16 +928,12 @@ export async function passGate(
     await checkForeignEntries(reader, area, options.calendar);
   }
   const answer = await secret.input.readLine(
-    `${options.summary}\nAlle Prüfungen des Wächters sind bestanden. Vergleichen Sie die SHA-256 oben mit dem Pull Request.\nWeiter? Tippen Sie «ja»: `,
+    `${options.summary}\nAlle Prüfungen des Wächters sind bestanden. ${sentence}\nWeiter? Tippen Sie «ja»: `,
   );
   if (answer !== 'ja') {
     throw refuse('nichtBestaetigt');
   }
-  return {
-    result,
-    writer: createWriteClient(secret.options),
-    ...(reader === undefined ? {} : { reader }),
-  };
+  return { result, reader, clientOptions: secret.options };
 }
 
 /**
