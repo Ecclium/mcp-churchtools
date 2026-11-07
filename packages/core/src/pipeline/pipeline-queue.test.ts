@@ -83,7 +83,7 @@ const marked = (written: string): string => {
     origin,
     canonicalOfWritten(written),
   );
-  return `${written}\n${markingLineOf({ date: day, origin, code }, 'Sekretariat')}\n`;
+  return `${written}\n${markingLineOf({ date: day, origin, code }, 'Sekretariat')}`;
 };
 
 const loaded = loadConfig({
@@ -285,7 +285,7 @@ const setup = (
       .reply(200, rights, json);
     double
       .intercept({ path: pagePath, method: 'GET' })
-      .reply(200, page(3, '# Plan\n'), json);
+      .reply(200, page(3, '# Plan'), json);
   };
   return {
     double,
@@ -1019,7 +1019,7 @@ describe('an approval of the operator (ADR 0029)', () => {
   const commitCalls = (setupped: ReturnType<typeof setup>) => {
     setupped.double
       .intercept({ path: pagePath, method: 'GET' })
-      .reply(200, page(3, '# Plan\n'), json);
+      .reply(200, page(3, '# Plan'), json);
     setupped.double
       .intercept({ path: pagePath, method: 'PATCH' })
       .reply(200, '{}', json);
@@ -1097,10 +1097,10 @@ describe('an approval of the operator (ADR 0029)', () => {
       .reply(200, rights, later);
     double
       .intercept({ path: pagePath, method: 'GET' })
-      .reply(200, page(3, '# Plan\n'), later);
+      .reply(200, page(3, '# Plan'), later);
     double
       .intercept({ path: pagePath, method: 'GET' })
-      .reply(200, page(3, '# Plan\n'), later);
+      .reply(200, page(3, '# Plan'), later);
     double
       .intercept({ path: pagePath, method: 'PATCH' })
       .reply(200, '{}', later);
@@ -1397,7 +1397,7 @@ describe('an approval of the operator (ADR 0029)', () => {
     // Someone saves the page between the decision and the send.
     setupped.double
       .intercept({ path: pagePath, method: 'GET' })
-      .reply(200, page(4, '# Von Hand\n'), json);
+      .reply(200, page(4, '# Von Hand'), json);
     const outcome = await setupped.pipeline.approve(
       { queueId: id },
       operator(),

@@ -145,9 +145,12 @@ const hashOf = (fields: readonly string[]): string => {
   return hash.digest('hex');
 };
 
-// The text the entry that can be approved writes, and the hash of its plan
-// for the actor of the start over stdio.
+// The text the entry that can be approved holds, as the content policy
+// wrote it, and the text it writes, as ChurchTools stores it, without the
+// line break at the end (F51); the hash of its plan for the actor of the
+// start over stdio.
 const newText = '# Neu\n';
+const storedText = '# Neu';
 const planHash = hashOf([
   'ecclium.plan.v1',
   'default',
@@ -158,7 +161,7 @@ const planHash = hashOf([
   'wiki_page',
   `12/${guid}`,
   '3',
-  hashOf(['ecclium.content.v1', '1', newText]),
+  hashOf(['ecclium.content.v1', '1', storedText]),
 ]);
 
 // An entry whose plan the core finds again on version 3 of the page.
@@ -567,9 +570,9 @@ describe('ecclium queue approve', () => {
     };
   const writing = answer(
     [
-      [3, '# Plan\n'],
-      [3, '# Plan\n'],
-      [4, newText],
+      [3, '# Plan'],
+      [3, '# Plan'],
+      [4, storedText],
     ],
     true,
   );

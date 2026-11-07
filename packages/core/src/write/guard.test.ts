@@ -118,7 +118,7 @@ const fakeOf = (): Fake => ({
     title: 'Dienstplan',
     isMarkdown: true,
     version: 3,
-    text: '# Plan\n',
+    text: '# Plan',
   },
   permissions: {
     kind: 'known',
@@ -143,6 +143,13 @@ const calendarUnused = {
   calendarFacts: unused,
   resourceName: unused,
 };
+
+// ChurchTools removes white space at both ends of a text before it stores
+// it, as `trim` of PHP does (F51); the double does the same, written apart
+// from the core, so that a text the core sends in another form comes back
+// changed.
+const asStored = (text: string): string =>
+  text.replace(/^[ \t\n\r\v]+/u, '').replace(/[ \t\n\r\v]+$/u, '');
 
 const clientOf = (fake: Fake): WriteClient => ({
   permissions: () => Promise.resolve(fake.permissions),
@@ -178,7 +185,11 @@ const clientOf = (fake: Fake): WriteClient => ({
     updateWikiPage: (_ctx, _category, _guid, text) => {
       fake.sent.push(text);
       if (fake.updateWrites !== false) {
-        fake.page = { ...fake.page, text, version: fake.page.version + 1 };
+        fake.page = {
+          ...fake.page,
+          text: asStored(text),
+          version: fake.page.version + 1,
+        };
       }
       return fake.updateFails === undefined
         ? Promise.resolve()
@@ -188,7 +199,7 @@ const clientOf = (fake: Fake): WriteClient => ({
       fake.sent.push(text);
       if (fake.createFails !== undefined)
         return Promise.reject(fake.createFails);
-      fake.createdText ??= text;
+      fake.createdText ??= asStored(text);
       fake.created ??= {
         guid: '00000000-0000-4000-8000-0000000000CD',
         title,
@@ -263,7 +274,7 @@ const marked = (written: string, tenantId = 'demo-tenant'): string => {
     origin,
     canonicalOfWritten(written),
   );
-  return `${written}\n${markingLineOf({ date: day, origin, code }, inquiriesTo)}\n`;
+  return `${written}\n${markingLineOf({ date: day, origin, code }, inquiriesTo)}`;
 };
 
 const setup = (
@@ -319,10 +330,17 @@ const planOf = ({ outcome }: PlanResult): PlannedWrite => {
 
 describe('appending a section', () => {
   it.each([
-    ['# Plan\n', '## Nachtrag', '# Plan\n\n## Nachtrag\n'],
-    ['# Plan  \n\n', '## Nachtrag \n', '# Plan\n\n## Nachtrag\n'],
-    ['', '## Nachtrag', '## Nachtrag\n'],
-    ['   ', '## Nachtrag', '## Nachtrag\n'],
+    ['# Plan\n', '## Nachtrag', '# Plan\n\n## Nachtrag'],
+    ['# Plan  \n\n', '## Nachtrag \n', '# Plan\n\n## Nachtrag'],
+    ['', '## Nachtrag', '## Nachtrag'],
+    ['   ', '## Nachtrag', '## Nachtrag'],
+    // Only what ChurchTools removes goes, at both ends (F51).
+    ['\n\t# Plan', '\r\n## Nachtrag\v', '# Plan\n\n## Nachtrag'],
+    [
+      '# Plan\u00a0',
+      '## Nachtrag\u00a0\n',
+      '# Plan\u00a0\n\n## Nachtrag\u00a0',
+    ],
   ])('joins %j and %j', (text, section, expected) => {
     expect(appendSection(text, section)).toBe(expected);
   });
@@ -601,6 +619,21 @@ describe('committing', () => {
     return { ...parts, plan, proof };
   };
 
+  it('sends every text in the form ChurchTools stores, so that the read back finds it (F51)', async () => {
+    // The double removes white space at both ends, as ChurchTools does: a
+    // text sent with a line break at its end would come back without it
+    // and end in conflict.
+    for (const intent of [create, append, { ...update, text: '\n# Neu\n\n' }]) {
+      const { fake, guard, ctx, plan, proof } = await planned(intent);
+      expect(await guard.commit(ctx, plan, proof)).toMatchObject({
+        ok: true,
+        state: 'verified',
+      });
+      expect(fake.sent).toHaveLength(1);
+      expect(fake.sent.map(asStored)).toEqual(fake.sent);
+    }
+  });
+
   it('changes a page and reads the change back', async () => {
     const { fake, guard, ctx, plan, proof } = await planned(update);
     expect(await guard.commit(ctx, plan, proof)).toEqual({
@@ -610,7 +643,7 @@ describe('committing', () => {
       target: { kind: 'wiki_page', key: `12/${guid.toLowerCase()}` },
       version: 4,
     });
-    expect(fake.sent).toEqual(['# Neu\n']);
+    expect(fake.sent).toEqual(['# Neu']);
     expect(logged.map((line) => line.event)).toContain('write_committed');
   });
 
@@ -706,7 +739,7 @@ describe('committing', () => {
 
   it('writes nothing when the text of the page changed under the same version', async () => {
     const { fake, guard, ctx, plan, proof } = await planned(append);
-    fake.page = { ...fake.page, text: '# Anders\n' };
+    fake.page = { ...fake.page, text: '# Anders' };
     const result = await guard.commit(ctx, plan, proof);
     expect(!result.ok && result.error.message).toBe(
       writeSentences.changedSincePlan,
@@ -885,7 +918,7 @@ describe('committing', () => {
       });
     }
     const fake = fakeOf();
-    fake.createdText = '# Anders\n';
+    fake.createdText = '# Anders';
     const other = await planned(create, fake);
     expect(
       await other.guard.commit(other.ctx, other.plan, other.proof),
@@ -960,7 +993,7 @@ describe('the policy (ADR 0032)', () => {
     expect(planned.outcome.kind).toBe('planned');
     expect(planned.queue).toBe('no_entry');
     expect(planned.text?.summary).toContain('ändern');
-    fake.page = { ...fake.page, text: '# Neu\n' };
+    fake.page = { ...fake.page, text: '# Neu' };
     const skipped = await guard.plan(request, update);
     expect(skipped.outcome).toEqual({ kind: 'skipped', reason: 'unchanged' });
     expect(skipped.queue).toBeUndefined();
@@ -976,7 +1009,7 @@ describe('the policy (ADR 0032)', () => {
     const proof = issueProof(plan, 'elicitation', now);
     expect((await guard.commit(ctx, plan, proof)).ok).toBe(true);
     expect(await quota?.read(ctx, pageKey, today())).toBe(1);
-    expect(fake.sent).toEqual(['# Neu\n']);
+    expect(fake.sent).toEqual(['# Neu']);
   });
 
   it('writes nothing once the limit is reached after the plan, and uses the proof up', async () => {
@@ -1120,12 +1153,12 @@ describe('the snapshot of a write (ADR 0031)', () => {
           tool: 'ct_example_note_write',
           categoryId: 12,
           guid,
-          before: { version: 3, text: '# Plan\n' },
-          after: { version: 4, textHash: contentHashOf(['# Neu\n']) },
+          before: { version: 3, text: '# Plan' },
+          after: { version: 4, textHash: contentHashOf(['# Neu']) },
         },
       },
     ]);
-    expect(fake.sent).toEqual(['# Neu\n']);
+    expect(fake.sent).toEqual(['# Neu']);
   });
 
   it('keeps a new page before the send and its GUID after the read back', async () => {
@@ -1238,7 +1271,7 @@ describe('the snapshot of a write (ADR 0031)', () => {
     [
       'reads back with another text',
       (fake: Fake) => {
-        fake.createdText = '# Anders\n';
+        fake.createdText = '# Anders';
       },
       'conflict',
       1,
@@ -1312,8 +1345,8 @@ describe('the undo of a write (ADR 0031)', () => {
       tool: 'ct_example_note_write',
       categoryId: 12,
       guid,
-      before: { version: 2, text: '# Alt\n' },
-      after: { version: 3, textHash: contentHashOf(['# Plan\n']) },
+      before: { version: 2, text: '# Alt' },
+      after: { version: 3, textHash: contentHashOf(['# Plan']) },
     },
     day,
   };
@@ -1323,7 +1356,7 @@ describe('the undo of a write (ADR 0031)', () => {
       tool: 'ct_example_note_write',
       categoryId: 12,
       title: 'Dienstplan',
-      textHash: contentHashOf(['# Plan\n']),
+      textHash: contentHashOf(['# Plan']),
     },
     after: { kind: 'wikiPageCreated', guid, version: 3 },
     day,
@@ -1372,9 +1405,9 @@ describe('the undo of a write (ADR 0031)', () => {
     expect(ended).toMatchObject({
       kind: 'committed',
       result: { ok: true, path: 'operator', version: 4, undoId },
-      change: { from: '# Plan\n', to: '# Alt\n' },
+      change: { from: '# Plan', to: '# Alt' },
     });
-    expect(fake.sent).toEqual(['# Alt\n']);
+    expect(fake.sent).toEqual(['# Alt']);
     // The undo can be taken back from the state it wrote over.
     expect(saved).toEqual([
       {
@@ -1386,8 +1419,8 @@ describe('the undo of a write (ADR 0031)', () => {
           tool: 'ct_example_note_write',
           categoryId: 12,
           guid,
-          before: { version: 3, text: '# Plan\n' },
-          after: { version: 4, textHash: contentHashOf(['# Alt\n']) },
+          before: { version: 3, text: '# Plan' },
+          after: { version: 4, textHash: contentHashOf(['# Alt']) },
         },
       },
     ]);
@@ -1395,12 +1428,12 @@ describe('the undo of a write (ADR 0031)', () => {
 
   it('writes nothing over a page someone changed since, unless asked to', async () => {
     const fake = fakeOf();
-    fake.page = { ...fake.page, version: 5, text: '# Von Hand\n' };
+    fake.page = { ...fake.page, version: 5, text: '# Von Hand' };
     const first = undoWith(changed, { fake });
     expect(await first.result).toMatchObject({
       kind: 'changed',
       target: { kind: 'wiki_page', key: `12/${guid.toLowerCase()}` },
-      change: { from: '# Von Hand\n', to: '# Alt\n' },
+      change: { from: '# Von Hand', to: '# Alt' },
     });
     expect(fake.sent).toEqual([]);
     const second = undoWith(changed, { fake, overwrite: true });
@@ -1408,12 +1441,12 @@ describe('the undo of a write (ADR 0031)', () => {
       kind: 'committed',
       result: { ok: true, version: 6 },
     });
-    expect(fake.sent).toEqual(['# Alt\n']);
+    expect(fake.sent).toEqual(['# Alt']);
   });
 
   it('does nothing when the page holds the text from before already', async () => {
     const fake = fakeOf();
-    fake.page = { ...fake.page, version: 4, text: '# Alt\n' };
+    fake.page = { ...fake.page, version: 4, text: '# Alt' };
     const { result } = undoWith(changed, { fake });
     expect(await result).toMatchObject({ kind: 'unchanged' });
     expect(fake.sent).toEqual([]);
@@ -1439,7 +1472,7 @@ describe('the undo of a write (ADR 0031)', () => {
     const ended = await result;
     expect(ended).toMatchObject({ kind: 'committed', result: { ok: true } });
     expect(fake.sent).toEqual([
-      'Diese Seite hat Ecclium am 30.11.2026 angelegt und am 01.12.2026 zurückgenommen.\n',
+      'Diese Seite hat Ecclium am 30.11.2026 angelegt und am 01.12.2026 zurückgenommen.',
     ]);
     // A second undo finds the sentence and writes nothing.
     const again = undoWith(created, { fake });
@@ -1474,7 +1507,7 @@ describe('the undo of a write (ADR 0031)', () => {
       kind: 'committed',
       result: { ok: true },
     });
-    expect(fake.sent).toEqual(['# Alt\n']);
+    expect(fake.sent).toEqual(['# Alt']);
   });
 
   it.each([
@@ -1666,11 +1699,11 @@ describe('an approval of the operator (ADR 0029)', () => {
         version: 4,
         undoId: approvalId,
       },
-      change: { from: '# Plan\n', to: '# Neu\n' },
+      change: { from: '# Plan', to: '# Neu' },
     });
     // Decided once, before anything was sent.
     expect(decisions).toEqual([0]);
-    expect(fake.sent).toEqual(['# Neu\n']);
+    expect(fake.sent).toEqual(['# Neu']);
     expect(saved).toMatchObject([{ eventId: approvalId, part: 'before' }]);
   });
 
@@ -1679,7 +1712,7 @@ describe('an approval of the operator (ADR 0029)', () => {
     expect(await appended.result).toMatchObject({
       kind: 'committed',
       result: { ok: true },
-      change: { from: '# Plan\n', to: `# Plan\n\n${marked('## Nachtrag\n')}` },
+      change: { from: '# Plan', to: `# Plan\n\n${marked('## Nachtrag\n')}` },
     });
     const created = approveWith(await entryOf(create));
     expect(await created.result).toMatchObject({
@@ -1713,7 +1746,7 @@ describe('an approval of the operator (ADR 0029)', () => {
   it('writes and decides nothing when the page changed since the write was queued', async () => {
     const entry = await entryOf(append);
     const later = fakeOf();
-    later.page = { ...later.page, version: 4, text: '# Plan, von Hand\n' };
+    later.page = { ...later.page, version: 4, text: '# Plan, von Hand' };
     const moved = approveWith(entry, { fake: later });
     expect(await moved.result).toEqual({
       kind: 'refused',
@@ -1730,7 +1763,7 @@ describe('an approval of the operator (ADR 0029)', () => {
     const entry = await entryOf(append);
     // The same version with another text, as no ChurchTools should hold.
     const other = fakeOf();
-    other.page = { ...other.page, text: '# Anders\n' };
+    other.page = { ...other.page, text: '# Anders' };
     const changed = approveWith(entry, { fake: other });
     expect(await changed.result).toMatchObject({
       kind: 'refused',
@@ -1882,7 +1915,7 @@ describe('an approval of the operator (ADR 0029)', () => {
       kind: 'committed',
       result: { ok: true },
     });
-    expect(fake.sent).toEqual(['# Neu\n']);
+    expect(fake.sent).toEqual(['# Neu']);
   });
 
   it('writes past the limit of the day and counts the write all the same', async () => {
@@ -1899,7 +1932,7 @@ describe('an approval of the operator (ADR 0029)', () => {
       kind: 'committed',
       result: { ok: true },
     });
-    expect(fake.sent).toEqual(['# Neu\n']);
+    expect(fake.sent).toEqual(['# Neu']);
     // Counted for the actor who asked for the write.
     expect(await store.read(wish, pageKey, today())).toBe(2);
   });
@@ -1919,7 +1952,7 @@ describe('an approval of the operator (ADR 0029)', () => {
       kind: 'committed',
       result: { ok: true },
     });
-    expect(fake.sent).toEqual(['# Neu\n']);
+    expect(fake.sent).toEqual(['# Neu']);
     expect(await store.read(contextOf([]), pageKey, today())).toBe(1);
   });
 
@@ -1933,7 +1966,7 @@ describe('an approval of the operator (ADR 0029)', () => {
       kind: 'committed',
       result: { ok: true },
     });
-    expect(fake.sent).toEqual(['# Neu\n']);
+    expect(fake.sent).toEqual(['# Neu']);
     expect(logged.map(({ event }) => event)).toContain(
       'policy_count_unavailable',
     );
@@ -1965,7 +1998,7 @@ describe('the marking', () => {
       expect(fake.sent).toEqual([sent]);
     }
     expect(marked('# Bericht\n')).toMatch(
-      /^# Bericht\n\nAutomatisch erstellt am 01\.12\.2026 durch Ecclium, interaktiv, Prüfcode k1:[A-Z2-7]{13}\. Rückfragen an Sekretariat\.\n$/u,
+      /^# Bericht\n\nAutomatisch erstellt am 01\.12\.2026 durch Ecclium, interaktiv, Prüfcode k1:[A-Z2-7]{13}\. Rückfragen an Sekretariat\.$/u,
     );
   });
 
@@ -1975,7 +2008,7 @@ describe('the marking', () => {
     });
     const plan = planOf(result);
     await guard.commit(ctx, plan, issueProof(plan, 'elicitation', now));
-    expect(fake.sent).toEqual(['# Neu\n']);
+    expect(fake.sent).toEqual(['# Neu']);
   });
 
   it.each([

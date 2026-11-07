@@ -207,12 +207,9 @@ describe('the text of a confirmation', () => {
         after: 'neu\\',
       }),
     );
-    expect(text.diff).toEqual([
-      '@@ -1,1 +1,1 @@',
-      '-\\u{336}alt',
-      '+neu\\\\',
-      '\\ No newline at end of file',
-    ]);
+    // A text ChurchTools stores ends without a line break (F51); the
+    // question reads it as a line all the same.
+    expect(text.diff).toEqual(['@@ -1,1 +1,1 @@', '-\\u{336}alt', '+neu\\\\']);
     // A combining mark later in a line joins the text before it, which is
     // the page's own.
     expect(
@@ -220,6 +217,23 @@ describe('the text of a confirmation', () => {
         preview({ kind: 'wikiPageUpdate', before: '', after: 'a̶\n' }),
       ).diff,
     ).toEqual(['@@ -0,0 +1,1 @@', '+a̶']);
+  });
+
+  it('shows an appended section as new lines only, though the page ends without a line break (F51)', () => {
+    const text = confirmationTextOf(
+      preview({
+        kind: 'wikiSectionAppend',
+        before: '# Plan',
+        after: '# Plan\n\n## Nachtrag',
+      }),
+    );
+    expect(text.summary).toContain('einen Abschnitt mit 2 Zeilen anhängen');
+    expect(text.diff).toEqual([
+      '@@ -1,1 +1,3 @@',
+      ' # Plan',
+      '+',
+      '+## Nachtrag',
+    ]);
   });
 
   it('keeps an empty line of the page as its sign alone', () => {

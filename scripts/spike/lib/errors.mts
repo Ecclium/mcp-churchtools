@@ -120,6 +120,14 @@ export const hints = {
     'Abbruch: Die Schreib-State-Datei ist beschädigt, stammt nicht von 11-calendar-write oder gehört zu einer anderen Instanz, einem anderen Kalender oder einer anderen Ressource.',
   kalenderSchreibenAbgebrochen:
     'Abbruch nach einer schreibenden Anfrage. Es folgt keine weitere ausser dem Aufräumen. Prüfen Sie Kalender und Ressource und starten Sie 11-calendar-write mit derselben Schreib-State-Datei noch einmal: Dann löscht die Probe, was sie angelegt und noch nicht gelöscht hat.',
+  zuruecklesenOhneBereich:
+    'Abbruch: 13-write-readback braucht ECCLIUM_SPIKE_WRITE_CALENDAR_ID und ECCLIUM_SPIKE_WRITE_RESOURCE_ID. Es wurde nichts geschrieben.',
+  zuruecklesenKalenderStateFehlt:
+    'Abbruch: 13-write-readback braucht ECCLIUM_SPIKE_WRITE_CALENDAR_STATE_FILE. Dort hält die Probe ihren Termin fest, den 11-calendar-write nach einem Abbruch entfernt. Es wurde nichts geschrieben.',
+  zuruecklesenStateGleich:
+    'Abbruch: ECCLIUM_SPIKE_WRITE_STATE_FILE und ECCLIUM_SPIKE_WRITE_CALENDAR_STATE_FILE nennen dieselbe Datei. 13-write-readback braucht zwei neue Dateien. Es wurde nichts geschrieben.',
+  zuruecklesenAbgebrochen:
+    'Abbruch nach einer schreibenden Anfrage. Es folgt keine weitere ausser dem Aufräumen. Prüfen Sie Schreibbereich und Kalender und räumen Sie mit 07-wiki-cleanup und der Schreib-State-Datei auf und mit 11-calendar-write und der Kalender-State-Datei.',
   keinTerminal:
     'Abbruch: Die Bestätigung braucht ein Terminal. Starten Sie die Probe direkt im Terminal, ohne umgeleitete Eingabe.',
   nichtBestaetigt: 'Abbruch: nicht bestätigt. Es wurde nichts geändert.',

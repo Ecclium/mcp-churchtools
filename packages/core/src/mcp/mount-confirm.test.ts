@@ -81,7 +81,7 @@ const marked = (written: string): string => {
     origin,
     canonicalOfWritten(written),
   );
-  return `${written}\n${markingLineOf({ date: day, origin, code }, 'Sekretariat')}\n`;
+  return `${written}\n${markingLineOf({ date: day, origin, code }, 'Sekretariat')}`;
 };
 
 const at = (value: unknown, ...path: readonly (string | number)[]): unknown =>
@@ -213,13 +213,13 @@ const setup = (
       .reply(200, rights, json);
     double
       .intercept({ path: pagePath, method: 'GET' })
-      .reply(200, page(3, '# Plan\n'), json);
+      .reply(200, page(3, '# Plan'), json);
   };
   // The read right before the write, the write and the read after it.
   const commitReads = () => {
     double
       .intercept({ path: pagePath, method: 'GET' })
-      .reply(200, page(3, '# Plan\n'), json);
+      .reply(200, page(3, '# Plan'), json);
     double
       .intercept({ path: pagePath, method: 'PATCH' })
       .reply(200, '{}', json);

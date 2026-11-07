@@ -26,6 +26,20 @@ describe('Guard', () => {
     ]);
   });
 
+  it('tells beforehand whether a key would pass the block list', () => {
+    const guard = new Guard();
+    guard.block('demo-tenant');
+    guard.blockAll({ title: 'kanarie', id: 4711 });
+    expect(guard.passesBlockList('selfLink')).toBe(true);
+    // A value or number of an answer and a blocked value as a whole word.
+    expect(guard.passesBlockList('kanarie')).toBe(false);
+    expect(guard.passesBlockList('kanarie_link')).toBe(false);
+    expect(guard.passesBlockList('link4711')).toBe(false);
+    expect(guard.passesBlockList('demo-tenant-url')).toBe(false);
+    // Asking allows nothing: the word still needs allowChecked.
+    expect(guard.check({ selfLink: 'x' })).not.toEqual([]);
+  });
+
   it('blocks whole words only, so ordinary keys survive short values', () => {
     const guard = new Guard();
     guard.allowChecked('wikiCategory');

@@ -182,7 +182,7 @@ const wikiWriteLimits = Object.freeze({
   maxElements: 20_000,
 });
 
-const invalidWikiWriteInput = `A category ID is a whole number from 1 and a page is addressed by its GUID. A title has 1 to ${String(maxWikiTitleLength)} characters, no control characters and no spaces at either end. A text has 1 byte to ${String(maxWikiWriteBytes / 1024)} KiB in UTF-8, more than spaces and no character U+0000.`;
+const invalidWikiWriteInput = `A category ID is a whole number from 1 and a page is addressed by its GUID. A title has 1 to ${String(maxWikiTitleLength)} characters, no control characters and no spaces at either end. A text has 1 byte to ${String(maxWikiWriteBytes / 1024)} KiB in UTF-8, more than spaces, no character U+0000 and no space, tab or line break at either end, which ChurchTools would remove.`;
 
 // ChurchTools refuses a second page with the title of one in the same
 // category with 400 (F12, «Titel einer Seite»). The client cannot read the
@@ -221,10 +221,45 @@ export const isWikiTitle = (value: unknown): value is string => {
   return true;
 };
 
+// The characters ChurchTools removes at both ends of the text of a page
+// before it stores it: those `trim` of PHP removes, as the OpenAPI document
+// of 3.138 says («Trimmed Markdown») and probe 13 showed (F51). NUL the
+// client never sends.
+const trimmedByChurchTools = ' \t\n\r\v';
+
+/**
+ * The text of a page as ChurchTools stores it: without the white space it
+ * removes at both ends (F51). Inside the text nothing changes, and white
+ * space ChurchTools keeps, such as a protected space, stays at the ends.
+ * The write guard seals, sends, hashes and compares exactly this form, so
+ * that the read right after a write finds the text it sent (ADR 0029,
+ * ADR 0072).
+ *
+ * @param text - A text of a page.
+ * @returns The text ChurchTools would store for it.
+ * @example
+ * ```ts
+ * storedWikiText('# Plan\n\nText\n'); // '# Plan\n\nText'
+ * ```
+ */
+export function storedWikiText(text: string): string {
+  let start = 0;
+  let end = text.length;
+  while (start < end && trimmedByChurchTools.includes(text.charAt(start))) {
+    start += 1;
+  }
+  while (end > start && trimmedByChurchTools.includes(text.charAt(end - 1))) {
+    end -= 1;
+  }
+  return text.slice(start, end);
+}
+
 // A text fits when it has 1 byte to the limit in UTF-8, more than spaces,
 // no lone surrogate and no U+0000, which a database may cut a text at. A
 // text of spaces only would empty the page: the OpenAPI document says that
 // ChurchTools trims the text and clears the content when nothing is left.
+// A text with white space ChurchTools removes at an end would come back
+// changed and the write would end in conflict (F51), so it is refused.
 // A string longer than the limit in UTF-16 units is longer in bytes as
 // well, so it is refused before it is encoded.
 const isText = (value: unknown): value is string =>
@@ -232,6 +267,7 @@ const isText = (value: unknown): value is string =>
   value.length >= 1 &&
   value.length <= maxWikiWriteBytes &&
   value.trim() !== '' &&
+  value === storedWikiText(value) &&
   wellFormed(value) &&
   !value.includes('\u0000') &&
   new TextEncoder().encode(value).byteLength <= maxWikiWriteBytes;

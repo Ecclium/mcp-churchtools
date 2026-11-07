@@ -550,6 +550,31 @@ describe('createCalendarClient', () => {
     ],
     ['/api/calendars/7/appointments', [['calendar_ids[]', '8']], false],
     ['/api/bookings/12', [['include[]', 'conflicts']], false],
+    // One appointment as the server reads it before a change.
+    [
+      '/api/calendars/7/appointments/12',
+      [
+        ['include[]', 'event'],
+        ['include[]', 'bookings'],
+        ['include[]', 'meetingRequests'],
+      ],
+      true,
+    ],
+    ['/api/calendars/7/appointments/12', [['include[]', 'bookings']], true],
+    ['/api/calendars/7/appointments/12', [['include[]', 'persons']], false],
+    [
+      '/api/calendars/7/appointments/12',
+      [
+        ['include[]', 'event'],
+        ['include[]', 'event'],
+      ],
+      false,
+    ],
+    ['/api/calendars/7/appointments/12', [['include', 'event']], false],
+    ['/api/calendars/7/appointments/12', [['from', '2026-12-01']], false],
+    ['/api/calendars/7/appointments', [['include[]', 'event']], false],
+    ['/api/calendars/8/appointments/12', [['include[]', 'event']], false],
+    ['/api/bookings/12', [['include[]', 'event']], false],
   ])('decides %s with %j: %s', (path, query, inside) => {
     expect(insideCalendarArea(path, query, area)).toBe(inside);
   });

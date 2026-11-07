@@ -761,6 +761,47 @@ describe('the state of an appointment for a plan', () => {
     ],
     ['text beside the appointment', { notice: 'Hinweis' }, {}, false],
     ['the described meta', {}, { meta: { createdPerson: { id: 3 } } }, false],
+    // The legacy field mappings every answer carries are no part (F52);
+    // anything else under that key, or such texts under another, is.
+    [
+      'the legacy field mappings in the appointment',
+      {},
+      {
+        '@deprecated': {
+          additions: 'Zusatz',
+          caption: 'Titel',
+          note: 'Notiz',
+          information: 'Hinweis',
+        },
+      },
+      false,
+    ],
+    [
+      'legacy field mappings of the fields beside the appointment',
+      { '@deprecated': { additionalInfos: 'Hinweise' } },
+      {},
+      false,
+    ],
+    [
+      'texts under @deprecated that name no field of the object',
+      {},
+      { '@deprecated': { caption: 'Titel', eventUrl: 'x' } },
+      true,
+    ],
+    [
+      'texts under @deprecated that name a field of another object',
+      { '@deprecated': { caption: 'Titel' } },
+      {},
+      true,
+    ],
+    [
+      'an object in the legacy field mappings',
+      {},
+      { '@deprecated': { caption: { id: 3 } } },
+      true,
+    ],
+    ['a list as legacy field mappings', {}, { '@deprecated': ['x'] }, true],
+    ['texts under another unknown key', {}, { legacy: { caption: 'b' } }, true],
   ])('judges %s', async (_, beside, inside, linked) => {
     const { double, writes, ctx } = setup();
     const answer = stateAnswer(inside);

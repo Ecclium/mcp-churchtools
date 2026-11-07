@@ -14,6 +14,7 @@ import {
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createChurchToolsClient } from './client.js';
+import { storedWikiText } from './wiki-writes.js';
 import {
   wikiPageCreateBodySchema,
   wikiPageUpdateBodySchema,
@@ -154,7 +155,7 @@ describe('creating a page', () => {
       ctx(),
       4,
       'Dienstplan',
-      '# Dienstplan\n\n- Ä und ö\n',
+      '# Dienstplan\n\n- Ä und ö',
     );
     expect(created).toEqual({
       guid,
@@ -170,7 +171,7 @@ describe('creating a page', () => {
     expect(call?.searchParams).toEqual({});
     expect(call?.headers['content-type']).toBe('application/json');
     expect(call?.body).toBe(
-      '{"title":"Dienstplan","text":"# Dienstplan\\n\\n- Ä und ö\\n","isMarkdown":true}',
+      '{"title":"Dienstplan","text":"# Dienstplan\\n\\n- Ä und ö","isMarkdown":true}',
     );
     // The body fits the schema the contract check compares, and has no
     // field besides.
@@ -358,6 +359,10 @@ describe('creating a page', () => {
     ['a text of line breaks and tabs only', 4, 'Dienstplan', '\n\t\n'],
     ['a text with a lone surrogate', 4, 'Dienstplan', 'Text\udc00'],
     ['a text that is no text', 4, 'Dienstplan', null],
+    // ChurchTools would store these without their ends (F51).
+    ['a text with a line break at the end', 4, 'Dienstplan', 'Text\n'],
+    ['a text with a space at the start', 4, 'Dienstplan', ' Text'],
+    ['a text with a vertical tab at the end', 4, 'Dienstplan', 'Text\v'],
   ])(
     'refuses %s with validation before it asks ChurchTools',
     async (_, categoryId, title, text) => {
@@ -402,7 +407,30 @@ describe('creating a page', () => {
   });
 });
 
+describe('the form in which ChurchTools stores a text', () => {
+  it.each([
+    ['# Plan\n', '# Plan'],
+    ['\n \t# Plan\r\n\v ', '# Plan'],
+    ['# Plan\n\nText', '# Plan\n\nText'],
+    // What `trim` of PHP leaves stays, also at the ends.
+    ['\u00a0# Plan\u3000', '\u00a0# Plan\u3000'],
+    ['Text\f', 'Text\f'],
+    [' \n ', ''],
+  ])('stores %j as %j', (text, stored) => {
+    expect(storedWikiText(text)).toBe(stored);
+  });
+});
+
 describe('changing a page', () => {
+  it('sends a text that ends in white space ChurchTools keeps', async () => {
+    const { double, writes, ctx } = setup();
+    double
+      .intercept({ path: pagePath, method: 'PATCH' })
+      .reply(200, '{}', json);
+    await writes.updateWikiPage(ctx(), 4, guid, 'Neu\u00a0');
+    expect(double.calls()[0]?.body).toBe('{"text":"Neu\u00a0"}');
+  });
+
   it('sends PATCH with exactly the text and reads nothing of the answer', async () => {
     const { double, writes, ctx, lines } = setup();
     double
@@ -468,6 +496,8 @@ describe('changing a page', () => {
     ['an empty text', 4, guid, ''],
     ['a text of spaces only, which would empty the page', 4, guid, ' \n '],
     ['a text above 64 KiB', 4, guid, 'a'.repeat(65_537)],
+    ['a text with a line break at the end', 4, guid, 'T\n'],
+    ['a text with a carriage return at the start', 4, guid, '\rT'],
   ])(
     'refuses %s with validation before it asks ChurchTools',
     async (_, categoryId, page, text) => {
