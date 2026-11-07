@@ -243,8 +243,10 @@ export function createChurchTools(config: StandInConfig): {
   });
 
   // An appointment as ChurchTools stores it: a single appointment with
-  // nothing linked, so that no key the core does not know holds a value
-  // (calendar-writes.ts, appointmentKeys).
+  // nothing linked. Like the answers of ChurchTools to creating and reading
+  // an appointment it carries the legacy field mappings under a key the document does not
+  // declare there, which a change keeps (F52); the core must not take them
+  // for a linked part.
   const storedAppointment = (entry: Appointment) => ({
     id: entry.id,
     version: entry.version,
@@ -269,6 +271,12 @@ export function createChurchTools(config: StandInConfig): {
     signup: null,
     onBehalfOfPid: null,
     meta: metaOf(entry),
+    '@deprecated': {
+      additions: 'additionals',
+      caption: 'title',
+      note: 'description',
+      information: 'subtitle',
+    },
   });
 
   const storedBooking = (entry: Booking) => ({
