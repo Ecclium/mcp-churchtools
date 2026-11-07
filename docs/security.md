@@ -8,7 +8,7 @@
 - Die Maskierung begrenzt den Schaden, sie anonymisiert nicht. Daten aus ChurchTools lassen auf die Religionszugehörigkeit einer Person schliessen.
 - ChurchTools setzt die Rechte durch. Ecclium liest mit den Rechten seines Dienstkontos und nur mit ihnen. Je enger Sie das Konto halten, desto weniger kann Ecclium herausgeben ([Dienstkonto](betrieb/dienstkonto.md)).
 - Die Tools der Bereiche geben nur feste Felder weiter. Mit dem Toolset `api` gibt Ecclium dagegen ganze Antworten von ChurchTools weiter, mit allem, was die Rechte des Kontos öffnen (unten, «Lesender Zugriff auf die API»).
-- Mit der Voreinstellung `ECCLIUM_READ_ONLY=true` liest Ecclium nur. Mit `false` und dem Toolset `wiki` bietet der Server `ct_wiki_page_create`, `ct_wiki_page_update` und `ct_wiki_page_append_section` an. Jedes schreibt erst nach einer Bestätigung: einer Rückfrage im Client, dem Echo oder einer Freigabe aus der Warteschlange (ADR 0029).
+- Mit der Voreinstellung `ECCLIUM_READ_ONLY=true` liest Ecclium nur. Mit `false` und dem Toolset `wiki` bietet der Server `ct_wiki_page_create`, `ct_wiki_page_update` und `ct_wiki_page_append_section` an, mit dem Toolset `calendars` `ct_appointments_create`, `ct_appointments_update` und `ct_bookings_create`. Jedes schreibt erst nach einer Bestätigung: einer Rückfrage im Client, dem Echo oder einer Freigabe aus der Warteschlange (ADR 0029). Das Ändern eines Termins und eine Buchungsanfrage bestätigt das Echo nie, weil ChurchTools dabei Menschen ausserhalb des Clients benachrichtigt oder benachrichtigen kann, bei einer Buchungsanfrage die Verwalter der Ressource sofort per Mail.
 
 ## Andere Tools im selben Client
 
