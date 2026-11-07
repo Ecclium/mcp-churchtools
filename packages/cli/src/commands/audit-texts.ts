@@ -18,6 +18,7 @@ import {
   type AuditObjectHit,
   type AuditSummary,
   type AuditVerifyReport,
+  maxAnchorEntries,
   maxAnchors,
   maxShownHits,
 } from '@ecclium/mcp-churchtools-core/audit';
@@ -68,7 +69,8 @@ const findingTexts: Readonly<Record<AuditFindingKind, string>> = Object.freeze({
     'Die Datei endet vor der Zeile, die der Anker im Log nennt. Sie wurde gekürzt.',
   anchor_extended:
     'Nach der Zeile, die der Anker im Log nennt, stehen weitere Zeilen.',
-  anchor_conflict: 'Das Log nennt zwei verschiedene Anker für diese Datei.',
+  anchor_conflict:
+    'Das Log nennt zwei verschiedene Anker für dieselbe Zeile dieser Datei.',
   file_missing:
     'Ein Anker im Log nennt diese Datei, sie fehlt aber im Ordner, und ihre Frist nach ‹ECCLIUM_AUDIT_RETENTION_MONTHS› ist nicht abgelaufen. Prüfen Sie, ob diese Frist die des Servers ist und das Log zu diesem Zustandsordner gehört.',
   file_unsafe:
@@ -180,7 +182,7 @@ export function renderVerifyReport(
     );
     if (anchors.dropped > 0) {
       lines.push(
-        `  Anker übergangen, weil das Log mehr als ${formatNumber(maxAnchors)} Dateien nennt: ${formatNumber(anchors.dropped)}`,
+        `  Anker übergangen, weil das Log mehr als ${formatNumber(maxAnchors)} Dateien oder ${formatNumber(maxAnchorEntries)} Anker nennt: ${formatNumber(anchors.dropped)}`,
       );
     }
   }
@@ -206,7 +208,7 @@ export function renderVerifyReport(
     );
   } else if ((anchors?.dropped ?? 0) > 0) {
     lines.push(
-      `Ergebnis: Das Log nennt Anker zu mehr als ${formatNumber(maxAnchors)} Dateien, Ecclium hat die übrigen nicht geprüft und kann nicht sagen, ob jede Datei zu ihrem Anker passt. Prüfen Sie mit einem Log über einen kürzeren Zeitraum.`,
+      `Ergebnis: Das Log nennt Anker zu mehr als ${formatNumber(maxAnchors)} Dateien oder mehr als ${formatNumber(maxAnchorEntries)} Anker, Ecclium hat die übrigen nicht geprüft und kann nicht sagen, ob jede Datei zu ihrem Anker passt. Prüfen Sie mit einem Log über einen kürzeren Zeitraum.`,
     );
   } else if (total > 0) {
     lines.push(

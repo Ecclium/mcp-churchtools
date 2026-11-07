@@ -49,11 +49,17 @@ const maxWriteStateBytes = 1024 * 1024;
 
 /**
  * What a page of the run is for: the three pages for the web editor, by
- * the name the output uses, the cases of 05, or the page of 12 that is
- * addressed under the path of another category.
+ * the name the output uses, the cases of 05, the page of 12 that is
+ * addressed under the path of another category, or the page the server of
+ * Ecclium created in the smoke test for writing, which 07 removes.
  */
 export type PageRole =
-  'markdown1' | 'markdown2' | 'standardformat' | 'faelle' | 'kategorie';
+  | 'markdown1'
+  | 'markdown2'
+  | 'standardformat'
+  | 'faelle'
+  | 'kategorie'
+  | 'smoke';
 
 const roles: readonly string[] = [
   'markdown1',
@@ -61,6 +67,7 @@ const roles: readonly string[] = [
   'standardformat',
   'faelle',
   'kategorie',
+  'smoke',
 ] satisfies PageRole[];
 
 /** The state of a page after 05-wiki-write, for the comparison in 06. */

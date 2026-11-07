@@ -66,6 +66,10 @@ describe('checkNodeEnvironment', () => {
 });
 
 describe('spikeVariables', () => {
+  it('holds the state file of appointments of the smoke test for writing, so its path stays out of every output', () => {
+    expect(spikeVariables).toContain('ECCLIUM_SPIKE_WRITE_CALENDAR_STATE_FILE');
+  });
+
   it('holds the IDs of the probe that reads persons, so their values stay out of every output', () => {
     expect(spikeVariables).toEqual(
       expect.arrayContaining([

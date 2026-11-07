@@ -253,10 +253,10 @@ describe('ecclium audit verify', () => {
 
     expect(result.code).toBe(exitCodes.dataError);
     expect(result.stdout).toContain(
-      "  Anker übergangen, weil das Log mehr als 100'000 Dateien nennt: 1",
+      "  Anker übergangen, weil das Log mehr als 100'000 Dateien oder 1'000'000 Anker nennt: 1",
     );
     expect(result.stdout.at(-1)).toMatch(
-      /^Ergebnis: Das Log nennt Anker zu mehr als 100'000 Dateien/,
+      /^Ergebnis: Das Log nennt Anker zu mehr als 100'000 Dateien oder mehr als 1'000'000 Anker,/,
     );
   });
 

@@ -334,6 +334,55 @@ describe('verifyAuditFiles and the anchors', () => {
     expect(report.findings).toEqual([]);
   });
 
+  // The anchors a server logs after each write: one for each of the first
+  // lines, the anchor of the last line apart (ADR 0028).
+  const withEarlier = (count: number): AuditAnchorSet => ({
+    ...anchorSet([anchor]),
+    earlier: new Map([
+      [
+        name,
+        lines
+          .slice(0, count)
+          .map((_, index) => anchorOf(name, lines.slice(0, index + 1))),
+      ],
+    ]),
+  });
+
+  it('matches a file whose lines fit every anchor after a write', () => {
+    const report = verify(folderOf({ [name]: textOf(lines) }), withEarlier(3));
+
+    expect(report).toMatchObject({
+      anchors: 1,
+      anchorsMatched: 1,
+      findings: [],
+    });
+  });
+
+  it('finds a changed line that an earlier anchor names', () => {
+    const changed = [...lines];
+    changed[1] = (changed[1] ?? '').replace('"n":2', '"n":9');
+
+    const report = verify(
+      folderOf({ [name]: textOf(changed) }),
+      withEarlier(3),
+    );
+
+    expect(report.findings).toContainEqual({
+      kind: 'anchor_mismatch',
+      file: name,
+    });
+    expect(report.anchorsMatched).toBe(0);
+  });
+
+  it('finds a file cut before the line of an earlier anchor', () => {
+    const report = verify(
+      folderOf({ [name]: textOf(lines.slice(0, 2)) }),
+      withEarlier(3),
+    );
+
+    expect(report.findings).toEqual([{ kind: 'anchor_truncated', file: name }]);
+  });
+
   it('finds a changed last line only with its anchor', () => {
     const changed = [...lines];
     changed[3] = (changed[3] ?? '').replace('"n":4', '"n":7');
@@ -560,23 +609,75 @@ describe('createAnchorCollector', () => {
   const lineOf = (file: string, seq: number, hash: string): string =>
     `{"ts":"2026-10-31T12:00:00.000Z","level":"info","event":"audit_chain_anchor","file":"${file}","seq":${String(seq)},"hash":"${hash}"}`;
 
-  it('takes each anchor once and sets aside files with two', () => {
+  it('takes each anchor once and sets aside files with two for one seq', () => {
     const collector = createAnchorCollector();
 
     expect(collector.add(lineOf(nameOf(1), 2, sha256('a')))).toBe(true);
     expect(collector.add(lineOf(nameOf(1), 2, sha256('a')))).toBe(true);
     expect(collector.add('{"ts":"x","event":"other"}')).toBe(false);
-    collector.add(lineOf(nameOf(2), 2, sha256('a')));
-    collector.add(lineOf(nameOf(2), 3, sha256('a')));
     collector.add(lineOf(nameOf(3), 1, sha256('a')));
     collector.add(lineOf(nameOf(3), 1, sha256('b')));
     collector.add(lineOf(nameOf(3), 1, sha256('c')));
+    collector.add(lineOf(nameOf(3), 2, sha256('d')));
 
     const result = collector.result();
     expect([...result.anchors.keys()]).toEqual([nameOf(1)]);
-    expect(result.conflicts).toEqual([nameOf(2), nameOf(3)]);
+    expect(result.earlier?.size).toBe(0);
+    expect(result.conflicts).toEqual([nameOf(3)]);
     expect(result.dropped).toBe(0);
     expect(Object.isFrozen(result)).toBe(true);
+  });
+
+  it('keeps every anchor of a file, one after each write, the last apart (ADR 0028)', () => {
+    const collector = createAnchorCollector();
+    // Out of order, as two logs given one after the other may hold them.
+    collector.add(lineOf(nameOf(2), 5, sha256('e')));
+    collector.add(lineOf(nameOf(2), 2, sha256('b')));
+    collector.add(lineOf(nameOf(2), 3, sha256('c')));
+    collector.add(lineOf(nameOf(2), 3, sha256('c')));
+
+    const result = collector.result();
+    expect(result.anchors.get(nameOf(2))).toEqual({
+      file: nameOf(2),
+      seq: 5,
+      hash: sha256('e'),
+    });
+    expect(result.earlier?.get(nameOf(2))).toEqual([
+      { file: nameOf(2), seq: 2, hash: sha256('b') },
+      { file: nameOf(2), seq: 3, hash: sha256('c') },
+    ]);
+    expect(result.conflicts).toEqual([]);
+  });
+
+  it('counts the anchors beyond the most it keeps in all', () => {
+    const collector = createAnchorCollector({ files: 10, entries: 3 });
+    for (let seq = 1; seq <= 5; seq += 1) {
+      collector.add(lineOf(nameOf(1), seq, sha256(String(seq))));
+    }
+    // A known anchor again is no new one and drops nothing.
+    collector.add(lineOf(nameOf(1), 1, sha256('1')));
+
+    collector.add(lineOf(nameOf(2), 1, sha256('1')));
+
+    const result = collector.result();
+    // The first file lost its later anchors, so none of its anchors count:
+    // the third would pass for its last and report its later lines.
+    expect(result.anchors.has(nameOf(1))).toBe(false);
+    expect(result.earlier?.has(nameOf(1))).toBe(false);
+    expect(result.anchors.has(nameOf(2))).toBe(false);
+    expect(result.dropped).toBe(3);
+  });
+
+  it('keeps the anchors of a file that lost none to the limits', () => {
+    const collector = createAnchorCollector({ files: 1, entries: 10 });
+    collector.add(lineOf(nameOf(1), 1, sha256('1')));
+    collector.add(lineOf(nameOf(1), 2, sha256('2')));
+    collector.add(lineOf(nameOf(2), 1, sha256('1')));
+
+    const result = collector.result();
+    expect(result.anchors.get(nameOf(1))?.seq).toBe(2);
+    expect(result.anchors.has(nameOf(2))).toBe(false);
+    expect(result.dropped).toBe(1);
   });
 
   it('counts the anchors beyond the most files it keeps', () => {
@@ -776,6 +877,60 @@ describe('verifyAuditFiles with the writer and the reader', () => {
       ['tool_call', 'ct_wiki_page_update', 1],
       ['undo', undefined, 1],
     ]);
+  });
+
+  it('finds nothing in a file with an anchor after every write (ADR 0028)', () => {
+    const folder = join(base, 'anchors');
+    mkdirSync(folder, { mode: 0o700 });
+    chmodSync(folder, 0o700);
+    const log: string[] = [];
+    const logger = createLogger({
+      writer: { write: (line) => log.push(line) > 0 },
+      clock,
+      minLevel: 'info',
+      anchors: true,
+    });
+    const opened = openAuditFile({
+      stateDir: folder,
+      clock,
+      pid: 501,
+      retentionMonths: 12,
+    });
+    if (!opened.ok) throw new Error(opened.code);
+    opened.writer.attach({
+      anchor: ({ file, seq, hash }) => {
+        logger.info('audit_chain_anchor', { file, seq, hash });
+      },
+      swept: () => undefined,
+    });
+    for (let index = 1; index <= 3; index += 1) {
+      opened.writer.write(`{"v":1,"pid":501,"n":${String(index)}}`);
+      opened.writer.anchor();
+    }
+    opened.writer.write('{"v":1,"pid":501,"n":4}');
+    opened.writer.close();
+    const collector = createAnchorCollector();
+    for (const line of log) collector.add(line);
+    const folderRead = openAuditFolder({ stateDir: folder });
+    if (!folderRead.ok) throw new Error(folderRead.code);
+
+    const report = verifyAuditFiles({
+      folder: folderRead.folder,
+      anchors: collector.result(),
+      retentionMonths: 12,
+      clock,
+    });
+
+    expect(
+      collector.result().earlier?.get(folderRead.folder.names[0] ?? ''),
+    ).toHaveLength(3);
+    expect(report).toMatchObject({
+      checked: 1,
+      lines: 4,
+      anchors: 1,
+      anchorsMatched: 1,
+      findings: [],
+    });
   });
 
   it('finds nothing in a file with a piece and a repeated seq, as the writer leaves them', () => {
