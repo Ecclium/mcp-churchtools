@@ -289,6 +289,20 @@ export const hints = {
     'Abbruch: Unerwarteter Fehler im Smoke-Test. Es wurde nichts aus den Antworten ausgegeben.',
   smokeZurueckgehalten:
     'Ausgabe zurückgehalten: An den genannten Stellen stünden womöglich Daten aus der Instanz. Nichts davon wurde ausgegeben.',
+  schreibSmokeAufruf:
+    'Abbruch: Der Smoke-Test für das Schreiben nimmt keine Argumente. Er liest alles aus der Umgebung, siehe docs/betrieb/stdio.md.',
+  schreibSmokeKalenderFehlt:
+    'Abbruch: Der Smoke-Test für das Schreiben braucht ECCLIUM_SPIKE_WRITE_CALENDAR_ID und ECCLIUM_SPIKE_WRITE_RESOURCE_ID. Es wurde nichts geschrieben.',
+  schreibSmokeTokenRelativ:
+    'Abbruch: ECCLIUM_SPIKE_WRITE_TOKEN_FILE muss ein absoluter Pfad sein, ohne ~ und ohne Variable.',
+  schreibSmokeKalenderStateFehlt:
+    'Abbruch: ECCLIUM_SPIKE_WRITE_CALENDAR_STATE_FILE fehlt. Dort hält der Smoke-Test die Termine und Buchungen fest, die 11-calendar-write später entfernt.',
+  schreibSmokeStateGleich:
+    'Abbruch: ECCLIUM_SPIKE_WRITE_STATE_FILE und ECCLIUM_SPIKE_WRITE_CALENDAR_STATE_FILE nennen dieselbe Datei. Der Smoke-Test braucht zwei neue Dateien.',
+  schreibSmokeNamen:
+    'Abbruch: Der Wächter fand die Namen von Schreibbereich, Kalender oder Ressource nicht in der dokumentierten Form. Es wurde nichts geschrieben.',
+  schreibSmokeAbgebrochen:
+    'Der Server hat womöglich schon geschrieben. Räumen Sie mit 07-wiki-cleanup und der Schreib-State-Datei auf und mit 11-calendar-write und der Kalender-State-Datei.',
   netz: 'Abbruch: Die Instanz ist nicht erreichbar. Code siehe oben.',
   antwort:
     'Abbruch: Die Instanz hat eine Antwort geliefert, die die Probe nicht verarbeiten kann. Code siehe oben.',

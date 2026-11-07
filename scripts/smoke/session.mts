@@ -93,21 +93,42 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
 /**
+ * Answers a request the server sends to the client, such as the question
+ * before a write in the 2025 era, which the server asks with
+ * `elicitation/create` (ADR 0029, ADR 0053).
+ *
+ * @param method - The method of the request.
+ * @param params - Its params, as the server sent them.
+ * @returns The result to send back, or `undefined` to answer that the
+ * client does not know the method.
+ */
+export type ServerRequestHandler = (method: string, params: unknown) => unknown;
+
+// The code JSON-RPC defines for a method the receiver does not know.
+const methodNotFound = -32601;
+
+/**
  * Starts the server with exactly the given environment.
  *
  * Nothing of the environment of the smoke test reaches the child, so a
  * variable of the shell can neither break the start nor change what the
  * server does (ADR 0055).
  *
+ * A request of the server goes to `onRequest`. Without it the session
+ * leaves it unanswered, as the smoke test that only reads always did: its
+ * server never asks.
+ *
  * @param command - Executable and arguments.
  * @param env - The whole environment of the child.
  * @param deadlines - How long to wait.
+ * @param onRequest - Answers requests of the server, if given.
  * @returns The session.
  */
 export function startServer(
   command: ServerCommand,
   env: Readonly<Record<string, string>>,
   deadlines: Deadlines = defaultDeadlines,
+  onRequest?: ServerRequestHandler,
 ): Session {
   const child = spawn(command.executable, [...command.args], {
     env: { ...env },
@@ -148,9 +169,20 @@ export function startServer(
       return;
     }
     const id = message['id'];
-    // A request of the server can carry the same number; only an answer
-    // settles a request of the smoke test.
-    if (typeof id !== 'number' || 'method' in message) return;
+    if ('method' in message) {
+      // A request of the server can carry the same number as one of the
+      // smoke test; it settles nothing here and goes to the handler.
+      const method = message['method'];
+      if (
+        onRequest !== undefined &&
+        typeof method === 'string' &&
+        (typeof id === 'number' || typeof id === 'string')
+      ) {
+        answerServer(id, method, message['params']);
+      }
+      return;
+    }
+    if (typeof id !== 'number') return;
     const settle = waiting.get(id);
     if (settle === undefined) return;
     waiting.delete(id);
@@ -190,6 +222,34 @@ export function startServer(
   const send = (message: Record<string, unknown>): void => {
     if (child.stdin.writable) child.stdin.write(`${JSON.stringify(message)}\n`);
   };
+
+  // A handler that throws or knows no answer gets the error of an unknown
+  // method, so the server never waits for an answer that will not come.
+  function answerServer(
+    id: number | string,
+    method: string,
+    params: unknown,
+  ): void {
+    const handler = onRequest;
+    if (handler === undefined) return;
+    void (async () => {
+      let result: unknown;
+      try {
+        result = await handler(method, params);
+      } catch {
+        result = undefined;
+      }
+      send(
+        result === undefined
+          ? {
+              jsonrpc: '2.0',
+              id,
+              error: { code: methodNotFound, message: 'Method not found' },
+            }
+          : { jsonrpc: '2.0', id, result },
+      );
+    })();
+  }
 
   return {
     request(method, params) {
