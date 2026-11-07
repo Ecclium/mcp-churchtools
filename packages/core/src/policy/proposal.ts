@@ -1,9 +1,9 @@
 /**
  * A proposal for the interactive part of the policy (ADR 0032), as
  * `ecclium policy init --interactive` writes it to stdout for the operator
- * to check: one entry per category of the wiki that a write tool reached,
- * with its name from ChurchTools, the tools seen on it and a daily limit
- * from what the audit shows.
+ * to check: one entry per category of the wiki, calendar and resource
+ * that a write tool reached, with its name from ChurchTools, the tools
+ * seen on it and a daily limit from what the audit shows.
  *
  * The text is YAML that the loader of the policy reads as it is, written
  * here without the library for YAML, which only the reader of the policy
@@ -12,27 +12,31 @@
  * escape of YAML, so that the command line passes the text to a terminal
  * and the loader reads back the name as ChurchTools gave it. A name the
  * policy would refuse, and a category without a name, stand only as a
- * comment.
+ * comment. So does a calendar or a resource, which the proposal names
+ * after the categories, each kind sorted by ID.
  *
  * @packageDocumentation
  */
 import { toolNamePattern } from '../logger/index.js';
 import { policyLimits } from './schema.js';
 
-/** A category of the wiki that a write tool reached, as the audit shows. */
-export interface ProposedCategory {
-  /** The ID of the category. */
+/**
+ * A category of the wiki, a calendar or a resource that a write tool
+ * reached, as the audit shows.
+ */
+export interface ProposedTarget {
+  /** The ID of the category, calendar or resource. */
   readonly id: number;
   /**
-   * Its name in ChurchTools, or undefined when the list of categories of
-   * the account does not name it.
+   * Its name in ChurchTools, or undefined when the list of the account
+   * does not name it.
    */
   readonly name: string | undefined;
   /**
    * Whether the redaction changed the name before the command line saw
    * it, by removing hidden characters or masking a part: then the name
-   * above is not the one ChurchTools compares, and the category stands
-   * only as a comment.
+   * above is not the one ChurchTools compares, and the target stands only
+   * as a comment.
    */
   readonly nameChanged?: boolean;
   /** The write tools seen on it. */
@@ -44,10 +48,17 @@ export interface ProposedCategory {
   readonly highestPerDay: number;
 }
 
+/** A category of the wiki that a write tool reached, as the audit shows. */
+export type ProposedCategory = ProposedTarget;
+
 /** What a proposal is made of. */
 export interface ProposalInput {
   /** The categories, in any order. */
-  readonly categories: readonly ProposedCategory[];
+  readonly categories: readonly ProposedTarget[];
+  /** The calendars, in any order; none when left out. */
+  readonly calendars?: readonly ProposedTarget[];
+  /** The resources, in any order; none when left out. */
+  readonly resources?: readonly ProposedTarget[];
   /** The read budget of the policy in force, kept in the proposal. */
   readonly readBudgetPerDay: number;
   /** The contact values of the policy in force, kept in the proposal. */
@@ -122,12 +133,40 @@ const nameFits = (name: string): boolean =>
 
 const dayPattern = /^\d{4}-\d{2}-\d{2}$/;
 
+/** How the proposal names the targets of one kind in its comments. */
+interface KindWords {
+  /** The kind as the policy writes it. */
+  readonly kind: 'wiki_category' | 'calendar' | 'resource';
+  /** The noun before the ID of a target. */
+  readonly noun: string;
+  /** The possessive of its name, after the gender of the noun. */
+  readonly its: string;
+}
+
+const categoryWords: KindWords = {
+  kind: 'wiki_category',
+  noun: 'Kategorie',
+  its: 'Ihr',
+};
+const calendarWords: KindWords = {
+  kind: 'calendar',
+  noun: 'Kalender',
+  its: 'Sein',
+};
+const resourceWords: KindWords = {
+  kind: 'resource',
+  noun: 'Ressource',
+  its: 'Ihr',
+};
+
 /**
- * Writes the proposal. The categories are sorted by ID, the tools of each
- * by name, each once; a tool whose name the policy would refuse is left
- * out. At most 200 entries, the most a part of the policy holds.
+ * Writes the proposal. The categories come first, then the calendars and
+ * the resources, each kind sorted by ID, the tools of each by name, each
+ * once; a tool whose name the policy would refuse is left out. At most 200
+ * entries, the most a part of the policy holds. A proposal of categories
+ * alone keeps the words of one about the wiki.
  *
- * @param input - The categories, the read budget and the days read.
+ * @param input - The targets, the read budget and the days read.
  * @returns The text, lines ending in a line break.
  * @example
  * ```ts
@@ -153,8 +192,14 @@ export function renderPolicyProposal(input: ProposalInput): string {
   } else {
     lines.push('# Grundlage: Das Audit enthält keine Zeile.');
   }
+  const calendars = input.calendars ?? [];
+  const resources = input.resources ?? [];
+  // Only the wiki: the words of a proposal before calendars and resources.
+  const wikiOnly = calendars.length === 0 && resources.length === 0;
   lines.push(
-    '# Ein Eintrag je Kategorie des Wikis, die das Audit in einer Zeile eines Schreib-Tools nennt, auch bei abgelehnten Versuchen.',
+    wikiOnly
+      ? '# Ein Eintrag je Kategorie des Wikis, die das Audit in einer Zeile eines Schreib-Tools nennt, auch bei abgelehnten Versuchen.'
+      : '# Ein Eintrag je Kategorie des Wikis, je Kalender und je Ressource, die das Audit in einer Zeile eines Schreib-Tools nennt, auch bei abgelehnten Versuchen.',
     `# maxPerDay ist das Doppelte des höchsten Tageswerts eines Tools, mindestens ${String(minProposedPerDay)}, ohne abgelehnte und übersprungene Aufrufe.`,
     '# Prüfen Sie jeden Eintrag, bevor Sie die Datei mit ECCLIUM_POLICY_FILE einsetzen.',
     'schema: policy.v1',
@@ -162,31 +207,42 @@ export function renderPolicyProposal(input: ProposalInput): string {
   );
   const entries: string[] = [];
   const skipped: string[] = [];
-  const sorted = [...input.categories].sort((a, b) => a.id - b.id);
+  const sorted = [
+    ...[...input.categories]
+      .sort((a, b) => a.id - b.id)
+      .map((target) => ({ target, words: categoryWords })),
+    ...[...calendars]
+      .sort((a, b) => a.id - b.id)
+      .map((target) => ({ target, words: calendarWords })),
+    ...[...resources]
+      .sort((a, b) => a.id - b.id)
+      .map((target) => ({ target, words: resourceWords })),
+  ];
   let count = 0;
   let more = 0;
-  for (const category of sorted) {
-    const id = String(category.id);
-    const tools = [...new Set(category.tools)]
+  for (const { target, words } of sorted) {
+    const id = String(target.id);
+    const { noun, its } = words;
+    const tools = [...new Set(target.tools)]
       .filter((tool) => tool.length <= 63 && toolNamePattern.test(tool))
       .sort()
       .slice(0, policyLimits.tools);
-    const { name } = category;
+    const { name } = target;
     if (name === undefined) {
       skipped.push(
-        `    # Kategorie ${id}: ChurchTools nennt dem Konto keinen Namen, darum kein Eintrag.`,
+        `    # ${noun} ${id}: ChurchTools nennt dem Konto keinen Namen, darum kein Eintrag.`,
       );
       continue;
     }
-    if (category.nameChanged === true) {
+    if (target.nameChanged === true) {
       skipped.push(
-        `    # Kategorie ${id}: Ihr Name kam verändert an, ohne unsichtbare Zeichen oder mit einem maskierten Teil, darum kein Eintrag. Tragen Sie ihn von Hand ein.`,
+        `    # ${noun} ${id}: ${its} Name kam verändert an, ohne unsichtbare Zeichen oder mit einem maskierten Teil, darum kein Eintrag. Tragen Sie ihn von Hand ein.`,
       );
       continue;
     }
     if (!nameFits(name)) {
       skipped.push(
-        `    # Kategorie ${id}: Ihr Name passt nicht in die Richtlinie, darum kein Eintrag.`,
+        `    # ${noun} ${id}: ${its} Name passt nicht in die Richtlinie, darum kein Eintrag.`,
       );
       continue;
     }
@@ -198,22 +254,22 @@ export function renderPolicyProposal(input: ProposalInput): string {
     count += 1;
     // A target that the audit shows only refused came from a wish, maybe
     // of the model, not from a write; the operator decides on it.
-    if (category.highestPerDay === 0) {
+    if (target.highestPerDay === 0) {
       entries.push(
         '    # Nur abgelehnte oder übersprungene Versuche im Audit: Prüfen Sie, ob Ecclium hier schreiben soll.',
       );
     }
     entries.push(
-      `    - target: { kind: wiki_category, id: ${id}, name: ${quoted(name)} }`,
+      `    - target: { kind: ${words.kind}, id: ${id}, name: ${quoted(name)} }`,
       `      tools: [${tools.join(', ')}]`,
-      `      maxPerDay: ${String(proposedMaxPerDay(category.highestPerDay))}`,
+      `      maxPerDay: ${String(proposedMaxPerDay(target.highestPerDay))}`,
     );
   }
   // The targets come before the read budget, so that a text cut off after
   // `targets:` is no file the loader takes. An empty list would allow every
-  // confirmed write: it stands only when the audit names no category, and
-  // when every category it names fell out, a placeholder keeps the file
-  // from loading until the operator enters the targets.
+  // confirmed write: it stands only when the audit names no target, and
+  // when every target it names fell out, a placeholder keeps the file from
+  // loading until the operator enters the targets.
   if (count > 0) {
     lines.push('  targets:', ...entries);
   } else if (sorted.length === 0) {
@@ -223,7 +279,7 @@ export function renderPolicyProposal(input: ProposalInput): string {
     );
   } else {
     lines.push(
-      '  # Keine Kategorie liess sich vorschlagen, siehe die Kommentare unten. Eine leere Liste erlaubte jeden bestätigten Schreibvorgang, darum nimmt Ecclium diese Datei erst an, wenn Sie die Ziele von Hand eintragen.',
+      `  # ${wikiOnly ? 'Keine Kategorie' : 'Kein Ziel'} liess sich vorschlagen, siehe die Kommentare unten. Eine leere Liste erlaubte jeden bestätigten Schreibvorgang, darum nimmt Ecclium diese Datei erst an, wenn Sie die Ziele von Hand eintragen.`,
       '  targets:',
       '    - ERSETZEN',
     );
@@ -231,7 +287,7 @@ export function renderPolicyProposal(input: ProposalInput): string {
   lines.push(...skipped);
   if (more > 0) {
     lines.push(
-      `    # Weitere ${String(more)} Kategorien passen nicht mehr in die ${String(policyLimits.entries)} Einträge eines Teils.`,
+      `    # Weitere ${String(more)} ${wikiOnly ? 'Kategorien' : 'Ziele'} passen nicht mehr in die ${String(policyLimits.entries)} Einträge eines Teils.`,
     );
   }
   lines.push(`  readBudgetPerDay: ${String(input.readBudgetPerDay)}`);

@@ -59,6 +59,8 @@ const variableOf = (code: ConfigProblemCode): string => {
     case 'subject_invalid':
     case 'subject_reserved':
       return 'ECCLIUM_STDIO_SUBJECT';
+    case 'time_zone_invalid':
+      return 'ECCLIUM_TIME_ZONE';
     case 'unknown_variable':
       return 'ECCLIUM_REDONLY';
     default:

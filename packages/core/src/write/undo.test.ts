@@ -2,7 +2,13 @@ import type { IsoDate } from '@ecclium/mcp-churchtools-plugin-api';
 import { describe, expect, it } from 'vitest';
 
 import { contentHashOf } from './plan-hash.js';
-import { isAsLeft, undoTargetOf, withdrawalNoteOf } from './undo.js';
+import {
+  isAsLeft,
+  undoOf,
+  undoSubjectOf,
+  undoTargetOf,
+  withdrawalNoteOf,
+} from './undo.js';
 
 const guid = '00000000-0000-4000-8000-0000000000AB';
 const day = '2026-11-02' as IsoDate;
@@ -100,5 +106,121 @@ describe('the target of an undo (ADR 0031)', () => {
     expect(() => withdrawalNoteOf('2026-11-0*' as IsoDate, today)).toThrow(
       TypeError,
     );
+  });
+});
+
+describe('what a snapshot means for its undo', () => {
+  const fieldsHash = contentHashOf(['Probe']);
+  const appointmentFields = {
+    kind: 'appointmentFields',
+    tool: 'ct_appointments_update',
+    calendarId: 8,
+    appointmentId: 21,
+    before: {
+      version: 2,
+      title: 'Gottesdienst',
+      subtitle: null,
+      description: null,
+      startDate: '2026-11-08T09:00:00Z',
+      endDate: '2026-11-08T10:00:00Z',
+      isInternal: false,
+    },
+    after: { version: 3, fieldsHash },
+  } as const;
+  const appointmentCreate = {
+    kind: 'appointmentCreate',
+    tool: 'ct_appointments_create',
+    placeId: 8,
+    fieldsHash,
+  } as const;
+  const bookingCreate = {
+    kind: 'bookingCreate',
+    tool: 'ct_bookings_create',
+    placeId: 13,
+    fieldsHash,
+    startDate: '2026-11-08T09:00:00Z',
+    endDate: '2026-11-08T10:00:00Z',
+  } as const;
+
+  it('gives a write of the wiki with its part after only for a new page', () => {
+    expect(undoOf(changed)).toEqual({ area: 'wiki', snapshot: changed });
+    expect(undoOf(created)).toEqual({ area: 'wiki', snapshot: created });
+    expect(
+      undoOf({
+        ...created,
+        after: { kind: 'appointmentCreated', id: 21, version: 0 },
+      }),
+    ).toEqual({ area: 'wiki', snapshot: { before: created.before, day } });
+  });
+
+  it('gives the change of an appointment with its fields from before', () => {
+    expect(undoOf({ before: appointmentFields, day })).toEqual({
+      area: 'calendar',
+      target: {
+        kind: 'restore',
+        tool: 'ct_appointments_update',
+        calendarId: 8,
+        appointmentId: 21,
+        before: appointmentFields.before,
+        left: { version: 3, fieldsHash },
+      },
+    });
+  });
+
+  it('gives a new appointment or booking with its ID, or only its place', () => {
+    expect(
+      undoOf({
+        before: appointmentCreate,
+        after: { kind: 'appointmentCreated', id: 21, version: 0 },
+        day,
+      }),
+    ).toEqual({
+      area: 'calendar',
+      target: {
+        kind: 'deleteAppointment',
+        tool: 'ct_appointments_create',
+        calendarId: 8,
+        appointmentId: 21,
+        left: { version: 0, fieldsHash },
+      },
+    });
+    expect(
+      undoOf({
+        before: bookingCreate,
+        after: { kind: 'bookingCreated', id: 51, version: 0, statusId: 1 },
+        day,
+      }),
+    ).toEqual({
+      area: 'calendar',
+      target: {
+        kind: 'deleteBooking',
+        tool: 'ct_bookings_create',
+        resourceId: 13,
+        bookingId: 51,
+        left: { version: 0, fieldsHash, statusId: 1 },
+        startDate: '2026-11-08T09:00:00Z',
+        endDate: '2026-11-08T10:00:00Z',
+      },
+    });
+    // A part after of another kind is no ID of this write.
+    expect(
+      undoOf({
+        before: appointmentCreate,
+        after: { kind: 'bookingCreated', id: 51, version: 0, statusId: 1 },
+        day,
+      }),
+    ).toEqual({ area: 'incomplete', place: { kind: 'calendar', key: '8' } });
+    expect(undoOf({ before: bookingCreate, day })).toEqual({
+      area: 'incomplete',
+      place: { kind: 'resource', key: '13' },
+    });
+  });
+
+  it('names the subject of each kind', () => {
+    expect(undoSubjectOf(changed.before)).toBe('page');
+    expect(undoSubjectOf(created.before)).toBe('page');
+    expect(undoSubjectOf(appointmentFields)).toBe('appointment');
+    expect(undoSubjectOf(appointmentCreate)).toBe('newAppointment');
+    expect(undoSubjectOf(bookingCreate)).toBe('newBooking');
   });
 });

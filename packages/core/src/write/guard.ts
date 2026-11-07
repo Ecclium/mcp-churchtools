@@ -32,7 +32,9 @@
  * the rights as advice, the read right before, the clock, a snapshot of
  * its own and the read after. The policy and the content policy do not
  * apply: the operator asked for it, and the text it writes back was on the
- * page before Ecclium wrote.
+ * page before Ecclium wrote. An undo of an appointment or a booking seals
+ * no plan, since no intent deletes and none empties a description, but runs
+ * the same steps; a delete keeps no snapshot and cannot be taken back.
  *
  * **approve** writes what waits in the queue of approvals, for `ecclium
  * queue approve` of the operator (ADR 0029, ADR 0031). It plans the write
@@ -113,6 +115,7 @@ import {
   calendarSentences,
   isCalendarIntent,
   planCalendar,
+  planCalendarUndo,
   type SendOutcome,
 } from './calendar-plan.js';
 import { readIntent } from './intent.js';
@@ -142,10 +145,12 @@ import {
 import { type PlanView, readPlan, sealPlan } from './sealed-plan.js';
 import { serverTimeFits } from './server-clock.js';
 import {
+  type CalendarUndoTarget,
   isAsLeft,
   type SnapshotToUndo,
+  undoOf,
   undoTargetOf,
-  wikiSnapshotOf,
+  type WikiSnapshotToUndo,
 } from './undo.js';
 
 /**
@@ -303,18 +308,33 @@ export interface UndoChange {
 
 /** How an undo ended. */
 export type UndoResult =
-  /** The page holds what the undo would write already. */
+  /**
+   * The target holds what the undo would write already, or a new
+   * appointment or booking is gone already.
+   */
   | { readonly kind: 'unchanged'; readonly target: WriteTarget }
-  /** Someone changed the page since the write; nothing was written. */
+  /** Someone changed the target since the write; nothing was written. */
   | {
       readonly kind: 'changed';
       readonly target: WriteTarget;
       readonly change: UndoChange;
     }
-  /** A new page whose GUID was never kept: only its category is known. */
+  /**
+   * A new page, appointment or booking whose ID was never kept: only its
+   * category, calendar or resource is known.
+   */
   | { readonly kind: 'incomplete'; readonly target: WriteTarget }
   /** Refused or failed before a plan: nothing was written. */
   | { readonly kind: 'refused'; readonly error: EccliumError }
+  /**
+   * A new appointment or booking deleted, and read as gone. A delete keeps
+   * no snapshot and cannot be taken back (ADR 0031).
+   */
+  | {
+      readonly kind: 'deleted';
+      readonly target: WriteTarget;
+      readonly change: UndoChange;
+    }
   /** Planned and committed, with how the commit ended. */
   | {
       readonly kind: 'committed';
@@ -1197,30 +1217,46 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     // The state before the write, kept before the one send: a snapshot
     // that cannot be kept stops the write, so that every write the core
     // sends with snapshots on can be taken back (ADR 0031).
-    let undo: Undo | undefined;
-    if (snapshots !== undefined) {
-      const day = isoDateOf(now);
-      const content = derived.before;
-      try {
-        if (eventId === undefined || day === undefined) {
-          throw new TypeError('No event or no day.');
-        }
-        await snapshots.save(ctx, { eventId, part: 'before', day, content });
-        undo = { eventId, day };
-      } catch {
-        ctx.log.warn('snapshot_failed', { code: 'internal' });
-        return ended(
-          ctx,
-          'failed',
-          refuse('internal', writeSentences.noSnapshot),
-          false,
-          target,
-          path,
-        );
-      }
-    }
+    const undo = await saveBefore(ctx, eventId, now, derived.before);
+    if (undo === 'failed') return noSnapshot(ctx, target, path);
     return derived.send(path, undo);
   };
+
+  // Keeps the part before of the snapshot of a write: where it was kept,
+  // undefined with snapshots off, or failed, which stops the write.
+  const saveBefore = async (
+    ctx: TenantContext,
+    eventId: string | undefined,
+    now: number,
+    content: SnapshotState,
+  ): Promise<Undo | undefined | 'failed'> => {
+    if (snapshots === undefined) return undefined;
+    const day = isoDateOf(now);
+    try {
+      if (eventId === undefined || day === undefined) {
+        throw new TypeError('No event or no day.');
+      }
+      await snapshots.save(ctx, { eventId, part: 'before', day, content });
+      return { eventId, day };
+    } catch {
+      ctx.log.warn('snapshot_failed', { code: 'internal' });
+      return 'failed';
+    }
+  };
+
+  const noSnapshot = (
+    ctx: TenantContext,
+    target: WriteTarget,
+    path: ConfirmationPath,
+  ): CommitResult =>
+    ended(
+      ctx,
+      'failed',
+      refuse('internal', writeSentences.noSnapshot),
+      false,
+      target,
+      path,
+    );
 
   // What a commit rests on, read right before the send: the hash, the time
   // of ChurchTools, the facts the policy names, what the snapshot keeps and
@@ -1593,13 +1629,24 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
   };
 
   const undoOnce = async (request: UndoRequest): Promise<UndoResult> => {
-    const { ctx, eventId, snapshot, overwrite } = request;
-    const stop = stopped(ctx);
+    const stop = stopped(request.ctx);
     if (stop !== undefined) throw stop;
-    // Appointments and bookings are not taken back yet (ADR 0031).
-    const wiki = wikiSnapshotOf(snapshot);
-    if (wiki === undefined)
-      throw refuse('policy_denied', writeSentences.notRun);
+    const found = undoOf(request.snapshot);
+    switch (found.area) {
+      case 'wiki':
+        return undoPage(request, found.snapshot);
+      case 'calendar':
+        return undoCalendar(request, found.target);
+      case 'incomplete':
+        return Object.freeze({ kind: 'incomplete', target: found.place });
+    }
+  };
+
+  const undoPage = async (
+    request: UndoRequest,
+    wiki: WikiSnapshotToUndo,
+  ): Promise<UndoResult> => {
+    const { ctx, eventId, overwrite } = request;
     const found = undoTargetOf(wiki);
     if (!found.ok) {
       return Object.freeze({
@@ -1674,6 +1721,85 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       'undo',
     );
     return Object.freeze({ kind: 'committed', target, result, change });
+  };
+
+  // Takes back a write of an appointment or a booking for the operator
+  // (ADR 0031). No plan is sealed, since no intent deletes and none empties
+  // a description, but the steps of every commit run: the switches, the
+  // rights as advice, the read right before, the clock, the snapshot of a
+  // change, the one send and the read after. The policy does not apply.
+  const undoCalendar = async (
+    request: UndoRequest,
+    undoing: CalendarUndoTarget,
+  ): Promise<UndoResult> => {
+    const { ctx, eventId, overwrite } = request;
+    // The rights of the write taken back, from an intent of its kind; only
+    // the place of the intent counts for them.
+    const asked: CalendarIntent =
+      undoing.kind === 'deleteBooking'
+        ? {
+            kind: 'bookingCreate',
+            resourceId: undoing.resourceId,
+            title: '-',
+            startDate: undoing.startDate,
+            endDate: undoing.endDate,
+          }
+        : {
+            kind: 'appointmentUpdate',
+            calendarId: undoing.calendarId,
+            appointmentId: undoing.appointmentId,
+            baseVersion: 0,
+            title: '-',
+            startDate: '-',
+            endDate: '-',
+          };
+    await checkRights(ctx, asked, withToolMeta(rulesOf(asked), undoMeta));
+    const target: WriteTarget = Object.freeze(
+      undoing.kind === 'deleteBooking'
+        ? {
+            kind: 'booking',
+            key: `${String(undoing.resourceId)}/${String(undoing.bookingId)}`,
+          }
+        : {
+            kind: 'appointment',
+            key: `${String(undoing.calendarId)}/${String(undoing.appointmentId)}`,
+          },
+    );
+    const planned = await planCalendarUndo(calendars, ctx, undoing, overwrite);
+    if (planned.kind === 'unchanged') {
+      return Object.freeze({ kind: 'unchanged', target });
+    }
+    const { change } = planned;
+    if (planned.kind === 'changed') {
+      return Object.freeze({ kind: 'changed', target, change });
+    }
+    // The operator asked for this undo on the command line.
+    const path: ConfirmationPath = 'operator';
+    const committed = (result: CommitResult): UndoResult =>
+      Object.freeze({ kind: 'committed', target, result, change });
+    const now = clock.now();
+    // Writing may have been switched off during the read.
+    const stopNow = stopped(ctx);
+    if (stopNow !== undefined) return committed(denied(stopNow, target, path));
+    if (!serverTimeFits(now, planned.serverTime)) {
+      ctx.log.warn('write_refused', { code: 'policy_denied' });
+      return committed(
+        denied(refuse('policy_denied', writeSentences.clock), target, path),
+      );
+    }
+    // A change keeps a snapshot of its own, a delete none (ADR 0031).
+    let undo: Undo | undefined;
+    if (planned.before !== undefined) {
+      const saved = await saveBefore(ctx, eventId, now, planned.before);
+      if (saved === 'failed') return committed(noSnapshot(ctx, target, path));
+      undo = saved;
+    }
+    const outcome = await planned.send();
+    if (outcome.kind === 'deleted') {
+      ctx.log.info('write_committed');
+      return Object.freeze({ kind: 'deleted', target, change });
+    }
+    return committed(commitOf(ctx, outcome, path, undo));
   };
 
   // Writes an entry of the queue for the operator: planned again from the

@@ -10,6 +10,8 @@ import {
   defaultStdioSubject,
   environmentSchema,
   fitsVariable,
+  isTimeZone,
+  maxTimeZoneLength,
   nodeOptionsVariableName,
   type PlainVariableName,
   plainVariableNames,
@@ -116,6 +118,7 @@ describe('the table of variables', () => {
       ['ECCLIUM_KEYS_DIR', undefined, false, true],
       ['ECCLIUM_SNAPSHOTS', 'on', false, false],
       ['ECCLIUM_WRITE_CONFIRMATION', 'echo-allowed', false, false],
+      ['ECCLIUM_TIME_ZONE', undefined, false, false],
       ['ECCLIUM_AUDIT_RETENTION_MONTHS', '12', false, true],
       ['ECCLIUM_POLICY_FILE', undefined, false, false],
       ['ECCLIUM_MARKER_KEY_FILE', undefined, false, false],
@@ -265,6 +268,12 @@ describe('fitsVariable', () => {
     ['ECCLIUM_WRITE_CONFIRMATION', 'echo-allowed'],
     ['ECCLIUM_WRITE_CONFIRMATION', 'elicitation-or-queue'],
     ['ECCLIUM_WRITE_CONFIRMATION', 'queue'],
+    ['ECCLIUM_TIME_ZONE', 'Europe/Zurich'],
+    ['ECCLIUM_TIME_ZONE', 'Europe/Berlin'],
+    ['ECCLIUM_TIME_ZONE', 'America/Argentina/Buenos_Aires'],
+    ['ECCLIUM_TIME_ZONE', 'Asia/Kolkata'],
+    ['ECCLIUM_TIME_ZONE', 'Etc/UTC'],
+    ['ECCLIUM_TIME_ZONE', 'UTC'],
     ['ECCLIUM_STDIO_SUBJECT', 'a'],
     ['ECCLIUM_STDIO_SUBJECT', 'a'.repeat(32)],
     ['ECCLIUM_STDIO_SUBJECT', 'local-operator-2'],
@@ -334,6 +343,17 @@ describe('fitsVariable', () => {
     ['ECCLIUM_WRITE_CONFIRMATION', 'echo_allowed'],
     ['ECCLIUM_WRITE_CONFIRMATION', 'elicitation'],
     ['ECCLIUM_WRITE_CONFIRMATION', 'queue '],
+    ['ECCLIUM_TIME_ZONE', ''],
+    ['ECCLIUM_TIME_ZONE', 'Mars/Base'],
+    ['ECCLIUM_TIME_ZONE', '+01:00'],
+    ['ECCLIUM_TIME_ZONE', 'europe/zurich'],
+    ['ECCLIUM_TIME_ZONE', 'CET'],
+    ['ECCLIUM_TIME_ZONE', 'Etc/GMT+1'],
+    ['ECCLIUM_TIME_ZONE', 'utc'],
+    ['ECCLIUM_TIME_ZONE', ' Europe/Zurich'],
+    ['ECCLIUM_TIME_ZONE', 'Europe/Zurich/'],
+    ['ECCLIUM_TIME_ZONE', 'Europe/../Zurich'],
+    ['ECCLIUM_TIME_ZONE', `Europe/${'A'.repeat(58)}`],
     ['ECCLIUM_STDIO_SUBJECT', ''],
     ['ECCLIUM_STDIO_SUBJECT', 'a'.repeat(33)],
     ['ECCLIUM_STDIO_SUBJECT', 'Local'],
@@ -377,6 +397,7 @@ describe('fitsVariable', () => {
         ['ECCLIUM_KEYS_DIR', 'keys'],
         ['ECCLIUM_SNAPSHOTS', 'OFF'],
         ['ECCLIUM_WRITE_CONFIRMATION', 'Queue'],
+        ['ECCLIUM_TIME_ZONE', 'Mars/Base'],
         ['ECCLIUM_AUDIT_RETENTION_MONTHS', '0'],
         ['ECCLIUM_POLICY_FILE', 'policy.yaml'],
         ['ECCLIUM_MARKER_KEY_FILE', 'marker-key'],
@@ -493,5 +514,25 @@ describe('readToolsetList', () => {
     expect(variableNames).not.toContain(searchToolsVariableName);
     expect(variableNames).toContain('ECCLIUM_TOOLSETS');
     expect(unsupportedVariableNames).not.toContain('ECCLIUM_TOOLSETS');
+  });
+});
+
+describe('isTimeZone', () => {
+  // A zone is read with its name as given; Intl may resolve it to an older
+  // name of the same zone, which still counts.
+  it('takes a name Intl resolves to a zone it lists, and UTC', () => {
+    expect(isTimeZone('Europe/Zurich')).toBe(true);
+    expect(isTimeZone('Europe/Kyiv')).toBe(true);
+    expect(isTimeZone('UTC')).toBe(true);
+    expect(row('ECCLIUM_TIME_ZONE')).toMatchObject({
+      kind: 'zone',
+      maxLength: maxTimeZoneLength,
+      choices: [],
+    });
+  });
+
+  it('refuses a value that is no string before it reads it', () => {
+    expect(isTimeZone(7 as unknown as string)).toBe(false);
+    expect(isTimeZone(`Europe/${'A'.repeat(maxTimeZoneLength)}`)).toBe(false);
   });
 });

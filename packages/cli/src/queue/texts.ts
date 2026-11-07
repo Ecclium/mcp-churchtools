@@ -324,7 +324,7 @@ const approveReasons: Readonly<
     code: exitCodes.noPermission,
   },
   wholeDays: {
-    text: 'Der Termin dauert ganze Tage, und solche schreibt Ecclium nicht. Ecclium hat nichts geschrieben.',
+    text: 'Der Termin oder die Buchung dauert ganze Tage oder beginnt und endet um Mitternacht in ‹ECCLIUM_TIME_ZONE›, und solche schreibt Ecclium nicht. Ecclium hat nichts geschrieben.',
     code: exitCodes.noPermission,
   },
   notOwnTime: {
@@ -334,6 +334,12 @@ const approveReasons: Readonly<
   dayListFull: {
     text: 'Der Kalender oder die Ressource hat an diesen Tagen zu viele Einträge, als dass Ecclium einen gleichen ausschliessen könnte. Ecclium hat nichts geschrieben. Legen Sie den Eintrag in ChurchTools an.',
     code: exitCodes.noPermission,
+  },
+  // Only an undo meets this sentence; the table names every sentence of
+  // the write guard all the same.
+  bookingGone: {
+    text: 'Die Buchung lässt sich nicht lesen, und die Liste ihrer Tage nennt sie nicht mehr. Ecclium hat nichts geschrieben.',
+    code: exitCodes.noInput,
   },
   auditNotReady: {
     text: 'Die Audit-Datei kann die Zeile der Freigabe nicht aufnehmen, darum schreibt Ecclium nicht. Prüfen Sie die Audit-Datei mit ‹ecclium audit verify›.',

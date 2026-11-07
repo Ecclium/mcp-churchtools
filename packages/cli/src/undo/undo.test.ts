@@ -36,13 +36,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { usageLine } from '../output/index.js';
 import type { Output } from '../output/index.js';
 import {
-  changedLine,
+  changedLineOf,
   doneLines,
-  undoChanged,
+  undoChangedOf,
   undoMissing,
   undoProblems,
-  undoUnchanged,
-  wouldChangeLine,
+  undoUnchangedOf,
+  wouldChangeLineOf,
 } from './texts.js';
 import { undoWrite } from './undo.js';
 
@@ -256,12 +256,12 @@ describe('ecclium undo', () => {
       ),
     });
     expect(result.code).toBe(0);
-    expect(result.stdout[0]).toBe(changedLine);
+    expect(result.stdout[0]).toBe(changedLineOf('page'));
     // The escape of the page is shown, never sent to the terminal.
     expect(result.stdout.join('\n')).toContain('\\u{1b}[31m');
     expect(result.stdout.join('\n')).not.toContain('\u001b');
     const done = result.stdout.slice(-2);
-    expect(done[0]).toBe(doneLines(5)[0]);
+    expect(done[0]).toBe(doneLines('page', 5)[0]);
     expect(done[1]).toMatch(/^Auch diese Rücknahme lässt sich zurücknehmen/);
     expect(result.stderr).toEqual([]);
   });
@@ -270,8 +270,8 @@ describe('ecclium undo', () => {
     await keep();
     const result = await run({ answer: answer([[5, '# Von Hand\n']]) });
     expect(result.code).toBe(65);
-    expect(result.stdout[0]).toBe(wouldChangeLine);
-    expect(result.stderr).toEqual([undoChanged.text]);
+    expect(result.stdout[0]).toBe(wouldChangeLineOf('page'));
+    expect(result.stderr).toEqual([undoChangedOf('page').text]);
   });
 
   it('finds no snapshot under an ID that kept none', async () => {
@@ -329,7 +329,7 @@ describe('ecclium undo', () => {
     await keep();
     const unchanged = await run({ answer: answer([[5, before]]) });
     expect(unchanged.code).toBe(0);
-    expect(unchanged.stdout).toEqual([undoUnchanged.text]);
+    expect(unchanged.stdout).toEqual([undoUnchangedOf('page').text]);
     const overwritten = await run({
       overwrite: true,
       answer: answer(
@@ -342,7 +342,7 @@ describe('ecclium undo', () => {
       ),
     });
     expect(overwritten.code).toBe(0);
-    expect(overwritten.stdout[0]).toBe(changedLine);
+    expect(overwritten.stdout[0]).toBe(changedLineOf('page'));
   });
 
   it('ends with 77 while writing is switched off or cannot be checked', async () => {

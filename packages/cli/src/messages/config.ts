@@ -124,6 +124,7 @@ const keyContent = (raw: string | undefined): string =>
     ? 'Schreiben Sie den bisherigen Schlüssel unverändert hinein.'
     : `Erzeugen Sie einen Schlüssel mit ${keyCommand} und schreiben Sie ihn in die Datei.`;
 const retention = quote('ECCLIUM_AUDIT_RETENTION_MONTHS');
+const timeZoneVariable = quote('ECCLIUM_TIME_ZONE');
 const toolsets = quote('ECCLIUM_TOOLSETS');
 const personsToolset = quote('persons');
 const eventsToolset = quote('events');
@@ -448,6 +449,12 @@ const problems: Readonly<
       `Der Wert von ${name} ist nicht erlaubt.`,
       `Erlaubt ist eine mit Komma getrennte Liste aus ${toolsetList}, jeder Name höchstens einmal und ohne Leerzeichen, oder ‹all› allein für alle ausser ${apiToolset}, oder ‹all,api› für alle. Ein leerer Wert schaltet kein Toolset ein.`,
       'Setzen Sie eine solche Liste, etwa ‹persons,wiki›, oder entfernen Sie die Variable.',
+    ),
+  time_zone_invalid: (name = timeZoneVariable) =>
+    message(
+      `Der Wert von ${name} ist keine Zeitzone, die Ecclium kennt.`,
+      'Erlaubt ist ‹UTC› oder der Name einer Zeitzone aus Gebiet und Ort, in dieser Schreibweise, etwa ‹Europe/Zurich› oder ‹Europe/Berlin›. Eine Angabe wie ‹+01:00› oder eine Zone mit festem Abstand wie ‹Etc/GMT+1› kennt keine Sommerzeit, und eine Abkürzung wie ‹CET› nennt keinen Ort. Beides nimmt Ecclium nicht an.',
+      'Setzen Sie die Zeitzone der ChurchTools-Installation oder entfernen Sie die Variable, dann zeigt Ecclium die Zeiten in UTC.',
     ),
   invalid_integer: (name = quote('ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE')) =>
     message(

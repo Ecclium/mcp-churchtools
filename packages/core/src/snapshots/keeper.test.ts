@@ -63,8 +63,15 @@ describe('createSnapshotKeeper', () => {
       tool: 'ct_bookings_create',
       placeId: 13,
       fieldsHash: 'a'.repeat(64),
+      startDate: '2026-11-08T09:00:00Z',
+      endDate: '2026-11-08T10:00:00Z',
     } as const;
-    const named = { kind: 'bookingCreated', id: 51, version: 0 } as const;
+    const named = {
+      kind: 'bookingCreated',
+      id: 51,
+      version: 0,
+      statusId: 1,
+    } as const;
     await keeper.save(ctx, { eventId, part: 'before', day, content: booking });
     await keeper.save(ctx, { eventId, part: 'after', day, content: named });
     expect(await keeper.load(ctx, eventId)).toEqual({

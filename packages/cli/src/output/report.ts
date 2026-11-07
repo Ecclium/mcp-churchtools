@@ -53,6 +53,7 @@ const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
   keysDir: 'Schlüsselordner',
   snapshots: 'Snapshots',
   writeConfirmation: 'Bestätigung',
+  timeZone: 'Zeitzone der Texte',
   auditRetentionMonths: 'Frist in Monaten',
   policy: 'Richtlinie',
   markerKey: 'Prüfcode-Schlüssel',
@@ -101,10 +102,12 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
   if (setting.key === 'policy' && setting.origin === 'default') {
     return { text: 'keine Datei' };
   }
-  // Only the folders of state and of keys and the key files may stay unset
-  // without a default.
+  // Only the folders of state and of keys, the key files and the zone may
+  // stay unset without a default.
   if (setting.origin === 'unset') {
     switch (setting.key) {
+      case 'timeZone':
+        return { text: 'UTC' };
       case 'stateDir':
         return { text: 'keine Audit-Datei' };
       case 'keysDir':

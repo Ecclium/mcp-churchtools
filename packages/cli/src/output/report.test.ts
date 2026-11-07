@@ -132,6 +132,7 @@ describe('renderConfigReport', () => {
       ),
       row('Snapshots', '‹on› (Voreinstellung)'),
       row('Bestätigung', '‹echo-allowed› (Voreinstellung)'),
+      row('Zeitzone der Texte', 'UTC (‹ECCLIUM_TIME_ZONE› ist nicht gesetzt)'),
       row('Frist in Monaten', '12 (Voreinstellung)'),
       row('Richtlinie', 'keine Datei (Voreinstellung)'),
       row(
@@ -374,6 +375,24 @@ describe('renderConfigReport', () => {
       `  - ${warningText('echo_over_http')}`,
       valid,
     ]);
+  });
+
+  // A zone names no person and no instance, so it is shown without
+  // --show-values; a refused one is never shown.
+  it('shows the zone of the texts, and never a refused one', () => {
+    expect(
+      render({ ...minimal(), ECCLIUM_TIME_ZONE: 'Europe/Zurich' }),
+    ).toContain(
+      row('Zeitzone der Texte', '‹Europe/Zurich› (aus ‹ECCLIUM_TIME_ZONE›)'),
+    );
+    const refused = render({ ...minimal(), ECCLIUM_TIME_ZONE: 'Mars/Base' });
+    expect(refused).toContain(
+      row(
+        'Zeitzone der Texte',
+        'ungültig (aus ‹ECCLIUM_TIME_ZONE›, siehe die Probleme unten)',
+      ),
+    );
+    expect(refused.join('\n')).not.toContain('Mars/Base');
   });
 
   it('reports the token from the environment with its warning', () => {

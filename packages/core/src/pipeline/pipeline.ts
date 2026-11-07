@@ -130,6 +130,8 @@ import {
   createWriteGuard,
   objectRefsOfTarget,
   type PlanQueueReason,
+  type UndoSubject,
+  undoSubjectOf,
   type WriteGuard,
   type WriteSnapshots,
   type WriteTarget,
@@ -214,41 +216,69 @@ export interface UndoCall {
   readonly overwrite: boolean;
 }
 
+export type { UndoSubject } from '../write/index.js';
+
 /**
  * How an undo ended, for the command line (ADR 0031). A diff holds texts
- * of the page; it goes to the operator only, never into a log or the
- * audit.
+ * of the page, the appointment or the booking; it goes to the operator
+ * only, never into a log or the audit. `subject` tells what the undo takes
+ * back, once its snapshot is found.
  */
 export type UndoOutcome =
   /**
-   * Taken back: the version of the page after it, and the ID to take the
-   * undo back with, since an undo always keeps a snapshot of its own.
-   * `unrecorded` when its line did not reach the audit file.
+   * Taken back: the version of the target after it, and the ID to take
+   * the undo back with, since an undo that writes keeps a snapshot of its
+   * own. `unrecorded` when its line did not reach the audit file.
    */
   | {
       readonly kind: 'done';
+      readonly subject: UndoSubject;
       readonly version: number;
       readonly undoId: string | undefined;
       readonly diff: LineDiff;
       readonly unrecorded?: true;
     }
-  /** The page holds what the undo would write already. */
-  | { readonly kind: 'unchanged' }
-  /** Someone changed the page since the write; nothing was written. */
-  | { readonly kind: 'changed'; readonly diff: LineDiff }
+  /**
+   * A new appointment or booking deleted; a delete cannot be taken back.
+   */
+  | {
+      readonly kind: 'deleted';
+      readonly subject: UndoSubject;
+      readonly diff: LineDiff;
+      readonly unrecorded?: true;
+    }
+  /**
+   * The target holds what the undo would write already, or a new
+   * appointment or booking is gone already.
+   */
+  | { readonly kind: 'unchanged'; readonly subject: UndoSubject }
+  /** Someone changed the target since the write; nothing was written. */
+  | {
+      readonly kind: 'changed';
+      readonly subject: UndoSubject;
+      readonly diff: LineDiff;
+    }
   /**
    * No snapshot: none under this ID, or removed after its retention;
    * still there but its day key is gone; or the server keeps none.
    */
   | { readonly kind: 'missing' | 'expired' | 'off' }
-  /** A new page whose GUID was never kept: look in its category by hand. */
-  | { readonly kind: 'incomplete'; readonly categoryId: number }
+  /**
+   * A new page, appointment or booking whose ID was never kept: look in
+   * its category, calendar or resource by hand.
+   */
+  | {
+      readonly kind: 'incomplete';
+      readonly subject: UndoSubject;
+      readonly placeId: number;
+    }
   /**
    * Refused or failed, with whether it may have reached ChurchTools and,
    * where the core knows it, the reason, for a text of the command line.
    */
   | {
       readonly kind: 'failed';
+      readonly subject?: UndoSubject;
       readonly code: ErrorCode;
       readonly reason?: UndoReason;
       readonly state: WriteState;
@@ -504,6 +534,12 @@ export interface ToolPipelineOptions {
    * wiki.
    */
   readonly markerKey?: KeyMaterial;
+  /**
+   * The zone in which the texts of a confirmation show the times of
+   * appointments and bookings, from `ECCLIUM_TIME_ZONE`, or undefined for
+   * UTC. The tools take UTC either way.
+   */
+  readonly timeZone?: string | undefined;
   /**
    * The provider of the keys for pseudonyms, built by the composition root
    * from the key files (ADR 0069). Without it, a call in the level
@@ -888,6 +924,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     quota: options.quota,
     snapshots: options.snapshots,
     markerKey: options.markerKey,
+    timeZone: options.timeZone,
   });
   // How writes are confirmed, and the questions to the client over the
   // stores the composition root built (ADR 0029). Without the stores no
@@ -1929,6 +1966,8 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     if (loaded.kind !== 'found') {
       return undoEnd({ kind: loaded.kind }, 'failed', 'not_found');
     }
+    // What the undo takes back, for the texts of the command line.
+    const subject = undoSubjectOf(loaded.before);
     const result = await guard.undo({
       ctx,
       eventId,
@@ -1942,12 +1981,13 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     switch (result.kind) {
       case 'unchanged':
         addTarget(refs, result.target);
-        return undoEnd({ kind: 'unchanged' }, 'skipped');
+        return undoEnd({ kind: 'unchanged', subject }, 'skipped');
       case 'changed':
         addTarget(refs, result.target);
         return undoEnd(
           {
             kind: 'changed',
+            subject,
             diff: diffLines(result.change.from, result.change.to),
           },
           'conflict',
@@ -1956,12 +1996,25 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       case 'incomplete':
         addTarget(refs, result.target);
         return undoEnd(
-          { kind: 'incomplete', categoryId: Number(result.target.key) },
+          { kind: 'incomplete', subject, placeId: Number(result.target.key) },
           'failed',
           'not_found',
         );
       case 'refused':
-        return undoRefused(result.error.code, reasonOf(result.error));
+        return undoRefused(result.error.code, reasonOf(result.error), subject);
+      case 'deleted':
+        addTarget(refs, result.target);
+        return undoEnd(
+          {
+            kind: 'deleted',
+            subject,
+            diff: diffLines(result.change.from, result.change.to),
+          },
+          'verified',
+          undefined,
+          'operator',
+          true,
+        );
       case 'committed':
         break;
     }
@@ -1972,6 +2025,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       return undoEnd(
         {
           kind: 'done',
+          subject,
           version: committed.version,
           undoId: committed.undoId,
           diff,
@@ -1986,6 +2040,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     return undoEnd(
       {
         kind: 'failed',
+        subject,
         code: committed.error.code,
         ...(reason === undefined ? {} : { reason }),
         state: committed.state,
@@ -2919,11 +2974,16 @@ const undoEnd = (
   });
 
 // An undo refused or failed before any plan: nothing was sent.
-const undoRefused = (code: ErrorCode, reason?: UndoReason): UndoEnd => {
+const undoRefused = (
+  code: ErrorCode,
+  reason?: UndoReason,
+  subject?: UndoSubject,
+): UndoEnd => {
   const state = writeStateOf(code);
   return undoEnd(
     {
       kind: 'failed',
+      ...(subject === undefined ? {} : { subject }),
       code,
       ...(reason === undefined ? {} : { reason }),
       state,

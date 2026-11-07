@@ -18,6 +18,7 @@ export {
   minProposedPerDay,
   type ProposalInput,
   type ProposedCategory,
+  type ProposedTarget,
   proposedMaxPerDay,
   renderPolicyProposal,
 } from './proposal.js';

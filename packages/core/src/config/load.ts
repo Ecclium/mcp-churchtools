@@ -124,6 +124,13 @@ export interface EccliumConfig {
    */
   readonly writeConfirmation: WriteConfirmation;
   /**
+   * The zone in which the texts of a confirmation, the queue and `ecclium
+   * undo` show the times of appointments and bookings, a name of the time
+   * zone database such as `Europe/Zurich` or `UTC`, or undefined when the
+   * variable is not set: then they show UTC. The tools take UTC either way.
+   */
+  readonly timeZone: string | undefined;
+  /**
    * How many months the audit files stay before the start or a new UTC day
    * deletes them, 1 to 120 (ADR 0028). Without a folder of state there are
    * no files, and the value does nothing.
@@ -159,6 +166,7 @@ export type SettingKey =
   | 'keysDir'
   | 'snapshots'
   | 'writeConfirmation'
+  | 'timeZone'
   | 'auditRetentionMonths'
   | 'policy'
   | 'markerKey'
@@ -1091,6 +1099,34 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     warnings.add('echo_over_http');
   }
 
+  // The zone of the texts of times (ADR 0029, ADR 0055). It may stay unset,
+  // then the texts show UTC. The value kept is the one given, and zod is
+  // only asked whether it fits.
+  const timeZoneName = 'ECCLIUM_TIME_ZONE';
+  const timeZoneRead = read(row(timeZoneName));
+  let timeZone: string | undefined;
+  let timeZoneValid = timeZoneRead.state !== 'invalid';
+  if (timeZoneRead.state === 'set') {
+    if (fitsVariable(timeZoneName, timeZoneRead.value)) {
+      timeZone = timeZoneRead.value;
+    } else {
+      report('time_zone_invalid', timeZoneName);
+      timeZoneValid = false;
+    }
+  }
+  setting(
+    'timeZone',
+    timeZoneName,
+    timeZone !== undefined
+      ? 'environment'
+      : timeZoneValid
+        ? 'unset'
+        : 'invalid',
+    timeZone !== undefined
+      ? record({ kind: 'choice', value: timeZone })
+      : shownNone,
+  );
+
   // The retention of the audit files: digits only, checked sign by sign.
   // Below a year every start warns, and without the folder of state there
   // is nothing to delete, which every start says (ADR 0028).
@@ -1289,6 +1325,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     !keysDirValid ||
     snapshots === undefined ||
     confirmation === undefined ||
+    !timeZoneValid ||
     retention === undefined ||
     policy === undefined ||
     !markerKeyValid ||
@@ -1314,6 +1351,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       keysDir,
       snapshots: snapshots.value === 'on',
       writeConfirmation: confirmation.value as WriteConfirmation,
+      timeZone,
       auditRetentionMonths: retention.value,
       policy,
       markerKey,

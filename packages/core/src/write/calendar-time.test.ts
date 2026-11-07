@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { spanTextOf, timeTextOf } from './calendar-time.js';
+import { isMidnightIn, spanTextOf, timeTextOf } from './calendar-time.js';
 
 // The times of appointments and bookings as a person reads them before a
 // write: in UTC unless the operator names a zone (ADR 0072).
@@ -35,5 +35,17 @@ describe('the times of a confirmation', () => {
     expect(timeTextOf('2026-12-31T23:59:00Z', undefined)).toBe(
       'Donnerstag, 31.12.2026, 23:59 (UTC)',
     );
+  });
+});
+
+// Start and end on midnight of the zone would make ChurchTools store whole
+// days, which the write guard refuses with a zone.
+describe('midnight in a zone', () => {
+  it('finds midnight by the clock of the zone, in winter and in summer', () => {
+    expect(isMidnightIn('2026-11-07T23:00:00Z', 'Europe/Zurich')).toBe(true);
+    expect(isMidnightIn('2026-11-08T00:00:00Z', 'Europe/Zurich')).toBe(false);
+    expect(isMidnightIn('2026-07-01T22:00:00Z', 'Europe/Zurich')).toBe(true);
+    expect(isMidnightIn('2026-11-08T00:00:00Z', 'UTC')).toBe(true);
+    expect(isMidnightIn('2026-11-08T00:01:00Z', 'UTC')).toBe(false);
   });
 });

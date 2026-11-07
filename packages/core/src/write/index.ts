@@ -51,3 +51,4 @@ export {
 export { approvalKeyOf } from './plan-hash.js';
 export { queueEntryOf } from './queue-entry.js';
 export { objectRefsOfTarget, type WriteTarget } from './rules.js';
+export { type UndoSubject, undoSubjectOf } from './undo.js';

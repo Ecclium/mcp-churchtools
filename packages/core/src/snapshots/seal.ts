@@ -13,7 +13,10 @@
  *
  * Only the changed field is kept, never a whole record of ChurchTools: the
  * text of a page before the write, or for a new page its category, title
- * and the hash of its text, and afterwards its GUID.
+ * and the hash of its text, and afterwards its GUID; the fields of an
+ * appointment a change writes; for a new appointment or booking its place
+ * and the hash of its fields, for a booking also its time, and afterwards
+ * its ID, for a booking also its status.
  *
  * @packageDocumentation
  */
@@ -84,16 +87,35 @@ export interface AppointmentFieldsSnapshot {
 }
 
 /**
- * What a snapshot keeps of an appointment or a booking a write creates,
- * before it is sent: where, and the hash of the fields it gets.
+ * What a snapshot keeps of an appointment a write creates, before it is
+ * sent: where, and the hash of the fields it gets.
  */
-export interface DatedCreateSnapshot {
-  readonly kind: 'appointmentCreate' | 'bookingCreate';
+export interface AppointmentCreateSnapshot {
+  readonly kind: 'appointmentCreate';
   readonly tool: string;
-  /** The calendar of an appointment or the resource of a booking. */
+  /** The calendar of the appointment. */
   readonly placeId: number;
   readonly fieldsHash: string;
 }
+
+/**
+ * What a snapshot keeps of a booking a write requests, before it is sent:
+ * the resource, the hash of the fields and the time, since only the list
+ * of its days tells whether a booking is gone (F47).
+ */
+export interface BookingCreateSnapshot {
+  readonly kind: 'bookingCreate';
+  readonly tool: string;
+  /** The resource of the booking. */
+  readonly placeId: number;
+  readonly fieldsHash: string;
+  readonly startDate: string;
+  readonly endDate: string;
+}
+
+/** What a snapshot keeps of an appointment or a booking a write creates. */
+export type DatedCreateSnapshot =
+  AppointmentCreateSnapshot | BookingCreateSnapshot;
 
 /** The part `before` of a snapshot of the wiki. */
 export type WikiSnapshotState = PageTextSnapshot | PageCreateSnapshot;
@@ -110,14 +132,31 @@ export interface PageCreatedSnapshot {
 }
 
 /**
- * The part `after` of the snapshot of a new appointment or booking, once
- * ChurchTools named it: its ID and the version it was created with.
+ * The part `after` of the snapshot of a new appointment, once ChurchTools
+ * named it: its ID and the version it was created with.
  */
-export interface DatedCreatedSnapshot {
-  readonly kind: 'appointmentCreated' | 'bookingCreated';
+export interface AppointmentCreatedSnapshot {
+  readonly kind: 'appointmentCreated';
   readonly id: number;
   readonly version: number;
 }
+
+/**
+ * The part `after` of the snapshot of a new booking, once ChurchTools named
+ * it: its ID, the version and the status it was created with, since an
+ * approval need not raise the version and an undo deletes no booking whose
+ * status changed.
+ */
+export interface BookingCreatedSnapshot {
+  readonly kind: 'bookingCreated';
+  readonly id: number;
+  readonly version: number;
+  readonly statusId: number;
+}
+
+/** The part `after` of the snapshot of a new appointment or booking. */
+export type DatedCreatedSnapshot =
+  AppointmentCreatedSnapshot | BookingCreatedSnapshot;
 
 /** The part `after` of a snapshot. */
 export type SnapshotOutcome = PageCreatedSnapshot | DatedCreatedSnapshot;
@@ -168,10 +207,18 @@ const stateSchema = z.discriminatedUnion('kind', [
     after: z.strictObject({ version, fieldsHash: hash }),
   }),
   z.strictObject({
-    kind: z.enum(['appointmentCreate', 'bookingCreate']),
+    kind: z.literal('appointmentCreate'),
     tool,
     placeId: id,
     fieldsHash: hash,
+  }),
+  z.strictObject({
+    kind: z.literal('bookingCreate'),
+    tool,
+    placeId: id,
+    fieldsHash: hash,
+    startDate: z.string(),
+    endDate: z.string(),
   }),
 ]);
 const outcomeSchema = z.union([
@@ -181,9 +228,15 @@ const outcomeSchema = z.union([
     version,
   }),
   z.strictObject({
-    kind: z.enum(['appointmentCreated', 'bookingCreated']),
+    kind: z.literal('appointmentCreated'),
     id,
     version,
+  }),
+  z.strictObject({
+    kind: z.literal('bookingCreated'),
+    id,
+    version,
+    statusId: z.int().min(0).max(Number.MAX_SAFE_INTEGER),
   }),
 ]);
 /**
@@ -194,7 +247,7 @@ const outcomeSchema = z.union([
  * @returns Whether it is an outcome.
  * @example
  * ```ts
- * isOutcome({ kind: 'bookingCreated', id: 51, version: 0 }); // true
+ * isOutcome({ kind: 'appointmentCreated', id: 51, version: 0 }); // true
  * ```
  */
 export const isOutcome = (

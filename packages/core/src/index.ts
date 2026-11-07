@@ -69,6 +69,7 @@ export {
   type PolicyTargetKind,
   type ProposalInput,
   type ProposedCategory,
+  type ProposedTarget,
   proposedMaxPerDay,
   renderPolicyProposal,
   targetKeyOf,
@@ -152,4 +153,5 @@ export {
   type UndoCall,
   type UndoOutcome,
   type UndoReason,
+  type UndoSubject,
 } from './pipeline/index.js';

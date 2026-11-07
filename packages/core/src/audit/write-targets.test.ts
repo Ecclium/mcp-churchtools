@@ -94,12 +94,53 @@ describe('collectWriteTargets', () => {
         { id: 12, tools: [create, update], highestPerDay: 3 },
         { id: 20, tools: [update], highestPerDay: 0 },
       ],
+      calendars: [],
+      resources: [],
       days: { first: '2026-10-30', last: '2026-10-31' },
       read: 2,
       unread: 0,
       moved: false,
     });
     expect(Object.isFrozen(targets.categories[0])).toBe(true);
+  });
+
+  it('collects the calendars of appointments and the resources of bookings like categories', () => {
+    const appointments = 'ct_appointments_create';
+    const bookings = 'ct_bookings_create';
+    const targets = collectWriteTargets(
+      folderOf({
+        [nameOf(1)]: [
+          write('verified', {
+            tool: appointments,
+            objectRefs: ['calendar:8', 'appointment:21'],
+          }),
+          write('queued', { tool: appointments, objectRefs: ['calendar:8'] }),
+          write('denied', {
+            tool: 'ct_appointments_update',
+            objectRefs: ['calendar:3', 'appointment:22'],
+          }),
+          write('verified', {
+            tool: bookings,
+            objectRefs: ['resource:13', 'booking:51'],
+          }),
+          // An appointment or a booking alone names no entry of the policy.
+          write('verified', {
+            tool: appointments,
+            objectRefs: ['appointment:23', 'booking:52', 'calendar:0'],
+          }),
+        ],
+      }),
+    );
+    expect(targets.categories).toEqual([]);
+    expect(targets.calendars).toEqual([
+      { id: 3, tools: ['ct_appointments_update'], highestPerDay: 0 },
+      { id: 8, tools: [appointments], highestPerDay: 2 },
+    ]);
+    expect(targets.resources).toEqual([
+      { id: 13, tools: [bookings], highestPerDay: 1 },
+    ]);
+    expect(Object.isFrozen(targets.calendars)).toBe(true);
+    expect(Object.isFrozen(targets.resources[0])).toBe(true);
   });
 
   it('names a refused target but does not count it for the limit', () => {
@@ -223,6 +264,8 @@ describe('collectWriteTargets', () => {
     const targets = collectWriteTargets(folderOf({}));
     expect(targets).toEqual({
       categories: [],
+      calendars: [],
+      resources: [],
       read: 0,
       unread: 0,
       moved: false,

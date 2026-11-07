@@ -41,6 +41,7 @@ export const variableNames = Object.freeze([
   'ECCLIUM_KEYS_DIR',
   'ECCLIUM_SNAPSHOTS',
   'ECCLIUM_WRITE_CONFIRMATION',
+  'ECCLIUM_TIME_ZONE',
   'ECCLIUM_AUDIT_RETENTION_MONTHS',
   'ECCLIUM_POLICY_FILE',
   'ECCLIUM_MARKER_KEY_FILE',
@@ -208,7 +209,8 @@ export type VariableKind =
   | 'boolean'
   | 'choice'
   | 'list'
-  | 'subject';
+  | 'subject'
+  | 'zone';
 
 /** The range of the requests per minute to ChurchTools (ADR 0057). */
 export const requestsPerMinuteRange = Object.freeze({ min: 1, max: 500 });
@@ -283,6 +285,56 @@ export function isRetentionMonths(value: string): boolean {
   }
   return (
     number >= retentionMonthsRange.min && number <= retentionMonthsRange.max
+  );
+}
+
+/** The longest name of a time zone the table takes. */
+export const maxTimeZoneLength = 64;
+
+// The form of a name of the time zone database: an area and a place, each
+// part with a capital first, such as `Europe/Zurich`. It keeps offsets like
+// `+01:00`, abbreviations like `CET` and names in small letters away before
+// Intl reads the value, which takes any case.
+const timeZonePattern =
+  /^[A-Z][A-Za-z0-9_+-]{0,31}(?:\/[A-Z][A-Za-z0-9_+-]{0,31}){1,2}$/;
+
+/**
+ * Tells whether a value names a time zone for the texts of confirmations
+ * (ADR 0055): `UTC`, or a name of the time zone database such as
+ * `Europe/Zurich` that Intl resolves to a zone it lists. An offset and a
+ * zone of the area `Etc` with a fixed offset are refused, because they
+ * follow no summer time and their sign misleads, and an abbreviation such
+ * as `CET` names no place.
+ *
+ * @param value - The value as given.
+ * @returns Whether it fits.
+ * @example
+ * ```ts
+ * isTimeZone('Europe/Zurich'); // true
+ * isTimeZone('UTC'); // true
+ * isTimeZone('+01:00'); // false
+ * isTimeZone('europe/zurich'); // false
+ * ```
+ */
+export function isTimeZone(value: string): boolean {
+  if (typeof value !== 'string' || value.length > maxTimeZoneLength) {
+    return false;
+  }
+  if (value === 'UTC') return true;
+  if (!timeZonePattern.test(value)) return false;
+  let resolved: string;
+  try {
+    resolved = new Intl.DateTimeFormat('en-US', {
+      timeZone: value,
+    }).resolvedOptions().timeZone;
+  } catch {
+    return false;
+  }
+  // Intl lists each zone under the name it resolves to, which may be an
+  // older one than the name given. The list is read here, at the start
+  // only, so that no module keeps it.
+  return (
+    resolved === 'UTC' || Intl.supportedValuesOf('timeZone').includes(resolved)
   );
 }
 
@@ -494,6 +546,18 @@ export const variables: readonly Variable[] = Object.freeze([
     secret: false,
     stdioOnly: false,
   }),
+  // The zone in which confirmations, the queue and `ecclium undo` show the
+  // times of appointments and bookings; without it they show UTC. The
+  // tools take UTC either way (ADR 0029).
+  row({
+    name: 'ECCLIUM_TIME_ZONE',
+    kind: 'zone',
+    maxLength: maxTimeZoneLength,
+    choices: [],
+    defaultValue: undefined,
+    secret: false,
+    stdioOnly: false,
+  }),
   row({
     name: 'ECCLIUM_AUDIT_RETENTION_MONTHS',
     kind: 'integer',
@@ -593,6 +657,10 @@ export const variableSchemas: Readonly<
     .refine((value) => isNormalizedAbsolutePath(value)),
   ECCLIUM_SNAPSHOTS: choiceOf('ECCLIUM_SNAPSHOTS'),
   ECCLIUM_WRITE_CONFIRMATION: choiceOf('ECCLIUM_WRITE_CONFIRMATION'),
+  ECCLIUM_TIME_ZONE: z
+    .string()
+    .max(maxTimeZoneLength)
+    .refine((value) => isTimeZone(value)),
   ECCLIUM_AUDIT_RETENTION_MONTHS: z
     .string()
     .max(3)
@@ -636,6 +704,7 @@ export const environmentSchema = z.strictObject({
   ECCLIUM_SNAPSHOTS: variableSchemas.ECCLIUM_SNAPSHOTS.optional(),
   ECCLIUM_WRITE_CONFIRMATION:
     variableSchemas.ECCLIUM_WRITE_CONFIRMATION.optional(),
+  ECCLIUM_TIME_ZONE: variableSchemas.ECCLIUM_TIME_ZONE.optional(),
   ECCLIUM_AUDIT_RETENTION_MONTHS:
     variableSchemas.ECCLIUM_AUDIT_RETENTION_MONTHS.optional(),
   ECCLIUM_POLICY_FILE: variableSchemas.ECCLIUM_POLICY_FILE.optional(),

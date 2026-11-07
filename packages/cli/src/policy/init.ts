@@ -3,21 +3,24 @@
  * part of the policy from the audit files, for the operator to check and
  * to save as the file of the policy. It changes no file.
  *
- * It reads the folder `audit` for the categories of the wiki that write
- * tools reached, asks ChurchTools for their names with the tool
- * `ct_wiki_categories_list` through the same pipeline as the server, and
- * writes the proposal as YAML to stdout. Its calls run in the mode
- * `operator` with the identity of the start over stdio, so they stand in
- * the audit file and count against the limits of ChurchTools like every
- * call; the tool reads no personal data and spends no read budget. With
- * no category in the audit it asks ChurchTools nothing.
+ * It reads the folder `audit` for the categories of the wiki, the
+ * calendars and the resources that write tools reached, asks ChurchTools
+ * for their names with the tools `ct_wiki_categories_list`,
+ * `ct_calendars_list` and `ct_resources_list` through the same pipeline
+ * as the server, and writes the proposal as YAML to stdout. Its calls run
+ * in the mode `operator` with the identity of the start over stdio, so
+ * they stand in the audit file and count against the limits of ChurchTools
+ * like every call; the tools read no personal data and spend no read
+ * budget. It asks only for the kinds the audit names, and with none it
+ * asks ChurchTools nothing.
  *
  * Its exit code follows sysexits: 0 when the proposal is written, 64
  * without `--interactive`, 66 when the folder `audit` is missing, 69 when
  * ChurchTools gives no names, 74 when files could not be read whole or the
  * proposal did not reach stdout, 78 for an invalid configuration, no
- * folder of state, the toolset `wiki` off or an audit file or folder of
- * the counters that cannot be used.
+ * folder of state, the toolset `wiki` or `calendars` off when the audit
+ * names a target of it, or an audit file or folder of the counters that
+ * cannot be used.
  *
  * @packageDocumentation
  */
@@ -29,13 +32,15 @@ import {
   type EccliumConfig,
   freeTextMarkers,
   loadConfig,
-  type ProposedCategory,
+  type ProposedTarget,
   renderPolicyProposal,
   type ToolRequest,
+  type ToolsetName,
 } from '@ecclium/mcp-churchtools-core';
 import {
   collectWriteTargets,
   openAuditFolder,
+  type WriteTargetObject,
 } from '@ecclium/mcp-churchtools-core/audit';
 import {
   createLogger,
@@ -63,6 +68,7 @@ import { type Output, usageLine } from '../output/index.js';
 import type { WriteSyncFn } from '../send.js';
 import { createStdioCatalog } from '../stdio/catalog.js';
 import {
+  type NamedKind,
   namesFailedText,
   outputCutText,
   partlyReadText,
@@ -93,11 +99,23 @@ export interface PolicyInitOptions {
 // The highest count a log line takes.
 const maxCount = 1_000_000;
 
-/** The tool that names the categories of the wiki. */
-const namesTool = 'ct_wiki_categories_list';
+/** Where the names of one kind of targets come from. */
+interface NameSource {
+  /** The tool that lists them, 25 a page. */
+  readonly tool: string;
+  /** Its toolset, which the configuration must switch on. */
+  readonly toolset: ToolsetName;
+}
 
-// The most pages of the list: 1000 categories at 25 a page, the most the
-// tool takes.
+/** The tools that name the categories, the calendars and the resources. */
+const nameSources: Readonly<Record<NamedKind, NameSource>> = Object.freeze({
+  categories: { tool: 'ct_wiki_categories_list', toolset: 'wiki' },
+  calendars: { tool: 'ct_calendars_list', toolset: 'calendars' },
+  resources: { tool: 'ct_resources_list', toolset: 'calendars' },
+});
+
+// The most pages of a list: 1000 entries at 25 a page, the most each of
+// the tools takes.
 const maxPages = 40;
 
 // The data envelope around a name, which the pipeline puts around every
@@ -135,19 +153,20 @@ const nameOf = (value: unknown): Name | undefined => {
 const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-/** One page of the list of categories, as the tool gives it. */
+/** One page of a list, as the tool gives it. */
 interface Page {
-  readonly categories: readonly { readonly id: number; readonly name: Name }[];
+  readonly entries: readonly { readonly id: number; readonly name: Name }[];
   readonly more: boolean;
 }
 
-// Reads a page of the result field by field; a result of another form
-// gives undefined, and the command writes no proposal then.
-const pageOf = (data: unknown): Page | undefined => {
+// Reads a page of the result field by field, the list under the name of
+// its kind; a result of another form gives undefined, and the command
+// writes no proposal then.
+const pageOf = (data: unknown, kind: NamedKind): Page | undefined => {
   if (!isRecord(data) || typeof data['more'] !== 'boolean') return undefined;
-  const list = data['categories'];
+  const list = data[kind];
   if (!Array.isArray(list)) return undefined;
-  const categories: { id: number; name: Name }[] = [];
+  const entries: { id: number; name: Name }[] = [];
   for (const entry of list as readonly unknown[]) {
     if (!isRecord(entry)) return undefined;
     const id = entry['id'];
@@ -155,30 +174,44 @@ const pageOf = (data: unknown): Page | undefined => {
     if (typeof id !== 'number' || !Number.isSafeInteger(id) || !name) {
       return undefined;
     }
-    categories.push({ id, name });
+    entries.push({ id, name });
   }
-  return { categories, more: data['more'] };
+  return { entries, more: data['more'] };
 };
 
+/** The IDs of the audit whose names to ask for, by kind. */
+type Wanted = Readonly<Record<NamedKind, ReadonlySet<number>>>;
+
+/** The names ChurchTools gave, by kind and ID. */
+type NamesByKind = Readonly<Record<NamedKind, ReadonlyMap<number, Name>>>;
+
 type Names =
-  | { readonly ok: true; readonly names: ReadonlyMap<number, Name> }
+  | { readonly ok: true; readonly names: NamesByKind }
   | { readonly ok: false; readonly code: ExitCode };
 
+const namedKinds: readonly NamedKind[] = Object.freeze([
+  'categories',
+  'calendars',
+  'resources',
+]);
+
 /**
- * Asks ChurchTools for the names of the categories, through the pipeline
- * with the audit file of this process.
+ * Asks ChurchTools for the names of the categories, the calendars and the
+ * resources the audit names, through the pipeline with the audit file of
+ * this process.
  *
  * @param config - The checked configuration, with a folder of state.
  * @param stateDir - The folder of state.
- * @param wanted - The IDs of the categories of the audit; no further page
- *   once each has its name.
+ * @param wanted - The IDs of the audit by kind; a kind without one is not
+ *   asked for, and no further page once each has its name.
  * @param options - The output and the replacements for tests.
- * @returns The names by ID, or the exit code after a text on stderr.
+ * @returns The names by kind and ID, or the exit code after a text on
+ *   stderr.
  */
 const fetchNames = async (
   config: EccliumConfig,
   stateDir: string,
-  wanted: ReadonlySet<number>,
+  wanted: Wanted,
   options: PolicyInitOptions,
 ): Promise<Names> => {
   const { output } = options;
@@ -225,11 +258,12 @@ const fetchNames = async (
       },
       swept: () => undefined,
     });
-    // Only the toolset of the wiki and no write tool: the command reads
-    // one list and needs nothing else.
+    // Only the toolsets of the lists it reads and no write tool: the
+    // command needs nothing else.
+    const asked = namedKinds.filter((kind) => wanted[kind].size > 0);
     const narrowed: EccliumConfig = {
       ...config,
-      toolsets: ['wiki'],
+      toolsets: [...new Set(asked.map((kind) => nameSources[kind].toolset))],
       readOnly: true,
     };
     const { pipeline, transport } = composeToolPipeline({
@@ -254,23 +288,36 @@ const fetchNames = async (
         features: Object.freeze([]),
         signal: new AbortController().signal,
       });
-      const names = new Map<number, Name>();
-      for (let page = 1; page <= maxPages; page += 1) {
-        const outcome = await pipeline.call(namesTool, { page }, request);
-        if (!outcome.ok) {
-          output.stderr(namesFailedText(outcome.error.code));
-          return { ok: false, code: exitCodes.unavailable };
+      const names: Record<NamedKind, Map<number, Name>> = {
+        categories: new Map(),
+        calendars: new Map(),
+        resources: new Map(),
+      };
+      for (const kind of asked) {
+        const found = names[kind];
+        for (let page = 1; page <= maxPages; page += 1) {
+          const outcome = await pipeline.call(
+            nameSources[kind].tool,
+            { page },
+            request,
+          );
+          if (!outcome.ok) {
+            output.stderr(namesFailedText(outcome.error.code, kind));
+            return { ok: false, code: exitCodes.unavailable };
+          }
+          const read = pageOf(outcome.data, kind);
+          if (read === undefined) {
+            output.stderr(
+              namesFailedText('internal' satisfies ErrorCode, kind),
+            );
+            return { ok: false, code: exitCodes.unavailable };
+          }
+          for (const entry of read.entries) found.set(entry.id, entry.name);
+          // No further page once every target of the audit has its name.
+          if (!read.more || [...wanted[kind]].every((id) => found.has(id))) {
+            break;
+          }
         }
-        const read = pageOf(outcome.data);
-        if (read === undefined) {
-          output.stderr(namesFailedText('internal' satisfies ErrorCode));
-          return { ok: false, code: exitCodes.unavailable };
-        }
-        for (const category of read.categories) {
-          names.set(category.id, category.name);
-        }
-        // No further page once every category of the audit has its name.
-        if (!read.more || [...wanted].every((id) => names.has(id))) break;
       }
       return { ok: true, names };
     } finally {
@@ -332,31 +379,50 @@ export async function initPolicy(
     output.stderr(policyInitTexts.folder_moved);
     return exitCodes.ioError;
   }
-  let names: ReadonlyMap<number, Name> = new Map();
-  if (targets.categories.length > 0) {
-    if (!config.toolsets.includes('wiki')) {
-      output.stderr(policyInitTexts.wiki_off);
-      return exitCodes.invalidConfig;
-    }
-    const fetched = await fetchNames(
-      config,
-      stateDir,
-      new Set(targets.categories.map((category) => category.id)),
-      options,
-    );
+  const wanted: Wanted = {
+    categories: new Set(targets.categories.map(({ id }) => id)),
+    calendars: new Set(targets.calendars.map(({ id }) => id)),
+    resources: new Set(targets.resources.map(({ id }) => id)),
+  };
+  // Every toolset first, so that a missing one stops before ChurchTools is
+  // asked anything.
+  if (wanted.categories.size > 0 && !config.toolsets.includes('wiki')) {
+    output.stderr(policyInitTexts.wiki_off);
+    return exitCodes.invalidConfig;
+  }
+  if (
+    wanted.calendars.size + wanted.resources.size > 0 &&
+    !config.toolsets.includes('calendars')
+  ) {
+    output.stderr(policyInitTexts.calendars_off);
+    return exitCodes.invalidConfig;
+  }
+  let names: NamesByKind = {
+    categories: new Map(),
+    calendars: new Map(),
+    resources: new Map(),
+  };
+  if (namedKinds.some((kind) => wanted[kind].size > 0)) {
+    const fetched = await fetchNames(config, stateDir, wanted, options);
     if (!fetched.ok) return fetched.code;
     names = fetched.names;
   }
-  const categories = targets.categories.map((category): ProposedCategory => {
-    const name = names.get(category.id);
-    return {
-      ...category,
-      name: name?.text,
-      ...(name?.changed === true ? { nameChanged: true } : {}),
-    };
-  });
+  const proposed = (
+    kind: NamedKind,
+    found: readonly WriteTargetObject[],
+  ): ProposedTarget[] =>
+    found.map((target) => {
+      const name = names[kind].get(target.id);
+      return {
+        ...target,
+        name: name?.text,
+        ...(name?.changed === true ? { nameChanged: true } : {}),
+      };
+    });
   const text = renderPolicyProposal({
-    categories,
+    categories: proposed('categories', targets.categories),
+    calendars: proposed('calendars', targets.calendars),
+    resources: proposed('resources', targets.resources),
     readBudgetPerDay: config.policy.interactive.readBudgetPerDay,
     ...(config.policy.interactive.contacts === undefined
       ? {}

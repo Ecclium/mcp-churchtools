@@ -254,7 +254,11 @@ afterEach(() => {
 
 const meta = { sensitivity: 'personal', unattended: 'policy' } as const;
 
-const setup = (fake = fakeOf(), snapshots?: WriteSnapshots) => {
+const setup = (
+  fake = fakeOf(),
+  snapshots?: WriteSnapshots,
+  timeZone?: string,
+) => {
   const guard = createWriteGuard({
     client: clientOf(fake),
     clock: createTestClock(now),
@@ -262,6 +266,7 @@ const setup = (fake = fakeOf(), snapshots?: WriteSnapshots) => {
     policy: defaultPolicy,
     quota: createMemoryQuotaStore(),
     snapshots,
+    timeZone,
   });
   const ctx = contextOf(logged);
   const request = (tool: string): PlanRequest => ({
@@ -1247,25 +1252,78 @@ describe('the operator', () => {
     expect(parts.fake.sent).toEqual([]);
   });
 
-  it('takes back no appointment yet', async () => {
-    const parts = setup();
-    const result = await parts.guard.undo({
-      ctx: parts.ctx,
-      eventId: '00000000-0000-4000-8000-000000000003',
-      snapshot: {
-        before: {
-          kind: 'appointmentCreate',
-          tool: 'ct_x',
-          placeId: 8,
-          fieldsHash: 'a'.repeat(64),
-        },
-        day: '2026-11-06' as IsoDate,
-      },
-      overwrite: false,
+  // Only the list of its days shows whether a booking is gone (F47), so its
+  // undo needs its time; the undo has tests of its own.
+  it('keeps the time of a new booking in its snapshot', async () => {
+    const { snapshots, saved } = keeper();
+    const parts = setup(fakeOf(), snapshots);
+    expect(await commitOf(parts, booking)).toMatchObject({ ok: true });
+    expect(saved[0]?.content).toMatchObject({
+      kind: 'bookingCreate',
+      placeId: 13,
+      startDate: start,
+      endDate: end,
     });
-    expect(result).toMatchObject({
-      kind: 'refused',
-      error: { code: 'policy_denied', message: writeSentences.notRun },
-    });
+  });
+});
+
+describe('times in the zone of the operator', () => {
+  const midnight = {
+    startDate: '2026-11-07T23:00:00Z',
+    endDate: '2026-11-08T23:00:00Z',
+  };
+
+  it.each([
+    ['a new appointment', create],
+    ['a change of an appointment', update],
+    ['a booking request', booking],
+  ])(
+    'refuses %s from midnight to midnight in the zone, before it reads',
+    async (_, intent) => {
+      const parts = setup(fakeOf(), undefined, 'Europe/Zurich');
+      const error = await refusalOf(
+        parts.guard.plan(parts.request('ct_x'), { ...intent, ...midnight }),
+      );
+      expect(error).toMatchObject({
+        code: 'policy_denied',
+        message: calendarSentences.wholeDays,
+      });
+      expect(parts.fake.reads).toEqual([]);
+    },
+  );
+
+  it('plans such times without a zone, and one end on midnight with one', async () => {
+    const bare = setup();
+    expect(
+      (await bare.guard.plan(bare.request('ct_x'), { ...create, ...midnight }))
+        .outcome.kind,
+    ).toBe('planned');
+    const zoned = setup(fakeOf(), undefined, 'Europe/Zurich');
+    expect(
+      (
+        await zoned.guard.plan(zoned.request('ct_x'), {
+          ...create,
+          startDate: '2026-11-07T23:00:00Z',
+          endDate: '2026-11-08T09:00:00Z',
+        })
+      ).outcome.kind,
+    ).toBe('planned');
+    expect(
+      (
+        await zoned.guard.plan(zoned.request('ct_x'), {
+          ...create,
+          startDate: '2026-11-08T09:00:00Z',
+          endDate: '2026-11-08T23:00:00Z',
+        })
+      ).outcome.kind,
+    ).toBe('planned');
+  });
+
+  it('shows the times in the zone with its name', async () => {
+    const parts = setup(fakeOf(), undefined, 'Europe/Zurich');
+    const result = await parts.guard.plan(parts.request('ct_x'), create);
+    expect(result.text?.summary).toContain(
+      'Sonntag, 08.11.2026, 10:00 bis 11:00 (Europe/Zurich)',
+    );
   });
 });

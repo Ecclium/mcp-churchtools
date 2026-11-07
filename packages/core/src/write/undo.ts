@@ -9,7 +9,7 @@
  * holds what the write left there, and whether nothing is left to do. The
  * module reads and writes nothing itself.
  *
- * There are two kinds of undo, and both are writes of the core that no
+ * There are these kinds of undo, and all are writes of the core that no
  * plugin can plan:
  *
  * - A page whose text a write changed or extended gets its text from
@@ -20,11 +20,15 @@
  *   sentence that Ecclium created and took it back, and its title stays.
  *   That sentence does pass the content policy, as every text Ecclium
  *   writes of its own.
+ * - An appointment whose fields a write changed gets its title,
+ *   description, start and end from before back (`calendar-plan.ts`).
+ * - An appointment or a booking a write created is deleted, but only while
+ *   it is as the write left it, and never over a change (ADR 0031).
  *
- * Whether the page is still as the write left it is told by its version
- * and the hash of its text, both kept in the snapshot. The write guard
- * writes over a page that someone changed since only when the operator
- * asks for it.
+ * Whether the target is still as the write left it is told by its version
+ * and the hash of its text or fields, both kept in the snapshot. The write
+ * guard writes over a page or an appointment that someone changed since
+ * only when the operator asks for it.
  *
  * @packageDocumentation
  */
@@ -32,12 +36,14 @@ import type { IsoDate } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { checkMarkdown } from '../content/index.js';
 import type {
+  AppointmentFieldsSnapshot,
   PageCreatedSnapshot,
   SnapshotOutcome,
   SnapshotState,
   WikiSnapshotState,
 } from '../snapshots/seal.js';
 import { contentHashOf } from './plan-hash.js';
+import type { WriteTarget } from './rules.js';
 
 /** The snapshot of a write as the undo takes it, from the keeper. */
 export interface SnapshotToUndo {
@@ -57,28 +63,171 @@ export interface WikiSnapshotToUndo {
   readonly day: IsoDate;
 }
 
+/** The version and the hash of the fields a write left on its target. */
+export interface LeftFields {
+  readonly version: number;
+  readonly fieldsHash: string;
+}
+
 /**
- * Gives the snapshot of a write of the wiki, or undefined for another
- * kind, such as an appointment, which the undo does not take back yet.
+ * What taking back a write of an appointment or a booking means. None of
+ * them goes through the content policy or the limits of a text of a tool:
+ * what goes back is the state before Ecclium wrote.
+ */
+export type CalendarUndoTarget =
+  /** A change of an appointment: its fields from before go back. */
+  | {
+      readonly kind: 'restore';
+      /** The tool of the write, which the snapshot of the undo names. */
+      readonly tool: string;
+      readonly calendarId: number;
+      readonly appointmentId: number;
+      /** The fields and the version before the write. */
+      readonly before: AppointmentFieldsSnapshot['before'];
+      readonly left: LeftFields;
+    }
+  /** A new appointment, deleted only while it is as the write left it. */
+  | {
+      readonly kind: 'deleteAppointment';
+      readonly tool: string;
+      readonly calendarId: number;
+      readonly appointmentId: number;
+      readonly left: LeftFields;
+    }
+  /**
+   * A new booking, likewise, and only with the status the write left. Its
+   * time names the days whose list tells whether it is gone (F47).
+   */
+  | {
+      readonly kind: 'deleteBooking';
+      readonly tool: string;
+      readonly resourceId: number;
+      readonly bookingId: number;
+      readonly left: LeftFields & { readonly statusId: number };
+      readonly startDate: string;
+      readonly endDate: string;
+    };
+
+/** What the snapshot of a write means for its undo. */
+export type SnapshotUndo =
+  | { readonly area: 'wiki'; readonly snapshot: WikiSnapshotToUndo }
+  | { readonly area: 'calendar'; readonly target: CalendarUndoTarget }
+  /**
+   * A new appointment or booking whose ID was never kept: only its
+   * calendar or resource is known, to look at by hand.
+   */
+  | { readonly area: 'incomplete'; readonly place: WriteTarget };
+
+const placeOf = (kind: 'calendar' | 'resource', id: number): WriteTarget =>
+  Object.freeze({ kind, key: String(id) });
+
+/**
+ * Tells what the snapshot of a write means for its undo: a write of the
+ * wiki, one of an appointment or a booking, or a new one whose ID was
+ * never kept.
  *
  * @param snapshot - The snapshot as the keeper found it.
- * @returns The snapshot of the wiki, or undefined.
+ * @returns What to take back, frozen.
  * @example
  * ```ts
- * const wiki = wikiSnapshotOf(snapshot);
- * if (wiki === undefined) return refused;
+ * const found = undoOf(snapshot);
+ * if (found.area === 'wiki') undoTargetOf(found.snapshot);
  * ```
  */
-export function wikiSnapshotOf(
-  snapshot: SnapshotToUndo,
-): WikiSnapshotToUndo | undefined {
+export function undoOf(snapshot: SnapshotToUndo): SnapshotUndo {
   const { before, after, day } = snapshot;
-  if (before.kind !== 'wikiPageText' && before.kind !== 'wikiPageCreate') {
-    return undefined;
+  switch (before.kind) {
+    case 'wikiPageText':
+    case 'wikiPageCreate':
+      return Object.freeze({
+        area: 'wiki',
+        snapshot:
+          after === undefined || after.kind !== 'wikiPageCreated'
+            ? { before, day }
+            : { before, after, day },
+      });
+    case 'appointmentFields':
+      return Object.freeze({
+        area: 'calendar',
+        target: Object.freeze({
+          kind: 'restore',
+          tool: before.tool,
+          calendarId: before.calendarId,
+          appointmentId: before.appointmentId,
+          before: before.before,
+          left: before.after,
+        }),
+      });
+    case 'appointmentCreate':
+      return after?.kind === 'appointmentCreated'
+        ? Object.freeze({
+            area: 'calendar',
+            target: Object.freeze({
+              kind: 'deleteAppointment',
+              tool: before.tool,
+              calendarId: before.placeId,
+              appointmentId: after.id,
+              left: { version: after.version, fieldsHash: before.fieldsHash },
+            }),
+          })
+        : Object.freeze({
+            area: 'incomplete',
+            place: placeOf('calendar', before.placeId),
+          });
+    case 'bookingCreate':
+      return after?.kind === 'bookingCreated'
+        ? Object.freeze({
+            area: 'calendar',
+            target: Object.freeze({
+              kind: 'deleteBooking',
+              tool: before.tool,
+              resourceId: before.placeId,
+              bookingId: after.id,
+              left: {
+                version: after.version,
+                fieldsHash: before.fieldsHash,
+                statusId: after.statusId,
+              },
+              startDate: before.startDate,
+              endDate: before.endDate,
+            }),
+          })
+        : Object.freeze({
+            area: 'incomplete',
+            place: placeOf('resource', before.placeId),
+          });
   }
-  return after === undefined || after.kind !== 'wikiPageCreated'
-    ? { before, day }
-    : { before, after, day };
+}
+
+/**
+ * What an undo takes back, for the texts of the command line: a page, the
+ * change of an appointment, a new appointment or a new booking.
+ */
+export type UndoSubject =
+  'page' | 'appointment' | 'newAppointment' | 'newBooking';
+
+/**
+ * Tells what the undo of a snapshot takes back.
+ *
+ * @param before - The part before of the snapshot.
+ * @returns The subject of the undo.
+ * @example
+ * ```ts
+ * undoSubjectOf(snapshot.before); // 'newBooking' for a booking request
+ * ```
+ */
+export function undoSubjectOf(before: SnapshotState): UndoSubject {
+  switch (before.kind) {
+    case 'wikiPageText':
+    case 'wikiPageCreate':
+      return 'page';
+    case 'appointmentFields':
+      return 'appointment';
+    case 'appointmentCreate':
+      return 'newAppointment';
+    case 'bookingCreate':
+      return 'newBooking';
+  }
 }
 
 /** What taking back one write means for its page. */
