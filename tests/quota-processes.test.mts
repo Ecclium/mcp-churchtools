@@ -154,6 +154,101 @@ describe('two processes that count one decision about an entry of the queue', ()
   );
 });
 
+const writeLimit = fileURLToPath(
+  new URL('fixtures/quota/write-limit.mts', import.meta.url),
+);
+
+// One child that asks the gate of the policy about writes with a limit of
+// the day, against the store in the folder of state.
+const ask = (stateDir: string, args: readonly string[]) =>
+  new Promise<unknown>((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [
+        '--conditions=@ecclium/source',
+        `--import=${hooks}`,
+        writeLimit,
+        stateDir,
+        ...args,
+      ],
+      { stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    let out = '';
+    let failure = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      out += chunk;
+    });
+    child.stderr.on('data', (chunk: string) => {
+      failure += chunk;
+    });
+    child.on('close', (code) => {
+      if (code === 0) resolve(JSON.parse(out));
+      else
+        reject(new Error(`the child ended with ${String(code)}: ${failure}`));
+    });
+  });
+
+// The limit of an entry of the policy counts in the file of quotas (ADR
+// 0032, ADR 0063): two processes that commit at the same time get no more
+// writes together than the limit allows, and a process started after them
+// plans with the count they left. Without the limit, the same children get
+// every write, and a new folder of state lets a new process plan again.
+describe('two processes that write against one limit of the policy', () => {
+  const commitTogether = async (stateDir: string, maxPerDay: number) => {
+    const startAt = Date.now() + 2000;
+    const args = ['commit', String(maxPerDay), '8', String(startAt), '10'];
+    const [first, second] = (await Promise.all([
+      ask(stateDir, args),
+      ask(stateDir, args),
+    ])) as [string[], string[]];
+    return [...first, ...second];
+  };
+
+  it(
+    'let only as many writes go as the limit allows, and a later process plans for the queue',
+    async () => {
+      const stateDir = mkdtempSync(join(base, 'write-limit-'));
+      chmodSync(stateDir, 0o700);
+      expect(prepareQuotaFolder(stateDir)).toEqual({ ok: true });
+      const outcomes = await commitTogether(stateDir, 5);
+      expect(outcomes.filter((outcome) => outcome === 'go')).toHaveLength(5);
+      expect(outcomes.filter((outcome) => outcome === 'refused')).toHaveLength(
+        11,
+      );
+      // After both ended, as after a restart: the count is in the file.
+      expect(await ask(stateDir, ['plan', '5'])).toBe('limit_reached');
+      const day = new Date().toISOString().slice(0, 10);
+      const counts = (
+        JSON.parse(
+          readFileSync(join(stateDir, 'quota', `default-${day}.json`), 'utf8'),
+        ) as { counts: Record<string, Record<string, number>> }
+      ).counts['service:stdio:local-stdio'];
+      expect(counts).toEqual({
+        'write:ct_wiki_page_create:wiki_category:12': 16,
+      });
+    },
+    timeout,
+  );
+
+  it(
+    'let every write go without the limit, and a new folder of state plans again',
+    async () => {
+      const stateDir = mkdtempSync(join(base, 'write-no-limit-'));
+      chmodSync(stateDir, 0o700);
+      expect(prepareQuotaFolder(stateDir)).toEqual({ ok: true });
+      const outcomes = await commitTogether(stateDir, 1000);
+      expect(outcomes).toEqual(Array.from({ length: 16 }, () => 'go'));
+      const fresh = mkdtempSync(join(base, 'write-fresh-'));
+      chmodSync(fresh, 0o700);
+      expect(prepareQuotaFolder(fresh)).toEqual({ ok: true });
+      expect(await ask(fresh, ['plan', '5'])).toBe('go');
+    },
+    timeout,
+  );
+});
+
 describe('a FIFO in place of the file of quotas', () => {
   it('is refused without waiting for a writer', async () => {
     const stateDir = mkdtempSync(join(base, 'fifo-'));
