@@ -904,7 +904,9 @@ describe('a tool of a plugin', () => {
   );
 
   // A write tool of a plugin that claims other rights and another guard
-  // against replay than the core derives for its intent.
+  // against replay than the core derives for its intent. Here the check of
+  // the rights shows which rules count; that target and replay guard come
+  // from the intent shows the test of the sealed plan in guard.test.ts.
   const claiming = defineWriteTool({
     name: 'ct_test_plugin_claims',
     meta: {

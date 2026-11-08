@@ -460,6 +460,24 @@ describe('planning', () => {
     ['an intent that fits none', { kind: 'pageDelete', guid }],
   ] as const;
 
+  // Counts every read of the fake, the rights included, which the guard
+  // reads first for a write it runs.
+  const countingReads = () => {
+    const fake = fakeOf();
+    const reads = { count: 0 };
+    fake.onRead = () => {
+      reads.count += 1;
+    };
+    const { permissions } = fake;
+    Object.defineProperty(fake, 'permissions', {
+      get: () => {
+        reads.count += 1;
+        return permissions;
+      },
+    });
+    return { fake, reads };
+  };
+
   it.each(
     everyIntent.flatMap(([name, intent]) =>
       (['core', 'plugin'] as const).map(
@@ -469,11 +487,7 @@ describe('planning', () => {
   )(
     'refuses %s from %s when the server only reads, before any read',
     async (_name, origin, intent) => {
-      const fake = fakeOf();
-      let reads = 0;
-      fake.onRead = () => {
-        reads += 1;
-      };
+      const { fake, reads } = countingReads();
       const { guard } = setup(fake);
       const ctx = contextOf(logged, { readOnly: true });
       const error = await refusalOf(
@@ -483,20 +497,26 @@ describe('planning', () => {
         'policy_denied',
         writeSentences.readOnly,
       ]);
-      expect([reads, fake.sent]).toEqual([0, []]);
+      expect([reads.count, fake.sent]).toEqual([0, []]);
     },
   );
 
-  it.each(everyIntent)(
+  // The counter-check: on a server that writes, no intent is refused as
+  // read-only, and each kind the core runs gets as far as a read.
+  it.each(
+    everyIntent.map(([name, intent], index) => [name, intent, index < 6]),
+  )(
     'counter-check: %s is not refused as read-only on a server that writes',
-    async (_name, intent) => {
-      const { guard, request } = setup();
+    async (_name, intent, runs) => {
+      const { fake, reads } = countingReads();
+      const { guard, request } = setup(fake);
       const outcome = await guard.plan(request, intent).then(
         () => 'planned',
         (error: unknown) =>
           isEccliumError(error) ? error.message : 'other error',
       );
       expect(outcome).not.toBe(writeSentences.readOnly);
+      expect(reads.count > 0).toBe(runs);
     },
   );
 
