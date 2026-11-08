@@ -764,6 +764,29 @@ describe('committing', () => {
     expect(fake.sent).toEqual([]);
   });
 
+  // What code outside the core could build in place of the proof it got:
+  // none is taken, none uses the proof up, and the real one still writes
+  // (ADR 0029).
+  it('commits nothing with a proof built outside the core, and the real proof still writes', async () => {
+    const { fake, guard, ctx, plan, proof } = await planned(update);
+    const forged: unknown[] = [
+      {},
+      { __ecclium: 'WriteProof' },
+      Object.create(proof) as object,
+      new Proxy(proof, {}),
+      { ...(proof as object) },
+      JSON.parse(JSON.stringify(proof)) as unknown,
+    ];
+    for (const value of forged) {
+      const result = await guard.commit(ctx, plan, value);
+      expect(result).toMatchObject({ ok: false, state: 'denied', sent: false });
+      expect(!result.ok && result.error.code).toBe('confirmation_required');
+    }
+    expect(fake.sent).toEqual([]);
+    expect((await guard.commit(ctx, plan, proof)).ok).toBe(true);
+    expect(fake.sent).toHaveLength(1);
+  });
+
   it('ends a repeated commit after a write in a conflict, without writing again', async () => {
     const { fake, guard, ctx, plan, proof } = await planned(update);
     expect((await guard.commit(ctx, plan, proof)).ok).toBe(true);

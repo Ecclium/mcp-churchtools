@@ -412,6 +412,8 @@ describe('a write tool in the pipeline', () => {
       target: { kind: 'wiki_page', key: `12/${guid}` },
       version: 4,
     });
+    // One line for each of the two calls, and only the second writes.
+    expect(events()).toHaveLength(2);
     expect(events()[0]).toMatchObject({ outcome: 'ok', writeState: 'planned' });
     expect(events()[1]).toMatchObject({
       outcome: 'ok',
