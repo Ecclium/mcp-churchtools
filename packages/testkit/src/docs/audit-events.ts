@@ -58,7 +58,7 @@ export const auditFieldMeanings: Readonly<Record<string, string>> =
     contentViolations:
       'Warum die ContentPolicy den Text eines Schreibvorgangs abgelehnt hat, als feste Namen wie `webAddress` oder `contact`, nie mit dem Text ([ADR 0030](adr/0030-contentpolicy.md)). Nur in einer Zeile mit `denied`.',
     writeState:
-      'Der Zustand eines Schreibvorgangs am Ende des Aufrufs: `planned`, `queued`, `verified` oder `skipped` bei `ok`, `denied` bei `denied`, `conflict`, `failed` oder `rolledBack` bei `error`. Wer Schreibvorgänge zählt, liest dieses Feld.',
+      'Der Zustand eines Schreibvorgangs am Ende des Aufrufs: `planned`, `queued`, `verified` oder `skipped` bei `ok`, `denied` bei `denied`, `conflict`, `failed` oder `rolledBack` bei `error`. `denied` heisst, dass Ecclium nichts gesendet hat, auch bei einem Konflikt vor dem Schreiben, dann mit dem Fehlercode `conflict`. `conflict` heisst, dass Ecclium geschrieben hat und das Ziel danach nicht wie geplant liest. Wer Schreibvorgänge zählt, liest dieses Feld.',
     policyHash:
       'SHA-256 der Richtlinie, die einen Aufruf eines schreibenden Tools beurteilt hat, wie `ecclium config check` ihn zeigt. Jede Zeile eines schreibenden Tools nennt ihn, auch eine abgelehnte, ebenso jede Zeile einer entschiedenen Freigabe. Später nennt ihn auch jede Zeile eines Laufs des Runners.',
     provider: 'Das Sprachmodell eines Laufs, wie die Konfiguration es nennt.',

@@ -31,6 +31,9 @@ export type ConfirmationPath = 'elicitation' | 'echo' | 'policy' | 'operator';
  * back, not needed, refused, ended in a conflict, failed, or taken back
  * after a failure in a run. The outcome of the line follows from it:
  * `ok` for the first four, `denied` for `denied`, `error` for the rest.
+ * `denied` means nothing was sent, also for a conflict found before the
+ * write, which carries the code `conflict`; the state `conflict` means the
+ * write was sent and the target does not read back as planned.
  */
 export type WriteState =
   | 'planned'
