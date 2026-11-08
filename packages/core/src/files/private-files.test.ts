@@ -52,6 +52,11 @@ const withFs = (changes: Partial<PrivateFileSystem>): PrivateFileSystem =>
 const systemError = (code: string): Error =>
   Object.assign(new Error('from the system'), { code });
 
+// Whether a descriptor belongs to a folder, for a fake that fails only the
+// flush of the folder.
+const isFolderFd = (fd: number): boolean =>
+  nodePrivateFileSystem.fstatSync(fd).isDirectory();
+
 const code = (run: () => unknown): string => {
   try {
     run();
@@ -493,6 +498,99 @@ describe('writePrivateFileOnce and readPrivateFile', () => {
       }),
     ).toBe('written');
     expect(readFileSync(join(folder, 'parts'), 'utf8')).toBe('abcdef');
+  });
+
+  it('flushes the folder after the link, and not for a name that is taken', () => {
+    const folder = fresh();
+    const calls: string[] = [];
+    const folders = new Set<number>();
+    const fs = withFs({
+      openSync: (path, flags, mode) => {
+        const fd = nodePrivateFileSystem.openSync(path, flags, mode);
+        if (path === folder) folders.add(fd);
+        calls.push(path === folder ? 'open folder' : 'open file');
+        return fd;
+      },
+      fsyncSync: (fd) => {
+        calls.push(folders.has(fd) ? 'fsync folder' : 'fsync file');
+        nodePrivateFileSystem.fsyncSync(fd);
+      },
+      closeSync: (fd) => {
+        folders.delete(fd);
+        nodePrivateFileSystem.closeSync(fd);
+      },
+      linkSync: (existing, path) => {
+        calls.push('link');
+        nodePrivateFileSystem.linkSync(existing, path);
+      },
+    });
+    expect(writePrivateFileOnce(folder, 'a', bytes('x'), { pid, fs })).toBe(
+      'written',
+    );
+    expect(calls).toEqual([
+      'open file',
+      'fsync file',
+      'link',
+      'open folder',
+      'fsync folder',
+    ]);
+    // The writer that gave the name flushed the folder.
+    calls.length = 0;
+    expect(writePrivateFileOnce(folder, 'a', bytes('y'), { pid, fs })).toBe(
+      'exists',
+    );
+    expect(calls).toEqual(['open file', 'fsync file', 'link']);
+  });
+
+  it('fails when the folder does not open or flush after the link, and leaves the file under its name', () => {
+    const folder = fresh();
+    const failing = (name: string, changes: Partial<PrivateFileSystem>) =>
+      code(() =>
+        writePrivateFileOnce(folder, name, bytes(name), {
+          pid,
+          fs: withFs(changes),
+        }),
+      );
+    expect(
+      failing('a', {
+        openSync: (path, flags, mode) => {
+          if (path === folder) throw systemError('EMFILE');
+          return nodePrivateFileSystem.openSync(path, flags, mode);
+        },
+      }),
+    ).toBe('unavailable');
+    expect(
+      failing('b', {
+        fsyncSync: (fd) => {
+          if (isFolderFd(fd)) throw systemError('EIO');
+          nodePrivateFileSystem.fsyncSync(fd);
+        },
+      }),
+    ).toBe('unavailable');
+    // No temporary name stays, and a second try finds the first file.
+    expect(readdirSync(folder)).toEqual(['a', 'b']);
+    expect(writePrivateFileOnce(folder, 'b', bytes('c'), { pid })).toBe(
+      'exists',
+    );
+    expect(readFileSync(join(folder, 'b'), 'utf8')).toBe('b');
+  });
+
+  it('takes a file system that cannot flush a folder', () => {
+    const folder = fresh();
+    for (const refusal of ['EINVAL', 'ENOTSUP']) {
+      expect(
+        writePrivateFileOnce(folder, refusal, bytes('x'), {
+          pid,
+          fs: withFs({
+            fsyncSync: (fd) => {
+              if (isFolderFd(fd)) throw systemError(refusal);
+              nodePrivateFileSystem.fsyncSync(fd);
+            },
+          }),
+        }),
+      ).toBe('written');
+    }
+    expect(readdirSync(folder)).toEqual(['EINVAL', 'ENOTSUP']);
   });
 });
 
