@@ -1,6 +1,6 @@
 # ADR 0030: ContentPolicy mit Längengrenze und Normalisierung, nur Markdown-Ziele
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 08.11.2026
 - Datum: 02.11.2026
 - Fällt vor: Phase 5
 - Ergänzt: [ADR 0021](0021-supply-chain-baseline.md), dessen Entscheid [ADR 0050](0050-token-der-mise-action.md) übernimmt, um eine Lizenz für Werkzeuge der Entwicklung
@@ -101,3 +101,4 @@ Termine und Buchungen, seit dem 06.11.2026:
 
 - **Klartext mit Zeilen:** `checkPlainLines` prüft einen Text ohne Markdown, der Zeilen haben darf, wie `checkPlainText` mit denselben Gründen, nur dass ein Zeilenumbruch erlaubt ist. Die Normalform macht jedes Zeilenende gleich.
 - **Im Write-Guard:** Der Titel eines Termins oder einer Buchung geht durch `checkPlainText`, ihre Beschreibung durch `checkPlainLines`, vor den Rechten und vor jeder Anfrage. Die Grenze von 2000 Zeichen einer Beschreibung prüft danach der Plan ([ADR 0029](0029-write-guard.md), Umsetzung Teil 7). Eine Zeile der Kennzeichnung bekommen sie nicht ([ADR 0032](0032-richtlinie-und-pruefcode.md)), und was ChurchTools von einer Buchungsanfrage per Mail an die Verwalter schickt (F48), hat damit weder Markdown noch Link noch Adresse.
+- **Abnahme:** Der Korpus und der Differenztest laufen in jedem `pnpm check`. In den Läufen der Abnahme am 08.11.2026 an der Testinstanz gingen die Titel und Texte von Seiten, Abschnitten, Terminen und einer Buchungsanfrage durch die ContentPolicy, im Smoke-Test für das Schreiben und in Claude Code und Claude Desktop.
