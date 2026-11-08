@@ -23,59 +23,101 @@ import {
 import { quotaContext } from '../packages/testkit/src/quota/index.ts';
 
 // Two processes share one file of quotas (ADR 0063): each child counts
-// against the store of core, run from source, from the same moment, and
-// together they get every count exactly once. A FIFO in place of the file,
-// made with mkfifo, never holds the store.
+// against the store of core, run from source, and together they get every
+// count exactly once. The test starts the children together once both
+// have loaded the source, so that they count at the same time also when
+// one of them took long to start, and every child counts on 24.10.2026 by
+// a clock that runs from noon of that day, so that no midnight falls
+// between them (tests/fixtures/quota/together.mts). A FIFO in place of the
+// file, made with mkfifo, never holds the store.
 
-const fixture = fileURLToPath(
+const counter = fileURLToPath(
   new URL('fixtures/quota/count.mts', import.meta.url),
+);
+const writeLimit = fileURLToPath(
+  new URL('fixtures/quota/write-limit.mts', import.meta.url),
 );
 const hooks = new URL('fixtures/stdio/hooks.mts', import.meta.url).href;
 const timeout = 30_000;
+const day = '2026-10-24';
 
 const base = mkdtempSync(join(tmpdir(), 'ecclium-quota-processes-'));
 afterAll(() => {
   rmSync(base, { recursive: true, force: true });
 });
 
-const count = (
-  stateDir: string,
-  times: number,
-  startAt: number,
-  pauseMs: number,
-  key?: { readonly key: string; readonly day: string },
-) =>
-  new Promise<number[]>((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      [
-        '--conditions=@ecclium/source',
-        `--import=${hooks}`,
-        fixture,
-        stateDir,
-        String(times),
-        String(startAt),
-        String(pauseMs),
-        ...(key === undefined ? [] : [key.key, key.day]),
-      ],
-      { stdio: ['ignore', 'pipe', 'pipe'] },
-    );
-    let out = '';
-    let failure = '';
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk: string) => {
-      out += chunk;
-    });
-    child.stderr.on('data', (chunk: string) => {
-      failure += chunk;
-    });
+interface Child {
+  /** Resolves once the child has loaded the source and waits to start. */
+  readonly ready: Promise<void>;
+  /** Starts the child, or lets it end when it does not wait to start. */
+  readonly start: () => void;
+  /** Ends the child, for a test that gives up on it. */
+  readonly stop: () => void;
+  /** The last line the child printed, as JSON. */
+  readonly result: Promise<unknown>;
+}
+
+const spawnChild = (fixture: string, args: readonly string[]): Child => {
+  const child = spawn(
+    process.execPath,
+    ['--conditions=@ecclium/source', `--import=${hooks}`, fixture, ...args],
+    { stdio: ['pipe', 'pipe', 'pipe'] },
+  );
+  let out = '';
+  let failure = '';
+  let markReady = (): void => undefined;
+  const ready = new Promise<void>((resolve) => {
+    markReady = resolve;
+  });
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk: string) => {
+    out += chunk;
+    if (out.startsWith('ready\n')) markReady();
+  });
+  child.stderr.on('data', (chunk: string) => {
+    failure += chunk;
+  });
+  // A child that ended before its start closes the pipe; its result tells
+  // why, so the error of the write is not one of the test.
+  child.stdin.on('error', () => undefined);
+  const result = new Promise<unknown>((resolve, reject) => {
     child.on('close', (code) => {
-      if (code === 0) resolve(JSON.parse(out) as number[]);
+      const last = out.trimEnd().split('\n').at(-1) ?? '';
+      if (code === 0) resolve(JSON.parse(last));
       else
         reject(new Error(`the child ended with ${String(code)}: ${failure}`));
     });
   });
+  return {
+    ready,
+    start: () => {
+      child.stdin.end('go\n');
+    },
+    stop: () => {
+      child.kill();
+    },
+    result,
+  };
+};
+
+// Starts every child once all of them wait, and gives their results. A
+// child that ends before it is ready ends the wait with its error, and
+// the others are ended then, so that none counts after the test.
+const together = async (children: readonly Child[]): Promise<unknown[]> => {
+  const results = Promise.all(children.map((child) => child.result));
+  try {
+    await Promise.race([
+      Promise.all(children.map((child) => child.ready)),
+      results,
+    ]);
+    for (const child of children) child.start();
+    return await results;
+  } catch (error) {
+    for (const child of children) child.stop();
+    throw error;
+  }
+};
 
 describe('two processes that count against one file of quotas', () => {
   it(
@@ -85,14 +127,13 @@ describe('two processes that count against one file of quotas', () => {
       chmodSync(stateDir, 0o700);
       expect(prepareQuotaFolder(stateDir)).toEqual({ ok: true });
       const times = 40;
-      // Late enough that both children have started and loaded the store.
-      const startAt = Date.now() + 2000;
       // A pause after each count gives the other child the lock in
       // between, so that both really wait for each other.
-      const [first, second] = await Promise.all([
-        count(stateDir, times, startAt, 10),
-        count(stateDir, times, startAt, 10),
-      ]);
+      const args = [stateDir, String(times), '10'];
+      const [first, second] = (await together([
+        spawnChild(counter, args),
+        spawnChild(counter, args),
+      ])) as [number[], number[]];
       expect([...first, ...second].sort((a, b) => a - b)).toEqual(
         Array.from({ length: 2 * times }, (_, index) => index + 1),
       );
@@ -103,11 +144,9 @@ describe('two processes that count against one file of quotas', () => {
         expect(span).toBeGreaterThan(counts.length);
       }
       const quota = join(stateDir, 'quota');
-      expect(readdirSync(quota)).toEqual(['default-2026-10-24.json']);
+      expect(readdirSync(quota)).toEqual([`default-${day}.json`]);
       expect(
-        JSON.parse(
-          readFileSync(join(quota, 'default-2026-10-24.json'), 'utf8'),
-        ),
+        JSON.parse(readFileSync(join(quota, `default-${day}.json`), 'utf8')),
       ).toMatchObject({
         counts: { 'user:stdio:local-stdio': { special_reads: 2 * times } },
       });
@@ -123,15 +162,15 @@ describe('two processes that count one decision about an entry of the queue', ()
       const stateDir = mkdtempSync(join(base, 'approvals-'));
       chmodSync(stateDir, 0o700);
       expect(prepareQuotaFolder(stateDir)).toEqual({ ok: true });
-      // Today, so that the store keeps the file by its clock (ADR 0029).
-      const day = new Date().toISOString().slice(0, 10);
+      // The day of the clock of the children, so that the store keeps the
+      // file of decisions (ADR 0029).
       const key = approvalQuotaKey('5e'.repeat(32));
       const times = 20;
-      const startAt = Date.now() + 2000;
-      const [first, second] = await Promise.all([
-        count(stateDir, times, startAt, 10, { key, day }),
-        count(stateDir, times, startAt, 10, { key, day }),
-      ]);
+      const args = [stateDir, String(times), '10', key];
+      const [first, second] = (await together([
+        spawnChild(counter, args),
+        spawnChild(counter, args),
+      ])) as [number[], number[]];
       const all = [...first, ...second].sort((a, b) => a - b);
       expect(all).toEqual(
         Array.from({ length: 2 * times }, (_, index) => index + 1),
@@ -154,41 +193,13 @@ describe('two processes that count one decision about an entry of the queue', ()
   );
 });
 
-const writeLimit = fileURLToPath(
-  new URL('fixtures/quota/write-limit.mts', import.meta.url),
-);
-
-// One child that asks the gate of the policy about writes with a limit of
-// the day, against the store in the folder of state.
-const ask = (stateDir: string, args: readonly string[]) =>
-  new Promise<unknown>((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      [
-        '--conditions=@ecclium/source',
-        `--import=${hooks}`,
-        writeLimit,
-        stateDir,
-        ...args,
-      ],
-      { stdio: ['ignore', 'pipe', 'pipe'] },
-    );
-    let out = '';
-    let failure = '';
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk: string) => {
-      out += chunk;
-    });
-    child.stderr.on('data', (chunk: string) => {
-      failure += chunk;
-    });
-    child.on('close', (code) => {
-      if (code === 0) resolve(JSON.parse(out));
-      else
-        reject(new Error(`the child ended with ${String(code)}: ${failure}`));
-    });
-  });
+// One child that plans a write with a limit of the day, against the store
+// in the folder of state, and does not wait to start.
+const plan = (stateDir: string, maxPerDay: number): Promise<unknown> => {
+  const child = spawnChild(writeLimit, [stateDir, 'plan', String(maxPerDay)]);
+  child.start();
+  return child.result;
+};
 
 // The limit of an entry of the policy counts in the file of quotas (ADR
 // 0032, ADR 0063): two processes that commit at the same time get no more
@@ -197,11 +208,10 @@ const ask = (stateDir: string, args: readonly string[]) =>
 // every write, and a new folder of state lets a new process plan again.
 describe('two processes that write against one limit of the policy', () => {
   const commitTogether = async (stateDir: string, maxPerDay: number) => {
-    const startAt = Date.now() + 2000;
-    const args = ['commit', String(maxPerDay), '8', String(startAt), '10'];
-    const [first, second] = (await Promise.all([
-      ask(stateDir, args),
-      ask(stateDir, args),
+    const args = [stateDir, 'commit', String(maxPerDay), '8', '10'];
+    const [first, second] = (await together([
+      spawnChild(writeLimit, args),
+      spawnChild(writeLimit, args),
     ])) as [string[], string[]];
     return [...first, ...second];
   };
@@ -218,16 +228,14 @@ describe('two processes that write against one limit of the policy', () => {
         11,
       );
       // After both ended, as after a restart: the count is in the file.
-      expect(await ask(stateDir, ['plan', '5'])).toBe('limit_reached');
-      // The file of the day the children counted on, by its name, so that
-      // the test does not read the clock again after them.
-      const files = readdirSync(join(stateDir, 'quota')).filter((name) =>
-        /^default-\d{4}-\d{2}-\d{2}\.json$/.test(name),
-      );
-      expect(files).toHaveLength(1);
+      expect(await plan(stateDir, 5)).toBe('limit_reached');
+      // The one file of the day the children counted on, by their clock.
+      expect(readdirSync(join(stateDir, 'quota'))).toEqual([
+        `default-${day}.json`,
+      ]);
       const counts = (
         JSON.parse(
-          readFileSync(join(stateDir, 'quota', files[0] ?? ''), 'utf8'),
+          readFileSync(join(stateDir, 'quota', `default-${day}.json`), 'utf8'),
         ) as { counts: Record<string, Record<string, number>> }
       ).counts['service:stdio:local-stdio'];
       expect(counts).toEqual({
@@ -248,7 +256,7 @@ describe('two processes that write against one limit of the policy', () => {
       const fresh = mkdtempSync(join(base, 'write-fresh-'));
       chmodSync(fresh, 0o700);
       expect(prepareQuotaFolder(fresh)).toEqual({ ok: true });
-      expect(await ask(fresh, ['plan', '5'])).toBe('go');
+      expect(await plan(fresh, 5)).toBe('go');
     },
     timeout,
   );

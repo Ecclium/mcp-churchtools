@@ -6,7 +6,9 @@
 // test gives, with a pause after each so that another child gets the lock
 // in between, and prints for each whether the policy let the write go. With
 // `plan` it plans once and prints the reason the write would wait in the
-// queue, or `go`.
+// queue, or `go`. Every child counts on 24.10.2026, by a clock that runs
+// from noon of that day, and with `commit` it starts together with the
+// other child once the test says so.
 import process from 'node:process';
 
 import {
@@ -17,15 +19,16 @@ import { checkPolicy } from '../../../packages/core/src/policy/check.ts';
 import { createFileQuotaStore } from '../../../packages/core/src/quota/file-store.ts';
 import { createPolicyGate } from '../../../packages/core/src/write/policy-gate.ts';
 import type { IntentRules } from '../../../packages/core/src/write/rules.ts';
+import { clockFromNoon, startTogether } from './together.mts';
 
 const [
   stateDir = '',
   phase = 'commit',
   maxPerDay = '1',
   times = '1',
-  startAt = '0',
   pauseMs = '0',
 ] = process.argv.slice(2);
+const clock = clockFromNoon();
 
 const tool = 'ct_wiki_page_create';
 const checked = checkPolicy({
@@ -46,11 +49,11 @@ const gate = createPolicyGate({
   policy: checked.policy,
   quota: createFileQuotaStore({
     stateDir,
-    clock: { now: () => Date.now() },
+    clock,
     pid: process.pid,
     host: 'test-host',
   }),
-  clock: { now: () => Date.now() },
+  clock,
   categoryName: () => Promise.resolve('Berichte'),
   calendarName: () => Promise.resolve(undefined),
   resourceName: () => Promise.resolve(undefined),
@@ -79,9 +82,7 @@ if (phase === 'plan') {
   const reason = await gate.check(ctx, tool, rules, {}, 'plan');
   process.stdout.write(`${JSON.stringify(reason ?? 'go')}\n`);
 } else {
-  await new Promise((resolve) => {
-    setTimeout(resolve, Math.max(0, Number(startAt) - Date.now()));
-  });
+  await startTogether();
   const outcomes: string[] = [];
   for (let index = 0; index < Number(times); index += 1) {
     try {
