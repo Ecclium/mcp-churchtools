@@ -340,7 +340,17 @@ Befunde:
 
 Für die Bestätigung von Schreibvorgängen in Phase 5 heisst das: Über Elicitation trägt sie in Claude Code interaktiv und im Code-Tab von Claude Desktop. Im Chat von Claude Desktop bleibt nur die Bestätigung per Echo, und mit `claude -p` kommt ohne Hook keine Bestätigung zustande. Schreiben kann nach T8 nur der Kern mit einem Nachweis. Ablehnen, Abbrechen, ein Fehler oder eine Zeitüberschreitung liefern keinen, eine Rückfrage, die niemand beantwortet, führt also nicht zu einem Schreibvorgang.
 
+### Abnahme von Phase 5
+
+Am 08.11.2026 liefen Claude Code 2.1.318 und Claude Desktop 4.23118.0 unter macOS 27.2 mit dem gebauten Server gegen die Testinstanz, über einen eigenen Eintrag `ecclium-schreiben` mit dem Schreibkonto, `ECCLIUM_READ_ONLY=false`, den Toolsets `wiki` und `calendars` und `echo-allowed`, der Voreinstellung über stdio. Ausgewertet ist die Audit-Datei, nicht ein Protokoll des Spikes.
+
+- **Claude Code, interaktiv:** Die Rückfrage erschien als Dialog mit dem Feld «Schreiben bestätigen» als Kästchen, den Knöpfen «Accept» und «Decline» und dem Hinweis, dass Esc abbricht. Zusammenfassung und Unterschied zeigte er gekürzt, mit einem Hinweis auf die weiteren Zeilen. Angenommen schrieben eine neue Seite, ein Abschnitt, ein neuer Termin und seine Änderung, im Audit mit `confirmation: elicitation`. Abgelehnt und mit Esc abgebrochen endeten je mit `denied` und `confirmation_required`, ohne zu schreiben. Im Audit unterscheiden sich die beiden nicht. Die Buchungsanfrage kam ohne Rückfrage in die Freigabe-Warteschlange, weil die Richtlinie die Ressource nicht nannte.
+- **Code-Tab von Claude Desktop:** Er nutzte den Server des Eintrags aus `claude_desktop_config.json` über die Verbindung von Claude Desktop, dieselbe, deren stderr im Log des Eintrags steht, und diese kündigte keine Rückfrage an. Ecclium bestätigte deshalb über das Echo. Im Modus «Auto» führte der Code-Tab `ct_write_confirm` aus, ohne zu fragen, und zwei Abschnitte kamen mit `confirmation: echo` ins Wiki, auch der, den die Person ablehnen wollte. Im Modus «Fragen» lehnte die Person schon den Aufruf des Tools ab oder brach ihn ab. Er kam nie bei Ecclium an, und das Audit hat dazu keine Zeile.
+- **Chat von Claude Desktop:** keine Rückfrage, wie im Spike. Das Echo bestätigte eine neue Seite, einen Abschnitt und einen neuen Termin, je nachdem die Person `ct_write_confirm` im Dialog des Clients einmal erlaubt hatte. Die Änderung eines Termins wartete in der Freigabe-Warteschlange, weil das Echo sie nicht bestätigt.
+
+Ein Modus, in dem der Client Tools ohne Nachfrage ausführt, wirkt damit wie «immer erlauben» für `ct_write_confirm` und macht das Echo wirkungslos. Das Echo bleibt auf Schreibvorgänge beschränkt, die sich zurücknehmen lassen, und das Audit nennt den Weg. Wer einen solchen Modus nutzt, setzt `ECCLIUM_WRITE_CONFIRMATION` auf `elicitation-or-queue` oder `queue` ([`docs/security.md`](../security.md#bestätigung-vor-dem-schreiben)).
+
 ## Offene Punkte
 
-- Wie der Code-Tab von Claude Desktop Ablehnen und Abbrechen sendet und ob ein Eintrag in `claude_desktop_config.json` dort dasselbe ergibt (Lauf 7 B und C, Lauf 8).
+- Wie der Code-Tab von Claude Desktop eine Rückfrage ablehnt und abbricht (Lauf 7 B und C). Mit einem Eintrag in `claude_desktop_config.json` kündigte er im November 2026 keine Rückfrage an (Lauf 8, siehe «Abnahme von Phase 5»). Ob ein Eintrag nur in Claude Code dort wieder eine Rückfrage ergibt, wie im Oktober 2026, ist nicht geprüft.
 - Wie sich andere Clients als Claude Code und Claude Desktop bei Rückfragen verhalten.
