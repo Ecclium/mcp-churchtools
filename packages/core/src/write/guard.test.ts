@@ -380,6 +380,9 @@ describe('planning', () => {
         ),
       ),
     );
+    if (plain === undefined || claimed === undefined) {
+      throw new Error('expected two sealed plans');
+    }
     expect(claimed.rules).toEqual(plain.rules);
     expect(claimed.rules).toMatchObject({
       target: { kind: 'wiki_page', key: `12/${guid.toLowerCase()}` },
