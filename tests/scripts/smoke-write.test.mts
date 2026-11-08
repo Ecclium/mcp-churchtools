@@ -268,7 +268,7 @@ describe.skipIf(process.getuid?.() === 0)(
         expect(result.stderr).toBe('');
         // A server that writes logs an anchor after each write, and
         // audit verify takes every one of them (ADR 0028).
-        expect(result.code).toBe(smokeWriteExitCodes.ok);
+        expect(result.code, result.stdout).toBe(smokeWriteExitCodes.ok);
         expect(report(result)).toEqual({
           befunde: [],
           // Undo of the first section refused, the second taken back, the
@@ -366,7 +366,7 @@ describe.skipIf(process.getuid?.() === 0)(
       async () => {
         const result = await run({ standIn: { deleteKeepsAppointment: true } });
         expect(result.stderr).toBe('');
-        expect(result.code).toBe(smokeWriteExitCodes.failed);
+        expect(result.code, result.stdout).toBe(smokeWriteExitCodes.failed);
         expect(report(result)).toMatchObject({
           reste: { seite: 'ja', termin: 'ja', buchung: 'nein' },
           aufraeumen: ['07-wiki-cleanup', '11-calendar-write'],
@@ -406,7 +406,7 @@ describe.skipIf(process.getuid?.() === 0)(
         expect(result.stderr).toBe('');
         // The request is found past the tool, in every status, and its undo
         // reads the booking itself, so only the finding tells of the list.
-        expect(result.code).toBe(smokeWriteExitCodes.ok);
+        expect(result.code, result.stdout).toBe(smokeWriteExitCodes.ok);
         expect(report(result)).toMatchObject({
           befunde: ['buchungsliste_ohne_anfrage'],
           ...passed([]),
@@ -423,7 +423,7 @@ describe.skipIf(process.getuid?.() === 0)(
       async () => {
         const result = await run({ standIn: { bookingStatus: 2 } });
         expect(result.stderr).toBe('');
-        expect(result.code).toBe(smokeWriteExitCodes.failed);
+        expect(result.code, result.stdout).toBe(smokeWriteExitCodes.failed);
         expect(report(result)).toMatchObject({
           reste: { seite: 'ja', termin: 'ja', buchung: 'nein' },
           ...passed(['buchung_anfragen']),
