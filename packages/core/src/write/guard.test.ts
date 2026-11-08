@@ -357,6 +357,37 @@ describe('planning', () => {
     });
   });
 
+  // A plugin declares rights, a target and a guard against replay in its
+  // meta; even if such fields reached the guard, the rules come from the
+  // intent (ADR 0029).
+  it('derives target, rights and replay guard from the intent, whatever a meta claims', async () => {
+    const { guard, request } = setup();
+    const plain = readPlan(planOf(await guard.plan(request, update)));
+    const claimed = readPlan(
+      planOf(
+        await guard.plan(
+          {
+            ...request,
+            origin: 'plugin',
+            meta: {
+              ...meta,
+              requiredRights: [{ module: 'churchcal', right: 'view' }],
+              replayGuard: 'nonce',
+              target: { kind: 'calendar', key: '3' },
+            } as typeof meta,
+          },
+          update,
+        ),
+      ),
+    );
+    expect(claimed.rules).toEqual(plain.rules);
+    expect(claimed.rules).toMatchObject({
+      target: { kind: 'wiki_page', key: `12/${guid.toLowerCase()}` },
+      requiredRights: [{ module: 'churchwiki', right: 'edit category' }],
+      replayGuard: 'baseVersion',
+    });
+  });
+
   it('seals a new page and a section, which reads the page for its text', async () => {
     const { guard, request } = setup();
     expect((await guard.plan(request, create)).outcome.kind).toBe('planned');
