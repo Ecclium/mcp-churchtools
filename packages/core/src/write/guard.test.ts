@@ -371,16 +371,100 @@ describe('planning', () => {
     });
   });
 
-  it.each([
-    ['the server only reads', { readOnly: true }, writeSentences.readOnly],
-  ])('refuses when %s', async (_name, change, sentence) => {
-    const { guard } = setup();
-    const ctx = contextOf(logged, change);
-    const error = await refusalOf(
-      guard.plan({ ctx, tool: 'ct_x', origin: 'core', meta }, update),
-    );
-    expect([error.code, error.message]).toEqual(['policy_denied', sentence]);
-  });
+  // Every kind of intent the plugin interface knows, those of the Pro
+  // module and one that fits none: with ECCLIUM_READ_ONLY=true the guard
+  // refuses each before it reads anything, whoever plans it (ADR 0029).
+  const everyIntent = [
+    ['a new page', create],
+    ['a change of a page', update],
+    ['a section', append],
+    [
+      'a new appointment',
+      {
+        kind: 'appointmentCreate',
+        calendarId: 3,
+        title: 'Probe',
+        startDate: '2026-12-02T09:00:00Z',
+        endDate: '2026-12-02T10:00:00Z',
+      },
+    ],
+    [
+      'a change of an appointment',
+      {
+        kind: 'appointmentUpdate',
+        calendarId: 3,
+        appointmentId: 41,
+        baseVersion: 0,
+        title: 'Probe',
+        startDate: '2026-12-02T09:00:00Z',
+        endDate: '2026-12-02T10:00:00Z',
+      },
+    ],
+    [
+      'a booking',
+      {
+        kind: 'bookingCreate',
+        resourceId: 6,
+        title: 'Probe',
+        startDate: '2026-12-02T09:00:00Z',
+        endDate: '2026-12-02T10:00:00Z',
+      },
+    ],
+    [
+      'a new member of a group',
+      { kind: 'groupMemberAdd', groupId: 7, personId: 1 },
+    ],
+    [
+      'a member leaving a group',
+      { kind: 'groupMemberRemove', groupId: 7, personId: 1 },
+    ],
+    [
+      'a service request',
+      { kind: 'serviceRequest', eventId: 9, serviceId: 3, personId: 1 },
+    ],
+    ['an operation by its ID', { kind: 'apiOperation', operationId: 'x' }],
+    ['an intent that fits none', { kind: 'pageDelete', guid }],
+  ] as const;
+
+  it.each(
+    everyIntent.flatMap(([name, intent]) =>
+      (['core', 'plugin'] as const).map(
+        (origin) => [name, origin, intent] as const,
+      ),
+    ),
+  )(
+    'refuses %s from %s when the server only reads, before any read',
+    async (_name, origin, intent) => {
+      const fake = fakeOf();
+      let reads = 0;
+      fake.onRead = () => {
+        reads += 1;
+      };
+      const { guard } = setup(fake);
+      const ctx = contextOf(logged, { readOnly: true });
+      const error = await refusalOf(
+        guard.plan({ ctx, tool: 'ct_x', origin, meta }, intent),
+      );
+      expect([error.code, error.message]).toEqual([
+        'policy_denied',
+        writeSentences.readOnly,
+      ]);
+      expect([reads, fake.sent]).toEqual([0, []]);
+    },
+  );
+
+  it.each(everyIntent)(
+    'counter-check: %s is not refused as read-only on a server that writes',
+    async (_name, intent) => {
+      const { guard, request } = setup();
+      const outcome = await guard.plan(request, intent).then(
+        () => 'planned',
+        (error: unknown) =>
+          isEccliumError(error) ? error.message : 'other error',
+      );
+      expect(outcome).not.toBe(writeSentences.readOnly);
+    },
+  );
 
   it('refuses while a kill switch is there, and without a folder to look in', async () => {
     writeFileSync(join(dir, 'writes-off-demo-tenant'), '');
