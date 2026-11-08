@@ -14,10 +14,12 @@ import { describe, expect, it } from 'vitest';
 
 import { instanceId } from '../../scripts/spike/lib/env.mts';
 import { SpikeError } from '../../scripts/spike/lib/errors.mts';
+import { checkPlainText } from '../../packages/core/src/content/check.ts';
 import {
   CalendarStateFile,
   WriteStateFile,
   checkNewWriteState,
+  drawRunTag,
   readCalendarState,
   readWriteState,
 } from '../../scripts/spike/lib/write-state.mts';
@@ -269,5 +271,55 @@ describe('the write state of 11-calendar-write', () => {
     ).toBe('INTERN');
     file.close();
     expect(instanceId(writeOrigin)).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe('the tag of a run', () => {
+  // The bytes of a tag that the content policy of the server takes for a
+  // phone number, and of one it takes as it is (ADR 0030).
+  const phoneLike = Uint8Array.of(0x00, 0x53, 0x75, 0x2a);
+  const plain = Uint8Array.of(0xab, 0xcd, 0x01, 0x23);
+  const titlesWith = (tag: string): string[] => [
+    `spike-schreibprobe-${tag}-smoke`,
+    `spike-schreibprobe-${tag}-termin-2-freigegeben`,
+    `spike-schreibprobe-${tag}-buchung`,
+  ];
+  const noContacts = { contacts: new Set<string>() };
+
+  it('is drawn again while it holds seven digits in a row', () => {
+    const draws = [phoneLike, plain];
+    const sizes: number[] = [];
+    const tag = drawRunTag((size) => {
+      sizes.push(size);
+      const next = draws.shift();
+      if (next === undefined) throw new Error('drawn too often');
+      return next;
+    });
+    expect(tag).toBe('abcd0123');
+    expect(sizes).toEqual([4, 4]);
+  });
+
+  it('is redrawn for the reason that the content policy refuses such a title', () => {
+    for (const title of titlesWith('0053752a')) {
+      expect(checkPlainText(title, noContacts)).toEqual({
+        ok: false,
+        violations: ['contact'],
+      });
+    }
+    for (const title of titlesWith('abcd0123')) {
+      expect(checkPlainText(title, noContacts)).toEqual({
+        ok: true,
+        text: title,
+      });
+    }
+  });
+
+  it('keeps its form and never holds seven digits in a row', () => {
+    // About one draw in twenty holds seven digits in a row, so these tags
+    // pass the redraw some 500 times.
+    const tags = Array.from({ length: 10_000 }, () => drawRunTag());
+    expect(
+      tags.filter((tag) => !/^[0-9a-f]{8}$/u.test(tag) || /\d{7}/u.test(tag)),
+    ).toEqual([]);
   });
 });

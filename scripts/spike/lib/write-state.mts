@@ -47,6 +47,35 @@ import { isObject } from './spec.mts';
 const format = 'ecclium-spike-write-state.v1';
 const maxWriteStateBytes = 1024 * 1024;
 
+// Seven digits in a row that start with a 0 are a phone number to the
+// content policy of the server (ADR 0030); a tag never holds the plus or
+// the parenthesis that also start one. A title with such a tag would be
+// refused while the smoke test for writing plans, and every step of the
+// run that uses the tag would fail. A tag is drawn again while it holds
+// seven digits in a row at all, which takes in every such phone number.
+const sevenDigits = /\d{7}/u;
+
+/**
+ * Draws the random tag of a run: 8 hex digits, never seven digits in a
+ * row, so that the content policy of the server takes every title that
+ * holds it.
+ *
+ * @param random - The source of 4 random bytes, only for tests.
+ * @returns The tag.
+ * @example
+ * ```ts
+ * drawRunTag(); // for example 'a3f09c1e', never '0053752a'
+ * ```
+ */
+export function drawRunTag(
+  random: (size: number) => Uint8Array = randomBytes,
+): string {
+  for (;;) {
+    const tag = Buffer.from(random(4)).toString('hex');
+    if (!sevenDigits.test(tag)) return tag;
+  }
+}
+
 /**
  * What a page of the run is for: the three pages for the web editor, by
  * the name the output uses, the cases of 05, the page of 12 that is
@@ -159,10 +188,7 @@ export class WriteStateFile {
     origin: string,
     category: number,
   ): WriteStateFile {
-    const file = new WriteStateFile(
-      createStateFile(path),
-      randomBytes(4).toString('hex'),
-    );
+    const file = new WriteStateFile(createStateFile(path), drawRunTag());
     file.#append({
       format,
       instance: instanceId(origin),
@@ -408,10 +434,7 @@ export class CalendarStateFile {
     area: CalendarArea,
     day: string,
   ): CalendarStateFile {
-    const file = new CalendarStateFile(
-      createStateFile(path),
-      randomBytes(4).toString('hex'),
-    );
+    const file = new CalendarStateFile(createStateFile(path), drawRunTag());
     appendRecord(file.#descriptor, {
       format: calendarFormat,
       instance: instanceId(origin),
