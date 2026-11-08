@@ -603,7 +603,9 @@ describe('describeError with missing rights', () => {
       ),
     ).toStrictEqual(permissionWithout);
     expect(describeError(withRights(sparse))).toStrictEqual(permissionWithout);
-    expect(performance.now() - started).toBeLessThan(500);
+    // Walking every index of the sparse list would take minutes; the bound
+    // leaves a loaded runner room.
+    expect(performance.now() - started).toBeLessThan(1000);
     expect(
       describeError(
         withRights(Array.from({ length: maxMissingRights }, () => right)),

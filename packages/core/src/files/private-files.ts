@@ -10,12 +10,14 @@
  * taken. A reader therefore never sees half a file, and two processes that
  * race for the same name end with one file, the first: the second learns
  * that it exists and reads it. A lock file is not needed for that, because
- * no file is ever written twice. Folders are made with 0700, never
- * recursively, files with 0600. Every open follows no link and is checked
- * on its descriptor: a regular file or folder of the user without rights
- * for others. A file is destroyed by writing zeros over it, flushing that
- * and removing its name, so that a second name of the same file, such as
- * the temporary one of a writer that stopped halfway, keeps nothing either.
+ * no file is ever written twice. After the link the folder is flushed as
+ * well, since the `fsync` of a file keeps its bytes but not its name.
+ * Folders are made with 0700, never recursively, files with 0600. Every
+ * open follows no link and is checked on its descriptor: a regular file or
+ * folder of the user without rights for others. A file is destroyed by
+ * writing zeros over it, flushing that and removing its name, so that a
+ * second name of the same file, such as the temporary one of a writer that
+ * stopped halfway, keeps nothing either.
  *
  * Nothing here names a path or a message of the system in what it throws.
  *
@@ -315,6 +317,32 @@ const writeAll = (fs: PrivateFileSystem, fd: number, bytes: Uint8Array) => {
   }
 };
 
+// Flushes a folder, so that a name given in it outlasts a crash of the
+// system (ADR 0031). A file system that cannot flush a folder answers
+// EINVAL or ENOTSUP; there the name stands as far as that system keeps
+// names. Any other failure is reported as one, although the name is
+// already in place: a second try finds the file.
+const flushFolder = (
+  fs: PrivateFileSystem,
+  folder: string,
+  flags: Flags,
+): void => {
+  let fd: number;
+  try {
+    fd = fs.openSync(folder, flags.folder);
+  } catch {
+    return fail('unavailable');
+  }
+  try {
+    fs.fsyncSync(fd);
+  } catch (error) {
+    const code = errorCode(error);
+    if (code !== 'EINVAL' && code !== 'ENOTSUP') fail('unavailable');
+  } finally {
+    close(fs, fd);
+  }
+};
+
 /** What {@link writePrivateFileOnce} needs besides the file functions. */
 export interface WriteOnceOptions {
   /** The ID of the process, part of the temporary name. */
@@ -325,8 +353,8 @@ export interface WriteOnceOptions {
 
 /**
  * Writes a private file once: whole under a temporary name, flushed, and
- * then given its name, unless the name is taken. A file of that name is
- * never changed.
+ * then given its name, unless the name is taken, and the folder flushed
+ * after it. A file of that name is never changed.
  *
  * @param folder - A private folder, as {@link preparePrivateFolder} made it.
  * @param name - The name of the file in the folder.
@@ -335,7 +363,9 @@ export interface WriteOnceOptions {
  *   functions.
  * @returns `written` when the file is new, `exists` when a file of the name
  *   was there already; that file is left as it is.
- * @throws {PrivateFileError} When the folder or the system refuses.
+ * @throws {PrivateFileError} When the folder or the system refuses, also
+ *   when the folder does not flush after the link: the file then has its
+ *   name, and a second call finds it.
  * @throws {TypeError} For a name that is not a plain name of a file.
  * @example
  * ```ts
@@ -370,11 +400,12 @@ export function writePrivateFileOnce(
     }
     try {
       fs.linkSync(temporary, path);
-      return 'written';
     } catch (error) {
       if (errorCode(error) === 'EEXIST') return 'exists';
       return fail('unavailable');
     }
+    flushFolder(fs, folder, flags);
+    return 'written';
   } catch (error) {
     throw error instanceof PrivateFileError
       ? error

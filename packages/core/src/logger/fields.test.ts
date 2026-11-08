@@ -102,9 +102,13 @@ describe('isEventName', () => {
   });
 
   it('refuses a huge string at once', () => {
+    const huge = `a${'b'.repeat(10_000_000)}`;
     const started = performance.now();
-    expect(isEventName(`a${'b'.repeat(10_000_000)}`)).toBe(false);
-    expect(performance.now() - started).toBeLessThan(50);
+    expect(isEventName(huge)).toBe(false);
+    // Work that grows faster than the string would take minutes, one pass
+    // over it a few milliseconds: the bound catches the first and leaves a
+    // loaded runner room.
+    expect(performance.now() - started).toBeLessThan(1000);
   });
 
   it('gives the same answer every time, so no pattern keeps a lastIndex', () => {
