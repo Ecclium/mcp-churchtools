@@ -13,11 +13,12 @@
  * Two processes share the file. Every change runs under a lock file made
  * with O_EXCL, which holds the ID of the process, the host and the time,
  * and goes through a temporary file, `fsync` and a rename, so that a
- * reader always sees a whole file. A lock older than ten seconds counts
- * as left behind and is replaced. Within one process the changes run one
- * after the other. Like the audit file, every file is opened without
- * following a link and checked on its descriptor (ADR 0028). Nothing here
- * names a path in what it throws or returns.
+ * reader always sees a whole file, and then a `fsync` of the folder, so
+ * that the new name outlasts a crash of the system. A lock older than ten
+ * seconds counts as left behind and is replaced. Within one process the
+ * changes run one after the other. Like the audit file, every file is
+ * opened without following a link and checked on its descriptor (ADR
+ * 0028). Nothing here names a path in what it throws or returns.
  *
  * Only the composition root reaches it, through the subpath
  * `./composition` of core.
@@ -692,17 +693,39 @@ export function createFileQuotaStore(
     }
   };
 
+  // Flushes the folder after a rename, so that the new name outlasts a
+  // crash of the system: the fsync of a file keeps its bytes, not its name.
+  // A file system that cannot flush a folder answers EINVAL or ENOTSUP and
+  // is taken as it is. Any other failure is reported as one, although the
+  // file already has its name: the count then fails after it was made, and
+  // a second try counts once more, never less (ADR 0063).
+  const flushFolder = (flags: { readonly folder: number }): void => {
+    const fd = fs.openSync(folder, flags.folder);
+    try {
+      fs.fsyncSync(fd);
+    } catch (error) {
+      const code = errorCode(error);
+      if (code !== 'EINVAL' && code !== 'ENOTSUP') throw unavailable();
+    } finally {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // The descriptor is given up either way.
+      }
+    }
+  };
+
   // A new file under a name no other process uses, written whole and
-  // flushed before the rename makes it the file. `part` is what the name
-  // of the file holds between the day and the end: nothing for the
-  // counters, `.approvals` for the decisions.
+  // flushed before the rename makes it the file, and the folder flushed
+  // after it. `part` is what the name of the file holds between the day
+  // and the end: nothing for the counters, `.approvals` for the decisions.
   const writeRecord = (
     path: string,
     tenantId: string,
     day: IsoDate,
     part: '' | '.approvals',
     record: Readonly<Record<string, unknown>>,
-    flags: { readonly create: number },
+    flags: { readonly create: number; readonly folder: number },
     checked: Identity,
   ): void => {
     const bytes = encoder.encode(
@@ -726,6 +749,7 @@ export function createFileQuotaStore(
       sameFolder(checked);
       fs.renameSync(temporary, path);
       moved = true;
+      flushFolder(flags);
     } catch {
       throw unavailable();
     } finally {

@@ -246,6 +246,102 @@ describe('the file of quotas', () => {
     ).resolves.toBe(2);
   });
 
+  // Whether a descriptor belongs to a folder, for fakes that watch or fail
+  // only the flush of the folder.
+  const isFolderFd = (fd: number): boolean => fstatSync(fd).isDirectory();
+  const systemError = (code: string): Error =>
+    Object.assign(new Error('from the system'), { code });
+
+  it('flushes the folder after the rename of every file of counts', async () => {
+    const state = freshState();
+    const calls: string[] = [];
+    const fs: QuotaFileSystem = Object.freeze({
+      ...nodeFs,
+      fsyncSync: (fd: number) => {
+        calls.push(isFolderFd(fd) ? 'fsync folder' : 'fsync file');
+        fsyncSync(fd);
+      },
+      renameSync: (from: string, to: string) => {
+        calls.push('rename');
+        renameSync(from, to);
+      },
+    });
+    const at = clockFrom(Date.UTC(2026, 9, 24, 12));
+    await open(state, { fs, clock: at }).increment(ctx, key, day);
+    await open(state, { fs, clock: at }).increment(ctx, decision, day);
+    expect(calls).toEqual([
+      'fsync file',
+      'rename',
+      'fsync folder',
+      'fsync file',
+      'rename',
+      'fsync folder',
+    ]);
+  });
+
+  it('fails a count whose folder does not open or flush, and counts on from it', async () => {
+    const state = freshState();
+    const failing = (changes: Partial<QuotaFileSystem>) =>
+      open(state, { fs: Object.freeze({ ...nodeFs, ...changes }) }).increment(
+        ctx,
+        key,
+        day,
+      );
+    await expect(
+      failing({
+        openSync: (path: string, flags: number, mode?: number) => {
+          if (path === join(state, 'quota')) throw systemError('EMFILE');
+          return openSync(path, flags, mode);
+        },
+      }),
+    ).rejects.toThrow(failure);
+    await expect(
+      failing({
+        fsyncSync: (fd: number) => {
+          if (isFolderFd(fd)) throw systemError('EIO');
+          fsyncSync(fd);
+        },
+      }),
+    ).rejects.toThrow(failure);
+    // Both counts stand under the name of the file, and no lock is left: a
+    // count that failed this way is counted once more, never lost.
+    expect(readdirSync(join(state, 'quota'))).toEqual([
+      `demo-tenant-${day}.json`,
+    ]);
+    await expect(open(state).increment(ctx, key, day)).resolves.toBe(3);
+  });
+
+  it('takes a file system that cannot flush a folder, and a folder that does not close', async () => {
+    const state = freshState();
+    const counts: number[] = [];
+    for (const refusal of ['EINVAL', 'ENOTSUP']) {
+      counts.push(
+        await open(state, {
+          fs: Object.freeze({
+            ...nodeFs,
+            fsyncSync: (fd: number) => {
+              if (isFolderFd(fd)) throw systemError(refusal);
+              fsyncSync(fd);
+            },
+          }),
+        }).increment(ctx, key, day),
+      );
+    }
+    counts.push(
+      await open(state, {
+        fs: Object.freeze({
+          ...nodeFs,
+          closeSync: (fd: number) => {
+            const folder = isFolderFd(fd);
+            closeSync(fd);
+            if (folder) throw systemError('EIO');
+          },
+        }),
+      }).increment(ctx, key, day),
+    );
+    expect(counts).toEqual([1, 2, 3]);
+  });
+
   it('refuses a counter of a decision in the file of the other counters', async () => {
     const state = freshState();
     writeFileSync(
