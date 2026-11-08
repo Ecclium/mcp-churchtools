@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { loadConfig } from '@ecclium/mcp-churchtools-core';
 import {
   classify,
+  defineTool,
   defineWriteTool,
   EccliumError,
   type IsoDate,
@@ -888,6 +889,227 @@ describe('a write tool in the pipeline', () => {
     );
     expect(!outcome.ok && outcome.error.code).toBe('network');
     assertOnlyReads(double);
+  });
+});
+
+// A write tool of a plugin goes through the same switches, policy and audit
+// as one of the core, and whatever it declares about rights, target or
+// replay, the core derives them from the intent (ADR 0029). A tool of a
+// plugin that only reads gets no write port at all.
+describe('a tool of a plugin', () => {
+  const pluginWrite = customTool('ct_test_plugin_write', (write) =>
+    write.plan(update),
+  );
+
+  // A write tool of a plugin that claims other rights and another guard
+  // against replay than the core derives for its intent.
+  const claiming = defineWriteTool({
+    name: 'ct_test_plugin_claims',
+    meta: {
+      capability: 'write',
+      domain: 'wiki',
+      requiredRights: [{ module: 'churchcal', right: 'view category' }],
+      tier: 'free',
+      sensitivity: 'personal',
+      unattended: 'policy',
+      routineStable: false,
+      reversible: 'snapshot',
+      replayGuard: 'nonce',
+    },
+    description: {
+      purpose: 'Serves a test.',
+      useWhen: 'A test needs it.',
+      avoidWhen: 'Anything else.',
+      limits: 'None.',
+    },
+    input: z.object({ text: classify(z.string().max(100), 'untrusted') }),
+    execute: ({ write }) => write.plan(update) as never,
+  });
+
+  it('refuses a write of a plugin while a kill switch is there, and without a folder to look in', async () => {
+    const none = setup({ killSwitchDir: null, tools: [pluginWrite] });
+    const first = await none.pipeline.call(
+      'ct_test_plugin_write',
+      { text: 'x' },
+      request(),
+    );
+    expect(!first.ok && first.error.message).toBe(writeSentences.switchUnknown);
+    expect(none.events()[0]).toMatchObject({
+      tool: 'ct_test_plugin_write',
+      outcome: 'denied',
+      writeState: 'denied',
+    });
+    expect(none.double.calls()).toEqual([]);
+    writeFileSync(join(dir, 'writes-off'), '');
+    const off = setup({ tools: [pluginWrite] });
+    const second = await off.pipeline.call(
+      'ct_test_plugin_write',
+      { text: 'x' },
+      request(),
+    );
+    expect(!second.ok && second.error.message).toBe(writeSentences.switchedOff);
+    expect(off.double.calls()).toEqual([]);
+  });
+
+  it('refuses a write of a plugin on a server that only reads, before any read', async () => {
+    const { double, pipeline, events } = setup({ tools: [pluginWrite] });
+    const outcome = await pipeline.call(
+      'ct_test_plugin_write',
+      { text: 'x' },
+      request({ readOnly: true }),
+    );
+    expect(!outcome.ok && outcome.error).toEqual({
+      code: 'policy_denied',
+      message: writeSentences.readOnly,
+    });
+    expect(events()[0]).toMatchObject({
+      tool: 'ct_test_plugin_write',
+      writeState: 'denied',
+    });
+    expect(double.calls()).toEqual([]);
+  });
+
+  it('runs no write tool of a plugin without an audit file that can take its line', async () => {
+    const { double, pipeline, file } = setup({ tools: [pluginWrite] });
+    file.ready = false;
+    const outcome = await pipeline.call(
+      'ct_test_plugin_write',
+      { text: 'x' },
+      request(),
+    );
+    expect(!outcome.ok && outcome.error.code).toBe('policy_denied');
+    expect(double.calls()).toEqual([]);
+  });
+
+  it('asks for no confirmation of a write of a plugin outside the policy', async () => {
+    const checked = checkPolicy({
+      schema: 'policy.v1',
+      interactive: {
+        targets: [
+          {
+            target: { kind: 'wiki_category', id: 13, name: 'Andere' },
+            tools: ['ct_test_plugin_write'],
+            maxPerDay: 1,
+          },
+        ],
+      },
+    });
+    if (!checked.ok) throw new Error(checked.code);
+    const { double, pipeline, events, logs, planReads } = setup({
+      policy: checked.policy,
+      tools: [pluginWrite],
+    });
+    planReads();
+    const outcome = await pipeline.call(
+      'ct_test_plugin_write',
+      { text: 'x' },
+      request({ elicitation: true }),
+    );
+    expect(!outcome.ok && outcome.question).toBeUndefined();
+    expect(events()[0]).toMatchObject({
+      tool: 'ct_test_plugin_write',
+      outcome: 'denied',
+      writeState: 'denied',
+      policyHash: policyHashOf(marking(checked.policy)),
+    });
+    expect(logs()).toContain('policy_no_entry');
+    expect(double.calls().filter(({ method }) => method !== 'GET')).toEqual([]);
+  });
+
+  it('counter-check: asks about a write of a plugin with switches, policy and audit file in order', async () => {
+    const { double, pipeline, events, planReads } = setup({
+      tools: [pluginWrite],
+    });
+    planReads();
+    const outcome = await pipeline.call(
+      'ct_test_plugin_write',
+      { text: 'x' },
+      request({ elicitation: true }),
+    );
+    expect(!outcome.ok && outcome.question).toBeDefined();
+    expect(events()[0]).toMatchObject({
+      tool: 'ct_test_plugin_write',
+      writeState: 'planned',
+      objectRefs: ['wiki_category:12', `wiki_page:${guid}`],
+    });
+    assertOnlyReads(double);
+  });
+
+  it('checks the rights the core derives for the intent, not those the tool claims', async () => {
+    const granted = setup({ tools: [claiming] });
+    granted.planReads();
+    const asked = await granted.pipeline.call(
+      'ct_test_plugin_claims',
+      { text: 'x' },
+      request({ elicitation: true }),
+    );
+    // The account holds the right of the wiki only: the plan goes on, and
+    // the audit names the page of the intent.
+    expect(!asked.ok && asked.question).toBeDefined();
+    expect(granted.events()[0]).toMatchObject({
+      writeState: 'planned',
+      objectRefs: ['wiki_category:12', `wiki_page:${guid}`],
+    });
+    const refused = setup({ tools: [claiming] });
+    refused.double
+      .intercept({ path: '/api/permissions/global', method: 'GET' })
+      .reply(
+        200,
+        JSON.stringify({ data: { churchcal: { 'view category': [12] } } }),
+        json,
+      );
+    const outcome = await refused.pipeline.call(
+      'ct_test_plugin_claims',
+      { text: 'x' },
+      request({ elicitation: true }),
+    );
+    // The account holds the right the tool claims, not the one of the
+    // wiki: the core names the right of the wiki as missing.
+    expect(!outcome.ok && outcome.error).toEqual({
+      code: 'permission',
+      message: writeSentences.missingRight,
+      missingRights: [{ module: 'churchwiki', right: 'edit category' }],
+    });
+    assertOnlyReads(refused.double);
+  });
+
+  it('gives a tool of a plugin that only reads no write port, and a write tool one', async () => {
+    const seen: string[][] = [];
+    const reads = defineTool({
+      name: 'ct_test_plugin_reads',
+      meta: {
+        capability: 'read',
+        domain: 'wiki',
+        requiredRights: [],
+        tier: 'free',
+        sensitivity: 'personal',
+        unattended: 'policy',
+        routineStable: false,
+      },
+      description: {
+        purpose: 'Serves a test.',
+        useWhen: 'A test needs it.',
+        avoidWhen: 'Anything else.',
+        limits: 'None.',
+      },
+      input: z.object({}),
+      output: z.object({ done: classify(z.boolean(), 'none') }),
+      execute: (call) => {
+        seen.push(Object.keys(call).sort());
+        return Promise.resolve({ done: true });
+      },
+    });
+    const writes = customTool('ct_test_plugin_sees', (write) => {
+      seen.push(typeof write.plan === 'function' ? ['plan'] : []);
+      return write.plan(update);
+    });
+    const { pipeline, planReads } = setup({ tools: [reads, writes] });
+    const read = await pipeline.call('ct_test_plugin_reads', {}, request());
+    expect(read.ok).toBe(true);
+    expect(seen).toEqual([['ctx', 'input', 'read']]);
+    planReads();
+    await pipeline.call('ct_test_plugin_sees', { text: 'x' }, request());
+    expect(seen).toEqual([['ctx', 'input', 'read'], ['plan']]);
   });
 });
 
