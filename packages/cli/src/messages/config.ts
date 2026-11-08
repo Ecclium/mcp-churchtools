@@ -960,6 +960,24 @@ const problems: Readonly<
       `Tools dieser Toolsets nennen Personen oder geben ganze Antworten von ChurchTools weiter. Ein Ergebnis solcher Tools gibt Ecclium nur heraus, wenn seine Zeile in der Audit-Datei steht, und die Audit-Datei liegt im Ordner aus ${name}. Unter Windows gibt es sie im Betrieb über stdio nicht, und damit auch diese Toolsets nicht.`,
       `Setzen Sie ${name} auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 oder entfernen Sie ${personsToolset}, ${eventsToolset} und ${apiToolset} aus ${toolsets}, soweit sie dort stehen. ${insteadOfAll}`,
     ),
+  // Writing over stdio keeps the audit, the snapshots, the queue, the
+  // counters of the policy and the kill switches in the folder of state;
+  // without it no write could pass (ADR 0029).
+  writes_without_state_dir: (name = stateDir) =>
+    message(
+      `${readOnly} ist ‹false›, aber ${name} ist nicht gesetzt.`,
+      'Jeder Schreibvorgang steht in der Audit-Datei, und Snapshots, Freigabe-Warteschlange, die Zähler der Richtlinie und die Kill-Switches liegen ebenfalls im Zustandsordner. Ohne ihn würde Ecclium jeden Schreibversuch ablehnen.',
+      `Setzen Sie ${name} auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 und legen Sie darin den Ordner ‹stop› an. Oder setzen Sie ${readOnly} auf ‹true›.`,
+    ),
+  // The kill switches live in the folder stop; a folder the core cannot
+  // check stops writing, so a start without it could never write
+  // (ADR 0029).
+  writes_without_stop_dir: (name = stateDir) =>
+    message(
+      `${readOnly} ist ‹false›, aber im Ordner aus ${name} fehlt der Ordner ‹stop›, er ist ein Link oder kein Ordner, oder Ecclium kann ihn nicht durchsuchen.`,
+      'Im Ordner ‹stop› liegen die Kill-Switches, mit denen Sie das Schreiben ohne Neustart anhalten. Ecclium legt ihn nicht selbst an, und einen Ordner, den es nicht prüfen kann, liest es als angehalten. Ohne ihn würde Ecclium jeden Schreibversuch ablehnen.',
+      `Legen Sie im Ordner aus ${name} einen Ordner ‹stop› Ihres Benutzers mit den Rechten 700 an. Oder setzen Sie ${readOnly} auf ‹true›.`,
+    ),
   // The answers of the escape hatch have no known schema, so strict could
   // not keep its promise for them (ADR 0069).
   redaction_strict_with_api: (name = toolsets) =>

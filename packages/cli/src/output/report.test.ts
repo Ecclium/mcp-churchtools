@@ -201,7 +201,11 @@ describe('renderConfigReport', () => {
   });
 
   it('shows the folder of keys as missing when the server writes without it', () => {
-    const lines = render({ ...minimal(), ECCLIUM_READ_ONLY: 'false' });
+    const lines = render({
+      ...minimal(),
+      ECCLIUM_READ_ONLY: 'false',
+      ECCLIUM_STATE_DIR: '/path/to/state',
+    });
     expect(lines).toContain(
       row('Schlüsselordner', 'fehlt (‹ECCLIUM_KEYS_DIR› ist nicht gesetzt)'),
     );
@@ -307,6 +311,7 @@ describe('renderConfigReport', () => {
     const lines = render({
       ...minimal(),
       ECCLIUM_READ_ONLY: 'false',
+      ECCLIUM_STATE_DIR: '/path/to/state',
       ECCLIUM_KEYS_DIR: '/path/to/keys',
       ECCLIUM_TOOLSETS: 'songs,calendars',
       ECCLIUM_LOG_LEVEL: 'debug',
@@ -327,6 +332,7 @@ describe('renderConfigReport', () => {
     const lines = render({
       ...minimal(),
       ECCLIUM_READ_ONLY: 'false',
+      ECCLIUM_STATE_DIR: '/path/to/state',
       ECCLIUM_KEYS_DIR: '/path/to/keys',
       ECCLIUM_SNAPSHOTS: 'off',
     });

@@ -86,6 +86,9 @@ const privateDir = (prefix: string): string => {
 
 beforeEach(() => {
   stateDir = privateDir('ecclium-queue-state-');
+  // The folder of the kill switches, which the operator makes and every
+  // command with writing switched on needs (ADR 0029).
+  mkdirSync(join(stateDir, 'stop'), { mode: 0o700 });
   keysDir = privateDir('ecclium-queue-keys-');
   configDir = privateDir('ecclium-queue-config-');
   writeFileSync(
@@ -576,11 +579,6 @@ describe('ecclium queue approve', () => {
     ],
     true,
   );
-
-  beforeEach(() => {
-    // The folder of the kill switches, which the operator makes.
-    mkdirSync(join(stateDir, 'stop'), { mode: 0o700 });
-  });
 
   it('writes the entry at once, shows what it changed, and decides it once', async () => {
     await keep(id, approvable);

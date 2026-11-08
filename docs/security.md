@@ -167,7 +167,7 @@ Deshalb bestätigt das Echo eine Buchungsanfrage und das Ändern eines Termins n
 
 ## Schreiben sofort anhalten
 
-Eine leere Datei `writes-off` im Ordner `stop` des Zustandsordners hält jedes Schreiben an, ohne Neustart: Ecclium schaut vor jedem Planen und unmittelbar vor jedem Schreiben nach. Fehlt der Ordner `stop` oder lässt er sich nicht prüfen, schreibt Ecclium ebenfalls nicht. Das Lesen läuft weiter. Wie Sie die Datei anlegen und wieder entfernen, steht unter [Betrieb über stdio](betrieb/stdio.md#schreiben-sofort-anhalten).
+Eine leere Datei `writes-off` im Ordner `stop` des Zustandsordners hält jedes Schreiben an, ohne Neustart: Ecclium schaut vor jedem Planen und unmittelbar vor jedem Schreiben nach. Fehlt der Ordner `stop` beim Start oder lässt er sich nicht prüfen, startet ein Server, der schreiben darf, nicht. Fehlt er später oder lässt er sich nicht prüfen, schreibt Ecclium ebenfalls nicht. Das Lesen läuft weiter. Wie Sie die Datei anlegen und wieder entfernen, steht unter [Betrieb über stdio](betrieb/stdio.md#schreiben-sofort-anhalten).
 
 ## Was Ecclium ins Wiki schreibt
 

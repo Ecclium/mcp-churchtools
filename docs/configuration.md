@@ -46,7 +46,7 @@ Legt fest, wie viele Anfragen der Server im Mittel höchstens pro Minute an Chur
 
 ## `ECCLIUM_READ_ONLY`
 
-Legt fest, ob der Server nur liest. Mit `true` registriert er keine Schreib-Tools. Mit `false` und dem Toolset `wiki` bietet er die Schreib-Tools des Wikis an, `ct_wiki_page_create`, `ct_wiki_page_update` und `ct_wiki_page_append_section`, mit dem Toolset `calendars` die für Termine und Buchungen, `ct_appointments_create`, `ct_appointments_update` und `ct_bookings_create`. Alle schreiben erst nach einer Bestätigung. Mit `false` warnt jeder Start, dass Ecclium schreiben darf, und der Start verlangt `ECCLIUM_KEYS_DIR`, mit dem Toolset `wiki` dazu `ECCLIUM_MARKER_KEY_FILE` und `interactive.inquiriesTo` in der Richtlinie.
+Legt fest, ob der Server nur liest. Mit `true` registriert er keine Schreib-Tools. Mit `false` und dem Toolset `wiki` bietet er die Schreib-Tools des Wikis an, `ct_wiki_page_create`, `ct_wiki_page_update` und `ct_wiki_page_append_section`, mit dem Toolset `calendars` die für Termine und Buchungen, `ct_appointments_create`, `ct_appointments_update` und `ct_bookings_create`. Alle schreiben erst nach einer Bestätigung. Mit `false` warnt jeder Start, dass Ecclium schreiben darf, und der Start verlangt über stdio `ECCLIUM_STATE_DIR` mit dem Unterordner `stop` und `ECCLIUM_KEYS_DIR`, mit dem Toolset `wiki` dazu `ECCLIUM_MARKER_KEY_FILE` und `interactive.inquiriesTo` in der Richtlinie.
 
 ## `ECCLIUM_REDACTION`
 
@@ -66,7 +66,7 @@ Legt fest, welche Bereiche von Tools der Server anbietet: eine mit Komma getrenn
 
 ## `ECCLIUM_STATE_DIR`
 
-Absoluter Pfad eines Ordners für den Zustand des Servers: für die Audit-Datei im Unterordner `audit`, die Zähler im Unterordner `quota` und, wenn Ecclium schreibt, die Snapshots im Unterordner `snapshots` und die Freigabe-Warteschlange im Unterordner `queue`. Den Ordner selbst legt Ecclium nicht an, diese Unterordner darin schon. Im Unterordner `stop` liegen die Kill-Switches: Eine Datei `writes-off` darin hält jedes Schreiben ohne Neustart an. Diesen Unterordner legt Ecclium nicht an, und ohne ihn schreibt es nicht. Der Ordner muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 700. Nur im Betrieb über stdio.
+Absoluter Pfad eines Ordners für den Zustand des Servers: für die Audit-Datei im Unterordner `audit`, die Zähler im Unterordner `quota` und, wenn Ecclium schreibt, die Snapshots im Unterordner `snapshots` und die Freigabe-Warteschlange im Unterordner `queue`. Den Ordner selbst legt Ecclium nicht an, diese Unterordner darin schon. Im Unterordner `stop` liegen die Kill-Switches: Eine Datei `writes-off` darin hält jedes Schreiben ohne Neustart an. Diesen Unterordner legt Ecclium nicht an, und ohne ihn startet ein Server mit `ECCLIUM_READ_ONLY=false` nicht. Pflicht mit `ECCLIUM_READ_ONLY=false`. Der Ordner muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 700. Nur im Betrieb über stdio.
 
 ## `ECCLIUM_KEYS_DIR`
 

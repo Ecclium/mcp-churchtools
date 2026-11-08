@@ -64,6 +64,10 @@ const canary = makeCanaries();
 // reads it as a leaked one.
 const base = mkdtempSync(join(tmpdir(), 'ecclium-compose-'));
 const keysDir = mkdtempSync(join(base, 'keys-'));
+// A folder of state with its folder stop, as writing needs (ADR 0029).
+const writeStateDir = mkdtempSync(join(base, 'state-'));
+chmodSync(writeStateDir, 0o700);
+mkdirSync(join(writeStateDir, 'stop'), { mode: 0o700 });
 chmodSync(keysDir, 0o700);
 const keyFile = join(base, 'pseudonym-key');
 writeFileSync(
@@ -163,6 +167,7 @@ describe('the build of the pipeline', () => {
     setup(
       configOf({
         ECCLIUM_READ_ONLY: 'false',
+        ECCLIUM_STATE_DIR: writeStateDir,
         ECCLIUM_KEYS_DIR: keysDir,
         ECCLIUM_WRITE_CONFIRMATION: 'queue',
       }),
@@ -179,6 +184,7 @@ describe('the build of the pipeline', () => {
   it('gives the pipeline a provider with the day keys in the folder of keys', async () => {
     const config = configOf({
       ECCLIUM_READ_ONLY: 'false',
+      ECCLIUM_STATE_DIR: writeStateDir,
       ECCLIUM_KEYS_DIR: keysDir,
     });
     const composed = setup(config).build();
@@ -252,6 +258,8 @@ describe('the build of the pipeline', () => {
     const folders = () => {
       const state = mkdtempSync(join(base, 'state-'));
       chmodSync(state, 0o700);
+      // The folder of the kill switches, which writing needs (ADR 0029).
+      mkdirSync(join(state, 'stop'), { mode: 0o700 });
       const keys = mkdtempSync(join(base, 'keys-'));
       chmodSync(keys, 0o700);
       return { state, keys };
@@ -354,12 +362,19 @@ describe('the build of the pipeline', () => {
     });
 
     // Without the folder of state there are no kill switches either, so
-    // nothing writes at all (ADR 0029).
+    // nothing writes at all (ADR 0029). The loader refuses such a
+    // configuration, the composition still gives no snapshots for one
+    // built by hand.
     it('gives the pipeline none without the folder of state', () => {
-      const config = configOf({
-        ECCLIUM_READ_ONLY: 'false',
-        ECCLIUM_KEYS_DIR: folders().keys,
-      });
+      const { state, keys } = folders();
+      const config: EccliumConfig = {
+        ...configOf({
+          ECCLIUM_READ_ONLY: 'false',
+          ECCLIUM_STATE_DIR: state,
+          ECCLIUM_KEYS_DIR: keys,
+        }),
+        stateDir: undefined,
+      };
       expect(keepsSnapshots(config)).toBe(false);
       const composed = setup(config).build();
       expect(composed.snapshots).toBeUndefined();
@@ -377,6 +392,8 @@ describe('the build of the pipeline', () => {
     const folders = () => {
       const state = mkdtempSync(join(base, 'state-'));
       chmodSync(state, 0o700);
+      // The folder of the kill switches, which writing needs (ADR 0029).
+      mkdirSync(join(state, 'stop'), { mode: 0o700 });
       const keys = mkdtempSync(join(base, 'keys-'));
       chmodSync(keys, 0o700);
       return { state, keys };
@@ -438,13 +455,18 @@ describe('the build of the pipeline', () => {
       },
     );
 
+    // The loader refuses such a configuration (ADR 0029), the composition
+    // still gives no queue for one built by hand.
     it('gives the pipeline none without the folder of state', () => {
-      const composed = setup(
-        configOf({
+      const { state, keys } = folders();
+      const composed = setup({
+        ...configOf({
           ECCLIUM_READ_ONLY: 'false',
-          ECCLIUM_KEYS_DIR: folders().keys,
+          ECCLIUM_STATE_DIR: state,
+          ECCLIUM_KEYS_DIR: keys,
         }),
-      ).build();
+        stateDir: undefined,
+      }).build();
       expect(composed.queue).toBeUndefined();
       expect(Object.hasOwn(built.options[0] as object, 'queue')).toBe(false);
     });
