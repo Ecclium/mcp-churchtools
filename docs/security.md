@@ -8,7 +8,7 @@
 - Die Maskierung begrenzt den Schaden, sie anonymisiert nicht. Daten aus ChurchTools lassen auf die Religionszugehörigkeit einer Person schliessen.
 - ChurchTools setzt die Rechte durch. Ecclium liest mit den Rechten seines Dienstkontos und nur mit ihnen. Je enger Sie das Konto halten, desto weniger kann Ecclium herausgeben ([Dienstkonto](betrieb/dienstkonto.md)).
 - Die Tools der Bereiche geben nur feste Felder weiter. Mit dem Toolset `api` gibt Ecclium dagegen ganze Antworten von ChurchTools weiter, mit allem, was die Rechte des Kontos öffnen (unten, «Lesender Zugriff auf die API»).
-- Mit der Voreinstellung `ECCLIUM_READ_ONLY=true` liest Ecclium nur. Mit `false` und dem Toolset `wiki` bietet der Server `ct_wiki_page_create`, `ct_wiki_page_update` und `ct_wiki_page_append_section` an, mit dem Toolset `calendars` `ct_appointments_create`, `ct_appointments_update` und `ct_bookings_create`. Jedes schreibt erst nach einer Bestätigung: einer Rückfrage im Client, dem Echo oder einer Freigabe aus der Warteschlange (ADR 0029). Das Ändern eines Termins und eine Buchungsanfrage bestätigt das Echo nie, weil ChurchTools dabei Menschen ausserhalb des Clients benachrichtigt oder benachrichtigen kann, bei einer Buchungsanfrage die Verwalter der Ressource sofort per Mail.
+- Mit der Voreinstellung `ECCLIUM_READ_ONLY=true` liest Ecclium nur. Mit `false` und dem Toolset `wiki` bietet der Server `ct_wiki_page_create`, `ct_wiki_page_update` und `ct_wiki_page_append_section` an, mit dem Toolset `calendars` `ct_appointments_create`, `ct_appointments_update` und `ct_bookings_create`. Jedes schreibt erst nach einer Bestätigung: einer Rückfrage im Client, dem Echo oder einer Freigabe aus der Warteschlange (ADR 0029). Das Ändern eines Termins und eine Buchungsanfrage bestätigt das Echo nie, weil ChurchTools dabei Menschen ausserhalb des Clients benachrichtigt oder benachrichtigen kann, bei einer Buchungsanfrage die Verwalter der Ressource sofort per Mail. Was die Bestätigung beweist und was nicht, steht unten unter «Bestätigung vor dem Schreiben», wie Sie das Schreiben einschalten, unter [Betrieb über stdio](betrieb/stdio.md#schreiben-einschalten).
 
 ## Andere Tools im selben Client
 
@@ -96,7 +96,6 @@ Die Tools, die in der Übersicht der [Referenz der Tools](tools.md) unter «Lese
 - Die Zähler liegen in einer Datei im Ordner `quota` des Zustandsordners. Sie überstehen einen Neustart, und zwei Prozesse mit demselben Ordner teilen sie ([Datenschutz](privacy.md)).
 - Über stdio entsteht der Akteur aus dem Subjekt in `ECCLIUM_STDIO_SUBJECT`. Das Budget gilt also je Installation und Subjekt, nicht je Person, die den Client benutzt, und nicht je Person, deren Daten gelesen werden.
 - Wer den Zustandsordner schreiben kann, kann die Zähler löschen. Das Budget bremst ein Modell und einen Client, nicht den Betreiber.
-- Die 200 sind in dieser Version fest. Einstellbar wird das Budget mit der Richtlinie in Phase 5.
 - Die übrigen Tools zählen nicht, etwa die für das Wiki, Events, Termine und Buchungen. Für sie gilt nur die Obergrenze je Aufruf, obwohl auch ihr Freitext Personendaten enthalten kann, etwa eine Seite des Wikis mit Namen und Telefonnummern.
 
 Dieselben Tools geben ihr Ergebnis erst heraus, wenn ihre Zeile ganz in der Audit-Datei steht ([ADR 0028](adr/0028-audit-ereignis-und-datei-sink.md)). Ist eines davon eingeschaltet und `ECCLIUM_STATE_DIR` nicht gesetzt, startet der Server über stdio nicht. Eine Zeile der Audit-Datei nennt Zeit, Akteur, Tool, Ausgang und Dauer und die Kennungen der Objekte, nach denen der Aufruf fragt, und der Personen und Gruppen, die sein Ergebnis nennt. Sie zeigt also, wann welches Tool lief und wessen Daten es las, ohne Namen. Damit trägt die Datei selbst Personendaten. Die Kopie auf stderr nennt keine Kennungen ([Datenschutz](privacy.md), [Audit-Ereignisse](audit-events.md)).
@@ -135,6 +134,41 @@ Die Tools des Toolsets `docs` und `ct_api_search_actions` schlagen in einem Inde
 - **Falsche Fakten.** Welche Operation welches Recht verlangt, ordnet das Projekt von Hand zu, jede Paarung mit Beleg. Fehlt eine Zuordnung, heisst das nicht, dass kein Recht nötig ist. Eine falsche Zuordnung könnte zu einem zu weiten Recht raten. Prüfen Sie deshalb jedes Recht, bevor Sie es vergeben, und vergeben Sie es nur für die Objekte, die gelesen werden sollen.
 - **Widerruf.** Die Erlaubnis für die Texte der Academy hat der Hersteller mündlich gegeben. Nimmt er sie zurück, erscheint die nächste Version ohne diese Texte. Eine Version, die Sie schon installiert haben, behält sie, bis Sie sie ersetzen.
 
+## Bestätigung vor dem Schreiben
+
+Kein Schreib-Tool schreibt selbst. Es plant einen Schreibvorgang, der Kern versiegelt den Plan, holt eine Bestätigung und schreibt erst dann, mit einem Nachweis, den nur er ausstellt ([ADR 0029](adr/0029-write-guard.md)). Die Zusammenfassung und den Unterschied, die eine Person sieht, macht der Kern aus dem, was er in ChurchTools gelesen hat, und aus dem, was er schreiben würde, nie das Modell. Es gibt drei Wege, in dieser Reihenfolge:
+
+- **Rückfrage im Client:** Kann der Client nachfragen, zeigt er die Zusammenfassung und den ganzen Unterschied in einem Dialog mit dem einen Feld «Schreiben bestätigen». Nur «Annehmen» mit «Ja» schreibt. Ablehnen, Abbrechen und eine Antwort, die nicht passt, schreiben nichts. Eine Antwort gilt nur für diesen einen Plan und nur einmal, und ein Neustart des Servers verwirft offene Rückfragen.
+- **Echo:** Kann der Client nicht nachfragen, gibt das Schreib-Tool die Zusammenfassung und ein Token zurück, und `ct_write_confirm` verlangt beides zurück, damit die Person die Zusammenfassung im Freigabedialog des Clients sieht. Das Echo gilt nur mit `ECCLIUM_WRITE_CONFIRMATION=echo-allowed`, der Voreinstellung über stdio, nur für Tools des Kerns und nur für Schreibvorgänge, die sich zurücknehmen lassen und niemanden ausserhalb des Clients benachrichtigen: eine neue Seite, eine Änderung und ein Abschnitt im Wiki und ein neuer Termin. Ohne Snapshots gilt es für keinen.
+- **Freigabe-Warteschlange:** Schickt die Richtlinie den Schreibvorgang zu Ihnen, steht `ECCLIUM_WRITE_CONFIRMATION` auf `queue` oder ist der Unterschied länger als 120 Zeilen oder 12'000 Zeichen, kommt er vor jedem anderen Weg in die Warteschlange, ebenso, wenn der Client nicht nachfragen kann und das Echo ihn nicht bestätigt. Dort wartet er verschlüsselt, bis Sie ihn mit `ecclium queue approve` freigeben oder mit `ecclium queue reject` abweisen. Bei der Freigabe plant der Kern neu und schreibt nur, wenn derselbe Plan herauskommt. Eine Freigabe gilt einmal, auch über einen Neustart ([Betrieb über stdio](betrieb/stdio.md#freigabe-warteschlange)).
+
+Was die Wege beweisen und was nicht:
+
+- **Keiner beweist einen Menschen.** Die Rückfrage stellt der Client, und ein Hook im Client kann sie annehmen, ohne dass jemand sie sieht. In Claude Code tut das ein Hook für «Elicitation», auch mit «Annehmen» und gültigem Inhalt. Ecclium erkennt das an keinem Feld der Antwort ([Threat Model](threat-model.md), T8).
+- **Das Echo macht den Willen sichtbar, beweist ihn aber nicht.** Alles, was `ct_write_confirm` verlangt, steht im Kontext des Modells. Wer `ct_write_confirm` im Client auf «immer erlauben» stellt, macht das Echo wirkungslos. Deshalb gilt es nur für Schreibvorgänge, die sich zurücknehmen lassen und niemanden benachrichtigen, und `ecclium audit show` zählt die Schreibvorgänge, die das Echo bestätigt hat, für sich.
+- **Nur die Freigabe-Warteschlange verlangt Sie selbst,** auf der Kommandozeile Ihres Rechners. Soll sicher ein Mensch jeden Schreibvorgang sehen, bevor er geschieht, setzen Sie `ECCLIUM_WRITE_CONFIRMATION=queue`. Dann geht jeder in die Warteschlange, auch einer, den der Client erfragen könnte.
+- **Die Bestätigung ist nicht die einzige Grenze.** Auch ein bestätigter Schreibvorgang geht nur auf Ziele, die die [Richtlinie](policy.md) erlaubt, nur so oft am Tag, wie sie sagt, nur mit Text, den die ContentPolicy annimmt, und nur mit den Rechten des Dienstkontos. Ein Kill-Switch hält jedes Schreiben an (unten, «Schreiben sofort anhalten»).
+- **Das Audit nennt den Weg.** Jede Zeile eines bestätigten Schreibvorgangs nennt im Feld `confirmation`, ob ihn eine Rückfrage, das Echo oder Sie bestätigt haben ([Audit-Ereignisse](audit-events.md)). Ein Schreibvorgang, der wartet oder vor der Bestätigung endet, hat das Feld nicht.
+
+## Wenn jemand gleichzeitig ändert
+
+ChurchTools kennt keine Bedingung, die verhindert, dass ein Schreibvorgang die Änderung eines anderen überschreibt: Wer zuletzt speichert, gewinnt ([Befunde zur API](research/churchtools-api.md), F11 und F43). Ecclium liest das Ziel deshalb unmittelbar vor dem Schreiben neu und vergleicht es mit dem Plan. Hat sich etwas geändert, schreibt es nicht, und der Vorgang endet mit `conflict`. Danach liest es noch einmal und prüft, dass die Version die erwartete ist und Text oder Felder die gesendeten sind, sonst endet der Vorgang ebenfalls mit `conflict`. Bei Terminen ersetzt ein Schreibvorgang das ganze Objekt (F41). Ecclium sendet darum alle Felder des Stands, den es eben gelesen hat.
+
+Ein kurzes Fenster bleibt zwischen dem Lesen davor und dem Schreiben: Speichert ein Mensch genau dann, überschreibt Ecclium seine Änderung (T9). Das Lesen danach meldet den Fall als `conflict`, und der Snapshot macht den Schreibvorgang von Ecclium rücknehmbar. Die überschriebene Änderung selbst hält Ecclium nicht fest. Bei einer Seite des Wikis steht sie noch in den Versionen der Seite in ChurchTools.
+
+## Mails aus ChurchTools
+
+Was Ecclium schreibt, kann ChurchTools an Menschen weitergeben, ausserhalb des Clients und ohne Ecclium. Ecclium selbst schickt keine Mail. Auf einer Testinstanz an ChurchTools 3.138 zeigte sich am 01.11.2026 (F48):
+
+- Eine neue Buchungsanfrage schickte den Verwaltern der Ressource sofort eine Mail mit Titel, Ressource, Status, Anzahl, Beschreibung, Beginn und Ende, die erste Änderung einer Buchungsanfrage eine mit dem alten und dem neuen Wert von Titel, Beginn und Ende. Ecclium ändert keine Buchung. Das Löschen einer Buchungsanfrage, wie es `ecclium undo` tut, ergab keine Mail.
+- Anlegen, Ändern und Löschen eines Termins, den das Dienstkonto angelegt hatte, ergaben keine Mail. Ob ChurchTools die Person benachrichtigt, die einen Termin angelegt hat, wenn ein anderes Konto ihn ändert, ist nicht geprüft.
+
+Deshalb bestätigt das Echo eine Buchungsanfrage und das Ändern eines Termins nie, und die Rückfrage einer Buchungsanfrage sagt, dass ChurchTools Titel und Beschreibung an die Verwalter schickt. Titel und Beschreibung gehen durch die ContentPolicy, Kontaktangaben nur aus `interactive.contacts`. Schreiben Sie in eine Buchungsanfrage nur, was die Verwalter der Ressource lesen dürfen.
+
+## Schreiben sofort anhalten
+
+Eine leere Datei `writes-off` im Ordner `stop` des Zustandsordners hält jedes Schreiben an, ohne Neustart: Ecclium schaut vor jedem Planen und unmittelbar vor jedem Schreiben nach. Fehlt der Ordner `stop` oder lässt er sich nicht prüfen, schreibt Ecclium ebenfalls nicht. Das Lesen läuft weiter. Wie Sie die Datei anlegen und wieder entfernen, steht unter [Betrieb über stdio](betrieb/stdio.md#schreiben-sofort-anhalten).
+
 ## Was Ecclium ins Wiki schreibt
 
 Jeder Text, den ein Schreib-Tool ins Wiki schreiben will, geht durch die ContentPolicy, bevor der Server ChurchTools fragt ([ADR 0030](adr/0030-contentpolicy.md)). Hängt ein Tool einen Abschnitt an, prüft sie nur den neuen Abschnitt, der Text der Seite bleibt, wie er ist. Geschrieben wird nur eine Teilmenge von Markdown: Überschriften, Absätze, Listen, Tabellen, fett und kursiv, in einer festen Form, die der Server selbst schreibt.
@@ -159,6 +193,6 @@ Ein Schreibvorgang des Kerns lässt sich 30 Tage lang mit `ecclium undo` zurück
 
 ## Was später kommt
 
-- Phase 5: Tools, die schreiben, mit Bestätigung über eine Rückfrage im Client, eine Freigabe durch den Betreiber oder ein Echo, und was jeder dieser Wege beweist und was nicht. Dazu das Lesebudget in der Richtlinie.
-- Phase 6: der Runner für Routinen, dessen Modell keine Werkzeuge hat, eine Positivliste für ausgehende Verbindungen und Schalter als Dateien, die das Schreiben ohne Neustart abstellen.
+- Phase 6: der Runner für Routinen, dessen Modell keine Werkzeuge hat, eine Positivliste für ausgehende Verbindungen und ein Kill-Switch je Routine. Zu weite Rechte des Dienstkontos und ein umbenanntes Ziel sperren dort das Schreiben einer Routine.
+- Phase 7: der Betrieb über HTTP, voreingestellt mit `elicitation-or-queue` und damit ohne Echo. Setzen Sie dort `ECCLIUM_WRITE_CONFIRMATION=echo-allowed` ausdrücklich, gilt das Echo, und jeder Start warnt.
 - Phase 8: eine Anleitung, wie Sie Pakete und Images vor der Installation prüfen.

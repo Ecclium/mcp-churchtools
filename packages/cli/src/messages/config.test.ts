@@ -414,6 +414,22 @@ describe('the catalog of messages', () => {
     expect(message.action).toContain('‹ECCLIUM_READ_ONLY› auf ‹true›');
   });
 
+  // Every start that may write says so and names the kill switch
+  // (ADR 0029).
+  it('warns that Ecclium may write and names the kill switch', () => {
+    const message = warningMessage('writes_enabled');
+    expect(message.what).toBe(
+      '‹ECCLIUM_READ_ONLY› steht auf ‹false›, Ecclium darf in ChurchTools schreiben.',
+    );
+    expect(message.why).toContain('‹wiki› und ‹calendars›');
+    expect(message.why).toContain('erst nach einer Bestätigung');
+    expect(message.why).toContain('Audit-Datei');
+    expect(message.action).toContain('‹writes-off› im Ordner ‹stop›');
+    expect(message.action).toContain('ohne Neustart');
+    expect(message.action).toContain('‹ECCLIUM_READ_ONLY› auf ‹true›');
+    expect(warningText('writes_enabled')).toBe(textOf(message));
+  });
+
   // Without snapshots no write can be taken back, which every start that
   // writes says (ADR 0031).
   it('warns that no write can be taken back while snapshots are off', () => {

@@ -833,6 +833,11 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
 
   const readOnly = choose('ECCLIUM_READ_ONLY');
   show('readOnly', 'ECCLIUM_READ_ONLY', readOnly, 'boolean');
+  // Every start that may write says so (ADR 0029): false is the one switch
+  // that lets the write tools in and lets undo and an approval of the
+  // queue write. It does not wait for a toolset with write tools, so that
+  // the operator hears of the switch before any tool uses it.
+  if (readOnly?.value === 'false') warnings.add('writes_enabled');
 
   // off is allowed over stdio only, with a warning on every start. strict
   // needs the key file and refuses the toolset api, both checked below

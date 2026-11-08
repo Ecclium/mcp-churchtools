@@ -2,7 +2,7 @@
 
 **In Entwicklung.** Es gibt noch keine veröffentlichte Version. Diese Seite beschreibt, wie Sie Ecclium aus dem Quellcode bauen und als lokalen Server über stdio in Claude Desktop oder Claude Code einbinden. Über stdio startet der Client den Server als eigenen Prozess auf Ihrem Rechner und spricht mit ihm über stdin und stdout.
 
-In der Voreinstellung bietet der Server nur das Tool `ct_whoami` an. Es zeigt, mit welchem Konto Ecclium ChurchTools liest und welche Rechte ChurchTools diesem Konto gibt. Auf ausdrücklichen Wunsch kommen mit dem Toolset `persons` die Tools für Personen und Gruppen dazu, siehe «Personen und Gruppen», mit dem Toolset `events` die Tools für Events, Abläufe und Dienste, siehe «Events und Dienste», mit dem Toolset `calendars` die Tools für Kalender, Termine, Ressourcen und Buchungen, siehe «Kalender und Ressourcen», mit dem Toolset `wiki` die Tools des Wikis und mit dem Toolset `songs` die Tools für Songs, siehe «Songs». Alle lesen nur und ändern in ChurchTools nichts.
+In der Voreinstellung bietet der Server nur das Tool `ct_whoami` an. Es zeigt, mit welchem Konto Ecclium ChurchTools liest und welche Rechte ChurchTools diesem Konto gibt. Auf ausdrücklichen Wunsch kommen mit dem Toolset `persons` die Tools für Personen und Gruppen dazu, siehe «Personen und Gruppen», mit dem Toolset `events` die Tools für Events, Abläufe und Dienste, siehe «Events und Dienste», mit dem Toolset `calendars` die Tools für Kalender, Termine, Ressourcen und Buchungen, siehe «Kalender und Ressourcen», mit dem Toolset `wiki` die Tools des Wikis und mit dem Toolset `songs` die Tools für Songs, siehe «Songs». Sie lesen nur und ändern in ChurchTools nichts. Erst wenn Sie das Schreiben ausdrücklich einschalten, kommen Tools dazu, die Seiten im Wiki anlegen und ändern, Termine anlegen und ändern und Buchungen anfragen, jedes erst nach einer Bestätigung, siehe [Schreiben einschalten](#schreiben-einschalten).
 
 Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Hersteller von ChurchTools.
 
@@ -147,7 +147,7 @@ Setzen Sie die Variable in der Konfiguration des Clients neben die Adresse und d
 In der Datei steht:
 
 - Je Start und UTC-Tag eine Datei `audit-JJJJ-MM-TT-hhmmss-<Prozess>-<Nummer>.jsonl` mit dem Datum und der Uhrzeit des Öffnens in UTC. Ecclium öffnet nie eine Datei, die schon da ist.
-- Je Aufruf eine Zeile mit Zeit, Mandant, Subjekt, Modus, Tool, Ausgang, bei einem Fehler seinem Code, der Dauer, der ID des Ereignisses und den Kennungen der Objekte, nach denen der Aufruf fragt, und der Personen und Gruppen, die sein Ergebnis nennt, etwa `person:12`. Die Kopie auf stderr ist dieselbe Zeile ohne die Kennungen. Keine Inhalte aus ChurchTools, keine Namen und kein Token. Alle Felder stehen unter [Audit-Ereignisse](../audit-events.md), das JSON Schema einer Zeile in [`schemas/audit-event.v1.json`](../../schemas/audit-event.v1.json).
+- Je Aufruf eine Zeile mit Zeit, Mandant, Subjekt, Modus, Tool, Ausgang, bei einem Fehler seinem Code, der Dauer, der ID des Ereignisses und den Kennungen der Objekte, nach denen der Aufruf fragt, und der Personen und Gruppen, die sein Ergebnis nennt, etwa `person:12`. Die Zeile eines Schreib-Tools nennt dazu den Zustand des Schreibvorgangs, den Weg der Bestätigung, das Ziel und den Hash der Richtlinie, und je Rücknahme mit `ecclium undo` und je Entscheid über die Freigabe-Warteschlange kommt eine eigene Zeile dazu. Die Kopie auf stderr ist dieselbe Zeile ohne die Kennungen. Keine Inhalte aus ChurchTools, keine Namen und kein Token. Alle Felder stehen unter [Audit-Ereignisse](../audit-events.md), das JSON Schema einer Zeile in [`schemas/audit-event.v1.json`](../../schemas/audit-event.v1.json).
 - Eine Zeile zählt nur, wenn sie mit einem Zeilenumbruch endet. Eine Zeile, die mit `~` endet, und ein letztes Stück ohne Zeilenumbruch sind Reste einer Zeile, die nicht ganz in die Datei kam. Überspringen Sie solche Zeilen wie Zeilen, die kein JSON sind.
 - Jede ganze Zeile trägt am Ende `seq` und `prevHash`, eine Hash-Kette je Datei: `seq` zählt die ganzen Zeilen ab 1, `prevHash` ist der SHA-256 der vorigen ganzen Zeile, bei der ersten Zeile des Namens der Datei. Reste einer Zeile gehören nicht dazu. Die Kopie auf stderr hat beides nicht.
 
@@ -235,6 +235,8 @@ Welche Tools der Server neben `ct_whoami` anbietet, legen Sie mit `ECCLIUM_TOOLS
 
 `all` schaltet alle ein ausser `api`, auch die Toolsets späterer Versionen. `api` nennen Sie ausdrücklich, allein, in einer Liste oder als `all,api` für alle ([ADR 0067](../adr/0067-generischer-lesezugriff.md)). Ist die Variable leer oder nicht gesetzt, bietet der Server nur `ct_whoami` an. Beim Start nennt Ecclium auf stderr die Toolsets, die eingeschaltet sind, und jedes, das in dieser Version noch keine Tools mitbringt. Ein unbekannter Name, ein doppelter oder `all` neben einem anderen Namen als `api` bricht den Start ab. Die frühere Variable `ECCLIUM_SEARCH_TOOLS` bricht den Start ebenfalls ab, mit dem Hinweis auf `ECCLIUM_TOOLSETS=persons`.
 
+Die Tabelle nennt die Tools, die lesen. Mit `ECCLIUM_READ_ONLY=false` bietet `wiki` dazu `ct_wiki_page_create`, `ct_wiki_page_update` und `ct_wiki_page_append_section` an und `calendars` dazu `ct_appointments_create`, `ct_appointments_update` und `ct_bookings_create`, und mit dem Echo kommt `ct_write_confirm` dazu, siehe [Schreiben einschalten](#schreiben-einschalten).
+
 ## Stufe `strict` und Schlüsseldatei
 
 Mit `ECCLIUM_REDACTION=strict` kürzt Ecclium Nachnamen auf den ersten Buchstaben, ersetzt die Kennungen von Personen durch Pseudonyme und prüft Freitext auf E-Mail-Adressen, Telefonnummern, IBAN und AHV-Nummern. Was die Stufe leistet und wo sie endet, steht unter [Sicherheit](../security.md#stufe-strict). Sie braucht einen Schlüssel für die Pseudonyme und geht nicht zusammen mit dem Toolset `api`.
@@ -286,6 +288,102 @@ Ecclium übersetzt ein Pseudonym am Tag seiner Ausgabe und am folgenden UTC-Tag 
 
 Solange die zweite Variable gesetzt ist, nimmt Ecclium auch ein Pseudonym an, das jemand mit dem bisherigen Schlüssel neu bildet. Ist der bisherige Schlüssel abhandengekommen, setzen Sie die zweite Variable deshalb nicht. Die Pseudonyme des laufenden und des vorigen Tages gelten dann nicht mehr, und der KI-Assistent findet die Personen über die Suche neu.
 
+## Schreiben einschalten
+
+In der Voreinstellung liest Ecclium nur. Schalten Sie das Schreiben ein, legt der KI-Assistent über Ecclium Seiten im Wiki an, ändert sie und hängt Abschnitte an, legt Termine an und ändert sie und fragt Buchungen an. Jeder Schreibvorgang wartet auf eine Bestätigung, steht in der Audit-Datei und lässt sich in der Voreinstellung 30 Tage lang zurücknehmen ([ADR 0029](../adr/0029-write-guard.md), [Sicherheit](../security.md#bestätigung-vor-dem-schreiben)). Dieser Abschnitt führt der Reihe nach durch das Einschalten. Die Abschnitte danach beschreiben die einzelnen Teile genauer.
+
+### Was die Schreib-Tools tun
+
+- **Wiki:** `ct_wiki_page_create` legt eine Seite in Markdown in einer Kategorie an. `ct_wiki_page_update` ersetzt den Text einer Seite in Markdown, `ct_wiki_page_append_section` hängt einen Abschnitt an, beide nur mit der Version, die das Modell gelesen hat. Hat sich die Seite seither geändert, schreiben sie nichts. Seiten in HTML ändern sie nicht, und eine Seite löscht Ecclium nie. Was Ecclium dem Wiki hinzufügt, trägt die Kennzeichnung, siehe [Kennzeichnung im Wiki](#kennzeichnung-im-wiki). ChurchTools entfernt Leerraum an beiden Enden eines Texts, eine Seite, die Ecclium schreibt, endet deshalb ohne Zeilenumbruch.
+- **Termine:** `ct_appointments_create` legt einen einzelnen Termin mit Beginn und Ende in einem Kalender an, ohne Serie und ohne Event. `ct_appointments_update` ändert Titel, Beschreibung, Beginn und Ende eines einzelnen Termins, aber keinen mit einer Serie, einer Adresse, einem Link, einem Bild, Anmeldungen oder einem verknüpften Event, einer Buchung oder einer Einladung, soweit das Dienstkonto sie sieht. Beginn und Ende verschiebt es nur bei einem Termin, den das Dienstkonto angelegt hat.
+- **Buchungen:** `ct_bookings_create` fragt eine Buchung einer Ressource an. Die Verwalter der Ressource genehmigen sie in ChurchTools, und ChurchTools schickt ihnen dafür eine Mail mit Titel, Beschreibung und Zeit ([Sicherheit](../security.md#mails-aus-churchtools)). Ob eine Ressource eine Anfrage auch von selbst genehmigen kann, ist nicht geprüft. Geben Sie dem Schreibkonto deshalb nur Ressourcen, deren Anfragen ein Mensch genehmigt.
+- **Gemeinsam:** Zeiten nehmen die Tools in UTC auf die volle Minute, einen Termin oder eine Buchung über ganze Tage nicht. Steht derselbe Termin schon im Kalender oder dieselbe Buchung schon bei der Ressource, schreibt Ecclium nichts. Jeder Text geht durch die ContentPolicy: Links, Bilder, HTML und Adressen von Websites lehnt sie ab ([Sicherheit](../security.md#was-ecclium-ins-wiki-schreibt)). Alle Felder und Grenzen stehen in der [Referenz der Tools](../tools.md).
+
+### Der Reihe nach
+
+1. **Schreibkonto.** Legen Sie ein eigenes Dienstkonto zum Schreiben an, mit Rechten nur für die Kategorien, Kalender und Ressourcen, in die Ecclium schreiben soll, und legen Sie sein Token in eine eigene Token-Datei wie unter [Token-Datei](#token-datei). Wir empfehlen dafür einen eigenen Eintrag im Client, etwa `ecclium-schreiben`, neben dem Eintrag `ecclium`, dessen Konto nichts schreiben darf ([Dienstkonto](dienstkonto.md#ein-eigenes-konto-zum-schreiben)).
+2. **Nur lesen ausschalten.** Im Eintrag zum Schreiben setzen Sie `ECCLIUM_READ_ONLY` auf `false` und `ECCLIUM_TOOLSETS` auf `wiki`, `calendars` oder `wiki,calendars`, je nachdem, was Ecclium schreiben soll. Jeder Start warnt dann, dass Ecclium schreiben darf. Geben Sie dem Eintrag ein eigenes Subjekt in `ECCLIUM_STDIO_SUBJECT`, etwa `schreiben`, damit das Audit seine Aufrufe von denen des lesenden Eintrags trennt.
+3. **Zustandsordner.** Schreiben braucht `ECCLIUM_STATE_DIR`, für die Audit-Datei, die Snapshots, die Freigabe-Warteschlange, die Zähler der Richtlinie und die Kill-Switches. Ohne ihn startet der Server, schreibt aber nichts. Legen Sie ihn an wie unter [Audit-Datei](#audit-datei). Beide Einträge dürfen denselben Ordner nutzen, dann liegt das Audit an einem Ort.
+4. **Ordner `stop`.** Darin liegen die Kill-Switches. Ecclium legt ihn nicht an, und ohne ihn schreibt es nichts: Ein Schreib-Tool endet mit `policy_denied`, `ecclium undo` und `ecclium queue approve` enden mit 77. Legen Sie ihn einmal an:
+
+   ```sh
+   (umask 077 && mkdir /pfad/zum/zustandsordner/stop)
+   ```
+
+   Wie Sie damit das Schreiben anhalten, steht unten unter «Schreiben sofort anhalten».
+
+5. **Ordner der Tagesschlüssel.** Legen Sie den Ordner für `ECCLIUM_KEYS_DIR` an und nehmen Sie ihn aus jeder Sicherung, siehe [Ordner der Tagesschlüssel](#ordner-der-tagesschlüssel). Ohne ihn startet ein Server mit `ECCLIUM_READ_ONLY=false` nicht.
+6. **Schlüssel des Prüfcodes.** Nur mit `wiki`: Legen Sie die Datei für `ECCLIUM_MARKER_KEY_FILE` an und sichern Sie sie, siehe [Kennzeichnung im Wiki](#kennzeichnung-im-wiki).
+7. **Richtlinie.** Legen Sie die Datei für `ECCLIUM_POLICY_FILE` an. Mit `wiki` ist `interactive.inquiriesTo` Pflicht, der Text nach «Rückfragen an» in der Kennzeichnung. Nennen Sie unter `interactive.targets` jedes Ziel, auf das Ecclium schreiben soll, mit Kennung und Namen und einer Obergrenze je Tag. Ohne Einträge darf ein bestätigter Schreibvorgang auf jedes Ziel, das das Dienstkonto schreiben darf. Ein Beispiel mit Platzhaltern:
+
+   ```yaml
+   schema: policy.v1
+   interactive:
+     inquiriesTo: 'Sekretariat, sekretariat@example.org'
+     contacts:
+       - sekretariat@example.org
+     targets:
+       - target: { kind: wiki_category, id: 12, name: Berichte }
+         tools:
+           - ct_wiki_page_create
+           - ct_wiki_page_update
+           - ct_wiki_page_append_section
+         maxPerDay: 10
+       - target: { kind: calendar, id: 4, name: Gemeindekalender }
+         tools: [ct_appointments_create, ct_appointments_update]
+         maxPerDay: 10
+       - target: { kind: resource, id: 6, name: Saal }
+         tools: [ct_bookings_create]
+         maxPerDay: 5
+   ```
+
+   Die Kennungen zeigen `ct_wiki_categories_list`, `ct_calendars_list` und `ct_resources_list`. Weicht ein Name in ChurchTools ab, schreibt Ecclium nicht auf dieses Ziel, und der Schreibvorgang wartet auf Ihre Freigabe. Nach einigen Tagen schlägt `ecclium policy init --interactive` Einträge aus dem Audit vor. Alle Felder stehen unter [Richtlinie](../policy.md).
+
+8. **Weg der Bestätigung.** `ECCLIUM_WRITE_CONFIRMATION` legt fest, wer einen Schreibvorgang bestätigt ([Sicherheit](../security.md#bestätigung-vor-dem-schreiben)):
+   - `echo-allowed`, die Voreinstellung über stdio: Kann der Client nachfragen, zeigt er eine Rückfrage mit dem Unterschied. Kann er es nicht, bestätigt das Echo mit `ct_write_confirm` im Freigabedialog des Clients, was sich zurücknehmen lässt und niemanden benachrichtigt, also eine neue Seite, eine Änderung oder einen Abschnitt im Wiki und einen neuen Termin. Das Ändern eines Termins und eine Buchungsanfrage warten dann in der Freigabe-Warteschlange.
+   - `elicitation-or-queue`: nur Rückfrage oder Freigabe-Warteschlange, nie das Echo.
+   - `queue`: Jeder Schreibvorgang wartet auf Ihre Freigabe mit `ecclium queue approve`. Wählen Sie das, wenn sicher sein soll, dass ein Mensch jeden Schreibvorgang sieht, bevor er geschieht.
+
+   Ein Unterschied über 120 Zeilen oder 12'000 Zeichen geht auf jedem Weg in die Freigabe-Warteschlange. Claude Code zeigte die Rückfrage im Oktober 2026 als Dialog, der Chat von Claude Desktop kündigte keine Rückfrage an und kennt damit nur das Echo und die Warteschlange ([Befunde zu Rückfragen](../research/mcp-sdk-und-elicitation.md)).
+
+9. **Zeitzone.** Setzen Sie `ECCLIUM_TIME_ZONE` auf die Zeitzone der ChurchTools-Installation, etwa `Europe/Zurich`. Dann zeigen Rückfrage, Freigabe-Warteschlange und Rücknahme die Zeiten in dieser Zone, und Ecclium lehnt einen Termin oder eine Buchung ab, deren Beginn und Ende beide auf Mitternacht fallen, weil ChurchTools sie womöglich als ganztägig speichert. Geprüft hat das keine Probe. Die Tools selbst nehmen Zeiten immer in UTC.
+10. **Eintrag und Prüfung.** Der Eintrag zum Schreiben steht neben dem Eintrag `ecclium` unter `mcpServers`, für Claude Desktop so, die Platzhalter durch Ihre Adresse und Ihre Pfade ersetzt:
+
+    ```json
+    "ecclium-schreiben": {
+      "command": "/pfad/zu/node",
+      "args": ["/pfad/zum/checkout/packages/cli/dist/bin.js", "stdio"],
+      "env": {
+        "ECCLIUM_CHURCHTOOLS_URL": "https://example.church.tools",
+        "ECCLIUM_CHURCHTOOLS_TOKEN_FILE": "/pfad/zur/token-datei-schreiben",
+        "ECCLIUM_READ_ONLY": "false",
+        "ECCLIUM_TOOLSETS": "wiki,calendars",
+        "ECCLIUM_STDIO_SUBJECT": "schreiben",
+        "ECCLIUM_STATE_DIR": "/pfad/zum/zustandsordner",
+        "ECCLIUM_KEYS_DIR": "/pfad/zum/schluesselordner",
+        "ECCLIUM_MARKER_KEY_FILE": "/pfad/zur/pruefcode-schluessel",
+        "ECCLIUM_POLICY_FILE": "/pfad/zur/richtlinie.yaml",
+        "ECCLIUM_TIME_ZONE": "Europe/Zurich"
+      }
+    }
+    ```
+
+    In Claude Code tragen Sie denselben Eintrag unter dem Namen `ecclium-schreiben` mit `claude mcp add-json` ein wie unter [Claude Code](#claude-code), mit `"type":"stdio"` vorne. Prüfen Sie vorher mit `config check` und denselben Variablen, wie unter [Konfiguration prüfen](#konfiguration-prüfen): Die Prüfung nennt die Warnung, dass Ecclium schreiben darf, sonst keine Probleme. Danach starten Sie den Client neu und prüfen mit `ct_whoami` im neuen Eintrag, dass er das Schreibkonto mit genau seinen Rechten zeigt.
+
+Rufen Sie `ecclium undo` und `ecclium queue` mit den Variablen dieses Eintrags auf, mit demselben Subjekt, siehe [Rücknahme](#rücknahme) und [Freigabe-Warteschlange](#freigabe-warteschlange).
+
+### Schreiben sofort anhalten
+
+Eine leere Datei `writes-off` im Ordner `stop` hält jedes Schreiben an, ohne Neustart:
+
+```sh
+touch /pfad/zum/zustandsordner/stop/writes-off
+```
+
+Ecclium schaut vor jedem Planen und unmittelbar vor jedem Schreiben nach, ob die Datei da ist, ihr Inhalt zählt nicht. Ein angehaltener Schreibvorgang endet mit `policy_denied`, `ecclium undo` und `ecclium queue approve` enden mit 77, und Lesen geht weiter. Ist `stop` kein Ordner, ein Link oder nicht zu lesen, gilt das Schreiben ebenfalls als angehalten. Mit `rm /pfad/zum/zustandsordner/stop/writes-off` geht es weiter.
+
+Soll Ecclium dauerhaft nur lesen, setzen Sie im Eintrag zum Schreiben `ECCLIUM_READ_ONLY` auf `true` und lassen `ECCLIUM_STATE_DIR` und `ECCLIUM_KEYS_DIR` stehen, bis 31 Tage um sind: So löscht Ecclium Snapshots und Einträge der Freigabe-Warteschlange nach ihrer Frist und vernichtet ihre Tagesschlüssel. Entfernen Sie den Eintrag erst danach, oder löschen Sie den Ordner der Tagesschlüssel selbst ([Ordner der Tagesschlüssel](#ordner-der-tagesschlüssel)).
+
 ## Ordner der Tagesschlüssel
 
 Sobald Ecclium schreibt, mit `ECCLIUM_READ_ONLY=false`, braucht es neben dem Zustandsordner einen zweiten Ordner, den `ECCLIUM_KEYS_DIR` nennt. Darin legt Ecclium je Tag einen zufälligen Schlüssel an, der den Schlüssel jedes Snapshots verschlüsselt, also des Stands vor einem Schreibvorgang, mit dem sich dieser mit `ecclium undo` zurücknehmen lässt, siehe [Rücknahme](#rücknahme). Nach 30 Tagen vernichtet es den Schlüssel eines Tages, und was er verschlüsselt hat, lässt sich nicht mehr lesen, auch nicht aus einer Sicherung ([Datenschutz](../privacy.md#tagesschlüssel), [ADR 0031](../adr/0031-persistenz-und-tagesschluessel.md)). Das wirkt nur, wenn der Ordner in keiner Sicherung liegt. Die gesicherten Stände selbst, die Snapshots, liegen verschlüsselt im Ordner `snapshots` des Zustandsordners ([Datenschutz](../privacy.md#snapshots)). Snapshots entstehen mit den Schreib-Tools des Wikis und mit jedem Schreibvorgang eines Termins oder einer Buchung. Von den Wegen der Bestätigung gibt es die Rückfrage im Client, das Echo mit `ct_write_confirm` und die Freigabe-Warteschlange, siehe [Freigabe-Warteschlange](#freigabe-warteschlange). Auch ihre Einträge verschlüsselt Ecclium mit Tagesschlüsseln, im Ordner `queue`, und vernichtet sie schon nach 14 Tagen.
@@ -302,7 +400,7 @@ Unter macOS nehmen Sie ihn danach aus Time Machine:
 tmutil addexclusion /pfad/zum/schluesselordner
 ```
 
-Erfasst ein anderes Backup den Ordner, nehmen Sie ihn dort ebenso heraus, und nehmen Sie keinen Ordner, den ein Dienst synchronisiert. Setzen Sie die Variable im Abschnitt `env` des Eintrags `ecclium` neben den Zustandsordner:
+Erfasst ein anderes Backup den Ordner, nehmen Sie ihn dort ebenso heraus, und nehmen Sie keinen Ordner, den ein Dienst synchronisiert. Setzen Sie die Variable im Abschnitt `env` des Eintrags, der schreibt, neben den Zustandsordner, mit zwei Einträgen also in `ecclium-schreiben` (siehe «Schreiben einschalten»):
 
 ```json
 "ECCLIUM_KEYS_DIR": "/pfad/zum/schluesselordner"
@@ -320,7 +418,7 @@ Ein Schreibvorgang des Kerns lässt sich zurücknehmen, solange sein Snapshot da
 env -i ECCLIUM_CHURCHTOOLS_URL=https://example.church.tools ECCLIUM_CHURCHTOOLS_TOKEN_FILE=/pfad/zur/token-datei ECCLIUM_STATE_DIR=/pfad/zum/zustandsordner ECCLIUM_KEYS_DIR=/pfad/zum/schluesselordner ECCLIUM_READ_ONLY=false /pfad/zu/node /pfad/zum/checkout/packages/cli/dist/bin.js undo 11111111-2222-4333-8444-555555555555
 ```
 
-Setzen Sie dazu jede weitere Variable, mit der der Server läuft, etwa `ECCLIUM_STDIO_SUBJECT`.
+Setzen Sie dazu jede weitere Variable, mit der der Server läuft, etwa `ECCLIUM_STDIO_SUBJECT` und `ECCLIUM_TIME_ZONE`. Mit zwei Einträgen nehmen Sie die Token-Datei und das Subjekt des Eintrags zum Schreiben, etwa `/pfad/zur/token-datei-schreiben` und `ECCLIUM_STDIO_SUBJECT=schreiben`, sonst fehlt dem Konto das Recht zum Schreiben.
 
 - **Was er schreibt:** Bei einer geänderten oder ergänzten Seite den Text von vor dem Schreibvorgang, unverändert. Eine neue Seite löscht er nicht, ihr Text wird «Diese Seite hat Ecclium am <Datum> angelegt und am <Datum> zurückgenommen.», und ihr Titel bleibt. Bei einem geänderten Termin Titel, Beschreibung, Beginn und Ende von vor dem Schreibvorgang, Untertitel und Sichtbarkeit bleiben, wie sie sind. Einen neuen Termin und eine neue Buchungsanfrage löscht er, aber nur, solange sie so sind, wie Ecclium sie angelegt hat, eine Buchung mit demselben Status, und an einem Termin nichts hängt. Gibt es sie schon nicht mehr, ist nichts zu tun.
 - **Was er zeigt:** den Unterschied Zeile für Zeile, nachdem er geschrieben hat, statt zu schreiben, wenn jemand die Seite geändert hat, und wenn nach dem Senden unklar ist, ob die Rücknahme ankam, mit `-` für Zeilen der Seite jetzt und `+` für Zeilen danach. Der Text einer Seite ist fremder Text: Steuerzeichen, Escape-Folgen, Zeichen für die Richtung des Texts, unsichtbare Zeichen und jedes Zeichen ausser ASCII, Umlauten und «» ‹› zeigt er als `\u{…}`, einen Backslash als `\\`, damit eine Seite Ihr Terminal nicht steuern kann.
@@ -352,11 +450,11 @@ env -i ECCLIUM_CHURCHTOOLS_URL=https://example.church.tools ECCLIUM_CHURCHTOOLS_
 - **Frist und Obergrenze:** Ein Eintrag gilt seinen Tag und die 14 Tage danach, dann verfällt er, und Ecclium löscht ihn mit seinem Tagesschlüssel beim Start oder Wechsel des UTC-Tages. Für einen Mandanten warten höchstens 100 Einträge, auch solche, die sich nicht öffnen lassen, bis sie verfallen. Ein weiterer Schreibvorgang wird dann weder geschrieben noch eingereiht.
 - **Exit-Codes:** 0 erledigt, auch `show` eines entschiedenen Eintrags; 64 falscher Aufruf; 65 ein Entscheid über einen schon entschiedenen Eintrag, ein Ziel, das sich seit dem Einreihen oder während der Freigabe geändert hat, oder ein Text, den die ContentPolicy oder ChurchTools abweist; 66 kein Eintrag unter der Kennung, er ist verfallen, oder das Ziel einer Freigabe gibt es in ChurchTools nicht mehr, dann wartet der Eintrag weiter; 69 ChurchTools nicht erreicht oder der Ausgang eines Schreibvorgangs unklar; 70 interner Fehler; 74 die Audit-Datei kann die Zeile nicht aufnehmen, der Stand vor dem Schreiben liess sich nicht festhalten, oder die Zeile eines festgehaltenen Entscheids kam nicht hinein; 77 der Aufruf wurde abgewiesen, etwa weil der Server nur liest, das Schreiben ausgeschaltet ist, ein Recht fehlt oder die Uhr abweicht; 78 Konfiguration, ein fehlender Ordner, ein Ordner `queue` oder `quota`, der sich nicht nutzen lässt, oder eine Audit-Datei, die sich nicht öffnen lässt.
 
-Den Ordner `queue` im Zustandsordner legt der Start eines Servers an, der schreibt. Wie jedes Schreiben verlangt `approve` den Ordner `stop` für die Kill-Switches und `ECCLIUM_READ_ONLY=false`. Die Kennung prüft der Befehl, bevor er eine Datei liest, und nennt sie in keiner Meldung. Nur `approve` fragt ChurchTools an. Einträge entstehen mit den Schreib-Tools des Wikis.
+Mit zwei Einträgen nehmen Sie auch hier die Token-Datei und das Subjekt des Eintrags zum Schreiben. Den Ordner `queue` im Zustandsordner legt der Start eines Servers an, der schreibt. Wie jedes Schreiben verlangt `approve` den Ordner `stop` für die Kill-Switches und `ECCLIUM_READ_ONLY=false`. Die Kennung prüft der Befehl, bevor er eine Datei liest, und nennt sie in keiner Meldung. Nur `approve` fragt ChurchTools an. Einträge entstehen mit jedem Schreib-Tool. Kann der Client nicht nachfragen, kommen das Ändern eines Termins und eine Buchungsanfrage immer hierher, weil das Echo sie nicht bestätigt.
 
 ## Kennzeichnung im Wiki
 
-Jede Seite und jeder Abschnitt, die Ecclium dem Wiki hinzufügt, endet mit einer Zeile mit festem Wortlaut, etwa «Automatisch erstellt am 05.11.2026 durch Ecclium, interaktiv, Prüfcode k1:ABCDEFGHIJKLM. Rückfragen an Sekretariat.» Am Prüfcode erkennt Ecclium seine eigenen Abschnitte, damit es denselben Abschnitt am selben Tag nicht zweimal anhängt. Ein Abschnitt, dessen Code nicht mehr zu seinem Inhalt passt, gilt als von Hand geändert, und Ecclium ersetzt ihn nie ([ADR 0032](../adr/0032-richtlinie-und-pruefcode.md)). Eine Änderung an bestehendem Text bekommt keine Zeile. Schreib-Tools für das Wiki gibt es in dieser Version noch nicht.
+Jede Seite und jeder Abschnitt, die Ecclium dem Wiki hinzufügt, endet mit einer Zeile mit festem Wortlaut, etwa «Automatisch erstellt am 05.11.2026 durch Ecclium, interaktiv, Prüfcode k1:ABCDEFGHIJKLM. Rückfragen an Sekretariat.» Am Prüfcode erkennt Ecclium seine eigenen Abschnitte, damit es denselben Abschnitt am selben Tag nicht zweimal anhängt. Ein Abschnitt, dessen Code nicht mehr zu seinem Inhalt passt, gilt als von Hand geändert, und Ecclium ersetzt ihn nie ([ADR 0032](../adr/0032-richtlinie-und-pruefcode.md)). Eine Änderung an bestehendem Text bekommt keine Zeile, Termine und Buchungen auch nicht.
 
 Mit `ECCLIUM_READ_ONLY=false` und dem Toolset `wiki` startet Ecclium nur mit zwei Angaben. Die erste ist der Schlüssel des Prüfcodes, eine Datei wie die Schlüsseldatei der Pseudonyme, aber mit einem eigenen Schlüssel:
 
@@ -547,7 +645,7 @@ Die Ausgabe ist JSON aus festen Wörtern: je Schritt `wie erwartet` oder `abweic
 
 ## Grenzen
 
-- Nur `ct_whoami`, mit dem Toolset `persons` die sechs Tools für Personen und Gruppen und die globale Suche, mit `events` die fünf Tools für Events, Abläufe und Dienste, mit `calendars` die fünf Tools für Kalender, Termine, Ressourcen und Buchungen, mit `wiki` die vier Tools des Wikis, mit `songs` die zwei Tools für Songs, mit `docs` die sechs Tools der Dokumentation und mit `api` die zwei Tools des lesenden Zugriffs auf die API. Tools, die schreiben, kommen mit späteren Versionen.
+- Nur `ct_whoami`, mit dem Toolset `persons` die sechs Tools für Personen und Gruppen und die globale Suche, mit `events` die fünf Tools für Events, Abläufe und Dienste, mit `calendars` die fünf Tools für Kalender, Termine, Ressourcen und Buchungen, mit `wiki` die vier Tools des Wikis, mit `songs` die zwei Tools für Songs, mit `docs` die sechs Tools der Dokumentation und mit `api` die zwei Tools des lesenden Zugriffs auf die API. Mit `ECCLIUM_READ_ONLY=false` schreiben die drei Tools des Wikis nur Seiten in Markdown, löschen keine und ändern keine Seite in HTML, und die drei Tools für Termine und Buchungen schreiben nur einzelne Termine ohne Serie und verknüpfte Teile und Buchungen nur als Anfrage.
 - Drei Prompts, je mit dem Toolset ihrer Tools. Ein Prompt beschreibt nur Schritte, was der KI-Assistent daraus macht, entscheidet das Modell.
 - Der Start fragt ChurchTools nicht an. Ein ungültiges oder entzogenes Token zeigt sich erst beim ersten Aufruf eines Tools.
 - `ct_whoami` verlangt kein Recht in ChurchTools. Geprüft ist das bisher nur mit einem Konto, das zwei Rechte im Wiki hatte, nicht mit einem Konto ganz ohne Rechte.
