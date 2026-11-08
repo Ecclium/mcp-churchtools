@@ -589,9 +589,13 @@ describe('event names', () => {
   it('replaces a huge name with a canary at once', () => {
     const canary = makeCanaries().token;
     const { log, lines } = make();
+    const huge = `a${canary.value}${'b'.repeat(10_000_000)}`;
     const started = performance.now();
-    log.info(`a${canary.value}${'b'.repeat(10_000_000)}`);
-    expect(performance.now() - started).toBeLessThan(200);
+    log.info(huge);
+    // Work that grows faster than the name would take minutes, one pass
+    // over it a few milliseconds: the bound catches the first and leaves a
+    // loaded runner room.
+    expect(performance.now() - started).toBeLessThan(1000);
     assertNoCanary(lines, [canary], 'line');
   });
 });

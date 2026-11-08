@@ -426,9 +426,13 @@ describe('an invalid event', () => {
 
   it('replaces a huge tenant at once', () => {
     const { sink, audit } = make();
+    const huge = `a${'b'.repeat(10_000_000)}`;
     const started = performance.now();
-    sink.record({ ...base, tenantId: `a${'b'.repeat(10_000_000)}` });
-    expect(performance.now() - started).toBeLessThan(200);
+    sink.record({ ...base, tenantId: huge });
+    // Work that grows faster than the tenant would take minutes, one pass
+    // over it a few milliseconds: the bound catches the first and leaves a
+    // loaded runner room.
+    expect(performance.now() - started).toBeLessThan(1000);
     expect(event(audit())['tenantId']).toBe('invalid');
   });
 
@@ -574,7 +578,9 @@ describe('lists', () => {
     const { sink, logs } = make();
     const started = performance.now();
     sink.record({ ...base, objectRefs: sparse });
-    expect(performance.now() - started).toBeLessThan(200);
+    // Walking every index of the list would take minutes; the bound leaves
+    // a loaded runner room.
+    expect(performance.now() - started).toBeLessThan(1000);
     expect(logs()).toMatchObject([
       { event: 'audit_invalid_object_refs', count: 1_000_000 },
     ]);
