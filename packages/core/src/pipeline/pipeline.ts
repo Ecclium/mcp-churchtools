@@ -770,13 +770,13 @@ const writeDenials: readonly ErrorCode[] = Object.freeze([
   'permission',
 ]);
 
-// The state of a write that ended with an error, by its code.
+// The state of a write that ended with an error before it was sent, by
+// its code. A write that was sent carries the state the guard gives it.
+// A conflict found before anything was sent counts as refused, so that
+// denied always means that nothing reached ChurchTools, and the state
+// conflict only follows a write that was sent (ADR 0029).
 const writeStateOf = (code: ErrorCode): WriteState =>
-  writeDenials.includes(code)
-    ? 'denied'
-    : code === 'conflict'
-      ? 'conflict'
-      : 'failed';
+  writeDenials.includes(code) || code === 'conflict' ? 'denied' : 'failed';
 
 // The state of a write for the audit line of its call: the one the write
 // left, or for a write tool that ended before its write, refused or failed
@@ -1990,7 +1990,8 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
             subject,
             diff: diffLines(result.change.from, result.change.to),
           },
-          'conflict',
+          // Nothing was sent over the change of a person (ADR 0029).
+          'denied',
           'conflict',
         );
       case 'incomplete':
