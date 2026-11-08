@@ -219,10 +219,15 @@ describe('two processes that write against one limit of the policy', () => {
       );
       // After both ended, as after a restart: the count is in the file.
       expect(await ask(stateDir, ['plan', '5'])).toBe('limit_reached');
-      const day = new Date().toISOString().slice(0, 10);
+      // The file of the day the children counted on, by its name, so that
+      // the test does not read the clock again after them.
+      const files = readdirSync(join(stateDir, 'quota')).filter((name) =>
+        /^default-\d{4}-\d{2}-\d{2}\.json$/.test(name),
+      );
+      expect(files).toHaveLength(1);
       const counts = (
         JSON.parse(
-          readFileSync(join(stateDir, 'quota', `default-${day}.json`), 'utf8'),
+          readFileSync(join(stateDir, 'quota', files[0] ?? ''), 'utf8'),
         ) as { counts: Record<string, Record<string, number>> }
       ).counts['service:stdio:local-stdio'];
       expect(counts).toEqual({
