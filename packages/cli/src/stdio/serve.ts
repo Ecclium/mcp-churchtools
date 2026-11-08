@@ -39,6 +39,7 @@ import {
 } from '@ecclium/mcp-churchtools-core';
 import {
   type AuditFileWriter,
+  anchorEventOf,
   createLogger,
   createStderrWriter,
   describeError,
@@ -141,7 +142,6 @@ const startFailedEvent = 'stdio_start_failed';
 const sigtermEvent = 'process_sigterm';
 const sigintEvent = 'process_sigint';
 const auditFileClosedEvent = 'audit_file_closed';
-const anchorEvent = 'audit_chain_anchor';
 const filesDeletedEvent = 'audit_files_deleted';
 const filesKeptEvent = 'audit_files_not_deleted';
 const dayKeysDestroyedEvent = 'day_keys_destroyed';
@@ -329,8 +329,9 @@ export function serve(options: ServeOptions): ExitCode | undefined {
       anchors: true,
     });
     auditFile.attach({
-      anchor: ({ file, seq, hash }) => {
-        anchorLogger.info(anchorEvent, { file, seq, hash });
+      anchor: (anchor) => {
+        const { file, seq, hash } = anchor;
+        anchorLogger.info(anchorEventOf(anchor), { file, seq, hash });
       },
       swept: ({ deleted, kept, complete }) => {
         if (deleted > 0) {

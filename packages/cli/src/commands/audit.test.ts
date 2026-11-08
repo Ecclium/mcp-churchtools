@@ -556,6 +556,7 @@ const verifyReport = (
   vanished: 1,
   anchors: 1_000,
   anchorsMatched: 990,
+  anchorsOpen: 4,
   anchorsExpired: 10,
   findings: [
     { kind: 'line_form', file: fileName(1), line: 2 },
@@ -783,6 +784,20 @@ describe('the texts of the audit commands', () => {
       }
     },
   );
+
+  it('names the files without a closing anchor only when there are some', () => {
+    const anchors = { anchors: new Map(), conflicts: [], dropped: 0 };
+    const named = (lines: readonly string[]): boolean =>
+      lines.some((line) => line.includes('ohne Anker beim Schliessen'));
+
+    expect(renderVerifyReport(verifyReport(), anchors)).toContain(
+      '  Davon ohne Anker beim Schliessen: 4. Ihr Server läuft noch oder endete, ohne die Datei zu schliessen. Zeilen nach ihrem letzten Anker prüft nur die Kette.',
+    );
+    expect(
+      named(renderVerifyReport(verifyReport({ anchorsOpen: 0 }), anchors)),
+    ).toBe(false);
+    expect(named(renderVerifyReport(verifyReport(), undefined))).toBe(false);
+  });
 
   it.each([
     ...Object.entries(auditShowProblemTexts),

@@ -68,9 +68,9 @@ const findingTexts: Readonly<Record<AuditFindingKind, string>> = Object.freeze({
   anchor_truncated:
     'Die Datei endet vor der Zeile, die der Anker im Log nennt. Sie wurde gekürzt.',
   anchor_extended:
-    'Nach der Zeile, die der Anker im Log nennt, stehen weitere Zeilen.',
+    'Nach der Zeile, die der Anker beim Schliessen im Log nennt, stehen weitere Zeilen.',
   anchor_conflict:
-    'Das Log nennt zwei verschiedene Anker für dieselbe Zeile dieser Datei.',
+    'Das Log nennt zwei verschiedene Anker für dieselbe Zeile dieser Datei, zwei verschiedene Anker beim Schliessen oder einen Anker nach dem beim Schliessen.',
   file_missing:
     'Ein Anker im Log nennt diese Datei, sie fehlt aber im Ordner, und ihre Frist nach ‹ECCLIUM_AUDIT_RETENTION_MONTHS› ist nicht abgelaufen. Prüfen Sie, ob diese Frist die des Servers ist und das Log zu diesem Zustandsordner gehört.',
   file_unsafe:
@@ -180,6 +180,11 @@ export function renderVerifyReport(
     lines.push(
       `  Dateien mit einem Anker aus dem Log: ${formatNumber(report.anchors)}, davon passend ${formatNumber(report.anchorsMatched)}, nach Ablauf der Frist gelöscht ${formatNumber(report.anchorsExpired)}`,
     );
+    if (report.anchorsOpen > 0) {
+      lines.push(
+        `  Davon ohne Anker beim Schliessen: ${formatNumber(report.anchorsOpen)}. Ihr Server läuft noch oder endete, ohne die Datei zu schliessen. Zeilen nach ihrem letzten Anker prüft nur die Kette.`,
+      );
+    }
     if (anchors.dropped > 0) {
       lines.push(
         `  Anker übergangen, weil das Log mehr als ${formatNumber(maxAnchors)} Dateien oder ${formatNumber(maxAnchorEntries)} Anker nennt: ${formatNumber(anchors.dropped)}`,

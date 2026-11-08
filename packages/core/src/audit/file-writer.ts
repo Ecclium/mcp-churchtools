@@ -153,8 +153,8 @@ export interface AuditFileCounts {
 }
 
 /**
- * The head of the chain of a file the writer gave up, for the anchor on
- * the log (ADR 0028).
+ * The head of the chain of a file, for the anchor on the log (ADR 0028):
+ * of a file the writer gave up, or of the open file after a write.
  */
 export interface AuditChainAnchor {
   /** The name of the file, without the folder. */
@@ -163,6 +163,34 @@ export interface AuditChainAnchor {
   readonly seq: number;
   /** The SHA-256 of its last whole line, in hex. */
   readonly hash: string;
+  /**
+   * Whether the writer gave the file up, so that no line follows: true
+   * when it closes, on a new UTC day and before a new file for a lost one,
+   * false for the open file after a write. `ecclium audit verify` lets a
+   * file go on only after an anchor that is not final, because the server
+   * may still run or may have ended without closing it.
+   */
+  readonly final: boolean;
+}
+
+/**
+ * The event to log an anchor with (ADR 0028): `audit_chain_anchor` for the
+ * closing anchor, `audit_chain_write_anchor` for the anchor of the open
+ * file after a write. `ecclium audit verify` reads both and tells them
+ * apart by the event, so that the line of the closing anchor stays as it
+ * was before the anchors after a write.
+ *
+ * @param anchor - The anchor the writer reported.
+ * @returns The name of the event.
+ * @example
+ * ```ts
+ * log.info(anchorEventOf(anchor), { file: anchor.file, seq: anchor.seq, hash: anchor.hash });
+ * ```
+ */
+export function anchorEventOf(
+  anchor: Pick<AuditChainAnchor, 'final'>,
+): 'audit_chain_anchor' | 'audit_chain_write_anchor' {
+  return anchor.final ? 'audit_chain_anchor' : 'audit_chain_write_anchor';
 }
 
 /**
@@ -172,9 +200,11 @@ export interface AuditChainAnchor {
 export interface AuditFileListener {
   /**
    * Gets the anchor of each file the writer gives up that has a whole
-   * line: when it closes, on a new UTC day and before a new file for a
-   * lost one. A file without a line has no anchor. Like `swept`, it runs
-   * while the writer is busy and must not call the writer.
+   * line, as final: when it closes, on a new UTC day and before a new
+   * file for a lost one. It also gets the anchor of the open file after a
+   * write, as not final. A file without a line has no anchor. Like
+   * `swept`, it runs while the writer is busy and must not call the
+   * writer.
    */
   readonly anchor: (anchor: AuditChainAnchor) => void;
   /**
@@ -660,13 +690,13 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
     return { sent: offset };
   };
 
-  // The anchor of a file with a whole line, for the log. A listener that
-  // throws changes nothing here.
-  const anchor = (old: Current): void => {
+  // The anchor of a file with a whole line, for the log, final when the
+  // writer gave the file up. A listener that throws changes nothing here.
+  const anchor = (old: Current, final: boolean): void => {
     if (old.seq === 0) return;
     try {
       onAnchor?.(
-        Object.freeze({ file: old.name, seq: old.seq, hash: old.hash }),
+        Object.freeze({ file: old.name, seq: old.seq, hash: old.hash, final }),
       );
     } catch {
       // The anchor is lost; the file and its chain stay as they are.
@@ -728,7 +758,7 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
       closeQuietly(old.fd);
       if (empty) removeEmpty(old);
     }
-    anchor(old);
+    anchor(old, true);
   };
 
   // Gives up the open file.
@@ -1003,7 +1033,7 @@ export function openAuditFile(options: AuditFileOptions): AuditFileResult {
     } catch {
       // The lines stay written; only a crash of the system could lose them.
     }
-    anchor(open);
+    anchor(open, false);
   };
 
   const close = (): void => {

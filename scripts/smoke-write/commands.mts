@@ -89,13 +89,22 @@ export function undoIdOfApproval(stdout: string): string | undefined {
 const anchoredLine =
   /^ {2}Dateien mit einem Anker aus dem Log: ([1-9]\d*), davon passend \1,/mu;
 
+// The line that names files without a closing anchor (ADR 0028). The
+// server of the smoke test ends before the check, so none may stay open.
+const openLine = /^ {2}Davon ohne Anker beim Schliessen: /mu;
+
 /**
  * Whether `ecclium audit verify` found every chain whole and fitting the
  * anchors of the log it got.
  *
  * @param run - The run of `audit verify --log -`.
- * @returns Whether it ended with 0 and every anchor fits its file.
+ * @returns Whether it ended with 0, every anchor fits its file and every
+ *   file ends with its closing anchor.
  */
 export function chainsFit(run: CommandRun): boolean {
-  return run.status === 0 && anchoredLine.test(run.stdout);
+  return (
+    run.status === 0 &&
+    anchoredLine.test(run.stdout) &&
+    !openLine.test(run.stdout)
+  );
 }

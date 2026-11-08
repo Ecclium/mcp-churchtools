@@ -57,6 +57,7 @@ import {
 } from '@ecclium/mcp-churchtools-core';
 import {
   type AuditFileWriter,
+  anchorEventOf,
   createLogger,
   createStderrWriter,
   openAuditFile,
@@ -516,8 +517,9 @@ export async function runQueue(options: QueueOptions): Promise<ExitCode> {
       anchors: true,
     });
     file.attach({
-      anchor: ({ file: name, seq, hash }) => {
-        anchorLogger.info('audit_chain_anchor', { file: name, seq, hash });
+      anchor: (anchor) => {
+        const { file: name, seq, hash } = anchor;
+        anchorLogger.info(anchorEventOf(anchor), { file: name, seq, hash });
       },
       swept: () => undefined,
     });

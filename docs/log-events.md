@@ -256,7 +256,8 @@ Je Ereignis die Stufe und die Felder, die ein Aufruf höchstens setzt. Die Felde
 
 | Ereignis | Stufe | Felder | Bedeutung |
 | --- | --- | --- | --- |
-| `audit_chain_anchor` | `info` | `file`, `seq`, `hash` | Der Anker einer Audit-Datei: `file` nennt die Datei, `seq` und `hash` den Kopf ihrer Kette, beim Schliessen, beim Wechsel des Tages, beim Neuöffnen und nach jedem Aufruf, der geschrieben haben kann, auch nach `ecclium undo` und `ecclium queue approve`. `ecclium audit verify` prüft eine Datei gegen ihn. |
+| `audit_chain_anchor` | `info` | `file`, `seq`, `hash` | Der Anker beim Schliessen einer Audit-Datei: `file` nennt die Datei, `seq` und `hash` die letzte Zeile ihrer Kette, beim Ende des Prozesses, beim Wechsel des Tages und beim Neuöffnen. Danach kommt keine Zeile mehr in die Datei. `ecclium audit verify` prüft, dass die Datei mit dieser Zeile endet. |
+| `audit_chain_write_anchor` | `info` | `file`, `seq`, `hash` | Der Anker der offenen Audit-Datei nach jedem Aufruf, der geschrieben haben kann, auch nach `ecclium undo` und `ecclium queue approve`: `file` nennt die Datei, `seq` und `hash` den Kopf ihrer Kette. Danach können weitere Zeilen folgen. `ecclium audit verify` prüft, dass die Zeile, die er nennt, noch dieselbe ist. |
 | `audit_file_closed` | `info` | `count` | Die Audit-Datei ist geschlossen. `count` nennt die Zeilen, die nicht ganz in die Datei kamen. |
 | `audit_files_deleted` | `info` | `count` | Ecclium hat Audit-Dateien nach ihrer Frist oder leere Dateien gelöscht. `count` nennt ihre Zahl. |
 | `audit_files_not_deleted` | `warn` | `count` | Ecclium konnte Audit-Dateien nach ihrer Frist nicht löschen oder den Ordner nicht ganz lesen. `count` nennt die Zahl der Dateien, die liegen blieben. |
