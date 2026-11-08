@@ -152,7 +152,7 @@ Was die Wege beweisen und was nicht:
 
 ## Wenn jemand gleichzeitig ändert
 
-ChurchTools kennt keine Bedingung, die verhindert, dass ein Schreibvorgang die Änderung eines anderen überschreibt: Wer zuletzt speichert, gewinnt ([Befunde zur API](research/churchtools-api.md), F11 und F43). Ecclium liest das Ziel deshalb unmittelbar vor dem Schreiben neu und vergleicht es mit dem Plan. Hat sich etwas geändert, schreibt es nicht, und der Vorgang endet mit `conflict`. Danach liest es noch einmal und prüft, dass die Version die erwartete ist und Text oder Felder die gesendeten sind, sonst endet der Vorgang ebenfalls mit `conflict`. Bei Terminen ersetzt ein Schreibvorgang das ganze Objekt (F41). Ecclium sendet darum alle Felder des Stands, den es eben gelesen hat.
+ChurchTools kennt keine Bedingung, die verhindert, dass ein Schreibvorgang die Änderung eines anderen überschreibt: Wer zuletzt speichert, gewinnt ([Befunde zur API](research/churchtools-api.md), F11 und F43). Ecclium liest das Ziel deshalb unmittelbar vor dem Schreiben neu und vergleicht es mit dem Plan. Hat sich etwas geändert, schreibt es nicht, und der Vorgang endet mit dem Code `conflict`, im Protokoll als abgelehnt (`denied`), weil nichts gesendet wurde. Danach liest es noch einmal und prüft, dass die Version die erwartete ist und Text oder Felder die gesendeten sind, sonst endet der Vorgang im Zustand `conflict`: Ecclium hat geschrieben, liest aber nicht, was es erwartet. Bei Terminen ersetzt ein Schreibvorgang das ganze Objekt (F41). Ecclium sendet darum alle Felder des Stands, den es eben gelesen hat.
 
 Ein kurzes Fenster bleibt zwischen dem Lesen davor und dem Schreiben: Speichert ein Mensch genau dann, überschreibt Ecclium seine Änderung (T9). Das Lesen danach meldet den Fall als `conflict`, und der Snapshot macht den Schreibvorgang von Ecclium rücknehmbar. Die überschriebene Änderung selbst hält Ecclium nicht fest. Bei einer Seite des Wikis steht sie noch in den Versionen der Seite in ChurchTools.
 
@@ -167,7 +167,7 @@ Deshalb bestätigt das Echo eine Buchungsanfrage und das Ändern eines Termins n
 
 ## Schreiben sofort anhalten
 
-Eine leere Datei `writes-off` im Ordner `stop` des Zustandsordners hält jedes Schreiben an, ohne Neustart: Ecclium schaut vor jedem Planen und unmittelbar vor jedem Schreiben nach. Fehlt der Ordner `stop` oder lässt er sich nicht prüfen, schreibt Ecclium ebenfalls nicht. Das Lesen läuft weiter. Wie Sie die Datei anlegen und wieder entfernen, steht unter [Betrieb über stdio](betrieb/stdio.md#schreiben-sofort-anhalten).
+Eine leere Datei `writes-off` im Ordner `stop` des Zustandsordners hält jedes Schreiben an, ohne Neustart: Ecclium schaut vor jedem Planen und unmittelbar vor jedem Schreiben nach. Fehlt der Ordner `stop` beim Start oder lässt er sich nicht prüfen, startet ein Server, der schreiben darf, nicht. Fehlt er später oder lässt er sich nicht prüfen, schreibt Ecclium ebenfalls nicht. Das Lesen läuft weiter. Wie Sie die Datei anlegen und wieder entfernen, steht unter [Betrieb über stdio](betrieb/stdio.md#schreiben-sofort-anhalten).
 
 ## Was Ecclium ins Wiki schreibt
 

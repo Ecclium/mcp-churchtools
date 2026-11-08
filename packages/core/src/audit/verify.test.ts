@@ -22,7 +22,11 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { createLogger, maxLineLength } from '../logger/index.js';
-import { type AuditFileSystem, openAuditFile } from './file-writer.js';
+import {
+  type AuditFileSystem,
+  anchorEventOf,
+  openAuditFile,
+} from './file-writer.js';
 import { type AuditFolder, type AuditLine, openAuditFolder } from './reader.js';
 import { createAuditSink } from './sink.js';
 import { summarizeAuditFiles } from './summary.js';
@@ -61,12 +65,17 @@ const chain = (name: string, count: number, first = 1): string[] => {
   return lines;
 };
 
-const anchorOf = (name: string, lines: readonly string[]): AuditAnchor => {
+const anchorOf = (
+  name: string,
+  lines: readonly string[],
+  final = true,
+): AuditAnchor => {
   const last = lines.at(-1) ?? '';
   return {
     file: name,
     seq: (JSON.parse(last) as { seq: number }).seq,
     hash: sha256(last),
+    final,
   };
 };
 
@@ -147,6 +156,7 @@ describe('verifyAuditFiles and the chain', () => {
       vanished: 0,
       anchors: 0,
       anchorsMatched: 0,
+      anchorsOpen: 0,
       anchorsExpired: 0,
       findings: [],
       findingsOmitted: 0,
@@ -343,7 +353,7 @@ describe('verifyAuditFiles and the anchors', () => {
         name,
         lines
           .slice(0, count)
-          .map((_, index) => anchorOf(name, lines.slice(0, index + 1))),
+          .map((_, index) => anchorOf(name, lines.slice(0, index + 1), false)),
       ],
     ]),
   });
@@ -411,6 +421,52 @@ describe('verifyAuditFiles and the anchors', () => {
       verify(folderOf({ [name]: textOf(longer) }), anchorSet([anchor]))
         .findings,
     ).toEqual([{ kind: 'anchor_extended', file: name }]);
+  });
+
+  it('lets a file go on after its last anchor only when no closing anchor ends it (ADR 0028)', () => {
+    // The server still runs or ended without closing the file: the anchor
+    // after its last write is the last one, and lines may follow.
+    const longer = chain(name, 6);
+    const open = anchorOf(name, lines, false);
+
+    const report = verify(
+      folderOf({ [name]: textOf(longer) }),
+      anchorSet([open]),
+    );
+
+    expect(report).toMatchObject({
+      anchors: 1,
+      anchorsMatched: 1,
+      anchorsOpen: 1,
+      findings: [],
+    });
+    // The counter-check: the same file against a closing anchor.
+    expect(
+      verify(folderOf({ [name]: textOf(longer) }), anchorSet([anchor])),
+    ).toMatchObject({
+      anchorsMatched: 0,
+      anchorsOpen: 0,
+      findings: [{ kind: 'anchor_extended', file: name }],
+    });
+  });
+
+  it('finds a changed or missing line of an anchor after a write also in an open file', () => {
+    const open = anchorOf(name, lines, false);
+    const changed = [...lines];
+    changed[3] = (changed[3] ?? '').replace('"n":4', '"n":7');
+
+    expect(
+      verify(folderOf({ [name]: textOf(changed) }), anchorSet([open])).findings,
+    ).toEqual([{ kind: 'anchor_mismatch', file: name }]);
+    expect(
+      verify(
+        folderOf({ [name]: textOf(lines.slice(0, 3)) }),
+        anchorSet([open]),
+      ),
+    ).toMatchObject({
+      anchorsOpen: 0,
+      findings: [{ kind: 'anchor_truncated', file: name }],
+    });
   });
 
   it('finds a file whose lines carry other numbers or no chain', () => {
@@ -496,10 +552,15 @@ describe('verifyAuditFiles and files it cannot read', () => {
         [nameOf(5)]: 'gone',
       }),
       anchorSet([
-        { file: nameOf(2), seq: 1, hash: sha256('x') },
-        { file: nameOf(3), seq: 1, hash: sha256('x') },
-        { file: nameOf(4), seq: 1, hash: sha256('x') },
-        { file: nameOf(1, '2020-01-01'), seq: 1, hash: sha256('x') },
+        { file: nameOf(2), seq: 1, hash: sha256('x'), final: true },
+        { file: nameOf(3), seq: 1, hash: sha256('x'), final: true },
+        { file: nameOf(4), seq: 1, hash: sha256('x'), final: true },
+        {
+          file: nameOf(1, '2020-01-01'),
+          seq: 1,
+          hash: sha256('x'),
+          final: true,
+        },
       ]),
     );
 
@@ -519,7 +580,7 @@ describe('verifyAuditFiles and files it cannot read', () => {
 
     const report = verify(
       folderOf({ [old]: 'gone' }),
-      anchorSet([{ file: old, seq: 1, hash: sha256('x') }]),
+      anchorSet([{ file: old, seq: 1, hash: sha256('x'), final: true }]),
     );
 
     expect(report.anchorsExpired).toBe(1);
@@ -529,7 +590,7 @@ describe('verifyAuditFiles and files it cannot read', () => {
   it('stops when the folder moves and judges no missing file then', () => {
     const report = verify(
       folderOf({ [nameOf(1)]: 'moved', [nameOf(2)]: textOf(lines) }),
-      anchorSet([{ file: nameOf(3), seq: 1, hash: sha256('x') }]),
+      anchorSet([{ file: nameOf(3), seq: 1, hash: sha256('x'), final: true }]),
     );
 
     expect(report.checked).toBe(0);
@@ -579,9 +640,24 @@ describe('anchorOfLogLine', () => {
       `${line}\r`,
       `prefix ${line} suffix`,
     ]) {
-      expect(anchorOfLogLine(text)).toEqual({ file, seq: 3, hash });
+      expect(anchorOfLogLine(text)).toEqual({
+        file,
+        seq: 3,
+        hash,
+        final: true,
+      });
     }
     expect(Object.isFrozen(anchorOfLogLine(line))).toBe(true);
+  });
+
+  it('reads the anchor after a write as one that is not final', () => {
+    expect(
+      anchorOfLogLine(
+        line.replace('audit_chain_anchor', 'audit_chain_write_anchor'),
+      ),
+    ).toEqual({ file, seq: 3, hash, final: false });
+    expect(anchorEventOf({ final: true })).toBe('audit_chain_anchor');
+    expect(anchorEventOf({ final: false })).toBe('audit_chain_write_anchor');
   });
 
   it('skips every other line', () => {
@@ -590,6 +666,7 @@ describe('anchorOfLogLine', () => {
       'no json',
       '{"ts":"2026-10-31T12:00:00.000Z"',
       line.replace('audit_chain_anchor', 'audit_file_closed'),
+      line.replace('audit_chain_anchor', 'audit_chain_anchors'),
       line.replace(file, 'audit-2026-10-31.jsonl'),
       line.replace('"seq":3', '"seq":0'),
       line.replace('"seq":3', '"seq":"3"'),
@@ -606,8 +683,14 @@ describe('anchorOfLogLine', () => {
 });
 
 describe('createAnchorCollector', () => {
-  const lineOf = (file: string, seq: number, hash: string): string =>
-    `{"ts":"2026-10-31T12:00:00.000Z","level":"info","event":"audit_chain_anchor","file":"${file}","seq":${String(seq)},"hash":"${hash}"}`;
+  // An anchor after a write, or with `closing` the closing anchor.
+  const lineOf = (
+    file: string,
+    seq: number,
+    hash: string,
+    closing = false,
+  ): string =>
+    `{"ts":"2026-10-31T12:00:00.000Z","level":"info","event":"${closing ? 'audit_chain_anchor' : 'audit_chain_write_anchor'}","file":"${file}","seq":${String(seq)},"hash":"${hash}"}`;
 
   it('takes each anchor once and sets aside files with two for one seq', () => {
     const collector = createAnchorCollector();
@@ -631,7 +714,7 @@ describe('createAnchorCollector', () => {
   it('keeps every anchor of a file, one after each write, the last apart (ADR 0028)', () => {
     const collector = createAnchorCollector();
     // Out of order, as two logs given one after the other may hold them.
-    collector.add(lineOf(nameOf(2), 5, sha256('e')));
+    collector.add(lineOf(nameOf(2), 5, sha256('e'), true));
     collector.add(lineOf(nameOf(2), 2, sha256('b')));
     collector.add(lineOf(nameOf(2), 3, sha256('c')));
     collector.add(lineOf(nameOf(2), 3, sha256('c')));
@@ -641,12 +724,53 @@ describe('createAnchorCollector', () => {
       file: nameOf(2),
       seq: 5,
       hash: sha256('e'),
+      final: true,
     });
     expect(result.earlier?.get(nameOf(2))).toEqual([
-      { file: nameOf(2), seq: 2, hash: sha256('b') },
-      { file: nameOf(2), seq: 3, hash: sha256('c') },
+      { file: nameOf(2), seq: 2, hash: sha256('b'), final: false },
+      { file: nameOf(2), seq: 3, hash: sha256('c'), final: false },
     ]);
     expect(result.conflicts).toEqual([]);
+  });
+
+  it('takes the anchor after a write and the closing anchor of one line as one closing anchor', () => {
+    const collector = createAnchorCollector();
+    collector.add(lineOf(nameOf(1), 4, sha256('d')));
+    collector.add(lineOf(nameOf(1), 4, sha256('d'), true));
+    collector.add(lineOf(nameOf(2), 4, sha256('d'), true));
+    collector.add(lineOf(nameOf(2), 4, sha256('d')));
+
+    const result = collector.result();
+    for (const file of [nameOf(1), nameOf(2)]) {
+      expect(result.anchors.get(file)).toEqual({
+        file,
+        seq: 4,
+        hash: sha256('d'),
+        final: true,
+      });
+    }
+    expect(result.conflicts).toEqual([]);
+  });
+
+  it('sets aside a file with two closing anchors or with an anchor after the closing one (ADR 0028)', () => {
+    const collector = createAnchorCollector();
+    // Lines added to a closed file and an anchor for them added to a copy
+    // of the log: each way it was closed, the later anchor conflicts.
+    collector.add(lineOf(nameOf(1), 3, sha256('c'), true));
+    collector.add(lineOf(nameOf(1), 5, sha256('e'), true));
+    collector.add(lineOf(nameOf(2), 3, sha256('c'), true));
+    collector.add(lineOf(nameOf(2), 4, sha256('d')));
+    // The same in the other order, as another copy of the log may give it.
+    collector.add(lineOf(nameOf(4), 4, sha256('d')));
+    collector.add(lineOf(nameOf(4), 3, sha256('c'), true));
+    // The counter-check: anchors after writes before the closing one.
+    collector.add(lineOf(nameOf(3), 3, sha256('c')));
+    collector.add(lineOf(nameOf(3), 4, sha256('d'), true));
+
+    const result = collector.result();
+    expect(result.conflicts).toEqual([nameOf(1), nameOf(2), nameOf(4)]);
+    expect([...result.anchors.keys()]).toEqual([nameOf(3)]);
+    expect(result.anchors.get(nameOf(3))?.final).toBe(true);
   });
 
   it('counts the anchors beyond the most it keeps in all', () => {
@@ -726,8 +850,9 @@ describe('verifyAuditFiles with the writer and the reader', () => {
     });
     if (!opened.ok) throw new Error(opened.code);
     opened.writer.attach({
-      anchor: ({ file, seq, hash }) => {
-        logger.info('audit_chain_anchor', { file, seq, hash });
+      anchor: (anchor) => {
+        const { file, seq, hash } = anchor;
+        logger.info(anchorEventOf(anchor), { file, seq, hash });
       },
       swept: () => undefined,
     });
@@ -806,8 +931,9 @@ describe('verifyAuditFiles with the writer and the reader', () => {
     });
     if (!opened.ok) throw new Error(opened.code);
     opened.writer.attach({
-      anchor: ({ file, seq, hash }) => {
-        logger.info('audit_chain_anchor', { file, seq, hash });
+      anchor: (anchor) => {
+        const { file, seq, hash } = anchor;
+        logger.info(anchorEventOf(anchor), { file, seq, hash });
       },
       swept: () => undefined,
     });
@@ -898,8 +1024,9 @@ describe('verifyAuditFiles with the writer and the reader', () => {
     });
     if (!opened.ok) throw new Error(opened.code);
     opened.writer.attach({
-      anchor: ({ file, seq, hash }) => {
-        logger.info('audit_chain_anchor', { file, seq, hash });
+      anchor: (anchor) => {
+        const { file, seq, hash } = anchor;
+        logger.info(anchorEventOf(anchor), { file, seq, hash });
       },
       swept: () => undefined,
     });
@@ -931,6 +1058,80 @@ describe('verifyAuditFiles with the writer and the reader', () => {
       anchorsMatched: 1,
       findings: [],
     });
+  });
+
+  it('counts a file left open after a write as open, and finds a line added after its closing anchor (ADR 0028)', () => {
+    const folder = join(base, 'open');
+    mkdirSync(folder, { mode: 0o700 });
+    chmodSync(folder, 0o700);
+    const log: string[] = [];
+    const logger = createLogger({
+      writer: { write: (line) => log.push(line) > 0 },
+      clock,
+      minLevel: 'info',
+      anchors: true,
+    });
+    const opened = openAuditFile({
+      stateDir: folder,
+      clock,
+      pid: 601,
+      retentionMonths: 12,
+    });
+    if (!opened.ok) throw new Error(opened.code);
+    opened.writer.attach({
+      anchor: (anchor) => {
+        const { file, seq, hash } = anchor;
+        logger.info(anchorEventOf(anchor), { file, seq, hash });
+      },
+      swept: () => undefined,
+    });
+    // A write with its anchor, then a read: the server still runs, or it
+    // ended here without closing the file.
+    opened.writer.write('{"v":1,"pid":601,"n":1}');
+    opened.writer.anchor();
+    opened.writer.write('{"v":1,"pid":601,"n":2}');
+    const check = (lines: readonly string[]) => {
+      const collector = createAnchorCollector();
+      for (const line of lines) collector.add(line);
+      const folderRead = openAuditFolder({ stateDir: folder });
+      if (!folderRead.ok) throw new Error(folderRead.code);
+      return verifyAuditFiles({
+        folder: folderRead.folder,
+        anchors: collector.result(),
+        retentionMonths: 12,
+        clock,
+      });
+    };
+
+    expect(check(log)).toMatchObject({
+      lines: 2,
+      anchorsMatched: 1,
+      anchorsOpen: 1,
+      findings: [],
+    });
+
+    opened.writer.close();
+    expect(check(log)).toMatchObject({
+      anchorsMatched: 1,
+      anchorsOpen: 0,
+      findings: [],
+    });
+    // A line added after the closing anchor, and an anchor for it in a
+    // copy of the log.
+    const name = readdirSync(join(folder, 'audit'))[0] ?? '';
+    const path = join(folder, 'audit', name);
+    const text = readFileSync(path, 'latin1');
+    const last = text.trimEnd().split('\n').at(-1) ?? '';
+    const added = `{"v":1,"pid":601,"n":3,"seq":3,"prevHash":"${sha256(last)}"}`;
+    writeFileSync(path, `${text}${added}\n`, 'latin1');
+    const forged = `{"ts":"2026-10-31T15:00:00.000Z","level":"info","event":"audit_chain_write_anchor","file":"${name}","seq":3,"hash":"${sha256(added)}"}`;
+
+    expect(check(log).findings).toEqual([
+      { kind: 'anchor_extended', file: name },
+    ]);
+    expect(check([...log, forged]).findings).toEqual([
+      { kind: 'anchor_conflict', file: name },
+    ]);
   });
 
   it('finds nothing in a file with a piece and a repeated seq, as the writer leaves them', () => {

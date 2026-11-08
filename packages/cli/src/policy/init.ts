@@ -43,6 +43,7 @@ import {
   type WriteTargetObject,
 } from '@ecclium/mcp-churchtools-core/audit';
 import {
+  anchorEventOf,
   createLogger,
   createStderrWriter,
   openAuditFile,
@@ -253,8 +254,9 @@ const fetchNames = async (
       anchors: true,
     });
     auditFile.attach({
-      anchor: ({ file, seq, hash }) => {
-        anchorLogger.info('audit_chain_anchor', { file, seq, hash });
+      anchor: (anchor) => {
+        const { file, seq, hash } = anchor;
+        anchorLogger.info(anchorEventOf(anchor), { file, seq, hash });
       },
       swept: () => undefined,
     });

@@ -348,7 +348,10 @@ export const logEvents = Object.freeze({
   ...family(httpFailureEvents, entry('warn', 'code', 'durationMs', 'method')),
   // The sink of the audit and the audit file (ADR 0028).
   ...family(auditSinkEvents, entry('error', 'code', 'count')),
+  // The closing anchor of a file, and the anchor of the open file after a
+  // write (ADR 0028).
   audit_chain_anchor: entry('info', 'file', 'seq', 'hash'),
+  audit_chain_write_anchor: entry('info', 'file', 'seq', 'hash'),
   audit_file_closed: entry('info', 'count'),
   audit_files_deleted: entry('info', 'count'),
   audit_files_not_deleted: entry('warn', 'count'),

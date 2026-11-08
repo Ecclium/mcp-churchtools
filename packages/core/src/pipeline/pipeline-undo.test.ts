@@ -294,11 +294,12 @@ describe('the undo of the pipeline (ADR 0031)', () => {
       request(),
     );
     expect(outcome.kind).toBe('changed');
+    // Nothing was sent, so the undo counts as refused (ADR 0029).
     expect(events()).toMatchObject([
       {
         type: 'undo',
-        outcome: 'error',
-        writeState: 'conflict',
+        outcome: 'denied',
+        writeState: 'denied',
         errorCode: 'conflict',
         undoes: written,
       },

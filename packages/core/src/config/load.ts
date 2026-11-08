@@ -30,6 +30,7 @@ import { readPseudonymKeyFile } from './pseudonym-key-file.js';
 import {
   checkKeysDir,
   checkStateDir,
+  hasStopDir,
   isNormalizedAbsolutePath,
   type StateDirFileSystem,
 } from './state-dir.js';
@@ -1010,6 +1011,24 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     stateDirRead.state === 'unset'
   ) {
     report('toolsets_without_state_dir', stateDirName);
+  }
+
+  // Writing over stdio needs the folder of state and its folder stop
+  // (ADR 0029): the audit file, the snapshots, the queue, the counters of
+  // the policy and the kill switches live there. Without them a write
+  // would end with policy_denied each time, so the start refuses up front
+  // and offers no write tool that could never write. A folder stop that
+  // goes away later stops writing at the next look, as before. Over HTTP
+  // the folder of keys is refused, so a server there does not write.
+  if (transport === 'stdio' && readOnly?.value === 'false') {
+    if (stateDirRead.state === 'unset') {
+      report('writes_without_state_dir', stateDirName);
+    } else if (
+      stateDir !== undefined &&
+      !hasStopDir(stateDir, stateDirFiles as StateDirFileSystem | undefined)
+    ) {
+      report('writes_without_stop_dir', stateDirName);
+    }
   }
 
   // The folder of the day keys (ADR 0031). Every write keeps a snapshot of

@@ -376,7 +376,9 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
     audit_unreadable:
       'Ecclium konnte die Angaben einer Zeile nicht lesen. Die Zeile trägt nur Platzhalter.',
     audit_chain_anchor:
-      'Der Anker einer Audit-Datei: `file` nennt die Datei, `seq` und `hash` den Kopf ihrer Kette, beim Schliessen, beim Wechsel des Tages, beim Neuöffnen und nach jedem Aufruf, der geschrieben haben kann, auch nach `ecclium undo` und `ecclium queue approve`. `ecclium audit verify` prüft eine Datei gegen ihn.',
+      'Der Anker beim Schliessen einer Audit-Datei: `file` nennt die Datei, `seq` und `hash` die letzte Zeile ihrer Kette, beim Ende des Prozesses, beim Wechsel des Tages und beim Neuöffnen. Danach kommt keine Zeile mehr in die Datei. `ecclium audit verify` prüft, dass die Datei mit dieser Zeile endet.',
+    audit_chain_write_anchor:
+      'Der Anker der offenen Audit-Datei nach jedem Aufruf, der geschrieben haben kann, auch nach `ecclium undo` und `ecclium queue approve`: `file` nennt die Datei, `seq` und `hash` den Kopf ihrer Kette. Danach können weitere Zeilen folgen. `ecclium audit verify` prüft, dass die Zeile, die er nennt, noch dieselbe ist.',
     audit_file_closed:
       'Die Audit-Datei ist geschlossen. `count` nennt die Zeilen, die nicht ganz in die Datei kamen.',
     audit_files_deleted:

@@ -25,6 +25,7 @@ export {
   type AuditFileListener,
   type AuditFileResult,
   type AuditFileWriter,
+  anchorEventOf,
   openAuditFile,
 } from './audit/file-writer.js';
 export { createAuditSink } from './audit/index.js';

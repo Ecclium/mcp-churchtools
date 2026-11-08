@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { chainsFit } from '../../scripts/smoke-write/commands.mts';
 import { stepNames } from '../../scripts/smoke-write/course.mts';
 import {
   runDay,
@@ -267,7 +268,7 @@ describe.skipIf(process.getuid?.() === 0)(
         expect(result.stderr).toBe('');
         // A server that writes logs an anchor after each write, and
         // audit verify takes every one of them (ADR 0028).
-        expect(result.code).toBe(smokeWriteExitCodes.ok);
+        expect(result.code, result.stdout).toBe(smokeWriteExitCodes.ok);
         expect(report(result)).toEqual({
           befunde: [],
           // Undo of the first section refused, the second taken back, the
@@ -365,7 +366,7 @@ describe.skipIf(process.getuid?.() === 0)(
       async () => {
         const result = await run({ standIn: { deleteKeepsAppointment: true } });
         expect(result.stderr).toBe('');
-        expect(result.code).toBe(smokeWriteExitCodes.failed);
+        expect(result.code, result.stdout).toBe(smokeWriteExitCodes.failed);
         expect(report(result)).toMatchObject({
           reste: { seite: 'ja', termin: 'ja', buchung: 'nein' },
           aufraeumen: ['07-wiki-cleanup', '11-calendar-write'],
@@ -405,7 +406,7 @@ describe.skipIf(process.getuid?.() === 0)(
         expect(result.stderr).toBe('');
         // The request is found past the tool, in every status, and its undo
         // reads the booking itself, so only the finding tells of the list.
-        expect(result.code).toBe(smokeWriteExitCodes.ok);
+        expect(result.code, result.stdout).toBe(smokeWriteExitCodes.ok);
         expect(report(result)).toMatchObject({
           befunde: ['buchungsliste_ohne_anfrage'],
           ...passed([]),
@@ -422,7 +423,7 @@ describe.skipIf(process.getuid?.() === 0)(
       async () => {
         const result = await run({ standIn: { bookingStatus: 2 } });
         expect(result.stderr).toBe('');
-        expect(result.code).toBe(smokeWriteExitCodes.failed);
+        expect(result.code, result.stdout).toBe(smokeWriteExitCodes.failed);
         expect(report(result)).toMatchObject({
           reste: { seite: 'ja', termin: 'ja', buchung: 'nein' },
           ...passed(['buchung_anfragen']),
@@ -548,6 +549,45 @@ describe('the smoke test for writing refuses before anything is written', () => 
 // A server that asks its client, as the server of Ecclium does in the 2025
 // era before a write: the session answers with the handler of the smoke
 // test, or with the error of an unknown method.
+// The check of the audit files at the end of a run: every file anchored,
+// fitting and closed (ADR 0028).
+describe('the check of the chains of the smoke test for writing', () => {
+  const fitting =
+    'Prüfung der Audit-Dateien\n  Dateien mit einem Anker aus dem Log: 2, davon passend 2, nach Ablauf der Frist gelöscht 0\n';
+  const run = (status: number | null, stdout: string) => ({
+    status,
+    stdout,
+    stderr: '',
+  });
+
+  it('takes every file anchored, fitting and closed', () => {
+    expect(chainsFit(run(0, fitting))).toBe(true);
+  });
+
+  it('refuses a file left open, one that does not fit, no anchor and a finding', () => {
+    expect(
+      chainsFit(
+        run(
+          0,
+          `${fitting}  Davon ohne Anker beim Schliessen: 1. Ihr Server läuft noch.\n`,
+        ),
+      ),
+    ).toBe(false);
+    expect(chainsFit(run(0, fitting.replace('passend 2', 'passend 1')))).toBe(
+      false,
+    );
+    expect(
+      chainsFit(
+        run(
+          0,
+          fitting.replace('Log: 2, davon passend 2', 'Log: 0, davon passend 0'),
+        ),
+      ),
+    ).toBe(false);
+    expect(chainsFit(run(65, fitting))).toBe(false);
+  });
+});
+
 describe('the requests of a server in the session of the smoke test', () => {
   const asks = fileURLToPath(
     new URL('../fixtures/smoke-write/asks.mts', import.meta.url),

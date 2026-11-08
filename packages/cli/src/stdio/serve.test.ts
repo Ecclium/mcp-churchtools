@@ -288,6 +288,9 @@ const anchorOfFake = {
   hash: 'a'.repeat(64),
 };
 
+// The anchor the fake reports when it closes, as the writer does.
+const closingAnchorOfFake = { ...anchorOfFake, final: true };
+
 /**
  * An audit file in memory that records its lines and, when it closes, the
  * events on stderr up to then, as `seen` gives them, and reports a fixed
@@ -315,7 +318,9 @@ const fakeAuditFile = (failed = 0) => {
     close: () => {
       events.push(state.seen().filter((event) => event !== undefined));
       if (lines.length > 0) {
-        for (const listener of listeners) listener.anchor(anchorOfFake);
+        for (const listener of listeners) {
+          listener.anchor(closingAnchorOfFake);
+        }
       }
     },
     attach: (listener) => {

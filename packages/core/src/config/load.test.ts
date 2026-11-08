@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inspect } from 'node:util';
@@ -212,12 +212,19 @@ const writingToWiki = (
     ECCLIUM_TOOLSETS: toolsets,
     ECCLIUM_KEYS_DIR: keysDirPath,
     ECCLIUM_POLICY_FILE: policyPath,
+    ECCLIUM_STATE_DIR: stateDirPath,
   };
   if (leave.key !== true) {
     files[markerKeyPath] = keyFile('m');
     environment['ECCLIUM_MARKER_KEY_FILE'] = markerKeyPath;
   }
-  return load(environment, 'stdio', pathFiles(files));
+  return load(
+    environment,
+    'stdio',
+    pathFiles(files),
+    undefined,
+    memoryFolder().fs,
+  );
 };
 
 /**
@@ -319,6 +326,8 @@ const memoryFolder = (
     readonly keys?: Entry;
     readonly snapshot?: Entry;
     readonly queue?: Entry;
+    readonly stop?: Entry;
+    readonly stopSwitch?: Entry;
     readonly getuid?: () => number | undefined;
   } = {},
 ): MemoryFolder => {
@@ -335,7 +344,11 @@ const memoryFolder = (
             ? (options.snapshot ?? missing)
             : path.endsWith('/queue')
               ? (options.queue ?? missing)
-              : (options.folder ?? {});
+              : path.endsWith('/stop')
+                ? (options.stop ?? {})
+                : path.endsWith('/stop/writes-off')
+                  ? (options.stopSwitch ?? missing)
+                  : (options.folder ?? {});
   const fs: StateDirFileSystem = {
     lstatSync: (path) => {
       looked.push(path);
@@ -765,7 +778,11 @@ describe('loadConfig and the folder of keys', () => {
   });
 
   it('asks for the folder when the server writes, as missing', () => {
-    const result = load({ ...valid(), ECCLIUM_READ_ONLY: 'false' });
+    const result = load({
+      ...valid(),
+      ECCLIUM_READ_ONLY: 'false',
+      ECCLIUM_STATE_DIR: stateDirPath,
+    });
     expect(result.ok).toBe(false);
     expect(problems(result)).toEqual([
       ['keys_dir_required', 'ECCLIUM_KEYS_DIR'],
@@ -776,6 +793,7 @@ describe('loadConfig and the folder of keys', () => {
     });
     const written = withKeysDir(keysDirPath, memoryFolder().fs, 'stdio', {
       ECCLIUM_READ_ONLY: 'false',
+      ECCLIUM_STATE_DIR: stateDirPath,
     });
     expect(written.ok && written.config).toMatchObject({
       readOnly: false,
@@ -945,16 +963,23 @@ describe('loadConfig and the folder of keys', () => {
       rmSync(base, { recursive: true, force: true });
     });
 
-    const loadFromDisk = (value: string): ConfigResult =>
-      loadConfig({
+    // A real folder of state with its folder stop beside the keys, as
+    // writing needs it (ADR 0029).
+    const loadFromDisk = (value: string): ConfigResult => {
+      const state = join(base, 'state-beside-keys');
+      mkdirSync(join(state, 'stop'), { recursive: true, mode: 0o700 });
+      chmodSync(state, 0o700);
+      return loadConfig({
         environment: {
           ...valid(),
           ECCLIUM_READ_ONLY: 'false',
           ECCLIUM_KEYS_DIR: value,
+          ECCLIUM_STATE_DIR: state,
         },
         transport: 'stdio',
         tokenFiles: memoryFiles().fs,
       });
+    };
 
     it('checks the real folder when no file functions are given', () => {
       expect(problems(loadFromDisk(join(base, 'missing')))).toEqual([
@@ -971,12 +996,96 @@ describe('loadConfig and the folder of keys', () => {
   });
 });
 
+// Writing over stdio needs the folder of state and its folder stop, so a
+// start that could never write stops up front (ADR 0029).
+describe('loadConfig and the folders writing needs', () => {
+  const writes = (
+    extra: Environment,
+    folders: StateDirFileSystem = memoryFolder().fs,
+    transport: Transport = 'stdio',
+  ): ConfigResult =>
+    withKeysDir(keysDirPath, folders, transport, {
+      ECCLIUM_READ_ONLY: 'false',
+      ...extra,
+    });
+
+  it('stops the start without the folder of state, only while the server writes', () => {
+    expect(problems(writes({}))).toEqual([
+      ['writes_without_state_dir', 'ECCLIUM_STATE_DIR'],
+    ]);
+    // The counter-checks: with the folder, or without writing.
+    expect(writes({ ECCLIUM_STATE_DIR: stateDirPath }).ok).toBe(true);
+    expect(load(valid()).ok).toBe(true);
+  });
+
+  it('starts with a switch in stop, and stops when the switch cannot be checked', () => {
+    const withSwitch = (stopSwitch: Entry) =>
+      writes(
+        { ECCLIUM_STATE_DIR: stateDirPath },
+        memoryFolder({ stopSwitch }).fs,
+      );
+    // Writing switched off is a state the operator chose, not a mistake.
+    expect(withSwitch({}).ok).toBe(true);
+    expect(problems(withSwitch({ error: 'EACCES' }))).toEqual([
+      ['writes_without_stop_dir', 'ECCLIUM_STATE_DIR'],
+    ]);
+  });
+
+  it('stops the start when stop is missing, a link or no folder', () => {
+    for (const stop of [
+      { error: 'ENOENT' },
+      { error: 'EACCES' },
+      { symlink: true },
+      { directory: false },
+    ] as const) {
+      expect(
+        problems(
+          writes(
+            { ECCLIUM_STATE_DIR: stateDirPath },
+            memoryFolder({ stop }).fs,
+          ),
+        ),
+      ).toEqual([['writes_without_stop_dir', 'ECCLIUM_STATE_DIR']]);
+    }
+    // The counter-check: the same without writing looks at no stop.
+    const reading = memoryFolder({ stop: { error: 'ENOENT' } });
+    expect(
+      load(
+        { ...valid(), ECCLIUM_STATE_DIR: stateDirPath },
+        'stdio',
+        memoryFiles().fs,
+        undefined,
+        reading.fs,
+      ).ok,
+    ).toBe(true);
+    expect(reading.looked.some((path) => path.endsWith('/stop'))).toBe(false);
+  });
+
+  it('reports only the problem of a folder of state it refuses', () => {
+    expect(
+      problems(
+        writes(
+          { ECCLIUM_STATE_DIR: 'relative/state' },
+          memoryFolder({ stop: { error: 'ENOENT' } }).fs,
+        ),
+      ),
+    ).toEqual([['state_dir_relative', 'ECCLIUM_STATE_DIR']]);
+  });
+
+  it('asks for neither over HTTP, where the server does not write', () => {
+    const codesOverHttp = codes(writes({}, memoryFolder().fs, 'http'));
+    expect(codesOverHttp).not.toContain('writes_without_state_dir');
+    expect(codesOverHttp).not.toContain('writes_without_stop_dir');
+  });
+});
+
 // The snapshots of writes (ADR 0031): on by default, and off only with a
 // warning on every start that writes.
 describe('loadConfig and the snapshots', () => {
   const writing = (extra: Environment = {}): ConfigResult =>
     withKeysDir(keysDirPath, memoryFolder().fs, 'stdio', {
       ECCLIUM_READ_ONLY: 'false',
+      ECCLIUM_STATE_DIR: stateDirPath,
       ...extra,
     });
 
@@ -1024,6 +1133,7 @@ describe('loadConfig and the snapshots', () => {
     const result = load({
       ...valid(),
       ECCLIUM_READ_ONLY: 'false',
+      ECCLIUM_STATE_DIR: stateDirPath,
       ECCLIUM_SNAPSHOTS: 'off',
     });
     expect(problems(result)).toEqual([
@@ -2687,7 +2797,12 @@ describe('loadConfig and its problems', () => {
       withKeysDir(keysDirPath, memoryFolder({ queue: { mode: 0o40701 } }).fs),
     queue_keys_dir_unsafe: () =>
       withKeysDir(keysDirPath, memoryFolder({ queue: { error: 'EIO' } }).fs),
-    keys_dir_required: () => load({ ...valid(), ECCLIUM_READ_ONLY: 'false' }),
+    keys_dir_required: () =>
+      load({
+        ...valid(),
+        ECCLIUM_READ_ONLY: 'false',
+        ECCLIUM_STATE_DIR: stateDirPath,
+      }),
     keys_dir_in_state_dir: () =>
       withKeysDir(`${stateDirPath}/keys`, memoryFolder().fs, 'stdio', {
         ECCLIUM_STATE_DIR: stateDirPath,
@@ -2701,10 +2816,12 @@ describe('loadConfig and its problems', () => {
     writes_enabled: () =>
       withKeysDir(keysDirPath, memoryFolder().fs, 'stdio', {
         ECCLIUM_READ_ONLY: 'false',
+        ECCLIUM_STATE_DIR: stateDirPath,
       }),
     snapshots_off: () =>
       withKeysDir(keysDirPath, memoryFolder().fs, 'stdio', {
         ECCLIUM_READ_ONLY: 'false',
+        ECCLIUM_STATE_DIR: stateDirPath,
         ECCLIUM_SNAPSHOTS: 'off',
       }),
     echo_over_http: () =>
@@ -2712,6 +2829,17 @@ describe('loadConfig and its problems', () => {
     redaction_off: () => load({ ...valid(), ECCLIUM_REDACTION: 'off' }),
     toolsets_without_state_dir: () =>
       load({ ...valid(), ECCLIUM_TOOLSETS: 'persons' }),
+    writes_without_state_dir: () =>
+      withKeysDir(keysDirPath, memoryFolder().fs, 'stdio', {
+        ECCLIUM_READ_ONLY: 'false',
+      }),
+    writes_without_stop_dir: () =>
+      withKeysDir(
+        keysDirPath,
+        memoryFolder({ stop: { error: 'ENOENT' } }).fs,
+        'stdio',
+        { ECCLIUM_READ_ONLY: 'false', ECCLIUM_STATE_DIR: stateDirPath },
+      ),
     // Only the loader of the commands that read the audit files reports it.
     state_dir_required: () => {
       const loaded = loadAuditConfig({ environment: {} });
@@ -3240,6 +3368,7 @@ describe('loadConfig and what it gives out', () => {
       ...valid(),
       ECCLIUM_READ_ONLY: 'false',
       ECCLIUM_KEYS_DIR: keysDirPath,
+      ECCLIUM_STATE_DIR: stateDirPath,
     };
     const first = load(environment);
     environment.ECCLIUM_READ_ONLY = 'true';

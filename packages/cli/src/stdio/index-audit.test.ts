@@ -1,4 +1,11 @@
-import { chmodSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -109,6 +116,9 @@ const freshFolder = (): string => {
   // mkdtemp gives 0700, the folder of state needs the same.
   const made = mkdtempSync(`${folder}-`);
   chmodSync(made, 0o700);
+  // The folder of the kill switches, which a start that writes needs
+  // (ADR 0029).
+  mkdirSync(join(made, 'stop'), { mode: 0o700 });
   return made;
 };
 
@@ -330,7 +340,8 @@ const closingFile = (closed: string[]) => ({
 // reads, so that the second stage can destroy the keys in it.
 describe('the first stage and the folder of the day keys', () => {
   it('prepares the folder snapshot with 0700 before the second stage loads, also while the server only reads', async () => {
-    const keys = freshFolder();
+    const keys = mkdtempSync(join(base, 'keys-'));
+    chmodSync(keys, 0o700);
     const { code } = await start(undefined, {}, { ECCLIUM_KEYS_DIR: keys });
     expect(code).toBeUndefined();
     expect(statSync(join(keys, 'snapshot')).mode & 0o777).toBe(0o700);
@@ -453,7 +464,8 @@ describe('the first stage and the folder of the snapshots', () => {
     expect(readdirSync(stateDir)).not.toContain('snapshots');
   });
 
-  it('prepares none without the folder of state', async () => {
+  // Writing without the folder of state stops the start (ADR 0029).
+  it('prepares none without the folder of state, and ends with 78', async () => {
     const prepared: unknown[] = [];
     const { code } = await start(
       undefined,
@@ -464,7 +476,7 @@ describe('the first stage and the folder of the snapshots', () => {
       },
       writing(freshFolder()),
     );
-    expect(code).toBeUndefined();
+    expect(code).toBe(78);
     expect(prepared).toEqual([]);
   });
 
@@ -570,8 +582,9 @@ describe('the first stage and the folder of the queue', () => {
         )
       ).code,
     ).toBeUndefined();
+    // Writing without the folder of state stops the start (ADR 0029).
     expect((await start(undefined, prepare, writing(freshFolder()))).code).toBe(
-      undefined,
+      78,
     );
     expect(prepared).toEqual([]);
     expect(readdirSync(stateDir)).not.toContain('queue');

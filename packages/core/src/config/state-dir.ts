@@ -395,6 +395,42 @@ export function checkStateDir(
 }
 
 /**
+ * Tells whether the folder of state holds the folder `stop` of the kill
+ * switches as a real folder, not a link (ADR 0029). The core looks into it
+ * before each plan and right before each write, and a folder it cannot
+ * check stops writing. With writing switched on, the loader checks it at
+ * the start already, so that a server that could never write does not
+ * offer its write tools.
+ *
+ * @param path - The folder of state, already checked.
+ * @param fs - The file functions, only for tests.
+ * @returns Whether `stop` is a folder in it.
+ * @example
+ * ```ts
+ * if (!hasStopDir('/srv/ecclium')) report('writes_without_stop_dir');
+ * ```
+ */
+export function hasStopDir(
+  path: string,
+  fs: StateDirFileSystem = nodeFileSystem,
+): boolean {
+  try {
+    const stats = fs.lstatSync(`${path}/stop`);
+    if (stats.isSymbolicLink() || !stats.isDirectory()) return false;
+  } catch {
+    return false;
+  }
+  // The switch in it must be checkable as well, as the core checks it
+  // before each write: a folder it cannot search stops every write.
+  try {
+    fs.lstatSync(`${path}/stop/writes-off`);
+    return true;
+  } catch (error) {
+    return errorCode(error) === 'ENOENT';
+  }
+}
+
+/**
  * Checks the folder of keys and, if they exist, its folders `snapshot` and
  * `queue` (ADR 0031), with the same rules as the folder of state and codes
  * of their own: absolute and normalised, a folder of the user, not a link,

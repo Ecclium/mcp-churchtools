@@ -729,9 +729,12 @@ describe('a write tool in the pipeline', () => {
       code: 'conflict',
       message: writeSentences.changedBefore,
     });
+    // A conflict found while planning sent nothing, so it counts as
+    // refused (ADR 0029).
     expect(events()[0]).toMatchObject({
-      outcome: 'error',
-      writeState: 'conflict',
+      outcome: 'denied',
+      writeState: 'denied',
+      errorCode: 'conflict',
     });
   });
 

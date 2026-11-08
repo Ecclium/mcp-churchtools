@@ -46,6 +46,8 @@ export const configProblemCodes = Object.freeze([
   'subject_reserved',
   ...stateDirCodes,
   'toolsets_without_state_dir',
+  'writes_without_state_dir',
+  'writes_without_stop_dir',
   ...keysDirCodes,
   'keys_dir_required',
   'keys_dir_in_state_dir',

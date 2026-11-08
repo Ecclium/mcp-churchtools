@@ -346,16 +346,17 @@ describe('ecclium undo', () => {
     expect(overwritten.stdout[0]).toBe(changedLineOf('page'));
   });
 
-  it('ends with 77 while writing is switched off or cannot be checked', async () => {
+  it('ends with 77 while writing is switched off, and with 78 without the folder stop', async () => {
     await keep();
     writeFileSync(join(stateDir, 'stop', 'writes-off'), '');
     const off = await run({ answer: answer([[4, after]]) });
     expect(off.code).toBe(77);
     expect(off.stderr[0]).toMatch(/Kill-Switch/);
+    // Without the folder the configuration stops it up front (ADR 0029).
     rmSync(join(stateDir, 'stop'), { recursive: true });
     const unknown = await run({ answer: answer([[4, after]]) });
-    expect(unknown.code).toBe(77);
-    expect(unknown.stderr[0]).toMatch(/‹stop›/);
+    expect(unknown.code).toBe(78);
+    expect(unknown.stderr.join('\n')).toMatch(/‹stop›/);
   });
 
   it('ends with 66 once the day key is gone', async () => {

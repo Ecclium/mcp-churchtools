@@ -1356,13 +1356,18 @@ describe('the anchors of the writer', () => {
   };
 
   /** The anchor of the last whole line of a text of a file. */
-  const headOf = (name: string, text: string): AuditChainAnchor => {
+  const headOf = (
+    name: string,
+    text: string,
+    final = true,
+  ): AuditChainAnchor => {
     const lines = text.split('\n').slice(0, -1);
     const last = lines.at(-1) ?? '';
     return {
       file: name,
       seq: (JSON.parse(last) as { seq: number }).seq,
       hash: sha256(last),
+      final,
     };
   };
 
@@ -1391,15 +1396,17 @@ describe('the anchors of the writer', () => {
     writer.write('{"v":1}');
     writer.anchor();
     expect(order).toEqual([`fsync ${String(fileFd)}`]);
-    expect(anchors).toEqual([headOf(nameOf(1), content(fileFd))]);
+    // Not final: the file stays open, and lines may follow (ADR 0028).
+    expect(anchors).toEqual([headOf(nameOf(1), content(fileFd), false)]);
     writer.write('{"v":2}');
     writer.anchor();
-    expect(anchors[1]?.seq).toBe(2);
+    expect(anchors[1]).toMatchObject({ seq: 2, final: false });
     expect(calls.filter((call) => call.startsWith('close'))).not.toContain(
       `close ${String(fileFd)}`,
     );
     writer.close();
     expect(anchors).toHaveLength(3);
+    expect(anchors[2]).toMatchObject({ seq: 2, final: true });
     // A closed writer gives no anchor.
     writer.anchor();
     expect(anchors).toHaveLength(3);
@@ -1424,7 +1431,8 @@ describe('the anchors of the writer', () => {
     deleted.add(fileFd);
     writer.anchor();
     expect(anchors).toHaveLength(2);
-    expect(anchors[1]).toEqual(anchors[0]);
+    expect(anchors[0]?.final).toBe(false);
+    expect(anchors[1]).toEqual({ ...anchors[0], final: true });
   });
 
   it('reports no anchor for a file without a whole line', () => {

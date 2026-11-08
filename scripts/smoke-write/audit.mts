@@ -12,7 +12,8 @@
  * - one line of the type `undo` for each run of undo that looked for its
  *   snapshot, naming the write it takes back, with the outcome its exit
  *   code says: 0 a write back or a delete confirmed by the operator, 65 a
- *   target someone changed, written as a conflict (ADR 0031);
+ *   target someone changed, refused with the code of a conflict because
+ *   nothing was sent (ADR 0029, ADR 0031);
  * - one line of the type `approval` for each approval, with the decision
  *   and the state of its write;
  * - and that no line holds the token or a text the run wrote.
@@ -199,7 +200,7 @@ export function checkAudit(
     run.status === 0
       ? undoKey(run.id, 'ok', 'verified', undefined, 'operator')
       : run.status === 65
-        ? undoKey(run.id, 'error', 'conflict', 'conflict', undefined)
+        ? undoKey(run.id, 'denied', 'denied', 'conflict', undefined)
         : undefined;
   const left = undoLines.map((line) => ({
     id: line['undoes'],
