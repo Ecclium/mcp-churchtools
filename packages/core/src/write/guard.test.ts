@@ -357,6 +357,40 @@ describe('planning', () => {
     });
   });
 
+  // A plugin declares rights, a target and a guard against replay in its
+  // meta; even if such fields reached the guard, the rules come from the
+  // intent (ADR 0029).
+  it('derives target, rights and replay guard from the intent, whatever a meta claims', async () => {
+    const { guard, request } = setup();
+    const plain = readPlan(planOf(await guard.plan(request, update)));
+    const claimed = readPlan(
+      planOf(
+        await guard.plan(
+          {
+            ...request,
+            origin: 'plugin',
+            meta: {
+              ...meta,
+              requiredRights: [{ module: 'churchcal', right: 'view' }],
+              replayGuard: 'nonce',
+              target: { kind: 'calendar', key: '3' },
+            } as typeof meta,
+          },
+          update,
+        ),
+      ),
+    );
+    if (plain === undefined || claimed === undefined) {
+      throw new Error('expected two sealed plans');
+    }
+    expect(claimed.rules).toEqual(plain.rules);
+    expect(claimed.rules).toMatchObject({
+      target: { kind: 'wiki_page', key: `12/${guid.toLowerCase()}` },
+      requiredRights: [{ module: 'churchwiki', right: 'edit category' }],
+      replayGuard: 'baseVersion',
+    });
+  });
+
   it('seals a new page and a section, which reads the page for its text', async () => {
     const { guard, request } = setup();
     expect((await guard.plan(request, create)).outcome.kind).toBe('planned');
@@ -371,16 +405,120 @@ describe('planning', () => {
     });
   });
 
-  it.each([
-    ['the server only reads', { readOnly: true }, writeSentences.readOnly],
-  ])('refuses when %s', async (_name, change, sentence) => {
-    const { guard } = setup();
-    const ctx = contextOf(logged, change);
-    const error = await refusalOf(
-      guard.plan({ ctx, tool: 'ct_x', origin: 'core', meta }, update),
-    );
-    expect([error.code, error.message]).toEqual(['policy_denied', sentence]);
-  });
+  // Every kind of intent the plugin interface knows, those of the Pro
+  // module and one that fits none: with ECCLIUM_READ_ONLY=true the guard
+  // refuses each before it reads anything, whoever plans it (ADR 0029).
+  const everyIntent = [
+    ['a new page', create],
+    ['a change of a page', update],
+    ['a section', append],
+    [
+      'a new appointment',
+      {
+        kind: 'appointmentCreate',
+        calendarId: 3,
+        title: 'Probe',
+        startDate: '2026-12-02T09:00:00Z',
+        endDate: '2026-12-02T10:00:00Z',
+      },
+    ],
+    [
+      'a change of an appointment',
+      {
+        kind: 'appointmentUpdate',
+        calendarId: 3,
+        appointmentId: 41,
+        baseVersion: 0,
+        title: 'Probe',
+        startDate: '2026-12-02T09:00:00Z',
+        endDate: '2026-12-02T10:00:00Z',
+      },
+    ],
+    [
+      'a booking',
+      {
+        kind: 'bookingCreate',
+        resourceId: 6,
+        title: 'Probe',
+        startDate: '2026-12-02T09:00:00Z',
+        endDate: '2026-12-02T10:00:00Z',
+      },
+    ],
+    [
+      'a new member of a group',
+      { kind: 'groupMemberAdd', groupId: 7, personId: 1 },
+    ],
+    [
+      'a member leaving a group',
+      { kind: 'groupMemberRemove', groupId: 7, personId: 1 },
+    ],
+    [
+      'a service request',
+      { kind: 'serviceRequest', eventId: 9, serviceId: 3, personId: 1 },
+    ],
+    ['an operation by its ID', { kind: 'apiOperation', operationId: 'x' }],
+    ['an intent that fits none', { kind: 'pageDelete', guid }],
+  ] as const;
+
+  // Counts every read of the fake, the rights included, which the guard
+  // reads first for a write it runs.
+  const countingReads = () => {
+    const fake = fakeOf();
+    const reads = { count: 0 };
+    fake.onRead = () => {
+      reads.count += 1;
+    };
+    const { permissions } = fake;
+    Object.defineProperty(fake, 'permissions', {
+      get: () => {
+        reads.count += 1;
+        return permissions;
+      },
+    });
+    return { fake, reads };
+  };
+
+  it.each(
+    everyIntent.flatMap(([name, intent]) =>
+      (['core', 'plugin'] as const).map(
+        (origin) => [name, origin, intent] as const,
+      ),
+    ),
+  )(
+    'refuses %s from %s when the server only reads, before any read',
+    async (_name, origin, intent) => {
+      const { fake, reads } = countingReads();
+      const { guard } = setup(fake);
+      const ctx = contextOf(logged, { readOnly: true });
+      const error = await refusalOf(
+        guard.plan({ ctx, tool: 'ct_x', origin, meta }, intent),
+      );
+      expect([error.code, error.message]).toEqual([
+        'policy_denied',
+        writeSentences.readOnly,
+      ]);
+      expect([reads.count, fake.sent]).toEqual([0, []]);
+    },
+  );
+
+  // The counter-check: on a server that writes, no intent is refused as
+  // read-only, and each kind the core runs gets as far as a read.
+  it.each(
+    everyIntent.map(([name, intent], index) => [name, intent, index < 6]),
+  )(
+    'counter-check: %s is not refused as read-only on a server that writes',
+    async (_name, intent, runs) => {
+      const { fake, reads } = countingReads();
+      const { guard, request } = setup(fake);
+      const outcome = await guard.plan(request, intent).then(
+        () => 'planned',
+        (error: unknown) =>
+          isEccliumError(error) ? error.message : 'other error',
+      );
+      expect(outcome).not.toBe(writeSentences.readOnly);
+      expect(reads.count > 0).toBe(runs);
+    },
+  );
 
   it('refuses while a kill switch is there, and without a folder to look in', async () => {
     writeFileSync(join(dir, 'writes-off-demo-tenant'), '');
@@ -678,6 +816,29 @@ describe('committing', () => {
     const twice = await guard.commit(ctx, plan, proof);
     expect(!twice.ok && twice.error.code).toBe('confirmation_required');
     expect(fake.sent).toEqual([]);
+  });
+
+  // What code outside the core could build in place of the proof it got:
+  // none is taken, none uses the proof up, and the real one still writes
+  // (ADR 0029).
+  it('commits nothing with a proof built outside the core, and the real proof still writes', async () => {
+    const { fake, guard, ctx, plan, proof } = await planned(update);
+    const forged: unknown[] = [
+      {},
+      { __ecclium: 'WriteProof' },
+      Object.create(proof) as object,
+      new Proxy(proof, {}),
+      { ...(proof as object) },
+      JSON.parse(JSON.stringify(proof)) as unknown,
+    ];
+    for (const value of forged) {
+      const result = await guard.commit(ctx, plan, value);
+      expect(result).toMatchObject({ ok: false, state: 'denied', sent: false });
+      expect(!result.ok && result.error.code).toBe('confirmation_required');
+    }
+    expect(fake.sent).toEqual([]);
+    expect((await guard.commit(ctx, plan, proof)).ok).toBe(true);
+    expect(fake.sent).toHaveLength(1);
   });
 
   it('ends a repeated commit after a write in a conflict, without writing again', async () => {

@@ -1,6 +1,6 @@
 # ADR 0032: Richtlinie mit Kennungen, portable Ziele der Routinen, interaktiver Teil und Lesebudget, Prüfcode in der Kennzeichnung, Zielarten für Gruppen und Dienste nur im interaktiven Teil
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 08.11.2026
 - Datum: 01.11.2026
 - Fällt vor: Phase 5
 - Ergänzt: [ADR 0063](0063-quotastore-als-datei.md)
@@ -173,3 +173,4 @@ Kennzeichnung im Write-Guard, seit dem 05.11.2026 (Teil 4):
 - **Schreib-Tools des Wikis:** Seit dem 05.11.2026 planen `ct_wiki_page_create` und `ct_wiki_page_append_section` mit `replayGuard: marker`, `ct_wiki_page_update` mit `baseVersion`. Ihre Beschreibungen sagen, dass der Server die Zeile setzt, ein Text keine eigene mitbringt, ein Update vorhandene Zeilen unverändert lässt und ein gleicher Abschnitt am selben Tag übersprungen wird. Eine Freigabe an einem späteren Tag schreibt mit dem Tag des Plans, ein Test der Pipeline zeigt das.
 - **Noch nicht:** Das Ersetzen eines eigenen Abschnitts bei einem zweiten Lauf derselben Periode und `ecclium marker adopt` kommen mit dem Runner.
 - **Namen von Kalendern und Ressourcen:** Seit dem 06.11.2026 liest der Write-Guard für einen Eintrag mit Kalender oder Ressource deren Namen mit dem Client (`calendarFacts`, `resourceName`, [ADR 0072](0072-schreibende-anfragen.md)) und vergleicht ihn wie den einer Kategorie. Termine und Buchungen bekommen keine Zeile der Kennzeichnung. Seit demselben Tag schlägt `ecclium policy init --interactive` auch Kalender und Ressourcen vor, siehe «Vorschlag aus dem Audit».
+- **Abnahme:** Am 08.11.2026 galt an der Testinstanz eine Richtlinie mit zwei Einträgen im Abschnitt `interactive`, einer Kategorie des Wikis und einem Kalender mit ihren Namen aus ChurchTools. Eine Buchungsanfrage für eine Ressource ohne Eintrag ging ohne Rückfrage in die Freigabe-Warteschlange, und jede Seite und jeder Abschnitt trug die Kennzeichnung mit Prüfcode und dem Text nach «Rückfragen an». Dass die Obergrenze eines Tages über zwei Prozesse und deren Ende hinaus hält, zeigt `tests/quota-processes.test.mts`.

@@ -131,6 +131,29 @@ describe('the catalog over stdio', () => {
     }
   });
 
+  // Without echo-allowed, the default over HTTP, the catalog keeps the
+  // write tools but offers no ct_write_confirm: a plan then waits for a
+  // question or for the queue (ADR 0029). The test above is the
+  // counter-check with the echo.
+  it.each(['elicitation-or-queue', 'queue'] as const)(
+    'offers the write tools but no ct_write_confirm with %s',
+    (writeConfirmation) => {
+      const names = createStdioCatalog({
+        readOnly: false,
+        toolsets: ['calendars'],
+        writeConfirmation,
+      })
+        .list()
+        .filter((entry) => entry.meta.capability === 'write')
+        .map((entry) => entry.name);
+      expect(names).toEqual([
+        'ct_appointments_create',
+        'ct_appointments_update',
+        'ct_bookings_create',
+      ]);
+    },
+  );
+
   // Songs name no person of ChurchTools, so neither tool is treated like
   // a special one and the toolset needs no folder of state (ADR 0064).
   it('adds the two tools of songs for the toolset songs, none treated as special', () => {

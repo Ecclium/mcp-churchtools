@@ -1,6 +1,6 @@
 # ADR 0031: Ausnahmen der Persistenz und Crypto-Shredding mit Tagesschlüsseln
 
-- Status: Vorgeschlagen
+- Status: Angenommen am 08.11.2026
 - Datum: 03.11.2026
 - Fällt vor: Phase 5
 - Ergänzt: [ADR 0029](0029-write-guard.md) (Rücknahme) und [ADR 0069](0069-stufe-strict.md) (Port für Schlüssel)
@@ -139,3 +139,4 @@ Teil 6 seit dem 06.11.2026, die Rücknahme von Terminen und Buchungen.
 - **Ohne Kennung:** Fehlt der Teil `after`, nennt der Befehl den Kalender oder die Ressource, wie bei einer neuen Seite die Kategorie, und endet mit 66.
 - **Ohne versiegelten Plan:** Für Termine und Buchungen baut der Write-Guard kein Vorhaben, weil kein Vorhaben löscht und keines eine Beschreibung leert. Er führt die Schritte jedes Festschreibens trotzdem aus: Kill-Switches, die Rechte für den Kalender oder die Ressource als Rat, das Lesen unmittelbar vor dem Senden, die Uhr, den Snapshot einer Änderung, ein Senden und das Lesen danach, mit der Bestätigung `operator` im Audit ([ADR 0029](0029-write-guard.md)). `packages/core/src/write/undo.ts` sagt, was ein Snapshot zurücknehmen lässt, `calendar-plan.ts` liest und sendet. Die Schnittstelle für Plugins ändert sich nicht.
 - **Codes, wie gebaut:** wie bei Seiten, dazu 65 für einen neuen Termin oder eine Buchung, die jemand geändert, genehmigt, abgewiesen oder verknüpft hat, 66 für einen neuen Termin oder eine Buchung ohne Kennung, einen geänderten Termin, den es nicht mehr gibt, oder eine Buchung, die sich nicht lesen lässt und die die Liste nicht nennt, und 77 für einen Termin mit Teilen, über ganze Tage oder einen fremden, den das Zurückschreiben verschöbe. Die Texte nennen, was zurückgenommen wird: die Seite, den Termin oder die Buchungsanfrage.
+- **Abnahme:** Am 08.11.2026 nahm `ecclium undo` an der Testinstanz einen Abschnitt ohne Änderung dazwischen mit 0 zurück, einen danach im Web-Editor von Hand geänderten erst nach dem Unterschied und mit `--overwrite`, eine freigegebene Buchungsanfrage durch Löschen und eine freigegebene Änderung eines Termins. Die Freigabe-Warteschlange hielt zwei Einträge, bis `ecclium queue approve` sie schrieb und ihren Inhalt vernichtete. Der Ordner der Tagesschlüssel lag neben dem Zustandsordner, aus Time Machine genommen. Dass ein Snapshot nach der Vernichtung seines Tagesschlüssels unlesbar ist und zwei Prozesse am selben neuen Tag denselben Tagesschlüssel bekommen, zeigen die Tests.
