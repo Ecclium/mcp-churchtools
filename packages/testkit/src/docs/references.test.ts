@@ -33,6 +33,12 @@ import {
   renderPolicySchema,
 } from './policy.js';
 import { renderPromptsReference } from './prompts.js';
+import {
+  renderRoutineSchema,
+  renderRoutinesReference,
+  routineFieldMeanings,
+  routineFieldPaths,
+} from './routines.js';
 import { renderToolsReference } from './tools.js';
 
 // The two references are file snapshots: a change of a tool or a variable
@@ -84,6 +90,63 @@ describe('the generated references', () => {
   it('matches docs/policy.md', async () => {
     await expect(renderPolicyReference()).toMatchFileSnapshot(
       '../../../../docs/policy.md',
+    );
+  });
+
+  it('matches schemas/routine.v1.json', async () => {
+    await expect(renderRoutineSchema()).toMatchFileSnapshot(
+      '../../../../schemas/routine.v1.json',
+    );
+  });
+
+  it('matches docs/routines.md', async () => {
+    await expect(renderRoutinesReference()).toMatchFileSnapshot(
+      '../../../../docs/routines.md',
+    );
+  });
+});
+
+describe('the page of the routines', () => {
+  it('gives every field of a routine a meaning, and no meaning to anything else', () => {
+    expect(Object.keys(routineFieldMeanings).sort()).toEqual(
+      [...routineFieldPaths()].sort(),
+    );
+  });
+
+  it('describes a strict file of the version routine.v1', () => {
+    const schema = JSON.parse(renderRoutineSchema()) as {
+      title: string;
+      additionalProperties: boolean;
+      properties: { schema: { const: string } };
+    };
+    expect(schema.title).toBe('RoutineV1');
+    expect(schema.additionalProperties).toBe(false);
+    expect(schema.properties.schema.const).toBe('routine.v1');
+  });
+
+  it('shows the form and the duty of fields of every kind', () => {
+    const page = renderRoutinesReference();
+    expect(page).toContain(
+      '| `id` | Text nach festem Muster, höchstens 63 Zeichen | ja |',
+    );
+    expect(page).toContain(
+      '| `inputs[].maxItems` | ganze Zahl von 1 bis 200 | ja |',
+    );
+    expect(page).toContain(
+      '| `generate.output.blocks` | Zuordnung mit 1 bis 10 Einträgen | ja |',
+    );
+    expect(page).toContain(
+      '| `generate.output.blocks.<Block>.fields.<Feld>.type` | `text`, `integer`, `date` oder `person` | ja |',
+    );
+    expect(page).toContain(
+      "| `generate.output.blocks.<Block>.fields.<Feld>.maxLength` | ganze Zahl von 1 bis 1'000 | nein |",
+    );
+    expect(page).toContain('| `output.target` | `wiki` oder `draft` | ja |');
+    expect(page).toContain(
+      '| `output.tool` | `ct_wiki_page_append_section` | nein |',
+    );
+    expect(page).toContain(
+      '| `checks[].check` | `stalePages` oder `brokenLinks` | ja |',
     );
   });
 });
