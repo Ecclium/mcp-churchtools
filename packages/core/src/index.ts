@@ -199,3 +199,6 @@ export {
   providersLimits,
   readProviderKey,
 } from './providers/index.js';
+// Only the type: an adapter of a model gets the transport from the
+// composition root and never builds one (ADR 0033, ADR 0056).
+export type { ModelTransport } from './http/index.js';
