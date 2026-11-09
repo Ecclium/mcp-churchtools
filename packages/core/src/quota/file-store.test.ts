@@ -406,6 +406,9 @@ describe('the file of quotas', () => {
 
   it('holds at most 512 counters of decisions per day and refuses a file with more', async () => {
     const state = freshState();
+    // The clock on the day of the file: by the real clock its 15 days are
+    // over, and the first count would sweep the file away.
+    const at = clockFrom(Date.UTC(2026, 9, 24, 12));
     const keyOf = (index: number) =>
       approvalQuotaKey(index.toString(16).padStart(64, '0'));
     const full = Object.fromEntries(
@@ -416,16 +419,20 @@ describe('the file of quotas', () => {
       approvalsOf(full),
       { mode: 0o600 },
     );
-    await expect(open(state).increment(ctx, keyOf(0), day)).resolves.toBe(2);
     await expect(
-      open(state).increment(ctx, keyOf(maxApprovalKeys), day),
+      open(state, { clock: at }).increment(ctx, keyOf(0), day),
+    ).resolves.toBe(2);
+    await expect(
+      open(state, { clock: at }).increment(ctx, keyOf(maxApprovalKeys), day),
     ).rejects.toThrow(failure);
     writeFileSync(
       fileOf(state, `demo-tenant-${day}.approvals.json`),
       approvalsOf({ ...full, [keyOf(maxApprovalKeys)]: 1 }),
       { mode: 0o600 },
     );
-    await expect(open(state).read(ctx, keyOf(0), day)).rejects.toThrow(failure);
+    await expect(
+      open(state, { clock: at }).read(ctx, keyOf(0), day),
+    ).rejects.toThrow(failure);
   });
 
   it('keeps the files of decisions 15 days after their day by its clock, and removes those before', async () => {
