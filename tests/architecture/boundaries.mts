@@ -58,6 +58,7 @@ export const placeKeys = [
   'writeGuardSeals',
   'writeGuardStores',
   'writeGuardImporters',
+  'cronSchedule',
 ] as const;
 
 /** Key of a place in the code that a rule refers to. */

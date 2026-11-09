@@ -1139,6 +1139,30 @@ const cases: readonly Case[] = [
         "import { writeFile } from 'fs/promises';\nexport const write = writeFile;\n",
     },
   },
+  {
+    rule: 'croner-only-in-schedule',
+    name: 'another module of the schedule reckons triggers past the reader',
+    files: {
+      'packages/core/src/schedule/forbidden.ts':
+        "import { Cron } from 'croner';\nexport const read = Cron;\n",
+    },
+  },
+  {
+    rule: 'croner-only-in-schedule',
+    name: 'a test of the schedule runs a job with croner',
+    files: {
+      'packages/core/src/schedule/forbidden.test.ts':
+        "import { Cron } from 'croner';\nexport const job = new Cron('0 6 * * MON', () => undefined);\n",
+    },
+  },
+  {
+    rule: 'croner-only-in-schedule',
+    name: 'a module of core imports a type of the library',
+    files: {
+      'packages/core/src/quota/forbidden.ts':
+        "import type { CronOptions } from 'croner';\nexport type Options = CronOptions;\n",
+    },
+  },
 ];
 
 // Imports the rules must let pass.

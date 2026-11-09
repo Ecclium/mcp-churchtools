@@ -533,6 +533,13 @@ export function dependencyRules(
         ],
       },
     },
+    {
+      name: 'croner-only-in-schedule',
+      severity: 'error',
+      comment: `${adr('cronSchedule')}: only the reader of schedules imports croner, so that every trigger the core reckons comes from five fields in a zone the configuration takes, croner never runs a job on a timer and keeps no named job, and the rules of the schedule at a change of summer time hold for the daemon and a single run alike. Tests in the packages are not exempt. Imports for types only count as well.`,
+      from: { path: '^packages/', pathNot: at('cronSchedule') },
+      to: { path: '(^|/)node_modules/croner/' },
+    },
   ];
 }
 

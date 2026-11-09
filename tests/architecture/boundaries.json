@@ -297,6 +297,11 @@
       "adr": "0055",
       "description": "Code that may read the environment and the arguments of the process: only the entry of the command line, which hands them to the core as parameters. Other code could otherwise read the token from them past the Secret.",
       "paths": ["packages/cli/src/bin.ts"]
+    },
+    "cronSchedule": {
+      "adr": "0034",
+      "description": "The reader of schedules: the only module that imports croner, with five fields, a zone the configuration takes and never a job, a callback or a name, so that croner starts no timer, keeps no state and no other code reckons a trigger past the rules of a schedule. One file of the schedule of core.",
+      "paths": ["packages/core/src/schedule/cron.ts"]
     }
   }
 }
