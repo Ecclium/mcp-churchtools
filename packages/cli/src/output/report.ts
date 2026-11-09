@@ -57,6 +57,7 @@ const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
   auditRetentionMonths: 'Frist in Monaten',
   policy: 'Richtlinie',
   markerKey: 'Prüfcode-Schlüssel',
+  routinesDir: 'Ordner der Routinen',
   stdioSubject: 'Subjekt über stdio',
   logLevel: 'Stufe des Logs',
 });
@@ -76,7 +77,7 @@ const quote = (text: string): string => `‹${text}›`;
 
 const inconsistent = 'The report of the configuration is inconsistent.';
 
-type Hidden = 'host' | 'subject' | 'path' | 'keys' | 'policy';
+type Hidden = 'host' | 'subject' | 'path' | 'keys' | 'policy' | 'routines';
 
 interface Value {
   readonly text: string;
@@ -102,8 +103,8 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
   if (setting.key === 'policy' && setting.origin === 'default') {
     return { text: 'keine Datei' };
   }
-  // Only the folders of state and of keys, the key files and the zone may
-  // stay unset without a default.
+  // Only the folders of state, of keys and of the routines, the key files
+  // and the zone may stay unset without a default.
   if (setting.origin === 'unset') {
     switch (setting.key) {
       case 'timeZone':
@@ -118,6 +119,8 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
         return { text: 'kein Wechsel' };
       case 'markerKey':
         return { text: 'kein Schlüssel' };
+      case 'routinesDir':
+        return { text: 'keine Routinen' };
       default:
         throw new TypeError(inconsistent);
     }
@@ -159,7 +162,9 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
               ? 'policy'
               : setting.key === 'keysDir'
                 ? 'keys'
-                : 'path',
+                : setting.key === 'routinesDir'
+                  ? 'routines'
+                  : 'path',
         };
       }
       return isPrintable(shown.value)
@@ -197,6 +202,7 @@ const hiddenNames: Readonly<Record<Hidden, readonly [string, string]>> =
     path: ['der Zustandsordner', 'ihn'],
     keys: ['der Schlüsselordner', 'ihn'],
     policy: ['der Pfad der Richtlinie', 'ihn'],
+    routines: ['der Ordner der Routinen', 'ihn'],
   });
 
 const maskedNote = (hidden: readonly Hidden[]): string => {
@@ -306,9 +312,9 @@ export function renderConfigReport(
     // In the order of the note, whatever the order of the settings.
     lines.push(
       maskedNote(
-        (['host', 'subject', 'path', 'keys', 'policy'] as const).filter(
-          (entry) => hidden.has(entry),
-        ),
+        (
+          ['host', 'subject', 'path', 'keys', 'policy', 'routines'] as const
+        ).filter((entry) => hidden.has(entry)),
       ),
     );
   }

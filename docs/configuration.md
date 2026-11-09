@@ -25,6 +25,7 @@ Ecclium liest seine Konfiguration aus Variablen der Umgebung. Jede trägt das Pr
 | `ECCLIUM_AUDIT_RETENTION_MONTHS` | ganze Zahl von 1 bis 120 | `12` | nein | ja |
 | `ECCLIUM_POLICY_FILE` | absoluter Pfad | keine | nein | nein |
 | `ECCLIUM_MARKER_KEY_FILE` | absoluter Pfad | keine | nein | nein |
+| `ECCLIUM_ROUTINES_DIR` | absoluter Pfad | keine | nein | nein |
 | `ECCLIUM_STDIO_SUBJECT` | Bezeichnung mit höchstens 32 Zeichen | `local-stdio` | nein | ja |
 | `ECCLIUM_LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` | nein | nein |
 
@@ -95,6 +96,10 @@ Absoluter Pfad der Datei mit der Richtlinie im Format `policy.v1`, in YAML oder 
 ## `ECCLIUM_MARKER_KEY_FILE`
 
 Absoluter Pfad einer Datei mit dem Schlüssel für den Prüfcode der Kennzeichnung: genau 64 Zeichen aus `0` bis `9` und `a` bis `f`, höchstens mit einem Zeilenumbruch am Ende, so wie `openssl rand -hex 32` ihn schreibt. Die Datei muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 600. Jede Seite und jeder Abschnitt, die Ecclium im Wiki hinzufügt, endet mit einer Zeile mit einem Prüfcode aus diesem Schlüssel, an dem Ecclium seine eigenen Abschnitte wiedererkennt. Wer den Schlüssel hat, kann Abschnitte als eigene von Ecclium ausgeben. Sichern Sie die Datei: Ein neuer Schlüssel macht jeden bisherigen Prüfcode ungültig. Es muss ein anderer Schlüssel sein als der für die Pseudonyme. Mit `ECCLIUM_READ_ONLY=false` und dem Toolset `wiki` ist die Variable Pflicht, ebenso `interactive.inquiriesTo` in der Richtlinie.
+
+## `ECCLIUM_ROUTINES_DIR`
+
+Absoluter Pfad des Ordners mit den Routinen im Format `routine.v1`, je eine Datei `<Kennung>.yaml`, mit ihren Prompts und Vorlagen im Ordner selbst oder in einem Ordner darunter (`docs/routines.md`). Ordner und Dateien müssen dem Benutzer gehören, unter dem Ecclium läuft, und Gruppe und andere Benutzer dürfen sie nicht ändern, etwa mit den Rechten 755 für Ordner und 644 für Dateien. Nur der Runner liest die Routinen, der Server prüft beim Start nur die Form des Pfads. Ist `LOG_TOKENS` oder `LOG_STREAM` gesetzt, bricht der Start ab, weil die Bibliothek für YAML die Routinen sonst nach stdout schriebe.
 
 ## `ECCLIUM_STDIO_SUBJECT`
 

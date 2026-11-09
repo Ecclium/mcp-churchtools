@@ -1,0 +1,46 @@
+# Routine für Tests: wöchentlicher Bericht über die Dienste der kommenden
+# zwei Wochen. Erfunden, wie alle Testdaten.
+schema: routine.v1
+id: dienstplan-report
+schedule: '0 6 * * MON'
+inputs:
+  - name: termine
+    tool: ct_events_list
+    params: { from: '+0d', to: '+14d' }
+    maxItems: 30
+  - name: einteilungen
+    tool: ct_services_get_assignments
+    forEach: termine
+    params:
+      eventId: { field: id }
+    maxItems: 60
+generate:
+  prompt: prompts/dienstplan-report.md
+  model: default
+  redaction: strict
+  maxOutputTokens: 2000
+  output:
+    blocks:
+      unbesetzt:
+        maxItems: 30
+        fields:
+          datum: { type: date }
+          termin: { type: text, maxLength: 80 }
+          dienst: { type: text, maxLength: 80 }
+      mehrfach:
+        maxItems: 30
+        fields:
+          person: { type: person }
+          anzahl: { type: integer, min: 2, max: 50 }
+      hinweise:
+        maxItems: 5
+        fields:
+          text: { type: text, maxLength: 400 }
+template: templates/dienstplan-report.md
+output:
+  target: wiki
+  tool: ct_wiki_page_append_section
+  scope: { category: Berichte, page: Dienstplan-Auswertung }
+  idempotencyKey: 'dienstplan-report:{isoWeek}'
+notify:
+  - channel: stdout

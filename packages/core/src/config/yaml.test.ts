@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { readPolicyYaml } from './yaml.js';
+import { readConfigYaml } from './yaml.js';
 
-describe('readPolicyYaml', () => {
+describe('readConfigYaml', () => {
   it('reads a map of YAML 1.2 into plain values', () => {
-    const result = readPolicyYaml(
+    const result = readConfigYaml(
       [
         'schema: policy.v1',
         '# A comment of the operator.',
@@ -38,7 +38,7 @@ describe('readPolicyYaml', () => {
 
   it('reads JSON as well', () => {
     expect(
-      readPolicyYaml('{"schema": "policy.v1", "interactive": {}}'),
+      readConfigYaml('{"schema": "policy.v1", "interactive": {}}'),
     ).toEqual({
       ok: true,
       value: { schema: 'policy.v1', interactive: {} },
@@ -46,14 +46,14 @@ describe('readPolicyYaml', () => {
   });
 
   it('reads the words of YAML 1.1 as text, not as booleans', () => {
-    expect(readPolicyYaml('a: yes\nb: off\n')).toEqual({
+    expect(readConfigYaml('a: yes\nb: off\n')).toEqual({
       ok: true,
       value: { a: 'yes', b: 'off' },
     });
   });
 
   it('keeps a key named __proto__ as an own key, so that the schema refuses it', () => {
-    const result = readPolicyYaml('__proto__: {polluted: 1}\n');
+    const result = readConfigYaml('__proto__: {polluted: 1}\n');
     expect(result.ok).toBe(true);
     const value = (result as { readonly value: object }).value;
     expect(Object.hasOwn(value, '__proto__')).toBe(true);
@@ -62,7 +62,7 @@ describe('readPolicyYaml', () => {
   });
 
   it('leaves << as a plain key, because merge keys are off', () => {
-    expect(readPolicyYaml('a:\n  <<: {b: 1}\n')).toEqual({
+    expect(readConfigYaml('a:\n  <<: {b: 1}\n')).toEqual({
       ok: true,
       value: { a: { '<<': { b: 1 } } },
     });
@@ -74,18 +74,18 @@ describe('readPolicyYaml', () => {
     ['a flow that does not end', 'a: [1, 2\nb: 3\n', 2],
     ['a tag the schema does not know', 'a: 1\nb: !foo x\n', 2],
   ])('refuses %s as a syntax error with its line', (_name, text, line) => {
-    expect(readPolicyYaml(text)).toEqual({
+    expect(readConfigYaml(text)).toEqual({
       ok: false,
-      code: 'policy_yaml_syntax',
+      code: 'yaml_syntax',
       line,
     });
   });
 
   it('refuses a text nested without end', () => {
     const deep = `${'['.repeat(20_000)}${']'.repeat(20_000)}`;
-    expect(readPolicyYaml(deep)).toMatchObject({
+    expect(readConfigYaml(deep)).toMatchObject({
       ok: false,
-      code: 'policy_yaml_syntax',
+      code: 'yaml_syntax',
     });
   });
 
@@ -101,9 +101,9 @@ describe('readPolicyYaml', () => {
     ['an empty key', 'a: 1\n: b\n', 2],
     ['a list as key', 'a: 1\n? [x]\n: c\n', 2],
   ])('refuses %s as not supported, with its line', (_name, text, line) => {
-    expect(readPolicyYaml(text)).toEqual({
+    expect(readConfigYaml(text)).toEqual({
       ok: false,
-      code: 'policy_yaml_unsupported',
+      code: 'yaml_unsupported',
       line,
     });
   });
@@ -118,13 +118,13 @@ describe('readPolicyYaml', () => {
     ['a handle of its own', '%TAG !e! tag:example.org,2026:\n---\na: 1\n'],
     ['another meaning of !!', '%TAG !! tag:example.org,2026:\n---\na: 1\n'],
   ])('refuses %s as not supported, without a line', (_name, text) => {
-    expect(readPolicyYaml(text)).toEqual({
+    expect(readConfigYaml(text)).toEqual({
       ok: false,
-      code: 'policy_yaml_unsupported',
+      code: 'yaml_unsupported',
     });
   });
 
   it('refuses a value that is not a string', () => {
-    expect(() => readPolicyYaml(12 as unknown as string)).toThrow(TypeError);
+    expect(() => readConfigYaml(12 as unknown as string)).toThrow(TypeError);
   });
 });

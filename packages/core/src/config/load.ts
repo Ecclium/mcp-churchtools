@@ -149,6 +149,12 @@ export interface EccliumConfig {
    * never the key of the pseudonyms.
    */
   readonly markerKey: KeyMaterial | undefined;
+  /**
+   * The folder of the routines, an absolute normalised path, or undefined
+   * when the variable is not set (ADR 0033). Only the runner reads the
+   * routines in it; the start checks the form of the path alone.
+   */
+  readonly routinesDir: string | undefined;
   readonly stdioSubject: string;
   readonly logLevel: LogLevel;
 }
@@ -171,6 +177,7 @@ export type SettingKey =
   | 'auditRetentionMonths'
   | 'policy'
   | 'markerKey'
+  | 'routinesDir'
   | 'stdioSubject'
   | 'logLevel';
 
@@ -1195,6 +1202,18 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   // library for YAML would write the file to stdout, it is not read.
   const policyName = 'ECCLIUM_POLICY_FILE';
   const policyRead = read(row(policyName));
+  // The policy and the folder of the routines both name files in YAML;
+  // each variable of debug output is reported once for both.
+  let yamlDebugReported = false;
+  const reportYamlDebug = (): void => {
+    if (yamlDebugReported) return;
+    yamlDebugReported = true;
+    for (const name of yamlDebugVariableNames) {
+      if (yamlDebug.has(name)) {
+        add('yaml_debug_output_enabled', yamlDebugRank, name);
+      }
+    }
+  };
   let policy: Policy | undefined;
   if (policyRead.state === 'unset') {
     policy = defaultPolicy;
@@ -1202,11 +1221,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   } else if (policyRead.state === 'invalid') {
     setting('policy', policyName, 'invalid', shownNone);
   } else if (yamlDebug.size > 0) {
-    for (const name of yamlDebugVariableNames) {
-      if (yamlDebug.has(name)) {
-        add('yaml_debug_output_enabled', yamlDebugRank, name);
-      }
-    }
+    reportYamlDebug();
     setting('policy', policyName, 'invalid', shownNone);
   } else {
     const fromFile = readPolicyFile(
@@ -1287,6 +1302,38 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     markerKey !== undefined ? shownHidden : shownNone,
   );
 
+  // The folder of the routines (ADR 0033). Only the runner reads it, so
+  // the start checks the form of the path and nothing on disk. While the
+  // library for YAML would write each routine to stdout, the start stops,
+  // as for the policy.
+  const routinesName = 'ECCLIUM_ROUTINES_DIR';
+  const routinesRead = read(row(routinesName));
+  let routinesDir: string | undefined;
+  let routinesDirValid = routinesRead.state !== 'invalid';
+  if (routinesRead.state === 'set') {
+    if (!fitsVariable(routinesName, routinesRead.value)) {
+      report('routines_dir_invalid', routinesName);
+      routinesDirValid = false;
+    } else if (yamlDebug.size > 0) {
+      reportYamlDebug();
+      routinesDirValid = false;
+    } else {
+      routinesDir = routinesRead.value;
+    }
+  }
+  setting(
+    'routinesDir',
+    routinesName,
+    routinesDir !== undefined
+      ? 'environment'
+      : routinesDirValid
+        ? 'unset'
+        : 'invalid',
+    routinesDir !== undefined
+      ? record({ kind: 'path', value: routinesDir })
+      : shownNone,
+  );
+
   // A wider trust store stays allowed for an instance with a certificate
   // of its own authority, with a warning on every start (ADR 0056).
   if (trustStoreExtended) warnings.add('trust_store_extended');
@@ -1353,6 +1400,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     retention === undefined ||
     policy === undefined ||
     !markerKeyValid ||
+    !routinesDirValid ||
     subject === undefined ||
     logLevel === undefined
   ) {
@@ -1379,6 +1427,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       auditRetentionMonths: retention.value,
       policy,
       markerKey,
+      routinesDir,
       stdioSubject: subject.value,
       logLevel: logLevel.value as LogLevel,
     }),

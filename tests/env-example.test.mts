@@ -22,8 +22,9 @@ import { environmentSchema } from '../packages/core/src/config/variables.ts';
 // the keys do something only with the level strict (ADR 0069). So does the
 // folder of the day keys, which only a server that writes needs
 // (ADR 0031), and the key file of the check codes, which only a server
-// that adds pages and sections to the wiki needs (ADR 0032). The zone of
-// the texts has no default either: a copied zone that is not the one of
+// that adds pages and sections to the wiki needs (ADR 0032), and the
+// folder of the routines, which only the runner reads (ADR 0033). The zone
+// of the texts has no default either: a copied zone that is not the one of
 // the installation would refuse the wrong times as whole days.
 
 const commentedOnly: readonly string[] = [
@@ -34,6 +35,7 @@ const commentedOnly: readonly string[] = [
   'ECCLIUM_TIME_ZONE',
   'ECCLIUM_MARKER_KEY_FILE',
   'ECCLIUM_POLICY_FILE',
+  'ECCLIUM_ROUTINES_DIR',
 ];
 
 const text = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');

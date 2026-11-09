@@ -147,6 +147,12 @@ describe('readPolicyFile on disk', () => {
     expect(
       readPolicyFile(file('syntax.yaml', 'schema: policy.v1\nschema: x\n')),
     ).toEqual({ ok: false, code: 'policy_yaml_syntax', line: 2 });
+    // A directive has no position the reader keeps, so there is no line.
+    expect(
+      readPolicyFile(
+        file('directive.yaml', '%YAML 1.2\n---\nschema: policy.v1\n'),
+      ),
+    ).toEqual({ ok: false, code: 'policy_yaml_unsupported' });
     expect(
       readPolicyFile(
         file(

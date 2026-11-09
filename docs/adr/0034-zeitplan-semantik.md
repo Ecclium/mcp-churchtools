@@ -68,3 +68,7 @@ Gewählt ist die dritte Option, mit `croner` 11.0.0.
   - Ein Lauf, der kurz vor dem Ende seiner Periode beginnt und danach endet, gehört zur Periode seiner Auslösung. Das ist gewollt, kann aber überraschen.
   - Drei Versuche je Auslösung können bei einem gestörten Anbieter dreimal kosten.
   - Ein Prozess, der abstürzt, hält die Sperre seiner Routine bis zur Höchstdauer eines Laufs, wenn der Kern nicht sehen kann, ob er noch läuft, etwa in einem anderen Container.
+
+## Umsetzung
+
+- **Form des Zeitplans, seit dem 09.11.2026:** `packages/workflows/src/routine/schedule.ts` prüft beim Laden einer Routine die fünf Felder mit einem Leerzeichen dazwischen, Bereiche von Minute (0 bis 59), Stunde (0 bis 23), Tag des Monats (1 bis 31), Monat (1 bis 12 oder `JAN` bis `DEC`) und Wochentag (0 bis 6 oder `SUN` bis `SAT`), Bereiche mit Anfang nicht nach dem Ende, Schritte von 1 bis zur Grösse des Felds nach `*` oder einem Bereich und Listen mit Kommas, der ganze Zeitplan höchstens 100 Zeichen. Die 7 für Sonntag und einen Wert mit Schritt wie `5/15` nimmt er nicht an, weil Nachbauten von cron sie verschieden lesen. Tag des Monats und Wochentag gelten als eingeschränkt, sobald das Feld nicht genau `*` ist. Ob ein Zeitplan überhaupt je auslöst, etwa am 31. Februar, prüft croner, sobald es die Fälligkeit rechnet.

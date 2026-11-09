@@ -1,0 +1,411 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RoutineV1",
+  "description": "A routine of Ecclium, version 1, in YAML or JSON. Not expressed here: generate or checks but not both, inputs with generate and never with checks, forEach only on an earlier input without a loop of its own, { field } only with forEach, min not above max, the names of the core for checks, a key that starts with the ID of the routine, the channels the core knows, the rules of the schedule beyond its five fields and the name period, which the template keeps; the loader refuses all of them as well.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "routine.v1"
+    },
+    "id": {
+      "type": "string",
+      "maxLength": 63,
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+    },
+    "schedule": {
+      "type": "string",
+      "maxLength": 100,
+      "pattern": "^[0-9A-Za-z*,/-]+(?: [0-9A-Za-z*,/-]+){4}$"
+    },
+    "inputs": {
+      "minItems": 1,
+      "maxItems": 10,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 32,
+            "pattern": "^[a-z][a-z0-9_]{0,31}$"
+          },
+          "tool": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^ct_[a-z0-9_]{1,60}$"
+          },
+          "forEach": {
+            "type": "string",
+            "maxLength": 32,
+            "pattern": "^[a-z][a-z0-9_]{0,31}$"
+          },
+          "params": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "maxLength": 32,
+              "pattern": "^[a-zA-Z][a-zA-Z0-9]{0,31}$"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200,
+                  "pattern": "^\\P{Cc}*$"
+                },
+                {
+                  "type": "integer",
+                  "minimum": -1000000000,
+                  "maximum": 1000000000
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "field": {
+                      "type": "string",
+                      "maxLength": 32,
+                      "pattern": "^[a-zA-Z][a-zA-Z0-9]{0,31}$"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "minProperties": 0,
+            "maxProperties": 10
+          },
+          "maxItems": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "required": [
+          "name",
+          "tool",
+          "maxItems"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "generate": {
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "type": "string",
+          "maxLength": 130,
+          "pattern": "^(?:[a-z0-9][a-z0-9._-]{0,63}\\/)?[a-z0-9][a-z0-9._-]{0,59}\\.md$"
+        },
+        "model": {
+          "type": "string",
+          "maxLength": 63,
+          "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+        },
+        "redaction": {
+          "type": "string",
+          "enum": [
+            "strict",
+            "standard"
+          ]
+        },
+        "maxOutputTokens": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 8000
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "blocks": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "maxLength": 32,
+                "pattern": "^[a-z][a-z0-9_]{0,31}$"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "maxItems": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100
+                  },
+                  "fields": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "maxLength": 32,
+                      "pattern": "^[a-z][a-z0-9_]{0,31}$"
+                    },
+                    "additionalProperties": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "const": "text"
+                            },
+                            "maxLength": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 1000
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "maxLength"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "const": "integer"
+                            },
+                            "min": {
+                              "type": "integer",
+                              "minimum": -1000000000,
+                              "maximum": 1000000000
+                            },
+                            "max": {
+                              "type": "integer",
+                              "minimum": -1000000000,
+                              "maximum": 1000000000
+                            }
+                          },
+                          "required": [
+                            "type",
+                            "min",
+                            "max"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "const": "date"
+                            }
+                          },
+                          "required": [
+                            "type"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "const": "person"
+                            }
+                          },
+                          "required": [
+                            "type"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "minProperties": 1,
+                    "maxProperties": 8
+                  }
+                },
+                "required": [
+                  "maxItems",
+                  "fields"
+                ],
+                "additionalProperties": false
+              },
+              "minProperties": 1,
+              "maxProperties": 10
+            }
+          },
+          "required": [
+            "blocks"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "prompt",
+        "model",
+        "output"
+      ],
+      "additionalProperties": false
+    },
+    "checks": {
+      "minItems": 1,
+      "maxItems": 2,
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "check": {
+                "type": "string",
+                "const": "stalePages"
+              },
+              "olderThanDays": {
+                "type": "integer",
+                "minimum": 30,
+                "maximum": 3650
+              },
+              "maxItems": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              }
+            },
+            "required": [
+              "check",
+              "olderThanDays",
+              "maxItems"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "check": {
+                "type": "string",
+                "const": "brokenLinks"
+              },
+              "maxItems": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              }
+            },
+            "required": [
+              "check",
+              "maxItems"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "template": {
+      "type": "string",
+      "maxLength": 130,
+      "pattern": "^(?:[a-z0-9][a-z0-9._-]{0,63}\\/)?[a-z0-9][a-z0-9._-]{0,59}\\.md$"
+    },
+    "output": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "target": {
+              "type": "string",
+              "const": "wiki"
+            },
+            "tool": {
+              "type": "string",
+              "const": "ct_wiki_page_append_section"
+            },
+            "scope": {
+              "type": "object",
+              "properties": {
+                "category": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "pattern": "^\\P{Cc}+$"
+                },
+                "page": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "pattern": "^\\P{Cc}+$"
+                }
+              },
+              "required": [
+                "category",
+                "page"
+              ],
+              "additionalProperties": false
+            },
+            "idempotencyKey": {
+              "type": "string",
+              "maxLength": 80,
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}:\\{(?:isoWeek|date|month)\\}$"
+            }
+          },
+          "required": [
+            "target",
+            "tool",
+            "scope",
+            "idempotencyKey"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "target": {
+              "type": "string",
+              "const": "draft"
+            },
+            "channel": {
+              "type": "string",
+              "maxLength": 63,
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+            },
+            "idempotencyKey": {
+              "type": "string",
+              "maxLength": 80,
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}:\\{(?:isoWeek|date|month)\\}$"
+            }
+          },
+          "required": [
+            "target",
+            "channel",
+            "idempotencyKey"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "notify": {
+      "minItems": 1,
+      "maxItems": 2,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "id",
+    "schedule",
+    "template",
+    "output"
+  ],
+  "additionalProperties": false
+}
