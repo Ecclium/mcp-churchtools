@@ -91,7 +91,7 @@ export const logFieldMeanings: Readonly<
   attempt: {
     setBy: 'Aufruf',
     meaning:
-      'Nummer eines Versuchs, 1 bis 10. Heute setzt ihn keine Zeile, der Runner braucht ihn ab Phase 6.',
+      'Nummer eines Versuchs, 1 bis 10. Heute nur in `run_model_answered`: 2, wenn ein Anbieter ohne strukturierte Ausgabe ein zweites Mal gefragt wurde.',
   },
   file: {
     setBy: 'Aufruf',
@@ -194,6 +194,20 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Das Lesebudget des Akteurs für diesen UTC-Tag ist aufgebraucht. Der Aufruf endet mit `policy_denied`, ohne ChurchTools zu fragen.',
     read_budget_unavailable:
       'Ecclium konnte das Lesebudget nicht zählen. Der Aufruf endet mit `policy_denied`, ohne ChurchTools zu fragen.',
+    run_read_failed:
+      'Ein Lauf einer Routine konnte eine Eingabe nicht lesen. `code` nennt den Fehler. Der Lauf endet, ohne das Modell zu fragen.',
+    run_read_limit:
+      'Ein Lauf einer Routine brauchte mehr Aufrufe, als eine Eingabe (200) oder ein Lauf (400) haben darf, oder ein Eintrag einer Quelle bekäme einen Aufruf, nachdem die Eingabe schon `maxItems` Einträge hat. `count` nennt die Aufrufe des Laufs oder die Einträge der Eingabe. Der Lauf endet endgültig, ohne das Modell zu fragen.',
+    run_model_answered:
+      'Das Modell eines Laufs hat eine Antwort gegeben, die zum Schema der Blöcke passt. `attempt` nennt die Zahl der Versuche, `durationMs` die Dauer.',
+    run_model_failed:
+      'Der Aufruf des Modells eines Laufs scheiterte. `code` nennt den Fehler, `validation` eine Antwort, die nicht zum Schema passt, `durationMs` die Dauer.',
+    run_answer_refused:
+      'Die Antwort des Modells eines Laufs nannte eine Person, die nicht in seinen Daten stand, oder ein Text oder ein Name verletzte die ContentPolicy. `count` nennt die Zahl der Felder. Der Lauf schreibt nichts.',
+    run_section_refused:
+      'Der gerenderte Abschnitt eines Laufs verletzte die ContentPolicy, auch wenn jedes Feld für sich sie bestand, etwa durch den Text der Vorlage. Der Lauf schreibt nichts.',
+    run_rendered:
+      'Ein Lauf einer Routine hat seinen Abschnitt gerendert, und er besteht die ContentPolicy. `count` nennt die Zahl der Einträge der Blöcke, `durationMs` die Dauer des Laufs bis dahin.',
     write_refused:
       'Der Write-Guard plant oder schreibt nicht: Schreiben ist gesperrt oder nicht zu prüfen, die Art des Schreibvorgangs läuft nicht, die Rechte des Kontos sind nicht zu lesen, oder die Uhr weicht mehr als fünf Minuten von ChurchTools ab. `code` nennt den Fehler.',
     write_conflict:
@@ -490,6 +504,10 @@ const sections: readonly {
       name === 'audit_withheld' ||
       name.startsWith('pseudonym_') ||
       name.startsWith('read_budget_'),
+  },
+  {
+    title: 'Lauf einer Routine',
+    fits: (name: string) => name.startsWith('run_'),
   },
   {
     title: 'Write-Guard',

@@ -3,8 +3,9 @@
  * the model provider for OpenAI-compatible APIs.
  *
  * So far: the format of routines, `routine.v1`, with its check, the check
- * of its template and the loader of a folder of routines, and the adapter
- * for chat interfaces in the style of OpenAI (ADR 0033).
+ * of its template and the loader of a folder of routines, the adapter for
+ * chat interfaces in the style of OpenAI, and the engine of a run up to
+ * before its write (ADR 0033).
  *
  * @packageDocumentation
  */
@@ -62,3 +63,40 @@ export {
   openAiCompatibleLimits,
   type OpenAiCompatibleOptions,
 } from './model/openai-compatible.js';
+export {
+  type AnswerCheck,
+  checkAnswer,
+  type FilledBlocks,
+  unnamedPerson,
+} from './run/answer.js';
+export {
+  executeRun,
+  runLimits,
+  type RunPorts,
+  type RunResult,
+  type RunStep,
+} from './run/execute.js';
+export {
+  type InputResults,
+  type InputsResult,
+  readInputs,
+  type RunRead,
+  runReadLimits,
+} from './run/inputs.js';
+export {
+  outputSpecOf,
+  type RunAnswer,
+  runAnswerName,
+  type RunAnswerValue,
+} from './run/output-spec.js';
+export {
+  maxRelativeDays,
+  type PreparedInput,
+  type PreparedRun,
+  prepareRun,
+  type RunPrepareCode,
+  runPrepareCodes,
+  type RunPrepareContext,
+  type RunPrepareResult,
+} from './run/prepare.js';
+export { renderSection } from './run/render.js';
