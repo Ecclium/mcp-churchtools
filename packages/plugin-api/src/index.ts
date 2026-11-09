@@ -271,3 +271,15 @@ export {
   type ProviderInfo,
   type WriteState,
 } from './audit.js';
+export {
+  isModelOutputName,
+  modelLimits,
+  type ModelOutputSpec,
+  type ModelPromptPart,
+  type ModelProvider,
+  type ModelRequest,
+  type ModelResult,
+  type StandardSchemaResult,
+  type StandardSchemaV1,
+  type TokenUsage,
+} from './model.js';
