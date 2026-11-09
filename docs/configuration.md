@@ -84,7 +84,7 @@ Legt fest, wie Ecclium einen Schreibvorgang bestätigen lässt, bevor es schreib
 
 ## `ECCLIUM_TIME_ZONE`
 
-Die Zeitzone, in der die Rückfrage vor einem Schreibvorgang, `ecclium queue show` und `ecclium undo` Beginn und Ende von Terminen und Buchungen zeigen, mit dem Namen der Zone, etwa `Europe/Zurich`. Erlaubt ist `UTC` oder der Name einer Zeitzone aus Gebiet und Ort, keine Angabe wie `+01:00` und keine Abkürzung wie `CET`. Ohne die Variable zeigen die Texte die Zeiten in UTC. Die Tools nehmen Zeiten immer in UTC, auch mit der Variable. Mit ihr lehnt Ecclium einen Termin und eine Buchung ab, deren Beginn und Ende beide auf Mitternacht dieser Zone fallen, weil ChurchTools sie womöglich als ganztägig speichert, was keine Probe geprüft hat. Tragen Sie deshalb die Zeitzone der ChurchTools-Installation ein.
+Die Zeitzone, in der die Rückfrage vor einem Schreibvorgang, `ecclium queue show` und `ecclium undo` Beginn und Ende von Terminen und Buchungen zeigen, mit dem Namen der Zone, etwa `Europe/Zurich`. Erlaubt ist `UTC` oder der Name einer Zeitzone aus Gebiet und Ort, keine Angabe wie `+01:00` und keine Abkürzung wie `CET`. Ohne die Variable zeigen die Texte die Zeiten in UTC. Die Tools nehmen Zeiten immer in UTC, auch mit der Variable. Mit ihr lehnt Ecclium einen Termin und eine Buchung ab, deren Beginn und Ende beide auf Mitternacht dieser Zone fallen, weil ChurchTools sie womöglich als ganztägig speichert, was keine Probe geprüft hat. Tragen Sie deshalb die Zeitzone der ChurchTools-Installation ein. Der Runner rechnet in dieser Zone die Zeitpläne der Routinen und ihre Perioden und startet ohne die Variable nicht, damit Texte und Zeitpläne dieselbe Zone zeigen.
 
 ## `ECCLIUM_AUDIT_RETENTION_MONTHS`
 
