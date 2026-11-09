@@ -173,9 +173,9 @@ describe('createModelTransport', () => {
       maxResponseBytes: 1024,
     });
     const history = agent.getCallHistory() as MockCallHistory;
-    expect(history.calls()[0]?.headers['authorization']).toBe(
-      `Login ${canary.value}`,
-    );
+    expect(history.calls()[0]?.headers).toMatchObject({
+      authorization: `Login ${canary.value}`,
+    });
   });
 
   it('logs a failure with its purpose', async () => {

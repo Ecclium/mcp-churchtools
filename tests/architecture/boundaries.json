@@ -254,11 +254,12 @@
     },
     "redactedUsers": {
       "adr": "0026",
-      "description": "Code that may mark a result as redacted or read the mark: the pipeline, which marks the result of every call after redact, markUntrusted and the check of its size, the serialisation of the mount, which sends only a marked result, and in testkit the stand-in outcomes for tests of a server.",
+      "description": "Code that may mark a result as redacted or read the mark: the pipeline, which marks the result of every call after redact, markUntrusted and the check of its size, the serialisation of the mount, which sends only a marked result, and in testkit the stand-in outcomes for tests of a server. Since ADR 0033 also the guard before every adapter of a language model, which reads the mark of every part of a prompt with data and makes none.",
       "paths": [
         "packages/core/src/pipeline/pipeline.ts",
         "packages/core/src/mcp/serialize.ts",
-        "packages/testkit/src/redacted/"
+        "packages/testkit/src/redacted/",
+        "packages/core/src/model/guard.ts"
       ]
     },
     "keys": {

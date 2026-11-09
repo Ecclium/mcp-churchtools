@@ -170,3 +170,21 @@ export {
   type UndoReason,
   type UndoSubject,
 } from './pipeline/index.js';
+export {
+  checkTransferBasis,
+  type GuardedModel,
+  type GuardedModelRequest,
+  type GuardedPromptPart,
+  guardModelProvider,
+  isSwissOrEeaCountry,
+  type ModelAnswerReason,
+  modelAnswerLimits,
+  type ModelAnswerResult,
+  type ModelGuardOptions,
+  parseModelJson,
+  readModelAnswer,
+  swissAndEeaCountries,
+  type TransferBasis,
+  transferBases,
+  type TransferBasisProblem,
+} from './model/index.js';

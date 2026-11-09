@@ -38,7 +38,10 @@ export default defineConfig({
       // taking a write back changes (ADR 0031), and of the write guard, the
       // only code that seals plans, issues proofs and writes to ChurchTools
       // (ADR 0029), and of the marking, by which the core tells its own
-      // sections in the wiki from those of a person (ADR 0032).
+      // sections in the wiki from those of a person (ADR 0032), and of the
+      // check of the shape of JSON and the guard before every adapter of a
+      // language model, which reads the answers of a vendor and lets no
+      // value reach it that the pipeline did not redact (ADR 0033).
       thresholds: {
         'packages/core/src/**': {
           statements: 80,
@@ -125,6 +128,18 @@ export default defineConfig({
           lines: 100,
         },
         'packages/core/src/marker/**': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        'packages/core/src/json/**': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        'packages/core/src/model/**': {
           statements: 100,
           branches: 100,
           functions: 100,
