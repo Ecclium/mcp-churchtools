@@ -30,13 +30,6 @@ export {
   type RoutineLoadResult,
 } from './routine/loader.js';
 export {
-  checkSchedule,
-  type ScheduleCheck,
-  type ScheduleFieldName,
-  scheduleFieldNames,
-  type ScheduleProblem,
-} from './routine/schedule.js';
-export {
   type Routine,
   type RoutineBlock,
   type RoutineCheck,

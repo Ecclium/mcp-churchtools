@@ -2,9 +2,10 @@
  * The check of the schedule of a routine (ADR 0034).
  *
  * Where it stands in a run: when the routines are loaded, long before a
- * run is due. It only checks the form; when a routine is due and which
- * period it serves is reckoned later from the same text, by one function
- * for the daemon and for a single run.
+ * run is due, and again whenever the core reckons a trigger from a
+ * schedule, so that no schedule reaches croner past these rules. It lies
+ * in core beside the one function that tells the daemon and a single run
+ * when a routine is due.
  *
  * Why it is narrower than cron: implementations of cron read some forms
  * differently, so a routine may use only the forms they share. A

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { checkSchedule } from './schedule.js';
+import { checkSchedule } from './form.js';
 
 describe('checkSchedule', () => {
   it.each([

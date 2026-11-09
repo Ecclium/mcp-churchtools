@@ -23,7 +23,8 @@
  *
  * @packageDocumentation
  */
-import { checkSchedule } from './schedule.js';
+import { checkSchedule } from '@ecclium/mcp-churchtools-core';
+
 import {
   type Routine,
   type RoutineBlock,
