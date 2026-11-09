@@ -15,6 +15,7 @@ import {
   type Policy,
   policyHashOf,
   policyLimits,
+  type ProviderSettings,
   type SettingKey,
   type SettingReport,
   type Transport,
@@ -38,6 +39,12 @@ export interface ReportOptions {
    * later `ecclium doctor` will report (ADR 0032). Never a target.
    */
   readonly policy?: Policy | undefined;
+  /**
+   * The checked providers of a valid configuration, for their summary:
+   * alias, vendor, model, country and basis of transfer, the host of the
+   * endpoint only with `showValues` (ADR 0033). Never the path of a key.
+   */
+  readonly providers?: readonly ProviderSettings[] | undefined;
 }
 
 const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
@@ -58,6 +65,7 @@ const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
   policy: 'Richtlinie',
   markerKey: 'Prüfcode-Schlüssel',
   routinesDir: 'Ordner der Routinen',
+  providers: 'Modellanbieter',
   stdioSubject: 'Subjekt über stdio',
   logLevel: 'Stufe des Logs',
 });
@@ -77,7 +85,8 @@ const quote = (text: string): string => `‹${text}›`;
 
 const inconsistent = 'The report of the configuration is inconsistent.';
 
-type Hidden = 'host' | 'subject' | 'path' | 'keys' | 'policy' | 'routines';
+type Hidden =
+  'host' | 'subject' | 'path' | 'keys' | 'policy' | 'routines' | 'providers';
 
 interface Value {
   readonly text: string;
@@ -103,8 +112,9 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
   if (setting.key === 'policy' && setting.origin === 'default') {
     return { text: 'keine Datei' };
   }
-  // Only the folders of state, of keys and of the routines, the key files
-  // and the zone may stay unset without a default.
+  // Only the folders of state, of keys and of the routines, the file of
+  // the providers, the key files and the zone may stay unset without a
+  // default.
   if (setting.origin === 'unset') {
     switch (setting.key) {
       case 'timeZone':
@@ -121,6 +131,8 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
         return { text: 'kein Schlüssel' };
       case 'routinesDir':
         return { text: 'keine Routinen' };
+      case 'providers':
+        return { text: 'keine Anbieter' };
       default:
         throw new TypeError(inconsistent);
     }
@@ -164,7 +176,9 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
                 ? 'keys'
                 : setting.key === 'routinesDir'
                   ? 'routines'
-                  : 'path',
+                  : setting.key === 'providers'
+                    ? 'providers'
+                    : 'path',
         };
       }
       return isPrintable(shown.value)
@@ -203,6 +217,7 @@ const hiddenNames: Readonly<Record<Hidden, readonly [string, string]>> =
     keys: ['der Schlüsselordner', 'ihn'],
     policy: ['der Pfad der Richtlinie', 'ihn'],
     routines: ['der Ordner der Routinen', 'ihn'],
+    providers: ['der Pfad der Datei der Anbieter', 'ihn'],
   });
 
 const maskedNote = (hidden: readonly Hidden[]): string => {
@@ -262,6 +277,30 @@ const policyLines = (policy: Policy): readonly string[] => {
   return lines;
 };
 
+// The summary of the providers: per alias the vendor, the model, the
+// country and, outside Switzerland and the EEA, the basis of the transfer,
+// so that the operator sees where the data of a run go (ADR 0033). The
+// host of the endpoint can name a server of the parish, so it shows only
+// on request, and the path of a key never.
+const providerLines = (
+  providers: readonly ProviderSettings[],
+  showValues: boolean,
+): readonly string[] => [
+  'Anbieter von Sprachmodellen im Format ‹providers.v1›:',
+  ...providers.map(({ alias, info }) => {
+    const parts = [
+      info.vendor,
+      `Modell ${quote(info.model)}`,
+      `Land ${info.hostingCountry}`,
+      ...(info.transferBasis === undefined
+        ? []
+        : [`Grundlage ${quote(info.transferBasis)}`]),
+      ...(showValues ? [`Endpunkt ${quote(info.endpointHost)}`] : []),
+    ];
+    return `  ${alias.padEnd(valueColumn)}${parts.join(', ')}`;
+  }),
+];
+
 const validText =
   'Die Konfiguration ist gültig. ChurchTools wurde nicht angefragt. Ob ChurchTools das Token annimmt, zeigt erst ein Aufruf von ‹ct_whoami›.';
 
@@ -313,12 +352,23 @@ export function renderConfigReport(
     lines.push(
       maskedNote(
         (
-          ['host', 'subject', 'path', 'keys', 'policy', 'routines'] as const
+          [
+            'host',
+            'subject',
+            'path',
+            'keys',
+            'policy',
+            'routines',
+            'providers',
+          ] as const
         ).filter((entry) => hidden.has(entry)),
       ),
     );
   }
   if (options.policy !== undefined) lines.push(...policyLines(options.policy));
+  if (options.providers !== undefined) {
+    lines.push(...providerLines(options.providers, options.showValues));
+  }
 
   const total = report.problems.length + report.omittedProblems;
   if (total > 0) {

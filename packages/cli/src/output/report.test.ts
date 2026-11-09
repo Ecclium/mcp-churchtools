@@ -143,6 +143,10 @@ describe('renderConfigReport', () => {
         'Ordner der Routinen',
         'keine Routinen (‹ECCLIUM_ROUTINES_DIR› ist nicht gesetzt)',
       ),
+      row(
+        'Modellanbieter',
+        'keine Anbieter (‹ECCLIUM_PROVIDERS_FILE› ist nicht gesetzt)',
+      ),
       row('Subjekt über stdio', '‹local-stdio› (Voreinstellung)'),
       row('Stufe des Logs', '‹info› (Voreinstellung)'),
       hostNote,
@@ -807,5 +811,89 @@ describe('renderConfigReport and the policy', () => {
         '‹/path/to/routines› (aus ‹ECCLIUM_ROUTINES_DIR›)',
       ),
     );
+  });
+  it('masks the path of the file of the providers and lists each provider, the host only on request', () => {
+    const withFile: ConfigReport = {
+      ...report,
+      settings: report.settings.map((setting) =>
+        setting.key === 'providers'
+          ? {
+              ...setting,
+              origin: 'file',
+              shown: { kind: 'path', value: '/path/to/providers.yaml' },
+            }
+          : setting,
+      ),
+    };
+    const providers = [
+      {
+        alias: 'default',
+        info: {
+          vendor: 'example',
+          model: 'example-maker/example-model-1',
+          hostingCountry: 'CH',
+          endpointHost: 'model.example.org',
+        },
+        endpoint: 'https://model.example.org/v1/chat/completions',
+        structuredOutput: true,
+        apiKeyFile: '/path/to/model-key',
+      },
+      {
+        alias: 'extern',
+        info: {
+          vendor: 'example',
+          model: 'example-model-2',
+          hostingCountry: 'US',
+          endpointHost: 'model.example.com',
+          transferBasis: 'standard_contractual_clauses',
+        },
+        endpoint: 'https://model.example.com/v1/chat/completions',
+        structuredOutput: false,
+        apiKeyFile: '/path/to/other-key',
+      },
+    ];
+    const masked = renderConfigReport(withFile, {
+      valid: true,
+      showValues: false,
+      providers,
+    });
+    expect(masked).toContain(
+      row(
+        'Modellanbieter',
+        '[verborgen] (aus der Datei in ‹ECCLIUM_PROVIDERS_FILE›, Eigentümer und Dateirechte geprüft)',
+      ),
+    );
+    expect(masked.find((line) => line.startsWith('Verborgen'))).toBe(
+      'Verborgen sind der Host und der Pfad der Datei der Anbieter, damit Sie die Ausgabe ohne Bearbeitung weitergeben können. Mit ‹--show-values› zeigt der Befehl beide.',
+    );
+    expect(masked).toContain(
+      'Anbieter von Sprachmodellen im Format ‹providers.v1›:',
+    );
+    expect(masked).toContain(
+      row(
+        'default',
+        'example, Modell ‹example-maker/example-model-1›, Land CH',
+      ),
+    );
+    expect(masked).toContain(
+      row(
+        'extern',
+        'example, Modell ‹example-model-2›, Land US, Grundlage ‹standard_contractual_clauses›',
+      ),
+    );
+    expect(masked.join('\n')).not.toContain('model.example');
+    expect(masked.join('\n')).not.toContain('/path/to/model-key');
+    const shown = renderConfigReport(withFile, {
+      valid: true,
+      showValues: true,
+      providers,
+    });
+    expect(shown).toContain(
+      row(
+        'default',
+        'example, Modell ‹example-maker/example-model-1›, Land CH, Endpunkt ‹model.example.org›',
+      ),
+    );
+    expect(shown.join('\n')).not.toContain('/path/to/model-key');
   });
 });

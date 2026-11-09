@@ -46,6 +46,7 @@ export const variableNames = Object.freeze([
   'ECCLIUM_POLICY_FILE',
   'ECCLIUM_MARKER_KEY_FILE',
   'ECCLIUM_ROUTINES_DIR',
+  'ECCLIUM_PROVIDERS_FILE',
   'ECCLIUM_STDIO_SUBJECT',
   'ECCLIUM_LOG_LEVEL',
 ] as const);
@@ -111,7 +112,7 @@ export const debugVariableName = 'NODE_DEBUG';
 
 /**
  * Variables without the prefix that the loader reads while a file of the
- * policy or a folder of routines is set, frozen. Set with any value, they
+ * policy or of the providers or a folder of routines is set, frozen. Set with any value, they
  * make the library for YAML write every token of a file to stdout, which
  * would break the protocol over stdio and put the content of the file on
  * a stream (ADR 0032, ADR 0033).
@@ -598,6 +599,18 @@ export const variables: readonly Variable[] = Object.freeze([
     secret: false,
     stdioOnly: false,
   }),
+  // The file of the providers of language models (ADR 0033). The start
+  // reads and checks it like the policy; the files of the keys it names
+  // are read only by the composition root of the runner.
+  row({
+    name: 'ECCLIUM_PROVIDERS_FILE',
+    kind: 'path',
+    maxLength: 4096,
+    choices: [],
+    defaultValue: undefined,
+    secret: false,
+    stdioOnly: false,
+  }),
   row({
     name: 'ECCLIUM_STDIO_SUBJECT',
     kind: 'subject',
@@ -693,6 +706,11 @@ export const variableSchemas: Readonly<
     .min(1)
     .max(4096)
     .refine((value) => isNormalizedAbsolutePath(value)),
+  ECCLIUM_PROVIDERS_FILE: z
+    .string()
+    .min(1)
+    .max(4096)
+    .refine((value) => isAbsolute(value)),
   ECCLIUM_STDIO_SUBJECT: z.string().max(32).regex(stdioSubjectPattern),
   ECCLIUM_LOG_LEVEL: choiceOf('ECCLIUM_LOG_LEVEL'),
 });
@@ -728,6 +746,7 @@ export const environmentSchema = z.strictObject({
   ECCLIUM_POLICY_FILE: variableSchemas.ECCLIUM_POLICY_FILE.optional(),
   ECCLIUM_MARKER_KEY_FILE: variableSchemas.ECCLIUM_MARKER_KEY_FILE.optional(),
   ECCLIUM_ROUTINES_DIR: variableSchemas.ECCLIUM_ROUTINES_DIR.optional(),
+  ECCLIUM_PROVIDERS_FILE: variableSchemas.ECCLIUM_PROVIDERS_FILE.optional(),
   ECCLIUM_STDIO_SUBJECT: variableSchemas.ECCLIUM_STDIO_SUBJECT.optional(),
   ECCLIUM_LOG_LEVEL: variableSchemas.ECCLIUM_LOG_LEVEL.optional(),
 });
