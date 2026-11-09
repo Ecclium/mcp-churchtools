@@ -178,13 +178,14 @@ export function checkSchedule(schedule: string): ScheduleCheck {
     return refuse({ reason: 'invalid' });
   }
   for (const [index, name] of scheduleFieldNames.entries()) {
-    if (!fieldIsValid(fields[index] ?? '', ranges[name])) {
+    if (!fieldIsValid(String(fields[index]), ranges[name])) {
       return refuse({ reason: 'invalid', field: name });
     }
   }
   if (fields[2] !== '*' && fields[4] !== '*') return refuse({ reason: 'days' });
   // The field passed above, so digits alone are one minute from 0 to 59.
-  if (!/^\d{1,2}$/.test(fields[0] ?? '')) return refuse({ reason: 'frequent' });
+  if (!/^\d{1,2}$/.test(String(fields[0])))
+    return refuse({ reason: 'frequent' });
   // Whether a day exists does not depend on the zone, so UTC answers it,
   // from a fixed time, so that the answer never depends on the clock.
   if (createCron(schedule, 'UTC').next(0) === undefined) {

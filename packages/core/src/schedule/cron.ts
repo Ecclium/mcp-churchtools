@@ -46,6 +46,26 @@ export interface CronSchedule {
 }
 
 /**
+ * The instant croner named, for a schedule that names one wherever it is
+ * asked: one that passed the check of its form, which refuses a schedule
+ * that never fires, asked within the years in which a clock is right.
+ *
+ * @param instant - What {@link CronSchedule} returned.
+ * @returns The instant.
+ * @throws {RangeError} When croner named none.
+ * @example
+ * ```ts
+ * found(createCron('0 6 * * MON', 'UTC').next(0)); // Date.UTC(1970, 0, 5, 6)
+ * ```
+ */
+export function found(instant: number | undefined): number {
+  if (instant === undefined) {
+    throw new RangeError('The schedule names no such time.');
+  }
+  return instant;
+}
+
+/**
  * Reads a schedule of five fields in a time zone.
  *
  * croner places a time that a change to summer time skips and a time that

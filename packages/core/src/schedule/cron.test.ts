@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createCron } from './cron.js';
+import { createCron, found } from './cron.js';
 
 const at = (iso: string): number => Date.parse(iso);
 const iso = (ms: number | undefined): string | undefined =>
@@ -36,6 +36,14 @@ describe('createCron', () => {
     expect(iso(cron.previous(trigger - 1))).toBe('2026-11-02T06:00:00.000Z');
     expect(cron.next(trigger - 1)).toBe(trigger);
     expect(iso(cron.next(trigger + 1))).toBe('2026-11-16T06:00:00.000Z');
+  });
+
+  it('gives what croner found and throws when it found nothing', () => {
+    expect(found(5)).toBe(5);
+    expect(found(0)).toBe(0);
+    expect(() => found(createCron('0 0 31 2 *', 'UTC').next(0))).toThrow(
+      RangeError,
+    );
   });
 
   it('names nothing for a schedule that never fires', () => {
