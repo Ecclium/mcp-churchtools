@@ -458,12 +458,21 @@ describe('the field schemas', () => {
     ['vendor', ['example-ai', 'acme'], ['Example', '-ai', 'a'.repeat(33)]],
     [
       'model',
-      ['example-model-1', 'model_2.5:latest'],
       [
-        'meta/llama',
+        'example-model-1',
+        'model_2.5:latest',
+        'example-maker/example-model-1',
+        `a/${'b'.repeat(62)}`,
+      ],
+      [
+        '/example-model',
+        'example-maker/',
+        'example-maker//model',
+        'a/b/c',
         'https://api.example.org/v1',
         'sk-ant-key with space',
         'a'.repeat(65),
+        `a/${'b'.repeat(63)}`,
       ],
     ],
     ['hostingCountry', ['CH', 'DE'], ['ch', 'CHE', 'C1']],

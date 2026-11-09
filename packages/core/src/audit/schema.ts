@@ -136,7 +136,12 @@ const actorIdPattern = /^[a-z][a-z0-9_-]{0,31}(?::[a-z0-9_-]{1,64})?$/;
 export const isActorId = (value: unknown): value is string =>
   typeof value === 'string' && value.length <= 97 && actorIdPattern.test(value);
 const vendorPattern = /^[a-z][a-z0-9-]{0,31}$/;
-const modelPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
+// A model as the vendor names it, at most 64 characters with the limit of
+// the field, such as example-model-1 or, with one slash between maker and
+// model, example-maker/example-model-1 (ADR 0033). A slash never stands at
+// either end or twice, so no address passes for a model.
+const modelPattern =
+  /^[A-Za-z0-9][A-Za-z0-9._:-]*(?:\/[A-Za-z0-9][A-Za-z0-9._:-]*)?$/;
 const countryPattern = /^[A-Z]{2}$/;
 // A term such as eu_gdpr, never text with spaces or dots. Which terms exist
 // is still open; until then any term of this form fits.
