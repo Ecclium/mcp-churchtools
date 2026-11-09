@@ -37,6 +37,19 @@ export {
   type StateDirStats,
 } from './state-dir.js';
 export {
+  type ConfigDirectoryResult,
+  type ConfigDirectoryStats,
+  type ConfigDirectorySystem,
+  type ConfigFileReason,
+  configFileReasons,
+  type ConfigFileSystem,
+  type ConfigTextFileReason,
+  type ConfigTextFileResult,
+  listConfigDirectory,
+  maxConfigDirectoryEntries,
+  readConfigTextFile,
+} from './text-file.js';
+export {
   type TokenFileCode,
   tokenFileCodes,
   type TokenFileStats,
