@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { fitsShape } from './json-shape.js';
+import { fitsShape } from './shape.js';
 
 const limits = { maxDepth: 16, maxElements: 10 };
 

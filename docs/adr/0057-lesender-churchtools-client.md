@@ -71,7 +71,7 @@ Gewählt ist die dritte Option.
 
 ## Umsetzung
 
-- **Client:** `packages/core/src/churchtools/` mit `client.ts` (Fabrik, `whoami`, `permissions`, seit dem 23.10.2026 `searchPersons` und `searchGroups`), `request.ts` (Reihenfolge von Mandant, Drosselung, Transport und Lesen), `answer.ts`, `json-shape.ts` und `retry-after.ts` (Lesen der Antwort), `query.ts` (Seiten und `ids[]`), `schemas.ts` und `rights.ts`. Kein Einstieg von core gibt den Client weiter.
+- **Client:** `packages/core/src/churchtools/` mit `client.ts` (Fabrik, `whoami`, `permissions`, seit dem 23.10.2026 `searchPersons` und `searchGroups`), `request.ts` (Reihenfolge von Mandant, Drosselung, Transport und Lesen), `answer.ts`, `retry-after.ts` und, seit dem 09.11.2026 unter `packages/core/src/json/shape.ts`, die Prüfung der Form (Lesen der Antwort), `query.ts` (Seiten und `ids[]`), `schemas.ts` und `rights.ts`. Kein Einstieg von core gibt den Client weiter.
 - **Drosselung:** `packages/core/src/throttle/`, nur vom Client gebaut.
 - **Variable:** `ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE` in `packages/core/src/config/variables.ts` (ADR 0055).
 - **Vertragsabgleich:** `packages/core/src/churchtools/contract.json`, festgehalten von `contract.test.ts`, und `scripts/contract/check.mts` mit README.

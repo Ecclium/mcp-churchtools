@@ -10,7 +10,7 @@
 import type { ErrorCode } from '@ecclium/mcp-churchtools-plugin-api';
 
 import type { HttpResponse } from '../http/index.js';
-import { fitsShape } from './json-shape.js';
+import { fitsShape } from '../json/shape.js';
 import { retryAfterSeconds } from './retry-after.js';
 
 /** Why an answer was not read. */

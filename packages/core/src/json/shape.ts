@@ -1,8 +1,10 @@
 /**
  * A check of JSON text before it is parsed (ADR 0057). `JSON.parse` has no
- * limit for depth or elements, so an answer of ChurchTools could make it
- * build a huge or deeply nested value. The check walks the text once,
- * without a regular expression, and counts outside of strings only.
+ * limit for depth or elements, so an answer of ChurchTools or of a
+ * language model could make it build a huge or deeply nested value. The
+ * check walks the text once, without a regular expression, and counts
+ * outside of strings only. It lives outside the raw client, so that the
+ * reading of the answers of a model uses it as well (ADR 0033).
  *
  * @packageDocumentation
  */
