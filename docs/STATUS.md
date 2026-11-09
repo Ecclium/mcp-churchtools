@@ -1594,3 +1594,4 @@ Diese Grundsatzfragen sind entschieden.
   - Ein Test des `QuotaStore` rechnete mit der echten Uhr und einer Datei der Entscheide über die Freigabe-Warteschlange vom 24.10.2026. Solche Dateien bleiben bis zum 15. Tag nach ihrem Tag ([ADR 0063](adr/0063-quotastore-als-datei.md)). Seit dem 09.11.2026 räumte deshalb die erste Zählung die Datei weg, und der Test scheiterte bei jedem Lauf, auch auf `main`. Er rechnet jetzt mit der Uhr jenes Tages, wie die Tests daneben.
   - Durchsicht aus zwei Blickwinkeln, der Inhalt gegen die angenommenen ADRs und die Sprache mit Opsec, jeder Befund an der Quelle geprüft und eingearbeitet.
   - `pnpm run build`, `pnpm check` und `pnpm run ci:secret-scan` grün.
+- 09.11.2026, die Entscheide vor dem Code von Phase 6 sind als `e68e3bf` auf `main` (#208). Der Squash-Commit bringt genau den Baum des Branches.
