@@ -80,10 +80,11 @@ export type TemplateResult =
 export const periodTag = 'period';
 
 // A tag of a section alone on its line, with spaces or tabs around it.
-// The name is one of a block, as the schema of a routine allows it.
-const sectionLine = /^[ \t]*\{\{([#^/])([a-z][a-z0-9_]{0,31})\}\}[ \t]*$/;
+// The name is one of a block: one the routine chose, in lower case, or
+// the name of a check of the core, such as `brokenLinks`.
+const sectionLine = /^[ \t]*\{\{([#^/])([a-z][a-zA-Z0-9_]{0,31})\}\}[ \t]*$/;
 // A tag inside a line: a field or the period, nothing else.
-const inlineTag = /^\{\{([a-z][a-z0-9_]{0,31})\}\}/;
+const inlineTag = /^\{\{([a-z][a-zA-Z0-9_]{0,31})\}\}/;
 // A control character other than the tab. Lines are split at line feeds
 // already, so a carriage return alone counts as well.
 const control = /[^\P{Cc}\t]/u;

@@ -2,8 +2,8 @@
  * Routines and policies with their versioned schemas, the routine engine and
  * the model provider for OpenAI-compatible APIs.
  *
- * So far: the format of routines, `routine.v1`, with its check and the
- * check of its template (ADR 0033).
+ * So far: the format of routines, `routine.v1`, with its check, the check
+ * of its template and the loader of a folder of routines (ADR 0033).
  *
  * @packageDocumentation
  */
@@ -18,6 +18,16 @@ export {
   type RoutineCheckResult,
   routineFieldOf,
 } from './routine/check.js';
+export {
+  type LoadedRoutine,
+  loadRoutines,
+  type RoutineFileSystem,
+  routineFileLimits,
+  type RoutineLoadCode,
+  routineLoadCodes,
+  type RoutineLoadProblem,
+  type RoutineLoadResult,
+} from './routine/loader.js';
 export {
   checkSchedule,
   type ScheduleCheck,
