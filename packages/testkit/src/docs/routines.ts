@@ -358,7 +358,7 @@ const fieldKinds: readonly (readonly [string, string, string])[] = [
   [
     'person',
     'feste Form',
-    'Verweis auf eine Person aus den Daten des Laufs. Das Modell sieht nur ihr Pseudonym, im Bericht steht ihr Name, wie ChurchTools ihn liefert.',
+    'Verweis auf eine Person aus den Daten des Laufs. Das Modell sieht in `strict` ihr Pseudonym, in `standard` ihre Kennung, im Bericht steht ihr Name, wie ChurchTools ihn liefert.',
   ],
 ];
 
@@ -440,7 +440,7 @@ export function renderRoutinesReference(): string {
     '',
     '## Eingaben',
     '',
-    '- Eine Eingabe ruft ein Lese-Tool über dieselbe Pipeline wie der Server, mit Maskierung und Protokoll. Erlaubt sind nur Lese-Tools, auf die sich Routinen verlassen können und die unbeaufsichtigt laufen dürfen. Das prüft eine spätere Version, bevor ein Lauf beginnt, ebenso die Parameter gegen das Tool.',
+    '- Eine Eingabe ruft ein Lese-Tool über dieselbe Pipeline wie der Server, mit Maskierung und Protokoll. Erlaubt sind nur Lese-Tools, auf die sich Routinen verlassen können und die unbeaufsichtigt laufen dürfen. Das prüft die Vorbereitung eines Laufs, bevor er etwas liest, ebenso die Parameter gegen das Tool, die Felder von `{ field }` und relative Tage bis 366 Tage.',
     '- Mit `forEach` läuft das Tool einmal je Eintrag einer früheren Eingabe, die selbst kein `forEach` hat. Die Zahl der Aufrufe ist so höchstens `maxItems` der früheren Eingabe, dazu die Folgeseiten, bis `maxItems` erreicht ist. Tools, die Namen anderer Personen nennen, zählen gegen das Lesebudget ([Richtlinie](policy.md)): Im Beispiel liest ein Lauf mit 30 Terminen die Einteilungen mit 30 Aufrufen.',
     '- Relative Tage wie `+0d` oder `+14d` zählen ab der geplanten Auslösung, nicht ab dem Beginn des Laufs. Ein verspäteter Lauf liest so denselben Zeitraum wie ein pünktlicher.',
     '',
