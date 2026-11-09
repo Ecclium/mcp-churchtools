@@ -98,6 +98,10 @@ export {
   exampleWriteTool,
 } from './plugins/example/index.js';
 export {
+  createRoutinePlugin,
+  type RoutinePlugin,
+} from './plugins/routine/index.js';
+export {
   createSpecialPlugin,
   type SpecialPluginOptions,
 } from './plugins/special/index.js';
