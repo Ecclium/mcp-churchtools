@@ -390,10 +390,10 @@ export function dependencyRules(
       to: { path: '(^|/)node_modules/@noble/ciphers/' },
     },
     {
-      name: 'yaml-only-in-policy-reader',
+      name: 'yaml-only-in-config-reader',
       severity: 'error',
-      comment: `${adr('policyYaml')}: only the reader of the policy imports yaml, so that every YAML Ecclium reads goes through its limits: the schema core of YAML 1.2, one document, no anchors, aliases, tags or directives, and a log level that writes to no stream. Tests in the packages are not exempt. Imports for types only count as well.`,
-      from: { path: '^packages/', pathNot: at('policyYaml') },
+      comment: `${adr('configYaml')}: only the reader of the files of the configuration imports yaml, so that every YAML Ecclium reads, the policy and the routines alike, goes through its limits: the schema core of YAML 1.2, one document, no anchors, aliases, tags or directives, and a log level that writes to no stream. Tests in the packages are not exempt. Imports for types only count as well.`,
+      from: { path: '^packages/', pathNot: at('configYaml') },
       to: { path: '(^|/)node_modules/yaml/' },
     },
     {

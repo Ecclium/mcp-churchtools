@@ -24,7 +24,7 @@ import { isProxy } from 'node:util/types';
 import type { TokenFileSystem } from '../config/token-file.js';
 import { checkPolicy, policyCheckCodes } from './check.js';
 import type { Policy } from './schema.js';
-import { policyYamlCodes, readPolicyYaml } from './yaml.js';
+import { readConfigYaml } from '../config/yaml.js';
 
 /** The reasons to refuse the file itself, frozen. */
 export const policyFileCodes = Object.freeze([
@@ -40,6 +40,15 @@ export const policyFileCodes = Object.freeze([
   'policy_file_bom',
   'policy_file_encoding',
   'policy_file_unsafe',
+] as const);
+
+/**
+ * Why the text of the file is no YAML the policy takes, frozen: the codes
+ * of the reader of YAML, named for the policy.
+ */
+export const policyYamlCodes = Object.freeze([
+  'policy_yaml_syntax',
+  'policy_yaml_unsupported',
 ] as const);
 
 /**
@@ -210,7 +219,14 @@ export function readPolicyFile(
   }
   if ('code' in read) return refuse(read.code);
 
-  const yaml = readPolicyYaml(read.text);
-  if (!yaml.ok) return yaml;
+  const yaml = readConfigYaml(read.text);
+  if (!yaml.ok) {
+    return Object.freeze({
+      __proto__: null,
+      ok: false,
+      code: `policy_${yaml.code}` as const,
+      ...(yaml.line === undefined ? {} : { line: yaml.line }),
+    });
+  }
   return checkPolicy(yaml.value);
 }

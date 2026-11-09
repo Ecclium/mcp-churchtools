@@ -227,10 +227,10 @@
       "description": "The pseudonyms of the level strict: the only module that imports @noble/ciphers for AES-256-GCM-SIV, and only the place pseudonymUsers and tests import it, so that no other code builds a cipher from a key for pseudonyms. One file of the redaction of core.",
       "paths": ["packages/core/src/redaction/pseudonym.ts"]
     },
-    "policyYaml": {
+    "configYaml": {
       "adr": "0032",
-      "description": "The reader of YAML for the file of the policy: the only module that imports yaml, with the schema core of YAML 1.2, one document and no anchors, aliases, tags or directives, so that no other code reads YAML past these limits. One file of the policy of core.",
-      "paths": ["packages/core/src/policy/yaml.ts"]
+      "description": "The reader of YAML for every file of the configuration, the policy and the routines: the only module that imports yaml, with the schema core of YAML 1.2, one document and no anchors, aliases, tags or directives, so that no other code reads YAML past these limits. One file of the configuration of core.",
+      "paths": ["packages/core/src/config/yaml.ts"]
     },
     "contentLexer": {
       "adr": "0030",

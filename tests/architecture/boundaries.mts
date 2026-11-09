@@ -47,7 +47,7 @@ export const placeKeys = [
   'apiTools',
   'operationCatalog',
   'aesGcmSiv',
-  'policyYaml',
+  'configYaml',
   'contentLexer',
   'contentDifferential',
   'pseudonymUsers',

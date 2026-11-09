@@ -5,10 +5,10 @@ import { describe, expect, it } from 'vitest';
 import { checkPolicy, defaultPolicy } from './check.js';
 import { policyHashOf } from './hash.js';
 import type { Policy } from './schema.js';
-import { readPolicyYaml } from './yaml.js';
+import { readConfigYaml } from '../config/yaml.js';
 
 const fromYaml = (text: string): Policy => {
-  const read = readPolicyYaml(text);
+  const read = readConfigYaml(text);
   if (!read.ok) throw new Error(read.code);
   const checked = checkPolicy(read.value);
   if (!checked.ok) throw new Error(checked.code);

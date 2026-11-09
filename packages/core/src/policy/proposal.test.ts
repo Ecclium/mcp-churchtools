@@ -9,20 +9,20 @@ import {
   renderPolicyProposal,
 } from './proposal.js';
 import type { Policy } from './schema.js';
-import { readPolicyYaml } from './yaml.js';
+import { readConfigYaml } from '../config/yaml.js';
 
 const create = 'ct_wiki_page_create';
 const update = 'ct_wiki_page_update';
 
 /** Whether the real reader and checker take a text. */
 const loads = (text: string): boolean => {
-  const read = readPolicyYaml(text);
+  const read = readConfigYaml(text);
   return read.ok && checkPolicy(read.value).ok;
 };
 
 /** Reads a proposal with the real reader and checker of the policy. */
 const load = (text: string): Policy => {
-  const read = readPolicyYaml(text);
+  const read = readConfigYaml(text);
   if (!read.ok) throw new Error(`yaml: ${read.code}`);
   const checked = checkPolicy(read.value);
   if (!checked.ok) throw new Error(`policy: ${checked.code}`);

@@ -1,26 +1,30 @@
 /**
- * The reader of YAML for the file of the policy (ADR 0032).
+ * The reader of YAML for every file of the configuration: the policy
+ * (ADR 0032) and the routines (ADR 0033).
  *
- * Where it stands: at the start, while the configuration is loaded. The
- * reader of the file hands over the text it checked and decoded, this
- * module turns it into plain values, and the schema of `policy.v1` checks
- * those next. Planning and committing a write later only see the checked
- * policy.
+ * Where it stands: at the start, while the configuration and the routines
+ * are loaded. The reader of a file hands over the text it checked and
+ * decoded, this module turns it into plain values, and the schema of the
+ * file, such as `policy.v1` or `routine.v1`, checks those next. Planning
+ * and committing a write later only see checked values.
  *
- * Why it is narrow: the policy decides which targets a write may reach, so
- * a feature of YAML that makes one text mean two things has no place in
- * it. The reader takes YAML 1.2 with the schema `core` and exactly one
+ * Why it is narrow: these files decide which targets a write may reach and
+ * what a run reads and writes, so a feature of YAML that makes one text
+ * mean two things has no place in them. The reader takes YAML 1.2 with
+ * the schema `core` and exactly one
  * document, and refuses a key twice in one map, anchors and aliases, tags,
  * directives such as `%YAML 1.1`, keys that are not text and every
  * warning of the parser. Merge keys are off, so `<<` stays an unknown key
  * that the schema refuses.
  *
  * It is the only module that imports `yaml`, which a rule of
- * dependency-cruiser holds (place `policyYaml`). The library writes the
- * tokens it reads to stdout when the variable `LOG_TOKENS` or `LOG_STREAM`
- * is set, which would break the protocol over stdio; the loader of the
- * configuration refuses both before it reads the file. Its warnings go to
- * no stream either, because the level of its log is `error`.
+ * dependency-cruiser holds (place `configYaml`), so the policy, the
+ * routines and every later file of the configuration share these limits.
+ * The library writes the tokens it reads to stdout when the variable
+ * `LOG_TOKENS` or `LOG_STREAM` is set, which would break the protocol over
+ * stdio and put the content of a file on a stream; the loader of the
+ * configuration refuses both while it names a file in YAML. Its warnings
+ * go to no stream either, because the level of its log is `error`.
  *
  * @packageDocumentation
  */
@@ -36,23 +40,25 @@ import {
 const defaultTagPrefix = 'tag:yaml.org,2002:';
 
 /**
- * Why a text is no YAML the policy takes, frozen. A code never carries a
- * value of the file; the line, if known, travels beside it.
+ * Why a text is no YAML a file of the configuration takes, frozen. A code
+ * never carries a value of the file; the line, if known, travels beside
+ * it. Each reader of a file turns it into a code of its own, such as
+ * `policy_yaml_syntax`.
  */
-export const policyYamlCodes = Object.freeze([
-  'policy_yaml_syntax',
-  'policy_yaml_unsupported',
+export const configYamlCodes = Object.freeze([
+  'yaml_syntax',
+  'yaml_unsupported',
 ] as const);
 
-/** Why a text is no YAML the policy takes. */
-export type PolicyYamlCode = (typeof policyYamlCodes)[number];
+/** Why a text is no YAML a file of the configuration takes. */
+export type ConfigYamlCode = (typeof configYamlCodes)[number];
 
 /** The plain values of the text, or why there are none. */
-export type PolicyYamlResult =
+export type ConfigYamlResult =
   | { readonly ok: true; readonly value: unknown }
   | {
       readonly ok: false;
-      readonly code: PolicyYamlCode;
+      readonly code: ConfigYamlCode;
       /** The line of the first problem, from 1, when the parser knows it. */
       readonly line?: number;
     };
@@ -70,7 +76,7 @@ const options = Object.freeze({
   logLevel: 'error',
 } as const);
 
-const refuse = (code: PolicyYamlCode, line?: number): PolicyYamlResult =>
+const refuse = (code: ConfigYamlCode, line?: number): ConfigYamlResult =>
   Object.freeze({
     __proto__: null,
     ok: false,
@@ -79,8 +85,8 @@ const refuse = (code: PolicyYamlCode, line?: number): PolicyYamlResult =>
   });
 
 /**
- * Reads the text of the policy file as YAML. JSON is YAML as well, so a
- * file in JSON reads the same way.
+ * Reads the text of a file of the configuration as YAML. JSON is YAML as
+ * well, so a file in JSON reads the same way.
  *
  * @param text - The decoded text of the file.
  * @returns The plain values, or the code of the first problem with its
@@ -88,13 +94,13 @@ const refuse = (code: PolicyYamlCode, line?: number): PolicyYamlResult =>
  * @throws {TypeError} When the text is not a string.
  * @example
  * ```ts
- * readPolicyYaml('schema: policy.v1\n'); // { ok: true, value: { schema: 'policy.v1' } }
- * readPolicyYaml('a: &x 1\nb: *x\n'); // { ok: false, code: 'policy_yaml_unsupported', line: 1 }
+ * readConfigYaml('schema: policy.v1\n'); // { ok: true, value: { schema: 'policy.v1' } }
+ * readConfigYaml('a: &x 1\nb: *x\n'); // { ok: false, code: 'yaml_unsupported', line: 1 }
  * ```
  */
-export function readPolicyYaml(text: string): PolicyYamlResult {
+export function readConfigYaml(text: string): ConfigYamlResult {
   if (typeof text !== 'string') {
-    throw new TypeError('The text of the policy must be a string.');
+    throw new TypeError('The text of the file must be a string.');
   }
   const lines = new LineCounter();
   const lineOf = (offset: number): number => lines.linePos(offset).line;
@@ -104,7 +110,7 @@ export function readPolicyYaml(text: string): PolicyYamlResult {
     // both mean the text is not what it seems.
     const [problem] = [...doc.errors, ...doc.warnings];
     if (problem !== undefined) {
-      return refuse('policy_yaml_syntax', lineOf(problem.pos[0]));
+      return refuse('yaml_syntax', lineOf(problem.pos[0]));
     }
     // A directive could change the version of YAML or what a tag means. The
     // document keeps no position of its directives, so there is no line.
@@ -115,7 +121,7 @@ export function readPolicyYaml(text: string): PolicyYamlResult {
         (handle) => handle !== '!!' || tags[handle] !== defaultTagPrefix,
       )
     ) {
-      return refuse('policy_yaml_unsupported');
+      return refuse('yaml_unsupported');
     }
     let unsupported: number | undefined;
     // Every node of a document parsed from a text has its range. For an
@@ -137,12 +143,12 @@ export function readPolicyYaml(text: string): PolicyYamlResult {
           : mark(pair.key),
     });
     if (unsupported !== undefined) {
-      return refuse('policy_yaml_unsupported', unsupported);
+      return refuse('yaml_unsupported', unsupported);
     }
     const value: unknown = doc.toJS({ maxAliasCount: 0 });
     return Object.freeze({ __proto__: null, ok: true, value });
   } catch {
     // Such as a stack too deep for a text nested without end.
-    return refuse('policy_yaml_syntax');
+    return refuse('yaml_syntax');
   }
 }
