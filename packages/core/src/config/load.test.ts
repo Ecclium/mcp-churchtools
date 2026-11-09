@@ -294,6 +294,44 @@ const failingPolicy = (code: string): TokenFileSystem =>
     },
   }).fs;
 
+const providersPath = '/path/to/providers.yaml';
+
+/** A good configuration with a file of the providers (ADR 0033). */
+const withProviders = (
+  providers: TokenFileSystem | string,
+  extra: Environment = {},
+  transport: Transport = 'stdio',
+): ConfigResult =>
+  load(
+    { ...valid(), ECCLIUM_PROVIDERS_FILE: providersPath, ...extra },
+    transport,
+    pathFiles({
+      [tokenPath]: memoryFiles().fs,
+      [providersPath]:
+        typeof providers === 'string' ? memoryFiles(providers).fs : providers,
+    }),
+  );
+
+const providersYaml = [
+  'schema: providers.v1',
+  'providers:',
+  '  - alias: default',
+  '    vendor: example',
+  '    model: example-maker/example-model-1',
+  '    hostingCountry: CH',
+  '    endpoint: https://model.example.org/v1/chat/completions',
+  '    structuredOutput: true',
+  '    apiKeyFile: /path/to/model-key',
+  '',
+].join('\n');
+
+const failingProviders = (code: string): TokenFileSystem =>
+  memoryFiles(providersYaml, {
+    open: () => {
+      throw fsError(code);
+    },
+  }).fs;
+
 const stateDirPath = '/path/to/state';
 const keysDirPath = '/path/to/keys';
 
@@ -540,6 +578,7 @@ describe('loadConfig with a good configuration', () => {
       ['policy', 'ECCLIUM_POLICY_FILE', 'default', { kind: 'none' }],
       ['markerKey', 'ECCLIUM_MARKER_KEY_FILE', 'unset', { kind: 'none' }],
       ['routinesDir', 'ECCLIUM_ROUTINES_DIR', 'unset', { kind: 'none' }],
+      ['providers', 'ECCLIUM_PROVIDERS_FILE', 'unset', { kind: 'none' }],
       [
         'stdioSubject',
         'ECCLIUM_STDIO_SUBJECT',
@@ -2605,6 +2644,100 @@ describe('loadConfig and the folder of the routines', () => {
   });
 });
 
+describe('loadConfig and the file of the providers', () => {
+  it('has no providers without the variable', () => {
+    const result = load(valid());
+    expect(result.ok && result.config.providers).toBeUndefined();
+    expect(setting(result, 'providers')).toEqual({
+      key: 'providers',
+      variable: 'ECCLIUM_PROVIDERS_FILE',
+      origin: 'unset',
+      shown: { kind: 'none' },
+    });
+  });
+
+  it.each(['stdio', 'http'] as const)(
+    'reads and checks the file over %s, but not the file of a key',
+    (transport) => {
+      const key = memoryFiles('placeholder-key');
+      const result = load(
+        { ...valid(), ECCLIUM_PROVIDERS_FILE: providersPath },
+        transport,
+        pathFiles({
+          [tokenPath]: memoryFiles().fs,
+          [providersPath]: memoryFiles(providersYaml).fs,
+          '/path/to/model-key': key.fs,
+        }),
+      );
+      expect(result.ok && result.config.providers).toEqual([
+        {
+          alias: 'default',
+          info: {
+            vendor: 'example',
+            model: 'example-maker/example-model-1',
+            hostingCountry: 'CH',
+            endpointHost: 'model.example.org',
+          },
+          endpoint: 'https://model.example.org/v1/chat/completions',
+          structuredOutput: true,
+          apiKeyFile: '/path/to/model-key',
+        },
+      ]);
+      expect(key.opened).toEqual([]);
+      expect(setting(result, 'providers')).toEqual({
+        key: 'providers',
+        variable: 'ECCLIUM_PROVIDERS_FILE',
+        origin: 'file',
+        shown: { kind: 'path', value: providersPath },
+      });
+    },
+  );
+
+  it('names the field of a provider outside without a basis, never a value', () => {
+    const result = withProviders(providersYaml.replace('CH', 'US'));
+    expect(result.ok).toBe(false);
+    expect(result.report.problems).toEqual([
+      {
+        code: 'providers_transfer_basis_missing',
+        variable: 'ECCLIUM_PROVIDERS_FILE',
+        field: 'providers[0].transferBasis',
+      },
+    ]);
+    expect(setting(result, 'providers')).toMatchObject({
+      origin: 'invalid',
+      shown: { kind: 'none' },
+    });
+  });
+
+  it('takes a provider outside with a basis', () => {
+    const result = withProviders(
+      `${providersYaml.replace('CH', 'US')}    transferBasis: standard_contractual_clauses\n`,
+    );
+    expect(result.ok && result.config.providers?.[0]?.info).toMatchObject({
+      hostingCountry: 'US',
+      transferBasis: 'standard_contractual_clauses',
+    });
+  });
+
+  it('names the line of a problem of YAML', () => {
+    const result = withProviders('schema: providers.v1\nproviders: [1\n');
+    expect(result.report.problems).toEqual([
+      expect.objectContaining({ code: 'providers_yaml_syntax', line: 3 }),
+    ]);
+  });
+
+  // The library for YAML would write the file to stdout (ADR 0033).
+  it('stops the start while LOG_TOKENS is set, without opening the file', () => {
+    const file = memoryFiles(providersYaml);
+    const result = withProviders(file.fs, { LOG_TOKENS: '1' });
+    expect(problems(result)).toEqual([
+      ['yaml_debug_output_enabled', 'LOG_TOKENS'],
+    ]);
+    expect(file.opened).toEqual([]);
+    expect(setting(result, 'providers')).toMatchObject({ origin: 'invalid' });
+  });
+});
+
 describe('loadConfig and its problems', () => {
   const withAddress = (value: string): ConfigResult =>
     load({ ...valid(), ECCLIUM_CHURCHTOOLS_URL: value });
@@ -3025,6 +3158,60 @@ describe('loadConfig and its problems', () => {
       withPolicy(
         `${policyYaml}    - target: { kind: wiki_category, id: 12, name: Archiv }\n      tools: [ct_wiki_page_update]\n      maxPerDay: 4\n`,
       ),
+    providers_file_relative: () =>
+      load({ ...valid(), ECCLIUM_PROVIDERS_FILE: 'providers.yaml' }),
+    // The token comes from the environment, so that only the file of the
+    // providers meets the checks of the platform.
+    providers_file_platform: () =>
+      load(
+        {
+          ECCLIUM_CHURCHTOOLS_URL: address,
+          [tokenVariableName]: token(),
+          ECCLIUM_PROVIDERS_FILE: providersPath,
+        },
+        'stdio',
+        memoryFiles(providersYaml, { getuid: () => undefined }).fs,
+      ),
+    providers_file_missing: () =>
+      load(
+        { ...valid(), ECCLIUM_PROVIDERS_FILE: providersPath },
+        'stdio',
+        pathFiles({ [tokenPath]: memoryFiles().fs }),
+      ),
+    providers_file_symlink: () => withProviders(failingProviders('ELOOP')),
+    providers_file_unreadable: () => withProviders(failingProviders('EACCES')),
+    providers_file_not_regular: () =>
+      withProviders(
+        memoryFiles(providersYaml, { stats: { isFile: false } }).fs,
+      ),
+    providers_file_owner: () =>
+      withProviders(memoryFiles(providersYaml, { stats: { uid: 0 } }).fs),
+    providers_file_mode: () =>
+      withProviders(
+        memoryFiles(providersYaml, { stats: { mode: 0o100620 } }).fs,
+      ),
+    providers_file_too_large: () =>
+      withProviders(memoryFiles(providersYaml, { stats: { size: 65_537 } }).fs),
+    providers_file_bom: () => withProviders(`ï»¿${providersYaml}`),
+    providers_file_encoding: () => withProviders(`${providersYaml}# Ã(\n`),
+    providers_file_unsafe: () => withProviders(failingProviders('EIO')),
+    providers_yaml_syntax: () =>
+      withProviders(`${providersYaml}schema: providers.v1\n`),
+    providers_yaml_unsupported: () =>
+      withProviders('schema: &v providers.v1\n'),
+    providers_version_unknown: () => withProviders('schema: providers.v2\n'),
+    providers_invalid: () =>
+      withProviders(providersYaml.replace('CH', 'Schweiz')),
+    providers_key_inline: () =>
+      withProviders(`${providersYaml}    apiKey: placeholder\n`),
+    providers_contradiction: () =>
+      withProviders(
+        `${providersYaml}${providersYaml.split('\n').slice(2).join('\n')}`,
+      ),
+    providers_transfer_basis_missing: () =>
+      withProviders(providersYaml.replace('CH', 'US')),
+    providers_transfer_basis_needless: () =>
+      withProviders(`${providersYaml}    transferBasis: adequacy_decision\n`),
     marker_key_file_relative: () =>
       load({ ...valid(), ECCLIUM_MARKER_KEY_FILE: 'marker-key' }),
     // The token comes from the environment, so that only the key file meets

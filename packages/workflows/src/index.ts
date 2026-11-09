@@ -3,7 +3,8 @@
  * the model provider for OpenAI-compatible APIs.
  *
  * So far: the format of routines, `routine.v1`, with its check, the check
- * of its template and the loader of a folder of routines (ADR 0033).
+ * of its template and the loader of a folder of routines, and the adapter
+ * for chat interfaces in the style of OpenAI (ADR 0033).
  *
  * @packageDocumentation
  */
@@ -63,3 +64,8 @@ export {
   type TemplateNode,
   type TemplateResult,
 } from './routine/template.js';
+export {
+  createOpenAiCompatibleProvider,
+  openAiCompatibleLimits,
+  type OpenAiCompatibleOptions,
+} from './model/openai-compatible.js';

@@ -78,6 +78,7 @@ export function checkConfig(
     valid: result.ok,
     showValues: options.showValues,
     policy: result.ok ? result.config.policy : undefined,
+    providers: result.ok ? result.config.providers : undefined,
   });
   for (const line of lines) options.output.stdout(line);
   return result.ok ? exitCodes.ok : exitCodes.invalidConfig;

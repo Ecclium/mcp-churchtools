@@ -304,7 +304,7 @@ export function dependencyRules(
     {
       name: 'redacted-mark-only-in-pipeline',
       severity: 'error',
-      comment: `${adr('redactedUsers')}: only the pipeline marks a result as redacted and only the serialisation of the mount reads the mark, and in testkit the stand-in outcomes for tests of a server mark one through the subpath ./redaction/testing of core, so that no other code makes a result that the mount sends. Tests are exempt.`,
+      comment: `${adr('redactedUsers')}: only the pipeline marks a result as redacted and only the serialisation of the mount reads the mark, and in testkit the stand-in outcomes for tests of a server mark one through the subpath ./redaction/testing of core, so that no other code makes a result that the mount sends. The guard of a language model reads the mark of every part with data (ADR 0033). Tests are exempt.`,
       from: {
         pathNot: [...at('redactedMark'), ...at('redactedUsers'), testFile],
       },

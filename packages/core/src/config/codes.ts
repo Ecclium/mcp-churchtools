@@ -8,6 +8,7 @@
  */
 import { originCodes } from '../http/index.js';
 import { policyCodes } from '../policy/file.js';
+import { providersCodes } from '../providers/file.js';
 import { markerKeyFileCodes } from './marker-key-file.js';
 import { pseudonymKeyFileCodes } from './pseudonym-key-file.js';
 import { keysDirCodes, stateDirCodes } from './state-dir.js';
@@ -60,6 +61,7 @@ export const configProblemCodes = Object.freeze([
   'marker_key_same',
   'marker_key_missing',
   'inquiries_missing',
+  ...providersCodes,
 ] as const);
 
 /** Why the configuration cannot start the server. */

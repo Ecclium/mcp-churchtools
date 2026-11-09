@@ -2,7 +2,8 @@
  * A test double for ChurchTools (ADR 0056): the real HTTP transport of core
  * on a MockAgent of undici, which answers from interceptors and connects
  * nowhere. Tests of the client and the tools use it, so their requests run
- * through the same checks as in production. This folder is the only code
+ * through the same checks as in production. A second double does the same
+ * for the endpoint of a language model (ADR 0033). This folder is the only code
  * outside the outbound path that may import the subpath `./http/testing`
  * of core.
  *
@@ -11,14 +12,17 @@
 import type { Clock, Logger } from '@ecclium/mcp-churchtools-plugin-api';
 import {
   createMockedHttpTransport,
+  createMockedModelTransport,
   type MockedHttpTransport,
   type MockedHttpTransportOptions,
+  type MockedModelTransport,
 } from '@ecclium/mcp-churchtools-core/http/testing';
 
 export type {
   InterceptOptions,
   MockedCall,
   MockedHttpTransport,
+  MockedModelTransport,
 } from '@ecclium/mcp-churchtools-core/http/testing';
 
 /** The placeholder instance of the project. */
@@ -103,4 +107,50 @@ export function assertOnlyReads(
       .map((call) => `${call.method} ${call.path}`)
       .join(', ')}`,
   );
+}
+
+/** The placeholder endpoint of a model of the project (RFC 2606). */
+export const doubleModelEndpoint =
+  'https://model.example.org/v1/chat/completions';
+
+/** What a double of a model needs; everything but the key has a default. */
+export interface ModelEndpointDoubleOptions {
+  /** The key the transport sends, a Secret of core. */
+  readonly key: MockedHttpTransportOptions['token'];
+  /** The endpoint, by default the placeholder endpoint. */
+  readonly endpoint?: string;
+  /** The logger, by default one that drops every line. */
+  readonly logger?: Logger;
+  /** The clock, by default one that stands still. */
+  readonly clock?: Clock;
+}
+
+/**
+ * Builds a double for the endpoint of a language model: the transport to
+ * a model of core, which answers from interceptors and connects nowhere
+ * (ADR 0033).
+ *
+ * @param options - The key and, if needed, endpoint, logger and clock.
+ * @returns The transport and the means to steer and read it. Close it
+ *   after the test.
+ * @throws {TypeError} When the endpoint is not a canonical https address
+ *   with a path or the key is not a Secret.
+ * @example
+ * ```ts
+ * const double = createModelEndpointDouble({ key });
+ * double
+ *   .intercept({ path: '/v1/chat/completions', method: 'POST' })
+ *   .reply(200, chatCompletion({ content: '{}' }), { headers: jsonHeaders });
+ * ```
+ */
+export function createModelEndpointDouble(
+  options: ModelEndpointDoubleOptions,
+): MockedModelTransport {
+  return createMockedModelTransport({
+    endpoint: options.endpoint ?? doubleModelEndpoint,
+    key: options.key,
+    userAgent: doubleUserAgent,
+    logger: options.logger ?? silentLogger,
+    clock: options.clock ?? stillClock,
+  });
 }

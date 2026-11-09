@@ -31,6 +31,7 @@ import {
   isSha256,
   isTenantId,
   isToolName,
+  isTransportPurpose,
   isUuid,
   toTimestamp,
 } from './fields.js';
@@ -128,6 +129,9 @@ const fields: readonly Field[] = Object.freeze(
     // The method of a request on the outbound path, so that every write to
     // ChurchTools shows in the log (ADR 0072).
     { name: 'method', bound: false, check: isHttpMethod },
+    // The purpose of a request to a model; the lines of ChurchTools carry
+    // none (ADR 0033).
+    { name: 'purpose', bound: false, check: isTransportPurpose },
     { name: 'status', bound: false, check: isIntegerIn(100, 599) },
     { name: 'attempt', bound: false, check: isIntegerIn(1, 10) },
     // The anchor of the chain of an audit file, only for the logger the

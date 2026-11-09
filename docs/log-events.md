@@ -26,7 +26,8 @@ In dieser Reihenfolge, jedes nur, wenn es einen Wert hat. Die Felder des Kerns b
 | `readOnly` | Kern | Ob der Aufruf nur lesen durfte. |
 | `durationMs` | Aufruf | Dauer in Millisekunden, höchstens ein Tag. |
 | `count` | Aufruf | Eine Zahl, deren Bedeutung das Ereignis nennt, höchstens 1'000'000. |
-| `method` | Aufruf | Methode einer Anfrage an ChurchTools: `GET` liest, `POST`, `PUT`, `PATCH` und `DELETE` schreiben. |
+| `method` | Aufruf | Methode einer Anfrage an ChurchTools: `GET` liest, `POST`, `PUT`, `PATCH` und `DELETE` schreiben. Eine Anfrage an ein Modell ist immer `POST`. |
+| `purpose` | Aufruf | Zweck einer Anfrage, heute nur `model` für eine Anfrage an ein Sprachmodell. Anfragen an ChurchTools tragen das Feld nicht. |
 | `status` | Aufruf | Status einer Antwort von ChurchTools, 100 bis 599. |
 | `attempt` | Aufruf | Nummer eines Versuchs, 1 bis 10. Heute setzt ihn keine Zeile, der Runner braucht ihn ab Phase 6. |
 | `file` | Aufruf | Name einer Audit-Datei nach ihrem festen Muster, nie ein Pfad, nur im Anker. |
@@ -239,18 +240,18 @@ Je Ereignis die Stufe und die Felder, die ein Aufruf höchstens setzt. Die Felde
 
 | Ereignis | Stufe | Felder | Bedeutung |
 | --- | --- | --- | --- |
-| `http_aborted` | `warn` | `code`, `durationMs`, `method` | Die Anfrage wurde abgebrochen, etwa weil der Client den Aufruf beendet hat. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage. |
-| `http_connect` | `warn` | `code`, `durationMs`, `method` | Es kam keine Verbindung zu ChurchTools zustande. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage. |
-| `http_encoding` | `warn` | `code`, `durationMs`, `method` | Die Antwort hatte eine Kodierung, die der ausgehende Weg nicht annimmt. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage. |
-| `http_failed` | `warn` | `code`, `durationMs`, `method` | Die Anfrage scheiterte aus einem anderen Grund im Netz. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage. |
-| `http_interrupted` | `warn` | `code`, `durationMs`, `method` | Die Verbindung brach ab, bevor die Antwort ganz da war. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage. |
-| `http_redirect` | `warn` | `code`, `durationMs`, `method` | ChurchTools hat auf eine andere Adresse verwiesen. Der ausgehende Weg folgt keinem Verweis. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage. |
-| `http_refused` | `warn` | `code`, `durationMs`, `method` | Der ausgehende Weg hat das Ziel einer Anfrage abgewiesen, bevor er etwas sendete. Das ist ein Fehler im Code, nie im Netz. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage. |
-| `http_response` | `info` | `durationMs`, `method`, `status` | ChurchTools hat geantwortet. `method` nennt die Methode der Anfrage, `status` den Status, `durationMs` die Dauer. |
-| `http_status` | `warn` | `code`, `durationMs`, `method` | Die Antwort hatte einen Status, den der ausgehende Weg nicht annimmt. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage. |
-| `http_timeout` | `warn` | `code`, `durationMs`, `method` | Die Anfrage dauerte länger als ihre Grenze. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage. |
-| `http_tls` | `warn` | `code`, `durationMs`, `method` | Die gesicherte Verbindung kam nicht zustande, etwa wegen des Zertifikats. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage. |
-| `http_too_large` | `warn` | `code`, `durationMs`, `method` | Die Antwort war grösser als die Grenze ihrer Operation. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage. |
+| `http_aborted` | `warn` | `code`, `durationMs`, `method`, `purpose` | Die Anfrage wurde abgebrochen, etwa weil der Client den Aufruf beendet hat. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage, `purpose` steht nur bei einer Anfrage an ein Modell. |
+| `http_connect` | `warn` | `code`, `durationMs`, `method`, `purpose` | Es kam keine Verbindung zu ChurchTools oder zum Anbieter des Modells zustande. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage, `purpose` steht nur bei einer Anfrage an ein Modell. |
+| `http_encoding` | `warn` | `code`, `durationMs`, `method`, `purpose` | Die Antwort hatte eine Kodierung, die der ausgehende Weg nicht annimmt. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage, `purpose` steht nur bei einer Anfrage an ein Modell. |
+| `http_failed` | `warn` | `code`, `durationMs`, `method`, `purpose` | Die Anfrage scheiterte aus einem anderen Grund im Netz. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage, `purpose` steht nur bei einer Anfrage an ein Modell. |
+| `http_interrupted` | `warn` | `code`, `durationMs`, `method`, `purpose` | Die Verbindung brach ab, bevor die Antwort ganz da war. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage, `purpose` steht nur bei einer Anfrage an ein Modell. |
+| `http_redirect` | `warn` | `code`, `durationMs`, `method`, `purpose` | ChurchTools oder der Anbieter des Modells hat auf eine andere Adresse verwiesen. Der ausgehende Weg folgt keinem Verweis. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage, `purpose` steht nur bei einer Anfrage an ein Modell. |
+| `http_refused` | `warn` | `code`, `durationMs`, `method`, `purpose` | Der ausgehende Weg hat das Ziel einer Anfrage abgewiesen, bevor er etwas sendete. Das ist ein Fehler im Code, nie im Netz. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage, `purpose` steht nur bei einer Anfrage an ein Modell. |
+| `http_response` | `info` | `durationMs`, `method`, `purpose`, `status` | ChurchTools oder der Anbieter des Modells hat geantwortet. `method` nennt die Methode der Anfrage, `status` den Status, `durationMs` die Dauer, `purpose` steht nur bei einer Anfrage an ein Modell. |
+| `http_status` | `warn` | `code`, `durationMs`, `method`, `purpose` | Die Antwort hatte einen Status, den der ausgehende Weg nicht annimmt. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage, `purpose` steht nur bei einer Anfrage an ein Modell. |
+| `http_timeout` | `warn` | `code`, `durationMs`, `method`, `purpose` | Die Anfrage dauerte länger als ihre Grenze. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage, `purpose` steht nur bei einer Anfrage an ein Modell. |
+| `http_tls` | `warn` | `code`, `durationMs`, `method`, `purpose` | Die gesicherte Verbindung kam nicht zustande, etwa wegen des Zertifikats. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage, `purpose` steht nur bei einer Anfrage an ein Modell. |
+| `http_too_large` | `warn` | `code`, `durationMs`, `method`, `purpose` | Die Antwort war grösser als die Grenze ihrer Operation. `code` nennt den Fehler, `durationMs` die Dauer bis dahin, `method` die Methode der Anfrage, `purpose` steht nur bei einer Anfrage an ein Modell. |
 
 ### Audit
 

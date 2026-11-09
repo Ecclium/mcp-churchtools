@@ -26,6 +26,7 @@ Ecclium liest seine Konfiguration aus Variablen der Umgebung. Jede trägt das Pr
 | `ECCLIUM_POLICY_FILE` | absoluter Pfad | keine | nein | nein |
 | `ECCLIUM_MARKER_KEY_FILE` | absoluter Pfad | keine | nein | nein |
 | `ECCLIUM_ROUTINES_DIR` | absoluter Pfad | keine | nein | nein |
+| `ECCLIUM_PROVIDERS_FILE` | absoluter Pfad | keine | nein | nein |
 | `ECCLIUM_STDIO_SUBJECT` | Bezeichnung mit höchstens 32 Zeichen | `local-stdio` | nein | ja |
 | `ECCLIUM_LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` | nein | nein |
 
@@ -100,6 +101,10 @@ Absoluter Pfad einer Datei mit dem Schlüssel für den Prüfcode der Kennzeichnu
 ## `ECCLIUM_ROUTINES_DIR`
 
 Absoluter Pfad des Ordners mit den Routinen im Format `routine.v1`, je eine Datei `<Kennung>.yaml`, mit ihren Prompts und Vorlagen im Ordner selbst oder in einem Ordner darunter (`docs/routines.md`). Ordner und Dateien müssen dem Benutzer gehören, unter dem Ecclium läuft, und Gruppe und andere Benutzer dürfen sie nicht ändern, etwa mit den Rechten 755 für Ordner und 644 für Dateien. Nur der Runner liest die Routinen, der Server prüft beim Start nur die Form des Pfads. Ist `LOG_TOKENS` oder `LOG_STREAM` gesetzt, bricht der Start ab, weil die Bibliothek für YAML die Routinen sonst nach stdout schriebe.
+
+## `ECCLIUM_PROVIDERS_FILE`
+
+Absoluter Pfad der Datei mit den Anbietern von Sprachmodellen im Format `providers.v1` (`docs/providers.md`): je Alias Anbieter, Modell, Land des Rechenzentrums, Endpunkt mit `https`, ob der Anbieter strukturierte Ausgabe kann, der Pfad der Datei mit dem Schlüssel und ausserhalb der Schweiz und des EWR die Grundlage der Übermittlung. Der Start liest und prüft die Datei wie die Richtlinie, die Dateien der Schlüssel liest erst der Runner. Ein Anbieter ausserhalb ohne Grundlage und ein Schlüssel in der Datei selbst verhindern den Start. Ist `LOG_TOKENS` oder `LOG_STREAM` gesetzt, bricht der Start ab, weil die Bibliothek für YAML die Datei sonst nach stdout schriebe. Nicht gesetzt: kein Modell, Routinen mit Modell starten nicht.
 
 ## `ECCLIUM_STDIO_SUBJECT`
 

@@ -181,6 +181,12 @@ const queueKeys = dayKeyFolder(quote('queue'), 'der Freigabe-Warteschlange');
 const example = 'https://example.church.tools';
 const policyFile = quote('ECCLIUM_POLICY_FILE');
 const routinesDir = quote('ECCLIUM_ROUTINES_DIR');
+const providersFile = quote('ECCLIUM_PROVIDERS_FILE');
+// Why the file of the providers matters (ADR 0033).
+const providersReason =
+  'Die Datei der Anbieter legt fest, an welches Sprachmodell in welchem Land der Runner Daten der Gemeinde schickt.';
+const providersUnset =
+  'Ohne die Variable startet keine Routine, die ein Modell braucht. Der Server über stdio braucht sie nicht.';
 // What applies without a file of the policy (ADR 0032).
 const policyDefault =
   'Dann gilt die Voreinstellung: Erlaubt ist, was das Dienstkonto darf, ausser bei Gruppen und Diensten, und das Lesebudget ist 200 Aufrufe je Tag.';
@@ -1103,6 +1109,128 @@ const problems: Readonly<
       `Die Richtlinie in ${name} widerspricht sich${at}.`,
       'Dort steht ein Ziel mit einem zweiten Namen, ein Tool zum zweiten Mal für dasselbe Ziel, eine Obergrenze je Lauf über der je Tag oder eine zweite Stufe der Maskierung für dieselbe Routine. Dann bliebe offen, welcher Eintrag gilt.',
       'Fassen Sie die beiden Einträge zusammen oder korrigieren Sie das Feld.',
+    ),
+  // The file of the providers of language models (ADR 0033). Its checks
+  // follow those of the file of the policy; it holds no secret.
+  providers_file_relative: (name = providersFile) =>
+    message(
+      `Der Pfad zur Datei der Anbieter in ${name} ist nicht absolut.`,
+      'Der Runner startet aus einem unbekannten Ordner, und eine Tilde wird nicht ersetzt.',
+      'Geben Sie den vollständigen Pfad an, der mit / beginnt.',
+    ),
+  providers_file_platform: (name = providersFile) =>
+    message(
+      `Die Datei der Anbieter in ${name} lässt sich auf diesem System nicht sicher lesen.`,
+      'Es fehlt die Prüfung des Eigentümers oder das Öffnen ohne Links, etwa unter Windows.',
+      `Entfernen Sie ${name}. ${providersUnset}`,
+    ),
+  providers_file_missing: (name = providersFile) =>
+    message(
+      `Die Datei der Anbieter in ${name} gibt es nicht.`,
+      `${providersReason} Ohne die Datei, die Sie nennen, startet Ecclium nicht.`,
+      `Prüfen Sie den Pfad in ${name} oder entfernen Sie die Variable. ${providersUnset}`,
+    ),
+  providers_file_symlink: (name = providersFile) =>
+    message(
+      `Der Pfad zur Datei der Anbieter in ${name} endet in einem symbolischen Link.`,
+      'Ein Link könnte auf eine fremde Datei zeigen, deshalb folgt Ecclium ihm nicht.',
+      'Geben Sie den Pfad der Datei selbst an.',
+    ),
+  providers_file_unreadable: (name = providersFile) =>
+    message(
+      `Die Datei der Anbieter in ${name} lässt sich nicht lesen.`,
+      'Dem Benutzer, unter dem Ecclium läuft, fehlt das Recht dazu.',
+      'Prüfen Sie Eigentümer und Rechte der Datei. Empfohlen sind die Rechte 644 oder 600.',
+    ),
+  providers_file_not_regular: (name = providersFile) =>
+    message(
+      `Der Pfad in ${name} zeigt nicht auf eine gewöhnliche Datei.`,
+      'Ein Ordner, ein Gerät oder eine Pipe enthält keine Anbieter, und aus einer Pipe zu lesen könnte den Start aufhalten.',
+      'Geben Sie den Pfad einer gewöhnlichen Datei an.',
+    ),
+  providers_file_owner: (name = providersFile) =>
+    message(
+      `Die Datei der Anbieter in ${name} gehört einem anderen Benutzer.`,
+      `${providersReason} Wem die Datei gehört, der kann die Daten an ein anderes Modell lenken.`,
+      'Legen Sie die Datei als der Benutzer an, unter dem Ecclium läuft.',
+    ),
+  providers_file_mode: (name = providersFile) =>
+    message(
+      `Die Datei der Anbieter in ${name} dürfen auch die Gruppe oder andere Benutzer ändern.`,
+      `${providersReason} Lesen dürfen andere Benutzer sie, ändern nicht.`,
+      'Setzen Sie die Rechte der Datei mit «chmod 644» auf 644 oder mit «chmod 600» auf 600.',
+    ),
+  providers_file_too_large: (name = providersFile) =>
+    message(
+      `Die Datei der Anbieter in ${name} ist zu gross.`,
+      `Sie hat mehr als ${formatNumber(65_536)} Bytes, also mehr als 64 KiB.`,
+      'Prüfen Sie, ob der Pfad auf die richtige Datei zeigt.',
+    ),
+  providers_file_bom: (name = providersFile) =>
+    message(
+      `Die Datei der Anbieter in ${name} beginnt mit einer Byte-Order-Markierung.`,
+      'Manche Editoren setzen sie beim Speichern. Ecclium entfernt sie nicht von sich aus.',
+      'Speichern Sie die Datei als UTF-8 ohne BOM.',
+    ),
+  providers_file_encoding: (name = providersFile) =>
+    message(
+      `Die Datei der Anbieter in ${name} ist nicht in UTF-8 geschrieben.`,
+      'Ecclium liest die Datei nur als UTF-8, damit jeder Wert genau so ankommt, wie er dort steht.',
+      'Speichern Sie die Datei als UTF-8 ohne BOM.',
+    ),
+  providers_file_unsafe: (name = providersFile) =>
+    message(
+      `Die Datei der Anbieter in ${name} liess sich nicht sicher öffnen.`,
+      'Das Dateisystem meldete einen Fehler. Seine Meldung zeigt Ecclium nicht, weil sie den Pfad enthält.',
+      'Prüfen Sie den Pfad und die Ordner darüber.',
+    ),
+  providers_yaml_syntax: (name = providersFile, _raw, at) =>
+    message(
+      `Die Datei der Anbieter in ${name} ist kein gültiges YAML${at}.`,
+      'Ecclium liest genau ein Dokument in YAML 1.2. Jeder Schlüssel darf in einer Zuordnung nur einmal stehen, und jede Warnung des Lesers gilt als Fehler.',
+      'Prüfen Sie die Datei an dieser Stelle, etwa auf Einrückung, Klammern, doppelte Schlüssel und ein zweites ‹---›.',
+    ),
+  providers_yaml_unsupported: (name = providersFile, _raw, at) =>
+    message(
+      `Die Datei der Anbieter in ${name} verwendet etwas aus YAML, das Ecclium nicht annimmt${at}.`,
+      'Anker und Verweise, Tags, Direktiven wie ‹%YAML› und Schlüssel, die kein Text sind, könnten einen Eintrag anders aussehen lassen, als er gilt.',
+      'Schreiben Sie jeden Wert aus. Beginnt ein Text mit einem Und-Zeichen, einem Stern, einem Ausrufezeichen oder einem Prozentzeichen, setzen Sie ihn in Anführungszeichen.',
+    ),
+  providers_version_unknown: (name = providersFile) =>
+    message(
+      `Die Datei der Anbieter in ${name} nennt kein Format, das diese Version kennt.`,
+      'Die Datei muss ‹schema: providers.v1› enthalten. Ohne diese Angabe bedeuten die übrigen Felder womöglich etwas anderes.',
+      'Setzen Sie die Zeile ‹schema: providers.v1› an den Anfang der Datei.',
+    ),
+  providers_invalid: (name = providersFile, _raw, at) =>
+    message(
+      `Ein Feld der Anbieter in ${name} ist nicht gültig${at}.`,
+      'Ecclium prüft die Datei streng: Ein unbekanntes Feld, ein falscher Typ, ein Endpunkt ohne ‹https› und Pfad oder ein Land, das kein Code aus zwei Grossbuchstaben ist, verhindert den Start. Den Wert selbst zeigt Ecclium nicht.',
+      'Prüfen Sie das Feld anhand der Beschreibung der Datei der Anbieter in der Dokumentation.',
+    ),
+  providers_key_inline: (name = providersFile, _raw, at) =>
+    message(
+      `Ein Eintrag der Anbieter in ${name} enthält offenbar einen Schlüssel${at}.`,
+      'Der Schlüssel eines Anbieters gehört in eine eigene Datei, die nur Ihr Benutzer lesen darf. Die Datei der Anbieter dürfen andere lesen, und ‹ecclium config check› zeigt mit ‹--show-values› den Pfad dieser Datei.',
+      'Legen Sie den Schlüssel in eine eigene Datei mit den Rechten 600, nennen Sie ihren Pfad in ‹apiKeyFile› und entfernen Sie das Feld. War die Datei schon geteilt, erneuern Sie den Schlüssel beim Anbieter.',
+    ),
+  providers_contradiction: (name = providersFile, _raw, at) =>
+    message(
+      `Die Datei der Anbieter in ${name} nennt einen Alias zum zweiten Mal${at}.`,
+      'Eine Routine wählt ihr Modell über den Alias. Stünde er zweimal da, bliebe offen, welcher Anbieter gilt.',
+      'Geben Sie jedem Anbieter einen eigenen Alias.',
+    ),
+  providers_transfer_basis_missing: (name = providersFile, _raw, at) =>
+    message(
+      `Ein Anbieter in ${name} liegt ausserhalb der Schweiz und des EWR und nennt keine Grundlage für die Übermittlung${at}.`,
+      'Ohne eine Grundlage, die Sie nennen, schickt Ecclium keine Daten der Gemeinde dorthin, damit keine Übermittlung in ein Drittland unbemerkt geschieht. Ob die Grundlage nach DSG oder DSGVO trägt, prüft Ecclium nicht, das verantworten Sie.',
+      'Tragen Sie in ‹transferBasis› ‹adequacy_decision›, ‹standard_contractual_clauses› oder ‹binding_corporate_rules› ein, oder wählen Sie einen Anbieter mit Rechenzentrum in der Schweiz oder im EWR.',
+    ),
+  providers_transfer_basis_needless: (name = providersFile, _raw, at) =>
+    message(
+      `Ein Anbieter in ${name} liegt in der Schweiz oder im EWR und nennt trotzdem eine Grundlage für die Übermittlung${at}.`,
+      'Dort braucht es keine. Stünde sie da, sagten Land und Grundlage Verschiedenes, und das Audit nennte eine Übermittlung, die es nicht gibt.',
+      'Entfernen Sie ‹transferBasis› oder prüfen Sie das Land in ‹hostingCountry›.',
     ),
   marker_key_file_relative: markerKeyFile.relative,
   marker_key_file_platform: markerKeyFile.platform,

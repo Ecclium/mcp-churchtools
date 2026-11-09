@@ -170,3 +170,35 @@ export {
   type UndoReason,
   type UndoSubject,
 } from './pipeline/index.js';
+export {
+  checkTransferBasis,
+  type GuardedModel,
+  type GuardedModelRequest,
+  type GuardedPromptPart,
+  guardModelProvider,
+  isSwissOrEeaCountry,
+  type ModelAnswerReason,
+  modelAnswerLimits,
+  type ModelAnswerResult,
+  type ModelGuardOptions,
+  parseModelJson,
+  readModelAnswer,
+  swissAndEeaCountries,
+  type TransferBasis,
+  transferBases,
+  type TransferBasisProblem,
+} from './model/index.js';
+export {
+  checkProviders,
+  maxProvidersFileBytes,
+  type ProviderSettings,
+  type ProvidersCheckCode,
+  type ProvidersCode,
+  providersCodes,
+  providersJsonSchema,
+  providersLimits,
+  readProviderKey,
+} from './providers/index.js';
+// Only the type: an adapter of a model gets the transport from the
+// composition root and never builds one (ADR 0033, ADR 0056).
+export type { ModelTransport } from './http/index.js';

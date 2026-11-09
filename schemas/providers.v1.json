@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProvidersV1",
+  "description": "The file of the providers of language models of Ecclium, version 1, in YAML or JSON. Not expressed here: an alias twice, a basis of transfer missing outside Switzerland and the EEA or given inside, and the canonical form of the endpoint, which the server refuses as well.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "providers.v1"
+    },
+    "providers": {
+      "minItems": 1,
+      "maxItems": 10,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "alias": {
+            "type": "string",
+            "maxLength": 63,
+            "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+          },
+          "vendor": {
+            "type": "string",
+            "maxLength": 32,
+            "pattern": "^[a-z][a-z0-9-]{0,31}$"
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*(?:\\/[A-Za-z0-9][A-Za-z0-9._:-]*)?$"
+          },
+          "hostingCountry": {
+            "type": "string",
+            "maxLength": 2,
+            "pattern": "^[A-Z]{2}$"
+          },
+          "endpoint": {
+            "type": "string",
+            "maxLength": 600,
+            "pattern": "^https:\\/\\/"
+          },
+          "structuredOutput": {
+            "type": "boolean"
+          },
+          "apiKeyFile": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "transferBasis": {
+            "type": "string",
+            "enum": [
+              "adequacy_decision",
+              "standard_contractual_clauses",
+              "binding_corporate_rules"
+            ]
+          }
+        },
+        "required": [
+          "alias",
+          "vendor",
+          "model",
+          "hostingCountry",
+          "endpoint",
+          "structuredOutput",
+          "apiKeyFile"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "providers"
+  ],
+  "additionalProperties": false
+}

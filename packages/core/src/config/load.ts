@@ -23,6 +23,10 @@ import type { LogLevel } from '../logger/index.js';
 import { defaultPolicy } from '../policy/check.js';
 import { type PolicyFileSystem, readPolicyFile } from '../policy/file.js';
 import type { Policy } from '../policy/schema.js';
+import {
+  type ProviderSettings,
+  readProvidersFile,
+} from '../providers/index.js';
 import type { ToolsetName } from '../registry/toolsets.js';
 import type { ConfigProblemCode, ConfigWarningCode } from './codes.js';
 import { readMarkerKeyFile } from './marker-key-file.js';
@@ -155,6 +159,14 @@ export interface EccliumConfig {
    * routines in it; the start checks the form of the path alone.
    */
   readonly routinesDir: string | undefined;
+  /**
+   * The checked providers of language models from `ECCLIUM_PROVIDERS_FILE`,
+   * in the order of the file, or undefined when the variable is not set
+   * (ADR 0033). The files of the keys are not read here: the composition
+   * root reads the file of a key when it builds the transport of its
+   * provider, so the server over stdio never holds one.
+   */
+  readonly providers: readonly ProviderSettings[] | undefined;
   readonly stdioSubject: string;
   readonly logLevel: LogLevel;
 }
@@ -178,6 +190,7 @@ export type SettingKey =
   | 'policy'
   | 'markerKey'
   | 'routinesDir'
+  | 'providers'
   | 'stdioSubject'
   | 'logLevel';
 
@@ -1202,8 +1215,9 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   // library for YAML would write the file to stdout, it is not read.
   const policyName = 'ECCLIUM_POLICY_FILE';
   const policyRead = read(row(policyName));
-  // The policy and the folder of the routines both name files in YAML;
-  // each variable of debug output is reported once for both.
+  // The policy, the folder of the routines and the file of the providers
+  // all name files in YAML; each variable of debug output is reported once
+  // for all of them.
   let yamlDebugReported = false;
   const reportYamlDebug = (): void => {
     if (yamlDebugReported) return;
@@ -1334,6 +1348,49 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       : shownNone,
   );
 
+  // The providers of language models (ADR 0033). The file is read and
+  // checked at the start like the policy, so that a provider outside
+  // Switzerland and the EEA without a basis of transfer stops every start
+  // and `ecclium config check` shows each problem with its field. The
+  // files of the keys are not read here.
+  const providersName = 'ECCLIUM_PROVIDERS_FILE';
+  const providersRead = read(row(providersName));
+  let providers: readonly ProviderSettings[] | undefined;
+  let providersValid = providersRead.state !== 'invalid';
+  if (providersRead.state === 'set') {
+    if (yamlDebug.size > 0) {
+      reportYamlDebug();
+      providersValid = false;
+    } else {
+      const fromFile = readProvidersFile(
+        providersRead.value,
+        tokenFiles as PolicyFileSystem | undefined,
+      );
+      if (fromFile.ok) {
+        providers = fromFile.providers;
+      } else {
+        add(
+          fromFile.code,
+          variableNames.indexOf(providersName),
+          providersName,
+          {
+            ...(fromFile.field === undefined ? {} : { field: fromFile.field }),
+            ...(fromFile.line === undefined ? {} : { line: fromFile.line }),
+          },
+        );
+        providersValid = false;
+      }
+    }
+  }
+  setting(
+    'providers',
+    providersName,
+    providers !== undefined ? 'file' : providersValid ? 'unset' : 'invalid',
+    providers !== undefined && providersRead.state === 'set'
+      ? record({ kind: 'path', value: providersRead.value })
+      : shownNone,
+  );
+
   // A wider trust store stays allowed for an instance with a certificate
   // of its own authority, with a warning on every start (ADR 0056).
   if (trustStoreExtended) warnings.add('trust_store_extended');
@@ -1401,6 +1458,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     policy === undefined ||
     !markerKeyValid ||
     !routinesDirValid ||
+    !providersValid ||
     subject === undefined ||
     logLevel === undefined
   ) {
@@ -1428,6 +1486,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       policy,
       markerKey,
       routinesDir,
+      providers,
       stdioSubject: subject.value,
       logLevel: logLevel.value as LogLevel,
     }),

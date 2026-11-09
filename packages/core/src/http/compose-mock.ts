@@ -5,19 +5,23 @@
  * production, with the same checks, headers and failures; only the
  * dispatcher answers from interceptors instead of a server. The MockAgent
  * is built here, refuses every connection to the network and never leaves
- * this module, so no caller can switch the network back on.
+ * this module, so no caller can switch the network back on. The same holds
+ * for the transport to the endpoint of a model (ADR 0033).
  *
  * @packageDocumentation
  */
 import type { Clock, Logger } from '@ecclium/mcp-churchtools-plugin-api';
 import { MockAgent, type MockCallHistory, type MockPool } from 'undici';
 
-import { parseChurchToolsOrigin } from './origin.js';
+import { parseChurchToolsOrigin, parseModelEndpoint } from './origin.js';
 import { revealSecret, type Secret } from './secret.js';
 import {
+  createModelTransport,
   createTransport,
   type HttpTransport,
   isUserAgent,
+  modelTransportLimits,
+  type ModelTransport,
   transportLimits,
 } from './transport.js';
 
@@ -26,6 +30,7 @@ export type {
   HttpResponse,
   HttpTransport,
   HttpWriteOptions,
+  ModelTransport,
 } from './transport.js';
 
 /** What a mocked transport is built from. */
@@ -96,6 +101,42 @@ const frozenCopy = (value: unknown): Readonly<Record<string, string>> =>
     Object.assign(Object.create(null) as Record<string, string>, value),
   );
 
+// A MockAgent for one origin that refuses every connection to the network
+// and keeps a history of the calls, and the means to steer and read it.
+// The agent never leaves this module but as the dispatcher of a transport.
+const mockAgentFor = (origin: string) => {
+  const agent = new MockAgent({ enableCallHistory: true });
+  agent.disableNetConnect();
+  const pool = agent.get(origin);
+  // The agent keeps the history, because it was built with it.
+  const history = agent.getCallHistory() as MockCallHistory;
+  return {
+    agent,
+    steering: {
+      intercept: (intercept: InterceptOptions): Interceptor =>
+        pool.intercept(intercept),
+      calls: (): readonly MockedCall[] =>
+        Object.freeze(
+          history.calls().map((call) =>
+            Object.freeze({
+              method: call.method,
+              path: call.path,
+              searchParams: frozenCopy(call.searchParams),
+              headers: frozenCopy(call.headers),
+              body: bodyText(call.body),
+            }),
+          ),
+        ),
+      assertNoPendingInterceptors: (): void => {
+        agent.assertNoPendingInterceptors();
+      },
+      close: async (): Promise<void> => {
+        await agent.close();
+      },
+    },
+  };
+};
+
 /**
  * Builds a transport on a MockAgent that refuses every connection to the
  * network, with the limits of production.
@@ -128,40 +169,89 @@ export function createMockedHttpTransport(
   if (!isUserAgent(userAgent)) {
     throw new TypeError('The User-Agent of a transport must be printable.');
   }
-  const agent = new MockAgent({ enableCallHistory: true });
-  agent.disableNetConnect();
-  const pool = agent.get(origin);
-  // The agent keeps the history, because it was built with it.
-  const history = agent.getCallHistory() as MockCallHistory;
-  const transport = createTransport(agent, {
-    origin,
-    token,
-    userAgent,
-    logger,
-    clock,
-    limits: transportLimits,
-  });
+  const mock = mockAgentFor(origin);
   return Object.freeze({
-    transport,
-    intercept: (intercept: InterceptOptions): Interceptor =>
-      pool.intercept(intercept),
-    calls: (): readonly MockedCall[] =>
-      Object.freeze(
-        history.calls().map((call) =>
-          Object.freeze({
-            method: call.method,
-            path: call.path,
-            searchParams: frozenCopy(call.searchParams),
-            headers: frozenCopy(call.headers),
-            body: bodyText(call.body),
-          }),
-        ),
-      ),
-    assertNoPendingInterceptors: (): void => {
-      agent.assertNoPendingInterceptors();
-    },
-    close: async (): Promise<void> => {
-      await agent.close();
-    },
+    transport: createTransport(mock.agent, {
+      origin,
+      token,
+      userAgent,
+      logger,
+      clock,
+      limits: transportLimits,
+    }),
+    ...mock.steering,
+  });
+}
+
+/** What a mocked transport to a model is built from (ADR 0033). */
+export interface MockedModelTransportOptions {
+  /** The address of the endpoint the transport and its interceptors serve. */
+  readonly endpoint: string;
+  /** The key the transport sends. */
+  readonly key: Secret;
+  /** The User-Agent the transport sends. */
+  readonly userAgent: string;
+  /** The logger of the transport. */
+  readonly logger: Logger;
+  /** The clock for the duration in the log. */
+  readonly clock: Clock;
+}
+
+/** A transport to a model on a MockAgent and the means to steer and read it. */
+export interface MockedModelTransport extends Omit<
+  MockedHttpTransport,
+  'transport'
+> {
+  /** The transport, as the code under test gets it. */
+  readonly transport: ModelTransport;
+}
+
+/**
+ * Builds a transport to a model on a MockAgent that refuses every
+ * connection to the network, with the limits of a model.
+ *
+ * @param options - Endpoint, key, User-Agent, logger and clock.
+ * @returns The transport and the means to steer and read its MockAgent.
+ * @throws {TypeError} When the endpoint is not a canonical https address
+ *   with a path, the key is not a Secret or the User-Agent is not
+ *   printable ASCII.
+ * @example
+ * ```ts
+ * const mocked = createMockedModelTransport({
+ *   endpoint: 'https://model.example.org/v1/chat/completions',
+ *   key,
+ *   userAgent: 'Ecclium/0.0.0-test',
+ *   logger,
+ *   clock,
+ * });
+ * mocked
+ *   .intercept({ path: '/v1/chat/completions', method: 'POST' })
+ *   .reply(200, '{}');
+ * ```
+ */
+export function createMockedModelTransport(
+  options: MockedModelTransportOptions,
+): MockedModelTransport {
+  const { endpoint, key, userAgent, logger, clock } = options;
+  const checked = parseModelEndpoint(endpoint);
+  if (!checked.ok) {
+    throw new TypeError('The endpoint of a transport must be canonical.');
+  }
+  revealSecret(key);
+  if (!isUserAgent(userAgent)) {
+    throw new TypeError('The User-Agent of a transport must be printable.');
+  }
+  const mock = mockAgentFor(checked.origin);
+  return Object.freeze({
+    transport: createModelTransport(mock.agent, {
+      origin: checked.origin,
+      path: checked.path,
+      token: key,
+      userAgent,
+      logger,
+      clock,
+      limits: modelTransportLimits,
+    }),
+    ...mock.steering,
   });
 }

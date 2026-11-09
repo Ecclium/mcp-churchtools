@@ -83,6 +83,12 @@ export {
   type MockedCall,
   type MockedHttpTransport,
 } from './http-double/index.js';
+export {
+  createModelEndpointDouble,
+  doubleModelEndpoint,
+  type MockedModelTransport,
+  type ModelEndpointDoubleOptions,
+} from './http-double/index.js';
 export { assertOnlyReads } from './http-double/index.js';
 export {
   exampleEchoTool,
@@ -146,3 +152,13 @@ export {
   type TestClock,
   type WriteStoreCheck,
 } from './write-stores/index.js';
+export {
+  chatCompletion,
+  type ChatCompletionOptions,
+  createMockModelProvider,
+  jsonHeaders,
+  type MockModel,
+  type MockModelBehaviour,
+  type MockModelOptions,
+  mockProviderInfo,
+} from './model/index.js';

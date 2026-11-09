@@ -44,6 +44,16 @@ export const httpMethods = Object.freeze([
 /** A method of the outbound path, in capitals as HTTP writes it. */
 export type HttpMethod = (typeof httpMethods)[number];
 
+/**
+ * The purposes of the outbound path a line may name, frozen. Only the
+ * transport to a model names its purpose, so the lines of ChurchTools stay
+ * as they were (ADR 0033).
+ */
+export const transportPurposes = Object.freeze(['model'] as const);
+
+/** A purpose of the outbound path that a line names. */
+export type TransportPurpose = (typeof transportPurposes)[number];
+
 // Regular expressions without flags: g or y would keep a lastIndex shared by
 // every caller, i would let capitals through, and i together with u would
 // let lookalikes such as U+017F through. The length is checked before a
@@ -189,6 +199,16 @@ export const isRedactionLevel = (value: unknown): value is RedactionLevel =>
  */
 export const isHttpMethod = (value: unknown): value is HttpMethod =>
   (httpMethods as readonly unknown[]).includes(value);
+
+/**
+ * Tells whether a value is a purpose of the outbound path that a line may
+ * name, compared exactly.
+ *
+ * @param value - Any value.
+ * @returns Whether it fits.
+ */
+export const isTransportPurpose = (value: unknown): value is TransportPurpose =>
+  (transportPurposes as readonly unknown[]).includes(value);
 
 /**
  * Tells whether a value is a real boolean, never a string such as `'false'`.

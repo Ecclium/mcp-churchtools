@@ -4,19 +4,23 @@
  * root imports it: a rule of dependency-cruiser refuses every other
  * importer, so that no tool builds a transport with an origin of its own.
  * The factory takes no dispatcher, no socket, no limits and no header
- * besides the fixed User-Agent.
+ * besides the fixed User-Agent. The same holds for the factory of the
+ * transport to the endpoint of a language model (ADR 0033).
  *
  * @packageDocumentation
  */
 import type { Clock, Logger } from '@ecclium/mcp-churchtools-plugin-api';
 
-import { parseChurchToolsOrigin } from './origin.js';
+import { parseChurchToolsOrigin, parseModelEndpoint } from './origin.js';
 import { revealSecret, type Secret } from './secret.js';
 import {
   createAgent,
+  createModelTransport,
   createTransport,
   type HttpTransport,
   isUserAgent,
+  modelTransportLimits,
+  type ModelTransport,
   transportLimits,
 } from './transport.js';
 
@@ -25,6 +29,7 @@ export type {
   HttpResponse,
   HttpTransport,
   HttpWriteOptions,
+  ModelTransport,
 } from './transport.js';
 
 /** What the composition root gives a transport. */
@@ -83,5 +88,68 @@ export function createHttpTransport(
     logger,
     clock,
     limits: transportLimits,
+  });
+}
+
+/** What the composition root gives a transport to a model (ADR 0033). */
+export interface ModelHttpTransportOptions {
+  /**
+   * The address of the endpoint, as the configuration of the providers
+   * checked it, such as `https://model.example.org/v1/chat/completions`.
+   */
+  readonly endpoint: string;
+  /** The key of the provider, read from its file. */
+  readonly key: Secret;
+  /** The User-Agent of every request, as for ChurchTools. */
+  readonly userAgent: string;
+  /** The logger, bound to the tenant. */
+  readonly logger: Logger;
+  /** The clock for the duration in the log. */
+  readonly clock: Clock;
+}
+
+/**
+ * Builds the transport to the endpoint of one model, with its own pool of
+ * connections and the fixed limits of a model (ADR 0033). It sends only a
+ * POST with JSON to the path of the endpoint, with the key as a bearer
+ * token.
+ *
+ * @param options - Endpoint, key, User-Agent, logger and clock.
+ * @returns The transport. Close it with `close()` when the run ends.
+ * @throws {TypeError} When the endpoint is not a canonical https address
+ *   with a path, the key is not a Secret or the User-Agent is not
+ *   printable ASCII.
+ * @example
+ * ```ts
+ * const transport = createModelHttpTransport({
+ *   endpoint: provider.endpoint,
+ *   key,
+ *   userAgent: 'Ecclium/1.0.0',
+ *   logger,
+ *   clock: systemClock,
+ * });
+ * ```
+ */
+export function createModelHttpTransport(
+  options: ModelHttpTransportOptions,
+): ModelTransport {
+  const { endpoint, key, userAgent, logger, clock } = options;
+  const checked = parseModelEndpoint(endpoint);
+  if (!checked.ok) {
+    throw new TypeError('The endpoint of a transport must be canonical.');
+  }
+  // Throws for anything but a Secret of this module, before a pool exists.
+  revealSecret(key);
+  if (!isUserAgent(userAgent)) {
+    throw new TypeError('The User-Agent of a transport must be printable.');
+  }
+  return createModelTransport(createAgent(modelTransportLimits), {
+    origin: checked.origin,
+    path: checked.path,
+    token: key,
+    userAgent,
+    logger,
+    clock,
+    limits: modelTransportLimits,
   });
 }

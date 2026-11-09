@@ -34,6 +34,12 @@ import {
 } from './policy.js';
 import { renderPromptsReference } from './prompts.js';
 import {
+  providersFieldMeanings,
+  providersFieldPaths,
+  renderProvidersReference,
+  renderProvidersSchema,
+} from './providers.js';
+import {
   renderRoutineSchema,
   renderRoutinesReference,
   routineFieldMeanings,
@@ -90,6 +96,18 @@ describe('the generated references', () => {
   it('matches docs/policy.md', async () => {
     await expect(renderPolicyReference()).toMatchFileSnapshot(
       '../../../../docs/policy.md',
+    );
+  });
+
+  it('matches schemas/providers.v1.json', async () => {
+    await expect(renderProvidersSchema()).toMatchFileSnapshot(
+      '../../../../schemas/providers.v1.json',
+    );
+  });
+
+  it('matches docs/providers.md', async () => {
+    await expect(renderProvidersReference()).toMatchFileSnapshot(
+      '../../../../docs/providers.md',
     );
   });
 
@@ -439,5 +457,36 @@ describe('the catalog of the audit events', () => {
       /\| `withheldAfterRead` \| `true` \| nein \| nein \|/u,
     );
     expect(page).toMatch(/\| `tenantId` \|[^\n]*\| ja \| ja \|/u);
+  });
+});
+
+describe('the page of the providers', () => {
+  it('gives every field of the file a meaning, and no meaning to anything else', () => {
+    expect(Object.keys(providersFieldMeanings).sort()).toEqual(
+      [...providersFieldPaths()].sort(),
+    );
+  });
+
+  it('describes a strict file of the version providers.v1', () => {
+    const schema = JSON.parse(renderProvidersSchema()) as {
+      title: string;
+      additionalProperties: boolean;
+      properties: { schema: { const: string } };
+    };
+    expect(schema.title).toBe('ProvidersV1');
+    expect(schema.additionalProperties).toBe(false);
+    expect(schema.properties.schema.const).toBe('providers.v1');
+  });
+
+  it('shows the form and the duty of the fields, the countries and the bases', () => {
+    const page = renderProvidersReference();
+    expect(page).toContain(
+      '| `providers[].transferBasis` | `adequacy_decision` oder `standard_contractual_clauses` oder `binding_corporate_rules` | nein |',
+    );
+    expect(page).toContain(
+      '| `providers[].structuredOutput` | `true` oder `false` | ja |',
+    );
+    expect(page).toContain('genau diese 31 Codes: `AT`, `BE`');
+    expect(page).not.toMatch(/sk-|Bearer [A-Za-z0-9]/);
   });
 });

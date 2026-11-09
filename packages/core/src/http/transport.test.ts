@@ -1193,7 +1193,10 @@ describe('createHttpTransport', () => {
   });
 
   it('passes on nothing but the factory and the types', () => {
-    expect(Object.keys(compose)).toEqual(['createHttpTransport']);
+    expect(Object.keys(compose)).toEqual([
+      'createHttpTransport',
+      'createModelHttpTransport',
+    ]);
   });
 });
 
