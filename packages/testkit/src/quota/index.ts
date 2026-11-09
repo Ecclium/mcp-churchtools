@@ -15,8 +15,12 @@ import {
   type IsoDate,
   isIsoDate,
   isQuotaKey,
+  isRunQuotaKey,
   type QuotaKey,
   type QuotaStore,
+  runCountDays,
+  runQuotaDayOf,
+  runQuotaKey,
   type TenantContext,
   type TenantId,
   writeQuotaKey,
@@ -52,7 +56,9 @@ export type QuotaMemory = Map<string, number>;
 /**
  * A store in memory, only for tests. Two stores over the same memory stand
  * for one store before and after a restart. A counter of a decision about
- * an entry of the queue belongs to the tenant alone, as the port asks.
+ * an entry of the queue and a counter of the memory of runs belong to the
+ * tenant alone, as the port asks, and a counter of the memory of runs
+ * counts under the UTC day of its trigger only.
  *
  * @param memory - The counters, new by default.
  * @returns The store, frozen.
@@ -68,7 +74,10 @@ export function createMemoryQuotaStore(
   const keyOf = (ctx: TenantContext, key: QuotaKey, day: IsoDate): string => {
     if (!isQuotaKey(key)) throw new TypeError('The key is unknown.');
     if (!isIsoDate(day)) throw new TypeError('The day is invalid.');
-    return isApprovalQuotaKey(key)
+    if (isRunQuotaKey(key) && runQuotaDayOf(key) !== day) {
+      throw new TypeError('The day is not the one of the trigger.');
+    }
+    return isApprovalQuotaKey(key) || isRunQuotaKey(key)
       ? JSON.stringify([ctx.tenantId, key, day])
       : JSON.stringify([ctx.tenantId, ctx.actor.kind, ctx.actor.id, key, day]);
   };
@@ -118,6 +127,10 @@ const daysFromToday = (offset: number): IsoDate =>
   new Date(Date.now() + offset * 86_400_000)
     .toISOString()
     .slice(0, 10) as IsoDate;
+
+// A counter of the memory of runs of a trigger at 06:00 UTC on a day.
+const runOn = (day: IsoDate, counter: 'done' | 'tries' | number) =>
+  runQuotaKey('report', Date.parse(`${day}T06:00:00Z`), counter);
 
 const check = (
   name: string,
@@ -306,6 +319,97 @@ export const quotaStoreChecks: readonly QuotaStoreCheck[] = Object.freeze([
       `approval:${'A'.repeat(64)}`,
       `approval:${'a'.repeat(63)}`,
       `approval:../${'a'.repeat(61)}`,
+    ]) {
+      await assert.rejects(store.increment(one, bad as QuotaKey, day));
+      await assert.rejects(store.read(one, bad as QuotaKey, day));
+    }
+  }),
+  // The memory of runs of the routines (ADR 0034): one counter per
+  // tenant, whoever counts, so that a run of a routine by hand closes the
+  // same trigger as one of the runner, under the UTC day of the trigger.
+  check(
+    'counts a run for the tenant, whichever actor counts, under the day of its trigger',
+    async (open) => {
+      const day = daysFromToday(0);
+      const run = runOn(day, 'tries');
+      const store = open();
+      const runner = quotaContext('demo-tenant', 'runner', 'runner:report');
+      const other = quotaContext('other-tenant', 'runner', 'runner:report');
+      assert.deepEqual(
+        [
+          await store.increment(runner, run, day),
+          await store.increment(one, run, day),
+          await store.increment(other, run, day),
+        ],
+        [1, 2, 1],
+      );
+      assert.equal(await store.read(one, run, day), 2);
+      assert.equal(await open().read(runner, run, day), 2);
+      assert.equal(await store.read(one, runOn(day, 'done'), day), 0);
+      assert.equal(await store.read(one, runOn(day, 0), day), 0);
+      await assert.rejects(store.increment(one, run, daysFromToday(1)));
+      await assert.rejects(store.read(one, run, daysFromToday(-1)));
+    },
+  ),
+  check(
+    'keeps a run apart from the read budget, the writes and the decisions',
+    async (open) => {
+      const day = daysFromToday(0);
+      const run = runOn(day, 'done');
+      const store = open();
+      const create = writeQuotaKey('ct_wiki_page_create', 'wiki_category:12');
+      await store.increment(one, run, day);
+      assert.equal(await store.read(one, key, day), 0);
+      assert.equal(await store.read(one, create, day), 0);
+      assert.equal(await store.read(one, decision, day), 0);
+      await store.increment(one, key, day);
+      await store.increment(one, create, day);
+      await store.increment(one, decision, day);
+      assert.equal(await store.read(one, run, day), 1);
+    },
+  ),
+  // A trigger can be due 31 days after its day, so its counters must stay
+  // while later days count.
+  check('keeps a run while later days count', async (open) => {
+    const day = daysFromToday(0);
+    const run = runOn(day, 'tries');
+    await open().increment(one, run, day);
+    for (const later of [1, runCountDays - 1, runCountDays].map(
+      daysFromToday,
+    )) {
+      const store = open();
+      await store.increment(one, key, later);
+      await store.increment(one, runOn(later, 'done'), later);
+    }
+    assert.equal(await open().read(one, run, day), 1);
+    assert.equal(await open().increment(one, run, day), 2);
+  }),
+  check(
+    'gives each count of a run once when two stores count at the same time',
+    async (open) => {
+      const day = daysFromToday(0);
+      const run = runOn(day, 'tries');
+      const first = open();
+      const second = open();
+      const counts = await Promise.all(
+        Array.from({ length: 10 }, (_, index) =>
+          (index % 2 === 0 ? first : second).increment(one, run, day),
+        ),
+      );
+      assert.deepEqual(
+        [...counts].sort((a, b) => a - b),
+        Array.from({ length: 10 }, (_, index) => index + 1),
+      );
+    },
+  ),
+  check('refuses a key of a run of another form', async (open) => {
+    const store = open();
+    for (const bad of [
+      'run:',
+      'run:report:20261024T0600',
+      'run:report:20261024T0600:try:01',
+      'run:../x:20261024T0600:done',
+      'run:report:20261024T2400:done',
     ]) {
       await assert.rejects(store.increment(one, bad as QuotaKey, day));
       await assert.rejects(store.read(one, bad as QuotaKey, day));

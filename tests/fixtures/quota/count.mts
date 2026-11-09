@@ -3,7 +3,8 @@
 // once the test starts every child together, with a pause after each
 // count so that the other child gets the lock in between, and prints only
 // the counts it got. Without a key it counts the read budget, with one
-// that key, both on 24.10.2026, by a clock that runs from noon of that day.
+// that key, a key of a run for a trigger of that day as well, both on
+// 24.10.2026, by a clock that runs from noon of that day.
 import process from 'node:process';
 
 import type {

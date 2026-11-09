@@ -15,6 +15,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import {
   approvalQuotaKey,
   type IsoDate,
+  runQuotaKey,
 } from '../packages/plugin-api/src/index.ts';
 import {
   createFileQuotaStore,
@@ -188,6 +189,38 @@ describe('two processes that count one decision about an entry of the queue', ()
         day,
         approvals: { [key]: 2 * times },
       });
+    },
+    timeout,
+  );
+});
+
+// The memory of runs of the routines (ADR 0034): two processes that count
+// the tries of one trigger, as two single runs could, get every count once,
+// so that no fourth try starts.
+describe('two processes that count the tries of one trigger of a routine', () => {
+  it(
+    'get every count once, in the file of the routine for the day of the trigger',
+    async () => {
+      const stateDir = mkdtempSync(join(base, 'runs-'));
+      chmodSync(stateDir, 0o700);
+      expect(prepareQuotaFolder(stateDir)).toEqual({ ok: true });
+      const key = runQuotaKey('report', Date.UTC(2026, 9, 24, 6), 'tries');
+      const times = 20;
+      const args = [stateDir, String(times), '10', key];
+      const [first, second] = (await together([
+        spawnChild(counter, args),
+        spawnChild(counter, args),
+      ])) as [number[], number[]];
+      expect([...first, ...second].sort((a, b) => a - b)).toEqual(
+        Array.from({ length: 2 * times }, (_, index) => index + 1),
+      );
+      const quota = join(stateDir, 'quota');
+      expect(readdirSync(quota)).toEqual([`default-${day}.runs-report.json`]);
+      expect(
+        JSON.parse(
+          readFileSync(join(quota, `default-${day}.runs-report.json`), 'utf8'),
+        ),
+      ).toEqual({ v: 1, tenant: 'default', day, runs: { [key]: 2 * times } });
     },
     timeout,
   );

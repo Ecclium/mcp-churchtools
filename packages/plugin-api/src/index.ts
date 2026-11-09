@@ -233,6 +233,15 @@ export {
   writeQuotaKey,
   type WriteQuotaKey,
 } from './quota.js';
+// The memory of runs of the routines in the store of quotas (ADR 0034).
+export {
+  isRunQuotaKey,
+  runCountDays,
+  runQuotaDayOf,
+  runQuotaKey,
+  type RunQuotaKey,
+  runWindowCount,
+} from './quota.js';
 export {
   defineWriteTool,
   writeIntentKinds,

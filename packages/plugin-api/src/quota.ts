@@ -32,11 +32,24 @@ export type ApprovalQuotaKey = string & {
 };
 
 /**
+ * The key of a counter of the memory of runs (ADR 0034): for one trigger
+ * of a routine, whether a run closed it (`done`), how many runs tried it
+ * (`tries`), and whether a run began in a window of 15 minutes since the
+ * trigger (`try:<window>`), as `run:<routine>:<trigger>:<counter>` with
+ * the trigger in UTC to the minute, such as
+ * `run:dienstplan-report:20261109T0500:done`. Only {@link runQuotaKey}
+ * makes one.
+ */
+export type RunQuotaKey = string & { readonly __ecclium: 'RunQuotaKey' };
+
+/**
  * What a counter counts: the calls of the tools in the read budget, which
  * share one budget per actor and day, the writes of one tool to one
- * target of the policy, or the decisions about one entry of the queue.
+ * target of the policy, the decisions about one entry of the queue, or
+ * the runs of one trigger of a routine.
  */
-export type QuotaKey = 'special_reads' | WriteQuotaKey | ApprovalQuotaKey;
+export type QuotaKey =
+  'special_reads' | WriteQuotaKey | ApprovalQuotaKey | RunQuotaKey;
 
 /** The keys with a fixed name, frozen. */
 export const quotaKeys: readonly QuotaKey[] = Object.freeze(['special_reads']);
@@ -99,10 +112,140 @@ export function approvalQuotaKey(hash: string): ApprovalQuotaKey {
   return key;
 }
 
+// The ID of a routine, its trigger in UTC to the minute and the counter,
+// the window a number from 0 without a leading zero. Anchored, without
+// flags.
+const runQuotaKeyPattern =
+  /^run:[a-z0-9][a-z0-9-]{0,62}:(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2}):(?:done|tries|try:(0|[1-9]\d{0,3}))$/;
+
+/**
+ * How many days after the day of its trigger a store keeps a counter of
+ * the memory of runs at least: the 31 days in which a trigger can still
+ * be due and one more. Other counters may go once their day is over.
+ */
+export const runCountDays = 32;
+
+/**
+ * How many windows of 15 minutes the counters of a trigger may name: as
+ * many as fit into {@link runCountDays}.
+ */
+export const runWindowCount: number = runCountDays * 96;
+
+// The parts of a key of the memory of runs, or undefined: the UTC day of
+// its trigger and the window, if it names one.
+const runKeyParts = (
+  value: unknown,
+): { readonly day: string; readonly window?: number } | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const match = runQuotaKeyPattern.exec(value);
+  if (match === null) return undefined;
+  const [, year, month, day, hour, minute, window] = match;
+  const day10 = `${String(year)}-${String(month)}-${String(day)}`;
+  if (!isIsoDate(day10) || Number(hour) > 23 || Number(minute) > 59) {
+    return undefined;
+  }
+  if (window === undefined) return { day: day10 };
+  const index = Number(window);
+  return index < runWindowCount ? { day: day10, window: index } : undefined;
+};
+
+// The last trigger a key can name: 31.12.9999, 23:59 UTC.
+const lastRunTrigger = Date.UTC(9999, 11, 31, 23, 59);
+
+/**
+ * Tells whether a value is the key of a counter of the memory of runs. A
+ * store counts under such a key for the tenant alone, under the UTC day
+ * of its trigger only, and keeps it {@link runCountDays} days.
+ *
+ * @param value - Any value.
+ * @returns Whether it is such a key.
+ * @example
+ * ```ts
+ * isRunQuotaKey('run:dienstplan-report:20261109T0500:done'); // true
+ * isRunQuotaKey('run:dienstplan-report:20261109T2460:done'); // false
+ * ```
+ */
+export function isRunQuotaKey(value: unknown): value is RunQuotaKey {
+  return runKeyParts(value) !== undefined;
+}
+
+/**
+ * The UTC day of the trigger of a key of the memory of runs, the only day
+ * a store counts it under.
+ *
+ * @param key - A key of the memory of runs.
+ * @returns The day.
+ * @throws {TypeError} When the key is no such key.
+ * @example
+ * ```ts
+ * runQuotaDayOf(runQuotaKey('dienstplan-report', Date.UTC(2026, 10, 9, 5), 'done'));
+ * // '2026-11-09'
+ * ```
+ */
+export function runQuotaDayOf(key: RunQuotaKey): IsoDate {
+  const parts = runKeyParts(key);
+  if (parts === undefined) {
+    throw new TypeError('The key of the counter is invalid.');
+  }
+  return parts.day as IsoDate;
+}
+
+/**
+ * Builds the key of a counter of the memory of runs.
+ *
+ * @param routine - The ID of the routine.
+ * @param trigger - The trigger, a whole minute in milliseconds since the
+ *   Unix epoch, from 1970 to 9999.
+ * @param counter - `done`, `tries`, or the number of the window of 15
+ *   minutes since the trigger, from 0 below {@link runWindowCount}.
+ * @returns The key.
+ * @throws {TypeError} When the result is no such key.
+ * @example
+ * ```ts
+ * runQuotaKey('dienstplan-report', Date.UTC(2026, 10, 9, 5), 'done');
+ * // 'run:dienstplan-report:20261109T0500:done'
+ * runQuotaKey('dienstplan-report', Date.UTC(2026, 10, 9, 5), 2);
+ * // 'run:dienstplan-report:20261109T0500:try:2'
+ * ```
+ */
+export function runQuotaKey(
+  routine: string,
+  trigger: number,
+  counter: 'done' | 'tries' | number,
+): RunQuotaKey {
+  if (
+    typeof routine !== 'string' ||
+    !Number.isSafeInteger(trigger) ||
+    trigger < 0 ||
+    // The last minute of the year 9999, so that the date has four digits
+    // and a far time throws no RangeError when it is written.
+    trigger > lastRunTrigger ||
+    trigger % 60_000 !== 0 ||
+    (typeof counter === 'number' && !Number.isSafeInteger(counter))
+  ) {
+    throw new TypeError('The key of the counter is invalid.');
+  }
+  // Without the seconds, the colons and the dashes: 2026-11-09T05:00 is
+  // 20261109T0500.
+  const stamp = new Date(trigger)
+    .toISOString()
+    .slice(0, 16)
+    .replaceAll('-', '')
+    .replaceAll(':', '');
+  const key = `run:${routine}:${stamp}:${
+    typeof counter === 'number' ? `try:${String(counter)}` : counter
+  }`;
+  if (!isRunQuotaKey(key)) {
+    throw new TypeError('The key of the counter is invalid.');
+  }
+  return key;
+}
+
 /**
  * Tells whether a value is the key of a counter: `special_reads`, a key of
- * a counter of the policy or a key of the counter of a decision. A store
- * checks every key itself before it counts under it.
+ * a counter of the policy, a key of the counter of a decision or a key of
+ * the memory of runs. A store checks every key itself before it counts
+ * under it.
  *
  * @param value - Any value.
  * @returns Whether it is such a key.
@@ -119,7 +262,8 @@ export function isQuotaKey(value: unknown): value is QuotaKey {
     ((quotaKeys as readonly string[]).includes(value) ||
       (value.length <= maxWriteQuotaKeyLength &&
         writeQuotaKeyPattern.test(value)) ||
-      isApprovalQuotaKey(value))
+      isApprovalQuotaKey(value) ||
+      isRunQuotaKey(value))
   );
 }
 
