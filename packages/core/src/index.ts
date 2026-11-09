@@ -64,7 +64,9 @@ export {
   variables,
   yamlDebugVariableNames,
 } from './config/index.js';
-export { freeTextMarkers } from './redaction/index.js';
+// The form of a pseudonym, which the schema of the answer of the model of a
+// run states for a field of the kind person (ADR 0033, ADR 0069).
+export { freeTextMarkers, pseudonymPattern } from './redaction/index.js';
 export { type PrivateFileCode, privateFileCodes } from './files/index.js';
 export {
   defaultPolicy,
@@ -228,9 +230,11 @@ export {
   checkRunSection,
   checkRunText,
   type ContentCheckResult,
+  createRunId,
   escapeRunText,
   isTransientRunCode,
   modelRedactionOf,
+  runAssignmentOf,
   runContactKeys,
   runSystemText,
 } from './run/index.js';
