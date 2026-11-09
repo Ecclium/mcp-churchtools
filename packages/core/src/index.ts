@@ -121,6 +121,7 @@ export {
   type CatalogEntry,
   type CatalogOptions,
   createToolCatalog,
+  describeRunTool,
   descriptionBudget,
   type LeafType,
   type OutputShape,
@@ -131,6 +132,7 @@ export {
   refusalReasons,
   RegistryRefusal,
   rightsPerOperation,
+  type RunToolFacts,
   type ShapeNode,
   type ShapePresence,
   type ToolCatalog,
@@ -219,3 +221,13 @@ export {
   startAttempt,
   type Trigger,
 } from './schedule/index.js';
+export {
+  checkRunSection,
+  checkRunText,
+  type ContentCheckResult,
+  escapeRunText,
+  isTransientRunCode,
+  modelRedactionOf,
+  runContactKeys,
+  runSystemText,
+} from './run/index.js';

@@ -21,6 +21,7 @@ export {
   createToolCatalog,
   type ToolCatalog,
 } from './registry.js';
+export { describeRunTool, type RunToolFacts } from './run-tool.js';
 export {
   type PromptEntry,
   type PromptFilling,
