@@ -539,6 +539,7 @@ describe('loadConfig with a good configuration', () => {
       ],
       ['policy', 'ECCLIUM_POLICY_FILE', 'default', { kind: 'none' }],
       ['markerKey', 'ECCLIUM_MARKER_KEY_FILE', 'unset', { kind: 'none' }],
+      ['routinesDir', 'ECCLIUM_ROUTINES_DIR', 'unset', { kind: 'none' }],
       [
         'stdioSubject',
         'ECCLIUM_STDIO_SUBJECT',
@@ -2536,6 +2537,74 @@ describe('loadConfig and the policy', () => {
   });
 });
 
+describe('loadConfig and the folder of the routines', () => {
+  it('leaves it unset without the variable', () => {
+    const result = load(valid());
+    expect(result.ok && result.config.routinesDir).toBeUndefined();
+    expect(setting(result, 'routinesDir')).toMatchObject({
+      variable: 'ECCLIUM_ROUTINES_DIR',
+      origin: 'unset',
+      shown: { kind: 'none' },
+    });
+  });
+
+  it('takes an absolute path in simple form, without looking at the disk', () => {
+    const result = load({
+      ...valid(),
+      ECCLIUM_ROUTINES_DIR: '/path/to/routines',
+    });
+    expect(result.ok && result.config.routinesDir).toBe('/path/to/routines');
+    expect(setting(result, 'routinesDir')).toMatchObject({
+      origin: 'environment',
+      shown: { kind: 'path', value: '/path/to/routines' },
+    });
+  });
+
+  it.each([
+    'routines',
+    './routines',
+    '/path/../routines',
+    '/path//routines',
+    '/path/routines/',
+    '/path/./routines',
+  ])('refuses %s without showing it', (value) => {
+    const result = load({ ...valid(), ECCLIUM_ROUTINES_DIR: value });
+    expect(result.ok).toBe(false);
+    expect(problems(result)).toEqual([
+      ['routines_dir_invalid', 'ECCLIUM_ROUTINES_DIR'],
+    ]);
+    expect(setting(result, 'routinesDir')).toMatchObject({
+      origin: 'invalid',
+      shown: { kind: 'none' },
+    });
+  });
+
+  // The library for YAML would write each routine to stdout (ADR 0033).
+  it('stops the start while LOG_TOKENS or LOG_STREAM is set', () => {
+    const result = load({
+      ...valid(),
+      ECCLIUM_ROUTINES_DIR: '/path/to/routines',
+      LOG_TOKENS: '1',
+    });
+    expect(problems(result)).toEqual([
+      ['yaml_debug_output_enabled', 'LOG_TOKENS'],
+    ]);
+    expect(setting(result, 'routinesDir')).toMatchObject({ origin: 'invalid' });
+  });
+
+  it('reports each variable of debug output once, with a policy as well', () => {
+    const file = memoryFiles(policyYaml);
+    const result = withPolicy(file.fs, {
+      ECCLIUM_ROUTINES_DIR: '/path/to/routines',
+      LOG_STREAM: 'x',
+    });
+    expect(problems(result)).toEqual([
+      ['yaml_debug_output_enabled', 'LOG_STREAM'],
+    ]);
+    expect(file.opened).toEqual([]);
+  });
+});
+
 describe('loadConfig and its problems', () => {
   const withAddress = (value: string): ConfigResult =>
     load({ ...valid(), ECCLIUM_CHURCHTOOLS_URL: value });
@@ -2566,6 +2635,8 @@ describe('loadConfig and its problems', () => {
       load({ ...valid(), ECCLIUM_AUDIT_RETENTION_MONTHS: '121' }),
     time_zone_invalid: () =>
       load({ ...valid(), ECCLIUM_TIME_ZONE: 'Mars/Base' }),
+    routines_dir_invalid: () =>
+      load({ ...valid(), ECCLIUM_ROUTINES_DIR: 'routines' }),
     url_missing: () => load({ ECCLIUM_CHURCHTOOLS_TOKEN_FILE: tokenPath }),
     url_too_long: () => withAddress(`https://${'a'.repeat(300)}.example`),
     url_invalid: () => withAddress('demo.example'),

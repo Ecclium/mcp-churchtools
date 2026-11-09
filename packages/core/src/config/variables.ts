@@ -45,6 +45,7 @@ export const variableNames = Object.freeze([
   'ECCLIUM_AUDIT_RETENTION_MONTHS',
   'ECCLIUM_POLICY_FILE',
   'ECCLIUM_MARKER_KEY_FILE',
+  'ECCLIUM_ROUTINES_DIR',
   'ECCLIUM_STDIO_SUBJECT',
   'ECCLIUM_LOG_LEVEL',
 ] as const);
@@ -110,9 +111,10 @@ export const debugVariableName = 'NODE_DEBUG';
 
 /**
  * Variables without the prefix that the loader reads while a file of the
- * policy is set, frozen. Set with any value, they make the library for
- * YAML write every token of the file to stdout, which would break the
- * protocol over stdio (ADR 0032).
+ * policy or a folder of routines is set, frozen. Set with any value, they
+ * make the library for YAML write every token of a file to stdout, which
+ * would break the protocol over stdio and put the content of the file on
+ * a stream (ADR 0032, ADR 0033).
  */
 export const yamlDebugVariableNames = Object.freeze([
   'LOG_TOKENS',
@@ -585,6 +587,17 @@ export const variables: readonly Variable[] = Object.freeze([
     secret: false,
     stdioOnly: false,
   }),
+  // The folder of the routines (ADR 0033). Only the runner reads the
+  // routines; the start of the server checks the form of the path.
+  row({
+    name: 'ECCLIUM_ROUTINES_DIR',
+    kind: 'path',
+    maxLength: 4096,
+    choices: [],
+    defaultValue: undefined,
+    secret: false,
+    stdioOnly: false,
+  }),
   row({
     name: 'ECCLIUM_STDIO_SUBJECT',
     kind: 'subject',
@@ -675,6 +688,11 @@ export const variableSchemas: Readonly<
     .min(1)
     .max(4096)
     .refine((value) => isAbsolute(value)),
+  ECCLIUM_ROUTINES_DIR: z
+    .string()
+    .min(1)
+    .max(4096)
+    .refine((value) => isNormalizedAbsolutePath(value)),
   ECCLIUM_STDIO_SUBJECT: z.string().max(32).regex(stdioSubjectPattern),
   ECCLIUM_LOG_LEVEL: choiceOf('ECCLIUM_LOG_LEVEL'),
 });
@@ -709,6 +727,7 @@ export const environmentSchema = z.strictObject({
     variableSchemas.ECCLIUM_AUDIT_RETENTION_MONTHS.optional(),
   ECCLIUM_POLICY_FILE: variableSchemas.ECCLIUM_POLICY_FILE.optional(),
   ECCLIUM_MARKER_KEY_FILE: variableSchemas.ECCLIUM_MARKER_KEY_FILE.optional(),
+  ECCLIUM_ROUTINES_DIR: variableSchemas.ECCLIUM_ROUTINES_DIR.optional(),
   ECCLIUM_STDIO_SUBJECT: variableSchemas.ECCLIUM_STDIO_SUBJECT.optional(),
   ECCLIUM_LOG_LEVEL: variableSchemas.ECCLIUM_LOG_LEVEL.optional(),
 });

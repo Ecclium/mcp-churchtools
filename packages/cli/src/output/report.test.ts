@@ -139,6 +139,10 @@ describe('renderConfigReport', () => {
         'Prüfcode-Schlüssel',
         'kein Schlüssel (‹ECCLIUM_MARKER_KEY_FILE› ist nicht gesetzt)',
       ),
+      row(
+        'Ordner der Routinen',
+        'keine Routinen (‹ECCLIUM_ROUTINES_DIR› ist nicht gesetzt)',
+      ),
       row('Subjekt über stdio', '‹local-stdio› (Voreinstellung)'),
       row('Stufe des Logs', '‹info› (Voreinstellung)'),
       hostNote,
@@ -768,6 +772,39 @@ describe('renderConfigReport and the policy', () => {
       row(
         'Richtlinie',
         '‹/path/to/policy.yaml› (aus der Datei in ‹ECCLIUM_POLICY_FILE›, Eigentümer und Dateirechte geprüft)',
+      ),
+    );
+  });
+
+  it('masks the folder of the routines unless asked to show it', () => {
+    const withFolder: ConfigReport = {
+      ...report,
+      settings: report.settings.map((setting) =>
+        setting.key === 'routinesDir'
+          ? {
+              ...setting,
+              origin: 'environment',
+              shown: { kind: 'path', value: '/path/to/routines' },
+            }
+          : setting,
+      ),
+    };
+    const masked = renderConfigReport(withFolder, {
+      valid: true,
+      showValues: false,
+    });
+    expect(masked).toContain(
+      row('Ordner der Routinen', '[verborgen] (aus ‹ECCLIUM_ROUTINES_DIR›)'),
+    );
+    expect(masked.find((line) => line.startsWith('Verborgen'))).toBe(
+      'Verborgen sind der Host und der Ordner der Routinen, damit Sie die Ausgabe ohne Bearbeitung weitergeben können. Mit ‹--show-values› zeigt der Befehl beide.',
+    );
+    expect(
+      renderConfigReport(withFolder, { valid: true, showValues: true }),
+    ).toContain(
+      row(
+        'Ordner der Routinen',
+        '‹/path/to/routines› (aus ‹ECCLIUM_ROUTINES_DIR›)',
       ),
     );
   });

@@ -180,6 +180,7 @@ const snapshotKeys = dayKeyFolder(quote('snapshot'), 'der Snapshots');
 const queueKeys = dayKeyFolder(quote('queue'), 'der Freigabe-Warteschlange');
 const example = 'https://example.church.tools';
 const policyFile = quote('ECCLIUM_POLICY_FILE');
+const routinesDir = quote('ECCLIUM_ROUTINES_DIR');
 // What applies without a file of the policy (ADR 0032).
 const policyDefault =
   'Dann gilt die Voreinstellung: Erlaubt ist, was das Dienstkonto darf, ausser bei Gruppen und Diensten, und das Lesebudget ist 200 Aufrufe je Tag.';
@@ -392,12 +393,12 @@ const problems: Readonly<
       'Entfernen Sie die Variable aus der Konfiguration des KI-Assistenten.',
     ),
   // The library for YAML reads both as true for any value but an empty one
-  // (ADR 0032).
+  // (ADR 0032, ADR 0033).
   yaml_debug_output_enabled: (name = quote('LOG_TOKENS')) =>
     message(
-      `Die Variable ${name} ist gesetzt, und ${policyFile} nennt eine Datei der Richtlinie.`,
-      'Damit schriebe die Bibliothek für YAML jeden Teil der Datei am Protokoll vorbei nach stdout, und der KI-Assistent verlöre die Verbindung zu Ecclium.',
-      'Entfernen Sie die Variable aus der Konfiguration des KI-Assistenten.',
+      `Die Variable ${name} ist gesetzt, und ${policyFile} oder ${routinesDir} nennt Dateien in YAML.`,
+      'Damit schriebe die Bibliothek für YAML jeden Teil dieser Dateien nach stdout, über stdio am Protokoll vorbei, so dass der KI-Assistent die Verbindung zu Ecclium verlöre.',
+      'Entfernen Sie die Variable aus der Konfiguration von Ecclium.',
     ),
   tls_keylog_enabled: (_name, raw) =>
     optionFound(
@@ -455,6 +456,12 @@ const problems: Readonly<
       `Der Wert von ${name} ist keine Zeitzone, die Ecclium kennt.`,
       'Erlaubt ist ‹UTC› oder der Name einer Zeitzone aus Gebiet und Ort, in dieser Schreibweise, etwa ‹Europe/Zurich› oder ‹Europe/Berlin›. Eine Angabe wie ‹+01:00› oder eine Zone mit festem Abstand wie ‹Etc/GMT+1› kennt keine Sommerzeit, und eine Abkürzung wie ‹CET› nennt keinen Ort. Beides nimmt Ecclium nicht an.',
       'Setzen Sie die Zeitzone der ChurchTools-Installation oder entfernen Sie die Variable, dann zeigt Ecclium die Zeiten in UTC.',
+    ),
+  routines_dir_invalid: (name = routinesDir) =>
+    message(
+      `Der Pfad in ${name} ist nicht absolut oder nicht in seiner eindeutigen Form geschrieben.`,
+      'Ecclium normalisiert nichts, damit der Runner genau den Ordner liest, den Sie angeben, und der Start weiss nicht, aus welchem Ordner er aufgerufen wird.',
+      'Geben Sie den vollständigen Pfad an, der mit / beginnt, ohne Schrägstrich am Ende, ohne doppelte Schrägstriche und ohne ‹.› oder ‹..›.',
     ),
   invalid_integer: (name = quote('ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE')) =>
     message(
