@@ -6,8 +6,14 @@ import {
   isApprovalQuotaKey,
   isIsoDate,
   isQuotaKey,
+  isRunQuotaKey,
   maxWriteQuotaKeyLength,
   quotaKeys,
+  runCountDays,
+  runQuotaDayOf,
+  runQuotaKey,
+  type RunQuotaKey,
+  runWindowCount,
   writeQuotaKey,
 } from './index.js';
 
@@ -78,6 +84,89 @@ describe('the port for quotas', () => {
     expect(() => approvalQuotaKey(hash)).toThrow(TypeError);
     expect(isApprovalQuotaKey(`approval:${hash}`)).toBe(false);
     expect(isQuotaKey(`approval:${hash}`)).toBe(false);
+  });
+
+  // The memory of runs of the routines (ADR 0034).
+  it('builds the keys of the memory of runs of a trigger', () => {
+    const trigger = Date.UTC(2026, 10, 9, 5);
+    const keys = [
+      runQuotaKey('dienstplan-report', trigger, 'done'),
+      runQuotaKey('dienstplan-report', trigger, 'tries'),
+      runQuotaKey('dienstplan-report', trigger, 0),
+      runQuotaKey('dienstplan-report', trigger, runWindowCount - 1),
+    ];
+    expect(keys).toEqual([
+      'run:dienstplan-report:20261109T0500:done',
+      'run:dienstplan-report:20261109T0500:tries',
+      'run:dienstplan-report:20261109T0500:try:0',
+      'run:dienstplan-report:20261109T0500:try:3071',
+    ]);
+    for (const key of keys) {
+      expect(isRunQuotaKey(key)).toBe(true);
+      expect(isQuotaKey(key)).toBe(true);
+      expect(isApprovalQuotaKey(key)).toBe(false);
+      expect(runQuotaDayOf(key)).toBe('2026-11-09');
+    }
+    // The 31 days a trigger can be due and one more, in windows of 15
+    // minutes.
+    expect(runCountDays).toBe(32);
+    expect(runWindowCount).toBe(3072);
+  });
+
+  it('takes the longest ID of a routine and the edges of the calendar', () => {
+    const key = runQuotaKey(
+      `a${'-'.repeat(62)}`,
+      Date.UTC(9999, 11, 31, 23, 59),
+      'tries',
+    );
+    expect(key).toBe(`run:a${'-'.repeat(62)}:99991231T2359:tries`);
+    expect(runQuotaDayOf(key)).toBe('9999-12-31');
+    expect(runQuotaKey('r', 0, 'done')).toBe('run:r:19700101T0000:done');
+    expect(runQuotaDayOf(runQuotaKey('r', Date.UTC(2028, 1, 29), 1))).toBe(
+      '2028-02-29',
+    );
+  });
+
+  it.each<[string, string, number, 'done' | 'tries' | number]>([
+    ['an ID in capitals', 'Dienstplan', 0, 'done'],
+    ['an ID with a colon', 'a:b', 0, 'done'],
+    ['an ID too long', 'a'.repeat(64), 0, 'done'],
+    ['an empty ID', '', 0, 'done'],
+    ['a trigger with seconds', 'r', 1000, 'done'],
+    ['a trigger before 1970', 'r', -60_000, 'done'],
+    ['a trigger after 9999', 'r', Date.UTC(10_000, 0, 1), 'done'],
+    ['a trigger far beyond any date', 'r', 9e15, 'done'],
+    ['a trigger that is no number', 'r', Number.NaN, 'done'],
+    ['a window below 0', 'r', 0, -1],
+    ['a window beyond the days kept', 'r', 0, 3072],
+    ['a window that is no whole number', 'r', 0, 1.5],
+    ['another counter', 'r', 0, 'last' as 'done'],
+  ])('refuses the key of a run with %s', (_name, routine, trigger, counter) => {
+    expect(() => runQuotaKey(routine, trigger, counter)).toThrow(TypeError);
+  });
+
+  it.each([
+    'run:r:20260230T0500:done',
+    'run:r:20261109T2400:done',
+    'run:r:20261109T0560:done',
+    'run:r:20261109T0500:try:01',
+    'run:r:20261109T0500:try:3072',
+    'run:r:20261109T0500:try:',
+    'run:r:20261109T0500',
+    'run:r:2026110T0500:done',
+    'run:r:20261109T0500:done\n',
+    'run:-r:20261109T0500:done',
+    12,
+    null,
+  ])('does not take %j as the key of a run', (value) => {
+    expect(isRunQuotaKey(value)).toBe(false);
+    expect(isQuotaKey(value)).toBe(false);
+  });
+
+  it('gives no day for a key of a run that is none', () => {
+    expect(() =>
+      runQuotaDayOf('run:r:20260230T0500:done' as RunQuotaKey),
+    ).toThrow(TypeError);
   });
 
   it.each(['special_reads', 'write:ct_x:wiki_category:1', 12, null])(

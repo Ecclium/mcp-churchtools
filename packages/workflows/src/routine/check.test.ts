@@ -202,10 +202,10 @@ describe('checkRoutine with a valid routine', () => {
     });
   });
 
-  it('takes a list of twelve minutes, longer than a field once could be', () => {
+  it('takes a list of twelve hours, longer than a field once could be', () => {
     const result = checkRoutine(
       changed(withModel, (r) => {
-        r['schedule'] = '0,5,10,15,20,25,30,35,40,45,50,55 * * * *';
+        r['schedule'] = '0 0,2,4,6,8,10,12,14,16,18,20,22 * * *';
       }),
     );
     expect(result.ok).toBe(true);
@@ -422,6 +422,18 @@ describe('checkRoutine with a routine it refuses', () => {
     ],
     ['a value out of range', '0 25 * * *', 'routine_schedule_invalid'],
     ['both days restricted', '0 6 1 * MON', 'routine_schedule_days'],
+    [
+      'more than one minute an hour',
+      '0,30 6 * * MON',
+      'routine_schedule_frequent',
+    ],
+    ['a day that does not exist', '0 6 31 2 *', 'routine_schedule_never'],
+    [
+      'more than one minute an hour',
+      '0,30 6 * * MON',
+      'routine_schedule_frequent',
+    ],
+    ['a day that does not exist', '0 6 31 2 *', 'routine_schedule_never'],
     [
       'a list longer than any field allows',
       `${Array.from({ length: 47 }, () => '1').join(',')} * * * *`,

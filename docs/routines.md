@@ -67,7 +67,7 @@ notify:
 | --- | --- | --- | --- |
 | `schema` | `routine.v1` | ja | Format der Datei, immer `routine.v1`. Ohne diese Angabe oder mit einer anderen nimmt Ecclium die Routine nicht an. |
 | `id` | Text nach festem Muster, höchstens 63 Zeichen | ja | Kennung der Routine, gleich dem Namen ihrer Datei ohne `.yaml`, etwa `dienstplan-report`. Unter dieser Kennung nennt die Richtlinie die Routine. |
-| `schedule` | Text nach festem Muster, höchstens 100 Zeichen | ja | Zeitplan mit fünf Feldern, siehe «Zeitplan». Die Zeitzone kommt aus der Konfiguration. |
+| `schedule` | Text nach festem Muster, höchstens 100 Zeichen | ja | Zeitplan mit fünf Feldern, siehe «Zeitplan». Die Zeitzone kommt aus `ECCLIUM_TIME_ZONE`. |
 | `inputs` | Liste mit 1 bis 10 Einträgen | nein | Was ein Lauf liest, bevor das Modell etwas sieht. Pflicht mit `generate`, mit `checks` nicht erlaubt, siehe «Eingaben». |
 | `inputs[].name` | Text nach festem Muster, höchstens 32 Zeichen | ja | Name der Eingabe, unter dem das Modell ihre Daten sieht und eine spätere Eingabe sie mit `forEach` nennt. |
 | `inputs[].tool` | Text nach festem Muster, höchstens 63 Zeichen | ja | Das Lese-Tool, etwa `ct_events_list`. Nur Lese-Tools, auf die sich Routinen verlassen können, siehe «Eingaben». |
@@ -140,9 +140,13 @@ Eine Routine mit `checks` hat kein Modell und keine Eingaben. Jede Prüfung fül
 ## Zeitplan
 
 - Fünf Felder mit einem Leerzeichen dazwischen: Minute (0 bis 59), Stunde (0 bis 23), Tag des Monats (1 bis 31), Monat (1 bis 12 oder `JAN` bis `DEC`) und Wochentag (0 für Sonntag bis 6 oder `SUN` bis `SAT`). Kein Feld für Sekunden oder Jahre ([ADR 0034](adr/0034-zeitplan-semantik.md)).
-- Ein Feld enthält `*`, einen Wert, einen Bereich wie `MON-FRI`, einen Schritt wie `*/15` oder `8-18/2` oder eine Liste davon mit Kommas. Einen Wert mit Schritt wie `5/15`, `L`, `W`, `#`, `?` und die 7 für Sonntag nimmt Ecclium nicht an, weil Nachbauten von cron sie verschieden lesen.
+- Ein Feld enthält `*`, einen Wert, einen Bereich wie `MON-FRI`, einen Schritt wie `*/2` oder `8-18/2` oder eine Liste davon mit Kommas. Einen Wert mit Schritt wie `5/15`, `L`, `W`, `#`, `?` und die 7 für Sonntag nimmt Ecclium nicht an, weil Nachbauten von cron sie verschieden lesen.
+- Die Minute ist ein einzelner Wert wie `0` oder `30`, eine Routine löst also höchstens einmal je Stunde aus. Jede Auslösung kann ein Modell aufrufen und belegt Platz im Gedächtnis der Läufe.
 - Tag des Monats und Wochentag dürfen nicht beide eingeschränkt sein: cron verbindet die beiden mit «oder», manche Nachbauten mit «und».
-- Wählen Sie eine Zeit ausserhalb der Stunde von 02:00 bis 03:00, in der in Mitteleuropa die Sommerzeit wechselt.
+- Der Zeitplan muss an einem Tag auslösen, den es gibt. `0 6 31 2 *`, der 31. Februar, weist der Lader ab, `0 6 29 2 *` löst in jedem Schaltjahr aus.
+- Der Zeitplan gilt in der Zeitzone aus `ECCLIUM_TIME_ZONE` ([Konfiguration](configuration.md)). Der Runner verlangt die Variable.
+- Eine Zeit, die es beim Wechsel zur Sommerzeit nicht gibt, läuft zur ersten Zeit danach, die es gibt. Eine Zeit, die es beim Wechsel zur Winterzeit zweimal gibt, läuft einmal, beim ersten Mal. Wählen Sie trotzdem eine Zeit ausserhalb der Stunde von 02:00 bis 03:00, in der in Mitteleuropa die Sommerzeit wechselt.
+- Fällig ist die letzte geplante Auslösung bis jetzt, höchstens 31 Tage zurück, solange kein Lauf sie abgeschlossen hat. Ältere verpasste Auslösungen holt der Runner nicht nach. Scheitert ein Lauf an einer vorübergehenden Störung, etwa weil das Modell oder ChurchTools nicht erreichbar ist, versucht der Runner dieselbe Auslösung höchstens dreimal, jeden Versuch mindestens 15 Minuten nach dem vorigen.
 
 ## Vorlage
 
@@ -175,5 +179,5 @@ Alle Dienste sind besetzt.
 
 - `wiki` hängt mit `ct_wiki_page_append_section` einen eigenen Abschnitt je Periode an die Seite in `scope` an. Ein zweiter Lauf derselben Periode ändert diesen Abschnitt oder lässt ihn stehen, er verdoppelt ihn nie. Die Seite braucht einen Eintrag im Teil `unattended` der Richtlinie, sonst startet die Routine nicht.
 - `draft` gibt einen Entwurf oder Bericht an einen Kanal. Der Kanal `file` schreibt eine Datei je Routine und Periode, die ein zweiter Lauf derselben Periode ersetzt, und schreibt nichts in ChurchTools.
-- Die Periode kommt aus der geplanten Auslösung in der Zeitzone der Konfiguration: `{isoWeek}` wie `2026-W46`, `{date}` wie `2026-11-09`, `{month}` wie `2026-11`.
+- Die Periode kommt aus der geplanten Auslösung in der Zeitzone aus `ECCLIUM_TIME_ZONE`, nie aus der Zeit des Laufs: `{isoWeek}` wie `2026-W46`, `{date}` wie `2026-11-09`, `{month}` wie `2026-11`.
 - Eine Meldung nach dem Lauf nennt Routine, Periode und Ausgang, nie Inhalt.

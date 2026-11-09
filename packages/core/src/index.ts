@@ -202,3 +202,20 @@ export {
 // Only the type: an adapter of a model gets the transport from the
 // composition root and never builds one (ADR 0033, ADR 0056).
 export type { ModelTransport } from './http/index.js';
+export {
+  type AttemptStart,
+  checkDue,
+  checkSchedule,
+  closeTrigger,
+  type DueCheck,
+  dueLimits,
+  type DueOptions,
+  lastTrigger,
+  type Period,
+  type ScheduleCheck,
+  type ScheduleFieldName,
+  scheduleFieldNames,
+  type ScheduleProblem,
+  startAttempt,
+  type Trigger,
+} from './schedule/index.js';

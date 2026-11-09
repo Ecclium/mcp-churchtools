@@ -2,9 +2,10 @@
  * The check of the schedule of a routine (ADR 0034).
  *
  * Where it stands in a run: when the routines are loaded, long before a
- * run is due. It only checks the form; when a routine is due and which
- * period it serves is reckoned later from the same text, by one function
- * for the daemon and for a single run.
+ * run is due, and again whenever the core reckons a trigger from a
+ * schedule, so that no schedule reaches croner past these rules. It lies
+ * in core beside the one function that tells the daemon and a single run
+ * when a routine is due.
  *
  * Why it is narrower than cron: implementations of cron read some forms
  * differently, so a routine may use only the forms they share. A
@@ -18,8 +19,17 @@
  * both be restricted, because cron joins the two with «or» and some of its
  * copies with «and».
  *
+ * Why at most once an hour: each trigger of a routine may call a model and
+ * leaves a few counters in the memory of runs of its tenant, whose file has
+ * a fixed size, and a failed run is tried again only 15 minutes later. So
+ * the minute is a single value, which allows one trigger per listed hour
+ * at most. And a schedule must name a day that exists: croner tells
+ * whether it ever fires, so that a routine set for 31 February is refused
+ * when it is loaded and not silently never run.
+ *
  * @packageDocumentation
  */
+import { createCron } from './cron.js';
 
 /** The fields of a schedule, in their order, frozen. */
 export const scheduleFieldNames = Object.freeze([
@@ -44,6 +54,14 @@ export type ScheduleProblem =
   | {
       /** Day of the month and day of the week are both restricted. */
       readonly reason: 'days';
+    }
+  | {
+      /** The minute is no single value, so it may fire more than hourly. */
+      readonly reason: 'frequent';
+    }
+  | {
+      /** The schedule names no day that exists, such as 31 February. */
+      readonly reason: 'never';
     };
 
 /** The result of the check of a schedule. */
@@ -135,17 +153,20 @@ const refuse = (problem: ScheduleProblem): ScheduleCheck =>
   Object.freeze({ __proto__: null, ok: false, ...problem });
 
 /**
- * Checks the form of the schedule of a routine.
+ * Checks the form of the schedule of a routine, that it fires at most once
+ * an hour, and that it fires at all.
  *
  * @param schedule - The schedule as the routine states it, such as
  *   `0 6 * * MON`.
- * @returns Whether the form is allowed, or why not and in which field.
- *   It never throws for a text.
+ * @returns Whether the schedule is allowed, or why not and, for a form not
+ *   allowed, in which field. It never throws for a text.
  * @throws {TypeError} When the schedule is not a string.
  * @example
  * ```ts
  * checkSchedule('0 6 * * MON'); // { ok: true }
  * checkSchedule('0 6 1 * MON'); // { ok: false, reason: 'days' }
+ * checkSchedule('*\/15 * * * *'); // { ok: false, reason: 'frequent' }
+ * checkSchedule('0 6 31 2 *'); // { ok: false, reason: 'never' }
  * ```
  */
 export function checkSchedule(schedule: string): ScheduleCheck {
@@ -157,10 +178,18 @@ export function checkSchedule(schedule: string): ScheduleCheck {
     return refuse({ reason: 'invalid' });
   }
   for (const [index, name] of scheduleFieldNames.entries()) {
-    if (!fieldIsValid(fields[index] ?? '', ranges[name])) {
+    if (!fieldIsValid(String(fields[index]), ranges[name])) {
       return refuse({ reason: 'invalid', field: name });
     }
   }
   if (fields[2] !== '*' && fields[4] !== '*') return refuse({ reason: 'days' });
+  // The field passed above, so digits alone are one minute from 0 to 59.
+  if (!/^\d{1,2}$/.test(String(fields[0])))
+    return refuse({ reason: 'frequent' });
+  // Whether a day exists does not depend on the zone, so UTC answers it,
+  // from a fixed time, so that the answer never depends on the clock.
+  if (createCron(schedule, 'UTC').next(0) === undefined) {
+    return refuse({ reason: 'never' });
+  }
   return Object.freeze({ __proto__: null, ok: true });
 }

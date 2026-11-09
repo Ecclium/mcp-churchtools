@@ -30,6 +30,7 @@ import {
   type Clock,
   type IsoDate,
   type QuotaKey,
+  runQuotaKey,
   writeQuotaKey,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import {
@@ -44,6 +45,7 @@ import {
   maxApprovalKeys,
   maxQuotaActors,
   maxQuotaFileBytes,
+  maxRunKeys,
   maxWriteKeysPerActor,
   orphanLockMs,
   prepareQuotaFolder,
@@ -526,6 +528,206 @@ describe('the file of quotas', () => {
     });
     await store.increment(ctx, key, day);
     expect(hasOld(state)).toBe(true);
+  });
+
+  // The counters of the memory of runs of the routines (ADR 0034).
+  const runOf = (counter: 'done' | 'tries' | number, on = day) =>
+    runQuotaKey('report', Date.parse(`${on}T06:00:00Z`), counter);
+  const runsOf = (runs: Record<string, unknown>) =>
+    JSON.stringify({ v: 1, tenant: 'demo-tenant', day, runs });
+  const runsName = `demo-tenant-${day}.runs-report.json`;
+  const runner = quotaContext('demo-tenant', 'runner', 'runner:report');
+
+  it('keeps the counters of runs in a file of their own, without an actor', async () => {
+    const state = freshState();
+    const at = clockFrom(Date.UTC(2026, 9, 24, 12));
+    await open(state, { clock: at }).increment(runner, runOf('tries'), day);
+    await open(state, { clock: at }).increment(ctx, runOf('tries'), day);
+    await open(state, { clock: at }).increment(runner, runOf(0), day);
+    const fd = openSync(fileOf(state, runsName), 'r');
+    try {
+      expect(fstatSync(fd).mode & 0o777).toBe(0o600);
+      expect(JSON.parse(readFileSync(fd, 'utf8'))).toEqual({
+        v: 1,
+        tenant: 'demo-tenant',
+        day,
+        runs: {
+          'run:report:20261024T0600:tries': 2,
+          'run:report:20261024T0600:try:0': 1,
+        },
+      });
+    } finally {
+      closeSync(fd);
+    }
+    expect(readdirSync(join(state, 'quota'))).toEqual([runsName]);
+    await expect(
+      open(state, { clock: at }).read(runner, runOf('done'), day),
+    ).resolves.toBe(0);
+  });
+
+  it('counts on from a file of runs it wrote before', async () => {
+    const state = freshState();
+    writeFileSync(fileOf(state, runsName), runsOf({ [runOf('done')]: 1 }), {
+      mode: 0o600,
+    });
+    const at = clockFrom(Date.UTC(2026, 9, 24, 12));
+    await expect(
+      open(state, { clock: at }).read(ctx, runOf('done'), day),
+    ).resolves.toBe(1);
+    await expect(
+      open(state, { clock: at }).increment(ctx, runOf('done'), day),
+    ).resolves.toBe(2);
+  });
+
+  it('counts a run under the day of its trigger only', async () => {
+    const state = freshState();
+    const store = open(state, { clock: clockFrom(Date.UTC(2026, 9, 24, 12)) });
+    const other = '2026-10-25' as IsoDate;
+    await expect(store.increment(ctx, runOf('tries'), other)).rejects.toThrow(
+      TypeError,
+    );
+    await expect(store.read(ctx, runOf('tries'), other)).rejects.toThrow(
+      TypeError,
+    );
+    expect(readdirSync(join(state, 'quota'))).toEqual([]);
+  });
+
+  it.each([
+    [
+      'the file of the other counters',
+      `demo-tenant-${day}.json`,
+      () =>
+        JSON.stringify({
+          v: 1,
+          tenant: 'demo-tenant',
+          day,
+          counts: { 'service:stdio:local-stdio': { [runOf('done')]: 1 } },
+        }),
+      key,
+    ],
+    [
+      'the file of decisions',
+      `demo-tenant-${day}.approvals.json`,
+      () => approvalsOf({ [runOf('done')]: 1 }),
+      decision,
+    ],
+  ])(
+    'refuses a counter of a run in %s',
+    async (_name, name, content, counter) => {
+      const state = freshState();
+      writeFileSync(fileOf(state, name), content(), { mode: 0o600 });
+      const at = clockFrom(Date.UTC(2026, 9, 24, 12));
+      await expect(
+        open(state, { clock: at }).read(ctx, counter, day),
+      ).rejects.toThrow(failure);
+    },
+  );
+
+  it.each([
+    ['another key', { special_reads: 1 }],
+    ['a counter of a decision', { [decision]: 1 }],
+    ['a count that is no count', { [runOf('done')]: 1.5 }],
+  ])('refuses a file of runs with %s', async (_name, runs) => {
+    const state = freshState();
+    writeFileSync(fileOf(state, runsName), runsOf(runs), { mode: 0o600 });
+    const at = clockFrom(Date.UTC(2026, 9, 24, 12));
+    await expect(
+      open(state, { clock: at }).read(ctx, runOf('done'), day),
+    ).rejects.toThrow(failure);
+    await expect(
+      open(state, { clock: at }).increment(ctx, runOf('done'), day),
+    ).rejects.toThrow(failure);
+  });
+
+  it('refuses a file of runs that keeps its counters under the field of decisions', async () => {
+    const state = freshState();
+    writeFileSync(fileOf(state, runsName), approvalsOf({}), { mode: 0o600 });
+    const at = clockFrom(Date.UTC(2026, 9, 24, 12));
+    await expect(
+      open(state, { clock: at }).read(ctx, runOf('done'), day),
+    ).rejects.toThrow(failure);
+  });
+
+  it('holds at most 128 counters of runs per routine and day and refuses a file with more', async () => {
+    const state = freshState();
+    const at = clockFrom(Date.UTC(2026, 9, 24, 12));
+    const full = Object.fromEntries(
+      Array.from({ length: maxRunKeys }, (_, index) => [runOf(index), 1]),
+    );
+    writeFileSync(fileOf(state, runsName), runsOf(full), { mode: 0o600 });
+    await expect(
+      open(state, { clock: at }).increment(ctx, runOf(0), day),
+    ).resolves.toBe(2);
+    await expect(
+      open(state, { clock: at }).increment(ctx, runOf('done'), day),
+    ).rejects.toThrow(failure);
+    writeFileSync(
+      fileOf(state, runsName),
+      runsOf({ ...full, [runOf('done')]: 1 }),
+      { mode: 0o600 },
+    );
+    await expect(
+      open(state, { clock: at }).read(ctx, runOf(0), day),
+    ).rejects.toThrow(failure);
+    // The full file of one routine leaves another routine its own.
+    const other = runQuotaKey('other', Date.UTC(2026, 9, 24, 6), 'done');
+    await expect(
+      open(state, { clock: at }).increment(ctx, other, day),
+    ).resolves.toBe(1);
+    expect(readdirSync(join(state, 'quota')).sort()).toEqual(
+      [runsName, `demo-tenant-${day}.runs-other.json`].sort(),
+    );
+  });
+
+  it('refuses a counter of another routine in the file of a routine', async () => {
+    const state = freshState();
+    const other = runQuotaKey('other', Date.UTC(2026, 9, 24, 6), 'done');
+    writeFileSync(fileOf(state, runsName), runsOf({ [other]: 1 }), {
+      mode: 0o600,
+    });
+    const at = clockFrom(Date.UTC(2026, 9, 24, 12));
+    await expect(
+      open(state, { clock: at }).read(ctx, runOf('done'), day),
+    ).rejects.toThrow(failure);
+  });
+
+  it('keeps the files of runs 32 days after their day by its clock, and removes those before', async () => {
+    const state = freshState();
+    const names = [
+      'demo-tenant-2026-09-21.runs-report.json',
+      'demo-tenant-2026-09-21.runs-report.json.lock',
+      'demo-tenant-2026-09-21.runs-report.json.lock.4242.0123456789abcdef.stale',
+      '.demo-tenant-2026-09-21.runs-report.4242.0123456789abcdef.tmp',
+      'demo-tenant-2026-09-22.runs-report.json',
+      'demo-tenant-2026-09-22.runs-report.json.lock',
+      '.demo-tenant-2026-09-22.runs-report.4242.0123456789abcdef.tmp',
+      'demo-tenant-2026-09-21.runs-report.4242.0123456789abcdef.tmp',
+      '.demo-tenant-2026-09-21.runs-report.json',
+      'demo-tenant-2026-09-21.runs-report.json.bak',
+      'other-tenant-2026-09-21.runs-report.json',
+      // A file of decisions of the same days goes by its own 15 days.
+      'demo-tenant-2026-10-09.approvals.json',
+    ];
+    for (const name of names) {
+      writeFileSync(fileOf(state, name), '{}', { mode: 0o600 });
+    }
+    // The clock on 24.10.2026: a trigger of 22.09. was due until 23.10.,
+    // and its file stays one more day as a margin; the one of 21.09. goes.
+    const at = clockFrom(Date.UTC(2026, 9, 24, 12));
+    await open(state, { clock: at }).increment(ctx, runOf('done'), day);
+    expect(readdirSync(join(state, 'quota')).sort()).toEqual(
+      [
+        runsName,
+        'demo-tenant-2026-09-22.runs-report.json',
+        'demo-tenant-2026-09-22.runs-report.json.lock',
+        '.demo-tenant-2026-09-22.runs-report.4242.0123456789abcdef.tmp',
+        'demo-tenant-2026-09-21.runs-report.4242.0123456789abcdef.tmp',
+        '.demo-tenant-2026-09-21.runs-report.json',
+        'demo-tenant-2026-09-21.runs-report.json.bak',
+        'other-tenant-2026-09-21.runs-report.json',
+        'demo-tenant-2026-10-09.approvals.json',
+      ].sort(),
+    );
   });
 
   it('writes the process, the host and the time into the lock, and a safe host only', async () => {

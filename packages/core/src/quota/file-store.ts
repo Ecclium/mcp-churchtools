@@ -6,9 +6,14 @@
  * The counters of decisions about entries of the queue of approvals (ADR
  * 0029) lie apart, in a file of their own per tenant and day of the entry,
  * `<tenant>-<day>.approvals.json`, without an actor and with nothing but
- * hashes and counts. The files of the other counters go on the first count
- * of a new day; those of decisions stay through the day 15 after their
- * own, the 14 days an entry waits and one more, and go after that.
+ * hashes and counts. So do the counters of the memory of runs of the
+ * routines (ADR 0034), in `<tenant>-<day>.runs-<routine>.json` per tenant,
+ * UTC day of the trigger and routine, so that no routine fills the file of
+ * another, with nothing but the ID of the routine, its trigger and counts. The files of the other counters go on the first count of a new
+ * day; those of decisions stay through the day 15 after their own, the 14
+ * days an entry waits and one more, those of runs through the day 32
+ * after their own, the 31 days a trigger can be due and one more, and go
+ * after that.
  *
  * Two processes share the file. Every change runs under a lock file made
  * with O_EXCL, which holds the ID of the process, the host and the time,
@@ -50,9 +55,12 @@ import {
   isApprovalQuotaKey,
   isIsoDate,
   isQuotaKey,
+  isRunQuotaKey,
   type QuotaKey,
   quotaKeys,
   type QuotaStore,
+  runCountDays,
+  runQuotaDayOf,
   type TenantContext,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
@@ -94,6 +102,15 @@ export const maxWriteKeysPerActor = 64;
  * once, so a day rarely has more than a few hundred.
  */
 export const maxApprovalKeys = 512;
+
+/**
+ * The most counters of the memory of runs one file holds, the file of one
+ * routine of a tenant for one day of triggers (ADR 0034). A routine fires
+ * at most once an hour and a trigger has at most five counters, so a
+ * routine that fires every hour fits even when every trigger needs all its
+ * tries, and no routine can fill the file of another.
+ */
+export const maxRunKeys = 128;
 
 const dayMs = 86_400_000;
 
@@ -401,8 +418,13 @@ const parseCounts = (
     const kept = Object.create(null) as Record<string, number>;
     for (const key of Object.keys(entry)) {
       const value = ownData(entry, key);
-      // A counter of a decision belongs in the file of decisions only.
-      if (!isQuotaKey(key) || isApprovalQuotaKey(key) || !isCount(value)) {
+      // A counter of a decision or of a run belongs in its own file only.
+      if (
+        !isQuotaKey(key) ||
+        isApprovalQuotaKey(key) ||
+        isRunQuotaKey(key) ||
+        !isCount(value)
+      ) {
         return undefined;
       }
       kept[key] = value;
@@ -413,9 +435,60 @@ const parseCounts = (
   return result;
 };
 
-// The counters of decisions of a file, or undefined when the file is not
-// one the store wrote for this tenant and day.
-const parseApprovals = (
+/**
+ * A kind of counters that belong to the tenant alone and stay for a fixed
+ * number of days after their own, in a file of their own per tenant and
+ * day: the decisions about entries of the queue, and the memory of runs
+ * with a file per routine as well.
+ */
+interface KeptKind {
+  /**
+   * What the name of the file of a key holds between the day and
+   * `.json`: `.approvals`, or `.runs-` and the ID of the routine.
+   */
+  readonly partOf: (key: string) => string;
+  /** The field of its file that holds the counters. */
+  readonly field: 'approvals' | 'runs';
+  readonly isKey: (value: unknown) => boolean;
+  readonly maxKeys: number;
+  /** How many days after its day a file stays at least. */
+  readonly keptDays: number;
+  /**
+   * What follows the day in the name of its file and of what a process
+   * leaves of it: the file, its lock, a lock moved aside, and a temporary
+   * file.
+   */
+  readonly leftOver: RegExp;
+}
+
+const keptKinds: readonly KeptKind[] = Object.freeze([
+  Object.freeze({
+    partOf: () => '.approvals',
+    field: 'approvals',
+    isKey: isApprovalQuotaKey,
+    maxKeys: maxApprovalKeys,
+    keptDays: approvalCountDays,
+    leftOver:
+      /^\.approvals\.(?:json(?:\.lock(?:\.\d{1,10}\.[0-9a-f]{16}\.stale)?)?|\d{1,10}\.[0-9a-f]{16}\.tmp)$/,
+  } as const),
+  Object.freeze({
+    // The ID of the routine is the second part of the key, checked by its
+    // pattern: letters, digits and dashes, no point and no slash.
+    partOf: (key: string) => `.runs-${String(key.split(':')[1])}`,
+    field: 'runs',
+    isKey: isRunQuotaKey,
+    maxKeys: maxRunKeys,
+    keptDays: runCountDays,
+    leftOver:
+      /^\.runs-[a-z0-9][a-z0-9-]{0,62}\.(?:json(?:\.lock(?:\.\d{1,10}\.[0-9a-f]{16}\.stale)?)?|\d{1,10}\.[0-9a-f]{16}\.tmp)$/,
+  } as const),
+]);
+
+// The counters of a file of a kept kind, or undefined when the file is not
+// one the store wrote for this tenant, day and part of the name.
+const parseKept = (
+  kind: KeptKind,
+  part: string,
   text: string,
   tenantId: string,
   day: IsoDate,
@@ -433,31 +506,26 @@ const parseApprovals = (
   ) {
     return undefined;
   }
-  const approvals = ownData(data, 'approvals');
+  const counters = ownData(data, kind.field);
   if (
-    typeof approvals !== 'object' ||
-    approvals === null ||
-    Array.isArray(approvals)
+    typeof counters !== 'object' ||
+    counters === null ||
+    Array.isArray(counters)
   ) {
     return undefined;
   }
-  const keys = Object.keys(approvals);
-  if (keys.length > maxApprovalKeys) return undefined;
+  const keys = Object.keys(counters);
+  if (keys.length > kind.maxKeys) return undefined;
   const kept = Object.create(null) as Record<string, number>;
   for (const key of keys) {
-    const value = ownData(approvals, key);
-    if (!isApprovalQuotaKey(key) || !isCount(value)) return undefined;
+    const value = ownData(counters, key);
+    if (!kind.isKey(key) || kind.partOf(key) !== part || !isCount(value)) {
+      return undefined;
+    }
     kept[key] = value;
   }
   return kept;
 };
-
-// What follows the day in the name of a file of decisions and of what a
-// process leaves of it: the file, its lock, a lock moved aside, and a
-// temporary file.
-const approvalsSuffix = '.approvals.json';
-const approvalsLeftOver =
-  /^\.approvals\.(?:json(?:\.lock(?:\.\d{1,10}\.[0-9a-f]{16}\.stale)?)?|\d{1,10}\.[0-9a-f]{16}\.tmp)$/;
 
 /**
  * Builds the store of quotas over the folder `quota` of the folder of
@@ -465,8 +533,9 @@ const approvalsLeftOver =
  * tenant and UTC day; the store takes tenant and actor from the context
  * and checks them, the key and the day before it builds a name. Files of
  * the same tenant for earlier days it removes when it first counts on a
- * new day, and files of decisions once they are older than
- * `approvalCountDays` by its clock.
+ * new day, files of decisions once they are older than
+ * `approvalCountDays` and files of runs once they are older than
+ * `runCountDays` by its clock.
  *
  * @param options - Folder of state, clock, process, host and, for tests,
  *   the file functions and the wait.
@@ -507,10 +576,10 @@ export function createFileQuotaStore(
       }));
   const folder = folderOf(stateDir);
   // The days already cleaned up, per tenant, so that the folder is listed
-  // once a day and not on every call; the files of decisions by the day of
-  // the clock.
+  // once a day and not on every call; the files of decisions and of runs
+  // by the day of the clock.
   const cleaned = new Map<string, string>();
-  const cleanedApprovals = new Map<string, string>();
+  const cleanedKept = new Map<string, string>();
   // The changes of this process, one after the other.
   let queue: Promise<unknown> = Promise.resolve();
 
@@ -531,6 +600,11 @@ export function createFileQuotaStore(
     }
     if (!isQuotaKey(key)) throw new TypeError('The key is unknown.');
     if (!isIsoDate(day)) throw new TypeError('The day is invalid.');
+    // A counter of a run lies in the file of the day of its trigger only,
+    // so that it goes with that file and no other day holds a second one.
+    if (isRunQuotaKey(key) && runQuotaDayOf(key) !== day) {
+      throw new TypeError('The day is not the one of the trigger.');
+    }
     return { tenantId, actor: `${String(kind)}:${id}` };
   };
 
@@ -668,8 +742,10 @@ export function createFileQuotaStore(
     return counts;
   };
 
-  // The counters of decisions in their file, or none without a file yet.
-  const readApprovals = (
+  // The counters of a kept kind in their file, or none without a file yet.
+  const readKept = (
+    kind: KeptKind,
+    part: string,
     path: string,
     tenantId: string,
     day: IsoDate,
@@ -679,9 +755,9 @@ export function createFileQuotaStore(
     const text = readText(path, flags, checked);
     if (text === undefined)
       return Object.create(null) as Record<string, number>;
-    const approvals = parseApprovals(text, tenantId, day);
-    if (approvals === undefined) throw unavailable();
-    return approvals;
+    const counters = parseKept(kind, part, text, tenantId, day);
+    if (counters === undefined) throw unavailable();
+    return counters;
   };
 
   const writeAll = (fd: number, bytes: Uint8Array): void => {
@@ -718,12 +794,13 @@ export function createFileQuotaStore(
   // A new file under a name no other process uses, written whole and
   // flushed before the rename makes it the file, and the folder flushed
   // after it. `part` is what the name of the file holds between the day
-  // and the end: nothing for the counters, `.approvals` for the decisions.
+  // and the end: nothing for the counters, `.approvals` for the decisions,
+  // `.runs` for the memory of runs.
   const writeRecord = (
     path: string,
     tenantId: string,
     day: IsoDate,
-    part: '' | '.approvals',
+    part: string,
     record: Readonly<Record<string, unknown>>,
     flags: { readonly create: number; readonly folder: number },
     checked: Identity,
@@ -940,25 +1017,25 @@ export function createFileQuotaStore(
     }
   };
 
-  // Removes the files of decisions of the tenant older than
-  // approvalCountDays by the clock, once per day of the clock: the file,
-  // its lock, a lock moved aside and a temporary file. A clock that gives
-  // no day removes nothing.
-  const cleanUpApprovals = (tenantId: string, checked: Identity): void => {
+  // Removes the files of decisions and of runs of the tenant older than
+  // their days by the clock, once per day of the clock: the file, its
+  // lock, a lock moved aside and a temporary file. A clock that gives no
+  // day removes nothing.
+  const cleanUpKept = (tenantId: string, checked: Identity): void => {
     let today: string;
-    let kept: string;
+    let keptFrom: readonly string[];
     try {
       // A time that is no date throws here as well.
       const now = clock.now();
       today = new Date(now).toISOString().slice(0, 10);
-      kept = new Date(now - approvalCountDays * dayMs)
-        .toISOString()
-        .slice(0, 10);
+      keptFrom = keptKinds.map((kind) =>
+        new Date(now - kind.keptDays * dayMs).toISOString().slice(0, 10),
+      );
     } catch {
       return;
     }
-    if (cleanedApprovals.get(tenantId) === today) return;
-    cleanedApprovals.set(tenantId, today);
+    if (cleanedKept.get(tenantId) === today) return;
+    cleanedKept.set(tenantId, today);
     let names: string[];
     try {
       sameFolder(checked);
@@ -973,9 +1050,13 @@ export function createFileQuotaStore(
       const earlier = rest.slice(0, 10);
       const suffix = rest.slice(10);
       // A temporary file starts with a point, every other one does not.
-      const leftOver =
-        approvalsLeftOver.test(suffix) && temporary === suffix.endsWith('.tmp');
-      if (isIsoDate(earlier) && earlier < kept && leftOver) {
+      const old = keptKinds.some(
+        (kind, index) =>
+          kind.leftOver.test(suffix) &&
+          temporary === suffix.endsWith('.tmp') &&
+          earlier < String(keptFrom[index]),
+      );
+      if (isIsoDate(earlier) && old) {
         try {
           fs.unlinkSync(`${folder}/${name}`);
         } catch {
@@ -985,36 +1066,48 @@ export function createFileQuotaStore(
     }
   };
 
-  // Counts a decision about an entry of the queue: for the tenant, without
-  // an actor, in the file of decisions of the day of the entry (ADR 0029).
-  const incrementApproval = async (
+  // Counts a decision about an entry of the queue (ADR 0029) or a counter
+  // of the memory of runs (ADR 0034): for the tenant, without an actor, in
+  // the file of its kind for the day of the entry or of the trigger, for a
+  // run in the file of its routine.
+  const incrementKept = async (
+    kind: KeptKind,
     tenantId: string,
     key: QuotaKey,
     day: IsoDate,
   ): Promise<number> => {
     const flags = flagsOrFail();
     const checked = checkFolder(flags.uid);
-    const path = `${folder}/${tenantId}-${day}${approvalsSuffix}`;
+    const part = kind.partOf(key);
+    const path = `${folder}/${tenantId}-${day}${part}.json`;
     const mine = await lock(`${path}.lock`, flags, checked);
     try {
-      const approvals = readApprovals(path, tenantId, day, flags, checked);
-      const value = (approvals[key] ?? 0) + 1;
+      const counters = readKept(
+        kind,
+        part,
+        path,
+        tenantId,
+        day,
+        flags,
+        checked,
+      );
+      const value = (counters[key] ?? 0) + 1;
       if (!Number.isSafeInteger(value)) throw unavailable();
-      approvals[key] = value;
-      if (Object.keys(approvals).length > maxApprovalKeys) throw unavailable();
+      counters[key] = value;
+      if (Object.keys(counters).length > kind.maxKeys) throw unavailable();
       writeRecord(
         path,
         tenantId,
         day,
-        '.approvals',
-        { approvals },
+        part,
+        { [kind.field]: counters },
         flags,
         checked,
       );
       return value;
     } finally {
       unlock(`${path}.lock`, mine, flags);
-      cleanUpApprovals(tenantId, checked);
+      cleanUpKept(tenantId, checked);
     }
   };
 
@@ -1024,7 +1117,8 @@ export function createFileQuotaStore(
     day: IsoDate,
   ): Promise<number> => {
     const { tenantId, actor } = subjectOf(ctx, key, day);
-    if (isApprovalQuotaKey(key)) return incrementApproval(tenantId, key, day);
+    const kind = keptKinds.find((entry) => entry.isKey(key));
+    if (kind !== undefined) return incrementKept(kind, tenantId, key, day);
     const flags = flagsOrFail();
     const checked = checkFolder(flags.uid);
     const path = `${folder}/${tenantId}-${day}.json`;
@@ -1046,7 +1140,7 @@ export function createFileQuotaStore(
     } finally {
       unlock(`${path}.lock`, mine, flags);
       cleanUp(tenantId, day, checked);
-      cleanUpApprovals(tenantId, checked);
+      cleanUpKept(tenantId, checked);
     }
   };
 
@@ -1059,15 +1153,19 @@ export function createFileQuotaStore(
     const flags = flagsOrFail();
     const checked = checkFolder(flags.uid);
     // A rename replaces the file whole, so a read needs no lock.
-    if (isApprovalQuotaKey(key)) {
-      const approvals = readApprovals(
-        `${folder}/${tenantId}-${day}${approvalsSuffix}`,
+    const kind = keptKinds.find((entry) => entry.isKey(key));
+    if (kind !== undefined) {
+      const part = kind.partOf(key);
+      const counters = readKept(
+        kind,
+        part,
+        `${folder}/${tenantId}-${day}${part}.json`,
         tenantId,
         day,
         flags,
         checked,
       );
-      return Promise.resolve(approvals[key] ?? 0);
+      return Promise.resolve(counters[key] ?? 0);
     }
     const counts = readCounts(
       `${folder}/${tenantId}-${day}.json`,

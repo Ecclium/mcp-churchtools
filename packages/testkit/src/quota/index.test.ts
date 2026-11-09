@@ -80,10 +80,60 @@ describe('the checks of a store of quotas', () => {
     },
   );
 
-  it('fail for a store that gives two decisions the count 1', async () => {
+  it.each([
+    'counts a run for the tenant, whichever actor counts, under the day of its trigger',
+    'keeps a run while later days count',
+  ])(
+    'fail for a store that keeps runs like the other counters: %s',
+    async (name) => {
+      const check = quotaStoreChecks.find((item) => item.name === name);
+      const store = perActor();
+      await expect(check?.run(() => store)).rejects.toThrow();
+      const memory: QuotaMemory = new Map();
+      await expect(
+        check?.run(() => createMemoryQuotaStore(memory)),
+      ).resolves.toBeUndefined();
+    },
+  );
+
+  it('fail for a store that counts a run under any day', async () => {
     const check = quotaStoreChecks.find(({ name }) =>
-      name.includes('two stores count at the same time'),
+      name.startsWith('counts a run for the tenant'),
     );
+    // Per tenant, as it should, but without a look at the day of the
+    // trigger.
+    const memory = new Map<string, number>();
+    const keyOf = (ctx: TenantContext, key: QuotaKey, day: IsoDate): string =>
+      JSON.stringify([ctx.tenantId, key, day]);
+    const anyDay: QuotaStore = {
+      increment: (ctx, key, day) => {
+        const value = (memory.get(keyOf(ctx, key, day)) ?? 0) + 1;
+        memory.set(keyOf(ctx, key, day), value);
+        return Promise.resolve(value);
+      },
+      read: (ctx, key, day) =>
+        Promise.resolve(memory.get(keyOf(ctx, key, day)) ?? 0),
+    };
+    await expect(check?.run(() => anyDay)).rejects.toThrow();
+  });
+
+  it('fail for a store that takes any key of a run', async () => {
+    const check = quotaStoreChecks.find(({ name }) =>
+      name.includes('run of another form'),
+    );
+    const lax = {
+      increment: () => Promise.resolve(1),
+      read: () => Promise.resolve(0),
+    };
+    await expect(check?.run(() => lax)).rejects.toThrow();
+  });
+
+  it.each([
+    'gives 1 to one decision only when two stores count at the same time',
+    'gives each count of a run once when two stores count at the same time',
+  ])('fail for a store that counts apart from another: %s', async (name) => {
+    const check = quotaStoreChecks.find((item) => item.name === name);
+    expect(check).toBeDefined();
     // Each store keeps its own count, as two processes without a shared
     // file would.
     await expect(check?.run(() => createMemoryQuotaStore())).rejects.toThrow();
