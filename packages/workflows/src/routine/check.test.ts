@@ -538,6 +538,25 @@ describe('checkRoutine with a routine it refuses', () => {
         'generate.output.blocks.mehrfach.fields.anzahl.min',
       ],
       [
+        'a field with the name the template keeps for the period',
+        (r) =>
+          (at(r, 'generate.output.blocks.mehrfach.fields')['period'] = {
+            type: 'date',
+          }),
+        'routine_contradiction',
+        'generate.output.blocks.mehrfach.fields.period',
+      ],
+      [
+        'a block with the name the template keeps for the period',
+        (r) =>
+          (at(r, 'generate.output.blocks')['period'] = {
+            maxItems: 1,
+            fields: { datum: { type: 'date' } },
+          }),
+        'routine_contradiction',
+        'generate.output.blocks.period',
+      ],
+      [
         'the key of another routine',
         (r) => (at(r, 'output')['idempotencyKey'] = 'wiki-hygiene:{isoWeek}'),
         'routine_contradiction',

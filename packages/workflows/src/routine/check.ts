@@ -37,6 +37,7 @@ import {
   type RoutineParamValue,
   type RoutinePeriod,
 } from './schema.js';
+import { periodTag } from './template.js';
 
 /** Why a value is no routine, frozen. */
 export const routineCheckCodes = Object.freeze([
@@ -180,14 +181,19 @@ const inputProblem = (
   return undefined;
 };
 
-// The first empty range of a number of a block, as the path of its min.
-const rangeProblem = (
+// The first problem of the blocks of the model, as the path of its
+// field: an empty range of numbers, or the name `period`, which a template
+// keeps for the period of the run.
+const blockProblem = (
   blocks: Readonly<Record<string, RoutineBlock>>,
 ): string | undefined => {
   for (const [blockName, block] of Object.entries(blocks)) {
+    const at = `generate.output.blocks.${blockName}`;
+    if (blockName === periodTag) return at;
     for (const [fieldName, field] of Object.entries(block.fields)) {
+      if (fieldName === periodTag) return `${at}.fields.${fieldName}`;
       if (field.type === 'integer' && field.min > field.max) {
-        return `generate.output.blocks.${blockName}.fields.${fieldName}.min`;
+        return `${at}.fields.${fieldName}.min`;
       }
     }
   }
@@ -357,8 +363,8 @@ export function checkRoutine(value: unknown): RoutineCheckResult {
   if (input !== undefined) return refuse(input[0], input[1]);
 
   if (file.generate !== undefined) {
-    const range = rangeProblem(file.generate.output.blocks);
-    if (range !== undefined) return refuse('routine_contradiction', range);
+    const block = blockProblem(file.generate.output.blocks);
+    if (block !== undefined) return refuse('routine_contradiction', block);
   }
 
   const checks = file.checks ?? [];
