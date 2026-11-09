@@ -7,7 +7,8 @@
  * composition root wraps around it, also around an adapter of a plugin.
  *
  * Why it exists: a part of the prompt with data must be a value the
- * pipeline redacted, and the mark of such a value is known only in core,
+ * pipeline redacted, or a list of such values for an input of several
+ * calls, and the mark of such a value is known only in core,
  * so an adapter of a plugin could not check it. The guard checks every
  * part before the adapter sees anything and stops the call otherwise, so
  * that not even a mistake in the code sends a raw value to the vendor
@@ -57,7 +58,9 @@ export type GuardedPromptPart =
       readonly name: string;
       /**
        * The result of the input as the pipeline redacted it, in the level
-       * of the call of the model. Any other value stops the call.
+       * of the call of the model, or the list of the results of its calls,
+       * for an input with several pages or one call per entry of another
+       * (ADR 0033). Any other value stops the call.
        */
       readonly value: unknown;
     };
@@ -87,8 +90,9 @@ export interface GuardedModel {
    * @param signal - Aborts the call.
    * @returns The answer, checked again against the output schema.
    * @throws {EccliumError} `internal` for a request the guard refuses,
-   *   such as a part that is not redacted, and the code of the failure of
-   *   the provider, never with its text.
+   *   such as a part that is not redacted, `validation` for an answer that
+   *   does not fit its schema, and the code of the failure of the
+   *   provider, never with its text.
    */
   generate<T>(
     request: GuardedModelRequest<T>,
@@ -112,7 +116,9 @@ type CheckedPart =
 
 // The codes a failure of a provider keeps. Any other code, such as one
 // of the write guard, means nothing for a call of a model and becomes
-// `upstream`.
+// `upstream`. `validation` is an answer that did not fit its schema after
+// the attempts allowed, which a later try of the run would not change, as
+// against `upstream`, a vendor that failed (ADR 0034).
 const providerCodes: readonly ErrorCode[] = Object.freeze([
   'config',
   'auth',
@@ -120,8 +126,12 @@ const providerCodes: readonly ErrorCode[] = Object.freeze([
   'rate_limited',
   'upstream',
   'network',
+  'validation',
   'internal',
 ]);
+
+/** The most results of the pipeline one part of a prompt may hold. */
+export const maxResultsPerPart = 400;
 
 // How often a boundary is drawn before the guard gives up. A boundary of
 // 64 random bits that one of the texts already holds is no accident, so a
@@ -228,6 +238,38 @@ const checkOutput = <T>(output: unknown): ModelOutputSpec<T> => {
   });
 };
 
+// The values of a plain list, no proxy, of at most so many values, each
+// with the mark of the pipeline, read by index as own data, never through
+// a getter, copied into a list of the guard's own. The list may hold no
+// key besides its indices and its length, so that no own `toJSON` decides
+// what is sent. An empty list is an input whose calls found nothing.
+// Undefined for anything else; the proxy is asked first, because a revoked
+// one would throw in `Array.isArray`.
+const redactedListOf = (value: unknown): readonly unknown[] | undefined => {
+  if (
+    isProxy(value) ||
+    !Array.isArray(value) ||
+    Object.getPrototypeOf(value) !== Array.prototype ||
+    value.length > maxResultsPerPart ||
+    Reflect.ownKeys(value).length !== value.length + 1
+  ) {
+    return undefined;
+  }
+  const copy: unknown[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const property = Object.getOwnPropertyDescriptor(value, index);
+    if (
+      property === undefined ||
+      !('value' in property) ||
+      !isRedacted(property.value)
+    ) {
+      return undefined;
+    }
+    copy.push(property.value);
+  }
+  return copy;
+};
+
 // The parts, checked: the text of the routine as a string, and each input
 // with a name and a value that carries the mark of the pipeline.
 const checkParts = (parts: unknown): readonly CheckedPart[] => {
@@ -256,18 +298,22 @@ const checkParts = (parts: unknown): readonly CheckedPart[] => {
       throw refuse('The parts of a call of a model are not in order.');
     }
     // The one check this guard exists for: a value without the mark of
-    // the pipeline never reaches an adapter.
-    if (!isRedacted(value)) {
+    // the pipeline never reaches an adapter. An input of several calls is
+    // a plain list of such values, each checked, so that no value is
+    // marked twice and only the pipeline makes a mark (ADR 0026).
+    const checked = isRedacted(value) ? value : redactedListOf(value);
+    if (checked === undefined) {
       throw refuse(
         'A part of the prompt holds data the pipeline did not redact.',
       );
     }
     // A value of the pipeline is plain JSON. Anything else, such as a
     // cycle, ends the call without the message of the parser, which could
-    // name a part of the value.
+    // name a part of the value. A list goes out as the copy that was
+    // checked, never as the list the caller holds.
     let json: string;
     try {
-      json = JSON.stringify(value);
+      json = JSON.stringify(checked);
     } catch {
       throw refuse('A part of the prompt is no JSON.');
     }
@@ -323,9 +369,11 @@ const checkResult = async <T>(
   } catch {
     checked = undefined;
   }
+  // An answer that does not fit is no failure of the vendor: a later try
+  // of the run would not change it (ADR 0034).
   if (checked === undefined || checked.issues !== undefined) {
     throw new EccliumError(
-      'upstream',
+      'validation',
       'The answer of the model does not fit its schema.',
     );
   }

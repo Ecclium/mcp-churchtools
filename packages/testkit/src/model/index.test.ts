@@ -103,7 +103,8 @@ describe('createMockModelProvider', () => {
     const error: unknown = await guardModelProvider(mock.provider)
       .generate(request, signal())
       .catch((caught: unknown) => caught);
-    expect(isEccliumError(error) && error.code).toBe('upstream');
+    // An answer off the schema is final for the run (ADR 0034).
+    expect(isEccliumError(error) && error.code).toBe('validation');
   });
 });
 

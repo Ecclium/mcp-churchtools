@@ -145,7 +145,13 @@ export interface ModelProvider {
    * @param signal - Aborts the call.
    * @returns The checked answer.
    * @throws {EccliumError} When the vendor fails or the answer does not
-   *   fit, with a code and never with text of the vendor.
+   *   fit, with a code and never with text of the vendor. A later try of
+   *   the run may pass `network`, `rate_limited` and `upstream`: a vendor
+   *   that did not answer, answered with 429 or 5xx, or gave an answer of
+   *   an unknown form. It would not change `validation`, for an answer
+   *   that does not fit after the attempts allowed, a refusal or another
+   *   reason to stop, nor `config`, `auth` and `permission`, for a request,
+   *   a key or a right the vendor refuses (ADR 0034).
    */
   generate<T>(
     request: ModelRequest<T>,

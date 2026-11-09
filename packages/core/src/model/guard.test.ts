@@ -205,6 +205,101 @@ describe('a call through the guard', () => {
     expect(requests).toHaveLength(1);
   });
 
+  it('takes a list of redacted values for an input of several calls, as one JSON list', async () => {
+    const { requests, provider } = recording();
+    const model = guardModelProvider(provider, {
+      random: (size) => new Uint8Array(size).fill(0x12),
+    });
+    await model.generate(
+      request({
+        parts: [
+          {
+            kind: 'data',
+            name: 'assignments',
+            value: [sealRedacted({ page: 1 }), sealRedacted({ page: 2 })],
+          },
+          { kind: 'data', name: 'empty', value: [] },
+        ],
+      }),
+      signal(),
+    );
+    expect(requests[0]?.parts.map((part) => part.text)).toEqual([
+      '<<input-assignments-1212121212121212>>\n[{"page":1},{"page":2}]\n<</input-assignments-1212121212121212>>',
+      '<<input-empty-1212121212121212>>\n[]\n<</input-empty-1212121212121212>>',
+    ]);
+  });
+
+  it.each<[string, () => unknown]>([
+    ['one value without the mark', () => [sealRedacted({ n: 1 }), { n: 2 }]],
+    ['a proxy of a list', () => new Proxy([sealRedacted({ n: 1 })], {})],
+    [
+      'a list of another kind',
+      () => {
+        class Pages extends Array<unknown> {}
+        return Pages.from([sealRedacted({ n: 1 })]);
+      },
+    ],
+    [
+      'a list with a hole',
+      () => {
+        const list: unknown[] = [];
+        list.length = 1;
+        return list;
+      },
+    ],
+    [
+      'a list whose value is a getter',
+      () => {
+        const list: unknown[] = [];
+        Object.defineProperty(list, 0, {
+          get: () => sealRedacted({ n: 1 }),
+          enumerable: true,
+        });
+        return list;
+      },
+    ],
+    [
+      'a list longer than 400',
+      () => Array.from({ length: 401 }, () => sealRedacted({ n: 1 })),
+    ],
+    [
+      'an own toJSON that would send raw data',
+      () =>
+        Object.assign([sealRedacted({ n: 1 })], {
+          toJSON: () => ({ email: 'max.mustermann@example.org' }),
+        }),
+    ],
+    [
+      'an own toJSON as a getter',
+      () => {
+        const list = [sealRedacted({ n: 1 })];
+        Object.defineProperty(list, 'toJSON', {
+          get: () => () => ({ raw: true }),
+        });
+        return list;
+      },
+    ],
+    ['a key besides its values', () => Object.assign([], { note: 'raw' })],
+    [
+      'a revoked proxy',
+      () => {
+        const { proxy, revoke } = Proxy.revocable([], {});
+        revoke();
+        return proxy;
+      },
+    ],
+  ])('stops a list with %s', async (_case, make) => {
+    const { requests, provider } = recording();
+    const error = await failure(
+      guardModelProvider(provider).generate(
+        request({ parts: [{ kind: 'data', name: 'events', value: make() }] }),
+        signal(),
+      ),
+    );
+    expect(error.code).toBe('internal');
+    expect(requests).toHaveLength(0);
+  });
+
   it('stops a proxy around a redacted value', async () => {
     const { requests, provider } = recording();
     const model = guardModelProvider(provider);
@@ -338,6 +433,7 @@ describe('a call through the guard', () => {
     ['rate_limited', 'rate_limited'],
     ['config', 'config'],
     ['network', 'network'],
+    ['validation', 'validation'],
     ['policy_denied', 'upstream'],
   ] as const)(
     'keeps the code %s of a failure as %s and never its text',
@@ -397,17 +493,31 @@ describe('a call through the guard', () => {
         usage: { inputTokens: 1, outputTokens: '1' },
       }),
     ],
-    ['an answer off the schema', () => ({ value: { text: 1 }, attempts: 1 })],
-    [
-      'an answer with an unknown field',
-      () => ({ value: { text: 'ok', extra: 1 }, attempts: 1 }),
-    ],
   ])('refuses a result with %s', async (_case, answer) => {
     const { provider } = recording(answer);
     const error = await failure(
       guardModelProvider(provider).generate(request(), signal()),
     );
     expect(error.code).toBe('upstream');
+  });
+
+  // An answer that does not fit is final for the run, a vendor that fails
+  // is not (ADR 0034), so the two never share a code.
+  it.each([
+    ['an answer off the schema', () => ({ value: { text: 1 }, attempts: 1 })],
+    [
+      'an answer with an unknown field',
+      () => ({ value: { text: 'ok', extra: 1 }, attempts: 1 }),
+    ],
+  ])('refuses %s as validation', async (_case, answer) => {
+    const { provider } = recording(answer);
+    const error = await failure(
+      guardModelProvider(provider).generate(request(), signal()),
+    );
+    expect(error).toMatchObject({
+      code: 'validation',
+      message: 'The answer of the model does not fit its schema.',
+    });
   });
 
   it('refuses an answer when the check itself throws, and waits for a check that is async', async () => {
@@ -429,7 +539,7 @@ describe('a call through the guard', () => {
       },
     });
     expect((await failure(model.generate(throwing, signal()))).code).toBe(
-      'upstream',
+      'validation',
     );
     const asynchronous = request({
       output: {
