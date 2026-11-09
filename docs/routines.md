@@ -113,7 +113,7 @@ Namen von Eingaben, Blöcken und Feldern bestehen aus Kleinbuchstaben, Ziffern u
 
 ## Eingaben
 
-- Eine Eingabe ruft ein Lese-Tool über dieselbe Pipeline wie der Server, mit Maskierung und Protokoll. Erlaubt sind nur Lese-Tools, auf die sich Routinen verlassen können und die unbeaufsichtigt laufen dürfen. Das prüft eine spätere Version, bevor ein Lauf beginnt, ebenso die Parameter gegen das Tool.
+- Eine Eingabe ruft ein Lese-Tool über dieselbe Pipeline wie der Server, mit Maskierung und Protokoll. Erlaubt sind nur Lese-Tools, auf die sich Routinen verlassen können und die unbeaufsichtigt laufen dürfen. Das prüft die Vorbereitung eines Laufs, bevor er etwas liest, ebenso die Parameter gegen das Tool, die Felder von `{ field }` und relative Tage bis 366 Tage.
 - Mit `forEach` läuft das Tool einmal je Eintrag einer früheren Eingabe, die selbst kein `forEach` hat. Die Zahl der Aufrufe ist so höchstens `maxItems` der früheren Eingabe, dazu die Folgeseiten, bis `maxItems` erreicht ist. Tools, die Namen anderer Personen nennen, zählen gegen das Lesebudget ([Richtlinie](policy.md)): Im Beispiel liest ein Lauf mit 30 Terminen die Einteilungen mit 30 Aufrufen.
 - Relative Tage wie `+0d` oder `+14d` zählen ab der geplanten Auslösung, nicht ab dem Beginn des Laufs. Ein verspäteter Lauf liest so denselben Zeitraum wie ein pünktlicher.
 
@@ -126,7 +126,7 @@ Jedes Feld ist begrenzt: Text mit `maxLength`, eine Zahl mit `min` und `max`, Da
 | `text` | `maxLength` | Klartext. Der Kern setzt ihn als reinen Text ein, Zeichen von Markdown zeichnen darin nichts aus, und jedes Feld geht durch die ContentPolicy. |
 | `integer` | `min` und `max` | Eine ganze Zahl in diesen Grenzen. |
 | `date` | feste Form | Ein Datum wie `2026-11-09`. |
-| `person` | feste Form | Verweis auf eine Person aus den Daten des Laufs. Das Modell sieht nur ihr Pseudonym, im Bericht steht ihr Name, wie ChurchTools ihn liefert. |
+| `person` | feste Form | Verweis auf eine Person aus den Daten des Laufs. Das Modell sieht in `strict` ihr Pseudonym, in `standard` ihre Kennung, im Bericht steht ihr Name, wie ChurchTools ihn liefert. |
 
 ## Prüfungen des Kerns
 

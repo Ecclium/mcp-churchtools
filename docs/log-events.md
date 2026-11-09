@@ -29,7 +29,7 @@ In dieser Reihenfolge, jedes nur, wenn es einen Wert hat. Die Felder des Kerns b
 | `method` | Aufruf | Methode einer Anfrage an ChurchTools: `GET` liest, `POST`, `PUT`, `PATCH` und `DELETE` schreiben. Eine Anfrage an ein Modell ist immer `POST`. |
 | `purpose` | Aufruf | Zweck einer Anfrage, heute nur `model` für eine Anfrage an ein Sprachmodell. Anfragen an ChurchTools tragen das Feld nicht. |
 | `status` | Aufruf | Status einer Antwort von ChurchTools, 100 bis 599. |
-| `attempt` | Aufruf | Nummer eines Versuchs, 1 bis 10. Heute setzt ihn keine Zeile, der Runner braucht ihn ab Phase 6. |
+| `attempt` | Aufruf | Nummer eines Versuchs, 1 bis 10. Heute nur in `run_model_answered`: 2, wenn ein Anbieter ohne strukturierte Ausgabe ein zweites Mal gefragt wurde. |
 | `file` | Aufruf | Name einer Audit-Datei nach ihrem festen Muster, nie ein Pfad, nur im Anker. |
 | `seq` | Aufruf | Stelle des Kopfs der Kette einer Audit-Datei, nur im Anker. |
 | `hash` | Aufruf | SHA-256 des Kopfs der Kette einer Audit-Datei, hexadezimal, nur im Anker. |
@@ -52,6 +52,18 @@ Je Ereignis die Stufe und die Felder, die ein Aufruf höchstens setzt. Die Felde
 | `tool_output_invalid` | `warn` | keine | Das Ergebnis eines Tools passte nicht zu seinem Schema, oder das Audit konnte eine Kennung darin nicht nennen. Es geht nicht hinaus. |
 | `tool_pseudonym_failed` | `warn` | keine | In `strict` liess sich eine Kennung einer Person im Ergebnis nicht durch ihr Pseudonym ersetzen. Das Ergebnis geht nicht hinaus. |
 | `tool_result_too_large` | `warn` | keine | Das Ergebnis eines Tools war grösser als 64 KiB, so wie der Client es erhielte. Ecclium kürzt nie, der Aufruf endet mit einem Fehler. |
+
+### Lauf einer Routine
+
+| Ereignis | Stufe | Felder | Bedeutung |
+| --- | --- | --- | --- |
+| `run_answer_refused` | `warn` | `count` | Die Antwort des Modells eines Laufs nannte eine Person, die nicht in seinen Daten stand, oder ein Text oder ein Name verletzte die ContentPolicy. `count` nennt die Zahl der Felder. Der Lauf schreibt nichts. |
+| `run_model_answered` | `info` | `attempt`, `durationMs` | Das Modell eines Laufs hat eine Antwort gegeben, die zum Schema der Blöcke passt. `attempt` nennt die Zahl der Versuche, `durationMs` die Dauer. |
+| `run_model_failed` | `warn` | `code`, `durationMs` | Der Aufruf des Modells eines Laufs scheiterte. `code` nennt den Fehler, `validation` eine Antwort, die nicht zum Schema passt, `durationMs` die Dauer. |
+| `run_read_failed` | `warn` | `code` | Ein Lauf einer Routine konnte eine Eingabe nicht lesen. `code` nennt den Fehler. Der Lauf endet, ohne das Modell zu fragen. |
+| `run_read_limit` | `warn` | `count` | Ein Lauf einer Routine brauchte mehr Aufrufe, als eine Eingabe (200) oder ein Lauf (400) haben darf, oder ein Eintrag einer Quelle bekäme einen Aufruf, nachdem die Eingabe schon `maxItems` Einträge hat. `count` nennt die Aufrufe des Laufs oder die Einträge der Eingabe. Der Lauf endet endgültig, ohne das Modell zu fragen. |
+| `run_rendered` | `info` | `count`, `durationMs` | Ein Lauf einer Routine hat seinen Abschnitt gerendert, und er besteht die ContentPolicy. `count` nennt die Zahl der Einträge der Blöcke, `durationMs` die Dauer des Laufs bis dahin. |
+| `run_section_refused` | `warn` | keine | Der gerenderte Abschnitt eines Laufs verletzte die ContentPolicy, auch wenn jedes Feld für sich sie bestand, etwa durch den Text der Vorlage. Der Lauf schreibt nichts. |
 
 ### Write-Guard
 

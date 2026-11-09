@@ -15,6 +15,7 @@ export {
   escapeRunText,
   runContactKeys,
 } from './content.js';
+export { createRunId, runAssignmentOf } from './id.js';
 export {
   isTransientRunCode,
   modelRedactionOf,

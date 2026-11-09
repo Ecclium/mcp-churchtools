@@ -251,6 +251,17 @@ export const logEvents = Object.freeze({
   pseudonym_keys_unavailable: entry('warn'),
   read_budget_exhausted: entry('warn'),
   read_budget_unavailable: entry('warn'),
+  // The engine of a run of a routine (ADR 0033): a read that failed or
+  // reached a limit, the answer of the model with its attempts or its
+  // failure, an answer or a section the checks refused, and the rendered
+  // section.
+  run_read_failed: entry('warn', 'code'),
+  run_read_limit: entry('warn', 'count'),
+  run_model_answered: entry('info', 'attempt', 'durationMs'),
+  run_model_failed: entry('warn', 'code', 'durationMs'),
+  run_answer_refused: entry('warn', 'count'),
+  run_section_refused: entry('warn'),
+  run_rendered: entry('info', 'count', 'durationMs'),
   // The write guard (ADR 0029).
   write_refused: entry('warn', 'code'),
   write_conflict: entry('warn', 'code'),
