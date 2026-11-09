@@ -5,7 +5,8 @@
  * reader of YAML and before the prompt and the template are read. It
  * checks the plain values against the schema of `routine.v1`, then
  * refuses what the schema cannot see: a schedule that cron reads in more
- * than one way, a routine with both a model and checks or with neither,
+ * than one way, may fire more than once an hour or never fires, a routine
+ * with both a model and checks or with neither,
  * an input that names an input it cannot use, a range of numbers that is
  * empty, a key of another routine and a channel the core does not know.
  * A routine that contradicts itself would leave it to chance what a run
@@ -23,7 +24,10 @@
  *
  * @packageDocumentation
  */
-import { checkSchedule } from '@ecclium/mcp-churchtools-core';
+import {
+  checkSchedule,
+  type ScheduleProblem,
+} from '@ecclium/mcp-churchtools-core';
 
 import {
   type Routine,
@@ -46,6 +50,8 @@ export const routineCheckCodes = Object.freeze([
   'routine_invalid',
   'routine_schedule_invalid',
   'routine_schedule_days',
+  'routine_schedule_frequent',
+  'routine_schedule_never',
   'routine_generate_or_checks',
   'routine_inputs',
   'routine_reference',
@@ -105,6 +111,17 @@ const refuse = (code: RoutineCheckCode, field?: string): RoutineCheckResult =>
     code,
     ...(field === undefined ? {} : { field }),
   });
+
+// The code for each reason the core refuses a schedule (ADR 0034).
+const scheduleCodes: Readonly<
+  Record<ScheduleProblem['reason'], RoutineCheckCode>
+> = Object.freeze({
+  __proto__: null,
+  invalid: 'routine_schedule_invalid',
+  days: 'routine_schedule_days',
+  frequent: 'routine_schedule_frequent',
+  never: 'routine_schedule_never',
+});
 
 // A name of the schema or a name the routine chose and its pattern took.
 // Anything else ends the path, so that no other text of the file reaches
@@ -338,12 +355,7 @@ export function checkRoutine(value: unknown): RoutineCheckResult {
 
   const schedule = checkSchedule(file.schedule);
   if (!schedule.ok) {
-    return refuse(
-      schedule.reason === 'days'
-        ? 'routine_schedule_days'
-        : 'routine_schedule_invalid',
-      'schedule',
-    );
+    return refuse(scheduleCodes[schedule.reason], 'schedule');
   }
 
   // A run is filled either by a model or by fixed checks of the core,
