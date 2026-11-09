@@ -41,7 +41,9 @@ export default defineConfig({
       // sections in the wiki from those of a person (ADR 0032), and of the
       // check of the shape of JSON and the guard before every adapter of a
       // language model, which reads the answers of a vendor and lets no
-      // value reach it that the pipeline did not redact (ADR 0033).
+      // value reach it that the pipeline did not redact (ADR 0033), and of the
+      // schedule, which decides when a run with a model and a write begins
+      // and how often it is tried (ADR 0034).
       thresholds: {
         'packages/core/src/**': {
           statements: 80,
@@ -140,6 +142,12 @@ export default defineConfig({
           lines: 100,
         },
         'packages/core/src/model/**': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        'packages/core/src/schedule/**': {
           statements: 100,
           branches: 100,
           functions: 100,
