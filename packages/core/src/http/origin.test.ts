@@ -4,9 +4,11 @@ import { describe, expect, it } from 'vitest';
 import { isEventName } from '../logger/index.js';
 import * as http from './index.js';
 import {
+  maxEndpointPathLength,
   type OriginCode,
   originCodes,
   parseChurchToolsOrigin,
+  parseModelEndpoint,
 } from './origin.js';
 
 // Every host here lies under .example (RFC 2606) or is the placeholder of
@@ -168,5 +170,77 @@ describe('the entry of http', () => {
   it('passes on the check of the address', () => {
     expect(http.parseChurchToolsOrigin).toBe(parseChurchToolsOrigin);
     expect(http.originCodes).toBe(originCodes);
+  });
+});
+
+describe('parseModelEndpoint', () => {
+  it.each([
+    [
+      'https://model.example/v1/chat/completions',
+      'https://model.example',
+      '/v1/chat/completions',
+      'model.example',
+    ],
+    [
+      'https://model.example:8443/v1/chat_completions.json',
+      'https://model.example:8443',
+      '/v1/chat_completions.json',
+      'model.example',
+    ],
+    [
+      'https://xn--mdell-jua.example/~a',
+      'https://xn--mdell-jua.example',
+      '/~a',
+      'xn--mdell-jua.example',
+    ],
+  ])('splits %s', (input, origin, path, host) => {
+    const result = parseModelEndpoint(input);
+    expect(result).toEqual({ ok: true, origin, path, host });
+    expect(Object.isFrozen(result)).toBe(true);
+  });
+
+  it.each<[string, OriginCode]>([
+    [`https://model.example/${'a'.repeat(600)}`, 'url_too_long'],
+    ['model.example/v1', 'url_invalid'],
+    ['http://model.example/v1', 'url_not_https'],
+    ['https://user@model.example/v1', 'url_credentials'],
+    ['https://user:pass@model.example/v1', 'url_credentials'],
+    ['https://model.example', 'url_path'],
+    ['https://model.example/', 'url_path'],
+    ['https://model.example/v1?', 'url_path'],
+    ['https://model.example/v1?x=1', 'url_path'],
+    ['https://model.example/v1#', 'url_path'],
+    ['https://model.example/v1//chat', 'url_path'],
+    ['https://model.example/v1/', 'url_path'],
+    [`https://model.example/${'a'.repeat(maxEndpointPathLength)}`, 'url_path'],
+    ['https://model.example/v1/%41', 'url_path'],
+    ['https://model.example/v1/ä', 'url_path'],
+    ['https://model.example/v1/a b', 'url_path'],
+    ['https://model.example/v1:chat', 'url_path'],
+    ['https://10.0.0.1/v1', 'url_ip_address'],
+    ['https://[::1]/v1', 'url_ip_address'],
+    ['https://localhost/v1', 'url_localhost'],
+    ['https://model/v1', 'url_single_label'],
+    ['https://model.example:0/v1', 'url_port'],
+    ['https://Model.example/v1', 'url_not_canonical'],
+    ['https://model.example:443/v1', 'url_not_canonical'],
+    ['https://model.example\\v1', 'url_not_canonical'],
+    ['https://model.example/v1/../v2', 'url_not_canonical'],
+    ['https://model.example/v1/./v2', 'url_not_canonical'],
+  ])('refuses %s with %s', (input, code) => {
+    expect(parseModelEndpoint(input)).toEqual({ ok: false, code });
+  });
+
+  it('takes the longest path and refuses a longer one', () => {
+    const longest = `/${'a'.repeat(maxEndpointPathLength - 1)}`;
+    expect(parseModelEndpoint(`https://model.example${longest}`)).toMatchObject(
+      { ok: true, path: longest },
+    );
+  });
+
+  it('throws for anything but a string', () => {
+    expect(() => parseModelEndpoint(42 as unknown as string)).toThrow(
+      TypeError,
+    );
   });
 });

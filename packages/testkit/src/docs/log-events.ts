@@ -77,7 +77,12 @@ export const logFieldMeanings: Readonly<
   method: {
     setBy: 'Aufruf',
     meaning:
-      'Methode einer Anfrage an ChurchTools: `GET` liest, `POST`, `PUT`, `PATCH` und `DELETE` schreiben.',
+      'Methode einer Anfrage an ChurchTools: `GET` liest, `POST`, `PUT`, `PATCH` und `DELETE` schreiben. Eine Anfrage an ein Modell ist immer `POST`.',
+  },
+  purpose: {
+    setBy: 'Aufruf',
+    meaning:
+      'Zweck einer Anfrage, heute nur `model` für eine Anfrage an ein Sprachmodell. Anfragen an ChurchTools tragen das Feld nicht.',
   },
   status: {
     setBy: 'Aufruf',
@@ -148,7 +153,8 @@ const readObjects: Readonly<Record<string, string>> = Object.freeze({
 const httpFailures: Readonly<Record<string, string>> = Object.freeze({
   refused:
     'Der ausgehende Weg hat das Ziel einer Anfrage abgewiesen, bevor er etwas sendete. Das ist ein Fehler im Code, nie im Netz.',
-  connect: 'Es kam keine Verbindung zu ChurchTools zustande.',
+  connect:
+    'Es kam keine Verbindung zu ChurchTools oder zum Anbieter des Modells zustande.',
   tls: 'Die gesicherte Verbindung kam nicht zustande, etwa wegen des Zertifikats.',
   timeout: 'Die Anfrage dauerte länger als ihre Grenze.',
   aborted:
@@ -156,7 +162,7 @@ const httpFailures: Readonly<Record<string, string>> = Object.freeze({
   interrupted: 'Die Verbindung brach ab, bevor die Antwort ganz da war.',
   too_large: 'Die Antwort war grösser als die Grenze ihrer Operation.',
   redirect:
-    'ChurchTools hat auf eine andere Adresse verwiesen. Der ausgehende Weg folgt keinem Verweis.',
+    'ChurchTools oder der Anbieter des Modells hat auf eine andere Adresse verwiesen. Der ausgehende Weg folgt keinem Verweis.',
   encoding:
     'Die Antwort hatte eine Kodierung, die der ausgehende Weg nicht annimmt.',
   status:
@@ -360,7 +366,7 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
     churchtools_operation_too_large:
       'Die Antwort auf eine Operation war grösser als ihre Grenze.',
     http_response:
-      'ChurchTools hat geantwortet. `method` nennt die Methode der Anfrage, `status` den Status, `durationMs` die Dauer.',
+      'ChurchTools oder der Anbieter des Modells hat geantwortet. `method` nennt die Methode der Anfrage, `status` den Status, `durationMs` die Dauer, `purpose` steht nur bei einer Anfrage an ein Modell.',
     audit_missing_error_code:
       'Eine Zeile mit `error` oder `denied` kam ohne Fehlercode. Die Zeile im Audit trägt einen Platzhalter.',
     audit_missing_undoes:
@@ -443,7 +449,7 @@ const familyMeaning = (name: string): string | undefined => {
   if (name.startsWith('http_')) {
     const category = name.slice('http_'.length);
     if (Object.hasOwn(httpFailures, category)) {
-      return `${httpFailures[category] ?? ''} \`code\` nennt den Fehler, \`durationMs\` die Dauer bis dahin, \`method\` die Methode der Anfrage.`;
+      return `${httpFailures[category] ?? ''} \`code\` nennt den Fehler, \`durationMs\` die Dauer bis dahin, \`method\` die Methode der Anfrage, \`purpose\` steht nur bei einer Anfrage an ein Modell.`;
     }
   }
   if (name.startsWith('audit_invalid_')) {

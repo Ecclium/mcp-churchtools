@@ -7,6 +7,12 @@
  * body of limited size and no query, reaches only the paths of the writes
  * the core knows, and no request is ever sent twice.
  *
+ * A second purpose since ADR 0033: the transport to the endpoint of a
+ * language model sends only a POST with JSON to the one path of its
+ * configuration, with the key as a bearer token and limits of its own.
+ * Every other check is the same for both purposes, and nothing of the
+ * transport to ChurchTools is loosened by it.
+ *
  * Only `compose.ts` and `compose-mock.ts` use this module. Its build path
  * takes a dispatcher, a socket and limits, which the factories never take
  * from a caller.
@@ -105,6 +111,25 @@ export interface HttpTransport {
   destroy(): Promise<void>;
 }
 
+/**
+ * The outbound path to the endpoint of one language model (ADR 0033). It
+ * takes no address: it sends only to the one path of its configuration,
+ * only a POST with a JSON body, with the key as a bearer token. Built only
+ * by the composition root, like the transport to ChurchTools.
+ */
+export interface ModelTransport {
+  /**
+   * Sends the body to the endpoint and reads the whole answer.
+   *
+   * @throws {HttpTransportError} For every failure, with a fixed category.
+   */
+  post(options: HttpWriteOptions): Promise<HttpResponse>;
+  /** Lets running calls finish, then closes every connection. */
+  close(): Promise<void>;
+  /** Closes every connection at once and aborts running calls. */
+  destroy(): Promise<void>;
+}
+
 /** The limits of a transport, all in milliseconds or bytes. */
 export interface TransportLimits {
   /** Time to open a connection, TLS included. */
@@ -147,6 +172,27 @@ export const transportLimits: TransportLimits = Object.freeze({
   maxResponseBytes: 8 * 1024 * 1024,
   maxHeaderBytes: 16 * 1024,
   maxRequestBytes: 1024 * 1024,
+});
+
+/**
+ * The limits of every transport to a model (ADR 0033). A model answers
+ * without streaming only when it has written its whole answer, and up to
+ * 8000 tokens can take minutes, so the headers may come late; the whole
+ * call still ends after five minutes. A prompt carries the inputs of a run,
+ * at most ten of up to 200 entries, which 2 MiB holds with room for the
+ * escapes of JSON, while an answer of 8000 tokens stays far below 1 MiB.
+ * Two connections suffice, as a run calls its model one at a time.
+ */
+export const modelTransportLimits: TransportLimits = Object.freeze({
+  connectMs: 10_000,
+  headersMs: 300_000,
+  bodyMs: 60_000,
+  totalMs: 300_000,
+  keepAliveMs: 10_000,
+  connections: 2,
+  maxResponseBytes: 1024 * 1024,
+  maxHeaderBytes: 16 * 1024,
+  maxRequestBytes: 2 * 1024 * 1024,
 });
 
 /**
@@ -253,6 +299,28 @@ export interface TransportSettings {
   readonly limits: TransportLimits;
 }
 
+/** What a transport to a model is built from (ADR 0033). */
+export interface ModelTransportSettings extends TransportSettings {
+  /**
+   * The path of the endpoint, as the configuration checked it, such as
+   * `/v1/chat/completions`. The transport sends to no other.
+   */
+  readonly path: string;
+}
+
+// What sets the purposes of a transport apart (ADR 0033). Everything else,
+// every check of the target and the body, the headers, the reading of the
+// answer and the failures, is the same for both.
+interface Purpose {
+  // The scheme of the Authorization header.
+  readonly scheme: 'Login' | 'Bearer';
+  // Whether a method may reach a path, once the target passed its checks.
+  readonly allows: (method: HttpMethod, path: string) => boolean;
+  // The field of every line of the log that names the purpose. ChurchTools
+  // has none, so its lines stay as they were.
+  readonly fields: { readonly purpose?: 'model' };
+}
+
 // Whether a signal of the caller has aborted, read through the getter of
 // the class with the signal as receiver: an own property named aborted
 // cannot answer for it. For anything but a real AbortSignal the getter
@@ -341,24 +409,28 @@ const copyBody = (value: unknown, max: number): Uint8Array | undefined => {
   return body.byteLength >= 1 && body.byteLength <= max ? body : undefined;
 };
 
-/**
- * Builds a transport on a dispatcher. The dispatcher is the agent from
- * {@link createAgent} or, for tests, a MockAgent; either way every call goes
- * through the same checks.
- *
- * @param dispatcher - Sends the requests to the origin.
- * @param settings - Origin, token, logger, clock and limits.
- * @returns The transport, frozen. It holds the dispatcher and the token
- *   only in its closures.
- * @example
- * ```ts
- * const transport = createTransport(createAgent(transportLimits), settings);
- * ```
- */
-export function createTransport(
+// The purpose of the transport to ChurchTools: the token in the header of
+// the scheme Login (ADR 0023), any read, and a write only to the paths of
+// the writes the core knows (ADR 0072).
+const churchTools: Purpose = Object.freeze({
+  scheme: 'Login',
+  allows: (method: HttpMethod, path: string): boolean =>
+    checkWriteTarget(method, path) === undefined,
+  fields: Object.freeze({}),
+});
+
+// The one way every request of a transport takes, for either purpose: the
+// checks of target, limit, signal and body come first, then a place in the
+// queue, then the request, then the whole answer.
+const createSend = (
   dispatcher: Dispatcher,
   settings: TransportSettings,
-): HttpTransport {
+  purpose: Purpose,
+): ((
+  method: HttpMethod,
+  url: URL,
+  options: HttpRequestOptions | HttpWriteOptions,
+) => Promise<HttpResponse>) => {
   const { origin, token, userAgent, logger, clock, limits } = settings;
 
   // Whether a body holds the token, as it is or escaped for JSON. A token
@@ -419,6 +491,7 @@ export function createTransport(
         code: error.code,
         durationMs: duration(),
         method,
+        ...purpose.fields,
       });
       return error;
     };
@@ -440,7 +513,7 @@ export function createTransport(
         (limit as number) < 1 ||
         (limit as number) > limits.maxResponseBytes ||
         !target.ok ||
-        checkWriteTarget(method, target.path) !== undefined
+        !purpose.allows(method, target.path)
       ) {
         throw new TypeError('refused');
       }
@@ -499,7 +572,7 @@ export function createTransport(
       await enter(controller.signal);
       entered = true;
       const headers: Record<string, string> = {
-        authorization: `Login ${revealSecret(token)}`,
+        authorization: `${purpose.scheme} ${revealSecret(token)}`,
         accept: 'application/json',
         'accept-encoding': 'identity',
         'user-agent': userAgent,
@@ -553,6 +626,7 @@ export function createTransport(
         durationMs: duration(),
         method,
         status,
+        ...purpose.fields,
       });
       return Object.freeze({
         __proto__: null,
@@ -575,7 +649,28 @@ export function createTransport(
       if (entered) leave();
     }
   };
+  return send;
+};
 
+/**
+ * Builds a transport to ChurchTools on a dispatcher. The dispatcher is the
+ * agent from {@link createAgent} or, for tests, a MockAgent; either way
+ * every call goes through the same checks.
+ *
+ * @param dispatcher - Sends the requests to the origin.
+ * @param settings - Origin, token, logger, clock and limits.
+ * @returns The transport, frozen. It holds the dispatcher and the token
+ *   only in its closures.
+ * @example
+ * ```ts
+ * const transport = createTransport(createAgent(transportLimits), settings);
+ * ```
+ */
+export function createTransport(
+  dispatcher: Dispatcher,
+  settings: TransportSettings,
+): HttpTransport {
+  const send = createSend(dispatcher, settings, churchTools);
   return Object.freeze({
     get: (url: URL, options: HttpRequestOptions) => send('GET', url, options),
     post: (url: URL, options: HttpWriteOptions) => send('POST', url, options),
@@ -583,6 +678,58 @@ export function createTransport(
     patch: (url: URL, options: HttpWriteOptions) => send('PATCH', url, options),
     delete: (url: URL, options: HttpRequestOptions) =>
       send('DELETE', url, options),
+    close: async (): Promise<void> => {
+      await dispatcher.close();
+    },
+    destroy: async (): Promise<void> => {
+      await dispatcher.destroy();
+    },
+  });
+}
+
+/**
+ * Builds a transport to the endpoint of a model on a dispatcher (ADR
+ * 0033). It sends only a POST with a JSON body to the one path of its
+ * settings, with the key in a header of the scheme Bearer, through the
+ * same checks as the transport to ChurchTools. Any other path, a query and
+ * any other method are refused before a socket opens.
+ *
+ * @param dispatcher - Sends the requests to the origin.
+ * @param settings - Origin, path, key, logger, clock and limits.
+ * @returns The transport, frozen. It holds the dispatcher and the key only
+ *   in its closures.
+ * @example
+ * ```ts
+ * const transport = createModelTransport(
+ *   createAgent(modelTransportLimits),
+ *   settings,
+ * );
+ * ```
+ */
+export function createModelTransport(
+  dispatcher: Dispatcher,
+  settings: ModelTransportSettings,
+): ModelTransport {
+  const { origin, path } = settings;
+  const send = createSend(
+    dispatcher,
+    settings,
+    Object.freeze({
+      scheme: 'Bearer',
+      // The transport has only post, so the target alone decides: exactly
+      // the path of the settings, never a query.
+      allows: (_method: HttpMethod, target: string): boolean =>
+        target === path && !target.includes('?'),
+      fields: Object.freeze({ purpose: 'model' }),
+    }),
+  );
+  // Built once from the settings; the check of every call reads a fresh
+  // copy of it. A path the parser changes, such as one without a leading
+  // slash, never equals the path of the settings, so every call is
+  // refused.
+  const endpoint = new URL(path, origin);
+  return Object.freeze({
+    post: (options: HttpWriteOptions) => send('POST', endpoint, options),
     close: async (): Promise<void> => {
       await dispatcher.close();
     },

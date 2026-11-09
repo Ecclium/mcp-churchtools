@@ -11,16 +11,21 @@
  * that is too large from other failures (ADR 0067). It passes on neither
  * `revealSecret`, which only modules inside this folder use (ADR 0054),
  * nor a way to build a transport: only the composition root builds one,
- * through the subpath `./http` of core (ADR 0056).
+ * through the subpath `./http` of core (ADR 0056). The check of the
+ * endpoint of a model is here as well, because the configuration of the
+ * providers reads it (ADR 0033).
  *
  * @packageDocumentation
  */
 export { type FailureCategory, HttpTransportError } from './failure.js';
 export {
+  type EndpointResult,
+  maxEndpointPathLength,
   type OriginCode,
   originCodes,
   type OriginResult,
   parseChurchToolsOrigin,
+  parseModelEndpoint,
 } from './origin.js';
 export { Secret } from './secret.js';
 export type {
@@ -28,4 +33,5 @@ export type {
   HttpResponse,
   HttpTransport,
   HttpWriteOptions,
+  ModelTransport,
 } from './transport.js';

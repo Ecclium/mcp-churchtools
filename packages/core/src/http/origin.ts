@@ -45,7 +45,10 @@ const maxLength = 'https://'.length + 253 + ':65535'.length + '/'.length;
 // keeps its brackets.
 const ipv4Pattern = /^\d{1,3}(?:\.\d{1,3}){3}$/;
 
-const refuse = (code: OriginCode): OriginResult =>
+// A refusal fits both results, that of an origin and that of an endpoint.
+const refuse = (
+  code: OriginCode,
+): { readonly ok: false; readonly code: OriginCode } =>
   Object.freeze({ __proto__: null, ok: false, code });
 
 /**
@@ -103,4 +106,94 @@ export function parseChurchToolsOrigin(input: string): OriginResult {
     return refuse('url_not_canonical');
   }
   return Object.freeze({ __proto__: null, ok: true, origin });
+}
+
+/** The longest path of the endpoint of a model (ADR 0033). */
+export const maxEndpointPathLength = 256;
+
+/** The checked endpoint of a model, or the reason to refuse its address. */
+export type EndpointResult =
+  | {
+      readonly ok: true;
+      /** The origin, checked as that of an instance. */
+      readonly origin: string;
+      /** The path, such as `/v1/chat/completions`. */
+      readonly path: string;
+      /** The host without the port, as the audit names it. */
+      readonly host: string;
+    }
+  | { readonly ok: false; readonly code: OriginCode };
+
+// The characters of a path that need no escape: letters, digits, the four
+// unreserved marks and the slash between segments. Character by character,
+// without a regular expression, as the names of parameters.
+const isPathCharacter = (code: number): boolean =>
+  (code >= 0x30 && code <= 0x39) ||
+  (code >= 0x41 && code <= 0x5a) ||
+  (code >= 0x61 && code <= 0x7a) ||
+  code === 0x2d ||
+  code === 0x2e ||
+  code === 0x5f ||
+  code === 0x7e ||
+  code === 0x2f;
+
+/**
+ * Checks the address of the endpoint of a language model and splits it
+ * into origin and path (ADR 0033). The origin gets every rule of the
+ * address of an instance. The path must be more than a slash, without an
+ * empty segment, an escape, a query or a fragment, and the whole address
+ * must be canonical, so that the transport sends to exactly what the
+ * configuration accepted.
+ *
+ * @param input - The address as configured.
+ * @returns Origin, path and host, or the code of the broken rule. Never
+ *   the input itself.
+ * @throws {TypeError} When the input is not a string.
+ * @example
+ * ```ts
+ * parseModelEndpoint('https://model.example.org/v1/chat/completions');
+ * // { ok: true, origin: 'https://model.example.org',
+ * //   path: '/v1/chat/completions', host: 'model.example.org' }
+ * ```
+ */
+export function parseModelEndpoint(input: string): EndpointResult {
+  if (typeof input !== 'string') {
+    throw new TypeError('An address must be a string.');
+  }
+  if (input.length > maxLength + maxEndpointPathLength) {
+    return refuse('url_too_long');
+  }
+  const url = URL.parse(input);
+  if (url === null) return refuse('url_invalid');
+  if (url.protocol !== 'https:') return refuse('url_not_https');
+  // The origin drops a user and a password, so they are checked here.
+  if (url.username !== '' || url.password !== '') {
+    return refuse('url_credentials');
+  }
+  const path = url.pathname;
+  if (
+    input.includes('?') ||
+    input.includes('#') ||
+    path.length < 2 ||
+    path.length > maxEndpointPathLength ||
+    path.includes('//') ||
+    path.endsWith('/')
+  ) {
+    return refuse('url_path');
+  }
+  for (let index = 0; index < path.length; index += 1) {
+    if (!isPathCharacter(path.charCodeAt(index))) return refuse('url_path');
+  }
+  const checked = parseChurchToolsOrigin(url.origin);
+  if (!checked.ok) return refuse(checked.code);
+  // Capitals, the default port, an escaped letter, a backslash or a dot
+  // segment the parser removed make the input differ.
+  if (input !== `${checked.origin}${path}`) return refuse('url_not_canonical');
+  return Object.freeze({
+    __proto__: null,
+    ok: true,
+    origin: checked.origin,
+    path,
+    host: url.hostname,
+  });
 }
