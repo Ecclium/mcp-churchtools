@@ -96,6 +96,9 @@ const setup = (overrides: Partial<StdioServerOptions> = {}) => {
     approve: () => Promise.resolve({ kind: 'off' }),
     listQueue: () => Promise.resolve({ kind: 'off' }),
     showQueue: () => Promise.resolve({ kind: 'off' }),
+    // Nor does it read for a run of a routine (ADR 0033).
+    callForRun: () =>
+      Promise.resolve({ ok: false, code: 'internal', transient: false }),
     call: (name, value) => {
       calls.push({ name, input: value });
       return Promise.resolve(done);

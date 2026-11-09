@@ -65,6 +65,9 @@ const noQueue = {
   approve: noReject,
   listQueue: noReject,
   showQueue: noReject,
+  // The mount never reads for a run of a routine (ADR 0033).
+  callForRun: () =>
+    Promise.resolve({ ok: false, code: 'internal', transient: false } as const),
 };
 
 // Drives the mount in process through the serving entry of the SDK, in
