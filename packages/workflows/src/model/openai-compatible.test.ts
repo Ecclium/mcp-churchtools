@@ -150,7 +150,7 @@ describe('createOpenAiCompatibleProvider with structured output', () => {
     const { double, provider, answer } = setUp(true);
     answer(chatCompletion({ content: '{"text":1}' }));
     const error = await failure(provider.generate(request, signal()));
-    expect(error.code).toBe('upstream');
+    expect(error.code).toBe('validation');
     expect(double.calls()).toHaveLength(1);
   });
 });
@@ -247,7 +247,7 @@ describe('createOpenAiCompatibleProvider without structured output', () => {
     answer(chatCompletion({ content: 'x' }));
     answer(chatCompletion({ content: '{"text":1}' }));
     const error = await failure(provider.generate(request, signal()));
-    expect(error.code).toBe('upstream');
+    expect(error.code).toBe('validation');
     expect(double.calls()).toHaveLength(2);
   });
 
@@ -271,7 +271,7 @@ describe('createOpenAiCompatibleProvider without structured output', () => {
       },
     };
     const error = await failure(provider.generate(throwing, signal()));
-    expect(error.code).toBe('upstream');
+    expect(error.code).toBe('validation');
     expect(double.calls()).toHaveLength(2);
   });
 });
@@ -284,7 +284,7 @@ describe('the failures of an endpoint', () => {
     );
     const error = await failure(provider.generate(request, signal()));
     expect(error).toMatchObject({
-      code: 'upstream',
+      code: 'validation',
       message: 'The model refused to answer.',
     });
     expect(double.calls()).toHaveLength(1);
@@ -307,7 +307,7 @@ describe('the failures of an endpoint', () => {
       }),
     );
     const error = await failure(provider.generate(request, signal()));
-    expect(error.code).toBe('upstream');
+    expect(error.code).toBe('validation');
   });
 
   it('takes an answer without a reason to stop', async () => {

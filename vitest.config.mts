@@ -43,7 +43,9 @@ export default defineConfig({
       // language model, which reads the answers of a vendor and lets no
       // value reach it that the pipeline did not redact (ADR 0033), and of the
       // schedule, which decides when a run with a model and a write begins
-      // and how often it is tried (ADR 0034).
+      // and how often it is tried (ADR 0034), and of the parts of a run the
+      // core keeps, its system text, the level of its model and the content
+      // policy for what it writes (ADR 0033).
       thresholds: {
         'packages/core/src/**': {
           statements: 80,
@@ -148,6 +150,12 @@ export default defineConfig({
           lines: 100,
         },
         'packages/core/src/schedule/**': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
+        'packages/core/src/run/**': {
           statements: 100,
           branches: 100,
           functions: 100,

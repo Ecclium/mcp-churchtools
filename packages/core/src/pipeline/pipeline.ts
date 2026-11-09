@@ -55,9 +55,11 @@ import {
   type PlannedWrite,
   type PlanOutcome,
   type PlanStore,
+  type ProviderInfo,
   type QueueDecisionKind,
   type QuotaStore,
   type RedactionLevel,
+  type RunId,
   type TenantAssignment,
   type TenantContext,
   type ToolCall,
@@ -138,6 +140,8 @@ import {
 } from '../write/index.js';
 import type { KeyMaterial } from '../keys/index.js';
 import { createReadAccess, type ReadAccess } from './read-api.js';
+import { isTransientRunCode } from '../run/model.js';
+import { cutEntries, personNamesOf } from './run-read.js';
 import {
   collectOutputRefs,
   fitsInput,
@@ -206,6 +210,73 @@ export type ToolOutcome =
        * confirmed. The call is audited as planned, without an error.
        */
       readonly question?: ConfirmationQuestion;
+    };
+
+/**
+ * The run a read belongs to (ADR 0033): every audit line of the read names
+ * it, so that the audit shows which data a run read and for which model.
+ */
+export interface RunTag {
+  /** The ID of the run, a UUID the core drew. */
+  readonly runId: string;
+  /** The ID of the routine, as the policy names it. */
+  readonly routineId: string;
+  /** The model the run gives its data to, when it has one. */
+  readonly provider?: ProviderInfo;
+}
+
+/**
+ * One read of a run of a routine (ADR 0033), built by the composition root
+ * only. It runs unattended and only reads: the pipeline sets the mode and
+ * refuses a write tool and a tool that is not stable for routines.
+ */
+export interface RunCallRequest {
+  /** Tenant and actor, the actor of the routine such as `runner:<ID>`. */
+  readonly assignment: TenantAssignment | undefined;
+  /** The level of the call of the model, which the data come in. */
+  readonly redaction: 'strict' | 'standard';
+  /** Licensed features, empty in the free core. */
+  readonly features: readonly FeatureKey[];
+  /** The signal of the run. */
+  readonly signal: AbortSignal;
+  /** The run the read belongs to. */
+  readonly run: RunTag;
+  /** The most entries the result passes on, from 1. */
+  readonly maxEntries: number;
+}
+
+/**
+ * What a read of a run gives: the data with the mark of a redacted result,
+ * in the level of the model, how many entries they hold, whether more
+ * follow, and the name of each person by what the model sees of it. Or the
+ * code of the failure, and whether a later try may succeed (ADR 0034).
+ */
+export type RunCallOutcome =
+  | {
+      readonly ok: true;
+      readonly data: Redacted;
+      readonly entries: number;
+      readonly more: boolean;
+      /**
+       * Pseudonym, or in `standard` the ID as text, to the name in the
+       * level `standard`; empty for a person without a name in the data.
+       * The run holds it for its duration only (ADR 0033).
+       */
+      readonly persons: Readonly<Record<string, string>>;
+    }
+  | {
+      readonly ok: false;
+      readonly code: ErrorCode;
+      /**
+       * Whether the failure may pass (ADR 0034): the codes `network`,
+       * `rate_limited` and `upstream`, or a store of quotas or an audit
+       * file that cannot take the call now. `upstream` stands for 5xx and
+       * also for an answer of ChurchTools the core refuses, such as one
+       * that is too large or of an unknown form, which the code does not
+       * tell apart, so such a run is tried again at most twice. A result
+       * the pipeline finds too large is final.
+       */
+      readonly transient: boolean;
     };
 
 /** What `ecclium undo` asks the pipeline to take back (ADR 0031). */
@@ -437,6 +508,23 @@ export interface ToolPipeline {
     input: unknown,
     request: ToolRequest,
   ): Promise<ToolOutcome>;
+  /**
+   * Runs one read of a run of a routine through every stage, as `call`
+   * does, in the mode `unattended` (ADR 0033). It keeps at most
+   * `maxEntries` entries and gives the names of the persons for the
+   * report. Its audit line names the run, the routine, the policy and the
+   * model.
+   *
+   * @param name - The name of a read tool stable for routines.
+   * @param input - The input the engine built.
+   * @param request - What the composition root set for the run.
+   * @returns The outcome. It never rejects.
+   */
+  callForRun(
+    name: string,
+    input: unknown,
+    request: RunCallRequest,
+  ): Promise<RunCallOutcome>;
   /**
    * Takes back a write of the core from its snapshot, for the operator
    * only: a request in another mode is refused (ADR 0031). It writes one
@@ -727,7 +815,23 @@ interface Run {
   revealed?: RevealedInput;
   /** What a call of a write tool leaves for its audit line (ADR 0029). */
   write?: WriteRecord;
+  /** For a read of a run: its tag and the most entries it passes on. */
+  forRun?: { readonly tag: RunTag; readonly maxEntries: number };
+  /** What a read of a run passes on beside its data. */
+  runResult?: {
+    readonly entries: number;
+    readonly more: boolean;
+    readonly persons: Readonly<Record<string, string>>;
+  };
+  /**
+   * Whether a failure may pass on a later try: a store of quotas or an
+   * audit file that cannot take the call now (ADR 0034).
+   */
+  transient?: boolean;
 }
+
+// The ID of a routine, as the policy names it.
+const routineIdPattern = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
 /** The state of a write at the end of its call, for the audit. */
 interface WriteRecord {
@@ -957,20 +1061,43 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       ctx.log.warn('tool_output_invalid');
       return failed('internal');
     }
-    run.output = parsedOutput.data as Readonly<Record<string, unknown>>;
+    const root = entry.shape.root;
+    // A read of a run passes on at most the entries its input may, cut
+    // before redact, so that the audit names and the model sees the same
+    // entries (ADR 0033).
+    const forRun = run.forRun;
+    const cut =
+      forRun === undefined
+        ? undefined
+        : cutEntries(
+            parsedOutput.data as Readonly<Record<string, unknown>>,
+            root,
+            forRun.maxEntries,
+          );
+    const output =
+      cut?.data ?? (parsedOutput.data as Readonly<Record<string, unknown>>);
+    run.output = output;
 
     // 7. redact and 8. markUntrusted, along the shape kept at registration.
     // The boundary is drawn after redact, so it is checked against the
     // cleaned text that the envelope will hold.
-    const root = entry.shape.root;
     let redacted: unknown;
+    let persons: Readonly<Record<string, string>> | undefined;
     try {
-      redacted = redact(
-        parsedOutput.data,
-        root,
-        redaction,
-        run.pseudonyms?.hide,
-      );
+      redacted = redact(output, root, redaction, run.pseudonyms?.hide);
+      // The names of the persons for the report of a run, by what the
+      // model sees: in strict the pseudonym, which redact has just made
+      // for every such ID, so the pseudonyms are open here (ADR 0069).
+      if (cut !== undefined) {
+        const pseudonyms = run.pseudonyms;
+        persons = personNamesOf(
+          output,
+          root,
+          isStrictLevel(redaction)
+            ? (id) => (pseudonyms as Pseudonyms).hide(id)
+            : String,
+        );
+      }
     } catch {
       // In strict an ID of a person without its pseudonym never goes out
       // (ADR 0069).
@@ -993,7 +1120,16 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     // 0024).
     if (resultBytes(data) > maxResultBytes) {
       ctx.log.warn('tool_result_too_large');
+      // The same read gives the same size: no later try of a run passes.
+      run.transient = false;
       return failed('upstream', tooLarge);
+    }
+    if (cut !== undefined) {
+      run.runResult = {
+        entries: cut.entries,
+        more: cut.more,
+        persons: persons as Readonly<Record<string, string>>,
+      };
     }
     // The mark of a redacted result, the only kind the mount sends (ADR
     // 0026).
@@ -1020,6 +1156,20 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     const entry = catalog.get(name);
     if (entry === undefined) return failed('not_found');
     run.entry = entry;
+    // A read of a run that the composition root built wrong ends before
+    // anything runs: a level other than those of a model, a limit of
+    // entries out of range, or a routine without the form of the policy.
+    const forRun = run.forRun;
+    if (
+      forRun !== undefined &&
+      ((request.redaction !== 'strict' && request.redaction !== 'standard') ||
+        !Number.isSafeInteger(forRun.maxEntries) ||
+        forRun.maxEntries < 1 ||
+        typeof forRun.tag.routineId !== 'string' ||
+        !routineIdPattern.test(forRun.tag.routineId))
+    ) {
+      return failed('internal');
+    }
 
     // 2. Copies of what the gate, the stages and the audit rely on, taken
     // before any code of the tool runs, and a signal of the call's own.
@@ -1067,6 +1217,9 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       logging,
       tool: entry.name,
       eventId: run.eventId,
+      // The log lines of a read of a run name the run (ADR 0033). The
+      // context refuses an ID that is no UUID.
+      ...(forRun === undefined ? {} : { runId: forRun.tag.runId as RunId }),
     });
     run.ctx = ctx;
 
@@ -1101,13 +1254,21 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     if (meta.unattended === 'never' && mode !== 'interactive') {
       return failed('policy_denied');
     }
+    // A run reads only with tools that are stable for routines, and never
+    // writes through this way (ADR 0033); the engine checks the same before
+    // the run, this holds also for an engine that forgot.
+    if (forRun !== undefined && (writes || !meta.routineStable)) {
+      return failed('policy_denied');
+    }
     if (meta.tier === 'pro' && features.length === 0) {
       return failed('license_required');
     }
     // Before the input is checked and ChurchTools is asked, so that a
     // broken audit file costs no read and no quota (ADR 0028). A tool that
-    // names persons counts here like a special one (ADR 0064).
+    // names persons counts here like a special one (ADR 0064). A run may
+    // try again later, when the operator has fixed the file (ADR 0034).
     if ((entry.asSpecial || writes) && !auditReady()) {
+      run.transient = true;
       return failed('policy_denied', auditNotReady);
     }
 
@@ -1172,6 +1333,9 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     if (entry.asSpecial) {
       const counted = await countRead(ctx);
       if (counted !== 'ok') {
+        // A store that cannot count may answer on a later try of a run; a
+        // budget that is used up stays so for the day (ADR 0034).
+        if (counted === 'unavailable') run.transient = true;
         ctx.log.warn(
           counted === 'exhausted'
             ? 'read_budget_exhausted'
@@ -1748,12 +1912,15 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       : 0;
   };
 
-  const call = async (
+  // One call through every stage, for a client or for a read of a run,
+  // with its state for the caller.
+  const callWith = async (
     name: string,
     input: unknown,
     request: ToolRequest,
-  ): Promise<ToolOutcome> => {
-    const run: Run = {};
+    forRun?: Run['forRun'],
+  ): Promise<{ readonly outcome: ToolOutcome; readonly run: Run }> => {
+    const run: Run = forRun === undefined ? {} : { forRun };
     let outcome = internalOutcome;
     let auditOutcome: AuditOutcome = 'error';
     const start = now();
@@ -1847,6 +2014,19 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
                 : { confirmation: run.write.confirmation }),
               ...(writeState === undefined ? {} : { writeState }),
               ...(run.entry?.meta.capability === 'write' ? { policyHash } : {}),
+              // A read of a run names its run, routine, policy and model,
+              // so that the audit shows which data went to which model
+              // (ADR 0033).
+              ...(forRun === undefined
+                ? {}
+                : {
+                    runId: forRun.tag.runId,
+                    routineId: forRun.tag.routineId,
+                    policyHash,
+                    ...(forRun.tag.provider === undefined
+                      ? {}
+                      : { provider: forRun.tag.provider }),
+                  }),
               ...(errorCode === undefined ? {} : { errorCode }),
               ...(run.write?.contentViolations === undefined
                 ? {}
@@ -1890,7 +2070,11 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       // Whatever threw above: the result of a tool treated as special goes
       // out only with its line in the audit file (ADR 0028).
       const withheld = outcome.ok && special && !recorded;
-      if (withheld) outcome = withheldOutcome;
+      if (withheld) {
+        outcome = withheldOutcome;
+        // The file may take the line on a later try of a run (ADR 0034).
+        run.transient = true;
+      }
       try {
         const errorCode =
           outcome.ok || outcome.question !== undefined
@@ -1907,7 +2091,67 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         // The log never decides the outcome.
       }
     }
-    return outcome;
+    return { outcome, run };
+  };
+
+  const call = async (
+    name: string,
+    input: unknown,
+    request: ToolRequest,
+  ): Promise<ToolOutcome> => (await callWith(name, input, request)).outcome;
+
+  // A read of a run (ADR 0033): the stages of every call, in the mode
+  // unattended and without writing, and what the run needs besides the
+  // data. The request is copied through own data properties, so that no
+  // getter of the composition root's object answers twice.
+  const callForRun = async (
+    name: string,
+    input: unknown,
+    request: RunCallRequest,
+  ): Promise<RunCallOutcome> => {
+    try {
+      const tag = ownData(request, 'run') as RunTag;
+      const provider = ownData(tag, 'provider') as ProviderInfo | undefined;
+      const forRun = Object.freeze({
+        tag: Object.freeze({
+          runId: ownData(tag, 'runId') as string,
+          routineId: ownData(tag, 'routineId') as string,
+          ...(provider === undefined ? {} : { provider }),
+        }),
+        maxEntries: ownData(request, 'maxEntries') as number,
+      });
+      const { outcome, run } = await callWith(
+        name,
+        input,
+        {
+          assignment: ownData(request, 'assignment') as TenantAssignment,
+          mode: 'unattended',
+          redaction: ownData(request, 'redaction') as RedactionLevel,
+          readOnly: true,
+          features: ownData(request, 'features') as readonly FeatureKey[],
+          signal: ownData(request, 'signal') as AbortSignal,
+        },
+        forRun,
+      );
+      if (outcome.ok) {
+        // A read of a run that ends with a result went through finish,
+        // which leaves what the run needs besides the data.
+        return Object.freeze({
+          ok: true,
+          data: outcome.data,
+          ...(run.runResult as NonNullable<Run['runResult']>),
+        });
+      }
+      const code = outcome.error.code;
+      return Object.freeze({
+        ok: false,
+        code,
+        transient: run.transient ?? isTransientRunCode(code),
+      });
+    } catch {
+      // A request that cannot be read is a fault of the caller.
+      return Object.freeze({ ok: false, code: 'internal', transient: false });
+    }
   };
 
   // One undo of the operator (ADR 0031): from the ID of the audit line of a
@@ -2815,6 +3059,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
   return Object.freeze({
     __proto__: null,
     call,
+    callForRun,
     undo,
     reject,
     approve,

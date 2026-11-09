@@ -216,16 +216,19 @@ export function createOpenAiCompatibleProvider(
     const withUsage = usage === undefined ? {} : { usage };
     // The schema of the answer asks for at least one choice.
     const choice = answer.choices[0] as (typeof answer.choices)[number];
+    // A refusal and a stop for another reason, such as a filter of the
+    // vendor, are answers that do not fit, not failures of the vendor: a
+    // later try of the run would get the same (ADR 0034).
     const refusal = choice.message.refusal;
     if (refusal !== undefined && refusal !== null && refusal !== '') {
-      throw fail('upstream', 'The model refused to answer.');
+      throw fail('validation', 'The model refused to answer.');
     }
     const reason = choice.finish_reason;
     if (reason === 'length') {
       return { ok: false, rejection: 'length', ...withUsage };
     }
     if (reason !== 'stop' && reason !== undefined && reason !== null) {
-      throw fail('upstream', 'The model stopped without an answer.');
+      throw fail('validation', 'The model stopped without an answer.');
     }
     const content = choice.message.content;
     const json = parseModelJson(content ?? '');
@@ -268,16 +271,18 @@ export function createOpenAiCompatibleProvider(
     }
     // A vendor that follows the schema has no excuse for an answer that
     // does not fit; only a vendor without it gets a second attempt.
+    // `validation`, not `upstream`: the vendor answered, the answer does
+    // not fit, and the run ends without a further try (ADR 0034).
     if (native) {
       throw fail(
-        'upstream',
+        'validation',
         'The answer of the model does not fit its schema.',
       );
     }
     const second = await attempt(request, first.rejection, signal);
     if (!second.ok) {
       throw fail(
-        'upstream',
+        'validation',
         'The answer of the model does not fit its schema.',
       );
     }
