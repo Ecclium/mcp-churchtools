@@ -285,8 +285,10 @@ const setup = (
   if (!prepared.ok) throw new Error(`not prepared: ${prepared.code}`);
   const bound = composeRun({
     pipeline: composed.pipeline,
-    routineId: 'dienstplan-test',
-    redaction: prepared.run.redaction,
+    run: prepared.run,
+    runs: [prepared.run],
+    // The policy of the test in place of the one the loader read.
+    config: Object.freeze({ ...config, policy }),
     provider: model.info,
     logging: { writer, minLevel: 'info' },
     clock,
@@ -309,10 +311,34 @@ const setup = (
     mock,
     bound,
     prepared: prepared.run,
+    pipeline: composed.pipeline,
+    writer,
+    clock,
     parsed,
     asked: routinePlugin.calls,
   };
 };
+
+describe('the binding of a run', () => {
+  it('takes the account from the policy of the configuration, never from its caller', () => {
+    const { prepared, pipeline, writer, clock } = setup('strict', () => ({}));
+    const bind = (policy: Policy) =>
+      composeRun({
+        pipeline,
+        run: prepared,
+        runs: [prepared],
+        config: Object.freeze({ ...config, policy }),
+        logging: { writer, minLevel: 'info' },
+        clock,
+      });
+    expect(() => bind(policyOf('strict'))).not.toThrow();
+    // A routine prepared against a policy that is not the one of the
+    // configuration, here one that names no entry for it.
+    expect(() =>
+      bind(Object.freeze({ ...policyOf('strict'), unattended: [] })),
+    ).toThrow(TypeError);
+  });
+});
 
 describe('a run of a routine up to before its write', () => {
   it('gives the model pseudonyms only and renders the names of the persons', async () => {
