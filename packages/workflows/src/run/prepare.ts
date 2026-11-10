@@ -89,6 +89,46 @@ export type RunPrepareResult =
       readonly field?: string;
     };
 
+/** The alias of the account of a routine, or that its entries differ. */
+export type RunCredential =
+  | {
+      readonly ok: true;
+      /** The alias, or undefined for a routine without an entry. */
+      readonly credential?: string;
+    }
+  | { readonly ok: false };
+
+/**
+ * The alias of the account of a routine, from the entries of the routine
+ * in the unattended part of the policy. The composition root takes it
+ * from the policy itself, never from its caller, so that no run reads or
+ * writes with another account than the policy names (ADR 0033).
+ *
+ * @param policy - The checked policy of the configuration.
+ * @param routineId - The ID of the routine.
+ * @returns The alias, none for a routine without an entry, or not ok when
+ *   the entries of the routine name two aliases.
+ * @example
+ * ```ts
+ * const settled = runCredentialOf(config.policy, 'dienstplan-report');
+ * ```
+ */
+export function runCredentialOf(
+  policy: Policy,
+  routineId: string,
+): RunCredential {
+  const aliases = new Set(
+    policy.unattended
+      .filter((entry) => entry.routine === routineId)
+      .map((entry) => entry.credential),
+  );
+  if (aliases.size > 1) return Object.freeze({ ok: false });
+  const [credential] = aliases;
+  return Object.freeze(
+    credential === undefined ? { ok: true } : { ok: true, credential },
+  );
+}
+
 /** The most days a relative day of a parameter reaches, either way. */
 export const maxRelativeDays = 366;
 
@@ -200,9 +240,9 @@ export function prepareRun(
   const entries = context.policy.unattended.filter(
     (entry) => entry.routine === routine.id,
   );
-  const credentials = new Set(entries.map((entry) => entry.credential));
-  if (credentials.size > 1) return refuse('run_credential_mixed');
-  const [credential] = credentials;
+  const settled = runCredentialOf(context.policy, routine.id);
+  if (!settled.ok) return refuse('run_credential_mixed');
+  const { credential } = settled;
 
   // A target in ChurchTools without an entry of the policy keeps the
   // routine from starting; a draft to a file needs none (ADR 0033).

@@ -27,6 +27,7 @@ Ecclium liest seine Konfiguration aus Variablen der Umgebung. Jede trägt das Pr
 | `ECCLIUM_MARKER_KEY_FILE` | absoluter Pfad | keine | nein | nein |
 | `ECCLIUM_ROUTINES_DIR` | absoluter Pfad | keine | nein | nein |
 | `ECCLIUM_PROVIDERS_FILE` | absoluter Pfad | keine | nein | nein |
+| `ECCLIUM_RUNNER_TOKENS_DIR` | absoluter Pfad | keine | nein | nein |
 | `ECCLIUM_STDIO_SUBJECT` | Bezeichnung mit höchstens 32 Zeichen | `local-stdio` | nein | ja |
 | `ECCLIUM_LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` | nein | nein |
 
@@ -105,6 +106,10 @@ Absoluter Pfad des Ordners mit den Routinen im Format `routine.v1`, je eine Date
 ## `ECCLIUM_PROVIDERS_FILE`
 
 Absoluter Pfad der Datei mit den Anbietern von Sprachmodellen im Format `providers.v1` (`docs/providers.md`): je Alias Anbieter, Modell, Land des Rechenzentrums, Endpunkt mit `https`, ob der Anbieter strukturierte Ausgabe kann, der Pfad der Datei mit dem Schlüssel und ausserhalb der Schweiz und des EWR die Grundlage der Übermittlung. Der Start liest und prüft die Datei wie die Richtlinie, die Dateien der Schlüssel liest erst der Runner. Ein Anbieter ausserhalb ohne Grundlage und ein Schlüssel in der Datei selbst verhindern den Start. Ist `LOG_TOKENS` oder `LOG_STREAM` gesetzt, bricht der Start ab, weil die Bibliothek für YAML die Datei sonst nach stdout schriebe. Nicht gesetzt: kein Modell, Routinen mit Modell starten nicht.
+
+## `ECCLIUM_RUNNER_TOKENS_DIR`
+
+Absoluter Pfad des Ordners mit den Token-Dateien der Konten des Runners, je Alias der Richtlinie eine Datei `ct_token_<Alias>`, etwa `ct_token_bericht` für den Alias `bericht` (`docs/policy.md`). Jede Datei hält das Login-Token eines eigenen Dienstkontos mit nur den Rechten der Routinen dieses Alias und muss dem Benutzer gehören, unter dem Ecclium läuft, ohne Rechte für Gruppe und andere, etwa mit den Rechten 600. Der Runner liest die Datei des Alias bei jedem Lauf neu, ein neues Token wirkt ohne Neustart. Auch `ecclium queue approve` schreibt einen Eintrag aus einem Lauf mit diesem Konto. Ist die Variable nicht gesetzt, fehlt die Datei eines Alias oder weist Ecclium sie ab, etwa wegen ihrer Rechte, liest und schreibt kein Lauf mit diesem Alias, auch nicht mit dem Token aus `ECCLIUM_CHURCHTOOLS_TOKEN_FILE`. Eine Routine ohne Eintrag in der Richtlinie liest mit dem Token aus `ECCLIUM_CHURCHTOOLS_TOKEN_FILE`. Der Server prüft beim Start nur die Form des Pfads.
 
 ## `ECCLIUM_STDIO_SUBJECT`
 

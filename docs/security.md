@@ -169,17 +169,32 @@ Deshalb bestätigt das Echo eine Buchungsanfrage und das Ändern eines Termins n
 
 Eine leere Datei `writes-off` im Ordner `stop` des Zustandsordners hält jedes Schreiben an, ohne Neustart: Ecclium schaut vor jedem Planen und unmittelbar vor jedem Schreiben nach. Fehlt der Ordner `stop` beim Start oder lässt er sich nicht prüfen, startet ein Server, der schreiben darf, nicht. Fehlt er später oder lässt er sich nicht prüfen, schreibt Ecclium ebenfalls nicht. Das Lesen läuft weiter. Wie Sie die Datei anlegen und wieder entfernen, steht unter [Betrieb über stdio](betrieb/stdio.md#schreiben-sofort-anhalten).
 
+Enger wirken zwei weitere Dateien im selben Ordner: `writes-off-<Mandant>` hält das Schreiben eines Mandanten an, `writes-off-routine-<Kennung>` das Schreiben der Läufe einer Routine und die Freigabe dessen, was sie in die Warteschlange legten. Heisst ein Mandant `routine-x`, hält die Datei `writes-off-routine-x` beide an.
+
 ## Was Ecclium ins Wiki schreibt
 
 Jeder Text, den ein Schreib-Tool ins Wiki schreiben will, geht durch die ContentPolicy, bevor der Server ChurchTools fragt ([ADR 0030](adr/0030-contentpolicy.md)). Hängt ein Tool einen Abschnitt an, prüft sie nur den neuen Abschnitt, der Text der Seite bleibt, wie er ist. Geschrieben wird nur eine Teilmenge von Markdown: Überschriften, Absätze, Listen, Tabellen, fett und kursiv, in einer festen Form, die der Server selbst schreibt.
 
 - **Abgelehnt** werden HTML, Bilder, Links jeder Art, Erwähnungen von Personen, Referenzen und Fussnoten, Code, Zitate und Trennlinien. Bilder und Links sind Wege, Daten aus dem Wiki wegzuschicken, und eine Erwähnung benachrichtigt womöglich eine Person.
 - **Webadressen ohne Link** werden ebenfalls abgelehnt, weil die Ansicht von ChurchTools eine nackte Adresse als Link zeigt. Die Prüfung ist bewusst streng: Auch `St.Gallen` oder `bericht.pdf` gelten als Adresse, ein Leerzeichen nach dem Punkt hilft.
-- **Kontaktangaben** wie E-Mail-Adressen, Telefonnummern, IBAN und AHV-Nummern stehen nur in einem Text, wenn sie in `interactive.contacts` der [Richtlinie](policy.md) stehen. So trägt ein Modell keine Adresse aus einer Seite mit kleinem Leserkreis in eine mit grossem.
+- **Kontaktangaben** wie E-Mail-Adressen, Telefonnummern, IBAN und AHV-Nummern stehen nur in einem Text, wenn sie in `interactive.contacts` der [Richtlinie](policy.md) stehen. So trägt ein Modell keine Adresse aus einer Seite mit kleinem Leserkreis in eine mit grossem. Ein Abschnitt eines Laufs darf zusätzlich die tragen, die in den Daten stehen, die derselbe Lauf gelesen hat, auch in einem freien Text dieser Daten. Eine Webadresse mit `@` zählt dabei nie als Kontaktangabe.
 - **Masken** der Schwärzung, Pseudonyme und die Grenzen des Datenumschlags werden abgelehnt, damit ein Modell eine maskierte Antwort nicht als Text zurück ins Wiki schreibt.
 - **Normalform:** Zeichen voller Breite, Ligaturen und ähnliche schreibt der Server in ihrer einfachen Form, unsichtbare Zeichen entfernt er. Eine Ellipse wird so zu drei Punkten.
 - **Grenzen:** Ein Feld hat höchstens 64 KiB und höchstens 2000 Sternchen, Unterstriche, Tilden und Ausrufezeichen, damit auch ein bösartiger Text schnell geprüft ist.
 - **Was bleibt:** Welche Bibliothek ChurchTools zum Darstellen nutzt, ist nicht bekannt. Eine nackte IP-Adresse oder eine Kontaktangabe in einer Form, die die Prüfung nicht kennt, kann durchgehen. Ein Text, den ein Mensch danach im Web-Editor speichert, kann der Editor umschreiben.
+
+## Schreiben aus einem Lauf
+
+Läufe startet erst der Runner, der mit einem späteren Schritt dieser Phase kommt. Was hier steht, gilt für jeden Lauf, sobald es ihn gibt.
+
+Ein Lauf einer Routine schreibt ohne eine Person, die bestätigt. An die Stelle der Bestätigung tritt die [Richtlinie](policy.md): Der Kern stellt den Nachweis für einen Schreibvorgang eines Laufs nur aus, wenn ein Eintrag der Routine im Teil `unattended` Tool und Ziel deckt, innerhalb der Grenzen je Lauf und je Tag ([ADR 0032](adr/0032-richtlinie-und-pruefcode.md)). Was die Richtlinie nicht deckt, legt er in die Freigabe-Warteschlange, statt zu schreiben.
+
+- **Ein Tool, ein Abschnitt:** Ein Lauf schreibt nur mit `ct_wiki_page_append_section` und nur einen eigenen Abschnitt je Periode. Die Seite sucht der Kern selbst, über ihre GUID oder ihren Titel in der Kategorie des Eintrags. Fehlt sie oder gibt es sie zweimal, schreibt der Lauf nicht, und eine Seite legt er nie an.
+- **Eigenes Konto:** Ein Lauf liest und schreibt mit dem Konto, das die Einträge seiner Routine als `credential` nennen, aus der Datei `ct_token_<credential>` im Ordner aus `ECCLIUM_RUNNER_TOKENS_DIR`. Ist `ECCLIUM_RUNNER_TOKENS_DIR` nicht gesetzt, fehlt die Datei oder weist Ecclium sie ab, läuft die Routine nicht, auch nicht mit dem Token des Servers. Auch `ecclium queue approve` schreibt einen Abschnitt, den ein Lauf in die Freigabe-Warteschlange legte, mit diesem Konto und nie mit dem Token des Servers. Geben Sie jedem dieser Konten nur die Rechte der Routinen, die es nutzen.
+- **Zu weite Rechte:** Hat das Konto Rechte, die kein Tool seiner Routinen braucht, oder darf es Kategorien bearbeiten, die kein Eintrag mit seinem `credential` nennt, kommt der Abschnitt in die Freigabe-Warteschlange. Die befristete Ausnahme `acceptRightsDrift` hebt das für höchstens 30 Tage auf, und jede Zeile im Audit eines solchen Schreibvorgangs trägt dann `rightsDriftAccepted`. Rechte, die ein Konto über eine Gruppe bekommt, sieht diese Prüfung womöglich nicht.
+- **Umbenanntes Ziel:** Weicht der Name einer Kategorie oder Seite vom erwarteten Namen in der Richtlinie ab, schreibt der Lauf nicht, und der Abschnitt kommt in die Warteschlange. Dafür gibt es keine Ausnahme, weil sonst eine neu angelegte Seite mit demselben Namen das Ziel werden könnte.
+- **Von Hand geändert:** Hat eine Person den Abschnitt eines Laufs geändert, ersetzt ihn ein späterer Lauf derselben Periode nicht, sondern legt den neuen in die Warteschlange.
+- **Nach einem Fehler im Audit:** Erreicht die Zeile eines Schreibvorgangs die Audit-Datei nicht, schreibt kein späterer Lauf desselben Prozesses mehr, bis er neu startet.
 
 ## Rücknahme
 
@@ -193,6 +208,6 @@ Ein Schreibvorgang des Kerns lässt sich 30 Tage lang mit `ecclium undo` zurück
 
 ## Was später kommt
 
-- Phase 6: der Runner für Routinen, dessen Modell keine Werkzeuge hat, eine Positivliste für ausgehende Verbindungen und ein Kill-Switch je Routine. Zu weite Rechte des Dienstkontos und ein umbenanntes Ziel schicken dort das Schreiben einer Routine in die Freigabe-Warteschlange, zu weite Rechte nur, solange keine befristete Ausnahme der Richtlinie gilt.
+- Phase 6: der Runner, der Routinen nach ihrem Zeitplan startet, mit einem Modell ohne Werkzeuge, und eine Positivliste für ausgehende Verbindungen.
 - Phase 7: der Betrieb über HTTP, voreingestellt mit `elicitation-or-queue` und damit ohne Echo. Setzen Sie dort `ECCLIUM_WRITE_CONFIRMATION=echo-allowed` ausdrücklich, gilt das Echo, und jeder Start warnt.
 - Phase 8: eine Anleitung, wie Sie Pakete und Images vor der Installation prüfen.

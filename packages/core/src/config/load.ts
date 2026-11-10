@@ -167,6 +167,15 @@ export interface EccliumConfig {
    * provider, so the server over stdio never holds one.
    */
   readonly providers: readonly ProviderSettings[] | undefined;
+  /**
+   * The folder of the token files of the accounts of the runner, an
+   * absolute normalised path, or undefined when the variable is not set
+   * (ADR 0033). It holds one file `ct_token_<alias>` per alias of the
+   * policy, which the composition root reads anew for each run and for
+   * the approval of an entry of a run; the start checks the form of the
+   * path alone.
+   */
+  readonly runnerTokensDir: string | undefined;
   readonly stdioSubject: string;
   readonly logLevel: LogLevel;
 }
@@ -191,6 +200,7 @@ export type SettingKey =
   | 'markerKey'
   | 'routinesDir'
   | 'providers'
+  | 'runnerTokensDir'
   | 'stdioSubject'
   | 'logLevel';
 
@@ -1391,6 +1401,34 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       : shownNone,
   );
 
+  // The folder of the token files of the runner (ADR 0033). Only a run and
+  // the approval of an entry of a run read a file in it, so the start
+  // checks the form of the path and nothing on disk.
+  const runnerTokensName = 'ECCLIUM_RUNNER_TOKENS_DIR';
+  const runnerTokensRead = read(row(runnerTokensName));
+  let runnerTokensDir: string | undefined;
+  let runnerTokensDirValid = runnerTokensRead.state !== 'invalid';
+  if (runnerTokensRead.state === 'set') {
+    if (fitsVariable(runnerTokensName, runnerTokensRead.value)) {
+      runnerTokensDir = runnerTokensRead.value;
+    } else {
+      report('runner_tokens_dir_invalid', runnerTokensName);
+      runnerTokensDirValid = false;
+    }
+  }
+  setting(
+    'runnerTokensDir',
+    runnerTokensName,
+    runnerTokensDir !== undefined
+      ? 'environment'
+      : runnerTokensDirValid
+        ? 'unset'
+        : 'invalid',
+    runnerTokensDir !== undefined
+      ? record({ kind: 'path', value: runnerTokensDir })
+      : shownNone,
+  );
+
   // A wider trust store stays allowed for an instance with a certificate
   // of its own authority, with a warning on every start (ADR 0056).
   if (trustStoreExtended) warnings.add('trust_store_extended');
@@ -1459,6 +1497,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     !markerKeyValid ||
     !routinesDirValid ||
     !providersValid ||
+    !runnerTokensDirValid ||
     subject === undefined ||
     logLevel === undefined
   ) {
@@ -1487,6 +1526,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       markerKey,
       routinesDir,
       providers,
+      runnerTokensDir,
       stdioSubject: subject.value,
       logLevel: logLevel.value as LogLevel,
     }),

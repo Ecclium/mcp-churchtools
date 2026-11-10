@@ -263,6 +263,14 @@ export const logEvents = Object.freeze({
   run_answer_refused: entry('warn', 'count'),
   run_section_refused: entry('warn'),
   run_rendered: entry('info', 'count', 'durationMs'),
+  // The write of a run (ADR 0032): written, skipped as written already,
+  // queued for the operator, failed, or a conflict before the send that is
+  // tried once more.
+  run_written: entry('info', 'durationMs'),
+  run_write_skipped: entry('info'),
+  run_write_queued: entry('info'),
+  run_write_failed: entry('warn', 'code'),
+  run_write_retried: entry('info', 'code'),
   // The write guard (ADR 0029).
   write_refused: entry('warn', 'code'),
   write_conflict: entry('warn', 'code'),

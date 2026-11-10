@@ -124,6 +124,7 @@ describe('the table of variables', () => {
       ['ECCLIUM_MARKER_KEY_FILE', undefined, false, false],
       ['ECCLIUM_ROUTINES_DIR', undefined, false, false],
       ['ECCLIUM_PROVIDERS_FILE', undefined, false, false],
+      ['ECCLIUM_RUNNER_TOKENS_DIR', undefined, false, false],
       ['ECCLIUM_STDIO_SUBJECT', 'local-stdio', false, true],
       ['ECCLIUM_LOG_LEVEL', 'info', false, false],
     ]);
@@ -405,6 +406,7 @@ describe('fitsVariable', () => {
         ['ECCLIUM_MARKER_KEY_FILE', 'marker-key'],
         ['ECCLIUM_ROUTINES_DIR', '/path/to/routines/'],
         ['ECCLIUM_PROVIDERS_FILE', 'providers.yaml'],
+        ['ECCLIUM_RUNNER_TOKENS_DIR', '/path/to/tokens/'],
         ['ECCLIUM_STDIO_SUBJECT', 'Max'],
         ['ECCLIUM_LOG_LEVEL', 'INFO'],
       ];

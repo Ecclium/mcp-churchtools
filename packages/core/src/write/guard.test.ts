@@ -45,6 +45,7 @@ import { readPlan } from './sealed-plan.js';
 import type { SnapshotToSeal } from '../snapshots/seal.js';
 import { contentHashOf } from './plan-hash.js';
 import type { SnapshotToUndo } from './undo.js';
+import { createWriteHalt, type WriteHalt, writesHalted } from './write-halt.js';
 
 const guid = '00000000-0000-4000-8000-0000000000AB';
 const now = Date.UTC(2026, 11, 1, 8, 0, 0);
@@ -287,6 +288,7 @@ const setup = (
     /** Without the key and whom to ask, for the tests of the marking. */
     unmarked?: 'key' | 'inquiries';
     clock?: TestClock;
+    writeHalt?: WriteHalt;
   } = {},
 ) => {
   const clock = limits.clock ?? createTestClock(now);
@@ -303,6 +305,7 @@ const setup = (
     quota,
     snapshots: limits.snapshots,
     ...(limits.unmarked === 'key' ? {} : { markerKey }),
+    ...(limits.writeHalt === undefined ? {} : { writeHalt: limits.writeHalt }),
   });
   const ctx = contextOf(logged);
   const request: PlanRequest = {
@@ -541,6 +544,40 @@ describe('planning', () => {
     expect((await refusalOf(guard.plan(request, update))).message).toBe(
       writeSentences.blocked,
     );
+  });
+
+  it('halts every guard that shares the halt of the process, and no other', async () => {
+    // The runner builds a pipeline per run; a block in one run holds for
+    // the next run of the process (ADR 0029).
+    const writeHalt = createWriteHalt();
+    const first = setup(fakeOf(), dir, { writeHalt });
+    const second = setup(fakeOf(), dir, { writeHalt });
+    const alone = setup();
+    first.guard.block();
+    expect(writesHalted(writeHalt)).toBe(true);
+    expect(
+      (await refusalOf(second.guard.plan(second.request, update))).message,
+    ).toBe(writeSentences.blocked);
+    expect((await alone.guard.plan(alone.request, update)).outcome.kind).toBe(
+      'planned',
+    );
+  });
+
+  it.each([
+    ['a lookalike', { __ecclium: 'WriteHalt' }],
+    ['a proxy', new Proxy(createWriteHalt(), {})],
+    ['null', null],
+  ])('refuses %s as the halt of writes when it is built', (_name, value) => {
+    expect(() =>
+      createWriteGuard({
+        client: clientOf(fakeOf()),
+        clock: createTestClock(now),
+        killSwitchDir: dir,
+        policy: withInquiries(defaultPolicy),
+        quota: createMemoryQuotaStore(),
+        writeHalt: value as unknown as WriteHalt,
+      }),
+    ).toThrow(TypeError);
   });
 
   it.each([

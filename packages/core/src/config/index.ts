@@ -49,6 +49,7 @@ export {
   maxConfigDirectoryEntries,
   readConfigTextFile,
 } from './text-file.js';
+export { readRunnerToken, runnerTokenPrefix } from './runner-token.js';
 export {
   type TokenFileCode,
   tokenFileCodes,

@@ -143,6 +143,7 @@ import {
   type UndoSubject,
   undoSubjectOf,
   type WriteGuard,
+  type WriteHalt,
   type WriteSnapshots,
   type WriteTarget,
 } from '../write/index.js';
@@ -760,6 +761,13 @@ export interface ToolPipelineOptions {
    * `confirmation_required`, and `ecclium queue` finds nothing.
    */
   readonly queue?: QueueKeeper;
+  /**
+   * The halt of writes of the process (ADR 0029), made by the composition
+   * root with `createWriteHalt` and shared by every pipeline it builds for
+   * the runs of the runner. Without it, the write guard of this pipeline
+   * halts only its own writes after a failed line of the audit.
+   */
+  readonly writeHalt?: WriteHalt;
 }
 
 // The longest duration the audit accepts.
@@ -1157,6 +1165,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     snapshots: options.snapshots,
     markerKey: options.markerKey,
     timeZone: options.timeZone,
+    writeHalt: options.writeHalt,
   });
   // How writes are confirmed, and the questions to the client over the
   // stores the composition root built (ADR 0029). Without the stores no
@@ -2601,6 +2610,11 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         return Object.freeze({ ok: true, state: 'skipped', target });
       }
       const code = outcome.error.code;
+      // Writes halted after a lost line of the audit write again after a
+      // restart, like an audit file that cannot take a line now, so a later
+      // run may pass (ADR 0029, ADR 0034). The halt is the first check of
+      // every plan and commit, so a refusal while it holds is its own.
+      const halted = code === 'policy_denied' && guard.halted();
       // A page that is missing or twice ends the trigger; a write that may
       // have landed may try again, since its marking keeps a second run
       // from adding it twice (ADR 0032, ADR 0034).
@@ -2611,7 +2625,8 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         sent: write?.sent === true,
         transient:
           run.page === undefined &&
-          (run.transient ?? (isTransientRunCode(code) || code === 'conflict')),
+          (run.transient ??
+            (halted || isTransientRunCode(code) || code === 'conflict')),
       });
     } catch {
       // A request that cannot be read is a fault of the caller.

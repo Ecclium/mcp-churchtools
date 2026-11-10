@@ -181,6 +181,7 @@ const queueKeys = dayKeyFolder(quote('queue'), 'der Freigabe-Warteschlange');
 const example = 'https://example.church.tools';
 const policyFile = quote('ECCLIUM_POLICY_FILE');
 const routinesDir = quote('ECCLIUM_ROUTINES_DIR');
+const runnerTokensDir = quote('ECCLIUM_RUNNER_TOKENS_DIR');
 const providersFile = quote('ECCLIUM_PROVIDERS_FILE');
 // Why the file of the providers matters (ADR 0033).
 const providersReason =
@@ -467,6 +468,12 @@ const problems: Readonly<
     message(
       `Der Pfad in ${name} ist nicht absolut oder nicht in seiner eindeutigen Form geschrieben.`,
       'Ecclium normalisiert nichts, damit der Runner genau den Ordner liest, den Sie angeben, und der Start weiss nicht, aus welchem Ordner er aufgerufen wird.',
+      'Geben Sie den vollständigen Pfad an, der mit / beginnt, ohne Schrägstrich am Ende, ohne doppelte Schrägstriche und ohne ‹.› oder ‹..›.',
+    ),
+  runner_tokens_dir_invalid: (name = runnerTokensDir) =>
+    message(
+      `Der Pfad in ${name} ist nicht absolut oder nicht in seiner eindeutigen Form geschrieben.`,
+      'Ecclium normalisiert nichts, damit der Runner die Token genau aus dem Ordner liest, den Sie angeben, und der Start weiss nicht, aus welchem Ordner er aufgerufen wird.',
       'Geben Sie den vollständigen Pfad an, der mit / beginnt, ohne Schrägstrich am Ende, ohne doppelte Schrägstriche und ohne ‹.› oder ‹..›.',
     ),
   invalid_integer: (name = quote('ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE')) =>

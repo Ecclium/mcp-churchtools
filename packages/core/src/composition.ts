@@ -72,3 +72,6 @@ export { createMemoryPlanStore } from './write/plan-store.js';
 // The counter of the writes of a run, which the composition root makes
 // once per run and hands on, like the stores (ADR 0032).
 export { createRunWrites, type RunWrites } from './write/run-writes.js';
+// The halt of writes of a process, which the composition root makes once
+// and hands to every pipeline of the runner (ADR 0029).
+export { createWriteHalt, type WriteHalt } from './write/write-halt.js';

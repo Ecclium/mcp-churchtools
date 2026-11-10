@@ -134,7 +134,8 @@ describe.each(cases)('$tool.name', ({ tool, input, intent }) => {
       tier: 'free',
       sensitivity: 'personal',
       unattended: 'policy',
-      routineStable: false,
+      // Only adding a section is for routines (ADR 0033).
+      routineStable: tool === wikiSectionAppendTool,
       reversible: 'snapshot',
     });
     expect(tool.meta.requiredRights).toEqual([

@@ -15,7 +15,10 @@
  * at once: the core plans the write of the entry again from the state of
  * the target now, and writes it only when that plan is the one that was
  * queued. Only `approve` asks ChurchTools. Both decisions count in the
- * store of quotas first, so that no entry is decided twice.
+ * store of quotas first, so that no entry is decided twice. An entry a run
+ * of a routine queued is written with the account the policy names for
+ * the routine, as the run would have written it, and never with the token
+ * of the server (ADR 0033).
  *
  * What an entry and a page hold is text of ChurchTools and of the model,
  * shown made safe for the terminal. The ID given is checked as a UUID
@@ -31,8 +34,9 @@
  * the audit file cannot take the line, the state before a write could not
  * be kept, or the line of a decision did not reach it; 77 for a call the
  * core refused, a server that only reads included; and 78 for an invalid
- * configuration, a folder that is missing or cannot be used, or an audit
- * file that cannot be opened.
+ * configuration, a folder that is missing or cannot be used, an audit
+ * file that cannot be opened, or the token of the account of a run that
+ * cannot be read.
  *
  * @packageDocumentation
  */
@@ -66,13 +70,16 @@ import {
   prepareQuotaFolder,
   prepareSnapshotFolder,
   systemClock,
+  createWriteHalt,
 } from '@ecclium/mcp-churchtools-core/composition';
 import type {
   HttpTransport,
   HttpTransportOptions,
 } from '@ecclium/mcp-churchtools-core/http';
+import type { Clock } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { composeToolPipeline } from '../compose/pipeline.js';
+import { composeRunPipeline } from '../compose/run-pipeline.js';
 import { privateFileCodeOf } from '../compose/private-file-code.js';
 import { keepsSnapshots } from '../compose/snapshots.js';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
@@ -107,6 +114,7 @@ import {
   reasonTexts,
   rejectedEnding,
   rejectedUnrecorded,
+  runAccountEnding,
   showFooter,
   timeOf,
   usedEnding,
@@ -135,6 +143,8 @@ export interface QueueOptions {
   /** Replaces the factory of the transport, for tests. */
   readonly createTransport?:
     ((options: HttpTransportOptions) => HttpTransport) | undefined;
+  /** Replaces the clock of the system, for tests. */
+  readonly clock?: Clock | undefined;
 }
 
 // The ID of an audit line as Ecclium draws it, in lower case.
@@ -479,7 +489,7 @@ export async function runQueue(options: QueueOptions): Promise<ExitCode> {
       return exitCodes.invalidConfig;
     }
   }
-  const clock = systemClock;
+  const clock = options.clock ?? systemClock;
   // Only a decision writes a line into the audit file; reading writes none.
   let auditFile: AuditFileWriter | undefined;
   if (deciding) {
@@ -525,13 +535,17 @@ export async function runQueue(options: QueueOptions): Promise<ExitCode> {
     });
   }
   try {
+    const catalog = createStdioCatalog(config);
+    // One halt of writes for both pipelines of the command.
+    const writeHalt = createWriteHalt();
     const { pipeline, transport } = composeToolPipeline({
       config,
-      catalog: createStdioCatalog(config),
+      catalog,
       writer,
       clock,
       auditFile,
       createTransport: options.createTransport,
+      writeHalt,
     });
     try {
       const assignment = await createStdioTenantResolver().resolve(
@@ -547,6 +561,45 @@ export async function runQueue(options: QueueOptions): Promise<ExitCode> {
         features: Object.freeze([]),
         signal: new AbortController().signal,
       });
+      if (action === 'approve') {
+        // An entry of a run is written with the account of its routine, as
+        // the run would have written it, never with the token of the
+        // server (ADR 0033). The entry names its routine; reading it asks
+        // ChurchTools nothing.
+        const shown = await pipeline.showQueue(
+          { queueId: options.queueId },
+          request,
+        );
+        // An entry that cannot be read now is not approved, so that one of
+        // a run never reaches the pipeline with the token of the server.
+        if (shown.kind === 'failed') {
+          return finish(output, failedEnding(shown));
+        }
+        const routine =
+          shown.kind === 'found' ? shown.content.run?.routine : undefined;
+        if (routine !== undefined) {
+          const built = composeRunPipeline({
+            config,
+            catalog,
+            writer,
+            clock,
+            auditFile,
+            createTransport: options.createTransport,
+            routineId: routine,
+            writeHalt,
+            // An entry of a run whose routine lost its entries in the
+            // policy since would otherwise go out with the token of the
+            // server.
+            requireAccount: true,
+          });
+          if (!built.ok) return finish(output, runAccountEnding(built.code));
+          try {
+            return await act(built.pipeline, request, options);
+          } finally {
+            await built.close().catch(() => undefined);
+          }
+        }
+      }
       return await act(pipeline, request, options);
     } finally {
       await transport.close().catch(() => undefined);

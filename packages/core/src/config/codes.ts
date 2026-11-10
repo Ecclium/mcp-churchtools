@@ -34,6 +34,7 @@ export const configProblemCodes = Object.freeze([
   'invalid_toolsets',
   'time_zone_invalid',
   'routines_dir_invalid',
+  'runner_tokens_dir_invalid',
   'url_missing',
   ...originCodes,
   'token_missing',

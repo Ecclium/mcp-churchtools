@@ -50,6 +50,11 @@ import { createMemoryPlanStore } from '../write/plan-store.js';
 import { policySentences } from '../write/policy-gate.js';
 import { createRunWrites, type RunWrites } from '../write/run-writes.js';
 import {
+  createWriteHalt,
+  haltWrites,
+  type WriteHalt,
+} from '../write/write-halt.js';
+import {
   createToolPipeline,
   type RunCallRequest,
   type RunWriteRequest,
@@ -488,6 +493,8 @@ const setup = (
     /** False for a server that keeps no queue of approvals. */
     readonly queue?: false;
     readonly snapshots?: WriteSnapshots;
+    /** The halt of writes of the process. */
+    readonly writeHalt?: WriteHalt;
   } = {},
 ) => {
   const double = createChurchToolsDouble({ token });
@@ -562,6 +569,9 @@ const setup = (
     plans: createMemoryPlanStore(clock),
     nonces: createMemoryNonceStore(clock),
     ...(options.queue === false ? {} : { queue: keeper }),
+    ...(options.writeHalt === undefined
+      ? {}
+      : { writeHalt: options.writeHalt }),
     ...(options.snapshots === undefined
       ? {}
       : { snapshots: options.snapshots }),
@@ -919,6 +929,18 @@ describe('what stops a write of a run', () => {
       refused('policy_denied', true),
     );
     expect(double.calls()).toHaveLength(0);
+  });
+
+  it('may try again after a restart when the writes of the process are halted', async () => {
+    // A line of the audit was lost in an earlier run of the process; after
+    // a restart the halt is gone (ADR 0029, ADR 0034).
+    const writeHalt = createWriteHalt();
+    haltWrites(writeHalt);
+    const { double, pipeline } = setup({ writeHalt });
+    expect(await pipeline.writeForRun(writeRequest())).toEqual(
+      refused('policy_denied', true),
+    );
+    assertOnlyReads(double);
   });
 });
 
