@@ -311,4 +311,260 @@ describe('judgeMatch', () => {
       ).toEqual({ kind: 'queue', reason: 'count_unavailable' });
     },
   );
+
+  it('takes no counter of a run for an entry of the interactive part', () => {
+    expect('maxPerRun' in match).toBe(false);
+    expect(judgeMatch(match, facts(['Berichte'], 2))).toEqual({
+      kind: 'allow',
+    });
+    expect(
+      judgeMatch(match, { ...facts(['Berichte'], 2), runCount: 99 }),
+    ).toEqual({ kind: 'allow' });
+  });
+});
+
+// A run of a routine writes only within the entries of its routine in the
+// unattended part, each with a limit per run besides the one of the day
+// (ADR 0032).
+const append = 'ct_wiki_page_append_section';
+const update = 'ct_wiki_page_update';
+
+const unattendedOf = (
+  unattended: readonly unknown[],
+  targets: readonly unknown[] = [],
+): Policy => {
+  const result = checkPolicy({
+    schema: 'policy.v1',
+    interactive: { targets },
+    unattended,
+  });
+  if (!result.ok) throw new Error(result.code);
+  return result.policy;
+};
+
+const routineEntry = (
+  target: unknown,
+  tools: readonly string[],
+  more: Record<string, unknown> = {},
+) => ({
+  routine: 'dienstplan-report',
+  credential: 'bericht',
+  target,
+  tools,
+  maxPerRun: 2,
+  maxPerDay: 4,
+  ...more,
+});
+
+const runRequest = (
+  kind: PolicyRequest['target']['kind'],
+  key: string,
+  tool = append,
+  more: Partial<PolicyRequest> = {},
+): PolicyRequest =>
+  request(kind, key, tool, {
+    mode: 'unattended',
+    routine: 'dienstplan-report',
+    ...more,
+  });
+
+describe('matchPolicy for a run of a routine', () => {
+  it('finds the entry of its routine with its limit per run', () => {
+    const policy = unattendedOf([routineEntry(category, [append])]);
+    expect(matchPolicy(policy, runRequest('wiki_category', '12'))).toEqual({
+      kind: 'entry',
+      entry: policy.unattended[0],
+      names: [{ of: { kind: 'wiki_category', id: 12 }, name: 'Berichte' }],
+      counter: `write:${append}:wiki_category:12`,
+      maxPerDay: 4,
+      maxPerRun: 2,
+    });
+    expect(
+      matchPolicy(policy, runRequest('wiki_page', `12/${otherGuid}`)),
+    ).toMatchObject({
+      kind: 'entry',
+      counter: `write:${append}:wiki_category:12`,
+      maxPerRun: 2,
+    });
+  });
+
+  it('lets the entry of a page replace that of its category for that page', () => {
+    const policy = unattendedOf([
+      routineEntry(category, [append], { maxPerRun: 3, maxPerDay: 6 }),
+      routineEntry(page, [update], { maxPerRun: 1, maxPerDay: 1 }),
+    ]);
+    expect(
+      matchPolicy(policy, runRequest('wiki_page', `12/${guid}`, update)),
+    ).toMatchObject({
+      kind: 'entry',
+      entry: policy.unattended[1],
+      counter: `write:${update}:wiki_page:12/${guid}`,
+      maxPerRun: 1,
+      maxPerDay: 1,
+    });
+    // The page replaces its category and does not allow appending.
+    expect(
+      matchPolicy(policy, runRequest('wiki_page', `12/${guid}`, append)),
+    ).toEqual({ kind: 'queue', reason: 'no_entry' });
+    expect(
+      matchPolicy(policy, runRequest('wiki_page', `12/${otherGuid}`, append)),
+    ).toMatchObject({ kind: 'entry', maxPerRun: 3, maxPerDay: 6 });
+  });
+
+  it('sends a tool its entry does not name and a target without an entry to the queue', () => {
+    const policy = unattendedOf([routineEntry(category, [append])]);
+    expect(
+      matchPolicy(policy, runRequest('wiki_category', '12', update)),
+    ).toEqual({ kind: 'queue', reason: 'no_entry' });
+    expect(matchPolicy(policy, runRequest('wiki_category', '13'))).toEqual({
+      kind: 'queue',
+      reason: 'no_entry',
+    });
+    expect(matchPolicy(policy, runRequest('calendar', '12'))).toEqual({
+      kind: 'queue',
+      reason: 'no_entry',
+    });
+  });
+
+  it('takes only the entries of its own routine, not those of another or of the interactive part', () => {
+    const policy = unattendedOf(
+      [routineEntry(category, [append], { routine: 'wiki-hygiene' })],
+      [entry(category, [append], 10)],
+    );
+    expect(matchPolicy(policy, runRequest('wiki_category', '12'))).toEqual({
+      kind: 'queue',
+      reason: 'no_entry',
+    });
+    expect(
+      matchPolicy(
+        policy,
+        runRequest('wiki_category', '12', append, { routine: 'wiki-hygiene' }),
+      ),
+    ).toMatchObject({ kind: 'entry', entry: policy.unattended[0] });
+  });
+
+  // No default allows a run to write: without entries of its routine
+  // everything goes to the queue, also targets the interactive mode would
+  // let through without entries.
+  it('sends every write of a run to the queue under the default policy', () => {
+    for (const [kind, key] of [
+      ['wiki_category', '12'],
+      ['wiki_page', `12/${guid}`],
+      ['calendar', '3'],
+    ] as const) {
+      expect(matchPolicy(defaultPolicy, runRequest(kind, key))).toEqual({
+        kind: 'queue',
+        reason: 'no_entry',
+      });
+    }
+  });
+
+  it('sends an operation that always waits for approval to the queue', () => {
+    const policy = unattendedOf([routineEntry(category, [append])]);
+    expect(
+      matchPolicy(
+        policy,
+        runRequest('wiki_category', '12', append, { alwaysQueue: true }),
+      ),
+    ).toEqual({ kind: 'queue', reason: 'queue_only' });
+  });
+
+  it('refuses a write in the mode unattended without a routine, and in the mode operator with one', () => {
+    const policy = unattendedOf([routineEntry(category, [append])]);
+    expect(
+      matchPolicy(
+        policy,
+        request('wiki_category', '12', append, { mode: 'unattended' }),
+      ),
+    ).toEqual({
+      kind: 'deny',
+      reason: 'not_interactive',
+    });
+    expect(
+      matchPolicy(
+        policy,
+        runRequest('wiki_category', '12', append, { mode: 'operator' }),
+      ),
+    ).toEqual({ kind: 'deny', reason: 'not_interactive' });
+  });
+
+  it('ignores a routine in the interactive mode, whose entries have no limit per run', () => {
+    const policy = unattendedOf(
+      [routineEntry(category, [append])],
+      [entry(category, [append], 10)],
+    );
+    const match = matchPolicy(
+      policy,
+      runRequest('wiki_category', '12', append, { mode: 'interactive' }),
+    );
+    expect(match).toMatchObject({
+      kind: 'entry',
+      entry: policy.interactive.targets[0],
+      maxPerDay: 10,
+    });
+    expect('maxPerRun' in match).toBe(false);
+  });
+});
+
+describe('judgeMatch with a limit per run', () => {
+  const policy = unattendedOf([routineEntry(category, [append])]);
+  const match = matchPolicy(policy, runRequest('wiki_category', '12'));
+  const names = ['Berichte'];
+
+  it('stops at the limit of the run before the count when planning, past it when committing', () => {
+    expect(
+      judgeMatch(match, { names, count: 0, counted: false, runCount: 1 }),
+    ).toEqual({ kind: 'allow' });
+    expect(
+      judgeMatch(match, { names, count: 0, counted: false, runCount: 2 }),
+    ).toEqual({ kind: 'queue', reason: 'limit_reached' });
+    expect(
+      judgeMatch(match, { names, count: 1, counted: true, runCount: 2 }),
+    ).toEqual({ kind: 'allow' });
+    expect(
+      judgeMatch(match, { names, count: 1, counted: true, runCount: 3 }),
+    ).toEqual({ kind: 'queue', reason: 'limit_reached' });
+  });
+
+  it('holds the limit of the day besides the one of the run', () => {
+    expect(
+      judgeMatch(match, { names, count: 4, counted: false, runCount: 0 }),
+    ).toEqual({ kind: 'queue', reason: 'limit_reached' });
+    expect(
+      judgeMatch(match, { names, count: 4, counted: true, runCount: 1 }),
+    ).toEqual({ kind: 'allow' });
+    expect(
+      judgeMatch(match, { names, count: 5, counted: true, runCount: 1 }),
+    ).toEqual({ kind: 'queue', reason: 'limit_reached' });
+  });
+
+  it.each([undefined, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+    'sends a write whose counter of the run reads %s to the queue',
+    (runCount) => {
+      expect(
+        judgeMatch(match, { names, count: 0, counted: false, runCount }),
+      ).toEqual({ kind: 'queue', reason: 'count_unavailable' });
+    },
+  );
+
+  it('sends a write without a counter of the run to the queue', () => {
+    expect(judgeMatch(match, facts(names))).toEqual({
+      kind: 'queue',
+      reason: 'count_unavailable',
+    });
+  });
+
+  it('judges the names and the counter of the day before the counter of the run', () => {
+    expect(
+      judgeMatch(match, { names: ['Archiv'], count: 0, counted: false }),
+    ).toEqual({ kind: 'queue', reason: 'name_changed' });
+    expect(
+      judgeMatch(match, {
+        names,
+        count: undefined,
+        counted: false,
+        runCount: 0,
+      }),
+    ).toEqual({ kind: 'queue', reason: 'count_unavailable' });
+  });
 });

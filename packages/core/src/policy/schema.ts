@@ -21,6 +21,8 @@
  * @packageDocumentation
  */
 import {
+  type IsoDate,
+  isIsoDate,
   maxWikiTitleLength,
   wikiPageGuidPattern,
 } from '@ecclium/mcp-churchtools-plugin-api';
@@ -52,6 +54,11 @@ export const policyLimits = Object.freeze({
   contactLength: 254,
   /** The longest text of whom to ask in the line of the marking. */
   inquiriesToLength: 200,
+  /**
+   * The most days an exception for rights an account should not have may
+   * span, its first and its last day included.
+   */
+  rightsDriftDays: 30,
 } as const);
 
 /** The levels of redaction a routine may ask for its call of the model. */
@@ -127,6 +134,13 @@ const interactiveEntry = z.strictObject({
   maxPerDay,
 });
 
+// A day as YYYY-MM-DD that the calendar has.
+const day = z
+  .string()
+  .max(10)
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(isIsoDate);
+
 const unattendedEntry = z.strictObject({
   routine: slug,
   credential: slug,
@@ -135,6 +149,9 @@ const unattendedEntry = z.strictObject({
   tools,
   maxPerRun: z.int().min(1).max(policyLimits.maxPerRun),
   maxPerDay,
+  // The exception for rights the account should not have, from its first
+  // to its last UTC day (ADR 0032).
+  acceptRightsDrift: z.strictObject({ from: day, until: day }).optional(),
 });
 
 /**
@@ -194,6 +211,17 @@ export interface UnattendedEntry {
   readonly tools: readonly string[];
   readonly maxPerRun: number;
   readonly maxPerDay: number;
+  /**
+   * The days on which the runs of the routine write although the account
+   * has rights no tool of its routines needs, with a note in the audit
+   * (ADR 0032). The same on every entry of the routine, at most
+   * {@link policyLimits.rightsDriftDays} days; only when the file names it,
+   * so that the hash of a policy without it stays the same.
+   */
+  readonly acceptRightsDrift?: {
+    readonly from: IsoDate;
+    readonly until: IsoDate;
+  };
 }
 
 /**

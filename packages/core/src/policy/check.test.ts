@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   checkPolicy,
+  daysFrom,
   defaultPolicy,
   policyFieldOf,
   targetKeyOf,
 } from './check.js';
-import type { Policy } from './schema.js';
+import { type Policy, policyLimits } from './schema.js';
 
 const guid = '00000000-0000-4000-8000-000000000001';
 const upperGuid = '0000000A-0000-4000-8000-00000000000B';
@@ -556,6 +557,185 @@ describe('checkPolicy', () => {
         unattended: [routine(page), routine(page, { routine: 'wiki-hygiene' })],
       }).ok,
     ).toBe(true);
+  });
+});
+
+// The exception for rights the account of a routine should not have
+// (ADR 0032): one per routine, from its first to its last UTC day.
+describe('checkPolicy with an exception for rights', () => {
+  const drift = (from: string, until: string) => ({
+    acceptRightsDrift: { from, until },
+  });
+  // A second entry of the routine, on another target with another tool.
+  const second = (more: Record<string, unknown> = {}) =>
+    routine(category, { tools: ['ct_wiki_page_create'], ...more });
+
+  it('keeps the exception frozen on every entry of its routine, and no key without one', () => {
+    const policy = policyOf({
+      schema: 'policy.v1',
+      unattended: [
+        routine(page, drift('2026-11-01', '2026-11-30')),
+        second(drift('2026-11-01', '2026-11-30')),
+        routine(page, { routine: 'wiki-hygiene' }),
+      ],
+    });
+    const [first, other, without] = policy.unattended;
+    expect(first?.acceptRightsDrift).toEqual({
+      from: '2026-11-01',
+      until: '2026-11-30',
+    });
+    expect(other?.acceptRightsDrift).toEqual(first?.acceptRightsDrift);
+    expect(Object.isFrozen(first?.acceptRightsDrift)).toBe(true);
+    expect(deeplyFrozen(policy)).toBe(true);
+    // Without the field the entry has no key for it, so that the canonical
+    // form and with it the hash of such a policy stays as it was.
+    expect(without).toBeDefined();
+    expect(Object.hasOwn(without ?? {}, 'acceptRightsDrift')).toBe(false);
+    expect(JSON.stringify(without)).not.toContain('acceptRightsDrift');
+  });
+
+  it.each([
+    ['one day', '2026-11-10', '2026-11-10'],
+    ['29 days, 30 with the first', '2026-11-01', '2026-11-30'],
+    ['29 days across a new year', '2026-12-20', '2027-01-18'],
+    ['29 days across the 29th of February', '2028-02-01', '2028-03-01'],
+  ])('takes an exception of %s', (_name, from, until) => {
+    expect(policyLimits.rightsDriftDays).toBe(30);
+    expect(
+      checkPolicy({
+        schema: 'policy.v1',
+        unattended: [routine(page, drift(from, until))],
+      }).ok,
+    ).toBe(true);
+  });
+
+  it.each([
+    [
+      'ends before it starts',
+      '2026-11-10',
+      '2026-11-09',
+      'policy_contradiction',
+    ],
+    ['spans 30 days', '2026-11-01', '2026-12-01', 'policy_invalid'],
+    ['spans 30 days in February', '2027-02-01', '2027-03-03', 'policy_invalid'],
+    ['spans a year', '2026-01-01', '2027-01-01', 'policy_invalid'],
+  ])(
+    'refuses an exception that %s, at its last day',
+    (_name, from, until, code) => {
+      expect(
+        checkPolicy({
+          schema: 'policy.v1',
+          unattended: [routine(page, drift(from, until))],
+        }),
+      ).toEqual({
+        ok: false,
+        code,
+        field: 'unattended[0].acceptRightsDrift.until',
+      });
+    },
+  );
+
+  it.each([
+    [
+      'a day the calendar does not have',
+      { from: '2026-02-30', until: '2026-03-01' },
+      'unattended[0].acceptRightsDrift.from',
+    ],
+    [
+      'a day before 1970',
+      { from: '1969-12-31', until: '1970-01-01' },
+      'unattended[0].acceptRightsDrift.from',
+    ],
+    [
+      'a day of another form',
+      { from: '2026-11-01', until: '30.11.2026' },
+      'unattended[0].acceptRightsDrift.until',
+    ],
+    [
+      'a day with a time',
+      { from: '2026-11-01T00:00:00Z', until: '2026-11-02' },
+      'unattended[0].acceptRightsDrift.from',
+    ],
+    [
+      'a day as a number',
+      { from: 20_261_101, until: '2026-11-02' },
+      'unattended[0].acceptRightsDrift.from',
+    ],
+    [
+      'no last day',
+      { from: '2026-11-01' },
+      'unattended[0].acceptRightsDrift.until',
+    ],
+    [
+      'a field the schema does not know',
+      { from: '2026-11-01', until: '2026-11-02', note: 'Update' },
+      'unattended[0].acceptRightsDrift',
+    ],
+  ])('refuses an exception with %s', (_name, acceptRightsDrift, field) => {
+    expect(
+      checkPolicy({
+        schema: 'policy.v1',
+        unattended: [routine(page, { acceptRightsDrift })],
+      }),
+    ).toEqual({ ok: false, code: 'policy_invalid', field });
+  });
+
+  it.each([
+    [
+      'an exception on one entry and none on another',
+      [routine(page, drift('2026-11-01', '2026-11-10')), second()],
+    ],
+    [
+      'none on one entry and an exception on another',
+      [routine(page), second(drift('2026-11-01', '2026-11-10'))],
+    ],
+    [
+      'two other exceptions',
+      [
+        routine(page, drift('2026-11-01', '2026-11-10')),
+        second(drift('2026-11-01', '2026-11-11')),
+      ],
+    ],
+  ])('refuses one routine with %s', (_name, unattended) => {
+    expect(checkPolicy({ schema: 'policy.v1', unattended })).toEqual({
+      ok: false,
+      code: 'policy_contradiction',
+      field: 'unattended[1].acceptRightsDrift',
+    });
+  });
+
+  it('takes one exception on every entry of a routine, and another for another routine', () => {
+    expect(
+      checkPolicy({
+        schema: 'policy.v1',
+        unattended: [
+          routine(page, drift('2026-11-01', '2026-11-10')),
+          second(drift('2026-11-01', '2026-11-10')),
+          routine(page, {
+            routine: 'wiki-hygiene',
+            ...drift('2026-11-05', '2026-11-06'),
+          }),
+          routine(category, {
+            routine: 'kalender-report',
+            tools: ['ct_wiki_page_create'],
+          }),
+        ],
+      }).ok,
+    ).toBe(true);
+  });
+});
+
+describe('daysFrom', () => {
+  it.each([
+    ['2026-11-10', '2026-11-10', 0],
+    ['2026-11-10', '2026-11-12', 2],
+    ['2026-11-12', '2026-11-10', -2],
+    ['2026-12-31', '2027-01-01', 1],
+    ['2028-02-28', '2028-03-01', 2],
+    // A change to summer time, which a day in UTC does not have.
+    ['2026-03-28', '2026-03-30', 2],
+  ])('counts from %s to %s as %i days', (from, until, days) => {
+    expect(daysFrom(from, until)).toBe(days);
   });
 });
 

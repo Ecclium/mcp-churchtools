@@ -5,7 +5,9 @@
  * plain values against the schema of `policy.v1`, then refuses what the
  * schema cannot see: one target with two names, a tool named twice for
  * one target, a limit per run above the limit per day, and one routine
- * with two levels of redaction. A policy that contradicts itself would
+ * with two levels of redaction or different exceptions for the rights of
+ * its account, or an exception that ends before it starts; an exception
+ * of more than 30 days is invalid. A policy that contradicts itself would
  * leave it to chance which entry counts, so the server does not start
  * with one. What passes gets its defaults, names in the normal form NFC
  * and GUIDs in lower case, so that planning compares like with like.
@@ -106,6 +108,25 @@ const ownData = (value: unknown, key: string): unknown => {
 };
 
 const nfc = (text: string): string => text.normalize('NFC');
+
+/**
+ * The number of days from one UTC day to another: 0 for the same day,
+ * negative when the second comes first.
+ *
+ * @param from - The first day, YYYY-MM-DD.
+ * @param until - The second day, YYYY-MM-DD.
+ * @returns The days between them.
+ * @example
+ * ```ts
+ * daysFrom('2026-11-10', '2026-11-12'); // 2
+ * ```
+ */
+export function daysFrom(from: string, until: string): number {
+  return (
+    (Date.parse(`${until}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) /
+    86_400_000
+  );
+}
 
 // The named things of a target, each with the key that identifies it and
 // the field of its name: an event and its service are named apart. A page
@@ -303,6 +324,7 @@ export function checkPolicy(value: unknown): PolicyCheckResult {
   }
 
   const levels = new Map<string, string>();
+  const exceptions = new Map<string, string>();
   const unattended: UnattendedEntry[] = [];
   for (const [index, entry] of (file.unattended ?? []).entries()) {
     const at = `unattended[${String(index)}]`;
@@ -312,6 +334,25 @@ export function checkPolicy(value: unknown): PolicyCheckResult {
       return refuse('policy_contradiction', `${at}.modelRedaction`);
     }
     levels.set(entry.routine, modelRedaction);
+    // One account per run, so one exception for its rights per routine,
+    // with a last day not before its first and a span of at most the
+    // limit (ADR 0032).
+    const drift = entry.acceptRightsDrift;
+    const exception = drift === undefined ? '' : `${drift.from}/${drift.until}`;
+    const known = exceptions.get(entry.routine);
+    if (known !== undefined && known !== exception) {
+      return refuse('policy_contradiction', `${at}.acceptRightsDrift`);
+    }
+    exceptions.set(entry.routine, exception);
+    if (drift !== undefined) {
+      const span = daysFrom(drift.from, drift.until);
+      if (span < 0) {
+        return refuse('policy_contradiction', `${at}.acceptRightsDrift.until`);
+      }
+      if (span >= policyLimits.rightsDriftDays) {
+        return refuse('policy_invalid', `${at}.acceptRightsDrift.until`);
+      }
+    }
     if (entry.maxPerRun > entry.maxPerDay) {
       return refuse('policy_contradiction', `${at}.maxPerRun`);
     }
@@ -335,6 +376,14 @@ export function checkPolicy(value: unknown): PolicyCheckResult {
         tools: Object.freeze([...entry.tools]),
         maxPerRun: entry.maxPerRun,
         maxPerDay: entry.maxPerDay,
+        ...(drift === undefined
+          ? {}
+          : {
+              acceptRightsDrift: Object.freeze({
+                from: drift.from,
+                until: drift.until,
+              }),
+            }),
       }),
     );
   }

@@ -190,3 +190,117 @@ describe('the policy engine with generated policies', () => {
     );
   });
 });
+
+// The unattended part: entries of two routines on the targets a routine
+// may have, one entry per routine and target (ADR 0032).
+const routines = ['dienstplan-report', 'wiki-hygiene'] as const;
+
+const unattendedPolicy: fc.Arbitrary<Policy> = fc
+  .uniqueArray(
+    fc.record({
+      routine: fc.constantFrom(...routines),
+      credential: fc.constant('bericht'),
+      target: target.filter(
+        (value) => value.kind !== 'group' && value.kind !== 'service',
+      ),
+      tools: fc.uniqueArray(fc.constantFrom(...tools), {
+        minLength: 1,
+        maxLength: 3,
+      }),
+      maxPerRun: fc.integer({ min: 1, max: 3 }),
+      maxPerDay: fc.integer({ min: 3, max: 5 }),
+    }),
+    {
+      maxLength: 8,
+      selector: (entry) => `${entry.routine}|${targetKeyOf(entry.target)}`,
+    },
+  )
+  .map((unattended) => {
+    const result = checkPolicy({ schema: 'policy.v1', unattended });
+    if (!result.ok) throw new Error(`generated policy refused: ${result.code}`);
+    return result.policy;
+  });
+
+describe('the policy engine with generated runs of routines', () => {
+  it('lets a run match only an entry of its own routine, with both its limits', () => {
+    fc.assert(
+      fc.property(
+        unattendedPolicy,
+        request,
+        fc.constantFrom(...routines),
+        (generated, write, routine) => {
+          const match = matchPolicy(generated, {
+            ...write,
+            mode: 'unattended',
+            routine,
+          });
+          if (write.alwaysQueue) {
+            expect(match).toEqual({ kind: 'queue', reason: 'queue_only' });
+          } else if (match.kind === 'entry') {
+            const { entry } = match;
+            expect('routine' in entry ? entry.routine : undefined).toBe(
+              routine,
+            );
+            expect(entry.tools).toContain(write.tool);
+            expect(match.maxPerDay).toBe(entry.maxPerDay);
+            expect(match.maxPerRun).toBe(
+              'maxPerRun' in entry ? entry.maxPerRun : undefined,
+            );
+          } else {
+            // Neither a write without a limit nor a refusal: no default
+            // lets a run write, and the person may still approve it.
+            expect(match).toEqual({ kind: 'queue', reason: 'no_entry' });
+          }
+        },
+      ),
+    );
+  });
+
+  it('never lets a write of a run through at the limit of its run or of its day', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 5 }),
+        fc.integer({ min: 0, max: 5 }),
+        fc.integer({ min: 0, max: 12 }),
+        fc.integer({ min: 0, max: 8 }),
+        fc.boolean(),
+        (maxPerRun, more, count, runCount, counted) => {
+          const result = checkPolicy({
+            schema: 'policy.v1',
+            unattended: [
+              {
+                routine: 'dienstplan-report',
+                credential: 'bericht',
+                target: { kind: 'wiki_category', id: 1, name: 'Kategorie 1' },
+                tools: ['ct_tool_a'],
+                maxPerRun,
+                maxPerDay: maxPerRun + more,
+              },
+            ],
+          });
+          if (!result.ok) throw new Error(result.code);
+          const match = matchPolicy(result.policy, {
+            mode: 'unattended',
+            routine: 'dienstplan-report',
+            tool: 'ct_tool_a',
+            target: { kind: 'wiki_category', key: '1' },
+            alwaysQueue: false,
+          });
+          const verdict = judgeMatch(match, {
+            names: ['Kategorie 1'],
+            count,
+            counted,
+            runCount,
+          });
+          const over = (value: number, limit: number): boolean =>
+            counted ? value > limit : value >= limit;
+          expect(verdict).toEqual(
+            over(runCount, maxPerRun) || over(count, maxPerRun + more)
+              ? { kind: 'queue', reason: 'limit_reached' }
+              : { kind: 'allow' },
+          );
+        },
+      ),
+    );
+  });
+});

@@ -35,7 +35,7 @@ export const policyFieldMeanings: Readonly<Record<string, string>> =
     'interactive.inquiriesTo':
       'Wen man bei Fragen erreicht, etwa `Sekretariat, sekretariat@example.org`. Der Text steht am Ende der Zeile, mit der jede Seite und jeder Abschnitt endet, die Ecclium im Wiki hinzufügt: «Automatisch erstellt am 05.11.2026 durch Ecclium, interaktiv, Prüfcode k1:ABCDEFGHIJKLM. Rückfragen an Sekretariat, sekretariat@example.org.». Er ist Klartext in einer Zeile ohne Steuerzeichen, Links und Adressen von Websites, ohne `<` vor einem Buchstaben, `/`, `!` oder `?`, ohne Zeichenreferenzen wie `&amp;` und ohne die Zeichen `[`, `]`, `` ` `` und `\\`, und eine E-Mail-Adresse oder Telefonnummer darin muss auch unter `interactive.contacts` stehen. Ohne ihn legt Ecclium keine Seite an und hängt keinen Abschnitt an, und mit `ECCLIUM_READ_ONLY=false` und dem Toolset `wiki` startet der Server nicht. Nennen Sie eine Stelle statt einer Person, wenn Sie keinen Namen im Wiki wollen.',
     unattended:
-      'Der Teil für Routinen, die ohne Person laufen. Ecclium prüft ihn beim Start, benutzt wird er erst mit dem Runner einer späteren Version.',
+      'Der Teil für Routinen, die ohne Person laufen. Ein Lauf schreibt nur auf die Ziele der Einträge seiner Routine, mit den Grenzen je Lauf und je Tag. Was kein Eintrag erlaubt, kommt in die Freigabe-Warteschlange.',
     'unattended[].routine': 'Kennung der Routine, etwa `dienstplan-report`.',
     'unattended[].credential':
       'Name der Zugangsdaten, mit denen der Runner für diese Routine schreibt, damit er das engste passende Dienstkonto nimmt.',
@@ -49,6 +49,11 @@ export const policyFieldMeanings: Readonly<Record<string, string>> =
       'Wie oft jedes dieser Tools je Lauf auf das Ziel schreiben darf, höchstens so oft wie je Tag.',
     'unattended[].maxPerDay':
       'Wie oft jedes dieser Tools je UTC-Tag auf das Ziel schreiben darf. Läufe von Hand zählen mit.',
+    'unattended[].acceptRightsDrift': `Befristete Ausnahme für Rechte, die das Konto der Routine hat, aber keine Routine dieses Kontos braucht. Ohne sie kommt jeder Schreibvorgang eines Laufs mit einem solchen Konto in die Freigabe-Warteschlange. Mit ihr schreibt der Lauf, und seine Zeile im Audit trägt \`rightsDriftAccepted\`. Für alle Einträge derselben Routine gleich, höchstens ${String(policyLimits.rightsDriftDays)} Tage. Ein umbenanntes Ziel deckt sie nicht.`,
+    'unattended[].acceptRightsDrift.from':
+      'Erster UTC-Tag der Ausnahme, etwa `2026-11-10`.',
+    'unattended[].acceptRightsDrift.until':
+      'Letzter UTC-Tag der Ausnahme, nicht vor dem ersten.',
   });
 
 /** The meaning of each field of a target, by its path in the target. */
@@ -397,7 +402,9 @@ export function renderPolicyReference(): string {
     '- **Abschliessend:** Hat `interactive.targets` einen Eintrag, darf ein bestätigter Schreibvorgang nur noch auf die genannten Ziele mit den genannten Tools. Jeder andere Wunsch und jeder über `maxPerDay` geht an den Betreiber, statt abgelehnt zu werden, damit die Person handlungsfähig bleibt.',
     '- **Gruppen und Dienste:** Mitgliedschaften in Gruppen und Anfragen für Dienste betreffen Personen. Ohne Eintrag gehen sie an den Betreiber, und Routinen schreiben sie nie. Operationen der schreibenden Escape Hatch gehen immer an den Betreiber, weil die Richtlinie für sie keine Art von Ziel kennt.',
     '- **Zähler:** Die Zähler je Tag liegen im Zustandsordner, überstehen einen Neustart und gelten für alle Prozesse mit demselben Ordner. Beim Planen liest Ecclium den Zähler, und steht er schon bei `maxPerDay`, geht der Wunsch an den Betreiber, damit niemand einen Vorgang bestätigt, der nicht mehr geht. Gezählt wird beim Festschreiben unmittelbar vor dem Senden. Ein gezählter Vorgang, der danach scheitert, bleibt gezählt, ein abgelehnter Name zählt nicht. Ohne Zustandsordner startet ein Server, der schreiben darf, nicht ([ADR 0029](adr/0029-write-guard.md)).',
-    '- **Widersprüche:** Dasselbe Ziel mit zwei Namen, dasselbe Tool zweimal für ein Ziel im selben Teil, `maxPerRun` über `maxPerDay` oder zwei Stufen von `modelRedaction` für eine Routine verhindern den Start.',
+    '- **Läufe:** Ein Lauf einer Routine schreibt nur auf die Ziele der Einträge seiner Routine in `unattended`, mit den Tools dort, höchstens `maxPerRun` Mal je Lauf und `maxPerDay` Mal je UTC-Tag. Was kein Eintrag erlaubt, ein umbenanntes Ziel und eine erreichte Grenze gehen an den Betreiber, der Lauf endet nicht. Ein Lauf hängt je Periode einen Abschnitt an. Ein zweiter Lauf derselben Periode lässt ihn stehen, wenn der Text gleich ist, und ersetzt ihn an seiner Stelle, wenn nicht. Hat eine Person den Abschnitt geändert, geht der neue an den Betreiber.',
+    `- **Rechte eines Kontos:** Hat das Konto eines Laufs Rechte, die kein Tool der Routinen dieses Kontos braucht, oder darf es Kategorien des Wikis bearbeiten, die kein Eintrag mit seinem \`credential\` nennt, geht jeder Schreibvorgang des Laufs an den Betreiber. Das kann nach einem Update von ChurchTools geschehen. Prüfen Sie dann die Rechte des Kontos. Bis Sie sie angepasst haben, lässt \`acceptRightsDrift\` die Läufe der Routine höchstens ${String(policyLimits.rightsDriftDays)} Tage lang trotzdem schreiben, mit einem Vermerk im Audit.`,
+    '- **Widersprüche:** Dasselbe Ziel mit zwei Namen, dasselbe Tool zweimal für ein Ziel im selben Teil, `maxPerRun` über `maxPerDay`, zwei Stufen von `modelRedaction` für eine Routine, verschiedene Ausnahmen `acceptRightsDrift` an den Einträgen einer Routine oder eine Ausnahme, deren letzter Tag vor dem ersten liegt, verhindern den Start.',
     '',
     '## Vorschlag aus dem Audit',
     '',

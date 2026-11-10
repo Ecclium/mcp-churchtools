@@ -22,8 +22,11 @@
  * writes to groups and services, which go to the queue. With entries the
  * list is final: a target without an entry, a name that changed or a
  * limit reached goes to the queue, not to a refusal, so that the person
- * stays able to act. Until the runner uses the unattended part, the policy
- * refuses every write outside the interactive mode.
+ * stays able to act. A run of a routine writes in the mode `unattended`
+ * only within the entries of its routine in the unattended part, each with
+ * a limit per run and per day; there is no default that allows more, and
+ * everything else goes to the queue (ADR 0032). Any other write outside
+ * the interactive mode is refused.
  *
  * @packageDocumentation
  */
@@ -35,7 +38,12 @@ import {
 } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { targetKeyOf } from './check.js';
-import type { InteractiveEntry, InteractiveTarget, Policy } from './schema.js';
+import type {
+  InteractiveEntry,
+  InteractiveTarget,
+  Policy,
+  UnattendedEntry,
+} from './schema.js';
 
 /** Why a write goes to the queue instead of ahead. */
 export type PolicyQueueReason =
@@ -72,6 +80,13 @@ export interface PolicyRequest {
   readonly target: { readonly kind: WriteTargetKind; readonly key: string };
   /** Whether the kind of write always goes to the queue. */
   readonly alwaysQueue: boolean;
+  /**
+   * The ID of the routine of a run, in the mode `unattended` only: its
+   * entries of the unattended part decide. Without it, a write in that
+   * mode is refused, so that no call outside a run of a routine reaches an
+   * entry (ADR 0032).
+   */
+  readonly routine?: string;
 }
 
 /**
@@ -104,18 +119,20 @@ export interface ExpectedName {
 export type PolicyMatch =
   /** No entries and a target that needs none: no limit, no counter. */
   | { readonly kind: 'allow' }
-  /** An entry covers the write; its names and counter decide. */
+  /** An entry covers the write; its names and counters decide. */
   | {
       readonly kind: 'entry';
-      readonly entry: InteractiveEntry;
+      readonly entry: InteractiveEntry | UnattendedEntry;
       /** The names to read and compare, in the order of the target. */
       readonly names: readonly ExpectedName[];
       /** The counter of the day of this tool on the target of the entry. */
       readonly counter: WriteQuotaKey;
       readonly maxPerDay: number;
+      /** For an entry of the unattended part, its limit per run. */
+      readonly maxPerRun?: number;
     }
   | { readonly kind: 'queue'; readonly reason: PolicyQueueReason }
-  /** Outside the interactive mode, until the runner uses the policy. */
+  /** Outside the interactive mode and outside a run of a routine. */
   | { readonly kind: 'deny'; readonly reason: 'not_interactive' };
 
 /** How a write ends with the policy. */
@@ -231,6 +248,15 @@ export function matchPolicy(
   policy: Policy,
   request: PolicyRequest,
 ): PolicyMatch {
+  // A run of a routine: only its own entries of the unattended part, and
+  // without them nothing, since nobody confirms there (ADR 0032).
+  if (request.mode === 'unattended' && request.routine !== undefined) {
+    if (request.alwaysQueue) return queue('queue_only');
+    const own = policy.unattended.filter(
+      (entry) => entry.routine === request.routine,
+    );
+    return matchEntries(own, request) ?? queue('no_entry');
+  }
   if (request.mode !== 'interactive') return notInteractive;
   if (request.alwaysQueue) return queue('queue_only');
   const { targets } = policy.interactive;
@@ -241,7 +267,16 @@ export function matchPolicy(
       ? queue('queue_only')
       : allow;
   }
-  const covering = targets.flatMap((entry) => {
+  return matchEntries(targets, request) ?? queue('no_entry');
+}
+
+// The entry among some that covers the tool and the target, with the
+// names to compare and the counters, or undefined.
+const matchEntries = (
+  entries: readonly (InteractiveEntry | UnattendedEntry)[],
+  request: PolicyRequest,
+): PolicyMatch | undefined => {
+  const covering = entries.flatMap((entry) => {
     const how = covers(entry.target, request.target);
     return how === undefined ? [] : [{ entry, how }];
   });
@@ -253,15 +288,17 @@ export function matchPolicy(
   const found = candidates.find((item) =>
     item.entry.tools.includes(request.tool),
   );
-  if (found === undefined) return queue('no_entry');
+  if (found === undefined) return undefined;
+  const { entry } = found;
   return Object.freeze({
     kind: 'entry',
-    entry: found.entry,
-    names: Object.freeze(namesOf(found.entry.target)),
-    counter: writeQuotaKey(request.tool, targetKeyOf(found.entry.target)),
-    maxPerDay: found.entry.maxPerDay,
+    entry,
+    names: Object.freeze(namesOf(entry.target)),
+    counter: writeQuotaKey(request.tool, targetKeyOf(entry.target)),
+    maxPerDay: entry.maxPerDay,
+    ...('maxPerRun' in entry ? { maxPerRun: entry.maxPerRun } : {}),
   });
-}
+};
 
 /** What the write guard read for a match of an entry. */
 export interface PolicyFacts {
@@ -277,6 +314,12 @@ export interface PolicyFacts {
   readonly count: number | undefined;
   /** Whether the count already holds this write. */
   readonly counted: boolean;
+  /**
+   * For an entry with a limit per run: the writes of the run under it,
+   * counted like the counter of the day; undefined when the run has no
+   * counter.
+   */
+  readonly runCount?: number;
 }
 
 /**
@@ -304,12 +347,17 @@ export function judgeMatch(
       facts.names[index]?.normalize('NFC') !== expected.name.normalize('NFC'),
   );
   if (changed) return queue('name_changed');
-  const { count } = facts;
-  if (count === undefined || !Number.isSafeInteger(count) || count < 0) {
-    return queue('count_unavailable');
+  const usable = (value: number | undefined): value is number =>
+    value !== undefined && Number.isSafeInteger(value) && value >= 0;
+  // Planning sends a write to the queue at the limit; committing holds the
+  // write and may reach the limit but not pass it.
+  const beyond = (value: number, limit: number): boolean =>
+    facts.counted ? value > limit : value >= limit;
+  const { count, runCount } = facts;
+  if (!usable(count)) return queue('count_unavailable');
+  if (match.maxPerRun !== undefined) {
+    if (!usable(runCount)) return queue('count_unavailable');
+    if (beyond(runCount, match.maxPerRun)) return queue('limit_reached');
   }
-  const over = facts.counted
-    ? count > match.maxPerDay
-    : count >= match.maxPerDay;
-  return over ? queue('limit_reached') : allow;
+  return beyond(count, match.maxPerDay) ? queue('limit_reached') : allow;
 }
