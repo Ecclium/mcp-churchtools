@@ -38,6 +38,7 @@ const commentedOnly: readonly string[] = [
   'ECCLIUM_POLICY_FILE',
   'ECCLIUM_ROUTINES_DIR',
   'ECCLIUM_PROVIDERS_FILE',
+  'ECCLIUM_RUNNER_TOKENS_DIR',
 ];
 
 const text = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');

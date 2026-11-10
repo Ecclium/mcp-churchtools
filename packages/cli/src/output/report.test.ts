@@ -147,6 +147,10 @@ describe('renderConfigReport', () => {
         'Modellanbieter',
         'keine Anbieter (‹ECCLIUM_PROVIDERS_FILE› ist nicht gesetzt)',
       ),
+      row(
+        'Token des Runners',
+        'kein Ordner (‹ECCLIUM_RUNNER_TOKENS_DIR› ist nicht gesetzt)',
+      ),
       row('Subjekt über stdio', '‹local-stdio› (Voreinstellung)'),
       row('Stufe des Logs', '‹info› (Voreinstellung)'),
       hostNote,
@@ -812,6 +816,39 @@ describe('renderConfigReport and the policy', () => {
       ),
     );
   });
+  it('masks the folder of the tokens of the runner unless asked to show it', () => {
+    const withFolder: ConfigReport = {
+      ...report,
+      settings: report.settings.map((setting) =>
+        setting.key === 'runnerTokensDir'
+          ? {
+              ...setting,
+              origin: 'environment',
+              shown: { kind: 'path', value: '/path/to/tokens' },
+            }
+          : setting,
+      ),
+    };
+    const masked = renderConfigReport(withFolder, {
+      valid: true,
+      showValues: false,
+    });
+    expect(masked).toContain(
+      row('Token des Runners', '[verborgen] (aus ‹ECCLIUM_RUNNER_TOKENS_DIR›)'),
+    );
+    expect(masked.find((line) => line.startsWith('Verborgen'))).toBe(
+      'Verborgen sind der Host und der Ordner der Token des Runners, damit Sie die Ausgabe ohne Bearbeitung weitergeben können. Mit ‹--show-values› zeigt der Befehl beide.',
+    );
+    expect(
+      renderConfigReport(withFolder, { valid: true, showValues: true }),
+    ).toContain(
+      row(
+        'Token des Runners',
+        '‹/path/to/tokens› (aus ‹ECCLIUM_RUNNER_TOKENS_DIR›)',
+      ),
+    );
+  });
+
   it('masks the path of the file of the providers and lists each provider, the host only on request', () => {
     const withFile: ConfigReport = {
       ...report,

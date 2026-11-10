@@ -47,6 +47,7 @@ export const variableNames = Object.freeze([
   'ECCLIUM_MARKER_KEY_FILE',
   'ECCLIUM_ROUTINES_DIR',
   'ECCLIUM_PROVIDERS_FILE',
+  'ECCLIUM_RUNNER_TOKENS_DIR',
   'ECCLIUM_STDIO_SUBJECT',
   'ECCLIUM_LOG_LEVEL',
 ] as const);
@@ -611,6 +612,19 @@ export const variables: readonly Variable[] = Object.freeze([
     secret: false,
     stdioOnly: false,
   }),
+  // The folder of the token files of the accounts of the runner, one file
+  // ct_token_<alias> per alias of the policy (ADR 0033). Only the runner
+  // reads a file in it, anew for each run; the start of the server checks
+  // the form of the path.
+  row({
+    name: 'ECCLIUM_RUNNER_TOKENS_DIR',
+    kind: 'path',
+    maxLength: 4096,
+    choices: [],
+    defaultValue: undefined,
+    secret: false,
+    stdioOnly: false,
+  }),
   row({
     name: 'ECCLIUM_STDIO_SUBJECT',
     kind: 'subject',
@@ -711,6 +725,11 @@ export const variableSchemas: Readonly<
     .min(1)
     .max(4096)
     .refine((value) => isAbsolute(value)),
+  ECCLIUM_RUNNER_TOKENS_DIR: z
+    .string()
+    .min(1)
+    .max(4096)
+    .refine((value) => isNormalizedAbsolutePath(value)),
   ECCLIUM_STDIO_SUBJECT: z.string().max(32).regex(stdioSubjectPattern),
   ECCLIUM_LOG_LEVEL: choiceOf('ECCLIUM_LOG_LEVEL'),
 });
@@ -747,6 +766,8 @@ export const environmentSchema = z.strictObject({
   ECCLIUM_MARKER_KEY_FILE: variableSchemas.ECCLIUM_MARKER_KEY_FILE.optional(),
   ECCLIUM_ROUTINES_DIR: variableSchemas.ECCLIUM_ROUTINES_DIR.optional(),
   ECCLIUM_PROVIDERS_FILE: variableSchemas.ECCLIUM_PROVIDERS_FILE.optional(),
+  ECCLIUM_RUNNER_TOKENS_DIR:
+    variableSchemas.ECCLIUM_RUNNER_TOKENS_DIR.optional(),
   ECCLIUM_STDIO_SUBJECT: variableSchemas.ECCLIUM_STDIO_SUBJECT.optional(),
   ECCLIUM_LOG_LEVEL: variableSchemas.ECCLIUM_LOG_LEVEL.optional(),
 });

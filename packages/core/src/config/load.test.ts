@@ -580,6 +580,12 @@ describe('loadConfig with a good configuration', () => {
       ['routinesDir', 'ECCLIUM_ROUTINES_DIR', 'unset', { kind: 'none' }],
       ['providers', 'ECCLIUM_PROVIDERS_FILE', 'unset', { kind: 'none' }],
       [
+        'runnerTokensDir',
+        'ECCLIUM_RUNNER_TOKENS_DIR',
+        'unset',
+        { kind: 'none' },
+      ],
+      [
         'stdioSubject',
         'ECCLIUM_STDIO_SUBJECT',
         'default',
@@ -2644,6 +2650,49 @@ describe('loadConfig and the folder of the routines', () => {
   });
 });
 
+describe('loadConfig and the folder of the tokens of the runner', () => {
+  it('leaves it unset without the variable', () => {
+    const result = load(valid());
+    expect(result.ok && result.config.runnerTokensDir).toBeUndefined();
+    expect(setting(result, 'runnerTokensDir')).toMatchObject({
+      variable: 'ECCLIUM_RUNNER_TOKENS_DIR',
+      origin: 'unset',
+      shown: { kind: 'none' },
+    });
+  });
+
+  it('takes an absolute path in simple form, without looking at the disk', () => {
+    const result = load({
+      ...valid(),
+      ECCLIUM_RUNNER_TOKENS_DIR: '/path/to/tokens',
+    });
+    expect(result.ok && result.config.runnerTokensDir).toBe('/path/to/tokens');
+    expect(setting(result, 'runnerTokensDir')).toMatchObject({
+      origin: 'environment',
+      shown: { kind: 'path', value: '/path/to/tokens' },
+    });
+  });
+
+  it.each([
+    'tokens',
+    './tokens',
+    '/path/../tokens',
+    '/path//tokens',
+    '/path/tokens/',
+    '/path/./tokens',
+  ])('refuses %s without showing it', (value) => {
+    const result = load({ ...valid(), ECCLIUM_RUNNER_TOKENS_DIR: value });
+    expect(result.ok).toBe(false);
+    expect(problems(result)).toEqual([
+      ['runner_tokens_dir_invalid', 'ECCLIUM_RUNNER_TOKENS_DIR'],
+    ]);
+    expect(setting(result, 'runnerTokensDir')).toMatchObject({
+      origin: 'invalid',
+      shown: { kind: 'none' },
+    });
+  });
+});
+
 describe('loadConfig and the file of the providers', () => {
   it('has no providers without the variable', () => {
     const result = load(valid());
@@ -2770,6 +2819,8 @@ describe('loadConfig and its problems', () => {
       load({ ...valid(), ECCLIUM_TIME_ZONE: 'Mars/Base' }),
     routines_dir_invalid: () =>
       load({ ...valid(), ECCLIUM_ROUTINES_DIR: 'routines' }),
+    runner_tokens_dir_invalid: () =>
+      load({ ...valid(), ECCLIUM_RUNNER_TOKENS_DIR: 'tokens' }),
     url_missing: () => load({ ECCLIUM_CHURCHTOOLS_TOKEN_FILE: tokenPath }),
     url_too_long: () => withAddress(`https://${'a'.repeat(300)}.example`),
     url_invalid: () => withAddress('demo.example'),

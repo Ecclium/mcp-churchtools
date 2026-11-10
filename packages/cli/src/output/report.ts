@@ -66,6 +66,7 @@ const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
   markerKey: 'Prüfcode-Schlüssel',
   routinesDir: 'Ordner der Routinen',
   providers: 'Modellanbieter',
+  runnerTokensDir: 'Token des Runners',
   stdioSubject: 'Subjekt über stdio',
   logLevel: 'Stufe des Logs',
 });
@@ -86,7 +87,14 @@ const quote = (text: string): string => `‹${text}›`;
 const inconsistent = 'The report of the configuration is inconsistent.';
 
 type Hidden =
-  'host' | 'subject' | 'path' | 'keys' | 'policy' | 'routines' | 'providers';
+  | 'host'
+  | 'subject'
+  | 'path'
+  | 'keys'
+  | 'policy'
+  | 'routines'
+  | 'providers'
+  | 'tokens';
 
 interface Value {
   readonly text: string;
@@ -133,6 +141,8 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
         return { text: 'keine Routinen' };
       case 'providers':
         return { text: 'keine Anbieter' };
+      case 'runnerTokensDir':
+        return { text: 'kein Ordner' };
       default:
         throw new TypeError(inconsistent);
     }
@@ -178,7 +188,9 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
                   ? 'routines'
                   : setting.key === 'providers'
                     ? 'providers'
-                    : 'path',
+                    : setting.key === 'runnerTokensDir'
+                      ? 'tokens'
+                      : 'path',
         };
       }
       return isPrintable(shown.value)
@@ -218,6 +230,7 @@ const hiddenNames: Readonly<Record<Hidden, readonly [string, string]>> =
     policy: ['der Pfad der Richtlinie', 'ihn'],
     routines: ['der Ordner der Routinen', 'ihn'],
     providers: ['der Pfad der Datei der Anbieter', 'ihn'],
+    tokens: ['der Ordner der Token des Runners', 'ihn'],
   });
 
 const maskedNote = (hidden: readonly Hidden[]): string => {
@@ -360,6 +373,7 @@ export function renderConfigReport(
             'policy',
             'routines',
             'providers',
+            'tokens',
           ] as const
         ).filter((entry) => hidden.has(entry)),
       ),
