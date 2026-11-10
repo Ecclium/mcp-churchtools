@@ -171,8 +171,9 @@ export interface EccliumConfig {
    * The folder of the token files of the accounts of the runner, an
    * absolute normalised path, or undefined when the variable is not set
    * (ADR 0033). It holds one file `ct_token_<alias>` per alias of the
-   * policy, which the composition root of the runner reads anew for each
-   * run; the start checks the form of the path alone.
+   * policy, which the composition root reads anew for each run and for
+   * the approval of an entry of a run; the start checks the form of the
+   * path alone.
    */
   readonly runnerTokensDir: string | undefined;
   readonly stdioSubject: string;
@@ -1400,9 +1401,9 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       : shownNone,
   );
 
-  // The folder of the token files of the runner (ADR 0033). Only the
-  // runner reads a file in it, for each run anew, so the start checks the
-  // form of the path and nothing on disk.
+  // The folder of the token files of the runner (ADR 0033). Only a run and
+  // the approval of an entry of a run read a file in it, so the start
+  // checks the form of the path and nothing on disk.
   const runnerTokensName = 'ECCLIUM_RUNNER_TOKENS_DIR';
   const runnerTokensRead = read(row(runnerTokensName));
   let runnerTokensDir: string | undefined;

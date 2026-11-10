@@ -42,13 +42,22 @@ export interface RunPipelineOptions extends ComposeOptions {
   readonly routineId: string;
   /** The halt of writes of the process, the same for every run. */
   readonly writeHalt: WriteHalt;
+  /**
+   * Whether the routine must have an account in the policy, as for the
+   * approval of an entry a run queued: then a routine without an entry
+   * builds nothing instead of reading with the token of the server.
+   */
+  readonly requireAccount?: boolean;
   /** Only for tests: reads the token file of an alias. */
   readonly readToken?: typeof readRunnerToken;
 }
 
 /** Why the pipeline of a run was not built. */
 export type RunPipelineCode =
-  TokenFileCode | 'runner_tokens_dir_missing' | 'run_credential_mixed';
+  | TokenFileCode
+  | 'runner_tokens_dir_missing'
+  | 'run_credential_mixed'
+  | 'run_credential_missing';
 
 /** The pipeline of a run, or why it was not built. */
 export type RunPipelineResult =
@@ -64,8 +73,9 @@ export type RunPipelineResult =
       /**
        * `runner_tokens_dir_missing` for an alias while
        * `ECCLIUM_RUNNER_TOKENS_DIR` is not set, `run_credential_mixed` for
-       * a routine whose entries name two aliases, else the code of the
-       * token file, such as `token_file_missing`.
+       * a routine whose entries name two aliases, `run_credential_missing`
+       * for a routine without an entry when an account is required, else
+       * the code of the token file, such as `token_file_missing`.
        */
       readonly code: RunPipelineCode;
     };
@@ -97,6 +107,9 @@ export function composeRunPipeline(
     return Object.freeze({ ok: false, code: 'run_credential_mixed' });
   }
   const { credential } = settled;
+  if (credential === undefined && options.requireAccount === true) {
+    return Object.freeze({ ok: false, code: 'run_credential_missing' });
+  }
   let token = config.churchtoolsToken;
   if (credential !== undefined) {
     // An alias reads and writes with its own account or not at all: the

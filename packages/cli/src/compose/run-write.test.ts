@@ -10,14 +10,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
-  createStdioIdentity,
-  createStdioTenantResolver,
   createToolCatalog,
   describeRunTool,
   guardModelProvider,
   loadConfig,
   policyHashOf,
-  type ToolRequest,
   type Trigger,
 } from '@ecclium/mcp-churchtools-core';
 import {
@@ -54,7 +51,9 @@ import {
 } from '@ecclium/mcp-churchtools-workflows';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { composeToolPipeline } from './pipeline.js';
+import { verifyAudit as runAuditVerify } from '../commands/audit-verify.js';
+import { exitCodes } from '../exit-codes.js';
+import { runQueue } from '../queue/queue.js';
 import { composeRunPipeline } from './run-pipeline.js';
 import { composeRun } from './run.js';
 
@@ -417,9 +416,12 @@ const setup = (options: SetupOptions = {}) => {
   const keysDir = privateDir(join(base, 'keys'));
   const tokensDir = privateDir(join(base, 'tokens'));
   const configDir = privateDir(join(base, 'config'));
-  privateFile(
+  // The token of the account of the alias, and the one of the server.
+  const accountCanary = makeCanary('token');
+  const serverCanary = makeCanary('token');
+  const accountFile = privateFile(
     join(tokensDir, 'ct_token_berichte'),
-    `${makeCanary('token').value}\n`,
+    `${accountCanary.value}\n`,
   );
   // Keys made from seeds instead of written out, so that no secret scanner
   // reads them as leaked ones.
@@ -440,23 +442,21 @@ const setup = (options: SetupOptions = {}) => {
       unattended: options.entries ?? [entryOf()],
     }),
   );
-  const loaded = loadConfig({
-    environment: {
-      ECCLIUM_CHURCHTOOLS_URL: doubleOrigin,
-      ECCLIUM_CHURCHTOOLS_TOKEN: makeCanary('token').value,
-      ECCLIUM_READ_ONLY: 'false',
-      ECCLIUM_TOOLSETS: 'wiki',
-      ECCLIUM_REDACTION: 'strict',
-      ECCLIUM_PSEUDONYM_KEY_FILE: keyFile,
-      ECCLIUM_MARKER_KEY_FILE: markerFile,
-      ECCLIUM_POLICY_FILE: policyFile,
-      ECCLIUM_STATE_DIR: stateDir,
-      ECCLIUM_KEYS_DIR: keysDir,
-      ECCLIUM_RUNNER_TOKENS_DIR: tokensDir,
-      ECCLIUM_TIME_ZONE: 'Europe/Zurich',
-    },
-    transport: 'stdio',
-  });
+  const environment = {
+    ECCLIUM_CHURCHTOOLS_URL: doubleOrigin,
+    ECCLIUM_CHURCHTOOLS_TOKEN: serverCanary.value,
+    ECCLIUM_READ_ONLY: 'false',
+    ECCLIUM_TOOLSETS: 'wiki',
+    ECCLIUM_REDACTION: 'strict',
+    ECCLIUM_PSEUDONYM_KEY_FILE: keyFile,
+    ECCLIUM_MARKER_KEY_FILE: markerFile,
+    ECCLIUM_POLICY_FILE: policyFile,
+    ECCLIUM_STATE_DIR: stateDir,
+    ECCLIUM_KEYS_DIR: keysDir,
+    ECCLIUM_RUNNER_TOKENS_DIR: tokensDir,
+    ECCLIUM_TIME_ZONE: 'Europe/Zurich',
+  };
+  const loaded = loadConfig({ environment, transport: 'stdio' });
   if (!loaded.ok) throw new Error('the configuration of the test is invalid');
   const config = loaded.config;
   const policy = config.policy;
@@ -614,31 +614,76 @@ const setup = (options: SetupOptions = {}) => {
     return { bound, rendered, written, signal };
   };
 
-  // The pipeline and the request of `ecclium queue`, with the token of the
-  // server and the actor of the start over stdio in the mode operator.
-  const operator = async () => {
-    const { pipeline, transport } = composeToolPipeline({
-      config,
-      catalog,
-      writer,
-      clock,
-      auditFile: audit.writer,
-      createTransport,
-      writeHalt,
-    });
-    open.push(transport);
-    const assignment = await createStdioTenantResolver().resolve(
-      createStdioIdentity(config),
-    );
-    const request: ToolRequest = {
-      assignment,
-      mode: 'operator',
-      redaction: config.redaction,
-      readOnly: config.readOnly,
-      features: [],
-      signal: new AbortController().signal,
+  // `ecclium queue approve` as the operator calls it, with the same
+  // configuration and the double of the test.
+  const approveCommand = async (queueId: string) => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    // The calls of the transports of the command, kept before it closes
+    // them, since a closed double forgets its calls.
+    const calls: MockedCall[] = [];
+    const recording = (given: HttpTransportOptions) => {
+      const transport = createTransport(given);
+      const double = doubles.at(-1);
+      return Object.freeze({
+        ...transport,
+        close: async () => {
+          calls.push(...(double?.calls() ?? []));
+          await transport.close();
+        },
+      });
     };
-    return { pipeline, request };
+    // The command opens the audit file of the day itself, with the clock
+    // and the process of the test, so the writer of the runs closes first.
+    audit.writer.close();
+    const code = await runQueue({
+      environment,
+      execArgv: [],
+      action: 'approve',
+      queueId,
+      output: {
+        stdout: (line) => stdout.push(line) > 0,
+        stderr: (line) => stderr.push(line) > 0,
+      },
+      writeSync: (_fd, _buffer, _offset, length) => length,
+      createTransport: recording,
+      clock,
+    });
+    return {
+      code,
+      stdout,
+      stderr,
+      patches: calls.filter((call) => call.method === 'PATCH'),
+    };
+  };
+
+  // Writes the policy again, as an operator who changes it between a run
+  // and the approval of what it queued.
+  const rewritePolicy = (entries: readonly unknown[]) => {
+    privateFile(
+      policyFile,
+      JSON.stringify({
+        schema: 'policy.v1',
+        interactive: { inquiriesTo: 'Sekretariat' },
+        unattended: entries,
+      }),
+    );
+  };
+
+  // The audit files of the test, checked by `ecclium audit verify`: its
+  // report and its exit code, 0 without a finding.
+  const verifyAudit = () => {
+    const lines: string[] = [];
+    const code = runAuditVerify({
+      environment,
+      logs: [],
+      output: {
+        stdout: (line) => lines.push(line) > 0,
+        stderr: (line) => lines.push(line) > 0,
+      },
+      clock,
+    });
+    return { code, lines };
   };
 
   return {
@@ -652,7 +697,11 @@ const setup = (options: SetupOptions = {}) => {
     text,
     bind,
     runOnce,
-    operator,
+    approveCommand,
+    accountCanary,
+    accountFile,
+    rewritePolicy,
+    verifyAudit,
   };
 };
 
@@ -815,7 +864,7 @@ describe('the tools of the account of a run', () => {
 
 describe('the limits of a routine across its runs', () => {
   it('queues a second write of the same run beyond its limit per run, and the next run has a counter of its own', async () => {
-    const { fake, patches, events, bind } = setup({
+    const { fake, patches, events, bind, verifyAudit } = setup({
       entries: [entryOf({ maxPerRun: 1, maxPerDay: 2 })],
     });
     const limits = () =>
@@ -871,6 +920,10 @@ describe('the limits of a routine across its runs', () => {
     ).toMatchObject({ kind: 'queued' });
     expect(limits()).toBe(2);
     expect(patches()).toHaveLength(2);
+    // Three pipelines over one audit file keep one chain.
+    const report = verifyAudit();
+    expect(report.lines.length).toBeGreaterThan(0);
+    expect(report.code).toBe(exitCodes.ok);
   });
 });
 
@@ -978,8 +1031,8 @@ describe('how a write of a run ends', () => {
     expect(sentText(patches()[0])).toContain('Nachtrag von Hand.');
   });
 
-  it('queues a section a person changed, which the approval of the operator writes', async () => {
-    const { fake, patches, text, runOnce, operator } = setup();
+  it('queues a section a person changed, and leaves the page as it is', async () => {
+    const { fake, patches, text, runOnce } = setup();
     expect((await runOnce()).written).toMatchObject({ kind: 'written' });
     const page = fake.pages.get(guid);
     if (page === undefined) throw new Error('no page');
@@ -994,14 +1047,69 @@ describe('how a write of a run ends', () => {
     expect(queued.target).toEqual(pageKey);
     expect(patches()).toHaveLength(1);
     expect(text()).toBe(before);
+    // Its approval goes through `ecclium queue approve`, below.
+  });
+});
 
-    const { pipeline, request } = await operator();
-    expect(
-      await pipeline.approve({ queueId: queued.queueId }, request),
-    ).toMatchObject({ kind: 'approved', target: pageKey, version: 6 });
-    expect(patches()).toHaveLength(2);
+describe('the approval of a section a run queued', () => {
+  // A run queues its section beside one a person changed.
+  const queueOne = async (setupOf: ReturnType<typeof setup>) => {
+    const { fake, runOnce } = setupOf;
+    expect((await runOnce()).written).toMatchObject({ kind: 'written' });
+    const page = fake.pages.get(guid);
+    if (page === undefined) throw new Error('no page');
+    page.text = page.text.replace('Mesmer', 'Mesmer, von Hand');
+    page.version += 1;
+    const queued = (await runOnce()).written;
+    if (queued.kind !== 'queued') throw new Error('not queued');
+    return queued.queueId;
+  };
+
+  it('writes with the account of the routine, as the run would, through ecclium queue approve', async () => {
+    const setupOf = setup();
+    const { text, approveCommand, accountCanary, verifyAudit } = setupOf;
+    const queueId = await queueOne(setupOf);
+    const before = text();
+    const approved = await approveCommand(queueId);
+    expect(approved.code).toBe(exitCodes.ok);
     // The changed section stays; the one of the run stands beside it.
     expect(text().startsWith(before)).toBe(true);
+    // The runs and the command, each with a pipeline of its own, keep one
+    // chain in the audit file.
+    expect(verifyAudit().code).toBe(exitCodes.ok);
+    expect(approved.patches).toHaveLength(1);
+    expect(approved.patches[0]?.headers['authorization']).toBe(
+      `Login ${accountCanary.value}`,
+    );
     expect(periodsOn(text())).toEqual(['2026-W46', '2026-W46']);
+  });
+
+  it('writes nothing without the token file of the account, also not with the token of the server', async () => {
+    const setupOf = setup();
+    const { patches, approveCommand, accountFile } = setupOf;
+    const queueId = await queueOne(setupOf);
+    rmSync(accountFile);
+    const refused = await approveCommand(queueId);
+    expect(refused.code).toBe(exitCodes.invalidConfig);
+    expect(refused.stderr.join('\n')).toContain(
+      'Mit dem Token des Servers schreibt Ecclium den Abschnitt nicht.',
+    );
+    expect(refused.patches).toEqual([]);
+    expect(patches()).toHaveLength(1);
+  });
+
+  it('writes nothing for a routine the policy no longer names, also not with the token of the server', async () => {
+    const setupOf = setup();
+    const { patches, approveCommand, rewritePolicy } = setupOf;
+    const queueId = await queueOne(setupOf);
+    // The entries of the routine are gone; another routine keeps the alias.
+    rewritePolicy([entryOf({ routine: 'kalender-test' })]);
+    const refused = await approveCommand(queueId);
+    expect(refused.code).toBe(exitCodes.invalidConfig);
+    expect(refused.stderr.join('\n')).toContain(
+      'Die Richtlinie nennt für die Routine keinen Eintrag und damit kein Konto mehr.',
+    );
+    expect(refused.patches).toEqual([]);
+    expect(patches()).toHaveLength(1);
   });
 });

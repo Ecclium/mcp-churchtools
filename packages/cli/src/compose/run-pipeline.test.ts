@@ -228,7 +228,10 @@ const setup = (options: SetupOptions = {}) => {
 
   const build = (
     routine: string,
-    extra: { readonly readToken?: typeof readRunnerToken } = {},
+    extra: {
+      readonly readToken?: typeof readRunnerToken;
+      readonly requireAccount?: boolean;
+    } = {},
   ): RunPipelineResult => {
     const built = composeRunPipeline({
       config,
@@ -357,6 +360,15 @@ describe('a pipeline of a run without a token file the checks accept', () => {
     expect(build(otherRoutine)).toEqual({
       ok: false,
       code: 'token_file_missing',
+    });
+    expect(doubles).toHaveLength(0);
+  });
+
+  it('is not built for a routine without an account when one is required', () => {
+    const { doubles, build } = setup();
+    expect(build(unlisted, { requireAccount: true })).toEqual({
+      ok: false,
+      code: 'run_credential_missing',
     });
     expect(doubles).toHaveLength(0);
   });

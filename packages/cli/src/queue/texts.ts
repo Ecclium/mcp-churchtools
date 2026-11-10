@@ -11,6 +11,8 @@
  * @packageDocumentation
  */
 import type { ApproveReason, QueueReason } from '@ecclium/mcp-churchtools-core';
+
+import type { RunPipelineCode } from '../compose/run-pipeline.js';
 import type {
   ErrorCode,
   QueueDecisionKind,
@@ -51,6 +53,59 @@ export const queueProblems: Readonly<Record<QueueProblem, QueueEnding>> =
       exitCodes.invalidConfig,
     ),
   });
+
+// Why the account of a run is not there, in the words of the token file.
+const runAccountCauses: Readonly<Record<RunPipelineCode, string>> =
+  Object.freeze({
+    runner_tokens_dir_missing: '‹ECCLIUM_RUNNER_TOKENS_DIR› ist nicht gesetzt.',
+    run_credential_mixed:
+      'Die Einträge der Routine in der Richtlinie nennen zwei verschiedene Konten.',
+    run_credential_missing:
+      'Die Richtlinie nennt für die Routine keinen Eintrag und damit kein Konto mehr.',
+    token_file_relative: 'Der Ordner der Token ist kein absoluter Pfad.',
+    token_file_platform:
+      'Die Token-Datei lässt sich auf diesem System nicht sicher lesen.',
+    token_file_missing: 'Die Token-Datei des Kontos gibt es nicht.',
+    token_file_symlink: 'Die Token-Datei des Kontos ist ein symbolischer Link.',
+    token_file_unreadable: 'Die Token-Datei des Kontos lässt sich nicht lesen.',
+    token_file_not_regular:
+      'Die Token-Datei des Kontos ist keine gewöhnliche Datei.',
+    token_file_owner:
+      'Die Token-Datei des Kontos gehört einem anderen Benutzer.',
+    token_file_mode:
+      'Die Token-Datei des Kontos ist auch für die Gruppe oder für andere Benutzer zugänglich.',
+    token_file_too_large: 'Die Token-Datei des Kontos ist zu gross.',
+    token_file_empty: 'Die Token-Datei des Kontos ist leer.',
+    token_file_bom:
+      'Die Token-Datei des Kontos beginnt mit einer Markierung der Byte-Reihenfolge.',
+    token_file_characters:
+      'Die Token-Datei des Kontos enthält Zeichen, die in keinem Token stehen.',
+    token_file_unsafe:
+      'Die Token-Datei des Kontos lässt sich nicht sicher lesen.',
+    token_invalid: 'Das Token in der Datei des Kontos hat keine gültige Form.',
+  });
+
+/**
+ * The ending of an approval of an entry of a run whose account has no
+ * token Ecclium accepts: it writes nothing, also not with the token of the
+ * server (ADR 0033).
+ *
+ * @param code - Why the pipeline of the run was not built.
+ * @returns The text and the exit code 78.
+ * @example
+ * ```ts
+ * runAccountEnding('token_file_missing').code; // 78
+ * ```
+ */
+export const runAccountEnding = (code: RunPipelineCode): QueueEnding =>
+  ending(
+    `Der Eintrag stammt aus einem Lauf einer Routine, und eine Freigabe schreibt ihn mit dem Konto, das die Richtlinie für die Routine nennt, wie der Lauf selbst. ${runAccountCauses[code]} Mit dem Token des Servers schreibt Ecclium den Abschnitt nicht. ${
+      code === 'run_credential_missing' || code === 'run_credential_mixed'
+        ? 'Nennen Sie für die Routine in der Richtlinie genau ein Konto und geben Sie dann frei, oder weisen Sie den Eintrag mit ‹ecclium queue reject› ab.'
+        : 'Legen Sie die Token-Datei ‹ct_token_<Alias>› im Ordner aus ‹ECCLIUM_RUNNER_TOKENS_DIR› so an, wie der Runner sie braucht, mit den Rechten 600, und geben Sie dann frei.'
+    }`,
+    exitCodes.invalidConfig,
+  );
 
 /** Why a write waits, in one sentence for the operator. */
 export const reasonTexts: Readonly<Record<QueueReason, string>> = Object.freeze(

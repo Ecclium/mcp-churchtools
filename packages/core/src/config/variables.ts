@@ -613,9 +613,9 @@ export const variables: readonly Variable[] = Object.freeze([
     stdioOnly: false,
   }),
   // The folder of the token files of the accounts of the runner, one file
-  // ct_token_<alias> per alias of the policy (ADR 0033). Only the runner
-  // reads a file in it, anew for each run; the start of the server checks
-  // the form of the path.
+  // ct_token_<alias> per alias of the policy (ADR 0033). Only the runner,
+  // for each run anew, and the approval of an entry of a run read a file
+  // in it; the start of the server checks the form of the path.
   row({
     name: 'ECCLIUM_RUNNER_TOKENS_DIR',
     kind: 'path',

@@ -7,9 +7,10 @@
  * visible ASCII only. The token stays a `Secret`, which only the outbound
  * path opens.
  *
- * Only the composition root of the runner reads it, for each run anew, so
- * that a new token takes effect with the next run and the server over
- * stdio never holds the token of an account of the runner.
+ * Only the composition root reads it, for each run anew and for the
+ * approval of an entry of a run, so that a new token takes effect with
+ * the next run and the server over stdio never holds the token of an
+ * account of the runner.
  *
  * @packageDocumentation
  */
