@@ -16,13 +16,16 @@ import { isEventName } from '../logger/index.js';
 import {
   auditDirName,
   checkKeysDir,
+  checkRunnerTokensDir,
   checkStateDir,
   isNormalizedAbsolutePath,
   type KeysDirCode,
   keysDirCodes,
   maxKeysDirLength,
+  maxRunnerTokensDirLength,
   maxStateDirLength,
   quotaDirName,
+  runnerTokensDirCodes,
   type StateDirCode,
   stateDirCodes,
   type StateDirFileSystem,
@@ -110,6 +113,13 @@ const keysPath = '/path/to/keys';
 const keysCodeOf = (options: FakeOptions, value = keysPath): string =>
   ((result) => (result.ok ? 'ok' : result.code))(
     checkKeysDir(value, fake(options).fs),
+  );
+
+const tokensPath = '/path/to/tokens';
+
+const tokensCodeOf = (options: FakeOptions, value = tokensPath): string =>
+  ((result) => (result.ok ? 'ok' : result.code))(
+    checkRunnerTokensDir(value, fake(options).fs),
   );
 
 describe('isNormalizedAbsolutePath', () => {
@@ -597,6 +607,202 @@ describe('keysDirCodes', () => {
         queue_keys_dir_mode: () => keysCodeOf({ queue: { mode: 0o40707 } }),
         queue_keys_dir_unsafe: () => keysCodeOf({ queue: { throws: true } }),
       };
+      expect(cases[code]()).toBe(code);
+    },
+  );
+});
+
+// The folder of the token files of the runner gets the checks of the other
+// folders with codes of its own (ADR 0033). The group and others may read
+// and search it, as in a folder of secrets that a container mounts, but
+// not write in it: whoever may could put the file of a wider account in
+// place of a narrow one. It has no folder inside to look at.
+describe('checkRunnerTokensDir with file functions', () => {
+  it.each([
+    ['700', 0o40700],
+    ['750', 0o40750],
+    ['755', 0o40755],
+    ['711', 0o40711],
+  ])('passes a folder of the user with %s and looks only at it', (_, mode) => {
+    const { fs, looked } = fake({
+      folder: { mode },
+      audit: { symlink: true },
+      snapshot: { mode: 0o40777 },
+    });
+    expect(checkRunnerTokensDir(tokensPath, fs)).toEqual({ ok: true });
+    expect(looked).toEqual([tokensPath]);
+  });
+
+  it.each([
+    ['775', 0o40775],
+    ['757', 0o40757],
+    ['720', 0o40720],
+    ['702', 0o40702],
+    ['777', 0o40777],
+  ])('refuses a folder with %s, in which others may write', (_, mode) => {
+    expect(tokensCodeOf({ folder: { mode } })).toBe('runner_tokens_dir_mode');
+  });
+
+  it('keeps the sticky and set-ID bits out of the check of the mode', () => {
+    expect(tokensCodeOf({ folder: { mode: 0o47755 } })).toBe('ok');
+  });
+
+  it('refuses the platform before the form of the path, without looking', () => {
+    const { fs, looked } = fake({ constants: { O_NOFOLLOW: 1 } });
+    expect(checkRunnerTokensDir('tokens', fs)).toEqual({
+      ok: false,
+      code: 'runner_tokens_dir_platform',
+    });
+    expect(looked).toEqual([]);
+  });
+
+  // A path in another form has the code of the loader for it.
+  it.each([
+    ['tokens', 'runner_tokens_dir_invalid'],
+    [`${tokensPath}/`, 'runner_tokens_dir_invalid'],
+    ['/path//to/tokens', 'runner_tokens_dir_invalid'],
+    ['/path/./to/tokens', 'runner_tokens_dir_invalid'],
+    [`/${'ä'.repeat(448)}`, 'runner_tokens_dir_too_long'],
+  ])('refuses %j with %s without looking at the disk', (value, code) => {
+    const { fs, looked } = fake();
+    expect(checkRunnerTokensDir(value, fs)).toMatchObject({ code });
+    expect(looked).toEqual([]);
+  });
+
+  // An umlaut takes two bytes in UTF-8: 447 of them and the slash are 895
+  // bytes, 448 are 897.
+  it('counts the length of the path in bytes', () => {
+    expect(tokensCodeOf({}, `/${'ä'.repeat(447)}`)).toBe('ok');
+    expect(
+      tokensCodeOf({}, `/${'a'.repeat(maxRunnerTokensDirLength - 1)}`),
+    ).toBe('ok');
+    expect(tokensCodeOf({}, `/${'a'.repeat(maxRunnerTokensDirLength)}`)).toBe(
+      'runner_tokens_dir_too_long',
+    );
+  });
+
+  it('gives frozen results without a prototype and names no path', () => {
+    const refused = checkRunnerTokensDir(
+      tokensPath,
+      fake({ folder: { error: fsError('EACCES') } }).fs,
+    );
+    for (const result of [
+      checkRunnerTokensDir(tokensPath, fake().fs),
+      refused,
+    ]) {
+      expect(Object.isFrozen(result)).toBe(true);
+      expect(Object.getPrototypeOf(result)).toBeNull();
+    }
+    expect(refused).toEqual({ ok: false, code: 'runner_tokens_dir_unsafe' });
+    expect(JSON.stringify(refused)).not.toContain('path');
+  });
+
+  it('throws for a path that is no string', () => {
+    expect(() =>
+      checkRunnerTokensDir(1 as unknown as string, fake().fs),
+    ).toThrow(
+      new TypeError('The path of the folder of the tokens must be a string.'),
+    );
+  });
+
+  it('passes the root folder of root', () => {
+    const { fs, looked } = fake({ folder: { uid: 0 }, getuid: () => 0 });
+    expect(checkRunnerTokensDir('/', fs)).toEqual({ ok: true });
+    expect(looked).toEqual(['/']);
+  });
+});
+
+describe('checkRunnerTokensDir on the disk', () => {
+  const base = mkdtempSync(join(tmpdir(), 'ecclium-runner-tokens-dir-'));
+  const fresh = (name: string, mode = 0o700): string => {
+    const folder = join(base, name);
+    mkdirSync(folder);
+    chmodSync(folder, mode);
+    return folder;
+  };
+
+  afterAll(() => {
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  it('passes a folder with 0700 and one with 0755', () => {
+    expect(checkRunnerTokensDir(fresh('closed'))).toEqual({ ok: true });
+    expect(checkRunnerTokensDir(fresh('readable', 0o755))).toEqual({
+      ok: true,
+    });
+  });
+
+  it('refuses a missing folder, one others may write in, a link and a file', () => {
+    expect(checkRunnerTokensDir(join(base, 'missing'))).toMatchObject({
+      code: 'runner_tokens_dir_missing',
+    });
+    for (const [name, mode] of [
+      ['group', 0o775],
+      ['others', 0o757],
+    ] as const) {
+      expect(checkRunnerTokensDir(fresh(name, mode)), name).toMatchObject({
+        code: 'runner_tokens_dir_mode',
+      });
+    }
+    const link = join(base, 'link');
+    symlinkSync(fresh('target'), link);
+    expect(checkRunnerTokensDir(link)).toMatchObject({
+      code: 'runner_tokens_dir_symlink',
+    });
+    const file = join(base, 'file');
+    writeFileSync(file, '', { mode: 0o600 });
+    expect(checkRunnerTokensDir(file)).toMatchObject({
+      code: 'runner_tokens_dir_not_directory',
+    });
+  });
+});
+
+describe('runnerTokensDirCodes', () => {
+  it('is frozen, has each code once and shares none with the other folders', () => {
+    expect(Object.isFrozen(runnerTokensDirCodes)).toBe(true);
+    expect(new Set(runnerTokensDirCodes).size).toBe(
+      runnerTokensDirCodes.length,
+    );
+    for (const code of runnerTokensDirCodes) {
+      expect(stateDirCodes as readonly string[]).not.toContain(code);
+      expect(keysDirCodes as readonly string[]).not.toContain(code);
+    }
+  });
+
+  it('fit the name of a log event behind a prefix', () => {
+    for (const code of runnerTokensDirCodes) {
+      expect(isEventName(`config_${code}`), code).toBe(true);
+    }
+  });
+
+  // /ct_token_ and an alias of up to 63 characters, the name of the token
+  // file of an account.
+  it('keep the path of a token file with the longest alias below PATH_MAX of macOS', () => {
+    const longest = `/${'a'.repeat(maxRunnerTokensDirLength - 1)}/ct_token_${'a'.repeat(63)}`;
+    expect(longest.length).toBeLessThan(1024);
+  });
+
+  it.each([...runnerTokensDirCodes])(
+    'are each given by a case of the check: %s',
+    (code) => {
+      const cases: Record<(typeof runnerTokensDirCodes)[number], () => string> =
+        {
+          runner_tokens_dir_platform: () =>
+            tokensCodeOf({ getuid: () => undefined }),
+          runner_tokens_dir_too_long: () =>
+            tokensCodeOf({}, `/${'a'.repeat(900)}`),
+          runner_tokens_dir_missing: () =>
+            tokensCodeOf({ folder: { error: fsError('ENOENT') } }),
+          runner_tokens_dir_symlink: () =>
+            tokensCodeOf({ folder: { symlink: true } }),
+          runner_tokens_dir_not_directory: () =>
+            tokensCodeOf({ folder: { directory: false } }),
+          runner_tokens_dir_owner: () => tokensCodeOf({ folder: { uid: 7 } }),
+          runner_tokens_dir_mode: () =>
+            tokensCodeOf({ folder: { mode: 0o40770 } }),
+          runner_tokens_dir_unsafe: () =>
+            tokensCodeOf({ folder: { throws: true } }),
+        };
       expect(cases[code]()).toBe(code);
     },
   );

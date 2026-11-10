@@ -42,6 +42,8 @@ import { isProxy } from 'node:util/types';
 
 import {
   type AuditOutcome,
+  type AuditRunResult,
+  type AuditRunStep,
   type Clock,
   type ConfirmationPath,
   type ContentViolationKind,
@@ -149,6 +151,7 @@ import {
 } from '../write/index.js';
 import type { KeyMaterial } from '../keys/index.js';
 import { createReadAccess, type ReadAccess } from './read-api.js';
+import { runAssignmentOf } from '../run/id.js';
 import { isTransientRunCode } from '../run/model.js';
 import { cutEntries, personNamesOf } from './run-read.js';
 import { contactKeysIn } from '../run/content.js';
@@ -577,6 +580,39 @@ export type ApproveOutcome =
       readonly unrecorded?: true;
     };
 
+/**
+ * The end of a run of a routine (ADR 0028, ADR 0033), which the runner
+ * reports once per run, after its reads and its write. Tenant and actor
+ * are those of the routine, `runner:<ID>`, and the mode is `unattended`:
+ * the pipeline sets them itself, never the caller.
+ */
+export interface RunEndRequest {
+  /** The run that ended. */
+  readonly run: RunTag;
+  /**
+   * How it ended: written, unchanged, queued, drafted, a preview, or
+   * failed.
+   */
+  readonly result: AuditRunResult;
+  /** The step a failed run ended in. */
+  readonly step?: AuditRunStep;
+  /** The code of a failed run; `internal` when it has none. */
+  readonly code?: ErrorCode;
+  /**
+   * Whether a failed run was refused, by the policy, a kill switch or the
+   * content policy, rather than failed: its line then says `denied`.
+   */
+  readonly refused?: boolean;
+  /** Why the content policy refused, only with `refused`. */
+  readonly contentViolations?: readonly ContentViolationKind[];
+  /** Which try of its trigger the run was, from 1 to 3; none by hand. */
+  readonly attempt?: number;
+  /** The period of the run, such as `2026-W46`. */
+  readonly period?: string;
+  /** How long the run took, in milliseconds. */
+  readonly durationMs: number;
+}
+
 /** The pipeline of one ChurchTools instance. */
 export interface ToolPipeline {
   /**
@@ -621,6 +657,18 @@ export interface ToolPipeline {
    * @returns The outcome. It never rejects.
    */
   writeForRun(request: RunWriteRequest): Promise<RunWriteOutcome>;
+  /**
+   * Writes the line of the type `run` that ends a run of a routine
+   * (ADR 0028, ADR 0033): how it ended, with the step and the code of a
+   * failure, the reasons of the content policy, the try, the period, the
+   * policy and the model. It reads nothing and writes nothing to
+   * ChurchTools.
+   *
+   * @param request - What the runner knows about the end of the run.
+   * @returns Whether the whole line reached the audit file, or without a
+   *   file the stream of the logger. It never throws.
+   */
+  endRun(request: RunEndRequest): boolean;
   /**
    * Takes back a write of the core from its snapshot, for the operator
    * only: a request in another mode is refused (ADR 0031). It writes one
@@ -2634,6 +2682,79 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     }
   };
 
+  // The end of a run (ADR 0033): one line of the type run. Tenant, actor
+  // and mode follow from the routine of the run, as for its reads and its
+  // write, so that no caller ends a run in the name of another actor. The
+  // request is copied through own data properties, so that no getter of
+  // the composition root's object answers twice; the sink checks every
+  // value it gets.
+  const endRun = (request: RunEndRequest): boolean => {
+    try {
+      // A proxy would run its traps on every read.
+      if (!isPlainTarget(request)) return false;
+      const tag = ownData(request, 'run');
+      if (!isPlainTarget(tag)) return false;
+      const runId = ownData(tag, 'runId');
+      const routineId = ownData(tag, 'routineId');
+      const provider = ownData(tag, 'provider');
+      let assignment: TenantAssignment | undefined;
+      try {
+        assignment = runAssignmentOf(routineId as string);
+      } catch {
+        // An ID that is no routine: the line takes the placeholders, names
+        // no routine and claims nothing, whatever the caller said.
+      }
+      const named = assignment !== undefined;
+      const result = named ? ownData(request, 'result') : 'failed';
+      const failedRun = result === 'failed';
+      const refused =
+        named && failedRun && ownData(request, 'refused') === true;
+      const code = named
+        ? (ownData(request, 'code') ?? 'internal')
+        : 'internal';
+      const step = ownData(request, 'step');
+      const reasons = ownData(request, 'contentViolations');
+      const attempt = ownData(request, 'attempt');
+      const period = ownData(request, 'period');
+      const recorded =
+        // Only true counts, also from a sink without types.
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-boolean-literal-compare -- see above
+        audit.record({
+          type: 'run',
+          tenantId: assignment?.tenantId ?? auditPlaceholders.tenantId,
+          actor: assignment?.actor ?? auditPlaceholders.actor,
+          mode: 'unattended',
+          runId: runId as string,
+          ...(assignment === undefined
+            ? {}
+            : { routineId: routineId as string }),
+          outcome: !failedRun ? 'ok' : refused ? 'denied' : 'error',
+          policyHash,
+          ...(provider === undefined
+            ? {}
+            : { provider: provider as ProviderInfo }),
+          objectRefs: [],
+          ...(failedRun ? { errorCode: code as ErrorCode } : {}),
+          ...(refused && reasons !== undefined
+            ? { contentViolations: reasons as readonly ContentViolationKind[] }
+            : {}),
+          runResult: result as AuditRunResult,
+          ...(failedRun && step !== undefined
+            ? { runStep: step as AuditRunStep }
+            : {}),
+          ...(attempt === undefined ? {} : { attempt: attempt as number }),
+          ...(period === undefined ? {} : { period: period as string }),
+          durationMs: ownData(request, 'durationMs') as number,
+        }) === true;
+      // A line without its routine is whole, but it is not the end of
+      // this run, so the caller hears of the fault.
+      return recorded && named;
+    } catch {
+      // The end of a run never throws; a line it cannot write is lost.
+      return false;
+    }
+  };
+
   // One undo of the operator (ADR 0031): from the ID of the audit line of a
   // write to the snapshot, through the write guard, to an audit line of
   // its own of the type undo that names the write. What the guard read of
@@ -3542,6 +3663,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     call,
     callForRun,
     writeForRun,
+    endRun,
     undo,
     reject,
     approve,

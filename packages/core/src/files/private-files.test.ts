@@ -260,6 +260,107 @@ describe('preparePrivateFolder', () => {
   });
 });
 
+describe('preparePrivateFolder and the folder above', () => {
+  // Records the path each descriptor was opened for and every path that
+  // was flushed, so that a test tells the folder above from the folder
+  // itself. The flush itself is up to the test.
+  const watched = (
+    flush: (path: string, fd: number) => void = (_path, fd) => {
+      nodePrivateFileSystem.fsyncSync(fd);
+    },
+    open: (path: string) => string = (path) => path,
+  ): { readonly fs: PrivateFileSystem; readonly flushed: string[] } => {
+    const paths = new Map<number, string>();
+    const flushed: string[] = [];
+    const fs = withFs({
+      openSync: (path, flags, mode) => {
+        const fd = nodePrivateFileSystem.openSync(open(path), flags, mode);
+        paths.set(fd, path);
+        return fd;
+      },
+      fsyncSync: (fd) => {
+        const path = paths.get(fd) ?? '';
+        flushed.push(path);
+        flush(path, fd);
+      },
+    });
+    return { fs, flushed };
+  };
+
+  it('flushes the folder above exactly when it makes the folder', () => {
+    const folder = join(base, 'flushed');
+    const { fs, flushed } = watched();
+    preparePrivateFolder(folder, fs);
+    expect(flushed).toEqual([base]);
+    expect(statSync(folder).mode & 0o777).toBe(0o700);
+    // A folder that is there already was flushed by whoever made it.
+    preparePrivateFolder(folder, fs);
+    expect(flushed).toEqual([base]);
+  });
+
+  it('fails with unavailable when the folder above does not open or flush, and takes the folder on a second call', () => {
+    const refusing = (name: string, fs: PrivateFileSystem): void => {
+      const folder = join(base, name);
+      expect(
+        code(() => {
+          preparePrivateFolder(folder, fs);
+        }),
+      ).toBe('unavailable');
+      // The folder stands and is private; a second call finds it and does
+      // not flush again.
+      expect(() => {
+        preparePrivateFolder(folder, fs);
+      }).not.toThrow();
+      expect(statSync(folder).mode & 0o777).toBe(0o700);
+    };
+    refusing(
+      'above-refuses-flush',
+      watched((path, fd) => {
+        if (path === base) throw systemError('EIO');
+        nodePrivateFileSystem.fsyncSync(fd);
+      }).fs,
+    );
+    refusing(
+      'above-refuses-open',
+      withFs({
+        openSync: (path, flags, mode) => {
+          if (path === base) throw systemError('EMFILE');
+          return nodePrivateFileSystem.openSync(path, flags, mode);
+        },
+      }),
+    );
+  });
+
+  it('takes a file system that cannot flush the folder above', () => {
+    for (const refusal of ['EINVAL', 'ENOTSUP']) {
+      const folder = join(base, `above-${refusal}`);
+      const { fs, flushed } = watched((path, fd) => {
+        if (path === base) throw systemError(refusal);
+        nodePrivateFileSystem.fsyncSync(fd);
+      });
+      preparePrivateFolder(folder, fs);
+      expect(flushed).toEqual([base]);
+      expect(statSync(folder).isDirectory()).toBe(true);
+    }
+  });
+
+  it('flushes the root for a new folder directly under it', () => {
+    // The root is no place for a folder of a test: the system makes the
+    // folder in name only, every open goes to a private folder of the
+    // test, and no flush reaches the disk.
+    const stand = fresh();
+    const { fs, flushed } = watched(
+      () => undefined,
+      () => stand,
+    );
+    preparePrivateFolder('/ecclium-private-test', {
+      ...fs,
+      mkdirSync: () => undefined,
+    });
+    expect(flushed).toEqual(['/']);
+  });
+});
+
 describe('writePrivateFileOnce and readPrivateFile', () => {
   it('writes a file with 0600 once, keeps the first and leaves no temporary name', () => {
     const folder = fresh();

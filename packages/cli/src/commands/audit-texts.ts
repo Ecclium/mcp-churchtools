@@ -267,10 +267,13 @@ const outcomeWords = Object.freeze({
 
 const toolName = (tool: string | undefined): string => tool ?? 'ohne Tool';
 
-// An undo of `ecclium undo` and a decision about the queue call no tool
-// and are named as what they are, in rows of their own (ADR 0031).
+// An undo of `ecclium undo`, a decision about the queue and the end of a
+// run of a routine call no tool and are named as what they are, in rows
+// of their own (ADR 0031, ADR 0033).
 const rowName = (row: AuditDayToolCounts): string => {
   switch (row.type) {
+    case 'run':
+      return 'Läufe von Routinen';
     case 'undo':
       return 'Rücknahmen mit ‹ecclium undo›';
     case 'approval':
@@ -283,6 +286,8 @@ const rowName = (row: AuditDayToolCounts): string => {
 };
 const hitName = (hit: AuditObjectHit): string => {
   switch (hit.type) {
+    case 'run':
+      return 'Lauf';
     case 'undo':
       return 'Rücknahme';
     case 'approval':

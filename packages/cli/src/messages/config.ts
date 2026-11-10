@@ -194,6 +194,28 @@ const policyDefault =
 const policyReason =
   'Die Richtlinie legt fest, wohin Ecclium schreiben darf und wie viel es je Tag lesen darf.';
 
+// The token file of an account of the runner (ADR 0033): the file of the
+// account of the runner itself, or of an account the policy names in the
+// field of the problem. The checks are those of the token file.
+const runnerTokenFile =
+  (cause: string, why: string, action: string) =>
+  (name = runnerTokensDir, _raw?: string, at = ''): Message =>
+    message(
+      at === ''
+        ? `Die Token-Datei ‹ct_token_runner› des Kontos des Runners im Ordner aus ${name} ${cause}`
+        : `Die Token-Datei des Kontos, das die Richtlinie${at} nennt, im Ordner aus ${name} ${cause}`,
+      why,
+      action,
+    );
+const runnerTokenFileMissing =
+  'Legen Sie im Ordner eine Datei an, deren Name aus ‹ct_token_› und dem Alias des Kontos besteht, etwa ‹ct_token_dienstplan›, für den Runner selbst ‹ct_token_runner›, mit dem Login-Token des Kontos und den Rechten 600.';
+// A server writes to the wiki only with the toolset wiki, the runner
+// whatever its toolsets (ADR 0033).
+const wikiOfServer = `Beim Server genügt es auch, ‹wiki› aus ${quote('ECCLIUM_TOOLSETS')} zu nehmen; steht dort ‹all›, nennen Sie stattdessen die übrigen Toolsets einzeln. Der Runner schreibt seine Abschnitte immer ins Wiki.`;
+// What the runner needs, which a server does not (ADR 0033, ADR 0034).
+const runnerReason =
+  'Der Runner führt Routinen ohne Aufsicht aus, deshalb startet er ohne diese Angabe nicht, statt mit einer Voreinstellung zu rechnen.';
+
 // Where an option of TLS was found: in NODE_OPTIONS, which the loader then
 // names, or else among the options Node.js was started with.
 const optionFound = (
@@ -950,7 +972,7 @@ const problems: Readonly<
   keys_dir_required: (name = keysDir) =>
     message(
       `${readOnly} ist ‹false›, aber ${name} ist nicht gesetzt.`,
-      'Vor jedem Schreiben in ChurchTools wird Ecclium den bisherigen Stand in einem Snapshot festhalten, verschlüsselt mit einem Tagesschlüssel aus diesem Ordner, und den Schlüssel nach 30 Tagen vernichten. Deshalb verlangt Schreiben den Ordner schon jetzt. Den Ordner gibt es vorerst nur im Betrieb über stdio.',
+      'Vor jedem Schreiben in ChurchTools wird Ecclium den bisherigen Stand in einem Snapshot festhalten, verschlüsselt mit einem Tagesschlüssel aus diesem Ordner, und den Schlüssel nach 30 Tagen vernichten. Deshalb verlangt Schreiben den Ordner schon jetzt. Im Betrieb über HTTP gibt es den Ordner vorerst nicht.',
       `Legen Sie einen eigenen Ordner Ihres Benutzers mit den Rechten 700 an, ausserhalb des Zustandsordners und ausserhalb jeder Sicherung, und nennen Sie ihn in ${name}. Oder setzen Sie ${readOnly} auf ‹true›.`,
     ),
   // A backup of the folder of state would hold the keys that open its
@@ -1013,6 +1035,187 @@ const problems: Readonly<
       `Die Befehle ‹ecclium audit verify› und ‹ecclium audit show› lesen die Audit-Dateien im Ordner aus ${name}, ohne ihn gibt es keine.`,
       `Setzen Sie ${name} in der Shell auf denselben Ordner wie in der Konfiguration des KI-Assistenten. Adresse und Token braucht es dafür nicht.`,
     ),
+  // The rules of the runner (ADR 0023, ADR 0033, ADR 0034).
+  runner_server_token: (name = tokenFile) =>
+    message(
+      `Für den Runner ist ${name} gesetzt.`,
+      'Der Runner liest nie mit dem Token des Servers. Routinen ohne Eintrag in der Richtlinie lesen mit dem eigenen Konto des Runners, jede andere mit dem Konto, das die Richtlinie nennt. So hält der Container des Runners das Token des Servers nicht.',
+      `Entfernen Sie ${name} aus der Umgebung des Runners und legen Sie das Token seines eigenen Kontos als ‹ct_token_runner› in den Ordner aus ${runnerTokensDir}.`,
+    ),
+  // What belongs to the local start over stdio only, set for the runner.
+  runner_stdio_only: (name, raw) => {
+    switch (raw) {
+      case 'ECCLIUM_REDACTION':
+        return message(
+          `${quote(raw)} mit dem Wert ‹off› gilt nur für den Start über stdio, nicht für den Runner.`,
+          'Der Runner liest ohne Aufsicht und gibt Daten an ein Sprachmodell, deshalb maskiert er immer.',
+          'Setzen Sie die Variable für den Runner auf ‹standard› oder ‹strict› oder entfernen Sie sie.',
+        );
+      case 'ECCLIUM_CHURCHTOOLS_TOKEN':
+        return message(
+          `${quote(raw)} gilt nur für den Start über stdio, nicht für den Runner.`,
+          'Der Runner liest nie mit dem Token des Servers, sondern mit seinem eigenen Konto und den Konten, die die Richtlinie nennt.',
+          `Entfernen Sie ${quote(raw)} aus der Umgebung des Runners und legen Sie das Token seines eigenen Kontos als ‹ct_token_runner› in den Ordner aus ${runnerTokensDir}.`,
+        );
+      case 'ECCLIUM_STDIO_SUBJECT':
+        return message(
+          `${quote(raw)} gilt nur für den Start über stdio, nicht für den Runner.`,
+          'Der Akteur eines Laufs ist die Routine selbst, ‹runner:› mit ihrer Kennung.',
+          'Entfernen Sie die Variable aus der Umgebung des Runners.',
+        );
+      default:
+        return message(
+          `${name ?? 'Eine Variable'} gilt nur für den Start über stdio, nicht für den Runner.`,
+          'Sie gehört zum lokalen Start über stdio.',
+          'Entfernen Sie die Variable aus der Umgebung des Runners.',
+        );
+    }
+  },
+  runner_time_zone_required: (name = timeZoneVariable) =>
+    message(
+      `${name} ist für den Runner nicht gesetzt.`,
+      `Die Zeitpläne der Routinen und die Perioden ihrer Berichte rechnen in dieser Zone. ${runnerReason}`,
+      'Setzen Sie die Zeitzone der ChurchTools-Installation, etwa ‹Europe/Zurich›.',
+    ),
+  runner_policy_required: (name = policyFile) =>
+    message(
+      `${name} ist für den Runner nicht gesetzt.`,
+      `Die Richtlinie legt fest, wohin ein Lauf schreiben darf und mit welchem Konto. Ohne Datei gälte die Voreinstellung, die für den Betrieb ohne Aufsicht nichts erlaubt. ${runnerReason}`,
+      `Legen Sie eine Datei der Richtlinie an und nennen Sie sie in ${name}.`,
+    ),
+  runner_routines_dir_required: (name = routinesDir) =>
+    message(
+      `${name} ist für den Runner nicht gesetzt.`,
+      'In diesem Ordner liegen die Routinen, die der Runner ausführt.',
+      `Nennen Sie in ${name} den Ordner mit den Routinen.`,
+    ),
+  runner_state_dir_required: (name = stateDir) =>
+    message(
+      `${name} ist für den Runner nicht gesetzt.`,
+      'Im Zustandsordner liegen die Audit-Datei, die Zähler der Richtlinie, das Gedächtnis der Läufe und die Sperrdateien der Routinen. Ohne ihn wüsste der Runner nicht, welche Auslösung schon lief, und keine Obergrenze je Tag gälte.',
+      `Setzen Sie ${name} auf einen Ordner Ihres Benutzers mit den Rechten 700, der zwischen zwei Läufen erhalten bleibt.`,
+    ),
+  runner_tokens_dir_required: (name = runnerTokensDir) =>
+    message(
+      `${name} ist für den Runner nicht gesetzt.`,
+      'In diesem Ordner liegt das Token des eigenen Kontos des Runners, ‹ct_token_runner›, und für jedes Konto, das die Richtlinie nennt, eine Datei, deren Name aus ‹ct_token_› und seinem Alias besteht.',
+      `Legen Sie einen Ordner an, in dem nur Ihr Benutzer schreiben darf, legen Sie die Token-Dateien mit den Rechten 600 hinein und nennen Sie ihn in ${name}.`,
+    ),
+  runner_tokens_dir_platform: (name = runnerTokensDir) =>
+    message(
+      `Der Ordner in ${name} lässt sich auf diesem System nicht sicher prüfen.`,
+      'Es fehlt die Prüfung des Eigentümers oder das Öffnen ohne Links, etwa unter Windows.',
+      'Entfernen Sie die Variable auf diesem System, wenn hier nur der Server läuft. Betreiben Sie den Runner auf einem System mit diesen Prüfungen, etwa im Container.',
+    ),
+  // A backup of the folder of state would hold the login tokens (ADR 0031).
+  runner_tokens_dir_in_state_dir: (name = runnerTokensDir) =>
+    message(
+      `Der Ordner in ${name} ist der Zustandsordner aus ${stateDir} oder liegt darin.`,
+      'Eine Sicherung des Zustandsordners enthielte dann die Login-Token der Konten des Runners.',
+      `Legen Sie den Ordner ausserhalb des Zustandsordners an, etwa neben ihm, und nennen Sie ihn in ${name}.`,
+    ),
+  runner_tokens_dir_too_long: (name = runnerTokensDir) =>
+    message(
+      `Der Pfad in ${name} ist zu lang.`,
+      `In UTF-8 hat er mehr als 896 Bytes, und der Pfad einer Token-Datei darin überschritte die Grenze von 1'024 Bytes für Pfade unter macOS. Zeichen ausserhalb von ASCII wie Umlaute zählen mehrfach.`,
+      'Wählen Sie einen kürzeren Pfad.',
+    ),
+  runner_tokens_dir_missing: (name = runnerTokensDir) =>
+    message(
+      `Den Ordner in ${name} gibt es nicht.`,
+      'Darin liegen die Token-Dateien der Konten des Runners.',
+      'Legen Sie den Ordner an oder prüfen Sie den Pfad.',
+    ),
+  runner_tokens_dir_symlink: (name = runnerTokensDir) =>
+    message(
+      `Der Pfad in ${name} endet in einem symbolischen Link.`,
+      'Ein Link könnte auf einen fremden Ordner mit den Token-Dateien anderer Konten zeigen, deshalb folgt Ecclium ihm nicht.',
+      'Geben Sie den Pfad des Ordners selbst an.',
+    ),
+  runner_tokens_dir_not_directory: (name = runnerTokensDir) =>
+    message(
+      `Der Pfad in ${name} zeigt nicht auf einen Ordner.`,
+      'Der Runner liest darin je Konto eine Token-Datei.',
+      'Geben Sie den Pfad eines Ordners an.',
+    ),
+  runner_tokens_dir_owner: (name = runnerTokensDir) =>
+    message(
+      `Der Ordner in ${name} gehört einem anderen Benutzer.`,
+      'Wem der Ordner gehört, der kann die Token-Datei eines engen Kontos durch die eines weiteren ersetzen.',
+      'Legen Sie den Ordner als der Benutzer an, unter dem der Runner läuft.',
+    ),
+  runner_tokens_dir_mode: (name = runnerTokensDir) =>
+    message(
+      `Im Ordner in ${name} darf auch die Gruppe oder ein anderer Benutzer schreiben.`,
+      'Wer darin schreiben darf, kann die Token-Datei eines engen Kontos durch die eines weiteren ersetzen. Lesen und durchsuchen dürfen andere den Ordner, die Dateien darin prüft Ecclium einzeln.',
+      'Nehmen Sie der Gruppe und anderen das Schreibrecht, etwa mit «chmod 700» oder «chmod 755».',
+    ),
+  runner_tokens_dir_unsafe: (name = runnerTokensDir) =>
+    message(
+      `Der Ordner in ${name} liess sich nicht sicher prüfen.`,
+      noPath,
+      'Prüfen Sie den Pfad und die Rechte der Ordner darüber.',
+    ),
+  runner_token_file_missing: runnerTokenFile(
+    'gibt es nicht.',
+    'Ohne sie liest und schreibt der Runner mit diesem Konto nicht, und auf ein anderes Konto weicht er nicht aus.',
+    runnerTokenFileMissing,
+  ),
+  runner_token_file_symlink: runnerTokenFile(
+    'ist ein symbolischer Link.',
+    'Ein Link könnte auf die Token-Datei eines anderen Kontos zeigen, deshalb folgt Ecclium ihm nicht.',
+    'Legen Sie die Datei selbst in den Ordner.',
+  ),
+  runner_token_file_unreadable: runnerTokenFile(
+    'lässt sich nicht lesen.',
+    'Dem Benutzer, unter dem der Runner läuft, fehlt das Recht dazu.',
+    'Prüfen Sie Eigentümer und Rechte der Datei. Empfohlen sind die Rechte 600.',
+  ),
+  runner_token_file_not_regular: runnerTokenFile(
+    'ist keine gewöhnliche Datei.',
+    'Ein Ordner, ein Gerät oder eine Pipe enthält kein Token, und aus einer Pipe zu lesen könnte den Start aufhalten.',
+    'Legen Sie an ihrer Stelle eine gewöhnliche Datei an.',
+  ),
+  runner_token_file_owner: runnerTokenFile(
+    'gehört einem anderen Benutzer.',
+    'Wem eine Datei gehört, der kann das Token darin austauschen.',
+    'Legen Sie die Datei als der Benutzer an, unter dem der Runner läuft.',
+  ),
+  runner_token_file_mode: runnerTokenFile(
+    'ist auch für die Gruppe oder für andere Benutzer zugänglich.',
+    'Dann könnten andere Benutzer das Token lesen oder austauschen.',
+    'Setzen Sie die Rechte der Datei mit «chmod 600» auf 600.',
+  ),
+  runner_token_file_too_large: runnerTokenFile(
+    'ist zu gross.',
+    `Ein Token hat höchstens ${formatNumber(4096)} Zeichen, mit dem Zeilenumbruch hat die Datei also höchstens ${formatNumber(4098)} Bytes.`,
+    'Prüfen Sie, ob die Datei nur das Token enthält.',
+  ),
+  runner_token_file_empty: runnerTokenFile(
+    'ist leer.',
+    'Sie enthält kein Token, höchstens einen Zeilenumbruch.',
+    'Schreiben Sie das Login-Token des Kontos in die Datei.',
+  ),
+  runner_token_file_bom: runnerTokenFile(
+    'beginnt mit einer Byte-Order-Markierung.',
+    'Manche Editoren setzen sie beim Speichern. Sie gehört nicht zum Token, und Ecclium entfernt sie nicht von sich aus.',
+    'Speichern Sie die Datei als UTF-8 ohne BOM oder als reinen Text.',
+  ),
+  runner_token_file_characters: runnerTokenFile(
+    'enthält Zeichen, die in einem Token nicht vorkommen.',
+    'Erlaubt sind sichtbare ASCII-Zeichen und ein einziger Zeilenumbruch am Ende. Leerzeichen, Tabulatoren und weitere Zeilen gehören nicht dazu.',
+    'Prüfen Sie die Datei, vielleicht steht dort mehr als das Token.',
+  ),
+  runner_token_file_unsafe: runnerTokenFile(
+    'liess sich nicht sicher öffnen.',
+    noPath,
+    'Prüfen Sie die Datei und den Ordner.',
+  ),
+  runner_token_invalid: runnerTokenFile(
+    'enthält kein gültiges Token.',
+    `Ein Token hat 1 bis ${formatNumber(4096)} sichtbare ASCII-Zeichen und ist kein Platzhalter.`,
+    'Kopieren Sie das Login-Token des Kontos erneut aus ChurchTools.',
+  ),
   // The file of the policy (ADR 0032). Its checks follow those of the token
   // file, but others may read it: it is no secret.
   policy_file_relative: (name = policyFile) =>
@@ -1268,13 +1471,13 @@ const problems: Readonly<
     message(
       `Ecclium soll im Wiki schreiben, aber ${name} ist nicht gesetzt.`,
       'Jede Seite und jeder Abschnitt, die Ecclium hinzufügt, endet mit einer Kennzeichnung, deren Prüfcode aus diesem Schlüssel entsteht.',
-      `Legen Sie eine Datei mit einem Schlüssel an, etwa mit ${keyCommand}, geben Sie ihr die Rechte 600, nennen Sie sie in ${name} und sichern Sie sie. Oder setzen Sie ${readOnly} auf ‹true› oder nehmen Sie ‹wiki› aus ${toolsets}. ${insteadOfAll}`,
+      `Legen Sie eine Datei mit einem Schlüssel an, etwa mit ${keyCommand}, geben Sie ihr die Rechte 600, nennen Sie sie in ${name} und sichern Sie sie. Oder setzen Sie ${readOnly} auf ‹true›. ${wikiOfServer}`,
     ),
   inquiries_missing: (name = policyFile) =>
     message(
       `Ecclium soll im Wiki schreiben, aber die Richtlinie aus ${name} nennt nicht, wen man bei Fragen erreicht.`,
       'Die Kennzeichnung jeder Seite und jedes Abschnitts, die Ecclium hinzufügt, endet mit «Rückfragen an» und diesem Text.',
-      `Tragen Sie in der Richtlinie unter ‹interactive.inquiriesTo› eine Stelle ein, etwa ‹Sekretariat›, und nennen Sie die Datei in ${name}. Oder setzen Sie ${readOnly} auf ‹true› oder nehmen Sie ‹wiki› aus ${toolsets}. ${insteadOfAll}`,
+      `Tragen Sie in der Richtlinie unter ‹interactive.inquiriesTo› eine Stelle ein, etwa ‹Sekretariat›, und nennen Sie die Datei in ${name}. Oder setzen Sie ${readOnly} auf ‹true›. ${wikiOfServer}`,
     ),
 });
 

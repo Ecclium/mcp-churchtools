@@ -273,6 +273,8 @@ export {
 export {
   type AuditEventV1,
   type AuditOutcome,
+  type AuditRunResult,
+  type AuditRunStep,
   type AuditType,
   type ConfirmationPath,
   type ContentViolationKind,

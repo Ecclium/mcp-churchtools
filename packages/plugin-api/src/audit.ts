@@ -10,11 +10,26 @@ import type { ErrorCode } from './errors.js';
 
 /**
  * What an audit event records: a call of a tool, the run of
- * `ecclium undo` that takes back a write of Ecclium from its snapshot, or
- * a decision of the operator about an entry of the queue of approvals
- * (ADR 0031). Grows with the phases that add actions.
+ * `ecclium undo` that takes back a write of Ecclium from its snapshot, a
+ * decision of the operator about an entry of the queue of approvals
+ * (ADR 0031), or the end of a run of a routine with how it ended
+ * (ADR 0028, ADR 0033). Grows with the phases that add actions.
  */
-export type AuditType = 'tool_call' | 'undo' | 'approval';
+export type AuditType = 'tool_call' | 'undo' | 'approval' | 'run';
+
+/**
+ * How a run of a routine ended (ADR 0033): its section written, the page
+ * holding it as written already, its write queued for the operator, a
+ * draft written to a file, a preview that wrote nothing, or failed.
+ */
+export type AuditRunResult =
+  'written' | 'unchanged' | 'queued' | 'drafted' | 'preview' | 'failed';
+
+/**
+ * The step a failed run of a routine ended in: reading its inputs, asking
+ * the model, checking the answer, checking the content, or writing.
+ */
+export type AuditRunStep = 'input' | 'model' | 'answer' | 'content' | 'write';
 
 /**
  * How an action ended: done, failed with an error code, or refused before it
@@ -196,6 +211,24 @@ export interface AuditEventV1 {
    * exception of the policy, whatever its `writeState` (ADR 0032).
    */
   readonly rightsDriftAccepted?: true;
+  /**
+   * How a run of a routine ended, on every line of the type `run` and
+   * never on another one (ADR 0033). The outcome is `ok` for every result
+   * but `failed`.
+   */
+  readonly runResult?: AuditRunResult;
+  /** The step a failed run ended in, only with the result `failed`. */
+  readonly runStep?: AuditRunStep;
+  /**
+   * Which try of a trigger of the schedule the run was, from 1 to 3, only
+   * on a line of the type `run`; a run by hand has none (ADR 0034).
+   */
+  readonly attempt?: number;
+  /**
+   * The period of the run, such as `2026-W46`, `2026-11-10` or `2026-11`,
+   * only on a line of the type `run` (ADR 0034).
+   */
+  readonly period?: string;
   /** Duration of the action in milliseconds. */
   readonly durationMs: number;
   /** Position in a hash chain, set only by a sink that chains, never by the producer. */

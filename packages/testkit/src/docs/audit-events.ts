@@ -23,6 +23,7 @@ export const auditTypeMeanings: Readonly<Record<string, string>> =
     undo: 'Ein Lauf von `ecclium undo`, der einen Schreibvorgang von Ecclium aus seinem verschlüsselten Snapshot zurücknimmt ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)). Jeder Lauf, der den Snapshot sucht, ergibt genau eine Zeile, mit `undoes` und ohne `tool`. Ein Lauf, der vorher am Aufruf oder an der Konfiguration scheitert, ergibt keine. `ecclium audit show` zählt diese Zeilen als Rücknahmen in einer eigenen Zeile, `ecclium policy init` leitet aus ihnen weder Ziele noch Grenzen ab.',
     approval:
       'Ein Entscheid des Betreibers über einen Eintrag der Freigabe-Warteschlange mit `ecclium queue` ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md)). Jeder Lauf, der einen Eintrag sucht, ergibt genau eine Zeile, mit `queueId` und `decision` und ohne `tool`. Eine Abweisung schreibt nichts in ChurchTools und hat weder `writeState` noch `confirmation`. Eine Freigabe schreibt sofort ([ADR 0029](adr/0029-write-guard.md)): Ist sie entschieden, nennt ihre Zeile den Zustand des Schreibvorgangs in `writeState`, `confirmation: operator`, sobald der Nachweis verbraucht ist, `policyHash` und das Ziel. Ihre `eventId` ist die Kennung, mit der `ecclium undo` den Schreibvorgang zurücknimmt. Den Wunsch selbst hält die Zeile des Aufrufs vom Typ `tool_call` mit `writeState: queued` fest, deren `eventId` die `queueId` ist. `ecclium audit show` zählt Freigaben und Abweisungen je in einer eigenen Zeile, `ecclium policy init` leitet aus ihnen weder Ziele noch Grenzen ab.',
+    run: 'Das Ende eines Laufs einer Routine ([ADR 0033](adr/0033-runner-modell-ohne-werkzeuge.md)), nach seinen Lesungen und seinem Schreibvorgang, die je eine eigene Zeile vom Typ `tool_call` mit derselben `runId` haben. Sobald der Runner Läufe ausführt, ergibt jeder Lauf am Ende genau eine Zeile, mit `runResult` und ohne `tool`, `writeState` und `confirmation`. `runResult` sagt, wie der Lauf endete, `failed` genau dann, wenn die Zeile nicht `ok` sagt. Eine Ablehnung durch Richtlinie, Kill-Switch oder ContentPolicy sagt `denied`, mit den Gründen der ContentPolicy in `contentViolations`, jeder andere Fehler `error`. Akteur ist `runner:` mit der Kennung der Routine, der Modus `unattended`; ist die Kennung der Routine ungültig, tragen Mandant und Akteur ihre Platzhalter, `routineId` fehlt, und die Zeile sagt `failed` mit `error`. `ecclium audit show` zählt diese Zeilen je Tag in einer eigenen Zeile «Läufe von Routinen».',
   });
 
 /**
@@ -49,9 +50,10 @@ export const auditFieldMeanings: Readonly<Record<string, string>> =
     'actor.id':
       'Neutrale Bezeichnung des Akteurs, über stdio `stdio:` mit dem Subjekt aus `ECCLIUM_STDIO_SUBJECT`, nie der Name einer Person.',
     mode: 'Wie der Aufruf lief: interaktiv, unbeaufsichtigt oder durch den Betreiber.',
-    runId: 'Kennung des Laufs einer Routine.',
+    runId:
+      'Kennung des Laufs einer Routine. In jeder Zeile vom Typ `run`; die Null-UUID steht dort für eine Kennung, die fehlte oder nicht passte, und nennt keinen Lauf.',
     routineId: 'Kennung der Routine eines Laufs.',
-    tool: 'Name des Tools, `ct_unknown` für ein Tool, das es nicht gibt. Nie in einer Zeile vom Typ `undo` oder `approval`, denn eine Rücknahme und ein Entscheid über die Freigabe-Warteschlange rufen kein Tool auf.',
+    tool: 'Name des Tools, `ct_unknown` für ein Tool, das es nicht gibt. Nie in einer Zeile vom Typ `undo`, `approval` oder `run`, denn eine Rücknahme, ein Entscheid über die Freigabe-Warteschlange und das Ende eines Laufs rufen kein Tool auf.',
     outcome:
       'Ausgang des Aufrufs: `ok`, `error` bei einem Fehler oder `denied` bei einer Ablehnung.',
     confirmation: 'Wie ein Schreibvorgang bestätigt wurde.',
@@ -82,6 +84,14 @@ export const auditFieldMeanings: Readonly<Record<string, string>> =
       'Der Server hat das Ergebnis gelesen, aber zurückgehalten, weil seine Zeile nicht so in die Datei kam, wie sie war. Die Zeile sagt dann `denied` mit `policy_denied`.',
     rightsDriftAccepted:
       'Ein Schreibvorgang eines Laufs, dessen Konto Rechte hat, die keine seiner Routinen braucht, und den die befristete Ausnahme `acceptRightsDrift` der Richtlinie an der Prüfung der Rechte vorbeiliess. Ob er schrieb, sagt `writeState`.',
+    runResult:
+      'Wie ein Lauf einer Routine endete: `written` mit seinem Abschnitt geschrieben, `unchanged`, wenn die Seite den Abschnitt seiner Periode schon so trug, `queued` mit seinem Schreibvorgang in der Freigabe-Warteschlange, `drafted` mit einem Entwurf als Datei, `preview` für eine Vorschau, die nichts schrieb, und `failed`. In jeder Zeile vom Typ `run` und in keiner anderen. Eine Zeile ohne gültigen Ausgang trägt `failed` als Platzhalter, der keinen Schreibvorgang behauptet, und eine solche Zeile, die `ok` sagte, dann `error`.',
+    runStep:
+      'Der Schritt, in dem ein gescheiterter Lauf endete: `input` beim Lesen, `model` beim Modell, `answer` bei der Prüfung der Antwort, `content` bei der ContentPolicy, `write` beim Schreiben. Nur in einer Zeile vom Typ `run` mit `failed`.',
+    attempt:
+      'Der wievielte Versuch einer Auslösung des Zeitplans der Lauf war, von 1 bis 3 ([ADR 0034](adr/0034-zeitplan-semantik.md)). Nur in einer Zeile vom Typ `run`, nicht bei einem Lauf von Hand.',
+    period:
+      'Die Periode des Laufs, die Woche wie `2026-W46`, der Tag wie `2026-11-10` oder der Monat wie `2026-11`, aus der Auslösung und nie aus der Zeit des Laufs ([ADR 0034](adr/0034-zeitplan-semantik.md)). Nur in einer Zeile vom Typ `run`.',
     durationMs: 'Dauer des Aufrufs in Millisekunden.',
     seq: 'Stelle der Zeile in der Hash-Kette ihrer Datei, ab 1 für die erste ganze Zeile. Nur der Schreiber der Datei setzt sie. Ein Stück einer Zeile zählt nicht, die nächste ganze Zeile trägt dann dieselbe Stelle.',
     prevHash:

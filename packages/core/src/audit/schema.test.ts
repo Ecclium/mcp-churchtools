@@ -2,6 +2,8 @@ import type {
   ActorKind,
   AuditEventV1,
   AuditOutcome,
+  AuditRunResult,
+  AuditRunStep,
   AuditType,
   ConfirmationPath,
 } from '@ecclium/mcp-churchtools-plugin-api';
@@ -22,6 +24,9 @@ import {
   writeStateOutcomes,
   writeStates,
 } from './index.js';
+// The audit index does not pass these two lists on, so the test reads them
+// where they are made.
+import { auditRunResults, auditRunSteps } from './schema.js';
 
 // Lists every value once. A value missing here fails the type check, a
 // value missing from the frozen list fails the comparison below.
@@ -35,6 +40,22 @@ const everyType: Readonly<Record<AuditType, true>> = {
   tool_call: true,
   undo: true,
   approval: true,
+  run: true,
+};
+const everyRunResult: Readonly<Record<AuditRunResult, true>> = {
+  written: true,
+  unchanged: true,
+  queued: true,
+  drafted: true,
+  preview: true,
+  failed: true,
+};
+const everyRunStep: Readonly<Record<AuditRunStep, true>> = {
+  input: true,
+  model: true,
+  answer: true,
+  content: true,
+  write: true,
 };
 const everyOutcome: Readonly<Record<AuditOutcome, true>> = {
   ok: true,
@@ -88,6 +109,29 @@ const rejection: AuditEventV1 = {
   queueId: 'a1b2c3d4-0000-4000-8000-000000000003',
   decision: 'rejected',
   objectRefs: ['wiki_category:12'],
+};
+
+// The end of a run of a routine: it names its run and how it ended, and
+// calls no tool, writes nothing of its own and needs no confirmation
+// (ADR 0033).
+const runEnd: AuditEventV1 = {
+  ...valid,
+  type: 'run',
+  tenantId: 'default',
+  actor: { kind: 'runner', id: 'runner:weekly-report' },
+  mode: 'unattended',
+  runId: '0b0e9a3c-3f7e-4c62-9a55-6a1f0d2c7e11',
+  routineId: 'weekly-report',
+  objectRefs: [],
+  runResult: 'written',
+};
+// The same run, failed in a step with an error code.
+const failedRun: AuditEventV1 = {
+  ...runEnd,
+  outcome: 'error',
+  errorCode: 'upstream',
+  runResult: 'failed',
+  runStep: 'model',
 };
 
 const passes = (schema: z.ZodType, value: unknown): boolean =>
@@ -252,6 +296,155 @@ describe('auditEventV1Schema', () => {
     ).toBe(false);
   });
 
+  it('takes the end of a run with every result but failed as ok (ADR 0033)', () => {
+    for (const runResult of auditRunResults) {
+      if (runResult === 'failed') continue;
+      expect(
+        passes(auditEventV1Schema, { ...runEnd, runResult }),
+        runResult,
+      ).toBe(true);
+    }
+    // A run by hand has no try and no period, a run of the schedule has
+    // both, and the routine and the model are optional.
+    expect(
+      passes(auditEventV1Schema, {
+        ...runEnd,
+        attempt: 2,
+        period: '2026-W46',
+        policyHash: 'a'.repeat(64),
+        provider: {
+          vendor: 'example-ai',
+          model: 'example-model-1',
+          hostingCountry: 'CH',
+          endpointHost: 'api.example.org',
+        },
+      }),
+    ).toBe(true);
+    expect(
+      passes(auditEventV1Schema, { ...runEnd, routineId: undefined }),
+    ).toBe(true);
+  });
+
+  it('takes a failed run with any step, error or denied (ADR 0033)', () => {
+    expect(passes(auditEventV1Schema, failedRun)).toBe(true);
+    for (const runStep of auditRunSteps) {
+      expect(
+        passes(auditEventV1Schema, { ...failedRun, runStep }),
+        runStep,
+      ).toBe(true);
+    }
+    expect(
+      passes(auditEventV1Schema, { ...failedRun, runStep: undefined }),
+    ).toBe(true);
+    // A run the content policy refused says denied, with its reasons.
+    expect(
+      passes(auditEventV1Schema, {
+        ...failedRun,
+        outcome: 'denied',
+        errorCode: 'validation',
+        runStep: 'content',
+        contentViolations: ['link'],
+      }),
+    ).toBe(true);
+  });
+
+  it('ties failed to an outcome that is not ok, both ways (ADR 0033)', () => {
+    // Each case changes one thing of a valid line and keeps every other
+    // rule, so that only the rule of the result can refuse it.
+    for (const runResult of auditRunResults) {
+      if (runResult === 'failed') continue;
+      for (const outcome of ['error', 'denied'] as const) {
+        expect(
+          passes(auditEventV1Schema, {
+            ...runEnd,
+            runResult,
+            outcome,
+            errorCode: 'internal',
+          }),
+          `${runResult} ${outcome}`,
+        ).toBe(false);
+      }
+    }
+    expect(
+      passes(auditEventV1Schema, {
+        ...failedRun,
+        outcome: 'ok',
+        errorCode: undefined,
+        runStep: undefined,
+      }),
+    ).toBe(false);
+  });
+
+  it('takes a step only on a failed run (ADR 0033)', () => {
+    expect(passes(auditEventV1Schema, { ...runEnd, runStep: 'write' })).toBe(
+      false,
+    );
+    for (const runStep of ['output', 'Write', 'toString', 1, null]) {
+      expect(
+        passes(auditEventV1Schema, { ...failedRun, runStep }),
+        String(runStep),
+      ).toBe(false);
+    }
+  });
+
+  it('refuses the end of a run without its result or its run (ADR 0033)', () => {
+    expect(
+      passes(auditEventV1Schema, { ...runEnd, runResult: undefined }),
+    ).toBe(false);
+    expect(passes(auditEventV1Schema, { ...runEnd, runId: undefined })).toBe(
+      false,
+    );
+    for (const runResult of ['done', 'Written', 'toString', 1, null]) {
+      expect(
+        passes(auditEventV1Schema, { ...runEnd, runResult }),
+        String(runResult),
+      ).toBe(false);
+    }
+  });
+
+  it('refuses a tool, a state of a write and a way of a confirmation on the end of a run (ADR 0033)', () => {
+    for (const tool of ['ct_wiki_page_update', auditPlaceholders.tool]) {
+      expect(passes(auditEventV1Schema, { ...runEnd, tool }), tool).toBe(false);
+    }
+    // The state fits the outcome, so only the rule of the run refuses it.
+    expect(
+      passes(auditEventV1Schema, { ...runEnd, writeState: 'verified' }),
+    ).toBe(false);
+    expect(
+      passes(auditEventV1Schema, { ...runEnd, confirmation: 'policy' }),
+    ).toBe(false);
+    expect(passes(auditEventV1Schema, { ...runEnd, tool: undefined })).toBe(
+      true,
+    );
+  });
+
+  it('keeps the result, the step, the try and the period to the end of a run (ADR 0033)', () => {
+    for (const other of [valid, undo, rejection]) {
+      for (const field of [
+        { runResult: 'written' },
+        { runStep: 'model' },
+        { attempt: 1 },
+        { period: '2026-W46' },
+      ]) {
+        expect(
+          passes(auditEventV1Schema, { ...other, ...field }),
+          `${other.type} ${Object.keys(field).join()}`,
+        ).toBe(false);
+      }
+      // Set to undefined, a field counts as absent.
+      expect(
+        passes(auditEventV1Schema, {
+          ...other,
+          runResult: undefined,
+          runStep: undefined,
+          attempt: undefined,
+          period: undefined,
+        }),
+        other.type,
+      ).toBe(true);
+    }
+  });
+
   it('refuses another type', () => {
     for (const type of ['other', 'Undo', 'toString', undefined]) {
       expect(passes(auditEventV1Schema, { ...valid, type }), type).toBe(false);
@@ -382,6 +575,18 @@ describe('auditEventV1Schema', () => {
       }),
     ).toBe(true);
     expect(placeholders.undoes).toBe(placeholders.eventId);
+    // The zero UUID and failed that the end of a run gets for a missing or
+    // invalid run or result.
+    expect(
+      passes(auditEventV1Schema, {
+        ...event,
+        tool: undefined,
+        type: 'run',
+        runId: placeholders.runId,
+        runResult: placeholders.runResult,
+      }),
+    ).toBe(true);
+    expect(placeholders.runId).toBe(placeholders.eventId);
     expect(Object.isFrozen(placeholders)).toBe(true);
     expect(Object.isFrozen(placeholders.actor)).toBe(true);
   });
@@ -391,6 +596,9 @@ describe('the lists of values', () => {
   it('hold every value once and are frozen', () => {
     expect([...actorKinds].sort()).toEqual(Object.keys(everyActorKind).sort());
     expect(auditTypes).toEqual(Object.keys(everyType));
+    expect(auditRunResults).toEqual(Object.keys(everyRunResult));
+    // In the order of a run.
+    expect(auditRunSteps).toEqual(Object.keys(everyRunStep));
     expect([...auditOutcomes].sort()).toEqual(Object.keys(everyOutcome).sort());
     expect([...confirmationPaths].sort()).toEqual(
       Object.keys(everyConfirmation).sort(),
@@ -408,6 +616,8 @@ describe('the lists of values', () => {
     for (const list of [
       actorKinds,
       auditTypes,
+      auditRunResults,
+      auditRunSteps,
       auditOutcomes,
       confirmationPaths,
       writeStates,
@@ -628,6 +838,55 @@ describe('the field schemas', () => {
     }
   });
 
+  it('takes a try only as a whole number from 1 to 3 (ADR 0034)', () => {
+    for (const value of [1, 2, 3]) {
+      expect(passes(fields.attempt, value), String(value)).toBe(true);
+    }
+    for (const value of [0, 4, -1, 1.5, Number.NaN, '1', null]) {
+      expect(passes(fields.attempt, value), String(value)).toBe(false);
+    }
+    expect(passes(auditEventV1Schema, { ...runEnd, attempt: 3 })).toBe(true);
+    expect(passes(auditEventV1Schema, { ...runEnd, attempt: 4 })).toBe(false);
+  });
+
+  it('takes a period as a week, a day or a month (ADR 0034)', () => {
+    for (const value of ['2026-W46', '2026-W01', '2026-11-10', '2026-11']) {
+      expect(passes(fields.period, value), value).toBe(true);
+    }
+    // The pattern checks the form only: a week, a month or a day that does
+    // not exist still passes. The runner makes the period, never a model.
+    for (const value of ['2026-W99', '2026-13', '2026-02-31']) {
+      expect(passes(fields.period, value), value).toBe(true);
+    }
+    for (const value of [
+      '2026-W5',
+      '2026-w46',
+      '2026-W466',
+      '2026-1',
+      '2026-11-1',
+      '26-11',
+      '2026',
+      '2026-11-10T08:00',
+      '2026-11-10\n',
+      // Short enough for the length, so only the anchor at the end refuses it.
+      '2026-11\n',
+      ' 2026-11',
+      'x'.repeat(11),
+      '',
+      202_611,
+      null,
+    ]) {
+      expect(passes(fields.period, value), String(value)).toBe(false);
+    }
+  });
+
+  it('refuses a huge period by its length, before its pattern', () => {
+    const result = fields.period.safeParse(`2026-11${'1'.repeat(10_000_000)}`);
+    expect(result.error?.issues.map((issue) => issue.code)).toEqual([
+      'too_big',
+    ]);
+  });
+
   it('takes a duration only as a whole number in its range', () => {
     for (const value of [0, 86_400_000]) {
       expect(passes(fields.durationMs, value)).toBe(true);
@@ -650,7 +909,20 @@ describe('auditEventJsonSchema', () => {
       'objectRefsOmitted',
     );
     expect(schema['properties']).toMatchObject({
-      type: { enum: ['tool_call', 'undo', 'approval'] },
+      type: { enum: ['tool_call', 'undo', 'approval', 'run'] },
+      runResult: {
+        enum: [
+          'written',
+          'unchanged',
+          'queued',
+          'drafted',
+          'preview',
+          'failed',
+        ],
+      },
+      runStep: { enum: ['input', 'model', 'answer', 'content', 'write'] },
+      attempt: { type: 'integer', minimum: 1, maximum: 3 },
+      period: { type: 'string', maxLength: 10 },
       undoes: { type: 'string', maxLength: 36 },
       queueId: { type: 'string', maxLength: 36 },
       decision: { enum: ['approved', 'rejected'] },

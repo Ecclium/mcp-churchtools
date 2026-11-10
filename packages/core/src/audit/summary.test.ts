@@ -73,6 +73,22 @@ const decision = (
     ...fields,
   });
 
+/**
+ * A line that ends a run of a routine, which names its run and how it
+ * ended and has no tool (ADR 0033).
+ */
+const runEnd = (fields: Record<string, unknown> = {}): string =>
+  event({
+    type: 'run',
+    actor: { kind: 'runner', id: 'runner:weekly-report' },
+    mode: 'unattended',
+    runId: '00000000-0000-4000-8000-0000000000cc',
+    routineId: 'weekly-report',
+    tool: undefined,
+    runResult: 'written',
+    ...fields,
+  });
+
 const line = (text: string, number: number): AuditLine => ({
   number,
   hash: sha256(text),
@@ -353,6 +369,138 @@ describe('summarizeAuditFiles', () => {
       },
     ]);
     expect(summary.queued).toBe(1);
+  });
+
+  it('counts the ends of runs of a day in a row of their own, after the decisions (ADR 0033)', () => {
+    const summary = summarizeAuditFiles({
+      folder: folderOf({
+        [nameOf(1)]: [
+          runEnd(),
+          decision('rejected'),
+          runEnd({
+            outcome: 'error',
+            errorCode: 'upstream',
+            runResult: 'failed',
+            runStep: 'model',
+            attempt: 2,
+            period: '2026-W44',
+          }),
+          undo(),
+          runEnd({
+            outcome: 'denied',
+            errorCode: 'validation',
+            runResult: 'failed',
+            contentViolations: ['link'],
+          }),
+          runEnd({ runResult: 'preview' }),
+          event({ tool: undefined }),
+          runEnd({ ts: '2026-10-29T08:00:00.000Z', runResult: 'queued' }),
+        ],
+      }),
+    });
+
+    expect(
+      summary.rows.map(({ day, type, tool, calls, ok, error, denied }) => ({
+        day,
+        type,
+        tool,
+        calls,
+        ok,
+        error,
+        denied,
+      })),
+    ).toEqual([
+      {
+        day: '2026-10-29',
+        type: 'run',
+        tool: undefined,
+        calls: 1,
+        ok: 1,
+        error: 0,
+        denied: 0,
+      },
+      {
+        day: '2026-10-30',
+        type: 'tool_call',
+        tool: undefined,
+        calls: 1,
+        ok: 1,
+        error: 0,
+        denied: 0,
+      },
+      {
+        day: '2026-10-30',
+        type: 'undo',
+        tool: undefined,
+        calls: 1,
+        ok: 1,
+        error: 0,
+        denied: 0,
+      },
+      {
+        day: '2026-10-30',
+        type: 'approval',
+        tool: undefined,
+        calls: 1,
+        ok: 1,
+        error: 0,
+        denied: 0,
+      },
+      {
+        day: '2026-10-30',
+        type: 'run',
+        tool: undefined,
+        calls: 4,
+        ok: 2,
+        error: 1,
+        denied: 1,
+      },
+    ]);
+    expect(summary.rows.at(-1)).not.toHaveProperty('decision');
+    // A run that queued its write is not a queued write: that write has a
+    // line of its own.
+    expect(summary.queued).toBe(0);
+    expect(summary.lines).toBe(8);
+    expect(summary.skipped).toBe(0);
+  });
+
+  it('skips an end of a run without its result or with a tool', () => {
+    const summary = summarizeAuditFiles({
+      folder: folderOf({
+        [nameOf(1)]: [
+          runEnd({ runResult: undefined }),
+          runEnd({ runId: undefined }),
+          runEnd({ tool: 'ct_wiki_page_update' }),
+          runEnd({ runResult: 'failed' }),
+          event({ runResult: 'written' }),
+          runEnd(),
+        ],
+      }),
+    });
+
+    expect(summary.skipped).toBe(5);
+    expect(summary.lines).toBe(1);
+  });
+
+  it('finds an end of a run that names the ID, with its type and without a tool', () => {
+    // The runner names no object on the end of a run; a line that does
+    // still counts as a hit of its type.
+    const summary = summarizeAuditFiles({
+      folder: folderOf({
+        [nameOf(1)]: [runEnd({ objectRefs: ['wiki_page:34'] }), runEnd()],
+      }),
+      object: 'wiki_page:34',
+    });
+    expect(summary.hits).toEqual([
+      {
+        ts: '2026-10-30T08:00:00.000Z',
+        type: 'run',
+        tool: undefined,
+        actorId: 'runner:weekly-report',
+        outcome: 'ok',
+        withheld: false,
+      },
+    ]);
   });
 
   it('finds a decision that names the ID, with its kind', () => {

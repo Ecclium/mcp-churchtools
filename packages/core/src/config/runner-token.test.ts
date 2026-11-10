@@ -19,8 +19,12 @@ import { makeCanary } from '@ecclium/mcp-churchtools-testkit';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { Secret } from '../http/index.js';
-import { readRunnerToken } from './runner-token.js';
-import type { TokenFileSystem } from './token-file.js';
+import {
+  readRunnerToken,
+  runnerTokenCodeOf,
+  runnerTokenCodes,
+} from './runner-token.js';
+import { tokenFileCodes, type TokenFileSystem } from './token-file.js';
 
 // The token of an account of the runner, a canary made at run time, in a
 // file of a temporary folder (ADR 0033).
@@ -133,4 +137,26 @@ describe('readRunnerToken', () => {
       expect(() => readRunnerToken(dir, 'berichte')).toThrow(TypeError);
     },
   );
+});
+
+describe('runnerTokenCodeOf', () => {
+  // A file in the checked folder is never relative, and without the checks
+  // of the platform the loader refuses the folder before any file, so
+  // these two codes name the folder (ADR 0033).
+  it('names the folder for the two codes a file in it cannot have', () => {
+    expect(runnerTokenCodeOf('token_file_relative')).toBe(
+      'runner_tokens_dir_invalid',
+    );
+    expect(runnerTokenCodeOf('token_file_platform')).toBe(
+      'runner_tokens_dir_platform',
+    );
+  });
+
+  it('gives every other code of the token file its code of the runner', () => {
+    const others = tokenFileCodes.filter(
+      (code) =>
+        code !== 'token_file_relative' && code !== 'token_file_platform',
+    );
+    expect(others.map(runnerTokenCodeOf)).toEqual(runnerTokenCodes);
+  });
 });

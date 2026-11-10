@@ -191,6 +191,10 @@ const producerKeys: readonly string[] = Object.freeze([
   'errorCode',
   'contentViolations',
   'rightsDriftAccepted',
+  'runResult',
+  'runStep',
+  'attempt',
+  'period',
   'durationMs',
 ]);
 
@@ -434,6 +438,8 @@ function fill(
   }
   // A rejection wrote nothing (ADR 0031).
   const rejected = approval && line['decision'] === 'rejected';
+  // The end of a run of a routine (ADR 0033).
+  const run = line['type'] === 'run';
 
   const tenantValid = scalar(
     'tenantId',
@@ -462,16 +468,29 @@ function fill(
   }
 
   scalar('mode', fields.mode, 'audit_invalid_mode', placeholders.mode);
-  scalar('runId', fields.runId, 'audit_invalid_run_id');
+  // The end of a run always names its run. Without a valid ID it names
+  // none with the zero UUID, which no run has.
+  if (run && own(draft, 'runId') === undefined) {
+    report('audit_missing_run_id');
+    line['runId'] = placeholders.runId;
+  } else {
+    scalar(
+      'runId',
+      fields.runId,
+      'audit_invalid_run_id',
+      run ? placeholders.runId : undefined,
+    );
+  }
   scalar('routineId', fields.routineId, 'audit_invalid_routine_id');
 
   const tool = own(draft, 'tool');
   if (tool !== undefined) {
-    // An undo and a decision call no tool (ADR 0031): a tool on their line
-    // is left out, without a placeholder and without asking the registry.
-    // ct_unknown is what the pipeline writes for a tool that does not
-    // exist; it is valid and not asked about.
-    if (undo || approval) {
+    // An undo and a decision call no tool (ADR 0031), nor does the end of
+    // a run (ADR 0033): a tool on their line is left out, without a
+    // placeholder and without asking the registry. ct_unknown is what the
+    // pipeline writes for a tool that does not exist; it is valid and not
+    // asked about.
+    if (undo || approval || run) {
       report('audit_invalid_tool');
     } else if (
       tool === placeholders.tool ||
@@ -490,7 +509,35 @@ function fill(
     'audit_invalid_outcome',
     placeholders.outcome,
   );
-  if (rejected && own(draft, 'confirmation') !== undefined) {
+  // The end of a run says how the run ended, `failed` exactly when the
+  // line does not say ok (ADR 0033). A result that is missing, invalid or
+  // does not go with the outcome becomes `failed`, and a line that said ok
+  // then says error, so that no line claims a write that may not have
+  // happened. The result goes into the line after the other fields, in the
+  // order of the schema.
+  let runResult: Json | undefined;
+  const result = own(draft, 'runResult');
+  if (run) {
+    if (result === undefined) {
+      report('audit_missing_run_result');
+    } else if (
+      !fits(fields.runResult, result) ||
+      (result === 'failed') !== (line['outcome'] !== 'ok')
+    ) {
+      report('audit_invalid_run_result');
+    } else {
+      runResult = result as string;
+    }
+    if (runResult === undefined) {
+      runResult = placeholders.runResult;
+      if (line['outcome'] === 'ok') line['outcome'] = placeholders.outcome;
+    }
+  } else if (result !== undefined) {
+    report('audit_invalid_run_result');
+  }
+  // A rejection wrote nothing, and the end of a run names no write of its
+  // own: its write has a line of its own.
+  if ((rejected || run) && own(draft, 'confirmation') !== undefined) {
     report('audit_invalid_confirmation');
   } else {
     scalar('confirmation', fields.confirmation, 'audit_invalid_confirmation');
@@ -502,6 +549,7 @@ function fill(
   if (writeState !== undefined) {
     if (
       !rejected &&
+      !run &&
       fits(fields.writeState, writeState) &&
       writeStateOutcomes[writeState as WriteState] === line['outcome']
     ) {
@@ -616,6 +664,27 @@ function fill(
     fields.rightsDriftAccepted,
     'audit_invalid_rights_drift_accepted',
   );
+
+  // How a run ended, the step a failed run ended in, its try and its
+  // period, only on the end of a run (ADR 0033, ADR 0034).
+  if (runResult !== undefined) line['runResult'] = runResult;
+  const step = own(draft, 'runStep');
+  if (step !== undefined) {
+    if (runResult === 'failed' && fits(fields.runStep, step)) {
+      line['runStep'] = step as string;
+    } else {
+      report('audit_invalid_run_step');
+    }
+  }
+  for (const [key, schema, event] of [
+    ['attempt', fields.attempt, 'audit_invalid_attempt'],
+    ['period', fields.period, 'audit_invalid_period'],
+  ] as const) {
+    const value = own(draft, key);
+    if (value === undefined) continue;
+    if (run && fits(schema, value)) line[key] = value as Json;
+    else report(event);
+  }
 
   scalar(
     'durationMs',
@@ -796,7 +865,9 @@ export function createAuditSink(options: AuditSinkOptions): AuditSink {
 
     // A required line that the sink had to change never says ok. The
     // result of a required line was read, so the line in the file says so.
-    const required = recordOptions?.required === true;
+    // The end of a run holds back no result, and its result must go with
+    // its outcome (ADR 0033), so it is never required.
+    const required = recordOptions?.required === true && line['type'] !== 'run';
     if (required && reports.length > 0 && line['outcome'] === 'ok') {
       withhold(line, true);
     }

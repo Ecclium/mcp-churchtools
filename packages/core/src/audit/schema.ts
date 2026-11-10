@@ -10,6 +10,8 @@
 import {
   type ActorKind,
   type AuditOutcome,
+  type AuditRunResult,
+  type AuditRunStep,
   type AuditType,
   type ConfirmationPath,
   type WriteState,
@@ -40,14 +42,41 @@ export const actorKinds: readonly ActorKind[] = Object.freeze([
 
 /**
  * Every {@link AuditType}, frozen: a call of a tool, the run of
- * `ecclium undo` that takes back a write from its snapshot, and a decision
- * of the operator about an entry of the queue of approvals (ADR 0031).
+ * `ecclium undo` that takes back a write from its snapshot, a decision
+ * of the operator about an entry of the queue of approvals (ADR 0031), and
+ * the end of a run of a routine (ADR 0033).
  */
 export const auditTypes: readonly AuditType[] = Object.freeze([
   'tool_call',
   'undo',
   'approval',
+  'run',
 ]);
+
+/** Every {@link AuditRunResult}, frozen. */
+export const auditRunResults: readonly AuditRunResult[] = Object.freeze([
+  'written',
+  'unchanged',
+  'queued',
+  'drafted',
+  'preview',
+  'failed',
+]);
+
+/** Every {@link AuditRunStep}, frozen, in the order of a run. */
+export const auditRunSteps: readonly AuditRunStep[] = Object.freeze([
+  'input',
+  'model',
+  'answer',
+  'content',
+  'write',
+]);
+
+/** The most tries of one trigger of a schedule (ADR 0034). */
+const maxAttempt = 3;
+
+// The period of a run: a week after ISO 8601, a day or a month (ADR 0034).
+const periodPattern = /^\d{4}-(?:W\d{2}|\d{2}(?:-\d{2})?)$/;
 
 /** Every {@link AuditOutcome}, frozen. */
 export const auditOutcomes: readonly AuditOutcome[] = Object.freeze([
@@ -186,6 +215,10 @@ export const auditFieldSchemas = Object.freeze({
   rightsDriftAccepted: z.literal(true),
   errorCode: z.enum(errorCodes),
   contentViolation: z.enum(contentViolationKinds),
+  runResult: z.enum(auditRunResults),
+  runStep: z.enum(auditRunSteps),
+  attempt: z.int().min(1).max(maxAttempt),
+  period: text(10, periodPattern),
   durationMs: z.int().min(0).max(86_400_000),
   seq: z.int().min(1),
 });
@@ -201,9 +234,13 @@ const fields = auditFieldSchemas;
  * of the queue in `queueId` and what was decided in `decision`, has no
  * tool, and a rejection has neither the state of a write nor a way of a
  * confirmation; no other line has `queueId` or `decision` (ADR 0031). A
- * count of left out IDs comes only with 100
- * IDs, and the mark of a result read but held back only with `denied` and
- * `policy_denied`. The copy on the stream of the logger is the same line
+ * line of the type `run` ends a run of a routine: it names the run and
+ * how it ended in `runResult`, `failed` exactly when the outcome is not
+ * `ok`, with the step of a failure, the try and the period, and has no
+ * tool, no state of a write and no way of a confirmation; no other line
+ * has these fields (ADR 0033). A count of left out IDs comes only with
+ * 100 IDs, and the mark of a result read but held back only with `denied`
+ * and `policy_denied`. The copy on the stream of the logger is the same line
  * without the IDs and without the fields in {@link fileOnlyFields}.
  */
 export const auditEventV1Schema = z
@@ -257,6 +294,10 @@ export const auditEventV1Schema = z
       .optional(),
     withheldAfterRead: fields.withheldAfterRead.optional(),
     rightsDriftAccepted: fields.rightsDriftAccepted.optional(),
+    runResult: fields.runResult.optional(),
+    runStep: fields.runStep.optional(),
+    attempt: fields.attempt.optional(),
+    period: fields.period.optional(),
     durationMs: fields.durationMs,
     seq: fields.seq.optional(),
     prevHash: fields.hash.optional(),
@@ -285,12 +326,47 @@ export const auditEventV1Schema = z
         (Object.hasOwn(event, 'decision') && event.decision !== undefined),
   )
   // An undo and a decision call no tool, and the tool of the write may no
-  // longer be registered (ADR 0031).
+  // longer be registered (ADR 0031). The end of a run calls none either:
+  // its reads and its write have lines of their own (ADR 0033).
   .refine(
     (event) =>
-      (event.type !== 'undo' && event.type !== 'approval') ||
+      (event.type !== 'undo' &&
+        event.type !== 'approval' &&
+        event.type !== 'run') ||
       !Object.hasOwn(event, 'tool') ||
       event.tool === undefined,
+  )
+  // The end of a run always says how it ended and names its run, and only
+  // such a line has a result, a step, a try or a period. Its routine comes
+  // from the run; a placeholder for it could be the ID of a real routine,
+  // so an invalid one is left out instead. It holds no state of a write
+  // and no way of a confirmation, which stand on the line of the write
+  // (ADR 0033).
+  .refine((event) => {
+    const has = (key: keyof typeof event): boolean =>
+      Object.hasOwn(event, key) && event[key] !== undefined;
+    if (event.type !== 'run') {
+      return (
+        !has('runResult') &&
+        !has('runStep') &&
+        !has('attempt') &&
+        !has('period')
+      );
+    }
+    return (
+      has('runResult') &&
+      has('runId') &&
+      !has('writeState') &&
+      !has('confirmation')
+    );
+  })
+  // A run failed exactly when its line does not say ok, and only a failed
+  // run names the step it ended in.
+  .refine(
+    (event) =>
+      event.type !== 'run' ||
+      ((event.runResult === 'failed') === (event.outcome !== 'ok') &&
+        (event.runStep === undefined || event.runResult === 'failed')),
   )
   // A rejection wrote nothing: it has no state of a write and no way of a
   // confirmation (ADR 0031).
@@ -355,7 +431,9 @@ export function auditEventJsonSchema(): Record<string, unknown> {
  * `invalid`, the actor `invalid`, the zero UUID as run or event and the
  * tool `ct_unknown`, and the registry will refuse that tool as well, so
  * that a placeholder is never taken for a real value. The zero UUID in
- * `undoes` of an undo therefore names no write.
+ * `undoes` of an undo therefore names no write. On the end of a run, the
+ * zero UUID names no run, and the result `failed` claims nothing was
+ * written.
  */
 export const auditPlaceholders = Object.freeze({
   eventId: '00000000-0000-0000-0000-000000000000',
@@ -364,6 +442,8 @@ export const auditPlaceholders = Object.freeze({
   undoes: '00000000-0000-0000-0000-000000000000',
   queueId: '00000000-0000-0000-0000-000000000000',
   decision: 'rejected',
+  runId: '00000000-0000-0000-0000-000000000000',
+  runResult: 'failed',
   tenantId: 'invalid',
   actor: Object.freeze({ kind: 'service', id: 'invalid' }),
   mode: 'unattended',

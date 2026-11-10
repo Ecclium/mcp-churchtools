@@ -32,7 +32,13 @@ import type { ConfigProblemCode, ConfigWarningCode } from './codes.js';
 import { readMarkerKeyFile } from './marker-key-file.js';
 import { readPseudonymKeyFile } from './pseudonym-key-file.js';
 import {
+  readRunnerToken,
+  runnerOwnAlias,
+  runnerTokenCodeOf,
+} from './runner-token.js';
+import {
   checkKeysDir,
+  checkRunnerTokensDir,
   checkStateDir,
   hasStopDir,
   isNormalizedAbsolutePath,
@@ -66,8 +72,12 @@ import {
   yamlDebugVariableNames,
 } from './variables.js';
 
-/** How the server is reached. Over http, the rules for stdio refuse. */
-export type Transport = 'stdio' | 'http';
+/**
+ * How Ecclium runs: the server over stdio or over HTTP, or the runner of
+ * routines (ADR 0033). Over http and for the runner, the rules for stdio
+ * refuse. The runner has its own account and its own required settings.
+ */
+export type Transport = 'stdio' | 'http' | 'runner';
 
 /** The checked configuration, deeply frozen. */
 export interface EccliumConfig {
@@ -596,9 +606,11 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     throw new TypeError(invalidSources);
   }
   const startOptions = execArgv === undefined ? [] : optionList(execArgv);
-  if (transport !== 'stdio' && transport !== 'http') {
+  if (transport !== 'stdio' && transport !== 'http' && transport !== 'runner') {
     throw new TypeError('The transport is unknown.');
   }
+  // The runner of routines (ADR 0033, ADR 0034).
+  const runner = transport === 'runner';
 
   const ranked: Ranked[] = [];
   const add = (
@@ -693,8 +705,22 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   const read = (variable: Variable): Read => {
     const value = given.get(variable.name);
     if (value === undefined) return unset;
-    if (variable.stdioOnly && transport !== 'stdio') {
-      report('stdio_only', variable.name);
+    // The runner has a rule of its own per variable: it may set the
+    // folders and the retention a start over stdio may set, but not what
+    // belongs to the local start only (ADR 0033).
+    if (
+      runner ? !variable.runner : variable.stdioOnly && transport !== 'stdio'
+    ) {
+      // The token file of the server has a code of its own for the runner,
+      // whose text points to the account of the runner (ADR 0023).
+      report(
+        !runner
+          ? 'stdio_only'
+          : variable.name === 'ECCLIUM_CHURCHTOOLS_TOKEN_FILE'
+            ? 'runner_server_token'
+            : 'runner_stdio_only',
+        variable.name,
+      );
       return invalid;
     }
     if (value === '') {
@@ -787,7 +813,11 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   }
 
   // The token, from the file or, over stdio only, from the environment.
-  // An empty value is reported as such and counts for nothing else.
+  // An empty value is reported as such and counts for nothing else. The
+  // runner never holds the token of the server (ADR 0023): its own account
+  // comes from the folder of its token files further down, and a file of
+  // the server set for it stops its start, so that its container does not
+  // keep the token of the server by mistake.
   const fileName = 'ECCLIUM_CHURCHTOOLS_TOKEN_FILE';
   const fileGiven = isSet(given.get(fileName));
   const environmentGiven = isSet(given.get(tokenVariableName));
@@ -799,7 +829,9 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   let token: Secret | undefined;
   let tokenVariable: VariableName =
     environmentGiven && !fileGiven ? tokenVariableName : fileName;
-  if (fileGiven && environmentGiven) {
+  if (runner) {
+    // Both are refused by read above, and the file is not opened.
+  } else if (fileGiven && environmentGiven) {
     // Neither source wins silently, and the file is not opened.
     report('token_conflict', tokenVariableName);
   } else if (file.state === 'set') {
@@ -821,8 +853,10 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     report('token_missing', fileName);
   }
   const tokenSource: 'file' | 'environment' =
-    tokenVariable === tokenVariableName ? 'environment' : 'file';
-  if (token !== undefined) {
+    tokenVariable === tokenVariableName && !runner ? 'environment' : 'file';
+  if (runner) {
+    // Reported with the folder of the token files, further down.
+  } else if (token !== undefined) {
     setting('churchtoolsToken', tokenVariable, tokenSource, shownHidden);
   } else {
     if (!fileGiven && !environmentGiven) tokenVariable = fileName;
@@ -876,7 +910,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   let redaction = choose('ECCLIUM_REDACTION');
   const strict = redaction?.value === 'strict';
   if (redaction?.value === 'off' && transport !== 'stdio') {
-    report('stdio_only', 'ECCLIUM_REDACTION');
+    report(runner ? 'runner_stdio_only' : 'stdio_only', 'ECCLIUM_REDACTION');
     redaction = undefined;
   } else if (redaction?.value === 'off') {
     warnings.add('redaction_off');
@@ -1006,7 +1040,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   let stateDir: string | undefined;
   let stateDirValid = true;
   if (stateDirRead.state === 'unset') {
-    setting('stateDir', stateDirName, 'unset', shownNone);
+    setting('stateDir', stateDirName, runner ? 'missing' : 'unset', shownNone);
   } else if (stateDirRead.state === 'invalid') {
     stateDirValid = false;
     setting('stateDir', stateDirName, 'invalid', shownNone);
@@ -1050,9 +1084,11 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   // and offers no write tool that could never write. A folder stop that
   // goes away later stops writing at the next look, as before. Over HTTP
   // the folder of keys is refused, so a server there does not write.
-  if (transport === 'stdio' && readOnly?.value === 'false') {
+  // The runner writes with the same folders as a server over stdio.
+  if ((transport === 'stdio' || runner) && readOnly?.value === 'false') {
     if (stateDirRead.state === 'unset') {
-      report('writes_without_state_dir', stateDirName);
+      // The runner needs the folder in any case and reports it so below.
+      if (!runner) report('writes_without_state_dir', stateDirName);
     } else if (
       stateDir !== undefined &&
       !hasStopDir(stateDir, stateDirFiles as StateDirFileSystem | undefined)
@@ -1173,9 +1209,11 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     timeZoneName,
     timeZone !== undefined
       ? 'environment'
-      : timeZoneValid
-        ? 'unset'
-        : 'invalid',
+      : !timeZoneValid
+        ? 'invalid'
+        : runner
+          ? 'missing'
+          : 'unset',
     timeZone !== undefined
       ? record({ kind: 'choice', value: timeZone })
       : shownNone,
@@ -1241,7 +1279,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   let policy: Policy | undefined;
   if (policyRead.state === 'unset') {
     policy = defaultPolicy;
-    setting('policy', policyName, 'default', shownNone);
+    setting('policy', policyName, runner ? 'missing' : 'default', shownNone);
   } else if (policyRead.state === 'invalid') {
     setting('policy', policyName, 'invalid', shownNone);
   } else if (yamlDebug.size > 0) {
@@ -1300,16 +1338,22 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   // with this key and whom to ask from the policy, so it does not start
   // without either (ADR 0032). A file that is set but refused has its own
   // problem.
+  // A runner that may write writes its sections into the wiki, whatever
+  // its toolsets: they choose the tools of a server, not the routines.
   const writesToWiki =
-    readOnly?.value === 'false' && toolsets?.value.includes('wiki') === true;
+    readOnly?.value === 'false' &&
+    (runner || toolsets?.value.includes('wiki') === true);
   if (writesToWiki && markerKeyRead.state === 'unset') {
     report('marker_key_missing', markerKeyName);
     markerKeyValid = false;
   }
+  // A runner without the file of the policy hears of the file itself,
+  // further down.
   if (
     writesToWiki &&
     policy !== undefined &&
-    policy.interactive.inquiriesTo === undefined
+    policy.interactive.inquiriesTo === undefined &&
+    !(runner && policyRead.state === 'unset')
   ) {
     report('inquiries_missing', policyName);
   }
@@ -1350,9 +1394,11 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     routinesName,
     routinesDir !== undefined
       ? 'environment'
-      : routinesDirValid
-        ? 'unset'
-        : 'invalid',
+      : !routinesDirValid
+        ? 'invalid'
+        : runner
+          ? 'missing'
+          : 'unset',
     routinesDir !== undefined
       ? record({ kind: 'path', value: routinesDir })
       : shownNone,
@@ -1401,20 +1447,46 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       : shownNone,
   );
 
-  // The folder of the token files of the runner (ADR 0033). Only a run and
-  // the approval of an entry of a run read a file in it, so the start
-  // checks the form of the path and nothing on disk.
+  // The folder of the token files of the runner (ADR 0033). The runner
+  // reads a file in it for each run, and the approval of an entry of a run
+  // reads one as well. A set folder is only looked at, like the folder of
+  // state: nobody but the user may write in it, because whoever can could
+  // put the file of a wider account in place of a narrow one. The runner
+  // needs it, for its own account if for nothing else.
   const runnerTokensName = 'ECCLIUM_RUNNER_TOKENS_DIR';
   const runnerTokensRead = read(row(runnerTokensName));
   let runnerTokensDir: string | undefined;
   let runnerTokensDirValid = runnerTokensRead.state !== 'invalid';
   if (runnerTokensRead.state === 'set') {
-    if (fitsVariable(runnerTokensName, runnerTokensRead.value)) {
-      runnerTokensDir = runnerTokensRead.value;
-    } else {
+    if (!fitsVariable(runnerTokensName, runnerTokensRead.value)) {
       report('runner_tokens_dir_invalid', runnerTokensName);
       runnerTokensDirValid = false;
+    } else {
+      const value = runnerTokensRead.value;
+      const stateDirValue =
+        stateDirRead.state === 'set' ? stateDirRead.value : undefined;
+      // In the folder of state, the login tokens would go into every backup
+      // of it, as the day keys would (ADR 0031). Compared as text, like the
+      // folder of keys.
+      const checked =
+        stateDirValue !== undefined &&
+        isNormalizedAbsolutePath(stateDirValue) &&
+        liesWithin(value, stateDirValue)
+          ? ({ ok: false, code: 'runner_tokens_dir_in_state_dir' } as const)
+          : checkRunnerTokensDir(
+              value,
+              stateDirFiles as StateDirFileSystem | undefined,
+            );
+      if (checked.ok) {
+        runnerTokensDir = value;
+      } else {
+        report(checked.code, runnerTokensName);
+        runnerTokensDirValid = false;
+      }
     }
+  } else if (runner && runnerTokensRead.state === 'unset') {
+    report('runner_tokens_dir_required', runnerTokensName);
+    runnerTokensDirValid = false;
   }
   setting(
     'runnerTokensDir',
@@ -1423,11 +1495,79 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       ? 'environment'
       : runnerTokensDirValid
         ? 'unset'
-        : 'invalid',
+        : runnerTokensRead.state === 'unset'
+          ? 'missing'
+          : 'invalid',
     runnerTokensDir !== undefined
       ? record({ kind: 'path', value: runnerTokensDir })
       : shownNone,
   );
+
+  // The token of the runner is that of its own account, `ct_token_runner`
+  // (ADR 0023). Before the first run, the start checks the file of every
+  // other account the policy names, so that a run never meets a file it
+  // refuses only then. The token of such a file is dropped at once: each
+  // run reads it anew (ADR 0033). A problem names the field of the first
+  // entry with the alias, never the path or the alias itself.
+  if (runner) {
+    if (runnerTokensDir !== undefined) {
+      const own = readRunnerToken(
+        runnerTokensDir,
+        runnerOwnAlias,
+        tokenFiles as TokenFileSystem | undefined,
+      );
+      if (own.ok) token = own.value;
+      else report(runnerTokenCodeOf(own.code), runnerTokensName);
+      const checked = new Set<string>([runnerOwnAlias]);
+      for (const [index, entry] of (policy?.unattended ?? []).entries()) {
+        if (checked.has(entry.credential)) continue;
+        checked.add(entry.credential);
+        const other = readRunnerToken(
+          runnerTokensDir,
+          entry.credential,
+          tokenFiles as TokenFileSystem | undefined,
+        );
+        if (!other.ok) {
+          add(
+            runnerTokenCodeOf(other.code),
+            variableNames.indexOf(runnerTokensName),
+            runnerTokensName,
+            { field: `unattended[${String(index)}].credential` },
+          );
+        }
+      }
+    }
+    setting(
+      'churchtoolsToken',
+      runnerTokensName,
+      token !== undefined
+        ? 'file'
+        : runnerTokensRead.state === 'unset'
+          ? 'missing'
+          : 'invalid',
+      token !== undefined ? shownHidden : shownNone,
+    );
+  }
+
+  // What the runner needs besides the server (ADR 0033, ADR 0034): the
+  // zone its schedules reckon in, a file of the policy, the folder of its
+  // routines and the folder of state, where the memory of its runs, its
+  // locks and its audit file live. Each is reported where it is missing,
+  // so that `ecclium config check` names all of them at once.
+  if (runner) {
+    if (timeZoneRead.state === 'unset') {
+      report('runner_time_zone_required', timeZoneName);
+    }
+    if (policyRead.state === 'unset') {
+      report('runner_policy_required', policyName);
+    }
+    if (routinesRead.state === 'unset') {
+      report('runner_routines_dir_required', routinesName);
+    }
+    if (stateDirRead.state === 'unset') {
+      report('runner_state_dir_required', stateDirName);
+    }
+  }
 
   // A wider trust store stays allowed for an instance with a certificate
   // of its own authority, with a warning on every start (ADR 0056).
