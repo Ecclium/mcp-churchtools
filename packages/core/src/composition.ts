@@ -66,6 +66,15 @@ export {
   type SnapshotKeeper,
   type SnapshotPurge,
 } from './snapshots/index.js';
+// The locks of the routines, which the composition root of the runner
+// makes once per process and asks before each run (ADR 0034).
+export {
+  createRoutineLocks,
+  type RoutineLock,
+  type RoutineLockOptions,
+  type RoutineLocks,
+  routineLockLimits,
+} from './schedule/lock.js';
 export { createDefaultTenantLogger } from './tenant/default-logger.js';
 export { createMemoryNonceStore } from './write/nonce-store.js';
 export { createMemoryPlanStore } from './write/plan-store.js';
