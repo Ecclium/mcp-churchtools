@@ -69,6 +69,21 @@
  * changed sends the plan to the queue. A change of the text of a page gets
  * no line.
  *
+ * **A write of a run of a routine** (ADR 0032) plans in the mode
+ * `unattended` with the run the pipeline names: only a section of the
+ * wiki, with a tool of the core that may run unattended. The kill switch
+ * of its routine counts besides the others. Its text may hold the contact
+ * values of the data the run read. Its marking names routine and period
+ * where an interactive one says «interaktiv», and its own section is the
+ * one of the same routine and period, whatever its day: the same text is
+ * a repeat, another text takes the place of the old one, and one a person
+ * changed sends the plan to the queue. An
+ * account with rights its routines do not need sends the plan to the
+ * queue as well, unless the exception of the policy holds today. The
+ * entries of the routine in the unattended part judge it, with a limit
+ * per run besides the one per day. Only then does `commitForRun` issue the
+ * proof of the policy and commit on the way of every write.
+ *
  * @packageDocumentation
  */
 import {
@@ -81,6 +96,7 @@ import {
   isEccliumError,
   type Permissions,
   type PlanOutcome,
+  type PlannedWrite,
   type QuotaStore,
   type Reversible,
   type RightRef,
@@ -96,6 +112,7 @@ import { maxWikiWriteBytes } from '../churchtools/schemas.js';
 import { isWikiTitle, storedWikiText } from '../churchtools/wiki-writes.js';
 import type { ChurchToolsWrites } from '../churchtools/writes.js';
 import { canonicalOfWritten, contactKeysOf } from '../content/index.js';
+import { contactKeysInSection } from '../run/content.js';
 import { HttpTransportError } from '../http/index.js';
 import type { KeyMaterial } from '../keys/index.js';
 import {
@@ -124,7 +141,7 @@ import {
   type ConfirmationText,
   confirmationTextOf,
 } from './confirmation-text.js';
-import { checkKillSwitches } from './kill-switch.js';
+import { checkKillSwitches, checkRunKillSwitches } from './kill-switch.js';
 import { contentHashOf } from './plan-hash.js';
 import { isoDateOf } from '../quota/budget.js';
 import type { LoadedSnapshot } from '../snapshots/keeper.js';
@@ -133,7 +150,11 @@ import type {
   SnapshotState,
   SnapshotToSeal,
 } from '../snapshots/seal.js';
-import { createPolicyGate, type WriteFacts } from './policy-gate.js';
+import {
+  createPolicyGate,
+  type GateRun,
+  type WriteFacts,
+} from './policy-gate.js';
 import { issueProof, useProof } from './proof.js';
 import {
   type IntentRules,
@@ -142,7 +163,18 @@ import {
   withToolMeta,
   type WriteTarget,
 } from './rules.js';
-import { type PlanView, readPlan, sealPlan } from './sealed-plan.js';
+import {
+  type PlanRun,
+  type PlanView,
+  readPlan,
+  sealPlan,
+} from './sealed-plan.js';
+import {
+  rightsBeyond,
+  rightsDriftAccepted,
+  type RunAccountNeeds,
+} from './rights-drift.js';
+import type { RunWrites } from './run-writes.js';
 import { serverTimeFits } from './server-clock.js';
 import {
   type CalendarUndoTarget,
@@ -201,6 +233,8 @@ export const writeSentences = Object.freeze({
     'With the line that marks it, the text of the page would be longer than ChurchTools takes. Shorten it.',
   pageOpen:
     'The page ends in a block that would take in the section and its marking, such as an open block of code or an open comment. Ask a person to close it in ChurchTools.',
+  notForRun:
+    'A run of a routine writes only a section of a page of the wiki with a tool of the core that may run unattended.',
   ...calendarSentences,
 } as const);
 
@@ -368,6 +402,11 @@ export interface ApprovedEntry {
    * names (ADR 0032); for an entry of an earlier version, its own day.
    */
   readonly plannedOn: IsoDate;
+  /**
+   * For a write a run of a routine queued, the run: the approval judges it
+   * against the entries of the routine and writes the same marking.
+   */
+  readonly run?: PlanRun;
 }
 
 /** What the operator asks the write guard to write from the queue. */
@@ -416,10 +455,33 @@ export type ApproveResult =
 
 /**
  * Why a sealed plan goes to the queue of approvals instead of a question:
- * a reason of the policy (ADR 0032), or an own section on the page with the
- * marking of this write that a person changed since (`marker_changed`).
+ * a reason of the policy (ADR 0032), an own section on the page with the
+ * marking of this write that a person changed since (`marker_changed`), or
+ * an account of a run with rights its routines do not need
+ * (`rights_drift`).
  */
-export type PlanQueueReason = PolicyQueueReason | 'marker_changed';
+export type PlanQueueReason =
+  PolicyQueueReason | 'marker_changed' | 'rights_drift';
+
+/**
+ * What a write of a run of a routine brings to its plan (ADR 0032), set by
+ * the pipeline from what the composition root bound, never by a tool.
+ */
+export interface RunPlanRequest {
+  /** The ID of the routine. */
+  readonly routine: string;
+  /** The period of the run, such as `2026-W46`. */
+  readonly period: string;
+  /**
+   * The keys of the contact values in the data the run read, which its
+   * text may hold besides those of the policy (ADR 0030).
+   */
+  readonly contacts: ReadonlySet<string>;
+  /** What the rights of the account of the run are judged against. */
+  readonly needs: RunAccountNeeds;
+  /** The counter of the writes of the run. */
+  readonly runWrites: RunWrites;
+}
 
 /** Who plans: the call of a tool. */
 export interface PlanRequest {
@@ -436,6 +498,11 @@ export interface PlanRequest {
     /** Whether the tool declares its write can be taken back. */
     readonly reversible?: Reversible;
   };
+  /**
+   * For a write of a run of a routine in the mode `unattended`, the run;
+   * without it no write in that mode reaches an entry of the policy.
+   */
+  readonly run?: RunPlanRequest;
 }
 
 /** What planning gives the pipeline: the outcome for the tool and the target. */
@@ -454,6 +521,11 @@ export interface PlanResult {
    * ADR 0032).
    */
   readonly queue?: PlanQueueReason;
+  /**
+   * For a write of a run whose account has rights its routines do not
+   * need, that the exception of the policy let it go on (ADR 0032).
+   */
+  readonly rightsDriftAccepted?: true;
 }
 
 /** How a commit ended. */
@@ -515,6 +587,23 @@ export interface WriteGuard {
     eventId?: string,
   ): Promise<CommitResult>;
   /**
+   * Commits a plan of a run of a routine that the policy covers, with a
+   * proof of the policy the guard issues itself, only in the mode
+   * `unattended` and only for a plan sealed for a run (ADR 0029, ADR 0032).
+   *
+   * @param ctx - The context of the write of the run.
+   * @param plan - The plan of the run.
+   * @param runWrites - The counter of the writes of the run.
+   * @param eventId - The ID of the audit event, for the snapshot.
+   * @returns How the commit ended; it never rejects.
+   */
+  commitForRun(
+    ctx: TenantContext,
+    plan: unknown,
+    runWrites: RunWrites,
+    eventId?: string,
+  ): Promise<CommitResult>;
+  /**
    * Takes back a write from its snapshot, for the operator (ADR 0031).
    *
    * @param request - Context, ID of the undo, snapshot and whether to
@@ -568,6 +657,47 @@ export function appendSection(text: string, section: string): string {
   return head === '' ? tail : `${head}\n\n${tail}`;
 }
 
+/**
+ * Builds the new text of a page whose own section of a run is replaced:
+ * the lines before the section, the new section with its line of the
+ * marking, and the lines after the old line of the marking, in the form
+ * ChurchTools stores (F51).
+ *
+ * @param text - The text of the page.
+ * @param own - Where the own section stands.
+ * @param own.start - The number of its first line, from 0.
+ * @param own.end - The number of the line of its marking.
+ * @param section - The new section with its line of the marking.
+ * @returns The new text.
+ * @example
+ * ```ts
+ * replaceSection('# Plan\n\n## W45\nalt\n', { kind: 'own', start: 2, end: 3 }, '## W45\nneu');
+ * ```
+ */
+export function replaceSection(
+  text: string,
+  own: { readonly start: number; readonly end: number },
+  section: string,
+): string {
+  const lines = text.split('\n');
+  const before = lines.slice(0, own.start);
+  // The old section may have begun with a block that ends a paragraph
+  // without an empty line, such as a heading; the new one may begin with a
+  // paragraph, which would run on from the text before it.
+  const gap =
+    before.length > 0 && !isBlank(before[before.length - 1] as string)
+      ? ['']
+      : [];
+  return storedWikiText(
+    [
+      ...before,
+      ...gap,
+      storedWikiText(section),
+      ...lines.slice(own.end + 1),
+    ].join('\n'),
+  );
+}
+
 const isBlank = (text: string): boolean => text.trim() === '';
 
 /** What a plan of a write of the wiki rests on, read now. */
@@ -591,10 +721,11 @@ type Derived =
       readonly text: string;
       /**
        * For a section to add, what the page holds with its marking
-       * (ADR 0032): none, the same section as Ecclium's own, or one a
-       * person changed.
+       * (ADR 0032): none, the same section as Ecclium's own, one a person
+       * changed, or for a run its own section of the period with another
+       * text, which the new one replaces where it stands.
        */
-      readonly marking?: SectionJudgement['kind'];
+      readonly marking?: SectionJudgement['kind'] | 'replaced';
     };
 
 /** Where the snapshot of a write was kept: its event and its day. */
@@ -626,6 +757,9 @@ type WikiIntent = Extract<WriteIntent, { categoryId: number }>;
 
 /** The writes that change a page that exists. */
 type PageIntent = Extract<WriteIntent, { guid: string }>;
+
+/** The write that adds a section, the only one of a run. */
+type SectionIntent = Extract<WriteIntent, { kind: 'wikiSectionAppend' }>;
 
 // What a person sees to confirm a write of the wiki: the page as read
 // and the text it would get, or for a new page its title and text.
@@ -686,15 +820,21 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
   const factsOf = (derived: Derived): WriteFacts =>
     derived.kind === 'change' ? { pageTitle: derived.before.title } : {};
 
-  // Writing off for this tenant, read-only, or blocked after a failed line
-  // of the audit: checked before every plan and right before every commit.
-  const stopped = (ctx: TenantContext): EccliumError | undefined => {
+  // Writing off for this tenant, for the routine of a run, read-only, or
+  // blocked after a failed line of the audit: checked before every plan
+  // and right before every commit.
+  const stopped = (
+    ctx: TenantContext,
+    routine?: string,
+  ): EccliumError | undefined => {
     if (blocked) return refuse('policy_denied', writeSentences.blocked);
     if (ctx.readOnly) return refuse('policy_denied', writeSentences.readOnly);
     const state =
       killSwitchDir === undefined
         ? 'unknown'
-        : checkKillSwitches(killSwitchDir, ctx.tenantId);
+        : routine === undefined
+          ? checkKillSwitches(killSwitchDir, ctx.tenantId)
+          : checkRunKillSwitches(killSwitchDir, ctx.tenantId, routine);
     if (state === 'on') return undefined;
     ctx.log.warn('write_refused', { code: 'policy_denied' });
     return refuse(
@@ -711,7 +851,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     ctx: TenantContext,
     intent: WikiIntent | CalendarIntent,
     rules: IntentRules,
-  ): Promise<void> => {
+  ): Promise<Extract<Permissions, { kind: 'known' }>> => {
     const permissions = await client.permissions(ctx);
     if (permissions.kind === 'unknown') {
       ctx.log.warn('write_refused', { code: 'policy_denied' });
@@ -736,6 +876,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     if (missing.length > 0) {
       throw refuse('permission', sentence, missing);
     }
+    return permissions;
   };
 
   // A text Ecclium adds as a whole, a new page or a section, ended with its
@@ -773,17 +914,30 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     if (intent.kind !== 'wikiPageUpdate') markingOf(ctx, day);
   };
 
+  // A run of a routine marks with its routine and period, and its own
+  // section is the one of the same routine and period, whatever its text
+  // and its day; an interactive write marks with its day, and only the
+  // same text on the same day is the same section (ADR 0032).
   const marked = (
     ctx: TenantContext,
     written: string,
     given: IsoDate | undefined,
+    run?: { readonly routine: string; readonly period: string },
   ): {
     readonly text: string;
-    readonly judge: (page: string) => SectionJudgement['kind'];
+    readonly judge: (page: string) => SectionJudgement;
+    readonly isThis: (marking: Marking) => boolean;
     readonly isLast: (page: string) => boolean;
   } => {
     const { key, inquiriesTo, day } = markingOf(ctx, given);
-    const origin = Object.freeze({ kind: 'interactive' as const, day });
+    const origin =
+      run === undefined
+        ? Object.freeze({ kind: 'interactive' as const, day })
+        : Object.freeze({
+            kind: 'routine' as const,
+            routine: run.routine,
+            run: run.period,
+          });
     const code = checkCodeOf(
       key,
       ctx.tenantId,
@@ -792,17 +946,23 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     );
     const line = markingLineOf({ date: day, origin, code }, inquiriesTo);
     const matches = (marking: Marking): boolean =>
-      marking.origin.kind === 'interactive' &&
-      marking.date === day &&
-      sameCheckCode(marking.code, code);
+      run === undefined
+        ? marking.origin.kind === 'interactive' &&
+          marking.date === day &&
+          sameCheckCode(marking.code, code)
+        : marking.origin.kind === 'routine' &&
+          marking.origin.routine === run.routine &&
+          marking.origin.run === run.period;
+    const isThis = (marking: Marking): boolean =>
+      matches(marking) && sameCheckCode(marking.code, code);
     return {
       // The text, an empty line and the line of the marking, in the form
       // ChurchTools stores: the written text ends with a line break, the
       // whole text without one (F51).
       text: storedWikiText(`${written}\n${line}`),
       judge: (page) =>
-        judgeSections({ key, tenantId: ctx.tenantId, text: page, matches })
-          .kind,
+        judgeSections({ key, tenantId: ctx.tenantId, text: page, matches }),
+      isThis,
       // The line comes back as the last marking of the page, a paragraph of
       // the top level on its last line: else the page ends in a block that
       // swallows the section, such as an open block of code or comment.
@@ -810,7 +970,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
         const last = findMarkings(page).at(-1);
         return (
           last !== undefined &&
-          matches(last.marking) &&
+          isThis(last.marking) &&
           last.line === page.trimEnd().split('\n').length - 1
         );
       },
@@ -849,12 +1009,14 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
   };
 
   // Reads what a plan of a write of the wiki rests on. The day is that of
-  // the marking of a new page or a section.
+  // the marking of a new page or a section, the run that of a section a
+  // run of a routine adds.
   const derive = async (
     ctx: TenantContext,
     intent: WikiIntent,
     day: IsoDate | undefined,
     restoring = false,
+    run?: { readonly routine: string; readonly period: string },
   ): Promise<Derived> => {
     if (intent.kind === 'wikiPageCreate') {
       if (isBlank(intent.text)) {
@@ -884,7 +1046,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     if (isBlank(added)) throw refuse('validation', writeSentences.blank);
     const section =
       intent.kind === 'wikiSectionAppend'
-        ? marked(ctx, intent.section, day)
+        ? marked(ctx, intent.section, day, run)
         : undefined;
     const { page, serverTime } = await client.writes.wikiPageState(
       ctx,
@@ -902,17 +1064,43 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     if (section === undefined && !restoring) {
       keepsMarkings(ctx, page.text, added);
     }
+    const judged = section?.judge(page.text);
+    // A run finds its own section of the period with another text: the new
+    // text takes its place, so that a second run never adds it twice. The
+    // same text, whose check code is the one of the line, is a repeat
+    // (ADR 0032).
+    const replacing =
+      run !== undefined &&
+      section !== undefined &&
+      judged?.kind === 'own' &&
+      !findMarkings(page.text).some(
+        (found) => found.line === judged.end && section.isThis(found.marking),
+      );
+    const marking: Extract<Derived, { kind: 'change' }>['marking'] = replacing
+      ? 'replaced'
+      : judged?.kind;
     // A text without the white space ChurchTools removes at its ends, so
     // that the read after the write finds what was sent (F51).
     const text =
       section === undefined
         ? storedWikiText(added)
-        : appendSection(page.text, section.text);
-    const marking = section?.judge(page.text);
+        : replacing
+          ? replaceSection(page.text, judged, section.text)
+          : appendSection(page.text, section.text);
     // A repeat is skipped whatever its size; a page that would swallow the
     // new section cannot be marked.
     if (marking !== 'own') fits(text);
-    if (section !== undefined && marking !== 'own' && !section.isLast(text)) {
+    // A replaced section needs no such check: it takes exactly the lines of
+    // a section the page showed as top-level blocks that end with its line
+    // of the marking, after an empty line and before the same lines as
+    // before, and the content policy lets no block into it that could open,
+    // so it stands as the own one of the period again (ADR 0032).
+    if (
+      section !== undefined &&
+      !replacing &&
+      marking !== 'own' &&
+      !section.isLast(text)
+    ) {
       throw refuse('validation', writeSentences.pageOpen);
     }
     return {
@@ -943,11 +1131,11 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     request: PlanRequest,
     value: unknown,
   ): Promise<PlanResult> => {
-    const { ctx } = request;
+    const { ctx, run } = request;
     // The day of the marking of a new page or a section: the day of this
     // plan, kept in the sealed plan for the commit and the queue.
     const day = isoDateOf(clock.now());
-    const stop = stopped(ctx);
+    const stop = stopped(ctx, run?.routine);
     if (stop !== undefined) throw stop;
     const intent = readIntent(value);
     if (intent === undefined) throw refuse('validation', writeSentences.intent);
@@ -956,26 +1144,60 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       ctx.log.warn('write_refused', { code: 'policy_denied' });
       throw refuse('policy_denied', writeSentences.notRun);
     }
+    // A run writes nothing but a section of the wiki, with a tool of the
+    // core that may run unattended, and only in the mode of a run: the
+    // proof of the policy exists for nothing else (ADR 0029, ADR 0071).
+    if (
+      run !== undefined &&
+      (ctx.mode !== 'unattended' ||
+        intent.kind !== 'wikiSectionAppend' ||
+        rules.module !== 'core' ||
+        rules.unattended !== 'policy' ||
+        request.origin !== 'core')
+    ) {
+      ctx.log.warn('write_refused', { code: 'policy_denied' });
+      throw refuse('policy_denied', writeSentences.notForRun);
+    }
     // A write runs only when the core runs its kind (rules.ts): one of the
     // wiki or one of calendars and resources. Its texts go through the
     // content policy before anything else, and from here on the intent
-    // holds them in their written form (ADR 0030).
+    // holds them in their written form (ADR 0030). A text of a run may
+    // also hold the contact values of the data the run read.
     if (isCalendarIntent(intent)) {
       return planCalendarOnce(request, intent, rules, day);
     }
-    const wiki = checkIntentContent(ctx, intent as WikiIntent, contacts);
+    const wiki = checkIntentContent(
+      ctx,
+      intent as WikiIntent,
+      run === undefined ? contacts : new Set([...contacts, ...run.contacts]),
+    );
     checkMarking(ctx, wiki, day);
-    await checkRights(ctx, wiki, rules);
-    const derived = await derive(ctx, wiki, day);
-    // The policy, with the counter of the day only read (ADR 0032). A plan
-    // it sends to the queue is sealed all the same (ADR 0031).
+    const permissions = await checkRights(ctx, wiki, rules);
+    const origin =
+      run === undefined
+        ? undefined
+        : { routine: run.routine, period: run.period };
+    const derived = await derive(ctx, wiki, day, false, origin);
+    // The policy, with the counters of the day and of the run only read
+    // (ADR 0032). A plan it sends to the queue is sealed all the same
+    // (ADR 0031).
     const policyQueue = await policy.check(
       ctx,
       request.tool,
       rules,
       factsOf(derived),
       'plan',
+      run === undefined
+        ? undefined
+        : { routine: run.routine, runWrites: run.runWrites },
     );
+    // An account of a run with rights its routines do not need: the write
+    // goes to the queue, the run goes on, unless the exception of the
+    // policy holds today (ADR 0032).
+    const drift =
+      run === undefined
+        ? 'none'
+        : rightsDriftOf(ctx, run, permissions.granted, day);
     // The same section, marked on the same day, already stands on the page
     // as Ecclium's own: a repeat, which adds nothing (ADR 0032).
     if (derived.kind === 'change' && derived.marking === 'own') {
@@ -995,10 +1217,13 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     // operator decides whether it is a repeat, Ecclium never does.
     // A reason of the policy stays the one the operator reads; the log
     // names the changed section either way.
-    let queue: PlanQueueReason | undefined = policyQueue;
+    // Rights the account should not have come first: an approval does not
+    // check them again, so the operator has to read them as the reason.
+    let queue: PlanQueueReason | undefined =
+      (drift === 'queue' ? 'rights_drift' : undefined) ?? policyQueue;
     if (derived.kind === 'change' && derived.marking === 'changed') {
       ctx.log.warn('marking_changed', {});
-      queue = policyQueue ?? 'marker_changed';
+      queue ??= 'marker_changed';
     }
     const sealed = sealPlan({
       tenantId: ctx.tenantId,
@@ -1011,13 +1236,57 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       sealedAt: clock.now(),
       ...(day === undefined ? {} : { day }),
       snapshots: reversible,
+      ...(run === undefined
+        ? {}
+        : { run: planRunOf(run, wiki as SectionIntent) }),
     });
     return Object.freeze({
       outcome: Object.freeze({ kind: 'planned', plan: sealed }),
       target: rules.target,
       text: textOf(wiki, derived),
       ...(queue === undefined ? {} : { queue }),
+      ...(drift === 'accepted' ? { rightsDriftAccepted: true as const } : {}),
     });
+  };
+
+  // Whether the account of a run has rights its routines do not need, and
+  // if so whether the exception of the entries of its routine holds today.
+  // The log names how many, never which.
+  const rightsDriftOf = (
+    ctx: TenantContext,
+    run: RunPlanRequest,
+    granted: Extract<Permissions, { kind: 'known' }>['granted'],
+    day: IsoDate | undefined,
+  ): 'none' | 'queue' | 'accepted' => {
+    const beyond = rightsBeyond(granted, run.needs);
+    if (beyond.length === 0) return 'none';
+    const entries = options.policy.unattended.filter(
+      (entry) => entry.routine === run.routine,
+    );
+    if (rightsDriftAccepted(entries, day)) {
+      ctx.log.warn('run_rights_drift_accepted', { count: beyond.length });
+      return 'accepted';
+    }
+    ctx.log.warn('run_rights_drift', { count: beyond.length });
+    return 'queue';
+  };
+
+  // The run a plan of a section comes from, with the keys of the contact
+  // values from the data of the run that the section holds, so that an
+  // approval checks it as the run did (ADR 0030).
+  const planRunOf = (run: RunPlanRequest, intent: SectionIntent): PlanRun => {
+    const held = contactKeysInSection(intent.section);
+    return {
+      routine: run.routine,
+      period: run.period,
+      // An entry of the queue keeps at most 100; an approval of a section
+      // with more contact values from the data refuses it rather than
+      // trusting more.
+      contacts: [...held]
+        .filter((key) => run.contacts.has(key))
+        .sort()
+        .slice(0, 100),
+    };
   };
 
   // Plans a write of an appointment or a booking: texts, rights, the read
@@ -1108,9 +1377,50 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       return denied(refuse('internal', writeSentences.notConfirmed));
     }
     const target = view.rules.target;
+    // A plan of a run commits only through the way of a run.
+    if (view.run !== undefined) {
+      useProof(proof, view, clock.now());
+      return denied(refuse('internal', writeSentences.notConfirmed), target);
+    }
     const stop = stopped(ctx);
     if (stop !== undefined) return denied(stop, target);
     return commitPlan(ctx, view, proof, eventId, 'tool');
+  };
+
+  // The commit of a write of a run of a routine (ADR 0029, ADR 0032): the
+  // guard issues the proof of the policy itself, only in the mode of a run
+  // and only for a plan sealed for a run, which the policy checked when it
+  // was planned and checks again right before the send, with the counters
+  // of the day and of the run. The proof holds only where the plan allows
+  // the way of the policy (proof.ts): never for an intent of the Pro module
+  // or one that may never run unattended.
+  const commitForRun = async (
+    ctx: TenantContext,
+    value: unknown,
+    runWrites: RunWrites,
+    eventId?: string,
+  ): Promise<CommitResult> => {
+    const view = readPlan(value);
+    if (
+      view?.run === undefined ||
+      ctx.mode !== 'unattended' ||
+      view.tenantId !== ctx.tenantId ||
+      view.actor.kind !== ctx.actor.kind ||
+      view.actor.id !== ctx.actor.id
+    ) {
+      return denied(refuse('internal', writeSentences.notConfirmed));
+    }
+    const target = view.rules.target;
+    const stop = stopped(ctx, view.run.routine);
+    if (stop !== undefined) return denied(stop, target);
+    let proof: unknown;
+    try {
+      proof = issueProof(value as PlannedWrite, 'policy', clock.now());
+    } catch {
+      ctx.log.warn('write_refused', { code: 'policy_denied' });
+      return denied(refuse('policy_denied', writeSentences.notForRun), target);
+    }
+    return commitPlan(ctx, view, proof, eventId, 'tool', runWrites);
   };
 
   // An undo of the operator skips the policy, which judges what the model
@@ -1122,7 +1432,10 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     proof: unknown,
     eventId: string | undefined,
     by: 'tool' | 'undo' | 'approve',
+    runWrites?: RunWrites,
   ): Promise<CommitResult> => {
+    // The routine of a run, whose kill switch and entries count as well.
+    const routine = view.run?.routine;
     // A plan is sealed only for an intent the core runs (sealed-plan.ts).
     const { intent } = view;
     const target = view.rules.target;
@@ -1166,6 +1479,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
         sealedAt: clock.now(),
         ...(view.day === undefined ? {} : { day: view.day }),
         snapshots: reversible,
+        ...(view.run === undefined ? {} : { run: view.run }),
       }),
     ) as PlanView;
     const now = clock.now();
@@ -1186,7 +1500,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       );
     }
     // Writing may have been switched off during the read.
-    const stopNow = stopped(ctx);
+    const stopNow = stopped(ctx, routine);
     if (stopNow !== undefined) return denied(stopNow, target, path);
     if (!serverTimeFits(now, derived.serverTime)) {
       ctx.log.warn('write_refused', { code: 'policy_denied' });
@@ -1209,6 +1523,12 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
           view.rules,
           derived.facts,
           by === 'approve' ? 'approve' : 'commit',
+          routine === undefined
+            ? undefined
+            : ({
+                routine,
+                ...(runWrites === undefined ? {} : { runWrites }),
+              } satisfies GateRun),
         );
       }
     } catch (error) {
@@ -1220,7 +1540,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     // The policy may have read ChurchTools and waited for its counter, so
     // the switches once more: a write counted and then stopped stays
     // counted, as one that fails after its count (ADR 0029, ADR 0032).
-    const stopLate = stopped(ctx);
+    const stopLate = stopped(ctx, routine);
     if (stopLate !== undefined) return denied(stopLate, target, path);
     // The state before the write, kept before the one send: a snapshot
     // that cannot be kept stops the write, so that every write the core
@@ -1294,7 +1614,15 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       };
     }
     const wiki = intent as WikiIntent;
-    const derived = await derive(ctx, wiki, view.day, by === 'undo');
+    const derived = await derive(
+      ctx,
+      wiki,
+      view.day,
+      by === 'undo',
+      view.run === undefined
+        ? undefined
+        : { routine: view.run.routine, period: view.run.period },
+    );
     return {
       contentHash: derived.contentHash,
       serverTime: derived.serverTime,
@@ -1834,7 +2162,8 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     request: ApproveRequest,
   ): Promise<ApproveResult> => {
     const { ctx, eventId, entry } = request;
-    const stop = stopped(ctx);
+    // A write a run queued: the kill switch of its routine as well.
+    const stop = stopped(ctx, entry.run?.routine);
     if (stop !== undefined) throw stop;
     // The intent as an intent again, and the rules from it and from the
     // metadata the plan was sealed with, as when the tool planned.
@@ -1846,11 +2175,14 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       throw refuse('policy_denied', writeSentences.notRun);
     }
     // The content policy again, since the contact values of the policy
-    // may have changed in the meantime (ADR 0030).
+    // may have changed in the meantime (ADR 0030). A write of a run may
+    // also hold the contact values of its data that the entry kept.
     const intent = checkIntentContent(
       ctx,
       read as WikiIntent | CalendarIntent,
-      contacts,
+      entry.run === undefined
+        ? contacts
+        : new Set([...contacts, ...entry.run.contacts]),
     );
     if (!isCalendarIntent(intent)) checkMarking(ctx, intent, entry.plannedOn);
     await checkRights(ctx, intent, rules);
@@ -1884,6 +2216,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       sealedAt: clock.now(),
       day: entry.plannedOn,
       snapshots: reversible,
+      ...(entry.run === undefined ? {} : { run: entry.run }),
     });
     const view = readPlan(sealed) as PlanView;
     if (view.planHash !== entry.planHash) {
@@ -1928,7 +2261,15 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       }
       return plan;
     }
-    const derived = await derive(ctx, intent, entry.plannedOn);
+    const derived = await derive(
+      ctx,
+      intent,
+      entry.plannedOn,
+      false,
+      entry.run === undefined
+        ? undefined
+        : { routine: entry.run.routine, period: entry.run.period },
+    );
     return {
       contentHash: derived.contentHash,
       serverTime: derived.serverTime,
@@ -1943,6 +2284,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
   return Object.freeze({
     plan,
     commit,
+    commitForRun,
     undo,
     approve,
     block: (): void => {

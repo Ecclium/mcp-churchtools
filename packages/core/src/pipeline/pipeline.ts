@@ -46,6 +46,7 @@ import {
   type ConfirmationPath,
   type ContentViolationKind,
   EccliumError,
+  isEccliumError,
   type ErrorCode,
   type FeatureKey,
   type IsoDate,
@@ -114,7 +115,11 @@ import type {
   QueueReason,
 } from '../queue/index.js';
 import { openPseudonyms, type Pseudonyms } from '../redaction/pseudonym.js';
-import { type Redacted, sealRedacted } from '../redaction/redacted.js';
+import {
+  isRedacted,
+  type Redacted,
+  sealRedacted,
+} from '../redaction/redacted.js';
 import { createTenantContext } from '../tenant/context.js';
 import {
   approvalKeyOf,
@@ -132,6 +137,9 @@ import {
   createWriteGuard,
   objectRefsOfTarget,
   type PlanQueueReason,
+  isRunWrites,
+  type RunPlanRequest,
+  type RunWrites,
   type UndoSubject,
   undoSubjectOf,
   type WriteGuard,
@@ -142,6 +150,8 @@ import type { KeyMaterial } from '../keys/index.js';
 import { createReadAccess, type ReadAccess } from './read-api.js';
 import { isTransientRunCode } from '../run/model.js';
 import { cutEntries, personNamesOf } from './run-read.js';
+import { contactKeysIn } from '../run/content.js';
+import { resolveRunPage, type RunPageRef, runNeedsOf } from './run-write.js';
 import {
   collectOutputRefs,
   fitsInput,
@@ -276,6 +286,79 @@ export type RunCallOutcome =
        * tell apart, so such a run is tried again at most twice. A result
        * the pipeline finds too large is final.
        */
+      readonly transient: boolean;
+    };
+
+/**
+ * One write of a run of a routine (ADR 0032, ADR 0033), built by the
+ * composition root only. It runs unattended with the write tool of the
+ * output of the routine, which must be a tool of the core stable for
+ * routines; the core finds the page, plans the section with the marking
+ * of the run and commits it with the proof of the policy, or queues it.
+ */
+export interface RunWriteRequest {
+  /** Tenant and actor, the actor of the routine such as `runner:<ID>`. */
+  readonly assignment: TenantAssignment | undefined;
+  /** Licensed features, empty in the free core. */
+  readonly features: readonly FeatureKey[];
+  /** The signal of the run. */
+  readonly signal: AbortSignal;
+  /** The run the write belongs to. */
+  readonly run: RunTag;
+  /** Whether the configuration of the runner only reads. */
+  readonly readOnly: boolean;
+  /** The write tool of the output of the routine. */
+  readonly tool: string;
+  /** The period of the run, which the line of the marking names. */
+  readonly period: string;
+  /** The section, without the line of the marking. */
+  readonly section: string;
+  /** The page: by its GUID, or by its title in a category. */
+  readonly page: RunPageRef;
+  /**
+   * The data the reads of the run gave, each with the mark of a redacted
+   * result: the contact values in them may stand in the section.
+   */
+  readonly data: readonly unknown[];
+  /**
+   * The tools of the routines of the account of the run, whose required
+   * rights are the rights the account may have.
+   */
+  readonly accountTools: readonly string[];
+  /** The counter of the writes of the run, made by the core. */
+  readonly runWrites: RunWrites;
+}
+
+/**
+ * How a write of a run ended: written, skipped as written already, queued
+ * for the operator, or failed with its code, whether it may have reached
+ * ChurchTools and whether a later try may pass (ADR 0034).
+ */
+export type RunWriteOutcome =
+  | {
+      readonly ok: true;
+      readonly state: 'verified';
+      readonly target: WriteTarget;
+      readonly version: number;
+      readonly undoId?: string;
+    }
+  | {
+      readonly ok: true;
+      readonly state: 'skipped';
+      readonly target: WriteTarget;
+    }
+  | {
+      readonly ok: true;
+      readonly state: 'queued';
+      readonly target: WriteTarget;
+      readonly queueId: string;
+    }
+  | {
+      readonly ok: false;
+      readonly code: ErrorCode;
+      /** Why the core found no page, when it found none. */
+      readonly page?: 'missing' | 'ambiguous';
+      readonly sent: boolean;
       readonly transient: boolean;
     };
 
@@ -525,6 +608,18 @@ export interface ToolPipeline {
     input: unknown,
     request: RunCallRequest,
   ): Promise<RunCallOutcome>;
+  /**
+   * Runs one write of a run of a routine through every stage, as `call`
+   * does, in the mode `unattended` (ADR 0032): the core finds the page,
+   * the write tool plans the section with the marking of the run, and the
+   * plan is committed with the proof of the policy or queued for the
+   * operator. Its audit line names the run, the routine, the policy and
+   * the model.
+   *
+   * @param request - What the composition root set for the write.
+   * @returns The outcome. It never rejects.
+   */
+  writeForRun(request: RunWriteRequest): Promise<RunWriteOutcome>;
   /**
    * Takes back a write of the core from its snapshot, for the operator
    * only: a request in another mode is refused (ADR 0031). It writes one
@@ -817,6 +912,10 @@ interface Run {
   write?: WriteRecord;
   /** For a read of a run: its tag and the most entries it passes on. */
   forRun?: { readonly tag: RunTag; readonly maxEntries: number };
+  /** For a write of a run: its tag and what the write of the run needs. */
+  forWrite?: RunWrite;
+  /** For a write of a run, why the core found no page. */
+  page?: 'missing' | 'ambiguous';
   /** What a read of a run passes on beside its data. */
   runResult?: {
     readonly entries: number;
@@ -832,6 +931,25 @@ interface Run {
 
 // The ID of a routine, as the policy names it.
 const routineIdPattern = /^[a-z0-9][a-z0-9-]{0,62}$/;
+// The period of a run, as the line of the marking names it.
+const periodPattern = /^[0-9A-Za-z][0-9A-Za-z-]{0,31}$/;
+
+// Why a write of a run found no page (ADR 0032). A run never creates one.
+const runPageMissing =
+  'The page of the routine is not in its category, its account cannot see it, or the category has more pages than a run searches. A run creates no page. Ask the operator.';
+const runPageAmbiguous =
+  'Two pages of the category of the routine have its title, so the run does not write. Ask the operator.';
+
+/** A write of a run as the pipeline copied it from its request. */
+interface RunWrite {
+  readonly tag: RunTag;
+  readonly period: string;
+  readonly section: string;
+  readonly page: RunPageRef;
+  readonly data: readonly unknown[];
+  readonly accountTools: readonly string[];
+  readonly runWrites: RunWrites;
+}
 
 /** The state of a write at the end of its call, for the audit. */
 interface WriteRecord {
@@ -839,6 +957,14 @@ interface WriteRecord {
   readonly confirmation?: ConfirmationPath;
   /** Whether a write may have reached ChurchTools. */
   readonly sent: boolean;
+  /** For a write of a run, that the exception for rights let it go on. */
+  readonly rightsDriftAccepted?: true;
+  /** For a write that waits in the queue, the ID of its entry. */
+  readonly queueId?: string;
+  /** The target and version of a verified write, for a run. */
+  readonly target?: WriteTarget;
+  readonly version?: number;
+  readonly undoId?: string;
   /** Why the content policy refused a text of the write (ADR 0030). */
   readonly contentViolations?: readonly ContentViolationKind[];
 }
@@ -857,6 +983,8 @@ interface WriteAccess {
   readonly text: () => ConfirmationText | undefined;
   /** Why that plan goes to the queue, if it does. */
   readonly queue: () => PlanQueueReason | undefined;
+  /** Whether the exception for rights let that plan of a run go on. */
+  readonly rightsDriftAccepted: () => true | undefined;
   /** The refusal of the plan, if the guard refused it. */
   readonly refusal: () => EccliumError | undefined;
   /** Why the content policy refused a text, if it did. */
@@ -1170,6 +1298,21 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     ) {
       return failed('internal');
     }
+    // A write of a run likewise: a routine without the form of the policy,
+    // a period without the form of the marking, or a counter of its writes
+    // the core did not make.
+    const forWrite = run.forWrite;
+    if (
+      forWrite !== undefined &&
+      (typeof forWrite.tag.routineId !== 'string' ||
+        !routineIdPattern.test(forWrite.tag.routineId) ||
+        typeof forWrite.period !== 'string' ||
+        !periodPattern.test(forWrite.period) ||
+        typeof forWrite.section !== 'string' ||
+        !isRunWrites(forWrite.runWrites))
+    ) {
+      return failed('internal');
+    }
 
     // 2. Copies of what the gate, the stages and the audit rely on, taken
     // before any code of the tool runs, and a signal of the call's own.
@@ -1219,7 +1362,9 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       eventId: run.eventId,
       // The log lines of a read of a run name the run (ADR 0033). The
       // context refuses an ID that is no UUID.
-      ...(forRun === undefined ? {} : { runId: forRun.tag.runId as RunId }),
+      ...(forRun === undefined && forWrite === undefined
+        ? {}
+        : { runId: (forRun ?? forWrite)?.tag.runId as RunId }),
     });
     run.ctx = ctx;
 
@@ -1260,6 +1405,17 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     if (forRun !== undefined && (writes || !meta.routineStable)) {
       return failed('policy_denied');
     }
+    // A run writes only with a write tool of the core that is stable for
+    // routines and may run unattended (ADR 0032, ADR 0071).
+    if (
+      forWrite !== undefined &&
+      (!writes ||
+        !meta.routineStable ||
+        meta.unattended !== 'policy' ||
+        entry.origin !== 'core')
+    ) {
+      return failed('policy_denied');
+    }
     if (meta.tier === 'pro' && features.length === 0) {
       return failed('license_required');
     }
@@ -1278,15 +1434,26 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       return failed('internal');
     }
 
+    // A write of a run: the core finds the page and its version itself
+    // and builds the input of the write tool from it (run-write.ts).
+    let given = input;
+    let runPlan: RunPlanRequest | undefined;
+    if (forWrite !== undefined) {
+      const prepared = await prepareRunWrite(run, ctx, forWrite);
+      if (!prepared.ok) return prepared.failure;
+      given = prepared.input;
+      runPlan = prepared.plan;
+    }
+
     // 4. validateInput. The message of zod could repeat the input, so the
     // error carries the fixed sentence only. In strict the schema checks
     // the input with the IDs its pseudonyms stand for.
-    if (!fitsInput(input)) return failed('validation');
+    if (!fitsInput(given)) return failed('validation');
     if (run.revealed?.ok === false) {
       return failed('validation', pseudonymExpected);
     }
     const parsedInput = entry.input.safeParse(
-      run.revealed === undefined ? input : run.revealed.value,
+      run.revealed === undefined ? given : run.revealed.value,
     );
     if (!parsedInput.success) return failed('validation');
     // An ID the audit could not name does not reach ChurchTools (ADR 0028).
@@ -1370,7 +1537,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       );
     });
     // Only a write tool gets a write port, valid for this call (ADR 0029).
-    const writing = writes ? writeAccess(entry, ctx) : undefined;
+    const writing = writes ? writeAccess(entry, ctx, runPlan) : undefined;
     const readCall: ToolCall<unknown> = {
       ctx,
       input: parsedInput.data,
@@ -1416,6 +1583,18 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     if (writing !== undefined) {
       const refusal = writing.refusal();
       if (refusal !== undefined) return refused(run, writing, refusal);
+      if (forWrite !== undefined) {
+        const end = await completeRunWrite(
+          run,
+          ctx,
+          writing,
+          result,
+          forWrite.runWrites,
+          refs,
+        );
+        if (!end.ok) return end.failure;
+        return finish(run, entry, ctx, redaction, end.result);
+      }
       const written = await completeWrite(
         run,
         ctx,
@@ -1448,6 +1627,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
   const writeAccess = (
     entry: CatalogEntry,
     ctx: TenantContext,
+    runPlan?: RunPlanRequest,
   ): WriteAccess => {
     let open = true;
     let planned = false;
@@ -1455,6 +1635,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     let target: WriteTarget | undefined;
     let text: ConfirmationText | undefined;
     let queue: PlanQueueReason | undefined;
+    let drift: true | undefined;
     let refusal: EccliumError | undefined;
     let contentViolations: readonly ContentViolationKind[] | undefined;
     const port: WritePort = Object.freeze({
@@ -1473,6 +1654,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
                 // Only a write tool gets a port, and every one declares it.
                 reversible: entry.meta.reversible,
               },
+              ...(runPlan === undefined ? {} : { run: runPlan }),
             },
             intent,
           );
@@ -1480,6 +1662,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
           target = result.target;
           text = result.text;
           queue = result.queue;
+          drift = result.rightsDriftAccepted;
           return result.outcome;
         } catch (error) {
           // The guard rejects only with an EccliumError or a refusal of
@@ -1504,6 +1687,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       target: () => target,
       text: () => text,
       queue: () => queue,
+      rightsDriftAccepted: () => drift,
       refusal: () => refusal,
       contentViolations: () => contentViolations,
     });
@@ -1807,6 +1991,167 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     };
   };
 
+  // What a write of a run needs before its tool plans: the page and its
+  // version, the contact values of the data the run read and the rights
+  // its account may have (ADR 0030, ADR 0032). The data must carry the
+  // mark of a redacted result, so that only what the pipeline read counts.
+  const prepareRunWrite = async (
+    run: Run,
+    ctx: TenantContext,
+    forWrite: RunWrite,
+  ): Promise<
+    | {
+        readonly ok: true;
+        readonly input: unknown;
+        readonly plan: RunPlanRequest;
+      }
+    | {
+        readonly ok: false;
+        readonly failure: {
+          readonly outcome: ToolOutcome;
+          readonly audit: AuditOutcome;
+        };
+      }
+  > => {
+    const routine = forWrite.tag.routineId;
+    const needs = runNeedsOf(
+      catalog,
+      options.policy,
+      routine,
+      forWrite.accountTools,
+    );
+    if (needs === undefined || !forWrite.data.every(isRedacted)) {
+      return { ok: false, failure: failed('internal') };
+    }
+    let found: Awaited<ReturnType<typeof resolveRunPage>>;
+    try {
+      found = await resolveRunPage(client, ctx, forWrite.page);
+    } catch (error) {
+      return {
+        ok: false,
+        failure: failed(isEccliumError(error) ? error.code : 'internal'),
+      };
+    }
+    if (!found.ok) {
+      run.page = found.reason;
+      ctx.log.warn(
+        found.reason === 'missing' ? 'run_page_missing' : 'run_page_ambiguous',
+      );
+      return {
+        ok: false,
+        failure: failed(
+          found.reason === 'missing' ? 'not_found' : 'conflict',
+          found.reason === 'missing' ? runPageMissing : runPageAmbiguous,
+        ),
+      };
+    }
+    return {
+      ok: true,
+      input: {
+        categoryId: found.categoryId,
+        guid: found.guid,
+        section: forWrite.section,
+        baseVersion: found.version,
+      },
+      plan: Object.freeze({
+        routine,
+        period: forWrite.period,
+        contacts: contactKeysIn(forWrite.data),
+        needs,
+        runWrites: forWrite.runWrites,
+      }),
+    };
+  };
+
+  // Ends the write of a run after its plan: skipped as written already, to
+  // the queue for the reason the plan names, or committed with the proof of
+  // the policy, which the write guard issues itself (ADR 0032). The result
+  // has the fixed form of every write.
+  const completeRunWrite = async (
+    run: Run,
+    ctx: TenantContext,
+    writing: WriteAccess,
+    returned: unknown,
+    runWrites: RunWrites,
+    refs: ObjectRefCollector,
+  ): Promise<WriteEnd> => {
+    const outcome = writing.outcome();
+    const target = writing.target();
+    if (outcome === undefined || target === undefined || returned !== outcome) {
+      ctx.log.warn('tool_output_invalid');
+      return { ok: false, failure: failed('internal') };
+    }
+    addTarget(refs, target);
+    const drift = writing.rightsDriftAccepted();
+    const noted = (record: WriteRecord): WriteRecord =>
+      Object.freeze(
+        drift === undefined
+          ? record
+          : { ...record, rightsDriftAccepted: drift },
+      );
+    if (outcome.kind === 'skipped') {
+      run.write = noted({ writeState: 'skipped', sent: false, target });
+      return { ok: true, result: writeResult('skipped', target) };
+    }
+    const text = writing.text();
+    if (text === undefined) return { ok: false, failure: failed('internal') };
+    const reason = writing.queue();
+    if (reason !== undefined) {
+      const queued = await enqueue(
+        run,
+        ctx,
+        outcome.plan,
+        text,
+        reason,
+        target,
+      );
+      if (queued.ok && run.write !== undefined) {
+        run.write = noted({
+          ...run.write,
+          queueId: run.eventId,
+          target,
+        });
+      }
+      return queued;
+    }
+    const committed = await guard.commitForRun(
+      ctx,
+      outcome.plan,
+      runWrites,
+      run.eventId,
+    );
+    addTarget(refs, committed.target);
+    if (!committed.ok) {
+      const failure = writeFailure(
+        run,
+        committed.error,
+        committed.sent,
+        committed.path,
+        committed.state,
+      );
+      // writeFailure has just set the state of the write.
+      run.write = noted(run.write as WriteRecord);
+      return { ok: false, failure };
+    }
+    run.write = noted({
+      writeState: 'verified',
+      confirmation: committed.path,
+      sent: true,
+      target: committed.target,
+      version: committed.version,
+      ...(committed.undoId === undefined ? {} : { undoId: committed.undoId }),
+    });
+    return {
+      ok: true,
+      result: writeResult(
+        'verified',
+        committed.target,
+        committed.version,
+        committed.undoId,
+      ),
+    };
+  };
+
   // Counts one call against the daily read budget. A store that is
   // missing, throws, takes too long or answers with no count of 1 or more
   // counts as unavailable.
@@ -1919,8 +2264,14 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     input: unknown,
     request: ToolRequest,
     forRun?: Run['forRun'],
+    forWrite?: RunWrite,
   ): Promise<{ readonly outcome: ToolOutcome; readonly run: Run }> => {
-    const run: Run = forRun === undefined ? {} : { forRun };
+    const run: Run = {
+      ...(forRun === undefined ? {} : { forRun }),
+      ...(forWrite === undefined ? {} : { forWrite }),
+    };
+    // The run a read or a write of a run belongs to, for its audit line.
+    const tag = forRun?.tag ?? forWrite?.tag;
     let outcome = internalOutcome;
     let auditOutcome: AuditOutcome = 'error';
     const start = now();
@@ -2017,16 +2368,21 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
               // A read of a run names its run, routine, policy and model,
               // so that the audit shows which data went to which model
               // (ADR 0033).
-              ...(forRun === undefined
+              ...(tag === undefined
                 ? {}
                 : {
-                    runId: forRun.tag.runId,
-                    routineId: forRun.tag.routineId,
+                    runId: tag.runId,
+                    routineId: tag.routineId,
                     policyHash,
-                    ...(forRun.tag.provider === undefined
+                    ...(tag.provider === undefined
                       ? {}
-                      : { provider: forRun.tag.provider }),
+                      : { provider: tag.provider }),
                   }),
+              // A write of a run under the exception of the policy for
+              // rights its account should not have (ADR 0032).
+              ...(run.write?.rightsDriftAccepted === true
+                ? { rightsDriftAccepted: true as const }
+                : {}),
               ...(errorCode === undefined ? {} : { errorCode }),
               ...(run.write?.contentViolations === undefined
                 ? {}
@@ -2151,6 +2507,115 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     } catch {
       // A request that cannot be read is a fault of the caller.
       return Object.freeze({ ok: false, code: 'internal', transient: false });
+    }
+  };
+
+  // A write of a run (ADR 0032): the stages of every call, in the mode
+  // unattended, with the write tool of the routine and an input the core
+  // builds itself from the page it finds. The request is copied through
+  // own data properties, so that no getter of the composition root's
+  // object answers twice.
+  const writeForRun = async (
+    request: RunWriteRequest,
+  ): Promise<RunWriteOutcome> => {
+    const fault = Object.freeze({
+      ok: false,
+      code: 'internal',
+      sent: false,
+      transient: false,
+    } as const);
+    try {
+      const tag = ownData(request, 'run') as RunTag;
+      const provider = ownData(tag, 'provider') as ProviderInfo | undefined;
+      const page = ownData(request, 'page');
+      const data = ownData(request, 'data');
+      const accountTools = ownData(request, 'accountTools');
+      if (
+        !isPlainTarget(page) ||
+        !Array.isArray(data) ||
+        !Array.isArray(accountTools)
+      ) {
+        return fault;
+      }
+      const guid = ownData(page, 'guid');
+      const title = ownData(page, 'title');
+      const categoryId = ownData(page, 'categoryId') as number;
+      const forWrite: RunWrite = Object.freeze({
+        tag: Object.freeze({
+          runId: ownData(tag, 'runId') as string,
+          routineId: ownData(tag, 'routineId') as string,
+          ...(provider === undefined ? {} : { provider }),
+        }),
+        period: ownData(request, 'period') as string,
+        section: ownData(request, 'section') as string,
+        page: Object.freeze(
+          typeof guid === 'string'
+            ? { categoryId, guid }
+            : { categoryId, title: title as string },
+        ),
+        data: Object.freeze([...(data as readonly unknown[])]),
+        accountTools: Object.freeze([...(accountTools as string[])]),
+        runWrites: ownData(request, 'runWrites') as RunWrites,
+      });
+      const { outcome, run } = await callWith(
+        ownData(request, 'tool') as string,
+        {},
+        {
+          assignment: ownData(request, 'assignment') as TenantAssignment,
+          mode: 'unattended',
+          // The result of a write names a target and a version, no data of
+          // a person, so the level of the call keys nothing.
+          redaction: 'standard',
+          // Anything but false only reads, so that a request built wrong
+          // never writes.
+          readOnly: ownData(request, 'readOnly') !== false,
+          features: ownData(request, 'features') as readonly FeatureKey[],
+          signal: ownData(request, 'signal') as AbortSignal,
+        },
+        undefined,
+        forWrite,
+      );
+      const write = run.write;
+      if (outcome.ok) {
+        // A write with a result went through completeRunWrite, which left
+        // its state, verified, queued or skipped, and its target.
+        const done = write as WriteRecord;
+        const target = done.target as WriteTarget;
+        if (done.writeState === 'verified') {
+          return Object.freeze({
+            ok: true,
+            state: 'verified',
+            target,
+            version: done.version as number,
+            ...(done.undoId === undefined ? {} : { undoId: done.undoId }),
+          });
+        }
+        if (done.writeState === 'queued') {
+          return Object.freeze({
+            ok: true,
+            state: 'queued',
+            target,
+            queueId: done.queueId as string,
+          });
+        }
+        return Object.freeze({ ok: true, state: 'skipped', target });
+      }
+      const code = outcome.error.code;
+      // A page that is missing or twice ends the trigger; a write that may
+      // have landed may try again, since its marking keeps a second run
+      // from adding it twice (ADR 0032, ADR 0034).
+      return Object.freeze({
+        ok: false,
+        code,
+        ...(run.page === undefined ? {} : { page: run.page }),
+        sent: write?.sent === true,
+        transient:
+          run.page === undefined &&
+          (run.transient ?? (isTransientRunCode(code) || code === 'conflict')),
+      });
+    } catch {
+      // A request that cannot be read is a fault of the caller.
+      return fault;
     }
   };
 
@@ -2834,6 +3299,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
         intent: content.intent,
         planHash: content.planHash,
         plannedOn: content.plannedOn ?? day,
+        ...(content.run === undefined ? {} : { run: content.run }),
       },
       decide: async () => {
         decided = await decideEntry(
@@ -3060,6 +3526,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     __proto__: null,
     call,
     callForRun,
+    writeForRun,
     undo,
     reject,
     approve,

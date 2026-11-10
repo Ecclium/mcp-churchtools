@@ -190,6 +190,12 @@ export interface AuditEventV1 {
    * was. The line then says `denied` with `policy_denied`.
    */
   readonly withheldAfterRead?: true;
+  /**
+   * A write of a run of a routine whose account has rights its routines do
+   * not need, which went past the check of those rights under the
+   * exception of the policy, whatever its `writeState` (ADR 0032).
+   */
+  readonly rightsDriftAccepted?: true;
   /** Duration of the action in milliseconds. */
   readonly durationMs: number;
   /** Position in a hash chain, set only by a sink that chains, never by the producer. */

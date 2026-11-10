@@ -99,6 +99,14 @@ const setup = (overrides: Partial<StdioServerOptions> = {}) => {
     // Nor does it read for a run of a routine (ADR 0033).
     callForRun: () =>
       Promise.resolve({ ok: false, code: 'internal', transient: false }),
+    // Nor does it write for one (ADR 0032).
+    writeForRun: () =>
+      Promise.resolve({
+        ok: false,
+        code: 'internal',
+        sent: false,
+        transient: false,
+      }),
     call: (name, value) => {
       calls.push({ name, input: value });
       return Promise.resolve(done);

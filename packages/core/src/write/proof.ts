@@ -14,8 +14,11 @@
  * `confirm.ts` issues the proofs of a question answered with yes and of
  * the echo, and the write guard issues the proof of the operator for an
  * undo (ADR 0031) and for an approval of an entry of the queue (ADR 0029),
- * each asked for on the command line; the way of the policy, only tests
- * issue so far, through a relative import. Like
+ * each asked for on the command line, and the proof of the policy for a
+ * write of a run of a routine that the policy covers (ADR 0032). The way
+ * of the policy holds only for a plan sealed for a run, of an intent of
+ * the core that may run unattended, never for an intent of the Pro module.
+ * Like
  * the sealed plan, the proof is a class with private fields behind a key
  * that only this module holds, so that no tool and no plugin can make
  * one, and the package exports no way to make one for tests. Only the
@@ -102,7 +105,8 @@ Object.freeze(Proof);
 // core does not run. Only the operator for one that always goes to the
 // queue, such as an operation of the escape hatch. Otherwise the echo only
 // where the plan was derived to allow it, the policy only for a write of
-// the core that may run unattended, and the client and the operator for
+// the core that may run unattended and was planned for a run, and the
+// client and the operator for
 // any plan that reaches them (ADR 0029, ADR 0071).
 const allows = (plan: PlanView, path: ConfirmationPath): boolean => {
   const { rules } = plan;
@@ -112,7 +116,11 @@ const allows = (plan: PlanView, path: ConfirmationPath): boolean => {
     case 'echo':
       return plan.echo;
     case 'policy':
-      return rules.module === 'core' && rules.unattended === 'policy';
+      return (
+        rules.module === 'core' &&
+        rules.unattended === 'policy' &&
+        plan.run !== undefined
+      );
     case 'elicitation':
     case 'operator':
       return true;

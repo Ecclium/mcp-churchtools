@@ -54,7 +54,9 @@ import { isTenantId, isUuid, toolNamePattern } from '../logger/index.js';
  * changed, the limit of the day, and a counter that could not be read.
  * The other three come from the way of the confirmation: the setting
  * `queue`, a client that cannot be asked while the echo does not confirm
- * the plan, and a diff too long for a question.
+ * the plan, and a diff too long for a question. `marker_changed` is an own
+ * section a person changed, and `rights_drift` a write of a run whose
+ * account has rights its routines do not need (ADR 0032).
  */
 export type QueueReason =
   | 'queue_only'
@@ -65,7 +67,8 @@ export type QueueReason =
   | 'setting'
   | 'no_question'
   | 'too_long'
-  | 'marker_changed';
+  | 'marker_changed'
+  | 'rights_drift';
 
 /** Every {@link QueueReason}, frozen, the policy first. */
 export const queueReasons: readonly QueueReason[] = Object.freeze([
@@ -78,6 +81,7 @@ export const queueReasons: readonly QueueReason[] = Object.freeze([
   'no_question',
   'too_long',
   'marker_changed',
+  'rights_drift',
 ]);
 
 /** What an entry of the queue holds, as the write guard made it. */
@@ -116,9 +120,23 @@ export interface QueueEntryContent {
    * version has none.
    */
   readonly plannedOn?: IsoDate;
+  /**
+   * For a write of a run of a routine, the run: routine and period name
+   * its line of the marking, and the keys of the contact values from the
+   * data of the run that its text holds (ADR 0030, ADR 0032). An approval
+   * judges such an entry against the entries of the routine.
+   */
+  readonly run?: {
+    readonly routine: string;
+    readonly period: string;
+    readonly contacts: readonly string[];
+  };
 }
 
 const hash = z.string().regex(/^[0-9a-f]{64}$/);
+// The period of a run as the line of the marking names it, such as
+// 2026-W46: letters, digits and hyphens.
+const periodPattern = /^[0-9A-Za-z][0-9A-Za-z-]{0,31}$/;
 const json = z.json();
 // An intent as a plain object of JSON values with a kind the core knows;
 // whether it fits its kind the write guard checks when it plans again.
@@ -159,6 +177,13 @@ const contentSchema = z.strictObject({
   reason: z.enum(queueReasons),
   queuedAt: z.int().min(0).max(Number.MAX_SAFE_INTEGER),
   plannedOn: z.string().refine(isIsoDate).optional(),
+  run: z
+    .strictObject({
+      routine: z.string().refine(isTenantId),
+      period: z.string().regex(periodPattern),
+      contacts: z.array(z.string().min(1).max(254)).max(100),
+    })
+    .optional(),
 });
 const recordSchema = z.strictObject({
   v: z.literal(1),

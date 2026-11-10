@@ -45,6 +45,16 @@ const inputOf = (
 const sealed = (change: Partial<PlanInput> = {}): PlannedWrite =>
   sealPlan(inputOf(update, change));
 
+// The run a plan of a routine comes from; only such a plan may be
+// confirmed by the policy (ADR 0032).
+const fromRun = {
+  run: { routine: 'dienstplan-report', period: '2026-W46', contacts: [] },
+} as const;
+
+// A plan for a way: one of a run for the policy, any other otherwise.
+const sealedFor = (path: ConfirmationPath): PlannedWrite =>
+  sealed(path === 'policy' ? fromRun : {});
+
 const viewOf = (plan: PlannedWrite): PlanView => {
   const view = readPlan(plan);
   if (view === undefined) throw new Error('no plan');
@@ -201,7 +211,7 @@ describe('a proof', () => {
   it.each<ConfirmationPath>(['elicitation', 'operator', 'echo', 'policy'])(
     'confirms its plan once on the way %s',
     (path) => {
-      const plan = sealed();
+      const plan = sealedFor(path);
       const proof = issueProof(plan, path, issued);
       expect(isProof(proof)).toBe(true);
       expect(useProof(proof, viewOf(plan), soon)).toBe(path);
@@ -271,8 +281,21 @@ describe('a proof', () => {
     expect(() => issueProof(never, 'policy', issued)).toThrow(TypeError);
   });
 
+  it('is not issued by the policy for a plan that is no plan of a run', () => {
+    expect(() => issueProof(sealed(), 'policy', issued)).toThrow(TypeError);
+    const plan = sealed(fromRun);
+    expect(viewOf(plan).run).toEqual(fromRun.run);
+    expect(Object.isFrozen(viewOf(plan).run)).toBe(true);
+    // A proof of the policy confirms nothing once the plan derived again
+    // is no plan of a run.
+    const proof = issueProof(plan, 'policy', issued);
+    const rest: Record<string, unknown> = { ...viewOf(plan) };
+    delete rest['run'];
+    expect(useProof(proof, rest as unknown as PlanView, soon)).toBeUndefined();
+  });
+
   it('confirms nothing by the policy for a plan of the Pro module', () => {
-    const plan = sealed();
+    const plan = sealed(fromRun);
     const proof = issueProof(plan, 'policy', issued);
     expect(
       useProof(proof, withRules(viewOf(plan), { module: 'pro' }), soon),
@@ -282,7 +305,7 @@ describe('a proof', () => {
   it.each<ConfirmationPath>(['elicitation', 'operator', 'echo', 'policy'])(
     'confirms nothing on the way %s for an intent the core does not run',
     (path) => {
-      const plan = sealed();
+      const plan = sealedFor(path);
       const proof = issueProof(plan, path, issued);
       expect(
         useProof(proof, withRules(viewOf(plan), { runs: false }), soon),
@@ -298,7 +321,7 @@ describe('a proof', () => {
   ])(
     'confirms a plan that always goes to the queue on the way %s only as the operator',
     (path, expected) => {
-      const plan = sealed();
+      const plan = sealedFor(path);
       const proof = issueProof(plan, path, issued);
       expect(
         useProof(proof, withRules(viewOf(plan), { alwaysQueue: true }), soon),

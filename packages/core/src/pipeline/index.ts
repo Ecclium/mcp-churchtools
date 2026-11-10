@@ -17,6 +17,8 @@ export {
   type RunCallOutcome,
   type RunCallRequest,
   type RunTag,
+  type RunWriteOutcome,
+  type RunWriteRequest,
   type ToolOutcome,
   type ToolPipeline,
   type ToolPipelineOptions,
@@ -26,3 +28,4 @@ export {
   type UndoReason,
   type UndoSubject,
 } from './pipeline.js';
+export { type RunPageRef } from './run-write.js';

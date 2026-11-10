@@ -183,6 +183,7 @@ export const auditFieldSchemas = Object.freeze({
   objectRef: text(50, objectRefPattern),
   objectRefsOmitted: z.int().min(1).max(auditLimits.objectRefsOmitted),
   withheldAfterRead: z.literal(true),
+  rightsDriftAccepted: z.literal(true),
   errorCode: z.enum(errorCodes),
   contentViolation: z.enum(contentViolationKinds),
   durationMs: z.int().min(0).max(86_400_000),
@@ -255,6 +256,7 @@ export const auditEventV1Schema = z
       .readonly()
       .optional(),
     withheldAfterRead: fields.withheldAfterRead.optional(),
+    rightsDriftAccepted: fields.rightsDriftAccepted.optional(),
     durationMs: fields.durationMs,
     seq: fields.seq.optional(),
     prevHash: fields.hash.optional(),

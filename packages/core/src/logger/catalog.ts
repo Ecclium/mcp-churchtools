@@ -212,6 +212,7 @@ const auditSinkEvents = Object.freeze([
   'audit_invalid_provider_transfer_basis',
   'audit_invalid_provider_vendor',
   'audit_invalid_queue_id',
+  'audit_invalid_rights_drift_accepted',
   'audit_invalid_routine_id',
   'audit_invalid_run_id',
   'audit_invalid_tenant_id',
@@ -299,6 +300,13 @@ export const logEvents = Object.freeze({
   // stands on the page as Ecclium's own, and one a person changed.
   marking_repeated: entry('info'),
   marking_changed: entry('warn'),
+  // The rights of the account of a run (ADR 0032): too wide, the write
+  // goes to the queue, or too wide under the exception of the policy.
+  run_rights_drift: entry('warn', 'count'),
+  run_rights_drift_accepted: entry('warn', 'count'),
+  // The page of a write of a run (ADR 0032): none, or two with its title.
+  run_page_missing: entry('warn'),
+  run_page_ambiguous: entry('warn'),
   // The content policy in the write guard (ADR 0030), one line per reason.
   content_too_long: entry('warn'),
   content_unparsable: entry('warn'),

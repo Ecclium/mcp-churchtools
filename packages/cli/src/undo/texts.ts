@@ -383,6 +383,11 @@ const reasonsOf = (
       'Diesen Schreibvorgang nimmt diese Version von Ecclium nicht zurück, Ecclium hat nichts geschrieben. Nehmen Sie ihn bei Bedarf in ChurchTools von Hand zurück.',
       exitCodes.noPermission,
     ),
+    // An undo is no write of a run; the reason only completes the table.
+    notForRun: ending(
+      'Ein Lauf einer Routine schreibt nur einen Abschnitt einer Seite des Wikis, Ecclium hat nichts geschrieben.',
+      exitCodes.noPermission,
+    ),
     intent: internal,
     blank: ending(
       'Vor dem Schreibvorgang war die Seite leer, und eine leere Seite schreibt Ecclium nicht. Leeren Sie die Seite bei Bedarf von Hand.',

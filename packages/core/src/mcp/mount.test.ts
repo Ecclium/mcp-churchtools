@@ -68,6 +68,14 @@ const noQueue = {
   // The mount never reads for a run of a routine (ADR 0033).
   callForRun: () =>
     Promise.resolve({ ok: false, code: 'internal', transient: false } as const),
+  // Nor does it write for one (ADR 0032).
+  writeForRun: () =>
+    Promise.resolve({
+      ok: false,
+      code: 'internal',
+      sent: false,
+      transient: false,
+    } as const),
 };
 
 // Drives the mount in process through the serving entry of the SDK, in

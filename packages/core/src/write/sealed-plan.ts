@@ -81,6 +81,26 @@ export interface PlanInput {
    * the echo allows none.
    */
   readonly snapshots: boolean;
+  /**
+   * For a write of a run of a routine, the run it comes from (ADR 0032):
+   * routine and period name its line of the marking, and the contact
+   * values its text may hold besides those of the policy. Only such a plan
+   * may get the proof of the policy.
+   */
+  readonly run?: PlanRun;
+}
+
+/** The run a plan of a write of a routine comes from. */
+export interface PlanRun {
+  /** The ID of the routine. */
+  readonly routine: string;
+  /** The period of the run, such as `2026-W46`. */
+  readonly period: string;
+  /**
+   * The keys of the contact values from the data of the run that the text
+   * holds, so that an approval checks the text as the run did (ADR 0030).
+   */
+  readonly contacts: readonly string[];
 }
 
 /** A sealed plan as the place `writeGuard` reads it. */
@@ -105,6 +125,8 @@ export interface PlanView {
   readonly sealedAt: number;
   /** The UTC day of the marking, for a new page or a section. */
   readonly day?: IsoDate;
+  /** For a write of a run of a routine, the run, frozen. */
+  readonly run?: PlanRun;
   /** The hash of the plan, computed when it was sealed. */
   readonly planHash: string;
   /** Whether the plan may be confirmed by echo, derived, never given. */
@@ -198,6 +220,15 @@ export function sealPlan(input: PlanInput): PlannedWrite {
     contentHash: input.contentHash,
     sealedAt: input.sealedAt,
     ...(input.day === undefined ? {} : { day: input.day }),
+    ...(input.run === undefined
+      ? {}
+      : {
+          run: Object.freeze({
+            routine: input.run.routine,
+            period: input.run.period,
+            contacts: Object.freeze([...input.run.contacts]),
+          }),
+        }),
     planHash,
     echo: echoAllowed(rules, input.origin),
   });

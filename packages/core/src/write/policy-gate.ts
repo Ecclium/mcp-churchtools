@@ -23,12 +23,14 @@
  *   for every reason the policy sends a write to the queue for, so no
  *   name is read and no limit stops the write, but a write to a target of
  *   an entry still counts against its limit of the day (ADR 0029). The
- *   wish is judged in its own mode, which is interactive: only a call in
- *   that mode reaches the queue in this version.
+ *   wish is judged in its own mode: a write a run queued against the
+ *   entries of its routine in the unattended part, any other in the
+ *   interactive mode.
  *
- * Each reason for the queue has one log line. Outside the interactive
- * mode, every write is refused until the runner uses the unattended part
- * of the policy.
+ * A write of a run of a routine is judged in the mode `unattended` against
+ * the entries of its routine only, with the counter of the writes of the
+ * run besides the one of the day (ADR 0032). Each reason for the queue has
+ * one log line. Any other write outside the interactive mode is refused.
  *
  * @packageDocumentation
  */
@@ -49,6 +51,7 @@ import {
 import type { Policy } from '../policy/schema.js';
 import { isoDateOf, quotaTimeoutMs } from '../quota/budget.js';
 import type { IntentRules } from './rules.js';
+import { addRunWrite, runWriteCount, type RunWrites } from './run-writes.js';
 
 /**
  * The sentences the model reads when the policy stops a write. None of
@@ -62,7 +65,7 @@ export const policySentences = Object.freeze({
   nameChanged:
     'The target in ChurchTools does not have the name the policy of this server expects, so nothing was written. Ask the operator.',
   limitReached:
-    'The limit of writes of this tool to this target for today is reached. It resets at 00:00 UTC.',
+    'The limit of writes of this tool to this target is reached, for today or for this run of a routine. The limit of a day resets at 00:00 UTC.',
   countUnavailable:
     'The server cannot count this write against the limit of its policy now, so nothing was written. Ask the operator to check the folder of state.',
 } as const);
@@ -142,7 +145,18 @@ export interface PolicyGate {
     rules: IntentRules,
     facts: WriteFacts,
     phase: 'plan' | 'commit' | 'approve',
+    run?: GateRun,
   ): Promise<PolicyQueueReason | undefined>;
+}
+
+/**
+ * The run of a routine a write comes from: its routine, whose entries of
+ * the unattended part decide, and the counter of its writes, which an
+ * approval of an entry of the queue does not have.
+ */
+export interface GateRun {
+  readonly routine: string;
+  readonly runWrites?: RunWrites;
 }
 
 /**
@@ -219,13 +233,22 @@ export function createPolicyGate(options: PolicyGateOptions): PolicyGate {
     rules: IntentRules,
     facts: WriteFacts,
     phase: 'plan' | 'commit' | 'approve',
+    run?: GateRun,
   ): Promise<PolicyQueueReason | undefined> => {
     const match = matchPolicy(policy, {
-      // An approval judges the wish, not the command of the operator.
-      mode: phase === 'approve' ? 'interactive' : ctx.mode,
+      // An approval judges the wish, not the command of the operator: a
+      // write a run queued against the entries of its routine, any other
+      // in the interactive mode, the only one that queues besides a run.
+      mode:
+        phase === 'approve'
+          ? run === undefined
+            ? 'interactive'
+            : 'unattended'
+          : ctx.mode,
       tool,
       target: rules.target,
       alwaysQueue: rules.alwaysQueue,
+      ...(run === undefined ? {} : { routine: run.routine }),
     });
     if (match.kind === 'allow') return undefined;
     if (match.kind === 'deny') {
@@ -255,14 +278,36 @@ export function createPolicyGate(options: PolicyGateOptions): PolicyGate {
     const names = await Promise.all(
       match.names.map((expected) => nameOf(ctx, expected, facts)),
     );
-    // The names first, with a count that cannot reach a limit, so that a
-    // write to a renamed target costs no place of the day.
-    let verdict = judgeMatch(match, { names, count: 0, counted: true });
+    // The names first, with counts that cannot reach a limit, so that a
+    // write to a renamed target costs no place of the day or of the run.
+    let verdict = judgeMatch(match, {
+      names,
+      count: 0,
+      counted: true,
+      runCount: 0,
+    });
+    // Then the writes of the run, which only the counter in memory of the
+    // run holds, before the counter of the day, so that a write beyond the
+    // limit of its run costs no place of the day (ADR 0032).
+    let runCount: number | undefined;
+    if (verdict.kind === 'allow' && match.maxPerRun !== undefined) {
+      runCount =
+        phase === 'commit'
+          ? addRunWrite(run?.runWrites, match.counter)
+          : runWriteCount(run?.runWrites, match.counter);
+      verdict = judgeMatch(match, {
+        names,
+        count: 0,
+        counted: phase === 'commit',
+        ...(runCount === undefined ? {} : { runCount }),
+      });
+    }
     if (verdict.kind === 'allow') {
       verdict = judgeMatch(match, {
         names,
         count: await countOf(ctx, match.counter, phase),
         counted: phase === 'commit',
+        ...(runCount === undefined ? {} : { runCount }),
       });
     }
     if (verdict.kind === 'allow') return undefined;
