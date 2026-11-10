@@ -73,5 +73,12 @@ export { createMemoryPlanStore } from './write/plan-store.js';
 // once per run and hands on, like the stores (ADR 0032).
 export { createRunWrites, type RunWrites } from './write/run-writes.js';
 // The halt of writes of a process, which the composition root makes once
-// and hands to every pipeline of the runner (ADR 0029).
-export { createWriteHalt, type WriteHalt } from './write/write-halt.js';
+// and hands to every pipeline of the runner (ADR 0029). The runner reads it
+// before a run that would write, so that a halted process neither reads
+// for nor asks a model about a write it would refuse (ADR 0033). Reading
+// it lifts nothing.
+export {
+  createWriteHalt,
+  type WriteHalt,
+  writesHalted,
+} from './write/write-halt.js';
