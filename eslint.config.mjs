@@ -44,18 +44,33 @@ export default defineConfig(
     settings: { jsdoc: { mode: 'typescript' } },
     rules: {
       // publicOnly also finds exports through `export { name }` lists.
+      //
+      // Functions are listed as selectors, not as `require` switches, so
+      // that a function that is the value of a property in an object literal
+      // stays exempt. Since eslint-plugin-jsdoc 65.3.5 publicOnly counts such
+      // a function as exported when the object is, and would then ask for a
+      // separate comment on every method of an exported object, such as
+      // `run` of a probe or `register` of a plugin. The comment on the object
+      // documents it, and its type documents the methods. Methods of
+      // exported classes still need their own comment through
+      // MethodDefinition.
       'jsdoc/require-jsdoc': [
         'error',
         {
           publicOnly: true,
           require: {
-            ArrowFunctionExpression: true,
+            ArrowFunctionExpression: false,
             ClassDeclaration: true,
             FunctionDeclaration: true,
-            FunctionExpression: true,
+            FunctionExpression: false,
             MethodDefinition: true,
           },
-          contexts: ['TSInterfaceDeclaration', 'TSTypeAliasDeclaration'],
+          contexts: [
+            'TSInterfaceDeclaration',
+            'TSTypeAliasDeclaration',
+            'ArrowFunctionExpression:not(Property > ArrowFunctionExpression)',
+            'FunctionExpression:not(Property > FunctionExpression):not(MethodDefinition > FunctionExpression)',
+          ],
         },
       ],
       'jsdoc/require-description': 'error',
