@@ -69,3 +69,6 @@ export {
 export { createDefaultTenantLogger } from './tenant/default-logger.js';
 export { createMemoryNonceStore } from './write/nonce-store.js';
 export { createMemoryPlanStore } from './write/plan-store.js';
+// The counter of the writes of a run, which the composition root makes
+// once per run and hands on, like the stores (ADR 0032).
+export { createRunWrites, type RunWrites } from './write/run-writes.js';

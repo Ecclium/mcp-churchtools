@@ -13,8 +13,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   checkKillSwitches,
+  checkRunKillSwitches,
   globalKillSwitch,
   type KillSwitchFileSystem,
+  routineKillSwitchOf,
   tenantKillSwitchOf,
 } from './kill-switch.js';
 import { maxClockSkewMs, serverTimeFits } from './server-clock.js';
@@ -134,6 +136,107 @@ describe('the kill switches', () => {
     };
     expect(checkKillSwitches(dir, tenant, throwsProxy)).toBe('unknown');
     expect(read).toBe(false);
+  });
+
+  // The third kind stops the runs of one routine (ADR 0029).
+  const routine = 'dienstplan-report';
+
+  it('stop the runs of one routine only with writes-off-routine-<routine>', () => {
+    expect(routineKillSwitchOf(routine)).toBe(
+      'writes-off-routine-dienstplan-report',
+    );
+    expect(checkRunKillSwitches(dir, tenant, routine)).toBe('on');
+    writeFileSync(join(dir, routineKillSwitchOf(routine)), '');
+    expect(checkRunKillSwitches(dir, tenant, routine)).toBe('off');
+    expect(checkRunKillSwitches(dir, tenant, 'wiki-hygiene')).toBe('on');
+    // A write outside a run has no routine, so the file does not stop it.
+    expect(checkKillSwitches(dir, tenant)).toBe('on');
+  });
+
+  it('stop a run with the switch of every write and with the one of its tenant', () => {
+    writeFileSync(join(dir, tenantKillSwitchOf(tenant)), '');
+    expect(checkRunKillSwitches(dir, tenant, routine)).toBe('off');
+    expect(checkRunKillSwitches(dir, 'other-tenant', routine)).toBe('on');
+    rmSync(join(dir, tenantKillSwitchOf(tenant)));
+    writeFileSync(join(dir, globalKillSwitch), '');
+    expect(checkRunKillSwitches(dir, tenant, routine)).toBe('off');
+    expect(checkRunKillSwitches(dir, 'other-tenant', 'wiki-hygiene')).toBe(
+      'off',
+    );
+  });
+
+  it('stop both a tenant routine-<id> and the routine <id> with one file, and open neither', () => {
+    writeFileSync(join(dir, routineKillSwitchOf('wiki')), '');
+    expect(tenantKillSwitchOf('routine-wiki')).toBe(
+      routineKillSwitchOf('wiki'),
+    );
+    expect(checkKillSwitches(dir, 'routine-wiki')).toBe('off');
+    expect(checkRunKillSwitches(dir, tenant, 'wiki')).toBe('off');
+    expect(checkRunKillSwitches(dir, 'routine-wiki', routine)).toBe('off');
+  });
+
+  it('count a switch of a routine that is a folder or a link that points nowhere', () => {
+    mkdirSync(join(dir, routineKillSwitchOf(routine)));
+    expect(checkRunKillSwitches(dir, tenant, routine)).toBe('off');
+    rmSync(join(dir, routineKillSwitchOf(routine)), { recursive: true });
+    symlinkSync(join(dir, 'nowhere'), join(dir, routineKillSwitchOf(routine)));
+    expect(checkRunKillSwitches(dir, tenant, routine)).toBe('off');
+  });
+
+  it.each([
+    [
+      'a folder that is no clean absolute path',
+      'relative/stop',
+      tenant,
+      routine,
+    ],
+    ['a tenant that cannot name a file', undefined, '../demo', routine],
+    ['a routine that cannot name a file', undefined, tenant, '../demo'],
+    ['a routine in capitals', undefined, tenant, 'Dienstplan'],
+    ['an empty routine', undefined, tenant, ''],
+    ['a routine with a slash', undefined, tenant, 'a/b'],
+  ])('stop a run for %s', (_name, folder, tenantId, routineId) => {
+    expect(checkRunKillSwitches(folder ?? dir, tenantId, routineId)).toBe(
+      'unknown',
+    );
+  });
+
+  it('stop a run when the folder is missing or cannot be searched', () => {
+    expect(checkRunKillSwitches(join(dir, 'missing'), tenant, routine)).toBe(
+      'unknown',
+    );
+    chmodSync(dir, 0o000);
+    expect(checkRunKillSwitches(dir, tenant, routine)).toBe('unknown');
+  });
+
+  it('look for the three files of a run, and stop it when one cannot be read', () => {
+    const looked: string[] = [];
+    const fsOf = (failing?: string): KillSwitchFileSystem => ({
+      lstatSync: (path: string) => {
+        if (path === dir)
+          return { isDirectory: () => true, isSymbolicLink: () => false };
+        looked.push(path);
+        const error = new Error('with a path');
+        Object.defineProperty(error, 'code', {
+          value: path === failing ? 'EACCES' : 'ENOENT',
+        });
+        throw error;
+      },
+    });
+    expect(checkRunKillSwitches(dir, tenant, routine, fsOf())).toBe('on');
+    expect(looked).toEqual([
+      join(dir, globalKillSwitch),
+      join(dir, tenantKillSwitchOf(tenant)),
+      join(dir, routineKillSwitchOf(routine)),
+    ]);
+    expect(
+      checkRunKillSwitches(
+        dir,
+        tenant,
+        routine,
+        fsOf(join(dir, routineKillSwitchOf(routine))),
+      ),
+    ).toBe('unknown');
   });
 });
 

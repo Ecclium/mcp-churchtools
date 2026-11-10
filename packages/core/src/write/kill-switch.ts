@@ -4,8 +4,9 @@
  *
  * Where it stands in the way of a write: the core looks here before it
  * plans and again right before it commits. `writes-off` in the folder
- * stops every write, `writes-off-<tenant>` those of one tenant; from
- * phase 6 a third kind stops one routine. Only that the file is there
+ * stops every write, `writes-off-<tenant>` those of one tenant, and
+ * `writes-off-routine-<routine>` those of the runs of one routine and the
+ * approvals of what they queued. Only that the file is there
  * counts, never what it holds, and the core follows no link to find it. A
  * folder that cannot be checked stops writing as well: a switch the core
  * cannot see must not count as off.
@@ -98,6 +99,70 @@ export function checkKillSwitches(
   if (!isNormalizedAbsolutePath(dir) || !isTenantId(tenantId)) {
     return 'unknown';
   }
+  return lookFor(dir, [globalKillSwitch, tenantKillSwitchOf(tenantId)], fs);
+}
+
+/**
+ * The file that stops the writes of the runs of one routine (ADR 0029).
+ * A tenant whose ID starts with `routine-` has a file of the same name as
+ * a routine; both stop then, neither opens.
+ *
+ * @param routineId - The ID of the routine, as the policy names it.
+ * @returns The name of the file.
+ * @example
+ * ```ts
+ * routineKillSwitchOf('dienstplan-report'); // 'writes-off-routine-dienstplan-report'
+ * ```
+ */
+export function routineKillSwitchOf(routineId: string): string {
+  return `${globalKillSwitch}-routine-${routineId}`;
+}
+
+/**
+ * Checks the kill switches for a write of a run of a routine: the one of
+ * every write, the one of the tenant and the one of the routine.
+ *
+ * @param dir - The folder of the switches, an absolute path.
+ * @param tenantId - The tenant of the write.
+ * @param routineId - The routine of the run.
+ * @param fs - The file system; the real one unless a test replaces it.
+ * @returns As {@link checkKillSwitches}, and `unknown` as well for a
+ *   routine whose ID cannot name a file.
+ * @example
+ * ```ts
+ * if (checkRunKillSwitches(dir, ctx.tenantId, routine) !== 'on') return refused();
+ * ```
+ */
+export function checkRunKillSwitches(
+  dir: string,
+  tenantId: string,
+  routineId: string,
+  fs: KillSwitchFileSystem = system,
+): KillSwitchState {
+  if (
+    !isNormalizedAbsolutePath(dir) ||
+    !isTenantId(tenantId) ||
+    !isTenantId(routineId)
+  ) {
+    return 'unknown';
+  }
+  return lookFor(
+    dir,
+    [
+      globalKillSwitch,
+      tenantKillSwitchOf(tenantId),
+      routineKillSwitchOf(routineId),
+    ],
+    fs,
+  );
+}
+
+// Whether one of the files is in the folder, which must be a real folder.
+const lookFor = (
+  dir: string,
+  names: readonly string[],
+  fs: KillSwitchFileSystem,
+): KillSwitchState => {
   try {
     // The folder itself, without following a link: a link could point
     // the core at a folder the operator never looks into.
@@ -107,10 +172,10 @@ export function checkKillSwitches(
     return 'unknown';
   }
   let state: KillSwitchState = 'on';
-  for (const name of [globalKillSwitch, tenantKillSwitchOf(tenantId)]) {
+  for (const name of names) {
     const found = present(fs, join(dir, name));
     if (found === undefined) return 'unknown';
     if (found) state = 'off';
   }
   return state;
-}
+};
