@@ -636,6 +636,13 @@ export interface WriteGuard {
    * line could not be recorded in the audit file (ADR 0029).
    */
   block(): void;
+  /**
+   * Whether writes are halted, by this guard or by another pipeline of the
+   * process that shares the halt (ADR 0029).
+   *
+   * @returns Whether every plan and commit is refused until a restart.
+   */
+  halted(): boolean;
 }
 
 const refuse = (
@@ -2314,6 +2321,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     block: (): void => {
       haltWrites(halt);
     },
+    halted: (): boolean => writesHalted(halt),
   });
 }
 
