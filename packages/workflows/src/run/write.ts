@@ -73,6 +73,12 @@ export interface RunWritePorts {
   readonly log: Logger;
   /** The clock of the core. */
   readonly clock: Clock;
+  /**
+   * Whether a second write after a conflict may begin; by default it may.
+   * The runner says no after the deadline of a run or its stop, while the
+   * write that began is never aborted.
+   */
+  readonly mayRetry?: () => boolean;
 }
 
 /** A section a run rendered. */
@@ -187,7 +193,8 @@ export async function writeRun(
     outcome.code === 'conflict' &&
     outcome.page === undefined &&
     !outcome.sent &&
-    !signal.aborted
+    !signal.aborted &&
+    (ports.mayRetry?.() ?? true)
   ) {
     log.info('run_write_retried', { code: 'conflict' });
     attempts = 2;
