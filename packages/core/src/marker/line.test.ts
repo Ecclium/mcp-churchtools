@@ -9,11 +9,13 @@ import {
 } from '../content/index.js';
 import type { MarkingOrigin } from './code.js';
 import {
+  draftMarkingLineOf,
   type Marking,
   markingLineOf,
   markingTextsOf,
   readMarkingLine,
 } from './line.js';
+import { findMarkings } from './sections.js';
 
 const dayOf = (value: string): IsoDate => {
   if (!isIsoDate(value)) throw new TypeError('No day.');
@@ -103,6 +105,69 @@ describe('markingLineOf', () => {
       text: `${line}\n`,
     });
     expect(canonicalMarkdown(line)).toBe(`${line}\n`);
+  });
+});
+
+describe('draftMarkingLineOf', () => {
+  const draft = {
+    date: dayOf('2026-11-10'),
+    routine: 'termin-vorschau',
+    run: '2026-W46',
+  };
+
+  // The wording the project owner decided on 10.11.2026.
+  it('writes the line of a marking without the check code', () => {
+    expect(draftMarkingLineOf(draft, 'Sekretariat')).toBe(
+      'Automatisch erstellt am 10.11.2026 durch Ecclium, Routine termin-vorschau, Lauf 2026-W46. Rückfragen an Sekretariat.',
+    );
+  });
+
+  it('writes the day as day, month and year', () => {
+    expect(
+      draftMarkingLineOf({ ...draft, date: dayOf('2027-01-02') }, 'Pfarramt'),
+    ).toContain('am 02.01.2027 durch');
+  });
+
+  it('escapes the text of the operator like markingLineOf', () => {
+    expect(draftMarkingLineOf(draft, ' Team *Wiki* & Co ')).toBe(
+      'Automatisch erstellt am 10.11.2026 durch Ecclium, Routine termin-vorschau, Lauf 2026-W46. Rückfragen an Team \\*Wiki\\* \\& Co.',
+    );
+  });
+
+  it('adds no second full stop after a sentence the operator ends', () => {
+    for (const end of ['.', '!', '?']) {
+      expect(
+        draftMarkingLineOf(draft, `Sekretariat${end}`).endsWith(
+          `Rückfragen an Sekretariat${end}`,
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it('refuses a draft of another form and an empty or broken text of the operator', () => {
+    const bad: readonly [typeof draft, string][] = [
+      [{ ...draft, date: '2026-02-30' as IsoDate }, 'Sekretariat'],
+      [{ ...draft, routine: 'Termin' }, 'Sekretariat'],
+      [{ ...draft, routine: '' }, 'Sekretariat'],
+      [{ ...draft, run: 'a b' }, 'Sekretariat'],
+      [{ ...draft, run: '' }, 'Sekretariat'],
+      [draft, ''],
+      [draft, '   '],
+      [draft, 'Sekretariat\noder Pfarramt'],
+      [draft, `Sekretariat${String.fromCodePoint(0x2028)}Pfarramt`],
+    ];
+    for (const [value, inquiriesTo] of bad) {
+      expect(() => draftMarkingLineOf(value, inquiriesTo)).toThrow(TypeError);
+    }
+  });
+
+  // A draft goes to a file, so Ecclium never takes it for a section of its
+  // own on a page (ADR 0032, ADR 0033).
+  it('is never read as a marking and never found as a section', () => {
+    const line = draftMarkingLineOf(draft, 'Sekretariat');
+    expect(readMarkingLine(line)).toBeUndefined();
+    expect(findMarkings(`## Vorschau\n\nText.\n\n${line}\n`)).toEqual([]);
+    expect(findMarkings(`## Vorschau\n\nText.\n\n${line}`)).toEqual([]);
   });
 });
 

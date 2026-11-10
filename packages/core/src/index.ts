@@ -76,6 +76,9 @@ export {
 // The form of a pseudonym, which the schema of the answer of the model of a
 // run states for a field of the kind person (ADR 0033, ADR 0069).
 export { freeTextMarkers, pseudonymPattern } from './redaction/index.js';
+// The line of a draft of a routine that goes to a file, without a check code
+// (ADR 0032, ADR 0033).
+export { draftMarkingLineOf } from './marker/index.js';
 export { type PrivateFileCode, privateFileCodes } from './files/index.js';
 export {
   defaultPolicy,
