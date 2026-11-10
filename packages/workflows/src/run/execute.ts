@@ -99,6 +99,8 @@ export type RunResult =
       readonly usage?: TokenUsage;
       /** How many reads the run made. */
       readonly calls: number;
+      /** Present for a routine prepared only for a preview, which never writes. */
+      readonly preview?: true;
     }
   | {
       readonly kind: 'failed';
@@ -241,5 +243,6 @@ export async function executeRun(
     attempts: answer.attempts,
     ...(answer.usage === undefined ? {} : { usage: answer.usage }),
     calls: read.calls,
+    ...(run.preview === true ? { preview: true } : {}),
   });
 }

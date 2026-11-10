@@ -51,6 +51,13 @@ export interface RunPrepareContext {
   readonly policy: Policy;
   /** The aliases of the models the configuration offers. */
   readonly models: ReadonlySet<string>;
+  /**
+   * Whether the run is a preview, which writes nothing: then a target in
+   * the wiki needs no entry of the policy yet, so that the operator sees
+   * the section before writing the entry (ADR 0033). Every other check
+   * holds.
+   */
+  readonly preview?: boolean;
 }
 
 /** An input with the facts of its tool. */
@@ -77,6 +84,11 @@ export interface PreparedRun {
    * for the account of the runner, when the policy has no entry.
    */
   readonly credential?: string;
+  /**
+   * Present for a routine prepared only for a preview: it may lack the
+   * entry of its target, and nothing may write its section.
+   */
+  readonly preview?: true;
 }
 
 /** The prepared routine, or why it does not start. */
@@ -245,13 +257,15 @@ export function prepareRun(
   const { credential } = settled;
 
   // A target in ChurchTools without an entry of the policy keeps the
-  // routine from starting; a draft to a file needs none (ADR 0033).
+  // routine from starting; a draft to a file needs none (ADR 0033). A
+  // preview writes nothing, so it runs before the entry is there.
   const { output } = routine;
+  const preview = context.preview === true;
   const target =
     output.target === 'wiki'
       ? entries.find((entry) => allows(entry, output.tool, output.scope))
       : undefined;
-  if (output.target === 'wiki' && target === undefined) {
+  if (output.target === 'wiki' && target === undefined && !preview) {
     return refuse('run_target_unlisted', 'output.scope');
   }
 
@@ -271,6 +285,7 @@ export function prepareRun(
       entries: Object.freeze(entries),
       ...(target === undefined ? {} : { target }),
       ...(credential === undefined ? {} : { credential }),
+      ...(preview ? { preview: true } : {}),
     }),
   });
 }

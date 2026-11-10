@@ -147,7 +147,8 @@ const pageOf = (
  *   ChurchTools, the policy or the checks of the core.
  * @throws {TypeError} When the run has no output in the wiki or no entry
  *   of the policy for it, which only a caller that skips the preparation
- *   can make: a draft goes another way.
+ *   can make, or comes from a routine prepared for a preview: a draft goes
+ *   another way, and a preview writes nothing.
  * @example
  * ```ts
  * const rendered = await executeRun(prepared, trigger, ports, signal);
@@ -164,6 +165,9 @@ export async function writeRun(
   const { output, target } = run;
   if (output.target !== 'wiki' || target === undefined) {
     throw new TypeError('Only a run with a target in the wiki writes here.');
+  }
+  if (run.preview === true) {
+    throw new TypeError('A preview writes nothing.');
   }
   const { log, clock } = ports;
   const call: RunWriteCall = Object.freeze({

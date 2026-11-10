@@ -260,6 +260,10 @@ describe('the write of a run', () => {
         signal,
       ),
     ).rejects.toThrow(TypeError);
+    // A routine prepared for a preview writes nothing, even with an entry.
+    await expect(
+      writeRun({ ...rendered(), preview: true }, ports, signal),
+    ).rejects.toThrow(TypeError);
     expect(calls).toEqual([]);
   });
 });
