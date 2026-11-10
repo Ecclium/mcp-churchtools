@@ -15,15 +15,24 @@
  * Which account: the alias comes from the entries of the routine in the
  * policy of the configuration, never from the caller. A routine whose
  * entries name an alias reads and writes with the file `ct_token_<alias>`
- * of `ECCLIUM_RUNNER_TOKENS_DIR`, and never with another token. Without
- * the variable, without the file or with a file the checks refuse, the run
- * does not start. A routine without an entry, which writes no page, reads
- * with the token of `ECCLIUM_CHURCHTOOLS_TOKEN_FILE`.
+ * of `ECCLIUM_RUNNER_TOKENS_DIR`, and never with another token. A routine
+ * without an entry, which writes no page, reads with the own account of
+ * the runner, the file `ct_token_runner` in the same folder (ADR 0023,
+ * ADR 0033), read anew for each run like any other. Only the runner builds
+ * such a run; any other caller must require an account, so that nothing
+ * but the runner reads in the name of a routine without an entry. Without
+ * the variable, with a folder or a file the checks refuse, the run does
+ * not start, and the token of the configuration is never taken: the
+ * folder is checked again for each run, since its rights can change while
+ * a daemon runs.
  *
  * @packageDocumentation
  */
 import {
+  checkRunnerTokensDir,
   readRunnerToken,
+  runnerOwnAlias,
+  type RunnerTokensDirCode,
   type TokenFileCode,
   type ToolPipeline,
 } from '@ecclium/mcp-churchtools-core';
@@ -50,12 +59,15 @@ export interface RunPipelineOptions extends ComposeOptions {
   readonly requireAccount?: boolean;
   /** Only for tests: reads the token file of an alias. */
   readonly readToken?: typeof readRunnerToken;
+  /** Only for tests: checks the folder of the token files. */
+  readonly checkTokensDir?: typeof checkRunnerTokensDir;
 }
 
 /** Why the pipeline of a run was not built. */
 export type RunPipelineCode =
   | TokenFileCode
-  | 'runner_tokens_dir_missing'
+  | RunnerTokensDirCode
+  | 'runner_tokens_dir_unset'
   | 'run_credential_mixed'
   | 'run_credential_missing';
 
@@ -71,11 +83,12 @@ export type RunPipelineResult =
   | {
       readonly ok: false;
       /**
-       * `runner_tokens_dir_missing` for an alias while
-       * `ECCLIUM_RUNNER_TOKENS_DIR` is not set, `run_credential_mixed` for
-       * a routine whose entries name two aliases, `run_credential_missing`
-       * for a routine without an entry when an account is required, else
-       * the code of the token file, such as `token_file_missing`.
+       * `runner_tokens_dir_unset` while `ECCLIUM_RUNNER_TOKENS_DIR` is not
+       * set, `run_credential_mixed` for a routine whose entries name two
+       * aliases, `run_credential_missing` for a routine without an entry
+       * when an account is required, the code of the check of the folder,
+       * such as `runner_tokens_dir_mode`, or the code of the token file,
+       * such as `token_file_missing`.
        */
       readonly code: RunPipelineCode;
     };
@@ -88,7 +101,8 @@ export type RunPipelineResult =
  * @returns The pipeline with a function that closes its transport, or why
  *   no token was read. Nothing is open when it was not built.
  * @throws {TypeError} When a factory of core refuses its options, as
- *   `composeToolPipeline` does.
+ *   `composeToolPipeline` does, or when a caller other than the runner
+ *   asks for a routine without an entry and requires no account.
  * @example
  * ```ts
  * const built = composeRunPipeline({ config, catalog, writer, clock, auditFile, routineId, writeHalt });
@@ -106,26 +120,36 @@ export function composeRunPipeline(
   if (!settled.ok) {
     return Object.freeze({ ok: false, code: 'run_credential_mixed' });
   }
-  const { credential } = settled;
-  if (credential === undefined && options.requireAccount === true) {
-    return Object.freeze({ ok: false, code: 'run_credential_missing' });
-  }
-  let token = config.churchtoolsToken;
-  if (credential !== undefined) {
-    // An alias reads and writes with its own account or not at all: the
-    // token of the server would give a run more than its routines need.
-    if (config.runnerTokensDir === undefined) {
-      return Object.freeze({ ok: false, code: 'runner_tokens_dir_missing' });
+  let { credential } = settled;
+  if (credential === undefined) {
+    if (options.requireAccount === true) {
+      return Object.freeze({ ok: false, code: 'run_credential_missing' });
     }
-    const read = (options.readToken ?? readRunnerToken)(
-      config.runnerTokensDir,
-      credential,
-    );
-    if (!read.ok) return Object.freeze({ ok: false, code: read.code });
-    token = read.value;
+    // A routine without an entry reads with the own account of the runner,
+    // and only the runner may build such a run (ADR 0023).
+    if (config.transport !== 'runner') {
+      throw new TypeError(
+        'Only the runner reads for a routine without an account.',
+      );
+    }
+    credential = runnerOwnAlias;
   }
+  // Every run reads with the account of its alias or not at all: the token
+  // of the configuration would give a run more than its routines need.
+  if (config.runnerTokensDir === undefined) {
+    return Object.freeze({ ok: false, code: 'runner_tokens_dir_unset' });
+  }
+  const folder = (options.checkTokensDir ?? checkRunnerTokensDir)(
+    config.runnerTokensDir,
+  );
+  if (!folder.ok) return Object.freeze({ ok: false, code: folder.code });
+  const read = (options.readToken ?? readRunnerToken)(
+    config.runnerTokensDir,
+    credential,
+  );
+  if (!read.ok) return Object.freeze({ ok: false, code: read.code });
   const { pipeline, transport } = composeToolPipeline({
-    config: Object.freeze({ ...config, churchtoolsToken: token }),
+    config: Object.freeze({ ...config, churchtoolsToken: read.value }),
     catalog: options.catalog,
     writer: options.writer,
     clock: options.clock,

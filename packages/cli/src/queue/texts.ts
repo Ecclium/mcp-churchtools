@@ -57,7 +57,25 @@ export const queueProblems: Readonly<Record<QueueProblem, QueueEnding>> =
 // Why the account of a run is not there, in the words of the token file.
 const runAccountCauses: Readonly<Record<RunPipelineCode, string>> =
   Object.freeze({
-    runner_tokens_dir_missing: '‹ECCLIUM_RUNNER_TOKENS_DIR› ist nicht gesetzt.',
+    runner_tokens_dir_unset: '‹ECCLIUM_RUNNER_TOKENS_DIR› ist nicht gesetzt.',
+    runner_tokens_dir_invalid:
+      'Der Pfad in ‹ECCLIUM_RUNNER_TOKENS_DIR› ist kein absoluter Pfad in eindeutiger Form.',
+    runner_tokens_dir_platform:
+      'Den Ordner der Token kann Ecclium auf diesem System nicht sicher prüfen.',
+    runner_tokens_dir_too_long:
+      'Der Pfad in ‹ECCLIUM_RUNNER_TOKENS_DIR› ist zu lang.',
+    runner_tokens_dir_missing:
+      'Den Ordner in ‹ECCLIUM_RUNNER_TOKENS_DIR› gibt es nicht mehr.',
+    runner_tokens_dir_symlink:
+      'Der Ordner in ‹ECCLIUM_RUNNER_TOKENS_DIR› ist ein symbolischer Link.',
+    runner_tokens_dir_not_directory:
+      'Der Pfad in ‹ECCLIUM_RUNNER_TOKENS_DIR› zeigt nicht auf einen Ordner.',
+    runner_tokens_dir_owner:
+      'Der Ordner in ‹ECCLIUM_RUNNER_TOKENS_DIR› gehört einem anderen Benutzer.',
+    runner_tokens_dir_mode:
+      'Im Ordner in ‹ECCLIUM_RUNNER_TOKENS_DIR› darf auch die Gruppe oder ein anderer Benutzer schreiben.',
+    runner_tokens_dir_unsafe:
+      'Den Ordner in ‹ECCLIUM_RUNNER_TOKENS_DIR› kann Ecclium nicht sicher prüfen.',
     run_credential_mixed:
       'Die Einträge der Routine in der Richtlinie nennen zwei verschiedene Konten.',
     run_credential_missing:
@@ -102,7 +120,9 @@ export const runAccountEnding = (code: RunPipelineCode): QueueEnding =>
     `Der Eintrag stammt aus einem Lauf einer Routine, und eine Freigabe schreibt ihn mit dem Konto, das die Richtlinie für die Routine nennt, wie der Lauf selbst. ${runAccountCauses[code]} Mit dem Token des Servers schreibt Ecclium den Abschnitt nicht. ${
       code === 'run_credential_missing' || code === 'run_credential_mixed'
         ? 'Nennen Sie für die Routine in der Richtlinie genau ein Konto und geben Sie dann frei, oder weisen Sie den Eintrag mit ‹ecclium queue reject› ab.'
-        : 'Legen Sie die Token-Datei ‹ct_token_<Alias>› im Ordner aus ‹ECCLIUM_RUNNER_TOKENS_DIR› so an, wie der Runner sie braucht, mit den Rechten 600, und geben Sie dann frei.'
+        : code.startsWith('runner_tokens_dir_')
+          ? 'Richten Sie den Ordner aus ‹ECCLIUM_RUNNER_TOKENS_DIR› so ein, wie der Runner ihn braucht: ein Ordner Ihres Benutzers, kein Link, ohne Schreibrecht für die Gruppe und andere, und geben Sie dann frei.'
+          : 'Legen Sie die Token-Datei ‹ct_token_<Alias>› im Ordner aus ‹ECCLIUM_RUNNER_TOKENS_DIR› so an, wie der Runner sie braucht, mit den Rechten 600, und geben Sie dann frei.'
     }`,
     exitCodes.invalidConfig,
   );

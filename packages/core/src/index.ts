@@ -6,6 +6,7 @@
  * @packageDocumentation
  */
 export {
+  checkRunnerTokensDir,
   type ConfigDirectoryResult,
   type ConfigDirectoryStats,
   type ConfigDirectorySystem,
@@ -44,6 +45,7 @@ export {
   runnerTokenCodes,
   type RunnerTokensDirCode,
   runnerTokensDirCodes,
+  type RunnerTokensDirResult,
   runnerOwnAlias,
   runnerTokenPrefix,
   searchToolsVariableName,
