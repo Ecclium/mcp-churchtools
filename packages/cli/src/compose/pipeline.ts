@@ -40,6 +40,7 @@ import {
   type QueueKeeper,
   type SnapshotKeeper,
   type StderrLineWriter,
+  type WriteHalt,
 } from '@ecclium/mcp-churchtools-core/composition';
 import {
   createHttpTransport,
@@ -69,6 +70,12 @@ export interface ComposeOptions {
    */
   readonly createTransport?:
     ((options: HttpTransportOptions) => HttpTransport) | undefined;
+  /**
+   * The halt of writes of the process, which the runner hands to the
+   * pipeline of each run (ADR 0029). Without it the pipeline halts only
+   * its own writes after a failed line of the audit.
+   */
+  readonly writeHalt?: WriteHalt | undefined;
 }
 
 /**
@@ -254,6 +261,9 @@ export function composeToolPipeline(options: ComposeOptions): ComposedPipeline {
             nonces: createMemoryNonceStore(clock),
           }),
       ...(queue === undefined ? {} : { queue }),
+      ...(options.writeHalt === undefined
+        ? {}
+        : { writeHalt: options.writeHalt }),
     });
     return Object.freeze({ pipeline, transport, dayKeys, snapshots, queue });
   } catch (error) {
