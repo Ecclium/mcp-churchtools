@@ -181,11 +181,21 @@ export function readReport(
   options: ReportOptions = {},
 ): LicenceReport {
   const dir = options.dir === undefined ? [] : ['--dir', options.dir];
-  const output = runPnpm(
-    [...dir, 'licenses', 'list', '--json', '-r', scope],
-    options.env,
+  return parseReport(
+    runPnpm([...dir, 'licenses', 'list', '--json', '-r', scope], options.env),
   );
-  // Without dependencies in the scope, pnpm prints a sentence, not JSON.
+}
+
+/**
+ * Reads the output of `pnpm licenses list --json`.
+ *
+ * Without dependencies in the scope, pnpm 11.28.5 prints a sentence, not
+ * JSON, and pnpm 11.28.11 prints an empty object. Both mean an empty report.
+ *
+ * @param output - What pnpm printed.
+ * @returns The report, empty if pnpm found no dependencies.
+ */
+export function parseReport(output: string): LicenceReport {
   return output.trimStart().startsWith('{')
     ? (JSON.parse(output) as LicenceReport)
     : {};
