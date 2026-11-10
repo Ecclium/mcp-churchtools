@@ -42,16 +42,19 @@ export const maxWriteTextLength = 65_536;
 
 // The metadata of all three: what the core derives for an intent of the
 // wiki anyway (ADR 0029), here so that the registry and the description
-// name it. Not for routines yet: phase 6 decides which tool a routine of
-// the core relies on.
-const meta = (replayGuard: WriteToolMeta['replayGuard']): WriteToolMeta => ({
+// name it. Only the tool that adds a section is for routines: a run of a
+// routine writes with it alone (ADR 0033).
+const meta = (
+  replayGuard: WriteToolMeta['replayGuard'],
+  routineStable = false,
+): WriteToolMeta => ({
   capability: 'write',
   domain: 'wiki',
   requiredRights: [wikiViewRight, wikiCategoryRight, wikiEditRight],
   tier: 'free',
   sensitivity: 'personal',
   unattended: 'policy',
-  routineStable: false,
+  routineStable,
   reversible: 'snapshot',
   replayGuard,
 });
@@ -182,7 +185,10 @@ export const wikiPageUpdateTool = defineWriteTool({
  */
 export const wikiSectionAppendTool = defineWriteTool({
   name: 'ct_wiki_page_append_section',
-  meta: meta('marker'),
+  // The output of a routine of the free core writes with it, so its name
+  // and input are a public contract from phase 6 on (ADR 0033). A run never
+  // passes the input: the core finds the page and builds it (ADR 0032).
+  meta: meta('marker', true),
   description: appendDescription,
   input: z.strictObject({ categoryId, guid, section: text, baseVersion }),
   execute: ({ input, write }): Promise<PlanOutcome> =>
