@@ -18,7 +18,7 @@ const outbound = 'packages/core/src/http/';
 /** Files that may name the function, each with its reason. */
 const exceptions: ReadonlyMap<string, string> = new Map([
   [
-    'tests/architecture/dependency-rules.test.mts',
+    'tests/architecture/dependency-cases.mts',
     'example sources for the rule, written to a temporary folder',
   ],
   ['tests/architecture/reveal-secret.test.mts', 'this test'],
