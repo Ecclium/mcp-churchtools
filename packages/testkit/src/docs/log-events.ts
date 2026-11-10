@@ -208,6 +208,16 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Der gerenderte Abschnitt eines Laufs verletzte die ContentPolicy, auch wenn jedes Feld für sich sie bestand, etwa durch den Text der Vorlage. Der Lauf schreibt nichts.',
     run_rendered:
       'Ein Lauf einer Routine hat seinen Abschnitt gerendert, und er besteht die ContentPolicy. `count` nennt die Zahl der Einträge der Blöcke, `durationMs` die Dauer des Laufs bis dahin.',
+    run_written:
+      'Ein Lauf einer Routine hat seinen Abschnitt ins Wiki geschrieben, und das Lesen danach zeigt ihn wie geplant. `durationMs` nennt die Dauer des Schreibens.',
+    run_write_skipped:
+      'Die Seite trägt den Abschnitt dieser Routine und Periode schon mit demselben Text und gültigem Prüfcode. Der Lauf schreibt nichts und gilt als erledigt.',
+    run_write_queued:
+      'Der Abschnitt eines Laufs wartet in der Freigabe-Warteschlange auf den Betreiber, etwa weil eine Grenze der Richtlinie erreicht ist, das Ziel umbenannt wurde, das Konto zu weite Rechte hat oder eine Person den Abschnitt der Periode geändert hat. Geschrieben ist nichts.',
+    run_write_failed:
+      'Der Abschnitt eines Laufs ist nicht geschrieben. `code` nennt den Fehler, etwa `policy_denied` für einen Kill-Switch, `not_found` für eine Seite, die fehlt, und `conflict` für eine Seite, die es in ihrer Kategorie zweimal gibt oder die sich zweimal vor dem Schreiben geändert hat. Ob ein späterer Lauf es noch einmal versucht, hängt vom Grund ab, nicht allein vom Code: `policy_denied` nach einem Fehler im Audit und `conflict` für eine geänderte Seite sind vorübergehend, ein Kill-Switch und eine doppelte Seite endgültig.',
+    run_write_retried:
+      'Die Seite eines Laufs hat sich zwischen dem Plan und dem Lesen unmittelbar vor dem Schreiben geändert, bevor etwas gesendet war. Der Lauf liest sie neu und versucht es genau einmal noch. `code` ist `conflict`.',
     write_refused:
       'Der Write-Guard plant oder schreibt nicht: Schreiben ist gesperrt oder nicht zu prüfen, die Art des Schreibvorgangs läuft nicht, die Rechte des Kontos sind nicht zu lesen, oder die Uhr weicht mehr als fünf Minuten von ChurchTools ab. `code` nennt den Fehler.',
     write_conflict:
