@@ -31,8 +31,9 @@ export interface AuditDayToolCounts {
   /** The UTC day, such as `2026-10-31`. */
   readonly day: string;
   /**
-   * The type of the lines: `tool_call`, `undo` for the undos, or
-   * `approval` for the decisions about the queue.
+   * The type of the lines: `tool_call`, `undo` for the undos, `approval`
+   * for the decisions about the queue, or `run` for the ends of the runs
+   * of routines (ADR 0033).
    */
   readonly type: AuditType;
   /** For the decisions about the queue, which kind they are. */
@@ -58,7 +59,7 @@ export interface AuditDayToolCounts {
 export interface AuditObjectHit {
   /** The time of the line, in UTC. */
   readonly ts: string;
-  /** The type of the line: `tool_call`, `undo` or `approval`. */
+  /** The type of the line: `tool_call`, `undo`, `approval` or `run`. */
   readonly type: AuditType;
   /** For a decision about the queue, which kind it is. */
   readonly decision?: QueueDecisionKind;
@@ -178,7 +179,8 @@ interface Counts {
 const compareText = (left: string, right: string): number =>
   left < right ? -1 : left > right ? 1 : 0;
 
-// The undos of a day after its calls, as auditTypes orders them.
+// The undos, decisions and ends of runs of a day after its calls, as
+// auditTypes orders them.
 const compareType = (left: AuditType, right: AuditType): number =>
   auditTypes.indexOf(left) - auditTypes.indexOf(right);
 

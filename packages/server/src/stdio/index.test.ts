@@ -107,6 +107,8 @@ const setup = (overrides: Partial<StdioServerOptions> = {}) => {
         sent: false,
         transient: false,
       }),
+    // Nor does it end one (ADR 0033).
+    endRun: () => false,
     call: (name, value) => {
       calls.push({ name, input: value });
       return Promise.resolve(done);

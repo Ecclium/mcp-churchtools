@@ -2,6 +2,8 @@ import { describe, expect, expectTypeOf, it } from 'vitest';
 
 import {
   type AuditEventV1,
+  type AuditRunResult,
+  type AuditRunStep,
   type AuditType,
   type ContentViolationKind,
   contentViolationKinds,
@@ -69,21 +71,49 @@ describe('AuditEventV1', () => {
       | 'contentViolations'
       | 'withheldAfterRead'
       | 'rightsDriftAccepted'
+      | 'runResult'
+      | 'runStep'
+      | 'attempt'
+      | 'period'
       | 'durationMs'
       | 'seq'
       | 'prevHash'
     >();
   });
 
-  it('records a call of a tool, an undo or a decision about the queue (ADR 0031)', () => {
+  it('records a call of a tool, an undo, a decision about the queue (ADR 0031) or the end of a run (ADR 0033)', () => {
     expectTypeOf<AuditType>().toEqualTypeOf<
-      'tool_call' | 'undo' | 'approval'
+      'tool_call' | 'undo' | 'approval' | 'run'
     >();
     expectTypeOf<AuditEventV1['undoes']>().toEqualTypeOf<string | undefined>();
     expectTypeOf<AuditEventV1['queueId']>().toEqualTypeOf<string | undefined>();
     expectTypeOf<AuditEventV1['decision']>().toEqualTypeOf<
       'approved' | 'rejected' | undefined
     >();
+  });
+
+  it('ends a run with a known result, step, try and period (ADR 0033, ADR 0034)', () => {
+    expectTypeOf<AuditRunResult>().toEqualTypeOf<
+      'written' | 'unchanged' | 'queued' | 'drafted' | 'preview' | 'failed'
+    >();
+    expectTypeOf<AuditRunStep>().toEqualTypeOf<
+      'input' | 'model' | 'answer' | 'content' | 'write'
+    >();
+    expectTypeOf<AuditEventV1['runResult']>().toEqualTypeOf<
+      AuditRunResult | undefined
+    >();
+    expectTypeOf<AuditEventV1['runStep']>().toEqualTypeOf<
+      AuditRunStep | undefined
+    >();
+    expectTypeOf<AuditEventV1['attempt']>().toEqualTypeOf<number | undefined>();
+    expectTypeOf<AuditEventV1['period']>().toEqualTypeOf<string | undefined>();
+    // A result outside the list is refused by the type, so that the runner
+    // cannot invent a way a run ended.
+    const event = (runResult: string): Partial<AuditEventV1> => ({
+      // @ts-expect-error: only the known results are allowed
+      runResult,
+    });
+    expect(event).toBeTypeOf('function');
   });
 
   it('accepts only a known error code and version 1', () => {

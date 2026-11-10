@@ -1138,6 +1138,525 @@ describe('a decision about an entry of the queue (ADR 0031)', () => {
   });
 });
 
+describe('the end of a run (ADR 0033)', () => {
+  const runId = '0b0e9a3c-3f7e-4c62-9a55-6a1f0d2c7e11';
+  const runEnd: AuditDraft = {
+    type: 'run',
+    tenantId: 'default',
+    actor: { kind: 'runner', id: 'runner:weekly-report' },
+    mode: 'unattended',
+    runId,
+    routineId: 'weekly-report',
+    outcome: 'ok',
+    objectRefs: [],
+    runResult: 'written',
+    durationMs: 30,
+  };
+  const runLine = `{"v":1,"eventId":"${firstId}","ts":"2026-10-13T08:00:00.000Z","type":"run","tenantId":"default","actor":{"kind":"runner","id":"runner:weekly-report"},"mode":"unattended","runId":"${runId}","routineId":"weekly-report","outcome":"ok","objectRefs":[],"runResult":"written","durationMs":30}`;
+  // A run that failed while it asked the model.
+  const failed: AuditDraft = {
+    ...runEnd,
+    outcome: 'error',
+    errorCode: 'upstream',
+    runResult: 'failed',
+    runStep: 'model',
+  };
+
+  // The sink checks the whole line against the schema at the end and
+  // writes placeholders with audit_schema_mismatch when it does not pass,
+  // so every line it builds for a run has to pass on its own.
+  const passesSchema = (line: Record<string, unknown>): boolean =>
+    auditEventV1Schema.safeParse(line).success;
+
+  // The end of a run holds back no result, and a line that said denied
+  // with written would fail the schema, so required counts for nothing.
+  it('is never held back, also when required and changed', () => {
+    const { sink, file } = makeWithFile();
+    sink.record({ ...runEnd, attempt: 9 }, undefined, {
+      required: true,
+    });
+    const line = JSON.parse(file()[0] ?? '') as Record<string, unknown>;
+    expect(line).toMatchObject({ outcome: 'ok', runResult: 'written' });
+    expect(line).not.toHaveProperty('withheldAfterRead');
+    expect(passesSchema(line)).toBe(true);
+  });
+
+  it('is written without a tool, with its result before the duration', () => {
+    const { sink, file, lines, logs, toolChecks } = makeWithFile();
+    expect(sink.record(runEnd)).toBe(true);
+    expect(file()).toEqual([runLine]);
+    // The end of a run names no object, so file and copy are the same.
+    expect(lines).toEqual([runLine]);
+    expect(passesSchema(JSON.parse(runLine) as Record<string, unknown>)).toBe(
+      true,
+    );
+    expect(logs()).toEqual([]);
+    expect(toolChecks).toEqual([]);
+  });
+
+  it.each(['written', 'unchanged', 'queued', 'drafted', 'preview'] as const)(
+    'keeps the result %s with the outcome ok',
+    (runResult) => {
+      const { sink, audit, logs } = make();
+      expect(sink.record({ ...runEnd, runResult })).toBe(true);
+      const line = event(audit());
+      expect(line).toMatchObject({ type: 'run', outcome: 'ok', runResult });
+      expect(passesSchema(line)).toBe(true);
+      expect(logs()).toEqual([]);
+    },
+  );
+
+  it('keeps a failed run with its step, error code, try and period, in the order of the schema', () => {
+    const { sink, file, logs } = makeWithFile();
+    expect(
+      sink.record({
+        ...failed,
+        outcome: 'denied',
+        errorCode: 'validation',
+        runStep: 'content',
+        contentViolations: ['link', 'contact'],
+        policyHash: 'a'.repeat(64),
+        provider: {
+          vendor: 'example-ai',
+          model: 'example-model-1',
+          hostingCountry: 'CH',
+          endpointHost: 'api.example.org',
+        },
+        attempt: 2,
+        period: '2026-W46',
+      }),
+    ).toBe(true);
+    const line = event(file());
+    expect(Object.keys(line)).toEqual([
+      'v',
+      'eventId',
+      'ts',
+      'type',
+      'tenantId',
+      'actor',
+      'mode',
+      'runId',
+      'routineId',
+      'outcome',
+      'policyHash',
+      'provider',
+      'objectRefs',
+      'errorCode',
+      'contentViolations',
+      'runResult',
+      'runStep',
+      'attempt',
+      'period',
+      'durationMs',
+    ]);
+    expect(line).toMatchObject({
+      outcome: 'denied',
+      errorCode: 'validation',
+      contentViolations: ['link', 'contact'],
+      runResult: 'failed',
+      runStep: 'content',
+      attempt: 2,
+      period: '2026-W46',
+    });
+    expect(passesSchema(line)).toBe(true);
+    expect(logs()).toEqual([]);
+  });
+
+  it('keeps a run without a routine, as the pipeline writes it for an ID that was none', () => {
+    const { sink, audit, logs } = make();
+    expect(sink.record({ ...runEnd, routineId: undefined })).toBe(true);
+    expect(event(audit())).not.toHaveProperty('routineId');
+    expect(passesSchema(event(audit()))).toBe(true);
+    expect(logs()).toEqual([]);
+  });
+
+  it('gives an end of a run without its run the zero UUID', () => {
+    const { sink, audit, logs } = make();
+    // Set to undefined, a field counts as absent.
+    expect(sink.record({ ...runEnd, runId: undefined })).toBe(false);
+    const line = event(audit());
+    expect(line).toMatchObject({ type: 'run', runId: nilId });
+    expect(passesSchema(line)).toBe(true);
+    expect(events(logs())).toEqual(['audit_missing_run_id']);
+    expect(logs()[0]).toMatchObject({
+      level: 'error',
+      code: 'validation',
+      eventId: firstId,
+      tenantId: 'default',
+    });
+  });
+
+  it.each([
+    ['of another form', 'run-of-yesterday'],
+    ['in capitals', runId.toUpperCase()],
+    ['as a number', 42],
+    ['as an object', { id: runId }],
+  ])('replaces a run %s by the zero UUID', (_, value) => {
+    const { sink, audit, logs } = make();
+    sink.record({ ...runEnd, runId: value } as unknown as AuditDraft);
+    const line = event(audit());
+    expect(line).toMatchObject({ type: 'run', runId: nilId });
+    expect(passesSchema(line)).toBe(true);
+    expect(events(logs())).toEqual(['audit_invalid_run_id']);
+    expect(audit()[0]).not.toContain('yesterday');
+  });
+
+  it('runs no getter on runId and counts it as invalid, not as missing', () => {
+    const { sink, audit, logs } = make();
+    const draft = { ...runEnd };
+    let reads = 0;
+    Object.defineProperty(draft, 'runId', {
+      enumerable: true,
+      get: () => {
+        reads += 1;
+        return runId;
+      },
+    });
+    sink.record(draft);
+    expect(reads).toBe(0);
+    expect(event(audit())['runId']).toBe(nilId);
+    expect(events(logs())).toEqual(['audit_invalid_run_id']);
+  });
+
+  it('says failed and error for a run without its result, so that no line claims a write', () => {
+    const { sink, audit, logs } = make();
+    expect(sink.record({ ...runEnd, runResult: undefined })).toBe(false);
+    const line = event(audit());
+    expect(line).toMatchObject({
+      type: 'run',
+      outcome: 'error',
+      errorCode: 'internal',
+      runResult: 'failed',
+    });
+    expect(passesSchema(line)).toBe(true);
+    // An ok that became error needs an error code, which the sink then
+    // reports as missing.
+    expect(events(logs())).toEqual([
+      'audit_missing_run_result',
+      'audit_missing_error_code',
+    ]);
+  });
+
+  it('keeps the outcome and error code of a failed run without its result', () => {
+    const { sink, audit, logs } = make();
+    sink.record({ ...failed, runResult: undefined });
+    const line = event(audit());
+    expect(line).toMatchObject({
+      outcome: 'error',
+      errorCode: 'upstream',
+      runResult: 'failed',
+      // The line says failed, so the step it names stays.
+      runStep: 'model',
+    });
+    expect(passesSchema(line)).toBe(true);
+    expect(events(logs())).toEqual(['audit_missing_run_result']);
+  });
+
+  it.each([
+    ['of another form', 'done'],
+    ['in capitals', 'Written'],
+    ['inherited', 'toString'],
+    ['as a number', 1],
+    ['as null', null],
+  ])('says failed and error for a result %s', (_, runResult) => {
+    const { sink, audit, logs } = make();
+    sink.record({ ...runEnd, runResult } as unknown as AuditDraft);
+    const line = event(audit());
+    expect(line).toMatchObject({
+      outcome: 'error',
+      errorCode: 'internal',
+      runResult: 'failed',
+    });
+    expect(passesSchema(line)).toBe(true);
+    expect(events(logs())).toEqual([
+      'audit_invalid_run_result',
+      'audit_missing_error_code',
+    ]);
+  });
+
+  it('says failed for a result that does not go with the outcome', () => {
+    // A written run whose line says error: the write may not have
+    // happened, so the line says failed and keeps its error code.
+    const written = make();
+    written.sink.record({
+      ...runEnd,
+      outcome: 'error',
+      errorCode: 'upstream',
+    });
+    expect(event(written.audit())).toMatchObject({
+      outcome: 'error',
+      errorCode: 'upstream',
+      runResult: 'failed',
+    });
+    expect(passesSchema(event(written.audit()))).toBe(true);
+    expect(events(written.logs())).toEqual(['audit_invalid_run_result']);
+
+    // A queued run whose line says denied keeps denied.
+    const queued = make();
+    queued.sink.record({
+      ...runEnd,
+      runResult: 'queued',
+      outcome: 'denied',
+      errorCode: 'policy_denied',
+    });
+    expect(event(queued.audit())).toMatchObject({
+      outcome: 'denied',
+      errorCode: 'policy_denied',
+      runResult: 'failed',
+    });
+    expect(events(queued.logs())).toEqual(['audit_invalid_run_result']);
+
+    // A failed run whose line says ok: ok becomes error with the
+    // placeholder of an error code.
+    const ok = make();
+    ok.sink.record({ ...runEnd, runResult: 'failed' });
+    expect(event(ok.audit())).toMatchObject({
+      outcome: 'error',
+      errorCode: 'internal',
+      runResult: 'failed',
+    });
+    expect(passesSchema(event(ok.audit()))).toBe(true);
+    expect(events(ok.logs())).toEqual([
+      'audit_invalid_run_result',
+      'audit_missing_error_code',
+    ]);
+
+    // The same with an error code: ok becomes error and keeps the code.
+    const coded = make();
+    coded.sink.record({
+      ...runEnd,
+      runResult: 'failed',
+      errorCode: 'upstream',
+    });
+    expect(event(coded.audit())).toMatchObject({
+      outcome: 'error',
+      errorCode: 'upstream',
+      runResult: 'failed',
+    });
+    expect(passesSchema(event(coded.audit()))).toBe(true);
+    expect(events(coded.logs())).toEqual(['audit_invalid_run_result']);
+  });
+
+  it('says failed when the outcome itself is invalid', () => {
+    const { sink, audit, logs } = make();
+    sink.record({ ...runEnd, outcome: 'maybe' } as unknown as AuditDraft);
+    const line = event(audit());
+    expect(line).toMatchObject({
+      outcome: 'error',
+      errorCode: 'internal',
+      runResult: 'failed',
+    });
+    expect(passesSchema(line)).toBe(true);
+    expect(events(logs())).toEqual([
+      'audit_invalid_outcome',
+      'audit_invalid_run_result',
+      'audit_missing_error_code',
+    ]);
+  });
+
+  it.each([
+    ['a registered tool', 'ct_group_search'],
+    ['the placeholder of a tool', 'ct_unknown'],
+  ])('leaves out %s, without asking the registry', (_, tool) => {
+    const { sink, file, logs, toolChecks } = makeWithFile();
+    sink.record({ ...runEnd, tool });
+    expect(file()).toEqual([runLine]);
+    expect(events(logs())).toEqual(['audit_invalid_tool']);
+    expect(toolChecks).toEqual([]);
+  });
+
+  it('leaves the state and the way of a write out and reports them, which stand on the line of the write', () => {
+    const { sink, file, logs } = makeWithFile();
+    // The state fits the outcome, so only the rule of the run drops it.
+    sink.record({ ...runEnd, confirmation: 'policy', writeState: 'verified' });
+    expect(file()).toEqual([runLine]);
+    expect(events(logs())).toEqual([
+      'audit_invalid_confirmation',
+      'audit_invalid_write_state',
+    ]);
+  });
+
+  it('keeps a step only on a failed run', () => {
+    const notFailed = make();
+    notFailed.sink.record({ ...runEnd, runStep: 'write' });
+    expect(notFailed.audit()).toEqual([runLine]);
+    expect(events(notFailed.logs())).toEqual(['audit_invalid_run_step']);
+
+    for (const runStep of ['output', 'Write', 'toString', 1]) {
+      const { sink, audit, logs } = make();
+      sink.record({ ...failed, runStep } as unknown as AuditDraft);
+      const line = event(audit());
+      expect(line, String(runStep)).not.toHaveProperty('runStep');
+      expect(line).toMatchObject({ runResult: 'failed', outcome: 'error' });
+      expect(passesSchema(line)).toBe(true);
+      expect(events(logs())).toEqual(['audit_invalid_run_step']);
+    }
+  });
+
+  it.each([
+    ['attempt', 0, 'audit_invalid_attempt'],
+    ['attempt', 4, 'audit_invalid_attempt'],
+    ['attempt', 1.5, 'audit_invalid_attempt'],
+    ['attempt', '2', 'audit_invalid_attempt'],
+    ['period', '2026-W5', 'audit_invalid_period'],
+    ['period', '2026-11-10T08:00', 'audit_invalid_period'],
+    ['period', 'weekly', 'audit_invalid_period'],
+    ['period', 202_611, 'audit_invalid_period'],
+  ])('leaves out %s %j when it is invalid', (key, value, name) => {
+    const { sink, audit, logs } = make();
+    expect(sink.record({ ...runEnd, [key]: value })).toBe(false);
+    expect(audit()).toEqual([runLine]);
+    expect(events(logs())).toEqual([name]);
+  });
+
+  it.each([
+    ['a try', { attempt: 3 }],
+    ['a week', { period: '2026-W46' }],
+    ['a day', { period: '2026-11-10' }],
+    ['a month', { period: '2026-11' }],
+  ])('keeps %s right before the duration', (_, field) => {
+    const { sink, audit, logs } = make();
+    expect(sink.record({ ...runEnd, ...field })).toBe(true);
+    const line = event(audit());
+    expect(Object.keys(line).slice(-3)).toEqual([
+      'runResult',
+      ...Object.keys(field),
+      'durationMs',
+    ]);
+    expect(line).toMatchObject(field);
+    expect(passesSchema(line)).toBe(true);
+    expect(logs()).toEqual([]);
+  });
+
+  const undoDraft: AuditDraft = {
+    type: 'undo',
+    undoes: secondId,
+    tenantId: 'demo-tenant',
+    actor: { kind: 'operator', id: 'stdio:local-stdio' },
+    mode: 'operator',
+    outcome: 'ok',
+    objectRefs: [],
+    durationMs: 5,
+  };
+
+  it.each([
+    ['a call of a tool', base, baseLine],
+    [
+      'an undo',
+      undoDraft,
+      `{"v":1,"eventId":"${firstId}","ts":"2026-10-13T08:00:00.000Z","type":"undo","undoes":"${secondId}","tenantId":"demo-tenant","actor":{"kind":"operator","id":"stdio:local-stdio"},"mode":"operator","outcome":"ok","objectRefs":[],"durationMs":5}`,
+    ],
+  ])(
+    'leaves the result, the step, the try and the period out of %s and reports them',
+    (_, draft, expected) => {
+      const { sink, audit, logs } = make();
+      sink.record({
+        ...draft,
+        runResult: 'written',
+        runStep: 'model',
+        attempt: 1,
+        period: '2026-W46',
+      });
+      expect(audit()).toEqual([expected]);
+      expect(events(logs())).toEqual([
+        'audit_invalid_run_result',
+        'audit_invalid_run_step',
+        'audit_invalid_attempt',
+        'audit_invalid_period',
+      ]);
+    },
+  );
+
+  it('treats a line whose type is invalid as a call of a tool, without the fields of a run', () => {
+    const { sink, audit, logs } = make();
+    sink.record({
+      ...failed,
+      type: 'Run',
+      attempt: 1,
+      period: '2026-W46',
+    } as unknown as AuditDraft);
+    const line = event(audit());
+    expect(line).toMatchObject({ type: 'tool_call', outcome: 'error' });
+    for (const key of ['runResult', 'runStep', 'attempt', 'period']) {
+      expect(line).not.toHaveProperty(key);
+    }
+    expect(passesSchema(line)).toBe(true);
+    expect(events(logs())).toEqual([
+      'audit_invalid_type',
+      'audit_invalid_run_result',
+      'audit_invalid_run_step',
+      'audit_invalid_attempt',
+      'audit_invalid_period',
+    ]);
+  });
+
+  it('runs no getter on the result, the step, the try or the period and counts them as invalid', () => {
+    const { sink, audit, logs } = make();
+    const draft = { ...failed };
+    let reads = 0;
+    const values: Record<string, unknown> = {
+      runResult: 'failed',
+      runStep: 'model',
+      attempt: 1,
+      period: '2026-W46',
+    };
+    for (const [key, value] of Object.entries(values)) {
+      Object.defineProperty(draft, key, {
+        enumerable: true,
+        get: () => {
+          reads += 1;
+          return value;
+        },
+      });
+    }
+    sink.record(draft);
+    expect(reads).toBe(0);
+    const line = event(audit());
+    // The result behind a getter is invalid, so the line says failed; the
+    // outcome was error already and keeps its code.
+    expect(line).toMatchObject({
+      outcome: 'error',
+      errorCode: 'upstream',
+      runResult: 'failed',
+    });
+    for (const key of ['runStep', 'attempt', 'period']) {
+      expect(line).not.toHaveProperty(key);
+    }
+    expect(passesSchema(line)).toBe(true);
+    expect(events(logs())).toEqual([
+      'audit_invalid_run_result',
+      'audit_invalid_run_step',
+      'audit_invalid_attempt',
+      'audit_invalid_period',
+    ]);
+  });
+
+  it('leaks no canary from a field of a run into any line', () => {
+    const canaries = makeCanaries();
+    const { sink, lines } = make();
+    for (const canary of canaries.all) {
+      sink.record({
+        ...runEnd,
+        runId: canary.value,
+        routineId: canary.value,
+        runResult: canary.value,
+        runStep: canary.value,
+        attempt: canary.value,
+        period: canary.value,
+      } as unknown as AuditDraft);
+    }
+    const written = lines.filter((line) => line.startsWith('{"v":1,'));
+    expect(written).toHaveLength(canaries.all.length);
+    for (const line of written) {
+      expect(passesSchema(JSON.parse(line) as Record<string, unknown>)).toBe(
+        true,
+      );
+    }
+    expect(lines.join('\n')).not.toContain('audit_schema_mismatch');
+    assertNoCanary(lines, canaries.all, 'lines');
+  });
+});
+
 describe('other optional fields', () => {
   it.each([
     ['runId', 'not-a-uuid', 'audit_invalid_run_id'],

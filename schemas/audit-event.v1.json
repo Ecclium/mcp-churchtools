@@ -24,7 +24,8 @@
       "enum": [
         "tool_call",
         "undo",
-        "approval"
+        "approval",
+        "run"
       ]
     },
     "undoes": {
@@ -249,6 +250,37 @@
     "rightsDriftAccepted": {
       "type": "boolean",
       "const": true
+    },
+    "runResult": {
+      "type": "string",
+      "enum": [
+        "written",
+        "unchanged",
+        "queued",
+        "drafted",
+        "preview",
+        "failed"
+      ]
+    },
+    "runStep": {
+      "type": "string",
+      "enum": [
+        "input",
+        "model",
+        "answer",
+        "content",
+        "write"
+      ]
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 3
+    },
+    "period": {
+      "type": "string",
+      "maxLength": 10,
+      "pattern": "^\\d{4}-(?:W\\d{2}|\\d{2}(?:-\\d{2})?)$"
     },
     "durationMs": {
       "type": "integer",

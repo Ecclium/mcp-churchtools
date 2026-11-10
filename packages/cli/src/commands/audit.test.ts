@@ -492,6 +492,70 @@ describe('ecclium audit show', () => {
     );
   });
 
+  it('counts the ends of the runs of routines of a day in a row of their own, in a chain verify finds whole (ADR 0033)', () => {
+    const runEnd = (fields: Record<string, unknown>): string =>
+      event({
+        type: 'run',
+        actor: { kind: 'runner', id: 'runner:weekly-report' },
+        mode: 'unattended',
+        runId: '00000000-0000-4000-8000-0000000000cc',
+        routineId: 'weekly-report',
+        tool: undefined,
+        runResult: 'written',
+        ...fields,
+      });
+    const runName = fileName(3);
+    const runLines = chained(runName, [
+      event({ tool: 'ct_wiki_page_get' }),
+      runEnd({ ts: '2026-10-30T09:00:00.000Z', period: '2026-W44' }),
+      runEnd({
+        ts: '2026-10-30T09:05:00.000Z',
+        outcome: 'error',
+        errorCode: 'upstream',
+        runResult: 'failed',
+        runStep: 'model',
+        attempt: 1,
+      }),
+      runEnd({
+        ts: '2026-10-30T09:10:00.000Z',
+        objectRefs: ['wiki_page:34'],
+      }),
+    ]);
+    const { stateDir } = makeState({ [runName]: runLines });
+
+    expect(show(stateDir).stdout).toEqual([
+      'Aufrufe je Tag und Tool, Tage in UTC',
+      '30.10.2026',
+      '  ct_wiki_page_get: 1 Aufruf, 1 ausgeführt',
+      '  Läufe von Routinen: 3 Aufrufe, 2 ausgeführt, 1 mit Fehler',
+      'Gelesen: 1 von 1 Datei, 4 Zeilen im Zeitraum.',
+      'Die Auswertung prüft die Ketten nicht. Das tut ‹ecclium audit verify›.',
+    ]);
+    // The runner names no object on the end of a run; a line that does
+    // is named as a run.
+    expect(
+      show(stateDir, { object: 'wiki_page:34' }).stdout.slice(0, 3),
+    ).toEqual([
+      'Aufrufe, die ‹wiki_page:34› nennen, Zeiten in UTC',
+      '  30.10.2026 09:10:00  Lauf  Subjekt runner:weekly-report  ausgeführt',
+      '1 Zeile nennt ‹wiki_page:34›.',
+    ]);
+    const result = verify(stateDir, [putLog([anchorLine(runName, runLines)])]);
+    expect(result.code).toBe(exitCodes.ok);
+    expect(result.stdout.at(-1)).toBe(
+      'Ergebnis: Die Ketten der Audit-Dateien sind ganz und passen zu den Ankern aus dem Log.',
+    );
+  });
+
+  it('names the row and the hit of a run in the texts of the summary', () => {
+    expect(renderSummary(summary(), {})).toContain(
+      "  Läufe von Routinen: 1'002 Aufrufe, 1'000 ausgeführt, 1 mit Fehler, 1 abgelehnt",
+    );
+    expect(renderObjectHits(summary(), 'person:12', {})).toContain(
+      '  30.10.2026 09:30:00  Lauf  Subjekt runner:weekly-report  mit Fehler',
+    );
+  });
+
   it('refuses a value of the wrong form without repeating it', () => {
     const { stateDir } = makeState({ [name]: lines });
     const cases: [
@@ -641,6 +705,16 @@ const summary = (changes: Partial<AuditSummary> = {}): AuditSummary => ({
       denied: 0,
       withheld: 0,
     },
+    {
+      day: '2026-10-30',
+      type: 'run',
+      tool: undefined,
+      calls: 1_002,
+      ok: 1_000,
+      error: 1,
+      denied: 1,
+      withheld: 0,
+    },
   ],
   hits: [
     {
@@ -675,6 +749,14 @@ const summary = (changes: Partial<AuditSummary> = {}): AuditSummary => ({
       tool: undefined,
       actorId: 'stdio:local-stdio',
       outcome: 'ok',
+      withheld: false,
+    },
+    {
+      ts: '2026-10-30T09:30:00.000Z',
+      type: 'run',
+      tool: undefined,
+      actorId: 'runner:weekly-report',
+      outcome: 'error',
       withheld: false,
     },
   ],

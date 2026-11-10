@@ -427,6 +427,7 @@ describe('the catalog of the audit events', () => {
       'tool_call',
       'undo',
       'approval',
+      'run',
     ]);
     expect(Object.keys(objectDomainLabels).sort()).toEqual(
       [...objectDomains].sort(),

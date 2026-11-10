@@ -174,6 +174,7 @@ export {
   type RejectOutcome,
   type RunCallOutcome,
   type RunCallRequest,
+  type RunEndRequest,
   type RunTag,
   type RunWriteOutcome,
   type RunWriteRequest,

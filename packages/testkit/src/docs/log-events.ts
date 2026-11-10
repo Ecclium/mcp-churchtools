@@ -407,6 +407,10 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Eine Zeile vom Typ `approval` kam ohne die Kennung des Eintrags der Freigabe-Warteschlange. Die Zeile im Audit trägt in `queueId` die Null-UUID als Platzhalter, die keinen Eintrag nennt.',
     audit_missing_decision:
       'Eine Zeile vom Typ `approval` kam ohne den Entscheid. Die Zeile im Audit trägt in `decision` den Platzhalter `rejected`, der keinen Schreibvorgang behauptet.',
+    audit_missing_run_id:
+      'Eine Zeile vom Typ `run` kam ohne die Kennung ihres Laufs. Die Zeile im Audit trägt in `runId` die Null-UUID als Platzhalter, die keinen Lauf nennt.',
+    audit_missing_run_result:
+      'Eine Zeile vom Typ `run` kam ohne den Ausgang des Laufs. Die Zeile im Audit trägt in `runResult` den Platzhalter `failed`, der keinen Schreibvorgang behauptet, und sagte sie `ok`, dann den Ausgang `error`.',
     audit_unknown_fields:
       'Eine Zeile kam mit Feldern, die das Schema nicht kennt. `count` nennt ihre Zahl, die Felder fallen weg.',
     audit_schema_mismatch:

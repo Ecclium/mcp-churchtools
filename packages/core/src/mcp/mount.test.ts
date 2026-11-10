@@ -76,6 +76,8 @@ const noQueue = {
       sent: false,
       transient: false,
     } as const),
+  // Nor does it end one (ADR 0033).
+  endRun: () => false,
 };
 
 // Drives the mount in process through the serving entry of the SDK, in
