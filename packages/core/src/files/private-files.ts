@@ -235,7 +235,10 @@ const close = (fs: PrivateFileSystem, fd: number): void => {
 /**
  * Creates a private folder with 0700 if it is missing, never recursively,
  * and checks it through a descriptor opened without following a link: a
- * folder of the user without rights for others.
+ * folder of the user without rights for others. A folder it creates is
+ * flushed into the folder above with `fsync`, so that a crash right after
+ * does not lose the new folder with a file that was already flushed in it
+ * (ADR 0031), such as the folder of a new day of snapshots.
  *
  * @param folder - An absolute path.
  * @param fs - The file functions, only for tests.
@@ -251,8 +254,10 @@ export function preparePrivateFolder(
   fs: PrivateFileSystem = nodePrivateFileSystem,
 ): void {
   const flags = flagsOf(fs);
+  let made = false;
   try {
     fs.mkdirSync(folder, privateFolderMode);
+    made = true;
   } catch (error) {
     if (errorCode(error) !== 'EEXIST') fail('unavailable');
   }
@@ -277,6 +282,13 @@ export function preparePrivateFolder(
     if (!stats.isDirectory() || !isPrivate(stats, flags.uid)) fail('unsafe');
   } finally {
     close(fs, fd);
+  }
+  // The name of a new folder stands in the folder above, which a `fsync`
+  // of the folder itself does not flush. A second call after a failure
+  // finds the folder and does not flush again, like a second try after a
+  // failed flush of a file.
+  if (made) {
+    flushFolder(fs, folder.slice(0, folder.lastIndexOf('/')) || '/', flags);
   }
 }
 
