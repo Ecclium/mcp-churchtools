@@ -6,6 +6,8 @@ import { sealRedacted } from '../redaction/redacted.js';
 import {
   checkRunSection,
   checkRunText,
+  contactKeysIn,
+  contactKeysInSection,
   escapeRunText,
   runContactKeys,
 } from './content.js';
@@ -104,5 +106,80 @@ describe('the contact values a run may write', () => {
 
   it('pass over a text the content policy cannot read', () => {
     expect(runContactKeys(defaultPolicy, ['\uD800']).size).toBe(0);
+  });
+});
+
+// What a section of a run took from its data, for the entry of the queue
+// (ADR 0030): the contact values in its texts, without those of the policy.
+describe('the contact values in some values of JSON', () => {
+  it('are those in every text, at every depth, and none of the policy', () => {
+    const keys = contactKeysIn([
+      '## Woche\n\nFragen an Info@example.org',
+      { rows: [{ text: 'Telefon 000 000 12 34' }, 7, true] },
+      null,
+    ]);
+    expect([...keys].sort()).toEqual(['0000001234', 'info@example.org']);
+  });
+
+  it('are none without contact values, and pass over a text the content policy cannot read', () => {
+    expect(contactKeysIn([]).size).toBe(0);
+    expect(contactKeysIn(['Sigrist fehlt', '\uD800', undefined]).size).toBe(0);
+  });
+});
+
+// The masking reads any word with an @ and a later dot as an e-mail
+// address, a web address with an @ in its path included: data that others
+// can edit must never make such a value trusted (ADR 0030).
+describe('the contact values data can never make trusted', () => {
+  const phishing = 'https://phish.example/@login/a.bc';
+
+  it('leave out a web address read as an e-mail address, while an address beside it still counts', () => {
+    const data = [`Anmeldung unter ${phishing} oder info@example.org.`];
+    expect([...runContactKeys(defaultPolicy, data)]).toEqual([
+      'info@example.org',
+    ]);
+    expect([...contactKeysIn(data)]).toEqual(['info@example.org']);
+    expect(contactKeysIn([phishing]).size).toBe(0);
+  });
+
+  it('leave out every value with a sign of a web address or an escape', () => {
+    for (const text of [
+      'mailto:info@example.org',
+      'https://example.org/?a=info@example.org',
+      'https://example.org/#info@example.org',
+      'x\\info@example.org',
+    ]) {
+      expect([...contactKeysIn([text])]).toEqual([]);
+    }
+  });
+});
+
+// A section is compared in its written form, which escapes signs such as
+// `_` and keeps the signs of emphasis: the keys are those of the addresses
+// a reader sees, as the data hold them (ADR 0030).
+describe('the contact values of a section in its written form', () => {
+  it('are read without the escapes of the written form', () => {
+    expect([
+      ...contactKeysInSection('Fragen an anna\\_muster@example.org'),
+    ]).toEqual(['anna_muster@example.org']);
+    // Read as it is written, the address is not the one of the data.
+    expect(
+      contactKeysIn(['Fragen an anna\\_muster@example.org']).has(
+        'anna_muster@example.org',
+      ),
+    ).toBe(false);
+  });
+
+  it('are read without the signs of emphasis and strikethrough', () => {
+    expect([
+      ...contactKeysInSection('Fragen an **anna\\_muster@example.org**'),
+    ]).toEqual(['anna_muster@example.org']);
+    expect(
+      [...contactKeysInSection('~~alt@example.org~~ neu@example.org')].sort(),
+    ).toEqual(['alt@example.org', 'neu@example.org']);
+    // Read as it is written, the signs belong to the address.
+    expect([...contactKeysIn(['**anna_muster@example.org**'])]).toEqual([
+      '**anna_muster@example.org**',
+    ]);
   });
 });

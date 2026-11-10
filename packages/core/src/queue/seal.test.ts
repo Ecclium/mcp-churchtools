@@ -62,7 +62,7 @@ const toSeal = (value: QueueEntryContent = content): QueueEntryToSeal => ({
 });
 
 describe('the reasons of the queue', () => {
-  it('name the five of the policy first, three of the way and the marking, frozen', () => {
+  it('name the five of the policy first, three of the way, the marking and the rights of a run, frozen', () => {
     expect(queueReasons).toEqual([
       'queue_only',
       'no_entry',
@@ -73,12 +73,43 @@ describe('the reasons of the queue', () => {
       'no_question',
       'too_long',
       'marker_changed',
+      'rights_drift',
     ]);
     expect(Object.isFrozen(queueReasons)).toBe(true);
   });
 });
 
 describe('sealQueueEntry and openQueueEntry', () => {
+  it('keep the run a write of a routine comes from, and refuse a run of another form', async () => {
+    const keys = createMemoryDayKeys();
+    const fromRun: QueueEntryContent = {
+      ...content,
+      actor: { kind: 'runner', id: 'runner:dienstplan-report' },
+      reason: 'rights_drift',
+      run: {
+        routine: 'dienstplan-report',
+        period: '2026-W46',
+        contacts: ['info@example.org'],
+      },
+    };
+    const sealed = await sealQueueEntry(keys, ctx, toSeal(fromRun));
+    expect(await openQueueEntry(keys, ctx, sealed)).toEqual(fromRun);
+    for (const run of [
+      { routine: 'Dienstplan', period: '2026-W46', contacts: [] },
+      { routine: 'dienstplan-report', period: '2026 W46', contacts: [] },
+      { routine: 'dienstplan-report', period: '2026-W46', contacts: [''] },
+      { routine: 'dienstplan-report', period: '2026-W46' },
+    ]) {
+      await expect(
+        sealQueueEntry(
+          keys,
+          ctx,
+          toSeal({ ...fromRun, run: run as QueueEntryContent['run'] }),
+        ),
+      ).rejects.toThrow(TypeError);
+    }
+  });
+
   it('open what they sealed, and the store sees no text of the write', async () => {
     const keys = createMemoryDayKeys();
     const sealed = await sealQueueEntry(keys, ctx, toSeal());

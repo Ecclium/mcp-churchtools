@@ -246,6 +246,10 @@
       "type": "boolean",
       "const": true
     },
+    "rightsDriftAccepted": {
+      "type": "boolean",
+      "const": true
+    },
     "durationMs": {
       "type": "integer",
       "minimum": 0,

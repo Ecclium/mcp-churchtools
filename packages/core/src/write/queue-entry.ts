@@ -64,5 +64,17 @@ export function queueEntryOf(
     reason,
     queuedAt,
     ...(view.day === undefined ? {} : { plannedOn: view.day }),
+    // The run a write of a routine comes from, so that an approval judges
+    // it against the entries of its routine and writes the same marking
+    // (ADR 0032).
+    ...(view.run === undefined
+      ? {}
+      : {
+          run: Object.freeze({
+            routine: view.run.routine,
+            period: view.run.period,
+            contacts: view.run.contacts,
+          }),
+        }),
   });
 }

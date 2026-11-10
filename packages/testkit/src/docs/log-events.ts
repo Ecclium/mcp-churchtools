@@ -247,7 +247,7 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
     snapshot_incomplete:
       'Nach dem Anlegen einer Seite, eines Termins oder einer Buchung konnte Ecclium Kennung und Version nicht im Snapshot ergänzen. Das Angelegte bleibt, sein Snapshot aber unvollständig, und `ecclium undo` kann es nicht zurücknehmen. `code` ist `internal`.',
     policy_not_interactive:
-      'Ein Schreibvorgang kam ausserhalb des interaktiven Modus. Bis der Runner den unbeaufsichtigten Teil der Richtlinie nutzt, schreibt Ecclium dort nichts. Der Aufruf endet mit `policy_denied`.',
+      'Ein Schreibvorgang kam ausserhalb des interaktiven Modus und aus keinem Lauf einer Routine. Ecclium schreibt ihn nicht, der Aufruf endet mit `policy_denied`.',
     policy_queue_only:
       'Die Richtlinie schickt diese Art von Schreibvorgang immer in die Warteschlange der Freigaben, etwa einen in eine Gruppe oder einen Dienst. Beim Planen kommt der Schreibvorgang in die Freigabe-Warteschlange, ohne Warteschlange endet er mit `confirmation_required`. Bei der Prüfung unmittelbar vor dem Senden endet er mit `policy_denied`. In keinem Fall schreibt Ecclium.',
     policy_no_entry:
@@ -262,6 +262,14 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Auf der Seite steht derselbe Abschnitt schon als eigener von Ecclium, mit der Kennzeichnung desselben Tages. Ecclium hängt ihn nicht ein zweites Mal an, der Aufruf endet mit `skipped`.',
     marking_changed:
       'Auf der Seite steht ein Abschnitt mit der Kennzeichnung des Abschnitts, den Ecclium anhängen soll, aber jemand hat ihn seither geändert. Ob es eine Wiederholung ist, entscheidet der Betreiber: Der Schreibvorgang kommt in die Freigabe-Warteschlange, ohne Warteschlange endet er mit `confirmation_required`.',
+    run_rights_drift:
+      'Das Konto eines Laufs hat Rechte, die keine seiner Routinen braucht, und die Richtlinie nennt heute keine Ausnahme dafür. `count` nennt die Zahl dieser Rechte, nie ihre Namen. Der Schreibvorgang kommt in die Freigabe-Warteschlange, ausser er wiederholt einen eigenen Abschnitt, und der Lauf endet nicht.',
+    run_page_missing:
+      'Die Seite, auf die ein Lauf schreiben soll, steht nicht in ihrer Kategorie, das Konto des Laufs sieht sie nicht, oder die Kategorie hat mehr als 1000 Seiten, mehr als ein Lauf durchsucht. Ein Lauf legt keine Seite an, er schreibt nichts, und Ecclium versucht diese Auslösung nicht noch einmal. Legen Sie die Seite an, oder nennen Sie sie in der Richtlinie mit ihrer GUID.',
+    run_page_ambiguous:
+      'Zwei Seiten der Kategorie tragen den Titel, auf den ein Lauf schreiben soll. Der Lauf schreibt nichts. Nennen Sie in der Richtlinie die Seite mit ihrer GUID statt der Kategorie.',
+    run_rights_drift_accepted:
+      'Das Konto eines Laufs hat Rechte, die keine seiner Routinen braucht, aber die befristete Ausnahme `acceptRightsDrift` der Richtlinie gilt heute. `count` nennt die Zahl dieser Rechte. Die Rechte halten den Schreibvorgang nicht auf, und seine Zeile im Audit trägt `rightsDriftAccepted`.',
     content_too_long:
       'Ein Text eines Schreibvorgangs ist länger als 64 KiB oder hat mehr als 2000 Sternchen, Unterstriche, Tilden und Ausrufezeichen. Der Aufruf endet ohne Schreiben, der Grund steht in `contentViolations` des Audits.',
     content_unparsable:

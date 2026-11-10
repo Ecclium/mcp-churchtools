@@ -85,13 +85,25 @@ export function escapeRunText(text: string): string {
   return text.replaceAll(escapable, (sign) => `\\${sign}`);
 }
 
+// The marks of the envelope around a text of foreign data, such as
+// `<<data-a1b2c3d4e5f6a7b8>>` and `<</data-a1b2c3d4e5f6a7b8>>`.
+const envelope = /<<\/?data-[0-9A-Za-z]{1,64}>>/gu;
+
 // Adds the keys of the contact values in every text of a value of JSON.
 const collect = (value: unknown, keys: Set<string>): void => {
   if (typeof value === 'string') {
-    const normal = normalizeContent(value);
+    // The marks of the envelope of foreign data around a text of the data
+    // as spaces, so that an address at its start or end reads alone.
+    const normal = normalizeContent(value.replaceAll(envelope, ' '));
     if (!normal.ok) return;
     for (const find of findPersonalData(normal.text)) {
-      keys.add(contactKey(normal.text, find));
+      const key = contactKey(normal.text, find);
+      // The masking reads any word with an @ and a later dot as an e-mail
+      // address, a web address with an @ in its path included. Data that
+      // others can edit must never make such a value trusted, so a key
+      // with a sign of a web address never counts (ADR 0030).
+      if (/[/:?#\\]/u.test(key)) continue;
+      keys.add(key);
     }
     return;
   }
@@ -121,6 +133,52 @@ export function runContactKeys(
   data: readonly unknown[],
 ): ReadonlySet<string> {
   const keys = new Set(contactKeysOf(policy.interactive.contacts ?? []));
+  for (const value of data) collect(value, keys);
+  return keys;
+}
+
+/**
+ * The keys of the contact values that a section in its written form holds,
+ * as a reader sees them: the written form escapes signs such as `_` with a
+ * backslash and may set an address in emphasis, which a key of the data
+ * does not have (ADR 0030).
+ *
+ * @param markdown - The section as the content policy wrote it.
+ * @returns The keys.
+ * @example
+ * ```ts
+ * contactKeysInSection('Fragen an anna\\_muster@example.org'); // Set { 'anna_muster@example.org' }
+ * ```
+ */
+export function contactKeysInSection(markdown: string): ReadonlySet<string> {
+  // Without its escapes, and with the signs of emphasis as spaces, so that
+  // `**anna@example.org**` reads as the address a reader sees.
+  return contactKeysIn([
+    markdown.replaceAll(escaped, '$1').replaceAll(emphasis, ' '),
+  ]);
+}
+
+// The signs of emphasis and strikethrough the content policy writes.
+const emphasis = /[*~]/gu;
+
+// A sign of ASCII that CommonMark lets a backslash escape, with its
+// backslash.
+const escaped = /\\([!-/:-@[-`{-~])/gu;
+
+/**
+ * The keys of the contact values that the texts of some values of JSON
+ * hold, without those of the policy: what a section of a run took from
+ * its data, for the entry of the queue (ADR 0030).
+ *
+ * @param data - Values of JSON, such as the text of a section.
+ * @returns The keys.
+ * @example
+ * ```ts
+ * contactKeysIn(['Fragen an info@example.org']); // Set { 'info@example.org' }
+ * ```
+ */
+export function contactKeysIn(data: readonly unknown[]): ReadonlySet<string> {
+  const keys = new Set<string>();
   for (const value of data) collect(value, keys);
   return keys;
 }

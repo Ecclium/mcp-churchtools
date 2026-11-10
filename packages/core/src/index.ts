@@ -168,6 +168,8 @@ export {
   type RunCallOutcome,
   type RunCallRequest,
   type RunTag,
+  type RunWriteOutcome,
+  type RunWriteRequest,
   type ToolOutcome,
   type ToolPipeline,
   type ToolPipelineOptions,
@@ -176,6 +178,7 @@ export {
   type UndoOutcome,
   type UndoReason,
   type UndoSubject,
+  type RunPageRef,
 } from './pipeline/index.js';
 export {
   checkTransferBasis,

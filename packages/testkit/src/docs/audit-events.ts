@@ -80,6 +80,8 @@ export const auditFieldMeanings: Readonly<Record<string, string>> =
     errorCode: 'Fehlercode bei `error` und `denied`.',
     withheldAfterRead:
       'Der Server hat das Ergebnis gelesen, aber zurückgehalten, weil seine Zeile nicht so in die Datei kam, wie sie war. Die Zeile sagt dann `denied` mit `policy_denied`.',
+    rightsDriftAccepted:
+      'Ein Schreibvorgang eines Laufs, dessen Konto Rechte hat, die keine seiner Routinen braucht, und den die befristete Ausnahme `acceptRightsDrift` der Richtlinie an der Prüfung der Rechte vorbeiliess. Ob er schrieb, sagt `writeState`.',
     durationMs: 'Dauer des Aufrufs in Millisekunden.',
     seq: 'Stelle der Zeile in der Hash-Kette ihrer Datei, ab 1 für die erste ganze Zeile. Nur der Schreiber der Datei setzt sie. Ein Stück einer Zeile zählt nicht, die nächste ganze Zeile trägt dann dieselbe Stelle.',
     prevHash:

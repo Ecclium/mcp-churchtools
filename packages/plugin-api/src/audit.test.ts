@@ -68,6 +68,7 @@ describe('AuditEventV1', () => {
       | 'errorCode'
       | 'contentViolations'
       | 'withheldAfterRead'
+      | 'rightsDriftAccepted'
       | 'durationMs'
       | 'seq'
       | 'prevHash'

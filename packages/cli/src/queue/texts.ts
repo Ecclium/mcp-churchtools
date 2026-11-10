@@ -70,6 +70,8 @@ export const reasonTexts: Readonly<Record<QueueReason, string>> = Object.freeze(
     too_long: 'Der Unterschied ist für eine Rückfrage im Client zu lang.',
     marker_changed:
       'Auf der Seite steht ein Abschnitt mit derselben Kennzeichnung, den jemand geändert hat. Ob es eine Wiederholung ist, entscheiden Sie.',
+    rights_drift:
+      'Das Konto des Laufs hat Rechte, die keine seiner Routinen braucht. Prüfen Sie die Rechte des Kontos in ChurchTools, bevor Sie freigeben.',
   },
 );
 
@@ -219,6 +221,12 @@ const approveReasons: Readonly<
   },
   notRun: {
     text: 'Diese Version von Ecclium führt diese Art Schreibvorgang nicht aus, Ecclium hat nichts geschrieben.',
+    code: exitCodes.noPermission,
+  },
+  // A run writes only a section with a tool of the core; an approval
+  // writes as the operator, so the reason only completes the table.
+  notForRun: {
+    text: 'Ein Lauf einer Routine schreibt nur einen Abschnitt einer Seite des Wikis, Ecclium hat nichts geschrieben.',
     code: exitCodes.noPermission,
   },
   intent: {

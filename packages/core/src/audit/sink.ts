@@ -190,6 +190,7 @@ const producerKeys: readonly string[] = Object.freeze([
   'objectRefsOmitted',
   'errorCode',
   'contentViolations',
+  'rightsDriftAccepted',
   'durationMs',
 ]);
 
@@ -607,6 +608,14 @@ function fill(
       report('audit_invalid_content_violations');
     }
   }
+
+  // The note that a write of a run went on under the exception of the
+  // policy for rights its account should not have (ADR 0032).
+  scalar(
+    'rightsDriftAccepted',
+    fields.rightsDriftAccepted,
+    'audit_invalid_rights_drift_accepted',
+  );
 
   scalar(
     'durationMs',

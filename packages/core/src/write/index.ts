@@ -39,6 +39,8 @@ export {
   createWriteGuard,
   type PlanQueueReason,
   type PlanRequest,
+  replaceSection,
+  type RunPlanRequest,
   type UndoChange,
   type UndoRequest,
   type UndoResult,
@@ -49,6 +51,14 @@ export {
   writeSentences,
 } from './guard.js';
 export { approvalKeyOf } from './plan-hash.js';
+export { checkRunKillSwitches, routineKillSwitchOf } from './kill-switch.js';
+export {
+  editCategoriesOf,
+  rightsBeyond,
+  rightsDriftAccepted,
+  type RunAccountNeeds,
+} from './rights-drift.js';
+export { createRunWrites, isRunWrites, type RunWrites } from './run-writes.js';
 export { queueEntryOf } from './queue-entry.js';
 export { objectRefsOfTarget, type WriteTarget } from './rules.js';
 export { type UndoSubject, undoSubjectOf } from './undo.js';
