@@ -184,6 +184,13 @@ import {
   undoTargetOf,
   type WikiSnapshotToUndo,
 } from './undo.js';
+import {
+  createWriteHalt,
+  haltWrites,
+  isWriteHalt,
+  type WriteHalt,
+  writesHalted,
+} from './write-halt.js';
 
 /**
  * The sentences the model reads when a write does not happen as planned.
@@ -284,6 +291,12 @@ export interface WriteGuardOptions {
    * appointments and bookings, an IANA name, or undefined for UTC.
    */
   readonly timeZone?: string | undefined;
+  /**
+   * The halt of writes of the process, which every pipeline of the runner
+   * shares, or undefined: then the guard makes its own, which lives as
+   * long as the guard (ADR 0029).
+   */
+  readonly writeHalt?: WriteHalt | undefined;
 }
 
 /**
@@ -778,12 +791,14 @@ const textOf = (intent: WikiIntent, derived: Derived): ConfirmationText =>
 
 /**
  * Makes the write guard of one pipeline. It holds one piece of state, the
- * block after a failed line of the audit, which lives as long as the
- * pipeline and is no state at module level.
+ * halt after a failed line of the audit: the halt of the process the
+ * composition root gives, or else one that lives as long as the pipeline.
+ * Neither is state at module level.
  *
- * @param options - Client, clock, folder of the kill switches, policy and
- *   store of quotas.
+ * @param options - Client, clock, folder of the kill switches, policy,
+ *   store of quotas and the halt of writes of the process.
  * @returns The write guard, frozen.
+ * @throws {TypeError} When the halt of writes is not one of the core.
  * @example
  * ```ts
  * const guard = createWriteGuard({ client, clock, killSwitchDir, policy, quota });
@@ -797,7 +812,14 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
   // The contact values a text may hold, from the interactive part of the
   // policy (ADR 0030).
   const contacts = contactKeysOf(options.policy.interactive.contacts ?? []);
-  let blocked = false;
+  // The halt after a failed line of the audit: the one of the process when
+  // the composition root gives one, else one of this guard (ADR 0029). A
+  // value the core did not make would read as halted for good, so it is
+  // refused here rather than met at the first write.
+  if (options.writeHalt !== undefined && !isWriteHalt(options.writeHalt)) {
+    throw new TypeError('The halt of writes is not one of the core.');
+  }
+  const halt = options.writeHalt ?? createWriteHalt();
   const policy = createPolicyGate({
     policy: options.policy,
     quota: options.quota,
@@ -827,7 +849,9 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     ctx: TenantContext,
     routine?: string,
   ): EccliumError | undefined => {
-    if (blocked) return refuse('policy_denied', writeSentences.blocked);
+    if (writesHalted(halt)) {
+      return refuse('policy_denied', writeSentences.blocked);
+    }
     if (ctx.readOnly) return refuse('policy_denied', writeSentences.readOnly);
     const state =
       killSwitchDir === undefined
@@ -2288,7 +2312,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     undo,
     approve,
     block: (): void => {
-      blocked = true;
+      haltWrites(halt);
     },
   });
 }

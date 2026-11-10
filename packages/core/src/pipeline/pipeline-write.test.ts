@@ -44,6 +44,7 @@ import {
 import { type WriteSnapshots, writeSentences } from '../write/guard.js';
 import { createMemoryNonceStore } from '../write/nonce-store.js';
 import { createMemoryPlanStore } from '../write/plan-store.js';
+import { createWriteHalt, type WriteHalt } from '../write/write-halt.js';
 import { policySentences } from '../write/policy-gate.js';
 import {
   createToolPipeline,
@@ -274,6 +275,8 @@ const setup = (
     readonly coreTools?: readonly ToolDefinition[];
     /** Plugins before the one with `tools`. */
     readonly firstPlugins?: readonly Plugin[];
+    /** The halt of writes of the process, shared with other pipelines. */
+    readonly writeHalt?: WriteHalt;
   } = {},
 ) => {
   const double = createChurchToolsDouble({ token });
@@ -352,6 +355,9 @@ const setup = (
     ...(options.confirmation === undefined
       ? {}
       : { confirmation: options.confirmation }),
+    ...(options.writeHalt === undefined
+      ? {}
+      : { writeHalt: options.writeHalt }),
   });
   const events = () =>
     auditLines.map((line) => JSON.parse(line) as Record<string, unknown>);
@@ -626,6 +632,51 @@ describe('a write tool in the pipeline', () => {
     file.ok = true;
     const next = await pipeline.call('ct_example_note_write', note, request());
     expect(!next.ok && next.error.message).toBe(writeSentences.blocked);
+  });
+
+  it('writes no more in another pipeline of the process once a line failed', async () => {
+    // The runner builds a pipeline per run with the same halt (ADR 0029).
+    const writeHalt = createWriteHalt();
+    const first = setup({ writeHalt });
+    const later = setup({ writeHalt });
+    first.planReads();
+    first.double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, page(3, '# Plan'), json);
+    first.double
+      .intercept({ path: pagePath, method: 'PATCH' })
+      .reply(200, '{}', json);
+    first.double
+      .intercept({ path: pagePath, method: 'GET' })
+      .reply(200, page(4, `# Plan\n\n${marked('Hallo\n')}`), json);
+    const asked = await first.pipeline.call(
+      'ct_example_note_write',
+      note,
+      request({ elicitation: true }),
+    );
+    if (asked.ok || asked.question === undefined) {
+      throw new Error('no question');
+    }
+    first.file.ok = false;
+    await first.pipeline.call(
+      'ct_example_note_write',
+      note,
+      request({
+        answer: {
+          state: asked.question.state,
+          action: 'accept',
+          content: { bestaetigen: true },
+        },
+      }),
+    );
+    expect(first.logs()).toContain('write_audit_failed');
+    const next = await later.pipeline.call(
+      'ct_example_note_write',
+      note,
+      request(),
+    );
+    expect(!next.ok && next.error.message).toBe(writeSentences.blocked);
+    expect(later.double.calls()).toEqual([]);
   });
 
   it('runs no write tool without an audit file that can take its line', async () => {

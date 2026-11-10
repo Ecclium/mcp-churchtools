@@ -59,6 +59,7 @@ export {
   type RunAccountNeeds,
 } from './rights-drift.js';
 export { createRunWrites, isRunWrites, type RunWrites } from './run-writes.js';
+export { type WriteHalt } from './write-halt.js';
 export { queueEntryOf } from './queue-entry.js';
 export { objectRefsOfTarget, type WriteTarget } from './rules.js';
 export { type UndoSubject, undoSubjectOf } from './undo.js';
