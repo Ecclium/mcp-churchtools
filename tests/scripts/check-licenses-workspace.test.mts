@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import {
   findViolations,
+  parseReport,
   readReport,
   runtimeLicences,
 } from '../../scripts/check-licenses.mts';
@@ -109,12 +110,13 @@ describe('readReport in a workspace', () => {
     'needs -r: pnpm alone reads only the root package',
     () => {
       // The call the check made before -r. It finds nothing in the same
-      // workspace, so the test above fails if -r goes missing.
+      // workspace, so the test above fails if -r goes missing. What pnpm
+      // prints for nothing differs between versions; parseReport reads both.
       const output = runPnpm(
         ['--dir', root, 'licenses', 'list', '--json', '--prod'],
         env,
       );
-      expect(output.trimStart().startsWith('{')).toBe(false);
+      expect(parseReport(output)).toEqual({});
     },
     timeout,
   );
