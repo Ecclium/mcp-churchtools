@@ -1,6 +1,8 @@
 import { defaultServerConditions } from 'vite';
 import { defineConfig } from 'vitest/config';
 
+import { LongFilesFirst } from './tests/support/long-files-first.mts';
+
 // Workspace packages export their TypeScript source under this condition
 // (ADR 0022). Tests resolve it first, so they run the source and never an
 // earlier build.
@@ -17,6 +19,14 @@ export default defineConfig({
     // Every test process runs with the network guard: connections only to
     // 127.0.0.1 and ::1 as IP literals, no name resolution (ADR 0052).
     setupFiles: ['tests/support/no-network.setup.mts'],
+    // A worker for every core, one more than Vitest gives by default, on the
+    // assumption that its main process mostly waits for the workers. On a
+    // runner of CI with four cores that is four workers instead of three; its
+    // runs show whether that is faster.
+    maxWorkers: '100%',
+    // Without a cache, as in CI, Vitest knows no durations; the long test
+    // files start first (tests/support/long-files-first.mts).
+    sequence: { sequencer: LongFilesFirst },
     coverage: {
       provider: 'v8',
       include: ['packages/*/src/**/*.ts'],
