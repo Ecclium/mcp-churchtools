@@ -31,6 +31,8 @@ export {
 export {
   type KeysDirCode,
   keysDirCodes,
+  type RunnerTokensDirCode,
+  runnerTokensDirCodes,
   type StateDirCode,
   stateDirCodes,
   type StateDirFileSystem,
@@ -49,7 +51,13 @@ export {
   maxConfigDirectoryEntries,
   readConfigTextFile,
 } from './text-file.js';
-export { readRunnerToken, runnerTokenPrefix } from './runner-token.js';
+export {
+  readRunnerToken,
+  type RunnerTokenCode,
+  runnerTokenCodes,
+  runnerOwnAlias,
+  runnerTokenPrefix,
+} from './runner-token.js';
 export {
   type TokenFileCode,
   tokenFileCodes,

@@ -6,30 +6,32 @@ Diese Seite entsteht mit `pnpm docs:generate` aus der Tabelle der Variablen im K
 
 Ecclium liest seine Konfiguration aus Variablen der Umgebung. Jede trägt das Präfix `ECCLIUM_`. Eine unbekannte oder falsch geschriebene Variable mit diesem Präfix bricht den Start ab. `ecclium config check` zeigt jede Einstellung mit ihrer Herkunft und prüft die Konfiguration, ohne ChurchTools anzufragen.
 
-| Variable | Werte | Voreinstellung | Geheimnis | Nur über stdio |
-| --- | --- | --- | --- | --- |
-| `ECCLIUM_CHURCHTOOLS_URL` | Adresse mit `https` | keine | nein | nein |
-| `ECCLIUM_CHURCHTOOLS_TOKEN_FILE` | absoluter Pfad | keine | nein | nein |
-| `ECCLIUM_CHURCHTOOLS_TOKEN` | Login-Token | keine | ja | ja |
-| `ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE` | ganze Zahl von 1 bis 500 | `300` | nein | nein |
-| `ECCLIUM_READ_ONLY` | `true`, `false` | `true` | nein | nein |
-| `ECCLIUM_REDACTION` | `standard`, `off`, `strict` | `standard` | nein | nein |
-| `ECCLIUM_PSEUDONYM_KEY_FILE` | absoluter Pfad | keine | nein | nein |
-| `ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE` | absoluter Pfad | keine | nein | nein |
-| `ECCLIUM_TOOLSETS` | Liste aus `persons`, `events`, `calendars`, `wiki`, `songs`, `docs`, `api`, mit Komma getrennt, oder `all` für alle ausser `api`, oder `all,api` | leer | nein | nein |
-| `ECCLIUM_STATE_DIR` | absoluter Pfad | keine | nein | ja |
-| `ECCLIUM_KEYS_DIR` | absoluter Pfad | keine | nein | ja |
-| `ECCLIUM_SNAPSHOTS` | `on`, `off` | `on` | nein | nein |
-| `ECCLIUM_WRITE_CONFIRMATION` | `echo-allowed`, `elicitation-or-queue`, `queue` | `echo-allowed` | nein | nein |
-| `ECCLIUM_TIME_ZONE` | `UTC` oder Name einer Zeitzone wie `Europe/Zurich` | keine | nein | nein |
-| `ECCLIUM_AUDIT_RETENTION_MONTHS` | ganze Zahl von 1 bis 120 | `12` | nein | ja |
-| `ECCLIUM_POLICY_FILE` | absoluter Pfad | keine | nein | nein |
-| `ECCLIUM_MARKER_KEY_FILE` | absoluter Pfad | keine | nein | nein |
-| `ECCLIUM_ROUTINES_DIR` | absoluter Pfad | keine | nein | nein |
-| `ECCLIUM_PROVIDERS_FILE` | absoluter Pfad | keine | nein | nein |
-| `ECCLIUM_RUNNER_TOKENS_DIR` | absoluter Pfad | keine | nein | nein |
-| `ECCLIUM_STDIO_SUBJECT` | Bezeichnung mit höchstens 32 Zeichen | `local-stdio` | nein | ja |
-| `ECCLIUM_LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` | nein | nein |
+Die Spalte «Server nur über stdio» sagt, ob der Server die Variable nur im Betrieb über stdio nimmt und nicht über HTTP. Die Spalte «Runner» sagt, ob der Runner der Routinen sie nimmt. Er hat ein eigenes Konto und liest nie mit dem Token des Servers.
+
+| Variable | Werte | Voreinstellung | Geheimnis | Server nur über stdio | Runner |
+| --- | --- | --- | --- | --- | --- |
+| `ECCLIUM_CHURCHTOOLS_URL` | Adresse mit `https` | keine | nein | nein | ja |
+| `ECCLIUM_CHURCHTOOLS_TOKEN_FILE` | absoluter Pfad | keine | nein | nein | nein |
+| `ECCLIUM_CHURCHTOOLS_TOKEN` | Login-Token | keine | ja | ja | nein |
+| `ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE` | ganze Zahl von 1 bis 500 | `300` | nein | nein | ja |
+| `ECCLIUM_READ_ONLY` | `true`, `false` | `true` | nein | nein | ja |
+| `ECCLIUM_REDACTION` | `standard`, `off`, `strict` | `standard` | nein | nein | ja |
+| `ECCLIUM_PSEUDONYM_KEY_FILE` | absoluter Pfad | keine | nein | nein | ja |
+| `ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE` | absoluter Pfad | keine | nein | nein | ja |
+| `ECCLIUM_TOOLSETS` | Liste aus `persons`, `events`, `calendars`, `wiki`, `songs`, `docs`, `api`, mit Komma getrennt, oder `all` für alle ausser `api`, oder `all,api` | leer | nein | nein | ja |
+| `ECCLIUM_STATE_DIR` | absoluter Pfad | keine | nein | ja | ja |
+| `ECCLIUM_KEYS_DIR` | absoluter Pfad | keine | nein | ja | ja |
+| `ECCLIUM_SNAPSHOTS` | `on`, `off` | `on` | nein | nein | ja |
+| `ECCLIUM_WRITE_CONFIRMATION` | `echo-allowed`, `elicitation-or-queue`, `queue` | `echo-allowed` | nein | nein | ja |
+| `ECCLIUM_TIME_ZONE` | `UTC` oder Name einer Zeitzone wie `Europe/Zurich` | keine | nein | nein | ja |
+| `ECCLIUM_AUDIT_RETENTION_MONTHS` | ganze Zahl von 1 bis 120 | `12` | nein | ja | ja |
+| `ECCLIUM_POLICY_FILE` | absoluter Pfad | keine | nein | nein | ja |
+| `ECCLIUM_MARKER_KEY_FILE` | absoluter Pfad | keine | nein | nein | ja |
+| `ECCLIUM_ROUTINES_DIR` | absoluter Pfad | keine | nein | nein | ja |
+| `ECCLIUM_PROVIDERS_FILE` | absoluter Pfad | keine | nein | nein | ja |
+| `ECCLIUM_RUNNER_TOKENS_DIR` | absoluter Pfad | keine | nein | nein | ja |
+| `ECCLIUM_STDIO_SUBJECT` | Bezeichnung mit höchstens 32 Zeichen | `local-stdio` | nein | ja | nein |
+| `ECCLIUM_LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` | nein | nein | ja |
 
 ## `ECCLIUM_CHURCHTOOLS_URL`
 
@@ -37,7 +39,7 @@ Adresse der ChurchTools-Instanz, nur mit `https`, ohne Pfad und in Kleinbuchstab
 
 ## `ECCLIUM_CHURCHTOOLS_TOKEN_FILE`
 
-Absoluter Pfad einer Datei mit dem Login-Token des Dienstkontos. Die Datei muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 600. Pflicht, ausser im Betrieb über stdio mit `ECCLIUM_CHURCHTOOLS_TOKEN`.
+Absoluter Pfad einer Datei mit dem Login-Token des Dienstkontos. Die Datei muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 600. Pflicht, ausser im Betrieb über stdio mit `ECCLIUM_CHURCHTOOLS_TOKEN`. Für den Runner nicht erlaubt: Er liest nie mit dem Token des Servers, sondern mit seinem eigenen Konto aus `ECCLIUM_RUNNER_TOKENS_DIR`.
 
 ## `ECCLIUM_CHURCHTOOLS_TOKEN`
 
@@ -69,11 +71,11 @@ Legt fest, welche Bereiche von Tools der Server anbietet: eine mit Komma getrenn
 
 ## `ECCLIUM_STATE_DIR`
 
-Absoluter Pfad eines Ordners für den Zustand des Servers: für die Audit-Datei im Unterordner `audit`, die Zähler im Unterordner `quota` und, wenn Ecclium schreibt, die Snapshots im Unterordner `snapshots` und die Freigabe-Warteschlange im Unterordner `queue`. Den Ordner selbst legt Ecclium nicht an, diese Unterordner darin schon. Im Unterordner `stop` liegen die Kill-Switches: Eine Datei `writes-off` darin hält jedes Schreiben ohne Neustart an. Diesen Unterordner legt Ecclium nicht an, und ohne ihn startet ein Server mit `ECCLIUM_READ_ONLY=false` nicht. Pflicht mit `ECCLIUM_READ_ONLY=false`. Der Ordner muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 700. Nur im Betrieb über stdio.
+Absoluter Pfad eines Ordners für den Zustand des Servers: für die Audit-Datei im Unterordner `audit`, die Zähler im Unterordner `quota` und, wenn Ecclium schreibt, die Snapshots im Unterordner `snapshots` und die Freigabe-Warteschlange im Unterordner `queue`. Den Ordner selbst legt Ecclium nicht an, diese Unterordner darin schon. Im Unterordner `stop` liegen die Kill-Switches: Eine Datei `writes-off` darin hält jedes Schreiben ohne Neustart an. Diesen Unterordner legt Ecclium nicht an, und ohne ihn startet ein Server mit `ECCLIUM_READ_ONLY=false` nicht. Pflicht mit `ECCLIUM_READ_ONLY=false`, für den Runner immer. Der Ordner muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 700. Beim Server nur im Betrieb über stdio, dazu für den Runner.
 
 ## `ECCLIUM_KEYS_DIR`
 
-Absoluter Pfad eines eigenen Ordners für die Tagesschlüssel, mit denen Ecclium die Snapshots von Schreibvorgängen und die Einträge der Freigabe-Warteschlange verschlüsselt, in den Unterordnern `snapshot` und `queue`. Den Ordner selbst legt Ecclium nicht an, beim Start aber den Unterordner `snapshot`, den Unterordner `queue` mit dem ersten Eintrag. Der Ordner muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 700. Er darf nicht der Ordner aus `ECCLIUM_STATE_DIR` sein, nicht darin liegen und ihn nicht enthalten und gehört in keine Sicherung. Beim Start und beim Wechsel des UTC-Tages vernichtet Ecclium die Tagesschlüssel der Snapshots, die älter sind als 30 Tage, und die der Freigabe-Warteschlange, die älter sind als 14 Tage: Ein Snapshot bleibt an seinem Tag und an den 30 Tagen danach lesbar, ein Eintrag der Warteschlange an seinem Tag und an den 14 Tagen danach, danach in keiner Kopie mehr. Pflicht mit `ECCLIUM_READ_ONLY=false`. Nur im Betrieb über stdio.
+Absoluter Pfad eines eigenen Ordners für die Tagesschlüssel, mit denen Ecclium die Snapshots von Schreibvorgängen und die Einträge der Freigabe-Warteschlange verschlüsselt, in den Unterordnern `snapshot` und `queue`. Den Ordner selbst legt Ecclium nicht an, beim Start aber den Unterordner `snapshot`, den Unterordner `queue` mit dem ersten Eintrag. Der Ordner muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben, etwa mit den Rechten 700. Er darf nicht der Ordner aus `ECCLIUM_STATE_DIR` sein, nicht darin liegen und ihn nicht enthalten und gehört in keine Sicherung. Beim Start und beim Wechsel des UTC-Tages vernichtet Ecclium die Tagesschlüssel der Snapshots, die älter sind als 30 Tage, und die der Freigabe-Warteschlange, die älter sind als 14 Tage: Ein Snapshot bleibt an seinem Tag und an den 30 Tagen danach lesbar, ein Eintrag der Warteschlange an seinem Tag und an den 14 Tagen danach, danach in keiner Kopie mehr. Pflicht mit `ECCLIUM_READ_ONLY=false`. Beim Server nur im Betrieb über stdio, dazu für den Runner.
 
 ## `ECCLIUM_SNAPSHOTS`
 
@@ -89,11 +91,11 @@ Die Zeitzone, in der die Rückfrage vor einem Schreibvorgang, `ecclium queue sho
 
 ## `ECCLIUM_AUDIT_RETENTION_MONTHS`
 
-Wie viele Monate die Audit-Dateien bleiben, von 1 bis 120. Danach löscht Ecclium sie beim Start oder beim Wechsel des UTC-Tages, nur im Ordner `audit` und nur Dateien mit dem Namen einer Audit-Datei. Eine Datei bleibt mindestens bis zum Ende des Tages, der so viele Kalendermonate nach ihrem Tag liegt. Unter zwölf Monaten warnt jeder Start, weil das Protokoll dann kürzer bleibt als ein Jahr. Ohne `ECCLIUM_STATE_DIR` gibt es keine Audit-Datei, und die Variable bewirkt nichts. Kopien, etwa in Backups, löscht Ecclium nicht. Nur im Betrieb über stdio.
+Wie viele Monate die Audit-Dateien bleiben, von 1 bis 120. Danach löscht Ecclium sie beim Start oder beim Wechsel des UTC-Tages, nur im Ordner `audit` und nur Dateien mit dem Namen einer Audit-Datei. Eine Datei bleibt mindestens bis zum Ende des Tages, der so viele Kalendermonate nach ihrem Tag liegt. Unter zwölf Monaten warnt jeder Start, weil das Protokoll dann kürzer bleibt als ein Jahr. Ohne `ECCLIUM_STATE_DIR` gibt es keine Audit-Datei, und die Variable bewirkt nichts. Kopien, etwa in Backups, löscht Ecclium nicht. Beim Server nur im Betrieb über stdio, dazu für den Runner.
 
 ## `ECCLIUM_POLICY_FILE`
 
-Absoluter Pfad der Datei mit der Richtlinie im Format `policy.v1`, in YAML oder JSON. Sie legt fest, auf welche Ziele bestätigte Schreibvorgänge gehen dürfen, wie oft je Tag, und wie hoch das Lesebudget ist (`docs/policy.md`). Die Datei muss dem Benutzer gehören, unter dem Ecclium läuft, und Gruppe und andere Benutzer dürfen sie nicht ändern, etwa mit den Rechten 644 oder 600. Ecclium liest sie beim Start, eine Änderung wirkt nach einem Neustart. Ohne die Variable gilt die Voreinstellung: Erlaubt ist, was das Dienstkonto darf, ausser bei Gruppen und Diensten, und das Lesebudget ist 200 Aufrufe je Akteur und UTC-Tag. Ist `LOG_TOKENS` oder `LOG_STREAM` gesetzt, bricht der Start ab, weil die Bibliothek für YAML die Datei sonst nach stdout schriebe.
+Absoluter Pfad der Datei mit der Richtlinie im Format `policy.v1`, in YAML oder JSON. Sie legt fest, auf welche Ziele bestätigte Schreibvorgänge gehen dürfen, wie oft je Tag, und wie hoch das Lesebudget ist (`docs/policy.md`). Die Datei muss dem Benutzer gehören, unter dem Ecclium läuft, und Gruppe und andere Benutzer dürfen sie nicht ändern, etwa mit den Rechten 644 oder 600. Ecclium liest sie beim Start, eine Änderung wirkt nach einem Neustart. Ohne die Variable gilt die Voreinstellung: Erlaubt ist, was das Dienstkonto darf, ausser bei Gruppen und Diensten, und das Lesebudget ist 200 Aufrufe je Akteur und UTC-Tag. Der Runner startet ohne die Variable nicht. Ist `LOG_TOKENS` oder `LOG_STREAM` gesetzt, bricht der Start ab, weil die Bibliothek für YAML die Datei sonst nach stdout schriebe.
 
 ## `ECCLIUM_MARKER_KEY_FILE`
 
@@ -101,7 +103,7 @@ Absoluter Pfad einer Datei mit dem Schlüssel für den Prüfcode der Kennzeichnu
 
 ## `ECCLIUM_ROUTINES_DIR`
 
-Absoluter Pfad des Ordners mit den Routinen im Format `routine.v1`, je eine Datei `<Kennung>.yaml`, mit ihren Prompts und Vorlagen im Ordner selbst oder in einem Ordner darunter (`docs/routines.md`). Ordner und Dateien müssen dem Benutzer gehören, unter dem Ecclium läuft, und Gruppe und andere Benutzer dürfen sie nicht ändern, etwa mit den Rechten 755 für Ordner und 644 für Dateien. Nur der Runner liest die Routinen, der Server prüft beim Start nur die Form des Pfads. Ist `LOG_TOKENS` oder `LOG_STREAM` gesetzt, bricht der Start ab, weil die Bibliothek für YAML die Routinen sonst nach stdout schriebe.
+Absoluter Pfad des Ordners mit den Routinen im Format `routine.v1`, je eine Datei `<Kennung>.yaml`, mit ihren Prompts und Vorlagen im Ordner selbst oder in einem Ordner darunter (`docs/routines.md`). Ordner und Dateien müssen dem Benutzer gehören, unter dem Ecclium läuft, und Gruppe und andere Benutzer dürfen sie nicht ändern, etwa mit den Rechten 755 für Ordner und 644 für Dateien. Nur der Runner liest die Routinen und startet ohne die Variable nicht, der Server prüft beim Start nur die Form des Pfads. Ist `LOG_TOKENS` oder `LOG_STREAM` gesetzt, bricht der Start ab, weil die Bibliothek für YAML die Routinen sonst nach stdout schriebe.
 
 ## `ECCLIUM_PROVIDERS_FILE`
 
@@ -109,7 +111,7 @@ Absoluter Pfad der Datei mit den Anbietern von Sprachmodellen im Format `provide
 
 ## `ECCLIUM_RUNNER_TOKENS_DIR`
 
-Absoluter Pfad des Ordners mit den Token-Dateien der Konten des Runners, je Alias der Richtlinie eine Datei `ct_token_<Alias>`, etwa `ct_token_bericht` für den Alias `bericht` (`docs/policy.md`). Jede Datei hält das Login-Token eines eigenen Dienstkontos mit nur den Rechten der Routinen dieses Alias und muss dem Benutzer gehören, unter dem Ecclium läuft, ohne Rechte für Gruppe und andere, etwa mit den Rechten 600. Der Runner liest die Datei des Alias bei jedem Lauf neu, ein neues Token wirkt ohne Neustart. Auch `ecclium queue approve` schreibt einen Eintrag aus einem Lauf mit diesem Konto. Ist die Variable nicht gesetzt, fehlt die Datei eines Alias oder weist Ecclium sie ab, etwa wegen ihrer Rechte, liest und schreibt kein Lauf mit diesem Alias, auch nicht mit dem Token aus `ECCLIUM_CHURCHTOOLS_TOKEN_FILE`. Eine Routine ohne Eintrag in der Richtlinie liest mit dem Token aus `ECCLIUM_CHURCHTOOLS_TOKEN_FILE`. Der Server prüft beim Start nur die Form des Pfads.
+Absoluter Pfad des Ordners mit den Token-Dateien der Konten des Runners: `ct_token_runner` für das eigene Konto des Runners, mit dem eine Routine ohne Eintrag in der Richtlinie liest, und je Alias der Richtlinie eine Datei `ct_token_<Alias>`, etwa `ct_token_bericht` für den Alias `bericht` (`docs/policy.md`). Jede Datei hält das Login-Token eines eigenen Dienstkontos mit nur den Rechten seiner Routinen und muss dem Benutzer gehören, unter dem Ecclium läuft, ohne Rechte für Gruppe und andere, etwa mit den Rechten 600. Der Ordner muss ebenfalls diesem Benutzer gehören, darf kein Link sein und nicht im Ordner aus `ECCLIUM_STATE_DIR` liegen, und weder die Gruppe noch andere dürfen darin schreiben, etwa mit den Rechten 700 oder 755. Jeder Start prüft den Ordner, und der Runner prüft vor dem ersten Lauf seine eigene Datei und die Datei jedes Alias der Richtlinie und startet ohne den Ordner nicht. Ein Lauf liest die Datei seines Kontos neu, ein neues Token wirkt ohne Neustart. Auch `ecclium queue approve` schreibt einen Eintrag aus einem Lauf mit diesem Konto. Der Runner liest nie mit dem Token aus `ECCLIUM_CHURCHTOOLS_TOKEN_FILE`.
 
 ## `ECCLIUM_STDIO_SUBJECT`
 

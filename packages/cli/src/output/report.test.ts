@@ -396,6 +396,32 @@ describe('renderConfigReport', () => {
     ]);
   });
 
+  // The runner has a heading of its own and names each setting it needs
+  // and lacks, its own account among them (ADR 0033, ADR 0034).
+  it('renders the report of the runner with its heading and what it lacks', () => {
+    const result = loadConfig({
+      environment: { ECCLIUM_CHURCHTOOLS_URL: address },
+      transport: 'runner',
+      tokenFiles: goodFile().files,
+      stateDirFiles: folder(),
+    });
+    const lines = renderConfigReport(result.report, {
+      valid: result.ok,
+      showValues: false,
+    });
+    expect(lines[0]).toBe(
+      'Prüfung der Konfiguration für den Betrieb des Runners',
+    );
+    expect(lines).toContain(
+      row('Zustandsordner', 'fehlt (‹ECCLIUM_STATE_DIR› ist nicht gesetzt)'),
+    );
+    expect(lines).toContain(
+      row('Token', 'fehlt (‹ECCLIUM_RUNNER_TOKENS_DIR› ist nicht gesetzt)'),
+    );
+    expect(lines).toContain('Die Konfiguration hat 5 Probleme:');
+    expect(lines.at(-1)).toBe(invalid);
+  });
+
   // A zone names no person and no instance, so it is shown without
   // --show-values; a refused one is never shown.
   it('shows the zone of the texts, and never a refused one', () => {

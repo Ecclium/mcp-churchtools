@@ -406,8 +406,16 @@ export interface Variable {
   readonly defaultValue: string | undefined;
   /** Whether the value is a secret. */
   readonly secret: boolean;
-  /** Whether only a start over stdio may set the variable at all. */
+  /** Whether, of the two servers, only a start over stdio may set it. */
   readonly stdioOnly: boolean;
+  /**
+   * Whether the runner of routines may set it (ADR 0033). It may not set
+   * the token of the server, from a file or from the environment, nor the
+   * subject of stdio, which belong to the server, but the folders of state
+   * and of keys and the retention of the audit, which the runner needs as
+   * a start over stdio does.
+   */
+  readonly runner: boolean;
 }
 
 const row = (variable: Variable): Variable =>
@@ -432,6 +440,7 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: undefined,
     secret: false,
     stdioOnly: false,
+    runner: true,
   }),
   row({
     name: 'ECCLIUM_CHURCHTOOLS_TOKEN_FILE',
@@ -441,6 +450,7 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: undefined,
     secret: false,
     stdioOnly: false,
+    runner: false,
   }),
   row({
     name: 'ECCLIUM_CHURCHTOOLS_TOKEN',
@@ -450,6 +460,7 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: undefined,
     secret: true,
     stdioOnly: true,
+    runner: false,
   }),
   row({
     name: 'ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE',
@@ -459,6 +470,7 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: '300',
     secret: false,
     stdioOnly: false,
+    runner: true,
   }),
   row({
     name: 'ECCLIUM_READ_ONLY',
@@ -468,6 +480,7 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: 'true',
     secret: false,
     stdioOnly: false,
+    runner: true,
   }),
   row({
     name: 'ECCLIUM_REDACTION',
@@ -477,6 +490,7 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: 'standard',
     secret: false,
     stdioOnly: false,
+    runner: true,
   }),
   row({
     name: 'ECCLIUM_PSEUDONYM_KEY_FILE',
@@ -486,6 +500,7 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: undefined,
     secret: false,
     stdioOnly: false,
+    runner: true,
   }),
   row({
     name: 'ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE',
@@ -495,6 +510,7 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: undefined,
     secret: false,
     stdioOnly: false,
+    runner: true,
   }),
   row({
     name: 'ECCLIUM_TOOLSETS',
@@ -504,6 +520,7 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: '',
     secret: false,
     stdioOnly: false,
+    runner: true,
   }),
   row({
     name: 'ECCLIUM_STATE_DIR',
@@ -513,10 +530,11 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: undefined,
     secret: false,
     stdioOnly: true,
+    runner: true,
   }),
   // The folder of the day keys (ADR 0031): needed as soon as the server
-  // writes, and over stdio only, like the folder of state it must not lie
-  // in.
+  // or the runner writes, of the servers over stdio only, and like the
+  // folder of state it must not lie in.
   row({
     name: 'ECCLIUM_KEYS_DIR',
     kind: 'path',
@@ -525,6 +543,7 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: undefined,
     secret: false,
     stdioOnly: true,
+    runner: true,
   }),
   // The snapshots of writes (ADR 0031): on unless the operator turns them
   // off, which leaves no write that can be taken back. Their retention is
@@ -537,6 +556,7 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: 'on',
     secret: false,
     stdioOnly: false,
+    runner: true,
   }),
   // How a write gets confirmed (ADR 0029). The row holds the default over
   // stdio; over HTTP the loader takes elicitation-or-queue when the
@@ -549,6 +569,7 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: 'echo-allowed',
     secret: false,
     stdioOnly: false,
+    runner: true,
   }),
   // The zone in which confirmations, the queue and `ecclium undo` show the
   // times of appointments and bookings; without it they show UTC. The
@@ -561,6 +582,7 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: undefined,
     secret: false,
     stdioOnly: false,
+    runner: true,
   }),
   row({
     name: 'ECCLIUM_AUDIT_RETENTION_MONTHS',
@@ -570,6 +592,7 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: String(recommendedRetentionMonths),
     secret: false,
     stdioOnly: true,
+    runner: true,
   }),
   row({
     name: 'ECCLIUM_POLICY_FILE',
@@ -579,6 +602,7 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: undefined,
     secret: false,
     stdioOnly: false,
+    runner: true,
   }),
   row({
     name: 'ECCLIUM_MARKER_KEY_FILE',
@@ -588,6 +612,7 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: undefined,
     secret: false,
     stdioOnly: false,
+    runner: true,
   }),
   // The folder of the routines (ADR 0033). Only the runner reads the
   // routines; the start of the server checks the form of the path.
@@ -599,6 +624,7 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: undefined,
     secret: false,
     stdioOnly: false,
+    runner: true,
   }),
   // The file of the providers of language models (ADR 0033). The start
   // reads and checks it like the policy; the files of the keys it names
@@ -611,11 +637,13 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: undefined,
     secret: false,
     stdioOnly: false,
+    runner: true,
   }),
   // The folder of the token files of the accounts of the runner, one file
-  // ct_token_<alias> per alias of the policy (ADR 0033). Only the runner,
-  // for each run anew, and the approval of an entry of a run read a file
-  // in it; the start of the server checks the form of the path.
+  // ct_token_<alias> per alias of the policy and ct_token_runner for its
+  // own account (ADR 0033). A set folder is checked on disk at every start;
+  // the start of the runner checks every file in it the policy names, and
+  // each run and the approval of an entry of a run read the file anew.
   row({
     name: 'ECCLIUM_RUNNER_TOKENS_DIR',
     kind: 'path',
@@ -624,6 +652,7 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: undefined,
     secret: false,
     stdioOnly: false,
+    runner: true,
   }),
   row({
     name: 'ECCLIUM_STDIO_SUBJECT',
@@ -633,6 +662,7 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: defaultStdioSubject,
     secret: false,
     stdioOnly: true,
+    runner: false,
   }),
   row({
     name: 'ECCLIUM_LOG_LEVEL',
@@ -642,6 +672,7 @@ export const variables: readonly Variable[] = Object.freeze([
     defaultValue: 'info',
     secret: false,
     stdioOnly: false,
+    runner: true,
   }),
 ]);
 

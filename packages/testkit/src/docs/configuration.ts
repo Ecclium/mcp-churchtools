@@ -87,8 +87,10 @@ export function renderConfigurationReference(): string {
     '',
     `Ecclium liest seine Konfiguration aus Variablen der Umgebung. Jede trägt das Präfix ${code(variablePrefix)}. Eine unbekannte oder falsch geschriebene Variable mit diesem Präfix bricht den Start ab. \`ecclium config check\` zeigt jede Einstellung mit ihrer Herkunft und prüft die Konfiguration, ohne ChurchTools anzufragen.`,
     '',
-    '| Variable | Werte | Voreinstellung | Geheimnis | Nur über stdio |',
-    '| --- | --- | --- | --- | --- |',
+    'Die Spalte «Server nur über stdio» sagt, ob der Server die Variable nur im Betrieb über stdio nimmt und nicht über HTTP. Die Spalte «Runner» sagt, ob der Runner der Routinen sie nimmt. Er hat ein eigenes Konto und liest nie mit dem Token des Servers.',
+    '',
+    '| Variable | Werte | Voreinstellung | Geheimnis | Server nur über stdio | Runner |',
+    '| --- | --- | --- | --- | --- | --- |',
   ];
   for (const variable of variables) {
     // A secret has no default, and the page would never show one.
@@ -102,7 +104,7 @@ export function renderConfigurationReference(): string {
           ? 'leer'
           : code(variable.defaultValue);
     lines.push(
-      `| ${code(variable.name)} | ${valuesOf(variable)} | ${defaultValue} | ${yesNo(variable.secret)} | ${yesNo(variable.stdioOnly)} |`,
+      `| ${code(variable.name)} | ${valuesOf(variable)} | ${defaultValue} | ${yesNo(variable.secret)} | ${yesNo(variable.stdioOnly)} | ${yesNo(variable.runner)} |`,
     );
   }
   for (const variable of variables) {

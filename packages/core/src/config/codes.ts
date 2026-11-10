@@ -11,10 +11,15 @@ import { policyCodes } from '../policy/file.js';
 import { providersCodes } from '../providers/file.js';
 import { markerKeyFileCodes } from './marker-key-file.js';
 import { pseudonymKeyFileCodes } from './pseudonym-key-file.js';
-import { keysDirCodes, stateDirCodes } from './state-dir.js';
+import { runnerTokenCodes } from './runner-token.js';
+import {
+  keysDirCodes,
+  runnerTokensDirCodes,
+  stateDirCodes,
+} from './state-dir.js';
 import { tokenFileCodes } from './token-file.js';
 
-/** Why the configuration cannot start the server, frozen. */
+/** Why the configuration cannot start the server or the runner, frozen. */
 export const configProblemCodes = Object.freeze([
   'unknown_variable',
   'miscased_variable',
@@ -57,6 +62,19 @@ export const configProblemCodes = Object.freeze([
   'state_dir_in_keys_dir',
   'redaction_strict_with_api',
   'state_dir_required',
+  // The rules of the runner (ADR 0033, ADR 0034): what it needs besides
+  // the server, its own account instead of the token of the server, and
+  // the folder of the token files of its accounts.
+  'runner_server_token',
+  'runner_stdio_only',
+  'runner_time_zone_required',
+  'runner_policy_required',
+  'runner_routines_dir_required',
+  'runner_state_dir_required',
+  'runner_tokens_dir_required',
+  'runner_tokens_dir_in_state_dir',
+  ...runnerTokensDirCodes,
+  ...runnerTokenCodes,
   ...policyCodes,
   ...markerKeyFileCodes,
   'marker_key_same',
@@ -65,7 +83,7 @@ export const configProblemCodes = Object.freeze([
   ...providersCodes,
 ] as const);
 
-/** Why the configuration cannot start the server. */
+/** Why the configuration cannot start the server or the runner. */
 export type ConfigProblemCode = (typeof configProblemCodes)[number];
 
 /** What the start reports although it goes on, frozen. */

@@ -1,7 +1,9 @@
 /**
  * Checks the folder of state that `ECCLIUM_STATE_DIR` names (ADR 0028,
  * ADR 0055), and the folder of the day keys that `ECCLIUM_KEYS_DIR` names
- * (ADR 0031), with the same rules and codes of their own. The loader only
+ * (ADR 0031), with the same rules and codes of their own, and the folder
+ * of the token files of the runner that `ECCLIUM_RUNNER_TOKENS_DIR` names
+ * (ADR 0033), in which only the user may write. The loader only
  * looks: it creates nothing and opens nothing, so that `ecclium config
  * check` changes nothing on disk. The start creates the folders `audit`
  * and `snapshot` and opens the audit file, and checks them again.
@@ -75,6 +77,30 @@ export const keysDirCodes = Object.freeze([
 /** The reason to refuse a folder of keys. */
 export type KeysDirCode = (typeof keysDirCodes)[number];
 
+/**
+ * The reasons to refuse the folder of the token files of the runner,
+ * frozen (ADR 0033). A path that is not absolute or not in its one form
+ * has the code `runner_tokens_dir_invalid` of the loader. A code never
+ * carries the path.
+ */
+export const runnerTokensDirCodes = Object.freeze([
+  'runner_tokens_dir_platform',
+  'runner_tokens_dir_too_long',
+  'runner_tokens_dir_missing',
+  'runner_tokens_dir_symlink',
+  'runner_tokens_dir_not_directory',
+  'runner_tokens_dir_owner',
+  'runner_tokens_dir_mode',
+  'runner_tokens_dir_unsafe',
+] as const);
+
+/**
+ * The reason to refuse the folder of the token files of the runner, with
+ * the code of the loader for a path in another form.
+ */
+export type RunnerTokensDirCode =
+  (typeof runnerTokensDirCodes)[number] | 'runner_tokens_dir_invalid';
+
 /** The name of the folder for the audit files inside the folder of state. */
 export const auditDirName = 'audit';
 
@@ -119,6 +145,11 @@ export type StateDirResult =
 export type KeysDirResult =
   { readonly ok: true } | { readonly ok: false; readonly code: KeysDirCode };
 
+/** Whether the folder of the token files passed, or the reason it did not. */
+export type RunnerTokensDirResult =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly code: RunnerTokensDirCode };
+
 /**
  * The longest path of the folder, in characters and in bytes of UTF-8:
  * with `/audit/` and the name of an audit file it stays below PATH_MAX of
@@ -136,6 +167,14 @@ export const maxStateDirLength = 960;
  * leave room for.
  */
 export const maxKeysDirLength = 896;
+
+/**
+ * The longest path of the folder of the token files of the runner, in
+ * characters and in bytes of UTF-8 (ADR 0033). The name of a file in it is
+ * `/ct_token_` and an alias of up to 63 characters, so the path of a file
+ * stays below PATH_MAX of macOS, 1024 bytes, as for the folder of keys.
+ */
+export const maxRunnerTokensDirLength = 896;
 
 const encoder = new TextEncoder();
 
@@ -207,6 +246,8 @@ interface Kind<Code extends string> {
   readonly maxLength: number;
   readonly missing: Code;
   readonly unsafe: Code;
+  /** The bits of the mode the group and others must not have. */
+  readonly forbidden: number;
   readonly checks: Checks<Code>;
   readonly inside: readonly Inside<Code>[];
 }
@@ -220,6 +261,8 @@ const stateDirKind: Kind<StateDirCode> = Object.freeze({
   maxLength: maxStateDirLength,
   missing: 'state_dir_missing',
   unsafe: 'state_dir_unsafe',
+  // No right at all for the group or others: the folder holds the audit.
+  forbidden: 0o077,
   checks: Object.freeze({
     symlink: 'state_dir_symlink',
     notDirectory: 'state_dir_not_directory',
@@ -259,6 +302,7 @@ const keysDirKind: Kind<KeysDirCode> = Object.freeze({
   maxLength: maxKeysDirLength,
   missing: 'keys_dir_missing',
   unsafe: 'keys_dir_unsafe',
+  forbidden: 0o077,
   checks: Object.freeze({
     symlink: 'keys_dir_symlink',
     notDirectory: 'keys_dir_not_directory',
@@ -289,17 +333,42 @@ const keysDirKind: Kind<KeysDirCode> = Object.freeze({
   ] as const),
 });
 
-// A folder of the user without rights for the group or others, never
-// reached through a link at its last part.
+// The folder of the token files of the runner. Each file in it has the
+// checks of the token file, no right for the group or others. The folder
+// itself may be read and searched by them, as a folder of secrets that a
+// container mounts often is, but nobody else may write in it: whoever can,
+// could put the file of a wider account in place of a narrow one.
+const runnerTokensDirKind: Kind<RunnerTokensDirCode> = Object.freeze({
+  notString: 'The path of the folder of the tokens must be a string.',
+  platform: 'runner_tokens_dir_platform',
+  relative: 'runner_tokens_dir_invalid',
+  notNormalized: 'runner_tokens_dir_invalid',
+  tooLong: 'runner_tokens_dir_too_long',
+  maxLength: maxRunnerTokensDirLength,
+  missing: 'runner_tokens_dir_missing',
+  unsafe: 'runner_tokens_dir_unsafe',
+  forbidden: 0o022,
+  checks: Object.freeze({
+    symlink: 'runner_tokens_dir_symlink',
+    notDirectory: 'runner_tokens_dir_not_directory',
+    owner: 'runner_tokens_dir_owner',
+    mode: 'runner_tokens_dir_mode',
+  }),
+  inside: Object.freeze([]),
+});
+
+// A folder of the user without the forbidden rights for the group or
+// others, never reached through a link at its last part.
 const checkFolder = <Code extends string>(
   stats: StateDirStats,
   uid: number,
   checks: Checks<Code>,
+  forbidden: number,
 ): Code | undefined => {
   if (stats.isSymbolicLink()) return checks.symlink;
   if (!stats.isDirectory()) return checks.notDirectory;
   if (stats.uid !== uid) return checks.owner;
-  if ((stats.mode & 0o077) !== 0) return checks.mode;
+  if ((stats.mode & forbidden) !== 0) return checks.mode;
   return undefined;
 };
 
@@ -338,7 +407,7 @@ const checkDir = <Code extends string>(
     return refuse(errorCode(error) === 'ENOENT' ? kind.missing : kind.unsafe);
   }
   try {
-    const code = checkFolder(folder, uid, kind.checks);
+    const code = checkFolder(folder, uid, kind.checks, kind.forbidden);
     if (code !== undefined) return refuse(code);
   } catch {
     return refuse(kind.unsafe);
@@ -354,7 +423,7 @@ const checkDir = <Code extends string>(
       return refuse(unsafe);
     }
     try {
-      const code = checkFolder(inside, uid, checks);
+      const code = checkFolder(inside, uid, checks, kind.forbidden);
       if (code !== undefined) return refuse(code);
     } catch {
       return refuse(unsafe);
@@ -458,4 +527,35 @@ export function checkKeysDir(
   fs: StateDirFileSystem = nodeFileSystem,
 ): KeysDirResult {
   return checkDir(path, fs, keysDirKind);
+}
+
+/**
+ * Checks the folder of the token files of the runner that
+ * `ECCLIUM_RUNNER_TOKENS_DIR` names (ADR 0033): absolute and normalised, a
+ * folder of the user, not a link, in which neither the group nor others
+ * may write, and at most {@link maxRunnerTokensDirLength} bytes in UTF-8.
+ * Unlike the folders of state and of keys, the group and others may read
+ * and search it: each file in it is checked on its own, with no right for
+ * them. Without the ID of the user or the flags of the token file, as on
+ * Windows, the platform is refused first. The check only looks and opens
+ * no file.
+ *
+ * Folders above it are trusted: `lstat` follows links there.
+ *
+ * @param path - The value of `ECCLIUM_RUNNER_TOKENS_DIR`.
+ * @param fs - The file functions, only for tests.
+ * @returns Whether the folder passed, or the code of the first check that
+ *   failed.
+ * @throws {TypeError} When the path is not a string.
+ * @example
+ * ```ts
+ * const checked = checkRunnerTokensDir('/run/secrets');
+ * if (!checked.ok) report(checked.code);
+ * ```
+ */
+export function checkRunnerTokensDir(
+  path: string,
+  fs: StateDirFileSystem = nodeFileSystem,
+): RunnerTokensDirResult {
+  return checkDir(path, fs, runnerTokensDirKind);
 }

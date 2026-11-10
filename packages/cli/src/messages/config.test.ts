@@ -6,6 +6,7 @@ import {
   configWarningCodes,
   loadConfig,
   proxyVariableName,
+  runnerTokenCodes,
   tlsVariableName,
   tokenVariableName,
   unsupportedVariableNames,
@@ -37,7 +38,19 @@ const variableOf = (code: ConfigProblemCode): string => {
     return 'ECCLIUM_CHURCHTOOLS_TOKEN_FILE';
   }
   if (code.includes('keys_dir')) return 'ECCLIUM_KEYS_DIR';
+  // The folder of the tokens of the runner and the token files in it.
+  if (code.startsWith('runner_token')) return 'ECCLIUM_RUNNER_TOKENS_DIR';
   switch (code) {
+    case 'runner_server_token':
+      return 'ECCLIUM_CHURCHTOOLS_TOKEN_FILE';
+    case 'runner_time_zone_required':
+      return 'ECCLIUM_TIME_ZONE';
+    case 'runner_policy_required':
+      return 'ECCLIUM_POLICY_FILE';
+    case 'runner_routines_dir_required':
+      return 'ECCLIUM_ROUTINES_DIR';
+    case 'runner_state_dir_required':
+      return 'ECCLIUM_STATE_DIR';
     case 'token_conflict':
     case 'token_invalid':
       return 'ECCLIUM_CHURCHTOOLS_TOKEN';
@@ -53,6 +66,7 @@ const variableOf = (code: ConfigProblemCode): string => {
     case 'tls_trace_enabled':
       return 'NODE_OPTIONS';
     case 'stdio_only':
+    case 'runner_stdio_only':
       return 'ECCLIUM_REDACTION';
     case 'redaction_strict_with_api':
       return 'ECCLIUM_TOOLSETS';
@@ -317,6 +331,43 @@ describe('the catalog of messages', () => {
       }
     },
   );
+
+  // The runner refuses what belongs to the local start over stdio with a
+  // code of its own, so that its text speaks of the runner, never of HTTP,
+  // and never sends the operator to the token file of the server, which
+  // the runner refuses as well (ADR 0033).
+  it.each([
+    ['ECCLIUM_REDACTION', '‹off›', '‹standard› oder ‹strict›'],
+    [
+      'ECCLIUM_CHURCHTOOLS_TOKEN',
+      'nicht für den Runner',
+      '‹ct_token_runner› in den Ordner aus ‹ECCLIUM_RUNNER_TOKENS_DIR›',
+    ],
+    [
+      'ECCLIUM_STDIO_SUBJECT',
+      'nicht für den Runner',
+      'aus der Umgebung des Runners',
+    ],
+    ['ECCLIUM_LOG_LEVEL', 'nicht für den Runner', 'des Runners'],
+  ])('gives %s a text of the runner', (name, what, action) => {
+    const message = problemMessage({
+      code: 'runner_stdio_only',
+      variable: name,
+    });
+    expect(message.what).toContain(`‹${name}›`);
+    expect(message.what).toContain(what);
+    expect(message.action).toContain(action);
+    expect(textOf(message)).not.toMatch(/HTTP|TOKEN_FILE/);
+  });
+
+  it('gives a text of the runner for a name it does not show', () => {
+    expect(
+      problemMessage({ code: 'runner_stdio_only', variable: 'not a name' })
+        .what,
+    ).toBe(
+      'Eine Variable gilt nur für den Start über stdio, nicht für den Runner.',
+    );
+  });
 
   // A name with letters beyond ASCII never reaches url_host: the parser
   // turns it into Punycode, so the address is not in its canonical form.
@@ -794,6 +845,56 @@ describe('the place of a problem of the policy', () => {
       expect(
         problemText({ code: 'yaml_debug_output_enabled', variable: name }),
       ).toContain(`Die Variable ‹${name}› ist gesetzt`);
+    }
+  });
+});
+
+// The loader reports the file of the account of the runner itself without
+// a field, and the file of another account with the field of the first
+// entry of the policy that names it, never with the alias (ADR 0033).
+describe('the token files of the accounts of the runner', () => {
+  const what = (code: ConfigProblemCode, field?: string): string =>
+    problemMessage({
+      code,
+      variable: 'ECCLIUM_RUNNER_TOKENS_DIR',
+      ...(field === undefined ? {} : { field }),
+    }).what;
+
+  it.each(runnerTokenCodes)(
+    'names its own file without a field and the entry with one: %s',
+    (code) => {
+      const own = what(code);
+      expect(own).toMatch(
+        /^Die Token-Datei ‹ct_token_runner› des Kontos des Runners im Ordner aus ‹ECCLIUM_RUNNER_TOKENS_DIR› /u,
+      );
+      expect(own).not.toContain('im Feld');
+      const other = what(code, 'unattended[2].credential');
+      expect(other).toMatch(
+        /^Die Token-Datei des Kontos, das die Richtlinie im Feld ‹unattended\[2\]\.credential› nennt, im Ordner aus ‹ECCLIUM_RUNNER_TOKENS_DIR› /u,
+      );
+      expect(other).not.toContain('ct_token_runner');
+    },
+  );
+
+  it('shows nothing of a field in another form than the loader builds', () => {
+    const text = problemText({
+      code: 'runner_token_file_missing',
+      variable: 'ECCLIUM_RUNNER_TOKENS_DIR',
+      field: 'unattended[0].credential: bericht',
+    });
+    expect(text).not.toMatch(/bericht|im Feld/u);
+  });
+
+  // A file in the checked folder is never relative, and on a platform
+  // without the checks the folder is refused first.
+  it('has no message for the two codes the loader cannot give for a file', () => {
+    for (const code of [
+      'runner_token_file_relative',
+      'runner_token_file_platform',
+    ]) {
+      expect(() => problemText({ code } as unknown as ConfigProblem)).toThrow(
+        new TypeError('The problem code is unknown.'),
+      );
     }
   });
 });

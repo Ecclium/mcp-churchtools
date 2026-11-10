@@ -78,6 +78,7 @@ const valueColumn =
 const transports: Readonly<Record<Transport, string>> = Object.freeze({
   stdio: 'über stdio',
   http: 'über HTTP',
+  runner: 'des Runners',
 });
 
 const masked = '[verborgen]';
