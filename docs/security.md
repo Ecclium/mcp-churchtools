@@ -193,6 +193,6 @@ Ein Schreibvorgang des Kerns lässt sich 30 Tage lang mit `ecclium undo` zurück
 
 ## Was später kommt
 
-- Phase 6: der Runner für Routinen, dessen Modell keine Werkzeuge hat, eine Positivliste für ausgehende Verbindungen und ein Kill-Switch je Routine. Zu weite Rechte des Dienstkontos und ein umbenanntes Ziel sperren dort das Schreiben einer Routine.
+- Phase 6: der Runner für Routinen, dessen Modell keine Werkzeuge hat, eine Positivliste für ausgehende Verbindungen und ein Kill-Switch je Routine. Zu weite Rechte des Dienstkontos und ein umbenanntes Ziel schicken dort das Schreiben einer Routine in die Freigabe-Warteschlange, zu weite Rechte nur, solange keine befristete Ausnahme der Richtlinie gilt.
 - Phase 7: der Betrieb über HTTP, voreingestellt mit `elicitation-or-queue` und damit ohne Echo. Setzen Sie dort `ECCLIUM_WRITE_CONFIRMATION=echo-allowed` ausdrücklich, gilt das Echo, und jeder Start warnt.
 - Phase 8: eine Anleitung, wie Sie Pakete und Images vor der Installation prüfen.
