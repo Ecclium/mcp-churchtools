@@ -1,17 +1,26 @@
 /**
  * Private files of the server outside the audit (ADR 0031): the day keys
- * in the folder of keys and the snapshots in the folder of state. Where it
- * stands in the way of a write: below the stores that keep such files,
- * never reached by a tool.
+ * in the folder of keys and the snapshots in the folder of state, and the
+ * drafts and notices of the runner (ADR 0033). Where it stands in the way
+ * of a write: below the stores and the runner that keep such files, never
+ * reached by a tool.
  *
- * Every file here is written once and never changed. A new file is
+ * Most files here are written once and never changed. Such a file is
  * written whole under a temporary name of its own, flushed with `fsync`
  * and only then given its name with `link`, which fails when the name is
  * taken. A reader therefore never sees half a file, and two processes that
  * race for the same name end with one file, the first: the second learns
  * that it exists and reads it. A lock file is not needed for that, because
- * no file is ever written twice. After the link the folder is flushed as
- * well, since the `fsync` of a file keeps its bytes but not its name.
+ * no such file is ever written twice. After the link the folder is flushed
+ * as well, since the `fsync` of a file keeps its bytes but not its name.
+ *
+ * Two kinds of file change. A draft, which a second run of the same period
+ * replaces (ADR 0033), is written the same way and then given its name with
+ * `rename`, which puts it in the place of a file of that name whole: a
+ * reader sees the old file or the new one, never a mix. A file of notices
+ * grows by one line at a time at its end and is never written over; it
+ * lies where the operator chose, so only the file itself is checked.
+ *
  * Folders are made with 0700, never recursively, files with 0600. Every
  * open follows no link and is checked on its descriptor: a regular file or
  * folder of the user without rights for others. A file is destroyed by
@@ -35,11 +44,14 @@ import {
   openSync,
   readdirSync,
   readSync,
+  renameSync,
   rmdirSync,
   unlinkSync,
   writeSync,
 } from 'node:fs';
 import { isProxy } from 'node:util/types';
+
+import { isNormalizedAbsolutePath } from '../config/state-dir.js';
 
 /** The mode of a private folder. */
 export const privateFolderMode = 0o700;
@@ -81,9 +93,25 @@ export interface PrivateFileSystem {
     length: number,
     position: number,
   ) => number;
+  /**
+   * Writes at the end of a descriptor opened with `O_APPEND`. It takes no
+   * position: with one, a system that follows POSIX writes at that
+   * position even on such a descriptor, over what the file holds.
+   */
+  readonly appendSync: (
+    fd: number,
+    buffer: Uint8Array,
+    offset: number,
+    length: number,
+  ) => number;
   readonly fsyncSync: (fd: number) => void;
   readonly closeSync: (fd: number) => void;
   readonly linkSync: (existing: string, path: string) => void;
+  /**
+   * Gives a file a new name in place of whatever had it; a link at the new
+   * name is replaced, never followed.
+   */
+  readonly renameSync: (from: string, to: string) => void;
   readonly unlinkSync: (path: string) => void;
   /** Removes an empty folder; it follows no link at the end of the path. */
   readonly rmdirSync: (path: string) => void;
@@ -105,9 +133,19 @@ export const nodePrivateFileSystem: PrivateFileSystem = Object.freeze({
   lstatSync,
   readSync,
   writeSync,
+  // Exactly four arguments, so that Node.js calls write(2) and not
+  // pwrite(2), which writes at the position it is given on macOS even with
+  // O_APPEND.
+  appendSync: (
+    fd: number,
+    buffer: Uint8Array,
+    offset: number,
+    length: number,
+  ) => writeSync(fd, buffer, offset, length),
   fsyncSync,
   closeSync,
   linkSync,
+  renameSync,
   unlinkSync,
   // Without options: rmdir(2) itself, which removes only an empty folder.
   rmdirSync: (path: string) => {
@@ -177,6 +215,7 @@ interface Flags {
   readonly read: number;
   readonly write: number;
   readonly create: number;
+  readonly append: number;
   readonly folder: number;
   readonly uid: number;
 }
@@ -184,11 +223,12 @@ interface Flags {
 const flagsOf = (fs: PrivateFileSystem): Flags => {
   const { O_RDONLY, O_WRONLY, O_CREAT, O_EXCL, O_NOFOLLOW, O_NOCTTY } =
     fs.constants;
-  const { O_DIRECTORY, O_NONBLOCK } = fs.constants;
+  const { O_APPEND, O_DIRECTORY, O_NONBLOCK } = fs.constants;
   const uid = fs.getuid();
   if (
     O_RDONLY === undefined ||
     O_WRONLY === undefined ||
+    O_APPEND === undefined ||
     O_CREAT === undefined ||
     O_EXCL === undefined ||
     O_NOFOLLOW === undefined ||
@@ -204,6 +244,9 @@ const flagsOf = (fs: PrivateFileSystem): Flags => {
     read: O_RDONLY | O_NOFOLLOW | O_NOCTTY | O_NONBLOCK,
     write: O_WRONLY | O_NOFOLLOW | O_NOCTTY | O_NONBLOCK,
     create: O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_NOCTTY,
+    // Every write at the end, a missing file made; O_NONBLOCK as for
+    // reading, since the path of a file of notices is the operator's.
+    append: O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_NOCTTY | O_NONBLOCK,
     folder: O_RDONLY | O_DIRECTORY | O_NOFOLLOW,
     uid,
   };
@@ -223,6 +266,12 @@ const pathOf = (folder: string, name: string): string => {
   }
   return `${prefixOf(folder)}/${name}`;
 };
+
+// A temporary name no other writer uses: a dot, the plain name, the ID of
+// the process, 16 hex digits and `.tmp`, as temporaryPattern below knows
+// it, so that destroyPrivateFile can remove one a writer left behind.
+const temporaryOf = (folder: string, name: string, pid: number): string =>
+  `${prefixOf(folder)}/.${name}.${String(pid)}.${randomBytes(8).toString('hex')}.tmp`;
 
 const close = (fs: PrivateFileSystem, fd: number): void => {
   try {
@@ -329,6 +378,17 @@ const writeAll = (fs: PrivateFileSystem, fd: number, bytes: Uint8Array) => {
   }
 };
 
+// Like writeAll, at the end of a descriptor opened with O_APPEND: each part
+// lands at the end, wherever the file ends by then.
+const appendAll = (fs: PrivateFileSystem, fd: number, bytes: Uint8Array) => {
+  let offset = 0;
+  while (offset < bytes.length) {
+    const written = fs.appendSync(fd, bytes, offset, bytes.length - offset);
+    if (written <= 0) fail('unavailable');
+    offset += written;
+  }
+};
+
 // Flushes a folder, so that a name given in it outlasts a crash of the
 // system (ADR 0031). A file system that cannot flush a folder answers
 // EINVAL or ENOTSUP; there the name stands as far as that system keeps
@@ -394,7 +454,7 @@ export function writePrivateFileOnce(
   const path = pathOf(folder, name);
   const flags = flagsOf(fs);
   checkFolder(fs, folder, flags.uid);
-  const temporary = `${prefixOf(folder)}/.${name}.${String(options.pid)}.${randomBytes(8).toString('hex')}.tmp`;
+  const temporary = temporaryOf(folder, name, options.pid);
   let fd: number;
   try {
     fd = fs.openSync(temporary, flags.create, privateFileMode);
@@ -428,6 +488,170 @@ export function writePrivateFileOnce(
     } catch {
       // A temporary name left behind is destroyed with its file.
     }
+  }
+}
+
+/** What {@link replacePrivateFile} needs besides the file functions. */
+export interface ReplaceOptions {
+  /** The ID of the process, part of the temporary name. */
+  readonly pid: number;
+  /** The file functions, only for tests. */
+  readonly fs?: PrivateFileSystem;
+}
+
+/**
+ * Writes a private file whole and puts it in the place of any file of that
+ * name, such as a draft that a second run of the same period replaces (ADR
+ * 0033): written under a temporary name, flushed, then given its name with
+ * `rename` and the folder flushed after it. A reader sees the old file or
+ * the new one, never half of one. `rename` replaces a link at the name and
+ * never follows it, so the target of such a link keeps its bytes. The
+ * temporary name is removed when anything fails before the rename.
+ *
+ * @param folder - A private folder, as {@link preparePrivateFolder} made it.
+ * @param name - The name of the file in the folder.
+ * @param bytes - What the file holds.
+ * @param options - The ID of the process and, for tests, the file
+ *   functions.
+ * @returns Nothing; the file of that name holds the bytes.
+ * @throws {PrivateFileError} With `unsafe` when the folder is not private
+ *   or a folder has the name, otherwise when the folder or the system
+ *   refuses, also when the folder does not flush after the rename: the new
+ *   file then has its name already.
+ * @throws {TypeError} For a name that is not a plain name of a file.
+ * @example
+ * ```ts
+ * replacePrivateFile(folder, 'weekly-2026-W45.md', bytes, { pid: process.pid });
+ * ```
+ */
+export function replacePrivateFile(
+  folder: string,
+  name: string,
+  bytes: Uint8Array,
+  options: ReplaceOptions,
+): void {
+  const fs = options.fs ?? nodePrivateFileSystem;
+  const path = pathOf(folder, name);
+  const flags = flagsOf(fs);
+  checkFolder(fs, folder, flags.uid);
+  const temporary = temporaryOf(folder, name, options.pid);
+  let fd: number;
+  try {
+    fd = fs.openSync(temporary, flags.create, privateFileMode);
+  } catch {
+    return fail('unavailable');
+  }
+  // After the rename the file no longer has the temporary name, and
+  // removing that name would remove nothing or, at worst, another file.
+  let renamed = false;
+  try {
+    try {
+      const stats = fs.fstatSync(fd);
+      if (!stats.isFile() || !isPrivate(stats, flags.uid)) fail('unsafe');
+      writeAll(fs, fd, bytes);
+      fs.fsyncSync(fd);
+    } finally {
+      close(fs, fd);
+    }
+    try {
+      fs.renameSync(temporary, path);
+    } catch (error) {
+      return fail(errorCode(error) === 'EISDIR' ? 'unsafe' : 'unavailable');
+    }
+    renamed = true;
+    flushFolder(fs, folder, flags);
+  } catch (error) {
+    throw error instanceof PrivateFileError
+      ? error
+      : new PrivateFileError('unavailable');
+  } finally {
+    if (!renamed) {
+      try {
+        fs.unlinkSync(temporary);
+      } catch {
+        // A temporary name left behind is destroyed with its file.
+      }
+    }
+  }
+}
+
+/** What {@link appendPrivateLine} takes besides the path and the line. */
+export interface AppendLineOptions {
+  /** The file functions, only for tests. */
+  readonly fs?: PrivateFileSystem;
+}
+
+// Every end of a line a reader may split at, so that one call adds exactly
+// one line.
+const lineBreakPattern = /[\n\r\u2028\u2029]/u;
+
+const encoder = new TextEncoder();
+
+/**
+ * Adds one line and its `\n` at the end of a private file, such as the
+ * notice of a run, which names routine, period and outcome, never content
+ * (ADR 0033). A missing file is made with 0600. The file is opened for
+ * appending without following a link and checked on its descriptor: a
+ * regular file of the user without rights for others. Every byte is
+ * written at the end, then flushed with `fsync`. The folder is the
+ * operator's choice and is not checked; only the file is.
+ *
+ * @param path - An absolute, normalised path of the file.
+ * @param line - The line, not empty, without an end of a line.
+ * @param options - For tests, the file functions.
+ * @returns Nothing; the line is at the end of the file.
+ * @throws {PrivateFileError} With `platform`; with `unsafe` for a link, a
+ *   folder or a file that is not a private file of the user; with
+ *   `unavailable` when the system refuses. A write that fails halfway may
+ *   leave the start of the line in the file, a failed `fsync` the whole
+ *   line.
+ * @throws {TypeError} For a path that is not absolute and normalised, and
+ *   for a line that is empty or holds an end of a line.
+ * @example
+ * ```ts
+ * appendPrivateLine('/srv/ecclium/notices.jsonl', '{"routine":"weekly"}');
+ * ```
+ */
+export function appendPrivateLine(
+  path: string,
+  line: string,
+  options: AppendLineOptions = {},
+): void {
+  if (!isNormalizedAbsolutePath(path)) {
+    throw new TypeError('The path of a private file is invalid.');
+  }
+  if (typeof line !== 'string' || line === '' || lineBreakPattern.test(line)) {
+    throw new TypeError('The line for a private file is invalid.');
+  }
+  const fs = options.fs ?? nodePrivateFileSystem;
+  const flags = flagsOf(fs);
+  let fd: number;
+  try {
+    fd = fs.openSync(path, flags.append, privateFileMode);
+  } catch (error) {
+    // A link at the path (ELOOP, EMLINK on some systems) or a folder.
+    const code = errorCode(error);
+    return fail(
+      code === 'ELOOP' || code === 'EMLINK' || code === 'EISDIR'
+        ? 'unsafe'
+        : 'unavailable',
+    );
+  }
+  try {
+    const stats = fs.fstatSync(fd);
+    // One name only: a second hard link at the path would make the line
+    // land in a file the user keeps for something else.
+    if (!stats.isFile() || !isPrivate(stats, flags.uid) || stats.nlink !== 1) {
+      fail('unsafe');
+    }
+    appendAll(fs, fd, encoder.encode(`${line}\n`));
+    fs.fsyncSync(fd);
+  } catch (error) {
+    throw error instanceof PrivateFileError
+      ? error
+      : new PrivateFileError('unavailable');
+  } finally {
+    close(fs, fd);
   }
 }
 
@@ -538,8 +762,9 @@ export function listPrivateFolder(
   }
 }
 
-// The temporary name writePrivateFileOnce gives a file: a dot, the plain
-// name, the ID of the process, 16 hex digits and `.tmp`.
+// The temporary name writePrivateFileOnce and replacePrivateFile give a
+// file (temporaryOf): a dot, the plain name, the ID of the process, 16 hex
+// digits and `.tmp`.
 const temporaryPattern =
   /^\.[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.\d{1,10}\.[0-9a-f]{16}\.tmp$/;
 
@@ -586,7 +811,7 @@ const zeroFile = (
  *
  * @param folder - A private folder.
  * @param name - The name of the entry, a plain one or a temporary one that
- *   {@link writePrivateFileOnce} left behind.
+ *   {@link writePrivateFileOnce} or {@link replacePrivateFile} left behind.
  * @param maxBytes - The largest file zeroed; a larger one only loses its
  *   name.
  * @param fs - The file functions, only for tests.

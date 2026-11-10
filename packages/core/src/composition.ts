@@ -38,7 +38,15 @@ export {
   prepareDayKeyFolder,
 } from './keys/day-keys.js';
 export { createFileKeyProvider, type FileKeys } from './keys/file-provider.js';
-export { PrivateFileError } from './files/index.js';
+// The private files the runner writes its drafts and notices to (ADR 0033).
+export {
+  type AppendLineOptions,
+  appendPrivateLine,
+  preparePrivateFolder,
+  PrivateFileError,
+  replacePrivateFile,
+  type ReplaceOptions,
+} from './files/index.js';
 export {
   createLogger,
   createStderrWriter,
