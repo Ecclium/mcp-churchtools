@@ -50,5 +50,5 @@ Gewählt ist die dritte Option.
 - Orte: `stdioEntries`, `stdout` und `stderr` in `tests/architecture/boundaries.json`, mit leeren Modulen an jedem Ort.
 - dependency-cruiser: Regel `no-stdout-in-stdio-paths` in `tests/architecture/dependency-rules.mts`, geprüft mit `pnpm check:arch`.
 - ESLint: `tests/architecture/lint-rules.mts`, geladen von `eslint.config.mjs`.
-- Tests: `tests/architecture/dependency-rules.test.mts` und `tests/architecture/lint-rules.test.mts`, je Regel mit einem Beispiel, das sie verletzt.
+- Tests: `tests/architecture/dependency-cases.mts`, ausgeführt in `dependency-rules-1.test.mts` bis `dependency-rules-6.test.mts` und geprüft in `dependency-rules.test.mts`, sowie `tests/architecture/lint-rules.test.mts`, je Regel mit einem Beispiel, das sie verletzt.
 - Das Serverpaket des SDK, die Server-Instanz pro Anfrage und der Test im Betrieb über stdio folgen in Phase 1, der Adapter für HTTP in Phase 7.
