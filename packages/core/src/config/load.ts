@@ -186,6 +186,22 @@ export interface EccliumConfig {
    * path alone.
    */
   readonly runnerTokensDir: string | undefined;
+  /**
+   * The folder of the drafts of the channel `file`, an absolute normalised
+   * path, or undefined when the variable is not set (ADR 0033). The runner
+   * writes one private file `<routine>-<period>.md` per routine and period
+   * into it and prepares the folder itself; the start checks the form of
+   * the path alone. How long a draft stays is the operator's matter
+   * (ADR 0031).
+   */
+  readonly draftsDir: string | undefined;
+  /**
+   * The file of the notices of the channel `file`, an absolute normalised
+   * path, or undefined when the variable is not set (ADR 0033). The runner
+   * appends one line per run to it, never content, and creates it itself;
+   * the start checks the form of the path alone.
+   */
+  readonly notifyFile: string | undefined;
   readonly stdioSubject: string;
   readonly logLevel: LogLevel;
 }
@@ -211,6 +227,8 @@ export type SettingKey =
   | 'routinesDir'
   | 'providers'
   | 'runnerTokensDir'
+  | 'draftsDir'
+  | 'notifyFile'
   | 'stdioSubject'
   | 'logLevel';
 
@@ -1549,6 +1567,105 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     );
   }
 
+  // The folder of the drafts of the channel file and the file of the
+  // notices after a run (ADR 0033). Only the runner writes them, and it
+  // prepares the folder and the file itself, so the start checks the form
+  // of the path and nothing on disk, as for the routines. Neither is
+  // required, also not for the runner: only a routine with the channel
+  // file needs one. Neither names YAML, so the variables of debug output
+  // of the library for YAML play no part.
+  // Neither may lie in or hold a folder of Ecclium whose files a draft or
+  // a line of a notice would spoil or that holds a secret: the folders of
+  // state that hold the audit, the counters, the snapshots, the queue, the
+  // locks and the kill switches, the folder of state itself, the folder of
+  // keys and the folder of the token files. A line appended to an audit
+  // file would break its chain, one appended to a token file the account.
+  // A folder of drafts beside these in the folder of state, such as
+  // /data/output, stays allowed. Compared as text, like the folder of keys.
+  const guardedFolders = (): {
+    readonly state: string | undefined;
+    readonly folders: readonly string[];
+  } => {
+    const given = (value: string | undefined): string | undefined =>
+      value !== undefined && isNormalizedAbsolutePath(value)
+        ? value
+        : undefined;
+    const state = given(
+      stateDirRead.state === 'set' ? stateDirRead.value : undefined,
+    );
+    const others = [
+      given(keysDirRead.state === 'set' ? keysDirRead.value : undefined),
+      given(
+        runnerTokensRead.state === 'set' ? runnerTokensRead.value : undefined,
+      ),
+    ].filter((value): value is string => value !== undefined);
+    return {
+      state,
+      folders: [
+        ...others,
+        ...(state === undefined
+          ? []
+          : ['audit', 'quota', 'snapshots', 'queue', 'runner', 'stop'].map(
+              (part) => `${state === '/' ? '' : state}/${part}`,
+            )),
+      ],
+    };
+  };
+  const overlaps = (value: string): boolean => {
+    const { state, folders } = guardedFolders();
+    return (
+      (state !== undefined && liesWithin(state, value)) ||
+      folders.some(
+        (folder) => liesWithin(value, folder) || liesWithin(folder, value),
+      )
+    );
+  };
+  const formOnlyPath = (
+    key: 'draftsDir' | 'notifyFile',
+    name: 'ECCLIUM_DRAFTS_DIR' | 'ECCLIUM_NOTIFY_FILE',
+    code: 'drafts_dir_invalid' | 'notify_file_invalid',
+    overlapCode: 'drafts_dir_overlap' | 'notify_file_overlap',
+  ): { readonly value: string | undefined; readonly valid: boolean } => {
+    const pathRead = read(row(name));
+    if (pathRead.state === 'unset') {
+      setting(key, name, 'unset', shownNone);
+      return { value: undefined, valid: true };
+    }
+    if (
+      pathRead.state === 'set' &&
+      fitsVariable(name, pathRead.value) &&
+      overlaps(pathRead.value)
+    ) {
+      report(overlapCode, name);
+      setting(key, name, 'invalid', shownNone);
+      return { value: undefined, valid: false };
+    }
+    if (pathRead.state === 'set' && fitsVariable(name, pathRead.value)) {
+      setting(
+        key,
+        name,
+        'environment',
+        record({ kind: 'path', value: pathRead.value }),
+      );
+      return { value: pathRead.value, valid: true };
+    }
+    if (pathRead.state === 'set') report(code, name);
+    setting(key, name, 'invalid', shownNone);
+    return { value: undefined, valid: false };
+  };
+  const drafts = formOnlyPath(
+    'draftsDir',
+    'ECCLIUM_DRAFTS_DIR',
+    'drafts_dir_invalid',
+    'drafts_dir_overlap',
+  );
+  const notify = formOnlyPath(
+    'notifyFile',
+    'ECCLIUM_NOTIFY_FILE',
+    'notify_file_invalid',
+    'notify_file_overlap',
+  );
+
   // What the runner needs besides the server (ADR 0033, ADR 0034): the
   // zone its schedules reckon in, a file of the policy, the folder of its
   // routines and the folder of state, where the memory of its runs, its
@@ -1638,6 +1755,8 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     !routinesDirValid ||
     !providersValid ||
     !runnerTokensDirValid ||
+    !drafts.valid ||
+    !notify.valid ||
     subject === undefined ||
     logLevel === undefined
   ) {
@@ -1667,6 +1786,8 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       routinesDir,
       providers,
       runnerTokensDir,
+      draftsDir: drafts.value,
+      notifyFile: notify.value,
       stdioSubject: subject.value,
       logLevel: logLevel.value as LogLevel,
     }),

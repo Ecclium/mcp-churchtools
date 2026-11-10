@@ -48,6 +48,8 @@ export const variableNames = Object.freeze([
   'ECCLIUM_ROUTINES_DIR',
   'ECCLIUM_PROVIDERS_FILE',
   'ECCLIUM_RUNNER_TOKENS_DIR',
+  'ECCLIUM_DRAFTS_DIR',
+  'ECCLIUM_NOTIFY_FILE',
   'ECCLIUM_STDIO_SUBJECT',
   'ECCLIUM_LOG_LEVEL',
 ] as const);
@@ -654,6 +656,31 @@ export const variables: readonly Variable[] = Object.freeze([
     stdioOnly: false,
     runner: true,
   }),
+  // The folder of the drafts of the channel file, one file per routine and
+  // period, and the file of the notices after a run (ADR 0033). Only the
+  // runner writes them, and it prepares the folder and the file itself, so
+  // the start checks the form of the path alone, as for the routines. How
+  // long a draft stays is the operator's matter (ADR 0031).
+  row({
+    name: 'ECCLIUM_DRAFTS_DIR',
+    kind: 'path',
+    maxLength: 4096,
+    choices: [],
+    defaultValue: undefined,
+    secret: false,
+    stdioOnly: false,
+    runner: true,
+  }),
+  row({
+    name: 'ECCLIUM_NOTIFY_FILE',
+    kind: 'path',
+    maxLength: 4096,
+    choices: [],
+    defaultValue: undefined,
+    secret: false,
+    stdioOnly: false,
+    runner: true,
+  }),
   row({
     name: 'ECCLIUM_STDIO_SUBJECT',
     kind: 'subject',
@@ -761,6 +788,16 @@ export const variableSchemas: Readonly<
     .min(1)
     .max(4096)
     .refine((value) => isNormalizedAbsolutePath(value)),
+  ECCLIUM_DRAFTS_DIR: z
+    .string()
+    .min(1)
+    .max(4096)
+    .refine((value) => isNormalizedAbsolutePath(value)),
+  ECCLIUM_NOTIFY_FILE: z
+    .string()
+    .min(1)
+    .max(4096)
+    .refine((value) => isNormalizedAbsolutePath(value)),
   ECCLIUM_STDIO_SUBJECT: z.string().max(32).regex(stdioSubjectPattern),
   ECCLIUM_LOG_LEVEL: choiceOf('ECCLIUM_LOG_LEVEL'),
 });
@@ -799,6 +836,8 @@ export const environmentSchema = z.strictObject({
   ECCLIUM_PROVIDERS_FILE: variableSchemas.ECCLIUM_PROVIDERS_FILE.optional(),
   ECCLIUM_RUNNER_TOKENS_DIR:
     variableSchemas.ECCLIUM_RUNNER_TOKENS_DIR.optional(),
+  ECCLIUM_DRAFTS_DIR: variableSchemas.ECCLIUM_DRAFTS_DIR.optional(),
+  ECCLIUM_NOTIFY_FILE: variableSchemas.ECCLIUM_NOTIFY_FILE.optional(),
   ECCLIUM_STDIO_SUBJECT: variableSchemas.ECCLIUM_STDIO_SUBJECT.optional(),
   ECCLIUM_LOG_LEVEL: variableSchemas.ECCLIUM_LOG_LEVEL.optional(),
 });

@@ -126,6 +126,8 @@ describe('the table of variables', () => {
       ['ECCLIUM_ROUTINES_DIR', undefined, false, false, true],
       ['ECCLIUM_PROVIDERS_FILE', undefined, false, false, true],
       ['ECCLIUM_RUNNER_TOKENS_DIR', undefined, false, false, true],
+      ['ECCLIUM_DRAFTS_DIR', undefined, false, false, true],
+      ['ECCLIUM_NOTIFY_FILE', undefined, false, false, true],
       ['ECCLIUM_STDIO_SUBJECT', 'local-stdio', false, true, false],
       ['ECCLIUM_LOG_LEVEL', 'info', false, false, true],
     ]);
@@ -408,6 +410,8 @@ describe('fitsVariable', () => {
         ['ECCLIUM_ROUTINES_DIR', '/path/to/routines/'],
         ['ECCLIUM_PROVIDERS_FILE', 'providers.yaml'],
         ['ECCLIUM_RUNNER_TOKENS_DIR', '/path/to/tokens/'],
+        ['ECCLIUM_DRAFTS_DIR', '/path/to/drafts/'],
+        ['ECCLIUM_NOTIFY_FILE', 'notify.jsonl'],
         ['ECCLIUM_STDIO_SUBJECT', 'Max'],
         ['ECCLIUM_LOG_LEVEL', 'INFO'],
       ];

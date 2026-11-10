@@ -672,6 +672,8 @@ describe('loadConfig with a good configuration', () => {
         'unset',
         { kind: 'none' },
       ],
+      ['draftsDir', 'ECCLIUM_DRAFTS_DIR', 'unset', { kind: 'none' }],
+      ['notifyFile', 'ECCLIUM_NOTIFY_FILE', 'unset', { kind: 'none' }],
       [
         'stdioSubject',
         'ECCLIUM_STDIO_SUBJECT',
@@ -2816,6 +2818,147 @@ describe('loadConfig and the folder of the tokens of the runner', () => {
   });
 });
 
+// A draft or a notice never goes into a folder of Ecclium whose files it
+// would spoil or that holds a secret (ADR 0033): the folder of state
+// itself and its folders audit, quota, snapshots, queue, runner and stop,
+// the folder of keys and the folder of the token files. A folder of drafts
+// beside them in the folder of state stays allowed.
+describe('loadConfig and the folders of drafts and notices', () => {
+  const withKeys = { ECCLIUM_KEYS_DIR: keysDirPath };
+  it.each([
+    ['ECCLIUM_DRAFTS_DIR', stateDirPath, 'drafts_dir_overlap'],
+    ['ECCLIUM_DRAFTS_DIR', '/path', 'drafts_dir_overlap'],
+    ['ECCLIUM_DRAFTS_DIR', `${stateDirPath}/audit`, 'drafts_dir_overlap'],
+    ['ECCLIUM_DRAFTS_DIR', `${stateDirPath}/stop/drafts`, 'drafts_dir_overlap'],
+    ['ECCLIUM_DRAFTS_DIR', `${tokensDirPath}/drafts`, 'drafts_dir_overlap'],
+    ['ECCLIUM_DRAFTS_DIR', keysDirPath, 'drafts_dir_overlap'],
+    [
+      'ECCLIUM_NOTIFY_FILE',
+      `${stateDirPath}/quota/notices.jsonl`,
+      'notify_file_overlap',
+    ],
+    [
+      'ECCLIUM_NOTIFY_FILE',
+      `${stateDirPath}/audit/default-2026-11-11.jsonl`,
+      'notify_file_overlap',
+    ],
+    [
+      'ECCLIUM_NOTIFY_FILE',
+      `${tokensDirPath}/ct_token_runner`,
+      'notify_file_overlap',
+    ],
+    ['ECCLIUM_NOTIFY_FILE', `${keysDirPath}/notices`, 'notify_file_overlap'],
+  ] as const)('refuses %s at %s', (name, path, code) => {
+    const result = asRunner({ extra: { ...withKeys, [name]: path } });
+    expect(result.ok).toBe(false);
+    expect(problems(result)).toContainEqual([code, name]);
+  });
+
+  it.each([
+    ['ECCLIUM_DRAFTS_DIR', `${stateDirPath}/output`, 'draftsDir'],
+    ['ECCLIUM_DRAFTS_DIR', '/path/to/stateful', 'draftsDir'],
+    ['ECCLIUM_NOTIFY_FILE', `${stateDirPath}/notices.jsonl`, 'notifyFile'],
+    ['ECCLIUM_NOTIFY_FILE', '/path/to/logs/notices.jsonl', 'notifyFile'],
+  ] as const)('takes %s at %s', (name, path, key) => {
+    const result = asRunner({ extra: { ...withKeys, [name]: path } });
+    expect(codes(result)).not.toContain('drafts_dir_overlap');
+    expect(codes(result)).not.toContain('notify_file_overlap');
+    expect(setting(result, key)).toMatchObject({ origin: 'environment' });
+  });
+});
+
+// The folder of the drafts of the channel file and the file of the notices
+// after a run (ADR 0033): only the runner writes them and prepares both
+// itself, so every start checks the form of the path alone, as for the
+// routines, and neither is required.
+describe.each([
+  ['draftsDir', 'ECCLIUM_DRAFTS_DIR', 'drafts_dir_invalid', '/path/to/drafts'],
+  [
+    'notifyFile',
+    'ECCLIUM_NOTIFY_FILE',
+    'notify_file_invalid',
+    '/path/to/notify.jsonl',
+  ],
+] as const)('loadConfig and %s', (key, name, code, path) => {
+  it('leaves it unset without the variable, for the runner as well', () => {
+    for (const result of [load(valid()), asRunner()]) {
+      expect(result.ok && result.config[key]).toBeUndefined();
+      expect(setting(result, key)).toMatchObject({
+        variable: name,
+        origin: 'unset',
+        shown: { kind: 'none' },
+      });
+    }
+  });
+
+  it.each(['stdio', 'http'] as const)(
+    'takes an absolute path in simple form over %s, without looking at the disk',
+    (transport) => {
+      const files = memoryFiles();
+      const folders = memoryFolder();
+      const result = load(
+        { ...valid(), [name]: path },
+        transport,
+        files.fs,
+        undefined,
+        folders.fs,
+      );
+      expect(result.report.problems).toEqual([]);
+      expect(result.ok && result.config[key]).toBe(path);
+      expect(files.opened).toEqual([tokenPath]);
+      expect(folders.looked).toEqual([]);
+      expect(setting(result, key)).toMatchObject({
+        variable: name,
+        origin: 'environment',
+        shown: { kind: 'path', value: path },
+      });
+    },
+  );
+
+  it('takes it for the runner', () => {
+    const result = asRunner({ extra: { [name]: path } });
+    expect(result.report.problems).toEqual([]);
+    expect(result.ok && result.config[key]).toBe(path);
+  });
+
+  it.each([
+    'drafts',
+    './drafts',
+    '/path/../drafts',
+    '/path//drafts',
+    '/path/drafts/',
+    '/path/./drafts',
+  ])('refuses %s without showing it', (value) => {
+    const result = load({ ...valid(), [name]: value });
+    expect(result.ok).toBe(false);
+    expect(problems(result)).toEqual([[code, name]]);
+    expect(setting(result, key)).toMatchObject({
+      origin: 'invalid',
+      shown: { kind: 'none' },
+    });
+  });
+
+  it('reports an empty value as such, without its own problem', () => {
+    const result = load({ ...valid(), [name]: '' });
+    expect(result.ok).toBe(false);
+    expect(problems(result)).toEqual([['empty_value', name]]);
+    expect(setting(result, key)).toMatchObject({ origin: 'invalid' });
+  });
+
+  // Neither names a file in YAML, so the debug output of the library for
+  // YAML does not stop the start, unlike with the routines (ADR 0033).
+  it('lets LOG_TOKENS and LOG_STREAM be', () => {
+    const result = load({
+      ...valid(),
+      [name]: path,
+      LOG_TOKENS: '1',
+      LOG_STREAM: '1',
+    });
+    expect(result.report.problems).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+});
+
 // The runner of routines (ADR 0033, ADR 0034): its own account from the
 // folder of the tokens, never the token of the server (ADR 0023), and the
 // settings a server may leave out.
@@ -3232,6 +3375,10 @@ describe('loadConfig and its problems', () => {
       load({ ...valid(), ECCLIUM_ROUTINES_DIR: 'routines' }),
     runner_tokens_dir_invalid: () =>
       load({ ...valid(), ECCLIUM_RUNNER_TOKENS_DIR: 'tokens' }),
+    drafts_dir_invalid: () =>
+      load({ ...valid(), ECCLIUM_DRAFTS_DIR: 'drafts' }),
+    notify_file_invalid: () =>
+      load({ ...valid(), ECCLIUM_NOTIFY_FILE: 'notify.jsonl' }),
     url_missing: () => load({ ECCLIUM_CHURCHTOOLS_TOKEN_FILE: tokenPath }),
     url_too_long: () => withAddress(`https://${'a'.repeat(300)}.example`),
     url_invalid: () => withAddress('demo.example'),
@@ -3501,6 +3648,30 @@ describe('loadConfig and its problems', () => {
           ...valid(),
           ECCLIUM_STATE_DIR: stateDirPath,
           ECCLIUM_RUNNER_TOKENS_DIR: `${stateDirPath}/tokens`,
+        },
+        'stdio',
+        memoryFiles().fs,
+        undefined,
+        memoryFolder().fs,
+      ),
+    drafts_dir_overlap: () =>
+      load(
+        {
+          ...valid(),
+          ECCLIUM_STATE_DIR: stateDirPath,
+          ECCLIUM_DRAFTS_DIR: `${stateDirPath}/audit`,
+        },
+        'stdio',
+        memoryFiles().fs,
+        undefined,
+        memoryFolder().fs,
+      ),
+    notify_file_overlap: () =>
+      load(
+        {
+          ...valid(),
+          ECCLIUM_STATE_DIR: stateDirPath,
+          ECCLIUM_NOTIFY_FILE: `${stateDirPath}/audit/notices.jsonl`,
         },
         'stdio',
         memoryFiles().fs,
