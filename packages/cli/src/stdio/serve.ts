@@ -43,22 +43,17 @@ import {
   createLogger,
   createStderrWriter,
   describeError,
-  firstKeptQueueDay,
-  type SnapshotPurge,
   systemClock,
 } from '@ecclium/mcp-churchtools-core/composition';
 import type {
   HttpTransport,
   HttpTransportOptions,
 } from '@ecclium/mcp-churchtools-core/http';
-import {
-  type ErrorCode,
-  type IsoDate,
-  isIsoDate,
-} from '@ecclium/mcp-churchtools-plugin-api';
+import type { ErrorCode } from '@ecclium/mcp-churchtools-plugin-api';
 import { startStdioServer } from '@ecclium/mcp-churchtools-server/stdio';
 
 import { composeToolPipeline } from '../compose/pipeline.js';
+import { createRetentionSweep } from '../compose/retention.js';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
 import type { WriteSyncFn } from '../send.js';
 import { version } from '../version.js';
@@ -144,13 +139,6 @@ const sigintEvent = 'process_sigint';
 const auditFileClosedEvent = 'audit_file_closed';
 const filesDeletedEvent = 'audit_files_deleted';
 const filesKeptEvent = 'audit_files_not_deleted';
-const dayKeysDestroyedEvent = 'day_keys_destroyed';
-const dayKeysKeptEvent = 'day_keys_not_destroyed';
-const snapshotsDeletedEvent = 'snapshots_deleted';
-const snapshotsKeptEvent = 'snapshots_not_deleted';
-const queueDeletedEvent = 'queue_entries_deleted';
-const queueKeysDestroyedEvent = 'queue_day_keys_destroyed';
-const queueKeptEvent = 'queue_not_purged';
 const closedEvent = 'stdio_closed';
 
 /**
@@ -180,37 +168,6 @@ export const untilNextDay = (now: number): number =>
   Number.isFinite(now)
     ? Math.min(dayMs - (((now % dayMs) + dayMs) % dayMs) + 1000, hourMs)
     : hourMs;
-
-/**
- * How many days after its own a snapshot stays readable: the day key of
- * the snapshots of a day is destroyed once 30 more days are over, so a
- * snapshot of a day D opens through D+30 and in no copy from D+31 on
- * (ADR 0031).
- */
-export const snapshotRetentionDays = 30;
-
-/**
- * The first UTC day whose day keys of snapshots stay at a time: the day of
- * the time less {@link snapshotRetentionDays}. Every day key of an earlier
- * day is past its retention.
- *
- * @param now - Milliseconds since the Unix epoch, from the clock.
- * @returns The day, or undefined when the time gives no day from 1970 to
- *   9999.
- * @example
- * ```ts
- * firstKeptSnapshotDay(Date.UTC(2026, 10, 3, 12)); // '2026-10-04'
- * ```
- */
-export const firstKeptSnapshotDay = (now: number): IsoDate | undefined => {
-  if (!Number.isFinite(now)) return undefined;
-  // A day in UTC has no change of the clock, so 30 times its length back
-  // is the same time of the day 30 days before.
-  const cut = new Date(now - snapshotRetentionDays * dayMs);
-  if (Number.isNaN(cut.getTime())) return undefined;
-  const day = cut.toISOString().slice(0, 10);
-  return isIsoDate(day) ? day : undefined;
-};
 
 // The process itself. Only properties are used: loading node:process
 // would make fd 1 and fd 2 non-blocking (ADR 0054).
@@ -395,127 +352,17 @@ export function serve(options: ServeOptions): ExitCode | undefined {
       ...(options.output === undefined ? {} : { output: options.output }),
     });
 
-    // The day keys of the snapshots past their retention go at the start
-    // and then once on each new UTC day (ADR 0031). With the folder of
-    // state, the keeper of the snapshots removes the records of those days
-    // and destroys the day keys of the same days, also while the server
-    // only reads or keeps no snapshots; without that folder the day keys
-    // alone go, so that keys of an earlier run that wrote still go in
-    // time. One line counts the records, another the day keys, and a day
-    // whose records or keys could not all go is tried again at the next
-    // look of the timer, within the hour. The lines name a count only,
-    // never a path or the message of an error.
-    // The entries of the queue of approvals past their retention of 14
-    // days go in the same way, with their day keys `queue`, and without the
-    // folder of state their day keys alone (ADR 0031).
-    const { dayKeys, snapshots, queue } = composed;
-    const keysAlone =
-      (purpose: 'snapshot' | 'queue') =>
-      (cut: IsoDate): Promise<SnapshotPurge> =>
-        (dayKeys as NonNullable<typeof dayKeys>)
-          .destroyBefore(purpose, cut)
-          .then(
-            (count) => ({ records: 0, dayKeys: count, complete: true }),
-            () => ({ records: 0, dayKeys: 0, complete: false }),
-          );
-    const purge: ((cut: IsoDate) => Promise<SnapshotPurge>) | undefined =
-      snapshots !== undefined
-        ? (cut) => snapshots.purgeBefore(cut)
-        : dayKeys !== undefined
-          ? keysAlone('snapshot')
-          : undefined;
-    const purgeQueue: ((cut: IsoDate) => Promise<SnapshotPurge>) | undefined =
-      queue !== undefined
-        ? (cut) => queue.purgeBefore(cut)
-        : dayKeys !== undefined
-          ? keysAlone('queue')
-          : undefined;
-    // Only a count the logger takes, and never more than it takes.
-    const countOf = (count: number): number | undefined =>
-      Number.isSafeInteger(count) && count > 0
-        ? Math.min(count, maxCount)
-        : undefined;
-    // One sweep of what is past its retention, at most once per cut and
-    // again at the next look of the timer after a failure. The lines name
-    // a count only, never a path or the message of an error.
-    const sweeper = (sweep: {
-      readonly purge: (cut: IsoDate) => Promise<SnapshotPurge>;
-      readonly cutOf: (now: number) => IsoDate | undefined;
-      readonly deleted: typeof snapshotsDeletedEvent | typeof queueDeletedEvent;
-      readonly destroyed:
-        typeof dayKeysDestroyedEvent | typeof queueKeysDestroyedEvent;
-      readonly kept:
-        | typeof dayKeysKeptEvent
-        | typeof snapshotsKeptEvent
-        | typeof queueKeptEvent;
-    }): (() => void) => {
-      let sweptFor: IsoDate | undefined;
-      let sweeping = false;
-      return (): void => {
-        let now = Number.NaN;
-        try {
-          now = clock.now();
-        } catch {
-          // No day without the clock, which the line below says.
-        }
-        const cut = sweep.cutOf(now);
-        if (cut === undefined) {
-          processLogger.warn(sweep.kept);
-          return;
-        }
-        if (sweeping || cut === sweptFor) return;
-        sweeping = true;
-        // A promise that rejected is caught here: unhandled, it would end
-        // the process through the handler above.
-        void Promise.resolve()
-          .then(() => sweep.purge(cut))
-          .then(
-            (result) => {
-              const records = countOf(result.records);
-              if (records !== undefined) {
-                processLogger.info(sweep.deleted, { count: records });
-              }
-              const keys = countOf(result.dayKeys);
-              if (keys !== undefined) {
-                processLogger.info(sweep.destroyed, { count: keys });
-              }
-              if (result.complete) {
-                sweptFor = cut;
-              } else {
-                processLogger.warn(sweep.kept);
-              }
-            },
-            () => {
-              processLogger.warn(sweep.kept);
-            },
-          )
-          .catch(() => undefined)
-          .finally(() => {
-            sweeping = false;
-          });
-      };
-    };
-    if (purge !== undefined && purgeQueue !== undefined) {
-      const sweepSnapshots = sweeper({
-        purge,
-        cutOf: firstKeptSnapshotDay,
-        deleted: snapshotsDeletedEvent,
-        destroyed: dayKeysDestroyedEvent,
-        kept: snapshots === undefined ? dayKeysKeptEvent : snapshotsKeptEvent,
-      });
-      const sweepQueue = sweeper({
-        purge: purgeQueue,
-        cutOf: firstKeptQueueDay,
-        deleted: queueDeletedEvent,
-        destroyed: queueKeysDestroyedEvent,
-        kept: queueKeptEvent,
-      });
-      sweepDayKeys = (): void => {
-        sweepSnapshots();
-        sweepQueue();
-      };
-      sweepDayKeys();
-    }
+    // The day keys of the snapshots and of the queue past their retention
+    // go at the start and then once on each new UTC day, with their
+    // records and entries when there is a folder of state (ADR 0031).
+    sweepDayKeys = createRetentionSweep({
+      dayKeys: composed.dayKeys,
+      snapshots: composed.snapshots,
+      queue: composed.queue,
+      clock,
+      logger: processLogger,
+    });
+    sweepDayKeys?.();
     if (auditFile !== undefined || sweepDayKeys !== undefined) armDayTimer();
 
     let signalCode: ExitCode | undefined;
