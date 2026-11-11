@@ -651,6 +651,13 @@ export const cases: readonly Case[] = [
   },
   {
     rule: 'composition-only-from-composition-root',
+    name: 'the runner takes the locks of the routines through the subpath of core',
+    files: {
+      'packages/runner/src/forbidden.ts': `import { createRoutineLocks } from '${nameOf('core')}/composition';\nexport const build = createRoutineLocks;\n`,
+    },
+  },
+  {
+    rule: 'composition-only-from-composition-root',
     name: 'a test of core imports the subpath by a relative path',
     files: {
       'packages/core/src/forbidden.test.ts':
@@ -849,7 +856,7 @@ export const cases: readonly Case[] = [
     name: 'the mount reaches the write guard',
     files: {
       'packages/core/src/mcp/forbidden.ts':
-        "import { checkKillSwitches } from '../write/kill-switch.js';\nexport const check = checkKillSwitches;\n",
+        "import { rightsBeyond } from '../write/rights-drift.js';\nexport const check = rightsBeyond;\n",
     },
   },
   {
@@ -873,7 +880,7 @@ export const cases: readonly Case[] = [
     name: 'the composition root reaches past the stores into the write guard',
     files: {
       'packages/core/src/composition.ts':
-        "export { checkKillSwitches } from './write/kill-switch.js';\n",
+        "export { rightsBeyond } from './write/rights-drift.js';\n",
     },
   },
   {
@@ -1299,6 +1306,12 @@ export const allowedCases: readonly Omit<Case, 'rule'>[] = [
     name: 'the composition root builds the stderr writer through the subpath of core',
     files: {
       'packages/cli/src/stdio/allowed.ts': `import { createStderrWriter } from '${nameOf('core')}/composition';\nexport const build = createStderrWriter;\n`,
+    },
+  },
+  {
+    name: 'the composition root of the runner takes the locks of the routines through the subpath of core',
+    files: {
+      'packages/cli/src/runner/allowed.ts': `import { createRoutineLocks } from '${nameOf('core')}/composition';\nexport const build = createRoutineLocks;\n`,
     },
   },
   {

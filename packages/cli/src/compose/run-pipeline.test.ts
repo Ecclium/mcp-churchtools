@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  checkRunnerTokensDir,
   createRunId,
   createToolCatalog,
   type EccliumConfig,
@@ -41,9 +42,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { type RunPipelineResult, composeRunPipeline } from './run-pipeline.js';
 
 // The pipeline of one run with the token of its account (ADR 0033): which
-// token reaches ChurchTools, that a new token file counts from the next
-// build on, that nothing is built without a token file the checks accept,
-// and that the token of the account shows nowhere. The double of
+// token reaches ChurchTools, that a routine without an entry reads with the
+// own account of the runner and only in the runner, that a new token file
+// counts from the next build on, that nothing is built without a folder
+// and a token file the checks accept, checked anew for each build, and
+// that the token of the account shows nowhere. The double of
 // ChurchTools accepts only the token a test names. All data are made up.
 
 const now = Date.UTC(2026, 10, 11, 7);
@@ -117,6 +120,9 @@ const setup = (options: SetupOptions = {}) => {
   const accountToken = makeCanary('token');
   const accountFile = join(tokensDir, 'ct_token_berichte');
   tokenFile(accountFile, accountToken);
+  // The own account of the runner, for a routine without an entry.
+  const runnerToken = makeCanary('token');
+  tokenFile(join(tokensDir, 'ct_token_runner'), runnerToken);
   // JSON is YAML, so the loader of the policy reads it as it is.
   const policyFile = join(base, 'policy.json');
   writeFileSync(
@@ -151,6 +157,12 @@ const setup = (options: SetupOptions = {}) => {
   });
   if (!loaded.ok) throw new Error('the configuration of the test is invalid');
   const config: EccliumConfig = loaded.config;
+  // The same settings as the runner has them: only the kind differs, which
+  // decides whether a routine without an entry may read at all.
+  const runnerConfig: EccliumConfig = Object.freeze({
+    ...config,
+    transport: 'runner',
+  });
 
   const audit = openAuditFile({
     stateDir,
@@ -230,11 +242,14 @@ const setup = (options: SetupOptions = {}) => {
     routine: string,
     extra: {
       readonly readToken?: typeof readRunnerToken;
+      readonly checkTokensDir?: typeof checkRunnerTokensDir;
       readonly requireAccount?: boolean;
+      readonly runner?: boolean;
     } = {},
   ): RunPipelineResult => {
+    const { runner, ...rest } = extra;
     const built = composeRunPipeline({
-      config,
+      config: runner === true ? runnerConfig : config,
       catalog,
       writer,
       clock,
@@ -242,7 +257,7 @@ const setup = (options: SetupOptions = {}) => {
       createTransport,
       routineId: routine,
       writeHalt: createWriteHalt(),
-      ...extra,
+      ...rest,
     });
     if (built.ok) open.push({ close: () => built.close() });
     return built;
@@ -269,6 +284,7 @@ const setup = (options: SetupOptions = {}) => {
     config,
     serverCanary,
     accountToken,
+    runnerToken,
     accountFile,
     tokensDir,
     accepted,
@@ -281,18 +297,35 @@ const setup = (options: SetupOptions = {}) => {
 };
 
 describe('the token of the pipeline of a run', () => {
-  it('reads with the token of the configuration for a routine without an account', async () => {
-    const { serverCanary, accepted, doubles, build, read } = setup();
-    accepted.token = serverCanary;
-    const outcome = await read(build(unlisted), unlisted);
+  it('reads with the own account of the runner for a routine without an entry', async () => {
+    const { runnerToken, accepted, doubles, build, read } = setup();
+    accepted.token = runnerToken;
+    const outcome = await read(build(unlisted, { runner: true }), unlisted);
     expect(outcome).toMatchObject({
       ok: true,
       data: { categories: [{ id: 7 }] },
     });
     expect(doubles).toHaveLength(1);
     expect(doubles[0]?.calls()[0]?.headers['authorization']).toBe(
+      `Login ${runnerToken.value}`,
+    );
+  });
+
+  it('never reads with the token of the configuration for a routine without an entry', async () => {
+    const { serverCanary, accepted, doubles, build, read } = setup();
+    accepted.token = serverCanary;
+    await expect(
+      read(build(unlisted, { runner: true }), unlisted),
+    ).resolves.toMatchObject({ ok: false, code: 'auth' });
+    expect(doubles[0]?.calls()[0]?.headers['authorization']).not.toBe(
       `Login ${serverCanary.value}`,
     );
+  });
+
+  it('builds a run without an entry only in the runner', () => {
+    const { doubles, build } = setup();
+    expect(() => build(unlisted)).toThrow(TypeError);
+    expect(doubles).toHaveLength(0);
   });
 
   it('reads with the token file of the alias, and never with the token of the configuration', async () => {
@@ -306,12 +339,11 @@ describe('the token of the pipeline of a run', () => {
     expect(doubles.at(-1)?.calls()[0]?.headers['authorization']).toBe(
       `Login ${accountToken.value}`,
     );
-    // The double takes only the token of the account, so the pipeline of
-    // the configuration cannot read in its place.
-    await expect(read(build(unlisted), unlisted)).resolves.toMatchObject({
-      ok: false,
-      code: 'auth',
-    });
+    // The double takes only the token of the account, so the own account
+    // of the runner cannot read in its place.
+    await expect(
+      read(build(unlisted, { runner: true }), unlisted),
+    ).resolves.toMatchObject({ ok: false, code: 'auth' });
   });
 
   it('takes a changed token file with the next build, without a restart', async () => {
@@ -342,10 +374,40 @@ describe('a pipeline of a run without a token file the checks accept', () => {
         return readRunnerToken(dir, alias);
       },
     });
-    expect(built).toEqual({ ok: false, code: 'runner_tokens_dir_missing' });
+    expect(built).toEqual({ ok: false, code: 'runner_tokens_dir_unset' });
     expect(asked).toEqual([]);
+    // Also for a routine without an entry: never the token of the
+    // configuration.
+    expect(build(unlisted, { runner: true })).toEqual({
+      ok: false,
+      code: 'runner_tokens_dir_unset',
+    });
     // No transport, so the token of the configuration went nowhere.
     expect(doubles).toHaveLength(0);
+  });
+
+  it('checks the folder of the tokens anew for each build', () => {
+    const { tokensDir, doubles, build } = setup();
+    let checks = 0;
+    const checkTokensDir: typeof checkRunnerTokensDir = (dir) => {
+      checks += 1;
+      return checkRunnerTokensDir(dir);
+    };
+    expect(build(routineId, { checkTokensDir })).toMatchObject({ ok: true });
+    // The folder lost its rights while the runner ran: the next run reads
+    // no token from it.
+    chmodSync(tokensDir, 0o770);
+    expect(build(routineId, { checkTokensDir })).toEqual({
+      ok: false,
+      code: 'runner_tokens_dir_mode',
+    });
+    expect(build(unlisted, { runner: true })).toEqual({
+      ok: false,
+      code: 'runner_tokens_dir_mode',
+    });
+    expect(checks).toBe(2);
+    expect(doubles).toHaveLength(1);
+    chmodSync(tokensDir, 0o700);
   });
 
   it('is not built for a token file that group or others may read', () => {

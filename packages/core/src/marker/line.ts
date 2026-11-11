@@ -11,6 +11,11 @@
  * because it is a setting of the operator and the web editor might turn an
  * address in it into a link. Spaces at the end of the line do not count.
  *
+ * A draft of a routine that goes to a file has a line of its own without the
+ * check code: «Automatisch erstellt am 10.11.2026 durch Ecclium, Routine
+ * termin-vorschau, Lauf 2026-W46. Rückfragen an Sekretariat.» Reading never
+ * takes it for a marking.
+ *
  * @packageDocumentation
  */
 import { isIsoDate, type IsoDate } from '@ecclium/mcp-churchtools-plugin-api';
@@ -71,16 +76,71 @@ export function markingLineOf(marking: Marking, inquiriesTo: string): string {
   ) {
     throw new TypeError('A marking needs a day, an origin and a check code.');
   }
+  const from =
+    origin.kind === 'interactive'
+      ? 'interaktiv'
+      : `Routine ${origin.routine}, Lauf ${origin.run}`;
+  return paragraphOf(date, `${from}, Prüfcode ${code}`, inquiriesTo);
+}
+
+/**
+ * Writes the line of a draft of a routine that goes to a file, as Markdown:
+ * the line of a marking without the check code, one paragraph on one line,
+ * without a line break at the end. The text of the operator is escaped like
+ * every text the content policy writes.
+ *
+ * There is no check code on purpose: a draft goes to a file that a person
+ * reads and passes on. No page holds it, so no write of Ecclium ever has to
+ * recognise it as its own section, and the check code proves only that to
+ * the write guard (ADR 0032, ADR 0033). {@link readMarkingLine} therefore
+ * never reads this line as a marking.
+ *
+ * @param draft - Day, routine and run of the draft.
+ * @param draft.date - The UTC day the line names.
+ * @param draft.routine - The ID of the routine, as the policy names it.
+ * @param draft.run - The period of the run, such as 2026-W46.
+ * @param inquiriesTo - Whom to ask, as the policy names it.
+ * @returns The line.
+ * @throws {TypeError} For a day, routine or run of another form, and a text
+ *   of the operator that is empty or holds a line break.
+ * @example
+ * ```ts
+ * draftMarkingLineOf({ date, routine: 'termin-vorschau', run: '2026-W46' }, 'Sekretariat');
+ * // 'Automatisch erstellt am 10.11.2026 durch Ecclium, Routine termin-vorschau, Lauf 2026-W46. Rückfragen an Sekretariat.'
+ * ```
+ */
+export function draftMarkingLineOf(
+  draft: {
+    readonly date: IsoDate;
+    readonly routine: string;
+    readonly run: string;
+  },
+  inquiriesTo: string,
+): string {
+  const { date, routine, run } = draft;
+  if (
+    !isIsoDate(date) ||
+    !routinePattern.test(routine) ||
+    !runPattern.test(run)
+  ) {
+    throw new TypeError('A draft needs a day, a routine and a run.');
+  }
+  return paragraphOf(date, `Routine ${routine}, Lauf ${run}`, inquiriesTo);
+}
+
+// The one paragraph both lines share: the day, the origin as far as it goes
+// before the full stop, and the escaped text of the operator.
+function paragraphOf(
+  date: IsoDate,
+  origin: string,
+  inquiriesTo: string,
+): string {
   const contact = inquiriesTo.trim();
   if (contact === '' || /[\n\r\u2028\u2029]/u.test(contact)) {
     throw new TypeError('Whom to ask is one line of text.');
   }
   const day = `${date.slice(8, 10)}.${date.slice(5, 7)}.${date.slice(0, 4)}`;
-  const from =
-    origin.kind === 'interactive'
-      ? 'interaktiv'
-      : `Routine ${origin.routine}, Lauf ${origin.run}`;
-  const text = `Automatisch erstellt am ${day} durch Ecclium, ${from}, Prüfcode ${code}. Rückfragen an ${contact}${endsSentence(contact) ? '' : '.'}`;
+  const text = `Automatisch erstellt am ${day} durch Ecclium, ${origin}. Rückfragen an ${contact}${endsSentence(contact) ? '' : '.'}`;
   return serializeBlocks([
     { kind: 'paragraph', children: [{ kind: 'text', text }] },
   ]).trimEnd();

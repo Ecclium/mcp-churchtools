@@ -73,6 +73,12 @@ export interface RunWritePorts {
   readonly log: Logger;
   /** The clock of the core. */
   readonly clock: Clock;
+  /**
+   * Whether a second write after a conflict may begin; by default it may.
+   * The runner says no after the deadline of a run or its stop, while the
+   * write that began is never aborted.
+   */
+  readonly mayRetry?: () => boolean;
 }
 
 /** A section a run rendered. */
@@ -147,7 +153,8 @@ const pageOf = (
  *   ChurchTools, the policy or the checks of the core.
  * @throws {TypeError} When the run has no output in the wiki or no entry
  *   of the policy for it, which only a caller that skips the preparation
- *   can make: a draft goes another way.
+ *   can make, or comes from a routine prepared for a preview: a draft goes
+ *   another way, and a preview writes nothing.
  * @example
  * ```ts
  * const rendered = await executeRun(prepared, trigger, ports, signal);
@@ -164,6 +171,9 @@ export async function writeRun(
   const { output, target } = run;
   if (output.target !== 'wiki' || target === undefined) {
     throw new TypeError('Only a run with a target in the wiki writes here.');
+  }
+  if (run.preview === true) {
+    throw new TypeError('A preview writes nothing.');
   }
   const { log, clock } = ports;
   const call: RunWriteCall = Object.freeze({
@@ -183,7 +193,8 @@ export async function writeRun(
     outcome.code === 'conflict' &&
     outcome.page === undefined &&
     !outcome.sent &&
-    !signal.aborted
+    !signal.aborted &&
+    (ports.mayRetry?.() ?? true)
   ) {
     log.info('run_write_retried', { code: 'conflict' });
     attempts = 2;

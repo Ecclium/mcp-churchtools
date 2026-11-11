@@ -23,6 +23,7 @@ import {
   type EccliumConfig,
   type LogLevel,
   runAssignmentOf,
+  runnerOwnAlias,
   type RunPageRef,
   type ToolPipeline,
 } from '@ecclium/mcp-churchtools-core';
@@ -145,11 +146,12 @@ export function composeRun(options: RunComposeOptions): ComposedRun {
   // The tools of every routine of the account, not only of this one: an
   // account serves all of them, and a tool too many or too few would hide
   // a right too wide or queue every write (ADR 0032).
-  // The running routine counts even when the caller left it out.
-  const accountTools =
-    credential === undefined
-      ? Object.freeze([])
-      : accountToolsOf([options.run, ...options.runs], credential);
+  // The running routine counts even when the caller left it out. A routine
+  // without an entry reads with the own account of the runner (ADR 0023).
+  const accountTools = accountToolsOf(
+    [options.run, ...options.runs],
+    credential ?? runnerOwnAlias,
+  );
   // One counter per run, for the limit per run of the policy.
   const runWrites = createRunWrites();
   // Whether the configuration only reads, never from the caller.

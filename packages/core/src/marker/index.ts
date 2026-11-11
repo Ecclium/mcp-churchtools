@@ -1,7 +1,8 @@
 /**
  * The marking of what Ecclium adds to the wiki (ADR 0032): the check code,
  * the line with the fixed wording of the brand, and how the core finds its
- * own sections on a page. The entry point of core does not export it.
+ * own sections on a page. The entry point of core exports only the line of
+ * a draft, which the command line writes into a file.
  *
  * @packageDocumentation
  */
@@ -14,6 +15,7 @@ export {
   sameCheckCode,
 } from './code.js';
 export {
+  draftMarkingLineOf,
   type Marking,
   markingLineOf,
   markingTextsOf,

@@ -38,7 +38,15 @@ export {
   prepareDayKeyFolder,
 } from './keys/day-keys.js';
 export { createFileKeyProvider, type FileKeys } from './keys/file-provider.js';
-export { PrivateFileError } from './files/index.js';
+// The private files the runner writes its drafts and notices to (ADR 0033).
+export {
+  type AppendLineOptions,
+  appendPrivateLine,
+  preparePrivateFolder,
+  PrivateFileError,
+  replacePrivateFile,
+  type ReplaceOptions,
+} from './files/index.js';
 export {
   createLogger,
   createStderrWriter,
@@ -76,6 +84,16 @@ export {
   routineLockLimits,
 } from './schedule/lock.js';
 export { createDefaultTenantLogger } from './tenant/default-logger.js';
+// The context of the memory of runs of a routine, which only the
+// composition root of the runner makes, with the tenant and the actor of
+// the routine (ADR 0034).
+export {
+  createTenantContext,
+  type TenantContextOptions,
+} from './tenant/context.js';
+// The kill switches of a routine, which the runner looks at before the
+// first read of a run and before a draft (ADR 0029, ADR 0033).
+export { checkRunKillSwitches } from './write/kill-switch.js';
 export { createMemoryNonceStore } from './write/nonce-store.js';
 export { createMemoryPlanStore } from './write/plan-store.js';
 // The counter of the writes of a run, which the composition root makes

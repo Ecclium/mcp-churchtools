@@ -260,6 +260,10 @@ describe('the write of a run', () => {
         signal,
       ),
     ).rejects.toThrow(TypeError);
+    // A routine prepared for a preview writes nothing, even with an entry.
+    await expect(
+      writeRun({ ...rendered(), preview: true }, ports, signal),
+    ).rejects.toThrow(TypeError);
     expect(calls).toEqual([]);
   });
 });
@@ -328,6 +332,22 @@ describe('the tools of an account', () => {
   it('leave out the routines of another alias and those without an entry', () => {
     expect(accountToolsOf(runs, 'andere')).toEqual(['ct_appointments_list']);
     expect(accountToolsOf(runs, 'keines')).toEqual([]);
+  });
+
+  it('count the routines without an entry for the own account of the runner', () => {
+    // A routine without an entry reads with the account `runner`, and a
+    // routine whose entries name `runner` shares it (ADR 0023, ADR 0033).
+    expect(accountToolsOf(runs, 'runner')).toEqual(['ct_songs_search']);
+    expect(
+      accountToolsOf(
+        [...runs, preparedOf('eigen', ['ct_events_list'], true, 'runner')],
+        'runner',
+      ),
+    ).toEqual([
+      'ct_events_list',
+      'ct_songs_search',
+      'ct_wiki_page_append_section',
+    ]);
   });
 });
 

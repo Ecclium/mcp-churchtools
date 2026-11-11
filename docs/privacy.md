@@ -130,6 +130,18 @@ Kann niemand einen Schreibvorgang im Client bestätigen, oder schickt die Richtl
 - **Frist:** Ein Eintrag bleibt seinen Tag und die 14 Tage danach. Danach gilt er als verfallen, und Ecclium löscht Einträge und Vermerke beim Start und beim Wechsel des UTC-Tages und vernichtet den Tagesschlüssel, ab dann lässt sich auch eine Kopie in einer Sicherung nicht mehr lesen. Gelöscht wird nur, solange Ecclium mit `ECCLIUM_STATE_DIR` und `ECCLIUM_KEYS_DIR` läuft, auch nur lesend.
 - **Obergrenze:** Für einen Mandanten warten höchstens 100 Einträge, auch solche, die sich nicht öffnen lassen, bis sie verfallen. Ein weiterer Schreibvorgang wird dann weder geschrieben noch eingereiht.
 
+### Entwürfe des Runners
+
+Eine Routine mit dem Ziel `draft` und dem Kanal `file` legt ihren Entwurf als Datei in den Ordner aus `ECCLIUM_DRAFTS_DIR`, eine je Routine und Periode ([Runner](betrieb/runner.md)).
+
+- **Inhalt:** der Abschnitt, den das Modell aus den Daten der Routine gemacht hat, mit Namen von Personen, in der Stufe `strict` mit gekürztem Nachnamen, und am Ende die Kennzeichnung.
+- **Schutz:** Ordner mit den Rechten 700, Datei mit 600, ohne Verschlüsselung, weil ein Mensch den Entwurf lesen und weitergeben soll. Ein zweiter Lauf derselben Periode ersetzt die Datei ganz.
+- **Frist:** Sache des Betreibers. Ecclium löscht Entwürfe nicht. Löschen Sie einen Entwurf, sobald er weitergegeben ist, und nehmen Sie den Ordner aus Sicherungen, die länger leben als nötig.
+
+### Meldungen des Runners
+
+Nennt eine Routine den Kanal `file`, hängt der Runner je Lauf eine Zeile an die Datei aus `ECCLIUM_NOTIFY_FILE` an: Zeit, Routine, Periode, Kennung des Laufs, Ausgang und bei einem Fehler Schritt und Code, nie einen Inhalt und keine Kennung einer Person. Die Datei hat die Rechte 600, Ecclium kürzt und löscht sie nicht; rotieren Sie sie wie ein Log. Mit dem Kanal `stdout` geht dieselbe Zeile auf die Standardausgabe, und wer diese sammelt, etwa `docker logs`, hält sie so lange, wie er es einstellt.
+
 ## Was ChurchTools nach einem Schreibvorgang weitergibt
 
 Was Ecclium in ChurchTools schreibt, sehen dort alle, die das Ziel sehen dürfen, und ChurchTools kann es weitergeben, ohne dass Ecclium davon weiss:

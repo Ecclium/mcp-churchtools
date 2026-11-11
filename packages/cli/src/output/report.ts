@@ -45,6 +45,11 @@ export interface ReportOptions {
    * endpoint only with `showValues` (ADR 0033). Never the path of a key.
    */
   readonly providers?: readonly ProviderSettings[] | undefined;
+  /**
+   * Leaves out the last line, which speaks of the server and `ct_whoami`;
+   * the check of the runner ends with its own (ADR 0033).
+   */
+  readonly withoutEnding?: boolean;
 }
 
 const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
@@ -67,6 +72,8 @@ const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
   routinesDir: 'Ordner der Routinen',
   providers: 'Modellanbieter',
   runnerTokensDir: 'Token des Runners',
+  draftsDir: 'Ordner der Entwürfe',
+  notifyFile: 'Datei der Meldungen',
   stdioSubject: 'Subjekt über stdio',
   logLevel: 'Stufe des Logs',
 });
@@ -95,7 +102,9 @@ type Hidden =
   | 'policy'
   | 'routines'
   | 'providers'
-  | 'tokens';
+  | 'tokens'
+  | 'drafts'
+  | 'notices';
 
 interface Value {
   readonly text: string;
@@ -121,9 +130,9 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
   if (setting.key === 'policy' && setting.origin === 'default') {
     return { text: 'keine Datei' };
   }
-  // Only the folders of state, of keys and of the routines, the file of
-  // the providers, the key files and the zone may stay unset without a
-  // default.
+  // Only the folders of state, of keys, of the routines, of the tokens of
+  // the runner and of the drafts, the files of the providers and of the
+  // notices, the key files and the zone may stay unset without a default.
   if (setting.origin === 'unset') {
     switch (setting.key) {
       case 'timeZone':
@@ -144,6 +153,10 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
         return { text: 'keine Anbieter' };
       case 'runnerTokensDir':
         return { text: 'kein Ordner' };
+      case 'draftsDir':
+        return { text: 'keine Entwürfe als Datei' };
+      case 'notifyFile':
+        return { text: 'keine Meldungen als Datei' };
       default:
         throw new TypeError(inconsistent);
     }
@@ -191,7 +204,11 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
                     ? 'providers'
                     : setting.key === 'runnerTokensDir'
                       ? 'tokens'
-                      : 'path',
+                      : setting.key === 'draftsDir'
+                        ? 'drafts'
+                        : setting.key === 'notifyFile'
+                          ? 'notices'
+                          : 'path',
         };
       }
       return isPrintable(shown.value)
@@ -232,6 +249,8 @@ const hiddenNames: Readonly<Record<Hidden, readonly [string, string]>> =
     routines: ['der Ordner der Routinen', 'ihn'],
     providers: ['der Pfad der Datei der Anbieter', 'ihn'],
     tokens: ['der Ordner der Token des Runners', 'ihn'],
+    drafts: ['der Ordner der Entwürfe', 'ihn'],
+    notices: ['der Pfad der Datei der Meldungen', 'ihn'],
   });
 
 const maskedNote = (hidden: readonly Hidden[]): string => {
@@ -375,6 +394,8 @@ export function renderConfigReport(
             'routines',
             'providers',
             'tokens',
+            'drafts',
+            'notices',
           ] as const
         ).filter((entry) => hidden.has(entry)),
       ),
@@ -407,6 +428,8 @@ export function renderConfigReport(
       lines.push(`  - ${warningText(code)}`);
     }
   }
-  lines.push(options.valid ? validText : invalidText);
+  if (options.withoutEnding !== true) {
+    lines.push(options.valid ? validText : invalidText);
+  }
   return Object.freeze(lines);
 }

@@ -1,8 +1,12 @@
 import {
   chmodSync,
+  closeSync,
+  fstatSync,
   linkSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readdirSync,
   readFileSync,
   rmSync,
@@ -16,6 +20,7 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import {
+  appendPrivateLine,
   destroyPrivateFile,
   listPrivateFolder,
   nodePrivateFileSystem,
@@ -26,8 +31,20 @@ import {
   type PrivateFileSystem,
   readPrivateFile,
   removePrivateFolder,
+  replacePrivateFile,
   writePrivateFileOnce,
 } from './index.js';
+
+// Reads a file and its mode through one descriptor, so that both describe
+// the same file and no check on its path comes before its use.
+const readWithMode = (path: string): { text: string; mode: number } => {
+  const fd = openSync(path, 'r');
+  try {
+    return { text: readFileSync(fd, 'utf8'), mode: fstatSync(fd).mode & 0o777 };
+  } finally {
+    closeSync(fd);
+  }
+};
 
 // The files run on disk in a temporary folder of their own. A fake file
 // system replaces single functions for what a test cannot build there,
@@ -692,6 +709,500 @@ describe('writePrivateFileOnce and readPrivateFile', () => {
       ).toBe('written');
     }
     expect(readdirSync(folder)).toEqual(['EINVAL', 'ENOTSUP']);
+  });
+});
+
+describe('replacePrivateFile', () => {
+  const otherUid = (process.getuid?.() ?? 0) + 1;
+
+  it('writes a file with 0600, replaces it whole and leaves no temporary name', () => {
+    const folder = fresh();
+    const path = join(folder, 'weekly-2026-W45.md');
+    replacePrivateFile(folder, 'weekly-2026-W45.md', bytes('first run'), {
+      pid,
+    });
+    expect(readFileSync(path, 'utf8')).toBe('first run');
+    // A shorter second file keeps nothing of the first, and a file the
+    // operator opened for others comes back private.
+    chmodSync(path, 0o644);
+    replacePrivateFile(folder, 'weekly-2026-W45.md', bytes('x'), {
+      pid,
+      fs: withFs({}),
+    });
+    expect(readFileSync(path, 'utf8')).toBe('x');
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(readdirSync(folder)).toEqual(['weekly-2026-W45.md']);
+    expect(
+      new TextDecoder().decode(
+        readPrivateFile(folder, 'weekly-2026-W45.md', 64),
+      ),
+    ).toBe('x');
+  });
+
+  it('replaces a link at the name and never follows it', () => {
+    const folder = fresh();
+    const target = join(base, 'replace-link-target');
+    writeFileSync(target, 'keep', { mode: 0o600 });
+    symlinkSync(target, join(folder, 'a.md'));
+    replacePrivateFile(folder, 'a.md', bytes('new'), { pid });
+    expect(lstatSync(join(folder, 'a.md')).isSymbolicLink()).toBe(false);
+    expect(readFileSync(join(folder, 'a.md'), 'utf8')).toBe('new');
+    expect(readFileSync(target, 'utf8')).toBe('keep');
+    // A link to nothing makes no file at its target either.
+    const missing = join(base, 'replace-link-missing');
+    symlinkSync(missing, join(folder, 'b.md'));
+    replacePrivateFile(folder, 'b.md', bytes('new'), { pid });
+    expect(readFileSync(join(folder, 'b.md'), 'utf8')).toBe('new');
+    expect(() => statSync(missing)).toThrow();
+    expect(readdirSync(folder).sort()).toEqual(['a.md', 'b.md']);
+  });
+
+  it('refuses a name that is no plain name of a file and a folder that is not private', () => {
+    const folder = fresh();
+    for (const name of ['', '.hidden', '../up', 'a/b', 'x'.repeat(129), 5]) {
+      expect(() => {
+        replacePrivateFile(folder, name as string, bytes('x'), { pid });
+      }).toThrow(TypeError);
+    }
+    expect(readdirSync(folder)).toEqual([]);
+    chmodSync(folder, 0o750);
+    expect(
+      code(() => {
+        replacePrivateFile(folder, 'a', bytes('x'), { pid });
+      }),
+    ).toBe('unsafe');
+    expect(readdirSync(folder)).toEqual([]);
+    expect(
+      code(() => {
+        replacePrivateFile(join(base, 'replace-gone'), 'a', bytes('x'), {
+          pid,
+        });
+      }),
+    ).toBe('unavailable');
+  });
+
+  it('refuses a folder at the name with unsafe and keeps it', () => {
+    const folder = fresh();
+    mkdirSync(join(folder, 'dir.md'), { mode: 0o700 });
+    expect(
+      code(() => {
+        replacePrivateFile(folder, 'dir.md', bytes('x'), { pid });
+      }),
+    ).toBe('unsafe');
+    expect(statSync(join(folder, 'dir.md')).isDirectory()).toBe(true);
+    expect(readdirSync(folder)).toEqual(['dir.md']);
+  });
+
+  it('turns every refusal of the system into a code, keeps the old file and removes the temporary name', () => {
+    const folder = fresh();
+    replacePrivateFile(folder, 'a', bytes('old'), { pid });
+    const failing = (changes: Partial<PrivateFileSystem>): string =>
+      code(() => {
+        replacePrivateFile(folder, 'a', bytes('new'), {
+          pid,
+          fs: withFs(changes),
+        });
+      });
+    const cases: readonly (readonly [Partial<PrivateFileSystem>, string])[] = [
+      [
+        {
+          openSync: () => {
+            throw systemError('EACCES');
+          },
+        },
+        'unavailable',
+      ],
+      [
+        {
+          fstatSync: () => {
+            throw systemError('EIO');
+          },
+        },
+        'unavailable',
+      ],
+      [
+        {
+          fstatSync: (fd) =>
+            changed(nodePrivateFileSystem.fstatSync(fd), { file: false }),
+        },
+        'unsafe',
+      ],
+      [
+        {
+          fstatSync: (fd) =>
+            changed(nodePrivateFileSystem.fstatSync(fd), { uid: otherUid }),
+        },
+        'unsafe',
+      ],
+      [
+        {
+          fstatSync: (fd) =>
+            changed(nodePrivateFileSystem.fstatSync(fd), {
+              mode: 0o100640,
+            }),
+        },
+        'unsafe',
+      ],
+      [{ writeSync: () => 0 }, 'unavailable'],
+      [
+        {
+          writeSync: () => {
+            throw systemError('ENOSPC');
+          },
+        },
+        'unavailable',
+      ],
+      [
+        {
+          fsyncSync: () => {
+            throw systemError('EIO');
+          },
+        },
+        'unavailable',
+      ],
+      [
+        {
+          renameSync: () => {
+            throw systemError('EXDEV');
+          },
+        },
+        'unavailable',
+      ],
+      [
+        {
+          renameSync: () => {
+            // eslint-disable-next-line @typescript-eslint/only-throw-error -- a value of any kind, as a system may throw
+            throw 'refused';
+          },
+        },
+        'unavailable',
+      ],
+    ];
+    for (const [changes, expected] of cases) {
+      expect(failing(changes)).toBe(expected);
+      expect(readdirSync(folder)).toEqual(['a']);
+      expect(readFileSync(join(folder, 'a'), 'utf8')).toBe('old');
+    }
+    // A temporary name that cannot be removed is left to the destruction,
+    // which knows its form.
+    expect(
+      failing({
+        renameSync: () => {
+          throw systemError('EPERM');
+        },
+        unlinkSync: () => {
+          throw systemError('EPERM');
+        },
+      }),
+    ).toBe('unavailable');
+    const left = readdirSync(folder).filter((name) => name.startsWith('.a.'));
+    expect(left).toHaveLength(1);
+    expect(destroyPrivateFile(folder, left[0] ?? '', 64)).toBe(true);
+    expect(readdirSync(folder)).toEqual(['a']);
+  });
+
+  it('flushes the folder after the rename and removes nothing after it', () => {
+    const folder = fresh();
+    const calls: string[] = [];
+    const folders = new Set<number>();
+    const fs = withFs({
+      openSync: (path, flags, mode) => {
+        const fd = nodePrivateFileSystem.openSync(path, flags, mode);
+        if (path === folder) folders.add(fd);
+        calls.push(path === folder ? 'open folder' : 'open file');
+        return fd;
+      },
+      fsyncSync: (fd) => {
+        calls.push(folders.has(fd) ? 'fsync folder' : 'fsync file');
+        nodePrivateFileSystem.fsyncSync(fd);
+      },
+      closeSync: (fd) => {
+        folders.delete(fd);
+        nodePrivateFileSystem.closeSync(fd);
+      },
+      renameSync: (from, to) => {
+        calls.push('rename');
+        nodePrivateFileSystem.renameSync(from, to);
+      },
+      unlinkSync: (path) => {
+        calls.push('unlink');
+        nodePrivateFileSystem.unlinkSync(path);
+      },
+    });
+    replacePrivateFile(folder, 'a', bytes('x'), { pid, fs });
+    replacePrivateFile(folder, 'a', bytes('y'), { pid, fs });
+    const once = [
+      'open file',
+      'fsync file',
+      'rename',
+      'open folder',
+      'fsync folder',
+    ];
+    expect(calls).toEqual([...once, ...once]);
+    expect(readFileSync(join(folder, 'a'), 'utf8')).toBe('y');
+  });
+
+  it('fails when the folder does not open or flush after the rename, and leaves the new file under its name', () => {
+    const folder = fresh();
+    const failing = (text: string, changes: Partial<PrivateFileSystem>) =>
+      code(() => {
+        replacePrivateFile(folder, 'a', bytes(text), {
+          pid,
+          fs: withFs(changes),
+        });
+      });
+    expect(
+      failing('first', {
+        openSync: (path, flags, mode) => {
+          if (path === folder) throw systemError('EMFILE');
+          return nodePrivateFileSystem.openSync(path, flags, mode);
+        },
+      }),
+    ).toBe('unavailable');
+    expect(readFileSync(join(folder, 'a'), 'utf8')).toBe('first');
+    expect(
+      failing('second', {
+        fsyncSync: (fd) => {
+          if (isFolderFd(fd)) throw systemError('EIO');
+          nodePrivateFileSystem.fsyncSync(fd);
+        },
+      }),
+    ).toBe('unavailable');
+    expect(readFileSync(join(folder, 'a'), 'utf8')).toBe('second');
+    expect(readdirSync(folder)).toEqual(['a']);
+    // A file system that cannot flush a folder is taken.
+    for (const refusal of ['EINVAL', 'ENOTSUP']) {
+      replacePrivateFile(folder, 'a', bytes(refusal), {
+        pid,
+        fs: withFs({
+          fsyncSync: (fd) => {
+            if (isFolderFd(fd)) throw systemError(refusal);
+            nodePrivateFileSystem.fsyncSync(fd);
+          },
+        }),
+      });
+      expect(readFileSync(join(folder, 'a'), 'utf8')).toBe(refusal);
+    }
+  });
+});
+
+describe('appendPrivateLine', () => {
+  const otherUid = (process.getuid?.() ?? 0) + 1;
+
+  it('makes a missing file with 0600 and adds the lines in order', () => {
+    const folder = fresh();
+    const path = join(folder, 'notices.jsonl');
+    appendPrivateLine(path, '{"n":1}');
+    expect(readWithMode(path).mode).toBe(0o600);
+    appendPrivateLine(path, '{"n":2}', {});
+    appendPrivateLine(path, '{"n":3}', { fs: withFs({}) });
+    const appended = readWithMode(path);
+    expect(appended.text).toBe('{"n":1}\n{"n":2}\n{"n":3}\n');
+    expect(appended.mode).toBe(0o600);
+    expect(readdirSync(folder)).toEqual(['notices.jsonl']);
+  });
+
+  it('adds at the end of a longer file, also when the system takes fewer bytes at once', () => {
+    const path = join(fresh(), 'notices');
+    writeFileSync(path, 'abcdefghij\n', { mode: 0o600 });
+    chmodSync(path, 0o600);
+    let calls = 0;
+    appendPrivateLine(path, 'x', {
+      fs: withFs({
+        appendSync: (fd, buffer, offset) => {
+          calls += 1;
+          return nodePrivateFileSystem.appendSync(fd, buffer, offset, 1);
+        },
+      }),
+    });
+    expect(calls).toBe(2);
+    appendPrivateLine(path, 'yz');
+    expect(readFileSync(path, 'utf8')).toBe('abcdefghij\nx\nyz\n');
+  });
+
+  it('refuses a link, a folder and a file with rights for others, and changes none of them', () => {
+    const folder = fresh();
+    const target = join(folder, 'target');
+    writeFileSync(target, 'keep\n', { mode: 0o600 });
+    symlinkSync(target, join(folder, 'link'));
+    expect(
+      code(() => {
+        appendPrivateLine(join(folder, 'link'), 'x');
+      }),
+    ).toBe('unsafe');
+    expect(readFileSync(target, 'utf8')).toBe('keep\n');
+    const missing = join(folder, 'missing');
+    symlinkSync(missing, join(folder, 'dangling'));
+    expect(
+      code(() => {
+        appendPrivateLine(join(folder, 'dangling'), 'x');
+      }),
+    ).toBe('unsafe');
+    expect(() => statSync(missing)).toThrow();
+    mkdirSync(join(folder, 'dir'), { mode: 0o700 });
+    expect(
+      code(() => {
+        appendPrivateLine(join(folder, 'dir'), 'x');
+      }),
+    ).toBe('unsafe');
+    expect(readdirSync(join(folder, 'dir'))).toEqual([]);
+    const open = join(folder, 'open');
+    writeFileSync(open, 'keep\n', { mode: 0o644 });
+    chmodSync(open, 0o644);
+    expect(
+      code(() => {
+        appendPrivateLine(open, 'x');
+      }),
+    ).toBe('unsafe');
+    expect(readFileSync(open, 'utf8')).toBe('keep\n');
+    expect(statSync(open).mode & 0o777).toBe(0o644);
+    // A second name of another file of the user: the line would land in it.
+    const kept = join(folder, 'kept');
+    writeFileSync(kept, 'keep\n', { mode: 0o600 });
+    chmodSync(kept, 0o600);
+    linkSync(kept, join(folder, 'twice'));
+    expect(
+      code(() => {
+        appendPrivateLine(join(folder, 'twice'), 'x');
+      }),
+    ).toBe('unsafe');
+    expect(readFileSync(kept, 'utf8')).toBe('keep\n');
+  });
+
+  it('refuses a path that is not absolute and normalised, and a line that is empty or holds an end of a line', () => {
+    const folder = fresh();
+    for (const path of [
+      'notices',
+      `${folder}/./notices`,
+      `${folder}/../notices`,
+      `${folder}//notices`,
+      `${folder}/notices/`,
+      '',
+      5,
+    ]) {
+      expect(() => {
+        appendPrivateLine(path as string, 'x');
+      }).toThrow(TypeError);
+    }
+    const path = join(folder, 'notices');
+    for (const line of [
+      '',
+      'a\nb',
+      'a\rb',
+      'a\u2028b',
+      'a\u2029b',
+      'end\n',
+      5,
+    ]) {
+      expect(() => {
+        appendPrivateLine(path, line as string);
+      }).toThrow(TypeError);
+    }
+    expect(readdirSync(folder)).toEqual([]);
+  });
+
+  it('turns every refusal of the system into a code and gives up the descriptor', () => {
+    const path = join(fresh(), 'notices');
+    appendPrivateLine(path, 'first');
+    expect(
+      code(() => {
+        appendPrivateLine(path, 'x', {
+          fs: withFs({
+            constants: {
+              ...nodePrivateFileSystem.constants,
+              O_APPEND: undefined,
+            },
+          }),
+        });
+      }),
+    ).toBe('platform');
+    for (const [error, expected] of [
+      ['ELOOP', 'unsafe'],
+      ['EMLINK', 'unsafe'],
+      ['EISDIR', 'unsafe'],
+      ['EACCES', 'unavailable'],
+    ] as const) {
+      expect(
+        code(() => {
+          appendPrivateLine(path, 'x', {
+            fs: withFs({
+              openSync: () => {
+                throw systemError(error);
+              },
+            }),
+          });
+        }),
+      ).toBe(expected);
+    }
+    const cases: readonly (readonly [Partial<PrivateFileSystem>, string])[] = [
+      [
+        {
+          fstatSync: () => {
+            throw systemError('EIO');
+          },
+        },
+        'unavailable',
+      ],
+      [
+        {
+          fstatSync: (fd) =>
+            changed(nodePrivateFileSystem.fstatSync(fd), { file: false }),
+        },
+        'unsafe',
+      ],
+      [
+        {
+          fstatSync: (fd) =>
+            changed(nodePrivateFileSystem.fstatSync(fd), { uid: otherUid }),
+        },
+        'unsafe',
+      ],
+      [
+        {
+          fstatSync: (fd) =>
+            changed(nodePrivateFileSystem.fstatSync(fd), {
+              mode: 0o100606,
+            }),
+        },
+        'unsafe',
+      ],
+      [{ appendSync: () => 0 }, 'unavailable'],
+      [
+        {
+          appendSync: () => {
+            throw systemError('ENOSPC');
+          },
+        },
+        'unavailable',
+      ],
+      [
+        {
+          fsyncSync: () => {
+            throw systemError('EIO');
+          },
+        },
+        'unavailable',
+      ],
+    ];
+    for (const [changes, expected] of cases) {
+      let closed = 0;
+      expect(
+        code(() => {
+          appendPrivateLine(path, 'x', {
+            fs: withFs({
+              ...changes,
+              closeSync: (fd) => {
+                closed += 1;
+                nodePrivateFileSystem.closeSync(fd);
+              },
+            }),
+          });
+        }),
+      ).toBe(expected);
+      expect(closed).toBe(1);
+    }
+    // Only the failing fsync wrote its line; every other refusal came first.
+    expect(readFileSync(path, 'utf8')).toBe('first\nx\n');
   });
 });
 

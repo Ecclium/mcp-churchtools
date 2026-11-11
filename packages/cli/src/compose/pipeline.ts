@@ -148,8 +148,13 @@ export function composeToolPipeline(options: ComposeOptions): ComposedPipeline {
     if (config.redaction === 'strict' && config.pseudonymKey === undefined) {
       throw new TypeError('The level strict has no key.');
     }
+    // A run of the runner reads at the level its policy allows for the
+    // model, `strict` unless an entry allows `standard`, whatever the level
+    // of the configuration is (ADR 0033); with a key, its pipeline has the
+    // keys for both.
     const strict =
-      config.redaction === 'strict' && config.pseudonymKey !== undefined;
+      config.pseudonymKey !== undefined &&
+      (config.redaction === 'strict' || config.transport === 'runner');
     // The day keys in the folder of keys, for the snapshots of writes and
     // the queue (ADR 0031). They hold the folder only, no key, and touch
     // the disk only when a key is wrapped, opened or destroyed. One

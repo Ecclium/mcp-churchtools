@@ -29,10 +29,12 @@ export {
   type ValueOrigin,
 } from './load.js';
 export {
+  checkRunnerTokensDir,
   type KeysDirCode,
   keysDirCodes,
   type RunnerTokensDirCode,
   runnerTokensDirCodes,
+  type RunnerTokensDirResult,
   type StateDirCode,
   stateDirCodes,
   type StateDirFileSystem,

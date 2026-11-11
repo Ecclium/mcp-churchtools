@@ -182,6 +182,8 @@ const example = 'https://example.church.tools';
 const policyFile = quote('ECCLIUM_POLICY_FILE');
 const routinesDir = quote('ECCLIUM_ROUTINES_DIR');
 const runnerTokensDir = quote('ECCLIUM_RUNNER_TOKENS_DIR');
+const draftsDir = quote('ECCLIUM_DRAFTS_DIR');
+const notifyFile = quote('ECCLIUM_NOTIFY_FILE');
 const providersFile = quote('ECCLIUM_PROVIDERS_FILE');
 // Why the file of the providers matters (ADR 0033).
 const providersReason =
@@ -496,6 +498,34 @@ const problems: Readonly<
     message(
       `Der Pfad in ${name} ist nicht absolut oder nicht in seiner eindeutigen Form geschrieben.`,
       'Ecclium normalisiert nichts, damit der Runner die Token genau aus dem Ordner liest, den Sie angeben, und der Start weiss nicht, aus welchem Ordner er aufgerufen wird.',
+      'Geben Sie den vollständigen Pfad an, der mit / beginnt, ohne Schrägstrich am Ende, ohne doppelte Schrägstriche und ohne ‹.› oder ‹..›.',
+    ),
+  // The runner writes drafts with personal data there (ADR 0033), so the
+  // path must name exactly one folder.
+  drafts_dir_invalid: (name = draftsDir) =>
+    message(
+      `Der Pfad in ${name} ist nicht absolut oder nicht in seiner eindeutigen Form geschrieben.`,
+      'Ecclium normalisiert nichts, damit der Runner die Entwürfe mit Personendaten genau in den Ordner schreibt, den Sie angeben, und der Start weiss nicht, aus welchem Ordner er aufgerufen wird.',
+      'Geben Sie den vollständigen Pfad an, der mit / beginnt, ohne Schrägstrich am Ende, ohne doppelte Schrägstriche und ohne ‹.› oder ‹..›.',
+    ),
+  // A draft or a notice must not spoil a file of Ecclium or sit beside a
+  // secret (ADR 0033).
+  drafts_dir_overlap: (name = draftsDir) =>
+    message(
+      `Der Ordner in ${name} ist der Zustandsordner, enthält ihn, oder er liegt in einem Ordner, den Ecclium selbst füllt: im Ordner der Schlüssel, im Ordner der Token-Dateien oder in einem der Ordner ‹audit›, ‹quota›, ‹snapshots›, ‹queue›, ‹runner› oder ‹stop› des Zustandsordners.`,
+      'Ein Entwurf darf keine Datei von Ecclium verderben und nicht neben Schlüsseln und Login-Token liegen.',
+      'Wählen Sie einen eigenen Ordner, etwa ‹output› im Zustandsordner oder einen Ordner daneben.',
+    ),
+  notify_file_overlap: (name = notifyFile) =>
+    message(
+      `Die Datei in ${name} liegt in einem Ordner, den Ecclium selbst füllt: im Ordner der Schlüssel, im Ordner der Token-Dateien oder in einem der Ordner ‹audit›, ‹quota›, ‹snapshots›, ‹queue›, ‹runner› oder ‹stop› des Zustandsordners.`,
+      'Eine Zeile, die der Runner an eine Audit-Datei oder eine Token-Datei anhängte, verdürbe deren Kette oder das Konto.',
+      'Wählen Sie eine Datei ausserhalb dieser Ordner, etwa im Zustandsordner selbst oder in einem Ordner für Logs.',
+    ),
+  notify_file_invalid: (name = notifyFile) =>
+    message(
+      `Der Pfad in ${name} ist nicht absolut oder nicht in seiner eindeutigen Form geschrieben.`,
+      'Ecclium normalisiert nichts, damit der Runner die Meldungen genau an die Datei anhängt, die Sie angeben, und der Start weiss nicht, aus welchem Ordner er aufgerufen wird.',
       'Geben Sie den vollständigen Pfad an, der mit / beginnt, ohne Schrägstrich am Ende, ohne doppelte Schrägstriche und ohne ‹.› oder ‹..›.',
     ),
   invalid_integer: (name = quote('ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE')) =>

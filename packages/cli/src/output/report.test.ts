@@ -151,6 +151,14 @@ describe('renderConfigReport', () => {
         'Token des Runners',
         'kein Ordner (‹ECCLIUM_RUNNER_TOKENS_DIR› ist nicht gesetzt)',
       ),
+      row(
+        'Ordner der Entwürfe',
+        'keine Entwürfe als Datei (‹ECCLIUM_DRAFTS_DIR› ist nicht gesetzt)',
+      ),
+      row(
+        'Datei der Meldungen',
+        'keine Meldungen als Datei (‹ECCLIUM_NOTIFY_FILE› ist nicht gesetzt)',
+      ),
       row('Subjekt über stdio', '‹local-stdio› (Voreinstellung)'),
       row('Stufe des Logs', '‹info› (Voreinstellung)'),
       hostNote,
@@ -874,6 +882,52 @@ describe('renderConfigReport and the policy', () => {
       ),
     );
   });
+
+  // Both paths can hold the name of a user, like the other paths (ADR 0033).
+  it.each([
+    [
+      'draftsDir',
+      'ECCLIUM_DRAFTS_DIR',
+      'Ordner der Entwürfe',
+      '/path/to/drafts',
+      'der Ordner der Entwürfe',
+    ],
+    [
+      'notifyFile',
+      'ECCLIUM_NOTIFY_FILE',
+      'Datei der Meldungen',
+      '/path/to/notify.jsonl',
+      'der Pfad der Datei der Meldungen',
+    ],
+  ] as const)(
+    'masks %s unless asked to show it',
+    (key, variable, label, path, hidden) => {
+      const withPath: ConfigReport = {
+        ...report,
+        settings: report.settings.map((setting) =>
+          setting.key === key
+            ? {
+                ...setting,
+                origin: 'environment',
+                shown: { kind: 'path', value: path },
+              }
+            : setting,
+        ),
+      };
+      const masked = renderConfigReport(withPath, {
+        valid: true,
+        showValues: false,
+      });
+      expect(masked).toContain(row(label, `[verborgen] (aus ‹${variable}›)`));
+      expect(masked.find((line) => line.startsWith('Verborgen'))).toBe(
+        `Verborgen sind der Host und ${hidden}, damit Sie die Ausgabe ohne Bearbeitung weitergeben können. Mit ‹--show-values› zeigt der Befehl beide.`,
+      );
+      expect(masked.join('\n')).not.toContain(path);
+      expect(
+        renderConfigReport(withPath, { valid: true, showValues: true }),
+      ).toContain(row(label, `‹${path}› (aus ‹${variable}›)`));
+    },
+  );
 
   it('masks the path of the file of the providers and lists each provider, the host only on request', () => {
     const withFile: ConfigReport = {

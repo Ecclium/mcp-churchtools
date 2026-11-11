@@ -99,6 +99,8 @@ export type RunResult =
       readonly usage?: TokenUsage;
       /** How many reads the run made. */
       readonly calls: number;
+      /** Present for a routine prepared only for a preview, which never writes. */
+      readonly preview?: true;
     }
   | {
       readonly kind: 'failed';
@@ -205,9 +207,13 @@ export async function executeRun(
   );
   if (!checked.ok) {
     log.warn('run_answer_refused', { count: checked.fields });
+    // A breach of the content policy outweighs an unknown person, so that
+    // the audit says it was refused and names why (ADR 0030).
     return failed(
       'answer',
-      checked.unknownPerson ? 'run_person_unknown' : 'run_content_refused',
+      checked.unknownPerson && checked.violations.length === 0
+        ? 'run_person_unknown'
+        : 'run_content_refused',
       true,
       checked.violations.length === 0 ? {} : { violations: checked.violations },
     );
@@ -241,5 +247,6 @@ export async function executeRun(
     attempts: answer.attempts,
     ...(answer.usage === undefined ? {} : { usage: answer.usage }),
     calls: read.calls,
+    ...(run.preview === true ? { preview: true } : {}),
   });
 }
