@@ -1638,6 +1638,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     overlapCode:
       'drafts_dir_overlap' | 'notify_file_overlap' | 'metrics_file_overlap',
     taken: readonly (string | undefined)[] = [],
+    within: readonly (string | undefined)[] = [],
   ): { readonly value: string | undefined; readonly valid: boolean } => {
     const pathRead = read(row(name));
     if (pathRead.state === 'unset') {
@@ -1647,7 +1648,12 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     if (
       pathRead.state === 'set' &&
       fitsVariable(name, pathRead.value) &&
-      (overlaps(pathRead.value) || taken.includes(pathRead.value))
+      (overlaps(pathRead.value) ||
+        taken.includes(pathRead.value) ||
+        within.some(
+          (folder) =>
+            folder !== undefined && liesWithin(pathRead.value, folder),
+        ))
     ) {
       report(overlapCode, name);
       setting(key, name, 'invalid', shownNone);
@@ -1679,14 +1685,25 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     'notify_file_overlap',
   );
   // The metrics file is replaced whole after each pass, so it may also not
-  // be the file of the notices, whose lines it would wipe out, nor the
-  // folder of the drafts (ADR 0033).
+  // be the file of the notices, whose lines it would wipe out, the folder
+  // of the drafts, a file of the policy, the providers, a key or the token
+  // of the server, nor lie in the folder of the routines (ADR 0033).
   const metrics = formOnlyPath(
     'metricsFile',
     'ECCLIUM_RUNNER_METRICS_FILE',
     'metrics_file_invalid',
     'metrics_file_overlap',
-    [notify.value, drafts.value],
+    [
+      notify.value,
+      drafts.value,
+      given.get('ECCLIUM_POLICY_FILE'),
+      given.get('ECCLIUM_PROVIDERS_FILE'),
+      given.get('ECCLIUM_PSEUDONYM_KEY_FILE'),
+      given.get('ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE'),
+      given.get('ECCLIUM_MARKER_KEY_FILE'),
+      given.get('ECCLIUM_CHURCHTOOLS_TOKEN_FILE'),
+    ],
+    [given.get('ECCLIUM_ROUTINES_DIR')],
   );
 
   // What the runner needs besides the server (ADR 0033, ADR 0034): the

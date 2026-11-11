@@ -2895,22 +2895,57 @@ describe('loadConfig and the folders of drafts and notices', () => {
   });
 
   // The metrics file is replaced whole after each pass: as the file of the
-  // notices it would wipe out their lines (ADR 0033).
+  // notices it would wipe out their lines, as a key file the key
+  // (ADR 0033).
   it.each([
     ['ECCLIUM_NOTIFY_FILE', '/path/to/logs/runner.prom'],
     ['ECCLIUM_DRAFTS_DIR', '/path/to/logs/runner.prom'],
+    ['ECCLIUM_POLICY_FILE', '/path/to/config/policy.yaml'],
+    ['ECCLIUM_PROVIDERS_FILE', '/path/to/config/providers.yaml'],
+    ['ECCLIUM_MARKER_KEY_FILE', '/path/to/config/marker.key'],
   ] as const)('refuses the metrics file at the path of %s', (name, path) => {
     const result = asRunner({
       extra: { ...withKeys, [name]: path, ECCLIUM_RUNNER_METRICS_FILE: path },
     });
     expect(result.ok).toBe(false);
-    expect(problems(result)).toEqual([
-      ['metrics_file_overlap', 'ECCLIUM_RUNNER_METRICS_FILE'],
+    expect(problems(result)).toContainEqual([
+      'metrics_file_overlap',
+      'ECCLIUM_RUNNER_METRICS_FILE',
     ]);
     expect(setting(result, 'metricsFile')).toMatchObject({
       origin: 'invalid',
       shown: { kind: 'none' },
     });
+  });
+
+  it('refuses the metrics file in the folder of the routines', () => {
+    const result = asRunner({
+      extra: {
+        ...withKeys,
+        ECCLIUM_RUNNER_METRICS_FILE: `${routinesDirPath}/runner.prom`,
+      },
+    });
+    expect(problems(result)).toContainEqual([
+      'metrics_file_overlap',
+      'ECCLIUM_RUNNER_METRICS_FILE',
+    ]);
+  });
+
+  // The name must be one a private file of the runner takes, so that a
+  // path the start takes is one the runner can write.
+  it.each([
+    '/path/to/metrics/.runner.prom',
+    '/path/to/metrics/runner prom',
+    '/path/to/metrics/läufe.prom',
+    `/path/to/metrics/${'r'.repeat(129)}`,
+  ])('refuses the metrics file %s by its name', (path) => {
+    const result = asRunner({
+      extra: { ...withKeys, ECCLIUM_RUNNER_METRICS_FILE: path },
+    });
+    expect(problems(result)).toContainEqual([
+      'metrics_file_invalid',
+      'ECCLIUM_RUNNER_METRICS_FILE',
+    ]);
   });
 });
 

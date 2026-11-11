@@ -67,6 +67,9 @@ export const tokenVariableName = 'ECCLIUM_CHURCHTOOLS_TOKEN';
 /** The name of a variable whose value is no secret. */
 export type PlainVariableName = Exclude<VariableName, typeof tokenVariableName>;
 
+// The name of a private file of the runner, as the private files take it.
+const privateFileNamePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
 /** The variables whose value is no secret, frozen, in table order. */
 export const plainVariableNames: readonly PlainVariableName[] = Object.freeze(
   variableNames.filter(
@@ -814,11 +817,17 @@ export const variableSchemas: Readonly<
     .min(1)
     .max(4096)
     .refine((value) => isNormalizedAbsolutePath(value)),
+  // A name the private files take as well (files/private-files.ts), so
+  // that a path the start takes is one the runner can write.
   ECCLIUM_RUNNER_METRICS_FILE: z
     .string()
     .min(1)
     .max(4096)
-    .refine((value) => isNormalizedAbsolutePath(value)),
+    .refine(
+      (value) =>
+        isNormalizedAbsolutePath(value) &&
+        privateFileNamePattern.test(value.slice(value.lastIndexOf('/') + 1)),
+    ),
   ECCLIUM_STDIO_SUBJECT: z.string().max(32).regex(stdioSubjectPattern),
   ECCLIUM_LOG_LEVEL: choiceOf('ECCLIUM_LOG_LEVEL'),
 });
