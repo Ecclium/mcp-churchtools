@@ -164,7 +164,7 @@ const invalid = (): never => {
  *   the chain does not fit its form, or the routines are not in order.
  * @example
  * ```ts
- * renderRunnerMetrics({ routines: [{ routineId: 'weekly', nextRun: 1_763_355_600_000 }] });
+ * renderRunnerMetrics({ routines: [{ routineId: 'weekly', nextRun: 1_794_805_200_000 }] });
  * ```
  */
 export function renderRunnerMetrics(metrics: RunnerMetrics): string {
@@ -400,6 +400,11 @@ export function updateRunnerMetrics(update: MetricsUpdate): RunnerMetrics {
       if (found.success && report?.endedAt !== undefined) {
         lastSuccess = report.endedAt;
       }
+    } else if (lastStatus === 'refused') {
+      // A routine that starts again is no longer refused, also before its
+      // next run.
+      lastStatus = undefined;
+      code = undefined;
     }
     const nextRun = update.next.get(routineId);
     return Object.freeze({

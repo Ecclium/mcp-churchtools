@@ -223,7 +223,10 @@ describe('readRunnerMetrics', () => {
       fullText.replace('} 42\n', '} 42 1763355600000\n'),
     ],
     ['a carriage return', fullText.replace('\n', '\r\n')],
-    ['lines in another order', fullText.split('\n').reverse().join('\n')],
+    [
+      'lines in another order',
+      `${fullText.slice(0, -1).split('\n').reverse().join('\n')}\n`,
+    ],
   ])('counts %s as no file of its own', (_case, text) => {
     expect(readRunnerMetrics(text)).toBeUndefined();
   });
@@ -396,6 +399,27 @@ describe('updateRunnerMetrics', () => {
       ],
     });
     expect(metrics.routines).toEqual(previous.routines);
+  });
+
+  it('drops refused for a routine that starts again, also before its next run', () => {
+    const metrics = updateRunnerMetrics({
+      ...base,
+      previous: {
+        routines: [
+          {
+            routineId: 'weekly',
+            lastSuccess: success,
+            lastStatus: 'refused',
+            code: 'run_model_unknown',
+          },
+        ],
+      },
+      routineIds: ['weekly'],
+      reports: [report('weekly', { status: 'not_due' })],
+    });
+    expect(metrics.routines).toEqual([
+      { routineId: 'weekly', lastSuccess: success },
+    ]);
   });
 
   it('marks a routine that does not start as refused and keeps its last success', () => {
