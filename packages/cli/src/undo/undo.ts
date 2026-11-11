@@ -389,35 +389,13 @@ export async function undoWrite(options: UndoOptions): Promise<ExitCode> {
   // is written: its write is taken back with the account of its routine
   // (ADR 0033). Only the days whose writes can have a snapshot are read.
   const since = firstUndoDay(clock.now());
-  const opened = openAuditFolder({ stateDir });
   let target: UndoTarget;
   if (runId !== undefined) {
-    if (!opened.ok) {
-      if (opened.code === 'audit_folder_missing') {
-        return refuse(output, 'run_unknown');
-      }
-      output.stderr(auditFolderTexts[opened.code]);
-      return folderExitCodes[opened.code];
-    }
-    const found = findRunWrites({ folder: opened.folder, runId, since });
-    if (found.moved || found.unread > 0) {
-      return refuse(output, 'audit_incomplete');
-    }
-    const { routineId } = found;
-    if (routineId === undefined) return refuse(output, 'run_unknown');
-    if (found.written.length === 0) {
-      for (const queueId of found.undecided) {
-        output.stdout(undecidedLine(queueId));
-      }
-      return refuse(output, 'run_nothing_written');
-    }
-    target = {
-      kind: 'run',
-      run: Object.freeze({ runId, routineId }),
-      written: found.written,
-      undecided: found.undecided,
-    };
+    const found = runTargetOf(output, stateDir, runId, since);
+    if (typeof found === 'number') return found;
+    target = found;
   } else {
+    const opened = openAuditFolder({ stateDir });
     const eventId = options.eventId as string;
     let run: AuditRunRef | undefined;
     // Without the folder, no write of a run has a line: as before, the
@@ -554,20 +532,25 @@ export async function undoWrite(options: UndoOptions): Promise<ExitCode> {
       if (!built.ok) return finish(output, undoAccountEnding(built.code));
       try {
         const request = await requestOf();
-        return target.kind === 'write'
-          ? reportUndo(
-              output,
-              await built.pipeline.undo(
-                { eventId: target.eventId, overwrite: options.overwrite, run },
-                request,
-              ),
-            )
-          : await undoRun(output, built.pipeline, request, {
-              run,
-              written: target.written,
-              undecided: target.undecided,
-              overwrite: options.overwrite,
-            });
+        if (target.kind === 'write') {
+          return reportUndo(
+            output,
+            await built.pipeline.undo(
+              { eventId: target.eventId, overwrite: options.overwrite, run },
+              request,
+            ),
+          );
+        }
+        // Read again under the lock: a run that still ran when the files
+        // were read first may have written since (ADR 0034).
+        const again = runTargetOf(output, stateDir, run.runId, since);
+        if (typeof again === 'number') return again;
+        return await undoRun(output, built.pipeline, request, {
+          run,
+          written: again.written,
+          undecided: again.undecided,
+          overwrite: options.overwrite,
+        });
       } finally {
         await built.close().catch(() => undefined);
       }
@@ -579,6 +562,44 @@ export async function undoWrite(options: UndoOptions): Promise<ExitCode> {
     auditFile.close();
   }
 }
+
+// The writes of a run from the audit files of the range, or the exit code
+// after the text that says why none are taken back: a folder that cannot
+// be read, a file or a line that cannot be read whole, which may hold a
+// write of the run, a run no line names, or one that wrote nothing.
+const runTargetOf = (
+  output: Output,
+  stateDir: string,
+  runId: string,
+  since: string,
+): Extract<UndoTarget, { kind: 'run' }> | ExitCode => {
+  const opened = openAuditFolder({ stateDir });
+  if (!opened.ok) {
+    if (opened.code === 'audit_folder_missing') {
+      return refuse(output, 'run_unknown');
+    }
+    output.stderr(auditFolderTexts[opened.code]);
+    return folderExitCodes[opened.code];
+  }
+  const found = findRunWrites({ folder: opened.folder, runId, since });
+  if (found.moved || found.unread > 0 || found.skipped > 0) {
+    return refuse(output, 'audit_incomplete');
+  }
+  const { routineId } = found;
+  if (routineId === undefined) return refuse(output, 'run_unknown');
+  if (found.written.length === 0) {
+    for (const queueId of found.undecided) {
+      output.stdout(undecidedLine(queueId));
+    }
+    return refuse(output, 'run_nothing_written');
+  }
+  return {
+    kind: 'run',
+    run: Object.freeze({ runId, routineId }),
+    written: found.written,
+    undecided: found.undecided,
+  };
+};
 
 // Takes back every write of a run, the newest first, and stops at the
 // first that does not end with 0. A write that ended before its send has
@@ -596,6 +617,8 @@ const undoRun = async (
 ): Promise<ExitCode> => {
   const { run, written, undecided, overwrite } = what;
   let code: ExitCode = exitCodes.ok;
+  // The writes taken back or found as before, not those that sent nothing.
+  let done = 0;
   for (const [index, write] of written.entries()) {
     output.stdout(runWriteLine(write));
     const outcome = await pipeline.undo(
@@ -612,8 +635,11 @@ const undoRun = async (
       if (left > 0) output.stderr(stoppedLine(left));
       break;
     }
+    done += 1;
   }
   for (const queueId of undecided) output.stdout(undecidedLine(queueId));
-  if (code === exitCodes.ok) output.stdout(runDoneLine(written.length));
-  return code;
+  if (code !== exitCodes.ok) return code;
+  if (done === 0) return refuse(output, 'run_nothing_written');
+  output.stdout(runDoneLine(done));
+  return exitCodes.ok;
 };

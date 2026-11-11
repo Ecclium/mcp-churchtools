@@ -1213,6 +1213,39 @@ const writtenLines = (
       (runId === undefined || line['runId'] === runId),
   );
 
+// Writes lines into an audit file of its own in the folder of the test,
+// as a process of the runner would have, for writes no double can make.
+let extraFiles = 0;
+const addAuditLines = (
+  stateDir: string,
+  lines: readonly (Record<string, unknown> | string)[],
+): void => {
+  extraFiles += 1;
+  privateFile(
+    join(
+      stateDir,
+      'audit',
+      `audit-2026-11-11-073000-4242-${String(extraFiles)}.jsonl`,
+    ),
+    lines
+      .map((line) => (typeof line === 'string' ? line : JSON.stringify(line)))
+      .join('\n')
+      .concat('\n'),
+  );
+};
+
+// A copy of the line of a write with another ID and time, without the
+// fields of the chain, which only the writer of a file fills.
+const copyOfWrite = (
+  line: Record<string, unknown> | undefined,
+  fields: Record<string, unknown>,
+): Record<string, unknown> => {
+  const copy: Record<string, unknown> = { ...line, ...fields };
+  Reflect.deleteProperty(copy, 'seq');
+  Reflect.deleteProperty(copy, 'prevHash');
+  return copy;
+};
+
 describe('ecclium undo --run', () => {
   it('takes the write of a run back with the account of its routine, and the run shows the undo', async () => {
     const setupOf = setup();
@@ -1409,6 +1442,64 @@ describe('ecclium undo --run', () => {
     expect(refused.calls).toEqual([]);
   });
 
+  it('says a write of the run without a snapshot sent nothing, and ends with 66 when no write of the run sent anything', async () => {
+    const setupOf = setup();
+    const { runOnce, undoCommand, auditFileLines, stateDir } = setupOf;
+    const { bound } = await runOnce();
+    const [write] = writtenLines(auditFileLines(), bound.runId);
+    // A later try of the same run that failed before its send.
+    addAuditLines(stateDir, [
+      copyOfWrite(write, {
+        eventId: '00000000-0000-4000-8000-0000000007a1',
+        ts: '2026-11-11T07:30:00.000Z',
+        outcome: 'error',
+        errorCode: 'internal',
+        writeState: 'failed',
+      }),
+    ]);
+    const undone = await undoCommand({ runId: bound.runId });
+    expect(undone.code).toBe(exitCodes.ok);
+    expect(undone.stdout[0]).toBe(
+      'Schreibvorgang ‹00000000-0000-4000-8000-0000000007a1› des Laufs vom 11.11.2026 07:30:00 UTC:',
+    );
+    expect(undone.stdout[1]).toMatch(
+      /^Zu diesem Schreibvorgang gibt es keinen Snapshot/u,
+    );
+    expect(undone.stdout.at(-1)).toBe(
+      'Der Lauf ist zurückgenommen: 1 Schreibvorgang, jeder mit seiner eigenen Zeile vom Typ undo im Audit.',
+    );
+    expect(setupOf.text()).toBe(`# ${pageTitle}`);
+    // A run whose only write failed before its send.
+    const lonely = '00000000-0000-4000-8000-0000000007b2';
+    addAuditLines(stateDir, [
+      copyOfWrite(write, {
+        eventId: '00000000-0000-4000-8000-0000000007b3',
+        runId: lonely,
+        ts: '2026-11-11T07:40:00.000Z',
+        outcome: 'error',
+        errorCode: 'internal',
+        writeState: 'failed',
+      }),
+    ]);
+    const nothing = await undoCommand({ runId: lonely });
+    expect(nothing.code).toBe(exitCodes.noInput);
+    expect(nothing.stderr.join('\n')).toContain(
+      'Der Lauf hat in ChurchTools nichts geschrieben',
+    );
+    expect(nothing.patches).toEqual([]);
+  });
+
+  it('takes nothing back while a line in the range does not fit the format, since it may be a write of the run', async () => {
+    const setupOf = setup();
+    const { runOnce, undoCommand, stateDir } = setupOf;
+    const { bound } = await runOnce();
+    addAuditLines(stateDir, ['{"v":1,"eventId":"damaged"}']);
+    const refused = await undoCommand({ runId: bound.runId });
+    expect(refused.code).toBe(exitCodes.ioError);
+    expect(refused.calls).toEqual([]);
+    expect(setupOf.text()).toContain('Mesmer');
+  });
+
   it('ends with 66 for a run no line names, and with 64 for an ID of a run that is none', async () => {
     const { undoCommand } = setup();
     const unknown = await undoCommand({
@@ -1463,6 +1554,20 @@ describe('ecclium undo <Kennung> of a write of a run', () => {
     expect(undone.patches[0]?.headers['authorization']).toBe(
       `Login ${setupOf.accountCanary.value}`,
     );
+  });
+
+  it('takes nothing back when the line of the write does not fit the format, since it may name a run', async () => {
+    const setupOf = setup();
+    const { runOnce, undoCommand, auditFileLines, stateDir } = setupOf;
+    const { bound } = await runOnce();
+    const [write] = writtenLines(auditFileLines(), bound.runId);
+    const damaged = '00000000-0000-4000-8000-0000000007c4';
+    addAuditLines(stateDir, [
+      copyOfWrite(write, { eventId: damaged, writeState: 'bogus' }),
+    ]);
+    const refused = await undoCommand({ eventId: damaged });
+    expect(refused.code).toBe(exitCodes.ioError);
+    expect(refused.calls).toEqual([]);
   });
 
   it('takes nothing back while an audit file cannot be read whole, when the write names no run there', async () => {

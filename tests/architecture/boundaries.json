@@ -85,8 +85,12 @@
     },
     "auditCommands": {
       "adr": "0028",
-      "description": "The commands that read the audit files: the only code that imports the subpath ./audit of core with the reader of the folder audit, the check of the chains, the summary and the targets of writes, because the audit files name the IDs of the persons whose data was read. Each entry is a folder of the command line: the audit commands and ecclium policy init.",
-      "paths": ["packages/cli/src/commands/", "packages/cli/src/policy/"]
+      "description": "The commands that read the audit files: the only code that imports the subpath ./audit of core with the reader of the folder audit, the check of the chains, the summary and the targets of writes, because the audit files name the IDs of the persons whose data was read. Each entry is a folder of the command line: the audit commands, ecclium policy init and ecclium undo, which finds the run a write belongs to.",
+      "paths": [
+        "packages/cli/src/commands/",
+        "packages/cli/src/policy/",
+        "packages/cli/src/undo/"
+      ]
     },
     "httpDouble": {
       "adr": "0056",

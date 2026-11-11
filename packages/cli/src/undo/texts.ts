@@ -73,7 +73,7 @@ export const undoProblems: Readonly<Record<UndoProblem, UndoEnding>> =
       exitCodes.noInput,
     ),
     audit_incomplete: ending(
-      'Ecclium konnte nicht jede Audit-Datei der letzten 45 Tage ganz lesen, oder der Ordner ‹audit› änderte sich beim Lesen. Ein Schreibvorgang, der zu einem Lauf gehört, könnte darin stehen, und Ecclium nimmt dann nichts zurück, damit es weder mit dem falschen Konto schreibt noch einen Schreibvorgang auslässt. Prüfen Sie die Dateien mit ‹ecclium audit verify› und versuchen Sie es erneut.',
+      'Ecclium konnte nicht jede Audit-Datei der letzten 45 Tage ganz lesen, eine Zeile darin passt nicht zum Format der Ereignisse, oder der Ordner ‹audit› änderte sich beim Lesen. Ein Schreibvorgang, der zu einem Lauf gehört, könnte darin stehen, und Ecclium nimmt dann nichts zurück, damit es weder mit dem falschen Konto schreibt noch einen Schreibvorgang auslässt. Prüfen Sie die Dateien mit ‹ecclium audit verify› und versuchen Sie es erneut.',
       exitCodes.ioError,
     ),
     routine_busy: ending(
@@ -81,7 +81,7 @@ export const undoProblems: Readonly<Record<UndoProblem, UndoEnding>> =
       exitCodes.tempFail,
     ),
     routine_lock_failed: ending(
-      'Die Sperrdatei der Routine liess sich nicht anlegen, weil der Ordner ‹runner› im Zustandsordner sich nicht nutzen lässt. Ecclium nimmt nichts zurück, ohne einen Lauf derselben Routine auszuschliessen. Der Ordner muss Ihrem Benutzer gehören und die Rechte 700 haben.',
+      'Die Sperrdatei der Routine liess sich nicht anlegen, weil der Ordner ‹runner› im Zustandsordner sich nicht nutzen lässt. Ecclium nimmt nichts zurück, ohne einen Lauf derselben Routine auszuschliessen. Der Ordner muss Ihrem Benutzer gehören und darf der Gruppe und anderen keine Rechte geben, üblich sind die Rechte 700.',
       exitCodes.invalidConfig,
     ),
   });
@@ -681,9 +681,12 @@ export function runWriteLine(write: AuditRunWrite): string {
   return `Schreibvorgang ‹${write.eventId}› ${way} vom ${shownTime(write.ts)}:`;
 }
 
-/** The line for a write of a run that sent nothing, so has nothing to take back. */
+/**
+ * The line for a write of a run that may have failed before its send and
+ * has no snapshot, so has nothing to take back.
+ */
 export const notSentLine =
-  'Dieser Schreibvorgang endete vor dem Senden und hat nichts geändert, es gibt nichts zurückzunehmen.';
+  'Zu diesem Schreibvorgang gibt es keinen Snapshot: Er endete vor dem Senden, denn Ecclium hält den Snapshot unmittelbar davor fest, oder ‹ECCLIUM_STATE_DIR› ist ein anderer Ordner als beim Runner. Es gibt nichts zurückzunehmen. Zweifeln Sie daran, prüfen Sie die Seite in ChurchTools.';
 
 /**
  * The line after an undo of a run that stopped at one write: the older
