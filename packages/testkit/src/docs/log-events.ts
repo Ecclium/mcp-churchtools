@@ -451,6 +451,8 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Eine Promise wurde abgelehnt, ohne dass jemand darauf wartete. Der Prozess endet mit 70.',
     process_sigterm: 'Der Prozess erhielt `SIGTERM` und endet.',
     process_sigint: 'Der Prozess erhielt `SIGINT` und endet.',
+    process_sighup:
+      'Der Runner erhielt `SIGHUP`, etwa weil sein Terminal geschlossen wurde, und endet wie nach `SIGTERM`.',
   },
 );
 

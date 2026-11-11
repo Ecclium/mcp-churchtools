@@ -163,9 +163,12 @@ export interface RunnerProcess {
    * metrics file with the head of the chain of the audit file.
    *
    * @param reports - What became of the routines of the pass.
-   * @returns The next looks and whether the metrics file took them.
+   * @param looks - Whether the caller needs the next looks; they are
+   *   asked for the metrics file in any case.
+   * @returns The next looks, empty when nobody needs them, and whether the
+   *   metrics file took them.
    */
-  after(reports: readonly RoutineReport[]): Promise<PassAfter>;
+  after(reports: readonly RoutineReport[], looks: boolean): Promise<PassAfter>;
   /** Whether the halt of writes of the process holds (ADR 0029). */
   writesHalted(): boolean;
   /** Closes the audit file with the anchor of its chain. Never throws. */
@@ -514,12 +517,19 @@ export function openRunnerProcess(
           }),
         );
       },
-      after: async (reports: readonly RoutineReport[]): Promise<PassAfter> => {
+      after: async (
+        reports: readonly RoutineReport[],
+        looks: boolean,
+      ): Promise<PassAfter> => {
+        const next = new Map<string, number>();
+        // Each look reads the memory of runs; nobody needs them otherwise.
+        if (!looks && metricsFile === undefined) {
+          return Object.freeze({ next });
+        }
         const ports = portsOf(
           () => Object.freeze({ ok: false, code: 'run_model_unknown' }),
           undefined,
         );
-        const next = new Map<string, number>();
         for (const run of routines) {
           const check = await ports.schedule.due(run);
           next.set(run.loaded.routine.id, check.next);

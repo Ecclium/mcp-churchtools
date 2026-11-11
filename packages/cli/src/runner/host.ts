@@ -4,15 +4,17 @@
  * wait of the daemon between two passes. Tests replace it.
  *
  * Why a signal never cuts a write: a write that has begun in ChurchTools
- * belongs with its snapshot, the read after it and its audit line. The
- * first SIGTERM or SIGINT aborts reading and the model at once, since both
- * change nothing outside, and no further routine begins; a write that
- * runs still ends (decided on 10.11.2026). A second signal ends the
- * process at once, as with the server over stdio, but never while a write
- * runs: then the process ends right after it, with the pass (decided on
- * 11.11.2026). Only SIGKILL, such as from `docker stop` after its grace
- * period, stops it harder. The process ends with 143 after SIGTERM and
- * 130 after SIGINT, before any other code.
+ * belongs with its snapshot, the read after it, its audit line, the end of
+ * its trigger and its notice. The first SIGTERM, SIGINT or SIGHUP aborts
+ * reading and the model at once, since both change nothing outside, and no
+ * further routine begins; a write that runs still ends (decided on
+ * 10.11.2026). A second signal ends the process at once, as with the
+ * server over stdio, but never while a write runs: then the process ends
+ * right after it, with the pass (decided on 11.11.2026). SIGHUP is heeded
+ * too, so that a terminal that closes, such as a lost SSH session, cuts no
+ * write. Other signals, such as SIGKILL from `docker stop` after its grace
+ * period, stop it harder. The process ends with 143 after SIGTERM, 130
+ * after SIGINT and 129 after SIGHUP, before any other code.
  *
  * @packageDocumentation
  */
@@ -31,7 +33,7 @@ export interface RunnerHost {
    * @returns A function that removes the listener again.
    */
   readonly onSignal: (
-    signal: 'SIGINT' | 'SIGTERM',
+    signal: 'SIGINT' | 'SIGTERM' | 'SIGHUP',
     listener: () => void,
   ) => () => void;
   /**
@@ -74,7 +76,10 @@ export interface RunnerHost {
  */
 export const processRunnerHost = (): RunnerHost =>
   Object.freeze({
-    onSignal: (signal: 'SIGINT' | 'SIGTERM', listener: () => void) => {
+    onSignal: (
+      signal: 'SIGINT' | 'SIGTERM' | 'SIGHUP',
+      listener: () => void,
+    ) => {
       process.on(signal, listener);
       return () => {
         process.off(signal, listener);
@@ -173,7 +178,10 @@ export function watchSignals(
   let first: ExitCode | undefined;
   let writes = 0;
   const onSignal =
-    (event: 'process_sigterm' | 'process_sigint', code: ExitCode) =>
+    (
+      event: 'process_sigterm' | 'process_sigint' | 'process_sighup',
+      code: ExitCode,
+    ) =>
     (): void => {
       logger.info(event);
       if (first === undefined) {
@@ -192,6 +200,7 @@ export function watchSignals(
   const removers = [
     host.onSignal('SIGTERM', onSignal('process_sigterm', exitCodes.terminated)),
     host.onSignal('SIGINT', onSignal('process_sigint', exitCodes.interrupted)),
+    host.onSignal('SIGHUP', onSignal('process_sighup', exitCodes.hungUp)),
     host.onFault((kind, value) => {
       try {
         logger.error(

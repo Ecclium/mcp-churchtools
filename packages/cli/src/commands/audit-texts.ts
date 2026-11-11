@@ -506,11 +506,16 @@ export function renderRun(
       );
     }
     if (summary.begin !== undefined) {
-      lines.push(`  Beginn    ${timeOf(summary.begin)}`);
+      // With a range, the first line of the run in the range.
+      lines.push(
+        `  Beginn    ${timeOf(summary.begin)}${period === undefined ? '' : ', erste Zeile im Zeitraum'}`,
+      );
     }
     if (end === undefined) {
       lines.push(
-        '  Ende      fehlt: Der Lauf läuft noch, oder sein Prozess endete, bevor er das Ende festhielt.',
+        period === undefined
+          ? '  Ende      fehlt: Der Lauf läuft noch, oder sein Prozess endete, bevor er das Ende festhielt.'
+          : '  Ende      fehlt im Zeitraum: Es liegt danach, der Lauf läuft noch, oder sein Prozess endete, bevor er das Ende festhielt.',
       );
     } else {
       lines.push(

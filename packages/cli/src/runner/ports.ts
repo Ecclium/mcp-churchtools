@@ -79,8 +79,9 @@ export interface RunnerPortsOptions {
    */
   readonly model: (alias: string) => ModelOfAlias;
   /**
-   * Marks a write that has begun until it ends, so that no signal cuts it.
-   * Leave it out where no signal is watched.
+   * Marks a write that has begun until its run closes, so that no signal
+   * cuts it or the steps after it. Leave it out where no signal is
+   * watched.
    */
   readonly writing?: () => () => void;
   readonly writer: StderrLineWriter;
@@ -196,6 +197,10 @@ export function composeRunnerPorts(options: RunnerPortsOptions): RunnerPorts {
       routineId,
       provider: model.info,
     });
+    // A write that has begun is marked until the run closes, after the
+    // end of its trigger, its audit line and its notice, so that no second
+    // signal cuts any of them (ADR 0033).
+    let release: (() => void) | undefined;
     return Object.freeze({
       ok: true,
       run: Object.freeze({
@@ -204,13 +209,9 @@ export function composeRunnerPorts(options: RunnerPortsOptions): RunnerPorts {
         write:
           writing === undefined
             ? bound.write
-            : async (...args: Parameters<typeof bound.write>) => {
-                const done = writing();
-                try {
-                  return await bound.write(...args);
-                } finally {
-                  done();
-                }
+            : (...args: Parameters<typeof bound.write>) => {
+                release ??= writing();
+                return bound.write(...args);
               },
         model,
         log: bound.log,
@@ -228,7 +229,11 @@ export function composeRunnerPorts(options: RunnerPortsOptions): RunnerPorts {
             period: line.period,
             durationMs: line.durationMs,
           }),
-        close: () => built.close().catch(() => undefined),
+        close: () => {
+          release?.();
+          release = undefined;
+          return built.close().catch(() => undefined);
+        },
       }),
     });
   };

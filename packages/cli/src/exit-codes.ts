@@ -31,14 +31,15 @@ export const exitCodes = Object.freeze({
   /**
    * A file could not be read or written whole: for `ecclium undo`, the
    * line in the audit file or the snapshot of the undo (ADR 0031); for
-   * `ecclium run-once`, a draft or a notice of a run.
+   * `ecclium run-once`, a draft or a notice of a run or the metrics file.
    */
   ioError: 74,
   /**
    * A later call may pass (EX_TEMPFAIL): for `ecclium run-once`, a run
    * failed on a passing fault, the memory of runs did not answer, writes
    * of the process are halted, or another process holds the routine of a
-   * run by hand (ADR 0034).
+   * run by hand (ADR 0034); for the daemon, writes of the process are
+   * halted, so that a restart lifts the halt (ADR 0029).
    */
   tempFail: 75,
   /**
@@ -55,11 +56,20 @@ export const exitCodes = Object.freeze({
    */
   invalidConfig: 78,
   /**
-   * The server over stdio ended after SIGINT: 128 and the number of the
-   * signal, as a shell reports a process that the signal ended.
+   * `ecclium run-once` or the daemon ended after SIGHUP, such as when its
+   * terminal closed: 128 and 1.
+   */
+  hungUp: 129,
+  /**
+   * The server over stdio, `ecclium run-once` or the daemon ended after
+   * SIGINT: 128 and the number of the signal, as a shell reports a process
+   * that the signal ended.
    */
   interrupted: 130,
-  /** The server over stdio ended after SIGTERM, 128 and 15. */
+  /**
+   * The server over stdio, `ecclium run-once` or the daemon ended after
+   * SIGTERM, 128 and 15.
+   */
   terminated: 143,
 } as const);
 

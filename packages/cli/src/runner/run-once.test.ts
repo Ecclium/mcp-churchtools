@@ -50,7 +50,7 @@ import {
   type MockedHttpTransport,
 } from '@ecclium/mcp-churchtools-testkit';
 import { createCorePlugin } from '@ecclium/mcp-churchtools-tools';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type ExitCode, exitCodes } from '../exit-codes.js';
 import { run } from '../main.js';
@@ -376,11 +376,14 @@ const testHost = (advance: (ms: number) => void) => {
   // What happens at each wait, by its number from 1: by default the wait
   // passes; a test sends a signal here to end the daemon.
   let atWait: (count: number) => void = () => undefined;
-  const send = (signal: 'SIGTERM' | 'SIGINT'): void => {
+  const send = (signal: 'SIGTERM' | 'SIGINT' | 'SIGHUP'): void => {
     for (const listener of [...(signals.get(signal) ?? [])]) listener();
   };
   const host: RunnerHost = Object.freeze({
-    onSignal: (signal: 'SIGINT' | 'SIGTERM', listener: () => void) => {
+    onSignal: (
+      signal: 'SIGINT' | 'SIGTERM' | 'SIGHUP',
+      listener: () => void,
+    ) => {
       const list = signals.get(signal) ?? [];
       list.push(listener);
       signals.set(signal, list);
@@ -597,6 +600,8 @@ const setup = (options: SetupOptions = {}) => {
     // such as a signal.
     onModel: (): void => undefined,
     onPatch: (): void => undefined,
+    // What happens at each line of the log of a call, such as a signal.
+    onLog: (() => undefined) as (line: string) => void,
     // Whether the endpoint of the model answers with 503.
     modelDown: false,
   };
@@ -704,11 +709,11 @@ const setup = (options: SetupOptions = {}) => {
         : { readModelKey: more.readModelKey }),
       ...(more.ownCatalog === true ? {} : { createCatalog }),
       writeSync: (_fd, buffer, offset, length) => {
-        logs.push(
-          Buffer.from(buffer)
-            .subarray(offset, offset + length)
-            .toString('utf8'),
-        );
+        const line = Buffer.from(buffer)
+          .subarray(offset, offset + length)
+          .toString('utf8');
+        logs.push(line);
+        state.onLog(line);
         return length;
       },
       createTransport,
@@ -1592,6 +1597,7 @@ describe('the signals of ecclium run-once', () => {
   it.each([
     ['SIGTERM', exitCodes.terminated, 'process_sigterm'],
     ['SIGINT', exitCodes.interrupted, 'process_sigint'],
+    ['SIGHUP', exitCodes.hungUp, 'process_sighup'],
   ] as const)(
     'stops at %s while the model answers: writes nothing, keeps the trigger open and ends with %i',
     async (signal, exit, event) => {
@@ -1641,6 +1647,33 @@ describe('the signals of ecclium run-once', () => {
       expect.objectContaining({ runResult: 'written' }),
     ]);
     t.assertNothingLeaked();
+  });
+
+  it('cuts neither the end of the trigger nor the audit line nor the notice after a write at a second signal', async () => {
+    const t = setup({
+      routines: { [wikiRoutine]: { notify: ['stdout', 'file'] } },
+    });
+    t.state.onPatch = () => {
+      t.driver.send('SIGTERM');
+    };
+    // After the write has returned, before its trigger closes.
+    t.state.onLog = (line) => {
+      if (line.includes('"event":"run_written"')) t.driver.send('SIGTERM');
+    };
+    const { code, stdout } = await t.call(due);
+    expect(code).toBe(exitCodes.terminated);
+    expect(t.driver.exits).toEqual([]);
+    expect(t.logs.join('')).toContain('"event":"run_written"');
+    expect(t.runLines()).toEqual([
+      expect.objectContaining({ runResult: 'written' }),
+    ]);
+    expect(jsonLines(stdout)).toHaveLength(1);
+    expect(t.notices()).toHaveLength(1);
+    // The trigger is closed: a later call writes nothing.
+    t.state.onPatch = () => undefined;
+    t.state.onLog = () => undefined;
+    expect((await t.call(due)).code).toBe(exitCodes.ok);
+    expect(t.patches()).toHaveLength(1);
   });
 
   it('ends at once at a second signal while no write runs', async () => {
@@ -1695,10 +1728,11 @@ describe('the retention in ecclium run-once', () => {
     const kept = dayFile('2026-11-01');
     const { code } = await t.call(due);
     expect(code).toBe(exitCodes.ok);
-    // The deletion runs beside the pass; it is done by the next tick.
-    await new Promise((resolve) => setTimeout(resolve, 50));
     expect(existsSync(oldAudit)).toBe(false);
-    expect(existsSync(old)).toBe(false);
+    // The deletion of the day keys runs beside the pass.
+    await vi.waitFor(() => {
+      expect(existsSync(old)).toBe(false);
+    });
     expect(existsSync(kept)).toBe(true);
     expect(t.logs.join('')).toContain('"event":"audit_files_deleted"');
     t.assertNothingLeaked();
@@ -1711,8 +1745,23 @@ describe('the retention in ecclium run-once', () => {
       join(auditDir, 'audit-2025-01-01-000000-1-1.jsonl'),
       '',
     );
+    utimesSync(
+      oldAudit,
+      new Date(Date.UTC(2025, 0, 1)),
+      new Date(Date.UTC(2025, 0, 1)),
+    );
+    const snapshotDays = privateDir(join(t.base, 'keys', 'snapshot'));
+    const day = '2026-09-01';
+    const oldDay = privateFile(
+      join(snapshotDays, `default.${day}.key`),
+      'k'.repeat(32),
+    );
     expect((await t.call(preview(wikiRoutine))).code).toBe(exitCodes.ok);
+    // Long enough for a deletion beside the call, which a preview starts
+    // none of.
+    await new Promise((resolve) => setTimeout(resolve, 20));
     expect(existsSync(oldAudit)).toBe(true);
+    expect(existsSync(oldDay)).toBe(true);
   });
 });
 
@@ -2133,6 +2182,35 @@ describe('ecclium audit show --run', () => {
     expect(both.code).toBe(exitCodes.usage);
     expect(both.stderr).toContain(
       '‹--run› und ‹--object› gehen nicht zusammen',
+    );
+  });
+});
+
+describe('ecclium audit show --run with a range of days', () => {
+  it('says that the end can lie outside the range', async () => {
+    const t = setup();
+    expect((await t.call(due)).code).toBe(exitCodes.ok);
+    const runId = String(t.runLines()[0]?.['runId']);
+    const { code, stdout } = await t.cli([
+      'audit',
+      'show',
+      '--run',
+      runId,
+      '--until',
+      '2026-11-10',
+    ]);
+    expect(code).toBe(exitCodes.ok);
+    expect(stdout).toContain('Keine Zeile nennt diesen Lauf.');
+    const within = await t.cli([
+      'audit',
+      'show',
+      '--run',
+      runId,
+      '--since',
+      '2026-11-11',
+    ]);
+    expect(within.stdout).toContain(
+      '  Beginn    11.11.2026 07:00:00, erste Zeile im Zeitraum',
     );
   });
 });

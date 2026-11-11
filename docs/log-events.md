@@ -352,6 +352,7 @@ Je Ereignis die Stufe und die Felder, die ein Aufruf höchstens setzt. Die Felde
 
 | Ereignis | Stufe | Felder | Bedeutung |
 | --- | --- | --- | --- |
+| `process_sighup` | `info` | keine | Der Runner erhielt `SIGHUP`, etwa weil sein Terminal geschlossen wurde, und endet wie nach `SIGTERM`. |
 | `process_sigint` | `info` | keine | Der Prozess erhielt `SIGINT` und endet. |
 | `process_sigterm` | `info` | keine | Der Prozess erhielt `SIGTERM` und endet. |
 | `process_uncaught_exception` | `error` | `code` | Ein Fehler wurde nirgends abgefangen. Der Prozess endet mit 70. |

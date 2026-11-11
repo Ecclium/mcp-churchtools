@@ -104,6 +104,7 @@ describe('the exit codes', () => {
       tempFail: 75,
       noPermission: 77,
       invalidConfig: 78,
+      hungUp: 129,
       interrupted: 130,
       terminated: 143,
     });

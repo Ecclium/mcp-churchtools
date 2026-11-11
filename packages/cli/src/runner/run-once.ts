@@ -40,7 +40,12 @@ import { type ExitCode, exitCodes } from '../exit-codes.js';
 import { problemText } from '../messages/index.js';
 import { type Output, terminalLines } from '../output/index.js';
 import type { WriteSyncFn } from '../send.js';
-import { processRunnerHost, type RunnerHost, watchSignals } from './host.js';
+import {
+  processRunnerHost,
+  type RunnerHost,
+  type SignalWatch,
+  watchSignals,
+} from './host.js';
 import { openRunnerProcess } from './process.js';
 import {
   type RunnerMode,
@@ -218,11 +223,18 @@ export async function runOnce(options: RunOnceOptions): Promise<ExitCode> {
   });
   if (!opened.ok) return opened.code;
   const runner = opened.process;
-  const watch = watchSignals(
-    options.host ?? processRunnerHost(),
-    runner.logger,
-    () => output.stderr(runnerProcessTexts.signal),
-  );
+  let watch: SignalWatch;
+  try {
+    watch = watchSignals(
+      options.host ?? processRunnerHost(),
+      runner.logger,
+      () => output.stderr(runnerProcessTexts.signal),
+    );
+  } catch (error) {
+    // The audit file closes also when the signals cannot be watched.
+    runner.close();
+    throw error;
+  }
   try {
     runner.sweep();
     if (mode.kind === 'preview') {
@@ -254,7 +266,7 @@ export async function runOnce(options: RunOnceOptions): Promise<ExitCode> {
     severity = worseOf(severity, pass.severity);
     // The metrics file carries the values of the routines this call did
     // not run; it mirrors only and decides about no run (ADR 0033).
-    const after = await runner.after(pass.routines);
+    const after = await runner.after(pass.routines, false);
     if (after.metrics === false) {
       output.stderr(runnerProcessTexts.metrics_failed);
       severity = worseOf(severity, 'file');

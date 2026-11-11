@@ -24,7 +24,7 @@
 import type { RoutineReport } from '@ecclium/mcp-churchtools-runner';
 
 import { type ExitCode, exitCodes } from '../exit-codes.js';
-import { processRunnerHost, watchSignals } from './host.js';
+import { processRunnerHost, type SignalWatch, watchSignals } from './host.js';
 import { openRunnerProcess } from './process.js';
 import { reportStart, type RunOnceOptions } from './run-once.js';
 import { startRunner } from './start.js';
@@ -162,9 +162,16 @@ export async function runDaemon(
   });
   if (!opened.ok) return opened.code;
   const runner = opened.process;
-  const watch = watchSignals(host, runner.logger, () =>
-    output.stderr(runnerProcessTexts.signal),
-  );
+  let watch: SignalWatch;
+  try {
+    watch = watchSignals(host, runner.logger, () =>
+      output.stderr(runnerProcessTexts.signal),
+    );
+  } catch (error) {
+    // The audit file closes also when the signals cannot be watched.
+    runner.close();
+    throw error;
+  }
   try {
     output.stderr(
       daemonStartText({ routines: routines.length, refused: refused.length }),
@@ -185,7 +192,7 @@ export async function runDaemon(
       first = false;
       const pass = await runner.pass(watch);
       report(options, pass.routines, refused.length);
-      const after = await runner.after(pass.routines);
+      const after = await runner.after(pass.routines, true);
       if (after.metrics === false) {
         output.stderr(runnerProcessTexts.metrics_failed);
       }
