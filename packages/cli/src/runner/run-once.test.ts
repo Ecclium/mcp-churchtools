@@ -345,6 +345,8 @@ interface CallOptions {
   readonly load?: (sources: ConfigSources) => ReturnType<typeof loadConfig>;
   /** Replaces the reading of the key file of a model. */
   readonly readModelKey?: RunOnceOptions['readModelKey'];
+  /** Uses the catalog of the runner itself, without the test plugin. */
+  readonly ownCatalog?: boolean;
 }
 
 const setup = (options: SetupOptions = {}) => {
@@ -576,7 +578,7 @@ const setup = (options: SetupOptions = {}) => {
       ...(more.readModelKey === undefined
         ? {}
         : { readModelKey: more.readModelKey }),
-      createCatalog,
+      ...(more.ownCatalog === true ? {} : { createCatalog }),
       writeSync: (_fd, buffer, offset, length) => {
         logs.push(
           Buffer.from(buffer)
@@ -1172,6 +1174,42 @@ describe('ecclium run-once <Routine> --preview', () => {
     const pass = await t.call(due);
     expect(pass.code).toBe(exitCodes.ok);
     expect(readdirSync(t.draftsDir)).toEqual([draftName]);
+    t.assertNothingLeaked();
+  });
+});
+
+describe('the catalog of the runner itself', () => {
+  it('reads with a read tool of the core in a preview, without ECCLIUM_TOOLSETS', async () => {
+    const t = setup({
+      routines: {
+        [wikiRoutine]: {
+          inputs: [
+            {
+              name: 'kategorien',
+              tool: 'ct_wiki_categories_list',
+              params: {},
+              maxItems: 10,
+            },
+          ],
+        },
+      },
+      entries: [],
+      extra: { ECCLIUM_TOOLSETS: undefined },
+    });
+    const { code, stdout } = await t.call(preview(wikiRoutine), {
+      ownCatalog: true,
+    });
+    expect(code).toBe(exitCodes.ok);
+    expect(stdout).toContain('### Dienstplan 2026-W46');
+    // The read went to ChurchTools with the own account of the runner.
+    const reads = t.churchtoolsCalls.filter(
+      (call) =>
+        call.method === 'GET' && call.path.startsWith('/api/wiki/categories'),
+    );
+    expect(reads).toHaveLength(1);
+    expect(reads[0]?.headers['authorization']).toBe(
+      `Login ${t.runnerToken.value}`,
+    );
     t.assertNothingLeaked();
   });
 });
