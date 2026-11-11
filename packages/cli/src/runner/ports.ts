@@ -60,6 +60,11 @@ import { composeRun } from '../compose/run.js';
 import { composeRunPipeline } from '../compose/run-pipeline.js';
 import type { Output } from '../output/index.js';
 
+/** The model of an alias, or why there is none for this pass. */
+export type ModelOfAlias =
+  | { readonly ok: true; readonly model: GuardedModel }
+  | { readonly ok: false; readonly code: string };
+
 /** What the ports of a pass are built from. */
 export interface RunnerPortsOptions {
   /** The configuration of the runner, with its folder of state and zone. */
@@ -67,13 +72,17 @@ export interface RunnerPortsOptions {
   readonly catalog: ToolCatalog;
   /** Every routine that passed its preparation, for the tools of an account. */
   readonly routines: readonly PreparedRun[];
-  /** The guarded models of the pass, by alias. */
-  readonly models: ReadonlyMap<string, GuardedModel>;
   /**
-   * The aliases whose key file was refused for this pass, with the code of
-   * the file; their routines do not start.
+   * The guarded model of an alias for this pass, built when a run first
+   * needs it, or the code of its refused key file or `run_model_unknown`;
+   * a run with a refused model does not start.
    */
-  readonly refusedModels?: ReadonlyMap<string, string>;
+  readonly model: (alias: string) => ModelOfAlias;
+  /**
+   * Marks a write that has begun until it ends, so that no signal cuts it.
+   * Leave it out where no signal is watched.
+   */
+  readonly writing?: () => () => void;
   readonly writer: StderrLineWriter;
   readonly clock: Clock;
   readonly auditFile: AuditFileWriter;
@@ -105,12 +114,12 @@ const dayOf = (time: number): IsoDate =>
  *   zone, which the loader of the runner requires.
  * @example
  * ```ts
- * const ports = composeRunnerPorts({ config, catalog, routines, models, writer, clock, auditFile, store, locks, writeHalt, output, pid: process.pid });
+ * const ports = composeRunnerPorts({ config, catalog, routines, model, writer, clock, auditFile, store, locks, writeHalt, output, pid: process.pid });
  * const pass = await runDue(routines, ports, { signal, maxRunMs });
  * ```
  */
 export function composeRunnerPorts(options: RunnerPortsOptions): RunnerPorts {
-  const { config, clock, writer } = options;
+  const { config, clock, writer, writing } = options;
   const { stateDir, timeZone } = config;
   if (stateDir === undefined || timeZone === undefined) {
     throw new TypeError('The runner needs its folder of state and its zone.');
@@ -150,13 +159,9 @@ export function composeRunnerPorts(options: RunnerPortsOptions): RunnerPorts {
 
   const open: RunnerPorts['open'] = (run) => {
     const routineId = run.loaded.routine.id;
-    const model = options.models.get(run.model);
-    if (model === undefined) {
-      return Object.freeze({
-        ok: false,
-        code: options.refusedModels?.get(run.model) ?? 'run_model_unknown',
-      });
-    }
+    const found = options.model(run.model);
+    if (!found.ok) return Object.freeze({ ok: false, code: found.code });
+    const { model } = found;
     const built = composeRunPipeline({
       config,
       catalog: options.catalog,
@@ -196,7 +201,17 @@ export function composeRunnerPorts(options: RunnerPortsOptions): RunnerPorts {
       run: Object.freeze({
         runId: bound.runId,
         read: bound.read,
-        write: bound.write,
+        write:
+          writing === undefined
+            ? bound.write
+            : async (...args: Parameters<typeof bound.write>) => {
+                const done = writing();
+                try {
+                  return await bound.write(...args);
+                } finally {
+                  done();
+                }
+              },
         model,
         log: bound.log,
         end: (line: RunEndLine) =>

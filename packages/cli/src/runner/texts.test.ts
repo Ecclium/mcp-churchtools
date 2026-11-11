@@ -13,12 +13,16 @@ import { describe, expect, it } from 'vitest';
 
 import type { RunnerRoutineCode } from './start.js';
 import {
+  daemonStartText,
+  draftsFolderText,
+  metricsFolderText,
   passSummaryText,
   previewReportText,
   providerText,
   refusedText,
   routineReportText,
   routinesProblemText,
+  runnerProcessTexts,
   runnerStartTexts,
 } from './texts.js';
 
@@ -326,5 +330,36 @@ describe('the texts of the runner', () => {
     expect(passSummaryText({ ran: 0, skipped: 2, refused: 0 })).toBe(
       'Durchgang beendet: 0 Läufe, 2 übersprungen, 0 Routinen starten nicht.',
     );
+  });
+
+  it('name the code of a folder of drafts or metrics that cannot be used, and say what to do', () => {
+    expect(draftsFolderText('unsafe')).toContain('Code ‹unsafe›');
+    expect(draftsFolderText('unsafe')).toContain('Rechten 700');
+    expect(metricsFolderText('unavailable')).toContain('Code ‹unavailable›');
+    expect(metricsFolderText('unavailable')).toContain(
+      '‹ECCLIUM_RUNNER_METRICS_FILE›',
+    );
+    expect(metricsFolderText('unavailable')).toContain('derselbe Benutzer');
+  });
+
+  it('count the routines of the daemon at its start, in the singular and the plural', () => {
+    expect(daemonStartText({ routines: 1, refused: 1 })).toBe(
+      'Der Runner läuft mit 1 Routine, 1 startet nicht. Er sieht die Routinen zu ihrer Zeit an, spätestens alle 15 Minuten.',
+    );
+    expect(daemonStartText({ routines: 2, refused: 0 })).toBe(
+      'Der Runner läuft mit 2 Routinen, 0 starten nicht. Er sieht die Routinen zu ihrer Zeit an, spätestens alle 15 Minuten.',
+    );
+  });
+
+  it('say of a signal that a write that has begun still ends, and why the daemon ends with 75', () => {
+    expect(runnerProcessTexts.signal).toContain(
+      'ein Schreibvorgang, der begonnen hat, endet noch',
+    );
+    expect(runnerProcessTexts.halted).toContain(
+      'Ein Neustart hebt die Sperre.',
+    );
+    for (const text of Object.values(runnerProcessTexts)) {
+      expect(text).not.toMatch(/\/(?:data|srv|home|Users)\//u);
+    }
   });
 });

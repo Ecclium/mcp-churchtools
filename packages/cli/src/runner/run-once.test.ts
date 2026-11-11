@@ -12,6 +12,7 @@ import {
   rmSync,
   statSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -46,11 +47,27 @@ import {
 import { createCorePlugin } from '@ecclium/mcp-churchtools-tools';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { exitCodes } from '../exit-codes.js';
+import { type ExitCode, exitCodes } from '../exit-codes.js';
 import { run } from '../main.js';
+import type { RunnerHost } from './host.js';
 import { runOnce, type RunOnceOptions } from './run-once.js';
 import type { RunnerMode } from './start.js';
-import { modelKeyText, refusedText, runnerStartTexts } from './texts.js';
+import {
+  modelKeyText,
+  refusedText,
+  runnerProcessTexts,
+  runnerStartTexts,
+} from './texts.js';
+
+// The mode of a folder, through its descriptor.
+const fstatMode = (path: string): number => {
+  const fd = openSync(path, 'r');
+  try {
+    return fstatSync(fd).mode & 0o777;
+  } finally {
+    closeSync(fd);
+  }
+};
 
 // Reads a file and its mode through one descriptor, so that both describe
 // the same file and no check on its path comes before its use.
@@ -210,6 +227,7 @@ const serve = (
   pages: Map<string, FakePage>,
   unavailable: boolean,
   rights: Readonly<Record<string, unknown>>,
+  onPatch: () => void = () => undefined,
 ): void => {
   if (unavailable) {
     double
@@ -304,6 +322,8 @@ const serve = (
           : Buffer.from(opts.body as Uint8Array).toString('utf8');
       found.text = (JSON.parse(body) as { text: string }).text;
       found.version += 1;
+      // While the write is under way, such as for a signal.
+      onPatch();
       return { statusCode: 200, data: '{}', responseOptions: json };
     })
     .persist();
@@ -333,6 +353,67 @@ const privateFile = (path: string, text: string): string => {
   writeFileSync(path, text, { mode: 0o600 });
   chmodSync(path, 0o600);
   return path;
+};
+
+/**
+ * A process that only the test drives: its signals, its faults, its end
+ * and the waits of the daemon, which pass at once and move the clock.
+ */
+const testHost = (advance: (ms: number) => void) => {
+  const signals = new Map<string, (() => void)[]>();
+  const faults: ((kind: 'exception' | 'rejection', value: unknown) => void)[] =
+    [];
+  const exits: ExitCode[] = [];
+  const waits: number[] = [];
+  // What happens at each wait, by its number from 1: by default the wait
+  // passes; a test sends a signal here to end the daemon.
+  let atWait: (count: number) => void = () => undefined;
+  const send = (signal: 'SIGTERM' | 'SIGINT'): void => {
+    for (const listener of [...(signals.get(signal) ?? [])]) listener();
+  };
+  const host: RunnerHost = Object.freeze({
+    onSignal: (signal: 'SIGINT' | 'SIGTERM', listener: () => void) => {
+      const list = signals.get(signal) ?? [];
+      list.push(listener);
+      signals.set(signal, list);
+      return () => {
+        signals.set(
+          signal,
+          (signals.get(signal) ?? []).filter((item) => item !== listener),
+        );
+      };
+    },
+    onFault: (
+      listener: (kind: 'exception' | 'rejection', value: unknown) => void,
+    ) => {
+      faults.push(listener);
+      return () => {
+        faults.splice(faults.indexOf(listener), 1);
+      };
+    },
+    exit: (code: ExitCode) => {
+      exits.push(code);
+    },
+    wait: (ms: number, signal: AbortSignal) => {
+      waits.push(ms);
+      advance(ms);
+      atWait(waits.length);
+      return signal.aborted ? Promise.resolve() : Promise.resolve();
+    },
+  });
+  return {
+    host,
+    send,
+    exits,
+    waits,
+    faults,
+    listening: () =>
+      [...signals.values()].reduce((sum, list) => sum + list.length, 0) +
+      faults.length,
+    onWait: (react: (count: number) => void) => {
+      atWait = react;
+    },
+  };
 };
 
 /** What a test sets up differently. */
@@ -504,10 +585,19 @@ const setup = (options: SetupOptions = {}) => {
     rights: wikiRights as Readonly<Record<string, unknown>>,
     // How far the clock of the command runs ahead of the start of the test.
     laterMs: 0,
+    // What happens while the model answers and while a page is written,
+    // such as a signal.
+    onModel: (): void => undefined,
+    onPatch: (): void => undefined,
+    // Whether the endpoint of the model answers with 503.
+    modelDown: false,
   };
   // Frozen, function and all, as the core takes a clock.
   const clock = Object.freeze({
     now: Object.freeze(() => now + state.laterMs),
+  });
+  const driver = testHost((ms) => {
+    state.laterMs += ms;
   });
   // The calls of every transport, kept before it closes, since a closed
   // double forgets its calls.
@@ -523,7 +613,9 @@ const setup = (options: SetupOptions = {}) => {
       clock: given.clock,
     });
     open.push(double);
-    serve(double, pages, state.unavailable, state.rights);
+    serve(double, pages, state.unavailable, state.rights, () => {
+      state.onPatch();
+    });
     return Object.freeze({
       ...double.transport,
       close: async () => {
@@ -545,11 +637,21 @@ const setup = (options: SetupOptions = {}) => {
         path: new URL(doubleModelEndpoint).pathname,
         method: 'POST',
       })
-      .reply(() => ({
-        statusCode: 200,
-        data: chatCompletion({ content: JSON.stringify(state.answer) }),
-        responseOptions: { headers: jsonHeaders },
-      }))
+      .reply(() => {
+        state.onModel();
+        if (state.modelDown) {
+          return {
+            statusCode: 503,
+            data: '{}',
+            responseOptions: { headers: jsonHeaders },
+          };
+        }
+        return {
+          statusCode: 200,
+          data: chatCompletion({ content: JSON.stringify(state.answer) }),
+          responseOptions: { headers: jsonHeaders },
+        };
+      })
       .persist();
     return Object.freeze({
       ...double.transport,
@@ -604,6 +706,7 @@ const setup = (options: SetupOptions = {}) => {
       createTransport,
       createModelTransport,
       clock,
+      host: driver.host,
     });
     stdout.push(...out);
     stderr.push(...err);
@@ -634,6 +737,7 @@ const setup = (options: SetupOptions = {}) => {
         createTransport,
         createModelTransport,
         clock,
+        host: driver.host,
       },
     });
     const text = (fd: number): string =>
@@ -714,6 +818,7 @@ const setup = (options: SetupOptions = {}) => {
     stderr,
     logs,
     call,
+    driver,
     cli,
     writeRoutine,
     auditLines,
@@ -1411,6 +1516,281 @@ describe('ecclium run-once through the command line', () => {
     expect(code).toBe(exitCodes.ok);
     expect(t.patches()).toHaveLength(1);
     expect(t.runLines()).toEqual([expect.objectContaining({ attempt: 1 })]);
+    t.assertNothingLeaked();
+  });
+});
+
+// SIGTERM and SIGINT abort reading and the model at once and never a
+// write that has begun; a second signal ends the process at once, but
+// never while a write runs (ADR 0033, decided on 10. and 11.11.2026).
+describe('the signals of ecclium run-once', () => {
+  it.each([
+    ['SIGTERM', exitCodes.terminated, 'process_sigterm'],
+    ['SIGINT', exitCodes.interrupted, 'process_sigint'],
+  ] as const)(
+    'stops at %s while the model answers: writes nothing, keeps the trigger open and ends with %i',
+    async (signal, exit, event) => {
+      // A draft, whose later try needs no clock of ChurchTools.
+      const t = setup(draftOnly);
+      t.state.onModel = () => {
+        t.driver.send(signal);
+      };
+      const { code, stderr } = await t.call(due);
+      expect(code).toBe(exit);
+      expect(stderr).toContain(runnerProcessTexts.signal);
+      expect(existsSync(join(t.draftsDir, draftName))).toBe(false);
+      expect(t.driver.exits).toEqual([]);
+      expect(t.logs.join('')).toContain(`"event":"${event}"`);
+      // The try counted, and the trigger stays open for a later one.
+      expect(t.runLines()).toEqual([
+        expect.objectContaining({
+          runResult: 'failed',
+          runStep: 'model',
+          errorCode: 'network',
+          attempt: 1,
+        }),
+      ]);
+      t.state.onModel = () => undefined;
+      t.state.laterMs = 30 * 60_000;
+      expect((await t.call(due)).code).toBe(exitCodes.ok);
+      expect(existsSync(join(t.draftsDir, draftName))).toBe(true);
+      // Every listener of the process is gone again.
+      expect(t.driver.listening()).toBe(0);
+      t.assertNothingLeaked();
+    },
+  );
+
+  it('ends a write that has begun also after a second signal, and only then with 143', async () => {
+    const t = setup();
+    t.state.onPatch = () => {
+      t.driver.send('SIGTERM');
+      t.driver.send('SIGTERM');
+    };
+    const { code } = await t.call(due);
+    expect(code).toBe(exitCodes.terminated);
+    // The write ended whole, with its audit line and the end of its run.
+    expect(t.driver.exits).toEqual([]);
+    expect(t.patches()).toHaveLength(1);
+    expect(t.pageText()).toContain('Gottesdienst: Mesmer');
+    expect(t.runLines()).toEqual([
+      expect.objectContaining({ runResult: 'written' }),
+    ]);
+    t.assertNothingLeaked();
+  });
+
+  it('ends at once at a second signal while no write runs', async () => {
+    const t = setup();
+    t.state.onModel = () => {
+      t.driver.send('SIGTERM');
+      t.driver.send('SIGINT');
+    };
+    const { code } = await t.call(due);
+    expect(t.driver.exits).toEqual([exitCodes.interrupted]);
+    // The host of the test does not end the process; the call ends as the
+    // first signal says.
+    expect(code).toBe(exitCodes.terminated);
+    expect(t.patches()).toEqual([]);
+  });
+
+  it('ends with 70 after a fault nothing caught, with one line and its code', async () => {
+    const t = setup();
+    t.state.onModel = () => {
+      for (const listener of [...t.driver.faults]) {
+        listener('rejection', new Error('a value that never shows'));
+      }
+    };
+    await t.call(due);
+    expect(t.driver.exits).toEqual([exitCodes.internal]);
+    expect(t.logs.join('')).toContain('"event":"process_unhandled_rejection"');
+    expect(t.logs.join('')).not.toContain('a value that never shows');
+  });
+});
+
+// What a call of the runner deletes past its retention at its start, as
+// the server does (ADR 0028, ADR 0031).
+describe('the retention in ecclium run-once', () => {
+  it('deletes an audit file past its retention and a day key of the snapshots past 30 days', async () => {
+    const t = setup();
+    const auditDir = privateDir(join(t.stateDir, 'audit'));
+    const oldAudit = privateFile(
+      join(auditDir, 'audit-2025-01-01-000000-1-1.jsonl'),
+      '',
+    );
+    // A file counts by its name and its last change.
+    utimesSync(
+      oldAudit,
+      new Date(Date.UTC(2025, 0, 1)),
+      new Date(Date.UTC(2025, 0, 1)),
+    );
+    // The day keys of the snapshots, one past 30 days and one within.
+    const snapshotDays = privateDir(join(t.base, 'keys', 'snapshot'));
+    const dayFile = (day: string): string =>
+      privateFile(join(snapshotDays, `default.${day}.key`), 'k'.repeat(32));
+    const old = dayFile('2026-09-01');
+    const kept = dayFile('2026-11-01');
+    const { code } = await t.call(due);
+    expect(code).toBe(exitCodes.ok);
+    // The deletion runs beside the pass; it is done by the next tick.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(existsSync(oldAudit)).toBe(false);
+    expect(existsSync(old)).toBe(false);
+    expect(existsSync(kept)).toBe(true);
+    expect(t.logs.join('')).toContain('"event":"audit_files_deleted"');
+    t.assertNothingLeaked();
+  });
+
+  it('deletes nothing in a preview', async () => {
+    const t = setup();
+    const auditDir = privateDir(join(t.stateDir, 'audit'));
+    const oldAudit = privateFile(
+      join(auditDir, 'audit-2025-01-01-000000-1-1.jsonl'),
+      '',
+    );
+    expect((await t.call(preview(wikiRoutine))).code).toBe(exitCodes.ok);
+    expect(existsSync(oldAudit)).toBe(true);
+  });
+});
+
+// The metrics file mirrors each routine and the head of the chain of the
+// audit file; it never decides about a run (ADR 0028, ADR 0033).
+describe('the metrics file of the runner', () => {
+  const sha256 = (text: string): string =>
+    createHash('sha256').update(text).digest('hex');
+
+  // The last whole line of the audit files of a test, with its file.
+  const lastAuditLine = (stateDir: string) => {
+    const dir = join(stateDir, 'audit');
+    const files = readdirSync(dir)
+      .filter((name) => name.endsWith('.jsonl'))
+      .sort();
+    for (const file of files.reverse()) {
+      const lines = readFileSync(join(dir, file), 'utf8')
+        .split('\n')
+        .filter((line) => line !== '');
+      const last = lines.at(-1);
+      if (last !== undefined) return { file, line: last, seq: lines.length };
+    }
+    return undefined;
+  };
+
+  const withMetrics = (options: SetupOptions = {}) => {
+    const t = setup(options);
+    const metricsFile = join(t.base, 'metrics', 'runner.prom');
+    t.environment['ECCLIUM_RUNNER_METRICS_FILE'] = metricsFile;
+    return { t, metricsFile };
+  };
+
+  it('writes the next look, the last success and status and the head of the chain, privately', async () => {
+    const { t, metricsFile } = withMetrics();
+    expect((await t.call(due)).code).toBe(exitCodes.ok);
+    const { text, mode } = readWithMode(metricsFile);
+    expect(mode).toBe(0o600);
+    expect(fstatMode(join(t.base, 'metrics'))).toBe(0o700);
+    // The next Monday at 06:00 in Zurich.
+    expect(text).toContain(
+      `ecclium_runner_next_run_timestamp_seconds{routine="${wikiRoutine}"} ${String(Date.UTC(2026, 10, 16, 5) / 1000)}\n`,
+    );
+    expect(text).toContain(
+      `ecclium_runner_last_success_timestamp_seconds{routine="${wikiRoutine}"} ${String(now / 1000)}\n`,
+    );
+    expect(text).toContain(
+      `ecclium_runner_last_status{routine="${wikiRoutine}",status="written"} 1\n`,
+    );
+    const last = lastAuditLine(t.stateDir);
+    expect(last).toBeDefined();
+    expect(text).toContain(
+      `ecclium_runner_audit_chain_head{file="${last?.file ?? ''}",hash="${sha256(last?.line ?? '')}"} ${String(last?.seq ?? 0)}\n`,
+    );
+    t.assertNothingLeaked();
+    assertNoCanary([text], [t.runnerToken, t.accountToken], 'the metrics');
+  });
+
+  it('names a routine that does not start as refused, with its code', async () => {
+    const { t, metricsFile } = withMetrics({
+      routines: {
+        [wikiRoutine]: {},
+        'ohne-modell': { target: 'draft', model: 'unbekannt' },
+      },
+    });
+    expect((await t.call(due)).code).toBe(exitCodes.invalidConfig);
+    const { text } = readWithMode(metricsFile);
+    expect(text).toContain(
+      'ecclium_runner_last_status{routine="ohne-modell",status="refused",code="run_model_unknown"} 1\n',
+    );
+    expect(text).not.toContain(
+      'ecclium_runner_next_run_timestamp_seconds{routine="ohne-modell"}',
+    );
+  });
+
+  it('carries the values of the routines a call did not run, and writes none for a preview', async () => {
+    const { t, metricsFile } = withMetrics({
+      routines: {
+        [wikiRoutine]: {},
+        [draftRoutine]: { target: 'draft', notify: ['file'] },
+      },
+    });
+    expect((await t.call(byHand(wikiRoutine))).code).toBe(exitCodes.ok);
+    const first = readWithMode(metricsFile).text;
+    expect(first).toContain(
+      `ecclium_runner_last_status{routine="${wikiRoutine}",status="written"} 1\n`,
+    );
+    expect(first).not.toContain(`routine="${draftRoutine}",status=`);
+    // A later call by hand of the other routine keeps what the first said.
+    t.state.laterMs = 60_000;
+    expect((await t.call(byHand(draftRoutine))).code).toBe(exitCodes.ok);
+    const second = readWithMode(metricsFile).text;
+    expect(second).toContain(
+      `ecclium_runner_last_status{routine="${wikiRoutine}",status="written"} 1\n`,
+    );
+    expect(second).toContain(
+      `ecclium_runner_last_status{routine="${draftRoutine}",status="drafted"} 1\n`,
+    );
+    expect(second).toContain(
+      `ecclium_runner_last_success_timestamp_seconds{routine="${wikiRoutine}"} ${String(now / 1000)}\n`,
+    );
+    // A preview leaves the file as it is.
+    t.state.laterMs = 120_000;
+    expect((await t.call(preview(wikiRoutine))).code).toBe(exitCodes.ok);
+    expect(readWithMode(metricsFile).text).toBe(second);
+  });
+
+  it('starts anew from a file that is not its own, and never names its lines', async () => {
+    const { t, metricsFile } = withMetrics();
+    privateDir(join(t.base, 'metrics'));
+    privateFile(
+      metricsFile,
+      'ecclium_runner_last_status{routine="fremd",status="written"} 1\nnode_cpu 1\n',
+    );
+    expect((await t.call(due)).code).toBe(exitCodes.ok);
+    const { text } = readWithMode(metricsFile);
+    expect(text).not.toContain('fremd');
+    expect(text).not.toContain('node_cpu');
+    expect(text).toContain(`routine="${wikiRoutine}",status="written"`);
+  });
+
+  it('does not start with 78 when the folder of the file is not private, and reads nothing', async () => {
+    const { t } = withMetrics();
+    mkdirSync(join(t.base, 'metrics'), { mode: 0o755 });
+    chmodSync(join(t.base, 'metrics'), 0o755);
+    const { code, stderr } = await t.call(due);
+    expect(code).toBe(exitCodes.invalidConfig);
+    expect(stderr.join('\n')).toContain(
+      'Der Ordner der Metrikdatei aus ‹ECCLIUM_RUNNER_METRICS_FILE› lässt sich nicht als privater Ordner verwenden',
+    );
+    expect(t.plugin.calls()).toEqual([]);
+    expect(t.runLines()).toEqual([]);
+    t.assertNothingLeaked();
+  });
+
+  it('ends with 74 when the file cannot be written, after the runs themselves', async () => {
+    const { t, metricsFile } = withMetrics();
+    // A folder in the place of the file.
+    privateDir(join(t.base, 'metrics'));
+    privateDir(metricsFile);
+    const { code, stderr } = await t.call(due);
+    expect(code).toBe(exitCodes.ioError);
+    expect(stderr).toContain(runnerProcessTexts.metrics_failed);
+    expect(t.patches()).toHaveLength(1);
     t.assertNothingLeaked();
   });
 });
