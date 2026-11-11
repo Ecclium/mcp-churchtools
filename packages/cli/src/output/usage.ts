@@ -8,7 +8,7 @@
 
 /** The short form of the call. */
 export const usageLine =
-  'Aufruf: ecclium stdio | ecclium config check [Optionen] | ecclium audit verify [Optionen] | ecclium audit show [Optionen] | ecclium policy init --interactive | ecclium undo <Kennung> [--overwrite] | ecclium queue list | ecclium queue show <Kennung> | ecclium queue approve <Kennung> | ecclium queue reject <Kennung> | ecclium run-once --due | ecclium run-once <Routine> [--preview]';
+  'Aufruf: ecclium stdio | ecclium config check [Optionen] | ecclium audit verify [Optionen] | ecclium audit show [Optionen] | ecclium policy init --interactive | ecclium undo <Kennung> [--overwrite] | ecclium queue list | ecclium queue show <Kennung> | ecclium queue approve <Kennung> | ecclium queue reject <Kennung> | ecclium run-once --due | ecclium run-once <Routine> [--preview] | ecclium runner';
 
 /** The help, for `--help` and `-h`. */
 export const helpLines: readonly string[] = Object.freeze([
@@ -34,6 +34,7 @@ export const helpLines: readonly string[] = Object.freeze([
   '  run-once --due        führt jede Routine aus, die fällig ist, eine nach der anderen, und endet dann',
   '  run-once <Routine>    führt eine Routine von Hand aus, mit der Periode ihrer letzten Auslösung',
   '    --preview           zeigt den Abschnitt nur auf stdout und schreibt nichts, auch ohne Eintrag in der Richtlinie',
+  '  runner                führt als Daemon jede Routine zu ihrer Zeit aus, bis ein Signal ihn anhält',
   '  -h, --help            zeigt diese Hilfe',
 ]);
 
@@ -44,7 +45,7 @@ export type UsageProblem = 'command' | 'option' | 'repeated' | 'value';
 export const usageProblemTexts: Readonly<Record<UsageProblem, string>> =
   Object.freeze({
     command:
-      'Der Befehl ist unvollständig oder unbekannt. Diese Version von Ecclium kennt nur ‹ecclium stdio›, ‹ecclium config check›, ‹ecclium audit verify›, ‹ecclium audit show›, ‹ecclium policy init›, ‹ecclium undo›, ‹ecclium queue› und ‹ecclium run-once›, diesen mit ‹--due› oder einer Routine. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
+      'Der Befehl ist unvollständig oder unbekannt. Diese Version von Ecclium kennt nur ‹ecclium stdio›, ‹ecclium config check›, ‹ecclium audit verify›, ‹ecclium audit show›, ‹ecclium policy init›, ‹ecclium undo›, ‹ecclium queue›, ‹ecclium run-once›, diesen mit ‹--due› oder einer Routine, und ‹ecclium runner›. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
     option:
       'Eine Option ist unbekannt oder gehört zu einem anderen Befehl. Ecclium nennt sie nicht, weil darin ein Token stehen könnte. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
     repeated:

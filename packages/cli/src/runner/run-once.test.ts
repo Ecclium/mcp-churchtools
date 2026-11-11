@@ -25,6 +25,11 @@ import {
   loadConfig,
   toolsetNames,
 } from '@ecclium/mcp-churchtools-core';
+import {
+  createLogger,
+  createStderrWriter,
+  systemClock,
+} from '@ecclium/mcp-churchtools-core/composition';
 import type {
   HttpTransportOptions,
   ModelHttpTransportOptions,
@@ -49,10 +54,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { type ExitCode, exitCodes } from '../exit-codes.js';
 import { run } from '../main.js';
+import { maxWaitMs, minWaitMs, runDaemon, waitBefore } from './daemon.js';
 import type { RunnerHost } from './host.js';
+import type { openRunnerProcess, RunnerProcess } from './process.js';
 import { runOnce, type RunOnceOptions } from './run-once.js';
 import type { RunnerMode } from './start.js';
 import {
+  daemonStartText,
   modelKeyText,
   refusedText,
   runnerProcessTexts,
@@ -713,6 +721,47 @@ const setup = (options: SetupOptions = {}) => {
     return { code, stdout: out, stderr: err };
   };
 
+  // The daemon, which runs until the test sends a signal at a wait.
+  const daemon = async (
+    more: CallOptions & {
+      readonly openProcess?: typeof openRunnerProcess;
+    } = {},
+  ) => {
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = await runDaemon({
+      environment,
+      execArgv: [],
+      output: {
+        stdout: (line) => out.push(line) > 0,
+        stderr: (line) => err.push(line) > 0,
+      },
+      ...(more.load === undefined ? {} : { load: more.load }),
+      ...(more.readModelKey === undefined
+        ? {}
+        : { readModelKey: more.readModelKey }),
+      ...(more.ownCatalog === true ? {} : { createCatalog }),
+      writeSync: (_fd, buffer, offset, length) => {
+        logs.push(
+          Buffer.from(buffer)
+            .subarray(offset, offset + length)
+            .toString('utf8'),
+        );
+        return length;
+      },
+      createTransport,
+      createModelTransport,
+      clock,
+      host: driver.host,
+      ...(more.openProcess === undefined
+        ? {}
+        : { openProcess: more.openProcess }),
+    });
+    stdout.push(...out);
+    stderr.push(...err);
+    return { code, stdout: out, stderr: err };
+  };
+
   // The same through the command line, which reads the arguments and
   // writes through its own output.
   const cli = async (args: readonly string[]) => {
@@ -725,6 +774,21 @@ const setup = (options: SetupOptions = {}) => {
         return length;
       },
       runOnce: {
+        createCatalog,
+        writeSync: (_fd, buffer, offset, length) => {
+          logs.push(
+            Buffer.from(buffer)
+              .subarray(offset, offset + length)
+              .toString('utf8'),
+          );
+          return length;
+        },
+        createTransport,
+        createModelTransport,
+        clock,
+        host: driver.host,
+      },
+      runner: {
         createCatalog,
         writeSync: (_fd, buffer, offset, length) => {
           logs.push(
@@ -818,6 +882,7 @@ const setup = (options: SetupOptions = {}) => {
     stderr,
     logs,
     call,
+    daemon,
     driver,
     cli,
     writeRoutine,
@@ -1792,5 +1857,214 @@ describe('the metrics file of the runner', () => {
     expect(stderr).toContain(runnerProcessTexts.metrics_failed);
     expect(t.patches()).toHaveLength(1);
     t.assertNothingLeaked();
+  });
+});
+
+// The daemon runs the same pass at each trigger and ends only after a
+// signal, a halt of writes or a fault (ADR 0033, ADR 0034).
+describe('ecclium runner', () => {
+  it('runs a due routine once, looks again within 15 minutes and ends after SIGTERM with 143', async () => {
+    const t = setup({
+      routines: {
+        [wikiRoutine]: {},
+        'nie-faellig': {
+          target: 'draft',
+          notify: ['file'],
+          schedule: '0 6 1 1 *',
+        },
+      },
+    });
+    t.driver.onWait((count) => {
+      if (count === 3) t.driver.send('SIGTERM');
+    });
+    const { code, stderr } = await t.daemon();
+    expect(code).toBe(exitCodes.terminated);
+    expect(stderr[0]).toBe(daemonStartText({ routines: 2, refused: 0 }));
+    // One write for the trigger of the week, whatever the number of looks.
+    expect(t.patches()).toHaveLength(1);
+    expect(t.runLines()).toHaveLength(1);
+    expect(t.driver.waits).toHaveLength(3);
+    for (const wait of t.driver.waits) {
+      expect(wait).toBeGreaterThanOrEqual(1_000);
+      expect(wait).toBeLessThanOrEqual(15 * 60_000);
+    }
+    // A pass where nothing was due says nothing.
+    expect(
+      stderr.filter((line) => line.startsWith('Durchgang beendet')),
+    ).toEqual([
+      'Durchgang beendet: 1 Lauf, 0 übersprungen, 0 Routinen starten nicht.',
+    ]);
+    expect(t.driver.listening()).toBe(0);
+    t.assertNothingLeaked();
+  });
+
+  it('tries a run that failed for a passing reason again at a later look', async () => {
+    const t = setup(draftOnly);
+    t.state.modelDown = true;
+    t.driver.onWait((count) => {
+      if (count === 1) t.state.modelDown = false;
+      if (count === 4) t.driver.send('SIGTERM');
+    });
+    const daemonRun = await t.daemon();
+    expect(daemonRun.code).toBe(exitCodes.terminated);
+    expect(t.runLines().map((line) => line['runResult'])).toEqual([
+      'failed',
+      'drafted',
+    ]);
+    expect(t.runLines().map((line) => line['attempt'])).toEqual([1, 2]);
+  });
+
+  it('names the routines that do not start at every pass and runs the others', async () => {
+    const t = setup({
+      routines: {
+        [wikiRoutine]: {},
+        'ohne-modell': { target: 'draft', model: 'unbekannt' },
+      },
+    });
+    t.driver.onWait((count) => {
+      if (count === 2) t.driver.send('SIGINT');
+    });
+    const { code, stderr } = await t.daemon();
+    expect(code).toBe(exitCodes.interrupted);
+    const refusedLine = refusedText({
+      routineId: 'ohne-modell',
+      code: 'run_model_unknown',
+      field: 'generate.model',
+    });
+    // At the start, and at the pass after the first wait; the signal at
+    // the second wait ends the daemon before another pass.
+    expect(stderr.filter((line) => line === refusedLine)).toHaveLength(2);
+    expect(t.patches()).toHaveLength(1);
+  });
+
+  it('does not start with 78 when no routine starts', async () => {
+    const t = setup({
+      routines: { 'ohne-modell': { target: 'draft', model: 'unbekannt' } },
+      entries: [],
+    });
+    const { code, stderr } = await t.daemon();
+    expect(code).toBe(exitCodes.invalidConfig);
+    expect(stderr).toContain(runnerProcessTexts.no_routine);
+    expect(t.driver.waits).toEqual([]);
+    expect(t.runLines()).toEqual([]);
+  });
+
+  it('starts through the command line with ecclium runner and ends after a signal', async () => {
+    const t = setup();
+    t.driver.onWait(() => {
+      t.driver.send('SIGTERM');
+    });
+    const { code } = await t.cli(['runner']);
+    expect(code).toBe(exitCodes.terminated);
+    expect(t.patches()).toHaveLength(1);
+    t.assertNothingLeaked();
+  });
+});
+
+// The daemon around a process that a test opens, for what a real process
+// cannot be brought to on doubles: the halt of writes after a line of the
+// audit that did not reach the file (ADR 0029).
+describe('ecclium runner around a process of the test', () => {
+  const fakeProcess =
+    (
+      t: ReturnType<typeof setup>,
+      over: Partial<RunnerProcess> = {},
+    ): typeof openRunnerProcess =>
+    () => ({
+      ok: true,
+      process: {
+        logger: createLogger({
+          writer: createStderrWriter({
+            writeSync: (_fd, _buffer, _offset, length) => length,
+          }),
+          clock: systemClock,
+          minLevel: 'info',
+        }),
+        clock: { now: () => now + t.state.laterMs },
+        sweep: () => undefined,
+        tick: () => undefined,
+        pass: () => Promise.resolve({ routines: [], severity: 'ok' }),
+        preview: () => Promise.reject(new Error('no preview')),
+        after: () =>
+          Promise.resolve({
+            next: new Map([[wikiRoutine, now + t.state.laterMs + 90_000]]),
+          }),
+        writesHalted: () => false,
+        close: () => undefined,
+        ...over,
+      },
+    });
+
+  it('ends with 75 after the pass in which writes became halted, so that a restart lifts the halt', async () => {
+    const t = setup();
+    let closed = 0;
+    const { code, stderr } = await t.daemon({
+      openProcess: fakeProcess(t, {
+        writesHalted: () => true,
+        close: () => {
+          closed += 1;
+        },
+      }),
+    });
+    expect(code).toBe(exitCodes.tempFail);
+    expect(stderr).toContain(runnerProcessTexts.halted);
+    expect(t.driver.waits).toEqual([]);
+    expect(closed).toBe(1);
+    expect(t.driver.listening()).toBe(0);
+  });
+
+  it('waits until the earliest next look, says when the metrics file failed, and goes on', async () => {
+    const t = setup();
+    t.driver.onWait((count) => {
+      if (count === 2) t.driver.send('SIGTERM');
+    });
+    const { code, stderr } = await t.daemon({
+      openProcess: fakeProcess(t, {
+        after: () =>
+          Promise.resolve({
+            next: new Map([
+              [wikiRoutine, now + t.state.laterMs + 90_000],
+              ['other', now + t.state.laterMs + 3 * 3_600_000],
+            ]),
+            metrics: false,
+          }),
+      }),
+    });
+    expect(code).toBe(exitCodes.terminated);
+    expect(t.driver.waits).toEqual([90_000, 90_000]);
+    expect(
+      stderr.filter((line) => line === runnerProcessTexts.metrics_failed),
+    ).toHaveLength(2);
+  });
+
+  it('ends with the code of the process when it does not open', async () => {
+    const t = setup();
+    const { code } = await t.daemon({
+      openProcess: () => ({ ok: false, code: exitCodes.invalidConfig }),
+    });
+    expect(code).toBe(exitCodes.invalidConfig);
+  });
+});
+
+describe('waitBefore', () => {
+  it('waits until the earliest next look, at least a second and at most 15 minutes', () => {
+    const start = Date.UTC(2026, 10, 11, 7);
+    expect(waitBefore(start, new Map([['a', start + 60_000]]))).toBe(60_000);
+    expect(
+      waitBefore(
+        start,
+        new Map([
+          ['a', start + 600_000],
+          ['b', start + 120_000],
+        ]),
+      ),
+    ).toBe(120_000);
+    expect(waitBefore(start, new Map([['a', start - 5_000]]))).toBe(minWaitMs);
+    expect(waitBefore(start, new Map([['a', start + 86_400_000]]))).toBe(
+      maxWaitMs,
+    );
+    expect(waitBefore(start, new Map())).toBe(maxWaitMs);
+    expect(waitBefore(start, new Map([['a', Number.NaN]]))).toBe(maxWaitMs);
+    expect(waitBefore(Number.NaN, new Map([['a', start]]))).toBe(maxWaitMs);
   });
 });

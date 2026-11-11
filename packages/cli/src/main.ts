@@ -5,11 +5,10 @@
  * `ecclium config check`, `ecclium audit verify` and `ecclium audit show`,
  * which read the audit files (ADR 0028), `ecclium policy init`
  * (ADR 0032), `ecclium undo` and `ecclium queue list`, `show`, `approve`
- * and `reject` (ADR 0029, ADR 0031), and `ecclium run-once` with `--due`,
- * a routine or a routine and `--preview` (ADR 0033, ADR 0034). Wrong calls
- * get fixed German
- * texts on stderr, never an argument, and every exit code comes from
- * `exit-codes.ts`.
+ * and `reject` (ADR 0029, ADR 0031), `ecclium run-once` with `--due`, a
+ * routine or a routine and `--preview`, and the daemon `ecclium runner`
+ * (ADR 0033, ADR 0034). Wrong calls get fixed German texts on stderr,
+ * never an argument, and every exit code comes from `exit-codes.ts`.
  *
  * @packageDocumentation
  */
@@ -44,6 +43,7 @@ import type { PolicyInitOptions } from './policy/init.js';
 import { policyInitTexts } from './policy/texts.js';
 import type { WriteSyncFn } from './send.js';
 import type { QueueOptions } from './queue/queue.js';
+import type { RunnerDaemonOptions } from './runner/daemon.js';
 import type { RunOnceOptions } from './runner/run-once.js';
 import type { UndoOptions } from './undo/undo.js';
 
@@ -68,6 +68,11 @@ export interface RunOptions {
   readonly runOnce?: Omit<
     RunOnceOptions,
     'environment' | 'execArgv' | 'mode' | 'output'
+  >;
+  /** Replacements for `runner`, such as the doubles and the process. */
+  readonly runner?: Omit<
+    RunnerDaemonOptions,
+    'environment' | 'execArgv' | 'output'
   >;
 }
 
@@ -95,6 +100,7 @@ const commands: readonly Command[] = Object.freeze(
     // Without a routine only with --due, with one by hand or as a preview.
     { words: ['run-once'], options: ['due'] },
     { words: ['run-once'], options: ['preview'], argument: true },
+    { words: ['runner'], options: [] },
   ].map((entry) =>
     Object.freeze({
       words: Object.freeze(entry.words),
@@ -148,7 +154,8 @@ type Call =
       readonly action: 'list' | 'show' | 'approve' | 'reject';
       readonly queueId: string | undefined;
     }
-  | { readonly kind: 'run'; readonly mode: RunOnceOptions['mode'] };
+  | { readonly kind: 'run'; readonly mode: RunOnceOptions['mode'] }
+  | { readonly kind: 'daemon' };
 
 // The kind of a refused call, from the code of the error of parseArgs
 // alone: its message repeats the argument, which can hold a token.
@@ -261,6 +268,8 @@ const readCall = (args: readonly string[]): Call => {
         ? { kind: 'run', mode: { kind: 'due' } }
         : { kind: 'wrong', problem: 'command' };
     }
+    case 'runner':
+      return { kind: 'daemon' };
     default:
       return {
         kind: 'check',
@@ -282,8 +291,8 @@ const readCall = (args: readonly string[]): Call => {
  * @param execArgv - The options Node.js was started with, which the check
  *   of the configuration reads for the options of TLS.
  * @param runOptions - Replacements for tests.
- * @returns The exit code, or for `policy init`, `undo`, `queue` and
- *   `run-once`, which build the pipeline, a promise of it.
+ * @returns The exit code, or for `policy init`, `undo`, `queue`,
+ *   `run-once` and `runner`, which build the pipeline, a promise of it.
  * @example
  * ```ts
  * process.exitCode = await run(process.argv.slice(2), environment, process.execArgv);
@@ -430,6 +439,23 @@ export function run(
               environment: taken,
               execArgv,
               mode,
+              output: out,
+            }),
+          )
+          .catch(() => {
+            out.stderr(internalErrorText);
+            return exitCodes.internal;
+          });
+      }
+      case 'daemon': {
+        // Loaded only for this command, like `run-once`.
+        const out = output;
+        return import('./runner/daemon.js')
+          .then(({ runDaemon }) =>
+            runDaemon({
+              ...runOptions.runner,
+              environment: taken,
+              execArgv,
               output: out,
             }),
           )
