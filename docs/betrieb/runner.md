@@ -60,6 +60,10 @@ Kill-Switches sind Dateien im Ordner `stop` des Zustandsordners. Nur dass die Da
 
 Ein angehaltener Lauf liest nichts und schickt dem Modell keine Daten. Er endet endgültig, die Auslösung gilt als abgeschlossen. Nach dem Entfernen der Datei läuft die Routine zu ihrer nächsten Auslösung, oder Sie starten sie mit `ecclium run-once <Routine>` von Hand.
 
+## Rücknahme
+
+`ecclium undo --run <Lauf>` nimmt zurück, was ein Lauf im Wiki geschrieben hat, auch einen Abschnitt, den Sie mit `ecclium queue approve` aus der Freigabe-Warteschlange freigegeben haben, den neuesten Schreibvorgang zuerst. Hat jemand die Seite seither geändert, zeigt der Befehl den Unterschied und schreibt erst mit `--overwrite`. Er schreibt mit dem Konto, das die Richtlinie für die Routine nennt, nie mit dem Token des Servers, also mit der Token-Datei aus `ECCLIUM_RUNNER_TOKENS_DIR`, und er lädt die Konfiguration wie `ecclium undo` und `ecclium queue`. Läuft die Routine gerade, endet er mit 75; versuchen Sie es nach dem Lauf erneut. Der Kill-Switch der Routine hält eine Rücknahme nicht an, `writes-off` schon. Zurücknehmen lässt sich, was nicht älter als 30 Tage ist ([Sicherheit](../security.md#rücknahme)).
+
 ## Entwürfe
 
 Eine Routine mit dem Ziel `draft` und dem Kanal `file` schreibt ihren Entwurf als `<Routine>-<Periode>.md` in den Ordner aus `ECCLIUM_DRAFTS_DIR`, etwa `termin-vorschau-2026-W46.md`. Ein zweiter Lauf derselben Periode ersetzt die Datei. Am Ende steht die Kennzeichnung, etwa «Automatisch erstellt am 10.11.2026 durch Ecclium, Routine termin-vorschau, Lauf 2026-W46. Rückfragen an Sekretariat.» Einen Prüfcode trägt ein Entwurf nicht, weil ihn keine Seite im Wiki hält.
