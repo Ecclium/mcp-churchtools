@@ -9,8 +9,10 @@
  * began while it ran. A run that did not end, because it still runs or
  * its process ended at once, has no line of the type `run`. The decision
  * of the operator about a write a run queued is a line of its own, with
- * the entry of the queue and without the run (ADR 0031). It does not check
- * the chain: that is `ecclium audit verify`.
+ * the entry of the queue and without the run (ADR 0031); the ID of the
+ * entry is the ID of the line with which the run queued it, so the two are
+ * joined here. An undo of a write of the run names the run on its line.
+ * It does not check the chain: that is `ecclium audit verify`.
  *
  * @packageDocumentation
  */
@@ -18,6 +20,7 @@ import type {
   AuditOutcome,
   AuditRunResult,
   AuditRunStep,
+  QueueDecisionKind,
   ConfirmationPath,
   ContentViolationKind,
   ErrorCode,
@@ -45,6 +48,24 @@ export interface AuditRunWrites {
   /** How the write was confirmed; none for a write refused before. */
   readonly confirmation?: ConfirmationPath;
   /** Where the write ended, such as `verified` or `queued`. */
+  readonly writeState: WriteState;
+  readonly count: number;
+}
+
+/**
+ * The decisions of the operator about the entries a run queued, with one
+ * decision and, for an approval, the state of its write.
+ */
+export interface AuditRunDecisions {
+  readonly decision: QueueDecisionKind;
+  /** Where the write of an approval ended; none for a rejection. */
+  readonly writeState?: WriteState;
+  readonly count: number;
+}
+
+/** The undos of writes of a run, with one state. */
+export interface AuditRunUndos {
+  /** Where the undo ended, such as `verified` or `skipped`. */
   readonly writeState: WriteState;
   readonly count: number;
 }
@@ -88,6 +109,10 @@ export interface AuditRunSummary {
   readonly reads: readonly AuditRunReads[];
   /** Its writes per tool, way and state, sorted. */
   readonly writeRows: readonly AuditRunWrites[];
+  /** The decisions about the entries it queued, sorted. */
+  readonly decisions: readonly AuditRunDecisions[];
+  /** The undos of its writes, sorted by state. */
+  readonly undos: readonly AuditRunUndos[];
 }
 
 /** Options of {@link summarizeRun}. */
@@ -184,6 +209,14 @@ export function summarizeRun(options: AuditRunSummaryOptions): AuditRunSummary {
   let routineId: string | undefined;
   let begin: string | undefined;
   let end: AuditRunEnd | undefined;
+  // The entries the run queued, the decisions about any entry by its ID,
+  // and the undos of its writes by state.
+  const queued = new Set<string>();
+  const decisionsOf = new Map<
+    string,
+    { readonly decision: QueueDecisionKind; readonly writeState?: WriteState }[]
+  >();
+  const undos = new Map<WriteState, number>();
 
   for (const name of folder.names) {
     const outcome = folder.read(name, (line) => {
@@ -194,7 +227,6 @@ export function summarizeRun(options: AuditRunSummaryOptions): AuditRunSummary {
         return;
       }
       const event = parsed.data;
-      if (event.runId !== runId) return;
       const day = event.ts.slice(0, 10);
       if (
         (since !== undefined && day < since) ||
@@ -202,9 +234,31 @@ export function summarizeRun(options: AuditRunSummaryOptions): AuditRunSummary {
       ) {
         return;
       }
+      // The schema gives every line of the type approval its entry and its
+      // decision; the entry is joined with the run below.
+      if (event.type === 'approval') {
+        const queueId = event.queueId as string;
+        const decided = decisionsOf.get(queueId) ?? [];
+        decided.push({
+          decision: event.decision as QueueDecisionKind,
+          ...(event.writeState === undefined
+            ? {}
+            : { writeState: event.writeState }),
+        });
+        decisionsOf.set(queueId, decided);
+        return;
+      }
+      if (event.runId !== runId) return;
       lines += 1;
       if (begin === undefined || event.ts < begin) begin = event.ts;
       routineId ??= event.routineId;
+      // The pipeline gives every line of an undo the state it ended in.
+      if (event.type === 'undo') {
+        if (event.writeState !== undefined) {
+          undos.set(event.writeState, (undos.get(event.writeState) ?? 0) + 1);
+        }
+        return;
+      }
       // The schema gives every line of the type run a result.
       if (event.type === 'run' && event.runResult !== undefined) {
         // The last end counts, should a run have two.
@@ -254,6 +308,7 @@ export function summarizeRun(options: AuditRunSummaryOptions): AuditRunSummary {
         writes.set(key, row);
       }
       row.count += 1;
+      if (writeState === 'queued') queued.add(event.eventId);
     });
     if (outcome === 'moved') {
       moved = true;
@@ -261,6 +316,22 @@ export function summarizeRun(options: AuditRunSummaryOptions): AuditRunSummary {
     }
     if (outcome === 'read') read += 1;
     else if (outcome !== 'gone') unread += 1;
+  }
+
+  // A decision and a state hold no space, so the key is unique.
+  const decisions = new Map<string, AuditRunDecisions>();
+  for (const queueId of queued) {
+    for (const { decision, writeState } of decisionsOf.get(queueId) ?? []) {
+      const key = `${decision} ${writeState ?? ''}`;
+      decisions.set(
+        key,
+        Object.freeze({
+          decision,
+          ...(writeState === undefined ? {} : { writeState }),
+          count: (decisions.get(key)?.count ?? 0) + 1,
+        }),
+      );
+    }
   }
 
   return Object.freeze({
@@ -287,6 +358,19 @@ export function summarizeRun(options: AuditRunSummaryOptions): AuditRunSummary {
             compareText(left.writeState, right.writeState),
         )
         .map((row): AuditRunWrites => Object.freeze(row)),
+    ),
+    // By decision, then by state, as the key holds both in this order.
+    decisions: Object.freeze(
+      [...decisions]
+        .sort(([left], [right]) => compareText(left, right))
+        .map(([, row]) => row),
+    ),
+    undos: Object.freeze(
+      [...undos]
+        .sort(([left], [right]) => compareText(left, right))
+        .map(([writeState, count]): AuditRunUndos =>
+          Object.freeze({ writeState, count }),
+        ),
     ),
   });
 }

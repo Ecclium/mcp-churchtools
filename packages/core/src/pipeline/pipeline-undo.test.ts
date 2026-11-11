@@ -318,6 +318,56 @@ describe('the undo of the pipeline (ADR 0031)', () => {
     ]);
   });
 
+  it('names the run of the write on its line, so that the run shows the undo', async () => {
+    const { pipeline, keep, reads, events } = setup();
+    await keep();
+    reads(5, before);
+    const runId = '00000000-0000-4000-8000-0000000000cc';
+    expect(
+      await pipeline.undo(
+        {
+          eventId: written,
+          overwrite: false,
+          run: { runId, routineId: 'weekly-report' },
+        },
+        request(),
+      ),
+    ).toEqual({ kind: 'unchanged', subject: 'page' });
+    expect(events()).toMatchObject([
+      {
+        type: 'undo',
+        runId,
+        routineId: 'weekly-report',
+        undoes: written,
+        writeState: 'skipped',
+      },
+    ]);
+  });
+
+  it.each([
+    { runId: 'run-alpha', routineId: 'weekly-report' },
+    {
+      runId: '00000000-0000-4000-8000-0000000000CC',
+      routineId: 'weekly-report',
+    },
+    { runId: 42, routineId: 'weekly-report' },
+    { runId: '00000000-0000-4000-8000-0000000000cc', routineId: 'Weekly' },
+    { runId: '00000000-0000-4000-8000-0000000000cc', routineId: 7 },
+  ])('takes nothing back for a run of another form, %j', async (run) => {
+    const { pipeline, keep, events } = setup();
+    await keep();
+    expect(
+      await pipeline.undo(
+        { eventId: written, overwrite: false, run },
+        request(),
+      ),
+    ).toMatchObject({ kind: 'failed', code: 'validation', sent: false });
+    const [line] = events();
+    expect(line).toMatchObject({ type: 'undo', undoes: written });
+    expect(line).not.toHaveProperty('runId');
+    expect(line).not.toHaveProperty('routineId');
+  });
+
   it('finds no snapshot under an unknown ID, and none when the server keeps none', async () => {
     const kept = setup();
     expect(

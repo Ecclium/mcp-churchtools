@@ -47,13 +47,26 @@ export {
 } from './audit/summary.js';
 export { objectRefFromText } from './audit/object-ref.js';
 export {
+  type AuditRunDecisions,
   type AuditRunEnd,
   type AuditRunReads,
   type AuditRunSummary,
+  type AuditRunUndos,
   type AuditRunWrites,
   runIdFromText,
   summarizeRun,
 } from './audit/run-summary.js';
+export {
+  type AuditRunOfWrite,
+  type AuditRunRef,
+  type AuditRunWrite,
+  type AuditRunWritesFound,
+  type AuditRunWriteWay,
+  findRunOfWrite,
+  type FindRunOfWriteOptions,
+  findRunWrites,
+  type FindRunWritesOptions,
+} from './audit/run-writes.js';
 export {
   collectWriteTargets,
   type WriteTargetCategory,
