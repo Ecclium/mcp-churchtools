@@ -259,6 +259,11 @@ export interface RoutineReport {
   readonly closed?: boolean;
   /** Whether every channel of the routine took the notice. */
   readonly notified?: boolean;
+  /**
+   * When the run ended, in milliseconds since the Unix epoch, as its
+   * notice says, for the metrics file.
+   */
+  readonly endedAt?: number;
 }
 
 /** What became of every routine of a pass, and the worst of it. */
@@ -510,11 +515,15 @@ const runRoutine = async (
             durationMs: durationSince(ports.clock, began),
           }),
         );
-        const notified = await afterwards(() =>
-          ports.notify(
+        // Inside the step, like the rest of the notice: a clock that fails
+        // keeps the run from its notice, not from its report.
+        let endedAt: number | undefined;
+        const notified = await afterwards(() => {
+          endedAt = ports.clock.now();
+          return ports.notify(
             run,
             Object.freeze({
-              time: new Date(ports.clock.now()).toISOString(),
+              time: new Date(endedAt).toISOString(),
               routine: routineId,
               period,
               run: opened.run.runId,
@@ -522,8 +531,8 @@ const runRoutine = async (
               ...(outcome.step === undefined ? {} : { step: outcome.step }),
               ...(outcome.code === undefined ? {} : { code: outcome.code }),
             }),
-          ),
-        );
+          );
+        });
         let severity = severityOf(outcome);
         if (!notified) severity = worseOf(severity, 'file');
         if (!recorded || closed === false) {
@@ -537,6 +546,7 @@ const runRoutine = async (
           recorded,
           ...(closed === undefined ? {} : { closed }),
           notified,
+          ...(endedAt === undefined ? {} : { endedAt }),
         });
       } finally {
         await opened.run.close();

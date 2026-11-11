@@ -720,6 +720,7 @@ describe('a pass over the routines that are due', () => {
         recorded: true,
         closed: true,
         notified: true,
+        endedAt: expect.any(Number) as number,
       });
       // No read and no model: a stopped routine sends no data anywhere.
       expect(h.order).toEqual(
@@ -780,6 +781,7 @@ describe('a pass over the routines that are due', () => {
           recorded: true,
           closed: true,
           notified: true,
+          endedAt: expect.any(Number) as number,
         },
       ],
       severity: 'ok',
@@ -798,6 +800,9 @@ describe('a pass over the routines that are due', () => {
     expect(h.lines).toEqual([
       { result: 'written', attempt: 1, period: '2026-W46', durationMs: 1500 },
     ]);
+    // The end of the run is the time of its notice, for the metrics file.
+    expect(pass.routines[0]?.endedAt).toBe(begin + 1500);
+    expect(h.notices[0]?.time).toBe(new Date(begin + 1500).toISOString());
     expect(h.notices).toEqual([
       {
         time: '2026-11-09T06:00:01.500Z',
@@ -1068,6 +1073,29 @@ describe('a pass over the routines that are due', () => {
     expect(h.order).toEqual(steps('alpha', ...dueWiki));
   });
 
+  it('keeps the report of a run without its end when the clock fails at its notice', async () => {
+    const h = setup();
+    const clock = {
+      now: () => {
+        if (h.order.at(-1) === 'end:alpha') throw new Error('clock');
+        return begin;
+      },
+    };
+    const pass = await runDue(
+      [prepared('alpha', 'wiki')],
+      { ...h.ports, clock },
+      options(),
+    );
+    expect(pass.routines[0]).toMatchObject({
+      status: 'ran',
+      severity: 'file',
+      outcome: { result: 'written' },
+      notified: false,
+    });
+    expect(pass.routines[0]).not.toHaveProperty('endedAt');
+    expect(h.notices).toEqual([]);
+  });
+
   it('ends at least as a failure of a file when a channel did not take the notice', async () => {
     const h = setup({ notify: () => false });
     const pass = await runDue([prepared('alpha', 'wiki')], h.ports, options());
@@ -1238,6 +1266,7 @@ describe('a pass over the routines that are due', () => {
         recorded: true,
         closed: true,
         notified: true,
+        endedAt: expect.any(Number) as number,
       });
       expect(pass.routines[1]).toMatchObject({ status: 'ran', severity: 'ok' });
       expect(h.order).toEqual([
@@ -1471,6 +1500,7 @@ describe('a run by hand', () => {
       recorded: true,
       closed: true,
       notified: true,
+      endedAt: expect.any(Number) as number,
     });
     expect(Object.isFrozen(done)).toBe(true);
     expect(h.order).toEqual(

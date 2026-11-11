@@ -1,8 +1,8 @@
 /**
  * Runs routines on schedule: one pass over the routines that are due, a
  * run by hand and a preview, each through ports that the composition root
- * of the command line builds (ADR 0033, ADR 0034). The daemon, which
- * starts a pass at each trigger, comes later.
+ * of the command line builds (ADR 0033, ADR 0034), and the metrics file
+ * a pass leaves behind for a monitoring.
  *
  * @packageDocumentation
  */
@@ -15,6 +15,17 @@ export {
   severityOf,
   worseOf,
 } from './outcome.js';
+export {
+  metricStatuses,
+  type MetricsChainHead,
+  type MetricStatus,
+  type MetricsUpdate,
+  readRunnerMetrics,
+  renderRunnerMetrics,
+  type RoutineMetrics,
+  type RunnerMetrics,
+  updateRunnerMetrics,
+} from './metrics.js';
 export {
   type DraftCall,
   type DraftResult,
