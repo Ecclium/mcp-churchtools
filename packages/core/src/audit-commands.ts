@@ -47,6 +47,14 @@ export {
 } from './audit/summary.js';
 export { objectRefFromText } from './audit/object-ref.js';
 export {
+  type AuditRunEnd,
+  type AuditRunReads,
+  type AuditRunSummary,
+  type AuditRunWrites,
+  runIdFromText,
+  summarizeRun,
+} from './audit/run-summary.js';
+export {
   collectWriteTargets,
   type WriteTargetCategory,
   type WriteTargetObject,

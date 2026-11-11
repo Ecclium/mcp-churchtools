@@ -2068,3 +2068,71 @@ describe('waitBefore', () => {
     expect(waitBefore(Number.NaN, new Map([['a', start]]))).toBe(maxWaitMs);
   });
 });
+
+// One run of a routine in the audit, for the people who lead a
+// congregation (ADR 0028, ADR 0033).
+describe('ecclium audit show --run', () => {
+  it('shows routine, period, try, begin and end, the outcome, the reads per tool and the writes per way', async () => {
+    const t = setup();
+    expect((await t.call(due)).code).toBe(exitCodes.ok);
+    const runId = String(t.runLines()[0]?.['runId']);
+    const { code, stdout } = await t.cli(['audit', 'show', '--run', runId]);
+    expect(code).toBe(exitCodes.ok);
+    const lines = stdout.split('\n');
+    expect(lines[0]).toBe(`Lauf ‹${runId}›, Zeiten in UTC`);
+    expect(lines).toContain(`  Routine   ‹${wikiRoutine}›`);
+    expect(lines).toContain('  Periode   ‹2026-W46›, Versuch 1');
+    expect(lines).toContain('  Beginn    11.11.2026 07:00:00');
+    expect(lines).toContain('  Ausgang   geschrieben');
+    expect(lines).toContain('Lesungen je Tool');
+    expect(lines).toContain(
+      '  ct_test_events  2 Aufrufe: 2 ausgeführt, 0 mit Fehler, 0 abgelehnt',
+    );
+    expect(lines).toContain(
+      '  ct_test_assignments  3 Aufrufe: 3 ausgeführt, 0 mit Fehler, 0 abgelehnt',
+    );
+    expect(lines).toContain(
+      '  ct_wiki_page_append_section  Richtlinie, geschrieben und zurückgelesen: 1',
+    );
+    // An ID in capitals is the same run.
+    expect(
+      (await t.cli(['audit', 'show', '--run', runId.toUpperCase()])).stdout,
+    ).toBe(stdout);
+    // Nothing of the content of the run, nothing of its account.
+    expect(stdout).not.toContain('Gottesdienst');
+    t.assertNothingLeaked();
+  });
+
+  it('says so for a run no line names', async () => {
+    const t = setup();
+    expect((await t.call(due)).code).toBe(exitCodes.ok);
+    const { code, stdout } = await t.cli([
+      'audit',
+      'show',
+      '--run',
+      '00000000-0000-4000-8000-0000000000ff',
+    ]);
+    expect(code).toBe(exitCodes.ok);
+    expect(stdout).toContain('Keine Zeile nennt diesen Lauf.');
+  });
+
+  it('refuses another ID and --run with --object with 64, never repeating the value', async () => {
+    const t = setup();
+    const wrong = await t.cli(['audit', 'show', '--run', 'lauf-geheim-42']);
+    expect(wrong.code).toBe(exitCodes.usage);
+    expect(wrong.stderr).toContain('keine Kennung eines Laufs');
+    expect(wrong.stderr).not.toContain('lauf-geheim-42');
+    const both = await t.cli([
+      'audit',
+      'show',
+      '--run',
+      '00000000-0000-4000-8000-0000000000ff',
+      '--object',
+      'person:42',
+    ]);
+    expect(both.code).toBe(exitCodes.usage);
+    expect(both.stderr).toContain(
+      '‹--run› und ‹--object› gehen nicht zusammen',
+    );
+  });
+});

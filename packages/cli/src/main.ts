@@ -90,7 +90,10 @@ const commands: readonly Command[] = Object.freeze(
   [
     { words: ['config', 'check'], options: ['show-values', 'runner'] },
     { words: ['audit', 'verify'], options: ['log'] },
-    { words: ['audit', 'show'], options: ['object', 'since', 'until'] },
+    {
+      words: ['audit', 'show'],
+      options: ['object', 'run', 'since', 'until'],
+    },
     { words: ['policy', 'init'], options: ['interactive'] },
     { words: ['undo'], options: ['overwrite'], argument: true },
     { words: ['queue', 'list'], options: [] },
@@ -116,6 +119,7 @@ const options = Object.freeze({
   // Several logs, such as rotated ones (ADR 0028).
   log: Object.freeze({ type: 'string', multiple: true }),
   object: Object.freeze({ type: 'string' }),
+  run: Object.freeze({ type: 'string' }),
   since: Object.freeze({ type: 'string' }),
   until: Object.freeze({ type: 'string' }),
   interactive: Object.freeze({ type: 'boolean' }),
@@ -140,6 +144,7 @@ type Call =
   | {
       readonly kind: 'show';
       readonly object: string | undefined;
+      readonly run: string | undefined;
       readonly since: string | undefined;
       readonly until: string | undefined;
     }
@@ -233,6 +238,7 @@ const readCall = (args: readonly string[]): Call => {
       return {
         kind: 'show',
         object: values.object,
+        run: values.run,
         since: values.since,
         until: values.until,
       };
@@ -357,6 +363,7 @@ export function run(
         return showAudit({
           environment: taken,
           object: call.object,
+          run: call.run,
           since: call.since,
           until: call.until,
           output,

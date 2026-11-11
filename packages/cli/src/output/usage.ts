@@ -21,6 +21,7 @@ export const helpLines: readonly string[] = Object.freeze([
   '    --log <Datei>       prüft auch gegen die Anker aus diesem Log, ‹-› liest stdin, mehrmals möglich',
   '  audit show            zählt die Aufrufe in den Audit-Dateien je Tag und Tool',
   '    --object <Kennung>  zeigt stattdessen die Aufrufe, die eine Kennung wie ‹person:42› nennen',
+  '    --run <Lauf>        zeigt stattdessen einen Lauf einer Routine: Ausgang, Lesungen und Schreibvorgänge',
   '    --since <Tag>       ab diesem Tag in UTC, in der Form JJJJ-MM-TT',
   '    --until <Tag>       bis und mit diesem Tag in UTC',
   '  policy init           schlägt die Richtlinie aus den Audit-Dateien vor und fragt ChurchTools nach den Namen',
@@ -51,7 +52,7 @@ export const usageProblemTexts: Readonly<Record<UsageProblem, string>> =
     repeated:
       'Eine Option steht mehr als einmal im Aufruf. Ausser ‹--log› gilt jede Option nur einmal, damit kein Aufruf zweideutig ist. Nennen Sie jede andere Option höchstens einmal.',
     value:
-      'Eine Option hat einen Wert, den sie nicht annimmt, oder ihr fehlt einer. ‹--show-values›, ‹--runner›, ‹--interactive›, ‹--overwrite›, ‹--due›, ‹--preview› und ‹--help› nehmen keinen Wert an, ‹--log›, ‹--object›, ‹--since› und ‹--until› brauchen einen. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
+      'Eine Option hat einen Wert, den sie nicht annimmt, oder ihr fehlt einer. ‹--show-values›, ‹--runner›, ‹--interactive›, ‹--overwrite›, ‹--due›, ‹--preview› und ‹--help› nehmen keinen Wert an, ‹--log›, ‹--object›, ‹--run›, ‹--since› und ‹--until› brauchen einen. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
   });
 
 /** The one text for an internal error. */

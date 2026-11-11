@@ -16,6 +16,7 @@ import {
   type AuditFindingKind,
   type AuditFolderCode,
   type AuditObjectHit,
+  type AuditRunSummary,
   type AuditSummary,
   type AuditVerifyReport,
   maxAnchorEntries,
@@ -26,7 +27,7 @@ import {
 import { formatNumber, problemText } from '../messages/index.js';
 
 /** What can be wrong with the values of `ecclium audit show`. */
-export type AuditShowProblem = 'object' | 'day' | 'range';
+export type AuditShowProblem = 'object' | 'day' | 'range' | 'run' | 'both';
 
 /** One text per kind of wrong value: what, why and what to do. */
 export const auditShowProblemTexts: Readonly<Record<AuditShowProblem, string>> =
@@ -35,6 +36,8 @@ export const auditShowProblemTexts: Readonly<Record<AuditShowProblem, string>> =
     day: 'Ein Tag nach ‹--since› oder ‹--until› ist kein Tag, den es gibt. Ecclium nennt ihn nicht und nimmt nur die Form JJJJ-MM-TT in UTC. Geben Sie den Tag etwa als ‹2026-10-31› an.',
     range:
       'Der Tag nach ‹--since› liegt nach dem Tag nach ‹--until›. Dazwischen gibt es keinen Tag, der sich zusammenfassen liesse. Nennen Sie nach ‹--since› den früheren Tag.',
+    run: 'Die Kennung nach ‹--run› ist keine Kennung eines Laufs. Ecclium nennt sie nicht. Eine Kennung eines Laufs hat 36 Zeichen wie ‹3f2b9c1e-0d4a-4c8e-9b7a-1e2d3c4b5a69› und steht in der Meldung des Laufs, in seinen Zeilen auf stderr und im Audit.',
+    both: '‹--run› und ‹--object› gehen nicht zusammen. Der eine zeigt einen Lauf, der andere die Aufrufe zu einer Kennung. Nennen Sie nur eine der beiden Optionen.',
   });
 
 /** One text per reason the folder `audit` cannot be read. */
@@ -427,5 +430,154 @@ export function renderObjectHits(
     );
   }
   lines.push(...footer(summary));
+  return Object.freeze(lines);
+}
+
+const pathWords = Object.freeze({
+  elicitation: 'Rückfrage',
+  echo: 'Echo',
+  policy: 'Richtlinie',
+  operator: 'Betreiber',
+});
+
+const stateWords = Object.freeze({
+  planned: 'geplant, wartet auf Bestätigung',
+  queued: 'in die Freigabe-Warteschlange gestellt',
+  verified: 'geschrieben und zurückgelesen',
+  skipped: 'nicht nötig, stand schon so da',
+  denied: 'abgewiesen, nichts gesendet',
+  conflict: 'gesendet, liest sich nicht wie geplant zurück',
+  failed: 'gescheitert',
+  rolledBack: 'nach einem Fehler zurückgenommen',
+});
+
+const runResultWords = Object.freeze({
+  written: 'geschrieben',
+  unchanged: 'unverändert, der Abschnitt stand schon so da',
+  queued: 'in der Freigabe-Warteschlange',
+  drafted: 'Entwurf geschrieben',
+  preview: 'Vorschau, nichts geschrieben',
+  failed: 'gescheitert',
+});
+
+const stepWords = Object.freeze({
+  input: 'beim Lesen der Eingaben',
+  model: 'beim Modell',
+  answer: 'bei der Prüfung der Antwort',
+  content: 'bei der ContentPolicy',
+  write: 'beim Schreiben',
+});
+
+const timeOf = (ts: string): string =>
+  `${dateOf(ts.slice(0, 10))} ${ts.slice(11, 19)}`;
+
+/**
+ * The lines of `ecclium audit show --run`: routine, period and try, begin
+ * and end, how the run ended, its reads per tool and its writes per way of
+ * confirmation and state (ADR 0033).
+ *
+ * @param summary - The summary of the run.
+ * @param runId - The ID of the run, as checked.
+ * @param range - The range of days asked for.
+ * @returns The lines, frozen.
+ * @example
+ * ```ts
+ * for (const line of renderRun(summary, runId, {})) output.stdout(line);
+ * ```
+ */
+export function renderRun(
+  summary: AuditRunSummary,
+  runId: string,
+  range: ShowRange,
+): readonly string[] {
+  const lines = [`Lauf ‹${runId}›, Zeiten in UTC`];
+  const period = rangeLine(range);
+  if (period !== undefined) lines.push(period);
+  if (summary.lines === 0) {
+    lines.push('Keine Zeile nennt diesen Lauf.');
+  } else {
+    const { end } = summary;
+    if (summary.routineId !== undefined) {
+      lines.push(`  Routine   ‹${summary.routineId}›`);
+    }
+    if (end?.period !== undefined) {
+      lines.push(
+        `  Periode   ‹${end.period}›${end.attempt === undefined ? ', von Hand oder als Vorschau' : `, Versuch ${String(end.attempt)}`}`,
+      );
+    }
+    if (summary.begin !== undefined) {
+      lines.push(`  Beginn    ${timeOf(summary.begin)}`);
+    }
+    if (end === undefined) {
+      lines.push(
+        '  Ende      fehlt: Der Lauf läuft noch, oder sein Prozess endete, bevor er das Ende festhielt.',
+      );
+    } else {
+      lines.push(
+        `  Ende      ${timeOf(end.ts)}, nach ${formatNumber(Math.round(end.durationMs / 1000))} Sekunden`,
+      );
+      const failure =
+        end.result === 'failed'
+          ? [
+              end.step === undefined ? '' : ` ${stepWords[end.step]}`,
+              end.errorCode === undefined ? '' : `, Code ‹${end.errorCode}›`,
+              end.contentViolations === undefined
+                ? ''
+                : `, Gründe ${end.contentViolations.map((kind) => `‹${kind}›`).join(', ')}`,
+            ].join('')
+          : '';
+      lines.push(`  Ausgang   ${runResultWords[end.result]}${failure}`);
+    }
+    lines.push('Lesungen je Tool');
+    if (summary.reads.length === 0) lines.push('  keine');
+    for (const row of summary.reads) {
+      const withheld =
+        row.withheld > 0
+          ? `, davon ${formatNumber(row.withheld)} nach dem Lesen zurückgehalten`
+          : '';
+      lines.push(
+        `  ${row.tool}  ${count(row.calls, 'Aufruf', 'Aufrufe')}: ${formatNumber(row.ok)} ausgeführt, ${formatNumber(row.error)} mit Fehler, ${formatNumber(row.denied)} abgelehnt${withheld}`,
+      );
+    }
+    lines.push('Schreibvorgänge je Bestätigungsweg');
+    if (summary.writeRows.length === 0) lines.push('  keine');
+    for (const row of summary.writeRows) {
+      const way =
+        row.confirmation === undefined
+          ? 'ohne Bestätigung'
+          : pathWords[row.confirmation];
+      lines.push(
+        `  ${row.tool}  ${way}, ${stateWords[row.writeState]}: ${formatNumber(row.count)}`,
+      );
+    }
+    // A decision of the operator is a line of its own, without the run
+    // (ADR 0031).
+    if (summary.writeRows.some((row) => row.writeState === 'queued')) {
+      lines.push(
+        'Die Freigabe oder Abweisung eines eingereihten Schreibvorgangs steht als eigene Zeile ohne die Kennung des Laufs im Audit. Was noch wartet, zeigt ‹ecclium queue list›.',
+      );
+    }
+  }
+  lines.push(
+    `Gelesen: ${formatNumber(summary.read)} von ${count(summary.files, 'Datei', 'Dateien')}, ${count(summary.lines, 'Zeile', 'Zeilen')} des Laufs.`,
+  );
+  if (summary.skipped > 0) {
+    lines.push(
+      `${count(summary.skipped, 'Zeile passt', 'Zeilen passen')} nicht zum Schema der Ereignisse und ${summary.skipped === 1 ? 'fehlt' : 'fehlen'} in der Auswertung.`,
+    );
+  }
+  if (summary.unread > 0) {
+    lines.push(
+      `${count(summary.unread, 'Datei liess', 'Dateien liessen')} sich nicht lesen und ${summary.unread === 1 ? 'fehlt' : 'fehlen'} in der Auswertung.`,
+    );
+  }
+  if (summary.moved) {
+    lines.push(
+      'Der Ordner ‹audit› hat sich während des Lesens geändert. Die Auswertung ist unvollständig.',
+    );
+  }
+  lines.push(
+    'Die Auswertung prüft die Ketten nicht. Das tut ‹ecclium audit verify›.',
+  );
   return Object.freeze(lines);
 }
