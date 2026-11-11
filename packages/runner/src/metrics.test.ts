@@ -222,7 +222,7 @@ describe('readRunnerMetrics', () => {
       'a line with a time per sample',
       fullText.replace('} 42\n', '} 42 1763355600000\n'),
     ],
-    ['a carriage return', fullText.replace('\n', '\r\n')],
+    ['line ends with a carriage return', fullText.replaceAll('\n', '\r\n')],
     [
       'lines in another order',
       `${fullText.slice(0, -1).split('\n').reverse().join('\n')}\n`,
