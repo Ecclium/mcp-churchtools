@@ -366,7 +366,9 @@ describe('findRunWrites', () => {
 });
 
 describe('findRunOfWrite', () => {
-  it('names the run of a write of a run, and none of a write of a client', () => {
+  const ofRun = { kind: 'run', run: { runId, routineId: 'weekly-report' } };
+
+  it('names the run of a write of a run, and proves none for a write of a client', () => {
     const own = write();
     const client = write({
       runId: undefined,
@@ -376,49 +378,62 @@ describe('findRunOfWrite', () => {
       confirmation: 'elicitation',
     });
     const folder = folderOf({ [nameOf('2026-11-09', 1)]: [own, client] });
-    expect(findRunOfWrite({ folder, eventId: idIn(own) })).toEqual({
-      run: { runId, routineId: 'weekly-report' },
-      complete: true,
-    });
+    const found = findRunOfWrite({ folder, eventId: idIn(own) });
+    expect(found).toEqual(ofRun);
+    expect(Object.isFrozen(found)).toBe(true);
     const none = findRunOfWrite({ folder, eventId: idIn(client) });
-    expect(none).toEqual({ complete: true });
+    expect(none).toEqual({ kind: 'none' });
     expect(Object.isFrozen(none)).toBe(true);
+    // No line names the write, and every line was read.
     expect(findRunOfWrite({ folder, eventId: idOf(999_997) })).toEqual({
-      complete: true,
+      kind: 'none',
     });
-  });
-
-  it('says it read not every line when one is no audit event or a piece, since it may be the one asked for', () => {
-    const own = write();
-    const damaged = write().replace('"verified"', '"bogus"');
-    for (const bad of ['not json', `${own.slice(0, 20)}~`, damaged]) {
-      const folder = folderOf({ [nameOf('2026-11-09', 1)]: [bad, own] });
-      expect(findRunOfWrite({ folder, eventId: idIn(own) })).toEqual({
-        run: { runId, routineId: 'weekly-report' },
-        complete: false,
-      });
-      expect(findRunOfWrite({ folder, eventId: idIn(damaged) })).toEqual({
-        complete: false,
-      });
-    }
   });
 
   it('names the run whose line queued the entry an approval wrote, in any order of the files', () => {
     const queued = write({ writeState: 'queued', confirmation: undefined });
     const approved = decision(idIn(queued));
-    const other = decision(idOf(999_996));
     const folder = folderOf({
-      [nameOf('2026-11-09', 0)]: [approved, other],
+      [nameOf('2026-11-09', 0)]: [approved],
       [nameOf('2026-11-09', 1)]: [queued],
     });
-    expect(findRunOfWrite({ folder, eventId: idIn(approved) })).toEqual({
-      run: { runId, routineId: 'weekly-report' },
-      complete: true,
+    expect(findRunOfWrite({ folder, eventId: idIn(approved) })).toEqual(ofRun);
+  });
+
+  it('proves none for an approval of an entry a client queued', () => {
+    const queued = write({
+      runId: undefined,
+      routineId: undefined,
+      actor: { kind: 'user', id: 'person-id-1' },
+      mode: 'interactive',
+      writeState: 'queued',
+      confirmation: undefined,
     });
-    // An approval of an entry that no run queued belongs to no run.
-    expect(findRunOfWrite({ folder, eventId: idIn(other) })).toEqual({
-      complete: true,
+    const approved = decision(idIn(queued));
+    const found = findRunOfWrite({
+      folder: folderOf({ [nameOf('2026-11-09', 1)]: [queued, approved] }),
+      eventId: idIn(approved),
     });
+    expect(found).toEqual({ kind: 'none' });
+  });
+
+  it('cannot tell for an approval whose queueing line is not in the range', () => {
+    const queued = write({
+      ts: '2026-11-08T05:00:00.000Z',
+      writeState: 'queued',
+      confirmation: undefined,
+    });
+    const approved = decision(idIn(queued));
+    const found = findRunOfWrite({
+      folder: folderOf({
+        [nameOf('2026-11-08', 1)]: [queued],
+        [nameOf('2026-11-10', 1)]: [approved],
+      }),
+      eventId: idIn(approved),
+      since: '2026-11-09',
+    });
+    expect(found).toEqual({ kind: 'unknown', reason: 'queued_missing' });
+    expect(Object.isFrozen(found)).toBe(true);
   });
 
   it('names the run of an undo of a write of a run', () => {
@@ -435,11 +450,35 @@ describe('findRunOfWrite', () => {
       findRunOfWrite({
         folder: folderOf({ [nameOf('2026-11-09', 1)]: [undo] }),
         eventId: idIn(undo),
-      }).run,
-    ).toEqual({ runId, routineId: 'weekly-report' });
+      }),
+    ).toEqual(ofRun);
   });
 
-  it('reads only the days from the first on, and says when it could not read every file', () => {
+  it('cannot tell when the line is not found while a line or a file could not be read, and finds it despite them', () => {
+    const own = write();
+    const damaged = write().replaceAll('"verified"', '"bogus"');
+    for (const bad of ['not json', `${own.slice(0, 20)}~`, damaged]) {
+      const folder = folderOf({ [nameOf('2026-11-09', 1)]: [bad, own] });
+      expect(findRunOfWrite({ folder, eventId: idIn(own) })).toEqual(ofRun);
+      expect(findRunOfWrite({ folder, eventId: idIn(damaged) })).toEqual({
+        kind: 'unknown',
+        reason: 'incomplete',
+      });
+    }
+    for (const file of ['unreadable', 'moved'] as const) {
+      expect(
+        findRunOfWrite({
+          folder: folderOf({
+            [nameOf('2026-11-09', 1)]: file,
+            [nameOf('2026-11-09', 2)]: [own],
+          }),
+          eventId: idOf(999_994),
+        }),
+      ).toEqual({ kind: 'unknown', reason: 'incomplete' });
+    }
+  });
+
+  it('reads only the days from the first on, and a file gone meanwhile hides nothing', () => {
     const old = write({ ts: '2026-11-08T05:00:00.000Z' });
     const opened: string[] = [];
     const folder = folderOf(
@@ -447,34 +486,18 @@ describe('findRunOfWrite', () => {
         [nameOf('2026-11-08', 1)]: [old],
         [nameOf('2026-11-09', 1)]: [old],
         [nameOf('2026-11-09', 2)]: 'gone',
+        'audit-current.jsonl': [],
       },
       opened,
     );
     expect(
       findRunOfWrite({ folder, eventId: idIn(old), since: '2026-11-09' }),
-    ).toEqual({ complete: true });
-    expect(opened).toEqual([nameOf('2026-11-09', 1), nameOf('2026-11-09', 2)]);
-    expect(
-      findRunOfWrite({
-        folder: folderOf({
-          [nameOf('2026-11-09', 1)]: 'unreadable',
-          'audit-current.jsonl': [old],
-        }),
-        eventId: idIn(old),
-      }),
-    ).toEqual({
-      run: { runId, routineId: 'weekly-report' },
-      complete: false,
-    });
-    expect(
-      findRunOfWrite({
-        folder: folderOf({
-          [nameOf('2026-11-09', 1)]: 'moved',
-          [nameOf('2026-11-09', 2)]: [old],
-        }),
-        eventId: idIn(old),
-      }),
-    ).toEqual({ complete: false });
+    ).toEqual({ kind: 'none' });
+    expect(opened).toEqual([
+      nameOf('2026-11-09', 1),
+      nameOf('2026-11-09', 2),
+      'audit-current.jsonl',
+    ]);
   });
 
   it.each([

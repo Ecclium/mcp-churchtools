@@ -251,17 +251,28 @@ export interface AuditRunRef {
   readonly routineId: string;
 }
 
-/** What {@link findRunOfWrite} found. */
-export interface AuditRunOfWrite {
-  /** The run the write belongs to, if one does. */
-  readonly run?: AuditRunRef;
+/**
+ * What {@link findRunOfWrite} found: the run of the write, proof that it
+ * belongs to none, or that the files cannot tell.
+ */
+export type AuditRunOfWrite =
+  /** The write belongs to this run. */
+  | { readonly kind: 'run'; readonly run: AuditRunRef }
   /**
-   * Whether every file in the range was read whole and every line in it
-   * fits the schema: without it, the line of a write of a run may stand
-   * where it could not be read.
+   * The write belongs to no run: its own line names none, and for an
+   * approval the line that queued its entry names none either; or no line
+   * of the range names the write while every line was read.
    */
-  readonly complete: boolean;
-}
+  | { readonly kind: 'none' }
+  /**
+   * The files cannot tell: the line of the write is not found while a
+   * file or a line could not be read (`incomplete`), or an approval names
+   * an entry whose queueing line is not in the range (`queued_missing`).
+   */
+  | {
+      readonly kind: 'unknown';
+      readonly reason: 'incomplete' | 'queued_missing';
+    };
 
 /** Options of {@link findRunOfWrite}. */
 export interface FindRunOfWriteOptions {
@@ -280,12 +291,13 @@ export interface FindRunOfWriteOptions {
  * line queued the entry. It reads only, through the folder.
  *
  * @param options - The folder, the ID of the line and the first day.
- * @returns The run, if the write belongs to one, and whether every file
- *   was read whole; frozen.
+ * @returns The run, proof of none, or that the files cannot tell;
+ *   frozen.
  * @throws {TypeError} When the ID is no ID of a line or the day no UTC day.
  * @example
  * ```ts
- * const { run, complete } = findRunOfWrite({ folder, eventId, since });
+ * const found = findRunOfWrite({ folder, eventId, since });
+ * if (found.kind === 'run') found.run.routineId;
  * ```
  */
 export function findRunOfWrite(
@@ -298,11 +310,13 @@ export function findRunOfWrite(
   ) {
     throw new TypeError('The run of a write needs its ID and a day.');
   }
-  // The run the line itself names, or the entry an approval wrote.
-  let own: AuditRunRef | undefined;
-  let queueId: string | undefined;
-  // The runs of the lines that queued an entry, by the ID of the line.
-  const queuedBy = new Map<string, AuditRunRef>();
+  // The own line of the write: the run it names, or the entry an approval
+  // wrote.
+  let own:
+    { readonly ref?: AuditRunRef; readonly queueId?: string } | undefined;
+  // The lines that queued an entry, by their ID, with the run they name,
+  // or null for one of no run.
+  const queuedBy = new Map<string, AuditRunRef | null>();
   let complete = true;
   for (const name of folder.names) {
     const day = dayOfAuditFile(name);
@@ -323,11 +337,13 @@ export function findRunOfWrite(
           ? Object.freeze({ runId: event.runId, routineId: event.routineId })
           : undefined;
       if (event.eventId === eventId) {
-        own = ref;
-        queueId = event.queueId;
+        own = {
+          ...(ref === undefined ? {} : { ref }),
+          ...(event.queueId === undefined ? {} : { queueId: event.queueId }),
+        };
       }
-      if (ref !== undefined && event.writeState === 'queued') {
-        queuedBy.set(event.eventId, ref);
+      if (event.writeState === 'queued') {
+        queuedBy.set(event.eventId, ref ?? null);
       }
     });
     if (outcome === 'moved') {
@@ -336,10 +352,16 @@ export function findRunOfWrite(
     }
     if (outcome !== 'read' && outcome !== 'gone') complete = false;
   }
-  const run =
-    own ?? (queueId === undefined ? undefined : queuedBy.get(queueId));
-  return Object.freeze({
-    ...(run === undefined ? {} : { run }),
-    complete,
-  });
+  const none: AuditRunOfWrite = Object.freeze({ kind: 'none' });
+  const unknown = (reason: 'incomplete' | 'queued_missing'): AuditRunOfWrite =>
+    Object.freeze({ kind: 'unknown', reason });
+  const runOf = (run: AuditRunRef): AuditRunOfWrite =>
+    Object.freeze({ kind: 'run', run });
+  const found = own;
+  if (found === undefined) return complete ? none : unknown('incomplete');
+  if (found.ref !== undefined) return runOf(found.ref);
+  if (found.queueId === undefined) return none;
+  const queued = queuedBy.get(found.queueId);
+  if (queued === undefined) return unknown('queued_missing');
+  return queued === null ? none : runOf(queued);
 }
