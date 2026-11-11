@@ -73,13 +73,14 @@
     },
     "transportBuilders": {
       "adr": "0056",
-      "description": "The composition root: the only code outside the outbound path that imports the factory of the HTTP transport, the subpath ./http of core, and the only code at all that imports the stderr writer, the logger and the audit sink through the subpath ./composition of core. Each entry is a folder of the command line: the start over stdio, the build of the pipeline it shares with the commands that talk to ChurchTools, and those commands, today ecclium policy init, ecclium undo and ecclium queue.",
+      "description": "The composition root: the only code outside the outbound path that imports the factory of the HTTP transport, the subpath ./http of core, and the only code at all that imports the stderr writer, the logger and the audit sink through the subpath ./composition of core. Each entry is a folder of the command line: the start over stdio, the build of the pipeline it shares with the commands that talk to ChurchTools, and those commands, today ecclium policy init, ecclium undo, ecclium queue and the runner with ecclium run-once.",
       "paths": [
         "packages/cli/src/stdio/",
         "packages/cli/src/compose/",
         "packages/cli/src/policy/",
         "packages/cli/src/undo/",
-        "packages/cli/src/queue/"
+        "packages/cli/src/queue/",
+        "packages/cli/src/runner/"
       ]
     },
     "auditCommands": {
@@ -283,8 +284,9 @@
     },
     "writeGuardStores": {
       "adr": "0029",
-      "description": "The stores of plans and nonces in memory, the counter of the writes of a run and the halt of writes of a process: state that outlives a request, lives as long as a run or is shared by the pipelines of a process, so outside the write guard only the composition root imports them, through the subpath ./composition of core, and hands them on. Each entry is one file of the write guard.",
+      "description": "The stores of plans and nonces in memory, the counter of the writes of a run and the halt of writes of a process: state that outlives a request, lives as long as a run or is shared by the pipelines of a process, so outside the write guard only the composition root imports them, through the subpath ./composition of core, and hands them on. The same holds for the look at the kill switches, which the runner takes before the first read of a run and before a draft. Each entry is one file of the write guard.",
       "paths": [
+        "packages/core/src/write/kill-switch.ts",
         "packages/core/src/write/nonce-store.ts",
         "packages/core/src/write/plan-store.ts",
         "packages/core/src/write/run-writes.ts",
