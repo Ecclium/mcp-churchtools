@@ -142,6 +142,10 @@ Eine Routine mit dem Ziel `draft` und dem Kanal `file` legt ihren Entwurf als Da
 
 Nennt eine Routine den Kanal `file`, hängt der Runner je Lauf eine Zeile an die Datei aus `ECCLIUM_NOTIFY_FILE` an: Zeit, Routine, Periode, Kennung des Laufs, Ausgang und bei einem Fehler Schritt und Code, nie einen Inhalt und keine Kennung einer Person. Die Datei hat die Rechte 600, Ecclium kürzt und löscht sie nicht; rotieren Sie sie wie ein Log. Mit dem Kanal `stdout` geht dieselbe Zeile auf die Standardausgabe, und wer diese sammelt, etwa `docker logs`, hält sie so lange, wie er es einstellt.
 
+### Metrikdatei des Runners
+
+Mit `ECCLIUM_RUNNER_METRICS_FILE` schreibt der Runner nach jedem Durchgang eine Metrikdatei für eine Überwachung ([Runner](betrieb/runner.md#metrikdatei)): je Routine ihre Kennung, Zeiten, den Status und Code ihres letzten Laufs, dazu Name, Nummer und Hash der letzten Zeile der Audit-Datei. Sie enthält keine Personendaten und keine Inhalte. Der Runner ersetzt sie jedes Mal ganz, ihr Ordner hat die Rechte 700, die Datei 600.
+
 ## Was ChurchTools nach einem Schreibvorgang weitergibt
 
 Was Ecclium in ChurchTools schreibt, sehen dort alle, die das Ziel sehen dürfen, und ChurchTools kann es weitergeben, ohne dass Ecclium davon weiss:
