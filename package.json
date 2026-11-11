@@ -40,7 +40,7 @@
     "@vitest/coverage-v8": "5.0.5",
     "dependency-cruiser": "18.7.2",
     "eslint": "10.14.0",
-    "eslint-plugin-jsdoc": "65.3.4",
+    "eslint-plugin-jsdoc": "65.4.5",
     "fast-check": "4.10.2",
     "markdown-it": "15.0.3",
     "prettier": "3.9.10",
