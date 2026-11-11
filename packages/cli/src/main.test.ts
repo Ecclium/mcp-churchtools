@@ -276,6 +276,11 @@ describe('the command line', () => {
     [['undo', '--overwrite'], 'command'],
     [['undo', 'x', '--overwrite=1'], 'value'],
     [['undo', 'x', '--log', 'y'], 'option'],
+    // One write or one run, never both.
+    [['undo', 'x', '--run', 'y'], 'option'],
+    [['undo', '--run'], 'value'],
+    [['undo', '--run', 'a', '--run', 'b'], 'repeated'],
+    [['undo', '--run', 'a', 'b', 'c'], 'command'],
     [['config', 'check', '--overwrite'], 'option'],
     [['queue'], 'command'],
     [['queue', 'list', 'x'], 'command'],
@@ -661,6 +666,14 @@ describe('ecclium undo in the command line', () => {
     const result = await runUndo(['undo', id, '--overwrite']);
     expect(result.code).toBe(exitCodes.usage);
     expect(result.stderr).toContain('Die Kennung ist keine Kennung');
+    expect(result.stderr).not.toContain(id);
+  });
+
+  it('hands the ID of a run to the command, which checks it and never names it', async () => {
+    const id = `lauf-${plain()}`;
+    const result = await runUndo(['undo', '--run', id, '--overwrite']);
+    expect(result.code).toBe(exitCodes.usage);
+    expect(result.stderr).toContain('Die Kennung des Laufs ist keine UUID');
     expect(result.stderr).not.toContain(id);
   });
 

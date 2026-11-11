@@ -8,7 +8,7 @@
 
 /** The short form of the call. */
 export const usageLine =
-  'Aufruf: ecclium stdio | ecclium config check [Optionen] | ecclium audit verify [Optionen] | ecclium audit show [Optionen] | ecclium policy init --interactive | ecclium undo <Kennung> [--overwrite] | ecclium queue list | ecclium queue show <Kennung> | ecclium queue approve <Kennung> | ecclium queue reject <Kennung> | ecclium run-once --due | ecclium run-once <Routine> [--preview] | ecclium runner';
+  'Aufruf: ecclium stdio | ecclium config check [Optionen] | ecclium audit verify [Optionen] | ecclium audit show [Optionen] | ecclium policy init --interactive | ecclium undo <Kennung> [--overwrite] | ecclium undo --run <Lauf> [--overwrite] | ecclium queue list | ecclium queue show <Kennung> | ecclium queue approve <Kennung> | ecclium queue reject <Kennung> | ecclium run-once --due | ecclium run-once <Routine> [--preview] | ecclium runner';
 
 /** The help, for `--help` and `-h`. */
 export const helpLines: readonly string[] = Object.freeze([
@@ -28,6 +28,7 @@ export const helpLines: readonly string[] = Object.freeze([
   '    --interactive       den interaktiven Teil, als YAML auf stdout',
   '  undo <Kennung>        nimmt einen Schreibvorgang aus seinem Snapshot zurück, die Kennung steht im Audit',
   '    --overwrite         schreibt auch, wenn jemand die Seite seither geändert hat',
+  '  undo --run <Lauf>     nimmt jeden Schreibvorgang eines Laufs zurück, auch aus Freigaben, den neuesten zuerst',
   '  queue list            zeigt, was in der Freigabe-Warteschlange auf Ihre Freigabe wartet',
   '  queue show <Kennung>  zeigt den ganzen Unterschied eines Eintrags',
   '  queue approve <Kennung> gibt einen Eintrag frei und schreibt ihn sofort, auf dem Stand des Ziels von jetzt',

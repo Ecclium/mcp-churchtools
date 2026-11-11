@@ -54,8 +54,11 @@ export const queueProblems: Readonly<Record<QueueProblem, QueueEnding>> =
     ),
   });
 
-// Why the account of a run is not there, in the words of the token file.
-const runAccountCauses: Readonly<Record<RunPipelineCode, string>> =
+/**
+ * Why the account of a run is not there, in the words of the token file,
+ * also for the undo of a write of a run.
+ */
+export const runAccountCauses: Readonly<Record<RunPipelineCode, string>> =
   Object.freeze({
     runner_tokens_dir_unset: '‹ECCLIUM_RUNNER_TOKENS_DIR› ist nicht gesetzt.',
     runner_tokens_dir_invalid:
