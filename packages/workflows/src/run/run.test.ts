@@ -806,4 +806,64 @@ describe('a run that ends at the section', () => {
     });
     expect(warned).toEqual(['run_section_refused']);
   });
+
+  it('names a breach of the content policy before an unknown person in the same answer', async () => {
+    const prepared = prepareRun(loadedOf(routineValue()), context());
+    if (!prepared.ok) throw new Error(prepared.code);
+    const read: RunRead = () => {
+      const outcome = redactedOutcome({ events: [] });
+      if (!outcome.ok) throw new Error('no data');
+      return Promise.resolve({
+        ok: true,
+        data: outcome.data,
+        entries: 0,
+        more: false,
+        persons: {},
+      });
+    };
+    const model = guardModelProvider(
+      createMockModelProvider({
+        kind: 'obedient',
+        respond: () => ({
+          liste: [
+            {
+              text: 'siehe gemeinde.example',
+              tag: '2026-11-16',
+              zahl: 3,
+              // A pseudonym of the right form that is none of the data.
+              person: `p1_${'a'.repeat(39)}`,
+            },
+          ],
+        }),
+      }).provider,
+    );
+    const result = await executeRun(
+      prepared.run,
+      {
+        at: Date.UTC(2026, 10, 9, 5),
+        period: { isoWeek: '2026-W46', date: '2026-11-09', month: '2026-11' },
+      },
+      {
+        read,
+        model,
+        policy: policyOf(),
+        log: {
+          debug: () => undefined,
+          info: () => undefined,
+          warn: () => undefined,
+          error: () => undefined,
+        },
+        clock: { now: () => Date.UTC(2026, 10, 9, 5) },
+      },
+      new AbortController().signal,
+    );
+    // Refused with its reasons, so that the audit says denied (ADR 0030).
+    expect(result).toEqual({
+      kind: 'failed',
+      step: 'answer',
+      code: 'run_content_refused',
+      final: true,
+      violations: ['webAddress'],
+    });
+  });
 });
