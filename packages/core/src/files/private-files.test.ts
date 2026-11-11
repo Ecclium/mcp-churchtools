@@ -1,9 +1,12 @@
 import {
   chmodSync,
+  closeSync,
+  fstatSync,
   linkSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readdirSync,
   readFileSync,
   rmSync,
@@ -31,6 +34,17 @@ import {
   replacePrivateFile,
   writePrivateFileOnce,
 } from './index.js';
+
+// Reads a file and its mode through one descriptor, so that both describe
+// the same file and no check on its path comes before its use.
+const readWithMode = (path: string): { text: string; mode: number } => {
+  const fd = openSync(path, 'r');
+  try {
+    return { text: readFileSync(fd, 'utf8'), mode: fstatSync(fd).mode & 0o777 };
+  } finally {
+    closeSync(fd);
+  }
+};
 
 // The files run on disk in a temporary folder of their own. A fake file
 // system replaces single functions for what a test cannot build there,
@@ -979,11 +993,12 @@ describe('appendPrivateLine', () => {
     const folder = fresh();
     const path = join(folder, 'notices.jsonl');
     appendPrivateLine(path, '{"n":1}');
-    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(readWithMode(path).mode).toBe(0o600);
     appendPrivateLine(path, '{"n":2}', {});
     appendPrivateLine(path, '{"n":3}', { fs: withFs({}) });
-    expect(readFileSync(path, 'utf8')).toBe('{"n":1}\n{"n":2}\n{"n":3}\n');
-    expect(statSync(path).mode & 0o777).toBe(0o600);
+    const appended = readWithMode(path);
+    expect(appended.text).toBe('{"n":1}\n{"n":2}\n{"n":3}\n');
+    expect(appended.mode).toBe(0o600);
     expect(readdirSync(folder)).toEqual(['notices.jsonl']);
   });
 

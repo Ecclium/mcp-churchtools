@@ -1,9 +1,12 @@
 import { createHash } from 'node:crypto';
 import {
   chmodSync,
+  closeSync,
   existsSync,
+  fstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readdirSync,
   readFileSync,
   rmSync,
@@ -48,6 +51,17 @@ import { run } from '../main.js';
 import { runOnce, type RunOnceOptions } from './run-once.js';
 import type { RunnerMode } from './start.js';
 import { modelKeyText, refusedText, runnerStartTexts } from './texts.js';
+
+// Reads a file and its mode through one descriptor, so that both describe
+// the same file and no check on its path comes before its use.
+const readWithMode = (path: string): { text: string; mode: number } => {
+  const fd = openSync(path, 'r');
+  try {
+    return { text: readFileSync(fd, 'utf8'), mode: fstatSync(fd).mode & 0o777 };
+  } finally {
+    closeSync(fd);
+  }
+};
 
 // `ecclium run-once` end to end on doubles (ADR 0033, ADR 0034): the real
 // loader of the configuration of the runner over real temporary folders,
@@ -815,8 +829,9 @@ describe('ecclium run-once --due with a routine into the wiki', () => {
     });
     // The same line in the file, which only the user of the runner reads.
     expect(t.notices()).toEqual([notice]);
-    expect(statSync(t.notifyFile).mode & 0o777).toBe(0o600);
-    for (const text of [...stdout, readFileSync(t.notifyFile, 'utf8')]) {
+    const kept = readWithMode(t.notifyFile);
+    expect(kept.mode).toBe(0o600);
+    for (const text of [...stdout, kept.text]) {
       expect(text).not.toContain('Gottesdienst');
       expect(text).not.toContain('Mesmer');
       expect(text).not.toContain('Dienstplan');
@@ -999,11 +1014,12 @@ describe('ecclium run-once --due with a draft', () => {
     expect(first.code).toBe(exitCodes.ok);
     expect(readdirSync(t.draftsDir)).toEqual([draftName]);
     const file = join(t.draftsDir, draftName);
-    const text = readFileSync(file, 'utf8');
+    const written = readWithMode(file);
+    const text = written.text;
     expect(text.startsWith('### Dienstplan 2026-W46\n')).toBe(true);
     expect(text).toContain('Gottesdienst: Mesmer');
     expect(text.endsWith(`\n\n${draftMarking}\n`)).toBe(true);
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(written.mode).toBe(0o600);
     expect(statSync(t.draftsDir).mode & 0o777).toBe(0o700);
     // A draft writes nothing in ChurchTools.
     expect(t.churchtoolsCalls).toEqual([]);
@@ -1020,11 +1036,12 @@ describe('ecclium run-once --due with a draft', () => {
     const second = await t.call(byHand(draftRoutine));
     expect(second.code).toBe(exitCodes.ok);
     expect(readdirSync(t.draftsDir)).toEqual([draftName]);
-    const replaced = readFileSync(file, 'utf8');
+    const again = readWithMode(file);
+    const replaced = again.text;
     expect(replaced).toContain('Gottesdienst: Sigrist');
     expect(replaced).not.toContain('Mesmer');
     expect(replaced.endsWith(`\n\n${draftMarking}\n`)).toBe(true);
-    expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(again.mode).toBe(0o600);
     t.assertNothingLeaked();
   });
 
