@@ -45,6 +45,11 @@ export interface ReportOptions {
    * endpoint only with `showValues` (ADR 0033). Never the path of a key.
    */
   readonly providers?: readonly ProviderSettings[] | undefined;
+  /**
+   * Leaves out the last line, which speaks of the server and `ct_whoami`;
+   * the check of the runner ends with its own (ADR 0033).
+   */
+  readonly withoutEnding?: boolean;
 }
 
 const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
@@ -423,6 +428,8 @@ export function renderConfigReport(
       lines.push(`  - ${warningText(code)}`);
     }
   }
-  lines.push(options.valid ? validText : invalidText);
+  if (options.withoutEnding !== true) {
+    lines.push(options.valid ? validText : invalidText);
+  }
   return Object.freeze(lines);
 }

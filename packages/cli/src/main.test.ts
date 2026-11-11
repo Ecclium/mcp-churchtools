@@ -2,7 +2,11 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { tokenVariableName } from '@ecclium/mcp-churchtools-core';
+import {
+  loadConfig,
+  tokenVariableName,
+  type Transport,
+} from '@ecclium/mcp-churchtools-core';
 import { makeCanary } from '@ecclium/mcp-churchtools-testkit';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -97,6 +101,7 @@ describe('the exit codes', () => {
       unavailable: 69,
       internal: 70,
       ioError: 74,
+      tempFail: 75,
       noPermission: 77,
       invalidConfig: 78,
       interrupted: 130,
@@ -719,4 +724,98 @@ describe('ecclium queue in the command line', () => {
       expect(result.stderr).toBe(`${internalErrorText}\n`);
     },
   );
+});
+
+describe('ecclium run-once in the command line', () => {
+  // The command builds the pipelines and the models, so run gives a
+  // promise for it; its own tests stand in runner/run-once.test.ts.
+  const runAsync = async (
+    args: readonly string[],
+    options: RunOptions = {},
+  ) => {
+    const taken = new Map<number, number[]>();
+    const writeSync: WriteSyncFn = (fd, buffer, offset, length) => {
+      const bytes = taken.get(fd) ?? [];
+      bytes.push(...buffer.subarray(offset, offset + length));
+      taken.set(fd, bytes);
+      return length;
+    };
+    const code = await run(args, {}, [], { ...options, writeSync });
+    const text = (fd: number): string =>
+      decoder.decode(new Uint8Array(taken.get(fd) ?? []));
+    return { code, stdout: text(1), stderr: text(2) };
+  };
+
+  it('refuses run-once without --due and without a routine with 64', () => {
+    const result = capture(['run-once'], {});
+    expect(result.code).toBe(exitCodes.usage);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toBe(`${usageProblemTexts.command}\n${usageLine}\n`);
+  });
+
+  it('refuses --due before a routine with 64, as an option of the other form', () => {
+    const result = capture(['run-once', '--due', 'wochen-bericht'], {});
+    expect(result.code).toBe(exitCodes.usage);
+    expect(result.stderr).toBe(`${usageProblemTexts.option}\n${usageLine}\n`);
+  });
+
+  it('refuses --due after a routine with 64, without naming the routine', () => {
+    const routine = `routine-${plain().toLowerCase()}`;
+    const result = capture(['run-once', routine, '--due'], {});
+    expect(result.code).toBe(exitCodes.usage);
+    expect(result.stderr).toBe(`${usageProblemTexts.option}\n${usageLine}\n`);
+    expect(result.stderr).not.toContain(routine);
+  });
+
+  it('refuses --preview without a routine with 64', () => {
+    const result = capture(['run-once', '--preview'], {});
+    expect(result.code).toBe(exitCodes.usage);
+    expect(result.stderr).toBe(`${usageProblemTexts.option}\n${usageLine}\n`);
+  });
+
+  it('hands a pass to the command, which turns a failure into the internal error', async () => {
+    const result = await runAsync(['run-once', '--due'], {
+      runOnce: {
+        load: () => {
+          throw new Error(plain());
+        },
+      },
+    });
+    expect(result.code).toBe(exitCodes.internal);
+    expect(result.stderr).toBe(`${internalErrorText}\n`);
+  });
+
+  it('reaches the check of the runner with config check --runner, which loads the kind runner', async () => {
+    const transports: Transport[] = [];
+    const result = await runAsync(['config', 'check', '--runner'], {
+      load: (sources) => {
+        transports.push(sources.transport);
+        return loadConfig(sources);
+      },
+    });
+    expect(transports).toEqual(['runner']);
+    expect(result.code).toBe(exitCodes.invalidConfig);
+    expect(lastLine(result.stdout)).toBe(
+      'Mit dieser Konfiguration startet der Runner nicht, oder eine Routine startet nicht. ChurchTools wurde nicht angefragt. Beheben Sie die Probleme und prüfen Sie dann erneut mit ‹ecclium config check --runner›.',
+    );
+    expect(result.stdout).not.toContain('ct_whoami');
+  });
+
+  it('lists run-once and the check of the runner in the help', () => {
+    const result = capture(['--help'], {});
+    expect(result.code).toBe(exitCodes.ok);
+    const lines = result.stdout.split('\n');
+    for (const start of [
+      '    --runner ',
+      '  run-once --due ',
+      '  run-once <Routine> ',
+      '    --preview ',
+    ]) {
+      expect(lines.some((line) => line.startsWith(start))).toBe(true);
+    }
+    expect(usageLine).toContain(
+      'ecclium run-once --due | ecclium run-once <Routine> [--preview]',
+    );
+    expect(capture(['run-once', '--help'], {}).stdout).toBe(result.stdout);
+  });
 });

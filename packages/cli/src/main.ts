@@ -5,7 +5,9 @@
  * `ecclium config check`, `ecclium audit verify` and `ecclium audit show`,
  * which read the audit files (ADR 0028), `ecclium policy init`
  * (ADR 0032), `ecclium undo` and `ecclium queue list`, `show`, `approve`
- * and `reject` (ADR 0029, ADR 0031). Wrong calls get fixed German
+ * and `reject` (ADR 0029, ADR 0031), and `ecclium run-once` with `--due`,
+ * a routine or a routine and `--preview` (ADR 0033, ADR 0034). Wrong calls
+ * get fixed German
  * texts on stderr, never an argument, and every exit code comes from
  * `exit-codes.ts`.
  *
@@ -42,6 +44,7 @@ import type { PolicyInitOptions } from './policy/init.js';
 import { policyInitTexts } from './policy/texts.js';
 import type { WriteSyncFn } from './send.js';
 import type { QueueOptions } from './queue/queue.js';
+import type { RunOnceOptions } from './runner/run-once.js';
 import type { UndoOptions } from './undo/undo.js';
 
 /** Replacements for tests. */
@@ -61,6 +64,11 @@ export interface RunOptions {
   readonly undo?: Pick<UndoOptions, 'load' | 'writeSync' | 'createTransport'>;
   /** Replacements for `queue`, such as the test double of ChurchTools. */
   readonly queue?: Pick<QueueOptions, 'load' | 'writeSync' | 'createTransport'>;
+  /** Replacements for `run-once`, such as the doubles of ChurchTools and a model. */
+  readonly runOnce?: Omit<
+    RunOnceOptions,
+    'environment' | 'execArgv' | 'mode' | 'output'
+  >;
 }
 
 /**
@@ -75,7 +83,7 @@ interface Command {
 
 const commands: readonly Command[] = Object.freeze(
   [
-    { words: ['config', 'check'], options: ['show-values'] },
+    { words: ['config', 'check'], options: ['show-values', 'runner'] },
     { words: ['audit', 'verify'], options: ['log'] },
     { words: ['audit', 'show'], options: ['object', 'since', 'until'] },
     { words: ['policy', 'init'], options: ['interactive'] },
@@ -84,6 +92,9 @@ const commands: readonly Command[] = Object.freeze(
     { words: ['queue', 'show'], options: [], argument: true },
     { words: ['queue', 'approve'], options: [], argument: true },
     { words: ['queue', 'reject'], options: [], argument: true },
+    // Without a routine only with --due, with one by hand or as a preview.
+    { words: ['run-once'], options: ['due'] },
+    { words: ['run-once'], options: ['preview'], argument: true },
   ].map((entry) =>
     Object.freeze({
       words: Object.freeze(entry.words),
@@ -103,6 +114,9 @@ const options = Object.freeze({
   until: Object.freeze({ type: 'string' }),
   interactive: Object.freeze({ type: 'boolean' }),
   overwrite: Object.freeze({ type: 'boolean' }),
+  runner: Object.freeze({ type: 'boolean' }),
+  due: Object.freeze({ type: 'boolean' }),
+  preview: Object.freeze({ type: 'boolean' }),
 } as const);
 
 // The only option that may stand more than once.
@@ -111,7 +125,11 @@ const repeatable: readonly string[] = Object.freeze(['log']);
 type Call =
   | { readonly kind: 'wrong'; readonly problem: UsageProblem }
   | { readonly kind: 'help' }
-  | { readonly kind: 'check'; readonly showValues: boolean }
+  | {
+      readonly kind: 'check';
+      readonly showValues: boolean;
+      readonly runner: boolean;
+    }
   | { readonly kind: 'verify'; readonly logs: readonly string[] }
   | {
       readonly kind: 'show';
@@ -129,7 +147,8 @@ type Call =
       readonly kind: 'queue';
       readonly action: 'list' | 'show' | 'approve' | 'reject';
       readonly queueId: string | undefined;
-    };
+    }
+  | { readonly kind: 'run'; readonly mode: RunOnceOptions['mode'] };
 
 // The kind of a refused call, from the code of the error of parseArgs
 // alone: its message repeats the argument, which can hold a token.
@@ -226,8 +245,28 @@ const readCall = (args: readonly string[]): Call => {
       return { kind: 'queue', action: 'approve', queueId: positionals[2] };
     case 'queue reject':
       return { kind: 'queue', action: 'reject', queueId: positionals[2] };
+    case 'run-once': {
+      const routineId = positionals[1];
+      if (routineId !== undefined) {
+        return {
+          kind: 'run',
+          mode: {
+            kind: values.preview === true ? 'preview' : 'manual',
+            routineId,
+          },
+        };
+      }
+      // Without a routine, a pass over the due ones must be asked for.
+      return values.due === true
+        ? { kind: 'run', mode: { kind: 'due' } }
+        : { kind: 'wrong', problem: 'command' };
+    }
     default:
-      return { kind: 'check', showValues: values['show-values'] === true };
+      return {
+        kind: 'check',
+        showValues: values['show-values'] === true,
+        runner: values.runner === true,
+      };
   }
 };
 
@@ -243,8 +282,8 @@ const readCall = (args: readonly string[]): Call => {
  * @param execArgv - The options Node.js was started with, which the check
  *   of the configuration reads for the options of TLS.
  * @param runOptions - Replacements for tests.
- * @returns The exit code, or for `policy init`, `undo` and `queue`, which
- *   build the pipeline, a promise of it.
+ * @returns The exit code, or for `policy init`, `undo`, `queue` and
+ *   `run-once`, which build the pipeline, a promise of it.
  * @example
  * ```ts
  * process.exitCode = await run(process.argv.slice(2), environment, process.execArgv);
@@ -273,7 +312,27 @@ export function run(
       case 'help':
         for (const line of helpLines) output.stdout(line);
         return exitCodes.ok;
-      case 'check':
+      case 'check': {
+        if (call.runner) {
+          // Loaded only for this check: it loads and prepares the routines.
+          const out = output;
+          return import('./runner/check.js')
+            .then(({ checkRunnerConfig }) =>
+              checkRunnerConfig({
+                environment: taken,
+                execArgv,
+                showValues: call.showValues,
+                output: out,
+                ...(runOptions.load === undefined
+                  ? {}
+                  : { load: runOptions.load }),
+              }),
+            )
+            .catch(() => {
+              out.stderr(internalErrorText);
+              return exitCodes.internal;
+            });
+        }
         return checkConfig({
           environment: taken,
           execArgv,
@@ -282,6 +341,7 @@ export function run(
           tokenFiles: runOptions.tokenFiles,
           load: runOptions.load,
         });
+      }
       case 'verify':
         return verifyAudit({ environment: taken, logs: call.logs, output });
       case 'show':
@@ -351,6 +411,26 @@ export function run(
               ...(call.queueId === undefined ? {} : { queueId: call.queueId }),
               output: out,
               ...runOptions.queue,
+            }),
+          )
+          .catch(() => {
+            out.stderr(internalErrorText);
+            return exitCodes.internal;
+          });
+      }
+      case 'run': {
+        // Loaded only for this command: it builds the pipelines, the
+        // models and the runner.
+        const out = output;
+        const mode = call.mode;
+        return import('./runner/run-once.js')
+          .then(({ runOnce }) =>
+            runOnce({
+              ...runOptions.runOnce,
+              environment: taken,
+              execArgv,
+              mode,
+              output: out,
             }),
           )
           .catch(() => {
