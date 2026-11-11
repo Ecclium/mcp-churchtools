@@ -44,6 +44,8 @@ export const configProblemCodes = Object.freeze([
   'drafts_dir_overlap',
   'notify_file_invalid',
   'notify_file_overlap',
+  'metrics_file_invalid',
+  'metrics_file_overlap',
   'url_missing',
   ...originCodes,
   'token_missing',

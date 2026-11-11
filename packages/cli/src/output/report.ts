@@ -74,6 +74,7 @@ const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
   runnerTokensDir: 'Token des Runners',
   draftsDir: 'Ordner der Entwürfe',
   notifyFile: 'Datei der Meldungen',
+  metricsFile: 'Metrikdatei',
   stdioSubject: 'Subjekt über stdio',
   logLevel: 'Stufe des Logs',
 });
@@ -104,7 +105,8 @@ type Hidden =
   | 'providers'
   | 'tokens'
   | 'drafts'
-  | 'notices';
+  | 'notices'
+  | 'metrics';
 
 interface Value {
   readonly text: string;
@@ -131,8 +133,9 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
     return { text: 'keine Datei' };
   }
   // Only the folders of state, of keys, of the routines, of the tokens of
-  // the runner and of the drafts, the files of the providers and of the
-  // notices, the key files and the zone may stay unset without a default.
+  // the runner and of the drafts, the files of the providers, of the
+  // notices and of the metrics, the key files and the zone may stay unset
+  // without a default.
   if (setting.origin === 'unset') {
     switch (setting.key) {
       case 'timeZone':
@@ -157,6 +160,8 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
         return { text: 'keine Entwürfe als Datei' };
       case 'notifyFile':
         return { text: 'keine Meldungen als Datei' };
+      case 'metricsFile':
+        return { text: 'keine Metrikdatei' };
       default:
         throw new TypeError(inconsistent);
     }
@@ -208,7 +213,9 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
                         ? 'drafts'
                         : setting.key === 'notifyFile'
                           ? 'notices'
-                          : 'path',
+                          : setting.key === 'metricsFile'
+                            ? 'metrics'
+                            : 'path',
         };
       }
       return isPrintable(shown.value)
@@ -251,6 +258,7 @@ const hiddenNames: Readonly<Record<Hidden, readonly [string, string]>> =
     tokens: ['der Ordner der Token des Runners', 'ihn'],
     drafts: ['der Ordner der Entwürfe', 'ihn'],
     notices: ['der Pfad der Datei der Meldungen', 'ihn'],
+    metrics: ['der Pfad der Metrikdatei', 'ihn'],
   });
 
 const maskedNote = (hidden: readonly Hidden[]): string => {
@@ -396,6 +404,7 @@ export function renderConfigReport(
             'tokens',
             'drafts',
             'notices',
+            'metrics',
           ] as const
         ).filter((entry) => hidden.has(entry)),
       ),

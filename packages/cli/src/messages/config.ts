@@ -184,6 +184,7 @@ const routinesDir = quote('ECCLIUM_ROUTINES_DIR');
 const runnerTokensDir = quote('ECCLIUM_RUNNER_TOKENS_DIR');
 const draftsDir = quote('ECCLIUM_DRAFTS_DIR');
 const notifyFile = quote('ECCLIUM_NOTIFY_FILE');
+const metricsFile = quote('ECCLIUM_RUNNER_METRICS_FILE');
 const providersFile = quote('ECCLIUM_PROVIDERS_FILE');
 // Why the file of the providers matters (ADR 0033).
 const providersReason =
@@ -526,6 +527,18 @@ const problems: Readonly<
     message(
       `Der Pfad in ${name} ist nicht absolut oder nicht in seiner eindeutigen Form geschrieben.`,
       'Ecclium normalisiert nichts, damit der Runner die Meldungen genau an die Datei anhängt, die Sie angeben, und der Start weiss nicht, aus welchem Ordner er aufgerufen wird.',
+      'Geben Sie den vollständigen Pfad an, der mit / beginnt, ohne Schrägstrich am Ende, ohne doppelte Schrägstriche und ohne ‹.› oder ‹..›.',
+    ),
+  metrics_file_overlap: (name = metricsFile) =>
+    message(
+      `Die Datei in ${name} liegt in einem Ordner, den Ecclium selbst füllt, oder ist die Datei der Meldungen oder der Ordner der Entwürfe.`,
+      'Der Runner ersetzt die Metrikdatei nach jedem Durchgang ganz. An einem dieser Orte löschte er eine Datei von Ecclium oder die Meldungen.',
+      'Wählen Sie eine eigene Datei ausserhalb der Ordner der Schlüssel und der Token-Dateien und der Ordner ‹audit›, ‹quota›, ‹snapshots›, ‹queue›, ‹runner› und ‹stop› des Zustandsordners, etwa ‹runner.prom› im Zustandsordner selbst oder in einem eigenen Ordner.',
+    ),
+  metrics_file_invalid: (name = metricsFile) =>
+    message(
+      `Der Pfad in ${name} ist nicht absolut oder nicht in seiner eindeutigen Form geschrieben.`,
+      'Ecclium normalisiert nichts, damit der Runner genau die Datei ersetzt, die Sie angeben, und der Start weiss nicht, aus welchem Ordner er aufgerufen wird.',
       'Geben Sie den vollständigen Pfad an, der mit / beginnt, ohne Schrägstrich am Ende, ohne doppelte Schrägstriche und ohne ‹.› oder ‹..›.',
     ),
   invalid_integer: (name = quote('ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE')) =>
