@@ -4,7 +4,7 @@
 
 Eine Routine beschreibt einen wiederkehrenden Ablauf: wann er läuft, was er in ChurchTools liest, wie ein Sprachmodell oder eine feste Prüfung daraus Blöcke mit festen Feldern füllt, in welche Vorlage die Blöcke kommen und wohin das Ergebnis geht ([ADR 0033](adr/0033-runner-modell-ohne-werkzeuge.md)). Das Modell bekommt nur Daten und die Form der Antwort, nie ein Tool. Ziel und Aktion stehen fest, bevor es etwas sieht, und die Richtlinie entscheidet, ob ein Lauf dorthin schreiben darf ([Richtlinie](policy.md)).
 
-Stand: Diese Version bringt das Format und den Lader der Routinen. Ein Runner, der Routinen nach ihrem Zeitplan ausführt, kommt mit einer späteren Version. Bis dahin liest Ecclium den Ordner der Routinen nicht.
+Stand: Der Runner führt Routinen mit `ecclium run-once` aus ([Runner](betrieb/runner.md)), der Daemon mit Zeitgeber kommt mit einer späteren Version. Der Server liest den Ordner der Routinen nicht.
 
 ## Ordner
 
