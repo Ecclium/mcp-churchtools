@@ -121,6 +121,8 @@ const dayOf = (time: number): IsoDate =>
  */
 export function composeRunnerPorts(options: RunnerPortsOptions): RunnerPorts {
   const { config, clock, writer, writing } = options;
+  // The mark of a draft, released when its run closes.
+  let draftRelease: (() => void) | undefined;
   const { stateDir, timeZone } = config;
   if (stateDir === undefined || timeZone === undefined) {
     throw new TypeError('The runner needs its folder of state and its zone.');
@@ -232,6 +234,9 @@ export function composeRunnerPorts(options: RunnerPortsOptions): RunnerPorts {
         close: () => {
           release?.();
           release = undefined;
+          // Runs go one after the other, so a draft belongs to this one.
+          draftRelease?.();
+          draftRelease = undefined;
           return built.close().catch(() => undefined);
         },
       }),
@@ -254,6 +259,9 @@ export function composeRunnerPorts(options: RunnerPortsOptions): RunnerPorts {
     if (draftsDir === undefined || inquiriesTo === undefined) {
       return Object.freeze({ ok: false, code: 'internal', final: false });
     }
+    // A draft is marked like a write until its run closes, so that no
+    // second signal cuts the steps after it (ADR 0033).
+    draftRelease ??= writing?.();
     try {
       const line = draftMarkingLineOf(
         {

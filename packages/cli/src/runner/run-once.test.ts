@@ -602,6 +602,8 @@ const setup = (options: SetupOptions = {}) => {
     onPatch: (): void => undefined,
     // What happens at each line of the log of a call, such as a signal.
     onLog: (() => undefined) as (line: string) => void,
+    // What happens at each line a call writes to stdout, such as a notice.
+    onStdout: (() => undefined) as (line: string) => void,
     // Whether the endpoint of the model answers with 503.
     modelDown: false,
   };
@@ -700,7 +702,10 @@ const setup = (options: SetupOptions = {}) => {
       execArgv: [],
       mode,
       output: {
-        stdout: (line) => out.push(line) > 0,
+        stdout: (line) => {
+          state.onStdout(line);
+          return out.push(line) > 0;
+        },
         stderr: (line) => err.push(line) > 0,
       },
       ...(more.load === undefined ? {} : { load: more.load }),
@@ -1674,6 +1679,25 @@ describe('the signals of ecclium run-once', () => {
     t.state.onLog = () => undefined;
     expect((await t.call(due)).code).toBe(exitCodes.ok);
     expect(t.patches()).toHaveLength(1);
+  });
+
+  it('cuts nothing after a draft at two signals before its run closes', async () => {
+    const t = setup({
+      ...draftOnly,
+      routines: { [draftRoutine]: { target: 'draft', notify: ['stdout'] } },
+    });
+    // At the notice, after the draft and the end of its trigger.
+    t.state.onStdout = () => {
+      t.driver.send('SIGTERM');
+      t.driver.send('SIGTERM');
+    };
+    const { code } = await t.call(due);
+    expect(code).toBe(exitCodes.terminated);
+    expect(t.driver.exits).toEqual([]);
+    expect(existsSync(join(t.draftsDir, draftName))).toBe(true);
+    expect(t.runLines()).toEqual([
+      expect.objectContaining({ runResult: 'drafted' }),
+    ]);
   });
 
   it('ends at once at a second signal while no write runs', async () => {
