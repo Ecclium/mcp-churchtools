@@ -42,7 +42,7 @@ Kommt eine Zeile des Audits nicht in die Audit-Datei, etwa bei voller Platte, sc
 
 ## Signale
 
-SIGTERM, SIGINT und SIGHUP brechen Lesen und Modell sofort ab, weil beide ausserhalb nichts ändern. Ein Schreibvorgang, der schon begonnen hat, endet noch, mit Snapshot, Lesen danach, seiner Zeile im Audit, dem Ende seiner Auslösung und seiner Meldung. Danach beginnt keine Routine mehr. Bei einem Lauf, der noch nicht schrieb, bleibt die Auslösung offen, der Versuch zählt, und ein späterer Aufruf versucht es wieder. Der Prozess endet nach SIGTERM mit 143, nach SIGINT mit 130 und nach SIGHUP, etwa wenn sein Terminal geschlossen wird, mit 129.
+SIGTERM, SIGINT und SIGHUP brechen Lesen und Modell sofort ab, weil beide ausserhalb nichts ändern. Ein Schreibvorgang oder Entwurf, der schon begonnen hat, endet noch, beim Wiki mit Snapshot und Lesen danach, und mit seiner Zeile im Audit, dem Ende seiner Auslösung und seiner Meldung. Danach beginnt keine Routine mehr. Bei einem Lauf, der noch nicht schrieb, bleibt die Auslösung offen, der Versuch zählt, und ein späterer Aufruf versucht es wieder. Der Prozess endet nach SIGTERM mit 143, nach SIGINT mit 130 und nach SIGHUP, etwa wenn sein Terminal geschlossen wird, mit 129.
 
 Ein zweites Signal beendet den Prozess sofort, ausser während eines Schreibvorgangs: Dann endet er direkt danach. Andere Signale wie SIGKILL halten ihn hart an. Geben Sie einem Container des Runners beim Stoppen mindestens 60 Sekunden, bei Docker Compose etwa mit `stop_grace_period: 60s`, damit ein Schreibvorgang nie von SIGKILL getroffen wird.
 
