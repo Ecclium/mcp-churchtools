@@ -36,6 +36,7 @@ export type UndoProblem =
   | 'run_unknown'
   | 'run_nothing_written'
   | 'audit_incomplete'
+  | 'queued_missing'
   | 'routine_busy'
   | 'routine_lock_failed';
 
@@ -75,6 +76,10 @@ export const undoProblems: Readonly<Record<UndoProblem, UndoEnding>> =
     audit_incomplete: ending(
       'Ecclium konnte nicht jede Audit-Datei der letzten 45 Tage ganz lesen, eine Zeile darin passt nicht zum Format der Ereignisse, oder der Ordner ‹audit› änderte sich beim Lesen. Ein Schreibvorgang, der zu einem Lauf gehört, könnte darin stehen, und Ecclium nimmt dann nichts zurück, damit es weder mit dem falschen Konto schreibt noch einen Schreibvorgang auslässt. Prüfen Sie die Dateien mit ‹ecclium audit verify› und versuchen Sie es erneut.',
       exitCodes.ioError,
+    ),
+    queued_missing: ending(
+      'Die Freigabe nennt einen Eintrag, dessen Zeile Ecclium in den Audit-Dateien der letzten 45 Tage nicht findet, etwa weil ‹ECCLIUM_AUDIT_RETENTION_MONTHS› die Datei schon gelöscht hat. Ob der Eintrag aus einem Lauf einer Routine stammt, bleibt damit offen, und Ecclium nimmt nichts zurück, damit es nicht mit dem falschen Konto schreibt. Nehmen Sie den Schreibvorgang in ChurchTools von Hand zurück.',
+      exitCodes.noInput,
     ),
     routine_busy: ending(
       'Ein Lauf dieser Routine hält gerade ihre Sperrdatei. Ecclium nimmt nichts zurück, solange er schreiben könnte. Versuchen Sie es nach seinem Ende erneut; eine Sperrdatei eines beendeten Laufs gilt spätestens 35 Minuten nach seinem Beginn als verlassen.',

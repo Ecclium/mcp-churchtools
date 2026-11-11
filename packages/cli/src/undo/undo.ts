@@ -402,10 +402,15 @@ export async function undoWrite(options: UndoOptions): Promise<ExitCode> {
     // undo needs the folder only to write its own line.
     if (opened.ok) {
       const found = findRunOfWrite({ folder: opened.folder, eventId, since });
-      if (found.run === undefined && !found.complete) {
-        return refuse(output, 'audit_incomplete');
+      // A write of a run never goes back with the token of the server: when
+      // the files cannot tell, nothing is taken back (ADR 0033).
+      if (found.kind === 'unknown') {
+        return refuse(
+          output,
+          found.reason === 'incomplete' ? 'audit_incomplete' : 'queued_missing',
+        );
       }
-      run = found.run;
+      run = found.kind === 'run' ? found.run : undefined;
     } else if (opened.code !== 'audit_folder_missing') {
       output.stderr(auditFolderTexts[opened.code]);
       return folderExitCodes[opened.code];

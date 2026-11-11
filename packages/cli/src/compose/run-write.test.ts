@@ -1570,6 +1570,63 @@ describe('ecclium undo <Kennung> of a write of a run', () => {
     expect(refused.calls).toEqual([]);
   });
 
+  it('takes a write of no run back as before, also beside a line that does not fit the format', async () => {
+    const setupOf = setup();
+    const { runOnce, undoCommand, auditFileLines, stateDir } = setupOf;
+    const { bound } = await runOnce();
+    const [write] = writtenLines(auditFileLines(), bound.runId);
+    const interactive = '00000000-0000-4000-8000-0000000007d5';
+    addAuditLines(stateDir, [
+      '{"v":1}',
+      copyOfWrite(write, {
+        eventId: interactive,
+        runId: undefined,
+        routineId: undefined,
+        actor: { kind: 'user', id: 'person-id-1' },
+        mode: 'interactive',
+        confirmation: 'elicitation',
+      }),
+    ]);
+    // The line proves that the write belongs to no run: the undo goes on
+    // as before and finds no snapshot, instead of refusing for the
+    // damaged line.
+    const missing = await undoCommand({ eventId: interactive });
+    expect(missing.code).toBe(exitCodes.noInput);
+    expect(missing.stderr.join('\n')).toContain(
+      'Unter dieser Kennung findet Ecclium keinen Snapshot',
+    );
+  });
+
+  it('takes nothing back for an approval whose entry no line of the range queued', async () => {
+    const { undoCommand, stateDir, runOnce } = setup();
+    await runOnce();
+    const approval = '00000000-0000-4000-8000-0000000007e6';
+    addAuditLines(stateDir, [
+      {
+        v: 1,
+        eventId: approval,
+        ts: '2026-11-11T07:45:00.000Z',
+        type: 'approval',
+        tenantId: 'default',
+        actor: { kind: 'operator', id: 'local-stdio' },
+        mode: 'operator',
+        queueId: '00000000-0000-4000-8000-0000000007e7',
+        decision: 'approved',
+        writeState: 'verified',
+        confirmation: 'operator',
+        outcome: 'ok',
+        objectRefs: [],
+        durationMs: 4,
+      },
+    ]);
+    const refused = await undoCommand({ eventId: approval });
+    expect(refused.code).toBe(exitCodes.noInput);
+    expect(refused.stderr.join('\n')).toContain(
+      'Die Freigabe nennt einen Eintrag, dessen Zeile Ecclium in den Audit-Dateien der letzten 45 Tage nicht findet',
+    );
+    expect(refused.calls).toEqual([]);
+  });
+
   it('takes nothing back while an audit file cannot be read whole, when the write names no run there', async () => {
     const setupOf = setup();
     const { runOnce, undoCommand, auditFileLines, stateDir } = setupOf;
