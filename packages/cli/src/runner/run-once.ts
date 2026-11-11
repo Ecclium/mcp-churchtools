@@ -3,45 +3,26 @@
  * routines that are due (`--due`), one routine by hand (`<Routine>`), or
  * a preview of one routine (`<Routine> --preview`), then the end of the
  * process. A container that cron starts every 15 minutes calls it with
- * `--due`; the daemon, later, runs the same pass at each trigger.
+ * `--due`; the daemon `ecclium runner` runs the same pass at each trigger.
  *
- * Where it stands: the composition root of a call. It starts the runner,
- * makes the folders a pass needs, builds the models of the routines it
- * runs, the ports of the pass and the pass itself, reports each routine on
- * stderr, a preview on stdout and a notice where the routine says, and
- * ends with one exit code after sysexits: 0 when every run did its work or
- * nothing was due, 75 when a later call may pass, 74 when a file of the
- * runner failed, 65 when a run ended for good on its data or its answer,
- * 77 for a kill switch, the policy, a right or a refused token, 78 for the
- * configuration or a routine that does not start, 70 for an internal
- * error. Of several, the worst counts (ADR 0033).
+ * Where it stands: the command around a process of the runner. It starts
+ * the runner, opens the process, watches the signals, reports each routine
+ * on stderr, a preview on stdout and a notice where the routine says,
+ * writes the metrics file, and ends with one exit code after sysexits: 0
+ * when every run did its work or nothing was due, 75 when a later call may
+ * pass, 74 when a file of the runner failed, 65 when a run ended for good
+ * on its data or its answer, 77 for a kill switch, the policy, a right or
+ * a refused token, 78 for the configuration or a routine that does not
+ * start, 70 for an internal error. Of several, the worst counts
+ * (ADR 0033). After SIGTERM or SIGINT it ends with 143 or 130, before any
+ * other code.
  *
  * @packageDocumentation
  */
-import {
-  type ConfigResult,
-  type ConfigSources,
-  type GuardedModel,
-  type PrivateFileCode,
-  type ProviderSettings,
+import type {
+  ConfigResult,
+  ConfigSources,
 } from '@ecclium/mcp-churchtools-core';
-import {
-  anchorEventOf,
-  createDefaultTenantLogger,
-  createFileQuotaStore,
-  createLogger,
-  createRoutineLocks,
-  createStderrWriter,
-  createWriteHalt,
-  openAuditFile,
-  prepareDayKeyFolder,
-  preparePrivateFolder,
-  prepareQueueFolder,
-  prepareQuotaFolder,
-  prepareSnapshotFolder,
-  routineLockLimits,
-  systemClock,
-} from '@ecclium/mcp-churchtools-core/composition';
 import type {
   HttpTransport,
   HttpTransportOptions,
@@ -49,31 +30,23 @@ import type {
 import type { Clock } from '@ecclium/mcp-churchtools-plugin-api';
 import {
   type PassReport,
-  previewRoutine,
-  runByHand,
   type RunnerSeverity,
-  runDue,
   worseOf,
 } from '@ecclium/mcp-churchtools-runner';
 import type { RoutineFileSystem } from '@ecclium/mcp-churchtools-workflows';
 
-import { composeModelProviders } from '../compose/model.js';
-import { privateFileCodeOf } from '../compose/private-file-code.js';
-import { keepsQueue } from '../compose/queue.js';
-import { keepsSnapshots } from '../compose/snapshots.js';
+import type { composeModelProviders } from '../compose/model.js';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
-import {
-  auditFileMessage,
-  dayKeyFolderMessage,
-  type Message,
-  problemText,
-  queueFolderMessage,
-  quotaFolderMessage,
-  snapshotFolderMessage,
-} from '../messages/index.js';
+import { problemText } from '../messages/index.js';
 import { type Output, terminalLines } from '../output/index.js';
 import type { WriteSyncFn } from '../send.js';
-import { composeRunnerPorts, hostName } from './ports.js';
+import {
+  processRunnerHost,
+  type RunnerHost,
+  type SignalWatch,
+  watchSignals,
+} from './host.js';
+import { openRunnerProcess } from './process.js';
 import {
   type RunnerMode,
   type RunnerStartOptions,
@@ -81,13 +54,12 @@ import {
   startRunner,
 } from './start.js';
 import {
-  modelKeyText,
   passSummaryText,
   previewReportText,
-  providerText,
   refusedText,
   routineReportText,
   routinesProblemText,
+  runnerProcessTexts,
   runnerStartTexts,
 } from './texts.js';
 
@@ -117,15 +89,24 @@ export interface RunOnceOptions {
   >[0]['readKey'];
   /** Replaces the clock. */
   readonly clock?: Clock;
-  /** Stops the call; the daemon and the signals come later. */
-  readonly signal?: AbortSignal;
+  /** Replaces the process for its signals, faults, end and waits. */
+  readonly host?: RunnerHost;
 }
 
 // The ID of a routine, as its schema takes it.
 const routinePattern = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
-// The exit code of a severity of the runner.
-const exitCodeOf = (severity: RunnerSeverity): ExitCode => {
+/**
+ * The exit code of a severity of the runner, after sysexits.
+ *
+ * @param severity - How bad a pass or a run ended.
+ * @returns The exit code.
+ * @example
+ * ```ts
+ * exitCodeOf('temporary'); // 75
+ * ```
+ */
+export const exitCodeOf = (severity: RunnerSeverity): ExitCode => {
   switch (severity) {
     case 'ok':
       return exitCodes.ok;
@@ -144,12 +125,21 @@ const exitCodeOf = (severity: RunnerSeverity): ExitCode => {
   }
 };
 
-// A text of the start about a folder it could not use, said of the runner.
-const runnerText = (message: Message): string =>
-  `${message.what.replace(', und der Start bricht ab.', ', und der Runner startet nicht.')} ${message.why} ${message.action}`;
-
-// The problem that keeps the runner from starting, on stderr.
-const reportStart = (output: Output, problem: RunnerStartProblem): ExitCode => {
+/**
+ * The problem that keeps the runner from starting, on stderr.
+ *
+ * @param output - Where the text goes.
+ * @param problem - The problem.
+ * @returns 78, or 64 for a routine by hand that is not in the folder.
+ * @example
+ * ```ts
+ * if (!started.ok) return reportStart(output, started.problem);
+ * ```
+ */
+export const reportStart = (
+  output: Output,
+  problem: RunnerStartProblem,
+): ExitCode => {
   switch (problem.kind) {
     case 'config':
       for (const item of problem.problems) output.stderr(problemText(item));
@@ -202,7 +192,7 @@ export async function runOnce(options: RunOnceOptions): Promise<ExitCode> {
       : { createCatalog: options.createCatalog }),
   });
   if (!started.ok) return reportStart(output, started.problem);
-  const { config, catalog, routines, refused, target } = started;
+  const { refused, target } = started;
 
   // Each routine that does not start, by name. For a call by hand or a
   // preview only the one routine decides the exit code.
@@ -212,232 +202,78 @@ export async function runOnce(options: RunOnceOptions): Promise<ExitCode> {
   if (mode.kind !== 'due' && target === undefined) {
     return exitCodes.invalidConfig;
   }
-  const running =
-    mode.kind === 'due' ? routines : target === undefined ? [] : [target];
 
-  // The loader of the runner requires the folder of state.
-  const { stateDir } = config;
-  if (stateDir === undefined) return exitCodes.invalidConfig;
-  const prepared = prepareQuotaFolder(stateDir);
-  if (!prepared.ok) {
-    output.stderr(runnerText(quotaFolderMessage(prepared.code)));
-    return exitCodes.invalidConfig;
-  }
-  // The folder of the drafts, made private when a run may write one.
-  if (
-    mode.kind !== 'preview' &&
-    config.draftsDir !== undefined &&
-    running.some((run) => run.loaded.routine.output.target === 'draft')
-  ) {
-    try {
-      preparePrivateFolder(config.draftsDir);
-    } catch (error) {
-      const code = privateFileCodeOf(error);
-      if (code === undefined) throw error;
-      output.stderr(
-        `Der Ordner aus ‹ECCLIUM_DRAFTS_DIR› lässt sich nicht als privater Ordner verwenden, Code ‹${code}›, und der Runner startet nicht. Ein Entwurf enthält Namen von Personen; nur der Benutzer des Runners darf den Ordner lesen. Legen Sie ihn mit den Rechten 700 an, als der Benutzer, unter dem der Runner läuft.`,
-      );
-      return exitCodes.invalidConfig;
-    }
-  }
-  // The folders a write into the wiki needs, as the start over stdio and
-  // `ecclium queue approve` prepare them: the day keys and the records of
-  // the snapshots, and the queue of approvals (ADR 0031). Without them the
-  // snapshot of every write fails and the write ends as an internal error.
-  // A preview writes nothing.
-  if (
-    mode.kind !== 'preview' &&
-    running.some((run) => run.loaded.routine.output.target === 'wiki')
-  ) {
-    const steps: (readonly [() => void, (code: PrivateFileCode) => Message])[] =
-      [];
-    if (keepsSnapshots(config)) {
-      const { keysDir } = config;
-      steps.push(
-        [
-          () => {
-            prepareDayKeyFolder(keysDir, 'snapshot');
-          },
-          dayKeyFolderMessage,
-        ],
-        [
-          () => {
-            prepareSnapshotFolder(stateDir);
-          },
-          snapshotFolderMessage,
-        ],
-      );
-    }
-    if (keepsQueue(config)) {
-      steps.push([
-        () => {
-          prepareQueueFolder(stateDir);
-        },
-        queueFolderMessage,
-      ]);
-    }
-    for (const [prepare, message] of steps) {
-      try {
-        prepare();
-      } catch (error) {
-        const code = privateFileCodeOf(error);
-        if (code === undefined) throw error;
-        output.stderr(runnerText(message(code)));
-        return exitCodes.invalidConfig;
-      }
-    }
-  }
-
-  const clock = options.clock ?? systemClock;
-  const opened = openAuditFile({
-    stateDir,
-    clock,
-    pid: process.pid,
-    retentionMonths: config.auditRetentionMonths,
+  const opened = openRunnerProcess({
+    started,
+    mode,
+    output,
+    ...(options.writeSync === undefined
+      ? {}
+      : { writeSync: options.writeSync }),
+    ...(options.createTransport === undefined
+      ? {}
+      : { createTransport: options.createTransport }),
+    ...(options.createModelTransport === undefined
+      ? {}
+      : { createModelTransport: options.createModelTransport }),
+    ...(options.readModelKey === undefined
+      ? {}
+      : { readModelKey: options.readModelKey }),
+    ...(options.clock === undefined ? {} : { clock: options.clock }),
   });
-  if (!opened.ok) {
-    output.stderr(runnerText(auditFileMessage(opened.code)));
-    return exitCodes.invalidConfig;
-  }
-  const auditFile = opened.writer;
-  // Everything after the open of the audit file closes it again, also
-  // after a fault.
-  let processLogger: ReturnType<typeof createLogger> | undefined;
+  if (!opened.ok) return opened.code;
+  const runner = opened.process;
+  let watch: SignalWatch;
   try {
-    const writer = createStderrWriter(
-      options.writeSync === undefined ? {} : { writeSync: options.writeSync },
+    watch = watchSignals(
+      options.host ?? processRunnerHost(),
+      runner.logger,
+      () => output.stderr(runnerProcessTexts.signal),
     );
-    // The anchor of the chain goes to the log when the file closes, as with
-    // the server and `ecclium queue` (ADR 0028).
-    const anchorLogger = createLogger({
-      writer,
-      clock,
-      minLevel: 'info',
-      anchors: true,
-    });
-    auditFile.attach({
-      anchor: (anchor) => {
-        const { file: name, seq, hash } = anchor;
-        anchorLogger.info(anchorEventOf(anchor), { file: name, seq, hash });
-      },
-      swept: () => undefined,
-    });
-    processLogger = createLogger({ writer, clock, minLevel: 'info' });
-
-    // Only the providers of the routines this call runs; the key of each is
-    // read for this call, so a new key takes effect without a restart.
-    const aliases = new Set(running.map((run) => run.model));
-    const providers: ProviderSettings[] = (config.providers ?? []).filter(
-      (provider) => aliases.has(provider.alias),
-    );
-    // One provider at a time: a key file that cannot be used stops only the
-    // routines of its model, as a token file stops only its routine.
-    const models = new Map<string, GuardedModel>();
-    const refusedModels = new Map<string, string>();
-    const closers: (() => Promise<void>)[] = [];
-    const modelLogger = createDefaultTenantLogger({
-      writer,
-      clock,
-      minLevel: config.logLevel,
-    });
-    for (const provider of providers) {
-      output.stderr(providerText(provider));
-      const built = composeModelProviders({
-        providers: [provider],
-        logger: modelLogger,
-        clock,
-        ...(options.readModelKey === undefined
-          ? {}
-          : { readKey: options.readModelKey }),
-        ...(options.createModelTransport === undefined
-          ? {}
-          : { createTransport: options.createModelTransport }),
-      });
-      if (built.ok) {
-        for (const [alias, model] of built.models) models.set(alias, model);
-        closers.push(() => built.close());
-      } else {
-        refusedModels.set(built.alias, built.code);
-        output.stderr(modelKeyText(built.alias, built.code));
-      }
-    }
-    try {
-      const ports = composeRunnerPorts({
-        config,
-        catalog,
-        routines,
-        models,
-        refusedModels,
-        writer,
-        clock,
-        auditFile,
-        store: createFileQuotaStore({
-          stateDir,
-          clock,
-          pid: process.pid,
-          host: hostName(),
-        }),
-        locks: createRoutineLocks({
-          stateDir,
-          clock,
-          pid: process.pid,
-          host: hostName(),
-        }),
-        writeHalt: createWriteHalt(),
-        output,
-        pid: process.pid,
-        ...(options.createTransport === undefined
-          ? {}
-          : { createTransport: options.createTransport }),
-      });
-      const passOptions = {
-        signal: options.signal ?? new AbortController().signal,
-        maxRunMs: routineLockLimits.maxRunMs,
-      };
-      if (mode.kind === 'preview') {
-        // The start keeps a preview without its routine from here.
-        if (target === undefined) return exitCodes.invalidConfig;
-        const shown = await previewRoutine(target, ports, passOptions);
-        if (shown.section !== undefined) {
-          // Line by line: the terminal output makes one line safe and would
-          // show each line break of the section as an escape.
-          for (const raw of shown.section.trimEnd().split('\n')) {
-            for (const line of terminalLines('', raw)) output.stdout(line);
-          }
+  } catch (error) {
+    // The audit file closes also when the signals cannot be watched.
+    runner.close();
+    throw error;
+  }
+  try {
+    runner.sweep();
+    if (mode.kind === 'preview') {
+      const shown = await runner.preview(watch);
+      if (shown.section !== undefined) {
+        // Line by line: the terminal output makes one line safe and would
+        // show each line break of the section as an escape.
+        for (const raw of shown.section.trimEnd().split('\n')) {
+          for (const line of terminalLines('', raw)) output.stdout(line);
         }
-        output.stderr(previewReportText(shown));
-        return exitCodeOf(shown.severity);
       }
-      let pass: PassReport;
-      if (mode.kind === 'manual') {
-        if (target === undefined) return exitCodes.invalidConfig;
-        const done = await runByHand(target, ports, passOptions);
-        pass = { routines: [done], severity: done.severity };
-      } else {
-        pass = await runDue(routines, ports, passOptions);
-      }
-      for (const item of pass.routines) {
-        const text = routineReportText(item);
-        if (text !== undefined) output.stderr(text);
-      }
-      output.stderr(
-        passSummaryText({
-          ran: pass.routines.filter((item) => item.status === 'ran').length,
-          skipped: pass.routines.filter(
-            (item) => item.status !== 'ran' && item.status !== 'not_due',
-          ).length,
-          refused: refused.length,
-        }),
-      );
-      severity = worseOf(severity, pass.severity);
-      return exitCodeOf(severity);
-    } finally {
-      await Promise.all(closers.map((close) => close().catch(() => undefined)));
+      output.stderr(previewReportText(shown));
+      return watch.code() ?? exitCodeOf(shown.severity);
     }
+    const pass: PassReport = await runner.pass(watch);
+    for (const item of pass.routines) {
+      const text = routineReportText(item);
+      if (text !== undefined) output.stderr(text);
+    }
+    output.stderr(
+      passSummaryText({
+        ran: pass.routines.filter((item) => item.status === 'ran').length,
+        skipped: pass.routines.filter(
+          (item) => item.status !== 'ran' && item.status !== 'not_due',
+        ).length,
+        refused: refused.length,
+      }),
+    );
+    severity = worseOf(severity, pass.severity);
+    // The metrics file carries the values of the routines this call did
+    // not run; it mirrors only and decides about no run (ADR 0033).
+    const after = await runner.after(pass.routines, false);
+    if (after.metrics === false) {
+      output.stderr(runnerProcessTexts.metrics_failed);
+      severity = worseOf(severity, 'file');
+    }
+    return watch.code() ?? exitCodeOf(severity);
   } finally {
-    processLogger?.info('audit_file_closed', {
-      count: Math.min(auditFile.counts().failed, 1_000_000),
-    });
-    auditFile.close();
+    watch.dispose();
+    runner.close();
   }
 }

@@ -275,3 +275,63 @@ export function passSummaryText(counts: {
 }): string {
   return `Durchgang beendet: ${String(counts.ran)} ${counts.ran === 1 ? 'Lauf' : 'Läufe'}, ${String(counts.skipped)} übersprungen, ${String(counts.refused)} ${counts.refused === 1 ? 'Routine startet' : 'Routinen starten'} nicht.`;
 }
+
+/**
+ * Why the folder of the drafts cannot be used: the runner does not start.
+ *
+ * @param code - The code of the private folder, such as `unsafe`.
+ * @returns One text.
+ * @example
+ * ```ts
+ * draftsFolderText('unsafe');
+ * ```
+ */
+export function draftsFolderText(code: string): string {
+  return `Der Ordner aus ‹ECCLIUM_DRAFTS_DIR› lässt sich nicht als privater Ordner verwenden, Code ${quote(code)}, und der Runner startet nicht. Ein Entwurf enthält Namen von Personen; nur der Benutzer des Runners darf den Ordner lesen. Legen Sie ihn mit den Rechten 700 an, als der Benutzer, unter dem der Runner läuft.`;
+}
+
+/**
+ * Why the folder of the metrics file cannot be used: the runner does not
+ * start.
+ *
+ * @param code - The code of the private folder, such as `unsafe`.
+ * @returns One text.
+ * @example
+ * ```ts
+ * metricsFolderText('unsafe');
+ * ```
+ */
+export function metricsFolderText(code: string): string {
+  return `Der Ordner der Metrikdatei aus ‹ECCLIUM_RUNNER_METRICS_FILE› lässt sich nicht als privater Ordner verwenden, Code ${quote(code)}, und der Runner startet nicht. Wie jede Datei von Ecclium liegt die Metrikdatei in einem Ordner nur für den Benutzer des Runners. Legen Sie den Ordner mit den Rechten 700 an, als der Benutzer, unter dem der Runner läuft, oder lassen Sie ihn den Runner anlegen. Eine Überwachung liest die Datei als derselbe Benutzer.`;
+}
+
+/** The texts of the process of the runner and of its daemon. */
+export const runnerProcessTexts = Object.freeze({
+  signal:
+    'Der Runner hält an: Lesen und Modell brechen ab, ein Schreibvorgang, der begonnen hat, endet noch, und keine weitere Routine beginnt. Ein zweites Signal beendet ihn sofort, ausser während eines Schreibvorgangs.',
+  metrics_failed:
+    'Die Metrikdatei aus ‹ECCLIUM_RUNNER_METRICS_FILE› liess sich nicht schreiben. Die Läufe selbst sind davon nicht betroffen. Prüfen Sie, dass ihr Ordner Ihrem Benutzer gehört, nur für Sie zugänglich ist und Platz hat.',
+  no_routine:
+    'Der Runner startet nicht: Keine Routine im Ordner aus ‹ECCLIUM_ROUTINES_DIR› startet. Die Zeilen darüber nennen den Grund für jede.',
+  halted:
+    'Der Runner endet mit 75: Eine Zeile des Audits erreichte die Audit-Datei nicht, und seither schreibt der Prozess nichts mehr. Ein Neustart hebt die Sperre. Prüfen Sie die Audit-Datei im Zustandsordner, etwa den freien Platz.',
+});
+
+/**
+ * The first line of the daemon, after the routines that do not start.
+ *
+ * @param counts - What the start counted.
+ * @param counts.routines - The routines that run.
+ * @param counts.refused - The routines that do not start.
+ * @returns One text.
+ * @example
+ * ```ts
+ * daemonStartText({ routines: 2, refused: 0 });
+ * ```
+ */
+export function daemonStartText(counts: {
+  readonly routines: number;
+  readonly refused: number;
+}): string {
+  return `Der Runner läuft mit ${String(counts.routines)} ${counts.routines === 1 ? 'Routine' : 'Routinen'}, ${String(counts.refused)} ${counts.refused === 1 ? 'startet' : 'starten'} nicht. Er sieht die Routinen zu ihrer Zeit an, spätestens alle 15 Minuten.`;
+}

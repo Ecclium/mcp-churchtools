@@ -50,6 +50,7 @@ export const variableNames = Object.freeze([
   'ECCLIUM_RUNNER_TOKENS_DIR',
   'ECCLIUM_DRAFTS_DIR',
   'ECCLIUM_NOTIFY_FILE',
+  'ECCLIUM_RUNNER_METRICS_FILE',
   'ECCLIUM_STDIO_SUBJECT',
   'ECCLIUM_LOG_LEVEL',
 ] as const);
@@ -65,6 +66,9 @@ export const tokenVariableName = 'ECCLIUM_CHURCHTOOLS_TOKEN';
 
 /** The name of a variable whose value is no secret. */
 export type PlainVariableName = Exclude<VariableName, typeof tokenVariableName>;
+
+// The name of a private file of the runner, as the private files take it.
+const privateFileNamePattern = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 /** The variables whose value is no secret, frozen, in table order. */
 export const plainVariableNames: readonly PlainVariableName[] = Object.freeze(
@@ -681,6 +685,21 @@ export const variables: readonly Variable[] = Object.freeze([
     stdioOnly: false,
     runner: true,
   }),
+  // The metrics file of the runner, in the text format of Prometheus: per
+  // routine the next run, the last success and the last status, and the
+  // head of the chain of the open audit file (ADR 0028, ADR 0033). The
+  // runner replaces it whole after each pass and prepares its folder as a
+  // private one, so the start checks the form of the path alone.
+  row({
+    name: 'ECCLIUM_RUNNER_METRICS_FILE',
+    kind: 'path',
+    maxLength: 4096,
+    choices: [],
+    defaultValue: undefined,
+    secret: false,
+    stdioOnly: false,
+    runner: true,
+  }),
   row({
     name: 'ECCLIUM_STDIO_SUBJECT',
     kind: 'subject',
@@ -798,6 +817,17 @@ export const variableSchemas: Readonly<
     .min(1)
     .max(4096)
     .refine((value) => isNormalizedAbsolutePath(value)),
+  // A name the private files take as well (files/private-files.ts), so
+  // that a path the start takes is one the runner can write.
+  ECCLIUM_RUNNER_METRICS_FILE: z
+    .string()
+    .min(1)
+    .max(4096)
+    .refine(
+      (value) =>
+        isNormalizedAbsolutePath(value) &&
+        privateFileNamePattern.test(value.slice(value.lastIndexOf('/') + 1)),
+    ),
   ECCLIUM_STDIO_SUBJECT: z.string().max(32).regex(stdioSubjectPattern),
   ECCLIUM_LOG_LEVEL: choiceOf('ECCLIUM_LOG_LEVEL'),
 });
@@ -838,6 +868,8 @@ export const environmentSchema = z.strictObject({
     variableSchemas.ECCLIUM_RUNNER_TOKENS_DIR.optional(),
   ECCLIUM_DRAFTS_DIR: variableSchemas.ECCLIUM_DRAFTS_DIR.optional(),
   ECCLIUM_NOTIFY_FILE: variableSchemas.ECCLIUM_NOTIFY_FILE.optional(),
+  ECCLIUM_RUNNER_METRICS_FILE:
+    variableSchemas.ECCLIUM_RUNNER_METRICS_FILE.optional(),
   ECCLIUM_STDIO_SUBJECT: variableSchemas.ECCLIUM_STDIO_SUBJECT.optional(),
   ECCLIUM_LOG_LEVEL: variableSchemas.ECCLIUM_LOG_LEVEL.optional(),
 });

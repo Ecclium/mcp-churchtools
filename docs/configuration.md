@@ -32,6 +32,7 @@ Die Spalte «Server nur über stdio» sagt, ob der Server die Variable nur im Be
 | `ECCLIUM_RUNNER_TOKENS_DIR` | absoluter Pfad | keine | nein | nein | ja |
 | `ECCLIUM_DRAFTS_DIR` | absoluter Pfad | keine | nein | nein | ja |
 | `ECCLIUM_NOTIFY_FILE` | absoluter Pfad | keine | nein | nein | ja |
+| `ECCLIUM_RUNNER_METRICS_FILE` | absoluter Pfad | keine | nein | nein | ja |
 | `ECCLIUM_STDIO_SUBJECT` | Bezeichnung mit höchstens 32 Zeichen | `local-stdio` | nein | ja | nein |
 | `ECCLIUM_LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` | nein | nein | ja |
 
@@ -122,6 +123,10 @@ Absoluter Pfad des Ordners, in den der Runner die Entwürfe der Routinen mit dem
 ## `ECCLIUM_NOTIFY_FILE`
 
 Absoluter Pfad der Datei, an die der Runner nach jedem Lauf einer Routine, deren `notify` den Kanal `file` nennt, eine Zeile in JSON anhängt: Zeit, Routine, Periode, Lauf, Ausgang und Code, nie Inhalt. Fehlt die Datei, legt der Runner sie mit den Rechten 600 an. Eine bestehende Datei muss dem Benutzer gehören, unter dem Ecclium läuft, darf für die Gruppe und andere Benutzer keine Rechte haben und kein Link sein. Nur der Runner schreibt hinein. Beim Start prüft Ecclium die Form des Pfads und dass er nicht im Ordner der Schlüssel, im Ordner der Token-Dateien oder in einem der Ordner `audit`, `quota`, `snapshots`, `queue`, `runner` oder `stop` des Zustandsordners liegt, weil ein Entwurf oder eine Meldung dort eine Datei von Ecclium verdürbe. Die Datei wächst mit jedem Lauf. Wie bei einem Log ist das Rotieren Ihre Sache als Betreiber, etwa mit logrotate. Nicht gesetzt: Eine Routine, deren `notify` den Kanal `file` nennt, startet nicht.
+
+## `ECCLIUM_RUNNER_METRICS_FILE`
+
+Absoluter Pfad der Metrikdatei des Runners im Textformat von Prometheus (`docs/betrieb/runner.md`): je Routine die nächste Zeit, zu der der Runner sie wieder ansieht, das Ende des letzten erfolgreichen Laufs und der Status des letzten Laufs, dazu der Kopf der Kette der offenen Audit-Datei. Der Runner ersetzt die Datei nach jedem Durchgang in einem Schritt, `ecclium run-once` nach jedem Aufruf, und führt dabei die Werte der Routinen weiter, die er nicht ausgeführt hat. Fehlt der Ordner der Datei, legt der Runner ihn mit den Rechten 700 an, nicht aber einen Ordner darüber, und die Datei mit den Rechten 600. Ein bestehender Ordner muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben. Eine Überwachung liest die Datei deshalb als derselbe Benutzer. Beim Start prüft Ecclium die Form des Pfads, dass der Name der Datei mit einem Buchstaben oder einer Ziffer beginnt und höchstens 128 Zeichen aus Buchstaben ohne Umlaute, Ziffern, Punkt, Bindestrich und Unterstrich hat, dass der Pfad nicht der Zustandsordner ist oder ihn enthält, keine andere Datei der Konfiguration ist, etwa die Datei der Meldungen, die Richtlinie oder eine Schlüsseldatei, nicht der Ordner der Entwürfe ist und nicht im Ordner der Routinen, im Ordner der Schlüssel, im Ordner der Token-Dateien oder in einem der Ordner `audit`, `quota`, `snapshots`, `queue`, `runner` oder `stop` des Zustandsordners liegt. Die Datei enthält keine Personendaten. Nicht gesetzt: Der Runner schreibt keine Metrikdatei.
 
 ## `ECCLIUM_STDIO_SUBJECT`
 

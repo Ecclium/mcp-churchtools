@@ -674,6 +674,7 @@ describe('loadConfig with a good configuration', () => {
       ],
       ['draftsDir', 'ECCLIUM_DRAFTS_DIR', 'unset', { kind: 'none' }],
       ['notifyFile', 'ECCLIUM_NOTIFY_FILE', 'unset', { kind: 'none' }],
+      ['metricsFile', 'ECCLIUM_RUNNER_METRICS_FILE', 'unset', { kind: 'none' }],
       [
         'stdioSubject',
         'ECCLIUM_STDIO_SUBJECT',
@@ -2848,6 +2849,22 @@ describe('loadConfig and the folders of drafts and notices', () => {
       'notify_file_overlap',
     ],
     ['ECCLIUM_NOTIFY_FILE', `${keysDirPath}/notices`, 'notify_file_overlap'],
+    [
+      'ECCLIUM_RUNNER_METRICS_FILE',
+      `${stateDirPath}/runner/runner.prom`,
+      'metrics_file_overlap',
+    ],
+    [
+      'ECCLIUM_RUNNER_METRICS_FILE',
+      `${stateDirPath}/audit/runner.prom`,
+      'metrics_file_overlap',
+    ],
+    ['ECCLIUM_RUNNER_METRICS_FILE', stateDirPath, 'metrics_file_overlap'],
+    [
+      'ECCLIUM_RUNNER_METRICS_FILE',
+      `${tokensDirPath}/runner.prom`,
+      'metrics_file_overlap',
+    ],
   ] as const)('refuses %s at %s', (name, path, code) => {
     const result = asRunner({ extra: { ...withKeys, [name]: path } });
     expect(result.ok).toBe(false);
@@ -2859,11 +2876,76 @@ describe('loadConfig and the folders of drafts and notices', () => {
     ['ECCLIUM_DRAFTS_DIR', '/path/to/stateful', 'draftsDir'],
     ['ECCLIUM_NOTIFY_FILE', `${stateDirPath}/notices.jsonl`, 'notifyFile'],
     ['ECCLIUM_NOTIFY_FILE', '/path/to/logs/notices.jsonl', 'notifyFile'],
+    [
+      'ECCLIUM_RUNNER_METRICS_FILE',
+      `${stateDirPath}/runner.prom`,
+      'metricsFile',
+    ],
+    [
+      'ECCLIUM_RUNNER_METRICS_FILE',
+      '/path/to/metrics/runner.prom',
+      'metricsFile',
+    ],
   ] as const)('takes %s at %s', (name, path, key) => {
     const result = asRunner({ extra: { ...withKeys, [name]: path } });
     expect(codes(result)).not.toContain('drafts_dir_overlap');
     expect(codes(result)).not.toContain('notify_file_overlap');
+    expect(codes(result)).not.toContain('metrics_file_overlap');
     expect(setting(result, key)).toMatchObject({ origin: 'environment' });
+  });
+
+  // The metrics file is replaced whole after each pass: as the file of the
+  // notices it would wipe out their lines, as a key file the key
+  // (ADR 0033).
+  it.each([
+    ['ECCLIUM_NOTIFY_FILE', '/path/to/logs/runner.prom'],
+    ['ECCLIUM_DRAFTS_DIR', '/path/to/logs/runner.prom'],
+    ['ECCLIUM_POLICY_FILE', '/path/to/config/policy.yaml'],
+    ['ECCLIUM_PROVIDERS_FILE', '/path/to/config/providers.yaml'],
+    ['ECCLIUM_MARKER_KEY_FILE', '/path/to/config/marker.key'],
+  ] as const)('refuses the metrics file at the path of %s', (name, path) => {
+    const result = asRunner({
+      extra: { ...withKeys, [name]: path, ECCLIUM_RUNNER_METRICS_FILE: path },
+    });
+    expect(result.ok).toBe(false);
+    expect(problems(result)).toContainEqual([
+      'metrics_file_overlap',
+      'ECCLIUM_RUNNER_METRICS_FILE',
+    ]);
+    expect(setting(result, 'metricsFile')).toMatchObject({
+      origin: 'invalid',
+      shown: { kind: 'none' },
+    });
+  });
+
+  it('refuses the metrics file in the folder of the routines', () => {
+    const result = asRunner({
+      extra: {
+        ...withKeys,
+        ECCLIUM_RUNNER_METRICS_FILE: `${routinesDirPath}/runner.prom`,
+      },
+    });
+    expect(problems(result)).toContainEqual([
+      'metrics_file_overlap',
+      'ECCLIUM_RUNNER_METRICS_FILE',
+    ]);
+  });
+
+  // The name must be one a private file of the runner takes, so that a
+  // path the start takes is one the runner can write.
+  it.each([
+    '/path/to/metrics/.runner.prom',
+    '/path/to/metrics/runner prom',
+    '/path/to/metrics/läufe.prom',
+    `/path/to/metrics/${'r'.repeat(129)}`,
+  ])('refuses the metrics file %s by its name', (path) => {
+    const result = asRunner({
+      extra: { ...withKeys, ECCLIUM_RUNNER_METRICS_FILE: path },
+    });
+    expect(problems(result)).toContainEqual([
+      'metrics_file_invalid',
+      'ECCLIUM_RUNNER_METRICS_FILE',
+    ]);
   });
 });
 
@@ -2878,6 +2960,12 @@ describe.each([
     'ECCLIUM_NOTIFY_FILE',
     'notify_file_invalid',
     '/path/to/notify.jsonl',
+  ],
+  [
+    'metricsFile',
+    'ECCLIUM_RUNNER_METRICS_FILE',
+    'metrics_file_invalid',
+    '/path/to/metrics/runner.prom',
   ],
 ] as const)('loadConfig and %s', (key, name, code, path) => {
   it('leaves it unset without the variable, for the runner as well', () => {
@@ -3379,6 +3467,8 @@ describe('loadConfig and its problems', () => {
       load({ ...valid(), ECCLIUM_DRAFTS_DIR: 'drafts' }),
     notify_file_invalid: () =>
       load({ ...valid(), ECCLIUM_NOTIFY_FILE: 'notify.jsonl' }),
+    metrics_file_invalid: () =>
+      load({ ...valid(), ECCLIUM_RUNNER_METRICS_FILE: 'runner.prom' }),
     url_missing: () => load({ ECCLIUM_CHURCHTOOLS_TOKEN_FILE: tokenPath }),
     url_too_long: () => withAddress(`https://${'a'.repeat(300)}.example`),
     url_invalid: () => withAddress('demo.example'),
@@ -3672,6 +3762,18 @@ describe('loadConfig and its problems', () => {
           ...valid(),
           ECCLIUM_STATE_DIR: stateDirPath,
           ECCLIUM_NOTIFY_FILE: `${stateDirPath}/audit/notices.jsonl`,
+        },
+        'stdio',
+        memoryFiles().fs,
+        undefined,
+        memoryFolder().fs,
+      ),
+    metrics_file_overlap: () =>
+      load(
+        {
+          ...valid(),
+          ECCLIUM_STATE_DIR: stateDirPath,
+          ECCLIUM_RUNNER_METRICS_FILE: `${stateDirPath}/quota/runner.prom`,
         },
         'stdio',
         memoryFiles().fs,

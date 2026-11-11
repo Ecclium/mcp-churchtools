@@ -113,7 +113,9 @@ export {
   objectDomains,
 } from './audit/index.js';
 export {
+  isAuditFileName,
   isLogEvent,
+  isSha256,
   type LogCallField,
   type LogEventEntry,
   logEvents,

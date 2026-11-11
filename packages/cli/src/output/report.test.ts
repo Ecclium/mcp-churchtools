@@ -159,6 +159,10 @@ describe('renderConfigReport', () => {
         'Datei der Meldungen',
         'keine Meldungen als Datei (‹ECCLIUM_NOTIFY_FILE› ist nicht gesetzt)',
       ),
+      row(
+        'Metrikdatei',
+        'keine Metrikdatei (‹ECCLIUM_RUNNER_METRICS_FILE› ist nicht gesetzt)',
+      ),
       row('Subjekt über stdio', '‹local-stdio› (Voreinstellung)'),
       row('Stufe des Logs', '‹info› (Voreinstellung)'),
       hostNote,
@@ -883,7 +887,7 @@ describe('renderConfigReport and the policy', () => {
     );
   });
 
-  // Both paths can hold the name of a user, like the other paths (ADR 0033).
+  // These paths can hold the name of a user, like the other paths (ADR 0033).
   it.each([
     [
       'draftsDir',
@@ -898,6 +902,13 @@ describe('renderConfigReport and the policy', () => {
       'Datei der Meldungen',
       '/path/to/notify.jsonl',
       'der Pfad der Datei der Meldungen',
+    ],
+    [
+      'metricsFile',
+      'ECCLIUM_RUNNER_METRICS_FILE',
+      'Metrikdatei',
+      '/path/to/metrics/runner.prom',
+      'der Pfad der Metrikdatei',
     ],
   ] as const)(
     'masks %s unless asked to show it',

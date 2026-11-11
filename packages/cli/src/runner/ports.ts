@@ -60,6 +60,11 @@ import { composeRun } from '../compose/run.js';
 import { composeRunPipeline } from '../compose/run-pipeline.js';
 import type { Output } from '../output/index.js';
 
+/** The model of an alias, or why there is none for this pass. */
+export type ModelOfAlias =
+  | { readonly ok: true; readonly model: GuardedModel }
+  | { readonly ok: false; readonly code: string };
+
 /** What the ports of a pass are built from. */
 export interface RunnerPortsOptions {
   /** The configuration of the runner, with its folder of state and zone. */
@@ -67,13 +72,18 @@ export interface RunnerPortsOptions {
   readonly catalog: ToolCatalog;
   /** Every routine that passed its preparation, for the tools of an account. */
   readonly routines: readonly PreparedRun[];
-  /** The guarded models of the pass, by alias. */
-  readonly models: ReadonlyMap<string, GuardedModel>;
   /**
-   * The aliases whose key file was refused for this pass, with the code of
-   * the file; their routines do not start.
+   * The guarded model of an alias for this pass, built when a run first
+   * needs it, or the code of its refused key file or `run_model_unknown`;
+   * a run with a refused model does not start.
    */
-  readonly refusedModels?: ReadonlyMap<string, string>;
+  readonly model: (alias: string) => ModelOfAlias;
+  /**
+   * Marks a write that has begun until its run closes, so that no signal
+   * cuts it or the steps after it. Leave it out where no signal is
+   * watched.
+   */
+  readonly writing?: () => () => void;
   readonly writer: StderrLineWriter;
   readonly clock: Clock;
   readonly auditFile: AuditFileWriter;
@@ -105,12 +115,14 @@ const dayOf = (time: number): IsoDate =>
  *   zone, which the loader of the runner requires.
  * @example
  * ```ts
- * const ports = composeRunnerPorts({ config, catalog, routines, models, writer, clock, auditFile, store, locks, writeHalt, output, pid: process.pid });
+ * const ports = composeRunnerPorts({ config, catalog, routines, model, writer, clock, auditFile, store, locks, writeHalt, output, pid: process.pid });
  * const pass = await runDue(routines, ports, { signal, maxRunMs });
  * ```
  */
 export function composeRunnerPorts(options: RunnerPortsOptions): RunnerPorts {
-  const { config, clock, writer } = options;
+  const { config, clock, writer, writing } = options;
+  // The mark of a draft, released when its run closes.
+  let draftRelease: (() => void) | undefined;
   const { stateDir, timeZone } = config;
   if (stateDir === undefined || timeZone === undefined) {
     throw new TypeError('The runner needs its folder of state and its zone.');
@@ -150,13 +162,9 @@ export function composeRunnerPorts(options: RunnerPortsOptions): RunnerPorts {
 
   const open: RunnerPorts['open'] = (run) => {
     const routineId = run.loaded.routine.id;
-    const model = options.models.get(run.model);
-    if (model === undefined) {
-      return Object.freeze({
-        ok: false,
-        code: options.refusedModels?.get(run.model) ?? 'run_model_unknown',
-      });
-    }
+    const found = options.model(run.model);
+    if (!found.ok) return Object.freeze({ ok: false, code: found.code });
+    const { model } = found;
     const built = composeRunPipeline({
       config,
       catalog: options.catalog,
@@ -191,12 +199,22 @@ export function composeRunnerPorts(options: RunnerPortsOptions): RunnerPorts {
       routineId,
       provider: model.info,
     });
+    // A write that has begun is marked until the run closes, after the
+    // end of its trigger, its audit line and its notice, so that no second
+    // signal cuts any of them (ADR 0033).
+    let release: (() => void) | undefined;
     return Object.freeze({
       ok: true,
       run: Object.freeze({
         runId: bound.runId,
         read: bound.read,
-        write: bound.write,
+        write:
+          writing === undefined
+            ? bound.write
+            : (...args: Parameters<typeof bound.write>) => {
+                release ??= writing();
+                return bound.write(...args);
+              },
         model,
         log: bound.log,
         end: (line: RunEndLine) =>
@@ -213,7 +231,14 @@ export function composeRunnerPorts(options: RunnerPortsOptions): RunnerPorts {
             period: line.period,
             durationMs: line.durationMs,
           }),
-        close: () => built.close().catch(() => undefined),
+        close: () => {
+          release?.();
+          release = undefined;
+          // Runs go one after the other, so a draft belongs to this one.
+          draftRelease?.();
+          draftRelease = undefined;
+          return built.close().catch(() => undefined);
+        },
       }),
     });
   };
@@ -234,6 +259,9 @@ export function composeRunnerPorts(options: RunnerPortsOptions): RunnerPorts {
     if (draftsDir === undefined || inquiriesTo === undefined) {
       return Object.freeze({ ok: false, code: 'internal', final: false });
     }
+    // A draft is marked like a write until its run closes, so that no
+    // second signal cuts the steps after it (ADR 0033).
+    draftRelease ??= writing?.();
     try {
       const line = draftMarkingLineOf(
         {

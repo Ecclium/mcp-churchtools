@@ -22,16 +22,18 @@ import {
 } from '@ecclium/mcp-churchtools-testkit';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 
+import {
+  firstKeptSnapshotDay,
+  snapshotRetentionDays,
+} from '../compose/retention.js';
 import type { ExitCode } from '../exit-codes.js';
 import type { WriteSyncFn } from '../send.js';
 import { createStdioCatalog } from './catalog.js';
 import {
   closeDeadlineMs,
-  firstKeptSnapshotDay,
   serve,
   type ServeOptions,
   type ServeReplacements,
-  snapshotRetentionDays,
   type StdioHost,
   untilNextDay,
 } from './serve.js';

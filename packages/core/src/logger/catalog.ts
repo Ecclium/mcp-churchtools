@@ -414,6 +414,9 @@ export const logEvents = Object.freeze({
   process_unhandled_rejection: entry('error', 'code'),
   process_sigterm: entry('info'),
   process_sigint: entry('info'),
+  // The runner also heeds SIGHUP, so that a closed terminal never cuts a
+  // write (ADR 0033).
+  process_sighup: entry('info'),
 });
 
 /** The name of an event of the catalog. */

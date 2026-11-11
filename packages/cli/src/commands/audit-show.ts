@@ -1,7 +1,8 @@
 /**
  * `ecclium audit show` (ADR 0028): sums up the audit files for the people
- * who lead a congregation, per UTC day and tool, or with `--object` lists
- * the calls that name one ID, such as for a request for information. It
+ * who lead a congregation, per UTC day and tool, with `--object` lists
+ * the calls that name one ID, such as for a request for information, or
+ * with `--run` shows one run of a routine (ADR 0033). It
  * only reads and does not check the chains. Its exit code follows
  * sysexits: 0 when the output is written, 64 for a value of the wrong
  * form, 66 when the folder `audit` is missing, 74 when files could not be
@@ -15,7 +16,9 @@ import {
   loadAuditConfig,
   objectRefFromText,
   openAuditFolder,
+  runIdFromText,
   summarizeAuditFiles,
+  summarizeRun,
 } from '@ecclium/mcp-churchtools-core/audit';
 
 import { type ExitCode, exitCodes } from '../exit-codes.js';
@@ -26,6 +29,7 @@ import {
   type AuditShowProblem,
   problemLines,
   renderObjectHits,
+  renderRun,
   renderSummary,
 } from './audit-texts.js';
 import { folderExitCodes } from './audit-verify.js';
@@ -36,6 +40,8 @@ export interface AuditShowOptions {
   readonly environment: Readonly<Record<string, string>>;
   /** The value of `--object`, as typed. */
   readonly object?: string | undefined;
+  /** The value of `--run`, as typed. */
+  readonly run?: string | undefined;
   /** The value of `--since`, as typed. */
   readonly since?: string | undefined;
   /** The value of `--until`, as typed. */
@@ -73,6 +79,10 @@ export function showAudit(options: AuditShowOptions): ExitCode {
   if (options.object !== undefined && object === undefined) {
     return refuse('object');
   }
+  const run =
+    options.run === undefined ? undefined : runIdFromText(options.run);
+  if (options.run !== undefined && run === undefined) return refuse('run');
+  if (run !== undefined && object !== undefined) return refuse('both');
   if (
     (since !== undefined && !isUtcDay(since)) ||
     (until !== undefined && !isUtcDay(until))
@@ -100,13 +110,24 @@ export function showAudit(options: AuditShowOptions): ExitCode {
     output.stderr(auditFolderTexts[opened.code]);
     return folderExitCodes[opened.code];
   }
+  const range = { since, until };
+  if (run !== undefined) {
+    const shown = summarizeRun({
+      folder: opened.folder,
+      runId: run,
+      since,
+      until,
+    });
+    // Rendered whole before the first line goes out.
+    for (const line of renderRun(shown, run, range)) output.stdout(line);
+    return shown.moved || shown.unread > 0 ? exitCodes.ioError : exitCodes.ok;
+  }
   const summary = summarizeAuditFiles({
     folder: opened.folder,
     since,
     until,
     object,
   });
-  const range = { since, until };
   // Rendered whole before the first line goes out.
   const lines =
     object === undefined
