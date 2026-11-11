@@ -60,7 +60,11 @@ export interface AuditRunWritesFound {
   readonly unread: number;
   /** Whether the folder `audit` changed while it was read. */
   readonly moved: boolean;
-  /** The whole lines in the range that do not fit the schema. */
+  /**
+   * The lines in the files read that do not fit the schema, and the
+   * pieces of lines too long: any of them may have been a write of the
+   * run.
+   */
   readonly skipped: number;
   /** The lines that name the run, in the range. */
   readonly lines: number;
@@ -158,9 +162,12 @@ export function findRunWrites(
     const day = dayOfAuditFile(name);
     if (since !== undefined && day !== undefined && day < since) continue;
     const outcome = folder.read(name, (line) => {
-      if (line.piece) return;
-      const parsed = auditEventV1Schema.safeParse(parse(line.text));
-      if (!parsed.success) {
+      // A piece of a line too long for Ecclium counts as a line that could
+      // not be read: it may be what is left of a write of the run.
+      const parsed = line.piece
+        ? undefined
+        : auditEventV1Schema.safeParse(parse(line.text));
+      if (parsed?.success !== true) {
         skipped += 1;
         return;
       }
@@ -249,8 +256,9 @@ export interface AuditRunOfWrite {
   /** The run the write belongs to, if one does. */
   readonly run?: AuditRunRef;
   /**
-   * Whether every file in the range was read whole: without it, a write
-   * of a run may stand in a file that was not read.
+   * Whether every file in the range was read whole and every line in it
+   * fits the schema: without it, the line of a write of a run may stand
+   * where it could not be read.
    */
   readonly complete: boolean;
 }
@@ -300,9 +308,14 @@ export function findRunOfWrite(
     const day = dayOfAuditFile(name);
     if (since !== undefined && day !== undefined && day < since) continue;
     const outcome = folder.read(name, (line) => {
-      if (line.piece) return;
-      const parsed = auditEventV1Schema.safeParse(parse(line.text));
-      if (!parsed.success) return;
+      const parsed = line.piece
+        ? undefined
+        : auditEventV1Schema.safeParse(parse(line.text));
+      // A line that cannot be read may be the one asked for.
+      if (parsed?.success !== true) {
+        complete = false;
+        return;
+      }
       const event = parsed.data;
       if (since !== undefined && event.ts.slice(0, 10) < since) return;
       const ref =

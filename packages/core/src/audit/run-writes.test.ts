@@ -317,7 +317,7 @@ describe('findRunWrites', () => {
     expect(found.lines).toBe(0);
   });
 
-  it('skips pieces and lines that are no audit events', () => {
+  it('counts pieces and lines that are no audit events as skipped', () => {
     const found = findRunWrites({
       folder: folderOf({
         [nameOf('2026-11-09', 1)]: [
@@ -330,7 +330,7 @@ describe('findRunWrites', () => {
       }),
       runId,
     });
-    expect(found.skipped).toBe(3);
+    expect(found.skipped).toBe(4);
     expect(found.written).toHaveLength(1);
   });
 
@@ -375,14 +375,7 @@ describe('findRunOfWrite', () => {
       mode: 'interactive',
       confirmation: 'elicitation',
     });
-    const folder = folderOf({
-      [nameOf('2026-11-09', 1)]: [
-        'not json',
-        `${own.slice(0, 20)}~`,
-        own,
-        client,
-      ],
-    });
+    const folder = folderOf({ [nameOf('2026-11-09', 1)]: [own, client] });
     expect(findRunOfWrite({ folder, eventId: idIn(own) })).toEqual({
       run: { runId, routineId: 'weekly-report' },
       complete: true,
@@ -393,6 +386,21 @@ describe('findRunOfWrite', () => {
     expect(findRunOfWrite({ folder, eventId: idOf(999_997) })).toEqual({
       complete: true,
     });
+  });
+
+  it('says it read not every line when one is no audit event or a piece, since it may be the one asked for', () => {
+    const own = write();
+    const damaged = write().replace('"verified"', '"bogus"');
+    for (const bad of ['not json', `${own.slice(0, 20)}~`, damaged]) {
+      const folder = folderOf({ [nameOf('2026-11-09', 1)]: [bad, own] });
+      expect(findRunOfWrite({ folder, eventId: idIn(own) })).toEqual({
+        run: { runId, routineId: 'weekly-report' },
+        complete: false,
+      });
+      expect(findRunOfWrite({ folder, eventId: idIn(damaged) })).toEqual({
+        complete: false,
+      });
+    }
   });
 
   it('names the run whose line queued the entry an approval wrote, in any order of the files', () => {
