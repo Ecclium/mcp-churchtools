@@ -10,9 +10,12 @@
  * @packageDocumentation
  */
 import type { UndoReason, UndoSubject } from '@ecclium/mcp-churchtools-core';
+import type { AuditRunWrite } from '@ecclium/mcp-churchtools-core/audit';
 import type { ErrorCode } from '@ecclium/mcp-churchtools-plugin-api';
 
+import type { RunPipelineCode } from '../compose/run-pipeline.js';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
+import { runAccountCauses } from '../queue/texts.js';
 
 /** A text and the exit code it ends the command with. */
 export interface UndoEnding {
@@ -25,7 +28,17 @@ const ending = (text: string, code: ExitCode): UndoEnding =>
 
 /** The problems that end `ecclium undo` before it asks ChurchTools. */
 export type UndoProblem =
-  'id_invalid' | 'read_only' | 'state_dir_missing' | 'snapshots_off';
+  | 'id_invalid'
+  | 'run_invalid'
+  | 'read_only'
+  | 'state_dir_missing'
+  | 'snapshots_off'
+  | 'run_unknown'
+  | 'run_nothing_written'
+  | 'audit_incomplete'
+  | 'queued_missing'
+  | 'routine_busy'
+  | 'routine_lock_failed';
 
 const snapshotsOff = ending(
   'Dieser Server hält mit ‹ECCLIUM_SNAPSHOTS=off› keine Snapshots fest, und eine Rücknahme braucht selbst einen, damit sie sich zurücknehmen lässt. Setzen Sie ‹ECCLIUM_SNAPSHOTS› auf ‹on›.',
@@ -48,6 +61,34 @@ export const undoProblems: Readonly<Record<UndoProblem, UndoEnding>> =
       exitCodes.invalidConfig,
     ),
     snapshots_off: snapshotsOff,
+    run_invalid: ending(
+      'Die Kennung des Laufs ist keine UUID, Ecclium nennt sie nicht. Nehmen Sie die Kennung ‹run› aus der Meldung des Laufs oder die ‹runId› seiner Zeilen im Audit.',
+      exitCodes.usage,
+    ),
+    run_unknown: ending(
+      'Keine Zeile in den Audit-Dateien der letzten 45 Tage nennt diesen Lauf. Ältere Schreibvorgänge lassen sich nicht mehr zurücknehmen, weil ihre Snapshots nach 30 Tagen vernichtet sind. Prüfen Sie die Kennung mit ‹ecclium audit show --run› und ob ‹ECCLIUM_STATE_DIR› derselbe Ordner ist wie beim Runner.',
+      exitCodes.noInput,
+    ),
+    run_nothing_written: ending(
+      'Der Lauf hat in ChurchTools nichts geschrieben, das sich zurücknehmen liesse: Er schrieb einen Entwurf, fand nichts zu ändern, stellte seinen Abschnitt nur in die Freigabe-Warteschlange oder endete vor dem Schreiben. ‹ecclium audit show --run› zeigt, wie er endete.',
+      exitCodes.noInput,
+    ),
+    audit_incomplete: ending(
+      'Ecclium konnte nicht jede Audit-Datei der letzten 45 Tage ganz lesen, eine Zeile darin passt nicht zum Format der Ereignisse, oder der Ordner ‹audit› änderte sich beim Lesen. Ein Schreibvorgang, der zu einem Lauf gehört, könnte darin stehen, und Ecclium nimmt dann nichts zurück, damit es weder mit dem falschen Konto schreibt noch einen Schreibvorgang auslässt. Prüfen Sie die Dateien mit ‹ecclium audit verify› und versuchen Sie es erneut.',
+      exitCodes.ioError,
+    ),
+    queued_missing: ending(
+      'Die Freigabe nennt einen Eintrag, dessen Zeile Ecclium in den Audit-Dateien der letzten 45 Tage nicht findet, etwa weil ‹ECCLIUM_AUDIT_RETENTION_MONTHS› die Datei schon gelöscht hat. Ob der Eintrag aus einem Lauf einer Routine stammt, bleibt damit offen, und Ecclium nimmt nichts zurück, damit es nicht mit dem falschen Konto schreibt. Nehmen Sie den Schreibvorgang in ChurchTools von Hand zurück.',
+      exitCodes.noInput,
+    ),
+    routine_busy: ending(
+      'Ein Lauf dieser Routine hält gerade ihre Sperrdatei. Ecclium nimmt nichts zurück, solange er schreiben könnte. Versuchen Sie es nach seinem Ende erneut; eine Sperrdatei eines beendeten Laufs gilt spätestens 35 Minuten nach seinem Beginn als verlassen.',
+      exitCodes.tempFail,
+    ),
+    routine_lock_failed: ending(
+      'Die Sperrdatei der Routine liess sich nicht anlegen, weil der Ordner ‹runner› im Zustandsordner sich nicht nutzen lässt. Ecclium nimmt nichts zurück, ohne einen Lauf derselben Routine auszuschliessen. Der Ordner muss Ihrem Benutzer gehören und darf der Gruppe und anderen keine Rechte geben, üblich sind die Rechte 700.',
+      exitCodes.invalidConfig,
+    ),
   });
 
 /** The endings of an undo that found no write to take back. */
@@ -597,4 +638,101 @@ export function undoUnrecordedOf(subject: UndoSubject): UndoEnding {
     `Die Zeile dieser Rücknahme kam nicht in die Audit-Datei, obwohl Ecclium ${accusative} womöglich ${deletes(subject) ? 'gelöscht' : 'geändert'} hat. Prüfen Sie die Audit-Datei mit ‹ecclium audit verify› und ${accusative} in ChurchTools.`,
     exitCodes.ioError,
   );
+}
+
+/**
+ * The ending of an undo of a write of a run whose account has no token
+ * Ecclium accepts: it writes nothing, also not with the token of the
+ * server (ADR 0033).
+ *
+ * @param code - Why the pipeline of the run was not built.
+ * @returns The text and the exit code 78.
+ * @example
+ * ```ts
+ * undoAccountEnding('token_file_missing').code; // 78
+ * ```
+ */
+export const undoAccountEnding = (code: RunPipelineCode): UndoEnding =>
+  ending(
+    `Der Schreibvorgang stammt aus einem Lauf einer Routine, und eine Rücknahme schreibt mit dem Konto, das die Richtlinie für die Routine nennt, wie der Lauf selbst. ${runAccountCauses[code]} Mit dem Token des Servers nimmt Ecclium nichts zurück. ${
+      code === 'run_credential_missing' || code === 'run_credential_mixed'
+        ? 'Nennen Sie für die Routine in der Richtlinie genau ein Konto und nehmen Sie dann zurück.'
+        : code.startsWith('runner_tokens_dir_')
+          ? 'Richten Sie den Ordner aus ‹ECCLIUM_RUNNER_TOKENS_DIR› so ein, wie der Runner ihn braucht: ein Ordner Ihres Benutzers, kein Link, ohne Schreibrecht für die Gruppe und andere, und nehmen Sie dann zurück.'
+          : 'Legen Sie die Token-Datei ‹ct_token_<Alias>› im Ordner aus ‹ECCLIUM_RUNNER_TOKENS_DIR› so an, wie der Runner sie braucht, mit den Rechten 600, und nehmen Sie dann zurück.'
+    }`,
+    exitCodes.invalidConfig,
+  );
+
+// A time of the audit in UTC, as the texts of the command line show it.
+const shownTime = (ts: string): string =>
+  `${ts.slice(8, 10)}.${ts.slice(5, 7)}.${ts.slice(0, 4)} ${ts.slice(11, 19)} UTC`;
+
+/**
+ * The line before the undo of one write of a run: its ID, its time and how
+ * it came about. The ID comes from the audit, never from the call.
+ *
+ * @param write - The write, as the audit names it.
+ * @returns The line, for stdout.
+ * @example
+ * ```ts
+ * runWriteLine({ eventId, ts: '2026-11-09T05:00:09.000Z', way: 'run', writeState: 'verified' });
+ * // 'Schreibvorgang ‹…› des Laufs vom 09.11.2026 05:00:09 UTC:'
+ * ```
+ */
+export function runWriteLine(write: AuditRunWrite): string {
+  const way =
+    write.way === 'run' ? 'des Laufs' : 'der Freigabe eines Eintrags des Laufs';
+  return `Schreibvorgang ‹${write.eventId}› ${way} vom ${shownTime(write.ts)}:`;
+}
+
+/**
+ * The line for a write of a run that may have failed before its send and
+ * has no snapshot, so has nothing to take back.
+ */
+export const notSentLine =
+  'Zu diesem Schreibvorgang gibt es keinen Snapshot: Er endete vor dem Senden, denn Ecclium hält den Snapshot unmittelbar davor fest, oder ‹ECCLIUM_STATE_DIR› ist ein anderer Ordner als beim Runner. Es gibt nichts zurückzunehmen. Zweifeln Sie daran, prüfen Sie die Seite in ChurchTools.';
+
+/**
+ * The line after an undo of a run that stopped at one write: the older
+ * writes stay, since their undo would write over a newer state.
+ *
+ * @param left - How many older writes stay.
+ * @returns The line, for stderr.
+ * @example
+ * ```ts
+ * stoppedLine(1);
+ * ```
+ */
+export function stoppedLine(left: number): string {
+  return `Ecclium hat hier angehalten und ${left === 1 ? 'den älteren Schreibvorgang' : `die ${String(left)} älteren Schreibvorgänge`} des Laufs nicht zurückgenommen, weil eine Rücknahme sonst über einen neueren Stand schriebe. Klären Sie diesen zuerst und rufen Sie den Befehl dann erneut auf.`;
+}
+
+/**
+ * The line for an entry a run queued with no decision in the audit.
+ *
+ * @param queueId - The ID of the entry, from the audit.
+ * @returns The line, for stdout.
+ * @example
+ * ```ts
+ * undecidedLine('11111111-2222-4333-8444-555555555555');
+ * ```
+ */
+export function undecidedLine(queueId: string): string {
+  return `Der Lauf hat den Eintrag ‹${queueId}› in die Freigabe-Warteschlange gestellt, und das Audit hält keinen Entscheid fest. Wartet er noch, weisen Sie ihn mit ‹ecclium queue reject ${queueId}› ab, damit ihn niemand später freigibt.`;
+}
+
+/**
+ * The line after an undo of a run in which every write ended well.
+ *
+ * @param count - The writes of the run.
+ * @returns The line, for stdout.
+ * @example
+ * ```ts
+ * runDoneLine(1);
+ * // 'Der Lauf ist zurückgenommen: 1 Schreibvorgang, jeder mit seiner eigenen Zeile vom Typ undo im Audit.'
+ * ```
+ */
+export function runDoneLine(count: number): string {
+  return `Der Lauf ist zurückgenommen: ${String(count)} ${count === 1 ? 'Schreibvorgang' : 'Schreibvorgänge'}, jeder mit seiner eigenen Zeile vom Typ undo im Audit.`;
 }

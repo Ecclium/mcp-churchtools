@@ -193,6 +193,8 @@ describe('summarizeRun', () => {
           count: 1,
         },
       ],
+      decisions: [],
+      undos: [],
     });
     expect(Object.isFrozen(summary)).toBe(true);
     expect(Object.isFrozen(summary.reads)).toBe(true);
@@ -285,6 +287,109 @@ describe('summarizeRun', () => {
         until: '2026-11-09',
       }).lines,
     ).toBe(2);
+  });
+
+  it('joins the decisions about the entries the run queued, and counts the undos of its writes', () => {
+    const idIn = (text: string): string =>
+      (JSON.parse(text) as { eventId: string }).eventId;
+    const queuedWrite = (): string =>
+      write({ writeState: 'queued', confirmation: undefined });
+    const approvedOnce = queuedWrite();
+    const approvedTwice = queuedWrite();
+    const rejected = queuedWrite();
+    const waiting = queuedWrite();
+    const decision = (
+      queueId: string,
+      fields: Record<string, unknown> = {},
+    ): string =>
+      event({
+        ts: '2026-11-10T08:00:00.000Z',
+        type: 'approval',
+        actor: { kind: 'operator', id: 'local-stdio' },
+        mode: 'operator',
+        runId: undefined,
+        routineId: undefined,
+        tool: undefined,
+        queueId,
+        decision: 'approved',
+        writeState: 'verified',
+        confirmation: 'operator',
+        ...fields,
+      });
+    const rejection = {
+      decision: 'rejected',
+      writeState: undefined,
+      confirmation: undefined,
+    };
+    const undo = (fields: Record<string, unknown> = {}): string =>
+      event({
+        ts: '2026-11-11T08:00:00.000Z',
+        type: 'undo',
+        actor: { kind: 'operator', id: 'local-stdio' },
+        mode: 'operator',
+        tool: undefined,
+        undoes: idIn(approvedOnce),
+        writeState: 'verified',
+        confirmation: 'operator',
+        ...fields,
+      });
+    const summary = summarizeRun({
+      folder: folderOf({
+        // The decisions sort before the lines of the run.
+        [nameOf('2026-11-08', 1)]: [
+          decision(idIn(approvedOnce), { ts: '2026-11-08T08:00:00.000Z' }),
+        ],
+        [nameOf('2026-11-09', 1)]: [
+          approvedOnce,
+          approvedTwice,
+          rejected,
+          waiting,
+          runEnd(),
+        ],
+        [nameOf('2026-11-10', 1)]: [
+          decision(idIn(approvedOnce)),
+          // An approval that found the target changed decides nothing.
+          decision(idIn(approvedTwice), {
+            outcome: 'error',
+            errorCode: 'conflict',
+            writeState: undefined,
+            confirmation: undefined,
+          }),
+          decision(idIn(approvedTwice)),
+          decision(idIn(rejected), rejection),
+          // A decision about an entry of another run is none of this run.
+          decision('00000000-0000-4000-8000-0000000009ff', rejection),
+        ],
+        [nameOf('2026-11-11', 1)]: [
+          undo(),
+          undo({ writeState: 'skipped' }),
+          undo({ writeState: 'skipped' }),
+          // An undo of a write of another run is none of this run.
+          undo({ runId: otherRun }),
+          // The schema lets an undo without a state through; it counts as
+          // a line of the run only.
+          undo({ writeState: undefined, confirmation: undefined }),
+        ],
+      }),
+      runId,
+      since: '2026-11-09',
+    });
+    expect(summary.decisions).toEqual([
+      { decision: 'approved', count: 1 },
+      { decision: 'approved', writeState: 'verified', count: 2 },
+      { decision: 'rejected', count: 1 },
+    ]);
+    expect(summary.undos).toEqual([
+      { writeState: 'skipped', count: 2 },
+      { writeState: 'verified', count: 1 },
+    ]);
+    // The four writes, the end and the four undos of this run.
+    expect(summary.lines).toBe(9);
+    expect(summary.begin).toBe('2026-11-09T05:00:09.000Z');
+    expect(Object.isFrozen(summary.decisions)).toBe(true);
+    expect(Object.isFrozen(summary.decisions[0])).toBe(true);
+    expect(Object.isFrozen(summary.undos)).toBe(true);
+    expect(Object.isFrozen(summary.undos[0])).toBe(true);
   });
 
   it('counts a line without a tool and a piece of a line as nothing, and a line of other characters as skipped', () => {

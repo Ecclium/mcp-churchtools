@@ -96,6 +96,8 @@ const commands: readonly Command[] = Object.freeze(
     },
     { words: ['policy', 'init'], options: ['interactive'] },
     { words: ['undo'], options: ['overwrite'], argument: true },
+    // Without the ID of a write only with --run, for every write of a run.
+    { words: ['undo'], options: ['run', 'overwrite'] },
     { words: ['queue', 'list'], options: [] },
     { words: ['queue', 'show'], options: [], argument: true },
     { words: ['queue', 'approve'], options: [], argument: true },
@@ -151,7 +153,9 @@ type Call =
   | { readonly kind: 'init'; readonly interactive: boolean }
   | {
       readonly kind: 'undo';
-      readonly eventId: string;
+      /** The ID of one write, or the ID of a run with `--run`. */
+      readonly target:
+        { readonly eventId: string } | { readonly runId: string };
       readonly overwrite: boolean;
     }
   | {
@@ -244,12 +248,24 @@ const readCall = (args: readonly string[]): Call => {
       };
     case 'policy init':
       return { kind: 'init', interactive: values.interactive === true };
-    case 'undo':
-      return {
-        kind: 'undo',
-        eventId: positionals[1] ?? '',
-        overwrite: values.overwrite === true,
-      };
+    case 'undo': {
+      const eventId = positionals[1];
+      if (eventId !== undefined) {
+        return {
+          kind: 'undo',
+          target: { eventId },
+          overwrite: values.overwrite === true,
+        };
+      }
+      // Without the ID of a write, a run must be named.
+      return values.run === undefined
+        ? { kind: 'wrong', problem: 'command' }
+        : {
+            kind: 'undo',
+            target: { runId: values.run },
+            overwrite: values.overwrite === true,
+          };
+    }
     case 'queue list':
       return { kind: 'queue', action: 'list', queueId: undefined };
     case 'queue show':
@@ -403,7 +419,7 @@ export function run(
             undoWrite({
               environment: taken,
               execArgv,
-              eventId: call.eventId,
+              ...call.target,
               overwrite: call.overwrite,
               output: out,
               ...runOptions.undo,

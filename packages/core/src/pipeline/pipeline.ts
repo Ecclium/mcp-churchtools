@@ -372,7 +372,38 @@ export interface UndoCall {
   readonly eventId: unknown;
   /** Whether to write also over a page someone changed since the write. */
   readonly overwrite: boolean;
+  /**
+   * The run of a routine the write belongs to, as the audit names it, so
+   * that the line of the undo names it as well and `ecclium audit show
+   * --run` shows the undo with the run (ADR 0028). The caller found it in
+   * the audit; the pipeline only checks its form.
+   */
+  readonly run?: {
+    readonly runId: unknown;
+    readonly routineId: unknown;
+  };
 }
+
+// The run of an undo in the form the audit writes it.
+interface UndoRun {
+  readonly runId: string;
+  readonly routineId: string;
+}
+
+// The run of an undo, checked: undefined without one, null for one of
+// another form, which refuses the undo as a call built wrong.
+const undoRunOf = (run: UndoCall['run']): UndoRun | null | undefined => {
+  if (run === undefined) return undefined;
+  const { runId, routineId } = run;
+  if (typeof runId !== 'string' || !isUuid(runId)) return null;
+  try {
+    // Throws for anything but the ID of a routine.
+    runAssignmentOf(routineId as string);
+  } catch {
+    return null;
+  }
+  return Object.freeze({ runId, routineId: routineId as string });
+};
 
 export type { UndoSubject } from '../write/index.js';
 
@@ -2917,13 +2948,15 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       typeof undoCall.eventId === 'string' && isUuid(undoCall.eventId)
         ? undoCall.eventId
         : undefined;
+    let run: UndoRun | null | undefined;
     let end: UndoEnd = undoRefused('internal');
     let recorded = false;
     try {
+      run = undoRunOf(undoCall.run);
       assignment = copyAssignment(request.assignment);
       mode = request.mode;
       end =
-        undoes === undefined
+        undoes === undefined || run === null
           ? undoRefused('validation')
           : await undoStages(
               { eventId: undoes, overwrite: undoCall.overwrite },
@@ -2945,6 +2978,11 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
               tenantId: assignment?.tenantId ?? auditPlaceholders.tenantId,
               actor: assignment?.actor ?? auditPlaceholders.actor,
               mode: mode as Mode,
+              // The run whose write the undo takes back, so that the run
+              // shows it (ADR 0028).
+              ...(run === undefined || run === null
+                ? {}
+                : { runId: run.runId, routineId: run.routineId }),
               outcome: end.audit,
               undoes: undoes ?? auditPlaceholders.eventId,
               ...(end.confirmation === undefined

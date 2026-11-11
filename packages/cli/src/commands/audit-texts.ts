@@ -451,6 +451,11 @@ const stateWords = Object.freeze({
   rolledBack: 'nach einem Fehler zurückgenommen',
 });
 
+const decisionWords = Object.freeze({
+  approved: 'freigegeben',
+  rejected: 'abgewiesen',
+});
+
 const runResultWords = Object.freeze({
   written: 'geschrieben',
   unchanged: 'unverändert, der Abschnitt stand schon so da',
@@ -555,12 +560,30 @@ export function renderRun(
         `  ${row.tool}  ${way}, ${stateWords[row.writeState]}: ${formatNumber(row.count)}`,
       );
     }
-    // A decision of the operator is a line of its own, without the run
-    // (ADR 0031).
+    // A decision of the operator is a line of its own, joined with the run
+    // through the entry it queued (ADR 0031).
     if (summary.writeRows.some((row) => row.writeState === 'queued')) {
-      lines.push(
-        'Die Freigabe oder Abweisung eines eingereihten Schreibvorgangs steht als eigene Zeile ohne die Kennung des Laufs im Audit. Was noch wartet, zeigt ‹ecclium queue list›.',
-      );
+      lines.push('Entscheide über eingereihte Schreibvorgänge');
+      if (summary.decisions.length === 0) lines.push('  keine');
+      for (const row of summary.decisions) {
+        const state =
+          row.writeState === undefined
+            ? ', ohne Schreibvorgang'
+            : `, ${stateWords[row.writeState]}`;
+        lines.push(
+          `  ${decisionWords[row.decision]}${state}: ${formatNumber(row.count)}`,
+        );
+      }
+      lines.push('Was noch wartet, zeigt ‹ecclium queue list›.');
+    }
+    // An undo names the run of the write it takes back (ADR 0028).
+    if (summary.undos.length > 0) {
+      lines.push('Rücknahmen mit ‹ecclium undo›');
+      for (const row of summary.undos) {
+        lines.push(
+          `  ${stateWords[row.writeState]}: ${formatNumber(row.count)}`,
+        );
+      }
     }
   }
   lines.push(

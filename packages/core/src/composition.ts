@@ -67,6 +67,7 @@ export {
   prepareQueueFolder,
   type QueueKeeper,
   type QueuePurge,
+  queueRetentionDays,
 } from './queue/index.js';
 export {
   createFileSnapshotStore,
