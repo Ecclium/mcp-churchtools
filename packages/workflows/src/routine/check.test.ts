@@ -145,8 +145,8 @@ describe('checkRoutine with a valid routine', () => {
     if (!result.ok) throw new Error(result.code);
     const kept = result.routine.inputs[0]?.params['calendarIds'];
     expect(kept).toEqual([3, 7]);
-    expect(kept).not.toBe(ids);
     expect(Object.isFrozen(kept)).toBe(true);
+    expect(Object.isFrozen(ids)).toBe(false);
     // The longest list, and the largest ID a routine may name.
     const longest = Array.from(
       { length: routineLimits.listItems },

@@ -208,6 +208,11 @@ export async function readInputs(
           input: input.name,
         };
       }
+      // A page the routine names that is no number goes to the tool as it
+      // is, so that the pipeline refuses it like any value of the wrong
+      // kind instead of the run starting quietly at page 1.
+      const counted =
+        base['page'] === undefined || typeof base['page'] === 'number';
       let page = typeof base['page'] === 'number' ? base['page'] : 1;
       for (;;) {
         if (
@@ -226,7 +231,7 @@ export async function readInputs(
         inputCalls += 1;
         const outcome = await read(
           input.tool,
-          facts.paged ? { ...base, page } : base,
+          facts.paged && counted ? { ...base, page } : base,
           input.maxItems - entries,
           signal,
         );
@@ -244,7 +249,14 @@ export async function readInputs(
         for (const [key, name] of Object.entries(outcome.persons)) {
           if (name !== '' || !persons.has(key)) persons.set(key, name);
         }
-        if (!facts.paged || !outcome.more || entries >= input.maxItems) break;
+        if (
+          !facts.paged ||
+          !counted ||
+          !outcome.more ||
+          entries >= input.maxItems
+        ) {
+          break;
+        }
         page += 1;
       }
     }

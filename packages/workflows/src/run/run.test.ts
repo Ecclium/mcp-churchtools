@@ -575,6 +575,32 @@ describe('reading the inputs', () => {
     expect(seen).toEqual([{ from: '2026-11-02', to: '2026-11-09', page: 2 }]);
   });
 
+  it('passes a page that is no number to the tool as it is, once', async () => {
+    const value = routineValue();
+    const withPage = loadedOf({
+      ...value,
+      inputs: [{ ...value.inputs[0], params: { from: '+0d', page: [2] } }],
+    });
+    const result = prepareRun(withPage, context());
+    if (!result.ok) throw new Error(result.code);
+    const seen: unknown[] = [];
+    const read: RunRead = (_tool, input) => {
+      seen.push(input);
+      // Even a stand-in that says more gets no second call with this page.
+      return Promise.resolve(ok({ events: [] }, 0, true));
+    };
+    await readInputs(
+      result.run,
+      trigger,
+      read,
+      log,
+      new AbortController().signal,
+    );
+    // The pipeline refuses it with validation, as any value of the wrong
+    // kind; the run never starts quietly at page 1.
+    expect(seen).toEqual([{ from: '2026-11-09', page: [2] }]);
+  });
+
   it('gives a list to every call as a list, not the one of the routine', async () => {
     const value = routineValue();
     const withList = loadedOf({
@@ -612,8 +638,8 @@ describe('reading the inputs', () => {
       { calendarIds: [3, 7], from: '2026-11-09', to: '2026-11-23', page: 1 },
       { calendarIds: [3, 7], from: '2026-11-09', to: '2026-11-23', page: 2 },
     ]);
-    // Each call gets a list of its own, as the input of a client is, never
-    // the frozen list of the routine.
+    // The calls get a copy, as the input of a client is, never the frozen
+    // list of the routine.
     const kept = result.run.inputs[0]?.input.params['calendarIds'];
     expect(seen[0]?.['calendarIds']).not.toBe(kept);
     expect(Object.isFrozen(seen[0]?.['calendarIds'])).toBe(false);
