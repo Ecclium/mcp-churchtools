@@ -211,3 +211,102 @@ const ownStart = (
   }
   return undefined;
 };
+
+/** A line of the marking a write asks about, with where its section may begin. */
+export interface MarkingAskedFor extends FoundMarking {
+  /**
+   * The first line its section may begin at: after the line of the
+   * marking before it, or the start of the page.
+   */
+  readonly earliest: number;
+}
+
+/**
+ * What a page holds of the lines of the marking a write asks about, for an
+ * adoption (ADR 0032): none of them can say whether their code fits, that
+ * is {@link judgeSections}.
+ */
+export type MarkingsAskedFor =
+  /** The lexer cannot read the page. */
+  | { readonly kind: 'unreadable' }
+  | {
+      readonly kind: 'read';
+      /** Whether the page holds HTML that could hide a section (T10). */
+      readonly hides: boolean;
+      /** The lines, in the order of the page. */
+      readonly lines: readonly MarkingAskedFor[];
+    };
+
+/**
+ * Finds the lines of the marking a write asks about on a page, each with
+ * the first line its section may begin at, as {@link judgeSections} reads
+ * the page.
+ *
+ * @param options - What to find.
+ * @param options.text - The text of the page.
+ * @param options.matches - Which markings the write asks about.
+ * @returns The lines, frozen, or that the page cannot be read.
+ * @example
+ * ```ts
+ * markingsAskedFor({ text, matches: (m) => m.origin.kind === 'routine' });
+ * ```
+ */
+export function markingsAskedFor(options: {
+  readonly text: string;
+  readonly matches: (marking: Marking) => boolean;
+}): MarkingsAskedFor {
+  const parts = partsOf(options.text);
+  if (parts === undefined) return Object.freeze({ kind: 'unreadable' });
+  const lines: MarkingAskedFor[] = [];
+  let earliest = 0;
+  for (const { marking, line } of markingsOf(parts)) {
+    if (options.matches(marking)) {
+      lines.push(Object.freeze({ marking, line, earliest }));
+    }
+    earliest = line + 1;
+  }
+  return Object.freeze({
+    kind: 'read',
+    hides: parts.some((part) => part.hides),
+    lines: Object.freeze(lines),
+  });
+}
+
+/**
+ * Gives the canonical form of the section of a page between two lines, as
+ * {@link judgeSections} takes the code over it, for an adoption
+ * (ADR 0032).
+ *
+ * @param text - The text of the page.
+ * @param start - The first line of the section, where a block begins.
+ * @param end - The line of its marking, a paragraph of the top level.
+ * @returns The canonical form, or undefined when the page cannot be read,
+ *   no block begins at `start`, no line of the marking stands at `end`, no
+ *   block lies between, or a block between has no canonical form.
+ * @example
+ * ```ts
+ * canonicalSectionOf('# Plan\n\n## W46\nText\n\nAutomatisch …', 2, 5);
+ * ```
+ */
+export function canonicalSectionOf(
+  text: string,
+  start: number,
+  end: number,
+): string | undefined {
+  const parts = partsOf(text);
+  if (parts === undefined) return undefined;
+  const marking = markingsOf(parts).find(({ line }) => line === end);
+  if (
+    marking === undefined ||
+    !parts.some((part) => part.first === start && part.type !== 'space')
+  ) {
+    return undefined;
+  }
+  const blocks: Block[] = [];
+  for (const part of parts.slice(0, marking.index)) {
+    if (part.first < start || part.type === 'space') continue;
+    if (part.node === undefined) return undefined;
+    blocks.push(part.node);
+  }
+  return blocks.length === 0 ? undefined : canonicalFormOf(blocks);
+}

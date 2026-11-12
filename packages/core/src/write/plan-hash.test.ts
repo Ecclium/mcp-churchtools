@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  adoptionCheckOf,
   approvalKeyOf,
   contentHashOf,
   type PlanHashInput,
@@ -121,5 +122,46 @@ describe('the key of a decision about an entry of the queue (ADR 0029)', () => {
     ['a hash in capitals', queueId, planHash.toUpperCase()],
   ])('refuses %s', (_name, id, hash) => {
     expect(() => approvalKeyOf(id, hash)).toThrow(TypeError);
+  });
+});
+
+describe('adoptionCheckOf', () => {
+  const input = {
+    guid: '00000000-0000-4000-8000-0000000000c1',
+    version: 4,
+    section: '## KW 46\n\nText',
+    line: 'Automatisch erstellt am 09.11.2026',
+  };
+
+  // Pinned, checked against a second implementation of the encoding: the
+  // value a preview showed must still fit after an update.
+  it('keeps its encoding and gives 16 hex digits', () => {
+    expect(adoptionCheckOf(input)).toBe('ea49df4053e1c208');
+  });
+
+  it('changes with the page, its version, the section and the line', () => {
+    const value = adoptionCheckOf(input);
+    for (const other of [
+      { guid: '00000000-0000-4000-8000-0000000000c2' },
+      { version: 5 },
+      { section: '## KW 46\n\nText.' },
+      { line: 'Automatisch erstellt am 10.11.2026' },
+      // A field may not run into the next one.
+      {
+        section: '## KW 46\n\nTextA',
+        line: 'utomatisch erstellt am 09.11.2026',
+      },
+    ]) {
+      expect(
+        adoptionCheckOf({ ...input, ...other }),
+        JSON.stringify(other),
+      ).not.toBe(value);
+    }
+  });
+
+  it('refuses a field with a lone surrogate', () => {
+    expect(() => adoptionCheckOf({ ...input, section: '\ud800' })).toThrow(
+      TypeError,
+    );
   });
 });

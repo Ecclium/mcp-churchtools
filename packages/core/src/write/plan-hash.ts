@@ -36,6 +36,7 @@ import type { TargetKind } from './rules.js';
 const planTag = 'ecclium.plan.v1';
 const contentTag = 'ecclium.content.v1';
 const approvalTag = 'ecclium.approval.v1';
+const adoptionTag = 'ecclium.adoption.v1';
 
 const encoder = new TextEncoder();
 
@@ -157,4 +158,41 @@ export function approvalKeyOf(
     throw new TypeError('The key of a decision needs an ID and a hash.');
   }
   return approvalQuotaKey(hashOf(approvalTag, [queueId, planHash]));
+}
+
+/** What the check value of an adoption covers (ADR 0032). */
+export interface AdoptionCheckInput {
+  /** The GUID of the page, in lower case. */
+  readonly guid: string;
+  /** The version of the page as read. */
+  readonly version: number;
+  /** The lines of the section as they stand on the page. */
+  readonly section: string;
+  /** The new line of the marking. */
+  readonly line: string;
+}
+
+/**
+ * The check value of an adoption (ADR 0032): the first 16 hex digits of
+ * the hash over the page, its version, the section and the new line. The
+ * operator sees it in the preview of `ecclium marker adopt` and gives it
+ * back with `--confirm`, so that the second call writes only what the
+ * first one showed. It is no secret and no proof of a person; it ties the
+ * confirmation to the state of the page that was shown.
+ *
+ * @param input - Page, version, section and new line.
+ * @returns 16 hex digits in lower case.
+ * @throws {TypeError} For a field with a lone surrogate.
+ * @example
+ * ```ts
+ * adoptionCheckOf({ guid, version: 4, section: '## W46', line }).length; // 16
+ * ```
+ */
+export function adoptionCheckOf(input: AdoptionCheckInput): string {
+  return hashOf(adoptionTag, [
+    input.guid,
+    String(input.version),
+    input.section,
+    input.line,
+  ]).slice(0, 16);
 }
