@@ -649,6 +649,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     ['song-extra', 'lied'],
     ['categories-bare-name', 'wikikategorien'],
     ['pages-bad-guid', 'wikiseiten'],
+    ['pages-bad-date', 'wikiseiten'],
     ['extra-tool', 'nicht_aufgerufen'],
     ['tools-cursor', 'tools_list'],
     ['prompts-cursor', 'prompts'],
@@ -730,6 +731,25 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
       expectClean(result);
     },
   );
+
+  it('says whether every page of a list names the day of its last change', async () => {
+    const datesOf = (result: Awaited<ReturnType<typeof run>>): unknown[] =>
+      (
+        report(result)['aeren'] as {
+          aufrufe: { tool: string; datum?: string }[];
+        }[]
+      ).map(
+        (era) =>
+          era.aufrufe.find((call) => call.tool === 'ct_wiki_pages_list')?.datum,
+      );
+    const dated = await run({ env: search });
+    expect(datesOf(dated)).toEqual(['alle', 'alle']);
+    // A page without a date passes: the list still serves, and the checks
+    // of the core for routines end their run instead (ADR 0033).
+    const undated = await run({ env: search, scenario: 'pages-no-date' });
+    expect(undated.code, undated.stdout).toBe(smokeExitCodes.ok);
+    expect(datesOf(undated)).toEqual(['keines', 'keines']);
+  });
 
   it('names the help page it had no hit to read with', async () => {
     const result = await run({ env: search, scenario: 'docs-no-pages' });
@@ -1570,7 +1590,10 @@ describe.skipIf(process.getuid?.() === 0)(
               title: `${canary}Liste`,
               isMarkdown: true,
               version: 2,
-              meta: { createdPerson: { title: `${canary}Autor` } },
+              meta: {
+                createdPerson: { title: `${canary}Autor` },
+                modifiedDate: '2026-11-12T08:00:00Z',
+              },
             },
           ],
           meta: {
