@@ -1,6 +1,6 @@
 # Wöchentlicher Entwurf einer Übersicht der Termine für den Gemeindebrief:
-# die Termine Ihrer öffentlichen Kalender von der nächsten bis zur fünften
-# Woche, als Datei zum Weitergeben. Ecclium verschickt nichts und ändert
+# die Termine Ihrer öffentlichen Kalender von einer bis fünf Wochen nach
+# dem Lauf, als Datei zum Weitergeben. Ecclium verschickt nichts und ändert
 # nichts in ChurchTools. Was Sie anpassen, steht in README.md in diesem
 # Ordner.
 schema: routine.v1

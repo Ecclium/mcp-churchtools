@@ -1,6 +1,6 @@
 ## Termine für den Gemeindebrief
 
-Entwurf der Woche {{period}} mit den Terminen von der nächsten bis zur fünften Woche.
+Entwurf der Woche {{period}} mit den Terminen von einer bis fünf Wochen nach dem Lauf.
 
 {{#termine}}
 - **{{datum}}, {{zeit}}, {{titel}}:** {{text}}
