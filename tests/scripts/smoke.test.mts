@@ -254,7 +254,7 @@ describe('the spans of the events', () => {
 describe('the smoke test against a stand-in of the server', { timeout }, () => {
   it('calls only ct_whoami and the docs tools without the switch, in both eras, and sends nothing itself', async () => {
     const result = await run();
-    expect(result.code).toBe(smokeExitCodes.ok);
+    expect(result.code, result.stdout).toBe(smokeExitCodes.ok);
     expect(report(result)).toMatchObject({
       suchtools: 'nein',
       api: 'nein',
@@ -283,7 +283,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
         HOME: folder,
       },
     });
-    expect(result.code).toBe(smokeExitCodes.ok);
+    expect(result.code, result.stdout).toBe(smokeExitCodes.ok);
     expect(result.records).toHaveLength(2);
     for (const record of result.records) {
       // macOS adds __CF_USER_TEXT_ENCODING to the environment of every
@@ -307,7 +307,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
 
   it('with the switch reads the identification category first, then calls all tools', async () => {
     const result = await run({ env: search });
-    expect(result.code).toBe(smokeExitCodes.ok);
+    expect(result.code, result.stdout).toBe(smokeExitCodes.ok);
     expect(report(result)).toMatchObject({
       suchtools: 'ja',
       churchtools: '3.137',
@@ -400,7 +400,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
 
   it('with the second switch also calls the escape hatch, behind the guard', async () => {
     const result = await run({ env: withApi });
-    expect(result.code).toBe(smokeExitCodes.ok);
+    expect(result.code, result.stdout).toBe(smokeExitCodes.ok);
     expect(report(result)).toMatchObject({
       suchtools: 'ja',
       api: 'ja',
@@ -440,7 +440,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     const result = await run({
       env: { ...withApi, ECCLIUM_SMOKE_ALLOW_API: 'example' },
     });
-    expect(result.code).toBe(smokeExitCodes.refused);
+    expect(result.code, result.stdout).toBe(smokeExitCodes.refused);
     expect(result.stderr).toContain(hints.smokeApiSchalterFalsch);
     expect(result.fetched).toEqual([]);
     expect(result.records).toEqual([]);
@@ -476,7 +476,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     'refuses %s and starts no server',
     async (_, categories, hint) => {
       const result = await run({ env: search, categories });
-      expect(result.code).toBe(smokeExitCodes.refused);
+      expect(result.code, result.stdout).toBe(smokeExitCodes.refused);
       expect(result.stderr).toContain(hints[hint]);
       expect(result.records).toEqual([]);
       expect(result.stdout).toBe('');
@@ -501,7 +501,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     const result = await run({
       env: { ...search, ECCLIUM_SMOKE_ALLOW_SEARCH: 'example' },
     });
-    expect(result.code).toBe(smokeExitCodes.refused);
+    expect(result.code, result.stdout).toBe(smokeExitCodes.refused);
     expect(result.stderr).toContain(hints.smokeSchalterFalsch);
     expect(result.fetched).toEqual([]);
     expect(result.records).toEqual([]);
@@ -579,7 +579,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     'ends with 78 for %s, before any request',
     async (_, env, hint) => {
       const result = await run({ env });
-      expect(result.code).toBe(smokeExitCodes.configuration);
+      expect(result.code, result.stdout).toBe(smokeExitCodes.configuration);
       expect(result.stderr).toContain(hints[hint]);
       expect(result.fetched).toEqual([]);
       expect(result.records).toEqual([]);
@@ -592,7 +592,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     writeFileSync(open, `${token}\n`, { mode: 0o644 });
     chmodSync(open, 0o644);
     const result = await run({ env: { ECCLIUM_CHURCHTOOLS_TOKEN_FILE: open } });
-    expect(result.code).toBe(smokeExitCodes.configuration);
+    expect(result.code, result.stdout).toBe(smokeExitCodes.configuration);
     expect(result.stderr).toContain(hints.smokeTokenDateiUnsicher);
     expect(result.records).toEqual([]);
   });
@@ -683,7 +683,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     'fails when the server breaks it: %s',
     async (scenario, failure) => {
       const result = await run({ env: search, scenario });
-      expect(result.code).toBe(smokeExitCodes.failed);
+      expect(result.code, result.stdout).toBe(smokeExitCodes.failed);
       expect(report(result)['ergebnis']).toBe('gescheitert');
       expect(report(result)['fehler']).toContain(failure);
       expect(stateDirsLeft()).toEqual([]);
@@ -703,7 +703,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     'fails without the switch when the server breaks it: %s',
     async (scenario, failure) => {
       const result = await run({ scenario });
-      expect(result.code).toBe(smokeExitCodes.failed);
+      expect(result.code, result.stdout).toBe(smokeExitCodes.failed);
       expect(report(result)['fehler']).toContain(failure);
       expectClean(result);
     },
@@ -723,7 +723,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     'fails when the server breaks the escape hatch: %s',
     async (scenario, failure) => {
       const result = await run({ env: withApi, scenario });
-      expect(result.code).toBe(smokeExitCodes.failed);
+      expect(result.code, result.stdout).toBe(smokeExitCodes.failed);
       expect(report(result)['ergebnis']).toBe('gescheitert');
       expect(report(result)['fehler']).toContain(failure);
       expect(stateDirsLeft()).toEqual([]);
@@ -746,7 +746,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
   // result says when the log names a hit of another type (ADR 0064).
   it('says when a search gave a hit of another type than the one asked for', async () => {
     const result = await run({ env: search, scenario: 'search-foreign' });
-    expect(result.code).toBe(smokeExitCodes.failed);
+    expect(result.code, result.stdout).toBe(smokeExitCodes.failed);
     for (const era of report(result)['aeren'] as { artfremd: string }[]) {
       expect(era.artfremd).toBe('ja');
     }
@@ -757,7 +757,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     'passes with every form the server gives an account: %s',
     async (scenario) => {
       const result = await run({ scenario });
-      expect(result.code).toBe(smokeExitCodes.ok);
+      expect(result.code, result.stdout).toBe(smokeExitCodes.ok);
       expect(stateDirsLeft()).toEqual([]);
       expectClean(result);
     },
@@ -767,7 +767,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     const result = await run({
       env: { ...search, ECCLIUM_SMOKE_QUERY: 'interactive' },
     });
-    expect(result.code).toBe(smokeExitCodes.ok);
+    expect(result.code, result.stdout).toBe(smokeExitCodes.ok);
     expect(report(result)['fehler']).toEqual([]);
   });
 
@@ -955,7 +955,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
     'passes with a finding for %s',
     async (scenario, finding, calls) => {
       const result = await run({ env: search, scenario });
-      expect(result.code).toBe(smokeExitCodes.ok);
+      expect(result.code, result.stdout).toBe(smokeExitCodes.ok);
       expect(report(result)['befunde']).toEqual([finding]);
       expect(report(result)['fehler']).toEqual([]);
       for (const record of result.records) {
@@ -991,7 +991,7 @@ describe('the smoke test against a stand-in of the server', { timeout }, () => {
 
   it('names a tool it had nothing to call with, and passes', async () => {
     const result = await run({ env: search, scenario: 'no-page-anywhere' });
-    expect(result.code).toBe(smokeExitCodes.ok);
+    expect(result.code, result.stdout).toBe(smokeExitCodes.ok);
     expect(report(result)['befunde']).toEqual([
       'keine_wikiseite_gefunden',
       'keine_seite_gefunden',
@@ -1026,7 +1026,7 @@ describe('the smoke test with the level strict', { timeout }, () => {
       expect(record.variables).not.toHaveProperty('ECCLIUM_PSEUDONYM_KEY_FILE');
     }
     const result = await run({ env: strict() });
-    expect(result.code).toBe(smokeExitCodes.ok);
+    expect(result.code, result.stdout).toBe(smokeExitCodes.ok);
     expect(report(result)).toMatchObject({
       maskierung: 'strict',
       fehler: [],
@@ -1043,7 +1043,7 @@ describe('the smoke test with the level strict', { timeout }, () => {
 
   it('passes with the switch, reads by pseudonym and sees a number refused', async () => {
     const result = await run({ env: { ...search, ...strict() } });
-    expect(result.code).toBe(smokeExitCodes.ok);
+    expect(result.code, result.stdout).toBe(smokeExitCodes.ok);
     expect(report(result)).toMatchObject({
       maskierung: 'strict',
       fehler: [],
@@ -1088,7 +1088,7 @@ describe('the smoke test with the level strict', { timeout }, () => {
     ['a pseudonym in the log', 'pseudonym-log', ['protokoll']],
   ] as const)('fails for %s', async (_, scenario, codes) => {
     const result = await run({ scenario, env: { ...search, ...strict() } });
-    expect(result.code).toBe(smokeExitCodes.failed);
+    expect(result.code, result.stdout).toBe(smokeExitCodes.failed);
     expect(failures(result)).toEqual(expect.arrayContaining([...codes]));
     expectClean(result);
   });
@@ -1122,7 +1122,7 @@ describe('the smoke test with the level strict', { timeout }, () => {
     'ends with 78 for %s, before any request',
     async (_, env, hint) => {
       const result = await run({ env });
-      expect(result.code).toBe(smokeExitCodes.configuration);
+      expect(result.code, result.stdout).toBe(smokeExitCodes.configuration);
       expect(result.stderr).toContain(hints[hint]);
       expect(result.fetched).toEqual([]);
       expect(result.records).toEqual([]);
@@ -1132,7 +1132,7 @@ describe('the smoke test with the level strict', { timeout }, () => {
 
   it('ends with 78 for strict together with the escape hatch, before any request', async () => {
     const result = await run({ env: { ...withApi, ...strict() } });
-    expect(result.code).toBe(smokeExitCodes.configuration);
+    expect(result.code, result.stdout).toBe(smokeExitCodes.configuration);
     expect(result.stderr).toContain(hints.smokeApiMitStrict);
     expect(result.fetched).toEqual([]);
     expect(result.records).toEqual([]);
@@ -1178,7 +1178,7 @@ describe('the smoke test with the level strict', { timeout }, () => {
     const result = await run({
       env: { ECCLIUM_REDACTION: 'strict', ECCLIUM_PSEUDONYM_KEY_FILE: crlf },
     });
-    expect(result.code).toBe(smokeExitCodes.ok);
+    expect(result.code, result.stdout).toBe(smokeExitCodes.ok);
     expectClean(result);
   });
 });
@@ -1719,7 +1719,7 @@ describe.skipIf(process.getuid?.() === 0)(
       requests.length = 0;
       const result = await run({ origin, server });
       expect(result.stderr).toBe('');
-      expect(result.code).toBe(smokeExitCodes.ok);
+      expect(result.code, result.stdout).toBe(smokeExitCodes.ok);
       expect(report(result)).toMatchObject({
         suchtools: 'nein',
         fehler: [],
@@ -1737,7 +1737,7 @@ describe.skipIf(process.getuid?.() === 0)(
       songTerms.length = 0;
       const result = await run({ origin, server, env: search });
       expect(result.stderr).toBe('');
-      expect(result.code).toBe(smokeExitCodes.ok);
+      expect(result.code, result.stdout).toBe(smokeExitCodes.ok);
       expect(report(result)).toMatchObject({
         suchtools: 'ja',
         churchtools: '3.137',
@@ -1768,7 +1768,7 @@ describe.skipIf(process.getuid?.() === 0)(
       requests.length = 0;
       const result = await run({ origin, server, env: withApi });
       expect(result.stderr).toBe('');
-      expect(result.code).toBe(smokeExitCodes.ok);
+      expect(result.code, result.stdout).toBe(smokeExitCodes.ok);
       expect(report(result)).toMatchObject({
         suchtools: 'ja',
         api: 'ja',
@@ -1805,7 +1805,7 @@ describe.skipIf(process.getuid?.() === 0)(
         },
       });
       expect(result.stderr).toBe('');
-      expect(result.code).toBe(smokeExitCodes.ok);
+      expect(result.code, result.stdout).toBe(smokeExitCodes.ok);
       expect(report(result)).toMatchObject({
         maskierung: 'strict',
         befunde: [],
@@ -1825,7 +1825,7 @@ describe.skipIf(process.getuid?.() === 0)(
         server,
         env: { ...search, ECCLIUM_SMOKE_SONG_QUERY: songQuery },
       });
-      expect(result.code).toBe(smokeExitCodes.ok);
+      expect(result.code, result.stdout).toBe(smokeExitCodes.ok);
       expect(songTerms).toEqual(
         Array.from({ length: 2 }, () => [
           `songs ${songQuery}`,
