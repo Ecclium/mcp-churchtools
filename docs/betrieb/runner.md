@@ -17,9 +17,10 @@ Der Runner liest dieselben Variablen wie der Server ([Konfiguration](../configur
 - Für Meldungen in eine Datei braucht die Routine `ECCLIUM_NOTIFY_FILE`.
 - Eine Metrikdatei schreibt der Runner nur mit `ECCLIUM_RUNNER_METRICS_FILE` (siehe «Metrikdatei»).
 - Den Ordner der Entwürfe, die Datei der Meldungen und die Metrikdatei legen Sie nicht in einen Ordner, den Ecclium selbst füllt: weder in den Ordner der Schlüssel noch in den der Token-Dateien, noch in einen der Ordner `audit`, `quota`, `snapshots`, `queue`, `runner` oder `stop` des Zustandsordners. Ein eigener Ordner wie `output` im Zustandsordner geht. Die Metrikdatei ist zudem keine andere Datei der Konfiguration, etwa die Datei der Meldungen, die Richtlinie oder eine Schlüsseldatei, liegt nicht im Ordner der Routinen, und ihr Name beginnt mit einem Buchstaben oder einer Ziffer und hat höchstens 128 Zeichen aus Buchstaben ohne Umlaute, Ziffern, Punkt, Bindestrich und Unterstrich.
-- Eine Routine gibt dem Modell ihre Daten in der Stufe `strict`, ausser ein Eintrag der Richtlinie erlaubt `standard`. Dafür braucht sie die Schlüsseldatei der Pseudonyme in `ECCLIUM_PSEUDONYM_KEY_FILE` ([Betrieb über stdio](stdio.md), «Schlüsseldatei anlegen»), auch für eine Vorschau.
+- Eine Routine mit Modell gibt dem Modell ihre Daten in der Stufe `strict`, ausser ein Eintrag der Richtlinie erlaubt `standard`. Dafür braucht sie die Schlüsseldatei der Pseudonyme in `ECCLIUM_PSEUDONYM_KEY_FILE` ([Betrieb über stdio](stdio.md), «Schlüsseldatei anlegen»), auch für eine Vorschau.
+- Eine Routine mit den Prüfungen des Kerns, wie `wiki-hygiene`, hat kein Modell. Sie braucht weder die Datei der Anbieter noch die Schlüsseldatei der Pseudonyme, weil ihre Prüfungen in der Stufe `standard` lesen und ihre Daten niemandem geben ([Routinen](../routines.md), «Prüfungen des Kerns»).
 
-`ecclium config check --runner` prüft all das ohne ChurchTools und ohne die Modelle anzufragen und nennt jede Routine mit Zeitplan, Ziel, Konto und Modell.
+`ecclium config check --runner` prüft all das ohne ChurchTools und ohne die Modelle anzufragen und nennt jede Routine mit Zeitplan, Ziel, Konto und Modell, eine Routine ohne Modell mit ihren Prüfungen.
 
 ## Befehle
 
