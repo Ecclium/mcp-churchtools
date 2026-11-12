@@ -14,6 +14,7 @@ export {
   checkRunText,
   escapeRunText,
   runContactKeys,
+  runDataText,
 } from './content.js';
 export { createRunId, runAssignmentOf } from './id.js';
 export {

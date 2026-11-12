@@ -89,6 +89,43 @@ export function escapeRunText(text: string): string {
 // `<<data-a1b2c3d4e5f6a7b8>>` and `<</data-a1b2c3d4e5f6a7b8>>`.
 const envelope = /<<\/?data-[0-9A-Za-z]{1,64}>>/gu;
 
+// A whole value in one envelope, with the same boundary at both ends. The
+// pipeline draws a boundary the result does not hold (ADR 0024), so the
+// text inside can never end the envelope early.
+const wrapped = /^<<data-([0-9a-f]{16})>>([\s\S]*)<<\/data-\1>>$/u;
+
+// The start of any mark of an envelope, without the state of a global
+// expression.
+const envelopeMark = /<<\/?data-/u;
+
+/**
+ * The text of a value that a read of a run gave, without the envelope of
+ * foreign data around it (ADR 0024). The checks of the core read titles
+ * and the text of pages as data, give them to no model and report only
+ * what passes {@link checkRunText}, so they need the text itself (ADR
+ * 0033).
+ *
+ * @param value - A value of the result of a read, such as a title.
+ * @returns The text inside its envelope, a text without any mark of an
+ *   envelope as it is, or undefined for anything else, such as a number
+ *   or a text with a mark that does not close.
+ * @example
+ * ```ts
+ * runDataText('<<data-a1b2c3d4e5f6a7b8>>Kirche<</data-a1b2c3d4e5f6a7b8>>'); // 'Kirche'
+ * ```
+ */
+export function runDataText(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const inner = wrapped.exec(value);
+  if (inner !== null) {
+    // The boundary of a call never stands inside its envelope; a value
+    // that holds it again was not wrapped once by the pipeline.
+    const [, boundary = '', text = ''] = inner;
+    return text.includes(`data-${boundary}>>`) ? undefined : text;
+  }
+  return envelopeMark.test(value) ? undefined : value;
+}
+
 // Adds the keys of the contact values in every text of a value of JSON.
 const collect = (value: unknown, keys: Set<string>): void => {
   if (typeof value === 'string') {
