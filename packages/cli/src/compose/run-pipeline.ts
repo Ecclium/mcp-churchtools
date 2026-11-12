@@ -30,7 +30,8 @@
  * the names of the target of a routine before any entry names its
  * account, with the alias the operator names (ADR 0032). That pipeline
  * comes from `composeAccountPipeline`, with the same checks of folder and
- * file, and only for a configuration that only reads.
+ * file, and only for a configuration that only reads and a catalog of
+ * read tools.
  *
  * @packageDocumentation
  */
@@ -220,10 +221,11 @@ export type AccountPipelineResult =
  * is read, never what is written.
  *
  * @param options - What `composeToolPipeline` takes, with a configuration
- *   that only reads, and the alias.
+ *   that only reads and a catalog without a write tool, and the alias.
  * @returns The pipeline with a function that closes its transport, or why
  *   no token was read. Nothing is open when it was not built.
- * @throws {TypeError} When the configuration may write, or when a factory
+ * @throws {TypeError} When the configuration may write or the catalog
+ *   holds a tool that is no read tool, or when a factory
  *   of core refuses its options, as `composeToolPipeline` does.
  * @example
  * ```ts
@@ -235,7 +237,13 @@ export type AccountPipelineResult =
 export function composeAccountPipeline(
   options: AccountPipelineOptions,
 ): AccountPipelineResult {
-  if (!options.config.readOnly) {
+  // Both the configuration and the catalog: the pipeline takes its write
+  // tools from the catalog, and the flag of the configuration alone would
+  // not keep one out.
+  if (
+    !options.config.readOnly ||
+    options.catalog.list().some((entry) => entry.meta.capability !== 'read')
+  ) {
     throw new TypeError('An account the operator names only reads.');
   }
   return withAccount(options, options.credential);

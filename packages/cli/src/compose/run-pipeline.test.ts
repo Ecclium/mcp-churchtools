@@ -16,6 +16,7 @@ import {
   createToolCatalog,
   type EccliumConfig,
   loadConfig,
+  type ToolCatalog,
   readRunnerToken,
   runAssignmentOf,
 } from '@ecclium/mcp-churchtools-core';
@@ -293,12 +294,13 @@ const setup = (options: SetupOptions = {}) => {
     credential: string,
     extra: {
       readonly config?: EccliumConfig;
+      readonly catalog?: ToolCatalog;
       readonly checkTokensDir?: typeof checkRunnerTokensDir;
     } = {},
   ): AccountPipelineResult => {
     const built = composeAccountPipeline({
       config: extra.config ?? Object.freeze({ ...config, readOnly: true }),
-      catalog,
+      catalog: extra.catalog ?? catalog,
       writer,
       clock,
       auditFile: audit.writer,
@@ -584,11 +586,22 @@ describe('the pipeline with an account the operator names', () => {
     expect(unset.doubles).toHaveLength(0);
   });
 
-  it('is never built with a configuration that may write', () => {
+  it('is never built with a configuration that may write or a write tool', () => {
     const { config, doubles, buildAccount } = setup();
     expect(() =>
       buildAccount('berichte', {
         config: Object.freeze({ ...config, readOnly: false }),
+      }),
+    ).toThrow(TypeError);
+    // A configuration that only reads, with a catalog that writes.
+    expect(() =>
+      buildAccount('berichte', {
+        catalog: createToolCatalog({
+          core: createCorePlugin({ writing: true }),
+          plugins: [],
+          readOnly: false,
+          toolsets: new Set(['wiki'] as const),
+        }),
       }),
     ).toThrow(TypeError);
     expect(doubles).toHaveLength(0);
