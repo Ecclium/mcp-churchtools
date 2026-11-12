@@ -1,6 +1,7 @@
 /**
- * The schedule of routines (ADR 0034): the check of its form, and when a
- * routine is due, with the memory of runs in the store of quotas.
+ * The schedule of routines (ADR 0034): the check of its form, when a
+ * routine is due, with the memory of runs in the store of quotas, and how
+ * often it fires on one UTC day at most.
  *
  * @packageDocumentation
  */
@@ -22,4 +23,5 @@ export {
   scheduleFieldNames,
   type ScheduleProblem,
 } from './form.js';
+export { mostTriggersPerUtcDay, triggersPerDaySpanDays } from './per-day.js';
 export type { Period } from './period.js';

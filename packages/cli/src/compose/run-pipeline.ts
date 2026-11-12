@@ -26,6 +26,13 @@
  * folder is checked again for each run, since its rights can change while
  * a daemon runs.
  *
+ * One exception for the operator: `ecclium policy init --routine` reads
+ * the names of the target of a routine before any entry names its
+ * account, with the alias the operator names (ADR 0032). That pipeline
+ * comes from `composeAccountPipeline`, with the same checks of folder and
+ * file, and only for a configuration that only reads and a catalog of
+ * read tools.
+ *
  * @packageDocumentation
  */
 import {
@@ -93,6 +100,47 @@ export type RunPipelineResult =
       readonly code: RunPipelineCode;
     };
 
+// Builds the pipeline with the token of an alias, or says why not. Every
+// run reads with the account of its alias or not at all: the token of the
+// configuration would give a run more than its routines need.
+const withAccount = (
+  options: ComposeOptions & {
+    readonly readToken?: typeof readRunnerToken | undefined;
+    readonly checkTokensDir?: typeof checkRunnerTokensDir | undefined;
+  },
+  credential: string,
+):
+  | Extract<RunPipelineResult, { ok: true }>
+  | { readonly ok: false; readonly code: AccountPipelineCode } => {
+  const { config } = options;
+  if (config.runnerTokensDir === undefined) {
+    return Object.freeze({ ok: false, code: 'runner_tokens_dir_unset' });
+  }
+  const folder = (options.checkTokensDir ?? checkRunnerTokensDir)(
+    config.runnerTokensDir,
+  );
+  if (!folder.ok) return Object.freeze({ ok: false, code: folder.code });
+  const read = (options.readToken ?? readRunnerToken)(
+    config.runnerTokensDir,
+    credential,
+  );
+  if (!read.ok) return Object.freeze({ ok: false, code: read.code });
+  const { pipeline, transport } = composeToolPipeline({
+    config: Object.freeze({ ...config, churchtoolsToken: read.value }),
+    catalog: options.catalog,
+    writer: options.writer,
+    clock: options.clock,
+    auditFile: options.auditFile,
+    createTransport: options.createTransport,
+    writeHalt: options.writeHalt,
+  });
+  return Object.freeze({
+    ok: true,
+    pipeline,
+    close: (): Promise<void> => transport.close(),
+  });
+};
+
 /**
  * Builds the pipeline of one run with the token of its account.
  *
@@ -134,32 +182,69 @@ export function composeRunPipeline(
     }
     credential = runnerOwnAlias;
   }
-  // Every run reads with the account of its alias or not at all: the token
-  // of the configuration would give a run more than its routines need.
-  if (config.runnerTokensDir === undefined) {
-    return Object.freeze({ ok: false, code: 'runner_tokens_dir_unset' });
+  return withAccount(options, credential);
+}
+
+/** What the pipeline with an account the operator names is built from. */
+export interface AccountPipelineOptions extends ComposeOptions {
+  /**
+   * The alias the operator named on the command line, such as with
+   * `ecclium policy init --routine --credential`, in the form an alias of
+   * the policy has.
+   */
+  readonly credential: string;
+  /** Only for tests: reads the token file of an alias. */
+  readonly readToken?: typeof readRunnerToken;
+  /** Only for tests: checks the folder of the token files. */
+  readonly checkTokensDir?: typeof checkRunnerTokensDir;
+}
+
+/** Why the pipeline with an account the operator names was not built. */
+export type AccountPipelineCode =
+  TokenFileCode | RunnerTokensDirCode | 'runner_tokens_dir_unset';
+
+/** The pipeline with an account the operator names, or why not. */
+export type AccountPipelineResult =
+  | Extract<RunPipelineResult, { ok: true }>
+  | { readonly ok: false; readonly code: AccountPipelineCode };
+
+/**
+ * Builds a pipeline that only reads, with the token of an alias the
+ * operator names on the command line (ADR 0032, ADR 0033): the file
+ * `ct_token_<alias>` of `ECCLIUM_RUNNER_TOKENS_DIR`, with the checks of a
+ * run, and never the token of the configuration.
+ *
+ * Why the operator may name the alias here and a run may not: before the
+ * entry of a routine exists, no policy names its account, and the names
+ * of its target should be read by the account that writes there later.
+ * The pipeline only reads, so the alias the operator names decides what
+ * is read, never what is written.
+ *
+ * @param options - What `composeToolPipeline` takes, with a configuration
+ *   that only reads and a catalog without a write tool, and the alias.
+ * @returns The pipeline with a function that closes its transport, or why
+ *   no token was read. Nothing is open when it was not built.
+ * @throws {TypeError} When the configuration may write or the catalog
+ *   holds a tool that is no read tool, or when a factory
+ *   of core refuses its options, as `composeToolPipeline` does.
+ * @example
+ * ```ts
+ * const built = composeAccountPipeline({ config, catalog, writer, clock, auditFile, credential: 'berichte' });
+ * if (!built.ok) return report(built.code);
+ * try { await read(built.pipeline); } finally { await built.close(); }
+ * ```
+ */
+export function composeAccountPipeline(
+  options: AccountPipelineOptions,
+): AccountPipelineResult {
+  // Both the configuration and the catalog: the pipeline takes its write
+  // tools from the catalog, and the flag of the configuration alone would
+  // not keep one out.
+  if (
+    !options.config.readOnly ||
+    options.catalog.list().some((entry) => entry.meta.capability !== 'read')
+  ) {
+    throw new TypeError('An account the operator names only reads.');
   }
-  const folder = (options.checkTokensDir ?? checkRunnerTokensDir)(
-    config.runnerTokensDir,
-  );
-  if (!folder.ok) return Object.freeze({ ok: false, code: folder.code });
-  const read = (options.readToken ?? readRunnerToken)(
-    config.runnerTokensDir,
-    credential,
-  );
-  if (!read.ok) return Object.freeze({ ok: false, code: read.code });
-  const { pipeline, transport } = composeToolPipeline({
-    config: Object.freeze({ ...config, churchtoolsToken: read.value }),
-    catalog: options.catalog,
-    writer: options.writer,
-    clock: options.clock,
-    auditFile: options.auditFile,
-    createTransport: options.createTransport,
-    writeHalt: options.writeHalt,
-  });
-  return Object.freeze({
-    ok: true,
-    pipeline,
-    close: (): Promise<void> => transport.close(),
-  });
+  return withAccount(options, options.credential);
 }

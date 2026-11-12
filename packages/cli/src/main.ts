@@ -40,7 +40,8 @@ import {
   usageProblemTexts,
 } from './output/index.js';
 import type { PolicyInitOptions } from './policy/init.js';
-import { policyInitTexts } from './policy/texts.js';
+import { policyInitCallProblem } from './policy/call.js';
+import { policyInitCallTexts } from './policy/texts.js';
 import type { WriteSyncFn } from './send.js';
 import type { QueueOptions } from './queue/queue.js';
 import type { RunnerDaemonOptions } from './runner/daemon.js';
@@ -94,7 +95,10 @@ const commands: readonly Command[] = Object.freeze(
       words: ['audit', 'show'],
       options: ['object', 'run', 'since', 'until'],
     },
-    { words: ['policy', 'init'], options: ['interactive'] },
+    {
+      words: ['policy', 'init'],
+      options: ['interactive', 'routine', 'credential'],
+    },
     { words: ['undo'], options: ['overwrite'], argument: true },
     // Without the ID of a write only with --run, for every write of a run.
     { words: ['undo'], options: ['run', 'overwrite'] },
@@ -125,6 +129,8 @@ const options = Object.freeze({
   since: Object.freeze({ type: 'string' }),
   until: Object.freeze({ type: 'string' }),
   interactive: Object.freeze({ type: 'boolean' }),
+  routine: Object.freeze({ type: 'string' }),
+  credential: Object.freeze({ type: 'string' }),
   overwrite: Object.freeze({ type: 'boolean' }),
   runner: Object.freeze({ type: 'boolean' }),
   due: Object.freeze({ type: 'boolean' }),
@@ -150,7 +156,12 @@ type Call =
       readonly since: string | undefined;
       readonly until: string | undefined;
     }
-  | { readonly kind: 'init'; readonly interactive: boolean }
+  | {
+      readonly kind: 'init';
+      readonly interactive: boolean;
+      readonly routine: string | undefined;
+      readonly credential: string | undefined;
+    }
   | {
       readonly kind: 'undo';
       /** The ID of one write, or the ID of a run with `--run`. */
@@ -247,7 +258,12 @@ const readCall = (args: readonly string[]): Call => {
         until: values.until,
       };
     case 'policy init':
-      return { kind: 'init', interactive: values.interactive === true };
+      return {
+        kind: 'init',
+        interactive: values.interactive === true,
+        routine: values.routine,
+        credential: values.credential,
+      };
     case 'undo': {
       const eventId = positionals[1];
       if (eventId !== undefined) {
@@ -386,9 +402,10 @@ export function run(
         });
       case 'init': {
         // Checked before the import, so that a wrong call loads nothing.
-        if (!call.interactive) {
-          output.stderr(policyInitTexts.interactive_missing);
-          output.stderr(usageLine);
+        const problem = policyInitCallProblem(call);
+        if (problem !== undefined) {
+          output.stderr(policyInitCallTexts[problem]);
+          if (!problem.endsWith('_invalid')) output.stderr(usageLine);
           return exitCodes.usage;
         }
         // Loaded only for this command: it builds the transport, whose
@@ -400,6 +417,8 @@ export function run(
               environment: taken,
               execArgv,
               interactive: call.interactive,
+              routine: call.routine,
+              credential: call.credential,
               output: out,
               ...runOptions.policyInit,
             }),

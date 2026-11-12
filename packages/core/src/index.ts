@@ -101,6 +101,11 @@ export {
   type ProposedTarget,
   proposedMaxPerDay,
   renderPolicyProposal,
+  renderRoutineProposal,
+  type RoutineProposalInput,
+  type RoutineProposalNote,
+  type RoutineProposalPage,
+  routineMaxPerDay,
   targetKeyOf,
   type UnattendedEntry,
   type UnattendedTarget,
@@ -236,6 +241,7 @@ export {
   dueLimits,
   type DueOptions,
   lastTrigger,
+  mostTriggersPerUtcDay,
   type Period,
   type ScheduleCheck,
   type ScheduleFieldName,
@@ -243,6 +249,7 @@ export {
   type ScheduleProblem,
   startAttempt,
   type Trigger,
+  triggersPerDaySpanDays,
 } from './schedule/index.js';
 export {
   checkRunSection,

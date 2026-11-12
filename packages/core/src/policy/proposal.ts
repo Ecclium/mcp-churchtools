@@ -99,12 +99,16 @@ const hex = (code: number, width: number): string =>
 
 /**
  * Writes a name as a double-quoted scalar of YAML that holds only
- * characters the command line shows.
+ * characters the command line shows. For the proposals of this folder.
  *
  * @param name - A name the policy accepts.
  * @returns The scalar, quotes included.
+ * @example
+ * ```ts
+ * yamlQuoted('Bericht «neu»'); // '"Bericht «neu»"'
+ * ```
  */
-const quoted = (name: string): string => {
+export const yamlQuoted = (name: string): string => {
   let text = '"';
   for (const character of name) {
     // A character of the iteration has a code point at 0.
@@ -125,7 +129,20 @@ const quoted = (name: string): string => {
 // A name the policy takes: 1 to 255 characters, no control character, and
 // well formed, so that no half of a pair of surrogates reaches an escape.
 const namePattern = /^\P{Cc}+$/u;
-const nameFits = (name: string): boolean =>
+
+/**
+ * Whether the policy takes a name as it is, for the proposals of this
+ * folder.
+ *
+ * @param name - The name.
+ * @returns Whether it has 1 to 255 characters, no control character and
+ *   no half of a pair of surrogates.
+ * @example
+ * ```ts
+ * policyNameFits('Berichte'); // true
+ * ```
+ */
+export const policyNameFits = (name: string): boolean =>
   name.length >= 1 &&
   name.length <= policyLimits.name &&
   name.isWellFormed() &&
@@ -240,7 +257,7 @@ export function renderPolicyProposal(input: ProposalInput): string {
       );
       continue;
     }
-    if (!nameFits(name)) {
+    if (!policyNameFits(name)) {
       skipped.push(
         `    # ${noun} ${id}: ${its} Name passt nicht in die Richtlinie, darum kein Eintrag.`,
       );
@@ -260,7 +277,7 @@ export function renderPolicyProposal(input: ProposalInput): string {
       );
     }
     entries.push(
-      `    - target: { kind: ${words.kind}, id: ${id}, name: ${quoted(name)} }`,
+      `    - target: { kind: ${words.kind}, id: ${id}, name: ${yamlQuoted(name)} }`,
       `      tools: [${tools.join(', ')}]`,
       `      maxPerDay: ${String(proposedMaxPerDay(target.highestPerDay))}`,
     );
@@ -296,10 +313,10 @@ export function renderPolicyProposal(input: ProposalInput): string {
   if (input.contacts !== undefined && input.contacts.length > 0) {
     lines.push('  contacts:');
     for (const contact of input.contacts)
-      lines.push(`    - ${quoted(contact)}`);
+      lines.push(`    - ${yamlQuoted(contact)}`);
   }
   if (input.inquiriesTo !== undefined) {
-    lines.push(`  inquiriesTo: ${quoted(input.inquiriesTo)}`);
+    lines.push(`  inquiriesTo: ${yamlQuoted(input.inquiriesTo)}`);
   }
   return `${lines.join('\n')}\n`;
 }

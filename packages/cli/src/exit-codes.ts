@@ -19,11 +19,14 @@ export const exitCodes = Object.freeze({
    * a run ended for good on its data or the answer of its model.
    */
   dataError: 65,
-  /** The input is missing, such as the folder `audit` or a log. */
+  /**
+   * The input is missing, such as the folder `audit`, a log or the folder
+   * of the routines.
+   */
   noInput: 66,
   /**
    * A service the command needs did not answer as needed: for
-   * `policy init`, ChurchTools gave no names of the categories.
+   * `policy init`, ChurchTools gave no names of the targets or pages.
    */
   unavailable: 69,
   /** An internal error, with a fixed text and no details. */

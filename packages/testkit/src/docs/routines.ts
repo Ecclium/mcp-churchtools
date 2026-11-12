@@ -383,7 +383,7 @@ const table = (
  * changes with the versions that use more of them.
  */
 export const routinesState =
-  'Der Runner führt Routinen mit `ecclium run-once` aus ([Runner](betrieb/runner.md)), der Daemon mit Zeitgeber kommt mit einer späteren Version. Der Server liest den Ordner der Routinen nicht.';
+  'Der Runner führt Routinen von Hand mit `ecclium run-once` aus und als Daemon mit `ecclium runner` zu ihrer Zeit ([Runner](betrieb/runner.md)). `ecclium policy init --routine` lädt die Routinen, um den Eintrag einer Routine in der Richtlinie vorzuschlagen ([Richtlinie](policy.md)). Der Server liest den Ordner der Routinen nicht.';
 
 /**
  * Renders `docs/routines.md`, the page of the routines for operators.

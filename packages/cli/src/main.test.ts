@@ -13,6 +13,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { exitCodes } from './exit-codes.js';
 import { run, type RunOptions } from './main.js';
 import { problemText, warningText } from './messages/index.js';
+import { policyInitCallTexts } from './policy/texts.js';
 import {
   helpLines,
   internalErrorText,
@@ -621,12 +622,69 @@ describe('ecclium policy init in the command line', () => {
     return { code, stderr: decoder.decode(new Uint8Array(taken)) };
   };
 
-  it('hands the call to the command, which needs --interactive', async () => {
-    const result = await runInit(['policy', 'init']);
-    expect(result.code).toBe(exitCodes.usage);
-    expect(result.stderr).toContain(
-      '‹ecclium policy init› braucht ‹--interactive›.',
-    );
+  it('needs --interactive or --routine with --credential before it loads the command', async () => {
+    const loads: number[] = [];
+    const load = () => {
+      loads.push(1);
+      throw new Error(plain());
+    };
+    for (const [args, problem] of [
+      [['policy', 'init'], 'mode_missing'],
+      [['policy', 'init', '--credential', 'berichte'], 'mode_missing'],
+      [
+        ['policy', 'init', '--interactive', '--routine', 'dienstplan'],
+        'mode_both',
+      ],
+      [['policy', 'init', '--routine', 'dienstplan'], 'credential_missing'],
+      [
+        ['policy', 'init', '--interactive', '--credential', 'berichte'],
+        'credential_interactive',
+      ],
+    ] as const) {
+      const result = await runInit(args, { policyInit: { load } });
+      expect(result.code).toBe(exitCodes.usage);
+      expect(result.stderr).toBe(
+        `${policyInitCallTexts[problem]}\n${usageLine}\n`,
+      );
+    }
+    expect(loads).toEqual([]);
+  });
+
+  it('refuses a routine or an alias of another form without repeating it', async () => {
+    const canary = makeCanary('token');
+    for (const [args, problem] of [
+      [
+        ['policy', 'init', '--routine', canary.value, '--credential', 'b'],
+        'routine_invalid',
+      ],
+      [
+        [
+          'policy',
+          'init',
+          '--routine',
+          'dienstplan',
+          '--credential',
+          canary.value,
+        ],
+        'credential_invalid',
+      ],
+    ] as const) {
+      const result = await runInit(args);
+      expect(result.code).toBe(exitCodes.usage);
+      expect(result.stderr).toBe(`${policyInitCallTexts[problem]}\n`);
+      expect(result.stderr).not.toContain(canary.value);
+    }
+  });
+
+  it('needs a value for --routine and --credential', () => {
+    for (const args of [
+      ['policy', 'init', '--routine'],
+      ['policy', 'init', '--routine', 'dienstplan', '--credential'],
+    ]) {
+      const result = capture(args, {});
+      expect(result.code).toBe(exitCodes.usage);
+      expect(result.stderr).toBe(`${usageProblemTexts.value}\n${usageLine}\n`);
+    }
   });
 
   it('turns a failure of the command into the internal error', async () => {
@@ -641,10 +699,32 @@ describe('ecclium policy init in the command line', () => {
     expect(result.stderr).toBe(`${internalErrorText}\n`);
   });
 
-  it('takes --interactive only for policy init', () => {
-    const result = capture(['config', 'check', '--interactive'], {});
-    expect(result.code).toBe(exitCodes.usage);
-    expect(result.stderr).toBe(`${usageProblemTexts.option}\n${usageLine}\n`);
+  it('hands --routine and --credential to the command', async () => {
+    // A valid call reaches the loader, which only the command calls.
+    const result = await runInit(
+      ['policy', 'init', '--routine', 'dienstplan', '--credential', 'berichte'],
+      {
+        policyInit: {
+          load: () => {
+            throw new Error(plain());
+          },
+        },
+      },
+    );
+    expect(result.code).toBe(exitCodes.internal);
+    expect(result.stderr).toBe(`${internalErrorText}\n`);
+  });
+
+  it('takes --interactive, --routine and --credential only for policy init', () => {
+    for (const option of [
+      ['--interactive'],
+      ['--routine', 'dienstplan'],
+      ['--credential', 'berichte'],
+    ]) {
+      const result = capture(['config', 'check', ...option], {});
+      expect(result.code).toBe(exitCodes.usage);
+      expect(result.stderr).toBe(`${usageProblemTexts.option}\n${usageLine}\n`);
+    }
   });
 });
 
