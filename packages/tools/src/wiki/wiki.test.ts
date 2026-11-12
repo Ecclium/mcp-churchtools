@@ -149,7 +149,10 @@ const pageEntry = (index: number) => ({
   title: `Seite ${String(index)}`,
   version: index,
   isMarkdown: true,
-  meta: { modifiedPerson: { title: 'Person A' } },
+  meta: {
+    modifiedDate: '2026-10-09T08:00:00Z',
+    modifiedPerson: { title: 'Person A' },
+  },
 });
 
 const pageList = (count: number, current = 1, lastPage = 1) =>
@@ -268,7 +271,7 @@ describe('ct_wiki_categories_list', () => {
 });
 
 describe('ct_wiki_pages_list', () => {
-  it('lists the first page of a category with GUID, title, format and version', async () => {
+  it('lists the first page of a category with GUID, title, format, version and date', async () => {
     const { double, call } = setup();
     double
       .intercept({ path: atPages, method: 'GET' })
@@ -283,12 +286,14 @@ describe('ct_wiki_pages_list', () => {
           title: enveloped('Seite 1'),
           isMarkdown: true,
           version: 1,
+          modifiedDate: '2026-10-09T08:00:00Z',
         },
         {
           guid: '00000000-0000-4000-8000-000000000002',
           title: enveloped('Seite 2'),
           isMarkdown: true,
           version: 2,
+          modifiedDate: '2026-10-09T08:00:00Z',
         },
       ],
       more: true,
@@ -671,6 +676,7 @@ describe('the output of the tools of the wiki', () => {
       title: 'untrusted',
       isMarkdown: 'none',
       version: 'none',
+      modifiedDate: 'none',
     });
     expect(classes('ct_wiki_page_get', [])).toEqual({
       categoryId: 'none',

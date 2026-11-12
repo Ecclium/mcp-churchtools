@@ -693,7 +693,10 @@ export const wikiCategoryListSchema = z.object({
  * The answer of `GET /api/wiki/pages` for one category, only the fields a
  * list passes on (F6, F9, «Kennung einer Seite», «Listen ohne Text»).
  * `meta.createdPerson` and `meta.modifiedPerson`, which carry names of
- * persons, are not read (ADR 0057).
+ * persons, are not read (ADR 0057). Of `meta` of an entry only
+ * `modifiedDate` is read, for the checks of the core (ADR 0033); an entry
+ * without it, or with a value of another form, still passes, and the
+ * client gives no date for it.
  */
 export const wikiPageListSchema = z.object({
   data: z
@@ -703,6 +706,7 @@ export const wikiPageListSchema = z.object({
         title: text(maxWikiTitleLength),
         isMarkdown: z.boolean(),
         version: id,
+        meta: z.object({ modifiedDate: z.unknown() }).partial().optional(),
       }),
     )
     .max(wikiPageListLimit),

@@ -76,7 +76,15 @@ const members: GroupMemberList = {
 const guid = '00000000-0000-4000-8000-000000000001';
 const categories: readonly WikiCategory[] = [{ id: 4, name: 'Kategorie A' }];
 const pages: WikiPageList = {
-  pages: [{ guid, title: 'Seite A', isMarkdown: true, version: 2 }],
+  pages: [
+    {
+      guid,
+      title: 'Seite A',
+      isMarkdown: true,
+      version: 2,
+      modifiedDate: '2026-11-12T08:00:00Z',
+    },
+  ],
   more: false,
 };
 const page: WikiPage = {
