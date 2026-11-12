@@ -236,6 +236,7 @@ export {
   dueLimits,
   type DueOptions,
   lastTrigger,
+  mostTriggersPerUtcDay,
   type Period,
   type ScheduleCheck,
   type ScheduleFieldName,
@@ -243,6 +244,7 @@ export {
   type ScheduleProblem,
   startAttempt,
   type Trigger,
+  triggersPerDaySpanDays,
 } from './schedule/index.js';
 export {
   checkRunSection,
