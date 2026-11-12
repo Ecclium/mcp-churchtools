@@ -88,6 +88,11 @@ export interface PolicyInitOptions {
   readonly routine?: string | undefined;
   /** The alias of `--credential`, with `--routine`. */
   readonly credential?: string | undefined;
+  /**
+   * Replaces the time the count of the triggers starts from, with
+   * `--routine`, for tests.
+   */
+  readonly now?: (() => number) | undefined;
   readonly output: Output;
   /** Replaces the loader, for tests. */
   readonly load?: ((sources: ConfigSources) => ConfigResult) | undefined;

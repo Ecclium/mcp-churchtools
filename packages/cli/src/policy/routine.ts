@@ -4,11 +4,12 @@
  * the policy, for the operator to check and to add to the file of the
  * policy. It changes no file.
  *
- * It loads the routine from `ECCLIUM_ROUTINES_DIR` with the loader of
- * `routine.v1`, without the preparation against the policy, which a
- * routine without its entry would not pass. A routine whose output is a
- * draft needs no entry: the command says so and ends before it touches the
- * token files or ChurchTools. For a page of the wiki it reads the names
+ * It loads the configuration over stdio like the server, then every
+ * routine of `ECCLIUM_ROUTINES_DIR` with the loader of `routine.v1`,
+ * without the preparation against the policy, which a routine without its
+ * entry would not pass, and proposes for the one it names. A routine
+ * whose output is a draft needs no entry: the command says so and ends
+ * before it touches the token file of an alias or ChurchTools. For a page of the wiki it reads the names
  * with the account of the alias, the file `ct_token_<alias>` of
  * `ECCLIUM_RUNNER_TOKENS_DIR`, never with the token of the server: the
  * account that writes later shows now whether it may see the page. It asks
@@ -25,10 +26,11 @@
  *
  * Its exit code follows sysexits: 0 when the proposal is written, also one
  * with comments only, 64 for a routine the folder does not hold, 66 when
- * the folder of the routines is missing, 69 when ChurchTools gives no
- * names, 74 when the proposal did not reach stdout whole, and 78 for an
- * invalid configuration, routines that do not load, no folder of state,
- * no zone, or no token file of the alias the checks take.
+ * the folder of `ECCLIUM_ROUTINES_DIR` is missing or no folder, 69 when
+ * ChurchTools gives no list, 74 when the proposal did not reach stdout
+ * whole, and 78 for an invalid configuration, routines that do not load,
+ * and without `ECCLIUM_ROUTINES_DIR`, a folder of state, a zone, the
+ * folder of the token files or a token file of the alias the checks take.
  *
  * @packageDocumentation
  */
@@ -71,9 +73,9 @@ import {
   withReading,
 } from './names.js';
 import {
+  accountNamesFailedText,
   accountText,
   draftNeedsNoEntryText,
-  namesFailedText,
   outputCutText,
   routineProposalTexts,
   routinesLoadText,
@@ -217,9 +219,11 @@ const findPage = async (
       namedEntryOf,
     );
     if (!categories.ok) {
-      output.stderr(namesFailedText(categories.code, 'categories'));
+      output.stderr(accountNamesFailedText(categories.code, 'categories'));
       return { ok: false, code: exitCodes.unavailable };
     }
+    // The client takes at most 1000 categories and refuses a longer list,
+    // so this holds only should that change: a part never counts as whole.
     if (!categories.complete) return { ok: true, value: tooLong };
     const category = nfc(scope.category);
     // Each category once, should a list name one twice.
@@ -253,7 +257,7 @@ const findPage = async (
         pageEntryOf,
       );
       if (!pages.ok) {
-        output.stderr(namesFailedText(pages.code, 'pages'));
+        output.stderr(accountNamesFailedText(pages.code, 'pages'));
         return { ok: false, code: exitCodes.unavailable };
       }
       if (!pages.complete) return { ok: true, value: tooLong };
@@ -381,7 +385,7 @@ export async function proposeRoutineEntry(
   }
   const target = routine.output;
   // A draft goes to a file, not to ChurchTools, so the command reads no
-  // token and asks ChurchTools nothing (ADR 0033).
+  // token file of an alias and asks ChurchTools nothing (ADR 0033).
   if (target.target !== 'wiki') return writeOut(output, draftNeedsNoEntryText);
   const { timeZone, stateDir } = config;
   if (timeZone === undefined) {

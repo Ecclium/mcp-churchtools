@@ -25,9 +25,9 @@ export const policyInitCallTexts: Readonly<
   credential_interactive:
     '‹--credential› gehört zu ‹--routine›: Den interaktiven Teil schlägt Ecclium mit dem Token des Servers vor. Lassen Sie ‹--credential› weg oder schlagen Sie mit ‹--routine› den Eintrag einer Routine vor.',
   routine_invalid:
-    'Die Kennung aus ‹--routine› ist keine Kennung einer Routine: Kleinbuchstaben, Ziffern und Bindestriche, höchstens 63 Zeichen, am Anfang ein Buchstabe oder eine Ziffer. Ecclium nennt sie nicht noch einmal.',
+    'Die Kennung aus ‹--routine› ist keine Kennung einer Routine: Kleinbuchstaben, Ziffern und Bindestriche, höchstens 63 Zeichen, am Anfang ein Buchstabe oder eine Ziffer. Ecclium nennt sie nicht noch einmal. Nennen Sie die Kennung, wie sie im Namen der Datei der Routine steht, ohne ‹.yaml›.',
   credential_invalid:
-    'Der Alias aus ‹--credential› hat nicht die Form eines Alias der Richtlinie: Kleinbuchstaben, Ziffern und Bindestriche, höchstens 63 Zeichen, am Anfang ein Buchstabe oder eine Ziffer. Ecclium nennt ihn nicht noch einmal.',
+    'Der Alias aus ‹--credential› hat nicht die Form eines Alias der Richtlinie: Kleinbuchstaben, Ziffern und Bindestriche, höchstens 63 Zeichen, am Anfang ein Buchstabe oder eine Ziffer. Ecclium nennt ihn nicht noch einmal. Nennen Sie den Alias, wie ihn die Datei ‹ct_token_<Alias>› trägt.',
 });
 
 /** The problems of `ecclium policy init` that end it before a proposal. */
@@ -127,6 +127,10 @@ export const draftNeedsNoEntryText =
  * ```
  */
 export function routinesLoadText(problem: RoutineLoadProblem): string {
+  // The folder itself, not a file in it: no word about the format.
+  if (problem.code === 'routines_dir') {
+    return `Den Ordner aus ‹ECCLIUM_ROUTINES_DIR› kann Ecclium nicht lesen${problem.reason === undefined ? '' : ` (Grund ‹${problem.reason}›)`}, darum schlägt Ecclium keinen Eintrag vor. Prüfen Sie, ob es den Ordner gibt, ob er Ihrem Benutzer gehört und ob ihn die Gruppe und andere nicht ändern dürfen, wie für den Runner.`;
+  }
   const where = [
     problem.routine === undefined ? '' : ` in der Routine ‹${problem.routine}›`,
     problem.field === undefined ? '' : `, Feld ‹${problem.field}›`,
@@ -146,8 +150,31 @@ export function routinesLoadText(problem: RoutineLoadProblem): string {
  * ```
  */
 export function accountText(code: AccountPipelineCode): string {
-  const action = code.startsWith('runner_tokens_dir_')
-    ? 'Richten Sie den Ordner aus ‹ECCLIUM_RUNNER_TOKENS_DIR› so ein, wie der Runner ihn braucht: ein Ordner Ihres Benutzers, kein Link, ohne Schreibrecht für die Gruppe und andere.'
-    : 'Legen Sie die Token-Datei ‹ct_token_<Alias>› für den Alias aus ‹--credential› im Ordner aus ‹ECCLIUM_RUNNER_TOKENS_DIR› so an, wie der Runner sie braucht, mit den Rechten 600.';
+  const action =
+    code === 'runner_tokens_dir_unset'
+      ? 'Setzen Sie ‹ECCLIUM_RUNNER_TOKENS_DIR› auf den Ordner der Token-Dateien, wie für den Runner.'
+      : code.startsWith('runner_tokens_dir_')
+        ? 'Richten Sie den Ordner aus ‹ECCLIUM_RUNNER_TOKENS_DIR› so ein, wie der Runner ihn braucht: ein Ordner Ihres Benutzers, kein Link, ohne Schreibrecht für die Gruppe und andere.'
+        : 'Legen Sie die Token-Datei ‹ct_token_<Alias>› für den Alias aus ‹--credential› im Ordner aus ‹ECCLIUM_RUNNER_TOKENS_DIR› so an, wie der Runner sie braucht, mit den Rechten 600.';
   return `Ecclium liest die Namen mit dem Konto aus ‹--credential›, mit dem die Routine später schreibt, nie mit dem Token des Servers. ${runAccountCauses[code]} ${action} Rufen Sie den Befehl dann erneut auf.`;
+}
+
+/**
+ * The text when ChurchTools did not give a list to the account of
+ * `--credential`, for the entry of a routine.
+ *
+ * @param code - The stable code of the error, never its message.
+ * @param kind - The categories, or the pages of a category.
+ * @returns The text.
+ * @example
+ * ```ts
+ * accountNamesFailedText('auth', 'categories');
+ * ```
+ */
+export function accountNamesFailedText(
+  code: ErrorCode,
+  kind: 'categories' | 'pages',
+): string {
+  const what = kindNames[kind];
+  return `ChurchTools gab dem Konto aus ‹--credential› die Namen der ${what} nicht heraus (Fehler ‹${code}›), darum schreibt Ecclium keinen Vorschlag. Prüfen Sie, ob das Token in ‹ct_token_<Alias>› gilt und ob das Konto die ${what} sehen darf, und rufen Sie den Befehl erneut auf.`;
 }

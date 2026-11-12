@@ -33,9 +33,9 @@ import type { Output } from '../output/index.js';
 import { createRunnerCatalog } from '../runner/start.js';
 import { initPolicy } from './init.js';
 import {
+  accountNamesFailedText,
   accountText,
   draftNeedsNoEntryText,
-  namesFailedText,
   outputCutText,
   routineProposalTexts,
   routinesLoadText,
@@ -77,6 +77,7 @@ interface RoutineOptions {
   readonly schedule?: string;
   readonly target?: 'wiki' | 'draft';
   readonly redaction?: 'strict' | 'standard';
+  readonly category?: string;
   readonly page?: string;
 }
 
@@ -117,7 +118,10 @@ const routineValueOf = (id: string, options: RoutineOptions = {}) => ({
       : {
           target: 'wiki',
           tool,
-          scope: { category: 'Berichte', page: options.page ?? pageTitle },
+          scope: {
+            category: options.category ?? 'Berichte',
+            page: options.page ?? pageTitle,
+          },
           idempotencyKey: `${id}:{isoWeek}`,
         },
 });
@@ -391,8 +395,8 @@ const setup = (options: SetupOptions = {}) => {
 };
 
 const entryLines = (maxPerDay: number, page = guid): readonly string[] => [
-  `- routine: ${routineId}`,
-  '  credential: berichte',
+  `- routine: "${routineId}"`,
+  '  credential: "berichte"',
   `  target: { kind: wiki_page, categoryId: 7, guid: "${page}", name: "${pageTitle}" }`,
   `  tools: [${tool}]`,
   '  maxPerRun: 1',
@@ -474,7 +478,9 @@ describe('ecclium policy init --routine', () => {
     wiki.accepted = serverCanary;
     const result = await run();
     expect(result.code).toBe(69);
-    expect(result.stderr).toEqual([namesFailedText('auth', 'categories')]);
+    expect(result.stderr).toEqual([
+      accountNamesFailedText('auth', 'categories'),
+    ]);
     expect(result.stdout).toEqual([]);
     expect(authorizations()).not.toContain(`Login ${serverCanary.value}`);
   });
@@ -575,6 +581,55 @@ describe('ecclium policy init --routine', () => {
       expect(notes[1]).toContain('verändert an');
     });
 
+    it('for a page whose name only the redaction made equal', async () => {
+      // The note of the redaction would match a routine that names it.
+      const { run } = setup({
+        routines: {
+          [routineId]: routineValueOf(routineId, {
+            page: 'Bericht [ecclium: 1 hidden characters removed]',
+          }),
+        },
+        pages: [{ categoryId: 7, guid, title: 'Bericht\u200b' }],
+      });
+      const result = await run();
+      expect(result.code).toBe(0);
+      expect(comments(result.stdout)).toEqual(result.stdout);
+      expect(result.stdout.at(-1)).toContain('verändert an');
+    });
+
+    it('for a category whose name only the redaction made equal', async () => {
+      const { run } = setup({
+        routines: {
+          [routineId]: routineValueOf(routineId, {
+            category: 'Berichte [ecclium: 1 hidden characters removed]',
+          }),
+        },
+        categories: [{ id: 7, name: 'Berichte\u200b' }],
+      });
+      const result = await run();
+      expect(result.code).toBe(0);
+      const notes = comments(result.stdout).slice(-2);
+      expect(notes[0]).toContain('output.scope.category');
+      expect(notes[1]).toContain('verändert an');
+    });
+
+    it('for the page in two categories of the same name', async () => {
+      const { run } = setup({
+        categories: [
+          { id: 7, name: 'Berichte' },
+          { id: 8, name: 'Berichte' },
+        ],
+        pages: [
+          { categoryId: 7, guid, title: pageTitle },
+          { categoryId: 8, guid: otherGuid, title: pageTitle },
+        ],
+      });
+      const result = await run();
+      expect(result.code).toBe(0);
+      expect(comments(result.stdout)).toEqual(result.stdout);
+      expect(result.stdout.at(-1)).toContain('Mehr als eine Seite');
+    });
+
     it('for a category with more pages than the command reads', async () => {
       const pages = Array.from({ length: 1001 }, (_, index) => ({
         categoryId: 7,
@@ -584,7 +639,7 @@ describe('ecclium policy init --routine', () => {
       const { run, authorizations } = setup({ pages });
       const result = await run();
       expect(result.code).toBe(0);
-      expect(result.stdout.at(-1)).toContain('länger als die 1000 Einträge');
+      expect(result.stdout.at(-1)).toContain("länger als die 1'000 Einträge");
       // The categories once, then the 40 pages of the list it reads.
       expect(authorizations()).toHaveLength(41);
     });
