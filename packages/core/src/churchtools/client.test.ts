@@ -1050,29 +1050,25 @@ describe('the wiki', () => {
       ...entry(index),
       meta,
     });
-    double
-      .intercept({ path: at('/api/wiki/pages'), method: 'GET' })
-      .reply(
-        200,
-        pageList([
-          without(1, undefined),
-          without(2, {}),
-          without(3, { modifiedDate: '2026-10-09 08:00:00' }),
-          without(4, { modifiedDate: '2026-10-09T08:00:00+02:00' }),
-          without(5, { modifiedDate: 1_760_000_000 }),
-          without(6, { modifiedDate: null }),
-        ]),
-        json,
-      );
+    double.intercept({ path: at('/api/wiki/pages'), method: 'GET' }).reply(
+      200,
+      pageList([
+        without(1, undefined),
+        without(2, {}),
+        without(3, { modifiedDate: '2026-10-09 08:00:00' }),
+        without(4, { modifiedDate: '2026-10-09T08:00:00+02:00' }),
+        without(5, { modifiedDate: 1_760_000_000 }),
+        without(6, { modifiedDate: null }),
+        // PHP writes an empty object as an empty list.
+        without(7, []),
+        without(8, null),
+      ]),
+      json,
+    );
     const result = await client.wikiPages(ctx(), 4, 1);
-    expect(result.pages.map((page) => page.modifiedDate)).toEqual([
-      null,
-      null,
-      null,
-      null,
-      null,
-      null,
-    ]);
+    expect(result.pages.map((page) => page.modifiedDate)).toEqual(
+      Array.from({ length: 8 }, () => null),
+    );
   });
 
   it('takes exactly 25 entries', async () => {

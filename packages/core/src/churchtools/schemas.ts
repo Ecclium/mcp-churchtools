@@ -706,7 +706,10 @@ export const wikiPageListSchema = z.object({
         title: text(maxWikiTitleLength),
         isMarkdown: z.boolean(),
         version: id,
-        meta: z.object({ modifiedDate: z.unknown() }).partial().optional(),
+        // Read as anything, so that a meta of another form, such as an
+        // empty list, keeps the list working; the client takes only the
+        // date from it.
+        meta: z.unknown().optional(),
       }),
     )
     .max(wikiPageListLimit),
