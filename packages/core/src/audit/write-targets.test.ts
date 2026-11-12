@@ -213,6 +213,30 @@ describe('collectWriteTargets', () => {
     expect(targets.days).toEqual({ first: '2026-10-30', last: '2026-10-31' });
   });
 
+  it('leaves out an adoption, which signs a section of a run anew and writes no text of the model (ADR 0032)', () => {
+    const targets = collectWriteTargets(
+      folderOf({
+        [nameOf(1)]: [
+          write('verified'),
+          write('verified', {
+            ts: '2026-10-31T09:00:00.000Z',
+            type: 'adoption',
+            mode: 'operator',
+            runId: '00000000-0000-4000-8000-0000000000ab',
+            routineId: 'weekly-report',
+            tool: undefined,
+            confirmation: 'operator',
+            objectRefs: ['wiki_category:14', `wiki_page:${guid}`],
+          }),
+        ],
+      }),
+    );
+    expect(targets.categories).toEqual([
+      { id: 12, tools: [create], highestPerDay: 1 },
+    ]);
+    expect(targets.days).toEqual({ first: '2026-10-30', last: '2026-10-31' });
+  });
+
   it('counts files it could not read, and notices a folder that moved', () => {
     const targets = collectWriteTargets(
       folderOf({

@@ -177,6 +177,8 @@ export {
   queueReasons,
 } from './queue/index.js';
 export {
+  type AdoptCall,
+  type AdoptOutcome,
   type ApproveOutcome,
   type ApproveReason,
   createToolPipeline,
@@ -194,6 +196,7 @@ export {
   type ToolPipeline,
   type ToolPipelineOptions,
   type ToolRequest,
+  maxAdoptionWrites,
   type UndoCall,
   type UndoOutcome,
   type UndoReason,

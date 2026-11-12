@@ -492,6 +492,52 @@ describe('ecclium audit show', () => {
     );
   });
 
+  it('counts the adoptions of a day in a row of their own and names them for an ID, in a chain verify finds whole (ADR 0032)', () => {
+    const refs = ['wiki_category:12', 'wiki_page:34'];
+    const adoption = (fields: Record<string, unknown>): string =>
+      event({
+        type: 'adoption',
+        actor: { kind: 'operator', id: 'stdio:local-stdio' },
+        mode: 'operator',
+        runId: '0b0e9a3c-3f7e-4c62-9a55-6a1f0d2c7e11',
+        routineId: 'weekly-report',
+        tool: undefined,
+        writeState: 'planned',
+        objectRefs: refs,
+        ...fields,
+      });
+    const adoptionName = fileName(2);
+    const adoptionLines = chained(adoptionName, [
+      adoption({ ts: '2026-10-30T09:00:00.000Z' }),
+      adoption({
+        ts: '2026-10-30T09:05:00.000Z',
+        writeState: 'verified',
+        confirmation: 'operator',
+      }),
+    ]);
+    const { stateDir } = makeState({ [adoptionName]: adoptionLines });
+
+    expect(show(stateDir).stdout).toEqual([
+      'Aufrufe je Tag und Tool, Tage in UTC',
+      '30.10.2026',
+      '  Übernahmen mit ‹ecclium marker adopt›: 2 Aufrufe, 2 ausgeführt',
+      'Gelesen: 1 von 1 Datei, 2 Zeilen im Zeitraum.',
+      'Die Auswertung prüft die Ketten nicht. Das tut ‹ecclium audit verify›.',
+    ]);
+    expect(
+      show(stateDir, { object: 'wiki_page:34' }).stdout.slice(0, 4),
+    ).toEqual([
+      'Aufrufe, die ‹wiki_page:34› nennen, Zeiten in UTC',
+      '  30.10.2026 09:00:00  Übernahme  Subjekt stdio:local-stdio  ausgeführt',
+      '  30.10.2026 09:05:00  Übernahme  Subjekt stdio:local-stdio  ausgeführt',
+      '2 Zeilen nennen ‹wiki_page:34›.',
+    ]);
+    const result = verify(stateDir, [
+      putLog([anchorLine(adoptionName, adoptionLines)]),
+    ]);
+    expect(result.code).toBe(exitCodes.ok);
+  });
+
   it('counts the ends of the runs of routines of a day in a row of their own, in a chain verify finds whole (ADR 0033)', () => {
     const runEnd = (fields: Record<string, unknown>): string =>
       event({

@@ -36,6 +36,18 @@
  * no plan, since no intent deletes and none empties a description, but runs
  * the same steps; a delete keeps no snapshot and cannot be taken back.
  *
+ * **adopt** signs the section of a run anew after the key of the check
+ * codes was lost, for `ecclium marker adopt` of the operator (ADR 0032,
+ * `adopt.ts`). Only a section the snapshot of a write of the routine
+ * proves is signed, and only its code changes. Without the value of the
+ * preview, it only shows; with it, it plans the update itself, confirms it
+ * with a proof of the operator and commits it on the way of every write,
+ * like an undo: the switches of the tenant and of writing, not the one of
+ * the routine, the rights as advice, the read right before, the clock, a
+ * snapshot of its own, so that `ecclium undo` takes it back, and the read
+ * after. The policy and the content policy do not apply: no text changes
+ * but the code, which the core computes itself.
+ *
  * **approve** writes what waits in the queue of approvals, for `ecclium
  * queue approve` of the operator (ADR 0029, ADR 0031). It plans the write
  * of the entry again, with the actor who asked for it, from the state of
@@ -142,7 +154,7 @@ import {
   confirmationTextOf,
 } from './confirmation-text.js';
 import { checkKillSwitches, checkRunKillSwitches } from './kill-switch.js';
-import { contentHashOf } from './plan-hash.js';
+import { adoptionCheckOf, contentHashOf } from './plan-hash.js';
 import { isoDateOf } from '../quota/budget.js';
 import type { LoadedSnapshot } from '../snapshots/keeper.js';
 import type {
@@ -176,6 +188,7 @@ import {
 } from './rights-drift.js';
 import type { RunWrites } from './run-writes.js';
 import { serverTimeFits } from './server-clock.js';
+import { type AdoptionUnclear, planAdoption } from './adopt.js';
 import {
   type CalendarUndoTarget,
   isAsLeft,
@@ -466,6 +479,101 @@ export type ApproveResult =
       readonly change: UndoChange;
     };
 
+/** What the operator asks the write guard to sign anew (ADR 0032). */
+export interface AdoptRequest {
+  /** The context of the adoption, in the mode of the operator. */
+  readonly ctx: TenantContext;
+  /**
+   * The ID of the audit event of the adoption, under which its own
+   * snapshot is kept, so that it can be taken back.
+   */
+  readonly eventId: string;
+  /** The ID of the routine. */
+  readonly routine: string;
+  /** The period of the section, such as `2026-W46`. */
+  readonly period: string;
+  /**
+   * The page from the entry of the routine in the policy, with the name it
+   * is expected to have, as for a run.
+   */
+  readonly page: {
+    readonly categoryId: number;
+    readonly guid: string;
+    readonly name: string;
+  };
+  /**
+   * The snapshots of the writes of the routine, the newest first; those of
+   * other pages and kinds count for nothing.
+   */
+  readonly snapshots: readonly SnapshotToUndo[];
+  /** The check value of the preview; without it, nothing is written. */
+  readonly confirm?: string | undefined;
+}
+
+/** What an adoption shows the operator before and when it writes. */
+export interface AdoptionShown {
+  /** The lines of the section as they stand on the page. */
+  readonly section: string;
+  /** The line of the marking as it stands. */
+  readonly oldLine: string;
+  /** The same line with the new code. */
+  readonly newLine: string;
+  /** The check value to give back with `--confirm`. */
+  readonly check: string;
+}
+
+/** How an adoption ended. */
+export type AdoptResult =
+  /** Refused or failed before the page was judged: nothing was written. */
+  | { readonly kind: 'refused'; readonly error: EccliumError }
+  /** The page has another name than the policy expects; nothing written. */
+  | { readonly kind: 'renamed'; readonly target: WriteTarget }
+  /** A line of the period whose code fits already. */
+  | { readonly kind: 'own'; readonly target: WriteTarget }
+  /** No line of the marking of the period on the page. */
+  | { readonly kind: 'none'; readonly target: WriteTarget }
+  /** The core cannot tell which section to sign. */
+  | {
+      readonly kind: 'unclear';
+      readonly target: WriteTarget;
+      readonly reason: AdoptionUnclear;
+    }
+  /**
+   * No snapshot proves the section; `snapshots` counts those of writes of
+   * this page that were checked, and `range` holds what may be it.
+   */
+  | {
+      readonly kind: 'unproven';
+      readonly target: WriteTarget;
+      readonly range: string;
+      readonly snapshots: number;
+    }
+  /** Proven, but the line or the section cannot be signed. */
+  | {
+      readonly kind: 'unsignable';
+      readonly target: WriteTarget;
+      readonly range: string;
+    }
+  /** Proven and shown, without a check value; nothing written. */
+  | {
+      readonly kind: 'preview';
+      readonly target: WriteTarget;
+      readonly shown: AdoptionShown;
+    }
+  /** A check value other than the one of the page now; nothing written. */
+  | {
+      readonly kind: 'mismatch';
+      readonly target: WriteTarget;
+      readonly shown: AdoptionShown;
+    }
+  /** Planned and committed, with how the commit ended. */
+  | {
+      readonly kind: 'committed';
+      readonly target: WriteTarget;
+      readonly shown: AdoptionShown;
+      readonly result: CommitResult;
+    };
+
 /**
  * Why a sealed plan goes to the queue of approvals instead of a question:
  * a reason of the policy (ADR 0032), an own section on the page with the
@@ -625,6 +733,14 @@ export interface WriteGuard {
    */
   undo(request: UndoRequest): Promise<UndoResult>;
   /**
+   * Signs the section of a run anew, for the operator (ADR 0032).
+   *
+   * @param request - Context, ID of the adoption, routine, period, page,
+   *   snapshots and the check value of the preview.
+   * @returns How the adoption ended; it never rejects.
+   */
+  adopt(request: AdoptRequest): Promise<AdoptResult>;
+  /**
    * Writes an entry of the queue of approvals, for the operator (ADR 0029).
    *
    * @param request - Context, ID of the approval, entry and the decision.
@@ -753,6 +869,9 @@ interface Undo {
   readonly eventId: string;
   readonly day: IsoDate;
 }
+
+/** Who commits: a tool, an undo, an approval or an adoption. */
+type CommitBy = 'tool' | 'undo' | 'approve' | 'adopt';
 
 /** What a commit rests on, read right before the send. */
 interface Prepared {
@@ -1091,7 +1210,9 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       throw refuse('conflict', writeSentences.changedBefore);
     }
     // An undo writes back what the page held before, which is no text of a
-    // tool and may hold lines a change dropped since (ADR 0031).
+    // tool and may hold lines a change dropped since (ADR 0031). An
+    // adoption changes only the code of a line, as the core computed it
+    // (ADR 0032).
     if (section === undefined && !restoring) {
       keepsMarkings(ctx, page.text, added);
     }
@@ -1454,15 +1575,16 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     return commitPlan(ctx, view, proof, eventId, 'tool', runWrites);
   };
 
-  // An undo of the operator skips the policy, which judges what the model
-  // asks for, and adds nothing to its counters (ADR 0031). An approval runs
-  // it in a phase of its own, which only counts (ADR 0029).
+  // An undo and an adoption of the operator skip the policy, which judges
+  // what the model asks for, and add nothing to its counters (ADR 0031,
+  // ADR 0032). An approval runs it in a phase of its own, which only
+  // counts (ADR 0029).
   const commitPlan = async (
     ctx: TenantContext,
     view: PlanView,
     proof: unknown,
     eventId: string | undefined,
-    by: 'tool' | 'undo' | 'approve',
+    by: CommitBy,
     runWrites?: RunWrites,
   ): Promise<CommitResult> => {
     // The routine of a run, whose kill switch and entries count as well.
@@ -1547,7 +1669,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     // of a name that fails is no refusal of the policy: the write failed
     // before it was sent.
     try {
-      if (by !== 'undo') {
+      if (by !== 'undo' && by !== 'adopt') {
         await policy.check(
           ctx,
           view.tool,
@@ -1624,7 +1746,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
   const prepare = async (
     ctx: TenantContext,
     view: PlanView,
-    by: 'tool' | 'undo' | 'approve',
+    by: CommitBy,
   ): Promise<Prepared> => {
     const { intent } = view;
     if (isCalendarIntent(intent)) {
@@ -1645,11 +1767,13 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
       };
     }
     const wiki = intent as WikiIntent;
+    // An undo writes back what the page held, an adoption changes the code
+    // of a line the core computed itself: neither is a text of a tool.
     const derived = await derive(
       ctx,
       wiki,
       view.day,
-      by === 'undo',
+      by === 'undo' || by === 'adopt',
       view.run === undefined
         ? undefined
         : { routine: view.run.routine, period: view.run.period },
@@ -2169,6 +2293,151 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     return committed(commitOf(ctx, outcome, path, undo));
   };
 
+  // Signs the section of a run anew for the operator (ADR 0032): the page
+  // of the entry of the routine read now, judged with the snapshots of the
+  // writes of the routine, shown, and with the value of the preview
+  // committed as an update the core plans and confirms itself. Rejects
+  // nothing: a refusal or a failed read is a result of its own.
+  const adopt = async (request: AdoptRequest): Promise<AdoptResult> => {
+    try {
+      return await adoptOnce(request);
+    } catch (error) {
+      return Object.freeze({ kind: 'refused', error: asError(error) });
+    }
+  };
+
+  const adoptOnce = async (request: AdoptRequest): Promise<AdoptResult> => {
+    const { ctx, eventId, routine, period, page } = request;
+    // Writing off for the tenant or the process stops it, the switch of the
+    // routine does not: whoever stops a routine may still sign its section.
+    const stop = stopped(ctx);
+    if (stop !== undefined) throw stop;
+    if (markerKey === undefined) {
+      ctx.log.warn('write_refused', { code: 'policy_denied' });
+      throw refuse('policy_denied', writeSentences.noMarking);
+    }
+    const guid = page.guid.toLowerCase();
+    // The rights as advice for the update, as for an undo.
+    const asked: PageIntent = Object.freeze({
+      kind: 'wikiPageUpdate',
+      categoryId: page.categoryId,
+      guid,
+      text: '-',
+      baseVersion: 0,
+    });
+    const rules = withToolMeta(rulesOf(asked), undoMeta);
+    await checkRights(ctx, asked, rules);
+    const { target } = rules;
+    const { page: read } = await client.writes.wikiPageState(
+      ctx,
+      page.categoryId,
+      guid,
+    );
+    if (!read.isMarkdown) {
+      throw refuse('policy_denied', writeSentences.notMarkdown);
+    }
+    // The page the policy names, as a run checks it: a page with another
+    // name may be another page under the same ID.
+    if (read.title.normalize('NFC') !== page.name.normalize('NFC')) {
+      return Object.freeze({ kind: 'renamed', target });
+    }
+    // What the snapshots of the writes of the routine on this page kept.
+    const kept = request.snapshots.flatMap(({ before }) =>
+      before.kind === 'wikiPageText' &&
+      before.categoryId === page.categoryId &&
+      before.guid.toLowerCase() === guid
+        ? [before]
+        : [],
+    );
+    const planned = planAdoption({
+      key: markerKey,
+      tenantId: ctx.tenantId,
+      text: read.text,
+      routine,
+      period,
+      written: kept.map((before) => ({
+        before: storedWikiText(before.before.text),
+        afterHash: before.after.textHash,
+      })),
+    });
+    switch (planned.kind) {
+      case 'own':
+      case 'none':
+        return Object.freeze({ kind: planned.kind, target });
+      case 'unclear':
+        return Object.freeze({
+          kind: 'unclear',
+          target,
+          reason: planned.reason,
+        });
+      case 'unproven':
+        return Object.freeze({
+          kind: 'unproven',
+          target,
+          range: planned.range,
+          snapshots: kept.length,
+        });
+      case 'unsignable':
+        return Object.freeze({
+          kind: 'unsignable',
+          target,
+          range: planned.range,
+        });
+      case 'proven':
+        break;
+    }
+    const shown: AdoptionShown = Object.freeze({
+      section: planned.section,
+      oldLine: planned.oldLine,
+      newLine: planned.newLine,
+      check: adoptionCheckOf({
+        guid,
+        version: read.version,
+        section: planned.section,
+        line: planned.newLine,
+      }),
+    });
+    if (request.confirm === undefined) {
+      return Object.freeze({ kind: 'preview', target, shown });
+    }
+    if (request.confirm !== shown.check) {
+      return Object.freeze({ kind: 'mismatch', target, shown });
+    }
+    // The plan of the update, sealed on the version read now, so that the
+    // commit writes nothing when the page changes in between. Its tool is
+    // the one of the write that proved the section, as for an undo.
+    const text = storedWikiText(planned.text);
+    const intent: PageIntent = Object.freeze({
+      kind: 'wikiPageUpdate',
+      categoryId: page.categoryId,
+      guid,
+      text,
+      baseVersion: read.version,
+    });
+    const sealed = sealPlan({
+      tenantId: ctx.tenantId,
+      actor: ctx.actor,
+      tool: (kept[planned.proof] as (typeof kept)[number]).tool,
+      origin: 'core',
+      intent,
+      toolMeta: undoMeta,
+      contentHash: contentHashOf([text]),
+      sealedAt: clock.now(),
+      snapshots: reversible,
+    });
+    // The operator gave the value of the preview on the command line, so
+    // the core confirms the update itself, for this plan only (proof.ts).
+    const proof = issueProof(sealed, 'operator', clock.now());
+    const result = await commitPlan(
+      ctx,
+      readPlan(sealed) as PlanView,
+      proof,
+      eventId,
+      'adopt',
+    );
+    return Object.freeze({ kind: 'committed', target, shown, result });
+  };
+
   // Writes an entry of the queue for the operator: planned again from the
   // state now, decided only when the hash is the one of the entry, and
   // committed with a proof of the operator (ADR 0029). Rejects nothing: a
@@ -2317,6 +2586,7 @@ export function createWriteGuard(options: WriteGuardOptions): WriteGuard {
     commit,
     commitForRun,
     undo,
+    adopt,
     approve,
     block: (): void => {
       haltWrites(halt);

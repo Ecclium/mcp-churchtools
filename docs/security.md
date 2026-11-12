@@ -196,6 +196,14 @@ Ein Lauf einer Routine schreibt ohne eine Person, die bestätigt. An die Stelle 
 - **Von Hand geändert:** Hat eine Person den Abschnitt eines Laufs geändert, ersetzt ihn ein späterer Lauf derselben Periode nicht, sondern legt den neuen in die Warteschlange.
 - **Nach einem Fehler im Audit:** Erreicht die Zeile eines Schreibvorgangs die Audit-Datei nicht, schreibt kein späterer Lauf desselben Prozesses mehr, bis er neu startet.
 
+## Schlüssel des Prüfcodes
+
+Die Zeile der Kennzeichnung unter jedem Abschnitt, den Ecclium ins Wiki schreibt, trägt einen Prüfcode, ein gekürztes HMAC mit dem Schlüssel aus `ECCLIUM_MARKER_KEY_FILE` über den Abschnitt ([ADR 0032](adr/0032-richtlinie-und-pruefcode.md)). Nur ein Abschnitt mit passendem Code gilt als eigener, den ein Lauf derselben Periode ersetzen darf. So kann eine Person mit Schreibrecht im Wiki keinen Abschnitt unterschieben, den Ecclium für seinen hält.
+
+- **Sichern:** Der Schlüssel gehört ins Backup, anders als die Tagesschlüssel der Snapshots. Geht er verloren oder ersetzen Sie ihn, passt kein bestehender Code mehr, und jeder Abschnitt gilt als von einer Person geändert: Ecclium ersetzt ihn nicht, und der nächste Lauf derselben Periode legt seinen Abschnitt in die Freigabe-Warteschlange.
+- **Neu signieren:** `ecclium marker adopt --run <Lauf>` signiert den Abschnitt der Periode eines Laufs mit dem neuen Schlüssel, aber nur, wenn der Snapshot des Schreibvorgangs, der ihn hinterliess, belegt, dass er seither unverändert ist und wo er beginnt. Es ändert nur den Code in der Zeile, zeigt zuerst Abschnitt, alte und neue Zeile und schreibt erst mit dem Prüfwert dieser Vorschau, mit dem Konto der Routine. Ohne Beleg, also nach 30 Tagen, nach einer Änderung einer Person, nach einem Speichern im Web-Editor oder wenn ein späterer Lauf den Abschnitt ersetzte, signiert es nichts, und der Weg bleibt die Freigabe-Warteschlange ([Betrieb des Runners](betrieb/runner.md#neuer-schlüssel-des-prüfcodes)).
+- **Gelangt der Schlüssel nach aussen,** kann jemand Abschnitte schreiben, die Ecclium für seine hält und die ein späterer Lauf ersetzt. Ersetzen Sie ihn dann sofort und signieren Sie danach nur die Abschnitte neu, die ein Snapshot belegt.
+
 ## Rücknahme
 
 Ein Schreibvorgang des Kerns lässt sich 30 Tage lang mit `ecclium undo` zurücknehmen, solange Snapshots eingeschaltet sind ([ADR 0031](adr/0031-persistenz-und-tagesschluessel.md), [Betrieb über stdio](betrieb/stdio.md#rücknahme)).

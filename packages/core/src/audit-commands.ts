@@ -57,11 +57,15 @@ export {
   summarizeRun,
 } from './audit/run-summary.js';
 export {
+  type AuditRoutineWrite,
+  type AuditRoutineWritesFound,
   type AuditRunOfWrite,
   type AuditRunRef,
   type AuditRunWrite,
   type AuditRunWritesFound,
   type AuditRunWriteWay,
+  findRoutineWrites,
+  type FindRoutineWritesOptions,
   findRunOfWrite,
   type FindRunOfWriteOptions,
   findRunWrites,

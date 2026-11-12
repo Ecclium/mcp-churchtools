@@ -6,9 +6,11 @@ import { KeyMaterial } from '../keys/index.js';
 import { checkCodeOf, type MarkingOrigin, sameCheckCode } from './code.js';
 import { type Marking, markingLineOf } from './line.js';
 import {
+  canonicalSectionOf,
   findMarkings,
   judgeSections,
   maxJudgedMarkings,
+  markingsAskedFor,
   maxSectionStarts,
 } from './sections.js';
 
@@ -390,5 +392,59 @@ describe('findMarkings', () => {
     expect(findMarkings(`<!--\n\n${text}\n-->\n`)).toEqual([]);
     expect(findMarkings(`\`\`\`\n${text}\`\`\`\n`)).toEqual([]);
     expect(findMarkings(`${'*'.repeat(2001)}\n\n${text}`)).toEqual([]);
+  });
+});
+
+describe('markingsAskedFor and canonicalSectionOf', () => {
+  const first = own('Eins.');
+  const second = own('## Zwei\n\n- Probe\n- Pause\n');
+  const page = `# Plan\n\n${first.text}\n${second.text}`;
+  const asked = (code: string) => (marking: Marking) =>
+    sameCheckCode(marking.code, code);
+
+  it('finds the lines a write asks about, each with the line after the marking before', () => {
+    expect(
+      markingsAskedFor({ text: page, matches: asked(second.code) }),
+    ).toEqual({
+      kind: 'read',
+      hides: false,
+      lines: [
+        {
+          marking: expect.objectContaining({ code: second.code }) as unknown,
+          line: page.split('\n').length - 2,
+          earliest: lineOf(page, 'Automatisch') + 1,
+        },
+      ],
+    });
+    expect(
+      markingsAskedFor({ text: page, matches: asked(first.code) }),
+    ).toMatchObject({ lines: [{ earliest: 0 }] });
+    expect(
+      markingsAskedFor({ text: `<details>\n\n${page}`, matches: () => true }),
+    ).toMatchObject({ kind: 'read', hides: true });
+    expect(
+      markingsAskedFor({ text: `${page}\r`, matches: () => true }),
+    ).toEqual({ kind: 'unreadable' });
+  });
+
+  it('gives the canonical form of the section between a first line and a line of the marking', () => {
+    const lines = page.split('\n');
+    const end = lines.length - 2;
+    const start = lineOf(page, '## Zwei');
+    expect(canonicalSectionOf(page, start, end)).toBe(
+      canonicalMarkdown('## Zwei\n\n- Probe\n- Pause\n'),
+    );
+    // The page cannot be read, no line of the marking at the end, no block
+    // at the start, or no block between.
+    expect(canonicalSectionOf(`${page}\r`, start, end)).toBeUndefined();
+    expect(canonicalSectionOf(page, start, end - 1)).toBeUndefined();
+    expect(canonicalSectionOf(page, start - 1, end)).toBeUndefined();
+    expect(canonicalSectionOf(page, start + 3, end)).toBeUndefined();
+    expect(canonicalSectionOf(page, end, end)).toBeUndefined();
+    // A block outside the allowed part has no canonical form.
+    const linked = `Mehr: [Plan](https://example.org/)\n\n${second.text}`;
+    expect(
+      canonicalSectionOf(linked, 0, linked.split('\n').length - 2),
+    ).toBeUndefined();
   });
 });

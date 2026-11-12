@@ -3,7 +3,11 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import type { AuditFileRead, AuditFolder, AuditLine } from './reader.js';
-import { findRunOfWrite, findRunWrites } from './run-writes.js';
+import {
+  findRoutineWrites,
+  findRunOfWrite,
+  findRunWrites,
+} from './run-writes.js';
 
 // The writes of one run of a routine in the audit files, from synthetic
 // lines. All data are made up.
@@ -360,6 +364,203 @@ describe('findRunWrites', () => {
     { runId, since: 'yesterday' },
   ])('refuses %j', (wrong) => {
     expect(() => findRunWrites({ folder: folderOf({}), ...wrong })).toThrow(
+      TypeError,
+    );
+  });
+});
+
+describe('findRoutineWrites', () => {
+  const routineId = 'weekly-report';
+  const period = '2026-W46';
+
+  it('finds the writes of every run of the routine, its own and those of approvals, the newest first', () => {
+    // A run of the period that wrote, one of the period whose entry an
+    // approval wrote, one of an earlier period, and one without an end.
+    const own = write({ ts: '2026-11-09T05:00:09.000Z' });
+    const queued = write({
+      ts: '2026-11-10T05:00:09.000Z',
+      runId: otherRun,
+      writeState: 'queued',
+      confirmation: undefined,
+    });
+    const earlier = write({
+      ts: '2026-11-02T05:00:09.000Z',
+      runId: '00000000-0000-4000-8000-0000000000e1',
+    });
+    const unended = write({
+      ts: '2026-11-11T05:00:09.000Z',
+      runId: '00000000-0000-4000-8000-0000000000e2',
+      writeState: 'conflict',
+      outcome: 'error',
+    });
+    const approval = decision(idIn(queued), { ts: '2026-11-10T08:00:00.000Z' });
+    const found = findRoutineWrites({
+      folder: folderOf({
+        [nameOf('2026-11-02', 1)]: [
+          earlier,
+          runEnd({
+            runId: '00000000-0000-4000-8000-0000000000e1',
+            period: '2026-W45',
+          }),
+        ],
+        [nameOf('2026-11-09', 1)]: [own, runEnd()],
+        [nameOf('2026-11-10', 1)]: [
+          queued,
+          runEnd({ runId: otherRun }),
+          approval,
+        ],
+        [nameOf('2026-11-11', 1)]: [
+          unended,
+          // A write of another routine, a read and a write refused before.
+          write({ routineId: 'other-report' }),
+          event({}),
+          write({ writeState: 'denied', outcome: 'denied' }),
+        ],
+      }),
+      routineId,
+      period,
+    });
+    expect(found.written).toEqual([
+      {
+        eventId: idIn(unended),
+        ts: '2026-11-11T05:00:09.000Z',
+        way: 'run',
+        writeState: 'conflict',
+        runId: '00000000-0000-4000-8000-0000000000e2',
+      },
+      {
+        eventId: idIn(approval),
+        ts: '2026-11-10T08:00:00.000Z',
+        way: 'approval',
+        writeState: 'verified',
+        runId: otherRun,
+      },
+      {
+        eventId: idIn(own),
+        ts: '2026-11-09T05:00:09.000Z',
+        way: 'run',
+        writeState: 'verified',
+        runId,
+      },
+      {
+        eventId: idIn(earlier),
+        ts: '2026-11-02T05:00:09.000Z',
+        way: 'run',
+        writeState: 'verified',
+        runId: '00000000-0000-4000-8000-0000000000e1',
+      },
+    ]);
+    expect(found.undecided).toEqual([]);
+    expect(found).toMatchObject({
+      files: 4,
+      read: 4,
+      unread: 0,
+      moved: false,
+      skipped: 0,
+    });
+    expect(Object.isFrozen(found)).toBe(true);
+    expect(Object.isFrozen(found.written)).toBe(true);
+    expect(Object.isFrozen(found.written[0])).toBe(true);
+  });
+
+  it('names the waiting entries of runs of the period only, in the order they were queued', () => {
+    const queuedBy = (run: string, ts: string): string =>
+      write({ ts, runId: run, writeState: 'queued', confirmation: undefined });
+    const second = queuedBy(otherRun, '2026-11-10T05:00:09.000Z');
+    const first = queuedBy(runId, '2026-11-09T05:00:09.000Z');
+    const rejected = queuedBy(runId, '2026-11-09T06:00:09.000Z');
+    const ofAnotherPeriod = queuedBy(
+      '00000000-0000-4000-8000-0000000000e1',
+      '2026-11-02T05:00:09.000Z',
+    );
+    const ofARunWithoutEnd = queuedBy(
+      '00000000-0000-4000-8000-0000000000e2',
+      '2026-11-11T05:00:09.000Z',
+    );
+    const found = findRoutineWrites({
+      folder: folderOf({
+        [nameOf('2026-11-09', 1)]: [
+          second,
+          first,
+          rejected,
+          ofAnotherPeriod,
+          ofARunWithoutEnd,
+          runEnd(),
+          // The last end counts, should a run have two.
+          runEnd({ ts: '2026-11-09T04:00:00.000Z', period: '2026-W45' }),
+          runEnd({ runId: otherRun, ts: '2026-11-10T05:00:10.000Z' }),
+          runEnd({
+            runId: '00000000-0000-4000-8000-0000000000e1',
+            period: '2026-W45',
+          }),
+          // An end without a period, as for a run that failed early.
+          runEnd({
+            runId: '00000000-0000-4000-8000-0000000000e3',
+            period: undefined,
+            runResult: 'failed',
+            outcome: 'error',
+            errorCode: 'internal',
+          }),
+          decision(idIn(rejected), {
+            decision: 'rejected',
+            writeState: undefined,
+            confirmation: undefined,
+          }),
+        ],
+      }),
+      routineId,
+      period,
+    });
+    expect(found.undecided).toEqual([idIn(first), idIn(second)]);
+    expect(found.written).toEqual([]);
+  });
+
+  it('reads from the first day on, and counts what it could not read', () => {
+    const opened: string[] = [];
+    const found = findRoutineWrites({
+      folder: folderOf(
+        {
+          [nameOf('2026-11-01', 1)]: [
+            write({ ts: '2026-11-01T05:00:09.000Z' }),
+          ],
+          [nameOf('2026-11-08', 1)]: [
+            write({ ts: '2026-11-07T23:59:59.000Z' }),
+            '{"v":1~',
+            'not json',
+          ],
+          [nameOf('2026-11-09', 1)]: 'unreadable',
+          [nameOf('2026-11-09', 2)]: 'gone',
+          [nameOf('2026-11-10', 1)]: 'moved',
+          [nameOf('2026-11-11', 1)]: [write()],
+        },
+        opened,
+      ),
+      routineId,
+      period,
+      since: '2026-11-08',
+    });
+    expect(opened).toEqual([
+      nameOf('2026-11-08', 1),
+      nameOf('2026-11-09', 1),
+      nameOf('2026-11-09', 2),
+      nameOf('2026-11-10', 1),
+    ]);
+    expect(found).toMatchObject({
+      files: 6,
+      read: 1,
+      unread: 1,
+      moved: true,
+      skipped: 2,
+      written: [],
+    });
+  });
+
+  it.each([
+    { routineId: 'Weekly Report', period: '2026-W46' },
+    { routineId: 'weekly-report', period: 'W46' },
+    { routineId: 'weekly-report', period: '2026-W46', since: 'yesterday' },
+  ])('refuses %j', (wrong) => {
+    expect(() => findRoutineWrites({ folder: folderOf({}), ...wrong })).toThrow(
       TypeError,
     );
   });

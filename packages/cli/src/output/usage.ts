@@ -8,7 +8,7 @@
 
 /** The short form of the call. */
 export const usageLine =
-  'Aufruf: ecclium stdio | ecclium config check [Optionen] | ecclium audit verify [Optionen] | ecclium audit show [Optionen] | ecclium policy init --interactive | ecclium policy init --routine <Routine> --credential <Alias> | ecclium undo <Kennung> [--overwrite] | ecclium undo --run <Lauf> [--overwrite] | ecclium queue list | ecclium queue show <Kennung> | ecclium queue approve <Kennung> | ecclium queue reject <Kennung> | ecclium run-once --due | ecclium run-once <Routine> [--preview] | ecclium runner';
+  'Aufruf: ecclium stdio | ecclium config check [Optionen] | ecclium audit verify [Optionen] | ecclium audit show [Optionen] | ecclium policy init --interactive | ecclium policy init --routine <Routine> --credential <Alias> | ecclium undo <Kennung> [--overwrite] | ecclium undo --run <Lauf> [--overwrite] | ecclium marker adopt --run <Lauf> [--confirm <Prüfwert>] | ecclium queue list | ecclium queue show <Kennung> | ecclium queue approve <Kennung> | ecclium queue reject <Kennung> | ecclium run-once --due | ecclium run-once <Routine> [--preview] | ecclium runner';
 
 /** The help, for `--help` and `-h`. */
 export const helpLines: readonly string[] = Object.freeze([
@@ -31,6 +31,8 @@ export const helpLines: readonly string[] = Object.freeze([
   '  undo <Kennung>        nimmt einen Schreibvorgang aus seinem Snapshot zurück, die Kennung steht im Audit',
   '    --overwrite         schreibt auch, wenn jemand die Seite seither geändert hat',
   '  undo --run <Lauf>     nimmt jeden Schreibvorgang eines Laufs zurück, auch aus Freigaben, den neuesten zuerst',
+  '  marker adopt --run <Lauf> zeigt den Abschnitt der Periode eines Laufs, den ein Snapshot belegt, zum neuen Signieren nach einem verlorenen Schlüssel',
+  '    --confirm <Prüfwert> signiert ihn mit dem Prüfwert der Vorschau neu, wenn die Seite noch so steht',
   '  queue list            zeigt, was in der Freigabe-Warteschlange auf Ihre Freigabe wartet',
   '  queue show <Kennung>  zeigt den ganzen Unterschied eines Eintrags',
   '  queue approve <Kennung> gibt einen Eintrag frei und schreibt ihn sofort, auf dem Stand des Ziels von jetzt',
@@ -49,13 +51,13 @@ export type UsageProblem = 'command' | 'option' | 'repeated' | 'value';
 export const usageProblemTexts: Readonly<Record<UsageProblem, string>> =
   Object.freeze({
     command:
-      'Der Befehl ist unvollständig oder unbekannt. Diese Version von Ecclium kennt nur ‹ecclium stdio›, ‹ecclium config check›, ‹ecclium audit verify›, ‹ecclium audit show›, ‹ecclium policy init›, ‹ecclium undo›, ‹ecclium queue›, ‹ecclium run-once›, diesen mit ‹--due› oder einer Routine, und ‹ecclium runner›. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
+      'Der Befehl ist unvollständig oder unbekannt. Diese Version von Ecclium kennt nur ‹ecclium stdio›, ‹ecclium config check›, ‹ecclium audit verify›, ‹ecclium audit show›, ‹ecclium policy init›, ‹ecclium undo›, ‹ecclium marker adopt› mit ‹--run›, ‹ecclium queue›, ‹ecclium run-once›, diesen mit ‹--due› oder einer Routine, und ‹ecclium runner›. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
     option:
       'Eine Option ist unbekannt oder gehört zu einem anderen Befehl. Ecclium nennt sie nicht, weil darin ein Token stehen könnte. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
     repeated:
       'Eine Option steht mehr als einmal im Aufruf. Ausser ‹--log› gilt jede Option nur einmal, damit kein Aufruf zweideutig ist. Nennen Sie jede andere Option höchstens einmal.',
     value:
-      'Eine Option hat einen Wert, den sie nicht annimmt, oder ihr fehlt einer. ‹--show-values›, ‹--runner›, ‹--interactive›, ‹--overwrite›, ‹--due›, ‹--preview› und ‹--help› nehmen keinen Wert an, ‹--log›, ‹--object›, ‹--run›, ‹--since›, ‹--until›, ‹--routine› und ‹--credential› brauchen einen. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
+      'Eine Option hat einen Wert, den sie nicht annimmt, oder ihr fehlt einer. ‹--show-values›, ‹--runner›, ‹--interactive›, ‹--overwrite›, ‹--due›, ‹--preview› und ‹--help› nehmen keinen Wert an, ‹--log›, ‹--object›, ‹--run›, ‹--since›, ‹--until›, ‹--routine›, ‹--credential› und ‹--confirm› brauchen einen. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
   });
 
 /** The one text for an internal error. */

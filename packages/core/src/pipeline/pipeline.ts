@@ -78,6 +78,7 @@ import {
   type ObjectDomain,
   type ObjectRefCollector,
   type ObjectRefList,
+  auditFieldSchemas,
   writeStateOutcomes,
 } from '../audit/index.js';
 import { createChurchToolsClient } from '../churchtools/index.js';
@@ -142,6 +143,9 @@ import {
   isRunWrites,
   type RunPlanRequest,
   type RunWrites,
+  type AdoptionShown,
+  type AdoptionUnclear,
+  type SnapshotToUndo,
   type UndoSubject,
   undoSubjectOf,
   type WriteGuard,
@@ -483,6 +487,94 @@ export type UndoOutcome =
 export type UndoReason = keyof typeof writeSentences | 'auditNotReady';
 
 /**
+ * What `ecclium marker adopt` asks the pipeline to sign anew (ADR 0032).
+ * The command line found the run, its period, the page in the entry of
+ * the routine and the writes of the routine in the audit; the pipeline
+ * checks their form, and the write guard judges the page itself.
+ */
+export interface AdoptCall {
+  /** The run the operator named, as the audit names it. */
+  readonly run: { readonly runId: unknown; readonly routineId: unknown };
+  /** The period of the run, such as `2026-W46`. */
+  readonly period: unknown;
+  /** The page of the entry of the routine, with its expected name. */
+  readonly page: {
+    readonly categoryId: unknown;
+    readonly guid: unknown;
+    readonly name: unknown;
+  };
+  /**
+   * The IDs of the audit lines of the writes of the routine, the newest
+   * first, whose snapshots may prove the section; at most
+   * {@link maxAdoptionWrites}.
+   */
+  readonly writeIds: readonly unknown[];
+  /** The check value of the preview; without it, nothing is written. */
+  readonly confirm?: unknown;
+}
+
+/** The most writes whose snapshots an adoption opens. */
+export const maxAdoptionWrites = 1000;
+
+/**
+ * How an adoption ended, for the command line (ADR 0032). The section and
+ * the lines are text of the page; they go to the operator only, never into
+ * a log or the audit.
+ */
+export type AdoptOutcome =
+  /** A line of the period whose code fits already: nothing to do. */
+  | { readonly kind: 'own' }
+  /** No line of the marking of the period on the page. */
+  | { readonly kind: 'none' }
+  /** The page has another name than the entry of the routine expects. */
+  | { readonly kind: 'renamed' }
+  /** The core cannot tell which section to sign. */
+  | { readonly kind: 'unclear'; readonly reason: AdoptionUnclear }
+  /**
+   * No snapshot proves the section: `snapshots` counts those of writes of
+   * the page that were found and checked, and `range` holds the lines from
+   * the line of the marking before to the line of the period.
+   */
+  | {
+      readonly kind: 'unproven';
+      readonly range: string;
+      readonly snapshots: number;
+    }
+  /** Proven, but the line or the section cannot be signed. */
+  | { readonly kind: 'unsignable'; readonly range: string }
+  /** Shown without a check value; nothing written. */
+  | { readonly kind: 'preview'; readonly shown: AdoptionShown }
+  /** The check value does not fit the page now; nothing written. */
+  | { readonly kind: 'mismatch'; readonly shown: AdoptionShown }
+  /**
+   * Signed anew: the version of the page after it, and the ID to take the
+   * adoption back with. `unrecorded` when its line did not reach the
+   * audit file.
+   */
+  | {
+      readonly kind: 'done';
+      readonly shown: AdoptionShown;
+      readonly version: number;
+      readonly undoId: string | undefined;
+      readonly unrecorded?: true;
+    }
+  /** The server keeps no snapshots, so nothing can be proven. */
+  | { readonly kind: 'off' }
+  /**
+   * Refused or failed, with whether it may have reached ChurchTools and,
+   * where the core knows it, the reason, for a text of the command line.
+   */
+  | {
+      readonly kind: 'failed';
+      readonly code: ErrorCode;
+      readonly reason?: UndoReason;
+      readonly state: WriteState;
+      readonly sent: boolean;
+      readonly shown?: AdoptionShown;
+      readonly unrecorded?: true;
+    };
+
+/**
  * What `ecclium queue list` finds (ADR 0031): every entry of the tenant,
  * the oldest first, those that wait with what they hold. Their texts come
  * from ChurchTools and the model; they go to the operator only.
@@ -710,6 +802,17 @@ export interface ToolPipeline {
    * @returns How the undo ended. It never rejects.
    */
   undo(undo: UndoCall, request: ToolRequest): Promise<UndoOutcome>;
+  /**
+   * Signs the section of a run anew after the key of the check codes was
+   * lost, for the operator only: a request in another mode is refused
+   * (ADR 0032). It writes one audit line of the type `adoption` that names
+   * the run, also for a preview.
+   *
+   * @param call - Run, period, page, writes and the check value.
+   * @param request - Tenant, actor and mode of the operator.
+   * @returns How the adoption ended. It never rejects.
+   */
+  adopt(call: AdoptCall, request: ToolRequest): Promise<AdoptOutcome>;
   /**
    * Rejects an entry of the queue of approvals, for the operator only: a
    * request in another mode is refused (ADR 0031). It keeps the decision,
@@ -3035,6 +3138,250 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
       : end.outcome;
   };
 
+  // An adoption of the operator (ADR 0032): from the run, its period, the
+  // page and the writes of its routine, through the snapshots of those
+  // writes and the write guard, to an audit line of its own of the type
+  // adoption that names the run. What the guard read of the page leaves
+  // only for the operator.
+  const adopt = async (
+    adoptCall: AdoptCall,
+    request: ToolRequest,
+  ): Promise<AdoptOutcome> => {
+    // The ID of the adoption itself: its audit line and its own snapshot,
+    // so that `ecclium undo` can take it back.
+    const eventId = randomUUID();
+    const start = now();
+    const refs = createObjectRefCollector();
+    let assignment: TenantAssignment | undefined;
+    let mode: Mode | undefined;
+    let run: UndoRun | null | undefined;
+    let end: AdoptEnd = adoptRefused('internal');
+    let recorded = false;
+    try {
+      // The run first: it names the line of the audit even when the rest
+      // of the call is built wrong.
+      run = undoRunOf(adoptCall.run);
+      assignment = copyAssignment(request.assignment);
+      mode = request.mode;
+      const checked = adoptCallOf(adoptCall);
+      end =
+        run === null || run === undefined || checked === undefined
+          ? adoptRefused('validation')
+          : await adoptStages(run, checked, request, assignment, eventId, refs);
+    } catch {
+      end = adoptRefused('internal');
+    } finally {
+      const durationMs = durationSince(start);
+      try {
+        recorded =
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-boolean-literal-compare -- only true counts, also from a sink without types
+          audit.record(
+            {
+              type: 'adoption',
+              tenantId: assignment?.tenantId ?? auditPlaceholders.tenantId,
+              actor: assignment?.actor ?? auditPlaceholders.actor,
+              mode: mode as Mode,
+              // The run whose section it signs, so that the run shows the
+              // adoption (ADR 0028); the zero UUID for one built wrong.
+              ...(run === undefined || run === null
+                ? { runId: auditPlaceholders.runId }
+                : { runId: run.runId, routineId: run.routineId }),
+              outcome: writeStateOutcomes[end.writeState],
+              ...(end.confirmation === undefined
+                ? {}
+                : { confirmation: end.confirmation }),
+              writeState: end.writeState,
+              ...(end.errorCode === undefined
+                ? {}
+                : { errorCode: end.errorCode }),
+              // At most a category and a page, never over the limit.
+              objectRefs: refs.list().refs,
+              durationMs,
+            },
+            eventId,
+            { required: false },
+          ) === true;
+      } catch {
+        // A line that does not reach the file is handled below.
+      }
+      // An adoption that may have written and whose line is not in the
+      // audit file stops every later write, as for a write of a tool
+      // (ADR 0029).
+      if (end.sent) {
+        if (!recorded) {
+          guard.block();
+          try {
+            end.ctx?.log.error('write_audit_failed');
+          } catch {
+            // The block holds without its log line.
+          }
+        }
+        try {
+          audit.anchor?.();
+        } catch {
+          // The anchor is lost; the line is in the file or reported.
+        }
+      }
+      try {
+        end.ctx?.log.info('adoption_call', {
+          durationMs,
+          ...(end.errorCode === undefined ? {} : { code: end.errorCode }),
+        });
+      } catch {
+        // The log never decides the outcome.
+      }
+    }
+    return end.sent && !recorded
+      ? Object.freeze({ ...end.outcome, unrecorded: true })
+      : end.outcome;
+  };
+
+  const adoptStages = async (
+    run: UndoRun,
+    call: CheckedAdoptCall,
+    request: ToolRequest,
+    assignment: TenantAssignment | undefined,
+    eventId: string,
+    refs: ObjectRefCollector,
+  ): Promise<AdoptEnd> => {
+    // Only the command line of the operator signs anew, never a client of
+    // the model, whatever mode its mount passes (ADR 0024).
+    if (request.mode !== 'operator') return adoptRefused('policy_denied');
+    if (isAborted(request.signal)) return adoptRefused('network');
+    if (assignment === undefined) return adoptRefused('auth');
+    const ctx = createTenantContext({
+      assignment,
+      instance: origin,
+      mode: request.mode,
+      redaction: request.redaction,
+      readOnly: request.readOnly,
+      features: [...request.features],
+      clock,
+      signal: request.signal,
+      logging,
+      eventId,
+    });
+    const end = await adoptWith(ctx, run, call, eventId, refs);
+    return { ...end, ctx };
+  };
+
+  const adoptWith = async (
+    ctx: TenantContext,
+    run: UndoRun,
+    call: CheckedAdoptCall,
+    eventId: string,
+    refs: ObjectRefCollector,
+  ): Promise<AdoptEnd> => {
+    // As for every write, nothing runs while the audit file cannot take
+    // its line (ADR 0028, ADR 0029).
+    if (!auditReady()) return adoptRefused('policy_denied', 'auditNotReady');
+    const snapshots = options.snapshots;
+    if (snapshots === undefined) {
+      return adoptEnd({ kind: 'off' }, 'denied', 'policy_denied');
+    }
+    // The snapshots of the writes, the newest first; one gone after its
+    // retention or whose day key is gone proves nothing.
+    const found: SnapshotToUndo[] = [];
+    for (const write of call.writeIds) {
+      let loaded: Awaited<ReturnType<WriteSnapshots['load']>>;
+      try {
+        loaded = await snapshots.load(ctx, write);
+      } catch {
+        return adoptRefused('internal');
+      }
+      if (loaded.kind !== 'found') continue;
+      found.push({
+        before: loaded.before,
+        ...(loaded.after === undefined ? {} : { after: loaded.after }),
+        day: loaded.day,
+      });
+    }
+    const result = await guard.adopt({
+      ctx,
+      eventId,
+      routine: run.routineId,
+      period: call.period,
+      page: call.page,
+      snapshots: found,
+      confirm: call.confirm,
+    });
+    if (result.kind === 'refused') {
+      return adoptRefused(result.error.code, reasonOf(result.error));
+    }
+    addTarget(refs, result.target);
+    switch (result.kind) {
+      case 'own':
+        return adoptEnd({ kind: 'own' }, 'skipped');
+      case 'none':
+        return adoptEnd({ kind: 'none' }, 'denied', 'not_found');
+      case 'renamed':
+        return adoptEnd({ kind: 'renamed' }, 'denied', 'conflict');
+      case 'unclear':
+        return adoptEnd(
+          { kind: 'unclear', reason: result.reason },
+          'denied',
+          'conflict',
+        );
+      case 'unproven':
+        return adoptEnd(
+          {
+            kind: 'unproven',
+            range: result.range,
+            snapshots: result.snapshots,
+          },
+          'denied',
+          'conflict',
+        );
+      case 'unsignable':
+        return adoptEnd(
+          { kind: 'unsignable', range: result.range },
+          'denied',
+          'conflict',
+        );
+      case 'preview':
+        return adoptEnd({ kind: 'preview', shown: result.shown }, 'planned');
+      case 'mismatch':
+        return adoptEnd(
+          { kind: 'mismatch', shown: result.shown },
+          'denied',
+          'conflict',
+        );
+      case 'committed':
+        break;
+    }
+    const { shown } = result;
+    const committed = result.result;
+    if (committed.ok) {
+      return adoptEnd(
+        {
+          kind: 'done',
+          shown,
+          version: committed.version,
+          undoId: committed.undoId,
+        },
+        'verified',
+        undefined,
+        committed.path,
+        true,
+      );
+    }
+    const reason = reasonOf(committed.error);
+    return adoptEnd(
+      {
+        kind: 'failed',
+        code: committed.error.code,
+        ...(reason === undefined ? {} : { reason }),
+        state: committed.state,
+        sent: committed.sent,
+        shown,
+      },
+      committed.state,
+      committed.error.code,
+      committed.path,
+      committed.sent,
+    );
+  };
+
   // The context of a call of the operator on the queue: only the command
   // line of the operator reaches the queue, never a client of the model,
   // whatever mode its mount passes (ADR 0024, ADR 0031).
@@ -3703,6 +4050,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     writeForRun,
     endRun,
     undo,
+    adopt,
     reject,
     approve,
     listQueue,
@@ -3889,3 +4237,100 @@ const sentenceNames = Object.keys(
 ) as (keyof typeof writeSentences)[];
 const reasonOf = (error: EccliumError): UndoReason | undefined =>
   sentenceNames.find((name) => writeSentences[name] === error.message);
+
+/** How an adoption ended, with what its audit line needs. */
+interface AdoptEnd {
+  readonly outcome: AdoptOutcome;
+  readonly writeState: WriteState;
+  readonly errorCode?: ErrorCode;
+  readonly confirmation?: ConfirmationPath;
+  /** Whether the adoption may have reached ChurchTools. */
+  readonly sent: boolean;
+  /** The context of the adoption, once there is one, for its log lines. */
+  readonly ctx?: TenantContext;
+}
+
+// An adoption that ended, frozen; the outcome of its line follows from
+// its state as for a write.
+const adoptEnd = (
+  outcome: AdoptOutcome,
+  writeState: WriteState,
+  errorCode?: ErrorCode,
+  confirmation?: ConfirmationPath,
+  sent = false,
+): AdoptEnd =>
+  Object.freeze({
+    outcome: Object.freeze(outcome),
+    writeState,
+    ...(errorCode === undefined ? {} : { errorCode }),
+    ...(confirmation === undefined ? {} : { confirmation }),
+    sent,
+  });
+
+// An adoption refused or failed before the page was judged: nothing sent.
+const adoptRefused = (code: ErrorCode, reason?: UndoReason): AdoptEnd => {
+  const state = writeStateOf(code);
+  return adoptEnd(
+    {
+      kind: 'failed',
+      code,
+      ...(reason === undefined ? {} : { reason }),
+      state,
+      sent: false,
+    },
+    state,
+    code,
+  );
+};
+
+/** An adoption call whose fields have the form they must have. */
+interface CheckedAdoptCall {
+  readonly period: string;
+  readonly page: {
+    readonly categoryId: number;
+    readonly guid: string;
+    readonly name: string;
+  };
+  readonly writeIds: readonly string[];
+  readonly confirm: string | undefined;
+}
+
+// The GUID of a page of the wiki, as the policy names it.
+const pageGuidPattern =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+// The check value of a preview: 16 hex digits in lower case.
+const checkValuePattern = /^[0-9a-f]{16}$/;
+
+// The fields of an adoption call, checked, or undefined for one built
+// wrong: no field of the command line reaches the write guard unchecked.
+const adoptCallOf = (call: AdoptCall): CheckedAdoptCall | undefined => {
+  const { period, page, writeIds, confirm } = call;
+  const { categoryId, guid, name } = page;
+  if (
+    !auditFieldSchemas.period.safeParse(period).success ||
+    !Number.isSafeInteger(categoryId) ||
+    (categoryId as number) < 1 ||
+    typeof guid !== 'string' ||
+    !pageGuidPattern.test(guid) ||
+    typeof name !== 'string' ||
+    name.trim() === '' ||
+    !Array.isArray(writeIds) ||
+    writeIds.length > maxAdoptionWrites ||
+    !writeIds.every((id) => typeof id === 'string' && isUuid(id)) ||
+    (confirm !== undefined &&
+      (typeof confirm !== 'string' || !checkValuePattern.test(confirm)))
+  ) {
+    return undefined;
+  }
+  return Object.freeze({
+    period: period as string,
+    page: Object.freeze({
+      categoryId: categoryId as number,
+      guid,
+      name,
+    }),
+    writeIds: Object.freeze([...(writeIds as readonly string[])]),
+    confirm,
+  });
+};

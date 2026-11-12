@@ -428,6 +428,7 @@ describe('the catalog of the audit events', () => {
       'undo',
       'approval',
       'run',
+      'adoption',
     ]);
     expect(Object.keys(objectDomainLabels).sort()).toEqual(
       [...objectDomains].sort(),

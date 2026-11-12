@@ -5,6 +5,8 @@
  * @packageDocumentation
  */
 export {
+  type AdoptCall,
+  type AdoptOutcome,
   type ApproveOutcome,
   type ApproveReason,
   type ConfirmationAnswer,
@@ -24,6 +26,7 @@ export {
   type ToolPipeline,
   type ToolPipelineOptions,
   type ToolRequest,
+  maxAdoptionWrites,
   type UndoCall,
   type UndoOutcome,
   type UndoReason,

@@ -81,9 +81,9 @@ describe('AuditEventV1', () => {
     >();
   });
 
-  it('records a call of a tool, an undo, a decision about the queue (ADR 0031) or the end of a run (ADR 0033)', () => {
+  it('records a call of a tool, an undo, a decision about the queue (ADR 0031), the end of a run (ADR 0033) or an adoption (ADR 0032)', () => {
     expectTypeOf<AuditType>().toEqualTypeOf<
-      'tool_call' | 'undo' | 'approval' | 'run'
+      'tool_call' | 'undo' | 'approval' | 'run' | 'adoption'
     >();
     expectTypeOf<AuditEventV1['undoes']>().toEqualTypeOf<string | undefined>();
     expectTypeOf<AuditEventV1['queueId']>().toEqualTypeOf<string | undefined>();

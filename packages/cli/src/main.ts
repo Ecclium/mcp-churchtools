@@ -39,6 +39,7 @@ import {
   type UsageProblem,
   usageProblemTexts,
 } from './output/index.js';
+import type { AdoptOptions } from './marker/adopt.js';
 import type { PolicyInitOptions } from './policy/init.js';
 import { policyInitCallProblem } from './policy/call.js';
 import { policyInitCallTexts } from './policy/texts.js';
@@ -63,6 +64,14 @@ export interface RunOptions {
   >;
   /** Replacements for `undo`, such as the test double of ChurchTools. */
   readonly undo?: Pick<UndoOptions, 'load' | 'writeSync' | 'createTransport'>;
+  /**
+   * Replacements for `marker adopt`, such as the test double of
+   * ChurchTools.
+   */
+  readonly marker?: Pick<
+    AdoptOptions,
+    'load' | 'writeSync' | 'createTransport' | 'clock'
+  >;
   /** Replacements for `queue`, such as the test double of ChurchTools. */
   readonly queue?: Pick<QueueOptions, 'load' | 'writeSync' | 'createTransport'>;
   /** Replacements for `run-once`, such as the doubles of ChurchTools and a model. */
@@ -102,6 +111,8 @@ const commands: readonly Command[] = Object.freeze(
     { words: ['undo'], options: ['overwrite'], argument: true },
     // Without the ID of a write only with --run, for every write of a run.
     { words: ['undo'], options: ['run', 'overwrite'] },
+    // Only with --run, and with --confirm to write what a preview showed.
+    { words: ['marker', 'adopt'], options: ['run', 'confirm'] },
     { words: ['queue', 'list'], options: [] },
     { words: ['queue', 'show'], options: [], argument: true },
     { words: ['queue', 'approve'], options: [], argument: true },
@@ -132,6 +143,7 @@ const options = Object.freeze({
   routine: Object.freeze({ type: 'string' }),
   credential: Object.freeze({ type: 'string' }),
   overwrite: Object.freeze({ type: 'boolean' }),
+  confirm: Object.freeze({ type: 'string' }),
   runner: Object.freeze({ type: 'boolean' }),
   due: Object.freeze({ type: 'boolean' }),
   preview: Object.freeze({ type: 'boolean' }),
@@ -168,6 +180,11 @@ type Call =
       readonly target:
         { readonly eventId: string } | { readonly runId: string };
       readonly overwrite: boolean;
+    }
+  | {
+      readonly kind: 'adopt';
+      readonly runId: string;
+      readonly confirm: string | undefined;
     }
   | {
       readonly kind: 'queue';
@@ -282,6 +299,11 @@ const readCall = (args: readonly string[]): Call => {
             overwrite: values.overwrite === true,
           };
     }
+    case 'marker adopt':
+      // The run must be named; the value of a preview is optional.
+      return values.run === undefined
+        ? { kind: 'wrong', problem: 'command' }
+        : { kind: 'adopt', runId: values.run, confirm: values.confirm };
     case 'queue list':
       return { kind: 'queue', action: 'list', queueId: undefined };
     case 'queue show':
@@ -442,6 +464,26 @@ export function run(
               overwrite: call.overwrite,
               output: out,
               ...runOptions.undo,
+            }),
+          )
+          .catch(() => {
+            out.stderr(internalErrorText);
+            return exitCodes.internal;
+          });
+      }
+      case 'adopt': {
+        // Loaded only for this command, like `undo`: it builds the
+        // transport, and it writes.
+        const out = output;
+        return import('./marker/adopt.js')
+          .then(({ adoptMarker }) =>
+            adoptMarker({
+              environment: taken,
+              execArgv,
+              runId: call.runId,
+              confirm: call.confirm,
+              output: out,
+              ...runOptions.marker,
             }),
           )
           .catch(() => {

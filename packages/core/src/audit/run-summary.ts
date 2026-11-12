@@ -11,7 +11,9 @@
  * of the operator about a write a run queued is a line of its own, with
  * the entry of the queue and without the run (ADR 0031); the ID of the
  * entry is the ID of the line with which the run queued it, so the two are
- * joined here. An undo of a write of the run names the run on its line.
+ * joined here. An undo of a write of the run names the run on its line,
+ * and so does an adoption that signed the section of the run anew
+ * (ADR 0032).
  * It does not check the chain: that is `ecclium audit verify`.
  *
  * @packageDocumentation
@@ -70,6 +72,16 @@ export interface AuditRunUndos {
   readonly count: number;
 }
 
+/**
+ * The adoptions of `ecclium marker adopt` for a run, with one state
+ * (ADR 0032): `verified` for a section signed anew, `planned` for a
+ * preview, `skipped` when its code fitted already.
+ */
+export interface AuditRunAdoptions {
+  readonly writeState: WriteState;
+  readonly count: number;
+}
+
 /** How a run ended, from its line of the type `run`. */
 export interface AuditRunEnd {
   /** The time of the line, in UTC. */
@@ -113,6 +125,8 @@ export interface AuditRunSummary {
   readonly decisions: readonly AuditRunDecisions[];
   /** The undos of its writes, sorted by state. */
   readonly undos: readonly AuditRunUndos[];
+  /** The adoptions of its section, sorted by state. */
+  readonly adoptions: readonly AuditRunAdoptions[];
 }
 
 /** Options of {@link summarizeRun}. */
@@ -159,6 +173,16 @@ const parse = (text: string | undefined): unknown => {
 // audit is the order of time and of the alphabet.
 const compareText = (left: string, right: string): number =>
   left < right ? -1 : left > right ? 1 : 0;
+
+// Counts by state, sorted by state.
+const byState = (
+  counts: ReadonlyMap<WriteState, number>,
+): readonly AuditRunUndos[] =>
+  Object.freeze(
+    [...counts]
+      .sort(([left], [right]) => compareText(left, right))
+      .map(([writeState, count]) => Object.freeze({ writeState, count })),
+  );
 
 /**
  * Sums up one run from the audit files of the folder. It reads only,
@@ -217,6 +241,7 @@ export function summarizeRun(options: AuditRunSummaryOptions): AuditRunSummary {
     { readonly decision: QueueDecisionKind; readonly writeState?: WriteState }[]
   >();
   const undos = new Map<WriteState, number>();
+  const adoptions = new Map<WriteState, number>();
 
   for (const name of folder.names) {
     const outcome = folder.read(name, (line) => {
@@ -253,9 +278,10 @@ export function summarizeRun(options: AuditRunSummaryOptions): AuditRunSummary {
       if (begin === undefined || event.ts < begin) begin = event.ts;
       routineId ??= event.routineId;
       // The pipeline gives every line of an undo the state it ended in.
-      if (event.type === 'undo') {
+      if (event.type === 'undo' || event.type === 'adoption') {
+        const counts = event.type === 'undo' ? undos : adoptions;
         if (event.writeState !== undefined) {
-          undos.set(event.writeState, (undos.get(event.writeState) ?? 0) + 1);
+          counts.set(event.writeState, (counts.get(event.writeState) ?? 0) + 1);
         }
         return;
       }
@@ -365,12 +391,7 @@ export function summarizeRun(options: AuditRunSummaryOptions): AuditRunSummary {
         .sort(([left], [right]) => compareText(left, right))
         .map(([, row]) => row),
     ),
-    undos: Object.freeze(
-      [...undos]
-        .sort(([left], [right]) => compareText(left, right))
-        .map(([writeState, count]): AuditRunUndos =>
-          Object.freeze({ writeState, count }),
-        ),
-    ),
+    undos: byState(undos),
+    adoptions: byState(adoptions),
   });
 }

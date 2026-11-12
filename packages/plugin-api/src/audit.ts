@@ -12,10 +12,12 @@ import type { ErrorCode } from './errors.js';
  * What an audit event records: a call of a tool, the run of
  * `ecclium undo` that takes back a write of Ecclium from its snapshot, a
  * decision of the operator about an entry of the queue of approvals
- * (ADR 0031), or the end of a run of a routine with how it ended
- * (ADR 0028, ADR 0033). Grows with the phases that add actions.
+ * (ADR 0031), the end of a run of a routine with how it ended
+ * (ADR 0028, ADR 0033), or the run of `ecclium marker adopt` that signs
+ * the section of a run anew after the key of the check codes was lost
+ * (ADR 0032). Grows with the phases that add actions.
  */
-export type AuditType = 'tool_call' | 'undo' | 'approval' | 'run';
+export type AuditType = 'tool_call' | 'undo' | 'approval' | 'run' | 'adoption';
 
 /**
  * How a run of a routine ended (ADR 0033): its section written, the page
