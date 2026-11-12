@@ -1760,3 +1760,4 @@ Diese Grundsatzfragen sind entschieden.
   - Der Smoke-Test über stdio gibt bei einem unerwarteten Exit-Code seinen Bericht aus (siehe «Offen»).
   - Durchsicht aus zwei Blickwinkeln, Sicherheit und Logik sowie öffentliche Texte, jeder Befund an der Quelle geprüft. Kein hoher und kein mittlerer Befund. Behoben: Die Anleitung für Betreiber nennt jetzt, was der Befehl vor dem Start braucht.
   - `pnpm run ci:check` mit 26'359 Tests, davon einer übersprungen, der nur in CI läuft, `pnpm run ci:secret-scan` und `pnpm run coverage:security` mit vier Workern grün, `pnpm run check:licenses` im Terminal, weil der Speicher von pnpm in der Sandbox ein Paket nicht kennt.
+- 12.11.2026, die Übernahme eines Abschnitts ist als `95b65c2` auf `main` (#231). Der Squash-Commit bringt genau den Baum des Branches.
