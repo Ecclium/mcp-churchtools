@@ -14,8 +14,9 @@
  * in all its parts. Of a page in the list they take the GUID, the title
  * and the date of its last change; the client reads no person of the list
  * at all. They read in the level `standard`: no model sees the data, the
- * tools of the wiki give no person, and the level `strict` would mask a
- * part of a GUID in a link as a phone number (decided on 12.11.2026).
+ * tools of the wiki give no person in a field of its own, and the level
+ * `strict` would mask a part of a GUID in a link as a phone number
+ * (decided on 12.11.2026).
  *
  * What they report: titles and names of categories as plain text, each
  * through the content policy of a text of a run on its own. A value it
@@ -154,10 +155,11 @@ const interfaceSegments: readonly string[] = Object.freeze(['sitemap']);
  * in the form the web interface of ChurchTools gives in its address bar:
  * `/wiki/<ID of the category>/<title>`, with the title encoded for an
  * address, `main` for the main page, or the category alone. ChurchTools
- * finds a page also by its GUID there, and both without regard to case.
- * A link counts with the origin of the instance or as a path alone; a
- * link to another host, the list of all pages, an anchor or a file is
- * none. Each link appears once, in the order of the text.
+ * finds a page also by its GUID there, and both without regard to case
+ * (F55). A link counts with the origin of the instance, written exactly
+ * so, or as a path alone; a link to another origin, the list of all pages
+ * or a file is none. Of a link with an anchor or a query only the page
+ * counts. Each link appears once, in the order of the text.
  *
  * @param text - The whole text of a page, Markdown or HTML.
  * @param origin - The origin of the instance.

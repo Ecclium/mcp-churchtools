@@ -365,7 +365,7 @@ const checkMeanings: Readonly<Record<string, string>> = Object.freeze({
   stalePages:
     'Seiten des Wikis, die seit `olderThanDays` Tagen niemand geändert hat, die ältesten zuerst, mit dem Tag der Änderung in der Zeitzone aus `ECCLIUM_TIME_ZONE`. Fehlt einer Seite das Datum, endet der Lauf mit `run_page_date_missing`.',
   brokenLinks:
-    'Links im Wiki auf Seiten, die das Konto der Routine nicht findet, in der Form `/wiki/<Kennung der Kategorie>/<Titel, GUID oder main>` mit oder ohne den Host der Instanz. Ein Link auf eine Seite, die das Konto nicht sehen darf, erscheint wie einer auf eine fehlende Seite. Das Ziel steht als «Kategorie › Titel» im Bericht, nie als Adresse.',
+    'Links im Wiki auf Seiten, die das Konto der Routine nicht findet, in der Form `/wiki/<Kennung der Kategorie>/<Titel, GUID oder main>` oder `/wiki/<Kennung der Kategorie>`, mit dem Origin der Instanz genau so geschrieben oder als Pfad allein. Ein Link auf eine Seite, die das Konto nicht sehen darf, erscheint wie einer auf eine fehlende Seite. Das Ziel steht als «Kategorie › Titel» im Bericht, nie als Adresse.',
 });
 
 const table = (

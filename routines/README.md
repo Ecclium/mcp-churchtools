@@ -4,7 +4,7 @@ Dieser Ordner enthält die Routinen, die Ecclium mitbringt, mit ihren Prompts un
 
 Ordner und Dateien müssen dem Benutzer gehören, unter dem Ecclium läuft, und dürfen für Gruppe und andere nicht beschreibbar sein, etwa mit den Rechten 755 und 644. Ein Checkout gibt Dateien oft andere Rechte, prüfen Sie sie nach dem Kopieren.
 
-Probieren Sie eine Routine zuerst mit `ecclium run-once <Routine> --preview` aus. Die Vorschau zeigt den Abschnitt, ohne zu schreiben, auch bevor die Richtlinie einen Eintrag für die Routine hat. Eine Routine mit Modell fragt dafür schon das Modell und braucht wie jeder ihrer Läufe die Schlüsseldatei der Pseudonyme ([Runner](../docs/betrieb/runner.md)). `wiki-hygiene` hat kein Modell und braucht weder die Datei der Anbieter noch diesen Schlüssel.
+Probieren Sie eine Routine zuerst mit `ecclium run-once <Routine> --preview` aus. Die Vorschau zeigt den Abschnitt, ohne zu schreiben, auch bevor die Richtlinie einen Eintrag für die Routine hat. Eine Routine mit Modell fragt dafür schon das Modell und braucht in der Stufe `strict` wie jeder ihrer Läufe die Schlüsseldatei der Pseudonyme ([Runner](../docs/betrieb/runner.md)). `wiki-hygiene` hat kein Modell und braucht weder die Datei der Anbieter noch diesen Schlüssel.
 
 ## dienstplan-report
 
@@ -54,8 +54,8 @@ Die Routine schreibt am Ersten jedes Monats um 07:00 einen Bericht über die Pfl
 Was die Prüfungen lesen und melden:
 
 - **Welche Seiten:** jede Seite jeder Kategorie, die das Konto der Routine sieht, auch die des Berichts. Welche Kategorien das sind, bestimmen die Rechte des Kontos, nicht die Routine.
-- **Lange nicht geändert:** Seiten, deren letzte Änderung länger als `olderThanDays` Tage vor dem Lauf liegt, die ältesten zuerst, mit dem Tag der Änderung in der Zeitzone aus `ECCLIUM_TIME_ZONE`. Fehlt einer Seite in der Liste von ChurchTools das Datum, endet der Lauf mit `run_page_date_missing`, statt zu melden, keine Seite sei alt.
-- **Links ohne Ziel:** Links auf die eigene Instanz in der Form, die die Adresszeile von ChurchTools zeigt, `/wiki/<Kennung der Kategorie>/<Titel>` oder `/wiki/<Kennung der Kategorie>/main`, mit oder ohne Host. ChurchTools findet eine Seite dort über ihren Titel oder ihre GUID ohne Rücksicht auf Gross- und Kleinschreibung, die Prüfung ebenso. Ein Link auf eine Seite, die das Konto nicht sehen darf, erscheint wie ein Link auf eine fehlende Seite, ein Link in eine Kategorie, die es nicht sieht, mit der Kennung der Kategorie. Links auf andere Hosts, auf Anker, Dateien und die alte Form mit `?q=churchwiki` prüft sie nicht. Der Bericht nennt das Ziel als Text «Kategorie › Titel», nie als Adresse.
+- **Lange nicht geändert:** Seiten, deren letzte Änderung länger als `olderThanDays` Tage vor der geplanten Auslösung liegt, so dass ein späterer Versuch dieselben Seiten nennt, die ältesten zuerst, mit dem Tag der Änderung in der Zeitzone aus `ECCLIUM_TIME_ZONE`. Fehlt einer Seite in der Liste von ChurchTools das Datum, endet der Lauf mit `run_page_date_missing`, statt zu melden, keine Seite sei alt.
+- **Links ohne Ziel:** Links auf die eigene Instanz in der Form, die die Adresszeile von ChurchTools zeigt: `/wiki/<Kennung der Kategorie>/<Titel>`, `/wiki/<Kennung der Kategorie>/<GUID>`, `/wiki/<Kennung der Kategorie>/main` oder `/wiki/<Kennung der Kategorie>` für die Hauptseite, mit dem Origin aus `ECCLIUM_CHURCHTOOLS_URL` genau so geschrieben oder als Pfad allein. ChurchTools findet eine Seite dort über ihren Titel oder ihre GUID ohne Rücksicht auf Gross- und Kleinschreibung, die Prüfung ebenso. Ein Link auf eine Seite, die das Konto nicht sehen darf, erscheint wie ein Link auf eine fehlende Seite, ein Link in eine Kategorie, die es nicht sieht, mit der Kennung der Kategorie. Den Anker oder die Query eines Links prüft sie nicht, nur die Seite. Links auf andere Hosts, mit `http` oder einem anderen Port, auf Dateien und die alte Form mit `?q=churchwiki` prüft sie nicht. Der Bericht nennt das Ziel als Text «Kategorie › Titel», nie als Adresse.
 - **Titel im Bericht:** Jeder Titel und jeder Name einer Kategorie geht für sich durch die ContentPolicy. Einen, den sie abweist, etwa mit einer E-Mail-Adresse, ersetzt der Text «(Titel nicht darstellbar)».
 
 Was Sie anpassen:
@@ -63,7 +63,7 @@ Was Sie anpassen:
 - **Seite:** `output.scope` nennt die Kategorie «Berichte» und die Seite «Wiki-Pflege». Legen Sie Kategorie und Seite in ChurchTools an oder nennen Sie eine bestehende Seite. Ecclium legt keine Seite an.
 - **Wer den Bericht liest:** Der Bericht nennt Titel von Seiten, auch aus Kategorien, die nicht jeder sieht. Wählen Sie eine Kategorie, die nur die Personen sehen, die das Wiki pflegen.
 - **Alter:** `olderThanDays` in `stalePages`, von 30 bis 3'650 Tagen. Ändern Sie dann auch die Überschrift und den Satz für eine leere Liste in der Vorlage.
-- **Länge:** `maxItems` je Prüfung, 1 bis 100. Hat eine Prüfung mehr Treffer, nennt der Bericht die ersten in fester Reihenfolge. Die Vorlage sagt die Grenze, ändern Sie sie dort mit.
+- **Länge:** `maxItems` je Prüfung, 1 bis 100. Hat eine Prüfung mehr Treffer, nennt der Bericht die ersten in fester Reihenfolge: lange nicht geänderte Seiten die ältesten zuerst, Links nach Kategorie und Titel der Seite, dann nach dem Ziel. Die Vorlage sagt die Grenze, ändern Sie sie dort mit.
 - **Zeit:** `schedule` gilt in der Zeitzone aus `ECCLIUM_TIME_ZONE`.
 - **Richtlinie:** Die Seite braucht einen Eintrag im Teil `unattended` der Richtlinie, sonst startet die Routine nicht. `ecclium policy init --routine wiki-hygiene --credential <Alias>` schlägt ihn vor ([Richtlinie](../docs/policy.md)). Ohne `interactive.inquiriesTo` in der Richtlinie hängt ein Lauf keinen Abschnitt an.
 
@@ -73,9 +73,9 @@ Das Konto der Routine braucht genau diese Rechte ([Dienstkonto](../docs/betrieb/
 - `churchwiki: view category` für jede Kategorie, die der Bericht prüfen soll, und für die Kategorie des Berichts;
 - `churchwiki: edit category` nur für die Kategorie des Berichts.
 
-Die Prüfungen lesen in der Stufe `standard`, weil sie ihre Daten keinem Modell geben und die Tools des Wikis keine Person nennen. In der Stufe `strict` hielte die Maskierung Teile einer GUID in einem Link für eine Telefonnummer.
+Die Prüfungen lesen in der Stufe `standard`, weil sie ihre Daten keinem Modell geben und die Tools des Wikis keine Person in einem eigenen Feld nennen. In der Stufe `strict` hielte die Maskierung Teile einer GUID in einem Link für eine Telefonnummer. In den Bericht kommen nur Titel und Namen von Kategorien, jeder durch die ContentPolicy.
 
-Grenzen: Ein Lauf liest höchstens 400 Mal: einmal die Kategorien, je Kategorie die Liste ihrer Seiten zu 25, und für `brokenLinks` jede Seite, eine lange Seite in mehreren Teilen. Das reicht für etwa 350 Seiten. Braucht ein Lauf mehr, endet er mit `run_calls_exhausted`, statt Seiten wegzulassen. Geben Sie dem Konto dann weniger Kategorien oder nehmen Sie `brokenLinks` aus der Routine. Die Aufrufe zählen nicht gegen das Lesebudget.
+Grenzen: Ein Lauf liest höchstens 400 Mal: die Kategorien zu 25, je Kategorie die Liste ihrer Seiten zu 25, und für `brokenLinks` jede Seite, eine lange Seite in mehreren Teilen. Das reicht für etwa 350 Seiten. Braucht ein Lauf mehr, endet er mit `run_calls_exhausted`, statt Seiten wegzulassen. Geben Sie dem Konto dann weniger Kategorien oder nehmen Sie `brokenLinks` aus der Routine. Die Aufrufe zählen nicht gegen das Lesebudget.
 
 ## Ein Konto für alle drei Routinen
 

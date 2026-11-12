@@ -300,9 +300,9 @@ export function prepareRun(
       loaded,
       inputs: Object.freeze(inputs),
       // The checks of the core give their data to no model, the tools of
-      // the wiki give no person, and in `strict` the masking would take a
-      // part of a GUID in a link for a phone number (decided on
-      // 12.11.2026, ADR 0033).
+      // the wiki give no person in a field of its own, and in `strict` the
+      // masking would take a part of a GUID in a link for a phone number
+      // (decided on 12.11.2026, ADR 0033).
       redaction:
         generate === undefined
           ? 'standard'

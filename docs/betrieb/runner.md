@@ -2,7 +2,7 @@
 
 **In Entwicklung.** Es gibt noch keine veröffentlichte Version. Diese Seite beschreibt `ecclium run-once` und den Daemon `ecclium runner`, so wie sie heute gebaut sind. Der Vertrag für den Container des Runners und die Ping-URL kommen später und ergänzen diese Seite.
 
-Der Runner führt Routinen nach ihrem Zeitplan aus: Er liest Daten aus ChurchTools, gibt sie maskiert einem Sprachmodell, prüft die Antwort und schreibt einen Abschnitt ins Wiki oder einen Entwurf als Datei ([Routinen](../routines.md), [Richtlinie](../policy.md), [Anbieter](../providers.md)). Er läuft ohne Menschen, deshalb schreibt er ins Wiki nur, was die Richtlinie erlaubt.
+Der Runner führt Routinen nach ihrem Zeitplan aus: Er liest Daten aus ChurchTools, gibt sie maskiert einem Sprachmodell oder prüft sie mit festen Prüfungen des Kerns, prüft das Ergebnis und schreibt einen Abschnitt ins Wiki oder einen Entwurf als Datei ([Routinen](../routines.md), [Richtlinie](../policy.md), [Anbieter](../providers.md)). Er läuft ohne Menschen, deshalb schreibt er ins Wiki nur, was die Richtlinie erlaubt.
 
 Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Hersteller von ChurchTools.
 
@@ -18,7 +18,7 @@ Der Runner liest dieselben Variablen wie der Server ([Konfiguration](../configur
 - Eine Metrikdatei schreibt der Runner nur mit `ECCLIUM_RUNNER_METRICS_FILE` (siehe «Metrikdatei»).
 - Den Ordner der Entwürfe, die Datei der Meldungen und die Metrikdatei legen Sie nicht in einen Ordner, den Ecclium selbst füllt: weder in den Ordner der Schlüssel noch in den der Token-Dateien, noch in einen der Ordner `audit`, `quota`, `snapshots`, `queue`, `runner` oder `stop` des Zustandsordners. Ein eigener Ordner wie `output` im Zustandsordner geht. Die Metrikdatei ist zudem keine andere Datei der Konfiguration, etwa die Datei der Meldungen, die Richtlinie oder eine Schlüsseldatei, liegt nicht im Ordner der Routinen, und ihr Name beginnt mit einem Buchstaben oder einer Ziffer und hat höchstens 128 Zeichen aus Buchstaben ohne Umlaute, Ziffern, Punkt, Bindestrich und Unterstrich.
 - Eine Routine mit Modell gibt dem Modell ihre Daten in der Stufe `strict`, ausser ein Eintrag der Richtlinie erlaubt `standard`. Dafür braucht sie die Schlüsseldatei der Pseudonyme in `ECCLIUM_PSEUDONYM_KEY_FILE` ([Betrieb über stdio](stdio.md), «Schlüsseldatei anlegen»), auch für eine Vorschau.
-- Eine Routine mit den Prüfungen des Kerns, wie `wiki-hygiene`, hat kein Modell. Sie braucht weder die Datei der Anbieter noch die Schlüsseldatei der Pseudonyme, weil ihre Prüfungen in der Stufe `standard` lesen und ihre Daten niemandem geben ([Routinen](../routines.md), «Prüfungen des Kerns»).
+- Eine Routine mit den Prüfungen des Kerns, wie `wiki-hygiene`, hat kein Modell und braucht deshalb keine Datei der Anbieter. Ihre Prüfungen lesen in der Stufe `standard`, weil sie ihre Daten keinem Modell geben, und brauchen deshalb auch keine Schlüsseldatei der Pseudonyme ([Routinen](../routines.md), «Prüfungen des Kerns»).
 
 `ecclium config check --runner` prüft all das ohne ChurchTools und ohne die Modelle anzufragen und nennt jede Routine mit Zeitplan, Ziel, Konto und Modell, eine Routine ohne Modell mit ihren Prüfungen.
 
