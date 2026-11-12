@@ -64,6 +64,16 @@ Ein angehaltener Lauf liest nichts und schickt dem Modell keine Daten. Er endet 
 
 `ecclium undo --run <Lauf>` nimmt zurück, was ein Lauf im Wiki geschrieben hat, auch einen Abschnitt, den Sie mit `ecclium queue approve` aus der Freigabe-Warteschlange freigegeben haben, den neuesten Schreibvorgang zuerst. Hat jemand die Seite seither geändert, zeigt der Befehl den Unterschied und schreibt erst mit `--overwrite`. Er schreibt mit dem Konto, das die Richtlinie für die Routine nennt, nie mit dem Token des Servers, also mit der Token-Datei aus `ECCLIUM_RUNNER_TOKENS_DIR`, und er lädt die Konfiguration wie `ecclium undo` und `ecclium queue`. Läuft die Routine gerade, endet er mit 75; versuchen Sie es nach dem Lauf erneut. Der Kill-Switch der Routine hält eine Rücknahme nicht an, `writes-off` schon. Zurücknehmen lässt sich, was nicht älter als 30 Tage ist ([Sicherheit](../security.md#rücknahme)).
 
+## Neuer Schlüssel des Prüfcodes
+
+Geht der Schlüssel aus `ECCLIUM_MARKER_KEY_FILE` verloren oder ersetzen Sie ihn, passt der Prüfcode keines bestehenden Abschnitts mehr ([Sicherheit](../security.md#schlüssel-des-prüfcodes)). Der nächste Lauf einer Periode, die schon einen Abschnitt hat, legt seinen dann in die Freigabe-Warteschlange. So übernehmen Sie den alten Abschnitt:
+
+1. `ecclium marker adopt --run <Lauf>` mit der Kennung dieses Laufs oder eines anderen Laufs derselben Routine und Periode. Der Befehl zeigt Seite, Periode, den Abschnitt, die Zeile der Kennzeichnung jetzt und neu und einen Prüfwert, und er schreibt nichts.
+2. Stimmt der Abschnitt, rufen Sie den Befehl mit `--confirm <Prüfwert>` auf. Er liest die Seite neu und ändert nur den Prüfcode in der Zeile, mit dem Konto der Routine. Mit `ecclium undo <Kennung>` nehmen Sie das zurück.
+3. Weisen Sie den wartenden Eintrag des Laufs mit `ecclium queue reject <Kennung>` ab, den der Befehl nennt. Eine Freigabe hängte den Abschnitt ein zweites Mal an. Der nächste Lauf der Periode ersetzt den Abschnitt jetzt wie gewohnt, von Hand mit `ecclium run-once <Routine>`.
+
+Der Befehl braucht einen Eintrag der Routine mit dem Ziel `wiki_page`, wie ihn `ecclium policy init --routine` vorschlägt, und einen Snapshot des Schreibvorgangs, der den Abschnitt hinterliess, also nicht älter als 30 Tage. Hat jemand den Abschnitt oder den Text darüber seither geändert, die Seite im Web-Editor gespeichert oder ein späterer Lauf derselben Periode den Abschnitt ersetzt, zeigt er nur den Bereich und signiert nichts; dann bleibt die Freigabe-Warteschlange der Weg. Läuft die Routine gerade, endet er mit 75. Der Kill-Switch der Routine hält ihn nicht an, `writes-off` und der des Mandanten schon.
+
 ## Entwürfe
 
 Eine Routine mit dem Ziel `draft` und dem Kanal `file` schreibt ihren Entwurf als `<Routine>-<Periode>.md` in den Ordner aus `ECCLIUM_DRAFTS_DIR`, etwa `termin-vorschau-2026-W46.md`. Ein zweiter Lauf derselben Periode ersetzt die Datei. Am Ende steht die Kennzeichnung, etwa «Automatisch erstellt am 10.11.2026 durch Ecclium, Routine termin-vorschau, Lauf 2026-W46. Rückfragen an Sekretariat.» Einen Prüfcode trägt ein Entwurf nicht, weil ihn keine Seite im Wiki hält.
