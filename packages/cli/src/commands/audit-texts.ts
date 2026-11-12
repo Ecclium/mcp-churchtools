@@ -270,15 +270,18 @@ const outcomeWords = Object.freeze({
 
 const toolName = (tool: string | undefined): string => tool ?? 'ohne Tool';
 
-// An undo of `ecclium undo`, a decision about the queue and the end of a
-// run of a routine call no tool and are named as what they are, in rows
-// of their own (ADR 0031, ADR 0033).
+// An undo of `ecclium undo`, a decision about the queue, the end of a run
+// of a routine and an adoption of `ecclium marker adopt` call no tool and
+// are named as what they are, in rows of their own (ADR 0031, ADR 0032,
+// ADR 0033).
 const rowName = (row: AuditDayToolCounts): string => {
   switch (row.type) {
     case 'run':
       return 'Läufe von Routinen';
     case 'undo':
       return 'Rücknahmen mit ‹ecclium undo›';
+    case 'adoption':
+      return 'Übernahmen mit ‹ecclium marker adopt›';
     case 'approval':
       return row.decision === 'approved'
         ? 'Freigaben mit ‹ecclium queue approve›'
@@ -293,6 +296,8 @@ const hitName = (hit: AuditObjectHit): string => {
       return 'Lauf';
     case 'undo':
       return 'Rücknahme';
+    case 'adoption':
+      return 'Übernahme';
     case 'approval':
       return hit.decision === 'approved' ? 'Freigabe' : 'Abweisung';
     case 'tool_call':
@@ -576,10 +581,15 @@ export function renderRun(
       }
       lines.push('Was noch wartet, zeigt ‹ecclium queue list›.');
     }
-    // An undo names the run of the write it takes back (ADR 0028).
-    if (summary.undos.length > 0) {
-      lines.push('Rücknahmen mit ‹ecclium undo›');
-      for (const row of summary.undos) {
+    // An undo names the run of the write it takes back (ADR 0028), an
+    // adoption the run whose section it signs anew (ADR 0032).
+    for (const [heading, rows] of [
+      ['Rücknahmen mit ‹ecclium undo›', summary.undos],
+      ['Übernahmen mit ‹ecclium marker adopt›', summary.adoptions],
+    ] as const) {
+      if (rows.length === 0) continue;
+      lines.push(heading);
+      for (const row of rows) {
         lines.push(
           `  ${stateWords[row.writeState]}: ${formatNumber(row.count)}`,
         );

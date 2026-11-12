@@ -195,6 +195,7 @@ describe('summarizeRun', () => {
       ],
       decisions: [],
       undos: [],
+      adoptions: [],
     });
     expect(Object.isFrozen(summary)).toBe(true);
     expect(Object.isFrozen(summary.reads)).toBe(true);
@@ -287,6 +288,46 @@ describe('summarizeRun', () => {
         until: '2026-11-09',
       }).lines,
     ).toBe(2);
+  });
+
+  it('counts the adoptions of the section of the run by state, apart from its undos (ADR 0032)', () => {
+    const adoption = (fields: Record<string, unknown> = {}): string =>
+      event({
+        ts: '2026-11-11T08:00:00.000Z',
+        type: 'adoption',
+        actor: { kind: 'operator', id: 'local-stdio' },
+        mode: 'operator',
+        tool: undefined,
+        writeState: 'verified',
+        confirmation: 'operator',
+        ...fields,
+      });
+    const summary = summarizeRun({
+      folder: folderOf({
+        [nameOf('2026-11-09', 1)]: [write(), runEnd()],
+        [nameOf('2026-11-11', 1)]: [
+          adoption({ writeState: 'planned', confirmation: undefined }),
+          adoption(),
+          adoption({ writeState: 'skipped' }),
+          // An adoption for another run is none of this run.
+          adoption({ runId: otherRun }),
+          // One without a state counts as a line of the run only.
+          adoption({ writeState: undefined, confirmation: undefined }),
+        ],
+      }),
+      runId,
+    });
+    expect(summary.adoptions).toEqual([
+      { writeState: 'planned', count: 1 },
+      { writeState: 'skipped', count: 1 },
+      { writeState: 'verified', count: 1 },
+    ]);
+    expect(summary.undos).toEqual([]);
+    expect(summary.writeRows).toHaveLength(1);
+    // The write, the end and the four adoptions of this run.
+    expect(summary.lines).toBe(6);
+    expect(Object.isFrozen(summary.adoptions)).toBe(true);
+    expect(Object.isFrozen(summary.adoptions[0])).toBe(true);
   });
 
   it('joins the decisions about the entries the run queued, and counts the undos of its writes', () => {

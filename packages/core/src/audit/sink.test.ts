@@ -1657,6 +1657,62 @@ describe('the end of a run (ADR 0033)', () => {
   });
 });
 
+describe('an adoption (ADR 0032)', () => {
+  const runId = '0b0e9a3c-3f7e-4c62-9a55-6a1f0d2c7e11';
+  const adoption: AuditDraft = {
+    type: 'adoption',
+    tenantId: 'default',
+    actor: { kind: 'operator', id: 'stdio:local-stdio' },
+    mode: 'operator',
+    runId,
+    routineId: 'weekly-report',
+    outcome: 'ok',
+    confirmation: 'operator',
+    writeState: 'verified',
+    objectRefs: [],
+    durationMs: 30,
+  };
+  const adoptionLine = `{"v":1,"eventId":"${firstId}","ts":"2026-10-13T08:00:00.000Z","type":"adoption","tenantId":"default","actor":{"kind":"operator","id":"stdio:local-stdio"},"mode":"operator","runId":"${runId}","routineId":"weekly-report","outcome":"ok","confirmation":"operator","writeState":"verified","objectRefs":[],"durationMs":30}`;
+
+  it('writes an adoption as it is', () => {
+    const { sink, file, logs } = makeWithFile();
+    expect(sink.record(adoption)).toBe(true);
+    expect(file()).toEqual([adoptionLine]);
+    expect(logs()).toEqual([]);
+  });
+
+  it('gives an adoption without its run the zero UUID, and one of another form as well', () => {
+    for (const runIdOf of [
+      undefined,
+      'run-of-yesterday',
+      runId.toUpperCase(),
+    ]) {
+      const { sink, audit, logs } = make();
+      sink.record({ ...adoption, runId: runIdOf });
+      const line = event(audit());
+      expect(line, String(runIdOf)).toMatchObject({
+        type: 'adoption',
+        runId: nilId,
+      });
+      expect(auditEventV1Schema.safeParse(line).success).toBe(true);
+      expect(events(logs())).toEqual([
+        runIdOf === undefined ? 'audit_missing_run_id' : 'audit_invalid_run_id',
+      ]);
+    }
+  });
+
+  it.each([
+    ['a registered tool', 'ct_group_search'],
+    ['the placeholder of a tool', 'ct_unknown'],
+  ])('leaves out %s, without asking the registry', (_, tool) => {
+    const { sink, file, logs, toolChecks } = makeWithFile();
+    sink.record({ ...adoption, tool });
+    expect(file()).toEqual([adoptionLine]);
+    expect(events(logs())).toEqual(['audit_invalid_tool']);
+    expect(toolChecks).toEqual([]);
+  });
+});
+
 describe('other optional fields', () => {
   it.each([
     ['runId', 'not-a-uuid', 'audit_invalid_run_id'],

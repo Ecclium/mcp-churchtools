@@ -41,6 +41,7 @@ const everyType: Readonly<Record<AuditType, true>> = {
   undo: true,
   approval: true,
   run: true,
+  adoption: true,
 };
 const everyRunResult: Readonly<Record<AuditRunResult, true>> = {
   written: true,
@@ -124,6 +125,19 @@ const runEnd: AuditEventV1 = {
   routineId: 'weekly-report',
   objectRefs: [],
   runResult: 'written',
+};
+// An adoption of ecclium marker adopt: it names the run whose section it
+// signs anew and its page, and calls no tool (ADR 0032).
+const adoption: AuditEventV1 = {
+  ...valid,
+  type: 'adoption',
+  actor: { kind: 'operator', id: 'stdio:local-stdio' },
+  mode: 'operator',
+  runId: '0b0e9a3c-3f7e-4c62-9a55-6a1f0d2c7e11',
+  routineId: 'weekly-report',
+  confirmation: 'operator',
+  writeState: 'verified',
+  objectRefs: ['wiki_category:12', 'wiki_page:34'],
 };
 // The same run, failed in a step with an error code.
 const failedRun: AuditEventV1 = {
@@ -418,8 +432,45 @@ describe('auditEventV1Schema', () => {
     );
   });
 
+  it('takes an adoption that names its run, without a tool, and refuses one without its run (ADR 0032)', () => {
+    expect(passes(auditEventV1Schema, adoption)).toBe(true);
+    // The routine is left out when it is not known, as on the end of a run.
+    expect(
+      passes(auditEventV1Schema, { ...adoption, routineId: undefined }),
+    ).toBe(true);
+    // A preview of the operator planned and wrote nothing.
+    expect(
+      passes(auditEventV1Schema, {
+        ...adoption,
+        writeState: 'planned',
+        confirmation: undefined,
+      }),
+    ).toBe(true);
+    expect(passes(auditEventV1Schema, { ...adoption, runId: undefined })).toBe(
+      false,
+    );
+    for (const tool of ['ct_wiki_page_update', auditPlaceholders.tool]) {
+      expect(passes(auditEventV1Schema, { ...adoption, tool }), tool).toBe(
+        false,
+      );
+    }
+    // Against the rules of the other types: no write it takes back, no
+    // entry of the queue and nothing of the end of a run.
+    for (const field of [
+      { undoes: undo.undoes },
+      { queueId: rejection.queueId, decision: 'approved' },
+      { runResult: 'written' },
+      { period: '2026-W46' },
+    ]) {
+      expect(
+        passes(auditEventV1Schema, { ...adoption, ...field }),
+        Object.keys(field).join(),
+      ).toBe(false);
+    }
+  });
+
   it('keeps the result, the step, the try and the period to the end of a run (ADR 0033)', () => {
-    for (const other of [valid, undo, rejection]) {
+    for (const other of [valid, undo, rejection, adoption]) {
       for (const field of [
         { runResult: 'written' },
         { runStep: 'model' },
@@ -909,7 +960,7 @@ describe('auditEventJsonSchema', () => {
       'objectRefsOmitted',
     );
     expect(schema['properties']).toMatchObject({
-      type: { enum: ['tool_call', 'undo', 'approval', 'run'] },
+      type: { enum: ['tool_call', 'undo', 'approval', 'run', 'adoption'] },
       runResult: {
         enum: [
           'written',

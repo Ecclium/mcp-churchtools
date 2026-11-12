@@ -43,14 +43,16 @@ export const actorKinds: readonly ActorKind[] = Object.freeze([
 /**
  * Every {@link AuditType}, frozen: a call of a tool, the run of
  * `ecclium undo` that takes back a write from its snapshot, a decision
- * of the operator about an entry of the queue of approvals (ADR 0031), and
- * the end of a run of a routine (ADR 0033).
+ * of the operator about an entry of the queue of approvals (ADR 0031),
+ * the end of a run of a routine (ADR 0033), and the run of `ecclium marker
+ * adopt` that signs the section of a run anew (ADR 0032).
  */
 export const auditTypes: readonly AuditType[] = Object.freeze([
   'tool_call',
   'undo',
   'approval',
   'run',
+  'adoption',
 ]);
 
 /** Every {@link AuditRunResult}, frozen. */
@@ -238,9 +240,11 @@ const fields = auditFieldSchemas;
  * how it ended in `runResult`, `failed` exactly when the outcome is not
  * `ok`, with the step of a failure, the try and the period, and has no
  * tool, no state of a write and no way of a confirmation; no other line
- * has these fields (ADR 0033). A count of left out IDs comes only with
- * 100 IDs, and the mark of a result read but held back only with `denied`
- * and `policy_denied`. The copy on the stream of the logger is the same line
+ * has these fields (ADR 0033). A line of the type `adoption` signs the
+ * section of a run anew for the operator: it always names the run, which
+ * the operator named, and has no tool (ADR 0032). A count of left out
+ * IDs comes only with 100 IDs, and the mark of a result read but held back
+ * only with `denied` and `policy_denied`. The copy on the stream of the logger is the same line
  * without the IDs and without the fields in {@link fileOnlyFields}.
  */
 export const auditEventV1Schema = z
@@ -327,14 +331,22 @@ export const auditEventV1Schema = z
   )
   // An undo and a decision call no tool, and the tool of the write may no
   // longer be registered (ADR 0031). The end of a run calls none either:
-  // its reads and its write have lines of their own (ADR 0033).
+  // its reads and its write have lines of their own (ADR 0033), nor does an
+  // adoption, which the core writes itself (ADR 0032).
   .refine(
     (event) =>
       (event.type !== 'undo' &&
         event.type !== 'approval' &&
-        event.type !== 'run') ||
+        event.type !== 'run' &&
+        event.type !== 'adoption') ||
       !Object.hasOwn(event, 'tool') ||
       event.tool === undefined,
+  )
+  // An adoption always names the run whose section it signs (ADR 0032).
+  .refine(
+    (event) =>
+      event.type !== 'adoption' ||
+      (Object.hasOwn(event, 'runId') && event.runId !== undefined),
   )
   // The end of a run always says how it ended and names its run, and only
   // such a line has a result, a step, a try or a period. Its routine comes

@@ -440,6 +440,8 @@ function fill(
   const rejected = approval && line['decision'] === 'rejected';
   // The end of a run of a routine (ADR 0033).
   const run = line['type'] === 'run';
+  // The adoption of the section of a run (ADR 0032).
+  const adoption = line['type'] === 'adoption';
 
   const tenantValid = scalar(
     'tenantId',
@@ -468,9 +470,10 @@ function fill(
   }
 
   scalar('mode', fields.mode, 'audit_invalid_mode', placeholders.mode);
-  // The end of a run always names its run. Without a valid ID it names
-  // none with the zero UUID, which no run has.
-  if (run && own(draft, 'runId') === undefined) {
+  // The end of a run and an adoption always name a run. Without a valid ID
+  // they name none with the zero UUID, which no run has.
+  const named = run || adoption;
+  if (named && own(draft, 'runId') === undefined) {
     report('audit_missing_run_id');
     line['runId'] = placeholders.runId;
   } else {
@@ -478,19 +481,19 @@ function fill(
       'runId',
       fields.runId,
       'audit_invalid_run_id',
-      run ? placeholders.runId : undefined,
+      named ? placeholders.runId : undefined,
     );
   }
   scalar('routineId', fields.routineId, 'audit_invalid_routine_id');
 
   const tool = own(draft, 'tool');
   if (tool !== undefined) {
-    // An undo and a decision call no tool (ADR 0031), nor does the end of
-    // a run (ADR 0033): a tool on their line is left out, without a
-    // placeholder and without asking the registry. ct_unknown is what the
-    // pipeline writes for a tool that does not exist; it is valid and not
-    // asked about.
-    if (undo || approval || run) {
+    // An undo and a decision call no tool (ADR 0031), nor do the end of a
+    // run (ADR 0033) and an adoption (ADR 0032): a tool on their line is
+    // left out, without a placeholder and without asking the registry.
+    // ct_unknown is what the pipeline writes for a tool that does not
+    // exist; it is valid and not asked about.
+    if (undo || approval || run || adoption) {
       report('audit_invalid_tool');
     } else if (
       tool === placeholders.tool ||
