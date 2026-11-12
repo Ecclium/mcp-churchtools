@@ -283,6 +283,15 @@ describe('the command line', () => {
     [['undo', '--run', 'a', '--run', 'b'], 'repeated'],
     [['undo', '--run', 'a', 'b', 'c'], 'command'],
     [['config', 'check', '--overwrite'], 'option'],
+    [['marker'], 'command'],
+    [['marker', 'adopt'], 'command'],
+    [['marker', 'adopt', '--confirm', 'abc'], 'command'],
+    [['marker', 'adopt', 'x', '--run', 'y'], 'command'],
+    [['marker', 'adopt', '--run'], 'value'],
+    [['marker', 'adopt', '--run', 'a', '--confirm'], 'value'],
+    [['marker', 'adopt', '--run', 'a', '--overwrite'], 'option'],
+    [['marker', 'adopt', '--run', 'a', '--run', 'b'], 'repeated'],
+    [['undo', 'x', '--confirm', 'y'], 'option'],
     [['queue'], 'command'],
     [['queue', 'list', 'x'], 'command'],
     [['queue', 'show'], 'command'],
@@ -762,6 +771,58 @@ describe('ecclium undo in the command line', () => {
       ['undo', '11111111-2222-4333-8444-555555555555'],
       {
         undo: {
+          load: () => {
+            throw new Error(plain());
+          },
+        },
+      },
+    );
+    expect(result.code).toBe(exitCodes.internal);
+    expect(result.stderr).toBe(`${internalErrorText}\n`);
+  });
+});
+
+describe('ecclium marker adopt in the command line', () => {
+  // The command builds the pipeline; its own tests stand with the runs of
+  // routines in compose/run-write.test.ts.
+  const runAdopt = async (
+    args: readonly string[],
+    options: RunOptions = {},
+  ) => {
+    const taken: number[] = [];
+    const writeSync: WriteSyncFn = (_fd, buffer, offset, length) => {
+      taken.push(...buffer.subarray(offset, offset + length));
+      return length;
+    };
+    const code = await run(args, {}, [], { ...options, writeSync });
+    return { code, stderr: decoder.decode(new Uint8Array(taken)) };
+  };
+
+  it('hands the ID of a run and the check value to the command, which checks both and names neither', async () => {
+    const id = `lauf-${plain()}`;
+    const ofRun = await runAdopt(['marker', 'adopt', '--run', id]);
+    expect(ofRun.code).toBe(exitCodes.usage);
+    expect(ofRun.stderr).toContain('Die Kennung des Laufs ist keine UUID');
+    expect(ofRun.stderr).not.toContain(id);
+    const value = `wert-${plain()}`;
+    const ofValue = await runAdopt([
+      'marker',
+      'adopt',
+      '--run',
+      '11111111-2222-4333-8444-555555555555',
+      '--confirm',
+      value,
+    ]);
+    expect(ofValue.code).toBe(exitCodes.usage);
+    expect(ofValue.stderr).toContain('Der Prüfwert hat nicht die Form');
+    expect(ofValue.stderr).not.toContain(value);
+  });
+
+  it('turns a failure of the command into the internal error', async () => {
+    const result = await runAdopt(
+      ['marker', 'adopt', '--run', '11111111-2222-4333-8444-555555555555'],
+      {
+        marker: {
           load: () => {
             throw new Error(plain());
           },

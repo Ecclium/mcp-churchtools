@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   chmodSync,
   closeSync,
@@ -60,6 +60,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { showAudit } from '../commands/audit-show.js';
 import { verifyAudit as runAuditVerify } from '../commands/audit-verify.js';
 import { exitCodes } from '../exit-codes.js';
+import { adoptMarker } from '../marker/adopt.js';
 import { runQueue } from '../queue/queue.js';
 import { undoWrite } from '../undo/undo.js';
 import { composeRunPipeline } from './run-pipeline.js';
@@ -466,7 +467,9 @@ const setup = (options: SetupOptions = {}) => {
   };
   const loaded = loadConfig({ environment, transport: 'stdio' });
   if (!loaded.ok) throw new Error('the configuration of the test is invalid');
-  const config = loaded.config;
+  // The configuration of the runs, which a new key of the check codes
+  // replaces.
+  let config = loaded.config;
   const policy = config.policy;
 
   // The folders the start over stdio prepares before it builds anything.
@@ -709,6 +712,77 @@ const setup = (options: SetupOptions = {}) => {
     };
   };
 
+  // A new key of the check codes, as after the old one was lost: the runs
+  // after it and every command sign with it.
+  const rekey = () => {
+    privateFile(
+      markerFile,
+      `${createHash('sha256').update('run-write-marker-new').digest('hex')}\n`,
+    );
+    const again = loadConfig({ environment, transport: 'stdio' });
+    if (!again.ok) throw new Error('the configuration of the test is invalid');
+    config = again.config;
+  };
+
+  // `ecclium marker adopt` as the operator calls it, with the same
+  // configuration and the double of the test.
+  const adoptCommand = async (runId: string, confirm?: string) => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const calls: MockedCall[] = [];
+    const recording = (given: HttpTransportOptions) => {
+      const transport = createTransport(given);
+      const double = doubles.at(-1);
+      return Object.freeze({
+        ...transport,
+        close: async () => {
+          calls.push(...(double?.calls() ?? []));
+          await transport.close();
+        },
+      });
+    };
+    // As for the approval: the command opens the audit file of the day.
+    audit.writer.close();
+    const code = await adoptMarker({
+      environment,
+      execArgv: [],
+      runId,
+      confirm,
+      output: {
+        stdout: (line) => stdout.push(line) > 0,
+        stderr: (line) => stderr.push(line) > 0,
+      },
+      writeSync: (_fd, _buffer, _offset, length) => length,
+      createTransport: recording,
+      clock,
+    });
+    return {
+      code,
+      stdout,
+      stderr,
+      patches: calls.filter((call) => call.method === 'PATCH'),
+    };
+  };
+
+  // A new audit file of the day, for a run after a command closed the one
+  // of the test.
+  const reopenAudit = (): AuditFileWriter => {
+    const again = openAuditFile({
+      stateDir,
+      clock,
+      pid: process.pid,
+      retentionMonths: config.auditRetentionMonths,
+    });
+    if (!again.ok) throw new Error('no audit file');
+    open.push({
+      close: () => {
+        again.writer.close();
+        return Promise.resolve();
+      },
+    });
+    return again.writer;
+  };
+
   // The lines of the audit files of the test, with every field.
   const auditFileLines = (): Record<string, unknown>[] => {
     const dir = join(stateDir, 'audit');
@@ -779,6 +853,9 @@ const setup = (options: SetupOptions = {}) => {
     runOnce,
     approveCommand,
     undoCommand,
+    adoptCommand,
+    rekey,
+    reopenAudit,
     auditFileLines,
     showRun,
     accountCanary,
@@ -1649,5 +1726,200 @@ describe('ecclium undo <Kennung> of a write of a run', () => {
       fchmodSync(fd, 0o600);
       closeSync(fd);
     }
+  });
+});
+
+describe('ecclium marker adopt', () => {
+  // A routine bound to its page, as `ecclium policy init --routine`
+  // proposes it.
+  const pageEntry = entryOf({
+    target: { kind: 'wiki_page', categoryId: 7, guid, name: pageTitle },
+  });
+
+  // The line that ends a run with its period, as the runner writes it; the
+  // runs of this test end without one.
+  const ended = (stateDir: string, runId: string): void => {
+    addAuditLines(stateDir, [
+      {
+        v: 1,
+        eventId: randomUUID(),
+        ts: '2026-11-11T07:00:30.000Z',
+        type: 'run',
+        tenantId: 'default',
+        actor: { kind: 'runner', id: `runner:${routineId}` },
+        mode: 'unattended',
+        runId,
+        routineId,
+        outcome: 'ok',
+        objectRefs: [],
+        runResult: 'queued',
+        period: '2026-W46',
+        durationMs: 30_000,
+      },
+    ]);
+  };
+
+  // The check value of a preview, from its line on stdout.
+  const checkIn = (stdout: readonly string[]): string =>
+    (stdout.find((line) => line.startsWith('Prüfwert: ')) ?? '').slice(
+      'Prüfwert: '.length,
+    );
+
+  it('signs the section of a period anew after the key was lost, with the account of its routine, and the next run replaces it', async () => {
+    const setupOf = setup({ entries: [pageEntry] });
+    const { runOnce, adoptCommand, auditFileLines, showRun } = setupOf;
+    await runOnce();
+    const written = setupOf.text();
+    expect(written).toContain('Mesmer');
+    // With a new key, the next run of the period finds a changed section
+    // and queues its write.
+    setupOf.rekey();
+    const second = await runOnce();
+    expect(second.written).toMatchObject({ kind: 'queued' });
+    expect(setupOf.text()).toBe(written);
+    const runId = second.bound.runId;
+    ended(setupOf.stateDir, runId);
+
+    const preview = await adoptCommand(runId);
+    expect(preview.code, preview.stderr.join('\n')).toBe(exitCodes.ok);
+    expect(preview.patches).toEqual([]);
+    const check = checkIn(preview.stdout);
+    expect(check).toMatch(/^[0-9a-f]{16}$/);
+    expect(preview.stdout[0]).toBe(
+      `Seite: ‹${pageTitle}› in der Kategorie 7, Periode 2026-W46`,
+    );
+    expect(preview.stdout.at(-1)).toContain(
+      `‹ecclium marker adopt --run ${runId} --confirm ${check}›`,
+    );
+
+    const done = await adoptCommand(runId, check);
+    expect(done.code).toBe(exitCodes.ok);
+    expect(done.patches).toHaveLength(1);
+    expect(done.patches[0]?.headers['authorization']).toBe(
+      `Login ${setupOf.accountCanary.value}`,
+    );
+    // Only the code of the line changed.
+    const adopted = setupOf.text();
+    const codeless = (text: string) => text.replace(/k1:[A-Z2-7]{13}/gu, '');
+    expect(adopted).not.toBe(written);
+    expect(codeless(adopted)).toBe(codeless(written));
+    expect(done.stdout[0]).toMatch(/^Übernommen: /u);
+    const lines = auditFileLines().filter(
+      (line) => line['type'] === 'adoption',
+    );
+    expect(lines).toMatchObject([
+      { runId, routineId, writeState: 'planned', mode: 'operator' },
+      {
+        runId,
+        routineId,
+        writeState: 'verified',
+        confirmation: 'operator',
+      },
+    ]);
+    const adoptionId = String(lines[1]?.['eventId']);
+    expect(done.stdout).toEqual(
+      expect.arrayContaining([
+        `Zurücknehmen lässt sich die Übernahme mit ‹ecclium undo ${adoptionId}›.`,
+        expect.stringContaining('ecclium queue reject') as unknown,
+        expect.stringContaining(`‹ecclium run-once ${routineId}›`) as unknown,
+      ]),
+    );
+    expect(showRun(runId).lines).toEqual(
+      expect.arrayContaining([
+        'Übernahmen mit ‹ecclium marker adopt›',
+        '  geschrieben und zurückgelesen: 1',
+      ]),
+    );
+    // Nothing is left to do now.
+    const again = await adoptCommand(runId);
+    expect(again.code).toBe(exitCodes.ok);
+    expect(again.stdout).toEqual([
+      'Der Abschnitt dieser Periode trägt schon einen Prüfcode, der mit dem Schlüssel von heute passt. Es gibt nichts zu übernehmen.',
+    ]);
+    // The section counts as the own one of the period again: the next run
+    // replaces it in place instead of queueing.
+    const third = await runOnce({
+      auditFile: setupOf.reopenAudit(),
+      answer: {
+        unbesetzt: [
+          { datum: '2026-11-15', termin: 'Gottesdienst', dienst: 'Sigrist' },
+        ],
+      },
+    });
+    expect(third.written).toMatchObject({ kind: 'written' });
+    expect(setupOf.text()).toContain('Sigrist');
+    expect(setupOf.text()).not.toContain('Mesmer');
+  });
+
+  it('takes an adoption back with ecclium undo and the account of the routine', async () => {
+    const setupOf = setup({ entries: [pageEntry] });
+    const { runOnce, adoptCommand, undoCommand, auditFileLines } = setupOf;
+    await runOnce();
+    const written = setupOf.text();
+    setupOf.rekey();
+    const { bound } = await runOnce();
+    ended(setupOf.stateDir, bound.runId);
+    const preview = await adoptCommand(bound.runId);
+    await adoptCommand(bound.runId, checkIn(preview.stdout));
+    const adoption = auditFileLines().find(
+      (line) =>
+        line['type'] === 'adoption' && line['writeState'] === 'verified',
+    );
+    const undone = await undoCommand({
+      eventId: String(adoption?.['eventId']),
+    });
+    expect(undone.code).toBe(exitCodes.ok);
+    expect(setupOf.text()).toBe(written);
+    expect(undone.patches[0]?.headers['authorization']).toBe(
+      `Login ${setupOf.accountCanary.value}`,
+    );
+  });
+
+  it('signs nothing without proof, for a value of another preview, and names the range', async () => {
+    const setupOf = setup({ entries: [pageEntry] });
+    const { runOnce, adoptCommand } = setupOf;
+    await runOnce();
+    setupOf.rekey();
+    const { bound } = await runOnce();
+    ended(setupOf.stateDir, bound.runId);
+    const mismatch = await adoptCommand(bound.runId, '0123456789abcdef');
+    expect(mismatch.code).toBe(exitCodes.dataError);
+    expect(mismatch.patches).toEqual([]);
+    // A person changed the section since the write.
+    const page = setupOf.fake.pages.get(guid);
+    if (page === undefined) throw new Error('no page');
+    setupOf.fake.pages.set(guid, {
+      ...page,
+      version: page.version + 1,
+      text: page.text.replace('Mesmer', 'Sakristan'),
+    });
+    const unproven = await adoptCommand(bound.runId);
+    expect(unproven.code).toBe(exitCodes.dataError);
+    expect(unproven.stdout[0]).toBe('Bereich auf der Seite:');
+    expect(unproven.stdout.join('\n')).toContain('Sakristan');
+    expect(unproven.stderr.at(-1)).toMatch(
+      /^Kein Snapshot belegt den Abschnitt/u,
+    );
+    expect(unproven.patches).toEqual([]);
+  });
+
+  it('refuses a wrong call, a run it does not know, a routine without a page and a configuration without a key', async () => {
+    const setupOf = setup();
+    const { runOnce, adoptCommand } = setupOf;
+    // The entry of the routine names only a category.
+    const { bound } = await runOnce();
+    ended(setupOf.stateDir, bound.runId);
+    const noPage = await adoptCommand(bound.runId);
+    expect(noPage.code).toBe(exitCodes.noInput);
+    expect(noPage.stderr[0]).toMatch(/nicht genau eine Seite/u);
+    const wrong = await adoptCommand('run-1');
+    expect(wrong.code).toBe(exitCodes.usage);
+    const badValue = await adoptCommand(
+      '00000000-0000-4000-8000-0000000000aa',
+      'zzzz',
+    );
+    expect(badValue.code).toBe(exitCodes.usage);
+    const unknown = await adoptCommand('00000000-0000-4000-8000-0000000000aa');
+    expect(unknown.code).toBe(exitCodes.noInput);
   });
 });
