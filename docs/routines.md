@@ -74,7 +74,7 @@ notify:
 | `inputs[].tool` | Text nach festem Muster, höchstens 63 Zeichen | ja | Das Lese-Tool, etwa `ct_events_list`. Nur Lese-Tools, auf die sich Routinen verlassen können, siehe «Eingaben». |
 | `inputs[].forEach` | Text nach festem Muster, höchstens 32 Zeichen | nein | Name einer früheren Eingabe: Das Tool läuft dann einmal je Eintrag dieser Eingabe. |
 | `inputs[].params` | Zuordnung mit 0 bis 10 Einträgen | nein | Die Parameter des Tools mit ihrem Namen aus dem Tool, etwa `from`. |
-| `inputs[].params.<Parameter>` | Text, ganze Zahl, Wahrheitswert oder Verweis auf ein Feld | nein | Ein Text, eine Zahl oder ein Wahrheitswert. Ein Text wie `+14d` oder `-30d` zählt Tage ab der geplanten Auslösung. Mit `forEach` setzt `{ field: id }` das Feld `id` des jeweiligen Eintrags ein. |
+| `inputs[].params.<Parameter>` | Text, ganze Zahl, Wahrheitswert, Liste ganzer Zahlen oder Verweis auf ein Feld | nein | Ein Text, eine Zahl, ein Wahrheitswert oder eine Liste von 1 bis 10 Kennungen. Ein Text wie `+14d` oder `-30d` zählt Tage ab der geplanten Auslösung. Eine Liste wie `calendarIds: [3, 7]` nennt ganze Zahlen ab 1, jede einmal. Mit `forEach` setzt `{ field: id }` das Feld `id` des jeweiligen Eintrags ein. |
 | `inputs[].params.<Parameter>.field` | Text nach festem Muster, höchstens 32 Zeichen | nein | Das Feld eines Eintrags der Eingabe aus `forEach`. |
 | `inputs[].maxItems` | ganze Zahl von 1 bis 200 | ja | Wie viele Einträge die Eingabe höchstens liefert, über alle ihre Aufrufe zusammen. |
 | `generate` | Objekt | nein | Der Schritt mit einem Sprachmodell. Eine Routine hat ihn oder `checks`, nicht beides. |
@@ -114,7 +114,7 @@ Namen von Eingaben, Blöcken und Feldern bestehen aus Kleinbuchstaben, Ziffern u
 
 ## Eingaben
 
-- Eine Eingabe ruft ein Lese-Tool über dieselbe Pipeline wie der Server, mit Maskierung und Protokoll. Erlaubt sind nur Lese-Tools, auf die sich Routinen verlassen können und die unbeaufsichtigt laufen dürfen. Das prüft die Vorbereitung eines Laufs, bevor er etwas liest, ebenso die Parameter gegen das Tool, die Felder von `{ field }` und relative Tage bis 366 Tage.
+- Eine Eingabe ruft ein Lese-Tool über dieselbe Pipeline wie der Server, mit Maskierung und Protokoll. Erlaubt sind nur Lese-Tools, auf die sich Routinen verlassen können und die unbeaufsichtigt laufen dürfen. Das prüft die Vorbereitung eines Laufs, bevor er etwas liest, ebenso die Namen der Parameter gegen das Tool, die Felder von `{ field }` und relative Tage bis 366 Tage. Ob ein Wert die Art hat, die das Tool verlangt, etwa eine Liste für `calendarIds`, prüft die Pipeline beim ersten Aufruf der Eingabe gegen das Schema des Tools: Ein Wert der falschen Art beendet den Lauf mit `validation`.
 - Mit `forEach` läuft das Tool einmal je Eintrag einer früheren Eingabe, die selbst kein `forEach` hat. Die Zahl der Aufrufe ist so höchstens `maxItems` der früheren Eingabe, dazu die Folgeseiten, bis `maxItems` erreicht ist. Tools, die Namen anderer Personen nennen, zählen gegen das Lesebudget ([Richtlinie](policy.md)): Im Beispiel liest ein Lauf mit 40 Terminen die Einteilungen mit mindestens 40 Aufrufen, einem je 25 Plätze eines Termins.
 - Relative Tage wie `+0d` oder `+14d` zählen ab der geplanten Auslösung, nicht ab dem Beginn des Laufs. Ein verspäteter Lauf liest so denselben Zeitraum wie ein pünktlicher.
 

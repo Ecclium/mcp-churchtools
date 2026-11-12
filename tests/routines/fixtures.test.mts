@@ -6,9 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { loadRoutines } from '@ecclium/mcp-churchtools-workflows';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-// The routines of the free core not yet shipped in routines/, as fixtures
-// with their prompts and templates, loaded from disk with the real file
-// functions; shipped.test.mts loads the shipped ones. A checkout
+// The routine of the free core not yet shipped in routines/, as a fixture
+// with its template, loaded from disk with the real file functions;
+// shipped.test.mts loads the shipped ones. A checkout
 // gives files the rights its umask allows, and the loader refuses a file
 // the group may write, so the test copies the folder and sets the rights
 // itself.
@@ -40,20 +40,14 @@ afterEach(() => {
 });
 
 describe('the routines of the fixtures', () => {
-  it('load with their prompts and templates', () => {
+  it('load with their templates', () => {
     const loaded = loadRoutines(folder);
     expect(loaded).toMatchObject({ ok: true });
     if (!loaded.ok) return;
     expect(loaded.routines.map(({ routine }) => routine.id)).toEqual([
-      'termin-vorschau',
       'wiki-hygiene',
     ]);
-    const [preview, hygiene] = loaded.routines;
-    expect(preview?.prompt).toContain('Gemeindebrief');
-    expect(preview?.routine.output).toMatchObject({
-      target: 'draft',
-      channel: 'file',
-    });
+    const [hygiene] = loaded.routines;
     expect(hygiene?.routine.checks?.map(({ check }) => check)).toEqual([
       'stalePages',
       'brokenLinks',
@@ -66,7 +60,7 @@ describe('the routines of the fixtures', () => {
     expect(loadRoutines(folder)).toMatchObject({
       ok: false,
       code: 'routine_template',
-      routine: 'termin-vorschau',
+      routine: 'wiki-hygiene',
       reason: 'mode',
     });
   });

@@ -63,6 +63,17 @@
                   "type": "boolean"
                 },
                 {
+                  "minItems": 1,
+                  "maxItems": 10,
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1000000000
+                  },
+                  "uniqueItems": true
+                },
+                {
                   "type": "object",
                   "properties": {
                     "field": {
