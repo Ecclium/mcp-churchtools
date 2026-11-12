@@ -1,0 +1,39 @@
+# Wöchentlicher Entwurf einer Übersicht der Termine für den Gemeindebrief:
+# die Termine Ihrer öffentlichen Kalender von der nächsten bis zur fünften
+# Woche, als Datei zum Weitergeben. Ecclium verschickt nichts und ändert
+# nichts in ChurchTools. Was Sie anpassen, steht in README.md in diesem
+# Ordner.
+schema: routine.v1
+id: termin-vorschau
+schedule: '0 6 * * MON'
+inputs:
+  - name: termine
+    tool: ct_appointments_list
+    # calendarIds: die Kennungen Ihrer öffentlichen Kalender, 1 bis 10.
+    params: { calendarIds: [1], from: '+7d', to: '+35d' }
+    maxItems: 50
+generate:
+  prompt: prompts/termin-vorschau.md
+  model: default
+  redaction: strict
+  maxOutputTokens: 8000
+  output:
+    blocks:
+      termine:
+        maxItems: 50
+        fields:
+          datum: { type: date }
+          zeit: { type: text, maxLength: 40 }
+          titel: { type: text, maxLength: 120 }
+          text: { type: text, maxLength: 250 }
+      hinweise:
+        maxItems: 3
+        fields:
+          text: { type: text, maxLength: 300 }
+template: templates/termin-vorschau.md
+output:
+  target: draft
+  channel: file
+  idempotencyKey: 'termin-vorschau:{isoWeek}'
+notify:
+  - channel: stdout

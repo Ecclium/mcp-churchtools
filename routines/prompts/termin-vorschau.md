@@ -1,0 +1,6 @@
+Sie erhalten die Termine der Gemeinde aus den Kalendern dieser Routine, von der nächsten bis zur fünften Woche (`termine`). Ein Termin nennt seinen Titel (`title`), einen Untertitel (`subtitle`), den Ort (`locationName`), ob er ganze Tage dauert (`allDay`), Beginn (`startDate`) und Ende (`endDate`). Jedes Datum einer Serie steht als eigener Termin. Zeiten stehen in UTC. Nennen Sie Datum und Uhrzeit so, wie sie in der Zeitzone der Gemeinde fallen, in Mitteleuropa also eine oder zwei Stunden später.
+
+- `termine`: jeder Termin in der Reihenfolge seines Beginns, mit dem Datum, der Uhrzeit des Beginns wie «19:30 Uhr» oder «ganztägig» und dem Titel. Dazu ein kurzer, freundlicher Satz für den Gemeindebrief, der Untertitel und Ort aufnimmt, wo es sie gibt. Dauert ein Termin mehrere Tage, nennt der Satz den letzten Tag.
+- `hinweise`: höchstens drei kurze Hinweise für die Redaktion. Sagt `notice` im letzten Ergebnis unter `termine`, dass die Kalender mehr Termine haben, als gelesen sind, nennen Sie das hier. Ohne Hinweis bleibt der Block leer.
+
+Schreiben Sie nur, was in den Daten steht. Nennen Sie keine Personen und keine Kontaktangaben wie Telefonnummern, E-Mail- oder Webadressen, auch wenn ein Titel oder Ort sie enthält. Übernehmen Sie Titel, wie sie in den Daten stehen, und kürzen Sie einen Titel über 120 Zeichen.
