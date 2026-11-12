@@ -33,6 +33,7 @@ import {
   namesFailedText,
   outputCutText,
   partlyReadText,
+  policyInitCallTexts,
   policyInitTexts,
 } from './texts.js';
 
@@ -187,14 +188,15 @@ const names =
   };
 
 describe('ecclium policy init', () => {
-  it('needs --interactive', async () => {
+  it('needs --interactive or --routine', async () => {
     const result = await run({ interactive: false });
     expect(result.code).toBe(64);
     expect(result.stderr).toEqual([
-      policyInitTexts.interactive_missing,
+      policyInitCallTexts.mode_missing,
       usageLine,
     ]);
     expect(result.stdout).toEqual([]);
+    expect(result.transports).toBe(0);
   });
 
   it('ends with 78 for an invalid configuration and without a folder of state', async () => {

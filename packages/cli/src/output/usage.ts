@@ -8,7 +8,7 @@
 
 /** The short form of the call. */
 export const usageLine =
-  'Aufruf: ecclium stdio | ecclium config check [Optionen] | ecclium audit verify [Optionen] | ecclium audit show [Optionen] | ecclium policy init --interactive | ecclium undo <Kennung> [--overwrite] | ecclium undo --run <Lauf> [--overwrite] | ecclium queue list | ecclium queue show <Kennung> | ecclium queue approve <Kennung> | ecclium queue reject <Kennung> | ecclium run-once --due | ecclium run-once <Routine> [--preview] | ecclium runner';
+  'Aufruf: ecclium stdio | ecclium config check [Optionen] | ecclium audit verify [Optionen] | ecclium audit show [Optionen] | ecclium policy init --interactive | ecclium policy init --routine <Routine> --credential <Alias> | ecclium undo <Kennung> [--overwrite] | ecclium undo --run <Lauf> [--overwrite] | ecclium queue list | ecclium queue show <Kennung> | ecclium queue approve <Kennung> | ecclium queue reject <Kennung> | ecclium run-once --due | ecclium run-once <Routine> [--preview] | ecclium runner';
 
 /** The help, for `--help` and `-h`. */
 export const helpLines: readonly string[] = Object.freeze([
@@ -24,8 +24,10 @@ export const helpLines: readonly string[] = Object.freeze([
   '    --run <Lauf>        zeigt stattdessen einen Lauf einer Routine: Ausgang, Lesungen und Schreibvorgänge',
   '    --since <Tag>       ab diesem Tag in UTC, in der Form JJJJ-MM-TT',
   '    --until <Tag>       bis und mit diesem Tag in UTC',
-  '  policy init           schlägt die Richtlinie aus den Audit-Dateien vor und fragt ChurchTools nach den Namen',
-  '    --interactive       den interaktiven Teil, als YAML auf stdout',
+  '  policy init           schlägt einen Teil der Richtlinie als YAML auf stdout vor und fragt ChurchTools nach den Namen',
+  '    --interactive       den interaktiven Teil aus den Audit-Dateien',
+  '    --routine <Routine> den Eintrag einer Routine für ihre Seite im Wiki, zum Einfügen unter ‹unattended›',
+  '    --credential <Alias> mit ‹--routine›: das Konto, das später schreibt und jetzt die Namen liest',
   '  undo <Kennung>        nimmt einen Schreibvorgang aus seinem Snapshot zurück, die Kennung steht im Audit',
   '    --overwrite         schreibt auch, wenn jemand die Seite seither geändert hat',
   '  undo --run <Lauf>     nimmt jeden Schreibvorgang eines Laufs zurück, auch aus Freigaben, den neuesten zuerst',
@@ -53,7 +55,7 @@ export const usageProblemTexts: Readonly<Record<UsageProblem, string>> =
     repeated:
       'Eine Option steht mehr als einmal im Aufruf. Ausser ‹--log› gilt jede Option nur einmal, damit kein Aufruf zweideutig ist. Nennen Sie jede andere Option höchstens einmal.',
     value:
-      'Eine Option hat einen Wert, den sie nicht annimmt, oder ihr fehlt einer. ‹--show-values›, ‹--runner›, ‹--interactive›, ‹--overwrite›, ‹--due›, ‹--preview› und ‹--help› nehmen keinen Wert an, ‹--log›, ‹--object›, ‹--run›, ‹--since› und ‹--until› brauchen einen. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
+      'Eine Option hat einen Wert, den sie nicht annimmt, oder ihr fehlt einer. ‹--show-values›, ‹--runner›, ‹--interactive›, ‹--overwrite›, ‹--due›, ‹--preview› und ‹--help› nehmen keinen Wert an, ‹--log›, ‹--object›, ‹--run›, ‹--since›, ‹--until›, ‹--routine› und ‹--credential› brauchen einen. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
   });
 
 /** The one text for an internal error. */

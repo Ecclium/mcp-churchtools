@@ -14,8 +14,11 @@
  * budget. It asks only for the kinds the audit names, and with none it
  * asks ChurchTools nothing.
  *
+ * With `--routine` and `--credential` it proposes the entry of a routine
+ * in the unattended part instead (`routine.ts`).
+ *
  * Its exit code follows sysexits: 0 when the proposal is written, 64
- * without `--interactive`, 66 when the folder `audit` is missing, 69 when
+ * for a call of another form, 66 when the folder `audit` is missing, 69 when
  * ChurchTools gives no names, 74 when files could not be read whole or the
  * proposal did not reach stdout, 78 for an invalid configuration, no
  * folder of state, the toolset `wiki` or `calendars` off when the audit
@@ -30,7 +33,6 @@ import {
   createStdioIdentity,
   createStdioTenantResolver,
   type EccliumConfig,
-  freeTextMarkers,
   loadConfig,
   type ProposedTarget,
   renderPolicyProposal,
@@ -42,14 +44,6 @@ import {
   openAuditFolder,
   type WriteTargetObject,
 } from '@ecclium/mcp-churchtools-core/audit';
-import {
-  anchorEventOf,
-  createLogger,
-  createStderrWriter,
-  openAuditFile,
-  prepareQuotaFolder,
-  systemClock,
-} from '@ecclium/mcp-churchtools-core/composition';
 import type {
   HttpTransport,
   HttpTransportOptions,
@@ -60,19 +54,25 @@ import { auditFolderTexts } from '../commands/audit-texts.js';
 import { folderExitCodes } from '../commands/audit-verify.js';
 import { composeToolPipeline } from '../compose/pipeline.js';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
-import {
-  auditFileText,
-  problemText,
-  quotaFolderText,
-} from '../messages/index.js';
+import { problemText } from '../messages/index.js';
 import { type Output, usageLine } from '../output/index.js';
 import type { WriteSyncFn } from '../send.js';
 import { createStdioCatalog } from '../stdio/catalog.js';
+import { policyInitCallProblem } from './call.js';
+import {
+  listPageOf,
+  type Name,
+  namedEntryOf,
+  type ReadingResult,
+  withReading,
+} from './names.js';
+import { proposeRoutineEntry } from './routine.js';
 import {
   type NamedKind,
   namesFailedText,
   outputCutText,
   partlyReadText,
+  policyInitCallTexts,
   policyInitTexts,
 } from './texts.js';
 
@@ -84,6 +84,10 @@ export interface PolicyInitOptions {
   readonly execArgv: readonly string[];
   /** Whether `--interactive` was given. */
   readonly interactive: boolean;
+  /** The routine of `--routine`, for the entry of a routine. */
+  readonly routine?: string | undefined;
+  /** The alias of `--credential`, with `--routine`. */
+  readonly credential?: string | undefined;
   readonly output: Output;
   /** Replaces the loader, for tests. */
   readonly load?: ((sources: ConfigSources) => ConfigResult) | undefined;
@@ -96,9 +100,6 @@ export interface PolicyInitOptions {
   readonly createTransport?:
     ((options: HttpTransportOptions) => HttpTransport) | undefined;
 }
-
-// The highest count a log line takes.
-const maxCount = 1_000_000;
 
 /** Where the names of one kind of targets come from. */
 interface NameSource {
@@ -119,76 +120,13 @@ const nameSources: Readonly<Record<NamedKind, NameSource>> = Object.freeze({
 // the tools takes.
 const maxPages = 40;
 
-// The data envelope around a name, which the pipeline puts around every
-// text of the tenant (ADR 0024), and the note of the redaction after a
-// text it removed hidden characters from.
-const envelope = /^<<data-([0-9a-f]{16})>>([\s\S]*)<<\/data-\1>>$/;
-const hiddenNote = / \[ecclium: \d+ hidden characters removed\]$/;
-const maskMarkers: readonly string[] = Object.freeze(
-  Object.values(freeTextMarkers),
-);
-
-/** A name as the command line takes it from a result. */
-interface Name {
-  readonly text: string;
-  /**
-   * Whether the redaction changed it: hidden characters removed, or in
-   * the level strict a part masked (ADR 0069).
-   */
-  readonly changed: boolean;
-}
-
-const nameOf = (value: unknown): Name | undefined => {
-  if (typeof value !== 'string') return undefined;
-  const match = envelope.exec(value);
-  const text = match?.[2];
-  if (text === undefined) return undefined;
-  return {
-    text,
-    changed:
-      hiddenNote.test(text) ||
-      maskMarkers.some((marker) => text.includes(marker)),
-  };
-};
-
-const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-/** One page of a list, as the tool gives it. */
-interface Page {
-  readonly entries: readonly { readonly id: number; readonly name: Name }[];
-  readonly more: boolean;
-}
-
-// Reads a page of the result field by field, the list under the name of
-// its kind; a result of another form gives undefined, and the command
-// writes no proposal then.
-const pageOf = (data: unknown, kind: NamedKind): Page | undefined => {
-  if (!isRecord(data) || typeof data['more'] !== 'boolean') return undefined;
-  const list = data[kind];
-  if (!Array.isArray(list)) return undefined;
-  const entries: { id: number; name: Name }[] = [];
-  for (const entry of list as readonly unknown[]) {
-    if (!isRecord(entry)) return undefined;
-    const id = entry['id'];
-    const name = nameOf(entry['name']);
-    if (typeof id !== 'number' || !Number.isSafeInteger(id) || !name) {
-      return undefined;
-    }
-    entries.push({ id, name });
-  }
-  return { entries, more: data['more'] };
-};
-
 /** The IDs of the audit whose names to ask for, by kind. */
 type Wanted = Readonly<Record<NamedKind, ReadonlySet<number>>>;
 
 /** The names ChurchTools gave, by kind and ID. */
 type NamesByKind = Readonly<Record<NamedKind, ReadonlyMap<number, Name>>>;
 
-type Names =
-  | { readonly ok: true; readonly names: NamesByKind }
-  | { readonly ok: false; readonly code: ExitCode };
+type Names = ReadingResult<NamesByKind>;
 
 const namedKinds: readonly NamedKind[] = Object.freeze([
   'categories',
@@ -209,57 +147,14 @@ const namedKinds: readonly NamedKind[] = Object.freeze([
  * @returns The names by kind and ID, or the exit code after a text on
  *   stderr.
  */
-const fetchNames = async (
+const fetchNames = (
   config: EccliumConfig,
   stateDir: string,
   wanted: Wanted,
   options: PolicyInitOptions,
-): Promise<Names> => {
-  const { output } = options;
-  const clock = systemClock;
-  const opened = openAuditFile({
-    stateDir,
-    clock,
-    pid: process.pid,
-    retentionMonths: config.auditRetentionMonths,
-  });
-  if (!opened.ok) {
-    output.stderr(auditFileText(opened.code));
-    return { ok: false, code: exitCodes.invalidConfig };
-  }
-  const auditFile = opened.writer;
-  let closing = (): void => undefined;
-  try {
-    const prepared = prepareQuotaFolder(stateDir);
-    if (!prepared.ok) {
-      output.stderr(quotaFolderText(prepared.code));
-      return { ok: false, code: exitCodes.invalidConfig };
-    }
-    const writer = createStderrWriter(
-      options.writeSync === undefined ? {} : { writeSync: options.writeSync },
-    );
-    // The anchor of the chain of the audit file goes to the log when the
-    // file closes, and before it the count of lines the file lost, as with
-    // the server (ADR 0028).
-    const processLogger = createLogger({ writer, clock, minLevel: 'info' });
-    closing = () => {
-      processLogger.info('audit_file_closed', {
-        count: Math.min(auditFile.counts().failed, maxCount),
-      });
-    };
-    const anchorLogger = createLogger({
-      writer,
-      clock,
-      minLevel: 'info',
-      anchors: true,
-    });
-    auditFile.attach({
-      anchor: (anchor) => {
-        const { file, seq, hash } = anchor;
-        anchorLogger.info(anchorEventOf(anchor), { file, seq, hash });
-      },
-      swept: () => undefined,
-    });
+): Promise<Names> =>
+  withReading(config, stateDir, options, async (reading) => {
+    const { output } = options;
     // Only the toolsets of the lists it reads and no write tool: the
     // command needs nothing else.
     const asked = namedKinds.filter((kind) => wanted[kind].size > 0);
@@ -271,9 +166,9 @@ const fetchNames = async (
     const { pipeline, transport } = composeToolPipeline({
       config: narrowed,
       catalog: createStdioCatalog(narrowed),
-      writer,
-      clock,
-      auditFile,
+      writer: reading.writer,
+      clock: reading.clock,
+      auditFile: reading.auditFile,
       createTransport: options.createTransport,
     });
     try {
@@ -307,7 +202,7 @@ const fetchNames = async (
             output.stderr(namesFailedText(outcome.error.code, kind));
             return { ok: false, code: exitCodes.unavailable };
           }
-          const read = pageOf(outcome.data, kind);
+          const read = listPageOf(outcome.data, kind, namedEntryOf);
           if (read === undefined) {
             output.stderr(
               namesFailedText('internal' satisfies ErrorCode, kind),
@@ -321,22 +216,18 @@ const fetchNames = async (
           }
         }
       }
-      return { ok: true, names };
+      return { ok: true, value: names };
     } finally {
       await transport.close().catch(() => undefined);
     }
-  } finally {
-    closing();
-    auditFile.close();
-  }
-};
+  });
 
 /**
  * Runs `ecclium policy init`. The proposal is rendered whole before the
  * first line goes out; a problem that stops it goes to stderr.
  *
- * @param options - The environment, `--interactive`, the output and the
- *   replacements for tests.
+ * @param options - The environment, `--interactive` or `--routine` with
+ *   `--credential`, the output and the replacements for tests.
  * @returns The exit code.
  * @throws {TypeError} Only for an internal error, which the command line
  *   turns into 70.
@@ -349,10 +240,20 @@ export async function initPolicy(
   options: PolicyInitOptions,
 ): Promise<ExitCode> {
   const { output } = options;
-  if (!options.interactive) {
-    output.stderr(policyInitTexts.interactive_missing);
-    output.stderr(usageLine);
+  // The form of the call first, before any file is read; no text repeats
+  // an argument.
+  const problem = policyInitCallProblem(options);
+  if (problem !== undefined) {
+    output.stderr(policyInitCallTexts[problem]);
+    if (!problem.endsWith('_invalid')) output.stderr(usageLine);
     return exitCodes.usage;
+  }
+  if (options.routine !== undefined && options.credential !== undefined) {
+    return proposeRoutineEntry({
+      ...options,
+      routine: options.routine,
+      credential: options.credential,
+    });
   }
   const loaded = (options.load ?? loadConfig)({
     environment: options.environment,
@@ -407,7 +308,7 @@ export async function initPolicy(
   if (namedKinds.some((kind) => wanted[kind].size > 0)) {
     const fetched = await fetchNames(config, stateDir, wanted, options);
     if (!fetched.ok) return fetched.code;
-    names = fetched.names;
+    names = fetched.value;
   }
   const proposed = (
     kind: NamedKind,
