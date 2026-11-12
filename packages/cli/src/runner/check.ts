@@ -71,7 +71,7 @@ const routineLine = (run: PreparedRun): string => {
 };
 
 const validText =
-  'Die Konfiguration des Runners ist gültig. ChurchTools und die Modelle wurden nicht angefragt. Probieren Sie eine Routine mit ‹ecclium run-once <Routine> --preview› aus: Die Vorschau liest und fragt das Modell, schreibt aber nichts.';
+  'Die Konfiguration des Runners ist gültig. ChurchTools und die Modelle wurden nicht angefragt. Probieren Sie eine Routine mit ‹ecclium run-once <Routine> --preview› aus: Die Vorschau liest und fragt das Modell der Routine, falls sie eines hat, schreibt aber nichts.';
 const invalidText =
   'Mit dieser Konfiguration startet der Runner nicht, oder eine Routine startet nicht. ChurchTools wurde nicht angefragt. Beheben Sie die Probleme und prüfen Sie dann erneut mit ‹ecclium config check --runner›.';
 
