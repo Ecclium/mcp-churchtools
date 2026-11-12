@@ -325,7 +325,10 @@ export const eventSchema = z.object({
  * and the names of the assigned person (ADR 0064, F37). The person who
  * requested it, its ID, the comment and every field of the event are not
  * read. An assignment may name no person: the ID and the names may then be
- * missing or `null`, and the core passes on no person.
+ * missing or `null`, and the core passes on no person. `name`, a name
+ * without a person, is read only to tell a filled place from an open one
+ * and never passed on, so its form is not checked. Both states may be
+ * missing or `null` here; the client accepts that only for an open place.
  */
 export const eventAssignmentsSchema = z.object({
   data: z.object({
@@ -333,11 +336,12 @@ export const eventAssignmentsSchema = z.object({
       .array(
         z.object({
           serviceId: id,
-          isAccepted: z.boolean(),
-          agreed: z.boolean(),
+          isAccepted: z.boolean().nullable().optional(),
+          agreed: z.boolean().nullable().optional(),
           // Any whole number or null: ChurchTools sent a number below 1 for
           // a service that hides the names (F37).
           personId: z.number().int().nullable().optional(),
+          name: z.unknown().nullable().optional(),
           person: z
             .object({
               domainAttributes: z.object({

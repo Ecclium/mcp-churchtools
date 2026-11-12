@@ -989,10 +989,16 @@
                     "maximum": 9007199254740991
                   },
                   "isAccepted": {
-                    "type": "boolean"
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
                   },
                   "agreed": {
-                    "type": "boolean"
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
                   },
                   "personId": {
                     "anyOf": [
@@ -1001,6 +1007,14 @@
                         "minimum": -9007199254740991,
                         "maximum": 9007199254740991
                       },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "name": {
+                    "anyOf": [
+                      {},
                       {
                         "type": "null"
                       }
@@ -1050,9 +1064,7 @@
                   }
                 },
                 "required": [
-                  "serviceId",
-                  "isAccepted",
-                  "agreed"
+                  "serviceId"
                 ]
               }
             }

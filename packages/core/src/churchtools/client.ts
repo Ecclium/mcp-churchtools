@@ -1442,6 +1442,29 @@ export function createChurchToolsClient(
     // ChurchTools gives every assignment with the event; the core pages
     // through them, so that every page counts against the read budget.
     const all = parsed.data.data.eventServices;
+    // A place nobody fills has no ID of a person (seed of the test
+    // instance); a hidden name still has a number, and a name without a
+    // person fills the place as well (a conclusion, ADR 0064). Only this
+    // switch leaves the core, never the name.
+    const filled = (entry: (typeof all)[number]): boolean =>
+      typeof entry.personId === 'number' ||
+      (typeof entry.name === 'string' && entry.name.trim() !== '');
+    // Every filled place said whether it is accepted and agreed (F37). An
+    // open place may leave both out, which no probe has seen yet, so that
+    // one open place does not end the read of the whole event.
+    if (
+      all.some(
+        (entry) =>
+          filled(entry) &&
+          (typeof entry.isAccepted !== 'boolean' ||
+            typeof entry.agreed !== 'boolean'),
+      )
+    ) {
+      ctx.log.warn('churchtools_event_assignments_refused', {
+        code: 'upstream',
+      });
+      throw new EccliumError('upstream');
+    }
     const first = (page - 1) * assignmentsPageLimit;
     const shown = all.slice(first, first + assignmentsPageLimit);
     const assignments = shown.map((entry): Assignment => {
@@ -1459,8 +1482,9 @@ export function createChurchToolsClient(
         __proto__: null,
         serviceId: entry.serviceId,
         serviceName: service?.name ?? null,
-        isAccepted: entry.isAccepted,
-        agreed: entry.agreed,
+        isAccepted: entry.isAccepted === true,
+        agreed: entry.agreed === true,
+        assigned: filled(entry),
         person: named
           ? Object.freeze({
               __proto__: null,

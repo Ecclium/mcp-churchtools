@@ -637,6 +637,12 @@ export interface Assignment {
   /** Whether the assignment is agreed. */
   readonly agreed: boolean;
   /**
+   * Whether someone fills the place: ChurchTools names a person, also one
+   * whose name the service hides, or a name without a person. `false` is a
+   * place nobody fills yet (ADR 0064).
+   */
+  readonly assigned: boolean;
+  /**
    * The assigned person, or `null`: when the service hides the names, when
    * it is missing in the list of services, when ChurchTools gives no whole
    * number from 1 as the ID of the person, or no last name (ADR 0064). The
