@@ -131,12 +131,12 @@ Jedes Feld ist begrenzt: Text mit `maxLength`, eine Zahl mit `min` und `max`, Da
 
 ## Prüfungen des Kerns
 
-Eine Routine mit `checks` hat kein Modell und keine Eingaben. Jede Prüfung füllt einen Block mit ihrem Namen und festen Feldern, den die Vorlage wie einen Block des Modells wiederholt. Die Prüfungen selbst kommen mit einer späteren Version.
+Eine Routine mit `checks` hat kein Modell und keine Eingaben. Jede Prüfung füllt einen Block mit ihrem Namen und festen Feldern, den die Vorlage wie einen Block des Modells wiederholt. Die Prüfungen lesen jede Kategorie des Wikis, die das Konto der Routine sieht, über die Lese-Tools des Wikis und in der Stufe `standard`, weil sie ihre Daten keinem Modell geben. Ein Lauf liest höchstens 400 Mal, sonst endet er mit `run_calls_exhausted`. Hat eine Prüfung mehr Treffer als `maxItems`, nennt der Block die ersten in fester Reihenfolge. Jeder Titel geht für sich durch die ContentPolicy, einen abgewiesenen ersetzt ein fester Text. Die Routine `wiki-hygiene` im Ordner `routines/` nutzt beide.
 
 | Prüfung | Was sie findet | Felder |
 | --- | --- | --- |
-| `stalePages` | Seiten des Wikis, die seit `olderThanDays` Tagen niemand geändert hat. | `page` (`text`), `category` (`text`), `changed` (`date`) |
-| `brokenLinks` | Links im Wiki auf Seiten, die das Konto der Routine nicht findet. Ein Link auf eine Seite, die das Konto nicht sehen darf, erscheint wie einer auf eine fehlende Seite. | `page` (`text`), `link` (`text`) |
+| `stalePages` | Seiten des Wikis, die seit `olderThanDays` Tagen niemand geändert hat, die ältesten zuerst, mit dem Tag der Änderung in der Zeitzone aus `ECCLIUM_TIME_ZONE`. Fehlt einer Seite das Datum, endet der Lauf mit `run_page_date_missing`. | `page` (`text`), `category` (`text`), `changed` (`date`) |
+| `brokenLinks` | Links im Wiki auf Seiten, die das Konto der Routine nicht findet, in der Form `/wiki/<Kennung der Kategorie>/<Titel, GUID oder main>` mit oder ohne den Host der Instanz. Ein Link auf eine Seite, die das Konto nicht sehen darf, erscheint wie einer auf eine fehlende Seite. Das Ziel steht als «Kategorie › Titel» im Bericht, nie als Adresse. | `page` (`text`), `link` (`text`) |
 
 ## Zeitplan
 

@@ -1,0 +1,22 @@
+# Monatlicher Bericht über die Pflege des Wikis, ohne Modell: Seiten, die
+# lange niemand geändert hat, und Links auf Seiten des Wikis, deren Ziel das
+# Konto der Routine nicht findet. Feste Prüfungen des Kerns, keine
+# automatische Korrektur. Jeder Monat ein eigener Abschnitt auf einer Seite
+# des Wikis. Was Sie anpassen, steht in README.md in diesem Ordner.
+schema: routine.v1
+id: wiki-hygiene
+schedule: '0 7 1 * *'
+checks:
+  - check: stalePages
+    olderThanDays: 365
+    maxItems: 50
+  - check: brokenLinks
+    maxItems: 50
+template: templates/wiki-hygiene.md
+output:
+  target: wiki
+  tool: ct_wiki_page_append_section
+  scope: { category: Berichte, page: Wiki-Pflege }
+  idempotencyKey: 'wiki-hygiene:{month}'
+notify:
+  - channel: stdout

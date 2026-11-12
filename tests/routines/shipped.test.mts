@@ -36,7 +36,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 // The routines the repository ships in routines/, loaded from disk with the
 // real loader, prepared against the read tools of the core and run on a
-// stand-in of the reads and of the model up to the rendered section. The
+// stand-in of the reads and, where they have one, of the model up to the
+// rendered section. The
 // stand-in gives fields as the tools do, not every field; what the tools
 // and the level strict give is tested with them. The
 // schema the loader checks is the one schemas/routine.v1.json is made from.
@@ -103,6 +104,19 @@ const policy = {
         categoryId: 7,
         guid: 'seite-dienstplan',
         name: 'Dienstplan-Auswertung',
+      },
+      tools: ['ct_wiki_page_append_section'],
+      maxPerRun: 1,
+      maxPerDay: 2,
+    },
+    {
+      routine: 'wiki-hygiene',
+      credential: 'runner',
+      target: {
+        kind: 'wiki_page',
+        categoryId: 7,
+        guid: 'seite-pflege',
+        name: 'Wiki-Pflege',
       },
       tools: ['ct_wiki_page_append_section'],
       maxPerRun: 1,
@@ -218,7 +232,28 @@ describe('the shipped routines', () => {
     expect(loadShipped().map(({ routine }) => routine.id)).toEqual([
       'dienstplan-report',
       'termin-vorschau',
+      'wiki-hygiene',
     ]);
+  });
+
+  it('are refused when the group may write the folder of templates', () => {
+    chmodSync(join(folder, 'templates'), 0o775);
+    expect(loadRoutines(folder)).toMatchObject({
+      ok: false,
+      code: 'routine_template',
+      routine: 'dienstplan-report',
+      reason: 'mode',
+    });
+  });
+
+  it('are refused when a routine is a file the group may write', () => {
+    chmodSync(join(folder, 'wiki-hygiene.yaml'), 0o664);
+    expect(loadRoutines(folder)).toMatchObject({
+      ok: false,
+      code: 'routine_file',
+      routine: 'wiki-hygiene',
+      reason: 'mode',
+    });
   });
 });
 
@@ -446,5 +481,131 @@ describe('the shipped routine termin-vorschau', () => {
       (part) => part.kind === 'data' && part.name === 'termine',
     );
     expect(data?.kind === 'data' ? data.text : '').toContain('Adventsbasar');
+  });
+});
+
+describe('the shipped routine wiki-hygiene', () => {
+  const origin = 'https://example.church.tools';
+  const boundary = 'a1b2c3d4e5f6a7b8';
+  // A text of the class untrusted, as the pipeline wraps it.
+  const wrap = (text: string): string =>
+    `<<data-${boundary}>>${text}<</data-${boundary}>>`;
+
+  const prepare = (): PreparedRun => {
+    const prepared = prepareRun(routineOf('wiki-hygiene'), {
+      tool: (name) => describeRunTool(catalog, name),
+      policy,
+      // No model at all: the routine needs none.
+      models: new Set(),
+    });
+    if (!prepared.ok) throw new Error(`not prepared: ${prepared.code}`);
+    return prepared.run;
+  };
+
+  it('prepares against the read tools of the core without a model, at standard and for its page', () => {
+    const run = prepare();
+    expect(run.loaded.routine.checks?.map(({ check }) => check)).toEqual([
+      'stalePages',
+      'brokenLinks',
+    ]);
+    expect(run.inputs).toEqual([]);
+    expect(run).not.toHaveProperty('model');
+    expect(run.redaction).toBe('standard');
+    expect(run.target?.target.name).toBe('Wiki-Pflege');
+    expect(run.credential).toBe('runner');
+  });
+
+  it('renders the report of the checks with the pages and links of the wiki', async () => {
+    // A category of reports with the page of the report, an old page with
+    // a link that finds its target and one that does not, and the main
+    // page, which ChurchTools lists as a page of its own.
+    const read: RunRead = (tool, input) => {
+      if (tool === 'ct_wiki_categories_list') {
+        return Promise.resolve(
+          outcome(
+            {
+              page: 1,
+              categories: [{ id: 7, name: wrap('Berichte') }],
+              more: false,
+              notice: null,
+            },
+            1,
+          ),
+        );
+      }
+      if (tool === 'ct_wiki_pages_list') {
+        return Promise.resolve(
+          outcome(
+            {
+              categoryId: 7,
+              page: 1,
+              pages: [
+                ['seite-main', 'main', '2026-11-02T08:00:00Z'],
+                ['seite-pflege', 'Wiki-Pflege', '2026-11-02T08:00:00Z'],
+                ['seite-alt', 'Ablauf Sonntag', '2025-03-01T08:00:00Z'],
+              ].map(([guid, title, modifiedDate]) => ({
+                guid,
+                title: wrap(title ?? ''),
+                isMarkdown: true,
+                version: 2,
+                modifiedDate,
+              })),
+              more: false,
+              notice: null,
+            },
+            3,
+          ),
+        );
+      }
+      if (tool !== 'ct_wiki_page_get') throw new Error(tool);
+      const text =
+        input['guid'] === 'seite-alt'
+          ? [
+              `[${origin}/wiki/7/Wiki-Pflege](${origin}/wiki/7/Wiki-Pflege)`,
+              `[${origin}/wiki/7/main](${origin}/wiki/7/main)`,
+              `[${origin}/wiki/7/Taufe](${origin}/wiki/7/Taufe)`,
+            ].join('\n\n')
+          : '';
+      return Promise.resolve(
+        outcome(
+          {
+            categoryId: 7,
+            guid: input['guid'],
+            title: wrap('Seite'),
+            isMarkdown: true,
+            version: 2,
+            part: 1,
+            parts: 1,
+            text: wrap(text),
+          },
+          1,
+        ),
+      );
+    };
+    const result = await executeRun(
+      prepare(),
+      trigger,
+      {
+        read,
+        checks: { origin, timeZone: 'Europe/Zurich' },
+        policy,
+        log: silent,
+        clock: { now: () => trigger.at },
+      },
+      new AbortController().signal,
+    );
+    if (result.kind !== 'rendered') throw new Error(result.code);
+    expect(result.period).toBe('2026-11');
+    expect(result.section).toContain('### Pflege des Wikis im Monat 2026-11');
+    expect(result.section).toContain(
+      '- Ablauf Sonntag (Berichte), zuletzt geändert am 01.03.2025',
+    );
+    expect(result.section).toContain(
+      '- Berichte › Ablauf Sonntag: Link auf Berichte › Taufe',
+    );
+    expect(result.section).not.toContain('Link auf Berichte › Wiki-Pflege');
+    expect(result.section).not.toContain('Hauptseite');
+    expect(result.section).toContain('höchstens 50 Einträge');
+    expect(result).not.toHaveProperty('provider');
   });
 });
