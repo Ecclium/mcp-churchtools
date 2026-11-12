@@ -11,6 +11,8 @@ import { join } from 'node:path';
 import {
   checkRunnerTokensDir,
   createRunId,
+  createStdioIdentity,
+  createStdioTenantResolver,
   createToolCatalog,
   type EccliumConfig,
   loadConfig,
@@ -39,7 +41,12 @@ import {
 import { createCorePlugin } from '@ecclium/mcp-churchtools-tools';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { type RunPipelineResult, composeRunPipeline } from './run-pipeline.js';
+import {
+  type AccountPipelineResult,
+  composeAccountPipeline,
+  composeRunPipeline,
+  type RunPipelineResult,
+} from './run-pipeline.js';
 
 // The pipeline of one run with the token of its account (ADR 0033): which
 // token reaches ChurchTools, that a routine without an entry reads with the
@@ -280,6 +287,50 @@ const setup = (options: SetupOptions = {}) => {
     );
   };
 
+  // The pipeline with an alias the operator names, with a configuration
+  // that only reads unless a test passes another.
+  const buildAccount = (
+    credential: string,
+    extra: {
+      readonly config?: EccliumConfig;
+      readonly checkTokensDir?: typeof checkRunnerTokensDir;
+    } = {},
+  ): AccountPipelineResult => {
+    const built = composeAccountPipeline({
+      config: extra.config ?? Object.freeze({ ...config, readOnly: true }),
+      catalog,
+      writer,
+      clock,
+      auditFile: audit.writer,
+      createTransport,
+      credential,
+      ...(extra.checkTokensDir === undefined
+        ? {}
+        : { checkTokensDir: extra.checkTokensDir }),
+    });
+    if (built.ok) open.push({ close: () => built.close() });
+    return built;
+  };
+
+  // One read of the operator, as ecclium policy init reads.
+  const readAsOperator = async (built: AccountPipelineResult) => {
+    if (!built.ok) throw new Error(`no pipeline: ${built.code}`);
+    return built.pipeline.call(
+      'ct_wiki_categories_list',
+      {},
+      {
+        assignment: await createStdioTenantResolver().resolve(
+          createStdioIdentity(config),
+        ),
+        mode: 'operator',
+        redaction: 'standard',
+        readOnly: true,
+        features: Object.freeze([]),
+        signal: new AbortController().signal,
+      },
+    );
+  };
+
   return {
     config,
     serverCanary,
@@ -293,6 +344,8 @@ const setup = (options: SetupOptions = {}) => {
     closed: () => closed,
     build,
     read,
+    buildAccount,
+    readAsOperator,
   };
 };
 
@@ -481,5 +534,63 @@ describe('the end of the pipeline of a run', () => {
     expect(closed()).toBe(0);
     await built.close();
     expect(closed()).toBe(1);
+  });
+});
+
+describe('the pipeline with an account the operator names', () => {
+  it('reads with the token of the alias it names', async () => {
+    const { accountToken, doubles, buildAccount, readAsOperator } = setup();
+    const outcome = await readAsOperator(buildAccount('berichte'));
+    expect(outcome).toMatchObject({
+      ok: true,
+      data: { categories: [{ id: 7 }] },
+    });
+    expect(doubles).toHaveLength(1);
+    expect(doubles[0]?.calls()[0]?.headers['authorization']).toBe(
+      `Login ${accountToken.value}`,
+    );
+  });
+
+  it('never reads with the token of the configuration', async () => {
+    const { serverCanary, accepted, doubles, buildAccount, readAsOperator } =
+      setup();
+    accepted.token = serverCanary;
+    await expect(
+      readAsOperator(buildAccount('berichte')),
+    ).resolves.toMatchObject({ ok: false, error: { code: 'auth' } });
+    expect(doubles[0]?.calls()[0]?.headers['authorization']).not.toBe(
+      `Login ${serverCanary.value}`,
+    );
+  });
+
+  it('is not built without the token file of the alias or its folder', () => {
+    const { doubles, buildAccount } = setup();
+    expect(buildAccount('andere')).toEqual({
+      ok: false,
+      code: 'token_file_missing',
+    });
+    expect(
+      buildAccount('berichte', {
+        checkTokensDir: () =>
+          Object.freeze({ ok: false, code: 'runner_tokens_dir_mode' }),
+      }),
+    ).toEqual({ ok: false, code: 'runner_tokens_dir_mode' });
+    expect(doubles).toHaveLength(0);
+    const unset = setup({ tokensDir: false });
+    expect(unset.buildAccount('berichte')).toEqual({
+      ok: false,
+      code: 'runner_tokens_dir_unset',
+    });
+    expect(unset.doubles).toHaveLength(0);
+  });
+
+  it('is never built with a configuration that may write', () => {
+    const { config, doubles, buildAccount } = setup();
+    expect(() =>
+      buildAccount('berichte', {
+        config: Object.freeze({ ...config, readOnly: false }),
+      }),
+    ).toThrow(TypeError);
+    expect(doubles).toHaveLength(0);
   });
 });
