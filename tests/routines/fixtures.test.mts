@@ -6,8 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { loadRoutines } from '@ecclium/mcp-churchtools-workflows';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-// The three routines of the free core as fixtures, with their prompts and
-// templates, loaded from disk with the real file functions. A checkout
+// The routines of the free core not yet shipped in routines/, as fixtures
+// with their prompts and templates, loaded from disk with the real file
+// functions; shipped.test.mts loads the shipped ones. A checkout
 // gives files the rights its umask allows, and the loader refuses a file
 // the group may write, so the test copies the folder and sets the rights
 // itself.
@@ -44,19 +45,11 @@ describe('the routines of the fixtures', () => {
     expect(loaded).toMatchObject({ ok: true });
     if (!loaded.ok) return;
     expect(loaded.routines.map(({ routine }) => routine.id)).toEqual([
-      'dienstplan-report',
       'termin-vorschau',
       'wiki-hygiene',
     ]);
-    const [report, preview, hygiene] = loaded.routines;
-    expect(report?.routine).toMatchObject({
-      inputs: [
-        { name: 'termine', tool: 'ct_events_list' },
-        { name: 'einteilungen', forEach: 'termine' },
-      ],
-      output: { target: 'wiki', period: 'isoWeek' },
-    });
-    expect(report?.prompt).toContain('unbesetzt');
+    const [preview, hygiene] = loaded.routines;
+    expect(preview?.prompt).toContain('Gemeindebrief');
     expect(preview?.routine.output).toMatchObject({
       target: 'draft',
       channel: 'file',
@@ -73,7 +66,7 @@ describe('the routines of the fixtures', () => {
     expect(loadRoutines(folder)).toMatchObject({
       ok: false,
       code: 'routine_template',
-      routine: 'dienstplan-report',
+      routine: 'termin-vorschau',
       reason: 'mode',
     });
   });

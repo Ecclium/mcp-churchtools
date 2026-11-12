@@ -1,5 +1,7 @@
-# Routine für Tests: wöchentlicher Bericht über die Dienste der kommenden
-# zwei Wochen. Erfunden, wie alle Testdaten.
+# Wöchentlicher Bericht über die Dienste der kommenden zwei Wochen: welche
+# Plätze unbesetzt sind, welche Anfragen noch auf eine Zusage warten und wer
+# mehrfach eingeteilt ist. Jede Woche ein eigener Abschnitt auf einer Seite
+# des Wikis. Was Sie anpassen, steht in README.md in diesem Ordner.
 schema: routine.v1
 id: dienstplan-report
 schedule: '0 6 * * MON'
@@ -7,26 +9,33 @@ inputs:
   - name: termine
     tool: ct_events_list
     params: { from: '+0d', to: '+14d' }
-    maxItems: 30
+    maxItems: 40
   - name: einteilungen
     tool: ct_services_get_assignments
     forEach: termine
     params:
       eventId: { field: id }
-    maxItems: 60
+    maxItems: 200
 generate:
   prompt: prompts/dienstplan-report.md
   model: default
   redaction: strict
-  maxOutputTokens: 2000
+  maxOutputTokens: 8000
   output:
     blocks:
       unbesetzt:
-        maxItems: 30
+        maxItems: 50
         fields:
           datum: { type: date }
-          termin: { type: text, maxLength: 80 }
-          dienst: { type: text, maxLength: 80 }
+          termin: { type: text, maxLength: 120 }
+          dienst: { type: text, maxLength: 120 }
+      offen:
+        maxItems: 50
+        fields:
+          datum: { type: date }
+          termin: { type: text, maxLength: 120 }
+          dienst: { type: text, maxLength: 120 }
+          person: { type: person }
       mehrfach:
         maxItems: 30
         fields:
@@ -35,7 +44,7 @@ generate:
       hinweise:
         maxItems: 5
         fields:
-          text: { type: text, maxLength: 400 }
+          text: { type: text, maxLength: 300 }
 template: templates/dienstplan-report.md
 output:
   target: wiki

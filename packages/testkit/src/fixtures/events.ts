@@ -212,6 +212,11 @@ export interface AssignmentFixture {
   readonly firstName: string;
   /** The last name, or the placeholder ChurchTools sends in its place. */
   readonly lastName: string;
+  /**
+   * The name without a person, `null` for none; without it the field
+   * holds a canary like every field the core does not pass on.
+   */
+  readonly name?: string | null;
 }
 
 // The event around assignments: every field but the assignments holds a
@@ -265,6 +270,7 @@ export function eventAssignmentsAnswer(
       isAccepted: assignment.isAccepted,
       agreed: assignment.agreed,
       personId: assignment.personId,
+      ...(assignment.name === undefined ? {} : { name: assignment.name }),
       person: {
         domainAttributes: {
           firstName: assignment.firstName,
@@ -273,6 +279,14 @@ export function eventAssignmentsAnswer(
       },
     }),
   );
+  // A name the test gives takes the place of the canary; when every
+  // assignment has one, no answer holds the canary.
+  if (
+    assignments.length > 0 &&
+    assignments.every((assignment) => assignment.name !== undefined)
+  ) {
+    made.delete('assignment.name');
+  }
   return answer({ ...event, eventServices }, made);
 }
 

@@ -421,6 +421,7 @@ describe('the three layers together', () => {
           serviceName: enveloped('Dienst 11'),
           isAccepted: true,
           agreed: true,
+          assigned: true,
           person: { personId: 1, firstName: 'Person', lastName: 'A' },
         },
         {
@@ -428,6 +429,7 @@ describe('the three layers together', () => {
           serviceName: enveloped('Dienst 11'),
           isAccepted: false,
           agreed: true,
+          assigned: true,
           person: { personId: 3, firstName: 'Person', lastName: 'C' },
         },
       ],
@@ -968,6 +970,7 @@ describe('the layer of the pipeline', () => {
             serviceName: 'Dienst 11',
             isAccepted: true,
             agreed: true,
+            assigned: true,
             person: {
               personId: 1,
               firstName: 'Person',
@@ -990,6 +993,7 @@ describe('the layer of the pipeline', () => {
             serviceName: enveloped('Dienst 11'),
             isAccepted: true,
             agreed: true,
+            assigned: true,
             person: { personId: 1, firstName: 'Person', lastName: 'A' },
           },
         ],

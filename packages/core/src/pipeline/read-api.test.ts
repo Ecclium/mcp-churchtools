@@ -107,6 +107,7 @@ const assignments: AssignmentList = {
       serviceName: 'Dienst A',
       isAccepted: true,
       agreed: true,
+      assigned: true,
       person: { personId: 2, firstName: 'Person', lastName: 'B' },
     },
   ],

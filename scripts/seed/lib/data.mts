@@ -211,9 +211,12 @@ export function datedData(now: Date): DatedData {
         },
         event: {
           label: 'e1',
-          services: [{ service: 's1', count: 1 }],
+          services: [{ service: 's1', count: 2 }],
           assignments: [
             { label: 'e1s1pD', service: 's1', person: 'pD', accept: false },
+            // Person A serves on both days, for a report of persons
+            // assigned more than once.
+            { label: 'e1s1pA', service: 's1', person: 'pA', accept: true },
           ],
           agenda: [],
         },
@@ -229,8 +232,9 @@ export function datedData(now: Date): DatedData {
         },
         event: {
           label: 'e2',
+          // The second place of s1 stays open, for a report of open places.
           services: [
-            { service: 's1', count: 1 },
+            { service: 's1', count: 2 },
             { service: 's2', count: 2 },
           ],
           assignments: [

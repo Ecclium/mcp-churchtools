@@ -646,6 +646,7 @@ describe('the assignments of an event', () => {
         serviceName: 'Dienst 11',
         isAccepted: true,
         agreed: true,
+        assigned: true,
         person: { personId: 1, firstName: 'Person', lastName: 'A' },
       },
       {
@@ -653,6 +654,7 @@ describe('the assignments of an event', () => {
         serviceName: 'Dienst 11',
         isAccepted: false,
         agreed: false,
+        assigned: true,
         person: { personId: 3, firstName: '', lastName: 'C' },
       },
     ]);
@@ -690,7 +692,7 @@ describe('the assignments of an event', () => {
     },
   );
 
-  it('passes on no person for an assignment without one', async () => {
+  it('passes on no person and an open place for an assignment without person or name', async () => {
     const { double, client, ctx } = setup();
     double.intercept({ path: '/api/events/2', method: 'GET' }).reply(
       200,
@@ -701,6 +703,7 @@ describe('the assignments of an event', () => {
           if (first === undefined) return;
           first['person'] = null;
           delete first['personId'];
+          delete first['name'];
         },
       ),
       json,
@@ -714,9 +717,77 @@ describe('the assignments of an event', () => {
       serviceName: 'Dienst 11',
       isAccepted: true,
       agreed: true,
+      assigned: false,
       person: null,
     });
   });
+
+  // An open place has no ID of a person, as the seed found it; a hidden
+  // name keeps a number (F37), and a name without a person fills the place.
+  it.each([
+    ['an open place', { personId: null, name: null }, false],
+    ['an open place with an empty name', { personId: null, name: '' }, false],
+    ['an open place with a blank name', { personId: null, name: ' \t' }, false],
+    ['a name without a person', { personId: null, name: 'Gast' }, true],
+    [
+      'the placeholder of a hidden name',
+      { personId: 0, firstName: '', lastName: 'Platzhalter', name: null },
+      true,
+    ],
+    ['a negative ID of the person', { personId: -4, name: null }, true],
+    ['a named person', { name: null }, true],
+    // The name is read for this switch only, so its form ends nothing.
+    [
+      'a name of 300 characters',
+      { personId: null, name: 'x'.repeat(300) },
+      true,
+    ],
+    ['a name as a number', { personId: null, name: 7 }, false],
+  ] as const)('says whether %s fills the place', async (_, extra, filled) => {
+    const { double, client, ctx } = setup();
+    // A name as a number is no form a fixture takes, so it is cast.
+    reply(
+      double,
+      [assignment(11, extra as unknown as Partial<AssignmentFixture>)],
+      [service(11)],
+    );
+    const [result] = (await client.eventAssignments(ctx(), 2, 1)).assignments;
+    expect(result?.assigned).toBe(filled);
+    expect(JSON.stringify(result)).not.toContain('Gast');
+    expect(JSON.stringify(result)).not.toContain('xxxx');
+  });
+
+  // No probe has seen an open place yet; whether ChurchTools gives it its
+  // two states is open, so an open place without them reads as neither.
+  it.each([
+    ['without both states', { isAccepted: undefined, agreed: undefined }],
+    ['with both states null', { isAccepted: null, agreed: null }],
+  ])(
+    'reads an open place %s as not accepted and not agreed',
+    async (_, states) => {
+      const { double, client, ctx } = setup();
+      reply(
+        double,
+        [
+          assignment(11),
+          {
+            ...assignment(11, { personId: null, name: null }),
+            ...states,
+          } as unknown as AssignmentFixture,
+        ],
+        [service(11)],
+      );
+      const [, open] = (await client.eventAssignments(ctx(), 2, 1)).assignments;
+      expect(open).toEqual({
+        serviceId: 11,
+        serviceName: 'Dienst 11',
+        isAccepted: false,
+        agreed: false,
+        assigned: false,
+        person: null,
+      });
+    },
+  );
 
   it('gives an empty list for an event without assignments, as without the right on the groups of services', async () => {
     const { double, client, ctx } = setup();
@@ -732,6 +803,11 @@ describe('the assignments of an event', () => {
     ['no agreed', { agreed: undefined }],
     ['a service ID 0', { serviceId: 0 }],
     ['a first name of 256 characters', { firstName: 'x'.repeat(256) }],
+    ['a filled place with isAccepted null', { isAccepted: null }],
+    [
+      'a name without a person and no agreed',
+      { personId: null, name: 'Gast', agreed: undefined },
+    ],
   ])('gives upstream for an assignment with %s', async (_, change) => {
     const { double, client, ctx, lines } = setup();
     reply(

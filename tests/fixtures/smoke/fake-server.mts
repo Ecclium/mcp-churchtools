@@ -706,6 +706,7 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
           serviceName: wrap(`${canary}Dienst`),
           isAccepted: true,
           agreed: true,
+          assigned: true,
           person: {
             personId: personRef(811),
             firstName: `${canary}Erika`,
@@ -720,6 +721,7 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
           serviceName: wrap(`${canary}Dienst`),
           isAccepted: false,
           agreed: false,
+          assigned: true,
           person: null,
         },
       ],

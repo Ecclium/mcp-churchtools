@@ -1348,7 +1348,8 @@ export async function runEra(
             if (isRecord(person)) {
               seeValue(person['firstName']);
               seeValue(person['lastName']);
-            } else {
+            } else if (entry['assigned'] === true) {
+              // A filled place without a person; an open place hides nothing.
               hidden = true;
             }
           }
@@ -1371,6 +1372,7 @@ export async function runEra(
               isRecord(entry) &&
               sameKeys(entry, [
                 'agreed',
+                'assigned',
                 'isAccepted',
                 'person',
                 'serviceId',
@@ -1379,6 +1381,9 @@ export async function runEra(
               isId(entry['serviceId']) &&
               typeof entry['isAccepted'] === 'boolean' &&
               typeof entry['agreed'] === 'boolean' &&
+              typeof entry['assigned'] === 'boolean' &&
+              // A named person always fills the place.
+              (entry['person'] === null || entry['assigned']) &&
               (entry['person'] === null ||
                 (isRecord(entry['person']) &&
                   sameKeys(entry['person'], [
