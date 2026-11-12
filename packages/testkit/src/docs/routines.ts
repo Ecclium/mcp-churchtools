@@ -78,8 +78,7 @@ export const routineFieldMeanings: Readonly<Record<string, string>> =
       'Name einer früheren Eingabe: Das Tool läuft dann einmal je Eintrag dieser Eingabe.',
     'inputs[].params':
       'Die Parameter des Tools mit ihrem Namen aus dem Tool, etwa `from`.',
-    'inputs[].params.<Parameter>':
-      'Ein Text, eine Zahl oder ein Wahrheitswert. Ein Text wie `+14d` oder `-30d` zählt Tage ab der geplanten Auslösung. Mit `forEach` setzt `{ field: id }` das Feld `id` des jeweiligen Eintrags ein.',
+    'inputs[].params.<Parameter>': `Ein Text, eine Zahl, ein Wahrheitswert oder eine Liste von 1 bis ${swiss(routineLimits.listItems)} Kennungen. Ein Text wie \`+14d\` oder \`-30d\` zählt Tage ab der geplanten Auslösung. Eine Liste wie \`calendarIds: [3, 7]\` nennt ganze Zahlen ab 1, jede einmal. Mit \`forEach\` setzt \`{ field: id }\` das Feld \`id\` des jeweiligen Eintrags ein.`,
     'inputs[].params.<Parameter>.field':
       'Das Feld eines Eintrags der Eingabe aus `forEach`.',
     'inputs[].maxItems':
@@ -233,7 +232,7 @@ const formOf = (nodes: readonly JsonSchemaNode[]): string => {
     return listOf(node.enum.map((value) => code(String(value))));
   }
   if (node.anyOf !== undefined) {
-    return 'Text, ganze Zahl, Wahrheitswert oder Verweis auf ein Feld';
+    return 'Text, ganze Zahl, Wahrheitswert, Liste ganzer Zahlen oder Verweis auf ein Feld';
   }
   if (node.oneOf !== undefined) return 'Objekt einer Art';
   switch (node.type) {
@@ -441,7 +440,7 @@ export function renderRoutinesReference(): string {
     '',
     '## Eingaben',
     '',
-    '- Eine Eingabe ruft ein Lese-Tool über dieselbe Pipeline wie der Server, mit Maskierung und Protokoll. Erlaubt sind nur Lese-Tools, auf die sich Routinen verlassen können und die unbeaufsichtigt laufen dürfen. Das prüft die Vorbereitung eines Laufs, bevor er etwas liest, ebenso die Parameter gegen das Tool, die Felder von `{ field }` und relative Tage bis 366 Tage.',
+    '- Eine Eingabe ruft ein Lese-Tool über dieselbe Pipeline wie der Server, mit Maskierung und Protokoll. Erlaubt sind nur Lese-Tools, auf die sich Routinen verlassen können und die unbeaufsichtigt laufen dürfen. Das prüft die Vorbereitung eines Laufs, bevor er etwas liest, ebenso die Namen der Parameter gegen das Tool, die Felder von `{ field }` und relative Tage bis 366 Tage. Ob ein Wert die Art hat, die das Tool verlangt, etwa eine Liste für `calendarIds`, prüft das Tool beim ersten Lesen: Ein Wert der falschen Art beendet den Lauf mit `validation`.',
     '- Mit `forEach` läuft das Tool einmal je Eintrag einer früheren Eingabe, die selbst kein `forEach` hat. Die Zahl der Aufrufe ist so höchstens `maxItems` der früheren Eingabe, dazu die Folgeseiten, bis `maxItems` erreicht ist. Tools, die Namen anderer Personen nennen, zählen gegen das Lesebudget ([Richtlinie](policy.md)): Im Beispiel liest ein Lauf mit 40 Terminen die Einteilungen mit mindestens 40 Aufrufen, einem je 25 Plätze eines Termins.',
     '- Relative Tage wie `+0d` oder `+14d` zählen ab der geplanten Auslösung, nicht ab dem Beginn des Laufs. Ein verspäteter Lauf liest so denselben Zeitraum wie ein pünktlicher.',
     '',

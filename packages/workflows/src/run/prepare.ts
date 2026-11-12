@@ -25,7 +25,7 @@ import {
 } from '@ecclium/mcp-churchtools-core';
 
 import type { LoadedRoutine } from '../routine/loader.js';
-import type { RoutineInput } from '../routine/schema.js';
+import { isParamField, type RoutineInput } from '../routine/schema.js';
 
 /** Why a routine does not start, frozen. */
 export const runPrepareCodes = Object.freeze([
@@ -157,7 +157,7 @@ const refuse = (code: RunPrepareCode, field?: string): RunPrepareResult =>
 
 // The first problem of the parameters of an input, with the path of its
 // field: a name the tool does not take, a relative day too far away, or a
-// field the entries of its source do not have.
+// field the entries of its source do not have. A list is never a field.
 const paramProblem = (
   input: RoutineInput,
   facts: RunToolFacts,
@@ -173,12 +173,16 @@ const paramProblem = (
         return ['run_param_days', field];
       }
     } else if (
-      typeof value === 'object' &&
+      isParamField(value) &&
       // The check of the routine allows a field only with forEach.
       !(source?.entryFields.includes(value.field) ?? false)
     ) {
       return ['run_field_unknown', field];
     }
+    // A list, a number and a switch pass on their name alone: the facts of
+    // a tool hold the names of its parameters, not their kinds, so a value
+    // of the wrong kind ends the run at its first read with `validation`,
+    // as the pipeline checks every input against the schema of its tool.
   }
   return undefined;
 };

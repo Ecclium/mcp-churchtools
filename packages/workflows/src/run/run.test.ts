@@ -331,6 +331,44 @@ describe('preparing a run', () => {
     expect(run.ok && 'preview' in run.run).toBe(false);
   });
 
+  it('passes a list on the name of its parameter, also on an input with forEach', () => {
+    const value = routineValue();
+    const withLists = loadedOf({
+      ...value,
+      inputs: [
+        {
+          ...value.inputs[0],
+          params: { ...value.inputs[0]?.params, calendarIds: [3, 7] },
+        },
+        {
+          ...value.inputs[1],
+          params: { eventId: { field: 'id' }, serviceIds: [5] },
+        },
+      ],
+    });
+    const listTools: Readonly<Record<string, RunToolFacts>> = {
+      ct_events_list: facts({ params: ['calendarIds', 'from', 'page', 'to'] }),
+      ct_services_get_assignments: facts({
+        params: ['eventId', 'page', 'serviceIds'],
+        list: 'assignments',
+        entryFields: ['serviceId'],
+      }),
+    };
+    const prepared = prepareRun(withLists, {
+      ...context(),
+      tool: (name: string) => listTools[name],
+    });
+    if (!prepared.ok) throw new Error(prepared.code);
+    expect(prepared.run.inputs[0]?.input.params['calendarIds']).toEqual([3, 7]);
+    expect(prepared.run.inputs[1]?.input.params['serviceIds']).toEqual([5]);
+    // A list for a parameter the tool does not take is refused by its name.
+    expect(prepareRun(withLists, context())).toEqual({
+      ok: false,
+      code: 'run_param_unknown',
+      field: 'inputs[0].params.calendarIds',
+    });
+  });
+
   it('refuses a routine with the checks of the core until they are built', () => {
     const rest: Record<string, unknown> = { ...routineValue() };
     delete rest['generate'];
@@ -535,6 +573,50 @@ describe('reading the inputs', () => {
       new AbortController().signal,
     );
     expect(seen).toEqual([{ from: '2026-11-02', to: '2026-11-09', page: 2 }]);
+  });
+
+  it('gives a list to every call as a list, not the one of the routine', async () => {
+    const value = routineValue();
+    const withList = loadedOf({
+      ...value,
+      inputs: [
+        {
+          ...value.inputs[0],
+          params: { calendarIds: [3, 7], from: '+0d', to: '+14d' },
+        },
+      ],
+    });
+    const result = prepareRun(withList, {
+      ...context(),
+      tool: () => facts({ params: ['calendarIds', 'from', 'page', 'to'] }),
+    });
+    if (!result.ok) throw new Error(result.code);
+    const seen: Readonly<Record<string, unknown>>[] = [];
+    const read: RunRead = (_tool, input) => {
+      seen.push(input);
+      return Promise.resolve(
+        input['page'] === 1
+          ? ok({ events: [{ id: 1 }], more: true }, 1, true)
+          : ok({ events: [{ id: 2 }] }, 1),
+      );
+    };
+    const inputs = await readInputs(
+      result.run,
+      trigger,
+      read,
+      log,
+      new AbortController().signal,
+    );
+    if (!inputs.ok) throw new Error(inputs.code);
+    expect(seen).toEqual([
+      { calendarIds: [3, 7], from: '2026-11-09', to: '2026-11-23', page: 1 },
+      { calendarIds: [3, 7], from: '2026-11-09', to: '2026-11-23', page: 2 },
+    ]);
+    // Each call gets a list of its own, as the input of a client is, never
+    // the frozen list of the routine.
+    const kept = result.run.inputs[0]?.input.params['calendarIds'];
+    expect(seen[0]?.['calendarIds']).not.toBe(kept);
+    expect(Object.isFrozen(seen[0]?.['calendarIds'])).toBe(false);
   });
 });
 

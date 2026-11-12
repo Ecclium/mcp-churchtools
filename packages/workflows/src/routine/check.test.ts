@@ -1,4 +1,5 @@
 import { policyJsonSchema } from '@ecclium/mcp-churchtools-core';
+import { maxListIds } from '@ecclium/mcp-churchtools-plugin-api';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -131,6 +132,49 @@ describe('checkRoutine with a valid routine', () => {
       value === null ||
       (Object.isFrozen(value) && Object.values(value).every(frozen));
     expect(frozen(result)).toBe(true);
+  });
+
+  it('takes a list of IDs as a parameter and keeps a frozen copy', () => {
+    const ids = [3, 7];
+    const result = checkRoutine(
+      changed(
+        withModel,
+        (r) => (at(r, 'inputs.0.params')['calendarIds'] = ids),
+      ),
+    );
+    if (!result.ok) throw new Error(result.code);
+    const kept = result.routine.inputs[0]?.params['calendarIds'];
+    expect(kept).toEqual([3, 7]);
+    expect(kept).not.toBe(ids);
+    expect(Object.isFrozen(kept)).toBe(true);
+    // The longest list, and the largest ID a routine may name.
+    const longest = Array.from(
+      { length: routineLimits.listItems },
+      (_, index) => routineLimits.integer - index,
+    );
+    expect(
+      checkRoutine(
+        changed(
+          withModel,
+          (r) => (at(r, 'inputs.0.params')['calendarIds'] = longest),
+        ),
+      ).ok,
+    ).toBe(true);
+  });
+
+  it('takes a list on an input with forEach besides the field it reads', () => {
+    const result = checkRoutine(
+      changed(withModel, (r) => (at(r, 'inputs.1.params')['serviceIds'] = [5])),
+    );
+    if (!result.ok) throw new Error(result.code);
+    expect(result.routine.inputs[1]?.params).toEqual({
+      eventId: { field: 'id' },
+      serviceIds: [5],
+    });
+  });
+
+  it('names lists of as many IDs as a list of a tool', () => {
+    expect(routineLimits.listItems).toBe(maxListIds);
   });
 
   it('keeps a wish for redaction and a limit of tokens', () => {
@@ -367,6 +411,41 @@ describe('checkRoutine with a routine it refuses', () => {
       (r) => (at(r, 'inputs.0')['maxItems'] = routineLimits.inputItems + 1),
       'inputs[0].maxItems',
     ],
+    ...(
+      [
+        ['an empty list', []],
+        [
+          'a list longer than a tool takes',
+          Array.from(
+            { length: routineLimits.listItems + 1 },
+            (_, index) => index + 1,
+          ),
+        ],
+        // A list is the only kind such a value can be, so the path names
+        // the position of the ID out of range.
+        ['a list with an ID below 1', [7, 0], '[1]'],
+        [
+          'a list with an ID above the limit',
+          [routineLimits.integer + 1],
+          '[0]',
+        ],
+        ['a list with an ID twice', [3, 3]],
+        ['a list with a fraction', [1.5]],
+        ['a list of texts', ['3']],
+        ['a list of fields', [{ field: 'id' }]],
+        ['a list in a list', [[3]]],
+      ] as readonly (readonly [string, readonly unknown[], string?])[]
+    ).map(
+      ([name, list, position]): [
+        string,
+        (routine: Record<string, unknown>) => void,
+        string,
+      ] => [
+        name,
+        (r) => (at(r, 'inputs.0.params')['calendarIds'] = list),
+        `inputs[0].params.calendarIds${position ?? ''}`,
+      ],
+    ),
     [
       'another tool for the wiki',
       (r) => (at(r, 'output')['tool'] = 'ct_wiki_page_update'),
@@ -527,6 +606,12 @@ describe('checkRoutine with a routine it refuses', () => {
       [
         'a loop that uses no field of its entries',
         (r) => (at(r, 'inputs.1')['params'] = { eventId: 5 }),
+        'routine_reference',
+        'inputs[1].forEach',
+      ],
+      [
+        'a loop whose only object is a list, which reads no field',
+        (r) => (at(r, 'inputs.1')['params'] = { eventId: [5] }),
         'routine_reference',
         'inputs[1].forEach',
       ],
@@ -709,6 +794,37 @@ describe('routineJsonSchema', () => {
     expect(routine.properties.id.pattern).toBe(
       policy.properties.unattended.items.properties.routine.pattern,
     );
+  });
+
+  it('describes a list of IDs as a value of a parameter', () => {
+    const schema = routineJsonSchema() as {
+      properties: {
+        inputs: {
+          items: {
+            properties: {
+              params: {
+                additionalProperties: { anyOf: Record<string, unknown>[] };
+              };
+            };
+          };
+        };
+      };
+    };
+    const branches =
+      schema.properties.inputs.items.properties.params.additionalProperties
+        .anyOf;
+    expect(branches.filter((branch) => branch['type'] === 'array')).toEqual([
+      expect.objectContaining({
+        minItems: 1,
+        maxItems: routineLimits.listItems,
+        uniqueItems: true,
+        items: expect.objectContaining({
+          type: 'integer',
+          minimum: 1,
+          maximum: routineLimits.integer,
+        }) as unknown,
+      }),
+    ]);
   });
 
   it('returns a new object each time', () => {

@@ -4,6 +4,7 @@ import { loadConfig } from '@ecclium/mcp-churchtools-core';
 import {
   classify,
   defineWriteTool,
+  refersTo,
   EccliumError,
   type Plugin,
   type PluginHost,
@@ -79,8 +80,13 @@ const meta = {
 
 const id = () => z.number().int().nonnegative();
 
-// What a test lets the tools do, reset before each.
-const behaviour: { people: number; fail?: Error } = { people: 3 };
+// What a test lets the tools do, reset before each, and the calendars the
+// tool with a list got.
+const behaviour: {
+  people: number;
+  fail?: Error;
+  calendarIds?: unknown;
+} = { people: 3 };
 
 // Lists persons with their names, as the list of assignments does.
 const peopleTool = {
@@ -134,6 +140,25 @@ const textTool = {
     }),
 } as unknown as ToolDefinition;
 
+// Takes a list of calendars, as the list of appointments does, which a
+// routine names in its file (ADR 0033), and keeps what reached it.
+const calendarsTool = {
+  name: 'ct_test_calendars',
+  meta,
+  description,
+  input: z.strictObject({
+    calendarIds: z
+      .array(refersTo(z.number().int().positive(), 'calendar'))
+      .min(1)
+      .max(10),
+  }),
+  output: z.object({ count: classify(id(), 'none') }),
+  execute: ({ input }: { input: { calendarIds: number[] } }) => {
+    behaviour.calendarIds = input.calendarIds;
+    return Promise.resolve({ count: input.calendarIds.length });
+  },
+} as unknown as ToolDefinition;
+
 // A read tool a routine may not rely on.
 const unstableTool = {
   ...textTool,
@@ -164,7 +189,13 @@ const testPlugin: Plugin = {
   name: 'test-plugin',
   version: '1.0.0',
   register(host: PluginHost): undefined {
-    for (const tool of [peopleTool, textTool, unstableTool, writeTool]) {
+    for (const tool of [
+      peopleTool,
+      textTool,
+      calendarsTool,
+      unstableTool,
+      writeTool,
+    ]) {
       host.addTool(tool);
     }
     return undefined;
@@ -210,6 +241,7 @@ const setup = (
 ) => {
   behaviour.people = 3;
   delete behaviour.fail;
+  delete behaviour.calendarIds;
   const double = createChurchToolsDouble({ token });
   open.push(double);
   const catalog = createToolCatalog({
@@ -402,6 +434,25 @@ describe('a read of a run', () => {
         null as unknown as RunCallRequest,
       ),
     ).resolves.toEqual(internal);
+  });
+
+  it('passes a list of calendars at strict to the tool as the list it is', async () => {
+    const { pipeline } = setup();
+    const outcome = await pipeline.callForRun(
+      'ct_test_calendars',
+      { calendarIds: [3, 7] },
+      request(),
+    );
+    expect(outcome.ok).toBe(true);
+    expect(behaviour.calendarIds).toEqual([3, 7]);
+  });
+
+  it('ends a read with a number in place of a list for good, before the tool', async () => {
+    const { pipeline } = setup();
+    await expect(
+      pipeline.callForRun('ct_test_calendars', { calendarIds: 3 }, request()),
+    ).resolves.toEqual({ ok: false, code: 'validation', transient: false });
+    expect(behaviour.calendarIds).toBeUndefined();
   });
 
   it('tells a failure that may pass from one that will not', async () => {

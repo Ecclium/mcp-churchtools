@@ -34,6 +34,11 @@ export const routineLimits = Object.freeze({
   params: 10,
   /** The longest text of a parameter. */
   paramLength: 200,
+  /**
+   * The most whole numbers of a list of a parameter, as many IDs as a
+   * list of calendars or resources of a tool names.
+   */
+  listItems: 10,
   /** The most blocks of a routine. */
   blocks: 10,
   /** The most entries of a block. */
@@ -159,12 +164,24 @@ const block = z.strictObject({
   fields: mapOf(ownName, field, 1, routineLimits.fields),
 });
 
+// A list of IDs, such as the calendars of a list of appointments: whole
+// numbers from 1, each once, as a tool takes them. Only numbers: a list
+// of texts or of fields of an entry would let a routine build from data
+// what a tool reads, and no read tool of a routine needs that.
+const idList = z
+  .array(z.int().min(1).max(routineLimits.integer))
+  .min(1)
+  .max(routineLimits.listItems)
+  .refine((ids) => new Set(ids).size === ids.length)
+  .meta({ uniqueItems: true });
+
 // A value of a parameter: a text, such as a relative day like "+14d", a
-// number, a switch, or the field of the entry of `forEach`.
+// number, a switch, a list of IDs, or the field of the entry of `forEach`.
 const paramValue = z.union([
   z.string().max(routineLimits.paramLength).regex(plainPattern),
   integer,
   z.boolean(),
+  idList,
   z.strictObject({ field: z.string().max(32).regex(paramPattern) }),
 ]);
 
@@ -261,7 +278,42 @@ export interface RoutineBlock {
 
 /** A value of a parameter of an input. */
 export type RoutineParamValue =
-  string | number | boolean | { readonly field: string };
+  string | number | boolean | readonly number[] | { readonly field: string };
+
+/**
+ * Whether a value of a parameter is a list of IDs. A list is an object as
+ * well, so every check for `{ field }` asks this first.
+ *
+ * @param value - The value of a parameter.
+ * @returns Whether it is a list.
+ * @example
+ * ```ts
+ * isParamList([3, 7]); // true
+ * ```
+ */
+export function isParamList(
+  value: RoutineParamValue,
+): value is readonly number[] {
+  return Array.isArray(value);
+}
+
+/**
+ * Whether a value of a parameter names a field of the entry of `forEach`,
+ * never a list.
+ *
+ * @param value - The value of a parameter.
+ * @returns Whether it is `{ field }`.
+ * @example
+ * ```ts
+ * isParamField({ field: 'id' }); // true
+ * isParamField([3, 7]); // false
+ * ```
+ */
+export function isParamField(
+  value: RoutineParamValue,
+): value is { readonly field: string } {
+  return typeof value === 'object' && !isParamList(value);
+}
 
 /** An input: one read tool, called once or once per entry of another. */
 export interface RoutineInput {

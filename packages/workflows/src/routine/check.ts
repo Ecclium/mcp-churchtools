@@ -30,6 +30,8 @@ import {
 } from '@ecclium/mcp-churchtools-core';
 
 import {
+  isParamField,
+  isParamList,
   type Routine,
   type RoutineBlock,
   type RoutineCheck,
@@ -167,9 +169,6 @@ const ownData = (value: unknown, key: string): unknown => {
     : undefined;
 };
 
-const isFieldRef = (value: RoutineParamValue): value is { field: string } =>
-  typeof value === 'object';
-
 // The first problem of the inputs, with the path of its field.
 const inputProblem = (
   inputs: NonNullable<RoutineFile['inputs']>,
@@ -178,8 +177,9 @@ const inputProblem = (
   for (const [index, input] of inputs.entries()) {
     const at = `inputs[${String(index)}]`;
     if (seen.has(input.name)) return ['routine_contradiction', `${at}.name`];
+    // A list is no reference to a field: it reads nothing of an entry.
     const refs = Object.entries(input.params ?? {}).filter(([, value]) =>
-      isFieldRef(value),
+      isParamField(value),
     );
     if (input.forEach === undefined) {
       const [ref] = refs;
@@ -240,6 +240,15 @@ const freezeBlocks = (
     ),
   );
 
+// A list and a field as frozen copies, so that the routine shares nothing
+// a caller could change.
+const freezeParam = (value: RoutineParamValue): RoutineParamValue =>
+  isParamList(value)
+    ? Object.freeze([...value])
+    : isParamField(value)
+      ? Object.freeze({ field: value.field })
+      : value;
+
 const freezeInput = (
   input: NonNullable<RoutineFile['inputs']>[number],
 ): RoutineInput =>
@@ -251,7 +260,7 @@ const freezeInput = (
       Object.fromEntries(
         Object.entries(input.params ?? {}).map(([key, value]) => [
           key,
-          isFieldRef(value) ? Object.freeze({ field: value.field }) : value,
+          freezeParam(value),
         ]),
       ),
     ),

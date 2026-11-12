@@ -29,6 +29,7 @@
 import type { RunCallOutcome, Trigger } from '@ecclium/mcp-churchtools-core';
 import type { ErrorCode, Logger } from '@ecclium/mcp-churchtools-plugin-api';
 
+import { isParamField, isParamList } from '../routine/schema.js';
 import type { PreparedInput, PreparedRun } from './prepare.js';
 
 /** The limits of the reads of a run, frozen. */
@@ -119,9 +120,9 @@ const entriesOf = (
         return Array.isArray(items) ? (items as readonly unknown[]) : [];
       });
 
-// The input of one call: relative days as days, a field of the entry of
-// the source in place of `{ field }`. Undefined when the entry lacks a
-// value a call could take.
+// The input of one call: relative days as days, a list as a list, a field
+// of the entry of the source in place of `{ field }`. Undefined when the
+// entry lacks a value a call could take.
 const inputOf = (
   prepared: PreparedInput,
   trigger: Trigger,
@@ -129,7 +130,11 @@ const inputOf = (
 ): Readonly<Record<string, unknown>> | undefined => {
   const input: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(prepared.input.params)) {
-    if (typeof value === 'object') {
+    if (isParamList(value)) {
+      // A list of its own, as the input of a client is: the list of the
+      // routine is frozen and shared by every run.
+      input[name] = [...value];
+    } else if (isParamField(value)) {
       const taken = ownData(entry, value.field);
       if (typeof taken !== 'string' && typeof taken !== 'number') {
         return undefined;
