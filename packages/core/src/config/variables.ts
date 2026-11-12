@@ -620,8 +620,9 @@ export const variables: readonly Variable[] = Object.freeze([
     stdioOnly: false,
     runner: true,
   }),
-  // The folder of the routines (ADR 0033). Only the runner reads the
-  // routines; the start of the server checks the form of the path.
+  // The folder of the routines (ADR 0033). The runner reads the routines,
+  // and `ecclium policy init --routine` the one it proposes an entry for;
+  // the start of the server checks the form of the path.
   row({
     name: 'ECCLIUM_ROUTINES_DIR',
     kind: 'path',
