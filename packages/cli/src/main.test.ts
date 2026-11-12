@@ -699,6 +699,22 @@ describe('ecclium policy init in the command line', () => {
     expect(result.stderr).toBe(`${internalErrorText}\n`);
   });
 
+  it('hands --routine and --credential to the command', async () => {
+    // A valid call reaches the loader, which only the command calls.
+    const result = await runInit(
+      ['policy', 'init', '--routine', 'dienstplan', '--credential', 'berichte'],
+      {
+        policyInit: {
+          load: () => {
+            throw new Error(plain());
+          },
+        },
+      },
+    );
+    expect(result.code).toBe(exitCodes.internal);
+    expect(result.stderr).toBe(`${internalErrorText}\n`);
+  });
+
   it('takes --interactive, --routine and --credential only for policy init', () => {
     for (const option of [
       ['--interactive'],
