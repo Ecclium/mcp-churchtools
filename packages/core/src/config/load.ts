@@ -165,9 +165,9 @@ export interface EccliumConfig {
   readonly markerKey: KeyMaterial | undefined;
   /**
    * The folder of the routines, an absolute normalised path, or undefined
-   * when the variable is not set (ADR 0033). The runner reads the routines
-   * in it, and `ecclium policy init --routine` the one it proposes an
-   * entry for; the start checks the form of the path alone.
+   * when the variable is not set (ADR 0033). The runner and `ecclium
+   * policy init --routine` load the routines in it; the start checks the
+   * form of the path alone.
    */
   readonly routinesDir: string | undefined;
   /**
