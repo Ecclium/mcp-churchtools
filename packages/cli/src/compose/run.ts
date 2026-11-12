@@ -129,7 +129,11 @@ export function composeRun(options: RunComposeOptions): ComposedRun {
     ...(provider === undefined ? {} : { provider }),
   });
   // The results of the reads of this run, each with the mark of the
-  // pipeline, whose contact values the section of the run may hold.
+  // pipeline, whose contact values the section of the run may hold. The
+  // checks of the core put no value of their reads into the section but
+  // titles, each checked without known contact values, so their reads
+  // make no contact value known to the write guard either (ADR 0033).
+  const keepsData = options.run.loaded.routine.checks === undefined;
   const data: unknown[] = [];
   const read: RunRead = async (tool, input, maxEntries, signal) => {
     const outcome = await pipeline.callForRun(tool, input, {
@@ -140,7 +144,7 @@ export function composeRun(options: RunComposeOptions): ComposedRun {
       run,
       maxEntries,
     });
-    if (outcome.ok) data.push(outcome.data);
+    if (outcome.ok && keepsData) data.push(outcome.data);
     return outcome;
   };
   // The tools of every routine of the account, not only of this one: an
