@@ -9,25 +9,30 @@
  * the schedule `30 * * * *` fires 25 times between two midnights of UTC,
  * because the time the change skips runs at the end of its gap.
  *
- * Why a whole year: the day of the month, the month and the changes of
- * summer time repeat within a year at the latest. The count starts at the
- * first trigger after a time, so a schedule for 29 February is counted on
- * that day. It reads every trigger of the year through the module of the
- * triggers, which keeps the one rule for the changes of summer time; an
- * hourly schedule takes about two seconds.
+ * Why a year and a week of whole days: the count starts at midnight UTC
+ * of the day of the first trigger after a time, so that this day counts
+ * whole, and a schedule for 29 February is counted on that day. A day of
+ * the month and a month come again within a year, a change of summer time
+ * set to the last Sunday of a month within 371 days. A coincidence of both
+ * in a later year, such as a change on 29 March, the count does not see;
+ * then one write more than the limit goes to the queue. It reads every
+ * trigger through the module of the triggers, which keeps the one rule
+ * for the changes of summer time; an hourly schedule takes about two
+ * seconds.
  *
  * @packageDocumentation
  */
 import { readTriggers, triggerTimeRange } from './triggers.js';
 
-/** The days counted from the first trigger on. */
-export const triggersPerDaySpanDays = 366;
+/** The whole UTC days counted from the day of the first trigger on. */
+export const triggersPerDaySpanDays = 373;
 
 const dayMs = 86_400_000;
 
 /**
- * The most triggers of a schedule on one UTC day, from the first trigger
- * after a time to the end of {@link triggersPerDaySpanDays} days after it.
+ * The most triggers of a schedule on one UTC day, over
+ * {@link triggersPerDaySpanDays} whole UTC days from the day of the first
+ * trigger after a time.
  *
  * @param schedule - A schedule that passes the check of its form.
  * @param timeZone - `UTC` or a name of the time zone database, as
@@ -48,10 +53,15 @@ export function mostTriggersPerUtcDay(
   from: number,
 ): number {
   const triggers = readTriggers(schedule, timeZone);
-  let at = triggers.next(from);
+  const first = triggers.next(from);
   // The module of the triggers takes no time from 2100 on.
+  if (first >= triggerTimeRange.to) return 0;
+  // From midnight UTC of the day of the first trigger, so that the day
+  // counts whole; a time before 2000 the module of the triggers refuses.
+  const start = Math.floor(first / dayMs) * dayMs;
+  let at = triggers.next(Math.max(start - 1, triggerTimeRange.from));
   const end = Math.min(
-    at + triggersPerDaySpanDays * dayMs,
+    start + triggersPerDaySpanDays * dayMs,
     triggerTimeRange.to,
   );
   let day = Math.floor(at / dayMs);

@@ -55,7 +55,29 @@ describe('mostTriggersPerUtcDay', () => {
     expect(
       mostTriggersPerUtcDay('0 6 29 2 *', 'UTC', at('2026-11-12T00:00:00Z')),
     ).toBe(1);
-    expect(triggersPerDaySpanDays).toBe(366);
+    expect(triggersPerDaySpanDays).toBe(373);
+  });
+
+  it('counts the day of the first trigger whole', () => {
+    // Started at noon on 1 March: the morning of that day counts, and the
+    // next 1 March lies more than a year later in a leap year.
+    expect(
+      mostTriggersPerUtcDay(
+        '0 0-23/2 1 3 *',
+        'UTC',
+        at('2027-03-01T11:30:00Z'),
+      ),
+    ).toBe(12);
+  });
+
+  it('sees the change to summer time a year and a week ahead', () => {
+    // 25.03.2029 and 31.03.2030 lie 371 days apart. Started on the day of
+    // the change after its gap, and on the day after it.
+    for (const from of ['2029-03-25T00:45:00Z', '2029-03-26T00:00:00Z']) {
+      expect(
+        mostTriggersPerUtcDay('30 0-3 * * *', 'Europe/Zurich', at(from)),
+      ).toBe(5);
+    }
   });
 
   it('counts nothing from 2100 on', () => {
