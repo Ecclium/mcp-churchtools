@@ -9,8 +9,9 @@
  * Why only the entry: the text is one item of the list `unattended`,
  * which the operator adds to the file of the policy. On its own it is no
  * policy the loader takes, so it never takes the place of the file in
- * force by mistake. That would drop the part `interactive`, and without
- * its targets the server would write whatever its account may.
+ * force unnoticed. That would drop the part `interactive`, and without
+ * its targets the server would allow every confirmed write its account
+ * may.
  *
  * The limits are as narrow as the routine allows: a run writes once, so
  * `maxPerRun` is 1, and `maxPerDay` is the most triggers of the schedule
@@ -119,24 +120,33 @@ const noteOrder: readonly RoutineProposalNote['kind'][] = Object.freeze([
   'checks',
 ]);
 
-// One note as a comment, in the words of the operator.
-const noteText = (note: RoutineProposalNote): string => {
+// A whole number with an apostrophe between groups of three digits, as
+// the texts of Ecclium write numbers, such as 1'000.
+const grouped = (value: number): string =>
+  String(value).replaceAll(/\B(?=(?:\d{3})+$)/gu, "'");
+
+// One note as a comment, in the words of the operator; what it says about
+// entries of the policy in force depends on whether the proposal has one.
+const noteText = (note: RoutineProposalNote, withEntry: boolean): string => {
   switch (note.kind) {
     case 'category_missing':
-      return '# Eine Kategorie mit dem Namen aus output.scope.category nennt ChurchTools dem Konto nicht: Es gibt sie nicht, oder das Konto darf sie nicht sehen. Darum kein Eintrag.';
+      return '# Eine Kategorie mit dem Namen aus output.scope.category nennt ChurchTools dem Konto nicht: Es gibt sie nicht, oder das Konto darf sie nicht sehen. Darum kein Eintrag. Prüfen Sie den Namen in der Routine und die Rechte des Kontos in ChurchTools und rufen Sie den Befehl erneut auf.';
     case 'page_missing':
       return '# In der Kategorie steht keine Seite mit dem Namen aus output.scope.page, oder das Konto darf die Seiten der Kategorie nicht sehen. Ein Lauf legt keine Seite an: Legen Sie die Seite von Hand an und rufen Sie den Befehl erneut auf. Darum kein Eintrag.';
     case 'page_ambiguous':
       return '# Mehr als eine Seite trägt den Namen aus output.scope.page. Darum kein Eintrag. Tragen Sie die richtige Seite mit ihrer GUID von Hand ein, ct_wiki_pages_list zeigt sie.';
     case 'list_too_long':
-      return `# Die Liste der Kategorien oder der Seiten der Kategorie ist länger als die ${String(note.entries)} Einträge, die Ecclium liest. Darum kein Eintrag. Tragen Sie die Seite von Hand ein.`;
+      return `# Die Liste der Seiten der Kategorie ist länger als die ${grouped(note.entries)} Einträge, die Ecclium liest. Darum kein Eintrag. Tragen Sie die Seite von Hand ein.`;
     case 'names_changed':
-      return '# Mindestens ein Name kam verändert an, ohne unsichtbare Zeichen oder mit einem maskierten Teil, und zählt darum nicht als Treffer. Ist das Ziel darunter, tragen Sie es von Hand ein.';
+      return '# Mindestens ein Name kam verändert an, weil Ecclium unsichtbare Zeichen entfernt oder einen Teil maskiert hat, und zählt darum nicht als Treffer. Ist das Ziel darunter, tragen Sie es von Hand ein.';
     case 'existing': {
       const which =
         note.count === 1 ? 'einen Eintrag' : `${String(note.count)} Einträge`;
       const them = note.count === 1 ? 'ihn' : 'sie';
-      return `# Die geltende Richtlinie hat schon ${which} für diese Routine${note.otherCredential ? ', mit einem anderen Konto' : ''}. Ersetzen Sie ${them} durch diesen Vorschlag, statt den Vorschlag dazuzufügen: Alle Einträge einer Routine nennen dasselbe Konto und dieselbe Stufe für das Modell, sonst startet der Runner nicht.`;
+      const has = `# Die geltende Richtlinie hat schon ${which} für diese Routine${note.otherCredential ? ', mit einem anderen Konto' : ''}.`;
+      return withEntry
+        ? `${has} Ersetzen Sie ${them} durch diesen Vorschlag, statt den Vorschlag dazuzufügen: Alle Einträge einer Routine nennen dasselbe Konto und dieselbe Stufe für das Modell. Mit zwei Stufen nimmt Ecclium die Richtlinie nicht an, mit zwei Konten startet der Runner nicht.`
+        : `${has} Dieser Vorschlag enthält keinen Eintrag: Lassen Sie ${them} stehen, bis ein Vorschlag mit Eintrag ${them} ersetzt.`;
     }
     case 'redaction_standard':
       return '# Die Routine wünscht für das Modell die Stufe standard. Ecclium schlägt sie nie vor, ohne modelRedaction gilt strict. Ob die Richtlinie standard erlaubt, entscheiden Sie: Setzen Sie dann modelRedaction: standard in jeden Eintrag der Routine.';
@@ -188,26 +198,32 @@ export function renderRoutineProposal(input: RoutineProposalInput): string {
   const lines = [
     '# Vorschlag von «ecclium policy init --routine» für einen Eintrag im Teil unattended der Richtlinie.',
     '# Grundlage: die Routine aus ECCLIUM_ROUTINES_DIR und die Namen, die ChurchTools dem Konto aus --credential nennt.',
-    '# Fügen Sie den Eintrag in die Liste unattended der Datei aus ECCLIUM_POLICY_FILE ein, statt die Datei zu ersetzen. Allein ist er keine Richtlinie: Ohne den Teil interactive erlaubte der Server jeden bestätigten Schreibvorgang, den sein Konto darf, und ohne interactive.inquiriesTo hängt ein Lauf keinen Abschnitt an.',
   ];
   if (fits) {
     lines.push(
+      '# Fügen Sie den Eintrag in die Liste unattended der Datei aus ECCLIUM_POLICY_FILE ein, statt die Datei zu ersetzen, und rücken Sie ihn so weit ein wie die anderen Punkte der Liste. Fehlt die Liste, beginnen Sie sie mit der Zeile unattended:. Allein ist der Eintrag keine Richtlinie: Ohne den Teil interactive erlaubte der Server jeden bestätigten Schreibvorgang, den sein Konto darf, und ohne interactive.inquiriesTo hängt ein Lauf keinen Abschnitt an.',
       '# maxPerRun ist 1, weil ein Lauf höchstens einmal schreibt. maxPerDay ist die höchste Zahl der Auslösungen des Zeitplans an einem UTC-Tag, gerechnet in der Zone aus ECCLIUM_TIME_ZONE, und eins mehr für einen Lauf von Hand.',
+    );
+  } else {
+    lines.push(
+      '# Dieser Vorschlag enthält keinen Eintrag. Die Kommentare darunter sagen, warum.',
     );
   }
   for (const kind of noteOrder) {
     const note = input.notes.find((candidate) => candidate.kind === kind);
-    if (note !== undefined) lines.push(noteText(note));
+    if (note !== undefined) lines.push(noteText(note, fits));
   }
   if (page !== undefined && !fits) {
     lines.push(
-      '# Kennung oder Name der Seite passen nicht in die Richtlinie. Darum kein Eintrag.',
+      '# Die Kennung der Kategorie, die GUID oder der Name der Seite hat eine Form, die die Richtlinie nicht annimmt. Darum kein Eintrag. Prüfen Sie die Seite mit ct_wiki_pages_list und den Namen aus output.scope.page.',
     );
   }
   if (fits) {
     lines.push(
-      `- routine: ${routine}`,
-      `  credential: ${credential}`,
+      // Quoted as well: an ID such as 2026 or true would read as a number
+      // or a switch, and the policy takes only a text.
+      `- routine: ${yamlQuoted(routine)}`,
+      `  credential: ${yamlQuoted(credential)}`,
       `  target: { kind: wiki_page, categoryId: ${String(page.categoryId)}, guid: ${yamlQuoted(page.guid.toLowerCase())}, name: ${yamlQuoted(page.name)} }`,
       `  tools: [${tool}]`,
       '  maxPerRun: 1',

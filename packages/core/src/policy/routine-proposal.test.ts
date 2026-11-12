@@ -99,6 +99,20 @@ describe('renderRoutineProposal', () => {
     expect(text.split('\n').every(shown)).toBe(true);
   });
 
+  it('quotes a routine and an alias that YAML would read as another type', () => {
+    for (const [routine, credential] of [
+      ['true', '42'],
+      ['2026', 'null'],
+      ['1e3', '0x1f'],
+    ] as const) {
+      const text = renderRoutineProposal(input({ routine, credential }));
+      expect(inPolicy(text).unattended[0]).toMatchObject({
+        routine,
+        credential,
+      });
+    }
+  });
+
   it('gives maxPerDay one more than the most triggers of a day', () => {
     const policy = inPolicy(
       renderRoutineProposal(input({ triggersPerDay: 25 })),
@@ -134,6 +148,10 @@ describe('renderRoutineProposal', () => {
       comments(text),
     );
     expect(text).not.toContain('maxPerRun ist 1');
+    expect(text).not.toContain('Fügen Sie den Eintrag');
+    expect(comments(text)[2]).toBe(
+      '# Dieser Vorschlag enthält keinen Eintrag. Die Kommentare darunter sagen, warum.',
+    );
     expect(comments(text).at(-1)).toContain('output.scope.category');
   });
 
@@ -156,9 +174,11 @@ describe('renderRoutineProposal', () => {
     expect(notes[0]).toContain('output.scope.category');
     expect(notes[1]).toContain('Legen Sie die Seite von Hand an');
     expect(notes[2]).toContain('Mehr als eine Seite');
-    expect(notes[3]).toContain('länger als die 1000 Einträge');
+    expect(notes[3]).toContain("länger als die 1'000 Einträge");
     expect(notes[4]).toContain('verändert an');
-    expect(notes[5]).toContain('hat schon einen Eintrag für diese Routine.');
+    expect(notes[5]).toBe(
+      '# Die geltende Richtlinie hat schon einen Eintrag für diese Routine. Dieser Vorschlag enthält keinen Eintrag: Lassen Sie ihn stehen, bis ein Vorschlag mit Eintrag ihn ersetzt.',
+    );
     expect(notes[6]).toContain('modelRedaction: standard');
     expect(notes[7]).toContain('feste Prüfungen');
     expect(notes.every(shown)).toBe(true);
@@ -174,6 +194,17 @@ describe('renderRoutineProposal', () => {
     ).slice(4);
     expect(note).toContain(
       'hat schon 2 Einträge für diese Routine, mit einem anderen Konto. Ersetzen Sie sie',
+    );
+    const [without] = comments(
+      renderRoutineProposal(
+        input({
+          page: undefined,
+          notes: [{ kind: 'existing', count: 2, otherCredential: false }],
+        }),
+      ),
+    ).slice(3);
+    expect(without).toBe(
+      '# Die geltende Richtlinie hat schon 2 Einträge für diese Routine. Dieser Vorschlag enthält keinen Eintrag: Lassen Sie sie stehen, bis ein Vorschlag mit Eintrag sie ersetzt.',
     );
   });
 
@@ -197,7 +228,7 @@ describe('renderRoutineProposal', () => {
   ])('writes no entry for %s', (_case, page) => {
     const text = renderRoutineProposal(input({ page }));
     expect(comments(text).at(-1)).toBe(
-      '# Kennung oder Name der Seite passen nicht in die Richtlinie. Darum kein Eintrag.',
+      '# Die Kennung der Kategorie, die GUID oder der Name der Seite hat eine Form, die die Richtlinie nicht annimmt. Darum kein Eintrag. Prüfen Sie die Seite mit ct_wiki_pages_list und den Namen aus output.scope.page.',
     );
     expect(text).not.toContain('- routine:');
     expect(text.split('\n').every(shown)).toBe(true);
