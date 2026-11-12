@@ -97,11 +97,13 @@ export function worseOf(
 
 // The codes of the engine, which say that the data or the answer of the
 // model did not fit: limits of the reads, a person who is not one of the
-// data, a breach of the content policy.
+// data, a page without the date of its last change for the checks of the
+// core, a breach of the content policy.
 const engineCodes: readonly string[] = Object.freeze([
   'run_calls_exhausted',
   'run_items_exhausted',
   'run_person_unknown',
+  'run_page_date_missing',
   'run_content_refused',
 ]);
 

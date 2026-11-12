@@ -106,6 +106,24 @@ export const checkBlockFields: Readonly<
   }),
 });
 
+/**
+ * The read tools each check of the core needs, by its name. The
+ * preparation checks them like the tools of inputs, and they count for the
+ * account of the routine (ADR 0032).
+ */
+export const checkTools: Readonly<Record<RoutineCheckName, readonly string[]>> =
+  Object.freeze({
+    stalePages: Object.freeze([
+      'ct_wiki_categories_list',
+      'ct_wiki_pages_list',
+    ]),
+    brokenLinks: Object.freeze([
+      'ct_wiki_categories_list',
+      'ct_wiki_pages_list',
+      'ct_wiki_page_get',
+    ]),
+  });
+
 const refuse = (code: RoutineCheckCode, field?: string): RoutineCheckResult =>
   Object.freeze({
     __proto__: null,

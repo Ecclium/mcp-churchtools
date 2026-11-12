@@ -7,12 +7,16 @@
  * that names a tool that is not a read tool stable for routines, a
  * parameter the tool does not know, a field an entry does not have, a
  * target the policy does not list, two accounts or a model without a
- * provider does not start. Each problem is reported with its code and the
+ * provider does not start. A routine with checks of the core needs no
+ * model, but the tools of its checks must be read tools stable for
+ * routines like the tools of inputs. Each problem is reported with its code and the
  * path of its field, never with a value of the routine.
  *
  * What it settles for the run: the level of redaction of the data for the
  * model, which only the policy may lower, the entry of the policy for the
- * target and the alias of the account the run reads and writes with.
+ * target and the alias of the account the run reads and writes with. The
+ * checks of the core read in the level `standard`, because no model sees
+ * their data (ADR 0033).
  *
  * @packageDocumentation
  */
@@ -25,11 +29,11 @@ import {
 } from '@ecclium/mcp-churchtools-core';
 
 import type { LoadedRoutine } from '../routine/loader.js';
+import { checkTools } from '../routine/check.js';
 import { isParamField, type RoutineInput } from '../routine/schema.js';
 
 /** Why a routine does not start, frozen. */
 export const runPrepareCodes = Object.freeze([
-  'run_checks_pending',
   'run_tool_unknown',
   'run_tool_unfit',
   'run_param_unknown',
@@ -71,10 +75,13 @@ export interface PreparedRun {
   readonly loaded: LoadedRoutine;
   /** The inputs in their order, each with the facts of its tool. */
   readonly inputs: readonly PreparedInput[];
-  /** The level of the data for the model. */
+  /**
+   * The level of the data for the model, `standard` for the checks of the
+   * core, which give their data to no model.
+   */
   readonly redaction: ModelRedaction;
-  /** The alias of the model. */
-  readonly model: string;
+  /** The alias of the model, absent for a routine with checks. */
+  readonly model?: string;
   /** The entries of the routine in the unattended part of the policy. */
   readonly entries: readonly UnattendedEntry[];
   /** The entry that allows the target, for a target in ChurchTools. */
@@ -97,7 +104,10 @@ export type RunPrepareResult =
   | {
       readonly ok: false;
       readonly code: RunPrepareCode;
-      /** The path of the field, such as `inputs[1].params.eventId`. */
+      /**
+       * The path of the field, such as `inputs[1].params.eventId` or
+       * `checks[0]`.
+       */
       readonly field?: string;
     };
 
@@ -223,10 +233,21 @@ export function prepareRun(
   context: RunPrepareContext,
 ): RunPrepareResult {
   const { routine } = loaded;
-  // The checks of the core come with the routine wiki-hygiene; until then
-  // such a routine would fill its blocks with nothing.
-  if (routine.generate === undefined) {
-    return refuse('run_checks_pending', 'checks');
+  // Only a read tool that a routine may rely on and that may run without
+  // a person; the pipeline holds the same for every read of a run.
+  const unfit = (facts: RunToolFacts): boolean =>
+    facts.capability !== 'read' ||
+    !facts.routineStable ||
+    facts.unattended !== 'policy';
+
+  // The tools of the checks of the core, as strictly as those of inputs.
+  for (const [index, check] of (routine.checks ?? []).entries()) {
+    const at = `checks[${String(index)}]`;
+    for (const name of checkTools[check.check]) {
+      const facts = context.tool(name);
+      if (facts === undefined) return refuse('run_tool_unknown', at);
+      if (unfit(facts)) return refuse('run_tool_unfit', at);
+    }
   }
 
   const inputs: PreparedInput[] = [];
@@ -234,15 +255,7 @@ export function prepareRun(
     const at = `inputs[${String(index)}]`;
     const facts = context.tool(input.tool);
     if (facts === undefined) return refuse('run_tool_unknown', `${at}.tool`);
-    // Only a read tool that a routine may rely on and that may run without
-    // a person; the pipeline holds the same for every read of a run.
-    if (
-      facts.capability !== 'read' ||
-      !facts.routineStable ||
-      facts.unattended !== 'policy'
-    ) {
-      return refuse('run_tool_unfit', `${at}.tool`);
-    }
+    if (unfit(facts)) return refuse('run_tool_unfit', `${at}.tool`);
     const source = inputs.find(
       (prepared) => prepared.input.name === input.forEach,
     )?.facts;
@@ -273,8 +286,10 @@ export function prepareRun(
     return refuse('run_target_unlisted', 'output.scope');
   }
 
+  // The loader holds that a routine has exactly one of a step with a
+  // model and checks of the core.
   const { generate } = routine;
-  if (!context.models.has(generate.model)) {
+  if (generate !== undefined && !context.models.has(generate.model)) {
     return refuse('run_model_unknown', 'generate.model');
   }
 
@@ -284,8 +299,15 @@ export function prepareRun(
     run: Object.freeze({
       loaded,
       inputs: Object.freeze(inputs),
-      redaction: modelRedactionOf(entries, generate.redaction),
-      model: generate.model,
+      // The checks of the core give their data to no model, the tools of
+      // the wiki give no person, and in `strict` the masking would take a
+      // part of a GUID in a link for a phone number (decided on
+      // 12.11.2026, ADR 0033).
+      redaction:
+        generate === undefined
+          ? 'standard'
+          : modelRedactionOf(entries, generate.redaction),
+      ...(generate === undefined ? {} : { model: generate.model }),
       entries: Object.freeze(entries),
       ...(target === undefined ? {} : { target }),
       ...(credential === undefined ? {} : { credential }),

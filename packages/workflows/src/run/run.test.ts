@@ -369,14 +369,14 @@ describe('preparing a run', () => {
     });
   });
 
-  it('refuses a routine with the checks of the core until they are built', () => {
+  // A routine with the checks of the core, without inputs and a model.
+  const checksOf = (
+    checks: readonly unknown[] = [{ check: 'brokenLinks', maxItems: 5 }],
+  ): LoadedRoutine => {
     const rest: Record<string, unknown> = { ...routineValue() };
     delete rest['generate'];
     delete rest['inputs'];
-    const checked = checkRoutine({
-      ...rest,
-      checks: [{ check: 'brokenLinks', maxItems: 5 }],
-    });
+    const checked = checkRoutine({ ...rest, output: wikiOutput, checks });
     if (!checked.ok) throw new Error(checked.code);
     const parsed = parseTemplate(
       '{{#brokenLinks}}\n- {{page}}\n{{/brokenLinks}}\n',
@@ -388,14 +388,82 @@ describe('preparing a run', () => {
       },
     );
     if (!parsed.ok) throw new Error('invalid template');
-    const checks: LoadedRoutine = {
-      routine: checked.routine,
-      template: parsed.template,
-    };
-    expect(prepareRun(checks, context())).toEqual({
+    return { routine: checked.routine, template: parsed.template };
+  };
+  const wikiTools: Readonly<Record<string, RunToolFacts>> = {
+    ct_wiki_categories_list: facts({ params: ['page'], list: 'categories' }),
+    ct_wiki_pages_list: facts({
+      params: ['categoryId', 'page'],
+      list: 'pages',
+    }),
+    ct_wiki_page_get: facts({
+      params: ['categoryId', 'guid', 'part', 'version'],
+      list: undefined,
+      paged: false,
+    }),
+  };
+  const wikiContext = (
+    over: Readonly<Record<string, RunToolFacts | undefined>> = {},
+    policy = policyOf([entry()]),
+  ) => ({
+    tool: (name: string) =>
+      name in over ? over[name] : (wikiTools[name] ?? tools[name]),
+    policy,
+    // No model at all: a routine with checks needs none.
+    models: new Set<string>(),
+  });
+
+  it('prepares a routine with the checks of the core without a model, in standard', () => {
+    const prepared = prepareRun(
+      checksOf(),
+      // Even an entry that asks for strict leaves the checks in standard:
+      // they give their data to no model.
+      wikiContext(),
+    );
+    if (!prepared.ok) throw new Error(prepared.code);
+    expect(prepared.run.inputs).toEqual([]);
+    expect(prepared.run).not.toHaveProperty('model');
+    expect(prepared.run.redaction).toBe('standard');
+    expect(prepared.run.credential).toBe('runner');
+    expect(prepared.run.target?.target.name).toBe('Berichte');
+  });
+
+  it('refuses a check whose tool the server lacks or that does not fit', () => {
+    expect(
+      prepareRun(checksOf(), wikiContext({ ct_wiki_page_get: undefined })),
+    ).toEqual({ ok: false, code: 'run_tool_unknown', field: 'checks[0]' });
+    expect(
+      prepareRun(
+        checksOf([
+          { check: 'stalePages', olderThanDays: 30, maxItems: 5 },
+          { check: 'brokenLinks', maxItems: 5 },
+        ]),
+        wikiContext({
+          ct_wiki_page_get: facts({ routineStable: false }),
+        }),
+      ),
+    ).toEqual({ ok: false, code: 'run_tool_unfit', field: 'checks[1]' });
+    // stalePages reads no page, so a missing ct_wiki_page_get keeps no
+    // routine with only stalePages from starting.
+    expect(
+      prepareRun(
+        checksOf([{ check: 'stalePages', olderThanDays: 30, maxItems: 5 }]),
+        wikiContext({ ct_wiki_page_get: undefined }),
+      ).ok,
+    ).toBe(true);
+    expect(
+      prepareRun(
+        checksOf(),
+        wikiContext({ ct_wiki_pages_list: facts({ unattended: 'never' }) }),
+      ),
+    ).toEqual({ ok: false, code: 'run_tool_unfit', field: 'checks[0]' });
+  });
+
+  it('still asks a target in the wiki for its entry', () => {
+    expect(prepareRun(checksOf(), wikiContext({}, policyOf()))).toEqual({
       ok: false,
-      code: 'run_checks_pending',
-      field: 'checks',
+      code: 'run_target_unlisted',
+      field: 'output.scope',
     });
   });
 });
