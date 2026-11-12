@@ -108,7 +108,7 @@ describe('renderRoutineProposal', () => {
   });
 
   it('writes the GUID in small letters and a name with escapes', () => {
-    const name = 'Bericht "neu" \\ «Gemeinde» Zürich \u{1f600}';
+    const name = 'Bericht "neu" \\ «Gemeinde»\u00a0Zürich \u{1f600}';
     const text = renderRoutineProposal(
       input({
         page: { categoryId: 12, guid: guid.toUpperCase(), name },
