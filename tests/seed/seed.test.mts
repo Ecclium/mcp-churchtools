@@ -412,6 +412,7 @@ describe('anlegen', () => {
       events: { e1: 'angelegt', e2: 'angelegt' },
       einteilungen: {
         e1s1pD: 'angelegt',
+        e1s1pA: 'angelegt',
         e2s1pA: 'angelegt',
         e2s2pB: 'angelegt',
         e2s2pC: 'angelegt',
@@ -462,12 +463,13 @@ describe('anlegen', () => {
       'PUT',
       'PUT',
       'PUT',
+      'PUT',
     ]);
     expect(
       assignments.map(
         (item) => (item.body as Record<string, unknown>)['isAccepted'],
       ),
-    ).toEqual([false, true, false, false]);
+    ).toEqual([false, true, true, false, false]);
     expect(
       writes.some((item) => /invite|meetingrequests/.test(item.path)),
     ).toBe(false);
@@ -584,6 +586,7 @@ describe('anlegen', () => {
     });
     expect(result.result['einteilungen']).toEqual({
       e1s1pD: 'antwort unerwartet',
+      e1s1pA: 'antwort unerwartet',
       e2s1pA: 'antwort unerwartet',
       e2s2pB: 'antwort unerwartet',
       e2s2pC: 'antwort unerwartet',
