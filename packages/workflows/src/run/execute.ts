@@ -48,9 +48,10 @@ import {
   type TokenUsage,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
-import type { RoutineOutput } from '../routine/schema.js';
+import { checkBlockFields } from '../routine/check.js';
+import type { RoutineCheckName, RoutineOutput } from '../routine/schema.js';
 import { checkAnswer, type FilledBlocks } from './answer.js';
-import { type CheckContext, runChecks } from './checks.js';
+import { type CheckContext, hiddenTitle, runChecks } from './checks.js';
 import { readInputs, type RunRead } from './inputs.js';
 import { outputSpecOf } from './output-spec.js';
 import type { PreparedRun } from './prepare.js';
@@ -213,6 +214,42 @@ export async function executeRun(
     });
   };
 
+  // The blocks of the checks of the core, each entry fitted to its line of
+  // the template: an entry that the content policy refuses there, alone in
+  // its block, gives way to the fixed text in each of its texts, so that
+  // a title next to a word of the template, such as one that ends in
+  // «mailto» before a colon, cannot fail every run (ADR 0033). A date
+  // stays; the core wrote it.
+  const fitTemplate = (
+    blocks: FilledBlocks,
+    contacts: ReadonlySet<string>,
+  ): FilledBlocks => {
+    const period = trigger.period[routine.output.period];
+    const fits = (candidate: FilledBlocks): boolean =>
+      checkRunSection(
+        renderSection(loaded.template, candidate, period),
+        contacts,
+      ).ok;
+    if (fits(blocks)) return blocks;
+    const fitted: Record<string, readonly Readonly<Record<string, string>>[]> =
+      {};
+    for (const [name, entries] of Object.entries(blocks)) {
+      fitted[name] = Object.freeze(
+        entries.map((entry) => {
+          if (fits({ [name]: [entry] })) return entry;
+          const fields = checkBlockFields[name as RoutineCheckName];
+          const hidden: Record<string, string> = {};
+          for (const [field, value] of Object.entries(entry)) {
+            hidden[field] =
+              fields[field]?.type === 'date' ? value : hiddenTitle;
+          }
+          return Object.freeze(hidden);
+        }),
+      );
+    }
+    return Object.freeze(fitted);
+  };
+
   // A routine with checks of the core: no inputs and no model. The checks
   // read through the same port and fill the blocks; a report may hold only
   // the contact values of the policy (ADR 0033).
@@ -231,10 +268,11 @@ export async function executeRun(
     if (!checked.ok) {
       return failed('input', checked.code, !checked.transient);
     }
+    const contacts = runContactKeys(ports.policy, []);
     return rendered(
-      checked.blocks,
+      fitTemplate(checked.blocks, contacts),
       checked.entries,
-      runContactKeys(ports.policy, []),
+      contacts,
       checked.calls,
     );
   }

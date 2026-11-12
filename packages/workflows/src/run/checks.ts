@@ -32,8 +32,16 @@
  *
  * @packageDocumentation
  */
-import { checkRunText, runDataText } from '@ecclium/mcp-churchtools-core';
-import type { ErrorCode, Logger } from '@ecclium/mcp-churchtools-plugin-api';
+import {
+  checkRunText,
+  escapeRunText,
+  runDataText,
+} from '@ecclium/mcp-churchtools-core';
+import {
+  type ErrorCode,
+  type Logger,
+  wikiPageGuidPattern,
+} from '@ecclium/mcp-churchtools-plugin-api';
 
 import { routineLimits, type RoutineCheck } from '../routine/schema.js';
 import type { FilledBlocks } from './answer.js';
@@ -55,6 +63,19 @@ export const hiddenTitle = '(Titel nicht darstellbar)';
 
 /** The name of the main page of a category in a report. */
 export const mainPageName = 'Hauptseite';
+
+/**
+ * The text in place of the GUID of a link the content policy refuses,
+ * since parts of a GUID can look like a phone number.
+ */
+export const hiddenGuid = '(Seite über ihre GUID verlinkt)';
+
+/**
+ * The most bytes the values of one block take, escaped as the template
+ * sets them, so that two blocks and the template stay well within the
+ * longest text of a page the content policy takes.
+ */
+export const maxBlockBytes = 24_000;
 
 /** What the checks filled, or why the run ends. */
 export type ChecksResult =
@@ -138,13 +159,34 @@ export interface WikiLink {
    * for a link to the category alone, a GUID or a title.
    */
   readonly page: string;
+  /**
+   * The page without signs that end a sentence, such as a full stop after
+   * an address in running text, when it has such signs at its end.
+   */
+  readonly trimmed?: string;
 }
 
 const escapeForPattern = (text: string): string =>
   text.replaceAll(/[.*+?^${}()|[\]\\/]/gu, '\\$&');
 
-// The signs that end a segment of an address in Markdown or HTML.
-const segmentEnd = String.raw`\s)"'<>\]#?/`;
+// A text without regard to case: each letter as both of its cases.
+const anyCase = (text: string): string =>
+  Array.from(text)
+    .map((sign) =>
+      /^[a-z]$/iu.test(sign)
+        ? `[${sign.toLowerCase()}${sign.toUpperCase()}]`
+        : escapeForPattern(sign),
+    )
+    .join('');
+
+// One sign of a segment of an address. The web interface leaves brackets
+// and apostrophes in a title as they are, so brackets count when they pair
+// up (F55).
+const segmentSign = String.raw`[^\s"<>\[\]#?/()]`;
+const segment = String.raw`(?:${segmentSign}|\(${segmentSign}*\))+`;
+
+// Signs that end a sentence and may stand after an address in running text.
+const sentenceEnd = /[.,;:!]+$/u;
 
 // Segments of the web interface of the wiki that name no page, such as
 // the list of all pages of a category.
@@ -156,10 +198,11 @@ const interfaceSegments: readonly string[] = Object.freeze(['sitemap']);
  * `/wiki/<ID of the category>/<title>`, with the title encoded for an
  * address, `main` for the main page, or the category alone. ChurchTools
  * finds a page also by its GUID there, and both without regard to case
- * (F55). A link counts with the origin of the instance, written exactly
- * so, or as a path alone; a link to another origin, the list of all pages
- * or a file is none. Of a link with an anchor or a query only the page
- * counts. Each link appears once, in the order of the text.
+ * (F55). A link counts with the scheme and host of the instance, without
+ * regard to their case or without the scheme, or as a path alone, each
+ * only where an address starts; a link to another origin, the list of all
+ * pages or a file is none. Of a link with an anchor or a query only the
+ * page counts. Each link appears once, in the order of the text.
  *
  * @param text - The whole text of a page, Markdown or HTML.
  * @param origin - The origin of the instance.
@@ -171,10 +214,12 @@ const interfaceSegments: readonly string[] = Object.freeze(['sitemap']);
  * ```
  */
 export function wikiLinksIn(text: string, origin: string): readonly WikiLink[] {
-  // A path alone counts only where an address starts, so that the path of
-  // a link to another host never reads as one to the own instance.
+  const url = new URL(origin);
+  // An address starts at the start of the text, after a space, a bracket
+  // or a quote, never inside another address, so that the path of a link
+  // to another host never reads as one to the own instance.
   const pattern = new RegExp(
-    String.raw`(?:${escapeForPattern(origin)}|(?<=^|[\s("'=<\[]))/wiki/(\d{1,15})(?:/([^${segmentEnd}]+))?(?=$|[${segmentEnd}])`,
+    String.raw`(?<=^|[\s("'<\[])(?:(?:${anyCase(url.protocol)})?//${anyCase(url.host)})?/wiki/(\d{1,15})(?:/(${segment}))?(?![\w%])`,
     'gu',
   );
   const seen = new Set<string>();
@@ -182,8 +227,9 @@ export function wikiLinksIn(text: string, origin: string): readonly WikiLink[] {
   for (const match of text.matchAll(pattern)) {
     const categoryId = Number(match[1]);
     if (!isWhole(categoryId)) continue;
-    const raw = match[2] ?? 'main';
-    if (interfaceSegments.includes(raw)) continue;
+    // HTML writes an ampersand in an address as an entity.
+    const raw = (match[2] ?? 'main').replaceAll('&amp;', '&');
+    if (interfaceSegments.includes(raw.toLowerCase())) continue;
     let page: string;
     try {
       page = decodeURIComponent(raw);
@@ -195,7 +241,14 @@ export function wikiLinksIn(text: string, origin: string): readonly WikiLink[] {
     const key = `${String(categoryId)}/${page.toLowerCase()}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    links.push(Object.freeze({ categoryId, page }));
+    const trimmed = page.replace(sentenceEnd, '');
+    links.push(
+      Object.freeze(
+        trimmed !== page && trimmed !== ''
+          ? { categoryId, page, trimmed }
+          : { categoryId, page },
+      ),
+    );
   }
   return Object.freeze(links);
 }
@@ -245,12 +298,12 @@ export async function runChecks(
     return outcome.data;
   };
 
-  // A title or a name as plain text, or the fixed text when the content
+  // A title or a name as plain text, or a fixed text when the content
   // policy refuses it. Only the contact values of the policy would count,
   // and a title is no place for them.
-  const plain = (value: string): string => {
+  const plain = (value: string, fallback = hiddenTitle): string => {
     const checked = checkRunText(value, new Set());
-    return checked.ok ? checked.text : hiddenTitle;
+    return checked.ok ? checked.text : fallback;
   };
 
   try {
@@ -331,12 +384,42 @@ const dayOf = (at: number, timeZone: string): string => {
 };
 
 // A value of a report within the length of its field, the longest name
-// of the schema, cut between two code points with an ellipsis.
+// of the schema, cut between two code points with three dots, the normal
+// form the content policy gives an ellipsis.
 const fit = (text: string): string => {
   const points = Array.from(text);
   return points.length <= routineLimits.name
     ? text
-    : `${points.slice(0, routineLimits.name - 1).join('')}…`;
+    : `${points.slice(0, routineLimits.name - 3).join('')}...`;
+};
+
+// A value as the report holds it: each part checked on its own, then
+// joined, cut to the length of its field and checked once more, since a
+// join or a cut can make a text the content policy refuses, such as a web
+// address cut at its dot.
+const final = (
+  text: string,
+  plain: (value: string, fallback?: string) => string,
+): string => plain(fit(plain(text)));
+
+const encoder = new TextEncoder();
+
+// The entries of a block in their order while their values, escaped as
+// the template sets them, stay within maxBlockBytes; like maxItems, a
+// cut in a fixed order.
+const withinBytes = (
+  entries: readonly Readonly<Record<string, string>>[],
+): readonly Readonly<Record<string, string>>[] => {
+  const kept: Readonly<Record<string, string>>[] = [];
+  let bytes = 0;
+  for (const entry of entries) {
+    for (const value of Object.values(entry)) {
+      bytes += encoder.encode(escapeRunText(value)).length;
+    }
+    if (bytes > maxBlockBytes) break;
+    kept.push(entry);
+  }
+  return Object.freeze(kept);
 };
 
 const byText = (left: string, right: string): number =>
@@ -350,7 +433,7 @@ const stalePages = (
   pages: readonly Page[],
   context: CheckContext,
   now: number,
-  plain: (value: string) => string,
+  plain: (value: string, fallback?: string) => string,
 ): readonly Readonly<Record<string, string>>[] => {
   const before = now - check.olderThanDays * dayMs;
   const stale: (Page & { readonly changed: number })[] = [];
@@ -365,11 +448,11 @@ const stalePages = (
       byText(left.category.name, right.category.name) ||
       byText(left.title, right.title),
   );
-  return Object.freeze(
+  return withinBytes(
     stale.slice(0, check.maxItems).map((page) =>
       Object.freeze({
-        page: fit(plain(page.title)),
-        category: fit(plain(page.category.name)),
+        page: final(page.title, plain),
+        category: final(page.category.name, plain),
         changed: dayOf(page.changed, context.timeZone),
       }),
     ),
@@ -387,7 +470,7 @@ const brokenLinks = async (
     tool: string,
     input: Readonly<Record<string, unknown>>,
   ) => Promise<unknown>,
-  plain: (value: string) => string,
+  plain: (value: string, fallback?: string) => string,
 ): Promise<readonly Readonly<Record<string, string>>[]> => {
   const byId = new Map(categories.map((category) => [category.id, category]));
   // ChurchTools finds a page by its GUID or its title, both without regard
@@ -399,9 +482,14 @@ const brokenLinks = async (
     names.get(id)?.add(page.guid.toLowerCase());
     names.get(id)?.add(page.title.normalize('NFC').toLowerCase());
   }
+  const known = (categoryId: number, page: string | undefined): boolean =>
+    page !== undefined &&
+    (names.get(categoryId)?.has(page.toLowerCase()) ?? false);
+  // A link whose page ends with a sign that ends a sentence finds its
+  // target with or without that sign.
   const exists = (link: WikiLink): boolean =>
     byId.has(link.categoryId) &&
-    (names.get(link.categoryId)?.has(link.page.toLowerCase()) ?? false);
+    (known(link.categoryId, link.page) || known(link.categoryId, link.trimmed));
 
   const found: {
     readonly page: string;
@@ -410,14 +498,23 @@ const brokenLinks = async (
   for (const page of pages) {
     let text = '';
     try {
+      // Every part after the first from the version of the first, so
+      // that a change in between neither mixes two texts nor ends the run
+      // at a part the shorter text no longer has.
+      let version: number | undefined;
       for (let part = 1, parts = 1; part <= parts; part += 1) {
         const data = await call('ct_wiki_page_get', {
           categoryId: page.category.id,
           guid: page.guid,
           part,
+          ...(version === undefined ? {} : { version }),
         });
-        const count = ownData(data, 'parts');
-        if (part === 1 && isWhole(count)) parts = count;
+        if (part === 1) {
+          const count = ownData(data, 'parts');
+          const read = ownData(data, 'version');
+          if (isWhole(count)) parts = count;
+          if (isWhole(read)) version = read;
+        }
         text += runDataText(ownData(data, 'text')) ?? '';
       }
     } catch (error) {
@@ -428,10 +525,21 @@ const brokenLinks = async (
     for (const link of wikiLinksIn(text, context.origin)) {
       if (exists(link)) continue;
       const category = byId.get(link.categoryId);
+      const target = link.trimmed ?? link.page;
+      const name =
+        target.toLowerCase() === 'main'
+          ? mainPageName
+          : wikiPageGuidPattern.test(target)
+            ? plain(target, hiddenGuid)
+            : plain(target);
       found.push({
-        page: fit(`${plain(page.category.name)} › ${plain(page.title)}`),
-        link: fit(
-          `${category === undefined ? `Kategorie ${String(link.categoryId)}` : plain(category.name)} › ${link.page.toLowerCase() === 'main' ? mainPageName : plain(link.page)}`,
+        page: final(
+          `${plain(page.category.name)} › ${plain(page.title)}`,
+          plain,
+        ),
+        link: final(
+          `${category === undefined ? `Kategorie ${String(link.categoryId)}` : plain(category.name)} › ${name}`,
+          plain,
         ),
       });
     }
@@ -440,7 +548,7 @@ const brokenLinks = async (
     (left, right) =>
       byText(left.page, right.page) || byText(left.link, right.link),
   );
-  return Object.freeze(
+  return withinBytes(
     found
       .slice(0, check.maxItems)
       .map((entry) => Object.freeze({ page: entry.page, link: entry.link })),

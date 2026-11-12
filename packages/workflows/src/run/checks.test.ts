@@ -13,8 +13,10 @@ import type { RoutineCheck } from '../routine/schema.js';
 import { parseTemplate } from '../routine/template.js';
 import {
   type CheckContext,
+  hiddenGuid,
   hiddenTitle,
   mainPageName,
+  maxBlockBytes,
   runChecks,
   wikiLinksIn,
 } from './checks.js';
@@ -226,6 +228,45 @@ describe('the links of a page to the own wiki', () => {
     ).toEqual([]);
   });
 
+  it('take brackets that pair up, an ampersand of HTML and a sign that ends a sentence', () => {
+    expect(
+      wikiLinksIn(
+        [
+          `[${origin}/wiki/3/Ablauf%20(Sonntag)](${origin}/wiki/3/Ablauf%20(Sonntag))`,
+          '<a href="/wiki/3/Kaffee%20&amp;%20Kuchen">k</a>',
+          `Siehe ${origin}/wiki/3/Ablauf. Und /wiki/3/Taufe, dann.`,
+          "[a](/wiki/3/Gottes'Wort)",
+        ].join('\n'),
+        origin,
+      ),
+    ).toEqual([
+      { categoryId: 3, page: 'Ablauf (Sonntag)' },
+      { categoryId: 3, page: 'Kaffee & Kuchen' },
+      { categoryId: 3, page: 'Ablauf.', trimmed: 'Ablauf' },
+      { categoryId: 3, page: 'Taufe,', trimmed: 'Taufe' },
+      { categoryId: 3, page: "Gottes'Wort" },
+    ]);
+  });
+
+  it('take the host without regard to case or without the scheme, never inside another address', () => {
+    expect(
+      wikiLinksIn(
+        [
+          '[a](HTTPS://EXAMPLE.Church.tools/wiki/3/A)',
+          '[b](//example.church.tools/wiki/3/B)',
+          '[c](http://example.church.tools/wiki/3/C)',
+          `[d](https://other.example/r/${origin}/wiki/3/D)`,
+          '[e](https://other.example/?next=/wiki/3/E)',
+          '[f](/wiki/3/Sitemap) [g](/wiki/3/SITEMAP)',
+        ].join('\n'),
+        origin,
+      ),
+    ).toEqual([
+      { categoryId: 3, page: 'A' },
+      { categoryId: 3, page: 'B' },
+    ]);
+  });
+
   it('keep a page whose escape is broken as it stands', () => {
     expect(wikiLinksIn('[a](/wiki/3/%E0%A4%A)', origin)).toEqual([
       { categoryId: 3, page: '%E0%A4%A' },
@@ -288,7 +329,7 @@ describe('the checks of the core', () => {
     expect(mainPageName).toBe('Hauptseite');
   });
 
-  it('cut a value longer than its field with an ellipsis, between code points', async () => {
+  it('cut a value longer than its field with three dots, between code points', async () => {
     const long = {
       1: [
         {
@@ -304,7 +345,73 @@ describe('the checks of the core', () => {
     if (!checked.ok) throw new Error(checked.code);
     const page = checked.blocks['stalePages']?.[0]?.['page'] ?? '';
     expect(Array.from(page)).toHaveLength(255);
-    expect(page).toBe(`${'𝄞'.repeat(254)}…`);
+    expect(page).toBe(`${'𝄞'.repeat(252)}...`);
+  });
+
+  it('check every value again as the report holds it, and give a GUID its own fixed text', async () => {
+    const tricky = {
+      1: [
+        {
+          guid: 'seite-trick',
+          title: 'Trick',
+          modifiedDate: '2026-11-01T08:00:00Z',
+          parts: [
+            [
+              // A category the account does not see, whose number reads
+              // as an AHV number once it stands in the report.
+              '[x](/wiki/7561234567897/x)',
+              // A GUID whose parts read as a phone number.
+              '[y](/wiki/1/3F2A9C1E-0123-4567-89AB-CDEF01234567)',
+              // A title that ends in a web address once it is cut.
+              `[z](/wiki/1/${'A'.repeat(231)}%20kirche.dexyz12)`,
+            ].join('\n'),
+          ],
+        },
+      ],
+    };
+    const checked = await run([links], standIn(tricky));
+    if (!checked.ok) throw new Error(checked.code);
+    expect(checked.blocks['brokenLinks']).toEqual([
+      { page: 'Gemeinde › Trick', link: hiddenTitle },
+      { page: 'Gemeinde › Trick', link: hiddenTitle },
+      { page: 'Gemeinde › Trick', link: `Gemeinde › ${hiddenGuid}` },
+    ]);
+  });
+
+  it('read every part of a page from the version of its first part', async () => {
+    const calls: { tool: string; input: unknown }[] = [];
+    await run([links], standIn(wiki, calls));
+    expect(
+      calls
+        .filter((call) => call.tool === 'ct_wiki_page_get')
+        .map((call) => call.input),
+    ).toContainEqual({
+      categoryId: 1,
+      guid: 'seite-ablauf',
+      part: 2,
+      version: 2,
+    });
+  });
+
+  it('keep a block within its bytes, in its order', async () => {
+    const many = {
+      1: Array.from({ length: 100 }, (_, index) => ({
+        guid: `seite-${String(index).padStart(3, '0')}`,
+        // 255 signs of four bytes each, about 1 KB per entry.
+        title: `${String(index).padStart(3, '0')}${'𝄞'.repeat(252)}`,
+        modifiedDate: '2020-01-01T08:00:00Z',
+        parts: [''],
+      })),
+    };
+    const checked = await run([{ ...stale, maxItems: 100 }], standIn(many));
+    if (!checked.ok) throw new Error(checked.code);
+    const kept = checked.blocks['stalePages'] ?? [];
+    expect(kept.length).toBeGreaterThan(10);
+    expect(kept.length).toBeLessThan(100);
+    const bytes = kept
+      .flatMap((entry) => Object.values(entry))
+      .reduce((sum, value) => sum + new TextEncoder().encode(value).length, 0);
+    expect(bytes).toBeLessThanOrEqual(maxBlockBytes);
   });
 
   it('end the run when a page has no date and stalePages runs', async () => {
@@ -453,6 +560,36 @@ describe('a run of a routine with the checks of the core', () => {
     );
     expect(result).not.toHaveProperty('provider');
     expect(result).not.toHaveProperty('attempts');
+  });
+
+  it('gives an entry the fixed text when its line of the template breaks the content policy', async () => {
+    // A title that ends in «mailto» before the colon of the template reads
+    // as a web address in that line, though each value passes on its own.
+    const mail = {
+      1: [
+        {
+          guid: 'seite-mail',
+          title: 'Kontakt mailto',
+          modifiedDate: '2026-11-01T08:00:00Z',
+          parts: ['[x](/wiki/1/Fehlt)'],
+        },
+      ],
+    };
+    const result = await executeRun(
+      prepared(),
+      trigger,
+      {
+        read: standIn(mail),
+        checks: context,
+        policy,
+        log: silent,
+        clock: { now: () => at },
+      },
+      new AbortController().signal,
+    );
+    if (result.kind !== 'rendered') throw new Error(result.code);
+    expect(result.section).toContain(`- ${hiddenTitle}: ${hiddenTitle}`);
+    expect(result.section).not.toContain('mailto');
   });
 
   it('fails without the context of the checks, as a fault of the composition', async () => {
