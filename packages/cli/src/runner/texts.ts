@@ -62,8 +62,6 @@ export function routinesProblemText(problem: RoutineLoadProblem): string {
 // What to do for each code a single routine does not start with.
 const refusedActions: Readonly<Record<RunnerRoutineCode, string>> =
   Object.freeze({
-    run_checks_pending:
-      'Die festen Prüfungen des Kerns gibt es in dieser Version noch nicht. Nehmen Sie die Routine aus dem Ordner, bis sie kommen.',
     run_tool_unknown:
       'Das Tool gibt es in Ecclium nicht. Prüfen Sie den Namen des Tools.',
     run_tool_unfit:

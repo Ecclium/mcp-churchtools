@@ -33,7 +33,6 @@ import {
 // Every code a single routine does not start with. A new code of the type
 // breaks the build here until it is listed.
 const routineCodes = Object.keys({
-  run_checks_pending: true,
   run_tool_unknown: true,
   run_tool_unfit: true,
   run_param_unknown: true,

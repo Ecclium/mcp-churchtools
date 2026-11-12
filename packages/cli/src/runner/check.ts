@@ -62,7 +62,12 @@ const routineLine = (run: PreparedRun): string => {
     run.credential === undefined
       ? 'eigenes Konto des Runners'
       : `Konto ${quote(run.credential)}`;
-  return `  - ${quote(routine.id)}: Zeitplan ${quote(routine.schedule)}, ${target}, ${account}, Modell ${quote(run.model)}, Maskierung zum Modell ${quote(run.redaction)}`;
+  // A routine with checks of the core has no model and no level to it.
+  const filled =
+    run.model === undefined
+      ? `ohne Modell, mit den Prüfungen ${(routine.checks ?? []).map(({ check }) => quote(check)).join(' und ')}`
+      : `Modell ${quote(run.model)}, Maskierung zum Modell ${quote(run.redaction)}`;
+  return `  - ${quote(routine.id)}: Zeitplan ${quote(routine.schedule)}, ${target}, ${account}, ${filled}`;
 };
 
 const validText =
@@ -149,7 +154,9 @@ export function checkRunnerConfig(options: RunnerCheckOptions): ExitCode {
   // opening.
   const readKey = options.readModelKey ?? readProviderKey;
   let keysRefused = false;
-  const aliases = new Set(routines.map((run) => run.model));
+  const aliases = new Set(
+    routines.flatMap((run) => (run.model === undefined ? [] : [run.model])),
+  );
   for (const provider of loaded.config.providers ?? []) {
     if (!aliases.has(provider.alias)) continue;
     const key = readKey(provider.apiKeyFile);

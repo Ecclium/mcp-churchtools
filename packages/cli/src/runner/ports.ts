@@ -162,9 +162,13 @@ export function composeRunnerPorts(options: RunnerPortsOptions): RunnerPorts {
 
   const open: RunnerPorts['open'] = (run) => {
     const routineId = run.loaded.routine.id;
-    const found = options.model(run.model);
-    if (!found.ok) return Object.freeze({ ok: false, code: found.code });
-    const { model } = found;
+    // A routine with checks of the core has no model (ADR 0033).
+    let model: GuardedModel | undefined;
+    if (run.model !== undefined) {
+      const found = options.model(run.model);
+      if (!found.ok) return Object.freeze({ ok: false, code: found.code });
+      model = found.model;
+    }
     const built = composeRunPipeline({
       config,
       catalog: options.catalog,
@@ -183,7 +187,7 @@ export function composeRunnerPorts(options: RunnerPortsOptions): RunnerPorts {
         run,
         runs: options.routines,
         config,
-        provider: model.info,
+        ...(model === undefined ? {} : { provider: model.info }),
         logging: { writer, minLevel: config.logLevel },
         clock,
       });
@@ -197,7 +201,7 @@ export function composeRunnerPorts(options: RunnerPortsOptions): RunnerPorts {
     const tag = Object.freeze({
       runId: bound.runId,
       routineId,
-      provider: model.info,
+      ...(model === undefined ? {} : { provider: model.info }),
     });
     // A write that has begun is marked until the run closes, after the
     // end of its trigger, its audit line and its notice, so that no second
@@ -215,7 +219,16 @@ export function composeRunnerPorts(options: RunnerPortsOptions): RunnerPorts {
                 release ??= writing();
                 return bound.write(...args);
               },
-        model,
+        ...(model === undefined
+          ? {
+              // The checks of the core tell links to the own instance and
+              // write the day of a change in the zone of the runner.
+              checks: Object.freeze({
+                origin: config.churchtoolsOrigin,
+                timeZone,
+              }),
+            }
+          : { model }),
         log: bound.log,
         end: (line: RunEndLine) =>
           built.pipeline.endRun({
