@@ -32,6 +32,9 @@ export {
 export type { ConfirmationState } from './request-state.js';
 export { ContentRefusal } from './content-gate.js';
 export {
+  type AdoptionShown,
+  type AdoptRequest,
+  type AdoptResult,
   type ApprovedEntry,
   type ApproveRequest,
   type ApproveResult,
@@ -51,6 +54,7 @@ export {
   writeSentences,
 } from './guard.js';
 export { approvalKeyOf } from './plan-hash.js';
+export type { AdoptionUnclear } from './adopt.js';
 export { checkRunKillSwitches, routineKillSwitchOf } from './kill-switch.js';
 export {
   editCategoriesOf,
@@ -62,4 +66,8 @@ export { createRunWrites, isRunWrites, type RunWrites } from './run-writes.js';
 export { type WriteHalt } from './write-halt.js';
 export { queueEntryOf } from './queue-entry.js';
 export { objectRefsOfTarget, type WriteTarget } from './rules.js';
-export { type UndoSubject, undoSubjectOf } from './undo.js';
+export {
+  type SnapshotToUndo,
+  type UndoSubject,
+  undoSubjectOf,
+} from './undo.js';

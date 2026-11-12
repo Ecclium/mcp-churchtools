@@ -92,6 +92,7 @@ const setup = (overrides: Partial<StdioServerOptions> = {}) => {
     // The server never takes a write back nor decides about the queue
     // over stdio (ADR 0031).
     undo: () => Promise.resolve({ kind: 'off' }),
+    adopt: () => Promise.resolve({ kind: 'off' }),
     reject: () => Promise.resolve({ kind: 'off' }),
     approve: () => Promise.resolve({ kind: 'off' }),
     listQueue: () => Promise.resolve({ kind: 'off' }),

@@ -30,7 +30,6 @@
  *
  * @packageDocumentation
  */
-import { storedWikiText } from '../churchtools/wiki-writes.js';
 import type { KeyMaterial } from '../keys/index.js';
 import { checkCodeOf, judgeSections, type Marking } from '../marker/index.js';
 import {
@@ -42,7 +41,10 @@ import { contentHashOf } from './plan-hash.js';
 
 /** What the snapshot of a write of the routine keeps of its page. */
 export interface WrittenPage {
-  /** The text of the page before the write. */
+  /**
+   * The text of the page before the write, in the form ChurchTools stores,
+   * without the white space it removes at both ends (F51).
+   */
   readonly before: string;
   /** The hash of the text after the write, from `contentHashOf`. */
   readonly afterHash: string;
@@ -116,7 +118,7 @@ export interface AdoptionOptions {
 // the page up to the line of its marking is the text the write left.
 const startOf = (written: WrittenPage, prefix: string): number | undefined => {
   if (contentHashOf([prefix]) !== written.afterHash) return undefined;
-  const head = storedWikiText(written.before);
+  const head = written.before;
   if (head === '') return 0;
   return prefix.startsWith(`${head}\n\n`)
     ? head.split('\n').length + 1

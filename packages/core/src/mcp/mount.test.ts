@@ -56,7 +56,8 @@ import { deriveAnnotations } from './annotations.js';
 import { createMcpMount, type McpMountOptions } from './mount.js';
 import { deriveOutputSchema } from './schema.js';
 
-// The mount never takes a write back; the stand-ins answer undo as off.
+// The mount never takes a write back nor signs a section anew; the
+// stand-ins answer undo and adopt as off.
 const noUndo = () => Promise.resolve({ kind: 'off' } as const);
 // The mount never decides about the queue nor reads it (ADR 0031).
 const noReject = () => Promise.resolve({ kind: 'off' } as const);
@@ -753,6 +754,7 @@ describe('the resolver of the tenant', () => {
     const listeners: number[] = [];
     const pipeline: ToolPipeline = {
       undo: noUndo,
+      adopt: noUndo,
       ...noQueue,
       call: (_name, _input, request) => {
         listeners.push(getEventListeners(request.signal, 'abort').length);
@@ -776,6 +778,7 @@ describe('the factory', () => {
     const pipeline: ToolPipeline = {
       call: run,
       undo: noUndo,
+      adopt: noUndo,
       ...noQueue,
     };
     const { factory, audit, logs } = setup({
@@ -871,6 +874,7 @@ describe('errors', () => {
       pipeline: {
         call: () => Promise.reject(new Error(canary)),
         undo: noUndo,
+        adopt: noUndo,
         ...noQueue,
       },
     });
@@ -892,6 +896,7 @@ describe('errors', () => {
     const { factory, logs } = setup({
       pipeline: {
         undo: noUndo,
+        adopt: noUndo,
         ...noQueue,
         // A stand-in that hands over raw data, as a result that went past
         // the pipeline would be (ADR 0026).

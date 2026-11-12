@@ -78,6 +78,7 @@ Je Ereignis die Stufe und die Felder, die ein Aufruf höchstens setzt. Die Felde
 
 | Ereignis | Stufe | Felder | Bedeutung |
 | --- | --- | --- | --- |
+| `adoption_call` | `info` | `code`, `durationMs` | Eine Übernahme mit `ecclium marker adopt` ist zu Ende, als Vorschau oder mit `--confirm`, mit oder ohne Fehler. `code` nennt den Fehler, `durationMs` die Dauer. Zu jeder Übernahme gehört eine Zeile vom Typ `adoption` im Audit. Text der Seite und Zeilen der Kennzeichnung stehen nie darin. |
 | `content_contact` | `warn` | keine | Ein Text enthält eine E-Mail-Adresse, Telefonnummer, IBAN oder AHV-Nummer, die nicht in `interactive.contacts` der Richtlinie steht. Der Aufruf endet ohne Schreiben. |
 | `content_html` | `warn` | keine | Ein Text enthält HTML, einen Kommentar oder einen Verweis auf ein Zeichen wie `&amp;`. Der Aufruf endet ohne Schreiben. |
 | `content_image` | `warn` | keine | Ein Text enthält ein Bild. Der Aufruf endet ohne Schreiben. |

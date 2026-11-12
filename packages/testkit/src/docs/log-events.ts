@@ -240,6 +240,8 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
       'Die Person hat eine Rückfrage abgelehnt, abgebrochen oder nicht mit «Ja» angenommen. Ecclium schreibt nichts, der Aufruf endet mit `confirmation_required`.',
     undo_call:
       'Eine Rücknahme mit `ecclium undo` ist zu Ende, mit oder ohne Fehler. `code` nennt den Fehler, `durationMs` die Dauer. Zu jeder Rücknahme gehört eine Zeile vom Typ `undo` im Audit. Text einer Seite und Felder eines Termins oder einer Buchung stehen nie darin.',
+    adoption_call:
+      'Eine Übernahme mit `ecclium marker adopt` ist zu Ende, als Vorschau oder mit `--confirm`, mit oder ohne Fehler. `code` nennt den Fehler, `durationMs` die Dauer. Zu jeder Übernahme gehört eine Zeile vom Typ `adoption` im Audit. Text der Seite und Zeilen der Kennzeichnung stehen nie darin.',
     write_queued:
       'Ein Schreibvorgang wartet als verschlüsselter Eintrag in der Freigabe-Warteschlange auf den Betreiber, unter der Kennung der Zeile seines Aufrufs im Audit. Geschrieben ist nichts.',
     write_queue_full:
@@ -538,6 +540,7 @@ const sections: readonly {
     fits: (name: string) =>
       name.startsWith('write_') ||
       name.startsWith('undo_') ||
+      name.startsWith('adoption_') ||
       name.startsWith('queue_reject_') ||
       name.startsWith('snapshot_') ||
       name.startsWith('policy_') ||

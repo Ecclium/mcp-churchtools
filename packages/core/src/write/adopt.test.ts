@@ -63,7 +63,8 @@ const left = (before: string, text: string): WrittenPage => ({
 });
 
 const report = sectionOf('## Dienste KW 46\n\n- Sonntag: Mesmer fehlt\n');
-const head = '# Dienstplan-Auswertung\n\nWas die Routine findet.\n';
+// As ChurchTools stores it, without a line break at the end (F51).
+const head = '# Dienstplan-Auswertung\n\nWas die Routine findet.';
 
 const plan = (text: string, written: readonly WrittenPage[]) =>
   planAdoption({ key, tenantId, text, routine, period, written });
@@ -115,7 +116,7 @@ describe('planAdoption', () => {
     const first = append(head, report);
     // A person added a paragraph below the line since the write.
     const text = `${first.text}\n\nNachtrag einer Person.`;
-    const other = append('# Anders\n', report).written;
+    const other = append('# Anders', report).written;
     const found = plan(text, [other, first.written]);
     expect(found).toMatchObject({ kind: 'proven', proof: 1 });
     if (found.kind !== 'proven') return;
