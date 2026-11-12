@@ -425,7 +425,7 @@ describe('the adoption of the pipeline (ADR 0032)', () => {
     });
     // The write of the page, whose snapshot does not fit a changed page.
     await keep();
-    reads(left.replace('fehlt', 'gefunden'));
+    reads(left.replaceAll('fehlt', 'gefunden'));
     expect(
       await pipeline.adopt(call({ writeIds: writes }), request()),
     ).toMatchObject({

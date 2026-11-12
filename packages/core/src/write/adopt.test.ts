@@ -146,10 +146,10 @@ describe('planAdoption', () => {
     const { text, written } = append(head, report);
     expect(plan(text, [])).toEqual({ kind: 'unproven', range: text });
     // A person changed a word of the section.
-    const changed = text.replace('Mesmer fehlt', 'Mesmer gefunden');
+    const changed = text.replaceAll('Mesmer fehlt', 'Mesmer gefunden');
     expect(plan(changed, [written])).toMatchObject({ kind: 'unproven' });
     // A person changed the text above the section.
-    const above = text.replace('Was die Routine findet.', 'Was sie findet.');
+    const above = text.replaceAll('Was die Routine findet.', 'Was sie findet.');
     expect(plan(above, [written])).toMatchObject({ kind: 'unproven' });
   });
 
@@ -201,7 +201,7 @@ describe('planAdoption', () => {
     const lines = text.split('\n');
     // The reader takes the line in the normal form NFC; the core never
     // writes one in another form, so it does not sign it.
-    const decomposed = text.replace('Prüfcode', 'Prüfcode');
+    const decomposed = text.replaceAll('Prüfcode', 'Pru\u0308fcode');
     expect(plan(decomposed, [left(head, decomposed)])).toMatchObject({
       kind: 'unsignable',
     });

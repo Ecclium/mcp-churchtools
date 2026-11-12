@@ -1891,7 +1891,7 @@ describe('ecclium marker adopt', () => {
     setupOf.fake.pages.set(guid, {
       ...page,
       version: page.version + 1,
-      text: page.text.replace('Mesmer', 'Sakristan'),
+      text: page.text.replaceAll('Mesmer', 'Sakristan'),
     });
     const unproven = await adoptCommand(bound.runId);
     expect(unproven.code).toBe(exitCodes.dataError);
