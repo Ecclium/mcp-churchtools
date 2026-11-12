@@ -1,4 +1,4 @@
-### Dienstplan {{period}}
+### Dienstplan ab Woche {{period}}
 
 #### Unbesetzte Dienste
 {{#unbesetzt}}
@@ -7,6 +7,14 @@
 {{^unbesetzt}}
 Alle Dienste sind besetzt.
 {{/unbesetzt}}
+
+#### Offene Anfragen
+{{#offen}}
+- {{datum}}, {{termin}}: {{dienst}}, angefragt bei {{person}}
+{{/offen}}
+{{^offen}}
+Keine Anfrage wartet auf eine Zusage.
+{{/offen}}
 
 #### Mehrfach eingeteilt
 {{#mehrfach}}
