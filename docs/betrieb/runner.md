@@ -53,7 +53,9 @@ SIGTERM, SIGINT und SIGHUP brechen Lesen und Modell sofort ab, weil beide ausser
 
 SIGHUP kommt etwa, wenn das Terminal des Prozesses geschlossen wird. Ein zweites Signal beendet den Prozess sofort, ausser während eines Schreibvorgangs: Dann endet er direkt danach. Andere Signale wie SIGKILL halten ihn hart an.
 
-Ein Schreibvorgang ins Wiki besteht aus mehreren Anfragen an ChurchTools, jede mit höchstens 30 Sekunden. Geben Sie einem Container des Runners beim Stoppen deshalb mindestens 5 Minuten, bei Docker Compose mit `stop_grace_period: 5m`, bei `docker stop` mit `--time 300`, damit ein Schreibvorgang nie von SIGKILL getroffen wird. So viel Zeit lässt auch die Sperrdatei einer Routine einem abgebrochenen Lauf für sein Ende. Läuft kein Schreibvorgang, endet der Runner sofort; die Frist verlängert das Stoppen dann nicht.
+Ein Schreibvorgang ins Wiki besteht aus bis zu acht Anfragen an ChurchTools mit je höchstens 30 Sekunden und zwei Zugriffen auf die Zähler im Zustandsordner mit je höchstens 5 Sekunden, zusammen also höchstens 250 Sekunden. Geben Sie einem Container des Runners beim Stoppen deshalb mindestens 5 Minuten, bei Docker Compose mit `stop_grace_period: 5m`, bei `docker stop` mit `--time 300`, damit ein Schreibvorgang nicht von SIGKILL getroffen wird. So viel Zeit lässt auch die Sperrdatei einer Routine einem abgebrochenen Lauf für sein Ende. Läuft kein Schreibvorgang, endet der Runner sofort; die Frist verlängert das Stoppen dann nicht.
+
+Erlaubt der Eintrag der Richtlinie einer Routine eine ganze Kategorie statt einer Seite, also `wiki_category` statt `wiki_page`, sucht der Runner die Seite über ihren Titel, und zwar erst, wenn der Schreibvorgang begonnen hat, in bis zu 40 Seiten der Liste der Kategorie. Ein Signal hält diese Suche nicht an. Antwortet ChurchTools wie gewohnt in einer Sekunde, ändert das wenig. Braucht aber jede Anfrage die volle Frist, reichen auch 5 Minuten nicht.
 
 ## Frist der Daten
 
@@ -174,7 +176,9 @@ Was der Runner in einem Container vorfinden muss, legt der Runner-Container-Vert
 - Der Runner läuft als Benutzer ohne root, im offiziellen Image mit der UID 65532. Ihm gehört alles, was Ecclium liest oder schreibt, unter `/config`, `/run/secrets`, `/data` und `/keys`, ausser dem Ordner `stop` und den Kill-Switches darin. Gehört etwas einem anderen Benutzer, startet der Runner nicht und nennt den Grund.
 - Ein neues Volume von Docker gehört root. Übergeben Sie `/data` und `/keys` vor dem ersten Start dem Benutzer des Runners, einmalig etwa mit einem Container als root ohne Netz, der nur die Capability `CHOWN` hat: zuerst `chmod 700`, dann `chown 65532:65532`.
 - Die Dateien und Ordner auf Ihrem Rechner, die unter `/config` und `/run/secrets` eingebunden sind, gehören ebenfalls der UID 65532. Ändern Sie eine davon, setzen Sie danach ihren Besitzer wieder. Eine neue Token-Datei bekommt Besitzer und Rechte, bevor Sie die alte durch Umbenennen ersetzen.
+- Wem eine Datei gehört, der darf sie auch ändern. Legen Sie die Ordner für `/config` und `/run/secrets` auf Ihrem Rechner deshalb in einen Ordner, den nur root oder Sie öffnen können, mit den Rechten 700, und lassen Sie dort keinen anderen Prozess unter der UID 65532 laufen.
 - Das Dateisystem des Containers ist nur lesbar, `/tmp` ein tmpfs. Der Container läuft ohne Capabilities, mit `no-new-privileges`, mit Grenzen für die Zahl der Prozesse und den Speicher, ohne veröffentlichten Port und nur in einem internen Netz mit dem Proxy (siehe «Ausgehender Weg»).
+- Starten Sie den Container mit einem init, bei Docker Compose mit `init: true`, bei `docker run` mit `--init`. Der Runner richtet seine Behandlung der Signale erst nach dem Start ein; liefe er selbst als PID 1, verwürfe das Betriebssystem ein SIGTERM in dieser Zeit, und der Runner liefe weiter, bis SIGKILL ihn trifft.
 
 ### Pfade
 
@@ -195,9 +199,9 @@ In `/run/secrets` liegen:
 - die Schlüssel der Modelle unter dem Pfad, den `providers.yaml` nennt, etwa `/run/secrets/model_api_key`,
 - `runner_ping_url`, wenn Sie einen Ping an eine Überwachung wollen.
 
-Jede Datei hat die Rechte 400 oder 600, der Ordner 700. Das Token des Servers liegt nie darin. Binden Sie den Ordner ein, nicht einzelne Dateien: Eine Datei, die Sie auf Ihrem Rechner durch Umbenennen ersetzen, sieht ein laufender Container nur durch einen eingebundenen Ordner, und nur so wirkt ein neues Token ohne Neustart.
+Jede Datei hat die Rechte 400 oder 600, der Ordner 700. Das Token des Servers liegt nie darin. Binden Sie den Ordner ein, nicht einzelne Dateien, also auch nicht über `secrets:` von Docker Compose, das jede Datei einzeln einbindet: Eine Datei, die Sie auf Ihrem Rechner durch Umbenennen ersetzen, sieht ein laufender Container nur durch einen eingebundenen Ordner, und nur so wirkt ein neues Token ohne Neustart.
 
-Den Ordner `/data/stop` binden Sie von Ihrem Rechner nur lesbar ein, im Bundle `config/stop`. Einen Kill-Switch legen Sie dort an, ohne Rechte von root und ohne Neustart (siehe «Anhalten»). Der Ordner braucht Rechte, mit denen der Benutzer des Runners ihn durchsuchen kann, etwa 755. Fehlt die Einbindung oder kann der Runner den Ordner nicht durchsuchen, startet ein Runner, der ins Wiki schreibt, nicht.
+Den Ordner `/data/stop` binden Sie von Ihrem Rechner nur lesbar ein, im Bundle `config/stop`. Einen Kill-Switch legen Sie dort an, ohne Rechte von root und ohne Neustart (siehe «Anhalten»). Der Ordner braucht Rechte, mit denen der Benutzer des Runners ihn durchsuchen kann, etwa 755. Fehlt `stop` oder kann der Runner ihn nicht durchsuchen, startet ein Runner nicht, der ins Wiki schreibt oder Entwürfe ablegt. Beim ersten Start mit der Einbindung legt Docker allerdings einen leeren Ordner `stop` im Volume an. Ein späterer Container ohne die Einbindung startet deshalb trotzdem, und Ihre Kill-Switches wirken für ihn nicht. Binden Sie `stop` in jeden Container des Runners ein, auch für einen Lauf von Hand und für die Befehle für Betreiber.
 
 ### Variablen
 
