@@ -542,6 +542,10 @@ export function renderRun(
             ].join('')
           : '';
       lines.push(`  Ausgang   ${runResultWords[end.result]}${failure}`);
+      // A run without the boundary in the network says so (ADR 0035).
+      if (end.egressOff === true) {
+        lines.push('  Proxy     keiner, weil ‹ECCLIUM_EGRESS› auf ‹off› stand');
+      }
     }
     lines.push('Lesungen je Tool');
     if (summary.reads.length === 0) lines.push('  keine');

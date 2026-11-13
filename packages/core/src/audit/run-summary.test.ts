@@ -259,6 +259,23 @@ describe('summarizeRun', () => {
     expect(twice.end).not.toHaveProperty('period');
   });
 
+  // A runner without its proxy notes it on the end of each run, and the
+  // summary carries it on (ADR 0035).
+  it('keeps the note of a runner without its proxy', () => {
+    const off = summarizeRun({
+      folder: folderOf({
+        [nameOf('2026-11-09', 1)]: [runEnd({ egressOff: true })],
+      }),
+      runId,
+    });
+    expect(off.end?.egressOff).toBe(true);
+    const on = summarizeRun({
+      folder: folderOf({ [nameOf('2026-11-09', 1)]: [runEnd()] }),
+      runId,
+    });
+    expect(on.end).not.toHaveProperty('egressOff');
+  });
+
   it('finds nothing for another run, and leaves out lines outside the days', () => {
     const files = {
       [nameOf('2026-11-09', 1)]: [event({}), runEnd()],

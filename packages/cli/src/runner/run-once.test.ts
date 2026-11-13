@@ -2258,6 +2258,10 @@ describe('ecclium audit show --run', () => {
     expect(lines).toContain('  Periode   ‹2026-W46›, Versuch 1');
     expect(lines).toContain('  Beginn    11.11.2026 07:00:00');
     expect(lines).toContain('  Ausgang   geschrieben');
+    // The runner of the test runs without its proxy (ADR 0035).
+    expect(lines).toContain(
+      '  Proxy     keiner, weil ‹ECCLIUM_EGRESS› auf ‹off› stand',
+    );
     expect(lines).toContain('Lesungen je Tool');
     expect(lines).toContain(
       '  ct_test_events  2 Aufrufe: 2 ausgeführt, 0 mit Fehler, 0 abgelehnt',
@@ -2365,6 +2369,10 @@ describe('the proxy of ecclium run-once (ADR 0035)', () => {
     });
     expect(stderr).not.toContain(warningText('egress_off'));
     expect(t.runLines()[0]).not.toHaveProperty('egressOff');
+    const runId = String(t.runLines()[0]?.['runId']);
+    const shown = await t.cli(['audit', 'show', '--run', runId]);
+    expect(shown.stdout).toContain('  Ausgang   geschrieben');
+    expect(shown.stdout).not.toContain('  Proxy ');
   });
 
   it.each(['unreachable', 'no_answer', 'refused'] as const)(
