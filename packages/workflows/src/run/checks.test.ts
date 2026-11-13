@@ -267,6 +267,26 @@ describe('the links of a page to the own wiki', () => {
     ]);
   });
 
+  it('read the text the editor of ChurchTools stored for a typed link', () => {
+    // A typed [Text](address) stays text with escaped brackets, and the
+    // address in it becomes a link to itself (F55).
+    const stored = [
+      `\\[Wiki-Pflege]\\([${origin}/wiki/17/Wiki-Pflege](${origin}/wiki/17/Wiki-Pflege))`,
+      `\\[Lange Seite]\\([${origin}/wiki/14/Seedprobe%20lange%20Seite](${origin}/wiki/14/Seedprobe%20lange%20Seite))`,
+    ].join('\n\n');
+    expect(wikiLinksIn(stored, origin)).toEqual([
+      { categoryId: 17, page: 'Wiki-Pflege' },
+      { categoryId: 14, page: 'Seedprobe lange Seite' },
+    ]);
+  });
+
+  it('take little time for a long hostile text', () => {
+    const hostile = `(/wiki/1/${'('.repeat(200_000)}a ${'%'.repeat(200_000)} /wiki/${'1'.repeat(200_000)}`;
+    const started = performance.now();
+    wikiLinksIn(hostile, origin);
+    expect(performance.now() - started).toBeLessThan(2_000);
+  });
+
   it('keep a page whose escape is broken as it stands', () => {
     expect(wikiLinksIn('[a](/wiki/3/%E0%A4%A)', origin)).toEqual([
       { categoryId: 3, page: '%E0%A4%A' },
