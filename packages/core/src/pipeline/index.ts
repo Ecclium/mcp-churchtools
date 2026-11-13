@@ -32,4 +32,9 @@ export {
   type UndoReason,
   type UndoSubject,
 } from './pipeline.js';
-export { type RunPageRef } from './run-write.js';
+export {
+  type AccountRights,
+  accountRightsOf,
+  type RightsException,
+  type RunPageRef,
+} from './run-write.js';

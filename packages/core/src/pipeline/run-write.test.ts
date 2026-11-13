@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { checkPolicy } from '../policy/check.js';
 import type { CatalogEntry, ToolCatalog } from '../registry/index.js';
 import {
+  accountRightsOf,
   maxRunPageListPages,
   resolveRunPage,
   runNeedsOf,
@@ -402,5 +403,119 @@ describe('the needs of the account of a run', () => {
         'ct_unknown_tool',
       ]),
     ).toBeUndefined();
+  });
+
+  // The check of ecclium doctor judges an account as the write guard does
+  // (ADR 0032).
+  describe('as ecclium doctor judges an account', () => {
+    const excepted = (() => {
+      const result = checkPolicy({
+        schema: 'policy.v1',
+        unattended: [
+          {
+            routine: 'dienstplan-report',
+            credential: 'bericht',
+            target: { kind: 'wiki_category', id: 12, name: 'Berichte' },
+            tools: ['ct_wiki_page_append_section'],
+            maxPerRun: 1,
+            maxPerDay: 2,
+            acceptRightsDrift: { from: '2026-11-10', until: '2026-11-19' },
+          },
+          {
+            routine: 'dienstplan-report',
+            credential: 'bericht',
+            target: { kind: 'wiki_category', id: 13, name: 'Archiv' },
+            tools: ['ct_wiki_page_append_section'],
+            maxPerRun: 1,
+            maxPerDay: 2,
+            acceptRightsDrift: { from: '2026-11-10', until: '2026-11-19' },
+          },
+          {
+            routine: 'wiki-hygiene',
+            credential: 'bericht',
+            target: { kind: 'wiki_category', id: 14, name: 'Pflege' },
+            tools: ['ct_wiki_page_append_section'],
+            maxPerRun: 1,
+            maxPerDay: 2,
+          },
+          {
+            routine: 'kalender-report',
+            credential: 'kalender',
+            target: { kind: 'wiki_category', id: 15, name: 'Kalender' },
+            tools: ['ct_wiki_page_append_section'],
+            maxPerRun: 1,
+            maxPerDay: 2,
+            acceptRightsDrift: { from: '2026-11-01', until: '2026-11-05' },
+          },
+        ],
+      });
+      if (!result.ok) throw new Error(result.code);
+      return result.policy;
+    })();
+    const tools = ['ct_events_list', 'ct_wiki_page_append_section'];
+
+    it('names the rights beyond the needs of every entry with the alias', () => {
+      const found = accountRightsOf(
+        catalog,
+        excepted,
+        'bericht',
+        tools,
+        {
+          churchservice: { view: true, 'edit services': true },
+          churchwiki: { view: true, 'edit category': [12, 13, 14] },
+          churchcal: { view: [] },
+        },
+        '2026-11-13',
+      );
+      expect(found?.beyond).toEqual([
+        { module: 'churchservice', right: 'edit services' },
+      ]);
+      expect(found?.exceptions).toEqual([
+        { routine: 'dienstplan-report', until: '2026-11-19', holds: true },
+      ]);
+      expect(Object.isFrozen(found)).toBe(true);
+      expect(Object.isFrozen(found?.exceptions)).toBe(true);
+    });
+
+    it('counts a category of another account as too wide, and an exception only within its days', () => {
+      const found = accountRightsOf(
+        catalog,
+        excepted,
+        'kalender',
+        ['ct_wiki_page_append_section'],
+        { churchwiki: { view: true, 'edit category': [12, 15] } },
+        '2026-11-13',
+      );
+      expect(found?.beyond).toEqual([wikiEdit]);
+      expect(found?.exceptions).toEqual([
+        { routine: 'kalender-report', until: '2026-11-05', holds: false },
+      ]);
+    });
+
+    it('counts every right as too wide for an account without tools', () => {
+      expect(
+        accountRightsOf(
+          catalog,
+          excepted,
+          'runner',
+          [],
+          { churchwiki: { view: true } },
+          '2026-11-13',
+        ),
+      ).toEqual({ beyond: [wikiView], exceptions: [] });
+    });
+
+    it('is none when a tool is not in the catalog', () => {
+      expect(
+        accountRightsOf(
+          catalog,
+          excepted,
+          'bericht',
+          ['ct_unknown_tool'],
+          {},
+          '2026-11-13',
+        ),
+      ).toBeUndefined();
+    });
   });
 });

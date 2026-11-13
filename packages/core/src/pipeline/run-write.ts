@@ -19,6 +19,8 @@
  * @packageDocumentation
  */
 import type {
+  GrantedRights,
+  IsoDate,
   RightRef,
   TenantContext,
 } from '@ecclium/mcp-churchtools-plugin-api';
@@ -28,6 +30,8 @@ import type { Policy } from '../policy/schema.js';
 import type { ToolCatalog } from '../registry/index.js';
 import {
   editCategoriesOf,
+  rightsBeyond,
+  rightsDriftAccepted,
   type RunAccountNeeds,
 } from '../write/rights-drift.js';
 
@@ -114,9 +118,47 @@ const isNotFound = (error: unknown): boolean =>
   Object.getOwnPropertyDescriptor(error, 'code')?.value === 'not_found';
 
 /**
- * What the rights of the account of a run are judged against: the rights
- * every tool of the routines of the account requires, and the categories
- * the entries with its alias write to.
+ * What the rights of an account of the runner are judged against: the
+ * rights every tool of the routines of the account requires, and the
+ * categories the entries with its alias write to.
+ *
+ * @param catalog - The catalog of tools.
+ * @param policy - The checked policy.
+ * @param credential - The alias of the account, or undefined for a
+ *   routine without an entry, whose account writes to no category.
+ * @param tools - The names of the tools of the routines of the account,
+ *   their read tools and the write tool of their output.
+ * @returns The needs, or undefined when a tool is not in the catalog.
+ * @example
+ * ```ts
+ * accountNeedsOf(catalog, policy, 'berichte', ['ct_events_list', 'ct_wiki_page_append_section']);
+ * ```
+ */
+export function accountNeedsOf(
+  catalog: Pick<ToolCatalog, 'get'>,
+  policy: Policy,
+  credential: string | undefined,
+  tools: readonly string[],
+): RunAccountNeeds | undefined {
+  const rights: RightRef[] = [];
+  for (const name of tools) {
+    const entry = catalog.get(name);
+    if (entry === undefined) return undefined;
+    rights.push(...entry.meta.requiredRights);
+  }
+  const entries =
+    credential === undefined
+      ? []
+      : policy.unattended.filter((entry) => entry.credential === credential);
+  return Object.freeze({
+    rights: Object.freeze(rights),
+    editCategories: editCategoriesOf(entries),
+  });
+}
+
+/**
+ * What the rights of the account of a run are judged against: the needs
+ * of the account the entries of its routine name.
  *
  * @param catalog - The catalog of tools.
  * @param policy - The checked policy.
@@ -135,21 +177,90 @@ export function runNeedsOf(
   routine: string,
   tools: readonly string[],
 ): RunAccountNeeds | undefined {
-  const rights: RightRef[] = [];
-  for (const name of tools) {
-    const entry = catalog.get(name);
-    if (entry === undefined) return undefined;
-    rights.push(...entry.meta.requiredRights);
+  return accountNeedsOf(
+    catalog,
+    policy,
+    policy.unattended.find((entry) => entry.routine === routine)?.credential,
+    tools,
+  );
+}
+
+/** The exception of a routine for rights its account should not have. */
+export interface RightsException {
+  /** The ID of the routine whose entries carry the exception. */
+  readonly routine: string;
+  /** The last UTC day of the exception. */
+  readonly until: IsoDate;
+  /** Whether it holds on the day of the check. */
+  readonly holds: boolean;
+}
+
+/** What the write guard would find for the rights of an account. */
+export interface AccountRights {
+  /**
+   * Module and name of each granted right the routines of the account do
+   * not need, in the order of the answer of ChurchTools.
+   */
+  readonly beyond: readonly RightRef[];
+  /**
+   * The exceptions `acceptRightsDrift` of the routines whose entries name
+   * the account, in the order of the policy.
+   */
+  readonly exceptions: readonly RightsException[];
+}
+
+/**
+ * Judges the rights of an account of the runner as the write guard judges
+ * them before a write of a run (ADR 0032), for `ecclium doctor`: the same
+ * needs, the same comparison and the same days of an exception, so that
+ * the check never passes an account whose writes the guard would queue.
+ *
+ * @param catalog - The catalog of tools.
+ * @param policy - The checked policy.
+ * @param credential - The alias of the account.
+ * @param tools - The tools of the routines of the account that pass their
+ *   preparation, as `accountToolsOf` of the workflows gives them.
+ * @param granted - The rights of the account, as ChurchTools grants them.
+ * @param day - The UTC day of the check.
+ * @returns The rights that are too wide and the exceptions, frozen, or
+ *   undefined when a tool is not in the catalog.
+ * @example
+ * ```ts
+ * accountRightsOf(catalog, policy, 'berichte', tools, granted, '2026-11-13');
+ * ```
+ */
+export function accountRightsOf(
+  catalog: Pick<ToolCatalog, 'get'>,
+  policy: Policy,
+  credential: string,
+  tools: readonly string[],
+  granted: GrantedRights,
+  day: IsoDate,
+): AccountRights | undefined {
+  const needs = accountNeedsOf(catalog, policy, credential, tools);
+  if (needs === undefined) return undefined;
+  const exceptions: RightsException[] = [];
+  const seen = new Set<string>();
+  for (const { routine, credential: alias } of policy.unattended) {
+    if (alias !== credential || seen.has(routine)) continue;
+    seen.add(routine);
+    // As the write guard reads them: the entries of the routine, whose
+    // check holds them to one exception.
+    const entries = policy.unattended.filter(
+      (entry) => entry.routine === routine,
+    );
+    const exception = entries[0]?.acceptRightsDrift;
+    if (exception === undefined) continue;
+    exceptions.push(
+      Object.freeze({
+        routine,
+        until: exception.until,
+        holds: rightsDriftAccepted(entries, day),
+      }),
+    );
   }
-  const alias = policy.unattended.find(
-    (entry) => entry.routine === routine,
-  )?.credential;
-  const entries =
-    alias === undefined
-      ? []
-      : policy.unattended.filter((entry) => entry.credential === alias);
   return Object.freeze({
-    rights: Object.freeze(rights),
-    editCategories: editCategoriesOf(entries),
+    beyond: rightsBeyond(granted, needs),
+    exceptions: Object.freeze(exceptions),
   });
 }
