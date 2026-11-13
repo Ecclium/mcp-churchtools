@@ -124,21 +124,21 @@ export interface ProxySeen {
 }
 
 /**
- * Builds a transport whose every connection goes through a proxy on the
- * loopback address (ADR 0035). The proxy answers CONNECT with 200 and
- * hands the tunnel to a server in memory with the given certificate, as
- * Squid would hand it to ChurchTools, and keeps every byte it got.
+ * Starts a proxy on the loopback address (ADR 0035). It answers CONNECT
+ * with 200 and hands the tunnel to a server in memory with the given
+ * certificate, as Squid would hand it to ChurchTools, and keeps every byte
+ * it got.
  *
  * @param name - Which key and certificate the server shows, a or b.
  * @param handler - Answers the requests.
- * @returns The transport, what the proxy saw, and a function that stops
- *   the proxy.
+ * @returns The address of the proxy, what it saw, and a function that
+ *   stops it.
  */
-export async function throughProxy(
+export async function startTunnelProxy(
   name: 'a' | 'b',
   handler: RequestListener,
 ): Promise<{
-  transport: HttpTransport;
+  url: string;
   proxy: ProxySeen;
   close: () => Promise<void>;
 }> {
@@ -187,17 +187,6 @@ export async function throughProxy(
   const address = proxyServer.address();
   const port =
     typeof address === 'object' && address !== null ? address.port : 0;
-  const transport = createTransport(
-    createProxyAgent(transportLimits, `http://127.0.0.1:${String(port)}`),
-    {
-      origin,
-      token,
-      userAgent,
-      logger,
-      clock: { now: () => Date.now() },
-      limits: transportLimits,
-    },
-  );
   const close = async (): Promise<void> => {
     for (const socket of sockets) socket.destroy();
     await new Promise<void>((resolve) => {
@@ -206,5 +195,34 @@ export async function throughProxy(
       });
     });
   };
+  return { url: `http://127.0.0.1:${String(port)}`, proxy, close };
+}
+
+/**
+ * Builds a transport whose every connection goes through a proxy of
+ * {@link startTunnelProxy}.
+ *
+ * @param name - Which key and certificate the server shows, a or b.
+ * @param handler - Answers the requests.
+ * @returns The transport, what the proxy saw, and a function that stops
+ *   the proxy.
+ */
+export async function throughProxy(
+  name: 'a' | 'b',
+  handler: RequestListener,
+): Promise<{
+  transport: HttpTransport;
+  proxy: ProxySeen;
+  close: () => Promise<void>;
+}> {
+  const { url, proxy, close } = await startTunnelProxy(name, handler);
+  const transport = createTransport(createProxyAgent(transportLimits, url), {
+    origin,
+    token,
+    userAgent,
+    logger,
+    clock: { now: () => Date.now() },
+    limits: transportLimits,
+  });
   return { transport, proxy, close };
 }

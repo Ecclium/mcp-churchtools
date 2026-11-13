@@ -6,10 +6,12 @@ import { inspect } from 'node:util';
 import { assertNoCanary } from '@ecclium/mcp-churchtools-testkit';
 import { describe, expect, it } from 'vitest';
 
+import { probeEgressTarget } from '../../../packages/core/src/http/proxy-probe.ts';
 import {
   canary,
   logged,
   origin,
+  startTunnelProxy,
   throughProxy,
   throughServer,
 } from './server.mts';
@@ -53,6 +55,25 @@ describe('a transport through a proxy against a certificate nothing trusts', () 
       );
     expect(error).toMatchObject({ category: 'tls', code: 'network' });
     await transport.destroy();
+    await close();
+  });
+});
+
+// The check of a target by ecclium doctor checks the certificate the same
+// way, whatever NODE_TLS_REJECT_UNAUTHORIZED says.
+describe('a check of a target through a proxy against a certificate nothing trusts', () => {
+  it('gives tls', async () => {
+    const { url, close } = await startTunnelProxy('a', (_, response) => {
+      response.end('never');
+    });
+    expect(
+      await probeEgressTarget({
+        proxy: url,
+        host: 'demo.example',
+        port: 443,
+        tls: true,
+      }),
+    ).toEqual({ ok: false, reason: 'tls' });
     await close();
   });
 });

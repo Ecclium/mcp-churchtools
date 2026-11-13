@@ -1194,12 +1194,16 @@ describe('createHttpTransport', () => {
     expect(getGlobalDispatcher()).toBe(before);
   });
 
-  // The check of the proxy at the start comes from the same entry, so
-  // that only the composition root reaches it (ADR 0035), and so does the
-  // transport to the ping of the runner (ADR 0009).
-  it('passes on nothing but the factories, the check of the proxy and the types', () => {
+  // The checks of the proxy, of a target through it and of the direct path
+  // come from the same entry, so that only the composition root reaches
+  // them (ADR 0035), and so does the transport to the ping of the runner
+  // (ADR 0009).
+  it('passes on nothing but the factories, the checks of the outbound path and the types', () => {
     expect(Object.keys(compose)).toEqual([
+      'probeDirect',
+      'isProbeTarget',
       'probeEgressProxy',
+      'probeEgressTarget',
       'createHttpTransport',
       'createModelHttpTransport',
       'createPingHttpTransport',
