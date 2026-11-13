@@ -71,7 +71,9 @@ const setup = () => {
   );
   folders.push(base);
   const stateDir = privateDir(join(base, 'state'));
-  privateDir(join(stateDir, 'stop'));
+  // The folder of the kill switches, which the runner requires
+  // (ADR 0036).
+  const stopDir = privateDir(join(stateDir, 'stop'));
   const tokensDir = privateDir(join(base, 'tokens'));
   const token = makeCanary('token');
   privateFile(join(tokensDir, 'ct_token_runner'), `${token.value}\n`);
@@ -153,6 +155,7 @@ const setup = () => {
     ),
     ECCLIUM_ROUTINES_DIR: routinesDir,
     ECCLIUM_STATE_DIR: stateDir,
+    ECCLIUM_KILL_SWITCH_DIR: stopDir,
     ECCLIUM_RUNNER_TOKENS_DIR: tokensDir,
     ECCLIUM_DRAFTS_DIR: join(base, 'drafts'),
     ECCLIUM_RUNNER_METRICS_FILE: metricsFile,

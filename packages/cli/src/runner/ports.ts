@@ -35,7 +35,6 @@ import {
   createTenantContext,
   replacePrivateFile,
   type RoutineLocks,
-  stateFolders,
   type StderrLineWriter,
   type WriteHalt,
   writesHalted,
@@ -112,8 +111,8 @@ const dayOf = (time: number): IsoDate =>
  * @param options - Configuration, catalog, routines, models, writer,
  *   clock, audit file, store, locks, halt, output and process.
  * @returns The ports, frozen.
- * @throws {TypeError} When the configuration has no folder of state or no
- *   zone, which the loader of the runner requires.
+ * @throws {TypeError} When the configuration has no folder of the kill
+ *   switches or no zone, which the loader of the runner requires.
  * @example
  * ```ts
  * const ports = composeRunnerPorts({ config, catalog, routines, model, writer, clock, auditFile, store, locks, writeHalt, output, pid: process.pid });
@@ -124,11 +123,14 @@ export function composeRunnerPorts(options: RunnerPortsOptions): RunnerPorts {
   const { config, clock, writer, writing } = options;
   // The mark of a draft, released when its run closes.
   let draftRelease: (() => void) | undefined;
-  const { stateDir, timeZone } = config;
-  if (stateDir === undefined || timeZone === undefined) {
-    throw new TypeError('The runner needs its folder of state and its zone.');
+  // The folder of the kill switches is the one the loader named
+  // (ADR 0029), never a path built here.
+  const { killSwitchDir: stopDir, timeZone } = config;
+  if (stopDir === undefined || timeZone === undefined) {
+    throw new TypeError(
+      'The runner needs its folder of the kill switches and its zone.',
+    );
   }
-  const stopDir = `${stateDir}/${stateFolders.stop}`;
 
   // The memory of runs counts per tenant (ADR 0034); the context names the
   // tenant and the actor of the routine and nothing a caller chose.

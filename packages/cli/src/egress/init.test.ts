@@ -97,6 +97,9 @@ const setup = (options: SetupOptions = {}) => {
     ),
     ECCLIUM_ROUTINES_DIR: privateDir(join(base, 'routines')),
     ECCLIUM_STATE_DIR: privateDir(join(base, 'state')),
+    // Required for the runner (ADR 0036); a runner that only reads does
+    // not look at it.
+    ECCLIUM_KILL_SWITCH_DIR: join(base, 'kill-switches'),
     ECCLIUM_RUNNER_TOKENS_DIR: tokensDir,
     ECCLIUM_PROVIDERS_FILE: providers,
     ECCLIUM_RUNNER_PING_URL_FILE: privateFile(

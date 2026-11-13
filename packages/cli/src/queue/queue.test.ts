@@ -213,6 +213,8 @@ const run = async (
   options: {
     readonly queueId?: string;
     readonly environment?: Readonly<Record<string, string>>;
+    /** Added to the environment of the test. */
+    readonly extra?: Readonly<Record<string, string>>;
     readonly cut?: boolean;
     readonly answer?: (double: MockedHttpTransport) => void;
   } = {},
@@ -260,6 +262,7 @@ const run = async (
       ECCLIUM_TOOLSETS: 'wiki',
       ECCLIUM_MARKER_KEY_FILE: join(configDir, 'marker-key'),
       ECCLIUM_POLICY_FILE: join(configDir, 'policy.yaml'),
+      ...options.extra,
     },
     execArgv: [],
     action,
@@ -653,6 +656,23 @@ describe('ecclium queue approve', () => {
     expect(result.code).toBe(exitCodes.noPermission);
     expect(result.stderr[0]).toContain('Kill-Switch');
     expect(result.stderr[0]).toContain('Der Eintrag wartet weiter');
+    expect(result.requests).toBe(0);
+  });
+
+  // The command looks for a switch only in the folder the configuration
+  // names (ADR 0029), not in the empty folder stop of the folder of state.
+  it('writes nothing for a switch in the folder of ECCLIUM_KILL_SWITCH_DIR', async () => {
+    await keep(id, approvable);
+    const switches = join(configDir, 'kill-switches');
+    mkdirSync(switches, { mode: 0o700 });
+    writeFileSync(join(switches, 'writes-off'), '');
+    const result = await run('approve', {
+      queueId: id,
+      answer: writing,
+      extra: { ECCLIUM_KILL_SWITCH_DIR: switches },
+    });
+    expect(result.code).toBe(exitCodes.noPermission);
+    expect(result.stderr[0]).toContain('Kill-Switch');
     expect(result.requests).toBe(0);
   });
 

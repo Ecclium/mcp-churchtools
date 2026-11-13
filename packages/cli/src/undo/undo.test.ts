@@ -195,6 +195,8 @@ const run = async (
     readonly eventId?: string;
     readonly overwrite?: boolean;
     readonly environment?: Readonly<Record<string, string>>;
+    /** Added to the environment of the test. */
+    readonly extra?: Readonly<Record<string, string>>;
     readonly answer?: (double: MockedHttpTransport) => void;
   } = {},
 ): Promise<Run> => {
@@ -232,6 +234,7 @@ const run = async (
       ECCLIUM_TOOLSETS: 'wiki',
       ECCLIUM_MARKER_KEY_FILE: join(configDir, 'marker-key'),
       ECCLIUM_POLICY_FILE: join(configDir, 'policy.yaml'),
+      ...options.extra,
     },
     execArgv: [],
     eventId: options.eventId ?? written,
@@ -357,6 +360,25 @@ describe('ecclium undo', () => {
     const unknown = await run({ answer: answer([[4, after]]) });
     expect(unknown.code).toBe(78);
     expect(unknown.stderr.join('\n')).toMatch(/‹stop›/);
+  });
+
+  // The command looks for a switch only in the folder the configuration
+  // names (ADR 0029): a switch in the folder of ECCLIUM_KILL_SWITCH_DIR
+  // stops it while the folder stop of the folder of state is empty, and
+  // without that folder it does not fall back to stop.
+  it('looks only into the folder of ECCLIUM_KILL_SWITCH_DIR when it is set', async () => {
+    await keep();
+    const switches = join(configDir, 'kill-switches');
+    mkdirSync(switches, { mode: 0o700 });
+    writeFileSync(join(switches, 'writes-off'), '');
+    const extra = { ECCLIUM_KILL_SWITCH_DIR: switches };
+    const off = await run({ extra, answer: answer([[4, after]]) });
+    expect(off.code).toBe(77);
+    expect(off.stderr[0]).toMatch(/Kill-Switch/);
+    rmSync(switches, { recursive: true });
+    const unknown = await run({ extra, answer: answer([[4, after]]) });
+    expect(unknown.code).toBe(78);
+    expect(unknown.stderr.join('\n')).toMatch(/ECCLIUM_KILL_SWITCH_DIR/);
   });
 
   it('ends with 66 once the day key is gone', async () => {
