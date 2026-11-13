@@ -325,11 +325,20 @@ const entries = (count: number): string =>
       ? '1 Eintrag'
       : `${formatNumber(count)} Einträge`;
 
-// The summary of the policy: its hash, as every audit line of a write
-// names it, the size of both parts and the read budget, then what a later
-// `ecclium doctor` reports as findings (ADR 0032). No target, so that the
-// output fits into a public issue as well.
-const policyLines = (policy: Policy): readonly string[] => {
+/**
+ * The summary of the policy: its hash, as every audit line of a write
+ * names it, the size of both parts and the read budget, then its findings,
+ * which `ecclium doctor` shows the same way (ADR 0032). No target, so that
+ * the output fits into a public issue as well.
+ *
+ * @param policy - The checked policy.
+ * @returns The lines; a finding starts with «Befund» after the indent.
+ * @example
+ * ```ts
+ * policyLines(config.policy);
+ * ```
+ */
+export const policyLines = (policy: Policy): readonly string[] => {
   const budget = policy.interactive.readBudgetPerDay;
   const row = (label: string, value: string): string =>
     `  ${label.padEnd(valueColumn)}${value}`;
@@ -359,12 +368,22 @@ const policyLines = (policy: Policy): readonly string[] => {
   return lines;
 };
 
-// The summary of the providers: per alias the vendor, the model, the
-// country and, outside Switzerland and the EEA, the basis of the transfer,
-// so that the operator sees where the data of a run go (ADR 0033). The
-// host of the endpoint can name a server of the parish, so it shows only
-// on request, and the path of a key never.
-const providerLines = (
+/**
+ * The summary of the providers: per alias the vendor, the model, the
+ * country and, outside Switzerland and the EEA, the basis of the transfer,
+ * so that the operator sees where the data of a run go (ADR 0033). The
+ * host of the endpoint can name a server of the parish, so it shows only
+ * on request, and the path of a key never.
+ *
+ * @param providers - The checked providers.
+ * @param showValues - Whether to show the host of each endpoint.
+ * @returns The lines.
+ * @example
+ * ```ts
+ * providerLines(config.providers ?? [], false);
+ * ```
+ */
+export const providerLines = (
   providers: readonly ProviderSettings[],
   showValues: boolean,
 ): readonly string[] => [
