@@ -45,3 +45,4 @@ export {
   type RunnerSchedule,
   type RunNotice,
 } from './pass.js';
+export { type PingContext, pingOf, type PingVerdict } from './ping.js';

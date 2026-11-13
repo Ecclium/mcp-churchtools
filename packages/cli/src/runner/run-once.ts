@@ -53,7 +53,7 @@ import {
   type SignalWatch,
   watchSignals,
 } from './host.js';
-import { openRunnerProcess } from './process.js';
+import { openRunnerProcess, type RunnerProcessOptions } from './process.js';
 import {
   type RunnerMode,
   type RunnerStart,
@@ -95,6 +95,8 @@ export interface RunOnceOptions {
   readonly readModelKey?: Parameters<
     typeof composeModelProviders
   >[0]['readKey'];
+  /** Replaces the transport to the ping of the runner (ADR 0009). */
+  readonly createPingTransport?: RunnerProcessOptions['createPingTransport'];
   /** Replaces the clock. */
   readonly clock?: Clock;
   /** Replaces the process for its signals, faults, end and waits. */
@@ -264,6 +266,9 @@ export async function runOnce(options: RunOnceOptions): Promise<ExitCode> {
     ...(options.readModelKey === undefined
       ? {}
       : { readModelKey: options.readModelKey }),
+    ...(options.createPingTransport === undefined
+      ? {}
+      : { createPingTransport: options.createPingTransport }),
     ...(options.clock === undefined ? {} : { clock: options.clock }),
   });
   if (!opened.ok) return opened.code;
@@ -316,6 +321,13 @@ export async function runOnce(options: RunOnceOptions): Promise<ExitCode> {
       output.stderr(runnerProcessTexts.metrics_failed);
       severity = worseOf(severity, 'file');
     }
+    // The ping to the monitoring, after the metrics file; it changes no
+    // exit code (ADR 0009). For a run by hand only its routine counts.
+    await runner.ping(
+      pass.routines,
+      mode.kind === 'due' ? refused.length : 0,
+      watch.signal,
+    );
     return watch.code() ?? exitCodeOf(severity);
   } finally {
     watch.dispose();

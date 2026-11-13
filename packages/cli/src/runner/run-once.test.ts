@@ -33,6 +33,7 @@ import {
 import type {
   HttpTransportOptions,
   ModelHttpTransportOptions,
+  PingHttpTransportOptions,
 } from '@ecclium/mcp-churchtools-core/http';
 import {
   assertNoCanary,
@@ -41,6 +42,7 @@ import {
   chatCompletion,
   createChurchToolsDouble,
   createModelEndpointDouble,
+  createPingDouble,
   createRoutinePlugin,
   doubleModelEndpoint,
   doubleOrigin,
@@ -474,6 +476,11 @@ interface SetupOptions {
    * only the key of the pseudonyms, which every setup sets.
    */
   readonly strict?: boolean;
+  /**
+   * Sets a file with the ping URL of the runner (ADR 0009), whose path
+   * holds a canary, and the status its double answers with.
+   */
+  readonly ping?: { readonly status: number };
 }
 
 /** One call of the command. */
@@ -508,6 +515,14 @@ const setup = (options: SetupOptions = {}) => {
   privateDir(join(routinesDir, 'templates'));
   const draftsDir = join(base, 'drafts');
   const notifyFile = join(base, 'notices.jsonl');
+  // The ping URL of the runner, whose path works like a secret (ADR 0009):
+  // a canary in it shows a leak anywhere the check for canaries reads.
+  const pingCanary = makeCanary('token');
+  const pingPath = `/ping/${pingCanary.cores[0] ?? ''}`;
+  const pingFile = join(base, 'ping-url');
+  if (options.ping !== undefined) {
+    privateFile(pingFile, `https://ping.example.org${pingPath}\n`);
+  }
 
   // The own account of the runner and the account of the alias of the
   // wiki routine, each with a token that must show nowhere.
@@ -607,6 +622,9 @@ const setup = (options: SetupOptions = {}) => {
     // without the boundary on purpose (ADR 0035).
     ECCLIUM_EGRESS: 'off',
     ...(options.strict === true ? { ECCLIUM_REDACTION: 'strict' } : {}),
+    ...(options.ping === undefined
+      ? {}
+      : { ECCLIUM_RUNNER_PING_URL_FILE: pingFile }),
   };
   for (const [name, value] of Object.entries(options.extra ?? {})) {
     if (value === undefined) Reflect.deleteProperty(environment, name);
@@ -715,6 +733,32 @@ const setup = (options: SetupOptions = {}) => {
       },
     });
   };
+  // The ping, on a double that answers each of its two paths with the
+  // status of the test. Each transport lives for one ping; its calls are
+  // kept when the runner destroys it.
+  const pingCalls: MockedCall[] = [];
+  const createPingTransport = (given: PingHttpTransportOptions) => {
+    const double = createPingDouble({
+      url: given.url,
+      logger: given.logger,
+      clock: given.clock,
+    });
+    open.push(double);
+    for (const path of [pingPath, `${pingPath}/fail`]) {
+      double
+        .intercept({ path, method: 'POST' })
+        .reply(options.ping?.status ?? 200, 'OK')
+        .persist();
+    }
+    return Object.freeze({
+      ...double.transport,
+      destroy: async () => {
+        pingCalls.push(...double.calls());
+        await double.close();
+      },
+    });
+  };
+
   // The read tools of the routine plugin beside the tools of the core, as
   // the catalog of the runner holds them.
   const plugin = createRoutinePlugin();
@@ -763,6 +807,7 @@ const setup = (options: SetupOptions = {}) => {
       },
       createTransport,
       createModelTransport,
+      createPingTransport,
       clock,
       host: driver.host,
     });
@@ -801,6 +846,7 @@ const setup = (options: SetupOptions = {}) => {
       },
       createTransport,
       createModelTransport,
+      createPingTransport,
       clock,
       host: driver.host,
       ...(more.openProcess === undefined
@@ -894,6 +940,7 @@ const setup = (options: SetupOptions = {}) => {
       accountToken,
       modelKey,
       pathCanary,
+      pingCanary,
       ...otherTokens,
     ];
     assertPlanted(
@@ -909,6 +956,7 @@ const setup = (options: SetupOptions = {}) => {
     assertNoCanary(stderr, canaries, 'stderr');
     assertNoCanary(logs, canaries, 'the log');
     assertNoCanary(notices(), canaries, 'the notices');
+    assertNoCanary(auditLines(), canaries, 'the audit file');
   };
 
   return {
@@ -942,6 +990,8 @@ const setup = (options: SetupOptions = {}) => {
     patches,
     pageText,
     notices,
+    pingCalls,
+    pingPath,
     assertNothingLeaked,
   };
 };
@@ -2163,6 +2213,7 @@ describe('ecclium runner around a process of the test', () => {
           Promise.resolve({
             next: new Map([[wikiRoutine, now + t.state.laterMs + 90_000]]),
           }),
+        ping: () => Promise.resolve(),
         writesHalted: () => false,
         close: () => undefined,
         ...over,
@@ -2427,5 +2478,120 @@ describe('the proxy of ecclium run-once (ADR 0035)', () => {
     });
     expect(code).toBe(exitCodes.invalidConfig);
     expect(stderr.join('\n')).toContain('ECCLIUM_EGRESS_PROXY');
+  });
+});
+
+describe('the ping of the runner (ADR 0009)', () => {
+  // The lines of the log of a setup, as JSON.
+  const logLines = (t: ReturnType<typeof setup>): Record<string, unknown>[] =>
+    t.logs
+      .join('')
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+  it('reports a pass with a run to its address, without body or token, and never names its path', async () => {
+    const t = setup({ ping: { status: 200 } });
+    const first = await t.call(due);
+    expect(first.code).toBe(exitCodes.ok);
+    expect(t.pingCalls).toHaveLength(1);
+    const [ping] = t.pingCalls;
+    expect(ping?.method).toBe('POST');
+    expect(ping?.path).toBe(t.pingPath);
+    expect(ping?.body).toBeUndefined();
+    expect(ping?.headers['authorization']).toBeUndefined();
+    expect(logLines(t)).toContainEqual(
+      expect.objectContaining({
+        event: 'http_response',
+        purpose: 'ping',
+        status: 200,
+      }),
+    );
+    // A pass in which nothing was due sends nothing.
+    const second = await t.call(due);
+    expect(second.code).toBe(exitCodes.ok);
+    expect(t.pingCalls).toHaveLength(1);
+    t.assertNothingLeaked();
+  });
+
+  it('reports a run by hand, and nothing for a preview', async () => {
+    const t = setup({ ping: { status: 200 } });
+    expect((await t.call(preview(wikiRoutine))).code).toBe(exitCodes.ok);
+    expect(t.pingCalls).toEqual([]);
+    expect((await t.call(byHand(wikiRoutine))).code).toBe(exitCodes.ok);
+    expect(t.pingCalls.map((call) => call.path)).toEqual([t.pingPath]);
+    t.assertNothingLeaked();
+  });
+
+  it('reports a run that failed for good to /fail and keeps the exit code', async () => {
+    const t = setup({ ping: { status: 200 } });
+    writeFileSync(join(t.stopDir, `writes-off-routine-${wikiRoutine}`), '');
+    const { code } = await t.call(due);
+    expect(code).toBe(exitCodes.noPermission);
+    expect(t.pingCalls.map((call) => call.path)).toEqual([
+      `${t.pingPath}/fail`,
+    ]);
+    t.assertNothingLeaked();
+  });
+
+  it('sends nothing after the first try that failed for a passing reason, and /fail after the second', async () => {
+    const t = setup({ ping: { status: 200 } });
+    t.state.modelDown = true;
+    expect((await t.call(due)).code).toBe(exitCodes.tempFail);
+    expect(t.pingCalls).toEqual([]);
+    // The second try of the same trigger, two windows of 15 minutes later.
+    t.state.laterMs += 30 * 60_000;
+    expect((await t.call(due)).code).toBe(exitCodes.tempFail);
+    expect(t.runLines().map((line) => line['attempt'])).toEqual([1, 2]);
+    expect(t.pingCalls.map((call) => call.path)).toEqual([
+      `${t.pingPath}/fail`,
+    ]);
+    t.assertNothingLeaked();
+  });
+
+  it('changes no exit code when the service refuses the ping, and logs the status without the address', async () => {
+    const t = setup({ ping: { status: 404 } });
+    const { code, stderr } = await t.call(due);
+    expect(code).toBe(exitCodes.ok);
+    expect(t.pingCalls).toHaveLength(1);
+    expect(logLines(t)).toContainEqual(
+      expect.objectContaining({
+        level: 'warn',
+        event: 'http_status',
+        purpose: 'ping',
+        status: 404,
+      }),
+    );
+    // The command says nothing more on stderr than without a ping.
+    expect(stderr.join('\n')).not.toContain('ping');
+    t.assertNothingLeaked();
+  });
+
+  it('sends nothing without the variable', async () => {
+    const t = setup();
+    expect((await t.call(due)).code).toBe(exitCodes.ok);
+    expect(t.pingCalls).toEqual([]);
+  });
+
+  it('pings from the daemon after the pass with a run only', async () => {
+    const t = setup({ ping: { status: 200 } });
+    t.driver.onWait((count) => {
+      if (count === 3) t.driver.send('SIGTERM');
+    });
+    const { code } = await t.daemon();
+    expect(code).toBe(exitCodes.terminated);
+    expect(t.driver.waits).toHaveLength(3);
+    expect(t.pingCalls.map((call) => call.path)).toEqual([t.pingPath]);
+    t.assertNothingLeaked();
+  });
+
+  it('sends no ping after a signal during the pass', async () => {
+    const t = setup({ ping: { status: 200 } });
+    t.state.onModel = () => {
+      t.driver.send('SIGTERM');
+    };
+    const { code } = await t.call(due);
+    expect(code).toBe(exitCodes.terminated);
+    expect(t.pingCalls).toEqual([]);
   });
 });
