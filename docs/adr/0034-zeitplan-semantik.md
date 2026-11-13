@@ -65,7 +65,7 @@ Gewählt ist die dritte Option, mit `croner` 11.0.0.
 - Daemon und Einzellauf haben eine Semantik. Wer den Einzellauf öfter aufruft, als Routinen fällig werden, verursacht keine zusätzlichen Läufe.
 - Die Zeitzone kommt aus der Variable, die es für die Texte der Bestätigungen schon gibt. Für den Runner ist sie Pflicht, für den Server bleibt sie freiwillig ([ADR 0055](0055-konfiguration-identitaet.md)).
 - **Restrisiken:**
-  - Geht die Uhr des Rechners falsch, laufen Routinen zur falschen Zeit oder in der falschen Periode. `ecclium doctor` prüft die Uhr, sobald es ihn gibt.
+  - Geht die Uhr des Rechners falsch, laufen Routinen zur falschen Zeit oder in der falschen Periode. Die Uhr prüft erst eine spätere Fassung von `ecclium doctor`, die erste vom 13.11.2026 nicht.
   - Ein Lauf, der kurz vor dem Ende seiner Periode beginnt und danach endet, gehört zur Periode seiner Auslösung. Das ist gewollt, kann aber überraschen.
   - Drei Versuche je Auslösung können bei einem gestörten Anbieter dreimal kosten.
   - Ein Prozess, der abstürzt, hält die Sperre seiner Routine bis zur Höchstdauer eines Laufs, wenn der Kern nicht sehen kann, ob er noch läuft, etwa in einem anderen Container.
