@@ -79,7 +79,7 @@ Schalten Sie das Schreiben ein, empfehlen wir ein zweites Dienstkonto nur dafür
 - **Ziele mit wenig Folgen:** `edit category` erlaubte auf einer Testinstanz auch, die Seiten der Kategorie zu löschen. Ecclium löscht nie eine Seite, ein gestohlenes Token könnte es aber. Geben Sie das Recht deshalb für Kategorien, in denen ein Fehler wenig kostet, etwa eine eigene Kategorie für Berichte, und für einen eigenen Kalender, wo das geht.
 - **Richtlinie dazu:** Nennen Sie dieselben Ziele unter `interactive.targets` der [Richtlinie](../policy.md). Die Rechte begrenzen, was das Konto in ChurchTools darf, die Richtlinie, wohin Ecclium schreiben will und wie oft am Tag.
 - **Nur ein Konto:** Es geht auch mit einem Eintrag und einem Konto, das lesen und für die Ziele schreiben darf. Dann trägt jeder Aufruf, auch einer, der nur liest, die Schreibrechte des Kontos mit.
-- **Später:** Seit dem 13.11.2026 prüft `ecclium doctor` die Konten des Runners und zeigt eine Richtlinie ohne Einträge unter `interactive.targets` als Befund ([Prüfen mit `ecclium doctor`](doctor.md)). Für das Konto des Servers kommt die Prüfung mit einer späteren Fassung: Sie soll Schreibrechte eines Kontos melden, dessen Server nur liest, und Leserechte, die kein eingeschaltetes Tool braucht.
+- **Prüfung mit `ecclium doctor`:** Seit dem 13.11.2026 prüft `ecclium doctor` die Konten des Runners und zeigt eine Richtlinie ohne Einträge unter `interactive.targets` als Befund, der nicht für den Exit-Code zählt ([Prüfen mit `ecclium doctor`](doctor.md)). Für das Konto des Servers kommt die Prüfung mit einer späteren Fassung: Sie soll Schreibrechte eines Kontos melden, dessen Server nur liest, und Leserechte, die kein eingeschaltetes Tool braucht.
 
 ## Login-Token
 
