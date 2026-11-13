@@ -105,9 +105,10 @@ export type RunnerTokensDirCode =
  * The folders that Ecclium keeps inside the folder of state, frozen, by
  * purpose: the audit files (ADR 0028), the counters of the read budget, the
  * limits of a day and the memory of runs (ADR 0063), the snapshots and the
- * queue (ADR 0031), the locks of the routines (ADR 0034) and the kill
- * switches (ADR 0029). They are named once here, so that the loader, the
- * stores and the runner container contract (ADR 0036) name the same.
+ * queue (ADR 0031), the locks of the routines (ADR 0034) and, over stdio
+ * without `ECCLIUM_KILL_SWITCH_DIR`, the kill switches (ADR 0029). They are
+ * named once here, so that the loader, the stores and the runner container
+ * contract (ADR 0036) name the same.
  */
 export const stateFolders = Object.freeze({
   audit: 'audit',
@@ -481,38 +482,63 @@ export function checkStateDir(
 }
 
 /**
- * Tells whether the folder of state holds the folder `stop` of the kill
- * switches as a real folder, not a link (ADR 0029). The core looks into it
- * before each plan and right before each write, and a folder it cannot
- * check stops writing. With writing switched on, the loader checks it at
- * the start already, so that a server that could never write does not
- * offer its write tools.
+ * The longest path of the folder of the kill switches, in characters and
+ * in bytes of UTF-8 (ADR 0029). The longest name in it is the kill switch
+ * of a routine, `writes-off-routine-` and an ID of up to 63 characters, so
+ * the path of a switch stays below PATH_MAX of macOS, 1024 bytes, as for
+ * the folder of the token files.
+ */
+export const maxKillSwitchDirLength = 896;
+
+/**
+ * What the start finds at the folder of the kill switches: a folder it can
+ * use, one that is missing or that the core could not check, or one in
+ * which the group or others may write.
+ */
+export type KillSwitchDirState = 'ready' | 'missing' | 'writable';
+
+/**
+ * Checks the folder of the kill switches (ADR 0029): a real folder, not a
+ * link, in which neither the group nor others may write, and in which the
+ * core can look for a switch. The core looks into it before each plan and
+ * right before each write, and a folder it cannot check stops writing.
+ * With writing switched on, the loader checks it at the start already, so
+ * that a server that could never write does not offer its write tools, and
+ * the runner checks it for a routine with a draft.
  *
- * @param path - The folder of state, already checked.
+ * Its owner is not checked: the operator makes a switch on the host
+ * without root, also in a folder that a container mounts read-only
+ * (ADR 0036). Whoever may write in the folder, though, could take
+ * a switch away again, so the group and others may not.
+ *
+ * Folders above it are trusted: `lstat` follows links there.
+ *
+ * @param dir - The folder of the switches, an absolute normalised path.
  * @param fs - The file functions, only for tests.
- * @returns Whether `stop` is a folder in it.
+ * @returns `ready`, `missing` or `writable`.
  * @example
  * ```ts
- * if (!hasStopDir('/srv/ecclium')) report('writes_without_stop_dir');
+ * if (checkKillSwitchDir('/config/stop') !== 'ready') report('writes_without_stop_dir');
  * ```
  */
-export function hasStopDir(
-  path: string,
+export function checkKillSwitchDir(
+  dir: string,
   fs: StateDirFileSystem = nodeFileSystem,
-): boolean {
+): KillSwitchDirState {
   try {
-    const stats = fs.lstatSync(`${path}/${stateFolders.stop}`);
-    if (stats.isSymbolicLink() || !stats.isDirectory()) return false;
+    const stats = fs.lstatSync(dir);
+    if (stats.isSymbolicLink() || !stats.isDirectory()) return 'missing';
+    if ((stats.mode & 0o022) !== 0) return 'writable';
   } catch {
-    return false;
+    return 'missing';
   }
   // The switch in it must be checkable as well, as the core checks it
   // before each write: a folder it cannot search stops every write.
   try {
-    fs.lstatSync(`${path}/${stateFolders.stop}/writes-off`);
-    return true;
+    fs.lstatSync(`${dir === '/' ? '' : dir}/writes-off`);
+    return 'ready';
   } catch (error) {
-    return errorCode(error) === 'ENOENT';
+    return errorCode(error) === 'ENOENT' ? 'ready' : 'missing';
   }
 }
 

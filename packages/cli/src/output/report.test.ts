@@ -130,6 +130,10 @@ describe('renderConfigReport', () => {
         'Schlüsselordner',
         'keine Tagesschlüssel (‹ECCLIUM_KEYS_DIR› ist nicht gesetzt)',
       ),
+      row(
+        'Kill-Switches',
+        'kein Ordner (‹ECCLIUM_KILL_SWITCH_DIR› ist nicht gesetzt)',
+      ),
       row('Snapshots', '‹on› (Voreinstellung)'),
       row('Bestätigung', '‹echo-allowed› (Voreinstellung)'),
       row('Zeitzone der Texte', 'UTC (‹ECCLIUM_TIME_ZONE› ist nicht gesetzt)'),
@@ -222,6 +226,41 @@ describe('renderConfigReport', () => {
     expect(masked.join('\n')).not.toContain('/path/to/keys');
     expect(render(environment, true)).toContain(
       row('Schlüsselordner', '‹/path/to/keys› (aus ‹ECCLIUM_KEYS_DIR›)'),
+    );
+  });
+
+  // The folder of the kill switches (ADR 0029): the folder stop by default
+  // lies in the folder of state, whose own line masks it; a folder of the
+  // variable can hold the name of a user and is masked like the others.
+  it('names the folder stop by default and masks the folder of the variable', () => {
+    const stateOnly = render({
+      ...minimal(),
+      ECCLIUM_STATE_DIR: '/path/to/state',
+    });
+    expect(stateOnly).toContain(
+      row('Kill-Switches', '‹stop› im Zustandsordner (Voreinstellung)'),
+    );
+    expect(stateOnly).toContain(
+      'Verborgen sind der Host und der Zustandsordner, damit Sie die Ausgabe ohne Bearbeitung weitergeben können. Mit ‹--show-values› zeigt der Befehl beide.',
+    );
+    const environment = {
+      ...minimal(),
+      ECCLIUM_STATE_DIR: '/path/to/state',
+      ECCLIUM_KILL_SWITCH_DIR: '/path/to/kill-switches',
+    };
+    const masked = render(environment);
+    expect(masked).toContain(
+      row('Kill-Switches', '[verborgen] (aus ‹ECCLIUM_KILL_SWITCH_DIR›)'),
+    );
+    expect(masked).toContain(
+      'Verborgen sind der Host, der Zustandsordner und der Ordner der Kill-Switches, damit Sie die Ausgabe ohne Bearbeitung weitergeben können. Mit ‹--show-values› zeigt der Befehl alle.',
+    );
+    expect(masked.join('\n')).not.toContain('/path/to/kill-switches');
+    expect(render(environment, true)).toContain(
+      row(
+        'Kill-Switches',
+        '‹/path/to/kill-switches› (aus ‹ECCLIUM_KILL_SWITCH_DIR›)',
+      ),
     );
   });
 
@@ -446,9 +485,15 @@ describe('renderConfigReport', () => {
     expect(lines).toContain(
       row('Token', 'fehlt (‹ECCLIUM_RUNNER_TOKENS_DIR› ist nicht gesetzt)'),
     );
-    // The five settings it needs, and a proxy or ECCLIUM_EGRESS=off
+    // The six settings it needs, and a proxy or ECCLIUM_EGRESS=off
     // (ADR 0035).
-    expect(lines).toContain('Die Konfiguration hat 6 Probleme:');
+    expect(lines).toContain(
+      row(
+        'Kill-Switches',
+        'fehlt (‹ECCLIUM_KILL_SWITCH_DIR› ist nicht gesetzt)',
+      ),
+    );
+    expect(lines).toContain('Die Konfiguration hat 7 Probleme:');
     expect(lines.at(-1)).toBe(invalid);
   });
 

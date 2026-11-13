@@ -24,6 +24,7 @@ import {
 import {
   isNormalizedAbsolutePath,
   maxKeysDirLength,
+  maxKillSwitchDirLength,
   maxStateDirLength,
 } from './state-dir.js';
 
@@ -43,6 +44,7 @@ export const variableNames = Object.freeze([
   'ECCLIUM_TOOLSETS',
   'ECCLIUM_STATE_DIR',
   'ECCLIUM_KEYS_DIR',
+  'ECCLIUM_KILL_SWITCH_DIR',
   'ECCLIUM_SNAPSHOTS',
   'ECCLIUM_WRITE_CONFIRMATION',
   'ECCLIUM_TIME_ZONE',
@@ -637,6 +639,20 @@ export const variables: readonly Variable[] = Object.freeze([
     stdioOnly: true,
     runner: true,
   }),
+  // The folder of the kill switches (ADR 0029): over stdio by default the
+  // folder stop of the folder of state, for the runner required, in its
+  // container /config/stop, which comes with /config (ADR 0036). Like the
+  // folder of state, only where Ecclium writes.
+  row({
+    name: 'ECCLIUM_KILL_SWITCH_DIR',
+    kind: 'path',
+    maxLength: maxKillSwitchDirLength,
+    choices: [],
+    defaultValue: undefined,
+    secret: false,
+    stdioOnly: true,
+    runner: true,
+  }),
   // The snapshots of writes (ADR 0031): on unless the operator turns them
   // off, which leaves no write that can be taken back. Their retention is
   // fixed, so there is no variable for it.
@@ -909,6 +925,17 @@ export const variableSchemas: Readonly<
     .min(1)
     .max(maxKeysDirLength)
     .refine((value) => isNormalizedAbsolutePath(value)),
+  // The bound in bytes as well: a character outside ASCII takes more than
+  // one byte in a path.
+  ECCLIUM_KILL_SWITCH_DIR: z
+    .string()
+    .min(1)
+    .max(maxKillSwitchDirLength)
+    .refine(
+      (value) =>
+        isNormalizedAbsolutePath(value) &&
+        new TextEncoder().encode(value).length <= maxKillSwitchDirLength,
+    ),
   ECCLIUM_SNAPSHOTS: choiceOf('ECCLIUM_SNAPSHOTS'),
   ECCLIUM_WRITE_CONFIRMATION: choiceOf('ECCLIUM_WRITE_CONFIRMATION'),
   ECCLIUM_TIME_ZONE: z
@@ -1008,6 +1035,7 @@ export const environmentSchema = z.strictObject({
   ECCLIUM_TOOLSETS: variableSchemas.ECCLIUM_TOOLSETS.optional(),
   ECCLIUM_STATE_DIR: variableSchemas.ECCLIUM_STATE_DIR.optional(),
   ECCLIUM_KEYS_DIR: variableSchemas.ECCLIUM_KEYS_DIR.optional(),
+  ECCLIUM_KILL_SWITCH_DIR: variableSchemas.ECCLIUM_KILL_SWITCH_DIR.optional(),
   ECCLIUM_SNAPSHOTS: variableSchemas.ECCLIUM_SNAPSHOTS.optional(),
   ECCLIUM_WRITE_CONFIRMATION:
     variableSchemas.ECCLIUM_WRITE_CONFIRMATION.optional(),

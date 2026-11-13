@@ -71,6 +71,11 @@ export const configProblemCodes = Object.freeze([
   'toolsets_without_state_dir',
   'writes_without_state_dir',
   'writes_without_stop_dir',
+  // The folder of the kill switches (ADR 0029, ADR 0036).
+  'kill_switch_dir_invalid',
+  'kill_switch_dir_overlap',
+  'kill_switch_dir_writable',
+  'kill_switch_dir_required',
   ...keysDirCodes,
   'keys_dir_required',
   'keys_dir_in_state_dir',

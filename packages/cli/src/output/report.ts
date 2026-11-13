@@ -63,6 +63,7 @@ const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
   toolsets: 'Toolsets',
   stateDir: 'Zustandsordner',
   keysDir: 'Schlüsselordner',
+  killSwitchDir: 'Kill-Switches',
   snapshots: 'Snapshots',
   writeConfirmation: 'Bestätigung',
   timeZone: 'Zeitzone der Texte',
@@ -104,6 +105,7 @@ type Hidden =
   | 'subject'
   | 'path'
   | 'keys'
+  | 'stop'
   | 'policy'
   | 'routines'
   | 'providers'
@@ -137,11 +139,11 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
   if (setting.key === 'policy' && setting.origin === 'default') {
     return { text: 'keine Datei' };
   }
-  // Only the folders of state, of keys, of the routines, of the tokens of
-  // the runner and of the drafts, the files of the providers, of the
-  // notices, of the metrics and of the ping, the key files, the zone, the
-  // proxy, the switch for a runner without it and the targets in the local
-  // network may stay unset without a default.
+  // Only the folders of state, of keys, of the kill switches, of the
+  // routines, of the tokens of the runner and of the drafts, the files of
+  // the providers, of the notices, of the metrics and of the ping, the key
+  // files, the zone, the proxy, the switch for a runner without it and the
+  // targets in the local network may stay unset without a default.
   if (setting.origin === 'unset') {
     switch (setting.key) {
       case 'timeZone':
@@ -150,6 +152,8 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
         return { text: 'keine Audit-Datei' };
       case 'keysDir':
         return { text: 'keine Tagesschlüssel' };
+      case 'killSwitchDir':
+        return { text: 'kein Ordner' };
       case 'pseudonymKey':
         return { text: 'kein Schlüssel' };
       case 'pseudonymKeyPrevious':
@@ -179,6 +183,11 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
       default:
         throw new TypeError(inconsistent);
     }
+  }
+  // The folder stop by default lies in the folder of state, which its own
+  // line shows or masks, so its path needs no mask of its own.
+  if (setting.key === 'killSwitchDir' && setting.origin === 'default') {
+    return { text: `${quote('stop')} im Zustandsordner` };
   }
   const shown = setting.shown;
   switch (shown.kind) {
@@ -243,19 +252,21 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
               ? 'policy'
               : setting.key === 'keysDir'
                 ? 'keys'
-                : setting.key === 'routinesDir'
-                  ? 'routines'
-                  : setting.key === 'providers'
-                    ? 'providers'
-                    : setting.key === 'runnerTokensDir'
-                      ? 'tokens'
-                      : setting.key === 'draftsDir'
-                        ? 'drafts'
-                        : setting.key === 'notifyFile'
-                          ? 'notices'
-                          : setting.key === 'metricsFile'
-                            ? 'metrics'
-                            : 'path',
+                : setting.key === 'killSwitchDir'
+                  ? 'stop'
+                  : setting.key === 'routinesDir'
+                    ? 'routines'
+                    : setting.key === 'providers'
+                      ? 'providers'
+                      : setting.key === 'runnerTokensDir'
+                        ? 'tokens'
+                        : setting.key === 'draftsDir'
+                          ? 'drafts'
+                          : setting.key === 'notifyFile'
+                            ? 'notices'
+                            : setting.key === 'metricsFile'
+                              ? 'metrics'
+                              : 'path',
         };
       }
       return isPrintable(shown.value)
@@ -292,6 +303,7 @@ const hiddenNames: Readonly<Record<Hidden, readonly [string, string]>> =
     subject: ['das Subjekt', 'es'],
     path: ['der Zustandsordner', 'ihn'],
     keys: ['der Schlüsselordner', 'ihn'],
+    stop: ['der Ordner der Kill-Switches', 'ihn'],
     policy: ['der Pfad der Richtlinie', 'ihn'],
     routines: ['der Ordner der Routinen', 'ihn'],
     providers: ['der Pfad der Datei der Anbieter', 'ihn'],
@@ -458,6 +470,7 @@ export function renderConfigReport(
             'subject',
             'path',
             'keys',
+            'stop',
             'policy',
             'routines',
             'providers',
