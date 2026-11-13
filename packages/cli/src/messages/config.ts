@@ -108,6 +108,7 @@ const tokenFile = quote('ECCLIUM_CHURCHTOOLS_TOKEN_FILE');
 const tokenVariable = quote('ECCLIUM_CHURCHTOOLS_TOKEN');
 const stateDir = quote('ECCLIUM_STATE_DIR');
 const keysDir = quote('ECCLIUM_KEYS_DIR');
+const killSwitchDir = quote('ECCLIUM_KILL_SWITCH_DIR');
 const readOnly = quote('ECCLIUM_READ_ONLY');
 const snapshotsVariable = quote('ECCLIUM_SNAPSHOTS');
 const confirmationVariable = quote('ECCLIUM_WRITE_CONFIRMATION');
@@ -605,13 +606,13 @@ const problems: Readonly<
   // secret (ADR 0033).
   drafts_dir_overlap: (name = draftsDir) =>
     message(
-      `Der Ordner in ${name} ist der Zustandsordner, enthält ihn, oder er liegt in einem Ordner, den Ecclium selbst füllt: im Ordner der Schlüssel, im Ordner der Token-Dateien oder in einem der Ordner ‹audit›, ‹quota›, ‹snapshots›, ‹queue›, ‹runner› oder ‹stop› des Zustandsordners.`,
+      `Der Ordner in ${name} ist der Zustandsordner, enthält ihn, oder er liegt in einem Ordner, den Ecclium selbst füllt: im Ordner der Schlüssel, im Ordner der Token-Dateien oder in einem der Ordner ‹audit›, ‹quota›, ‹snapshots›, ‹queue›, ‹runner› oder ‹stop› des Zustandsordners. Oder er liegt im Ordner der Kill-Switches aus ${killSwitchDir}.`,
       'Ein Entwurf darf keine Datei von Ecclium verderben und nicht neben Schlüsseln und Login-Token liegen.',
       'Wählen Sie einen eigenen Ordner, etwa ‹output› im Zustandsordner oder einen Ordner daneben.',
     ),
   notify_file_overlap: (name = notifyFile) =>
     message(
-      `Die Datei in ${name} liegt in einem Ordner, den Ecclium selbst füllt: im Ordner der Schlüssel, im Ordner der Token-Dateien oder in einem der Ordner ‹audit›, ‹quota›, ‹snapshots›, ‹queue›, ‹runner› oder ‹stop› des Zustandsordners. Oder sie ist die Datei mit der Ping-URL.`,
+      `Die Datei in ${name} liegt in einem Ordner, den Ecclium selbst füllt: im Ordner der Schlüssel, im Ordner der Token-Dateien oder in einem der Ordner ‹audit›, ‹quota›, ‹snapshots›, ‹queue›, ‹runner› oder ‹stop› des Zustandsordners. Oder sie liegt im Ordner der Kill-Switches aus ${killSwitchDir} oder ist die Datei mit der Ping-URL.`,
       'Eine Zeile, die der Runner an eine Audit-Datei, eine Token-Datei oder die Datei mit der Ping-URL anhängte, verdürbe deren Kette, das Konto oder die Adresse.',
       'Wählen Sie eine Datei ausserhalb dieser Ordner, etwa im Zustandsordner selbst oder in einem Ordner für Logs.',
     ),
@@ -625,7 +626,7 @@ const problems: Readonly<
     message(
       `Die Datei in ${name} liegt in einem Ordner, den Ecclium selbst füllt, oder im Ordner der Routinen, oder sie ist eine andere Datei der Konfiguration, etwa die Datei der Meldungen, die Richtlinie oder eine Schlüsseldatei.`,
       'Der Runner ersetzt die Metrikdatei nach jedem Durchgang ganz. An einem dieser Orte löschte er eine Datei von Ecclium, die Meldungen oder einen Schlüssel.',
-      'Wählen Sie eine eigene Datei ausserhalb der Ordner der Schlüssel und der Token-Dateien und der Ordner ‹audit›, ‹quota›, ‹snapshots›, ‹queue›, ‹runner› und ‹stop› des Zustandsordners, etwa ‹runner.prom› im Zustandsordner selbst oder in einem eigenen Ordner.',
+      'Wählen Sie eine eigene Datei ausserhalb der Ordner der Schlüssel und der Token-Dateien und der Ordner ‹audit›, ‹quota›, ‹snapshots›, ‹queue›, ‹runner› und ‹stop› des Zustandsordners und ausserhalb des Ordners aus ‹ECCLIUM_KILL_SWITCH_DIR›, etwa ‹runner.prom› im Zustandsordner selbst oder in einem eigenen Ordner.',
     ),
   metrics_file_invalid: (name = metricsFile) =>
     message(
@@ -1170,17 +1171,58 @@ const problems: Readonly<
   writes_without_state_dir: (name = stateDir) =>
     message(
       `${readOnly} ist ‹false›, aber ${name} ist nicht gesetzt.`,
-      'Jeder Schreibvorgang steht in der Audit-Datei, und Snapshots, Freigabe-Warteschlange, die Zähler der Richtlinie und die Kill-Switches liegen ebenfalls im Zustandsordner. Ohne ihn würde Ecclium jeden Schreibversuch ablehnen.',
-      `Setzen Sie ${name} auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 und legen Sie darin den Ordner ‹stop› an. Oder setzen Sie ${readOnly} auf ‹true›.`,
+      'Jeder Schreibvorgang steht in der Audit-Datei, und Snapshots, Freigabe-Warteschlange, die Zähler der Richtlinie und, wenn ‹ECCLIUM_KILL_SWITCH_DIR› keinen anderen Ordner nennt, die Kill-Switches liegen ebenfalls im Zustandsordner. Ohne ihn würde Ecclium jeden Schreibversuch ablehnen.',
+      `Setzen Sie ${name} auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 und legen Sie darin den Ordner ‹stop› an, wenn ${killSwitchDir} keinen anderen Ordner nennt. Oder setzen Sie ${readOnly} auf ‹true›.`,
     ),
-  // The kill switches live in the folder stop; a folder the core cannot
-  // check stops writing, so a start without it could never write
-  // (ADR 0029).
+  // The kill switches live in the folder stop of the folder of state or in
+  // the folder of ECCLIUM_KILL_SWITCH_DIR; a folder the core cannot check
+  // stops writing, so a start without it could never write (ADR 0029).
   writes_without_stop_dir: (name = stateDir) =>
+    name === killSwitchDir
+      ? message(
+          `${readOnly} ist ‹false›, aber den Ordner aus ${name} gibt es nicht, er ist ein Link oder kein Ordner, oder Ecclium kann ihn nicht durchsuchen.`,
+          'In diesem Ordner liegen die Kill-Switches, mit denen Sie das Schreiben ohne Neustart anhalten. Ecclium legt ihn nicht selbst an, und einen Ordner, den es nicht prüfen kann, liest es als angehalten. Ohne ihn würde Ecclium jeden Schreibversuch ablehnen.',
+          `Legen Sie den Ordner an, mit Rechten, mit denen nur sein Besitzer darin schreiben darf: 700 für einen Ordner des Benutzers, unter dem Ecclium läuft, sonst 755, für den Container auf Ihrem Rechner unter ‹config/stop›. Oder setzen Sie ${readOnly} auf ‹true›.`,
+        )
+      : message(
+          `${readOnly} ist ‹false›, aber im Ordner aus ${name} fehlt der Ordner ‹stop›, er ist ein Link oder kein Ordner, oder Ecclium kann ihn nicht durchsuchen.`,
+          `Im Ordner ‹stop› liegen die Kill-Switches, solange ${killSwitchDir} keinen anderen Ordner nennt. Mit ihnen halten Sie das Schreiben ohne Neustart an. Ecclium legt ihn nicht selbst an, und einen Ordner, den es nicht prüfen kann, liest es als angehalten. Ohne ihn würde Ecclium jeden Schreibversuch ablehnen.`,
+          `Legen Sie im Ordner aus ${name} einen Ordner ‹stop› Ihres Benutzers mit den Rechten 700 an. Oder setzen Sie ${readOnly} auf ‹true›.`,
+        ),
+  // A path not in its one form would make the core look into another
+  // folder than the one given.
+  kill_switch_dir_invalid: (name = killSwitchDir) =>
     message(
-      `${readOnly} ist ‹false›, aber im Ordner aus ${name} fehlt der Ordner ‹stop›, er ist ein Link oder kein Ordner, oder Ecclium kann ihn nicht durchsuchen.`,
-      'Im Ordner ‹stop› liegen die Kill-Switches, mit denen Sie das Schreiben ohne Neustart anhalten. Ecclium legt ihn nicht selbst an, und einen Ordner, den es nicht prüfen kann, liest es als angehalten. Ohne ihn würde Ecclium jeden Schreibversuch ablehnen.',
-      `Legen Sie im Ordner aus ${name} einen Ordner ‹stop› Ihres Benutzers mit den Rechten 700 an. Oder setzen Sie ${readOnly} auf ‹true›.`,
+      `Der Pfad in ${name} ist nicht absolut, nicht in seiner eindeutigen Form geschrieben oder länger als 896 Bytes.`,
+      'Ecclium normalisiert nichts, damit es die Kill-Switches genau in dem Ordner sucht, den Sie angeben.',
+      'Geben Sie den vollständigen Pfad an, der mit / beginnt, ohne Schrägstrich am Ende, ohne doppelte Schrägstriche und ohne ‹.› oder ‹..›.',
+    ),
+  // Ecclium writes in these folders itself, and a switch must be one the
+  // operator made (ADR 0029, ADR 0036).
+  kill_switch_dir_overlap: (name = killSwitchDir) =>
+    message(
+      `Der Ordner in ${name} ist der Zustandsordner, enthält ihn oder liegt in einem Ordner, den Ecclium selbst füllt: in einem der Ordner ‹audit›, ‹quota›, ‹snapshots›, ‹queue› oder ‹runner› des Zustandsordners, im Ordner der Schlüssel oder im Ordner der Token-Dateien. Oder er enthält einen dieser beiden.`,
+      'Einen Kill-Switch legen nur Sie an. In einem Ordner, in dem Ecclium selbst Dateien anlegt, wäre nicht klar, wer das Schreiben angehalten hat, und ein Ordner mit Schlüsseln oder Login-Token gehört nicht dazu.',
+      'Wählen Sie einen eigenen Ordner, etwa ‹stop› im Zustandsordner oder im Container ‹/config/stop›.',
+    ),
+  // Whoever may write in the folder could take a switch away again
+  // (ADR 0029).
+  kill_switch_dir_writable: (name = killSwitchDir) =>
+    message(
+      name === killSwitchDir
+        ? `Im Ordner aus ${name} darf auch die Gruppe oder ein anderer Benutzer schreiben.`
+        : `Im Ordner ‹stop› des Ordners aus ${name} darf auch die Gruppe oder ein anderer Benutzer schreiben.`,
+      'Wer im Ordner der Kill-Switches schreiben darf, kann einen Kill-Switch auch wieder entfernen und das Schreiben fortsetzen, das Sie angehalten haben. Wem der Ordner gehört, prüft Ecclium nicht.',
+      'Nehmen Sie der Gruppe und anderen das Schreibrecht, etwa mit «chmod 755», oder mit «chmod 700», wenn der Ordner dem Benutzer gehört, unter dem Ecclium läuft.',
+    ),
+  // The runner has no folder of its own by default, so that a container
+  // never looks into a folder stop that someone made in its volume
+  // (ADR 0036).
+  kill_switch_dir_required: (name = killSwitchDir) =>
+    message(
+      `${name} ist für den Runner nicht gesetzt.`,
+      'In diesem Ordner liegen die Kill-Switches, mit denen Sie die Läufe ohne Neustart anhalten. Der Runner sucht sie nur in einem Ordner, den Sie ausdrücklich nennen, damit er nie einen anderen Ordner liest als den, in dem Sie sie anlegen.',
+      `Legen Sie einen Ordner an, in dem nur sein Besitzer schreiben darf, und nennen Sie ihn in ${name}, im Container ‹/config/stop›.`,
     ),
   // The answers of the escape hatch have no known schema, so strict could
   // not keep its promise for them (ADR 0069).
@@ -1713,7 +1755,7 @@ const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({
   writes_enabled: message(
     `${readOnly} steht auf ‹false›, Ecclium darf in ChurchTools schreiben.`,
     `Mit den Toolsets ${quote('wiki')} und ${quote('calendars')} bietet der Server Tools an, die Seiten im Wiki anlegen und ändern, Termine anlegen und ändern und Buchungen anfragen, und ‹ecclium undo› und ‹ecclium queue approve› schreiben ebenfalls. Ein Tool schreibt erst nach einer Bestätigung, und jeder Schreibvorgang steht in der Audit-Datei.`,
-    `Eine leere Datei ‹writes-off› im Ordner ‹stop› des Zustandsordners hält jedes Schreiben ohne Neustart an. Soll Ecclium nur lesen, setzen Sie ${readOnly} auf ‹true› oder entfernen Sie die Variable.`,
+    `Eine leere Datei ‹writes-off› im Ordner der Kill-Switches, ‹stop› im Zustandsordner oder dem Ordner aus ${killSwitchDir}, hält jedes Schreiben ohne Neustart an. Soll Ecclium nur lesen, setzen Sie ${readOnly} auf ‹true› oder entfernen Sie die Variable.`,
   ),
   // On every start that writes, because without snapshots no write can be
   // taken back and the echo confirms none (ADR 0029, ADR 0031).

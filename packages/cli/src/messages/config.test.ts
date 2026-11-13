@@ -481,7 +481,10 @@ describe('the catalog of messages', () => {
     expect(message.why).toContain('‹wiki› und ‹calendars›');
     expect(message.why).toContain('erst nach einer Bestätigung');
     expect(message.why).toContain('Audit-Datei');
-    expect(message.action).toContain('‹writes-off› im Ordner ‹stop›');
+    // Both folders the switch can lie in (ADR 0029).
+    expect(message.action).toContain(
+      '‹writes-off› im Ordner der Kill-Switches, ‹stop› im Zustandsordner oder dem Ordner aus ‹ECCLIUM_KILL_SWITCH_DIR›',
+    );
     expect(message.action).toContain('ohne Neustart');
     expect(message.action).toContain('‹ECCLIUM_READ_ONLY› auf ‹true›');
     expect(warningText('writes_enabled')).toBe(textOf(message));
@@ -551,6 +554,38 @@ describe('the catalog of messages', () => {
     expect(message.what).toContain('‹ECCLIUM_STATE_DIR›');
     expect(message.why).toContain('Sicherung');
     expect(message.action).toContain('ausserhalb des Zustandsordners');
+  });
+
+  // The folder of the kill switches comes from the folder of state or from
+  // its own variable (ADR 0029); the text names the one it comes from.
+  it('names the folder the kill switches come from', () => {
+    const ofState = problemMessage({
+      code: 'writes_without_stop_dir',
+      variable: 'ECCLIUM_STATE_DIR',
+    });
+    expect(ofState.what).toContain('fehlt der Ordner ‹stop›');
+    expect(ofState.action).toContain('im Ordner aus ‹ECCLIUM_STATE_DIR›');
+    const ofVariable = problemMessage({
+      code: 'writes_without_stop_dir',
+      variable: 'ECCLIUM_KILL_SWITCH_DIR',
+    });
+    expect(ofVariable.what).toContain(
+      'den Ordner aus ‹ECCLIUM_KILL_SWITCH_DIR›',
+    );
+    expect(ofVariable.what).not.toContain('‹stop›');
+    expect(ofVariable.action).toContain('‹config/stop›');
+    const writable = problemMessage({
+      code: 'kill_switch_dir_writable',
+      variable: 'ECCLIUM_STATE_DIR',
+    });
+    expect(writable.what).toContain('Im Ordner ‹stop› des Ordners aus');
+    expect(writable.why).toContain('entfernen');
+    expect(
+      problemMessage({
+        code: 'kill_switch_dir_writable',
+        variable: 'ECCLIUM_KILL_SWITCH_DIR',
+      }).what,
+    ).toContain('Im Ordner aus ‹ECCLIUM_KILL_SWITCH_DIR›');
   });
 
   it('names both folders for a folder of state in the folder of keys', () => {

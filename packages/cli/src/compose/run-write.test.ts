@@ -420,8 +420,12 @@ const setup = (options: SetupOptions = {}) => {
   const base = mkdtempSync(join(tmpdir(), 'ecclium-run-write-'));
   cleanup.push(base);
   const stateDir = privateDir(join(base, 'state'));
-  // The folder of the kill switches, which writing needs (ADR 0029).
-  const stopDir = privateDir(join(stateDir, 'stop'));
+  // The folder of the kill switches, which writing needs (ADR 0029),
+  // named by its variable beside the folder of state. The folder stop in
+  // the folder of state is a decoy that stays empty: a run, an undo, an
+  // approval or an adoption that looked there would miss every switch.
+  const stopDir = privateDir(join(base, 'kill-switches'));
+  privateDir(join(stateDir, 'stop'));
   const keysDir = privateDir(join(base, 'keys'));
   const tokensDir = privateDir(join(base, 'tokens'));
   const configDir = privateDir(join(base, 'config'));
@@ -462,6 +466,7 @@ const setup = (options: SetupOptions = {}) => {
     ECCLIUM_POLICY_FILE: policyFile,
     ECCLIUM_STATE_DIR: stateDir,
     ECCLIUM_KEYS_DIR: keysDir,
+    ECCLIUM_KILL_SWITCH_DIR: stopDir,
     ECCLIUM_RUNNER_TOKENS_DIR: tokensDir,
     ECCLIUM_TIME_ZONE: 'Europe/Zurich',
   };
@@ -1764,6 +1769,25 @@ describe('ecclium marker adopt', () => {
     (stdout.find((line) => line.startsWith('Prüfwert: ')) ?? '').slice(
       'Prüfwert: '.length,
     );
+
+  // The adoption writes, so a switch in the folder of the variable stops
+  // it, although the folder stop of the folder of state is empty
+  // (ADR 0029).
+  it('writes nothing while writes-off is in the folder of ECCLIUM_KILL_SWITCH_DIR', async () => {
+    const setupOf = setup({ entries: [pageEntry] });
+    const { runOnce, adoptCommand, stopDir } = setupOf;
+    await runOnce();
+    setupOf.rekey();
+    const second = await runOnce();
+    const runId = second.bound.runId;
+    ended(setupOf.stateDir, runId);
+    const check = checkIn((await adoptCommand(runId)).stdout);
+    expect(check).toMatch(/^[0-9a-f]{16}$/);
+    writeFileSync(join(stopDir, 'writes-off'), '');
+    const stopped = await adoptCommand(runId, check);
+    expect(stopped.code).toBe(exitCodes.noPermission);
+    expect(stopped.patches).toEqual([]);
+  });
 
   it('signs the section of a period anew after the key was lost, with the account of its routine, and the next run replaces it', async () => {
     const setupOf = setup({ entries: [pageEntry] });

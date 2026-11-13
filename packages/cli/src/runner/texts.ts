@@ -83,7 +83,9 @@ const refusedActions: Readonly<Record<RunnerRoutineCode, string>> =
     runner_drafts_dir_unset:
       'Die Routine schreibt einen Entwurf als Datei, und ‹ECCLIUM_DRAFTS_DIR› ist nicht gesetzt. Nennen Sie dort den Ordner der Entwürfe.',
     runner_stop_dir_missing:
-      'Die Routine schreibt einen Entwurf, und den Ordner ‹stop› der Kill-Switches im Zustandsordner gibt es nicht oder Ecclium kann ihn nicht prüfen. Ein Kill-Switch, den Ecclium nicht sieht, hielte jeden Entwurf an. Legen Sie den Ordner ‹stop› im Zustandsordner an.',
+      'Die Routine schreibt einen Entwurf, und den Ordner der Kill-Switches aus ‹ECCLIUM_KILL_SWITCH_DIR› gibt es nicht oder Ecclium kann ihn nicht prüfen. Ein Kill-Switch, den Ecclium nicht sieht, hielte jeden Entwurf an. Legen Sie den Ordner an, für den Container auf Ihrem Rechner unter ‹config/stop›.',
+    runner_stop_dir_writable:
+      'Die Routine schreibt einen Entwurf, und im Ordner der Kill-Switches aus ‹ECCLIUM_KILL_SWITCH_DIR› darf auch die Gruppe oder ein anderer Benutzer schreiben. Wer darin schreiben darf, kann einen Kill-Switch entfernen. Nehmen Sie der Gruppe und anderen das Schreibrecht, etwa mit «chmod 755».',
     runner_inquiries_missing:
       'Die Routine schreibt einen Entwurf, und die Richtlinie nennt unter ‹interactive.inquiriesTo› niemanden für Rückfragen. Die Kennzeichnung am Ende des Entwurfs braucht diese Angabe. Tragen Sie sie in die Richtlinie ein.',
     runner_notify_file_unset:

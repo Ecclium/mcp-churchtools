@@ -44,9 +44,9 @@ import {
 } from './runner-token.js';
 import {
   checkKeysDir,
+  checkKillSwitchDir,
   checkRunnerTokensDir,
   checkStateDir,
-  hasStopDir,
   isNormalizedAbsolutePath,
   type StateDirFileSystem,
   stateFolders,
@@ -132,6 +132,16 @@ export interface EccliumConfig {
    * the folder of state or a folder in it.
    */
   readonly keysDir: string | undefined;
+  /**
+   * The folder of the kill switches (ADR 0029), an absolute normalised
+   * path: the one of `ECCLIUM_KILL_SWITCH_DIR`, else over stdio the folder
+   * `stop` of the folder of state, else undefined. The runner requires the
+   * variable (ADR 0036). Every part that looks for a switch takes it from
+   * here and builds no path of its own, so that no part looks into another
+   * folder than the operator named. The disk is checked at the start only
+   * while Ecclium writes.
+   */
+  readonly killSwitchDir: string | undefined;
   /**
    * Whether a write keeps a snapshot of what it changes, true unless
    * `ECCLIUM_SNAPSHOTS` is `off` (ADR 0031). Without them every write is
@@ -272,6 +282,7 @@ export type SettingKey =
   | 'toolsets'
   | 'stateDir'
   | 'keysDir'
+  | 'killSwitchDir'
   | 'snapshots'
   | 'writeConfirmation'
   | 'timeZone'
@@ -1170,24 +1181,19 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     report('toolsets_without_state_dir', stateDirName);
   }
 
-  // Writing over stdio needs the folder of state and its folder stop
-  // (ADR 0029): the audit file, the snapshots, the queue, the counters of
-  // the policy and the kill switches live there. Without them a write
-  // would end with policy_denied each time, so the start refuses up front
-  // and offers no write tool that could never write. A folder stop that
-  // goes away later stops writing at the next look, as before. Over HTTP
-  // the folder of keys is refused, so a server there does not write.
-  // The runner writes with the same folders as a server over stdio.
-  if ((transport === 'stdio' || runner) && readOnly?.value === 'false') {
-    if (stateDirRead.state === 'unset') {
-      // The runner needs the folder in any case and reports it so below.
-      if (!runner) report('writes_without_state_dir', stateDirName);
-    } else if (
-      stateDir !== undefined &&
-      !hasStopDir(stateDir, stateDirFiles as StateDirFileSystem | undefined)
-    ) {
-      report('writes_without_stop_dir', stateDirName);
-    }
+  // Writing over stdio needs the folder of state (ADR 0029): the audit
+  // file, the snapshots, the queue and the counters of the policy live
+  // there. Without it a write would end with policy_denied each time, so
+  // the start refuses up front and offers no write tool that could never
+  // write. The folder of the kill switches is checked further below, once
+  // the folders it must not overlap are read. Over HTTP the folder of keys
+  // is refused, so a server there does not write. The runner writes with
+  // the same folders as a server over stdio.
+  const writing =
+    (transport === 'stdio' || runner) && readOnly?.value === 'false';
+  // The runner needs the folder in any case and reports it so below.
+  if (writing && !runner && stateDirRead.state === 'unset') {
+    report('writes_without_state_dir', stateDirName);
   }
 
   // The folder of the day keys (ADR 0031). Every write keeps a snapshot of
@@ -1252,6 +1258,100 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       setting('keysDir', keysDirName, 'invalid', shownNone);
     }
   }
+
+  // The folder of the kill switches (ADR 0029). Over stdio it is the
+  // folder stop of the folder of state unless the variable names another;
+  // the runner requires the variable, so that a container without it never
+  // looks into a folder stop that someone made in its volume and misses the
+  // switches the operator made on the host (ADR 0036). A variable that is
+  // set but refused never falls back to the folder stop. The folder may lie
+  // in the folder of state, as stop does, or elsewhere, such as /config/stop
+  // in the container, but it is neither the folder of state nor holds it,
+  // and it neither lies in a folder Ecclium fills there nor overlaps the
+  // folders of keys and of the token files. Compared as text, like the
+  // folder of keys. The disk is looked at only while Ecclium writes; a
+  // folder that goes away later stops writing at the next look.
+  const killSwitchName = 'ECCLIUM_KILL_SWITCH_DIR';
+  const killSwitchRead = read(row(killSwitchName));
+  const killSwitchGiven =
+    killSwitchRead.state === 'set' &&
+    fitsVariable(killSwitchName, killSwitchRead.value)
+      ? killSwitchRead.value
+      : undefined;
+  const filledFolders = Object.values(stateFolders).filter(
+    (part) => part !== stateFolders.stop,
+  );
+  const killSwitchOverlaps = (value: string): boolean => {
+    const state =
+      stateDirRead.state === 'set' &&
+      isNormalizedAbsolutePath(stateDirRead.value)
+        ? stateDirRead.value
+        : undefined;
+    // The folder of the token files as given: it is read further below.
+    const separate = [
+      keysDirRead.state === 'set' ? keysDirRead.value : undefined,
+      given.get('ECCLIUM_RUNNER_TOKENS_DIR'),
+    ].filter(
+      (folder): folder is string =>
+        folder !== undefined && isNormalizedAbsolutePath(folder),
+    );
+    return (
+      (state !== undefined &&
+        (liesWithin(state, value) ||
+          filledFolders.some((part) =>
+            liesWithin(value, `${state === '/' ? '' : state}/${part}`),
+          ))) ||
+      separate.some(
+        (folder) => liesWithin(value, folder) || liesWithin(folder, value),
+      )
+    );
+  };
+  let killSwitchDir: string | undefined;
+  let killSwitchDirValid = killSwitchRead.state !== 'invalid';
+  let killSwitchOrigin: ValueOrigin = 'environment';
+  if (killSwitchRead.state === 'set') {
+    if (killSwitchGiven === undefined) {
+      report('kill_switch_dir_invalid', killSwitchName);
+      killSwitchDirValid = false;
+    } else if (killSwitchOverlaps(killSwitchGiven)) {
+      report('kill_switch_dir_overlap', killSwitchName);
+      killSwitchDirValid = false;
+    } else {
+      killSwitchDir = killSwitchGiven;
+    }
+  } else if (killSwitchRead.state === 'unset') {
+    if (runner) {
+      report('kill_switch_dir_required', killSwitchName);
+      killSwitchDirValid = false;
+    } else if (stateDir !== undefined) {
+      killSwitchDir = `${stateDir === '/' ? '' : stateDir}/${stateFolders.stop}`;
+      killSwitchOrigin = 'default';
+    }
+  }
+  if (writing && killSwitchDir !== undefined) {
+    // Named by the variable the folder comes from.
+    const name = killSwitchOrigin === 'default' ? stateDirName : killSwitchName;
+    const checked = checkKillSwitchDir(
+      killSwitchDir,
+      stateDirFiles as StateDirFileSystem | undefined,
+    );
+    if (checked === 'missing') report('writes_without_stop_dir', name);
+    if (checked === 'writable') report('kill_switch_dir_writable', name);
+  }
+  setting(
+    'killSwitchDir',
+    killSwitchName,
+    killSwitchDir !== undefined
+      ? killSwitchOrigin
+      : !killSwitchDirValid
+        ? killSwitchRead.state === 'unset'
+          ? 'missing'
+          : 'invalid'
+        : 'unset',
+    killSwitchDir !== undefined
+      ? record({ kind: 'path', value: killSwitchDir })
+      : shownNone,
+  );
 
   // The snapshots of writes (ADR 0031), on by default. Turned off, no
   // write can be taken back, which every start that writes says. A server
@@ -1653,8 +1753,9 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   // a line of a notice would spoil or that holds a secret: the folders of
   // state that hold the audit, the counters, the snapshots, the queue, the
   // locks and the kill switches, the folder of state itself, the folder of
-  // keys and the folder of the token files. A line appended to an audit
-  // file would break its chain, one appended to a token file the account.
+  // keys, the folder of the token files and the folder of the kill switches
+  // the variable names. A line appended to an audit file would break its
+  // chain, one appended to a token file the account.
   // A folder of drafts beside these in the folder of state, such as
   // /data/output, stays allowed. Compared as text, like the folder of keys.
   const guardedFolders = (): {
@@ -1673,6 +1774,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       given(
         runnerTokensRead.state === 'set' ? runnerTokensRead.value : undefined,
       ),
+      killSwitchGiven,
     ].filter((value): value is string => value !== undefined);
     return {
       state,
@@ -2026,6 +2128,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     toolsets === undefined ||
     !stateDirValid ||
     !keysDirValid ||
+    !killSwitchDirValid ||
     snapshots === undefined ||
     confirmation === undefined ||
     !timeZoneValid ||
@@ -2062,6 +2165,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       toolsets: toolsets.value,
       stateDir,
       keysDir,
+      killSwitchDir,
       snapshots: snapshots.value === 'on',
       writeConfirmation: confirmation.value as WriteConfirmation,
       timeZone,

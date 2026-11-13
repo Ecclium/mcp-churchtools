@@ -411,11 +411,11 @@ const reasonsOf = (
     ),
     readOnly: undoProblems.read_only,
     switchedOff: ending(
-      'Das Schreiben ist für diesen Mandanten mit einem Kill-Switch im Zustandsordner ausgeschaltet, Ecclium hat nichts geschrieben. Schalten Sie es wieder ein, wenn Sie zurücknehmen wollen.',
+      'Das Schreiben ist für diesen Mandanten mit einem Kill-Switch ausgeschaltet, Ecclium hat nichts geschrieben. Schalten Sie es wieder ein, wenn Sie zurücknehmen wollen.',
       exitCodes.noPermission,
     ),
     switchUnknown: ending(
-      'Ecclium kann nicht prüfen, ob das Schreiben ausgeschaltet ist, und schreibt darum nicht. Prüfen Sie den Ordner ‹stop› im Zustandsordner.',
+      'Ecclium kann nicht prüfen, ob das Schreiben ausgeschaltet ist, und schreibt darum nicht. Prüfen Sie den Ordner der Kill-Switches, ‹stop› im Zustandsordner oder den Ordner aus ‹ECCLIUM_KILL_SWITCH_DIR›.',
       exitCodes.noPermission,
     ),
     // Every snapshot of this version can be taken back; the sentence of a

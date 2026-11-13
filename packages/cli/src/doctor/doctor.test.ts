@@ -167,7 +167,9 @@ const setup = (options: SetupOptions = {}) => {
   );
   cleanup.push(base);
   const stateDir = privateDir(join(base, 'state'));
-  privateDir(join(stateDir, 'stop'));
+  // The folder of the kill switches, which the runner requires
+  // (ADR 0036).
+  const stopDir = privateDir(join(stateDir, 'stop'));
   const keysDir = privateDir(join(base, 'keys'));
   const tokensDir = privateDir(join(base, 'tokens'));
   const configDir = privateDir(join(base, 'config'));
@@ -258,6 +260,7 @@ const setup = (options: SetupOptions = {}) => {
     ECCLIUM_POLICY_FILE: policyFile,
     ECCLIUM_ROUTINES_DIR: routinesDir,
     ECCLIUM_STATE_DIR: stateDir,
+    ECCLIUM_KILL_SWITCH_DIR: stopDir,
     ECCLIUM_RUNNER_TOKENS_DIR: tokensDir,
     ECCLIUM_PROVIDERS_FILE: providersFile,
     ECCLIUM_READ_ONLY: 'false',

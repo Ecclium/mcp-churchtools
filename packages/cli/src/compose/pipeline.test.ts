@@ -251,6 +251,31 @@ describe('the build of the pipeline', () => {
     ).rejects.toBeInstanceOf(TypeError);
   });
 
+  // Every part takes the folder of the kill switches the loader named
+  // (ADR 0029): the folder of ECCLIUM_KILL_SWITCH_DIR, never the folder
+  // stop of the folder of state beside it, and that one only by default.
+  it('gives the pipeline the folder of the kill switches the loader named', () => {
+    const switches = mkdtempSync(join(base, 'kill-switches-'));
+    chmodSync(switches, 0o700);
+    const writing = {
+      ECCLIUM_READ_ONLY: 'false',
+      ECCLIUM_STATE_DIR: writeStateDir,
+      ECCLIUM_KEYS_DIR: keysDir,
+    };
+    setup(configOf({ ...writing, ECCLIUM_KILL_SWITCH_DIR: switches })).build();
+    expect((built.options[0] as ToolPipelineOptions).killSwitchDir).toBe(
+      switches,
+    );
+    setup(configOf(writing)).build();
+    expect((built.options[1] as ToolPipelineOptions).killSwitchDir).toBe(
+      join(writeStateDir, 'stop'),
+    );
+    setup(configOf()).build();
+    expect(Object.hasOwn(built.options[2] as object, 'killSwitchDir')).toBe(
+      false,
+    );
+  });
+
   // Every write keeps a snapshot of what it changes, sealed with a day key
   // of the same provider and kept in the folder of state (ADR 0031).
   describe('and the snapshots of writes', () => {

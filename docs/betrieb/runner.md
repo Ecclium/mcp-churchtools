@@ -10,13 +10,13 @@ Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Herstel
 
 Der Runner liest dieselben Variablen wie der Server ([Konfiguration](../configuration.md)), mit diesen Unterschieden:
 
-- Pflicht sind `ECCLIUM_TIME_ZONE`, `ECCLIUM_POLICY_FILE`, `ECCLIUM_ROUTINES_DIR`, `ECCLIUM_STATE_DIR` und `ECCLIUM_RUNNER_TOKENS_DIR`, dazu entweder `ECCLIUM_EGRESS_PROXY` oder `ECCLIUM_EGRESS=off` (siehe «Ausgehender Weg»).
+- Pflicht sind `ECCLIUM_TIME_ZONE`, `ECCLIUM_POLICY_FILE`, `ECCLIUM_ROUTINES_DIR`, `ECCLIUM_STATE_DIR`, `ECCLIUM_KILL_SWITCH_DIR` und `ECCLIUM_RUNNER_TOKENS_DIR`, dazu entweder `ECCLIUM_EGRESS_PROXY` oder `ECCLIUM_EGRESS=off` (siehe «Ausgehender Weg»).
 - Der Runner liest nie das Token des Servers. `ECCLIUM_CHURCHTOOLS_TOKEN_FILE` und `ECCLIUM_CHURCHTOOLS_TOKEN` halten ihn vom Start ab. Sein eigenes Konto liegt als `ct_token_runner` im Ordner aus `ECCLIUM_RUNNER_TOKENS_DIR`, jedes Konto, das die Richtlinie nennt, als `ct_token_<Alias>` daneben, jede Datei mit den Rechten 400 oder 600. Mit dem eigenen Konto liest eine Routine, für die die Richtlinie keinen Eintrag hat. Jeder Lauf liest seine Token-Datei neu, ein neues Token wirkt also ohne Neustart.
 - Schreibt eine Routine ins Wiki, verlangt der Runner `ECCLIUM_READ_ONLY=false` mit allem, was das Schreiben sonst braucht. Sonst startet er nicht, weil ein Lauf lesen und das Modell fragen würde, ohne zu schreiben.
-- Für einen Entwurf als Datei braucht die Routine `ECCLIUM_DRAFTS_DIR`, den Ordner `stop` im Zustandsordner und unter `interactive.inquiriesTo` in der Richtlinie, wen Leserinnen und Leser fragen können, auch mit `ECCLIUM_READ_ONLY=true`.
+- Für einen Entwurf als Datei braucht die Routine `ECCLIUM_DRAFTS_DIR`, den Ordner der Kill-Switches aus `ECCLIUM_KILL_SWITCH_DIR` und unter `interactive.inquiriesTo` in der Richtlinie, wen Leserinnen und Leser fragen können, auch mit `ECCLIUM_READ_ONLY=true`.
 - Für Meldungen in eine Datei braucht die Routine `ECCLIUM_NOTIFY_FILE`.
 - Eine Metrikdatei schreibt der Runner nur mit `ECCLIUM_RUNNER_METRICS_FILE` (siehe «Metrikdatei»), einen Ping an eine Überwachung nur mit `ECCLIUM_RUNNER_PING_URL_FILE` (siehe «Ping an eine Überwachung»).
-- Den Ordner der Entwürfe, die Datei der Meldungen und die Metrikdatei legen Sie nicht in einen Ordner, den Ecclium selbst füllt: weder in den Ordner der Schlüssel noch in den der Token-Dateien, noch in einen der Ordner `audit`, `quota`, `snapshots`, `queue`, `runner` oder `stop` des Zustandsordners. Ein eigener Ordner wie `output` im Zustandsordner geht. Die Metrikdatei ist zudem keine andere Datei der Konfiguration, etwa die Datei der Meldungen, die Richtlinie oder eine Schlüsseldatei, liegt nicht im Ordner der Routinen, und ihr Name beginnt mit einem Buchstaben oder einer Ziffer und hat höchstens 128 Zeichen aus Buchstaben ohne Umlaute, Ziffern, Punkt, Bindestrich und Unterstrich.
+- Den Ordner der Entwürfe, die Datei der Meldungen und die Metrikdatei legen Sie nicht in einen Ordner, den Ecclium selbst füllt oder der die Kill-Switches hält: weder in den Ordner der Schlüssel noch in den der Token-Dateien oder der Kill-Switches, noch in einen der Ordner `audit`, `quota`, `snapshots`, `queue`, `runner` oder `stop` des Zustandsordners. Ein eigener Ordner wie `output` im Zustandsordner geht. Die Metrikdatei ist zudem keine andere Datei der Konfiguration, etwa die Datei der Meldungen, die Richtlinie oder eine Schlüsseldatei, liegt nicht im Ordner der Routinen, und ihr Name beginnt mit einem Buchstaben oder einer Ziffer und hat höchstens 128 Zeichen aus Buchstaben ohne Umlaute, Ziffern, Punkt, Bindestrich und Unterstrich.
 - Eine Routine mit Modell gibt dem Modell ihre Daten in der Stufe `strict`, ausser ein Eintrag der Richtlinie erlaubt `standard`. Dafür braucht sie die Schlüsseldatei der Pseudonyme in `ECCLIUM_PSEUDONYM_KEY_FILE` ([Betrieb über stdio](stdio.md), «Schlüsseldatei anlegen»), auch für eine Vorschau.
 - Eine Routine mit den Prüfungen des Kerns, wie `wiki-hygiene`, hat kein Modell und braucht deshalb keine Datei der Anbieter. Ihre Prüfungen lesen in der Stufe `standard`, weil sie ihre Daten keinem Modell geben, und brauchen deshalb auch keine Schlüsseldatei der Pseudonyme ([Routinen](../routines.md), «Prüfungen des Kerns»).
 
@@ -63,11 +63,13 @@ Der Runner löscht wie der Server, was seine Frist überschritten hat: Audit-Dat
 
 ## Anhalten
 
-Kill-Switches sind Dateien im Ordner `stop` des Zustandsordners. Nur dass die Datei da ist, zählt:
+Kill-Switches sind Dateien im Ordner aus `ECCLIUM_KILL_SWITCH_DIR`, im Container `/config/stop` (siehe «Container»). Nur dass die Datei da ist, zählt:
 
 - `writes-off` hält jeden Lauf an,
 - `writes-off-<Mandant>` die Läufe eines Mandanten (`writes-off-default` über stdio und im Runner),
 - `writes-off-routine-<Routine>` die Läufe einer Routine.
+
+Ecclium legt den Ordner nicht an und prüft nicht, wem er gehört, damit Sie einen Kill-Switch ohne Rechte von root anlegen können. Weder die Gruppe noch andere dürfen darin schreiben, etwa mit den Rechten 755, weil sie einen Kill-Switch sonst entfernen könnten. Fehlt der Ordner oder dürfen sie es doch, startet ein Runner nicht, der ins Wiki schreibt, und eine Routine mit Entwurf ebenso nicht. Der Ordner darf im Zustandsordner liegen, aber nicht in einem der Ordner, die Ecclium dort selbst füllt.
 
 Ein angehaltener Lauf liest nichts und schickt dem Modell keine Daten. Er endet endgültig, die Auslösung gilt als abgeschlossen. Nach dem Entfernen der Datei läuft die Routine zu ihrer nächsten Auslösung, oder Sie starten sie mit `ecclium run-once <Routine>` von Hand.
 
@@ -173,9 +175,9 @@ Was der Runner in einem Container vorfinden muss, legt der Runner-Container-Vert
 
 ### Benutzer und Rechte
 
-- Der Runner läuft als Benutzer ohne root, im offiziellen Image mit der UID 65532. Ihm gehört alles, was Ecclium liest oder schreibt, unter `/config`, `/run/secrets`, `/data` und `/keys`, ausser dem Ordner `stop` und den Kill-Switches darin. Gehört etwas einem anderen Benutzer, startet der Runner nicht und nennt den Grund.
+- Der Runner läuft als Benutzer ohne root, im offiziellen Image mit der UID 65532. Ihm gehört alles, was Ecclium liest oder schreibt, unter `/config`, `/run/secrets`, `/data` und `/keys`, ausser dem Ordner `/config/stop` und den Kill-Switches darin. Gehört etwas einem anderen Benutzer, startet der Runner nicht und nennt den Grund.
 - Ein neues Volume von Docker gehört root. Übergeben Sie `/data` und `/keys` vor dem ersten Start dem Benutzer des Runners, einmalig etwa mit einem Container als root ohne Netz, der nur die Capability `CHOWN` hat: zuerst `chmod 700`, dann `chown 65532:65532`.
-- Die Dateien und Ordner auf Ihrem Rechner, die unter `/config` und `/run/secrets` eingebunden sind, gehören ebenfalls der UID 65532. Ändern Sie eine davon, setzen Sie danach ihren Besitzer wieder. Eine neue Token-Datei bekommt Besitzer und Rechte, bevor Sie die alte durch Umbenennen ersetzen.
+- Die Dateien und Ordner auf Ihrem Rechner, die unter `/config` und `/run/secrets` eingebunden sind, gehören ebenfalls der UID 65532, ausser `config/stop` und den Kill-Switches darin. Ändern Sie eine davon, setzen Sie danach ihren Besitzer wieder. Eine neue Token-Datei bekommt Besitzer und Rechte, bevor Sie die alte durch Umbenennen ersetzen.
 - Wem eine Datei gehört, der darf sie auch ändern. Legen Sie die Ordner für `/config` und `/run/secrets` auf Ihrem Rechner deshalb in einen Ordner, den nur root oder Sie öffnen können, mit den Rechten 700, und lassen Sie dort keinen anderen Prozess unter der UID 65532 laufen.
 - Das Dateisystem des Containers ist nur lesbar, `/tmp` ein tmpfs. Der Container läuft ohne Capabilities, mit `no-new-privileges`, mit Grenzen für die Zahl der Prozesse und den Speicher, ohne veröffentlichten Port und nur in einem internen Netz mit dem Proxy (siehe «Ausgehender Weg»).
 - Starten Sie den Container mit einem init, bei Docker Compose mit `init: true`, bei `docker run` mit `--init`. Der Runner richtet seine Behandlung der Signale erst nach dem Start ein; liefe er selbst als PID 1, verwürfe das Betriebssystem ein SIGTERM in dieser Zeit, und der Runner liefe weiter, bis SIGKILL ihn trifft.
@@ -185,9 +187,9 @@ Was der Runner in einem Container vorfinden muss, legt der Runner-Container-Vert
 | Pfad           | Im Container      | Inhalt                                                                                  |
 | -------------- | ----------------- | --------------------------------------------------------------------------------------- |
 | `/config`      | nur lesbar        | `policy.yaml`, `providers.yaml` und der Ordner `routines` mit `prompts` und `templates` |
+| `/config/stop` | nur lesbar        | die Kill-Switches, mit `/config` eingebunden                                            |
 | `/run/secrets` | nur lesbar        | ein eingebundener Ordner mit den Token-Dateien und Schlüsseln                           |
 | `/data`        | schreibbar        | der Zustandsordner, siehe «Ordner im Zustandsordner»                                    |
-| `/data/stop`   | nur lesbar        | die Kill-Switches, ein eingebundener Ordner von Ihrem Rechner                           |
 | `/keys`        | schreibbar        | die Tagesschlüssel der Snapshots und der Freigabe-Warteschlange                         |
 | `/tmp`         | schreibbar, tmpfs | nichts, das bleiben muss                                                                |
 
@@ -201,7 +203,7 @@ In `/run/secrets` liegen:
 
 Jede Datei hat die Rechte 400 oder 600, der Ordner 700. Das Token des Servers liegt nie darin. Binden Sie den Ordner ein, nicht einzelne Dateien, also auch nicht über `secrets:` von Docker Compose, das jede Datei einzeln einbindet: Eine Datei, die Sie auf Ihrem Rechner durch Umbenennen ersetzen, sieht ein laufender Container nur durch einen eingebundenen Ordner, und nur so wirkt ein neues Token ohne Neustart.
 
-Den Ordner `/data/stop` binden Sie von Ihrem Rechner nur lesbar ein, im Bundle `config/stop`. Einen Kill-Switch legen Sie dort an, ohne Rechte von root und ohne Neustart (siehe «Anhalten»). Der Ordner braucht Rechte, mit denen der Benutzer des Runners ihn durchsuchen kann, etwa 755. Fehlt `stop` oder kann der Runner ihn nicht durchsuchen, startet ein Runner nicht, der ins Wiki schreibt oder Entwürfe ablegt. Beim ersten Start mit der Einbindung legt Docker allerdings einen leeren Ordner `stop` im Volume an. Ein späterer Container ohne die Einbindung startet deshalb trotzdem, und Ihre Kill-Switches wirken für ihn nicht. Binden Sie `stop` in jeden Container des Runners ein, auch für einen Lauf von Hand und für die Befehle für Betreiber.
+Den Ordner `stop` legen Sie auf Ihrem Rechner im Ordner an, den Sie unter `/config` einbinden, im Bundle `config/stop`. Er kommt so mit `/config` in jeden Container des Runners, auch in einen Lauf von Hand und in die Befehle für Betreiber, ohne eigene Einbindung. Einen Kill-Switch legen Sie dort an, ohne Rechte von root und ohne Neustart (siehe «Anhalten»). Der Ordner gehört Ihnen und braucht Rechte, mit denen der Benutzer des Runners ihn durchsuchen kann und nur Sie darin schreiben, etwa 755. Fehlt er, kann der Runner ihn nicht durchsuchen oder dürfen Gruppe oder andere darin schreiben, startet ein Runner nicht, der ins Wiki schreibt oder Entwürfe ablegt. Ohne `ECCLIUM_KILL_SWITCH_DIR` startet der Runner gar nicht, damit er nie einen anderen Ordner liest als den, in dem Sie die Kill-Switches anlegen.
 
 ### Variablen
 
@@ -209,6 +211,7 @@ Den Ordner `/data/stop` binden Sie von Ihrem Rechner nur lesbar ein, im Bundle `
 | ------------------------------------- | ------------------------------------- |
 | `ECCLIUM_STATE_DIR`                   | `/data`                               |
 | `ECCLIUM_KEYS_DIR`                    | `/keys`                               |
+| `ECCLIUM_KILL_SWITCH_DIR`             | `/config/stop`                        |
 | `ECCLIUM_POLICY_FILE`                 | `/config/policy.yaml`                 |
 | `ECCLIUM_PROVIDERS_FILE`              | `/config/providers.yaml`              |
 | `ECCLIUM_ROUTINES_DIR`                | `/config/routines`                    |
@@ -229,14 +232,15 @@ Den Ordner `/data/stop` binden Sie von Ihrem Rechner nur lesbar ein, im Bundle `
 
 ### Ordner im Zustandsordner
 
-| Ordner      | Inhalt                                                                         | Angelegt von                  |
-| ----------- | ------------------------------------------------------------------------------ | ----------------------------- |
-| `audit`     | die Audit-Dateien                                                              | Ecclium                       |
-| `quota`     | Lesebudget, Grenzen je Tag, verbrauchte Freigaben und das Gedächtnis der Läufe | Ecclium                       |
-| `snapshots` | Snapshots der Schreibvorgänge, verschlüsselt mit Schlüsseln aus `/keys`        | Ecclium                       |
-| `queue`     | die Freigabe-Warteschlange                                                     | Ecclium                       |
-| `runner`    | die Sperrdateien der Routinen                                                  | Ecclium                       |
-| `stop`      | die Kill-Switches                                                              | Ihnen, nur lesbar eingebunden |
+| Ordner      | Inhalt                                                                         | Angelegt von |
+| ----------- | ------------------------------------------------------------------------------ | ------------ |
+| `audit`     | die Audit-Dateien                                                              | Ecclium      |
+| `quota`     | Lesebudget, Grenzen je Tag, verbrauchte Freigaben und das Gedächtnis der Läufe | Ecclium      |
+| `snapshots` | Snapshots der Schreibvorgänge, verschlüsselt mit Schlüsseln aus `/keys`        | Ecclium      |
+| `queue`     | die Freigabe-Warteschlange                                                     | Ecclium      |
+| `runner`    | die Sperrdateien der Routinen                                                  | Ecclium      |
+
+Einen Ordner `stop` im Zustandsordner liest nur ein Server über stdio ohne `ECCLIUM_KILL_SWITCH_DIR` ([Betrieb über stdio](stdio.md)). Der Runner liest die Kill-Switches nur aus `/config/stop`.
 
 `/data` muss zwischen zwei Läufen erhalten bleiben, in einem dauerhaften Volume, nie in einem tmpfs. Alle Container des Runners einer Installation teilen es: der Daemon, jeder `run-once` und die Befehle für Betreiber. Das gilt ausdrücklich für `/data/quota`: Ohne diesen Ordner gelten die Grenzen je Tag nicht, und eine Routine läuft für eine schon erledigte Periode noch einmal, mit Kosten beim Modell; einen zweiten Abschnitt verhindert dann nur der Prüfcode. `/data` braucht ein lokales Dateisystem, kein Netzlaufwerk wie NFS oder SMB und keinen synchronisierten Ordner. Sichern Sie `/data` und `/config`, die Entwürfe in `/data/output` nur so lange wie nötig ([Datenschutz](../privacy.md)). Die Dateien aus `/run/secrets` sichern Sie getrennt davon wie andere Zugangsdaten, vor allem `runner_mac_key`: Ein neuer Schlüssel macht jeden bisherigen Prüfcode ungültig (siehe «Neuer Schlüssel des Prüfcodes»). `/keys` sichern Sie nie.
 
@@ -250,4 +254,4 @@ Den Ordner `/data/stop` binden Sie von Ihrem Rechner nur lesbar ein, im Bundle `
 
 Befehle zum Runner laufen in einem Container mit demselben Benutzer, denselben Pfaden und demselben Netz wie der Runner, mit schreibbarem `/data`, weil `ecclium doctor` und `ecclium run-once` dort ins Audit schreiben, und nie mit dem Token des Servers. Das gilt heute für `ecclium doctor`, `ecclium init egress`, `ecclium config check --runner`, `ecclium run-once`, `ecclium audit show` und `ecclium audit verify`. Auch Entwürfe und die Datei der Meldungen lesen, löschen und rotieren Sie so, mit dem Benutzer des Runners und demselben `/data`.
 
-`ecclium undo --run`, `ecclium queue` für Einträge eines Laufs, `ecclium marker adopt --run` und `ecclium policy init --routine` laden die Konfiguration noch wie der Server über stdio und verlangen dessen Token, auch wenn sie mit dem Konto des Runners lesen oder schreiben. Sie brauchen also neben den Pfaden des Runners die Token-Datei des Servers, und ein Container mit beiden Token erfüllt diesen Vertrag nicht. Bis diese Befehle die Konfiguration des Runners laden, ist das eine bekannte Lücke.
+`ecclium undo --run`, `ecclium queue` für Einträge eines Laufs, `ecclium marker adopt --run` und `ecclium policy init --routine` laden die Konfiguration noch wie der Server über stdio und verlangen dessen Token, auch wenn sie mit dem Konto des Runners lesen oder schreiben. Sie brauchen also neben den Pfaden des Runners die Token-Datei des Servers, und ein Container mit beiden Token erfüllt diesen Vertrag nicht. Bis diese Befehle die Konfiguration des Runners laden, ist das eine bekannte Lücke. Setzen Sie für sie auch `ECCLIUM_KILL_SWITCH_DIR=/config/stop` wie für den Runner: Ohne die Variable suchen sie die Kill-Switches wie ein Server über stdio im Ordner `stop` des Zustandsordners. Den gibt es im Container nicht, und sie enden dann mit 78; hat ihn jemand von Hand angelegt, sähen sie Ihre Kill-Switches nicht.

@@ -31,7 +31,12 @@ export {
 } from './audit/file-writer.js';
 export { createAuditSink } from './audit/index.js';
 export { systemClock } from './clock.js';
-export { stateFolders } from './config/state-dir.js';
+// The check of the folder of the kill switches, for the start of the
+// runner with a draft (ADR 0029, ADR 0033).
+export {
+  checkKillSwitchDir,
+  type KillSwitchDirState,
+} from './config/state-dir.js';
 export { describeError } from './errors/index.js';
 export {
   createFileDayKeys,

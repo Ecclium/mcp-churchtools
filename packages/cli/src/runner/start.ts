@@ -29,15 +29,11 @@ import {
   describeRunTool,
   type EccliumConfig,
   loadConfig,
-  runAssignmentOf,
   type ToolCatalog,
   toolsetNames,
   createToolCatalog,
 } from '@ecclium/mcp-churchtools-core';
-import {
-  checkRunKillSwitches,
-  stateFolders,
-} from '@ecclium/mcp-churchtools-core/composition';
+import { checkKillSwitchDir } from '@ecclium/mcp-churchtools-core/composition';
 import { createCorePlugin } from '@ecclium/mcp-churchtools-tools';
 import {
   loadRoutines,
@@ -61,6 +57,7 @@ export type RunnerRoutineCode =
   | 'runner_pseudonym_key_missing'
   | 'runner_drafts_dir_unset'
   | 'runner_stop_dir_missing'
+  | 'runner_stop_dir_writable'
   | 'runner_inquiries_missing'
   | 'runner_notify_file_unset';
 
@@ -126,8 +123,6 @@ export interface RunnerStartOptions {
   readonly load?: (sources: ConfigSources) => ConfigResult;
   /** Replaces the file functions of the loader of the routines. */
   readonly routineFiles?: RoutineFileSystem;
-  /** Replaces the check of the kill switches, for the folder `stop`. */
-  readonly checkKillSwitches?: typeof checkRunKillSwitches;
   /** Replaces the catalog, such as with the read tools of a test plugin. */
   readonly createCatalog?: (config: EccliumConfig) => ToolCatalog;
 }
@@ -168,7 +163,6 @@ export function createRunnerCatalog(
 const needsOf = (
   run: PreparedRun,
   config: EccliumConfig,
-  checkKillSwitches: typeof checkRunKillSwitches,
   preview: boolean,
 ): RefusedRoutine | undefined => {
   const { routine } = run.loaded;
@@ -184,17 +178,18 @@ const needsOf = (
       return { routineId, code: 'runner_drafts_dir_unset' };
     }
     // A kill switch the core cannot see would stop every draft, so the
-    // folder must be there, also while the configuration only reads
-    // (ADR 0033).
-    if (
-      config.stateDir === undefined ||
-      checkKillSwitches(
-        `${config.stateDir}/${stateFolders.stop}`,
-        runAssignmentOf(routineId).tenantId,
-        routineId,
-      ) === 'unknown'
-    ) {
+    // folder the loader named must be there, also while the configuration
+    // only reads (ADR 0033), and others may not write in it, as for a
+    // write (ADR 0029).
+    const stop =
+      config.killSwitchDir === undefined
+        ? 'missing'
+        : checkKillSwitchDir(config.killSwitchDir);
+    if (stop === 'missing') {
       return { routineId, code: 'runner_stop_dir_missing' };
+    }
+    if (stop === 'writable') {
+      return { routineId, code: 'runner_stop_dir_writable' };
     }
     if (config.policy.interactive.inquiriesTo === undefined) {
       return { routineId, code: 'runner_inquiries_missing' };
@@ -285,7 +280,6 @@ export function startRunner(options: RunnerStartOptions): RunnerStart {
     policy: config.policy,
     models,
   };
-  const checkKillSwitches = options.checkKillSwitches ?? checkRunKillSwitches;
   // Two accounts for one routine stop the whole runner (ADR 0033), before
   // any other check of a routine could name a lesser problem first.
   for (const routine of routines.routines) {
@@ -314,12 +308,7 @@ export function startRunner(options: RunnerStartOptions): RunnerStart {
       );
       continue;
     }
-    const missing = needsOf(
-      result.run,
-      config,
-      checkKillSwitches,
-      preview && named === routine,
-    );
+    const missing = needsOf(result.run, config, preview && named === routine);
     if (missing !== undefined) {
       refused.push(Object.freeze(missing));
       continue;
@@ -335,7 +324,7 @@ export function startRunner(options: RunnerStartOptions): RunnerStart {
       const result = prepareRun(named, { ...context, preview: true });
       // A preview reads like a run, at the level of its model.
       const missing: RefusedRoutine | undefined = result.ok
-        ? needsOf(result.run, config, checkKillSwitches, true)
+        ? needsOf(result.run, config, true)
         : Object.freeze({
             routineId: named.routine.id,
             code: result.code,

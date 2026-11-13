@@ -290,11 +290,11 @@ const approveReasons: Readonly<
     code: exitCodes.noPermission,
   },
   switchedOff: {
-    text: 'Das Schreiben ist für diesen Mandanten mit einem Kill-Switch im Zustandsordner ausgeschaltet, Ecclium hat nichts geschrieben.',
+    text: 'Das Schreiben ist für diesen Mandanten mit einem Kill-Switch ausgeschaltet, Ecclium hat nichts geschrieben.',
     code: exitCodes.noPermission,
   },
   switchUnknown: {
-    text: 'Ecclium kann nicht prüfen, ob das Schreiben ausgeschaltet ist, und schreibt darum nicht. Prüfen Sie den Ordner ‹stop› im Zustandsordner.',
+    text: 'Ecclium kann nicht prüfen, ob das Schreiben ausgeschaltet ist, und schreibt darum nicht. Prüfen Sie den Ordner der Kill-Switches, ‹stop› im Zustandsordner oder den Ordner aus ‹ECCLIUM_KILL_SWITCH_DIR›.',
     code: exitCodes.noPermission,
   },
   notRun: {

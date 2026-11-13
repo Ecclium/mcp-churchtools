@@ -337,6 +337,9 @@ const failingProviders = (code: string): TokenFileSystem =>
 const stateDirPath = '/path/to/state';
 const keysDirPath = '/path/to/keys';
 const tokensDirPath = '/path/to/tokens';
+// The folder of the kill switches the variable names, beside the folder of
+// state, as /config/stop is in the runner container (ADR 0036).
+const killSwitchPath = '/path/to/kill-switches';
 
 /** What lstat finds at a path: a folder with these fields, or an error. */
 type Entry =
@@ -371,6 +374,8 @@ const memoryFolder = (
     readonly queue?: Entry;
     readonly stop?: Entry;
     readonly stopSwitch?: Entry;
+    readonly killSwitch?: Entry;
+    readonly killSwitchFile?: Entry;
     readonly getuid?: () => number | undefined;
   } = {},
 ): MemoryFolder => {
@@ -379,21 +384,25 @@ const memoryFolder = (
   const entryOf = (path: string): Entry =>
     path === keysDirPath
       ? (options.keys ?? {})
-      : path === tokensDirPath
-        ? (options.tokens ?? {})
-        : path.endsWith('/audit')
-          ? (options.audit ?? missing)
-          : path.endsWith('/quota')
-            ? (options.quota ?? missing)
-            : path.endsWith('/snapshot')
-              ? (options.snapshot ?? missing)
-              : path.endsWith('/queue')
-                ? (options.queue ?? missing)
-                : path.endsWith('/stop')
-                  ? (options.stop ?? {})
-                  : path.endsWith('/stop/writes-off')
-                    ? (options.stopSwitch ?? missing)
-                    : (options.folder ?? {});
+      : path === killSwitchPath
+        ? (options.killSwitch ?? {})
+        : path === `${killSwitchPath}/writes-off`
+          ? (options.killSwitchFile ?? missing)
+          : path === tokensDirPath
+            ? (options.tokens ?? {})
+            : path.endsWith('/audit')
+              ? (options.audit ?? missing)
+              : path.endsWith('/quota')
+                ? (options.quota ?? missing)
+                : path.endsWith('/snapshot')
+                  ? (options.snapshot ?? missing)
+                  : path.endsWith('/queue')
+                    ? (options.queue ?? missing)
+                    : path.endsWith('/stop')
+                      ? (options.stop ?? {})
+                      : path.endsWith('/stop/writes-off')
+                        ? (options.stopSwitch ?? missing)
+                        : (options.folder ?? {});
   const fs: StateDirFileSystem = {
     lstatSync: (path) => {
       looked.push(path);
@@ -494,6 +503,8 @@ const runnerEnv = (extra: Environment = {}): Environment => ({
   ECCLIUM_ROUTINES_DIR: routinesDirPath,
   ECCLIUM_STATE_DIR: stateDirPath,
   ECCLIUM_RUNNER_TOKENS_DIR: tokensDirPath,
+  // The runner has no folder of the kill switches by default (ADR 0036).
+  ECCLIUM_KILL_SWITCH_DIR: killSwitchPath,
   // The runner starts only with a proxy or without the boundary on purpose
   // (ADR 0035); the tests of its other rules run without one.
   ECCLIUM_EGRESS: 'off',
@@ -663,6 +674,7 @@ describe('loadConfig with a good configuration', () => {
       ['toolsets', 'ECCLIUM_TOOLSETS', 'default', { kind: 'list', values: [] }],
       ['stateDir', 'ECCLIUM_STATE_DIR', 'unset', { kind: 'none' }],
       ['keysDir', 'ECCLIUM_KEYS_DIR', 'unset', { kind: 'none' }],
+      ['killSwitchDir', 'ECCLIUM_KILL_SWITCH_DIR', 'unset', { kind: 'none' }],
       [
         'snapshots',
         'ECCLIUM_SNAPSHOTS',
@@ -1241,6 +1253,296 @@ describe('loadConfig and the folders writing needs', () => {
     const codesOverHttp = codes(writes({}, memoryFolder().fs, 'http'));
     expect(codesOverHttp).not.toContain('writes_without_state_dir');
     expect(codesOverHttp).not.toContain('writes_without_stop_dir');
+  });
+});
+
+// The folder of the kill switches (ADR 0029, ADR 0036): over stdio the
+// folder stop of the folder of state unless the variable names another,
+// for the runner always the variable. Every part that looks for a switch
+// takes the folder from the configuration, so a variable that is set must
+// never fall back to the folder stop.
+describe('loadConfig and the folder of the kill switches', () => {
+  const writes = (
+    extra: Environment,
+    folders: StateDirFileSystem = memoryFolder().fs,
+    transport: Transport = 'stdio',
+  ): ConfigResult =>
+    withKeysDir(keysDirPath, folders, transport, {
+      ECCLIUM_READ_ONLY: 'false',
+      ECCLIUM_STATE_DIR: stateDirPath,
+      ...extra,
+    });
+
+  it('is the folder stop of the folder of state over stdio by default', () => {
+    const result = writes({});
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.config.killSwitchDir).toBe(`${stateDirPath}/stop`);
+    expect(setting(result, 'killSwitchDir')).toEqual({
+      key: 'killSwitchDir',
+      variable: 'ECCLIUM_KILL_SWITCH_DIR',
+      origin: 'default',
+      shown: { kind: 'path', value: `${stateDirPath}/stop` },
+    });
+  });
+
+  it('is none without the variable and without the folder of state', () => {
+    const result = load(valid());
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.config.killSwitchDir).toBeUndefined();
+  });
+
+  it('is the folder the variable names, and the start looks only there', () => {
+    // The decoy: no folder stop at all in the folder of state.
+    const folders = memoryFolder({ stop: { error: 'ENOENT' } });
+    const result = writes(
+      { ECCLIUM_KILL_SWITCH_DIR: killSwitchPath },
+      folders.fs,
+    );
+    expect(result.report.problems).toEqual([]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.config.killSwitchDir).toBe(killSwitchPath);
+    expect(setting(result, 'killSwitchDir')).toMatchObject({
+      origin: 'environment',
+      shown: { kind: 'path', value: killSwitchPath },
+    });
+    expect(folders.looked).toContain(killSwitchPath);
+    expect(folders.looked).toContain(`${killSwitchPath}/writes-off`);
+    expect(folders.looked.some((path) => path.endsWith('/stop'))).toBe(false);
+  });
+
+  it('never falls back to the folder stop for a folder that is missing or cannot be checked', () => {
+    for (const killSwitch of [
+      { error: 'ENOENT' },
+      { error: 'EACCES' },
+      { symlink: true },
+      { directory: false },
+    ] as const) {
+      expect(
+        problems(
+          writes(
+            { ECCLIUM_KILL_SWITCH_DIR: killSwitchPath },
+            memoryFolder({ killSwitch }).fs,
+          ),
+        ),
+      ).toEqual([['writes_without_stop_dir', 'ECCLIUM_KILL_SWITCH_DIR']]);
+    }
+    expect(
+      problems(
+        writes(
+          { ECCLIUM_KILL_SWITCH_DIR: killSwitchPath },
+          memoryFolder({ killSwitchFile: { error: 'EACCES' } }).fs,
+        ),
+      ),
+    ).toEqual([['writes_without_stop_dir', 'ECCLIUM_KILL_SWITCH_DIR']]);
+    // A switch in it is a state the operator chose, not a mistake.
+    expect(
+      writes(
+        { ECCLIUM_KILL_SWITCH_DIR: killSwitchPath },
+        memoryFolder({ killSwitchFile: {} }).fs,
+      ).ok,
+    ).toBe(true);
+  });
+
+  it('never falls back to the folder stop for a value it refuses', () => {
+    for (const value of ['relative/stop', `${killSwitchPath}/`, '/a/../b']) {
+      const result = writes({ ECCLIUM_KILL_SWITCH_DIR: value });
+      expect(problems(result)).toEqual([
+        ['kill_switch_dir_invalid', 'ECCLIUM_KILL_SWITCH_DIR'],
+      ]);
+      expect(setting(result, 'killSwitchDir')).toMatchObject({
+        origin: 'invalid',
+        shown: { kind: 'none' },
+      });
+    }
+    expect(
+      problems(writes({ ECCLIUM_KILL_SWITCH_DIR: `/${'x'.repeat(896)}` })),
+    ).toEqual([['value_too_long', 'ECCLIUM_KILL_SWITCH_DIR']]);
+    // Below the bound in characters, above it in bytes of UTF-8.
+    expect(
+      problems(writes({ ECCLIUM_KILL_SWITCH_DIR: `/${'ü'.repeat(500)}` })),
+    ).toEqual([['kill_switch_dir_invalid', 'ECCLIUM_KILL_SWITCH_DIR']]);
+  });
+
+  it('refuses the folder of state, a folder Ecclium fills and the folders of keys and of tokens', () => {
+    for (const value of [
+      stateDirPath,
+      '/path',
+      `${stateDirPath}/audit`,
+      `${stateDirPath}/quota/stop`,
+      `${stateDirPath}/snapshots`,
+      `${stateDirPath}/queue`,
+      `${stateDirPath}/runner`,
+      keysDirPath,
+      `${keysDirPath}/stop`,
+      tokensDirPath,
+      `${tokensDirPath}/stop`,
+    ]) {
+      expect(
+        problems(
+          writes({
+            ECCLIUM_RUNNER_TOKENS_DIR: tokensDirPath,
+            ECCLIUM_KILL_SWITCH_DIR: value,
+          }),
+        ),
+        value,
+      ).toEqual([['kill_switch_dir_overlap', 'ECCLIUM_KILL_SWITCH_DIR']]);
+    }
+  });
+
+  // The folders of keys and of tokens on their own, away from the folder
+  // of state, so that only their own rule refuses.
+  it('refuses a folder that holds the folder of keys or of tokens', () => {
+    expect(
+      problems(
+        withKeysDir('/elsewhere/keys', memoryFolder().fs, 'stdio', {
+          ECCLIUM_STATE_DIR: stateDirPath,
+          ECCLIUM_KILL_SWITCH_DIR: '/elsewhere',
+        }),
+      ),
+    ).toEqual([['kill_switch_dir_overlap', 'ECCLIUM_KILL_SWITCH_DIR']]);
+    expect(
+      problems(
+        load({
+          ...valid(),
+          ECCLIUM_STATE_DIR: stateDirPath,
+          ECCLIUM_RUNNER_TOKENS_DIR: '/secrets/tokens',
+          ECCLIUM_KILL_SWITCH_DIR: '/secrets',
+        }),
+      ),
+    ).toEqual([['kill_switch_dir_overlap', 'ECCLIUM_KILL_SWITCH_DIR']]);
+    // The root holds every folder of state.
+    expect(
+      problems(
+        load({
+          ...valid(),
+          ECCLIUM_STATE_DIR: stateDirPath,
+          ECCLIUM_KILL_SWITCH_DIR: '/',
+        }),
+      ),
+    ).toEqual([['kill_switch_dir_overlap', 'ECCLIUM_KILL_SWITCH_DIR']]);
+  });
+
+  it('reports only the refused value of the runner, not that the variable is missing', () => {
+    for (const [value, code] of [
+      ['relative/stop', 'kill_switch_dir_invalid'],
+      [`${stateDirPath}/audit`, 'kill_switch_dir_overlap'],
+    ] as const) {
+      expect(
+        problems(asRunner({ extra: { ECCLIUM_KILL_SWITCH_DIR: value } })),
+      ).toEqual([[code, 'ECCLIUM_KILL_SWITCH_DIR']]);
+    }
+  });
+
+  it('takes a folder in the folder of state beside those Ecclium fills, or one elsewhere', () => {
+    for (const value of [
+      `${stateDirPath}/stop`,
+      `${stateDirPath}/kill-switches`,
+      `${stateDirPath}/auditing`,
+      '/config/stop',
+    ]) {
+      const result = load({
+        ...valid(),
+        ECCLIUM_STATE_DIR: stateDirPath,
+        ECCLIUM_KILL_SWITCH_DIR: value,
+      });
+      expect(result.report.problems, value).toEqual([]);
+      expect(result.ok ? result.config.killSwitchDir : undefined).toBe(value);
+    }
+  });
+
+  it('refuses a folder in which the group or others may write', () => {
+    for (const mode of [0o40775, 0o40757, 0o40777]) {
+      expect(
+        problems(
+          writes(
+            { ECCLIUM_KILL_SWITCH_DIR: killSwitchPath },
+            memoryFolder({ killSwitch: { mode } }).fs,
+          ),
+        ),
+      ).toEqual([['kill_switch_dir_writable', 'ECCLIUM_KILL_SWITCH_DIR']]);
+    }
+    // The folder stop by default is named by the folder of state.
+    expect(
+      problems(writes({}, memoryFolder({ stop: { mode: 0o40770 } }).fs)),
+    ).toEqual([['kill_switch_dir_writable', 'ECCLIUM_STATE_DIR']]);
+    // Read and searched by others is fine, and so is another owner: the
+    // operator makes a switch on the host without root.
+    for (const killSwitch of [{ mode: 0o40755 }, { uid: 0, mode: 0o40755 }]) {
+      expect(
+        writes(
+          { ECCLIUM_KILL_SWITCH_DIR: killSwitchPath },
+          memoryFolder({ killSwitch }).fs,
+        ).ok,
+      ).toBe(true);
+    }
+  });
+
+  it('looks at the disk only while Ecclium writes', () => {
+    const folders = memoryFolder({ killSwitch: { error: 'ENOENT' } });
+    const result = load(
+      {
+        ...valid(),
+        ECCLIUM_STATE_DIR: stateDirPath,
+        ECCLIUM_KILL_SWITCH_DIR: killSwitchPath,
+      },
+      'stdio',
+      memoryFiles().fs,
+      undefined,
+      folders.fs,
+    );
+    expect(result.ok).toBe(true);
+    expect(folders.looked).not.toContain(killSwitchPath);
+  });
+
+  it('is refused over HTTP, where the server does not write', () => {
+    expect(
+      codes(
+        load({ ...valid(), ECCLIUM_KILL_SWITCH_DIR: killSwitchPath }, 'http'),
+      ),
+    ).toContain('stdio_only');
+  });
+
+  it('is required for the runner, which has no folder stop by default', () => {
+    const result = asRunner({ extra: { ECCLIUM_KILL_SWITCH_DIR: undefined } });
+    expect(problems(result)).toEqual([
+      ['kill_switch_dir_required', 'ECCLIUM_KILL_SWITCH_DIR'],
+    ]);
+    expect(setting(result, 'killSwitchDir')).toMatchObject({
+      origin: 'missing',
+    });
+    const named = asRunner();
+    expect(named.ok ? named.config.killSwitchDir : undefined).toBe(
+      killSwitchPath,
+    );
+  });
+
+  it('keeps the drafts, the notices and the metrics out of it', () => {
+    for (const [name, value, code] of [
+      ['ECCLIUM_DRAFTS_DIR', `${killSwitchPath}/drafts`, 'drafts_dir_overlap'],
+      [
+        'ECCLIUM_NOTIFY_FILE',
+        `${killSwitchPath}/notify.jsonl`,
+        'notify_file_overlap',
+      ],
+      [
+        'ECCLIUM_RUNNER_METRICS_FILE',
+        `${killSwitchPath}/runner.prom`,
+        'metrics_file_overlap',
+      ],
+    ] as const) {
+      expect(
+        problems(
+          load({
+            ...valid(),
+            ECCLIUM_KILL_SWITCH_DIR: killSwitchPath,
+            [name]: value,
+          }),
+        ),
+      ).toEqual([[code, name]]);
+    }
   });
 });
 
@@ -3165,10 +3467,11 @@ describe('loadConfig for the runner', () => {
   });
 
   // ecclium config check names all of them at once, each as missing.
-  it('names the five settings it needs together', () => {
+  it('names the six settings it needs together', () => {
     const result = load({ ECCLIUM_CHURCHTOOLS_URL: address }, 'runner');
     expect(problems(result)).toEqual([
       ['runner_state_dir_required', 'ECCLIUM_STATE_DIR'],
+      ['kill_switch_dir_required', 'ECCLIUM_KILL_SWITCH_DIR'],
       ['runner_time_zone_required', 'ECCLIUM_TIME_ZONE'],
       ['runner_policy_required', 'ECCLIUM_POLICY_FILE'],
       ['runner_routines_dir_required', 'ECCLIUM_ROUTINES_DIR'],
@@ -3177,6 +3480,7 @@ describe('loadConfig for the runner', () => {
     ]);
     for (const key of [
       'stateDir',
+      'killSwitchDir',
       'timeZone',
       'policy',
       'routinesDir',
@@ -3287,11 +3591,11 @@ describe('loadConfig for the runner', () => {
   it('needs the folder stop, the folder of keys, the marker key and whom to ask when it may write', () => {
     const result = asRunner({
       extra: { ECCLIUM_READ_ONLY: 'false', ECCLIUM_TOOLSETS: '' },
-      folders: memoryFolder({ stop: { error: 'ENOENT' } }).fs,
+      folders: memoryFolder({ killSwitch: { error: 'ENOENT' } }).fs,
     });
     expect(problems(result)).toEqual([
-      ['writes_without_stop_dir', 'ECCLIUM_STATE_DIR'],
       ['keys_dir_required', 'ECCLIUM_KEYS_DIR'],
+      ['writes_without_stop_dir', 'ECCLIUM_KILL_SWITCH_DIR'],
       ['inquiries_missing', 'ECCLIUM_POLICY_FILE'],
       ['marker_key_missing', 'ECCLIUM_MARKER_KEY_FILE'],
     ]);
@@ -3917,6 +4221,28 @@ describe('loadConfig and its problems', () => {
         'stdio',
         { ECCLIUM_READ_ONLY: 'false', ECCLIUM_STATE_DIR: stateDirPath },
       ),
+    // The folder of the kill switches (ADR 0029, ADR 0036).
+    kill_switch_dir_invalid: () =>
+      load({ ...valid(), ECCLIUM_KILL_SWITCH_DIR: 'relative/stop' }),
+    kill_switch_dir_overlap: () =>
+      load({
+        ...valid(),
+        ECCLIUM_STATE_DIR: stateDirPath,
+        ECCLIUM_KILL_SWITCH_DIR: `${stateDirPath}/audit`,
+      }),
+    kill_switch_dir_writable: () =>
+      withKeysDir(
+        keysDirPath,
+        memoryFolder({ killSwitch: { mode: 0o40775 } }).fs,
+        'stdio',
+        {
+          ECCLIUM_READ_ONLY: 'false',
+          ECCLIUM_STATE_DIR: stateDirPath,
+          ECCLIUM_KILL_SWITCH_DIR: killSwitchPath,
+        },
+      ),
+    kill_switch_dir_required: () =>
+      asRunner({ extra: { ECCLIUM_KILL_SWITCH_DIR: undefined } }),
     // Only the loader of the commands that read the audit files reports it.
     state_dir_required: () => {
       const loaded = loadAuditConfig({ environment: {} });

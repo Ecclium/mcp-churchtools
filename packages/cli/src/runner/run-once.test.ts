@@ -505,8 +505,12 @@ const setup = (options: SetupOptions = {}) => {
   cleanup.push(base);
   const stateDir = privateDir(join(base, 'state'));
   // The folder of the kill switches, which writing and every draft need
-  // (ADR 0029, ADR 0033).
-  const stopDir = privateDir(join(stateDir, 'stop'));
+  // (ADR 0029, ADR 0033), beside the folder of state, as /config/stop is in
+  // the container (ADR 0036). The folder stop in the folder of state is a
+  // decoy that stays empty: a part that looked there instead would miss
+  // every switch of the tests.
+  const stopDir = privateDir(join(base, 'kill-switches'));
+  privateDir(join(stateDir, 'stop'));
   const keysDir = privateDir(join(base, 'keys'));
   const tokensDir = privateDir(join(base, 'tokens'));
   const configDir = privateDir(join(base, 'config'));
@@ -608,6 +612,7 @@ const setup = (options: SetupOptions = {}) => {
     ECCLIUM_POLICY_FILE: policyFile,
     ECCLIUM_ROUTINES_DIR: routinesDir,
     ECCLIUM_STATE_DIR: stateDir,
+    ECCLIUM_KILL_SWITCH_DIR: stopDir,
     ECCLIUM_RUNNER_TOKENS_DIR: tokensDir,
     ECCLIUM_PROVIDERS_FILE: providersFile,
     ECCLIUM_READ_ONLY: 'false',
@@ -1377,6 +1382,35 @@ describe('ecclium run-once --due with a draft', () => {
     const { code } = await t.call(due);
     expect(code).toBe(exitCodes.ok);
     expect(readdirSync(t.draftsDir)).toEqual([draftName]);
+    t.assertNothingLeaked();
+  });
+
+  // The draft looks for a switch only in the folder of the variable, not
+  // in the empty folder stop of the folder of state (ADR 0029).
+  it('stops a draft at a kill switch in the folder of ECCLIUM_KILL_SWITCH_DIR', async () => {
+    const t = setup({ ...draftOnly, extra: { ECCLIUM_READ_ONLY: 'true' } });
+    writeFileSync(join(t.stopDir, 'writes-off'), '');
+    const { code } = await t.call(due);
+    expect(code).toBe(exitCodes.noPermission);
+    expect(t.plugin.calls()).toEqual([]);
+    expect(t.modelCalls).toEqual([]);
+    expect(existsSync(join(t.draftsDir, draftName))).toBe(false);
+    t.assertNothingLeaked();
+  });
+
+  it('does not start a draft routine whose folder of the kill switches others may write in', async () => {
+    const t = setup({ ...draftOnly, extra: { ECCLIUM_READ_ONLY: 'true' } });
+    chmodSync(t.stopDir, 0o775);
+    const { code, stderr } = await t.call(due);
+    expect(code).toBe(exitCodes.invalidConfig);
+    expect(stderr).toContain(
+      refusedText({
+        routineId: draftRoutine,
+        code: 'runner_stop_dir_writable',
+      }),
+    );
+    expect(t.plugin.calls()).toEqual([]);
+    expect(existsSync(t.draftsDir)).toBe(false);
     t.assertNothingLeaked();
   });
 
