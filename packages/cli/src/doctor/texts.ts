@@ -349,7 +349,7 @@ const accountLines = (account: AccountCheck): Section => {
   if (missing.length > 0) {
     findings += 1;
     lines.push(
-      `    ${findingPrefix}Rechte, die seine Routinen brauchen und die ‹ct_whoami› nicht zeigt: ${rightsText(missing)}. Ein Lauf scheitert dann am Lesen oder Schreiben, das sie braucht. Rechte aus einer Gruppe zeigt ‹ct_whoami› womöglich nicht.`,
+      `    ${findingPrefix}Rechte, die seine Routinen brauchen und die ‹ct_whoami› nicht zeigt: ${rightsText(missing)}. Ein Schreibvorgang scheitert dann am Recht, und ein Lesen liefert womöglich weniger oder nichts. Rechte aus einer Gruppe zeigt ‹ct_whoami› womöglich nicht.`,
     );
   }
   if (rights.cut) {

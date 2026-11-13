@@ -169,7 +169,7 @@ describe('the texts of ecclium doctor', () => {
       }),
     ]);
     expect(lines).toContain(
-      '    Befund: Rechte, die seine Routinen brauchen und die ‹ct_whoami› nicht zeigt: ‹churchservice› ‹view›. Ein Lauf scheitert dann am Lesen oder Schreiben, das sie braucht. Rechte aus einer Gruppe zeigt ‹ct_whoami› womöglich nicht.',
+      '    Befund: Rechte, die seine Routinen brauchen und die ‹ct_whoami› nicht zeigt: ‹churchservice› ‹view›. Ein Schreibvorgang scheitert dann am Recht, und ein Lesen liefert womöglich weniger oder nichts. Rechte aus einer Gruppe zeigt ‹ct_whoami› womöglich nicht.',
     );
     expect(findings).toBe(1);
   });

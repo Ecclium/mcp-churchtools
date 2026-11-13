@@ -797,7 +797,9 @@ describe('ecclium doctor', () => {
       extra: { ECCLIUM_EGRESS_PROXY: undefined },
     });
     const { probes, calls } = probesOf();
-    const { code, stdout } = await doctor({ probes });
+    // Also with --show-values, which names hosts only, never the paths of
+    // the report; the helper checks the canary in every folder.
+    const { code, stdout } = await doctor({ probes, showValues: true });
     expect(code).toBe(exitCodes.invalidConfig);
     expect(calls).toEqual([]);
     expect(requests).toEqual([]);
