@@ -176,7 +176,7 @@ describe('renderConfigReport', () => {
         'nicht abgeschaltet (‹ECCLIUM_EGRESS› ist nicht gesetzt)',
       ),
       row(
-        'Ziele im LAN',
+        'Lokale Ziele',
         'keine (‹ECCLIUM_EGRESS_ALLOW_LAN› ist nicht gesetzt)',
       ),
       row('Subjekt über stdio', '‹local-stdio› (Voreinstellung)'),
@@ -1134,7 +1134,7 @@ describe('the proxy in the report', () => {
     };
     const lines = render(environment);
     expect(lines).toContain(
-      row('Ziele im LAN', '[verborgen]:443 (aus ‹ECCLIUM_EGRESS_ALLOW_LAN›)'),
+      row('Lokale Ziele', '[verborgen]:443 (aus ‹ECCLIUM_EGRESS_ALLOW_LAN›)'),
     );
     expect(lines.join('\n')).not.toContain('example.church.tools:443');
     const shown = loadConfig({
@@ -1147,7 +1147,7 @@ describe('the proxy in the report', () => {
       renderConfigReport(shown.report, { valid: shown.ok, showValues: true }),
     ).toContain(
       row(
-        'Ziele im LAN',
+        'Lokale Ziele',
         '‹example.church.tools:443› (aus ‹ECCLIUM_EGRESS_ALLOW_LAN›)',
       ),
     );

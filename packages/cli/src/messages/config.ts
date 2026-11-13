@@ -650,14 +650,14 @@ const problems: Readonly<
   // The targets in the local network (ADR 0035).
   egress_allow_lan_invalid: (name = allowLan) =>
     message(
-      `${name} hat nicht die Form einer Liste aus ‹Name:Port›, oder ein Ziel steht zweimal darin.`,
+      `${name} hat nicht die Form einer Liste aus ‹Name:Port›, nennt mehr als 16 Ziele, oder ein Ziel steht zweimal darin.`,
       'Jedes Ziel ist genau ein Name mit Punkt in kleinen Buchstaben und ein ausgeschriebener Port, damit der Proxy genau dieses Paar durchlässt. Eine IP-Adresse oder ‹localhost› nimmt Ecclium nicht an, wie für jede Adresse der Konfiguration.',
       'Geben Sie die Ziele mit Komma getrennt an, etwa ‹modell.example.org:8443›, auch mit Port 443 ausgeschrieben.',
     ),
   egress_allow_lan_unknown: (name = allowLan) =>
     message(
       `${name} nennt ein Ziel, das weder die Adresse von ChurchTools noch der Endpunkt eines Anbieters ist.`,
-      'Im lokalen Netz lässt der Proxy ein Ziel auf jedem Port und an einer privaten Adresse zu. Das soll nur für eine Adresse gelten, die Ecclium selbst erreicht.',
+      'Im lokalen Netz lässt der Proxy ein Ziel auf seinem eigenen Port und an einer privaten Adresse zu. Das gilt nur für Adressen, die auch der Server beim Start prüfen kann.',
       `Nennen Sie nur Name und Port aus ‹ECCLIUM_CHURCHTOOLS_URL› oder aus einem Endpunkt in ${providersFile}, mit Port 443, wenn die Adresse keinen nennt.`,
     ),
   invalid_integer: (name = quote('ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE')) =>

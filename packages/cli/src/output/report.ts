@@ -78,7 +78,7 @@ const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
   runnerPingUrl: 'Ping-URL',
   egressProxy: 'Proxy nach aussen',
   egress: 'Grenze im Netz',
-  egressAllowLan: 'Ziele im LAN',
+  egressAllowLan: 'Lokale Ziele',
   stdioSubject: 'Subjekt über stdio',
   logLevel: 'Stufe des Logs',
 });

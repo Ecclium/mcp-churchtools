@@ -13,5 +13,5 @@ export const egressInitTexts = Object.freeze({
   output_cut:
     'Die Liste liess sich nicht ganz auf stdout schreiben. Squid darf eine halbe Liste nicht laden. Leiten Sie die Ausgabe in eine neue Datei um, versuchen Sie es erneut und ersetzen Sie die alte Liste erst danach.',
   port: (roles: readonly string[]): string =>
-    `Die Liste wurde nicht geschrieben: ${roles.join(', ')} ${roles.length === 1 ? 'hat' : 'haben'} einen anderen Port als 443 und ${roles.length === 1 ? 'steht' : 'stehen'} nicht in ‹ECCLIUM_EGRESS_ALLOW_LAN›. Die Vorlage für Squid lässt ausserhalb des lokalen Netzes nur Port 443 zu, das Ziel käme also nie durch. Nehmen Sie Name und Port in ‹ECCLIUM_EGRESS_ALLOW_LAN› auf, wenn das Ziel im lokalen Netz liegt, sonst geben Sie es mit Port 443 an.`,
+    `Die Liste wurde nicht geschrieben: ${roles.join(', ')} ${roles.length === 1 ? 'hat' : 'haben'} einen anderen Port als 443 und ${roles.length === 1 ? 'steht' : 'stehen'} nicht in ‹ECCLIUM_EGRESS_ALLOW_LAN›. Die Vorlage für Squid lässt ausserhalb des lokalen Netzes nur Port 443 zu, solche Ziele kämen also nie durch. Liegt ChurchTools oder ein Anbieter im lokalen Netz, nehmen Sie Name und Port in ‹ECCLIUM_EGRESS_ALLOW_LAN› auf, sonst geben Sie die Adresse mit Port 443 an. Die Ping-URL braucht immer Port 443.`,
 });

@@ -28,7 +28,7 @@ export const helpLines: readonly string[] = Object.freeze([
   '    --interactive       den interaktiven Teil aus den Audit-Dateien',
   '    --routine <Routine> den Eintrag einer Routine für ihre Seite im Wiki, zum Einfügen unter ‹unattended›',
   '    --credential <Alias> mit ‹--routine›: das Konto, das später schreibt und jetzt die Namen liest',
-  '  init egress           schreibt die Liste der Ziele für die Vorlage von Squid auf stdout, aus der Konfiguration des Runners',
+  '  init egress           schreibt die Liste der Ziele für die Vorlage für Squid auf stdout, aus der Konfiguration des Runners',
   '  undo <Kennung>        nimmt einen Schreibvorgang aus seinem Snapshot zurück, die Kennung steht im Audit',
   '    --overwrite         schreibt auch, wenn jemand die Seite seither geändert hat',
   '  undo --run <Lauf>     nimmt jeden Schreibvorgang eines Laufs zurück, auch aus Freigaben, den neuesten zuerst',
