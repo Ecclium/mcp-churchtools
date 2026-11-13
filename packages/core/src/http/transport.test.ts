@@ -359,6 +359,8 @@ describe('an answer', () => {
     expect(error.category).toBe('status');
     expect(error.code).toBe('upstream');
     expect(lines.map((line) => line.event)).toEqual(['http_status']);
+    // A status beyond 599 is none the log takes, so the line names none.
+    expect(lines[0]?.fields).not.toHaveProperty('status');
   });
 
   it.each([
@@ -1193,12 +1195,14 @@ describe('createHttpTransport', () => {
   });
 
   // The check of the proxy at the start comes from the same entry, so
-  // that only the composition root reaches it (ADR 0035).
+  // that only the composition root reaches it (ADR 0035), and so does the
+  // transport to the ping of the runner (ADR 0009).
   it('passes on nothing but the factories, the check of the proxy and the types', () => {
     expect(Object.keys(compose)).toEqual([
       'probeEgressProxy',
       'createHttpTransport',
       'createModelHttpTransport',
+      'createPingHttpTransport',
     ]);
   });
 });

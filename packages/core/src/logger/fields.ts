@@ -46,10 +46,10 @@ export type HttpMethod = (typeof httpMethods)[number];
 
 /**
  * The purposes of the outbound path a line may name, frozen. Only the
- * transport to a model names its purpose, so the lines of ChurchTools stay
- * as they were (ADR 0033).
+ * transports to a model (ADR 0033) and to the ping of the runner (ADR
+ * 0009) name their purpose, so the lines of ChurchTools stay as they were.
  */
-export const transportPurposes = Object.freeze(['model'] as const);
+export const transportPurposes = Object.freeze(['model', 'ping'] as const);
 
 /** A purpose of the outbound path that a line names. */
 export type TransportPurpose = (typeof transportPurposes)[number];

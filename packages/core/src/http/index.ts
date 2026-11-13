@@ -21,6 +21,7 @@ export { type FailureCategory, HttpTransportError } from './failure.js';
 export {
   type EndpointResult,
   maxEndpointPathLength,
+  maxPingPathLength,
   maxProxyLength,
   type OriginCode,
   originCodes,
@@ -28,6 +29,7 @@ export {
   parseChurchToolsOrigin,
   parseEgressProxy,
   parseModelEndpoint,
+  parsePingUrl,
   type ProxyResult,
 } from './origin.js';
 export { Secret } from './secret.js';
@@ -37,4 +39,7 @@ export type {
   HttpTransport,
   HttpWriteOptions,
   ModelTransport,
+  PingKind,
+  PingOptions,
+  PingTransport,
 } from './transport.js';

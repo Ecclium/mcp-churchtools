@@ -258,3 +258,40 @@ export function parseModelEndpoint(input: string): EndpointResult {
     host: url.hostname,
   });
 }
+
+/**
+ * The longest path of the address of the ping of the runner (ADR 0009):
+ * that of an endpoint less `/fail`, so that the address of a failure keeps
+ * to the same limit.
+ */
+export const maxPingPathLength = maxEndpointPathLength - '/fail'.length;
+
+/**
+ * Checks the address of the ping of the runner, in the format of
+ * Healthchecks, such as `https://hc-ping.com/<uuid>` (ADR 0009, ADR 0035).
+ * It gets the rules of the endpoint of a model, so the origin those of an
+ * instance: https, a name with a dot, no IP address, no user, query or
+ * fragment, a path without a slash at the end. The path may be at most
+ * {@link maxPingPathLength} characters long, so that the address of a
+ * failure, the path with `/fail`, fits as well. The path works like a
+ * secret: whoever knows it can report to the check, so the configuration
+ * holds the address only as a `Secret`.
+ *
+ * @param input - The address as the file gives it.
+ * @returns Origin, path and host, or the code of the broken rule. Never
+ *   the input itself.
+ * @throws {TypeError} When the input is not a string.
+ * @example
+ * ```ts
+ * parsePingUrl('https://ping.example.org/check-1');
+ * // { ok: true, origin: 'https://ping.example.org', path: '/check-1',
+ * //   host: 'ping.example.org' }
+ * ```
+ */
+export function parsePingUrl(input: string): EndpointResult {
+  const checked = parseModelEndpoint(input);
+  if (checked.ok && checked.path.length > maxPingPathLength) {
+    return refuse('url_path');
+  }
+  return checked;
+}

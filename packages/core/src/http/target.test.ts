@@ -164,6 +164,24 @@ describe('checkRequestTarget', () => {
     ).toEqual({ ok: false, code: 'target_token' });
   });
 
+  // The ping of the runner sends no token: its address is its secret
+  // (ADR 0009), so only the search for a token is left out.
+  it('leave out only the search for a token without one', () => {
+    const core = canary.cores[0] ?? '';
+    const target = new URL(`https://demo.example/ping/${core}`);
+    expect(checkRequestTarget(target, origin, undefined)).toEqual({
+      ok: true,
+      path: `/ping/${core}`,
+    });
+    expect(
+      checkRequestTarget(
+        new URL('https://other.example/ping'),
+        origin,
+        undefined,
+      ),
+    ).toEqual({ ok: false, code: 'target_origin' });
+  });
+
   // The parser keeps escapes in a path as they come, in either case.
   it('decode escapes in upper and lower case in the path', () => {
     const [first = '', second = ''] = canary.cores;

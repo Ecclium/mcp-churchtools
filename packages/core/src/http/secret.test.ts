@@ -326,11 +326,13 @@ describe('revealSecret', () => {
     expect(Object.keys(http)).toEqual([
       'HttpTransportError',
       'maxEndpointPathLength',
+      'maxPingPathLength',
       'maxProxyLength',
       'originCodes',
       'parseChurchToolsOrigin',
       'parseEgressProxy',
       'parseModelEndpoint',
+      'parsePingUrl',
       'Secret',
     ]);
   });

@@ -3,7 +3,8 @@
  * on a MockAgent of undici, which answers from interceptors and connects
  * nowhere. Tests of the client and the tools use it, so their requests run
  * through the same checks as in production. A second double does the same
- * for the endpoint of a language model (ADR 0033). This folder is the only code
+ * for the endpoint of a language model (ADR 0033), a third for the ping of
+ * the runner (ADR 0009). This folder is the only code
  * outside the outbound path that may import the subpath `./http/testing`
  * of core.
  *
@@ -13,9 +14,11 @@ import type { Clock, Logger } from '@ecclium/mcp-churchtools-plugin-api';
 import {
   createMockedHttpTransport,
   createMockedModelTransport,
+  createMockedPingTransport,
   type MockedHttpTransport,
   type MockedHttpTransportOptions,
   type MockedModelTransport,
+  type MockedPingTransport,
 } from '@ecclium/mcp-churchtools-core/http/testing';
 
 export type {
@@ -23,6 +26,7 @@ export type {
   MockedCall,
   MockedHttpTransport,
   MockedModelTransport,
+  MockedPingTransport,
 } from '@ecclium/mcp-churchtools-core/http/testing';
 
 /** The placeholder instance of the project. */
@@ -149,6 +153,42 @@ export function createModelEndpointDouble(
   return createMockedModelTransport({
     endpoint: options.endpoint ?? doubleModelEndpoint,
     key: options.key,
+    userAgent: doubleUserAgent,
+    logger: options.logger ?? silentLogger,
+    clock: options.clock ?? stillClock,
+  });
+}
+
+/** What a double of the ping needs; everything but the address has a default. */
+export interface PingDoubleOptions {
+  /** The address of the ping, a Secret of core. */
+  readonly url: MockedHttpTransportOptions['token'];
+  /** The logger, by default one that drops every line. */
+  readonly logger?: Logger;
+  /** The clock, by default one that stands still. */
+  readonly clock?: Clock;
+}
+
+/**
+ * Builds a double for the ping of the runner: the transport to the ping of
+ * core, which answers from interceptors and connects nowhere (ADR 0009).
+ *
+ * @param options - The address and, if needed, logger and clock.
+ * @returns The transport and the means to steer and read it. Close it
+ *   after the test.
+ * @throws {TypeError} When the address is not a Secret or not a canonical
+ *   https address with a path.
+ * @example
+ * ```ts
+ * const double = createPingDouble({ url });
+ * double.intercept({ path: '/ping/check', method: 'POST' }).reply(200, 'OK');
+ * ```
+ */
+export function createPingDouble(
+  options: PingDoubleOptions,
+): MockedPingTransport {
+  return createMockedPingTransport({
+    url: options.url,
     userAgent: doubleUserAgent,
     logger: options.logger ?? silentLogger,
     clock: options.clock ?? stillClock,
