@@ -23,6 +23,8 @@ import { exitCodes } from '../packages/cli/src/exit-codes.ts';
 import { runnerSignals } from '../packages/cli/src/runner/host.ts';
 import { exitCodeOf } from '../packages/cli/src/runner/run-once.ts';
 import { stateFolders } from '../packages/core/src/config/state-dir.ts';
+import { transportLimits } from '../packages/core/src/http/transport.ts';
+import { quotaTimeoutMs } from '../packages/core/src/quota/budget.ts';
 import { routineLockLimits } from '../packages/core/src/schedule/lock.ts';
 import { metricNames } from '../packages/runner/src/metrics.ts';
 import { runnerSeverities } from '../packages/runner/src/outcome.ts';
@@ -294,6 +296,34 @@ describe('the signals of the runner', () => {
     ]);
     expect(rows).toEqual(
       runnerSignals.map(({ signal, code }) => [signal, code]),
+    );
+  });
+
+  // A write of a run to a page named by its ID, counted in the code on
+  // 13.11.2026: the state of the page, then the rights, the page and the
+  // name of the category for the plan, then the page, the name, the update
+  // and the read after it for the commit, each within the total time of
+  // the transport, and two counts in the store of quotas. A signal never
+  // stops it, so the grace of the container must cover all of it. The
+  // search of a page by its title, which may come before, is not covered
+  // (ADR 0036, residual risks).
+  it('covers a write that has begun with the grace of the lock', () => {
+    const requestsOfAWrite = 8;
+    const quotaCountsOfAWrite = 2;
+    expect(routineLockLimits.graceMs).toBeGreaterThanOrEqual(
+      requestsOfAWrite * transportLimits.totalMs +
+        quotaCountsOfAWrite * quotaTimeoutMs,
+    );
+    const text = signalSection.join('\n');
+    const seconds =
+      (requestsOfAWrite * transportLimits.totalMs +
+        quotaCountsOfAWrite * quotaTimeoutMs) /
+      1000;
+    expect(text).toContain(
+      `bis zu acht Anfragen an ChurchTools mit je höchstens ${String(transportLimits.totalMs / 1000)} Sekunden`,
+    );
+    expect(text).toContain(
+      `zusammen also höchstens ${String(seconds)} Sekunden`,
     );
   });
 
