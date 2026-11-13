@@ -30,7 +30,7 @@ export const helpLines: readonly string[] = Object.freeze([
   '    --credential <Alias> mit ‹--routine›: das Konto, das später schreibt und jetzt die Namen liest',
   '  init egress           schreibt die Liste der Ziele für die Vorlage für Squid auf stdout, aus der Konfiguration des Runners',
   '  doctor                prüft den Runner: den Weg nach aussen über den Proxy, die Anbieter, die Richtlinie, die Routinen und die Rechte seiner Konten',
-  '    --show-values       nennt bei ‹doctor› auch Name und Port jedes Ziels',
+  '    --show-values       nennt bei ‹doctor› auch Name und Port jedes Ziels und den Host jedes Anbieters',
   '  undo <Kennung>        nimmt einen Schreibvorgang aus seinem Snapshot zurück, die Kennung steht im Audit',
   '    --overwrite         schreibt auch, wenn jemand die Seite seither geändert hat',
   '  undo --run <Lauf>     nimmt jeden Schreibvorgang eines Laufs zurück, auch aus Freigaben, den neuesten zuerst',

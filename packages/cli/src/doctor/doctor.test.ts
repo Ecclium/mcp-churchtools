@@ -485,7 +485,7 @@ describe('ecclium doctor', () => {
       `  ‹default›: genutzt von ‹${draftRoutine}›, ‹${wikiRoutine}›.`,
     );
     expect(stdout).toContain(
-      '  ‹reserve›: von keiner Routine genutzt, die startet. Die Liste aus ‹ecclium init egress› nennt den Anbieter trotzdem.',
+      '  ‹reserve›: Keine Routine, die startet, nutzt ihn. Die Liste aus ‹ecclium init egress› nennt den Anbieter trotzdem.',
     );
     expect(stdout).toContain('Routinen: 2 starten, 0 starten nicht.');
     expect(stdout).toContain(
@@ -511,7 +511,7 @@ describe('ecclium doctor', () => {
       'Ergebnis: kein Befund zu Weg, Anbietern, Routinen und Konten. Die Befunde zur Richtlinie zählen nicht für den Exit-Code, weil sie oft gewollt sind.',
     );
     expect(stdout.at(-1)).toBe(
-      'Nicht geprüft in dieser Fassung: die Uhrzeit, der Ablauf der Tokens, das Alter des Images und die Rechte des Kontos des Servers. Sie kommen mit dem ganzen ‹ecclium doctor›.',
+      'Nicht geprüft in dieser Fassung: die Uhrzeit, der Ablauf der Tokens, das Alter des Images und die Rechte des Kontos des Servers. Sie kommen mit einer späteren Fassung von ‹ecclium doctor›.',
     );
     // ct_whoami with each account, each with its line in the audit, in the
     // mode operator, and no other request.
@@ -696,6 +696,39 @@ describe('ecclium doctor', () => {
     expect(stdout).toContain(
       '  Ein Ziel ausserhalb der Liste (‹ecclium-doctor.invalid›): nicht geprüft.',
     );
+  });
+
+  it('goes on with the other targets after a tunnel the proxy does not answer', async () => {
+    const { doctor, probesOf } = setup();
+    const { probes, calls } = probesOf({
+      target: (given) =>
+        given.host === 'model.example.org'
+          ? { ok: false, reason: 'no_answer' }
+          : undefined,
+    });
+    const { code, stdout } = await doctor({ probes });
+    expect(code).toBe(exitCodes.dataError);
+    expect(
+      calls.filter((entry) => (entry as { kind: string }).kind === 'target'),
+    ).toHaveLength(4);
+    expect(stdout).toContain(
+      '  Anbieter ‹reserve›: Tunnel über den Proxy und TLS in Ordnung.',
+    );
+  });
+
+  it('reports a right the routines need and the account lacks', async () => {
+    const { doctor } = setup({
+      rights: { runner: { churchwiki: { view: true } } },
+    });
+    const { code, stdout } = await doctor();
+    expect(code).toBe(exitCodes.dataError);
+    expect(
+      stdout.some((line) =>
+        line.startsWith(
+          '    Befund: Rechte, die seine Routinen brauchen und die ‹ct_whoami› nicht zeigt:',
+        ),
+      ),
+    ).toBe(true);
   });
 
   it('reports an account whose token ChurchTools refuses', async () => {

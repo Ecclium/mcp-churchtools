@@ -37,6 +37,7 @@ import type {
   ErrorCode,
   GrantedRights,
   IsoDate,
+  RightRef,
   RightValue,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import {
@@ -269,17 +270,25 @@ export async function checkAccounts(
         read.granted,
         day,
       );
+      const isWikiEdit = ({ module, right }: RightRef): boolean =>
+        `${module}\u0000${right}` === wikiEdit;
+      const cut = read.cut.has(wikiEdit);
       rights =
         judged === undefined
           ? Object.freeze({ kind: 'failed', code: 'internal' })
           : Object.freeze({
               kind: 'judged',
-              rights: judged,
-              cut:
-                read.cut.has(wikiEdit) &&
-                !judged.beyond.some(
-                  ({ module, right }) => `${module}\u0000${right}` === wikiEdit,
-                ),
+              // A list cut short may hold a category beyond its first ten,
+              // so it never shows a category as missing.
+              rights: cut
+                ? Object.freeze({
+                    ...judged,
+                    missing: Object.freeze(
+                      judged.missing.filter((ref) => !isWikiEdit(ref)),
+                    ),
+                  })
+                : judged,
+              cut: cut && !judged.beyond.some(isWikiEdit),
             });
     } else {
       rights = read;

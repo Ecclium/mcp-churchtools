@@ -60,7 +60,7 @@ export const warningsHeadingText = 'Beim Start meldet der Runner:';
 
 /** What this version never checks. */
 export const notCheckedText =
-  'Nicht geprüft in dieser Fassung: die Uhrzeit, der Ablauf der Tokens, das Alter des Images und die Rechte des Kontos des Servers. Sie kommen mit dem ganzen ‹ecclium doctor›.';
+  'Nicht geprüft in dieser Fassung: die Uhrzeit, der Ablauf der Tokens, das Alter des Images und die Rechte des Kontos des Servers. Sie kommen mit einer späteren Fassung von ‹ecclium doctor›.';
 
 const plural = (count: number, one: string, many: string): string =>
   count === 1 ? `1 ${one}` : `${formatNumber(count)} ${many}`;
@@ -126,7 +126,7 @@ const targetTexts = (
       };
     case 'no_answer':
       return {
-        text: `${findingPrefix}${label}: Der Proxy nimmt die Verbindung an, antwortet aber nicht in der Frist. Die übrigen Ziele prüft ‹ecclium doctor› darum nicht.`,
+        text: `${findingPrefix}${label}: Der Proxy nimmt die Verbindung an, gibt aber in der Frist keine Antwort auf den Tunnel. Er erreicht das Ziel womöglich nicht, oder er antwortet selbst nicht.`,
         finding: true,
       };
     case 'tls':
@@ -181,15 +181,23 @@ const directTexts = (
       finding: true,
     };
   }
-  return direct.reason === 'dns'
-    ? {
+  switch (direct.reason) {
+    case 'dns':
+      return {
         text: 'Direkt, ohne den Proxy, löst der Name von ChurchTools nicht auf, und keine Verbindung kommt zustande. Ob eine Verbindung zu einer IP-Adresse durchkäme, zeigt das nicht.',
         finding: false,
-      }
-    : {
+      };
+    case 'timeout':
+      return {
+        text: 'Direkt, ohne den Proxy, kommt in 10 Sekunden keine Verbindung zu ChurchTools zustande, so wenig wie für den Runner mit derselben Frist. Ob schon der Name nicht auflöste, zeigt das nicht.',
+        finding: false,
+      };
+    case 'no_connection':
+      return {
         text: 'Direkt, ohne den Proxy, kommt keine Verbindung zu ChurchTools zustande, wie es sein soll.',
         finding: false,
       };
+  }
 };
 
 /**
@@ -250,7 +258,7 @@ export function egressSection(
     if (found.finding) findings += 1;
   }
   lines.push(
-    '  Nicht geprüft: die Sperre privater und besonderer Adressen im Proxy. Ein Name ausserhalb der Liste endet schon vorher mit 403, und die Sperre selbst bräuchte einen Namen der Liste, der auf eine private Adresse zeigt. Sie belegt der Lauf der Vorlage für Squid mit Docker.',
+    '  Nicht geprüft: die Sperre privater und besonderer Adressen im Proxy. Ein Name ausserhalb der Liste endet schon vorher mit 403, und die Sperre selbst bräuchte einen Namen der Liste, der auf eine private Adresse zeigt. Sie belegt nur ein Lauf der Vorlage für Squid mit Docker.',
   );
   return { lines, findings };
 }
@@ -271,7 +279,7 @@ export function providerUseText(
   routines: readonly string[],
 ): string {
   return routines.length === 0
-    ? `${quote(alias)}: von keiner Routine genutzt, die startet. Die Liste aus ‹ecclium init egress› nennt den Anbieter trotzdem.`
+    ? `${quote(alias)}: Keine Routine, die startet, nutzt ihn. Die Liste aus ‹ecclium init egress› nennt den Anbieter trotzdem.`
     : `${quote(alias)}: genutzt von ${routines.map(quote).join(', ')}.`;
 }
 
@@ -312,7 +320,7 @@ const accountLines = (account: AccountCheck): Section => {
   switch (rights.kind) {
     case 'account':
       lines.push(
-        `    ${findingPrefix}Das Token des Kontos lässt sich nicht verwenden, Code ${quote(rights.code)}. Die Datei ‹ct_token_<Alias>› im Ordner aus ‹ECCLIUM_RUNNER_TOKENS_DIR› muss Ihrem Benutzer gehören und die Rechte 600 haben.`,
+        `    ${findingPrefix}Das Token des Kontos lässt sich nicht verwenden, Code ${quote(rights.code)}. Prüfen Sie die Datei ‹ct_token_<Alias>› im Ordner aus ‹ECCLIUM_RUNNER_TOKENS_DIR›: Sie muss vorhanden sein, Ihrem Benutzer gehören und die Rechte 600 haben.`,
       );
       return { lines, findings: 1 };
     case 'unknown':
@@ -329,13 +337,19 @@ const accountLines = (account: AccountCheck): Section => {
       break;
   }
   let findings = 0;
-  const { beyond, exceptions } = rights.rights;
+  const { beyond, missing, exceptions } = rights.rights;
   if (beyond.length === 0) {
     lines.push('    Rechte: keine, die seine Routinen nicht brauchen.');
   } else {
     findings += 1;
     lines.push(
       `    ${findingPrefix}Rechte, die seine Routinen nicht brauchen: ${rightsText(beyond)}.`,
+    );
+  }
+  if (missing.length > 0) {
+    findings += 1;
+    lines.push(
+      `    ${findingPrefix}Rechte, die seine Routinen brauchen und die ‹ct_whoami› nicht zeigt: ${rightsText(missing)}. Ein Lauf scheitert dann am Lesen oder Schreiben, das sie braucht. Rechte aus einer Gruppe zeigt ‹ct_whoami› womöglich nicht.`,
     );
   }
   if (rights.cut) {
@@ -350,7 +364,7 @@ const accountLines = (account: AccountCheck): Section => {
       lines.push(
         `    ${exception} gilt heute nicht, sie endet am ${dayText(until)} oder beginnt später.`,
       );
-    } else if (beyond.length > 0) {
+    } else if (beyond.length > 0 || rights.cut) {
       lines.push(
         `    ${exception} gilt bis ${dayText(until)}: Ihre Läufe schreiben trotz zu weiter Rechte.`,
       );
@@ -385,7 +399,7 @@ export function accountsSection(accounts: readonly AccountCheck[]): Section {
     findings += section.findings;
   }
   lines.push(
-    '  Rechte zählen nur für Routinen, die starten. Was nur eine Routine braucht, die nicht startet, etwa ohne ihren Anbieter, gilt als zu weit, wie beim Schreiben eines Laufs: Seine Schreibvorgänge kommen dann in die Freigabe-Warteschlange, ausser eine Ausnahme ‹acceptRightsDrift› gilt.',
+    '  Rechte zählen nur für Routinen, die starten. Was nur eine Routine braucht, die nicht startet, etwa ohne ihren Anbieter, gilt als zu weit. So bewertet auch der Write-Guard vor dem Schreiben eines Laufs: Die Schreibvorgänge des Kontos kämen in die Freigabe-Warteschlange, ausser eine Ausnahme ‹acceptRightsDrift› gilt.',
   );
   return { lines, findings };
 }

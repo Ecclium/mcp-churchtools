@@ -162,9 +162,11 @@ export async function runDoctor(options: DoctorOptions): Promise<ExitCode> {
   });
   if (!loaded.ok) {
     write(
+      // Without values even with --show-values, which names hosts only:
+      // the report of the configuration would show paths as well.
       renderConfigReport(loaded.report, {
         valid: false,
-        showValues,
+        showValues: false,
         withoutEnding: true,
       }),
     );

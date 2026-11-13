@@ -77,12 +77,15 @@ describe('the texts of ecclium doctor', () => {
           },
         ],
         outside: undefined,
-        direct: { connected: false, reason: 'no_connection' },
+        direct: { connected: false, reason: 'timeout' },
       },
       false,
     );
     expect(lines).toContain(
-      '  Befund: ChurchTools: Der Proxy nimmt die Verbindung an, antwortet aber nicht in der Frist. Die übrigen Ziele prüft ‹ecclium doctor› darum nicht.',
+      '  Direkt, ohne den Proxy, kommt in 10 Sekunden keine Verbindung zu ChurchTools zustande, so wenig wie für den Runner mit derselben Frist. Ob schon der Name nicht auflöste, zeigt das nicht.',
+    );
+    expect(lines).toContain(
+      '  Befund: ChurchTools: Der Proxy nimmt die Verbindung an, gibt aber in der Frist keine Antwort auf den Tunnel. Er erreicht das Ziel womöglich nicht, oder er antwortet selbst nicht.',
     );
   });
 
@@ -107,7 +110,7 @@ describe('the texts of ecclium doctor', () => {
       accountsSection([account({ kind: 'account', code: 'token_file_mode' })])
         .lines,
     ).toContain(
-      '    Befund: Das Token des Kontos lässt sich nicht verwenden, Code ‹token_file_mode›. Die Datei ‹ct_token_<Alias>› im Ordner aus ‹ECCLIUM_RUNNER_TOKENS_DIR› muss Ihrem Benutzer gehören und die Rechte 600 haben.',
+      '    Befund: Das Token des Kontos lässt sich nicht verwenden, Code ‹token_file_mode›. Prüfen Sie die Datei ‹ct_token_<Alias>› im Ordner aus ‹ECCLIUM_RUNNER_TOKENS_DIR›: Sie muss vorhanden sein, Ihrem Benutzer gehören und die Rechte 600 haben.',
     );
     expect(
       accountsSection([account({ kind: 'failed', code: 'upstream' })]).lines,
@@ -126,16 +129,47 @@ describe('the texts of ecclium doctor', () => {
     );
   });
 
-  it('report a list of categories ct_whoami cut short as not judged whole', () => {
+  it('report a list of categories ct_whoami cut short as not judged whole, and its exception without advice to remove it', () => {
     const { lines, findings } = accountsSection([
       account({
         kind: 'judged',
-        rights: { beyond: [], exceptions: [] },
+        rights: {
+          beyond: [],
+          missing: [],
+          exceptions: [
+            {
+              routine: 'wochen-bericht',
+              until: '2026-11-19' as never,
+              holds: true,
+            },
+          ],
+        },
         cut: true,
       }),
     ]);
     expect(lines).toContain(
       '    Befund: Das Konto darf in mehr als 10 Kategorien des Wikis schreiben. ‹ct_whoami› nennt nur die ersten 10, darum prüft ‹ecclium doctor› das Recht ‹edit category› nicht ganz.',
+    );
+    expect(lines).toContain(
+      '    Die Ausnahme ‹acceptRightsDrift› der Routine ‹wochen-bericht› gilt bis 19.11.2026: Ihre Läufe schreiben trotz zu weiter Rechte.',
+    );
+    expect(findings).toBe(1);
+  });
+
+  it('report rights the routines need and the account lacks', () => {
+    const { lines, findings } = accountsSection([
+      account({
+        kind: 'judged',
+        rights: {
+          beyond: [],
+          missing: [{ module: 'churchservice', right: 'view' }],
+          exceptions: [],
+        },
+        cut: false,
+      }),
+    ]);
+    expect(lines).toContain(
+      '    Befund: Rechte, die seine Routinen brauchen und die ‹ct_whoami› nicht zeigt: ‹churchservice› ‹view›. Ein Lauf scheitert dann am Lesen oder Schreiben, das sie braucht. Rechte aus einer Gruppe zeigt ‹ct_whoami› womöglich nicht.',
     );
     expect(findings).toBe(1);
   });

@@ -13,8 +13,11 @@
  * offer only with a host of its own; the run of the template in Docker
  * shows it.
  *
- * Why it stops at the first proxy that is not reached or does not answer:
- * every further tunnel would wait for the same limit and say nothing new.
+ * Why it stops at a proxy it does not reach: every further tunnel would
+ * fail the same way and say nothing new. A proxy that takes the connection
+ * but gives no answer in time may only wait for one target, since Squid
+ * waits longer for a target than the check for its answer, so the check
+ * goes on with the others.
  *
  * @packageDocumentation
  */
@@ -83,9 +86,9 @@ export type EgressCheck =
     };
 
 // Whether a check says nothing about the target because the proxy itself
-// was not reached or gave no answer.
-const proxyFailed = (probe: EgressTargetProbe): boolean =>
-  !probe.ok && (probe.reason === 'unreachable' || probe.reason === 'no_answer');
+// was not reached.
+const proxyUnreachable = (probe: EgressTargetProbe): boolean =>
+  !probe.ok && probe.reason === 'unreachable';
 
 /**
  * Checks the outbound path of the configuration of the runner.
@@ -133,7 +136,7 @@ export async function checkEgress(
       tls: true,
     });
     targets.push(Object.freeze({ target, probe }));
-    stopped = proxyFailed(probe);
+    stopped = proxyUnreachable(probe);
   }
   const outside = stopped
     ? undefined
