@@ -10,11 +10,12 @@
  * Why pairs: each target is one exact name (`dstdomain -n`, no subdomain
  * and no reverse lookup of an IP address) together with its port
  * (`all-of`), so a target in the local network opens its own port only.
- * The names of a pair come from a hash of its name and port, so that two
- * lists written into one file never pair the name of one target with the
- * port of another. Why the last line: a list cut short, such as on a full
- * disk, could end in the middle of a pair; without the mark the template
- * lets nothing through.
+ * The names of a pair come from a hash of its name and port, not from its
+ * place in the list. Why the last line: a list cut short, such as on a
+ * full disk, could end in the middle of a pair; without the mark the
+ * template lets nothing through. A piece cut short followed by a whole
+ * list in the same file would still open the proxy, so the operator
+ * replaces the file and never appends to it.
  *
  * @packageDocumentation
  */

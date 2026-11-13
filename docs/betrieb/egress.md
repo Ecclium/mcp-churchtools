@@ -35,9 +35,9 @@ ecclium init egress > ecclium-targets.conf.neu && mv ecclium-targets.conf.neu ec
 ```
 
 - Auf der Liste stehen ChurchTools, jeder Anbieter aus `ECCLIUM_PROVIDERS_FILE` und der Host der Ping-URL, jeder mit genau seinem Namen und Port. Der Pfad der Ping-URL steht nie darin.
-- Die Liste enthält nur Kommentare und Zeilen `acl`. Sie hängt Paare aus Name und Port an die zwei Listen an, die die Vorlage anlegt, und endet mit der Zeile, die sie als vollständig markiert. Die Namen eines Paars bildet sie aus Name und Port des Ziels, so dass auch zwei Listen in einer Datei nie den Namen eines Ziels mit dem Port eines anderen verbinden. Eine Regel kann die Liste nicht hinzufügen: Squid liest sie erst nach der letzten Regel. Eine leere Liste lässt nichts durch.
+- Die Liste enthält nur Kommentare und Zeilen `acl`. Sie hängt Paare aus Name und Port an die zwei Listen an, die die Vorlage anlegt, und endet mit der Zeile, die sie als vollständig markiert. Eine Regel kann die Liste nicht hinzufügen: Squid liest sie erst nach der letzten Regel. Eine leere Liste lässt nichts durch.
 - Erzeugen Sie die Liste nach jeder Änderung der Adresse von ChurchTools, der Anbieter, der Ping-URL oder von `ECCLIUM_EGRESS_ALLOW_LAN` neu und starten Sie danach den Container `egress` neu.
-- Mit 78 endet der Befehl bei einer ungültigen Konfiguration des Runners und bei einem Ziel mit einem anderen Port als 443, das nicht in `ECCLIUM_EGRESS_ALLOW_LAN` steht, weil die Vorlage es nie durchliesse. Dann schreibt er nichts auf stdout. Mit 74 endet er, wenn die Liste nicht ganz auf stdout ging; ein Teil kann dann geschrieben sein. Ihm fehlt die letzte Zeile, so dass Squid mit ihm nichts durchlässt. Ersetzen Sie die alte Liste trotzdem nur nach 0.
+- Mit 78 endet der Befehl bei einer ungültigen Konfiguration des Runners und bei einem Ziel mit einem anderen Port als 443, das nicht in `ECCLIUM_EGRESS_ALLOW_LAN` steht, weil die Vorlage es nie durchliesse. Dann schreibt er nichts auf stdout. Mit 74 endet er, wenn die Liste nicht ganz auf stdout ging; ein Teil kann dann geschrieben sein. Ihm fehlt die letzte Zeile, so dass Squid mit ihm allein nichts durchlässt. Ersetzen Sie die alte Liste nur nach 0, und hängen Sie nie eine Liste an eine bestehende Datei an: Ein abgebrochenes Stück vor einer ganzen Liste in derselben Datei öffnet den Proxy.
 
 ## Ziele im lokalen Netz
 
