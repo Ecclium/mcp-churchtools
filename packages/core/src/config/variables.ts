@@ -55,6 +55,7 @@ export const variableNames = Object.freeze([
   'ECCLIUM_DRAFTS_DIR',
   'ECCLIUM_NOTIFY_FILE',
   'ECCLIUM_RUNNER_METRICS_FILE',
+  'ECCLIUM_RUNNER_PING_URL_FILE',
   'ECCLIUM_EGRESS_PROXY',
   'ECCLIUM_EGRESS',
   'ECCLIUM_STDIO_SUBJECT',
@@ -718,6 +719,20 @@ export const variables: readonly Variable[] = Object.freeze([
     stdioOnly: false,
     runner: true,
   }),
+  // The file with the address of the ping of the runner, in the format of
+  // Healthchecks (ADR 0009). Its path works like a secret, so the address
+  // comes from a file with the checks of the token file, which only the
+  // start of the runner reads; a server checks the form of the path alone.
+  row({
+    name: 'ECCLIUM_RUNNER_PING_URL_FILE',
+    kind: 'path',
+    maxLength: 4096,
+    choices: [],
+    defaultValue: undefined,
+    secret: false,
+    stdioOnly: false,
+    runner: true,
+  }),
   // The proxy of every transport of the process, http://host:port, and the
   // switch that lets the runner start without one (ADR 0035). Neither has
   // a default: the runner needs one of them, the server neither.
@@ -869,6 +884,11 @@ export const variableSchemas: Readonly<
         isNormalizedAbsolutePath(value) &&
         privateFileNamePattern.test(value.slice(value.lastIndexOf('/') + 1)),
     ),
+  ECCLIUM_RUNNER_PING_URL_FILE: z
+    .string()
+    .min(1)
+    .max(4096)
+    .refine((value) => isAbsolute(value)),
   ECCLIUM_EGRESS_PROXY: z
     .string()
     .max(maxProxyLength)
@@ -919,6 +939,8 @@ export const environmentSchema = z.strictObject({
   ECCLIUM_NOTIFY_FILE: variableSchemas.ECCLIUM_NOTIFY_FILE.optional(),
   ECCLIUM_RUNNER_METRICS_FILE:
     variableSchemas.ECCLIUM_RUNNER_METRICS_FILE.optional(),
+  ECCLIUM_RUNNER_PING_URL_FILE:
+    variableSchemas.ECCLIUM_RUNNER_PING_URL_FILE.optional(),
   ECCLIUM_EGRESS_PROXY: variableSchemas.ECCLIUM_EGRESS_PROXY.optional(),
   ECCLIUM_EGRESS: variableSchemas.ECCLIUM_EGRESS.optional(),
   ECCLIUM_STDIO_SUBJECT: variableSchemas.ECCLIUM_STDIO_SUBJECT.optional(),

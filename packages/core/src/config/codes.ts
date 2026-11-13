@@ -10,6 +10,7 @@ import { originCodes } from '../http/index.js';
 import { policyCodes } from '../policy/file.js';
 import { providersCodes } from '../providers/file.js';
 import { markerKeyFileCodes } from './marker-key-file.js';
+import { pingUrlFileCodes } from './ping-url-file.js';
 import { pseudonymKeyFileCodes } from './pseudonym-key-file.js';
 import { runnerTokenCodes } from './runner-token.js';
 import {
@@ -45,6 +46,8 @@ export const configProblemCodes = Object.freeze([
   'notify_file_overlap',
   'metrics_file_invalid',
   'metrics_file_overlap',
+  // The file with the address of the ping of the runner (ADR 0009).
+  ...pingUrlFileCodes,
   // The proxy of outbound connections and the switch for the runner
   // without one (ADR 0035).
   'egress_proxy_invalid',
