@@ -75,6 +75,8 @@ const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
   draftsDir: 'Ordner der Entwürfe',
   notifyFile: 'Datei der Meldungen',
   metricsFile: 'Metrikdatei',
+  egressProxy: 'Proxy nach aussen',
+  egress: 'Grenze im Netz',
   stdioSubject: 'Subjekt über stdio',
   logLevel: 'Stufe des Logs',
 });
@@ -134,8 +136,8 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
   }
   // Only the folders of state, of keys, of the routines, of the tokens of
   // the runner and of the drafts, the files of the providers, of the
-  // notices and of the metrics, the key files and the zone may stay unset
-  // without a default.
+  // notices and of the metrics, the key files, the zone, the proxy and the
+  // switch for a runner without it may stay unset without a default.
   if (setting.origin === 'unset') {
     switch (setting.key) {
       case 'timeZone':
@@ -162,6 +164,10 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
         return { text: 'keine Meldungen als Datei' };
       case 'metricsFile':
         return { text: 'keine Metrikdatei' };
+      case 'egressProxy':
+        return { text: 'kein Proxy' };
+      case 'egress':
+        return { text: 'nicht abgeschaltet' };
       default:
         throw new TypeError(inconsistent);
     }
@@ -193,6 +199,12 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
         ? { text: `https://${shown.host}${port}` }
         : { text: `https://${masked}${port}`, hides: 'host' };
     }
+    case 'proxy':
+      // The host of the proxy can name a machine of the network; the port
+      // names none (ADR 0035).
+      return showValues
+        ? { text: `http://${shown.host}:${shown.port}` }
+        : { text: `http://${masked}:${shown.port}`, hides: 'host' };
     case 'path':
       // The path can hold the name of a user, so it is masked by default.
       if (!showValues) {

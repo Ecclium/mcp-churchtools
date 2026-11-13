@@ -17,7 +17,11 @@ import {
 
 import type { RedactionLevel } from '@ecclium/mcp-churchtools-plugin-api';
 
-import { parseChurchToolsOrigin, Secret } from '../http/index.js';
+import {
+  parseChurchToolsOrigin,
+  parseEgressProxy,
+  Secret,
+} from '../http/index.js';
 import type { KeyMaterial } from '../keys/index.js';
 import type { LogLevel } from '../logger/index.js';
 import { defaultPolicy } from '../policy/check.js';
@@ -48,10 +52,11 @@ import { readTokenFile, type TokenFileSystem } from './token-file.js';
 import {
   debugVariableName,
   defaultHttpWriteConfirmation,
+  environmentProxyOption,
+  environmentProxyVariableNames,
   fitsVariable,
   nodeOptionsVariableName,
   type PlainVariableName,
-  proxyVariableName,
   readToolsetList,
   recommendedRetentionMonths,
   reservedStdioSubjects,
@@ -210,6 +215,17 @@ export interface EccliumConfig {
    * start checks the form of the path alone.
    */
   readonly metricsFile: string | undefined;
+  /**
+   * The proxy of every transport of the process, `http://host:port` as
+   * checked, or undefined to connect directly (ADR 0035).
+   */
+  readonly egressProxy: string | undefined;
+  /**
+   * Whether `ECCLIUM_EGRESS` is `off`: the runner then starts without a
+   * proxy, warns and notes it on every line of a run in the audit
+   * (ADR 0035). Never true together with a proxy.
+   */
+  readonly egressOff: boolean;
   readonly stdioSubject: string;
   readonly logLevel: LogLevel;
 }
@@ -238,6 +254,8 @@ export type SettingKey =
   | 'draftsDir'
   | 'notifyFile'
   | 'metricsFile'
+  | 'egressProxy'
+  | 'egress'
   | 'stdioSubject'
   | 'logLevel';
 
@@ -256,6 +274,7 @@ export type ShownValue =
   | { readonly kind: 'list'; readonly values: readonly string[] }
   | { readonly kind: 'integer'; readonly value: number }
   | { readonly kind: 'origin'; readonly host: string; readonly port: string }
+  | { readonly kind: 'proxy'; readonly host: string; readonly port: string }
   | { readonly kind: 'path'; readonly value: string }
   | { readonly kind: 'hidden' }
   | { readonly kind: 'none' };
@@ -399,6 +418,7 @@ const nodeVariableNames: readonly string[] = Object.freeze([
   debugVariableName,
   ...yamlDebugVariableNames,
   nodeOptionsVariableName,
+  ...environmentProxyVariableNames,
   ...trustStoreVariableNames,
 ]);
 
@@ -490,16 +510,15 @@ interface Ranked {
 
 // The order of the problems: the variables in table order, then the
 // variables of TLS and of debug output, also of the library for YAML, then
-// the options that log TLS, then the names of a proxy, of later phases and
-// of the replaced switch for the search tools, then unknown names by code
-// unit, then those too odd to name.
+// the options that log TLS, then the names of later phases and of the
+// replaced switch for the search tools, then unknown names by code unit,
+// then those too odd to name.
 const tlsRank = variableNames.length;
 const debugRank = tlsRank + 1;
 const yamlDebugRank = debugRank + 1;
 const keylogRank = yamlDebugRank + 1;
 const traceRank = keylogRank + 1;
-const proxyRank = traceRank + 1;
-const unsupportedRank = proxyRank + 1;
+const unsupportedRank = traceRank + 1;
 const replacedRank = unsupportedRank + unsupportedVariableNames.length;
 const unknownRank = replacedRank + 1;
 
@@ -530,9 +549,6 @@ const sortName = (key: string): SortedName => {
     variable === undefined
       ? { kind: 'problem', code, rank }
       : { kind: 'problem', code, rank, variable };
-  if (upper === proxyVariableName) {
-    return problem('proxy_unsupported', proxyRank, proxyVariableName);
-  }
   if (upper === searchToolsVariableName) {
     return problem(
       'search_tools_replaced',
@@ -669,6 +685,9 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   // each in capitals, for the file of the policy below.
   const yamlDebug = new Set<string>();
   let trustStoreExtended = false;
+  // Whether a proxy of the shell, of Node.js or of undici is set, which
+  // Ecclium does not use (ADR 0035).
+  let environmentProxy = false;
   for (const key of Object.keys(environment)) {
     const prefixed =
       asciiUpper(key.slice(0, variablePrefix.length)) === variablePrefix;
@@ -696,6 +715,12 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       for (const option of nodeOptionsOf(value)) {
         inNodeOptions.add(optionName(option));
       }
+      continue;
+    }
+    if (
+      (environmentProxyVariableNames as readonly string[]).includes(node ?? '')
+    ) {
+      if (isSet(value)) environmentProxy = true;
       continue;
     }
     if (node !== undefined) {
@@ -727,6 +752,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     if (trustStoreOptions.some((option) => names.has(option))) {
       trustStoreExtended = true;
     }
+    if (names.has(environmentProxyOption)) environmentProxy = true;
   }
 
   const read = (variable: Variable): Read => {
@@ -1731,6 +1757,69 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   // of its own authority, with a warning on every start (ADR 0056).
   if (trustStoreExtended) warnings.add('trust_store_extended');
 
+  // The proxy of every transport of the process and the switch for a
+  // runner without one (ADR 0035). The runner starts only with one of
+  // them, so that a runner without a boundary in the network is always a
+  // choice that shows; the server and the commands need neither.
+  const proxyName = 'ECCLIUM_EGRESS_PROXY';
+  const proxyRead = read(row(proxyName));
+  let egressProxy: string | undefined;
+  let proxyValid = proxyRead.state !== 'invalid';
+  if (proxyRead.state === 'unset') {
+    setting('egressProxy', proxyName, 'unset', shownNone);
+  } else if (proxyRead.state === 'invalid') {
+    setting('egressProxy', proxyName, 'invalid', shownNone);
+  } else {
+    const parsed = parseEgressProxy(proxyRead.value);
+    if (parsed.ok && fitsVariable(proxyName, proxyRead.value)) {
+      egressProxy = parsed.proxy;
+      setting(
+        'egressProxy',
+        proxyName,
+        'environment',
+        record({ kind: 'proxy', host: parsed.host, port: parsed.port }),
+      );
+    } else {
+      proxyValid = false;
+      report('egress_proxy_invalid', proxyName);
+      setting('egressProxy', proxyName, 'invalid', shownNone);
+    }
+  }
+  const egressName = 'ECCLIUM_EGRESS';
+  const egressRead = read(row(egressName));
+  let egressOff = false;
+  let egressValid = egressRead.state !== 'invalid';
+  if (egressRead.state === 'unset') {
+    setting('egress', egressName, 'unset', shownNone);
+  } else if (egressRead.state === 'invalid') {
+    setting('egress', egressName, 'invalid', shownNone);
+  } else if (
+    egressRead.value === 'off' &&
+    fitsVariable(egressName, egressRead.value)
+  ) {
+    egressOff = true;
+    setting(
+      'egress',
+      egressName,
+      'environment',
+      record({ kind: 'choice', value: 'off' }),
+    );
+  } else {
+    egressValid = false;
+    report('invalid_choice', egressName);
+    setting('egress', egressName, 'invalid', shownNone);
+  }
+  if (egressOff && egressProxy !== undefined) {
+    report('egress_off_with_proxy', egressName);
+  }
+  if (runner && proxyRead.state === 'unset' && egressRead.state === 'unset') {
+    report('runner_egress_required', proxyName);
+  }
+  if (runner && egressOff && egressProxy === undefined) {
+    warnings.add('egress_off');
+  }
+  if (environmentProxy) warnings.add('environment_proxy_ignored');
+
   // The subject must fit the pattern, and the placeholder of the audit is
   // refused although it fits.
   const subjectName = 'ECCLIUM_STDIO_SUBJECT';
@@ -1799,6 +1888,8 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     !drafts.valid ||
     !notify.valid ||
     !metrics.valid ||
+    !proxyValid ||
+    !egressValid ||
     subject === undefined ||
     logLevel === undefined
   ) {
@@ -1831,6 +1922,8 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       draftsDir: drafts.value,
       notifyFile: notify.value,
       metricsFile: metrics.value,
+      egressProxy,
+      egressOff,
       stdioSubject: subject.value,
       logLevel: logLevel.value as LogLevel,
     }),

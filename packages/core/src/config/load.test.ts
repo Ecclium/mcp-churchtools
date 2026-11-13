@@ -492,6 +492,9 @@ const runnerEnv = (extra: Environment = {}): Environment => ({
   ECCLIUM_ROUTINES_DIR: routinesDirPath,
   ECCLIUM_STATE_DIR: stateDirPath,
   ECCLIUM_RUNNER_TOKENS_DIR: tokensDirPath,
+  // The runner starts only with a proxy or without the boundary on purpose
+  // (ADR 0035); the tests of its other rules run without one.
+  ECCLIUM_EGRESS: 'off',
   ...extra,
 });
 
@@ -582,6 +585,7 @@ describe('loadConfig with a good configuration', () => {
       writeConfirmation: 'echo-allowed',
       auditRetentionMonths: 12,
       policy: defaultPolicy,
+      egressOff: false,
       stdioSubject: 'local-stdio',
       logLevel: 'info',
     });
@@ -675,6 +679,8 @@ describe('loadConfig with a good configuration', () => {
       ['draftsDir', 'ECCLIUM_DRAFTS_DIR', 'unset', { kind: 'none' }],
       ['notifyFile', 'ECCLIUM_NOTIFY_FILE', 'unset', { kind: 'none' }],
       ['metricsFile', 'ECCLIUM_RUNNER_METRICS_FILE', 'unset', { kind: 'none' }],
+      ['egressProxy', 'ECCLIUM_EGRESS_PROXY', 'unset', { kind: 'none' }],
+      ['egress', 'ECCLIUM_EGRESS', 'unset', { kind: 'none' }],
       [
         'stdioSubject',
         'ECCLIUM_STDIO_SUBJECT',
@@ -1774,7 +1780,6 @@ describe('loadConfig and the names of variables', () => {
 
   it('refuses each name of a later phase as not yet supported', () => {
     expect(unsupportedVariableNames).toEqual([
-      'ECCLIUM_EGRESS',
       'ECCLIUM_EGRESS_ALLOW_LAN',
       'ECCLIUM_ALLOWED_HOSTS',
     ]);
@@ -1809,7 +1814,9 @@ describe('loadConfig and the names of variables', () => {
     ]);
   });
 
-  it('ignores the proxy variables of other tools', () => {
+  // Ecclium uses none of them, so it says so instead of passing them by
+  // (ADR 0035). NO_PROXY alone opens no way and gives no warning.
+  it('warns about the proxy variables of other tools, which it does not use', () => {
     const result = load({
       ...valid(),
       HTTPS_PROXY: 'http://proxy.example:3128',
@@ -1818,7 +1825,10 @@ describe('loadConfig and the names of variables', () => {
       NODE_USE_ENV_PROXY: '1',
     });
     expect(result.ok).toBe(true);
-    expect(result.report.warnings).toEqual([]);
+    expect(result.report.warnings).toEqual(['environment_proxy_ignored']);
+    expect(
+      load({ ...valid(), NO_PROXY: 'demo.example' }).report.warnings,
+    ).toEqual([]);
   });
 });
 
@@ -2136,15 +2146,12 @@ describe('loadConfig and the token', () => {
 });
 
 describe('loadConfig and refused settings', () => {
-  it.each(['https://proxy.example:3128', ''])(
-    'refuses the proxy variable set to %j',
+  it.each(['https://proxy.example:3128', 'http://proxy.example'])(
+    'refuses the proxy set to %j',
     (value) => {
       expect(
         problems(load({ ...valid(), ECCLIUM_EGRESS_PROXY: value })),
-      ).toEqual([['proxy_unsupported', 'ECCLIUM_EGRESS_PROXY']]);
-      expect(
-        problems(load({ ...valid(), ecclium_egress_proxy: value })),
-      ).toEqual([['proxy_unsupported', 'ECCLIUM_EGRESS_PROXY']]);
+      ).toEqual([['egress_proxy_invalid', 'ECCLIUM_EGRESS_PROXY']]);
     },
   );
 
@@ -3078,7 +3085,7 @@ describe('loadConfig for the runner', () => {
         shown: { kind: 'hidden' },
       },
     ]);
-    expect(result.report.warnings).toEqual([]);
+    expect(result.report.warnings).toEqual(['egress_off']);
   });
 
   // Its container should not keep the token of the server by mistake, so
@@ -3119,7 +3126,7 @@ describe('loadConfig for the runner', () => {
     // A code of its own, so that the message speaks of the runner and not
     // of the server over HTTP.
     expect(problems(result)).toEqual([['runner_stdio_only', name]]);
-    expect(result.report.warnings).toEqual([]);
+    expect(result.report.warnings).toEqual(['egress_off']);
   });
 
   it('takes the folders of state and of keys and the retention', () => {
@@ -3146,6 +3153,7 @@ describe('loadConfig for the runner', () => {
       ['runner_policy_required', 'ECCLIUM_POLICY_FILE'],
       ['runner_routines_dir_required', 'ECCLIUM_ROUTINES_DIR'],
       ['runner_tokens_dir_required', 'ECCLIUM_RUNNER_TOKENS_DIR'],
+      ['runner_egress_required', 'ECCLIUM_EGRESS_PROXY'],
     ]);
     for (const key of [
       'stateDir',
@@ -3331,7 +3339,7 @@ describe('loadConfig for the runner', () => {
     });
     expect(result.report.problems).toEqual([]);
     expect(result.ok && result.config.readOnly).toBe(false);
-    expect(result.report.warnings).toEqual(['writes_enabled']);
+    expect(result.report.warnings).toEqual(['writes_enabled', 'egress_off']);
   });
 });
 
@@ -3440,8 +3448,22 @@ describe('loadConfig and its problems', () => {
   > = {
     unknown_variable: () => load({ ...valid(), ECCLIUM_REDONLY: 'true' }),
     miscased_variable: () => load({ ...valid(), ecclium_read_only: 'true' }),
-    unsupported_variable: () => load({ ...valid(), ECCLIUM_EGRESS: 'x' }),
-    proxy_unsupported: () => load({ ...valid(), ECCLIUM_EGRESS_PROXY: 'x' }),
+    unsupported_variable: () =>
+      load({ ...valid(), ECCLIUM_EGRESS_ALLOW_LAN: 'x' }),
+    // The proxy and the switch for a runner without it (ADR 0035).
+    egress_proxy_invalid: () =>
+      load({ ...valid(), ECCLIUM_EGRESS_PROXY: 'https://egress:3128' }),
+    egress_off_with_proxy: () =>
+      load({
+        ...valid(),
+        ECCLIUM_EGRESS_PROXY: 'http://egress:3128',
+        ECCLIUM_EGRESS: 'off',
+      }),
+    runner_egress_required: () =>
+      asRunner({ extra: { ECCLIUM_EGRESS: undefined } }),
+    egress_off: () => asRunner(),
+    environment_proxy_ignored: () =>
+      load({ ...valid(), https_proxy: 'http://proxy.example:3128' }),
     search_tools_replaced: () =>
       load({ ...valid(), ECCLIUM_SEARCH_TOOLS: 'true' }),
     tls_check_disabled: () =>
@@ -4270,7 +4292,7 @@ describe('loadConfig and its problems', () => {
     const environment: Environment = {
       ECCLIUM_CHURCHTOOLS_URL: 'http://demo.example',
       ECCLIUM_CHURCHTOOLS_TOKEN_FILE: tokenPath,
-      ECCLIUM_EGRESS: 'x',
+      ECCLIUM_EGRESS_ALLOW_LAN: 'x',
       ECCLIUM_SEARCH_TOOLS: 'x',
       NODE_TLS_REJECT_UNAUTHORIZED: '0',
       NODE_DEBUG: 'undici',
@@ -4287,12 +4309,12 @@ describe('loadConfig and its problems', () => {
     expect(result.report.omittedProblems).toBe(48 - maxReportedProblems);
     expect(problems(result).slice(0, 9)).toEqual([
       ['url_not_https', 'ECCLIUM_CHURCHTOOLS_URL'],
+      ['egress_proxy_invalid', 'ECCLIUM_EGRESS_PROXY'],
       ['tls_check_disabled', 'NODE_TLS_REJECT_UNAUTHORIZED'],
       ['debug_output_enabled', 'NODE_DEBUG'],
       ['tls_keylog_enabled'],
       ['tls_trace_enabled', 'NODE_OPTIONS'],
-      ['proxy_unsupported', 'ECCLIUM_EGRESS_PROXY'],
-      ['unsupported_variable', 'ECCLIUM_EGRESS'],
+      ['unsupported_variable', 'ECCLIUM_EGRESS_ALLOW_LAN'],
       ['search_tools_replaced', 'ECCLIUM_SEARCH_TOOLS'],
       ['unknown_variable', 'ECCLIUM_UNKNOWN_0'],
     ]);
@@ -4351,6 +4373,8 @@ describe('loadConfig and what it gives out', () => {
         ecclium_redaction: value,
         ECCLIUM_TOOLSETS: value,
         ECCLIUM_EGRESS_PROXY: value,
+        ECCLIUM_EGRESS: value,
+        HTTPS_PROXY: `http://${value}@proxy.example:3128`,
         NODE_TLS_REJECT_UNAUTHORIZED: value,
         NODE_DEBUG: `undici,${value}`,
         NODE_EXTRA_CA_CERTS: `/${canaries.name.value}/${value}.pem`,
@@ -4735,5 +4759,99 @@ describe('loadConfig and a server that writes to the wiki', () => {
     expect(
       problems(writingToWiki({ key: true, inquiries: true }, 'calendars')),
     ).toEqual([]);
+  });
+});
+
+describe('loadConfig and the proxy of outbound connections (ADR 0035)', () => {
+  const proxy = 'http://egress:3128';
+
+  it('takes the proxy for every transport and shows host and port', () => {
+    for (const transport of ['stdio', 'http'] as const) {
+      const result = load(
+        { ...valid(), ECCLIUM_EGRESS_PROXY: proxy },
+        transport,
+      );
+      expect(result.ok && result.config.egressProxy, transport).toBe(proxy);
+      expect(result.ok && result.config.egressOff, transport).toBe(false);
+      expect(setting(result, 'egressProxy'), transport).toEqual({
+        key: 'egressProxy',
+        variable: 'ECCLIUM_EGRESS_PROXY',
+        origin: 'environment',
+        shown: { kind: 'proxy', host: 'egress', port: '3128' },
+      });
+    }
+  });
+
+  it('connects directly without the variable, for the server', () => {
+    const result = load(valid());
+    expect(result.ok && result.config.egressProxy).toBeUndefined();
+    expect(setting(result, 'egressProxy')?.origin).toBe('unset');
+    expect(setting(result, 'egress')?.origin).toBe('unset');
+  });
+
+  it('starts the runner with a proxy and without a warning', () => {
+    const result = asRunner({
+      extra: { ECCLIUM_EGRESS: undefined, ECCLIUM_EGRESS_PROXY: proxy },
+    });
+    expect(problems(result)).toEqual([]);
+    expect(result.ok && result.config.egressProxy).toBe(proxy);
+    expect(result.report.warnings).toEqual([]);
+  });
+
+  it('starts the runner without a proxy only with off, and warns', () => {
+    const without = asRunner({ extra: { ECCLIUM_EGRESS: undefined } });
+    expect(problems(without)).toEqual([
+      ['runner_egress_required', 'ECCLIUM_EGRESS_PROXY'],
+    ]);
+    const off = asRunner();
+    expect(off.ok && off.config.egressOff).toBe(true);
+    expect(off.report.warnings).toEqual(['egress_off']);
+    expect(setting(off, 'egress')?.shown).toEqual({
+      kind: 'choice',
+      value: 'off',
+    });
+  });
+
+  it('takes off for the server without a warning, since it changes nothing there', () => {
+    const result = load({ ...valid(), ECCLIUM_EGRESS: 'off' });
+    expect(result.ok && result.config.egressOff).toBe(true);
+    expect(result.report.warnings).toEqual([]);
+  });
+
+  it('refuses off together with a proxy, and any value but off', () => {
+    expect(
+      problems(
+        load({
+          ...valid(),
+          ECCLIUM_EGRESS_PROXY: proxy,
+          ECCLIUM_EGRESS: 'off',
+        }),
+      ),
+    ).toEqual([['egress_off_with_proxy', 'ECCLIUM_EGRESS']]);
+    for (const value of ['on', 'OFF', 'no']) {
+      const result = load({ ...valid(), ECCLIUM_EGRESS: value });
+      expect(problems(result), value).toEqual([
+        ['invalid_choice', 'ECCLIUM_EGRESS'],
+      ]);
+      expect(setting(result, 'egress')?.origin, value).toBe('invalid');
+    }
+    // An invalid proxy is reported once, not also as a missing one.
+    expect(
+      problems(
+        asRunner({
+          extra: { ECCLIUM_EGRESS: undefined, ECCLIUM_EGRESS_PROXY: 'egress' },
+        }),
+      ),
+    ).toEqual([['egress_proxy_invalid', 'ECCLIUM_EGRESS_PROXY']]);
+  });
+
+  it('warns about a proxy of Node.js in its options as well', () => {
+    expect(started(['--use-env-proxy']).report.warnings).toEqual([
+      'environment_proxy_ignored',
+    ]);
+    expect(
+      load({ ...valid(), NODE_OPTIONS: '--use_env_proxy' }).report.warnings,
+    ).toEqual(['environment_proxy_ignored']);
+    expect(load({ ...valid(), all_proxy: '' }).report.warnings).toEqual([]);
   });
 });

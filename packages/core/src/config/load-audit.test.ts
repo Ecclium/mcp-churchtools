@@ -6,11 +6,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 import { loadAuditConfig, maxReportedProblems } from './load.js';
 import type { StateDirFileSystem } from './state-dir.js';
-import {
-  proxyVariableName,
-  searchToolsVariableName,
-  tokenVariableName,
-} from './variables.js';
+import { searchToolsVariableName, tokenVariableName } from './variables.js';
 
 // The commands that read the audit files load only the folder of state and
 // the retention (ADR 0028). Everything else of the start, the address, the
@@ -138,9 +134,8 @@ describe('loadAuditConfig', () => {
       ECCLIUM_STATE_DIR: stateDir,
       ECCLIUM_STATE_DIRR: 'x',
       Ecclium_State_Dir: 'x',
-      [proxyVariableName]: 'x',
       [searchToolsVariableName]: 'x',
-      ECCLIUM_EGRESS: 'x',
+      ECCLIUM_EGRESS_ALLOW_LAN: 'x',
       'ECCLIUM_odd-name': 'x',
     });
 
@@ -148,8 +143,7 @@ describe('loadAuditConfig', () => {
       ok: false,
       problems: [
         { code: 'miscased_variable', variable: 'ECCLIUM_STATE_DIR' },
-        { code: 'proxy_unsupported', variable: proxyVariableName },
-        { code: 'unsupported_variable', variable: 'ECCLIUM_EGRESS' },
+        { code: 'unsupported_variable', variable: 'ECCLIUM_EGRESS_ALLOW_LAN' },
         { code: 'search_tools_replaced', variable: searchToolsVariableName },
         { code: 'unknown_variable', variable: 'ECCLIUM_STATE_DIRR' },
         { code: 'unknown_variable' },

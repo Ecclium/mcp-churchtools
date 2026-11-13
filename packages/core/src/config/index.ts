@@ -68,7 +68,7 @@ export {
 } from './token-file.js';
 export {
   defaultStdioSubject,
-  proxyVariableName,
+  environmentProxyVariableNames,
   recommendedRetentionMonths,
   requestsPerMinuteRange,
   retentionMonthsRange,

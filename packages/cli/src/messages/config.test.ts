@@ -5,7 +5,6 @@ import {
   type ConfigWarningCode,
   configWarningCodes,
   loadConfig,
-  proxyVariableName,
   runnerTokenCodes,
   tlsVariableName,
   tokenVariableName,
@@ -54,8 +53,11 @@ const variableOf = (code: ConfigProblemCode): string => {
     case 'token_conflict':
     case 'token_invalid':
       return 'ECCLIUM_CHURCHTOOLS_TOKEN';
-    case 'proxy_unsupported':
+    case 'egress_proxy_invalid':
+    case 'runner_egress_required':
       return 'ECCLIUM_EGRESS_PROXY';
+    case 'egress_off_with_proxy':
+      return 'ECCLIUM_EGRESS';
     case 'unsupported_variable':
       return 'ECCLIUM_TOOLSETS';
     case 'tls_check_disabled':
@@ -83,13 +85,12 @@ const variableOf = (code: ConfigProblemCode): string => {
 };
 
 // Every name the loader can report with a problem: the known variables,
-// the names of later phases and of a proxy, the variable of TLS, the
+// the names of later phases, the variable of TLS, the
 // variable with the options of Node.js and the longest unknown name it
 // shows.
 const reportedNames: readonly string[] = [
   ...variableNames,
   ...unsupportedVariableNames,
-  proxyVariableName,
   tlsVariableName,
   'NODE_OPTIONS',
   `ECCLIUM_${'A'.repeat(64)}`,
@@ -138,7 +139,8 @@ describe('the catalog of messages', () => {
 
   // Chapter 9 of brand/README.md: «Sie», ss, quotes «so», no em dash, no
   // exclamation mark, numbers from 1000 up as 4'096, none of the words it
-  // lists.
+  // lists. A port in an address, such as that of a proxy, is no number of
+  // that kind.
   it.each(everyMessage)(
     'follows the rules of the brand in %s',
     (_, message) => {
@@ -146,7 +148,7 @@ describe('the catalog of messages', () => {
       expect(text.replace(/(?<=\d)'(?=\d{3})/g, '')).not.toMatch(
         /[ß—–!"„“”'‚‘’\u00a0]/,
       );
-      expect(text).not.toMatch(/\d{4}/);
+      expect(text.replace(/https?:\/\/[^\s›]+/g, '')).not.toMatch(/\d{4}/);
       expect(hasControlCharacter(text)).toBe(false);
       expect(text.split('«').length).toBe(text.split('»').length);
       expect(text.split('‹').length).toBe(text.split('›').length);
@@ -721,6 +723,7 @@ describe('the catalog of messages', () => {
         'auditFileText',
         'dayKeyFolderMessage',
         'dayKeyFolderText',
+        'egressProxyText',
         'emptyToolsetMessage',
         'emptyToolsetText',
         'queueFolderMessage',

@@ -9,7 +9,11 @@ import { isAbsolute } from 'node:path';
 
 import { z } from 'zod';
 
-import { parseChurchToolsOrigin } from '../http/index.js';
+import {
+  maxProxyLength,
+  parseChurchToolsOrigin,
+  parseEgressProxy,
+} from '../http/index.js';
 import { logLevels } from '../logger/index.js';
 import {
   isToolsetName,
@@ -51,6 +55,8 @@ export const variableNames = Object.freeze([
   'ECCLIUM_DRAFTS_DIR',
   'ECCLIUM_NOTIFY_FILE',
   'ECCLIUM_RUNNER_METRICS_FILE',
+  'ECCLIUM_EGRESS_PROXY',
+  'ECCLIUM_EGRESS',
   'ECCLIUM_STDIO_SUBJECT',
   'ECCLIUM_LOG_LEVEL',
 ] as const);
@@ -82,7 +88,6 @@ export const plainVariableNames: readonly PlainVariableName[] = Object.freeze(
  * start with a message that this version does not support it yet.
  */
 export const unsupportedVariableNames = Object.freeze([
-  'ECCLIUM_EGRESS',
   'ECCLIUM_EGRESS_ALLOW_LAN',
   'ECCLIUM_ALLOWED_HOSTS',
 ] as const);
@@ -96,10 +101,21 @@ export const unsupportedVariableNames = Object.freeze([
 export const searchToolsVariableName = 'ECCLIUM_SEARCH_TOOLS';
 
 /**
- * The variable for a proxy of outbound connections. It stops the start
- * until an explicit proxy comes with ADR 0035.
+ * Variables without the prefix with which a shell, Node.js or undici
+ * would send through a proxy, frozen (ADR 0035). Ecclium uses none of
+ * them: its transports go only through `ECCLIUM_EGRESS_PROXY`. Set with a
+ * value in any spelling of the name, they give a warning, so that nobody
+ * takes the proxy of the shell for the one of Ecclium.
  */
-export const proxyVariableName = 'ECCLIUM_EGRESS_PROXY';
+export const environmentProxyVariableNames = Object.freeze([
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'ALL_PROXY',
+  'NODE_USE_ENV_PROXY',
+] as const);
+
+/** The option of Node.js that does the same as `NODE_USE_ENV_PROXY`. */
+export const environmentProxyOption = '--use-env-proxy';
 
 /**
  * A variable without the prefix that the loader reads. With the value 0,
@@ -213,6 +229,7 @@ export const defaultHttpWriteConfirmation: WriteConfirmation =
 /** How the loader reads the value of a variable. */
 export type VariableKind =
   | 'origin'
+  | 'proxy'
   | 'path'
   | 'token'
   | 'integer'
@@ -701,6 +718,29 @@ export const variables: readonly Variable[] = Object.freeze([
     stdioOnly: false,
     runner: true,
   }),
+  // The proxy of every transport of the process, http://host:port, and the
+  // switch that lets the runner start without one (ADR 0035). Neither has
+  // a default: the runner needs one of them, the server neither.
+  row({
+    name: 'ECCLIUM_EGRESS_PROXY',
+    kind: 'proxy',
+    maxLength: maxProxyLength,
+    choices: [],
+    defaultValue: undefined,
+    secret: false,
+    stdioOnly: false,
+    runner: true,
+  }),
+  row({
+    name: 'ECCLIUM_EGRESS',
+    kind: 'choice',
+    maxLength: 3,
+    choices: ['off'],
+    defaultValue: undefined,
+    secret: false,
+    stdioOnly: false,
+    runner: true,
+  }),
   row({
     name: 'ECCLIUM_STDIO_SUBJECT',
     kind: 'subject',
@@ -829,6 +869,14 @@ export const variableSchemas: Readonly<
         isNormalizedAbsolutePath(value) &&
         privateFileNamePattern.test(value.slice(value.lastIndexOf('/') + 1)),
     ),
+  ECCLIUM_EGRESS_PROXY: z
+    .string()
+    .max(maxProxyLength)
+    .refine((value) => {
+      const checked = parseEgressProxy(value);
+      return checked.ok && checked.proxy === value;
+    }),
+  ECCLIUM_EGRESS: choiceOf('ECCLIUM_EGRESS'),
   ECCLIUM_STDIO_SUBJECT: z.string().max(32).regex(stdioSubjectPattern),
   ECCLIUM_LOG_LEVEL: choiceOf('ECCLIUM_LOG_LEVEL'),
 });
@@ -871,6 +919,8 @@ export const environmentSchema = z.strictObject({
   ECCLIUM_NOTIFY_FILE: variableSchemas.ECCLIUM_NOTIFY_FILE.optional(),
   ECCLIUM_RUNNER_METRICS_FILE:
     variableSchemas.ECCLIUM_RUNNER_METRICS_FILE.optional(),
+  ECCLIUM_EGRESS_PROXY: variableSchemas.ECCLIUM_EGRESS_PROXY.optional(),
+  ECCLIUM_EGRESS: variableSchemas.ECCLIUM_EGRESS.optional(),
   ECCLIUM_STDIO_SUBJECT: variableSchemas.ECCLIUM_STDIO_SUBJECT.optional(),
   ECCLIUM_LOG_LEVEL: variableSchemas.ECCLIUM_LOG_LEVEL.optional(),
 });

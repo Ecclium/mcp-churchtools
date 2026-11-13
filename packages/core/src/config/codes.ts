@@ -24,7 +24,6 @@ export const configProblemCodes = Object.freeze([
   'unknown_variable',
   'miscased_variable',
   'unsupported_variable',
-  'proxy_unsupported',
   'search_tools_replaced',
   'tls_check_disabled',
   'debug_output_enabled',
@@ -46,6 +45,10 @@ export const configProblemCodes = Object.freeze([
   'notify_file_overlap',
   'metrics_file_invalid',
   'metrics_file_overlap',
+  // The proxy of outbound connections and the switch for the runner
+  // without one (ADR 0035).
+  'egress_proxy_invalid',
+  'egress_off_with_proxy',
   'url_missing',
   ...originCodes,
   'token_missing',
@@ -79,6 +82,7 @@ export const configProblemCodes = Object.freeze([
   'runner_state_dir_required',
   'runner_tokens_dir_required',
   'runner_tokens_dir_in_state_dir',
+  'runner_egress_required',
   ...runnerTokensDirCodes,
   ...runnerTokenCodes,
   ...policyCodes,
@@ -106,6 +110,8 @@ export const configWarningCodes = Object.freeze([
   'trust_store_extended',
   'audit_retention_short',
   'audit_retention_without_state_dir',
+  'egress_off',
+  'environment_proxy_ignored',
 ] as const);
 
 /** What the start reports although it goes on. */
