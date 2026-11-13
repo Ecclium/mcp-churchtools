@@ -299,32 +299,30 @@ describe('the signals of the runner', () => {
     );
   });
 
-  // A write of a run to a page named by its ID, counted in the code on
-  // 13.11.2026: the state of the page, then the rights, the page and the
-  // name of the category for the plan, then the page, the name, the update
-  // and the read after it for the commit, each within the total time of
-  // the transport, and two counts in the store of quotas. A signal never
-  // stops it, so the grace of the container must cover all of it. The
-  // search of a page by its title, which may come before, is not covered
-  // (ADR 0036, residual risks).
+  // A write of a run to a page the policy names by its ID (wiki_page),
+  // counted in the code on 13.11.2026: the page by its ID, then the rights
+  // and the page for the plan, then the page, the update and the read
+  // after it for the commit, each within the total time of the transport,
+  // and a read and a raise of the counter of the day in the store of
+  // quotas. A signal never stops it, so the grace of the container must
+  // cover it, with room for two requests more. The search of a page by its
+  // title for a whole category is not covered (ADR 0036, residual risks).
   it('covers a write that has begun with the grace of the lock', () => {
-    const requestsOfAWrite = 8;
+    const requestsOfAWrite = 6;
+    const spareRequests = 2;
     const quotaCountsOfAWrite = 2;
     expect(routineLockLimits.graceMs).toBeGreaterThanOrEqual(
-      requestsOfAWrite * transportLimits.totalMs +
+      (requestsOfAWrite + spareRequests) * transportLimits.totalMs +
         quotaCountsOfAWrite * quotaTimeoutMs,
     );
     const text = signalSection.join('\n');
-    const seconds =
-      (requestsOfAWrite * transportLimits.totalMs +
-        quotaCountsOfAWrite * quotaTimeoutMs) /
-      1000;
     expect(text).toContain(
-      `bis zu acht Anfragen an ChurchTools mit je höchstens ${String(transportLimits.totalMs / 1000)} Sekunden`,
+      `bis zu sechs Anfragen an ChurchTools mit je höchstens ${String(transportLimits.totalMs / 1000)} Sekunden`,
     );
     expect(text).toContain(
-      `zusammen also höchstens ${String(seconds)} Sekunden`,
+      `je höchstens ${String(quotaTimeoutMs / 1000)} Sekunden`,
     );
+    expect(text).toContain('Platz für zwei Anfragen mehr');
   });
 
   it('give a container at least the grace of the lock of a routine', () => {
