@@ -59,18 +59,27 @@ describe('probeDirect', () => {
     ).toEqual({ connected: false, reason: 'dns' });
   });
 
-  it.each([
-    'ECONNREFUSED',
-    'UND_ERR_CONNECT_TIMEOUT',
-    'ENETUNREACH',
-    undefined,
-  ])('gives no_connection for %s', async (code) => {
-    expect(
-      await probeDirectWith(target, (_, callback) => {
-        callback(Object.assign(new Error('x'), { code }), null);
-      }),
-    ).toEqual({ connected: false, reason: 'no_connection' });
-  });
+  it.each(['UND_ERR_CONNECT_TIMEOUT', 'ETIMEDOUT'])(
+    'gives timeout for %s, which counts the lookup of the name as well',
+    async (code) => {
+      expect(
+        await probeDirectWith(target, (_, callback) => {
+          callback(Object.assign(new Error('x'), { code }), null);
+        }),
+      ).toEqual({ connected: false, reason: 'timeout' });
+    },
+  );
+
+  it.each(['ECONNREFUSED', 'ENETUNREACH', undefined])(
+    'gives no_connection for %s',
+    async (code) => {
+      expect(
+        await probeDirectWith(target, (_, callback) => {
+          callback(Object.assign(new Error('x'), { code }), null);
+        }),
+      ).toEqual({ connected: false, reason: 'no_connection' });
+    },
+  );
 
   it('gives no_connection when the connector throws', async () => {
     expect(

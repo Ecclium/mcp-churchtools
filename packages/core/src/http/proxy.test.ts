@@ -653,6 +653,7 @@ describe('isProbeTarget', () => {
     ['demo.example', '443'],
     [42, 443],
     ['demo', 443],
+    ['demo.example:8443', 443],
   ])('refuses %j on port %j', (host, port) => {
     expect(isProbeTarget(host, port)).toBe(false);
   });

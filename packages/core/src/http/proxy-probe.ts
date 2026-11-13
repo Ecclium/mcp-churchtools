@@ -122,7 +122,11 @@ export function isProbeTarget(host: unknown, port: unknown): boolean {
   const origin =
     port === 443 ? `https://${host}` : `https://${host}:${String(port)}`;
   const checked = parseChurchToolsOrigin(origin);
-  return checked.ok && checked.origin === origin;
+  // The host alone must be the name of the origin, so that a port or
+  // anything else inside it never reaches the target of CONNECT.
+  return (
+    checked.ok && checked.origin === origin && new URL(origin).hostname === host
+  );
 }
 
 /** The answer of the proxy, or why there is none. */

@@ -20,12 +20,17 @@ import { transportLimits } from './transport.js';
 
 /**
  * What the check found: a connection that stood, or none. `dns`: the name
- * did not resolve. `no_connection`: the name resolved, or the failure did
- * not say, and no connection came about in time, refused or unanswered.
+ * did not resolve. `timeout`: nothing came about within the connect limit,
+ * which counts the lookup of the name as well, so it does not show whether
+ * the name resolved. `no_connection`: the connection was refused or had no
+ * route, or the failure did not say.
  */
 export type DirectProbe =
   | { readonly connected: true }
-  | { readonly connected: false; readonly reason: 'dns' | 'no_connection' };
+  | {
+      readonly connected: false;
+      readonly reason: 'dns' | 'timeout' | 'no_connection';
+    };
 
 /** What the check is made with. */
 export interface DirectProbeOptions {
@@ -37,6 +42,12 @@ export interface DirectProbeOptions {
   /** The port of the target. */
   readonly port: number;
 }
+
+// Codes of the connect limit, which undici and Node.js report.
+const timeoutCodes: readonly string[] = Object.freeze([
+  'UND_ERR_CONNECT_TIMEOUT',
+  'ETIMEDOUT',
+]);
 
 // Codes of a name that does not resolve, as Node.js reports them.
 const dnsCodes: readonly string[] = Object.freeze([
@@ -99,11 +110,14 @@ export async function probeDirectWith(
     throw new TypeError('The target must be checked.');
   }
   const failed = (error: unknown): DirectProbe => {
-    const code = codeOf(error);
+    const code = codeOf(error) ?? '';
     return Object.freeze({
       connected: false,
-      reason:
-        code !== undefined && dnsCodes.includes(code) ? 'dns' : 'no_connection',
+      reason: dnsCodes.includes(code)
+        ? 'dns'
+        : timeoutCodes.includes(code)
+          ? 'timeout'
+          : 'no_connection',
     });
   };
   return new Promise((resolve) => {
