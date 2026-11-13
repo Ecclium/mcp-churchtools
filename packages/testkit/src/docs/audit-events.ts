@@ -94,6 +94,8 @@ export const auditFieldMeanings: Readonly<Record<string, string>> =
       'Der wievielte Versuch einer Auslösung des Zeitplans der Lauf war, von 1 bis 3 ([ADR 0034](adr/0034-zeitplan-semantik.md)). Nur in einer Zeile vom Typ `run`, nicht bei einem Lauf von Hand.',
     period:
       'Die Periode des Laufs, die Woche wie `2026-W46`, der Tag wie `2026-11-10` oder der Monat wie `2026-11`, aus der Auslösung und nie aus der Zeit des Laufs ([ADR 0034](adr/0034-zeitplan-semantik.md)). Nur in einer Zeile vom Typ `run`.',
+    egressOff:
+      'Der Runner lief ohne seinen Proxy, weil `ECCLIUM_EGRESS` auf `off` steht ([ADR 0035](adr/0035-proxy-und-grenze-im-netz.md)). Nur in einer Zeile vom Typ `run`.',
     durationMs: 'Dauer des Aufrufs in Millisekunden.',
     seq: 'Stelle der Zeile in der Hash-Kette ihrer Datei, ab 1 für die erste ganze Zeile. Nur der Schreiber der Datei setzt sie. Ein Stück einer Zeile zählt nicht, die nächste ganze Zeile trägt dann dieselbe Stelle.',
     prevHash:

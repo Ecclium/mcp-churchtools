@@ -325,6 +325,7 @@ describe('auditEventV1Schema', () => {
         ...runEnd,
         attempt: 2,
         period: '2026-W46',
+        egressOff: true,
         policyHash: 'a'.repeat(64),
         provider: {
           vendor: 'example-ai',
@@ -476,6 +477,7 @@ describe('auditEventV1Schema', () => {
         { runStep: 'model' },
         { attempt: 1 },
         { period: '2026-W46' },
+        { egressOff: true },
       ]) {
         expect(
           passes(auditEventV1Schema, { ...other, ...field }),
@@ -490,6 +492,7 @@ describe('auditEventV1Schema', () => {
           runStep: undefined,
           attempt: undefined,
           period: undefined,
+          egressOff: undefined,
         }),
         other.type,
       ).toBe(true);

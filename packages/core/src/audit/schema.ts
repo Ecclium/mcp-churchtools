@@ -221,6 +221,7 @@ export const auditFieldSchemas = Object.freeze({
   runStep: z.enum(auditRunSteps),
   attempt: z.int().min(1).max(maxAttempt),
   period: text(10, periodPattern),
+  egressOff: z.literal(true),
   durationMs: z.int().min(0).max(86_400_000),
   seq: z.int().min(1),
 });
@@ -302,6 +303,7 @@ export const auditEventV1Schema = z
     runStep: fields.runStep.optional(),
     attempt: fields.attempt.optional(),
     period: fields.period.optional(),
+    egressOff: fields.egressOff.optional(),
     durationMs: fields.durationMs,
     seq: fields.seq.optional(),
     prevHash: fields.hash.optional(),
@@ -349,7 +351,8 @@ export const auditEventV1Schema = z
       (Object.hasOwn(event, 'runId') && event.runId !== undefined),
   )
   // The end of a run always says how it ended and names its run, and only
-  // such a line has a result, a step, a try or a period. Its routine comes
+  // such a line has a result, a step, a try, a period or the note that the
+  // runner ran without its proxy (ADR 0035). Its routine comes
   // from the run; a placeholder for it could be the ID of a real routine,
   // so an invalid one is left out instead. It holds no state of a write
   // and no way of a confirmation, which stand on the line of the write
@@ -362,7 +365,8 @@ export const auditEventV1Schema = z
         !has('runResult') &&
         !has('runStep') &&
         !has('attempt') &&
-        !has('period')
+        !has('period') &&
+        !has('egressOff')
       );
     }
     return (

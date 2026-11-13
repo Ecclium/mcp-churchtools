@@ -950,6 +950,13 @@ export interface ToolPipelineOptions {
    * halts only its own writes after a failed line of the audit.
    */
   readonly writeHalt?: WriteHalt;
+  /**
+   * Whether the runner runs without its proxy, because `ECCLIUM_EGRESS` is
+   * `off` (ADR 0035). Then every line of the type run carries the note,
+   * so that each run shows that it had no boundary in the network. Only
+   * the composition root sets it, from the configuration.
+   */
+  readonly egressOff?: boolean;
 }
 
 // The longest duration the audit accepts.
@@ -1322,6 +1329,8 @@ const inputRefsOf = (
 export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
   const { catalog, audit, clock, logging, origin } = options;
   const random = options.random ?? randomBytes;
+  // Only true counts, also from a caller without types.
+  const egressOff = options.egressOff === true;
   // The read budget of the policy, fixed for the life of the pipeline, as
   // the policy is read once at the start (ADR 0032).
   const readBudget = options.policy.interactive.readBudgetPerDay;
@@ -2878,6 +2887,7 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
             : {}),
           ...(attempt === undefined ? {} : { attempt: attempt as number }),
           ...(period === undefined ? {} : { period: period as string }),
+          ...(egressOff ? { egressOff: true as const } : {}),
           durationMs: ownData(request, 'durationMs') as number,
         }) === true;
       // A line without its routine is whole, but it is not the end of

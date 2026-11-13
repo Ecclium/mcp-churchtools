@@ -1502,6 +1502,8 @@ describe('the end of a run (ADR 0033)', () => {
     ['period', '2026-11-10T08:00', 'audit_invalid_period'],
     ['period', 'weekly', 'audit_invalid_period'],
     ['period', 202_611, 'audit_invalid_period'],
+    ['egressOff', false, 'audit_invalid_egress_off'],
+    ['egressOff', 'true', 'audit_invalid_egress_off'],
   ])('leaves out %s %j when it is invalid', (key, value, name) => {
     const { sink, audit, logs } = make();
     expect(sink.record({ ...runEnd, [key]: value })).toBe(false);
@@ -1514,6 +1516,7 @@ describe('the end of a run (ADR 0033)', () => {
     ['a week', { period: '2026-W46' }],
     ['a day', { period: '2026-11-10' }],
     ['a month', { period: '2026-11' }],
+    ['the note of a runner without its proxy', { egressOff: true as const }],
   ])('keeps %s right before the duration', (_, field) => {
     const { sink, audit, logs } = make();
     expect(sink.record({ ...runEnd, ...field })).toBe(true);

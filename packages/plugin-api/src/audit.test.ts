@@ -75,6 +75,7 @@ describe('AuditEventV1', () => {
       | 'runStep'
       | 'attempt'
       | 'period'
+      | 'egressOff'
       | 'durationMs'
       | 'seq'
       | 'prevHash'
