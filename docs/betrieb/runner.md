@@ -10,7 +10,7 @@ Ecclium ist ein unabhängiges Projekt und steht in keiner Verbindung zum Herstel
 
 Der Runner liest dieselben Variablen wie der Server ([Konfiguration](../configuration.md)), mit diesen Unterschieden:
 
-- Pflicht sind `ECCLIUM_TIME_ZONE`, `ECCLIUM_POLICY_FILE`, `ECCLIUM_ROUTINES_DIR`, `ECCLIUM_STATE_DIR` und `ECCLIUM_RUNNER_TOKENS_DIR`.
+- Pflicht sind `ECCLIUM_TIME_ZONE`, `ECCLIUM_POLICY_FILE`, `ECCLIUM_ROUTINES_DIR`, `ECCLIUM_STATE_DIR` und `ECCLIUM_RUNNER_TOKENS_DIR`, dazu entweder `ECCLIUM_EGRESS_PROXY` oder `ECCLIUM_EGRESS=off` (siehe «Ausgehender Weg»).
 - Der Runner liest nie das Token des Servers. `ECCLIUM_CHURCHTOOLS_TOKEN_FILE` und `ECCLIUM_CHURCHTOOLS_TOKEN` halten ihn vom Start ab. Sein eigenes Konto liegt als `ct_token_runner` im Ordner aus `ECCLIUM_RUNNER_TOKENS_DIR`, jedes Konto, das die Richtlinie nennt, als `ct_token_<Alias>` daneben, jede Datei mit den Rechten 600. Mit dem eigenen Konto liest eine Routine, für die die Richtlinie keinen Eintrag hat. Jeder Lauf liest seine Token-Datei neu, ein neues Token wirkt also ohne Neustart.
 - Schreibt eine Routine ins Wiki, verlangt der Runner `ECCLIUM_READ_ONLY=false` mit allem, was das Schreiben sonst braucht. Sonst startet er nicht, weil ein Lauf lesen und das Modell fragen würde, ohne zu schreiben.
 - Für einen Entwurf als Datei braucht die Routine `ECCLIUM_DRAFTS_DIR`, den Ordner `stop` im Zustandsordner und unter `interactive.inquiriesTo` in der Richtlinie, wen Leserinnen und Leser fragen können, auch mit `ECCLIUM_READ_ONLY=true`.
