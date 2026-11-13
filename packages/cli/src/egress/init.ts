@@ -1,14 +1,17 @@
 /**
  * `ecclium init egress` (ADR 0035): writes the list of targets for the
- * template of Squid to stdout, as lines `acl` only. The operator sends the
- * output into the file the template includes. Like `ecclium policy init`
- * it changes no file, and like `ecclium config check --runner` it asks
- * nothing over the network, not even the proxy, whose list does not exist
- * yet.
+ * template of Squid to stdout, as comments and lines `acl` only. The
+ * operator sends the output into the file the template includes. Like
+ * `ecclium policy init` it changes no file, and like `ecclium config check
+ * --runner` it asks nothing over the network, not even the proxy, whose
+ * list does not exist yet.
  *
  * Why the configuration of the runner: only it reads the file of the
- * ping, whose host the list must name. On any problem nothing reaches
- * stdout, so that a redirect never gets half a list.
+ * ping, whose host the list must name. With an invalid configuration or
+ * a target the template could never pass nothing reaches stdout. If
+ * stdout takes a line no more, part of the list may be out already; the
+ * exit code 74 says so, and the guide tells the operator to replace the
+ * old list only after 0.
  *
  * Its exit code follows sysexits: 0 when the list is written, 74 when it
  * did not reach stdout whole, 78 for an invalid configuration or a target

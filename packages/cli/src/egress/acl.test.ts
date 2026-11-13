@@ -1,7 +1,10 @@
+import { createHash } from 'node:crypto';
+
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import {
+  aclCompleteLine,
   aclHeader,
   aclLinePatterns,
   type EgressTarget,
@@ -19,6 +22,10 @@ const provider = (alias: string, endpoint: string) => ({
   structuredOutput: true,
   apiKeyFile: '/path/to/key',
 });
+
+// The suffix of the names of a pair, as the list makes it.
+const suffix = (host: string, port: string): string =>
+  createHash('sha256').update(`${host}:${port}`).digest('hex').slice(0, 16);
 
 const base = {
   churchtoolsOrigin: 'https://example.church.tools',
@@ -119,6 +126,8 @@ describe('egressTargetsOf', () => {
 
 describe('renderEgressAcl', () => {
   it('writes per target a name, a port and the pair in its list, after a comment', () => {
+    const one = suffix('example.church.tools', '443');
+    const two = suffix('llm.example.org', '8443');
     expect(
       renderEgressAcl([
         {
@@ -137,14 +146,39 @@ describe('renderEgressAcl', () => {
     ).toEqual([
       aclHeader,
       '# ChurchTools',
-      'acl ecclium_host_1 dstdomain -n example.church.tools',
-      'acl ecclium_port_1 port 443',
-      'acl ecclium_public all-of ecclium_host_1 ecclium_port_1',
+      `acl ecclium_host_${one} dstdomain -n example.church.tools`,
+      `acl ecclium_port_${one} port 443`,
+      `acl ecclium_public all-of ecclium_host_${one} ecclium_port_${one}`,
       '# Anbieter ‹lokal›, lokales Netz',
-      'acl ecclium_host_2 dstdomain -n llm.example.org',
-      'acl ecclium_port_2 port 8443',
-      'acl ecclium_lan all-of ecclium_host_2 ecclium_port_2',
+      `acl ecclium_host_${two} dstdomain -n llm.example.org`,
+      `acl ecclium_port_${two} port 8443`,
+      `acl ecclium_lan all-of ecclium_host_${two} ecclium_port_${two}`,
+      aclCompleteLine,
     ]);
+    // The names come from name and port, not from the place in the list.
+    expect(one).toBe('5f0b4e0595983329');
+  });
+
+  it('ends an empty list with the mark of a complete list', () => {
+    expect(renderEgressAcl([])).toEqual([aclHeader, aclCompleteLine]);
+  });
+
+  // A list cut short or a pair split across two lists must not fit.
+  it.each([
+    'acl ecclium_lan all-of ecclium_host_0123456789abcdef ecclium_port_fedcba9876543210',
+    'acl ecclium_lan all-of ecclium_host_0123456789abcdef',
+    'acl ecclium_host_1 dstdomain -n example.org',
+    'acl ecclium_host_0123456789abcdef dstdomain -n example.org .example.org',
+    'acl ecclium_host_0123456789abcdef dstdomain example.org',
+    'acl ecclium_port_0123456789abcdef port 1-65535',
+    'acl ecclium_never all-of ecclium_host_0123456789abcdef ecclium_port_0123456789abcdef',
+    'acl ecclium_complete all-of ecclium_none_one',
+    'http_access allow all',
+    'include /etc/squid/other.conf',
+    '#no space',
+    '',
+  ])('refuses the line %j', (line) => {
+    expect(aclLinePatterns.some((pattern) => pattern.test(line))).toBe(false);
   });
 
   it.each<[string, EgressTarget]>([
@@ -185,55 +219,70 @@ describe('renderEgressAcl', () => {
     expect(() => renderEgressAcl([target])).toThrow(TypeError);
   });
 
-  // Whatever the targets, the list holds only lines of the allowed forms,
-  // never a rule http_access, and each pair names a host and a port that
-  // stand above it (ADR 0035).
-  it('gives only lines of the allowed forms for any targets', () => {
+  // Whatever the targets, the list either throws or holds only lines of
+  // the allowed forms, ends with the mark, and pairs a name and a port of
+  // the same target that stand above the pair (ADR 0035).
+  it('throws or gives only lines of the allowed forms for any targets', () => {
     const label = fc.stringMatching(/^[a-z0-9](?:[a-z0-9-]{0,8}[a-z0-9])?$/);
-    // The last label is no number, as in every name the configuration takes.
     const last = fc.stringMatching(/^[a-z](?:[a-z0-9-]{0,8}[a-z0-9])?$/);
-    const host = fc
+    const goodHost = fc
       .tuple(fc.array(label, { minLength: 1, maxLength: 3 }), last)
       .map(([labels, end]) => [...labels, end].join('.'));
-    const target = fc.oneof(
-      fc.record({
-        host,
-        port: fc.constant('443'),
-        lan: fc.constant(false),
-        roles: fc.array(fc.constantFrom('ChurchTools', 'Anbieter ‹a-1›'), {
-          minLength: 1,
-          maxLength: 3,
-        }),
+    const target = fc.record({
+      host: fc.oneof(goodHost, fc.string({ maxLength: 20 })),
+      port: fc.oneof(
+        fc.constant('443'),
+        fc.integer({ min: 0, max: 70000 }).map(String),
+        fc.string({ maxLength: 6 }),
+      ),
+      lan: fc.boolean(),
+      roles: fc.array(fc.oneof(fc.constant('ChurchTools'), fc.string()), {
+        minLength: 1,
+        maxLength: 3,
       }),
-      fc.record({
-        host,
-        port: fc.integer({ min: 1, max: 65535 }).map(String),
-        lan: fc.constant(true),
-        roles: fc.constant(['Ping des Runners']),
-      }),
-    );
+    });
+    let rendered = 0;
     fc.assert(
-      fc.property(fc.array(target, { maxLength: 12 }), (targets) => {
-        const lines = renderEgressAcl(targets);
+      fc.property(fc.array(target, { maxLength: 8 }), (targets) => {
+        let lines: readonly string[];
+        try {
+          lines = renderEgressAcl(targets);
+        } catch (error) {
+          expect(error).toBeInstanceOf(TypeError);
+          return;
+        }
+        if (targets.length > 0) rendered += 1;
         expect(lines[0]).toBe(aclHeader);
-        expect(lines).toHaveLength(1 + 4 * targets.length);
-        const defined = new Set<string>();
+        expect(lines.at(-1)).toBe(aclCompleteLine);
+        expect(lines).toHaveLength(2 + 4 * targets.length);
+        const defined = new Map<string, string>();
         for (const line of lines) {
           expect(aclLinePatterns.some((pattern) => pattern.test(line))).toBe(
             true,
           );
-          expect(line).not.toMatch(/http_access|\n|\r/);
-          const [, name] = /^acl (ecclium_(?:host|port)_\d+) /.exec(line) ?? [];
-          if (name !== undefined) defined.add(name);
-          const pair = /all-of (ecclium_host_\d+) (ecclium_port_\d+)$/.exec(
+          expect(line).not.toMatch(/http_access|[\n\r\u2028\u2029]/);
+          const named =
+            /^acl (ecclium_(?:host|port)_[0-9a-f]{16}) \S+ (?:-n )?(\S+)$/.exec(
+              line,
+            );
+          if (named !== null) defined.set(named[1] ?? '', named[2] ?? '');
+          const pair = /all-of (ecclium_host_\S+) (ecclium_port_\S+)$/.exec(
             line,
           );
           if (pair !== null) {
-            expect(defined.has(pair[1] ?? '')).toBe(true);
-            expect(defined.has(pair[2] ?? '')).toBe(true);
+            const host = defined.get(pair[1] ?? '');
+            const port = defined.get(pair[2] ?? '');
+            expect(host).toBeDefined();
+            expect(port).toBeDefined();
+            expect(pair[1]?.slice('ecclium_host_'.length)).toBe(
+              suffix(host ?? '', port ?? ''),
+            );
           }
         }
       }),
+      { numRuns: 500 },
     );
+    // Not only lists that throw or hold no target.
+    expect(rendered).toBeGreaterThan(10);
   });
 });

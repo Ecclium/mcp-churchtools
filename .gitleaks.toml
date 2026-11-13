@@ -350,9 +350,9 @@ regexes = ['''^(?:10\.|172\.(?:1[6-9]|2\d|3[01])\.|192\.168\.|100\.(?:6[4-9]|[7-
 # The template of the proxy blocks the special ranges of the IANA registry
 # (ADR 0035). Their base addresses name no network; only the one that is no
 # base of the ranges above, the former relay of 6to4, needs this exception.
-description = "The relay range of 6to4 in the block list of the template of the proxy"
+description = "The relay range of 6to4 in the block list of the template of the proxy and its test"
 condition = "AND"
-paths = ['''^deploy/selfhost/egress/squid\.conf$''']
+paths = ['''^(?:deploy/selfhost/egress/squid\.conf|tests/egress-template\.test\.mts)$''']
 regexes = ['''^192\.88\.99\.0$''']
 
 [[rules]]
@@ -376,9 +376,9 @@ condition = "AND"
 paths = ['''(?i)(?:^|/)(?:tests?|__tests__)/|\.(?:test|spec)\.[cm]?[jt]sx?$''']
 regexes = ['''(?i)^f[cd]''']
 [[rules.allowlists]]
-description = "The bare prefixes of Teredo and 6to4 in the block list of the template of the proxy (ADR 0035)"
+description = "The bare prefixes of the IETF block and of 6to4 in the block list of the template of the proxy and its test (ADR 0035)"
 condition = "AND"
-paths = ['''^deploy/selfhost/egress/squid\.conf$''']
+paths = ['''^(?:deploy/selfhost/egress/squid\.conf|tests/egress-template\.test\.mts)$''']
 regexes = ['''^200[12]::$''']
 
 [[rules]]

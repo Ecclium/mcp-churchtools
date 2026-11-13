@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { exitCodes } from '../exit-codes.js';
 import { warningText } from '../messages/index.js';
-import { aclHeader } from './acl.js';
+import { aclCompleteLine, aclHeader } from './acl.js';
 import { initEgress } from './init.js';
 import { egressInitTexts } from './texts.js';
 
@@ -110,14 +110,15 @@ const setup = (options: SetupOptions = {}) => {
     if (value === undefined) Reflect.deleteProperty(environment, name);
     else environment[name] = value;
   }
-  const init = (stdoutWorks = true) => {
+  /** Runs the command; stdout takes at most `lines` lines. */
+  const init = (lines = Number.POSITIVE_INFINITY) => {
     const stdout: string[] = [];
     const stderr: string[] = [];
     const code = initEgress({
       environment,
       execArgv: [],
       output: {
-        stdout: (line) => stdoutWorks && stdout.push(line) > 0,
+        stdout: (line) => stdout.length < lines && stdout.push(line) > 0,
         stderr: (line) => stderr.push(line) > 0,
       },
     });
@@ -133,24 +134,28 @@ describe('ecclium init egress', () => {
     const { code, stdout, stderr } = setup().init();
     expect(code).toBe(exitCodes.ok);
     expect(stderr).toEqual([]);
+    const pair = (list: string, host: string, port: string): string[] => {
+      const suffix = createHash('sha256')
+        .update(`${host}:${port}`)
+        .digest('hex')
+        .slice(0, 16);
+      return [
+        `acl ecclium_host_${suffix} dstdomain -n ${host}`,
+        `acl ecclium_port_${suffix} port ${port}`,
+        `acl ${list} all-of ecclium_host_${suffix} ecclium_port_${suffix}`,
+      ];
+    };
     expect(stdout).toEqual([
       aclHeader,
       '# ChurchTools',
-      'acl ecclium_host_1 dstdomain -n example.church.tools',
-      'acl ecclium_port_1 port 443',
-      'acl ecclium_public all-of ecclium_host_1 ecclium_port_1',
+      ...pair('ecclium_public', 'example.church.tools', '443'),
       '# Anbieter ‹default›',
-      'acl ecclium_host_2 dstdomain -n model.example.org',
-      'acl ecclium_port_2 port 443',
-      'acl ecclium_public all-of ecclium_host_2 ecclium_port_2',
+      ...pair('ecclium_public', 'model.example.org', '443'),
       '# Anbieter ‹lokal›, lokales Netz',
-      'acl ecclium_host_3 dstdomain -n llm.example.org',
-      'acl ecclium_port_3 port 8443',
-      'acl ecclium_lan all-of ecclium_host_3 ecclium_port_3',
+      ...pair('ecclium_lan', 'llm.example.org', '8443'),
       '# Ping des Runners',
-      'acl ecclium_host_4 dstdomain -n ping.example.org',
-      'acl ecclium_port_4 port 443',
-      'acl ecclium_public all-of ecclium_host_4 ecclium_port_4',
+      ...pair('ecclium_public', 'ping.example.org', '443'),
+      aclCompleteLine,
     ]);
   });
 
@@ -196,10 +201,16 @@ describe('ecclium init egress', () => {
     ]);
   });
 
-  it('gives 74 when stdout takes no line', () => {
-    const { code, stdout, stderr } = setup().init(false);
-    expect(code).toBe(exitCodes.ioError);
-    expect(stdout).toEqual([]);
-    expect(stderr).toEqual([egressInitTexts.output_cut]);
-  });
+  // A list cut short never ends with the mark, so the template lets
+  // nothing through with it (ADR 0035).
+  it.each([0, 1, 4, 9, 17])(
+    'gives 74 when stdout takes only %i lines, and the mark is not among them',
+    (lines) => {
+      const { code, stdout, stderr } = setup().init(lines);
+      expect(code).toBe(exitCodes.ioError);
+      expect(stdout).toHaveLength(lines);
+      expect(stdout).not.toContain(aclCompleteLine);
+      expect(stderr).toEqual([egressInitTexts.output_cut]);
+    },
+  );
 });

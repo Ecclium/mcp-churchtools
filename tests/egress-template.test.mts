@@ -34,6 +34,7 @@ describe('the template of Squid', () => {
     expect(directives.filter((line) => line.startsWith('http_access'))).toEqual(
       [
         'http_access deny !ecclium_connect',
+        'http_access deny !ecclium_complete',
         'http_access allow ecclium_lan !ecclium_never',
         'http_access deny !ecclium_public',
         'http_access deny !ecclium_tls_port',
@@ -79,36 +80,54 @@ describe('the template of Squid', () => {
     expect(directives).toContain(
       'acl ecclium_lan all-of ecclium_none_one ecclium_none_two',
     );
+    expect(directives).toContain(
+      'acl ecclium_complete all-of ecclium_none_one ecclium_none_two',
+    );
     expect(directives).toContain('acl ecclium_connect method CONNECT');
     expect(directives).toContain('acl ecclium_tls_port port 443');
   });
 
-  it('blocks loopback, link-local and the private ranges, but never IPv4 in IPv6 as a whole', () => {
+  // The whole lists, so that dropping a range turns the test red. Squid
+  // reads ::ffff:0:0/96 as 0.0.0.0/0 and would refuse every target.
+  it('blocks exactly these ranges, but never IPv4 in IPv6 as a whole', () => {
     const ranges = (name: string): string[] =>
       directives
         .filter((line) => line.startsWith(`acl ${name} dst `))
         .flatMap((line) => line.split(' ').slice(3));
-    const never = ranges('ecclium_never');
-    for (const range of [
+    expect(ranges('ecclium_never')).toEqual([
       '0.0.0.0/8',
       '127.0.0.0/8',
       '169.254.0.0/16',
+      '224.0.0.0/4',
+      '240.0.0.0/4',
+      '::/128',
       '::1/128',
       'fe80::/10',
-    ]) {
-      expect(never, range).toContain(range);
-    }
-    const special = ranges('ecclium_special');
-    for (const range of [
+      'ff00::/8',
+    ]);
+    expect(ranges('ecclium_special')).toEqual([
       '10.0.0.0/8',
       '100.64.0.0/10',
       '172.16.0.0/12',
+      '192.0.0.0/24',
+      '192.0.2.0/24',
+      '192.88.99.0/24',
       '192.168.0.0/16',
+      '198.18.0.0/15',
+      '198.51.100.0/24',
+      '203.0.113.0/24',
+      '64:ff9b::/96',
+      '64:ff9b:1::/48',
+      '::/96',
+      '100::/64',
+      '2001::/23',
+      '2001:db8::/32',
+      '3fff::/20',
+      '2002::/16',
+      '5f00::/16',
       'fc00::/7',
-    ]) {
-      expect(special, range).toContain(range);
-    }
-    // Squid reads it as 0.0.0.0/0 and would refuse every target.
+      'fec0::/10',
+    ]);
     expect(text).not.toMatch(/^acl [^\n]*::ffff:/m);
   });
 
@@ -144,9 +163,10 @@ describe('the template of Squid', () => {
     ]);
   });
 
-  it('lets the list of targets add only pairs, never extend a list of its own', () => {
-    // Every name the generator writes is its own or one of the two lists
-    // of targets, so a fault in it can narrow the proxy, never open it.
+  it('lets the list of targets add only pairs and its mark, never extend another list of its own', () => {
+    // Every name the generator writes is its own, one of the two lists of
+    // targets or the mark of a complete list, so a fault in it cannot add
+    // a rule or widen a list of the template.
     const own = new Set(
       directives.flatMap((line) => /^acl (\S+) /.exec(line)?.[1] ?? []),
     );
@@ -159,10 +179,12 @@ describe('the template of Squid', () => {
       const name = /^acl (\S+) /.exec(line)?.[1];
       if (name === undefined) continue;
       if (own.has(name)) {
-        expect(['ecclium_public', 'ecclium_lan']).toContain(name);
+        expect(['ecclium_public', 'ecclium_lan', 'ecclium_complete']).toContain(
+          name,
+        );
         expect(line).toMatch(/ all-of /);
       } else {
-        expect(name).toMatch(/^ecclium_(host|port)_[1-9][0-9]*$/);
+        expect(name).toMatch(/^ecclium_(host|port)_[0-9a-f]{16}$/);
       }
     }
   });

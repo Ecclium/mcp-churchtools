@@ -3,15 +3,23 @@
  * which origins the configuration reaches, and the lines `acl` for the
  * template of Squid in `deploy/selfhost/egress/squid.conf`. The template
  * holds every rule `http_access`; this list only adds pairs of a name and
- * a port to the two lists `ecclium_public` and `ecclium_lan` it declares.
- * So a fault here can narrow the proxy, never open it.
+ * a port to the two lists `ecclium_public` and `ecclium_lan` it declares,
+ * and ends with a line that marks it complete. So a fault here cannot add
+ * a rule; what the list decides is which targets it names.
  *
  * Why pairs: each target is one exact name (`dstdomain -n`, no subdomain
  * and no reverse lookup of an IP address) together with its port
  * (`all-of`), so a target in the local network opens its own port only.
+ * The names of a pair come from a hash of its name and port, so that two
+ * lists written into one file never pair the name of one target with the
+ * port of another. Why the last line: a list cut short, such as on a full
+ * disk, could end in the middle of a pair; without the mark the template
+ * lets nothing through.
  *
  * @packageDocumentation
  */
+import { createHash } from 'node:crypto';
+
 import type { EccliumConfig } from '@ecclium/mcp-churchtools-core';
 
 /** One target of the proxy: an origin of the configuration. */
@@ -130,21 +138,34 @@ export const aclHeader =
   '# Ziele von Ecclium für die Vorlage squid.conf, erzeugt mit ‹ecclium init egress›. Nicht von Hand ändern: Erzeugen Sie die Liste nach jeder Änderung der Konfiguration neu.';
 
 /**
+ * The last line of the list. The template lets nothing through unless the
+ * list ends with it, so a list cut short fails closed.
+ */
+export const aclCompleteLine = 'acl ecclium_complete all-of ecclium_connect';
+
+/**
  * The forms a line of the list may have, and nothing else: a comment, a
- * name, a port, or a pair added to one of the two lists of the template.
+ * name, a port, a pair added to one of the two lists of the template, or
+ * the mark of a complete list.
  */
 export const aclLinePatterns: readonly RegExp[] = Object.freeze([
   /^# [^\p{Cc}\p{Zl}\p{Zp}]+$/u,
-  /^acl ecclium_host_([1-9][0-9]*) dstdomain -n [a-z0-9.-]+$/,
-  /^acl ecclium_port_([1-9][0-9]*) port [1-9][0-9]{0,4}$/,
-  /^acl ecclium_(public|lan) all-of ecclium_host_([1-9][0-9]*) ecclium_port_\2$/,
+  /^acl ecclium_host_([0-9a-f]{16}) dstdomain -n [a-z0-9.-]+$/,
+  /^acl ecclium_port_([0-9a-f]{16}) port [1-9][0-9]{0,4}$/,
+  /^acl ecclium_(public|lan) all-of ecclium_host_([0-9a-f]{16}) ecclium_port_\2$/,
+  /^acl ecclium_complete all-of ecclium_connect$/,
 ]);
+
+// The suffix of the names of a pair: 64 bits of SHA-256 over name and
+// port. Two targets with the same suffix stop the list.
+const suffixOf = (host: string, port: string): string =>
+  createHash('sha256').update(`${host}:${port}`).digest('hex').slice(0, 16);
 
 /**
  * Renders the lines `acl` for the targets: per target its name, its port
  * and the pair in `ecclium_lan` or `ecclium_public`, after a comment with
- * its roles. Every line is checked against {@link aclLinePatterns} before
- * any is given back.
+ * its roles, and {@link aclCompleteLine} at the end. Every line is checked
+ * against {@link aclLinePatterns} before any is given back.
  *
  * @param targets - The targets of {@link egressTargetsOf}.
  * @returns The lines, without line breaks.
@@ -154,16 +175,18 @@ export const aclLinePatterns: readonly RegExp[] = Object.freeze([
  * ```ts
  * renderEgressAcl([{ host: 'example.church.tools', port: '443', lan: false, roles: ['ChurchTools'] }]);
  * // ['# Ziele …', '# ChurchTools',
- * //  'acl ecclium_host_1 dstdomain -n example.church.tools',
- * //  'acl ecclium_port_1 port 443',
- * //  'acl ecclium_public all-of ecclium_host_1 ecclium_port_1']
+ * //  'acl ecclium_host_<hash> dstdomain -n example.church.tools',
+ * //  'acl ecclium_port_<hash> port 443',
+ * //  'acl ecclium_public all-of ecclium_host_<hash> ecclium_port_<hash>',
+ * //  'acl ecclium_complete all-of ecclium_connect']
  * ```
  */
 export function renderEgressAcl(
   targets: readonly EgressTarget[],
 ): readonly string[] {
   const lines = [aclHeader];
-  targets.forEach((target, index) => {
+  const suffixes = new Set<string>();
+  for (const target of targets) {
     if (
       !namePattern.test(target.host) ||
       !portPattern.test(target.port) ||
@@ -172,15 +195,20 @@ export function renderEgressAcl(
     ) {
       throw new TypeError('A target of the list is unexpected.');
     }
-    const number = String(index + 1);
+    const suffix = suffixOf(target.host, target.port);
+    if (suffixes.has(suffix)) {
+      throw new TypeError('Two targets of the list share their names.');
+    }
+    suffixes.add(suffix);
     const list = target.lan ? 'ecclium_lan' : 'ecclium_public';
     lines.push(
       `# ${target.roles.join(', ')}${target.lan ? ', lokales Netz' : ''}`,
-      `acl ecclium_host_${number} dstdomain -n ${target.host}`,
-      `acl ecclium_port_${number} port ${target.port}`,
-      `acl ${list} all-of ecclium_host_${number} ecclium_port_${number}`,
+      `acl ecclium_host_${suffix} dstdomain -n ${target.host}`,
+      `acl ecclium_port_${suffix} port ${target.port}`,
+      `acl ${list} all-of ecclium_host_${suffix} ecclium_port_${suffix}`,
     );
-  });
+  }
+  lines.push(aclCompleteLine);
   for (const line of lines) {
     if (!aclLinePatterns.some((pattern) => pattern.test(line))) {
       throw new TypeError('A line of the list does not fit its form.');
