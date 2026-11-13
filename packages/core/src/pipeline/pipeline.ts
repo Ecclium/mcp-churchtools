@@ -1596,7 +1596,16 @@ export function createToolPipeline(options: ToolPipelineOptions): ToolPipeline {
     // 0028, ADR 0029).
     const { meta } = entry;
     const writes = meta.capability === 'write';
-    if (meta.unattended === 'never' && mode !== 'interactive') {
+    // A command of the operator may read the account of its own token with
+    // ct_whoami of the core, as `ecclium doctor` does for each account of
+    // the runner (ADR 0035): the tool names no other person and no data of
+    // members. Every other tool that never runs unattended stays closed
+    // outside the mode interactive.
+    const ownAccount =
+      mode === 'operator' &&
+      entry.name === 'ct_whoami' &&
+      entry.origin === 'core';
+    if (meta.unattended === 'never' && mode !== 'interactive' && !ownAccount) {
       return failed('policy_denied');
     }
     // A run reads only with tools that are stable for routines, and never

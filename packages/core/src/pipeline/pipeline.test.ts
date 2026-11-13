@@ -389,6 +389,61 @@ describe('the gate', () => {
     }
   });
 
+  // ecclium doctor reads the account of each token of the runner with
+  // ct_whoami of the core in the mode operator (ADR 0035), and only that
+  // tool: the catalog here hands out the echo of the example under its
+  // name.
+  it('lets the mode operator run ct_whoami of the core alone among the tools that never run unattended', async () => {
+    const asWhoami =
+      (origin: string) =>
+      (catalog: ToolCatalog): ToolCatalog => {
+        const echo = catalog.get('ct_example_echo');
+        if (echo === undefined) throw new Error('no echo');
+        const whoami = Object.freeze({ ...echo, name: 'ct_whoami', origin });
+        return Object.freeze({
+          ...catalog,
+          has: (name: string) => name === 'ct_whoami' || catalog.has(name),
+          get: (name: string) =>
+            name === 'ct_whoami' ? whoami : catalog.get(name),
+        }) as ToolCatalog;
+      };
+    const core = setup(
+      [],
+      false,
+      fixedRandom(boundaryBytesA),
+      asWhoami('core'),
+    );
+    const passed = await core.pipeline.call(
+      'ct_whoami',
+      {},
+      request({ mode: 'operator' }),
+    );
+    expect(passed.ok).toBe(true);
+    expect(core.events()[0]).toMatchObject({
+      tool: 'ct_whoami',
+      mode: 'operator',
+      outcome: 'ok',
+    });
+    const unattended = await core.pipeline.call(
+      'ct_whoami',
+      {},
+      request({ mode: 'unattended' }),
+    );
+    expect(!unattended.ok && unattended.error.code).toBe('policy_denied');
+    const plugin = setup(
+      [],
+      false,
+      fixedRandom(boundaryBytesA),
+      asWhoami('plugin'),
+    );
+    const refused = await plugin.pipeline.call(
+      'ct_whoami',
+      {},
+      request({ mode: 'operator' }),
+    );
+    expect(!refused.ok && refused.error.code).toBe('policy_denied');
+  });
+
   it('refuses a pro tool without a licence and runs it with one', async () => {
     let runs = 0;
     const pro = testTool(
