@@ -19,6 +19,8 @@ export {
   auditFileText,
   dayKeyFolderMessage,
   dayKeyFolderText,
+  type EgressProxyFailure,
+  egressProxyText,
   emptyToolsetMessage,
   emptyToolsetText,
   quotaFolderMessage,

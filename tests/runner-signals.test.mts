@@ -156,6 +156,9 @@ const setup = () => {
     ECCLIUM_RUNNER_TOKENS_DIR: tokensDir,
     ECCLIUM_DRAFTS_DIR: join(base, 'drafts'),
     ECCLIUM_RUNNER_METRICS_FILE: metricsFile,
+    // The test reaches no network, so the runner runs without the
+    // boundary on purpose (ADR 0035).
+    ECCLIUM_EGRESS: 'off',
     ECCLIUM_PSEUDONYM_KEY_FILE: privateFile(
       join(configDir, 'pseudonym-key'),
       `${createHash('sha256').update('runner-signals').digest('hex')}\n`,

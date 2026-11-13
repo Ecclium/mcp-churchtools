@@ -26,7 +26,7 @@ import type { RoutineReport } from '@ecclium/mcp-churchtools-runner';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
 import { processRunnerHost, type SignalWatch, watchSignals } from './host.js';
 import { openRunnerProcess } from './process.js';
-import { reportStart, type RunOnceOptions } from './run-once.js';
+import { reportStart, type RunOnceOptions, startEgress } from './run-once.js';
 import { startRunner } from './start.js';
 import {
   daemonStartText,
@@ -134,6 +134,8 @@ export async function runDaemon(
       : { createCatalog: options.createCatalog }),
   });
   if (!started.ok) return reportStart(output, started.problem);
+  const stopped = await startEgress(output, started, options.probeProxy);
+  if (stopped !== undefined) return stopped;
   const { routines, refused } = started;
   for (const item of refused) output.stderr(refusedText(item));
   // A daemon without work would be a silent fault of the configuration.

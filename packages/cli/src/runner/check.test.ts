@@ -256,6 +256,8 @@ const setup = (options: SetupOptions = {}) => {
     ECCLIUM_MARKER_KEY_FILE: markerFile,
     ECCLIUM_PSEUDONYM_KEY_FILE: pseudonymFile,
     ECCLIUM_DRAFTS_DIR: join(base, 'drafts'),
+    // Without the boundary in the network on purpose (ADR 0035).
+    ECCLIUM_EGRESS: 'off',
   };
   for (const [name, value] of Object.entries(options.extra ?? {})) {
     if (value === undefined) Reflect.deleteProperty(environment, name);

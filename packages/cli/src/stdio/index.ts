@@ -36,6 +36,10 @@ import {
   prepareSnapshotFolder,
   systemClock,
 } from '@ecclium/mcp-churchtools-core/composition';
+import type {
+  ProxyProbe,
+  ProxyProbeOptions,
+} from '@ecclium/mcp-churchtools-core/http';
 import { DocsIndexError } from '@ecclium/mcp-churchtools-docs-index';
 
 import { privateFileCodeOf } from '../compose/private-file-code.js';
@@ -46,6 +50,7 @@ import { type ExitCode, exitCodes } from '../exit-codes.js';
 import {
   auditFileText,
   dayKeyFolderText,
+  egressProxyText,
   emptyToolsetText,
   type MessageText,
   problemText,
@@ -81,6 +86,8 @@ export interface StdioStartOptions extends ServeReplacements {
   readonly prepareQueueFolder?: typeof prepareQueueFolder;
   /** Replaces the reader of the docs index. */
   readonly readDocs?: StdioCatalogOptions['readDocs'];
+  /** Replaces the check of the proxy at the start (ADR 0035). */
+  readonly probeProxy?: (options: ProxyProbeOptions) => Promise<ProxyProbe>;
 }
 
 // Whether a thrown value is the refusal of the docs index, without
@@ -138,7 +145,8 @@ const refusalOf = (error: unknown): RefusalReason | undefined => {
  * @param startOptions - Replacements for tests.
  * @returns 64 for an argument, 78 for an invalid configuration, an audit
  *   file that is missing or cannot be opened or a folder that cannot be
- *   used, 70 for a refusal of
+ *   used, 69 for a proxy that gives no tunnel to ChurchTools (ADR 0035),
+ *   70 for a refusal of
  *   the registry or an internal error, or undefined once the
  *   server runs: the process then gets its exit code when the connection
  *   ends.
@@ -162,6 +170,7 @@ export async function startStdio(
     prepareSnapshotFolder: prepareSnapshots = prepareSnapshotFolder,
     prepareQueueFolder: prepareQueue = prepareQueueFolder,
     readDocs,
+    probeProxy,
     ...replacements
   } = startOptions;
   const notices = (texts: readonly MessageText[]): boolean =>
@@ -308,6 +317,25 @@ export async function startStdio(
     // Only now: the server, its SDK and undici make fd 2 non-blocking
     // while they load.
     const { serve } = await import('./serve.js');
+    // With a proxy, a tunnel to ChurchTools before the server takes its
+    // first call, without a request to ChurchTools (ADR 0035). The check
+    // needs undici, so its notice may go out on a descriptor that no
+    // longer blocks; the exit code tells the failure either way.
+    const { egressProxy } = loaded.config;
+    if (egressProxy !== undefined) {
+      const probe =
+        probeProxy ??
+        (await import('@ecclium/mcp-churchtools-core/http')).probeEgressProxy;
+      const checked = await probe({
+        proxy: egressProxy,
+        origin: loaded.config.churchtoolsOrigin,
+      });
+      if (!checked.ok) {
+        notices([egressProxyText(checked.reason)]);
+        auditFile?.close();
+        return exitCodes.unavailable;
+      }
+    }
     // Inside the catch as well: serve writes nothing before its stderr
     // writer and logger exist and catches every failure after them itself.
     return serve({

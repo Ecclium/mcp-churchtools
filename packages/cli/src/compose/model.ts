@@ -38,6 +38,11 @@ export interface ModelComposeOptions {
   readonly logger: Logger;
   /** The clock for the duration in the log. */
   readonly clock: Clock;
+  /**
+   * The proxy of the configuration, or undefined to connect directly
+   * (ADR 0035).
+   */
+  readonly proxy?: string | undefined;
   /** Only for tests: reads the file of a key. */
   readonly readKey?: typeof readProviderKey;
   /** Only for tests: builds the transport to an endpoint. */
@@ -115,6 +120,7 @@ export function composeModelProviders(
         userAgent,
         logger: options.logger,
         clock: options.clock,
+        proxy: options.proxy,
       });
       transports.push(transport);
       models.set(

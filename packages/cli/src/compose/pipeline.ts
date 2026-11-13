@@ -140,6 +140,9 @@ export function composeToolPipeline(options: ComposeOptions): ComposedPipeline {
     // name the same tenant as the lines and the audit of a call.
     logger: createDefaultTenantLogger({ writer, clock, minLevel }),
     clock,
+    // Every transport of the process goes through the proxy of the
+    // configuration, when it has one (ADR 0035).
+    proxy: config.egressProxy,
   });
   try {
     // The keys for the pseudonyms of the level strict, from the key files
@@ -227,6 +230,9 @@ export function composeToolPipeline(options: ComposeOptions): ComposedPipeline {
       // The checked policy, for the read budget and the limits of writes
       // (ADR 0032).
       policy: config.policy,
+      // The note on every end of a run of a runner without its proxy
+      // (ADR 0035); only the runner ends runs.
+      egressOff: config.egressOff,
       // The counters of the read budget and of the writes, in the folder
       // the first stage prepared. Without the folder of state there is no
       // store: no tool with sensitivity special runs (ADR 0063), and no

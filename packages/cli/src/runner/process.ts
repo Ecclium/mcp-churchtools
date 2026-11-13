@@ -391,6 +391,7 @@ export function openRunnerProcess(
             providers: [provider],
             logger: modelLogger,
             clock,
+            proxy: config.egressProxy,
             ...(options.readModelKey === undefined
               ? {}
               : { readKey: options.readModelKey }),

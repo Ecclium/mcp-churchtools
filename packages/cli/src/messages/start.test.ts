@@ -19,6 +19,7 @@ import {
   auditFileText,
   dayKeyFolderMessage,
   dayKeyFolderText,
+  egressProxyText,
   emptyToolsetMessage,
   emptyToolsetText,
   type Message,
@@ -361,6 +362,7 @@ describe('the texts of the start over stdio', () => {
       'auditFileText',
       'dayKeyFolderMessage',
       'dayKeyFolderText',
+      'egressProxyText',
       'emptyToolsetMessage',
       'emptyToolsetText',
       'queueFolderMessage',
@@ -376,5 +378,32 @@ describe('the texts of the start over stdio', () => {
       'toolsetsMessage',
       'toolsetsText',
     ]);
+  });
+});
+
+describe('the texts of the check of the proxy (ADR 0035)', () => {
+  it.each(['unreachable', 'no_answer', 'refused'] as const)(
+    'names the variable for %s, and no address',
+    (reason) => {
+      const text = egressProxyText(reason);
+      expect(text).toContain('‹ECCLIUM_EGRESS_PROXY›');
+      expect(text).not.toMatch(/https?:\/\//);
+    },
+  );
+
+  it('gives three different texts', () => {
+    expect(
+      new Set(
+        (['unreachable', 'no_answer', 'refused'] as const).map((reason) =>
+          egressProxyText(reason),
+        ),
+      ).size,
+    ).toBe(3);
+  });
+
+  it('refuses a reason outside the catalog', () => {
+    expect(() => egressProxyText('toString' as unknown as 'refused')).toThrow(
+      TypeError,
+    );
   });
 });

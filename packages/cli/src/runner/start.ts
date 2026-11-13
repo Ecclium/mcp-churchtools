@@ -25,6 +25,7 @@ import {
   type ConfigProblem,
   type ConfigResult,
   type ConfigSources,
+  type ConfigWarningCode,
   describeRunTool,
   type EccliumConfig,
   loadConfig,
@@ -79,11 +80,24 @@ export type RunnerStartProblem =
   | { readonly kind: 'read_only_wiki'; readonly routineId: string }
   | { readonly kind: 'routine_unknown' };
 
+// The warnings of the loader that concern the runner: a runner without
+// its proxy and a proxy of the shell that Ecclium does not use (ADR 0035).
+const egressWarnings: readonly ConfigWarningCode[] = Object.freeze([
+  'egress_off',
+  'environment_proxy_ignored',
+]);
+
 /** The started runner, or why it does not start. */
 export type RunnerStart =
   | {
       readonly ok: true;
       readonly config: EccliumConfig;
+      /**
+       * The warnings of the configuration about the proxy, which the
+       * runner shows at every start (ADR 0035). The other warnings of the
+       * loader speak of the server.
+       */
+      readonly warnings: readonly ConfigWarningCode[];
       /** Every tool a routine may read, and the write tool when it writes. */
       readonly catalog: ToolCatalog;
       /** Every routine that passed its preparation and its checks. */
@@ -344,6 +358,11 @@ export function startRunner(options: RunnerStartOptions): RunnerStart {
   return Object.freeze({
     ok: true,
     config,
+    warnings: Object.freeze(
+      loaded.report.warnings.filter((code) =>
+        (egressWarnings as readonly string[]).includes(code),
+      ),
+    ),
     catalog,
     routines: Object.freeze(prepared),
     refused: Object.freeze(refused),
