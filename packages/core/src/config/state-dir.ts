@@ -101,14 +101,31 @@ export const runnerTokensDirCodes = Object.freeze([
 export type RunnerTokensDirCode =
   (typeof runnerTokensDirCodes)[number] | 'runner_tokens_dir_invalid';
 
+/**
+ * The folders that Ecclium keeps inside the folder of state, frozen, by
+ * purpose: the audit files (ADR 0028), the counters of the read budget, the
+ * limits of a day and the memory of runs (ADR 0063), the snapshots and the
+ * queue (ADR 0031), the locks of the routines (ADR 0034) and the kill
+ * switches (ADR 0029). They are named once here, so that the loader, the
+ * stores and the runner container contract (ADR 0036) name the same.
+ */
+export const stateFolders = Object.freeze({
+  audit: 'audit',
+  quota: 'quota',
+  snapshots: 'snapshots',
+  queue: 'queue',
+  runner: 'runner',
+  stop: 'stop',
+} as const);
+
 /** The name of the folder for the audit files inside the folder of state. */
-export const auditDirName = 'audit';
+export const auditDirName = stateFolders.audit;
 
 /**
  * The name of the folder for the counters of the read budget inside the
  * folder of state (ADR 0063).
  */
-export const quotaDirName = 'quota';
+export const quotaDirName = stateFolders.quota;
 
 /** What the check learns about a path, without following a link. */
 export interface StateDirStats {
@@ -484,7 +501,7 @@ export function hasStopDir(
   fs: StateDirFileSystem = nodeFileSystem,
 ): boolean {
   try {
-    const stats = fs.lstatSync(`${path}/stop`);
+    const stats = fs.lstatSync(`${path}/${stateFolders.stop}`);
     if (stats.isSymbolicLink() || !stats.isDirectory()) return false;
   } catch {
     return false;
@@ -492,7 +509,7 @@ export function hasStopDir(
   // The switch in it must be checkable as well, as the core checks it
   // before each write: a folder it cannot search stops every write.
   try {
-    fs.lstatSync(`${path}/stop/writes-off`);
+    fs.lstatSync(`${path}/${stateFolders.stop}/writes-off`);
     return true;
   } catch (error) {
     return errorCode(error) === 'ENOENT';

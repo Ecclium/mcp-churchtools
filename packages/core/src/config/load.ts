@@ -49,6 +49,7 @@ import {
   hasStopDir,
   isNormalizedAbsolutePath,
   type StateDirFileSystem,
+  stateFolders,
 } from './state-dir.js';
 import { readTokenFile, type TokenFileSystem } from './token-file.js';
 import {
@@ -1679,7 +1680,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
         ...others,
         ...(state === undefined
           ? []
-          : ['audit', 'quota', 'snapshots', 'queue', 'runner', 'stop'].map(
+          : Object.values(stateFolders).map(
               (part) => `${state === '/' ? '' : state}/${part}`,
             )),
       ],
