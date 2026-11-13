@@ -33,6 +33,7 @@ import {
   rightsBeyond,
   rightsDriftAccepted,
   type RunAccountNeeds,
+  wikiEditRight,
 } from '../write/rights-drift.js';
 
 /** The most pages of the list of a category a run reads to find its page. */
@@ -203,17 +204,56 @@ export interface AccountRights {
    */
   readonly beyond: readonly RightRef[];
   /**
+   * Module and name of each right the tools of the routines of the account
+   * require and the account lacks, in the order of the tools, each once;
+   * for the right to edit categories also when a category of the entries
+   * of the account is missing from its list. A run of such a routine fails
+   * on the read or the write that needs it.
+   */
+  readonly missing: readonly RightRef[];
+  /**
    * The exceptions `acceptRightsDrift` of the routines whose entries name
    * the account, in the order of the policy.
    */
   readonly exceptions: readonly RightsException[];
 }
 
+// The rights the needs of an account require and the granted rights lack:
+// a right that is not set, and the right to edit categories without a
+// category of the entries of the account. Read only from own properties.
+const rightsMissing = (
+  granted: GrantedRights,
+  needs: RunAccountNeeds,
+): readonly RightRef[] => {
+  const missing: RightRef[] = [];
+  const seen = new Set<string>();
+  for (const { module, right } of needs.rights) {
+    const key = `${module}\u0000${right}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const rights = Object.hasOwn(granted, module) ? granted[module] : undefined;
+    const value =
+      rights !== undefined && Object.hasOwn(rights, right)
+        ? rights[right]
+        : undefined;
+    const set = value === true || (Array.isArray(value) && value.length > 0);
+    const lacksCategory =
+      module === wikiEditRight.module &&
+      right === wikiEditRight.right &&
+      Array.isArray(value) &&
+      [...needs.editCategories].some((id) => !value.includes(id));
+    if (!set || lacksCategory) missing.push(Object.freeze({ module, right }));
+  }
+  return Object.freeze(missing);
+};
+
 /**
  * Judges the rights of an account of the runner as the write guard judges
  * them before a write of a run (ADR 0032), for `ecclium doctor`: the same
  * needs, the same comparison and the same days of an exception, so that
  * the check never passes an account whose writes the guard would queue.
+ * It names the rights the account lacks as well, on which a read or a
+ * write of a run would fail.
  *
  * @param catalog - The catalog of tools.
  * @param policy - The checked policy.
@@ -222,8 +262,8 @@ export interface AccountRights {
  *   preparation, as `accountToolsOf` of the workflows gives them.
  * @param granted - The rights of the account, as ChurchTools grants them.
  * @param day - The UTC day of the check.
- * @returns The rights that are too wide and the exceptions, frozen, or
- *   undefined when a tool is not in the catalog.
+ * @returns The rights that are too wide, those that are missing and the
+ *   exceptions, frozen, or undefined when a tool is not in the catalog.
  * @example
  * ```ts
  * accountRightsOf(catalog, policy, 'berichte', tools, granted, '2026-11-13');
@@ -261,6 +301,7 @@ export function accountRightsOf(
   }
   return Object.freeze({
     beyond: rightsBeyond(granted, needs),
+    missing: rightsMissing(granted, needs),
     exceptions: Object.freeze(exceptions),
   });
 }

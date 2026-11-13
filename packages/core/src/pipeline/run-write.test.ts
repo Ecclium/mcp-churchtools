@@ -1,5 +1,6 @@
 import {
   EccliumError,
+  type IsoDate,
   type RightRef,
   type TenantContext,
   type WikiPage,
@@ -453,6 +454,7 @@ describe('the needs of the account of a run', () => {
       return result.policy;
     })();
     const tools = ['ct_events_list', 'ct_wiki_page_append_section'];
+    const day = '2026-11-13' as IsoDate;
 
     it('names the rights beyond the needs of every entry with the alias', () => {
       const found = accountRightsOf(
@@ -465,15 +467,17 @@ describe('the needs of the account of a run', () => {
           churchwiki: { view: true, 'edit category': [12, 13, 14] },
           churchcal: { view: [] },
         },
-        '2026-11-13',
+        day,
       );
       expect(found?.beyond).toEqual([
         { module: 'churchservice', right: 'edit services' },
       ]);
+      expect(found?.missing).toEqual([]);
       expect(found?.exceptions).toEqual([
         { routine: 'dienstplan-report', until: '2026-11-19', holds: true },
       ]);
       expect(Object.isFrozen(found)).toBe(true);
+      expect(Object.isFrozen(found?.missing)).toBe(true);
       expect(Object.isFrozen(found?.exceptions)).toBe(true);
     });
 
@@ -484,7 +488,7 @@ describe('the needs of the account of a run', () => {
         'kalender',
         ['ct_wiki_page_append_section'],
         { churchwiki: { view: true, 'edit category': [12, 15] } },
-        '2026-11-13',
+        day,
       );
       expect(found?.beyond).toEqual([wikiEdit]);
       expect(found?.exceptions).toEqual([
@@ -500,9 +504,40 @@ describe('the needs of the account of a run', () => {
           'runner',
           [],
           { churchwiki: { view: true } },
-          '2026-11-13',
+          day,
         ),
-      ).toEqual({ beyond: [wikiView], exceptions: [] });
+      ).toEqual({ beyond: [wikiView], missing: [], exceptions: [] });
+    });
+
+    it('names a right the account lacks and the right to edit categories without a category of its entries', () => {
+      const found = accountRightsOf(
+        catalog,
+        excepted,
+        'bericht',
+        [...tools, 'ct_wiki_page_append_section'],
+        {
+          churchwiki: { 'edit category': [12, 13] },
+          churchservice: { view: [] },
+        },
+        day,
+      );
+      // The events need churchservice view, which is an empty list here;
+      // category 14 of wiki-hygiene is missing from the list.
+      expect(found?.missing).toEqual([eventsView, wikiView, wikiEdit]);
+      const own = Object.create({ churchwiki: { view: true } }) as Record<
+        string,
+        Record<string, true>
+      >;
+      expect(
+        accountRightsOf(
+          catalog,
+          excepted,
+          'kalender',
+          ['ct_wiki_page_append_section'],
+          own,
+          day,
+        )?.missing,
+      ).toEqual([wikiView, wikiEdit]);
     });
 
     it('is none when a tool is not in the catalog', () => {
@@ -513,7 +548,7 @@ describe('the needs of the account of a run', () => {
           'bericht',
           ['ct_unknown_tool'],
           {},
-          '2026-11-13',
+          day,
         ),
       ).toBeUndefined();
     });
