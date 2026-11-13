@@ -59,7 +59,7 @@ Gewählt ist die zweite Option. Die Tabellen im Abschnitt «Container» von [Run
 - Der Runner lässt sich ohne Compose betreiben: von einem Betreiber mit eigenem Orchestrator und von einem gehosteten Dienst, der für jeden Lauf einen frischen Container startet. Was gilt, steht in Tabellen, die ein Test beim Code hält.
 - Der Betreiber kann einen Kill-Switch auf seinem Rechner anlegen, ohne Rechte von root und ohne Neustart. Fehlt die Einbindung von `stop`, startet ein Runner, der schreibt, nicht.
 - Das Permission Model im Image muss auch `/keys` schreiben lassen, nicht nur `/data` und `/tmp`.
-- `ecclium undo --run`, `ecclium queue` für Einträge eines Laufs, `ecclium marker adopt --run` und `ecclium policy init --routine` erfüllen den Vertrag noch nicht: Sie verlangen das Token des Servers. Bis sie die Konfiguration des Runners laden, laufen sie dort, wo das Token des Servers liegt.
+- `ecclium undo --run`, `ecclium queue` für Einträge eines Laufs, `ecclium marker adopt --run` und `ecclium policy init --routine` erfüllen den Vertrag noch nicht: Sie verlangen das Token des Servers. Bis sie die Konfiguration des Runners laden, brauchen sie neben den Pfaden des Runners die Token-Datei des Servers, und ein Container mit beiden Token liegt ausserhalb dieses Vertrags.
 - **Restrisiken:**
   - Ein Ordner `stop`, den jemand von Hand im Volume anlegt, verdeckt eine vergessene Einbindung: Der Runner startet, und ein Kill-Switch auf dem Rechner des Betreibers wirkt nicht. Eine spätere Fassung von `ecclium doctor` soll das erkennen.
   - Die Probe lief unter OrbStack auf arm64. Besitzer bei Ordnern, die vom Mac eingebunden sind, bildet OrbStack anders ab als Linux; die Probe nahm deshalb nur Volumes. Unter Linux belegt das erst der E2E-Job in CI.
