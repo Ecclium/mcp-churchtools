@@ -481,7 +481,10 @@ describe('the catalog of messages', () => {
     expect(message.why).toContain('‹wiki› und ‹calendars›');
     expect(message.why).toContain('erst nach einer Bestätigung');
     expect(message.why).toContain('Audit-Datei');
-    expect(message.action).toContain('‹writes-off› im Ordner ‹stop›');
+    // Both folders the switch can lie in (ADR 0029).
+    expect(message.action).toContain(
+      '‹writes-off› im Ordner der Kill-Switches, ‹stop› im Zustandsordner oder dem Ordner aus ‹ECCLIUM_KILL_SWITCH_DIR›',
+    );
     expect(message.action).toContain('ohne Neustart');
     expect(message.action).toContain('‹ECCLIUM_READ_ONLY› auf ‹true›');
     expect(warningText('writes_enabled')).toBe(textOf(message));

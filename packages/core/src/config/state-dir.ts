@@ -518,7 +518,7 @@ export type KillSwitchDirState = 'ready' | 'missing' | 'writable';
  * @returns `ready`, `missing` or `writable`.
  * @example
  * ```ts
- * if (checkKillSwitchDir('/config/stop') !== 'ready') report('writes_without_stop_dir');
+ * if (checkKillSwitchDir('/config/stop') === 'missing') report('writes_without_stop_dir');
  * ```
  */
 export function checkKillSwitchDir(

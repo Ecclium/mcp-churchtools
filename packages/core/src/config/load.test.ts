@@ -1392,6 +1392,50 @@ describe('loadConfig and the folder of the kill switches', () => {
     }
   });
 
+  // The folders of keys and of tokens on their own, away from the folder
+  // of state, so that only their own rule refuses.
+  it('refuses a folder that holds the folder of keys or of tokens', () => {
+    expect(
+      problems(
+        withKeysDir('/elsewhere/keys', memoryFolder().fs, 'stdio', {
+          ECCLIUM_STATE_DIR: stateDirPath,
+          ECCLIUM_KILL_SWITCH_DIR: '/elsewhere',
+        }),
+      ),
+    ).toEqual([['kill_switch_dir_overlap', 'ECCLIUM_KILL_SWITCH_DIR']]);
+    expect(
+      problems(
+        load({
+          ...valid(),
+          ECCLIUM_STATE_DIR: stateDirPath,
+          ECCLIUM_RUNNER_TOKENS_DIR: '/secrets/tokens',
+          ECCLIUM_KILL_SWITCH_DIR: '/secrets',
+        }),
+      ),
+    ).toEqual([['kill_switch_dir_overlap', 'ECCLIUM_KILL_SWITCH_DIR']]);
+    // The root holds every folder of state.
+    expect(
+      problems(
+        load({
+          ...valid(),
+          ECCLIUM_STATE_DIR: stateDirPath,
+          ECCLIUM_KILL_SWITCH_DIR: '/',
+        }),
+      ),
+    ).toEqual([['kill_switch_dir_overlap', 'ECCLIUM_KILL_SWITCH_DIR']]);
+  });
+
+  it('reports only the refused value of the runner, not that the variable is missing', () => {
+    for (const [value, code] of [
+      ['relative/stop', 'kill_switch_dir_invalid'],
+      [`${stateDirPath}/audit`, 'kill_switch_dir_overlap'],
+    ] as const) {
+      expect(
+        problems(asRunner({ extra: { ECCLIUM_KILL_SWITCH_DIR: value } })),
+      ).toEqual([[code, 'ECCLIUM_KILL_SWITCH_DIR']]);
+    }
+  });
+
   it('takes a folder in the folder of state beside those Ecclium fills, or one elsewhere', () => {
     for (const value of [
       `${stateDirPath}/stop`,

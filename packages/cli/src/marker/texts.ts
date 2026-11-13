@@ -179,7 +179,7 @@ const changedMeanwhile = ending(
   exitCodes.dataError,
 );
 const switched = ending(
-  'Das Schreiben ist im Ordner ‹stop› ausgeschaltet, für alle Mandanten oder für diesen. Ecclium hat nichts geschrieben. Der Kill-Switch der Routine hält eine Übernahme nicht an, diese beiden schon.',
+  'Das Schreiben ist im Ordner der Kill-Switches ausgeschaltet, für alle Mandanten oder für diesen. Ecclium hat nichts geschrieben. Der Kill-Switch der Routine hält eine Übernahme nicht an, diese beiden schon.',
   exitCodes.noPermission,
 );
 
@@ -193,7 +193,7 @@ const reasons: Partial<Readonly<Record<UndoReason, AdoptEnding>>> =
     readOnly: adoptProblems.read_only,
     switchedOff: switched,
     switchUnknown: ending(
-      'Ecclium kann nicht prüfen, ob das Schreiben ausgeschaltet ist, und schreibt darum nicht. Prüfen Sie den Ordner ‹stop› im Zustandsordner.',
+      'Ecclium kann nicht prüfen, ob das Schreiben ausgeschaltet ist, und schreibt darum nicht. Prüfen Sie den Ordner der Kill-Switches, ‹stop› im Zustandsordner oder den Ordner aus ‹ECCLIUM_KILL_SWITCH_DIR›.',
       exitCodes.noPermission,
     ),
     rightsUnknown: ending(

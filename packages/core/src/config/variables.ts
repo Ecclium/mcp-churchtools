@@ -642,7 +642,8 @@ export const variables: readonly Variable[] = Object.freeze([
   // The folder of the kill switches (ADR 0029): over stdio by default the
   // folder stop of the folder of state, for the runner required, in its
   // container /config/stop, which comes with /config (ADR 0036). Like the
-  // folder of state, only where Ecclium writes.
+  // folder of keys, only over stdio and for the runner, which always
+  // requires it.
   row({
     name: 'ECCLIUM_KILL_SWITCH_DIR',
     kind: 'path',

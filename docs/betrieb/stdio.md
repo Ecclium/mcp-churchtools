@@ -375,7 +375,7 @@ Rufen Sie `ecclium undo` und `ecclium queue` mit den Variablen dieses Eintrags a
 
 ### Schreiben sofort anhalten
 
-Eine leere Datei `writes-off` im Ordner `stop`, oder im Ordner aus `ECCLIUM_KILL_SWITCH_DIR`, wenn Sie ihn gesetzt haben, hält jedes Schreiben an, ohne Neustart:
+Eine leere Datei `writes-off` im Ordner `stop` des Zustandsordners oder, wenn Sie `ECCLIUM_KILL_SWITCH_DIR` gesetzt haben, im Ordner daraus hält jedes Schreiben an, ohne Neustart:
 
 ```sh
 touch /pfad/zum/zustandsordner/stop/writes-off

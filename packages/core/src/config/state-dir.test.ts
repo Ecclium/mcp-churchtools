@@ -16,6 +16,7 @@ import { isEventName } from '../logger/index.js';
 import {
   auditDirName,
   checkKeysDir,
+  checkKillSwitchDir,
   checkRunnerTokensDir,
   checkStateDir,
   isNormalizedAbsolutePath,
@@ -754,6 +755,72 @@ describe('checkRunnerTokensDir on the disk', () => {
     expect(checkRunnerTokensDir(file)).toMatchObject({
       code: 'runner_tokens_dir_not_directory',
     });
+  });
+});
+
+// The folder of the kill switches (ADR 0029): a real folder in which the
+// core can look and in which neither the group nor others may write; its
+// owner is not checked, so that the operator makes a switch without root.
+describe('checkKillSwitchDir on the disk', () => {
+  const base = mkdtempSync(join(tmpdir(), 'ecclium-kill-switch-dir-'));
+  const fresh = (name: string, mode = 0o700): string => {
+    const folder = join(base, name);
+    mkdirSync(folder);
+    chmodSync(folder, mode);
+    return folder;
+  };
+
+  afterAll(() => {
+    // A folder without the right to search it cannot be removed otherwise.
+    chmodSync(join(base, 'closed'), 0o700);
+    rmSync(base, { recursive: true, force: true });
+  });
+
+  it('takes a folder with 0700 or 0755, with a switch in it or without', () => {
+    expect(checkKillSwitchDir(fresh('private'))).toBe('ready');
+    const readable = fresh('readable', 0o755);
+    expect(checkKillSwitchDir(readable)).toBe('ready');
+    writeFileSync(join(readable, 'writes-off'), '');
+    expect(checkKillSwitchDir(readable)).toBe('ready');
+  });
+
+  it('reads a folder that is missing, a link, a file or cannot be searched as missing', () => {
+    expect(checkKillSwitchDir(join(base, 'missing'))).toBe('missing');
+    const link = join(base, 'link');
+    symlinkSync(fresh('target'), link);
+    expect(checkKillSwitchDir(link)).toBe('missing');
+    const file = join(base, 'file');
+    writeFileSync(file, '', { mode: 0o600 });
+    expect(checkKillSwitchDir(file)).toBe('missing');
+    expect(checkKillSwitchDir(fresh('closed', 0o600))).toBe('missing');
+  });
+
+  it('refuses a folder the group or others may write in', () => {
+    for (const [name, mode] of [
+      ['group', 0o775],
+      ['others', 0o757],
+    ] as const) {
+      expect(checkKillSwitchDir(fresh(name, mode)), name).toBe('writable');
+    }
+  });
+
+  it('checks no owner', () => {
+    const fs: StateDirFileSystem = {
+      lstatSync: (target) => {
+        if (target.endsWith('/writes-off')) {
+          throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+        }
+        return {
+          isDirectory: () => true,
+          isSymbolicLink: () => false,
+          uid: 0,
+          mode: 0o40755,
+        };
+      },
+      getuid: () => 65532,
+      constants: { O_NOFOLLOW: 1, O_DIRECTORY: 2, O_NOCTTY: 4 },
+    };
+    expect(checkKillSwitchDir('/config/stop', fs)).toBe('ready');
   });
 });
 
