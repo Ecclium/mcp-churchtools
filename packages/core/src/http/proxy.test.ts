@@ -5,7 +5,11 @@ import type { Logger, LogFields } from '@ecclium/mcp-churchtools-plugin-api';
 import { makeCanary } from '@ecclium/mcp-churchtools-testkit';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { createHttpTransport, createModelHttpTransport } from './compose.js';
+import {
+  createHttpTransport,
+  createModelHttpTransport,
+  createPingHttpTransport,
+} from './compose.js';
 import { HttpTransportError } from './failure.js';
 import { probeEgressProxy, proxyProbeLimits } from './proxy-probe.js';
 import { Secret } from './secret.js';
@@ -301,6 +305,34 @@ describe('the factories with a proxy', () => {
       'CONNECT demo.example:443 HTTP/1.1',
       'CONNECT model.example:443 HTTP/1.1',
     ]);
+  });
+
+  // The path of the ping works like a secret (ADR 0009): the proxy learns
+  // host and port from CONNECT, and the path goes only through the tunnel,
+  // inside TLS.
+  it('send the ping through a tunnel that names only host and port', async () => {
+    const proxy = await startProxy(tunnelThenHangUp);
+    const { logger, lines } = recordingLogger();
+    const secretPath = canary.cores[1] ?? '';
+    const ping = createPingHttpTransport({
+      url: new Secret(`https://ping.example/ping/${secretPath}`),
+      userAgent,
+      logger,
+      clock,
+      proxy: proxy.url,
+    });
+    open.push({ close: () => ping.destroy() });
+    await expect(ping.ping('fail', {})).rejects.toBeInstanceOf(
+      HttpTransportError,
+    );
+    expect(proxy.heads.map((head) => head.split('\r\n')[0])).toEqual([
+      'CONNECT ping.example:443 HTTP/1.1',
+    ]);
+    const sent = everything(proxy);
+    expect(sent).not.toContain(secretPath);
+    expect(sent).not.toContain('/fail');
+    expect(sent.toLowerCase()).not.toContain('authorization');
+    expect(JSON.stringify(lines)).not.toContain(secretPath);
   });
 
   it.each([

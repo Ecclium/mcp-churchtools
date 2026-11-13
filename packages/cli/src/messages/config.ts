@@ -185,6 +185,7 @@ const runnerTokensDir = quote('ECCLIUM_RUNNER_TOKENS_DIR');
 const draftsDir = quote('ECCLIUM_DRAFTS_DIR');
 const notifyFile = quote('ECCLIUM_NOTIFY_FILE');
 const metricsFile = quote('ECCLIUM_RUNNER_METRICS_FILE');
+const pingUrlFile = quote('ECCLIUM_RUNNER_PING_URL_FILE');
 const egressProxy = quote('ECCLIUM_EGRESS_PROXY');
 const egress = quote('ECCLIUM_EGRESS');
 const providersFile = quote('ECCLIUM_PROVIDERS_FILE');
@@ -346,6 +347,100 @@ const keyFileTexts = (
         purpose.content(raw),
       ),
   });
+// The texts for the file with the ping URL of the runner (ADR 0009). It
+// goes through the reader of the token file as well, but holds an address
+// whose path works like a secret, not a key.
+const pingUrlFileSubject = (name: string): string =>
+  `Die Datei mit der Ping-URL in ${name}`;
+const pingUrlContent =
+  'Schreiben Sie die Ping-URL Ihrer Prüfung bei Healthchecks in die Datei, etwa ‹https://hc-ping.com/<uuid>›, und sonst nichts.';
+const pingUrlFileTexts = Object.freeze({
+  relative: (name = pingUrlFile) =>
+    message(
+      `Der Pfad zur Datei mit der Ping-URL in ${name} ist nicht absolut.`,
+      'Ecclium weiss nicht, aus welchem Ordner es aufgerufen wird, und eine Tilde wird nicht ersetzt.',
+      'Geben Sie den vollständigen Pfad an, der mit / beginnt.',
+    ),
+  platform: (name = pingUrlFile) =>
+    message(
+      `${pingUrlFileSubject(name)} lässt sich auf diesem System nicht sicher lesen.`,
+      'Es fehlt die Prüfung des Eigentümers oder das Öffnen ohne Links, etwa unter Windows. Einen anderen Weg für die Ping-URL gibt es nicht.',
+      `Entfernen Sie ${name}. Der Runner sendet dann keinen Ping.`,
+    ),
+  missing: (name = pingUrlFile) =>
+    message(
+      `${pingUrlFileSubject(name)} gibt es nicht.`,
+      'Ohne sie startet der Runner nicht, statt still ohne Meldung an Ihre Überwachung zu laufen.',
+      `Prüfen Sie den Pfad in ${name} oder entfernen Sie die Variable.`,
+    ),
+  symlink: (name = pingUrlFile) =>
+    message(
+      `Der Pfad zur Datei mit der Ping-URL in ${name} endet in einem symbolischen Link.`,
+      'Ein Link könnte auf eine fremde Datei zeigen, deshalb folgt Ecclium ihm nicht.',
+      'Geben Sie den Pfad der Datei selbst an.',
+    ),
+  unreadable: (name = pingUrlFile) =>
+    message(
+      `${pingUrlFileSubject(name)} lässt sich nicht lesen.`,
+      'Dem Benutzer, unter dem der Runner läuft, fehlt das Recht dazu.',
+      'Prüfen Sie Eigentümer und Rechte der Datei. Empfohlen sind die Rechte 600.',
+    ),
+  notRegular: (name = pingUrlFile) =>
+    message(
+      `Der Pfad in ${name} zeigt nicht auf eine gewöhnliche Datei.`,
+      'Ein Ordner, ein Gerät oder eine Pipe enthält keine Ping-URL, und aus einer Pipe zu lesen könnte den Start aufhalten.',
+      'Geben Sie den Pfad einer gewöhnlichen Datei an.',
+    ),
+  owner: (name = pingUrlFile) =>
+    message(
+      `${pingUrlFileSubject(name)} gehört einem anderen Benutzer.`,
+      'Wem die Datei gehört, der kann die Adresse darin austauschen und die Meldungen des Runners an ein anderes Ziel lenken.',
+      'Legen Sie die Datei als der Benutzer an, unter dem der Runner läuft.',
+    ),
+  mode: (name = pingUrlFile) =>
+    message(
+      `${pingUrlFileSubject(name)} ist auch für die Gruppe oder für andere Benutzer zugänglich.`,
+      'Wer die Ping-URL kennt, kann Ihrer Überwachung einen Erfolg oder einen Fehler melden.',
+      'Setzen Sie die Rechte der Datei mit «chmod 600» auf 600.',
+    ),
+  tooLarge: (name = pingUrlFile) =>
+    message(
+      `${pingUrlFileSubject(name)} ist zu gross.`,
+      `Sie hat mehr als ${formatNumber(4098)} Bytes, eine Ping-URL aber nur einige hundert Zeichen.`,
+      'Prüfen Sie, ob die Datei nur die Ping-URL enthält.',
+    ),
+  empty: (name = pingUrlFile) =>
+    message(
+      `${pingUrlFileSubject(name)} ist leer.`,
+      'Sie enthält keine Adresse, höchstens einen Zeilenumbruch.',
+      pingUrlContent,
+    ),
+  bom: (name = pingUrlFile) =>
+    message(
+      `${pingUrlFileSubject(name)} beginnt mit einer Byte-Order-Markierung.`,
+      'Manche Editoren setzen sie beim Speichern. Sie gehört nicht zur Adresse, und Ecclium entfernt sie nicht von sich aus.',
+      'Speichern Sie die Datei als UTF-8 ohne BOM oder als reinen Text.',
+    ),
+  characters: (name = pingUrlFile) =>
+    message(
+      `${pingUrlFileSubject(name)} enthält Zeichen, die in einer Ping-URL nicht vorkommen.`,
+      'Erlaubt sind sichtbare ASCII-Zeichen und ein einziger Zeilenumbruch am Ende. Leerzeichen, Tabulatoren und weitere Zeilen gehören nicht dazu.',
+      'Prüfen Sie die Datei, vielleicht steht dort mehr als die Adresse.',
+    ),
+  unsafe: (name = pingUrlFile) =>
+    message(
+      `${pingUrlFileSubject(name)} liess sich nicht sicher öffnen.`,
+      'Das Dateisystem meldete einen Fehler. Seine Meldung zeigt Ecclium nicht, weil sie den Pfad enthält.',
+      'Prüfen Sie den Pfad und die Ordner darüber.',
+    ),
+  invalid: (name = pingUrlFile) =>
+    message(
+      `${pingUrlFileSubject(name)} enthält keine Adresse, die Ecclium annimmt.`,
+      'Ecclium nimmt nur ‹https› mit einem Namen, der einen Punkt hat. Die Adresse hat keine IP-Adresse, keinen Benutzer, keine Query und kein Fragment, und ihr Pfad hat höchstens 251 Zeichen und endet nicht mit ‹/›. Ecclium ändert die Adresse nicht: Der Host steht in kleinen Buchstaben, und der Port 443 fehlt.',
+      pingUrlContent,
+    ),
+});
+
 const pseudonymKeyFile = keyFileTexts(keyFile, {
   missing: 'Ohne die Datei hat Ecclium keinen Schlüssel für Pseudonyme.',
   platform: 'Pseudonyme gibt es auf diesem System nicht.',
@@ -515,8 +610,8 @@ const problems: Readonly<
     ),
   notify_file_overlap: (name = notifyFile) =>
     message(
-      `Die Datei in ${name} liegt in einem Ordner, den Ecclium selbst füllt: im Ordner der Schlüssel, im Ordner der Token-Dateien oder in einem der Ordner ‹audit›, ‹quota›, ‹snapshots›, ‹queue›, ‹runner› oder ‹stop› des Zustandsordners.`,
-      'Eine Zeile, die der Runner an eine Audit-Datei oder eine Token-Datei anhängte, verdürbe deren Kette oder das Konto.',
+      `Die Datei in ${name} liegt in einem Ordner, den Ecclium selbst füllt: im Ordner der Schlüssel, im Ordner der Token-Dateien oder in einem der Ordner ‹audit›, ‹quota›, ‹snapshots›, ‹queue›, ‹runner› oder ‹stop› des Zustandsordners. Oder sie ist die Datei mit der Ping-URL.`,
+      'Eine Zeile, die der Runner an eine Audit-Datei, eine Token-Datei oder die Datei mit der Ping-URL anhängte, verdürbe deren Kette, das Konto oder die Adresse.',
       'Wählen Sie eine Datei ausserhalb dieser Ordner, etwa im Zustandsordner selbst oder in einem Ordner für Logs.',
     ),
   notify_file_invalid: (name = notifyFile) =>
@@ -1502,6 +1597,20 @@ const problems: Readonly<
       'Dort braucht es keine. Stünde sie da, sagten Land und Grundlage Verschiedenes, und das Audit nennte eine Übermittlung, die es nicht gibt.',
       'Entfernen Sie ‹transferBasis› oder prüfen Sie das Land in ‹hostingCountry›.',
     ),
+  ping_url_file_relative: pingUrlFileTexts.relative,
+  ping_url_file_platform: pingUrlFileTexts.platform,
+  ping_url_file_missing: pingUrlFileTexts.missing,
+  ping_url_file_symlink: pingUrlFileTexts.symlink,
+  ping_url_file_unreadable: pingUrlFileTexts.unreadable,
+  ping_url_file_not_regular: pingUrlFileTexts.notRegular,
+  ping_url_file_owner: pingUrlFileTexts.owner,
+  ping_url_file_mode: pingUrlFileTexts.mode,
+  ping_url_file_too_large: pingUrlFileTexts.tooLarge,
+  ping_url_file_empty: pingUrlFileTexts.empty,
+  ping_url_file_bom: pingUrlFileTexts.bom,
+  ping_url_file_characters: pingUrlFileTexts.characters,
+  ping_url_file_unsafe: pingUrlFileTexts.unsafe,
+  ping_url_invalid: pingUrlFileTexts.invalid,
   marker_key_file_relative: markerKeyFile.relative,
   marker_key_file_platform: markerKeyFile.platform,
   marker_key_file_missing: markerKeyFile.missing,

@@ -146,6 +146,10 @@ Nennt eine Routine den Kanal `file`, hängt der Runner je Lauf eine Zeile an die
 
 Mit `ECCLIUM_RUNNER_METRICS_FILE` schreibt der Runner nach jedem Durchgang eine Metrikdatei für eine Überwachung ([Runner](betrieb/runner.md#metrikdatei)): je Routine ihre Kennung, Zeiten, den Status und Code ihres letzten Laufs, dazu Name, Nummer und Hash der letzten Zeile der Audit-Datei. Sie enthält keine Personendaten und keine Inhalte. Der Runner ersetzt sie jedes Mal ganz, ihr Ordner hat die Rechte 700, die Datei 600.
 
+### Ping des Runners
+
+Mit `ECCLIUM_RUNNER_PING_URL_FILE` meldet der Runner nach einem Durchgang, in dem eine Routine fällig war oder von Hand lief, einem Dienst im Format von Healthchecks einen Erfolg oder einen Fehler ([Runner](betrieb/runner.md#ping-an-eine-überwachung)). Der Ping hat keinen Inhalt. Der Dienst erfährt nur, wann der Runner meldet und ob mit Erfolg oder Fehler, dazu die IP-Adresse des Runners und den User-Agent mit der Version von Ecclium, nie Daten aus ChurchTools, Namen von Routinen oder Codes. Nutzen Sie einen fremden Dienst, ist das ein weiterer Empfänger dieser Angaben über Ihren Betrieb.
+
 ## Was ChurchTools nach einem Schreibvorgang weitergibt
 
 Was Ecclium in ChurchTools schreibt, sehen dort alle, die das Ziel sehen dürfen, und ChurchTools kann es weitergeben, ohne dass Ecclium davon weiss:

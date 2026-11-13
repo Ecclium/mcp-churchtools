@@ -34,6 +34,7 @@ import {
 import type { ToolsetName } from '../registry/toolsets.js';
 import type { ConfigProblemCode, ConfigWarningCode } from './codes.js';
 import { readMarkerKeyFile } from './marker-key-file.js';
+import { readPingUrlFile } from './ping-url-file.js';
 import { readPseudonymKeyFile } from './pseudonym-key-file.js';
 import {
   readRunnerToken,
@@ -216,6 +217,16 @@ export interface EccliumConfig {
    */
   readonly metricsFile: string | undefined;
   /**
+   * The address of the ping of the runner, in the format of Healthchecks,
+   * or undefined when the variable is not set or the transport is no
+   * runner (ADR 0009). The start of the runner reads it from the file of
+   * `ECCLIUM_RUNNER_PING_URL_FILE` with the checks of the token file and
+   * keeps it as a secret, because whoever knows its path can report to
+   * the check; a new address takes effect with a restart. A server checks
+   * the form of the path alone and never reads the file.
+   */
+  readonly runnerPingUrl: Secret | undefined;
+  /**
    * The proxy of every transport of the process, `http://host:port` as
    * checked, or undefined to connect directly (ADR 0035).
    */
@@ -254,6 +265,7 @@ export type SettingKey =
   | 'draftsDir'
   | 'notifyFile'
   | 'metricsFile'
+  | 'runnerPingUrl'
   | 'egressProxy'
   | 'egress'
   | 'stdioSubject'
@@ -1705,11 +1717,13 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     'drafts_dir_invalid',
     'drafts_dir_overlap',
   );
+  // A line appended to the file of the ping would break its address.
   const notify = formOnlyPath(
     'notifyFile',
     'ECCLIUM_NOTIFY_FILE',
     'notify_file_invalid',
     'notify_file_overlap',
+    [given.get('ECCLIUM_RUNNER_PING_URL_FILE')],
   );
   // The metrics file is replaced whole after each pass, so it may also not
   // be the file of the notices, whose lines it would wipe out, the folder
@@ -1729,9 +1743,55 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       given.get('ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE'),
       given.get('ECCLIUM_MARKER_KEY_FILE'),
       given.get('ECCLIUM_CHURCHTOOLS_TOKEN_FILE'),
+      given.get('ECCLIUM_RUNNER_PING_URL_FILE'),
     ],
     [given.get('ECCLIUM_ROUTINES_DIR')],
   );
+
+  // The address of the ping of the runner (ADR 0009). Its path works like
+  // a secret, so it comes from a file with the checks of the token file,
+  // and the report shows its host and port, never its path or that of the
+  // file. Only the runner reads the file, at its start; a server never
+  // pings and checks the form of the path alone, like the metrics file.
+  const pingName = 'ECCLIUM_RUNNER_PING_URL_FILE';
+  const pingRead = read(row(pingName));
+  let runnerPingUrl: Secret | undefined;
+  let pingValid = pingRead.state !== 'invalid';
+  if (pingRead.state === 'unset') {
+    setting('runnerPingUrl', pingName, 'unset', shownNone);
+  } else if (pingRead.state === 'invalid') {
+    setting('runnerPingUrl', pingName, 'invalid', shownNone);
+  } else if (!runner) {
+    if (fitsVariable(pingName, pingRead.value)) {
+      setting('runnerPingUrl', pingName, 'environment', shownHidden);
+    } else {
+      pingValid = false;
+      report('ping_url_file_relative', pingName);
+      setting('runnerPingUrl', pingName, 'invalid', shownNone);
+    }
+  } else {
+    const fromFile = readPingUrlFile(
+      pingRead.value,
+      tokenFiles as TokenFileSystem | undefined,
+    );
+    if (fromFile.ok) {
+      runnerPingUrl = fromFile.value.url;
+      setting(
+        'runnerPingUrl',
+        pingName,
+        'file',
+        record({
+          kind: 'origin',
+          host: fromFile.value.host,
+          port: fromFile.value.port,
+        }),
+      );
+    } else {
+      pingValid = false;
+      report(fromFile.code, pingName);
+      setting('runnerPingUrl', pingName, 'invalid', shownNone);
+    }
+  }
 
   // What the runner needs besides the server (ADR 0033, ADR 0034): the
   // zone its schedules reckon in, a file of the policy, the folder of its
@@ -1888,6 +1948,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     !drafts.valid ||
     !notify.valid ||
     !metrics.valid ||
+    !pingValid ||
     !proxyValid ||
     !egressValid ||
     subject === undefined ||
@@ -1922,6 +1983,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       draftsDir: drafts.value,
       notifyFile: notify.value,
       metricsFile: metrics.value,
+      runnerPingUrl,
       egressProxy,
       egressOff,
       stdioSubject: subject.value,

@@ -89,6 +89,11 @@ export {
   type MockedModelTransport,
   type ModelEndpointDoubleOptions,
 } from './http-double/index.js';
+export {
+  createPingDouble,
+  type MockedPingTransport,
+  type PingDoubleOptions,
+} from './http-double/index.js';
 export { assertOnlyReads } from './http-double/index.js';
 export {
   exampleEchoTool,

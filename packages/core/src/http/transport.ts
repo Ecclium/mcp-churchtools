@@ -13,6 +13,13 @@
  * Every other check is the same for both purposes, and nothing of the
  * transport to ChurchTools is loosened by it.
  *
+ * A third purpose since ADR 0009 and ADR 0035: the ping of the runner
+ * sends only a POST without body and without Authorization header to the
+ * one path of its address or to that path with `/fail`, with short
+ * limits. Its secret is the address itself, which the transport holds
+ * only in its closures, and an answer outside 2xx is a failure: a
+ * redirect as everywhere, any other status the failure `status`.
+ *
  * Only `compose.ts` and `compose-mock.ts` use this module. Its build path
  * takes a dispatcher, a socket and limits, which the factories never take
  * from a caller.
@@ -33,7 +40,11 @@ import {
   ProxyAgent,
 } from 'undici';
 
-import type { HttpFailureEvent, HttpMethod } from '../logger/index.js';
+import type {
+  HttpFailureEvent,
+  HttpMethod,
+  TransportPurpose,
+} from '../logger/index.js';
 import {
   categoriseFailure,
   type FailureCategory,
@@ -136,6 +147,37 @@ export interface ModelTransport {
   destroy(): Promise<void>;
 }
 
+/** Whether a ping reports a pass that went well or one that failed. */
+export type PingKind = 'success' | 'fail';
+
+/** What a ping takes. */
+export interface PingOptions {
+  /** Aborts the ping. Its reason never leaves the transport. */
+  readonly signal?: AbortSignal;
+}
+
+/**
+ * The outbound path to the ping of the runner, in the format of
+ * Healthchecks (ADR 0009, ADR 0035). It takes no address: it sends only
+ * to the path of its configuration, for a failure with `/fail`, only a
+ * POST without body and without Authorization header. Built only by the
+ * composition root, like the other transports.
+ */
+export interface PingTransport {
+  /**
+   * Sends the ping of a pass and reads the answer, which it drops.
+   *
+   * @throws {HttpTransportError} For every failure, with a fixed category,
+   *   `redirect` for a 3xx, and `status` for any other answer outside
+   *   2xx.
+   */
+  ping(kind: PingKind, options: PingOptions): Promise<void>;
+  /** Lets a running ping finish, then closes every connection. */
+  close(): Promise<void>;
+  /** Closes every connection at once and aborts a running ping. */
+  destroy(): Promise<void>;
+}
+
 /** The limits of a transport, all in milliseconds or bytes. */
 export interface TransportLimits {
   /** Time to open a connection, TLS included. */
@@ -199,6 +241,23 @@ export const modelTransportLimits: TransportLimits = Object.freeze({
   maxResponseBytes: 1024 * 1024,
   maxHeaderBytes: 16 * 1024,
   maxRequestBytes: 2 * 1024 * 1024,
+});
+
+/**
+ * The limits of the transport to the ping (ADR 0009). A ping has no body
+ * and gets a short answer, such as `OK`, so it waits little and reads
+ * little, and one connection suffices, as a pass sends one ping.
+ */
+export const pingTransportLimits: TransportLimits = Object.freeze({
+  connectMs: 10_000,
+  headersMs: 10_000,
+  bodyMs: 10_000,
+  totalMs: 15_000,
+  keepAliveMs: 10_000,
+  connections: 1,
+  maxResponseBytes: 64 * 1024,
+  maxHeaderBytes: 16 * 1024,
+  maxRequestBytes: 0,
 });
 
 /**
@@ -343,12 +402,10 @@ export function isUserAgent(value: unknown): value is string {
   return value.trim() === value;
 }
 
-/** What a transport is built from. */
-export interface TransportSettings {
+/** What every transport is built from, whatever its purpose. */
+export interface TransportBaseSettings {
   /** The origin, as the configuration checked it. */
   readonly origin: string;
-  /** The token for the Authorization header. */
-  readonly token: Secret;
   /** The fixed User-Agent, as {@link isUserAgent} accepts it. */
   readonly userAgent: string;
   /** The logger, bound to the tenant by the composition root. */
@@ -357,6 +414,12 @@ export interface TransportSettings {
   readonly clock: Clock;
   /** The limits of the transport. */
   readonly limits: TransportLimits;
+}
+
+/** What a transport to ChurchTools is built from. */
+export interface TransportSettings extends TransportBaseSettings {
+  /** The token for the Authorization header. */
+  readonly token: Secret;
 }
 
 /** What a transport to a model is built from (ADR 0033). */
@@ -368,18 +431,43 @@ export interface ModelTransportSettings extends TransportSettings {
   readonly path: string;
 }
 
-// What sets the purposes of a transport apart (ADR 0033). Everything else,
-// every check of the target and the body, the headers, the reading of the
-// answer and the failures, is the same for both.
-interface Purpose {
-  // The scheme of the Authorization header.
+/** What the transport to the ping is built from (ADR 0009). */
+export interface PingTransportSettings extends TransportBaseSettings {
+  /**
+   * The path of the address, as the configuration checked it. The
+   * transport sends to it and to it with `/fail`, to no other.
+   */
+  readonly path: string;
+}
+
+// The Authorization header of a purpose: its scheme and its secret.
+interface Authorization {
   readonly scheme: 'Login' | 'Bearer';
+  readonly token: Secret;
+}
+
+// What sets the purposes of a transport apart (ADR 0033, ADR 0009).
+// Everything else, every check of the target, the other headers, the
+// reading of the answer and the failures, is the same for all.
+interface Purpose {
+  // The Authorization header, or none for the ping, whose secret is its
+  // address. Only a purpose with one sends a body, so that every body is
+  // searched for its token.
+  readonly authorization: Authorization | undefined;
   // Whether a method may reach a path, once the target passed its checks.
   readonly allows: (method: HttpMethod, path: string) => boolean;
+  // Whether the caller reads an answer with this status; any other is the
+  // failure status. A redirect is refused before.
+  readonly answers: (status: number) => boolean;
   // The field of every line of the log that names the purpose. ChurchTools
   // has none, so its lines stay as they were.
-  readonly fields: { readonly purpose?: 'model' };
+  readonly fields: { readonly purpose?: TransportPurpose };
 }
+
+// ChurchTools and a model answer a failure with 4xx or 5xx, which the
+// caller reads (ADR 0056).
+const answersFrom200To599 = (status: number): boolean =>
+  status >= 200 && status <= 599;
 
 // Whether a signal of the caller has aborted, read through the getter of
 // the class with the signal as receiver: an own property named aborted
@@ -473,30 +561,33 @@ const copyBody = (value: unknown, max: number): Uint8Array | undefined => {
 // The purpose of the transport to ChurchTools: the token in the header of
 // the scheme Login (ADR 0023), any read, and a write only to the paths of
 // the writes the core knows (ADR 0072).
-const churchTools: Purpose = Object.freeze({
-  scheme: 'Login',
-  allows: (method: HttpMethod, path: string): boolean =>
-    checkWriteTarget(method, path) === undefined,
-  fields: Object.freeze({}),
-});
+const churchToolsPurpose = (token: Secret): Purpose =>
+  Object.freeze({
+    authorization: Object.freeze({ scheme: 'Login', token }),
+    allows: (method: HttpMethod, path: string): boolean =>
+      checkWriteTarget(method, path) === undefined,
+    answers: answersFrom200To599,
+    fields: Object.freeze({}),
+  });
 
 // The one way every request of a transport takes, for either purpose: the
 // checks of target, limit, signal and body come first, then a place in the
 // queue, then the request, then the whole answer.
 const createSend = (
   dispatcher: Dispatcher,
-  settings: TransportSettings,
+  settings: TransportBaseSettings,
   purpose: Purpose,
 ): ((
   method: HttpMethod,
   url: URL,
   options: HttpRequestOptions | HttpWriteOptions,
 ) => Promise<HttpResponse>) => {
-  const { origin, token, userAgent, logger, clock, limits } = settings;
+  const { origin, userAgent, logger, clock, limits } = settings;
+  const { authorization } = purpose;
 
   // Whether a body holds the token, as it is or escaped for JSON. A token
   // holds only visible ASCII (ADR 0054), so latin1 compares byte by byte.
-  const carriesToken = (body: Uint8Array): boolean => {
+  const carriesToken = (body: Uint8Array, token: Secret): boolean => {
     const value = revealSecret(token);
     const bytes = Buffer.from(body.buffer, body.byteOffset, body.byteLength);
     return [value, JSON.stringify(value).slice(1, -1)].some((form) =>
@@ -546,13 +637,19 @@ const createSend = (
     const started = clock.now();
     const duration = (): number =>
       Math.max(0, Math.round(clock.now() - started));
-    const fail = (category: FailureCategory): HttpTransportError => {
+    // The status of an answer the purpose does not read goes into the
+    // line, so that the log tells a wrong address from a busy service.
+    const fail = (
+      category: FailureCategory,
+      status?: number,
+    ): HttpTransportError => {
       const error = new HttpTransportError(category);
       logger.warn(failureEvents[category], {
         code: error.code,
         durationMs: duration(),
         method,
         ...purpose.fields,
+        ...(status === undefined ? {} : { status }),
       });
       return error;
     };
@@ -568,7 +665,7 @@ const createSend = (
     try {
       const limit = ownValue(options, 'maxResponseBytes');
       const given = ownValue(options, 'signal');
-      const target = checkRequestTarget(url, origin, token);
+      const target = checkRequestTarget(url, origin, authorization?.token);
       if (
         !Number.isSafeInteger(limit) ||
         (limit as number) < 1 ||
@@ -579,14 +676,14 @@ const createSend = (
         throw new TypeError('refused');
       }
       const raw = ownValue(options, 'body');
-      if (withBody.includes(method)) {
+      if (authorization !== undefined && withBody.includes(method)) {
         body = copyBody(raw, limits.maxRequestBytes);
         // The token goes only into its header. A token in the body is a
         // mistake, such as a value pasted into a field. The search covers
         // the token as it is and as a string of JSON writes it, with a
         // backslash before each quote and backslash; it guards against
         // mistakes, not against code that sets out to encode it otherwise.
-        if (body === undefined || carriesToken(body)) {
+        if (body === undefined || carriesToken(body, authorization.token)) {
           throw new TypeError('refused');
         }
       } else if (raw !== undefined) {
@@ -624,6 +721,7 @@ const createSend = (
     let timer: ReturnType<typeof setTimeout> | undefined;
     let entered = false;
     let decided: FailureCategory | undefined;
+    let refusedStatus: number | undefined;
     let phase: 'request' | 'body' = 'request';
     try {
       timer = setTimeout(() => {
@@ -633,11 +731,13 @@ const createSend = (
       await enter(controller.signal);
       entered = true;
       const headers: Record<string, string> = {
-        authorization: `${purpose.scheme} ${revealSecret(token)}`,
         accept: 'application/json',
         'accept-encoding': 'identity',
         'user-agent': userAgent,
       };
+      if (authorization !== undefined) {
+        headers.authorization = `${authorization.scheme} ${revealSecret(authorization.token)}`;
+      }
       if (body !== undefined) headers['content-type'] = 'application/json';
       const pending = dispatcher.request({
         origin,
@@ -667,7 +767,12 @@ const createSend = (
       };
       const status = answer.statusCode;
       if (status >= 300 && status < 400) refuse('redirect');
-      if (status < 200 || status > 599) refuse('status');
+      if (!purpose.answers(status)) {
+        // Only a status the log takes; ChurchTools and a model refuse
+        // one beyond 599, which no line can name.
+        if (status <= 599) refusedStatus = status;
+        refuse('status');
+      }
       const kept = keepKnownHeaders(answer.headers);
       if (!kept.ok) return refuse('encoding');
       const chunks: Uint8Array[] = [];
@@ -703,6 +808,7 @@ const createSend = (
             deadline,
             callerAborted: hasAborted(signal),
           }),
+        refusedStatus,
       );
     } finally {
       clearTimeout(timer);
@@ -731,7 +837,11 @@ export function createTransport(
   dispatcher: Dispatcher,
   settings: TransportSettings,
 ): HttpTransport {
-  const send = createSend(dispatcher, settings, churchTools);
+  const send = createSend(
+    dispatcher,
+    settings,
+    churchToolsPurpose(settings.token),
+  );
   return Object.freeze({
     get: (url: URL, options: HttpRequestOptions) => send('GET', url, options),
     post: (url: URL, options: HttpWriteOptions) => send('POST', url, options),
@@ -776,11 +886,12 @@ export function createModelTransport(
     dispatcher,
     settings,
     Object.freeze({
-      scheme: 'Bearer',
+      authorization: Object.freeze({ scheme: 'Bearer', token: settings.token }),
       // The transport has only post, so the target alone decides: exactly
       // the path of the settings, never a query.
       allows: (_method: HttpMethod, target: string): boolean =>
         target === path && !target.includes('?'),
+      answers: answersFrom200To599,
       fields: Object.freeze({ purpose: 'model' }),
     }),
   );
@@ -791,6 +902,73 @@ export function createModelTransport(
   const endpoint = new URL(path, origin);
   return Object.freeze({
     post: (options: HttpWriteOptions) => send('POST', endpoint, options),
+    close: async (): Promise<void> => {
+      await dispatcher.close();
+    },
+    destroy: async (): Promise<void> => {
+      await dispatcher.destroy();
+    },
+  });
+}
+
+/**
+ * Builds the transport to the ping of the runner on a dispatcher (ADR
+ * 0009, ADR 0035). It sends only a POST without body and without
+ * Authorization header to the path of its settings, for a failure to that
+ * path with `/fail`, through the same checks as the other transports. Any
+ * other path, a query, a body and any other method are refused before a
+ * socket opens. A 3xx is `redirect`, any other answer outside 2xx the
+ * failure `status`.
+ *
+ * @param dispatcher - Sends the requests to the origin.
+ * @param settings - Origin, path, User-Agent, logger, clock and limits.
+ * @returns The transport, frozen. It holds the dispatcher and the address
+ *   only in its closures.
+ * @example
+ * ```ts
+ * const transport = createPingTransport(
+ *   createAgent(pingTransportLimits),
+ *   settings,
+ * );
+ * await transport.ping('success', { signal });
+ * ```
+ */
+export function createPingTransport(
+  dispatcher: Dispatcher,
+  settings: PingTransportSettings,
+): PingTransport {
+  const { origin, path, limits } = settings;
+  const failPath = `${path}/fail`;
+  const send = createSend(
+    dispatcher,
+    settings,
+    Object.freeze({
+      authorization: undefined,
+      // Only a POST, to exactly one of the two paths, never with a query.
+      allows: (method: HttpMethod, target: string): boolean =>
+        method === 'POST' &&
+        (target === path || target === failPath) &&
+        !target.includes('?'),
+      // Healthchecks answers a ping it took with 200; any other status,
+      // such as 404 for an unknown check or 429, means it did not count.
+      answers: (status: number): boolean => status >= 200 && status <= 299,
+      fields: Object.freeze({ purpose: 'ping' }),
+    }),
+  );
+  // Built once from the settings; the check of every call reads a fresh
+  // copy of each.
+  const targets: Readonly<Record<PingKind, URL>> = Object.freeze({
+    success: new URL(path, origin),
+    fail: new URL(failPath, origin),
+  });
+  return Object.freeze({
+    ping: async (kind: PingKind, options: PingOptions): Promise<void> => {
+      const target = kind === 'fail' ? targets.fail : targets.success;
+      await send('POST', target, {
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        maxResponseBytes: limits.maxResponseBytes,
+      });
+    },
     close: async (): Promise<void> => {
       await dispatcher.close();
     },

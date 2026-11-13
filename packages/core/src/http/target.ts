@@ -118,6 +118,8 @@ const serialise = (target: URL): string => {
  * same origin, no fragment, no path that starts with `//`, parameter names
  * of letters, digits and underscores with an optional `[]`, neither
  * `login_token` nor `with_session`, and the token nowhere in the address.
+ * The ping of the runner sends no token, since its address is its secret
+ * (ADR 0009), so its target is checked without that last rule.
  *
  * The search for the token compares the address as sent and the address
  * with visible ASCII decoded from `%XX`, with the token as it is and with
@@ -128,7 +130,8 @@ const serialise = (target: URL): string => {
  *
  * @param target - The address to request.
  * @param origin - The origin of the transport, as its configuration gave it.
- * @param token - The token the transport sends in its header.
+ * @param token - The token the transport sends in its header, or
+ *   undefined for a transport that sends none.
  * @returns The path with the query, or the code of the broken rule. Never
  *   the target itself.
  * @throws {TypeError} When the target is not a URL.
@@ -145,7 +148,7 @@ const serialise = (target: URL): string => {
 export function checkRequestTarget(
   target: URL,
   origin: string,
-  token: Secret,
+  token: Secret | undefined,
 ): TargetResult {
   const url = new URL(serialise(target));
   const address = url.href;
@@ -164,13 +167,15 @@ export function checkRequestTarget(
       return refuse('target_forbidden_parameter');
     }
   }
-  const value = revealSecret(token);
-  // The parser turns a backslash in the path of an https address into a
-  // slash, so a token with a backslash reaches the path in that form.
-  const values = [value, value.replaceAll('\\', '/')];
-  const forms = [address, decodeVisibleAscii(address)];
-  if (forms.some((form) => values.some((shape) => form.includes(shape)))) {
-    return refuse('target_token');
+  if (token !== undefined) {
+    const value = revealSecret(token);
+    // The parser turns a backslash in the path of an https address into a
+    // slash, so a token with a backslash reaches the path in that form.
+    const values = [value, value.replaceAll('\\', '/')];
+    const forms = [address, decodeVisibleAscii(address)];
+    if (forms.some((form) => values.some((shape) => form.includes(shape)))) {
+      return refuse('target_token');
+    }
   }
   return Object.freeze({
     __proto__: null,

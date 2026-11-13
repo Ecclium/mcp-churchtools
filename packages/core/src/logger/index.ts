@@ -45,6 +45,7 @@ export {
   timestampPattern,
   toolNamePattern,
   toTimestamp,
+  type TransportPurpose,
   uuidPattern,
 } from './fields.js';
 export {

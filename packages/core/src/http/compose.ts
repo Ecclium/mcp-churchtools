@@ -5,10 +5,11 @@
  * importer, so that no tool builds a transport with an origin of its own.
  * The factory takes no dispatcher, no socket, no limits and no header
  * besides the fixed User-Agent. The same holds for the factory of the
- * transport to the endpoint of a language model (ADR 0033). Of a proxy,
- * both take only the address the configuration checked and build the
- * agent through it themselves; the check of the proxy at the start comes
- * from here as well (ADR 0035).
+ * transport to the endpoint of a language model (ADR 0033) and for the
+ * transport to the ping of the runner (ADR 0009). Of a proxy, all three
+ * take only the address the configuration checked and build the agent
+ * through it themselves; the check of the proxy at the start comes from
+ * here as well (ADR 0035).
  *
  * @packageDocumentation
  */
@@ -18,17 +19,21 @@ import {
   parseChurchToolsOrigin,
   parseEgressProxy,
   parseModelEndpoint,
+  parsePingUrl,
 } from './origin.js';
 import { revealSecret, type Secret } from './secret.js';
 import {
   createAgent,
   createModelTransport,
+  createPingTransport,
   createProxyAgent,
   createTransport,
   type HttpTransport,
   isUserAgent,
   modelTransportLimits,
   type ModelTransport,
+  pingTransportLimits,
+  type PingTransport,
   type TransportLimits,
   transportLimits,
 } from './transport.js';
@@ -44,6 +49,9 @@ export type {
   HttpTransport,
   HttpWriteOptions,
   ModelTransport,
+  PingKind,
+  PingOptions,
+  PingTransport,
 } from './transport.js';
 
 /** What the composition root gives a transport. */
@@ -183,5 +191,68 @@ export function createModelHttpTransport(
     logger,
     clock,
     limits: modelTransportLimits,
+  });
+}
+
+/** What the composition root gives the transport to the ping (ADR 0009). */
+export interface PingHttpTransportOptions {
+  /**
+   * The address of the ping, as the configuration read it from its file,
+   * such as `https://hc-ping.com/<uuid>`. A secret, because whoever knows
+   * the path can report to the check.
+   */
+  readonly url: Secret;
+  /** The User-Agent of every request, as for ChurchTools. */
+  readonly userAgent: string;
+  /** The logger of the runner. */
+  readonly logger: Logger;
+  /** The clock for the duration in the log. */
+  readonly clock: Clock;
+  /** The proxy of the configuration, as for ChurchTools (ADR 0035). */
+  readonly proxy?: string | undefined;
+}
+
+/**
+ * Builds the transport to the ping of the runner, with one connection of
+ * its own and the short limits of a ping (ADR 0009). It sends only a POST
+ * without body and without Authorization header to the path of the
+ * address, for a failure to that path with `/fail`. The address is opened
+ * here and held only in the closures of the transport.
+ *
+ * @param options - Address, User-Agent, logger, clock and proxy.
+ * @returns The transport. Destroy it after the ping, so that no
+ *   connection keeps the process open.
+ * @throws {TypeError} When the address is not a Secret or not a canonical
+ *   https address with a path, or the User-Agent is not printable ASCII.
+ *   The message never shows the address.
+ * @example
+ * ```ts
+ * const transport = createPingHttpTransport({
+ *   url: config.runnerPingUrl,
+ *   userAgent: 'Ecclium/1.0.0',
+ *   logger,
+ *   clock: systemClock,
+ * });
+ * ```
+ */
+export function createPingHttpTransport(
+  options: PingHttpTransportOptions,
+): PingTransport {
+  const { url, userAgent, logger, clock, proxy } = options;
+  // Throws for anything but a Secret of this module, before a pool exists.
+  const checked = parsePingUrl(revealSecret(url));
+  if (!checked.ok) {
+    throw new TypeError('The address of a ping must be canonical.');
+  }
+  if (!isUserAgent(userAgent)) {
+    throw new TypeError('The User-Agent of a transport must be printable.');
+  }
+  return createPingTransport(agentFor(pingTransportLimits, proxy), {
+    origin: checked.origin,
+    path: checked.path,
+    userAgent,
+    logger,
+    clock,
+    limits: pingTransportLimits,
   });
 }

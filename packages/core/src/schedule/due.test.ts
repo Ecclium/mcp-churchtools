@@ -178,6 +178,36 @@ describe('checkDue', () => {
     });
   });
 
+  // An hourly routine gets two tries per trigger: its third would begin
+  // two windows after the second, at the next trigger, which takes over.
+  // The ping of the runner relies on this (ADR 0009).
+  it('gives an hourly trigger no third try, as its next trigger comes first', async () => {
+    const trigger = at('2026-11-09T05:00:00Z');
+    const clock = movable(trigger);
+    const options = optionsFor(clock, createMemoryQuotaStore(), {
+      schedule: '0 * * * *',
+    });
+    const start = async (): Promise<unknown> => {
+      const check = await checkDue(options);
+      if (check.status !== 'due') return check;
+      return startAttempt({ ...options, trigger: check.trigger });
+    };
+    await expect(start()).resolves.toEqual({ ok: true, attempt: 1 });
+    clock.set(trigger + minutes(30));
+    await expect(start()).resolves.toEqual({ ok: true, attempt: 2 });
+    clock.set(trigger + minutes(59));
+    await expect(checkDue(options)).resolves.toMatchObject({
+      status: 'waiting',
+      trigger: { at: trigger },
+      next: trigger + minutes(60),
+    });
+    clock.set(trigger + minutes(60));
+    await expect(checkDue(options)).resolves.toMatchObject({
+      status: 'due',
+      trigger: { at: trigger + minutes(60) },
+    });
+  });
+
   it('lets a try begin when the memory names tries but no window near now', async () => {
     const clock = movable(monday + minutes(5));
     const store = createMemoryQuotaStore();

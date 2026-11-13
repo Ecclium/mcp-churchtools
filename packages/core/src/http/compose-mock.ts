@@ -6,22 +6,30 @@
  * dispatcher answers from interceptors instead of a server. The MockAgent
  * is built here, refuses every connection to the network and never leaves
  * this module, so no caller can switch the network back on. The same holds
- * for the transport to the endpoint of a model (ADR 0033).
+ * for the transport to the endpoint of a model (ADR 0033) and for the
+ * transport to the ping of the runner (ADR 0009).
  *
  * @packageDocumentation
  */
 import type { Clock, Logger } from '@ecclium/mcp-churchtools-plugin-api';
 import { MockAgent, type MockCallHistory, type MockPool } from 'undici';
 
-import { parseChurchToolsOrigin, parseModelEndpoint } from './origin.js';
+import {
+  parseChurchToolsOrigin,
+  parseModelEndpoint,
+  parsePingUrl,
+} from './origin.js';
 import { revealSecret, type Secret } from './secret.js';
 import {
   createModelTransport,
+  createPingTransport,
   createTransport,
   type HttpTransport,
   isUserAgent,
   modelTransportLimits,
   type ModelTransport,
+  pingTransportLimits,
+  type PingTransport,
   transportLimits,
 } from './transport.js';
 
@@ -31,6 +39,9 @@ export type {
   HttpTransport,
   HttpWriteOptions,
   ModelTransport,
+  PingKind,
+  PingOptions,
+  PingTransport,
 } from './transport.js';
 
 /** What a mocked transport is built from. */
@@ -251,6 +262,71 @@ export function createMockedModelTransport(
       logger,
       clock,
       limits: modelTransportLimits,
+    }),
+    ...mock.steering,
+  });
+}
+
+/** What a mocked transport to the ping is built from (ADR 0009). */
+export interface MockedPingTransportOptions {
+  /** The address of the ping, a Secret as the configuration holds it. */
+  readonly url: Secret;
+  /** The User-Agent the transport sends. */
+  readonly userAgent: string;
+  /** The logger of the transport. */
+  readonly logger: Logger;
+  /** The clock for the duration in the log. */
+  readonly clock: Clock;
+}
+
+/** A transport to the ping on a MockAgent and the means to steer and read it. */
+export interface MockedPingTransport extends Omit<
+  MockedHttpTransport,
+  'transport'
+> {
+  /** The transport, as the code under test gets it. */
+  readonly transport: PingTransport;
+}
+
+/**
+ * Builds a transport to the ping of the runner on a MockAgent that
+ * refuses every connection to the network, with the limits of a ping.
+ *
+ * @param options - Address, User-Agent, logger and clock.
+ * @returns The transport and the means to steer and read its MockAgent.
+ * @throws {TypeError} When the address is not a Secret or not a canonical
+ *   https address with a path, or the User-Agent is not printable ASCII.
+ * @example
+ * ```ts
+ * const mocked = createMockedPingTransport({
+ *   url,
+ *   userAgent: 'Ecclium/0.0.0-test',
+ *   logger,
+ *   clock,
+ * });
+ * mocked.intercept({ path: '/ping/check', method: 'POST' }).reply(200, 'OK');
+ * ```
+ */
+export function createMockedPingTransport(
+  options: MockedPingTransportOptions,
+): MockedPingTransport {
+  const { url, userAgent, logger, clock } = options;
+  const checked = parsePingUrl(revealSecret(url));
+  if (!checked.ok) {
+    throw new TypeError('The address of a ping must be canonical.');
+  }
+  if (!isUserAgent(userAgent)) {
+    throw new TypeError('The User-Agent of a transport must be printable.');
+  }
+  const mock = mockAgentFor(checked.origin);
+  return Object.freeze({
+    transport: createPingTransport(mock.agent, {
+      origin: checked.origin,
+      path: checked.path,
+      userAgent,
+      logger,
+      clock,
+      limits: pingTransportLimits,
     }),
     ...mock.steering,
   });

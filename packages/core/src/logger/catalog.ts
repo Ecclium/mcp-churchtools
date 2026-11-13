@@ -382,11 +382,13 @@ export const logEvents = Object.freeze({
   churchtools_operation_input_refused: entry('warn', 'code'),
   churchtools_operation_too_large: entry('warn', 'code'),
   // The outbound path (ADR 0056), with the method of each request (ADR 0072)
-  // and, for a request to a model, its purpose (ADR 0033).
+  // and, for a request to a model or the ping of the runner, its purpose
+  // (ADR 0033, ADR 0009). A failure for a status the purpose does not read
+  // names the status.
   http_response: entry('info', 'durationMs', 'method', 'purpose', 'status'),
   ...family(
     httpFailureEvents,
-    entry('warn', 'code', 'durationMs', 'method', 'purpose'),
+    entry('warn', 'code', 'durationMs', 'method', 'purpose', 'status'),
   ),
   // The sink of the audit and the audit file (ADR 0028).
   ...family(auditSinkEvents, entry('error', 'code', 'count')),

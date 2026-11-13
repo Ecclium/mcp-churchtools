@@ -543,6 +543,19 @@ const asRunner = (
     options.folders ?? memoryFolder().fs,
   );
 
+const pingPath = '/path/to/ping-url';
+// The path of a ping works like a secret (ADR 0009), so it is made at run
+// time and never shows up in a report.
+const pingCheck = `check-${createHash('sha256').update('ping').digest('hex').slice(0, 24)}`;
+const pingAddress = `https://ping.example/ping/${pingCheck}`;
+
+/** A runner with the file of the ping, as given. */
+const withPing = (file: TokenFileSystem, extra: Environment = {}) =>
+  asRunner({
+    extra: { ECCLIUM_RUNNER_PING_URL_FILE: pingPath, ...extra },
+    files: { [pingPath]: file },
+  });
+
 /** The options of the start alone, with a good configuration. */
 const started = (execArgv: readonly string[]): ConfigResult =>
   load(valid(), 'stdio', memoryFiles().fs, execArgv);
@@ -679,6 +692,12 @@ describe('loadConfig with a good configuration', () => {
       ['draftsDir', 'ECCLIUM_DRAFTS_DIR', 'unset', { kind: 'none' }],
       ['notifyFile', 'ECCLIUM_NOTIFY_FILE', 'unset', { kind: 'none' }],
       ['metricsFile', 'ECCLIUM_RUNNER_METRICS_FILE', 'unset', { kind: 'none' }],
+      [
+        'runnerPingUrl',
+        'ECCLIUM_RUNNER_PING_URL_FILE',
+        'unset',
+        { kind: 'none' },
+      ],
       ['egressProxy', 'ECCLIUM_EGRESS_PROXY', 'unset', { kind: 'none' }],
       ['egress', 'ECCLIUM_EGRESS', 'unset', { kind: 'none' }],
       [
@@ -4056,6 +4075,51 @@ describe('loadConfig and its problems', () => {
       withProviders(providersYaml.replace('CH', 'US')),
     providers_transfer_basis_needless: () =>
       withProviders(`${providersYaml}    transferBasis: adequacy_decision\n`),
+    // The file of the ping of the runner (ADR 0009). A server checks only
+    // that the path is absolute.
+    ping_url_file_relative: () =>
+      load({ ...valid(), ECCLIUM_RUNNER_PING_URL_FILE: 'ping-url' }),
+    // Only the file of the ping, which the runner reads last, meets a
+    // platform without the ID of the user.
+    ping_url_file_platform: () => {
+      const files = pathFiles({
+        [policyPath]: memoryFiles(runnerPolicy()).fs,
+        [ownTokenPath]: memoryFiles().fs,
+      });
+      const opened: string[] = [];
+      return load(
+        runnerEnv({ ECCLIUM_RUNNER_PING_URL_FILE: pingPath }),
+        'runner',
+        {
+          ...files,
+          openSync: (path, flags) => {
+            opened.push(path);
+            return files.openSync(path, flags);
+          },
+          getuid: () => (opened.includes(ownTokenPath) ? undefined : 1000),
+        },
+        undefined,
+        memoryFolder().fs,
+      );
+    },
+    ping_url_file_missing: () => withPing(failingOpen('ENOENT')),
+    ping_url_file_symlink: () => withPing(failingOpen('ELOOP')),
+    ping_url_file_unreadable: () => withPing(failingOpen('EACCES')),
+    ping_url_file_not_regular: () =>
+      withPing(memoryFiles(pingAddress, { stats: { isFile: false } }).fs),
+    ping_url_file_owner: () =>
+      withPing(memoryFiles(pingAddress, { stats: { uid: 0 } }).fs),
+    ping_url_file_mode: () =>
+      withPing(memoryFiles(pingAddress, { stats: { mode: 0o100644 } }).fs),
+    ping_url_file_too_large: () => withPing(memoryFiles('a'.repeat(5000)).fs),
+    ping_url_file_empty: () => withPing(memoryFiles('\n').fs),
+    ping_url_file_bom: () =>
+      withPing(memoryFiles(`\xef\xbb\xbf${pingAddress}\n`).fs),
+    ping_url_file_characters: () =>
+      withPing(memoryFiles(`${pingAddress} x\n`).fs),
+    ping_url_file_unsafe: () => withPing(failingOpen('ENOTDIR')),
+    ping_url_invalid: () =>
+      withPing(memoryFiles(pingAddress.replace('https:', 'http:')).fs),
     marker_key_file_relative: () =>
       load({ ...valid(), ECCLIUM_MARKER_KEY_FILE: 'marker-key' }),
     // The token comes from the environment, so that only the key file meets
@@ -4853,5 +4917,97 @@ describe('loadConfig and the proxy of outbound connections (ADR 0035)', () => {
       load({ ...valid(), NODE_OPTIONS: '--use_env_proxy' }).report.warnings,
     ).toEqual(['environment_proxy_ignored']);
     expect(load({ ...valid(), all_proxy: '' }).report.warnings).toEqual([]);
+  });
+});
+
+describe('loadConfig and the ping of the runner (ADR 0009)', () => {
+  it('reads the address for the runner, keeps it as a secret and shows host and port', () => {
+    const result = withPing(memoryFiles(`${pingAddress}\n`).fs);
+    expect(problems(result)).toEqual([]);
+    const url = result.ok ? result.config.runnerPingUrl : undefined;
+    expect(url).toBeInstanceOf(Secret);
+    expect(String(url)).toBe('[REDACTED]');
+    expect(setting(result, 'runnerPingUrl')).toEqual({
+      key: 'runnerPingUrl',
+      variable: 'ECCLIUM_RUNNER_PING_URL_FILE',
+      origin: 'file',
+      shown: { kind: 'origin', host: 'ping.example', port: '' },
+    });
+    expect(JSON.stringify(result)).not.toContain(pingCheck);
+    expect(inspect(result, { depth: 10 })).not.toContain(pingCheck);
+  });
+
+  it('shows a port that is not the default', () => {
+    const result = withPing(
+      memoryFiles(pingAddress.replace('ping.example', 'ping.example:8443')).fs,
+    );
+    expect(setting(result, 'runnerPingUrl')?.shown).toEqual({
+      kind: 'origin',
+      host: 'ping.example',
+      port: '8443',
+    });
+  });
+
+  it('never reads the file for a server, which checks the form of the path', () => {
+    for (const transport of ['stdio', 'http'] as const) {
+      const file = memoryFiles(pingAddress);
+      const result = load(
+        { ...valid(), ECCLIUM_RUNNER_PING_URL_FILE: pingPath },
+        transport,
+        pathFiles({ [tokenPath]: memoryFiles().fs, [pingPath]: file.fs }),
+      );
+      expect(problems(result), transport).toEqual([]);
+      expect(file.opened, transport).toEqual([]);
+      expect(result.ok && result.config.runnerPingUrl).toBeUndefined();
+      expect(setting(result, 'runnerPingUrl')).toMatchObject({
+        origin: 'environment',
+        shown: { kind: 'hidden' },
+      });
+    }
+  });
+
+  it('has no address without the variable', () => {
+    const result = asRunner();
+    expect(result.ok && result.config.runnerPingUrl).toBeUndefined();
+    expect(setting(result, 'runnerPingUrl')).toMatchObject({
+      origin: 'unset',
+      shown: { kind: 'none' },
+    });
+  });
+
+  it('refuses an empty value and names no file', () => {
+    const result = withPing(memoryFiles(pingAddress).fs, {
+      ECCLIUM_RUNNER_PING_URL_FILE: '',
+    });
+    expect(problems(result)).toEqual([
+      ['empty_value', 'ECCLIUM_RUNNER_PING_URL_FILE'],
+    ]);
+    expect(setting(result, 'runnerPingUrl')?.origin).toBe('invalid');
+  });
+
+  it('keeps the file of the notices off the file of the ping, which a line would break', () => {
+    const result = withPing(memoryFiles(pingAddress).fs, {
+      ECCLIUM_NOTIFY_FILE: pingPath,
+    });
+    expect(problems(result)).toEqual([
+      ['notify_file_overlap', 'ECCLIUM_NOTIFY_FILE'],
+    ]);
+  });
+
+  it('keeps the metrics file off the file of the ping, which it would replace', () => {
+    const result = withPing(memoryFiles(pingAddress).fs, {
+      ECCLIUM_RUNNER_METRICS_FILE: pingPath,
+    });
+    expect(problems(result)).toEqual([
+      ['metrics_file_overlap', 'ECCLIUM_RUNNER_METRICS_FILE'],
+    ]);
+  });
+
+  it('names no part of a refused address', () => {
+    const result = withPing(memoryFiles(`${pingAddress}?key=${pingCheck}`).fs);
+    expect(problems(result)).toEqual([
+      ['ping_url_invalid', 'ECCLIUM_RUNNER_PING_URL_FILE'],
+    ]);
+    expect(JSON.stringify(result)).not.toContain(pingCheck);
   });
 });

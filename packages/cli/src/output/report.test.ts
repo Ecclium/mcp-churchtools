@@ -164,6 +164,10 @@ describe('renderConfigReport', () => {
         'keine Metrikdatei (‹ECCLIUM_RUNNER_METRICS_FILE› ist nicht gesetzt)',
       ),
       row(
+        'Ping-URL',
+        'kein Ping (‹ECCLIUM_RUNNER_PING_URL_FILE› ist nicht gesetzt)',
+      ),
+      row(
         'Proxy nach aussen',
         'kein Proxy (‹ECCLIUM_EGRESS_PROXY› ist nicht gesetzt)',
       ),
@@ -949,6 +953,51 @@ describe('renderConfigReport and the policy', () => {
       ).toContain(row(label, `‹${path}› (aus ‹${variable}›)`));
     },
   );
+
+  // The ping of the runner shows host and port of its address, never its
+  // path, which works like a secret (ADR 0009); the host only on request.
+  it('masks the host of the ping and shows a port other than 443', () => {
+    const withPing: ConfigReport = {
+      ...report,
+      transport: 'runner',
+      settings: report.settings.map((setting) =>
+        setting.key === 'runnerPingUrl'
+          ? {
+              ...setting,
+              origin: 'file',
+              shown: { kind: 'origin', host: 'ping.example', port: '8443' },
+            }
+          : setting,
+      ),
+    };
+    const masked = renderConfigReport(withPing, {
+      valid: true,
+      showValues: false,
+      withoutEnding: true,
+    });
+    expect(masked).toContain(
+      row(
+        'Ping-URL',
+        'https://[verborgen]:8443 (aus der Datei in ‹ECCLIUM_RUNNER_PING_URL_FILE›, Eigentümer und Dateirechte geprüft)',
+      ),
+    );
+    expect(masked.find((line) => line.startsWith('Verborgen'))).toBe(
+      'Verborgen sind der Host und der Host der Ping-URL, damit Sie die Ausgabe ohne Bearbeitung weitergeben können. Mit ‹--show-values› zeigt der Befehl beide.',
+    );
+    expect(masked.join('\n')).not.toContain('ping.example');
+    expect(
+      renderConfigReport(withPing, {
+        valid: true,
+        showValues: true,
+        withoutEnding: true,
+      }),
+    ).toContain(
+      row(
+        'Ping-URL',
+        'https://ping.example:8443 (aus der Datei in ‹ECCLIUM_RUNNER_PING_URL_FILE›, Eigentümer und Dateirechte geprüft)',
+      ),
+    );
+  });
 
   it('masks the path of the file of the providers and lists each provider, the host only on request', () => {
     const withFile: ConfigReport = {

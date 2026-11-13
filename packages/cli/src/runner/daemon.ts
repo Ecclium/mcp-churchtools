@@ -160,6 +160,9 @@ export async function runDaemon(
     ...(options.readModelKey === undefined
       ? {}
       : { readModelKey: options.readModelKey }),
+    ...(options.createPingTransport === undefined
+      ? {}
+      : { createPingTransport: options.createPingTransport }),
     ...(options.clock === undefined ? {} : { clock: options.clock }),
   });
   if (!opened.ok) return opened.code;
@@ -198,6 +201,9 @@ export async function runDaemon(
       if (after.metrics === false) {
         output.stderr(runnerProcessTexts.metrics_failed);
       }
+      // The ping of the pass, also before an end for halted writes, which
+      // it reports as a failure (ADR 0009).
+      await runner.ping(pass.routines, refused.length, watch.signal);
       if (stopped()) break;
       // After a line of the audit that did not reach the file the process
       // writes nothing until a restart (ADR 0029).

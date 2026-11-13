@@ -75,6 +75,7 @@ const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
   draftsDir: 'Ordner der Entwürfe',
   notifyFile: 'Datei der Meldungen',
   metricsFile: 'Metrikdatei',
+  runnerPingUrl: 'Ping-URL',
   egressProxy: 'Proxy nach aussen',
   egress: 'Grenze im Netz',
   stdioSubject: 'Subjekt über stdio',
@@ -108,7 +109,8 @@ type Hidden =
   | 'tokens'
   | 'drafts'
   | 'notices'
-  | 'metrics';
+  | 'metrics'
+  | 'ping';
 
 interface Value {
   readonly text: string;
@@ -136,8 +138,9 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
   }
   // Only the folders of state, of keys, of the routines, of the tokens of
   // the runner and of the drafts, the files of the providers, of the
-  // notices and of the metrics, the key files, the zone, the proxy and the
-  // switch for a runner without it may stay unset without a default.
+  // notices, of the metrics and of the ping, the key files, the zone, the
+  // proxy and the switch for a runner without it may stay unset without a
+  // default.
   if (setting.origin === 'unset') {
     switch (setting.key) {
       case 'timeZone':
@@ -164,6 +167,8 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
         return { text: 'keine Meldungen als Datei' };
       case 'metricsFile':
         return { text: 'keine Metrikdatei' };
+      case 'runnerPingUrl':
+        return { text: 'kein Ping' };
       case 'egressProxy':
         return { text: 'kein Proxy' };
       case 'egress':
@@ -193,11 +198,16 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
     case 'integer':
       return { text: formatNumber(shown.value) };
     case 'origin': {
-      // A port other than 443 stays visible: it names no instance.
+      // A port other than 443 stays visible: it names no instance. The
+      // address of the ping shows no path, which works like a secret
+      // (ADR 0009), and its host is masked like that of ChurchTools.
       const port = shown.port === '' ? '' : `:${shown.port}`;
       return showValues
         ? { text: `https://${shown.host}${port}` }
-        : { text: `https://${masked}${port}`, hides: 'host' };
+        : {
+            text: `https://${masked}${port}`,
+            hides: setting.key === 'runnerPingUrl' ? 'ping' : 'host',
+          };
     }
     case 'proxy':
       // The host of the proxy can name a machine of the network; the port
@@ -271,6 +281,7 @@ const hiddenNames: Readonly<Record<Hidden, readonly [string, string]>> =
     drafts: ['der Ordner der Entwürfe', 'ihn'],
     notices: ['der Pfad der Datei der Meldungen', 'ihn'],
     metrics: ['der Pfad der Metrikdatei', 'ihn'],
+    ping: ['der Host der Ping-URL', 'ihn'],
   });
 
 const maskedNote = (hidden: readonly Hidden[]): string => {
@@ -417,6 +428,7 @@ export function renderConfigReport(
             'drafts',
             'notices',
             'metrics',
+            'ping',
           ] as const
         ).filter((entry) => hidden.has(entry)),
       ),

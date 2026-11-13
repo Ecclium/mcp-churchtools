@@ -7,8 +7,10 @@
  * the routines, the halt of writes and the deletion past the retention.
  * Per pass: the models with their keys, read anew, so that a new key takes
  * effect with the next pass, and built only when a run needs one, so that
- * a pass over routines that are not due reads no key; and the ports.
- * Tokens are read anew for every run by its pipeline.
+ * a pass over routines that are not due reads no key; the ports; and
+ * after the pass the ping to the monitoring, with a transport of its own
+ * that is gone again before the next look (ADR 0009). Tokens are read
+ * anew for every run by its pipeline.
  *
  * Where it stands: the composition root of the runner. The commands
  * around it say on stderr what became of each routine and end the
@@ -39,14 +41,18 @@ import {
   systemClock,
   writesHalted,
 } from '@ecclium/mcp-churchtools-core/composition';
-import type {
-  HttpTransport,
-  HttpTransportOptions,
+import {
+  createPingHttpTransport,
+  type HttpTransport,
+  type HttpTransportOptions,
+  type PingHttpTransportOptions,
+  type PingTransport,
 } from '@ecclium/mcp-churchtools-core/http';
 import type { Clock, Logger } from '@ecclium/mcp-churchtools-plugin-api';
 import {
   type MetricsChainHead,
   type PassReport,
+  pingOf,
   previewRoutine,
   type PreviewReport,
   type RoutineReport,
@@ -62,6 +68,7 @@ import {
   createRetentionSweep,
 } from '../compose/retention.js';
 import { keepsSnapshots } from '../compose/snapshots.js';
+import { userAgent } from '../version.js';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
 import {
   auditFileMessage,
@@ -103,6 +110,10 @@ export interface RunnerProcessOptions {
   readonly readModelKey?: Parameters<
     typeof composeModelProviders
   >[0]['readKey'];
+  /** Replaces the transport to the ping of the runner (ADR 0009). */
+  readonly createPingTransport?: (
+    options: PingHttpTransportOptions,
+  ) => PingTransport;
   /** Replaces the clock. */
   readonly clock?: Clock;
 }
@@ -169,6 +180,24 @@ export interface RunnerProcess {
    *   metrics file took them.
    */
   after(reports: readonly RoutineReport[], looks: boolean): Promise<PassAfter>;
+  /**
+   * After a pass: the ping to the address of `ECCLIUM_RUNNER_PING_URL_FILE`
+   * (ADR 0009), a success or to `/fail` as `pingOf` decides, nothing for a
+   * pass in which nothing was due, without an address or after a signal.
+   * A ping that fails leaves the lines of its transport in the log and
+   * changes no run and no exit code.
+   *
+   * @param reports - What became of the routines of the pass.
+   * @param refused - How many routines of the runner do not start; 0 for
+   *   a run by hand.
+   * @param signal - The signal of the process, which aborts the ping.
+   * @returns When the ping is sent or given up. It never rejects.
+   */
+  ping(
+    reports: readonly RoutineReport[],
+    refused: number,
+    signal: AbortSignal,
+  ): Promise<void>;
   /** Whether the halt of writes of the process holds (ADR 0029). */
   writesHalted(): boolean;
   /** Closes the audit file with the anchor of its chain. Never throws. */
@@ -558,6 +587,43 @@ export function openRunnerProcess(
           process.pid,
         );
         return Object.freeze({ next, metrics });
+      },
+      ping: async (
+        reports: readonly RoutineReport[],
+        refusedCount: number,
+        signal: AbortSignal,
+      ): Promise<void> => {
+        const url = config.runnerPingUrl;
+        // After a signal the process ends without waiting for a ping.
+        if (url === undefined || signal.aborted) return;
+        let transport: PingTransport | undefined;
+        try {
+          const kind = pingOf(reports, {
+            refused: refusedCount,
+            halted: writesHalted(writeHalt),
+          });
+          if (kind === undefined) return;
+          // With the logger of the transports to a model, bound to the
+          // tenant at the level of the configuration, and through the
+          // proxy of every transport (ADR 0035).
+          transport = (options.createPingTransport ?? createPingHttpTransport)({
+            url,
+            userAgent,
+            logger: modelLogger,
+            clock,
+            proxy: config.egressProxy,
+          });
+          await transport.ping(kind, { signal });
+        } catch {
+          // A failure of the transport has its line in the log; the error
+          // itself is never looked at, and a ping that fails changes no
+          // run and no exit code (ADR 0009).
+        } finally {
+          // Destroyed, not closed: no connection may keep `ecclium
+          // run-once` alive, and closing would wait for a tunnel the
+          // proxy holds.
+          await transport?.destroy().catch(() => undefined);
+        }
       },
       writesHalted: () => writesHalted(writeHalt),
       close: () => {

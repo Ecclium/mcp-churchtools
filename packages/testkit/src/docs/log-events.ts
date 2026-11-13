@@ -77,16 +77,17 @@ export const logFieldMeanings: Readonly<
   method: {
     setBy: 'Aufruf',
     meaning:
-      'Methode einer Anfrage an ChurchTools: `GET` liest, `POST`, `PUT`, `PATCH` und `DELETE` schreiben. Eine Anfrage an ein Modell ist immer `POST`.',
+      'Methode einer Anfrage an ChurchTools: `GET` liest, `POST`, `PUT`, `PATCH` und `DELETE` schreiben. Eine Anfrage an ein Modell und der Ping des Runners sind immer `POST`.',
   },
   purpose: {
     setBy: 'Aufruf',
     meaning:
-      'Zweck einer Anfrage, heute nur `model` für eine Anfrage an ein Sprachmodell. Anfragen an ChurchTools tragen das Feld nicht.',
+      'Zweck einer Anfrage: `model` für eine Anfrage an ein Sprachmodell, `ping` für den Ping des Runners an eine Überwachung ([ADR 0009](adr/0009-positivliste-ausgehend.md)). Anfragen an ChurchTools tragen das Feld nicht.',
   },
   status: {
     setBy: 'Aufruf',
-    meaning: 'Status einer Antwort von ChurchTools, 100 bis 599.',
+    meaning:
+      'Status einer Antwort von ChurchTools, einem Modell oder dem Dienst des Pings, 100 bis 599.',
   },
   attempt: {
     setBy: 'Aufruf',
@@ -154,9 +155,9 @@ const httpFailures: Readonly<Record<string, string>> = Object.freeze({
   refused:
     'Der ausgehende Weg hat das Ziel einer Anfrage abgewiesen, bevor er etwas sendete. Das ist ein Fehler im Code, nie im Netz.',
   connect:
-    'Es kam keine Verbindung zu ChurchTools oder zum Anbieter des Modells zustande.',
+    'Es kam keine Verbindung zu ChurchTools, zum Anbieter des Modells oder zum Dienst des Pings zustande.',
   proxy:
-    'Der Proxy aus `ECCLIUM_EGRESS_PROXY` hat den Tunnel zu ChurchTools oder zum Anbieter des Modells abgewiesen oder vor seiner Antwort abgebrochen, meist weil das Ziel nicht auf seiner Liste steht ([ADR 0035](adr/0035-proxy-und-grenze-im-netz.md)).',
+    'Der Proxy aus `ECCLIUM_EGRESS_PROXY` hat den Tunnel zu ChurchTools, zum Anbieter des Modells oder zum Dienst des Pings abgewiesen oder vor seiner Antwort abgebrochen, meist weil das Ziel nicht auf seiner Liste steht ([ADR 0035](adr/0035-proxy-und-grenze-im-netz.md)).',
   tls: 'Die gesicherte Verbindung kam nicht zustande, etwa wegen des Zertifikats.',
   timeout: 'Die Anfrage dauerte länger als ihre Grenze.',
   aborted:
@@ -164,11 +165,11 @@ const httpFailures: Readonly<Record<string, string>> = Object.freeze({
   interrupted: 'Die Verbindung brach ab, bevor die Antwort ganz da war.',
   too_large: 'Die Antwort war grösser als die Grenze ihrer Operation.',
   redirect:
-    'ChurchTools oder der Anbieter des Modells hat auf eine andere Adresse verwiesen. Der ausgehende Weg folgt keinem Verweis.',
+    'ChurchTools, der Anbieter des Modells oder der Dienst des Pings hat auf eine andere Adresse verwiesen. Der ausgehende Weg folgt keinem Verweis.',
   encoding:
     'Die Antwort hatte eine Kodierung, die der ausgehende Weg nicht annimmt.',
   status:
-    'Die Antwort hatte einen Status, den der ausgehende Weg nicht annimmt.',
+    'Die Antwort hatte einen Status, den der ausgehende Weg nicht annimmt, beim Ping des Runners jeden ausser 2xx und 3xx. `status` nennt ihn.',
   failed: 'Die Anfrage scheiterte aus einem anderen Grund im Netz.',
 });
 
@@ -402,7 +403,7 @@ export const logEventMeanings: Readonly<Record<string, string>> = Object.freeze(
     churchtools_operation_too_large:
       'Die Antwort auf eine Operation war grösser als ihre Grenze.',
     http_response:
-      'ChurchTools oder der Anbieter des Modells hat geantwortet. `method` nennt die Methode der Anfrage, `status` den Status, `durationMs` die Dauer, `purpose` steht nur bei einer Anfrage an ein Modell.',
+      'ChurchTools, der Anbieter des Modells oder der Dienst des Pings hat geantwortet. `method` nennt die Methode der Anfrage, `status` den Status, `durationMs` die Dauer, `purpose` steht nur bei einer Anfrage an ein Modell oder beim Ping des Runners. Die Adresse nennt keine Zeile.',
     audit_missing_error_code:
       'Eine Zeile mit `error` oder `denied` kam ohne Fehlercode. Die Zeile im Audit trägt einen Platzhalter.',
     audit_missing_undoes:
@@ -491,7 +492,7 @@ const familyMeaning = (name: string): string | undefined => {
   if (name.startsWith('http_')) {
     const category = name.slice('http_'.length);
     if (Object.hasOwn(httpFailures, category)) {
-      return `${httpFailures[category] ?? ''} \`code\` nennt den Fehler, \`durationMs\` die Dauer bis dahin, \`method\` die Methode der Anfrage, \`purpose\` steht nur bei einer Anfrage an ein Modell.`;
+      return `${httpFailures[category] ?? ''} \`code\` nennt den Fehler, \`durationMs\` die Dauer bis dahin, \`method\` die Methode der Anfrage, \`purpose\` steht nur bei einer Anfrage an ein Modell oder beim Ping des Runners.`;
     }
   }
   if (name.startsWith('audit_invalid_')) {
