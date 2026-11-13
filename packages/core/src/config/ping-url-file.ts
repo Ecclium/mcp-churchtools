@@ -75,6 +75,11 @@ export interface PingUrl {
   readonly host: string;
   /** Its port, or empty for the default port 443. */
   readonly port: string;
+  /**
+   * The origin of the address, `https://host` or `https://host:port`, no
+   * secret: the list of the proxy names it (ADR 0035), never the path.
+   */
+  readonly origin: string;
 }
 
 /** The address, or the reason to refuse the file. */
@@ -92,7 +97,12 @@ const wrap = (value: string): PingUrl => {
   const url = new Secret(value);
   // The checked origin is https://host or https://host:port.
   const port = checked.origin.slice(`https://${checked.host}`.length + 1);
-  return Object.freeze({ url, host: checked.host, port });
+  return Object.freeze({
+    url,
+    host: checked.host,
+    port,
+    origin: checked.origin,
+  });
 };
 
 /**

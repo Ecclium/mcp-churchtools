@@ -25,8 +25,9 @@ import { environmentSchema } from '../packages/core/src/config/variables.ts';
 // that adds pages and sections to the wiki needs (ADR 0032), and the
 // folders of the routines and of the drafts and the files of the providers
 // and of the notices and the metrics file, which only the runner needs, and
-// the folder of its tokens (ADR 0033), and the proxy and the switch for a
-// runner without it, which have no default (ADR 0035). The zone
+// the folder of its tokens (ADR 0033), and the proxy, the switch for a
+// runner without it and the targets in the local network, which have no
+// default (ADR 0035). The zone
 // of the texts has no default either: a copied zone that is not the one of
 // the installation would refuse the wrong times as whole days.
 
@@ -47,6 +48,7 @@ const commentedOnly: readonly string[] = [
   'ECCLIUM_RUNNER_PING_URL_FILE',
   'ECCLIUM_EGRESS_PROXY',
   'ECCLIUM_EGRESS',
+  'ECCLIUM_EGRESS_ALLOW_LAN',
 ];
 
 const text = readFileSync(new URL('../.env.example', import.meta.url), 'utf8');

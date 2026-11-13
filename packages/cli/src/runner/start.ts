@@ -81,9 +81,11 @@ export type RunnerStartProblem =
   | { readonly kind: 'routine_unknown' };
 
 // The warnings of the loader that concern the runner: a runner without
-// its proxy and a proxy of the shell that Ecclium does not use (ADR 0035).
-const egressWarnings: readonly ConfigWarningCode[] = Object.freeze([
+// its proxy, targets in the local network without it and a proxy of the
+// shell that Ecclium does not use (ADR 0035).
+export const egressWarnings: readonly ConfigWarningCode[] = Object.freeze([
   'egress_off',
+  'egress_allow_lan_unused',
   'environment_proxy_ignored',
 ]);
 

@@ -175,6 +175,10 @@ describe('renderConfigReport', () => {
         'Grenze im Netz',
         'nicht abgeschaltet (‹ECCLIUM_EGRESS› ist nicht gesetzt)',
       ),
+      row(
+        'Ziele im LAN',
+        'keine (‹ECCLIUM_EGRESS_ALLOW_LAN› ist nicht gesetzt)',
+      ),
       row('Subjekt über stdio', '‹local-stdio› (Voreinstellung)'),
       row('Stufe des Logs', '‹info› (Voreinstellung)'),
       hostNote,
@@ -1118,6 +1122,34 @@ describe('the proxy in the report', () => {
   it('shows a runner without its proxy', () => {
     expect(render({ ...minimal(), ECCLIUM_EGRESS: 'off' })).toContain(
       row('Grenze im Netz', '‹off› (aus ‹ECCLIUM_EGRESS›)'),
+    );
+  });
+
+  // A name of a target can name an instance, its port names none
+  // (ADR 0035).
+  it('masks the names of the targets in the local network unless asked to show them', () => {
+    const environment = {
+      ...minimal(),
+      ECCLIUM_EGRESS_ALLOW_LAN: 'example.church.tools:443',
+    };
+    const lines = render(environment);
+    expect(lines).toContain(
+      row('Ziele im LAN', '[verborgen]:443 (aus ‹ECCLIUM_EGRESS_ALLOW_LAN›)'),
+    );
+    expect(lines.join('\n')).not.toContain('example.church.tools:443');
+    const shown = loadConfig({
+      environment,
+      transport: 'stdio',
+      tokenFiles: goodFile().files,
+      stateDirFiles: folder(),
+    });
+    expect(
+      renderConfigReport(shown.report, { valid: shown.ok, showValues: true }),
+    ).toContain(
+      row(
+        'Ziele im LAN',
+        '‹example.church.tools:443› (aus ‹ECCLIUM_EGRESS_ALLOW_LAN›)',
+      ),
     );
   });
 });

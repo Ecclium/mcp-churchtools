@@ -36,6 +36,7 @@ Die Spalte «Server nur über stdio» sagt, ob der Server die Variable nur im Be
 | `ECCLIUM_RUNNER_PING_URL_FILE` | absoluter Pfad | keine | nein | nein | ja |
 | `ECCLIUM_EGRESS_PROXY` | Adresse wie `http://egress:3128` | keine | nein | nein | ja |
 | `ECCLIUM_EGRESS` | `off` | keine | nein | nein | ja |
+| `ECCLIUM_EGRESS_ALLOW_LAN` | Liste aus Name und Port wie `modell.example.org:8443`, mit Komma getrennt | keine | nein | nein | ja |
 | `ECCLIUM_STDIO_SUBJECT` | Bezeichnung mit höchstens 32 Zeichen | `local-stdio` | nein | ja | nein |
 | `ECCLIUM_LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` | nein | nein | ja |
 
@@ -143,6 +144,10 @@ Der Proxy für alle ausgehenden Verbindungen des Prozesses, als `http://host:por
 
 Nur `off`: Der Runner startet ohne Proxy und damit ohne Grenze im Netz ([ADR 0035](adr/0035-proxy-und-grenze-im-netz.md)). Er warnt dann bei jedem Start, und jede Zeile eines Laufs im Audit trägt den Vermerk `egressOff`. Zusammen mit `ECCLIUM_EGRESS_PROXY` bricht der Start ab. Für den Server und die Befehle ändert die Variable nichts. Nicht gesetzt: Der Runner verlangt `ECCLIUM_EGRESS_PROXY`.
 
+## `ECCLIUM_EGRESS_ALLOW_LAN`
+
+Ziele im lokalen Netz für die Grenze im Netz des Runners, als Liste aus `Name:Port` mit Komma, etwa `modell.example.org:8443` ([ADR 0035](adr/0035-proxy-und-grenze-im-netz.md), `docs/betrieb/egress.md`). Jedes Ziel muss Name und Port der Adresse von ChurchTools oder des Endpunkts eines Anbieters sein, mit ausgeschriebenem Port, auch 443, sonst bricht der Start ab. Wie für jede Adresse der Konfiguration nimmt Ecclium einen Namen mit Punkt in kleinen Buchstaben an, keine IP-Adresse und kein `localhost`. Die Variable wirkt nur über die Liste, die `ecclium init egress` für Squid erzeugt: Dort darf ein solches Ziel einen anderen Port als 443 haben und an einer privaten Adresse liegen, alle anderen Ziele nicht. Loopback, Link-Local und Multicast sperrt die Vorlage auch für sie. Ein Runner mit `ECCLIUM_EGRESS=off` warnt, wenn die Variable gesetzt ist. Nicht gesetzt: Jedes Ziel braucht Port 443 und eine öffentliche Adresse.
+
 ## `ECCLIUM_STDIO_SUBJECT`
 
 Das Subjekt, also eine neutrale Bezeichnung dessen, der den Server über stdio nutzt. Erlaubt sind Kleinbuchstaben, Ziffern und Bindestriche, am Anfang ein Buchstabe. Die Bezeichnung erscheint im Audit als Akteur und darf deshalb kein Personenname sein.
@@ -155,7 +160,6 @@ Legt fest, ab welcher Stufe der Server Zeilen des Logs auf stderr schreibt.
 
 Diese Namen gehören zu späteren Versionen. Ist einer gesetzt, bricht der Start mit einem Hinweis ab, statt die Variable still zu übergehen.
 
-- `ECCLIUM_EGRESS_ALLOW_LAN`
 - `ECCLIUM_ALLOWED_HOSTS`
 
 ## Nicht mehr gültig

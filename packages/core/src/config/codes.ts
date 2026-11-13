@@ -52,6 +52,9 @@ export const configProblemCodes = Object.freeze([
   // without one (ADR 0035).
   'egress_proxy_invalid',
   'egress_off_with_proxy',
+  // The targets in the local network (ADR 0035).
+  'egress_allow_lan_invalid',
+  'egress_allow_lan_unknown',
   'url_missing',
   ...originCodes,
   'token_missing',
@@ -115,6 +118,7 @@ export const configWarningCodes = Object.freeze([
   'audit_retention_without_state_dir',
   'egress_off',
   'environment_proxy_ignored',
+  'egress_allow_lan_unused',
 ] as const);
 
 /** What the start reports although it goes on. */

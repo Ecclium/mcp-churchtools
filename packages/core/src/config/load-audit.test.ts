@@ -135,7 +135,7 @@ describe('loadAuditConfig', () => {
       ECCLIUM_STATE_DIRR: 'x',
       Ecclium_State_Dir: 'x',
       [searchToolsVariableName]: 'x',
-      ECCLIUM_EGRESS_ALLOW_LAN: 'x',
+      ECCLIUM_ALLOWED_HOSTS: 'x',
       'ECCLIUM_odd-name': 'x',
     });
 
@@ -143,7 +143,7 @@ describe('loadAuditConfig', () => {
       ok: false,
       problems: [
         { code: 'miscased_variable', variable: 'ECCLIUM_STATE_DIR' },
-        { code: 'unsupported_variable', variable: 'ECCLIUM_EGRESS_ALLOW_LAN' },
+        { code: 'unsupported_variable', variable: 'ECCLIUM_ALLOWED_HOSTS' },
         { code: 'search_tools_replaced', variable: searchToolsVariableName },
         { code: 'unknown_variable', variable: 'ECCLIUM_STATE_DIRR' },
         { code: 'unknown_variable' },
