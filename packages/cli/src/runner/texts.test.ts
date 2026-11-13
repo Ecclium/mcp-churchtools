@@ -285,7 +285,7 @@ describe('the texts of the runner', () => {
       recorded: true,
     };
     expect(previewReportText(shown)).toBe(
-      `Routine ‹${routineId}›, Periode ‹2026-W46›: Vorschau auf stdout, ohne die Zeile der Kennzeichnung. Geschrieben ist nichts, gezählt ist kein Versuch, aber das Lesen und das Modell haben gekostet.`,
+      `Routine ‹${routineId}›, Periode ‹2026-W46›: Vorschau auf stdout, ohne die Zeile der Kennzeichnung. Geschrieben ist nichts, gezählt ist kein Versuch, aber das Lesen und, wo die Routine eines hat, das Modell haben gekostet.`,
     );
     expect(
       previewReportText({

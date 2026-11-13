@@ -207,7 +207,7 @@ export function previewReportText(report: PreviewReport): string {
           ? ' Die Zeile des Audits erreichte die Audit-Datei nicht.'
           : '';
       if (outcome?.result === 'preview') {
-        return `${routine}${period}: Vorschau auf stdout, ohne die Zeile der Kennzeichnung. Geschrieben ist nichts, gezählt ist kein Versuch, aber das Lesen und das Modell haben gekostet.${lost}`;
+        return `${routine}${period}: Vorschau auf stdout, ohne die Zeile der Kennzeichnung. Geschrieben ist nichts, gezählt ist kein Versuch, aber das Lesen und, wo die Routine eines hat, das Modell haben gekostet.${lost}`;
       }
       return `${routine}${period}: Vorschau gescheitert, Code ${quote(outcome?.code ?? 'internal')}. Geschrieben ist nichts.${lost}`;
     }
