@@ -51,16 +51,18 @@ describe('the audit end of a run', () => {
     expect(Object.isFrozen(end)).toBe(true);
   });
 
-  it.each(['run_calls_exhausted', 'run_items_exhausted', 'run_person_unknown'])(
-    'turns the engine code %s into validation, not refused',
-    (code) => {
-      expect(auditEndOf(failed(code, true, { step: 'input' }))).toEqual({
-        result: 'failed',
-        step: 'input',
-        code: 'validation',
-      });
-    },
-  );
+  it.each([
+    'run_calls_exhausted',
+    'run_items_exhausted',
+    'run_person_unknown',
+    'run_page_date_missing',
+  ])('turns the engine code %s into validation, not refused', (code) => {
+    expect(auditEndOf(failed(code, true, { step: 'input' }))).toEqual({
+      result: 'failed',
+      step: 'input',
+      code: 'validation',
+    });
+  });
 
   it('refuses a breach of the content policy with a frozen copy of its reasons', () => {
     const violations: ContentViolationKind[] = ['webAddress', 'contact'];
@@ -194,6 +196,7 @@ describe('the severity of a run', () => {
     'run_person_unknown',
     'run_calls_exhausted',
     'run_items_exhausted',
+    'run_page_date_missing',
   ])('is data for a final %s', (code) => {
     expect(severityOf(failed(code, true))).toBe('data');
   });

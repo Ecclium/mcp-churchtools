@@ -33,7 +33,7 @@ import { modelKeyText, refusedText, runnerStartTexts } from './texts.js';
 // data are made up.
 
 const validText =
-  'Die Konfiguration des Runners ist gültig. ChurchTools und die Modelle wurden nicht angefragt. Probieren Sie eine Routine mit ‹ecclium run-once <Routine> --preview› aus: Die Vorschau liest und fragt das Modell, schreibt aber nichts.';
+  'Die Konfiguration des Runners ist gültig. ChurchTools und die Modelle wurden nicht angefragt. Probieren Sie eine Routine mit ‹ecclium run-once <Routine> --preview› aus: Die Vorschau liest und fragt das Modell der Routine, falls sie eines hat, schreibt aber nichts.';
 const invalidText =
   'Mit dieser Konfiguration startet der Runner nicht, oder eine Routine startet nicht. ChurchTools wurde nicht angefragt. Beheben Sie die Probleme und prüfen Sie dann erneut mit ‹ecclium config check --runner›.';
 
@@ -53,13 +53,49 @@ const template = [
 interface RoutineOptions {
   readonly target?: 'wiki' | 'draft';
   readonly tool?: string;
+  /** The checks of the core in place of inputs and a model. */
+  readonly checks?: boolean;
 }
+
+const checksTemplate = [
+  '### Pflege {{period}}',
+  '',
+  '{{#stalePages}}',
+  '- {{page}} ({{category}}), {{changed}}',
+  '{{/stalePages}}',
+  '{{#brokenLinks}}',
+  '- {{page}}: {{link}}',
+  '{{/brokenLinks}}',
+  '',
+].join('\n');
 
 // A routine that reads the events with the read tool of the core.
 const routineValueOf = (id: string, options: RoutineOptions = {}) => ({
   schema: 'routine.v1',
   id,
   schedule: '0 6 * * MON',
+  ...(options.checks === true ? checksOf() : modelOf(id, options)),
+  template: `templates/${id}.md`,
+  output:
+    options.target === 'draft'
+      ? { target: 'draft', channel: 'file', idempotencyKey: `${id}:{isoWeek}` }
+      : {
+          target: 'wiki',
+          tool: 'ct_wiki_page_append_section',
+          scope: { category: 'Berichte', page: 'Termine' },
+          idempotencyKey: `${id}:{isoWeek}`,
+        },
+  notify: [{ channel: 'stdout' }],
+});
+
+const checksOf = () => ({
+  checks: [
+    { check: 'stalePages', olderThanDays: 365, maxItems: 20 },
+    { check: 'brokenLinks', maxItems: 20 },
+  ],
+});
+
+const modelOf = (id: string, options: RoutineOptions) => ({
   inputs: [
     {
       name: 'termine',
@@ -83,17 +119,6 @@ const routineValueOf = (id: string, options: RoutineOptions = {}) => ({
       },
     },
   },
-  template: `templates/${id}.md`,
-  output:
-    options.target === 'draft'
-      ? { target: 'draft', channel: 'file', idempotencyKey: `${id}:{isoWeek}` }
-      : {
-          target: 'wiki',
-          tool: 'ct_wiki_page_append_section',
-          scope: { category: 'Berichte', page: 'Termine' },
-          idempotencyKey: `${id}:{isoWeek}`,
-        },
-  notify: [{ channel: 'stdout' }],
 });
 
 const cleanup: string[] = [];
@@ -213,7 +238,10 @@ const setup = (options: SetupOptions = {}) => {
       JSON.stringify(routineValueOf(id, routine)),
     );
     privateFile(join(routinesDir, 'prompts', `${id}.md`), 'Fasse zusammen.\n');
-    privateFile(join(routinesDir, 'templates', `${id}.md`), template);
+    privateFile(
+      join(routinesDir, 'templates', `${id}.md`),
+      routine.checks === true ? checksTemplate : template,
+    );
   }
   const environment: Record<string, string | undefined> = {
     ECCLIUM_CHURCHTOOLS_URL: doubleOrigin,
@@ -323,6 +351,32 @@ describe('ecclium config check --runner', () => {
     expect(stdout).toContain(
       `  - ${refusedText({ routineId: 'kalender-test', code: 'run_tool_unfit', field: 'inputs[0].tool' })}`,
     );
+  });
+
+  it('lists a routine with the checks of the core without a model, a key of the pseudonyms or providers', () => {
+    const { check } = setup({
+      routines: { 'pflege-test': { checks: true } },
+      entries: [
+        {
+          routine: 'pflege-test',
+          credential: 'runner',
+          target: { kind: 'wiki_category', id: 7, name: 'Berichte' },
+          tools: ['ct_wiki_page_append_section'],
+          maxPerRun: 1,
+          maxPerDay: 2,
+        },
+      ],
+      extra: {
+        ECCLIUM_PSEUDONYM_KEY_FILE: undefined,
+        ECCLIUM_PROVIDERS_FILE: undefined,
+      },
+    });
+    const { code, stdout } = check();
+    expect(code).toBe(exitCodes.ok);
+    expect(stdout).toContain(
+      '  - ‹pflege-test›: Zeitplan ‹0 6 * * MON›, Abschnitt im Wiki, Konto ‹runner›, ohne Modell, mit den Prüfungen ‹stalePages› und ‹brokenLinks›',
+    );
+    expect(stdout.at(-1)).toBe(validText);
   });
 
   it('names a routine at the level strict without the key of the pseudonyms', () => {

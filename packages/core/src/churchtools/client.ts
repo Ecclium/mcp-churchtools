@@ -28,6 +28,7 @@ import {
   type BookingList,
   type Calendar,
   type Clock,
+  dateTimePattern,
   EccliumError,
   type EventDetails,
   type EventEntry,
@@ -1129,6 +1130,22 @@ export function createChurchToolsClient(
     return { list: parsed.data, date };
   };
 
+  // The date of the last change of a page in the list, only in the form
+  // of a moment in UTC; any other form gives none, so that the list still
+  // serves and a check that needs the date says it lacks one (ADR 0033).
+  const modifiedDateOf = (meta: unknown): string | null => {
+    if (typeof meta !== 'object' || meta === null || Array.isArray(meta)) {
+      return null;
+    }
+    // An own data property only, never through a getter.
+    const property = Object.getOwnPropertyDescriptor(meta, 'modifiedDate');
+    const value: unknown =
+      property !== undefined && 'value' in property ? property.value : null;
+    return typeof value === 'string' && dateTimePattern.test(value)
+      ? value
+      : null;
+  };
+
   const wikiPages = async (
     ctx: TenantContext,
     categoryId: number,
@@ -1145,6 +1162,7 @@ export function createChurchToolsClient(
             title: entry.title,
             isMarkdown: entry.isMarkdown,
             version: entry.version,
+            modifiedDate: modifiedDateOf(entry.meta),
           }),
         ),
       ),

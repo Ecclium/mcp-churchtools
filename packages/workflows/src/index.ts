@@ -12,6 +12,7 @@
 export {
   checkBlockFields,
   checkRoutine,
+  checkTools,
   draftChannels,
   notifyChannels,
   routineBlocks,
@@ -69,6 +70,15 @@ export {
   type FilledBlocks,
   unnamedPerson,
 } from './run/answer.js';
+export {
+  type CheckContext,
+  type ChecksResult,
+  hiddenTitle,
+  mainPageName,
+  runChecks,
+  type WikiLink,
+  wikiLinksIn,
+} from './run/checks.js';
 export {
   executeRun,
   runLimits,

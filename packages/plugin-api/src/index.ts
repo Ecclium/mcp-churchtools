@@ -173,6 +173,7 @@ export {
   type WikiPage,
   type WikiPageEntry,
   type WikiPageList,
+  type WikiPageListEntry,
   type WikiSearchHit,
   type WikiSearchHits,
 } from './read-api.js';

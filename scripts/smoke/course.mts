@@ -128,6 +128,10 @@ export const courseWords = [
   'module',
   'treffer',
   'mehr',
+  'datum',
+  'alle',
+  'teils',
+  'keines',
   'hinweis',
   'umschlag',
   'anfragen',
@@ -2006,11 +2010,20 @@ export async function runEra(
               (entry: unknown) =>
                 isRecord(entry) &&
                 allOf([seeEnveloped(entry['title'])]) &&
-                sameKeys(entry, ['guid', 'isMarkdown', 'title', 'version']) &&
+                sameKeys(entry, [
+                  'guid',
+                  'isMarkdown',
+                  'modifiedDate',
+                  'title',
+                  'version',
+                ]) &&
                 typeof entry['guid'] === 'string' &&
                 pageGuid.test(entry['guid']) &&
                 typeof entry['isMarkdown'] === 'boolean' &&
-                isId(entry['version']),
+                isId(entry['version']) &&
+                (entry['modifiedDate'] === null ||
+                  (typeof entry['modifiedDate'] === 'string' &&
+                    dateTime.test(entry['modifiedDate']))),
             )
           : [];
         const pagesOk =
@@ -2038,11 +2051,25 @@ export async function runEra(
         } else if (pagesOk) {
           findings.add('keine_wikiseite_gefunden');
         }
+        // Whether every page names the day of its last change, which the
+        // checks of the core for routines need (ADR 0033).
+        const dated = Array.isArray(pages)
+          ? pages.filter(
+              (entry: unknown) =>
+                isRecord(entry) && typeof entry['modifiedDate'] === 'string',
+            ).length
+          : 0;
         results.push({
           tool: 'ct_wiki_pages_list',
           ergebnis: pagesOk ? 'ok' : 'gescheitert',
           treffer: countClass(Array.isArray(pages) ? pages.length : 0),
           mehr: pagesData?.['more'] === true ? 'ja' : 'nein',
+          datum:
+            !Array.isArray(pages) || dated === 0
+              ? 'keines'
+              : dated === pages.length
+                ? 'alle'
+                : 'teils',
         });
       } else {
         withoutData.add('ct_wiki_pages_list');

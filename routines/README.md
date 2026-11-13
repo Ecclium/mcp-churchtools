@@ -4,7 +4,7 @@ Dieser Ordner enthält die Routinen, die Ecclium mitbringt, mit ihren Prompts un
 
 Ordner und Dateien müssen dem Benutzer gehören, unter dem Ecclium läuft, und dürfen für Gruppe und andere nicht beschreibbar sein, etwa mit den Rechten 755 und 644. Ein Checkout gibt Dateien oft andere Rechte, prüfen Sie sie nach dem Kopieren.
 
-Probieren Sie eine Routine zuerst mit `ecclium run-once <Routine> --preview` aus. Die Vorschau zeigt den Abschnitt, ohne zu schreiben, auch bevor die Richtlinie einen Eintrag für die Routine hat. Eine Routine mit Modell fragt dafür schon das Modell und braucht wie jeder Lauf die Schlüsseldatei der Pseudonyme ([Runner](../docs/betrieb/runner.md)).
+Probieren Sie eine Routine zuerst mit `ecclium run-once <Routine> --preview` aus. Die Vorschau zeigt den Abschnitt, ohne zu schreiben, auch bevor die Richtlinie einen Eintrag für die Routine hat. Eine Routine mit Modell fragt dafür schon das Modell und braucht in der Stufe `strict` wie jeder ihrer Läufe die Schlüsseldatei der Pseudonyme ([Runner](../docs/betrieb/runner.md)). `wiki-hygiene` hat kein Modell und braucht weder die Datei der Anbieter noch diesen Schlüssel.
 
 ## dienstplan-report
 
@@ -43,6 +43,40 @@ Was Sie anpassen:
 
 Ohne Eintrag in der Richtlinie liest die Routine mit dem eigenen Konto des Runners, `ct_token_runner`. Es braucht dafür genau «Einzelnen Kalender sehen» (`churchcal: view category`) für die Kalender aus `calendarIds`, nicht das Recht des Moduls `churchcal: view` ([Dienstkonto](../docs/betrieb/dienstkonto.md#rechte)). Nennt der Eintrag von `dienstplan-report` den Alias `runner`, liest der Bericht mit demselben Konto. Das Konto braucht dann die Rechte beider Routinen, und das Recht auf die Kalender gilt für den Bericht nicht als zu weit, solange `termin-vorschau` startet. Startet sie nicht, etwa weil `ECCLIUM_DRAFTS_DIR` fehlt, gilt dieses Recht als zu weit, und der Bericht geht in die Freigabe-Warteschlange, statt geschrieben zu werden.
 
-Fehlt dem Konto das Recht auf den einzigen Kalender aus `calendarIds`, weist ChurchTools die Termine ab, und der Lauf endet mit `permission`, ohne Entwurf. Ob ChurchTools eine Liste mehrerer Kalender ebenso abweist, wenn das Recht nur für einen davon fehlt, oder diesen Kalender still weglässt, ist nicht geprüft. Der Entwurf nennt den Kalender eines Termins nicht. Prüfen Sie deshalb nach jeder Änderung an `calendarIds` oder an den Rechten mit `ecclium run-once termin-vorschau --preview`, dass aus jedem Kalender ein Termin erscheint, den Sie dort kennen.
+Fehlt dem Konto das Recht auf einen der Kalender aus `calendarIds`, weist ChurchTools die ganze Liste ab, nicht nur diesen Kalender, und der Lauf endet mit `permission`, ohne Entwurf. Das zeigte ein Blick von Hand an einer Testinstanz mit einem Konto, dem das Recht auf einen von zwei Kalendern fehlte. Prüfen Sie nach jeder Änderung an `calendarIds` oder an den Rechten mit `ecclium run-once termin-vorschau --preview`, dass der Entwurf entsteht.
 
 Grenzen: Ein Lauf liest höchstens 50 Termine, in zwei Aufrufen zu 25, jedes Datum einer Serie als eigenen Termin. Haben die Kalender in diesen Wochen mehr, sagt das Tool es, und der Prompt bittet das Modell, es unter den Hinweisen zu nennen. Nennen Sie dann weniger Kalender oder kürzen Sie den Zeitraum. Die Aufrufe zählen nicht gegen das Lesebudget, weil das Tool keine Person in einem eigenen Feld nennt.
+
+## wiki-hygiene
+
+Die Routine schreibt am Ersten jedes Monats um 07:00 einen Bericht über die Pflege des Wikis, als eigenen Abschnitt je Monat auf einer Seite des Wikis: welche Seiten seit einem Jahr niemand geändert hat und welche Links auf Seiten des Wikis ihr Ziel nicht finden. Sie hat kein Modell. Zwei feste Prüfungen des Kerns, `stalePages` und `brokenLinks`, lesen das Wiki und füllen den Bericht ([Routinen](../docs/routines.md), «Prüfungen des Kerns»). Sie korrigiert nichts. Ein zweiter Lauf im selben Monat ändert den Abschnitt dieses Monats, er hängt keinen zweiten an.
+
+Was die Prüfungen lesen und melden:
+
+- **Welche Seiten:** jede Seite jeder Kategorie, die das Konto der Routine sieht, auch die des Berichts. Welche Kategorien das sind, bestimmen die Rechte des Kontos, nicht die Routine.
+- **Lange nicht geändert:** Seiten, deren letzte Änderung länger als `olderThanDays` Tage vor der geplanten Auslösung liegt, so dass ein späterer Versuch dieselben Seiten nennt, die ältesten zuerst, mit dem Tag der Änderung in der Zeitzone aus `ECCLIUM_TIME_ZONE`. Fehlt einer Seite in der Liste von ChurchTools das Datum, endet der Lauf mit `run_page_date_missing`, statt zu melden, keine Seite sei alt.
+- **Links ohne Ziel:** Links auf die eigene Instanz in der Form, die die Adresszeile von ChurchTools zeigt: `/wiki/<Kennung der Kategorie>/<Titel>`, `/wiki/<Kennung der Kategorie>/<GUID>`, `/wiki/<Kennung der Kategorie>/main` oder `/wiki/<Kennung der Kategorie>` für die Hauptseite, mit Schema und Host aus `ECCLIUM_CHURCHTOOLS_URL`, auch in anderer Gross- und Kleinschreibung oder ohne Schema, oder als Pfad allein, jeweils nur am Anfang einer Adresse. Ein Satzzeichen am Ende, etwa ein Punkt nach einer Adresse im Fliesstext, stört nicht. ChurchTools findet eine Seite dort über ihren Titel oder ihre GUID ohne Rücksicht auf Gross- und Kleinschreibung, die Prüfung ebenso. Ein Link auf eine Seite, die das Konto nicht sehen darf, erscheint wie ein Link auf eine fehlende Seite, ein Link in eine Kategorie, die es nicht sieht, mit der Kennung der Kategorie. Den Anker oder die Query eines Links prüft sie nicht, nur die Seite. Links auf andere Hosts, mit einem anderen Schema oder Port, auf Dateien und die alte Form mit `?q=churchwiki` prüft sie nicht. Der Bericht nennt das Ziel als Text «Kategorie › Titel», nie als Adresse.
+- **Titel im Bericht:** Jeder Titel und jeder Name einer Kategorie geht für sich durch die ContentPolicy, und noch einmal jeder Wert, wie er im Bericht steht, und jeder Eintrag in seiner Zeile der Vorlage. Was sie abweist, etwa einen Titel mit einer E-Mail-Adresse, ersetzt der Text «(Titel nicht darstellbar)», eine GUID, deren Teile wie eine Telefonnummer aussehen, der Text «(Seite über ihre GUID verlinkt)». So lässt ein einzelner Titel nicht jeden Lauf scheitern.
+
+Was Sie anpassen:
+
+- **Seite:** `output.scope` nennt die Kategorie «Berichte» und die Seite «Wiki-Pflege». Legen Sie Kategorie und Seite in ChurchTools an oder nennen Sie eine bestehende Seite. Ecclium legt keine Seite an.
+- **Wer den Bericht liest:** Der Bericht nennt Titel von Seiten, auch aus Kategorien, die nicht jeder sieht. Wählen Sie eine Kategorie, die nur die Personen sehen, die das Wiki pflegen.
+- **Alter:** `olderThanDays` in `stalePages`, von 30 bis 3'650 Tagen. Ändern Sie dann auch die Überschrift und den Satz für eine leere Liste in der Vorlage.
+- **Länge:** `maxItems` je Prüfung, 1 bis 100, und je Liste höchstens etwa 24 KB Text. Hat eine Prüfung mehr Treffer, nennt der Bericht die ersten in fester Reihenfolge: lange nicht geänderte Seiten die ältesten zuerst, Links nach Kategorie und Titel der Seite, dann nach dem Ziel. Die Vorlage sagt die Grenze, ändern Sie sie dort mit.
+- **Zeit:** `schedule` gilt in der Zeitzone aus `ECCLIUM_TIME_ZONE`.
+- **Richtlinie:** Die Seite braucht einen Eintrag im Teil `unattended` der Richtlinie, sonst startet die Routine nicht. `ecclium policy init --routine wiki-hygiene --credential <Alias>` schlägt ihn vor ([Richtlinie](../docs/policy.md)). Ohne `interactive.inquiriesTo` in der Richtlinie hängt ein Lauf keinen Abschnitt an.
+
+Das Konto der Routine braucht genau diese Rechte ([Dienstkonto](../docs/betrieb/dienstkonto.md#rechte)):
+
+- «"Wiki" sehen» (`churchwiki: view`);
+- `churchwiki: view category` für jede Kategorie, die der Bericht prüfen soll, und für die Kategorie des Berichts;
+- `churchwiki: edit category` nur für die Kategorie des Berichts.
+
+Die Prüfungen lesen in der Stufe `standard`, weil sie ihre Daten keinem Modell geben und die Tools des Wikis keine Person in einem eigenen Feld nennen. In der Stufe `strict` hielte die Maskierung Teile einer GUID in einem Link für eine Telefonnummer. In den Bericht kommen nur Titel und Namen von Kategorien, jeder durch die ContentPolicy.
+
+Grenzen: Ein Lauf liest höchstens 400 Mal: die Kategorien zu 25, je Kategorie die Liste ihrer Seiten zu 25, und für `brokenLinks` jede Seite, eine lange Seite in mehreren Teilen. Das reicht für etwa 350 Seiten. Braucht ein Lauf mehr, endet er mit `run_calls_exhausted`, statt Seiten wegzulassen. Geben Sie dem Konto dann weniger Kategorien oder nehmen Sie `brokenLinks` aus der Routine. Die Aufrufe zählen nicht gegen das Lesebudget.
+
+## Ein Konto für alle drei Routinen
+
+Nennen die Einträge von `dienstplan-report` und `wiki-hygiene` dasselbe Konto, etwa `runner`, das auch `termin-vorschau` ohne Eintrag nutzt, braucht dieses Konto die Rechte aller drei Routinen zusammen, und keines gilt als zu weit, solange alle drei starten. Eine Routine, die nicht startet, zählt nicht: Fehlt etwa die Datei der Anbieter, starten `dienstplan-report` und `termin-vorschau` nicht, ihre Rechte auf Events, Dienste und Kalender gelten als zu weit, und `wiki-hygiene` legt ihren Bericht in die Freigabe-Warteschlange. Für eine Übergangszeit lässt `acceptRightsDrift` im Eintrag von `wiki-hygiene` sie trotzdem schreiben, höchstens 30 Tage und mit einem Vermerk im Audit ([Richtlinie](../docs/policy.md)). Ein eigenes Konto je Routine vermeidet das.

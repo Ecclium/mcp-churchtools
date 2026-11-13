@@ -185,10 +185,20 @@ export interface WikiPageEntry {
   readonly version: number;
 }
 
+/** A page of the wiki as the list of its category names it. */
+export interface WikiPageListEntry extends WikiPageEntry {
+  /**
+   * When the newest version of the page was saved, in UTC such as
+   * `2026-11-12T08:00:00Z`, or null when ChurchTools names no date in this
+   * form. Only the date: who saved it stays unread.
+   */
+  readonly modifiedDate: string | null;
+}
+
 /** One page of the list of pages of a category. */
 export interface WikiPageList {
   /** At most {@link wikiPageListLimit} pages, in the order of ChurchTools. */
-  readonly pages: readonly WikiPageEntry[];
+  readonly pages: readonly WikiPageListEntry[];
   /**
    * Whether ChurchTools reports a later page of the list. It comes from the
    * pagination of ChurchTools, which may count pages the account cannot

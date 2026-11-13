@@ -9,6 +9,7 @@ import {
   guardModelProvider,
   loadConfig,
   type Policy,
+  type ToolPipeline,
   toolsetNames,
   type Trigger,
 } from '@ecclium/mcp-churchtools-core';
@@ -32,6 +33,7 @@ import {
   executeRun,
   type LoadedRoutine,
   parseTemplate,
+  type PreparedRun,
   prepareRun,
   type RunResult,
 } from '@ecclium/mcp-churchtools-workflows';
@@ -337,6 +339,70 @@ describe('the binding of a run', () => {
     expect(() =>
       bind(Object.freeze({ ...policyOf('strict'), unattended: [] })),
     ).toThrow(TypeError);
+  });
+});
+
+describe('the data a run gives its write', () => {
+  // A stand-in of the pipeline that answers every read with a contact
+  // value and notes the data of the write.
+  const recording = () => {
+    const noted: { data: readonly unknown[] }[] = [];
+    const pipeline = {
+      callForRun: () =>
+        Promise.resolve({
+          ok: true,
+          data: { text: 'info@example.org' },
+          entries: 1,
+          more: false,
+          persons: {},
+        }),
+      writeForRun: (request: { data: readonly unknown[] }) => {
+        noted.push(request);
+        return Promise.resolve({ ok: false, code: 'internal', sent: false });
+      },
+    } as unknown as ToolPipeline;
+    return { pipeline, noted };
+  };
+
+  it('are the results of its reads for a routine with a model, and none for one with checks', async () => {
+    const { prepared, writer, clock } = setup('strict', () => ({}));
+    const bindAndWrite = async (run: PreparedRun) => {
+      const { pipeline, noted } = recording();
+      const bound = composeRun({
+        pipeline,
+        run,
+        runs: [run],
+        config: Object.freeze({ ...config, policy: policyOf('strict') }),
+        logging: { writer, minLevel: 'info' },
+        clock,
+      });
+      await bound.read('ct_events_list', {}, 5, new AbortController().signal);
+      await bound.write(
+        {
+          tool: 'ct_wiki_page_append_section',
+          period: '2026-W46',
+          section: 'Abschnitt',
+          page: { categoryId: 7, guid: 'seite' },
+        },
+        new AbortController().signal,
+      );
+      return noted[0]?.data;
+    };
+    expect(await bindAndWrite(prepared)).toHaveLength(1);
+    // The same routine with checks of the core instead of a model: its
+    // titles pass the content policy without known contact values, so its
+    // reads make none known to the write guard either (ADR 0033).
+    const withChecks = {
+      ...prepared,
+      loaded: {
+        ...prepared.loaded,
+        routine: {
+          ...prepared.loaded.routine,
+          checks: [{ check: 'brokenLinks', maxItems: 5 }],
+        },
+      },
+    } as unknown as PreparedRun;
+    expect(await bindAndWrite(withChecks)).toEqual([]);
   });
 });
 

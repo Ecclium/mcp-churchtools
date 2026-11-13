@@ -1020,16 +1020,19 @@ describe('the wiki', () => {
           title: 'Seite 1',
           isMarkdown: true,
           version: 1,
+          modifiedDate: '2026-10-09T08:00:00Z',
         },
         {
           guid: '00000000-0000-4000-8000-000000000002',
           title: 'Seite 2',
           isMarkdown: false,
           version: 2,
+          modifiedDate: '2026-10-09T08:00:00Z',
         },
       ],
       more: true,
     });
+    // The persons of meta next to the date are never read.
     assertNoCanary(result, [name, email], 'pages');
     expect(Object.getPrototypeOf(result.pages[0])).toBeNull();
     expect(Object.isFrozen(result.pages)).toBe(true);
@@ -1039,6 +1042,33 @@ describe('the wiki', () => {
       page: '2',
       limit: '25',
     });
+  });
+
+  it('gives no date for an entry without one or with another form', async () => {
+    const { double, client, ctx } = setup();
+    const without = (index: number, meta: unknown) => ({
+      ...entry(index),
+      meta,
+    });
+    double.intercept({ path: at('/api/wiki/pages'), method: 'GET' }).reply(
+      200,
+      pageList([
+        without(1, undefined),
+        without(2, {}),
+        without(3, { modifiedDate: '2026-10-09 08:00:00' }),
+        without(4, { modifiedDate: '2026-10-09T08:00:00+02:00' }),
+        without(5, { modifiedDate: 1_760_000_000 }),
+        without(6, { modifiedDate: null }),
+        // PHP writes an empty object as an empty list.
+        without(7, []),
+        without(8, null),
+      ]),
+      json,
+    );
+    const result = await client.wikiPages(ctx(), 4, 1);
+    expect(result.pages.map((page) => page.modifiedDate)).toEqual(
+      Array.from({ length: 8 }, () => null),
+    );
   });
 
   it('takes exactly 25 entries', async () => {

@@ -151,7 +151,7 @@ const noteText = (note: RoutineProposalNote, withEntry: boolean): string => {
     case 'redaction_standard':
       return '# Die Routine wünscht für das Modell die Stufe standard. Ecclium schlägt sie nie vor, ohne modelRedaction gilt strict. Ob die Richtlinie standard erlaubt, entscheiden Sie: Setzen Sie dann modelRedaction: standard in jeden Eintrag der Routine.';
     case 'checks':
-      return '# Die Routine wählt feste Prüfungen des Kerns. Sie startet in dieser Version noch nicht, und für die Tools ihrer Prüfungen schlägt Ecclium nichts vor.';
+      return '# Die Routine wählt feste Prüfungen des Kerns statt eines Modells. Sie braucht kein modelRedaction, weil ihre Prüfungen in der Stufe standard lesen, und ihre Lese-Tools gehören nicht in tools: Der Eintrag erlaubt nur das Schreiben.';
   }
 };
 

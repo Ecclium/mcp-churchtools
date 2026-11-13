@@ -56,6 +56,7 @@ import type {
   Logger,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import {
+  type CheckContext,
   executeRun,
   type PreparedRun,
   type RunRead,
@@ -97,8 +98,13 @@ export interface OpenedRun {
   readonly read: RunRead;
   /** Writes a section into the wiki with the same account. */
   readonly write: RunWrite;
-  /** The model of the alias of the routine, behind its guard. */
-  readonly model: GuardedModel;
+  /**
+   * The model of the alias of the routine, behind its guard; none for a
+   * routine with checks of the core.
+   */
+  readonly model?: GuardedModel;
+  /** What the checks of the core need, for a routine with checks. */
+  readonly checks?: CheckContext;
   /** The logger of the run. */
   readonly log: Logger;
   /**
@@ -356,7 +362,8 @@ const perform = async (
       trigger,
       {
         read: opened.read,
-        model: opened.model,
+        ...(opened.model === undefined ? {} : { model: opened.model }),
+        ...(opened.checks === undefined ? {} : { checks: opened.checks }),
         policy: ports.policy,
         log: opened.log,
         clock: ports.clock,
@@ -665,7 +672,12 @@ export async function previewRoutine(
           trigger,
           {
             read: opened.run.read,
-            model: opened.run.model,
+            ...(opened.run.model === undefined
+              ? {}
+              : { model: opened.run.model }),
+            ...(opened.run.checks === undefined
+              ? {}
+              : { checks: opened.run.checks }),
             policy: ports.policy,
             log: opened.run.log,
             clock: ports.clock,

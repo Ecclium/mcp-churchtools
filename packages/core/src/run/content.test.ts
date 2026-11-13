@@ -10,6 +10,7 @@ import {
   contactKeysInSection,
   escapeRunText,
   runContactKeys,
+  runDataText,
 } from './content.js';
 
 // The content policy for what a run writes (ADR 0030, ADR 0033).
@@ -181,5 +182,43 @@ describe('the contact values of a section in its written form', () => {
     expect([...contactKeysIn(['**anna_muster@example.org**'])]).toEqual([
       '**anna_muster@example.org**',
     ]);
+  });
+});
+
+describe('the text of a value a read of a run gave', () => {
+  const boundary = 'a1b2c3d4e5f6a7b8';
+  const wrap = (text: string): string =>
+    `<<data-${boundary}>>${text}<</data-${boundary}>>`;
+
+  it('is the text inside its envelope, also over several lines', () => {
+    expect(runDataText(wrap('Kirche'))).toBe('Kirche');
+    expect(runDataText(wrap('a\n[b](/wiki/1/main)\n'))).toBe(
+      'a\n[b](/wiki/1/main)\n',
+    );
+    expect(runDataText(wrap(''))).toBe('');
+  });
+
+  it('is a text without an envelope as it is', () => {
+    expect(runDataText('seite-1')).toBe('seite-1');
+    expect(runDataText('2026-11-12T08:00:00Z')).toBe('2026-11-12T08:00:00Z');
+  });
+
+  it('is nothing for a mark that does not close or two boundaries', () => {
+    expect(runDataText(`<<data-${boundary}>>Kirche`)).toBeUndefined();
+    expect(
+      runDataText(`<<data-${boundary}>>Kirche<</data-b1b2c3d4e5f6a7b8>>`),
+    ).toBeUndefined();
+    expect(runDataText(`x${wrap('Kirche')}`)).toBeUndefined();
+    expect(runDataText(`${wrap('a')}${wrap('b')}`)).toBeUndefined();
+    // The same call twice gives the same answer: no state of a global
+    // expression carries over.
+    expect(runDataText('<</data-x>>')).toBeUndefined();
+    expect(runDataText('<</data-x>>')).toBeUndefined();
+  });
+
+  it('is nothing for a value that is no text', () => {
+    expect(runDataText(1)).toBeUndefined();
+    expect(runDataText(null)).toBeUndefined();
+    expect(runDataText(undefined)).toBeUndefined();
   });
 });

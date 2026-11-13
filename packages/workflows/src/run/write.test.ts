@@ -334,6 +334,43 @@ describe('the tools of an account', () => {
     expect(accountToolsOf(runs, 'keines')).toEqual([]);
   });
 
+  it('count the tools of the checks of the core, each once', () => {
+    const hygiene = (
+      checks: readonly string[],
+      credential?: string,
+    ): PreparedRun => {
+      const run = preparedOf('pflege', [], true, credential);
+      return {
+        ...run,
+        loaded: {
+          ...run.loaded,
+          routine: {
+            ...run.loaded.routine,
+            checks: checks.map((check) => ({ check, maxItems: 5 })),
+          } as unknown as Routine,
+        },
+      };
+    };
+    expect(accountToolsOf([hygiene(['stalePages'])], 'runner')).toEqual([
+      'ct_wiki_categories_list',
+      'ct_wiki_page_append_section',
+      'ct_wiki_pages_list',
+    ]);
+    expect(
+      accountToolsOf(
+        [...runs, hygiene(['stalePages', 'brokenLinks'], 'berichte')],
+        'berichte',
+      ),
+    ).toEqual([
+      'ct_events_list',
+      'ct_services_get_assignments',
+      'ct_wiki_categories_list',
+      'ct_wiki_page_append_section',
+      'ct_wiki_page_get',
+      'ct_wiki_pages_list',
+    ]);
+  });
+
   it('count the routines without an entry for the own account of the runner', () => {
     // A routine without an entry reads with the account `runner`, and a
     // routine whose entries name `runner` shares it (ADR 0023, ADR 0033).

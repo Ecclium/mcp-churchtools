@@ -57,7 +57,8 @@ const input = z.strictObject({
 });
 
 // Titles are text people of the congregation write, so they stand in the
-// data envelope. GUID, format and version describe a page, not a person.
+// data envelope. GUID, format, version and the date of the last change
+// describe a page, not a person; who changed it is never read.
 const output = z.object({
   categoryId: classify(z.number().int().positive(), 'none'),
   page: classify(z.number().int().min(1).max(maxWikiListPage), 'none'),
@@ -68,6 +69,7 @@ const output = z.object({
         title: classify(z.string().max(maxWikiTitleLength), 'untrusted'),
         isMarkdown: classify(z.boolean(), 'none'),
         version: classify(z.number().int().positive(), 'none'),
+        modifiedDate: classify(z.string(), 'none').nullable(),
       }),
     )
     .max(wikiPageListLimit),
@@ -93,12 +95,13 @@ const execute = async ({
   return {
     categoryId,
     page,
-    // Copied field by field, so nothing but the four fields can follow.
-    pages: pages.map(({ guid, title, isMarkdown, version }) => ({
+    // Copied field by field, so nothing but the five fields can follow.
+    pages: pages.map(({ guid, title, isMarkdown, version, modifiedDate }) => ({
       guid,
       title,
       isMarkdown,
       version,
+      modifiedDate,
     })),
     more,
     notice:
@@ -140,7 +143,7 @@ export const wikiPagesListTool = defineTool({
   },
   description: {
     purpose:
-      'Lists the pages of one category of the ChurchTools wiki, 25 per call, each with its GUID, title, version and whether it is written in Markdown, but without its text.',
+      'Lists the pages of one category of the ChurchTools wiki, 25 per call, each with its GUID, title, version, Markdown flag and date of its last change, but without its text.',
     useWhen:
       'You need the GUID of a page to read it, or an overview of the pages of a category. Take the category ID from the list of categories.',
     avoidWhen:

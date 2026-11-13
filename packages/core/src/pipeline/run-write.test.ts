@@ -3,8 +3,8 @@ import {
   type RightRef,
   type TenantContext,
   type WikiPage,
-  type WikiPageEntry,
   type WikiPageList,
+  type WikiPageListEntry,
 } from '@ecclium/mcp-churchtools-plugin-api';
 import { describe, expect, it } from 'vitest';
 
@@ -28,15 +28,16 @@ const guid = '0000000a-0000-4000-8000-000000000001';
 const upperGuid = '0000000A-0000-4000-8000-00000000000B';
 const otherGuid = '0000000c-0000-4000-8000-000000000003';
 
-const entryOf = (title: string, id = guid, version = 3): WikiPageEntry => ({
+const entryOf = (title: string, id = guid, version = 3): WikiPageListEntry => ({
   guid: id,
   title,
   isMarkdown: true,
   version,
+  modifiedDate: null,
 });
 
 const listOf = (
-  pages: readonly WikiPageEntry[],
+  pages: readonly WikiPageListEntry[],
   more = false,
 ): WikiPageList => ({ pages, more });
 

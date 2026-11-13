@@ -264,5 +264,6 @@ export {
   modelRedactionOf,
   runAssignmentOf,
   runContactKeys,
+  runDataText,
   runSystemText,
 } from './run/index.js';

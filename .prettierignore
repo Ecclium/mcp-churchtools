@@ -56,4 +56,4 @@ packages/core/src/churchtools/catalog/generated.ts
 # Templates of routines are rendered line by line: a line that Prettier
 # joins, splits or separates with a blank line changes every report
 # (ADR 0033).
-tests/routines/routines/templates/
+routines/templates/

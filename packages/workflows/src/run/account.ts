@@ -19,12 +19,14 @@
  */
 import { runnerOwnAlias } from '@ecclium/mcp-churchtools-core';
 
+import { checkTools } from '../routine/check.js';
 import type { PreparedRun } from './prepare.js';
 
 /**
  * The tools of the prepared routines whose entries of the policy name an
  * alias, and for the alias `runner` also of those without an entry: the
- * read tools of their inputs and the write tool of an output in the wiki,
+ * read tools of their inputs and of their checks of the core and the write
+ * tool of an output in the wiki,
  * each once, in the order of the names. Only a routine that
  * passed its preparation counts, so that every tool is one the catalog
  * knows and a routine that never runs widens nothing.
@@ -45,6 +47,9 @@ export function accountToolsOf(
   for (const run of runs) {
     if ((run.credential ?? runnerOwnAlias) !== credential) continue;
     for (const { input } of run.inputs) tools.add(input.tool);
+    for (const { check } of run.loaded.routine.checks ?? []) {
+      for (const tool of checkTools[check]) tools.add(tool);
+    }
     const { output } = run.loaded.routine;
     if (output.target === 'wiki') tools.add(output.tool);
   }

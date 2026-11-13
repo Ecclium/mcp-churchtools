@@ -968,6 +968,12 @@ const callTool = (name: string, args: Record<string, unknown>): unknown => {
               title: wrap(`${canary}Liste`),
               isMarkdown: true,
               version: 2,
+              modifiedDate:
+                scenario === 'pages-bad-date'
+                  ? '12.11.2026'
+                  : scenario === 'pages-no-date'
+                    ? null
+                    : '2026-11-12T08:00:00Z',
             },
           ],
       more: false,

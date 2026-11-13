@@ -135,7 +135,22 @@ interface RoutineOptions {
   readonly notify?: readonly ('stdout' | 'file')[];
   /** The alias of the model, `default` unless given. */
   readonly model?: string;
+  /** The checks of the core in place of inputs and a model. */
+  readonly checks?: boolean;
 }
+
+// The template of a routine with the checks of the core.
+const checksTemplate = [
+  '### Pflege {{period}}',
+  '',
+  '{{#stalePages}}',
+  '- {{page}} ({{category}}), {{changed}}',
+  '{{/stalePages}}',
+  '{{#brokenLinks}}',
+  '- {{page}}: {{link}}',
+  '{{/brokenLinks}}',
+  '',
+].join('\n');
 
 // The two read tools of the routine plugin of testkit, which ask
 // ChurchTools nothing and list what they were called with.
@@ -159,6 +174,29 @@ const routineValueOf = (id: string, options: RoutineOptions = {}) => ({
   schema: 'routine.v1',
   id,
   schedule: options.schedule ?? '0 6 * * MON',
+  ...(options.checks === true
+    ? {
+        checks: [
+          { check: 'stalePages', olderThanDays: 365, maxItems: 10 },
+          { check: 'brokenLinks', maxItems: 10 },
+        ],
+      }
+    : modelPartsOf(id, options)),
+  template: `templates/${id}.md`,
+  output:
+    options.target === 'draft'
+      ? { target: 'draft', channel: 'file', idempotencyKey: `${id}:{isoWeek}` }
+      : {
+          target: 'wiki',
+          tool: writeTool,
+          scope: { category: 'Berichte', page: pageTitle },
+          idempotencyKey: `${id}:{isoWeek}`,
+        },
+  notify: (options.notify ?? ['stdout']).map((channel) => ({ channel })),
+});
+
+// The inputs and the step with a model of a routine without checks.
+const modelPartsOf = (id: string, options: RoutineOptions) => ({
   inputs: options.inputs ?? pluginInputs,
   generate: {
     prompt: `prompts/${id}.md`,
@@ -176,17 +214,6 @@ const routineValueOf = (id: string, options: RoutineOptions = {}) => ({
       },
     },
   },
-  template: `templates/${id}.md`,
-  output:
-    options.target === 'draft'
-      ? { target: 'draft', channel: 'file', idempotencyKey: `${id}:{isoWeek}` }
-      : {
-          target: 'wiki',
-          tool: writeTool,
-          scope: { category: 'Berichte', page: pageTitle },
-          idempotencyKey: `${id}:{isoWeek}`,
-        },
-  notify: (options.notify ?? ['stdout']).map((channel) => ({ channel })),
 });
 
 /** The entry of a routine in the unattended part of the policy. */
@@ -223,6 +250,8 @@ interface FakePage {
   title: string;
   version: number;
   text: string;
+  /** When it last changed, as the list of pages gives it. */
+  modifiedDate?: string;
 }
 
 const pagePath = /^\/api\/wiki\/categories\/(\d+)\/pages\/([0-9a-f-]{36})$/u;
@@ -276,6 +305,7 @@ const serve = (
         title: page.title,
         isMarkdown: true,
         version: page.version,
+        meta: { modifiedDate: page.modifiedDate ?? '2026-11-02T08:00:00Z' },
       }));
       return {
         statusCode: 200,
@@ -543,7 +573,10 @@ const setup = (options: SetupOptions = {}) => {
       join(routinesDir, 'prompts', `${id}.md`),
       'Fasse die Dienste zusammen.\n',
     );
-    privateFile(join(routinesDir, 'templates', `${id}.md`), template);
+    privateFile(
+      join(routinesDir, 'templates', `${id}.md`),
+      routine.checks === true ? checksTemplate : template,
+    );
   };
   for (const [id, routine] of Object.entries(
     options.routines ?? { [wikiRoutine]: {} },
@@ -1183,6 +1216,62 @@ describe('ecclium run-once --due with a routine into the wiki', () => {
     expect(again.code).toBe(exitCodes.ok);
     expect(t.patches()).toHaveLength(1);
     expect(t.runLines()).toEqual([expect.objectContaining({ attempt: 1 })]);
+    t.assertNothingLeaked();
+  });
+});
+
+describe('ecclium run-once with a routine with the checks of the core', () => {
+  it('writes the report of the checks without a model, a provider or a key of the pseudonyms', async () => {
+    const t = setup({
+      routines: { 'wiki-pflege': { checks: true } },
+      entries: [entryOf('wiki-pflege')],
+      extra: {
+        ECCLIUM_PROVIDERS_FILE: undefined,
+        ECCLIUM_PSEUDONYM_KEY_FILE: undefined,
+      },
+    });
+    t.pages.set('00000000-0000-4000-8000-0000000000c2', {
+      categoryId: 7,
+      title: 'Alte Seite',
+      version: 2,
+      modifiedDate: '2024-01-09T23:30:00Z',
+      text: [
+        `[${doubleOrigin}/wiki/7/Dienstplan-Auswertung](${doubleOrigin}/wiki/7/Dienstplan-Auswertung)`,
+        `[${doubleOrigin}/wiki/7/Fehlt](${doubleOrigin}/wiki/7/Fehlt)`,
+      ].join('\n\n'),
+    });
+    const result = await t.call(due);
+    expect(result.code).toBe(exitCodes.ok);
+    expect(t.modelCalls).toEqual([]);
+    expect(t.patches()).toHaveLength(1);
+    expect(t.pageText()).toContain('### Pflege 2026-W46');
+    expect(t.pageText()).toContain('- Alte Seite (Berichte), 10.01.2024');
+    expect(t.pageText()).toContain('- Berichte › Alte Seite: Berichte › Fehlt');
+    expect(t.pageText()).not.toContain('Dienstplan-Auswertung:');
+    // The reads went through the pipeline with the account of the entry,
+    // and the line of the end of the run names no model.
+    const reads = t.churchtoolsCalls.filter(
+      (call) => call.method === 'GET' && call.path.startsWith('/api/wiki/'),
+    );
+    expect(reads.length).toBeGreaterThan(0);
+    for (const read of reads) {
+      expect(read.headers['authorization']).toBe(
+        `Login ${t.accountToken.value}`,
+      );
+    }
+    expect(t.runLines()).toEqual([
+      expect.objectContaining({
+        type: 'run',
+        routineId: 'wiki-pflege',
+        period: '2026-W46',
+        runResult: 'written',
+      }),
+    ]);
+    expect(t.runLines()[0]).not.toHaveProperty('provider');
+    // Every read of the run names no model either.
+    for (const entry of t.auditLines()) {
+      expect(entry).not.toHaveProperty('provider');
+    }
     t.assertNothingLeaked();
   });
 });
