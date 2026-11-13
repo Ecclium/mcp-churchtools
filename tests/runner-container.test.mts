@@ -151,27 +151,44 @@ describe('the paths of the runner container', () => {
   });
 
   it('uses every path of the table', () => {
-    const state = documented.get('ECCLIUM_STATE_DIR');
     for (const { path } of paths) {
       if (path === '/tmp') continue;
-      const used =
-        path === `${state ?? ''}/${stateFolders.stop}` ||
-        [...documented.values()].some((value) => liesWithin(value, path));
+      const used = [...documented.values()].some((value) =>
+        liesWithin(value, path),
+      );
       expect(used, path).toBe(true);
     }
   });
 
-  it('mounts the kill switches over the folder stop of the state', () => {
-    expect(paths.map(({ path }) => path)).toContain(
-      `${documented.get('ECCLIUM_STATE_DIR') ?? ''}/${stateFolders.stop}`,
+  // The kill switches come with /config into every container, read-only,
+  // never into the volume of the state, where Docker made a folder stop
+  // of its own (ADR 0029, ADR 0036).
+  it('keeps the kill switches in a read-only path of their own outside /data', () => {
+    const switches = documented.get('ECCLIUM_KILL_SWITCH_DIR') ?? '';
+    expect(paths.map(({ path }) => path)).toContain(switches);
+    expect(paths.find(({ path }) => path === switches)?.access).toBe(
+      'nur lesbar',
     );
+    const config = paths.find(
+      ({ path }) => liesWithin(switches, path) && path !== switches,
+    );
+    expect(config?.access).toBe('nur lesbar');
+    expect(
+      liesWithin(switches, documented.get('ECCLIUM_STATE_DIR') ?? ''),
+    ).toBe(false);
   });
 });
 
 describe('the folders in the folder of state', () => {
-  it('are the folders the code keeps there', () => {
+  // The folder stop is only the default of a server over stdio; the runner
+  // reads its kill switches from ECCLIUM_KILL_SWITCH_DIR (ADR 0036).
+  it('are the folders the code keeps there, without the folder stop', () => {
     const named = folderRows.map(([folder = '']) => plain(folder));
-    expect(named.sort()).toEqual(Object.values(stateFolders).sort());
+    expect(named.sort()).toEqual(
+      Object.values(stateFolders)
+        .filter((folder) => folder !== stateFolders.stop)
+        .sort(),
+    );
   });
 });
 
@@ -203,7 +220,9 @@ describe('the environment of the runner container', () => {
       return found ?? '';
     };
     folder(value('ECCLIUM_STATE_DIR'), 0o700);
-    folder(`${value('ECCLIUM_STATE_DIR')}/${stateFolders.stop}`, 0o755);
+    // Only the folder of the variable: the load that writes shows that the
+    // runner takes it, since there is no folder stop in the state.
+    folder(value('ECCLIUM_KILL_SWITCH_DIR'), 0o755);
     folder(value('ECCLIUM_KEYS_DIR'), 0o700);
     folder(value('ECCLIUM_ROUTINES_DIR'), 0o755);
     folder(value('ECCLIUM_RUNNER_TOKENS_DIR'), 0o700);
