@@ -20,6 +20,7 @@ import type { RedactionLevel } from '@ecclium/mcp-churchtools-plugin-api';
 import {
   parseChurchToolsOrigin,
   parseEgressProxy,
+  parseModelEndpoint,
   Secret,
 } from '../http/index.js';
 import type { KeyMaterial } from '../keys/index.js';
@@ -58,6 +59,7 @@ import {
   fitsVariable,
   nodeOptionsVariableName,
   type PlainVariableName,
+  readAllowLanList,
   readToolsetList,
   recommendedRetentionMonths,
   reservedStdioSubjects,
@@ -227,6 +229,13 @@ export interface EccliumConfig {
    */
   readonly runnerPingUrl: Secret | undefined;
   /**
+   * The origin of the address of the ping, `https://host` or
+   * `https://host:port`, set exactly when {@link EccliumConfig.runnerPingUrl}
+   * is. No secret: `ecclium init egress` names it in the list of the proxy
+   * (ADR 0035), never the path of the address.
+   */
+  readonly runnerPingOrigin: string | undefined;
+  /**
    * The proxy of every transport of the process, `http://host:port` as
    * checked, or undefined to connect directly (ADR 0035).
    */
@@ -237,6 +246,15 @@ export interface EccliumConfig {
    * (ADR 0035). Never true together with a proxy.
    */
   readonly egressOff: boolean;
+  /**
+   * The targets in the local network from `ECCLIUM_EGRESS_ALLOW_LAN`, as
+   * https origins with the port left out for 443, frozen, in the order
+   * given; empty when the variable is not set (ADR 0035). Each is the
+   * origin of ChurchTools or of the endpoint of a provider. Only the list
+   * of the proxy uses them: there a target may have any port and a
+   * private address.
+   */
+  readonly egressAllowLan: readonly string[];
   readonly stdioSubject: string;
   readonly logLevel: LogLevel;
 }
@@ -268,6 +286,7 @@ export type SettingKey =
   | 'runnerPingUrl'
   | 'egressProxy'
   | 'egress'
+  | 'egressAllowLan'
   | 'stdioSubject'
   | 'logLevel';
 
@@ -287,6 +306,14 @@ export type ShownValue =
   | { readonly kind: 'integer'; readonly value: number }
   | { readonly kind: 'origin'; readonly host: string; readonly port: string }
   | { readonly kind: 'proxy'; readonly host: string; readonly port: string }
+  | {
+      readonly kind: 'targets';
+      readonly values: readonly {
+        readonly host: string;
+        /** Always written out, also 443. */
+        readonly port: string;
+      }[];
+    }
   | { readonly kind: 'path'; readonly value: string }
   | { readonly kind: 'hidden' }
   | { readonly kind: 'none' };
@@ -1756,6 +1783,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   const pingName = 'ECCLIUM_RUNNER_PING_URL_FILE';
   const pingRead = read(row(pingName));
   let runnerPingUrl: Secret | undefined;
+  let runnerPingOrigin: string | undefined;
   let pingValid = pingRead.state !== 'invalid';
   if (pingRead.state === 'unset') {
     setting('runnerPingUrl', pingName, 'unset', shownNone);
@@ -1776,6 +1804,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     );
     if (fromFile.ok) {
       runnerPingUrl = fromFile.value.url;
+      runnerPingOrigin = fromFile.value.origin;
       setting(
         'runnerPingUrl',
         pingName,
@@ -1880,6 +1909,66 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
   }
   if (environmentProxy) warnings.add('environment_proxy_ignored');
 
+  // The targets in the local network (ADR 0035). Each must be the origin
+  // of ChurchTools or of the endpoint of a provider, so that the list of
+  // the proxy never names a target the configuration does not reach. A
+  // refused address or file of the providers has its own problem, so the
+  // targets are compared only with origins that passed.
+  const lanName = 'ECCLIUM_EGRESS_ALLOW_LAN';
+  const lanRead = read(row(lanName));
+  let egressAllowLan: readonly string[] = Object.freeze([]);
+  let lanValid = lanRead.state !== 'invalid';
+  if (lanRead.state === 'unset') {
+    setting('egressAllowLan', lanName, 'unset', shownNone);
+  } else if (lanRead.state === 'invalid') {
+    setting('egressAllowLan', lanName, 'invalid', shownNone);
+  } else {
+    const targets = fitsVariable(lanName, lanRead.value)
+      ? readAllowLanList(lanRead.value)
+      : undefined;
+    if (targets === undefined) {
+      lanValid = false;
+      report('egress_allow_lan_invalid', lanName);
+    } else if (origin !== undefined && providersValid) {
+      const known = new Set<string>([origin]);
+      for (const provider of providers ?? []) {
+        const endpoint = parseModelEndpoint(provider.endpoint);
+        if (endpoint.ok) known.add(endpoint.origin);
+      }
+      if (targets.some((target) => !known.has(target))) {
+        lanValid = false;
+        report('egress_allow_lan_unknown', lanName);
+      }
+    }
+    if (lanValid && targets !== undefined) {
+      egressAllowLan = targets;
+      setting(
+        'egressAllowLan',
+        lanName,
+        'environment',
+        record({
+          kind: 'targets',
+          values: Object.freeze(
+            targets.map((target) => {
+              const [host = '', port = '443'] = target
+                .slice('https://'.length)
+                .split(':');
+              return record({ host, port });
+            }),
+          ),
+        }),
+      );
+    } else {
+      setting('egressAllowLan', lanName, 'invalid', shownNone);
+    }
+  }
+  // Without a proxy the list does nothing for the runner. The server says
+  // nothing: it has no boundary in the network either way and shares the
+  // file of the environment with the runner.
+  if (runner && egressOff && egressAllowLan.length > 0) {
+    warnings.add('egress_allow_lan_unused');
+  }
+
   // The subject must fit the pattern, and the placeholder of the audit is
   // refused although it fits.
   const subjectName = 'ECCLIUM_STDIO_SUBJECT';
@@ -1951,6 +2040,7 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
     !pingValid ||
     !proxyValid ||
     !egressValid ||
+    !lanValid ||
     subject === undefined ||
     logLevel === undefined
   ) {
@@ -1984,8 +2074,10 @@ export function loadConfig(sources: ConfigSources): ConfigResult {
       notifyFile: notify.value,
       metricsFile: metrics.value,
       runnerPingUrl,
+      runnerPingOrigin,
       egressProxy,
       egressOff,
+      egressAllowLan,
       stdioSubject: subject.value,
       logLevel: logLevel.value as LogLevel,
     }),

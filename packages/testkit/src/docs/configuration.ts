@@ -30,6 +30,8 @@ const valuesOf = (variable: Variable): string => {
       return 'Adresse mit `https`';
     case 'proxy':
       return `Adresse wie ${code('http://egress:3128')}`;
+    case 'targets':
+      return `Liste aus Name und Port wie ${code('modell.example.org:8443')}, mit Komma getrennt`;
     case 'path':
       return 'absoluter Pfad';
     case 'token':

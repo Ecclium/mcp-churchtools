@@ -974,3 +974,76 @@ describe('ecclium run-once in the command line', () => {
     expect(capture(['run-once', '--help'], {}).stdout).toBe(result.stdout);
   });
 });
+
+describe('ecclium init egress in the command line', () => {
+  // The command reads the configuration of the runner, so run gives a
+  // promise for it; its own tests stand in egress/init.test.ts.
+  const runAsync = async (
+    args: readonly string[],
+    options: RunOptions = {},
+  ) => {
+    const taken = new Map<number, number[]>();
+    const writeSync: WriteSyncFn = (fd, buffer, offset, length) => {
+      const bytes = taken.get(fd) ?? [];
+      bytes.push(...buffer.subarray(offset, offset + length));
+      taken.set(fd, bytes);
+      return length;
+    };
+    const code = await run(args, {}, [], { ...options, writeSync });
+    const text = (fd: number): string =>
+      decoder.decode(new Uint8Array(taken.get(fd) ?? []));
+    return { code, stdout: text(1), stderr: text(2) };
+  };
+
+  it.each([
+    [['init'], 'command'],
+    [['init', 'egress', 'squid'], 'command'],
+    [['init', 'egress', '--runner'], 'option'],
+    [['init', 'egress', '--show-values'], 'option'],
+  ] as const)('refuses %j with 64', (args, problem) => {
+    const result = capture(args, {});
+    expect(result.code).toBe(exitCodes.usage);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toBe(`${usageProblemTexts[problem]}\n${usageLine}\n`);
+  });
+
+  it('loads the configuration of the runner and writes nothing to stdout when it is invalid', async () => {
+    const transports: Transport[] = [];
+    const result = await runAsync(['init', 'egress'], {
+      load: (sources) => {
+        transports.push(sources.transport);
+        return loadConfig(sources);
+      },
+    });
+    expect(transports).toEqual(['runner']);
+    expect(result.code).toBe(exitCodes.invalidConfig);
+    expect(result.stdout).toBe('');
+    expect(lastLine(result.stderr)).toBe(
+      'Die Konfiguration des Runners ist ungültig, deshalb hat ‹ecclium init egress› keine Liste geschrieben. Die Liste nennt die Ziele genau dieser Konfiguration. Beheben Sie die Probleme oben und prüfen Sie mit ‹ecclium config check --runner›.',
+    );
+  });
+
+  it('turns a failure of the command into the internal error', async () => {
+    const result = await runAsync(['init', 'egress'], {
+      load: () => {
+        throw new Error(plain());
+      },
+    });
+    expect(result.code).toBe(exitCodes.internal);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toBe(`${internalErrorText}\n`);
+  });
+
+  it('lists init egress in the help', () => {
+    const result = capture(['--help'], {});
+    expect(
+      result.stdout
+        .split('\n')
+        .some((line) => line.startsWith('  init egress ')),
+    ).toBe(true);
+    expect(usageLine).toContain('| ecclium init egress |');
+    expect(capture(['init', 'egress', '--help'], {}).stdout).toBe(
+      result.stdout,
+    );
+  });
+});

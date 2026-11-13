@@ -188,6 +188,7 @@ const metricsFile = quote('ECCLIUM_RUNNER_METRICS_FILE');
 const pingUrlFile = quote('ECCLIUM_RUNNER_PING_URL_FILE');
 const egressProxy = quote('ECCLIUM_EGRESS_PROXY');
 const egress = quote('ECCLIUM_EGRESS');
+const allowLan = quote('ECCLIUM_EGRESS_ALLOW_LAN');
 const providersFile = quote('ECCLIUM_PROVIDERS_FILE');
 // Why the file of the providers matters (ADR 0033).
 const providersReason =
@@ -645,6 +646,19 @@ const problems: Readonly<
       `${name} steht auf ‹off›, und ${egressProxy} nennt trotzdem einen Proxy.`,
       'Ecclium weiss dann nicht, ob die Grenze im Netz gelten soll.',
       `Entfernen Sie ${name}, wenn der Proxy gelten soll, sonst ${egressProxy}.`,
+    ),
+  // The targets in the local network (ADR 0035).
+  egress_allow_lan_invalid: (name = allowLan) =>
+    message(
+      `${name} hat nicht die Form einer Liste aus ‹Name:Port›, nennt mehr als 16 Ziele, oder ein Ziel steht zweimal darin.`,
+      'Jedes Ziel ist genau ein Name mit Punkt in kleinen Buchstaben und ein ausgeschriebener Port, damit der Proxy genau dieses Paar durchlässt. Eine IP-Adresse oder ‹localhost› nimmt Ecclium nicht an, wie für jede Adresse der Konfiguration.',
+      'Geben Sie die Ziele mit Komma getrennt an, etwa ‹modell.example.org:8443›, auch mit Port 443 ausgeschrieben.',
+    ),
+  egress_allow_lan_unknown: (name = allowLan) =>
+    message(
+      `${name} nennt ein Ziel, das weder die Adresse von ChurchTools noch der Endpunkt eines Anbieters ist.`,
+      'Im lokalen Netz lässt der Proxy ein Ziel auf seinem eigenen Port und an einer privaten Adresse zu. Das gilt nur für Adressen, die auch der Server beim Start prüfen kann.',
+      `Nennen Sie nur Name und Port aus ‹ECCLIUM_CHURCHTOOLS_URL› oder aus einem Endpunkt in ${providersFile}, mit Port 443, wenn die Adresse keinen nennt.`,
     ),
   invalid_integer: (name = quote('ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE')) =>
     message(
@@ -1741,6 +1755,13 @@ const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({
     `Der Runner läuft ohne Proxy, weil ${egress} auf ‹off› steht.`,
     'Ohne Proxy begrenzt nur die Positivliste im Code die Ziele. Code, der am Kern vorbei eine Verbindung öffnet, erreicht dann jede Adresse. Jeder Lauf trägt den Vermerk im Audit.',
     `Setzen Sie ${egressProxy} auf einen Proxy, der nur die Ziele der Konfiguration durchlässt, und entfernen Sie ${egress}.`,
+  ),
+  // Only the list of the proxy uses the targets in the local network, and
+  // the runner with `off` has no proxy (ADR 0035).
+  egress_allow_lan_unused: message(
+    `${allowLan} ist gesetzt, aber der Runner läuft ohne Proxy, weil ${egress} auf ‹off› steht.`,
+    `Die Ziele im lokalen Netz wirken nur über die Liste, die ‹ecclium init egress› für den Proxy erzeugt. Ohne Proxy bewirken sie nichts.`,
+    `Setzen Sie ${egressProxy} und entfernen Sie ${egress}, oder entfernen Sie ${allowLan}.`,
   ),
   // One text for every setting, which the report of the loader does not
   // name: a value of such a variable can hold a user and a password.

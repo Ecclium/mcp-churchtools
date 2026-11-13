@@ -58,6 +58,7 @@ export const variableNames = Object.freeze([
   'ECCLIUM_RUNNER_PING_URL_FILE',
   'ECCLIUM_EGRESS_PROXY',
   'ECCLIUM_EGRESS',
+  'ECCLIUM_EGRESS_ALLOW_LAN',
   'ECCLIUM_STDIO_SUBJECT',
   'ECCLIUM_LOG_LEVEL',
 ] as const);
@@ -89,7 +90,6 @@ export const plainVariableNames: readonly PlainVariableName[] = Object.freeze(
  * start with a message that this version does not support it yet.
  */
 export const unsupportedVariableNames = Object.freeze([
-  'ECCLIUM_EGRESS_ALLOW_LAN',
   'ECCLIUM_ALLOWED_HOSTS',
 ] as const);
 
@@ -237,6 +237,7 @@ export type VariableKind =
   | 'boolean'
   | 'choice'
   | 'list'
+  | 'targets'
   | 'subject'
   | 'zone';
 
@@ -411,6 +412,73 @@ export function readToolsetList(
 
 // The longest value that can fit: every toolset once.
 const toolsetListLength = toolsetNames.join(',').length;
+
+/**
+ * The most targets `ECCLIUM_EGRESS_ALLOW_LAN` names (ADR 0035): far more
+ * than a configuration has origins, one of ChurchTools and one per
+ * provider.
+ */
+export const maxAllowLanTargets = 16;
+
+/**
+ * The longest value of `ECCLIUM_EGRESS_ALLOW_LAN`: the most targets, each
+ * a name of 253 characters with the highest port, and the commas.
+ */
+export const allowLanLength =
+  maxAllowLanTargets * (253 + ':65535'.length + 1) - 1;
+
+// A port as the parser writes it: no sign, no leading zero.
+const portPattern = /^[1-9][0-9]{0,4}$/;
+
+/**
+ * Reads the targets in the local network that the proxy may reach on any
+ * port and in a private range (ADR 0035): a list with commas, each entry
+ * exactly `name:port`. The name gets every rule of the address of an
+ * instance, so it is a name in lower case with a dot, never an IP address
+ * or `localhost`, and the port is written out, also 443. Nothing is
+ * trimmed and no case is changed, like every other value of the table.
+ *
+ * @param value - The value as given.
+ * @returns The targets as https origins, the port left out for 443,
+ *   frozen, in the order given; or `undefined` when the value does not
+ *   fit or names a target twice.
+ * @example
+ * ```ts
+ * readAllowLanList('model.example.org:8443');
+ * // ['https://model.example.org:8443']
+ * readAllowLanList('example.church.tools:443');
+ * // ['https://example.church.tools']
+ * readAllowLanList('192.0.2.5:8443'); // undefined
+ * ```
+ */
+export function readAllowLanList(value: string): readonly string[] | undefined {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    value.length > allowLanLength
+  ) {
+    return undefined;
+  }
+  const entries = value.split(',');
+  if (entries.length > maxAllowLanTargets) return undefined;
+  const origins: string[] = [];
+  for (const entry of entries) {
+    const colon = entry.indexOf(':');
+    if (colon < 1 || colon !== entry.lastIndexOf(':')) return undefined;
+    const port = entry.slice(colon + 1);
+    if (!portPattern.test(port)) return undefined;
+    const host = entry.slice(0, colon);
+    const origin =
+      port === '443' ? `https://${host}` : `https://${host}:${port}`;
+    // The parser refuses a port above 65535, and any host it would change
+    // makes the origin differ from what was written.
+    const checked = parseChurchToolsOrigin(origin);
+    if (!checked.ok || checked.origin !== origin) return undefined;
+    if (origins.includes(origin)) return undefined;
+    origins.push(origin);
+  }
+  return Object.freeze(origins);
+}
 
 /** One row of the table. */
 export interface Variable {
@@ -756,6 +824,19 @@ export const variables: readonly Variable[] = Object.freeze([
     stdioOnly: false,
     runner: true,
   }),
+  // The targets in the local network, each an origin of the configuration
+  // (ADR 0035). Only `ecclium init egress` turns them into a list for the
+  // proxy; every start checks that each one is an origin it knows.
+  row({
+    name: 'ECCLIUM_EGRESS_ALLOW_LAN',
+    kind: 'targets',
+    maxLength: allowLanLength,
+    choices: [],
+    defaultValue: undefined,
+    secret: false,
+    stdioOnly: false,
+    runner: true,
+  }),
   row({
     name: 'ECCLIUM_STDIO_SUBJECT',
     kind: 'subject',
@@ -897,6 +978,10 @@ export const variableSchemas: Readonly<
       return checked.ok && checked.proxy === value;
     }),
   ECCLIUM_EGRESS: choiceOf('ECCLIUM_EGRESS'),
+  ECCLIUM_EGRESS_ALLOW_LAN: z
+    .string()
+    .max(allowLanLength)
+    .refine((value) => readAllowLanList(value) !== undefined),
   ECCLIUM_STDIO_SUBJECT: z.string().max(32).regex(stdioSubjectPattern),
   ECCLIUM_LOG_LEVEL: choiceOf('ECCLIUM_LOG_LEVEL'),
 });
@@ -943,6 +1028,7 @@ export const environmentSchema = z.strictObject({
     variableSchemas.ECCLIUM_RUNNER_PING_URL_FILE.optional(),
   ECCLIUM_EGRESS_PROXY: variableSchemas.ECCLIUM_EGRESS_PROXY.optional(),
   ECCLIUM_EGRESS: variableSchemas.ECCLIUM_EGRESS.optional(),
+  ECCLIUM_EGRESS_ALLOW_LAN: variableSchemas.ECCLIUM_EGRESS_ALLOW_LAN.optional(),
   ECCLIUM_STDIO_SUBJECT: variableSchemas.ECCLIUM_STDIO_SUBJECT.optional(),
   ECCLIUM_LOG_LEVEL: variableSchemas.ECCLIUM_LOG_LEVEL.optional(),
 });

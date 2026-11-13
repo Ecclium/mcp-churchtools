@@ -108,6 +108,8 @@ const commands: readonly Command[] = Object.freeze(
       words: ['policy', 'init'],
       options: ['interactive', 'routine', 'credential'],
     },
+    // The list of targets for the template of Squid (ADR 0035).
+    { words: ['init', 'egress'], options: [] },
     { words: ['undo'], options: ['overwrite'], argument: true },
     // Without the ID of a write only with --run, for every write of a run.
     { words: ['undo'], options: ['run', 'overwrite'] },
@@ -192,7 +194,8 @@ type Call =
       readonly queueId: string | undefined;
     }
   | { readonly kind: 'run'; readonly mode: RunOnceOptions['mode'] }
-  | { readonly kind: 'daemon' };
+  | { readonly kind: 'daemon' }
+  | { readonly kind: 'egress' };
 
 // The kind of a refused call, from the code of the error of parseArgs
 // alone: its message repeats the argument, which can hold a token.
@@ -330,6 +333,8 @@ const readCall = (args: readonly string[]): Call => {
     }
     case 'runner':
       return { kind: 'daemon' };
+    case 'init egress':
+      return { kind: 'egress' };
     default:
       return {
         kind: 'check',
@@ -524,6 +529,26 @@ export function run(
               execArgv,
               mode,
               output: out,
+            }),
+          )
+          .catch(() => {
+            out.stderr(internalErrorText);
+            return exitCodes.internal;
+          });
+      }
+      case 'egress': {
+        // Loaded only for this command: it reads the configuration of the
+        // runner, whose modules the other commands never need.
+        const out = output;
+        return import('./egress/init.js')
+          .then(({ initEgress }) =>
+            initEgress({
+              environment: taken,
+              execArgv,
+              output: out,
+              ...(runOptions.load === undefined
+                ? {}
+                : { load: runOptions.load }),
             }),
           )
           .catch(() => {

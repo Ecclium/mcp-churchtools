@@ -119,12 +119,15 @@ describe('the texts of the output', () => {
 
   // Chapter 9 of brand/README.md: «Sie», ss, quotes «so», no em dash, no
   // exclamation mark, numbers from 1000 up as 4'096, none of the words it
-  // lists. A port in an address is no number of that kind.
+  // lists. A port in an address, also in a target as name and port, is no
+  // number of that kind.
   it.each([...fixedTexts, ...reports()])(
     'follow the rules of the brand in %s',
     (_, lines) => {
       for (const line of lines) {
-        const text = line.replace(/https?:\/\/\S+/g, '');
+        const text = line
+          .replace(/https?:\/\/\S+/g, '')
+          .replace(/\b[a-z0-9-]+(?:\.[a-z0-9-]+)+:\d+\b/g, '');
         expect(text.replace(/(?<=\d)'(?=\d{3})/g, ''), line).not.toMatch(
           /[ß—–!"„“”'‚‘’]/,
         );

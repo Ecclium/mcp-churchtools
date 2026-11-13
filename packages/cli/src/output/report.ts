@@ -78,6 +78,7 @@ const labels: Readonly<Record<SettingKey, string>> = Object.freeze({
   runnerPingUrl: 'Ping-URL',
   egressProxy: 'Proxy nach aussen',
   egress: 'Grenze im Netz',
+  egressAllowLan: 'Lokale Ziele',
   stdioSubject: 'Subjekt über stdio',
   logLevel: 'Stufe des Logs',
 });
@@ -139,8 +140,8 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
   // Only the folders of state, of keys, of the routines, of the tokens of
   // the runner and of the drafts, the files of the providers, of the
   // notices, of the metrics and of the ping, the key files, the zone, the
-  // proxy and the switch for a runner without it may stay unset without a
-  // default.
+  // proxy, the switch for a runner without it and the targets in the local
+  // network may stay unset without a default.
   if (setting.origin === 'unset') {
     switch (setting.key) {
       case 'timeZone':
@@ -173,6 +174,8 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
         return { text: 'kein Proxy' };
       case 'egress':
         return { text: 'nicht abgeschaltet' };
+      case 'egressAllowLan':
+        return { text: 'keine' };
       default:
         throw new TypeError(inconsistent);
     }
@@ -209,6 +212,21 @@ const valueOf = (setting: SettingReport, showValues: boolean): Value => {
             hides: setting.key === 'runnerPingUrl' ? 'ping' : 'host',
           };
     }
+    case 'targets':
+      // Like the address of ChurchTools: the name of a target can name
+      // an instance or a machine of the network, its port names none.
+      return showValues
+        ? {
+            text: shown.values
+              .map(({ host, port }) => quote(`${host}:${port}`))
+              .join(', '),
+          }
+        : {
+            text: shown.values
+              .map(({ port }) => `${masked}:${port}`)
+              .join(', '),
+            hides: 'host',
+          };
     case 'proxy':
       // The host of the proxy can name a machine of the network; the port
       // names none (ADR 0035).

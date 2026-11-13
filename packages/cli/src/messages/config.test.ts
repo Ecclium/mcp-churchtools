@@ -139,8 +139,8 @@ describe('the catalog of messages', () => {
 
   // Chapter 9 of brand/README.md: «Sie», ss, quotes «so», no em dash, no
   // exclamation mark, numbers from 1000 up as 4'096, none of the words it
-  // lists. A port in an address, such as that of a proxy, is no number of
-  // that kind.
+  // lists. A port in an address, such as that of a proxy or a target as
+  // name and port, is no number of that kind.
   it.each(everyMessage)(
     'follows the rules of the brand in %s',
     (_, message) => {
@@ -148,7 +148,11 @@ describe('the catalog of messages', () => {
       expect(text.replace(/(?<=\d)'(?=\d{3})/g, '')).not.toMatch(
         /[ß—–!"„“”'‚‘’\u00a0]/,
       );
-      expect(text.replace(/https?:\/\/[^\s›]+/g, '')).not.toMatch(/\d{4}/);
+      expect(
+        text
+          .replace(/https?:\/\/[^\s›]+/g, '')
+          .replace(/\b[a-z0-9-]+(?:\.[a-z0-9-]+)+:\d+\b/g, ''),
+      ).not.toMatch(/\d{4}/);
       expect(hasControlCharacter(text)).toBe(false);
       expect(text.split('«').length).toBe(text.split('»').length);
       expect(text.split('‹').length).toBe(text.split('›').length);

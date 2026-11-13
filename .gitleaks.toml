@@ -346,6 +346,14 @@ description = "Private-range addresses inside test files"
 condition = "AND"
 paths = ['''(?i)(?:^|/)(?:tests?|__tests__)/|\.(?:test|spec)\.[cm]?[jt]sx?$''']
 regexes = ['''^(?:10\.|172\.(?:1[6-9]|2\d|3[01])\.|192\.168\.|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|169\.254\.)''']
+[[rules.allowlists]]
+# The template of the proxy blocks the special ranges of the IANA registry
+# (ADR 0035). Their base addresses name no network; only the one that is no
+# base of the ranges above, the former relay of 6to4, needs this exception.
+description = "The relay range of 6to4 in the block list of the template of the proxy and its test"
+condition = "AND"
+paths = ['''^(?:deploy/selfhost/egress/squid\.conf|tests/egress-template\.test\.mts)$''']
+regexes = ['''^192\.88\.99\.0$''']
 
 [[rules]]
 id = "opsec-ipv6-address"
@@ -367,6 +375,11 @@ description = "Unique-local addresses inside test files (same reasoning as for I
 condition = "AND"
 paths = ['''(?i)(?:^|/)(?:tests?|__tests__)/|\.(?:test|spec)\.[cm]?[jt]sx?$''']
 regexes = ['''(?i)^f[cd]''']
+[[rules.allowlists]]
+description = "The bare prefixes of the IETF block and of 6to4 in the block list of the template of the proxy and its test (ADR 0035)"
+condition = "AND"
+paths = ['''^(?:deploy/selfhost/egress/squid\.conf|tests/egress-template\.test\.mts)$''']
+regexes = ['''^200[12]::$''']
 
 [[rules]]
 id = "opsec-local-user-path"

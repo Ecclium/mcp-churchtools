@@ -34,6 +34,8 @@ import {
 import type { StateDirFileSystem } from './state-dir.js';
 import type { TokenFileStats, TokenFileSystem } from './token-file.js';
 import {
+  allowLanLength,
+  maxAllowLanTargets,
   tokenVariableName,
   trustStoreVariableNames,
   unsupportedVariableNames,
@@ -599,6 +601,7 @@ describe('loadConfig with a good configuration', () => {
       auditRetentionMonths: 12,
       policy: defaultPolicy,
       egressOff: false,
+      egressAllowLan: [],
       stdioSubject: 'local-stdio',
       logLevel: 'info',
     });
@@ -700,6 +703,7 @@ describe('loadConfig with a good configuration', () => {
       ],
       ['egressProxy', 'ECCLIUM_EGRESS_PROXY', 'unset', { kind: 'none' }],
       ['egress', 'ECCLIUM_EGRESS', 'unset', { kind: 'none' }],
+      ['egressAllowLan', 'ECCLIUM_EGRESS_ALLOW_LAN', 'unset', { kind: 'none' }],
       [
         'stdioSubject',
         'ECCLIUM_STDIO_SUBJECT',
@@ -1798,10 +1802,7 @@ describe('loadConfig and the names of variables', () => {
   });
 
   it('refuses each name of a later phase as not yet supported', () => {
-    expect(unsupportedVariableNames).toEqual([
-      'ECCLIUM_EGRESS_ALLOW_LAN',
-      'ECCLIUM_ALLOWED_HOSTS',
-    ]);
+    expect(unsupportedVariableNames).toEqual(['ECCLIUM_ALLOWED_HOSTS']);
     for (const name of unsupportedVariableNames) {
       expect(problems(load({ ...valid(), [name]: 'x' })), name).toEqual([
         ['unsupported_variable', name],
@@ -3468,7 +3469,16 @@ describe('loadConfig and its problems', () => {
     unknown_variable: () => load({ ...valid(), ECCLIUM_REDONLY: 'true' }),
     miscased_variable: () => load({ ...valid(), ecclium_read_only: 'true' }),
     unsupported_variable: () =>
+      load({ ...valid(), ECCLIUM_ALLOWED_HOSTS: 'x' }),
+    // The targets in the local network (ADR 0035).
+    egress_allow_lan_invalid: () =>
       load({ ...valid(), ECCLIUM_EGRESS_ALLOW_LAN: 'x' }),
+    egress_allow_lan_unknown: () =>
+      load({ ...valid(), ECCLIUM_EGRESS_ALLOW_LAN: 'other.example.org:443' }),
+    egress_allow_lan_unused: () =>
+      asRunner({
+        extra: { ECCLIUM_EGRESS_ALLOW_LAN: 'example.church.tools:443' },
+      }),
     // The proxy and the switch for a runner without it (ADR 0035).
     egress_proxy_invalid: () =>
       load({ ...valid(), ECCLIUM_EGRESS_PROXY: 'https://egress:3128' }),
@@ -4191,12 +4201,17 @@ describe('loadConfig and its problems', () => {
   });
 
   // Snapshots matter only to a server that writes, so their warning comes
-  // with the one that says writing is on (ADR 0029, ADR 0031).
+  // with the one that says writing is on (ADR 0029, ADR 0031); the targets
+  // in the local network do nothing only for a runner with off (ADR 0035).
   it.each([...configWarningCodes])('can report the warning %s', (code) => {
     const result = cases[code]();
     expect(result.ok).toBe(true);
     expect(result.report.warnings).toEqual(
-      code === 'snapshots_off' ? ['writes_enabled', code] : [code],
+      code === 'snapshots_off'
+        ? ['writes_enabled', code]
+        : code === 'egress_allow_lan_unused'
+          ? ['egress_off', code]
+          : [code],
     );
   });
 
@@ -4356,7 +4371,7 @@ describe('loadConfig and its problems', () => {
     const environment: Environment = {
       ECCLIUM_CHURCHTOOLS_URL: 'http://demo.example',
       ECCLIUM_CHURCHTOOLS_TOKEN_FILE: tokenPath,
-      ECCLIUM_EGRESS_ALLOW_LAN: 'x',
+      ECCLIUM_ALLOWED_HOSTS: 'x',
       ECCLIUM_SEARCH_TOOLS: 'x',
       NODE_TLS_REJECT_UNAUTHORIZED: '0',
       NODE_DEBUG: 'undici',
@@ -4378,7 +4393,7 @@ describe('loadConfig and its problems', () => {
       ['debug_output_enabled', 'NODE_DEBUG'],
       ['tls_keylog_enabled'],
       ['tls_trace_enabled', 'NODE_OPTIONS'],
-      ['unsupported_variable', 'ECCLIUM_EGRESS_ALLOW_LAN'],
+      ['unsupported_variable', 'ECCLIUM_ALLOWED_HOSTS'],
       ['search_tools_replaced', 'ECCLIUM_SEARCH_TOOLS'],
       ['unknown_variable', 'ECCLIUM_UNKNOWN_0'],
     ]);
@@ -4920,12 +4935,173 @@ describe('loadConfig and the proxy of outbound connections (ADR 0035)', () => {
   });
 });
 
+describe('loadConfig and the targets in the local network (ADR 0035)', () => {
+  const lan = 'ECCLIUM_EGRESS_ALLOW_LAN';
+  const withLan = (value: string, extra: Environment = {}): ConfigResult =>
+    load({ ...valid(), [lan]: value, ...extra });
+  const lanProviders = providersYaml.replace(
+    'https://model.example.org/v1',
+    'https://model.example.org:8443/v1',
+  );
+
+  it('has no targets without the variable', () => {
+    const result = load(valid());
+    expect(result.ok && result.config.egressAllowLan).toEqual([]);
+    expect(setting(result, 'egressAllowLan')?.origin).toBe('unset');
+  });
+
+  it('takes ChurchTools and a provider, with the port written out, as origins', () => {
+    const result = withProviders(lanProviders, {
+      [lan]: 'model.example.org:8443,example.church.tools:443',
+    });
+    expect(problems(result)).toEqual([]);
+    expect(result.ok && result.config.egressAllowLan).toEqual([
+      'https://model.example.org:8443',
+      'https://example.church.tools',
+    ]);
+    expect(setting(result, 'egressAllowLan')).toEqual({
+      key: 'egressAllowLan',
+      variable: lan,
+      origin: 'environment',
+      shown: {
+        kind: 'targets',
+        values: [
+          { host: 'model.example.org', port: '8443' },
+          { host: 'example.church.tools', port: '443' },
+        ],
+      },
+    });
+    expect(result.report.warnings).toEqual([]);
+  });
+
+  it('takes ChurchTools on a port of its own', () => {
+    const result = load(
+      {
+        ECCLIUM_CHURCHTOOLS_URL: 'https://example.church.tools:8443',
+        ECCLIUM_CHURCHTOOLS_TOKEN_FILE: tokenPath,
+        [lan]: 'example.church.tools:8443',
+      },
+      'stdio',
+    );
+    expect(problems(result)).toEqual([]);
+    expect(result.ok && result.config.egressAllowLan).toEqual([
+      'https://example.church.tools:8443',
+    ]);
+  });
+
+  it.each([
+    'example.church.tools',
+    'example.church.tools:',
+    ':443',
+    'example.church.tools:0443',
+    'example.church.tools:+443',
+    'example.church.tools:443:443',
+    'example.church.tools:65536',
+    'Example.church.tools:443',
+    'example.church.tools.:443',
+    ' example.church.tools:443',
+    'example.church.tools:443,',
+    ',example.church.tools:443',
+    'example.church.tools:443,example.church.tools:443',
+    'example.church.tools:443;model.example.org:8443',
+    'https://example.church.tools:443',
+    'user@example.org:443',
+    'example.church.tools/x:443',
+    '192.0.2.5:8443',
+    '[::1]:8443',
+    'localhost:8443',
+    'model.localhost:8443',
+    'modell:8443',
+    'xn--bcher-kva.example:443x',
+  ])('refuses %j', (value) => {
+    const result = withLan(value);
+    expect(problems(result)).toEqual([['egress_allow_lan_invalid', lan]]);
+    expect(setting(result, 'egressAllowLan')?.origin).toBe('invalid');
+  });
+
+  it('refuses more targets than it takes, and a value longer than that', () => {
+    const many = Array.from(
+      { length: maxAllowLanTargets + 1 },
+      (_, index) => `t${String(index)}.example.org:443`,
+    ).join(',');
+    expect(problems(withLan(many))).toEqual([
+      ['egress_allow_lan_invalid', lan],
+    ]);
+    expect(problems(withLan('a'.repeat(allowLanLength + 1)))).toEqual([
+      ['value_too_long', lan],
+    ]);
+  });
+
+  it('refuses a target that is no origin of the configuration', () => {
+    for (const value of [
+      'other.example.org:443',
+      'example.church.tools:8443',
+      'model.example.org:443',
+      'example.church.tools:443,other.example.org:443',
+    ]) {
+      const result = withLan(value);
+      expect(problems(result), value).toEqual([
+        ['egress_allow_lan_unknown', lan],
+      ]);
+      expect(result.ok, value).toBe(false);
+    }
+    // The provider on 8443 is no target on 443.
+    expect(
+      problems(withProviders(lanProviders, { [lan]: 'model.example.org:443' })),
+    ).toEqual([['egress_allow_lan_unknown', lan]]);
+  });
+
+  it('compares only with origins that passed, so a refused file is reported once', () => {
+    const result = withProviders('schema: providers.v1\nproviders: [1\n', {
+      [lan]: 'model.example.org:8443',
+    });
+    expect(problems(result)).toEqual([
+      ['providers_yaml_syntax', 'ECCLIUM_PROVIDERS_FILE'],
+    ]);
+    expect(setting(result, 'egressAllowLan')?.origin).toBe('environment');
+  });
+
+  it('never takes the host of the ping, which the server does not read', () => {
+    const result = withPing(memoryFiles(pingAddress).fs, {
+      [lan]: 'ping.example:443',
+    });
+    expect(problems(result)).toEqual([['egress_allow_lan_unknown', lan]]);
+  });
+
+  it('warns a runner with off, since there is no proxy, but not a runner with one or the server', () => {
+    const target = { [lan]: 'example.church.tools:443' };
+    expect(asRunner({ extra: target }).report.warnings).toEqual([
+      'egress_off',
+      'egress_allow_lan_unused',
+    ]);
+    const proxied = asRunner({
+      extra: {
+        ...target,
+        ECCLIUM_EGRESS: undefined,
+        ECCLIUM_EGRESS_PROXY: 'http://egress:3128',
+      },
+    });
+    expect(problems(proxied)).toEqual([]);
+    expect(proxied.report.warnings).toEqual([]);
+    expect(proxied.ok && proxied.config.egressAllowLan).toEqual([
+      'https://example.church.tools',
+    ]);
+    expect(
+      load({ ...valid(), ...target, ECCLIUM_EGRESS: 'off' }).report.warnings,
+    ).toEqual([]);
+  });
+});
+
 describe('loadConfig and the ping of the runner (ADR 0009)', () => {
   it('reads the address for the runner, keeps it as a secret and shows host and port', () => {
     const result = withPing(memoryFiles(`${pingAddress}\n`).fs);
     expect(problems(result)).toEqual([]);
     const url = result.ok ? result.config.runnerPingUrl : undefined;
     expect(url).toBeInstanceOf(Secret);
+    // The origin is no secret: the list of the proxy names it (ADR 0035).
+    expect(result.ok && result.config.runnerPingOrigin).toBe(
+      'https://ping.example',
+    );
     expect(String(url)).toBe('[REDACTED]');
     expect(setting(result, 'runnerPingUrl')).toEqual({
       key: 'runnerPingUrl',
@@ -4946,6 +5122,9 @@ describe('loadConfig and the ping of the runner (ADR 0009)', () => {
       host: 'ping.example',
       port: '8443',
     });
+    expect(result.ok && result.config.runnerPingOrigin).toBe(
+      'https://ping.example:8443',
+    );
   });
 
   it('never reads the file for a server, which checks the form of the path', () => {
@@ -4959,6 +5138,7 @@ describe('loadConfig and the ping of the runner (ADR 0009)', () => {
       expect(problems(result), transport).toEqual([]);
       expect(file.opened, transport).toEqual([]);
       expect(result.ok && result.config.runnerPingUrl).toBeUndefined();
+      expect(result.ok && result.config.runnerPingOrigin).toBeUndefined();
       expect(setting(result, 'runnerPingUrl')).toMatchObject({
         origin: 'environment',
         shown: { kind: 'hidden' },

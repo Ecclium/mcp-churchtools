@@ -85,6 +85,17 @@
       extractVersionTemplate: '^v(?<version>.+)$',
       versioningTemplate: 'semver',
     },
+    {
+      customType: 'regex',
+      description: 'The image of Squid that the template of the proxy names and was checked with (ADR 0035). Like every digest it waits three days and for a person: the proxy is the boundary in the network of the runner.',
+      managerFilePatterns: ['/^deploy/selfhost/egress/squid\\.conf$/'],
+      matchStrings: [
+        '# Image: (?<depName>ubuntu/squid):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[0-9a-f]{64})',
+      ],
+      datasourceTemplate: 'docker',
+      versioningTemplate: 'docker',
+      autoReplaceStringTemplate: '# Image: {{{depName}}}:{{{newValue}}}@{{{newDigest}}}',
+    },
   ],
 
   packageRules: [
