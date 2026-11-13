@@ -94,6 +94,8 @@ export interface AuditRunEnd {
   /** Which try of its trigger the run was; none by hand or a preview. */
   readonly attempt?: number;
   readonly period?: string;
+  /** The runner ran without its proxy (ADR 0035). */
+  readonly egressOff?: true;
   readonly durationMs: number;
 }
 
@@ -304,6 +306,7 @@ export function summarizeRun(options: AuditRunSummaryOptions): AuditRunSummary {
               }),
           ...(event.attempt === undefined ? {} : { attempt: event.attempt }),
           ...(event.period === undefined ? {} : { period: event.period }),
+          ...(event.egressOff === true ? { egressOff: true as const } : {}),
           durationMs: event.durationMs,
         });
         return;

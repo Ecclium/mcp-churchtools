@@ -163,6 +163,14 @@ describe('renderConfigReport', () => {
         'Metrikdatei',
         'keine Metrikdatei (‹ECCLIUM_RUNNER_METRICS_FILE› ist nicht gesetzt)',
       ),
+      row(
+        'Proxy nach aussen',
+        'kein Proxy (‹ECCLIUM_EGRESS_PROXY› ist nicht gesetzt)',
+      ),
+      row(
+        'Grenze im Netz',
+        'nicht abgeschaltet (‹ECCLIUM_EGRESS› ist nicht gesetzt)',
+      ),
       row('Subjekt über stdio', '‹local-stdio› (Voreinstellung)'),
       row('Stufe des Logs', '‹info› (Voreinstellung)'),
       hostNote,
@@ -430,7 +438,9 @@ describe('renderConfigReport', () => {
     expect(lines).toContain(
       row('Token', 'fehlt (‹ECCLIUM_RUNNER_TOKENS_DIR› ist nicht gesetzt)'),
     );
-    expect(lines).toContain('Die Konfiguration hat 5 Probleme:');
+    // The five settings it needs, and a proxy or ECCLIUM_EGRESS=off
+    // (ADR 0035).
+    expect(lines).toContain('Die Konfiguration hat 6 Probleme:');
     expect(lines.at(-1)).toBe(invalid);
   });
 
@@ -1023,5 +1033,42 @@ describe('renderConfigReport and the policy', () => {
       ),
     );
     expect(shown.join('\n')).not.toContain('/path/to/model-key');
+  });
+});
+
+// The proxy names a machine of the network by its host, which stays
+// hidden like the host of the instance; its port names none (ADR 0035).
+describe('the proxy in the report', () => {
+  it('masks the host of the proxy unless asked to show it', () => {
+    const environment = {
+      ...minimal(),
+      ECCLIUM_EGRESS_PROXY: 'http://egress:3128',
+    };
+    expect(render(environment)).toContain(
+      row(
+        'Proxy nach aussen',
+        'http://[verborgen]:3128 (aus ‹ECCLIUM_EGRESS_PROXY›)',
+      ),
+    );
+    const shown = loadConfig({
+      environment,
+      transport: 'stdio',
+      tokenFiles: goodFile().files,
+      stateDirFiles: folder(),
+    });
+    expect(
+      renderConfigReport(shown.report, { valid: shown.ok, showValues: true }),
+    ).toContain(
+      row(
+        'Proxy nach aussen',
+        'http://egress:3128 (aus ‹ECCLIUM_EGRESS_PROXY›)',
+      ),
+    );
+  });
+
+  it('shows a runner without its proxy', () => {
+    expect(render({ ...minimal(), ECCLIUM_EGRESS: 'off' })).toContain(
+      row('Grenze im Netz', '‹off› (aus ‹ECCLIUM_EGRESS›)'),
+    );
   });
 });

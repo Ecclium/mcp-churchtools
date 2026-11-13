@@ -4,7 +4,6 @@ import {
   configWarningCodes,
   loadConfig,
   maxReportedProblems,
-  proxyVariableName,
   tlsVariableName,
   tokenVariableName,
   unsupportedVariableNames,
@@ -24,13 +23,12 @@ import {
 } from './index.js';
 
 // Every name the loader can report with a problem: the known variables,
-// the names of later phases and of a proxy, the variable of TLS, the
+// the names of later phases, the variable of TLS, the
 // variable with the options of Node.js and the longest unknown name it
 // shows.
 const reportedNames: readonly string[] = [
   ...variableNames,
   ...unsupportedVariableNames,
-  proxyVariableName,
   tlsVariableName,
   'NODE_OPTIONS',
   `ECCLIUM_${'A'.repeat(64)}`,
@@ -126,7 +124,7 @@ describe('the texts of the output', () => {
     'follow the rules of the brand in %s',
     (_, lines) => {
       for (const line of lines) {
-        const text = line.replace(/https:\/\/\S+/g, '');
+        const text = line.replace(/https?:\/\/\S+/g, '');
         expect(text.replace(/(?<=\d)'(?=\d{3})/g, ''), line).not.toMatch(
           /[ß—–!"„“”'‚‘’]/,
         );

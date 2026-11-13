@@ -53,6 +53,7 @@ import { createCorePlugin } from '@ecclium/mcp-churchtools-tools';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type ExitCode, exitCodes } from '../exit-codes.js';
+import { egressProxyText, warningText } from '../messages/index.js';
 import { run } from '../main.js';
 import { maxWaitMs, minWaitMs, runDaemon, waitBefore } from './daemon.js';
 import type { RunnerHost } from './host.js';
@@ -483,6 +484,8 @@ interface CallOptions {
   readonly readModelKey?: RunOnceOptions['readModelKey'];
   /** Uses the catalog of the runner itself, without the test plugin. */
   readonly ownCatalog?: boolean;
+  /** Replaces the check of the proxy at the start (ADR 0035). */
+  readonly probeProxy?: RunOnceOptions['probeProxy'];
 }
 
 const setup = (options: SetupOptions = {}) => {
@@ -600,6 +603,9 @@ const setup = (options: SetupOptions = {}) => {
     // Every line the command can write, so that a leak in one shows.
     ECCLIUM_LOG_LEVEL: 'debug',
     ECCLIUM_PSEUDONYM_KEY_FILE: pseudonymFile,
+    // The transports of the test reach no network, so the runner runs
+    // without the boundary on purpose (ADR 0035).
+    ECCLIUM_EGRESS: 'off',
     ...(options.strict === true ? { ECCLIUM_REDACTION: 'strict' } : {}),
   };
   for (const [name, value] of Object.entries(options.extra ?? {})) {
@@ -746,6 +752,7 @@ const setup = (options: SetupOptions = {}) => {
         ? {}
         : { readModelKey: more.readModelKey }),
       ...(more.ownCatalog === true ? {} : { createCatalog }),
+      ...(more.probeProxy === undefined ? {} : { probeProxy: more.probeProxy }),
       writeSync: (_fd, buffer, offset, length) => {
         const line = Buffer.from(buffer)
           .subarray(offset, offset + length)
@@ -799,6 +806,7 @@ const setup = (options: SetupOptions = {}) => {
       ...(more.openProcess === undefined
         ? {}
         : { openProcess: more.openProcess }),
+      ...(more.probeProxy === undefined ? {} : { probeProxy: more.probeProxy }),
     });
     stdout.push(...out);
     stderr.push(...err);
@@ -2041,7 +2049,11 @@ describe('ecclium runner', () => {
     });
     const { code, stderr } = await t.daemon();
     expect(code).toBe(exitCodes.terminated);
-    expect(stderr[0]).toBe(daemonStartText({ routines: 2, refused: 0 }));
+    // After the warning about the runner without its proxy (ADR 0035).
+    expect(stderr.slice(0, 2)).toEqual([
+      warningText('egress_off'),
+      daemonStartText({ routines: 2, refused: 0 }),
+    ]);
     // One write for the trigger of the week, whatever the number of looks.
     expect(t.patches()).toHaveLength(1);
     expect(t.runLines()).toHaveLength(1);
@@ -2246,6 +2258,10 @@ describe('ecclium audit show --run', () => {
     expect(lines).toContain('  Periode   ‹2026-W46›, Versuch 1');
     expect(lines).toContain('  Beginn    11.11.2026 07:00:00');
     expect(lines).toContain('  Ausgang   geschrieben');
+    // The runner of the test runs without its proxy (ADR 0035).
+    expect(lines).toContain(
+      '  Proxy     keiner, weil ‹ECCLIUM_EGRESS› auf ‹off› stand',
+    );
     expect(lines).toContain('Lesungen je Tool');
     expect(lines).toContain(
       '  ct_test_events  2 Aufrufe: 2 ausgeführt, 0 mit Fehler, 0 abgelehnt',
@@ -2325,5 +2341,91 @@ describe('ecclium audit show --run with a range of days', () => {
     expect(within.stdout).toContain(
       '  Beginn    11.11.2026 07:00:00, erste Zeile im Zeitraum',
     );
+  });
+});
+
+describe('the proxy of ecclium run-once (ADR 0035)', () => {
+  it('warns at every start of a runner without its proxy', async () => {
+    const t = setup();
+    const { code, stderr } = await t.call(due);
+    expect(code).toBe(exitCodes.ok);
+    expect(stderr[0]).toBe(warningText('egress_off'));
+    expect(t.runLines()[0]).toMatchObject({ egressOff: true });
+  });
+
+  it('asks the proxy for a tunnel to ChurchTools before the first read', async () => {
+    const t = setup({
+      extra: {
+        ECCLIUM_EGRESS: undefined,
+        ECCLIUM_EGRESS_PROXY: 'http://127.0.0.1:3128',
+      },
+    });
+    const probeProxy = vi.fn(() => Promise.resolve({ ok: true } as const));
+    const { code, stderr } = await t.call(due, { probeProxy });
+    expect(code).toBe(exitCodes.ok);
+    expect(probeProxy).toHaveBeenCalledExactlyOnceWith({
+      proxy: 'http://127.0.0.1:3128',
+      origin: t.environment['ECCLIUM_CHURCHTOOLS_URL'],
+    });
+    expect(stderr).not.toContain(warningText('egress_off'));
+    expect(t.runLines()[0]).not.toHaveProperty('egressOff');
+    const runId = String(t.runLines()[0]?.['runId']);
+    const shown = await t.cli(['audit', 'show', '--run', runId]);
+    expect(shown.stdout).toContain('  Ausgang   geschrieben');
+    expect(shown.stdout).not.toContain('  Proxy ');
+  });
+
+  it.each(['unreachable', 'no_answer', 'refused'] as const)(
+    'ends with 69 and reads nothing when the proxy gives no tunnel: %s',
+    async (reason) => {
+      const t = setup({
+        extra: {
+          ECCLIUM_EGRESS: undefined,
+          ECCLIUM_EGRESS_PROXY: 'http://127.0.0.1:3128',
+        },
+      });
+      for (const mode of [
+        due,
+        { kind: 'preview', routineId: wikiRoutine },
+      ] as const) {
+        const { code, stdout, stderr } = await t.call(mode, {
+          probeProxy: () => Promise.resolve({ ok: false, reason }),
+        });
+        expect(code).toBe(exitCodes.unavailable);
+        expect(stdout).toEqual([]);
+        expect(stderr).toEqual([egressProxyText(reason)]);
+      }
+      expect(t.churchtoolsCalls).toEqual([]);
+      expect(t.auditLines()).toEqual([]);
+    },
+  );
+
+  it('ends the daemon with 69 before its first pass when the proxy gives no tunnel', async () => {
+    const t = setup({
+      extra: {
+        ECCLIUM_EGRESS: undefined,
+        ECCLIUM_EGRESS_PROXY: 'http://127.0.0.1:3128',
+      },
+    });
+    const { code, stdout, stderr } = await t.daemon({
+      probeProxy: () => Promise.resolve({ ok: false, reason: 'refused' }),
+    });
+    expect(code).toBe(exitCodes.unavailable);
+    expect(stdout).toEqual([]);
+    expect(stderr).toEqual([egressProxyText('refused')]);
+    expect(t.churchtoolsCalls).toEqual([]);
+  });
+
+  it('does not start without a proxy and without ECCLIUM_EGRESS=off', async () => {
+    const t = setup();
+    const { code, stderr } = await t.call(due, {
+      load: (sources) =>
+        loadConfig({
+          ...sources,
+          environment: { ...sources.environment, ECCLIUM_EGRESS: undefined },
+        }),
+    });
+    expect(code).toBe(exitCodes.invalidConfig);
+    expect(stderr.join('\n')).toContain('ECCLIUM_EGRESS_PROXY');
   });
 });

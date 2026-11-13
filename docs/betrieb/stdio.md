@@ -109,14 +109,15 @@ Ecclium wartet nicht auf stderr. Liest der Client stderr nicht oder zu langsam, 
 
 Der Server endet mit einem dieser Codes:
 
-| Code | Bedeutung                                                                                                                         |
-| ---- | --------------------------------------------------------------------------------------------------------------------------------- |
-| 0    | Die Verbindung hat geendet: Der Client hat stdin geschlossen, stdout ist abgebrochen, oder die ungelesene Eingabe lag über 1 MiB. |
-| 64   | Nach `stdio` stand ein weiteres Argument.                                                                                         |
-| 70   | Ein interner Fehler, gemeldet mit einer festen Meldung ohne Einzelheiten.                                                         |
-| 78   | Die Konfiguration ist ungültig, oder die Audit-Datei lässt sich nicht öffnen.                                                     |
-| 130  | Der Server hat sich nach dem Signal `SIGINT` beendet, das vor dem Ende der Verbindung kam.                                        |
-| 143  | Der Server hat sich nach dem Signal `SIGTERM` beendet, das vor dem Ende der Verbindung kam.                                       |
+| Code | Bedeutung                                                                                                                                                                                |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0    | Die Verbindung hat geendet: Der Client hat stdin geschlossen, stdout ist abgebrochen, oder die ungelesene Eingabe lag über 1 MiB.                                                        |
+| 64   | Nach `stdio` stand ein weiteres Argument.                                                                                                                                                |
+| 69   | Der Proxy aus `ECCLIUM_EGRESS_PROXY` gab beim Start keinen Tunnel zu ChurchTools: nicht erreichbar, keine Antwort oder abgewiesen ([ADR 0035](../adr/0035-proxy-und-grenze-im-netz.md)). |
+| 70   | Ein interner Fehler, gemeldet mit einer festen Meldung ohne Einzelheiten.                                                                                                                |
+| 78   | Die Konfiguration ist ungültig, oder die Audit-Datei lässt sich nicht öffnen.                                                                                                            |
+| 130  | Der Server hat sich nach dem Signal `SIGINT` beendet, das vor dem Ende der Verbindung kam.                                                                                               |
+| 143  | Der Server hat sich nach dem Signal `SIGTERM` beendet, das vor dem Ende der Verbindung kam.                                                                                              |
 
 Kommt das erste Signal erst nach dem Ende der Verbindung, steht es im Log, und der Code bleibt 0. Ein zweites Signal beendet den Server sofort, mit dem Code dieses zweiten Signals.
 

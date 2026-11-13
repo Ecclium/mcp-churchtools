@@ -195,6 +195,7 @@ const producerKeys: readonly string[] = Object.freeze([
   'runStep',
   'attempt',
   'period',
+  'egressOff',
   'durationMs',
 ]);
 
@@ -668,8 +669,9 @@ function fill(
     'audit_invalid_rights_drift_accepted',
   );
 
-  // How a run ended, the step a failed run ended in, its try and its
-  // period, only on the end of a run (ADR 0033, ADR 0034).
+  // How a run ended, the step a failed run ended in, its try, its period
+  // and the note that the runner ran without its proxy, only on the end of
+  // a run (ADR 0033, ADR 0034, ADR 0035).
   if (runResult !== undefined) line['runResult'] = runResult;
   const step = own(draft, 'runStep');
   if (step !== undefined) {
@@ -682,6 +684,7 @@ function fill(
   for (const [key, schema, event] of [
     ['attempt', fields.attempt, 'audit_invalid_attempt'],
     ['period', fields.period, 'audit_invalid_period'],
+    ['egressOff', fields.egressOff, 'audit_invalid_egress_off'],
   ] as const) {
     const value = own(draft, key);
     if (value === undefined) continue;

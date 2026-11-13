@@ -186,6 +186,7 @@ describe('failureCategories and categoryCodes', () => {
     expect({ ...categoryCodes }).toEqual({
       refused: 'internal',
       connect: 'network',
+      proxy: 'network',
       tls: 'network',
       timeout: 'network',
       aborted: 'network',
@@ -232,5 +233,33 @@ describe('HttpTransportError', () => {
     }).toThrow(TypeError);
     expect(Reflect.deleteProperty(error, 'category')).toBe(false);
     expect(error.category).toBe('tls');
+  });
+});
+
+// A tunnel through the proxy that fails before the request goes out
+// (ADR 0035): undici throws an abort with the status of the proxy in its
+// text, or a failed proxy connection. A name the certificate of a proxy
+// does not hold stays TLS.
+describe('categoriseFailure with a proxy', () => {
+  it.each(['UND_ERR_ABORTED', 'UND_ERR_PRX_CONN'])(
+    'gives proxy for %s before the answer and interrupted after it',
+    (code) => {
+      expect(categoriseFailure(withCode(code), inRequest)).toBe('proxy');
+      expect(categoriseFailure(withCode(code), inBody)).toBe('interrupted');
+    },
+  );
+
+  it('lets the own deadline and an abort by the caller win', () => {
+    const aborted = withCode('UND_ERR_ABORTED');
+    expect(categoriseFailure(deadline, inRequest)).toBe('timeout');
+    expect(
+      categoriseFailure(aborted, { ...inRequest, callerAborted: true }),
+    ).toBe('aborted');
+  });
+
+  it('gives tls for a name the certificate of a proxy does not hold', () => {
+    expect(categoriseFailure(withCode('UND_ERR_PRX_TLS'), inRequest)).toBe(
+      'tls',
+    );
   });
 });

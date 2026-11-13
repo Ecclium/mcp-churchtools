@@ -33,6 +33,8 @@ Die Spalte «Server nur über stdio» sagt, ob der Server die Variable nur im Be
 | `ECCLIUM_DRAFTS_DIR` | absoluter Pfad | keine | nein | nein | ja |
 | `ECCLIUM_NOTIFY_FILE` | absoluter Pfad | keine | nein | nein | ja |
 | `ECCLIUM_RUNNER_METRICS_FILE` | absoluter Pfad | keine | nein | nein | ja |
+| `ECCLIUM_EGRESS_PROXY` | Adresse wie `http://egress:3128` | keine | nein | nein | ja |
+| `ECCLIUM_EGRESS` | `off` | keine | nein | nein | ja |
 | `ECCLIUM_STDIO_SUBJECT` | Bezeichnung mit höchstens 32 Zeichen | `local-stdio` | nein | ja | nein |
 | `ECCLIUM_LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` | nein | nein | ja |
 
@@ -128,6 +130,14 @@ Absoluter Pfad der Datei, an die der Runner nach jedem Lauf einer Routine, deren
 
 Absoluter Pfad der Metrikdatei des Runners im Textformat von Prometheus (`docs/betrieb/runner.md`): je Routine die nächste Zeit, zu der der Runner sie wieder ansieht, das Ende des letzten erfolgreichen Laufs und der Status des letzten Laufs, dazu der Kopf der Kette der offenen Audit-Datei. Der Runner ersetzt die Datei nach jedem Durchgang in einem Schritt, `ecclium run-once` nach jedem Aufruf, und führt dabei die Werte der Routinen weiter, die er nicht ausgeführt hat. Fehlt der Ordner der Datei, legt der Runner ihn mit den Rechten 700 an, nicht aber einen Ordner darüber, und die Datei mit den Rechten 600. Ein bestehender Ordner muss dem Benutzer gehören, unter dem Ecclium läuft, und für die Gruppe und andere Benutzer keine Rechte haben. Eine Überwachung liest die Datei deshalb als derselbe Benutzer. Beim Start prüft Ecclium die Form des Pfads, dass der Name der Datei mit einem Buchstaben oder einer Ziffer beginnt und höchstens 128 Zeichen aus Buchstaben ohne Umlaute, Ziffern, Punkt, Bindestrich und Unterstrich hat, dass der Pfad nicht der Zustandsordner ist oder ihn enthält, keine andere Datei der Konfiguration ist, etwa die Datei der Meldungen, die Richtlinie oder eine Schlüsseldatei, nicht der Ordner der Entwürfe ist und nicht im Ordner der Routinen, im Ordner der Schlüssel, im Ordner der Token-Dateien oder in einem der Ordner `audit`, `quota`, `snapshots`, `queue`, `runner` oder `stop` des Zustandsordners liegt. Die Datei enthält keine Personendaten. Nicht gesetzt: Der Runner schreibt keine Metrikdatei.
 
+## `ECCLIUM_EGRESS_PROXY`
+
+Der Proxy für alle ausgehenden Verbindungen des Prozesses, als `http://host:port` mit ausgeschriebenem Port, in kleinen Buchstaben, ohne Benutzer, Passwort, Pfad und Query, etwa `http://egress:3128` ([ADR 0035](adr/0035-proxy-und-grenze-im-netz.md)). Gesetzt gehen der Server, der Runner und die Befehle über ihn zu ChurchTools und zu den Modellen, jede Verbindung als Tunnel mit `CONNECT`, durch den TLS bis zum Ziel läuft. Der Proxy sieht Host und Port jedes Ziels, nie Inhalte oder Token. Beim Start prüfen der Server über stdio und der Runner einen Tunnel zu ChurchTools, ohne eine Anfrage zu senden, und brechen mit 69 ab, wenn der Proxy nicht erreichbar ist, nicht antwortet oder den Tunnel abweist. `HTTP_PROXY`, `HTTPS_PROXY` und `NODE_USE_ENV_PROXY` nutzt Ecclium nicht. Nicht gesetzt: Der Server verbindet direkt, der Runner startet nur mit `ECCLIUM_EGRESS=off`.
+
+## `ECCLIUM_EGRESS`
+
+Nur `off`: Der Runner startet ohne Proxy und damit ohne Grenze im Netz ([ADR 0035](adr/0035-proxy-und-grenze-im-netz.md)). Er warnt dann bei jedem Start, und jede Zeile eines Laufs im Audit trägt den Vermerk `egressOff`. Zusammen mit `ECCLIUM_EGRESS_PROXY` bricht der Start ab. Für den Server und die Befehle ändert die Variable nichts. Nicht gesetzt: Der Runner verlangt `ECCLIUM_EGRESS_PROXY`.
+
 ## `ECCLIUM_STDIO_SUBJECT`
 
 Das Subjekt, also eine neutrale Bezeichnung dessen, der den Server über stdio nutzt. Erlaubt sind Kleinbuchstaben, Ziffern und Bindestriche, am Anfang ein Buchstabe. Die Bezeichnung erscheint im Audit als Akteur und darf deshalb kein Personenname sein.
@@ -140,10 +150,8 @@ Legt fest, ab welcher Stufe der Server Zeilen des Logs auf stderr schreibt.
 
 Diese Namen gehören zu späteren Versionen. Ist einer gesetzt, bricht der Start mit einem Hinweis ab, statt die Variable still zu übergehen.
 
-- `ECCLIUM_EGRESS`
 - `ECCLIUM_EGRESS_ALLOW_LAN`
 - `ECCLIUM_ALLOWED_HOSTS`
-- `ECCLIUM_EGRESS_PROXY`: Einen Proxy für ausgehende Verbindungen gibt es erst in einer späteren Version.
 
 ## Nicht mehr gültig
 

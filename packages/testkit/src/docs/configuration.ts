@@ -8,7 +8,6 @@
  */
 import { variableDescriptions } from '@ecclium/mcp-churchtools';
 import {
-  proxyVariableName,
   requestsPerMinuteRange,
   retentionMonthsRange,
   searchToolsVariableName,
@@ -29,6 +28,8 @@ const valuesOf = (variable: Variable): string => {
   switch (variable.kind) {
     case 'origin':
       return 'Adresse mit `https`';
+    case 'proxy':
+      return `Adresse wie ${code('http://egress:3128')}`;
     case 'path':
       return 'absoluter Pfad';
     case 'token':
@@ -122,7 +123,6 @@ export function renderConfigurationReference(): string {
     'Diese Namen gehören zu späteren Versionen. Ist einer gesetzt, bricht der Start mit einem Hinweis ab, statt die Variable still zu übergehen.',
     '',
     ...unsupportedVariableNames.map((name) => `- ${code(name)}`),
-    `- ${code(proxyVariableName)}: Einen Proxy für ausgehende Verbindungen gibt es erst in einer späteren Version.`,
     '',
     '## Nicht mehr gültig',
     '',

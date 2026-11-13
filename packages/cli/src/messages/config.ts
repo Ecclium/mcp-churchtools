@@ -185,6 +185,8 @@ const runnerTokensDir = quote('ECCLIUM_RUNNER_TOKENS_DIR');
 const draftsDir = quote('ECCLIUM_DRAFTS_DIR');
 const notifyFile = quote('ECCLIUM_NOTIFY_FILE');
 const metricsFile = quote('ECCLIUM_RUNNER_METRICS_FILE');
+const egressProxy = quote('ECCLIUM_EGRESS_PROXY');
+const egress = quote('ECCLIUM_EGRESS');
 const providersFile = quote('ECCLIUM_PROVIDERS_FILE');
 // Why the file of the providers matters (ADR 0033).
 const providersReason =
@@ -406,12 +408,6 @@ const problems: Readonly<
       `An ihre Stelle tritt ${toolsets}. Ecclium übergeht sie nicht still, damit die Suchtools nicht unbemerkt wegfallen.`,
       `Ersetzen Sie ${quote('ECCLIUM_SEARCH_TOOLS=true')} durch ${quote('ECCLIUM_TOOLSETS=persons')} oder entfernen Sie die Variable.`,
     ),
-  proxy_unsupported: (name = quote('ECCLIUM_EGRESS_PROXY')) =>
-    message(
-      `Die Variable ${name} ist gesetzt.`,
-      'Ecclium unterstützt noch keinen Proxy für ausgehende Verbindungen. Ohne Abbruch gingen die Anfragen an ChurchTools am Proxy vorbei.',
-      'Entfernen Sie die Variable, bis eine Version mit Proxy erscheint.',
-    ),
   tls_check_disabled: (name = quote('NODE_TLS_REJECT_UNAUTHORIZED')) =>
     message(
       `Die Variable ${name} hat den Wert 0.`,
@@ -540,6 +536,20 @@ const problems: Readonly<
       `Der Pfad in ${name} ist nicht absolut, nicht in seiner eindeutigen Form geschrieben, oder der Name der Datei hat andere Zeichen als die einer privaten Datei von Ecclium.`,
       'Ecclium normalisiert nichts, damit der Runner genau die Datei ersetzt, die Sie angeben, und der Start weiss nicht, aus welchem Ordner er aufgerufen wird.',
       'Geben Sie den vollständigen Pfad an, der mit / beginnt, ohne Schrägstrich am Ende, ohne doppelte Schrägstriche und ohne ‹.› oder ‹..›. Der Name der Datei beginnt mit einem Buchstaben oder einer Ziffer und hat höchstens 128 Zeichen aus Buchstaben ohne Umlaute, Ziffern, Punkt, Bindestrich und Unterstrich, etwa ‹runner.prom›.',
+    ),
+  // The proxy of outbound connections and the switch for a runner without
+  // one (ADR 0035).
+  egress_proxy_invalid: (name = egressProxy) =>
+    message(
+      `Die Adresse in ${name} hat nicht die Form ‹http://host:port›.`,
+      'Ecclium nimmt nur diese Form an, mit ausgeschriebenem Port und ohne Benutzer, Passwort, Pfad oder Query, damit die Anfragen genau über den Proxy gehen, den Sie angeben. Die Daten zu ChurchTools und zum Modell laufen ohnehin in TLS durch ihn hindurch.',
+      'Geben Sie den Proxy als ‹http://host:port› in kleinen Buchstaben an, etwa ‹http://egress:3128›.',
+    ),
+  egress_off_with_proxy: (name = egress) =>
+    message(
+      `${name} steht auf ‹off›, und ${egressProxy} nennt trotzdem einen Proxy.`,
+      'Ecclium weiss dann nicht, ob die Grenze im Netz gelten soll.',
+      `Entfernen Sie ${name}, wenn der Proxy gelten soll, sonst ${egressProxy}.`,
     ),
   invalid_integer: (name = quote('ECCLIUM_CHURCHTOOLS_REQUESTS_PER_MINUTE')) =>
     message(
@@ -1157,6 +1167,13 @@ const problems: Readonly<
       'Eine Sicherung des Zustandsordners enthielte dann die Login-Token der Konten des Runners.',
       `Legen Sie den Ordner ausserhalb des Zustandsordners an, etwa neben ihm, und nennen Sie ihn in ${name}.`,
     ),
+  // A runner without a boundary in the network only on purpose (ADR 0035).
+  runner_egress_required: (name = egressProxy) =>
+    message(
+      `Für den Runner ist weder ${name} noch ${egress} gesetzt.`,
+      'Der Runner liest fremde Texte und schreibt danach. Er soll nur über einen Proxy nach aussen gehen, der nur die Ziele der Konfiguration durchlässt. Ohne Proxy läuft er nur, wenn Sie es ausdrücklich so einstellen.',
+      `Setzen Sie ${name} auf den Proxy, etwa ‹http://egress:3128›, oder ${egress} auf ‹off›, wenn der Runner ohne Grenze im Netz laufen soll.`,
+    ),
   runner_tokens_dir_too_long: (name = runnerTokensDir) =>
     message(
       `Der Pfad in ${name} ist zu lang.`,
@@ -1608,6 +1625,20 @@ const warnings: Readonly<Record<ConfigWarningCode, Message>> = Object.freeze({
     `${retention} ist gesetzt, ${stateDir} aber nicht.`,
     'Ohne den Zustandsordner schreibt Ecclium keine Audit-Datei, und die Frist bewirkt nichts.',
     `Setzen Sie ${stateDir} auf einen lokalen Ordner Ihres Benutzers mit den Rechten 700 oder entfernen Sie ${retention}.`,
+  ),
+  // On every start of the runner without its proxy, which every run also
+  // notes in the audit (ADR 0035).
+  egress_off: message(
+    `Der Runner läuft ohne Proxy, weil ${egress} auf ‹off› steht.`,
+    'Ohne Proxy begrenzt nur die Positivliste im Code die Ziele. Code, der am Kern vorbei eine Verbindung öffnet, erreicht dann jede Adresse. Jeder Lauf trägt den Vermerk im Audit.',
+    `Setzen Sie ${egressProxy} auf einen Proxy, der nur die Ziele der Konfiguration durchlässt, und entfernen Sie ${egress}.`,
+  ),
+  // One text for every setting, which the report of the loader does not
+  // name: a value of such a variable can hold a user and a password.
+  environment_proxy_ignored: message(
+    'Eine Einstellung für einen Proxy der Shell ist gesetzt, die Ecclium nicht nutzt.',
+    `Mindestens eine der Einstellungen ‹HTTP_PROXY›, ‹HTTPS_PROXY›, ‹ALL_PROXY›, ‹NODE_USE_ENV_PROXY› und ‹--use-env-proxy› ist gesetzt. Ecclium nutzt nur den Proxy aus ${egressProxy}. Ist diese Variable nicht gesetzt, verbindet es direkt.`,
+    `Soll Ecclium über einen Proxy gehen, setzen Sie ${egressProxy}. Sonst können Sie die Meldung übergehen.`,
   ),
 });
 

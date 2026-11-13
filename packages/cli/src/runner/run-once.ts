@@ -23,9 +23,12 @@ import type {
   ConfigResult,
   ConfigSources,
 } from '@ecclium/mcp-churchtools-core';
-import type {
-  HttpTransport,
-  HttpTransportOptions,
+import {
+  type HttpTransport,
+  type HttpTransportOptions,
+  probeEgressProxy,
+  type ProxyProbe,
+  type ProxyProbeOptions,
 } from '@ecclium/mcp-churchtools-core/http';
 import type { Clock } from '@ecclium/mcp-churchtools-plugin-api';
 import {
@@ -37,7 +40,11 @@ import type { RoutineFileSystem } from '@ecclium/mcp-churchtools-workflows';
 
 import type { composeModelProviders } from '../compose/model.js';
 import { type ExitCode, exitCodes } from '../exit-codes.js';
-import { problemText } from '../messages/index.js';
+import {
+  egressProxyText,
+  problemText,
+  warningText,
+} from '../messages/index.js';
 import { type Output, terminalLines } from '../output/index.js';
 import type { WriteSyncFn } from '../send.js';
 import {
@@ -49,6 +56,7 @@ import {
 import { openRunnerProcess } from './process.js';
 import {
   type RunnerMode,
+  type RunnerStart,
   type RunnerStartOptions,
   type RunnerStartProblem,
   startRunner,
@@ -91,6 +99,8 @@ export interface RunOnceOptions {
   readonly clock?: Clock;
   /** Replaces the process for its signals, faults, end and waits. */
   readonly host?: RunnerHost;
+  /** Replaces the check of the proxy at the start (ADR 0035). */
+  readonly probeProxy?: (options: ProxyProbeOptions) => Promise<ProxyProbe>;
 }
 
 // The ID of a routine, as its schema takes it.
@@ -160,6 +170,39 @@ export const reportStart = (
 };
 
 /**
+ * The egress at every start of the runner (ADR 0035): the warnings about
+ * a runner without its proxy and a proxy of the shell, then, with a
+ * proxy, a tunnel to ChurchTools without a request, before the first run
+ * reads anything.
+ *
+ * @param output - Where the texts go.
+ * @param started - The started runner.
+ * @param probe - Replaces the check of the proxy, for tests.
+ * @returns Undefined when the runner may go on, else 69.
+ * @example
+ * ```ts
+ * const stopped = await startEgress(output, started, undefined);
+ * if (stopped !== undefined) return stopped;
+ * ```
+ */
+export const startEgress = async (
+  output: Output,
+  started: Extract<RunnerStart, { readonly ok: true }>,
+  probe: ((options: ProxyProbeOptions) => Promise<ProxyProbe>) | undefined,
+): Promise<ExitCode | undefined> => {
+  for (const code of started.warnings) output.stderr(warningText(code));
+  const { egressProxy, churchtoolsOrigin } = started.config;
+  if (egressProxy === undefined) return undefined;
+  const checked = await (probe ?? probeEgressProxy)({
+    proxy: egressProxy,
+    origin: churchtoolsOrigin,
+  });
+  if (checked.ok) return undefined;
+  output.stderr(egressProxyText(checked.reason));
+  return exitCodes.unavailable;
+};
+
+/**
  * Runs `ecclium run-once`.
  *
  * @param options - Environment, what the call does, output, and
@@ -192,6 +235,8 @@ export async function runOnce(options: RunOnceOptions): Promise<ExitCode> {
       : { createCatalog: options.createCatalog }),
   });
   if (!started.ok) return reportStart(output, started.problem);
+  const stopped = await startEgress(output, started, options.probeProxy);
+  if (stopped !== undefined) return stopped;
   const { refused, target } = started;
 
   // Each routine that does not start, by name. For a call by hand or a

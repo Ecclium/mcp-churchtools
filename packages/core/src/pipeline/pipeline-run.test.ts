@@ -237,6 +237,8 @@ const setup = (
     readonly quota?: QuotaStore;
     /** A sink whose record throws, as no sink of the core does. */
     readonly recordThrows?: boolean;
+    /** The runner runs without its proxy (ADR 0035). */
+    readonly egressOff?: boolean;
   } = {},
 ) => {
   behaviour.people = 3;
@@ -297,6 +299,9 @@ const setup = (
         createHash('sha256').update('seed').digest('hex'),
       ),
     }),
+    ...(options.egressOff === undefined
+      ? {}
+      : { egressOff: options.egressOff }),
   });
   const parse = (line: string) => JSON.parse(line) as Record<string, unknown>;
   return {
@@ -523,6 +528,21 @@ describe('the end of a run (ADR 0033)', () => {
     result: 'written',
     durationMs: 1_200,
     ...overrides,
+  });
+
+  // A runner without its proxy notes it on every end of a run, and only
+  // there (ADR 0035); a pipeline that is told nothing notes nothing.
+  it('notes a runner without its proxy on the line of the run', () => {
+    const off = setup({ egressOff: true });
+    expect(off.pipeline.endRun(end())).toBe(true);
+    expect(off.inFile()).toEqual([
+      expect.objectContaining({ type: 'run', egressOff: true }),
+    ]);
+    for (const egressOff of [false, undefined]) {
+      const on = setup(egressOff === undefined ? {} : { egressOff });
+      expect(on.pipeline.endRun(end())).toBe(true);
+      expect(on.inFile()[0], String(egressOff)).not.toHaveProperty('egressOff');
+    }
   });
 
   // The reports of the sink among the lines of the logger; the copy of

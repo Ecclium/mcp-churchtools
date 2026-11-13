@@ -301,6 +301,52 @@ export function startText(code: StartNoticeCode): MessageText {
   return joined(startMessage(code));
 }
 
+/** Why the check of the proxy at the start failed (ADR 0035). */
+export type EgressProxyFailure = 'unreachable' | 'no_answer' | 'refused';
+
+const proxyVariable = '‹ECCLIUM_EGRESS_PROXY›';
+const proxyWhy =
+  'Ecclium sendet jede Verbindung über diesen Proxy, und der Start bricht ab, statt jede Anfrage scheitern zu lassen.';
+
+const proxyFailures: Readonly<Record<EgressProxyFailure, Message>> =
+  Object.freeze({
+    unreachable: message(
+      `Der Proxy aus ${proxyVariable} ist nicht erreichbar.`,
+      proxyWhy,
+      `Prüfen Sie, ob der Proxy läuft und ob Host und Port in ${proxyVariable} stimmen.`,
+    ),
+    no_answer: message(
+      `Der Proxy aus ${proxyVariable} hat die Verbindung angenommen, aber nicht oder nicht rechtzeitig geantwortet.`,
+      `Ecclium hat ihn um einen Tunnel zu ChurchTools gebeten, ohne Anfrage an ChurchTools, und nach der Frist aufgegeben. ${proxyWhy}`,
+      'Prüfen Sie, ob an dieser Adresse wirklich der Proxy läuft und ob er selbst nach aussen verbinden kann.',
+    ),
+    refused: message(
+      `Der Proxy aus ${proxyVariable} lässt keine Verbindung zu ChurchTools zu.`,
+      'Er hat den Tunnel zur Adresse aus ‹ECCLIUM_CHURCHTOOLS_URL› abgewiesen. Meist fehlt der Host von ChurchTools in seiner Liste der erlaubten Ziele.',
+      'Nehmen Sie den Host von ChurchTools in die Liste der erlaubten Ziele des Proxys auf und starten Sie den Proxy neu.',
+    ),
+  });
+
+/**
+ * The text for a check of the proxy at the start that failed, for the
+ * server over stdio and the runner alike (ADR 0035). It names neither the
+ * proxy nor ChurchTools by their addresses.
+ *
+ * @param failure - Why the check failed.
+ * @returns The text of the catalog, in one line.
+ * @throws {TypeError} When the reason is none of the catalog.
+ * @example
+ * ```ts
+ * writeNotices([egressProxyText('refused')]);
+ * ```
+ */
+export function egressProxyText(failure: EgressProxyFailure): MessageText {
+  if (!Object.hasOwn(proxyFailures, failure)) {
+    throw new TypeError('The reason is none of the catalog.');
+  }
+  return joined(proxyFailures[failure]);
+}
+
 /**
  * The message for an audit file that could not be opened. It names no
  * path.

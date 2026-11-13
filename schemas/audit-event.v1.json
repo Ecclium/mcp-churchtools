@@ -283,6 +283,10 @@
       "maxLength": 10,
       "pattern": "^\\d{4}-(?:W\\d{2}|\\d{2}(?:-\\d{2})?)$"
     },
+    "egressOff": {
+      "type": "boolean",
+      "const": true
+    },
     "durationMs": {
       "type": "integer",
       "minimum": 0,

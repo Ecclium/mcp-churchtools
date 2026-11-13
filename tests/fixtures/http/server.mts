@@ -5,7 +5,7 @@
 // HTTP_FIXTURE_DIR; nothing of them lies in the repository.
 import { readFileSync } from 'node:fs';
 import { createServer, type RequestListener } from 'node:http';
-import type { Socket } from 'node:net';
+import { createServer as createNetServer, type Socket } from 'node:net';
 import { join } from 'node:path';
 import { duplexPair } from 'node:stream';
 import { createSecureContext, TLSSocket } from 'node:tls';
@@ -16,6 +16,7 @@ import type { Canary } from '@ecclium/mcp-churchtools-testkit';
 import { Secret } from '../../../packages/core/src/http/secret.ts';
 import {
   createAgent,
+  createProxyAgent,
   createTransport,
   type HttpTransport,
   type TransportLimits,
@@ -114,4 +115,96 @@ export function throughServer(
     limits: merged,
   });
   return { transport, seen };
+}
+
+/** What a proxy saw: the head of each CONNECT and every byte it got. */
+export interface ProxySeen {
+  readonly heads: string[];
+  readonly bytes: Buffer[];
+}
+
+/**
+ * Builds a transport whose every connection goes through a proxy on the
+ * loopback address (ADR 0035). The proxy answers CONNECT with 200 and
+ * hands the tunnel to a server in memory with the given certificate, as
+ * Squid would hand it to ChurchTools, and keeps every byte it got.
+ *
+ * @param name - Which key and certificate the server shows, a or b.
+ * @param handler - Answers the requests.
+ * @returns The transport, what the proxy saw, and a function that stops
+ *   the proxy.
+ */
+export async function throughProxy(
+  name: 'a' | 'b',
+  handler: RequestListener,
+): Promise<{
+  transport: HttpTransport;
+  proxy: ProxySeen;
+  close: () => Promise<void>;
+}> {
+  const secureContext = createSecureContext({
+    key: readFileSync(join(folder, `${name}.key`)),
+    cert: readFileSync(join(folder, `${name}.crt`)),
+  });
+  const server = createServer(handler);
+  const proxy: ProxySeen = { heads: [], bytes: [] };
+  const sockets = new Set<Socket>();
+  const proxyServer = createNetServer((socket) => {
+    sockets.add(socket);
+    socket.on('error', () => undefined);
+    let head = Buffer.alloc(0);
+    let tunnel: ReturnType<typeof duplexPair>[0] | undefined;
+    socket.on('data', (chunk: Buffer) => {
+      proxy.bytes.push(chunk);
+      if (tunnel !== undefined) {
+        tunnel.write(chunk);
+        return;
+      }
+      head = Buffer.concat([head, chunk]);
+      const end = head.indexOf('\r\n\r\n');
+      if (end < 0) return;
+      proxy.heads.push(head.subarray(0, end).toString('latin1'));
+      socket.write('HTTP/1.1 200 Connection established\r\n\r\n');
+      const [client, other] = duplexPair();
+      tunnel = client;
+      const tls = new TLSSocket(other, {
+        isServer: true,
+        secureContext,
+        ALPNProtocols: ['h2', 'http/1.1'],
+      });
+      tls.on('error', () => undefined);
+      client.on('data', (data: Buffer) => socket.write(data));
+      client.on('close', () => socket.destroy());
+      socket.on('close', () => client.destroy());
+      server.emit('connection', tls);
+      const rest = head.subarray(end + 4);
+      if (rest.length > 0) client.write(rest);
+    });
+  });
+  await new Promise<void>((resolve) => {
+    proxyServer.listen(0, '127.0.0.1', resolve);
+  });
+  const address = proxyServer.address();
+  const port =
+    typeof address === 'object' && address !== null ? address.port : 0;
+  const transport = createTransport(
+    createProxyAgent(transportLimits, `http://127.0.0.1:${String(port)}`),
+    {
+      origin,
+      token,
+      userAgent,
+      logger,
+      clock: { now: () => Date.now() },
+      limits: transportLimits,
+    },
+  );
+  const close = async (): Promise<void> => {
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve) => {
+      proxyServer.close(() => {
+        resolve();
+      });
+    });
+  };
+  return { transport, proxy, close };
 }

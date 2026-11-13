@@ -8,6 +8,8 @@ import {
   allToolsets,
   defaultHttpWriteConfirmation,
   defaultStdioSubject,
+  environmentProxyOption,
+  environmentProxyVariableNames,
   environmentSchema,
   fitsVariable,
   isTimeZone,
@@ -15,7 +17,6 @@ import {
   nodeOptionsVariableName,
   type PlainVariableName,
   plainVariableNames,
-  proxyVariableName,
   readToolsetList,
   reservedStdioSubjects,
   searchToolsVariableName,
@@ -58,7 +59,6 @@ describe('the table of variables', () => {
     const names = [
       ...variableNames,
       ...unsupportedVariableNames,
-      proxyVariableName,
       searchToolsVariableName,
     ];
     for (const name of names) {
@@ -129,6 +129,8 @@ describe('the table of variables', () => {
       ['ECCLIUM_DRAFTS_DIR', undefined, false, false, true],
       ['ECCLIUM_NOTIFY_FILE', undefined, false, false, true],
       ['ECCLIUM_RUNNER_METRICS_FILE', undefined, false, false, true],
+      ['ECCLIUM_EGRESS_PROXY', undefined, false, false, true],
+      ['ECCLIUM_EGRESS', undefined, false, false, true],
       ['ECCLIUM_STDIO_SUBJECT', 'local-stdio', false, true, false],
       ['ECCLIUM_LOG_LEVEL', 'info', false, false, true],
     ]);
@@ -414,6 +416,8 @@ describe('fitsVariable', () => {
         ['ECCLIUM_DRAFTS_DIR', '/path/to/drafts/'],
         ['ECCLIUM_NOTIFY_FILE', 'notify.jsonl'],
         ['ECCLIUM_RUNNER_METRICS_FILE', '/path/to/runner.prom/'],
+        ['ECCLIUM_EGRESS_PROXY', 'http://egress'],
+        ['ECCLIUM_EGRESS', 'OFF'],
         ['ECCLIUM_STDIO_SUBJECT', 'Max'],
         ['ECCLIUM_LOG_LEVEL', 'INFO'],
       ];
@@ -547,5 +551,55 @@ describe('isTimeZone', () => {
   it('refuses a value that is no string before it reads it', () => {
     expect(isTimeZone(7 as unknown as string)).toBe(false);
     expect(isTimeZone(`Europe/${'A'.repeat(maxTimeZoneLength)}`)).toBe(false);
+  });
+});
+
+describe('the proxy of outbound connections (ADR 0035)', () => {
+  it('takes only http://host:port, exactly as the parser gives it back', () => {
+    for (const value of [
+      'http://egress:3128',
+      'http://127.0.0.1:3128',
+      'http://[::1]:3128',
+      'http://proxy.example.org:80',
+    ]) {
+      expect(fitsVariable('ECCLIUM_EGRESS_PROXY', value), value).toBe(true);
+    }
+    for (const value of [
+      'http://egress',
+      'http://egress:3128/',
+      'https://egress:3128',
+      'socks5://egress:1080',
+      'http://user:secret@egress:3128',
+      'http://Egress:3128',
+      'http://egress:3128?x=1',
+      'http://egress:3128#x',
+      'http://egress:0',
+      'http://127.1:3128',
+      'egress:3128',
+    ]) {
+      expect(fitsVariable('ECCLIUM_EGRESS_PROXY', value), value).toBe(false);
+    }
+  });
+
+  it('switches the boundary off only with off', () => {
+    expect(row('ECCLIUM_EGRESS').choices).toEqual(['off']);
+    expect(fitsVariable('ECCLIUM_EGRESS', 'off')).toBe(true);
+    for (const value of ['on', 'OFF', 'false', '0']) {
+      expect(fitsVariable('ECCLIUM_EGRESS', value), value).toBe(false);
+    }
+  });
+
+  it('names the proxies of the shell and of Node.js that Ecclium leaves alone', () => {
+    expect(environmentProxyVariableNames).toEqual([
+      'HTTP_PROXY',
+      'HTTPS_PROXY',
+      'ALL_PROXY',
+      'NODE_USE_ENV_PROXY',
+    ]);
+    expect(Object.isFrozen(environmentProxyVariableNames)).toBe(true);
+    expect(environmentProxyOption).toBe('--use-env-proxy');
+    for (const name of environmentProxyVariableNames) {
+      expect(name.startsWith(variablePrefix), name).toBe(false);
+    }
   });
 });

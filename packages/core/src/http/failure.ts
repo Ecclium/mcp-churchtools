@@ -19,6 +19,7 @@ import {
 export const failureCategories = Object.freeze([
   'refused',
   'connect',
+  'proxy',
   'tls',
   'timeout',
   'aborted',
@@ -44,6 +45,7 @@ export const categoryCodes: Readonly<Record<FailureCategory, ErrorCode>> =
     __proto__: null,
     refused: 'internal',
     connect: 'network',
+    proxy: 'network',
     tls: 'network',
     timeout: 'network',
     aborted: 'network',
@@ -163,6 +165,17 @@ const timeoutCodes: readonly string[] = Object.freeze([
   'UND_ERR_BODY_TIMEOUT',
 ]);
 
+// Codes of a tunnel through the proxy that failed before the request went
+// out (ADR 0035): the proxy answered CONNECT with a status other than 200,
+// which undici throws as an abort with the status in its text, or closed
+// the connection before it answered. The own deadline and an abort by the
+// caller reach undici as a reason of their own, never as this code, and
+// win before it.
+const proxyCodes: readonly string[] = Object.freeze([
+  'UND_ERR_ABORTED',
+  'UND_ERR_PRX_CONN',
+]);
+
 // Reads a field of a thrown value without letting a getter or a proxy
 // break the transport.
 const field = (value: unknown, key: string): unknown => {
@@ -174,8 +187,18 @@ const field = (value: unknown, key: string): unknown => {
   }
 };
 
-// The code of a thrown value. Node.js reports a connection that failed for
-// every address of a name as an AggregateError; its first error has the code.
+/**
+ * The code of a thrown value, read without letting a getter or a proxy
+ * break the transport. Node.js reports a connection that failed for every
+ * address of a name as an AggregateError; its first error has the code.
+ *
+ * @param error - What undici or Node.js threw.
+ * @returns The code, or undefined when the value has none.
+ * @example
+ * ```ts
+ * codeOf(Object.assign(new Error('x'), { code: 'ECONNREFUSED' })); // 'ECONNREFUSED'
+ * ```
+ */
 const codeOf = (error: unknown): string | undefined => {
   const code = field(error, 'code');
   if (typeof code === 'string') return code;
@@ -217,9 +240,15 @@ export function categoriseFailure(
   if (
     tlsCodes.includes(code) ||
     code.startsWith('ERR_TLS_') ||
-    code.startsWith('ERR_SSL_')
+    code.startsWith('ERR_SSL_') ||
+    // undici wraps a name that does not fit the certificate of a proxy
+    // under TLS; the transport takes no such proxy, but it stays TLS.
+    code === 'UND_ERR_PRX_TLS'
   ) {
     return 'tls';
+  }
+  if (context.phase === 'request' && proxyCodes.includes(code)) {
+    return 'proxy';
   }
   if (timeoutCodes.includes(code)) return 'timeout';
   if (code === 'UND_ERR_RES_EXCEEDED_MAX_SIZE') return 'too_large';

@@ -25,7 +25,13 @@ import type { Readable } from 'node:stream';
 import { isUint8Array } from 'node:util/types';
 
 import type { Clock, Logger } from '@ecclium/mcp-churchtools-plugin-api';
-import { Agent, buildConnector, type Dispatcher } from 'undici';
+import {
+  Agent,
+  buildConnector,
+  type Dispatcher,
+  Pool,
+  ProxyAgent,
+} from 'undici';
 
 import type { HttpFailureEvent, HttpMethod } from '../logger/index.js';
 import {
@@ -261,6 +267,60 @@ export function createAgent(
 }
 
 /**
+ * Builds the agent of a transport that reaches its origin through the
+ * proxy of the configuration (ADR 0035). Every connection is a tunnel with
+ * CONNECT, also to an origin without TLS, and TLS to the origin runs
+ * through it with the same rules as without a proxy: certificates checked
+ * explicitly, no HTTP/2, the connect limit. The pool to the proxy has the
+ * connections of the transport, the parser and the limit for headers, and
+ * waits for the answer to CONNECT no longer than for a connection, instead
+ * of the long defaults of undici. The agent takes the same options as one
+ * without a proxy, so one origin, the connections and the limits of the
+ * answer stay as they are.
+ *
+ * @param limits - The limits of the transport.
+ * @param proxy - The address of the proxy, as `parseEgressProxy` checked
+ *   it: `http://host:port`.
+ * @returns The agent.
+ * @example
+ * ```ts
+ * const agent = createProxyAgent(transportLimits, 'http://egress:3128');
+ * ```
+ */
+export function createProxyAgent(
+  limits: TransportLimits,
+  proxy: string,
+): ProxyAgent {
+  const options = agentOptions(limits);
+  return new ProxyAgent({
+    ...options,
+    uri: proxy,
+    proxyTunnel: true,
+    connectTimeout: limits.connectMs,
+    requestTls: { rejectUnauthorized: true, allowH2: false },
+    // A pool with as many connections as the transport, so that one
+    // tunnel the proxy holds does not keep the others waiting, as the
+    // default of undici does. The answer to CONNECT ends the setup of the
+    // connection, so it gets the connect limit, not the longer limit for
+    // the headers of an answer: with a model that is five minutes, and
+    // closing the agent waits for a CONNECT still open.
+    clientFactory: (origin: URL, factoryOptions: object): Dispatcher =>
+      new Pool(origin, {
+        ...factoryOptions,
+        connections: limits.connections,
+        allowH2: false,
+        useMilo: false,
+        pipelining: 1,
+        headersTimeout: limits.connectMs,
+        bodyTimeout: limits.connectMs,
+        keepAliveTimeout: options.keepAliveTimeout,
+        keepAliveMaxTimeout: options.keepAliveMaxTimeout,
+        maxHeaderSize: options.maxHeaderSize,
+      }),
+  });
+}
+
+/**
  * Whether a value fits as the User-Agent of a transport: 1 to 256
  * characters of printable ASCII, no blank at either end. The factories
  * refuse any other value before they build anything.
@@ -354,6 +414,7 @@ const failureEvents: Readonly<Record<FailureCategory, HttpFailureEvent>> =
   Object.freeze({
     refused: 'http_refused',
     connect: 'http_connect',
+    proxy: 'http_proxy',
     tls: 'http_tls',
     timeout: 'http_timeout',
     aborted: 'http_aborted',

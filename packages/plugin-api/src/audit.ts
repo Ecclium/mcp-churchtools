@@ -231,6 +231,11 @@ export interface AuditEventV1 {
    * only on a line of the type `run` (ADR 0034).
    */
   readonly period?: string;
+  /**
+   * Set only on a line of the type `run`: the runner ran without its
+   * proxy, because `ECCLIUM_EGRESS` is `off` (ADR 0035).
+   */
+  readonly egressOff?: true;
   /** Duration of the action in milliseconds. */
   readonly durationMs: number;
   /** Position in a hash chain, set only by a sink that chains, never by the producer. */

@@ -108,6 +108,67 @@ export function parseChurchToolsOrigin(input: string): OriginResult {
   return Object.freeze({ __proto__: null, ok: true, origin });
 }
 
+/** The checked address of the proxy, or a refusal without a reason. */
+export type ProxyResult =
+  | {
+      readonly ok: true;
+      /** The address, `http://host:port`, exactly as given. */
+      readonly proxy: string;
+      /** The host, an IPv6 address in brackets. */
+      readonly host: string;
+      /** The port, always written out. */
+      readonly port: string;
+    }
+  | { readonly ok: false };
+
+/**
+ * The longest address of a proxy that can pass: http://, a host of 253
+ * characters and the highest port.
+ */
+export const maxProxyLength = 'http://'.length + 253 + ':65535'.length;
+
+/**
+ * Checks the address of the proxy for outbound connections (ADR 0035).
+ * Only `http://host:port` passes, in the form the parser gives back: a
+ * name in lower case, which may have a single label such as `egress`, an
+ * IPv4 address or an IPv6 address in brackets, and the port written out,
+ * also when it is 80. No user, password, path, query or fragment, no
+ * slash at the end, no `https:` and no `socks:`. The proxy stands in the
+ * internal network, and the data to each target runs in TLS through it.
+ *
+ * @param input - The address as configured.
+ * @returns The address with its host and port, or a refusal. Never the
+ *   input of a refusal.
+ * @throws {TypeError} When the input is not a string.
+ * @example
+ * ```ts
+ * parseEgressProxy('http://egress:3128');
+ * // { ok: true, proxy: 'http://egress:3128', host: 'egress', port: '3128' }
+ * ```
+ */
+export function parseEgressProxy(input: string): ProxyResult {
+  if (typeof input !== 'string') {
+    throw new TypeError('An address must be a string.');
+  }
+  const refused: ProxyResult = Object.freeze({ __proto__: null, ok: false });
+  if (input.length > maxProxyLength) return refused;
+  const url = URL.parse(input);
+  if (url === null || url.protocol !== 'http:') return refused;
+  if (url.username !== '' || url.password !== '') return refused;
+  const host = url.hostname;
+  const name = !host.startsWith('[') && !ipv4Pattern.test(host);
+  if (name && !hostPattern.test(host)) return refused;
+  if (url.port === '0') return refused;
+  // The parser leaves out the port 80 and drops an empty query or
+  // fragment, and it changes capitals, a short IPv4 or IPv6 address and an
+  // escape. The input must be exactly the address it gives back, with the
+  // port written out, so that the proxy is the one the operator wrote.
+  const port = url.port === '' ? '80' : url.port;
+  const proxy = `http://${host}:${port}`;
+  if (input !== proxy) return refused;
+  return Object.freeze({ __proto__: null, ok: true, proxy, host, port });
+}
+
 /** The longest path of the endpoint of a model (ADR 0033). */
 export const maxEndpointPathLength = 256;
 

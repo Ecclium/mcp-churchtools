@@ -18,6 +18,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { type ExitCode, exitCodes } from '../exit-codes.js';
 import {
+  egressProxyText,
   problemText,
   refusalText,
   startText,
@@ -220,6 +221,64 @@ describe('the first stage of the start over stdio', () => {
       expect(() => JSON.parse(line) as unknown, line).not.toThrow();
     }
     assertNoCanary(stderr(), [token], 'stderr');
+  });
+
+  // With a proxy, a tunnel to ChurchTools before the server takes its
+  // first call (ADR 0035).
+  it('asks the proxy for a tunnel before the server and ends with 69 when it gives none', async () => {
+    const token = makeCanary('token');
+    const environment = (): Environment => ({
+      ECCLIUM_CHURCHTOOLS_URL: doubleOrigin,
+      ECCLIUM_EGRESS_PROXY: 'http://127.0.0.1:3128',
+      [tokenVariableName]: token.value,
+    });
+    const asked: unknown[] = [];
+    const refused = await start([], environment(), {
+      probeProxy: (options) => {
+        asked.push(options);
+        return Promise.resolve({ ok: false, reason: 'refused' });
+      },
+    });
+    expect(refused.code).toBe(exitCodes.unavailable);
+    expect(asked).toEqual([
+      { proxy: 'http://127.0.0.1:3128', origin: doubleOrigin },
+    ]);
+    expect(refused.stderr().trimEnd().split('\n').at(-1)).toBe(
+      egressProxyText('refused'),
+    );
+    // The server never started: no line of JSON from its stderr writer.
+    expect(refused.stderr()).not.toContain('"event"');
+    assertNoCanary(refused.stderr(), [token], 'stderr');
+
+    const { options, input, exitCodesSet } = serving();
+    const given = await start([], environment(), {
+      ...options,
+      probeProxy: () => Promise.resolve({ ok: true }),
+    });
+    expect(given.code).toBeUndefined();
+    input.end();
+    await vi.waitFor(() => {
+      expect(exitCodesSet).toEqual([exitCodes.ok]);
+    });
+  });
+
+  it('asks no proxy without the variable', async () => {
+    const { options, input, exitCodesSet } = serving();
+    const probeProxy = vi.fn(() => Promise.resolve({ ok: true } as const));
+    const { code } = await start(
+      [],
+      {
+        ECCLIUM_CHURCHTOOLS_URL: doubleOrigin,
+        [tokenVariableName]: makeCanary('token').value,
+      },
+      { ...options, probeProxy },
+    );
+    expect(code).toBeUndefined();
+    input.end();
+    await vi.waitFor(() => {
+      expect(exitCodesSet).toEqual([exitCodes.ok]);
+    });
+    expect(probeProxy).not.toHaveBeenCalled();
   });
 
   it('ends a refusal of the registry with its notice and 70', async () => {

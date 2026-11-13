@@ -5,25 +5,39 @@
  * importer, so that no tool builds a transport with an origin of its own.
  * The factory takes no dispatcher, no socket, no limits and no header
  * besides the fixed User-Agent. The same holds for the factory of the
- * transport to the endpoint of a language model (ADR 0033).
+ * transport to the endpoint of a language model (ADR 0033). Of a proxy,
+ * both take only the address the configuration checked and build the
+ * agent through it themselves; the check of the proxy at the start comes
+ * from here as well (ADR 0035).
  *
  * @packageDocumentation
  */
 import type { Clock, Logger } from '@ecclium/mcp-churchtools-plugin-api';
 
-import { parseChurchToolsOrigin, parseModelEndpoint } from './origin.js';
+import {
+  parseChurchToolsOrigin,
+  parseEgressProxy,
+  parseModelEndpoint,
+} from './origin.js';
 import { revealSecret, type Secret } from './secret.js';
 import {
   createAgent,
   createModelTransport,
+  createProxyAgent,
   createTransport,
   type HttpTransport,
   isUserAgent,
   modelTransportLimits,
   type ModelTransport,
+  type TransportLimits,
   transportLimits,
 } from './transport.js';
 
+export {
+  probeEgressProxy,
+  type ProxyProbe,
+  type ProxyProbeOptions,
+} from './proxy-probe.js';
 export type {
   HttpRequestOptions,
   HttpResponse,
@@ -47,7 +61,23 @@ export interface HttpTransportOptions {
   readonly logger: Logger;
   /** The clock for the duration in the log. */
   readonly clock: Clock;
+  /**
+   * The proxy of the configuration, `http://host:port`, or undefined to
+   * connect directly (ADR 0035).
+   */
+  readonly proxy?: string | undefined;
 }
+
+// The agent of a transport: direct, or through the checked proxy. A proxy
+// that did not pass its check is refused before a pool exists.
+const agentFor = (limits: TransportLimits, proxy: string | undefined) => {
+  if (proxy === undefined) return createAgent(limits);
+  const checked = parseEgressProxy(proxy);
+  if (!checked.ok || checked.proxy !== proxy) {
+    throw new TypeError('The proxy of a transport must be canonical.');
+  }
+  return createProxyAgent(limits, proxy);
+};
 
 /**
  * Builds the transport to one ChurchTools instance, with its own pool of
@@ -71,7 +101,7 @@ export interface HttpTransportOptions {
 export function createHttpTransport(
   options: HttpTransportOptions,
 ): HttpTransport {
-  const { origin, token, userAgent, logger, clock } = options;
+  const { origin, token, userAgent, logger, clock, proxy } = options;
   const checked = parseChurchToolsOrigin(origin);
   if (!checked.ok || checked.origin !== origin) {
     throw new TypeError('The origin of a transport must be canonical.');
@@ -81,7 +111,7 @@ export function createHttpTransport(
   if (!isUserAgent(userAgent)) {
     throw new TypeError('The User-Agent of a transport must be printable.');
   }
-  return createTransport(createAgent(transportLimits), {
+  return createTransport(agentFor(transportLimits, proxy), {
     origin,
     token,
     userAgent,
@@ -106,6 +136,8 @@ export interface ModelHttpTransportOptions {
   readonly logger: Logger;
   /** The clock for the duration in the log. */
   readonly clock: Clock;
+  /** The proxy of the configuration, as for ChurchTools (ADR 0035). */
+  readonly proxy?: string | undefined;
 }
 
 /**
@@ -133,7 +165,7 @@ export interface ModelHttpTransportOptions {
 export function createModelHttpTransport(
   options: ModelHttpTransportOptions,
 ): ModelTransport {
-  const { endpoint, key, userAgent, logger, clock } = options;
+  const { endpoint, key, userAgent, logger, clock, proxy } = options;
   const checked = parseModelEndpoint(endpoint);
   if (!checked.ok) {
     throw new TypeError('The endpoint of a transport must be canonical.');
@@ -143,7 +175,7 @@ export function createModelHttpTransport(
   if (!isUserAgent(userAgent)) {
     throw new TypeError('The User-Agent of a transport must be printable.');
   }
-  return createModelTransport(createAgent(modelTransportLimits), {
+  return createModelTransport(agentFor(modelTransportLimits, proxy), {
     origin: checked.origin,
     path: checked.path,
     token: key,
