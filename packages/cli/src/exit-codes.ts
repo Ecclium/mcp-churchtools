@@ -16,7 +16,9 @@ export const exitCodes = Object.freeze({
    * The data is wrong: for `audit verify`, a chain or an anchor of the
    * audit files does not agree (ADR 0028); for `ecclium undo`, someone
    * changed the page since the write (ADR 0031); for `ecclium run-once`,
-   * a run ended for good on its data or the answer of its model.
+   * a run ended for good on its data or the answer of its model; for
+   * `ecclium doctor`, at least one finding on the outbound path, the
+   * providers, the routines or the accounts of the runner (ADR 0035).
    */
   dataError: 65,
   /**
@@ -55,7 +57,8 @@ export const exitCodes = Object.freeze({
   noPermission: 77,
   /**
    * The configuration is invalid; for `ecclium run-once`, also when a
-   * routine does not start.
+   * routine does not start; for `ecclium doctor`, the configuration of the
+   * runner, and then it checks nothing else.
    */
   invalidConfig: 78,
   /**

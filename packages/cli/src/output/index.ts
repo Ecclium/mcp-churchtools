@@ -11,7 +11,12 @@ export {
   type Output,
   type OutputOptions,
 } from './write.js';
-export { renderConfigReport, type ReportOptions } from './report.js';
+export {
+  policyLines,
+  providerLines,
+  renderConfigReport,
+  type ReportOptions,
+} from './report.js';
 export { terminalLines } from './terminal.js';
 export {
   helpLines,

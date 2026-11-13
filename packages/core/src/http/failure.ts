@@ -199,7 +199,7 @@ const field = (value: unknown, key: string): unknown => {
  * codeOf(Object.assign(new Error('x'), { code: 'ECONNREFUSED' })); // 'ECONNREFUSED'
  * ```
  */
-const codeOf = (error: unknown): string | undefined => {
+export const codeOf = (error: unknown): string | undefined => {
   const code = field(error, 'code');
   if (typeof code === 'string') return code;
   const errors = field(error, 'errors');

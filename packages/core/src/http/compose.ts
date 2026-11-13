@@ -39,7 +39,16 @@ import {
 } from './transport.js';
 
 export {
+  type DirectProbe,
+  type DirectProbeOptions,
+  probeDirect,
+} from './direct-probe.js';
+export {
+  type EgressTargetProbe,
+  type EgressTargetProbeOptions,
+  isProbeTarget,
   probeEgressProxy,
+  probeEgressTarget,
   type ProxyProbe,
   type ProxyProbeOptions,
 } from './proxy-probe.js';

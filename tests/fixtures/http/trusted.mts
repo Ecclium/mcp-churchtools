@@ -6,9 +6,11 @@ import { subscribe, unsubscribe } from 'node:diagnostics_channel';
 
 import { describe, expect, it } from 'vitest';
 
+import { probeEgressTarget } from '../../../packages/core/src/http/proxy-probe.ts';
 import {
   canary,
   origin,
+  startTunnelProxy,
   throughProxy,
   throughServer,
   userAgent,
@@ -271,6 +273,46 @@ describe('a transport through a proxy', () => {
       await categoryOf(transport.get(target('/api'), { maxResponseBytes: 64 })),
     ).toBe('tls');
     await transport.destroy();
+    await close();
+  });
+});
+
+// The check of a target by ecclium doctor (ADR 0035): a TLS handshake
+// inside the tunnel with the name of the target, and no request.
+describe('a check of a target through a proxy', () => {
+  it('passes the handshake for the name of the target and sends no request', async () => {
+    let requests = 0;
+    const { url, proxy, close } = await startTunnelProxy('a', (_, response) => {
+      requests += 1;
+      response.end('never');
+    });
+    expect(
+      await probeEgressTarget({
+        proxy: url,
+        host: 'demo.example',
+        port: 443,
+        tls: true,
+      }),
+    ).toEqual({ ok: true });
+    expect(proxy.heads.map((head) => head.split('\r\n')[0])).toEqual([
+      'CONNECT demo.example:443 HTTP/1.1',
+    ]);
+    expect(requests).toBe(0);
+    await close();
+  });
+
+  it('gives tls for a trusted certificate for another name', async () => {
+    const { url, close } = await startTunnelProxy('b', (_, response) => {
+      response.end('never');
+    });
+    expect(
+      await probeEgressTarget({
+        proxy: url,
+        host: 'demo.example',
+        port: 443,
+        tls: true,
+      }),
+    ).toEqual({ ok: false, reason: 'tls' });
     await close();
   });
 });

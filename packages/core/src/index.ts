@@ -177,6 +177,8 @@ export {
   queueReasons,
 } from './queue/index.js';
 export {
+  type AccountRights,
+  accountRightsOf,
   type AdoptCall,
   type AdoptOutcome,
   type ApproveOutcome,
@@ -202,6 +204,7 @@ export {
   type UndoReason,
   type UndoSubject,
   type RunPageRef,
+  type RightsException,
 } from './pipeline/index.js';
 export {
   checkTransferBasis,

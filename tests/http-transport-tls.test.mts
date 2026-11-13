@@ -110,9 +110,9 @@ afterAll(() => {
 
 describe('the HTTP transport over TLS', () => {
   it.each([
-    ['untrusted', 2],
-    ['untrusted with the check switched off', 2],
-    ['trusted', 16],
+    ['untrusted', 3],
+    ['untrusted with the check switched off', 3],
+    ['trusted', 18],
   ] as const)('passes every case of the run %s', (name, count) => {
     const run = runs.get(name);
     expect(run, name).toBeDefined();

@@ -7,7 +7,8 @@
  * (ADR 0032), `ecclium undo` and `ecclium queue list`, `show`, `approve`
  * and `reject` (ADR 0029, ADR 0031), `ecclium run-once` with `--due`, a
  * routine or a routine and `--preview`, and the daemon `ecclium runner`
- * (ADR 0033, ADR 0034). Wrong calls get fixed German texts on stderr,
+ * (ADR 0033, ADR 0034), `ecclium init egress` and `ecclium doctor`
+ * (ADR 0035). Wrong calls get fixed German texts on stderr,
  * never an argument, and every exit code comes from `exit-codes.ts`.
  *
  * @packageDocumentation
@@ -39,6 +40,7 @@ import {
   type UsageProblem,
   usageProblemTexts,
 } from './output/index.js';
+import type { DoctorOptions } from './doctor/doctor.js';
 import type { AdoptOptions } from './marker/adopt.js';
 import type { PolicyInitOptions } from './policy/init.js';
 import { policyInitCallProblem } from './policy/call.js';
@@ -84,6 +86,11 @@ export interface RunOptions {
     RunnerDaemonOptions,
     'environment' | 'execArgv' | 'output'
   >;
+  /** Replacements for `doctor`, such as the checks and the double. */
+  readonly doctor?: Omit<
+    DoctorOptions,
+    'environment' | 'execArgv' | 'output' | 'showValues'
+  >;
 }
 
 /**
@@ -110,6 +117,8 @@ const commands: readonly Command[] = Object.freeze(
     },
     // The list of targets for the template of Squid (ADR 0035).
     { words: ['init', 'egress'], options: [] },
+    // The checks of the runner, its outbound path and its accounts.
+    { words: ['doctor'], options: ['show-values'] },
     { words: ['undo'], options: ['overwrite'], argument: true },
     // Without the ID of a write only with --run, for every write of a run.
     { words: ['undo'], options: ['run', 'overwrite'] },
@@ -195,7 +204,8 @@ type Call =
     }
   | { readonly kind: 'run'; readonly mode: RunOnceOptions['mode'] }
   | { readonly kind: 'daemon' }
-  | { readonly kind: 'egress' };
+  | { readonly kind: 'egress' }
+  | { readonly kind: 'doctor'; readonly showValues: boolean };
 
 // The kind of a refused call, from the code of the error of parseArgs
 // alone: its message repeats the argument, which can hold a token.
@@ -335,6 +345,8 @@ const readCall = (args: readonly string[]): Call => {
       return { kind: 'daemon' };
     case 'init egress':
       return { kind: 'egress' };
+    case 'doctor':
+      return { kind: 'doctor', showValues: values['show-values'] === true };
     default:
       return {
         kind: 'check',
@@ -357,7 +369,7 @@ const readCall = (args: readonly string[]): Call => {
  *   of the configuration reads for the options of TLS.
  * @param runOptions - Replacements for tests.
  * @returns The exit code, or for `policy init`, `undo`, `queue`,
- *   `run-once` and `runner`, which build the pipeline, a promise of it.
+ *   `run-once`, `runner`, `init egress` and `doctor`, a promise of it.
  * @example
  * ```ts
  * process.exitCode = await run(process.argv.slice(2), environment, process.execArgv);
@@ -549,6 +561,26 @@ export function run(
               ...(runOptions.load === undefined
                 ? {}
                 : { load: runOptions.load }),
+            }),
+          )
+          .catch(() => {
+            out.stderr(internalErrorText);
+            return exitCodes.internal;
+          });
+      }
+      case 'doctor': {
+        // Loaded only for this command: it builds the checks of the
+        // outbound path and a pipeline per account.
+        const out = output;
+        const showValues = call.showValues;
+        return import('./doctor/doctor.js')
+          .then(({ runDoctor }) =>
+            runDoctor({
+              ...runOptions.doctor,
+              environment: taken,
+              execArgv,
+              showValues,
+              output: out,
             }),
           )
           .catch(() => {

@@ -1,5 +1,6 @@
 import type { AddressInfo, Socket } from 'node:net';
 import { createServer } from 'node:net';
+import { PassThrough } from 'node:stream';
 
 import type { Logger, LogFields } from '@ecclium/mcp-churchtools-plugin-api';
 import { makeCanary } from '@ecclium/mcp-churchtools-testkit';
@@ -11,7 +12,12 @@ import {
   createPingHttpTransport,
 } from './compose.js';
 import { HttpTransportError } from './failure.js';
-import { probeEgressProxy, proxyProbeLimits } from './proxy-probe.js';
+import {
+  isProbeTarget,
+  probeEgressProxy,
+  probeEgressTarget,
+  proxyProbeLimits,
+} from './proxy-probe.js';
 import { Secret } from './secret.js';
 import {
   createProxyAgent,
@@ -443,5 +449,212 @@ describe('probeEgressProxy', () => {
     await expect(probeEgressProxy(options)).rejects.toThrow(
       'The proxy and the origin must be checked.',
     );
+  });
+});
+
+describe('probeEgressTarget', () => {
+  const target = { host: 'demo.example', port: 443 } as const;
+  const given = (socket: Socket): void => {
+    socket.write('HTTP/1.1 200 Connection established\r\n\r\n');
+  };
+
+  it('is fine without TLS when the proxy gives the tunnel, and sends nothing into it', async () => {
+    const proxy = await startProxy(given);
+    expect(
+      await probeEgressTarget({ proxy: proxy.url, ...target, tls: false }),
+    ).toEqual({ ok: true });
+    const [line, ...headers] = (proxy.heads[0] ?? '').split('\r\n');
+    expect(line).toBe('CONNECT demo.example:443 HTTP/1.1');
+    expect(headers.map((header) => header.toLowerCase())).toContain(
+      'host: demo.example',
+    );
+    expect(everything(proxy)).toBe(`${proxy.heads[0] ?? ''}\r\n\r\n`);
+  });
+
+  it('asks for a port other than 443 with the port in the host header', async () => {
+    const proxy = await startProxy(given);
+    await probeEgressTarget({
+      proxy: proxy.url,
+      host: 'model.example',
+      port: 8443,
+      tls: false,
+    });
+    const [line, ...headers] = (proxy.heads[0] ?? '').split('\r\n');
+    expect(line).toBe('CONNECT model.example:8443 HTTP/1.1');
+    expect(headers.map((header) => header.toLowerCase())).toContain(
+      'host: model.example:8443',
+    );
+  });
+
+  it.each([403, 503])(
+    'gives refused with the status %i of the answer',
+    async (status) => {
+      const proxy = await startProxy((socket) => {
+        socket.end(
+          `HTTP/1.1 ${String(status)} No\r\nContent-Length: 0\r\n\r\n`,
+        );
+      });
+      expect(
+        await probeEgressTarget({ proxy: proxy.url, ...target, tls: true }),
+      ).toEqual({ ok: false, reason: 'refused', status });
+    },
+  );
+
+  it('gives no_answer when the proxy hangs up, and unreachable when nobody listens', async () => {
+    const closing = await startProxy(hangUp);
+    expect(
+      await probeEgressTarget({ proxy: closing.url, ...target, tls: true }),
+    ).toEqual({ ok: false, reason: 'no_answer' });
+    const gone = await startProxy(keepSilent);
+    const url = gone.url;
+    await gone.close();
+    expect(
+      await probeEgressTarget({ proxy: url, ...target, tls: true }),
+    ).toEqual({ ok: false, reason: 'unreachable' });
+  });
+
+  it('gives tls when the other end of the tunnel does not speak TLS, after a hello with the name of the target', async () => {
+    const proxy = await startProxy(tunnelThenHangUp);
+    expect(
+      await probeEgressTarget({ proxy: proxy.url, ...target, tls: true }),
+    ).toEqual({ ok: false, reason: 'tls' });
+    const inside = Buffer.concat(proxy.received).subarray(
+      (proxy.heads[0] ?? '').length + 4,
+    );
+    // A ClientHello, with the name of the target as SNI in clear text.
+    expect(inside[0]).toBe(0x16);
+    expect(inside.toString('latin1')).toContain('demo.example');
+    expect(everything(proxy).toLowerCase()).not.toContain('authorization');
+  });
+
+  it('makes the handshake on the socket of the tunnel with the name of the target', async () => {
+    const proxy = await startProxy(given);
+    const calls: unknown[] = [];
+    let destroyed = 0;
+    expect(
+      await probeEgressTarget(
+        { proxy: proxy.url, ...target, tls: true },
+        proxyProbeLimits,
+        (options, callback) => {
+          calls.push({
+            ...options,
+            httpSocket: options.httpSocket !== undefined,
+          });
+          const secured = new (class extends PassThrough {
+            override destroy(error?: Error): this {
+              destroyed += 1;
+              return super.destroy(error);
+            }
+          })() as unknown as Socket;
+          callback(null, secured);
+        },
+      ),
+    ).toEqual({ ok: true });
+    expect(calls).toEqual([
+      {
+        hostname: 'demo.example',
+        protocol: 'https:',
+        port: '443',
+        servername: 'demo.example',
+        httpSocket: true,
+      },
+    ]);
+    expect(destroyed).toBe(1);
+  });
+
+  it('gives tls when the handshake fails or the connector throws', async () => {
+    const proxy = await startProxy(given);
+    expect(
+      await probeEgressTarget(
+        { proxy: proxy.url, ...target, tls: true },
+        proxyProbeLimits,
+        (_, callback) => {
+          callback(
+            Object.assign(new Error('x'), { code: 'CERT_HAS_EXPIRED' }),
+            null,
+          );
+        },
+      ),
+    ).toEqual({ ok: false, reason: 'tls' });
+    expect(
+      await probeEgressTarget(
+        { proxy: proxy.url, ...target, tls: true },
+        proxyProbeLimits,
+        () => {
+          throw new Error('x');
+        },
+      ),
+    ).toEqual({ ok: false, reason: 'tls' });
+  });
+
+  it.each([
+    [{ proxy: 'http://egress', host: 'demo.example', port: 443, tls: true }],
+    [{ proxy: 'http://egress:3128', host: '192.0.2.1', port: 443, tls: true }],
+    [
+      {
+        proxy: 'http://egress:3128',
+        host: 'Demo.example',
+        port: 443,
+        tls: true,
+      },
+    ],
+    [{ proxy: 'http://egress:3128', host: 'localhost', port: 443, tls: true }],
+    [
+      {
+        proxy: 'http://egress:3128',
+        host: 'demo.example/x',
+        port: 443,
+        tls: true,
+      },
+    ],
+    [{ proxy: 'http://egress:3128', host: 'demo.example', port: 0, tls: true }],
+    [
+      {
+        proxy: 'http://egress:3128',
+        host: 'demo.example',
+        port: 1.5,
+        tls: true,
+      },
+    ],
+    [
+      {
+        proxy: 'http://egress:3128',
+        host: 'demo.example',
+        port: 70_000,
+        tls: true,
+      },
+    ],
+    [
+      {
+        proxy: 'http://egress:3128',
+        host: 'demo.example',
+        port: 443,
+        tls: 'yes' as unknown as boolean,
+      },
+    ],
+  ])('refuses %j before a socket opens', async (options) => {
+    await expect(probeEgressTarget(options)).rejects.toThrow(
+      'The proxy and the target must be checked.',
+    );
+  });
+});
+
+describe('isProbeTarget', () => {
+  it('takes a name of the configuration with its port', () => {
+    expect(isProbeTarget('demo.example', 443)).toBe(true);
+    expect(isProbeTarget('ecclium-doctor.invalid', 443)).toBe(true);
+    expect(isProbeTarget('model.example', 8443)).toBe(true);
+  });
+
+  it.each([
+    ['192.0.2.1', 443],
+    ['[2001:db8::1]', 443],
+    ['demo.example', 443.5],
+    ['demo.example', '443'],
+    [42, 443],
+    ['demo', 443],
+    ['demo.example:8443', 443],
+  ])('refuses %j on port %j', (host, port) => {
+    expect(isProbeTarget(host, port)).toBe(false);
   });
 });

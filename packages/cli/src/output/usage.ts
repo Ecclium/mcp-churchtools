@@ -8,7 +8,7 @@
 
 /** The short form of the call. */
 export const usageLine =
-  'Aufruf: ecclium stdio | ecclium config check [Optionen] | ecclium audit verify [Optionen] | ecclium audit show [Optionen] | ecclium policy init --interactive | ecclium policy init --routine <Routine> --credential <Alias> | ecclium init egress | ecclium undo <Kennung> [--overwrite] | ecclium undo --run <Lauf> [--overwrite] | ecclium marker adopt --run <Lauf> [--confirm <Prüfwert>] | ecclium queue list | ecclium queue show <Kennung> | ecclium queue approve <Kennung> | ecclium queue reject <Kennung> | ecclium run-once --due | ecclium run-once <Routine> [--preview] | ecclium runner';
+  'Aufruf: ecclium stdio | ecclium config check [Optionen] | ecclium audit verify [Optionen] | ecclium audit show [Optionen] | ecclium policy init --interactive | ecclium policy init --routine <Routine> --credential <Alias> | ecclium init egress | ecclium doctor [--show-values] | ecclium undo <Kennung> [--overwrite] | ecclium undo --run <Lauf> [--overwrite] | ecclium marker adopt --run <Lauf> [--confirm <Prüfwert>] | ecclium queue list | ecclium queue show <Kennung> | ecclium queue approve <Kennung> | ecclium queue reject <Kennung> | ecclium run-once --due | ecclium run-once <Routine> [--preview] | ecclium runner';
 
 /** The help, for `--help` and `-h`. */
 export const helpLines: readonly string[] = Object.freeze([
@@ -29,6 +29,8 @@ export const helpLines: readonly string[] = Object.freeze([
   '    --routine <Routine> den Eintrag einer Routine für ihre Seite im Wiki, zum Einfügen unter ‹unattended›',
   '    --credential <Alias> mit ‹--routine›: das Konto, das später schreibt und jetzt die Namen liest',
   '  init egress           schreibt die Liste der Ziele für die Vorlage für Squid auf stdout, aus der Konfiguration des Runners',
+  '  doctor                prüft den Runner: den Weg nach aussen über den Proxy, die Anbieter, die Richtlinie, die Routinen und die Rechte seiner Konten',
+  '    --show-values       nennt bei ‹doctor› auch Name und Port jedes Ziels und den Host jedes Anbieters',
   '  undo <Kennung>        nimmt einen Schreibvorgang aus seinem Snapshot zurück, die Kennung steht im Audit',
   '    --overwrite         schreibt auch, wenn jemand die Seite seither geändert hat',
   '  undo --run <Lauf>     nimmt jeden Schreibvorgang eines Laufs zurück, auch aus Freigaben, den neuesten zuerst',
@@ -52,7 +54,7 @@ export type UsageProblem = 'command' | 'option' | 'repeated' | 'value';
 export const usageProblemTexts: Readonly<Record<UsageProblem, string>> =
   Object.freeze({
     command:
-      'Der Befehl ist unvollständig oder unbekannt. Diese Version von Ecclium kennt nur ‹ecclium stdio›, ‹ecclium config check›, ‹ecclium audit verify›, ‹ecclium audit show›, ‹ecclium policy init›, ‹ecclium init egress›, ‹ecclium undo›, ‹ecclium marker adopt› mit ‹--run›, ‹ecclium queue›, ‹ecclium run-once›, diesen mit ‹--due› oder einer Routine, und ‹ecclium runner›. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
+      'Der Befehl ist unvollständig oder unbekannt. Diese Version von Ecclium kennt nur ‹ecclium stdio›, ‹ecclium config check›, ‹ecclium audit verify›, ‹ecclium audit show›, ‹ecclium policy init›, ‹ecclium init egress›, ‹ecclium doctor›, ‹ecclium undo›, ‹ecclium marker adopt› mit ‹--run›, ‹ecclium queue›, ‹ecclium run-once›, diesen mit ‹--due› oder einer Routine, und ‹ecclium runner›. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
     option:
       'Eine Option ist unbekannt oder gehört zu einem anderen Befehl. Ecclium nennt sie nicht, weil darin ein Token stehen könnte. Prüfen Sie den Aufruf mit ‹ecclium --help›.',
     repeated:
