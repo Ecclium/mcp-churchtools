@@ -1,6 +1,6 @@
 # Runner der Routinen
 
-**In Entwicklung.** Es gibt noch keine veröffentlichte Version. Diese Seite beschreibt `ecclium run-once` und den Daemon `ecclium runner`, so wie sie heute gebaut sind. Der Vertrag für den Container des Runners kommt später und ergänzt diese Seite.
+**In Entwicklung.** Es gibt noch keine veröffentlichte Version. Diese Seite beschreibt `ecclium run-once` und den Daemon `ecclium runner`, so wie sie heute gebaut sind, und unter «Container», was der Runner in einem Container vorfinden muss.
 
 Der Runner führt Routinen nach ihrem Zeitplan aus: Er liest Daten aus ChurchTools, gibt sie maskiert einem Sprachmodell oder prüft sie mit festen Prüfungen des Kerns, prüft das Ergebnis und schreibt einen Abschnitt ins Wiki oder einen Entwurf als Datei ([Routinen](../routines.md), [Richtlinie](../policy.md), [Anbieter](../providers.md)). Er läuft ohne Menschen, deshalb schreibt er ins Wiki nur, was die Richtlinie erlaubt.
 
@@ -43,9 +43,17 @@ Kommt eine Zeile des Audits nicht in die Audit-Datei, etwa bei voller Platte, sc
 
 ## Signale
 
-SIGTERM, SIGINT und SIGHUP brechen Lesen und Modell sofort ab, weil beide ausserhalb nichts ändern. Ein Schreibvorgang oder Entwurf, der schon begonnen hat, endet noch, beim Wiki mit Snapshot und Lesen danach, und mit seiner Zeile im Audit, dem Ende seiner Auslösung und seiner Meldung. Danach beginnt keine Routine mehr. Bei einem Lauf, der noch nicht schrieb, bleibt die Auslösung offen, der Versuch zählt, und ein späterer Aufruf versucht es wieder. Der Prozess endet nach SIGTERM mit 143, nach SIGINT mit 130 und nach SIGHUP, etwa wenn sein Terminal geschlossen wird, mit 129.
+SIGTERM, SIGINT und SIGHUP brechen Lesen und Modell sofort ab, weil beide ausserhalb nichts ändern. Ein Schreibvorgang oder Entwurf, der schon begonnen hat, endet noch, beim Wiki mit Snapshot und Lesen danach, und mit seiner Zeile im Audit, dem Ende seiner Auslösung und seiner Meldung. Danach beginnt keine Routine mehr. Bei einem Lauf, der noch nicht schrieb, bleibt die Auslösung offen, der Versuch zählt, und ein späterer Aufruf versucht es wieder. Der Prozess endet so:
 
-Ein zweites Signal beendet den Prozess sofort, ausser während eines Schreibvorgangs: Dann endet er direkt danach. Andere Signale wie SIGKILL halten ihn hart an. Geben Sie einem Container des Runners beim Stoppen mindestens 60 Sekunden, bei Docker Compose etwa mit `stop_grace_period: 60s`, damit ein Schreibvorgang nie von SIGKILL getroffen wird.
+| Signal  | Exit-Code |
+| ------- | --------- |
+| SIGTERM | 143       |
+| SIGINT  | 130       |
+| SIGHUP  | 129       |
+
+SIGHUP kommt etwa, wenn das Terminal des Prozesses geschlossen wird. Ein zweites Signal beendet den Prozess sofort, ausser während eines Schreibvorgangs: Dann endet er direkt danach. Andere Signale wie SIGKILL halten ihn hart an.
+
+Ein Schreibvorgang ins Wiki besteht aus mehreren Anfragen an ChurchTools, jede mit höchstens 30 Sekunden. Geben Sie einem Container des Runners beim Stoppen deshalb mindestens 5 Minuten, bei Docker Compose mit `stop_grace_period: 5m`, bei `docker stop` mit `--time 300`, damit ein Schreibvorgang nie von SIGKILL getroffen wird. So lange lässt auch die Sperrdatei einer Routine einem abgebrochenen Lauf für sein Ende. Läuft kein Schreibvorgang, endet der Runner sofort; die Frist verlängert das Stoppen dann nicht.
 
 ## Frist der Daten
 
@@ -156,3 +164,85 @@ Der Runner liest fremde Texte und schreibt danach. Er soll deshalb nur über ein
 Von mehreren gilt der schwerste in der Reihenfolge 70, 78, 77, 65, 74, 75. Nach einem Signal gelten 129, 130 und 143 vor allen anderen. Bei einem Lauf von Hand und einer Vorschau zählt nur die genannte Routine.
 
 Der Daemon endet nur nach einem Signal mit 143, 130 oder 129, nach einer Sperre des Schreibens mit 75, nach einem internen Fehler mit 70, und beim Start mit 78, 69 oder 64 wie `run-once`. Was in einem Durchgang scheitert, beendet ihn nicht.
+
+## Container
+
+Was der Runner in einem Container vorfinden muss, legt der Runner-Container-Vertrag fest ([ADR 0036](../adr/0036-runner-container-vertrag.md)): die Tabellen dieses Abschnitts, dazu oben die Signale, die Exit-Codes und die Metrikdatei. Er gilt für jeden Container, der `ecclium runner` oder `ecclium run-once` ausführt, ob ihn das Bundle für das Self-Hosting startet, ein anderer Orchestrator oder ein gehosteter Dienst. Ein Test hält die Tabellen beim Code.
+
+### Benutzer und Rechte
+
+- Der Runner läuft als Benutzer ohne root, im offiziellen Image mit der UID 65532. Ihm gehört alles, was Ecclium liest oder schreibt, unter `/config`, `/run/secrets`, `/data` und `/keys`, ausser dem Ordner `stop` und den Kill-Switches darin. Gehört etwas einem anderen Benutzer, startet der Runner nicht und nennt den Grund.
+- Ein neues Volume von Docker gehört root. Übergeben Sie es vor dem ersten Start dem Benutzer des Runners, mit den Rechten 700. Ändern Sie auf Ihrem Rechner eine Datei, die unter `/config` eingebunden ist, setzen Sie danach ihren Besitzer wieder.
+- Das Dateisystem des Containers ist nur lesbar, `/tmp` ein tmpfs. Der Container läuft ohne Capabilities, mit `no-new-privileges`, mit Grenzen für die Zahl der Prozesse und den Speicher, ohne veröffentlichten Port und nur in einem internen Netz mit dem Proxy (siehe «Ausgehender Weg»).
+
+### Pfade
+
+| Pfad           | Im Container      | Inhalt                                                                                  |
+| -------------- | ----------------- | --------------------------------------------------------------------------------------- |
+| `/config`      | nur lesbar        | `policy.yaml`, `providers.yaml` und der Ordner `routines` mit `prompts` und `templates` |
+| `/run/secrets` | nur lesbar        | ein eingebundener Ordner mit den Token-Dateien und Schlüsseln                           |
+| `/data`        | schreibbar        | der Zustandsordner, siehe «Ordner im Zustandsordner»                                    |
+| `/data/stop`   | nur lesbar        | die Kill-Switches, ein eingebundener Ordner von Ihrem Rechner                           |
+| `/keys`        | schreibbar        | die Tagesschlüssel der Snapshots und der Freigabe-Warteschlange                         |
+| `/tmp`         | schreibbar, tmpfs | nichts, das bleiben muss                                                                |
+
+In `/run/secrets` liegen:
+
+- `ct_token_runner` für das eigene Konto des Runners und `ct_token_<Alias>` für jedes Konto, das die Richtlinie nennt,
+- `pseudonym_key` für Routinen mit Modell und während eines Wechsels dieses Schlüssels `pseudonym_key_previous`,
+- `runner_mac_key` für Routinen, die ins Wiki schreiben,
+- die Schlüssel der Modelle unter dem Pfad, den `providers.yaml` nennt, etwa `/run/secrets/model_api_key`,
+- `runner_ping_url`, wenn Sie einen Ping an eine Überwachung wollen.
+
+Jede Datei hat die Rechte 400 oder 600, der Ordner 700. Das Token des Servers liegt nie darin. Binden Sie den Ordner ein, nicht einzelne Dateien: Eine Datei, die Sie auf Ihrem Rechner durch Umbenennen ersetzen, sieht ein laufender Container nur durch einen eingebundenen Ordner, und nur so wirkt ein neues Token ohne Neustart.
+
+Den Ordner `/data/stop` binden Sie von Ihrem Rechner nur lesbar ein, im Bundle `config/stop`. Einen Kill-Switch legen Sie dort an, ohne Rechte von root und ohne Neustart (siehe «Anhalten»). Fehlt die Einbindung, startet ein Runner, der ins Wiki schreibt, nicht.
+
+### Variablen
+
+| Variable                              | Wert im Container                     |
+| ------------------------------------- | ------------------------------------- |
+| `ECCLIUM_STATE_DIR`                   | `/data`                               |
+| `ECCLIUM_KEYS_DIR`                    | `/keys`                               |
+| `ECCLIUM_POLICY_FILE`                 | `/config/policy.yaml`                 |
+| `ECCLIUM_PROVIDERS_FILE`              | `/config/providers.yaml`              |
+| `ECCLIUM_ROUTINES_DIR`                | `/config/routines`                    |
+| `ECCLIUM_RUNNER_TOKENS_DIR`           | `/run/secrets`                        |
+| `ECCLIUM_PSEUDONYM_KEY_FILE`          | `/run/secrets/pseudonym_key`          |
+| `ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE` | `/run/secrets/pseudonym_key_previous` |
+| `ECCLIUM_MARKER_KEY_FILE`             | `/run/secrets/runner_mac_key`         |
+| `ECCLIUM_RUNNER_PING_URL_FILE`        | `/run/secrets/runner_ping_url`        |
+| `ECCLIUM_DRAFTS_DIR`                  | `/data/output`                        |
+| `ECCLIUM_NOTIFY_FILE`                 | `/data/notify.jsonl`                  |
+| `ECCLIUM_RUNNER_METRICS_FILE`         | `/data/metrics/runner.prom`           |
+| `ECCLIUM_EGRESS_PROXY`                | `http://egress:3128`                  |
+
+- Setzen Sie eine Variable der Tabelle nur, wenn Sie brauchen, wofür sie steht: `ECCLIUM_PSEUDONYM_KEY_FILE` für Routinen mit Modell, `ECCLIUM_PSEUDONYM_KEY_PREVIOUS_FILE` während eines Wechsels dieses Schlüssels ([Betrieb über stdio](stdio.md)), `ECCLIUM_MARKER_KEY_FILE` für Routinen, die ins Wiki schreiben, `ECCLIUM_RUNNER_PING_URL_FILE` für einen Ping, `ECCLIUM_NOTIFY_FILE` für Meldungen in eine Datei. Die übrigen Werte sind fest.
+- `ECCLIUM_EGRESS_PROXY` nennt im Bundle den Container `egress`, sonst den Proxy Ihres Netzes.
+- Die Adresse von ChurchTools, die Zeitzone und für Routinen, die ins Wiki schreiben, `ECCLIUM_READ_ONLY=false` setzen Sie selbst (siehe «Konfiguration»).
+- Den Ordner `output` für Entwürfe und den Ordner `metrics` legt der Runner selbst an, weitere Ebenen nicht. Die Datei der Meldungen liegt deshalb direkt in `/data`, denn ihr Ordner muss bestehen.
+
+### Ordner im Zustandsordner
+
+| Ordner      | Inhalt                                                                         | Angelegt von                  |
+| ----------- | ------------------------------------------------------------------------------ | ----------------------------- |
+| `audit`     | die Audit-Dateien                                                              | Ecclium                       |
+| `quota`     | Lesebudget, Grenzen je Tag, verbrauchte Freigaben und das Gedächtnis der Läufe | Ecclium                       |
+| `snapshots` | Snapshots der Schreibvorgänge, verschlüsselt mit Schlüsseln aus `/keys`        | Ecclium                       |
+| `queue`     | die Freigabe-Warteschlange                                                     | Ecclium                       |
+| `runner`    | die Sperrdateien der Routinen                                                  | Ecclium                       |
+| `stop`      | die Kill-Switches                                                              | Ihnen, nur lesbar eingebunden |
+
+`/data` muss zwischen zwei Läufen erhalten bleiben, in einem dauerhaften Volume, nie in einem tmpfs. Alle Container des Runners einer Installation teilen es: der Daemon, jeder `run-once` und die Befehle für Betreiber. Das gilt ausdrücklich für `/data/quota`: Ohne diesen Ordner gelten die Grenzen je Tag nicht, und eine Routine läuft für eine schon erledigte Periode noch einmal, mit Kosten beim Modell; einen zweiten Abschnitt verhindert dann nur der Prüfcode. `/data` braucht ein lokales Dateisystem, kein Netzlaufwerk wie NFS oder SMB und keinen synchronisierten Ordner. In Ihre Sicherung gehören `/data`, `/config` und `/run/secrets`, `/keys` nie ([Datenschutz](../privacy.md)).
+
+### Aufseher und Lebenszeichen
+
+- Den Daemon startet ein Aufseher nach 75, 69 und 70 neu, etwa die Regel `restart` von Docker Compose. Erst ein Neustart hebt die Sperre des Schreibens nach einer Zeile des Audits, die ihre Datei nicht erreichte, und 69 heisst, dass der Proxy beim Start noch nicht bereit war. Nach 78 und 64 hilft ein Neustart nicht: Der Grund steht im Log, und der Ping bleibt aus.
+- `ecclium run-once --due` ruft der Aufseher zu seiner Zeit einfach wieder auf, etwa alle 15 Minuten, auch nach 75. Nach 77 und 78 braucht es Sie.
+- Ob der Runner lebt, zeigen `next_run` in der Metrikdatei und der Ping an eine Überwachung. Einen Befehl für einen Healthcheck des Containers gibt es noch nicht; er kommt mit dem Image.
+
+### Befehle für Betreiber
+
+Befehle zum Runner laufen in einem Container mit demselben Benutzer, denselben Pfaden und demselben Netz wie der Runner, mit schreibbarem `/data`, weil auch sie ins Audit schreiben, und nie mit dem Token des Servers. Das gilt heute für `ecclium doctor`, `ecclium init egress`, `ecclium config check --runner`, `ecclium run-once`, `ecclium audit show` und `ecclium audit verify`.
+
+`ecclium undo --run`, `ecclium queue` für Einträge eines Laufs, `ecclium marker adopt --run` und `ecclium policy init --routine` laden die Konfiguration noch wie der Server über stdio und verlangen dessen Token, auch wenn sie mit dem Konto des Runners schreiben. Sie brauchen also neben den Pfaden des Runners die Token-Datei des Servers, und ein Container mit beiden Token erfüllt diesen Vertrag nicht. Bis diese Befehle die Konfiguration des Runners laden, ist das eine bekannte Lücke.
