@@ -1,0 +1,64 @@
+# ADR 0035: Proxy für ausgehende Verbindungen und Grenze im Netz des Runners
+
+- Status: Vorgeschlagen
+- Datum: 13.11.2026
+- Fällt vor: Phase 6
+- Ergänzt: [ADR 0009](0009-positivliste-ausgehend.md), [ADR 0056](0056-ausgehender-weg.md)
+
+## Kontext
+
+[ADR 0009](0009-positivliste-ausgehend.md) verlangt eine Positivliste im Code in jeder Betriebsart und im Self-Hosting zusätzlich eine Grenze im Netz für den Runner: Er hängt nur an einem internen Netz, und nur ein Proxy verbindet nach aussen und lässt nur die Ziele der Liste zu. Die Grenze lässt sich abschalten, dann warnt Ecclium beim Start und vermerkt es im Audit. Proxy, Vorlage seiner Konfiguration und Anbindung im Code regelt dieses ADR.
+
+[ADR 0056](0056-ausgehender-weg.md) baut einen Transport je Origin mit eigenem Pool und eigenem Connector, nimmt keinen Dispatcher und keine `connect`-Optionen von aussen an und begründet das Parsen jeder Antwort mit dem gebündelten llhttp unter anderem damit, dass kein Proxy dazwischen steht. Bis zu diesem ADR bricht eine gesetzte Variable `ECCLIUM_EGRESS_PROXY` den Start ab.
+
+Die Grenze im Netz wirkt auch gegen Code, der am Kern vorbei eine Verbindung öffnet. Der Weg im Code macht nur eindeutig, wohin der Kern selbst verbindet. Ein Container ohne Weg nach aussen erreicht ohne Proxy gar nichts, und ein Proxy, der Verbindungen unbemerkt abfängt, bräuchte Regeln für die Firewall im Container oder das Aufbrechen von TLS.
+
+Geprüft am 13.11.2026 an undici 8.12.2 und Node.js 24.22.2:
+
+- **`ProxyAgent`** baut zu einem Ziel mit `https` immer einen Tunnel mit `CONNECT` und legt danach TLS zum Ziel über den Socket, mit den Optionen aus `requestTls`, die er in den Connector des Ziels ausbreitet. `proxyTunnel: true` erzwingt den Tunnel auch für `http`. Die Verbindungen zum Proxy baut `clientFactory`, ohne sie ein `Pool` mit den Fristen von undici, für die Kopfzeilen 300 Sekunden. Ein einzelner `Client` stattdessen stellte jeden Tunnel hinter den vorigen, und das Schliessen des Agents wartet auf ein offenes `CONNECT`. Der Client des Pools gibt dem Connector kein `allowH2` mit, die Option muss deshalb in `requestTls` stehen. Ein Signal reicht der `ProxyAgent` an das `CONNECT` nicht weiter.
+- **Adresse des Proxys:** `ProxyAgent` nimmt auch `socks5:` und `socks:` an, macht aus Benutzer und Passwort in der Adresse eine Kopfzeile `proxy-authorization` mit Basic und spricht mit einem Proxy unter `https:` selbst TLS.
+- **Fehler:** Antwortet der Proxy auf `CONNECT` mit einem anderen Status als 200, wirft undici `RequestAbortedError` mit dem Code `UND_ERR_ABORTED` und dem Status im Text. Schliesst der Proxy die Verbindung vor der Antwort, wirft es `ProxyConnectionError` mit `UND_ERR_PRX_CONN`. Beides beobachtet mit einem Proxy auf Loopback. Ohne Proxy ordnete der Transport den ersten Code als `failed` ein und kannte den zweiten nicht.
+- **Diagnose:** Ein Tunnel veröffentlicht auf `undici:proxy:connected` Socket und Parameter. Kein Code der Pakete darf `node:diagnostics_channel` laden (ADR 0056).
+- **Umgebung:** Node.js kennt `NODE_USE_ENV_PROXY` und die Option `--use-env-proxy`, mit denen seine eigenen Clients `HTTP_PROXY`, `HTTPS_PROXY` und `NO_PROXY` lesen, und undici bringt `EnvHttpProxyAgent` mit, der dieselben Variablen liest. Der Transport benutzt weder den globalen Dispatcher noch diese Klasse.
+
+## Optionen
+
+1. **Proxy aus der Umgebung,** `HTTPS_PROXY` mit `NODE_USE_ENV_PROXY` oder `EnvHttpProxyAgent`: jedem Werkzeug bekannt, aber `NO_PROXY` öffnet Ausnahmen am Proxy vorbei, die Variablen gelten für jeden Code im Prozess, und eine Variable, die ein Werkzeug der Shell für sich setzt, lenkte auch Ecclium um.
+2. **`ProxyAgent` von undici mit festen Optionen** und einer eigenen, geprüften Variable.
+3. **Eigener Connector:** der Tunnel über `Client#connect` von undici, danach der Connector des Transports wie heute. Weniger Wege offen, aber eigener Code an einer Stelle, die undici selbst pflegt.
+
+## Entscheid
+
+Gewählt ist die zweite Option.
+
+- **Variable:** `ECCLIUM_EGRESS_PROXY` nimmt nur `http://host:port` in kanonischer Form an: ein Name in kleinen Buchstaben, eine IPv4-Adresse oder eine IPv6-Adresse in Klammern, der Port ausdrücklich, kein Benutzer, kein Passwort, kein Pfad, keine Query und kein Fragment. Kein `https:` und kein `socks`: Der Proxy steht im internen Netz, und die Daten laufen ohnehin in TLS bis zum Ziel, er sieht nur Host und Port. Keine Zugangsdaten zum Proxy, weil die Grenze nicht an einem Geheimnis im Prozess hängen soll, das ein Fehler ausplaudern könnte.
+- **Geltung:** Ist die Variable gesetzt, gehen alle Transporte des Prozesses über den Proxy: der Server über stdio, der Runner und die Befehle, die mit ChurchTools oder einem Modell sprechen. Alle Ziele nehmen denselben Proxy, es gibt keine Ausnahme je Host. Ein Ziel im lokalen Netz lässt die Konfiguration des Proxys zu, nicht der Code.
+- **Bau:** Die Fabriken des Transports nehmen nur den geprüften Wert, nie einen Dispatcher. Daraus baut der Kern einen `ProxyAgent` mit `proxyTunnel: true`, mit `requestTls` aus `rejectUnauthorized: true` und `allowH2: false`, mit der Frist für den Verbindungsaufbau aus ADR 0056 als `connectTimeout` und mit einer `clientFactory`, deren Pool zum Proxy so viele Verbindungen wie der Transport, dieselben Grenzen für Kopfzeilen und Parser und für die Antwort auf `CONNECT` die Frist des Verbindungsaufbaus hat. Die Antwort beendet den Aufbau der Verbindung, und die Frist für die Kopfzeilen einer Antwort wäre mit einem Modell fünf Minuten. Sonst gelten dieselben Optionen wie ohne Proxy: eine Origin, vier Verbindungen, eine Anfrage je Verbindung, kein HTTP/2, llhttp und die Grenzen der Antwort. Den Agent gibt der Transport nie heraus.
+- **Fehler:** Ein abgewiesener oder abgebrochener Tunnel wird die neue Kategorie `proxy` mit dem Code `network` und der Logzeile `http_proxy`, damit das Log eine Ablehnung durch den Proxy von einem Fehler im Netz unterscheidet. Den Status des Proxys nennt sie nicht, der Text des Fehlers wird wie jeder andere nie gelesen. Ein Fehler des TLS zum Ziel bleibt `tls`, eine abgelaufene Frist `timeout`. Setzt der Proxy die Verbindung vor seiner Antwort zurück, statt sie zu schliessen, meldet Node.js `ECONNRESET`, und die Logzeile heisst `http_connect`.
+- **Start:** Der Server über stdio und der Runner prüfen den Proxy beim Start. Ein eigener Client zum Proxy sendet `CONNECT` an Host und Port der Origin von ChurchTools, erwartet 200 und schliesst den Socket, ohne TLS und ohne eine Anfrage an ChurchTools. Scheitert das, endet der Start mit 69 und einer Meldung, die sagt, ob der Proxy nicht erreichbar war, nicht antwortete oder den Tunnel abwies. `ecclium config check` prüft nur die Form und bleibt ohne Netz. Die Befehle prüfen nicht vorab, ihr erster Aufruf endet dann mit `proxy`, `connect` oder `timeout`.
+- **Abschalten:** `ECCLIUM_EGRESS` nimmt nur den Wert `off`. Mit einem Proxy zusammen ist das ein Fehler der Konfiguration. Der Runner startet nur mit einem Proxy oder mit `off`. Mit `off` warnt er bei jedem Start, und jede Zeile vom Typ `run` im Audit trägt `egressOff: true` ([ADR 0028](0028-audit-ereignis-und-datei-sink.md)). Für den Server und die Befehle ändert `off` nichts, sie brauchen keinen Proxy.
+- **Variablen der Umgebung:** Ecclium nutzt `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NODE_USE_ENV_PROXY` und `--use-env-proxy` nicht. Ist eine davon gesetzt, in jeder Schreibweise des Namens, warnt der Start, damit niemand annimmt, ein Proxy der Shell greife.
+- **Self-Hosting:** Der Proxy ist Squid im Image `ubuntu/squid`, per Digest. Die Vorlage seiner Konfiguration lässt nur `CONNECT` auf Port 443 zu, sperrt private Bereiche und Link-Local für IPv4 und IPv6, hat keinen Cache, bricht kein TLS auf und schreibt ein Zugriffslog ohne Query. Alle Regeln `http_access` stehen in der Vorlage. `ecclium init egress` erzeugt aus der Konfiguration nur die Liste der erlaubten Ziele als Zeilen `acl`, so dass ein Fehler im Erzeuger den Proxy nicht öffnen kann. `ECCLIUM_EGRESS_ALLOW_LAN` nennt Ziele im lokalen Netz als genau `host:port`. Jeder Eintrag muss einer Origin der Konfiguration entsprechen, einem Modell oder einer selbst betriebenen ChurchTools-Instanz, und nur diese Paare dürfen einen anderen Port als 443 haben. `ecclium doctor` prüft, dass die Direktverbindung scheitert und der Weg über den Proxy klappt. Diese Teile kommen in eigenen Schritten dieser Phase und stehen dann unter «Umsetzung».
+
+## Konsequenzen
+
+- Mit einem Proxy parst llhttp zusätzlich dessen Antwort auf `CONNECT`, im Klartext im internen Netz. Wer den Proxy kontrolliert, kann diese Antwort verfälschen oder den Tunnel abweisen, aber nicht in die Verbindung zum Ziel sehen: TLS mit geprüftem Zertifikat und Namen gilt weiter dem Ziel. Der Proxy sieht Host und Port jedes Ziels, Zeitpunkte und Grössen, nie Inhalte oder Token.
+- Mit einem Proxy löst er die Namen auf, nicht Node.js. Eine Sperre privater Bereiche im Proxy greift deshalb auch für einen Namen, der auf eine interne Adresse zeigt.
+- Ein Runner ohne Proxy startet nur mit `ECCLIUM_EGRESS=off`. Das gilt auch für einen Runner ausserhalb von Docker und für Tests und Läufe von Hand. Der Ausweg ist so immer sichtbar, in der Warnung und im Audit.
+- Der Start von Server und Runner wartet mit Proxy auf eine Antwort des Proxys, höchstens zweimal so lange wie die Frist für den Verbindungsaufbau, für die Verbindung und für die Antwort.
+- **Restrisiken:**
+  - Code am Kern vorbei liest `ECCLIUM_EGRESS_PROXY` nicht. Gegen ihn hilft nur die Grenze im Netz, und die gibt es nur für den Runner im Self-Hosting (ADR 0009).
+  - Ein Tunnel, auf dessen Antwort der Proxy wartet, endet erst an der Frist für den Verbindungsaufbau, nicht bei einem Abbruch des Aufrufers, und so lange wartet auch das Schliessen des Transports. Der Aufruf selbst endet sofort, wie ADR 0056 es für jedes Warten verlangt.
+  - Der Server hat keine Grenze im Netz. Für ihn bleibt die Positivliste im Code (ADR 0009).
+
+## Umsetzung
+
+- **Proxy im Kern, seit dem 13.11.2026:**
+  - `parseEgressProxy` in `packages/core/src/http/origin.ts` prüft die Adresse, `createProxyAgent` in `transport.ts` baut den `ProxyAgent`, und `compose.ts` nimmt in beiden Fabriken nur den geprüften Wert als `proxy`.
+  - Die Kategorie `proxy` in `failure.ts` gilt für `UND_ERR_ABORTED` und `UND_ERR_PRX_CONN` vor den Kopfzeilen der Antwort, `UND_ERR_PRX_TLS` gilt als `tls`. Die eigene Frist und ein Abbruch des Aufrufers gehen vor, weil sie undici mit einem eigenen Grund erreichen.
+  - Die Prüfung beim Start ist `probeEgressProxy` in `proxy-probe.ts`, über den Subpfad `./http`, mit der Frist für den Verbindungsaufbau für die Verbindung und für die Antwort. Scheitert sie, nachdem die Verbindung zum Proxy stand, heisst das «keine Antwort», sonst «nicht erreichbar». Wie der `ProxyAgent` nennt sie das Ziel als `host` und den Proxy als Namen des Servers. Ohne diesen Namen nähme undici den Namen des Servers aus `host` und verbände zur Adresse des Proxys unter dem Namen des Ziels. Die Netzsperre der Tests hat das aufgedeckt.
+  - Der Start über stdio prüft nach seinen Startmeldungen und vor dem Server, `ecclium run-once` und `ecclium runner` nach dem Start des Runners und vor dem ersten Lesen, auch für eine Vorschau. Die Texte stehen in `packages/cli/src/messages/start.ts`.
+- **Konfiguration, seit dem 13.11.2026:** `ECCLIUM_EGRESS_PROXY` und `ECCLIUM_EGRESS` in der Tabelle von [ADR 0055](0055-konfiguration-identitaet.md) mit den Problemen `egress_proxy_invalid`, `egress_off_with_proxy` und `runner_egress_required` und den Warnungen `egress_off` und `environment_proxy_ignored`. Der Runner zeigt nur diese beiden Warnungen, die übrigen des Laders sprechen vom Server.
+- **Audit, seit dem 13.11.2026:** `egressOff` auf den Zeilen vom Typ `run` ([ADR 0028](0028-audit-ereignis-und-datei-sink.md)). Die Pipeline nimmt die Option `egressOff` aus der Konfiguration.
+- **Tests:** `packages/core/src/http/proxy.test.ts` gegen einen Proxy auf Loopback (ADR 0052): ein Tunnel zur Origin ohne Token im Klartext und mit TLS im Tunnel, Ablehnung, Abbruch vor der Antwort, ein schweigender Proxy, zwei Tunnel zugleich, Abbruch beim Warten, ein fremdes Ziel und die Prüfung beim Start, auch gegen einen Proxy, der die Verbindung zurücksetzt. `tests/fixtures/http/trusted.mts` belegt eine Antwort durch einen Tunnel mit einem vertrauten Zertifikat und die Prüfung des Namens im Tunnel, `untrusted.mts` die Ablehnung eines Zertifikats, dem nichts vertraut, auch im Tunnel und mit `NODE_TLS_REJECT_UNAUTHORIZED=0`. Der Ordner `http/` bleibt bei 100 Prozent.
+- **Offen:** Ping-URL, Squid-Vorlage mit `ecclium init egress` und `ECCLIUM_EGRESS_ALLOW_LAN`, und `ecclium doctor` folgen in eigenen Schritten dieser Phase.
