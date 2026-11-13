@@ -25,7 +25,7 @@ import { type ExitCode, exitCodes } from '../exit-codes.js';
 
 /**
  * The signals the runner heeds, frozen, each with its log line and the
- * exit code it ends with, 128 and the number of the signal. The runner
+ * exit code it ends with, 128 plus the number of the signal. The runner
  * container contract names them (ADR 0036).
  */
 export const runnerSignals = Object.freeze([

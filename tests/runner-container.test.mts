@@ -32,8 +32,8 @@ import { runnerSeverities } from '../packages/runner/src/outcome.ts';
 // in both directions: what the page names must exist in the code, and what
 // the code has must stand on the page. The environment the page gives is
 // loaded as a configuration of the runner, with every path moved below a
-// folder of the test, so that the rules of the loader about which folder
-// may lie in which judge the contract itself.
+// folder of the test, so that the rules of the loader on which folder may
+// lie inside which check the contract itself.
 
 const runnerPage = readFileSync(
   new URL('../docs/betrieb/runner.md', import.meta.url),
@@ -52,7 +52,7 @@ const sectionOf = (text: string, heading: string): string[] => {
   const level = /^#+/.exec(heading)?.[0].length ?? 0;
   const rest = lines.slice(start + 1);
   const end = rest.findIndex((line) => {
-    const hashes = /^(#+) /.exec(line)?.[1].length;
+    const hashes = /^(#+) /.exec(line)?.[1]?.length;
     return hashes !== undefined && hashes <= level;
   });
   return end === -1 ? rest : rest.slice(0, end);
