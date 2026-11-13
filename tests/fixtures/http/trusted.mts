@@ -6,7 +6,13 @@ import { subscribe, unsubscribe } from 'node:diagnostics_channel';
 
 import { describe, expect, it } from 'vitest';
 
-import { canary, origin, throughServer, userAgent } from './server.mts';
+import {
+  canary,
+  origin,
+  throughProxy,
+  throughServer,
+  userAgent,
+} from './server.mts';
 
 const target = (path: string): URL => new URL(`${origin}${path}`);
 
@@ -228,5 +234,43 @@ describe('a transport against a trusted certificate', () => {
       unsubscribe('undici:client:sendHeaders', listener);
     }
     expect(seen.join('\n')).toContain(`authorization: Login ${canary.value}`);
+  });
+});
+
+// Through a proxy (ADR 0035): the tunnel carries TLS to the origin, so
+// the proxy sees the host and the port, never the token, and the name of
+// the origin is checked against the certificate as without a proxy.
+describe('a transport through a proxy', () => {
+  it('answers through a tunnel, and the proxy sees no token', async () => {
+    const { transport, proxy, close } = await throughProxy(
+      'a',
+      (_, response) => {
+        response.end('ok');
+      },
+    );
+    const answer = await transport.get(target('/api/whoami'), {
+      maxResponseBytes: 64,
+    });
+    expect(answer.status).toBe(200);
+    expect(new TextDecoder().decode(answer.body)).toBe('ok');
+    expect(proxy.heads.map((head) => head.split('\r\n')[0])).toEqual([
+      'CONNECT demo.example:443 HTTP/1.1',
+    ]);
+    const seen = Buffer.concat(proxy.bytes).toString('latin1');
+    for (const core of canary.cores) expect(seen).not.toContain(core);
+    expect(seen.toLowerCase()).not.toContain('authorization');
+    await transport.close();
+    await close();
+  });
+
+  it('refuses a trusted certificate for another name inside the tunnel', async () => {
+    const { transport, close } = await throughProxy('b', (_, response) => {
+      response.end('never');
+    });
+    expect(
+      await categoryOf(transport.get(target('/api'), { maxResponseBytes: 64 })),
+    ).toBe('tls');
+    await transport.destroy();
+    await close();
   });
 });

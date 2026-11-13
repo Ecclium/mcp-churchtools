@@ -1192,8 +1192,11 @@ describe('createHttpTransport', () => {
     expect(getGlobalDispatcher()).toBe(before);
   });
 
-  it('passes on nothing but the factory and the types', () => {
+  // The check of the proxy at the start comes from the same entry, so
+  // that only the composition root reaches it (ADR 0035).
+  it('passes on nothing but the factories, the check of the proxy and the types', () => {
     expect(Object.keys(compose)).toEqual([
+      'probeEgressProxy',
       'createHttpTransport',
       'createModelHttpTransport',
     ]);

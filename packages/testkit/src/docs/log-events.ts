@@ -155,6 +155,8 @@ const httpFailures: Readonly<Record<string, string>> = Object.freeze({
     'Der ausgehende Weg hat das Ziel einer Anfrage abgewiesen, bevor er etwas sendete. Das ist ein Fehler im Code, nie im Netz.',
   connect:
     'Es kam keine Verbindung zu ChurchTools oder zum Anbieter des Modells zustande.',
+  proxy:
+    'Der Proxy aus `ECCLIUM_EGRESS_PROXY` hat den Tunnel zu ChurchTools oder zum Anbieter des Modells abgewiesen oder vor seiner Antwort abgebrochen, meist weil das Ziel nicht auf seiner Liste steht ([ADR 0035](adr/0035-proxy-und-grenze-im-netz.md)).',
   tls: 'Die gesicherte Verbindung kam nicht zustande, etwa wegen des Zertifikats.',
   timeout: 'Die Anfrage dauerte länger als ihre Grenze.',
   aborted:

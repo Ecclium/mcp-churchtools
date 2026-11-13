@@ -21,11 +21,14 @@ export { type FailureCategory, HttpTransportError } from './failure.js';
 export {
   type EndpointResult,
   maxEndpointPathLength,
+  maxProxyLength,
   type OriginCode,
   originCodes,
   type OriginResult,
   parseChurchToolsOrigin,
+  parseEgressProxy,
   parseModelEndpoint,
+  type ProxyResult,
 } from './origin.js';
 export { Secret } from './secret.js';
 export type {

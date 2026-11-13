@@ -7,7 +7,9 @@ import {
   maxEndpointPathLength,
   type OriginCode,
   originCodes,
+  maxProxyLength,
   parseChurchToolsOrigin,
+  parseEgressProxy,
   parseModelEndpoint,
 } from './origin.js';
 
@@ -242,5 +244,63 @@ describe('parseModelEndpoint', () => {
     expect(() => parseModelEndpoint(42 as unknown as string)).toThrow(
       TypeError,
     );
+  });
+});
+
+describe('parseEgressProxy', () => {
+  it.each([
+    ['http://egress:3128', 'egress', '3128'],
+    ['http://proxy.example.org:8080', 'proxy.example.org', '8080'],
+    ['http://127.0.0.1:3128', '127.0.0.1', '3128'],
+    ['http://[::1]:3128', '[::1]', '3128'],
+    ['http://egress:80', 'egress', '80'],
+  ])('takes %s', (input, host, port) => {
+    expect(parseEgressProxy(input)).toEqual({
+      ok: true,
+      proxy: input,
+      host,
+      port,
+    });
+  });
+
+  it.each([
+    ['https', 'https://egress:3128'],
+    ['socks', 'socks5://egress:1080'],
+    ['no port', 'http://egress'],
+    ['the port 0', 'http://egress:0'],
+    ['a slash at the end', 'http://egress:3128/'],
+    ['a path', 'http://egress:3128/proxy'],
+    ['a query', 'http://egress:3128?x=1'],
+    ['an empty query', 'http://egress:3128?'],
+    ['a fragment', 'http://egress:3128#x'],
+    ['a user', 'http://user@egress:3128'],
+    ['a user and a password', 'http://user:secret@egress:3128'],
+    ['capitals', 'http://Egress:3128'],
+    ['a short IPv4 address', 'http://127.1:3128'],
+    ['a long IPv6 address', 'http://[0:0:0:0:0:0:0:1]:3128'],
+    ['an underscore', 'http://egress_proxy:3128'],
+    ['a trailing dot', 'http://egress.:3128'],
+    ['a leading zero in the port', 'http://egress:03128'],
+    ['no scheme', 'egress:3128'],
+    ['nothing', ''],
+    ['too much', `http://${'a'.repeat(maxProxyLength)}:3128`],
+  ])('refuses %s', (_, input) => {
+    expect(parseEgressProxy(input)).toEqual({ ok: false });
+  });
+
+  it('names no part of a refused address', () => {
+    const canary = makeCanary('token');
+    const refused = parseEgressProxy(`http://user:${canary.value}@egress:3128`);
+    expect(JSON.stringify(refused)).not.toContain(canary.value);
+  });
+
+  it('throws for a value that is no string', () => {
+    expect(() => parseEgressProxy(3128 as unknown as string)).toThrow(
+      TypeError,
+    );
+  });
+
+  it('keeps the longest address within a host of 253 characters', () => {
+    expect(maxProxyLength).toBe('http://'.length + 253 + ':65535'.length);
   });
 });
