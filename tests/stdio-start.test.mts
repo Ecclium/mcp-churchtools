@@ -1870,3 +1870,33 @@ describe('ecclium policy init at the real process', { timeout }, () => {
     }
   });
 });
+
+// With a proxy, the real start asks it for a tunnel to ChurchTools after
+// its notices and before the server, with undici loaded on the way
+// (ADR 0035). A port nobody listens on stands for a proxy that is down.
+describe('the proxy at the start', { timeout }, () => {
+  it('ends with 69 and its notice when the proxy cannot be reached, before the server', async () => {
+    const closed = createTcpServer();
+    const address = await listen(closed);
+    await new Promise<void>((resolve) => {
+      closed.close(() => {
+        resolve();
+      });
+    });
+    const port = new URL(address).port;
+    const session = launch({
+      origin: `https://${host}`,
+      env: { ECCLIUM_EGRESS_PROXY: `http://127.0.0.1:${port}` },
+    });
+    const { code, stdout, stderr } = await session.ended();
+    expect(code).toBe(69);
+    expect(stdout).toBe('');
+    expect(stderr).toContain(
+      'Der Proxy aus ‹ECCLIUM_EGRESS_PROXY› ist nicht erreichbar.',
+    );
+    // No line of the server: it never started.
+    expect(eventsOf(stderr)).toEqual([]);
+    expect(stderr).not.toContain(blockedMarker);
+    assertNoCanary(stderr, [canary.token], 'stderr');
+  });
+});
