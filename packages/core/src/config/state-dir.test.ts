@@ -1,5 +1,6 @@
 import {
   chmodSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
@@ -771,8 +772,10 @@ describe('checkKillSwitchDir on the disk', () => {
   };
 
   afterAll(() => {
-    // A folder without the right to search it cannot be removed otherwise.
-    chmodSync(join(base, 'closed'), 0o700);
+    // A folder without the right to search it cannot be removed otherwise;
+    // it is there only when its test ran.
+    if (existsSync(join(base, 'closed')))
+      chmodSync(join(base, 'closed'), 0o700);
     rmSync(base, { recursive: true, force: true });
   });
 
