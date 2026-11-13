@@ -44,7 +44,7 @@ import {
   type TenantContext,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
-import { isNormalizedAbsolutePath } from '../config/state-dir.js';
+import { isNormalizedAbsolutePath, stateFolders } from '../config/state-dir.js';
 import {
   destroyPrivateFile,
   listPrivateFolder,
@@ -59,7 +59,7 @@ import {
 import { isTenantId, timestampPattern, uuidPattern } from '../logger/index.js';
 
 /** The name of the folder of the queue in the folder of state. */
-export const queueFolderName = 'queue';
+export const queueFolderName = stateFolders.queue;
 
 /** What {@link createFileApprovalQueue} needs. */
 export interface FileApprovalQueueOptions {

@@ -23,12 +23,35 @@ import type { ErrorCode, Logger } from '@ecclium/mcp-churchtools-plugin-api';
 
 import { type ExitCode, exitCodes } from '../exit-codes.js';
 
+/**
+ * The signals the runner heeds, frozen, each with its log line and the
+ * exit code it ends with, 128 plus the number of the signal. The runner
+ * container contract names them (ADR 0036).
+ */
+export const runnerSignals = Object.freeze([
+  Object.freeze({
+    signal: 'SIGTERM',
+    event: 'process_sigterm',
+    code: exitCodes.terminated,
+  } as const),
+  Object.freeze({
+    signal: 'SIGINT',
+    event: 'process_sigint',
+    code: exitCodes.interrupted,
+  } as const),
+  Object.freeze({
+    signal: 'SIGHUP',
+    event: 'process_sighup',
+    code: exitCodes.hungUp,
+  } as const),
+]);
+
 /** What the runner needs of its process. Tests replace it. */
 export interface RunnerHost {
   /**
    * Adds a listener for a signal.
    *
-   * @param signal - SIGINT or SIGTERM.
+   * @param signal - SIGTERM, SIGINT or SIGHUP.
    * @param listener - Runs on every delivery of the signal.
    * @returns A function that removes the listener again.
    */
@@ -198,9 +221,9 @@ export function watchSignals(
       if (writes === 0) host.exit(code);
     };
   const removers = [
-    host.onSignal('SIGTERM', onSignal('process_sigterm', exitCodes.terminated)),
-    host.onSignal('SIGINT', onSignal('process_sigint', exitCodes.interrupted)),
-    host.onSignal('SIGHUP', onSignal('process_sighup', exitCodes.hungUp)),
+    ...runnerSignals.map(({ signal, event, code }) =>
+      host.onSignal(signal, onSignal(event, code)),
+    ),
     host.onFault((kind, value) => {
       try {
         logger.error(

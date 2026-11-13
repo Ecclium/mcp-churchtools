@@ -57,7 +57,7 @@ Gewählt ist die dritte Option, mit `croner` 11.0.0.
 
 - Eine Sperrdatei je Routine im Zustandsordner verhindert, dass zwei Prozesse dieselbe Routine zugleich ausführen, nach dem Vorbild der Sperrdatei des `QuotaStore` ([ADR 0063](0063-quotastore-als-datei.md)). Sie nennt Prozess, Rechner und Beginn. Weil ein Lauf Minuten dauern kann, gilt sie erst als verlassen, wenn sie älter ist als die feste Höchstdauer eines Laufs, nach der der Runner einen Lauf abbricht, oder wenn ihr Prozess auf demselben Rechner nicht mehr läuft. Ein zweiter Prozess überspringt die Routine und sagt es, das zählt nicht als Versuch. Wer die Sperre hat, prüft unter ihr noch einmal, ob die Auslösung fällig ist.
 - `ecclium run-once <Routine>` führt eine Routine von Hand aus, mit der Periode ihrer letzten Auslösung, auch wenn sie nicht fällig ist. Der Lauf zählt gegen die Obergrenzen der Richtlinie wie jeder andere, und schliesst er ab, gilt auch diese Auslösung als abgeschlossen.
-- Die Exit-Codes und das Verhalten bei Signalen legt der Runner-Container-Vertrag fest (ADR 0036).
+- Die Exit-Codes und das Verhalten bei Signalen legt der Runner-Container-Vertrag fest ([ADR 0036](0036-runner-container-vertrag.md)).
 
 ## Konsequenzen
 

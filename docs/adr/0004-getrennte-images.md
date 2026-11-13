@@ -22,10 +22,10 @@ Entwurf: Vorgesehen ist die dritte Option.
 
 - Zwei Images, `ghcr.io/ecclium/mcp-churchtools-server` und `ghcr.io/ecclium/mcp-churchtools-runner`. Beide enthalten genau das veröffentlichte npm-Paket, damit in keinem Image Code liegt, der nicht auch im Paket geprüft wurde.
 - Jedes Image hat seinen festen Befehl. Der Server bekommt sein eigenes Dienstkonto, der Runner ein eigenes, auf seine Routinen beschränktes (ADR 0023). Der Runner hängt nur an einem internen Netz (ADR 0009).
-- **Abgrenzung:** Basis-Image, Signaturen und Attestations regelt ADR 0038. Wie der Runner-Container von aussen zu betreiben ist, regelt der Runner-Container-Vertrag in ADR 0036.
+- **Abgrenzung:** Basis-Image, Signaturen und Attestations regelt ADR 0038. Wie der Runner-Container von aussen zu betreiben ist, regelt der Runner-Container-Vertrag in [ADR 0036](0036-runner-container-vertrag.md).
 
 ## Konsequenzen
 
 - Beide Images haben dieselbe Stückliste und werden gemeinsam geprüft. Ein Fund betrifft immer beide.
 - Restrisiken: Der Code des Runners liegt auch im Image des Servers. Wer den Server-Container übernimmt, hat diesen Code, aber nicht die Zugangsdaten des Runners und nicht dessen Netz.
-- Offen: Der Entwurf wird vor Phase 7 zusammen mit ADR 0038 zur Bestätigung vorgelegt. Der Runner-Container-Vertrag in ADR 0036 fällt schon vor Phase 6.
+- Offen: Der Entwurf wird vor Phase 7 zusammen mit ADR 0038 zur Bestätigung vorgelegt. Der Runner-Container-Vertrag ist seit dem 13.11.2026 als ADR 0036 vorgeschlagen.

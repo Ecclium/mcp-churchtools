@@ -39,6 +39,7 @@ import {
   type DayKeys,
   type QueueKeeper,
   type SnapshotKeeper,
+  stateFolders,
   type StderrLineWriter,
   type WriteHalt,
 } from '@ecclium/mcp-churchtools-core/composition';
@@ -249,7 +250,7 @@ export function composeToolPipeline(options: ComposeOptions): ComposedPipeline {
             // The kill switches of writing: the folder stop of the folder
             // of state. Nothing makes it; without it, writing stays off
             // (ADR 0029).
-            killSwitchDir: `${config.stateDir}/stop`,
+            killSwitchDir: `${config.stateDir}/${stateFolders.stop}`,
           }),
       ...(keys === undefined ? {} : { keys }),
       ...(writeSnapshots === undefined ? {} : { snapshots: writeSnapshots }),

@@ -39,7 +39,7 @@ import {
   type TenantContext,
 } from '@ecclium/mcp-churchtools-plugin-api';
 
-import { isNormalizedAbsolutePath } from '../config/state-dir.js';
+import { isNormalizedAbsolutePath, stateFolders } from '../config/state-dir.js';
 import {
   destroyPrivateFile,
   listPrivateFolder,
@@ -54,7 +54,7 @@ import {
 import { isTenantId, uuidPattern } from '../logger/index.js';
 
 /** The name of the folder of snapshots in the folder of state. */
-export const snapshotFolderName = 'snapshots';
+export const snapshotFolderName = stateFolders.snapshots;
 
 /** What {@link createFileSnapshotStore} needs. */
 export interface FileSnapshotStoreOptions {

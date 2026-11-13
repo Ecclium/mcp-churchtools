@@ -61,7 +61,7 @@ import { isProxy } from 'node:util/types';
 
 import type { Clock } from '@ecclium/mcp-churchtools-plugin-api';
 
-import { isNormalizedAbsolutePath } from '../config/state-dir.js';
+import { isNormalizedAbsolutePath, stateFolders } from '../config/state-dir.js';
 
 /** The limits of the lock of a routine, frozen. */
 export const routineLockLimits = Object.freeze({
@@ -83,7 +83,7 @@ export const routineLockLimits = Object.freeze({
 });
 
 /** The name of the folder of the locks in the folder of state. */
-export const runnerDirName = 'runner';
+export const runnerDirName = stateFolders.runner;
 
 const folderMode = 0o700;
 const fileMode = 0o600;

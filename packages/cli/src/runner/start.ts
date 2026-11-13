@@ -34,7 +34,10 @@ import {
   toolsetNames,
   createToolCatalog,
 } from '@ecclium/mcp-churchtools-core';
-import { checkRunKillSwitches } from '@ecclium/mcp-churchtools-core/composition';
+import {
+  checkRunKillSwitches,
+  stateFolders,
+} from '@ecclium/mcp-churchtools-core/composition';
 import { createCorePlugin } from '@ecclium/mcp-churchtools-tools';
 import {
   loadRoutines,
@@ -186,7 +189,7 @@ const needsOf = (
     if (
       config.stateDir === undefined ||
       checkKillSwitches(
-        `${config.stateDir}/stop`,
+        `${config.stateDir}/${stateFolders.stop}`,
         runAssignmentOf(routineId).tenantId,
         routineId,
       ) === 'unknown'

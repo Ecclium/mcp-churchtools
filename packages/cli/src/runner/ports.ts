@@ -35,6 +35,7 @@ import {
   createTenantContext,
   replacePrivateFile,
   type RoutineLocks,
+  stateFolders,
   type StderrLineWriter,
   type WriteHalt,
   writesHalted,
@@ -127,7 +128,7 @@ export function composeRunnerPorts(options: RunnerPortsOptions): RunnerPorts {
   if (stateDir === undefined || timeZone === undefined) {
     throw new TypeError('The runner needs its folder of state and its zone.');
   }
-  const stopDir = `${stateDir}/stop`;
+  const stopDir = `${stateDir}/${stateFolders.stop}`;
 
   // The memory of runs counts per tenant (ADR 0034); the context names the
   // tenant and the actor of the routine and nothing a caller chose.

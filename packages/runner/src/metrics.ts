@@ -118,12 +118,18 @@ const codePattern = /^[a-z][a-z0-9_]{0,63}$/;
 // so that every value stays a safe integer in milliseconds.
 const maxSeconds = 253_402_300_799;
 
-const names = Object.freeze({
+/**
+ * The names of the metrics in the file, frozen. The runner container
+ * contract and the page for operators name them (ADR 0036).
+ */
+export const metricNames = Object.freeze({
   next: 'ecclium_runner_next_run_timestamp_seconds',
   success: 'ecclium_runner_last_success_timestamp_seconds',
   status: 'ecclium_runner_last_status',
   chain: 'ecclium_runner_audit_chain_head',
-});
+} as const);
+
+const names = metricNames;
 
 const helps = Object.freeze({
   next: 'Zeit, zu der der Runner die Routine wieder ansieht, in Sekunden seit 1970.',
