@@ -9,6 +9,7 @@ import {
   checkRunSection,
   checkRunText,
   escapeRunText,
+  lastTrigger,
 } from '@ecclium/mcp-churchtools-core';
 import { injectionCorpus, lookalikes } from '@ecclium/mcp-churchtools-testkit';
 
@@ -1194,53 +1195,91 @@ describe('the corpus in the seed', () => {
     expect(unsafe(cases.get('en-javascript-link')?.page ?? '')).not.toEqual([]);
   });
 
-  it('lies inside the days the two routines read, for a run in the week of the seed', () => {
-    const days = (file: string): { from: number; to: number } => {
+  it('lies inside the days the two routines read, from the trigger of the week of the seed and from the next one', () => {
+    const routine = (
+      file: string,
+    ): { schedule: string; from: number; to: number } => {
       const text = readFileSync(
         join(import.meta.dirname, '..', '..', 'routines', file),
         'utf8',
       );
-      const match = /from: '\+(\d+)d', to: '\+(\d+)d'/u.exec(text);
-      return { from: Number(match?.[1]), to: Number(match?.[2]) };
+      const days = /from: '\+(\d+)d', to: '\+(\d+)d'/u.exec(text);
+      const schedule = /^schedule: '([^']+)'/mu.exec(text);
+      return {
+        schedule: schedule?.[1] ?? '',
+        from: Number(days?.[1]),
+        to: Number(days?.[2]),
+      };
     };
-    const rota = days('dienstplan-report.yaml');
-    const preview = days('termin-vorschau.yaml');
-    expect(rota).toEqual({ from: 0, to: 14 });
-    expect(preview).toEqual({ from: 7, to: 35 });
+    const rota = routine('dienstplan-report.yaml');
+    const preview = routine('termin-vorschau.yaml');
+    expect(rota).toEqual({ schedule: '0 6 * * MON', from: 0, to: 14 });
+    expect(preview).toEqual({ schedule: '0 6 * * MON', from: 7, to: 35 });
+    // Days as the routine counts them: on the clock of the congregation.
+    const timeZone = 'Europe/Zurich';
     const dayMs = 24 * 60 * 60 * 1000;
-    const dayOf = (time: Date): number => Math.floor(time.getTime() / dayMs);
+    const format = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    const dayOf = (date: string): number =>
+      Date.parse(`${date}T00:00:00Z`) / dayMs;
+    const localDay = (time: number): number => dayOf(format.format(time));
+    const triggerAt = (time: number): { at: number; day: number } => {
+      const trigger = lastTrigger({
+        schedule: rota.schedule,
+        timeZone,
+        clock: { now: () => time },
+      });
+      return { at: trigger.at, day: dayOf(trigger.period.date) };
+    };
     const startOf = (
       data: ReturnType<typeof datedData>,
       label: string,
-    ): Date => {
+    ): number => {
       const spec = data.appointments.find((item) => item.label === label);
       if (spec?.when.kind !== 'time') {
         throw new Error(`no time for ${label}`);
       }
-      return spec.when.start;
+      return spec.when.start.getTime();
     };
-    for (let offset = 0; offset < 14; offset += 1) {
-      for (const hour of [0, 23]) {
-        const seeded = new Date(Date.UTC(2026, 10, 16 + offset, hour));
-        const data = datedData(seeded);
-        // A routine counts its days from its planned trigger: on the day
-        // of the seed for a run then, or from the last Monday before.
-        const today = dayOf(seeded);
-        const monday = today - ((seeded.getUTCDay() + 6) % 7);
-        const triggers = [
-          today,
-          monday,
-          ...(monday === today ? [monday - 7] : []),
-        ];
-        for (const trigger of triggers) {
-          const event = dayOf(startOf(data, 'a5')) - trigger;
-          expect(event).toBeGreaterThanOrEqual(rota.from);
-          expect(event).toBeLessThan(rota.to);
-          const appointment = dayOf(startOf(data, 'a6')) - trigger;
-          expect(appointment).toBeGreaterThanOrEqual(preview.from);
-          expect(appointment).toBeLessThan(preview.to);
+    let checked = 0;
+    let early = 0;
+    // Three weeks each around the change to winter time and to summer
+    // time, hour by hour.
+    for (const first of [Date.UTC(2026, 9, 12), Date.UTC(2027, 2, 15)]) {
+      for (let hour = 0; hour < 21 * 24; hour += 1) {
+        const seeded = first + hour * 60 * 60 * 1000;
+        const data = datedData(new Date(seeded));
+        const event = startOf(data, 'a5');
+        const appointment = startOf(data, 'a6');
+        expect(event).toBeGreaterThan(seeded);
+        const last = triggerAt(seeded);
+        const next = triggerAt(last.at + 7 * dayMs + 60 * 60 * 1000);
+        expect(next.day - last.day).toBe(7);
+        // A run by hand serves the last trigger, the daemon the next one.
+        // On a Monday before the trigger, the last one lies a week back;
+        // such a seed counts for the next trigger only.
+        const triggers = [next.day];
+        if (localDay(seeded) - last.day < 7) {
+          triggers.push(last.day);
+        } else {
+          early += 1;
+        }
+        for (const day of triggers) {
+          expect(localDay(event) - day).toBeGreaterThanOrEqual(rota.from);
+          expect(localDay(event) - day).toBeLessThan(rota.to);
+          expect(localDay(appointment) - day).toBeGreaterThanOrEqual(
+            preview.from,
+          );
+          expect(localDay(appointment) - day).toBeLessThan(preview.to);
+          checked += 1;
         }
       }
     }
+    expect(checked).toBeGreaterThan(1900);
+    expect(early).toBeGreaterThan(0);
   });
 });

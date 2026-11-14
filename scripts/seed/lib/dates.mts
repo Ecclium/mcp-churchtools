@@ -33,6 +33,27 @@ export function anchorSaturday(now: Date): Date {
 }
 
 /**
+ * Finds the Monday of the week of the run, in UTC: the day of the run if it
+ * is a Monday, otherwise the Monday before.
+ *
+ * @param now - The time of the run.
+ * @returns Midnight UTC of that Monday.
+ * @example
+ * ```ts
+ * mondayOf(new Date('2026-10-29T20:00:00Z')); // 2026-10-26T00:00:00Z
+ * ```
+ */
+export function mondayOf(now: Date): Date {
+  const today = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+  );
+  const sinceMonday = (now.getUTCDay() + 6) % 7;
+  return new Date(today - sinceMonday * dayMs);
+}
+
+/**
  * A point in time a number of days and hours after a day.
  *
  * @param day - Midnight UTC of a day.

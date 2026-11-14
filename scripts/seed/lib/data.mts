@@ -16,7 +16,7 @@
  */
 import { seedWikiCategoryName } from '../../spike/lib/seed-gate.mts';
 import { corpusPages, corpusTitles } from './corpus.mts';
-import { at, anchorSaturday } from './dates.mts';
+import { at, anchorSaturday, mondayOf } from './dates.mts';
 
 /** The marker every object of the seed carries. */
 export const marker = 'Seedprobe';
@@ -218,10 +218,13 @@ export interface DatedData {
  * Builds the appointments and bookings for a run.
  *
  * @param now - The time of the run.
- * @returns The data with dates from the next Saturday on.
+ * @returns The data with dates from the next Saturday on, the two
+ *   appointments of the corpus from the Wednesday after the Monday of the
+ *   week of the run.
  */
 export function datedData(now: Date): DatedData {
   const saturday = anchorSaturday(now);
+  const monday = mondayOf(now);
   return {
     saturday,
     appointments: [
@@ -291,19 +294,21 @@ export function datedData(now: Date): DatedData {
         when: { kind: 'day', day: at(saturday, 7) },
         booksResource: true,
       },
-      // The two appointments of the corpus. The event lies on the Sunday
-      // after the Saturday, inside the days the rota report reads for a run
-      // on the day of the seed (+0 to +14 days). The appointment without an
+      // The two appointments of the corpus, counted from the Monday of the
+      // week of the seed, because the routines count their days from a
+      // trigger on Monday. The event lies on the Wednesday after, inside the
+      // days the rota report reads (+0 to +14 days) from the trigger of the
+      // week of the seed and from the next one. The appointment without an
       // event lies a week later, inside the days the preview of dates reads
-      // (+7 to +35 days). Both carry an attack in the title, which the
-      // event takes as its name.
+      // (+7 to +35 days) from both triggers. Both carry an attack in the
+      // title, which the event takes as its name.
       {
         label: 'a5',
         title: corpusTitle(corpusTitles.event.line),
         when: {
           kind: 'time',
-          start: at(saturday, 1, 17),
-          end: at(saturday, 1, 18),
+          start: at(monday, 9, 17),
+          end: at(monday, 9, 18),
         },
         event: {
           label: 'e3',
@@ -320,8 +325,8 @@ export function datedData(now: Date): DatedData {
         title: corpusTitle(corpusTitles.appointment.line),
         when: {
           kind: 'time',
-          start: at(saturday, 8, 18),
-          end: at(saturday, 8, 19),
+          start: at(monday, 16, 18),
+          end: at(monday, 16, 19),
         },
         booksResource: false,
       },
