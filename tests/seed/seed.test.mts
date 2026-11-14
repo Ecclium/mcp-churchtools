@@ -950,6 +950,15 @@ describe('pruefen with the corpus', () => {
     });
     expect(setting.instance.writes()).toHaveLength(before);
     expect(leaks(checked.output, forbidden(setting))).toEqual([]);
+    // Another anlegen finds every page, appointment and event and writes
+    // nothing.
+    const again = await run(setting, 'anlegen');
+    expect(again.result).toMatchObject({
+      termine: { a5: 'vorhanden', a6: 'vorhanden' },
+      events: { e3: 'vorhanden' },
+      seiten: allPages('vorhanden'),
+    });
+    expect(setting.instance.writes()).toHaveLength(before);
   });
 
   it('reports an event under another name, and a missing one', async () => {
@@ -978,6 +987,106 @@ describe('pruefen with the corpus', () => {
     expect(missing.result['events']).toMatchObject({
       e2: 'vorhanden',
       e3: 'fehlt',
+    });
+  });
+
+  it('reports the events as missing once zuruecksetzen took them, with the calendar still there', async () => {
+    const setting = seedSetup();
+    await run(setting, 'anlegen');
+    await run(setting, 'zuruecksetzen');
+    const result = await run(setting, 'pruefen', { terminal: false });
+    expect(result.result['struktur']).toMatchObject({ c: 'vorhanden' });
+    expect(result.result['termine']).toMatchObject({
+      a5: 'fehlt',
+      a6: 'fehlt',
+    });
+    expect(result.result['events']).toEqual({
+      e1: 'fehlt',
+      e2: 'fehlt',
+      e3: 'fehlt',
+    });
+  });
+
+  it('reports the event of an appointment that is gone as missing, while other events are there', async () => {
+    const setting = seedSetup();
+    await run(setting, 'anlegen');
+    const { store } = setting.instance;
+    const title = datedData(now).appointments.find(
+      (spec) => spec.label === 'a5',
+    )?.title;
+    const appointment = store.appointments.findIndex(
+      (item) => item['title'] === title,
+    );
+    const event = store.events.findIndex((item) => item['name'] === title);
+    expect(appointment).toBeGreaterThanOrEqual(0);
+    expect(event).toBeGreaterThanOrEqual(0);
+    store.appointments.splice(appointment, 1);
+    store.events.splice(event, 1);
+    const result = await run(setting, 'pruefen', { terminal: false });
+    expect(result.code).toBe(exitCodes.ok);
+    expect(result.result['termine']).toMatchObject({
+      a5: 'fehlt',
+      a6: 'vorhanden',
+    });
+    expect(result.result['events']).toEqual({
+      e1: 'vorhanden',
+      e2: 'vorhanden',
+      e3: 'fehlt',
+    });
+  });
+
+  it('reports the events as unreadable when the list of events or of appointments cannot be read', async () => {
+    const setting = seedSetup();
+    await run(setting, 'anlegen');
+    const unreadable = {
+      e1: 'antwort unerwartet',
+      e2: 'antwort unerwartet',
+      e3: 'antwort unerwartet',
+    };
+    setting.instance.behave({ refuse: new Map([['GET /api/events', 500]]) });
+    const events = await run(setting, 'pruefen', { terminal: false });
+    expect(events.result['termine']).toMatchObject({ a5: 'vorhanden' });
+    expect(events.result['events']).toEqual(unreadable);
+    setting.instance.behave({
+      refuse: new Map([['GET /api/calendars/{}/appointments', 500]]),
+    });
+    const appointments = await run(setting, 'pruefen', { terminal: false });
+    expect(appointments.result['termine']).toMatchObject({
+      a5: 'antwort unerwartet',
+    });
+    expect(appointments.result['events']).toEqual(unreadable);
+  });
+
+  it('reports an event or an appointment that is there twice as mehrfach', async () => {
+    const setting = seedSetup();
+    await run(setting, 'anlegen');
+    const { store } = setting.instance;
+    const title = datedData(now).appointments.find(
+      (spec) => spec.label === 'a5',
+    )?.title;
+    const appointment = store.appointments.find(
+      (item) => item['title'] === title,
+    );
+    const event = store.events.find((item) => item['name'] === title);
+    expect(appointment).toBeDefined();
+    expect(event).toBeDefined();
+    store.events.push({ ...event, id: 990001 });
+    const eventTwice = await run(setting, 'pruefen', { terminal: false });
+    expect(eventTwice.result['events']).toMatchObject({
+      e2: 'vorhanden',
+      e3: 'mehrfach',
+    });
+    store.events.pop();
+    store.appointments.push({ ...appointment, id: 990002 });
+    const appointmentTwice = await run(setting, 'pruefen', {
+      terminal: false,
+    });
+    expect(appointmentTwice.result['termine']).toMatchObject({
+      a5: 'mehrfach',
+    });
+    expect(appointmentTwice.result['events']).toMatchObject({
+      e2: 'vorhanden',
+      e3: 'mehrfach',
     });
   });
 
@@ -1113,6 +1222,23 @@ describe('the corpus in the seed', () => {
 
   it('puts the line of a case into the title of each appointment, which a run that copies it keeps', () => {
     const data = datedData(now);
+    const fieldLength = Math.min(
+      ...[
+        ['dienstplan-report.yaml', 'termin'],
+        ['termin-vorschau.yaml', 'titel'],
+      ].map(([file, field]) => {
+        const text = readFileSync(
+          join(import.meta.dirname, '..', '..', 'routines', file ?? ''),
+          'utf8',
+        );
+        const match = new RegExp(
+          `${field ?? ''}: \\{ type: text, maxLength: (\\d+) \\}`,
+          'u',
+        ).exec(text);
+        return Number(match?.[1]);
+      }),
+    );
+    expect(fieldLength).toBe(120);
     const titled = [
       ['a5', corpusTitles.event],
       ['a6', corpusTitles.appointment],
@@ -1122,7 +1248,9 @@ describe('the corpus in the seed', () => {
       const title =
         data.appointments.find((spec) => spec.label === label)?.title ?? '';
       expect(title).toBe(`Seedprobe Korpus: ${entry.line}`);
-      expect(title.length).toBeLessThanOrEqual(255);
+      // A run that copies the title fills a field of its blocks with it:
+      // `termin` of the rota report, `titel` of the preview of dates.
+      expect(title.length).toBeLessThanOrEqual(fieldLength);
       expect(checkRunText(title, new Set())).toMatchObject({
         ok: true,
         text: title,
