@@ -2,7 +2,13 @@ import { readFileSync } from 'node:fs';
 
 import { describe, expect, it } from 'vitest';
 
-import { createChurchTools, createModel } from '../../scripts/e2e/mock.mts';
+import {
+  createChurchTools,
+  createModel,
+  heldFor,
+  holdOf,
+  maxHoldMs,
+} from '../../scripts/e2e/mock.mts';
 import { limitsOf, nodeImageOf, squidImageOf } from '../../scripts/e2e/run.mts';
 import {
   countCalls,
@@ -11,6 +17,8 @@ import {
   highestPeak,
   judgePeaks,
   judgeProbe,
+  judgeStopInSearch,
+  judgeStopInWrite,
   oneSectionPerPeriod,
   peakOf,
   type ProbeResult,
@@ -383,5 +391,111 @@ describe('the sources of the job', () => {
       { method: 'PATCH', path: '/api/other', status: 404 },
     ];
     expect(countCalls(calls, 'PATCH', '/api/wiki/')).toBe(1);
+  });
+});
+
+describe('the hold of a stand-in', () => {
+  const query = (values: Record<string, string>) => new URLSearchParams(values);
+  const list = { method: 'GET', path: '/api/wiki/pages' };
+
+  it('reads method, start of the path, number and time', () => {
+    expect(
+      holdOf(
+        query({
+          method: 'GET',
+          path: '/api/wiki/pages',
+          nth: '2',
+          ms: '12000',
+        }),
+      ),
+    ).toEqual({ method: 'GET', path: '/api/wiki/pages', nth: 2, ms: 12_000 });
+  });
+
+  it.each([
+    ['a method in small letters', { method: 'get' }],
+    ['a path outside the API', { path: '/reset' }],
+    ['no number', { nth: '0' }],
+    [
+      'a time longer than a request of Ecclium waits',
+      { ms: String(maxHoldMs + 1) },
+    ],
+    ['no time', { ms: '0' }],
+  ])('refuses %s', (_name, change) => {
+    expect(
+      holdOf(
+        query({
+          method: 'GET',
+          path: '/api/wiki/pages',
+          nth: '2',
+          ms: '1000',
+          ...change,
+        }),
+      ),
+    ).toBeUndefined();
+  });
+
+  it('holds only the nth request of its method below its path', () => {
+    const hold = { ...list, nth: 2, ms: 1000 };
+    const page = { method: 'GET', path: '/api/wiki/categories/7/pages/x' };
+    expect(heldFor(hold, [list])).toBe(0);
+    expect(heldFor(hold, [list, page])).toBe(0);
+    expect(heldFor(hold, [list, page, list])).toBe(1000);
+    expect(heldFor(hold, [list, list, list])).toBe(0);
+    expect(heldFor(undefined, [list, list])).toBe(0);
+  });
+});
+
+describe('the verdicts on a stop', () => {
+  const sigterm = '{"event":"process_sigterm"}';
+  const patch = {
+    method: 'PATCH',
+    path: '/api/wiki/categories/7/pages/x',
+    status: 200,
+  };
+  const readBack = { ...patch, method: 'GET' };
+  const inSearch = {
+    code: 143,
+    tookMs: 1500,
+    log: sigterm,
+    calls: [],
+    modelCalls: 1,
+  };
+
+  it('passes a search that ended at once, without a write', () => {
+    expect(judgeStopInSearch(inSearch, 20_000)).toEqual([]);
+  });
+
+  it.each([
+    ['a stop before the model', { modelCalls: 0 }],
+    ['another exit code', { code: 0 }],
+    ['a search that ran until its answer', { tookMs: 19_000 }],
+    ['a write after the stop', { calls: [patch] }],
+    ['a log without the signal', { log: '' }],
+  ])('fails a stop in the search with %s', (_name, change) => {
+    expect(judgeStopInSearch({ ...inSearch, ...change }, 20_000)).not.toEqual(
+      [],
+    );
+  });
+
+  const inWrite = {
+    code: 143,
+    tookMs: 7000,
+    log: `${sigterm}\n{"result":"written"}`,
+    calls: [patch, readBack],
+    modelCalls: 1,
+  };
+
+  it('passes a write that ran to its end', () => {
+    expect(judgeStopInWrite(inWrite)).toEqual([]);
+  });
+
+  it.each([
+    ['another exit code', { code: 0 }],
+    ['no PATCH', { calls: [readBack] }],
+    ['a PATCH that failed', { calls: [{ ...patch, status: 500 }, readBack] }],
+    ['no read after the PATCH', { calls: [readBack, patch] }],
+    ['no notice of the write', { log: sigterm }],
+  ])('fails a stop in the write with %s', (_name, change) => {
+    expect(judgeStopInWrite({ ...inWrite, ...change })).not.toEqual([]);
   });
 });

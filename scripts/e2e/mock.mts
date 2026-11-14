@@ -21,6 +21,10 @@
 // body, a query or a token, and for ChurchTools the version and text of the
 // page. Everything is made up by the driver; no answer is copied from an
 // instance (tests/fixtures/README.md).
+//
+// The driver can have a stand-in hold one request back before it answers,
+// so that a container can be stopped while the request runs (ADR 0036). It
+// reports every request as it arrives, before such a hold.
 import { readFileSync } from 'node:fs';
 import {
   createServer as createPlainServer,
@@ -29,6 +33,7 @@ import {
 } from 'node:http';
 import { createServer as createTlsServer } from 'node:https';
 import process from 'node:process';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 /** The roles of a stand-in. */
 export const mockRoles = ['churchtools', 'model', 'decoy'] as const;
@@ -76,10 +81,35 @@ export interface MockCall {
   readonly status: number;
 }
 
+/** One request as it arrived, before a hold. */
+export interface MockArrival {
+  readonly method: string;
+  readonly path: string;
+}
+
+/**
+ * A request a stand-in holds back before it answers: the nth since the
+ * last reset of its method whose path starts with a prefix, for a time.
+ */
+export interface MockHold {
+  readonly method: string;
+  readonly path: string;
+  readonly nth: number;
+  readonly ms: number;
+}
+
+/**
+ * The longest hold, below the 15 seconds Ecclium waits for the head of an
+ * answer, so that a held request is answered rather than timed out.
+ */
+export const maxHoldMs = 14_000;
+
 /** What a stand-in reports to the driver. */
 export interface MockReport {
   readonly role: MockRole;
   readonly calls: readonly MockCall[];
+  /** Every request as it arrived, also one that is held or never answered. */
+  readonly arrived: readonly MockArrival[];
   /** Connections over TCP, also those that never sent a request. */
   readonly connections: number;
   /** The page of ChurchTools, for its role only. */
@@ -217,6 +247,59 @@ export function createChurchTools(config: MockConfig['churchtools']): {
 }
 
 /**
+ * Reads a hold from the query of `POST /hold` of the report.
+ *
+ * @param query - `method`, `path` as the start of the path, `nth` from 1
+ *   and `ms` up to `maxHoldMs`.
+ * @returns The hold, or undefined for a query without these values.
+ */
+export function holdOf(query: URLSearchParams): MockHold | undefined {
+  const method = query.get('method') ?? '';
+  const path = query.get('path') ?? '';
+  const nth = Number(query.get('nth'));
+  const ms = Number(query.get('ms'));
+  if (
+    !/^[A-Z]+$/u.test(method) ||
+    !path.startsWith('/api/') ||
+    !Number.isInteger(nth) ||
+    nth < 1 ||
+    !Number.isInteger(ms) ||
+    ms < 1 ||
+    ms > maxHoldMs
+  ) {
+    return undefined;
+  }
+  return Object.freeze({ method, path, nth, ms });
+}
+
+/**
+ * How long to hold the request that arrived last.
+ *
+ * @param hold - The hold the driver set, if any.
+ * @param arrived - The requests since the reset, the last one included.
+ * @returns The milliseconds to wait before the answer, 0 for none.
+ */
+export function heldFor(
+  hold: MockHold | undefined,
+  arrived: readonly MockArrival[],
+): number {
+  const last = arrived.at(-1);
+  if (
+    hold === undefined ||
+    last === undefined ||
+    last.method !== hold.method ||
+    !last.path.startsWith(hold.path)
+  ) {
+    return 0;
+  }
+  const count = arrived.filter(
+    (request) =>
+      request.method === hold.method && request.path.startsWith(hold.path),
+  ).length;
+  return count === hold.nth ? hold.ms : 0;
+}
+
+/**
  * Builds the handler of the model: the chat interface after the example of
  * OpenAI, with one block whose text carries the number of the call.
  *
@@ -288,10 +371,14 @@ const main = (): void => {
   ) as MockConfig;
   // A reset starts over with the page and the count of the model, without
   // a restart: a new container could get another address, which Squid
-  // would not know yet.
+  // would not know yet. It drops the hold, and a request held across it
+  // changes nothing and is not reported.
   let churchtools: ReturnType<typeof createChurchTools> | undefined;
   let model: ReturnType<typeof createModel> | undefined;
   const calls: MockCall[] = [];
+  const arrived: MockArrival[] = [];
+  let hold: MockHold | undefined;
+  let generation = 0;
   let connections = 0;
   const reset = (): void => {
     churchtools =
@@ -300,6 +387,9 @@ const main = (): void => {
         : undefined;
     model = role === 'model' ? createModel(config.model) : undefined;
     calls.length = 0;
+    arrived.length = 0;
+    hold = undefined;
+    generation += 1;
     connections = 0;
   };
   reset();
@@ -310,8 +400,16 @@ const main = (): void => {
       cert: readFileSync(`/e2e/tls/${role}.crt`),
     },
     (request, response) => {
-      void bodyOf(request).then((body) => {
-        const url = new URL(request.url ?? '/', 'https://mock.invalid');
+      const url = new URL(request.url ?? '/', 'https://mock.invalid');
+      arrived.push({ method: request.method ?? 'GET', path: url.pathname });
+      const wait = heldFor(hold, arrived);
+      const born = generation;
+      void bodyOf(request).then(async (body) => {
+        if (wait > 0) await sleep(wait);
+        if (born !== generation) {
+          response.destroy();
+          return;
+        }
         const answer: MockAnswer =
           body === undefined
             ? { status: 413, body: {} }
@@ -339,10 +437,15 @@ const main = (): void => {
   });
 
   const report = createPlainServer((request, response) => {
-    if (request.method === 'POST' && request.url === '/reset') reset();
+    const asked = new URL(request.url ?? '/', 'http://report.invalid');
+    if (request.method === 'POST' && asked.pathname === '/reset') reset();
+    if (request.method === 'POST' && asked.pathname === '/hold') {
+      hold = holdOf(asked.searchParams);
+    }
     const state: MockReport = {
       role,
       calls,
+      arrived,
       connections,
       ...(churchtools === undefined ? {} : { page: churchtools.page() }),
     };

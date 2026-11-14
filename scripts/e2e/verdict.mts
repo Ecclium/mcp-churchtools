@@ -318,11 +318,105 @@ export interface Call {
  * @returns How many there were.
  */
 export function countCalls(
-  calls: readonly Call[],
+  calls: readonly Pick<Call, 'method' | 'path'>[],
   method: string,
   prefix: string,
 ): number {
   return calls.filter(
     (call) => call.method === method && call.path.startsWith(prefix),
   ).length;
+}
+
+/** How a run-once that the driver stopped with `docker stop` ended. */
+export interface Stopped {
+  /** The exit code of the container. */
+  readonly code: number;
+  /** How long `docker stop` took. */
+  readonly tookMs: number;
+  /** The log of the container, stdout and stderr. */
+  readonly log: string;
+  /** What ChurchTools answered until the judgement. */
+  readonly calls: readonly Call[];
+  /** How many calls the model answered before the stop. */
+  readonly modelCalls: number;
+}
+
+const pagePrefix = '/api/wiki/categories/';
+
+/**
+ * Judges a stop while ChurchTools held the list of pages that the search
+ * of the page reads after the model (ADR 0036): the signal ends the search
+ * at once, so the container ends with 143 long before the hold would, and
+ * no write begins.
+ *
+ * @param stopped - How the run ended.
+ * @param holdMs - How long ChurchTools held the list.
+ * @returns The failures, empty when it holds.
+ */
+export function judgeStopInSearch(stopped: Stopped, holdMs: number): string[] {
+  const failures: string[] = [];
+  if (stopped.modelCalls < 1) {
+    failures.push(
+      'Der Stopp kam vor dem Modell; er traf das Lesen, nicht die Suche der Seite.',
+    );
+  }
+  if (stopped.code !== 143) {
+    failures.push(
+      `docker stop in der Suche endete mit ${String(stopped.code)} statt 143.`,
+    );
+  }
+  if (stopped.tookMs >= holdMs / 2) {
+    failures.push(
+      `docker stop in der Suche dauerte ${String(Math.round(stopped.tookMs / 1000))} s; die Suche lief bis zur Antwort weiter.`,
+    );
+  }
+  const written = countCalls(stopped.calls, 'PATCH', pagePrefix);
+  if (written !== 0) {
+    failures.push(
+      `Nach dem Stopp in der Suche ${String(written)} PATCH statt keinem.`,
+    );
+  }
+  if (!stopped.log.includes('"event":"process_sigterm"')) {
+    failures.push(
+      'Das Log nach dem Stopp in der Suche nennt process_sigterm nicht.',
+    );
+  }
+  return failures;
+}
+
+/**
+ * Judges a stop while ChurchTools held the PATCH of a write (ADR 0036): a
+ * write that has begun runs to its end, with its read after it and its
+ * notice, and only then the container ends with 143.
+ *
+ * @param stopped - How the run ended.
+ * @returns The failures, empty when it holds.
+ */
+export function judgeStopInWrite(stopped: Stopped): string[] {
+  const failures: string[] = [];
+  if (stopped.code !== 143) {
+    failures.push(
+      `docker stop im Schreibvorgang endete mit ${String(stopped.code)} statt 143.`,
+    );
+  }
+  const patch = stopped.calls.findIndex(
+    (call) => call.method === 'PATCH' && call.path.startsWith(pagePrefix),
+  );
+  if (patch === -1 || stopped.calls[patch]?.status !== 200) {
+    failures.push('Im Schreibvorgang kam kein PATCH mit 200 zurück.');
+  } else if (
+    !stopped.calls
+      .slice(patch + 1)
+      .some((call) => call.method === 'GET' && call.path.startsWith(pagePrefix))
+  ) {
+    failures.push(
+      'Nach dem PATCH las der Runner die Seite nicht; der Schreibvorgang wurde abgebrochen.',
+    );
+  }
+  if (!stopped.log.includes('"result":"written"')) {
+    failures.push(
+      'Die Meldung des Laufs nennt keinen geschriebenen Abschnitt.',
+    );
+  }
+  return failures;
 }
