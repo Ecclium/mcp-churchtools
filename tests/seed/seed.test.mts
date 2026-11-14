@@ -933,6 +933,64 @@ describe('the lists of pages of the seed', () => {
   });
 });
 
+describe('pruefen with the corpus', () => {
+  it('finds the pages, the appointments and their events, each event under the title of its appointment', async () => {
+    const setting = seedSetup();
+    await run(setting, 'anlegen');
+    setting.instance.grantSeedCategory();
+    await run(setting, 'anlegen');
+    const before = setting.instance.writes().length;
+    const checked = await run(setting, 'pruefen', { terminal: false });
+    expect(checked.code).toBe(exitCodes.ok);
+    expect(checked.result).toMatchObject({
+      termine: { a5: 'vorhanden', a6: 'vorhanden' },
+      events: { e1: 'vorhanden', e2: 'vorhanden', e3: 'vorhanden' },
+      seiten: allPages('vorhanden'),
+    });
+    expect(setting.instance.writes()).toHaveLength(before);
+    expect(leaks(checked.output, forbidden(setting))).toEqual([]);
+  });
+
+  it('reports an event under another name, and a missing one', async () => {
+    const setting = seedSetup();
+    await run(setting, 'anlegen');
+    const title = datedData(now).appointments.find(
+      (spec) => spec.label === 'a5',
+    )?.title;
+    const event = setting.instance.store.events.find(
+      (item) => item['name'] === title,
+    );
+    expect(event).toBeDefined();
+    if (event !== undefined) {
+      event['name'] = 'Seedprobe Anlass';
+    }
+    const renamed = await run(setting, 'pruefen', { terminal: false });
+    expect(renamed.result['events']).toMatchObject({
+      e2: 'vorhanden',
+      e3: 'anderer Name',
+    });
+    setting.instance.store.events.splice(
+      setting.instance.store.events.indexOf(event ?? {}),
+      1,
+    );
+    const missing = await run(setting, 'pruefen', { terminal: false });
+    expect(missing.result['events']).toMatchObject({
+      e2: 'vorhanden',
+      e3: 'fehlt',
+    });
+  });
+
+  it('reports the events as missing without the calendar', async () => {
+    const setting = seedSetup();
+    const result = await run(setting, 'pruefen', { terminal: false });
+    expect(result.result['events']).toEqual({
+      e1: 'fehlt',
+      e2: 'fehlt',
+      e3: 'fehlt',
+    });
+  });
+});
+
 // Latin letters for the letters of other scripts that look like them.
 const latinOf = new Map(
   Array.from('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ').flatMap(

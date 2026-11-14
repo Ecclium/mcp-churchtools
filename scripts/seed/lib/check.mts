@@ -6,10 +6,13 @@
  * person sees before the first write whether the guard lets the seed pass,
  * whether the account sees and may edit the category of the wiki, whether
  * the services of the seed send mails and whether the seed account is in
- * one of its groups.
+ * one of its groups. For each event of the data set it checks that the
+ * event is there and carries the title of its appointment as its name,
+ * which the event of the corpus of prompt injections relies on.
  *
  * @packageDocumentation
  */
+import type { JsonObject } from '../../spike/lib/spec.mts';
 import {
   datedData,
   groups,
@@ -30,6 +33,7 @@ import {
   idOf,
   readAppointments,
   readBookings,
+  readEvents,
   readMembers,
   searchWindow,
   type Found,
@@ -45,6 +49,35 @@ function presence(found: Found | FoundPage, run: SeedRun): Outcome {
     return unreadable(run);
   }
   return found === undefined ? 'fehlt' : 'vorhanden';
+}
+
+// Whether the event of an appointment of the seed is there and carries the
+// title of its appointment as its name, which the event of the corpus
+// needs, so that the rota report reads the attack.
+function eventPresence(
+  title: string,
+  appointments: readonly JsonObject[],
+  events: readonly JsonObject[] | undefined,
+  run: SeedRun,
+): Outcome {
+  const appointment = findOne(appointments, (base) => base['title'] === title);
+  if (appointment === 'mehrfach') {
+    return 'mehrfach';
+  }
+  if (typeof appointment !== 'object') {
+    return 'fehlt';
+  }
+  if (events === undefined) {
+    return unreadable(run);
+  }
+  const own = findOne(
+    events,
+    (event) => event['appointmentId'] === appointment.id,
+  );
+  if (typeof own !== 'object') {
+    return own === 'mehrfach' ? 'mehrfach' : 'fehlt';
+  }
+  return own.entry['name'] === title ? 'vorhanden' : 'anderer Name';
 }
 
 function mails(found: Found, run: SeedRun): Outcome {
@@ -167,6 +200,21 @@ export async function checkAll(context: CommandContext): Promise<void> {
             run,
           ),
     );
+  }
+  const events =
+    appointments === undefined ? undefined : await readEvents(run, window);
+  for (const spec of data.appointments) {
+    if (spec.event !== undefined) {
+      run.note(
+        'events',
+        spec.event.label,
+        appointments === undefined
+          ? calendar === undefined
+            ? 'fehlt'
+            : unreadable(run)
+          : eventPresence(spec.title, appointments, events, run),
+      );
+    }
   }
 
   const resource = idOf(found.resource);
