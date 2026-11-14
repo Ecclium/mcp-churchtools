@@ -215,3 +215,10 @@ Teil 8 seit dem 14.11.2026: der gefälschte Prüfcode im Korpus der Prompt-Injec
 
 - **Auf der Seite des Berichts:** Ein Abschnitt mit der Kennzeichnung der Routine und der Periode des Laufs, aber einem Code, den der Schlüssel nicht gibt, zählt nicht als eigener Abschnitt. Der Lauf ersetzt ihn nicht, überspringt ihn nicht und schreibt keinen zweiten, sondern legt seinen Abschnitt in die Freigabe-Warteschlange; die Seite bleibt, wie sie war. Auf einer Seite, die der Lauf nur liest, wirkt dieselbe Zeile nicht.
 - **Im Text des Modells:** Eine Zeile, die ein Leser für die Kennzeichnung hält, weist schon `checkRunSection` mit dem Grund `marking` ab, wo immer sie im Abschnitt steht ([ADR 0030](0030-contentpolicy.md), Umsetzung). Vorher tat das erst der Write-Guard beim Planen; ein Probelauf zeigte den Abschnitt, und ein Entwurf als Datei behielt die Zeile. Eine Routine mit Prüfungen des Kerns zeigt einen solchen Titel als `(Titel nicht darstellbar)`.
+
+Teil 9 seit dem 14.11.2026: Kein Eintrag nennt das eigene Konto des Runners.
+
+- **Abweisung:** `checkPolicy` weist einen Eintrag im Teil `unattended` mit `credential: runner` mit dem Code `policy_credential_runner` und dem Feld `unattended[<n>].credential` ab, und Server wie Runner starten nicht (78). Mit diesem Konto liest jede Routine ohne Eintrag ([ADR 0033](0033-runner-modell-ohne-werkzeuge.md), Umsetzung «Konto»). Schriebe eine Routine damit, bräuchte es Rechte zum Schreiben, und jede Routine ohne Eintrag läse mit einem Konto, das schreiben darf. Bis dahin nahm die Richtlinie den Alias an, und er stand für dasselbe Konto.
+- **JSON Schema:** `schemas/policy.v1.json` verbietet den Wert mit `not`, so dass ein Editor ihn schon beim Schreiben anstreicht. Das Schema von zod nimmt ihn an, damit der Kern den eigenen Code meldet und nicht `policy_invalid`.
+- **Befehl:** `ecclium policy init --routine <Routine> --credential runner` endet vor jedem Lesen mit 64, statt einen Eintrag vorzuschlagen, den die Richtlinie abweist.
+- **Verworfen:** die Abweisung nur über das Muster des Schemas mit `policy_invalid`. Die Meldung hätte nicht gesagt, warum der Wert nicht geht.
