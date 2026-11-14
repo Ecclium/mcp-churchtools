@@ -244,6 +244,17 @@ Einen Ordner `stop` im Zustandsordner liest nur ein Server über stdio ohne `ECC
 
 `/data` muss zwischen zwei Läufen erhalten bleiben, in einem dauerhaften Volume, nie in einem tmpfs. Alle Container des Runners einer Installation teilen es: der Daemon, jeder `run-once` und die Befehle für Betreiber. Das gilt ausdrücklich für `/data/quota`: Ohne diesen Ordner gelten die Grenzen je Tag nicht, und eine Routine läuft für eine schon erledigte Periode noch einmal, mit Kosten beim Modell; einen zweiten Abschnitt verhindert dann nur der Prüfcode. `/data` braucht ein lokales Dateisystem, kein Netzlaufwerk wie NFS oder SMB und keinen synchronisierten Ordner. Sichern Sie `/data` und `/config`, die Entwürfe in `/data/output` nur so lange wie nötig ([Datenschutz](../privacy.md)). Die Dateien aus `/run/secrets` sichern Sie getrennt davon wie andere Zugangsdaten, vor allem `runner_mac_key`: Ein neuer Schlüssel macht jeden bisherigen Prüfcode ungültig (siehe «Neuer Schlüssel des Prüfcodes»). `/keys` sichern Sie nie.
 
+### Grenzen
+
+Der Container läuft mit Grenzen für die Zahl der Prozesse, Threads eingeschlossen, und für den Speicher. Der Job `e2e` in CI startet den Runner mit diesen Grenzen und liest nach jedem Lauf von `ecclium run-once` die Höchstwerte aus der cgroup des Containers; ein Lauf, der eine Grenze erreicht, lässt den Job scheitern. Am 14.11.2026 brauchte ein solcher Lauf, der eine Liste von Seiten liest, ein Modell fragt und einen Abschnitt schreibt, lokal unter Ubuntu 24.04 auf arm64 höchstens 13 Prozesse und 79 MiB Speicher. Die Werte der Tabelle sind Ausgangswerte: das Doppelte davon, aufgerundet auf eine Zweierpotenz.
+
+| Grenze   | Wert    | In Docker Compose |
+| -------- | ------- | ----------------- |
+| Prozesse | 32      | `pids_limit: 32`  |
+| Speicher | 256 MiB | `mem_limit: 256m` |
+
+Liest eine Routine viel, etwa die Einteilungen vieler Events, kann ihr Lauf mehr Speicher brauchen; gemessen ist das nicht. Endet ein Lauf mit 137, ohne dass ihn jemand gestoppt hat, und zeigt `docker inspect` bei `OOMKilled` den Wert `true`, hat der Kernel ihn wegen des Speichers beendet. Erhöhen Sie dann die Grenze für den Speicher.
+
 ### Aufseher und Lebenszeichen
 
 - Den Daemon startet der Aufseher nach 75, 69 und 70 neu. Erst ein Neustart hebt die Sperre des Schreibens nach einer Zeile des Audits, die ihre Datei nicht erreichte. 69 heisst, dass der Proxy beim Start keinen Tunnel gab, etwa weil er noch nicht bereit war. Nach 78 und 64 hilft ein Neustart nicht: Der Grund steht im Log, und der Ping bleibt aus. Docker Compose unterscheidet die Codes nicht: Mit `restart: on-failure` oder `unless-stopped` startet der Daemon auch nach 78 und 64 wieder und endet erneut, bis Sie den Grund beheben.

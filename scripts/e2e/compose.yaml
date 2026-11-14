@@ -1,0 +1,129 @@
+# The E2E job of the runner container contract (ADR 0036), run by
+# scripts/e2e/run.mts, locally and in the job e2e of ci.yml. Not the
+# bundle for self-hosting, which comes with the images in phase 7.
+#
+# The runner runs the built repository in the image of Node.js, mounted
+# read-only, as the contract asks: UID 65532, read-only file system, no
+# capabilities, an init, limits for processes and memory, /config and
+# /run/secrets read-only, /data and /keys writable, only in runner-int.
+# Squid runs the template of deploy/selfhost/egress unchanged. ChurchTools,
+# the model and a decoy are stand-ins with TLS (scripts/e2e/mock.mts).
+#
+# Unlike the bundle, egress-ext is internal as well: no container of the
+# job reaches the internet, every target lies in the job (ADR 0052).
+#
+# The driver sets the variables: E2E_WORK, the folder of the run with
+# config, secrets, certificates and the list of Squid; E2E_DATA and
+# E2E_KEYS, the volumes it made and handed to the runner; E2E_SQUID_IMAGE,
+# taken from the header of the template, so that the image has one source.
+name: ecclium-e2e
+
+x-node-image: &node-image node:24-trixie-slim@sha256:af02d57b57719b9657a45199a79264a9437940cd55b3c7b3fc99615654f124a0
+
+# What every container of Node.js gets: nothing to write but /tmp, no
+# capability, no new privileges.
+x-locked: &locked
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+
+x-stand-in: &stand-in
+  <<: *locked
+  image: *node-image
+  user: '1000:1000'
+  init: true
+  volumes:
+    - ./:/app/scripts/e2e:ro
+    - ${E2E_WORK:?}/tls:/e2e/tls:ro
+    - ${E2E_WORK:?}/mock.json:/e2e/mock.json:ro
+
+services:
+  egress:
+    image: ${E2E_SQUID_IMAGE:?}
+    entrypoint: [/usr/sbin/squid-gnutls, -f, /etc/squid/squid.conf, -N]
+    read_only: true
+    tmpfs: [/tmp, /run, /var/run/squid, /var/spool/squid, /var/log/squid]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    volumes:
+      - ../../deploy/selfhost/egress/squid.conf:/etc/squid/squid.conf:ro
+      - ${E2E_WORK:?}/egress/ecclium-targets.conf:/etc/squid/ecclium-targets.conf:ro
+    networks: [runner-int, egress-ext]
+
+  churchtools:
+    <<: *stand-in
+    command: [node, /app/scripts/e2e/mock.mts, churchtools]
+    networks:
+      egress-ext:
+        aliases: [churchtools.e2e.test]
+
+  model:
+    <<: *stand-in
+    command: [node, /app/scripts/e2e/mock.mts, model]
+    networks:
+      egress-ext:
+        aliases: [model.e2e.test]
+
+  decoy:
+    <<: *stand-in
+    command: [node, /app/scripts/e2e/mock.mts, decoy]
+    networks:
+      egress-ext:
+        aliases: [decoy.e2e.test]
+
+  runner:
+    <<: *locked
+    image: *node-image
+    profiles: [runner]
+    user: '65532:65532'
+    init: true
+    # The limits of the contract (ADR 0036): twice the peak this job
+    # measured, rounded up to a power of two. The job checks every run
+    # against them.
+    pids_limit: 32
+    mem_limit: 256m
+    stop_grace_period: 5m
+    entrypoint: [node, /app/packages/cli/dist/bin.js]
+    environment:
+      ECCLIUM_CHURCHTOOLS_URL: https://churchtools.e2e.test
+      ECCLIUM_TIME_ZONE: Europe/Zurich
+      ECCLIUM_READ_ONLY: 'false'
+      ECCLIUM_STATE_DIR: /data
+      ECCLIUM_KEYS_DIR: /keys
+      ECCLIUM_KILL_SWITCH_DIR: /config/stop
+      ECCLIUM_POLICY_FILE: /config/policy.yaml
+      ECCLIUM_PROVIDERS_FILE: /config/providers.yaml
+      ECCLIUM_ROUTINES_DIR: /config/routines
+      ECCLIUM_RUNNER_TOKENS_DIR: /run/secrets
+      ECCLIUM_PSEUDONYM_KEY_FILE: /run/secrets/pseudonym_key
+      ECCLIUM_MARKER_KEY_FILE: /run/secrets/runner_mac_key
+      ECCLIUM_RUNNER_METRICS_FILE: /data/metrics/runner.prom
+      ECCLIUM_EGRESS_PROXY: http://egress:3128
+      # The stand-ins have private addresses in the network of Docker,
+      # like a model in the network of a congregation.
+      ECCLIUM_EGRESS_ALLOW_LAN: churchtools.e2e.test:443,model.e2e.test:443
+      # The certificates of the stand-ins, made by the driver.
+      NODE_EXTRA_CA_CERTS: /e2e/ca.pem
+    volumes:
+      - ../../:/app:ro
+      - ${E2E_WORK:?}/config:/config:ro
+      - ${E2E_WORK:?}/secrets:/run/secrets:ro
+      - ${E2E_WORK:?}/tls/ca.pem:/e2e/ca.pem:ro
+      - data:/data
+      - keys:/keys
+    networks: [runner-int]
+
+networks:
+  runner-int:
+    internal: true
+  egress-ext:
+    internal: true
+
+volumes:
+  data:
+    name: ${E2E_DATA:?}
+    external: true
+  keys:
+    name: ${E2E_KEYS:?}
+    external: true

@@ -292,6 +292,42 @@ jobs:
       - name: Check that the tests changed no tracked file
         run: git diff --exit-code
 
+  # The E2E of the runner container contract with Docker Compose (ADR 0036):
+  # the built runner in the image of Node.js after the contract, Squid from
+  # the template of the bundle and stand-ins for ChurchTools and a model,
+  # all pinned by digest. scripts/e2e/run.mts says what each proof shows.
+  # It needs Docker, so it runs outside the network namespace of the
+  # checks (ADR 0052). The job itself uses the network for checkout, mise,
+  # the install and the images only; the containers of the proofs hang in
+  # two internal networks and reach nothing outside the job.
+  e2e:
+    name: e2e
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Node.js and pnpm
+        uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5.2.7
+        with:
+          version: 2026.10.24
+          cache: false
+          install_args: node aqua:pnpm/pnpm
+      - name: Install the dependencies from the lockfile
+        run: pnpm install --frozen-lockfile
+      - name: Check that the install changed no tracked file
+        run: git diff --exit-code
+      - name: Build
+        run: pnpm run build
+      - name: Run the E2E checks with Docker Compose
+        run: pnpm run e2e
+      - name: Check that the E2E checks changed no tracked file
+        run: git diff --exit-code
+
   deps-review:
     name: deps-review
     # Compares the dependencies of the base and the head of a pull request.

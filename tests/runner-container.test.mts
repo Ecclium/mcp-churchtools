@@ -179,6 +179,65 @@ describe('the paths of the runner container', () => {
   });
 });
 
+// The E2E job runs the runner after the contract (scripts/e2e/, ADR 0036):
+// its compose file is the one place of the limits, and it sets the
+// variables and paths of the tables with their values.
+const e2eCompose = readFileSync(
+  new URL('../scripts/e2e/compose.yaml', import.meta.url),
+  'utf8',
+);
+const e2eRunner =
+  /^ {2}runner:\n((?: {4}.*\n|\n)*)/m.exec(e2eCompose)?.[1] ?? '';
+
+describe('the runner container of the E2E job', () => {
+  it('runs with the limits of the table', () => {
+    const rows = tableOf(sectionOf(containerSection.join('\n'), '### Grenzen'));
+    const settings = rows.map(([, , setting = '']) => plain(setting));
+    expect(settings.sort()).toEqual(['mem_limit: 256m', 'pids_limit: 32']);
+    for (const setting of settings) {
+      expect(e2eRunner).toMatch(new RegExp(`^ {4}${setting}$`, 'm'));
+    }
+    const values = Object.fromEntries(
+      rows.map(([limit = '', value = '']) => [limit, value]),
+    );
+    expect(values).toEqual({ Prozesse: '32', Speicher: '256 MiB' });
+  });
+
+  it('sets each variable of the table it sets with the value of the table', () => {
+    const set = [...e2eRunner.matchAll(/^ {6}(ECCLIUM_\w+): (\S+)$/gm)].map(
+      ([, name = '', value = '']) => [name, value.replace(/^'(.*)'$/, '$1')],
+    );
+    expect(set.length).toBeGreaterThan(10);
+    for (const [name = '', value] of set) {
+      if (documented.has(name)) expect(value, name).toBe(documented.get(name));
+    }
+  });
+
+  it('mounts the paths of the table read-only or writable as the table says', () => {
+    expect(e2eRunner).toMatch(/^ {6}- \$\{E2E_WORK:\?\}\/config:\/config:ro$/m);
+    expect(e2eRunner).toMatch(
+      /^ {6}- \$\{E2E_WORK:\?\}\/secrets:\/run\/secrets:ro$/m,
+    );
+    expect(e2eRunner).toMatch(/^ {6}- data:\/data$/m);
+    expect(e2eRunner).toMatch(/^ {6}- keys:\/keys$/m);
+    expect(e2eRunner).toMatch(/^ {4}user: '65532:65532'$/m);
+    expect(e2eRunner).toMatch(/^ {4}init: true$/m);
+    // The hardening comes through the anchor; without the merge the runner
+    // would write anywhere and keep its capabilities.
+    expect(e2eRunner).toMatch(/^ {4}<<: \*locked$/m);
+    const locked =
+      /^x-locked: &locked\n((?: {2}.*\n)*)/m.exec(e2eCompose)?.[1] ?? '';
+    expect(locked.split('\n').filter(Boolean)).toEqual([
+      '  read_only: true',
+      '  tmpfs: [/tmp]',
+      '  cap_drop: [ALL]',
+      '  security_opt: [no-new-privileges:true]',
+    ]);
+    expect(e2eRunner).toMatch(/^ {4}networks: \[runner-int\]$/m);
+    expect(e2eRunner).not.toMatch(/ports:/);
+  });
+});
+
 describe('the folders in the folder of state', () => {
   // The folder stop is only the default of a server over stdio; the runner
   // reads its kill switches from ECCLIUM_KILL_SWITCH_DIR (ADR 0036).

@@ -48,6 +48,7 @@ Ein Modell oder eine selbst betriebene ChurchTools-Instanz im eigenen Netz nenne
 - `ecclium config check --runner` prüft die Konfiguration, ohne etwas anzufragen.
 - `ecclium doctor` prüft im Netz `runner-int` den ganzen Weg: einen Tunnel mit TLS zu jedem Ziel der Liste, 403 für einen Namen ausserhalb und keinen direkten Weg zu ChurchTools ([Prüfen mit `ecclium doctor`](doctor.md)).
 - Der Runner bittet bei jedem Start um einen Tunnel zu ChurchTools, ohne eine Anfrage zu senden, und endet mit 69, wenn der Proxy ihn nicht gibt. Das Zugriffslog von Squid zeigt dann `TCP_DENIED/403` mit Host und Port.
+- Der Job `e2e` in CI startet Squid mit dieser Vorlage und einer Liste aus `ecclium init egress` bei jedem Pull Request und führt den Runner durch den Proxy ([Runner der Routinen](runner.md#container)).
 - Von Hand prüfen Sie aus einem Container im Netz `runner-int`, dass ein Tunnel zu ChurchTools geht, einer zu einem anderen Host nicht und eine Verbindung ohne Proxy scheitert, etwa mit `curl -sS -o /dev/null -w '%{http_connect}\n' -x http://egress:3128 https://example.church.tools/`. Erwartet sind 200 für ChurchTools und 403 für einen Host, der nicht auf der Liste steht.
 
 ## Grenzen
