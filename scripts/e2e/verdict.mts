@@ -35,6 +35,40 @@ export function sectionsOf(
   return counts;
 }
 
+// The ID of a run, a UUID in lower case as Ecclium draws it.
+const runIdPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+
+/**
+ * The ID of the run of a routine from the notice `ecclium run-once` writes
+ * to stdout for the channel `stdout`, one line of JSON per run.
+ *
+ * @param output - What the run wrote to stdout.
+ * @param routine - The ID of the routine.
+ * @returns The ID of the run, or undefined without exactly one notice of
+ *   the routine that names one.
+ */
+export function runIdOf(output: string, routine: string): string | undefined {
+  const found: string[] = [];
+  for (const line of output.split('\n')) {
+    let notice: unknown;
+    try {
+      notice = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (typeof notice !== 'object' || notice === null) continue;
+    const { routine: of, run } = notice as {
+      readonly routine?: unknown;
+      readonly run?: unknown;
+    };
+    if (of === routine && typeof run === 'string' && runIdPattern.test(run)) {
+      found.push(run);
+    }
+  }
+  return found.length === 1 ? found[0] : undefined;
+}
+
 /**
  * Whether every period of the routine has exactly one section, and at
  * least one period has one.

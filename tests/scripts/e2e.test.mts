@@ -23,6 +23,7 @@ import {
   peakOf,
   type ProbeResult,
   routineId,
+  runIdOf,
   sectionsOf,
   waitBeforeProof,
   withFault,
@@ -88,6 +89,34 @@ describe('the count of sections', () => {
       sectionsOf(line(routineId, '2026-W01').replace('k1:', 'k2:'), routineId)
         .size,
     ).toBe(0);
+  });
+});
+
+describe('the ID of a run from its notice', () => {
+  const run = '11111111-2222-4333-8444-555555555555';
+  const notice = (fields: Record<string, unknown>): string =>
+    JSON.stringify({
+      time: '2026-11-14T06:00:00.000Z',
+      routine: routineId,
+      period: '2026-W46',
+      run,
+      result: 'written',
+      ...fields,
+    });
+
+  it('reads the ID of the one notice of the routine, beside other lines', () => {
+    expect(
+      runIdOf(['', notice({}), 'e2e-peak 1 2', ''].join('\n'), routineId),
+    ).toBe(run);
+  });
+
+  it('gives none for another routine, two notices or an ID of another form', () => {
+    expect(runIdOf(notice({ routine: 'andere' }), routineId)).toBeUndefined();
+    expect(
+      runIdOf([notice({}), notice({})].join('\n'), routineId),
+    ).toBeUndefined();
+    expect(runIdOf(notice({ run: 'LAUF-1' }), routineId)).toBeUndefined();
+    expect(runIdOf('kein JSON', routineId)).toBeUndefined();
   });
 });
 
