@@ -38,7 +38,7 @@ export const policyFieldMeanings: Readonly<Record<string, string>> =
       'Der Teil für Routinen, die ohne Person laufen. Ein Lauf schreibt nur auf die Ziele der Einträge seiner Routine, mit den Grenzen je Lauf und je Tag. Was kein Eintrag erlaubt, kommt in die Freigabe-Warteschlange.',
     'unattended[].routine': 'Kennung der Routine, etwa `dienstplan-report`.',
     'unattended[].credential':
-      'Name des Kontos, mit dem der Runner für diese Routine liest und schreibt, damit er das engste passende Dienstkonto nimmt: das Token in der Datei `ct_token_<credential>` im Ordner aus `ECCLIUM_RUNNER_TOKENS_DIR` ([Konfiguration](configuration.md)). Ist `ECCLIUM_RUNNER_TOKENS_DIR` nicht gesetzt, fehlt die Datei oder weist Ecclium sie ab, läuft die Routine nicht, auch nicht mit dem Token des Servers. Alle Einträge einer Routine nennen denselben Namen.',
+      'Name des Kontos, mit dem der Runner für diese Routine liest und schreibt, damit er das engste passende Dienstkonto nimmt: das Token in der Datei `ct_token_<credential>` im Ordner aus `ECCLIUM_RUNNER_TOKENS_DIR` ([Konfiguration](configuration.md)). Ist `ECCLIUM_RUNNER_TOKENS_DIR` nicht gesetzt, fehlt die Datei oder weist Ecclium sie ab, läuft die Routine nicht, auch nicht mit dem Token des Servers. Alle Einträge einer Routine nennen denselben Namen. `runner` nimmt Ecclium hier nicht an: Mit diesem eigenen Konto des Runners liest jede Routine ohne Eintrag, und schriebe eine Routine damit, bekämen alle diese Routinen ihre Rechte zum Schreiben.',
     'unattended[].modelRedaction':
       'Stufe der Maskierung für den Aufruf des Sprachmodells der Routine: `strict`, die Voreinstellung, oder `standard`. Für dieselbe Routine überall gleich.',
     'unattended[].target':
@@ -186,10 +186,17 @@ const formOf = (node: JsonSchemaNode): string => {
         : `Liste mit ${swiss(node.minItems)} bis ${swiss(node.maxItems)} Einträgen`;
     case 'object':
       return 'Objekt';
-    default:
-      return node.minLength === undefined
-        ? `Text nach festem Muster, höchstens ${swiss(node.maxLength)} Zeichen`
-        : `Text von ${swiss(node.minLength)} bis ${swiss(node.maxLength)} Zeichen ohne Steuerzeichen`;
+    default: {
+      const form =
+        node.minLength === undefined
+          ? `Text nach festem Muster, höchstens ${swiss(node.maxLength)} Zeichen`
+          : `Text von ${swiss(node.minLength)} bis ${swiss(node.maxLength)} Zeichen ohne Steuerzeichen`;
+      // A text the schema forbids, such as the own account of the runner.
+      const not = node.not as { readonly const?: unknown } | undefined;
+      return typeof not?.const === 'string'
+        ? `${form}, nicht ${code(not.const)}`
+        : form;
+    }
   }
 };
 

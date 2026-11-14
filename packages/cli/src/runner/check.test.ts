@@ -173,6 +173,7 @@ const setup = (options: SetupOptions = {}) => {
   const modelKey = makeCanary('token');
   privateFile(join(tokensDir, 'ct_token_runner'), `${runnerToken.value}\n`);
   privateFile(join(tokensDir, 'ct_token_berichte'), `${accountToken.value}\n`);
+  privateFile(join(tokensDir, 'ct_token_archiv'), `${accountToken.value}\n`);
   const modelKeyFile = privateFile(
     join(configDir, 'model-key'),
     `${modelKey.value}\n`,
@@ -364,7 +365,7 @@ describe('ecclium config check --runner', () => {
       entries: [
         {
           routine: 'pflege-test',
-          credential: 'runner',
+          credential: 'berichte',
           target: { kind: 'wiki_category', id: 7, name: 'Berichte' },
           tools: ['ct_wiki_page_append_section'],
           maxPerRun: 1,
@@ -379,7 +380,7 @@ describe('ecclium config check --runner', () => {
     const { code, stdout } = check();
     expect(code).toBe(exitCodes.ok);
     expect(stdout).toContain(
-      '  - ‹pflege-test›: Zeitplan ‹0 6 * * MON›, Abschnitt im Wiki, Konto ‹runner›, ohne Modell, mit den Prüfungen ‹stalePages› und ‹brokenLinks›',
+      '  - ‹pflege-test›: Zeitplan ‹0 6 * * MON›, Abschnitt im Wiki, Konto ‹berichte›, ohne Modell, mit den Prüfungen ‹stalePages› und ‹brokenLinks›',
     );
     expect(stdout.at(-1)).toBe(validText);
   });
@@ -415,7 +416,7 @@ describe('ecclium config check --runner', () => {
         [wikiRoutine]: {},
         [draftRoutine]: { target: 'draft', tool: 'ct_nope' },
       },
-      entries: [entryOf('berichte', 8), entryOf('runner', 9)],
+      entries: [entryOf('berichte', 8), entryOf('archiv', 9)],
     });
     const { code, stdout } = check();
     expect(code).toBe(exitCodes.invalidConfig);

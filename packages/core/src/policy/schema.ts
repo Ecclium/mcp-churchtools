@@ -61,6 +61,15 @@ export const policyLimits = Object.freeze({
   rightsDriftDays: 30,
 } as const);
 
+/**
+ * The alias of the own account of the runner (ADR 0023, ADR 0033): a
+ * routine without an entry in the policy reads with the file
+ * `ct_token_runner`. No entry of the unattended part names it, so that no
+ * routine writes with the account every routine without an entry reads
+ * with (ADR 0032).
+ */
+export const runnerOwnAlias = 'runner';
+
 /** The levels of redaction a routine may ask for its call of the model. */
 export const modelRedactionLevels = Object.freeze([
   'strict',
@@ -143,7 +152,10 @@ const day = z
 
 const unattendedEntry = z.strictObject({
   routine: slug,
-  credential: slug,
+  // The JSON Schema forbids the own account of the runner, so that an
+  // editor marks it; the check refuses it with a code of its own, which
+  // the schema of zod would hide behind policy_invalid (ADR 0032).
+  credential: slug.meta({ not: { const: runnerOwnAlias } }),
   modelRedaction: z.enum(modelRedactionLevels).optional(),
   target: unattendedTarget,
   tools,
@@ -205,6 +217,7 @@ export interface InteractiveEntry {
 /** An entry of the unattended part, with its level of redaction. */
 export interface UnattendedEntry {
   readonly routine: string;
+  /** The alias of the account of the runs, never {@link runnerOwnAlias}. */
   readonly credential: string;
   readonly modelRedaction: ModelRedaction;
   readonly target: Readonly<UnattendedTarget>;

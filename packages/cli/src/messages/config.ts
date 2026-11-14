@@ -1531,6 +1531,12 @@ const problems: Readonly<
       'Dort steht ein Ziel mit einem zweiten Namen, ein Tool zum zweiten Mal für dasselbe Ziel, eine Obergrenze je Lauf über der je Tag oder eine zweite Stufe der Maskierung für dieselbe Routine. Dann bliebe offen, welcher Eintrag gilt.',
       'Fassen Sie die beiden Einträge zusammen oder korrigieren Sie das Feld.',
     ),
+  policy_credential_runner: (name = policyFile, _raw, at) =>
+    message(
+      `Ein Eintrag der Richtlinie in ${name} nennt das eigene Konto des Runners als Konto einer Routine${at}.`,
+      'Mit dem Konto ‹runner› liest jede Routine, die keinen Eintrag in der Richtlinie hat. Schriebe eine Routine damit, bekämen alle diese Routinen ihre Rechte zum Schreiben.',
+      'Nennen Sie im Feld ‹credential› ein eigenes Konto, etwa ‹berichte›, und legen Sie sein Token als Datei ‹ct_token_berichte› in den Ordner aus ‹ECCLIUM_RUNNER_TOKENS_DIR›.',
+    ),
   // The file of the providers of language models (ADR 0033). Its checks
   // follow those of the file of the policy; it holds no secret.
   providers_file_relative: (name = providersFile) =>

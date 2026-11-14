@@ -30,13 +30,11 @@ import {
 /** The start of the name of the token file of an alias. */
 export const runnerTokenPrefix = 'ct_token_';
 
-/**
- * The alias of the account of the runner itself (ADR 0023, ADR 0033): a
- * routine without an entry in the policy reads with the file
- * `ct_token_runner`, never with the token of the server. A policy may
- * name the same alias; then it is the same account.
- */
-export const runnerOwnAlias = 'runner';
+// The alias of the account of the runner itself (ADR 0023, ADR 0033): a
+// routine without an entry in the policy reads with the file
+// `ct_token_runner`, never with the token of the server. The policy
+// defines it, because its check refuses it for every entry (ADR 0032).
+export { runnerOwnAlias } from '../policy/schema.js';
 
 // A token file in the folder of the tokens is never relative, and on a
 // platform without the checks of a token file the loader refuses the

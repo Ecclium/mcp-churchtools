@@ -256,6 +256,35 @@ describe('checkPolicy', () => {
     });
   });
 
+  it('refuses the own account of the runner as the credential of an entry, with a code of its own', () => {
+    for (const unattended of [
+      [routine(page, { credential: 'runner' })],
+      [
+        routine(page),
+        routine(category, { routine: 'wiki-hygiene', credential: 'runner' }),
+      ],
+    ]) {
+      const at = unattended.length - 1;
+      expect(checkPolicy({ schema: 'policy.v1', unattended })).toEqual({
+        ok: false,
+        code: 'policy_credential_runner',
+        field: `unattended[${String(at)}].credential`,
+      });
+    }
+    // Only the alias itself: another one that starts with it, and a routine
+    // of that name, stay.
+    const policy = policyOf({
+      schema: 'policy.v1',
+      unattended: [
+        routine(page, { routine: 'runner', credential: 'runner-berichte' }),
+      ],
+    });
+    expect(policy.unattended[0]).toMatchObject({
+      routine: 'runner',
+      credential: 'runner-berichte',
+    });
+  });
+
   it('keeps contact values in the normal form of the content policy, only when there are some', () => {
     const policy = policyOf({
       schema: 'policy.v1',

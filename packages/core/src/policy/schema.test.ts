@@ -4,6 +4,7 @@ import {
   modelRedactionLevels,
   policyJsonSchema,
   policyLimits,
+  runnerOwnAlias,
 } from './schema.js';
 
 interface JsonSchemaNode {
@@ -27,6 +28,23 @@ describe('policyJsonSchema', () => {
       'interactive',
       'unattended',
     ]);
+  });
+
+  it('forbids the own account of the runner as the credential of an entry, and nowhere else', () => {
+    const entry = (
+      schema.properties?.unattended as {
+        items: { properties: Record<string, Record<string, unknown>> };
+      }
+    ).items.properties;
+    expect(entry.credential).toEqual({
+      type: 'string',
+      maxLength: 63,
+      pattern: '^[a-z0-9][a-z0-9-]{0,62}$',
+      not: { const: runnerOwnAlias },
+    });
+    expect(runnerOwnAlias).toBe('runner');
+    expect(entry.routine).not.toHaveProperty('not');
+    expect(JSON.stringify(schema).match(/"not":/gu)).toHaveLength(1);
   });
 
   it('makes a new object on each call', () => {
