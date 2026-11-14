@@ -1641,6 +1641,36 @@ describe('ecclium undo --run', () => {
     expect(setupOf.text()).toContain('Mesmer');
   });
 
+  it('writes nothing for a routine the policy no longer names, never with the own account of the runner', async () => {
+    const setupOf = setup();
+    const {
+      runOnce,
+      undoCommand,
+      adoptCommand,
+      auditFileLines,
+      rewritePolicy,
+    } = setupOf;
+    const { bound } = await runOnce();
+    const [write] = writtenLines(auditFileLines(), bound.runId);
+    // The entries of the routine are gone; another routine keeps the alias.
+    rewritePolicy([entryOf({ routine: 'kalender-test' })]);
+    for (const refused of [
+      await undoCommand({ runId: bound.runId }),
+      await undoCommand({ eventId: String(write?.['eventId']) }),
+    ]) {
+      expect(refused.code).toBe(exitCodes.invalidConfig);
+      expect(refused.stderr.join('\n')).toContain(
+        'Die Richtlinie nennt für die Routine keinen Eintrag und damit kein Konto mehr.',
+      );
+      expect(refused.calls).toEqual([]);
+    }
+    // An adoption needs the page of the entry and ends before the account.
+    const adopted = await adoptCommand(bound.runId);
+    expect(adopted.code).toBe(exitCodes.noInput);
+    expect(adopted.patches).toEqual([]);
+    expect(setupOf.text()).toContain('Mesmer');
+  });
+
   it('refuses the token of the server and requires the folder of the kill switches, as the runner does', async () => {
     const setupOf = setup();
     const { runOnce, undoCommand, runnerEnvironment, accountFile } = setupOf;

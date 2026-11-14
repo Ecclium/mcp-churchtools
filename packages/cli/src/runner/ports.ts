@@ -181,6 +181,9 @@ export function composeRunnerPorts(options: RunnerPortsOptions): RunnerPorts {
       createTransport: options.createTransport,
       routineId,
       writeHalt: options.writeHalt,
+      // A routine without an entry reads with the own account of the
+      // runner; only the runner passes this (ADR 0033, ADR 0036).
+      ownAccount: true,
     });
     if (!built.ok) return Object.freeze({ ok: false, code: built.code });
     let bound: ReturnType<typeof composeRun>;

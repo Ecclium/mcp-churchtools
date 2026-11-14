@@ -24,7 +24,8 @@
  * of the runner, as the runner container contract asks of a command about
  * the runner (ADR 0036), and otherwise the one over stdio. The
  * configuration of the runner refuses the token of the server and holds
- * the own account of the runner in its place, which never writes. So
+ * the own account of the runner in its place, on which no command falls
+ * back. So
  * `approve` writes an entry of a run only with `--runner`, and with it
  * only an entry of a run; `list`, `show` and `reject` ask ChurchTools
  * nothing and work with both.
@@ -629,9 +630,11 @@ export async function runQueue(options: QueueOptions): Promise<ExitCode> {
           return finish(output, queueProblems.run_needs_runner);
         }
         // With the configuration of the runner the pipeline of the command
-        // holds the own account of the runner, which never writes: an entry
-        // of no run ends here, and so does one that cannot be approved, with
-        // the text the approval would give, before anything is sent.
+        // holds the own account of the runner, on which the command never
+        // falls back: an entry of no run ends here, and so does one that cannot
+        // be approved, with the text the approval would give, before
+        // anything is sent and, like every refusal of the command before
+        // its pipeline, without a line in the audit.
         if (routine === undefined && runner) {
           return shown.kind === 'found'
             ? finish(output, queueProblems.entry_of_no_run)
@@ -647,10 +650,9 @@ export async function runQueue(options: QueueOptions): Promise<ExitCode> {
             createTransport: options.createTransport,
             routineId: routine,
             writeHalt,
-            // An entry of a run whose routine lost its entries in the
-            // policy since would otherwise go out with the token of the
-            // server.
-            requireAccount: true,
+            // Without ownAccount, an entry of a run whose routine lost its
+            // entries in the policy since builds nothing, never a pipeline
+            // with the own account of the runner (ADR 0036).
           });
           if (!built.ok) return finish(output, runAccountEnding(built.code));
           try {

@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -623,6 +624,18 @@ describe('ecclium queue --runner', () => {
       decidedEnding('rejected', undefined, false).text,
     ]);
     expect(missing.requests + decided.requests).toBe(0);
+    // The two approvals ended before the pipeline, whose transport holds
+    // the own account of the runner: only the rejection has a line.
+    const decisions = readdirSync(join(stateDir, 'audit'))
+      .filter((name) => name.endsWith('.jsonl'))
+      .flatMap((name) =>
+        readFileSync(join(stateDir, 'audit', name), 'utf8')
+          .split('\n')
+          .filter((line) => line !== ''),
+      )
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((line) => line['type'] === 'approval');
+    expect(decisions.map((line) => line['decision'])).toEqual(['rejected']);
   });
 
   it('refuses the token of the server, as the runner does', async () => {

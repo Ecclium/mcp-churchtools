@@ -440,7 +440,6 @@ export async function adoptMarker(options: AdoptOptions): Promise<ExitCode> {
         createTransport: options.createTransport,
         routineId,
         writeHalt: createWriteHalt(),
-        requireAccount: true,
       });
       if (!built.ok) return finish(output, adoptAccountEnding(built.code));
       try {

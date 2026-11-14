@@ -39,8 +39,8 @@
  * server, requires the folder of the kill switches and holds the own
  * account of the runner where the server holds its token. So with it the
  * command takes back only a write that its audit files tie to a run, with
- * the account of the routine, and never writes with the own account of the
- * runner; over stdio it takes back only a write of the server and points
+ * the account of the routine, and never falls back on the own account
+ * of the runner; over stdio it takes back only a write of the server and points
  * the operator to `--runner` for one of a run.
  *
  * Its exit code follows sysexits, as `texts.ts` maps each case: 0 when
@@ -449,7 +449,7 @@ export async function undoWrite(options: UndoOptions): Promise<ExitCode> {
     }
     // A write of a run goes back only with the configuration of the runner,
     // and with it only a write of a run: its transport holds the own account
-    // of the runner, which never writes (ADR 0033, ADR 0036).
+    // of the runner, on which it never falls back (ADR 0033, ADR 0036).
     if (run !== undefined && !runner) return refuse(output, 'run_needs_runner');
     if (run === undefined && runner) return refuse(output, 'write_of_no_run');
     target = { kind: 'write', eventId, ...(run === undefined ? {} : { run }) };
@@ -575,7 +575,6 @@ export async function undoWrite(options: UndoOptions): Promise<ExitCode> {
         ...composeOptions,
         routineId: run.routineId,
         writeHalt: createWriteHalt(),
-        requireAccount: true,
       });
       if (!built.ok) return finish(output, undoAccountEnding(built.code));
       try {
