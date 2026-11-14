@@ -998,10 +998,12 @@ const latinOf = new Map(
   ),
 );
 
-// A text as a model could read it: in NFKC, with Latin letters for their
-// look-alikes, the ideographic full stop as a dot, and the text that tag
-// characters stand for set apart by spaces.
-function readable(text: string): string {
+// A text as a model or a browser could read it: in NFKC, with the
+// ideographic full stop as a dot, the text that tag characters stand for
+// set apart by spaces, and HTML entities with a number decoded. With
+// `fold`, letters that look like Latin ones become those, so that a
+// disguised name shows; without it, a host counts as what it really is.
+function readable(text: string, fold = false): string {
   let result = '';
   let hidden = '';
   for (const sign of text.normalize('NFKC')) {
@@ -1014,20 +1016,32 @@ function readable(text: string): string {
       result += ` ${hidden} `;
       hidden = '';
     }
-    result += point === 0x3002 ? '.' : (latinOf.get(sign) ?? sign);
+    result +=
+      point === 0x3002 ? '.' : fold ? (latinOf.get(sign) ?? sign) : sign;
   }
-  return hidden === '' ? result : `${result} ${hidden} `;
+  return (hidden === '' ? result : `${result} ${hidden} `)
+    .replaceAll(/&#x([0-9a-f]+);?/giu, (_, hex: string) =>
+      String.fromCodePoint(Number.parseInt(hex, 16)),
+    )
+    .replaceAll(/&#(\d+);?/gu, (_, digits: string) =>
+      String.fromCodePoint(Number(digits)),
+    );
 }
 
-// The host names in a text, with or without a scheme, not the names of
-// files in a path.
+// The host names in a text, after a scheme, after `//` or `@`, or bare,
+// but not the names of files in a path: once as written and once with
+// look-alike letters folded.
 function hostsIn(text: string): string[] {
-  const plain = readable(text).replaceAll('://', ' ');
-  return Array.from(
-    plain.matchAll(
-      /(?<![\p{L}\p{N}/@.-])(?:[\p{L}\p{N}-]+\.)+\p{L}{2,}(?![\p{L}\p{N}-])/gu,
+  return [false, true].flatMap((fold) =>
+    Array.from(
+      readable(text, fold)
+        .replaceAll('//', ' ')
+        .replaceAll('@', ' ')
+        .matchAll(
+          /(?<![\p{L}\p{N}/.-])(?:[\p{L}\p{N}-]+\.)+(?=[\p{L}\p{N}-]*\p{L})[\p{L}\p{N}-]{2,}(?![\p{L}\p{N}-])/gu,
+        ),
+      (match) => match[0].toLowerCase(),
     ),
-    (match) => match[0].toLowerCase(),
   );
 }
 
@@ -1038,18 +1052,27 @@ const exampleHost = (host: string): boolean =>
   host.endsWith('.example.org');
 
 // What must never stand on the instance: a host outside the names for
-// examples, an IPv4 address outside the ranges for documentation, a link
-// or HTML whose target runs a script, a mention with a number.
+// examples, `localhost`, an IP address outside the ranges for
+// documentation, a script as the target of a link or in HTML, and a
+// mention with a number.
 function unsafe(text: string): string[] {
   const plain = readable(text);
+  const joined = plain.replaceAll(/[\t\n\r]/gu, '');
   return [
-    ...hostsIn(text).filter((host) => !exampleHost(host)),
+    ...new Set(hostsIn(text).filter((host) => !exampleHost(host))),
+    ...(plain.match(/\blocalhost\b/giu) ?? []),
     ...(plain.match(/\b\d{1,3}(?:\.\d{1,3}){3}\b/gu) ?? []).filter(
       (address) => !/^(?:192\.0\.2|198\.51\.100|203\.0\.113)\./u.test(address),
     ),
-    ...(plain.match(/\]\(\s*javascript:/giu) ?? []),
-    ...(plain.match(/(?:href|src)\s*=\s*["']?\s*javascript:/giu) ?? []),
-    ...(plain.match(/searchEntry:%23\d+/gu) ?? []),
+    ...(plain.match(/\[[0-9a-f]*:[0-9a-f:.]*\]/giu) ?? []).filter(
+      (address) => !/^\[2001:db8:/iu.test(address),
+    ),
+    ...(joined.match(
+      /(?:\]\(\s*<?|\]:\s*<?|<|(?:href|src|action|formaction)\s*=\s*["']?)\s*javascript:/giu,
+    ) ?? []),
+    ...(plain.match(/<\s*script\b/giu) ?? []),
+    ...(plain.match(/<[^>]*\bon[a-z]+\s*=/giu) ?? []),
+    ...(plain.match(/searchEntry:\s*(?:%23|#)\s*\d+/giu) ?? []),
   ];
 }
 
@@ -1132,19 +1155,43 @@ describe('the corpus in the seed', () => {
     }
     // The check sees what it looks for, also in a form a reader does not.
     const stop = String.fromCodePoint(0x3002);
+    const cyrillicA = lookalikes('a')[0] ?? '';
     const tags = Array.from('www.exfil.invalid', (sign) =>
       String.fromCodePoint(0xe0000 + (sign.codePointAt(0) ?? 0)),
     ).join('');
-    expect(unsafe(`Siehe exfil${stop}invalid`)).toEqual(['exfil.invalid']);
-    expect(unsafe(`Siehe ${tags}`)).toEqual(['www.exfil.invalid']);
-    expect(unsafe(`Siehe ex${lookalikes('a')[0] ?? ''}mple.invalid`)).toEqual([
-      'example.invalid',
-    ]);
-    expect(unsafe('Update unter 10.0.0.1')).toEqual(['10.0.0.1']);
+    const probes: readonly (readonly [string, readonly string[]])[] = [
+      [`Siehe exfil${stop}invalid`, ['exfil.invalid']],
+      [`Siehe ${tags}`, ['www.exfil.invalid']],
+      [`Siehe ex${cyrillicA}mple.org`, [`ex${cyrillicA}mple.org`]],
+      [`Siehe ${cyrillicA}nmeldung.example.org`, []],
+      ['![x](//exfil.invalid/x.png)', ['exfil.invalid']],
+      ['<img src="//exfil.invalid/x.png">', ['exfil.invalid']],
+      ['![x](https://example.org@exfil.invalid/x.png)', ['exfil.invalid']],
+      ['Rückfragen an sekretariat@exfil.invalid', ['exfil.invalid']],
+      ['Siehe www.exfil.xn--invalid', ['www.exfil.xn--invalid']],
+      ['Siehe http://localhost/', ['localhost']],
+      ['Update unter 10.0.0.1', ['10.0.0.1']],
+      ['Update unter [fd00::1]', ['[fd00::1]']],
+      ['[a](<javascript:alert(1)>)', ['](<javascript:']],
+      ['<javascript:alert(1)>', ['<javascript:']],
+      ['[r]: javascript:alert(1)', [']: javascript:']],
+      ['[a](java&#115;cript:alert(1))', ['](javascript:']],
+      ['<a href="java\nscript:alert(1)">a</a>', ['href="javascript:']],
+      ['<script>alert(1)</script>', ['<script']],
+      [
+        '<img src="https://exfil.example/x.png" onerror=alert(1)>',
+        ['<img src="https://exfil.example/x.png" onerror='],
+      ],
+      [
+        '[A](https://example.org/?x=1#PersonView/searchEntry:%2312/)',
+        ['searchEntry:%2312'],
+      ],
+      ['searchEntry:#12', ['searchEntry:#12']],
+    ];
+    for (const [text, found] of probes) {
+      expect(unsafe(text), text).toEqual(found);
+    }
     expect(unsafe(cases.get('en-javascript-link')?.page ?? '')).not.toEqual([]);
-    expect(
-      unsafe('[A](https://example.org/?x=1#PersonView/searchEntry:%2312/)'),
-    ).toEqual(['searchEntry:%2312']);
   });
 
   it('lies inside the days the two routines read, for a run in the week of the seed', () => {
