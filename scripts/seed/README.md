@@ -42,7 +42,7 @@ Die Kategorie «Seedprobe» legt der Seed im ersten Lauf an, zusammen mit dem Ka
 
 ## Ausführung
 
-Node.js 24.21.0, wie in `.nvmrc`. Kein `pnpm install` nötig. Starten Sie den Seed mit `env -i`, damit keine andere Variable mitläuft, und tippen Sie den Schalter von Hand ein:
+Node.js in der Version aus `.nvmrc`. Kein `pnpm install` nötig. Starten Sie den Seed mit `env -i`, damit keine andere Variable mitläuft, und tippen Sie den Schalter von Hand ein:
 
 ```sh
 env -i \
