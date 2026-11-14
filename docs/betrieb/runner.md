@@ -246,14 +246,14 @@ Einen Ordner `stop` im Zustandsordner liest nur ein Server über stdio ohne `ECC
 
 ### Grenzen
 
-Der Container läuft mit Grenzen für die Zahl der Prozesse, Threads eingeschlossen, und für den Speicher. Der Job `e2e` in CI startet den Runner mit diesen Grenzen und liest nach jedem Lauf die Höchstwerte aus der cgroup des Containers; ein Lauf, der eine Grenze erreicht, lässt den Job scheitern. Am 14.11.2026 brauchte ein Lauf, der eine Liste von Seiten liest, ein Modell fragt und einen Abschnitt schreibt, unter Linux höchstens 13 Prozesse und 78 MiB Speicher. Die Grenzen sind das Doppelte davon, aufgerundet auf eine Zweierpotenz.
+Der Container läuft mit Grenzen für die Zahl der Prozesse, Threads eingeschlossen, und für den Speicher. Der Job `e2e` in CI startet den Runner mit diesen Grenzen und liest nach jedem Lauf von `ecclium run-once` die Höchstwerte aus der cgroup des Containers; ein Lauf, der eine Grenze erreicht, lässt den Job scheitern. Am 14.11.2026 brauchte ein solcher Lauf, der eine Liste von Seiten liest, ein Modell fragt und einen Abschnitt schreibt, lokal unter Ubuntu 24.04 auf arm64 höchstens 13 Prozesse und 78 MiB Speicher. Die Werte der Tabelle sind Ausgangswerte: das Doppelte davon, aufgerundet auf eine Zweierpotenz.
 
 | Grenze   | Wert    | In Docker Compose |
 | -------- | ------- | ----------------- |
 | Prozesse | 32      | `pids_limit: 32`  |
 | Speicher | 256 MiB | `mem_limit: 256m` |
 
-Liest eine Routine viel, etwa die Einteilungen vieler Events, braucht ihr Lauf mehr Speicher. Endet ein Lauf mit 137, hat der Kernel ihn wegen des Speichers beendet; erhöhen Sie dann die Grenze für den Speicher.
+Liest eine Routine viel, etwa die Einteilungen vieler Events, kann ihr Lauf mehr Speicher brauchen; gemessen ist das nicht. Endet ein Lauf mit 137, ohne dass ihn jemand gestoppt hat, und zeigt `docker inspect` bei `OOMKilled` den Wert `true`, hat der Kernel ihn wegen des Speichers beendet. Erhöhen Sie dann die Grenze für den Speicher.
 
 ### Aufseher und Lebenszeichen
 
