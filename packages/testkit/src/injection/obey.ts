@@ -70,7 +70,7 @@ const partTexts = (part: ModelPromptPart): readonly string[] => {
  * every data part, without the envelopes, with tag characters as letters.
  *
  * @param request - A request a mock provider got.
- * @returns The texts, one per line.
+ * @returns The texts, joined by line feeds.
  * @example
  * ```ts
  * heardText(mock.requests()[0]).includes('www.exfil.example');

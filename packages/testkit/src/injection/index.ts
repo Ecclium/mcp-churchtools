@@ -1,6 +1,6 @@
 /**
  * The corpus of prompt injections and a model that obeys them, for the
- * tests that prove the checks of a run without a model (ADR 0030, ADR
+ * tests that show the checks of a run without a model (ADR 0030, ADR
  * 0033).
  *
  * @packageDocumentation

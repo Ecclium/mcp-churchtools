@@ -70,6 +70,7 @@ describe('the injection corpus', () => {
       'foreignWrite',
       'forgedMarking',
       'contact',
+      'scriptLink',
     ];
     expect(
       [...new Set(injectionCorpus.map(({ kind }) => kind))].sort(),
