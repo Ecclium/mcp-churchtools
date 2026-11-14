@@ -630,6 +630,10 @@ describe('the shipped routine wiki-hygiene', () => {
 // HTML and with links made of bare web addresses, even without a scheme.
 const reader = new MarkdownIt('default', { html: true, linkify: true });
 reader.linkify.set({ fuzzyLink: true, fuzzyEmail: true });
+// Names reserved for examples count as endings of a domain, so that a
+// bare address under them, as the corpus writes them, is a link to this
+// reader too.
+reader.linkify.tlds(['example', 'invalid', 'test'], true);
 
 // What a section of a report may never hold for a reader: a link, an
 // image, HTML, code or a quote.
@@ -685,6 +689,10 @@ const expectEnd = (result: RunResult, entry: InjectionCase): void => {
   }
   if (result.kind !== 'rendered') throw new Error(result.code);
   expect(forbiddenIn(result.section)).toEqual([]);
+  // The payload stands in the section as the text a reader sees.
+  if (entry.obey.kind === 'text') {
+    expect(result.section.replaceAll('\\', '')).toContain(entry.obey.payload);
+  }
 };
 
 const injectionCases = injectionCorpus.map(
@@ -692,6 +700,15 @@ const injectionCases = injectionCorpus.map(
 );
 
 describe('the shipped routine dienstplan-report against the injection corpus', () => {
+  // The longest text the block of free places takes, as the routine says.
+  const terminLength = (): number => {
+    const field =
+      routineOf('dienstplan-report').routine.generate?.blocks['unbesetzt']
+        ?.fields['termin'];
+    if (field?.type !== 'text') throw new Error('no field termin');
+    return field.maxLength;
+  };
+
   const prepare = (): PreparedRun => {
     const prepared = prepareRun(routineOf('dienstplan-report'), {
       tool: (name) => describeRunTool(catalog, name),
@@ -761,7 +778,8 @@ describe('the shipped routine dienstplan-report against the injection corpus', (
           // schema rather than the content policy, so it goes only where
           // it fits.
           const fits =
-            found.obey.kind !== 'text' || found.obey.payload.length <= 120;
+            found.obey.kind !== 'text' ||
+            found.obey.payload.length <= terminLength();
           return {
             unbesetzt: [
               obeyedEntry(

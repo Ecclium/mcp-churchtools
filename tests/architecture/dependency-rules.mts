@@ -406,7 +406,7 @@ export function dependencyRules(
     {
       name: 'markdown-it-only-in-differential-test',
       severity: 'error',
-      comment: `${adr('contentDifferential')}: only the differential test of the content policy and the run against the corpus of prompt injections import markdown-it. It is a second parser for these tests, a tool of development without provenance, and never reads or writes a text of the product.`,
+      comment: `${adr('contentDifferential')}: among the packages, only the differential test of the content policy and the run against the corpus of prompt injections import markdown-it; tests outside the packages may use it too. It is a second parser for these tests, a tool of development without provenance, and never reads or writes a text of the product.`,
       from: { path: '^packages/', pathNot: at('contentDifferential') },
       to: { path: '(^|/)node_modules/markdown-it/' },
     },

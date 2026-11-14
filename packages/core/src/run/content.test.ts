@@ -92,8 +92,9 @@ describe('the payloads of the injection corpus in a text field', () => {
     }
     expect(checked.ok).toBe(true);
     if (!checked.ok) return;
-    // Kept as plain text: set into a list item, it marks nothing up, and
-    // only a line of the marking in it refuses the section.
+    // Kept as plain text: set into a list item, it stands there as the
+    // text a reader sees, and only a line of the marking in it refuses the
+    // section.
     const section = checkRunSection(
       `- ${escapeRunText(checked.text)}\n`,
       new Set(),
@@ -104,7 +105,7 @@ describe('the payloads of the injection corpus in a text field', () => {
     }
     expect(section.ok).toBe(true);
     if (section.ok) {
-      expect(section.text).not.toMatch(/\]\(|<[a-z]|!\[/iu);
+      expect(section.text.replaceAll('\\', '')).toContain(checked.text);
     }
   });
 });
