@@ -1373,40 +1373,75 @@ describe('the corpus in the seed', () => {
       }
       return spec.when.start.getTime();
     };
+    const starts = [Date.UTC(2026, 9, 12), Date.UTC(2027, 2, 15)];
+    // The triggers in the weeks of the test, each read once from the core:
+    // reading them hour by hour took longer than a test may under coverage.
+    const found = new Map<number, number>();
+    for (const first of starts) {
+      for (let day = -8; day < 30; day += 1) {
+        const trigger = triggerAt(first + day * dayMs + 12 * 60 * 60 * 1000);
+        found.set(trigger.at, trigger.day);
+      }
+    }
+    const triggers = [...found].sort(([one], [other]) => one - other);
+    const failures: string[] = [];
     let checked = 0;
     let early = 0;
     // Three weeks each around the change to winter time and to summer
     // time, hour by hour.
-    for (const first of [Date.UTC(2026, 9, 12), Date.UTC(2027, 2, 15)]) {
+    for (const first of starts) {
       for (let hour = 0; hour < 21 * 24; hour += 1) {
         const seeded = first + hour * 60 * 60 * 1000;
+        const when = new Date(seeded).toISOString();
         const data = datedData(new Date(seeded));
         const event = startOf(data, 'a5');
         const appointment = startOf(data, 'a6');
-        expect(event).toBeGreaterThan(seeded);
-        const last = triggerAt(seeded);
-        const next = triggerAt(last.at + 7 * dayMs + 60 * 60 * 1000);
-        expect(next.day - last.day).toBe(7);
+        if (event <= seeded) {
+          failures.push(`${when}: the event lies before the seed`);
+        }
+        let index = -1;
+        for (const [position, [at]] of triggers.entries()) {
+          if (at <= seeded) {
+            index = position;
+          }
+        }
+        const last = triggers[index];
+        const next = triggers[index + 1];
+        if (
+          last === undefined ||
+          next === undefined ||
+          next[1] - last[1] !== 7
+        ) {
+          failures.push(`${when}: no trigger before and a week after`);
+          continue;
+        }
         // A run by hand serves the last trigger, the daemon the next one.
         // On a Monday before the trigger, the last one lies a week back;
         // such a seed counts for the next trigger only.
-        const triggers = [next.day];
-        if (localDay(seeded) - last.day < 7) {
-          triggers.push(last.day);
+        const days = [next[1]];
+        if (localDay(seeded) - last[1] < 7) {
+          days.push(last[1]);
         } else {
           early += 1;
         }
-        for (const day of triggers) {
-          expect(localDay(event) - day).toBeGreaterThanOrEqual(rota.from);
-          expect(localDay(event) - day).toBeLessThan(rota.to);
-          expect(localDay(appointment) - day).toBeGreaterThanOrEqual(
-            preview.from,
-          );
-          expect(localDay(appointment) - day).toBeLessThan(preview.to);
+        for (const day of days) {
+          const toEvent = localDay(event) - day;
+          const toAppointment = localDay(appointment) - day;
+          if (
+            toEvent < rota.from ||
+            toEvent >= rota.to ||
+            toAppointment < preview.from ||
+            toAppointment >= preview.to
+          ) {
+            failures.push(
+              `${when}: ${String(toEvent)} and ${String(toAppointment)} days from the trigger`,
+            );
+          }
           checked += 1;
         }
       }
     }
+    expect(failures).toEqual([]);
     expect(checked).toBeGreaterThan(1900);
     expect(early).toBeGreaterThan(0);
   });
