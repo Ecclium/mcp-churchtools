@@ -126,6 +126,19 @@ export {
   type QuotaStoreCheck,
   quotaStoreChecks,
 } from './quota/index.js';
+export {
+  createObedientModel,
+  heardCases,
+  heardText,
+  type InjectionCase,
+  injectionCorpus,
+  type InjectionExpectation,
+  type InjectionKind,
+  type InjectionObedience,
+  type ObedientModel,
+  type ObedientModelOptions,
+  obeyedEntry,
+} from './injection/index.js';
 export { redactedOutcome } from './redacted/index.js';
 export {
   type ApprovalQueueCheck,
