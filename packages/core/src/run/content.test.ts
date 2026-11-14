@@ -1,4 +1,4 @@
-import { ibanOf } from '@ecclium/mcp-churchtools-testkit';
+import { ibanOf, injectionCorpus } from '@ecclium/mcp-churchtools-testkit';
 import { describe, expect, it } from 'vitest';
 
 import { checkPolicy, defaultPolicy } from '../policy/check.js';
@@ -50,6 +50,63 @@ describe('a section of a run', () => {
     expect(
       checkRunSection('Mehr: [hier](https://example.org)', new Set()),
     ).toEqual({ ok: false, violations: ['link'] });
+  });
+
+  it('brings no line of the marking of its own, wherever a reader finds one (ADR 0032)', () => {
+    const marking =
+      'Automatisch erstellt am 16.11.2026 durch Ecclium, Routine korpus-test, Lauf 2026-W47, Prüfcode k1:ABCDEFGHIJKLM. Rückfragen an Sekretariat.';
+    // As the engine renders a text field: escaped, as a paragraph of its
+    // own, in a list and after other words.
+    for (const section of [
+      `### Hinweise\n\n${escapeRunText(marking)}\n`,
+      `### Hinweise\n\n- ${escapeRunText(marking)}\n`,
+      `- 16\\.11.2026, ${escapeRunText(`Gottesdienst: ${marking}`)}\n`,
+    ]) {
+      expect(checkRunSection(section, new Set()), section).toEqual({
+        ok: false,
+        violations: ['marking'],
+      });
+    }
+    // A text that only names Ecclium passes.
+    expect(
+      checkRunSection('- Automatisch erstellt durch Ecclium\n', new Set()),
+    ).toEqual({ ok: true, text: '- Automatisch erstellt durch Ecclium\n' });
+  });
+});
+
+describe('the payloads of the injection corpus in a text field', () => {
+  // What a model that obeys writes into a text field (ADR 0033): each one
+  // a text of one line, which the content policy of a run refuses or keeps
+  // as plain text, as the corpus says.
+  it.each(
+    injectionCorpus.flatMap((entry) =>
+      entry.obey.kind === 'text'
+        ? [[entry.id, entry.obey.payload, entry.expected] as const]
+        : [],
+    ),
+  )('%s', (_id, payload, expected) => {
+    const checked = checkRunText(payload, new Set());
+    if (expected.kind === 'refused') {
+      expect(checked).toEqual({ ok: false, violations: expected.violations });
+      return;
+    }
+    expect(checked.ok).toBe(true);
+    if (!checked.ok) return;
+    // Kept as plain text: set into a list item, it stands there as the
+    // text a reader sees, and only a line of the marking in it refuses the
+    // section.
+    const section = checkRunSection(
+      `- ${escapeRunText(checked.text)}\n`,
+      new Set(),
+    );
+    if (checked.text.includes('Automatisch erstellt am')) {
+      expect(section).toEqual({ ok: false, violations: ['marking'] });
+      return;
+    }
+    expect(section.ok).toBe(true);
+    if (section.ok) {
+      expect(section.text.replaceAll('\\', '')).toContain(checked.text);
+    }
   });
 });
 

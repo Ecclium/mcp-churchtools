@@ -248,8 +248,11 @@
     },
     "contentDifferential": {
       "adr": "0030",
-      "description": "The differential test of the content policy: the only module that imports markdown-it, a second parser of Markdown that reads what the content policy writes and must find only the allowed part. A tool of development, never part of the product.",
-      "paths": ["packages/core/src/content/differential.test.ts"]
+      "description": "The differential test of the content policy and the run of a routine against the corpus of prompt injections: the only modules of the packages that import markdown-it, a second parser of Markdown that reads what the content policy writes, and what a run writes into the wiki, and must find only the allowed part. Tests outside the packages, such as those of the shipped routines, may use it as well. A tool of development, never part of the product.",
+      "paths": [
+        "packages/core/src/content/differential.test.ts",
+        "packages/cli/src/compose/run-injection.test.ts"
+      ]
     },
     "pseudonymUsers": {
       "adr": "0069",
